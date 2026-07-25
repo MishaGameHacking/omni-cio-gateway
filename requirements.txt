@@ -1,0 +1,6 @@
+--extra-index-url https://opensource.tbank.ru/api/v4/projects/238/packages/pypi/simple
+fastapi>=0.115,<1
+uvicorn[standard]>=0.30,<1
+grpcio>=1.60,<2
+protobuf>=5,<7
+t-tech-investments
