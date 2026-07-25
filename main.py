@@ -18,6 +18,13 @@ APP_NAME = "omni-cio-readonly-gateway"
 TINVEST_TOKEN = os.environ.get("TINVEST_TOKEN", "").strip()
 GATEWAY_API_KEY = os.environ.get("GATEWAY_API_KEY", "").strip()
 
+# Render automatically provides the public HTTPS URL of this web service.
+# GPT Actions require an explicit absolute server URL in the OpenAPI schema.
+PUBLIC_BASE_URL = os.environ.get(
+    "RENDER_EXTERNAL_URL",
+    "http://localhost:8000",
+).rstrip("/")
+
 app = FastAPI(
     title="Omni-CIO Read-Only Gateway",
     version="1.0.0",
@@ -28,6 +35,12 @@ app = FastAPI(
     ),
     docs_url=None,
     redoc_url=None,
+    servers=[
+        {
+            "url": PUBLIC_BASE_URL,
+            "description": "Public HTTPS endpoint of the private Omni-CIO gateway",
+        }
+    ],
 )
 
 bearer = HTTPBearer(auto_error=False)
@@ -166,6 +179,22 @@ def get_open_account(client: Client) -> tuple[str, dict[str, Any]]:
         "access_level": account.get("access_level"),
     }
     return account_id, safe_account
+
+
+@app.get(
+    "/",
+    operation_id="gatewayRoot",
+    summary="Show basic gateway information",
+    include_in_schema=False,
+)
+def root() -> dict[str, Any]:
+    return {
+        "status": "ok",
+        "service": APP_NAME,
+        "health": f"{PUBLIC_BASE_URL}/health",
+        "openapi": f"{PUBLIC_BASE_URL}/openapi.json",
+        "trading_methods": False,
+    }
 
 
 @app.get(
