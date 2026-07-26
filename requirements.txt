@@ -2,5 +2,5 @@
 fastapi>=0.115,<1
 uvicorn[standard]>=0.30,<1
 grpcio>=1.60,<2
-protobuf>=5,<7
-t-tech-investments
+protobuf>=5.27,<6
+t-tech-investments==0.3.3
