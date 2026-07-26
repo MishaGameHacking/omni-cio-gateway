@@ -1,6 +1,10 @@
 import hmac
+import logging
 import os
+import sys
+from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone
+from importlib import metadata
 from typing import Any
 
 # T-Bank SDK reads this variable when configuring TLS verification.
@@ -13,6 +17,8 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from google.protobuf.json_format import MessageToDict
 from t_tech.invest import Client
 
+
+logger = logging.getLogger("omni_cio_gateway")
 
 APP_NAME = "omni-cio-readonly-gateway"
 TINVEST_TOKEN = os.environ.get("TINVEST_TOKEN", "").strip()
@@ -64,12 +70,47 @@ def require_gateway_key(
         )
 
 
+def package_version(package_name: str) -> str:
+    try:
+        return metadata.version(package_name)
+    except metadata.PackageNotFoundError:
+        return "not-installed"
+
+
+def safe_error_message(exc: Exception) -> str:
+    message = str(exc) or type(exc).__name__
+    for secret in (TINVEST_TOKEN, GATEWAY_API_KEY):
+        if secret:
+            message = message.replace(secret, "[REDACTED]")
+    return message[:500]
+
+
 def proto_to_dict(message: Any) -> dict[str, Any]:
-    """Convert protobuf response to JSON-compatible dict."""
-    return MessageToDict(
-        message,
-        preserving_proto_field_name=True,
-        use_integers_for_enums=False,
+    """Convert protobuf/dataclass/dict responses to JSON-compatible dicts."""
+    if isinstance(message, dict):
+        return message
+
+    if hasattr(message, "DESCRIPTOR"):
+        return MessageToDict(
+            message,
+            preserving_proto_field_name=True,
+            use_integers_for_enums=False,
+        )
+
+    to_dict = getattr(message, "to_dict", None)
+    if callable(to_dict):
+        result = to_dict()
+        if isinstance(result, dict):
+            return result
+
+    if is_dataclass(message):
+        result = asdict(message)
+        if isinstance(result, dict):
+            return result
+
+    raise TypeError(
+        f"Unsupported SDK response type: {type(message).__module__}."
+        f"{type(message).__name__}"
     )
 
 
@@ -208,6 +249,14 @@ def health() -> dict[str, Any]:
         "service": APP_NAME,
         "time_utc": datetime.now(timezone.utc).isoformat(),
         "tls_mode": "T-Bank SDK embedded certificate",
+        "python_version": sys.version.split()[0],
+        "sdk_version": package_version("t-tech-investments"),
+        "protobuf_version": package_version("protobuf"),
+        "grpcio_version": package_version("grpcio"),
+        "configured": {
+            "tinvest_token": bool(TINVEST_TOKEN),
+            "gateway_api_key": bool(GATEWAY_API_KEY),
+        },
         "trading_methods": False,
     }
 
@@ -234,11 +283,29 @@ def connection() -> dict[str, Any]:
         http_status, payload = grpc_error_payload(exc)
         raise HTTPException(status_code=http_status, detail=payload) from exc
     except Exception as exc:
+        safe_message = safe_error_message(exc)
+        logger.exception(
+            "Gateway SDK/client failure: %s: %s",
+            type(exc).__name__,
+            safe_message,
+        )
+        error_code = (
+            "GATEWAY_SDK_COMPATIBILITY_ERROR"
+            if isinstance(exc, (AttributeError, TypeError))
+            else "GATEWAY_CLIENT_ERROR"
+        )
         raise HTTPException(
             status_code=502,
             detail={
-                "code": "GATEWAY_CLIENT_ERROR",
-                "message": type(exc).__name__,
+                "code": error_code,
+                "exception_type": type(exc).__name__,
+                "message": safe_message,
+                "runtime": {
+                    "python": sys.version.split()[0],
+                    "t_tech_investments": package_version("t-tech-investments"),
+                    "protobuf": package_version("protobuf"),
+                    "grpcio": package_version("grpcio"),
+                },
             },
         ) from exc
 
@@ -257,7 +324,6 @@ def snapshot() -> dict[str, Any]:
 
             portfolio = client.operations.get_portfolio(
                 account_id=account_id,
-                currency="RUB",
             )
             positions = client.operations.get_positions(account_id=account_id)
             withdraw_limits = client.operations.get_withdraw_limits(
@@ -282,10 +348,28 @@ def snapshot() -> dict[str, Any]:
         http_status, payload = grpc_error_payload(exc)
         raise HTTPException(status_code=http_status, detail=payload) from exc
     except Exception as exc:
+        safe_message = safe_error_message(exc)
+        logger.exception(
+            "Gateway SDK/client failure: %s: %s",
+            type(exc).__name__,
+            safe_message,
+        )
+        error_code = (
+            "GATEWAY_SDK_COMPATIBILITY_ERROR"
+            if isinstance(exc, (AttributeError, TypeError))
+            else "GATEWAY_CLIENT_ERROR"
+        )
         raise HTTPException(
             status_code=502,
             detail={
-                "code": "GATEWAY_CLIENT_ERROR",
-                "message": type(exc).__name__,
+                "code": error_code,
+                "exception_type": type(exc).__name__,
+                "message": safe_message,
+                "runtime": {
+                    "python": sys.version.split()[0],
+                    "t_tech_investments": package_version("t-tech-investments"),
+                    "protobuf": package_version("protobuf"),
+                    "grpcio": package_version("grpcio"),
+                },
             },
         ) from exc
