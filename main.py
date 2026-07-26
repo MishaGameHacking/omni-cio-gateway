@@ -33,7 +33,7 @@ PUBLIC_BASE_URL = os.environ.get(
 
 app = FastAPI(
     title="Omni-CIO Read-Only Gateway",
-    version="1.0.0",
+    version="1.0.2",
     description=(
         "Private read-only gateway between a Custom GPT and T-Invest API. "
         "It exposes only connection and portfolio snapshot endpoints. "
@@ -114,10 +114,98 @@ def proto_to_dict(message: Any) -> dict[str, Any]:
     )
 
 
+ACCOUNT_STATUS_NAMES = {
+    0: "ACCOUNT_STATUS_UNSPECIFIED",
+    1: "ACCOUNT_STATUS_NEW",
+    2: "ACCOUNT_STATUS_OPEN",
+    3: "ACCOUNT_STATUS_CLOSED",
+    4: "ACCOUNT_STATUS_ALL",
+}
+
+ACCOUNT_TYPE_NAMES = {
+    0: "ACCOUNT_TYPE_UNSPECIFIED",
+    1: "ACCOUNT_TYPE_TINKOFF",
+    2: "ACCOUNT_TYPE_TINKOFF_IIS",
+    3: "ACCOUNT_TYPE_INVEST_BOX",
+    4: "ACCOUNT_TYPE_INVEST_FUND",
+    5: "ACCOUNT_TYPE_DEBIT",
+    6: "ACCOUNT_TYPE_SAVING",
+    7: "ACCOUNT_TYPE_DFA",
+}
+
+ACCESS_LEVEL_NAMES = {
+    0: "ACCOUNT_ACCESS_LEVEL_UNSPECIFIED",
+    1: "ACCOUNT_ACCESS_LEVEL_FULL_ACCESS",
+    2: "ACCOUNT_ACCESS_LEVEL_READ_ONLY",
+    3: "ACCOUNT_ACCESS_LEVEL_NO_ACCESS",
+}
+
+
 def mask_account_id(account_id: str) -> str:
     if not account_id:
         return "***"
     return f"***{account_id[-4:]}"
+
+
+def object_field(obj: Any, field_name: str, default: Any = None) -> Any:
+    if isinstance(obj, dict):
+        return obj.get(field_name, default)
+    return getattr(obj, field_name, default)
+
+
+def enum_name(value: Any, mapping: dict[int, str]) -> str:
+    """Normalize protobuf enum, Python Enum, integer, or string to a name."""
+    if value is None:
+        return "UNKNOWN"
+
+    name = getattr(value, "name", None)
+    if isinstance(name, str) and name:
+        return name
+
+    raw_value = getattr(value, "value", value)
+
+    if isinstance(raw_value, bool):
+        return str(raw_value)
+
+    if isinstance(raw_value, int):
+        return mapping.get(raw_value, str(raw_value))
+
+    text_value = str(raw_value).strip()
+    if text_value.isdigit():
+        return mapping.get(int(text_value), text_value)
+
+    # Handles strings such as "AccountStatus.ACCOUNT_STATUS_OPEN".
+    return text_value.rsplit(".", 1)[-1]
+
+
+def response_accounts(accounts_response: Any) -> list[Any]:
+    direct_accounts = getattr(accounts_response, "accounts", None)
+    if direct_accounts is not None:
+        return list(direct_accounts)
+
+    accounts_data = proto_to_dict(accounts_response)
+    raw_accounts = accounts_data.get("accounts", [])
+    return list(raw_accounts) if raw_accounts else []
+
+
+def safe_account_view(account: Any) -> dict[str, Any]:
+    account_id = str(object_field(account, "id", "") or "")
+    return {
+        "masked_id": mask_account_id(account_id),
+        "name": object_field(account, "name"),
+        "type": enum_name(
+            object_field(account, "type"),
+            ACCOUNT_TYPE_NAMES,
+        ),
+        "status": enum_name(
+            object_field(account, "status"),
+            ACCOUNT_STATUS_NAMES,
+        ),
+        "access_level": enum_name(
+            object_field(account, "access_level"),
+            ACCESS_LEVEL_NAMES,
+        ),
+    }
 
 
 def grpc_error_payload(exc: grpc.RpcError) -> tuple[int, dict[str, Any]]:
@@ -169,19 +257,32 @@ def ensure_configured() -> None:
 
 def get_open_account(client: Client) -> tuple[str, dict[str, Any]]:
     accounts_response = client.users.get_accounts()
-    accounts_data = proto_to_dict(accounts_response)
-    accounts = accounts_data.get("accounts", [])
+    accounts = response_accounts(accounts_response)
 
     open_accounts = [
         account
         for account in accounts
-        if "OPEN" in str(account.get("status", "")).upper()
+        if enum_name(
+            object_field(account, "status"),
+            ACCOUNT_STATUS_NAMES,
+        ) == "ACCOUNT_STATUS_OPEN"
     ]
 
     if not open_accounts:
+        safe_accounts = [safe_account_view(account) for account in accounts]
         raise HTTPException(
             status_code=404,
-            detail={"code": "NO_OPEN_ACCOUNT"},
+            detail={
+                "code": "NO_OPEN_ACCOUNT",
+                "accessible_account_count": len(accounts),
+                "accounts": safe_accounts,
+                "message": (
+                    "T-Invest returned accounts, but none was classified as "
+                    "ACCOUNT_STATUS_OPEN."
+                    if accounts
+                    else "T-Invest returned no accounts accessible to this token."
+                ),
+            },
         )
 
     if len(open_accounts) > 1:
@@ -190,11 +291,7 @@ def get_open_account(client: Client) -> tuple[str, dict[str, Any]]:
             detail={
                 "code": "MULTIPLE_OPEN_ACCOUNTS",
                 "accounts": [
-                    {
-                        "masked_id": mask_account_id(str(account.get("id", ""))),
-                        "name": account.get("name"),
-                        "type": account.get("type"),
-                    }
+                    safe_account_view(account)
                     for account in open_accounts
                 ],
                 "message": (
@@ -205,21 +302,14 @@ def get_open_account(client: Client) -> tuple[str, dict[str, Any]]:
         )
 
     account = open_accounts[0]
-    account_id = str(account.get("id", ""))
+    account_id = str(object_field(account, "id", "") or "")
     if not account_id:
         raise HTTPException(
             status_code=502,
             detail={"code": "ACCOUNT_ID_MISSING"},
         )
 
-    safe_account = {
-        "masked_id": mask_account_id(account_id),
-        "name": account.get("name"),
-        "type": account.get("type"),
-        "status": account.get("status"),
-        "access_level": account.get("access_level"),
-    }
-    return account_id, safe_account
+    return account_id, safe_account_view(account)
 
 
 @app.get(
