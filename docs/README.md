@@ -10,6 +10,7 @@
 4. `architecture/SYSTEM_OVERVIEW.md` — компоненты и границы системы.
 5. `architecture/REPOSITORY_STRUCTURE.md` — назначение папок и файлов.
 6. `inventory/PROJECT_ASSETS.md` — что находится в GitHub, а что хранится во внешних системах.
+7. `inventory/FILE_INDEX.md` — быстрый индекс runtime, tests, configuration и knowledge.
 
 ## Разделы
 
@@ -17,6 +18,7 @@
 
 - `architecture/SYSTEM_OVERVIEW.md`
 - `architecture/REPOSITORY_STRUCTURE.md`
+- `architecture/DECISIONS.md`
 
 ### Operations
 
@@ -26,12 +28,14 @@
 ### Inventory
 
 - `inventory/PROJECT_ASSETS.md`
+- `inventory/FILE_INDEX.md`
 
 ### Custom GPT
 
 Каноническая конфигурация помощника хранится в `../gpt/`:
 
 - `../gpt/README.md`
+- `../gpt/CONFIGURATION.md`
 - `../gpt/INSTRUCTIONS.md`
 - `../gpt/ACTIONS_CATALOG.md`
 - `../gpt/NEW_CHAT_PROMPT.md`
