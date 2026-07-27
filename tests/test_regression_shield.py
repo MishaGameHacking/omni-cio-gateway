@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 import app as gateway_module
 
 
-EXPECTED_VERSION = "3.9.0"
+EXPECTED_VERSION = "3.9.1"
 EXPECTED_ENTRYPOINT = "app:app"
 EXPECTED_ACTION_PATHS = {
     "/health": "gatewayHealth",
@@ -91,6 +91,7 @@ def test_health_contract_and_read_only_invariants() -> None:
     assert "operations_cash_flow_reconciliation" in capabilities
     assert "broker_report_reconciliation" in capabilities
     assert "broker_report_async_generation" in capabilities
+    assert "broker_report_async_integrity" in capabilities
     assert "broker_report_trade_reconciliation" in capabilities
     assert "regression_shield" in capabilities
 
@@ -157,9 +158,12 @@ def test_openapi_is_gpt_actions_compatible_and_operation_ids_are_unique() -> Non
     assert "quality" in operations_properties
     assert "complete" in operations_properties
 
-    broker_schema = schema["paths"][
+    broker_operation = schema["paths"][
         "/operations/broker-report-reconciliation"
-    ]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+    ]["get"]
+    broker_schema = broker_operation["responses"]["200"]["content"][
+        "application/json"
+    ]["schema"]
     broker_properties = broker_schema["properties"]
     assert "report_generation" in broker_properties
     assert "broker_report_summary" in broker_properties
@@ -167,6 +171,13 @@ def test_openapi_is_gpt_actions_compatible_and_operation_ids_are_unique() -> Non
     assert "commission_reconciliation" in broker_properties
     assert "cash_flow_reconciliation" in broker_properties
     assert "quality" in broker_properties
+
+    days_parameter = next(
+        parameter
+        for parameter in broker_operation["parameters"]
+        if parameter["name"] == "days"
+    )
+    assert days_parameter["schema"]["maximum"] == 31
 
     assert len(operation_ids) == len(set(operation_ids))
 

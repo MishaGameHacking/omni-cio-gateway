@@ -11,7 +11,7 @@ import operations_analytics as operations_analytics_engine
 import broker_report_reconciliation as broker_report_reconciliation_engine
 
 
-APP_VERSION = "3.9.0"
+APP_VERSION = "3.9.1"
 ENTRYPOINT = "app:app"
 
 # Upgrade both archived wrappers because established route handlers resolve
@@ -27,7 +27,7 @@ app.version = APP_VERSION
 app.description = (
     "Private read-only gateway between a Custom GPT and T-Invest API. It exposes "
     "connection, portfolio, market, purchase-capacity, and operations data. "
-    "v3.9.0 adds asynchronous official broker-report generation, paginated report "
+    "v3.9.1 adds asynchronous official broker-report generation, paginated report "
     "loading, and currency-local trade and commission reconciliation. It cannot "
     "create, submit, replace, or cancel orders."
 )

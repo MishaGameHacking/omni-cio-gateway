@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+
 def _call_get_page(*, client: Any, task_id: str, page: int) -> Any:
     if GetBrokerReportRequest is None:
         raise TypeError("GetBrokerReportRequest is unavailable in this SDK")
@@ -12,10 +13,12 @@ def _call_get_page(*, client: Any, task_id: str, page: int) -> Any:
             raise
         return method(BrokerReportRequest(get_broker_report_request=request))
 
+
 def _extract_report_payload(base: Any, response: Any) -> dict[str, Any]:
     payload = _response_dict(base, response)
     report = payload.get("get_broker_report_response")
     return report if isinstance(report, dict) else {}
+
 
 def _extract_task_id(base: Any, response: Any) -> str:
     payload = _response_dict(base, response)
@@ -27,24 +30,120 @@ def _extract_task_id(base: Any, response: Any) -> str:
         return str(report.get("task_id", "") or "").strip()
     return ""
 
-def _pending_error(base: Any, exc: grpc.RpcError) -> dict[str, Any]:
-    code = ""
-    details = ""
-    try:
-        raw_code = exc.code()
-        code = getattr(raw_code, "name", str(raw_code))
-    except Exception:
-        pass
-    try:
-        details = exc.details() or ""
-    except Exception:
-        details = str(exc)
+
+def _exception_value(obj: Any, name: str) -> Any:
+    value = getattr(obj, name, None)
+    if callable(value):
+        try:
+            return value()
+        except Exception:
+            return None
+    return value
+
+
+def _metadata_value(metadata: Any, *names: str) -> Any:
+    if isinstance(metadata, dict):
+        for name in names:
+            if metadata.get(name) not in (None, ""):
+                return metadata.get(name)
+        return None
+    for name in names:
+        value = getattr(metadata, name, None)
+        if value not in (None, ""):
+            return value
+    return None
+
+
+def _exception_facts(exc: Exception) -> dict[str, str]:
+    raw_code = _exception_value(exc, "code")
+    grpc_code = getattr(raw_code, "name", None) or str(raw_code or "")
+    details = _exception_value(exc, "details")
+    metadata = getattr(exc, "metadata", None)
+    t_invest_code = _metadata_value(
+        metadata,
+        "code",
+        "error_code",
+        "t_invest_code",
+    )
+    metadata_message = _metadata_value(metadata, "message", "details")
+    tracking_id = _metadata_value(metadata, "tracking_id", "trackingId")
+    message = str(metadata_message or details or str(exc) or "").strip()
     return {
-        "code": "BROKER_REPORT_NOT_READY",
-        "grpc_code": code,
-        "exception_type": type(exc).__name__,
-        "message": base.safe_error_message(Exception(details or str(exc))),
+        "grpc_code": str(grpc_code or ""),
+        "t_invest_code": str(t_invest_code or ""),
+        "tracking_id": str(tracking_id or ""),
+        "message": message,
     }
+
+
+def _is_report_pending_error(exc: Exception) -> bool:
+    facts = _exception_facts(exc)
+    if facts["t_invest_code"] == "30058":
+        return True
+    searchable = " ".join(
+        (
+            facts["message"],
+            facts["grpc_code"],
+            str(exc),
+        )
+    ).lower()
+    return (
+        "30058" in searchable
+        or "task not completed yet" in searchable
+        or "task is not completed yet" in searchable
+    )
+
+
+def _error_detail(base: Any, exc: Exception, *, code: str) -> dict[str, Any]:
+    facts = _exception_facts(exc)
+    message = facts["message"] or str(exc)
+    return {
+        "code": code,
+        "grpc_code": facts["grpc_code"],
+        "exception_type": type(exc).__name__,
+        "message": base.safe_error_message(Exception(message)),
+    }
+
+
+def _pending_error(base: Any, exc: Exception) -> dict[str, Any]:
+    return _error_detail(base, exc, code="BROKER_REPORT_NOT_READY")
+
+
+def _empty_report_pagination() -> dict[str, Any]:
+    return {
+        "pages_fetched": 0,
+        "pages_count": 0,
+        "items_count": 0,
+        "rows_received": 0,
+        "max_pages": REPORT_MAX_PAGES,
+        "truncated": False,
+    }
+
+
+def _pending_result(
+    *,
+    task_id: str,
+    wait_seconds: int,
+    error: dict[str, Any] | None = None,
+) -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, Any], list[dict[str, Any]]]:
+    return (
+        {
+            "status": "pending",
+            "task_id": task_id,
+            "wait_seconds": wait_seconds,
+            "error": error
+            or {
+                "code": "BROKER_REPORT_NOT_READY",
+                "grpc_code": "",
+                "exception_type": "",
+                "message": "The broker report is still being generated.",
+            },
+        },
+        [],
+        _empty_report_pagination(),
+        [],
+    )
+
 
 def load_broker_report(
     *,
@@ -59,8 +158,9 @@ def load_broker_report(
     errors: list[dict[str, Any]] = []
     immediate_report: dict[str, Any] = {}
     active_task_id = str(task_id or "").strip()
+    generation_requested = not active_task_id
 
-    if not active_task_id:
+    if generation_requested:
         response = _call_generate(
             client=client,
             account_id=account_id,
@@ -69,6 +169,20 @@ def load_broker_report(
         )
         active_task_id = _extract_task_id(base, response)
         immediate_report = _extract_report_payload(base, response)
+
+        if not immediate_report and not active_task_id:
+            raise RuntimeError(
+                "T-Invest accepted broker-report generation but returned no task_id."
+            )
+
+        # Generation is asynchronous. For a zero-wait request, return the task ID
+        # immediately instead of issuing a premature GetBrokerReport poll that the
+        # SDK reports as RequestError 30058.
+        if not immediate_report and wait_seconds == 0:
+            return _pending_result(
+                task_id=active_task_id,
+                wait_seconds=wait_seconds,
+            )
 
     deadline = time.monotonic() + max(0, wait_seconds)
     first_attempt = True
@@ -86,51 +200,24 @@ def load_broker_report(
                     page=0,
                 ),
             )
-        except grpc.RpcError as exc:
+        except Exception as exc:
+            if not _is_report_pending_error(exc):
+                raise
             if time.monotonic() < deadline:
                 time.sleep(min(1.0, max(0.0, deadline - time.monotonic())))
                 continue
-            pending = _pending_error(base, exc)
-            return (
-                {
-                    "status": "pending",
-                    "task_id": active_task_id,
-                    "wait_seconds": wait_seconds,
-                    "error": pending,
-                },
-                [],
-                {
-                    "pages_fetched": 0,
-                    "pages_count": 0,
-                    "items_count": 0,
-                    "truncated": False,
-                },
-                [],
+            return _pending_result(
+                task_id=active_task_id,
+                wait_seconds=wait_seconds,
+                error=_pending_error(base, exc),
             )
         if not report_payload and time.monotonic() < deadline:
             time.sleep(min(1.0, max(0.0, deadline - time.monotonic())))
 
     if not report_payload:
-        return (
-            {
-                "status": "pending",
-                "task_id": active_task_id,
-                "wait_seconds": wait_seconds,
-                "error": {
-                    "code": "BROKER_REPORT_NOT_READY",
-                    "grpc_code": "",
-                    "exception_type": "",
-                    "message": "The broker report is still being generated.",
-                },
-            },
-            [],
-            {
-                "pages_fetched": 0,
-                "pages_count": 0,
-                "items_count": 0,
-                "truncated": False,
-            },
-            [],
+        return _pending_result(
+            task_id=active_task_id,
+            wait_seconds=wait_seconds,
         )
 
     rows = [
@@ -167,11 +254,15 @@ def load_broker_report(
                     page=next_page,
                 ),
             )
-        except grpc.RpcError as exc:
+        except Exception as exc:
             errors.append(
                 {
                     "component": "broker_report_page",
-                    "error": _pending_error(base, exc),
+                    "error": _error_detail(
+                        base,
+                        exc,
+                        code="BROKER_REPORT_PAGE_ERROR",
+                    ),
                 }
             )
             break
@@ -206,4 +297,3 @@ def load_broker_report(
         },
         errors,
     )
-
