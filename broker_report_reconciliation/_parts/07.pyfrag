@@ -1,0 +1,60 @@
+from __future__ import annotations
+
+def register_gateway(*, app: Any, base: Any, app_version: str) -> None:
+    for capability in (
+        "broker_report_reconciliation",
+        "broker_report_async_generation",
+        "broker_report_trade_reconciliation",
+    ):
+        if capability not in base.CAPABILITIES:
+            base.CAPABILITIES.append(capability)
+
+    @app.get(
+        PATH,
+        operation_id=OPERATION_ID,
+        summary=(
+            "Generate or retrieve the official broker report and reconcile its "
+            "trades and commissions with executed API operations"
+        ),
+        dependencies=[Depends(base.require_gateway_key)],
+    )
+    def broker_report_reconciliation_endpoint(
+        days: int = Query(
+            30,
+            ge=1,
+            le=3650,
+            description=(
+                "Requested calendar-day interval. If it crosses January 1, the "
+                "official report interval is limited to the current calendar year."
+            ),
+        ),
+        task_id: str | None = Query(
+            None,
+            min_length=1,
+            max_length=200,
+            description=(
+                "Task ID returned by an earlier pending call. Omit it to request "
+                "official broker-report generation."
+            ),
+        ),
+        wait_seconds: int = Query(
+            0,
+            ge=0,
+            le=10,
+            description=(
+                "Optional synchronous wait for report completion. Zero returns a "
+                "pending task immediately when the report is not ready."
+            ),
+        ),
+    ) -> dict[str, Any]:
+        return get_broker_report_reconciliation(
+            base=base,
+            app_version=app_version,
+            days=days,
+            task_id=task_id,
+            wait_seconds=wait_seconds,
+        )
+
+    base._ACTION_200_SCHEMAS[PATH] = _schema(base)
+    app.openapi_schema = None
+
