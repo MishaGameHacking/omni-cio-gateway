@@ -2,11 +2,6 @@
 name: Apply Omni-CIO v3.6.0
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - .github/workflows/apply-v360.yml
   pull_request:
     branches:
       - main
@@ -29,7 +24,7 @@ jobs:
           git fetch origin v3.6.0-cash-liquidity
           git checkout -B v3.6.0-cash-liquidity origin/v3.6.0-cash-liquidity
 
-      - name: Patch stable application and Regression Shield
+      - name: Patch stable application and tests
         run: |
           python - <<'PY'
           from pathlib import Path
@@ -207,6 +202,7 @@ jobs:
               'EXPECTED_VERSION = "3.6.0"',
               1,
           )
+
           expected_path_marker = (
               '    "/portfolio/analytics": "getPortfolioAnalytics",\n'
           )
@@ -217,6 +213,7 @@ jobs:
               + '    "/portfolio/cash-liquidity": "getCashLiquiditySnapshot",\n',
               1,
           )
+
           protected_marker = '    "/operations?days=1",\n'
           assert protected_marker in regression
           regression = regression.replace(
@@ -224,6 +221,7 @@ jobs:
               '    "/portfolio/cash-liquidity",\n' + protected_marker,
               1,
           )
+
           capability_marker = (
               '    assert "portfolio_analytics" in capabilities\n'
           )
@@ -235,62 +233,12 @@ jobs:
               1,
           )
           regression_path.write_text(regression, encoding="utf-8")
-
-          workflow_path = Path(".github/workflows/regression-shield.yml")
-          workflow = workflow_path.read_text(encoding="utf-8")
-          branch_marker = "      - v3.5.0-portfolio-analytics\n"
-          assert branch_marker in workflow
-          workflow = workflow.replace(
-              branch_marker,
-              branch_marker + "      - v3.6.0-cash-liquidity\n",
-              1,
-          )
-          compile_marker = (
-              "run: python -m compileall -q app.py main.py portfolio_market.py "
-              "portfolio_analytics.py tests"
-          )
-          assert compile_marker in workflow
-          workflow = workflow.replace(
-              compile_marker,
-              "run: python -m compileall -q app.py main.py portfolio_market.py "
-              "portfolio_analytics.py cash_liquidity.py tests",
-              1,
-          )
-          assert 'assert app.app.version == "3.5.0"' in workflow
-          workflow = workflow.replace(
-              'assert app.app.version == "3.5.0"',
-              'assert app.app.version == "3.6.0"',
-              1,
-          )
-          workflow_capability_marker = (
-              '          assert "portfolio_analytics" in app.base.CAPABILITIES\n'
-          )
-          assert workflow_capability_marker in workflow
-          workflow = workflow.replace(
-              workflow_capability_marker,
-              workflow_capability_marker
-              + '          assert "cash_liquidity_diagnostics" in app.base.CAPABILITIES\n',
-              1,
-          )
-          workflow_path.write_text(workflow, encoding="utf-8")
-
-          feature_workflow = Path(".github/workflows/v3.6.0-upgrade.yml")
-          if feature_workflow.exists():
-              feature_workflow.unlink()
           PY
 
       - name: Commit upgrade branch
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
+          git add app.py tests/test_regression_shield.py
           git commit -m "Integrate v3.6.0 Cash & Liquidity Diagnostics"
           git push origin HEAD:v3.6.0-cash-liquidity
-
-      - name: Remove one-time workflow from main
-        run: |
-          git fetch origin main
-          git checkout -B main origin/main
-          git rm .github/workflows/apply-v360.yml
-          git commit -m "Remove one-time v3.6.0 upgrade workflow"
-          git push origin main
