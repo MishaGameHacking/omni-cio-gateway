@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 import app as gateway_module
 
 
-EXPECTED_VERSION = "3.6.0"
+EXPECTED_VERSION = "3.7.0"
 EXPECTED_ENTRYPOINT = "app:app"
 EXPECTED_ACTION_PATHS = {
     "/health": "gatewayHealth",
@@ -25,6 +25,7 @@ EXPECTED_ACTION_PATHS = {
     "/portfolio/market-snapshot": "getPortfolioMarketSnapshot",
     "/portfolio/analytics": "getPortfolioAnalytics",
     "/portfolio/cash-liquidity": "getCashLiquiditySnapshot",
+    "/portfolio/purchase-capacity": "getPurchaseCapacityPreview",
     "/operations": "getOperationsHistory",
     "/instruments/search": "findInstrument",
     "/market/snapshot": "getMarketSnapshot",
@@ -39,6 +40,11 @@ PROTECTED_URLS = (
         "depth=1&max_instruments=1"
     ),
     "/portfolio/cash-liquidity",
+    (
+        "/portfolio/purchase-capacity?"
+        "instrument_uid=e6123145-9665-43e0-8413-cd61b8aa9b13&"
+        "price_basis=manual&quantity_lots=1&manual_price=269.33"
+    ),
     "/operations?days=1",
     "/instruments/search?query=SBER&limit=1",
     (
@@ -75,6 +81,7 @@ def test_health_contract_and_read_only_invariants() -> None:
     assert "portfolio_market_snapshot" in capabilities
     assert "portfolio_analytics" in capabilities
     assert "cash_liquidity_diagnostics" in capabilities
+    assert "purchase_capacity_preview" in capabilities
     assert "regression_shield" in capabilities
 
     assert payload["build"]["entrypoint"] == EXPECTED_ENTRYPOINT
