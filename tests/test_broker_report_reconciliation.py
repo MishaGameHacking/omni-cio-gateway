@@ -113,7 +113,7 @@ def build(
     now = datetime(2026, 7, 27, 9, 0, tzinfo=timezone.utc)
     return broker.build_reconciliation_payload(
         base=FakeBase,
-        app_version="3.9.0",
+        app_version="3.9.1",
         account={"masked_id": "***3118"},
         period={
             "from": "2026-07-01T00:00:00+00:00",
@@ -199,7 +199,7 @@ def test_ready_report_matches_operations_without_double_counting() -> None:
     )
 
     assert payload["status"] == "ok"
-    assert payload["version"] == "3.9.0"
+    assert payload["version"] == "3.9.1"
     assert payload["broker_report_summary"]["rows"] == 1
     assert payload["trade_reconciliation"]["matched_by_trade_id"] == 1
     assert payload["trade_reconciliation"]["report_only"] == 0
