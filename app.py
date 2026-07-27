@@ -1,3 +1,4 @@
+import os
 from typing import Any
 
 from fastapi import Depends, Query
@@ -6,11 +7,66 @@ from fastapi.routing import APIRoute
 import main as base
 
 
-app = base.app
-app.version = "3.3.2"
+APP_VERSION = "3.3.3"
+ENTRYPOINT = "app:app"
 
-if "market_source_diagnostics" not in base.CAPABILITIES:
-    base.CAPABILITIES.append("market_source_diagnostics")
+app = base.app
+app.version = APP_VERSION
+
+for capability in ("market_source_diagnostics", "regression_shield"):
+    if capability not in base.CAPABILITIES:
+        base.CAPABILITIES.append(capability)
+
+
+def remove_get_route(path: str) -> None:
+    """Remove one inherited GET route before registering its stable wrapper."""
+    app.router.routes = [
+        route
+        for route in app.router.routes
+        if not (
+            isinstance(route, APIRoute)
+            and route.path == path
+            and "GET" in (route.methods or set())
+        )
+    ]
+
+
+def build_metadata() -> dict[str, str]:
+    raw_commit = (
+        os.environ.get("RENDER_GIT_COMMIT")
+        or os.environ.get("GITHUB_SHA")
+        or "unknown"
+    )
+    commit_sha = raw_commit[:12] if raw_commit != "unknown" else raw_commit
+    deployment_platform = (
+        "render"
+        if os.environ.get("RENDER") or os.environ.get("RENDER_EXTERNAL_URL")
+        else "local"
+    )
+    return {
+        "commit_sha": commit_sha,
+        "entrypoint": ENTRYPOINT,
+        "deployment_platform": deployment_platform,
+    }
+
+
+remove_get_route("/health")
+
+
+@app.get(
+    "/health",
+    operation_id="gatewayHealth",
+    summary="Check whether the gateway process is running",
+)
+def health_v333() -> dict[str, Any]:
+    payload = base.health()
+    payload["build"] = build_metadata()
+    payload["regression_shield"] = {
+        "profile": APP_VERSION,
+        "read_only": True,
+        "expected_entrypoint": ENTRYPOINT,
+    }
+    return base.json_safe_value(payload)
 
 
 _original_safe_order_book_response = base.safe_order_book_response
@@ -133,15 +189,7 @@ def trading_flag_consistency_issues(
 
 # Replace only GET /market/snapshot. The core function remains responsible for
 # the SDK requests and the established error handling.
-app.router.routes = [
-    route
-    for route in app.router.routes
-    if not (
-        isinstance(route, APIRoute)
-        and route.path == "/market/snapshot"
-        and "GET" in (route.methods or set())
-    )
-]
+remove_get_route("/market/snapshot")
 
 
 @app.get(
@@ -153,7 +201,7 @@ app.router.routes = [
     ),
     dependencies=[Depends(base.require_gateway_key)],
 )
-def market_snapshot_v332(
+def market_snapshot_v333(
     instrument_uid: str = Query(
         ...,
         min_length=1,
@@ -237,8 +285,24 @@ def market_snapshot_v332(
     return base.json_safe_value(result)
 
 
-# Extend the GPT Actions-compatible schema while retaining explicit response
+# Extend the GPT Actions-compatible schemas while retaining explicit response
 # object properties from the core application.
+_health_properties = base._ACTION_200_SCHEMAS["/health"]["properties"]
+_health_properties["build"] = base._oa_obj(
+    {
+        "commit_sha": base._OA_STRING,
+        "entrypoint": base._OA_STRING,
+        "deployment_platform": base._OA_STRING,
+    }
+)
+_health_properties["regression_shield"] = base._oa_obj(
+    {
+        "profile": base._OA_STRING,
+        "read_only": base._OA_BOOL,
+        "expected_entrypoint": base._OA_STRING,
+    }
+)
+
 base._OA_ORDER_BOOK["properties"]["order_book_type"] = base._OA_STRING
 _market_properties = base._ACTION_200_SCHEMAS["/market/snapshot"]["properties"]
 _market_properties["dealer_session"] = base._OA_BOOL
