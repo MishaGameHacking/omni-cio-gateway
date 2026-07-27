@@ -10,13 +10,12 @@
 2. Прочитать `docs/README.md`.
 3. Прочитать `knowledge/00_PROJECT_MASTER_CONTEXT.md`.
 4. Прочитать `gpt/INSTRUCTIONS.md` и `gpt/ACTIONS_CATALOG.md`, если задача касается Custom GPT.
-5. Прочитать профильный файл из `knowledge/`.
-6. Проверить текущую ветку `main`, открытые PR, последние релизы и GitHub Actions.
-7. Не считать сведения из старого чата источником истины, если они расходятся с кодом в `main`.
+5. Для Telegram прочитать `knowledge/12_TELEGRAM_COMPANION.txt` и `docs/operations/TELEGRAM_COMPANION_RUNBOOK.md`.
+6. Прочитать профильный файл из `knowledge/`.
+7. Проверить `main`, открытые PR, последние релизы и GitHub Actions.
+8. Не считать старую переписку источником истины, если она расходится с кодом в `main`.
 
 ## 2. Неприкосновенный read-only режим
-
-Публичный шлюз должен оставаться строго read-only.
 
 Запрещено добавлять или вызывать:
 
@@ -24,144 +23,144 @@
 - отправку заявки;
 - замену заявки;
 - отмену заявки;
-- выставление стоп-заявки;
+- стоп-заявки;
 - любые другие методы, изменяющие брокерский счёт.
 
 Обязательные инварианты:
 
-- HTTP endpoints шлюза для пользовательских Action-методов — только `GET`;
+- пользовательские Gateway Actions — только `GET`;
+- Telegram Companion вызывает gateway только методом `GET`;
+- единственный допустимый публичный `POST` в Telegram service — входящий `/telegram/webhook`, который не изменяет брокерский счёт;
 - `trading_methods=false`;
-- описание API прямо сообщает, что сделки не совершаются;
-- Regression Shield отклоняет торговые operationId и mutating routes.
+- Regression Shield отклоняет торговые operationId и mutating gateway routes.
 
 ## 3. Секреты и персональные данные
 
 Никогда не сохранять в GitHub:
 
 - `TINVEST_TOKEN`;
-- `GATEWAY_API_KEY`;
+- `GATEWAY_API_KEY` или `OMNI_GATEWAY_API_KEY`;
+- `TELEGRAM_BOT_TOKEN`;
+- `TELEGRAM_WEBHOOK_SECRET`;
+- реальные Telegram user IDs владельца;
 - полный номер брокерского счёта;
-- содержимое реального брокерского отчёта пользователя;
-- персональные данные, номера сделок и иные чувствительные значения;
-- логи с Authorization header;
+- реальные брокерские отчёты, операции и позиции;
+- Authorization headers;
 - секреты Render или GPT Editor.
 
 Допустимы только имена переменных и безопасные placeholders. Счёт в ответах должен быть маскирован.
 
-Перед работой с внешними компонентами прочитать `docs/inventory/PROJECT_ASSETS.md`.
-
 ## 4. Стабильность runtime и деплоя
 
-- Основной entrypoint: `app:app`.
-- Не менять Render start command без отдельной доказанной необходимости.
-- Версия в runtime, `/health`, OpenAPI и Regression Shield должна совпадать.
-- Старые wrapper-модули можно сохранять для совместимости, но публичный `app` должен указывать на актуальную версию.
-- Перенос root runtime-модулей в пакет выполняется только отдельным refactor PR с compatibility imports и production smoke test.
+- Gateway entrypoint: `app:app`.
+- Telegram entrypoint: `telegram_bot.app:app`.
+- Gateway и Telegram разворачиваются как отдельные Render services.
+- Telegram использует отдельный `render.telegram.yaml`; не ломать существующий `render.yaml`.
+- Gateway API version и Telegram service version могут отличаться; это нужно явно документировать.
+- Перенос root runtime-модулей выполняется только отдельным refactor PR.
 
 ## 5. Структура репозитория
 
-- runtime и совместимые wrappers находятся в корне;
+- Gateway runtime и wrappers — в корне;
+- Telegram runtime — в `telegram_bot/`;
 - доменные правила — в `knowledge/`;
-- переносимая конфигурация Custom GPT — в `gpt/`;
+- Custom GPT — в `gpt/`;
 - архитектура, runbooks и inventory — в `docs/`;
-- локальные проверки — в `scripts/`;
-- постоянный CI, CODEOWNERS и templates — в `.github/`.
+- проверки — в `scripts/`;
+- постоянный CI и templates — в `.github/`.
 
-Одноразовые release-patcher workflow нельзя оставлять в `main` после завершения релиза.
+Одноразовые release-patcher workflow нельзя оставлять в `main`.
 
-Подробности: `docs/architecture/REPOSITORY_STRUCTURE.md`.
-
-## 6. Правила GPT Actions и OpenAPI
+## 6. GPT Actions и OpenAPI
 
 Для каждого Action:
 
-- уникальный и стабильный `operationId`;
+- уникальный стабильный `operationId`;
 - Bearer-защита через `GATEWAY_API_KEY`;
-- явные `properties` у каждого object schema;
-- компактный JSON, пригодный для GPT Actions;
-- `status`, `version`, `retrieved_at`, masked account, `quality`, `complete`, `component_errors`, `warnings` там, где это применимо;
-- частичный сбой компонента не должен уничтожать безопасный полезный результат;
+- явные `properties` у object schema;
+- `status`, `version`, `retrieved_at`, masked account, `quality`, `complete`, `component_errors`, `warnings`, где применимо;
 - неизвестные ошибки нельзя маскировать под `pending` или `ok`.
 
-При изменении Action contract обновить `gpt/ACTIONS_CATALOG.md`, `gpt/INSTRUCTIONS.md` и профильный `knowledge/` файл.
+При изменении Action contract обновить `gpt/` и профильный `knowledge/` файл.
 
-## 7. Деньги и качество данных
+## 7. Telegram Companion
 
-- Не складывать RUB, USD, EUR и другие валюты без подтверждённого FX-источника.
+- Webhook проверяет `X-Telegram-Bot-Api-Secret-Token`.
+- Разрешены только личные чаты.
+- Доступ только для `TELEGRAM_ALLOWED_USER_IDS`.
+- Повторные `update_id` игнорируются.
+- Действует per-user rate limit.
+- Команды не управляют GitHub, Render, ключами или торговыми действиями.
+- Telegram token никогда не должен появляться в URL ошибок, логах или health.
+- Startup setup (`getMe`, `setMyCommands`, `setWebhook`) не должен падением ломать health service; ошибка отражается безопасным degraded status.
+- `/report` использует максимум 31 день и сохраняет `task_id` только как временное удобство; пользовательский task ID должен оставаться видимым для восстановления после restart.
+
+## 8. Деньги и качество данных
+
+- Не складывать валюты без подтверждённого FX.
 - Денежные расчёты выполнять через `Decimal` или безопасную эквивалентную логику.
 - Не двойно учитывать комиссии, child operations, nested commissions или embedded trades.
 - Не объявлять данные полными при `complete=false`, `status=partial` или `pagination.truncated=true`.
-- Брокерский отчёт считать окончательным бухгалтерским источником при расхождении с оперативным API, но только после подтверждённой загрузки всех страниц.
+- Telegram не должен улучшать или переинтерпретировать финансовые данные gateway: он только безопасно доставляет ответ.
 
-## 8. Брокерский отчёт T-Invest
+## 9. Брокерский отчёт T-Invest
 
 Для `getBrokerReportReconciliation`:
 
-- `days` находится в диапазоне `1..31`;
-- первый вызов с `wait_seconds=0` и без `task_id` должен вернуть `pending` и непустой `task_id`;
+- `days=1..31`;
+- первый вызов без `task_id` и с `wait_seconds=0` возвращает `pending` и настоящий `task_id`;
 - повторный вызов использует тот же `task_id`;
-- код T-Invest `30058` означает, что задача ещё не завершена;
-- только `30058` и эквивалентные сообщения ожидания можно переводить в `pending`;
-- прочие исключения должны оставаться ошибками;
-- пока отчёт не готов, `complete=false`.
+- T-Invest `30058` означает `pending`;
+- прочие ошибки остаются ошибками;
+- до готовности отчёта `complete=false`.
 
-Подробности: `knowledge/11_BROKER_REPORT_ASYNC_INTEGRITY.txt`.
+## 10. Тестирование
 
-## 9. Тестирование
-
-Каждое изменение должно иметь тесты. Минимум:
+Минимум:
 
 ```bash
 python scripts/check_repository_layout.py
 python -m compileall -q app.py app_v371.py app_v360.py main.py \
   portfolio_market.py portfolio_analytics.py cash_liquidity.py \
   purchase_capacity.py purchase_capacity_integrity.py \
-  operations_analytics.py broker_report_reconciliation tests scripts
+  operations_analytics.py broker_report_reconciliation telegram_bot tests scripts
 python -m pytest -q
 ```
 
-Для новой возможности добавить:
+Для Telegram обязательны тесты: health без секретов, auto setup, неверный webhook secret, unauthorized user, GET-only gateway call, report task reuse, duplicate update suppression и `trading_methods=false`.
 
-- unit-тест happy path;
-- тест частичного сбоя;
-- тест защиты от двойного счёта, если есть денежная агрегация;
-- endpoint/OpenAPI тест;
-- Regression Shield тест;
-- тест отсутствия торговых методов.
+Тесты не должны обращаться к реальным Telegram, Render или T-Invest API.
 
-Тесты не должны обращаться к реальному T-Invest API и не должны использовать реальные секреты.
+## 11. Git workflow
 
-## 10. Git workflow
+- Работать в отдельной ветке.
+- Делать логические commits.
+- Открывать PR по шаблону.
+- Проверять head SHA, review threads и CI.
+- Для релизов использовать squash merge.
+- После merge проверять каждый затронутый production service отдельно.
 
-- Не писать новые функции прямо в `main`.
-- Создать отдельную ветку.
-- Сделать небольшие логические commits.
-- Открыть Pull Request по `.github/pull_request_template.md`.
-- Перед merge проверить head SHA, review threads и CI.
-- Для релизов предпочтителен squash merge.
-- После merge проверить production по `docs/operations/DEPLOYMENT_RUNBOOK.md`.
-
-## 11. Обновление проектной памяти
+## 12. Обновление проектной памяти
 
 После значимого изменения обновить:
 
 - `CHANGELOG.md`;
-- `README.md`, если изменился запуск, структура или release;
-- `knowledge/00_PROJECT_MASTER_CONTEXT.md`, если изменились цели, компоненты или приоритеты;
-- профильный файл `knowledge/NN_*`, если изменилось поведение Action;
-- `gpt/`, если изменилось поведение Custom GPT или Action contract;
-- `docs/inventory/PROJECT_ASSETS.md`, если изменились внешние компоненты;
-- `.github/copilot-instructions.md`, если изменились обязательные правила AI.
+- `README.md`;
+- `knowledge/00_PROJECT_MASTER_CONTEXT.md`;
+- профильный `knowledge/NN_*`;
+- `gpt/`, если меняется Custom GPT;
+- `docs/inventory/PROJECT_ASSETS.md`;
+- deployment runbook;
+- `.github/copilot-instructions.md`, если меняются обязательные AI-правила.
 
-Проектная память в GitHub должна оставаться обезличенной, проверяемой и пригодной для продолжения работы из любого нового чата.
-
-## 12. Внешние компоненты
+## 13. Внешние компоненты
 
 GitHub не заменяет:
 
 - Render Dashboard для секретов и deploy state;
-- GPT Editor для публикации, модели и Bearer key;
+- GPT Editor для публикации и Bearer key;
+- BotFather для создания и ротации Telegram token;
 - T-Invest для реальных данных;
-- исходный frontend-проект, пока он не найден и не зарегистрирован.
+- исходный frontend-проект, пока он не найден.
 
-Не придумывать отсутствующий frontend repository и не создавать дубликат существующего сайта.
+Не создавать дубликат существующего frontend.
