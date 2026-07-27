@@ -249,6 +249,6 @@ def test_analytics_endpoint_uses_one_source_snapshot_and_remains_read_only(monke
     assert len(calls) == 1
     assert calls[0]["depth"] == 1
     assert calls[0]["max_instruments"] == 20
-    assert payload["version"] == "3.5.0"
+    assert payload["version"] == "3.6.0"
     assert payload["portfolio_mode"] == "cash_only"
     assert payload["trading_methods"] is False
