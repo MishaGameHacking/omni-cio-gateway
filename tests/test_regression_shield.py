@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 import app as gateway_module
 
 
-EXPECTED_VERSION = "3.8.0"
+EXPECTED_VERSION = "3.9.0"
 EXPECTED_ENTRYPOINT = "app:app"
 EXPECTED_ACTION_PATHS = {
     "/health": "gatewayHealth",
@@ -28,6 +28,7 @@ EXPECTED_ACTION_PATHS = {
     "/portfolio/purchase-capacity": "getPurchaseCapacityPreview",
     "/operations": "getOperationsHistory",
     "/operations/analytics": "getOperationsAnalytics",
+    "/operations/broker-report-reconciliation": "getBrokerReportReconciliation",
     "/instruments/search": "findInstrument",
     "/market/snapshot": "getMarketSnapshot",
 }
@@ -48,6 +49,7 @@ PROTECTED_URLS = (
     ),
     "/operations?days=1",
     "/operations/analytics?days=1",
+    "/operations/broker-report-reconciliation?days=1&wait_seconds=0",
     "/instruments/search?query=SBER&limit=1",
     (
         "/market/snapshot?"
@@ -87,6 +89,9 @@ def test_health_contract_and_read_only_invariants() -> None:
     assert "purchase_capacity_integrity" in capabilities
     assert "operations_analytics" in capabilities
     assert "operations_cash_flow_reconciliation" in capabilities
+    assert "broker_report_reconciliation" in capabilities
+    assert "broker_report_async_generation" in capabilities
+    assert "broker_report_trade_reconciliation" in capabilities
     assert "regression_shield" in capabilities
 
     assert payload["build"]["entrypoint"] == EXPECTED_ENTRYPOINT
@@ -151,6 +156,17 @@ def test_openapi_is_gpt_actions_compatible_and_operation_ids_are_unique() -> Non
     assert "reconciliation" in operations_properties
     assert "quality" in operations_properties
     assert "complete" in operations_properties
+
+    broker_schema = schema["paths"][
+        "/operations/broker-report-reconciliation"
+    ]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+    broker_properties = broker_schema["properties"]
+    assert "report_generation" in broker_properties
+    assert "broker_report_summary" in broker_properties
+    assert "trade_reconciliation" in broker_properties
+    assert "commission_reconciliation" in broker_properties
+    assert "cash_flow_reconciliation" in broker_properties
+    assert "quality" in broker_properties
 
     assert len(operation_ids) == len(set(operation_ids))
 

@@ -1,0 +1,197 @@
+from __future__ import annotations
+
+def build_reconciliation_payload(
+    *,
+    base: Any,
+    app_version: str,
+    account: dict[str, Any],
+    period: dict[str, Any],
+    report_generation: dict[str, Any],
+    report_rows: list[dict[str, Any]],
+    report_pagination: dict[str, Any],
+    operations_payload: dict[str, Any],
+    raw_operations: list[dict[str, Any]],
+    component_errors: list[dict[str, Any]] | None = None,
+    retrieved_at: str | None = None,
+) -> dict[str, Any]:
+    errors = component_errors or []
+    report_ready = report_generation.get("status") == "ready"
+    report_summary = summarize_broker_report(base=base, rows=report_rows)
+    trade_reconciliation = (
+        reconcile_trade_rows(
+            base=base,
+            report_rows=report_rows,
+            raw_operations=raw_operations,
+        )
+        if report_ready
+        else {
+            "status": "unavailable",
+            "report_trade_rows": 0,
+            "operations_trade_rows": 0,
+            "matched": 0,
+            "matched_by_trade_id": 0,
+            "matched_by_fallback": 0,
+            "report_only": 0,
+            "operations_only": 0,
+            "report_only_examples": [],
+        }
+    )
+    cash_rows, commission_rows = (
+        reconcile_cash_and_commissions(
+            base=base,
+            report_summary=report_summary,
+            operations_payload=operations_payload,
+        )
+        if report_ready
+        else ([], [])
+    )
+
+    cash_ok = all(row["status"] == "matched" for row in cash_rows)
+    commission_ok = all(row["status"] == "matched" for row in commission_rows)
+    trade_ok = trade_reconciliation["status"] == "matched"
+    report_pagination_complete = not bool(report_pagination.get("truncated"))
+    operations_complete = bool(operations_payload.get("complete"))
+    reconciliation_confirmed = (
+        report_ready
+        and report_pagination_complete
+        and operations_complete
+        and trade_ok
+        and cash_ok
+        and commission_ok
+    )
+    complete = reconciliation_confirmed and not errors
+    status = (
+        "pending"
+        if report_generation.get("status") == "pending"
+        else ("ok" if complete else "partial")
+    )
+    warnings = [
+        (
+            "The official broker report is generated asynchronously. Reuse the "
+            "returned task_id when report_generation.status is pending."
+        ),
+        (
+            "Broker-report rows are the canonical source for trade details and "
+            "separately reported broker, exchange, and clearing commissions."
+        ),
+        (
+            "GetOperationsByCursor remains the canonical source for API cash-flow "
+            "categories. Executed top-level operation.payment values are used "
+            "without adding embedded trades or commissions again."
+        ),
+        (
+            "Currencies are reconciled independently; no FX conversion or "
+            "cross-currency aggregation is performed."
+        ),
+        (
+            "This endpoint is read-only. It generates or retrieves a report and "
+            "reads operations; it exposes no order placement, replacement, or "
+            "cancellation methods."
+        ),
+    ]
+    if not report_pagination_complete:
+        warnings.append(
+            "Broker-report pagination was incomplete; reconciliation covers only "
+            "the pages received."
+        )
+    if report_ready and not trade_ok:
+        warnings.append(
+            "At least one broker-report trade could not be matched to an API trade "
+            "record. See trade_reconciliation."
+        )
+    if report_ready and (not cash_ok or not commission_ok):
+        warnings.append(
+            "At least one currency has a trade-amount or broker-commission "
+            "difference above 0.01."
+        )
+
+    payload = {
+        "status": status,
+        "version": app_version,
+        "retrieved_at": retrieved_at or datetime.now(timezone.utc).isoformat(),
+        "account": account,
+        "period": period,
+        "report_generation": report_generation,
+        "report_pagination": report_pagination,
+        "broker_report_summary": report_summary,
+        "operations_summary": {
+            "status": operations_payload.get("status", "unavailable"),
+            "operations_count": operations_payload.get("operations_count", 0),
+            "executed_operations": operations_payload.get(
+                "executed_operations", 0
+            ),
+            "duplicates_removed": operations_payload.get(
+                "duplicates_removed", 0
+            ),
+            "pagination": operations_payload.get("pagination", {}),
+            "reconciliation": operations_payload.get("reconciliation", {}),
+        },
+        "trade_reconciliation": trade_reconciliation,
+        "cash_flow_reconciliation": cash_rows,
+        "commission_reconciliation": commission_rows,
+        "reconciliation": {
+            "trade_status": trade_reconciliation["status"],
+            "cash_flow_status": (
+                "matched" if cash_ok and report_ready else "unavailable"
+            ),
+            "commission_status": (
+                "matched" if commission_ok and report_ready else "unavailable"
+            ),
+            "confirmed": reconciliation_confirmed,
+            "status": "ok" if reconciliation_confirmed else "warning",
+        },
+        "quality": {
+            "report_ready": report_ready,
+            "report_pagination_complete": report_pagination_complete,
+            "operations_complete": operations_complete,
+            "report_rows": len(report_rows),
+            "operations_rows": len(raw_operations),
+            "report_invalid_money_rows": report_summary["invalid_money_rows"],
+            "trade_reconciliation_confirmed": trade_ok and report_ready,
+            "cash_flow_reconciliation_confirmed": cash_ok and report_ready,
+            "commission_reconciliation_confirmed": commission_ok and report_ready,
+            "component_errors": len(errors),
+            "complete": complete,
+            "no_cross_currency_aggregation": True,
+            "read_only": True,
+        },
+        "complete": complete,
+        "component_errors": errors,
+        "trading_methods": False,
+        "warnings": warnings,
+    }
+    return base.json_safe_value(payload)
+
+def _response_dict(base: Any, response: Any) -> dict[str, Any]:
+    converter = getattr(base, "proto_to_dict", None)
+    if callable(converter):
+        result = converter(response)
+        if isinstance(result, dict):
+            return result
+    result = base.json_safe_value(response)
+    return result if isinstance(result, dict) else {}
+
+def _call_generate(
+    *,
+    client: Any,
+    account_id: str,
+    start_time: datetime,
+    end_time: datetime,
+) -> Any:
+    if GenerateBrokerReportRequest is None:
+        raise TypeError("GenerateBrokerReportRequest is unavailable in this SDK")
+    request = GenerateBrokerReportRequest(
+        account_id=account_id,
+        from_=start_time,
+        to=end_time,
+    )
+    method = client.operations.get_broker_report
+    try:
+        return method(generate_broker_report_request=request)
+    except TypeError:
+        if BrokerReportRequest is None:
+            raise
+        return method(
+            BrokerReportRequest(generate_broker_report_request=request)
+        )
+

@@ -1,0 +1,113 @@
+name: Upgrade v3.9.0 Broker Report Reconciliation
+
+on:
+  push:
+    branches:
+      - v3.9.0-broker-report-reconciliation
+    paths:
+      - .github/workflows/upgrade-v390.yml
+
+permissions:
+  contents: write
+
+jobs:
+  upgrade:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: v3.9.0-broker-report-reconciliation
+          fetch-depth: 0
+
+      - name: Write v3.9.0 sources and patch stable entrypoint
+        env:
+          BROKER_MODULE_GZ_B64: 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
+          BROKER_TEST_GZ_B64: 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
+        run: |
+          python - <<'PY'
+          import base64
+          import gzip
+          import os
+          from pathlib import Path
+
+          Path('broker_report_reconciliation.py').write_bytes(
+              gzip.decompress(base64.b64decode(os.environ['BROKER_MODULE_GZ_B64']))
+          )
+          Path('tests/test_broker_report_reconciliation.py').write_bytes(
+              gzip.decompress(base64.b64decode(os.environ['BROKER_TEST_GZ_B64']))
+          )
+
+          app_path = Path('app.py')
+          app_text = app_path.read_text(encoding='utf-8')
+          import_marker = 'import operations_analytics as operations_analytics_engine\n'
+          import_line = 'import broker_report_reconciliation as broker_report_reconciliation_engine\n'
+          if import_line not in app_text:
+              app_text = app_text.replace(import_marker, import_marker + import_line)
+          app_text = app_text.replace('APP_VERSION = "3.8.0"', 'APP_VERSION = "3.9.0"', 1)
+          app_text = app_text.replace(
+              'v3.8.0 adds executed-only operations analytics with pagination diagnostics, '
+              'currency-local cash-flow reconciliation, and duplicate protection.',
+              'v3.9.0 adds asynchronous official broker-report generation, paginated '
+              'report loading, and currency-local trade and commission reconciliation.',
+          )
+          register_call = (
+              '\nbroker_report_reconciliation_engine.register_gateway(\n'
+              '    app=app,\n'
+              '    base=base,\n'
+              '    app_version=APP_VERSION,\n'
+              ')\n'
+          )
+          marker = '\napp.openapi_schema = None\n'
+          if register_call not in app_text:
+              app_text = app_text.replace(marker, register_call + marker)
+          app_path.write_text(app_text, encoding='utf-8')
+
+          test_path = Path('tests/test_regression_shield.py')
+          test_text = test_path.read_text(encoding='utf-8')
+          test_text = test_text.replace('EXPECTED_VERSION = "3.8.0"', 'EXPECTED_VERSION = "3.9.0"')
+          action_line = '    "/operations/analytics": "getOperationsAnalytics",\n'
+          new_action_line = '    "/operations/broker-report-reconciliation": "getBrokerReportReconciliation",\n'
+          if new_action_line not in test_text:
+              test_text = test_text.replace(action_line, action_line + new_action_line)
+          protected_line = '    "/operations/analytics?days=1",\n'
+          new_protected_line = '    "/operations/broker-report-reconciliation?days=1&wait_seconds=0",\n'
+          if new_protected_line not in test_text:
+              test_text = test_text.replace(protected_line, protected_line + new_protected_line)
+          capability_line = '    assert "operations_cash_flow_reconciliation" in capabilities\n'
+          capability_add = (
+              '    assert "broker_report_reconciliation" in capabilities\n'
+              '    assert "broker_report_async_generation" in capabilities\n'
+              '    assert "broker_report_trade_reconciliation" in capabilities\n'
+          )
+          if 'assert "broker_report_reconciliation" in capabilities' not in test_text:
+              test_text = test_text.replace(capability_line, capability_line + capability_add)
+          schema_anchor = '    assert "complete" in operations_properties\n'
+          schema_add = (
+              '\n    broker_schema = schema["paths"][\n'
+              '        "/operations/broker-report-reconciliation"\n'
+              '    ]["get"]["responses"]["200"]["content"]["application/json"]["schema"]\n'
+              '    broker_properties = broker_schema["properties"]\n'
+              '    assert "report_generation" in broker_properties\n'
+              '    assert "broker_report_summary" in broker_properties\n'
+              '    assert "trade_reconciliation" in broker_properties\n'
+              '    assert "commission_reconciliation" in broker_properties\n'
+              '    assert "cash_flow_reconciliation" in broker_properties\n'
+              '    assert "quality" in broker_properties\n'
+          )
+          if 'broker_report_summary" in broker_properties' not in test_text:
+              test_text = test_text.replace(schema_anchor, schema_anchor + schema_add)
+          test_path.write_text(test_text, encoding='utf-8')
+          PY
+
+      - name: Compile patched sources
+        run: python -m compileall -q app.py broker_report_reconciliation.py tests
+
+      - name: Commit upgrade
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add app.py broker_report_reconciliation.py tests/test_broker_report_reconciliation.py tests/test_regression_shield.py
+          git commit -m "Release v3.9.0 Broker Report & Operations Reconciliation"
+          git push origin HEAD:v3.9.0-broker-report-reconciliation
