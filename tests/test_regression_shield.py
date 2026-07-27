@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 import app as gateway_module
 
 
-EXPECTED_VERSION = "3.7.0"
+EXPECTED_VERSION = "3.7.1"
 EXPECTED_ENTRYPOINT = "app:app"
 EXPECTED_ACTION_PATHS = {
     "/health": "gatewayHealth",
@@ -82,6 +82,7 @@ def test_health_contract_and_read_only_invariants() -> None:
     assert "portfolio_analytics" in capabilities
     assert "cash_liquidity_diagnostics" in capabilities
     assert "purchase_capacity_preview" in capabilities
+    assert "purchase_capacity_integrity" in capabilities
     assert "regression_shield" in capabilities
 
     assert payload["build"]["entrypoint"] == EXPECTED_ENTRYPOINT
@@ -125,6 +126,16 @@ def test_openapi_is_gpt_actions_compatible_and_operation_ids_are_unique() -> Non
         ]["schema"]
         assert response_schema["type"] == "object"
         assert isinstance(response_schema["properties"], dict)
+
+    purchase_schema = schema["paths"]["/portfolio/purchase-capacity"]["get"][
+        "responses"
+    ]["200"]["content"]["application/json"]["schema"]
+    purchase_properties = purchase_schema["properties"]
+    assert "commission_summary" in purchase_properties
+    assert "currency_consistency" in purchase_properties
+    assert "limit_summary" in purchase_properties
+    assert "calculation_checks" in purchase_properties
+    assert "integrity_status" in purchase_properties
 
     assert len(operation_ids) == len(set(operation_ids))
 

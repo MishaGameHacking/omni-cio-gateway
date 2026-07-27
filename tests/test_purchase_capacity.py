@@ -64,7 +64,7 @@ def resolved_instrument() -> dict[str, object]:
 def test_builder_uses_only_own_funds_and_preliminary_total() -> None:
     payload = purchase_capacity.build_purchase_capacity_preview(
         base=gateway_module.base,
-        app_version="3.7.0",
+        app_version="3.7.1",
         account={"masked_id": "***3118", "name": "ИИС"},
         instrument_uid=INSTRUMENT_UID,
         instrument_resolution=resolved_instrument(),
@@ -128,7 +128,7 @@ def test_builder_uses_only_own_funds_and_preliminary_total() -> None:
     )
 
     assert payload["status"] == "ok"
-    assert payload["version"] == "3.7.0"
+    assert payload["version"] == "3.7.1"
     assert payload["account"]["masked_id"] == "***3118"
     assert payload["own_funds"]["buy_money_amount"] == "1000"
     assert payload["own_funds"]["buy_max_lots"] == 3
@@ -295,11 +295,20 @@ def test_endpoint_is_protected_and_calls_only_read_methods(monkeypatch) -> None:
 
     payload = response.json()
     assert payload["status"] == "ok"
-    assert payload["version"] == "3.7.0"
+    assert payload["version"] == "3.7.1"
     assert payload["account"]["masked_id"] == "***3118"
     assert payload["instrument"]["ticker"] == "SBER"
     assert payload["affordable"] == "yes"
     assert payload["remaining_cash_estimate"] == "190.8"
+    assert payload["commission_summary"]["canonical_source"] == "executed_commission"
+    assert payload["commission_summary"]["double_count_protection"] is True
+    assert payload["currency_consistency"]["status"] == "ok"
+    assert payload["limit_summary"]["selected_limit_field"] == "buy_max_lots"
+    assert payload["calculation_checks"]["initial_order_amount"]["status"] == "passed"
+    assert payload["calculation_checks"]["total_order_amount"]["status"] == "passed"
+    assert payload["calculation_checks"]["remaining_cash"]["status"] == "passed"
+    assert payload["integrity_status"] == "ok"
     assert payload["quality"]["no_order_created"] is True
+    assert payload["quality"]["commission_double_count_protected"] is True
     assert payload["trading_methods"] is False
     assert FakeOrders.calls == ["get_max_lots", "get_order_price"]
