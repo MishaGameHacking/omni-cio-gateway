@@ -7,10 +7,12 @@
 Перед изменением кода:
 
 1. Прочитать `README.md`.
-2. Прочитать `knowledge/00_PROJECT_MASTER_CONTEXT.md`.
-3. Прочитать профильный файл из `knowledge/`.
-4. Проверить текущую ветку `main`, открытые PR и последние релизы.
-5. Не считать сведения из старого чата источником истины, если они расходятся с кодом в `main`.
+2. Прочитать `docs/README.md`.
+3. Прочитать `knowledge/00_PROJECT_MASTER_CONTEXT.md`.
+4. Прочитать `gpt/INSTRUCTIONS.md` и `gpt/ACTIONS_CATALOG.md`, если задача касается Custom GPT.
+5. Прочитать профильный файл из `knowledge/`.
+6. Проверить текущую ветку `main`, открытые PR, последние релизы и GitHub Actions.
+7. Не считать сведения из старого чата источником истины, если они расходятся с кодом в `main`.
 
 ## 2. Неприкосновенный read-only режим
 
@@ -41,9 +43,12 @@
 - полный номер брокерского счёта;
 - содержимое реального брокерского отчёта пользователя;
 - персональные данные, номера сделок и иные чувствительные значения;
-- логи с Authorization header.
+- логи с Authorization header;
+- секреты Render или GPT Editor.
 
 Допустимы только имена переменных и безопасные placeholders. Счёт в ответах должен быть маскирован.
+
+Перед работой с внешними компонентами прочитать `docs/inventory/PROJECT_ASSETS.md`.
 
 ## 4. Стабильность runtime и деплоя
 
@@ -51,8 +56,22 @@
 - Не менять Render start command без отдельной доказанной необходимости.
 - Версия в runtime, `/health`, OpenAPI и Regression Shield должна совпадать.
 - Старые wrapper-модули можно сохранять для совместимости, но публичный `app` должен указывать на актуальную версию.
+- Перенос root runtime-модулей в пакет выполняется только отдельным refactor PR с compatibility imports и production smoke test.
 
-## 5. Правила GPT Actions и OpenAPI
+## 5. Структура репозитория
+
+- runtime и совместимые wrappers находятся в корне;
+- доменные правила — в `knowledge/`;
+- переносимая конфигурация Custom GPT — в `gpt/`;
+- архитектура, runbooks и inventory — в `docs/`;
+- локальные проверки — в `scripts/`;
+- постоянный CI, CODEOWNERS и templates — в `.github/`.
+
+Одноразовые release-patcher workflow нельзя оставлять в `main` после завершения релиза.
+
+Подробности: `docs/architecture/REPOSITORY_STRUCTURE.md`.
+
+## 6. Правила GPT Actions и OpenAPI
 
 Для каждого Action:
 
@@ -64,7 +83,9 @@
 - частичный сбой компонента не должен уничтожать безопасный полезный результат;
 - неизвестные ошибки нельзя маскировать под `pending` или `ok`.
 
-## 6. Деньги и качество данных
+При изменении Action contract обновить `gpt/ACTIONS_CATALOG.md`, `gpt/INSTRUCTIONS.md` и профильный `knowledge/` файл.
+
+## 7. Деньги и качество данных
 
 - Не складывать RUB, USD, EUR и другие валюты без подтверждённого FX-источника.
 - Денежные расчёты выполнять через `Decimal` или безопасную эквивалентную логику.
@@ -72,7 +93,7 @@
 - Не объявлять данные полными при `complete=false`, `status=partial` или `pagination.truncated=true`.
 - Брокерский отчёт считать окончательным бухгалтерским источником при расхождении с оперативным API, но только после подтверждённой загрузки всех страниц.
 
-## 7. Брокерский отчёт T-Invest
+## 8. Брокерский отчёт T-Invest
 
 Для `getBrokerReportReconciliation`:
 
@@ -86,12 +107,16 @@
 
 Подробности: `knowledge/11_BROKER_REPORT_ASYNC_INTEGRITY.txt`.
 
-## 8. Тестирование
+## 9. Тестирование
 
 Каждое изменение должно иметь тесты. Минимум:
 
 ```bash
-python -m compileall .
+python scripts/check_repository_layout.py
+python -m compileall -q app.py app_v371.py app_v360.py main.py \
+  portfolio_market.py portfolio_analytics.py cash_liquidity.py \
+  purchase_capacity.py purchase_capacity_integrity.py \
+  operations_analytics.py broker_report_reconciliation tests scripts
 python -m pytest -q
 ```
 
@@ -106,22 +131,37 @@ python -m pytest -q
 
 Тесты не должны обращаться к реальному T-Invest API и не должны использовать реальные секреты.
 
-## 9. Git workflow
+## 10. Git workflow
 
 - Не писать новые функции прямо в `main`.
 - Создать отдельную ветку.
 - Сделать небольшие логические commits.
-- Открыть Pull Request с разделами: что изменено, безопасность, тесты, проверка после merge.
-- Перед merge проверить head SHA и статус CI.
-- Для релизов предпочтителен squash merge, если история ветки содержит промежуточные технические commits.
+- Открыть Pull Request по `.github/pull_request_template.md`.
+- Перед merge проверить head SHA, review threads и CI.
+- Для релизов предпочтителен squash merge.
+- После merge проверить production по `docs/operations/DEPLOYMENT_RUNBOOK.md`.
 
-## 10. Обновление проектной памяти
+## 11. Обновление проектной памяти
 
 После значимого изменения обновить:
 
-- `README.md`, если изменился запуск или архитектура;
+- `CHANGELOG.md`;
+- `README.md`, если изменился запуск, структура или release;
 - `knowledge/00_PROJECT_MASTER_CONTEXT.md`, если изменились цели, компоненты или приоритеты;
-- профильный файл `knowledge/NN_*.txt`, если изменилось поведение Action;
-- `.github/copilot-instructions.md`, если изменились обязательные правила для AI.
+- профильный файл `knowledge/NN_*`, если изменилось поведение Action;
+- `gpt/`, если изменилось поведение Custom GPT или Action contract;
+- `docs/inventory/PROJECT_ASSETS.md`, если изменились внешние компоненты;
+- `.github/copilot-instructions.md`, если изменились обязательные правила AI.
 
 Проектная память в GitHub должна оставаться обезличенной, проверяемой и пригодной для продолжения работы из любого нового чата.
+
+## 12. Внешние компоненты
+
+GitHub не заменяет:
+
+- Render Dashboard для секретов и deploy state;
+- GPT Editor для публикации, модели и Bearer key;
+- T-Invest для реальных данных;
+- исходный frontend-проект, пока он не найден и не зарегистрирован.
+
+Не придумывать отсутствующий frontend repository и не создавать дубликат существующего сайта.
