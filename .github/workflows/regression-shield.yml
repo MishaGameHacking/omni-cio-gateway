@@ -1,19 +1,10 @@
-# v3.9.1 Broker Report Async Integrity release checks.
+# Permanent read-only regression checks for Omni-CIO Gateway.
 name: Regression Shield
 
 on:
   push:
     branches:
       - main
-      - v3.3.3-regression-shield
-      - v3.4.0-portfolio-market-snapshot
-      - v3.5.0-portfolio-analytics
-      - v3.6.0-cash-liquidity
-      - v3.7.0-purchase-capacity
-      - v3.7.1-purchase-capacity-integrity
-      - v3.8.0-operations-analytics
-      - v3.9.0-broker-report-reconciliation
-      - v3.9.1-broker-report-async-integrity
   pull_request:
   workflow_dispatch:
 
@@ -26,7 +17,7 @@ concurrency:
 
 jobs:
   regression-shield:
-    name: Read-only contract and OpenAPI checks
+    name: Read-only contract, OpenAPI and repository checks
     runs-on: ubuntu-latest
     timeout-minutes: 12
     env:
@@ -52,12 +43,15 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements-dev.txt
 
+      - name: Verify repository structure
+        run: python scripts/check_repository_layout.py
+
       - name: Compile gateway sources
         run: >-
           python -m compileall -q app.py app_v371.py app_v360.py main.py
           portfolio_market.py portfolio_analytics.py cash_liquidity.py
           purchase_capacity.py purchase_capacity_integrity.py
-          operations_analytics.py broker_report_reconciliation tests
+          operations_analytics.py broker_report_reconciliation tests scripts
 
       - name: Verify stable entrypoint import
         run: |
@@ -66,6 +60,7 @@ jobs:
 
           assert app.app.version == "3.9.1"
           assert app.app is app.base.app
+          assert app.ENTRYPOINT == "app:app"
           assert "portfolio_market_snapshot" in app.base.CAPABILITIES
           assert "portfolio_analytics" in app.base.CAPABILITIES
           assert "cash_liquidity_diagnostics" in app.base.CAPABILITIES
