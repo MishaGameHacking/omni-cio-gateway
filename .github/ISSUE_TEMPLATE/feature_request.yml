@@ -1,13 +1,15 @@
 name: Улучшение Omni-CIO
-about: Предложить новую read-only возможность или улучшение качества
+description: Предложить новую read-only возможность или улучшение качества
+title: "[Enhancement] "
 labels: [enhancement]
+assignees: [Misha2304]
 body:
   - type: markdown
     attributes:
       value: |
         Предложения, связанные с автоматической торговлей, созданием или отправкой заявок, не соответствуют архитектуре проекта.
   - type: input
-    id: title
+    id: summary
     attributes:
       label: Краткое название
     validations:
