@@ -4,12 +4,13 @@ from typing import Any
 from fastapi import Depends, Query
 from fastapi.routing import APIRoute
 
+import cash_liquidity as cash_liquidity_engine
 import main as base
 import portfolio_analytics as portfolio_analytics_engine
 import portfolio_market as portfolio_market_engine
 
 
-APP_VERSION = "3.5.0"
+APP_VERSION = "3.6.0"
 ENTRYPOINT = "app:app"
 
 app = base.app
@@ -18,7 +19,8 @@ app.description = (
     "Private read-only gateway between a Custom GPT and T-Invest API. "
     "It exposes connection, portfolio and operations data, smart instrument "
     "search, single-instrument market diagnostics, a read-only market valuation "
-    "snapshot for the whole portfolio, and currency-local portfolio analytics. "
+    "snapshot for the whole portfolio, currency-local portfolio analytics, "
+    "and cash/liquidity diagnostics. "
     "It cannot place, replace, or cancel orders."
 )
 
@@ -26,6 +28,7 @@ for capability in (
     "market_source_diagnostics",
     "portfolio_market_snapshot",
     "portfolio_analytics",
+    "cash_liquidity_diagnostics",
     "regression_shield",
 ):
     if capability not in base.CAPABILITIES:
@@ -398,6 +401,22 @@ def portfolio_analytics_v350(
     )
 
 
+@app.get(
+    "/portfolio/cash-liquidity",
+    operation_id="getCashLiquiditySnapshot",
+    summary=(
+        "Compare read-only cash positions, blocked amounts, and withdrawal "
+        "limits separately for each reported currency"
+    ),
+    dependencies=[Depends(base.require_gateway_key)],
+)
+def cash_liquidity_snapshot_v360() -> dict[str, Any]:
+    return cash_liquidity_engine.get_cash_liquidity_snapshot(
+        base=base,
+        app_version=APP_VERSION,
+    )
+
+
 # Extend the GPT Actions-compatible schemas while retaining explicit response
 # object properties from the core application.
 _health_properties = base._ACTION_200_SCHEMAS["/health"]["properties"]
@@ -703,6 +722,98 @@ base._ACTION_200_SCHEMAS["/portfolio/analytics"] = base._oa_obj(
         "account",
         "portfolio_mode",
         "currency_mode",
+    ],
+)
+
+_OA_CASH_SOURCE_PRESENCE = base._oa_obj(
+    {
+        "positions": base._OA_BOOL,
+        "withdraw_limits": base._OA_BOOL,
+    }
+)
+_OA_CASH_LIQUIDITY_ROW = base._oa_obj(
+    {
+        "currency": base._OA_STRING,
+        "reported_money": base._OA_STRING,
+        "positions_blocked": base._OA_STRING,
+        "withdrawable_money": base._OA_STRING,
+        "withdraw_blocked": base._OA_STRING,
+        "blocked_guarantee": base._OA_STRING,
+        "cash_difference": base._OA_STRING,
+        "cash_difference_basis": base._OA_STRING,
+        "cash_status": base._OA_STRING,
+        "source_presence": _OA_CASH_SOURCE_PRESENCE,
+        "discrepancy_reasons": base._oa_array(base._OA_STRING),
+    }
+)
+_OA_CASH_COMPONENT = base._oa_obj(
+    {
+        "status": base._OA_STRING,
+        "source": base._OA_STRING,
+        "limits_loading_in_progress": base._OA_BOOL,
+    }
+)
+_OA_CASH_COMPONENT_ERROR_DETAIL = base._oa_obj(
+    {
+        "code": base._OA_STRING,
+        "grpc_code": base._OA_STRING,
+        "exception_type": base._OA_STRING,
+        "message": base._OA_STRING,
+        "tracking_id": base._OA_STRING,
+    }
+)
+_OA_CASH_COMPONENT_ERROR = base._oa_obj(
+    {
+        "component": base._OA_STRING,
+        "error": _OA_CASH_COMPONENT_ERROR_DETAIL,
+    }
+)
+base._ACTION_200_SCHEMAS["/portfolio/cash-liquidity"] = base._oa_obj(
+    {
+        "status": base._OA_STRING,
+        "version": base._OA_STRING,
+        "retrieved_at": base._OA_STRING,
+        "account": base._OA_ACCOUNT,
+        "cash_mode": base._OA_STRING,
+        "cash_by_currency": base._oa_array(_OA_CASH_LIQUIDITY_ROW),
+        "components": base._oa_obj(
+            {
+                "positions": _OA_CASH_COMPONENT,
+                "withdraw_limits": _OA_CASH_COMPONENT,
+            }
+        ),
+        "buying_power": base._oa_obj(
+            {
+                "confirmed": base._OA_BOOL,
+                "reason": base._OA_STRING,
+            }
+        ),
+        "quality": base._oa_obj(
+            {
+                "positions_source_status": base._OA_STRING,
+                "withdraw_limits_source_status": base._OA_STRING,
+                "currencies_detected": base._OA_INT,
+                "currencies_present_in_both_sources": base._OA_INT,
+                "currencies_matched": base._OA_INT,
+                "source_discrepancies": base._OA_INT,
+                "negative_values_detected": base._OA_INT,
+                "invalid_money_rows": base._OA_INT,
+                "limits_loading_in_progress": base._OA_BOOL,
+                "buying_power_confirmed": base._OA_BOOL,
+                "complete": base._OA_BOOL,
+                "no_cross_currency_aggregation": base._OA_BOOL,
+            }
+        ),
+        "component_errors": base._oa_array(_OA_CASH_COMPONENT_ERROR),
+        "trading_methods": base._OA_BOOL,
+        "warnings": base._oa_array(base._OA_STRING),
+    },
+    required=[
+        "status",
+        "version",
+        "retrieved_at",
+        "account",
+        "cash_mode",
     ],
 )
 
