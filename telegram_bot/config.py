@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
 import os
+import re
 from typing import Mapping
 
 from . import TELEGRAM_COMPANION_VERSION
+
+
+_WEBHOOK_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{1,256}$")
 
 
 def _truthy(value: str | None, *, default: bool = False) -> bool:
@@ -79,6 +84,15 @@ class Settings:
                 source.get("TELEGRAM_MIN_REQUEST_INTERVAL_SECONDS", "1.5")
             ),
         )
+
+    @property
+    def webhook_secret_token(self) -> str:
+        """Return a Telegram-compatible secret token without exposing the source seed."""
+        if not self.telegram_webhook_secret:
+            return ""
+        if _WEBHOOK_TOKEN_RE.fullmatch(self.telegram_webhook_secret):
+            return self.telegram_webhook_secret
+        return hashlib.sha256(self.telegram_webhook_secret.encode("utf-8")).hexdigest()
 
     @property
     def webhook_url(self) -> str:
