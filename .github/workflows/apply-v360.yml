@@ -1,4 +1,4 @@
-# Triggered after workflow registration.
+# Triggered by the v3.6.0 pull request after workflow registration.
 name: Apply Omni-CIO v3.6.0
 
 on:
@@ -7,6 +7,9 @@ on:
       - main
     paths:
       - .github/workflows/apply-v360.yml
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: write
