@@ -6,6 +6,7 @@ on:
       - main
       - v3.3.3-regression-shield
       - v3.4.0-portfolio-market-snapshot
+      - v3.5.0-portfolio-analytics
   pull_request:
   workflow_dispatch:
 
@@ -45,16 +46,17 @@ jobs:
           python -m pip install -r requirements-dev.txt
 
       - name: Compile gateway sources
-        run: python -m compileall -q app.py main.py portfolio_market.py tests
+        run: python -m compileall -q app.py main.py portfolio_market.py portfolio_analytics.py tests
 
       - name: Verify stable entrypoint import
         run: |
           python - <<'PY'
           import app
 
-          assert app.app.version == "3.4.0"
+          assert app.app.version == "3.5.0"
           assert app.app is app.base.app
           assert "portfolio_market_snapshot" in app.base.CAPABILITIES
+          assert "portfolio_analytics" in app.base.CAPABILITIES
           assert "regression_shield" in app.base.CAPABILITIES
           print("Stable entrypoint:", app.app.version)
           PY
