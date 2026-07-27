@@ -1,0 +1,24 @@
+# Repository owner and default reviewer
+* @Misha2304
+
+# Runtime and deployment
+/app.py @Misha2304
+/app_v*.py @Misha2304
+/main.py @Misha2304
+/render.yaml @Misha2304
+/requirements*.txt @Misha2304
+
+# Domain engines
+/*.py @Misha2304
+/broker_report_reconciliation/ @Misha2304
+
+# Safety, CI and automation
+/.github/ @Misha2304
+/tests/ @Misha2304
+/AGENTS.md @Misha2304
+/SECURITY.md @Misha2304
+
+# Project memory and Custom GPT
+/knowledge/ @Misha2304
+/docs/ @Misha2304
+/gpt/ @Misha2304
