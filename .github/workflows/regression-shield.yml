@@ -64,12 +64,4 @@ jobs:
           PY
 
       - name: Run Regression Shield
-        run: python -m pytest -q > pytest.log 2>&1
-
-      - name: Upload Regression Shield log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: regression-shield-log
-          path: pytest.log
-          retention-days: 1
+        run: python -m pytest -q
