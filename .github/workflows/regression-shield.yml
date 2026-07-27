@@ -1,4 +1,4 @@
-# v3.7.0 Purchase Capacity Preview release checks.
+# v3.7.1 Purchase Capacity Integrity release checks.
 name: Regression Shield
 
 on:
@@ -10,6 +10,7 @@ on:
       - v3.5.0-portfolio-analytics
       - v3.6.0-cash-liquidity
       - v3.7.0-purchase-capacity
+      - v3.7.1-purchase-capacity-integrity
   pull_request:
   workflow_dispatch:
 
@@ -52,19 +53,20 @@ jobs:
         run: >-
           python -m compileall -q app.py app_v360.py main.py
           portfolio_market.py portfolio_analytics.py cash_liquidity.py
-          purchase_capacity.py tests
+          purchase_capacity.py purchase_capacity_integrity.py tests
 
       - name: Verify stable entrypoint import
         run: |
           python - <<'PY'
           import app
 
-          assert app.app.version == "3.7.0"
+          assert app.app.version == "3.7.1"
           assert app.app is app.base.app
           assert "portfolio_market_snapshot" in app.base.CAPABILITIES
           assert "portfolio_analytics" in app.base.CAPABILITIES
           assert "cash_liquidity_diagnostics" in app.base.CAPABILITIES
           assert "purchase_capacity_preview" in app.base.CAPABILITIES
+          assert "purchase_capacity_integrity" in app.base.CAPABILITIES
           assert "regression_shield" in app.base.CAPABILITIES
           print("Stable entrypoint:", app.app.version)
           PY
