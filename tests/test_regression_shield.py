@@ -15,13 +15,14 @@ from fastapi.testclient import TestClient
 import app as gateway_module
 
 
-EXPECTED_VERSION = "3.3.3"
+EXPECTED_VERSION = "3.4.0"
 EXPECTED_ENTRYPOINT = "app:app"
 EXPECTED_ACTION_PATHS = {
     "/health": "gatewayHealth",
     "/connection": "getConnection",
     "/snapshot": "getPortfolioSnapshot",
     "/snapshot/enriched": "getEnrichedPortfolioSnapshot",
+    "/portfolio/market-snapshot": "getPortfolioMarketSnapshot",
     "/operations": "getOperationsHistory",
     "/instruments/search": "findInstrument",
     "/market/snapshot": "getMarketSnapshot",
@@ -30,6 +31,7 @@ PROTECTED_URLS = (
     "/connection",
     "/snapshot",
     "/snapshot/enriched",
+    "/portfolio/market-snapshot?depth=1&max_instruments=1",
     "/operations?days=1",
     "/instruments/search?query=SBER&limit=1",
     (
@@ -63,6 +65,7 @@ def test_health_contract_and_read_only_invariants() -> None:
 
     capabilities = set(payload["capabilities"])
     assert "market_source_diagnostics" in capabilities
+    assert "portfolio_market_snapshot" in capabilities
     assert "regression_shield" in capabilities
 
     assert payload["build"]["entrypoint"] == EXPECTED_ENTRYPOINT
@@ -145,7 +148,7 @@ def test_render_uses_only_the_stable_application_entrypoint() -> None:
     assert "main_v" not in render_config
 
 
-def test_v332_market_source_diagnostics_remain_active() -> None:
+def test_market_source_diagnostics_remain_active() -> None:
     assert gateway_module.app is gateway_module.base.app
     assert gateway_module.app.version == EXPECTED_VERSION
 
