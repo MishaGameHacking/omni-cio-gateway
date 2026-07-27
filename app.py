@@ -7,6 +7,7 @@ from fastapi import Depends, Query
 import app_v360 as legacy
 from app_v360 import *  # noqa: F401,F403
 import purchase_capacity as purchase_capacity_engine
+import sdk_order_compat
 
 
 APP_VERSION = "3.7.0"
@@ -77,7 +78,7 @@ def purchase_capacity_preview_v370(
     ),
 ) -> dict[str, Any]:
     return purchase_capacity_engine.get_purchase_capacity_preview(
-        base=base,
+        base=sdk_order_compat.with_request_object_orders(base),
         app_version=APP_VERSION,
         market_snapshot_loader=lambda uid, depth: legacy.market_snapshot_v350(
             uid,
