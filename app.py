@@ -7,10 +7,11 @@ from fastapi import Depends, Query
 import app_v360 as legacy
 from app_v360 import *  # noqa: F401,F403
 import purchase_capacity as purchase_capacity_engine
+import purchase_capacity_integrity
 import sdk_order_compat
 
 
-APP_VERSION = "3.7.0"
+APP_VERSION = "3.7.1"
 ENTRYPOINT = "app:app"
 
 # Existing route handlers in the archived v3.6.0 wrapper resolve these module
@@ -27,24 +28,26 @@ app.description = (
     "It exposes connection, portfolio and operations data, smart instrument "
     "search, single-instrument market diagnostics, whole-portfolio market "
     "valuation, currency-local analytics, cash/liquidity diagnostics, and a "
-    "read-only purchase-capacity preview. It cannot create, submit, replace, "
-    "or cancel orders."
+    "read-only purchase-capacity preview with arithmetic, commission, currency, "
+    "and limit integrity checks. It cannot create, submit, replace, or cancel orders."
 )
 
 if "purchase_capacity_preview" not in base.CAPABILITIES:
     base.CAPABILITIES.append("purchase_capacity_preview")
+if "purchase_capacity_integrity" not in base.CAPABILITIES:
+    base.CAPABILITIES.append("purchase_capacity_integrity")
 
 
 @app.get(
     "/portfolio/purchase-capacity",
     operation_id="getPurchaseCapacityPreview",
     summary=(
-        "Calculate read-only own-funds limits and a preliminary purchase cost "
-        "for one exact instrument"
+        "Calculate read-only own-funds limits, a preliminary purchase cost, and "
+        "integrity checks for one exact instrument"
     ),
     dependencies=[Depends(base.require_gateway_key)],
 )
-def purchase_capacity_preview_v370(
+def purchase_capacity_preview_v371(
     instrument_uid: str = Query(
         ...,
         min_length=1,
@@ -77,7 +80,7 @@ def purchase_capacity_preview_v370(
         ),
     ),
 ) -> dict[str, Any]:
-    return purchase_capacity_engine.get_purchase_capacity_preview(
+    payload = purchase_capacity_engine.get_purchase_capacity_preview(
         base=sdk_order_compat.with_request_object_orders(base),
         app_version=APP_VERSION,
         market_snapshot_loader=lambda uid, depth: legacy.market_snapshot_v350(
@@ -89,6 +92,7 @@ def purchase_capacity_preview_v370(
         quantity_lots=quantity_lots,
         manual_price=manual_price,
     )
+    return purchase_capacity_integrity.apply_purchase_capacity_integrity(payload)
 
 
 # GPT Actions requires every object response schema to declare explicit
@@ -232,6 +236,96 @@ _OA_PC_INSTRUMENT_RESOLUTION = base._oa_obj(
         ),
     }
 )
+_OA_PC_COMMISSION_SOURCES = base._oa_obj(
+    {
+        "executed_commission": base._OA_MONEY,
+        "executed_commission_rub": base._OA_MONEY,
+        "service_commission": base._OA_MONEY,
+        "deal_commission": base._OA_MONEY,
+    }
+)
+_OA_PC_COMPONENT_SUM_CHECK = base._oa_obj(
+    {
+        "status": base._OA_STRING,
+        "components_sum": base._OA_STRING,
+        "canonical_amount": base._OA_STRING,
+        "difference": base._OA_STRING,
+        "currency": base._OA_STRING,
+    }
+)
+_OA_PC_COMMISSION_SUMMARY = base._oa_obj(
+    {
+        "status": base._OA_STRING,
+        "canonical_source": base._OA_STRING,
+        "canonical_commission": base._OA_MONEY,
+        "source_fields": _OA_PC_COMMISSION_SOURCES,
+        "components_sum_check": _OA_PC_COMPONENT_SUM_CHECK,
+        "fields_are_additive": base._OA_BOOL,
+        "double_count_protection": base._OA_BOOL,
+        "naive_sum_if_incorrectly_added": base._OA_MONEY,
+        "overstatement_prevented": base._OA_MONEY,
+        "notes": base._oa_array(base._OA_STRING),
+    }
+)
+_OA_PC_CURRENCIES = base._oa_obj(
+    {
+        "instrument": base._OA_STRING,
+        "market_price": base._OA_STRING,
+        "own_funds": base._OA_STRING,
+        "initial_order_amount": base._OA_STRING,
+        "total_order_amount": base._OA_STRING,
+        "canonical_commission": base._OA_STRING,
+        "remaining_cash": base._OA_STRING,
+        "aci_value": base._OA_STRING,
+    }
+)
+_OA_PC_CURRENCY_CONSISTENCY = base._oa_obj(
+    {
+        "status": base._OA_STRING,
+        "currencies": _OA_PC_CURRENCIES,
+        "unique_currencies": base._oa_array(base._OA_STRING),
+        "critical_fields_complete": base._OA_BOOL,
+        "issues": base._oa_array(base._OA_STRING),
+    }
+)
+_OA_PC_LIMIT_SUMMARY = base._oa_obj(
+    {
+        "selected_limit_field": base._OA_STRING,
+        "selected_limit_source": base._OA_STRING,
+        "selected_limit_value": base._OA_STRING,
+        "market_limit_field": base._OA_STRING,
+        "market_limit_value": base._OA_STRING,
+        "requested_lots": base._OA_STRING,
+        "requested_within_selected_limit": base._OA_STRING,
+        "requested_within_market_limit": base._OA_STRING,
+        "decision_basis": base._OA_STRING,
+    }
+)
+_OA_PC_CALCULATION_CHECK = base._oa_obj(
+    {
+        "status": base._OA_STRING,
+        "formula": base._OA_STRING,
+        "expected": base._OA_STRING,
+        "reported": base._OA_STRING,
+        "difference": base._OA_STRING,
+        "tolerance": base._OA_STRING,
+        "currency": base._OA_STRING,
+        "reason": base._OA_STRING,
+    }
+)
+_OA_PC_CALCULATION_CHECKS = base._oa_obj(
+    {
+        "initial_order_amount": _OA_PC_CALCULATION_CHECK,
+        "total_order_amount": _OA_PC_CALCULATION_CHECK,
+        "remaining_cash": _OA_PC_CALCULATION_CHECK,
+        "overall_status": base._OA_STRING,
+        "passed": base._OA_INT,
+        "failed": base._OA_INT,
+        "unavailable": base._OA_INT,
+        "not_applicable": base._OA_INT,
+        "integrity_confirmed": base._OA_BOOL,
+    }
+)
 _OA_PC_QUALITY = base._oa_obj(
     {
         "instrument_resolved": base._OA_BOOL,
@@ -244,6 +338,13 @@ _OA_PC_QUALITY = base._oa_obj(
         "complete": base._OA_BOOL,
         "read_only": base._OA_BOOL,
         "no_order_created": base._OA_BOOL,
+        "purchase_capacity_integrity": base._OA_BOOL,
+        "commission_double_count_protected": base._OA_BOOL,
+        "currency_consistent": base._OA_BOOL,
+        "calculation_integrity_confirmed": base._OA_BOOL,
+        "calculation_checks_passed": base._OA_INT,
+        "calculation_checks_failed": base._OA_INT,
+        "calculation_checks_unavailable": base._OA_INT,
     }
 )
 
@@ -268,6 +369,11 @@ base._ACTION_200_SCHEMAS["/portfolio/purchase-capacity"] = base._oa_obj(
         "own_funds": _OA_PC_OWN_FUNDS,
         "margin": _OA_PC_MARGIN,
         "order_preview": _OA_PC_ORDER_PREVIEW,
+        "commission_summary": _OA_PC_COMMISSION_SUMMARY,
+        "currency_consistency": _OA_PC_CURRENCY_CONSISTENCY,
+        "limit_summary": _OA_PC_LIMIT_SUMMARY,
+        "calculation_checks": _OA_PC_CALCULATION_CHECKS,
+        "integrity_status": base._OA_STRING,
         "affordable": base._OA_STRING,
         "affordability_confirmed": base._OA_BOOL,
         "affordability_checks": _OA_PC_AFFORDABILITY_CHECKS,
@@ -290,6 +396,11 @@ base._ACTION_200_SCHEMAS["/portfolio/purchase-capacity"] = base._oa_obj(
         "market_price",
         "own_funds",
         "order_preview",
+        "commission_summary",
+        "currency_consistency",
+        "limit_summary",
+        "calculation_checks",
+        "integrity_status",
         "complete",
     ],
 )
