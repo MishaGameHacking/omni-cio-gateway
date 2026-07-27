@@ -1,0 +1,66 @@
+name: Ошибка gateway
+about: Сообщить о воспроизводимой ошибке без секретов и персональных данных
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Не вставляйте токены, API-ключи, полный номер счёта, Authorization headers или реальные брокерские отчёты.
+  - type: input
+    id: version
+    attributes:
+      label: Версия
+      description: Значение `version` из `/health` или ответа Action.
+    validations:
+      required: true
+  - type: input
+    id: commit
+    attributes:
+      label: Commit SHA
+      description: `build.commit_sha`, если доступен.
+  - type: dropdown
+    id: component
+    attributes:
+      label: Компонент
+      options:
+        - gateway health / connection
+        - portfolio snapshot
+        - market data
+        - portfolio analytics
+        - cash and liquidity
+        - purchase capacity
+        - operations analytics
+        - broker report
+        - OpenAPI / GPT Actions
+        - Render deployment
+        - documentation
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Шаги воспроизведения
+      description: Используйте только маскированные и фиктивные значения.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Ожидаемое поведение
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Фактическое поведение
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Проверка безопасности
+      options:
+        - label: В сообщении нет секретов и полного номера счёта.
+          required: true
+        - label: Ошибка воспроизводится без совершения сделки.
+          required: true
