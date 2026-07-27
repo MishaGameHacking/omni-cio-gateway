@@ -4,6 +4,7 @@
 
 ## Файлы
 
+- `CONFIGURATION.md` — имя, описание, starters, publishing и ручные настройки GPT Editor.
 - `INSTRUCTIONS.md` — канонические системные инструкции бота.
 - `ACTIONS_CATALOG.md` — operationId, paths, назначение и правила вызовов.
 - `NEW_CHAT_PROMPT.md` — стартовый запрос для подключения нового чата к проекту.
@@ -24,7 +25,8 @@
 При изменении Action contract:
 
 1. обновить backend и тесты;
-2. обновить `ACTIONS_CATALOG.md`;
+2. обновить `CONFIGURATION.md`, `INSTRUCTIONS.md` и `ACTIONS_CATALOG.md`;
 3. обновить профильный файл в `knowledge/`;
 4. после production deploy заново импортировать OpenAPI в GPT Editor;
-5. проверить, что доступны только ожидаемые GET Actions.
+5. проверить, что доступны только ожидаемые GET Actions;
+6. подтвердить `trading_methods=false`.
