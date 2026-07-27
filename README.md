@@ -1,23 +1,26 @@
-# Omni-CIO Gateway
+# Omni-CIO Control Center
 
-Приватный **read-only** шлюз между Custom GPT Omni-CIO и T-Invest API. Репозиторий является единым техническим центром управления backend, конфигурацией помощника, тестами, документацией и обезличенной проектной памятью.
+Приватная read-only система инвестиционной аналитики. Один GitHub-репозиторий теперь содержит два независимых интерфейса к общему Omni-CIO Gateway:
+
+```text
+Custom GPT ──────┐
+                 ├── Omni-CIO Gateway ── T-Invest API
+Telegram Bot ────┘
+```
 
 ## Текущее состояние
 
-- Runtime: **v3.9.1 Broker Report Async Integrity**.
-- Production entrypoint: `app:app`.
-- Публичные пользовательские endpoints: только `GET`.
-- `trading_methods=false`.
+- System release: **v4.0.0 Telegram Companion — Read-Only Control Center**.
+- Gateway API component: **v3.9.1 Broker Report Async Integrity**.
+- Gateway production entrypoint: `app:app`.
+- Telegram production entrypoint: `telegram_bot.app:app`.
+- `trading_methods=false` в обоих интерфейсах.
 - Создание, отправка, замена и отмена заявок запрещены.
-- Официальный брокерский отчёт формируется асинхронно.
-- T-Invest `30058` трактуется как штатное состояние `pending`.
-- Максимальный период одного официального отчёта: `31` день.
+- Custom GPT и Telegram не делят историю чатов, но используют один gateway и одни правила данных.
 
 ## Начать работу
 
-### Новый чат, Codex, Copilot или IDE
-
-Прочитайте по порядку:
+Новый чат, Codex, Copilot или IDE должны прочитать:
 
 1. [`AGENTS.md`](AGENTS.md)
 2. [`docs/README.md`](docs/README.md)
@@ -26,12 +29,13 @@
 5. [`gpt/ACTIONS_CATALOG.md`](gpt/ACTIONS_CATALOG.md)
 6. профильный файл из [`knowledge/`](knowledge/)
 
-Готовый стартовый запрос находится в [`gpt/NEW_CHAT_PROMPT.md`](gpt/NEW_CHAT_PROMPT.md).
+Готовый стартовый запрос: [`gpt/NEW_CHAT_PROMPT.md`](gpt/NEW_CHAT_PROMPT.md).
 
 ## Карта репозитория
 
 ```text
-app.py + runtime modules             backend gateway
+app.py + runtime modules             Omni-CIO Gateway
+telegram_bot/                        Telegram Companion v4.0.0
 broker_report_reconciliation/        официальный отчёт и сверка
 tests/                               unit, endpoint, OpenAPI, Regression Shield
 knowledge/                           строгие правила предметной области
@@ -45,11 +49,44 @@ scripts/                             безопасные локальные п�
 
 Полная схема: [`docs/architecture/REPOSITORY_STRUCTURE.md`](docs/architecture/REPOSITORY_STRUCTURE.md).
 
+## Telegram Companion
+
+Первый релиз работает по предсказуемым командам без OpenAI API:
+
+```text
+/help
+/health
+/connection
+/portfolio
+/cash
+/analytics
+/operations [days]
+/report
+/report_status [task_id]
+```
+
+Безопасность:
+
+- отдельный Render web service;
+- Telegram webhook с `X-Telegram-Bot-Api-Secret-Token`;
+- доступ только для `TELEGRAM_ALLOWED_USER_IDS`;
+- только личные чаты;
+- дедупликация Telegram `update_id`;
+- rate limit;
+- gateway вызывается только методом GET с Bearer key;
+- повторное маскирование account ID;
+- секреты не выводятся в health и сообщения.
+
+Инструкция развёртывания: [`docs/operations/TELEGRAM_COMPANION_RUNBOOK.md`](docs/operations/TELEGRAM_COMPANION_RUNBOOK.md).
+
+Отдельный безопасный Blueprint: [`render.telegram.yaml`](render.telegram.yaml). Он не изменяет существующий gateway service.
+
 ## Что хранится в GitHub
 
 - весь backend-код gateway;
+- Telegram Companion;
 - OpenAPI-контракт и тесты;
-- Render blueprint;
+- Render Blueprints;
 - правила безопасности и разработки;
 - канонические инструкции Custom GPT;
 - каталог Actions;
@@ -59,28 +96,29 @@ scripts/                             безопасные локальные п�
 ## Что намеренно не хранится
 
 - `TINVEST_TOKEN`;
-- `GATEWAY_API_KEY`;
+- `GATEWAY_API_KEY` и `OMNI_GATEWAY_API_KEY`;
+- `TELEGRAM_BOT_TOKEN`;
+- `TELEGRAM_WEBHOOK_SECRET`;
+- Telegram user IDs владельца;
 - полный номер брокерского счёта;
 - реальные брокерские отчёты и операции пользователя;
-- настройки публикации GPT и секретный Bearer key;
-- Render secrets.
+- Render secrets и секретный GPT Bearer key.
 
 Полный реестр: [`docs/inventory/PROJECT_ASSETS.md`](docs/inventory/PROJECT_ASSETS.md).
 
 ## Основные документы
 
-- [`AGENTS.md`](AGENTS.md) — обязательные правила для AI и разработчиков.
+- [`AGENTS.md`](AGENTS.md) — обязательные правила.
 - [`CHANGELOG.md`](CHANGELOG.md) — история релизов.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — рабочий процесс.
 - [`SECURITY.md`](SECURITY.md) — политика безопасности.
 - [`docs/architecture/SYSTEM_OVERVIEW.md`](docs/architecture/SYSTEM_OVERVIEW.md) — архитектура.
-- [`docs/operations/DEPLOYMENT_RUNBOOK.md`](docs/operations/DEPLOYMENT_RUNBOOK.md) — Render deployment.
-- [`docs/operations/RELEASE_CHECKLIST.md`](docs/operations/RELEASE_CHECKLIST.md) — Definition of Done.
-- [`knowledge/09_MARKET_DATA_AND_BUYING_POWER.txt`](knowledge/09_MARKET_DATA_AND_BUYING_POWER.txt) — рынок и покупательная способность.
-- [`knowledge/10_OPERATIONS_ANALYTICS_AND_RECONCILIATION.txt`](knowledge/10_OPERATIONS_ANALYTICS_AND_RECONCILIATION.txt) — операции.
+- [`docs/operations/DEPLOYMENT_RUNBOOK.md`](docs/operations/DEPLOYMENT_RUNBOOK.md) — gateway deployment.
+- [`docs/operations/TELEGRAM_COMPANION_RUNBOOK.md`](docs/operations/TELEGRAM_COMPANION_RUNBOOK.md) — Telegram deployment.
 - [`knowledge/11_BROKER_REPORT_ASYNC_INTEGRITY.txt`](knowledge/11_BROKER_REPORT_ASYNC_INTEGRITY.txt) — асинхронный отчёт.
+- [`knowledge/12_TELEGRAM_COMPANION.txt`](knowledge/12_TELEGRAM_COMPANION.txt) — Telegram contract.
 
-## Локальный запуск
+## Локальный запуск gateway
 
 ```bash
 python -m venv .venv
@@ -92,6 +130,18 @@ export SSL_TBANK_VERIFY="True"
 uvicorn app:app --reload
 ```
 
+## Локальный запуск Telegram Companion
+
+```bash
+export TELEGRAM_BOT_TOKEN="..."
+export TELEGRAM_WEBHOOK_SECRET="..."
+export TELEGRAM_ALLOWED_USER_IDS="123456789"
+export OMNI_GATEWAY_URL="https://omni-cio-gateway-au6d.onrender.com"
+export OMNI_GATEWAY_API_KEY="..."
+export TELEGRAM_PUBLIC_BASE_URL="https://your-public-tunnel.example"
+uvicorn telegram_bot.app:app --reload
+```
+
 В Windows PowerShell используйте `$env:NAME="value"` вместо `export`.
 
 ## Проверки
@@ -101,32 +151,18 @@ python scripts/check_repository_layout.py
 python -m compileall -q app.py app_v371.py app_v360.py main.py \
   portfolio_market.py portfolio_analytics.py cash_liquidity.py \
   purchase_capacity.py purchase_capacity_integrity.py \
-  operations_analytics.py broker_report_reconciliation tests scripts
+  operations_analytics.py broker_report_reconciliation telegram_bot tests scripts
 python -m pytest -q
 ```
 
-Дополнительно Regression Shield проверяет:
-
-- актуальную версию runtime;
-- `app:app`;
-- уникальные operationId;
-- Bearer authentication;
-- явные OpenAPI object properties;
-- отсутствие торговых endpoints;
-- `trading_methods=false`;
-- расчёты по валютам без скрытого FX.
+Regression Shield контролирует оба сервиса, стабильный `app:app`, Telegram entrypoint, webhook security, отсутствие торговых функций и `trading_methods=false`.
 
 ## Деплой
 
-Render использует [`render.yaml`](render.yaml):
+- Gateway: [`render.yaml`](render.yaml), entrypoint `app:app`.
+- Telegram: [`render.telegram.yaml`](render.telegram.yaml), entrypoint `telegram_bot.app:app`.
 
-```text
-build: pip install -r requirements.txt
-start: uvicorn app:app --host 0.0.0.0 --port $PORT
-health: /health
-```
-
-После merge в `main` нужно проверить production `/health`, commit SHA и только затем обновлять OpenAPI schema в GPT Editor.
+Telegram Blueprint использует `autoDeployTrigger: checksPass`: деплой начинается только после успешного CI.
 
 ## Важная граница проекта
 
