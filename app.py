@@ -8,9 +8,10 @@ import app_v360 as legacy
 import app_v371 as archived
 from app_v371 import *  # noqa: F401,F403
 import operations_analytics as operations_analytics_engine
+import broker_report_reconciliation as broker_report_reconciliation_engine
 
 
-APP_VERSION = "3.8.0"
+APP_VERSION = "3.9.0"
 ENTRYPOINT = "app:app"
 
 # Upgrade both archived wrappers because established route handlers resolve
@@ -26,8 +27,8 @@ app.version = APP_VERSION
 app.description = (
     "Private read-only gateway between a Custom GPT and T-Invest API. It exposes "
     "connection, portfolio, market, purchase-capacity, and operations data. "
-    "v3.8.0 adds executed-only operations analytics with pagination diagnostics, "
-    "currency-local cash-flow reconciliation, and duplicate protection. It cannot "
+    "v3.9.0 adds asynchronous official broker-report generation, paginated report "
+    "loading, and currency-local trade and commission reconciliation. It cannot "
     "create, submit, replace, or cancel orders."
 )
 
@@ -298,6 +299,12 @@ base._ACTION_200_SCHEMAS["/operations/analytics"] = base._oa_obj(
         "complete",
         "trading_methods",
     ],
+)
+
+broker_report_reconciliation_engine.register_gateway(
+    app=app,
+    base=base,
+    app_version=APP_VERSION,
 )
 
 app.openapi_schema = None
