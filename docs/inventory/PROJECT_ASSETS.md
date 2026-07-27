@@ -1,12 +1,12 @@
 # Реестр компонентов и внешних активов
 
-Дата инвентаризации: 2026-07-27.
+Дата инвентаризации: 2026-07-28.
 
 Этот файл отвечает на вопрос: «Что новый чат получит из GitHub, а что нужно подключить отдельно?»
 
 ## 1. Находится в этом репозитории
 
-### Backend и API
+### Omni-CIO Gateway
 
 - FastAPI gateway и стабильный entrypoint `app:app`;
 - T-Invest read-only integration;
@@ -16,8 +16,19 @@
 - purchase capacity preview и integrity;
 - operations analytics;
 - broker report reconciliation и async integrity;
-- Render blueprint `render.yaml`;
+- Render Blueprint `render.yaml`;
 - unit и Regression Shield тесты.
+
+### Telegram Companion v4.0.0
+
+- отдельный FastAPI service `telegram_bot.app:app`;
+- webhook validation;
+- allowlist пользователей;
+- read-only команды gateway;
+- автоматические `setMyCommands` и `setWebhook`;
+- отдельный Blueprint `render.telegram.yaml`;
+- Telegram unit/security tests;
+- runbook и профильный knowledge-файл.
 
 ### Проектная память
 
@@ -25,32 +36,52 @@
 - `knowledge/00_PROJECT_MASTER_CONTEXT.md`;
 - профильные файлы `knowledge/`;
 - `docs/` с архитектурой и runbooks;
-- `gpt/` с переносимой конфигурацией помощника;
+- `gpt/` с переносимой конфигурацией Custom GPT;
 - changelog, contribution и security policies.
 
 ## 2. Существует вне GitHub и не должно копироваться как секрет
 
-### Render
+### Render gateway service
 
-Хранит production-переменные окружения:
+Хранит:
 
 - `TINVEST_TOKEN`;
 - `GATEWAY_API_KEY`;
-- автоматически задаваемый `RENDER_EXTERNAL_URL`.
+- deploy state и автоматически заданный `RENDER_EXTERNAL_URL`.
 
-В GitHub находятся только имена переменных и deploy contract. Значения нужно проверять в Render Dashboard.
+### Render Telegram service
+
+Хранит:
+
+- `TELEGRAM_BOT_TOKEN`;
+- `TELEGRAM_WEBHOOK_SECRET`;
+- `TELEGRAM_ALLOWED_USER_IDS`;
+- `OMNI_GATEWAY_API_KEY`;
+- production URL и deploy state.
+
+В GitHub находятся только имена переменных, placeholders и deploy contract.
+
+### Telegram / BotFather
+
+Во внешней системе находятся:
+
+- Telegram bot account и username;
+- bot token;
+- установленный webhook;
+- список команд;
+- Telegram user IDs и сообщения.
+
+GitHub содержит код настройки, но не токен, реальные IDs и историю сообщений.
 
 ### Custom GPT
 
-В интерфейсе ChatGPT хранятся:
+В GPT Editor хранятся:
 
 - выбранная модель;
 - загруженная Action schema;
 - Bearer API key;
 - опубликованное состояние GPT;
 - UI-настройки и доступ пользователей.
-
-Канонический текст инструкций и список Actions сохраняются в `gpt/`, но секретный API key не сохраняется.
 
 ### T-Invest
 
@@ -64,29 +95,21 @@
 
 `https://omni-cio-bot.ervinwilliams97920.chatgpt.site`
 
-Исходный frontend-проект или отдельный репозиторий пока не зафиксирован. До определения источника нельзя создавать копию сайта. Когда источник будет найден, в этот файл нужно добавить:
-
-- repository/project ID;
-- production URL;
-- framework и build command;
-- hosting configuration;
-- путь к parser-модулю HTML-отчётов;
-- связь frontend release с backend release.
+Исходный frontend-проект или отдельный репозиторий пока не зафиксирован. До определения источника нельзя создавать копию сайта. Когда источник будет найден, добавить repository/project ID, production URL, framework, build command, hosting configuration, parser path и связь frontend release с backend release.
 
 ### HTML-отчёты СберИнвестиций
 
-Реальные отчёты не должны сохраняться в GitHub. Допускаются только специально обезличенные fixtures, если из них удалены счёт, сделки, суммы, персональные данные и иные идентификаторы.
+Реальные отчёты не должны сохраняться в GitHub. Допускаются только специально обезличенные fixtures без счёта, сделок, сумм, персональных данных и иных идентификаторов.
 
 ## 4. Что нужно новому чату
 
-Минимальный доступ:
-
-1. GitHub repository read access.
+1. GitHub read access.
 2. Для изменения кода — GitHub write access через ветку и PR.
-3. Для production-проверки — доступ к публичному `/health`.
-4. Для изменения Render secrets — отдельный доступ к Render, не GitHub.
-5. Для изменения Custom GPT — доступ к GPT Editor, не GitHub.
+3. Для production-проверки — доступ к публичным `/health` обоих сервисов.
+4. Для изменения секретов — доступ к Render Dashboard.
+5. Для изменения Custom GPT — доступ к GPT Editor.
+6. Для создания или ротации Telegram token — доступ к BotFather владельца.
 
 ## 5. Запрещённые способы «сохранить всё»
 
-Нельзя добавлять в репозиторий реальные токены, Action API key, полный номер счёта, export чатов с финансовыми данными, реальные брокерские отчёты или screenshots с чувствительными значениями. GitHub должен хранить воспроизводимую систему и знания, а не пользовательские секреты.
+Нельзя добавлять реальные токены, API keys, webhook secret, Telegram user IDs владельца, полный номер счёта, export чатов, реальные брокерские отчёты или screenshots с чувствительными значениями. GitHub хранит воспроизводимую систему и знания, а не пользовательские секреты.
