@@ -1,3 +1,4 @@
+# Triggered after workflow registration.
 name: Apply Omni-CIO v3.6.0
 
 on:
