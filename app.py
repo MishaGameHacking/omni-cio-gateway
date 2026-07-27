@@ -4,8 +4,8 @@ from typing import Any
 
 from fastapi import Depends, Query
 
-import app_v360 as legacy_v360
-import app_v371 as legacy
+import app_v360 as legacy
+import app_v371 as archived
 from app_v371 import *  # noqa: F401,F403
 import operations_analytics as operations_analytics_engine
 
@@ -15,13 +15,13 @@ ENTRYPOINT = "app:app"
 
 # Upgrade both archived wrappers because established route handlers resolve
 # their module globals at call time.
+archived.APP_VERSION = APP_VERSION
+archived.ENTRYPOINT = ENTRYPOINT
 legacy.APP_VERSION = APP_VERSION
 legacy.ENTRYPOINT = ENTRYPOINT
-legacy_v360.APP_VERSION = APP_VERSION
-legacy_v360.ENTRYPOINT = ENTRYPOINT
 
-app = legacy.app
-base = legacy.base
+app = archived.app
+base = archived.base
 app.version = APP_VERSION
 app.description = (
     "Private read-only gateway between a Custom GPT and T-Invest API. It exposes "
