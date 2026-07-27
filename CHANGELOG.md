@@ -1,10 +1,29 @@
 # Changelog
 
-Все заметные изменения Omni-CIO Gateway фиксируются здесь. Источник истины по коду — ветка `main`; подробности релизов находятся в соответствующих Pull Request.
+Все заметные изменения Omni-CIO фиксируются здесь. Источник истины по коду — ветка `main`; подробности релизов находятся в соответствующих Pull Request.
 
 ## [Unreleased]
 
-- Структурирование репозитория, документации, конфигурации Custom GPT и эксплуатационных инструкций.
+- Свободный AI-диалог в Telegram через OpenAI API остаётся отдельным будущим этапом.
+
+## [4.0.0] — 2026-07-28
+
+### Added
+- Отдельный FastAPI service `telegram_bot.app:app`.
+- Команды `/health`, `/connection`, `/portfolio`, `/cash`, `/analytics`, `/operations`, `/report`, `/report_status`.
+- Автоматическая установка Telegram webhook и списка команд при старте.
+- Изолированный Render Blueprint `render.telegram.yaml`.
+- Ограничение доступа по `TELEGRAM_ALLOWED_USER_IDS` и только личным чатам.
+- Webhook secret validation, update deduplication, rate limit и повторное маскирование account ID.
+- In-memory удобство для повторного использования `task_id` официального брокерского отчёта.
+- Полный runbook и профильный knowledge-файл Telegram Companion.
+
+### Safety
+- Telegram вызывает Omni-CIO Gateway только методом GET.
+- Торговые команды отсутствуют.
+- `trading_methods=false`.
+- Gateway component и его entrypoint `app:app` не изменены.
+- Telegram и gateway deploy разделены, поэтому сбой Telegram не ломает основной API.
 
 ## [3.9.1] — 2026-07-27
 

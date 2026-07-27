@@ -1,4 +1,4 @@
-# Permanent read-only regression checks for Omni-CIO Gateway.
+# Permanent read-only regression checks for Omni-CIO Gateway and Telegram Companion.
 name: Regression Shield
 
 on:
@@ -17,13 +17,14 @@ concurrency:
 
 jobs:
   regression-shield:
-    name: Read-only contract, OpenAPI and repository checks
+    name: Read-only contracts, OpenAPI, Telegram and repository checks
     runs-on: ubuntu-latest
     timeout-minutes: 12
     env:
       TINVEST_TOKEN: regression-test-tinvest-token
       GATEWAY_API_KEY: regression-test-gateway-key
       RENDER_EXTERNAL_URL: https://omni-cio-gateway.onrender.com
+      TELEGRAM_AUTO_CONFIGURE: "false"
 
     steps:
       - name: Check out repository
@@ -46,14 +47,14 @@ jobs:
       - name: Verify repository structure
         run: python scripts/check_repository_layout.py
 
-      - name: Compile gateway sources
+      - name: Compile gateway and Telegram sources
         run: >-
           python -m compileall -q app.py app_v371.py app_v360.py main.py
           portfolio_market.py portfolio_analytics.py cash_liquidity.py
           purchase_capacity.py purchase_capacity_integrity.py
-          operations_analytics.py broker_report_reconciliation tests scripts
+          operations_analytics.py broker_report_reconciliation telegram_bot tests scripts
 
-      - name: Verify stable entrypoint import
+      - name: Verify stable gateway entrypoint
         run: |
           python - <<'PY'
           import app
@@ -73,7 +74,30 @@ jobs:
           assert "broker_report_async_integrity" in app.base.CAPABILITIES
           assert "broker_report_trade_reconciliation" in app.base.CAPABILITIES
           assert "regression_shield" in app.base.CAPABILITIES
-          print("Stable entrypoint:", app.app.version)
+          print("Gateway entrypoint:", app.app.version)
+          PY
+
+      - name: Verify Telegram Companion entrypoint
+        run: |
+          python - <<'PY'
+          from fastapi.testclient import TestClient
+          import telegram_bot.app as telegram_module
+
+          assert telegram_module.app.version == "4.0.0"
+          route_methods = {
+              route.path: set(route.methods or set())
+              for route in telegram_module.app.routes
+              if hasattr(route, "methods")
+          }
+          assert route_methods["/health"] == {"GET"}
+          assert route_methods["/telegram/webhook"] == {"POST"}
+          with TestClient(telegram_module.app) as client:
+              payload = client.get("/health").json()
+          assert payload["version"] == "4.0.0"
+          assert payload["build"]["entrypoint"] == "telegram_bot.app:app"
+          assert payload["read_only"] is True
+          assert payload["trading_methods"] is False
+          print("Telegram entrypoint:", payload["version"])
           PY
 
       - name: Run Regression Shield

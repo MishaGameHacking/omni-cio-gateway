@@ -1,6 +1,6 @@
 # Документация Omni-CIO
 
-Эта папка — навигационный центр проекта. Она дополняет `knowledge/`, но не заменяет профильные правила поведения Actions.
+Эта папка — навигационный центр проекта. Она дополняет `knowledge/`, но не заменяет профильные правила поведения Actions и Telegram Companion.
 
 ## Быстрый вход
 
@@ -9,8 +9,8 @@
 3. `../knowledge/00_PROJECT_MASTER_CONTEXT.md` — единая проектная память.
 4. `architecture/SYSTEM_OVERVIEW.md` — компоненты и границы системы.
 5. `architecture/REPOSITORY_STRUCTURE.md` — назначение папок и файлов.
-6. `inventory/PROJECT_ASSETS.md` — что находится в GitHub, а что хранится во внешних системах.
-7. `inventory/FILE_INDEX.md` — быстрый индекс runtime, tests, configuration и knowledge.
+6. `inventory/PROJECT_ASSETS.md` — GitHub и внешние системы.
+7. `inventory/FILE_INDEX.md` — индекс runtime, tests, configuration и knowledge.
 
 ## Разделы
 
@@ -22,7 +22,8 @@
 
 ### Operations
 
-- `operations/DEPLOYMENT_RUNBOOK.md`
+- `operations/DEPLOYMENT_RUNBOOK.md` — основной gateway.
+- `operations/TELEGRAM_COMPANION_RUNBOOK.md` — отдельный Telegram service.
 - `operations/RELEASE_CHECKLIST.md`
 
 ### Inventory
@@ -40,10 +41,14 @@
 - `../gpt/ACTIONS_CATALOG.md`
 - `../gpt/NEW_CHAT_PROMPT.md`
 
+### Telegram Companion
+
+Runtime находится в `../telegram_bot/`, правила — в `../knowledge/12_TELEGRAM_COMPANION.txt`, а развёртывание — в `operations/TELEGRAM_COMPANION_RUNBOOK.md`.
+
 ### Domain knowledge
 
 Проверяемые правила конкретных возможностей находятся в `../knowledge/`. Они имеют приоритет над краткими описаниями в `docs/`.
 
 ## Что не хранится в GitHub
 
-Секреты, реальные отчёты, полный номер счёта и пользовательские финансовые данные не должны находиться в репозитории. Их наличие во внешней системе отмечается только в inventory без раскрытия значений.
+Секреты, Telegram token, webhook secret, реальные Telegram user IDs, реальные отчёты, полный номер счёта и пользовательские финансовые данные не должны находиться в репозитории. Их наличие во внешней системе отмечается только в inventory без раскрытия значений.
