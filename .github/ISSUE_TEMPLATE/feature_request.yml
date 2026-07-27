@@ -1,0 +1,60 @@
+name: Улучшение Omni-CIO
+about: Предложить новую read-only возможность или улучшение качества
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Предложения, связанные с автоматической торговлей, созданием или отправкой заявок, не соответствуют архитектуре проекта.
+  - type: input
+    id: title
+    attributes:
+      label: Краткое название
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Область
+      options:
+        - portfolio
+        - market data
+        - cash and liquidity
+        - operations
+        - broker report
+        - Custom GPT
+        - frontend / HTML import
+        - CI / security
+        - documentation
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Проблема пользователя
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Предлагаемое решение
+    validations:
+      required: true
+  - type: textarea
+    id: data_sources
+    attributes:
+      label: Источники данных и ограничения
+      description: Укажите источник истины, валюты, полноту и возможные расхождения.
+  - type: checkboxes
+    id: invariants
+    attributes:
+      label: Обязательные инварианты
+      options:
+        - label: Решение остаётся read-only.
+          required: true
+        - label: `trading_methods=false` сохраняется.
+          required: true
+        - label: Render entrypoint `app:app` не меняется без отдельной миграции.
+          required: true
+        - label: Секреты и реальные пользовательские данные не нужны в GitHub.
+          required: true
