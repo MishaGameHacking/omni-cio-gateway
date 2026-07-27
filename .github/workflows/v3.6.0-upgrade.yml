@@ -1,0 +1,278 @@
+name: Apply v3.6.0 Cash Liquidity Upgrade
+
+on:
+  push:
+    branches:
+      - v3.6.0-cash-liquidity
+
+permissions:
+  contents: write
+
+jobs:
+  apply-upgrade:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out upgrade branch
+        uses: actions/checkout@v6
+        with:
+          ref: v3.6.0-cash-liquidity
+          fetch-depth: 0
+
+      - name: Patch stable application and Regression Shield
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          app_path = Path("app.py")
+          text = app_path.read_text(encoding="utf-8")
+
+          old_imports = (
+              "import main as base\n"
+              "import portfolio_analytics as portfolio_analytics_engine\n"
+          )
+          new_imports = (
+              "import cash_liquidity as cash_liquidity_engine\n"
+              "import main as base\n"
+              "import portfolio_analytics as portfolio_analytics_engine\n"
+          )
+          assert old_imports in text
+          text = text.replace(old_imports, new_imports, 1)
+
+          assert 'APP_VERSION = "3.5.0"' in text
+          text = text.replace(
+              'APP_VERSION = "3.5.0"',
+              'APP_VERSION = "3.6.0"',
+              1,
+          )
+
+          old_description = (
+              '    "snapshot for the whole portfolio, and currency-local portfolio analytics. "\n'
+          )
+          new_description = (
+              '    "snapshot for the whole portfolio, currency-local portfolio analytics, "\n'
+              '    "and cash/liquidity diagnostics. "\n'
+          )
+          assert old_description in text
+          text = text.replace(old_description, new_description, 1)
+
+          old_capabilities = (
+              '    "portfolio_analytics",\n'
+              '    "regression_shield",\n'
+          )
+          new_capabilities = (
+              '    "portfolio_analytics",\n'
+              '    "cash_liquidity_diagnostics",\n'
+              '    "regression_shield",\n'
+          )
+          assert old_capabilities in text
+          text = text.replace(old_capabilities, new_capabilities, 1)
+
+          route_marker = (
+              "# Extend the GPT Actions-compatible schemas while retaining explicit response\n"
+          )
+          assert route_marker in text
+          route_block = '''@app.get(
+              "/portfolio/cash-liquidity",
+              operation_id="getCashLiquiditySnapshot",
+              summary=(
+                  "Compare read-only cash positions, blocked amounts, and withdrawal "
+                  "limits separately for each reported currency"
+              ),
+              dependencies=[Depends(base.require_gateway_key)],
+          )
+          def cash_liquidity_snapshot_v360() -> dict[str, Any]:
+              return cash_liquidity_engine.get_cash_liquidity_snapshot(
+                  base=base,
+                  app_version=APP_VERSION,
+              )
+
+
+          '''
+          text = text.replace(route_marker, route_block + route_marker, 1)
+
+          schema_marker = "app.openapi_schema = None\n"
+          assert schema_marker in text
+          schema_block = '''_OA_CASH_SOURCE_PRESENCE = base._oa_obj(
+              {
+                  "positions": base._OA_BOOL,
+                  "withdraw_limits": base._OA_BOOL,
+              }
+          )
+          _OA_CASH_LIQUIDITY_ROW = base._oa_obj(
+              {
+                  "currency": base._OA_STRING,
+                  "reported_money": base._OA_STRING,
+                  "positions_blocked": base._OA_STRING,
+                  "withdrawable_money": base._OA_STRING,
+                  "withdraw_blocked": base._OA_STRING,
+                  "blocked_guarantee": base._OA_STRING,
+                  "cash_difference": base._OA_STRING,
+                  "cash_difference_basis": base._OA_STRING,
+                  "cash_status": base._OA_STRING,
+                  "source_presence": _OA_CASH_SOURCE_PRESENCE,
+                  "discrepancy_reasons": base._oa_array(base._OA_STRING),
+              }
+          )
+          _OA_CASH_COMPONENT = base._oa_obj(
+              {
+                  "status": base._OA_STRING,
+                  "source": base._OA_STRING,
+                  "limits_loading_in_progress": base._OA_BOOL,
+              }
+          )
+          _OA_CASH_COMPONENT_ERROR_DETAIL = base._oa_obj(
+              {
+                  "code": base._OA_STRING,
+                  "grpc_code": base._OA_STRING,
+                  "exception_type": base._OA_STRING,
+                  "message": base._OA_STRING,
+                  "tracking_id": base._OA_STRING,
+              }
+          )
+          _OA_CASH_COMPONENT_ERROR = base._oa_obj(
+              {
+                  "component": base._OA_STRING,
+                  "error": _OA_CASH_COMPONENT_ERROR_DETAIL,
+              }
+          )
+          base._ACTION_200_SCHEMAS["/portfolio/cash-liquidity"] = base._oa_obj(
+              {
+                  "status": base._OA_STRING,
+                  "version": base._OA_STRING,
+                  "retrieved_at": base._OA_STRING,
+                  "account": base._OA_ACCOUNT,
+                  "cash_mode": base._OA_STRING,
+                  "cash_by_currency": base._oa_array(_OA_CASH_LIQUIDITY_ROW),
+                  "components": base._oa_obj(
+                      {
+                          "positions": _OA_CASH_COMPONENT,
+                          "withdraw_limits": _OA_CASH_COMPONENT,
+                      }
+                  ),
+                  "buying_power": base._oa_obj(
+                      {
+                          "confirmed": base._OA_BOOL,
+                          "reason": base._OA_STRING,
+                      }
+                  ),
+                  "quality": base._oa_obj(
+                      {
+                          "positions_source_status": base._OA_STRING,
+                          "withdraw_limits_source_status": base._OA_STRING,
+                          "currencies_detected": base._OA_INT,
+                          "currencies_present_in_both_sources": base._OA_INT,
+                          "currencies_matched": base._OA_INT,
+                          "source_discrepancies": base._OA_INT,
+                          "negative_values_detected": base._OA_INT,
+                          "invalid_money_rows": base._OA_INT,
+                          "limits_loading_in_progress": base._OA_BOOL,
+                          "buying_power_confirmed": base._OA_BOOL,
+                          "complete": base._OA_BOOL,
+                          "no_cross_currency_aggregation": base._OA_BOOL,
+                      }
+                  ),
+                  "component_errors": base._oa_array(_OA_CASH_COMPONENT_ERROR),
+                  "trading_methods": base._OA_BOOL,
+                  "warnings": base._oa_array(base._OA_STRING),
+              },
+              required=[
+                  "status",
+                  "version",
+                  "retrieved_at",
+                  "account",
+                  "cash_mode",
+              ],
+          )
+
+          '''
+          text = text.replace(schema_marker, schema_block + schema_marker, 1)
+          app_path.write_text(text, encoding="utf-8")
+
+          regression_path = Path("tests/test_regression_shield.py")
+          regression = regression_path.read_text(encoding="utf-8")
+          assert 'EXPECTED_VERSION = "3.5.0"' in regression
+          regression = regression.replace(
+              'EXPECTED_VERSION = "3.5.0"',
+              'EXPECTED_VERSION = "3.6.0"',
+              1,
+          )
+          expected_path_marker = (
+              '    "/portfolio/analytics": "getPortfolioAnalytics",\n'
+          )
+          assert expected_path_marker in regression
+          regression = regression.replace(
+              expected_path_marker,
+              expected_path_marker
+              + '    "/portfolio/cash-liquidity": "getCashLiquiditySnapshot",\n',
+              1,
+          )
+          protected_marker = (
+              '    "/operations?days=1",\n'
+          )
+          assert protected_marker in regression
+          regression = regression.replace(
+              protected_marker,
+              '    "/portfolio/cash-liquidity",\n' + protected_marker,
+              1,
+          )
+          capability_marker = (
+              '    assert "portfolio_analytics" in capabilities\n'
+          )
+          assert capability_marker in regression
+          regression = regression.replace(
+              capability_marker,
+              capability_marker
+              + '    assert "cash_liquidity_diagnostics" in capabilities\n',
+              1,
+          )
+          regression_path.write_text(regression, encoding="utf-8")
+
+          workflow_path = Path(".github/workflows/regression-shield.yml")
+          workflow = workflow_path.read_text(encoding="utf-8")
+          branch_marker = "      - v3.5.0-portfolio-analytics\n"
+          assert branch_marker in workflow
+          workflow = workflow.replace(
+              branch_marker,
+              branch_marker + "      - v3.6.0-cash-liquidity\n",
+              1,
+          )
+          compile_marker = (
+              "run: python -m compileall -q app.py main.py portfolio_market.py "
+              "portfolio_analytics.py tests"
+          )
+          assert compile_marker in workflow
+          workflow = workflow.replace(
+              compile_marker,
+              "run: python -m compileall -q app.py main.py portfolio_market.py "
+              "portfolio_analytics.py cash_liquidity.py tests",
+              1,
+          )
+          assert 'assert app.app.version == "3.5.0"' in workflow
+          workflow = workflow.replace(
+              'assert app.app.version == "3.5.0"',
+              'assert app.app.version == "3.6.0"',
+              1,
+          )
+          workflow_capability_marker = (
+              '          assert "portfolio_analytics" in app.base.CAPABILITIES\n'
+          )
+          assert workflow_capability_marker in workflow
+          workflow = workflow.replace(
+              workflow_capability_marker,
+              workflow_capability_marker
+              + '          assert "cash_liquidity_diagnostics" in app.base.CAPABILITIES\n',
+              1,
+          )
+          workflow_path.write_text(workflow, encoding="utf-8")
+
+          Path(".github/workflows/v3.6.0-upgrade.yml").unlink()
+          PY
+
+      - name: Commit generated v3.6.0 integration
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Integrate v3.6.0 Cash & Liquidity Diagnostics"
+          git push origin HEAD:v3.6.0-cash-liquidity
