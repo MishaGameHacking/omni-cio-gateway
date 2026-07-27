@@ -14,12 +14,20 @@ REQUIRED_PATHS = (
     "SECURITY.md",
     "app.py",
     "render.yaml",
+    "render.telegram.yaml",
     "requirements.txt",
     "requirements-dev.txt",
+    "telegram_bot/__init__.py",
+    "telegram_bot/config.py",
+    "telegram_bot/clients.py",
+    "telegram_bot/commands.py",
+    "telegram_bot/app.py",
+    "tests/test_telegram_companion.py",
     "knowledge/00_PROJECT_MASTER_CONTEXT.md",
     "knowledge/09_MARKET_DATA_AND_BUYING_POWER.txt",
     "knowledge/10_OPERATIONS_ANALYTICS_AND_RECONCILIATION.txt",
     "knowledge/11_BROKER_REPORT_ASYNC_INTEGRITY.txt",
+    "knowledge/12_TELEGRAM_COMPANION.txt",
     "docs/README.md",
     "docs/architecture/SYSTEM_OVERVIEW.md",
     "docs/architecture/REPOSITORY_STRUCTURE.md",
@@ -27,6 +35,7 @@ REQUIRED_PATHS = (
     "docs/inventory/PROJECT_ASSETS.md",
     "docs/inventory/FILE_INDEX.md",
     "docs/operations/DEPLOYMENT_RUNBOOK.md",
+    "docs/operations/TELEGRAM_COMPANION_RUNBOOK.md",
     "docs/operations/RELEASE_CHECKLIST.md",
     "gpt/README.md",
     "gpt/CONFIGURATION.md",
@@ -71,6 +80,17 @@ def main() -> int:
         if expected not in render_text:
             fail("render.yaml does not preserve the app:app entrypoint", failures)
 
+    telegram_render_path = ROOT / "render.telegram.yaml"
+    if telegram_render_path.is_file():
+        telegram_render = telegram_render_path.read_text(encoding="utf-8")
+        expected = "uvicorn telegram_bot.app:app --host 0.0.0.0 --port $PORT"
+        if expected not in telegram_render:
+            fail("render.telegram.yaml has an unexpected entrypoint", failures)
+        if "autoDeployTrigger: checksPass" not in telegram_render:
+            fail("Telegram Blueprint must deploy only after CI checks pass", failures)
+        if "TELEGRAM_WEBHOOK_SECRET" not in telegram_render:
+            fail("Telegram Blueprint does not declare webhook secret", failures)
+
     app_path = ROOT / "app.py"
     if app_path.is_file():
         app_text = app_path.read_text(encoding="utf-8")
@@ -78,6 +98,22 @@ def main() -> int:
             fail("app.py does not declare ENTRYPOINT = app:app", failures)
         if "trading_methods" not in app_text:
             fail("app.py does not expose the read-only contract marker", failures)
+
+    telegram_app_path = ROOT / "telegram_bot" / "app.py"
+    if telegram_app_path.is_file():
+        telegram_text = telegram_app_path.read_text(encoding="utf-8")
+        if '"trading_methods": False' not in telegram_text:
+            fail("Telegram health does not expose trading_methods=false", failures)
+        if '@application.post("/telegram/webhook"' not in telegram_text:
+            fail("Telegram webhook route is missing", failures)
+
+    commands_path = ROOT / "telegram_bot" / "commands.py"
+    if commands_path.is_file():
+        commands_text = commands_path.read_text(encoding="utf-8").lower()
+        forbidden_commands = ("postorder", "cancelorder", "replaceorder", "stoporder")
+        for forbidden in forbidden_commands:
+            if forbidden in commands_text:
+                fail(f"forbidden trading command marker present: {forbidden}", failures)
 
     for path in ROOT.rglob("*"):
         if ".git" in path.parts or not path.is_file():
@@ -100,7 +136,8 @@ def main() -> int:
 
     print("Repository layout check passed.")
     print(f"Required files checked: {len(REQUIRED_PATHS)}")
-    print("Stable entrypoint: app:app")
+    print("Gateway entrypoint: app:app")
+    print("Telegram entrypoint: telegram_bot.app:app")
     return 0
 
 
