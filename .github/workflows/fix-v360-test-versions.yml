@@ -1,0 +1,53 @@
+name: Fix v3.6.0 Test Versions
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  fix-tests:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Check out v3.6.0 branch
+        run: |
+          git fetch origin v3.6.0-cash-liquidity
+          git checkout -B v3.6.0-cash-liquidity origin/v3.6.0-cash-liquidity
+
+      - name: Update inherited endpoint version assertions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          for filename in (
+              "tests/test_portfolio_analytics.py",
+              "tests/test_portfolio_market_snapshot.py",
+          ):
+              path = Path(filename)
+              text = path.read_text(encoding="utf-8")
+              old = 'assert payload["version"] == "3.5.0"'
+              assert text.count(old) == 1, (filename, text.count(old))
+              text = text.replace(
+                  old,
+                  'assert payload["version"] == "3.6.0"',
+                  1,
+              )
+              path.write_text(text, encoding="utf-8")
+          PY
+
+      - name: Commit test fixes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tests/test_portfolio_analytics.py tests/test_portfolio_market_snapshot.py
+          git commit -m "Update inherited endpoint tests for v3.6.0"
+          git push origin HEAD:v3.6.0-cash-liquidity
