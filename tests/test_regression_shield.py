@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 import app as gateway_module
 
 
-EXPECTED_VERSION = "3.7.1"
+EXPECTED_VERSION = "3.8.0"
 EXPECTED_ENTRYPOINT = "app:app"
 EXPECTED_ACTION_PATHS = {
     "/health": "gatewayHealth",
@@ -27,6 +27,7 @@ EXPECTED_ACTION_PATHS = {
     "/portfolio/cash-liquidity": "getCashLiquiditySnapshot",
     "/portfolio/purchase-capacity": "getPurchaseCapacityPreview",
     "/operations": "getOperationsHistory",
+    "/operations/analytics": "getOperationsAnalytics",
     "/instruments/search": "findInstrument",
     "/market/snapshot": "getMarketSnapshot",
 }
@@ -46,6 +47,7 @@ PROTECTED_URLS = (
         "price_basis=manual&quantity_lots=1&manual_price=269.33"
     ),
     "/operations?days=1",
+    "/operations/analytics?days=1",
     "/instruments/search?query=SBER&limit=1",
     (
         "/market/snapshot?"
@@ -83,6 +85,8 @@ def test_health_contract_and_read_only_invariants() -> None:
     assert "cash_liquidity_diagnostics" in capabilities
     assert "purchase_capacity_preview" in capabilities
     assert "purchase_capacity_integrity" in capabilities
+    assert "operations_analytics" in capabilities
+    assert "operations_cash_flow_reconciliation" in capabilities
     assert "regression_shield" in capabilities
 
     assert payload["build"]["entrypoint"] == EXPECTED_ENTRYPOINT
@@ -136,6 +140,17 @@ def test_openapi_is_gpt_actions_compatible_and_operation_ids_are_unique() -> Non
     assert "limit_summary" in purchase_properties
     assert "calculation_checks" in purchase_properties
     assert "integrity_status" in purchase_properties
+
+    operations_schema = schema["paths"]["/operations/analytics"]["get"][
+        "responses"
+    ]["200"]["content"]["application/json"]["schema"]
+    operations_properties = operations_schema["properties"]
+    assert "cash_summary_by_currency" in operations_properties
+    assert "net_external_flow" in operations_properties
+    assert "turnover" in operations_properties
+    assert "reconciliation" in operations_properties
+    assert "quality" in operations_properties
+    assert "complete" in operations_properties
 
     assert len(operation_ids) == len(set(operation_ids))
 
