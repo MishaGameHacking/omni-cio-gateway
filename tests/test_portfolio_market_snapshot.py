@@ -102,7 +102,7 @@ def test_cash_balances_keep_blocked_money_separate() -> None:
 def test_endpoint_returns_partial_failure_tolerant_portfolio_totals(monkeypatch) -> None:
     fake_enriched = {
         "status": "ok",
-        "version": "3.4.0",
+        "version": "3.5.0",
         "retrieved_at": "2026-07-27T05:00:00+00:00",
         "account": {
             "masked_id": "***3118",
@@ -226,7 +226,7 @@ def test_endpoint_returns_partial_failure_tolerant_portfolio_totals(monkeypatch)
     payload = response.json()
 
     assert payload["status"] == "ok"
-    assert payload["version"] == "3.4.0"
+    assert payload["version"] == "3.5.0"
     assert payload["trading_methods"] is False
     assert payload["quality"]["cash_like_portfolio_positions"] == 1
     assert payload["quality"]["unique_market_instruments"] == 1
