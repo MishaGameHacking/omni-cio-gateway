@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
 from fastapi.testclient import TestClient
@@ -109,6 +110,13 @@ def test_startup_auto_configures_commands_and_secret_webhook() -> None:
     ]
     assert telegram.commands and any(item["command"] == "portfolio" for item in telegram.commands[0])
     assert health["bootstrap"]["status"] == "ok"
+
+
+def test_invalid_render_generated_secret_is_normalized_for_telegram() -> None:
+    configured = replace(settings(), telegram_webhook_secret="base64+/=")
+    assert configured.webhook_secret_token != "base64+/="
+    assert len(configured.webhook_secret_token) == 64
+    assert configured.webhook_secret_token.isalnum()
 
 
 def test_webhook_rejects_wrong_secret() -> None:
