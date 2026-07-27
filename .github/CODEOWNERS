@@ -1,12 +1,16 @@
 # Repository owner and default reviewer
 * @Misha2304
 
-# Runtime and deployment
+# Gateway runtime and deployment
 /app.py @Misha2304
 /app_v*.py @Misha2304
 /main.py @Misha2304
 /render.yaml @Misha2304
 /requirements*.txt @Misha2304
+
+# Telegram runtime and deployment
+/telegram_bot/ @Misha2304
+/render.telegram.yaml @Misha2304
 
 # Domain engines
 /*.py @Misha2304
@@ -15,10 +19,11 @@
 # Safety, CI and automation
 /.github/ @Misha2304
 /tests/ @Misha2304
+/scripts/ @Misha2304
 /AGENTS.md @Misha2304
 /SECURITY.md @Misha2304
 
-# Project memory and Custom GPT
+# Project memory and interfaces
 /knowledge/ @Misha2304
 /docs/ @Misha2304
 /gpt/ @Misha2304
