@@ -1,6 +1,8 @@
 name: Ошибка gateway
-about: Сообщить о воспроизводимой ошибке без секретов и персональных данных
+description: Сообщить о воспроизводимой ошибке без секретов и персональных данных
+title: "[Bug] "
 labels: [bug]
+assignees: [Misha2304]
 body:
   - type: markdown
     attributes:
