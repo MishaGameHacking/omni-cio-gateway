@@ -35,7 +35,7 @@ async def configure_telegram(app: FastAPI) -> None:
         app.state.bootstrap["commands_configured"] = True
         await telegram.set_webhook(
             url=settings.webhook_url,
-            secret_token=settings.telegram_webhook_secret,
+            secret_token=settings.webhook_secret_token,
         )
         app.state.bootstrap["webhook_configured"] = True
         app.state.bootstrap["status"] = "ok"
@@ -124,7 +124,7 @@ def create_app(
     ) -> dict[str, bool]:
         if not verify_webhook_secret(
             x_telegram_bot_api_secret_token,
-            resolved.telegram_webhook_secret,
+            resolved.webhook_secret_token,
         ):
             raise HTTPException(status_code=403, detail="Invalid webhook secret")
         try:
