@@ -118,3 +118,34 @@
 ## [3.9.0] — 2026-07-27
 
 - Official Broker Report & Operations Reconciliation.
+- Пагинация отчёта, сверка сделок, денежных потоков и комиссий по каждой валюте.
+
+## [3.8.0] — 2026-07-27
+
+- Operations Analytics & Cash Flow Reconciliation.
+- Защита от дублей, parent/child и повторного учёта комиссий.
+
+## [3.7.1] — 2026-07-27
+
+- Purchase Capacity Integrity.
+- Арифметическая проверка суммы, комиссии и остатка.
+
+## [3.7.0] — 2026-07-27
+
+- Purchase Capacity Preview без создания заявки.
+
+## [3.6.0] — 2026-07-27
+
+- Cash & Liquidity Diagnostics.
+
+## [3.5.0] — 2026-07-27
+
+- Portfolio Analytics Core.
+
+## [3.4.0] — 2026-07-27
+
+- Portfolio Market Snapshot.
+
+## [3.3.3] — 2026-07-27
+
+- Regression Shield, CI и проверка read-only контракта.
