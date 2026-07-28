@@ -1,10 +1,13 @@
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from omni_cio.contracts.v1.analytics import AdvancedPortfolioAnalyticsV1
+from omni_cio.contracts.v1.analytics import (
+    AdvancedPortfolioAnalyticsV1,
+    CurrencyPortfolioAnalyticsV1,
+)
 from omni_cio.contracts.v1.common import (
     Completeness,
     ContractMetadata,
@@ -37,34 +40,30 @@ def _aware_utc(value: datetime | None) -> datetime:
     return result.astimezone(timezone.utc)
 
 
+def _currency_row(
+    analytics: AdvancedPortfolioAnalyticsV1,
+    currency: str,
+) -> CurrencyPortfolioAnalyticsV1:
+    normalized = currency.upper()
+    rows = [row for row in analytics.by_currency if row.currency == normalized]
+    if len(rows) != 1:
+        raise RebalancingEngineError("REBALANCE_CURRENCY_NOT_FOUND")
+    return rows[0]
+
+
 def _band_map(
     bands: Sequence[TargetBandV1],
-) -> dict[tuple[str, str], TargetBandV1]:
-    result: dict[tuple[str, str], TargetBandV1] = {}
+    currency: str,
+) -> dict[str, TargetBandV1]:
+    normalized = currency.upper()
+    result: dict[str, TargetBandV1] = {}
     for band in bands:
-        key = (band.currency, band.stable_key)
-        if key in result:
+        if band.currency != normalized:
+            raise RebalancingEngineError("TARGET_BAND_CURRENCY_MISMATCH")
+        if band.stable_key in result:
             raise RebalancingEngineError("DUPLICATE_TARGET_BAND")
-        result[key] = band
+        result[band.stable_key] = band
     return result
-
-
-def _deployable_cash(
-    analytics: AdvancedPortfolioAnalyticsV1,
-    requested: Mapping[str, Decimal],
-) -> dict[str, Decimal]:
-    available = {row.currency: row.cash for row in analytics.by_currency}
-    normalized: dict[str, Decimal] = {}
-    for raw_currency, value in requested.items():
-        currency = raw_currency.upper()
-        if value.is_nan() or value.is_infinite() or value < 0:
-            raise RebalancingEngineError("INVALID_DEPLOYABLE_CASH")
-        if currency not in available:
-            raise RebalancingEngineError("UNKNOWN_DEPLOYABLE_CASH_CURRENCY")
-        if value > available[currency]:
-            raise RebalancingEngineError("DEPLOYABLE_CASH_EXCEEDS_PORTFOLIO_CASH")
-        normalized[currency] = value
-    return normalized
 
 
 def _line(
@@ -112,45 +111,40 @@ def _line(
 
 
 def _build_lines(
-    analytics: AdvancedPortfolioAnalyticsV1,
-    bands: dict[tuple[str, str], TargetBandV1],
+    row: CurrencyPortfolioAnalyticsV1,
+    bands: dict[str, TargetBandV1],
 ) -> tuple[tuple[RebalanceLineV1, ...], bool]:
-    lines: list[RebalanceLineV1] = []
-    coverage_complete = True
-    portfolio_keys: set[tuple[str, str]] = set()
-    for currency_row in analytics.by_currency:
-        for position in currency_row.positions:
-            key = (currency_row.currency, position.stable_key)
-            portfolio_keys.add(key)
-            band = bands.get(key)
-            if band is None:
-                coverage_complete = False
-                continue
-            lines.append(
+    positions = {position.stable_key: position for position in row.positions}
+    if set(bands) - set(positions):
+        raise RebalancingEngineError("TARGET_BAND_REFERENCES_ABSENT_POSITION")
+    coverage_complete = set(positions) == set(bands)
+    lines = tuple(
+        sorted(
+            (
                 _line(
                     stable_key=position.stable_key,
-                    currency=currency_row.currency,
+                    currency=row.currency,
                     current_value=position.full_market_value,
                     current_weight=position.portfolio_weight,
-                    total=currency_row.total,
-                    band=band,
+                    total=row.total,
+                    band=bands[position.stable_key],
                 )
-            )
-    if set(bands) - portfolio_keys:
-        raise RebalancingEngineError("TARGET_BAND_REFERENCES_ABSENT_POSITION")
-    lines.sort(key=lambda row: (row.currency, row.stable_key))
-    return tuple(lines), coverage_complete
+                for position in row.positions
+                if position.stable_key in bands
+            ),
+            key=lambda line: line.stable_key,
+        )
+    )
+    return lines, coverage_complete
 
 
 def _sum_by_status(
     lines: tuple[RebalanceLineV1, ...],
     status: RebalanceBandStatus,
-    *,
-    to_target: bool,
 ) -> Decimal:
     return sum(
         (
-            line.value_to_target if to_target else line.value_to_nearest_band
+            line.value_to_target
             for line in lines
             if line.band_status == status
         ),
@@ -158,86 +152,79 @@ def _sum_by_status(
     )
 
 
-def _alternatives(
-    *,
-    decision_ready: bool,
+def _blocked_alternatives(
+    deployable_cash: Decimal,
+    blockers: tuple[RebalanceBlocker, ...],
+) -> tuple[RebalanceAlternativeV1, ...]:
+    return (
+        RebalanceAlternativeV1(
+            alternative_id="rebalance.no_action",
+            kind=RebalanceAlternativeKind.NO_ACTION,
+            status=RebalanceAlternativeStatus.PREFERRED,
+            title="Do nothing until the plan is decision-ready",
+            rationale="A source or target-coverage gate is open.",
+            uses_sales=False,
+            available_cash=deployable_cash,
+            planned_add_value=Decimal("0"),
+            planned_reduce_value=Decimal("0"),
+            residual_cash=deployable_cash,
+        ),
+        RebalanceAlternativeV1(
+            alternative_id="rebalance.cash_first",
+            kind=RebalanceAlternativeKind.CASH_FIRST,
+            status=RebalanceAlternativeStatus.BLOCKED,
+            title="Use cash for underweight positions",
+            rationale="Cash deployment is blocked until every gate closes.",
+            uses_sales=False,
+            available_cash=deployable_cash,
+            planned_add_value=Decimal("0"),
+            planned_reduce_value=Decimal("0"),
+            residual_cash=deployable_cash,
+            blockers=blockers,
+        ),
+        RebalanceAlternativeV1(
+            alternative_id="rebalance.full_threshold",
+            kind=RebalanceAlternativeKind.FULL_THRESHOLD,
+            status=RebalanceAlternativeStatus.BLOCKED,
+            title="Review full threshold repair",
+            rationale="Sales and purchases are blocked until every gate closes.",
+            uses_sales=False,
+            available_cash=deployable_cash,
+            planned_add_value=Decimal("0"),
+            planned_reduce_value=Decimal("0"),
+            residual_cash=deployable_cash,
+            blockers=blockers,
+        ),
+    )
+
+
+def _ready_alternatives(
     lines: tuple[RebalanceLineV1, ...],
     deployable_cash: Decimal,
     tax_basis_available: bool,
 ) -> tuple[RebalanceAlternativeV1, ...]:
-    below_target = _sum_by_status(
-        lines,
-        RebalanceBandStatus.BELOW,
-        to_target=True,
-    )
-    above_target = _sum_by_status(
-        lines,
-        RebalanceBandStatus.ABOVE,
-        to_target=True,
-    )
+    below_target = _sum_by_status(lines, RebalanceBandStatus.BELOW)
+    above_target = _sum_by_status(lines, RebalanceBandStatus.ABOVE)
+    cash_add = min(deployable_cash, below_target)
     has_breach = any(
         line.band_status != RebalanceBandStatus.INSIDE for line in lines
     )
-
-    if not decision_ready:
-        blockers = (RebalanceBlocker.DECISION_NOT_READY,)
-        return (
-            RebalanceAlternativeV1(
-                alternative_id="rebalance.no_action",
-                kind=RebalanceAlternativeKind.NO_ACTION,
-                status=RebalanceAlternativeStatus.PREFERRED,
-                title="Do nothing until the plan is decision-ready",
-                rationale="A source or target-coverage gate is open.",
-                uses_sales=False,
-                available_cash=deployable_cash,
-                planned_add_value=Decimal("0"),
-                planned_reduce_value=Decimal("0"),
-                residual_cash=deployable_cash,
-            ),
-            RebalanceAlternativeV1(
-                alternative_id="rebalance.cash_first",
-                kind=RebalanceAlternativeKind.CASH_FIRST,
-                status=RebalanceAlternativeStatus.BLOCKED,
-                title="Use cash for underweight positions",
-                rationale="Cash deployment is blocked until all gates close.",
-                uses_sales=False,
-                available_cash=deployable_cash,
-                planned_add_value=Decimal("0"),
-                planned_reduce_value=Decimal("0"),
-                residual_cash=deployable_cash,
-                blockers=blockers,
-            ),
-            RebalanceAlternativeV1(
-                alternative_id="rebalance.full_threshold",
-                kind=RebalanceAlternativeKind.FULL_THRESHOLD,
-                status=RebalanceAlternativeStatus.BLOCKED,
-                title="Review full threshold repair",
-                rationale="Sales and purchases are blocked until all gates close.",
-                uses_sales=False,
-                available_cash=deployable_cash,
-                planned_add_value=Decimal("0"),
-                planned_reduce_value=Decimal("0"),
-                residual_cash=deployable_cash,
-                blockers=blockers,
-            ),
-        )
-
-    cash_add = min(deployable_cash, below_target)
-    if has_breach and cash_add > 0:
-        no_action_status = RebalanceAlternativeStatus.AVAILABLE
-        cash_status = RebalanceAlternativeStatus.PREFERRED
-    else:
-        no_action_status = RebalanceAlternativeStatus.PREFERRED
-        cash_status = RebalanceAlternativeStatus.AVAILABLE
-
+    no_action_status = (
+        RebalanceAlternativeStatus.AVAILABLE
+        if has_breach and cash_add > 0
+        else RebalanceAlternativeStatus.PREFERRED
+    )
+    cash_status = (
+        RebalanceAlternativeStatus.PREFERRED
+        if has_breach and cash_add > 0
+        else RebalanceAlternativeStatus.AVAILABLE
+    )
     no_action = RebalanceAlternativeV1(
         alternative_id="rebalance.no_action",
         kind=RebalanceAlternativeKind.NO_ACTION,
         status=no_action_status,
         title="Keep the current structure",
-        rationale=(
-            "No transaction is required immediately; this remains the lowest-turnover option."
-        ),
+        rationale="This remains the lowest-turnover option.",
         uses_sales=False,
         available_cash=deployable_cash,
         planned_add_value=Decimal("0"),
@@ -250,7 +237,7 @@ def _alternatives(
         status=cash_status,
         title="Direct available cash to underweight positions",
         rationale=(
-            "Use existing cash without selling holdings; exact instruments, lots and costs require PR-14."
+            "Use cash without selling holdings; exact instruments, lots and costs require PR-14."
         ),
         uses_sales=False,
         available_cash=deployable_cash,
@@ -258,10 +245,7 @@ def _alternatives(
         planned_reduce_value=Decimal("0"),
         residual_cash=deployable_cash - cash_add,
     )
-
-    full_blockers: list[RebalanceBlocker] = [
-        RebalanceBlocker.LIVE_PREVIEW_REQUIRED
-    ]
+    full_blockers = [RebalanceBlocker.LIVE_PREVIEW_REQUIRED]
     if above_target > 0 and not tax_basis_available:
         full_blockers.append(RebalanceBlocker.SALES_REQUIRE_TAX_BASIS)
     funding = deployable_cash + above_target
@@ -272,7 +256,7 @@ def _alternatives(
         status=RebalanceAlternativeStatus.BLOCKED,
         title="Review full threshold repair",
         rationale=(
-            "This scenario may combine reductions and additions, but remains blocked until tax basis and live preview are available."
+            "This scenario may combine reductions and additions but remains blocked until a live preview validates costs and constraints."
         ),
         uses_sales=above_target > 0,
         available_cash=deployable_cash,
@@ -289,35 +273,43 @@ def build_threshold_rebalance_plan(
     decision: DecisionSetV1,
     target_bands: Sequence[TargetBandV1],
     *,
-    deployable_cash_by_currency: Mapping[str, Decimal] | None = None,
+    currency: str,
+    deployable_cash: Decimal = Decimal("0"),
     tax_basis_available: bool = False,
     planned_at: datetime | None = None,
 ) -> ThresholdRebalancePlanV1:
-    """Build a read-only threshold plan without lot, price or order parameters."""
+    """Build one currency-local read-only plan without order parameters."""
     timestamp = _aware_utc(planned_at)
-    bands = _band_map(target_bands)
-    cash_map = _deployable_cash(
-        analytics,
-        deployable_cash_by_currency or {},
-    )
-    lines, coverage_complete = _build_lines(analytics, bands)
+    row = _currency_row(analytics, currency)
+    if deployable_cash.is_nan() or deployable_cash.is_infinite() or deployable_cash < 0:
+        raise RebalancingEngineError("INVALID_DEPLOYABLE_CASH")
+    if deployable_cash > row.cash:
+        raise RebalancingEngineError("DEPLOYABLE_CASH_EXCEEDS_PORTFOLIO_CASH")
+    bands = _band_map(target_bands, row.currency)
+    lines, coverage_complete = _build_lines(row, bands)
     source_ready = (
         decision.recommendation_ready
         and not decision.abstain
         and decision.metadata.account == analytics.metadata.account
     )
     plan_ready = source_ready and coverage_complete
-    total_deployable_cash = sum(cash_map.values(), Decimal("0"))
-    alternatives = _alternatives(
-        decision_ready=plan_ready,
-        lines=lines,
-        deployable_cash=total_deployable_cash,
-        tax_basis_available=tax_basis_available,
-    )
+    if plan_ready:
+        alternatives = _ready_alternatives(
+            lines,
+            deployable_cash,
+            tax_basis_available,
+        )
+    else:
+        blockers: list[RebalanceBlocker] = []
+        if not source_ready:
+            blockers.append(RebalanceBlocker.DECISION_NOT_READY)
+        if not coverage_complete:
+            blockers.append(RebalanceBlocker.TARGET_COVERAGE_INCOMPLETE)
+        alternatives = _blocked_alternatives(deployable_cash, tuple(blockers))
     preferred = next(
-        row
-        for row in alternatives
-        if row.status == RebalanceAlternativeStatus.PREFERRED
+        alternative
+        for alternative in alternatives
+        if alternative.status == RebalanceAlternativeStatus.PREFERRED
     )
     below_count = sum(
         line.band_status == RebalanceBandStatus.BELOW for line in lines
@@ -328,8 +320,6 @@ def build_threshold_rebalance_plan(
     inside_count = sum(
         line.band_status == RebalanceBandStatus.INSIDE for line in lines
     )
-    quality = DataQuality.VERIFIED if plan_ready else DataQuality.PARTIAL
-    completeness = Completeness.COMPLETE if plan_ready else Completeness.PARTIAL
     warnings = [
         "Plan is analytical only; live prices, lots, commissions and taxes require PR-14."
     ]
@@ -348,12 +338,14 @@ def build_threshold_rebalance_plan(
                 provider="omni-cio",
                 operation="build_threshold_rebalance_plan",
                 retrieved_at=timestamp,
-                source_id="1.0",
+                source_id=f"1.0:{row.currency}",
             ),
         ),
         quality=QualityMetadata(
-            quality=quality,
-            completeness=completeness,
+            quality=(DataQuality.VERIFIED if plan_ready else DataQuality.PARTIAL),
+            completeness=(
+                Completeness.COMPLETE if plan_ready else Completeness.PARTIAL
+            ),
             warnings=tuple(warnings),
         ),
     )
