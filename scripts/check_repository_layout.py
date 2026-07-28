@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 import sys
 
@@ -62,9 +63,90 @@ FORBIDDEN_WORKFLOWS = {
     "upgrade-v390.yml",
 }
 
+FORBIDDEN_BROKER_METHOD_PREFIXES = (
+    "post_order",
+    "replace_order",
+    "cancel_order",
+    "create_order",
+    "execute_order",
+    "post_stop_order",
+    "cancel_stop_order",
+    "withdraw",
+    "transfer",
+)
+
+FORBIDDEN_BROKER_METHODS = {
+    "pay_in",
+    "sandbox_pay_in",
+    "open_sandbox_account",
+    "close_sandbox_account",
+}
+
+FORBIDDEN_BROKER_SERVICES = {
+    "stop_orders",
+    "sandbox",
+}
+
 
 def fail(message: str, failures: list[str]) -> None:
     failures.append(message)
+
+
+def is_forbidden_broker_attribute(name: str) -> bool:
+    return (
+        name in FORBIDDEN_BROKER_METHODS
+        or name in FORBIDDEN_BROKER_SERVICES
+        or any(
+            name.startswith(prefix)
+            for prefix in FORBIDDEN_BROKER_METHOD_PREFIXES
+        )
+    )
+
+
+def scan_runtime_broker_egress(failures: list[str]) -> None:
+    for path in ROOT.rglob("*.py"):
+        relative = path.relative_to(ROOT)
+        if any(
+            part in {".git", ".venv", "tests", "scripts", "__pycache__"}
+            for part in relative.parts
+        ):
+            continue
+
+        try:
+            source = path.read_text(encoding="utf-8")
+            tree = ast.parse(source, filename=str(relative))
+        except (OSError, SyntaxError) as exc:
+            fail(f"cannot inspect runtime Python source {relative}: {exc}", failures)
+            continue
+
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Attribute)
+                and is_forbidden_broker_attribute(node.attr)
+            ):
+                fail(
+                    (
+                        "forbidden broker write surface referenced: "
+                        f"{relative}:{node.lineno} ({node.attr})"
+                    ),
+                    failures,
+                )
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id == "getattr"
+                and len(node.args) >= 2
+                and isinstance(node.args[1], ast.Constant)
+                and isinstance(node.args[1].value, str)
+                and is_forbidden_broker_attribute(node.args[1].value)
+            ):
+                fail(
+                    (
+                        "dynamic forbidden broker write surface referenced: "
+                        f"{relative}:{node.lineno} ({node.args[1].value})"
+                    ),
+                    failures,
+                )
 
 
 def main() -> int:
@@ -136,6 +218,8 @@ def main() -> int:
     for name in FORBIDDEN_WORKFLOWS:
         if (workflow_dir / name).exists():
             fail(f"obsolete one-time workflow still present: {name}", failures)
+
+    scan_runtime_broker_egress(failures)
 
     if failures:
         print("Repository layout check failed:", file=sys.stderr)

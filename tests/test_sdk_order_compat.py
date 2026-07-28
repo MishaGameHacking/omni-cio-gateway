@@ -1,5 +1,7 @@
 import os
 
+import pytest
+
 os.environ.setdefault("TINVEST_TOKEN", "regression-test-tinvest-token")
 os.environ.setdefault("GATEWAY_API_KEY", "regression-test-gateway-key")
 
@@ -64,3 +66,67 @@ def test_adapter_retains_keyword_compatibility_for_existing_test_doubles() -> No
     adapter = sdk_order_compat.OrdersServiceRequestAdapter(KeywordOrders())
     assert adapter.get_max_lots(account_id="a")["account_id"] == "a"
     assert adapter.get_order_price(quantity=3)["quantity"] == 3
+
+
+class OrdersWithForbiddenMethods(KeywordOrders):
+    def get_orders(self):
+        raise AssertionError("get_orders must not be forwarded")
+
+    def post_order(self):
+        raise AssertionError("post_order must not be forwarded")
+
+    def replace_order(self):
+        raise AssertionError("replace_order must not be forwarded")
+
+    def cancel_order(self):
+        raise AssertionError("cancel_order must not be forwarded")
+
+
+def test_orders_adapter_exposes_only_explicit_preview_calculations() -> None:
+    adapter = sdk_order_compat.OrdersServiceRequestAdapter(
+        OrdersWithForbiddenMethods()
+    )
+
+    assert sdk_order_compat.ALLOWED_ORDERS_METHODS == frozenset(
+        {"get_max_lots", "get_order_price"}
+    )
+    for method_name in (
+        "get_orders",
+        "post_order",
+        "replace_order",
+        "cancel_order",
+    ):
+        with pytest.raises(AttributeError):
+            getattr(adapter, method_name)
+
+
+class ClientWithForbiddenServices:
+    def __init__(self) -> None:
+        self.users = object()
+        self.instruments = object()
+        self.orders = OrdersWithForbiddenMethods()
+        self.operations = object()
+        self.market_data = object()
+        self.stop_orders = object()
+        self.sandbox = object()
+
+
+def test_client_view_exposes_only_services_required_by_preview() -> None:
+    client = ClientWithForbiddenServices()
+    view = sdk_order_compat.ClientView(client)
+
+    assert sdk_order_compat.ALLOWED_CLIENT_SERVICES == frozenset(
+        {"users", "instruments", "orders"}
+    )
+    assert view.users is client.users
+    assert view.instruments is client.instruments
+    assert isinstance(view.orders, sdk_order_compat.OrdersServiceRequestAdapter)
+
+    for service_name in (
+        "operations",
+        "market_data",
+        "stop_orders",
+        "sandbox",
+    ):
+        with pytest.raises(AttributeError):
+            getattr(view, service_name)
