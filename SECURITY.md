@@ -22,6 +22,12 @@ Omni-CIO работает с финансовыми данными и долже
 - Telegram Companion вызывает Gateway только методом `GET`.
 - `POST /telegram/webhook` является только транспортом входящих Telegram updates.
 - Нет создания, отправки, замены, отмены заявок и стоп-заявок.
+- Purchase preview получает только сервисы `users`, `instruments` и
+  ограниченный `orders` adapter.
+- `orders` adapter разрешает только `get_max_lots` и `get_order_price`;
+  generic SDK forwarding запрещён.
+- Runtime source проверяется AST-сканером на обращения к торговым,
+  stop-order, sandbox, withdrawal и transfer методам.
 - `app:app` остаётся стабильным Gateway entrypoint.
 - `telegram_bot.app:app` является отдельным Telegram entrypoint.
 - Секреты поступают только через переменные окружения.
@@ -48,6 +54,9 @@ Omni-CIO работает с финансовыми данными и долже
 Regression Shield должен подтвердить:
 
 - отсутствие торговых operationId и mutating Gateway routes;
+- строгий allowlist SDK-сервисов и методов purchase preview;
+- негативные тесты, доказывающие отсутствие доступа к брокерским
+  write-методам;
 - Bearer-защиту Actions;
 - валидность OpenAPI;
 - стабильный `app:app`;
