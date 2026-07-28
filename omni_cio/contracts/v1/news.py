@@ -37,7 +37,7 @@ class NewsDisposition(StrEnum):
 class InjectionFlag(StrEnum):
     SYSTEM_OVERRIDE = "system_override"
     TOOL_CALL = "tool_call"
-    SECRET_REQUEST = "secret_request"
+    CREDENTIAL_REQUEST = "credential_request"
     CODE_EXECUTION = "code_execution"
     TRADING_INSTRUCTION = "trading_instruction"
     TRANSFER_OR_WITHDRAWAL = "transfer_or_withdrawal"
