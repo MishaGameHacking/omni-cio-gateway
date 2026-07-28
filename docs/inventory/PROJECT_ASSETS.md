@@ -19,6 +19,11 @@
 - shadow contract validation для portfolio market payload с состояниями
   `ready`, `partial`, `rejected`, безопасными aggregate logs и отдельным
   fail-closed gate для будущего Decision Engine;
+- `OperationsAnalyticsV1` для типизированных операций, денежных потоков,
+  оборота, пагинации, сверки и качества данных отдельно по валютам;
+- fail-closed adapter существующего `getOperationsAnalytics` payload с
+  обязательными `trading_methods=false`, masked account, read-only source и
+  double-count protections;
 - cash/liquidity diagnostics;
 - purchase capacity preview и integrity;
 - operations analytics;
@@ -27,6 +32,7 @@
 - hash-locked runtime/development dependencies;
 - unit и Regression Shield tests;
 - blocking Ruff, formatting, mypy, coverage, SCA, SAST и secret scan;
+- краткоживущие CI diagnostics с mypy, pytest и coverage output;
 - weekly Dependabot для pip и GitHub Actions.
 
 ### Граница поддерживаемого runtime
