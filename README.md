@@ -12,6 +12,7 @@ Telegram Bot ────┘
 
 - System release: **v4.0.1 Telegram Reliability & Friendly Output**.
 - Gateway API component: **v3.9.1 Broker Report Async Integrity**.
+- Custom GPT communication profile: **Modern Financial Sage — 2026**.
 - Gateway production entrypoint: `app:app`.
 - Telegram production entrypoint: `telegram_bot.app:app`.
 - `trading_methods=false` в обоих интерфейсах.
@@ -48,6 +49,24 @@ scripts/                             безопасные локальные п�
 ```
 
 Полная схема: [`docs/architecture/REPOSITORY_STRUCTURE.md`](docs/architecture/REPOSITORY_STRUCTURE.md).
+
+## Custom GPT: современный стиль 2026
+
+Канонический файл [`gpt/INSTRUCTIONS.md`](gpt/INSTRUCTIONS.md) задаёт единый стиль анализа и публикаций:
+
+- главный вывод в первых предложениях;
+- короткие абзацы без банковского канцелярита;
+- перевод сложных терминов на человеческий язык;
+- разделение факта, вывода и возможного сценария;
+- понятная шкала риска;
+- умеренный мат только как эмоциональный акцент, а не замена фактам;
+- формат денег ru-RU для рублей и сохранение исходной валюты;
+- мобильный формат Telegram-постов с датой и источниками;
+- сохранение GET-only и `trading_methods=false`.
+
+Профиль знаний: [`knowledge/13_COMMUNICATION_STYLE_2026.txt`](knowledge/13_COMMUNICATION_STYLE_2026.txt).
+
+Важно: GitHub хранит канонические инструкции, но не может автоматически заменить поле Instructions в GPT Editor. После изменения этого файла владелец вручную вставляет его полный текст в GPT Editor и нажимает **Update**. Повторный импорт OpenAPI не требуется, если контракт Actions не менялся.
 
 ## Telegram Companion
 
@@ -101,6 +120,7 @@ Telegram не пересчитывает и не улучшает финансо
 - Render Blueprints;
 - правила безопасности и разработки;
 - канонические инструкции Custom GPT;
+- современный профиль общения и публикаций;
 - каталог Actions;
 - проектная память и дорожная карта;
 - runbooks и changelog.
@@ -129,6 +149,7 @@ Telegram не пересчитывает и не улучшает финансо
 - [`docs/operations/TELEGRAM_COMPANION_RUNBOOK.md`](docs/operations/TELEGRAM_COMPANION_RUNBOOK.md) — Telegram deployment.
 - [`knowledge/11_BROKER_REPORT_ASYNC_INTEGRITY.txt`](knowledge/11_BROKER_REPORT_ASYNC_INTEGRITY.txt) — асинхронный отчёт.
 - [`knowledge/12_TELEGRAM_COMPANION.txt`](knowledge/12_TELEGRAM_COMPANION.txt) — Telegram contract.
+- [`knowledge/13_COMMUNICATION_STYLE_2026.txt`](knowledge/13_COMMUNICATION_STYLE_2026.txt) — современная речь и публикации.
 
 ## Локальный запуск gateway
 
@@ -180,4 +201,4 @@ Telegram Blueprint использует `autoDeployTrigger: checksPass`: деп�
 
 ## Важная граница проекта
 
-Исходный frontend существующего сайта Omni-CIO пока не закреплён за этим репозиторием. Не создавайте дубликат сайта. Состояние frontend и внешних компонентов ведётся в `docs/inventory/PROJECT_ASSETS.md`.
+Исходный frontend существующего сайта Omni-CIO пока не закреплён за этим репозиторием. Не создавайте дубликат сайта.
