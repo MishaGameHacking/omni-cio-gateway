@@ -8,6 +8,7 @@ from omni_cio.contracts.v1.common import (
     Completeness,
     ContractMetadata,
     DataQuality,
+    IssueSeverity,
     QualityMetadata,
     SourceReference,
 )
@@ -42,11 +43,12 @@ def default_conservative_risk_policy() -> ConservativeRiskPolicyV1:
             InstrumentType.SHARE,
             InstrumentType.BOND,
             InstrumentType.ETF,
-            InstrumentType.FUND,
         ),
         prohibited_instrument_types=(
             InstrumentType.CURRENCY,
             InstrumentType.FUTURE,
+            InstrumentType.OPTION,
+            InstrumentType.STRUCTURED_PRODUCT,
             InstrumentType.OTHER,
         ),
         max_position_weight=Decimal("0.20"),
@@ -76,18 +78,20 @@ def default_conservative_risk_policy() -> ConservativeRiskPolicyV1:
 def _aware_timestamp(value: datetime | None) -> datetime:
     result = value or datetime.now(timezone.utc)
     if result.tzinfo is None or result.utcoffset() is None:
-        raise RiskPolicyEvaluationError("RISK_EVALUATION_TIMESTAMP_MUST_BE_AWARE")
+        raise RiskPolicyEvaluationError(
+            "RISK_EVALUATION_TIMESTAMP_MUST_BE_AWARE"
+        )
     return result.astimezone(timezone.utc)
 
 
-def _max_check(
+def _maximum_check(
     *,
     check_id: str,
     code: RiskCheckCode,
     observed: Decimal,
     limit: Decimal,
-    message: str,
     severity: RiskSeverity,
+    message: str,
     currency: str | None = None,
     subject: str | None = None,
 ) -> RiskCheckV1:
@@ -110,7 +114,7 @@ def _max_check(
     )
 
 
-def _min_check(
+def _minimum_check(
     *,
     check_id: str,
     code: RiskCheckCode,
@@ -135,20 +139,28 @@ def _min_check(
     )
 
 
-def _boolean_disabled_check(
+def _binary_check(
     *,
     check_id: str,
     code: RiskCheckCode,
-    enabled: bool,
+    violation: bool,
     message: str,
+    currency: str | None = None,
+    subject: str | None = None,
 ) -> RiskCheckV1:
     return RiskCheckV1(
         check_id=check_id,
         code=code,
-        status=RiskCheckStatus.BREACH if enabled else RiskCheckStatus.PASS,
+        status=(
+            RiskCheckStatus.BREACH
+            if violation
+            else RiskCheckStatus.PASS
+        ),
         severity=RiskSeverity.BLOCK,
         message=message,
-        observed_value=Decimal(int(enabled)),
+        currency=currency,
+        subject=subject,
+        observed_value=Decimal(int(violation)),
         limit_value=Decimal("0"),
     )
 
@@ -172,7 +184,7 @@ def _unknown_check(
     )
 
 
-def _not_applicable_check(
+def _not_applicable(
     *,
     check_id: str,
     code: RiskCheckCode,
@@ -191,41 +203,96 @@ def _configuration_checks(
     policy: ConservativeRiskPolicyV1,
 ) -> list[RiskCheckV1]:
     return [
-        _boolean_disabled_check(
+        _binary_check(
             check_id="configuration.margin_trading",
             code=RiskCheckCode.MARGIN_TRADING,
-            enabled=policy.allow_margin,
+            violation=policy.allow_margin,
             message="Margin trading must remain disabled.",
         ),
-        _boolean_disabled_check(
+        _binary_check(
             check_id="configuration.short_sales",
             code=RiskCheckCode.SHORT_SALES,
-            enabled=policy.allow_short_sales,
+            violation=policy.allow_short_sales,
             message="Short sales must remain disabled.",
         ),
-        _boolean_disabled_check(
+        _binary_check(
             check_id="configuration.derivatives",
             code=RiskCheckCode.DERIVATIVES,
-            enabled=policy.allow_derivatives,
-            message="Derivative instruments must remain disabled in standard mode.",
+            violation=policy.allow_derivatives,
+            message="Derivatives must remain disabled in standard mode.",
         ),
-        _boolean_disabled_check(
+        _binary_check(
             check_id="configuration.currency_operations",
             code=RiskCheckCode.CURRENCY_OPERATIONS,
-            enabled=policy.allow_currency_operations,
+            violation=policy.allow_currency_operations,
             message="Currency trading operations must remain disabled.",
         ),
-        _not_applicable_check(
+        _not_applicable(
             check_id="future_order.order_weight",
             code=RiskCheckCode.ORDER_WEIGHT,
-            message="Order-size limit is evaluated only for a concrete preview.",
+            message="Order-size limit requires a concrete preview.",
         ),
-        _not_applicable_check(
+        _not_applicable(
             check_id="future_order.daily_turnover",
             code=RiskCheckCode.DAILY_TURNOVER,
-            message="Daily turnover limit requires dated operations and a proposal.",
+            message="Daily turnover requires dated operations and a proposal.",
         ),
     ]
+
+
+def _position_checks(
+    *,
+    currency: str,
+    index: int,
+    position: object,
+    policy: ConservativeRiskPolicyV1,
+) -> list[RiskCheckV1]:
+    prefix = f"position.{currency.lower()}.{index}"
+    instrument_type = position.instrument_type
+    stable_key = position.stable_key
+    checks = [
+        _maximum_check(
+            check_id=f"{prefix}.weight",
+            code=RiskCheckCode.POSITION_WEIGHT,
+            observed=position.portfolio_weight,
+            limit=policy.max_position_weight,
+            severity=RiskSeverity.BLOCK,
+            message="Position weight exceeds the conservative limit.",
+            currency=currency,
+            subject=stable_key,
+        ),
+        _binary_check(
+            check_id=f"{prefix}.instrument_type",
+            code=RiskCheckCode.ALLOWED_INSTRUMENT_TYPE,
+            violation=(
+                instrument_type not in policy.allowed_instrument_types
+                or instrument_type in policy.prohibited_instrument_types
+            ),
+            message="Instrument type must be allowed by the policy.",
+            currency=currency,
+            subject=instrument_type.value,
+        ),
+        _binary_check(
+            check_id=f"{prefix}.denylist",
+            code=RiskCheckCode.INSTRUMENT_DENYLIST,
+            violation=stable_key in policy.prohibited_instrument_keys,
+            message="Instrument must not be present in the denylist.",
+            currency=currency,
+            subject=stable_key,
+        ),
+    ]
+    if policy.allowed_instrument_keys:
+        checks.append(
+            _binary_check(
+                check_id=f"{prefix}.allowlist",
+                code=RiskCheckCode.INSTRUMENT_ALLOWLIST,
+                violation=stable_key not in policy.allowed_instrument_keys,
+                message="Instrument must be present in the configured allowlist.",
+                currency=currency,
+                subject=stable_key,
+            )
+        )
+    return checks
 
 
 def _currency_checks(
@@ -235,144 +302,69 @@ def _currency_checks(
     checks: list[RiskCheckV1] = []
     non_base_present = False
     for row in analytics.by_currency:
-        allowed = row.currency in policy.allowed_currencies
-        checks.append(
-            RiskCheckV1(
-                check_id=f"currency.{row.currency.lower()}.allowed",
-                code=RiskCheckCode.ALLOWED_CURRENCY,
-                status=(RiskCheckStatus.PASS if allowed else RiskCheckStatus.BREACH),
-                severity=RiskSeverity.BLOCK,
-                message="Currency must be present in the conservative allowlist.",
-                currency=row.currency,
-                observed_value=Decimal("0") if allowed else Decimal("1"),
-                limit_value=Decimal("0"),
-            )
-        )
-        checks.append(
-            _min_check(
-                check_id=f"currency.{row.currency.lower()}.cash_reserve",
-                code=RiskCheckCode.CASH_RESERVE,
-                observed=row.cash_weight,
-                limit=policy.min_cash_reserve_weight,
-                message="Cash reserve must meet the conservative minimum.",
-                currency=row.currency,
-            )
-        )
-        checks.append(
-            _max_check(
-                check_id=f"currency.{row.currency.lower()}.top5",
-                code=RiskCheckCode.TOP5_CONCENTRATION,
-                observed=row.concentration.top_5_invested_weight,
-                limit=policy.max_top5_invested_weight,
-                message="Top-five invested concentration exceeds the warning limit.",
-                severity=RiskSeverity.WARNING,
-                currency=row.currency,
-            )
-        )
-        checks.append(
-            _max_check(
-                check_id=f"currency.{row.currency.lower()}.hhi",
-                code=RiskCheckCode.HHI_CONCENTRATION,
-                observed=row.concentration.hhi_invested,
-                limit=policy.max_hhi_invested,
-                message="Invested-position HHI exceeds the warning limit.",
-                severity=RiskSeverity.WARNING,
-                currency=row.currency,
-            )
-        )
-        stress_loss = abs(row.invested_weight * policy.stress_shock)
-        checks.append(
-            _max_check(
-                check_id=f"currency.{row.currency.lower()}.stress_loss",
-                code=RiskCheckCode.STRESS_LOSS,
-                observed=stress_loss,
-                limit=policy.max_stress_loss_ratio,
-                message="Uniform stress loss exceeds the conservative limit.",
-                severity=RiskSeverity.BLOCK,
-                currency=row.currency,
+        checks.extend(
+            (
+                _binary_check(
+                    check_id=f"currency.{row.currency.lower()}.allowed",
+                    code=RiskCheckCode.ALLOWED_CURRENCY,
+                    violation=row.currency not in policy.allowed_currencies,
+                    message="Currency must be present in the allowlist.",
+                    currency=row.currency,
+                ),
+                _minimum_check(
+                    check_id=f"currency.{row.currency.lower()}.cash_reserve",
+                    code=RiskCheckCode.CASH_RESERVE,
+                    observed=row.cash_weight,
+                    limit=policy.min_cash_reserve_weight,
+                    message="Cash reserve must meet the minimum.",
+                    currency=row.currency,
+                ),
+                _maximum_check(
+                    check_id=f"currency.{row.currency.lower()}.top5",
+                    code=RiskCheckCode.TOP5_CONCENTRATION,
+                    observed=row.concentration.top_5_invested_weight,
+                    limit=policy.max_top5_invested_weight,
+                    severity=RiskSeverity.WARNING,
+                    message="Top-five invested concentration is elevated.",
+                    currency=row.currency,
+                ),
+                _maximum_check(
+                    check_id=f"currency.{row.currency.lower()}.hhi",
+                    code=RiskCheckCode.HHI_CONCENTRATION,
+                    observed=row.concentration.hhi_invested,
+                    limit=policy.max_hhi_invested,
+                    severity=RiskSeverity.WARNING,
+                    message="Invested-position HHI is elevated.",
+                    currency=row.currency,
+                ),
+                _maximum_check(
+                    check_id=f"currency.{row.currency.lower()}.stress_loss",
+                    code=RiskCheckCode.STRESS_LOSS,
+                    observed=abs(
+                        row.invested_weight * policy.stress_shock
+                    ),
+                    limit=policy.max_stress_loss_ratio,
+                    severity=RiskSeverity.BLOCK,
+                    message="Uniform stress loss exceeds the limit.",
+                    currency=row.currency,
+                ),
             )
         )
         if row.currency != policy.base_currency and row.total > 0:
             non_base_present = True
 
         for index, position in enumerate(row.positions):
-            prefix = f"position.{row.currency.lower()}.{index}"
-            checks.append(
-                _max_check(
-                    check_id=f"{prefix}.weight",
-                    code=RiskCheckCode.POSITION_WEIGHT,
-                    observed=position.portfolio_weight,
-                    limit=policy.max_position_weight,
-                    message="Position weight exceeds the conservative limit.",
-                    severity=RiskSeverity.BLOCK,
+            checks.extend(
+                _position_checks(
                     currency=row.currency,
-                    subject=position.stable_key,
+                    index=index,
+                    position=position,
+                    policy=policy,
                 )
             )
-            type_allowed = (
-                position.instrument_type in policy.allowed_instrument_types
-                and position.instrument_type not in policy.prohibited_instrument_types
-            )
-            checks.append(
-                RiskCheckV1(
-                    check_id=f"{prefix}.instrument_type",
-                    code=RiskCheckCode.ALLOWED_INSTRUMENT_TYPE,
-                    status=(
-                        RiskCheckStatus.PASS
-                        if type_allowed
-                        else RiskCheckStatus.BREACH
-                    ),
-                    severity=RiskSeverity.BLOCK,
-                    message="Instrument type must be allowed by the policy.",
-                    currency=row.currency,
-                    subject=position.instrument_type.value,
-                    observed_value=(
-                        Decimal("0") if type_allowed else Decimal("1")
-                    ),
-                    limit_value=Decimal("0"),
-                )
-            )
-            if policy.allowed_instrument_keys:
-                key_allowed = position.stable_key in policy.allowed_instrument_keys
-                checks.append(
-                    RiskCheckV1(
-                        check_id=f"{prefix}.allowlist",
-                        code=RiskCheckCode.INSTRUMENT_ALLOWLIST,
-                        status=(
-                            RiskCheckStatus.PASS
-                            if key_allowed
-                            else RiskCheckStatus.BREACH
-                        ),
-                        severity=RiskSeverity.BLOCK,
-                        message="Instrument must be present in the configured allowlist.",
-                        currency=row.currency,
-                        subject=position.stable_key,
-                        observed_value=(
-                            Decimal("0") if key_allowed else Decimal("1")
-                        ),
-                        limit_value=Decimal("0"),
-                    )
-                )
-            denied = position.stable_key in policy.prohibited_instrument_keys
-            checks.append(
-                RiskCheckV1(
-                    check_id=f"{prefix}.denylist",
-                    code=RiskCheckCode.INSTRUMENT_DENYLIST,
-                    status=(
-                        RiskCheckStatus.BREACH if denied else RiskCheckStatus.PASS
-                    ),
-                    severity=RiskSeverity.BLOCK,
-                    message="Instrument must not be present in the denylist.",
-                    currency=row.currency,
-                    subject=position.stable_key,
-                    observed_value=Decimal("1") if denied else Decimal("0"),
-                    limit_value=Decimal("0"),
-                )
-            )
-
         for allocation in row.asset_classes:
             checks.append(
-                _max_check(
+                _maximum_check(
                     check_id=(
                         f"asset_class.{row.currency.lower()}."
                         f"{allocation.instrument_type.value}"
@@ -380,8 +372,8 @@ def _currency_checks(
                     code=RiskCheckCode.ASSET_CLASS_WEIGHT,
                     observed=allocation.portfolio_weight,
                     limit=policy.max_asset_class_weight,
-                    message="Asset-class weight exceeds the conservative limit.",
                     severity=RiskSeverity.BLOCK,
+                    message="Asset-class weight exceeds the limit.",
                     currency=row.currency,
                     subject=allocation.instrument_type.value,
                 )
@@ -393,21 +385,20 @@ def _currency_checks(
                 check_id="currency_structure.non_base_weight",
                 code=RiskCheckCode.NON_BASE_CURRENCY_WEIGHT,
                 message=(
-                    "Non-base currency weight requires explicit FX rates and a "
-                    "cross-currency valuation contract."
+                    "Non-base currency weight requires explicit FX rates."
                 ),
                 missing=(RiskMissingInputCode.FX_RATES,),
             )
         )
     else:
         checks.append(
-            _max_check(
+            _maximum_check(
                 check_id="currency_structure.non_base_weight",
                 code=RiskCheckCode.NON_BASE_CURRENCY_WEIGHT,
                 observed=Decimal("0"),
                 limit=policy.max_non_base_currency_weight,
-                message="No non-base currency exposure was detected.",
                 severity=RiskSeverity.BLOCK,
+                message="No non-base currency exposure was detected.",
             )
         )
     return checks
@@ -424,10 +415,10 @@ def _missing_input_checks(
     ]
     if not positions:
         return [
-            _not_applicable_check(
+            _not_applicable(
                 check_id="missing_inputs.portfolio",
                 code=RiskCheckCode.ISSUER_WEIGHT,
-                message="Issuer and market-risk inputs are not applicable without positions.",
+                message="Issuer checks do not apply without positions.",
             )
         ]
 
@@ -435,54 +426,51 @@ def _missing_input_checks(
         _unknown_check(
             check_id="missing_inputs.issuer",
             code=RiskCheckCode.ISSUER_WEIGHT,
-            message="Issuer concentration cannot be verified without issuer identity.",
+            message="Issuer concentration requires issuer identity.",
             missing=(RiskMissingInputCode.ISSUER,),
         ),
         _unknown_check(
             check_id="missing_inputs.sector",
             code=RiskCheckCode.SECTOR_WEIGHT,
-            message="Sector concentration cannot be verified without sector data.",
+            message="Sector concentration requires sector data.",
             missing=(RiskMissingInputCode.SECTOR,),
         ),
         _unknown_check(
             check_id="missing_inputs.high_risk",
             code=RiskCheckCode.HIGH_RISK_WEIGHT,
-            message="High-risk exposure requires an explicit risk classification.",
+            message="High-risk exposure requires classification data.",
             missing=(RiskMissingInputCode.RISK_CLASSIFICATION,),
         ),
         _unknown_check(
             check_id="missing_inputs.liquidity",
             code=RiskCheckCode.ILLIQUID_WEIGHT,
-            message="Illiquid exposure requires spread, turnover and depth data.",
+            message="Illiquid exposure requires spread and depth data.",
             missing=(RiskMissingInputCode.LIQUIDITY,),
         ),
         _unknown_check(
             check_id="missing_inputs.drawdown",
             code=RiskCheckCode.MAX_DRAWDOWN,
-            message="Maximum drawdown requires a historical portfolio series.",
+            message="Maximum drawdown requires portfolio history.",
             missing=(RiskMissingInputCode.MAX_DRAWDOWN,),
         ),
     ]
-    has_bonds = any(
-        position.instrument_type == InstrumentType.BOND for position in positions
-    )
-    if has_bonds:
+    if any(
+        position.instrument_type == InstrumentType.BOND
+        for position in positions
+    ):
         checks.extend(
             (
                 _unknown_check(
                     check_id="missing_inputs.credit_rating",
                     code=RiskCheckCode.CREDIT_RATING,
-                    message=(
-                        "Minimum credit rating cannot be verified until current "
-                        "issue and issuer ratings are available."
-                    ),
+                    message="Credit-rating limit cannot yet be verified.",
                     missing=(RiskMissingInputCode.CREDIT_RATING,),
                     subject=policy.minimum_credit_rating,
                 ),
                 _unknown_check(
                     check_id="missing_inputs.bond_duration",
                     code=RiskCheckCode.BOND_DURATION,
-                    message="Maximum duration cannot be verified without bond duration.",
+                    message="Duration limit cannot yet be verified.",
                     missing=(RiskMissingInputCode.BOND_DURATION,),
                     subject=str(policy.max_duration_years),
                 ),
@@ -491,27 +479,45 @@ def _missing_input_checks(
     return checks
 
 
+def _require_analytics_ready(
+    analytics: AdvancedPortfolioAnalyticsV1,
+) -> None:
+    quality = analytics.metadata.quality
+    blocking_issue = any(
+        issue.severity in (IssueSeverity.WARNING, IssueSeverity.ERROR)
+        for issue in quality.issues
+    )
+    if (
+        not analytics.decision_ready
+        or quality.quality != DataQuality.VERIFIED
+        or quality.completeness != Completeness.COMPLETE
+        or blocking_issue
+    ):
+        raise RiskPolicyEvaluationError("ANALYTICS_NOT_DECISION_READY")
+    if not analytics.no_cross_currency_aggregation:
+        raise RiskPolicyEvaluationError(
+            "ANALYTICS_CURRENCY_BOUNDARY_INVALID"
+        )
+
+
 def evaluate_conservative_risk_policy(
     analytics: AdvancedPortfolioAnalyticsV1,
     *,
     policy: ConservativeRiskPolicyV1 | None = None,
     evaluated_at: datetime | None = None,
 ) -> RiskPolicyEvaluationV1:
-    """Evaluate verified analytics without producing a trade recommendation."""
-    if not analytics.decision_ready:
-        raise RiskPolicyEvaluationError("ANALYTICS_NOT_DECISION_READY")
-    if not analytics.no_cross_currency_aggregation:
-        raise RiskPolicyEvaluationError("ANALYTICS_CURRENCY_BOUNDARY_INVALID")
-
+    """Evaluate verified analytics without producing a recommendation."""
+    _require_analytics_ready(analytics)
     active_policy = policy or default_conservative_risk_policy()
     calculated_at = _aware_timestamp(evaluated_at)
-    checks: list[RiskCheckV1] = [
+
+    checks = [
         RiskCheckV1(
             check_id="source.data_quality",
             code=RiskCheckCode.DATA_QUALITY,
             status=RiskCheckStatus.PASS,
             severity=RiskSeverity.BLOCK,
-            message="Advanced analytics passed its verified-source gate.",
+            message="Advanced analytics passed the verified-source gate.",
             observed_value=Decimal("1"),
             limit_value=Decimal("1"),
         )
@@ -547,7 +553,6 @@ def evaluate_conservative_risk_policy(
         overall_status = RiskOverallStatus.WARNING
     else:
         overall_status = RiskOverallStatus.PASS
-    decision_ready = not blocking_breach and not blocking_unknown
 
     metadata = ContractMetadata(
         schema_name="risk_policy_evaluation",
@@ -563,12 +568,19 @@ def evaluate_conservative_risk_policy(
             ),
         ),
         quality=QualityMetadata(
-            quality=(DataQuality.PARTIAL if unknown_count else DataQuality.VERIFIED),
+            quality=(
+                DataQuality.PARTIAL
+                if unknown_count
+                else DataQuality.VERIFIED
+            ),
             completeness=(
-                Completeness.PARTIAL if unknown_count else Completeness.COMPLETE
+                Completeness.PARTIAL
+                if unknown_count
+                else Completeness.COMPLETE
             ),
             warnings=(
-                "The conservative default is a safety baseline, not personalized advice.",
+                "The conservative default is a safety baseline, "
+                "not personalized advice.",
             ),
         ),
     )
@@ -576,7 +588,7 @@ def evaluate_conservative_risk_policy(
         metadata=metadata,
         policy=active_policy,
         overall_status=overall_status,
-        decision_ready=decision_ready,
+        decision_ready=not blocking_breach and not blocking_unknown,
         checks=tuple(checks),
         breach_count=breach_count,
         warning_count=warning_count,
