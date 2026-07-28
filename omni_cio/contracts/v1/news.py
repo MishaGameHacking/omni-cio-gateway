@@ -135,6 +135,8 @@ class SanitizedNewsDocumentV1(ContractModel):
                 "ambiguous/unresolved entity cannot claim instrument_key"
             )
         if self.disposition == NewsDisposition.ACCEPTED:
+            if not self.sanitized_text:
+                raise ValueError("accepted document requires text")
             if self.injection_flags:
                 raise ValueError("accepted document cannot contain security flags")
             if self.entity_resolution != EntityResolutionStatus.RESOLVED:
