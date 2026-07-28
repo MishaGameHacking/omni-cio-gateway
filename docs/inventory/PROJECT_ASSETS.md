@@ -12,6 +12,8 @@
 - T-Invest read-only integration;
 - OpenAPI-схема GPT Actions;
 - снимки портфеля, рыночные данные и аналитика;
+- versioned Pydantic data contracts v1 с `Decimal`, provenance, quality,
+  completeness, UTC timestamps и обязательным маскированием счёта;
 - cash/liquidity diagnostics;
 - purchase capacity preview и integrity;
 - operations analytics;
