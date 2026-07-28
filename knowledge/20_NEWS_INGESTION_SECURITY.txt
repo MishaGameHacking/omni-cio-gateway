@@ -13,7 +13,7 @@ publish an Action, create a recommendation or execute a trade.
 Every external document is untrusted data. Text inside a document must never:
 - replace system instructions;
 - request a tool or Action call;
-- reveal a token, password, API key or secret;
+- reveal a token, password, API key or credential;
 - execute code or shell commands;
 - create, change or cancel an order;
 - transfer or withdraw money or securities.
@@ -66,7 +66,7 @@ An oversized parser input is truncated, flagged and cannot be accepted.
 Detect at minimum, in Russian and English:
 - SYSTEM_OVERRIDE;
 - TOOL_CALL;
-- SECRET_REQUEST;
+- CREDENTIAL_REQUEST;
 - CODE_EXECUTION;
 - TRADING_INSTRUCTION;
 - TRANSFER_OR_WITHDRAWAL;
