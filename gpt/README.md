@@ -5,18 +5,20 @@
 ## Файлы
 
 - `CONFIGURATION.md` — имя, описание, starters, publishing и ручные настройки GPT Editor.
-- `INSTRUCTIONS.md` — канонические системные инструкции бота, включая современный стиль общения 2026 и правила Telegram-постов.
+- `INSTRUCTIONS_COMPACT.md` — рабочий текст для поля Instructions в GPT Editor; укладывается в лимит 8000 символов.
+- `INSTRUCTIONS.md` — расширенные канонические инструкции для GitHub, разработки и восстановления контекста.
 - `ACTIONS_CATALOG.md` — operationId, paths, назначение и правила вызовов.
 - `NEW_CHAT_PROMPT.md` — стартовый запрос для подключения нового чата к проекту.
 
-Профиль стиля также зафиксирован в `knowledge/13_COMMUNICATION_STYLE_2026.txt` для восстановления контекста в новых чатах и инструментах разработки.
+Профиль стиля также зафиксирован в `knowledge/13_COMMUNICATION_STYLE_2026.txt`. Его можно загрузить в Knowledge как справочник с расширенными примерами. При конфликте компактные Instructions имеют приоритет.
 
 ## Что всё равно настраивается вручную в GPT Editor
 
 - имя и иконка GPT;
 - выбранная модель;
 - публикация и доступ;
-- текст Instructions из `INSTRUCTIONS.md`;
+- текст Instructions из `INSTRUCTIONS_COMPACT.md`;
+- Knowledge-файл `knowledge/13_COMMUNICATION_STYLE_2026.txt`;
 - включение Web Search;
 - импорт OpenAPI schema с production `/openapi.json`;
 - Bearer API key, равный `GATEWAY_API_KEY` в Render;
@@ -28,12 +30,14 @@
 
 Если меняются только язык, структура ответа или правила публикаций:
 
-1. обновить `INSTRUCTIONS.md` и `CONFIGURATION.md`;
-2. обновить профильный файл в `knowledge/`;
-3. после merge открыть GPT Editor;
-4. заменить поле Instructions полным содержимым `INSTRUCTIONS.md`;
-5. проверить Preview;
-6. нажать Update.
+1. обновить расширенный `INSTRUCTIONS.md`;
+2. синхронизировать рабочий `INSTRUCTIONS_COMPACT.md`, сохраняя размер менее 8000 символов;
+3. обновить `CONFIGURATION.md` и профильный файл в `knowledge/`;
+4. после merge открыть GPT Editor;
+5. заменить поле Instructions полным содержимым `INSTRUCTIONS_COMPACT.md`;
+6. при необходимости загрузить профиль стиля в Knowledge;
+7. проверить Preview;
+8. нажать Update.
 
 Повторно импортировать OpenAPI не нужно, если контракт Actions не изменился.
 
@@ -42,7 +46,7 @@
 При изменении Action contract:
 
 1. обновить backend и тесты;
-2. обновить `CONFIGURATION.md`, `INSTRUCTIONS.md` и `ACTIONS_CATALOG.md`;
+2. обновить `CONFIGURATION.md`, оба файла Instructions и `ACTIONS_CATALOG.md`;
 3. обновить профильный файл в `knowledge/`;
 4. после production deploy заново импортировать OpenAPI в GPT Editor;
 5. проверить, что доступны только ожидаемые GET Actions;
