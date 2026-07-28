@@ -4,8 +4,25 @@ import inspect
 from typing import Any, Callable
 
 
+ALLOWED_ORDERS_METHODS = frozenset(
+    {
+        "get_max_lots",
+        "get_order_price",
+    }
+)
+ALLOWED_CLIENT_SERVICES = frozenset(
+    {
+        "users",
+        "instruments",
+        "orders",
+    }
+)
+
+
 class OrdersServiceRequestAdapter:
-    """Adapt newer request-object SDK methods to the gateway's keyword calls."""
+    """Expose only the two read-only order calculation methods used by preview."""
+
+    __slots__ = ("_orders_service",)
 
     def __init__(self, orders_service: Any) -> None:
         self._orders_service = orders_service
@@ -48,17 +65,16 @@ class OrdersServiceRequestAdapter:
         _, get_order_price_request = self._request_types()
         return method(self._build_request(get_order_price_request, kwargs))
 
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._orders_service, name)
-
 
 class ClientView:
-    def __init__(self, client: Any) -> None:
-        self._client = client
-        self.orders = OrdersServiceRequestAdapter(client.orders)
+    """Minimal SDK client surface required by purchase-capacity preview."""
 
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._client, name)
+    __slots__ = ("users", "instruments", "orders")
+
+    def __init__(self, client: Any) -> None:
+        self.users = client.users
+        self.instruments = client.instruments
+        self.orders = OrdersServiceRequestAdapter(client.orders)
 
 
 class ClientContextAdapter:
