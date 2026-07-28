@@ -56,6 +56,17 @@ from omni_cio.contracts.v1.portfolio import (
     PositionValuation,
     ValuationBasis,
 )
+from omni_cio.contracts.v1.risk import (
+    ConservativeRiskPolicyV1,
+    RiskCheckCode,
+    RiskCheckStatus,
+    RiskCheckV1,
+    RiskMissingInputCode,
+    RiskOverallStatus,
+    RiskPolicyEvaluationV1,
+    RiskPolicyProfile,
+    RiskSeverity,
+)
 
 SCHEMA_VERSION = "1.0"
 
@@ -73,6 +84,7 @@ __all__ = [
     "CommissionDoubleCountProtectionV1",
     "Completeness",
     "ConcentrationMetricsV1",
+    "ConservativeRiskPolicyV1",
     "ContractMetadata",
     "CurrencyCashFlowV1",
     "CurrencyPortfolioAnalyticsV1",
@@ -105,6 +117,14 @@ __all__ = [
     "PositionWeightV1",
     "QualityMetadata",
     "ReconciliationStatus",
+    "RiskCheckCode",
+    "RiskCheckStatus",
+    "RiskCheckV1",
+    "RiskMissingInputCode",
+    "RiskOverallStatus",
+    "RiskPolicyEvaluationV1",
+    "RiskPolicyProfile",
+    "RiskSeverity",
     "SourceReference",
     "StressScenarioV1",
     "TurnoverV1",
