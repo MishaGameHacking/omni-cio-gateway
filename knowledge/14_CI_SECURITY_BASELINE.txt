@@ -20,7 +20,9 @@ Dependency supply chain
 - Generated `requirements.txt` and `requirements-dev.txt` pin every direct
   and transitive package to an exact version and include SHA-256 hashes.
 - Production and CI install with `pip --require-hashes`.
-- Lock files are generated with Python 3.12 and pip-tools 7.6.0.
+- Lock files are generated with Python 3.12 and pip-tools 7.6.0 using
+  `--allow-unsafe`, so build dependencies such as `setuptools` are also
+  exact and hashed rather than inherited implicitly from the runner image.
 - Lock files must not be edited by hand.
 - Dependabot checks Python packages and GitHub Actions weekly.
 

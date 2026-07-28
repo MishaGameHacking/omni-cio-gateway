@@ -46,6 +46,7 @@ jobs:
       - name: Verify lock files are current
         run: |
           python -m piptools compile \
+            --allow-unsafe \
             --generate-hashes \
             --resolver=backtracking \
             --strip-extras \
@@ -53,6 +54,7 @@ jobs:
             --output-file=requirements.txt \
             requirements.in
           python -m piptools compile \
+            --allow-unsafe \
             --generate-hashes \
             --resolver=backtracking \
             --strip-extras \
