@@ -1,0 +1,105 @@
+14 — REPRODUCIBLE CI AND SECURITY BASELINE
+
+Status
+------
+PR-03 establishes a reproducible, fail-closed CI baseline without changing
+the Gateway API, market logic or trading permissions.
+
+Immutable runtime invariants
+----------------------------
+- Render entrypoint remains `app:app`.
+- Public Actions remain GET-only.
+- `trading_methods=false`.
+- No order, stop-order, sandbox, withdrawal or transfer method is added.
+- Tests do not call the real T-Invest API.
+
+Dependency supply chain
+-----------------------
+- Human-edited top-level constraints live in `requirements.in` and
+  `requirements-dev.in`.
+- Generated `requirements.txt` and `requirements-dev.txt` pin every direct
+  and transitive package to an exact version and include SHA-256 hashes.
+- Production and CI install with `pip --require-hashes`.
+- Lock files are generated with Python 3.12 and pip-tools 7.6.0.
+- Lock files must not be edited by hand.
+- Dependabot checks Python packages and GitHub Actions weekly.
+
+To refresh locks in a dedicated dependency PR:
+
+1. review release notes and security advisories;
+2. update only the relevant `.in` constraint when necessary;
+3. run both pip-tools compile commands from Regression Shield;
+4. inspect all version and hash changes;
+5. run the full Regression Shield;
+6. document compatibility and rollback.
+
+GitHub Actions supply chain
+---------------------------
+Every external Action is pinned to a full 40-character commit SHA. A
+human-readable version comment is kept beside the SHA. Tags alone are not
+accepted because a tag can move.
+
+Quality baseline
+----------------
+- Ruff correctness baseline: E4, E7, E9 and F across Python sources.
+- Ruff formatting gate: `scripts/` and the PR-03 policy test.
+- mypy baseline: six already-compatible analytics/support modules and both
+  repository policy scripts.
+- Full legacy Ruff/mypy expansion is intentionally deferred to focused PRs.
+
+Measured legacy debt before PR-03:
+
+- full Ruff rule set: 113 findings;
+- full Ruff formatter: 23 Python files would change;
+- full mypy target set: 9 errors in `main.py` and `purchase_capacity.py`;
+- selected mypy baseline: zero errors in six modules.
+
+These numbers are a debt register, not ignored test results. New PRs must not
+weaken the active baseline and should expand it together with actual fixes.
+
+Coverage baseline
+-----------------
+The GitHub-hosted bootstrap run measured:
+
+- 42 tests passed before adding the PR-03 policy tests;
+- 2,826 statements in the configured runtime scope;
+- 1,840 covered lines;
+- branch-inclusive total coverage: 60.8%.
+
+Regression Shield therefore starts with `--cov-fail-under=60`. The threshold
+may only stay equal or increase. It must not be reduced merely to merge a PR.
+
+Security gates
+--------------
+- SCA: pip-audit checks the hash-locked runtime dependency set.
+- SAST: Bandit blocks medium/high-severity findings with medium/high
+  confidence.
+- Secret scan: detect-secrets scans repository content and a policy script
+  fails if any finding remains.
+- Repository policy test validates lock hashes, full-SHA Action pins,
+  mandatory gates and the Render install/entrypoint contract.
+
+Accepted narrow exception
+-------------------------
+`broker_report_reconciliation/__init__.py` loads only checked-in `.pyfrag`
+files from a fixed package directory. Bandit B102 is suppressed on that
+single loader line with an explicit explanation. No filename, path or source
+text comes from a request, document, news item or environment variable.
+
+Residual risk: checked-in fragments still execute as Python. Reviewers must
+treat changes in `_parts/*.pyfrag` as runtime code and the repository must not
+allow external uploads into that directory. A future package refactor should
+remove the dynamic loader.
+
+Failure policy
+--------------
+Quality and security checks are blocking and may not use
+`continue-on-error`. A timeout, dependency resolution problem, audit failure,
+secret finding or coverage regression blocks merge. It does not authorize a
+trade, a hidden retry against the broker or a weakening of the check.
+
+User action
+-----------
+PR-03 does not change Custom GPT Instructions, OpenAPI or Bearer
+authentication. No manual change in GPT Editor is required. After merge, the
+only operational check is the normal Render deploy and `/health` verification.

@@ -18,8 +18,11 @@
 ## Тесты
 
 - [ ] `python -m compileall ...`
-- [ ] `python -m pytest -q`
+- [ ] `python -m pytest ... --cov-fail-under=60`
 - [ ] `python scripts/check_repository_layout.py`
+- [ ] `python scripts/check_ci_security_baseline.py`
+- [ ] Ruff, formatting и mypy
+- [ ] pip-audit, Bandit и detect-secrets
 - [ ] Regression Shield
 
 Результаты:
@@ -35,6 +38,8 @@
 - [ ] Обновлён профильный `knowledge/` файл.
 - [ ] Обновлены `gpt/` файлы, если изменился Action.
 - [ ] Обновлён `docs/inventory/PROJECT_ASSETS.md`, если изменились внешние компоненты.
+- [ ] `.in`, lock-файлы и dependency hashes согласованы.
+- [ ] Все external Actions pinned full commit SHA.
 
 ## Проверка после merge
 

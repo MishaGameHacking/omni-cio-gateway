@@ -17,6 +17,10 @@ Custom GPT ── Omni-CIO Gateway (`app:app`) ── T-Invest API
 - Создание, отправка, замена и отмена заявок запрещены.
 - Telegram Companion выведен из эксплуатации; его package, Blueprint,
   webhook и активная конфигурация отсутствуют.
+- Runtime и CI устанавливают полностью pinned зависимости только после
+  проверки SHA-256 hashes.
+- Regression Shield включает lint, formatting baseline, mypy, покрытие
+  не ниже 60%, SCA, SAST и secret scan.
 
 ## Начать работу
 
@@ -110,13 +114,14 @@ Omni-CIO больше не содержит Telegram runtime. Полезная �
 - [`knowledge/11_BROKER_REPORT_ASYNC_INTEGRITY.txt`](knowledge/11_BROKER_REPORT_ASYNC_INTEGRITY.txt) — асинхронный отчёт.
 - [`knowledge/12_TELEGRAM_RETIREMENT.txt`](knowledge/12_TELEGRAM_RETIREMENT.txt) — запрет возврата Telegram runtime без нового ADR.
 - [`knowledge/13_COMMUNICATION_STYLE_2026.txt`](knowledge/13_COMMUNICATION_STYLE_2026.txt) — современная речь и публикации.
+- [`knowledge/14_CI_SECURITY_BASELINE.txt`](knowledge/14_CI_SECURITY_BASELINE.txt) — dependency locks, quality и security gates.
 
 ## Локальный запуск gateway
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install -r requirements-dev.txt
+python -m pip install --require-hashes -r requirements-dev.txt
 export TINVEST_TOKEN="..."
 export GATEWAY_API_KEY="..."
 export SSL_TBANK_VERIFY="True"
@@ -126,17 +131,26 @@ uvicorn app:app --reload
 ## Проверки
 
 ```bash
+python scripts/check_ci_security_baseline.py
 python scripts/check_repository_layout.py
+python -m ruff check .
+python -m ruff format --check scripts tests/test_ci_security_baseline.py
+python -m mypy
 python -m compileall -q app.py app_v371.py app_v360.py main.py \
   portfolio_market.py portfolio_analytics.py cash_liquidity.py \
   purchase_capacity.py purchase_capacity_integrity.py \
   operations_analytics.py broker_report_reconciliation tests scripts
-python -m pytest -q
+python -m pytest -q --cov --cov-branch --cov-fail-under=60
+python -m pip_audit --require-hashes --disable-pip --strict \
+  --progress-spinner off -r requirements.txt
+python -m bandit -c pyproject.toml -r . -ll -ii -q
 ```
 
 Regression Shield контролирует стабильный `app:app`, отсутствие Telegram
-runtime/configuration, отсутствие торговых функций и
-`trading_methods=false`.
+runtime/configuration, отсутствие торговых функций,
+`trading_methods=false`, dependency supply chain и минимальный quality/
+security baseline. Полная команда secret scan закреплена непосредственно
+в workflow, чтобы shell использовал `pipefail`.
 
 ## Деплой
 

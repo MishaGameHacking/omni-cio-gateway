@@ -7,6 +7,7 @@
 - Start command: `uvicorn app:app --host 0.0.0.0 --port $PORT`.
 - Health path: `/health`.
 - Configuration source: `render.yaml`.
+- Build command: `pip install --require-hashes -r requirements.txt`.
 
 ## Required environment variables
 
@@ -30,7 +31,8 @@
    - `regression_shield.read_only=true`;
    - `trading_methods=false`.
 7. Вызвать только `getConnection`, если нужно подтвердить T-Invest token и счёт.
-8. После успешного production smoke test обновить Action schema в GPT Editor.
+8. Обновить Action schema в GPT Editor только если PR действительно
+   менял публичный OpenAPI contract. PR-03 этого не требует.
 
 ## Если Render показывает старую версию
 

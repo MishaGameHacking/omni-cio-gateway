@@ -35,6 +35,9 @@ Request. Используйте приватный канал владельца
   configuration отсутствуют и блокируются Regression Shield.
 - Ответы повторно маскируют номер счёта.
 - Ошибки очищаются от секретов перед выводом.
+- Runtime и CI устанавливают только полностью pinned зависимости с
+  проверенными SHA-256 hashes.
+- Внешние GitHub Actions закреплены полным commit SHA.
 
 ## Запрещённые данные в Git
 
@@ -61,3 +64,15 @@ Regression Shield должен подтвердить:
 - отсутствие `telegram_bot/`, `render.telegram.yaml`, Telegram imports,
   env variables и OpenAPI routes;
 - `trading_methods=false` в Gateway health contract.
+- совпадение `.in` constraints и hash-locked dependency files;
+- Ruff, formatting baseline и mypy;
+- branch-inclusive покрытие не ниже 60%;
+- pip-audit для runtime dependencies;
+- Bandit для medium/high SAST findings;
+- detect-secrets без необработанных находок;
+- full-SHA pinning всех внешних GitHub Actions.
+
+Гейты блокируют merge. Для них запрещён `continue-on-error`. Узкое
+исключение Bandit B102 для фиксированного loader checked-in `.pyfrag`
+описано в `knowledge/14_CI_SECURITY_BASELINE.txt`; оно не разрешает
+загрузку или исполнение внешнего кода.

@@ -35,17 +35,17 @@ code is migrated.
 
 External cleanup
 ----------------
-Deleting code from GitHub does not stop an already deployed Render service or
-remove a webhook stored by Telegram. After this change is merged:
+Completed on 2026-07-28. The repository owner confirmed that:
 
-1. disable and remove the Render service `omni-cio-telegram-bot`;
-2. remove its Telegram-specific environment variables and copied Gateway key;
-3. remove the webhook using Telegram's official `deleteWebhook` method;
-4. revoke the Telegram bot token in BotFather;
-5. verify the Gateway `/health` response still reports `app:app`,
-   read-only mode and `trading_methods=false`.
+- the separate Telegram Render service was deleted;
+- its webhook was deleted;
+- the bot token was revoked.
 
-Never paste a Telegram token, Gateway key, user ID or webhook secret into
+No credential value was copied into GitHub, project documentation or chat.
+The Gateway remains the only supported service and must continue to report
+`app:app`, read-only mode and `trading_methods=false`.
+
+Never paste an old Telegram token, Gateway key, user ID or webhook secret into
 GitHub, a Pull Request, project documentation, logs or an AI conversation.
 
 Reintroduction rule

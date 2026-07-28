@@ -67,6 +67,8 @@
 - постоянный CI и templates — в `.github/`.
 
 Одноразовые release-patcher workflow нельзя оставлять в `main`.
+Dependency lock-файлы нельзя редактировать вручную. Внешние GitHub
+Actions должны быть закреплены полным commit SHA.
 
 ## 6. GPT Actions и OpenAPI
 
@@ -114,12 +116,16 @@
 Минимум:
 
 ```bash
+python scripts/check_ci_security_baseline.py
 python scripts/check_repository_layout.py
+python -m ruff check .
+python -m ruff format --check scripts tests/test_ci_security_baseline.py
+python -m mypy
 python -m compileall -q app.py app_v371.py app_v360.py main.py \
   portfolio_market.py portfolio_analytics.py cash_liquidity.py \
   purchase_capacity.py purchase_capacity_integrity.py \
   operations_analytics.py broker_report_reconciliation tests scripts
-python -m pytest -q
+python -m pytest -q --cov --cov-branch --cov-fail-under=60
 ```
 
 Обязателен тест, подтверждающий отсутствие Telegram runtime, Blueprint,
@@ -158,7 +164,7 @@ GitHub не заменяет:
 - T-Invest для реальных данных;
 - исходный frontend-проект, пока он не найден.
 
-BotFather и старый Telegram Render service нужны только для одноразовой
-очистки по retirement runbook.
+Старый Telegram Render service, webhook и token удалены владельцем
+2026-07-28; возвращать их или просить их значения не нужно.
 
 Не создавать дубликат существующего frontend.

@@ -79,9 +79,13 @@ Gateway:
 
 ```text
 render.yaml
+pip install --require-hashes -r requirements.txt
 uvicorn app:app --host 0.0.0.0 --port $PORT
 ```
 
-После merge проверяются health и commit SHA Gateway. Отдельный старый
-Telegram service удаляется вручную по
-`docs/operations/TELEGRAM_REMOVAL_RUNBOOK.md`.
+Dependency lock содержит точные версии и SHA-256 hashes. Regression
+Shield отдельно проверяет качество, покрытие, зависимости, код,
+секреты и full-SHA Action pins.
+
+После merge проверяются health и commit SHA Gateway. Старый Telegram
+service, webhook и token удалены владельцем 2026-07-28.

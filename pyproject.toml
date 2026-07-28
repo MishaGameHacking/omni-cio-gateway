@@ -1,0 +1,53 @@
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+# PR-03 establishes a low-noise correctness baseline across legacy runtime.
+# Additional rule families are enabled only with their fixes in later PRs.
+select = ["E4", "E7", "E9", "F"]
+
+[tool.mypy]
+python_version = "3.12"
+check_untyped_defs = true
+follow_imports = "skip"
+ignore_missing_imports = true
+no_incremental = true
+pretty = true
+files = [
+  "portfolio_analytics.py",
+  "portfolio_market.py",
+  "cash_liquidity.py",
+  "purchase_capacity_integrity.py",
+  "operations_analytics.py",
+  "sdk_order_compat.py",
+  "scripts/check_ci_security_baseline.py",
+  "scripts/check_repository_layout.py",
+]
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-markers"
+testpaths = ["tests"]
+
+[tool.coverage.run]
+branch = true
+source = [
+  "app",
+  "main",
+  "portfolio_market",
+  "portfolio_analytics",
+  "cash_liquidity",
+  "purchase_capacity",
+  "purchase_capacity_integrity",
+  "operations_analytics",
+  "sdk_order_compat",
+  "broker_report_reconciliation",
+]
+
+[tool.coverage.report]
+precision = 1
+show_missing = true
+skip_covered = false
+
+[tool.bandit]
+exclude_dirs = ["tests"]
