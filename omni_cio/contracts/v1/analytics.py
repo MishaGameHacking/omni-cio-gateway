@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from decimal import Decimal
 from enum import StrEnum
 from typing import Annotated
@@ -28,6 +29,11 @@ NegativeShock = Annotated[
     Field(gt=Decimal("-1"), lt=Decimal("0"), allow_inf_nan=False),
 ]
 NonNegativeInt = Annotated[int, Field(ge=0)]
+_WEIGHT_TOLERANCE = Decimal("1e-24")
+
+
+def _close(left: Decimal, right: Decimal) -> bool:
+    return abs(left - right) <= _WEIGHT_TOLERANCE
 
 
 class MissingDataCode(StrEnum):
@@ -94,7 +100,7 @@ class ConcentrationMetricsV1(ContractModel):
             raise ValueError("zero HHI requires zero effective position count")
         if self.hhi_invested > 0:
             expected = Decimal("1") / self.hhi_invested
-            if self.effective_position_count != expected:
+            if not _close(self.effective_position_count, expected):
                 raise ValueError("effective position count must equal one divided by HHI")
         return self
 
@@ -128,7 +134,7 @@ class StressScenarioV1(ContractModel):
             if self.starting_total > 0
             else Decimal("0")
         )
-        if self.portfolio_change_ratio != expected_ratio:
+        if not _close(self.portfolio_change_ratio, expected_ratio):
             raise ValueError("portfolio change ratio does not reconcile")
         return self
 
@@ -173,7 +179,7 @@ class CurrencyPortfolioAnalyticsV1(ContractModel):
             raise ValueError("position values do not reconcile with invested value")
 
         if self.total > 0:
-            if self.cash_weight + self.invested_weight != Decimal("1"):
+            if not _close(self.cash_weight + self.invested_weight, Decimal("1")):
                 raise ValueError("cash and invested weights must sum to one")
         elif self.cash_weight != 0 or self.invested_weight != 0:
             raise ValueError("empty currency portfolio must have zero weights")
@@ -183,7 +189,7 @@ class CurrencyPortfolioAnalyticsV1(ContractModel):
                 (position.invested_weight for position in self.positions),
                 Decimal("0"),
             )
-            if invested_weights != Decimal("1"):
+            if not _close(invested_weights, Decimal("1")):
                 raise ValueError("invested position weights must sum to one")
         elif any(position.invested_weight != 0 for position in self.positions):
             raise ValueError("zero invested value requires zero position weights")
@@ -205,11 +211,18 @@ class CurrencyPortfolioAnalyticsV1(ContractModel):
 
 class AdvancedPortfolioAnalyticsV1(ContractModel):
     metadata: ContractMetadata
-    source_snapshot_retrieved_at: object
+    source_snapshot_retrieved_at: datetime
     by_currency: tuple[CurrencyPortfolioAnalyticsV1, ...]
     missing_data: tuple[MissingDataV1, ...]
     no_cross_currency_aggregation: bool
     decision_ready: bool
+
+    @field_validator("source_snapshot_retrieved_at")
+    @classmethod
+    def require_aware_timestamp(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("source snapshot timestamp must be timezone-aware")
+        return value.astimezone(timezone.utc)
 
     @model_validator(mode="after")
     def validate_analytics(self) -> AdvancedPortfolioAnalyticsV1:
