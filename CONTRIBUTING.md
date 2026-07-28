@@ -44,6 +44,7 @@ python -m compileall -q app.py app_v371.py app_v360.py main.py \
   operations_analytics.py broker_report_reconciliation tests scripts
 python -m pytest -q --cov --cov-branch --cov-fail-under=60
 python -m pip_audit --require-hashes --disable-pip --strict \
+  --vulnerability-service osv \
   --progress-spinner off -r requirements.txt
 python -m bandit -c pyproject.toml -r . -ll -ii -q
 ```

@@ -172,6 +172,7 @@ jobs:
           --require-hashes
           --disable-pip
           --strict
+          --vulnerability-service osv
           --progress-spinner off
           -r requirements.txt
 

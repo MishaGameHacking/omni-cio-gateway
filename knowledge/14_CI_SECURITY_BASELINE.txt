@@ -73,7 +73,9 @@ may only stay equal or increase. It must not be reduced merely to merge a PR.
 
 Security gates
 --------------
-- SCA: pip-audit checks the hash-locked runtime dependency set.
+- SCA: pip-audit checks the hash-locked runtime dependency set through
+  OSV. This backend accepts the private T-Bank package identity instead of
+  treating its absence from PyPI metadata as a collection failure.
 - SAST: Bandit blocks medium/high-severity findings with medium/high
   confidence.
 - Secret scan: detect-secrets scans repository content and a policy script
@@ -92,6 +94,11 @@ Residual risk: checked-in fragments still execute as Python. Reviewers must
 treat changes in `_parts/*.pyfrag` as runtime code and the repository must not
 allow external uploads into that directory. A future package refactor should
 remove the dynamic loader.
+
+The private `t-tech-investments` package may have no entry in public advisory
+databases. Its absence is not interpreted as proof of safety. Every SDK update
+still requires the official T-Bank changelog/release review, exact version pin,
+new hashes and the complete Regression Shield.
 
 Failure policy
 --------------
