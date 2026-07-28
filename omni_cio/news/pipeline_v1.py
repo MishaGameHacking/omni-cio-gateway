@@ -11,11 +11,11 @@ from omni_cio.contracts.v1.news import (
     DuplicateNewsOccurrenceV1,
     EntityResolutionStatus,
     InjectionFlag,
+    NewsContentFormat,
+    NewsContentKind,
     NewsDeduplicationResultV1,
     NewsDisposition,
     NewsDocumentInputV1,
-    NewsContentFormat,
-    NewsContentKind,
     SanitizedNewsDocumentV1,
 )
 
@@ -150,7 +150,7 @@ _INJECTION_PATTERNS: tuple[tuple[InjectionFlag, tuple[str, ...]], ...] = (
         InjectionFlag.TRADING_INSTRUCTION,
         (
             r"\b(place|submit|create|execute)\s+(a\s+)?(trade|order)\b",
-            r"\b(создай|отправь|исполн[иь])\s+(торговую\s+)?заявку\b",
+            r"\b(создай|отправь|исполни)\s+(торговую\s+)?заявку\b",
             r"\bсоверши\s+сделку\b",
         ),
     ),
@@ -247,7 +247,9 @@ class _VisibleTextParser(HTMLParser):
             return
         popped = self.stack[matching_index:]
         del self.stack[matching_index:]
-        self.suppressed_depth -= sum(int(suppressed) for _, suppressed in popped)
+        self.suppressed_depth -= sum(
+            int(suppressed) for _, suppressed in popped
+        )
         self.suppressed_depth = max(self.suppressed_depth, 0)
         if normalized_tag in _BLOCK_TAGS and self.suppressed_depth == 0:
             self._separator()
@@ -283,14 +285,20 @@ def _sanitize_html(value: str) -> tuple[str, bool]:
     parser = _VisibleTextParser()
     parser.feed(value)
     parser.close()
-    return _normalize_visible_text("".join(parser.parts)), parser.hidden_content_found
+    return (
+        _normalize_visible_text("".join(parser.parts)),
+        parser.hidden_content_found,
+    )
 
 
 def _detect_injection_flags(value: str) -> list[InjectionFlag]:
-    lowered = unicodedata.normalize("NFKC", value).casefold()
+    lowered = _normalize_visible_text(value).casefold()
     flags: list[InjectionFlag] = []
     for flag, patterns in _INJECTION_PATTERNS:
-        if any(re.search(pattern, lowered, flags=re.IGNORECASE) for pattern in patterns):
+        if any(
+            re.search(pattern, lowered, flags=re.IGNORECASE)
+            for pattern in patterns
+        ):
             flags.append(flag)
     return flags
 
@@ -324,7 +332,9 @@ def sanitize_news_document(
     """Sanitize one provided document without fetching or executing content."""
     truncated = len(document.raw_content) > MAX_PARSE_INPUT_CHARS
     bounded_raw = document.raw_content[:MAX_PARSE_INPUT_CHARS]
-    suspicious_unicode = _contains_suspicious_unicode(bounded_raw)
+    suspicious_unicode = _contains_suspicious_unicode(
+        f"{document.title}\n{bounded_raw}"
+    )
 
     if document.content_format == NewsContentFormat.HTML:
         sanitized_text, hidden_content = _sanitize_html(bounded_raw)
@@ -333,6 +343,8 @@ def sanitize_news_document(
         hidden_content = False
     sanitized_text = sanitized_text[:MAX_SANITIZED_TEXT_CHARS]
     normalized_title = _normalize_visible_text(document.title)[:512]
+    if not normalized_title:
+        normalized_title = "Untitled external document"
 
     flags = _detect_injection_flags(
         f"{normalized_title}\n{bounded_raw}\n{sanitized_text}"
@@ -394,7 +406,9 @@ def sanitize_news_document(
     )
 
 
-def _canonical_rank(document: SanitizedNewsDocumentV1) -> tuple[int, int, int, float]:
+def _canonical_rank(
+    document: SanitizedNewsDocumentV1,
+) -> tuple[int, int, int, float]:
     disposition_rank = {
         NewsDisposition.ACCEPTED: 3,
         NewsDisposition.CONTEXT_ONLY: 2,
@@ -428,7 +442,10 @@ def deduplicate_news_documents(
     rows = tuple(documents)
     by_fingerprint: dict[str, list[SanitizedNewsDocumentV1]] = {}
     for document in rows:
-        by_fingerprint.setdefault(document.content_fingerprint, []).append(document)
+        by_fingerprint.setdefault(
+            document.content_fingerprint,
+            [],
+        ).append(document)
 
     canonical_documents: list[SanitizedNewsDocumentV1] = []
     duplicates: list[DuplicateNewsOccurrenceV1] = []
