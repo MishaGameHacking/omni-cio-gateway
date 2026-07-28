@@ -1,6 +1,6 @@
 # Omni-CIO Control Center
 
-Приватная read-only система инвестиционной аналитики. Один GitHub-репозиторий теперь содержит два независимых интерфейса к общему Omni-CIO Gateway:
+Приватная read-only система инвестиционной аналитики. Один GitHub-репозиторий содержит два независимых интерфейса к общему Omni-CIO Gateway:
 
 ```text
 Custom GPT ──────┐
@@ -10,7 +10,7 @@ Telegram Bot ────┘
 
 ## Текущее состояние
 
-- System release: **v4.0.0 Telegram Companion — Read-Only Control Center**.
+- System release: **v4.0.1 Telegram Reliability & Friendly Output**.
 - Gateway API component: **v3.9.1 Broker Report Async Integrity**.
 - Gateway production entrypoint: `app:app`.
 - Telegram production entrypoint: `telegram_bot.app:app`.
@@ -35,7 +35,7 @@ Telegram Bot ────┘
 
 ```text
 app.py + runtime modules             Omni-CIO Gateway
-telegram_bot/                        Telegram Companion v4.0.0
+telegram_bot/                        Telegram Companion v4.0.1
 broker_report_reconciliation/        официальный отчёт и сверка
 tests/                               unit, endpoint, OpenAPI, Regression Shield
 knowledge/                           строгие правила предметной области
@@ -51,10 +51,11 @@ scripts/                             безопасные локальные п�
 
 ## Telegram Companion
 
-Первый релиз работает по предсказуемым командам без OpenAI API:
+Telegram-интерфейс работает по предсказуемым командам без OpenAI API:
 
 ```text
 /help
+/status
 /health
 /connection
 /portfolio
@@ -64,6 +65,17 @@ scripts/                             безопасные локальные п�
 /report
 /report_status [task_id]
 ```
+
+v4.0.1 добавляет:
+
+- краткие русские сводки вместо больших JSON-блоков;
+- `/status` для проверки Telegram, Gateway и T-Invest;
+- автоматические повторы временно недоступного Gateway;
+- уведомление о пробуждении бесплатного Render service;
+- безопасное разбиение длинных ответов на части;
+- typing indicator как необязательное удобство.
+
+Telegram не пересчитывает и не улучшает финансовые данные: он только выбирает безопасные поля из ответа gateway и показывает их в более удобной форме.
 
 Безопасность:
 
@@ -139,6 +151,8 @@ export TELEGRAM_ALLOWED_USER_IDS="123456789"
 export OMNI_GATEWAY_URL="https://omni-cio-gateway-au6d.onrender.com"
 export OMNI_GATEWAY_API_KEY="..."
 export TELEGRAM_PUBLIC_BASE_URL="https://your-public-tunnel.example"
+export TELEGRAM_GATEWAY_RETRY_ATTEMPTS="2"
+export TELEGRAM_GATEWAY_RETRY_DELAY_SECONDS="5"
 uvicorn telegram_bot.app:app --reload
 ```
 
