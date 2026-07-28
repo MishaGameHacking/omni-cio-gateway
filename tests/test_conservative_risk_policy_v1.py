@@ -25,7 +25,6 @@ from omni_cio.contracts.v1 import (
     RiskCheckCode,
     RiskCheckStatus,
     RiskOverallStatus,
-    RiskPolicyProfile,
     RiskSeverity,
     SourceReference,
     ValuationBasis,
