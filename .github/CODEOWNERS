@@ -7,6 +7,8 @@
 /main.py @Misha2304
 /render.yaml @Misha2304
 /requirements*.txt @Misha2304
+/requirements*.in @Misha2304
+/pyproject.toml @Misha2304
 
 # Domain engines
 /*.py @Misha2304

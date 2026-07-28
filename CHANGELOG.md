@@ -5,6 +5,12 @@
 ## [Unreleased]
 
 ### Added
+- Hash-locked runtime и development dependency sets, генерируемые из
+  `requirements.in` и `requirements-dev.in`.
+- Blocking Ruff, formatting, mypy, coverage, pip-audit, Bandit и
+  detect-secrets gates в Regression Shield.
+- Self-test CI/security policy, weekly Dependabot и профиль
+  `knowledge/14_CI_SECURITY_BASELINE.txt`.
 - Retirement guard, который запрещает возврат `telegram_bot/`,
   `render.telegram.yaml`, Telegram imports, active env configuration и
   `/telegram/*` routes.
@@ -32,6 +38,11 @@
   Regression Shield.
 
 ### Changed
+- Render и GitHub Actions устанавливают зависимости только с
+  `--require-hashes`.
+- Все внешние GitHub Actions закреплены полными commit SHA.
+- Начальный branch-inclusive coverage floor установлен на 60% после
+  фактического измерения 60,8%.
 - Поддерживаемый пользовательский интерфейс теперь находится только в
   Custom GPT внутри ChatGPT; Gateway остаётся `app:app`.
 - System release подготовлен как `v4.1.0 ChatGPT-only Runtime`, Gateway
@@ -42,6 +53,10 @@
 - Web Search рекомендуется включать для актуального анализа компаний, отчётности, дивидендов, новостей и рыночного контекста.
 
 ### Safety
+- Security/quality gates являются блокирующими и не используют
+  `continue-on-error`.
+- Зафиксирован узкий Bandit B102 exception только для checked-in
+  broker-report fragments из фиксированного package path.
 - Удалён generic SDK forwarding из `OrdersServiceRequestAdapter` и
   `ClientView`.
 - Публичные Action-контракты, Gateway version и Render entrypoint не

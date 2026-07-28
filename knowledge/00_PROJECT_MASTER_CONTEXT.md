@@ -27,7 +27,7 @@ Omni-CIO развивается поэтапно из текущего read-only
 - большие знания хранятся во внешней версионируемой RAG-базе, а не
   загружаются бессистемно в модель.
 
-Текущий активный этап: **PR-02 — безопасное удаление Telegram runtime**.
+Текущий активный этап: **PR-03 — воспроизводимый CI и security gates**.
 До отдельного решения сохраняются `trading_methods=false`, GET-only
 Actions и Render entrypoint `app:app`.
 
@@ -159,8 +159,8 @@ GitHub не хранит:
 - секретный GPT Bearer key.
 
 Gateway Render service хранит T-Invest token и Gateway key. Старый
-Telegram service и его credentials удаляются владельцем после merge
-по removal runbook; значения не переносятся в GitHub или чат.
+Telegram service, webhook и token удалены владельцем 2026-07-28 по
+removal runbook; значения не переносились в GitHub или чат.
 
 ## 6. Gateway v3.9.1
 
@@ -195,10 +195,24 @@ Telegram service и его credentials удаляются владельцем �
 - Regression Shield запрещает возврат удалённых paths, переменных
   окружения и runtime imports;
 - OpenAPI-тест запрещает Telegram routes;
-- удаление старого Render service, webhook и token выполняется только
-  после merge по removal runbook;
+- старый Render service, webhook и token удалены владельцем
+  2026-07-28 по removal runbook;
 - удаление Telegram не меняет публичные Gateway Actions и не требует
   изменения GPT Editor.
+
+## 7.1. CI/security baseline PR-03
+
+- `requirements.in` и `requirements-dev.in` являются human-edited
+  constraints;
+- оба `.txt` lock-файла полностью pinned и содержат SHA-256 hashes;
+- Render и CI устанавливают зависимости с `--require-hashes`;
+- внешние GitHub Actions закреплены полным commit SHA;
+- Regression Shield блокирует Ruff, formatting baseline, mypy,
+  покрытие ниже 60%, pip-audit, Bandit и detect-secrets;
+- Dependabot еженедельно проверяет pip и GitHub Actions;
+- полный legacy formatter/mypy долг не скрыт и зафиксирован в
+  `knowledge/14_CI_SECURITY_BASELINE.txt`;
+- PR-03 не меняет OpenAPI, GPT Instructions или runtime behavior.
 
 ## 8. Обязательный контракт ответов Gateway
 
@@ -318,6 +332,7 @@ HTML-отчёт является источником истины для сос
 - документация и knowledge обновлены;
 - после merge проверен production health Gateway;
 - для PR-02 завершена внешняя Telegram-очистка по runbook;
+- dependency locks, Action pins и quality/security gates проходят;
 - новый чат может понять изменение только по GitHub.
 
 Вся программа завершена только когда дополнительно:
@@ -346,5 +361,11 @@ HTML-отчёт является источником истины для сос
 
 - `knowledge/12_TELEGRAM_RETIREMENT.txt`;
 - `docs/operations/TELEGRAM_REMOVAL_RUNBOOK.md`.
+
+Для PR-03:
+
+- `knowledge/14_CI_SECURITY_BASELINE.txt`;
+- `.github/workflows/regression-shield.yml`;
+- `scripts/check_ci_security_baseline.py`.
 
 Код в `main` имеет приоритет над старой перепиской.

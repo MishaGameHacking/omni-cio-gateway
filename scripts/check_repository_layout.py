@@ -15,15 +15,21 @@ REQUIRED_PATHS = (
     "SECURITY.md",
     "app.py",
     "render.yaml",
+    "requirements.in",
     "requirements.txt",
+    "requirements-dev.in",
     "requirements-dev.txt",
+    "pyproject.toml",
     ".env.example",
+    "scripts/check_ci_security_baseline.py",
+    "tests/test_ci_security_baseline.py",
     "tests/test_no_telegram_runtime.py",
     "knowledge/00_PROJECT_MASTER_CONTEXT.md",
     "knowledge/09_MARKET_DATA_AND_BUYING_POWER.txt",
     "knowledge/10_OPERATIONS_ANALYTICS_AND_RECONCILIATION.txt",
     "knowledge/11_BROKER_REPORT_ASYNC_INTEGRITY.txt",
     "knowledge/12_TELEGRAM_RETIREMENT.txt",
+    "knowledge/14_CI_SECURITY_BASELINE.txt",
     "docs/README.md",
     "docs/architecture/SYSTEM_OVERVIEW.md",
     "docs/architecture/REPOSITORY_STRUCTURE.md",
@@ -39,6 +45,7 @@ REQUIRED_PATHS = (
     "gpt/ACTIONS_CATALOG.md",
     "gpt/NEW_CHAT_PROMPT.md",
     ".github/CODEOWNERS",
+    ".github/dependabot.yml",
     ".github/copilot-instructions.md",
     ".github/pull_request_template.md",
     ".github/ISSUE_TEMPLATE/bug_report.yml",
@@ -54,6 +61,7 @@ FORBIDDEN_TRACKED_NAMES = {
 
 FORBIDDEN_WORKFLOWS = {
     "apply-v390.yml",
+    "pr03-bootstrap.yml",
     "upgrade-v390.yml",
 }
 
@@ -120,10 +128,7 @@ def is_forbidden_broker_attribute(name: str) -> bool:
     return (
         name in FORBIDDEN_BROKER_METHODS
         or name in FORBIDDEN_BROKER_SERVICES
-        or any(
-            name.startswith(prefix)
-            for prefix in FORBIDDEN_BROKER_METHOD_PREFIXES
-        )
+        or any(name.startswith(prefix) for prefix in FORBIDDEN_BROKER_METHOD_PREFIXES)
     )
 
 
@@ -144,9 +149,8 @@ def scan_runtime_broker_egress(failures: list[str]) -> None:
             continue
 
         for node in ast.walk(tree):
-            if (
-                isinstance(node, ast.Attribute)
-                and is_forbidden_broker_attribute(node.attr)
+            if isinstance(node, ast.Attribute) and is_forbidden_broker_attribute(
+                node.attr
             ):
                 fail(
                     (
@@ -181,7 +185,9 @@ def scan_retired_telegram_surface(failures: list[str]) -> None:
     for relative_path in (
         ".env.example",
         "render.yaml",
+        "requirements.in",
         "requirements.txt",
+        "requirements-dev.in",
         "requirements-dev.txt",
     ):
         path = ROOT / relative_path
@@ -196,7 +202,12 @@ def scan_retired_telegram_surface(failures: list[str]) -> None:
                     failures,
                 )
 
-    for relative_path in ("requirements.txt", "requirements-dev.txt"):
+    for relative_path in (
+        "requirements.in",
+        "requirements.txt",
+        "requirements-dev.in",
+        "requirements-dev.txt",
+    ):
         path = ROOT / relative_path
         if not path.is_file():
             continue
@@ -228,8 +239,7 @@ def scan_retired_telegram_surface(failures: list[str]) -> None:
             elif isinstance(node, ast.ImportFrom) and node.module:
                 modules = (node.module,)
             if any(
-                module == "telegram_bot"
-                or module.startswith("telegram_bot.")
+                module == "telegram_bot" or module.startswith("telegram_bot.")
                 for module in modules
             ):
                 fail(
@@ -264,9 +274,14 @@ def main() -> int:
         if ".git" in path.parts or not path.is_file():
             continue
         if path.name in FORBIDDEN_TRACKED_NAMES:
-            fail(f"forbidden generated or secret file present: {path.relative_to(ROOT)}", failures)
+            fail(
+                f"forbidden generated or secret file present: {path.relative_to(ROOT)}",
+                failures,
+            )
         if "__pycache__" in path.parts or path.suffix in {".pyc", ".pyo"}:
-            fail(f"generated Python artifact present: {path.relative_to(ROOT)}", failures)
+            fail(
+                f"generated Python artifact present: {path.relative_to(ROOT)}", failures
+            )
 
     workflow_dir = ROOT / ".github" / "workflows"
     for name in FORBIDDEN_WORKFLOWS:

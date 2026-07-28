@@ -20,8 +20,11 @@ omni-cio-gateway/
 ├── scripts/                       # локальные безопасные проверки
 ├── .github/                       # CI, templates и ownership
 ├── render.yaml                    # Gateway deploy contract
-├── requirements.txt
-├── requirements-dev.txt
+├── requirements.in                # production constraints
+├── requirements.txt               # pinned + SHA-256 runtime lock
+├── requirements-dev.in            # development constraints
+├── requirements-dev.txt           # pinned + SHA-256 development lock
+├── pyproject.toml                  # Ruff, mypy, pytest, coverage, Bandit
 ├── .env.example
 └── project documentation
 ```
@@ -47,6 +50,8 @@ Repository checks должны блокировать их случайное в
 - `10_` — операции;
 - `11_` — асинхронный брокерский отчёт;
 - `12_` — решение о выводе Telegram runtime из эксплуатации.
+- `13_` — communication profile;
+- `14_` — CI, dependency и security baseline.
 
 ### `gpt/`
 
@@ -61,14 +66,19 @@ Custom GPT.
 ### `.github/workflows/`
 
 Только постоянные workflow. Regression Shield проверяет Gateway
-entrypoint, read-only contract и отсутствие retired runtime. Одноразовые
-patch workflow удаляются после релиза.
+entrypoint, read-only contract, отсутствие retired runtime, lock
+integrity, quality, coverage и security. Все external Actions pinned
+полным commit SHA. Одноразовые patch/bootstrap workflow удаляются до
+merge.
 
 ### `tests/`
 
 Обязателен отдельный тест отсутствия Telegram package, Blueprint,
 configuration, imports и OpenAPI routes. Реальные T-Invest вызовы
 запрещены.
+
+`tests/test_ci_security_baseline.py` проверяет parser lock-файлов,
+full-SHA Action policy и secret-scan report handling.
 
 ## Что нельзя переносить без отдельного PR
 

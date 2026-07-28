@@ -17,7 +17,10 @@
 - operations analytics;
 - broker report reconciliation и async integrity;
 - Render Blueprint `render.yaml`;
-- unit и Regression Shield тесты.
+- hash-locked runtime/development dependencies;
+- unit и Regression Shield tests;
+- blocking Ruff, formatting, mypy, coverage, SCA, SAST и secret scan;
+- weekly Dependabot для pip и GitHub Actions.
 
 ### Граница поддерживаемого runtime
 
@@ -63,10 +66,9 @@
 
 ### Выведенные из эксплуатации внешние Telegram-активы
 
-После объединения PR владелец отдельно удаляет Render service
-`omni-cio-telegram-bot`, его environment variables, установленный
-webhook и токен BotFather. GitHub не может выполнить эту внешнюю
-очистку автоматически. Пошаговая процедура находится в
+Очистка завершена владельцем 2026-07-28: отдельный Telegram Render
+service удалён, webhook удалён, token отозван. Значения credentials не
+хранятся в GitHub. История процедуры находится в
 `docs/operations/TELEGRAM_REMOVAL_RUNBOOK.md`.
 
 ### Custom GPT
@@ -108,8 +110,7 @@ GitHub хранит желаемую каноническую конфигура
 3. Для production-проверки — доступ к публичному `/health` Gateway.
 4. Для изменения секретов — доступ к Render Dashboard.
 5. Для изменения Custom GPT — доступ к GPT Editor.
-6. До завершения одноразовой очистки Telegram — доступ к BotFather
-   владельца и старому Render service.
+6. Для dependency updates — проверка Dependabot PR и Regression Shield.
 
 ## 5. Запрещённые способы «сохранить всё»
 

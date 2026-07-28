@@ -22,8 +22,11 @@
 | Файл | Назначение |
 |---|---|
 | `render.yaml` | Gateway Render contract |
-| `requirements.txt` | Production dependencies Gateway |
-| `requirements-dev.txt` | Test dependencies |
+| `requirements.in` | Human-edited production constraints |
+| `requirements.txt` | Полностью pinned production lock с SHA-256 hashes |
+| `requirements-dev.in` | Human-edited development constraints |
+| `requirements-dev.txt` | Полностью pinned development lock с SHA-256 hashes |
+| `pyproject.toml` | Ruff, mypy, pytest/coverage и Bandit baseline |
 | `.env.example` | Имена Gateway-переменных без секретных значений |
 | `.gitignore` | Защита от секретов и артефактов |
 | `.editorconfig` | Единые правила форматирования |
@@ -43,6 +46,7 @@
 | `tests/test_broker_report_reconciliation.py` | Брокерский отчёт и сверка |
 | `tests/test_broker_report_async_integrity.py` | `task_id`, `pending`, T-Invest 30058 |
 | `tests/test_no_telegram_runtime.py` | Запрет Telegram runtime, config, imports и OpenAPI routes |
+| `tests/test_ci_security_baseline.py` | Hash locks, Action SHA pins и secret-report policy |
 
 ## Project memory
 
@@ -54,6 +58,7 @@
 | `knowledge/10_OPERATIONS_ANALYTICS_AND_RECONCILIATION.txt` | Operations semantics |
 | `knowledge/11_BROKER_REPORT_ASYNC_INTEGRITY.txt` | Broker-report async semantics |
 | `knowledge/12_TELEGRAM_RETIREMENT.txt` | Решение о выводе Telegram из эксплуатации |
+| `knowledge/14_CI_SECURITY_BASELINE.txt` | Воспроизводимый CI, quality/security gates и debt register |
 | `gpt/` | Восстановление Custom GPT |
 | `docs/operations/TELEGRAM_REMOVAL_RUNBOOK.md` | Одноразовая внешняя очистка Telegram после merge |
 | `docs/` | Архитектура, inventory и runbooks |
@@ -62,11 +67,19 @@
 
 | Файл | Назначение |
 |---|---|
-| `.github/workflows/regression-shield.yml` | Постоянный CI Gateway и запрета Telegram runtime |
+| `.github/workflows/regression-shield.yml` | Blocking quality, contracts, coverage и security CI |
+| `.github/dependabot.yml` | Еженедельные pip и GitHub Actions updates |
 | `.github/CODEOWNERS` | Ответственный за области |
 | `.github/pull_request_template.md` | Definition of Done для PR |
 | `.github/ISSUE_TEMPLATE/` | Безопасные формы задач |
 | `.github/copilot-instructions.md` | Канонические правила Copilot |
+
+## Repository checks
+
+| Файл | Назначение |
+|---|---|
+| `scripts/check_repository_layout.py` | Layout, retired Telegram и broker-write guard |
+| `scripts/check_ci_security_baseline.py` | Dependency hashes, Action pins, gates и secret report |
 
 ## Правило актуальности
 

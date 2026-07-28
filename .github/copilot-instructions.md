@@ -27,6 +27,9 @@
 - Денежные суммы считай отдельно по валютам без скрытого FX.
 - Не допускай двойного учёта top-level payment, nested commission, child operations или embedded trades.
 - Не маскируй неизвестные исключения под `pending`.
+- Не редактируй generated lock-файлы вручную; dependencies меняются
+  через `.in` и pip-tools.
+- External GitHub Actions должны использовать full commit SHA.
 
 Для брокерского отчёта:
 
@@ -39,12 +42,16 @@
 Проверки:
 
 ```bash
+python scripts/check_ci_security_baseline.py
 python scripts/check_repository_layout.py
+python -m ruff check .
+python -m ruff format --check scripts tests/test_ci_security_baseline.py
+python -m mypy
 python -m compileall -q app.py app_v371.py app_v360.py main.py \
   portfolio_market.py portfolio_analytics.py cash_liquidity.py \
   purchase_capacity.py purchase_capacity_integrity.py \
   operations_analytics.py broker_report_reconciliation tests scripts
-python -m pytest -q
+python -m pytest -q --cov --cov-branch --cov-fail-under=60
 ```
 
 Работай через отдельную ветку и PR. Обновляй changelog, master context, профильный knowledge, inventory и runbook.

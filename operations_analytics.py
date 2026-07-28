@@ -4,7 +4,7 @@ import hashlib
 import json
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from typing import Any
 
 import grpc

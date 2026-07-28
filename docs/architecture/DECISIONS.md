@@ -92,3 +92,20 @@ message formatting являлись Telegram-specific delivery layer, поэто
 Возврат Telegram или другого transport допускается только новым ADR,
 threat model, отдельным deployment contract, тестами и явным решением
 владельца.
+
+## ADR-014 — CI и dependency supply chain работают fail-closed
+
+**Статус:** принято.
+
+Human-edited dependencies живут в `.in` constraints. Runtime и
+development lock-файлы содержат точные версии всех транзитивных
+зависимостей и SHA-256 hashes; Render и CI используют
+`--require-hashes`. Внешние GitHub Actions закреплены полным commit SHA.
+
+Regression Shield блокирует merge при ошибке lint, formatting
+baseline, mypy, coverage floor, pip-audit, Bandit, detect-secrets или
+self-test CI policy. Ослабление гейта требует отдельного
+аргументированного PR; `continue-on-error` запрещён.
+
+Legacy quality debt расширяется инкрементально вместе с исправлениями,
+а не скрывается массовым autoformat в security PR.

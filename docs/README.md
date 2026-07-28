@@ -55,6 +55,12 @@ Runtime и deployment contract удалены. Решение и запрет с
 возврата описаны в `../knowledge/12_TELEGRAM_RETIREMENT.txt`, а внешняя
 очистка — в `operations/TELEGRAM_REMOVAL_RUNBOOK.md`.
 
+### CI and security
+
+Воспроизводимые dependencies, quality/security gates, начальные
+thresholds и остаточный долг описаны в
+`../knowledge/14_CI_SECURITY_BASELINE.txt`.
+
 ### Domain knowledge
 
 Проверяемые правила конкретных возможностей находятся в `../knowledge/`. Они имеют приоритет над краткими описаниями в `docs/`.

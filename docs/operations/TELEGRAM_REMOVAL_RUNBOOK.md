@@ -1,5 +1,11 @@
 # Runbook: окончательное отключение Telegram Companion
 
+## Статус
+
+Внешняя очистка завершена 2026-07-28. Владелец подтвердил удаление
+отдельного Telegram Render service, удаление webhook и отзыв token.
+Значения credentials не переносились в GitHub или документацию.
+
 ## Назначение
 
 Этот runbook завершает переход Omni-CIO на единственный пользовательский
@@ -10,7 +16,7 @@ GitHub-изменение удаляет код и конфигурацию Tele
 Внешнюю очистку выполняйте только после merge PR и успешного Regression
 Shield.
 
-## Что будет удалено из GitHub
+## Что удалено из GitHub
 
 - package `telegram_bot/`;
 - `render.telegram.yaml`;
