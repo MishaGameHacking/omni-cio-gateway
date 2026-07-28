@@ -30,6 +30,14 @@
   без изменения публичного Action response и без broker SDK imports.
 - Девять contract/adapter-тестов для арифметики, multi-currency separation,
   masking, pagination, reconciliation, component errors и read-only guards.
+- `AdvancedPortfolioAnalyticsV1`: exact per-currency structure, cash/invested
+  weights, asset-class allocation, top-1/top-5 concentration, HHI, effective
+  position count и deterministic stress sensitivities.
+- Explicit missing-data records для issuer, sector, liquidity, historical
+  prices, volatility, drawdown, correlation, tax basis и bond-specific inputs.
+- Десять focused analytics tests, включая cash-only, multi-currency,
+  repeating Decimal fractions, missing totals, currency mismatch, negative
+  long-position value, incomplete valuation и naïve timestamp rejection.
 - Сохранение полного mypy-вывода в краткоживущем Regression Shield artifact
   при сохранении блокирующего `pipefail`.
 - Профиль Custom GPT `Modern Financial Sage — 2026`.
@@ -58,6 +66,8 @@
   существующего Action JSON или OpenAPI schema.
 - Operations analytics теперь имеет отдельную versioned normalization boundary;
   runtime/OpenAPI подключение намеренно оставлено для отдельного PR.
+- Advanced portfolio analytics требует verified/complete source snapshot,
+  exact currency-local reconciliation и не публикуется как новый Action в PR-08.
 - Поддерживаемый пользовательский интерфейс теперь находится только в
   Custom GPT внутри ChatGPT; Gateway остаётся `app:app`.
 - System release подготовлен как `v4.1.0 ChatGPT-only Runtime`, Gateway
@@ -78,6 +88,10 @@
   prices, cash, totals, raw payloads или validation messages.
 - Operations contract требует `trading_methods=false`, masked account,
   `read_only=true`, отдельные валюты и активные double-count protections.
+- Advanced analytics блокирует partial/degraded snapshots, отсутствующую
+  valuation, валютные конфликты, отрицательные long values и неверные totals.
+- Stress scenarios являются арифметической чувствительностью, а не прогнозом,
+  вероятностью, VaR или обещанием доходности.
 - Публичные Action-контракты, Gateway version и Render entrypoint не
   изменены.
 - `trading_methods=false` и GET-only контракт сохранены.
