@@ -5,6 +5,11 @@
 ## [Unreleased]
 
 ### Added
+- Versioned Pydantic data contracts `omni_cio/contracts/v1/` для provenance,
+  quality/completeness, masked account references, Decimal money и
+  `PortfolioSnapshotV1`.
+- Контрактные тесты strict validation, UTC timestamps, stable instrument
+  identity, duplicate protection и JSON serialization денежных значений.
 - Hash-locked runtime и development dependency sets, генерируемые из
   `requirements.in` и `requirements-dev.in`.
 - Blocking Ruff, formatting, mypy, coverage, pip-audit, Bandit и
@@ -38,6 +43,8 @@
   Regression Shield.
 
 ### Changed
+- Mypy baseline включает новый пакет versioned contracts; существующие
+  FastAPI routes и GPT Action responses не мигрированы в PR-04.
 - Render и GitHub Actions устанавливают зависимости только с
   `--require-hashes`.
 - Все внешние GitHub Actions закреплены полными commit SHA.
@@ -53,6 +60,8 @@
 - Web Search рекомендуется включать для актуального анализа компаний, отчётности, дивидендов, новостей и рыночного контекста.
 
 ### Safety
+- Versioned contracts являются data-only, не импортируют broker SDK и не
+  добавляют order, cancellation, withdrawal или transfer methods.
 - Security/quality gates являются блокирующими и не используют
   `continue-on-error`.
 - Зафиксирован узкий Bandit B102 exception только для checked-in
@@ -118,34 +127,3 @@
 ## [3.9.0] — 2026-07-27
 
 - Official Broker Report & Operations Reconciliation.
-- Пагинация отчёта, сверка сделок, денежных потоков и комиссий по каждой валюте.
-
-## [3.8.0] — 2026-07-27
-
-- Operations Analytics & Cash Flow Reconciliation.
-- Защита от дублей, parent/child и повторного учёта комиссий.
-
-## [3.7.1] — 2026-07-27
-
-- Purchase Capacity Integrity.
-- Арифметическая проверка суммы, комиссии и остатка.
-
-## [3.7.0] — 2026-07-27
-
-- Purchase Capacity Preview без создания заявки.
-
-## [3.6.0] — 2026-07-27
-
-- Cash & Liquidity Diagnostics.
-
-## [3.5.0] — 2026-07-27
-
-- Portfolio Analytics Core.
-
-## [3.4.0] — 2026-07-27
-
-- Portfolio Market Snapshot.
-
-## [3.3.3] — 2026-07-27
-
-- Regression Shield, CI и проверка read-only контракта.
