@@ -83,7 +83,7 @@ jobs:
           from fastapi.testclient import TestClient
           import telegram_bot.app as telegram_module
 
-          assert telegram_module.app.version == "4.0.0"
+          assert telegram_module.app.version == "4.0.1"
           route_methods = {
               route.path: set(route.methods or set())
               for route in telegram_module.app.routes
@@ -93,8 +93,10 @@ jobs:
           assert route_methods["/telegram/webhook"] == {"POST"}
           with TestClient(telegram_module.app) as client:
               payload = client.get("/health").json()
-          assert payload["version"] == "4.0.0"
+          assert payload["version"] == "4.0.1"
           assert payload["build"]["entrypoint"] == "telegram_bot.app:app"
+          assert payload["reliability"]["friendly_output"] is True
+          assert payload["reliability"]["safe_message_splitting"] is True
           assert payload["read_only"] is True
           assert payload["trading_methods"] is False
           print("Telegram entrypoint:", payload["version"])

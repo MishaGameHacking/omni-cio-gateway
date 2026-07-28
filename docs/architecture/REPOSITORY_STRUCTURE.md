@@ -10,11 +10,12 @@ omni-cio-gateway/
 ├── main.py                        # историческое ядро FastAPI
 ├── *_analytics.py / *_market.py   # доменные gateway-модули
 ├── broker_report_reconciliation/  # официальный отчёт и сверка
-├── telegram_bot/                  # Telegram Companion v4.0.0
+├── telegram_bot/                  # Telegram Companion v4.0.1
 │   ├── __init__.py                # версия компонента
-│   ├── config.py                  # env configuration
+│   ├── config.py                  # env и retry configuration
 │   ├── clients.py                 # Telegram и Gateway HTTP clients
-│   ├── commands.py                # allowlist, команды и безопасность
+│   ├── commands.py                # allowlist, routing и reliability
+│   ├── formatters.py              # краткие безопасные ответы
 │   └── app.py                     # entrypoint telegram_bot.app:app
 ├── tests/                         # unit, endpoint, OpenAPI, Regression Shield
 ├── knowledge/                     # правила предметной области для AI
@@ -48,7 +49,7 @@ omni-cio-gateway/
 - `GET /health`;
 - `POST /telegram/webhook` — только входящий Telegram update с secret header.
 
-Telegram package не содержит торговых методов и вызывает Gateway только GET-запросами.
+Telegram package не содержит торговых методов и вызывает Gateway только GET-запросами. `commands.py` управляет безопасным retry и маршрутизацией, а `formatters.py` выбирает краткие поля без пересчёта финансовых данных.
 
 ### `knowledge/`
 
@@ -75,7 +76,7 @@ Telegram package не содержит торговых методов и выз
 
 ### `tests/`
 
-Для Telegram нужны health, bootstrap, secret header, allowlist, GET-only gateway, report task reuse и duplicate-update tests. Реальные Telegram/T-Invest вызовы запрещены.
+Для Telegram нужны health, bootstrap, secret header, allowlist, GET-only gateway, `/status`, retry policy, friendly formatting, safe message splitting, report task reuse и duplicate-update tests. Реальные Telegram/T-Invest вызовы запрещены.
 
 ## Что нельзя переносить без отдельного PR
 
@@ -92,4 +93,4 @@ Telegram package не содержит торговых методов и выз
 
 ## Будущий рефакторинг
 
-Gateway-код может перейти в пакет `omni_cio_gateway/` только через compatibility migration. Telegram state может получить внешнее хранилище в отдельном релизе, но v4.0.0 не требует базы данных.
+Gateway-код может перейти в пакет `omni_cio_gateway/` только через compatibility migration. Telegram state может получить внешнее хранилище в отдельном релизе, но v4.0.1 не требует базы данных.

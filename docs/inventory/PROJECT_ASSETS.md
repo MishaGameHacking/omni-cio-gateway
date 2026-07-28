@@ -19,15 +19,19 @@
 - Render Blueprint `render.yaml`;
 - unit и Regression Shield тесты.
 
-### Telegram Companion v4.0.0
+### Telegram Companion v4.0.1
 
 - отдельный FastAPI service `telegram_bot.app:app`;
 - webhook validation;
 - allowlist пользователей;
 - read-only команды gateway;
+- `/status` для проверки всей цепочки;
+- автоматические повторы временных Gateway-ошибок;
+- короткие русские форматтеры финансовых ответов;
+- безопасное разбиение длинных сообщений;
 - автоматические `setMyCommands` и `setWebhook`;
 - отдельный Blueprint `render.telegram.yaml`;
-- Telegram unit/security tests;
+- Telegram unit/security/reliability tests;
 - runbook и профильный knowledge-файл.
 
 ### Проектная память
@@ -59,7 +63,7 @@
 - `OMNI_GATEWAY_API_KEY`;
 - production URL и deploy state.
 
-В GitHub находятся только имена переменных, placeholders и deploy contract.
+В GitHub находятся только имена переменных, placeholders, retry defaults и deploy contract.
 
 ### Telegram / BotFather
 

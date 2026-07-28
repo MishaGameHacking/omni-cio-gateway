@@ -110,6 +110,9 @@ class TelegramClient:
                 },
             )
 
+    async def send_chat_action(self, chat_id: int, action: str = "typing") -> None:
+        await self.call("sendChatAction", {"chat_id": chat_id, "action": action})
+
     async def set_webhook(self, *, url: str, secret_token: str) -> None:
         await self.call(
             "setWebhook",
@@ -130,18 +133,25 @@ class TelegramClient:
 
 
 def split_message(text: str, *, limit: int = 3500) -> list[str]:
+    """Split text below Telegram's hard limit and label multi-part replies."""
     clean = text.strip() or "—"
     if len(clean) <= limit:
         return [clean]
+
+    payload_limit = max(1, limit - 32)
     chunks: list[str] = []
     remainder = clean
     while remainder:
-        if len(remainder) <= limit:
+        if len(remainder) <= payload_limit:
             chunks.append(remainder)
             break
-        split_at = remainder.rfind("\n", 0, limit)
-        if split_at < limit // 2:
-            split_at = limit
+        split_at = remainder.rfind("\n", 0, payload_limit)
+        if split_at < payload_limit // 2:
+            split_at = remainder.rfind(" ", 0, payload_limit)
+        if split_at < payload_limit // 2:
+            split_at = payload_limit
         chunks.append(remainder[:split_at].rstrip())
         remainder = remainder[split_at:].lstrip()
-    return chunks
+
+    total = len(chunks)
+    return [f"Часть {index}/{total}\n{chunk}" for index, chunk in enumerate(chunks, start=1)]

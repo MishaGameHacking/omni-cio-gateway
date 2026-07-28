@@ -6,6 +6,7 @@ from typing import Any
 from fastapi.testclient import TestClient
 
 from telegram_bot.app import create_app
+from telegram_bot.clients import UpstreamError, split_message
 from telegram_bot.config import Settings
 
 
@@ -14,10 +15,14 @@ class FakeTelegram:
         self.messages: list[tuple[int, str]] = []
         self.webhooks: list[tuple[str, str]] = []
         self.commands: list[list[dict[str, str]]] = []
+        self.chat_actions: list[tuple[int, str]] = []
         self.get_me_calls = 0
 
     async def send_message(self, chat_id: int, text: str) -> None:
         self.messages.append((chat_id, text))
+
+    async def send_chat_action(self, chat_id: int, action: str = "typing") -> None:
+        self.chat_actions.append((chat_id, action))
 
     async def get_me(self) -> dict[str, Any]:
         self.get_me_calls += 1
@@ -34,9 +39,18 @@ class FakeGateway:
     def __init__(self) -> None:
         self.calls: list[tuple[str, dict[str, Any] | None]] = []
         self.responses: list[dict[str, Any]] = []
+        self.failures_remaining = 0
+        self.failure_status_code: int | None = None
 
     async def get(self, path: str, *, params: dict[str, Any] | None = None) -> dict[str, Any]:
         self.calls.append((path, params))
+        if self.failures_remaining > 0:
+            self.failures_remaining -= 1
+            raise UpstreamError(
+                "omni_gateway",
+                "Gateway connection failed",
+                status_code=self.failure_status_code,
+            )
         if self.responses:
             return self.responses.pop(0)
         return {
@@ -57,6 +71,8 @@ def settings(*, auto_configure: bool = False, allowed: frozenset[int] | None = N
         public_base_url="https://telegram.example",
         auto_configure=auto_configure,
         min_request_interval_seconds=0,
+        gateway_retry_attempts=2,
+        gateway_retry_delay_seconds=0,
     )
 
 
@@ -89,8 +105,10 @@ def test_health_exposes_read_only_contract_without_secrets() -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "ok"
-    assert payload["version"] == "4.0.0"
+    assert payload["version"] == "4.0.1"
     assert payload["build"]["entrypoint"] == "telegram_bot.app:app"
+    assert payload["reliability"]["gateway_retry_attempts"] == 2
+    assert payload["reliability"]["friendly_output"] is True
     assert payload["read_only"] is True
     assert payload["trading_methods"] is False
     rendered = response.text
@@ -108,7 +126,7 @@ def test_startup_auto_configures_commands_and_secret_webhook() -> None:
     assert telegram.webhooks == [
         ("https://telegram.example/telegram/webhook", "webhook_secret_123")
     ]
-    assert telegram.commands and any(item["command"] == "portfolio" for item in telegram.commands[0])
+    assert telegram.commands and any(item["command"] == "status" for item in telegram.commands[0])
     assert health["bootstrap"]["status"] == "ok"
 
 
@@ -137,7 +155,7 @@ def test_unauthorized_user_never_reaches_gateway() -> None:
     assert telegram.messages == [(99, "Доступ запрещён.")]
 
 
-def test_health_command_calls_only_gateway_get_and_masks_account_id() -> None:
+def test_health_command_calls_only_gateway_get_and_returns_friendly_output() -> None:
     telegram = FakeTelegram()
     gateway = FakeGateway()
     app = create_app(settings(), telegram_client=telegram, gateway_client=gateway)
@@ -147,9 +165,67 @@ def test_health_command_calls_only_gateway_get_and_masks_account_id() -> None:
     assert gateway.calls == [("/health", None)]
     assert len(telegram.messages) == 1
     text = telegram.messages[0][1]
-    assert '"trading_methods": false' in text
+    assert "Omni-CIO Gateway" in text
+    assert "Gateway: v3.9.1" in text
+    assert "Торговые методы: выключены" in text
     assert "123456789" not in text
-    assert "***6789" in text
+    assert not text.lstrip().startswith("{")
+
+
+def test_status_checks_gateway_and_tinvest_with_get_only() -> None:
+    telegram = FakeTelegram()
+    gateway = FakeGateway()
+    gateway.responses = [
+        {"status": "ok", "version": "3.9.1", "trading_methods": False},
+        {
+            "status": "ok",
+            "version": "3.9.1",
+            "account": {
+                "masked_id": "***3118",
+                "name": "ИИС",
+                "access_level": "ACCOUNT_ACCESS_LEVEL_READ_ONLY",
+            },
+            "trading_methods": False,
+        },
+    ]
+    app = create_app(settings(), telegram_client=telegram, gateway_client=gateway)
+    with TestClient(app) as client:
+        response = post(client, update("/status", update_id=2))
+    assert response.status_code == 200
+    assert gateway.calls == [("/health", None), ("/connection", None)]
+    text = telegram.messages[-1][1]
+    assert "Telegram: ✅ работает · v4.0.1" in text
+    assert "Gateway: ✅ ok · v3.9.1" in text
+    assert "T-Invest: ✅ ok" in text
+    assert "***3118" in text
+
+
+def test_retry_notifies_user_and_repeats_retryable_gateway_get() -> None:
+    telegram = FakeTelegram()
+    gateway = FakeGateway()
+    gateway.failures_remaining = 1
+    app = create_app(settings(), telegram_client=telegram, gateway_client=gateway)
+    with TestClient(app) as client:
+        response = post(client, update("/health", update_id=3))
+    assert response.status_code == 200
+    assert gateway.calls == [("/health", None), ("/health", None)]
+    assert len(telegram.messages) == 2
+    assert "сервер просыпается" in telegram.messages[0][1]
+    assert "Omni-CIO Gateway" in telegram.messages[1][1]
+
+
+def test_non_retryable_gateway_error_is_not_repeated() -> None:
+    telegram = FakeTelegram()
+    gateway = FakeGateway()
+    gateway.failures_remaining = 1
+    gateway.failure_status_code = 401
+    app = create_app(settings(), telegram_client=telegram, gateway_client=gateway)
+    with TestClient(app) as client:
+        response = post(client, update("/health", update_id=4))
+    assert response.status_code == 200
+    assert gateway.calls == [("/health", None)]
+    assert len(telegram.messages) == 1
+    assert "HTTP 401" in telegram.messages[0][1]
 
 
 def test_report_task_is_reused_by_report_status() -> None:
@@ -159,6 +235,7 @@ def test_report_task_is_reused_by_report_status() -> None:
         {
             "status": "pending",
             "version": "3.9.1",
+            "period": {"from": "2026-06-27", "to": "2026-07-28"},
             "report_generation": {"status": "pending", "task_id": "task-abc"},
             "complete": False,
             "trading_methods": False,
@@ -166,7 +243,12 @@ def test_report_task_is_reused_by_report_status() -> None:
         {
             "status": "ok",
             "version": "3.9.1",
+            "period": {"from": "2026-06-27", "to": "2026-07-28"},
             "report_generation": {"status": "ready", "task_id": "task-abc"},
+            "broker_report_summary": {"rows": 1},
+            "operations_summary": {"operations_count": 1},
+            "trade_reconciliation": {"status": "matched"},
+            "reconciliation": {"status": "ok"},
             "complete": True,
             "trading_methods": False,
         },
@@ -188,7 +270,15 @@ def test_report_task_is_reused_by_report_status() -> None:
     ]
     assert len(telegram.messages) == 2
     assert "task-abc" in telegram.messages[0][1]
-    assert '"complete": true' in telegram.messages[1][1]
+    assert "Отчёт ещё формируется" in telegram.messages[0][1]
+    assert "Данные полные: да" in telegram.messages[1][1]
+
+
+def test_long_messages_are_split_below_telegram_limit() -> None:
+    chunks = split_message("строка\n" * 2000, limit=500)
+    assert len(chunks) > 1
+    assert all(len(chunk) <= 500 for chunk in chunks)
+    assert chunks[0].startswith("Часть 1/")
 
 
 def test_duplicate_update_is_ignored() -> None:

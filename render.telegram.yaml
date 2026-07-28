@@ -22,6 +22,10 @@ services:
         value: "true"
       - key: TELEGRAM_REQUEST_TIMEOUT_SECONDS
         value: "20"
+      - key: TELEGRAM_GATEWAY_RETRY_ATTEMPTS
+        value: "2"
+      - key: TELEGRAM_GATEWAY_RETRY_DELAY_SECONDS
+        value: "5"
       - key: TELEGRAM_MAX_RESPONSE_CHARS
         value: "12000"
       - key: TELEGRAM_MIN_REQUEST_INTERVAL_SECONDS

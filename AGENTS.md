@@ -94,6 +94,12 @@
 - Telegram token никогда не должен появляться в URL ошибок, логах или health.
 - Startup setup (`getMe`, `setMyCommands`, `setWebhook`) не должен падением ломать health service; ошибка отражается безопасным degraded status.
 - `/report` использует максимум 31 день и сохраняет `task_id` только как временное удобство; пользовательский task ID должен оставаться видимым для восстановления после restart.
+- Нормальный ответ команды — краткая безопасная сводка, а не полный JSON.
+- Friendly formatter не должен пересчитывать финансовые данные, смешивать валюты или менять `status`, `complete`, `quality`.
+- Длинные ответы должны безопасно делиться ниже лимита Telegram Bot API.
+- Retry разрешён только для того же GET-запроса при временной сетевой ошибке или HTTP 408/425/429/5xx.
+- HTTP 401/403, validation errors и любые mutating requests нельзя повторять.
+- После исчерпания retry вернуть ошибку, а не ложный `ok`.
 
 ## 8. Деньги и качество данных
 
@@ -127,7 +133,7 @@ python -m compileall -q app.py app_v371.py app_v360.py main.py \
 python -m pytest -q
 ```
 
-Для Telegram обязательны тесты: health без секретов, auto setup, неверный webhook secret, unauthorized user, GET-only gateway call, report task reuse, duplicate update suppression и `trading_methods=false`.
+Для Telegram обязательны тесты: health без секретов, auto setup, неверный webhook secret, unauthorized user, GET-only gateway call, `/status`, retryable и non-retryable errors, friendly output, safe message splitting, report task reuse, duplicate update suppression и `trading_methods=false`.
 
 Тесты не должны обращаться к реальным Telegram, Render или T-Invest API.
 

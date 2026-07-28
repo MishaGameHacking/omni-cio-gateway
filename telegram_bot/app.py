@@ -107,6 +107,12 @@ def create_app(
             "allowed_users_count": len(resolved.telegram_allowed_user_ids),
             "gateway_url_configured": bool(resolved.omni_gateway_url),
             "webhook_url_configured": bool(resolved.webhook_url),
+            "reliability": {
+                "gateway_retry_attempts": resolved.gateway_retry_attempts,
+                "gateway_retry_delay_seconds": resolved.gateway_retry_delay_seconds,
+                "friendly_output": True,
+                "safe_message_splitting": True,
+            },
             "build": {
                 "commit_sha": os.getenv("RENDER_GIT_COMMIT", "local"),
                 "entrypoint": "telegram_bot.app:app",

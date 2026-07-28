@@ -1,4 +1,4 @@
-12 — TELEGRAM COMPANION v4.0.0
+12 — TELEGRAM COMPANION v4.0.1
 
 Purpose
 -------
@@ -23,10 +23,13 @@ Security invariants
 - Gateway calls use Bearer `OMNI_GATEWAY_API_KEY` and GET only.
 - Tokens, API keys, raw Authorization headers, and full account IDs must never be logged or returned.
 - Account identifiers are masked again before Telegram output.
+- Automatic retries are allowed only for GET requests and temporary connection/HTTP failures.
+- Permanent authorization and validation errors must not be retried.
 
 Commands
 --------
 /help
+/status
 /health
 /connection
 /portfolio
@@ -36,7 +39,28 @@ Commands
 /report
 /report_status [task_id]
 
+`/status` confirms the Telegram delivery path, then checks Gateway `/health` and T-Invest `/connection` using read-only GET requests.
+
 `/report` starts a 31-day official T-Invest report with `wait_seconds=0`. When the gateway returns `pending`, the task ID is cached in memory for convenience and is also shown to the user. `/report_status` reuses the cached task ID or accepts an explicit ID. In-memory task IDs can be lost after a service restart, so the user-visible task ID remains the recovery mechanism.
+
+Friendly output
+---------------
+Telegram v4.0.1 no longer sends full gateway JSON for normal commands. It selects a small, documented set of safe fields and formats money using the currency returned by the gateway. It must not recalculate, reinterpret, merge currencies, hide `complete=false`, or upgrade partial data to complete data.
+
+Large messages are split below the Telegram Bot API text limit and labelled by part. The split operation must not expose additional fields or secrets.
+
+Reliability
+-----------
+Free Render services can sleep after inactivity. For retryable Gateway failures the bot:
+
+1. sends a short notice that the main server is waking;
+2. repeats the same GET request according to the configured retry policy;
+3. never converts a failed request into `ok`;
+4. returns a friendly error if all attempts fail.
+
+Retry environment variables:
+- `TELEGRAM_GATEWAY_RETRY_ATTEMPTS` — additional attempts after the first request;
+- `TELEGRAM_GATEWAY_RETRY_DELAY_SECONDS` — base delay before retries.
 
 Automatic setup
 ---------------
@@ -55,15 +79,17 @@ Optional settings
 TELEGRAM_AUTO_CONFIGURE
 TELEGRAM_PUBLIC_BASE_URL
 TELEGRAM_REQUEST_TIMEOUT_SECONDS
+TELEGRAM_GATEWAY_RETRY_ATTEMPTS
+TELEGRAM_GATEWAY_RETRY_DELAY_SECONDS
 TELEGRAM_MAX_RESPONSE_CHARS
 TELEGRAM_MIN_REQUEST_INTERVAL_SECONDS
 
 Versioning
 ----------
-System release: v4.0.0 Telegram Companion.
+System release: v4.0.1 Telegram Reliability & Friendly Output.
 Gateway API component remains v3.9.1 until its own public contract changes.
-Telegram service health reports version 4.0.0 and entrypoint `telegram_bot.app:app`.
+Telegram service health reports version 4.0.1 and entrypoint `telegram_bot.app:app`.
 
 Testing
 -------
-Tests must use fake Telegram and gateway clients. No test may contact Telegram, Render, or T-Invest. Required cases: health without secrets, startup webhook setup, invalid webhook secret, unauthorized user, GET-only gateway command, report task reuse, duplicate update suppression, and `trading_methods=false`.
+Tests must use fake Telegram and gateway clients. No test may contact Telegram, Render, or T-Invest. Required cases: health without secrets, startup webhook setup, invalid webhook secret, unauthorized user, GET-only gateway command, `/status`, retryable and non-retryable failures, friendly output, safe message splitting, report task reuse, duplicate update suppression, and `trading_methods=false`.

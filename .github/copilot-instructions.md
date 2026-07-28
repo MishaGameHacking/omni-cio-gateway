@@ -44,6 +44,12 @@
 - bootstrap failure отражается degraded health, но не раскрывает секреты;
 - команды не управляют GitHub, Render, ключами или торговлей;
 - report task in-memory является только удобством, task ID остаётся в ответе;
+- normal command output должен быть краткой безопасной сводкой, а не полным JSON;
+- friendly formatter не пересчитывает деньги, не смешивает валюты и не улучшает status/complete;
+- длинные сообщения делятся ниже лимита Telegram;
+- retry допустим только для того же GET-запроса при временной сетевой ошибке или HTTP 408/425/429/5xx;
+- HTTP 401/403, validation errors и mutating requests не повторять;
+- после исчерпания retry возвращать ошибку, а не `ok`;
 - тесты используют fake clients и не выходят в интернет.
 
 Проверки:

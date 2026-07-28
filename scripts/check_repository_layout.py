@@ -21,6 +21,7 @@ REQUIRED_PATHS = (
     "telegram_bot/config.py",
     "telegram_bot/clients.py",
     "telegram_bot/commands.py",
+    "telegram_bot/formatters.py",
     "telegram_bot/app.py",
     "tests/test_telegram_companion.py",
     "knowledge/00_PROJECT_MASTER_CONTEXT.md",
@@ -90,6 +91,10 @@ def main() -> int:
             fail("Telegram Blueprint must deploy only after CI checks pass", failures)
         if "TELEGRAM_WEBHOOK_SECRET" not in telegram_render:
             fail("Telegram Blueprint does not declare webhook secret", failures)
+        if "TELEGRAM_GATEWAY_RETRY_ATTEMPTS" not in telegram_render:
+            fail("Telegram Blueprint does not declare gateway retry attempts", failures)
+        if "TELEGRAM_GATEWAY_RETRY_DELAY_SECONDS" not in telegram_render:
+            fail("Telegram Blueprint does not declare gateway retry delay", failures)
 
     app_path = ROOT / "app.py"
     if app_path.is_file():
@@ -106,6 +111,8 @@ def main() -> int:
             fail("Telegram health does not expose trading_methods=false", failures)
         if '@application.post("/telegram/webhook"' not in telegram_text:
             fail("Telegram webhook route is missing", failures)
+        if '"friendly_output": True' not in telegram_text:
+            fail("Telegram health does not expose friendly output profile", failures)
 
     commands_path = ROOT / "telegram_bot" / "commands.py"
     if commands_path.is_file():
@@ -114,6 +121,8 @@ def main() -> int:
         for forbidden in forbidden_commands:
             if forbidden in commands_text:
                 fail(f"forbidden trading command marker present: {forbidden}", failures)
+        if '"command": "status"' not in commands_text:
+            fail("Telegram /status command is missing", failures)
 
     for path in ROOT.rglob("*"):
         if ".git" in path.parts or not path.is_file():
