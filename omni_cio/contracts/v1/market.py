@@ -188,7 +188,11 @@ class MarketQuoteV1(ContractModel):
 
     @model_validator(mode="after")
     def validate_quote(self) -> MarketQuoteV1:
-        if self.last_price is None and self.best_bid is None and self.best_ask is None:
+        if (
+            self.last_price is None
+            and self.best_bid is None
+            and self.best_ask is None
+        ):
             raise ValueError("quote requires at least one price")
         if (
             self.best_bid is not None
@@ -318,7 +322,9 @@ class CorporateEventV1(ContractModel):
     @model_validator(mode="after")
     def validate_amount(self) -> CorporateEventV1:
         if (self.amount is None) != (self.currency is None):
-            raise ValueError("event amount and currency must be supplied together")
+            raise ValueError(
+                "event amount and currency must be supplied together"
+            )
         return self
 
 
@@ -357,11 +363,18 @@ class MarketResearchBundleV1(ContractModel):
             "bond_metrics": self.bond_metrics_state,
             "events": self.events_state,
         }
-        for component, count in records.items():
-            if states[component].record_count != count:
-                raise ValueError(f"{component} record_count does not reconcile")
+        for component_name, count in records.items():
+            if states[component_name].record_count != count:
+                raise ValueError(
+                    f"{component_name} record_count does not reconcile"
+                )
 
-        items = [self.reference, self.quote, self.liquidity, self.bond_metrics]
+        items = [
+            self.reference,
+            self.quote,
+            self.liquidity,
+            self.bond_metrics,
+        ]
         items.extend(self.ratings)
         items.extend(self.events)
         for item in items:
@@ -373,12 +386,21 @@ class MarketResearchBundleV1(ContractModel):
                 else item.instrument_key
             )
             if item_key != self.instrument_key:
-                raise ValueError("market component instrument identity mismatch")
+                raise ValueError(
+                    "market component instrument identity mismatch"
+                )
 
         if self.reference is not None:
-            currency = self.reference.currency
-            for component in (self.quote, self.liquidity, self.bond_metrics):
-                if component is not None and component.currency != currency:
+            reference_currency = self.reference.currency
+            for priced_component in (
+                self.quote,
+                self.liquidity,
+                self.bond_metrics,
+            ):
+                if (
+                    priced_component is not None
+                    and priced_component.currency != reference_currency
+                ):
                     raise ValueError("market component currency mismatch")
         return self
 
@@ -397,16 +419,26 @@ class MarketReadinessAssessmentV1(ContractModel):
     assessed_at: datetime
     status: MarketAssessmentStatus
     decision_ready: bool
-    stale_components: tuple[Annotated[str, Field(min_length=1, max_length=64)], ...]
-    missing_components: tuple[Annotated[str, Field(min_length=1, max_length=64)], ...]
-    untrusted_components: tuple[Annotated[str, Field(min_length=1, max_length=64)], ...]
-    warnings: tuple[Annotated[str, Field(min_length=1, max_length=512)], ...] = ()
+    stale_components: tuple[
+        Annotated[str, Field(min_length=1, max_length=64)], ...
+    ]
+    missing_components: tuple[
+        Annotated[str, Field(min_length=1, max_length=64)], ...
+    ]
+    untrusted_components: tuple[
+        Annotated[str, Field(min_length=1, max_length=64)], ...
+    ]
+    warnings: tuple[
+        Annotated[str, Field(min_length=1, max_length=512)], ...
+    ] = ()
 
     @field_validator("assessed_at")
     @classmethod
     def normalize_timestamp(cls, value: datetime) -> datetime:
         if value.tzinfo is None or value.utcoffset() is None:
-            raise ValueError("assessment timestamp must be timezone-aware")
+            raise ValueError(
+                "assessment timestamp must be timezone-aware"
+            )
         return value.astimezone(timezone.utc)
 
     @model_validator(mode="after")
@@ -417,7 +449,9 @@ class MarketReadinessAssessmentV1(ContractModel):
             or self.untrusted_components
         )
         if self.decision_ready == blocked:
-            raise ValueError("decision_ready does not match blocking components")
+            raise ValueError(
+                "decision_ready does not match blocking components"
+            )
         expected = (
             MarketAssessmentStatus.READY
             if self.decision_ready
@@ -426,5 +460,7 @@ class MarketReadinessAssessmentV1(ContractModel):
             else MarketAssessmentStatus.PARTIAL
         )
         if self.status != expected:
-            raise ValueError("market assessment status is inconsistent")
+            raise ValueError(
+                "market assessment status is inconsistent"
+            )
         return self
