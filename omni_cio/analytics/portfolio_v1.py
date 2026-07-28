@@ -77,6 +77,10 @@ def _require_verified_snapshot(snapshot: PortfolioSnapshotV1) -> None:
             raise AdvancedPortfolioAnalyticsError(
                 "PORTFOLIO_POSITION_VALUATION_INCOMPLETE"
             )
+        if valuation.currency != position.instrument.currency:
+            raise AdvancedPortfolioAnalyticsError(
+                "PORTFOLIO_POSITION_CURRENCY_MISMATCH"
+            )
 
 
 def _validate_shocks(shocks: Iterable[Decimal]) -> tuple[Decimal, ...]:
@@ -101,7 +105,12 @@ def _full_value(position: PortfolioPositionV1) -> Decimal:
         if valuation.accrued_interest is not None
         else Decimal("0")
     )
-    return valuation.market_value.amount + accrued
+    full_value = valuation.market_value.amount + accrued
+    if full_value < 0:
+        raise AdvancedPortfolioAnalyticsError(
+            "PORTFOLIO_POSITION_VALUE_NEGATIVE"
+        )
+    return full_value
 
 
 def _position_rows(
