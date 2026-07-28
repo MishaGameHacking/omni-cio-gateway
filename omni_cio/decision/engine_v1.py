@@ -355,7 +355,7 @@ def _build_options(
         )
         limited_rationale = (
             "Verified non-blocking risk warnings support reviewing a limited change. "
-            "PR-12 does not choose an instrument or quantity."
+            "PR-12 does not choose a specific trade size."
         )
     else:
         no_action_status = DecisionOptionStatus.PREFERRED
