@@ -156,10 +156,10 @@ def test_unexpected_validator_failure_is_contained_and_redacted(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    secret = "PRIVATE_PORTFOLIO_VALUE_918273"
+    sensitive_marker = "do-not-log-this-marker"
 
     def fail(_: object) -> object:
-        raise RuntimeError(secret)
+        raise RuntimeError(sensitive_marker)
 
     monkeypatch.setattr(
         shadow_module,
@@ -173,7 +173,7 @@ def test_unexpected_validator_failure_is_contained_and_redacted(
 
     assert result.status == PortfolioShadowStatus.REJECTED
     assert result.exception_type == "RuntimeError"
-    assert secret not in caplog.text
+    assert sensitive_marker not in caplog.text
 
 
 def test_shadow_validation_does_not_mutate_source_payload() -> None:
