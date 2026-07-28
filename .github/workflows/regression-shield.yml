@@ -85,7 +85,9 @@ jobs:
           scripts tests/test_ci_security_baseline.py
 
       - name: Type-check baseline
-        run: python -m mypy
+        run: |
+          set -o pipefail
+          python -m mypy 2>&1 | tee mypy-results.txt
 
       - name: Verify stable gateway entrypoint
         run: |
@@ -140,6 +142,7 @@ jobs:
         with:
           name: regression-diagnostics
           path: |
+            mypy-results.txt
             pytest-results.xml
             coverage.xml
           if-no-files-found: warn
