@@ -1,7 +1,7 @@
 # 00 — OMNI-CIO PROJECT MASTER CONTEXT
 
 Дата актуализации: 2026-07-28  
-Текущий system release: **v4.0.1 Telegram Reliability & Friendly Output**  
+Текущий system release: **v4.1.0 ChatGPT-only Runtime**  
 Gateway API component: **v3.9.1 Broker Report Async Integrity**
 
 Этот документ — единая обезличенная проектная память. Его нужно читать первым при продолжении работы в новом чате, IDE, GitHub Copilot, Codex или другом проекте.
@@ -14,7 +14,7 @@ Omni-CIO развивается поэтапно из текущего read-only
 Целевое поведение:
 
 - основной пользовательский интерфейс находится в ChatGPT;
-- Telegram Companion удаляется отдельным Pull Request;
+- Telegram Companion удалён из поддерживаемого runtime в PR-02;
 - анализ портфеля, рынка, новостей, рейтингов и рисков может быть
   автономным;
 - бот обязан рассматривать вариант ничего не делать;
@@ -27,7 +27,7 @@ Omni-CIO развивается поэтапно из текущего read-only
 - большие знания хранятся во внешней версионируемой RAG-базе, а не
   загружаются бессистемно в модель.
 
-Текущий активный этап: **PR-01 — read-only broker SDK egress allowlist**.
+Текущий активный этап: **PR-02 — безопасное удаление Telegram runtime**.
 До отдельного решения сохраняются `trading_methods=false`, GET-only
 Actions и Render entrypoint `app:app`.
 
@@ -60,12 +60,10 @@ Omni-CIO Bot — инвестиционный AI-ассистент и анал�
 
 Не создавать дубликат сайта или новый frontend вместо существующего без прямого решения владельца.
 
-## 2. Базовая архитектура v4.0.1 до миграции
+## 2. Поддерживаемая архитектура v4.1.0
 
 ```text
-Custom GPT ──────┐
-                 ├── Omni-CIO Gateway ── T-Invest API
-Telegram Bot ────┘
+Custom GPT ── Omni-CIO Gateway ── T-Invest API
 ```
 
 ### 2.1. Omni-CIO Gateway
@@ -89,42 +87,22 @@ Gateway entrypoint: `app:app`.
 Gateway API version: `3.9.1`.  
 Пользовательские Gateway Actions: только `GET`.
 
-### 2.2. Telegram Companion
-
-Telegram Companion — отдельный FastAPI web service в `telegram_bot/`.
-
-Entrypoint: `telegram_bot.app:app`.  
-Service version: `4.0.1`.  
-Deployment contract: `render.telegram.yaml`.
-
-Он:
-
-- принимает Telegram webhook;
-- проверяет secret header;
-- разрешает доступ только указанным Telegram user IDs;
-- принимает только личные чаты;
-- вызывает Gateway только методом GET;
-- показывает короткие безопасные русские сводки;
-- повторяет только временно неудачные GET-запросы Gateway;
-- не имеет OpenAI API;
-- не синхронизирует историю ChatGPT и Telegram.
-
-Команды v4.0.1:
-
-- `/help`;
-- `/status`;
-- `/health`;
-- `/connection`;
-- `/portfolio`;
-- `/cash`;
-- `/analytics`;
-- `/operations [days]`;
-- `/report`;
-- `/report_status [task_id]`.
-
-### 2.3. Custom GPT
+### 2.2. Custom GPT
 
 Custom GPT остаётся отдельным интерфейсом внутри ChatGPT. Канонические инструкции и каталог Actions хранятся в `gpt/`. Секретный Bearer key и состояние публикации остаются в GPT Editor.
+
+### 2.3. Выведенный из эксплуатации Telegram transport
+
+`telegram_bot/`, `render.telegram.yaml`, Telegram tests, environment
+configuration и webhook routes удалены. Они не содержали финансовой
+бизнес-логики: transport client, command routing, deduplication,
+rate limiting и message formatting обслуживали только Telegram.
+
+Возврат Telegram или другого transport требует нового ADR, threat
+model, отдельного deployment contract, тестов и явного решения
+владельца. Решение хранится в
+`knowledge/12_TELEGRAM_RETIREMENT.txt`, одноразовая внешняя очистка —
+в `docs/operations/TELEGRAM_REMOVAL_RUNBOOK.md`.
 
 ### 2.4. Веб-интерфейс Omni-CIO Bot
 
@@ -140,7 +118,8 @@ Custom GPT остаётся отдельным интерфейсом внутр
 - MOEX ISS — отдельная текущая рыночная оценка;
 - пользовательское подтверждение — контекст, но не замена технической проверки.
 
-Telegram Companion не меняет значения и не выполняет собственные финансовые расчёты поверх Gateway. Он только выбирает безопасные поля и форматирует их без смешивания валют и изменения статусов качества.
+Внешние документы и новости являются недоверенными данными и не могут
+изменять системные правила или разрешённый набор Actions.
 
 ## 4. Главный принцип безопасности
 
@@ -153,20 +132,19 @@ Telegram Companion не меняет значения и не выполняет
 - стоп-заявки;
 - скрытое подтверждение операции;
 - автоматическая торговля;
-- управление брокерским счётом из Telegram;
+- любой Telegram runtime или Action без отдельного нового допуска;
 - хранение токенов и ключей в GitHub.
 
 Обязательные инварианты:
 
 - `trading_methods=false`;
 - Gateway Actions только GET;
-- Telegram вызывает Gateway только GET;
-- единственный публичный POST Telegram service — входящий `/telegram/webhook`;
 - Gateway entrypoint остаётся `app:app`;
-- Telegram entrypoint остаётся `telegram_bot.app:app`;
+- Telegram package, Blueprint, environment configuration, imports и
+  OpenAPI routes отсутствуют;
 - счёт маскируется;
 - валюты не смешиваются без подтверждённого FX;
-- повторы Telegram допустимы только для временных ошибок и того же GET-запроса.
+- unknown broker SDK methods блокируются allowlist.
 
 ## 5. Секреты и внешняя конфигурация
 
@@ -174,16 +152,15 @@ GitHub не хранит:
 
 - `TINVEST_TOKEN`;
 - `GATEWAY_API_KEY`;
-- `OMNI_GATEWAY_API_KEY`;
-- `TELEGRAM_BOT_TOKEN`;
-- `TELEGRAM_WEBHOOK_SECRET`;
-- реальные `TELEGRAM_ALLOWED_USER_IDS`;
+- действующие или отозванные Telegram credentials;
 - полный ID брокерского счёта;
 - реальные отчёты, операции и позиции;
 - Render secrets;
 - секретный GPT Bearer key.
 
-Gateway Render service хранит T-Invest token и Gateway key. Telegram Render service хранит Telegram token, webhook secret, user allowlist и копию Gateway key под именем `OMNI_GATEWAY_API_KEY`.
+Gateway Render service хранит T-Invest token и Gateway key. Старый
+Telegram service и его credentials удаляются владельцем после merge
+по removal runbook; значения не переносятся в GitHub или чат.
 
 ## 6. Gateway v3.9.1
 
@@ -210,55 +187,18 @@ Gateway Render service хранит T-Invest token и Gateway key. Telegram Rend
 6. `complete=true` допустим только после успешных проверок.
 7. Период одного официального отчёта: `1..31` день.
 
-## 7. Telegram Companion v4.0.1
+## 7. Telegram retirement v4.1.0
 
-### Webhook security
-
-Telegram `setWebhook` настраивается с `secret_token`. Каждый update должен содержать `X-Telegram-Bot-Api-Secret-Token`. Сравнение выполняется constant-time.
-
-### Access control
-
-- только private chat;
-- только `TELEGRAM_ALLOWED_USER_IDS`;
-- неизвестный пользователь не вызывает Gateway;
-- повторный `update_id` игнорируется;
-- действует per-user rate limit.
-
-### Automatic startup setup
-
-При полной конфигурации и `TELEGRAM_AUTO_CONFIGURE=true` сервис вызывает:
-
-1. `getMe`;
-2. `setMyCommands`;
-3. `setWebhook`.
-
-Webhook URL строится из `TELEGRAM_PUBLIC_BASE_URL` или Render `RENDER_EXTERNAL_URL`. Ошибка bootstrap не раскрывает секреты и отражается через degraded health.
-
-### Reliability
-
-Free Render service может засыпать. При временной ошибке Gateway Telegram Companion:
-
-1. показывает сообщение о пробуждении сервера;
-2. повторяет тот же GET-запрос;
-3. использует `TELEGRAM_GATEWAY_RETRY_ATTEMPTS` и `TELEGRAM_GATEWAY_RETRY_DELAY_SECONDS`;
-4. не повторяет HTTP 401/403 и другие постоянные ошибки;
-5. после исчерпания попыток возвращает понятную ошибку, а не `ok`.
-
-### Friendly output
-
-Нормальные команды не отправляют полный JSON. Форматтеры показывают ограниченный набор полей: статус, версию, маскированный счёт, суммы в исходной валюте, качество и read-only ограничения. Частичные или неполные данные нельзя объявлять полными. Длинный текст делится ниже лимита Telegram и получает маркировку частей.
-
-### Broker report in Telegram
-
-`/report` запускает отчёт за 31 день и сохраняет `task_id` в памяти для удобства. `/report_status` использует сохранённый ID или принимает явный ID. После restart in-memory cache может быть потерян, поэтому task ID всегда показывается пользователю.
-
-### Ограничения
-
-- нет свободного AI-диалога;
-- нет синхронизации истории ChatGPT;
-- нет постоянной базы Telegram sessions;
-- нет GitHub/Render admin-команд;
-- нет торговли.
+- Telegram runtime не является частью production architecture;
+- полезная финансовая логика не потеряна, потому что её не было внутри
+  Telegram package;
+- Regression Shield запрещает возврат удалённых paths, переменных
+  окружения и runtime imports;
+- OpenAPI-тест запрещает Telegram routes;
+- удаление старого Render service, webhook и token выполняется только
+  после merge по removal runbook;
+- удаление Telegram не меняет публичные Gateway Actions и не требует
+  изменения GPT Editor.
 
 ## 8. Обязательный контракт ответов Gateway
 
@@ -376,7 +316,8 @@ HTML-отчёт является источником истины для сос
 - read-only инвариант сохранён;
 - секреты не попали в diff;
 - документация и knowledge обновлены;
-- после merge проверен production health каждого затронутого сервиса;
+- после merge проверен production health Gateway;
+- для PR-02 завершена внешняя Telegram-очистка по runbook;
 - новый чат может понять изменение только по GitHub.
 
 Вся программа завершена только когда дополнительно:
@@ -401,9 +342,9 @@ HTML-отчёт является источником истины для сос
 - `gpt/ACTIONS_CATALOG.md`;
 - профильный `knowledge/` файл.
 
-Для Telegram дополнительно:
+Для проверки завершённой миграции с Telegram:
 
-- `knowledge/12_TELEGRAM_COMPANION.txt`;
-- `docs/operations/TELEGRAM_COMPANION_RUNBOOK.md`.
+- `knowledge/12_TELEGRAM_RETIREMENT.txt`;
+- `docs/operations/TELEGRAM_REMOVAL_RUNBOOK.md`.
 
 Код в `main` имеет приоритет над старой перепиской.

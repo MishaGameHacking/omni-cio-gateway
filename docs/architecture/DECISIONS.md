@@ -22,7 +22,9 @@ Render и GPT Actions зависят от стабильного FastAPI app. И
 
 **Статус:** принято.
 
-GitHub не хранит T-Invest token, Gateway key, Telegram token, webhook secret, реальные Telegram user IDs, полный номер счёта, реальные отчёты и финансовые данные.
+GitHub не хранит T-Invest token, Gateway key, любые действующие или
+отозванные transport credentials, полный номер счёта, реальные отчёты
+и финансовые данные.
 
 ## ADR-005 — Frontend нельзя дублировать до определения источника
 
@@ -38,36 +40,55 @@ Release-patcher workflow допускаются только во временн
 
 ## ADR-007 — Telegram является отдельным service, а не частью Gateway
 
-**Статус:** принято.
+**Статус:** заменено ADR-013.
 
 Telegram webhook имеет иной сетевой и эксплуатационный профиль, чем GPT Actions. Поэтому Telegram Companion запускается через `telegram_bot.app:app` и `render.telegram.yaml`. Сбой или неправильная конфигурация Telegram не должны ломать `app:app`.
 
 ## ADR-008 — Telegram использует команды без OpenAI API
 
-**Статус:** принято.
+**Статус:** заменено ADR-013.
 
 Telegram Companion использует фиксированные read-only команды. Это снижает стоимость, уменьшает неоднозначность маршрутизации и позволяет проверить безопасность. Свободный AI-диалог остаётся отдельным будущим релизом.
 
 ## ADR-009 — Webhook настраивается автоматически при старте
 
-**Статус:** принято.
+**Статус:** заменено ADR-013.
 
 Telegram service использует Render `RENDER_EXTERNAL_URL`, вызывает `getMe`, `setMyCommands` и `setWebhook`, а webhook защищается secret token. Ошибка auto setup не раскрывает секреты и отражается degraded health.
 
 ## ADR-010 — Telegram не дублирует Gateway business logic
 
-**Статус:** принято.
+**Статус:** заменено ADR-013.
 
 Telegram service вызывает существующие Gateway GET endpoints и не обращается к T-Invest напрямую. Он не пересчитывает финансовые показатели, а только выбирает безопасные поля, форматирует их и доставляет ответ.
 
 ## ADR-011 — Retry разрешён только для идемпотентных временных сбоев
 
-**Статус:** принято.
+**Статус:** заменено ADR-013.
 
 Telegram Companion может повторять только тот же GET-запрос к Gateway при сетевой ошибке или HTTP 408/425/429/5xx. Ошибки авторизации, валидации и любые изменяющие операции не повторяются. Исчерпание попыток остаётся ошибкой и не превращается в `ok`.
 
 ## ADR-012 — Telegram normal output является краткой сводкой
 
-**Статус:** принято.
+**Статус:** заменено ADR-013.
 
 Полный JSON неудобен в мобильном Telegram и может превышать лимит одного сообщения. v4.0.1 показывает небольшой фиксированный набор полей, сохраняет валюту и статусы качества Gateway, а длинный текст делит на маркированные части ниже лимита Telegram Bot API.
+
+## ADR-013 — Поддерживаемый интерфейс находится только в ChatGPT
+
+**Статус:** принято.
+
+По решению владельца Telegram Companion выведен из эксплуатации.
+Удаляются `telegram_bot/`, `render.telegram.yaml`, Telegram tests и
+active environment configuration. Gateway и публичные Actions не
+меняются: единственный production entrypoint остаётся `app:app`,
+Actions остаются GET-only, `trading_methods=false`.
+
+Удалённые модули не содержали бизнес-логики Gateway. HTTP transport,
+command routing, webhook security, deduplication, rate limit и
+message formatting являлись Telegram-specific delivery layer, поэтому
+их перенос в Gateway создавал бы ненужную связанность.
+
+Возврат Telegram или другого transport допускается только новым ADR,
+threat model, отдельным deployment contract, тестами и явным решением
+владельца.

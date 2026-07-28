@@ -10,10 +10,9 @@
 2. Прочитать `docs/README.md`.
 3. Прочитать `knowledge/00_PROJECT_MASTER_CONTEXT.md`.
 4. Прочитать `gpt/INSTRUCTIONS.md` и `gpt/ACTIONS_CATALOG.md`, если задача касается Custom GPT.
-5. Для Telegram прочитать `knowledge/12_TELEGRAM_COMPANION.txt` и `docs/operations/TELEGRAM_COMPANION_RUNBOOK.md`.
-6. Прочитать профильный файл из `knowledge/`.
-7. Проверить `main`, открытые PR, последние релизы и GitHub Actions.
-8. Не считать старую переписку источником истины, если она расходится с кодом в `main`.
+5. Прочитать профильный файл из `knowledge/`.
+6. Проверить `main`, открытые PR, последние релизы и GitHub Actions.
+7. Не считать старую переписку источником истины, если она расходится с кодом в `main`.
 
 ## 2. Неприкосновенный read-only режим
 
@@ -29,10 +28,10 @@
 Обязательные инварианты:
 
 - пользовательские Gateway Actions — только `GET`;
-- Telegram Companion вызывает gateway только методом `GET`;
-- единственный допустимый публичный `POST` в Telegram service — входящий `/telegram/webhook`, который не изменяет брокерский счёт;
 - `trading_methods=false`;
 - Regression Shield отклоняет торговые operationId и mutating gateway routes.
+- Telegram runtime выведен из эксплуатации и не должен появляться в
+  Gateway, OpenAPI или deployment configuration.
 
 ## 3. Секреты и персональные данные
 
@@ -40,9 +39,8 @@
 
 - `TINVEST_TOKEN`;
 - `GATEWAY_API_KEY` или `OMNI_GATEWAY_API_KEY`;
-- `TELEGRAM_BOT_TOKEN`;
-- `TELEGRAM_WEBHOOK_SECRET`;
-- реальные Telegram user IDs владельца;
+- любые старые Telegram tokens, webhook secrets и user IDs, обнаруженные
+  при очистке внешних систем;
 - полный номер брокерского счёта;
 - реальные брокерские отчёты, операции и позиции;
 - Authorization headers;
@@ -53,16 +51,15 @@
 ## 4. Стабильность runtime и деплоя
 
 - Gateway entrypoint: `app:app`.
-- Telegram entrypoint: `telegram_bot.app:app`.
-- Gateway и Telegram разворачиваются как отдельные Render services.
-- Telegram использует отдельный `render.telegram.yaml`; не ломать существующий `render.yaml`.
-- Gateway API version и Telegram service version могут отличаться; это нужно явно документировать.
+- Поддерживается только Gateway Render service из `render.yaml`.
+- `telegram_bot/`, `render.telegram.yaml` и `/telegram/webhook` выведены
+  из эксплуатации и не должны возвращаться без отдельного ADR и решения
+  владельца.
 - Перенос root runtime-модулей выполняется только отдельным refactor PR.
 
 ## 5. Структура репозитория
 
 - Gateway runtime и wrappers — в корне;
-- Telegram runtime — в `telegram_bot/`;
 - доменные правила — в `knowledge/`;
 - Custom GPT — в `gpt/`;
 - архитектура, runbooks и inventory — в `docs/`;
@@ -83,23 +80,16 @@
 
 При изменении Action contract обновить `gpt/` и профильный `knowledge/` файл.
 
-## 7. Telegram Companion
+## 7. Выведенный из эксплуатации Telegram runtime
 
-- Webhook проверяет `X-Telegram-Bot-Api-Secret-Token`.
-- Разрешены только личные чаты.
-- Доступ только для `TELEGRAM_ALLOWED_USER_IDS`.
-- Повторные `update_id` игнорируются.
-- Действует per-user rate limit.
-- Команды не управляют GitHub, Render, ключами или торговыми действиями.
-- Telegram token никогда не должен появляться в URL ошибок, логах или health.
-- Startup setup (`getMe`, `setMyCommands`, `setWebhook`) не должен падением ломать health service; ошибка отражается безопасным degraded status.
-- `/report` использует максимум 31 день и сохраняет `task_id` только как временное удобство; пользовательский task ID должен оставаться видимым для восстановления после restart.
-- Нормальный ответ команды — краткая безопасная сводка, а не полный JSON.
-- Friendly formatter не должен пересчитывать финансовые данные, смешивать валюты или менять `status`, `complete`, `quality`.
-- Длинные ответы должны безопасно делиться ниже лимита Telegram Bot API.
-- Retry разрешён только для того же GET-запроса при временной сетевой ошибке или HTTP 408/425/429/5xx.
-- HTTP 401/403, validation errors и любые mutating requests нельзя повторять.
-- После исчерпания retry вернуть ошибку, а не ложный `ok`.
+- Не добавлять package `telegram_bot/`.
+- Не добавлять `render.telegram.yaml`.
+- Не публиковать `/telegram/webhook`.
+- Не возвращать Telegram-specific переменные в `.env.example`,
+  `render.yaml` или dependency files.
+- История решения хранится в `knowledge/12_TELEGRAM_RETIREMENT.txt`.
+- Ручная очистка внешнего сервиса выполняется по
+  `docs/operations/TELEGRAM_REMOVAL_RUNBOOK.md`.
 
 ## 8. Деньги и качество данных
 
@@ -107,7 +97,6 @@
 - Денежные расчёты выполнять через `Decimal` или безопасную эквивалентную логику.
 - Не двойно учитывать комиссии, child operations, nested commissions или embedded trades.
 - Не объявлять данные полными при `complete=false`, `status=partial` или `pagination.truncated=true`.
-- Telegram не должен улучшать или переинтерпретировать финансовые данные gateway: он только безопасно доставляет ответ.
 
 ## 9. Брокерский отчёт T-Invest
 
@@ -129,13 +118,14 @@ python scripts/check_repository_layout.py
 python -m compileall -q app.py app_v371.py app_v360.py main.py \
   portfolio_market.py portfolio_analytics.py cash_liquidity.py \
   purchase_capacity.py purchase_capacity_integrity.py \
-  operations_analytics.py broker_report_reconciliation telegram_bot tests scripts
+  operations_analytics.py broker_report_reconciliation tests scripts
 python -m pytest -q
 ```
 
-Для Telegram обязательны тесты: health без секретов, auto setup, неверный webhook secret, unauthorized user, GET-only gateway call, `/status`, retryable и non-retryable errors, friendly output, safe message splitting, report task reuse, duplicate update suppression и `trading_methods=false`.
+Обязателен тест, подтверждающий отсутствие Telegram runtime, Blueprint,
+active env configuration, imports и OpenAPI routes.
 
-Тесты не должны обращаться к реальным Telegram, Render или T-Invest API.
+Тесты не должны обращаться к реальным Render или T-Invest API.
 
 ## 11. Git workflow
 
@@ -165,8 +155,10 @@ GitHub не заменяет:
 
 - Render Dashboard для секретов и deploy state;
 - GPT Editor для публикации и Bearer key;
-- BotFather для создания и ротации Telegram token;
 - T-Invest для реальных данных;
 - исходный frontend-проект, пока он не найден.
+
+BotFather и старый Telegram Render service нужны только для одноразовой
+очистки по retirement runbook.
 
 Не создавать дубликат существующего frontend.

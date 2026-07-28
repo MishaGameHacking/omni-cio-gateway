@@ -13,7 +13,7 @@
 3. Прочитай docs/README.md.
 4. Прочитай knowledge/00_PROJECT_MASTER_CONTEXT.md.
 5. Если задача касается Custom GPT — прочитай gpt/README.md, gpt/CONFIGURATION.md, gpt/INSTRUCTIONS_COMPACT.md, gpt/ACTIONS_CATALOG.md и профильные knowledge-файлы.
-6. Если задача касается Telegram — прочитай knowledge/12_TELEGRAM_COMPANION.txt и docs/operations/TELEGRAM_COMPANION_RUNBOOK.md.
+6. Если задача касается старой Telegram-интеграции — прочитай knowledge/12_TELEGRAM_RETIREMENT.txt и docs/operations/TELEGRAM_REMOVAL_RUNBOOK.md. Не восстанавливай runtime без нового ADR и решения владельца.
 7. Проверь main, последние PR и GitHub Actions.
 
 Обязательные инварианты:
@@ -22,8 +22,8 @@
 - никаких торговых endpoints;
 - пользовательские Gateway Actions только GET;
 - Gateway entrypoint app:app;
-- Telegram entrypoint telegram_bot.app:app;
-- секреты, реальные Telegram ID, полный номер счёта и реальные брокерские данные нельзя сохранять в GitHub;
+- Telegram runtime, Blueprint, environment configuration, imports и Actions отсутствуют;
+- секреты, старые Telegram credentials, полный номер счёта и реальные брокерские данные нельзя сохранять в GitHub;
 - изменения делать в отдельной ветке через Pull Request;
 - перед merge проверить Regression Shield;
 - при расхождении старой переписки и main доверять main;

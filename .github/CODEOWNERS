@@ -8,10 +8,6 @@
 /render.yaml @Misha2304
 /requirements*.txt @Misha2304
 
-# Telegram runtime and deployment
-/telegram_bot/ @Misha2304
-/render.telegram.yaml @Misha2304
-
 # Domain engines
 /*.py @Misha2304
 /broker_report_reconciliation/ @Misha2304

@@ -10,24 +10,16 @@ omni-cio-gateway/
 ├── main.py                        # историческое ядро FastAPI
 ├── *_analytics.py / *_market.py   # доменные gateway-модули
 ├── broker_report_reconciliation/  # официальный отчёт и сверка
-├── telegram_bot/                  # Telegram Companion v4.0.1
-│   ├── __init__.py                # версия компонента
-│   ├── config.py                  # env и retry configuration
-│   ├── clients.py                 # Telegram и Gateway HTTP clients
-│   ├── commands.py                # allowlist, routing и reliability
-│   ├── formatters.py              # краткие безопасные ответы
-│   └── app.py                     # entrypoint telegram_bot.app:app
 ├── tests/                         # unit, endpoint, OpenAPI, Regression Shield
 ├── knowledge/                     # правила предметной области для AI
 ├── gpt/                           # каноническая конфигурация Custom GPT
 ├── docs/
 │   ├── architecture/              # архитектура и карта файлов
-│   ├── operations/                # gateway и Telegram runbooks
+│   ├── operations/                # gateway и migration runbooks
 │   └── inventory/                 # реестр компонентов и внешних активов
 ├── scripts/                       # локальные безопасные проверки
 ├── .github/                       # CI, templates и ownership
 ├── render.yaml                    # Gateway deploy contract
-├── render.telegram.yaml           # Telegram deploy contract
 ├── requirements.txt
 ├── requirements-dev.txt
 ├── .env.example
@@ -40,16 +32,10 @@ omni-cio-gateway/
 
 В корне остаются файлы, необходимые для совместимости production gateway. Новые крупные функции не добавляются в `main.py`; они живут в отдельном модуле.
 
-### `telegram_bot/`
+### Retired transport paths
 
-Отдельный Python package для Telegram interface. Он не импортируется в Gateway `app.py`, не меняет его OpenAPI и разворачивается отдельным Render service.
-
-Допустимые endpoints Telegram service:
-
-- `GET /health`;
-- `POST /telegram/webhook` — только входящий Telegram update с secret header.
-
-Telegram package не содержит торговых методов и вызывает Gateway только GET-запросами. `commands.py` управляет безопасным retry и маршрутизацией, а `formatters.py` выбирает краткие поля без пересчёта финансовых данных.
+`telegram_bot/`, `render.telegram.yaml` и `/telegram/webhook` удалены.
+Repository checks должны блокировать их случайное возвращение.
 
 ### `knowledge/`
 
@@ -60,37 +46,43 @@ Telegram package не содержит торговых методов и выз
 - `09_` — рынок и покупательная способность;
 - `10_` — операции;
 - `11_` — асинхронный брокерский отчёт;
-- `12_` — Telegram Companion.
+- `12_` — решение о выводе Telegram runtime из эксплуатации.
 
 ### `gpt/`
 
-Переносимая конфигурация Custom GPT. Telegram не заменяет эти файлы и не синхронизирует историю ChatGPT.
+Переносимая конфигурация единственного поддерживаемого интерфейса —
+Custom GPT.
 
 ### `docs/`
 
-Архитектура, runbooks, решения и inventory. Gateway и Telegram имеют отдельные deployment runbooks.
+Архитектура, runbooks, решения и inventory. Старый Telegram deployment
+имеет только removal runbook.
 
 ### `.github/workflows/`
 
-Только постоянные workflow. Regression Shield проверяет оба entrypoint. Одноразовые patch workflow удаляются после релиза.
+Только постоянные workflow. Regression Shield проверяет Gateway
+entrypoint, read-only contract и отсутствие retired runtime. Одноразовые
+patch workflow удаляются после релиза.
 
 ### `tests/`
 
-Для Telegram нужны health, bootstrap, secret header, allowlist, GET-only gateway, `/status`, retry policy, friendly formatting, safe message splitting, report task reuse и duplicate-update tests. Реальные Telegram/T-Invest вызовы запрещены.
+Обязателен отдельный тест отсутствия Telegram package, Blueprint,
+configuration, imports и OpenAPI routes. Реальные T-Invest вызовы
+запрещены.
 
 ## Что нельзя переносить без отдельного PR
 
 - `app.py` и `app:app`;
-- `telegram_bot.app:app` после production запуска;
 - wrapper-модули gateway;
 - operationId и публичные Gateway paths;
-- `/telegram/webhook` path после регистрации webhook;
-- ключевые поля ответов, используемые Custom GPT и Telegram.
+- ключевые поля ответов, используемые Custom GPT.
 
 ## Deployment separation
 
-`render.yaml` управляет Gateway contract. `render.telegram.yaml` создаёт только Telegram service и намеренно не меняет существующий Gateway service.
+`render.yaml` является единственным deployment contract в репозитории.
 
 ## Будущий рефакторинг
 
-Gateway-код может перейти в пакет `omni_cio_gateway/` только через compatibility migration. Telegram state может получить внешнее хранилище в отдельном релизе, но v4.0.1 не требует базы данных.
+Gateway-код может перейти в пакет `omni_cio_gateway/` только через
+compatibility migration. Новый transport integration потребует
+отдельного ADR и security review.

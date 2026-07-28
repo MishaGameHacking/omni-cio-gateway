@@ -1,6 +1,8 @@
 # Bot-only file manifest
 
-Этот список содержит только файлы, относящиеся к Omni-CIO Gateway, Custom GPT и Telegram Companion. Данные старого аккаунта ChatGPT, личные чаты и посторонние проекты сюда не входят.
+Этот список содержит только файлы, относящиеся к Omni-CIO Gateway и
+Custom GPT. Данные старого аккаунта ChatGPT, личные чаты и посторонние
+проекты сюда не входят.
 
 ## 1. Обязательные файлы для нового проекта ChatGPT
 
@@ -37,7 +39,7 @@
 - операций и cash-flow reconciliation;
 - официального брокерского отчёта;
 - асинхронного task lifecycle;
-- Telegram Companion;
+- решение о выводе Telegram Companion из эксплуатации;
 - современного стиля 2026.
 
 В новый ChatGPT Project не обязательно загружать каждый knowledge-файл вручную, если GitHub подключён и чат может прочитать репозиторий. Для Custom GPT Knowledge загружается только необходимый справочный файл стиля или другие явно выбранные документы.
@@ -47,10 +49,8 @@
 В GitHub обязательно сохраняются:
 
 - `app.py` и Gateway runtime modules;
-- `telegram_bot/`;
 - `broker_report_reconciliation/`;
 - `render.yaml`;
-- `render.telegram.yaml`;
 - `requirements.txt` и dev dependencies;
 - `tests/`;
 - `scripts/`;
@@ -73,10 +73,8 @@
 - память и настройки другого аккаунта;
 - файлы других проектов;
 - `TINVEST_TOKEN`;
-- `GATEWAY_API_KEY` и `OMNI_GATEWAY_API_KEY`;
-- `TELEGRAM_BOT_TOKEN`;
-- `TELEGRAM_WEBHOOK_SECRET`;
-- реальные Telegram user IDs;
+- `GATEWAY_API_KEY`;
+- действующие или отозванные Telegram credentials;
 - полный номер брокерского счёта;
 - реальные операции, позиции и брокерские отчёты;
 - Render secrets;
@@ -96,4 +94,6 @@ GitHub хранит желаемую конфигурацию, но не сек�
 8. тест одного целевого GET Action;
 9. проверка `trading_methods=false`.
 
-Render services, T-Invest token и Telegram Companion не создаются заново, если используются существующие production services.
+Существующий Render Gateway и T-Invest token не создаются заново.
+Старый Telegram service выводится из эксплуатации по
+`docs/operations/TELEGRAM_REMOVAL_RUNBOOK.md`.

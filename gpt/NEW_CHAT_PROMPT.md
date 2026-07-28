@@ -43,9 +43,11 @@
 
 Дополнительно прочитайте всю папку `gpt/`, `knowledge/13_COMMUNICATION_STYLE_2026.txt` и проверьте production `/openapi.json` после Render deploy.
 
-## Для задачи по Telegram
+## Для проверки завершённой миграции с Telegram
 
-Прочитайте `knowledge/12_TELEGRAM_COMPANION.txt` и `docs/operations/TELEGRAM_COMPANION_RUNBOOK.md`.
+Прочитайте `knowledge/12_TELEGRAM_RETIREMENT.txt` и
+`docs/operations/TELEGRAM_REMOVAL_RUNBOOK.md`. Не восстанавливайте
+удалённый runtime без нового ADR, threat model и решения владельца.
 
 ## Для задачи по frontend
 
