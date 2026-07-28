@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
+from enum import StrEnum
 from typing import Any, TypeVar
 
 from omni_cio.contracts.v1.common import (
@@ -46,7 +47,7 @@ class OperationsAnalyticsAdapterError(ValueError):
     """The legacy operations analytics payload cannot satisfy contract v1."""
 
 
-EnumT = TypeVar("EnumT")
+EnumT = TypeVar("EnumT", bound=StrEnum)
 
 
 def _obj(value: object, field: str) -> Mapping[str, Any]:
@@ -80,12 +81,17 @@ def _text(
 def _integer(value: object, field: str) -> int:
     if isinstance(value, bool):
         raise OperationsAnalyticsAdapterError(f"{field} must be an integer")
-    try:
-        result = int(value)  # type: ignore[arg-type]
-    except (TypeError, ValueError) as exc:
-        raise OperationsAnalyticsAdapterError(
-            f"{field} must be an integer"
-        ) from exc
+    if isinstance(value, int):
+        result = value
+    elif isinstance(value, str):
+        try:
+            result = int(value)
+        except ValueError as exc:
+            raise OperationsAnalyticsAdapterError(
+                f"{field} must be an integer"
+            ) from exc
+    else:
+        raise OperationsAnalyticsAdapterError(f"{field} must be an integer")
     if result < 0:
         raise OperationsAnalyticsAdapterError(f"{field} must be nonnegative")
     return result
