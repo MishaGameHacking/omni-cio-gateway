@@ -46,6 +46,12 @@ def _ratio(numerator: Decimal, denominator: Decimal) -> Decimal:
     return numerator / denominator if denominator > 0 else Decimal("0")
 
 
+def _require_aware_timestamp(value: datetime) -> datetime:
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise AdvancedPortfolioAnalyticsError("ANALYTICS_TIMESTAMP_MUST_BE_AWARE")
+    return value.astimezone(timezone.utc)
+
+
 def _require_verified_snapshot(snapshot: PortfolioSnapshotV1) -> None:
     quality = snapshot.metadata.quality
     blocking_issue = any(
@@ -105,19 +111,21 @@ def _position_rows(
     total: Decimal,
     invested_value: Decimal,
 ) -> tuple[PositionWeightV1, ...]:
-    rows = [
-        PositionWeightV1(
-            stable_key=position.instrument.stable_key(),
-            name=position.instrument.name,
-            ticker=position.instrument.ticker,
-            instrument_type=position.instrument.instrument_type,
-            currency=currency,
-            full_market_value=_full_value(position),
-            portfolio_weight=_ratio(_full_value(position), total),
-            invested_weight=_ratio(_full_value(position), invested_value),
+    rows: list[PositionWeightV1] = []
+    for position in positions:
+        full_value = _full_value(position)
+        rows.append(
+            PositionWeightV1(
+                stable_key=position.instrument.stable_key(),
+                name=position.instrument.name,
+                ticker=position.instrument.ticker,
+                instrument_type=position.instrument.instrument_type,
+                currency=currency,
+                full_market_value=full_value,
+                portfolio_weight=_ratio(full_value, total),
+                invested_weight=_ratio(full_value, invested_value),
+            )
         )
-        for position in positions
-    ]
     rows.sort(key=lambda row: (row.full_market_value, row.stable_key), reverse=True)
     return tuple(rows)
 
@@ -265,7 +273,9 @@ def build_advanced_portfolio_analytics(
     """Build exact, currency-local analytics from a verified portfolio snapshot."""
     _require_verified_snapshot(snapshot)
     shocks = _validate_shocks(stress_shocks)
-    calculated_at = (retrieved_at or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    calculated_at = _require_aware_timestamp(
+        retrieved_at or datetime.now(timezone.utc)
+    )
 
     totals = {row.currency: row for row in snapshot.totals_by_currency}
     positions_by_currency: dict[str, list[PortfolioPositionV1]] = defaultdict(list)
@@ -276,6 +286,12 @@ def build_advanced_portfolio_analytics(
                 "PORTFOLIO_POSITION_VALUATION_INCOMPLETE"
             )
         positions_by_currency[valuation.currency].append(position)
+
+    missing_currency_totals = set(positions_by_currency) - set(totals)
+    if missing_currency_totals:
+        raise AdvancedPortfolioAnalyticsError(
+            "PORTFOLIO_POSITION_CURRENCY_TOTAL_MISSING"
+        )
 
     rows: list[CurrencyPortfolioAnalyticsV1] = []
     for currency, total_row in sorted(totals.items()):
