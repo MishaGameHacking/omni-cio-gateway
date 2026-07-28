@@ -23,6 +23,7 @@ files = [
   "sdk_order_compat.py",
   "omni_cio/contracts",
   "omni_cio/adapters",
+  "omni_cio/quality",
   "scripts/check_ci_security_baseline.py",
   "scripts/check_repository_layout.py",
 ]
