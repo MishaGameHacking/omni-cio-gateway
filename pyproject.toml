@@ -24,6 +24,7 @@ files = [
   "omni_cio/contracts",
   "omni_cio/adapters",
   "omni_cio/quality",
+  "omni_cio/analytics",
   "scripts/check_ci_security_baseline.py",
   "scripts/check_repository_layout.py",
 ]

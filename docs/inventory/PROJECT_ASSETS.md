@@ -24,6 +24,11 @@
 - fail-closed adapter существующего `getOperationsAnalytics` payload с
   обязательными `trading_methods=false`, masked account, read-only source и
   double-count protections;
+- `AdvancedPortfolioAnalyticsV1` и pure analytics engine для структуры,
+  cash/invested weights, asset-class allocation, top-1/top-5 concentration,
+  HHI, effective position count и stress sensitivities отдельно по валютам;
+- explicit missing-data records для issuer, sector, liquidity, historical
+  prices, volatility, drawdown, correlation, tax basis и bond-specific inputs;
 - cash/liquidity diagnostics;
 - purchase capacity preview и integrity;
 - operations analytics;
