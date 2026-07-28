@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
-from typing import Any
+from typing import Any, TypeVar
 
 from omni_cio.contracts.v1.common import (
     AccountReference,
@@ -44,6 +44,9 @@ from omni_cio.contracts.v1.operations import (
 
 class OperationsAnalyticsAdapterError(ValueError):
     """The legacy operations analytics payload cannot satisfy contract v1."""
+
+
+EnumT = TypeVar("EnumT")
 
 
 def _obj(value: object, field: str) -> Mapping[str, Any]:
@@ -138,7 +141,11 @@ def _currency(value: object, field: str) -> str:
     return result
 
 
-def _enum_value(enum_type: type[Any], value: object, field: str) -> Any:
+def _enum_value(
+    enum_type: type[EnumT],
+    value: object,
+    field: str,
+) -> EnumT:
     text = _text(value, field)
     assert text is not None
     try:
@@ -150,14 +157,18 @@ def _enum_value(enum_type: type[Any], value: object, field: str) -> Any:
 
 
 def _count(row: Mapping[str, Any], field: str) -> int:
-    return _integer(row.get(field, 0), field)
+    return _integer(row.get(field), field)
 
 
-def _cash_flow_rows(payload: Mapping[str, Any]) -> tuple[CurrencyCashFlowV1, ...]:
+def _cash_flow_rows(
+    payload: Mapping[str, Any],
+) -> tuple[CurrencyCashFlowV1, ...]:
     result: list[CurrencyCashFlowV1] = []
-    for index, item in enumerate(
-        _rows(payload.get("cash_summary_by_currency", ()), "cash_summary_by_currency")
-    ):
+    items = _rows(
+        payload.get("cash_summary_by_currency", ()),
+        "cash_summary_by_currency",
+    )
+    for index, item in enumerate(items):
         row = _obj(item, f"cash_summary_by_currency[{index}]")
         categories: list[CategoryCashFlowV1] = []
         for category in OperationCategory:
@@ -213,7 +224,9 @@ def _external_flow_rows(
 
 def _turnover_rows(payload: Mapping[str, Any]) -> tuple[TurnoverV1, ...]:
     result: list[TurnoverV1] = []
-    for index, item in enumerate(_rows(payload.get("turnover", ()), "turnover")):
+    for index, item in enumerate(
+        _rows(payload.get("turnover", ()), "turnover")
+    ):
         row = _obj(item, f"turnover[{index}]")
         result.append(
             TurnoverV1(
@@ -405,10 +418,7 @@ def _reconciliation(payload: Mapping[str, Any]) -> OperationsReconciliationV1:
     )
 
 
-def _source_quality(
-    payload: Mapping[str, Any],
-    component_error_count: int,
-) -> OperationsSourceQualityV1:
+def _source_quality(payload: Mapping[str, Any]) -> OperationsSourceQualityV1:
     row = _obj(payload.get("quality"), "quality")
     return OperationsSourceQualityV1(
         raw_items_received=_count(row, "raw_items_received"),
@@ -439,7 +449,6 @@ def _source_quality(
             row,
             "instrument_groups_skipped_by_limit",
         ),
-        component_error_count=component_error_count,
         complete=_boolean(row.get("complete"), "complete"),
         no_cross_currency_aggregation=_boolean(
             row.get("no_cross_currency_aggregation"),
@@ -453,6 +462,7 @@ def _issues(
     payload: Mapping[str, Any],
     quality: OperationsSourceQualityV1,
     instrument_activity: tuple[InstrumentActivityV1, ...],
+    component_error_count: int,
 ) -> tuple[DataIssue, ...]:
     result: list[DataIssue] = []
 
@@ -534,7 +544,7 @@ def _issues(
             "Instrument activity groups were limited by the source response.",
             "instrument_activity",
         )
-    if quality.component_error_count:
+    if component_error_count:
         add(
             "OPERATIONS_COMPONENT_ERRORS",
             IssueSeverity.ERROR,
@@ -587,8 +597,13 @@ def operations_analytics_v1_from_payload(
     turnovers = _turnover_rows(payload)
     instruments = _instrument_rows(payload)
     reconciliation = _reconciliation(payload)
-    source_quality = _source_quality(payload, len(component_errors))
-    issues = _issues(payload, source_quality, instruments)
+    source_quality = _source_quality(payload)
+    issues = _issues(
+        payload,
+        source_quality,
+        instruments,
+        len(component_errors),
+    )
 
     blocking_errors = any(
         issue.severity == IssueSeverity.ERROR for issue in issues
@@ -645,9 +660,9 @@ def operations_analytics_v1_from_payload(
         ),
     )
 
-    state_counts_row = _obj(payload.get("state_counts", {}), "state_counts")
+    state_counts_row = _obj(payload.get("state_counts"), "state_counts")
     category_counts_row = _obj(
-        payload.get("category_counts", {}),
+        payload.get("category_counts"),
         "category_counts",
     )
 
@@ -723,7 +738,7 @@ def operations_analytics_v1_from_payload(
             OperationCategoryCountV1(
                 category=category,
                 count=_integer(
-                    category_counts_row.get(category.value, 0),
+                    category_counts_row.get(category.value),
                     f"category_counts.{category.value}",
                 ),
             )
