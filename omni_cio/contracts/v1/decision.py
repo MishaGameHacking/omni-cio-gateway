@@ -159,6 +159,8 @@ class DecisionSetV1(ContractModel):
             raise ValueError("schema_name must be decision_set")
         if len(self.global_blockers) != len(set(self.global_blockers)):
             raise ValueError("global blockers must be unique")
+        if self.abstain != bool(self.global_blockers):
+            raise ValueError("abstain must match global blockers")
 
         evidence_ids = [row.evidence_id for row in self.evidence]
         if len(evidence_ids) != len(set(evidence_ids)):
@@ -193,6 +195,13 @@ class DecisionSetV1(ContractModel):
         expected_ready = not self.abstain and not self.global_blockers
         if self.recommendation_ready != expected_ready:
             raise ValueError("recommendation_ready does not match blockers")
+        if self.recommendation_ready and (
+            self.market_coverage_count != self.required_market_count
+        ):
+            raise ValueError("ready decision requires complete market coverage")
+        if not self.abstain and self.confidence == DecisionConfidence.LOW:
+            raise ValueError("ready decision cannot have low confidence")
+
         if self.abstain:
             if self.confidence != DecisionConfidence.LOW:
                 raise ValueError("abstain decision must have low confidence")
