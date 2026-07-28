@@ -185,9 +185,24 @@ class NewsDeduplicationResultV1(ContractModel):
             raise ValueError("duplicate_count does not match duplicate rows")
         if self.input_count != self.canonical_count + self.duplicate_count:
             raise ValueError("deduplication counts do not reconcile")
-        occurrence_ids = [
-            document.occurrence_id for document in self.canonical_documents
-        ]
-        if len(occurrence_ids) != len(set(occurrence_ids)):
+
+        canonical_by_id = {
+            document.occurrence_id: document
+            for document in self.canonical_documents
+        }
+        if len(canonical_by_id) != len(self.canonical_documents):
             raise ValueError("canonical occurrence IDs must be unique")
+
+        duplicate_ids = [
+            duplicate.duplicate_occurrence_id for duplicate in self.duplicates
+        ]
+        if len(duplicate_ids) != len(set(duplicate_ids)):
+            raise ValueError("duplicate occurrence IDs must be unique")
+
+        for duplicate in self.duplicates:
+            canonical = canonical_by_id.get(duplicate.canonical_occurrence_id)
+            if canonical is None:
+                raise ValueError("duplicate row references missing canonical document")
+            if canonical.content_fingerprint != duplicate.content_fingerprint:
+                raise ValueError("duplicate fingerprint does not match canonical")
         return self
