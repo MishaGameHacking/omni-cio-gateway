@@ -16,22 +16,15 @@
 | `sdk_order_compat.py` | Совместимость read-only SDK расчётных вызовов |
 | `operations_analytics.py` | Operations Analytics & Cash Flow Reconciliation |
 | `broker_report_reconciliation/` | Generate/Get official report, pagination и reconciliation |
-| `telegram_bot/__init__.py` | Telegram Companion version marker |
-| `telegram_bot/config.py` | Environment и retry configuration без раскрытия секретов |
-| `telegram_bot/clients.py` | Telegram Bot API, GET-only gateway client и safe message splitting |
-| `telegram_bot/commands.py` | Allowlist, routing, retries, deduplication и rate limit |
-| `telegram_bot/formatters.py` | Краткие безопасные русские сводки без изменения финансовых данных |
-| `telegram_bot/app.py` | FastAPI webhook service `telegram_bot.app:app` |
 
 ## Конфигурация
 
 | Файл | Назначение |
 |---|---|
 | `render.yaml` | Gateway Render contract |
-| `render.telegram.yaml` | Отдельный Telegram Companion Blueprint |
-| `requirements.txt` | Production dependencies обоих сервисов |
+| `requirements.txt` | Production dependencies Gateway |
 | `requirements-dev.txt` | Test dependencies |
-| `.env.example` | Имена переменных без секретных значений |
+| `.env.example` | Имена Gateway-переменных без секретных значений |
 | `.gitignore` | Защита от секретов и артефактов |
 | `.editorconfig` | Единые правила форматирования |
 
@@ -49,7 +42,7 @@
 | `tests/test_operations_analytics.py` | Операции и cash-flow reconciliation |
 | `tests/test_broker_report_reconciliation.py` | Брокерский отчёт и сверка |
 | `tests/test_broker_report_async_integrity.py` | `task_id`, `pending`, T-Invest 30058 |
-| `tests/test_telegram_companion.py` | Webhook, allowlist, GET-only, `/status`, retries, formatters, splitting и report task reuse |
+| `tests/test_no_telegram_runtime.py` | Запрет Telegram runtime, config, imports и OpenAPI routes |
 
 ## Project memory
 
@@ -60,16 +53,16 @@
 | `knowledge/09_MARKET_DATA_AND_BUYING_POWER.txt` | Market и buying-power semantics |
 | `knowledge/10_OPERATIONS_ANALYTICS_AND_RECONCILIATION.txt` | Operations semantics |
 | `knowledge/11_BROKER_REPORT_ASYNC_INTEGRITY.txt` | Broker-report async semantics |
-| `knowledge/12_TELEGRAM_COMPANION.txt` | Telegram service contract |
+| `knowledge/12_TELEGRAM_RETIREMENT.txt` | Решение о выводе Telegram из эксплуатации |
 | `gpt/` | Восстановление Custom GPT |
-| `docs/operations/TELEGRAM_COMPANION_RUNBOOK.md` | Развёртывание и эксплуатация Telegram |
+| `docs/operations/TELEGRAM_REMOVAL_RUNBOOK.md` | Одноразовая внешняя очистка Telegram после merge |
 | `docs/` | Архитектура, inventory и runbooks |
 
 ## GitHub automation
 
 | Файл | Назначение |
 |---|---|
-| `.github/workflows/regression-shield.yml` | Постоянный CI обоих сервисов |
+| `.github/workflows/regression-shield.yml` | Постоянный CI Gateway и запрета Telegram runtime |
 | `.github/CODEOWNERS` | Ответственный за области |
 | `.github/pull_request_template.md` | Definition of Done для PR |
 | `.github/ISSUE_TEMPLATE/` | Безопасные формы задач |

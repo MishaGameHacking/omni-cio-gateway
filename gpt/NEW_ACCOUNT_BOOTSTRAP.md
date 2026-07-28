@@ -11,7 +11,9 @@
 3. подключение к тому же приватному GitHub-репозиторию;
 4. повторная ручная настройка только тех полей GPT Editor, которые GitHub технически не может установить сам.
 
-Существующие Gateway, Render services, T-Invest connection и Telegram Companion продолжают работать отдельно и не требуют копирования кода в другой репозиторий.
+Существующие Gateway, Render Gateway service и T-Invest connection
+продолжают работать отдельно и не требуют копирования кода в другой
+репозиторий. Telegram Companion выведен из эксплуатации.
 
 ## Шаг 1. Подключить GitHub
 
@@ -81,7 +83,6 @@ gpt/CONFIGURATION.md
 Значения секретов берутся только из соответствующих внешних систем:
 
 - Gateway key и T-Invest token — Render Gateway Environment;
-- Telegram token, webhook secret и allowlist — Render Telegram Environment / BotFather;
 - GPT Bearer key — GPT Editor.
 
 Нельзя добавлять эти значения в issue, PR, commit, файл документации или чат с кодом.

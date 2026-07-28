@@ -5,6 +5,11 @@
 ## [Unreleased]
 
 ### Added
+- Retirement guard, который запрещает возврат `telegram_bot/`,
+  `render.telegram.yaml`, Telegram imports, active env configuration и
+  `/telegram/*` routes.
+- `knowledge/12_TELEGRAM_RETIREMENT.txt` и post-merge runbook очистки
+  внешнего Render service, webhook и token.
 - Явный read-only allowlist T-Invest SDK для purchase preview:
   `users`, `instruments`, `orders.get_max_lots` и
   `orders.get_order_price`.
@@ -20,7 +25,17 @@
 - Профиль знаний `knowledge/13_COMMUNICATION_STYLE_2026.txt`.
 - Компактный рабочий файл `gpt/INSTRUCTIONS_COMPACT.md`, рассчитанный на лимит 8000 символов GPT Editor.
 
+### Removed
+- Telegram Companion runtime package и его unit-тесты.
+- Telegram Render Blueprint и active environment template.
+- Telegram entrypoint, webhook, startup configuration и проверки из
+  Regression Shield.
+
 ### Changed
+- Поддерживаемый пользовательский интерфейс теперь находится только в
+  Custom GPT внутри ChatGPT; Gateway остаётся `app:app`.
+- System release подготовлен как `v4.1.0 ChatGPT-only Runtime`, Gateway
+  API component остаётся `v3.9.1`.
 - Канонический `gpt/INSTRUCTIONS.md` теперь ориентирован на простые объяснения состояния портфеля, компаний, рисков и денежных потоков.
 - GPT Editor использует компактные Instructions, а расширенный документ остаётся проектным источником истины.
 - Рекомендуемые conversation starters обновлены для понятного анализа и подготовки Telegram-публикаций.
@@ -31,10 +46,8 @@
   `ClientView`.
 - Публичные Action-контракты, Gateway version и Render entrypoint не
   изменены.
-- Стиль не меняет Gateway, Actions, Render services или Telegram command runtime.
 - `trading_methods=false` и GET-only контракт сохранены.
 - Сильные выводы должны подтверждаться цифрами, датой и источниками.
-- Свободный AI-диалог в Telegram через OpenAI API остаётся отдельным будущим этапом.
 
 ## [4.0.1] — 2026-07-28
 

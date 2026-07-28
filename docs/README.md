@@ -1,6 +1,7 @@
 # Документация Omni-CIO
 
-Эта папка — навигационный центр проекта. Она дополняет `knowledge/`, но не заменяет профильные правила поведения Actions и Telegram Companion.
+Эта папка — навигационный центр проекта. Она дополняет `knowledge/`, но
+не заменяет профильные правила поведения Gateway Actions.
 
 ## Быстрый вход
 
@@ -23,7 +24,8 @@
 ### Operations
 
 - `operations/DEPLOYMENT_RUNBOOK.md` — основной gateway.
-- `operations/TELEGRAM_COMPANION_RUNBOOK.md` — отдельный Telegram service.
+- `operations/TELEGRAM_REMOVAL_RUNBOOK.md` — одноразовая очистка
+  выведенного Telegram service.
 - `operations/RELEASE_CHECKLIST.md`
 
 ### Inventory
@@ -47,9 +49,11 @@
 
 Для запуска Omni-CIO в новом аккаунте ChatGPT без переноса личных чатов используйте `../gpt/NEW_ACCOUNT_BOOTSTRAP.md`.
 
-### Telegram Companion
+### Retired Telegram integration
 
-Runtime находится в `../telegram_bot/`, правила — в `../knowledge/12_TELEGRAM_COMPANION.txt`, а развёртывание — в `operations/TELEGRAM_COMPANION_RUNBOOK.md`.
+Runtime и deployment contract удалены. Решение и запрет случайного
+возврата описаны в `../knowledge/12_TELEGRAM_RETIREMENT.txt`, а внешняя
+очистка — в `operations/TELEGRAM_REMOVAL_RUNBOOK.md`.
 
 ### Domain knowledge
 
@@ -57,4 +61,6 @@ Runtime находится в `../telegram_bot/`, правила — в `../know
 
 ## Что не хранится в GitHub
 
-Секреты, Telegram token, webhook secret, реальные Telegram user IDs, реальные отчёты, полный номер счёта и пользовательские финансовые данные не должны находиться в репозитории. Их наличие во внешней системе отмечается только в inventory без раскрытия значений.
+Секреты, реальные отчёты, полный номер счёта и пользовательские
+финансовые данные не должны находиться в репозитории. Старые Telegram
+credentials, обнаруженные при внешней очистке, также нельзя сохранять.

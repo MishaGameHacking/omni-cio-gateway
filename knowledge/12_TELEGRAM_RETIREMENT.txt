@@ -1,0 +1,55 @@
+12 — TELEGRAM RUNTIME RETIREMENT
+
+Status
+------
+Telegram Companion is retired. Omni-CIO has one supported user interface:
+the Custom GPT inside ChatGPT, backed by the read-only Omni-CIO Gateway.
+
+Target architecture
+-------------------
+ChatGPT user -> Custom GPT -> Omni-CIO Gateway (`app:app`) -> T-Invest API
+
+Repository invariants
+---------------------
+- The `telegram_bot/` runtime package does not exist.
+- `render.telegram.yaml` does not exist.
+- `/telegram/webhook` is not exposed by the Gateway.
+- Telegram-specific tests and active deployment configuration do not exist.
+- `.env.example`, `render.yaml` and dependency files contain no Telegram
+  credentials or Telegram runtime settings.
+- The Gateway remains read-only and exposes `trading_methods=false`.
+- The stable Render entrypoint remains `app:app`.
+
+Shared-logic decision
+---------------------
+The retired package contained only delivery-layer code:
+
+- Telegram Bot API transport;
+- a GET-only HTTP client used only by the Telegram service;
+- command routing, webhook validation, update deduplication and rate limiting;
+- Telegram-specific short-message formatting.
+
+Gateway and GPT Actions did not import these modules. Moving them into the
+Gateway would couple the financial API to a retired transport, so no runtime
+code is migrated.
+
+External cleanup
+----------------
+Deleting code from GitHub does not stop an already deployed Render service or
+remove a webhook stored by Telegram. After this change is merged:
+
+1. disable and remove the Render service `omni-cio-telegram-bot`;
+2. remove its Telegram-specific environment variables and copied Gateway key;
+3. remove the webhook using Telegram's official `deleteWebhook` method;
+4. revoke the Telegram bot token in BotFather;
+5. verify the Gateway `/health` response still reports `app:app`,
+   read-only mode and `trading_methods=false`.
+
+Never paste a Telegram token, Gateway key, user ID or webhook secret into
+GitHub, a Pull Request, project documentation, logs or an AI conversation.
+
+Reintroduction rule
+-------------------
+Telegram runtime must not be reintroduced incidentally. A future integration
+requires a separate architecture decision, threat model, isolated deployment
+contract, tests and an explicit decision from the repository owner.

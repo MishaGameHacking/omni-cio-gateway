@@ -19,20 +19,15 @@
 - Render Blueprint `render.yaml`;
 - unit и Regression Shield тесты.
 
-### Telegram Companion v4.0.1
+### Граница поддерживаемого runtime
 
-- отдельный FastAPI service `telegram_bot.app:app`;
-- webhook validation;
-- allowlist пользователей;
-- read-only команды gateway;
-- `/status` для проверки всей цепочки;
-- автоматические повторы временных Gateway-ошибок;
-- короткие русские форматтеры финансовых ответов;
-- безопасное разбиение длинных сообщений;
-- автоматические `setMyCommands` и `setWebhook`;
-- отдельный Blueprint `render.telegram.yaml`;
-- Telegram unit/security/reliability tests;
-- runbook и профильный knowledge-файл.
+- пользовательский интерфейс работает через Custom GPT в ChatGPT;
+- Telegram runtime, Blueprint, тесты и активная конфигурация удалены;
+- отсутствие Telegram-компонентов контролируют Regression Shield и
+  `tests/test_no_telegram_runtime.py`;
+- решение и процедура внешней очистки зафиксированы в
+  `knowledge/12_TELEGRAM_RETIREMENT.txt` и
+  `docs/operations/TELEGRAM_REMOVAL_RUNBOOK.md`.
 
 ### Custom GPT Modern Financial Sage — 2026
 
@@ -43,7 +38,8 @@
 - простые объяснения финансовых терминов;
 - разделение фактов, выводов и сценариев;
 - умеренный мат без оскорбления пользователя;
-- шаблон мобильных Telegram-постов с датой и источниками;
+- шаблон коротких мобильных публикаций с датой и источниками; это только
+  формат ответа внутри ChatGPT, а не Telegram-интеграция;
 - сохранение GET-only и `trading_methods=false`.
 
 ### Проектная память
@@ -65,29 +61,13 @@
 - `GATEWAY_API_KEY`;
 - deploy state и автоматически заданный `RENDER_EXTERNAL_URL`.
 
-### Render Telegram service
+### Выведенные из эксплуатации внешние Telegram-активы
 
-Хранит:
-
-- `TELEGRAM_BOT_TOKEN`;
-- `TELEGRAM_WEBHOOK_SECRET`;
-- `TELEGRAM_ALLOWED_USER_IDS`;
-- `OMNI_GATEWAY_API_KEY`;
-- production URL и deploy state.
-
-В GitHub находятся только имена переменных, placeholders, retry defaults и deploy contract.
-
-### Telegram / BotFather
-
-Во внешней системе находятся:
-
-- Telegram bot account и username;
-- bot token;
-- установленный webhook;
-- список команд;
-- Telegram user IDs и сообщения.
-
-GitHub содержит код настройки, но не токен, реальные IDs и историю сообщений.
+После объединения PR владелец отдельно удаляет Render service
+`omni-cio-telegram-bot`, его environment variables, установленный
+webhook и токен BotFather. GitHub не может выполнить эту внешнюю
+очистку автоматически. Пошаговая процедура находится в
+`docs/operations/TELEGRAM_REMOVAL_RUNBOOK.md`.
 
 ### Custom GPT
 
@@ -125,11 +105,15 @@ GitHub хранит желаемую каноническую конфигура
 
 1. GitHub read access.
 2. Для изменения кода — GitHub write access через ветку и PR.
-3. Для production-проверки — доступ к публичным `/health` обоих сервисов.
+3. Для production-проверки — доступ к публичному `/health` Gateway.
 4. Для изменения секретов — доступ к Render Dashboard.
 5. Для изменения Custom GPT — доступ к GPT Editor.
-6. Для создания или ротации Telegram token — доступ к BotFather владельца.
+6. До завершения одноразовой очистки Telegram — доступ к BotFather
+   владельца и старому Render service.
 
 ## 5. Запрещённые способы «сохранить всё»
 
-Нельзя добавлять реальные токены, API keys, webhook secret, Telegram user IDs владельца, полный номер счёта, export чатов, реальные брокерские отчёты или screenshots с чувствительными значениями. GitHub хранит воспроизводимую систему и знания, а не пользовательские секреты.
+Нельзя добавлять реальные токены, API keys, отозванные Telegram
+credentials, полный номер счёта, export чатов, реальные брокерские
+отчёты или screenshots с чувствительными значениями. GitHub хранит
+воспроизводимую систему и знания, а не пользовательские секреты.
