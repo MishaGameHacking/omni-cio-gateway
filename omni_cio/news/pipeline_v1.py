@@ -133,7 +133,7 @@ _INJECTION_PATTERNS: tuple[tuple[InjectionFlag, tuple[str, ...]], ...] = (
         ),
     ),
     (
-        InjectionFlag.SECRET_REQUEST,
+        InjectionFlag.CREDENTIAL_REQUEST,
         (
             r"\b(reveal|show|print|return)\s+(the\s+)?(api\s+key|token|password|secret)\b",
             r"\b(покажи|раскрой|выведи)\s+(api[- ]?ключ|токен|пароль|секрет)\b",
@@ -166,7 +166,7 @@ _INJECTION_PATTERNS: tuple[tuple[InjectionFlag, tuple[str, ...]], ...] = (
 _SEVERE_FLAGS = {
     InjectionFlag.SYSTEM_OVERRIDE,
     InjectionFlag.TOOL_CALL,
-    InjectionFlag.SECRET_REQUEST,
+    InjectionFlag.CREDENTIAL_REQUEST,
     InjectionFlag.CODE_EXECUTION,
     InjectionFlag.TRADING_INSTRUCTION,
     InjectionFlag.TRANSFER_OR_WITHDRAWAL,
