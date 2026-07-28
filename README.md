@@ -17,6 +17,9 @@ Custom GPT ── Omni-CIO Gateway (`app:app`) ── T-Invest API
 - Создание, отправка, замена и отмена заявок запрещены.
 - Telegram Companion выведен из эксплуатации; его package, Blueprint,
   webhook и активная конфигурация отсутствуют.
+- Portfolio market snapshot проходит внутреннюю contract v1 shadow validation;
+  публичный Action response остаётся без изменений, а будущие decision flows
+  получают отдельный fail-closed quality gate.
 - Runtime и CI устанавливают полностью pinned зависимости только после
   проверки SHA-256 hashes.
 - Regression Shield включает lint, formatting baseline, mypy, покрытие
@@ -39,6 +42,9 @@ Custom GPT ── Omni-CIO Gateway (`app:app`) ── T-Invest API
 
 ```text
 app.py + runtime modules             Omni-CIO Gateway
+omni_cio/contracts/                  versioned financial contracts
+omni_cio/adapters/                   legacy-to-contract adapters
+omni_cio/quality/                    shadow validation and quality gates
 broker_report_reconciliation/        официальный отчёт и сверка
 tests/                               unit, endpoint, OpenAPI, Regression Shield
 knowledge/                           строгие правила предметной области
@@ -109,12 +115,14 @@ Omni-CIO больше не содержит Telegram runtime. Полезная �
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — рабочий процесс.
 - [`SECURITY.md`](SECURITY.md) — политика безопасности.
 - [`docs/architecture/SYSTEM_OVERVIEW.md`](docs/architecture/SYSTEM_OVERVIEW.md) — архитектура.
+- [`docs/architecture/PORTFOLIO_SHADOW_VALIDATION_V1.md`](docs/architecture/PORTFOLIO_SHADOW_VALIDATION_V1.md) — shadow validation и decision gate.
 - [`docs/operations/DEPLOYMENT_RUNBOOK.md`](docs/operations/DEPLOYMENT_RUNBOOK.md) — gateway deployment.
 - [`docs/operations/TELEGRAM_REMOVAL_RUNBOOK.md`](docs/operations/TELEGRAM_REMOVAL_RUNBOOK.md) — очистка выведенного Telegram service.
 - [`knowledge/11_BROKER_REPORT_ASYNC_INTEGRITY.txt`](knowledge/11_BROKER_REPORT_ASYNC_INTEGRITY.txt) — асинхронный отчёт.
 - [`knowledge/12_TELEGRAM_RETIREMENT.txt`](knowledge/12_TELEGRAM_RETIREMENT.txt) — запрет возврата Telegram runtime без нового ADR.
 - [`knowledge/13_COMMUNICATION_STYLE_2026.txt`](knowledge/13_COMMUNICATION_STYLE_2026.txt) — современная речь и публикации.
 - [`knowledge/14_CI_SECURITY_BASELINE.txt`](knowledge/14_CI_SECURITY_BASELINE.txt) — dependency locks, quality и security gates.
+- [`knowledge/15_DATA_QUALITY_SHADOW_VALIDATION.txt`](knowledge/15_DATA_QUALITY_SHADOW_VALIDATION.txt) — статусы качества и fail-closed gate.
 
 ## Локальный запуск gateway
 

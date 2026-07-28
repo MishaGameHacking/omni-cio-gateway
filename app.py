@@ -7,8 +7,10 @@ from fastapi import Depends, Query
 import app_v360 as legacy
 import app_v371 as archived
 from app_v371 import *  # noqa: F401,F403
-import operations_analytics as operations_analytics_engine
 import broker_report_reconciliation as broker_report_reconciliation_engine
+import operations_analytics as operations_analytics_engine
+import portfolio_market as portfolio_market_engine
+from omni_cio.quality import wrap_portfolio_market_snapshot_with_shadow_validation
 
 
 APP_VERSION = "3.9.1"
@@ -30,6 +32,16 @@ app.description = (
     "v3.9.1 adds asynchronous official broker-report generation, paginated report "
     "loading, and currency-local trade and commission reconciliation. It cannot "
     "create, submit, replace, or cancel orders."
+)
+
+# Existing route handlers call the module attribute at request time. The wrapper
+# observes contract quality without changing the legacy response or blocking the
+# current read-only Action while PR-06 runs in shadow mode.
+portfolio_market_engine.get_portfolio_market_snapshot = (
+    wrap_portfolio_market_snapshot_with_shadow_validation(
+        portfolio_market_engine.get_portfolio_market_snapshot,
+        logger=base.logger,
+    )
 )
 
 for capability in (

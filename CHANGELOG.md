@@ -21,6 +21,9 @@
   `orders.get_order_price`.
 - Негативные тесты и AST-проверка, блокирующие broker order,
   stop-order, sandbox, withdrawal и transfer write-методы.
+- Versioned financial contracts v1 и fail-closed portfolio market adapter.
+- Portfolio contract shadow validation со статусами `ready`, `partial`,
+  `rejected`, безопасными aggregate logs и отдельным decision-quality gate.
 - Профиль Custom GPT `Modern Financial Sage — 2026`.
 - Современный разговорный русский язык без банковского канцелярита.
 - Обязательный перевод сложных финансовых терминов на человеческий язык.
@@ -43,6 +46,8 @@
 - Все внешние GitHub Actions закреплены полными commit SHA.
 - Начальный branch-inclusive coverage floor установлен на 60% после
   фактического измерения 60,8%.
+- Portfolio market runtime теперь наблюдается через contract v1 без изменения
+  существующего Action JSON или OpenAPI schema.
 - Поддерживаемый пользовательский интерфейс теперь находится только в
   Custom GPT внутри ChatGPT; Gateway остаётся `app:app`.
 - System release подготовлен как `v4.1.0 ChatGPT-only Runtime`, Gateway
@@ -59,6 +64,8 @@
   broker-report fragments из фиксированного package path.
 - Удалён generic SDK forwarding из `OrdersServiceRequestAdapter` и
   `ClientView`.
+- Shadow validation не логирует account IDs, instrument identity, holdings,
+  prices, cash, totals, raw payloads или validation messages.
 - Публичные Action-контракты, Gateway version и Render entrypoint не
   изменены.
 - `trading_methods=false` и GET-only контракт сохранены.

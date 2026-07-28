@@ -16,6 +16,9 @@
   completeness, UTC timestamps и обязательным маскированием счёта;
 - fail-closed adapter текущего portfolio market snapshot в
   `PortfolioSnapshotV1` с сохранением blocked cash, НКД и сверкой итогов;
+- shadow contract validation для portfolio market payload с состояниями
+  `ready`, `partial`, `rejected`, безопасными aggregate logs и отдельным
+  fail-closed gate для будущего Decision Engine;
 - cash/liquidity diagnostics;
 - purchase capacity preview и integrity;
 - operations analytics;
