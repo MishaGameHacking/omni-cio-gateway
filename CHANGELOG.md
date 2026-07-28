@@ -5,6 +5,11 @@
 ## [Unreleased]
 
 ### Added
+- Явный read-only allowlist T-Invest SDK для purchase preview:
+  `users`, `instruments`, `orders.get_max_lots` и
+  `orders.get_order_price`.
+- Негативные тесты и AST-проверка, блокирующие broker order,
+  stop-order, sandbox, withdrawal и transfer write-методы.
 - Профиль Custom GPT `Modern Financial Sage — 2026`.
 - Современный разговорный русский язык без банковского канцелярита.
 - Обязательный перевод сложных финансовых терминов на человеческий язык.
@@ -22,6 +27,10 @@
 - Web Search рекомендуется включать для актуального анализа компаний, отчётности, дивидендов, новостей и рыночного контекста.
 
 ### Safety
+- Удалён generic SDK forwarding из `OrdersServiceRequestAdapter` и
+  `ClientView`.
+- Публичные Action-контракты, Gateway version и Render entrypoint не
+  изменены.
 - Стиль не меняет Gateway, Actions, Render services или Telegram command runtime.
 - `trading_methods=false` и GET-only контракт сохранены.
 - Сильные выводы должны подтверждаться цифрами, датой и источниками.
