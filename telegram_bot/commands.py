@@ -1,20 +1,30 @@
 from __future__ import annotations
 
+import asyncio
 from collections import deque
 from dataclasses import dataclass, field
 import hmac
-import json
-import re
 import time
 from typing import Any
 
 from .clients import GatewayClient, TelegramClient, UpstreamError
 from .config import Settings
+from .formatters import (
+    format_analytics,
+    format_cash,
+    format_connection,
+    format_gateway_health,
+    format_operations,
+    format_portfolio,
+    format_report,
+    format_system_status,
+)
 
 
 COMMANDS = [
     {"command": "help", "description": "Список безопасных команд"},
-    {"command": "health", "description": "Проверить Telegram и Omni-CIO Gateway"},
+    {"command": "status", "description": "Проверить всю цепочку Omni-CIO"},
+    {"command": "health", "description": "Проверить Omni-CIO Gateway"},
     {"command": "connection", "description": "Проверить подключение к T-Invest"},
     {"command": "portfolio", "description": "Получить read-only снимок портфеля"},
     {"command": "cash", "description": "Проверить деньги и ликвидность"},
@@ -24,23 +34,25 @@ COMMANDS = [
     {"command": "report_status", "description": "Проверить готовность отчёта"},
 ]
 
-HELP_TEXT = """Omni-CIO Telegram Companion v4.0.0
+HELP_TEXT = """Omni-CIO Telegram Companion v4.0.1
 
 Доступные read-only команды:
-/health — Telegram service и gateway
+/status — Telegram, Gateway и T-Invest
+/health — состояние Omni-CIO Gateway
 /connection — подключение к T-Invest
-/portfolio — снимок портфеля
+/portfolio — краткий снимок портфеля
 /cash — деньги и ликвидность
 /analytics — структура портфеля
-/operations [days] — аналитика операций, по умолчанию 90 дней
+/operations [days] — операции, по умолчанию 90 дней
 /report — запустить официальный отчёт за 31 день
 /report_status [task_id] — проверить готовность отчёта
 /help — эта справка
 
+При холодном запуске Render бот сам повторяет безопасный GET-запрос.
 Бот не создаёт заявки и не совершает сделки.
 trading_methods=false"""
 
-_SECRET_KEY_RE = re.compile(r"token|secret|api[_-]?key|authorization", re.IGNORECASE)
+_RETRYABLE_GATEWAY_STATUSES = {408, 425, 429, 500, 502, 503, 504}
 
 
 def verify_webhook_secret(received: str | None, expected: str) -> bool:
@@ -59,44 +71,6 @@ def parse_command(text: str) -> tuple[str, list[str]]:
     if "@" in command:
         command = command.split("@", 1)[0]
     return command, parts[1:]
-
-
-def _mask_account(value: Any) -> Any:
-    text = str(value or "")
-    if text.startswith("***") or len(text) <= 4:
-        return text
-    return f"***{text[-4:]}"
-
-
-def sanitize_payload(value: Any, path: tuple[str, ...] = ()) -> Any:
-    if isinstance(value, dict):
-        result: dict[str, Any] = {}
-        for key, item in value.items():
-            key_text = str(key)
-            next_path = (*path, key_text.lower())
-            if _SECRET_KEY_RE.search(key_text):
-                result[key_text] = "[REDACTED]"
-            elif key_text.lower() in {"account_id", "accountid"}:
-                result[key_text] = _mask_account(item)
-            elif key_text.lower() == "id" and "account" in path:
-                result[key_text] = _mask_account(item)
-            else:
-                result[key_text] = sanitize_payload(item, next_path)
-        return result
-    if isinstance(value, list):
-        return [sanitize_payload(item, path) for item in value]
-    return value
-
-
-def format_payload(title: str, payload: dict[str, Any], *, max_chars: int) -> str:
-    safe = sanitize_payload(payload)
-    rendered = json.dumps(safe, ensure_ascii=False, indent=2, sort_keys=False)
-    prefix = f"{title}\n"
-    warning = "\n\nОтвет сокращён. Полные данные доступны через Custom GPT или gateway."
-    if len(prefix) + len(rendered) > max_chars:
-        rendered = rendered[: max(0, max_chars - len(prefix) - len(warning))]
-        rendered = rendered.rstrip() + warning
-    return prefix + rendered
 
 
 @dataclass(slots=True)
@@ -175,57 +149,118 @@ class CommandRouter:
             return
 
         command, args = parse_command(text)
+        await self._typing(chat_id)
         try:
-            response = await self._dispatch(user_id, command, args)
+            response = await self._dispatch(chat_id, user_id, command, args)
         except UpstreamError as exc:
-            suffix = f" (HTTP {exc.status_code})" if exc.status_code else ""
-            response = f"Ошибка {exc.component}{suffix}: {exc}"
+            response = self._friendly_upstream_error(exc)
         except ValueError as exc:
             response = f"Некорректные параметры: {exc}"
         except Exception:
             response = "Внутренняя ошибка Telegram Companion. Секретные данные не выведены."
         await self.telegram.send_message(chat_id, response)
 
-    async def _dispatch(self, user_id: int, command: str, args: list[str]) -> str:
+    async def _typing(self, chat_id: int) -> None:
+        try:
+            await self.telegram.send_chat_action(chat_id, "typing")
+        except (AttributeError, UpstreamError):
+            # Typing status is only a convenience and must never block a command.
+            return
+
+    async def _gateway_get(
+        self,
+        chat_id: int,
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        attempts = self.settings.gateway_retry_attempts + 1
+        for attempt in range(attempts):
+            try:
+                return await self.gateway.get(path, params=params)
+            except UpstreamError as exc:
+                is_retryable = (
+                    exc.component == "omni_gateway"
+                    and (
+                        exc.status_code is None
+                        or exc.status_code in _RETRYABLE_GATEWAY_STATUSES
+                    )
+                )
+                if not is_retryable or attempt >= attempts - 1:
+                    raise
+                if attempt == 0:
+                    try:
+                        await self.telegram.send_message(
+                            chat_id,
+                            "⏳ Основной сервер просыпается. Повторяю безопасный запрос…",
+                        )
+                    except UpstreamError:
+                        pass
+                delay = self.settings.gateway_retry_delay_seconds * (attempt + 1)
+                if delay > 0:
+                    await asyncio.sleep(delay)
+                await self._typing(chat_id)
+        raise UpstreamError("omni_gateway", "Gateway retry policy exhausted")
+
+    async def _dispatch(
+        self,
+        chat_id: int,
+        user_id: int,
+        command: str,
+        args: list[str],
+    ) -> str:
         if command in {"", "start", "help"}:
             return HELP_TEXT
+        if command == "status":
+            health = await self._gateway_get(chat_id, "/health")
+            try:
+                connection = await self._gateway_get(chat_id, "/connection")
+            except UpstreamError as exc:
+                return format_system_status(
+                    health,
+                    None,
+                    connection_error=self._friendly_upstream_error(exc),
+                )
+            return format_system_status(health, connection)
         if command == "health":
-            payload = await self.gateway.get("/health")
-            return format_payload(
-                "Omni-CIO Gateway",
-                payload,
-                max_chars=self.settings.max_response_chars,
-            )
+            payload = await self._gateway_get(chat_id, "/health")
+            return format_gateway_health(payload)
         if command == "connection":
-            payload = await self.gateway.get("/connection")
-            return format_payload("Подключение T-Invest", payload, max_chars=self.settings.max_response_chars)
+            payload = await self._gateway_get(chat_id, "/connection")
+            return format_connection(payload)
         if command == "portfolio":
-            payload = await self.gateway.get("/snapshot")
-            return format_payload("Портфель", payload, max_chars=self.settings.max_response_chars)
+            payload = await self._gateway_get(chat_id, "/snapshot")
+            return format_portfolio(payload)
         if command == "cash":
-            payload = await self.gateway.get("/portfolio/cash-liquidity")
-            return format_payload("Деньги и ликвидность", payload, max_chars=self.settings.max_response_chars)
+            payload = await self._gateway_get(chat_id, "/portfolio/cash-liquidity")
+            return format_cash(payload)
         if command == "analytics":
-            payload = await self.gateway.get("/portfolio/analytics")
-            return format_payload("Аналитика портфеля", payload, max_chars=self.settings.max_response_chars)
+            payload = await self._gateway_get(chat_id, "/portfolio/analytics")
+            return format_analytics(payload)
         if command == "operations":
             days = self._parse_days(args, default=90, maximum=3650)
-            payload = await self.gateway.get("/operations/analytics", params={"days": days})
-            return format_payload("Операции", payload, max_chars=self.settings.max_response_chars)
+            payload = await self._gateway_get(
+                chat_id,
+                "/operations/analytics",
+                params={"days": days},
+            )
+            return format_operations(payload, days=days)
         if command == "report":
-            payload = await self.gateway.get(
+            payload = await self._gateway_get(
+                chat_id,
                 "/operations/broker-report-reconciliation",
                 params={"days": 31, "wait_seconds": 0},
             )
             task_id = self._extract_task_id(payload)
             if task_id:
                 self.report_tasks[user_id] = task_id
-            return format_payload("Брокерский отчёт", payload, max_chars=self.settings.max_response_chars)
+            return format_report(payload)
         if command == "report_status":
             task_id = args[0].strip() if args else self.report_tasks.get(user_id, "")
             if not task_id:
                 return "Нет сохранённого task_id. Сначала выполните /report или передайте /report_status <task_id>."
-            payload = await self.gateway.get(
+            payload = await self._gateway_get(
+                chat_id,
                 "/operations/broker-report-reconciliation",
                 params={
                     "days": 31,
@@ -235,8 +270,18 @@ class CommandRouter:
             )
             if payload.get("status") != "pending":
                 self.report_tasks.pop(user_id, None)
-            return format_payload("Статус брокерского отчёта", payload, max_chars=self.settings.max_response_chars)
+            return format_report(payload, status_command=True)
         return "Неизвестная команда. Используйте /help."
+
+    @staticmethod
+    def _friendly_upstream_error(exc: UpstreamError) -> str:
+        suffix = f" (HTTP {exc.status_code})" if exc.status_code else ""
+        if exc.component == "omni_gateway":
+            return (
+                f"⚠️ Не удалось получить данные от Omni-CIO Gateway{suffix}. "
+                "Повторите команду через минуту или выполните /status."
+            )
+        return f"⚠️ Ошибка внешнего сервиса {exc.component}{suffix}: {exc}"
 
     @staticmethod
     def _parse_days(args: list[str], *, default: int, maximum: int) -> int:
