@@ -44,7 +44,7 @@ def test_zero_width_obfuscated_injection_is_rejected() -> None:
     assert InjectionFlag.SUSPICIOUS_UNICODE in result.injection_flags
     assert InjectionFlag.SYSTEM_OVERRIDE in result.injection_flags
     assert InjectionFlag.TOOL_CALL in result.injection_flags
-    assert InjectionFlag.SECRET_REQUEST in result.injection_flags
+    assert InjectionFlag.CREDENTIAL_REQUEST in result.injection_flags
     assert "\u200b" not in result.sanitized_text
 
 
