@@ -14,7 +14,12 @@
 
 ## Instructions
 
-Use the complete text from `INSTRUCTIONS.md` as the canonical instruction source.
+GPT Editor принимает не более 8000 символов в поле Instructions. Поэтому:
+
+- вставляйте полный текст из `INSTRUCTIONS_COMPACT.md`;
+- `INSTRUCTIONS.md` остаётся расширенным каноническим документом для GitHub, разработки и восстановления контекста;
+- загрузите `knowledge/13_COMMUNICATION_STYLE_2026.txt` в Knowledge как справочник с расширенными примерами;
+- компактные Instructions имеют приоритет над Knowledge при конфликте.
 
 The communication profile requires:
 
@@ -59,13 +64,14 @@ Before publishing or updating:
 2. Import the current `/openapi.json` only if the Action contract changed.
 3. Confirm that all actions are GET-only.
 4. Confirm Bearer authentication.
-5. Replace the GPT Editor Instructions with the complete current `INSTRUCTIONS.md`.
-6. Enable Web Search for current public-company and market analysis.
-7. Run one method-only test.
-8. Run one plain-language portfolio explanation test.
-9. Run one Telegram-post draft test.
-10. Confirm `trading_methods=false` in the response.
-11. Do not expose the GPT publicly unless the owner deliberately changes access settings.
+5. Replace GPT Editor Instructions with the complete current `INSTRUCTIONS_COMPACT.md`.
+6. Upload `knowledge/13_COMMUNICATION_STYLE_2026.txt` to Knowledge if it is not already present.
+7. Enable Web Search for current public-company and market analysis.
+8. Run one method-only test.
+9. Run one plain-language portfolio explanation test.
+10. Run one Telegram-post draft test.
+11. Confirm `trading_methods=false` in the response.
+12. Do not expose the GPT publicly unless the owner deliberately changes access settings.
 
 ## External UI state
 
