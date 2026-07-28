@@ -108,10 +108,10 @@ def _market_coverage(
     blockers: list[DecisionBlocker],
 ) -> tuple[int, dict[str, InstrumentMarketReadinessV1]]:
     by_key: dict[str, InstrumentMarketReadinessV1] = {}
-    for row in market_states:
-        if row.instrument_key in by_key:
+    for market_state in market_states:
+        if market_state.instrument_key in by_key:
             raise DecisionEngineError("DUPLICATE_MARKET_READINESS_INSTRUMENT")
-        by_key[row.instrument_key] = row
+        by_key[market_state.instrument_key] = market_state
 
     missing = set(required_keys) - set(by_key)
     if missing:
