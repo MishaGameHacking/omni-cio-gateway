@@ -14,6 +14,8 @@
 - снимки портфеля, рыночные данные и аналитика;
 - versioned Pydantic data contracts v1 с `Decimal`, provenance, quality,
   completeness, UTC timestamps и обязательным маскированием счёта;
+- fail-closed adapter текущего portfolio market snapshot в
+  `PortfolioSnapshotV1` с сохранением blocked cash, НКД и сверкой итогов;
 - cash/liquidity diagnostics;
 - purchase capacity preview и integrity;
 - operations analytics;
