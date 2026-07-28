@@ -46,6 +46,8 @@ class Settings:
     request_timeout_seconds: float = 20.0
     max_response_chars: int = 12_000
     min_request_interval_seconds: float = 1.5
+    gateway_retry_attempts: int = 2
+    gateway_retry_delay_seconds: float = 5.0
     version: str = TELEGRAM_COMPANION_VERSION
 
     @classmethod
@@ -82,6 +84,14 @@ class Settings:
             ),
             min_request_interval_seconds=float(
                 source.get("TELEGRAM_MIN_REQUEST_INTERVAL_SECONDS", "1.5")
+            ),
+            gateway_retry_attempts=max(
+                0,
+                int(source.get("TELEGRAM_GATEWAY_RETRY_ATTEMPTS", "2")),
+            ),
+            gateway_retry_delay_seconds=max(
+                0.0,
+                float(source.get("TELEGRAM_GATEWAY_RETRY_DELAY_SECONDS", "5")),
             ),
         )
 
