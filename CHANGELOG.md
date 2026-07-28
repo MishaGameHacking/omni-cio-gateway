@@ -5,11 +5,6 @@
 ## [Unreleased]
 
 ### Added
-- Versioned Pydantic data contracts `omni_cio/contracts/v1/` для provenance,
-  quality/completeness, masked account references, Decimal money и
-  `PortfolioSnapshotV1`.
-- Контрактные тесты strict validation, UTC timestamps, stable instrument
-  identity, duplicate protection и JSON serialization денежных значений.
 - Hash-locked runtime и development dependency sets, генерируемые из
   `requirements.in` и `requirements-dev.in`.
 - Blocking Ruff, formatting, mypy, coverage, pip-audit, Bandit и
@@ -43,8 +38,6 @@
   Regression Shield.
 
 ### Changed
-- Mypy baseline включает новый пакет versioned contracts; существующие
-  FastAPI routes и GPT Action responses не мигрированы в PR-04.
 - Render и GitHub Actions устанавливают зависимости только с
   `--require-hashes`.
 - Все внешние GitHub Actions закреплены полными commit SHA.
@@ -60,8 +53,6 @@
 - Web Search рекомендуется включать для актуального анализа компаний, отчётности, дивидендов, новостей и рыночного контекста.
 
 ### Safety
-- Versioned contracts являются data-only, не импортируют broker SDK и не
-  добавляют order, cancellation, withdrawal или transfer methods.
 - Security/quality gates являются блокирующими и не используют
   `continue-on-error`.
 - Зафиксирован узкий Bandit B102 exception только для checked-in
