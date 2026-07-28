@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - agent/reproducible-ci-security-gates
+  pull_request:
 
 permissions:
   contents: read
