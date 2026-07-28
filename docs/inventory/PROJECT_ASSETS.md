@@ -29,6 +29,15 @@
   HHI, effective position count и stress sensitivities отдельно по валютам;
 - explicit missing-data records для issuer, sector, liquidity, historical
   prices, volatility, drawdown, correlation, tax basis и bond-specific inputs;
+- `ConservativeRiskPolicyV1` с отдельными `pass`, `warning`, `breach`,
+  `unknown`, `not_applicable`, блокировкой high-risk execution и консервативным
+  неперсонализированным baseline;
+- `MarketResearchBundleV1` для instrument reference, quotes, liquidity,
+  issuer/issue ratings, bond metrics и corporate events;
+- offline market readiness assessment по authority, coverage, value timestamp
+  и freshness без сетевого fetch, HTML/PDF parsing или нового Action;
+- exact Decimal spread arithmetic, identity/currency reconciliation и
+  обязательный `trading_methods=false` в market bundle;
 - cash/liquidity diagnostics;
 - purchase capacity preview и integrity;
 - operations analytics;

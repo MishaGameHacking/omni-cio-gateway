@@ -3,7 +3,10 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from omni_cio.contracts.v1.analytics import AdvancedPortfolioAnalyticsV1
+from omni_cio.contracts.v1.analytics import (
+    AdvancedPortfolioAnalyticsV1,
+    PositionWeightV1,
+)
 from omni_cio.contracts.v1.common import (
     Completeness,
     ContractMetadata,
@@ -244,7 +247,7 @@ def _position_checks(
     *,
     currency: str,
     index: int,
-    position: object,
+    position: PositionWeightV1,
     policy: ConservativeRiskPolicyV1,
 ) -> list[RiskCheckV1]:
     prefix = f"position.{currency.lower()}.{index}"
