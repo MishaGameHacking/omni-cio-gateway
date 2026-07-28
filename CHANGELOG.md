@@ -38,6 +38,15 @@
 - Десять focused analytics tests, включая cash-only, multi-currency,
   repeating Decimal fractions, missing totals, currency mismatch, negative
   long-position value, incomplete valuation и naïve timestamp rejection.
+- `ConservativeRiskPolicyV1` с независимыми threshold checks, состояниями
+  `pass`, `warning`, `breach`, `unknown`, `not_applicable` и строгой
+  блокировкой margin, shorts, derivatives и currency operations.
+- `MarketResearchBundleV1` для instrument reference, quotes, liquidity,
+  issuer/issue ratings, bond metrics и corporate events.
+- Offline market readiness assessment по source authority, component coverage,
+  value timestamps и freshness без сетевого fetch или нового Action.
+- Exact Decimal spread arithmetic, fresh empty-event checks, withdrawn-rating
+  handling и thirteen focused market contract/readiness tests.
 - Сохранение полного mypy-вывода в краткоживущем Regression Shield artifact
   при сохранении блокирующего `pipefail`.
 - Профиль Custom GPT `Modern Financial Sage — 2026`.
@@ -68,6 +77,10 @@
   runtime/OpenAPI подключение намеренно оставлено для отдельного PR.
 - Advanced portfolio analytics требует verified/complete source snapshot,
   exact currency-local reconciliation и не публикуется как новый Action в PR-08.
+- Risk-policy limits являются неперсонализированным engineering baseline;
+  отсутствие issuer/liquidity/rating/history data возвращает `unknown`, а не pass.
+- Market facts теперь имеют отдельную versioned offline boundary; freshness
+  считается по времени значения, а secondary sources не дают decision readiness.
 - Поддерживаемый пользовательский интерфейс теперь находится только в
   Custom GPT внутри ChatGPT; Gateway остаётся `app:app`.
 - System release подготовлен как `v4.1.0 ChatGPT-only Runtime`, Gateway
@@ -90,6 +103,10 @@
   `read_only=true`, отдельные валюты и активные double-count protections.
 - Advanced analytics блокирует partial/degraded snapshots, отсутствующую
   valuation, валютные конфликты, отрицательные long values и неверные totals.
+- Risk policy использует только канонические instrument types и блокирует
+  `option`, `structured_product`, `future`, `currency` и unknown types.
+- Market bundle блокирует stale/future values, untrusted authority, identity и
+  currency mismatch, hidden unavailable records и неверную spread arithmetic.
 - Stress scenarios являются арифметической чувствительностью, а не прогнозом,
   вероятностью, VaR или обещанием доходности.
 - Публичные Action-контракты, Gateway version и Render entrypoint не
