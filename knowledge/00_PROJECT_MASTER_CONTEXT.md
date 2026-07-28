@@ -1,7 +1,7 @@
 # 00 — OMNI-CIO PROJECT MASTER CONTEXT
 
 Дата актуализации: 2026-07-28  
-Текущий system release: **v4.0.0 Telegram Companion — Read-Only Control Center**  
+Текущий system release: **v4.0.1 Telegram Reliability & Friendly Output**  
 Gateway API component: **v3.9.1 Broker Report Async Integrity**
 
 Этот документ — единая обезличенная проектная память. Его нужно читать первым при продолжении работы в новом чате, IDE, GitHub Copilot, Codex или другом проекте.
@@ -24,7 +24,7 @@ Omni-CIO Bot — инвестиционный AI-ассистент и анал�
 
 Не создавать дубликат сайта или новый frontend вместо существующего без прямого решения владельца.
 
-## 2. Архитектура v4.0.0
+## 2. Архитектура v4.0.1
 
 ```text
 Custom GPT ──────┐
@@ -58,7 +58,7 @@ Gateway API version: `3.9.1`.
 Telegram Companion — отдельный FastAPI web service в `telegram_bot/`.
 
 Entrypoint: `telegram_bot.app:app`.  
-Service version: `4.0.0`.  
+Service version: `4.0.1`.  
 Deployment contract: `render.telegram.yaml`.
 
 Он:
@@ -68,13 +68,15 @@ Deployment contract: `render.telegram.yaml`.
 - разрешает доступ только указанным Telegram user IDs;
 - принимает только личные чаты;
 - вызывает Gateway только методом GET;
-- показывает безопасно отформатированные ответы;
-- не имеет OpenAI API в первом релизе;
+- показывает короткие безопасные русские сводки;
+- повторяет только временно неудачные GET-запросы Gateway;
+- не имеет OpenAI API;
 - не синхронизирует историю ChatGPT и Telegram.
 
-Команды v4.0.0:
+Команды v4.0.1:
 
 - `/help`;
+- `/status`;
 - `/health`;
 - `/connection`;
 - `/portfolio`;
@@ -102,7 +104,7 @@ Custom GPT остаётся отдельным интерфейсом внутр
 - MOEX ISS — отдельная текущая рыночная оценка;
 - пользовательское подтверждение — контекст, но не замена технической проверки.
 
-Telegram Companion не меняет значения и не выполняет собственные финансовые расчёты поверх Gateway. Он только безопасно доставляет ответ.
+Telegram Companion не меняет значения и не выполняет собственные финансовые расчёты поверх Gateway. Он только выбирает безопасные поля и форматирует их без смешивания валют и изменения статусов качества.
 
 ## 4. Главный принцип безопасности
 
@@ -127,7 +129,8 @@ Telegram Companion не меняет значения и не выполняет
 - Gateway entrypoint остаётся `app:app`;
 - Telegram entrypoint остаётся `telegram_bot.app:app`;
 - счёт маскируется;
-- валюты не смешиваются без подтверждённого FX.
+- валюты не смешиваются без подтверждённого FX;
+- повторы Telegram допустимы только для временных ошибок и того же GET-запроса.
 
 ## 5. Секреты и внешняя конфигурация
 
@@ -171,7 +174,7 @@ Gateway Render service хранит T-Invest token и Gateway key. Telegram Rend
 6. `complete=true` допустим только после успешных проверок.
 7. Период одного официального отчёта: `1..31` день.
 
-## 7. Telegram Companion v4.0.0
+## 7. Telegram Companion v4.0.1
 
 ### Webhook security
 
@@ -195,18 +198,31 @@ Telegram `setWebhook` настраивается с `secret_token`. Каждый
 
 Webhook URL строится из `TELEGRAM_PUBLIC_BASE_URL` или Render `RENDER_EXTERNAL_URL`. Ошибка bootstrap не раскрывает секреты и отражается через degraded health.
 
+### Reliability
+
+Free Render service может засыпать. При временной ошибке Gateway Telegram Companion:
+
+1. показывает сообщение о пробуждении сервера;
+2. повторяет тот же GET-запрос;
+3. использует `TELEGRAM_GATEWAY_RETRY_ATTEMPTS` и `TELEGRAM_GATEWAY_RETRY_DELAY_SECONDS`;
+4. не повторяет HTTP 401/403 и другие постоянные ошибки;
+5. после исчерпания попыток возвращает понятную ошибку, а не `ok`.
+
+### Friendly output
+
+Нормальные команды не отправляют полный JSON. Форматтеры показывают ограниченный набор полей: статус, версию, маскированный счёт, суммы в исходной валюте, качество и read-only ограничения. Частичные или неполные данные нельзя объявлять полными. Длинный текст делится ниже лимита Telegram и получает маркировку частей.
+
 ### Broker report in Telegram
 
 `/report` запускает отчёт за 31 день и сохраняет `task_id` в памяти для удобства. `/report_status` использует сохранённый ID или принимает явный ID. После restart in-memory cache может быть потерян, поэтому task ID всегда показывается пользователю.
 
-### Ограничения первого релиза
+### Ограничения
 
 - нет свободного AI-диалога;
 - нет синхронизации истории ChatGPT;
 - нет постоянной базы Telegram sessions;
 - нет GitHub/Render admin-команд;
-- нет торговли;
-- длинные ответы могут сокращаться.
+- нет торговли.
 
 ## 8. Обязательный контракт ответов Gateway
 
@@ -290,7 +306,7 @@ HTML-отчёт является источником истины для сос
 ### P0
 
 - стабильность Gateway v3.9.1;
-- безопасный Telegram Companion v4.0.0;
+- безопасный Telegram Companion v4.0.1;
 - безопасный HTML-import без OCR;
 - парсинг обязательных разделов;
 - preview, подтверждение и сверка итогов.
@@ -298,7 +314,7 @@ HTML-отчёт является источником истины для сос
 ### P1
 
 - постоянное хранение Telegram report task state;
-- Telegram-кнопки и компактные summary-форматы;
+- Telegram-кнопки;
 - архив отчётов и сравнение периодов;
 - редизайн, графики, MOEX, mobile и dark theme.
 
