@@ -16,6 +16,7 @@
 | `sdk_order_compat.py` | Совместимость read-only SDK расчётных вызовов |
 | `operations_analytics.py` | Operations Analytics & Cash Flow Reconciliation |
 | `broker_report_reconciliation/` | Generate/Get official report, pagination и reconciliation |
+| `omni_cio/contracts/v1/` | Strict immutable Pydantic-контракты v1: provenance, quality, Decimal money и portfolio snapshot |
 
 ## Конфигурация
 
@@ -47,6 +48,7 @@
 | `tests/test_broker_report_async_integrity.py` | `task_id`, `pending`, T-Invest 30058 |
 | `tests/test_no_telegram_runtime.py` | Запрет Telegram runtime, config, imports и OpenAPI routes |
 | `tests/test_ci_security_baseline.py` | Hash locks, Action SHA pins и secret-report policy |
+| `tests/test_versioned_data_contracts_v1.py` | Versioning, Decimal JSON, provenance, masking и strict validation |
 
 ## Project memory
 
@@ -59,6 +61,8 @@
 | `knowledge/11_BROKER_REPORT_ASYNC_INTEGRITY.txt` | Broker-report async semantics |
 | `knowledge/12_TELEGRAM_RETIREMENT.txt` | Решение о выводе Telegram из эксплуатации |
 | `knowledge/14_CI_SECURITY_BASELINE.txt` | Воспроизводимый CI, quality/security gates и debt register |
+| `knowledge/15_VERSIONED_DATA_CONTRACTS.txt` | Контракт v1, совместимость и read-only инварианты PR-04 |
+| `docs/architecture/DATA_CONTRACTS_V1.md` | Архитектура и migration policy versioned contracts v1 |
 | `gpt/` | Восстановление Custom GPT |
 | `docs/operations/TELEGRAM_REMOVAL_RUNBOOK.md` | Одноразовая внешняя очистка Telegram после merge |
 | `docs/` | Архитектура, inventory и runbooks |
