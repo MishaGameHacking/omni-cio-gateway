@@ -1,5 +1,15 @@
 """Omni-CIO data contracts, schema version 1.0."""
 
+from omni_cio.contracts.v1.analytics import (
+    AdvancedPortfolioAnalyticsV1,
+    AssetClassAllocationV1,
+    ConcentrationMetricsV1,
+    CurrencyPortfolioAnalyticsV1,
+    MissingDataCode,
+    MissingDataV1,
+    PositionWeightV1,
+    StressScenarioV1,
+)
 from omni_cio.contracts.v1.common import (
     AccountReference,
     Completeness,
@@ -52,6 +62,8 @@ SCHEMA_VERSION = "1.0"
 __all__ = [
     "SCHEMA_VERSION",
     "AccountReference",
+    "AdvancedPortfolioAnalyticsV1",
+    "AssetClassAllocationV1",
     "CashBalanceV1",
     "CashFlowBucketV1",
     "CategoryCashFlowV1",
@@ -60,8 +72,10 @@ __all__ = [
     "CheckStatus",
     "CommissionDoubleCountProtectionV1",
     "Completeness",
+    "ConcentrationMetricsV1",
     "ContractMetadata",
     "CurrencyCashFlowV1",
+    "CurrencyPortfolioAnalyticsV1",
     "CurrencyTotalsV1",
     "DataIssue",
     "DataQuality",
@@ -70,6 +84,8 @@ __all__ = [
     "InstrumentIdentity",
     "InstrumentType",
     "IssueSeverity",
+    "MissingDataCode",
+    "MissingDataV1",
     "Money",
     "NetExternalFlowV1",
     "OperationCategory",
@@ -86,9 +102,11 @@ __all__ = [
     "PortfolioPositionV1",
     "PortfolioSnapshotV1",
     "PositionValuation",
+    "PositionWeightV1",
     "QualityMetadata",
     "ReconciliationStatus",
     "SourceReference",
+    "StressScenarioV1",
     "TurnoverV1",
     "ValuationBasis",
 ]
