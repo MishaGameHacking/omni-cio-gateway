@@ -38,8 +38,14 @@
 - `../gpt/README.md`
 - `../gpt/CONFIGURATION.md`
 - `../gpt/INSTRUCTIONS.md`
+- `../gpt/INSTRUCTIONS_COMPACT.md`
 - `../gpt/ACTIONS_CATALOG.md`
 - `../gpt/NEW_CHAT_PROMPT.md`
+- `../gpt/PROJECT_INSTRUCTIONS.md`
+- `../gpt/BOT_ONLY_FILE_MANIFEST.md`
+- `../gpt/NEW_ACCOUNT_BOOTSTRAP.md`
+
+Для запуска Omni-CIO в новом аккаунте ChatGPT без переноса личных чатов используйте `../gpt/NEW_ACCOUNT_BOOTSTRAP.md`.
 
 ### Telegram Companion
 
