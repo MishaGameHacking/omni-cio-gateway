@@ -24,6 +24,14 @@
 - Versioned financial contracts v1 и fail-closed portfolio market adapter.
 - Portfolio contract shadow validation со статусами `ready`, `partial`,
   `rejected`, безопасными aggregate logs и отдельным decision-quality gate.
+- `OperationsAnalyticsV1`: immutable Decimal-контракты операций, денежных
+  потоков, оборота, пагинации, сверки и качества данных отдельно по валютам.
+- Fail-closed adapter текущего `getOperationsAnalytics` payload в contract v1
+  без изменения публичного Action response и без broker SDK imports.
+- Девять contract/adapter-тестов для арифметики, multi-currency separation,
+  masking, pagination, reconciliation, component errors и read-only guards.
+- Сохранение полного mypy-вывода в краткоживущем Regression Shield artifact
+  при сохранении блокирующего `pipefail`.
 - Профиль Custom GPT `Modern Financial Sage — 2026`.
 - Современный разговорный русский язык без банковского канцелярита.
 - Обязательный перевод сложных финансовых терминов на человеческий язык.
@@ -48,6 +56,8 @@
   фактического измерения 60,8%.
 - Portfolio market runtime теперь наблюдается через contract v1 без изменения
   существующего Action JSON или OpenAPI schema.
+- Operations analytics теперь имеет отдельную versioned normalization boundary;
+  runtime/OpenAPI подключение намеренно оставлено для отдельного PR.
 - Поддерживаемый пользовательский интерфейс теперь находится только в
   Custom GPT внутри ChatGPT; Gateway остаётся `app:app`.
 - System release подготовлен как `v4.1.0 ChatGPT-only Runtime`, Gateway
@@ -66,6 +76,8 @@
   `ClientView`.
 - Shadow validation не логирует account IDs, instrument identity, holdings,
   prices, cash, totals, raw payloads или validation messages.
+- Operations contract требует `trading_methods=false`, masked account,
+  `read_only=true`, отдельные валюты и активные double-count protections.
 - Публичные Action-контракты, Gateway version и Render entrypoint не
   изменены.
 - `trading_methods=false` и GET-only контракт сохранены.
