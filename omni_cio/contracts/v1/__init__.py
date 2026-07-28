@@ -99,6 +99,17 @@ from omni_cio.contracts.v1.portfolio import (
     PositionValuation,
     ValuationBasis,
 )
+from omni_cio.contracts.v1.rebalancing import (
+    RebalanceAlternativeKind,
+    RebalanceAlternativeStatus,
+    RebalanceAlternativeV1,
+    RebalanceBandStatus,
+    RebalanceBlocker,
+    RebalanceDirection,
+    RebalanceLineV1,
+    TargetBandV1,
+    ThresholdRebalancePlanV1,
+)
 from omni_cio.contracts.v1.risk import (
     ConservativeRiskPolicyV1,
     RiskCheckCode,
@@ -194,6 +205,13 @@ __all__ = [
     "QualityMetadata",
     "RatingAction",
     "RatingScope",
+    "RebalanceAlternativeKind",
+    "RebalanceAlternativeStatus",
+    "RebalanceAlternativeV1",
+    "RebalanceBandStatus",
+    "RebalanceBlocker",
+    "RebalanceDirection",
+    "RebalanceLineV1",
     "ReconciliationStatus",
     "RiskCheckCode",
     "RiskCheckStatus",
@@ -207,6 +225,8 @@ __all__ = [
     "SourceAuthority",
     "SourceReference",
     "StressScenarioV1",
+    "TargetBandV1",
+    "ThresholdRebalancePlanV1",
     "TurnoverV1",
     "ValuationBasis",
 ]
