@@ -47,6 +47,13 @@
   value timestamps и freshness без сетевого fetch или нового Action.
 - Exact Decimal spread arithmetic, fresh empty-event checks, withdrawn-rating
   handling и thirteen focused market contract/readiness tests.
+- `NewsDocumentInputV1`, `SanitizedNewsDocumentV1` и auditable exact-dedup
+  contracts для недоверенного внешнего текста и HTML.
+- Offline stack-based HTML sanitization, NFKC/zero-width normalization,
+  Russian/English prompt-injection flags и deterministic source ranking.
+- Security tests для hidden/script content, tool/credential/code/trade/transfer
+  instructions, oversized input, Unicode obfuscation, entity resolution и
+  repeated-object deduplication.
 - Сохранение полного mypy-вывода в краткоживущем Regression Shield artifact
   при сохранении блокирующего `pipefail`.
 - Профиль Custom GPT `Modern Financial Sage — 2026`.
@@ -81,6 +88,9 @@
   отсутствие issuer/liquidity/rating/history data возвращает `unknown`, а не pass.
 - Market facts теперь имеют отдельную versioned offline boundary; freshness
   считается по времени значения, а secondary sources не дают decision readiness.
+- External news remains data, not instructions; only trusted resolved facts with
+  zero security flags may receive `accepted`, while context-only/rejected inputs
+  cannot independently drive an actionable conclusion.
 - Поддерживаемый пользовательский интерфейс теперь находится только в
   Custom GPT внутри ChatGPT; Gateway остаётся `app:app`.
 - System release подготовлен как `v4.1.0 ChatGPT-only Runtime`, Gateway
@@ -107,6 +117,10 @@
   `option`, `structured_product`, `future`, `currency` и unknown types.
 - Market bundle блокирует stale/future values, untrusted authority, identity и
   currency mismatch, hidden unavailable records и неверную spread arithmetic.
+- News pipeline не импортирует HTTP/socket clients, не сохраняет raw HTML,
+  блокирует severe injection flags и требует `trading_methods=false` в output.
+- Exact duplicate audit требует существующий canonical fingerprint и уникальные
+  occurrence IDs, включая повторную передачу одного и того же объекта.
 - Stress scenarios являются арифметической чувствительностью, а не прогнозом,
   вероятностью, VaR или обещанием доходности.
 - Публичные Action-контракты, Gateway version и Render entrypoint не
