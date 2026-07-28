@@ -137,6 +137,7 @@ class PortfolioPositionV1(ContractModel):
 class CashBalanceV1(ContractModel):
     reported: Money
     available: Money | None = None
+    blocked: Money | None = None
     as_of: datetime
     venue: Annotated[str | None, Field(max_length=64)] = None
 
@@ -149,10 +150,9 @@ class CashBalanceV1(ContractModel):
 
     @model_validator(mode="after")
     def validate_currency(self) -> CashBalanceV1:
-        if self.available is not None and (
-            self.available.currency != self.reported.currency
-        ):
-            raise ValueError("cash balance currencies must match")
+        for value in (self.available, self.blocked):
+            if value is not None and value.currency != self.reported.currency:
+                raise ValueError("cash balance currencies must match")
         return self
 
 
