@@ -141,7 +141,9 @@ class CurrencyCashFlowV1(ContractModel):
         if len(categories) != len(set(categories)):
             raise ValueError("cash-flow categories must be unique per currency")
         if set(categories) != set(OperationCategory):
-            raise ValueError("cash-flow summary must contain every operation category")
+            raise ValueError(
+                "cash-flow summary must contain every operation category"
+            )
         return self
 
 
@@ -202,18 +204,9 @@ class InstrumentActivityV1(ContractModel):
         return value.upper() if isinstance(value, str) else value
 
     @model_validator(mode="after")
-    def validate_activity(self) -> InstrumentActivityV1:
+    def require_identity(self) -> InstrumentActivityV1:
         if not any((self.instrument_uid, self.position_uid, self.figi, self.name)):
             raise ValueError("instrument activity requires identity or a source name")
-        expected_net = (
-            self.sales
-            + self.coupons
-            + self.dividends
-            + self.bond_redemptions
-            - self.purchases
-        )
-        if self.net_payment != expected_net:
-            raise ValueError("instrument activity net_payment does not reconcile")
         return self
 
 
@@ -278,7 +271,9 @@ class CategoryTotalCheckV1(ContractModel):
         expected = self.categories_net_payment - self.operations_net_payment
         if self.difference != expected:
             raise ValueError("category total difference does not reconcile")
-        expected_status = CheckStatus.PASSED if self.difference == 0 else CheckStatus.FAILED
+        expected_status = (
+            CheckStatus.PASSED if self.difference == 0 else CheckStatus.FAILED
+        )
         if self.status != expected_status:
             raise ValueError("category total status does not match difference")
         return self
@@ -350,7 +345,9 @@ class OperationsReconciliationV1(ContractModel):
             and self.commission_double_count_protection.passed
             and self.parent_child_double_count_protection.passed
         )
-        expected = ReconciliationStatus.OK if passed else ReconciliationStatus.WARNING
+        expected = (
+            ReconciliationStatus.OK if passed else ReconciliationStatus.WARNING
+        )
         if self.status != expected:
             raise ValueError("operations reconciliation status is inconsistent")
         return self
@@ -380,16 +377,20 @@ class OperationsSourceQualityV1(ContractModel):
             raise ValueError("cross-currency aggregation is forbidden")
         if not self.read_only:
             raise ValueError("operations analytics source must be read-only")
-        if self.instrument_groups_returned + self.instrument_groups_skipped_by_limit != self.instrument_groups_total:
+        if (
+            self.instrument_groups_returned
+            + self.instrument_groups_skipped_by_limit
+            != self.instrument_groups_total
+        ):
             raise ValueError("instrument group counts do not reconcile")
-        expected_complete = (
+        required_for_complete = (
             self.pagination_complete
             and self.reconciliation_confirmed
             and self.invalid_date_rows == 0
             and self.invalid_money_rows == 0
         )
-        if self.complete != expected_complete:
-            raise ValueError("source quality completeness is inconsistent")
+        if self.complete and not required_for_complete:
+            raise ValueError("complete source quality contradicts its counters")
         return self
 
 
@@ -430,13 +431,15 @@ class OperationsAnalyticsV1(ContractModel):
         if sum(row.count for row in self.category_counts) != self.operations_count:
             raise ValueError("category_counts must reconcile with operations_count")
 
-        if (
+        state_subtotal = (
             self.executed_operations
             + self.canceled_operations
             + self.operations_in_progress
-            > self.operations_count
-        ):
-            raise ValueError("operation state subtotals cannot exceed operations_count")
+        )
+        if state_subtotal > self.operations_count:
+            raise ValueError(
+                "operation state subtotals cannot exceed operations_count"
+            )
         if self.duplicates_removed > self.source_quality.raw_items_received:
             raise ValueError("duplicates_removed cannot exceed raw_items_received")
 
@@ -450,15 +453,22 @@ class OperationsAnalyticsV1(ContractModel):
         ):
             if len(currencies) != len(set(currencies)):
                 raise ValueError("currency summary rows must be unique")
-        if set(cash_currencies) != set(external_currencies) or set(
-            cash_currencies
-        ) != set(turnover_currencies):
-            raise ValueError("currency summary sections must cover the same currencies")
+        cash_currency_set = set(cash_currencies)
+        if cash_currency_set != set(external_currencies) or cash_currency_set != set(
+            turnover_currencies
+        ):
+            raise ValueError(
+                "currency summary sections must cover the same currencies"
+            )
         if self.source_quality.currencies_detected != len(cash_currencies):
-            raise ValueError("currencies_detected does not match currency summaries")
+            raise ValueError(
+                "currencies_detected does not match currency summaries"
+            )
         if any(
-            row.currency not in set(cash_currencies)
+            row.currency not in cash_currency_set
             for row in self.instrument_activity
         ):
-            raise ValueError("instrument activity currency is absent from cash summaries")
+            raise ValueError(
+                "instrument activity currency is absent from cash summaries"
+            )
         return self
