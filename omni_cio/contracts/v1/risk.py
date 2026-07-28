@@ -6,7 +6,6 @@ from typing import Annotated
 
 from pydantic import Field, field_validator, model_validator
 
-from omni_cio.contracts.v1.analytics import MissingDataCode
 from omni_cio.contracts.v1.common import ContractMetadata, ContractModel, CurrencyCode
 from omni_cio.contracts.v1.portfolio import InstrumentType
 
@@ -49,6 +48,17 @@ class RiskOverallStatus(StrEnum):
     WARNING = "warning"
     BREACH = "breach"
     UNKNOWN = "unknown"
+
+
+class RiskMissingInputCode(StrEnum):
+    ISSUER = "issuer"
+    SECTOR = "sector"
+    LIQUIDITY = "liquidity"
+    CREDIT_RATING = "credit_rating"
+    BOND_DURATION = "bond_duration"
+    MAX_DRAWDOWN = "max_drawdown"
+    FX_RATES = "fx_rates"
+    RISK_CLASSIFICATION = "risk_classification"
 
 
 class RiskCheckCode(StrEnum):
@@ -168,7 +178,7 @@ class RiskCheckV1(ContractModel):
     subject: Annotated[str | None, Field(max_length=256)] = None
     observed_value: Decimal | None = None
     limit_value: Decimal | None = None
-    missing_data: tuple[MissingDataCode, ...] = ()
+    missing_data: tuple[RiskMissingInputCode, ...] = ()
 
     @field_validator("currency", mode="before")
     @classmethod
@@ -181,10 +191,17 @@ class RiskCheckV1(ContractModel):
             raise ValueError("unknown risk check requires missing-data codes")
         if self.status != RiskCheckStatus.UNKNOWN and self.missing_data:
             raise ValueError("only unknown checks may contain missing-data codes")
-        if self.status in (RiskCheckStatus.PASS, RiskCheckStatus.BREACH):
+        if self.status in (
+            RiskCheckStatus.PASS,
+            RiskCheckStatus.WARNING,
+            RiskCheckStatus.BREACH,
+        ):
             if self.observed_value is None or self.limit_value is None:
-                raise ValueError("pass/breach checks require observed and limit values")
-        if self.status == RiskCheckStatus.NOT_APPLICABLE and self.severity != RiskSeverity.INFO:
+                raise ValueError("threshold checks require observed and limit values")
+        if (
+            self.status == RiskCheckStatus.NOT_APPLICABLE
+            and self.severity != RiskSeverity.INFO
+        ):
             raise ValueError("not-applicable checks must be informational")
         return self
 
