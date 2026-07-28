@@ -5,7 +5,7 @@ from decimal import Decimal
 from enum import StrEnum
 from typing import Annotated
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import Field, ValidationInfo, field_validator, model_validator
 
 from omni_cio.contracts.v1.common import (
     ContractMetadata,
@@ -89,8 +89,8 @@ class OperationsPaginationV1(ContractModel):
     def validate_pagination(self) -> OperationsPaginationV1:
         if self.pages_fetched > self.max_pages:
             raise ValueError("pages_fetched cannot exceed max_pages")
-        expected_truncated = self.has_next or self.cursor_loop_detected
-        if self.truncated != expected_truncated:
+        unfinished = self.has_next or self.cursor_loop_detected
+        if self.truncated != unfinished:
             raise ValueError("truncated must match unfinished pagination state")
         return self
 
@@ -108,15 +108,8 @@ class CashFlowBucketV1(ContractModel):
             raise ValueError("gross_amount must equal inflow plus outflow")
         if self.net_payment != self.inflow - self.outflow:
             raise ValueError("net_payment must equal inflow minus outflow")
-        if self.count == 0 and any(
-            value != 0
-            for value in (
-                self.gross_amount,
-                self.net_payment,
-                self.inflow,
-                self.outflow,
-            )
-        ):
+        values = (self.gross_amount, self.net_payment, self.inflow, self.outflow)
+        if self.count == 0 and any(value != 0 for value in values):
             raise ValueError("zero-count cash-flow buckets must contain zero amounts")
         return self
 
@@ -141,9 +134,7 @@ class CurrencyCashFlowV1(ContractModel):
         if len(categories) != len(set(categories)):
             raise ValueError("cash-flow categories must be unique per currency")
         if set(categories) != set(OperationCategory):
-            raise ValueError(
-                "cash-flow summary must contain every operation category"
-            )
+            raise ValueError("cash-flow summary must contain every operation category")
         return self
 
 
@@ -158,11 +149,22 @@ class NetExternalFlowV1(ContractModel):
     def normalize_currency(cls, value: object) -> object:
         return value.upper() if isinstance(value, str) else value
 
-    @model_validator(mode="after")
-    def validate_arithmetic(self) -> NetExternalFlowV1:
-        if self.net_external_flow != self.deposits - self.withdrawals:
+    @field_validator("net_external_flow")
+    @classmethod
+    def validate_arithmetic(
+        cls,
+        value: Decimal,
+        info: ValidationInfo,
+    ) -> Decimal:
+        deposits = info.data.get("deposits")
+        external_outflows = info.data.get("withdrawals")
+        if (
+            isinstance(deposits, Decimal)
+            and isinstance(external_outflows, Decimal)
+            and value != deposits - external_outflows
+        ):
             raise ValueError("net_external_flow must equal deposits minus withdrawals")
-        return self
+        return value
 
 
 class TurnoverV1(ContractModel):
@@ -205,7 +207,8 @@ class InstrumentActivityV1(ContractModel):
 
     @model_validator(mode="after")
     def require_identity(self) -> InstrumentActivityV1:
-        if not any((self.instrument_uid, self.position_uid, self.figi, self.name)):
+        identity = (self.instrument_uid, self.position_uid, self.figi, self.name)
+        if not any(identity):
             raise ValueError("instrument activity requires identity or a source name")
         return self
 
@@ -271,9 +274,7 @@ class CategoryTotalCheckV1(ContractModel):
         expected = self.categories_net_payment - self.operations_net_payment
         if self.difference != expected:
             raise ValueError("category total difference does not reconcile")
-        expected_status = (
-            CheckStatus.PASSED if self.difference == 0 else CheckStatus.FAILED
-        )
+        expected_status = CheckStatus.PASSED if self.difference == 0 else CheckStatus.FAILED
         if self.status != expected_status:
             raise ValueError("category total status does not match difference")
         return self
@@ -319,11 +320,12 @@ class ParentChildDoubleCountProtectionV1(ContractModel):
 
     @model_validator(mode="after")
     def validate_protection(self) -> ParentChildDoubleCountProtectionV1:
-        if (
-            self.status != CheckStatus.APPLIED
-            or not self.top_level_operations_only
-            or not self.passed
-        ):
+        protection_active = (
+            self.status == CheckStatus.APPLIED
+            and self.top_level_operations_only
+            and self.passed
+        )
+        if not protection_active:
             raise ValueError("parent-child double-count protection must be applied")
         return self
 
@@ -345,9 +347,7 @@ class OperationsReconciliationV1(ContractModel):
             and self.commission_double_count_protection.passed
             and self.parent_child_double_count_protection.passed
         )
-        expected = (
-            ReconciliationStatus.OK if passed else ReconciliationStatus.WARNING
-        )
+        expected = ReconciliationStatus.OK if passed else ReconciliationStatus.WARNING
         if self.status != expected:
             raise ValueError("operations reconciliation status is inconsistent")
         return self
@@ -377,11 +377,9 @@ class OperationsSourceQualityV1(ContractModel):
             raise ValueError("cross-currency aggregation is forbidden")
         if not self.read_only:
             raise ValueError("operations analytics source must be read-only")
-        if (
-            self.instrument_groups_returned
-            + self.instrument_groups_skipped_by_limit
-            != self.instrument_groups_total
-        ):
+        returned = self.instrument_groups_returned
+        skipped = self.instrument_groups_skipped_by_limit
+        if returned + skipped != self.instrument_groups_total:
             raise ValueError("instrument group counts do not reconcile")
         required_for_complete = (
             self.pagination_complete
@@ -437,38 +435,23 @@ class OperationsAnalyticsV1(ContractModel):
             + self.operations_in_progress
         )
         if state_subtotal > self.operations_count:
-            raise ValueError(
-                "operation state subtotals cannot exceed operations_count"
-            )
+            raise ValueError("operation state subtotals cannot exceed operations_count")
         if self.duplicates_removed > self.source_quality.raw_items_received:
             raise ValueError("duplicates_removed cannot exceed raw_items_received")
 
         cash_currencies = [row.currency for row in self.cash_flows_by_currency]
         external_currencies = [row.currency for row in self.net_external_flow]
         turnover_currencies = [row.currency for row in self.turnover]
-        for currencies in (
-            cash_currencies,
-            external_currencies,
-            turnover_currencies,
-        ):
+        for currencies in (cash_currencies, external_currencies, turnover_currencies):
             if len(currencies) != len(set(currencies)):
                 raise ValueError("currency summary rows must be unique")
         cash_currency_set = set(cash_currencies)
-        if cash_currency_set != set(external_currencies) or cash_currency_set != set(
-            turnover_currencies
-        ):
-            raise ValueError(
-                "currency summary sections must cover the same currencies"
-            )
+        if cash_currency_set != set(external_currencies):
+            raise ValueError("cash and external-flow currencies must match")
+        if cash_currency_set != set(turnover_currencies):
+            raise ValueError("cash and turnover currencies must match")
         if self.source_quality.currencies_detected != len(cash_currencies):
-            raise ValueError(
-                "currencies_detected does not match currency summaries"
-            )
-        if any(
-            row.currency not in cash_currency_set
-            for row in self.instrument_activity
-        ):
-            raise ValueError(
-                "instrument activity currency is absent from cash summaries"
-            )
+            raise ValueError("currencies_detected does not match currency summaries")
+        if any(row.currency not in cash_currency_set for row in self.instrument_activity):
+            raise ValueError("instrument activity currency is absent from cash summaries")
         return self
