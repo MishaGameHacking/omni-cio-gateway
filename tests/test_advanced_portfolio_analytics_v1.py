@@ -195,7 +195,13 @@ def test_multi_currency_rows_are_kept_separate() -> None:
     snapshot = PortfolioSnapshotV1(
         metadata=rub.metadata,
         positions=(*rub.positions, usd_position),
-        cash_balances=(*rub.cash_balances,),
+        cash_balances=(
+            *rub.cash_balances,
+            CashBalanceV1(
+                reported=Money(amount=Decimal("100"), currency="USD"),
+                as_of=NOW,
+            ),
+        ),
         totals_by_currency=(
             *rub.totals_by_currency,
             CurrencyTotalsV1(
@@ -351,8 +357,27 @@ def test_totals_and_currency_coverage_fail_closed() -> None:
     ):
         build_advanced_portfolio_analytics(mismatched, retrieved_at=NOW)
 
+    missing_total = PortfolioSnapshotV1(
+        metadata=_metadata(),
+        positions=(
+            _position(
+                name="USD ETF",
+                uid="uid-usd-missing-total",
+                instrument_type=InstrumentType.ETF,
+                currency="USD",
+                clean_value="100",
+            ),
+        ),
+        totals_by_currency=(),
+    )
+    with pytest.raises(
+        AdvancedPortfolioAnalyticsError,
+        match="PORTFOLIO_POSITION_CURRENCY_TOTAL_MISSING",
+    ):
+        build_advanced_portfolio_analytics(missing_total, retrieved_at=NOW)
 
-def test_stress_inputs_and_contract_immutability() -> None:
+
+def test_stress_inputs_timestamp_and_contract_immutability() -> None:
     snapshot = _rub_snapshot()
     with pytest.raises(
         AdvancedPortfolioAnalyticsError,
@@ -371,6 +396,14 @@ def test_stress_inputs_and_contract_immutability() -> None:
             snapshot,
             stress_shocks=(Decimal("-1"),),
             retrieved_at=NOW,
+        )
+    with pytest.raises(
+        AdvancedPortfolioAnalyticsError,
+        match="ANALYTICS_TIMESTAMP_MUST_BE_AWARE",
+    ):
+        build_advanced_portfolio_analytics(
+            snapshot,
+            retrieved_at=datetime(2026, 7, 28, 18, 30),
         )
 
     result = build_advanced_portfolio_analytics(snapshot, retrieved_at=NOW)
