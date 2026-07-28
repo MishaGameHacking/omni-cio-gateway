@@ -38,6 +38,15 @@
   и freshness без сетевого fetch, HTML/PDF parsing или нового Action;
 - exact Decimal spread arithmetic, identity/currency reconciliation и
   обязательный `trading_methods=false` в market bundle;
+- `NewsDocumentInputV1` и `SanitizedNewsDocumentV1` для разделения внешних
+  инструкций и данных, явного entity-resolution и безопасного disposition;
+- offline news sanitization на стандартной библиотеке: nested hidden HTML,
+  NFKC, zero-width/bidi controls, size limits и prompt-injection flags;
+- exact content deduplication с article-specific occurrence IDs, source ranking,
+  event-time clusters и проверяемым duplicate audit trail;
+- news security tests для tool/credential/code/trade/withdrawal instructions,
+  hidden scripts, Unicode obfuscation, oversized content и отсутствия network
+  client imports;
 - cash/liquidity diagnostics;
 - purchase capacity preview и integrity;
 - operations analytics;
@@ -57,7 +66,9 @@
   `tests/test_no_telegram_runtime.py`;
 - решение и процедура внешней очистки зафиксированы в
   `knowledge/12_TELEGRAM_RETIREMENT.txt` и
-  `docs/operations/TELEGRAM_REMOVAL_RUNBOOK.md`.
+  `docs/operations/TELEGRAM_REMOVAL_RUNBOOK.md`;
+- PR-11 news pipeline остаётся offline data boundary: live URL fetching и новый
+  public Action не подключены.
 
 ### Custom GPT Modern Financial Sage — 2026
 
@@ -129,6 +140,12 @@ GitHub хранит желаемую каноническую конфигура
 ### HTML-отчёты СберИнвестиций
 
 Реальные отчёты не должны сохраняться в GitHub. Допускаются только специально обезличенные fixtures без счёта, сделок, сумм, персональных данных и иных идентификаторов.
+
+### Live news retrieval
+
+URL fetch, redirect policy, MIME validation, DNS/IP allowlists, SSRF protection,
+response-size enforcement и storage policy пока не подключены. PR-11 принимает
+только уже предоставленный текст/HTML и не выполняет сетевые запросы.
 
 ## 4. Что нужно новому чату
 

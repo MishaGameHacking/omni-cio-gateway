@@ -27,6 +27,7 @@ files = [
   "omni_cio/analytics",
   "omni_cio/risk",
   "omni_cio/market",
+  "omni_cio/news",
   "scripts/check_ci_security_baseline.py",
   "scripts/check_repository_layout.py",
 ]
