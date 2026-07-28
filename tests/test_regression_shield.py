@@ -13,6 +13,7 @@ os.environ.setdefault(
 from fastapi.testclient import TestClient
 
 import app as gateway_module
+import sdk_order_compat
 
 
 EXPECTED_VERSION = "3.9.1"
@@ -205,6 +206,28 @@ def test_openapi_exposes_no_mutating_or_trading_operations() -> None:
     )
     for marker in forbidden_markers:
         assert marker not in serialized
+
+
+def test_purchase_preview_uses_an_explicit_broker_sdk_allowlist() -> None:
+    assert sdk_order_compat.ALLOWED_ORDERS_METHODS == frozenset(
+        {"get_max_lots", "get_order_price"}
+    )
+    assert sdk_order_compat.ALLOWED_CLIENT_SERVICES == frozenset(
+        {"users", "instruments", "orders"}
+    )
+
+    orders_adapter_source = Path("sdk_order_compat.py").read_text(
+        encoding="utf-8"
+    ).split("class ClientView", maxsplit=1)[0]
+    assert "def __getattr__" not in orders_adapter_source
+
+    client_view_source = Path("sdk_order_compat.py").read_text(
+        encoding="utf-8"
+    ).split("class ClientView", maxsplit=1)[1].split(
+        "class ClientContextAdapter",
+        maxsplit=1,
+    )[0]
+    assert "def __getattr__" not in client_view_source
 
 
 def test_render_uses_only_the_stable_application_entrypoint() -> None:
