@@ -450,10 +450,14 @@ def deduplicate_news_documents(
     canonical_documents: list[SanitizedNewsDocumentV1] = []
     duplicates: list[DuplicateNewsOccurrenceV1] = []
     for fingerprint, group in sorted(by_fingerprint.items()):
-        canonical = max(group, key=_canonical_rank)
+        canonical_index = max(
+            range(len(group)),
+            key=lambda index: _canonical_rank(group[index]),
+        )
+        canonical = group[canonical_index]
         canonical_documents.append(canonical)
         for duplicate_index, duplicate in enumerate(group):
-            if duplicate is canonical:
+            if duplicate_index == canonical_index:
                 continue
             duplicate_occurrence_id = duplicate.occurrence_id
             if duplicate_occurrence_id == canonical.occurrence_id:
