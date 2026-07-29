@@ -31,6 +31,9 @@ class NewsRetrievalWarning(StrEnum):
     CONTEXT_ONLY_DOCUMENTS_EXCLUDED = "context_only_documents_excluded"
     REJECTED_DOCUMENTS_EXCLUDED = "rejected_documents_excluded"
     WRONG_INSTRUMENT_DOCUMENTS_EXCLUDED = "wrong_instrument_documents_excluded"
+    UNTRUSTED_AUTHORITY_DOCUMENTS_EXCLUDED = (
+        "untrusted_authority_documents_excluded"
+    )
     FUTURE_DOCUMENTS_EXCLUDED = "future_documents_excluded"
     STALE_DOCUMENTS_EXCLUDED = "stale_documents_excluded"
     NO_QUERY_TERM_MATCH = "no_query_term_match"
@@ -155,6 +158,7 @@ class NewsRetrievalExclusionCountsV1(ContractModel):
     context_only: NonNegativeInt = 0
     rejected: NonNegativeInt = 0
     wrong_instrument: NonNegativeInt = 0
+    untrusted_authority: NonNegativeInt = 0
     future: NonNegativeInt = 0
     stale: NonNegativeInt = 0
     no_term_match: NonNegativeInt = 0
@@ -166,6 +170,7 @@ class NewsRetrievalExclusionCountsV1(ContractModel):
             self.context_only
             + self.rejected
             + self.wrong_instrument
+            + self.untrusted_authority
             + self.future
             + self.stale
             + self.no_term_match
@@ -214,13 +219,25 @@ class NewsRetrievalResultV1(ContractModel):
             raise ValueError("returned news chunk count does not reconcile")
         if self.returned_chunk_count > self.eligible_chunk_count:
             raise ValueError("returned news chunks exceed eligible chunks")
-        if self.canonical_document_count > self.input_document_count:
-            raise ValueError("canonical news documents exceed input documents")
+        if self.input_document_count != (
+            self.canonical_document_count + self.exclusions.exact_duplicates
+        ):
+            raise ValueError("news input, canonical and duplicate counts do not reconcile")
         if self.eligible_document_count > self.canonical_document_count:
             raise ValueError("eligible news documents exceed canonical documents")
         expected_ranks = tuple(range(1, len(self.chunks) + 1))
         if tuple(chunk.rank for chunk in self.chunks) != expected_ranks:
             raise ValueError("news retrieval ranks must be contiguous")
+        cluster_count = len(
+            {chunk.citation.event_cluster_id for chunk in self.chunks}
+        )
+        if self.unique_event_cluster_count != cluster_count:
+            raise ValueError("news event cluster count does not reconcile")
+        publisher_count = len(
+            {chunk.citation.publisher.casefold() for chunk in self.chunks}
+        )
+        if self.unique_publisher_count != publisher_count:
+            raise ValueError("news publisher count does not reconcile")
         expected_ready = bool(self.chunks)
         if self.retrieval_ready is not expected_ready:
             raise ValueError("news retrieval readiness is inconsistent")
