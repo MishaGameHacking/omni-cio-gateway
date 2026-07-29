@@ -17,7 +17,7 @@ NonNegativeDecimal = Annotated[
 ]
 ReturnValue = Annotated[
     Decimal,
-    Field(gt=Decimal("-1"), allow_inf_nan=False),
+    Field(ge=Decimal("-1"), allow_inf_nan=False),
 ]
 UnitInterval = Annotated[
     Decimal,
