@@ -61,7 +61,7 @@ class FinalDecisionReviewInputCheckCode(StrEnum):
     CREDENTIAL_FIELDS = "credential_fields"
     EXECUTION_FIELDS = "execution_fields"
     MUTATION_FIELDS = "mutation_fields"
-    TRANSFER_WITHDRAWAL_FIELDS = "transfer_withdrawal_fields"
+    FUNDS_MOVEMENT_FIELDS = "funds_movement_fields"
 
 
 class FinalDecisionReviewInputWarning(StrEnum):
@@ -115,7 +115,7 @@ class FinalDecisionReviewReadOnlyQueryV1(ContractModel):
     credential_fields_present: Literal[False] = False
     execution_fields_present: Literal[False] = False
     mutation_fields_present: Literal[False] = False
-    transfer_withdrawal_fields_present: Literal[False] = False
+    funds_movement_fields_present: Literal[False] = False
     trade_authorized: Literal[False] = False
     order_created: Literal[False] = False
     execution_ready: Literal[False] = False
@@ -185,7 +185,7 @@ class FinalDecisionReviewInputBindingV1(ContractModel):
     credential_fields_absent: bool
     execution_fields_absent: bool
     mutation_fields_absent: bool
-    transfer_withdrawal_fields_absent: bool
+    funds_movement_fields_absent: bool
     checks: Annotated[tuple[FinalDecisionReviewInputCheckV1, ...], Field(min_length=1)]
     primary_blocker: FinalDecisionReviewInputCheckCode | None = None
     blockers: tuple[FinalDecisionReviewInputCheckCode, ...] = ()
@@ -267,7 +267,7 @@ class FinalDecisionReviewInputBindingV1(ContractModel):
             self.credential_fields_absent,
             self.execution_fields_absent,
             self.mutation_fields_absent,
-            self.transfer_withdrawal_fields_absent,
+            self.funds_movement_fields_absent,
         )
         expected_valid = all(flags) and not self.blockers
         if self.input_valid is not expected_valid:
