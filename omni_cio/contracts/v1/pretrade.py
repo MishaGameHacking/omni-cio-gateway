@@ -94,11 +94,18 @@ class PreTradePreviewV1(ContractModel):
     def normalize_currency(cls, value: object) -> object:
         return value.upper() if isinstance(value, str) else value
 
-    @field_validator("price_time", "evaluated_at")
+    @field_validator("price_time")
     @classmethod
-    def require_aware_timestamp(cls, value: datetime | None) -> datetime | None:
+    def require_aware_price_time(cls, value: datetime | None) -> datetime | None:
         if value is None:
             return None
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("pre-trade timestamps must be timezone-aware")
+        return value.astimezone(timezone.utc)
+
+    @field_validator("evaluated_at")
+    @classmethod
+    def require_aware_evaluated_at(cls, value: datetime) -> datetime:
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("pre-trade timestamps must be timezone-aware")
         return value.astimezone(timezone.utc)
@@ -176,16 +183,21 @@ class PreTradePreviewV1(ContractModel):
             self.remaining_cash,
             self.target_value_limit,
         )
-        if any(
+        currency_mismatch = any(
             money is not None and money.currency != self.currency
             for money in money_values
+        )
+        if (
+            currency_mismatch
+            and PreTradeBlocker.CURRENCY_MISMATCH not in self.blockers
         ):
-            raise ValueError("all pre-trade monetary values must use one currency")
+            raise ValueError("currency mismatch requires blocker")
 
         if (
             self.initial_order_amount is not None
             and self.canonical_commission is not None
             and self.total_order_amount is not None
+            and not currency_mismatch
         ):
             expected_total = (
                 self.initial_order_amount.amount
@@ -196,20 +208,32 @@ class PreTradePreviewV1(ContractModel):
                     else Decimal("0")
                 )
             )
-            if abs(self.total_order_amount.amount - expected_total) > _MONEY_TOLERANCE:
-                raise ValueError("total order amount does not reconcile")
+            if (
+                abs(self.total_order_amount.amount - expected_total)
+                > _MONEY_TOLERANCE
+                and PreTradeBlocker.ARITHMETIC_INTEGRITY_FAILED
+                not in self.blockers
+            ):
+                raise ValueError("arithmetic mismatch requires blocker")
 
         if (
             self.own_funds is not None
             and self.total_order_amount is not None
             and self.remaining_cash is not None
+            and not currency_mismatch
         ):
             expected_remaining = self.own_funds.amount - self.total_order_amount.amount
-            if abs(self.remaining_cash.amount - expected_remaining) > _MONEY_TOLERANCE:
-                raise ValueError("remaining cash does not reconcile")
+            if (
+                abs(self.remaining_cash.amount - expected_remaining)
+                > _MONEY_TOLERANCE
+                and PreTradeBlocker.ARITHMETIC_INTEGRITY_FAILED
+                not in self.blockers
+            ):
+                raise ValueError("remaining-cash mismatch requires blocker")
 
         if (
             self.total_order_amount is not None
+            and self.total_order_amount.currency == self.target_value_limit.currency
             and self.total_order_amount.amount
             > self.target_value_limit.amount + _MONEY_TOLERANCE
             and PreTradeBlocker.TARGET_BAND_OVERSHOOT not in self.blockers
