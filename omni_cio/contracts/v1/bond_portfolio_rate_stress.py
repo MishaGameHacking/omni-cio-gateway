@@ -150,7 +150,9 @@ class BondPortfolioRateScenarioV1(ContractModel):
             raise ValueError("portfolio stress estimated change does not reconcile")
         if self.estimated_loss.amount != expected_loss:
             raise ValueError("portfolio stress estimated loss does not reconcile")
-        expected_ratio = expected_loss / expected_current if expected_current > 0 else Decimal("0")
+        expected_ratio = (
+            expected_loss / expected_current if expected_current > 0 else Decimal("0")
+        )
         if self.estimated_loss_ratio != expected_ratio:
             raise ValueError("portfolio stress loss ratio does not reconcile")
         return self
@@ -225,10 +227,49 @@ class BondPortfolioRateStressV1(ContractModel):
             raise ValueError("portfolio stress scenario grid does not reconcile")
         if shocks != tuple(sorted(set(shocks))):
             raise ValueError("portfolio stress shock grid must be sorted and unique")
-        if any(scenario.current_value.amount != self.current_full_value.amount for scenario in self.scenarios):
+        if any(
+            scenario.current_value.amount != self.current_full_value.amount
+            for scenario in self.scenarios
+        ):
             raise ValueError("portfolio scenarios must use the same current total")
-        if any(scenario.current_value.currency != self.currency for scenario in self.scenarios):
+        if any(
+            scenario.current_value.currency != self.currency
+            for scenario in self.scenarios
+        ):
             raise ValueError("portfolio scenarios must use one currency")
+
+        baseline = self.scenarios[0].contributions
+        baseline_keys = tuple(item.instrument_key for item in baseline)
+        if baseline_keys != self.instrument_keys:
+            raise ValueError("portfolio stress instrument evidence does not reconcile")
+        baseline_values = {
+            item.instrument_key: item.current_value.amount for item in baseline
+        }
+        baseline_durations = {
+            item.instrument_key: item.duration_years for item in baseline
+        }
+        for scenario in self.scenarios:
+            if (
+                tuple(item.instrument_key for item in scenario.contributions)
+                != self.instrument_keys
+            ):
+                raise ValueError("portfolio scenario instrument coverage changed")
+            if any(
+                item.current_value.amount != baseline_values[item.instrument_key]
+                for item in scenario.contributions
+            ):
+                raise ValueError("portfolio scenario current values changed")
+            if any(
+                item.duration_years != baseline_durations[item.instrument_key]
+                for item in scenario.contributions
+            ):
+                raise ValueError("portfolio scenario durations changed")
+        expected_weighted_duration = sum(
+            item.current_value.amount * item.duration_years for item in baseline
+        ) / self.current_full_value.amount
+        if self.weighted_duration_years != expected_weighted_duration:
+            raise ValueError("portfolio weighted duration does not reconcile")
+
         expected_worst = max(scenario.estimated_loss.amount for scenario in self.scenarios)
         if self.worst_loss.amount != expected_worst:
             raise ValueError("portfolio stress worst loss does not reconcile")
