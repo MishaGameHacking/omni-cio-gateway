@@ -187,9 +187,16 @@ def test_ready_evaluation_compounds_oos_returns_costs_and_benchmark() -> None:
     assert result.evaluated_fold_count == 4
     assert result.aggregate_performance is not None
     aggregate = result.aggregate_performance
-    expected_gross = (Decimal("1.01") ** 40) - Decimal("1")
-    expected_net = (Decimal("1.00825") ** 40) - Decimal("1")
-    expected_benchmark = (Decimal("1.005") ** 40) - Decimal("1")
+    expected_gross_wealth = Decimal("1")
+    expected_net_wealth = Decimal("1")
+    expected_benchmark_wealth = Decimal("1")
+    for _ in range(40):
+        expected_gross_wealth *= Decimal("1.01")
+        expected_net_wealth *= Decimal("1.00825")
+        expected_benchmark_wealth *= Decimal("1.005")
+    expected_gross = expected_gross_wealth - Decimal("1")
+    expected_net = expected_net_wealth - Decimal("1")
+    expected_benchmark = expected_benchmark_wealth - Decimal("1")
     assert aggregate.gross_total_return == expected_gross
     assert aggregate.net_total_return == expected_net
     assert aggregate.benchmark_total_return == expected_benchmark
