@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from omni_cio.contracts.v1.decision_capacity import CapacityDecisionGateStatus
 from omni_cio.contracts.v1.decision_pro_forma_risk_binding import (
     ProFormaRiskIntentBindingV1,
 )
