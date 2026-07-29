@@ -9,10 +9,11 @@
 1. Прочитать `README.md`.
 2. Прочитать `docs/README.md`.
 3. Прочитать `knowledge/00_PROJECT_MASTER_CONTEXT.md`.
-4. Прочитать `gpt/INSTRUCTIONS.md` и `gpt/ACTIONS_CATALOG.md`, если задача касается Custom GPT.
-5. Прочитать профильный файл из `knowledge/`.
-6. Проверить `main`, открытые PR, последние релизы и GitHub Actions.
-7. Не считать старую переписку источником истины, если она расходится с кодом в `main`.
+4. Прочитать `knowledge/16_CURRENT_PROGRAM_STATUS.md` для фактического активного этапа.
+5. Прочитать `gpt/INSTRUCTIONS.md` и `gpt/ACTIONS_CATALOG.md`, если задача касается Custom GPT.
+6. Прочитать профильный файл из `knowledge/`.
+7. Проверить `main`, открытые PR, последние релизы и GitHub Actions.
+8. Не считать старую переписку источником истины, если она расходится с кодом в `main`.
 
 ## 2. Неприкосновенный read-only режим
 
@@ -149,6 +150,7 @@ active env configuration, imports и OpenAPI routes.
 - `CHANGELOG.md`;
 - `README.md`;
 - `knowledge/00_PROJECT_MASTER_CONTEXT.md`;
+- `knowledge/16_CURRENT_PROGRAM_STATUS.md`;
 - профильный `knowledge/NN_*`;
 - `gpt/`, если меняется Custom GPT;
 - `docs/inventory/PROJECT_ASSETS.md`;
