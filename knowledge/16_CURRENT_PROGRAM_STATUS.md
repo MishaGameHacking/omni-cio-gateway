@@ -1,8 +1,8 @@
 # 16 — CURRENT PROGRAM STATUS
 
 Дата актуализации: 2026-07-29  
-Фактическая вершина программы: **PR-48**  
-Основной commit после squash merge: `5193086fa4baf735599d846996c17a1a9734994b`
+Фактическая вершина программы после merge этого пакета: **PR-50**  
+Точная версия определяется текущей вершиной ветки `main`.
 
 ## Назначение документа
 
@@ -59,7 +59,8 @@
 - shadow и paper workflows;
 - authenticated/encrypted paper ledger, backup, restore и DR readiness;
 - purged walk-forward planning, OOS performance и statistical stability;
-- market-capacity assessment и capacity-aware decision gating.
+- market-capacity assessment и capacity-aware decision gating;
+- unified homogeneous buy/sell pre-trade review envelope.
 
 ## Последняя завершённая цепочка PR
 
@@ -91,11 +92,22 @@ open-order checks, tax basis, commission integrity и exact intent binding.
 Брокерские gross/net proceeds не пересчитываются gate, чтобы не нарушать
 правила номинальной цены облигаций и НКД.
 
+### PR-49
+
+Канонический оперативный status-файл добавлен в обязательный порядок чтения,
+чтобы устаревший номер этапа в стратегическом master-context не направлял
+новых агентов к уже завершённому PR-03.
+
+### PR-50
+
+Unified directional pre-trade review принимает ровно один однородный buy- или
+sell-source gate, блокирует смешивание направлений и сохраняет полный исходный
+gate без пересчёта брокерских значений и без исполнения.
+
 ## Что остаётся до полного релиза по мастер-плану
 
 ### Backend и orchestration
 
-- единый directional decision-review envelope для buy/sell;
 - композиция portfolio risk, capacity и broker preview в один объяснимый
   read-only ответ;
 - полная публичная Action-интеграция только после contract review;
@@ -130,12 +142,12 @@ partial-fill и timeout reconciliation требуют отдельной про�
 
 ## Следующий рекомендуемый пакет
 
-**PR-49 — unified directional pre-trade review envelope v1**:
+**PR-51 — portfolio-risk/capacity/pre-trade explanation envelope v1**:
 
-- принимает ровно один однородный buy- или sell-intent set;
-- маршрутизирует его только в соответствующий уже проверенный gate;
-- не допускает смешивания buy/sell preview типов;
-- сохраняет no-action, blockers, warnings и provenance;
+- объединяет только уже проверенные read-only результаты;
+- сохраняет отдельные source contracts и provenance;
+- показывает, какой слой заблокировал изменение;
+- не скрывает missing data и uncertainty;
 - не добавляет публичный route и не создаёт заявку.
 
 ## Запрет ложного завершения
