@@ -20,7 +20,7 @@ from omni_cio.contracts.v1.decision_capacity_pretrade import (
     CapacityPreTradeDecisionGateWarning,
     CapacityPreTradeMismatch,
 )
-from omni_cio.contracts.v1.pretrade import PreTradePreviewV1
+from omni_cio.contracts.v1.pretrade import PreTradeBlocker, PreTradePreviewV1
 
 
 class CapacityPreTradeDecisionGateError(ValueError):
@@ -169,6 +169,18 @@ def apply_capacity_pretrade_decision_gate(
         final_action = DecisionAction.WAIT_FOR_DATA
         status = CapacityDecisionGateStatus.ABSTAIN
 
+    coverage_complete = len(coverage) == len(expected_requests)
+    affordability_confirmed = coverage_complete and all(
+        row.preview.affordable
+        and PreTradeBlocker.AFFORDABILITY_UNCONFIRMED not in row.preview_blockers
+        for row in coverage
+    )
+    commission_integrity_confirmed = coverage_complete and all(
+        row.preview.integrity_confirmed
+        and row.preview.canonical_commission is not None
+        for row in coverage
+    )
+
     return CapacityPreTradeDecisionGateV1(
         assessed_at=gate_time,
         status=status,
@@ -192,4 +204,7 @@ def apply_capacity_pretrade_decision_gate(
             CapacityPreTradeDecisionGateWarning.COMMISSION_AND_ACCRUED_INTEREST_FROM_PREVIEW,
             CapacityPreTradeDecisionGateWarning.REVIEW_ONLY_NO_ORDER_CREATED,
         ),
+        broker_preview_coverage_complete=coverage_complete,
+        affordability_confirmed=affordability_confirmed,
+        commission_integrity_confirmed=commission_integrity_confirmed,
     )
