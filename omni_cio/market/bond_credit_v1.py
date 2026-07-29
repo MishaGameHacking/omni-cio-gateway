@@ -159,7 +159,7 @@ def assess_bond_credit_risk(
             if not rating.stale:
                 current_by_scope[rating.scope].append(rating)
         else:
-            _append_unique(warnings, BondCreditWarning.WITHDRAWN_RATING_PRESENT)
+            _append_unique(warnings, BondCreditWarning.INACTIVE_RATING_PRESENT)
         if rating.source_authority not in _TRUSTED_AUTHORITIES:
             _append_unique(blockers, BondCreditBlocker.UNTRUSTED_SOURCE)
 
@@ -304,7 +304,7 @@ def assess_bond_credit_risk(
         current_issuer_rating_count=len(current_by_scope[RatingScope.ISSUER]),
         current_issue_rating_count=len(current_by_scope[RatingScope.ISSUE]),
         stale_rating_count=sum(item.stale for item in selected_ratings),
-        withdrawn_rating_count=sum(not item.current for item in selected_ratings),
+        noncurrent_rating_count=sum(not item.current for item in selected_ratings),
         divergent_scopes=tuple(divergent_scopes),
         latest_downgrade_at=latest_downgrade_at,
         maturity_date=maturity_date,
