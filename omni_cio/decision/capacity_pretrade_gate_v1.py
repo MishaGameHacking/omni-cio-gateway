@@ -115,34 +115,34 @@ def apply_capacity_pretrade_decision_gate(
 
     coverage: list[CapacityPreTradeCoverageV1] = []
     for expected_request in expected_requests:
-        preview = preview_by_key.get(expected_request.instrument_key)
-        if preview is None:
+        matched_preview = preview_by_key.get(expected_request.instrument_key)
+        if matched_preview is None:
             continue
-        mismatch_fields = _preview_mismatches(expected_request, preview)
+        mismatch_fields = _preview_mismatches(expected_request, matched_preview)
         coverage.append(
             CapacityPreTradeCoverageV1(
                 instrument_key=expected_request.instrument_key,
                 expected_request=expected_request,
-                preview=preview,
+                preview=matched_preview,
                 mismatch_fields=mismatch_fields,
                 exact_match=not mismatch_fields,
-                preview_ready=preview.preview_ready,
-                preview_evaluated_at=preview.evaluated_at,
-                preview_currency=preview.currency,
-                preview_price_basis=preview.price_basis,
-                preview_unit_price=preview.unit_price,
-                preview_lot_size=preview.lot_size,
-                preview_quantity_lots=preview.quantity_lots,
-                preview_blockers=preview.blockers,
+                preview_ready=matched_preview.preview_ready,
+                preview_evaluated_at=matched_preview.evaluated_at,
+                preview_currency=matched_preview.currency,
+                preview_price_basis=matched_preview.price_basis,
+                preview_unit_price=matched_preview.unit_price,
+                preview_lot_size=matched_preview.lot_size,
+                preview_quantity_lots=matched_preview.quantity_lots,
+                preview_blockers=matched_preview.blockers,
             )
         )
         _time_blockers(
-            value_at=preview.evaluated_at,
+            value_at=matched_preview.evaluated_at,
             assessed_at=gate_time,
             policy=active_policy,
             blockers=blockers,
         )
-        if not preview.preview_ready:
+        if not matched_preview.preview_ready:
             _append_unique(
                 blockers,
                 CapacityPreTradeDecisionGateBlocker.PREVIEW_NOT_READY,
