@@ -289,9 +289,9 @@ def test_fold_and_plan_tampering_are_rejected() -> None:
 
     plan_payload = result.model_dump()
     folds = [dict(fold) for fold in plan_payload["folds"]]
-    second_test_ids = list(folds[1]["test_observation_ids"])
-    second_test_ids[0] = folds[0]["test_observation_ids"][0]
-    folds[1]["test_observation_ids"] = second_test_ids
+    first_test_ids = list(folds[0]["test_observation_ids"])
+    first_test_ids[0] = folds[1]["test_observation_ids"][0]
+    folds[0]["test_observation_ids"] = first_test_ids
     plan_payload["folds"] = folds
     with pytest.raises(ValidationError, match="cannot repeat"):
         WalkForwardValidationPlanV1.model_validate(plan_payload)
