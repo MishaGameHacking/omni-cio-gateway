@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
 import os
 from pathlib import Path
@@ -10,6 +10,7 @@ from typing import Literal
 
 from pydantic import ValidationError
 
+from omni_cio.contracts.v1.paper_archive import PaperLedgerArchiveRecordV1
 from omni_cio.contracts.v1.paper_dr import (
     PaperDrBlocker,
     PaperDrReadinessStatus,
@@ -21,7 +22,10 @@ from omni_cio.contracts.v1.paper_dr import (
     PaperLedgerDrReadinessV1,
     PaperLedgerDrTempArtifactV1,
 )
-from omni_cio.contracts.v1.paper_recovery import PaperLedgerLockDiagnosticV1
+from omni_cio.contracts.v1.paper_recovery import (
+    PaperLedgerLockDiagnosticV1,
+    PaperLedgerRecoveryManifestV1,
+)
 from omni_cio.paper.recovery_v1 import (
     PaperLedgerRecoveryError,
     diagnose_paper_ledger_writer_lock,
@@ -40,6 +44,7 @@ _MAX_MANIFEST_BYTES = 4 * 1024 * 1024
 _MANIFEST_PATTERN = re.compile(
     r"^recovery-(?P<sequence>[0-9]{8})-(?P<digest>[0-9a-f]{64})\.plrm$"
 )
+ManifestSelection = tuple[PaperLedgerRecoveryManifestV1, Path, bytes]
 
 
 class PaperLedgerDrAssessmentError(RuntimeError):
@@ -63,11 +68,8 @@ def _inspect_root(
         return None, blocker
     try:
         resolved = path.resolve(strict=True)
-    except (FileNotFoundError, OSError):
-        return None, blocker
-    try:
         info = resolved.stat()
-    except OSError:
+    except (FileNotFoundError, OSError):
         return None, blocker
     if not stat.S_ISDIR(info.st_mode) or info.st_mode & 0o077:
         return None, blocker
@@ -132,7 +134,9 @@ def _temp_artifacts(
 ) -> tuple[PaperLedgerDrTempArtifactV1, ...]:
     try:
         candidates = sorted(
-            path for path in root.iterdir() if path.name.startswith(".") and path.name.endswith(".tmp")
+            path
+            for path in root.iterdir()
+            if path.name.startswith(".") and path.name.endswith(".tmp")
         )
     except OSError as exc:
         raise PaperLedgerDrAssessmentError("PAPER_DR_TEMP_SCAN_FAILED") from exc
@@ -145,14 +149,13 @@ def _temp_artifacts(
         except OSError as exc:
             raise PaperLedgerDrAssessmentError("PAPER_DR_TEMP_STAT_FAILED") from exc
         modified_at = datetime.fromtimestamp(info.st_mtime, tz=timezone.utc)
-        age_seconds = max(0, int((assessed_at - modified_at).total_seconds()))
         artifacts.append(
             PaperLedgerDrTempArtifactV1(
                 root_role=root_role,
                 filename=path.name,
                 size_bytes=max(0, info.st_size),
                 modified_at=modified_at,
-                age_seconds=age_seconds,
+                age_seconds=max(0, int((assessed_at - modified_at).total_seconds())),
                 regular_file=stat.S_ISREG(info.st_mode),
                 symlink_detected=stat.S_ISLNK(info.st_mode),
                 permissions_safe=not bool(info.st_mode & 0o077),
@@ -190,57 +193,98 @@ def _read_secure_manifest(path: Path) -> bytes:
         os.close(fd)
 
 
-def _select_manifest(
+def _latest_manifest_paths(
     backup_root: Path,
-) -> tuple[Path | None, tuple[PaperDrBlocker, ...], tuple[PaperDrWarning, ...]]:
-    blockers: list[PaperDrBlocker] = []
-    warnings: list[PaperDrWarning] = []
+) -> tuple[tuple[Path, ...], set[PaperDrBlocker], set[PaperDrWarning]]:
+    blockers: set[PaperDrBlocker] = set()
+    warnings: set[PaperDrWarning] = set()
     try:
         candidates = sorted(backup_root.glob("*.plrm"))
     except OSError:
-        return None, (PaperDrBlocker.MANIFEST_FILE_INVALID,), ()
+        return (), {PaperDrBlocker.MANIFEST_FILE_INVALID}, warnings
     valid: list[tuple[int, Path]] = []
     for path in candidates:
         if path.is_symlink():
-            blockers.append(PaperDrBlocker.MANIFEST_FILE_INVALID)
+            blockers.add(PaperDrBlocker.MANIFEST_FILE_INVALID)
             continue
         match = _MANIFEST_PATTERN.fullmatch(path.name)
         if match is None:
-            blockers.append(PaperDrBlocker.MANIFEST_FILE_INVALID)
+            blockers.add(PaperDrBlocker.MANIFEST_FILE_INVALID)
             continue
         valid.append((int(match.group("sequence")), path))
     if not valid:
-        blockers.append(PaperDrBlocker.MANIFEST_MISSING)
-        return None, tuple(blockers), tuple(warnings)
+        blockers.add(PaperDrBlocker.MANIFEST_MISSING)
+        return (), blockers, warnings
     latest_sequence = max(sequence for sequence, _ in valid)
-    latest = [path for sequence, path in valid if sequence == latest_sequence]
-    if len(latest) != 1:
-        blockers.append(PaperDrBlocker.MANIFEST_AMBIGUOUS)
-        return None, tuple(blockers), tuple(warnings)
+    latest_paths = tuple(path for sequence, path in valid if sequence == latest_sequence)
     if len(valid) > 1:
-        warnings.append(PaperDrWarning.OLD_MANIFESTS_PRESENT)
-    return latest[0], tuple(blockers), tuple(warnings)
+        warnings.add(PaperDrWarning.OLD_MANIFESTS_PRESENT)
+    return latest_paths, blockers, warnings
+
+
+def _authenticate_latest_manifest(
+    paths: Sequence[Path],
+    *,
+    manifest_signing_keys: Mapping[str, bytes],
+) -> tuple[ManifestSelection | None, set[PaperDrBlocker]]:
+    blockers: set[PaperDrBlocker] = set()
+    authenticated: list[ManifestSelection] = []
+    for path in paths:
+        match = _MANIFEST_PATTERN.fullmatch(path.name)
+        if match is None:
+            blockers.add(PaperDrBlocker.MANIFEST_FILE_INVALID)
+            continue
+        try:
+            serialized = _read_secure_manifest(path)
+            parsed = parse_paper_ledger_recovery_manifest_unverified(serialized)
+        except (PaperLedgerDrAssessmentError, PaperLedgerRecoveryError):
+            blockers.add(PaperDrBlocker.MANIFEST_FILE_INVALID)
+            continue
+        key = manifest_signing_keys.get(parsed.manifest_key_id)
+        if key is None:
+            blockers.add(PaperDrBlocker.MANIFEST_KEY_UNAVAILABLE)
+            continue
+        try:
+            verified = verify_paper_ledger_recovery_manifest(
+                serialized,
+                manifest_signing_key=key,
+            )
+        except PaperLedgerRecoveryError:
+            blockers.add(PaperDrBlocker.MANIFEST_AUTHENTICATION_FAILED)
+            continue
+        if (
+            verified.latest_sequence != int(match.group("sequence"))
+            or verified.manifest_digest != match.group("digest")
+        ):
+            blockers.add(PaperDrBlocker.MANIFEST_FILENAME_MISMATCH)
+            continue
+        authenticated.append((verified, path, serialized))
+    if not authenticated:
+        return None, blockers
+    latest_created_at = max(item[0].created_at for item in authenticated)
+    latest = [item for item in authenticated if item[0].created_at == latest_created_at]
+    if len(latest) != 1:
+        blockers.add(PaperDrBlocker.MANIFEST_AMBIGUOUS)
+        return None, blockers
+    return latest[0], blockers
 
 
 def _archive_state(
     *,
     root_role: Literal["primary", "backup"],
-    latest: object,
+    latest: PaperLedgerArchiveRecordV1,
     assessed_at: datetime,
 ) -> PaperLedgerDrArchiveStateV1:
-    sequence = getattr(latest, "sequence")
-    record_digest = getattr(latest, "record_digest")
-    sealed_at = getattr(latest, "sealed_at")
-    ledger = getattr(latest, "ledger")
-    event_count = len(getattr(ledger, "events"))
-    age_seconds = max(0, int((assessed_at - sealed_at).total_seconds()))
     return PaperLedgerDrArchiveStateV1(
         root_role=root_role,
-        latest_sequence=sequence,
-        latest_record_digest=record_digest,
-        latest_event_count=event_count,
-        checkpoint_at=sealed_at,
-        checkpoint_age_seconds=age_seconds,
+        latest_sequence=latest.sequence,
+        latest_record_digest=latest.record_digest,
+        latest_event_count=len(latest.ledger.events),
+        checkpoint_at=latest.sealed_at,
+        checkpoint_age_seconds=max(
+            0,
+            int((assessed_at - latest.sealed_at).total_seconds()),
+        ),
     )
 
 
@@ -260,15 +304,14 @@ def _build_result(
     primary_backup_match: bool,
     separate_filesystem_device: bool,
 ) -> PaperLedgerDrReadinessV1:
-    status = (
-        PaperDrReadinessStatus.READY
-        if not blockers
-        else PaperDrReadinessStatus.BLOCKED
-    )
     try:
         return PaperLedgerDrReadinessV1(
             assessed_at=assessed_at,
-            status=status,
+            status=(
+                PaperDrReadinessStatus.READY
+                if not blockers
+                else PaperDrReadinessStatus.BLOCKED
+            ),
             policy=policy,
             primary_state=primary_state,
             backup_state=backup_state,
@@ -398,61 +441,38 @@ def assess_paper_ledger_dr_readiness(
     if temp_artifacts:
         blockers.add(PaperDrBlocker.TEMP_ARTIFACT_PRESENT)
 
-    manifest_path, manifest_blockers, manifest_warnings = _select_manifest(backup)
-    blockers.update(manifest_blockers)
-    warnings.update(manifest_warnings)
-    serialized_manifest: bytes | None = None
-    verified_manifest = None
-    if manifest_path is not None:
-        match = _MANIFEST_PATTERN.fullmatch(manifest_path.name)
-        try:
-            serialized_manifest = _read_secure_manifest(manifest_path)
-            parsed = parse_paper_ledger_recovery_manifest_unverified(serialized_manifest)
-        except (PaperLedgerDrAssessmentError, PaperLedgerRecoveryError):
-            blockers.add(PaperDrBlocker.MANIFEST_FILE_INVALID)
-        else:
-            manifest_key = manifest_signing_keys.get(parsed.manifest_key_id)
-            if manifest_key is None:
-                blockers.add(PaperDrBlocker.MANIFEST_KEY_UNAVAILABLE)
-            else:
-                try:
-                    verified_manifest = verify_paper_ledger_recovery_manifest(
-                        serialized_manifest,
-                        manifest_signing_key=manifest_key,
-                    )
-                except PaperLedgerRecoveryError:
-                    blockers.add(PaperDrBlocker.MANIFEST_AUTHENTICATION_FAILED)
-                else:
-                    expected_sequence = int(match.group("sequence")) if match else -1
-                    expected_digest = match.group("digest") if match else ""
-                    if (
-                        verified_manifest.latest_sequence != expected_sequence
-                        or verified_manifest.manifest_digest != expected_digest
-                    ):
-                        blockers.add(PaperDrBlocker.MANIFEST_FILENAME_MISMATCH)
-                    manifest_age = int((timestamp - verified_manifest.created_at).total_seconds())
-                    if manifest_age < 0:
-                        blockers.add(PaperDrBlocker.MANIFEST_TIME_IN_FUTURE)
-                        manifest_age = 0
-                    elif manifest_age > effective_policy.max_manifest_age_seconds:
-                        blockers.add(PaperDrBlocker.MANIFEST_STALE)
-                    try:
-                        manifest_evidence = PaperLedgerDrManifestEvidenceV1(
-                            filename=manifest_path.name,
-                            manifest_digest=verified_manifest.manifest_digest,
-                            manifest_key_id=verified_manifest.manifest_key_id,
-                            backup_reference=verified_manifest.backup_reference,
-                            created_at=verified_manifest.created_at,
-                            age_seconds=manifest_age,
-                            latest_sequence=verified_manifest.latest_sequence,
-                            latest_record_digest=verified_manifest.latest_record_digest,
-                            latest_event_count=verified_manifest.latest_event_count,
-                        )
-                    except ValidationError:
-                        blockers.add(PaperDrBlocker.MANIFEST_FILENAME_MISMATCH)
-                        manifest_evidence = None
+    latest_paths, path_blockers, path_warnings = _latest_manifest_paths(backup)
+    blockers.update(path_blockers)
+    warnings.update(path_warnings)
+    selection, authentication_blockers = _authenticate_latest_manifest(
+        latest_paths,
+        manifest_signing_keys=manifest_signing_keys,
+    )
+    blockers.update(authentication_blockers)
 
-    primary_latest = None
+    verified_manifest: PaperLedgerRecoveryManifestV1 | None = None
+    serialized_manifest: bytes | None = None
+    if selection is not None:
+        verified_manifest, manifest_path, serialized_manifest = selection
+        manifest_age = int((timestamp - verified_manifest.created_at).total_seconds())
+        if manifest_age < 0:
+            blockers.add(PaperDrBlocker.MANIFEST_TIME_IN_FUTURE)
+            manifest_age = 0
+        elif manifest_age > effective_policy.max_manifest_age_seconds:
+            blockers.add(PaperDrBlocker.MANIFEST_STALE)
+        manifest_evidence = PaperLedgerDrManifestEvidenceV1(
+            filename=manifest_path.name,
+            manifest_digest=verified_manifest.manifest_digest,
+            manifest_key_id=verified_manifest.manifest_key_id,
+            backup_reference=verified_manifest.backup_reference,
+            created_at=verified_manifest.created_at,
+            age_seconds=manifest_age,
+            latest_sequence=verified_manifest.latest_sequence,
+            latest_record_digest=verified_manifest.latest_record_digest,
+            latest_event_count=verified_manifest.latest_event_count,
+        )
+
+    primary_latest: PaperLedgerArchiveRecordV1 | None = None
     try:
         primary_latest = load_encrypted_paper_ledger_archive(
             primary,
@@ -472,7 +492,7 @@ def assess_paper_ledger_dr_readiness(
         elif primary_state.checkpoint_age_seconds > effective_policy.max_checkpoint_age_seconds:
             blockers.add(PaperDrBlocker.CHECKPOINT_STALE)
 
-    backup_latest = None
+    backup_latest: PaperLedgerArchiveRecordV1 | None = None
     if serialized_manifest is not None and verified_manifest is not None:
         manifest_key = manifest_signing_keys.get(verified_manifest.manifest_key_id)
         if manifest_key is not None:
@@ -495,7 +515,10 @@ def assess_paper_ledger_dr_readiness(
                 )
                 if backup_latest.sealed_at > timestamp:
                     blockers.add(PaperDrBlocker.CHECKPOINT_TIME_IN_FUTURE)
-                elif backup_state.checkpoint_age_seconds > effective_policy.max_checkpoint_age_seconds:
+                elif (
+                    backup_state.checkpoint_age_seconds
+                    > effective_policy.max_checkpoint_age_seconds
+                ):
                     blockers.add(PaperDrBlocker.CHECKPOINT_STALE)
     else:
         blockers.add(PaperDrBlocker.BACKUP_ARCHIVE_VERIFICATION_FAILED)
