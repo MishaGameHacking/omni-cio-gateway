@@ -7,11 +7,12 @@
 
 1. `../AGENTS.md` — обязательные правила.
 2. `../README.md` — текущее состояние и запуск.
-3. `../knowledge/00_PROJECT_MASTER_CONTEXT.md` — единая проектная память.
-4. `architecture/SYSTEM_OVERVIEW.md` — компоненты и границы системы.
-5. `architecture/REPOSITORY_STRUCTURE.md` — назначение папок и файлов.
-6. `inventory/PROJECT_ASSETS.md` — GitHub и внешние системы.
-7. `inventory/FILE_INDEX.md` — индекс runtime, tests, configuration и knowledge.
+3. `../knowledge/00_PROJECT_MASTER_CONTEXT.md` — стратегическая проектная память.
+4. `../knowledge/16_CURRENT_PROGRAM_STATUS.md` — фактический активный этап и оставшиеся пакеты.
+5. `architecture/SYSTEM_OVERVIEW.md` — компоненты и границы системы.
+6. `architecture/REPOSITORY_STRUCTURE.md` — назначение папок и файлов.
+7. `inventory/PROJECT_ASSETS.md` — GitHub и внешние системы.
+8. `inventory/FILE_INDEX.md` — индекс runtime, tests, configuration и knowledge.
 
 ## Разделы
 
@@ -60,6 +61,13 @@ Runtime и deployment contract удалены. Решение и запрет с
 Воспроизводимые dependencies, quality/security gates, начальные
 thresholds и остаточный долг описаны в
 `../knowledge/14_CI_SECURITY_BASELINE.txt`.
+
+### Current program status
+
+Фактическая вершина программы, завершённые контуры и следующий безопасный
+рабочий пакет фиксируются в `../knowledge/16_CURRENT_PROGRAM_STATUS.md`.
+Этот файл используется для активного номера PR; стратегические требования
+остаются в `../knowledge/00_PROJECT_MASTER_CONTEXT.md`.
 
 ### Domain knowledge
 
