@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import datetime, timezone
-from decimal import Decimal
 
 from omni_cio.contracts.v1.bond_portfolio_rate_stress import (
     BondPortfolioRateScenarioV1,
