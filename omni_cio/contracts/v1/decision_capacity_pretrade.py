@@ -10,9 +10,7 @@ from pydantic import Field, field_validator, model_validator
 from omni_cio.contracts.v1.capacity import CapacityOrderRequestV1
 from omni_cio.contracts.v1.common import ContractModel, CurrencyCode
 from omni_cio.contracts.v1.decision import DecisionAction
-from omni_cio.contracts.v1.decision_capacity import (
-    CapacityDecisionGateStatus,
-)
+from omni_cio.contracts.v1.decision_capacity import CapacityDecisionGateStatus
 from omni_cio.contracts.v1.decision_capacity_intent import (
     CapacityIntentDecisionGateV1,
 )
@@ -96,22 +94,19 @@ class CapacityPreTradeCoverageV1(ContractModel):
             raise ValueError("expected pretrade instrument mismatch")
         if self.preview.stable_key != self.instrument_key:
             raise ValueError("preview instrument mismatch")
-        if self.preview_evaluated_at != self.preview.evaluated_at:
-            raise ValueError("preview timestamp does not reconcile")
-        if self.preview_currency != self.preview.currency:
-            raise ValueError("preview currency does not reconcile")
-        if self.preview_price_basis != self.preview.price_basis:
-            raise ValueError("preview price basis does not reconcile")
-        if self.preview_unit_price != self.preview.unit_price:
-            raise ValueError("preview unit price does not reconcile")
-        if self.preview_lot_size != self.preview.lot_size:
-            raise ValueError("preview lot size does not reconcile")
-        if self.preview_quantity_lots != self.preview.quantity_lots:
-            raise ValueError("preview quantity does not reconcile")
-        if self.preview_blockers != self.preview.blockers:
-            raise ValueError("preview blockers do not reconcile")
-        if self.preview_ready is not self.preview.preview_ready:
-            raise ValueError("preview readiness does not reconcile")
+        mirrored_values = (
+            (self.preview_evaluated_at, self.preview.evaluated_at, "timestamp"),
+            (self.preview_currency, self.preview.currency, "currency"),
+            (self.preview_price_basis, self.preview.price_basis, "price basis"),
+            (self.preview_unit_price, self.preview.unit_price, "unit price"),
+            (self.preview_lot_size, self.preview.lot_size, "lot size"),
+            (self.preview_quantity_lots, self.preview.quantity_lots, "quantity"),
+            (self.preview_blockers, self.preview.blockers, "blockers"),
+            (self.preview_ready, self.preview.preview_ready, "readiness"),
+        )
+        for observed, expected, label in mirrored_values:
+            if observed != expected:
+                raise ValueError(f"preview {label} does not reconcile")
         if len(set(self.mismatch_fields)) != len(self.mismatch_fields):
             raise ValueError("capacity pretrade mismatch fields must be unique")
         if self.exact_match is bool(self.mismatch_fields):
@@ -168,6 +163,9 @@ class CapacityPreTradeDecisionGateV1(ContractModel):
             raise ValueError("capacity pretrade gate timestamp must be timezone-aware")
         return value.astimezone(timezone.utc)
 
+    def _has(self, blocker: CapacityPreTradeDecisionGateBlocker) -> bool:
+        return blocker in self.blockers
+
     @model_validator(mode="after")
     def validate_gate(self) -> CapacityPreTradeDecisionGateV1:
         expected_requests = self.base_intent_gate.request.expected_capacity_requests
@@ -190,7 +188,7 @@ class CapacityPreTradeDecisionGateV1(ContractModel):
             raise ValueError("capacity pretrade coverage contains unexpected instrument")
         if len(set(self.blockers)) != len(self.blockers):
             raise ValueError("capacity pretrade blockers must be unique")
-        if len(set(self.warnings)) != len(set(self.warnings)):
+        if len(set(self.warnings)) != len(self.warnings):
             raise ValueError("capacity pretrade warnings must be unique")
 
         coverage_complete = self.preview_coverage_count == self.required_preview_count
@@ -203,83 +201,66 @@ class CapacityPreTradeDecisionGateV1(ContractModel):
         )
         if self.affordability_confirmed is not expected_affordability:
             raise ValueError("affordability confirmation is inconsistent")
-        expected_commission_integrity = coverage_complete and all(
+        expected_commission = coverage_complete and all(
             row.preview.integrity_confirmed
             and row.preview.canonical_commission is not None
             for row in self.coverage
         )
-        if self.commission_integrity_confirmed is not expected_commission_integrity:
+        if self.commission_integrity_confirmed is not expected_commission:
             raise ValueError("commission integrity confirmation is inconsistent")
 
-        base_blocked = not self.base_intent_gate.gate_ready
-        has_base_blocker = (
-            CapacityPreTradeDecisionGateBlocker.BASE_INTENT_GATE_NOT_READY
-            in self.blockers
+        expected_blocker_states = (
+            (
+                CapacityPreTradeDecisionGateBlocker.BASE_INTENT_GATE_NOT_READY,
+                not self.base_intent_gate.gate_ready,
+            ),
+            (
+                CapacityPreTradeDecisionGateBlocker.PREVIEW_COVERAGE_INCOMPLETE,
+                not coverage_complete,
+            ),
+            (
+                CapacityPreTradeDecisionGateBlocker.PREVIEW_NOT_READY,
+                any(not row.preview_ready for row in self.coverage),
+            ),
+            (
+                CapacityPreTradeDecisionGateBlocker.PREVIEW_INTENT_MISMATCH,
+                any(not row.exact_match for row in self.coverage),
+            ),
+            (
+                CapacityPreTradeDecisionGateBlocker.PREVIEW_STALE,
+                any(
+                    (self.assessed_at - row.preview_evaluated_at).total_seconds()
+                    > self.policy.preview_max_age_seconds
+                    for row in self.coverage
+                ),
+            ),
+            (
+                CapacityPreTradeDecisionGateBlocker.PREVIEW_FROM_FUTURE,
+                any(
+                    (self.assessed_at - row.preview_evaluated_at).total_seconds()
+                    < -self.policy.future_tolerance_seconds
+                    for row in self.coverage
+                ),
+            ),
         )
-        if has_base_blocker != base_blocked:
-            raise ValueError("capacity pretrade base blocker is inconsistent")
-
-        coverage_incomplete = not coverage_complete
-        has_coverage_blocker = (
-            CapacityPreTradeDecisionGateBlocker.PREVIEW_COVERAGE_INCOMPLETE
-            in self.blockers
-        )
-        if has_coverage_blocker != coverage_incomplete:
-            raise ValueError("capacity pretrade coverage blocker is inconsistent")
-
-        preview_not_ready = any(not row.preview_ready for row in self.coverage)
-        has_ready_blocker = (
-            CapacityPreTradeDecisionGateBlocker.PREVIEW_NOT_READY in self.blockers
-        )
-        if has_ready_blocker != preview_not_ready:
-            raise ValueError("capacity pretrade readiness blocker is inconsistent")
-
-        mismatch_present = any(not row.exact_match for row in self.coverage)
-        has_mismatch_blocker = (
-            CapacityPreTradeDecisionGateBlocker.PREVIEW_INTENT_MISMATCH
-            in self.blockers
-        )
-        if has_mismatch_blocker != mismatch_present:
-            raise ValueError("capacity pretrade mismatch blocker is inconsistent")
-
-        ages = tuple(
-            (self.assessed_at - row.preview_evaluated_at).total_seconds()
-            for row in self.coverage
-        )
-        stale_present = any(
-            age > self.policy.preview_max_age_seconds for age in ages
-        )
-        has_stale_blocker = (
-            CapacityPreTradeDecisionGateBlocker.PREVIEW_STALE in self.blockers
-        )
-        if has_stale_blocker != stale_present:
-            raise ValueError("capacity pretrade stale blocker is inconsistent")
-
-        future_present = any(
-            age < -self.policy.future_tolerance_seconds for age in ages
-        )
-        has_future_blocker = (
-            CapacityPreTradeDecisionGateBlocker.PREVIEW_FROM_FUTURE in self.blockers
-        )
-        if has_future_blocker != future_present:
-            raise ValueError("capacity pretrade future blocker is inconsistent")
+        for blocker, expected_present in expected_blocker_states:
+            if self._has(blocker) != expected_present:
+                raise ValueError(f"capacity pretrade {blocker.value} is inconsistent")
 
         expected_ready = not self.blockers
-        if self.gate_ready is not expected_ready:
-            raise ValueError("capacity pretrade readiness is inconsistent")
-        if self.abstain is expected_ready:
-            raise ValueError("capacity pretrade abstain state is inconsistent")
         expected_status = (
             CapacityDecisionGateStatus.READY
             if expected_ready
             else CapacityDecisionGateStatus.ABSTAIN
         )
+        if self.gate_ready is not expected_ready:
+            raise ValueError("capacity pretrade readiness is inconsistent")
+        if self.abstain is expected_ready:
+            raise ValueError("capacity pretrade abstain state is inconsistent")
         if self.status is not expected_status:
             raise ValueError("capacity pretrade status is inconsistent")
 
         if expected_ready:
-            if not self.base_intent_gate.gate_ready:
-                raise ValueError("ready pretrade gate requires ready intent gate")
             if not self.broker_preview_coverage_complete:
                 raise ValueError("ready pretrade gate requires complete preview coverage")
             if not self.affordability_confirmed:
