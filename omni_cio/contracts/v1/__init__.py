@@ -89,6 +89,13 @@ from omni_cio.contracts.v1.operations import (
     ReconciliationStatus,
     TurnoverV1,
 )
+from omni_cio.contracts.v1.paper import (
+    PaperJournalEventKind,
+    PaperJournalEventV1,
+    PaperOrderStatus,
+    PaperPurchaseResultV1,
+    PaperRejectReason,
+)
 from omni_cio.contracts.v1.portfolio import (
     CashBalanceV1,
     CurrencyTotalsV1,
@@ -201,6 +208,11 @@ __all__ = [
     "OperationsReconciliationV1",
     "OperationsSourceQualityV1",
     "OperationStateCountV1",
+    "PaperJournalEventKind",
+    "PaperJournalEventV1",
+    "PaperOrderStatus",
+    "PaperPurchaseResultV1",
+    "PaperRejectReason",
     "ParentChildDoubleCountProtectionV1",
     "PaymentSignCheckV1",
     "PaymentSignExampleV1",
