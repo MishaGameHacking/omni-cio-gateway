@@ -12,6 +12,7 @@ class RequestObjectOrders:
     def __init__(self) -> None:
         self.max_lots_request = None
         self.order_price_request = None
+        self.orders_request = None
 
     def get_max_lots(self, request):
         self.max_lots_request = request
@@ -19,6 +20,19 @@ class RequestObjectOrders:
 
     def get_order_price(self, request):
         self.order_price_request = request
+        return {"status": "ok"}
+
+    def get_orders(self, request):
+        self.orders_request = request
+        return {"status": "ok"}
+
+
+class RequestObjectOperations:
+    def __init__(self) -> None:
+        self.positions_request = None
+
+    def get_positions(self, request):
+        self.positions_request = request
         return {"status": "ok"}
 
 
@@ -54,11 +68,56 @@ def test_adapter_builds_sdk_request_objects_for_new_orders_methods() -> None:
     assert orders.order_price_request.quantity == 3
 
 
+def test_sale_adapters_build_only_read_only_request_objects() -> None:
+    orders = RequestObjectOrders()
+    operations = RequestObjectOperations()
+    order_adapter = sdk_order_compat.SaleOrdersServiceRequestAdapter(orders)
+    operations_adapter = sdk_order_compat.SaleOperationsServiceRequestAdapter(
+        operations
+    )
+
+    from t_tech.invest import OrderDirection, Quotation
+
+    quotation = Quotation(units=98, nano=0)
+    direction = OrderDirection.ORDER_DIRECTION_SELL
+    assert order_adapter.get_max_lots(
+        account_id="test-account-3118",
+        instrument_id="instrument-uid",
+        price=quotation,
+    ) == {"status": "ok"}
+    assert order_adapter.get_order_price(
+        account_id="test-account-3118",
+        instrument_id="instrument-uid",
+        price=quotation,
+        direction=direction,
+        quantity=1,
+    ) == {"status": "ok"}
+    assert order_adapter.get_orders(account_id="test-account-3118") == {
+        "status": "ok"
+    }
+    assert operations_adapter.get_positions(account_id="test-account-3118") == {
+        "status": "ok"
+    }
+
+    assert orders.max_lots_request.account_id == "test-account-3118"
+    assert orders.order_price_request.direction == direction
+    assert orders.orders_request.account_id == "test-account-3118"
+    assert operations.positions_request.account_id == "test-account-3118"
+
+
 class KeywordOrders:
     def get_max_lots(self, **kwargs):
         return kwargs
 
     def get_order_price(self, **kwargs):
+        return kwargs
+
+    def get_orders(self, **kwargs):
+        return kwargs
+
+
+class KeywordOperations:
+    def get_positions(self, **kwargs):
         return kwargs
 
 
@@ -67,22 +126,34 @@ def test_adapter_retains_keyword_compatibility_for_existing_test_doubles() -> No
     assert adapter.get_max_lots(account_id="a")["account_id"] == "a"
     assert adapter.get_order_price(quantity=3)["quantity"] == 3
 
+    sale_orders = sdk_order_compat.SaleOrdersServiceRequestAdapter(KeywordOrders())
+    sale_operations = sdk_order_compat.SaleOperationsServiceRequestAdapter(
+        KeywordOperations()
+    )
+    assert sale_orders.get_orders(account_id="a")["account_id"] == "a"
+    assert sale_operations.get_positions(account_id="a")["account_id"] == "a"
+
 
 class OrdersWithForbiddenMethods(KeywordOrders):
-    def get_orders(self):
-        raise AssertionError("get_orders must not be forwarded")
-
     def post_order(self):
-        raise AssertionError("post_order must not be forwarded")
+        raise AssertionError("write method must not be forwarded")
 
     def replace_order(self):
-        raise AssertionError("replace_order must not be forwarded")
+        raise AssertionError("write method must not be forwarded")
 
     def cancel_order(self):
-        raise AssertionError("cancel_order must not be forwarded")
+        raise AssertionError("write method must not be forwarded")
 
 
-def test_orders_adapter_exposes_only_explicit_preview_calculations() -> None:
+class OperationsWithForbiddenMethods(KeywordOperations):
+    def get_withdraw_limits(self):
+        raise AssertionError("withdraw-limit method must not be forwarded")
+
+    def get_operations(self):
+        raise AssertionError("history method must not be forwarded")
+
+
+def test_purchase_orders_adapter_remains_narrow() -> None:
     adapter = sdk_order_compat.OrdersServiceRequestAdapter(
         OrdersWithForbiddenMethods()
     )
@@ -100,33 +171,65 @@ def test_orders_adapter_exposes_only_explicit_preview_calculations() -> None:
             getattr(adapter, method_name)
 
 
+def test_sale_adapters_expose_only_explicit_read_methods() -> None:
+    orders = sdk_order_compat.SaleOrdersServiceRequestAdapter(
+        OrdersWithForbiddenMethods()
+    )
+    operations = sdk_order_compat.SaleOperationsServiceRequestAdapter(
+        OperationsWithForbiddenMethods()
+    )
+
+    assert sdk_order_compat.ALLOWED_SALE_ORDERS_METHODS == frozenset(
+        {"get_max_lots", "get_order_price", "get_orders"}
+    )
+    assert sdk_order_compat.ALLOWED_SALE_OPERATIONS_METHODS == frozenset(
+        {"get_positions"}
+    )
+    for method_name in ("post_order", "replace_order", "cancel_order"):
+        with pytest.raises(AttributeError):
+            getattr(orders, method_name)
+    for method_name in ("get_withdraw_limits", "get_operations"):
+        with pytest.raises(AttributeError):
+            getattr(operations, method_name)
+
+
 class ClientWithForbiddenServices:
     def __init__(self) -> None:
         self.users = object()
         self.instruments = object()
         self.orders = OrdersWithForbiddenMethods()
-        self.operations = object()
+        self.operations = OperationsWithForbiddenMethods()
         self.market_data = object()
         self.stop_orders = object()
         self.sandbox = object()
 
 
-def test_client_view_exposes_only_services_required_by_preview() -> None:
+def test_client_views_preserve_separate_minimal_surfaces() -> None:
     client = ClientWithForbiddenServices()
-    view = sdk_order_compat.ClientView(client)
+    purchase = sdk_order_compat.ClientView(client)
+    sale = sdk_order_compat.SaleClientView(client)
 
     assert sdk_order_compat.ALLOWED_CLIENT_SERVICES == frozenset(
         {"users", "instruments", "orders"}
     )
-    assert view.users is client.users
-    assert view.instruments is client.instruments
-    assert isinstance(view.orders, sdk_order_compat.OrdersServiceRequestAdapter)
+    assert sdk_order_compat.ALLOWED_SALE_CLIENT_SERVICES == frozenset(
+        {"users", "instruments", "orders", "operations"}
+    )
+    assert purchase.users is client.users
+    assert purchase.instruments is client.instruments
+    assert isinstance(purchase.orders, sdk_order_compat.OrdersServiceRequestAdapter)
+    with pytest.raises(AttributeError):
+        getattr(purchase, "operations")
 
-    for service_name in (
-        "operations",
-        "market_data",
-        "stop_orders",
-        "sandbox",
-    ):
-        with pytest.raises(AttributeError):
-            getattr(view, service_name)
+    assert sale.users is client.users
+    assert sale.instruments is client.instruments
+    assert isinstance(sale.orders, sdk_order_compat.SaleOrdersServiceRequestAdapter)
+    assert isinstance(
+        sale.operations,
+        sdk_order_compat.SaleOperationsServiceRequestAdapter,
+    )
+
+    for view in (purchase, sale):
+        for service_name in ("market_data", "stop_orders", "sandbox"):
+            with pytest.raises(AttributeError):
+                getattr(view, service_name)
