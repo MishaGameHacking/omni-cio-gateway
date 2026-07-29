@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from enum import StrEnum
 from typing import Annotated, Literal
 
@@ -226,10 +226,6 @@ class FinalDecisionReviewInputBindingV1(ContractModel):
             raise ValueError("read-only input Action candidate digest is inconsistent")
         if self.query_size_bytes != len(query_bytes):
             raise ValueError("read-only input query size is inconsistent")
-        if self.query.response_sha256 != self.response_sha256:
-            raise ValueError("read-only input query response identity is inconsistent")
-        if self.query.action_candidate_sha256 != self.action_candidate_sha256:
-            raise ValueError("read-only input query candidate identity is inconsistent")
 
         check_codes = tuple(check.code for check in self.checks)
         if len(set(check_codes)) != len(check_codes):
@@ -252,6 +248,112 @@ class FinalDecisionReviewInputBindingV1(ContractModel):
             raise ValueError("read-only input warnings are incomplete")
         if len(set(self.warnings)) != len(self.warnings):
             raise ValueError("read-only input warnings must be unique")
+
+        expected_action_shadow = (
+            self.action_shadow.status
+            is FinalDecisionReviewActionCandidateStatus.SHADOW_VALID
+            and self.action_shadow.shadow_valid
+            and not self.action_shadow.blockers
+            and self.action_shadow.candidate.path == "/decision/final-review"
+            and self.action_shadow.candidate.method == "get"
+            and self.action_shadow.candidate.operation_id
+            == "getFinalDecisionReview"
+            and not self.action_shadow.production_schema_mutated
+            and not self.action_shadow.route_added
+            and not self.action_shadow.openapi_changed
+            and not self.action_shadow.public_action_created
+            and not self.action_shadow.trade_authorized
+            and not self.action_shadow.order_created
+            and not self.action_shadow.execution_ready
+            and not self.action_shadow.trading_methods
+        )
+        if self.action_shadow_confirmed is not expected_action_shadow:
+            raise ValueError("read-only input Action shadow mirror is inconsistent")
+
+        expected_response_identity = (
+            self.query.response_sha256 == self.response_sha256
+            and self.action_shadow.release_eligibility.response_sha256
+            == self.response_sha256
+        )
+        if self.response_identity_confirmed is not expected_response_identity:
+            raise ValueError("read-only input response identity mirror is inconsistent")
+        expected_candidate_identity = (
+            self.query.action_candidate_sha256 == self.action_candidate_sha256
+        )
+        if (
+            self.action_candidate_identity_confirmed
+            is not expected_candidate_identity
+        ):
+            raise ValueError("read-only input candidate identity mirror is inconsistent")
+
+        if self.account_confirmed is not (self.query.account == self.response.account):
+            raise ValueError("read-only input account mirror is inconsistent")
+        expected_options = (
+            self.query.requested_option_id == self.response.requested_option_id
+            and self.query.final_option_id == self.response.final_option_id
+        )
+        if self.options_confirmed is not expected_options:
+            raise ValueError("read-only input option mirror is inconsistent")
+        expected_fingerprint = (
+            self.query.intent_fingerprint == self.response.intent_fingerprint
+        )
+        if self.fingerprint_confirmed is not expected_fingerprint:
+            raise ValueError("read-only input fingerprint mirror is inconsistent")
+        expected_instruments = (
+            self.query.instrument_count == self.response.instrument_count
+            and self.query.instrument_keys
+            == tuple(row.instrument_key for row in self.response.intents)
+            and self.query.instrument_count <= self.policy.max_instruments
+        )
+        if self.instruments_confirmed is not expected_instruments:
+            raise ValueError("read-only input instruments mirror is inconsistent")
+
+        expected_payload_bounds = (
+            self.query_size_bytes <= self.policy.max_query_bytes
+            and self.query.instrument_count <= self.policy.max_instruments
+            and set(self.query.model_fields_set).issubset(
+                self.policy.allowed_query_parameters
+            )
+        )
+        if self.payload_bounds_confirmed is not expected_payload_bounds:
+            raise ValueError("read-only input bounds mirror is inconsistent")
+
+        response_delta = self.validated_at - self.response.generated_at
+        expected_age_seconds = max(0, int(response_delta.total_seconds()))
+        if self.response_age_seconds != expected_age_seconds:
+            raise ValueError("read-only input response age is inconsistent")
+        expected_freshness = (
+            expected_age_seconds <= self.policy.max_response_age_seconds
+            and self.response.generated_at
+            <= self.validated_at
+            + timedelta(seconds=self.policy.future_tolerance_seconds)
+        )
+        if self.freshness_confirmed is not expected_freshness:
+            raise ValueError("read-only input freshness mirror is inconsistent")
+
+        if self.request_body_absent is not (not self.query.request_body_present):
+            raise ValueError("read-only input request-body mirror is inconsistent")
+        if self.credential_fields_absent is not (
+            not self.query.credential_fields_present
+        ):
+            raise ValueError("read-only input credential mirror is inconsistent")
+        expected_execution_absent = (
+            not self.query.execution_fields_present
+            and not self.query.trade_authorized
+            and not self.query.order_created
+            and not self.query.execution_ready
+            and not self.query.trading_methods
+        )
+        if self.execution_fields_absent is not expected_execution_absent:
+            raise ValueError("read-only input execution mirror is inconsistent")
+        if self.mutation_fields_absent is not (
+            not self.query.mutation_fields_present
+        ):
+            raise ValueError("read-only input mutation mirror is inconsistent")
+        if self.funds_movement_fields_absent is not (
+            not self.query.funds_movement_fields_present
+        ):
+            raise ValueError("read-only input funds-movement mirror is inconsistent")
 
         flags = (
             self.action_shadow_confirmed,
@@ -279,31 +381,4 @@ class FinalDecisionReviewInputBindingV1(ContractModel):
         )
         if self.status is not expected_status:
             raise ValueError("read-only input status is inconsistent")
-
-        if self.account_confirmed is not (self.query.account == self.response.account):
-            raise ValueError("read-only input account mirror is inconsistent")
-        expected_options = (
-            self.query.requested_option_id == self.response.requested_option_id
-            and self.query.final_option_id == self.response.final_option_id
-        )
-        if self.options_confirmed is not expected_options:
-            raise ValueError("read-only input option mirror is inconsistent")
-        if self.fingerprint_confirmed is not (
-            self.query.intent_fingerprint == self.response.intent_fingerprint
-        ):
-            raise ValueError("read-only input fingerprint mirror is inconsistent")
-        expected_instruments = (
-            self.query.instrument_count == self.response.instrument_count
-            and self.query.instrument_keys
-            == tuple(row.instrument_key for row in self.response.intents)
-        )
-        if self.instruments_confirmed is not expected_instruments:
-            raise ValueError("read-only input instruments mirror is inconsistent")
-        if self.action_shadow_confirmed and (
-            self.action_shadow.status
-            is not FinalDecisionReviewActionCandidateStatus.SHADOW_VALID
-            or not self.action_shadow.shadow_valid
-            or self.action_shadow.blockers
-        ):
-            raise ValueError("read-only input Action shadow mirror is inconsistent")
         return self
