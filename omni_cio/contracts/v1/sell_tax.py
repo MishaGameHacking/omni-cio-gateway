@@ -84,7 +84,7 @@ class SellTaxEvidenceV1(ContractModel):
             raise ValueError("sell-tax commission cannot be negative")
         if self.canonical_commission.amount > self.gross_proceeds.amount:
             raise ValueError("sell-tax commission cannot exceed gross proceeds")
-        if self.source_period_start is None != (self.source_period_end is None):
+        if (self.source_period_start is None) != (self.source_period_end is None):
             raise ValueError("sell-tax source period must be complete or absent")
         if (
             self.source_period_start is not None
