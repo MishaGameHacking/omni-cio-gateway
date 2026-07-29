@@ -252,26 +252,30 @@ def build_paper_ledger_recovery_manifest(
     backup_reference: str,
     created_at: datetime | None = None,
 ) -> PaperLedgerRecoveryManifestV1:
-    """Verify primary and byte-identical backup archives before sealing a checkpoint."""
+    """Verify distinct primary and byte-identical backup archives."""
 
     key = _validate_signing_key(manifest_signing_key)
     normalized_key_id = _validate_key_id(manifest_key_id)
     normalized_reference = _validate_backup_reference(backup_reference)
     timestamp = _aware_utc(created_at)
+    primary_directory = _resolve_existing_directory(primary_root)
+    backup_directory = _resolve_existing_directory(backup_root)
+    if os.path.samefile(primary_directory, backup_directory):
+        raise PaperLedgerRecoveryError("PAPER_RECOVERY_BACKUP_ROOT_NOT_DISTINCT")
 
-    primary_files = _archive_evidence(primary_root)
-    backup_files = _archive_evidence(backup_root)
+    primary_files = _archive_evidence(primary_directory)
+    backup_files = _archive_evidence(backup_directory)
     if primary_files != backup_files:
         raise PaperLedgerRecoveryError("PAPER_RECOVERY_BACKUP_EVIDENCE_MISMATCH")
 
     try:
         primary_latest = load_encrypted_paper_ledger_archive(
-            primary_root,
+            primary_directory,
             key_manager=key_manager,
             signing_keys=signing_keys,
         )
         backup_latest = load_encrypted_paper_ledger_archive(
-            backup_root,
+            backup_directory,
             key_manager=key_manager,
             signing_keys=signing_keys,
         )
