@@ -65,7 +65,11 @@ class BondDecisionEvidenceV1(ContractModel):
 
     @model_validator(mode="after")
     def validate_values(self) -> BondDecisionEvidenceV1:
-        if self.limit_value is not None and self.observed_value is None:
+        if (
+            self.limit_value is not None
+            and self.observed_value is None
+            and self.kind != DecisionEvidenceKind.MISSING_DATA
+        ):
             raise ValueError("bond decision evidence limit requires observed value")
         return self
 
