@@ -32,7 +32,7 @@ class PaperLedgerArchiveRecordV1(ContractModel):
     record_digest: HexDigest
     authentication_tag: HexDigest
     ledger: PaperAccountLedgerV1
-    authenticated: Literal[True] = True
+    authentication_required: Literal[True] = True
     storage_backend_attached: Literal[False] = False
     paper_only: Literal[True] = True
     broker_order_created: Literal[False] = False
