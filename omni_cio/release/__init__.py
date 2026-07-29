@@ -19,6 +19,11 @@ from omni_cio.release.final_decision_review_route_readiness_v1 import (
     FinalDecisionReviewRouteReadinessError,
     build_final_decision_review_route_readiness_dossier,
 )
+from omni_cio.release.final_decision_review_test_app_v1 import (
+    TEST_APP_SERVER,
+    TEST_APP_VERSION,
+    build_isolated_final_decision_review_test_app,
+)
 from omni_cio.release.live_acceptance_v1 import (
     FetchedJsonDocument,
     LiveReleaseAcceptanceError,
@@ -37,11 +42,14 @@ __all__ = [
     "FinalDecisionReviewRouteReadinessError",
     "LiveReleaseAcceptanceError",
     "ReadOnlyReleaseError",
+    "TEST_APP_SERVER",
+    "TEST_APP_VERSION",
     "accept_live_read_only_release",
     "bind_final_decision_review_read_only_input",
     "build_final_decision_review_read_only_query",
     "build_final_decision_review_route_implementation_plan",
     "build_final_decision_review_route_readiness_dossier",
+    "build_isolated_final_decision_review_test_app",
     "build_read_only_release_manifest",
     "default_final_decision_review_acceptance_cases",
     "evaluate_final_decision_review_handler_shadow",
