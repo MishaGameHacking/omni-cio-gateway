@@ -5,6 +5,10 @@
 ## [Unreleased]
 
 ### Added
+- Final-review read-only query/input binding с exact account, requested/final
+  option, intent fingerprint, ordered instrument set, response/Action SHA-256,
+  freshness и bounded allowlist; request body и execution/mutation/transfer/
+  withdrawal/credential fields остаются запрещены.
 - Final review GET Action candidate и OpenAPI shadow validation: фиксированный
   private/authenticated GET contract проверяется на deep-copy схемы существующим
   read-only release guard без добавления production route или изменения OpenAPI.

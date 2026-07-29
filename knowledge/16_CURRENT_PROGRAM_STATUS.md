@@ -1,7 +1,7 @@
 # 16 — CURRENT PROGRAM STATUS
 
 Дата актуализации: 2026-07-29  
-Фактическая вершина программы после merge этого пакета: **PR-55**  
+Фактическая вершина программы после merge этого пакета: **PR-56**  
 Точная версия определяется текущей вершиной ветки `main`.
 
 ## Назначение документа
@@ -67,7 +67,9 @@
 - auditable final-response release-eligibility assessment для будущего
   GET/read-only contract review;
 - fixed final-review GET Action candidate и OpenAPI shadow validation через
-  существующий read-only release guard.
+  существующий read-only release guard;
+- exact final-review read-only query/input binding без request body и без
+  credential/execution/mutation/transfer/withdrawal surface.
 
 ## Последняя завершённая цепочка PR
 
@@ -151,11 +153,20 @@ OpenAPI shadow добавляет candidate только в deep-copy текущ
 GET Action и доказывает неизменность всех существующих Actions. Production
 route и OpenAPI не меняются.
 
+### PR-56
+
+Final-review read-only input binding формирует минимальный query-only context,
+связывает его с точным masked account, requested/final option, intent
+fingerprint, ordered instrument set, PR-53 response SHA-256 и PR-55 candidate
+SHA-256. Отдельные gates проверяют freshness, размер, instrument count, отсутствие
+request body, credentials, execution, mutation, transfer и withdrawal fields.
+Production route и OpenAPI не меняются.
+
 ## Что остаётся до полного релиза по мастер-плану
 
 ### Backend и orchestration
 
-- безопасный read-only orchestration/input contract для final-review Action;
+- единый production-route readiness dossier до добавления final-review route;
 - production-grade live ingestion для market, ratings, news и corporate events;
 - внешний versioned RAG index с freshness и citation controls;
 - более полная observability, alerting и operational runbooks.
@@ -187,13 +198,14 @@ partial-fill и timeout reconciliation требуют отдельной про�
 
 ## Следующий рекомендуемый пакет
 
-**PR-56 — final review read-only orchestration input contract v1**:
+**PR-57 — final-review production-route readiness dossier v1**:
 
-- определяет безопасные query/context inputs без request body;
-- связывает вход с точным account, option и intent fingerprint;
-- ограничивает количество инструментов и размер параметров;
-- запрещает execution, transfer, withdrawal и credential fields;
-- остаётся внутренним contract/shadow слоем до production route review.
+- объединяет PR-53 response, PR-54 eligibility, PR-55 OpenAPI shadow и PR-56
+  input binding в один auditable dossier;
+- повторно проверяет schema/digest/account/option/fingerprint parity;
+- требует документированные rollback, observability и authentication controls;
+- выдаёт только `ready_for_route_review`, а не автоматическое route approval;
+- не добавляет route, не меняет OpenAPI и не разрешает торговлю.
 
 ## Запрет ложного завершения
 
