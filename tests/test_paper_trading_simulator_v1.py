@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
@@ -68,12 +68,18 @@ def _metadata(*, blocked: bool = False) -> ContractMetadata:
     )
 
 
-def _preview(*, blocked: bool = False, accrued_interest: Decimal = Decimal("0")) -> PreTradePreviewV1:
+def _preview(
+    *,
+    blocked: bool = False,
+    accrued_interest: Decimal = Decimal("0"),
+) -> PreTradePreviewV1:
     initial = Decimal("300")
     commission = Decimal("3")
     total = initial + commission + accrued_interest
     own_funds = Decimal("500")
     blockers = (PreTradeBlocker.PRICE_STALE,) if blocked else ()
+    price_age = Decimal("121") if blocked else Decimal("0")
+    price_time = NOW - timedelta(seconds=int(price_age))
     return PreTradePreviewV1(
         metadata=_metadata(blocked=blocked),
         stable_key=KEY,
@@ -81,9 +87,9 @@ def _preview(*, blocked: bool = False, accrued_interest: Decimal = Decimal("0"))
         currency="RUB",
         price_basis=PreviewPriceBasis.BEST_ASK,
         price_source="T-Invest GetOrderBook best ask",
-        price_time=NOW,
+        price_time=price_time,
         evaluated_at=NOW,
-        price_age_seconds=Decimal("0"),
+        price_age_seconds=price_age,
         max_price_age_seconds=Decimal("120"),
         freshness_status=(
             PreviewFreshnessStatus.STALE
