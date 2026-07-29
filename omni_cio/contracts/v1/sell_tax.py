@@ -7,9 +7,11 @@ from typing import Annotated, Literal
 from pydantic import Field, field_validator, model_validator
 
 from omni_cio.contracts.v1.common import (
+    Completeness,
     ContractMetadata,
     ContractModel,
     CurrencyCode,
+    DataQuality,
     Money,
 )
 
@@ -74,10 +76,14 @@ class SellTaxEvidenceV1(ContractModel):
             raise ValueError("sell-tax quantity units do not reconcile")
         if self.gross_proceeds.currency != self.currency:
             raise ValueError("sell-tax gross proceeds currency mismatch")
+        if self.gross_proceeds.amount <= 0:
+            raise ValueError("sell-tax gross proceeds must be positive")
         if self.canonical_commission.currency != self.currency:
             raise ValueError("sell-tax commission currency mismatch")
         if self.canonical_commission.amount < 0:
             raise ValueError("sell-tax commission cannot be negative")
+        if self.canonical_commission.amount > self.gross_proceeds.amount:
+            raise ValueError("sell-tax commission cannot exceed gross proceeds")
         if self.source_period_start is None != (self.source_period_end is None):
             raise ValueError("sell-tax source period must be complete or absent")
         if (
@@ -91,6 +97,11 @@ class SellTaxEvidenceV1(ContractModel):
             and self.evidence_as_of < self.source_period_end
         ):
             raise ValueError("sell-tax evidence cannot predate its source period")
+        if (
+            self.method == SellTaxEvidenceMethod.VERIFIED_REPORT_RECONSTRUCTION
+            and self.source_period_start is None
+        ):
+            raise ValueError("report-reconstructed tax evidence requires source period")
 
         expected_confirmed = self.evidence_status == SellTaxEvidenceStatus.CONFIRMED
         if self.confirmed != expected_confirmed:
@@ -105,13 +116,18 @@ class SellTaxEvidenceV1(ContractModel):
                 raise ValueError("sell-tax estimated tax currency mismatch")
             if self.estimated_tax.amount < 0:
                 raise ValueError("sell-tax estimated tax cannot be negative")
+            if (
+                self.canonical_commission.amount + self.estimated_tax.amount
+                > self.gross_proceeds.amount
+            ):
+                raise ValueError("sell-tax deductions cannot exceed gross proceeds")
             if self.estimated_tax.amount == 0 and not self.zero_tax_reason:
                 raise ValueError("confirmed zero tax requires a verified reason")
             if self.estimated_tax.amount > 0 and self.zero_tax_reason is not None:
                 raise ValueError("zero-tax reason is allowed only for zero tax")
-            if self.metadata.quality.quality.value != "verified":
+            if self.metadata.quality.quality != DataQuality.VERIFIED:
                 raise ValueError("confirmed sell-tax evidence must be verified")
-            if self.metadata.quality.completeness.value != "complete":
+            if self.metadata.quality.completeness != Completeness.COMPLETE:
                 raise ValueError("confirmed sell-tax evidence must be complete")
         else:
             if self.method != SellTaxEvidenceMethod.UNAVAILABLE:
