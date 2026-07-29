@@ -99,6 +99,7 @@ def _ledger(
     event_count: int,
     *,
     first_purchase_cost: Decimal = Decimal("100"),
+    retrieved_at: datetime | None = None,
 ) -> PaperAccountLedgerV1:
     if event_count not in {1, 2}:
         raise ValueError("test ledger supports one or two events")
@@ -128,9 +129,9 @@ def _ledger(
         total_cost += Decimal("110")
         final_cash -= Decimal("110")
 
-    retrieved_at = BASE + timedelta(minutes=event_count - 1)
+    snapshot_time = retrieved_at or BASE + timedelta(minutes=event_count - 1)
     return PaperAccountLedgerV1(
-        metadata=_metadata(retrieved_at),
+        metadata=_metadata(snapshot_time),
         currency="RUB",
         initial_cash=_money("1000"),
         final_cash=Money(amount=final_cash, currency="RUB"),
@@ -309,7 +310,7 @@ def test_chain_rejects_rewritten_or_truncated_history() -> None:
 
     full = _seal(_ledger(2))
     truncated = _seal(
-        _ledger(1),
+        _ledger(1, retrieved_at=BASE + timedelta(minutes=2)),
         sequence=2,
         previous=full.record_digest,
         sealed_at=BASE + timedelta(minutes=8),
