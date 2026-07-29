@@ -269,13 +269,14 @@ class WalkForwardPerformanceEvaluationV1(ContractModel):
         )
         if self.evaluated_outcome_count != fold_observations:
             raise ValueError("evaluated outcome count does not reconcile")
-        metrics_present = self.aggregate_performance is not None
+        aggregate = self.aggregate_performance
+        metrics_present = aggregate is not None
         if self.performance_metrics_computed is not metrics_present:
             raise ValueError("performance metric status is inconsistent")
-        if metrics_present:
-            if self.aggregate_performance.observation_count != self.evaluated_outcome_count:
+        if aggregate is not None:
+            if aggregate.observation_count != self.evaluated_outcome_count:
                 raise ValueError("aggregate observation count does not reconcile")
-            if self.aggregate_performance.fold_count != self.evaluated_fold_count:
+            if aggregate.fold_count != self.evaluated_fold_count:
                 raise ValueError("aggregate fold count does not reconcile")
         if len(set(self.blockers)) != len(self.blockers):
             raise ValueError("performance blockers must be unique")
