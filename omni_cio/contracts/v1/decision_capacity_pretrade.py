@@ -149,6 +149,18 @@ class CapacityPreTradeDecisionGateV1(ContractModel):
     execution_ready: Literal[False] = False
     trading_methods: Literal[False] = False
 
+    @property
+    def broker_preview_checked(self) -> bool:
+        return self.broker_preview_coverage_complete
+
+    @property
+    def affordability_checked(self) -> bool:
+        return self.affordability_confirmed
+
+    @property
+    def commission_integrity_checked(self) -> bool:
+        return self.commission_integrity_confirmed
+
     @field_validator("assessed_at")
     @classmethod
     def normalize_timestamp(cls, value: datetime) -> datetime:
@@ -178,7 +190,7 @@ class CapacityPreTradeDecisionGateV1(ContractModel):
             raise ValueError("capacity pretrade coverage contains unexpected instrument")
         if len(set(self.blockers)) != len(self.blockers):
             raise ValueError("capacity pretrade blockers must be unique")
-        if len(set(self.warnings)) != len(self.warnings):
+        if len(set(self.warnings)) != len(set(self.warnings)):
             raise ValueError("capacity pretrade warnings must be unique")
 
         coverage_complete = self.preview_coverage_count == self.required_preview_count
