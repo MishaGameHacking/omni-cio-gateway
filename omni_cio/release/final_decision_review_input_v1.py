@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from omni_cio.contracts.v1.final_decision_review import FinalDecisionReviewResponseV1
 from omni_cio.contracts.v1.final_decision_review_action_candidate import (
@@ -118,9 +118,7 @@ def bind_final_decision_review_read_only_input(
     response_not_too_far_future = (
         response.generated_at
         <= validation_time
-        + __import__("datetime").timedelta(
-            seconds=input_policy.future_tolerance_seconds
-        )
+        + timedelta(seconds=input_policy.future_tolerance_seconds)
     )
 
     action_shadow_confirmed = (
@@ -161,10 +159,11 @@ def bind_final_decision_review_read_only_input(
         and query.instrument_keys == expected_instruments
         and query.instrument_count <= input_policy.max_instruments
     )
+    allowed_fields = set(input_policy.allowed_query_parameters)
     payload_bounds_confirmed = (
         len(query_bytes) <= input_policy.max_query_bytes
         and query.instrument_count <= input_policy.max_instruments
-        and tuple(query_payload)[:0] == ()
+        and set(query.model_fields_set).issubset(allowed_fields)
     )
     freshness_confirmed = response_not_too_old and response_not_too_far_future
     request_body_absent = not query.request_body_present
