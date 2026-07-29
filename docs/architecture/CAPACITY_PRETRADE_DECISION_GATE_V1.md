@@ -100,18 +100,23 @@ accrued interest. The existing `PreTradePreviewV1` remains authoritative for:
 The gate only binds the analytical intent to that verified preview. It does not
 invent a second competing broker-money formula.
 
-## Explicit safety flags
+## Explicit safety and confirmation fields
 
 Every result states:
 
-- `broker_preview_checked=true`;
-- `affordability_checked=true`;
-- `commission_integrity_checked=true`;
+- `broker_preview_coverage_complete` — all expected previews are present;
+- `affordability_confirmed` — all present previews confirm affordability;
+- `commission_integrity_confirmed` — every preview has canonical commission and
+  confirmed arithmetic integrity;
 - `order_total_recomputed_by_gate=false`;
 - `option_selected_by_gate=false`;
 - `order_created=false`;
 - `execution_ready=false`;
 - `trading_methods=false`.
+
+Read-only compatibility properties expose `broker_preview_checked`,
+`affordability_checked` and `commission_integrity_checked` with the same honest
+boolean values. Missing coverage never appears as a successful check.
 
 ## Compatibility
 
