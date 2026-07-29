@@ -27,6 +27,9 @@ def test_live_acceptance_workflow_is_read_only_and_pinned() -> None:
 
     assert "workflow_dispatch:" in workflow
     assert "schedule:" in workflow
+    assert "pull_request:" in workflow
+    assert '"omni_cio/release/live_acceptance_v1.py"' in workflow
+    assert '"scripts/check_live_read_only_release.py"' in workflow
     assert "contents: read" in workflow
     assert "check_live_read_only_release.py" in workflow
     assert "GATEWAY_API_KEY" not in workflow
