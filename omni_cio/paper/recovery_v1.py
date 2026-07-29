@@ -211,6 +211,36 @@ def _manifest_core(
     }
 
 
+def _manifest_core_from_fields(
+    manifest: PaperLedgerRecoveryManifestV1,
+) -> dict[str, object]:
+    return {
+        "format_version": manifest.format_version,
+        "manifest_format": manifest.manifest_format,
+        "authentication_algorithm": manifest.authentication_algorithm,
+        "created_at": manifest.created_at.isoformat(),
+        "manifest_key_id": manifest.manifest_key_id,
+        "backup_reference": manifest.backup_reference,
+        "files": [file.model_dump(mode="json") for file in manifest.files],
+        "archive_file_count": manifest.archive_file_count,
+        "latest_sequence": manifest.latest_sequence,
+        "latest_record_digest": manifest.latest_record_digest,
+        "latest_event_count": manifest.latest_event_count,
+        "files_digest": manifest.files_digest,
+        "primary_archive_verified": manifest.primary_archive_verified,
+        "backup_archive_verified": manifest.backup_archive_verified,
+        "checkpoint_verified": manifest.checkpoint_verified,
+        "full_chain_required_for_online_recovery": (
+            manifest.full_chain_required_for_online_recovery
+        ),
+        "retention_execution_allowed": manifest.retention_execution_allowed,
+        "paper_only": manifest.paper_only,
+        "broker_order_created": manifest.broker_order_created,
+        "execution_ready": manifest.execution_ready,
+        "trading_methods": manifest.trading_methods,
+    }
+
+
 def build_paper_ledger_recovery_manifest(
     primary_root: Path | str,
     backup_root: Path | str,
@@ -307,50 +337,6 @@ def parse_paper_ledger_recovery_manifest_unverified(
         return PaperLedgerRecoveryManifestV1.model_validate(value)
     except ValidationError as exc:
         raise PaperLedgerRecoveryError("PAPER_RECOVERY_CONTRACT_INVALID") from exc
-
-
-def _core_from_manifest(manifest: PaperLedgerRecoveryManifestV1) -> dict[str, object]:
-    return _manifest_core(
-        created_at=manifest.created_at,
-        manifest_key_id=manifest.manifest_key_id,
-        backup_reference=manifest.backup_reference,
-        files=manifest.files,
-        latest=PaperLedgerArchiveRecordV1.model_construct(
-            sequence=manifest.latest_sequence,
-            record_digest=manifest.latest_record_digest,
-            ledger=type("LedgerSummary", (), {"events": range(manifest.latest_event_count)})(),
-        ),
-    )
-
-
-def _manifest_core_from_fields(
-    manifest: PaperLedgerRecoveryManifestV1,
-) -> dict[str, object]:
-    return {
-        "format_version": manifest.format_version,
-        "manifest_format": manifest.manifest_format,
-        "authentication_algorithm": manifest.authentication_algorithm,
-        "created_at": manifest.created_at.isoformat(),
-        "manifest_key_id": manifest.manifest_key_id,
-        "backup_reference": manifest.backup_reference,
-        "files": [file.model_dump(mode="json") for file in manifest.files],
-        "archive_file_count": manifest.archive_file_count,
-        "latest_sequence": manifest.latest_sequence,
-        "latest_record_digest": manifest.latest_record_digest,
-        "latest_event_count": manifest.latest_event_count,
-        "files_digest": manifest.files_digest,
-        "primary_archive_verified": manifest.primary_archive_verified,
-        "backup_archive_verified": manifest.backup_archive_verified,
-        "checkpoint_verified": manifest.checkpoint_verified,
-        "full_chain_required_for_online_recovery": (
-            manifest.full_chain_required_for_online_recovery
-        ),
-        "retention_execution_allowed": manifest.retention_execution_allowed,
-        "paper_only": manifest.paper_only,
-        "broker_order_created": manifest.broker_order_created,
-        "execution_ready": manifest.execution_ready,
-        "trading_methods": manifest.trading_methods,
-    }
 
 
 def verify_paper_ledger_recovery_manifest(
@@ -455,7 +441,7 @@ def diagnose_paper_ledger_writer_lock(
         raise PaperLedgerRecoveryError("PAPER_LOCK_STALE_THRESHOLD_INVALID")
     timestamp = _aware_utc(observed_at)
     lock_path = Path(root) / _LOCK_NAME
-    if not lock_path.lexists() if hasattr(lock_path, "lexists") else not os.path.lexists(lock_path):
+    if not os.path.lexists(lock_path):
         return PaperLedgerLockDiagnosticV1(
             observed_at=timestamp,
             status="absent",
