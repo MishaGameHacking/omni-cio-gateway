@@ -122,6 +122,12 @@ class PaperLedgerBackupRestoreDrillV1(ContractModel):
     execution_ready: Literal[False] = False
     trading_methods: Literal[False] = False
 
+    @property
+    def no_backup_deletion(self) -> bool:
+        """Compatibility alias meaning no encrypted backup archive file deletion."""
+
+        return self.no_backup_archive_file_deletion
+
     @field_validator("started_at", "completed_at")
     @classmethod
     def normalize_timestamp(cls, value: datetime) -> datetime:
