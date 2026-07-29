@@ -5,6 +5,9 @@
 ## [Unreleased]
 
 ### Added
+- Account-aware portfolio-risk/pre-trade explanation envelope с freshness,
+  canonical layer attribution, fail-closed no-action и явным запретом считать
+  current-portfolio risk полноценным pro-forma одобрением изменения.
 - Unified directional pre-trade review envelope для однородного buy- или
   sell-intent set с fail-closed блокировкой смешанных направлений и без
   повторного расчёта брокерских значений.
