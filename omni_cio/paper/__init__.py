@@ -13,6 +13,10 @@ from omni_cio.paper.backup_v1 import (
     PaperLedgerBackupError,
     run_paper_ledger_backup_restore_drill,
 )
+from omni_cio.paper.dr_readiness_v1 import (
+    PaperLedgerDrAssessmentError,
+    assess_paper_ledger_dr_readiness,
+)
 from omni_cio.paper.ledger_v1 import (
     PaperAccountLedgerError,
     build_paper_account_ledger,
@@ -55,10 +59,12 @@ __all__ = [
     "PaperAccountLedgerError",
     "PaperLedgerArchiveError",
     "PaperLedgerBackupError",
+    "PaperLedgerDrAssessmentError",
     "PaperLedgerRecoveryError",
     "PaperLedgerStorageError",
     "PaperSaleSimulatorError",
     "PaperSimulatorError",
+    "assess_paper_ledger_dr_readiness",
     "build_paper_account_ledger",
     "build_paper_ledger_recovery_manifest",
     "build_paper_ledger_retention_plan",
