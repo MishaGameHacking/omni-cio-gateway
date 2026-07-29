@@ -1,7 +1,7 @@
 # 16 — CURRENT PROGRAM STATUS
 
 Дата актуализации: 2026-07-29  
-Фактическая вершина программы после merge этого пакета: **PR-58**  
+Фактическая вершина программы после merge этого пакета: **PR-59**  
 Точная версия определяется текущей вершиной ветки `main`.
 
 ## Назначение документа
@@ -74,7 +74,9 @@
   private authentication, rollback и safe observability controls без route
   activation;
 - machine-validated production-route implementation plan и 13-case blocking
-  acceptance matrix без применения production diff.
+  acceptance matrix без применения production diff;
+- route-handler shadow adapter с exact source identity, fixed error mapping и
+  safe observability без route registration и broker calls.
 
 ## Последняя завершённая цепочка PR
 
@@ -186,11 +188,20 @@ matrix содержит 13 blocking cases для pre-merge, post-deploy, GPT Edi
 и rollback drill. Все случаи остаются `executed=false`, `passed=false`; plan не
 разрешает implementation, deployment или route activation.
 
+### PR-59
+
+Final-review handler shadow принимает только ready PR-58 plan, valid PR-56 input
+binding, authentication decision и source availability. Exact identity возвращает
+только PR-53 compact response с модельным HTTP 200; missing auth, source conflict
+и source unavailability дают 401, 409 и 503. Fixed mapping также документирует
+400/422 framework boundaries. `ObservabilityEventV1` содержит masked account,
+trace IDs и безопасные счётчики; route и broker не вызываются.
+
 ## Что остаётся до полного релиза по мастер-плану
 
 ### Backend и orchestration
 
-- internal final-review route-handler shadow adapter до production registration;
+- isolated FastAPI test-app integration candidate без production registration;
 - отдельный production route PR и полный acceptance cycle;
 - production-grade live ingestion для market, ratings, news и corporate events;
 - внешний versioned RAG index с freshness и citation controls;
@@ -223,14 +234,14 @@ partial-fill и timeout reconciliation требуют отдельной про�
 
 ## Следующий рекомендуемый пакет
 
-**PR-59 — final-review route-handler shadow adapter v1**:
+**PR-60 — isolated FastAPI final-review integration candidate v1**:
 
-- моделирует handler input/output/error mapping без регистрации FastAPI route;
-- принимает только valid PR-56 input binding и ready PR-57 dossier;
-- возвращает только exact PR-53 compact response;
-- формирует safe observability metadata без sensitive payload;
-- проверяет 400/401/409/422/503 fail-closed mapping;
-- не добавляет route, не меняет OpenAPI и не разрешает торговлю.
+- создаёт отдельный test-only FastAPI app с reviewed query parsing и auth stub;
+- подключает PR-59 handler shadow без изменения production `app`;
+- проверяет 200/400/401/409/422/503 через TestClient;
+- сравнивает candidate OpenAPI с PR-55 shadow и PR-58 plan;
+- запрещает broker imports и write methods;
+- не меняет production route, production OpenAPI или `app:app`.
 
 ## Запрет ложного завершения
 
