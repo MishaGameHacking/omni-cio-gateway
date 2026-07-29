@@ -3,7 +3,10 @@ from __future__ import annotations
 from collections.abc import Iterable
 from datetime import datetime, timezone
 
-from omni_cio.contracts.v1.capacity import OrderSide
+from omni_cio.contracts.v1.capacity import (
+    CapacityOrderRequestV1,
+    OrderSide,
+)
 from omni_cio.contracts.v1.decision import DecisionAction
 from omni_cio.contracts.v1.decision_capacity import CapacityDecisionGateStatus
 from omni_cio.contracts.v1.decision_capacity_intent import (
@@ -39,7 +42,7 @@ def _append_unique[T](target: list[T], value: T) -> None:
 
 
 def _preview_mismatches(
-    expected_request,
+    expected_request: CapacityOrderRequestV1,
     preview: PreTradePreviewV1,
 ) -> tuple[CapacityPreTradeMismatch, ...]:
     mismatches: list[CapacityPreTradeMismatch] = []
