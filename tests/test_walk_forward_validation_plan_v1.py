@@ -221,15 +221,20 @@ def test_observation_contract_rejects_look_ahead_and_invalid_labels() -> None:
 def test_dataset_contract_rejects_duplicates_order_and_premature_retrieval() -> None:
     rows = list(_observations(count=3))
     duplicate_payload = _dataset(count=3).model_dump()
-    duplicate_payload["observations"][1]["observation_id"] = rows[0].observation_id
+    duplicate_observations = list(duplicate_payload["observations"])
+    duplicate_observations[1] = dict(duplicate_observations[1])
+    duplicate_observations[1]["observation_id"] = rows[0].observation_id
+    duplicate_payload["observations"] = duplicate_observations
     with pytest.raises(ValidationError, match="IDs must be unique"):
         WalkForwardDatasetV1.model_validate(duplicate_payload)
 
     ordered_payload = _dataset(count=3).model_dump()
-    ordered_payload["observations"][0], ordered_payload["observations"][1] = (
-        ordered_payload["observations"][1],
-        ordered_payload["observations"][0],
+    ordered_observations = list(ordered_payload["observations"])
+    ordered_observations[0], ordered_observations[1] = (
+        ordered_observations[1],
+        ordered_observations[0],
     )
+    ordered_payload["observations"] = ordered_observations
     with pytest.raises(ValidationError, match="must be chronological"):
         WalkForwardDatasetV1.model_validate(ordered_payload)
 
@@ -271,7 +276,9 @@ def test_fold_and_plan_tampering_are_rejected() -> None:
         WalkForwardFoldV1.model_validate(fold_payload)
 
     fold_payload = first_fold.model_dump()
-    fold_payload["test_observation_ids"][0] = first_fold.train_observation_ids[0]
+    test_ids = list(fold_payload["test_observation_ids"])
+    test_ids[0] = first_fold.train_observation_ids[0]
+    fold_payload["test_observation_ids"] = test_ids
     with pytest.raises(ValidationError, match="sets must be disjoint"):
         WalkForwardFoldV1.model_validate(fold_payload)
 
@@ -281,9 +288,11 @@ def test_fold_and_plan_tampering_are_rejected() -> None:
         WalkForwardValidationPlanV1.model_validate(plan_payload)
 
     plan_payload = result.model_dump()
-    plan_payload["folds"][1]["test_observation_ids"][0] = (
-        plan_payload["folds"][0]["test_observation_ids"][0]
-    )
+    folds = [dict(fold) for fold in plan_payload["folds"]]
+    second_test_ids = list(folds[1]["test_observation_ids"])
+    second_test_ids[0] = folds[0]["test_observation_ids"][0]
+    folds[1]["test_observation_ids"] = second_test_ids
+    plan_payload["folds"] = folds
     with pytest.raises(ValidationError, match="cannot repeat"):
         WalkForwardValidationPlanV1.model_validate(plan_payload)
 
