@@ -99,6 +99,12 @@ from omni_cio.contracts.v1.portfolio import (
     PositionValuation,
     ValuationBasis,
 )
+from omni_cio.contracts.v1.pretrade import (
+    PreTradeBlocker,
+    PreTradePreviewV1,
+    PreviewFreshnessStatus,
+    PreviewPriceBasis,
+)
 from omni_cio.contracts.v1.rebalancing import (
     RebalanceAlternativeKind,
     RebalanceAlternativeStatus,
@@ -202,6 +208,10 @@ __all__ = [
     "PortfolioSnapshotV1",
     "PositionValuation",
     "PositionWeightV1",
+    "PreTradeBlocker",
+    "PreTradePreviewV1",
+    "PreviewFreshnessStatus",
+    "PreviewPriceBasis",
     "QualityMetadata",
     "RatingAction",
     "RatingScope",
