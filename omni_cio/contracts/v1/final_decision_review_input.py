@@ -21,7 +21,7 @@ PositiveInt = Annotated[int, Field(gt=0)]
 Sha256Digest = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
 SafeIdentifier = Annotated[str, Field(min_length=3, max_length=256)]
 SafeMessage = Annotated[str, Field(min_length=1, max_length=512)]
-SafeObservation = Annotated[str, Field(min_length=1, max_length=256)]
+SafeObservation = Annotated[str, Field(min_length=1, max_length=1024)]
 
 
 def _canonical_bytes(value: object) -> bytes:
