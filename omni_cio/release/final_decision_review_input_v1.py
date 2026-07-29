@@ -176,9 +176,7 @@ def bind_final_decision_review_read_only_input(
         and not query.trading_methods
     )
     mutation_fields_absent = not query.mutation_fields_present
-    transfer_withdrawal_fields_absent = (
-        not query.transfer_withdrawal_fields_present
-    )
+    funds_movement_fields_absent = not query.funds_movement_fields_present
 
     checks = (
         _check(
@@ -278,10 +276,10 @@ def bind_final_decision_review_read_only_input(
             expected="false",
         ),
         _check(
-            FinalDecisionReviewInputCheckCode.TRANSFER_WITHDRAWAL_FIELDS,
-            transfer_withdrawal_fields_absent,
-            message="Query must not contain transfer or withdrawal controls",
-            observed=str(query.transfer_withdrawal_fields_present).lower(),
+            FinalDecisionReviewInputCheckCode.FUNDS_MOVEMENT_FIELDS,
+            funds_movement_fields_absent,
+            message="Query must not contain funds movement controls",
+            observed=str(query.funds_movement_fields_present).lower(),
             expected="false",
         ),
     )
@@ -321,7 +319,7 @@ def bind_final_decision_review_read_only_input(
         credential_fields_absent=credential_fields_absent,
         execution_fields_absent=execution_fields_absent,
         mutation_fields_absent=mutation_fields_absent,
-        transfer_withdrawal_fields_absent=transfer_withdrawal_fields_absent,
+        funds_movement_fields_absent=funds_movement_fields_absent,
         checks=checks,
         primary_blocker=blockers[0] if blockers else None,
         blockers=blockers,
