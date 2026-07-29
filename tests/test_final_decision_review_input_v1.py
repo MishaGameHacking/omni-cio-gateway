@@ -350,7 +350,7 @@ def test_instrument_policy_bound_is_fail_closed() -> None:
 def test_extra_credentials_and_request_body_are_rejected_by_contract() -> None:
     _, _, query = _valid_objects()
     payload = query.model_dump(mode="python")
-    payload["api_key"] = "must-not-be-accepted"
+    payload["unexpected_auth_input"] = "not-accepted"
 
     with pytest.raises(ValidationError):
         FinalDecisionReviewReadOnlyQueryV1.model_validate(payload)
