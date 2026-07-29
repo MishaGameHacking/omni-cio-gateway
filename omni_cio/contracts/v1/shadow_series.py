@@ -120,7 +120,10 @@ class ShadowPurchaseSeriesV1(ContractModel):
     entry_security_value: Money
     entry_commission: Money
     entry_total_cost: Money
-    points: Annotated[tuple[ShadowSeriesPointV1, ...], Field(min_length=1, max_length=256)]
+    points: Annotated[
+        tuple[ShadowSeriesPointV1, ...],
+        Field(min_length=1, max_length=256),
+    ]
     peak_market_value: Money
     max_drawdown_amount: Money
     max_drawdown_ratio: UnitInterval
@@ -172,10 +175,11 @@ class ShadowPurchaseSeriesV1(ContractModel):
         if [point.sequence for point in self.points] != expected_sequences:
             raise ValueError("shadow series sequences must be contiguous")
         timestamps = [point.observed_at for point in self.points]
-        if any(current >= following for current, following in zip(timestamps, timestamps[1:])):
+        if any(
+            current >= following
+            for current, following in zip(timestamps, timestamps[1:])
+        ):
             raise ValueError("shadow observations must be strictly ordered")
-        if any(point.holding_seconds <= 0 for point in self.points):
-            raise ValueError("every shadow point must be forward-looking")
 
         money_values = (
             self.entry_security_value,
@@ -195,10 +199,42 @@ class ShadowPurchaseSeriesV1(ContractModel):
         ):
             raise ValueError("shadow series entry total cost does not reconcile")
 
+        running_peak = Decimal("0")
+        for point in self.points:
+            expected_point_holding = Decimal(
+                str((point.observed_at - self.evaluated_from).total_seconds())
+            )
+            if point.holding_seconds != expected_point_holding:
+                raise ValueError("shadow series point holding period does not reconcile")
+            if point.holding_seconds <= 0:
+                raise ValueError("every shadow point must be forward-looking")
+            expected_gross_change = (
+                point.full_market_value.amount - self.entry_security_value.amount
+            )
+            if point.gross_value_change.amount != expected_gross_change:
+                raise ValueError("shadow series point gross change does not reconcile")
+            expected_net_change = (
+                point.full_market_value.amount - self.entry_total_cost.amount
+            )
+            if point.net_value_change_after_entry_costs.amount != expected_net_change:
+                raise ValueError("shadow series point net change does not reconcile")
+            expected_return = (
+                expected_net_change / self.entry_total_cost.amount
+                if self.entry_total_cost.amount > 0
+                else Decimal("0")
+            )
+            if point.return_on_total_cost != expected_return:
+                raise ValueError("shadow series point return does not reconcile")
+            running_peak = max(running_peak, point.full_market_value.amount)
+            if point.running_peak_market_value.amount != running_peak:
+                raise ValueError("shadow series running peak does not reconcile")
+
         expected_peak = max(point.full_market_value.amount for point in self.points)
         if self.peak_market_value.amount != expected_peak:
             raise ValueError("shadow series peak market value does not reconcile")
-        expected_max_drawdown = max(point.drawdown_amount.amount for point in self.points)
+        expected_max_drawdown = max(
+            point.drawdown_amount.amount for point in self.points
+        )
         if self.max_drawdown_amount.amount != expected_max_drawdown:
             raise ValueError("shadow series maximum drawdown amount does not reconcile")
         expected_max_ratio = max(point.drawdown_ratio for point in self.points)
