@@ -376,7 +376,7 @@ def test_blocked_base_explanation_cannot_be_upgraded() -> None:
 def test_scenario_and_result_tampering_are_rejected() -> None:
     base = _base_explanation()
     scenario = _scenario(base)
-    scenario_payload = scenario.model_dump(mode="python")
+    scenario_payload = dict(scenario.__dict__)
     scenario_payload["intent_fingerprint"] = "0" * 64
     with pytest.raises(ValidationError):
         ProFormaRiskScenarioV1.model_validate(scenario_payload)
