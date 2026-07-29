@@ -333,7 +333,7 @@ def test_manifest_tampering_wrong_key_and_duplicate_json_fail_closed(tmp_path: P
 
 def test_manifest_rejects_missing_or_modified_backup_file(tmp_path: Path) -> None:
     primary, backup, manager, _ = _archives(tmp_path)
-    sorted(backup.glob("*.plae"))[0].unlink()
+    sorted(backup.glob("*.plae"))[-1].unlink()
 
     with pytest.raises(PaperLedgerRecoveryError, match="BACKUP_EVIDENCE_MISMATCH"):
         build_paper_ledger_recovery_manifest(
