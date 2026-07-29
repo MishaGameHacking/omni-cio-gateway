@@ -7,8 +7,6 @@ import hmac
 import os
 from pathlib import Path
 
-import pytest
-
 from omni_cio.contracts.v1.common import (
     AccountReference,
     Completeness,
