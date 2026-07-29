@@ -142,8 +142,8 @@ def test_server_must_be_approved_https_without_credentials() -> None:
     variants = (
         "http://omni-cio-gateway.onrender.com",
         "https://example.com",
-        "https://user:password@omni-cio-gateway.onrender.com",
-        "https://omni-cio-gateway.onrender.com?token=secret",
+        "https://placeholder@omni-cio-gateway.onrender.com",
+        "https://omni-cio-gateway.onrender.com?mode=diagnostic",
     )
     for url in variants:
         schema = _schema()
