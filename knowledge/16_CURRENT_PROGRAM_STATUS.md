@@ -1,7 +1,7 @@
 # 16 — CURRENT PROGRAM STATUS
 
 Дата актуализации: 2026-07-29  
-Фактическая вершина программы после merge этого пакета: **PR-56**  
+Фактическая вершина программы после merge этого пакета: **PR-57**  
 Точная версия определяется текущей вершиной ветки `main`.
 
 ## Назначение документа
@@ -69,7 +69,10 @@
 - fixed final-review GET Action candidate и OpenAPI shadow validation через
   существующий read-only release guard;
 - exact final-review read-only query/input binding без request body и без
-  credential/execution/mutation/transfer/withdrawal surface.
+  credential/execution/mutation/funds-movement surface;
+- auditable production-route readiness dossier с exact evidence parity,
+  private authentication, rollback и safe observability controls без route
+  activation.
 
 ## Последняя завершённая цепочка PR
 
@@ -159,14 +162,24 @@ Final-review read-only input binding формирует минимальный q
 связывает его с точным masked account, requested/final option, intent
 fingerprint, ordered instrument set, PR-53 response SHA-256 и PR-55 candidate
 SHA-256. Отдельные gates проверяют freshness, размер, instrument count, отсутствие
-request body, credentials, execution, mutation, transfer и withdrawal fields.
+request body, credentials, execution, mutation и funds-movement fields.
 Production route и OpenAPI не меняются.
+
+### PR-57
+
+Final-review production-route readiness dossier объединяет PR-53 response,
+PR-54 eligibility, PR-55 Action shadow и PR-56 input binding. Он повторно
+проверяет exact response/candidate/query digests, masked account, requested и
+final options, intent fingerprint, ordered instruments, private `ApiKeyAuth`,
+deployment rollback, `ObservabilityEventV1`, `/health` и `app:app`.
+Даже статус `ready_for_route_review` не является route approval: production
+route и OpenAPI остаются неизменными, торговые методы выключены.
 
 ## Что остаётся до полного релиза по мастер-плану
 
 ### Backend и orchestration
 
-- единый production-route readiness dossier до добавления final-review route;
+- отдельный production route implementation/contract review и acceptance matrix;
 - production-grade live ingestion для market, ratings, news и corporate events;
 - внешний versioned RAG index с freshness и citation controls;
 - более полная observability, alerting и operational runbooks.
@@ -198,13 +211,13 @@ partial-fill и timeout reconciliation требуют отдельной про�
 
 ## Следующий рекомендуемый пакет
 
-**PR-57 — final-review production-route readiness dossier v1**:
+**PR-58 — final-review production-route implementation plan and acceptance matrix v1**:
 
-- объединяет PR-53 response, PR-54 eligibility, PR-55 OpenAPI shadow и PR-56
-  input binding в один auditable dossier;
-- повторно проверяет schema/digest/account/option/fingerprint parity;
-- требует документированные rollback, observability и authentication controls;
-- выдаёт только `ready_for_route_review`, а не автоматическое route approval;
+- описывает точный предполагаемый FastAPI/OpenAPI diff без его применения;
+- связывает private auth, query parameters, response schema, observability,
+  rollback и GPT Editor Preview tests;
+- фиксирует pre-deploy, post-deploy и rollback acceptance criteria;
+- требует отдельного решения перед production route PR;
 - не добавляет route, не меняет OpenAPI и не разрешает торговлю.
 
 ## Запрет ложного завершения
