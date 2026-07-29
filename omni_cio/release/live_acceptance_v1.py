@@ -76,6 +76,22 @@ def _normalize_base_url(base_url: str, approved_hosts: frozenset[str]) -> str:
     return f"https://{parsed.hostname}"
 
 
+def _validate_document_metadata(
+    document: FetchedJsonDocument,
+    *,
+    expected_url: str,
+    component: str,
+) -> None:
+    if document.requested_url != expected_url:
+        raise LiveReleaseAcceptanceError(f"LIVE_{component}_REQUEST_MISMATCH")
+    if document.final_url != expected_url:
+        raise LiveReleaseAcceptanceError(f"LIVE_{component}_REDIRECT_REJECTED")
+    if not 200 <= document.status_code < 300:
+        raise LiveReleaseAcceptanceError(f"LIVE_{component}_HTTP_STATUS_REJECTED")
+    if "application/json" not in document.content_type.lower():
+        raise LiveReleaseAcceptanceError(f"LIVE_{component}_CONTENT_TYPE_REJECTED")
+
+
 def _load_json_document(
     url: str,
     *,
@@ -155,14 +171,16 @@ def accept_live_read_only_release(
 
     health_document = load(health_url)
     openapi_document = load(openapi_url)
-    if health_document.requested_url != health_url:
-        raise LiveReleaseAcceptanceError("LIVE_HEALTH_REQUEST_MISMATCH")
-    if openapi_document.requested_url != openapi_url:
-        raise LiveReleaseAcceptanceError("LIVE_OPENAPI_REQUEST_MISMATCH")
-    if health_document.final_url != health_url:
-        raise LiveReleaseAcceptanceError("LIVE_HEALTH_REDIRECT_REJECTED")
-    if openapi_document.final_url != openapi_url:
-        raise LiveReleaseAcceptanceError("LIVE_OPENAPI_REDIRECT_REJECTED")
+    _validate_document_metadata(
+        health_document,
+        expected_url=health_url,
+        component="HEALTH",
+    )
+    _validate_document_metadata(
+        openapi_document,
+        expected_url=openapi_url,
+        component="OPENAPI",
+    )
 
     health = health_document.payload
     if health.get("status") != "ok":
