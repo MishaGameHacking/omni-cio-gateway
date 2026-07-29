@@ -9,6 +9,10 @@ from omni_cio.paper.archive_v1 import (
     verify_paper_ledger_archive_chain,
     verify_paper_ledger_record,
 )
+from omni_cio.paper.backup_v1 import (
+    PaperLedgerBackupError,
+    run_paper_ledger_backup_restore_drill,
+)
 from omni_cio.paper.ledger_v1 import (
     PaperAccountLedgerError,
     build_paper_account_ledger,
@@ -50,6 +54,7 @@ __all__ = [
     "ExternalPaperLedgerKeyManager",
     "PaperAccountLedgerError",
     "PaperLedgerArchiveError",
+    "PaperLedgerBackupError",
     "PaperLedgerRecoveryError",
     "PaperLedgerStorageError",
     "PaperSaleSimulatorError",
@@ -65,6 +70,7 @@ __all__ = [
     "parse_encrypted_paper_ledger_envelope",
     "parse_paper_ledger_recovery_manifest_unverified",
     "parse_paper_ledger_record_unverified",
+    "run_paper_ledger_backup_restore_drill",
     "seal_paper_ledger_record",
     "serialize_encrypted_paper_ledger_envelope",
     "serialize_paper_ledger_recovery_manifest",
