@@ -54,7 +54,7 @@ def _positive_int(value: object) -> int | None:
     if value is None or isinstance(value, bool):
         return None
     try:
-        result = int(value)
+        result = int(str(value))
     except (ValueError, TypeError, OverflowError):
         return None
     return result if result > 0 else None
