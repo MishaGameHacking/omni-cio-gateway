@@ -64,7 +64,11 @@ def _money(amount: str, currency: str = "RUB") -> Money:
     return Money(amount=Decimal(amount), currency=currency)
 
 
-def _journal(rejected: bool, occurred_at: datetime) -> tuple[PaperJournalEventV1, ...]:
+def _journal(
+    *,
+    rejected: bool,
+    occurred_at: datetime,
+) -> tuple[PaperJournalEventV1, ...]:
     if rejected:
         return (
             PaperJournalEventV1(
@@ -124,7 +128,7 @@ def _purchase(
         paper_cash_after=_money(cash_after, currency),
         position_lots_before=position_before,
         position_lots_after=position_after,
-        journal=_journal(False, retrieved_at),
+        journal=_journal(rejected=False, occurred_at=retrieved_at),
         paper_only=True,
         broker_order_created=False,
         execution_ready=False,
@@ -168,7 +172,7 @@ def _sale(
         paper_cash_after=_money(cash_after, currency),
         position_lots_before=position_before,
         position_lots_after=position_after,
-        journal=_journal(False, retrieved_at),
+        journal=_journal(rejected=False, occurred_at=retrieved_at),
         paper_only=True,
         broker_order_created=False,
         execution_ready=False,
@@ -203,7 +207,7 @@ def _rejected_purchase(
         paper_cash_after=_money("985"),
         position_lots_before=1,
         position_lots_after=1,
-        journal=_journal(True, retrieved_at),
+        journal=_journal(rejected=True, occurred_at=retrieved_at),
         paper_only=True,
         broker_order_created=False,
         execution_ready=False,
@@ -233,10 +237,9 @@ def test_mixed_purchase_sale_and_rejection_replay_exactly() -> None:
     )
 
     assert ledger.final_cash.amount == Decimal("985")
-    assert [(position.stable_key, position.lots) for position in ledger.final_positions] == [
-        ("uid:asset-a", 4),
-        ("uid:asset-b", 1),
-    ]
+    assert [
+        (position.stable_key, position.lots) for position in ledger.final_positions
+    ] == [("uid:asset-a", 4), ("uid:asset-b", 1)]
     assert ledger.scenario_ids == (
         "paper.buy.asset-b",
         "paper.sell.asset-a",
@@ -281,7 +284,10 @@ def test_results_must_be_time_ordered_and_build_time_must_be_later() -> None:
             currency="RUB",
             initial_cash=Decimal("1000"),
             initial_positions=_initial_positions(),
-            results=(_sale(retrieved_at=BASE), _purchase()),
+            results=(
+                _purchase(retrieved_at=BASE + timedelta(minutes=2)),
+                _sale(retrieved_at=BASE + timedelta(minutes=1)),
+            ),
             built_at=BASE + timedelta(minutes=4),
         )
 
@@ -314,13 +320,7 @@ def test_account_and_currency_mismatch_fail_closed() -> None:
             account=ACCOUNT,
             currency="RUB",
             initial_cash=Decimal("1000"),
-            results=(
-                _purchase(
-                    currency="USD",
-                    cash_before="1000",
-                    cash_after="890",
-                ),
-            ),
+            results=(_purchase(currency="USD"),),
             built_at=BASE + timedelta(minutes=4),
         )
 
@@ -348,20 +348,19 @@ def test_cash_and_position_state_gaps_are_rejected_by_contract() -> None:
 
 
 def test_lot_size_and_identity_cannot_change_mid_ledger() -> None:
-    changed_lot = _sale(lot_size=2)
     with pytest.raises(ValidationError, match="lot size changed"):
         build_paper_account_ledger(
             account=ACCOUNT,
             currency="RUB",
             initial_cash=Decimal("890"),
             initial_positions=_initial_positions(),
-            results=(changed_lot,),
+            results=(_sale(lot_size=2),),
             built_at=BASE + timedelta(minutes=4),
         )
 
-    sale_payload = _sale().model_dump(mode="python")
-    sale_payload["instrument_uid"] = "other-asset-a"
-    changed_identity = PaperSaleResultV1.model_validate(sale_payload)
+    payload = _sale().model_dump(mode="python")
+    payload["instrument_uid"] = "other-asset-a"
+    changed_identity = PaperSaleResultV1.model_validate(payload)
     with pytest.raises(ValidationError, match="instrument identity changed"):
         build_paper_account_ledger(
             account=ACCOUNT,
@@ -374,8 +373,9 @@ def test_lot_size_and_identity_cannot_change_mid_ledger() -> None:
 
 
 def test_zero_lot_position_is_removed_from_final_snapshot() -> None:
+    event_time = BASE + timedelta(minutes=1)
     sale = PaperSaleResultV1(
-        metadata=_metadata("paper_sale_result", BASE + timedelta(minutes=1)),
+        metadata=_metadata("paper_sale_result", event_time),
         scenario_id="paper.sell.all",
         source_preview_schema_version="1.0",
         stable_key="uid:asset-a",
@@ -398,7 +398,7 @@ def test_zero_lot_position_is_removed_from_final_snapshot() -> None:
         paper_cash_after=_money("1475"),
         position_lots_before=5,
         position_lots_after=0,
-        journal=_journal(False, BASE + timedelta(minutes=1)),
+        journal=_journal(rejected=False, occurred_at=event_time),
         paper_only=True,
         broker_order_created=False,
         execution_ready=False,
