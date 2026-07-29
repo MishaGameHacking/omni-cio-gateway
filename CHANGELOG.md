@@ -5,6 +5,9 @@
 ## [Unreleased]
 
 ### Added
+- Tamper-evident pro-forma risk/intention binding с SHA-256 fingerprint точного
+  option, account context, direction и полного capacity-request set; результат
+  остаётся review-only и явно сохраняет `trade_authorized=false`.
 - Account-aware portfolio-risk/pre-trade explanation envelope с freshness,
   canonical layer attribution, fail-closed no-action и явным запретом считать
   current-portfolio risk полноценным pro-forma одобрением изменения.
