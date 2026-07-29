@@ -22,6 +22,10 @@ from omni_cio.market.fund_structure_v1 import (
     FundStructuralAssessmentError,
     assess_fund_structure,
 )
+from omni_cio.market.technical_v1 import (
+    TechnicalIndicatorAssessmentError,
+    assess_technical_indicators,
+)
 
 __all__ = [
     "BondCreditRiskAssessmentError",
@@ -30,10 +34,12 @@ __all__ = [
     "EquityFundamentalAssessmentError",
     "FundStructuralAssessmentError",
     "MarketResearchAssessmentError",
+    "TechnicalIndicatorAssessmentError",
     "aggregate_bond_portfolio_rate_stress",
     "assess_bond_credit_risk",
     "assess_bond_rate_stress",
     "assess_equity_fundamentals",
     "assess_fund_structure",
     "assess_market_research_bundle",
+    "assess_technical_indicators",
 ]
