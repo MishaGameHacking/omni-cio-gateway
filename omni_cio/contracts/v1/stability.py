@@ -99,8 +99,6 @@ class StatisticalStabilityPolicyV1(ContractModel):
 
     @model_validator(mode="after")
     def validate_policy(self) -> StatisticalStabilityPolicyV1:
-        if self.limited_fold_warning_below < self.minimum_folds:
-            raise ValueError("limited-fold warning threshold is below minimum folds")
         if not self.cost_multipliers:
             raise ValueError("statistical stability policy requires cost multipliers")
         if tuple(sorted(self.cost_multipliers)) != self.cost_multipliers:
@@ -313,14 +311,23 @@ class StatisticalStabilityAssessmentV1(ContractModel):
 
     @model_validator(mode="after")
     def validate_assessment(self) -> StatisticalStabilityAssessmentV1:
+        if (self.bootstrap_interval is None) != (self.sign_flip_test is None):
+            raise ValueError("statistical inference bundle is partial")
+        sensitivity_parts = (
+            self.sensitivity_summary is not None,
+            bool(self.cost_scenarios),
+            bool(self.leave_one_fold_out),
+        )
+        if len(set(sensitivity_parts)) != 1:
+            raise ValueError("assumption sensitivity bundle is partial")
         inference_present = (
             self.bootstrap_interval is not None and self.sign_flip_test is not None
         )
-        sensitivity_present = (
-            self.sensitivity_summary is not None
-            and bool(self.cost_scenarios)
-            and bool(self.leave_one_fold_out)
-        )
+        sensitivity_present = all(sensitivity_parts)
+        if (inference_present or sensitivity_present) and (
+            self.baseline_active_total_return is None
+        ):
+            raise ValueError("computed stability assessment requires a baseline")
         if self.statistical_inference_computed is not inference_present:
             raise ValueError("statistical inference status is inconsistent")
         if self.assumption_sensitivity_computed is not sensitivity_present:
