@@ -112,9 +112,9 @@ class PaperLedgerBackupRestoreDrillV1(ContractModel):
     restore_drill_verified: Literal[True] = True
     distinct_roots_verified: Literal[True] = True
     byte_identical_replication: Literal[True] = True
-    encrypted_payload_only: Literal[True] = True
+    replicated_archive_payloads_encrypted: Literal[True] = True
     no_source_archive_file_mutation: Literal[True] = True
-    no_backup_deletion: Literal[True] = True
+    no_backup_archive_file_deletion: Literal[True] = True
     archive_transaction_atomic: Literal[False] = False
     record_atomic_writes: Literal[True] = True
     paper_only: Literal[True] = True
