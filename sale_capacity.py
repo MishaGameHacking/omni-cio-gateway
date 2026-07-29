@@ -7,7 +7,7 @@ import grpc
 from fastapi import HTTPException
 
 from purchase_capacity import (
-    PRICE_FRESH_SECONDS,
+    PRICE_FRESH_SECONDS as PRICE_FRESH_SECONDS,
     _component_error,
     _decimal_or_none,
     _quotation_from_decimal,
