@@ -5,6 +5,9 @@
 ## [Unreleased]
 
 ### Added
+- Compact user-safe final decision-review response и internal shadow parity
+  validation без раскрытия full account ID, source contracts или execution
+  surface; source provenance очищается от `source_id`.
 - Tamper-evident pro-forma risk/intention binding с SHA-256 fingerprint точного
   option, account context, direction и полного capacity-request set; результат
   остаётся review-only и явно сохраняет `trade_authorized=false`.
