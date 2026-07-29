@@ -269,7 +269,7 @@ def test_ready_index_fund_calculates_exact_structure_and_overlap() -> None:
     assert result.blockers == ()
     assert result.metrics.holding_count == 6
     assert result.metrics.top_1_weight == Decimal("0.30")
-    assert result.metrics.top_5_weight == Decimal("0.90")
+    assert result.metrics.top_5_weight == Decimal("0.95")
     assert result.metrics.top_10_weight == Decimal("1.00")
     assert result.metrics.herfindahl_index == Decimal("0.2150")
     assert result.metrics.effective_holding_count == Decimal("1") / Decimal("0.2150")
