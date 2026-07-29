@@ -37,11 +37,14 @@ from omni_cio.paper.storage_v1 import (
 _MAX_ARCHIVE_FILE_BYTES = 12 * 1024 * 1024
 _MAX_MANIFEST_BYTES = 4 * 1024 * 1024
 _MAX_ARCHIVE_FILES = 4096
+_MIN_MANIFEST_KEY_BYTES = 32
 _ARCHIVE_SUFFIX = ".plae"
 _MANIFEST_SUFFIX = ".plrm"
 _ARCHIVE_NAME_PATTERN = re.compile(
     r"^(?P<sequence>[0-9]{8})-(?P<digest>[0-9a-f]{64})\.plae$"
 )
+_KEY_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_.:-]{2,127}$")
+_BACKUP_REFERENCE_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:/-]{2,255}$")
 _STORAGE_LOCK_NAME = ".paper-ledger.lock"
 _STORAGE_LOCK_CONTENT = b"paper-ledger-writer\n"
 
@@ -55,6 +58,23 @@ def _aware_utc(value: datetime | None) -> datetime:
     if result.tzinfo is None or result.utcoffset() is None:
         raise PaperLedgerBackupError("PAPER_BACKUP_TIMESTAMP_MUST_BE_AWARE")
     return result.astimezone(timezone.utc)
+
+
+def _validate_manifest_inputs(
+    *,
+    manifest_signing_key: bytes,
+    manifest_key_id: str,
+    backup_reference: str,
+) -> None:
+    if (
+        not isinstance(manifest_signing_key, bytes)
+        or len(manifest_signing_key) < _MIN_MANIFEST_KEY_BYTES
+    ):
+        raise PaperLedgerBackupError("PAPER_BACKUP_MANIFEST_KEY_TOO_SHORT")
+    if _KEY_ID_PATTERN.fullmatch(manifest_key_id) is None:
+        raise PaperLedgerBackupError("PAPER_BACKUP_MANIFEST_KEY_ID_INVALID")
+    if _BACKUP_REFERENCE_PATTERN.fullmatch(backup_reference) is None:
+        raise PaperLedgerBackupError("PAPER_BACKUP_REFERENCE_INVALID")
 
 
 def _resolve_primary(root: Path | str) -> Path:
@@ -349,8 +369,21 @@ def run_paper_ledger_backup_restore_drill(
     """Replicate encrypted paper records and prove a complete backup restoration."""
 
     start = _aware_utc(started_at)
+    completion_override = _aware_utc(completed_at) if completed_at is not None else None
+    if completion_override is not None and completion_override < start:
+        raise PaperLedgerBackupError("PAPER_BACKUP_COMPLETION_PREDATES_START")
+    _validate_manifest_inputs(
+        manifest_signing_key=manifest_signing_key,
+        manifest_key_id=manifest_key_id,
+        backup_reference=backup_reference,
+    )
     primary = _resolve_primary(primary_root)
-    backup = _prepare_backup(backup_root)
+    backup_path = Path(backup_root)
+    if backup_path.exists() and not backup_path.is_symlink():
+        resolved_existing_backup = backup_path.resolve(strict=True)
+        if os.path.samefile(primary, resolved_existing_backup):
+            raise PaperLedgerBackupError("PAPER_BACKUP_ROOT_NOT_DISTINCT")
+    backup = _prepare_backup(backup_path)
     if os.path.samefile(primary, backup):
         raise PaperLedgerBackupError("PAPER_BACKUP_ROOT_NOT_DISTINCT")
 
@@ -366,6 +399,11 @@ def run_paper_ledger_backup_restore_drill(
             )
         except PaperLedgerStorageError as exc:
             raise PaperLedgerBackupError("PAPER_BACKUP_SOURCE_VERIFICATION_FAILED") from exc
+        if (
+            completion_override is not None
+            and completion_override < source_latest_before.sealed_at
+        ):
+            raise PaperLedgerBackupError("PAPER_BACKUP_COMPLETION_PREDATES_SOURCE")
 
         source_files = _source_archive_files(primary)
         source_names = tuple(file[0].name for file in source_files)
@@ -400,9 +438,7 @@ def run_paper_ledger_backup_restore_drill(
         if source_latest_after != source_latest_before:
             raise PaperLedgerBackupError("PAPER_BACKUP_SOURCE_STATE_CHANGED")
 
-        completion = _aware_utc(completed_at)
-        if completion < start:
-            raise PaperLedgerBackupError("PAPER_BACKUP_COMPLETION_PREDATES_START")
+        completion = completion_override or _aware_utc(None)
         try:
             manifest = build_paper_ledger_recovery_manifest(
                 primary,
