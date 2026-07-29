@@ -5,6 +5,10 @@
 ## [Unreleased]
 
 ### Added
+- Isolated test-only FastAPI final-review candidate с private `ApiKeyAuth`,
+  exact eight-query contract, TestClient 200/400/401/409/422/503 coverage и
+  проверкой candidate OpenAPI существующим GET-only release guard; production
+  `app`, OpenAPI и Render не импортируются и не изменяются.
 - Final-review handler shadow adapter с exact plan/input identity, fixed
   400/401/409/422/503 error mapping и safe `ObservabilityEventV1`; adapter не
   регистрирует route, не вызывает брокера и возвращает только PR-53 response.
