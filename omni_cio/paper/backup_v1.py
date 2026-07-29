@@ -104,6 +104,15 @@ def _prepare_backup(root: Path | str) -> Path:
     return resolved
 
 
+def _roots_overlap(primary: Path, backup_candidate: Path) -> bool:
+    prospective = backup_candidate.resolve(strict=False)
+    return (
+        prospective == primary
+        or prospective.is_relative_to(primary)
+        or primary.is_relative_to(prospective)
+    )
+
+
 def _write_all(fd: int, payload: bytes) -> None:
     view = memoryview(payload)
     written = 0
@@ -379,10 +388,10 @@ def run_paper_ledger_backup_restore_drill(
     )
     primary = _resolve_primary(primary_root)
     backup_path = Path(backup_root)
-    if backup_path.exists() and not backup_path.is_symlink():
-        resolved_existing_backup = backup_path.resolve(strict=True)
-        if os.path.samefile(primary, resolved_existing_backup):
-            raise PaperLedgerBackupError("PAPER_BACKUP_ROOT_NOT_DISTINCT")
+    if backup_path.is_symlink():
+        raise PaperLedgerBackupError("PAPER_BACKUP_ROOT_SYMLINK_FORBIDDEN")
+    if _roots_overlap(primary, backup_path):
+        raise PaperLedgerBackupError("PAPER_BACKUP_ROOTS_OVERLAP")
     backup = _prepare_backup(backup_path)
     if os.path.samefile(primary, backup):
         raise PaperLedgerBackupError("PAPER_BACKUP_ROOT_NOT_DISTINCT")
