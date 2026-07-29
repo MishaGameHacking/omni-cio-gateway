@@ -212,6 +212,28 @@ class CapacityPreTradeDecisionGateV1(ContractModel):
         if has_mismatch_blocker != mismatch_present:
             raise ValueError("capacity pretrade mismatch blocker is inconsistent")
 
+        ages = tuple(
+            (self.assessed_at - row.preview_evaluated_at).total_seconds()
+            for row in self.coverage
+        )
+        stale_present = any(
+            age > self.policy.preview_max_age_seconds for age in ages
+        )
+        has_stale_blocker = (
+            CapacityPreTradeDecisionGateBlocker.PREVIEW_STALE in self.blockers
+        )
+        if has_stale_blocker != stale_present:
+            raise ValueError("capacity pretrade stale blocker is inconsistent")
+
+        future_present = any(
+            age < -self.policy.future_tolerance_seconds for age in ages
+        )
+        has_future_blocker = (
+            CapacityPreTradeDecisionGateBlocker.PREVIEW_FROM_FUTURE in self.blockers
+        )
+        if has_future_blocker != future_present:
+            raise ValueError("capacity pretrade future blocker is inconsistent")
+
         expected_ready = not self.blockers
         if self.gate_ready is not expected_ready:
             raise ValueError("capacity pretrade readiness is inconsistent")
