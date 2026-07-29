@@ -5,6 +5,9 @@
 ## [Unreleased]
 
 ### Added
+- Final review GET Action candidate и OpenAPI shadow validation: фиксированный
+  private/authenticated GET contract проверяется на deep-copy схемы существующим
+  read-only release guard без добавления production route или изменения OpenAPI.
 - Auditable final response release-eligibility assessment с canonical JSON,
   SHA-256, shadow parity, schema/account/payload/provenance gates и строгим
   ограничением будущего contract review только методом GET/read-only.
