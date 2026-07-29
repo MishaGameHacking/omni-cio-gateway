@@ -116,6 +116,9 @@ jobs:
           print("Trading methods:", health["trading_methods"])
           PY
 
+      - name: Verify read-only GPT Actions release contract
+        run: python scripts/check_read_only_release_contract.py
+
       - name: Run Regression Shield with coverage
         id: pytest
         run: >-

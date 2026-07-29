@@ -133,6 +133,10 @@ from omni_cio.contracts.v1.rebalancing import (
     TargetBandV1,
     ThresholdRebalancePlanV1,
 )
+from omni_cio.contracts.v1.release import (
+    ReadOnlyActionV1,
+    ReadOnlyReleaseManifestV1,
+)
 from omni_cio.contracts.v1.risk import (
     ConservativeRiskPolicyV1,
     RiskCheckCode,
@@ -249,6 +253,8 @@ __all__ = [
     "QualityMetadata",
     "RatingAction",
     "RatingScope",
+    "ReadOnlyActionV1",
+    "ReadOnlyReleaseManifestV1",
     "RebalanceAlternativeKind",
     "RebalanceAlternativeStatus",
     "RebalanceAlternativeV1",
