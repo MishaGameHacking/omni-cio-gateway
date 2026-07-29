@@ -9,6 +9,12 @@ from typing import Any, cast
 
 from omni_cio.adapters import portfolio_snapshot_v1_from_market_payload
 from omni_cio.contracts.v1 import Completeness, DataQuality, IssueSeverity
+from omni_cio.contracts.v1.observability import (
+    ObservabilityOutcome,
+    ObservabilitySeverity,
+    SafeCountMetricV1,
+)
+from omni_cio.observability import build_safe_event, emit_safe_event
 
 
 class PortfolioShadowStatus(StrEnum):
@@ -40,34 +46,46 @@ class PortfolioShadowValidation:
 
 def _log_validation(logger: Logger, result: PortfolioShadowValidation) -> None:
     if result.status == PortfolioShadowStatus.REJECTED:
-        logger.warning(
-            "Portfolio contract shadow validation status=%s schema=%s "
-            "version=%s decision_ready=%s error_code=%s exception_type=%s",
-            result.status,
-            result.schema_name,
-            result.schema_version,
-            result.decision_ready,
-            result.error_code,
-            result.exception_type,
-        )
-        return
+        severity = ObservabilitySeverity.WARNING
+        outcome = ObservabilityOutcome.REJECTED
+    elif result.status == PortfolioShadowStatus.PARTIAL:
+        severity = ObservabilitySeverity.WARNING
+        outcome = ObservabilityOutcome.DEGRADED
+    else:
+        severity = ObservabilitySeverity.INFO
+        outcome = ObservabilityOutcome.SUCCESS
 
-    logger.info(
-        "Portfolio contract shadow validation status=%s schema=%s version=%s "
-        "decision_ready=%s quality=%s completeness=%s issues=%d warnings=%d "
-        "positions=%d cash_balances=%d currencies=%d",
-        result.status,
-        result.schema_name,
-        result.schema_version,
-        result.decision_ready,
-        result.quality,
-        result.completeness,
-        result.issue_count,
-        result.warning_count,
-        result.position_count,
-        result.cash_balance_count,
-        result.currency_count,
+    quality = (
+        DataQuality(result.quality)
+        if result.status != PortfolioShadowStatus.REJECTED
+        else DataQuality.UNAVAILABLE
     )
+    completeness = (
+        Completeness(result.completeness)
+        if result.status != PortfolioShadowStatus.REJECTED
+        else Completeness.INCOMPLETE
+    )
+    event = build_safe_event(
+        event_name="portfolio.shadow.validation",
+        component="portfolio_shadow",
+        severity=severity,
+        outcome=outcome,
+        quality=quality,
+        completeness=completeness,
+        error_code=result.error_code,
+        exception_type=result.exception_type,
+        metrics=(
+            SafeCountMetricV1(name="issues.count", value=result.issue_count),
+            SafeCountMetricV1(name="warnings.count", value=result.warning_count),
+            SafeCountMetricV1(name="positions.count", value=result.position_count),
+            SafeCountMetricV1(
+                name="cash_balances.count",
+                value=result.cash_balance_count,
+            ),
+            SafeCountMetricV1(name="currencies.count", value=result.currency_count),
+        ),
+    )
+    emit_safe_event(logger, event)
 
 
 def validate_portfolio_market_payload_in_shadow(
