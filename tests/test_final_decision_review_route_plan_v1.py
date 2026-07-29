@@ -24,6 +24,7 @@ from omni_cio.contracts.v1.final_decision_review_input import (
     FinalDecisionReviewReadOnlyQueryV1,
 )
 from omni_cio.contracts.v1.final_decision_review_route_plan import (
+    FinalDecisionReviewAcceptanceCaseV1,
     FinalDecisionReviewAcceptanceCheckCode,
     FinalDecisionReviewAcceptanceStage,
     FinalDecisionReviewProposedRouteV1,
@@ -153,7 +154,9 @@ def test_default_plan_is_complete_but_does_not_authorize_implementation() -> Non
         FinalDecisionReviewAcceptanceStage
     )
     assert all(case.blocking for case in plan.acceptance_cases)
-    assert all(not case.executed and not case.passed for case in plan.acceptance_cases)
+    assert all(
+        not case.executed and not case.passed for case in plan.acceptance_cases
+    )
     assert plan.implementation_authorized is False
     assert plan.route_approval_granted is False
     assert plan.production_route_added is False
@@ -237,11 +240,10 @@ def test_missing_observability_control_is_blocked() -> None:
 
 def test_acceptance_cases_cannot_claim_execution_or_success() -> None:
     cases = list(default_final_decision_review_acceptance_cases())
-    cases[0] = cases[0].model_construct(
-        **cases[0].model_dump(),
-        executed=True,
-        passed=True,
-    )
+    payload = cases[0].model_dump()
+    payload["executed"] = True
+    payload["passed"] = True
+    cases[0] = FinalDecisionReviewAcceptanceCaseV1.model_construct(**payload)
 
     with pytest.raises(ValidationError):
         build_final_decision_review_route_implementation_plan(
