@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from typing import Any, Callable, Mapping
 
 import grpc
@@ -109,6 +109,10 @@ def select_sale_price(
 
     price = _decimal_or_none(base, raw_price)
     freshness = _price_freshness(age_seconds, source_time, price_basis)
+    freshness.setdefault(
+        "fresh_threshold_seconds",
+        base.decimal_string(PRICE_FRESH_SECONDS),
+    )
     if price is None or price <= 0:
         return {
             "status": "unavailable",
@@ -132,6 +136,15 @@ def select_sale_price(
         ),
         "freshness": freshness,
     }
+
+
+def _integer_or_none(value: Any) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return int(value)
+    except (ValueError, TypeError, OverflowError):
+        return None
 
 
 def _exact_lots(
@@ -186,12 +199,10 @@ def _position_limits_view(
 
     position_lots = _exact_lots(units=balance_units, lot_size=lot_size)
     blocked_lots = _exact_lots(units=blocked_units, lot_size=lot_size)
-
     max_data = _status_dict(max_lots_data)
     sell_limits = _status_dict(max_data.get("sell_limits"))
     sell_max_lots = _integer_or_none(sell_limits.get("sell_max_lots"))
     currency = str(max_data.get("currency", "") or "").upper()
-
     complete = (
         positions_status == "ok"
         and max_lots_status == "ok"
@@ -218,24 +229,13 @@ def _position_limits_view(
         ),
         "position_lots": position_lots if position_lots is not None else "unavailable",
         "blocked_lots": blocked_lots if blocked_lots is not None else "unavailable",
-        "sell_max_lots": (
-            sell_max_lots if sell_max_lots is not None else "unavailable"
-        ),
+        "sell_max_lots": sell_max_lots if sell_max_lots is not None else "unavailable",
         "matching_position_rows": len(matching_rows),
         "duplicate_position_rows": duplicate_rows,
         "invalid_position_rows": invalid_rows,
         "exact_lot_conversion": position_lots is not None and blocked_lots is not None,
         "complete": complete,
     }
-
-
-def _integer_or_none(value: Any) -> int | None:
-    if value is None or isinstance(value, bool):
-        return None
-    try:
-        return int(value)
-    except (ValueError, TypeError, OverflowError):
-        return None
 
 
 def _open_orders_view(
@@ -272,7 +272,6 @@ def _open_orders_view(
             conflicting_lots += max(0, requested - executed)
     elif rows is not None:
         invalid_rows += 1
-
     checked = orders_status == "ok" and invalid_rows == 0
     return {
         "status": "ok" if checked else "partial",
@@ -296,7 +295,6 @@ def _gross_proceeds_view(
     security_currency = str(security.get("currency", "") or "").upper()
     if security_amount is None or not security_currency:
         return None
-
     extra_bond = _status_dict(order_preview.get("extra_bond"))
     aci = _money_view(base, extra_bond.get("aci_value"))
     aci_amount = Decimal("0")
@@ -383,7 +381,6 @@ def build_sale_capacity_preview(
     max_lots_status = component_statuses.get("max_lots", "not_requested")
     orders_status = component_statuses.get("open_orders", "not_requested")
     order_price_status = component_statuses.get("order_price", "not_requested")
-
     position_limits = _position_limits_view(
         base=base,
         positions_data=positions_data,
@@ -407,7 +404,6 @@ def build_sale_capacity_preview(
     gross_proceeds = _gross_proceeds_view(base=base, order_preview=order_preview)
     if gross_proceeds is not None:
         order_preview["gross_proceeds"] = gross_proceeds
-
     commission_summary = build_commission_summary(order_preview)
     market_price = dict(price_info)
     market_price["currency"] = str(
@@ -416,7 +412,6 @@ def build_sale_capacity_preview(
         or ""
     ).upper() or "unavailable"
     market_price["lot_size"] = lot_size if lot_size is not None else 0
-
     currency_consistency = _sale_currency_consistency(
         instrument=instrument,
         market_price=market_price,
@@ -453,16 +448,7 @@ def build_sale_capacity_preview(
         status = "partial"
     else:
         status = "error"
-
     snapshot = _status_dict(market_snapshot)
-    market_context = {
-        "requested": True,
-        "dealer_session": bool(snapshot.get("dealer_session", False)),
-        "market_data_sources": _status_dict(snapshot.get("market_data_sources")),
-        "trading_flag_consistency": _status_dict(
-            snapshot.get("trading_flag_consistency")
-        ),
-    }
     warnings = [
         (
             "This service performs read-only sale-capacity calculations and does not "
@@ -483,7 +469,6 @@ def build_sale_capacity_preview(
         warnings.append(
             "The selected sale price is stale relative to the gateway freshness threshold."
         )
-
     payload = {
         "status": status,
         "version": app_version,
@@ -502,7 +487,14 @@ def build_sale_capacity_preview(
             "resolution": _status_dict(resolution.get("resolution")),
         },
         "market_price": market_price,
-        "market_context": market_context,
+        "market_context": {
+            "requested": True,
+            "dealer_session": bool(snapshot.get("dealer_session", False)),
+            "market_data_sources": _status_dict(snapshot.get("market_data_sources")),
+            "trading_flag_consistency": _status_dict(
+                snapshot.get("trading_flag_consistency")
+            ),
+        },
         "position_limits": position_limits,
         "open_orders": open_orders,
         "order_preview": order_preview,
@@ -573,7 +565,6 @@ def get_sale_capacity_preview(
                 "message": "price_basis must be best_bid or last_price.",
             },
         )
-
     retrieved_at = datetime.now(timezone.utc).isoformat()
     component_errors: list[dict[str, Any]] = []
     component_statuses = {
@@ -592,14 +583,12 @@ def get_sale_capacity_preview(
         component_errors.append(
             {"component": "market_snapshot", "error": _component_error(base, exc)}
         )
-
     price_info = select_sale_price(
         base=base,
         price_basis=price_basis,
         market_snapshot=market_snapshot,
     )
     price_value = _decimal_or_none(base, price_info.get("price"))
-
     try:
         with base.Client(base.TINVEST_TOKEN) as client:
             account_id, safe_account = base.get_open_account(client)
@@ -631,12 +620,10 @@ def get_sale_capacity_preview(
                         "error": _component_error(base, exc),
                     }
                 )
-
             positions_data: dict[str, Any] | None = None
             max_lots_data: dict[str, Any] | None = None
             orders_data: dict[str, Any] | None = None
             order_price_data: dict[str, Any] | None = None
-
             try:
                 positions_response = client.operations.get_positions(
                     account_id=account_id
@@ -648,7 +635,6 @@ def get_sale_capacity_preview(
                 component_errors.append(
                     {"component": "positions", "error": _component_error(base, exc)}
                 )
-
             try:
                 orders_response = client.orders.get_orders(account_id=account_id)
                 orders_data = base.proto_to_dict(orders_response)
@@ -658,7 +644,6 @@ def get_sale_capacity_preview(
                 component_errors.append(
                     {"component": "open_orders", "error": _component_error(base, exc)}
                 )
-
             if price_value is None or price_value <= 0:
                 component_errors.append(
                     {
@@ -688,7 +673,6 @@ def get_sale_capacity_preview(
                     component_errors.append(
                         {"component": "max_lots", "error": _component_error(base, exc)}
                     )
-
                 try:
                     order_price_response = client.orders.get_order_price(
                         account_id=account_id,
@@ -707,7 +691,6 @@ def get_sale_capacity_preview(
                             "error": _component_error(base, exc),
                         }
                     )
-
             return build_sale_capacity_preview(
                 base=base,
                 app_version=app_version,
