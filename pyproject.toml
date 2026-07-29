@@ -32,6 +32,7 @@ files = [
   "omni_cio/rebalancing",
   "omni_cio/pretrade",
   "omni_cio/paper",
+  "omni_cio/shadow",
   "scripts/check_ci_security_baseline.py",
   "scripts/check_repository_layout.py",
 ]
