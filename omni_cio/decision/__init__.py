@@ -26,6 +26,11 @@ from omni_cio.decision.engine_v1 import (
     DecisionEngineError,
     build_decision_set,
 )
+from omni_cio.decision.pro_forma_risk_binding_v1 import (
+    ProFormaRiskIntentBindingError,
+    bind_pro_forma_risk_to_intent,
+    build_pro_forma_risk_scenario,
+)
 from omni_cio.decision.risk_pretrade_explanation_v1 import (
     RiskPreTradeExplanationError,
     compose_risk_pretrade_explanation,
@@ -39,13 +44,16 @@ __all__ = [
     "CapacityPreTradeDecisionGateError",
     "CapacitySellPreTradeDecisionGateError",
     "DecisionEngineError",
+    "ProFormaRiskIntentBindingError",
     "RiskPreTradeExplanationError",
     "apply_capacity_decision_gate",
     "apply_capacity_intent_decision_gate",
     "apply_capacity_pretrade_decision_gate",
     "apply_capacity_sell_pretrade_decision_gate",
+    "bind_pro_forma_risk_to_intent",
     "build_bond_aware_decision_set",
     "build_decision_set",
+    "build_pro_forma_risk_scenario",
     "compose_capacity_directional_pretrade_review",
     "compose_risk_pretrade_explanation",
 ]
