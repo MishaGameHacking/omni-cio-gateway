@@ -5,6 +5,9 @@
 ## [Unreleased]
 
 ### Added
+- Unified directional pre-trade review envelope для однородного buy- или
+  sell-intent set с fail-closed блокировкой смешанных направлений и без
+  повторного расчёта брокерских значений.
 - Read-only sell capacity/pre-trade decision gate с точной привязкой стороны,
   валюты, цены, размера лота и количества, а также fail-closed проверками
   позиции, открытых заявок, налоговой базы и комиссии.
