@@ -1,7 +1,7 @@
 # 16 — CURRENT PROGRAM STATUS
 
 Дата актуализации: 2026-07-29  
-Фактическая вершина программы после merge этого пакета: **PR-52**  
+Фактическая вершина программы после merge этого пакета: **PR-53**  
 Точная версия определяется текущей вершиной ветки `main`.
 
 ## Назначение документа
@@ -62,7 +62,8 @@
 - market-capacity assessment и capacity-aware decision gating;
 - unified homogeneous buy/sell pre-trade review envelope;
 - account-aware portfolio-risk/pre-trade explanation envelope;
-- tamper-evident pro-forma risk/intention binding.
+- tamper-evident pro-forma risk/intention binding;
+- compact user-safe final review response и shadow parity validation.
 
 ## Последняя завершённая цепочка PR
 
@@ -121,12 +122,19 @@ Pro-forma risk/intention binding связывает отдельную post-chan
 подтверждённая risk-привязка остаётся review-only: `trade_authorized=false`,
 `execution_ready=false`, `trading_methods=false`.
 
+### PR-53
+
+Final decision-review response формирует компактный user-safe payload с
+маскированным счётом, exact intent lines, current/pro-forma risk, blockers,
+warnings и очищенной provenance без `source_id`. Internal shadow validation
+проверяет паритет status, readiness, option/action, direction, account,
+fingerprint, risk approval и safety flags. Публичный route не добавляется.
+
 ## Что остаётся до полного релиза по мастер-плану
 
 ### Backend и orchestration
 
-- user-safe final decision-review response contract и shadow adapter;
-- полная публичная Action-интеграция только после отдельного contract review;
+- отдельная release-eligibility оценка final response до любого Action route;
 - production-grade live ingestion для market, ratings, news и corporate events;
 - внешний versioned RAG index с freshness и citation controls;
 - более полная observability, alerting и operational runbooks.
@@ -158,13 +166,13 @@ partial-fill и timeout reconciliation требуют отдельной про�
 
 ## Следующий рекомендуемый пакет
 
-**PR-53 — final decision-review response contract and shadow adapter v1**:
+**PR-54 — final response release-eligibility assessment v1**:
 
-- принимает только завершённый pro-forma binding или fail-closed abstain;
-- формирует компактный user-safe read-only ответ без полного account ID;
-- сохраняет факты, blockers, warnings, current/pro-forma risk и provenance;
-- не добавляет публичный route до отдельного Action contract review;
-- не создаёт заявку и не разрешает торговлю.
+- проверяет schema stability, account masking, payload bounds и provenance;
+- подтверждает только GET/read-only compatibility;
+- блокирует release при любых execution, mutation или sensitive-data признаках;
+- не добавляет route и не изменяет OpenAPI до отдельного решения;
+- формирует auditable eligibility result для будущего contract review.
 
 ## Запрет ложного завершения
 
