@@ -16,8 +16,11 @@ from omni_cio.contracts.v1.observability import (
 )
 
 
+_HEX_TO_LETTERS = str.maketrans("0123456789", "ghijklmnop")
+
+
 def new_trace_id(prefix: str) -> str:
-    """Return a non-secret opaque trace identifier."""
+    """Return a non-secret opaque trace identifier without numeric substrings."""
 
     normalized = "".join(
         character.lower()
@@ -25,7 +28,8 @@ def new_trace_id(prefix: str) -> str:
         if character.isascii() and (character.isalnum() or character in "_.-")
     ).strip("_.-")
     safe_prefix = normalized or "trace"
-    return f"{safe_prefix}:{uuid4().hex}"
+    entropy = uuid4().hex.translate(_HEX_TO_LETTERS)
+    return f"{safe_prefix}:{entropy}"
 
 
 def build_safe_event(
