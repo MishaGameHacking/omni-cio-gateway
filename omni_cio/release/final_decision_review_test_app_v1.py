@@ -29,7 +29,7 @@ from omni_cio.release.final_decision_review_handler_shadow_v1 import (
 )
 
 
-TEST_APP_VERSION = "final-review-candidate-1.0"
+TEST_APP_VERSION = "1.0.0"
 TEST_APP_SERVER = "https://omni-cio-gateway.onrender.com"
 _DIGEST_PATTERN = r"^[0-9a-f]{64}$"
 _API_KEY_HEADER = APIKeyHeader(
@@ -71,6 +71,8 @@ def _binding_for_query(
     source: FinalDecisionReviewInputBindingV1,
     query: FinalDecisionReviewReadOnlyQueryV1,
 ) -> FinalDecisionReviewInputBindingV1:
+    if query == source.query:
+        return source
     query_sha = _canonical_sha256(query.model_dump(mode="json"))
     return source.model_copy(
         update={
