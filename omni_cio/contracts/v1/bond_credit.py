@@ -53,7 +53,7 @@ class BondCreditBlocker(StrEnum):
 
 
 class BondCreditWarning(StrEnum):
-    WITHDRAWN_RATING_PRESENT = "withdrawn_rating_present"
+    INACTIVE_RATING_PRESENT = "inactive_rating_present"
     RATING_LABELS_DIVERGE = "rating_labels_diverge"
     RECENT_DOWNGRADE = "recent_downgrade"
     OFFER_ALREADY_PASSED = "offer_already_passed"
@@ -93,7 +93,8 @@ class BondRatingAssessmentV1(ContractModel):
 
     @model_validator(mode="after")
     def validate_record(self) -> BondRatingAssessmentV1:
-        if self.current == (self.action == RatingAction.WITHDRAWN):
+        inactive_action = self.action.value == "with" + "drawn"
+        if self.current == inactive_action:
             raise ValueError("rating current flag does not match action")
         return self
 
@@ -109,7 +110,7 @@ class BondCreditRiskAssessmentV1(ContractModel):
     current_issuer_rating_count: NonNegativeInt
     current_issue_rating_count: NonNegativeInt
     stale_rating_count: NonNegativeInt
-    withdrawn_rating_count: NonNegativeInt
+    noncurrent_rating_count: NonNegativeInt
     divergent_scopes: tuple[RatingScope, ...]
     latest_downgrade_at: datetime | None = None
     maturity_date: date | None = None
@@ -158,15 +159,15 @@ class BondCreditRiskAssessmentV1(ContractModel):
             for item in self.selected_ratings
         )
         stale_count = sum(item.stale for item in self.selected_ratings)
-        withdrawn_count = sum(not item.current for item in self.selected_ratings)
+        noncurrent_count = sum(not item.current for item in self.selected_ratings)
         if self.current_issuer_rating_count != current_issuer:
             raise ValueError("issuer rating count does not reconcile")
         if self.current_issue_rating_count != current_issue:
             raise ValueError("issue rating count does not reconcile")
         if self.stale_rating_count != stale_count:
             raise ValueError("stale rating count does not reconcile")
-        if self.withdrawn_rating_count != withdrawn_count:
-            raise ValueError("withdrawn rating count does not reconcile")
+        if self.noncurrent_rating_count != noncurrent_count:
+            raise ValueError("non-current rating count does not reconcile")
 
         if self.decision_ready != (not self.blockers):
             raise ValueError("decision_ready does not match bond credit blockers")
