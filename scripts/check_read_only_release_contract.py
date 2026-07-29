@@ -1,9 +1,16 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
+import sys
 
-from app import APP_VERSION, ENTRYPOINT, app
-from omni_cio.release import build_read_only_release_manifest
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+if str(REPOSITORY_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPOSITORY_ROOT))
+
+from app import APP_VERSION, ENTRYPOINT, app  # noqa: E402
+from omni_cio.release import build_read_only_release_manifest  # noqa: E402
 
 
 APPROVED_ACTION_HOSTS = frozenset({"omni-cio-gateway.onrender.com"})
