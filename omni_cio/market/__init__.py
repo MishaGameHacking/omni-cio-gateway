@@ -14,14 +14,20 @@ from omni_cio.market.bond_rate_stress_v1 import (
     BondRateStressAssessmentError,
     assess_bond_rate_stress,
 )
+from omni_cio.market.equity_fundamentals_v1 import (
+    EquityFundamentalAssessmentError,
+    assess_equity_fundamentals,
+)
 
 __all__ = [
     "BondCreditRiskAssessmentError",
     "BondPortfolioRateStressError",
     "BondRateStressAssessmentError",
+    "EquityFundamentalAssessmentError",
     "MarketResearchAssessmentError",
     "aggregate_bond_portfolio_rate_stress",
     "assess_bond_credit_risk",
     "assess_bond_rate_stress",
+    "assess_equity_fundamentals",
     "assess_market_research_bundle",
 ]
