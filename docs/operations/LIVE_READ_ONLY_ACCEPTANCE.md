@@ -69,7 +69,13 @@ The HTTP loader:
 `.github/workflows/live-read-only-acceptance.yml` runs:
 
 - manually through `workflow_dispatch`;
-- once per day on a schedule.
+- once per day on a schedule;
+- in a pull request when the live acceptance workflow, contracts, verifier,
+  CLI or focused tests change.
+
+The path-filtered pull-request trigger provides actual production evidence while
+the acceptance boundary itself is being modified. Ordinary analytics and model
+PRs are not coupled to production availability.
 
 The workflow uses read-only repository permissions, pinned GitHub Actions and
 hash-locked runtime dependencies. It requires no repository secret.
