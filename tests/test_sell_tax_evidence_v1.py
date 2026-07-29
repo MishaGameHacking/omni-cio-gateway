@@ -7,7 +7,14 @@ from decimal import Decimal
 import pytest
 from pydantic import ValidationError
 
-from omni_cio.contracts.v1.common import AccountReference, SourceReference
+from omni_cio.contracts.v1.common import (
+    AccountReference,
+    Completeness,
+    ContractMetadata,
+    DataQuality,
+    QualityMetadata,
+    SourceReference,
+)
 from omni_cio.contracts.v1.rebalancing import (
     RebalanceAlternativeKind,
     RebalanceAlternativeStatus,
@@ -30,7 +37,6 @@ from omni_cio.pretrade import (
     build_unavailable_sell_tax_evidence,
     enrich_sale_capacity_with_tax_evidence,
 )
-from tests.test_sell_pretrade_preview_v1 import _metadata
 
 
 NOW = datetime(2026, 7, 29, 12, 0, tzinfo=timezone.utc)
@@ -48,7 +54,31 @@ def _source() -> SourceReference:
     )
 
 
-def _confirmed(*, estimated_tax: Decimal = Decimal("4"), zero_reason=None):
+def _metadata() -> ContractMetadata:
+    return ContractMetadata(
+        schema_name="threshold_rebalance_plan",
+        retrieved_at=NOW,
+        account=ACCOUNT,
+        provenance=(
+            SourceReference(
+                provider="omni-cio-test",
+                operation="build_threshold_rebalance_plan",
+                retrieved_at=NOW,
+                source_id="1.0",
+            ),
+        ),
+        quality=QualityMetadata(
+            quality=DataQuality.VERIFIED,
+            completeness=Completeness.COMPLETE,
+        ),
+    )
+
+
+def _confirmed(
+    *,
+    estimated_tax: Decimal = Decimal("4"),
+    zero_reason: str | None = None,
+) -> SellTaxEvidenceV1:
     return build_confirmed_sell_tax_evidence(
         account=ACCOUNT,
         source=_source(),
@@ -364,12 +394,34 @@ def test_unconfirmed_evidence_cannot_enrich_payload() -> None:
 @pytest.mark.parametrize(
     ("mutation", "message"),
     (
-        (lambda payload: payload["account"].update(masked_id="***9999"), "ACCOUNT_MISMATCH"),
-        (lambda payload: payload["request"].update(instrument_uid="asset-b"), "INSTRUMENT_MISMATCH"),
-        (lambda payload: payload["request"].update(quantity_lots=2), "QUANTITY_MISMATCH"),
-        (lambda payload: payload["market_price"].update(currency="USD"), "CURRENCY_MISMATCH"),
-        (lambda payload: payload["order_preview"].update(gross_proceeds=_money("101")), "TERMS_MISMATCH"),
-        (lambda payload: payload["commission_summary"].update(canonical_commission=_money("2")), "TERMS_MISMATCH"),
+        (
+            lambda payload: payload["account"].update(masked_id="***9999"),
+            "ACCOUNT_MISMATCH",
+        ),
+        (
+            lambda payload: payload["request"].update(instrument_uid="asset-b"),
+            "INSTRUMENT_MISMATCH",
+        ),
+        (
+            lambda payload: payload["request"].update(quantity_lots=2),
+            "QUANTITY_MISMATCH",
+        ),
+        (
+            lambda payload: payload["market_price"].update(currency="USD"),
+            "CURRENCY_MISMATCH",
+        ),
+        (
+            lambda payload: payload["order_preview"].update(
+                gross_proceeds=_money("101")
+            ),
+            "TERMS_MISMATCH",
+        ),
+        (
+            lambda payload: payload["commission_summary"].update(
+                canonical_commission=_money("2")
+            ),
+            "TERMS_MISMATCH",
+        ),
     ),
 )
 def test_mismatched_live_terms_are_rejected(mutation, message: str) -> None:
