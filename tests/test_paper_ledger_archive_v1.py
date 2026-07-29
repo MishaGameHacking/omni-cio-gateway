@@ -279,7 +279,6 @@ def test_chain_verifies_full_history_and_supports_key_rotation() -> None:
 
 def test_chain_rejects_missing_key_and_broken_link() -> None:
     first = _seal(_ledger(1))
-    second = _seal(_ledger(2), sequence=2, previous=first.record_digest)
 
     with pytest.raises(PaperLedgerArchiveError, match="SIGNING_KEY_UNAVAILABLE"):
         verify_paper_ledger_archive_chain(
