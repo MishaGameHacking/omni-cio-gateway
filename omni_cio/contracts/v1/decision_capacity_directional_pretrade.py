@@ -49,7 +49,7 @@ class CapacityDirectionalPreTradeReviewV1(ContractModel):
     status: CapacityDecisionGateStatus
     gate_ready: bool
     abstain: bool
-    base_intent_gate: CapacityIntentDecisionGateV1
+    base_intent_gate: InstanceOf[CapacityIntentDecisionGateV1]
     source_gate: InstanceOf[
         CapacityPreTradeDecisionGateV1 | CapacitySellPreTradeDecisionGateV1
     ]
