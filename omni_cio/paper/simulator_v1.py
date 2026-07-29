@@ -186,6 +186,7 @@ def simulate_paper_purchase(
 
     reason_tuple = tuple(reject_reasons)
     cash_before = Money(amount=cash_before_amount, currency=currency)
+    journal: tuple[PaperJournalEventV1, ...]
     if reason_tuple:
         status = PaperOrderStatus.REJECTED
         actual_filled_lots = 0
