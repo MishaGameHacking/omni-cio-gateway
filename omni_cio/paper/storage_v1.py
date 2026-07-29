@@ -25,8 +25,12 @@ from omni_cio.paper.archive_v1 import (
 
 
 _MAX_ENVELOPE_BYTES = 12 * 1024 * 1024
+_MAX_CIPHERTEXT_BYTES = 8 * 1024 * 1024
 _STORAGE_SUFFIX = ".plae"
-_STORAGE_NAME_PATTERN = re.compile(r"^(?P<sequence>[0-9]{8})-(?P<digest>[0-9a-f]{64})\.plae$")
+_STORAGE_NAME_PATTERN = re.compile(
+    r"^(?P<sequence>[0-9]{8})-(?P<digest>[0-9a-f]{64})\.plae$"
+)
+_KEY_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_.:-]{2,127}$")
 _LOCK_NAME = ".paper-ledger.lock"
 
 
@@ -68,6 +72,12 @@ def _aware_utc(value: datetime | None) -> datetime:
     if result.tzinfo is None or result.utcoffset() is None:
         raise PaperLedgerStorageError("PAPER_STORAGE_TIMESTAMP_MUST_BE_AWARE")
     return result.astimezone(timezone.utc)
+
+
+def _validate_key_id(value: str) -> str:
+    if _KEY_ID_PATTERN.fullmatch(value) is None:
+        raise PaperLedgerStorageError("PAPER_STORAGE_ENCRYPTION_KEY_ID_INVALID")
+    return value
 
 
 def _canonical_json_bytes(value: object) -> bytes:
@@ -123,17 +133,18 @@ def encrypt_paper_ledger_record(
 ) -> PaperLedgerEncryptedEnvelopeV1:
     """Encrypt one authenticated archive record through an external AEAD manager."""
 
+    normalized_key_id = _validate_key_id(encryption_key_id)
     timestamp = _aware_utc(created_at)
     plaintext = serialize_paper_ledger_record(record)
     aad = _associated_data(
         created_at=timestamp,
         sequence=record.sequence,
         record_digest=record.record_digest,
-        encryption_key_id=encryption_key_id,
+        encryption_key_id=normalized_key_id,
     )
     try:
         encrypted = key_manager.encrypt(
-            key_id=encryption_key_id,
+            key_id=normalized_key_id,
             plaintext=plaintext,
             associated_data=aad,
         )
@@ -143,10 +154,14 @@ def encrypt_paper_ledger_record(
         raise PaperLedgerStorageError("PAPER_STORAGE_ENCRYPTION_RESULT_INVALID")
     if not encrypted.encryption_algorithm or not encrypted.nonce or not encrypted.ciphertext:
         raise PaperLedgerStorageError("PAPER_STORAGE_ENCRYPTION_RESULT_INCOMPLETE")
+    if len(encrypted.nonce) < 12 or len(encrypted.nonce) > 64:
+        raise PaperLedgerStorageError("PAPER_STORAGE_ENCRYPTION_NONCE_INVALID")
+    if len(encrypted.ciphertext) > _MAX_CIPHERTEXT_BYTES:
+        raise PaperLedgerStorageError("PAPER_STORAGE_CIPHERTEXT_TOO_LARGE")
     try:
         return PaperLedgerEncryptedEnvelopeV1(
             encryption_algorithm=encrypted.encryption_algorithm,
-            encryption_key_id=encryption_key_id,
+            encryption_key_id=normalized_key_id,
             created_at=timestamp,
             sequence=record.sequence,
             record_digest=record.record_digest,
@@ -243,6 +258,16 @@ def _fsync_directory(root: Path) -> None:
         os.close(fd)
 
 
+def _write_all(fd: int, payload: bytes) -> None:
+    view = memoryview(payload)
+    written = 0
+    while written < len(view):
+        amount = os.write(fd, view[written:])
+        if amount <= 0:
+            raise PaperLedgerStorageError("PAPER_STORAGE_WRITE_STALLED")
+        written += amount
+
+
 @contextmanager
 def _exclusive_writer_lock(root: Path) -> Iterator[None]:
     lock_path = root / _LOCK_NAME
@@ -252,7 +277,7 @@ def _exclusive_writer_lock(root: Path) -> Iterator[None]:
     except FileExistsError as exc:
         raise PaperLedgerStorageError("PAPER_STORAGE_CONCURRENT_WRITER") from exc
     try:
-        os.write(fd, b"paper-ledger-writer\n")
+        _write_all(fd, b"paper-ledger-writer\n")
         os.fsync(fd)
         yield
     finally:
@@ -273,10 +298,7 @@ def _atomic_write(root: Path, target: Path, payload: bytes) -> None:
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
     fd = os.open(temporary, flags, 0o600)
     try:
-        view = memoryview(payload)
-        written = 0
-        while written < len(view):
-            written += os.write(fd, view[written:])
+        _write_all(fd, payload)
         os.fsync(fd)
     except Exception:
         try:
@@ -317,7 +339,9 @@ def write_encrypted_paper_ledger_record(
     target = storage_root / _storage_name(record)
 
     with _exclusive_writer_lock(storage_root):
-        sequence_matches = tuple(storage_root.glob(f"{record.sequence:08d}-*{_STORAGE_SUFFIX}"))
+        sequence_matches = tuple(
+            storage_root.glob(f"{record.sequence:08d}-*{_STORAGE_SUFFIX}")
+        )
         if sequence_matches and target not in sequence_matches:
             raise PaperLedgerStorageError("PAPER_STORAGE_SEQUENCE_ALREADY_EXISTS")
         if target.exists():
