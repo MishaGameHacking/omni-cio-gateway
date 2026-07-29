@@ -1,6 +1,6 @@
 # Реестр компонентов и внешних активов
 
-Дата инвентаризации: 2026-07-28.
+Дата инвентаризации: 2026-07-29.
 
 Этот файл отвечает на вопрос: «Что новый чат получит из GitHub, а что нужно подключить отдельно?»
 
@@ -56,6 +56,9 @@
 - unit и Regression Shield tests;
 - blocking Ruff, formatting, mypy, coverage, SCA, SAST и secret scan;
 - краткоживущие CI diagnostics с mypy, pytest и coverage output;
+- machine-checked read-only GPT release manifest для фактической OpenAPI-схемы;
+- live read-only acceptance для публичных `/health` и `/openapi.json` с
+  ежедневным и ручным GitHub workflow без брокерского или account access;
 - weekly Dependabot для pip и GitHub Actions.
 
 ### Граница поддерживаемого runtime
@@ -101,6 +104,9 @@
 - `TINVEST_TOKEN`;
 - `GATEWAY_API_KEY`;
 - deploy state и автоматически заданный `RENDER_EXTERNAL_URL`.
+
+Live acceptance проверяет только boolean-статус конфигурации из `/health` и не
+получает значения секретов.
 
 ### Выведенные из эксплуатации внешние Telegram-активы
 
@@ -151,7 +157,7 @@ response-size enforcement и storage policy пока не подключены. 
 
 1. GitHub read access.
 2. Для изменения кода — GitHub write access через ветку и PR.
-3. Для production-проверки — доступ к публичному `/health` Gateway.
+3. Для production-проверки — доступ к публичным `/health` и `/openapi.json` Gateway либо результатам live acceptance workflow.
 4. Для изменения секретов — доступ к Render Dashboard.
 5. Для изменения Custom GPT — доступ к GPT Editor.
 6. Для dependency updates — проверка Dependabot PR и Regression Shield.

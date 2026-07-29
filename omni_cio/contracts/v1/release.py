@@ -74,3 +74,41 @@ class ReadOnlyReleaseManifestV1(ContractModel):
         if len(route_keys) != len(set(route_keys)):
             raise ValueError("release actions must be unique by path and method")
         return self
+
+
+class LiveReleaseAcceptanceV1(ContractModel):
+    checked_at: datetime
+    base_url: Annotated[str, Field(pattern=r"^https://[A-Za-z0-9.-]+$")]
+    health_url: Annotated[str, Field(pattern=r"^https://[A-Za-z0-9.-]+/health$")]
+    openapi_url: Annotated[
+        str,
+        Field(pattern=r"^https://[A-Za-z0-9.-]+/openapi\.json$"),
+    ]
+    health_status: Literal["ok"] = "ok"
+    health_version: Annotated[str, Field(pattern=r"^[0-9]+\.[0-9]+\.[0-9]+$")]
+    health_configured: Literal[True] = True
+    required_capabilities_present: Literal[True] = True
+    release_manifest: ReadOnlyReleaseManifestV1
+    live_http_verified: Literal[True] = True
+    trading_methods: Literal[False] = False
+
+    @field_validator("checked_at")
+    @classmethod
+    def require_aware_timestamp(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("live acceptance timestamp must be timezone-aware")
+        return value.astimezone(timezone.utc)
+
+    @model_validator(mode="after")
+    def validate_acceptance(self) -> LiveReleaseAcceptanceV1:
+        if self.health_url != f"{self.base_url}/health":
+            raise ValueError("health URL does not match base URL")
+        if self.openapi_url != f"{self.base_url}/openapi.json":
+            raise ValueError("OpenAPI URL does not match base URL")
+        if self.health_version != self.release_manifest.app_version:
+            raise ValueError("health and OpenAPI versions do not match")
+        if self.release_manifest.server_urls != (self.base_url,):
+            raise ValueError("live base URL does not match OpenAPI server")
+        if self.release_manifest.trading_methods is not False:
+            raise ValueError("release manifest must remain read-only")
+        return self
