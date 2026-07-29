@@ -1,5 +1,10 @@
 """Read-only GPT Actions release inspection."""
 
+from omni_cio.release.final_decision_review_handler_shadow_v1 import (
+    FinalDecisionReviewHandlerShadowError,
+    evaluate_final_decision_review_handler_shadow,
+    final_decision_review_handler_error_mapping,
+)
 from omni_cio.release.final_decision_review_input_v1 import (
     FinalDecisionReviewInputError,
     bind_final_decision_review_read_only_input,
@@ -26,6 +31,7 @@ from omni_cio.release.read_only_contract_v1 import (
 
 __all__ = [
     "FetchedJsonDocument",
+    "FinalDecisionReviewHandlerShadowError",
     "FinalDecisionReviewInputError",
     "FinalDecisionReviewRoutePlanError",
     "FinalDecisionReviewRouteReadinessError",
@@ -38,4 +44,6 @@ __all__ = [
     "build_final_decision_review_route_readiness_dossier",
     "build_read_only_release_manifest",
     "default_final_decision_review_acceptance_cases",
+    "evaluate_final_decision_review_handler_shadow",
+    "final_decision_review_handler_error_mapping",
 ]

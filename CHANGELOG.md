@@ -5,6 +5,9 @@
 ## [Unreleased]
 
 ### Added
+- Final-review handler shadow adapter с exact plan/input identity, fixed
+  400/401/409/422/503 error mapping и safe `ObservabilityEventV1`; adapter не
+  регистрирует route, не вызывает брокера и возвращает только PR-53 response.
 - Machine-validated final-review route implementation plan и 13-case blocking
   acceptance matrix для pre-merge, post-deploy, GPT Editor Preview и rollback;
   все будущие проверки остаются `executed=false`, `passed=false`, route diff не
