@@ -134,6 +134,11 @@ from omni_cio.contracts.v1.risk import (
     RiskPolicyProfile,
     RiskSeverity,
 )
+from omni_cio.contracts.v1.shadow import (
+    ShadowMarketObservationV1,
+    ShadowOutcome,
+    ShadowPurchaseEvaluationV1,
+)
 
 SCHEMA_VERSION = "1.0"
 
@@ -244,6 +249,9 @@ __all__ = [
     "RiskPolicyProfile",
     "RiskSeverity",
     "SanitizedNewsDocumentV1",
+    "ShadowMarketObservationV1",
+    "ShadowOutcome",
+    "ShadowPurchaseEvaluationV1",
     "SourceAuthority",
     "SourceReference",
     "StressScenarioV1",
