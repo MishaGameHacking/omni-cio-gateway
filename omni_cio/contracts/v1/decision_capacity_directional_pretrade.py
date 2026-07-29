@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from enum import StrEnum
 from typing import Annotated, Literal
 
-from pydantic import Field, SkipValidation, field_validator, model_validator
+from pydantic import Field, field_validator, model_validator
 
 from omni_cio.contracts.v1.capacity import OrderSide
 from omni_cio.contracts.v1.common import ContractModel
@@ -23,9 +23,6 @@ from omni_cio.contracts.v1.decision_capacity_sell_pretrade import (
 
 NonNegativeInt = Annotated[int, Field(ge=0)]
 PositiveInt = Annotated[int, Field(gt=0)]
-DirectionalSourceGateV1 = SkipValidation[
-    CapacityPreTradeDecisionGateV1 | CapacitySellPreTradeDecisionGateV1
-]
 
 
 class CapacityDirectionalPreTradeReviewBlocker(StrEnum):
@@ -53,7 +50,7 @@ class CapacityDirectionalPreTradeReviewV1(ContractModel):
     gate_ready: bool
     abstain: bool
     base_intent_gate: CapacityIntentDecisionGateV1
-    source_gate: DirectionalSourceGateV1
+    source_gate: CapacityPreTradeDecisionGateV1 | CapacitySellPreTradeDecisionGateV1
     no_action_option_id: Annotated[str, Field(min_length=3, max_length=256)]
     final_option_id: Annotated[str, Field(min_length=3, max_length=256)]
     final_action: DecisionAction
