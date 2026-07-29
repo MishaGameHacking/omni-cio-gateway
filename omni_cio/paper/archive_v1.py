@@ -154,10 +154,12 @@ def seal_paper_ledger_record(
     record_digest = _sha256(core_bytes)
     authentication_tag = hmac.new(key, core_bytes, hashlib.sha256).hexdigest()
     try:
-        return PaperLedgerArchiveRecordV1(
-            **core,
-            record_digest=record_digest,
-            authentication_tag=authentication_tag,
+        return PaperLedgerArchiveRecordV1.model_validate(
+            {
+                **core,
+                "record_digest": record_digest,
+                "authentication_tag": authentication_tag,
+            }
         )
     except ValidationError as exc:
         raise PaperLedgerArchiveError("PAPER_ARCHIVE_RECORD_INVALID") from exc
@@ -234,9 +236,7 @@ def _verify_record(
         if record.previous_record_digest != expected_previous:
             raise PaperLedgerArchiveError("PAPER_ARCHIVE_CHAIN_LINK_MISMATCH")
 
-    ledger_digest = _sha256(
-        _canonical_json_bytes(_ledger_payload(record.ledger))
-    )
+    ledger_digest = _sha256(_canonical_json_bytes(_ledger_payload(record.ledger)))
     if not hmac.compare_digest(record.ledger_digest, ledger_digest):
         raise PaperLedgerArchiveError("PAPER_ARCHIVE_LEDGER_DIGEST_MISMATCH")
 
