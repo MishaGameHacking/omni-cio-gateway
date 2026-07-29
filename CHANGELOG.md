@@ -5,6 +5,10 @@
 ## [Unreleased]
 
 ### Added
+- Machine-validated final-review route implementation plan и 13-case blocking
+  acceptance matrix для pre-merge, post-deploy, GPT Editor Preview и rollback;
+  все будущие проверки остаются `executed=false`, `passed=false`, route diff не
+  применяется и implementation authorization не выдаётся.
 - Final-review production-route readiness dossier, объединяющий PR-53 response,
   PR-54 eligibility, PR-55 Action shadow и PR-56 input binding с exact digest/
   context parity, private authentication, rollback и safe observability gates;
