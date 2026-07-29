@@ -58,14 +58,13 @@ class EquityFundamentalBlocker(StrEnum):
     NOT_A_SHARE = "not_a_share"
     INSTRUMENT_IDENTITY_MISMATCH = "instrument_identity_mismatch"
     CURRENCY_MISMATCH = "currency_mismatch"
-    UNTRUSTED_SOURCE = "untrusted_source"
+    UNTRUSTED_REPORT_SOURCE = "untrusted_report_source"
+    UNTRUSTED_MARKET_CAP_SOURCE = "untrusted_market_cap_source"
     REPORT_FUTURE_TIMESTAMP = "report_future_timestamp"
     REPORT_STALE = "report_stale"
     REPORT_PERIOD_FUTURE = "report_period_future"
-    MARKET_CAP_MISMATCH = "market_cap_mismatch"
-    EVIDENCE_RETRIEVED_BEFORE_PUBLICATION = (
-        "evidence_retrieved_before_publication"
-    )
+    MARKET_CAP_FUTURE_TIMESTAMP = "market_cap_future_timestamp"
+    MARKET_CAP_STALE = "market_cap_stale"
 
 
 class EquityFundamentalWarning(StrEnum):
@@ -90,6 +89,7 @@ class EquityFundamentalWarning(StrEnum):
 
 class EquityFundamentalPolicyV1(ContractModel):
     max_report_age_days: PositiveInt = 550
+    max_market_cap_age_seconds: PositiveInt = 86_400
     future_tolerance_seconds: NonNegativeInt = 60
     trusted_authorities: tuple[SourceAuthority, ...] = (
         SourceAuthority.PRIMARY,
@@ -118,7 +118,7 @@ class EquityFundamentalEvidenceV1(ContractModel):
     period_start: date
     period_end: date
     published_at: datetime
-    source: MarketSourceV1
+    report_source: MarketSourceV1
     revenue: NonNegativeDecimal
     operating_profit: FiniteDecimal | None = None
     ebitda: FiniteDecimal | None = None
@@ -131,6 +131,8 @@ class EquityFundamentalEvidenceV1(ContractModel):
     total_equity: FiniteDecimal
     dividends_paid: NonNegativeDecimal | None = None
     market_cap: PositiveDecimal
+    market_cap_as_of: datetime
+    market_cap_source: MarketSourceV1
     shares_outstanding: PositiveDecimal | None = None
     evidence_complete: Literal[True] = True
     forecast_data_included: Literal[False] = False
@@ -143,19 +145,21 @@ class EquityFundamentalEvidenceV1(ContractModel):
     def normalize_currency(cls, value: object) -> object:
         return value.upper() if isinstance(value, str) else value
 
-    @field_validator("published_at")
+    @field_validator("published_at", "market_cap_as_of")
     @classmethod
     def normalize_timestamp(cls, value: datetime) -> datetime:
         if value.tzinfo is None or value.utcoffset() is None:
-            raise ValueError("equity evidence published_at must be timezone-aware")
+            raise ValueError("equity evidence timestamp must be timezone-aware")
         return value.astimezone(timezone.utc)
 
     @model_validator(mode="after")
     def validate_evidence(self) -> EquityFundamentalEvidenceV1:
         if self.period_end < self.period_start:
             raise ValueError("equity evidence period end precedes start")
-        if self.source.retrieved_at < self.published_at:
-            raise ValueError("equity evidence was retrieved before publication")
+        if self.report_source.retrieved_at < self.published_at:
+            raise ValueError("equity report was retrieved before publication")
+        if self.market_cap_source.retrieved_at < self.market_cap_as_of:
+            raise ValueError("equity market cap was retrieved before its timestamp")
         expected_fcf = self.operating_cash_flow - self.capital_expenditure
         if self.free_cash_flow != expected_fcf:
             raise ValueError("equity free cash flow does not reconcile")
@@ -220,6 +224,7 @@ class EquityFundamentalAssessmentV1(ContractModel):
     instrument_key: Annotated[str, Field(min_length=3, max_length=256)]
     currency: CurrencyCode
     report_age_days: NonNegativeInt
+    market_cap_age_seconds: NonNegativeInt
     policy: EquityFundamentalPolicyV1
     market_readiness: MarketReadinessAssessmentV1
     metrics: EquityFundamentalMetricsV1
