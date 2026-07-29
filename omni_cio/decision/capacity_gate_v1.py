@@ -116,13 +116,13 @@ def apply_capacity_decision_gate(
         )
 
     capacity_by_key: dict[str, CapacityAssessmentV1] = {}
-    for assessment in capacities:
-        key = assessment.request.instrument_key
+    for capacity_assessment in capacities:
+        key = capacity_assessment.request.instrument_key
         if key in capacity_by_key:
             raise CapacityDecisionGateError(
                 "DUPLICATE_CAPACITY_ASSESSMENT_INSTRUMENT"
             )
-        capacity_by_key[key] = assessment
+        capacity_by_key[key] = capacity_assessment
 
     requested_keys = set(request.required_instrument_keys)
     extra_keys = set(capacity_by_key) - requested_keys
@@ -131,24 +131,26 @@ def apply_capacity_decision_gate(
 
     coverage: list[CapacityDecisionCoverageV1] = []
     for instrument_key in request.required_instrument_keys:
-        assessment = capacity_by_key.get(instrument_key)
-        if assessment is None:
+        matched_assessment = capacity_by_key.get(instrument_key)
+        if matched_assessment is None:
             continue
         coverage.append(
             CapacityDecisionCoverageV1(
                 instrument_key=instrument_key,
-                capacity_request_id=assessment.request.request_id,
-                currency=assessment.request.currency,
-                order_notional=assessment.request.order_notional,
-                safe_notional=assessment.metrics.safe_notional_for_requested_window,
-                safe_lots=assessment.metrics.safe_lots_for_requested_window,
-                capacity_ready=assessment.capacity_ready,
-                capacity_assessed_at=assessment.assessed_at,
-                capacity_blockers=assessment.blockers,
+                capacity_request_id=matched_assessment.request.request_id,
+                currency=matched_assessment.request.currency,
+                order_notional=matched_assessment.request.order_notional,
+                safe_notional=(
+                    matched_assessment.metrics.safe_notional_for_requested_window
+                ),
+                safe_lots=matched_assessment.metrics.safe_lots_for_requested_window,
+                capacity_ready=matched_assessment.capacity_ready,
+                capacity_assessed_at=matched_assessment.assessed_at,
+                capacity_blockers=matched_assessment.blockers,
             )
         )
         _time_blockers(
-            value_at=assessment.assessed_at,
+            value_at=matched_assessment.assessed_at,
             assessed_at=gate_time,
             maximum_age_seconds=active_policy.capacity_max_age_seconds,
             future_tolerance_seconds=active_policy.future_tolerance_seconds,
@@ -156,7 +158,7 @@ def apply_capacity_decision_gate(
             future_blocker=CapacityDecisionGateBlocker.CAPACITY_FROM_FUTURE,
             blockers=blockers,
         )
-        if not assessment.capacity_ready:
+        if not matched_assessment.capacity_ready:
             _append_unique(
                 blockers,
                 CapacityDecisionGateBlocker.CAPACITY_NOT_READY,
