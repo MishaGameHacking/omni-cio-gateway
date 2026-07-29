@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import datetime, timezone
 from decimal import Decimal
+from typing import TypeVar
 
 from omni_cio.contracts.v1.bond_credit import (
     BondCreditBlocker,
@@ -29,6 +30,7 @@ _TRUSTED_AUTHORITIES = {
     SourceAuthority.REGULATED,
 }
 _SECONDS_PER_DAY = Decimal("86400")
+_T = TypeVar("_T")
 
 
 class BondCreditRiskAssessmentError(ValueError):
@@ -44,7 +46,7 @@ def _aware_utc(value: datetime | None) -> datetime:
     return result.astimezone(timezone.utc)
 
 
-def _append_unique(target: list[object], value: object) -> None:
+def _append_unique(target: list[_T], value: _T) -> None:
     if value not in target:
         target.append(value)
 
