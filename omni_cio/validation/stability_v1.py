@@ -62,6 +62,10 @@ def _next_state(state: int) -> int:
     return (_LCG_MULTIPLIER * state + _LCG_INCREMENT) % _LCG_MODULUS
 
 
+def _index_from_state(state: int, size: int) -> int:
+    return (state * size) // _LCG_MODULUS
+
+
 def _nearest_rank(values: list[Decimal], probability: Decimal) -> Decimal:
     ordered = sorted(values)
     raw_rank = (probability * Decimal(len(ordered))).to_integral_value(
@@ -82,7 +86,9 @@ def _bootstrap_interval(
         sampled_sum = Decimal("0")
         for _ in range(fold_count):
             state = _next_state(state)
-            sampled_sum += fold_active_returns[state % fold_count]
+            sampled_sum += fold_active_returns[
+                _index_from_state(state, fold_count)
+            ]
         samples.append(sampled_sum / Decimal(fold_count))
 
     tail_probability = (Decimal("1") - policy.confidence_level) / Decimal("2")
@@ -131,7 +137,11 @@ def _sign_flip_test(
             signed_sum = Decimal("0")
             for value in fold_active_returns:
                 state = _next_state(state)
-                sign = Decimal("1") if state & 1 else Decimal("-1")
+                sign = (
+                    Decimal("1")
+                    if state >= _LCG_MODULUS // 2
+                    else Decimal("-1")
+                )
                 signed_sum += sign * value
             if abs(signed_sum / Decimal(fold_count)) >= observed_absolute:
                 extreme += 1
