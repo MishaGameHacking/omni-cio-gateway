@@ -1,7 +1,7 @@
 # 16 — CURRENT PROGRAM STATUS
 
 Дата актуализации: 2026-07-29  
-Фактическая вершина программы после merge этого пакета: **PR-59**  
+Фактическая вершина программы после merge этого пакета: **PR-60**  
 Точная версия определяется текущей вершиной ветки `main`.
 
 ## Назначение документа
@@ -76,7 +76,10 @@
 - machine-validated production-route implementation plan и 13-case blocking
   acceptance matrix без применения production diff;
 - route-handler shadow adapter с exact source identity, fixed error mapping и
-  safe observability без route registration и broker calls.
+  safe observability без route registration и broker calls;
+- isolated test-only FastAPI integration candidate с private authentication,
+  exact query parsing, real HTTP error mapping и candidate OpenAPI validation
+  без импорта или изменения production `app`.
 
 ## Последняя завершённая цепочка PR
 
@@ -197,12 +200,20 @@ binding, authentication decision и source availability. Exact identity возв
 400/422 framework boundaries. `ObservabilityEventV1` содержит masked account,
 trace IDs и безопасные счётчики; route и broker не вызываются.
 
+### PR-60
+
+Isolated FastAPI integration candidate создаёт отдельное test-only приложение с
+private `ApiKeyAuth`, exact eight-query contract и PR-59 handler shadow. TestClient
+проверяет 200, semantic 400, auth 401, identity 409, framework 422 и source 503.
+Candidate OpenAPI проходит существующий GET-only release guard и совпадает с
+PR-58 path/method/operation ID. Production `app`, OpenAPI, Render и broker не
+импортируются и не изменяются.
+
 ## Что остаётся до полного релиза по мастер-плану
 
 ### Backend и orchestration
 
-- isolated FastAPI test-app integration candidate без production registration;
-- отдельный production route PR и полный acceptance cycle;
+- отдельный production final-review route PR и полный acceptance cycle;
 - production-grade live ingestion для market, ratings, news и corporate events;
 - внешний versioned RAG index с freshness и citation controls;
 - более полная observability, alerting и operational runbooks.
@@ -234,14 +245,16 @@ partial-fill и timeout reconciliation требуют отдельной про�
 
 ## Следующий рекомендуемый пакет
 
-**PR-60 — isolated FastAPI final-review integration candidate v1**:
+**PR-61 — production final-review GET route v1**:
 
-- создаёт отдельный test-only FastAPI app с reviewed query parsing и auth stub;
-- подключает PR-59 handler shadow без изменения production `app`;
-- проверяет 200/400/401/409/422/503 через TestClient;
-- сравнивает candidate OpenAPI с PR-55 shadow и PR-58 plan;
-- запрещает broker imports и write methods;
-- не меняет production route, production OpenAPI или `app:app`.
+- регистрирует только reviewed private `GET /decision/final-review`;
+- использует существующий API-key dependency и PR-59 handler logic;
+- добавляет exact PR-56 query schema и PR-53 response contract;
+- обновляет OpenAPI только одним authenticated GET Action;
+- проходит PR-58 pre-merge matrix и текущий read-only release guard;
+- не вызывает broker write methods и сохраняет `trading_methods=false`;
+- post-deploy, GPT Editor Preview и rollback cases выполняются только после
+  фактического deployment и не считаются заранее пройденными.
 
 ## Запрет ложного завершения
 
