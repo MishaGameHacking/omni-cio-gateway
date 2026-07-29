@@ -1,7 +1,7 @@
 # 16 — CURRENT PROGRAM STATUS
 
 Дата актуализации: 2026-07-29  
-Фактическая вершина программы после merge этого пакета: **PR-50**  
+Фактическая вершина программы после merge этого пакета: **PR-51**  
 Точная версия определяется текущей вершиной ветки `main`.
 
 ## Назначение документа
@@ -60,7 +60,8 @@
 - authenticated/encrypted paper ledger, backup, restore и DR readiness;
 - purged walk-forward planning, OOS performance и statistical stability;
 - market-capacity assessment и capacity-aware decision gating;
-- unified homogeneous buy/sell pre-trade review envelope.
+- unified homogeneous buy/sell pre-trade review envelope;
+- account-aware portfolio-risk/pre-trade explanation envelope.
 
 ## Последняя завершённая цепочка PR
 
@@ -104,12 +105,18 @@ Unified directional pre-trade review принимает ровно один од
 sell-source gate, блокирует смешивание направлений и сохраняет полный исходный
 gate без пересчёта брокерских значений и без исполнения.
 
+### PR-51
+
+Risk/pre-trade explanation envelope объединяет консервативную risk evaluation
+и directional review, сверяет маскированный account context, freshness и пять
+канонических слоёв, показывает первый блокирующий слой и всегда сохраняет
+`risk_change_approval_confirmed=false` до отдельной pro-forma привязки.
+
 ## Что остаётся до полного релиза по мастер-плану
 
 ### Backend и orchestration
 
-- композиция portfolio risk, capacity и broker preview в один объяснимый
-  read-only ответ;
+- explicit pro-forma post-change risk binding для конкретного option/intention;
 - полная публичная Action-интеграция только после contract review;
 - production-grade live ingestion для market, ratings, news и corporate events;
 - внешний versioned RAG index с freshness и citation controls;
@@ -142,12 +149,12 @@ partial-fill и timeout reconciliation требуют отдельной про�
 
 ## Следующий рекомендуемый пакет
 
-**PR-51 — portfolio-risk/capacity/pre-trade explanation envelope v1**:
+**PR-52 — pro-forma risk/intention binding v1**:
 
-- объединяет только уже проверенные read-only результаты;
-- сохраняет отдельные source contracts и provenance;
-- показывает, какой слой заблокировал изменение;
-- не скрывает missing data и uncertainty;
+- связывает риск-оценку после предполагаемого изменения с конкретным option;
+- подтверждает одни и те же instrument keys, direction и account context;
+- отделяет current-portfolio risk от post-change risk;
+- не превращает аналитический review в разрешение на сделку;
 - не добавляет публичный route и не создаёт заявку.
 
 ## Запрет ложного завершения
