@@ -151,6 +151,8 @@ def build_paper_account_ledger(
     result_times = [result.metadata.retrieved_at for result in result_tuple]
     if result_times != sorted(result_times):
         raise PaperAccountLedgerError("PAPER_LEDGER_RESULTS_NOT_TIME_ORDERED")
+    if result_times[-1] > evaluation_time:
+        raise PaperAccountLedgerError("PAPER_LEDGER_BUILT_BEFORE_LAST_EVENT")
 
     events: list[PaperLedgerEventV1] = []
     provenance: list[SourceReference] = []
@@ -190,7 +192,6 @@ def build_paper_account_ledger(
                         "A rejected paper scenario was retained without changing state."
                     ),
                     component="paper_account_ledger",
-                    source_id=result.scenario_id,
                 )
             )
 
@@ -247,7 +248,7 @@ def build_paper_account_ledger(
         and event.status != PaperOrderStatus.REJECTED
     )
     rejected_event_count = sum(
-        event.status == PaperOrderStatus.REJECTED for event in event_tuple
+        1 for event in event_tuple if event.status == PaperOrderStatus.REJECTED
     )
 
     metadata = ContractMetadata(
