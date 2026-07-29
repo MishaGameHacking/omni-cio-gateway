@@ -5,6 +5,9 @@
 ## [Unreleased]
 
 ### Added
+- Auditable final response release-eligibility assessment с canonical JSON,
+  SHA-256, shadow parity, schema/account/payload/provenance gates и строгим
+  ограничением будущего contract review только методом GET/read-only.
 - Compact user-safe final decision-review response и internal shadow parity
   validation без раскрытия full account ID, source contracts или execution
   surface; source provenance очищается от `source_id`.
