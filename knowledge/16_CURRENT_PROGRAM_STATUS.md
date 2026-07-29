@@ -1,7 +1,7 @@
 # 16 — CURRENT PROGRAM STATUS
 
 Дата актуализации: 2026-07-29  
-Фактическая вершина программы после merge этого пакета: **PR-53**  
+Фактическая вершина программы после merge этого пакета: **PR-54**  
 Точная версия определяется текущей вершиной ветки `main`.
 
 ## Назначение документа
@@ -63,7 +63,9 @@
 - unified homogeneous buy/sell pre-trade review envelope;
 - account-aware portfolio-risk/pre-trade explanation envelope;
 - tamper-evident pro-forma risk/intention binding;
-- compact user-safe final review response и shadow parity validation.
+- compact user-safe final review response и shadow parity validation;
+- auditable final-response release-eligibility assessment для будущего
+  GET/read-only contract review.
 
 ## Последняя завершённая цепочка PR
 
@@ -130,11 +132,19 @@ warnings и очищенной provenance без `source_id`. Internal shadow va
 проверяет паритет status, readiness, option/action, direction, account,
 fingerprint, risk approval и safety flags. Публичный route не добавляется.
 
+### PR-54
+
+Final-response release eligibility строит canonical JSON и SHA-256, требует
+совпадающий shadow result, проверяет schema `1.0`, account masking, payload и
+count bounds, provenance, sensitive-data, execution/mutation surface и точный
+HTTP method `GET`. Eligibility не является route approval: route, OpenAPI и
+торговые флаги остаются выключены.
+
 ## Что остаётся до полного релиза по мастер-плану
 
 ### Backend и orchestration
 
-- отдельная release-eligibility оценка final response до любого Action route;
+- отдельный GET-only Action contract review и shadow OpenAPI validation;
 - production-grade live ingestion для market, ratings, news и corporate events;
 - внешний versioned RAG index с freshness и citation controls;
 - более полная observability, alerting и operational runbooks.
@@ -166,13 +176,13 @@ partial-fill и timeout reconciliation требуют отдельной про�
 
 ## Следующий рекомендуемый пакет
 
-**PR-54 — final response release-eligibility assessment v1**:
+**PR-55 — final review GET Action contract candidate and OpenAPI shadow v1**:
 
-- проверяет schema stability, account masking, payload bounds и provenance;
-- подтверждает только GET/read-only compatibility;
-- блокирует release при любых execution, mutation или sensitive-data признаках;
-- не добавляет route и не изменяет OpenAPI до отдельного решения;
-- формирует auditable eligibility result для будущего contract review.
+- фиксирует candidate operation ID, GET method, auth и response schema;
+- сравнивает candidate contract с текущим GET-only release manifest;
+- блокирует sensitive fields, mutation verbs и execution semantics;
+- выполняет OpenAPI shadow validation без добавления production route;
+- не создаёт заявку, не меняет Render entrypoint и не разрешает торговлю.
 
 ## Запрет ложного завершения
 
