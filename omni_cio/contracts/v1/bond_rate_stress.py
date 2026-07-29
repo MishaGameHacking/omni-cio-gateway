@@ -144,8 +144,14 @@ class BondRateStressAssessmentV1(ContractModel):
             raise ValueError("bond rate stress blockers must be unique")
         if len(self.warnings) != len(set(self.warnings)):
             raise ValueError("bond rate stress warnings must be unique")
-        if self.current_full_value.currency != self.currency:
-            raise ValueError("bond rate stress current value currency mismatch")
+        currency_mismatch = self.current_full_value.currency != self.currency
+        has_currency_blocker = (
+            BondRateStressBlocker.CURRENCY_MISMATCH in self.blockers
+        )
+        if currency_mismatch != has_currency_blocker:
+            raise ValueError("bond rate stress currency blocker does not reconcile")
+        if currency_mismatch and self.scenarios:
+            raise ValueError("currency-mismatched stress cannot contain scenarios")
         if self.worst_loss.currency != self.currency:
             raise ValueError("bond rate stress worst loss currency mismatch")
         if any(scenario.current_value.currency != self.currency for scenario in self.scenarios):
