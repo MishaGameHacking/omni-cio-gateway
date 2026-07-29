@@ -9,6 +9,7 @@ from omni_cio.paper.backup_v1 import (
     PaperLedgerBackupError,
     _prepare_backup,
     _read_secure_file,
+    _roots_overlap,
 )
 
 
@@ -30,3 +31,13 @@ def test_backup_root_rejects_broken_symlink(tmp_path: Path) -> None:
 
     with pytest.raises(PaperLedgerBackupError, match="ROOT_SYMLINK_FORBIDDEN"):
         _prepare_backup(backup)
+
+
+def test_backup_root_topology_rejects_nested_or_parent_paths(tmp_path: Path) -> None:
+    primary = tmp_path / "primary"
+    primary.mkdir()
+    resolved_primary = primary.resolve(strict=True)
+
+    assert _roots_overlap(resolved_primary, primary / "nested-backup") is True
+    assert _roots_overlap(resolved_primary, tmp_path) is True
+    assert _roots_overlap(resolved_primary, tmp_path / "sibling-backup") is False
