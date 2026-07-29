@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 import re
 import stat
-from typing import Iterator
+from typing import Iterator, Literal
 from uuid import uuid4
 
 from pydantic import ValidationError
@@ -74,7 +74,7 @@ def _resolve_primary(root: Path | str) -> Path:
 
 def _prepare_backup(root: Path | str) -> Path:
     path = Path(root)
-    if path.exists() and path.is_symlink():
+    if path.is_symlink():
         raise PaperLedgerBackupError("PAPER_BACKUP_ROOT_SYMLINK_FORBIDDEN")
     path.mkdir(mode=0o700, parents=True, exist_ok=True)
     resolved = path.resolve(strict=True)
@@ -136,6 +136,8 @@ def _read_secure_file(path: Path, *, maximum_size: int) -> bytes:
         info = os.fstat(fd)
         if not stat.S_ISREG(info.st_mode):
             raise PaperLedgerBackupError("PAPER_BACKUP_FILE_NOT_REGULAR")
+        if info.st_nlink != 1:
+            raise PaperLedgerBackupError("PAPER_BACKUP_FILE_HARDLINK_FORBIDDEN")
         if info.st_mode & 0o077:
             raise PaperLedgerBackupError("PAPER_BACKUP_FILE_PERMISSIONS_UNSAFE")
         if info.st_size <= 0 or info.st_size > maximum_size:
@@ -210,7 +212,15 @@ def _source_archive_files(root: Path) -> tuple[tuple[Path, bytes, int, str, str]
             raise PaperLedgerBackupError("PAPER_BACKUP_SOURCE_SEQUENCE_MISMATCH")
         if envelope.record_digest != record_digest:
             raise PaperLedgerBackupError("PAPER_BACKUP_SOURCE_DIGEST_MISMATCH")
-        files.append((path, payload, sequence, record_digest, hashlib.sha256(payload).hexdigest()))
+        files.append(
+            (
+                path,
+                payload,
+                sequence,
+                record_digest,
+                hashlib.sha256(payload).hexdigest(),
+            )
+        )
     return tuple(files)
 
 
@@ -228,6 +238,7 @@ def _ensure_backup_has_no_extra_files(
 def _copy_archive_file(
     backup_root: Path,
     *,
+    source_path: Path,
     source_payload: bytes,
     filename: str,
     sequence: int,
@@ -235,9 +246,13 @@ def _copy_archive_file(
     envelope_digest: str,
 ) -> PaperLedgerBackupFileResultV1:
     target = backup_root / filename
+    outcome: Literal["copied", "already_present_identical"]
+    atomic_write: bool
     if target.exists() or target.is_symlink():
         if target.is_symlink():
             raise PaperLedgerBackupError("PAPER_BACKUP_TARGET_SYMLINK_FORBIDDEN")
+        if os.path.samefile(source_path, target):
+            raise PaperLedgerBackupError("PAPER_BACKUP_TARGET_NOT_INDEPENDENT")
         existing = _read_secure_file(target, maximum_size=_MAX_ARCHIVE_FILE_BYTES)
         if existing != source_payload:
             raise PaperLedgerBackupError("PAPER_BACKUP_IMMUTABLE_FILE_CONFLICT")
@@ -285,6 +300,8 @@ def _store_manifest(
         raise PaperLedgerBackupError("PAPER_BACKUP_MANIFEST_ROUND_TRIP_MISMATCH")
     filename = _manifest_filename(manifest)
     target = backup_root / filename
+    outcome: Literal["stored", "already_present_identical"]
+    atomic_write: bool
     if target.exists() or target.is_symlink():
         if target.is_symlink():
             raise PaperLedgerBackupError("PAPER_BACKUP_MANIFEST_SYMLINK_FORBIDDEN")
@@ -356,6 +373,7 @@ def run_paper_ledger_backup_restore_drill(
         results = tuple(
             _copy_archive_file(
                 backup,
+                source_path=path,
                 source_payload=payload,
                 filename=path.name,
                 sequence=sequence,
