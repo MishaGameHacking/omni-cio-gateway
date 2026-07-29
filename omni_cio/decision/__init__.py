@@ -14,6 +14,10 @@ from omni_cio.decision.capacity_pretrade_gate_v1 import (
     CapacityPreTradeDecisionGateError,
     apply_capacity_pretrade_decision_gate,
 )
+from omni_cio.decision.capacity_sell_pretrade_gate_v1 import (
+    CapacitySellPreTradeDecisionGateError,
+    apply_capacity_sell_pretrade_decision_gate,
+)
 from omni_cio.decision.engine_v1 import (
     DecisionEngineError,
     build_decision_set,
@@ -24,10 +28,12 @@ __all__ = [
     "CapacityDecisionGateError",
     "CapacityIntentDecisionGateError",
     "CapacityPreTradeDecisionGateError",
+    "CapacitySellPreTradeDecisionGateError",
     "DecisionEngineError",
     "apply_capacity_decision_gate",
     "apply_capacity_intent_decision_gate",
     "apply_capacity_pretrade_decision_gate",
+    "apply_capacity_sell_pretrade_decision_gate",
     "build_bond_aware_decision_set",
     "build_decision_set",
 ]
