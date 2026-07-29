@@ -328,7 +328,7 @@ def test_repeated_drill_is_idempotent_and_does_not_rewrite_identical_files(
 def test_same_primary_and_backup_root_is_rejected_before_copy(tmp_path: Path) -> None:
     primary, manager, _ = _primary(tmp_path)
 
-    with pytest.raises(PaperLedgerBackupError, match="ROOT_NOT_DISTINCT"):
+    with pytest.raises(PaperLedgerBackupError, match="ROOTS_OVERLAP"):
         _run(primary, primary, manager)
 
 
