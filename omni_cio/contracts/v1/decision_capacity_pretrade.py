@@ -140,9 +140,9 @@ class CapacityPreTradeDecisionGateV1(ContractModel):
     coverage: tuple[CapacityPreTradeCoverageV1, ...]
     blockers: tuple[CapacityPreTradeDecisionGateBlocker, ...] = ()
     warnings: tuple[CapacityPreTradeDecisionGateWarning, ...] = ()
-    broker_preview_checked: Literal[True] = True
-    affordability_checked: Literal[True] = True
-    commission_integrity_checked: Literal[True] = True
+    broker_preview_coverage_complete: bool
+    affordability_confirmed: bool
+    commission_integrity_confirmed: bool
     order_total_recomputed_by_gate: Literal[False] = False
     option_selected_by_gate: Literal[False] = False
     order_created: Literal[False] = False
@@ -181,6 +181,24 @@ class CapacityPreTradeDecisionGateV1(ContractModel):
         if len(set(self.warnings)) != len(self.warnings):
             raise ValueError("capacity pretrade warnings must be unique")
 
+        coverage_complete = self.preview_coverage_count == self.required_preview_count
+        if self.broker_preview_coverage_complete is not coverage_complete:
+            raise ValueError("broker preview coverage status is inconsistent")
+        expected_affordability = coverage_complete and all(
+            row.preview.affordable
+            and PreTradeBlocker.AFFORDABILITY_UNCONFIRMED not in row.preview_blockers
+            for row in self.coverage
+        )
+        if self.affordability_confirmed is not expected_affordability:
+            raise ValueError("affordability confirmation is inconsistent")
+        expected_commission_integrity = coverage_complete and all(
+            row.preview.integrity_confirmed
+            and row.preview.canonical_commission is not None
+            for row in self.coverage
+        )
+        if self.commission_integrity_confirmed is not expected_commission_integrity:
+            raise ValueError("commission integrity confirmation is inconsistent")
+
         base_blocked = not self.base_intent_gate.gate_ready
         has_base_blocker = (
             CapacityPreTradeDecisionGateBlocker.BASE_INTENT_GATE_NOT_READY
@@ -189,7 +207,7 @@ class CapacityPreTradeDecisionGateV1(ContractModel):
         if has_base_blocker != base_blocked:
             raise ValueError("capacity pretrade base blocker is inconsistent")
 
-        coverage_incomplete = self.preview_coverage_count != self.required_preview_count
+        coverage_incomplete = not coverage_complete
         has_coverage_blocker = (
             CapacityPreTradeDecisionGateBlocker.PREVIEW_COVERAGE_INCOMPLETE
             in self.blockers
@@ -250,8 +268,12 @@ class CapacityPreTradeDecisionGateV1(ContractModel):
         if expected_ready:
             if not self.base_intent_gate.gate_ready:
                 raise ValueError("ready pretrade gate requires ready intent gate")
-            if self.preview_coverage_count != self.required_preview_count:
-                raise ValueError("ready pretrade gate requires complete coverage")
+            if not self.broker_preview_coverage_complete:
+                raise ValueError("ready pretrade gate requires complete preview coverage")
+            if not self.affordability_confirmed:
+                raise ValueError("ready pretrade gate requires confirmed affordability")
+            if not self.commission_integrity_confirmed:
+                raise ValueError("ready pretrade gate requires commission integrity")
             if self.preview_ready_count != self.required_preview_count:
                 raise ValueError("ready pretrade gate requires ready previews")
             if self.exact_match_count != self.required_preview_count:
