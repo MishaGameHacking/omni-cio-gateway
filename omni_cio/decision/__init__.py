@@ -2,6 +2,10 @@ from omni_cio.decision.bond_aware_v1 import (
     BondAwareDecisionError,
     build_bond_aware_decision_set,
 )
+from omni_cio.decision.capacity_directional_pretrade_review_v1 import (
+    CapacityDirectionalPreTradeReviewError,
+    compose_capacity_directional_pretrade_review,
+)
 from omni_cio.decision.capacity_gate_v1 import (
     CapacityDecisionGateError,
     apply_capacity_decision_gate,
@@ -26,6 +30,7 @@ from omni_cio.decision.engine_v1 import (
 __all__ = [
     "BondAwareDecisionError",
     "CapacityDecisionGateError",
+    "CapacityDirectionalPreTradeReviewError",
     "CapacityIntentDecisionGateError",
     "CapacityPreTradeDecisionGateError",
     "CapacitySellPreTradeDecisionGateError",
@@ -36,4 +41,5 @@ __all__ = [
     "apply_capacity_sell_pretrade_decision_gate",
     "build_bond_aware_decision_set",
     "build_decision_set",
+    "compose_capacity_directional_pretrade_review",
 ]
