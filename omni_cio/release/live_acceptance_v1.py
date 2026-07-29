@@ -3,12 +3,11 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import http.client
 import json
 from time import sleep
 from typing import Any
-from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
-from urllib.request import Request, urlopen
 
 from omni_cio.contracts.v1.release import LiveReleaseAcceptanceV1
 from omni_cio.release.read_only_contract_v1 import (
@@ -107,46 +106,66 @@ def _load_json_document(
     if attempts <= 0:
         raise ValueError("attempts must be positive")
 
+    parsed = urlparse(url)
+    try:
+        port = parsed.port or 443
+    except ValueError as exc:
+        raise LiveReleaseAcceptanceError("LIVE_FETCH_URL_REJECTED") from exc
+    if (
+        parsed.scheme != "https"
+        or not parsed.hostname
+        or parsed.username
+        or parsed.password
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise LiveReleaseAcceptanceError("LIVE_FETCH_URL_REJECTED")
+    request_path = parsed.path or "/"
+
     last_code = "LIVE_HTTP_UNAVAILABLE"
     for attempt in range(attempts):
-        request = Request(
-            url,
-            headers={
-                "Accept": "application/json",
-                "User-Agent": "omni-cio-live-acceptance/1.0",
-            },
-            method="GET",
+        connection = http.client.HTTPSConnection(
+            parsed.hostname,
+            port,
+            timeout=timeout_seconds,
         )
         try:
-            with urlopen(request, timeout=timeout_seconds) as response:
-                status_code = int(getattr(response, "status", response.getcode()))
-                if not 200 <= status_code < 300:
-                    raise LiveReleaseAcceptanceError("LIVE_HTTP_STATUS_REJECTED")
-                final_url = str(response.geturl())
-                content_type = str(response.headers.get("Content-Type", "")).lower()
-                if "application/json" not in content_type:
-                    raise LiveReleaseAcceptanceError("LIVE_CONTENT_TYPE_REJECTED")
-                raw = response.read(max_bytes + 1)
-                if len(raw) > max_bytes:
-                    raise LiveReleaseAcceptanceError("LIVE_DOCUMENT_TOO_LARGE")
+            connection.request(
+                "GET",
+                request_path,
+                headers={
+                    "Accept": "application/json",
+                    "User-Agent": "omni-cio-live-acceptance/1.0",
+                },
+            )
+            response = connection.getresponse()
+            status_code = int(response.status)
+            content_type = str(response.getheader("Content-Type", "")).lower()
+            raw = response.read(max_bytes + 1)
+            if status_code == 429 or 500 <= status_code < 600:
+                last_code = "LIVE_HTTP_RETRY_EXHAUSTED"
+            elif not 200 <= status_code < 300:
+                raise LiveReleaseAcceptanceError("LIVE_HTTP_STATUS_REJECTED")
+            elif "application/json" not in content_type:
+                raise LiveReleaseAcceptanceError("LIVE_CONTENT_TYPE_REJECTED")
+            elif len(raw) > max_bytes:
+                raise LiveReleaseAcceptanceError("LIVE_DOCUMENT_TOO_LARGE")
+            else:
                 try:
                     payload = json.loads(raw.decode("utf-8"))
                 except (UnicodeDecodeError, json.JSONDecodeError) as exc:
                     raise LiveReleaseAcceptanceError("LIVE_JSON_INVALID") from exc
                 return FetchedJsonDocument(
                     requested_url=url,
-                    final_url=final_url,
+                    final_url=url,
                     status_code=status_code,
                     content_type=content_type,
                     payload=_mapping(payload, "LIVE_JSON_OBJECT_REQUIRED"),
                 )
-        except HTTPError as exc:
-            if exc.code == 429 or 500 <= exc.code < 600:
-                last_code = "LIVE_HTTP_RETRY_EXHAUSTED"
-            else:
-                raise LiveReleaseAcceptanceError("LIVE_HTTP_STATUS_REJECTED") from exc
-        except (TimeoutError, URLError):
+        except (TimeoutError, OSError, http.client.HTTPException):
             last_code = "LIVE_HTTP_RETRY_EXHAUSTED"
+        finally:
+            connection.close()
 
         if attempt + 1 < attempts:
             sleeper(min(15.0, 2.0**attempt))
