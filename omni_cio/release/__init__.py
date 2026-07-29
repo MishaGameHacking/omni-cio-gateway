@@ -5,6 +5,11 @@ from omni_cio.release.final_decision_review_input_v1 import (
     bind_final_decision_review_read_only_input,
     build_final_decision_review_read_only_query,
 )
+from omni_cio.release.final_decision_review_route_plan_v1 import (
+    FinalDecisionReviewRoutePlanError,
+    build_final_decision_review_route_implementation_plan,
+    default_final_decision_review_acceptance_cases,
+)
 from omni_cio.release.final_decision_review_route_readiness_v1 import (
     FinalDecisionReviewRouteReadinessError,
     build_final_decision_review_route_readiness_dossier,
@@ -22,12 +27,15 @@ from omni_cio.release.read_only_contract_v1 import (
 __all__ = [
     "FetchedJsonDocument",
     "FinalDecisionReviewInputError",
+    "FinalDecisionReviewRoutePlanError",
     "FinalDecisionReviewRouteReadinessError",
     "LiveReleaseAcceptanceError",
     "ReadOnlyReleaseError",
     "accept_live_read_only_release",
     "bind_final_decision_review_read_only_input",
     "build_final_decision_review_read_only_query",
+    "build_final_decision_review_route_implementation_plan",
     "build_final_decision_review_route_readiness_dossier",
     "build_read_only_release_manifest",
+    "default_final_decision_review_acceptance_cases",
 ]
