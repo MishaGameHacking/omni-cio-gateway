@@ -191,6 +191,10 @@ class CapacityDecisionGateV1(ContractModel):
         else:
             if self.final_action is not DecisionAction.WAIT_FOR_DATA:
                 raise ValueError("abstain capacity decision must wait for data")
-            if self.final_option_id == self.request.requested_option_id:
+            retained_change_option = (
+                self.final_option_id == self.request.requested_option_id
+                and self.requested_option_kind is not DecisionOptionKind.NO_ACTION
+            )
+            if retained_change_option:
                 raise ValueError("abstain capacity decision cannot retain change option")
         return self
