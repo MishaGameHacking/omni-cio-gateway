@@ -4,12 +4,20 @@ on:
   workflow_dispatch:
   schedule:
     - cron: "23 4 * * *"
+  pull_request:
+    paths:
+      - ".github/workflows/live-read-only-acceptance.yml"
+      - "omni_cio/contracts/v1/release.py"
+      - "omni_cio/release/live_acceptance_v1.py"
+      - "scripts/check_live_read_only_release.py"
+      - "tests/test_live_acceptance_repository_assets.py"
+      - "tests/test_live_read_only_acceptance_v1.py"
 
 permissions:
   contents: read
 
 concurrency:
-  group: live-read-only-acceptance
+  group: live-read-only-acceptance-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
