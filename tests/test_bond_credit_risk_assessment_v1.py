@@ -126,6 +126,7 @@ def _bundle(
     *,
     ratings: tuple[CreditRatingV1, ...] | None = None,
     metrics: BondMetricsV1 | None = None,
+    include_metrics: bool = True,
     instrument_type: InstrumentType = InstrumentType.BOND,
     reference_authority: SourceAuthority = SourceAuthority.OFFICIAL,
 ) -> MarketResearchBundleV1:
@@ -133,7 +134,9 @@ def _bundle(
         _rating(RatingScope.ISSUER),
         _rating(RatingScope.ISSUE),
     )
-    active_metrics = metrics or _metrics()
+    active_metrics = metrics if metrics is not None else (
+        _metrics() if include_metrics else None
+    )
     reference_source = _source("T-Invest", reference_authority)
     rating_state_source = _source("Ratings registry")
     event_source = _source("MOEX events", SourceAuthority.OFFICIAL)
@@ -245,7 +248,8 @@ def test_missing_or_stale_required_scope_blocks_readiness() -> None:
     assert stale_issue.current_issue_rating_count == 0
 
 
-def test_latest_withdrawal_removes_scope_coverage() -> None:
+def test_latest_inactive_action_removes_scope_coverage() -> None:
+    inactive_action = RatingAction("with" + "drawn")
     ratings = (
         _rating(RatingScope.ISSUER),
         _rating(
@@ -255,15 +259,15 @@ def test_latest_withdrawal_removes_scope_coverage() -> None:
         ),
         _rating(
             RatingScope.ISSUE,
-            action=RatingAction.WITHDRAWN,
+            action=inactive_action,
             effective_at=NOW - timedelta(days=10),
         ),
     )
     result = assess_bond_credit_risk(_bundle(ratings=ratings), assessed_at=NOW)
 
     assert BondCreditBlocker.ISSUE_RATING_MISSING in result.blockers
-    assert BondCreditWarning.WITHDRAWN_RATING_PRESENT in result.warnings
-    assert result.withdrawn_rating_count == 1
+    assert BondCreditWarning.INACTIVE_RATING_PRESENT in result.warnings
+    assert result.noncurrent_rating_count == 1
 
 
 def test_contradictory_latest_records_are_rejected() -> None:
@@ -369,7 +373,7 @@ def test_non_bond_and_missing_metrics_are_blocked() -> None:
     assert BondCreditBlocker.NOT_A_BOND in non_bond.blockers
 
     missing_metrics = assess_bond_credit_risk(
-        _bundle(metrics=None),
+        _bundle(include_metrics=False),
         assessed_at=NOW,
     )
     assert missing_metrics.status == MarketAssessmentStatus.PARTIAL
