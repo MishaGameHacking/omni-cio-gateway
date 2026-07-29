@@ -1,7 +1,7 @@
 # 16 — CURRENT PROGRAM STATUS
 
 Дата актуализации: 2026-07-29  
-Фактическая вершина программы после merge этого пакета: **PR-54**  
+Фактическая вершина программы после merge этого пакета: **PR-55**  
 Точная версия определяется текущей вершиной ветки `main`.
 
 ## Назначение документа
@@ -65,7 +65,9 @@
 - tamper-evident pro-forma risk/intention binding;
 - compact user-safe final review response и shadow parity validation;
 - auditable final-response release-eligibility assessment для будущего
-  GET/read-only contract review.
+  GET/read-only contract review;
+- fixed final-review GET Action candidate и OpenAPI shadow validation через
+  существующий read-only release guard.
 
 ## Последняя завершённая цепочка PR
 
@@ -140,11 +142,20 @@ count bounds, provenance, sensitive-data, execution/mutation surface и точн
 HTTP method `GET`. Eligibility не является route approval: route, OpenAPI и
 торговые флаги остаются выключены.
 
+### PR-55
+
+Final-review GET Action candidate фиксирует `/decision/final-review`,
+`getFinalDecisionReview`, private API-key auth и response contract `1.0`.
+OpenAPI shadow добавляет candidate только в deep-copy текущей схемы, повторно
+запускает существующий read-only release validator, требует ровно один новый
+GET Action и доказывает неизменность всех существующих Actions. Production
+route и OpenAPI не меняются.
+
 ## Что остаётся до полного релиза по мастер-плану
 
 ### Backend и orchestration
 
-- отдельный GET-only Action contract review и shadow OpenAPI validation;
+- безопасный read-only orchestration/input contract для final-review Action;
 - production-grade live ingestion для market, ratings, news и corporate events;
 - внешний versioned RAG index с freshness и citation controls;
 - более полная observability, alerting и operational runbooks.
@@ -176,13 +187,13 @@ partial-fill и timeout reconciliation требуют отдельной про�
 
 ## Следующий рекомендуемый пакет
 
-**PR-55 — final review GET Action contract candidate and OpenAPI shadow v1**:
+**PR-56 — final review read-only orchestration input contract v1**:
 
-- фиксирует candidate operation ID, GET method, auth и response schema;
-- сравнивает candidate contract с текущим GET-only release manifest;
-- блокирует sensitive fields, mutation verbs и execution semantics;
-- выполняет OpenAPI shadow validation без добавления production route;
-- не создаёт заявку, не меняет Render entrypoint и не разрешает торговлю.
+- определяет безопасные query/context inputs без request body;
+- связывает вход с точным account, option и intent fingerprint;
+- ограничивает количество инструментов и размер параметров;
+- запрещает execution, transfer, withdrawal и credential fields;
+- остаётся внутренним contract/shadow слоем до production route review.
 
 ## Запрет ложного завершения
 
