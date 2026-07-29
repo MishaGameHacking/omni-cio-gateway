@@ -62,6 +62,7 @@ class PaperLedgerDrReadinessPolicyV1(ContractModel):
     max_checkpoint_age_seconds: PositiveInt = 7 * 24 * 60 * 60
     minimum_free_bytes_per_root: NonNegativeInt = 512 * 1024 * 1024
     require_separate_filesystem_device: bool = True
+    lock_stale_after_seconds: PositiveInt = 15 * 60
     maximum_temp_artifacts_per_root: Annotated[int, Field(gt=0, le=256)] = 64
 
 
@@ -162,7 +163,7 @@ TempArtifacts = Annotated[
 ]
 Capacities = Annotated[
     tuple[PaperLedgerDrFilesystemCapacityV1, ...],
-    Field(min_length=2, max_length=2),
+    Field(max_length=2),
 ]
 Blockers = Annotated[tuple[PaperDrBlocker, ...], Field(max_length=32)]
 Warnings = Annotated[tuple[PaperDrWarning, ...], Field(max_length=16)]
@@ -183,7 +184,7 @@ class PaperLedgerDrReadinessV1(ContractModel):
     backup_lock: PaperLedgerLockDiagnosticV1 | None = None
     temp_artifacts: TempArtifacts = ()
     temp_artifact_count: NonNegativeInt = 0
-    capacities: Capacities
+    capacities: Capacities = ()
     blockers: Blockers = ()
     warnings: Warnings = ()
     primary_backup_match: bool
@@ -214,7 +215,10 @@ class PaperLedgerDrReadinessV1(ContractModel):
             raise ValueError("paper DR blockers must be unique")
         if len(warning_set) != len(self.warnings):
             raise ValueError("paper DR warnings must be unique")
-        capacity_sufficient = all(capacity.sufficient for capacity in self.capacities)
+        capacities_complete = len(self.capacities) == 2
+        capacity_sufficient = capacities_complete and all(
+            capacity.sufficient for capacity in self.capacities
+        )
         evidence_complete = (
             self.primary_state is not None
             and self.backup_state is not None
@@ -222,18 +226,23 @@ class PaperLedgerDrReadinessV1(ContractModel):
             and self.primary_lock is not None
             and self.backup_lock is not None
         )
+        locks_absent = (
+            self.primary_lock is not None
+            and self.backup_lock is not None
+            and self.primary_lock.status == "absent"
+            and self.backup_lock.status == "absent"
+        )
         expected_ready = (
             not self.blockers
             and evidence_complete
             and self.primary_backup_match
             and capacity_sufficient
             and not self.temp_artifacts
-            and self.primary_lock.status == "absent"
-            and self.backup_lock.status == "absent"
+            and locks_absent
         )
-        if (self.status is PaperDrReadinessStatus.READY) is not expected_ready:
+        if (self.status == PaperDrReadinessStatus.READY) is not expected_ready:
             raise ValueError("paper DR readiness status is inconsistent")
-        if self.status is PaperDrReadinessStatus.READY:
+        if self.status == PaperDrReadinessStatus.READY:
             if self.policy.require_separate_filesystem_device:
                 if not self.separate_filesystem_device:
                     raise ValueError("paper DR ready state requires separate devices")
