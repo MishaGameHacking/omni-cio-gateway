@@ -1,7 +1,7 @@
 # 16 — CURRENT PROGRAM STATUS
 
 Дата актуализации: 2026-07-29  
-Фактическая вершина программы после merge этого пакета: **PR-51**  
+Фактическая вершина программы после merge этого пакета: **PR-52**  
 Точная версия определяется текущей вершиной ветки `main`.
 
 ## Назначение документа
@@ -61,7 +61,8 @@
 - purged walk-forward planning, OOS performance и statistical stability;
 - market-capacity assessment и capacity-aware decision gating;
 - unified homogeneous buy/sell pre-trade review envelope;
-- account-aware portfolio-risk/pre-trade explanation envelope.
+- account-aware portfolio-risk/pre-trade explanation envelope;
+- tamper-evident pro-forma risk/intention binding.
 
 ## Последняя завершённая цепочка PR
 
@@ -112,12 +113,20 @@ Risk/pre-trade explanation envelope объединяет консерватив�
 канонических слоёв, показывает первый блокирующий слой и всегда сохраняет
 `risk_change_approval_confirmed=false` до отдельной pro-forma привязки.
 
+### PR-52
+
+Pro-forma risk/intention binding связывает отдельную post-change risk evaluation
+с точным option, маскированным счётом, однородным направлением и полным набором
+`CapacityOrderRequestV1` через детерминированный SHA-256 fingerprint. Даже
+подтверждённая risk-привязка остаётся review-only: `trade_authorized=false`,
+`execution_ready=false`, `trading_methods=false`.
+
 ## Что остаётся до полного релиза по мастер-плану
 
 ### Backend и orchestration
 
-- explicit pro-forma post-change risk binding для конкретного option/intention;
-- полная публичная Action-интеграция только после contract review;
+- user-safe final decision-review response contract и shadow adapter;
+- полная публичная Action-интеграция только после отдельного contract review;
 - production-grade live ingestion для market, ratings, news и corporate events;
 - внешний versioned RAG index с freshness и citation controls;
 - более полная observability, alerting и operational runbooks.
@@ -149,13 +158,13 @@ partial-fill и timeout reconciliation требуют отдельной про�
 
 ## Следующий рекомендуемый пакет
 
-**PR-52 — pro-forma risk/intention binding v1**:
+**PR-53 — final decision-review response contract and shadow adapter v1**:
 
-- связывает риск-оценку после предполагаемого изменения с конкретным option;
-- подтверждает одни и те же instrument keys, direction и account context;
-- отделяет current-portfolio risk от post-change risk;
-- не превращает аналитический review в разрешение на сделку;
-- не добавляет публичный route и не создаёт заявку.
+- принимает только завершённый pro-forma binding или fail-closed abstain;
+- формирует компактный user-safe read-only ответ без полного account ID;
+- сохраняет факты, blockers, warnings, current/pro-forma risk и provenance;
+- не добавляет публичный route до отдельного Action contract review;
+- не создаёт заявку и не разрешает торговлю.
 
 ## Запрет ложного завершения
 
