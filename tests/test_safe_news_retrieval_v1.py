@@ -92,7 +92,7 @@ def test_retrieval_ranks_coverage_authority_recency_and_returns_exact_citations(
         publisher="Exchange Disclosure",
         authority=SourceAuthority.OFFICIAL,
         event_at=NOW - timedelta(days=1),
-        content="Биржа опубликовала сообщение о дивидендах компании.",
+        content="Биржа опубликовала сообщение: дивиденды компании вынесены на рассмотрение.",
     )
 
     result = retrieve_safe_news_chunks(
@@ -144,11 +144,13 @@ def test_rejected_context_wrong_future_stale_and_stricter_authority_are_excluded
     )
     future = _document(
         "future",
+        authority=SourceAuthority.PRIMARY,
         event_at=NOW + timedelta(hours=1),
         content="Будущее событие: прибыль и дивиденды.",
     )
     stale = _document(
         "stale",
+        authority=SourceAuthority.PRIMARY,
         event_at=NOW - timedelta(days=40),
         content="Старое событие: прибыль и дивиденды.",
     )
