@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from decimal import Decimal
+from decimal import ROUND_CEILING, ROUND_FLOOR, Decimal
 from enum import StrEnum
 from typing import Annotated, Literal
 
@@ -19,10 +19,6 @@ NonNegativeDecimal = Annotated[
     Decimal,
     Field(ge=Decimal("0"), allow_inf_nan=False),
 ]
-UnitInterval = Annotated[
-    Decimal,
-    Field(ge=Decimal("0"), le=Decimal("1"), allow_inf_nan=False),
-]
 PositiveInt = Annotated[int, Field(gt=0)]
 NonNegativeInt = Annotated[int, Field(ge=0)]
 
@@ -39,9 +35,6 @@ class CapacityStatus(StrEnum):
 
 class CapacityBlocker(StrEnum):
     MARKET_NOT_READY = "market_not_ready"
-    INSTRUMENT_MISMATCH = "instrument_mismatch"
-    CURRENCY_MISMATCH = "currency_mismatch"
-    LOT_SIZE_MISMATCH = "lot_size_mismatch"
     EVIDENCE_STALE = "evidence_stale"
     EVIDENCE_FROM_FUTURE = "evidence_from_future"
     UNTRUSTED_SOURCE = "untrusted_source"
@@ -218,7 +211,7 @@ class CapacityAssessmentV1(ContractModel):
     evidence: CapacityEvidenceV1
     policy: CapacityPolicyV1
     market_decision_ready: bool
-    metrics: CapacityMetricsV1 | None = None
+    metrics: CapacityMetricsV1
     blockers: tuple[CapacityBlocker, ...] = ()
     warnings: tuple[CapacityWarning, ...] = ()
     capacity_model: Literal["adv_depth_square_root_proxy"] = (
@@ -239,16 +232,63 @@ class CapacityAssessmentV1(ContractModel):
 
     @model_validator(mode="after")
     def validate_assessment(self) -> CapacityAssessmentV1:
+        if self.request.instrument_key != self.evidence.instrument_key:
+            raise ValueError("capacity assessment instrument mismatch")
+        if self.request.currency != self.evidence.currency:
+            raise ValueError("capacity assessment currency mismatch")
+        if self.request.lot_size != self.evidence.lot_size:
+            raise ValueError("capacity assessment lot size mismatch")
+        if self.request.reference_price != self.evidence.reference_price:
+            raise ValueError("capacity assessment reference price mismatch")
+        if self.metrics.order_notional != self.request.order_notional:
+            raise ValueError("capacity assessment order notional mismatch")
+
+        expected_slice = self.request.order_notional / Decimal(
+            self.request.intended_execution_days
+        )
+        if self.metrics.daily_slice_notional != expected_slice:
+            raise ValueError("capacity daily slice does not reconcile")
+        if self.metrics.daily_turnover_participation != (
+            expected_slice / self.evidence.average_daily_turnover_notional
+        ):
+            raise ValueError("capacity daily participation does not reconcile")
+        if self.metrics.top_of_book_participation != (
+            expected_slice / self.evidence.top_of_book_depth_notional
+        ):
+            raise ValueError("capacity top-of-book participation does not reconcile")
+
+        expected_days = int(
+            (
+                self.request.order_notional
+                / (
+                    self.evidence.average_daily_turnover_notional
+                    * self.policy.maximum_daily_turnover_participation
+                )
+            ).to_integral_value(rounding=ROUND_CEILING)
+        )
+        if self.metrics.minimum_execution_days != max(1, expected_days):
+            raise ValueError("capacity minimum execution days do not reconcile")
+
+        lot_notional = self.request.reference_price * Decimal(self.request.lot_size)
+        expected_safe_lots = int(
+            (
+                self.metrics.safe_notional_for_requested_window / lot_notional
+            ).to_integral_value(rounding=ROUND_FLOOR)
+        )
+        if self.metrics.safe_lots_for_requested_window != expected_safe_lots:
+            raise ValueError("capacity safe lots do not reconcile")
+
         if len(set(self.blockers)) != len(self.blockers):
             raise ValueError("capacity blockers must be unique")
         if len(set(self.warnings)) != len(self.warnings):
             raise ValueError("capacity warnings must be unique")
-        expected_ready = not self.blockers and self.metrics is not None
+        expected_ready = not self.blockers
         if self.capacity_ready is not expected_ready:
             raise ValueError("capacity readiness is inconsistent")
         expected_status = CapacityStatus.READY if expected_ready else CapacityStatus.REJECTED
         if self.status is not expected_status:
             raise ValueError("capacity status is inconsistent")
-        if self.market_decision_ready is False and CapacityBlocker.MARKET_NOT_READY not in self.blockers:
-            raise ValueError("market readiness blocker is missing")
+        market_blocked = CapacityBlocker.MARKET_NOT_READY in self.blockers
+        if self.market_decision_ready is market_blocked:
+            raise ValueError("market readiness blocker is inconsistent")
         return self
