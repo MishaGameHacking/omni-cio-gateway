@@ -100,6 +100,12 @@ def _payload_account(payload: Mapping[str, object]) -> str:
     return ""
 
 
+def _warning_list(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, str)]
+
+
 def build_confirmed_sell_tax_evidence(
     *,
     account: AccountReference,
@@ -366,7 +372,7 @@ def enrich_sale_capacity_with_tax_evidence(
     quality["tax_basis_confirmed"] = True
     quality["calculation_integrity_confirmed"] = True
     payload["quality"] = quality
-    warnings = list(payload.get("warnings", []))
+    warnings = _warning_list(payload.get("warnings"))
     warnings.append(
         "Estimated tax is not a final tax liability and must be refreshed before any future confirmation workflow."
     )
