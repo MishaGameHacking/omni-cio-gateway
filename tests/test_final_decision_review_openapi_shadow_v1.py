@@ -219,7 +219,7 @@ def test_candidate_hashes_are_deterministic() -> None:
 
 def test_shadow_result_tampering_is_rejected() -> None:
     result = _build(_openapi(), _eligibility())
-    payload = result.model_dump(mode="python")
+    payload = dict(result.__dict__)
     payload["shadow_valid"] = False
 
     with pytest.raises(ValidationError):
