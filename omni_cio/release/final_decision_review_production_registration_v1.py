@@ -16,6 +16,11 @@ from omni_cio.release.final_decision_review_calculator_intent_workflow_v1 import
 from omni_cio.release.final_decision_review_calculator_provider_registry_v1 import (
     FinalDecisionReviewCalculatorProviderRegistryV1,
 )
+from omni_cio.release.final_decision_review_production_owner_callables_v1 import (
+    FinalDecisionReviewProductionOwnerCallableRegistrationV1,
+    FinalDecisionReviewProductionOwnerCallableStoreV1,
+    register_final_decision_review_production_owner_callables,
+)
 from omni_cio.release.final_decision_review_production_sources_v1 import (
     FinalDecisionReviewProductionSourceWiringV1,
     FinalDecisionReviewScenarioSourceStoreV1,
@@ -47,6 +52,10 @@ class FinalDecisionReviewProductionRuntimeV1:
     calculator_intent_workflow: FinalDecisionReviewCalculatorIntentWorkflowV1
     approved_invocation: FinalDecisionReviewApprovedInvocationV1
     provider_registry: FinalDecisionReviewCalculatorProviderRegistryV1
+    owner_callable_store: FinalDecisionReviewProductionOwnerCallableStoreV1
+    owner_callable_registration: (
+        FinalDecisionReviewProductionOwnerCallableRegistrationV1
+    )
     producer: FinalDecisionReviewWorkflowProducerV1
     coordinator: FinalDecisionReviewWorkflowCoordinatorV1
     source_wiring: FinalDecisionReviewProductionSourceWiringV1
@@ -96,6 +105,16 @@ def register_final_decision_review_production_sources(
     provider_registry = FinalDecisionReviewCalculatorProviderRegistryV1(
         invocation=approved_invocation,
     )
+    owner_callable_store = FinalDecisionReviewProductionOwnerCallableStoreV1(
+        ttl_seconds=source_ttl_seconds,
+        capacity=source_capacity,
+    )
+    owner_callable_registration = (
+        register_final_decision_review_production_owner_callables(
+            registry=provider_registry,
+            store=owner_callable_store,
+        )
+    )
     producer = FinalDecisionReviewWorkflowProducerV1(bridge=bridge)
     coordinator = FinalDecisionReviewWorkflowCoordinatorV1(
         producer=producer,
@@ -117,6 +136,8 @@ def register_final_decision_review_production_sources(
         calculator_intent_workflow=calculator_intent_workflow,
         approved_invocation=approved_invocation,
         provider_registry=provider_registry,
+        owner_callable_store=owner_callable_store,
+        owner_callable_registration=owner_callable_registration,
         producer=producer,
         coordinator=coordinator,
         source_wiring=source_wiring,
