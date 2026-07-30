@@ -29,7 +29,6 @@ from omni_cio.contracts.v1.risk import RiskPolicyEvaluationV1
 from omni_cio.release.final_decision_review_source_acquisition_v1 import (
     FinalDecisionReviewSourceAcquisitionAdapterV1,
     FinalDecisionReviewSourceAcquisitionError,
-    FinalDecisionReviewSourceLoaderV1,
     purchase_gate_source_loader,
     risk_source_loader,
     sell_gate_source_loader,
