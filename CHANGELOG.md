@@ -5,6 +5,10 @@
 ## [Unreleased]
 
 ### Added
+- Read-only final-review source acquisition adapter with four typed loader ports, selected
+  buy/sell call routing, explicit available/missing/failed outcomes and safe timeout/type/
+  timestamp error codes; exact artifacts and evidence are handed to PR-67 without payload,
+  credential, account or exception-text logging and with `trading_methods=false`.
 - Read-only final-review workflow coordinator with four canonical source slots, explicit
   available/missing/failed acquisition evidence, freshness/account/direction gates and exact
   evidence-to-artifact correspondence; incomplete or stale bundles never call PR-66, no
