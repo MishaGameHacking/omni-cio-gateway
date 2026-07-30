@@ -39,6 +39,12 @@ class CbrKeyRateAlertPolicyV1(ContractModel):
     state_retention_seconds: Annotated[int, Field(ge=60, le=604_800)] = 86_400
     capacity: StateCapacity = 4
 
+    @model_validator(mode="after")
+    def validate_retention(self) -> CbrKeyRateAlertPolicyV1:
+        if self.state_retention_seconds < self.cooldown_seconds:
+            raise ValueError("alert state retention cannot be shorter than cooldown")
+        return self
+
     def threshold_for(self, kind: CbrKeyRateAlertKind) -> int:
         if kind is CbrKeyRateAlertKind.SOURCE_UNAVAILABLE:
             return self.source_unavailable_threshold
