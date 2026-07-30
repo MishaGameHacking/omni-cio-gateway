@@ -59,6 +59,9 @@
 - machine-checked read-only GPT release manifest для фактической OpenAPI-схемы;
 - live read-only acceptance для публичных `/health` и `/openapi.json` с
   ежедневным и ручным GitHub workflow без брокерского или account access;
+- approved server-side owner acquisition для exact fresh Decision Engine,
+  capacity, explicit pro-forma scenario и directional preview owners с server-derived
+  masked context и штатным `503` при недоступности;
 - weekly Dependabot для pip и GitHub Actions.
 
 ### Граница поддерживаемого runtime
