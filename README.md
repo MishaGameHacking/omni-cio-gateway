@@ -32,7 +32,10 @@ Custom GPT ── Omni-CIO Gateway (`app:app`) ── T-Invest API
 - PR-84 добавляет официальный read-only источник истории ключевой ставки Банка
   России `DailyInfo.KeyRateXML`: fixed HTTPS endpoint, bounded streaming,
   защищённый XML parser, Decimal-контракт, provenance и безопасные error codes.
-  Источник пока internal-only и не добавляет новый Action или dashboard field.
+- PR-85 добавляет exact-range process-local cache над PR-84: explicit
+  fresh/stale/unavailable contract, single-flight refresh, TTL pruning,
+  capacity eviction и запрет скрытого показа stale values. Cache остаётся
+  internal-only и не добавляет новый Action или dashboard field.
 - Runtime и CI устанавливают полностью pinned зависимости только после
   проверки SHA-256 hashes.
 - Regression Shield включает lint, formatting baseline, mypy, покрытие
@@ -123,6 +126,7 @@ Omni-CIO больше не содержит Telegram runtime. Полезная �
 - реальные брокерские отчёты и операции пользователя;
 - Render secrets и секретный GPT Bearer key;
 - сырой XML Банка России и upstream fault/exception text;
+- содержимое process-local CBR cache;
 - содержимое bounded final-review, approved-context, owner-snapshot и evidence
   registries после остановки процесса.
 
@@ -141,9 +145,10 @@ Omni-CIO больше не содержит Telegram runtime. Полезная �
 - [`docs/architecture/FINAL_DECISION_REVIEW_PRODUCTION_ROUTE_V1.md`](docs/architecture/FINAL_DECISION_REVIEW_PRODUCTION_ROUTE_V1.md) — production GET route, registry и fail-closed HTTP contract.
 - [`docs/architecture/FINAL_DECISION_REVIEW_AUTHENTICATED_OWNER_INSTALLATION_V1.md`](docs/architecture/FINAL_DECISION_REVIEW_AUTHENTICATED_OWNER_INSTALLATION_V1.md) — post-auth snapshot selection и one-shot installation.
 - [`docs/architecture/CBR_KEY_RATE_SOURCE_V1.md`](docs/architecture/CBR_KEY_RATE_SOURCE_V1.md) — официальный источник ключевой ставки и security boundary.
+- [`docs/architecture/CBR_KEY_RATE_CACHE_V1.md`](docs/architecture/CBR_KEY_RATE_CACHE_V1.md) — cache, freshness и stale/unavailable policy.
 - [`docs/operations/DEPLOYMENT_RUNBOOK.md`](docs/operations/DEPLOYMENT_RUNBOOK.md) — gateway deployment.
 - [`docs/operations/TELEGRAM_REMOVAL_RUNBOOK.md`](docs/operations/TELEGRAM_REMOVAL_RUNBOOK.md) — очистка выведенного Telegram service.
-- [`knowledge/09_MARKET_DATA_AND_BUYING_POWER.txt`](knowledge/09_MARKET_DATA_AND_BUYING_POWER.txt) — market и macro source semantics.
+- [`knowledge/09_MARKET_DATA_AND_BUYING_POWER.txt`](knowledge/09_MARKET_DATA_AND_BUYING_POWER.txt) — market и macro source/cache semantics.
 - [`knowledge/11_BROKER_REPORT_ASYNC_INTEGRITY.txt`](knowledge/11_BROKER_REPORT_ASYNC_INTEGRITY.txt) — асинхронный отчёт.
 - [`knowledge/14_CI_SECURITY_BASELINE.txt`](knowledge/14_CI_SECURITY_BASELINE.txt) — dependency locks, quality и security gates.
 - [`knowledge/16_CURRENT_PROGRAM_STATUS.md`](knowledge/16_CURRENT_PROGRAM_STATUS.md) — фактическая вершина и остаток программы.

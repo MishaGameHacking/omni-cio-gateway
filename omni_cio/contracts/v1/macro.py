@@ -34,6 +34,23 @@ class MacroDataErrorCode(StrEnum):
     DUPLICATE_CONFLICT = "CBR_KEY_RATE_DUPLICATE_CONFLICT"
 
 
+class MacroCacheStatus(StrEnum):
+    FRESH = "fresh"
+    STALE = "stale"
+    UNAVAILABLE = "unavailable"
+
+
+class MacroCacheErrorCode(StrEnum):
+    EMPTY = "CBR_KEY_RATE_CACHE_EMPTY"
+    EXPIRED = "CBR_KEY_RATE_CACHE_EXPIRED"
+    STALE_NOT_ALLOWED = "CBR_KEY_RATE_CACHE_STALE_NOT_ALLOWED"
+    REFRESH_FAILED = "CBR_KEY_RATE_CACHE_REFRESH_FAILED"
+    REFRESH_TYPE_INVALID = "CBR_KEY_RATE_CACHE_REFRESH_TYPE_INVALID"
+    REFRESH_RANGE_MISMATCH = "CBR_KEY_RATE_CACHE_REFRESH_RANGE_MISMATCH"
+    REFRESH_FROM_FUTURE = "CBR_KEY_RATE_CACHE_REFRESH_FROM_FUTURE"
+    REFRESH_STALE = "CBR_KEY_RATE_CACHE_REFRESH_STALE"
+
+
 class KeyRateObservationV1(ContractModel):
     effective_date: date
     rate_percent: RatePercent
@@ -101,4 +118,138 @@ class CbrKeyRateSnapshotV1(ContractModel):
             or self.error_code is None
         ):
             raise ValueError("unavailable key-rate snapshot is inconsistent")
+        return self
+
+
+class CbrKeyRateCacheResultV1(ContractModel):
+    schema_name: Literal["cbr_key_rate_cache_result"] = (
+        "cbr_key_rate_cache_result"
+    )
+    schema_version: Literal["1.0"] = "1.0"
+    requested_from: date
+    requested_to: date
+    checked_at: datetime
+    status: MacroCacheStatus
+    snapshot: CbrKeyRateSnapshotV1 | None = None
+    age_seconds: Annotated[int, Field(ge=0)] | None = None
+    fresh_until: datetime | None = None
+    stale_until: datetime | None = None
+    served_from_cache: bool
+    stale_available: bool
+    stale_value_exposed: bool
+    refresh_attempted: bool
+    refresh_succeeded: bool
+    source_error_code: MacroDataErrorCode | None = None
+    cache_error_code: MacroCacheErrorCode | None = None
+    display_value_allowed: bool
+    source_text_treated_as_data: Literal[True] = True
+    external_instructions_executed: Literal[False] = False
+    raw_xml_stored: Literal[False] = False
+    credentials_present: Literal[False] = False
+    full_account_identifier_present: Literal[False] = False
+    broker_write_called: Literal[False] = False
+    trade_authorized: Literal[False] = False
+    order_created: Literal[False] = False
+    trading_methods: Literal[False] = False
+
+    @field_validator("checked_at", "fresh_until", "stale_until")
+    @classmethod
+    def normalize_cache_timestamp(
+        cls,
+        value: datetime | None,
+    ) -> datetime | None:
+        if value is None:
+            return None
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("cache timestamp must be timezone-aware")
+        return value.astimezone(timezone.utc)
+
+    @model_validator(mode="after")
+    def validate_cache_result(self) -> CbrKeyRateCacheResultV1:
+        if self.requested_from > self.requested_to:
+            raise ValueError("requested date range is invalid")
+        if self.refresh_succeeded and not self.refresh_attempted:
+            raise ValueError("refresh success requires an attempt")
+        if self.stale_value_exposed and not self.stale_available:
+            raise ValueError("stale value exposure requires stale data")
+        if self.snapshot is not None and (
+            self.snapshot.requested_from != self.requested_from
+            or self.snapshot.requested_to != self.requested_to
+            or self.snapshot.status is not MacroDataStatus.AVAILABLE
+        ):
+            raise ValueError("cache snapshot does not match the request")
+
+        fresh_until = self.fresh_until
+        stale_until = self.stale_until
+        if (fresh_until is None) is not (stale_until is None):
+            raise ValueError("cache deadlines must be present together")
+        if (
+            fresh_until is not None
+            and stale_until is not None
+            and fresh_until > stale_until
+        ):
+            raise ValueError("cache deadlines are inconsistent")
+        deadlines_present = fresh_until is not None and stale_until is not None
+
+        if self.status is MacroCacheStatus.FRESH:
+            failed_refresh_fallback = (
+                self.refresh_attempted
+                and not self.refresh_succeeded
+                and self.served_from_cache
+                and (
+                    self.cache_error_code is not None
+                    or self.source_error_code is not None
+                )
+            )
+            normal_fresh = (
+                not self.refresh_attempted
+                or (
+                    self.refresh_succeeded
+                    and self.cache_error_code is None
+                    and self.source_error_code is None
+                )
+            )
+            if (
+                self.snapshot is None
+                or self.age_seconds is None
+                or not deadlines_present
+                or fresh_until is None
+                or self.checked_at >= fresh_until
+                or self.stale_available
+                or self.stale_value_exposed
+                or not self.display_value_allowed
+                or not (normal_fresh or failed_refresh_fallback)
+            ):
+                raise ValueError("fresh cache result is inconsistent")
+        elif self.status is MacroCacheStatus.STALE:
+            if (
+                self.snapshot is None
+                or self.age_seconds is None
+                or not deadlines_present
+                or fresh_until is None
+                or stale_until is None
+                or self.checked_at < fresh_until
+                or self.checked_at >= stale_until
+                or not self.stale_available
+                or not self.stale_value_exposed
+                or not self.display_value_allowed
+                or not self.refresh_attempted
+                or self.refresh_succeeded
+                or (
+                    self.cache_error_code is None
+                    and self.source_error_code is None
+                )
+            ):
+                raise ValueError("stale cache result is inconsistent")
+        elif (
+            self.snapshot is not None
+            or self.display_value_allowed
+            or self.stale_value_exposed
+            or self.refresh_succeeded
+            or (
+                self.cache_error_code is None
+                and self.source_error_code is None
+            )
+        ):
+            raise ValueError("unavailable cache result is inconsistent")
         return self
