@@ -94,7 +94,9 @@ serialized into the repository.
 - purchase and sell owner bundles are direction-isolated;
 - a bundle published after the approved invocation fails closed;
 - missing, expired, wrong-direction or wrong-correlation ownership fails closed;
-- active duplicates cannot replace owners during an invocation;
+- first lookup pins one immutable owner bundle to the invocation ID;
+- LRU eviction or concurrent republication cannot mix owner sets mid-review;
+- pin capacity overflow and invocation-ID/key/timestamp reuse fail closed;
 - every typed owner output remains validated by the PR-76 adapter and PR-75 registry;
 - fixed provider IDs remain `provider:existing:purchase-review` and
   `provider:existing:sell-review`.
