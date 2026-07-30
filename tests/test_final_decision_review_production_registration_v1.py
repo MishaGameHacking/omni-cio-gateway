@@ -6,6 +6,9 @@ from typing import Any
 import pytest
 
 import app as gateway
+from omni_cio.release.final_decision_review_approved_owner_installation_v1 import (
+    FinalDecisionReviewApprovedOwnerInstallationV1,
+)
 from omni_cio.release.final_decision_review_existing_calculator_providers_v1 import (
     PURCHASE_PROVIDER_ID,
     SELL_PROVIDER_ID,
@@ -49,6 +52,10 @@ def test_production_runtime_is_registered_without_startup_broker_call() -> None:
         runtime.trusted_owner_composition,
         FinalDecisionReviewTrustedOwnerCompositionV1,
     )
+    assert isinstance(
+        runtime.approved_owner_installation,
+        FinalDecisionReviewApprovedOwnerInstallationV1,
+    )
     assert isinstance(runtime.producer, FinalDecisionReviewWorkflowProducerV1)
     assert isinstance(runtime.coordinator, FinalDecisionReviewWorkflowCoordinatorV1)
     assert isinstance(
@@ -69,8 +76,14 @@ def test_production_runtime_is_registered_without_startup_broker_call() -> None:
     assert runtime.owner_callable_registration.startup_owner_call_performed is False
     assert runtime.trusted_owner_composition.registry is runtime.provider_registry
     assert runtime.trusted_owner_composition.store is runtime.owner_callable_store
+    assert (
+        runtime.approved_owner_installation.composition
+        is runtime.trusted_owner_composition
+    )
     assert runtime.internal_only is True
     assert runtime.startup_broker_call_performed is False
+    assert runtime.startup_owner_installation_performed is False
+    assert runtime.startup_owner_acquisition_performed is False
     assert runtime.public_source_publication_route_created is False
     assert runtime.production_openapi_changed is False
     assert runtime.broker_write_called is False
@@ -99,6 +112,11 @@ def test_registration_keeps_portfolio_loader_and_owner_store_lazy() -> None:
     assert runtime.owner_callable_registration.registered_provider_count == 2
     assert runtime.trusted_owner_composition.registry is runtime.provider_registry
     assert runtime.trusted_owner_composition.store is runtime.owner_callable_store
+    assert (
+        runtime.approved_owner_installation.composition
+        is runtime.trusted_owner_composition
+    )
+    assert runtime.startup_owner_installation_performed is False
 
 
 def test_production_portfolio_loader_uses_existing_read_only_engine(
@@ -147,6 +165,10 @@ def test_registration_source_has_no_route_or_broker_write_surface() -> None:
         Path("omni_cio/release/final_decision_review_production_owner_callables_v1.py"),
         Path(
             "omni_cio/release/" "final_decision_review_trusted_owner_composition_v1.py"
+        ),
+        Path(
+            "omni_cio/release/"
+            "final_decision_review_approved_owner_installation_v1.py"
         ),
         Path("app.py"),
     )
