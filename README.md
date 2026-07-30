@@ -35,8 +35,12 @@ Custom GPT ── Omni-CIO Gateway (`app:app`) ── T-Invest API
 - PR-81 сохраняет из trusted publication только exact scenario ID, trusted
   correlation, direction и masked account, а после existing Bearer auth и exact
   route validation создаёт server-generated approved context. Контекст хранится
-  не более 300 секунд в bounded process-local store; owner selection и PR-80
-  invocation остаются отдельным следующим пакетом.
+  не более 300 секунд в bounded process-local store.
+- PR-82 сохраняет exact typed Decision/intent/capacity/pro-forma/preview snapshots
+  только после успешного approved calculator invocation. При выборе snapshot
+  owner ports заново привязываются к fresh server-generated invocation ID;
+  mismatch, stale state или отсутствие snapshot остаются fail-closed. Вызов PR-80
+  из GET lifecycle остаётся отдельным следующим пакетом.
 - Runtime и CI устанавливают полностью pinned зависимости только после
   проверки SHA-256 hashes.
 - Regression Shield включает lint, formatting baseline, mypy, покрытие
@@ -125,7 +129,7 @@ Omni-CIO больше не содержит Telegram runtime. Полезная �
 - полный номер брокерского счёта;
 - реальные брокерские отчёты и операции пользователя;
 - Render secrets и секретный GPT Bearer key;
-- содержимое bounded final-review и approved-context registries после остановки процесса.
+- содержимое bounded final-review, approved-context и owner-snapshot registries после остановки процесса.
 
 Полный реестр: [`docs/inventory/PROJECT_ASSETS.md`](docs/inventory/PROJECT_ASSETS.md).
 
@@ -142,6 +146,7 @@ Omni-CIO больше не содержит Telegram runtime. Полезная �
 - [`docs/architecture/FINAL_DECISION_REVIEW_PRODUCTION_ROUTE_V1.md`](docs/architecture/FINAL_DECISION_REVIEW_PRODUCTION_ROUTE_V1.md) — production GET route, registry и fail-closed HTTP contract.
 - [`docs/architecture/FINAL_DECISION_REVIEW_APPROVED_OWNER_INSTALLATION_V1.md`](docs/architecture/FINAL_DECISION_REVIEW_APPROVED_OWNER_INSTALLATION_V1.md) — exact typed PR-78 owner ports into one PR-79 acquisition call.
 - [`docs/architecture/FINAL_DECISION_REVIEW_AUTHENTICATED_ROUTE_CONTEXT_V1.md`](docs/architecture/FINAL_DECISION_REVIEW_AUTHENTICATED_ROUTE_CONTEXT_V1.md) — trusted publication seed, post-auth approved context и bounded lifecycle.
+- [`docs/architecture/FINAL_DECISION_REVIEW_APPROVED_OWNER_SNAPSHOTS_V1.md`](docs/architecture/FINAL_DECISION_REVIEW_APPROVED_OWNER_SNAPSHOTS_V1.md) — exact typed snapshot capture и fresh authenticated rebinding.
 - [`docs/operations/DEPLOYMENT_RUNBOOK.md`](docs/operations/DEPLOYMENT_RUNBOOK.md) — gateway deployment.
 - [`docs/operations/TELEGRAM_REMOVAL_RUNBOOK.md`](docs/operations/TELEGRAM_REMOVAL_RUNBOOK.md) — очистка выведенного Telegram service.
 - [`knowledge/11_BROKER_REPORT_ASYNC_INTEGRITY.txt`](knowledge/11_BROKER_REPORT_ASYNC_INTEGRITY.txt) — асинхронный отчёт.
@@ -178,21 +183,8 @@ python -m pytest -q --cov --cov-branch --cov-fail-under=60
 python -m pip_audit --require-hashes --disable-pip --strict \
   --vulnerability-service osv \
   --progress-spinner off -r requirements.txt
-python -m bandit -c pyproject.toml -r . -ll -ii -q
+python -m bandit -q -lll -iii -r . \
+  -x tests,.venv,venv,htmlcov,broker_report_reconciliation/_parts \
+  --exclude "./broker_report_reconciliation/__init__.py"
+python scripts/scan_tracked_secrets.py
 ```
-
-Regression Shield контролирует стабильный `app:app`, отсутствие Telegram
-runtime/configuration, отсутствие торговых функций,
-`trading_methods=false`, dependency supply chain и минимальный quality/
-security baseline. Полная команда secret scan закреплена непосредственно
-в workflow, чтобы shell использовал `pipefail`.
-
-## Деплой
-
-- Gateway: [`render.yaml`](render.yaml), entrypoint `app:app`.
-- Функциональная вершина и следующий пакет указаны в `knowledge/16_CURRENT_PROGRAM_STATUS.md`.
-- Render/Gateway/GPT/rollback acceptance остаётся незавершённой, пока восемь реальных cases не зафиксированы как `passed`.
-
-## Важная граница проекта
-
-Исходный frontend существующего сайта Omni-CIO пока не закреплён за этим репозиторием. Не создавайте дубликат сайта.
