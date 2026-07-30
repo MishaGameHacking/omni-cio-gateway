@@ -11,6 +11,9 @@ import broker_report_reconciliation as broker_report_reconciliation_engine
 import operations_analytics as operations_analytics_engine
 import portfolio_market as portfolio_market_engine
 from omni_cio.quality import wrap_portfolio_market_snapshot_with_shadow_validation
+from omni_cio.release.final_decision_review_production_registration_v1 import (
+    register_final_decision_review_production_sources,
+)
 import omni_cio.release.final_decision_review_route_v1 as final_review_route
 from omni_cio.release.final_decision_review_workflow_bridge_v1 import (
     FinalDecisionReviewWorkflowBridgeV1,
@@ -55,6 +58,7 @@ for capability in (
     "operations_analytics",
     "operations_cash_flow_reconciliation",
     "final_decision_review_workflow_bridge",
+    "final_decision_review_production_sources",
 ):
     if capability not in base.CAPABILITIES:
         base.CAPABILITIES.append(capability)
@@ -350,4 +354,29 @@ final_decision_review_workflow_bridge = FinalDecisionReviewWorkflowBridgeV1(
     registry=final_decision_review_registry,
     openapi_provider=lambda: app.openapi(),
     expected_app_version=APP_VERSION,
+)
+
+
+def _load_final_decision_review_portfolio_payload() -> dict[str, Any]:
+    return portfolio_market_engine.get_portfolio_market_snapshot(
+        base=base,
+        app_version=APP_VERSION,
+        market_dealer_session=legacy.market_dealer_session,
+        trading_flag_consistency_issues=legacy.trading_flag_consistency_issues,
+        depth=1,
+        max_instruments=50,
+    )
+
+
+final_decision_review_production_runtime = (
+    register_final_decision_review_production_sources(
+        bridge=final_decision_review_workflow_bridge,
+        portfolio_payload_loader=_load_final_decision_review_portfolio_payload,
+    )
+)
+final_decision_review_scenario_source_store = (
+    final_decision_review_production_runtime.source_store
+)
+final_decision_review_source_wiring = (
+    final_decision_review_production_runtime.source_wiring
 )
