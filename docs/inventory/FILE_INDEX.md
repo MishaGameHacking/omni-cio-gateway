@@ -17,7 +17,9 @@
 | `operations_analytics.py` | Operations Analytics & Cash Flow Reconciliation |
 | `broker_report_reconciliation/` | Generate/Get official report, pagination и reconciliation |
 | `omni_cio/contracts/v1/` | Strict immutable Pydantic contracts v1: provenance, quality, Decimal money, analytics and final review |
+| `omni_cio/contracts/v1/final_decision_review_publisher.py` | Immutable internal publication result, replacement/eviction and safety invariants |
 | `omni_cio/release/final_decision_review_route_v1.py` | Production private GET route, bounded TTL source registry, OpenAPI security patch and safe handler boundary |
+| `omni_cio/release/final_decision_review_publisher_v1.py` | Trusted process-local exact-source publisher with per-registry concurrency guard |
 
 ## Конфигурация
 
@@ -39,6 +41,7 @@
 |---|---|
 | `tests/test_regression_shield.py` | Gateway OpenAPI, auth, read-only и entrypoint |
 | `tests/test_final_decision_review_production_route_v1.py` | Production final-review HTTP, source registry, TTL, substitution and OpenAPI contract |
+| `tests/test_final_decision_review_publisher_v1.py` | Internal publication, replacement, concurrency, eviction, expiry, restart, observability and unchanged OpenAPI |
 | `tests/test_portfolio_market_snapshot.py` | Рыночная оценка портфеля |
 | `tests/test_portfolio_analytics.py` | Структура и концентрация |
 | `tests/test_cash_liquidity.py` | Деньги и лимиты |
@@ -67,6 +70,7 @@
 | `knowledge/15_VERSIONED_DATA_CONTRACTS.txt` | Контракт v1, совместимость и read-only инварианты PR-04 |
 | `docs/architecture/DATA_CONTRACTS_V1.md` | Архитектура и migration policy versioned contracts v1 |
 | `docs/architecture/FINAL_DECISION_REVIEW_PRODUCTION_ROUTE_V1.md` | Production final-review route, registry, HTTP behavior, acceptance boundary and rollback |
+| `docs/architecture/FINAL_DECISION_REVIEW_PUBLISHER_V1.md` | Internal publication contract, concurrency, lifecycle, safety and rollback |
 | `gpt/` | Восстановление и настройка Custom GPT |
 | `docs/operations/TELEGRAM_REMOVAL_RUNBOOK.md` | Одноразовая внешняя очистка Telegram после merge |
 | `docs/` | Архитектура, inventory и runbooks |
