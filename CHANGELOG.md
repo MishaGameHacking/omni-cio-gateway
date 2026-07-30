@@ -5,6 +5,11 @@
 ## [Unreleased]
 
 ### Added
+- Process-local final-review workflow bridge, зарегистрированный в `app.py` без нового
+  route: bridge принимает typed risk/pre-trade evidence, строит pro-forma scenario и exact
+  binding, вызывает PR-63 orchestration, публикует safe review/no-action response через
+  PR-62 registry и сохраняет GET-only OpenAPI, `app:app`, отсутствие broker writes и
+  `trading_methods=false`.
 - Versioned final-review production-acceptance evidence contract and offline collector с
   восемью обязательными Render/Gateway/GPT/rollback case, статусами `not_executed`,
   `passed`, `failed`, `not_applicable`, canonical SHA-256 proof binding, dependency order,
