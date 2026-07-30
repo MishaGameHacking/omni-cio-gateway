@@ -1,7 +1,7 @@
 # 16 — CURRENT PROGRAM STATUS
 
 Дата актуализации: 2026-07-30  
-Фактическая вершина программы после merge этого пакета: **PR-93**  
+Фактическая вершина программы после merge этого пакета: **PR-94**  
 Точная версия определяется текущей вершиной ветки `main`.
 
 ## Назначение документа
@@ -31,11 +31,9 @@
   calculator handoff, approved owner installation and authenticated evidence;
 - **PR-84…PR-88:** official CBR source, cache, safe observability, bounded alert
   policy and deterministic fired/recovered evidence lifecycle;
-- **PR-89:** official public MOEX ISS TQBR quote source;
-- **PR-90:** exact TQBR+SECID bounded quote cache and two-clock freshness;
-- **PR-91:** pure safe MOEX source/cache observability without market payload;
-- **PR-92:** bounded global MOEX operational alert policy;
-- **PR-93:** deterministic bounded global MOEX operations evidence lifecycle.
+- **PR-89…PR-93:** official MOEX TQBR source, exact cache, safe observability,
+  global operational alert policy and deterministic fired/recovered evidence;
+- **PR-94:** fixed official ACRA issuer-level national-RU rating-action source.
 
 ## PR-81…PR-83 authenticated owner lifecycle
 
@@ -57,113 +55,84 @@ PR-87 evaluates operational conditions only with bounded thresholds, cooldown
 and recovery. PR-88 deterministically retains fired/recovered evidence without
 source fetch at import/startup.
 
-## PR-89 MOEX ISS TQBR source
+## PR-89…PR-93 MOEX lifecycle
 
-PR-89 adds one fixed read-only public Moscow Exchange source for
-`stock/shares/TQBR`:
-
-- fixed official HTTPS host, engine, market, board and endpoint;
-- strict normalized SECID before network access;
-- allowlisted `securities` and `marketdata` table shapes;
-- exact SECID/TQBR identity;
-- Decimal parsing, duplicate-key rejection and no NaN/infinity;
-- SUR/RUB normalization, positive finite prices and bid ≤ ask;
-- Moscow `SYSTIME` to UTC with future-skew rejection;
-- bounded streaming and redacted unavailable results;
-- no raw JSON, credentials, upstream body or exception text retention.
-
-The snapshot permanently marks the public feed as unauthenticated, potentially
-delayed, not guaranteed real-time and informational-only. Broker
-`getMarketSnapshot` remains primary for execution-style calculations.
-
-## PR-90 MOEX cache
-
-- exact process-local key `(TQBR, normalized SECID)`;
-- fresh TTL 60 seconds, stale retention 900 seconds, capacity 64;
-- cache TTL derives from retrieval time;
-- displayed market age derives from `quote.as_of`;
-- single-flight refresh under one `RLock`;
+- fixed official public `stock/shares/TQBR` endpoint and strict SECID identity;
+- allowlisted JSON tables, Decimal prices and Moscow time normalization;
+- public feed permanently marked potentially delayed, non-realtime and
+  informational-only;
+- exact `(TQBR, normalized SECID)` cache with separate retrieval TTL and market
+  age derived from `quote.as_of`;
 - stale exposure only after refresh failure and explicit trusted policy;
-- wrong type/identity/future data fail closed;
-- restart starts empty and import performs no network call.
+- pure status/freshness observability without price, SECID, account or raw JSON;
+- global-only operational alert policy with forged-event rejection;
+- deterministic event → evaluation → bounded fired/recovered evidence;
+- no external notification transport and no startup network call.
 
-## PR-91 safe MOEX observability
+Broker `getMarketSnapshot` remains primary for execution-style calculations.
+MOEX and broker values are never silently averaged.
 
-PR-91 maps already-produced source/cache results to immutable operational events:
-source available/unavailable, fresh hit, successful refresh, failed refresh with
-fresh fallback, explicit stale and unavailable cache.
+## PR-94 official ACRA issuer rating action source
 
-Events contain safe status, latency, freshness, refresh and boolean/count metadata
-only. They contain no price, bid, ask, spread, currency, SECID, short name,
-instrument key, lot metadata, market timestamp, age, account value, cash, raw
-JSON, credentials, exception type or exception text. Builders are pure and do
-not emit, fetch, register routes or call a broker.
+### Fixed source
 
-## PR-92 global MOEX alert policy
+- endpoint:
+  `https://www.acra-ratings.ru/press-releases/?count=30&lang=en`;
+- provider `ACRA`;
+- source id `ACRA.press_releases.issuer_rating_actions`;
+- release identity limited to numeric official `/press-releases/{id}/?lang=en`;
+- no caller-controlled host, path, agency, language or generic URL.
 
-The immutable scope is `global_moex_tqbr_feed`. PR-91 deliberately excludes
-SECID/account identity, so PR-92 cannot represent per-instrument alerts or
-reconstruct identity from correlation IDs, logs, error text or hidden state.
+### Supported issuer records
 
-Known PR-91 event names pass only through a full canonical gate: exact component,
-provider, operation, safe metric set, feed flags and allowed status profile. A
-forged same-name event fails closed.
+V1 accepts simple issuer-level Russian national-scale actions:
 
-Operational conditions:
+- assigned;
+- affirmed;
+- upgraded;
+- downgraded;
+- withdrawn.
 
-- source unavailable;
-- cache unavailable;
-- stale value explicitly exposed;
-- refresh failed while fresh cached data remains usable.
+Each record contains normalized subject name, fixed issuer scope, rating,
+action, explicit outlook when published, publication date, canonical official
+release URL and immutable source/safety metadata.
 
-State is bounded to four global kinds with consecutive thresholds, pending,
-fired, cooldown suppression and recovery. Out-of-order matching events fail
-closed. There are no financial thresholds, evidence store or external
-notification transport in PR-92.
+Ratings remain agency-specific strings such as `AAA(RU)`, `AA-(RU)` or
+`eA(RU)`. They are not converted to another agency scale and no numeric score is
+invented.
 
-Regression Shield #584 on the exact PR-92 final head passed:
+### Unsupported versus malformed scope
 
-- 925 tests, 0 failures/errors/skips;
-- mypy: 170 source files;
-- line coverage 66.3%, branch coverage 48.85%;
-- compile, Ruff, formatting, stable entrypoint, 14-GET release contract,
-  dependency audit, SAST and secret scan passed.
+The parser safely skips:
 
-## PR-93 MOEX operations evidence lifecycle
+- issue/bond/note/tranche/RMBS/series/class/security actions;
+- international-scale actions without `(RU)`;
+- multi-target or multi-rating titles;
+- non-rating press releases.
 
-### Deterministic composition
+A title that clearly presents one national-RU issuer action but no longer
+matches the allowlisted grammar fails closed. This prevents unsupported public
+documents from taking down the feed while detecting schema drift inside the
+supported boundary.
 
-For one typed PR-89 source snapshot or PR-90 cache result:
+Issue-level extraction requires a separate reviewed identity contract. PR-94
+does not infer an issue from free text.
 
-1. build one canonical PR-91 event;
-2. evaluate it with PR-92;
-3. retain only `fired` and `recovered` evaluations;
-4. invoke the event sink first and evidence sinks second;
-5. return one immutable batch with redacted sink-failure count.
+### Transport and data safety
 
-One lifecycle `RLock` covers pruning, alert-state mutation, evidence recording
-and sink invocation, so concurrent calls cannot emit evidence before its event.
+- HTTPS verification, redirects disabled and `trust_env=false`;
+- no Authorization/Cookie headers or broker credentials;
+- bounded timeout, `Content-Length` and streamed byte total;
+- only HTML/XHTML content types;
+- script/style/noscript ignored;
+- numeric release URL, publication date and duplicate validation;
+- maximum 30 accepted records;
+- raw HTML, upstream body, exception type/text and traceback not retained;
+- fixed typed unavailable error codes.
 
-### Evidence boundary
+Import and startup perform no source call.
 
-Evidence stores only opaque IDs, recorded timestamp, canonical event name, fixed
-global scope, operational kind/severity/disposition, counters, threshold and
-safe error code. Pending, ignored and cooldown-suppressed state cannot be stored.
-
-Evidence cannot represent SECID, instrument/board/lot identity, price, bid, ask,
-spread, currency, market timestamp, age, account, position, cash, raw JSON,
-credential, exception payload, trading authorization or notification state.
-
-### Retention and sinks
-
-- default retention 86400 seconds, allowed 60…604800;
-- default capacity 64, allowed 1…256;
-- prune on read/observe, oldest eviction, restart-empty and clear behavior;
-- optional typed event/evidence sinks;
-- sink errors become only `sink_failure_count`;
-- no automatic retry or external transport.
-
-## Compatibility and safety after PR-93
+## Compatibility and safety after PR-94
 
 - `app:app` unchanged;
 - exactly 14 authenticated GET Actions unchanged;
@@ -176,9 +145,9 @@ credential, exception payload, trading authorization or notification state.
 ## Frontend/owner discovery state
 
 Repository search did not find a registered existing frontend/dashboard owner or
-production caller for the CBR/MOEX fields. PR-84…PR-93 therefore do not invent a
-duplicate UI, silently change an Action response or start network calls. Exact
-owner discovery remains mandatory before production binding.
+production caller for the CBR/MOEX/ACRA fields. These source packages therefore
+do not invent a duplicate UI, silently change an Action response or start
+network calls. Exact owner discovery remains mandatory before production binding.
 
 ## Production acceptance state
 
@@ -199,9 +168,11 @@ Green CI cannot mark these external cases passed.
 
 ### Backend and operations
 
-- locate the exact existing CBR/MOEX caller and bind lifecycles lazily;
-- define operator-facing retention/acceptance and any later external routing;
-- build production-grade official ratings, news and corporate-event ingestion;
+- build bounded exact-release ACRA cache/freshness and dedup lifecycle;
+- add source-specific safe observability after cache semantics are fixed;
+- add other recognized rating agencies only through separate fixed contracts;
+- locate exact CBR/MOEX/ACRA callers and bind lifecycles lazily;
+- build production-grade news and corporate-event ingestion;
 - execute real Render/Gateway/GPT acceptance and record evidence;
 - add external versioned RAG with freshness and citation controls;
 - expand operational runbooks and monitoring acceptance.
@@ -221,21 +192,20 @@ Shadow, paper, preview и final-review инфраструктура не явл�
 switch, partial-fill и timeout reconciliation требуют отдельной программы
 допуска и решения владельца. Автономная торговля без подтверждения не включена.
 
-## Следующий пакет после PR-93
+## Следующий пакет после PR-94
 
-Ближайший независимый безопасный пакет — official credit-rating source boundary
-v1 из master plan:
+Ближайший независимый безопасный пакет — bounded ACRA issuer rating-action
+cache/freshness v1:
 
-- fixed allowlisted official/recognized rating sources;
-- typed issuer/rating/action/outlook/source-date contracts;
-- strict identity and freshness semantics;
-- bounded transport and fail-closed parsing;
-- no generic URL, user-supplied host or free-form instructions;
-- no route, Action, frontend field, startup call or broker method until an exact
-  owner is identified.
+- exact canonical release URL identity and duplicate protection;
+- explicit fresh/stale/unavailable snapshot contract;
+- no silent stale rating action;
+- single-flight refresh, bounded retention/capacity and restart-clear behavior;
+- publication date, retrieval time and source limitations preserved;
+- no route, Action, frontend field, startup network call or broker method.
 
 ## Запрет ложного завершения
 
-Проект не считается полностью завершённым только потому, что PR-93 слит и CI
+Проект не считается полностью завершённым только потому, что PR-94 слит и CI
 зелёный. Полный релиз требует внешней Render/Gateway/GPT acceptance evidence,
 точного production owner binding и завершения оставшихся master-plan блоков.
