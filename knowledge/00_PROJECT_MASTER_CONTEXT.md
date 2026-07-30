@@ -2,7 +2,7 @@
 
 Дата актуализации: 2026-07-30  
 Текущий system release: **v4.1.0 ChatGPT-only Runtime**  
-Gateway API component после merge PR-61: **v3.10.0 Final Decision Review GET Route**
+Gateway API component: **v3.10.0 Final Decision Review GET Route**
 
 Этот документ — единая обезличенная проектная память. Его нужно читать первым при
 продолжении работы в новом чате, IDE, GitHub Copilot, Codex или другом проекте.
@@ -86,7 +86,7 @@ Gateway отвечает за:
 - получение уже сформированного final decision review.
 
 Gateway entrypoint: `app:app`.  
-Gateway API version после PR-61: `3.10.0`.  
+Current Gateway API version: `3.10.0`.  
 Пользовательские Gateway Actions: только `GET`.
 
 ### 2.2. Custom GPT
