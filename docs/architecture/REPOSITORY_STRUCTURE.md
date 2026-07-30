@@ -54,6 +54,12 @@ contract, bounded transport, fail-closed parser и focused tests. Source module 
 полномочий. PR-89 ограничен публичным MOEX ISS `stock/shares/TQBR` и не является
 брокерской исполнимой котировкой.
 
+Source-specific cache modules также размещаются в `omni_cio/market/`. Они
+принимают только typed source snapshots, имеют exact identity, bounded TTL/
+capacity, single-flight refresh и explicit fresh/stale/unavailable contract.
+PR-90 не регистрирует production caller, не вызывает сеть при импорте и не
+разрешает stale без явной trusted policy.
+
 PR-80 `final_decision_review_approved_owner_installation_v1.py` является
 одноразовым typed adapter между существующими PR-78 owner ports и PR-79
 acquisition. Он не является HTTP handler, source-publication route или
@@ -111,6 +117,11 @@ call count, stale server context, operation mismatch, startup laziness и
 PR-89 тестируется отдельно: fixed TQBR URL, SECID injection guards, exact ISS
 table shape, Decimal/currency/time normalization, delayed public-feed flags,
 bounded transport, redacted failures, exports и отсутствие route/write surface.
+
+PR-90 тестируется отдельно: strict cache-state contract, exact key isolation,
+two-clock age, fresh/forced/stale/unavailable lifecycle, single-flight,
+pruning/eviction/clear, wrong type/identity/future guards, exports и отсутствие
+route/startup/write surface.
 
 ## Что нельзя переносить без отдельного PR
 
