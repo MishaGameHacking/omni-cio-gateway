@@ -18,6 +18,12 @@ from omni_cio.release.final_decision_review_calculator_intent_workflow_v1 import
     FinalDecisionReviewCalculatorIntentWorkflowError,
     FinalDecisionReviewCalculatorIntentWorkflowV1,
 )
+from omni_cio.release.final_decision_review_calculator_provider_registry_v1 import (
+    ApprovedCalculatorProviderBundleV1,
+    ApprovedCalculatorProviderV1,
+    FinalDecisionReviewCalculatorProviderRegistryError,
+    FinalDecisionReviewCalculatorProviderRegistryV1,
+)
 from omni_cio.release.final_decision_review_handler_shadow_v1 import (
     FinalDecisionReviewHandlerShadowError,
     evaluate_final_decision_review_handler_shadow,
@@ -103,12 +109,16 @@ from omni_cio.release.read_only_contract_v1 import (
 )
 
 __all__ = [
+    "ApprovedCalculatorProviderBundleV1",
+    "ApprovedCalculatorProviderV1",
     "FetchedJsonDocument",
     "FinalDecisionReviewAcceptanceError",
     "FinalDecisionReviewApprovedInvocationError",
     "FinalDecisionReviewApprovedInvocationV1",
     "FinalDecisionReviewCalculatorIntentWorkflowError",
     "FinalDecisionReviewCalculatorIntentWorkflowV1",
+    "FinalDecisionReviewCalculatorProviderRegistryError",
+    "FinalDecisionReviewCalculatorProviderRegistryV1",
     "FinalDecisionReviewCalculatorScenarioHandoffError",
     "FinalDecisionReviewCalculatorScenarioHandoffV1",
     "FinalDecisionReviewHandlerShadowError",
