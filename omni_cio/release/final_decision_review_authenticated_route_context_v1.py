@@ -52,11 +52,15 @@ class FinalDecisionReviewApprovedRouteContextSeedV1:
     trading_methods: bool = False
 
     def __post_init__(self) -> None:
-        if _SAFE_ID.fullmatch(self.scenario_id) is None:
+        if not isinstance(self.scenario_id, str) or _SAFE_ID.fullmatch(
+            self.scenario_id
+        ) is None:
             raise FinalDecisionReviewAuthenticatedRouteContextError(
                 "FINAL_DECISION_REVIEW_ROUTE_CONTEXT_SCENARIO_ID_INVALID"
             )
-        if _SAFE_ID.fullmatch(self.correlation_id) is None:
+        if not isinstance(self.correlation_id, str) or _SAFE_ID.fullmatch(
+            self.correlation_id
+        ) is None:
             raise FinalDecisionReviewAuthenticatedRouteContextError(
                 "FINAL_DECISION_REVIEW_ROUTE_CONTEXT_CORRELATION_ID_INVALID"
             )
@@ -91,10 +95,13 @@ class FinalDecisionReviewApprovedRouteContextCaptureV1:
     trading_methods: bool = False
 
 
-ApprovedRouteContextObserverV1 = Callable[
-    [FinalDecisionReviewApprovedServerContextV1],
-    object,
-]
+if TYPE_CHECKING:
+    ApprovedRouteContextObserverV1 = Callable[
+        [FinalDecisionReviewApprovedServerContextV1],
+        object,
+    ]
+else:
+    ApprovedRouteContextObserverV1 = Callable[..., object]
 
 
 def _aware_utc(value: datetime | None) -> datetime:
@@ -202,7 +209,7 @@ def build_final_decision_review_authenticated_server_context(
             "FINAL_DECISION_REVIEW_ROUTE_CONTEXT_SEED_FROM_FUTURE"
         )
     invocation = invocation_id or f"invoke:{uuid4().hex}"
-    if _SAFE_ID.fullmatch(invocation) is None:
+    if not isinstance(invocation, str) or _SAFE_ID.fullmatch(invocation) is None:
         raise FinalDecisionReviewAuthenticatedRouteContextError(
             "FINAL_DECISION_REVIEW_ROUTE_CONTEXT_INVOCATION_ID_INVALID"
         )
