@@ -50,6 +50,7 @@
 - `architecture/CBR_KEY_RATE_OPERATIONS_LIFECYCLE_V1.md` — deterministic event/evaluation/evidence composition, bounded retention and safe sink handoff.
 - `architecture/MOEX_ISS_TQBR_QUOTE_SOURCE_V1.md` — fixed official public TQBR quote source, strict JSON/identity/freshness boundary and delayed informational-feed flags.
 - `architecture/MOEX_ISS_TQBR_QUOTE_CACHE_V1.md` — exact TQBR+SECID cache, two-clock freshness, single-flight refresh and no-silent-stale policy.
+- `architecture/MOEX_ISS_TQBR_QUOTE_OBSERVABILITY_V1.md` — pure allowlisted source/cache telemetry without price, SECID, account or upstream payload.
 
 ### Operations
 
