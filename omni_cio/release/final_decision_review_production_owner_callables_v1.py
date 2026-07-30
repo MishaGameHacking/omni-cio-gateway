@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import OrderedDict
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import re
@@ -10,6 +11,8 @@ from omni_cio.contracts.v1.final_decision_review_approved_invocation import (
     ApprovedCalculatorInvocationRequestV1,
     ApprovedCalculatorOperation,
 )
+from omni_cio.contracts.v1.pretrade import PreTradePreviewV1
+from omni_cio.contracts.v1.sell_pretrade import SellPreTradePreviewV1
 from omni_cio.release.final_decision_review_calculator_provider_registry_v1 import (
     FinalDecisionReviewCalculatorProviderRegistryV1,
 )
@@ -143,6 +146,10 @@ def _safe_id(value: str, *, code: str) -> str:
 
 
 OwnerKeyV1 = tuple[str, str, ApprovedCalculatorOperation]
+PinnedOwnerBundleV1 = tuple[
+    datetime,
+    FinalDecisionReviewProductionOwnerCallableBundleV1,
+]
 
 
 class FinalDecisionReviewProductionOwnerCallableStoreV1:
@@ -163,6 +170,10 @@ class FinalDecisionReviewProductionOwnerCallableStoreV1:
             OwnerKeyV1,
             FinalDecisionReviewProductionOwnerCallableBundleV1,
         ] = OrderedDict()
+        self._pins: OrderedDict[
+            str,
+            PinnedOwnerBundleV1,
+        ] = OrderedDict()
         self._lock = RLock()
 
     @property
@@ -181,6 +192,13 @@ class FinalDecisionReviewProductionOwnerCallableStoreV1:
         ]
         for key in expired:
             self._bundles.pop(key, None)
+        expired_pins = [
+            invocation_id
+            for invocation_id, (_, bundle) in self._pins.items()
+            if bundle.expires_at <= checked_at
+        ]
+        for invocation_id in expired_pins:
+            self._pins.pop(invocation_id, None)
 
     def _publish(
         self,
@@ -287,6 +305,20 @@ class FinalDecisionReviewProductionOwnerCallableStoreV1:
         key = (request.scenario_id, request.correlation_id, request.operation)
         with self._lock:
             self._purge_expired(now)
+            pinned_entry = self._pins.get(request.invocation_id)
+            if pinned_entry is not None:
+                pinned_invoked_at, pinned = pinned_entry
+                pinned_key = (
+                    pinned.scenario_id,
+                    pinned.correlation_id,
+                    pinned.operation,
+                )
+                if pinned_key != key or pinned_invoked_at != request.invoked_at:
+                    raise FinalDecisionReviewProductionOwnerCallableError(
+                        "FINAL_DECISION_REVIEW_PRODUCTION_OWNER_PIN_MISMATCH"
+                    )
+                self._pins.move_to_end(request.invocation_id)
+                return pinned
             bundle = self._bundles.get(key)
             if bundle is None:
                 return None
@@ -294,14 +326,51 @@ class FinalDecisionReviewProductionOwnerCallableStoreV1:
                 raise FinalDecisionReviewProductionOwnerCallableError(
                     "FINAL_DECISION_REVIEW_PRODUCTION_OWNER_PUBLISHED_AFTER_INVOCATION"
                 )
+            if len(self._pins) >= self._capacity:
+                raise FinalDecisionReviewProductionOwnerCallableError(
+                    "FINAL_DECISION_REVIEW_PRODUCTION_OWNER_PIN_CAPACITY_EXCEEDED"
+                )
+            self._pins[request.invocation_id] = (request.invoked_at, bundle)
             self._bundles.move_to_end(key)
             return bundle
+
+    def release_for_request(
+        self,
+        request: ApprovedCalculatorInvocationRequestV1,
+    ) -> bool:
+        if not isinstance(request, ApprovedCalculatorInvocationRequestV1):
+            raise FinalDecisionReviewProductionOwnerCallableError(
+                "FINAL_DECISION_REVIEW_PRODUCTION_OWNER_REQUEST_TYPE_INVALID"
+            )
+        key = (request.scenario_id, request.correlation_id, request.operation)
+        with self._lock:
+            pinned_entry = self._pins.get(request.invocation_id)
+            if pinned_entry is None:
+                return False
+            pinned_invoked_at, pinned = pinned_entry
+            pinned_key = (
+                pinned.scenario_id,
+                pinned.correlation_id,
+                pinned.operation,
+            )
+            if pinned_key != key or pinned_invoked_at != request.invoked_at:
+                raise FinalDecisionReviewProductionOwnerCallableError(
+                    "FINAL_DECISION_REVIEW_PRODUCTION_OWNER_PIN_MISMATCH"
+                )
+            self._pins.pop(request.invocation_id)
+            return True
 
     def active_bundle_count(self, *, checked_at: datetime | None = None) -> int:
         now = _aware_utc(checked_at)
         with self._lock:
             self._purge_expired(now)
             return len(self._bundles)
+
+    def active_pin_count(self, *, checked_at: datetime | None = None) -> int:
+        now = _aware_utc(checked_at)
+        with self._lock:
+            self._purge_expired(now)
+            return len(self._pins)
 
 
 class FinalDecisionReviewProductionOwnerCallableRouterV1:
@@ -351,6 +420,15 @@ class FinalDecisionReviewProductionOwnerCallableRouterV1:
         return bundle.sell
 
     def purchase_owners(self) -> ApprovedPurchaseCalculatorOwnersV1:
+        def previews(
+            request: ApprovedCalculatorInvocationRequestV1,
+        ) -> Iterable[PreTradePreviewV1]:
+            owners = self._purchase(request)
+            try:
+                return owners.previews(request)
+            finally:
+                self._store.release_for_request(request)
+
         common = ApprovedCalculatorCommonOwnersV1(
             decision=lambda request: self._purchase(request).common.decision(request),
             intent=lambda request: self._purchase(request).common.intent(request),
@@ -361,10 +439,19 @@ class FinalDecisionReviewProductionOwnerCallableRouterV1:
         )
         return ApprovedPurchaseCalculatorOwnersV1(
             common=common,
-            previews=lambda request: self._purchase(request).previews(request),
+            previews=previews,
         )
 
     def sell_owners(self) -> ApprovedSellCalculatorOwnersV1:
+        def previews(
+            request: ApprovedCalculatorInvocationRequestV1,
+        ) -> Iterable[SellPreTradePreviewV1]:
+            owners = self._sell(request)
+            try:
+                return owners.previews(request)
+            finally:
+                self._store.release_for_request(request)
+
         common = ApprovedCalculatorCommonOwnersV1(
             decision=lambda request: self._sell(request).common.decision(request),
             intent=lambda request: self._sell(request).common.intent(request),
@@ -375,7 +462,7 @@ class FinalDecisionReviewProductionOwnerCallableRouterV1:
         )
         return ApprovedSellCalculatorOwnersV1(
             common=common,
-            previews=lambda request: self._sell(request).previews(request),
+            previews=previews,
         )
 
 
