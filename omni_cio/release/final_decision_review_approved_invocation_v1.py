@@ -37,6 +37,16 @@ def _aware_utc(value: datetime | None) -> datetime:
     return result.astimezone(timezone.utc)
 
 
+def _require_request(
+    value: ApprovedCalculatorInvocationRequestV1,
+) -> ApprovedCalculatorInvocationRequestV1:
+    if not isinstance(value, ApprovedCalculatorInvocationRequestV1):
+        raise FinalDecisionReviewApprovedInvocationError(
+            "FINAL_DECISION_REVIEW_INVOCATION_REQUEST_TYPE_INVALID"
+        )
+    return value
+
+
 class FinalDecisionReviewApprovedInvocationV1:
     """Replay-safe allowlisted invocation boundary for the PR-73 workflow."""
 
@@ -46,6 +56,8 @@ class FinalDecisionReviewApprovedInvocationV1:
         workflow: FinalDecisionReviewCalculatorIntentWorkflowV1,
         replay_ttl_seconds: int = 900,
         replay_capacity: int = 1_024,
+        max_invocation_age_seconds: int = 300,
+        future_tolerance_seconds: int = 30,
     ) -> None:
         if not isinstance(workflow, FinalDecisionReviewCalculatorIntentWorkflowV1):
             raise FinalDecisionReviewApprovedInvocationError(
@@ -59,9 +71,19 @@ class FinalDecisionReviewApprovedInvocationV1:
             raise FinalDecisionReviewApprovedInvocationError(
                 "FINAL_DECISION_REVIEW_INVOCATION_REPLAY_CAPACITY_INVALID"
             )
+        if not 1 <= max_invocation_age_seconds <= 86_400:
+            raise FinalDecisionReviewApprovedInvocationError(
+                "FINAL_DECISION_REVIEW_INVOCATION_MAX_AGE_INVALID"
+            )
+        if not 0 <= future_tolerance_seconds <= 3_600:
+            raise FinalDecisionReviewApprovedInvocationError(
+                "FINAL_DECISION_REVIEW_INVOCATION_FUTURE_TOLERANCE_INVALID"
+            )
         self._workflow = workflow
         self._replay_ttl_seconds = replay_ttl_seconds
         self._replay_capacity = replay_capacity
+        self._max_invocation_age_seconds = max_invocation_age_seconds
+        self._future_tolerance_seconds = future_tolerance_seconds
         self._completed: OrderedDict[str, datetime] = OrderedDict()
         self._lock = RLock()
 
@@ -78,15 +100,43 @@ class FinalDecisionReviewApprovedInvocationV1:
         for invocation_id in expired:
             self._completed.pop(invocation_id, None)
 
-    def _reserve(self, request: ApprovedCalculatorInvocationRequestV1) -> None:
-        self._purge(request.invoked_at)
+    def _validate_request(
+        self,
+        value: ApprovedCalculatorInvocationRequestV1,
+        *,
+        checked_at: datetime,
+    ) -> ApprovedCalculatorInvocationRequestV1:
+        request = _require_request(value)
+        age_seconds = (checked_at - request.invoked_at).total_seconds()
+        if age_seconds > self._max_invocation_age_seconds:
+            raise FinalDecisionReviewApprovedInvocationError(
+                "FINAL_DECISION_REVIEW_INVOCATION_STALE"
+            )
+        if age_seconds < -self._future_tolerance_seconds:
+            raise FinalDecisionReviewApprovedInvocationError(
+                "FINAL_DECISION_REVIEW_INVOCATION_FROM_FUTURE"
+            )
+        return request
+
+    def _reserve(
+        self,
+        request: ApprovedCalculatorInvocationRequestV1,
+        *,
+        checked_at: datetime,
+    ) -> None:
+        self._purge(checked_at)
         if request.invocation_id in self._completed:
             raise FinalDecisionReviewApprovedInvocationError(
                 "FINAL_DECISION_REVIEW_INVOCATION_REPLAY_DETECTED"
             )
 
-    def _complete(self, request: ApprovedCalculatorInvocationRequestV1) -> None:
-        self._completed[request.invocation_id] = request.invoked_at + timedelta(
+    def _complete(
+        self,
+        request: ApprovedCalculatorInvocationRequestV1,
+        *,
+        completed_at: datetime,
+    ) -> None:
+        self._completed[request.invocation_id] = completed_at + timedelta(
             seconds=self._replay_ttl_seconds
         )
         self._completed.move_to_end(request.invocation_id)
@@ -104,27 +154,28 @@ class FinalDecisionReviewApprovedInvocationV1:
         pro_forma_risk: RiskPolicyEvaluationV1,
         completed_at: datetime | None = None,
     ) -> ApprovedCalculatorInvocationResultV1:
-        if request.operation is not ApprovedCalculatorOperation.PURCHASE_REVIEW:
+        done_at = _aware_utc(completed_at)
+        approved = self._validate_request(request, checked_at=done_at)
+        if approved.operation is not ApprovedCalculatorOperation.PURCHASE_REVIEW:
             raise FinalDecisionReviewApprovedInvocationError(
                 "FINAL_DECISION_REVIEW_INVOCATION_OPERATION_NOT_ALLOWLISTED"
             )
         capacities = tuple(capacity_assessments)
         preview_rows = tuple(previews)
-        done_at = _aware_utc(completed_at or request.invoked_at)
         with self._lock:
-            self._reserve(request)
+            self._reserve(approved, checked_at=done_at)
             try:
                 publication = self._workflow.publish_purchase(
-                    scenario_id=request.scenario_id,
+                    scenario_id=approved.scenario_id,
                     decision=decision,
                     intent_request=intent_request,
                     capacity_assessments=capacities,
                     previews=preview_rows,
                     pro_forma_risk=pro_forma_risk,
-                    published_at=request.invoked_at,
+                    published_at=approved.invoked_at,
                 )
                 result = ApprovedCalculatorInvocationResultV1(
-                    request=request,
+                    request=approved,
                     completed_at=done_at,
                     publication=publication,
                     capacity_assessment_count=len(capacities),
@@ -136,7 +187,7 @@ class FinalDecisionReviewApprovedInvocationV1:
                 ValueError,
             ) as exc:
                 raise FinalDecisionReviewApprovedInvocationError(str(exc)) from exc
-            self._complete(request)
+            self._complete(approved, completed_at=done_at)
             return result
 
     def invoke_sell(
@@ -150,27 +201,28 @@ class FinalDecisionReviewApprovedInvocationV1:
         pro_forma_risk: RiskPolicyEvaluationV1,
         completed_at: datetime | None = None,
     ) -> ApprovedCalculatorInvocationResultV1:
-        if request.operation is not ApprovedCalculatorOperation.SELL_REVIEW:
+        done_at = _aware_utc(completed_at)
+        approved = self._validate_request(request, checked_at=done_at)
+        if approved.operation is not ApprovedCalculatorOperation.SELL_REVIEW:
             raise FinalDecisionReviewApprovedInvocationError(
                 "FINAL_DECISION_REVIEW_INVOCATION_OPERATION_NOT_ALLOWLISTED"
             )
         capacities = tuple(capacity_assessments)
         preview_rows = tuple(previews)
-        done_at = _aware_utc(completed_at or request.invoked_at)
         with self._lock:
-            self._reserve(request)
+            self._reserve(approved, checked_at=done_at)
             try:
                 publication = self._workflow.publish_sell(
-                    scenario_id=request.scenario_id,
+                    scenario_id=approved.scenario_id,
                     decision=decision,
                     intent_request=intent_request,
                     capacity_assessments=capacities,
                     previews=preview_rows,
                     pro_forma_risk=pro_forma_risk,
-                    published_at=request.invoked_at,
+                    published_at=approved.invoked_at,
                 )
                 result = ApprovedCalculatorInvocationResultV1(
-                    request=request,
+                    request=approved,
                     completed_at=done_at,
                     publication=publication,
                     capacity_assessment_count=len(capacities),
@@ -182,5 +234,5 @@ class FinalDecisionReviewApprovedInvocationV1:
                 ValueError,
             ) as exc:
                 raise FinalDecisionReviewApprovedInvocationError(str(exc)) from exc
-            self._complete(request)
+            self._complete(approved, completed_at=done_at)
             return result
