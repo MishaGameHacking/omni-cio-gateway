@@ -79,6 +79,15 @@ calculator-owned handoff must produce those exact typed artifacts from existing 
 calculators and invoke this publisher. Render, Gateway, GPT Editor, Preview, Action-list and
 rollback evidence remain unexecuted until actual production acceptance.
 
+## Reconciliation
+
+A separate calculator publisher and registration pair duplicated this trust boundary but was
+not exported from the release package and was never part of the production registration object
+graph. That parallel implementation, its isolated tests and its parallel architecture notes are
+retired. `FinalDecisionReviewTrustedScenarioPublisherV1` remains the sole scenario publisher
+registered in production, and the repository layout check blocks the retired paths from
+returning.
+
 ## Rollback
 
 Revert PR-71. PR-70 runtime registration and PR-69 acquisition wiring remain available, but the
