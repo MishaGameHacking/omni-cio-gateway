@@ -1,5 +1,11 @@
 """Allowlist-based structured observability without sensitive payloads."""
 
+from omni_cio.contracts.v1.alerting import (
+    CbrKeyRateAlertDisposition,
+    CbrKeyRateAlertEvaluationV1,
+    CbrKeyRateAlertKind,
+    CbrKeyRateAlertPolicyV1,
+)
 from omni_cio.observability.cbr_key_rate_alert_policy_v1 import (
     CbrKeyRateAlertPolicyError,
     CbrKeyRateAlertPolicyEvaluatorV1,
@@ -16,8 +22,12 @@ from omni_cio.observability.safe_events_v1 import (
 )
 
 __all__ = [
+    "CbrKeyRateAlertDisposition",
+    "CbrKeyRateAlertEvaluationV1",
+    "CbrKeyRateAlertKind",
     "CbrKeyRateAlertPolicyError",
     "CbrKeyRateAlertPolicyEvaluatorV1",
+    "CbrKeyRateAlertPolicyV1",
     "CbrKeyRateObservabilityError",
     "build_cbr_key_rate_cache_event",
     "build_cbr_key_rate_source_event",
