@@ -20,6 +20,14 @@ from omni_cio.release.final_decision_review_orchestration_v1 import (
     FinalDecisionReviewOrchestrationError,
     orchestrate_final_decision_review_publication,
 )
+from omni_cio.release.final_decision_review_production_sources_v1 import (
+    FinalDecisionReviewProductionSourceError,
+    FinalDecisionReviewProductionSourceWiringV1,
+    FinalDecisionReviewScenarioSourceBundleV1,
+    FinalDecisionReviewScenarioSourcePublicationV1,
+    FinalDecisionReviewScenarioSourceStoreV1,
+    build_live_current_risk_loader,
+)
 from omni_cio.release.final_decision_review_publisher_v1 import (
     FinalDecisionReviewPublisherError,
     FinalDecisionReviewPublisherV1,
@@ -79,10 +87,15 @@ __all__ = [
     "FinalDecisionReviewHandlerShadowError",
     "FinalDecisionReviewInputError",
     "FinalDecisionReviewOrchestrationError",
+    "FinalDecisionReviewProductionSourceError",
+    "FinalDecisionReviewProductionSourceWiringV1",
     "FinalDecisionReviewPublisherError",
     "FinalDecisionReviewPublisherV1",
     "FinalDecisionReviewRoutePlanError",
     "FinalDecisionReviewRouteReadinessError",
+    "FinalDecisionReviewScenarioSourceBundleV1",
+    "FinalDecisionReviewScenarioSourcePublicationV1",
+    "FinalDecisionReviewScenarioSourceStoreV1",
     "FinalDecisionReviewSourceAcquisitionAdapterV1",
     "FinalDecisionReviewSourceAcquisitionError",
     "FinalDecisionReviewSourceLoaderV1",
@@ -103,6 +116,7 @@ __all__ = [
     "build_final_decision_review_route_implementation_plan",
     "build_final_decision_review_route_readiness_dossier",
     "build_isolated_final_decision_review_test_app",
+    "build_live_current_risk_loader",
     "build_read_only_release_manifest",
     "collect_final_decision_review_acceptance_evidence",
     "default_final_decision_review_acceptance_cases",
