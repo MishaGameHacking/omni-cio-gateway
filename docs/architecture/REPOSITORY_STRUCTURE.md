@@ -40,9 +40,15 @@ omni-cio-gateway/
 В корне остаются файлы, необходимые для совместимости production gateway. Новые крупные функции не добавляются в `main.py`; они живут в отдельном модуле.
 
 Versioned domain contracts размещаются в `omni_cio/contracts/v1/`. Внутренние
-final-review coordinators, adapters, registries и owner-acquisition boundaries размещаются
-в `omni_cio/release/`; они не создают публичный Action автоматически. Публичная
-регистрация остаётся явной и проверяется 14-GET release contract.
+final-review coordinators, adapters, registries, owner-acquisition и
+owner-installation boundaries размещаются в `omni_cio/release/`; они не создают
+публичный Action автоматически. Публичная регистрация остаётся явной и
+проверяется 14-GET release contract.
+
+PR-80 `final_decision_review_approved_owner_installation_v1.py` является
+одноразовым typed adapter между существующими PR-78 owner ports и PR-79
+acquisition. Он не является HTTP handler, source-publication route или
+calculator implementation.
 
 ### Retired transport paths
 
@@ -88,6 +94,10 @@ configuration, imports и OpenAPI routes. Реальные T-Invest вызовы
 
 `tests/test_ci_security_baseline.py` проверяет parser lock-файлов,
 full-SHA Action policy и secret-scan report handling.
+
+PR-80 тестируется отдельно: purchase/sell direction isolation, exact owner
+call count, stale server context, operation mismatch, startup laziness и
+отсутствие HTTP/broker-write surface.
 
 ## Что нельзя переносить без отдельного PR
 
