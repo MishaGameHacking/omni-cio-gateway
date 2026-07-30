@@ -3,41 +3,32 @@
 ## Identity
 
 - Name: `Omni-CIO API | Управляющий и аналитик`
-- Purpose: read-only investment data assistant and gateway operator.
+- Purpose: read-only investment data assistant and Gateway client.
 - Primary language: Russian.
-- Backend release: `v3.9.1`.
+- Backend release: `v3.10.0`.
 - Communication profile: `Modern Financial Sage — 2026`.
 
 ## Recommended description
 
-> Безопасный read-only аналитик портфеля: подключение к T-Invest, снимки портфеля, рыночные данные, деньги и ликвидность, предварительный расчёт покупательной способности, операции и официальный брокерский отчёт. Объясняет сложные финансовые данные современным понятным русским языком, готовит живые Telegram-посты, не создаёт заявки и не совершает сделки.
+> Безопасный read-only аналитик портфеля: получает проверяемые данные через Omni-CIO Gateway, объясняет портфель, рынок, ликвидность, операции и риски простым русским языком. Не создаёт заявки, не совершает сделки и не выводит деньги.
 
-## Instructions
+## Instructions and Knowledge
 
-GPT Editor принимает не более 8000 символов в поле Instructions. Поэтому:
-
-- вставляйте полный текст из `INSTRUCTIONS_COMPACT.md`;
-- `INSTRUCTIONS.md` остаётся расширенным каноническим документом для GitHub, разработки и восстановления контекста;
-- загрузите `knowledge/13_COMMUNICATION_STYLE_2026.txt` в Knowledge как справочник с расширенными примерами;
-- компактные Instructions имеют приоритет над Knowledge при конфликте.
-
-The communication profile requires:
-
-- main conclusion first;
-- short paragraphs;
-- plain-language explanations of financial terms;
-- separation of fact, conclusion and scenario;
-- moderate optional profanity only as emphasis;
-- ru-RU money formatting for rubles;
-- milder public style for Telegram post drafts;
-- no change to read-only or Action safety rules.
+- В поле Instructions вставьте полный актуальный текст `INSTRUCTIONS_COMPACT.md`.
+- `INSTRUCTIONS.md` хранит расширенную каноническую версию для разработки и проверки.
+- В Knowledge загружайте только минимальные справочные файлы, например `knowledge/13_COMMUNICATION_STYLE_2026.txt`.
+- Master plan из `docs/master-plan/` является инструкцией разработки и по умолчанию не загружается в production GPT Knowledge.
+- Правила поведения и безопасности должны находиться в Instructions, а справочный материал — в Knowledge.
+- Секреты, полный номер счёта и реальные брокерские отчёты в Instructions/Knowledge запрещены.
 
 ## Actions
 
 - Schema source: production Render service `/openapi.json`.
-- Authentication: API Key in `Authorization` header with Bearer type.
-- Secret value: enter `GATEWAY_API_KEY` manually in GPT Editor; never commit it.
-- Expected actions: see `ACTIONS_CATALOG.md`.
+- Authentication: API Key, Bearer.
+- Secret value: ввести `GATEWAY_API_KEY` вручную; никогда не коммитить.
+- Expected surface: ровно 14 операций из `ACTIONS_CATALOG.md`, все `GET`.
+- Apps и Actions одновременно не используются; для Omni-CIO нужен режим Actions.
+- Выбранная модель/режим должны поддерживать Actions; Pro mode для этого контура не использовать.
 
 ## Recommended conversation starters
 
@@ -45,34 +36,28 @@ The communication profile requires:
 2. `Проверь подключение к T-Invest. Вызови только getConnection.`
 3. `Покажи read-only снимок моего портфеля и переведи цифры на человеческий язык.`
 4. `Проверь деньги и ликвидность без рекомендаций.`
-5. `Проанализируй компанию как современный финансовый мудрец: факты, риски и сценарии.`
-6. `Подготовь Telegram-пост в живом современном стиле с датой и источниками.`
-7. `Запусти официальный брокерский отчёт за 31 день и верни task_id.`
+5. `Проанализируй компанию: факты, риски, сценарии, дата и источники.`
+6. `Запусти официальный брокерский отчёт за 31 день и верни task_id.`
+7. `Проверь Gateway. Вызови только gatewayHealth.`
 
 ## Capabilities
 
-- Web browsing should be enabled for current company analysis, financial reports, management changes, dividends, news, sanctions, rates and market context.
-- Direct gateway Actions do not require web browsing when the user requests only exact account data.
-- Code Interpreter is optional and must not receive secrets or raw private reports unless the user deliberately provides a file for local analysis.
-- Image generation is not required for gateway operation.
+- Web Search включается для актуальных публичных данных о компаниях, отчётности, дивидендах, санкциях, ставках и новостях.
+- Для точных приватных данных счёта используются Gateway Actions, а не веб-поиск.
+- Code Interpreter опционален и не должен получать секреты или необезличенные приватные данные без явного действия пользователя.
+- Image generation для работы Gateway не требуется.
 
-## Publishing
+## Publishing checklist
 
-Before publishing or updating:
-
-1. Verify production `/health`.
-2. Import the current `/openapi.json` only if the Action contract changed.
-3. Confirm that all actions are GET-only.
-4. Confirm Bearer authentication.
-5. Replace GPT Editor Instructions with the complete current `INSTRUCTIONS_COMPACT.md`.
-6. Upload `knowledge/13_COMMUNICATION_STYLE_2026.txt` to Knowledge if it is not already present.
-7. Enable Web Search for current public-company and market analysis.
-8. Run one method-only test.
-9. Run one plain-language portfolio explanation test.
-10. Run one Telegram-post draft test.
-11. Confirm `trading_methods=false` in the response.
-12. Do not expose the GPT publicly unless the owner deliberately changes access settings.
+1. Выполнить `MY_GPT_SETUP_RUNBOOK.md`.
+2. Проверить production `/health`, `version=3.10.0`, `build.entrypoint=app:app` и `trading_methods=false`.
+3. Импортировать актуальный `/openapi.json` и сверить 14 GET Actions.
+4. Настроить Bearer authentication без копирования секрета в документацию.
+5. В Preview выполнить method-isolation, auth-negative и один безопасный authenticated test.
+6. Убедиться, что отсутствуют write/execute/transfer/withdraw Actions.
+7. Оставить GPT приватным или доступным только явно выбранным пользователям до production acceptance.
+8. Нажать Update только после прохождения проверок.
 
 ## External UI state
 
-Model selection, icon, sharing mode, publication status, enabled capabilities, instruction text and secret authentication value exist only in GPT Editor. This file records the desired state but cannot enforce those settings automatically.
+Модель, sharing, capabilities, фактический текст Instructions, Knowledge и секретный Bearer key существуют только в GPT Editor. GitHub хранит желаемое состояние, но не применяет его автоматически.
