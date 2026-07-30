@@ -5,7 +5,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from threading import RLock
-from typing import Any, TypeAlias
+from typing import Any
 
 from omni_cio.adapters.portfolio_market_v1 import portfolio_snapshot_v1_from_market_payload
 from omni_cio.analytics.portfolio_v1 import build_advanced_portfolio_analytics
@@ -19,6 +19,9 @@ from omni_cio.contracts.v1.decision_capacity_sell_pretrade import (
 from omni_cio.contracts.v1.final_decision_review_source_acquisition import (
     FinalDecisionReviewSourceAcquisitionResultV1,
 )
+from omni_cio.contracts.v1.final_decision_review_workflow_coordinator import (
+    FinalDecisionReviewWorkflowSourceSlot,
+)
 from omni_cio.contracts.v1.risk import RiskPolicyEvaluationV1
 from omni_cio.release.final_decision_review_source_acquisition_v1 import (
     FinalDecisionReviewSourceAcquisitionAdapterV1,
@@ -30,18 +33,10 @@ from omni_cio.release.final_decision_review_workflow_coordinator_v1 import (
     FinalDecisionReviewWorkflowCoordinatorV1,
 )
 from omni_cio.risk.policy_v1 import evaluate_conservative_risk_policy
-from omni_cio.contracts.v1.final_decision_review_workflow_coordinator import (
-    FinalDecisionReviewWorkflowSourceSlot,
-)
 
 
 class FinalDecisionReviewProductionSourceError(ValueError):
     """Production read-only final-review sources cannot be wired safely."""
-
-
-DirectionalGateV1: TypeAlias = (
-    CapacityPreTradeDecisionGateV1 | CapacitySellPreTradeDecisionGateV1
-)
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,7 +68,6 @@ class FinalDecisionReviewScenarioSourcePublicationV1:
     trading_methods: bool = False
 
 
-
 def _aware_utc(value: datetime | None) -> datetime:
     result = value or datetime.now(timezone.utc)
     if result.tzinfo is None or result.utcoffset() is None:
@@ -81,7 +75,6 @@ def _aware_utc(value: datetime | None) -> datetime:
             "FINAL_DECISION_REVIEW_PRODUCTION_SOURCE_TIMESTAMP_MUST_BE_AWARE"
         )
     return result.astimezone(timezone.utc)
-
 
 
 def _scenario_id(value: str) -> str:
@@ -214,7 +207,6 @@ class FinalDecisionReviewScenarioSourceStoreV1:
         with self._lock:
             self._purge_expired(now)
             return len(self._bundles)
-
 
 
 def build_live_current_risk_loader(
