@@ -11,9 +11,10 @@ import broker_report_reconciliation as broker_report_reconciliation_engine
 import operations_analytics as operations_analytics_engine
 import portfolio_market as portfolio_market_engine
 from omni_cio.quality import wrap_portfolio_market_snapshot_with_shadow_validation
+import omni_cio.release.final_decision_review_route_v1 as final_review_route
 
 
-APP_VERSION = "3.9.1"
+APP_VERSION = "3.10.0"
 ENTRYPOINT = "app:app"
 
 # Upgrade both archived wrappers because established route handlers resolve
@@ -28,10 +29,11 @@ base = archived.base
 app.version = APP_VERSION
 app.description = (
     "Private read-only gateway between a Custom GPT and T-Invest API. It exposes "
-    "connection, portfolio, market, purchase-capacity, and operations data. "
-    "v3.9.1 adds asynchronous official broker-report generation, paginated report "
-    "loading, and currency-local trade and commission reconciliation. It cannot "
-    "create, submit, replace, or cancel orders."
+    "connection, portfolio, market, purchase-capacity, operations, and a private "
+    "final decision-review retrieval route. v3.10.0 adds a bounded internal source "
+    "registry and an authenticated GET-only final-review response without broker "
+    "writes or execution semantics. It cannot create, submit, replace, or cancel "
+    "orders."
 )
 
 # Existing route handlers call the module attribute at request time. The wrapper
@@ -319,4 +321,21 @@ broker_report_reconciliation_engine.register_gateway(
     app_version=APP_VERSION,
 )
 
+final_decision_review_registry = (
+    final_review_route.register_final_decision_review_gateway(
+        app=app,
+        base=base,
+        app_version=APP_VERSION,
+    )
+)
+
+_base_openapi = app.openapi
+
+
+def openapi_v310() -> dict[str, Any]:
+    schema = _base_openapi()
+    return final_review_route.patch_final_decision_review_openapi(schema)
+
+
+app.openapi = openapi_v310
 app.openapi_schema = None
