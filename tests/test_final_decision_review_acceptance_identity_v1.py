@@ -17,7 +17,7 @@ from omni_cio.release.final_decision_review_acceptance_v1 import (
 
 
 NOW = datetime(2026, 7, 30, 5, 45, tzinfo=timezone.utc)
-EXPECTED_COMMIT = "ae4ca2429b1c1d6e7a2991daa9aab211d51a8048"
+EXPECTED_COMMIT = "a" * 40
 BASE_URL = "https://omni-cio-gateway.onrender.com"
 
 
