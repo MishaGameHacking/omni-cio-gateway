@@ -1,7 +1,7 @@
 # 16 — CURRENT PROGRAM STATUS
 
 Дата актуализации: 2026-07-30  
-Фактическая вершина программы после merge этого пакета: **PR-90**  
+Фактическая вершина программы после merge этого пакета: **PR-92**  
 Точная версия определяется текущей вершиной ветки `main`.
 
 ## Назначение документа
@@ -14,6 +14,7 @@
 
 - `trading_methods=false`;
 - пользовательские Gateway Actions только `GET`;
+- ровно 14 authenticated Actions;
 - Render entrypoint `app:app`;
 - отсутствие создания, отправки, замены и отмены заявок;
 - отсутствие переводов и вывода денег;
@@ -32,20 +33,12 @@
   scenario routing, one-shot composition, acquisition и installation;
 - **PR-81…PR-83:** authenticated context, typed owner snapshots, one PR-80
   invocation and bounded redacted evidence;
-- **PR-84:** official Bank of Russia key-rate source with immutable Decimal
-  contracts, bounded HTTPS streaming and protected XML parsing;
-- **PR-85:** exact-range bounded cache with explicit fresh/stale/unavailable
-  lifecycle, single-flight refresh and no-silent-stale policy;
-- **PR-86:** allowlisted source/cache observability events without key-rate,
-  date-range, XML, account or upstream exception payloads;
-- **PR-87:** bounded CBR alert-policy evaluator with consecutive thresholds,
-  deduplication, cooldown, recovery and retention/capacity guards;
-- **PR-88:** deterministic typed source/cache event → evaluation → bounded
-  fired/recovered evidence lifecycle with safe sink handoff;
-- **PR-89:** fixed official public MOEX ISS TQBR quote source with strict
-  JSON/identity/Decimal/time validation and delayed informational-feed flags;
-- **PR-90:** exact TQBR+SECID bounded quote cache with two-clock freshness,
-  single-flight refresh and explicit no-silent-stale policy.
+- **PR-84…PR-88:** official CBR source, cache, safe observability, bounded alert
+  policy и deterministic fired/recovered evidence lifecycle;
+- **PR-89:** official public MOEX ISS TQBR quote source;
+- **PR-90:** exact TQBR+SECID bounded quote cache and two-clock freshness;
+- **PR-91:** pure safe MOEX source/cache observability without market payload;
+- **PR-92:** bounded global MOEX operational alert policy.
 
 ## PR-81…PR-83 authenticated owner lifecycle
 
@@ -61,171 +54,156 @@
 Startup performs no owner, calculator, portfolio, network or broker call.
 Public response and OpenAPI remain unchanged.
 
-## PR-84 official CBR key-rate source v1
+## PR-84…PR-88 CBR lifecycle
 
-PR-84 provides a trusted internal Bank of Russia `DailyInfo.KeyRateXML` source:
+### Official source
 
-- fixed official endpoint, SOAPAction and source identity;
-- typed `Decimal` effective-date observations;
-- TLS verification, redirects disabled, bounded timeout/range/content type;
-- `Content-Length` and streamed byte limits before parsing;
-- protected `pyexpat` parser rejecting DTD/entity/external entities;
-- nested and escaped XMLDocument support;
-- fixed redacted network/HTTP/XML/range/duplicate error codes;
-- no raw XML, upstream body, fault or exception storage.
+PR-84 provides the fixed Bank of Russia `DailyInfo.KeyRateXML` source with typed
+Decimal observations, protected XML parsing, bounded HTTPS streaming and
+redacted failures. Raw XML, fault text and exception text are not retained.
 
-The first draft parser was blocked by Bandit B314 and replaced rather than
-suppressed. PR-84 added no route, Action, dependency or broker call.
+### Cache and freshness
 
-## PR-85 CBR key-rate cache lifecycle v1
+PR-85 provides exact-range process-local state with fresh/stale/unavailable
+semantics, single-flight refresh, retention/capacity bounds and no-silent-stale
+policy. Stale display requires explicit trusted `allow_stale=true`.
 
-PR-85 adds an internal process-local lifecycle over the PR-84 typed source.
+### Observability, alerts and evidence
 
-- exact `(requested_from, requested_to)` cache identity;
-- default fresh TTL 3600 seconds, stale retention 86400 seconds and capacity 16;
-- fully expired pruning, LRU-style oldest eviction and restart/clear behavior;
-- lazy loader and single-flight refresh under a process-local `RLock`;
-- explicit `fresh`, `stale`, `unavailable` result contract;
-- stale display only after failed refresh and explicit trusted `allow_stale=true`;
-- failed forced refresh while cached data is still fresh remains an explicit
-  fresh-cache fallback with redacted refresh error metadata;
-- wrong type/range/future source data and loader/source failures fail closed.
-
-Only typed PR-84 snapshots are retained. No raw XML, credentials, full account
-IDs or exception text enter the cache.
-
-## PR-86 safe CBR observability v1
-
-PR-86 maps PR-84/85 typed results to the existing immutable observability
-contracts.
-
-- available source: success/info with official provider and safe counts;
-- unavailable source: failure/error with one fixed source error code;
-- fresh cache hit: success/info and external call `not_called`;
-- successful refresh: success/info and external call `success`;
-- failed force refresh with still-fresh data: degraded/warning;
-- explicit stale exposure: degraded/warning with freshness `stale`;
-- unavailable: failure/error with no displayable value.
-
-Metrics contain only safe counts/booleans. The key-rate value, date range, XML,
-fault text, exception text and account context never enter telemetry.
-
-## PR-87 bounded CBR alert policy v1
-
-PR-87 evaluates only allowlisted PR-86 source/cache events.
-
-- conditions: source unavailable, cache unavailable, explicit stale exposure and
-  refresh failure while fresh cached data remains usable;
-- immutable typed policy/evaluation contracts;
-- consecutive status/count thresholds only, never financial thresholds;
-- `pending`, `fired`, `suppressed_cooldown`, `recovered` and `ignored` states;
-- pending state expires by retention;
-- active state cannot be forgotten before cooldown ends;
-- bounded process-local state, saturating counters and one `RLock`;
-- out-of-order matching events fail closed;
-- no webhook, email, Telegram, pager or external alert transport.
-
-## PR-88 CBR operations evidence lifecycle v1
-
-PR-88 composes already-produced PR-84/85 results with PR-86 and PR-87. It does
-not fetch the source or refresh the cache at import/startup.
-
-1. accept one typed source snapshot or cache result;
-2. build one allowlisted event;
-3. evaluate it using PR-87;
-4. persist only `fired` and `recovered` evidence;
-5. call the safe event sink first and evidence sinks second;
-6. return an immutable batch with a redacted sink-failure count.
-
-A lifecycle `RLock` prevents concurrent event/evidence reordering. Evidence is
-bounded, process-local and contains no rate, dates, XML, account, money, broker
-payload, secret, exception text or trading authorization.
+PR-86 maps source/cache states to allowlisted operational events without rate,
+date-range, XML, account or upstream payload. PR-87 evaluates only those events
+with consecutive operational thresholds, cooldown, recovery and bounded state;
+there are no financial thresholds or notification transports. PR-88 composes the
+existing typed results into deterministic event/evaluation and bounded
+fired/recovered evidence, without source fetch at import/startup.
 
 ## PR-89 official MOEX ISS TQBR quote source v1
 
-PR-89 adds one internal source for public Moscow Exchange ISS data on the fixed
-`stock/shares/TQBR` board.
-
-### Source and schema boundary
+PR-89 adds one fixed read-only public source for Moscow Exchange
+`stock/shares/TQBR` data:
 
 - fixed `https://iss.moex.com` host, engine, market, board and JSON endpoint;
-- caller controls only a strict validated `SECID`;
+- caller controls only a strict normalized `SECID`;
 - exact allowlisted `securities` and `marketdata` columns;
-- exact single-row `SECID + TQBR` identity in both tables;
-- direct JSON Decimal parsing, duplicate-key rejection and no NaN/infinity;
+- exact single-row `SECID + TQBR` identity;
+- direct Decimal parsing, duplicate-key rejection and no NaN/infinity;
 - `SUR`/`RUB` normalization to `RUB`;
-- positive finite `LAST`/`BID`/`OFFER`, at least one price and bid ≤ ask;
+- positive finite prices, at least one price and bid ≤ ask;
 - Moscow `SYSTIME` conversion to UTC with future-skew rejection;
-- existing `MarketSourceV1` and `MarketQuoteV1` contracts reused.
-
-### Transport and failure behavior
-
-- HTTPS/TLS verification, redirects disabled and `trust_env=false`;
-- no Authorization/Cookie headers or broker credentials;
-- bounded timeout, `Content-Length` and streamed response size;
-- only JSON content types accepted;
-- network/HTTP/content/schema/identity/time/price failures return one redacted
-  unavailable snapshot;
-- raw JSON, upstream body and exception text are never retained.
+- bounded HTTPS streaming, redirects disabled and `trust_env=false`;
+- redacted unavailable results for network/HTTP/content/schema/identity/time/
+  price failures;
+- no raw JSON, upstream body, credentials or exception text retention.
 
 The snapshot permanently declares public unauthenticated, potentially delayed,
 not guaranteed real-time and informational-only data. It does not replace broker
-`getMarketSnapshot`; values from the two sources are never silently averaged.
+`getMarketSnapshot`; values are never silently averaged.
 
-## PR-90 MOEX ISS TQBR quote cache v1
-
-PR-90 adds one internal bounded lifecycle over PR-89.
-
-### Identity and defaults
+## PR-90 MOEX quote cache v1
 
 - exact process-local key `(TQBR, normalized SECID)`;
-- default fresh TTL 60 seconds;
-- stale retention 900 seconds;
-- capacity 64 exact identities;
-- future tolerance 30 seconds;
-- bounded configuration and restart-clear state.
-
-### Two-clock freshness
-
-- `fresh_until` and `stale_until` are derived from `snapshot.retrieved_at` and
-  control source-request frequency/retention;
-- `age_seconds` is derived from `snapshot.quote.as_of` and represents actual
-  market-observation age;
-- a newly retrieved HTTP response therefore cannot hide old market data;
-- delayed/non-realtime/informational source flags remain immutable.
-
-### State behavior
-
-- `fresh`: successful refresh, ordinary cache hit, or explicit still-fresh
-  fallback after failed force refresh;
-- `stale`: only after refresh failure and trusted `allow_stale=true`;
-- `unavailable`: no snapshot is exposed when cache is empty/expired, stale is not
-  allowed, or type/identity/future/source validation fails;
-- stale is never shown silently;
-- newly loaded already-old data follows the same stale policy;
+- default fresh TTL 60 seconds, stale retention 900 seconds, capacity 64;
+- cache TTL derives from `snapshot.retrieved_at`;
+- user-visible market age derives from `snapshot.quote.as_of`;
 - one `RLock` provides single-flight refresh and atomic prune/store/evict/clear;
-- oldest entries are evicted and fully expired entries are removed.
+- explicit fresh, stale and unavailable result contract;
+- stale is exposed only after refresh failure and trusted `allow_stale=true`;
+- wrong type/identity/future/source data fail closed;
+- process state is empty after restart.
 
-The typed result contract rejects impossible time/state/refresh combinations.
-Only typed PR-89 snapshots are retained; no raw JSON, credentials, account data
-or exception text enter the cache.
+No network call occurs at import/startup. Only typed PR-89 snapshots are retained.
 
-### Compatibility and safety
+## PR-91 safe MOEX observability v1
 
-- `app:app` remains unchanged;
-- exactly 14 authenticated GET Actions remain unchanged;
-- no route, request body, public response field or frontend component is added;
-- no network call occurs at import/startup;
-- no dependency, secret, database or Render migration is required;
-- no T-Invest call or broker write method is added;
+PR-91 builds immutable events from already-produced PR-89/90 typed results.
+
+Supported mappings:
+
+- source available/unavailable;
+- fresh cache hit with external call `not_called`;
+- successful refresh;
+- failed refresh while still-fresh cached data remains usable;
+- explicit stale exposure;
+- unavailable cache result.
+
+Events contain safe status, latency, freshness, refresh and boolean/count metadata
+only. They contain no price, bid, ask, spread, currency, SECID, short name,
+instrument key, lot metadata, market timestamp, age, account value, cash, raw
+JSON, credentials, exception type or exception text.
+
+Builders are pure: no automatic emission, logger/sink registration, route,
+startup fetch or broker call.
+
+Regression Shield #575 on the exact PR-91 final head passed:
+
+- 912 tests, 0 failures/errors/skips;
+- mypy: 168 source files;
+- line coverage 66.3%, branch coverage 48.85%;
+- compile, Ruff, formatting, stable entrypoint, 14-GET release contract,
+  dependency audit, SAST and secret scan passed.
+
+## PR-92 global MOEX operational alert policy v1
+
+### Identity boundary
+
+The immutable scope is `global_moex_tqbr_feed`. PR-91 deliberately excludes
+SECID and account identity, so PR-92 cannot represent per-instrument alerts and
+cannot reconstruct identity from correlation IDs, errors, logs or hidden state.
+
+### Canonical event gate
+
+Known PR-91 event names are accepted only when the full allowlisted shape matches:
+
+- exact event/component/provider/operation;
+- exact safe metric-name set;
+- fixed public/delayed/non-realtime/informational flags;
+- allowed outcome/severity/external-call/freshness profile;
+- no account, request/action identity, quality/completeness or exception payload.
+
+A forged same-name event fails closed with `MOEX_ALERT_EVENT_CONTRACT_INVALID`.
+Unrelated event names are ignored without state.
+
+### Conditions and state
+
+Operational conditions only:
+
+- source unavailable;
+- cache unavailable;
+- stale value explicitly exposed;
+- refresh failed while fresh cached data remains displayable.
+
+Defaults:
+
+- thresholds: 3 / 2 / 2 / 3 consecutive occurrences;
+- cooldown 900 seconds;
+- retention 86400 seconds;
+- capacity exactly four global alert kinds;
+- saturating counters and one process-local `RLock`.
+
+Dispositions are `ignored`, `pending`, `fired`, `suppressed_cooldown` and
+`recovered`. Out-of-order matching events fail closed. Pending state expires by
+retention; active state is preserved through cooldown; restart starts empty.
+
+There are no price, spread, return, volatility, volume, liquidity or portfolio
+thresholds. There is no webhook, email, Telegram, pager, external notification,
+evidence store or automatic emission.
+
+## Compatibility and safety after PR-92
+
+- `app:app` unchanged;
+- exactly 14 authenticated GET Actions unchanged;
+- no route, request body, public response field or frontend component added;
+- no dependency, secret, database or Render migration required;
+- no source/cache call at import/startup;
+- no T-Invest call or broker write method added;
 - `trading_methods=false`.
 
 ## Frontend/owner discovery state
 
-Repository search did not find a registered existing frontend/dashboard owner
-or production caller for the CBR or MOEX fields. PR-84…PR-90 therefore do not
-invent a duplicate UI, silently change an Action response or start network calls.
-The exact existing source/caller must be located before production binding.
+Repository search did not find a registered existing frontend/dashboard owner or
+production caller for the CBR/MOEX fields. PR-84…PR-92 therefore do not invent a
+duplicate UI, silently change an Action response or start network calls. The exact
+existing caller/owner must be located before production binding.
 
 ## Production acceptance state
 
@@ -247,12 +225,10 @@ required Render/GPT evidence.
 
 ### Backend and operations
 
-- add safe MOEX source/cache observability without price values;
-- locate the exact existing CBR caller/owner and register PR-88 lazily without a
-  startup fetch or public API change;
-- define operator-facing retention/acceptance for CBR fired/recovered evidence;
-- locate the exact existing macro/dashboard owner, then bind CBR/MOEX results
-  with explicit freshness and source presentation;
+- build bounded MOEX fired/recovered evidence lifecycle over PR-91/92;
+- locate the exact existing CBR/MOEX caller/owner and register lifecycle lazily
+  without startup fetch or public API change;
+- define operator-facing retention/acceptance and any later external routing;
 - production-grade rating, news and corporate-event ingestion;
 - actual Render/Gateway acceptance and evidence recording;
 - actual GPT Editor import and authenticated Preview;
@@ -274,21 +250,25 @@ Shadow, paper, preview и final-review инфраструктура не явл�
 switch, partial-fill и timeout reconciliation требуют отдельной программы
 допуска и решения владельца. Автономная торговля без подтверждения не включена.
 
-## Следующий пакет после PR-90
+## Следующий пакет после PR-92
 
-Ближайший независимый безопасный пакет — MOEX source/cache observability v1:
+Ближайший независимый безопасный пакет — bounded MOEX operations evidence
+lifecycle v1:
 
-- allowlisted status, latency, refresh and freshness metadata only;
-- market price values and raw JSON never enter telemetry;
-- explicit public/delayed/non-realtime source flags;
-- safe source/cache error codes and count metrics;
-- no route, Action, frontend field, startup network call or broker method.
+- compose already-produced typed source/cache result → PR-91 event → PR-92
+  evaluation;
+- persist only fired/recovered global operational evidence;
+- deterministic event-sink then evidence-sink ordering;
+- bounded retention/capacity, pruning, eviction and restart-clear behavior;
+- no SECID, price, account, raw payload or exception text;
+- no external notification transport, route, Action, startup source call or
+  broker method.
 
 Production acceptance remains a separate mandatory external block and cannot be
 replaced by local tests.
 
 ## Запрет ложного завершения
 
-Проект не считается полностью завершённым только потому, что PR-90 слит или CI
-зелёный. Завершение разрешено объявлять только после всех согласованных пакетов,
-production acceptance и отдельной проверки полного Definition of Done.
+Проект не считается полностью завершённым только потому, что PR-92 слит и CI
+зелёный. Полный релиз требует внешней Render/Gateway/GPT acceptance evidence,
+точного production owner binding и завершения оставшихся master-plan блоков.
