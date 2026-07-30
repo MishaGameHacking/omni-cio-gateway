@@ -1,68 +1,33 @@
-# Custom GPT Omni-CIO configuration
+# Custom GPT Omni-CIO
 
-Эта папка хранит переносимую, обезличенную конфигурацию Custom GPT. Она нужна, чтобы новый чат, новый GPT-проект или новый аккаунт ChatGPT мог восстановить поведение помощника из GitHub без переноса личной истории аккаунта.
+Эта папка хранит воспроизводимую конфигурацию пользовательского интерфейса Omni-CIO внутри ChatGPT. История чатов, память аккаунта и секреты для восстановления не нужны.
 
-## Файлы
+## Канонические точки входа
 
-- `CONFIGURATION.md` — имя, описание, starters, publishing и ручные настройки GPT Editor.
-- `INSTRUCTIONS_COMPACT.md` — рабочий текст для поля Instructions в GPT Editor; укладывается в лимит 8000 символов.
-- `INSTRUCTIONS.md` — расширенные канонические инструкции для GitHub, разработки и восстановления контекста.
-- `ACTIONS_CATALOG.md` — operationId, paths, назначение и правила вызовов.
-- `NEW_CHAT_PROMPT.md` — стартовый запрос для подключения нового чата к проекту.
-- `PROJECT_INSTRUCTIONS.md` — готовый текст для Project instructions нового ChatGPT Project.
-- `BOT_ONLY_FILE_MANIFEST.md` — полный список только файлов Omni-CIO и внешних настроек без данных аккаунта.
-- `NEW_ACCOUNT_BOOTSTRAP.md` — пошаговый запуск Omni-CIO в новом аккаунте только из GitHub.
+- `MY_GPT_SETUP_RUNBOOK.md` — точная настройка в ChatGPT → My GPTs.
+- `CONFIGURATION.md` — желаемое состояние GPT Editor.
+- `INSTRUCTIONS_COMPACT.md` — рабочий текст для поля Instructions.
+- `INSTRUCTIONS.md` — расширенная каноническая версия поведения.
+- `ACTIONS_CATALOG.md` — ровно 14 production GET Actions.
+- `NEW_ACCOUNT_BOOTSTRAP.md` — запуск в новом аккаунте.
+- `BOT_ONLY_FILE_MANIFEST.md` — что относится к боту и что не переносится.
+- `PROJECT_INSTRUCTIONS.md` и `NEW_CHAT_PROMPT.md` — восстановление контекста разработки.
 
-Профиль стиля также зафиксирован в `knowledge/13_COMMUNICATION_STYLE_2026.txt`. Его можно загрузить в Knowledge как справочник с расширенными примерами. При конфликте компактные Instructions имеют приоритет.
+Стратегическая спецификация разработки находится в `docs/master-plan/`; фактический выполненный этап и следующий пакет — в `knowledge/16_CURRENT_PROGRAM_STATUS.md`.
 
-## Новый аккаунт без переноса личных данных
+## Что вводится вручную
 
-Для переезда проекта не нужен экспорт истории старого аккаунта. Используйте:
+- имя, описание, starters, модель и режим доступа;
+- текст из `INSTRUCTIONS_COMPACT.md`;
+- минимально необходимые Knowledge-файлы;
+- Web Search, если нужны текущие публичные сведения;
+- production `/openapi.json` в разделе Actions;
+- API Key с типом Bearer и секретным значением `GATEWAY_API_KEY`.
 
-1. `NEW_ACCOUNT_BOOTSTRAP.md`;
-2. `PROJECT_INSTRUCTIONS.md`;
-3. `BOT_ONLY_FILE_MANIFEST.md`;
-4. `NEW_CHAT_PROMPT.md`;
-5. существующий приватный репозиторий и production Gateway.
+Секрет никогда не записывается в GitHub, Instructions или Knowledge. Подробная последовательность и проверки — в `MY_GPT_SETUP_RUNBOOK.md`.
 
-Старые личные чаты, память другого аккаунта и файлы посторонних проектов не входят в перенос Omni-CIO.
+## Синхронизация
 
-## Что всё равно настраивается вручную в GPT Editor
+Если меняется только поведение ответа, синхронизируйте оба файла Instructions, профиль `knowledge/13_COMMUNICATION_STYLE_2026.txt` и затем проверьте Preview. Если меняется OpenAPI, после production deploy повторно импортируйте schema и сверяйте весь каталог Actions.
 
-- имя и иконка GPT;
-- выбранная модель;
-- публикация и доступ;
-- текст Instructions из `INSTRUCTIONS_COMPACT.md`;
-- Knowledge-файл `knowledge/13_COMMUNICATION_STYLE_2026.txt`;
-- включение Web Search;
-- импорт OpenAPI schema с production `/openapi.json`;
-- Bearer API key, равный `GATEWAY_API_KEY` в Render;
-- conversation starters.
-
-Секретный Bearer key не хранится в GitHub.
-
-## Обновление поведения без изменения Actions
-
-Если меняются только язык, структура ответа или правила публикаций:
-
-1. обновить расширенный `INSTRUCTIONS.md`;
-2. синхронизировать рабочий `INSTRUCTIONS_COMPACT.md`, сохраняя размер менее 8000 символов;
-3. обновить `CONFIGURATION.md` и профильный файл в `knowledge/`;
-4. после merge открыть GPT Editor;
-5. заменить поле Instructions полным содержимым `INSTRUCTIONS_COMPACT.md`;
-6. при необходимости загрузить профиль стиля в Knowledge;
-7. проверить Preview;
-8. нажать Update.
-
-Повторно импортировать OpenAPI не нужно, если контракт Actions не изменился.
-
-## Обновление Action contract
-
-При изменении Action contract:
-
-1. обновить backend и тесты;
-2. обновить `CONFIGURATION.md`, оба файла Instructions и `ACTIONS_CATALOG.md`;
-3. обновить профильный файл в `knowledge/`;
-4. после production deploy заново импортировать OpenAPI в GPT Editor;
-5. проверить, что доступны только ожидаемые GET Actions;
-6. подтвердить `trading_methods=false`.
+Внутри GPT нельзя считать Render/Gateway/GPT acceptance выполненной по одному зелёному CI. Статус acceptance фиксируется только после реальных проверок из `knowledge/16_CURRENT_PROGRAM_STATUS.md`.
