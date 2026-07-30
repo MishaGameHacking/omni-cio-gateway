@@ -1,5 +1,11 @@
 """Omni-CIO data contracts, schema version 1.0."""
 
+from omni_cio.contracts.v1.alerting import (
+    CbrKeyRateAlertDisposition,
+    CbrKeyRateAlertEvaluationV1,
+    CbrKeyRateAlertKind,
+    CbrKeyRateAlertPolicyV1,
+)
 from omni_cio.contracts.v1.analytics import (
     AdvancedPortfolioAnalyticsV1,
     AssetClassAllocationV1,
@@ -176,6 +182,10 @@ __all__ = [
     "CategoryCashFlowV1",
     "CategoryTotalCheckV1",
     "CategoryTotalsCheckV1",
+    "CbrKeyRateAlertDisposition",
+    "CbrKeyRateAlertEvaluationV1",
+    "CbrKeyRateAlertKind",
+    "CbrKeyRateAlertPolicyV1",
     "CbrKeyRateCacheResultV1",
     "CbrKeyRateSnapshotV1",
     "CheckStatus",
