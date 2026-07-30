@@ -36,6 +36,10 @@ Custom GPT ── Omni-CIO Gateway (`app:app`) ── T-Invest API
   fresh/stale/unavailable contract, single-flight refresh, TTL pruning,
   capacity eviction и запрет скрытого показа stale values. Cache остаётся
   internal-only и не добавляет новый Action или dashboard field.
+- PR-86 добавляет allowlisted observability events для PR-84/85: source/cache
+  status, latency, freshness и safe count metrics без значения ставки, дат
+  диапазона, XML, fault/exception text, счёта или broker payload. Event builders
+  pure и не меняют public API.
 - Runtime и CI устанавливают полностью pinned зависимости только после
   проверки SHA-256 hashes.
 - Regression Shield включает lint, formatting baseline, mypy, покрытие
@@ -65,6 +69,7 @@ omni_cio/contracts/                  versioned financial contracts
 omni_cio/adapters/                   legacy-to-contract adapters
 omni_cio/quality/                    shadow validation and quality gates
 omni_cio/market/                     market, macro and capacity sources/analysis
+omni_cio/observability/              allowlisted structured telemetry
 omni_cio/release/                    read-only release, route and acceptance controls
 broker_report_reconciliation/        официальный отчёт и сверка
 tests/                               unit, endpoint, OpenAPI, Regression Shield
@@ -126,6 +131,7 @@ Omni-CIO больше не содержит Telegram runtime. Полезная �
 - реальные брокерские отчёты и операции пользователя;
 - Render secrets и секретный GPT Bearer key;
 - сырой XML Банка России и upstream fault/exception text;
+- значение ставки или даты диапазона в observability events;
 - содержимое process-local CBR cache;
 - содержимое bounded final-review, approved-context, owner-snapshot и evidence
   registries после остановки процесса.
@@ -146,6 +152,7 @@ Omni-CIO больше не содержит Telegram runtime. Полезная �
 - [`docs/architecture/FINAL_DECISION_REVIEW_AUTHENTICATED_OWNER_INSTALLATION_V1.md`](docs/architecture/FINAL_DECISION_REVIEW_AUTHENTICATED_OWNER_INSTALLATION_V1.md) — post-auth snapshot selection и one-shot installation.
 - [`docs/architecture/CBR_KEY_RATE_SOURCE_V1.md`](docs/architecture/CBR_KEY_RATE_SOURCE_V1.md) — официальный источник ключевой ставки и security boundary.
 - [`docs/architecture/CBR_KEY_RATE_CACHE_V1.md`](docs/architecture/CBR_KEY_RATE_CACHE_V1.md) — cache, freshness и stale/unavailable policy.
+- [`docs/architecture/CBR_KEY_RATE_OBSERVABILITY_V1.md`](docs/architecture/CBR_KEY_RATE_OBSERVABILITY_V1.md) — safe source/cache telemetry without financial payload.
 - [`docs/operations/DEPLOYMENT_RUNBOOK.md`](docs/operations/DEPLOYMENT_RUNBOOK.md) — gateway deployment.
 - [`docs/operations/TELEGRAM_REMOVAL_RUNBOOK.md`](docs/operations/TELEGRAM_REMOVAL_RUNBOOK.md) — очистка выведенного Telegram service.
 - [`knowledge/09_MARKET_DATA_AND_BUYING_POWER.txt`](knowledge/09_MARKET_DATA_AND_BUYING_POWER.txt) — market и macro source/cache semantics.
