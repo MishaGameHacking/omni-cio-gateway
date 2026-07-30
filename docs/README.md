@@ -21,6 +21,7 @@
 - `architecture/SYSTEM_OVERVIEW.md`
 - `architecture/REPOSITORY_STRUCTURE.md`
 - `architecture/DECISIONS.md`
+- `architecture/FINAL_DECISION_REVIEW_PRODUCTION_ROUTE_V1.md` — private GET Action, bounded TTL registry, fail-closed HTTP and OpenAPI contract.
 
 ### Operations
 

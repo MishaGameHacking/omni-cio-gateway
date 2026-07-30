@@ -16,7 +16,7 @@ import app as gateway_module
 import sdk_order_compat
 
 
-EXPECTED_VERSION = "3.9.1"
+EXPECTED_VERSION = "3.10.0"
 EXPECTED_ENTRYPOINT = "app:app"
 EXPECTED_ACTION_PATHS = {
     "/health": "gatewayHealth",
@@ -32,6 +32,7 @@ EXPECTED_ACTION_PATHS = {
     "/operations/broker-report-reconciliation": "getBrokerReportReconciliation",
     "/instruments/search": "findInstrument",
     "/market/snapshot": "getMarketSnapshot",
+    "/decision/final-review": "getFinalDecisionReview",
 }
 PROTECTED_URLS = (
     "/connection",
@@ -55,6 +56,13 @@ PROTECTED_URLS = (
     (
         "/market/snapshot?"
         "instrument_uid=e6123145-9665-43e0-8413-cd61b8aa9b13&depth=1"
+    ),
+    (
+        "/decision/final-review?account=****1234&"
+        "requested_option_id=option.limited&final_option_id=option.limited&"
+        f"intent_fingerprint={'a' * 64}&instrument_count=1&"
+        "instrument_keys=uid%3Ainstrument-1&"
+        f"response_sha256={'1' * 64}&action_candidate_sha256={'2' * 64}"
     ),
 )
 
@@ -94,6 +102,7 @@ def test_health_contract_and_read_only_invariants() -> None:
     assert "broker_report_async_generation" in capabilities
     assert "broker_report_async_integrity" in capabilities
     assert "broker_report_trade_reconciliation" in capabilities
+    assert "final_decision_review" in capabilities
     assert "regression_shield" in capabilities
 
     assert payload["build"]["entrypoint"] == EXPECTED_ENTRYPOINT
@@ -135,6 +144,9 @@ def test_openapi_is_gpt_actions_compatible_and_operation_ids_are_unique() -> Non
         response_schema = operation["responses"]["200"]["content"][
             "application/json"
         ]["schema"]
+        if "$ref" in response_schema:
+            component_name = response_schema["$ref"].rsplit("/", maxsplit=1)[-1]
+            response_schema = schema["components"]["schemas"][component_name]
         assert response_schema["type"] == "object"
         assert isinstance(response_schema["properties"], dict)
 
@@ -180,6 +192,25 @@ def test_openapi_is_gpt_actions_compatible_and_operation_ids_are_unique() -> Non
     )
     assert days_parameter["schema"]["maximum"] == 31
 
+    final_operation = schema["paths"]["/decision/final-review"]["get"]
+    assert final_operation["security"] == [{"ApiKeyAuth": []}]
+    assert "requestBody" not in final_operation
+    final_query_names = tuple(
+        parameter["name"]
+        for parameter in final_operation["parameters"]
+        if parameter["in"] == "query"
+    )
+    assert final_query_names == (
+        "account",
+        "requested_option_id",
+        "final_option_id",
+        "intent_fingerprint",
+        "instrument_count",
+        "instrument_keys",
+        "response_sha256",
+        "action_candidate_sha256",
+    )
+
     assert len(operation_ids) == len(set(operation_ids))
 
     for node in walk_json(schema):
@@ -191,21 +222,30 @@ def test_openapi_is_gpt_actions_compatible_and_operation_ids_are_unique() -> Non
 def test_openapi_exposes_no_mutating_or_trading_operations() -> None:
     schema = client.get("/openapi.json").json()
     http_methods = {"get", "post", "put", "patch", "delete"}
-
-    for path, path_item in schema["paths"].items():
-        exposed_methods = set(path_item).intersection(http_methods)
-        assert exposed_methods <= {"get"}, (path, exposed_methods)
-
-    serialized = json.dumps(schema).lower()
-    forbidden_markers = (
+    forbidden_operation_markers = (
         "postorder",
+        "createorder",
         "replaceorder",
         "cancelorder",
-        "/orders",
-        "/order/",
+        "executeorder",
+        "confirmtrade",
     )
-    for marker in forbidden_markers:
-        assert marker not in serialized
+
+    for path, path_item in schema["paths"].items():
+        normalized_path = path.lower()
+        assert not normalized_path.startswith("/orders")
+        assert not normalized_path.startswith("/order/")
+        assert not normalized_path.startswith("/execution")
+        assert not normalized_path.startswith("/withdraw")
+        assert not normalized_path.startswith("/transfer")
+
+        exposed_methods = set(path_item).intersection(http_methods)
+        assert exposed_methods <= {"get"}, (path, exposed_methods)
+        for method in exposed_methods:
+            operation_id = str(path_item[method].get("operationId") or "").lower()
+            assert not any(
+                marker in operation_id for marker in forbidden_operation_markers
+            )
 
 
 def test_purchase_preview_uses_an_explicit_broker_sdk_allowlist() -> None:

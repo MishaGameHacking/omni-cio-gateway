@@ -161,7 +161,7 @@ def test_endpoint_is_protected_and_returns_compact_diagnostics(monkeypatch) -> N
 
     payload = response.json()
     assert payload["status"] == "ok"
-    assert payload["version"] == "3.9.1"
+    assert payload["version"] == gateway_module.APP_VERSION
     assert payload["account"]["masked_id"] == "***3118"
     assert payload["cash_by_currency"][0]["cash_status"] == "matched"
     assert payload["quality"]["currencies_matched"] == 1

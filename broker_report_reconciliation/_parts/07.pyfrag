@@ -4,14 +4,14 @@ from __future__ import annotations
 RELEASE_VERSION = "3.9.1"
 
 
-def _promote_runtime_version(app: Any) -> None:
-    app.version = RELEASE_VERSION
+def _promote_runtime_version(app: Any, release_version: str) -> None:
+    app.version = release_version
     app.description = (
         "Private read-only gateway between a Custom GPT and T-Invest API. "
-        "v3.9.1 preserves asynchronous broker-report task IDs, treats T-Invest "
-        "error 30058 as a pending state, limits report requests to 31 days, and "
-        "keeps report retrieval read-only. It cannot create, submit, replace, or "
-        "cancel orders."
+        f"Gateway release v{release_version} preserves asynchronous broker-report "
+        "task IDs, treats T-Invest error 30058 as a pending state, limits report "
+        "requests to 31 days, and keeps report retrieval read-only. It cannot "
+        "create, submit, replace, or cancel orders."
     )
 
     # Older route handlers resolve APP_VERSION from their defining module globals.
@@ -23,14 +23,16 @@ def _promote_runtime_version(app: Any) -> None:
         if not isinstance(route_globals, dict):
             continue
         if "APP_VERSION" in route_globals:
-            route_globals["APP_VERSION"] = RELEASE_VERSION
+            route_globals["APP_VERSION"] = release_version
         if "ENTRYPOINT" in route_globals:
             route_globals["ENTRYPOINT"] = "app:app"
 
 
 def register_gateway(*, app: Any, base: Any, app_version: str) -> None:
-    del app_version
-    _promote_runtime_version(app)
+    release_version = str(app_version or RELEASE_VERSION).strip()
+    if not release_version:
+        release_version = RELEASE_VERSION
+    _promote_runtime_version(app, release_version)
 
     for capability in (
         "broker_report_reconciliation",
@@ -82,7 +84,7 @@ def register_gateway(*, app: Any, base: Any, app_version: str) -> None:
     ) -> dict[str, Any]:
         return get_broker_report_reconciliation(
             base=base,
-            app_version=RELEASE_VERSION,
+            app_version=release_version,
             days=days,
             task_id=task_id,
             wait_seconds=wait_seconds,

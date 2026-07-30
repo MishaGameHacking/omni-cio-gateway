@@ -295,7 +295,7 @@ def test_endpoint_is_protected_and_calls_only_read_methods(monkeypatch) -> None:
 
     payload = response.json()
     assert payload["status"] == "ok"
-    assert payload["version"] == "3.9.1"
+    assert payload["version"] == gateway_module.APP_VERSION
     assert payload["account"]["masked_id"] == "***3118"
     assert payload["instrument"]["ticker"] == "SBER"
     assert payload["affordable"] == "yes"

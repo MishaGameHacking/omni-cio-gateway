@@ -5,6 +5,11 @@
 ## [Unreleased]
 
 ### Added
+- Production private `GET /decision/final-review` с exact eight-query identity,
+  existing Gateway Bearer auth, `FinalDecisionReviewResponseV1`, bounded 15-minute/
+  64-entry internal source registry, fail-closed 400/401/409/422/503 behavior и safe
+  observability; маршрут не вызывает брокера, не пересчитывает решение и сохраняет
+  `trading_methods=false`.
 - Isolated test-only FastAPI final-review candidate с private `ApiKeyAuth`,
   exact eight-query contract, TestClient 200/400/401/409/422/503 coverage и
   проверкой candidate OpenAPI существующим GET-only release guard; production
