@@ -27,6 +27,7 @@
 | `omni_cio/observability/cbr_key_rate_events_v1.py` | PR-86 source/cache status, latency, freshness and safe-count telemetry without financial payload |
 | `omni_cio/observability/cbr_key_rate_alert_policy_v1.py` | PR-87 bounded thresholds, cooldown, deduplication, recovery and retention lifecycle |
 | `omni_cio/observability/cbr_key_rate_operations_lifecycle_v1.py` | PR-88 deterministic event/evaluation/evidence composition and bounded safe sink handoff |
+| `omni_cio/observability/moex_iss_quote_events_v1.py` | PR-91 pure MOEX source/cache status builders without price, SECID, account or upstream payload |
 | `omni_cio/release/final_decision_review_route_v1.py` | Production private GET route and safe handler boundary |
 | `omni_cio/release/final_decision_review_publisher_v1.py` | Trusted process-local exact-source publisher |
 | `omni_cio/release/final_decision_review_orchestration_v1.py` | PR-53…PR-63 composition and first-blocker handling |
@@ -79,6 +80,9 @@
 | `tests/test_moex_iss_quote_contract_exports_v1.py` | PR-89 versioned contract and market-package export compatibility |
 | `tests/test_moex_iss_quote_cache_v1.py` | PR-90 cache contract, two-clock freshness, single-flight, stale policy, eviction and safety |
 | `tests/test_moex_iss_quote_cache_exports_v1.py` | PR-90 versioned cache-contract and market-package export compatibility |
+| `tests/test_moex_iss_quote_observability_v1.py` | PR-91 source/cache mapping, safe metrics, redacted errors and no-write surface |
+| `tests/test_moex_iss_quote_observability_privacy_v1.py` | PR-91 serialization exclusions for price, identity and upstream payload |
+| `tests/test_moex_iss_quote_observability_exports_v1.py` | PR-91 observability package export compatibility |
 | `tests/test_portfolio_market_snapshot.py` | Рыночная оценка портфеля |
 | `tests/test_portfolio_analytics.py` | Структура и концентрация |
 | `tests/test_cash_liquidity.py` | Деньги и лимиты |
@@ -103,7 +107,7 @@
 | `knowledge/12_TELEGRAM_RETIREMENT.txt` | Telegram retirement decision |
 | `knowledge/13_COMMUNICATION_STYLE_2026.txt` | Active communication profile |
 | `knowledge/14_CI_SECURITY_BASELINE.txt` | Reproducible CI and security gates |
-| `knowledge/15_VERSIONED_DATA_CONTRACTS.txt` | Versioned contracts and quality profiles |
+| `knowledge/15_VERSIONED_DATA_CONTRACTS.txt` | Versioned contracts and data-quality profiles |
 | `docs/architecture/FINAL_DECISION_REVIEW_AUTHENTICATED_OWNER_INSTALLATION_V1.md` | PR-83 authenticated installation lifecycle |
 | `docs/architecture/CBR_KEY_RATE_SOURCE_V1.md` | PR-84 official source, parser and transport security boundary |
 | `docs/architecture/CBR_KEY_RATE_CACHE_V1.md` | PR-85 exact-range cache and explicit freshness/display policy |
@@ -112,6 +116,7 @@
 | `docs/architecture/CBR_KEY_RATE_OPERATIONS_LIFECYCLE_V1.md` | PR-88 deterministic internal composition and bounded operator evidence |
 | `docs/architecture/MOEX_ISS_TQBR_QUOTE_SOURCE_V1.md` | PR-89 fixed TQBR source, public-feed limitations and fail-closed parser/transport boundary |
 | `docs/architecture/MOEX_ISS_TQBR_QUOTE_CACHE_V1.md` | PR-90 exact identity cache, two-clock freshness and no-silent-stale policy |
+| `docs/architecture/MOEX_ISS_TQBR_QUOTE_OBSERVABILITY_V1.md` | PR-91 pure status telemetry without price, SECID, account or upstream payload |
 | `gpt/MY_GPT_SETUP_RUNBOOK.md` | Точная настройка ChatGPT → My GPTs, Actions, Preview и rollback |
 | `docs/operations/RELEASE_CHECKLIST.md` | Pre-merge, production and evidence checklist |
 

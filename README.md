@@ -55,6 +55,10 @@ Custom GPT ── Omni-CIO Gateway (`app:app`) ── T-Invest API
   fresh/stale/unavailable contract, single-flight refresh, two-clock freshness,
   bounded pruning/eviction и запрет скрытого stale. `age_seconds` считается от
   market `quote.as_of`, а cache TTL — от `retrieved_at`.
+- PR-91 добавляет pure allowlisted observability builders над PR-89/90: source и
+  cache status, latency, freshness и safe boolean/count metrics без цены, SECID,
+  market timestamps, account, raw JSON или exception text. Автоматической
+  отправки событий, alerts, routes или startup calls нет.
 - Runtime и CI устанавливают полностью pinned зависимости только после
   проверки SHA-256 hashes.
 - Regression Shield включает lint, formatting baseline, mypy, покрытие
@@ -148,6 +152,7 @@ Omni-CIO больше не содержит Telegram runtime. Полезная �
 - сырой XML Банка России и upstream fault/exception text;
 - сырой MOEX ISS JSON и upstream body/exception text;
 - значение ставки или даты диапазона в observability events;
+- MOEX price/SECID/market timestamps/account в observability events;
 - содержимое process-local CBR/MOEX caches;
 - содержимое bounded final-review, approved-context, owner-snapshot, alert и
   evidence registries после остановки процесса.
@@ -173,6 +178,7 @@ Omni-CIO больше не содержит Telegram runtime. Полезная �
 - [`docs/architecture/CBR_KEY_RATE_OPERATIONS_LIFECYCLE_V1.md`](docs/architecture/CBR_KEY_RATE_OPERATIONS_LIFECYCLE_V1.md) — bounded fired/recovered evidence lifecycle.
 - [`docs/architecture/MOEX_ISS_TQBR_QUOTE_SOURCE_V1.md`](docs/architecture/MOEX_ISS_TQBR_QUOTE_SOURCE_V1.md) — официальный public TQBR source, strict parser/transport и delayed informational-feed boundary.
 - [`docs/architecture/MOEX_ISS_TQBR_QUOTE_CACHE_V1.md`](docs/architecture/MOEX_ISS_TQBR_QUOTE_CACHE_V1.md) — exact identity cache, two-clock freshness и no-silent-stale policy.
+- [`docs/architecture/MOEX_ISS_TQBR_QUOTE_OBSERVABILITY_V1.md`](docs/architecture/MOEX_ISS_TQBR_QUOTE_OBSERVABILITY_V1.md) — pure status telemetry without price, identity or account payload.
 - [`docs/operations/DEPLOYMENT_RUNBOOK.md`](docs/operations/DEPLOYMENT_RUNBOOK.md) — gateway deployment.
 - [`docs/operations/TELEGRAM_REMOVAL_RUNBOOK.md`](docs/operations/TELEGRAM_REMOVAL_RUNBOOK.md) — очистка выведенного Telegram service.
 - [`knowledge/09_MARKET_DATA_AND_BUYING_POWER.txt`](knowledge/09_MARKET_DATA_AND_BUYING_POWER.txt) — market, macro and MOEX source/cache semantics.

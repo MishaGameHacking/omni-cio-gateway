@@ -60,6 +60,12 @@ capacity, single-flight refresh и explicit fresh/stale/unavailable contract.
 PR-90 не регистрирует production caller, не вызывает сеть при импорте и не
 разрешает stale без явной trusted policy.
 
+Allowlisted telemetry builders размещаются в `omni_cio/observability/`. PR-91
+принимает только typed PR-89/90 результаты и строит immutable operational events
+без цены, SECID, market timestamp, account, raw payload или exception text. Эти
+builders не эмитят события автоматически, не регистрируют sink и не запускают
+source/cache lifecycle при import/startup.
+
 PR-80 `final_decision_review_approved_owner_installation_v1.py` является
 одноразовым typed adapter между существующими PR-78 owner ports и PR-79
 acquisition. Он не является HTTP handler, source-publication route или
@@ -122,6 +128,10 @@ PR-90 тестируется отдельно: strict cache-state contract, exac
 two-clock age, fresh/forced/stale/unavailable lifecycle, single-flight,
 pruning/eviction/clear, wrong type/identity/future guards, exports и отсутствие
 route/startup/write surface.
+
+PR-91 тестируется отдельно: source/cache status mapping, external-call state,
+latency/freshness semantics, safe metrics, serialized payload exclusions,
+package exports и отсутствие emit/route/startup/broker-write surface.
 
 ## Что нельзя переносить без отдельного PR
 
