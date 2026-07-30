@@ -118,6 +118,11 @@ Current dependency audit — 2026-07-30
 - Direct runtime constraints remain limited to FastAPI, HTTPX, the private-registry
   T-Bank SDK and Uvicorn standard extras.
 - Runtime and development locks remain exact and SHA-256 hash-locked.
+- Direct runtime lock snapshot: `fastapi==0.140.9`, `httpx==0.28.1`,
+  `t-tech-investments==1.49.2`, `uvicorn==0.51.0`.
+- Direct quality/security pins include `ruff==0.16.0`, `mypy==2.3.0`,
+  `pip-audit==2.10.1`, `bandit==1.9.4`, `detect-secrets==1.5.0`,
+  `pytest==8.4.2` and `pytest-cov==7.1.0`.
 - No Telegram dependency or configuration is present.
 - `t-tech-investments==1.49.2` is resolved from the configured T-Bank package
   index; an unrelated public PyPI project must never be used as a downgrade source.
