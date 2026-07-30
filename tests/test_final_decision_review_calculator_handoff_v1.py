@@ -7,7 +7,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from omni_cio.contracts.v1.capacity import CapacityOrderRequestV1, OrderSide
+from omni_cio.contracts.v1.capacity import (
+    CapacityAssessmentV1,
+    CapacityMetricsV1,
+    CapacityOrderRequestV1,
+    OrderSide,
+)
 from omni_cio.contracts.v1.common import (
     AccountReference,
     Completeness,
@@ -17,8 +22,14 @@ from omni_cio.contracts.v1.common import (
     QualityMetadata,
     SourceReference,
 )
-from omni_cio.contracts.v1.decision import DecisionAction
+from omni_cio.contracts.v1.decision import (
+    DecisionAction,
+    DecisionOptionKind,
+    DecisionOptionStatus,
+    DecisionSetV1,
+)
 from omni_cio.contracts.v1.decision_capacity_intent import (
+    CapacityIntentDecisionGateRequestV1,
     CapacityIntentDecisionGateV1,
 )
 from omni_cio.contracts.v1.decision_capacity_pretrade import (
@@ -37,6 +48,9 @@ from omni_cio.contracts.v1.risk import RiskPolicyEvaluationV1
 from omni_cio.contracts.v1.sell_pretrade import (
     SellPreTradePreviewV1,
     SellPreviewPriceBasis,
+)
+from omni_cio.decision.capacity_intent_gate_v1 import (
+    apply_capacity_intent_decision_gate,
 )
 from omni_cio.release.final_decision_review_calculator_handoff_v1 import (
     FinalDecisionReviewCalculatorScenarioHandoffError,
@@ -97,12 +111,47 @@ def _request(side: OrderSide) -> CapacityOrderRequestV1:
 
 
 def _intent(side: OrderSide) -> CapacityIntentDecisionGateV1:
-    return CapacityIntentDecisionGateV1.model_construct(
-        gate_ready=True,
-        request=SimpleNamespace(expected_capacity_requests=(_request(side),)),
-        no_action_option_id="option.no_action",
-        final_option_id="option.limited_change",
-        final_action=DecisionAction.REVIEW_LIMITED_CHANGE,
+    request = _request(side)
+    decision = DecisionSetV1.model_construct(
+        metadata=SimpleNamespace(retrieved_at=NOW),
+        recommendation_ready=True,
+        abstain=False,
+        preferred_option_id="option.limited_change",
+        options=(
+            SimpleNamespace(
+                option_id="option.no_action",
+                kind=DecisionOptionKind.NO_ACTION,
+                status=DecisionOptionStatus.AVAILABLE,
+                action=DecisionAction.HOLD,
+            ),
+            SimpleNamespace(
+                option_id="option.limited_change",
+                kind=DecisionOptionKind.LIMITED_CHANGE,
+                status=DecisionOptionStatus.PREFERRED,
+                action=DecisionAction.REVIEW_LIMITED_CHANGE,
+            ),
+        ),
+    )
+    metrics = CapacityMetricsV1.model_construct(
+        safe_notional_for_requested_window=request.order_notional,
+        safe_lots_for_requested_window=request.quantity_lots,
+    )
+    assessment = CapacityAssessmentV1.model_construct(
+        assessed_at=NOW,
+        capacity_ready=True,
+        request=request,
+        metrics=metrics,
+        blockers=(),
+    )
+    return apply_capacity_intent_decision_gate(
+        decision,
+        CapacityIntentDecisionGateRequestV1(
+            gate_id=f"handoff-{side.value}-gate",
+            requested_option_id="option.limited_change",
+            expected_capacity_requests=(request,),
+        ),
+        (assessment,),
+        assessed_at=NOW,
     )
 
 
