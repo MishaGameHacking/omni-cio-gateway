@@ -1,0 +1,1 @@
+- `architecture/MOEX_ISS_TQBR_QUOTE_OBSERVABILITY_V1.md` — pure allowlisted source/cache telemetry without price, SECID, account or upstream payload.
