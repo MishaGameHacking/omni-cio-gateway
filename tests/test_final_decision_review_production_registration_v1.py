@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 import app as gateway
 from omni_cio.release.final_decision_review_production_registration_v1 import (
     FinalDecisionReviewProductionRuntimeV1,
@@ -60,7 +62,7 @@ def test_registration_keeps_portfolio_loader_lazy() -> None:
 
 
 def test_production_portfolio_loader_uses_existing_read_only_engine(
-    monkeypatch,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     expected = {"status": "ok", "trading_methods": False}
     captured: dict[str, object] = {}
