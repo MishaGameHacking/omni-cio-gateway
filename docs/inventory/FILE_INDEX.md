@@ -19,11 +19,13 @@
 | `omni_cio/contracts/v1/alerting.py` | PR-87/88 CBR alert policy, evaluation and evidence contracts |
 | `omni_cio/contracts/v1/moex.py` | PR-89/90 MOEX ISS TQBR source and explicit cache result contracts |
 | `omni_cio/contracts/v1/moex_alerting.py` | PR-92/93 global MOEX alert policy, evaluation and fired/recovered evidence contracts |
+| `omni_cio/contracts/v1/ratings.py` | PR-94 ACRA issuer-level rating action, outlook, source status and error contracts |
 | `omni_cio/market/` | Market, capacity, bond, equity, fund and technical analysis |
 | `omni_cio/market/cbr_key_rate_v1.py` | PR-84 fixed official Bank of Russia SOAP source, bounded streaming and protected XML parsing |
 | `omni_cio/market/cbr_key_rate_cache_v1.py` | PR-85 exact-range bounded cache, single-flight refresh and explicit fresh/stale/unavailable lifecycle |
 | `omni_cio/market/moex_iss_quote_v1.py` | PR-89 fixed official public MOEX ISS TQBR quote source, strict JSON validation and bounded transport |
 | `omni_cio/market/moex_iss_quote_cache_v1.py` | PR-90 exact TQBR+SECID bounded cache, two-clock freshness, single-flight and no-silent-stale lifecycle |
+| `omni_cio/market/acra_rating_actions_v1.py` | PR-94 fixed official ACRA issuer-level national-RU rating-action source and bounded HTML transport |
 | `omni_cio/observability/safe_events_v1.py` | Existing allowlisted structured event builder and JSON emitter |
 | `omni_cio/observability/cbr_key_rate_events_v1.py` | PR-86 source/cache status, latency, freshness and safe-count telemetry without financial payload |
 | `omni_cio/observability/cbr_key_rate_alert_policy_v1.py` | PR-87 bounded thresholds, cooldown, deduplication, recovery and retention lifecycle |
@@ -90,6 +92,8 @@
 | `tests/test_moex_iss_quote_alert_policy_exports_v1.py` | PR-92 versioned contract and observability-package export compatibility |
 | `tests/test_moex_iss_quote_operations_lifecycle_v1.py` | PR-93 fired/recovered evidence, sink ordering, retention, eviction, concurrency and privacy |
 | `tests/test_moex_iss_quote_operations_lifecycle_exports_v1.py` | PR-93 contract and observability-package export compatibility |
+| `tests/test_acra_rating_actions_source_v1.py` | PR-94 issuer contracts, source scope, parsing, unsupported-scope handling, bounded transport and safety |
+| `tests/test_acra_rating_actions_exports_v1.py` | PR-94 versioned contract and market-package export compatibility |
 | `tests/test_portfolio_market_snapshot.py` | Рыночная оценка портфеля |
 | `tests/test_portfolio_analytics.py` | Структура и концентрация |
 | `tests/test_cash_liquidity.py` | Деньги и лимиты |
@@ -126,6 +130,7 @@
 | `docs/architecture/MOEX_ISS_TQBR_QUOTE_OBSERVABILITY_V1.md` | PR-91 pure status telemetry without price, SECID, account or upstream payload |
 | `docs/architecture/MOEX_ISS_TQBR_QUOTE_ALERT_POLICY_V1.md` | PR-92 global operational alert state without financial thresholds or external transport |
 | `docs/architecture/MOEX_ISS_TQBR_QUOTE_OPERATIONS_LIFECYCLE_V1.md` | PR-93 deterministic global fired/recovered evidence lifecycle |
+| `docs/architecture/ACRA_ISSUER_RATING_ACTION_SOURCE_V1.md` | PR-94 fixed official issuer-level national-RU source and bounded HTML/failure boundary |
 | `gpt/MY_GPT_SETUP_RUNBOOK.md` | Точная настройка ChatGPT → My GPTs, Actions, Preview и rollback |
 | `docs/operations/RELEASE_CHECKLIST.md` | Pre-merge, production and evidence checklist |
 

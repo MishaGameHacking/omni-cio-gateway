@@ -53,6 +53,7 @@
 - `architecture/MOEX_ISS_TQBR_QUOTE_OBSERVABILITY_V1.md` — pure allowlisted source/cache telemetry without price, SECID, account or upstream payload.
 - `architecture/MOEX_ISS_TQBR_QUOTE_ALERT_POLICY_V1.md` — bounded global-only operational thresholds, cooldown, recovery and forged-event rejection without financial thresholds or outbound transport.
 - `architecture/MOEX_ISS_TQBR_QUOTE_OPERATIONS_LIFECYCLE_V1.md` — deterministic PR-91/92 composition and bounded fired/recovered global evidence with safe sink ordering.
+- `architecture/ACRA_ISSUER_RATING_ACTION_SOURCE_V1.md` — fixed official issuer-level ACRA national-RU rating-action source with strict scope, HTML and failure boundaries.
 
 ### Operations
 
@@ -106,6 +107,6 @@ Runtime и deployment contract удалены. Решение и запрет с
 ## Что не хранится в GitHub
 
 Секреты, реальные отчёты, полный номер счёта, пользовательские финансовые
-данные, сырой CBR XML, сырой MOEX ISS JSON, upstream fault/body/exception text,
-process-local cache/alert/evidence state и финансовые значения в observability/
-alert payload не должны находиться в репозитории.
+данные, сырой CBR XML, сырой MOEX ISS JSON, сырой ACRA HTML, upstream
+fault/body/exception text, process-local cache/alert/evidence state и финансовые
+значения в observability/alert payload не должны находиться в репозитории.

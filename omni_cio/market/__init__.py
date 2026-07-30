@@ -1,3 +1,10 @@
+from omni_cio.market.acra_rating_actions_v1 import (
+    ACRA_RATING_ACTIONS_ENDPOINT,
+    ACRA_RATING_ACTIONS_SOURCE_ID,
+    AcraRatingActionsSourceError,
+    fetch_acra_issuer_rating_actions,
+    parse_acra_issuer_rating_actions_html,
+)
 from omni_cio.market.assessment_v1 import (
     MarketResearchAssessmentError,
     assess_market_research_bundle,
@@ -55,6 +62,9 @@ from omni_cio.market.technical_v1 import (
 )
 
 __all__ = [
+    "ACRA_RATING_ACTIONS_ENDPOINT",
+    "ACRA_RATING_ACTIONS_SOURCE_ID",
+    "AcraRatingActionsSourceError",
     "BondCreditRiskAssessmentError",
     "BondPortfolioRateStressError",
     "BondRateStressAssessmentError",
@@ -82,8 +92,10 @@ __all__ = [
     "assess_technical_indicators",
     "build_cbr_key_rate_soap_request",
     "build_moex_iss_tqbr_quote_url",
+    "fetch_acra_issuer_rating_actions",
     "fetch_cbr_key_rate",
     "fetch_moex_iss_tqbr_quote",
+    "parse_acra_issuer_rating_actions_html",
     "parse_cbr_key_rate_xml",
     "parse_moex_iss_tqbr_quote_json",
 ]
