@@ -4,6 +4,7 @@ from collections import OrderedDict
 from collections.abc import Iterable
 from datetime import datetime, timedelta, timezone
 from threading import RLock
+from typing import Protocol
 
 from omni_cio.contracts.v1.capacity import CapacityAssessmentV1
 from omni_cio.contracts.v1.decision import DecisionSetV1
@@ -14,6 +15,9 @@ from omni_cio.contracts.v1.final_decision_review_approved_invocation import (
     ApprovedCalculatorInvocationRequestV1,
     ApprovedCalculatorInvocationResultV1,
     ApprovedCalculatorOperation,
+)
+from omni_cio.contracts.v1.final_decision_review_trusted_scenario import (
+    TrustedScenarioPublicationResultV1,
 )
 from omni_cio.contracts.v1.pretrade import PreTradePreviewV1
 from omni_cio.contracts.v1.risk import RiskPolicyEvaluationV1
@@ -26,6 +30,34 @@ from omni_cio.release.final_decision_review_calculator_intent_workflow_v1 import
 
 class FinalDecisionReviewApprovedInvocationError(ValueError):
     """An internal calculator invocation cannot be executed safely."""
+
+
+class FinalDecisionReviewApprovedOwnerSnapshotStorePortV1(Protocol):
+    def capture_purchase(
+        self,
+        *,
+        request: ApprovedCalculatorInvocationRequestV1,
+        decision: DecisionSetV1,
+        intent_request: CapacityIntentDecisionGateRequestV1,
+        capacity_assessments: tuple[CapacityAssessmentV1, ...],
+        purchase_previews: tuple[PreTradePreviewV1, ...],
+        pro_forma_risk: RiskPolicyEvaluationV1,
+        publication: TrustedScenarioPublicationResultV1,
+        captured_at: datetime | None = None,
+    ) -> object: ...
+
+    def capture_sell(
+        self,
+        *,
+        request: ApprovedCalculatorInvocationRequestV1,
+        decision: DecisionSetV1,
+        intent_request: CapacityIntentDecisionGateRequestV1,
+        capacity_assessments: tuple[CapacityAssessmentV1, ...],
+        sell_previews: tuple[SellPreTradePreviewV1, ...],
+        pro_forma_risk: RiskPolicyEvaluationV1,
+        publication: TrustedScenarioPublicationResultV1,
+        captured_at: datetime | None = None,
+    ) -> object: ...
 
 
 def _aware_utc(value: datetime | None) -> datetime:
@@ -47,6 +79,20 @@ def _require_request(
     return value
 
 
+def _snapshot_store(
+    value: FinalDecisionReviewApprovedOwnerSnapshotStorePortV1 | None,
+) -> FinalDecisionReviewApprovedOwnerSnapshotStorePortV1 | None:
+    if value is None:
+        return None
+    if not callable(getattr(value, "capture_purchase", None)) or not callable(
+        getattr(value, "capture_sell", None)
+    ):
+        raise FinalDecisionReviewApprovedInvocationError(
+            "FINAL_DECISION_REVIEW_INVOCATION_SNAPSHOT_STORE_INVALID"
+        )
+    return value
+
+
 class FinalDecisionReviewApprovedInvocationV1:
     """Replay-safe allowlisted invocation boundary for the PR-73 workflow."""
 
@@ -54,6 +100,9 @@ class FinalDecisionReviewApprovedInvocationV1:
         self,
         *,
         workflow: FinalDecisionReviewCalculatorIntentWorkflowV1,
+        snapshot_store: (
+            FinalDecisionReviewApprovedOwnerSnapshotStorePortV1 | None
+        ) = None,
         replay_ttl_seconds: int = 900,
         replay_capacity: int = 1_024,
         max_invocation_age_seconds: int = 300,
@@ -80,6 +129,7 @@ class FinalDecisionReviewApprovedInvocationV1:
                 "FINAL_DECISION_REVIEW_INVOCATION_FUTURE_TOLERANCE_INVALID"
             )
         self._workflow = workflow
+        self._snapshot_store = _snapshot_store(snapshot_store)
         self._replay_ttl_seconds = replay_ttl_seconds
         self._replay_capacity = replay_capacity
         self._max_invocation_age_seconds = max_invocation_age_seconds
@@ -90,6 +140,12 @@ class FinalDecisionReviewApprovedInvocationV1:
     @property
     def workflow(self) -> FinalDecisionReviewCalculatorIntentWorkflowV1:
         return self._workflow
+
+    @property
+    def snapshot_store(
+        self,
+    ) -> FinalDecisionReviewApprovedOwnerSnapshotStorePortV1 | None:
+        return self._snapshot_store
 
     def _purge(self, checked_at: datetime) -> None:
         expired = [
@@ -181,6 +237,17 @@ class FinalDecisionReviewApprovedInvocationV1:
                     capacity_assessment_count=len(capacities),
                     preview_count=len(preview_rows),
                 )
+                if self._snapshot_store is not None:
+                    self._snapshot_store.capture_purchase(
+                        request=approved,
+                        decision=decision,
+                        intent_request=intent_request,
+                        capacity_assessments=capacities,
+                        purchase_previews=preview_rows,
+                        pro_forma_risk=pro_forma_risk,
+                        publication=publication,
+                        captured_at=done_at,
+                    )
             except (
                 FinalDecisionReviewCalculatorIntentWorkflowError,
                 TypeError,
@@ -228,6 +295,17 @@ class FinalDecisionReviewApprovedInvocationV1:
                     capacity_assessment_count=len(capacities),
                     preview_count=len(preview_rows),
                 )
+                if self._snapshot_store is not None:
+                    self._snapshot_store.capture_sell(
+                        request=approved,
+                        decision=decision,
+                        intent_request=intent_request,
+                        capacity_assessments=capacities,
+                        sell_previews=preview_rows,
+                        pro_forma_risk=pro_forma_risk,
+                        publication=publication,
+                        captured_at=done_at,
+                    )
             except (
                 FinalDecisionReviewCalculatorIntentWorkflowError,
                 TypeError,
