@@ -9,11 +9,14 @@
 1. AGENTS.md
 2. README.md
 3. docs/README.md
-4. knowledge/00_PROJECT_MASTER_CONTEXT.md
-5. gpt/README.md
-6. gpt/INSTRUCTIONS_COMPACT.md
-7. gpt/ACTIONS_CATALOG.md
-8. профильные файлы из knowledge/ по текущей задаче
+4. docs/master-plan/README.md
+5. docs/master-plan/OMNI_CIO_MASTER_PROMPT_V9.txt
+6. knowledge/00_PROJECT_MASTER_CONTEXT.md
+7. knowledge/16_CURRENT_PROGRAM_STATUS.md
+8. gpt/README.md
+9. gpt/INSTRUCTIONS_COMPACT.md
+10. gpt/ACTIONS_CATALOG.md
+11. профильные файлы из knowledge/ по текущей задаче
 
 Затем:
 - проверь актуальную ветку main;
