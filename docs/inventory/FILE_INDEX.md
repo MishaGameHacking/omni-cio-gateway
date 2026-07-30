@@ -35,6 +35,13 @@
 | `omni_cio/release/final_decision_review_production_sources_v1.py` | Atomic scenario source store, live current-risk loader and PR-68 production wiring |
 | `omni_cio/release/final_decision_review_production_registration_v1.py` | Lazy production runtime registration with one shared scenario store and trusted publisher |
 | `omni_cio/release/final_decision_review_trusted_scenario_publisher_v1.py` | Exact typed gate/risk trust boundary, masked-account parity, freshness and atomic publication |
+| `omni_cio/release/final_decision_review_calculator_handoff_v1.py` | PR-72 typed purchase/sell preview handoff into the canonical publisher |
+| `omni_cio/release/final_decision_review_calculator_intent_workflow_v1.py` | PR-73 exact capacity-intent gate construction before handoff |
+| `omni_cio/release/final_decision_review_approved_invocation_v1.py` | PR-74 allowlisted, freshness-checked and replay-safe invocation boundary |
+| `omni_cio/release/final_decision_review_calculator_provider_registry_v1.py` | PR-75 fixed typed calculator-provider registry |
+| `omni_cio/release/final_decision_review_existing_calculator_providers_v1.py` | PR-76 adapters from existing read-only calculator owners |
+| `omni_cio/release/final_decision_review_production_owner_callables_v1.py` | PR-77 scenario-scoped fixed provider owner routing |
+| `omni_cio/release/final_decision_review_trusted_owner_composition_v1.py` | PR-78 one-shot typed owner materialization, pro-forma binding and cleanup |
 
 ## Конфигурация
 
@@ -65,6 +72,13 @@
 | `tests/test_final_decision_review_source_acquisition_v1.py` | Loader routing, missing/failed/timeout/type/timestamp mapping and exact coordinator handoff |
 | `tests/test_final_decision_review_production_sources_v1.py` | Atomic bundle lifecycle, live current-risk composition, acquisition wiring and write-surface guards |
 | `tests/test_final_decision_review_trusted_scenario_publisher_v1.py` | Purchase/sell publication, replacement, freshness, account/direction parity, unsafe policy and concurrency |
+| `tests/test_final_decision_review_calculator_handoff_v1.py` | PR-72 typed handoff and canonical publisher integration |
+| `tests/test_final_decision_review_calculator_intent_workflow_v1.py` | PR-73 exact intent construction and fail-closed gates |
+| `tests/test_final_decision_review_approved_invocation_v1.py` | PR-74 allowlist, replay and freshness boundary |
+| `tests/test_final_decision_review_calculator_provider_registry_v1.py` | PR-75 fixed provider registry and context checks |
+| `tests/test_final_decision_review_existing_calculator_providers_v1.py` | PR-76 existing calculator adapters |
+| `tests/test_final_decision_review_production_owner_callables_v1.py` | PR-77 owner callable store, routing and lifecycle |
+| `tests/test_final_decision_review_trusted_owner_composition_v1.py` | PR-78 exact pro-forma binding and one-shot cleanup |
 | `tests/test_portfolio_market_snapshot.py` | Рыночная оценка портфеля |
 | `tests/test_portfolio_analytics.py` | Структура и концентрация |
 | `tests/test_cash_liquidity.py` | Деньги и лимиты |
@@ -83,12 +97,16 @@
 | Файл | Назначение |
 |---|---|
 | `AGENTS.md` | Обязательные правила работы |
+| `docs/master-plan/README.md` | Иерархия исходной спецификации и текущих источников истины |
+| `docs/master-plan/OMNI_CIO_MASTER_PROMPT_V9.pdf` | Исходный пользовательский master plan v9 |
+| `docs/master-plan/OMNI_CIO_MASTER_PROMPT_V9.txt` | Поисковая текстовая копия master plan |
 | `knowledge/00_PROJECT_MASTER_CONTEXT.md` | Полный контекст и roadmap |
 | `knowledge/16_CURRENT_PROGRAM_STATUS.md` | Фактическая вершина программы и следующий пакет |
 | `knowledge/09_MARKET_DATA_AND_BUYING_POWER.txt` | Market и buying-power semantics |
 | `knowledge/10_OPERATIONS_ANALYTICS_AND_RECONCILIATION.txt` | Operations semantics |
 | `knowledge/11_BROKER_REPORT_ASYNC_INTEGRITY.txt` | Broker-report async semantics |
 | `knowledge/12_TELEGRAM_RETIREMENT.txt` | Решение о выводе Telegram из эксплуатации |
+| `knowledge/13_COMMUNICATION_STYLE_2026.txt` | Активный стиль ChatGPT без transport-specific runtime |
 | `knowledge/14_CI_SECURITY_BASELINE.txt` | Воспроизводимый CI, quality/security gates и debt register |
 | `knowledge/15_VERSIONED_DATA_CONTRACTS.txt` | Контракт v1, совместимость и read-only инварианты PR-04 |
 | `docs/architecture/DATA_CONTRACTS_V1.md` | Архитектура и migration policy versioned contracts v1 |
@@ -101,6 +119,7 @@
 | `docs/architecture/FINAL_DECISION_REVIEW_WORKFLOW_COORDINATOR_V1.md` | Canonical acquisition evidence, source gates, privacy boundary and remaining adapter gap |
 | `docs/architecture/FINAL_DECISION_REVIEW_PRODUCTION_SOURCES_V1.md` | Live current-risk source, atomic scenario bundle, loader wiring and remaining registration gap |
 | `docs/architecture/FINAL_DECISION_REVIEW_TRUSTED_SCENARIO_PUBLICATION_V1.md` | Typed calculator-to-store trust boundary, exact parity, lifecycle, safety and rollback |
+| `gpt/MY_GPT_SETUP_RUNBOOK.md` | Точная настройка ChatGPT → My GPTs, Actions, Preview и rollback |
 | `gpt/` | Восстановление и настройка Custom GPT |
 | `docs/operations/TELEGRAM_REMOVAL_RUNBOOK.md` | Одноразовая внешняя очистка Telegram после merge |
 | `docs/operations/RELEASE_CHECKLIST.md` | Pre-merge, production and acceptance-evidence checklist |
@@ -121,7 +140,7 @@
 
 | Файл | Назначение |
 |---|---|
-| `scripts/check_repository_layout.py` | Layout, retired Telegram и broker-write guard |
+| `scripts/check_repository_layout.py` | Layout, master-plan presence, retired Telegram/duplicate publisher и broker-write guards |
 | `scripts/check_ci_security_baseline.py` | Dependency hashes, Action pins, gates и secret report |
 
 ## Правило актуальности
