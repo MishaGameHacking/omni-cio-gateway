@@ -152,6 +152,10 @@
 - Компактный рабочий файл `gpt/INSTRUCTIONS_COMPACT.md`, рассчитанный на лимит 8000 символов GPT Editor.
 
 ### Removed
+- Duplicate PR-71 calculator publisher/registration implementation, its isolated tests and
+  parallel architecture notes; the typed trusted scenario publisher remains the only
+  production-registered path, and the repository guard blocks reintroduction.
+
 - Telegram Companion runtime package и его unit-тесты.
 - Telegram Render Blueprint и active environment template.
 - Telegram entrypoint, webhook, startup configuration и проверки из
