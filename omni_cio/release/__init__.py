@@ -35,6 +35,14 @@ from omni_cio.release.final_decision_review_approved_owner_snapshots_v1 import (
     FinalDecisionReviewApprovedOwnerSnapshotSelectionV1,
     FinalDecisionReviewApprovedOwnerSnapshotStoreV1,
 )
+from omni_cio.release.final_decision_review_authenticated_owner_installation_v1 import (
+    FinalDecisionReviewAuthenticatedOwnerContextStoreV1,
+    FinalDecisionReviewAuthenticatedOwnerEvidenceStoreV1,
+    FinalDecisionReviewAuthenticatedOwnerInstallationError,
+    FinalDecisionReviewAuthenticatedOwnerInstallationEvidenceV1,
+    FinalDecisionReviewAuthenticatedOwnerInstallationStatus,
+    FinalDecisionReviewAuthenticatedOwnerInstallationV1,
+)
 from omni_cio.release.final_decision_review_authenticated_route_context_v1 import (
     FinalDecisionReviewApprovedRouteContextCaptureV1,
     FinalDecisionReviewApprovedRouteContextSeedV1,
@@ -200,6 +208,12 @@ __all__ = [
     "FinalDecisionReviewApprovedRouteContextSeedV1",
     "FinalDecisionReviewApprovedRouteContextStoreV1",
     "FinalDecisionReviewApprovedServerContextV1",
+    "FinalDecisionReviewAuthenticatedOwnerContextStoreV1",
+    "FinalDecisionReviewAuthenticatedOwnerEvidenceStoreV1",
+    "FinalDecisionReviewAuthenticatedOwnerInstallationError",
+    "FinalDecisionReviewAuthenticatedOwnerInstallationEvidenceV1",
+    "FinalDecisionReviewAuthenticatedOwnerInstallationStatus",
+    "FinalDecisionReviewAuthenticatedOwnerInstallationV1",
     "FinalDecisionReviewAuthenticatedRouteContextError",
     "FinalDecisionReviewCalculatorIntentWorkflowError",
     "FinalDecisionReviewCalculatorIntentWorkflowV1",
