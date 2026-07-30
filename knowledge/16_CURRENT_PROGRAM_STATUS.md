@@ -1,7 +1,7 @@
 # 16 — CURRENT PROGRAM STATUS
 
 Дата актуализации: 2026-07-30  
-Фактическая вершина программы после merge этого пакета: **PR-69**  
+Фактическая вершина программы после merge этого пакета: **PR-70**  
 Точная версия определяется текущей вершиной ветки `main`.
 
 ## Назначение документа
@@ -60,81 +60,62 @@ ledger, walk-forward/OOS stability и market-capacity gating.
 - **PR-66:** live read-only workflow producer from buy/sell gates and risk evidence;
 - **PR-67:** acquisition-outcome coordinator and source handoff validation;
 - **PR-68:** typed source acquisition adapter with safe outcome mapping;
-- **PR-69:** production-facing scenario store, live current-risk loader and PR-68 wiring.
+- **PR-69:** production-facing scenario store, live current-risk loader and PR-68 wiring;
+- **PR-70:** lazy production registration of source store, producer, coordinator and wiring.
 
-## PR-69 — production read-only source wiring v1
+## PR-70 — production source registration v1
 
-PR-69 exports `FinalDecisionReviewScenarioSourceStoreV1`,
-`build_live_current_risk_loader` and `FinalDecisionReviewProductionSourceWiringV1`.
-It adds no HTTP route, operationId, query parameter or request body.
+PR-70 registers one complete internal runtime object graph in `app.py`:
 
-### Live current-risk source
+1. existing final-review workflow bridge;
+2. one PR-66 producer;
+3. one PR-67 coordinator;
+4. one bounded PR-69 scenario source store;
+5. one lazy live current-risk loader;
+6. one PR-69 source acquisition wiring object.
 
-Current risk is built through the existing read-only chain:
+Production exports:
 
-1. portfolio market snapshot;
-2. portfolio contract v1 adapter;
-3. advanced portfolio analytics;
-4. conservative risk-policy evaluation.
+- `final_decision_review_production_runtime`;
+- `final_decision_review_scenario_source_store`;
+- `final_decision_review_source_wiring`.
 
-The loader preserves contract timestamps and never calls order placement, replacement or
-cancellation methods.
+### Startup laziness
 
-### Atomic scenario bundle
+`app.py` passes a callable into the current-risk loader. The portfolio-market engine is not
+called during import or registration. T-Invest is contacted only if trusted internal code
+explicitly invokes acquisition.
 
-Scenario-specific source data cannot be reconstructed from hashes or current portfolio state.
-The internal bounded store therefore accepts one complete bundle:
+The initial scenario store is empty after every process restart.
 
-- safe scenario ID;
-- exactly one purchase or sell pre-trade gate;
-- one already calculated pro-forma risk evaluation;
-- stored and expiry timestamps.
+### Action compatibility
 
-Partial or mixed-direction bundles are rejected. Missing and expired bundles stay unavailable
-and are never fabricated.
-
-Default lifecycle:
-
-- TTL: 900 seconds;
-- capacity: 64 bundles;
-- exact scenario replacement;
-- oldest-entry eviction;
-- empty state after process restart.
-
-### Acquisition wiring
-
-For one scenario PR-69 constructs the four PR-68 loader ports:
-
-- selected purchase or sell gate from the atomic scenario bundle;
-- unselected direction remains `missing/attempted=false`;
-- current risk from the live read-only portfolio pipeline;
-- pro-forma risk from the same exact scenario bundle.
-
-PR-68 then maps actual outcomes and invokes PR-67. Loader exceptions, invalid types and
-invalid timestamps remain safe failures.
+- Gateway version remains `3.10.0`;
+- production OpenAPI remains exactly 14 authenticated GET Actions;
+- no path, operationId, query field or request body is added;
+- no public scenario publication method exists;
+- `app:app` remains stable.
 
 ### Safety invariants
 
-- internal Python API only;
-- no public source-publication surface;
-- no production OpenAPI change;
+- no startup broker call;
 - no broker write method;
-- no credentials or full account in store metadata;
+- no credentials or full account in runtime metadata;
 - no trade authorization or order creation;
+- missing scenario data remains fail-closed;
 - `trading_methods=false`.
 
 ## Remaining production boundary
 
-PR-69 exports production-facing wiring but intentionally does not register it in `app.py`.
-A separate package must instantiate the source store, producer/coordinator and current-risk
-loader against the production bridge. Calculator-owned publication of purchase/sell gate and
-pro-forma risk also remains explicit and internal.
+The production source store and acquisition wiring are now registered, but the store is not
+automatically populated. A trusted calculator-owned handoff must publish one exact directional
+pre-trade gate and the corresponding pro-forma risk evaluation. It must preserve source
+timestamps and masked-account context and must not accept user-controlled raw payloads.
 
-Until registration and calculator publication exist:
+Until this handoff and actual acceptance exist:
 
-- scenario store is not automatically populated;
-- registry may remain empty after restart;
-- exact positive final-review acceptance may return `503`;
+- exact acquisition may report missing scenario sources;
+- final-review route may return `503` after restart;
 - Render/GPT/rollback evidence remains `not_executed`;
 - no autonomous trading is enabled.
 
@@ -142,14 +123,13 @@ Until registration and calculator publication exist:
 
 PR-64 still requires eight real evidence cases: Render commit, health, auth-negative,
 exact-route-positive, GPT schema import, authenticated Preview, Action-list inspection and
-rollback restore. None may be marked passed solely because PR-69 CI is green.
+rollback restore. None may be marked passed solely because PR-70 CI is green.
 
 ## Что остаётся до полного релиза
 
 ### Backend and release acceptance
 
-- register PR-69 production source wiring in `app.py` without changing Action surface;
-- connect trusted calculator-owned scenario publication;
+- trusted calculator-owned scenario publication into the registered store;
 - actual Render/Gateway acceptance and evidence recording;
 - actual GPT Editor import and authenticated Preview;
 - production-grade live ingestion for market, ratings, news and corporate events;
@@ -173,16 +153,16 @@ reconciliation требуют отдельной программы допуск
 
 ## Следующий рекомендуемый пакет
 
-**PR-70 — production source wiring registration v1**:
+**PR-71 — trusted scenario source publication v1**:
 
-- instantiate one scenario source store in the production wrapper;
-- instantiate PR-66 producer and PR-67 coordinator from the existing bridge;
-- register PR-69 current-risk loader and acquisition wiring as internal objects;
-- preserve startup laziness: no broker call until trusted internal acquisition is invoked;
-- expose no public source-publication endpoint;
-- prove production OpenAPI remains exactly 14 authenticated GET Actions;
-- add restart, empty-store, mocked live-risk and exact-acquisition integration tests;
-- preserve `app:app`, no broker writes and `trading_methods=false`.
+- accepts only already typed purchase/sell gate and pro-forma risk artifacts;
+- requires exact direction, scenario, timestamp and masked-account parity;
+- rejects raw dictionaries, credentials, full account IDs and request bodies;
+- publishes one atomic PR-69 bundle through an internal Python API;
+- records safe provenance and counts without financial payload logging;
+- proves restart, replacement, stale, mismatch and concurrency behavior;
+- changes no HTTP route or production OpenAPI operation;
+- preserves `app:app`, no broker writes and `trading_methods=false`.
 
 ## Запрет ложного завершения
 
