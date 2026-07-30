@@ -1,7 +1,7 @@
 # 16 — CURRENT PROGRAM STATUS
 
 Дата актуализации: 2026-07-30  
-Фактическая вершина программы после merge этого пакета: **PR-85**  
+Фактическая вершина программы после merge этого пакета: **PR-86**  
 Точная версия определяется текущей вершиной ветки `main`.
 
 ## Назначение документа
@@ -35,7 +35,9 @@
 - **PR-84:** official Bank of Russia key-rate source with immutable Decimal
   contracts, bounded HTTPS streaming and protected XML parsing;
 - **PR-85:** exact-range bounded cache with explicit fresh/stale/unavailable
-  lifecycle, single-flight refresh and no-silent-stale policy.
+  lifecycle, single-flight refresh and no-silent-stale policy;
+- **PR-86:** allowlisted source/cache observability events without key-rate,
+  date-range, XML, account or upstream exception payloads.
 
 ## PR-81…PR-83 authenticated owner lifecycle
 
@@ -71,39 +73,51 @@ suppressed. PR-84 added no route, Action, dependency or broker call.
 
 PR-85 adds an internal process-local lifecycle over the PR-84 typed source.
 
-### Exact identity and lifecycle
+- exact `(requested_from, requested_to)` cache identity;
+- default fresh TTL 3600 seconds, stale retention 86400 seconds and capacity 16;
+- fully expired pruning, LRU-style oldest eviction and restart/clear behavior;
+- lazy loader and single-flight refresh under a process-local `RLock`;
+- explicit `fresh`, `stale`, `unavailable` result contract;
+- stale display only after failed refresh and explicit trusted `allow_stale=true`;
+- failed forced refresh while cached data is still fresh remains an explicit
+  fresh-cache fallback with redacted refresh error metadata;
+- wrong type/range/future source data and loader/source failures fail closed.
 
-- key: exact `(requested_from, requested_to)` range;
-- default fresh TTL: 3600 seconds;
-- default stale retention: 86400 seconds;
-- default capacity: 16 ranges;
-- fully expired entries are pruned and never returned;
-- oldest ranges are evicted when capacity is exceeded;
-- restart/`clear()` removes all entries;
-- loader is lazy and startup performs no network call.
+Only typed PR-84 snapshots are retained. No raw XML, credentials, full account
+IDs or exception text enter the cache.
 
-### Explicit status contract
+## PR-86 safe CBR observability v1
 
-`CbrKeyRateCacheResultV1` distinguishes:
+PR-86 maps PR-84/85 typed results to the existing immutable observability
+contracts.
 
-- `fresh` — display permitted;
-- `stale` — display permitted only after a failed refresh and explicit trusted
-  `allow_stale=true`;
-- `unavailable` — no snapshot or numeric display value.
+### Source events
 
-Stale values are never silently presented as current. A failed forced refresh
-while the existing entry is still fresh preserves an explicit fresh-cache
-fallback with refresh failure metadata. Wrong type, wrong range, future source
-time, unavailable source and loader exceptions fail closed with fixed codes.
+- available source: success/info with official provider, operation, optional
+  latency, `fresh` status and safe observation/source-available counts;
+- unavailable source: failure/error with one fixed source error code;
+- no observation value, effective date, requested range, XML, fault text,
+  exception text or account context.
 
-### Single-flight and safety
+### Cache events
 
-A process-local `RLock` serializes lookup, refresh, publication, pruning and
-eviction. Concurrent empty-cache reads perform one loader call. Only typed PR-84
-snapshots are retained; raw XML, credentials, full account IDs and exception
-text are absent.
+- fresh cache hit: success/info and external call `not_called`;
+- successful refresh: success/info and external call `success`;
+- failed force refresh with still-fresh cached data: degraded/warning while
+  freshness remains `fresh`;
+- explicit stale exposure: degraded/warning with freshness `stale`;
+- unavailable: failure/error with no displayable value.
 
-- no FastAPI route, GPT Action or frontend field is added;
+Metrics are limited to safe counts/booleans: observation count, cache hit,
+refresh attempted/succeeded, stale exposed and display allowed. The key-rate
+value and date range are never metrics or event fields.
+
+### Compatibility and safety
+
+- builders are pure and do not emit automatically;
+- existing `ObservabilityEventV1`, `ExternalCallTelemetryV1` and
+  `build_safe_event` are reused;
+- no HTTP route, GPT Action, request body or frontend field is added;
 - no T-Invest call or broker write method is added;
 - `app:app` and exactly 14 authenticated GET Actions remain unchanged;
 - `trading_methods=false`.
@@ -111,7 +125,7 @@ text are absent.
 ## Frontend/owner discovery state
 
 Repository search did not find a registered existing frontend/dashboard owner
-for the key-rate field. PR-85 therefore does not invent a duplicate UI or
+for the key-rate field. PR-84…PR-86 therefore do not invent a duplicate UI or
 silently change an Action response. The deployed frontend source must first be
 located and registered before a UI binding package is safe.
 
@@ -135,6 +149,8 @@ access has not supplied all required Render/GPT evidence.
 
 ### Backend and operations
 
+- define exact PR-84/85 telemetry emission points, bounded retention and
+  rate-limited alert policy for repeated unavailable/stale outcomes;
 - locate the exact existing macro/dashboard owner or frontend source, then bind
   the PR-85 cache result with explicit fresh/stale/unavailable presentation;
 - production-grade quote, rating, news and corporate-event ingestion;
@@ -158,19 +174,23 @@ Shadow, paper, preview и final-review инфраструктура не явл�
 switch, partial-fill и timeout reconciliation требуют отдельной программы
 допуска и решения владельца. Автономная торговля без подтверждения не включена.
 
-## Следующий пакет после PR-85
+## Следующий пакет после PR-86
 
-Ближайший безопасный шаг зависит от обнаружения существующего frontend/owner.
-До этого нельзя создавать новый дублирующий кабинет или молча менять public
-Action contract. Параллельно допустим следующий независимый production-source
-пакет из master plan, если он сохраняет versioned contracts, provenance,
-freshness, fail-closed behavior и read-only границы.
+Ближайший независимый operations gap — bounded alert policy над typed PR-86
+events:
 
-Production acceptance остаётся отдельным обязательным внешним блоком и не может
-быть заменена локальными тестами.
+- thresholds only from status/count windows, never financial values;
+- deduplication, cooldown and bounded process-local state;
+- no outbound webhook or external service until separately configured;
+- safe alert evidence without account, XML or exception payload;
+- no public Action change.
+
+Frontend binding remains blocked until the existing source/owner is located.
+Production acceptance remains a separate mandatory external block and cannot be
+replaced by local tests.
 
 ## Запрет ложного завершения
 
-Проект не считается полностью завершённым только потому, что PR-85 слит или CI
+Проект не считается полностью завершённым только потому, что PR-86 слит или CI
 зелёный. Завершение разрешено объявлять только после всех согласованных пакетов,
 production acceptance и отдельной проверки полного Definition of Done.
