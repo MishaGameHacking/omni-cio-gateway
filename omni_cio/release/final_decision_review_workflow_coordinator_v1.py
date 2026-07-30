@@ -189,8 +189,9 @@ class FinalDecisionReviewWorkflowCoordinatorV1:
     ) -> FinalDecisionReviewWorkflowCoordinatorResultV1:
         now = _aware_utc(coordinated_at)
         ordered = _ordered_evidence(source_evidence)
-        selected_direction_count = int(purchase_gate is not None) + int(sell_gate is not None)
-        by_slot = {row.slot: row for row in ordered}
+        selected_direction_count = int(purchase_gate is not None) + int(
+            sell_gate is not None
+        )
         artifacts_present = {
             FinalDecisionReviewWorkflowSourceSlot.PURCHASE_GATE: purchase_gate is not None,
             FinalDecisionReviewWorkflowSourceSlot.SELL_GATE: sell_gate is not None,
@@ -202,9 +203,7 @@ class FinalDecisionReviewWorkflowCoordinatorV1:
             ),
         }
         correspondence_confirmed = all(
-            (
-                row.status is FinalDecisionReviewWorkflowSourceStatus.AVAILABLE
-            )
+            (row.status is FinalDecisionReviewWorkflowSourceStatus.AVAILABLE)
             is artifacts_present[row.slot]
             for row in ordered
         )
@@ -308,9 +307,7 @@ class FinalDecisionReviewWorkflowCoordinatorV1:
                 blocker="FINAL_DECISION_REVIEW_WORKFLOW_ACCOUNT_MISMATCH",
             )
 
-        expected_side = (
-            "buy" if purchase_gate is not None else "sell"
-        )
+        expected_side = "buy" if purchase_gate is not None else "sell"
         requests = selected_gate.base_intent_gate.request.expected_capacity_requests
         direction_confirmed = bool(requests) and all(
             row.side.value == expected_side for row in requests
@@ -340,7 +337,12 @@ class FinalDecisionReviewWorkflowCoordinatorV1:
                     request_id=request_id,
                     produced_at=now,
                 )
-            except (FinalDecisionReviewWorkflowProducerError, AttributeError, TypeError, ValueError):
+            except (
+                FinalDecisionReviewWorkflowProducerError,
+                AttributeError,
+                TypeError,
+                ValueError,
+            ):
                 return _result(
                     coordinated_at=now,
                     stage=FinalDecisionReviewWorkflowCoordinatorStage.PRODUCER,
