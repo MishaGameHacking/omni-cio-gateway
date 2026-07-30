@@ -348,12 +348,13 @@ class CbrKeyRateCacheV1:
                     refresh_attempted=True,
                     refresh_succeeded=True,
                 )
+            selected_entry: _CbrKeyRateCacheEntryV1 | None = refreshed
             if now >= refreshed.stale_until:
                 self._entries.pop(key, None)
-                refreshed = None
+                selected_entry = None
             return self._stale_or_unavailable_result(
                 key=key,
-                entry=refreshed,
+                entry=selected_entry,
                 checked_at=now,
                 allow_stale=allow_stale,
                 source_error_code=None,
