@@ -35,6 +35,14 @@ from omni_cio.release.final_decision_review_route_readiness_v1 import (
     FinalDecisionReviewRouteReadinessError,
     build_final_decision_review_route_readiness_dossier,
 )
+from omni_cio.release.final_decision_review_source_acquisition_v1 import (
+    FinalDecisionReviewSourceAcquisitionAdapterV1,
+    FinalDecisionReviewSourceAcquisitionError,
+    FinalDecisionReviewSourceLoaderV1,
+    purchase_gate_source_loader,
+    risk_source_loader,
+    sell_gate_source_loader,
+)
 from omni_cio.release.final_decision_review_test_app_v1 import (
     TEST_APP_SERVER,
     TEST_APP_VERSION,
@@ -75,6 +83,9 @@ __all__ = [
     "FinalDecisionReviewPublisherV1",
     "FinalDecisionReviewRoutePlanError",
     "FinalDecisionReviewRouteReadinessError",
+    "FinalDecisionReviewSourceAcquisitionAdapterV1",
+    "FinalDecisionReviewSourceAcquisitionError",
+    "FinalDecisionReviewSourceLoaderV1",
     "FinalDecisionReviewWorkflowBridgeError",
     "FinalDecisionReviewWorkflowBridgeV1",
     "FinalDecisionReviewWorkflowCoordinatorError",
@@ -103,5 +114,8 @@ __all__ = [
     "orchestrate_final_decision_review_publication",
     "publish_final_decision_review_source",
     "publisher_for_registry",
+    "purchase_gate_source_loader",
     "record_final_decision_review_acceptance_evidence",
+    "risk_source_loader",
+    "sell_gate_source_loader",
 ]
