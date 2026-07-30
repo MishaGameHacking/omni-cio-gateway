@@ -17,9 +17,6 @@ from omni_cio.contracts.v1.final_decision_review_approved_invocation import (
     ApprovedCalculatorInvocationResultV1,
     ApprovedCalculatorOperation,
 )
-from omni_cio.contracts.v1.final_decision_review_trusted_scenario import (
-    TrustedScenarioPublicationResultV1,
-)
 from omni_cio.contracts.v1.pretrade import PreTradePreviewV1
 from omni_cio.contracts.v1.risk import RiskPolicyEvaluationV1
 from omni_cio.contracts.v1.sell_pretrade import SellPreTradePreviewV1
@@ -211,11 +208,17 @@ class _UnusedInvocation(FinalDecisionReviewApprovedInvocationV1):
     def __init__(self) -> None:
         self.calls = 0
 
-    def invoke_purchase(self, **_: Any) -> ApprovedCalculatorInvocationResultV1:  # type: ignore[override]
+    def invoke_purchase(
+        self,
+        **_: Any,
+    ) -> ApprovedCalculatorInvocationResultV1:  # type: ignore[override]
         self.calls += 1
         return cast(ApprovedCalculatorInvocationResultV1, object())
 
-    def invoke_sell(self, **_: Any) -> ApprovedCalculatorInvocationResultV1:  # type: ignore[override]
+    def invoke_sell(
+        self,
+        **_: Any,
+    ) -> ApprovedCalculatorInvocationResultV1:  # type: ignore[override]
         self.calls += 1
         return cast(ApprovedCalculatorInvocationResultV1, object())
 
