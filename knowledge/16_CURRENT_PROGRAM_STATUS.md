@@ -1,7 +1,7 @@
 # 16 — CURRENT PROGRAM STATUS
 
 Дата актуализации: 2026-07-30  
-Фактическая вершина программы после merge этого пакета: **PR-74**  
+Фактическая вершина программы после merge этого пакета: **PR-75**  
 Точная версия определяется текущей вершиной ветки `main`.
 
 ## Назначение документа
@@ -65,43 +65,47 @@ ledger, walk-forward/OOS stability и market-capacity gating.
 - **PR-71:** trusted typed scenario publication into the registered bounded store;
 - **PR-72:** calculator-owned purchase/sell preview handoff into trusted publication;
 - **PR-73:** calculator-owned construction of the exact capacity-intent gate before PR-72;
-- **PR-74:** allowlisted, freshness-checked and replay-safe internal invocation boundary.
+- **PR-74:** allowlisted, freshness-checked and replay-safe internal invocation boundary;
+- **PR-75:** explicit calculator-provider registry with typed bundle and context gates.
 
-## PR-74 — approved calculator invocation boundary v1
+## PR-75 — allowlisted calculator provider registry v1
 
-PR-74 adds one internal control-plane service over PR-73. It binds an allowlisted analytical
-operation to one safe invocation, scenario and correlation context before typed calculator
-artifacts can reach the scenario store.
+PR-75 introduces one explicit internal registry of `(provider_id, operation)` pairs above the
+PR-74 invocation boundary. User-controlled provider names, dynamic module loading and raw
+provider payloads are not accepted.
 
-### Invocation request
+### Provider bundle
 
-The request contains only:
+A provider returns one immutable typed bundle containing:
 
-1. one safe invocation ID;
-2. one safe scenario ID;
-3. one safe correlation ID;
-4. one allowlisted `purchase_review` or `sell_review` operation;
-5. one timezone-aware invocation timestamp.
+1. exact scenario and correlation IDs;
+2. one timezone-aware build timestamp;
+3. one typed analytical decision;
+4. one typed exact-intent request;
+5. one or more typed capacity assessments;
+6. exactly one non-empty purchase or sell preview tuple;
+7. one typed pro-forma risk evaluation.
 
-Raw mappings, credentials, full account IDs and HTTP request bodies are rejected.
+The provider build timestamp must equal the pro-forma risk retrieval timestamp.
 
-### Trust and replay gates
+### Registry gates
 
-- exact request-contract type;
-- operation/method and publication-direction parity;
-- maximum invocation age and future tolerance;
-- bounded TTL replay cache;
-- atomic validation, PR-73 call, result construction and replay commit under one lock;
-- failed workflow calls do not consume invocation IDs;
-- concurrent duplicates can complete at most once;
-- safe result contains only counts, timestamps and the trusted publication result.
+- safe provider ID and exact allowlisted operation;
+- duplicate registration rejection;
+- no provider call during registration or startup;
+- exact provider-output contract type;
+- exact scenario and correlation parity with PR-74 request;
+- source freshness and future tolerance;
+- purchase/sell operation and preview-direction parity;
+- stable provider failure code without exposing exception text;
+- handoff to PR-74 only after every registry gate passes.
 
 ### Compatibility and safety
 
 - Gateway version remains `3.10.0`;
 - production OpenAPI remains exactly 14 authenticated GET Actions;
 - no route, operation ID, query field or request body is added;
-- no public invocation/publication method exists;
+- no dynamic provider discovery or public registration method exists;
 - no startup calculation or broker call;
 - no broker write method;
 - no trade authorization or order creation;
@@ -110,10 +114,11 @@ Raw mappings, credentials, full account IDs and HTTP request bodies are rejected
 
 ## Remaining production boundary
 
-PR-74 controls invocation but does not load or calculate decision, capacity, broker-preview or
-pro-forma risk artifacts. An allowlisted internal calculator provider must still assemble that
-typed bundle and call PR-74. Until that provider and actual production acceptance exist:
+PR-75 provides the registry but does not implement or register concrete providers from the
+existing decision, capacity, broker-preview and pro-forma risk owners. Until those adapters and
+actual production acceptance exist:
 
+- the provider registry remains empty after startup;
 - the scenario store may remain empty after restart;
 - exact acquisition may report missing scenario sources;
 - the final-review route may return `503`;
@@ -124,13 +129,13 @@ typed bundle and call PR-74. Until that provider and actual production acceptanc
 
 PR-64 still requires eight real evidence cases: Render commit, health, auth-negative,
 exact-route-positive, GPT schema import, authenticated Preview, Action-list inspection and
-rollback restore. None may be marked passed solely because PR-74 CI is green.
+rollback restore. None may be marked passed solely because PR-75 CI is green.
 
 ## Что остаётся до полного релиза
 
 ### Backend and release acceptance
 
-- allowlisted provider that assembles typed artifacts from existing calculation owners;
+- concrete provider adapters reusing existing read-only calculation owners;
 - actual Render/Gateway acceptance and evidence recording;
 - actual GPT Editor import and authenticated Preview;
 - production-grade live ingestion for market, ratings, news and corporate events;
@@ -154,14 +159,14 @@ reconciliation требуют отдельной программы допуск
 
 ## Следующий рекомендуемый пакет
 
-**PR-75 — allowlisted calculator provider registry v1**:
+**PR-76 — existing calculator provider adapters v1**:
 
-- registers only explicit internal provider/operation pairs;
-- providers return one complete typed decision/capacity/preview/pro-forma bundle;
-- binds provider output to the PR-74 request scenario and correlation context;
-- rejects missing, extra, stale, mismatched or raw provider outputs;
-- invokes PR-74 once without startup broker calls;
-- records safe provider, operation, count and timestamp metadata only;
+- maps existing read-only Decision Engine, capacity and broker-preview owners into provider
+  bundle ports without recalculating their values;
+- keeps pro-forma risk as an explicit typed dependency and rejects missing risk evidence;
+- registers explicit purchase and sell provider IDs only;
+- preserves source timestamps, masked account and exact request identity;
+- performs no provider call at startup;
 - changes no HTTP route or production OpenAPI operation;
 - preserves `app:app`, no broker writes and `trading_methods=false`.
 
