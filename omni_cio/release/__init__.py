@@ -40,6 +40,10 @@ from omni_cio.release.final_decision_review_test_app_v1 import (
     TEST_APP_VERSION,
     build_isolated_final_decision_review_test_app,
 )
+from omni_cio.release.final_decision_review_workflow_bridge_v1 import (
+    FinalDecisionReviewWorkflowBridgeError,
+    FinalDecisionReviewWorkflowBridgeV1,
+)
 from omni_cio.release.live_acceptance_v1 import (
     FetchedJsonDocument,
     LiveReleaseAcceptanceError,
@@ -60,6 +64,8 @@ __all__ = [
     "FinalDecisionReviewPublisherV1",
     "FinalDecisionReviewRoutePlanError",
     "FinalDecisionReviewRouteReadinessError",
+    "FinalDecisionReviewWorkflowBridgeError",
+    "FinalDecisionReviewWorkflowBridgeV1",
     "LiveReleaseAcceptanceError",
     "ReadOnlyReleaseError",
     "TEST_APP_SERVER",

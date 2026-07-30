@@ -12,6 +12,9 @@ import operations_analytics as operations_analytics_engine
 import portfolio_market as portfolio_market_engine
 from omni_cio.quality import wrap_portfolio_market_snapshot_with_shadow_validation
 import omni_cio.release.final_decision_review_route_v1 as final_review_route
+from omni_cio.release.final_decision_review_workflow_bridge_v1 import (
+    FinalDecisionReviewWorkflowBridgeV1,
+)
 
 
 APP_VERSION = "3.10.0"
@@ -51,6 +54,7 @@ portfolio_market_engine.get_portfolio_market_snapshot = (
 for capability in (
     "operations_analytics",
     "operations_cash_flow_reconciliation",
+    "final_decision_review_workflow_bridge",
 ):
     if capability not in base.CAPABILITIES:
         base.CAPABILITIES.append(capability)
@@ -341,3 +345,9 @@ def openapi_v310() -> dict[str, Any]:
 
 app.openapi = openapi_v310
 app.openapi_schema = None
+
+final_decision_review_workflow_bridge = FinalDecisionReviewWorkflowBridgeV1(
+    registry=final_decision_review_registry,
+    openapi_provider=lambda: app.openapi(),
+    expected_app_version=APP_VERSION,
+)

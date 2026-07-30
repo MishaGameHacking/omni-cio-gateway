@@ -25,6 +25,7 @@
 - `architecture/FINAL_DECISION_REVIEW_PUBLISHER_V1.md` — internal exact-source publication, concurrency, replacement, eviction and safe observability.
 - `architecture/FINAL_DECISION_REVIEW_ORCHESTRATION_V1.md` — end-to-end PR-53…PR-62 composition, first-blocker semantics and unchanged production OpenAPI.
 - `architecture/FINAL_DECISION_REVIEW_ACCEPTANCE_EVIDENCE_V1.md` — immutable Render/Gateway/GPT/rollback evidence, SHA-256 proof binding and completion rules.
+- `architecture/FINAL_DECISION_REVIEW_WORKFLOW_BRIDGE_V1.md` — production-importable typed workflow boundary, scenario/binding composition, TTL and no-route guarantees.
 
 ### Operations
 
