@@ -4,6 +4,9 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from omni_cio.release.final_decision_review_calculator_handoff_v1 import (
+    FinalDecisionReviewCalculatorScenarioHandoffV1,
+)
 from omni_cio.release.final_decision_review_production_sources_v1 import (
     FinalDecisionReviewProductionSourceWiringV1,
     FinalDecisionReviewScenarioSourceStoreV1,
@@ -31,6 +34,7 @@ class FinalDecisionReviewProductionRegistrationError(ValueError):
 class FinalDecisionReviewProductionRuntimeV1:
     source_store: FinalDecisionReviewScenarioSourceStoreV1
     scenario_publisher: FinalDecisionReviewTrustedScenarioPublisherV1
+    calculator_handoff: FinalDecisionReviewCalculatorScenarioHandoffV1
     producer: FinalDecisionReviewWorkflowProducerV1
     coordinator: FinalDecisionReviewWorkflowCoordinatorV1
     source_wiring: FinalDecisionReviewProductionSourceWiringV1
@@ -68,6 +72,9 @@ def register_final_decision_review_production_sources(
         max_source_age_seconds=max_source_age_seconds,
         future_tolerance_seconds=future_tolerance_seconds,
     )
+    calculator_handoff = FinalDecisionReviewCalculatorScenarioHandoffV1(
+        publisher=scenario_publisher,
+    )
     producer = FinalDecisionReviewWorkflowProducerV1(bridge=bridge)
     coordinator = FinalDecisionReviewWorkflowCoordinatorV1(
         producer=producer,
@@ -85,6 +92,7 @@ def register_final_decision_review_production_sources(
     return FinalDecisionReviewProductionRuntimeV1(
         source_store=source_store,
         scenario_publisher=scenario_publisher,
+        calculator_handoff=calculator_handoff,
         producer=producer,
         coordinator=coordinator,
         source_wiring=source_wiring,
