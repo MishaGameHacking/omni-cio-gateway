@@ -61,6 +61,10 @@ from omni_cio.release.final_decision_review_test_app_v1 import (
     TEST_APP_VERSION,
     build_isolated_final_decision_review_test_app,
 )
+from omni_cio.release.final_decision_review_trusted_scenario_publisher_v1 import (
+    FinalDecisionReviewTrustedScenarioPublisherError,
+    FinalDecisionReviewTrustedScenarioPublisherV1,
+)
 from omni_cio.release.final_decision_review_workflow_bridge_v1 import (
     FinalDecisionReviewWorkflowBridgeError,
     FinalDecisionReviewWorkflowBridgeV1,
@@ -106,6 +110,8 @@ __all__ = [
     "FinalDecisionReviewSourceAcquisitionAdapterV1",
     "FinalDecisionReviewSourceAcquisitionError",
     "FinalDecisionReviewSourceLoaderV1",
+    "FinalDecisionReviewTrustedScenarioPublisherError",
+    "FinalDecisionReviewTrustedScenarioPublisherV1",
     "FinalDecisionReviewWorkflowBridgeError",
     "FinalDecisionReviewWorkflowBridgeV1",
     "FinalDecisionReviewWorkflowCoordinatorError",
