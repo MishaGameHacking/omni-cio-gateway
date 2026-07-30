@@ -144,7 +144,7 @@ class FinalDecisionReviewWorkflowBridgeV1:
             try:
                 scenario = build_pro_forma_risk_scenario(
                     scenario_id=scenario_id,
-                    account=base_explanation.risk_evaluation.metadata.account,
+                    account=pro_forma_risk_evaluation.metadata.account,
                     requested_option_id=(
                         base_explanation.directional_review.base_intent_gate.request
                         .requested_option_id
@@ -152,7 +152,7 @@ class FinalDecisionReviewWorkflowBridgeV1:
                     direction=base_explanation.direction,
                     capacity_requests=capacity_requests,
                     risk_evaluation=pro_forma_risk_evaluation,
-                    generated_at=now,
+                    generated_at=pro_forma_risk_evaluation.metadata.retrieved_at,
                 )
             except ValueError:
                 return _blocked_result(
@@ -199,7 +199,7 @@ class FinalDecisionReviewWorkflowBridgeV1:
                     scenario=scenario,
                     source_binding=source_binding,
                 )
-            except FinalDecisionReviewOrchestrationError:
+            except (FinalDecisionReviewOrchestrationError, TypeError, ValueError):
                 return _blocked_result(
                     bridged_at=now,
                     stage=FinalDecisionReviewWorkflowBridgeStage.ORCHESTRATION,
