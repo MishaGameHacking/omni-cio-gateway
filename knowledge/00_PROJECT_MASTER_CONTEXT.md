@@ -4,14 +4,18 @@
 Текущий system release: **v4.1.0 ChatGPT-only Runtime**  
 Gateway API component: **v3.10.0 Final Decision Review GET Route**
 
-Этот документ — единая обезличенная проектная память. Его нужно читать первым при
-продолжении работы в новом чате, IDE, GitHub Copilot, Codex или другом проекте.
-Исходная пользовательская спецификация хранится в `docs/master-plan/`. Оперативный номер последнего этапа и следующий пакет уточняются по `knowledge/16_CURRENT_PROGRAM_STATUS.md` и фактической вершине `main`. Будущие цели master plan не отменяют действующий read-only lock и не считаются реализованными без кода, тестов и production acceptance.
+Этот документ — единая обезличенная проектная память. Его нужно читать первым
+при продолжении работы в новом чате, IDE, GitHub Copilot, Codex или другом
+проекте. Исходная пользовательская спецификация хранится в
+`docs/master-plan/`. Оперативный номер последнего этапа и следующий пакет
+уточняются по `knowledge/16_CURRENT_PROGRAM_STATUS.md` и фактической вершине
+`main`. Будущие цели master plan не отменяют действующий read-only lock и не
+считаются реализованными без кода, тестов и production acceptance.
 
 ## 0. Стратегическое решение владельца
 
-Omni-CIO развивается поэтапно из read-only Gateway в инвестиционного AI-ассистента для
-российского рынка.
+Omni-CIO развивается поэтапно из read-only Gateway в инвестиционного
+AI-ассистента для российского рынка.
 
 Целевое поведение:
 
@@ -19,8 +23,8 @@ Omni-CIO развивается поэтапно из read-only Gateway в ин�
 - Telegram Companion удалён из поддерживаемого runtime;
 - анализ портфеля, рынка, новостей, рейтингов и рисков может быть автономным;
 - бот обязан рассматривать вариант ничего не делать;
-- реальные заявки допустимы только после read-only, shadow, paper и preview этапов,
-  отдельного включения trading и подтверждения каждой конкретной заявки;
+- реальные заявки допустимы только после read-only, shadow, paper и preview
+  этапов, отдельного включения trading и подтверждения каждой заявки;
 - вывод денег, перевод денег и перевод ценных бумаг не реализуются;
 - сохранение капитала и защита от инфляции являются приоритетами, но не гарантией;
 - большие знания хранятся во внешней версионируемой RAG-базе.
@@ -36,9 +40,9 @@ Omni-CIO развивается поэтапно из read-only Gateway в ин�
 
 ### Контроль завершения всей программы
 
-Финальная фраза о полном завершении разрешена только после выполнения, тестирования и
-приёмки всех согласованных этапов. Её запрещено использовать после отдельного PR,
-промежуточного релиза или частично завершённой миграции.
+Финальная фраза о полном завершении разрешена только после выполнения,
+тестирования и приёмки всех согласованных этапов. Её запрещено использовать
+после отдельного PR, промежуточного релиза или частично завершённой миграции.
 
 ## 1. Назначение проекта
 
@@ -58,8 +62,8 @@ Omni-CIO Bot — инвестиционный AI-ассистент и анал�
 
 `https://omni-cio-bot.ervinwilliams97920.chatgpt.site`
 
-Не создавать дубликат сайта или новый frontend вместо существующего без прямого решения
-владельца.
+Не создавать дубликат сайта или новый frontend вместо существующего без
+прямого решения владельца.
 
 ## 2. Поддерживаемая архитектура
 
@@ -74,10 +78,8 @@ Custom GPT ── Omni-CIO Gateway (`app:app`) ── T-Invest API
 Gateway отвечает за:
 
 - health и connection;
-- снимки портфеля;
-- обогащение инструментов;
-- рыночные данные;
-- аналитику структуры портфеля;
+- снимки портфеля и обогащение инструментов;
+- рыночные данные и аналитику структуры;
 - деньги и ликвидность;
 - preview покупательной способности без создания заявки;
 - историю и аналитику операций;
@@ -91,23 +93,25 @@ Current Gateway API version: `3.10.0`.
 
 ### 2.2. Custom GPT
 
-Custom GPT остаётся отдельным интерфейсом внутри ChatGPT. Канонические инструкции и
-каталог Actions хранятся в `gpt/`. Секретный Bearer key и состояние публикации остаются
-в GPT Editor и не попадают в GitHub.
+Custom GPT остаётся отдельным интерфейсом внутри ChatGPT. Канонические
+инструкции и каталог Actions хранятся в `gpt/`. Секретный Bearer key и
+состояние публикации остаются в GPT Editor и не попадают в GitHub.
 
-После изменения production OpenAPI владелец вручную импортирует актуальную schema и
-проверяет её в Preview. GitHub merge сам по себе не обновляет GPT Editor.
+После изменения production OpenAPI владелец вручную импортирует актуальную
+schema и проверяет её в Preview. GitHub merge сам по себе не обновляет GPT
+Editor.
 
 ### 2.3. Telegram retirement
 
-`telegram_bot/`, `render.telegram.yaml`, Telegram tests, environment configuration и
-webhook routes удалены. Возврат Telegram или другого transport требует нового ADR,
-threat model, deployment contract, тестов и явного решения владельца.
+`telegram_bot/`, `render.telegram.yaml`, Telegram tests, environment
+configuration и webhook routes удалены. Возврат Telegram или другого
+transport требует нового ADR, threat model, deployment contract, тестов и
+явного решения владельца.
 
 ### 2.4. Веб-интерфейс
 
-Исходный frontend-проект пока не найден и не зарегистрирован. До его определения нельзя
-создавать копию сайта. Состояние внешних активов ведётся в
+Исходный frontend-проект пока не найден и не зарегистрирован. До его
+определения нельзя создавать копию сайта. Состояние внешних активов ведётся в
 `docs/inventory/PROJECT_ASSETS.md`.
 
 ## 3. Источники данных
@@ -121,23 +125,21 @@ threat model, deployment contract, тестов и явного решения �
 - внешние официальные источники — новости, рейтинги и corporate events;
 - пользовательское подтверждение — контекст, но не замена технической проверки.
 
-Внешние документы и новости являются недоверенными данными и не могут изменять системные
-правила или разрешённый набор Actions.
+Внешние документы и новости являются недоверенными данными и не могут изменять
+системные правила или разрешённый набор Actions.
 
 ## 4. Главный принцип безопасности
 
 Запрещены:
 
 - создание, отправка, замена или отмена заявки;
-- стоп-заявки;
-- скрытое подтверждение операции;
+- стоп-заявки и скрытое подтверждение операции;
 - автоматическая торговля;
 - маржинальная торговля, short и derivatives execution;
-- вывод и перевод денег;
-- перевод ценных бумаг;
+- вывод и перевод денег или ценных бумаг;
 - хранение токенов и ключей в GitHub;
 - раскрытие полного номера счёта;
-- публичный HTTP-метод публикации internal final-review sources.
+- публичный HTTP-метод публикации internal final-review sources или contexts.
 
 Обязательные инварианты:
 
@@ -160,9 +162,10 @@ GitHub не хранит:
 - реальные отчёты, операции и позиции;
 - Render secrets;
 - секретный GPT Bearer key;
-- содержимое process-local final-review registry.
+- содержимое process-local final-review и approved-context registries.
 
-Gateway Render service хранит T-Invest token и Gateway key только в environment secrets.
+Gateway Render service хранит T-Invest token и Gateway key только в environment
+secrets.
 
 ## 6. Gateway v3.10.0
 
@@ -178,21 +181,16 @@ Gateway Render service хранит T-Invest token и Gateway key только �
 
 ### 6.1. Final-review release chain
 
-PR-50 through PR-60 построили:
+PR-50 through PR-60 построили unified directional review, risk explanation,
+pro-forma intent binding, compact response, release eligibility, OpenAPI shadow,
+exact input binding, readiness dossier, acceptance matrix, handler shadow и
+isolated FastAPI candidate.
 
-- unified directional review;
-- risk explanation;
-- pro-forma intent binding;
-- compact response;
-- release eligibility;
-- OpenAPI shadow candidate;
-- exact input binding;
-- route readiness dossier;
-- acceptance matrix;
-- handler shadow;
-- isolated FastAPI candidate.
-
-PR-61 регистрирует production private `GET /decision/final-review`.
+PR-61 регистрирует production private `GET /decision/final-review`. PR-62…PR-78
+добавляют trusted publication, orchestration, evidence, workflow bridge,
+producer/coordinator, source stores, exact intent, provider routing и one-shot
+owner composition. PR-79 вводит approved acquisition, PR-80 — concrete typed
+owner installation, PR-81 — authenticated approved-context lifecycle.
 
 ### 6.2. Final-review route contract
 
@@ -216,22 +214,28 @@ The route uses a bounded process-local source registry:
 - missing/invalid Gateway key → `401`;
 - exact active source → `200`.
 
-PR-79 adds an internal approved acquisition controller in front of the PR-78 trusted
-composition. Invocation identity and the masked account come only from fresh authenticated
-server context. The controller loads exactly the existing Decision Engine, exact intent,
-capacity, explicit post-change risk scenario and selected directional preview owner leases.
-Any missing, stale, failed or account-mismatched source returns the existing safe `503`
-outcome before financial owners are called.
+PR-79 obtains Decision Engine, exact intent, capacity, explicit post-change
+scenario and selected directional preview leases only from fresh typed server
+context. Missing, stale, failed or account-mismatched evidence returns the
+existing safe `503` before financial owners are called.
 
-PR-80 adds the concrete typed installation adapter for already-existing PR-78 purchase or
-sell owner ports. It creates fixed context-bound PR-79 loaders for exactly one acquisition
-call, never installs the opposite preview direction and preserves all PR-79/PR-78 gates.
-Production startup registers the adapter but performs no installation, owner, calculator,
-portfolio, network or broker call.
+PR-80 installs already-existing typed purchase/sell owners into one exact PR-79
+call through fixed context-bound loaders. Startup registers the adapter but
+performs no installation, owner, calculator, portfolio, network or broker call.
 
-Production remains fail-closed until a separately reviewed authenticated request lifecycle
-derives the exact masked server context and selects the existing typed owners. This is
-correct unavailable behavior, not a completed end-to-end workflow.
+PR-81 no longer guesses the approved context from Action query values. Trusted
+publication retains only exact scenario ID, trusted publication correlation,
+direction-derived operation, masked account and timestamp. After the existing
+Bearer dependency, exact source lookup and successful handler shadow, the route
+creates a server-generated `FinalDecisionReviewApprovedServerContextV1` and
+captures it in a process-local store with 300-second TTL and bounded capacity.
+Authentication failure creates no context. Missing or stale seeds do not
+fabricate context or expose exception text.
+
+PR-81 intentionally does not select owners and does not invoke PR-80. The next
+reviewed package must bind the fresh context to only the existing typed owner
+ports inside the same server-owned lifecycle. This is correct incremental
+fail-closed behavior, not completed end-to-end execution.
 
 ## 7. Обязательный контракт ответов Gateway
 
@@ -256,15 +260,16 @@ correct unavailable behavior, not a completed end-to-end workflow.
 - считать отдельно по каждой валюте;
 - не складывать валюты без курса и времени FX;
 - использовать точную десятичную арифметику;
-- не учитывать повторно top-level payment, nested commission, child operations и
-  embedded trades;
+- не учитывать повторно top-level payment, nested commission, child operations
+  и embedded trades;
 - хранить комиссии раздельно, если источник их различает;
 - для облигаций учитывать номинал, процентную цену и НКД;
 - не путать количество инструментов, единицы и лоты.
 
 ## 9. Планы HTML-импорта СберИнвестиций
 
-Для существующего веб-кабинета запланирован безопасный импорт официального HTML-отчёта:
+Для существующего веб-кабинета запланирован безопасный импорт официального
+HTML-отчёта:
 
 - без OCR и фотографий;
 - без исполнения HTML/JS/CSS;
@@ -299,12 +304,14 @@ correct unavailable behavior, not a completed end-to-end workflow.
 
 ## 11. Acceptance and current next step
 
-После merge этого пакета функциональная вершина программы — PR-80. Concrete typed owner
-installation готова, но production по умолчанию остаётся fail-closed. Следующий номер не
-назначен; ближайший доказанный gap — actual authenticated server request lifecycle, который
-создаёт exact masked approved context и выбирает только существующие typed owner ports до
-вызова PR-80. Точный контракт следующего пакета определяется
-`knowledge/16_CURRENT_PROGRAM_STATUS.md` и фактической вершиной `main`.
+После merge этого пакета функциональная вершина программы — PR-81.
+Authenticated approved-context derivation and bounded capture готовы, но owner
+selection и PR-80 invocation намеренно не выполнены. Следующий номер не
+назначен; ближайший доказанный gap — связать один свежий approved context с
+точным existing typed purchase/sell owner bundle, вызвать PR-80 один раз и
+сохранить safe `503` при любом missing/stale/mismatch. Точный контракт
+следующего пакета определяется `knowledge/16_CURRENT_PROGRAM_STATUS.md` и
+фактической вершиной `main`.
 
 Отдельно остаются восемь реальных production acceptance cases:
 
@@ -316,7 +323,9 @@ installation готова, но production по умолчанию остаёт�
 - complete Action-list inspection;
 - rollback restore.
 
-Они не считаются выполненными по зелёному CI. До их фактической фиксации сохраняются `trading_methods=false`, GET-only Actions и fail-closed unavailable behavior.
+Они не считаются выполненными по зелёному CI. До их фактической фиксации
+сохраняются `trading_methods=false`, GET-only Actions и fail-closed unavailable
+behavior.
 
 ## 12. Definition of Done
 
@@ -332,4 +341,5 @@ Read-only программа не завершена, пока одноврем�
 - external RAG and live-source controls where required;
 - rollback and incident procedures.
 
-Real trading остаётся отдельной программой допуска и требует явного решения владельца.
+Real trading остаётся отдельной программой допуска и требует явного решения
+владельца.
