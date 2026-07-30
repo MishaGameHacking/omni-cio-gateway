@@ -1,7 +1,7 @@
 # 16 — CURRENT PROGRAM STATUS
 
 Дата актуализации: 2026-07-30  
-Фактическая вершина программы после merge этого пакета: **PR-61**  
+Фактическая вершина программы после merge этого пакета: **PR-62**  
 Точная версия определяется текущей вершиной ветки `main`.
 
 ## Назначение документа
@@ -30,35 +30,17 @@
 
 ### P0 — безопасность и воспроизводимость
 
-В `main` находятся:
-
-- Telegram runtime retirement;
-- broker SDK read-only allowlist;
-- запрет mutating Actions и торговых SDK-вызовов;
-- hash-locked dependencies;
-- Ruff, formatting, mypy и coverage gates;
-- dependency audit, SAST и secret scan;
-- стабильный `app:app` и GET-only release contract;
-- маскирование счёта и запрет секретов в GitHub.
+В `main` находятся Telegram retirement, broker SDK read-only allowlist, запрет mutating
+Actions, hash-locked dependencies, Ruff/formatting/mypy/coverage, dependency audit, SAST,
+secret scan, стабильный `app:app`, GET-only release contract и маскирование счёта.
 
 ### P1 — аналитический backend
 
-Реализованы versioned read-only слои для:
-
-- portfolio, cash, operations и broker-report reconciliation;
-- provenance, timestamps, completeness и quality gates;
-- portfolio analytics, concentration, stress и conservative risk policy;
-- market reference, quotes, liquidity, ratings и corporate events;
-- safe news sanitation, deduplication и citation-backed retrieval;
-- equity, bond и fund evidence assessments;
-- OHLCV technical-indicator evidence;
-- Decision Engine с обязательным no-action/abstain;
-- threshold rebalancing;
-- purchase и sell pre-trade previews;
-- shadow и paper workflows;
-- authenticated/encrypted paper ledger, backup, restore и DR readiness;
-- purged walk-forward planning, OOS performance и statistical stability;
-- market-capacity assessment и capacity-aware decision gating.
+Реализованы versioned read-only слои для portfolio, cash, operations, broker-report
+reconciliation, provenance, quality, analytics, concentration, stress, conservative risk,
+market evidence, safe news, instrument assessments, technical evidence, Decision Engine,
+threshold rebalancing, purchase/sell previews, shadow/paper workflows, encrypted paper
+ledger, walk-forward/OOS stability и market-capacity gating.
 
 ### Final-review release chain
 
@@ -66,85 +48,93 @@
 - **PR-51:** account-aware risk/pre-trade explanation envelope;
 - **PR-52:** tamper-evident pro-forma risk/intention binding;
 - **PR-53:** compact user-safe final response and shadow parity;
-- **PR-54:** final-response release eligibility and canonical SHA-256;
+- **PR-54:** release eligibility and canonical response SHA-256;
 - **PR-55:** private GET Action candidate and OpenAPI shadow;
 - **PR-56:** exact eight-query input binding;
 - **PR-57:** production-route readiness dossier;
-- **PR-58:** route implementation plan and 13-case acceptance matrix;
+- **PR-58:** implementation plan and 13-case acceptance matrix;
 - **PR-59:** route-handler shadow and safe observability;
 - **PR-60:** isolated FastAPI HTTP integration candidate;
-- **PR-61:** production private `GET /decision/final-review` with bounded TTL
-  source registry.
+- **PR-61:** production private `GET /decision/final-review` and bounded TTL registry;
+- **PR-62:** trusted process-local publisher into that registry.
 
-## PR-61 — production final-review GET route v1
+## PR-62 — internal final-review publisher v1
 
-PR-61 registers exactly one new production Action:
+PR-62 adds an internal Python API only:
 
-- method: `GET`;
-- path: `/decision/final-review`;
-- operationId: `getFinalDecisionReview`;
-- authentication: existing Gateway Bearer key, exported as `ApiKeyAuth`;
-- request body: absent;
-- query: exact PR-56 eight-field identity;
-- response: `FinalDecisionReviewResponseV1` `1.0`;
-- broker calls: none;
-- trading and execution semantics: none.
+```python
+publish_final_decision_review_source(
+    registry,
+    route_plan,
+    input_binding,
+    correlation_id=...,
+    request_id=...,
+    published_at=...,
+)
+```
 
-### Source registry
+### Preconditions
 
-The route cannot reconstruct a response from identity hashes. It uses an internal,
-process-local registry containing only already validated route plans and bindings.
+Publication is rejected unless the route plan is ready and blocker-free, the binding is
+valid, and masked account, requested/final options, fingerprint, ordered instruments,
+count, query SHA-256, response SHA-256 and Action-candidate SHA-256 match exactly.
 
-Default controls:
+Trace identifiers and timezone-aware timestamps are validated before registry mutation.
 
-- TTL: 15 minutes;
-- capacity: 64 entries;
-- no HTTP publication method;
-- expired-source pruning;
-- oldest-source eviction;
-- restart/deploy clears the registry;
-- no credentials stored.
+### Publication semantics
 
-Fail-closed behavior:
+- first exact context → `published`;
+- same active context → `replaced`;
+- another context beyond capacity → oldest-source eviction is counted;
+- expired source remains governed by PR-61 TTL;
+- a new process starts with an empty registry.
 
-- empty or expired registry → `503`;
-- active source with substituted context → `409`;
-- invalid masked account/count/uniqueness → `400`;
-- framework schema failure → `422`;
-- missing/invalid Gateway key → `401`;
-- exact active source → compact `200` response.
+One publisher/lock is attached to each registry. Concurrent calls therefore share one
+atomic lookup/publish/count boundary.
 
-The production route alone is not an end-to-end orchestration workflow. Until a trusted
-internal publisher is connected, the expected production result is `503` after successful
-authentication.
+### Safe observability
+
+Publisher telemetry contains only correlation/request IDs, masked account and safe counts
+for active sources, eviction, replacement and instrument count. External-call status is
+always `not_called`.
+
+The publisher:
+
+- creates no HTTP endpoint;
+- changes no production OpenAPI operation;
+- calls no broker;
+- recalculates no source values;
+- authorizes no trade or order;
+- preserves `trading_methods=false`.
 
 ## Acceptance state
 
-### Eligible for completion inside PR-61
+### Eligible inside PR-62
 
-- current GET-only release contract;
-- full Regression Shield;
-- production handler and registry tests;
-- exact OpenAPI Action count and query contract;
-- authentication negative test;
-- no broker-write surface;
-- `trading_methods=false`.
+- exact publication and replacement tests;
+- bounded-capacity eviction accounting;
+- concurrent publication semantics;
+- expiry and restart behavior;
+- fail-closed context, timestamp and trace validation;
+- safe publisher observability;
+- proof that production OpenAPI and HTTP method set are unchanged;
+- full Regression Shield and security gates.
 
 ### Must remain unexecuted until actual deployment
 
 - Render source-commit verification;
 - cache-busted `/health` verification;
 - live authenticated route call;
-- GPT Editor schema import;
+- GPT Editor OpenAPI import;
 - GPT Editor Preview;
-- full post-import Action-list inspection;
+- post-import Action-list inspection;
 - rollback drill.
 
 ## Что остаётся до полного релиза по мастер-плану
 
 ### Backend и orchestration
 
-- internal final-review orchestration publisher into the bounded registry;
+- end-to-end internal composition of PR-53 through PR-62 from validated read-only inputs;
 - production-grade live ingestion for market, ratings, news and corporate events;
 - external versioned RAG index with freshness and citation controls;
 - expanded observability, alerting and operational runbooks.
@@ -159,11 +149,10 @@ authentication.
 
 ### Release acceptance
 
-- синхронизировать inventory и file index;
 - провести Render/Gateway post-deploy acceptance;
 - импортировать актуальную OpenAPI schema в GPT Editor;
 - выполнить authenticated GPT Preview;
-- выполнить end-to-end read-only acceptance на реальных, но не сохраняемых данных;
+- провести end-to-end read-only acceptance на реальных, но не сохраняемых данных;
 - подтвердить rollback и incident procedures.
 
 ### Торговые этапы
@@ -171,19 +160,18 @@ authentication.
 Shadow, paper и preview инфраструктура не являются разрешением на реальную торговлю.
 Confirm-before-trade, idempotency, TTL confirmation, kill switch, partial-fill и timeout
 reconciliation требуют отдельной программы допуска и отдельного решения владельца.
-
 Полностью автономная торговля без подтверждения не планируется.
 
 ## Следующий рекомендуемый пакет
 
-**PR-62 — final-review internal orchestration publisher v1**:
+**PR-63 — final-review end-to-end internal orchestration composition v1**:
 
-- подключает существующий read-only final-review chain к PR-61 registry;
-- не создаёт HTTP publication endpoint;
-- публикует только blocker-free exact plan/binding;
-- применяет TTL, bounded capacity и source replacement controls;
-- проверяет concurrent publication, expiry and restart semantics;
-- добавляет orchestration provenance and safe publisher observability;
+- принимает только уже сформированный compact response и проверяемые release inputs;
+- последовательно строит eligibility, Action shadow, query binding, readiness dossier и
+  implementation plan;
+- публикует source через PR-62 только при полном прохождении всех gates;
+- возвращает fail-closed orchestration result с primary blocker;
+- не добавляет HTTP endpoint и не меняет production OpenAPI;
 - не вызывает broker write methods;
 - сохраняет `trading_methods=false`;
 - не считает Render/GPT Preview acceptance выполненной заранее.
