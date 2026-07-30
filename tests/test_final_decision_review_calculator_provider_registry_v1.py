@@ -191,7 +191,11 @@ def test_registry_rejects_unknown_and_duplicate_provider() -> None:
             completed_at=NOW,
         )
 
-    provider = lambda _: _bundle(purchase=True)
+    def provider(
+        _: ApprovedCalculatorInvocationRequestV1,
+    ) -> ApprovedCalculatorProviderBundleV1:
+        return _bundle(purchase=True)
+
     registry.register(
         provider_id="provider:duplicate",
         operation=ApprovedCalculatorOperation.PURCHASE_REVIEW,
@@ -229,11 +233,11 @@ def test_context_and_direction_mismatches_fail_before_invocation() -> None:
             "DIRECTION_MISMATCH",
         ),
     )
-    for provider_id, provider, error in cases:
+    for provider_id, provider_case, error in cases:
         registry.register(
             provider_id=provider_id,
             operation=ApprovedCalculatorOperation.PURCHASE_REVIEW,
-            provider=provider,
+            provider=provider_case,
         )
         with pytest.raises(
             FinalDecisionReviewCalculatorProviderRegistryError,
@@ -276,11 +280,11 @@ def test_stale_future_exception_and_raw_output_fail_closed() -> None:
         ("provider:failed", failed, "PROVIDER_CALL_FAILED"),
         ("provider:raw", lambda _: {"decision": "raw"}, "BUNDLE_TYPE_INVALID"),
     )
-    for provider_id, provider, error in providers:
+    for provider_id, provider_case, error in providers:
         registry.register(
             provider_id=provider_id,
             operation=ApprovedCalculatorOperation.PURCHASE_REVIEW,
-            provider=provider,
+            provider=provider_case,
         )
         with pytest.raises(
             FinalDecisionReviewCalculatorProviderRegistryError,
