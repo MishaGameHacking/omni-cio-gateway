@@ -22,6 +22,7 @@
 - `architecture/REPOSITORY_STRUCTURE.md`
 - `architecture/DECISIONS.md`
 - `architecture/FINAL_DECISION_REVIEW_PRODUCTION_ROUTE_V1.md` — private GET Action, bounded TTL registry, fail-closed HTTP and OpenAPI contract.
+- `architecture/FINAL_DECISION_REVIEW_PUBLISHER_V1.md` — internal exact-source publication, concurrency, replacement, eviction and safe observability.
 
 ### Operations
 
