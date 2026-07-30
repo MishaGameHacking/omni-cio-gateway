@@ -18,6 +18,10 @@ from omni_cio.market.capacity_v1 import (
     CapacityAssessmentError,
     assess_market_capacity,
 )
+from omni_cio.market.cbr_key_rate_cache_v1 import (
+    CbrKeyRateCacheError,
+    CbrKeyRateCacheV1,
+)
 from omni_cio.market.cbr_key_rate_v1 import (
     CBR_KEY_RATE_ENDPOINT,
     CBR_KEY_RATE_SOAP_ACTION,
@@ -46,6 +50,8 @@ __all__ = [
     "CBR_KEY_RATE_ENDPOINT",
     "CBR_KEY_RATE_SOAP_ACTION",
     "CapacityAssessmentError",
+    "CbrKeyRateCacheError",
+    "CbrKeyRateCacheV1",
     "CbrKeyRateSourceError",
     "EquityFundamentalAssessmentError",
     "FundStructuralAssessmentError",
