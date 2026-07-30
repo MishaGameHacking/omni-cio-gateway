@@ -267,6 +267,12 @@ def _parse_action_title(
     if _is_issue_level_title(upper):
         return None
 
+    rating_matches = re.findall(_RATING, normalized, flags=re.IGNORECASE)
+    if " AND " in upper or len(rating_matches) > 1:
+        return None
+    if "WITHDRAWS" not in upper and not rating_matches:
+        return None
+
     match = _ASSIGN_AFFIRM_PATTERN.fullmatch(normalized)
     if match is not None:
         action = (
