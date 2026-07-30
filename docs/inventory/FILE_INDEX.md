@@ -19,6 +19,8 @@
 | `omni_cio/market/` | Market, capacity, bond, equity, fund and technical analysis |
 | `omni_cio/market/cbr_key_rate_v1.py` | PR-84 fixed official Bank of Russia SOAP source, bounded streaming and protected XML parsing |
 | `omni_cio/market/cbr_key_rate_cache_v1.py` | PR-85 exact-range bounded cache, single-flight refresh and explicit fresh/stale/unavailable lifecycle |
+| `omni_cio/observability/safe_events_v1.py` | Existing allowlisted structured event builder and JSON emitter |
+| `omni_cio/observability/cbr_key_rate_events_v1.py` | PR-86 source/cache status, latency, freshness and safe-count telemetry without financial payload |
 | `omni_cio/release/final_decision_review_route_v1.py` | Production private GET route and safe handler boundary |
 | `omni_cio/release/final_decision_review_publisher_v1.py` | Trusted process-local exact-source publisher |
 | `omni_cio/release/final_decision_review_orchestration_v1.py` | PR-53…PR-63 composition and first-blocker handling |
@@ -62,6 +64,7 @@
 | `tests/test_final_decision_review_authenticated_owner_installation_v1.py` | PR-83 post-auth success/failure/evidence/idempotent registration |
 | `tests/test_cbr_key_rate_source_v1.py` | PR-84 contract, fixed source, XML security, bounded transport and fail-closed errors |
 | `tests/test_cbr_key_rate_cache_v1.py` | PR-85 fresh/stale/unavailable contract, single-flight, pruning, eviction and no-silent-stale behavior |
+| `tests/test_cbr_key_rate_observability_v1.py` | PR-86 source/cache event mapping, payload exclusions, latency/type guards and no-write surface |
 | `tests/test_portfolio_market_snapshot.py` | Рыночная оценка портфеля |
 | `tests/test_portfolio_analytics.py` | Структура и концентрация |
 | `tests/test_cash_liquidity.py` | Деньги и лимиты |
@@ -90,6 +93,7 @@
 | `docs/architecture/FINAL_DECISION_REVIEW_AUTHENTICATED_OWNER_INSTALLATION_V1.md` | PR-83 authenticated installation lifecycle |
 | `docs/architecture/CBR_KEY_RATE_SOURCE_V1.md` | PR-84 official source, parser and transport security boundary |
 | `docs/architecture/CBR_KEY_RATE_CACHE_V1.md` | PR-85 exact-range cache and explicit freshness/display policy |
+| `docs/architecture/CBR_KEY_RATE_OBSERVABILITY_V1.md` | PR-86 allowlisted telemetry without key-rate or upstream payload |
 | `gpt/MY_GPT_SETUP_RUNBOOK.md` | Точная настройка ChatGPT → My GPTs, Actions, Preview и rollback |
 | `docs/operations/RELEASE_CHECKLIST.md` | Pre-merge, production and evidence checklist |
 
