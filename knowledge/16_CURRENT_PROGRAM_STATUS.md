@@ -1,7 +1,7 @@
 # 16 — CURRENT PROGRAM STATUS
 
 Дата актуализации: 2026-07-30  
-Фактическая вершина программы после merge этого пакета: **PR-66**  
+Фактическая вершина программы после merge этого пакета: **PR-67**  
 Точная версия определяется текущей вершиной ветки `main`.
 
 ## Назначение документа
@@ -57,70 +57,71 @@ ledger, walk-forward/OOS stability и market-capacity gating.
 - **PR-63:** end-to-end internal composition and fail-closed publication;
 - **PR-64:** production-acceptance evidence contract and offline collector;
 - **PR-65:** production-importable typed workflow bridge;
-- **PR-66:** live read-only workflow producer from buy/sell gates and risk evidence.
+- **PR-66:** live read-only workflow producer from buy/sell gates and risk evidence;
+- **PR-67:** acquisition-outcome coordinator and source handoff validation.
 
-## PR-66 — live read-only decision workflow producer v1
+## PR-67 — read-only workflow coordinator v1
 
-PR-66 exports `FinalDecisionReviewWorkflowProducerV1`. It is an internal Python API and
+PR-67 exports `FinalDecisionReviewWorkflowCoordinatorV1`. It is an internal Python API and
 adds no HTTP route, operationId, query parameter or request body.
 
-### Typed inputs
+### Canonical source evidence
 
-Producer accepts:
+Every coordination attempt contains exactly four unique slots:
 
-- exactly one `CapacityPreTradeDecisionGateV1` or
-  `CapacitySellPreTradeDecisionGateV1`;
-- current `RiskPolicyEvaluationV1`;
-- already calculated pro-forma `RiskPolicyEvaluationV1`;
-- safe scenario/correlation/request identifiers;
-- timezone-aware production timestamp.
+- `purchase_gate`;
+- `sell_gate`;
+- `current_risk`;
+- `pro_forma_risk`.
 
-Credentials, full account ID, raw JSON payload, order confirmation and execution controls
-are not inputs.
+Each slot has status `available`, `missing` or `failed`. Evidence stores only UTC time,
+safe provider/operation and a safe error code. Financial payloads, credentials and full
+account data are not logged.
 
-### Exact source pipeline
+A complete bundle requires:
 
-1. Existing directional builder confirms one homogeneous buy/sell source, coverage and
-   exact intent binding.
-2. Existing explanation builder rechecks masked account, current-risk freshness/readiness,
-   directional freshness, capacity and broker-preview layers.
-3. Expected capacity requests are read only from retained source gate intent; caller cannot
-   inject a second conflicting request set.
-4. PR-65 builds pro-forma scenario and binding.
-5. PR-63/PR-62 publish exact review or safe no-action response into PR-61 registry.
+- exactly one directional gate available;
+- the other directional gate missing;
+- current risk available;
+- pro-forma risk available;
+- zero failed sources.
 
-Producer does not fetch broker data and does not recompute previews or risk. Source authority
-remains with the typed source contracts.
+### Coordinator gates
 
-### Fail-closed and no-action behavior
+Before invoking PR-66, coordinator verifies:
 
-- zero or two directional gates → structural block before explanation;
-- malformed source → structural block;
-- stale current risk, account mismatch, incomplete coverage or intent mismatch →
-  auditable `WAIT_FOR_DATA`/no-action;
-- invalid trace → downstream publication block with empty registry;
-- no blocked state is upgraded to ready;
-- all safety flags remain false and `trading_methods=false`.
+1. four canonical slots without duplicates;
+2. exact evidence-to-artifact correspondence;
+3. exactly one buy/sell direction;
+4. source evidence timestamp equals artifact source timestamp;
+5. age and future-tolerance bounds;
+6. current/pro-forma/preview masked-account parity;
+7. request side equals selected direction.
 
-### Concurrency and lifecycle
+Missing, failed, stale, future-dated, account-mismatched or direction-mismatched bundles do
+not call producer. The result is explicitly blocked and registry state is unchanged.
 
-- producer-level lock serializes directional review through bridge;
-- downstream bridge/publisher locks preserve exact replacement semantics;
-- concurrent exact workflows yield one initial publication and replacements;
-- PR-61 TTL, capacity, eviction and restart-empty behavior remain unchanged.
+### Safety invariants
+
+- no source acquisition or scheduling;
+- no network calls;
+- no broker SDK calls or writes;
+- no source payload, credential or full-account logs;
+- no trade authorization or order creation;
+- no production OpenAPI changes;
+- `trading_methods=false`.
 
 ## Remaining production boundary
 
-PR-66 is the first complete typed producer from retained pre-trade/risk artifacts to the
-final-review registry. It deliberately does not fetch, schedule or persist those artifacts
-and does not auto-run at startup.
+PR-67 validates handoff correctness but does not acquire source artifacts. A future adapter
+must call existing read-only calculators, construct evidence from actual outcomes and pass
+only complete typed artifacts to coordinator. It must never mark absent or failed data as
+available.
 
-A runtime coordinator is still required to obtain fresh typed purchase/sell gate, current
-risk and pro-forma risk from the existing read-only calculations and invoke the producer.
-Until then:
+Until that adapter exists and is invoked:
 
 - registry may remain empty after restart;
-- exact positive route acceptance may return `503` before producer invocation;
+- exact positive route acceptance may return `503`;
 - Render/GPT/rollback evidence remains `not_executed`;
 - no autonomous trading is enabled.
 
@@ -128,13 +129,13 @@ Until then:
 
 PR-64 still requires eight real evidence cases: Render commit, health, auth-negative,
 exact-route-positive, GPT schema import, authenticated Preview, Action-list inspection and
-rollback restore. None may be marked passed solely because PR-66 CI is green.
+rollback restore. None may be marked passed solely because PR-67 CI is green.
 
 ## Что остаётся до полного релиза
 
 ### Backend and release acceptance
 
-- runtime coordinator for obtaining fresh typed source artifacts and calling PR-66;
+- read-only source acquisition adapter for current risk, pro-forma risk and one buy/sell gate;
 - actual Render/Gateway acceptance and evidence recording;
 - actual GPT Editor import and authenticated Preview;
 - production-grade live ingestion for market, ratings, news and corporate events;
@@ -158,15 +159,15 @@ reconciliation требуют отдельной программы допуск
 
 ## Следующий рекомендуемый пакет
 
-**PR-67 — read-only decision workflow coordinator contract v1**:
+**PR-68 — read-only workflow source acquisition adapter v1**:
 
-- определяет typed handoff from existing read-only calculators to PR-66;
-- требует authority, freshness, masked-account and exact-intent evidence for every input;
-- records source acquisition outcomes without credentials or financial payload logs;
-- never fabricates missing purchase/sell gate or pro-forma risk;
-- invokes producer only when a complete bundle exists;
-- returns explicit no-action/blocked result otherwise;
-- adds restart, partial, stale, account mismatch and source failure tests;
+- определяет typed acquisition ports for one purchase/sell gate, current risk and pro-forma risk;
+- converts actual load outcomes into PR-67 source evidence;
+- never fabricates unavailable artifacts;
+- separates missing, failed, stale and partial outcomes;
+- invokes coordinator only with exact artifact/evidence correspondence;
+- records only safe counts, provider/operation and error codes;
+- adds timeout, source failure, stale, account mismatch and successful handoff tests;
 - preserves 14 GET Actions, `app:app`, no broker writes and `trading_methods=false`;
 - does not mark production acceptance complete before real deploy/GPT evidence.
 

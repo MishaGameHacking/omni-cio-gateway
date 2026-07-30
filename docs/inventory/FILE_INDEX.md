@@ -22,12 +22,14 @@
 | `omni_cio/contracts/v1/final_decision_review_acceptance.py` | Immutable production acceptance evidence, proof digests, counters and completion invariants |
 | `omni_cio/contracts/v1/final_decision_review_workflow_bridge.py` | Immutable scenario/binding/orchestration bridge result and safety mirrors |
 | `omni_cio/contracts/v1/final_decision_review_workflow_producer.py` | Immutable directional/explanation/bridge producer result and safety mirrors |
+| `omni_cio/contracts/v1/final_decision_review_workflow_coordinator.py` | Canonical source acquisition evidence and coordinator result invariants |
 | `omni_cio/release/final_decision_review_route_v1.py` | Production private GET route, bounded TTL source registry, OpenAPI security patch and safe handler boundary |
 | `omni_cio/release/final_decision_review_publisher_v1.py` | Trusted process-local exact-source publisher with per-registry concurrency guard |
 | `omni_cio/release/final_decision_review_orchestration_v1.py` | PR-53…PR-62 composition, first-blocker handling and internal publication |
 | `omni_cio/release/final_decision_review_acceptance_v1.py` | Offline eight-case evidence recorder and complete-dossier collector |
 | `omni_cio/release/final_decision_review_workflow_bridge_v1.py` | Production-importable typed risk/pre-trade bridge into PR-63 orchestration |
 | `omni_cio/release/final_decision_review_workflow_producer_v1.py` | Exactly-one buy/sell source, risk explanation and PR-65 producer pipeline |
+| `omni_cio/release/final_decision_review_workflow_coordinator_v1.py` | Source-evidence, freshness, account and direction coordinator before PR-66 |
 
 ## Конфигурация
 
@@ -54,6 +56,7 @@
 | `tests/test_final_decision_review_acceptance_v1.py` | Evidence statuses, SHA-256 binding, dependencies, counters, failure, sensitive-data and offline guards |
 | `tests/test_final_decision_review_workflow_bridge_v1.py` | Production bridge registration, exact route, no-action, HTTPS, trace, concurrency, TTL, restart and immutability |
 | `tests/test_final_decision_review_workflow_producer_v1.py` | Buy/sell producer, route 200, stale/account no-action, direction count, trace, concurrency and OpenAPI invariance |
+| `tests/test_final_decision_review_workflow_coordinator_v1.py` | Complete handoff, missing/failed/stale sources, account/direction mismatch, privacy and producer-call guards |
 | `tests/test_portfolio_market_snapshot.py` | Рыночная оценка портфеля |
 | `tests/test_portfolio_analytics.py` | Структура и концентрация |
 | `tests/test_cash_liquidity.py` | Деньги и лимиты |
@@ -87,6 +90,7 @@
 | `docs/architecture/FINAL_DECISION_REVIEW_ACCEPTANCE_EVIDENCE_V1.md` | Eight-case production evidence, proof digests, dependency order and completion rules |
 | `docs/architecture/FINAL_DECISION_REVIEW_WORKFLOW_BRIDGE_V1.md` | Typed production bridge, scenario/binding pipeline, fail-closed behavior and remaining live-producer gap |
 | `docs/architecture/FINAL_DECISION_REVIEW_WORKFLOW_PRODUCER_V1.md` | Buy/sell source pipeline, risk explanation, no-action behavior and remaining coordinator gap |
+| `docs/architecture/FINAL_DECISION_REVIEW_WORKFLOW_COORDINATOR_V1.md` | Canonical acquisition evidence, source gates, privacy boundary and remaining adapter gap |
 | `gpt/` | Восстановление и настройка Custom GPT |
 | `docs/operations/TELEGRAM_REMOVAL_RUNBOOK.md` | Одноразовая внешняя очистка Telegram после merge |
 | `docs/operations/RELEASE_CHECKLIST.md` | Pre-merge, production and acceptance-evidence checklist |

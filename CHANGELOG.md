@@ -5,6 +5,10 @@
 ## [Unreleased]
 
 ### Added
+- Read-only final-review workflow coordinator with four canonical source slots, explicit
+  available/missing/failed acquisition evidence, freshness/account/direction gates and exact
+  evidence-to-artifact correspondence; incomplete or stale bundles never call PR-66, no
+  payload/credential/full-account logging occurs and `trading_methods=false` is preserved.
 - Live read-only final-review workflow producer from exactly one typed buy/sell pre-trade
   gate plus current/pro-forma risk evidence; producer reuses existing directional,
   account, freshness and exact-intent builders, derives requests only from retained source

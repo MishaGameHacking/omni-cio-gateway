@@ -27,6 +27,7 @@
 - `architecture/FINAL_DECISION_REVIEW_ACCEPTANCE_EVIDENCE_V1.md` — immutable Render/Gateway/GPT/rollback evidence, SHA-256 proof binding and completion rules.
 - `architecture/FINAL_DECISION_REVIEW_WORKFLOW_BRIDGE_V1.md` — production-importable typed workflow boundary, scenario/binding composition, TTL and no-route guarantees.
 - `architecture/FINAL_DECISION_REVIEW_WORKFLOW_PRODUCER_V1.md` — exactly-one buy/sell source, risk explanation, no-action behavior and coordinator boundary.
+- `architecture/FINAL_DECISION_REVIEW_WORKFLOW_COORDINATOR_V1.md` — canonical acquisition evidence, source freshness/account/direction gates and adapter boundary.
 
 ### Operations
 
