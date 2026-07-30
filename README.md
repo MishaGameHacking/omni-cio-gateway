@@ -10,7 +10,7 @@ Custom GPT ── Omni-CIO Gateway (`app:app`) ── T-Invest API
 ## Текущее состояние
 
 - System release: **v4.1.0 ChatGPT-only Runtime**.
-- Gateway API component: **v3.9.1 Broker Report Async Integrity**.
+- Gateway API component: **v3.10.0 Final Decision Review GET Route**.
 - Custom GPT communication profile: **Modern Financial Sage — 2026**.
 - Gateway production entrypoint: `app:app`.
 - `trading_methods=false`.
@@ -20,6 +20,10 @@ Custom GPT ── Omni-CIO Gateway (`app:app`) ── T-Invest API
 - Portfolio market snapshot проходит внутреннюю contract v1 shadow validation;
   публичный Action response остаётся без изменений, а будущие decision flows
   получают отдельный fail-closed quality gate.
+- Private `GET /decision/final-review` возвращает только ранее сформированный и
+  проверенный compact response из bounded TTL source registry. Пустой registry
+  fail-closed возвращает `503`; маршрут не вызывает брокера и не создаёт решение
+  заново.
 - Runtime и CI устанавливают полностью pinned зависимости только после
   проверки SHA-256 hashes.
 - Regression Shield включает lint, formatting baseline, mypy, покрытие
@@ -32,9 +36,10 @@ Custom GPT ── Omni-CIO Gateway (`app:app`) ── T-Invest API
 1. [`AGENTS.md`](AGENTS.md)
 2. [`docs/README.md`](docs/README.md)
 3. [`knowledge/00_PROJECT_MASTER_CONTEXT.md`](knowledge/00_PROJECT_MASTER_CONTEXT.md)
-4. [`gpt/INSTRUCTIONS.md`](gpt/INSTRUCTIONS.md)
-5. [`gpt/ACTIONS_CATALOG.md`](gpt/ACTIONS_CATALOG.md)
-6. профильный файл из [`knowledge/`](knowledge/)
+4. [`knowledge/16_CURRENT_PROGRAM_STATUS.md`](knowledge/16_CURRENT_PROGRAM_STATUS.md)
+5. [`gpt/INSTRUCTIONS.md`](gpt/INSTRUCTIONS.md)
+6. [`gpt/ACTIONS_CATALOG.md`](gpt/ACTIONS_CATALOG.md)
+7. профильный файл из [`knowledge/`](knowledge/)
 
 Готовый стартовый запрос: [`gpt/NEW_CHAT_PROMPT.md`](gpt/NEW_CHAT_PROMPT.md).
 
@@ -45,6 +50,7 @@ app.py + runtime modules             Omni-CIO Gateway
 omni_cio/contracts/                  versioned financial contracts
 omni_cio/adapters/                   legacy-to-contract adapters
 omni_cio/quality/                    shadow validation and quality gates
+omni_cio/release/                    read-only release, route and acceptance controls
 broker_report_reconciliation/        официальный отчёт и сверка
 tests/                               unit, endpoint, OpenAPI, Regression Shield
 knowledge/                           строгие правила предметной области
@@ -74,7 +80,7 @@ scripts/                             безопасные локальные п�
 
 Профиль знаний: [`knowledge/13_COMMUNICATION_STYLE_2026.txt`](knowledge/13_COMMUNICATION_STYLE_2026.txt).
 
-Важно: GitHub хранит канонические инструкции, но не может автоматически заменить поле Instructions в GPT Editor. После изменения этого файла владелец вручную вставляет его полный текст в GPT Editor и нажимает **Update**. Повторный импорт OpenAPI не требуется, если контракт Actions не менялся.
+Важно: GitHub хранит канонические инструкции, но не может автоматически заменить поле Instructions в GPT Editor. После изменения этого файла владелец вручную вставляет его полный текст в GPT Editor и нажимает **Update**. После PR-61 требуется повторный импорт OpenAPI, потому что список Actions меняется.
 
 ## ChatGPT-only runtime
 
@@ -104,7 +110,8 @@ Omni-CIO больше не содержит Telegram runtime. Полезная �
 - `GATEWAY_API_KEY`;
 - полный номер брокерского счёта;
 - реальные брокерские отчёты и операции пользователя;
-- Render secrets и секретный GPT Bearer key.
+- Render secrets и секретный GPT Bearer key;
+- содержимое bounded final-review registry после остановки процесса.
 
 Полный реестр: [`docs/inventory/PROJECT_ASSETS.md`](docs/inventory/PROJECT_ASSETS.md).
 
@@ -116,6 +123,7 @@ Omni-CIO больше не содержит Telegram runtime. Полезная �
 - [`SECURITY.md`](SECURITY.md) — политика безопасности.
 - [`docs/architecture/SYSTEM_OVERVIEW.md`](docs/architecture/SYSTEM_OVERVIEW.md) — архитектура.
 - [`docs/architecture/PORTFOLIO_SHADOW_VALIDATION_V1.md`](docs/architecture/PORTFOLIO_SHADOW_VALIDATION_V1.md) — shadow validation и decision gate.
+- [`docs/architecture/FINAL_DECISION_REVIEW_PRODUCTION_ROUTE_V1.md`](docs/architecture/FINAL_DECISION_REVIEW_PRODUCTION_ROUTE_V1.md) — production GET route, registry и fail-closed HTTP contract.
 - [`docs/operations/DEPLOYMENT_RUNBOOK.md`](docs/operations/DEPLOYMENT_RUNBOOK.md) — gateway deployment.
 - [`docs/operations/TELEGRAM_REMOVAL_RUNBOOK.md`](docs/operations/TELEGRAM_REMOVAL_RUNBOOK.md) — очистка выведенного Telegram service.
 - [`knowledge/11_BROKER_REPORT_ASYNC_INTEGRITY.txt`](knowledge/11_BROKER_REPORT_ASYNC_INTEGRITY.txt) — асинхронный отчёт.
@@ -164,6 +172,9 @@ security baseline. Полная команда secret scan закреплена 
 ## Деплой
 
 - Gateway: [`render.yaml`](render.yaml), entrypoint `app:app`.
+- После PR-61 необходимо отдельно подтвердить Render commit, `/health`, новый
+  OpenAPI contract, GPT Editor Preview и rollback. Эти проверки нельзя считать
+  выполненными до фактического deployment.
 
 ## Важная граница проекта
 
