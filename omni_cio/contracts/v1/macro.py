@@ -179,24 +179,46 @@ class CbrKeyRateCacheResultV1(ContractModel):
         ):
             raise ValueError("cache snapshot does not match the request")
 
-        deadlines_present = self.fresh_until is not None and self.stale_until is not None
-        if deadlines_present and self.fresh_until > self.stale_until:
-            raise ValueError("cache deadlines are inconsistent")
-        if (self.fresh_until is None) is not (self.stale_until is None):
+        fresh_until = self.fresh_until
+        stale_until = self.stale_until
+        if (fresh_until is None) is not (stale_until is None):
             raise ValueError("cache deadlines must be present together")
+        if (
+            fresh_until is not None
+            and stale_until is not None
+            and fresh_until > stale_until
+        ):
+            raise ValueError("cache deadlines are inconsistent")
+        deadlines_present = fresh_until is not None and stale_until is not None
 
         if self.status is MacroCacheStatus.FRESH:
+            failed_refresh_fallback = (
+                self.refresh_attempted
+                and not self.refresh_succeeded
+                and self.served_from_cache
+                and (
+                    self.cache_error_code is not None
+                    or self.source_error_code is not None
+                )
+            )
+            normal_fresh = (
+                not self.refresh_attempted
+                or (
+                    self.refresh_succeeded
+                    and self.cache_error_code is None
+                    and self.source_error_code is None
+                )
+            )
             if (
                 self.snapshot is None
                 or self.age_seconds is None
                 or not deadlines_present
-                or self.checked_at >= self.fresh_until
+                or fresh_until is None
+                or self.checked_at >= fresh_until
                 or self.stale_available
                 or self.stale_value_exposed
                 or not self.display_value_allowed
-                or self.cache_error_code is not None
-                or self.source_error_code is not None
-                or (self.refresh_attempted and not self.refresh_succeeded)
+                or not (normal_fresh or failed_refresh_fallback)
             ):
                 raise ValueError("fresh cache result is inconsistent")
         elif self.status is MacroCacheStatus.STALE:
@@ -204,8 +226,10 @@ class CbrKeyRateCacheResultV1(ContractModel):
                 self.snapshot is None
                 or self.age_seconds is None
                 or not deadlines_present
-                or self.checked_at < self.fresh_until
-                or self.checked_at >= self.stale_until
+                or fresh_until is None
+                or stale_until is None
+                or self.checked_at < fresh_until
+                or self.checked_at >= stale_until
                 or not self.stale_available
                 or not self.stale_value_exposed
                 or not self.display_value_allowed
