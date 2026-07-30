@@ -30,19 +30,22 @@ _ALLOWED_CONTENT_TYPES = {
     "application/soap+xml",
     "text/xml",
 }
-_DATE_FIELDS = {
-    "date",
-    "datefrom",
+_DATE_FIELDS = (
     "dt",
+    "date",
     "effectivedate",
+    "datefrom",
     "fromdate",
-}
-_RATE_FIELDS = {
-    "keyrate",
+)
+_RATE_FIELDS = (
     "rate",
+    "keyrate",
     "value",
-}
-_XML_DECLARATION_RISK = re.compile(br"<!\s*(?:DOCTYPE|ENTITY)\b", re.IGNORECASE)
+)
+_XML_DECLARATION_RISK = re.compile(
+    br"<!\s*(?:DOCTYPE|ENTITY)\b",
+    re.IGNORECASE,
+)
 
 
 class CbrKeyRateSourceError(ValueError):
@@ -279,6 +282,47 @@ def _mapped_error_code(error: CbrKeyRateSourceError) -> MacroDataErrorCode:
         return MacroDataErrorCode.XML_INVALID
 
 
+def _read_bounded_response(
+    active_client: httpx.Client,
+    *,
+    body: bytes,
+    headers: dict[str, str],
+    timeout_seconds: float,
+    max_response_bytes: int,
+) -> tuple[int, str, bytes, bool]:
+    with active_client.stream(
+        "POST",
+        CBR_KEY_RATE_ENDPOINT,
+        content=body,
+        headers=headers,
+        timeout=timeout_seconds,
+        follow_redirects=False,
+    ) as response:
+        content_type = (
+            response.headers.get("content-type", "")
+            .partition(";")[0]
+            .strip()
+            .lower()
+        )
+        if response.status_code != 200 or content_type not in _ALLOWED_CONTENT_TYPES:
+            return response.status_code, content_type, b"", False
+
+        declared_length = response.headers.get("content-length")
+        if declared_length is not None:
+            try:
+                if int(declared_length) > max_response_bytes:
+                    return response.status_code, content_type, b"", True
+            except ValueError:
+                pass
+
+        payload = bytearray()
+        for chunk in response.iter_bytes():
+            if len(payload) + len(chunk) > max_response_bytes:
+                return response.status_code, content_type, b"", True
+            payload.extend(chunk)
+        return response.status_code, content_type, bytes(payload), False
+
+
 def fetch_cbr_key_rate(
     *,
     requested_from: date,
@@ -308,13 +352,6 @@ def fetch_cbr_key_rate(
         "User-Agent": "omni-cio-gateway/readonly-cbr-key-rate-v1",
     }
 
-    def post(active_client: httpx.Client) -> httpx.Response:
-        return active_client.post(
-            CBR_KEY_RATE_ENDPOINT,
-            content=body,
-            headers=headers,
-        )
-
     try:
         if client is None:
             with httpx.Client(
@@ -322,9 +359,23 @@ def fetch_cbr_key_rate(
                 verify=True,
                 follow_redirects=False,
             ) as owned_client:
-                response = post(owned_client)
+                status_code, content_type, payload, too_large = (
+                    _read_bounded_response(
+                        owned_client,
+                        body=body,
+                        headers=headers,
+                        timeout_seconds=timeout_seconds,
+                        max_response_bytes=max_response_bytes,
+                    )
+                )
         else:
-            response = post(client)
+            status_code, content_type, payload, too_large = _read_bounded_response(
+                client,
+                body=body,
+                headers=headers,
+                timeout_seconds=timeout_seconds,
+                max_response_bytes=max_response_bytes,
+            )
     except httpx.HTTPError:
         return _unavailable_snapshot(
             requested_from=requested_from,
@@ -333,14 +384,13 @@ def fetch_cbr_key_rate(
             error_code=MacroDataErrorCode.NETWORK_ERROR,
         )
 
-    if response.status_code != 200:
+    if status_code != 200:
         return _unavailable_snapshot(
             requested_from=requested_from,
             requested_to=requested_to,
             retrieved_at=observed_at,
             error_code=MacroDataErrorCode.HTTP_ERROR,
         )
-    content_type = response.headers.get("content-type", "").partition(";")[0].lower()
     if content_type not in _ALLOWED_CONTENT_TYPES:
         return _unavailable_snapshot(
             requested_from=requested_from,
@@ -348,8 +398,7 @@ def fetch_cbr_key_rate(
             retrieved_at=observed_at,
             error_code=MacroDataErrorCode.CONTENT_TYPE_INVALID,
         )
-    payload = response.content
-    if len(payload) > max_response_bytes:
+    if too_large:
         return _unavailable_snapshot(
             requested_from=requested_from,
             requested_to=requested_to,
