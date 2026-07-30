@@ -7,6 +7,9 @@ from typing import Any
 from omni_cio.release.final_decision_review_calculator_handoff_v1 import (
     FinalDecisionReviewCalculatorScenarioHandoffV1,
 )
+from omni_cio.release.final_decision_review_calculator_intent_workflow_v1 import (
+    FinalDecisionReviewCalculatorIntentWorkflowV1,
+)
 from omni_cio.release.final_decision_review_production_sources_v1 import (
     FinalDecisionReviewProductionSourceWiringV1,
     FinalDecisionReviewScenarioSourceStoreV1,
@@ -35,6 +38,7 @@ class FinalDecisionReviewProductionRuntimeV1:
     source_store: FinalDecisionReviewScenarioSourceStoreV1
     scenario_publisher: FinalDecisionReviewTrustedScenarioPublisherV1
     calculator_handoff: FinalDecisionReviewCalculatorScenarioHandoffV1
+    calculator_intent_workflow: FinalDecisionReviewCalculatorIntentWorkflowV1
     producer: FinalDecisionReviewWorkflowProducerV1
     coordinator: FinalDecisionReviewWorkflowCoordinatorV1
     source_wiring: FinalDecisionReviewProductionSourceWiringV1
@@ -75,6 +79,9 @@ def register_final_decision_review_production_sources(
     calculator_handoff = FinalDecisionReviewCalculatorScenarioHandoffV1(
         publisher=scenario_publisher,
     )
+    calculator_intent_workflow = FinalDecisionReviewCalculatorIntentWorkflowV1(
+        handoff=calculator_handoff,
+    )
     producer = FinalDecisionReviewWorkflowProducerV1(bridge=bridge)
     coordinator = FinalDecisionReviewWorkflowCoordinatorV1(
         producer=producer,
@@ -93,6 +100,7 @@ def register_final_decision_review_production_sources(
         source_store=source_store,
         scenario_publisher=scenario_publisher,
         calculator_handoff=calculator_handoff,
+        calculator_intent_workflow=calculator_intent_workflow,
         producer=producer,
         coordinator=coordinator,
         source_wiring=source_wiring,
