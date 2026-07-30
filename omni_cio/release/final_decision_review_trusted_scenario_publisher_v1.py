@@ -167,6 +167,7 @@ class FinalDecisionReviewTrustedScenarioPublisherV1:
                 "FINAL_DECISION_REVIEW_TRUSTED_SCENARIO_PRO_FORMA_TYPE_INVALID"
             )
 
+        gate: CapacityPreTradeDecisionGateV1 | CapacitySellPreTradeDecisionGateV1
         if purchase_gate is not None:
             if not isinstance(purchase_gate, CapacityPreTradeDecisionGateV1):
                 raise FinalDecisionReviewTrustedScenarioPublisherError(
