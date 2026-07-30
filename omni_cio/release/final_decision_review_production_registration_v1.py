@@ -102,7 +102,14 @@ def _route_context_store_for_bridge(
     *,
     capacity: int,
 ) -> FinalDecisionReviewApprovedRouteContextStoreV1:
-    observer = bridge.registry.approved_context_observer
+    registry = getattr(bridge, "registry", None)
+    if registry is None:
+        return FinalDecisionReviewApprovedRouteContextStoreV1(
+            ttl_seconds=300,
+            capacity=capacity,
+        )
+
+    observer = getattr(registry, "approved_context_observer", None)
     existing_store = getattr(observer, "__self__", None)
     if isinstance(existing_store, FinalDecisionReviewApprovedRouteContextStoreV1):
         return existing_store
@@ -110,11 +117,17 @@ def _route_context_store_for_bridge(
         raise FinalDecisionReviewProductionRegistrationError(
             "FINAL_DECISION_REVIEW_ROUTE_CONTEXT_OBSERVER_CONFLICT"
         )
+
+    attach_observer = getattr(registry, "attach_approved_context_observer", None)
+    if not callable(attach_observer):
+        raise FinalDecisionReviewProductionRegistrationError(
+            "FINAL_DECISION_REVIEW_ROUTE_CONTEXT_REGISTRY_INVALID"
+        )
     store = FinalDecisionReviewApprovedRouteContextStoreV1(
         ttl_seconds=300,
         capacity=capacity,
     )
-    bridge.registry.attach_approved_context_observer(store.capture)
+    attach_observer(store.capture)
     return store
 
 
