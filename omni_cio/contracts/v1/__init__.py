@@ -77,6 +77,12 @@ from omni_cio.contracts.v1.moex import (
     MoexQuoteCacheErrorCode,
     MoexQuoteCacheStatus,
 )
+from omni_cio.contracts.v1.moex_alerting import (
+    MoexQuoteAlertDisposition,
+    MoexQuoteAlertEvaluationV1,
+    MoexQuoteAlertKind,
+    MoexQuoteAlertPolicyV1,
+)
 from omni_cio.contracts.v1.news import (
     DuplicateNewsOccurrenceV1,
     EntityResolutionStatus,
@@ -256,6 +262,10 @@ __all__ = [
     "MoexIssQuoteStatus",
     "MoexIssTqbrQuoteCacheResultV1",
     "MoexIssTqbrQuoteSnapshotV1",
+    "MoexQuoteAlertDisposition",
+    "MoexQuoteAlertEvaluationV1",
+    "MoexQuoteAlertKind",
+    "MoexQuoteAlertPolicyV1",
     "MoexQuoteCacheErrorCode",
     "MoexQuoteCacheStatus",
     "Money",

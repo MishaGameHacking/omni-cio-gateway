@@ -51,6 +51,7 @@
 - `architecture/MOEX_ISS_TQBR_QUOTE_SOURCE_V1.md` — fixed official public TQBR quote source, strict JSON/identity/freshness boundary and delayed informational-feed flags.
 - `architecture/MOEX_ISS_TQBR_QUOTE_CACHE_V1.md` — exact TQBR+SECID cache, two-clock freshness, single-flight refresh and no-silent-stale policy.
 - `architecture/MOEX_ISS_TQBR_QUOTE_OBSERVABILITY_V1.md` — pure allowlisted source/cache telemetry without price, SECID, account or upstream payload.
+- `architecture/MOEX_ISS_TQBR_QUOTE_ALERT_POLICY_V1.md` — bounded global-only operational thresholds, cooldown, recovery and forged-event rejection without financial thresholds or outbound transport.
 
 ### Operations
 
