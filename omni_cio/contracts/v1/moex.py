@@ -169,8 +169,22 @@ class MoexIssTqbrQuoteCacheResultV1(ContractModel):
     @model_validator(mode="after")
     def validate_cache_result(self) -> MoexIssTqbrQuoteCacheResultV1:
         expected_key = f"MOEX:{self.board_id}:{self.secid}"
-        if self.refresh_succeeded and not self.refresh_attempted:
-            raise ValueError("successful refresh requires an attempted refresh")
+        if self.refresh_succeeded:
+            if (
+                not self.refresh_attempted
+                or self.served_from_cache
+                or self.source_error_code is not None
+                or self.cache_error_code is not None
+            ):
+                raise ValueError("successful refresh metadata is inconsistent")
+        if not self.refresh_attempted and (
+            self.refresh_succeeded
+            or self.source_error_code is not None
+            or self.cache_error_code is not None
+        ):
+            raise ValueError("non-refresh result cannot carry refresh metadata")
+        if (self.fresh_until is None) != (self.stale_until is None):
+            raise ValueError("cache boundaries must be both present or both absent")
         if self.fresh_until is not None and self.stale_until is not None:
             if self.fresh_until > self.stale_until:
                 raise ValueError("fresh cache boundary cannot exceed stale boundary")
@@ -190,9 +204,16 @@ class MoexIssTqbrQuoteCacheResultV1(ContractModel):
                 or self.age_seconds is None
                 or self.fresh_until is None
                 or self.stale_until is None
+                or self.checked_at >= self.fresh_until
                 or not self.display_value_allowed
                 or self.stale_available
                 or self.stale_value_exposed
+                or (not self.refresh_attempted and not self.served_from_cache)
+                or (
+                    self.refresh_attempted
+                    and not self.refresh_succeeded
+                    and self.cache_error_code is None
+                )
             ):
                 raise ValueError("fresh MOEX cache result is inconsistent")
         elif self.status is MoexQuoteCacheStatus.STALE:
@@ -201,6 +222,8 @@ class MoexIssTqbrQuoteCacheResultV1(ContractModel):
                 or self.age_seconds is None
                 or self.fresh_until is None
                 or self.stale_until is None
+                or self.checked_at < self.fresh_until
+                or self.checked_at >= self.stale_until
                 or not self.display_value_allowed
                 or not self.served_from_cache
                 or not self.stale_available
@@ -224,9 +247,17 @@ class MoexIssTqbrQuoteCacheResultV1(ContractModel):
 
         if self.stale_value_exposed and not self.stale_available:
             raise ValueError("exposed stale value requires stale availability")
-        if not self.stale_available and (
-            self.status is MoexQuoteCacheStatus.UNAVAILABLE
-            and (self.fresh_until is not None or self.stale_until is not None)
-        ):
-            raise ValueError("empty unavailable result cannot retain cache boundaries")
+        if self.status is MoexQuoteCacheStatus.UNAVAILABLE:
+            if self.stale_available:
+                if (
+                    self.fresh_until is None
+                    or self.stale_until is None
+                    or self.checked_at < self.fresh_until
+                    or self.checked_at >= self.stale_until
+                ):
+                    raise ValueError("available stale boundary is inconsistent")
+            elif self.fresh_until is not None or self.stale_until is not None:
+                raise ValueError(
+                    "empty unavailable result cannot retain cache boundaries"
+                )
         return self
