@@ -10,6 +10,7 @@ from omni_cio.contracts.v1.alerting import (
 from omni_cio.contracts.v1.moex_alerting import (
     MoexQuoteAlertDisposition,
     MoexQuoteAlertEvaluationV1,
+    MoexQuoteAlertEvidenceV1,
     MoexQuoteAlertKind,
     MoexQuoteAlertPolicyV1,
 )
@@ -36,6 +37,11 @@ from omni_cio.observability.moex_iss_quote_events_v1 import (
     build_moex_iss_quote_cache_event,
     build_moex_iss_quote_source_event,
 )
+from omni_cio.observability.moex_iss_quote_operations_lifecycle_v1 import (
+    MoexQuoteOperationsBatchV1,
+    MoexQuoteOperationsLifecycleError,
+    MoexQuoteOperationsLifecycleV1,
+)
 from omni_cio.observability.safe_events_v1 import (
     build_safe_event,
     emit_safe_event,
@@ -57,10 +63,14 @@ __all__ = [
     "MoexIssQuoteObservabilityError",
     "MoexQuoteAlertDisposition",
     "MoexQuoteAlertEvaluationV1",
+    "MoexQuoteAlertEvidenceV1",
     "MoexQuoteAlertKind",
     "MoexQuoteAlertPolicyError",
     "MoexQuoteAlertPolicyEvaluatorV1",
     "MoexQuoteAlertPolicyV1",
+    "MoexQuoteOperationsBatchV1",
+    "MoexQuoteOperationsLifecycleError",
+    "MoexQuoteOperationsLifecycleV1",
     "build_cbr_key_rate_cache_event",
     "build_cbr_key_rate_source_event",
     "build_moex_iss_quote_cache_event",
