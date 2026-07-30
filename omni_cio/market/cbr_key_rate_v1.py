@@ -5,6 +5,7 @@ from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
 import re
 from xml.etree import ElementTree
+from xml.parsers import expat
 
 import httpx
 
@@ -100,6 +101,60 @@ def _local_name(tag: str) -> str:
     return tag.rsplit("}", 1)[-1].lower()
 
 
+def _parse_xml_document(payload: bytes) -> ElementTree.Element:
+    if not payload or _XML_DECLARATION_RISK.search(payload):
+        raise CbrKeyRateSourceError(MacroDataErrorCode.XML_INVALID.value)
+
+    parser = expat.ParserCreate(namespace_separator="}")
+    parser.buffer_text = True
+    parser.SetParamEntityParsing(expat.XML_PARAM_ENTITY_PARSING_NEVER)
+    stack: list[ElementTree.Element] = []
+    root: ElementTree.Element | None = None
+
+    def start_element(name: str, attributes: dict[str, str]) -> None:
+        nonlocal root
+        element = ElementTree.Element(name, attributes)
+        if stack:
+            stack[-1].append(element)
+        else:
+            root = element
+        stack.append(element)
+
+    def end_element(name: str) -> None:
+        if not stack or stack[-1].tag != name:
+            raise CbrKeyRateSourceError(MacroDataErrorCode.XML_INVALID.value)
+        stack.pop()
+
+    def character_data(data: str) -> None:
+        if stack:
+            stack[-1].text = (stack[-1].text or "") + data
+
+    def reject_declaration(*args: object) -> None:
+        raise CbrKeyRateSourceError(MacroDataErrorCode.XML_INVALID.value)
+
+    def reject_external_entity(*args: object) -> int:
+        raise CbrKeyRateSourceError(MacroDataErrorCode.XML_INVALID.value)
+
+    parser.StartElementHandler = start_element
+    parser.EndElementHandler = end_element
+    parser.CharacterDataHandler = character_data
+    parser.StartDoctypeDeclHandler = reject_declaration
+    parser.EntityDeclHandler = reject_declaration
+    parser.ExternalEntityRefHandler = reject_external_entity
+
+    try:
+        parser.Parse(payload, True)
+    except CbrKeyRateSourceError:
+        raise
+    except expat.ExpatError as exc:
+        raise CbrKeyRateSourceError(
+            MacroDataErrorCode.XML_INVALID.value
+        ) from exc
+    if root is None or stack:
+        raise CbrKeyRateSourceError(MacroDataErrorCode.XML_INVALID.value)
+    return root
+
+
 def _parse_date(value: str) -> date:
     text = value.strip()
     normalized = text[:-1] + "+00:00" if text.endswith("Z") else text
@@ -146,15 +201,7 @@ def _data_roots(result: ElementTree.Element) -> tuple[ElementTree.Element, ...]:
     text = (result.text or "").strip()
     if not text:
         raise CbrKeyRateSourceError(MacroDataErrorCode.EMPTY.value)
-    encoded = text.encode("utf-8")
-    if _XML_DECLARATION_RISK.search(encoded):
-        raise CbrKeyRateSourceError(MacroDataErrorCode.XML_INVALID.value)
-    try:
-        return (ElementTree.fromstring(encoded),)
-    except ElementTree.ParseError as exc:
-        raise CbrKeyRateSourceError(
-            MacroDataErrorCode.XML_INVALID.value
-        ) from exc
+    return (_parse_xml_document(text.encode("utf-8")),)
 
 
 def _row_values(element: ElementTree.Element) -> dict[str, str]:
@@ -212,15 +259,8 @@ def parse_cbr_key_rate_xml(
     )
     if not isinstance(payload, bytes) or not payload:
         raise CbrKeyRateSourceError(MacroDataErrorCode.EMPTY.value)
-    if _XML_DECLARATION_RISK.search(payload):
-        raise CbrKeyRateSourceError(MacroDataErrorCode.XML_INVALID.value)
-    try:
-        root = ElementTree.fromstring(payload)
-    except ElementTree.ParseError as exc:
-        raise CbrKeyRateSourceError(
-            MacroDataErrorCode.XML_INVALID.value
-        ) from exc
 
+    root = _parse_xml_document(payload)
     if any(_local_name(element.tag) == "fault" for element in root.iter()):
         raise CbrKeyRateSourceError(MacroDataErrorCode.SOAP_FAULT.value)
 
