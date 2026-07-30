@@ -45,6 +45,7 @@
 - `architecture/FINAL_DECISION_REVIEW_AUTHENTICATED_OWNER_INSTALLATION_V1.md` — post-auth snapshot selection, one PR-80 invocation and bounded redacted evidence.
 - `architecture/CBR_KEY_RATE_SOURCE_V1.md` — fixed official Bank of Russia source, bounded streaming, protected XML parsing and fail-closed macro contract.
 - `architecture/CBR_KEY_RATE_CACHE_V1.md` — exact-range cache, explicit fresh/stale/unavailable states, single-flight refresh and no-silent-stale policy.
+- `architecture/CBR_KEY_RATE_OBSERVABILITY_V1.md` — allowlisted source/cache events with operational metadata only and no financial payload.
 
 ### Operations
 
@@ -98,4 +99,4 @@ Runtime и deployment contract удалены. Решение и запрет с
 ## Что не хранится в GitHub
 
 Секреты, реальные отчёты, полный номер счёта, пользовательские финансовые
-данные, сырой CBR XML, upstream fault text и process-local cache contents не должны находиться в репозитории.
+данные, сырой CBR XML, upstream fault text, process-local cache contents и финансовые значения в observability events не должны находиться в репозитории.
