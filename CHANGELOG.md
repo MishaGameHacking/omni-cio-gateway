@@ -5,6 +5,10 @@
 ## [Unreleased]
 
 ### Added
+- Internal final-review publisher с exact plan/binding context, one-lock-per-registry
+  concurrency, `published/replaced` semantics, bounded-capacity eviction accounting,
+  TTL/restart behavior и safe `ObservabilityEventV1`; publisher не создаёт HTTP method,
+  не меняет OpenAPI, не вызывает брокера и сохраняет `trading_methods=false`.
 - Production private `GET /decision/final-review` с exact eight-query identity,
   existing Gateway Bearer auth, `FinalDecisionReviewResponseV1`, bounded 15-minute/
   64-entry internal source registry, fail-closed 400/401/409/422/503 behavior и safe
