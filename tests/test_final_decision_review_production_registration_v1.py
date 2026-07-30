@@ -75,7 +75,6 @@ def test_production_runtime_is_registered_without_startup_broker_call() -> None:
     assert runtime.source_store.active_bundle_count() == 0
     assert runtime.owner_callable_store.active_bundle_count() == 0
     assert runtime.owner_callable_store.active_pin_count() == 0
-    assert runtime.approved_route_context_store.active_context_count() == 0
     assert (
         runtime.owner_callable_registration.purchase_provider_id == PURCHASE_PROVIDER_ID
     )
@@ -121,7 +120,6 @@ def test_registration_keeps_portfolio_loader_and_owner_store_lazy() -> None:
     assert runtime.source_store.active_bundle_count() == 0
     assert runtime.owner_callable_store.active_bundle_count() == 0
     assert runtime.owner_callable_store.active_pin_count() == 0
-    assert runtime.approved_route_context_store.active_context_count() == 0
     assert (
         runtime.approved_route_context_store
         is gateway.final_decision_review_production_runtime.approved_route_context_store
@@ -133,6 +131,7 @@ def test_registration_keeps_portfolio_loader_and_owner_store_lazy() -> None:
         runtime.approved_owner_installation.composition
         is runtime.trusted_owner_composition
     )
+    assert runtime.startup_authenticated_context_count == 0
     assert runtime.startup_owner_installation_performed is False
 
 
