@@ -38,6 +38,10 @@ from omni_cio.market.fund_structure_v1 import (
     FundStructuralAssessmentError,
     assess_fund_structure,
 )
+from omni_cio.market.moex_iss_quote_cache_v1 import (
+    MoexIssQuoteCacheError,
+    MoexIssTqbrQuoteCacheV1,
+)
 from omni_cio.market.moex_iss_quote_v1 import (
     MOEX_ISS_TQBR_QUOTE_ENDPOINT_TEMPLATE,
     MoexIssQuoteSourceError,
@@ -64,7 +68,9 @@ __all__ = [
     "EquityFundamentalAssessmentError",
     "FundStructuralAssessmentError",
     "MarketResearchAssessmentError",
+    "MoexIssQuoteCacheError",
     "MoexIssQuoteSourceError",
+    "MoexIssTqbrQuoteCacheV1",
     "TechnicalIndicatorAssessmentError",
     "aggregate_bond_portfolio_rate_stress",
     "assess_bond_credit_risk",

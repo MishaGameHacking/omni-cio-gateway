@@ -72,7 +72,10 @@ from omni_cio.contracts.v1.market import (
 from omni_cio.contracts.v1.moex import (
     MoexIssQuoteErrorCode,
     MoexIssQuoteStatus,
+    MoexIssTqbrQuoteCacheResultV1,
     MoexIssTqbrQuoteSnapshotV1,
+    MoexQuoteCacheErrorCode,
+    MoexQuoteCacheStatus,
 )
 from omni_cio.contracts.v1.news import (
     DuplicateNewsOccurrenceV1,
@@ -251,7 +254,10 @@ __all__ = [
     "MissingDataV1",
     "MoexIssQuoteErrorCode",
     "MoexIssQuoteStatus",
+    "MoexIssTqbrQuoteCacheResultV1",
     "MoexIssTqbrQuoteSnapshotV1",
+    "MoexQuoteCacheErrorCode",
+    "MoexQuoteCacheStatus",
     "Money",
     "NetExternalFlowV1",
     "NewsContentFormat",

@@ -51,6 +51,10 @@ Custom GPT ── Omni-CIO Gateway (`app:app`) ── T-Invest API
   validation, bounded streaming и redacted fail-closed errors. Feed явно
   маркируется potentially delayed, non-realtime и informational-only; он не
   заменяет broker `getMarketSnapshot`.
+- PR-90 добавляет exact `TQBR + SECID` process-local cache над PR-89: explicit
+  fresh/stale/unavailable contract, single-flight refresh, two-clock freshness,
+  bounded pruning/eviction и запрет скрытого stale. `age_seconds` считается от
+  market `quote.as_of`, а cache TTL — от `retrieved_at`.
 - Runtime и CI устанавливают полностью pinned зависимости только после
   проверки SHA-256 hashes.
 - Regression Shield включает lint, formatting baseline, mypy, покрытие
@@ -144,7 +148,7 @@ Omni-CIO больше не содержит Telegram runtime. Полезная �
 - сырой XML Банка России и upstream fault/exception text;
 - сырой MOEX ISS JSON и upstream body/exception text;
 - значение ставки или даты диапазона в observability events;
-- содержимое process-local CBR cache;
+- содержимое process-local CBR/MOEX caches;
 - содержимое bounded final-review, approved-context, owner-snapshot, alert и
   evidence registries после остановки процесса.
 
@@ -168,9 +172,10 @@ Omni-CIO больше не содержит Telegram runtime. Полезная �
 - [`docs/architecture/CBR_KEY_RATE_ALERT_POLICY_V1.md`](docs/architecture/CBR_KEY_RATE_ALERT_POLICY_V1.md) — bounded alert policy without external transport.
 - [`docs/architecture/CBR_KEY_RATE_OPERATIONS_LIFECYCLE_V1.md`](docs/architecture/CBR_KEY_RATE_OPERATIONS_LIFECYCLE_V1.md) — bounded fired/recovered evidence lifecycle.
 - [`docs/architecture/MOEX_ISS_TQBR_QUOTE_SOURCE_V1.md`](docs/architecture/MOEX_ISS_TQBR_QUOTE_SOURCE_V1.md) — официальный public TQBR source, strict parser/transport и delayed informational-feed boundary.
+- [`docs/architecture/MOEX_ISS_TQBR_QUOTE_CACHE_V1.md`](docs/architecture/MOEX_ISS_TQBR_QUOTE_CACHE_V1.md) — exact identity cache, two-clock freshness и no-silent-stale policy.
 - [`docs/operations/DEPLOYMENT_RUNBOOK.md`](docs/operations/DEPLOYMENT_RUNBOOK.md) — gateway deployment.
 - [`docs/operations/TELEGRAM_REMOVAL_RUNBOOK.md`](docs/operations/TELEGRAM_REMOVAL_RUNBOOK.md) — очистка выведенного Telegram service.
-- [`knowledge/09_MARKET_DATA_AND_BUYING_POWER.txt`](knowledge/09_MARKET_DATA_AND_BUYING_POWER.txt) — market, macro and MOEX source semantics.
+- [`knowledge/09_MARKET_DATA_AND_BUYING_POWER.txt`](knowledge/09_MARKET_DATA_AND_BUYING_POWER.txt) — market, macro and MOEX source/cache semantics.
 - [`knowledge/11_BROKER_REPORT_ASYNC_INTEGRITY.txt`](knowledge/11_BROKER_REPORT_ASYNC_INTEGRITY.txt) — асинхронный отчёт.
 - [`knowledge/14_CI_SECURITY_BASELINE.txt`](knowledge/14_CI_SECURITY_BASELINE.txt) — dependency locks, quality и security gates.
 - [`knowledge/16_CURRENT_PROGRAM_STATUS.md`](knowledge/16_CURRENT_PROGRAM_STATUS.md) — фактическая вершина и остаток программы.

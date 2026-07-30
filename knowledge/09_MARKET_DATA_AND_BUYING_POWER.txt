@@ -182,3 +182,21 @@
 - При `unavailable`, identity/schema/time/price mismatch показывать недоступность и безопасный error code; не переносить старое значение без отдельного cache/freshness контракта.
 - Не хранить сырой JSON, upstream body, exception text, cookies или credentials.
 - Публичная котировка MOEX не разрешает сделку, не является торговой рекомендацией и не меняет `trading_methods=false`.
+
+## 14. Cache и freshness котировки MOEX ISS TQBR
+
+- Использовать только `MoexIssTqbrQuoteCacheResultV1`; не читать process-local cache напрямую.
+- Cache identity — точная пара `TQBR + normalized SECID`. Нельзя использовать snapshot другого тикера или board.
+- `fresh_until` и `stale_until` определяются от `snapshot.retrieved_at` и управляют частотой refresh/retention.
+- `age_seconds` определяется от `snapshot.quote.as_of` и отражает возраст рыночного наблюдения. Свежий HTTP-ответ не обнуляет возраст задержанной котировки.
+- `fresh` разрешает информационный показ только с сохранением delayed/non-realtime/informational flags.
+- Fresh cache hit должен иметь `served_from_cache=true`, `refresh_attempted=false`.
+- Неудачный force refresh при ещё свежем cache допускает показ прежнего snapshot только как explicit `fresh` fallback с `refresh_attempted=true`, `refresh_succeeded=false` и безопасным cache error code.
+- После fresh TTL snapshot считается stale. Показ разрешён только после неудачного refresh и explicit trusted `allow_stale=true`.
+- Без `allow_stale=true` вернуть `unavailable` без snapshot, даже если stale entry физически ещё хранится.
+- После stale expiry entry удаляется и не может быть показан.
+- Wrong type, SECID/board/instrument mismatch, future timestamps и source unavailable fail closed.
+- Cache очищается при restart; наличие прежней котировки не гарантируется.
+- Не подменять unavailable значением из web search, другого ticker, broker snapshot или предыдущего процесса.
+- Не усреднять MOEX cache value с broker `getMarketSnapshot`; источник, as_of, retrieved_at и freshness показывать раздельно.
+- Cache не даёт торговых полномочий, не гарантирует real-time и не меняет `trading_methods=false`.
