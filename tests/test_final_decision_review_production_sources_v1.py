@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -38,22 +39,18 @@ class _FakeCoordinator:
         )
 
 
-
 def _purchase_gate(timestamp: datetime = NOW) -> CapacityPreTradeDecisionGateV1:
     return CapacityPreTradeDecisionGateV1.model_construct(assessed_at=timestamp)
-
 
 
 def _sell_gate(timestamp: datetime = NOW) -> CapacitySellPreTradeDecisionGateV1:
     return CapacitySellPreTradeDecisionGateV1.model_construct(assessed_at=timestamp)
 
 
-
 def _risk(timestamp: datetime = NOW) -> RiskPolicyEvaluationV1:
     return RiskPolicyEvaluationV1.model_construct(
         metadata=SimpleNamespace(retrieved_at=timestamp)
     )
-
 
 
 def test_store_publishes_exact_bundle_and_replaces_same_scenario() -> None:
@@ -91,7 +88,6 @@ def test_store_publishes_exact_bundle_and_replaces_same_scenario() -> None:
     assert bundle.sell_gate is not None
 
 
-
 def test_store_expires_and_evicts_oldest_bundle() -> None:
     store = subject.FinalDecisionReviewScenarioSourceStoreV1(
         ttl_seconds=10,
@@ -114,7 +110,6 @@ def test_store_expires_and_evicts_oldest_bundle() -> None:
     assert store.active_bundle_count(checked_at=NOW + timedelta(seconds=1)) == 1
     assert store.load_bundle("scenario-b", checked_at=NOW + timedelta(seconds=12)) is None
     assert store.active_bundle_count(checked_at=NOW + timedelta(seconds=12)) == 0
-
 
 
 def test_store_rejects_invalid_direction_and_timestamp() -> None:
@@ -140,7 +135,6 @@ def test_store_rejects_invalid_direction_and_timestamp() -> None:
             pro_forma_risk=_risk(),
             published_at=NOW.replace(tzinfo=None),
         )
-
 
 
 def test_live_current_risk_loader_uses_existing_contract_pipeline(
@@ -176,7 +170,6 @@ def test_live_current_risk_loader_uses_existing_contract_pipeline(
         ("analyze", (snapshot, NOW)),
         ("evaluate", (analytics, NOW)),
     ]
-
 
 
 def test_production_wiring_loads_selected_direction_live_risk_and_pro_forma() -> None:
@@ -221,7 +214,6 @@ def test_production_wiring_loads_selected_direction_live_risk_and_pro_forma() ->
     assert result.trading_methods is False
 
 
-
 def test_production_wiring_reports_missing_scenario_without_fabricating_sources() -> None:
     coordinator = _FakeCoordinator()
     wiring = subject.FinalDecisionReviewProductionSourceWiringV1(
@@ -243,12 +235,10 @@ def test_production_wiring_reports_missing_scenario_without_fabricating_sources(
     assert call["pro_forma_risk_evaluation"] is None
 
 
-
 def test_source_module_contains_no_broker_write_or_public_route_surface() -> None:
-    source = open(
-        "omni_cio/release/final_decision_review_production_sources_v1.py",
-        encoding="utf-8",
-    ).read().lower()
+    source = Path(
+        "omni_cio/release/final_decision_review_production_sources_v1.py"
+    ).read_text(encoding="utf-8").lower()
     forbidden = (
         ".post_order(",
         ".cancel_order(",
