@@ -24,6 +24,17 @@ from omni_cio.release.final_decision_review_calculator_provider_registry_v1 impo
     FinalDecisionReviewCalculatorProviderRegistryError,
     FinalDecisionReviewCalculatorProviderRegistryV1,
 )
+from omni_cio.release.final_decision_review_existing_calculator_providers_v1 import (
+    PURCHASE_PROVIDER_ID,
+    SELL_PROVIDER_ID,
+    ApprovedCalculatorCommonOwnersV1,
+    ApprovedPurchaseCalculatorOwnersV1,
+    ApprovedSellCalculatorOwnersV1,
+    FinalDecisionReviewExistingCalculatorProviderError,
+    build_existing_purchase_provider,
+    build_existing_sell_provider,
+    register_existing_calculator_providers,
+)
 from omni_cio.release.final_decision_review_handler_shadow_v1 import (
     FinalDecisionReviewHandlerShadowError,
     evaluate_final_decision_review_handler_shadow,
@@ -109,8 +120,11 @@ from omni_cio.release.read_only_contract_v1 import (
 )
 
 __all__ = [
+    "ApprovedCalculatorCommonOwnersV1",
     "ApprovedCalculatorProviderBundleV1",
     "ApprovedCalculatorProviderV1",
+    "ApprovedPurchaseCalculatorOwnersV1",
+    "ApprovedSellCalculatorOwnersV1",
     "FetchedJsonDocument",
     "FinalDecisionReviewAcceptanceError",
     "FinalDecisionReviewApprovedInvocationError",
@@ -121,6 +135,7 @@ __all__ = [
     "FinalDecisionReviewCalculatorProviderRegistryV1",
     "FinalDecisionReviewCalculatorScenarioHandoffError",
     "FinalDecisionReviewCalculatorScenarioHandoffV1",
+    "FinalDecisionReviewExistingCalculatorProviderError",
     "FinalDecisionReviewHandlerShadowError",
     "FinalDecisionReviewInputError",
     "FinalDecisionReviewOrchestrationError",
@@ -147,12 +162,16 @@ __all__ = [
     "FinalDecisionReviewWorkflowProducerError",
     "FinalDecisionReviewWorkflowProducerV1",
     "LiveReleaseAcceptanceError",
+    "PURCHASE_PROVIDER_ID",
     "ReadOnlyReleaseError",
+    "SELL_PROVIDER_ID",
     "TEST_APP_SERVER",
     "TEST_APP_VERSION",
     "accept_live_read_only_release",
     "available_final_decision_review_workflow_source",
     "bind_final_decision_review_read_only_input",
+    "build_existing_purchase_provider",
+    "build_existing_sell_provider",
     "build_final_decision_review_read_only_query",
     "build_final_decision_review_route_implementation_plan",
     "build_final_decision_review_route_readiness_dossier",
@@ -171,6 +190,7 @@ __all__ = [
     "publisher_for_registry",
     "purchase_gate_source_loader",
     "record_final_decision_review_acceptance_evidence",
+    "register_existing_calculator_providers",
     "register_final_decision_review_production_sources",
     "risk_source_loader",
     "sell_gate_source_loader",
