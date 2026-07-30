@@ -9,6 +9,9 @@ from omni_cio.release.final_decision_review_production_sources_v1 import (
     FinalDecisionReviewScenarioSourceStoreV1,
     build_live_current_risk_loader,
 )
+from omni_cio.release.final_decision_review_trusted_scenario_publisher_v1 import (
+    FinalDecisionReviewTrustedScenarioPublisherV1,
+)
 from omni_cio.release.final_decision_review_workflow_bridge_v1 import (
     FinalDecisionReviewWorkflowBridgeV1,
 )
@@ -27,6 +30,7 @@ class FinalDecisionReviewProductionRegistrationError(ValueError):
 @dataclass(frozen=True, slots=True)
 class FinalDecisionReviewProductionRuntimeV1:
     source_store: FinalDecisionReviewScenarioSourceStoreV1
+    scenario_publisher: FinalDecisionReviewTrustedScenarioPublisherV1
     producer: FinalDecisionReviewWorkflowProducerV1
     coordinator: FinalDecisionReviewWorkflowCoordinatorV1
     source_wiring: FinalDecisionReviewProductionSourceWiringV1
@@ -59,6 +63,11 @@ def register_final_decision_review_production_sources(
         ttl_seconds=source_ttl_seconds,
         capacity=source_capacity,
     )
+    scenario_publisher = FinalDecisionReviewTrustedScenarioPublisherV1(
+        source_store=source_store,
+        max_source_age_seconds=max_source_age_seconds,
+        future_tolerance_seconds=future_tolerance_seconds,
+    )
     producer = FinalDecisionReviewWorkflowProducerV1(bridge=bridge)
     coordinator = FinalDecisionReviewWorkflowCoordinatorV1(
         producer=producer,
@@ -75,6 +84,7 @@ def register_final_decision_review_production_sources(
     )
     return FinalDecisionReviewProductionRuntimeV1(
         source_store=source_store,
+        scenario_publisher=scenario_publisher,
         producer=producer,
         coordinator=coordinator,
         source_wiring=source_wiring,
