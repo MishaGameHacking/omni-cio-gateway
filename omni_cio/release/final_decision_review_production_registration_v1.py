@@ -13,6 +13,9 @@ from omni_cio.release.final_decision_review_calculator_handoff_v1 import (
 from omni_cio.release.final_decision_review_calculator_intent_workflow_v1 import (
     FinalDecisionReviewCalculatorIntentWorkflowV1,
 )
+from omni_cio.release.final_decision_review_calculator_provider_registry_v1 import (
+    FinalDecisionReviewCalculatorProviderRegistryV1,
+)
 from omni_cio.release.final_decision_review_production_sources_v1 import (
     FinalDecisionReviewProductionSourceWiringV1,
     FinalDecisionReviewScenarioSourceStoreV1,
@@ -43,6 +46,7 @@ class FinalDecisionReviewProductionRuntimeV1:
     calculator_handoff: FinalDecisionReviewCalculatorScenarioHandoffV1
     calculator_intent_workflow: FinalDecisionReviewCalculatorIntentWorkflowV1
     approved_invocation: FinalDecisionReviewApprovedInvocationV1
+    provider_registry: FinalDecisionReviewCalculatorProviderRegistryV1
     producer: FinalDecisionReviewWorkflowProducerV1
     coordinator: FinalDecisionReviewWorkflowCoordinatorV1
     source_wiring: FinalDecisionReviewProductionSourceWiringV1
@@ -89,6 +93,9 @@ def register_final_decision_review_production_sources(
     approved_invocation = FinalDecisionReviewApprovedInvocationV1(
         workflow=calculator_intent_workflow,
     )
+    provider_registry = FinalDecisionReviewCalculatorProviderRegistryV1(
+        invocation=approved_invocation,
+    )
     producer = FinalDecisionReviewWorkflowProducerV1(bridge=bridge)
     coordinator = FinalDecisionReviewWorkflowCoordinatorV1(
         producer=producer,
@@ -109,6 +116,7 @@ def register_final_decision_review_production_sources(
         calculator_handoff=calculator_handoff,
         calculator_intent_workflow=calculator_intent_workflow,
         approved_invocation=approved_invocation,
+        provider_registry=provider_registry,
         producer=producer,
         coordinator=coordinator,
         source_wiring=source_wiring,
