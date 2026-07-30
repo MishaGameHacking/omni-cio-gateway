@@ -23,6 +23,7 @@
 | `omni_cio/contracts/v1/final_decision_review_workflow_bridge.py` | Immutable scenario/binding/orchestration bridge result and safety mirrors |
 | `omni_cio/contracts/v1/final_decision_review_workflow_producer.py` | Immutable directional/explanation/bridge producer result and safety mirrors |
 | `omni_cio/contracts/v1/final_decision_review_workflow_coordinator.py` | Canonical source acquisition evidence and coordinator result invariants |
+| `omni_cio/contracts/v1/final_decision_review_trusted_scenario.py` | Immutable trusted scenario publication result, source identity and safety invariants |
 | `omni_cio/release/final_decision_review_route_v1.py` | Production private GET route, bounded TTL source registry, OpenAPI security patch and safe handler boundary |
 | `omni_cio/release/final_decision_review_publisher_v1.py` | Trusted process-local exact-source publisher with per-registry concurrency guard |
 | `omni_cio/release/final_decision_review_orchestration_v1.py` | PR-53…PR-62 composition, first-blocker handling and internal publication |
@@ -32,6 +33,8 @@
 | `omni_cio/release/final_decision_review_workflow_coordinator_v1.py` | Source-evidence, freshness, account and direction coordinator before PR-66 |
 | `omni_cio/release/final_decision_review_source_acquisition_v1.py` | Four typed loader ports, safe outcome mapping and exact PR-67 handoff |
 | `omni_cio/release/final_decision_review_production_sources_v1.py` | Atomic scenario source store, live current-risk loader and PR-68 production wiring |
+| `omni_cio/release/final_decision_review_production_registration_v1.py` | Lazy production runtime registration with one shared scenario store and trusted publisher |
+| `omni_cio/release/final_decision_review_trusted_scenario_publisher_v1.py` | Exact typed gate/risk trust boundary, masked-account parity, freshness and atomic publication |
 
 ## Конфигурация
 
@@ -61,6 +64,7 @@
 | `tests/test_final_decision_review_workflow_coordinator_v1.py` | Complete handoff, missing/failed/stale sources, account/direction mismatch, privacy and producer-call guards |
 | `tests/test_final_decision_review_source_acquisition_v1.py` | Loader routing, missing/failed/timeout/type/timestamp mapping and exact coordinator handoff |
 | `tests/test_final_decision_review_production_sources_v1.py` | Atomic bundle lifecycle, live current-risk composition, acquisition wiring and write-surface guards |
+| `tests/test_final_decision_review_trusted_scenario_publisher_v1.py` | Purchase/sell publication, replacement, freshness, account/direction parity, unsafe policy and concurrency |
 | `tests/test_portfolio_market_snapshot.py` | Рыночная оценка портфеля |
 | `tests/test_portfolio_analytics.py` | Структура и концентрация |
 | `tests/test_cash_liquidity.py` | Деньги и лимиты |
@@ -96,6 +100,7 @@
 | `docs/architecture/FINAL_DECISION_REVIEW_WORKFLOW_PRODUCER_V1.md` | Buy/sell source pipeline, risk explanation, no-action behavior and remaining coordinator gap |
 | `docs/architecture/FINAL_DECISION_REVIEW_WORKFLOW_COORDINATOR_V1.md` | Canonical acquisition evidence, source gates, privacy boundary and remaining adapter gap |
 | `docs/architecture/FINAL_DECISION_REVIEW_PRODUCTION_SOURCES_V1.md` | Live current-risk source, atomic scenario bundle, loader wiring and remaining registration gap |
+| `docs/architecture/FINAL_DECISION_REVIEW_TRUSTED_SCENARIO_PUBLICATION_V1.md` | Typed calculator-to-store trust boundary, exact parity, lifecycle, safety and rollback |
 | `gpt/` | Восстановление и настройка Custom GPT |
 | `docs/operations/TELEGRAM_REMOVAL_RUNBOOK.md` | Одноразовая внешняя очистка Telegram после merge |
 | `docs/operations/RELEASE_CHECKLIST.md` | Pre-merge, production and acceptance-evidence checklist |
