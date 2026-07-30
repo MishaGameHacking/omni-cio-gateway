@@ -166,7 +166,19 @@ class CbrKeyRateOperationsLifecycleV1:
                     CbrKeyRateAlertDisposition.RECOVERED,
                 )
             )
+            sink_failures = self._emit(event, evidence)
+            return CbrKeyRateOperationsBatchV1(
+                event=event,
+                evaluations=evaluations,
+                evidence=evidence,
+                sink_failure_count=sink_failures,
+            )
 
+    def _emit(
+        self,
+        event: ObservabilityEventV1,
+        evidence: tuple[CbrKeyRateAlertEvidenceV1, ...],
+    ) -> int:
         sink_failures = 0
         if self._event_sink is not None:
             try:
@@ -179,12 +191,7 @@ class CbrKeyRateOperationsLifecycleV1:
                     self._evidence_sink(item)
                 except Exception:
                     sink_failures += 1
-        return CbrKeyRateOperationsBatchV1(
-            event=event,
-            evaluations=evaluations,
-            evidence=evidence,
-            sink_failure_count=sink_failures,
-        )
+        return sink_failures
 
     def _record(
         self,
