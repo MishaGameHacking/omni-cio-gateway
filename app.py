@@ -26,6 +26,8 @@ legacy.ENTRYPOINT = ENTRYPOINT
 
 app = archived.app
 base = archived.base
+base.APP_VERSION = APP_VERSION
+base.ENTRYPOINT = ENTRYPOINT
 app.version = APP_VERSION
 app.description = (
     "Private read-only gateway between a Custom GPT and T-Invest API. It exposes "
