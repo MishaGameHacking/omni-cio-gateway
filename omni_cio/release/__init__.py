@@ -6,6 +6,10 @@ from omni_cio.release.final_decision_review_acceptance_v1 import (
     not_executed_final_decision_review_acceptance_evidence,
     record_final_decision_review_acceptance_evidence,
 )
+from omni_cio.release.final_decision_review_approved_invocation_v1 import (
+    FinalDecisionReviewApprovedInvocationError,
+    FinalDecisionReviewApprovedInvocationV1,
+)
 from omni_cio.release.final_decision_review_calculator_handoff_v1 import (
     FinalDecisionReviewCalculatorScenarioHandoffError,
     FinalDecisionReviewCalculatorScenarioHandoffV1,
@@ -101,6 +105,8 @@ from omni_cio.release.read_only_contract_v1 import (
 __all__ = [
     "FetchedJsonDocument",
     "FinalDecisionReviewAcceptanceError",
+    "FinalDecisionReviewApprovedInvocationError",
+    "FinalDecisionReviewApprovedInvocationV1",
     "FinalDecisionReviewCalculatorIntentWorkflowError",
     "FinalDecisionReviewCalculatorIntentWorkflowV1",
     "FinalDecisionReviewCalculatorScenarioHandoffError",
