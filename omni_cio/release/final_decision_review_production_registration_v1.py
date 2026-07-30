@@ -16,6 +16,9 @@ from omni_cio.release.final_decision_review_approved_owner_acquisition_v1 import
 from omni_cio.release.final_decision_review_approved_owner_installation_v1 import (
     FinalDecisionReviewApprovedOwnerInstallationV1,
 )
+from omni_cio.release.final_decision_review_authenticated_route_context_v1 import (
+    FinalDecisionReviewApprovedRouteContextStoreV1,
+)
 from omni_cio.release.final_decision_review_calculator_handoff_v1 import (
     FinalDecisionReviewCalculatorScenarioHandoffV1,
 )
@@ -71,10 +74,13 @@ class FinalDecisionReviewProductionRuntimeV1:
     trusted_owner_composition: FinalDecisionReviewTrustedOwnerCompositionV1
     approved_owner_installation: FinalDecisionReviewApprovedOwnerInstallationV1
     approved_owner_acquisition: FinalDecisionReviewApprovedOwnerAcquisitionV1
+    approved_route_context_store: FinalDecisionReviewApprovedRouteContextStoreV1
     producer: FinalDecisionReviewWorkflowProducerV1
     coordinator: FinalDecisionReviewWorkflowCoordinatorV1
     source_wiring: FinalDecisionReviewProductionSourceWiringV1
     internal_only: bool = True
+    authenticated_route_context_capture_registered: bool = True
+    startup_authenticated_context_count: int = 0
     startup_broker_call_performed: bool = False
     startup_owner_installation_performed: bool = False
     startup_owner_acquisition_performed: bool = False
@@ -165,6 +171,13 @@ def register_final_decision_review_production_sources(
             ),
         )
     )
+    approved_route_context_store = FinalDecisionReviewApprovedRouteContextStoreV1(
+        ttl_seconds=300,
+        capacity=source_capacity,
+    )
+    bridge.registry.attach_approved_context_observer(
+        approved_route_context_store.capture
+    )
     producer = FinalDecisionReviewWorkflowProducerV1(bridge=bridge)
     coordinator = FinalDecisionReviewWorkflowCoordinatorV1(
         producer=producer,
@@ -191,6 +204,7 @@ def register_final_decision_review_production_sources(
         trusted_owner_composition=trusted_owner_composition,
         approved_owner_installation=approved_owner_installation,
         approved_owner_acquisition=approved_owner_acquisition,
+        approved_route_context_store=approved_route_context_store,
         producer=producer,
         coordinator=coordinator,
         source_wiring=source_wiring,
