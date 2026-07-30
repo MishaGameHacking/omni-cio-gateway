@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
 from threading import RLock
 from weakref import WeakKeyDictionary
@@ -31,6 +32,9 @@ from omni_cio.release.final_decision_review_route_v1 import (
 )
 
 
+_TRACE_IDENTIFIER = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_.:-]{7,127}$")
+
+
 class FinalDecisionReviewPublisherError(ValueError):
     """A reviewed final response cannot be published into the internal registry."""
 
@@ -42,6 +46,21 @@ def _aware_utc(value: datetime | None) -> datetime:
             "FINAL_DECISION_REVIEW_PUBLISHER_TIMESTAMP_MUST_BE_AWARE"
         )
     return result.astimezone(timezone.utc)
+
+
+def _validate_trace_identifiers(
+    *,
+    correlation_id: str,
+    request_id: str | None,
+) -> None:
+    if _TRACE_IDENTIFIER.fullmatch(correlation_id) is None:
+        raise FinalDecisionReviewPublisherError(
+            "FINAL_DECISION_REVIEW_PUBLISHER_CORRELATION_ID_INVALID"
+        )
+    if request_id is not None and _TRACE_IDENTIFIER.fullmatch(request_id) is None:
+        raise FinalDecisionReviewPublisherError(
+            "FINAL_DECISION_REVIEW_PUBLISHER_REQUEST_ID_INVALID"
+        )
 
 
 def _validate_exact_context(
@@ -91,6 +110,10 @@ class FinalDecisionReviewPublisherV1:
         published_at: datetime | None = None,
     ) -> FinalDecisionReviewPublicationResultV1:
         now = _aware_utc(published_at)
+        _validate_trace_identifiers(
+            correlation_id=correlation_id,
+            request_id=request_id,
+        )
         _validate_exact_context(route_plan, input_binding)
         query = input_binding.query
 
