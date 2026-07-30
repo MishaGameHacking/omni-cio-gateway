@@ -7,6 +7,12 @@ from typing import Any
 from omni_cio.release.final_decision_review_approved_invocation_v1 import (
     FinalDecisionReviewApprovedInvocationV1,
 )
+from omni_cio.release.final_decision_review_approved_owner_acquisition_v1 import (
+    FinalDecisionReviewApprovedOwnerAcquisitionV1,
+    FinalDecisionReviewApprovedOwnerSourceLoadersV1,
+    FinalDecisionReviewApprovedServerContextV1,
+    unavailable_final_decision_review_approved_owner_source_loaders,
+)
 from omni_cio.release.final_decision_review_calculator_handoff_v1 import (
     FinalDecisionReviewCalculatorScenarioHandoffV1,
 )
@@ -60,17 +66,24 @@ class FinalDecisionReviewProductionRuntimeV1:
         FinalDecisionReviewProductionOwnerCallableRegistrationV1
     )
     trusted_owner_composition: FinalDecisionReviewTrustedOwnerCompositionV1
+    approved_owner_acquisition: FinalDecisionReviewApprovedOwnerAcquisitionV1
     producer: FinalDecisionReviewWorkflowProducerV1
     coordinator: FinalDecisionReviewWorkflowCoordinatorV1
     source_wiring: FinalDecisionReviewProductionSourceWiringV1
     internal_only: bool = True
     startup_broker_call_performed: bool = False
+    startup_owner_acquisition_performed: bool = False
     public_source_publication_route_created: bool = False
     production_openapi_changed: bool = False
     broker_write_called: bool = False
     trade_authorized: bool = False
     order_created: bool = False
     trading_methods: bool = False
+
+
+def _missing_approved_owner_context(
+) -> FinalDecisionReviewApprovedServerContextV1 | None:
+    return None
 
 
 def register_final_decision_review_production_sources(
@@ -81,6 +94,14 @@ def register_final_decision_review_production_sources(
     source_capacity: int = 64,
     max_source_age_seconds: int = 900,
     future_tolerance_seconds: int = 60,
+    approved_owner_context_loader: Callable[
+        [],
+        FinalDecisionReviewApprovedServerContextV1 | None,
+    ]
+    | None = None,
+    approved_owner_source_loaders: (
+        FinalDecisionReviewApprovedOwnerSourceLoadersV1 | None
+    ) = None,
 ) -> FinalDecisionReviewProductionRuntimeV1:
     """Register lazy, internal-only final-review source wiring for production."""
     if not callable(portfolio_payload_loader):
@@ -123,6 +144,19 @@ def register_final_decision_review_production_sources(
         registry=provider_registry,
         store=owner_callable_store,
     )
+    approved_owner_acquisition = (
+        FinalDecisionReviewApprovedOwnerAcquisitionV1(
+            composition=trusted_owner_composition,
+            context_loader=(
+                approved_owner_context_loader
+                or _missing_approved_owner_context
+            ),
+            source_loaders=(
+                approved_owner_source_loaders
+                or unavailable_final_decision_review_approved_owner_source_loaders()
+            ),
+        )
+    )
     producer = FinalDecisionReviewWorkflowProducerV1(bridge=bridge)
     coordinator = FinalDecisionReviewWorkflowCoordinatorV1(
         producer=producer,
@@ -147,6 +181,7 @@ def register_final_decision_review_production_sources(
         owner_callable_store=owner_callable_store,
         owner_callable_registration=owner_callable_registration,
         trusted_owner_composition=trusted_owner_composition,
+        approved_owner_acquisition=approved_owner_acquisition,
         producer=producer,
         coordinator=coordinator,
         source_wiring=source_wiring,

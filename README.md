@@ -24,6 +24,10 @@ Custom GPT ── Omni-CIO Gateway (`app:app`) ── T-Invest API
   проверенный compact response из bounded TTL source registry. Пустой registry
   fail-closed возвращает `503`; маршрут не вызывает брокера и не создаёт решение
   заново.
+- PR-79 добавляет внутренний acquisition-контроллер: invocation и masked account
+  берутся только из доверенного server context, все пять выбранных owner sources должны
+  быть свежими до PR-78, а production startup остаётся безопасно `unavailable` без
+  конкретных loaders. OpenAPI и 14 GET Actions не меняются.
 - Runtime и CI устанавливают полностью pinned зависимости только после
   проверки SHA-256 hashes.
 - Regression Shield включает lint, formatting baseline, mypy, покрытие

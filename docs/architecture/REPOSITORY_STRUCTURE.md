@@ -10,6 +10,9 @@ omni-cio-gateway/
 ├── main.py                        # историческое ядро FastAPI
 ├── *_analytics.py / *_market.py   # доменные gateway-модули
 ├── broker_report_reconciliation/  # официальный отчёт и сверка
+├── omni_cio/
+│   ├── contracts/v1/              # versioned typed read-only contracts
+│   └── release/                   # internal final-review release chain
 ├── tests/                         # unit, endpoint, OpenAPI, Regression Shield
 ├── knowledge/                     # правила предметной области для AI
 ├── gpt/                           # каноническая конфигурация Custom GPT
@@ -35,6 +38,11 @@ omni-cio-gateway/
 ### Gateway runtime
 
 В корне остаются файлы, необходимые для совместимости production gateway. Новые крупные функции не добавляются в `main.py`; они живут в отдельном модуле.
+
+Versioned domain contracts размещаются в `omni_cio/contracts/v1/`. Внутренние
+final-review coordinators, adapters, registries и owner-acquisition boundaries размещаются
+в `omni_cio/release/`; они не создают публичный Action автоматически. Публичная
+регистрация остаётся явной и проверяется 14-GET release contract.
 
 ### Retired transport paths
 
