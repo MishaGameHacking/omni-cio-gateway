@@ -39,6 +39,10 @@ from omni_cio.contracts.v1.final_decision_review_route_readiness import (
 from omni_cio.decision.final_decision_review_v1 import (
     build_final_decision_review_shadow,
 )
+from omni_cio.release.final_decision_review_authenticated_route_context_v1 import (
+    FinalDecisionReviewAuthenticatedRouteContextError,
+    build_final_decision_review_approved_route_context_seed,
+)
 from omni_cio.release.final_decision_review_eligibility_v1 import (
     assess_final_decision_review_release_eligibility,
 )
@@ -361,15 +365,26 @@ def orchestrate_final_decision_review_publication(
         )
 
     try:
+        approved_context_seed = (
+            build_final_decision_review_approved_route_context_seed(
+                source_binding,
+                correlation_id=correlation_id,
+                observed_at=now,
+            )
+        )
         publication = publish_final_decision_review_source(
             registry,
             route_plan,
             input_binding,
             correlation_id=correlation_id,
             request_id=request_id,
+            approved_context_seed=approved_context_seed,
             published_at=now,
         )
-    except FinalDecisionReviewPublisherError as exc:
+    except (
+        FinalDecisionReviewAuthenticatedRouteContextError,
+        FinalDecisionReviewPublisherError,
+    ) as exc:
         return _blocked(
             orchestrated_at=now,
             stage=FinalDecisionReviewOrchestrationStage.PUBLICATION,
