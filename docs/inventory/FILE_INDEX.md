@@ -51,6 +51,7 @@ operations assets. Код в `main` остаётся окончательным 
 | `omni_cio/observability/moex_iss_quote_events_v1.py` | PR-91 MOEX telemetry without price or SECID |
 | `omni_cio/observability/moex_iss_quote_alert_policy_v1.py` | PR-92 global MOEX alert state machine |
 | `omni_cio/observability/moex_iss_quote_operations_lifecycle_v1.py` | PR-93 global fired/recovered evidence lifecycle |
+| `omni_cio/observability/acra_rating_actions_events_v1.py` | PR-96 pure ACRA source/cache telemetry without issuer/rating content |
 
 ## Final-review release chain
 
@@ -94,10 +95,12 @@ Key entrypoints:
 | `tests/test_final_decision_review_*` | PR-50…PR-83 release chain |
 | `tests/test_cbr_key_rate_*` | PR-84…PR-88 source, cache, telemetry, alert и evidence |
 | `tests/test_moex_iss_quote_*` | PR-89…PR-93 source, cache, telemetry, alert и evidence |
-| `tests/test_acra_rating_actions_source_v1.py` | PR-94 contracts, source scope, parser, transport and safety |
+| `tests/test_acra_rating_actions_source_v1.py` | PR-94 source contracts, parser, transport and safety |
 | `tests/test_acra_rating_actions_exports_v1.py` | PR-94 export compatibility |
-| `tests/test_acra_rating_actions_cache_v1.py` | PR-95 fresh/stale/unavailable, single-flight, expiry and safety |
+| `tests/test_acra_rating_actions_cache_v1.py` | PR-95 fresh/stale/unavailable, single-flight and expiry |
 | `tests/test_acra_rating_actions_cache_exports_v1.py` | PR-95 cache export compatibility |
+| `tests/test_acra_rating_actions_observability_v1.py` | PR-96 mapping, safe metrics, privacy and no-write surface |
+| `tests/test_acra_rating_actions_observability_exports_v1.py` | PR-96 observability export compatibility |
 | `tests/test_portfolio_*` | Portfolio market and analytics |
 | `tests/test_purchase_capacity*.py` | Purchase preview integrity |
 | `tests/test_operations_analytics.py` | Operations and cash-flow reconciliation |
@@ -117,6 +120,7 @@ Key entrypoints:
 | `knowledge/16_CURRENT_PROGRAM_STATUS.md` | Фактическая вершина и следующий пакет |
 | `docs/architecture/ACRA_ISSUER_RATING_ACTION_SOURCE_V1.md` | PR-94 source boundary |
 | `docs/architecture/ACRA_ISSUER_RATING_ACTION_CACHE_V1.md` | PR-95 cache/freshness boundary |
+| `docs/architecture/ACRA_ISSUER_RATING_ACTION_OBSERVABILITY_V1.md` | PR-96 telemetry/privacy boundary |
 | `docs/architecture/CBR_KEY_RATE_*` | PR-84…PR-88 CBR architecture |
 | `docs/architecture/MOEX_ISS_TQBR_QUOTE_*` | PR-89…PR-93 MOEX architecture |
 | `gpt/MY_GPT_SETUP_RUNBOOK.md` | Custom GPT setup, Preview and rollback |
