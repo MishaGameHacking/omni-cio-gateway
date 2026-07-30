@@ -1,7 +1,7 @@
 # 16 — CURRENT PROGRAM STATUS
 
 Дата актуализации: 2026-07-30  
-Фактическая вершина программы после merge этого пакета: **PR-94**  
+Фактическая вершина программы после merge этого пакета: **PR-95**  
 Точная версия определяется текущей вершиной ветки `main`.
 
 ## Назначение документа
@@ -33,7 +33,8 @@
   policy and deterministic fired/recovered evidence lifecycle;
 - **PR-89…PR-93:** official MOEX TQBR source, exact cache, safe observability,
   global operational alert policy and deterministic fired/recovered evidence;
-- **PR-94:** fixed official ACRA issuer-level national-RU rating-action source.
+- **PR-94…PR-95:** fixed official ACRA issuer-level national-RU rating-action
+  source and bounded freshness cache.
 
 ## PR-81…PR-83 authenticated owner lifecycle
 
@@ -111,12 +112,9 @@ The parser safely skips:
 - non-rating press releases.
 
 A title that clearly presents one national-RU issuer action but no longer
-matches the allowlisted grammar fails closed. This prevents unsupported public
-documents from taking down the feed while detecting schema drift inside the
-supported boundary.
-
-Issue-level extraction requires a separate reviewed identity contract. PR-94
-does not infer an issue from free text.
+matches the allowlisted grammar fails closed. Issue-level extraction requires a
+separate reviewed identity contract; PR-94 does not infer an issue from free
+text.
 
 ### Transport and data safety
 
@@ -132,7 +130,25 @@ does not infer an issue from free text.
 
 Import and startup perform no source call.
 
-## Compatibility and safety after PR-94
+## PR-95 bounded ACRA rating-action cache
+
+- one fixed-source process-local entry; capacity is structurally one;
+- fresh TTL 900 seconds and stale retention 86400 seconds;
+- future-source tolerance 30 seconds;
+- retrieval freshness derives only from `snapshot.retrieved_at`;
+- each record's `published_on` remains separate source evidence and is never
+  refreshed or rewritten by a later HTTP retrieval;
+- one `RLock` provides single-flight refresh and protects prune/clear state;
+- still-fresh fallback after failed force refresh is explicit;
+- stale records remain hidden unless refresh failed and trusted
+  `allow_stale=true` was supplied;
+- fully expired entries are removed before refresh;
+- wrong type, source identity, future timestamp and unavailable source fail
+  closed with fixed cache error codes;
+- only typed PR-94 snapshots are retained, never raw HTML or exception text;
+- restart starts empty and import performs no network call.
+
+## Compatibility and safety after PR-95
 
 - `app:app` unchanged;
 - exactly 14 authenticated GET Actions unchanged;
@@ -168,8 +184,8 @@ Green CI cannot mark these external cases passed.
 
 ### Backend and operations
 
-- build bounded exact-release ACRA cache/freshness and dedup lifecycle;
-- add source-specific safe observability after cache semantics are fixed;
+- add source-specific safe ACRA source/cache observability without issuer names,
+  ratings, release URLs or raw HTML;
 - add other recognized rating agencies only through separate fixed contracts;
 - locate exact CBR/MOEX/ACRA callers and bind lifecycles lazily;
 - build production-grade news and corporate-event ingestion;
@@ -192,20 +208,18 @@ Shadow, paper, preview и final-review инфраструктура не явл�
 switch, partial-fill и timeout reconciliation требуют отдельной программы
 допуска и решения владельца. Автономная торговля без подтверждения не включена.
 
-## Следующий пакет после PR-94
+## Следующий пакет после PR-95
 
-Ближайший независимый безопасный пакет — bounded ACRA issuer rating-action
-cache/freshness v1:
+Ближайший независимый безопасный пакет — safe ACRA source/cache observability v1:
 
-- exact canonical release URL identity and duplicate protection;
-- explicit fresh/stale/unavailable snapshot contract;
-- no silent stale rating action;
-- single-flight refresh, bounded retention/capacity and restart-clear behavior;
-- publication date, retrieval time and source limitations preserved;
-- no route, Action, frontend field, startup network call or broker method.
+- source available/unavailable and cache fresh/stale/unavailable events only;
+- latency, refresh and display-state metadata without issuer names or ratings;
+- no release URL, publication date, raw HTML, account or exception payload;
+- pure builders only, no automatic emission or startup source call;
+- no route, Action, frontend field or broker method.
 
 ## Запрет ложного завершения
 
-Проект не считается полностью завершённым только потому, что PR-94 слит и CI
+Проект не считается полностью завершённым только потому, что PR-95 слит и CI
 зелёный. Полный релиз требует внешней Render/Gateway/GPT acceptance evidence,
 точного production owner binding и завершения оставшихся master-plan блоков.
