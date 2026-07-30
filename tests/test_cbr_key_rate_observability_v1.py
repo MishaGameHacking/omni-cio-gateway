@@ -19,6 +19,7 @@ from omni_cio.contracts.v1.market import MarketSourceV1, SourceAuthority
 from omni_cio.contracts.v1.observability import (
     ExternalCallStatus,
     FreshnessTelemetry,
+    ObservabilityEventV1,
     ObservabilityOutcome,
     ObservabilitySeverity,
 )
@@ -135,11 +136,8 @@ def _unavailable_result() -> CbrKeyRateCacheResultV1:
     )
 
 
-def _metrics(event: object) -> dict[str, int]:
-    return {
-        metric.name: metric.value
-        for metric in event.metrics  # type: ignore[attr-defined]
-    }
+def _metrics(event: ObservabilityEventV1) -> dict[str, int]:
+    return {metric.name: metric.value for metric in event.metrics}
 
 
 def test_available_source_event_contains_counts_but_not_rate_payload() -> None:
@@ -166,7 +164,9 @@ def test_available_source_event_contains_counts_but_not_rate_payload() -> None:
     assert "effective_date" not in serialized
     assert "requested_from" not in serialized
     assert "requested_to" not in serialized
-    assert "xml" not in serialized.lower()
+    assert "raw_xml" not in serialized
+    assert "soap" not in serialized.lower()
+    assert "fault" not in serialized.lower()
     assert event.account is None
     assert event.contains_sensitive_payload is False
     assert event.trading_methods is False
