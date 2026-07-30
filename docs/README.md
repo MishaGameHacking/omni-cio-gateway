@@ -54,6 +54,7 @@
 - `architecture/MOEX_ISS_TQBR_QUOTE_ALERT_POLICY_V1.md` — bounded global-only operational thresholds, cooldown, recovery and forged-event rejection without financial thresholds or outbound transport.
 - `architecture/MOEX_ISS_TQBR_QUOTE_OPERATIONS_LIFECYCLE_V1.md` — deterministic PR-91/92 composition and bounded fired/recovered global evidence with safe sink ordering.
 - `architecture/ACRA_ISSUER_RATING_ACTION_SOURCE_V1.md` — fixed official issuer-level ACRA national-RU rating-action source with strict scope, HTML and failure boundaries.
+- `architecture/ACRA_ISSUER_RATING_ACTION_CACHE_V1.md` — fixed-source cache with explicit fresh/stale/unavailable states, single-flight refresh and no-silent-stale policy.
 
 ### Operations
 
