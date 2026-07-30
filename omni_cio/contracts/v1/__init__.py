@@ -34,8 +34,11 @@ from omni_cio.contracts.v1.decision import (
     InstrumentMarketReadinessV1,
 )
 from omni_cio.contracts.v1.macro import (
+    CbrKeyRateCacheResultV1,
     CbrKeyRateSnapshotV1,
     KeyRateObservationV1,
+    MacroCacheErrorCode,
+    MacroCacheStatus,
     MacroDataErrorCode,
     MacroDataStatus,
 )
@@ -173,6 +176,7 @@ __all__ = [
     "CategoryCashFlowV1",
     "CategoryTotalCheckV1",
     "CategoryTotalsCheckV1",
+    "CbrKeyRateCacheResultV1",
     "CbrKeyRateSnapshotV1",
     "CheckStatus",
     "CircuitBreakerState",
@@ -214,6 +218,8 @@ __all__ = [
     "InstrumentType",
     "IssueSeverity",
     "KeyRateObservationV1",
+    "MacroCacheErrorCode",
+    "MacroCacheStatus",
     "MacroDataErrorCode",
     "MacroDataStatus",
     "MarketAssessmentStatus",
