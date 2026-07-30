@@ -19,8 +19,10 @@ from omni_cio.release.final_decision_review_approved_owner_installation_v1 impor
 from omni_cio.release.final_decision_review_approved_owner_snapshots_v1 import (
     FinalDecisionReviewApprovedOwnerSnapshotStoreV1,
 )
-from omni_cio.release.final_decision_review_authenticated_route_context_v1 import (
-    FinalDecisionReviewApprovedRouteContextStoreV1,
+from omni_cio.release.final_decision_review_authenticated_owner_installation_v1 import (
+    FinalDecisionReviewAuthenticatedOwnerContextStoreV1,
+    FinalDecisionReviewAuthenticatedOwnerEvidenceStoreV1,
+    FinalDecisionReviewAuthenticatedOwnerInstallationV1,
 )
 from omni_cio.release.final_decision_review_calculator_handoff_v1 import (
     FinalDecisionReviewCalculatorScenarioHandoffV1,
@@ -78,14 +80,22 @@ class FinalDecisionReviewProductionRuntimeV1:
     trusted_owner_composition: FinalDecisionReviewTrustedOwnerCompositionV1
     approved_owner_installation: FinalDecisionReviewApprovedOwnerInstallationV1
     approved_owner_acquisition: FinalDecisionReviewApprovedOwnerAcquisitionV1
-    approved_route_context_store: FinalDecisionReviewApprovedRouteContextStoreV1
+    authenticated_owner_evidence_store: (
+        FinalDecisionReviewAuthenticatedOwnerEvidenceStoreV1
+    )
+    authenticated_owner_installation: (
+        FinalDecisionReviewAuthenticatedOwnerInstallationV1
+    )
+    approved_route_context_store: FinalDecisionReviewAuthenticatedOwnerContextStoreV1
     producer: FinalDecisionReviewWorkflowProducerV1
     coordinator: FinalDecisionReviewWorkflowCoordinatorV1
     source_wiring: FinalDecisionReviewProductionSourceWiringV1
     internal_only: bool = True
     authenticated_route_context_capture_registered: bool = True
+    authenticated_owner_installation_registered: bool = True
     startup_authenticated_context_count: int = 0
     startup_approved_owner_snapshot_count: int = 0
+    startup_authenticated_owner_evidence_count: int = 0
     startup_broker_call_performed: bool = False
     startup_owner_installation_performed: bool = False
     startup_owner_acquisition_performed: bool = False
@@ -102,23 +112,39 @@ def _missing_approved_owner_context(
     return None
 
 
+def _registered_runtime_for_bridge(
+    bridge: FinalDecisionReviewWorkflowBridgeV1,
+) -> FinalDecisionReviewProductionRuntimeV1 | None:
+    registry = getattr(bridge, "registry", None)
+    observer = getattr(registry, "approved_context_observer", None)
+    store = getattr(observer, "__self__", None)
+    if not isinstance(store, FinalDecisionReviewAuthenticatedOwnerContextStoreV1):
+        return None
+    runtime = getattr(store, "_production_runtime", None)
+    return runtime if isinstance(runtime, FinalDecisionReviewProductionRuntimeV1) else None
+
+
 def _route_context_store_for_bridge(
     bridge: FinalDecisionReviewWorkflowBridgeV1,
     *,
+    lifecycle: FinalDecisionReviewAuthenticatedOwnerInstallationV1,
     capacity: int,
-) -> FinalDecisionReviewApprovedRouteContextStoreV1:
+) -> FinalDecisionReviewAuthenticatedOwnerContextStoreV1:
     registry = getattr(bridge, "registry", None)
     if registry is None:
-        return FinalDecisionReviewApprovedRouteContextStoreV1(
+        return FinalDecisionReviewAuthenticatedOwnerContextStoreV1(
+            lifecycle=lifecycle,
             ttl_seconds=300,
             capacity=capacity,
         )
 
     observer = getattr(registry, "approved_context_observer", None)
     existing_store = getattr(observer, "__self__", None)
-    if isinstance(existing_store, FinalDecisionReviewApprovedRouteContextStoreV1):
-        return existing_store
     if observer is not None:
+        if isinstance(existing_store, FinalDecisionReviewAuthenticatedOwnerContextStoreV1):
+            raise FinalDecisionReviewProductionRegistrationError(
+                "FINAL_DECISION_REVIEW_PRODUCTION_RUNTIME_CACHE_MISSING"
+            )
         raise FinalDecisionReviewProductionRegistrationError(
             "FINAL_DECISION_REVIEW_ROUTE_CONTEXT_OBSERVER_CONFLICT"
         )
@@ -128,7 +154,8 @@ def _route_context_store_for_bridge(
         raise FinalDecisionReviewProductionRegistrationError(
             "FINAL_DECISION_REVIEW_ROUTE_CONTEXT_REGISTRY_INVALID"
         )
-    store = FinalDecisionReviewApprovedRouteContextStoreV1(
+    store = FinalDecisionReviewAuthenticatedOwnerContextStoreV1(
+        lifecycle=lifecycle,
         ttl_seconds=300,
         capacity=capacity,
     )
@@ -158,6 +185,9 @@ def register_final_decision_review_production_sources(
         raise FinalDecisionReviewProductionRegistrationError(
             "FINAL_DECISION_REVIEW_PORTFOLIO_LOADER_NOT_CALLABLE"
         )
+    existing_runtime = _registered_runtime_for_bridge(bridge)
+    if existing_runtime is not None:
+        return existing_runtime
 
     source_store = FinalDecisionReviewScenarioSourceStoreV1(
         ttl_seconds=source_ttl_seconds,
@@ -174,11 +204,9 @@ def register_final_decision_review_production_sources(
     calculator_intent_workflow = FinalDecisionReviewCalculatorIntentWorkflowV1(
         handoff=calculator_handoff,
     )
-    approved_owner_snapshot_store = (
-        FinalDecisionReviewApprovedOwnerSnapshotStoreV1(
-            ttl_seconds=300,
-            capacity=source_capacity,
-        )
+    approved_owner_snapshot_store = FinalDecisionReviewApprovedOwnerSnapshotStoreV1(
+        ttl_seconds=300,
+        capacity=source_capacity,
     )
     approved_invocation = FinalDecisionReviewApprovedInvocationV1(
         workflow=calculator_intent_workflow,
@@ -204,21 +232,32 @@ def register_final_decision_review_production_sources(
     approved_owner_installation = FinalDecisionReviewApprovedOwnerInstallationV1(
         composition=trusted_owner_composition,
     )
-    approved_owner_acquisition = (
-        FinalDecisionReviewApprovedOwnerAcquisitionV1(
-            composition=trusted_owner_composition,
-            context_loader=(
-                approved_owner_context_loader
-                or _missing_approved_owner_context
-            ),
-            source_loaders=(
-                approved_owner_source_loaders
-                or unavailable_final_decision_review_approved_owner_source_loaders()
-            ),
+    approved_owner_acquisition = FinalDecisionReviewApprovedOwnerAcquisitionV1(
+        composition=trusted_owner_composition,
+        context_loader=(
+            approved_owner_context_loader or _missing_approved_owner_context
+        ),
+        source_loaders=(
+            approved_owner_source_loaders
+            or unavailable_final_decision_review_approved_owner_source_loaders()
+        ),
+    )
+    authenticated_owner_evidence_store = (
+        FinalDecisionReviewAuthenticatedOwnerEvidenceStoreV1(
+            ttl_seconds=300,
+            capacity=source_capacity,
+        )
+    )
+    authenticated_owner_installation = (
+        FinalDecisionReviewAuthenticatedOwnerInstallationV1(
+            snapshot_store=approved_owner_snapshot_store,
+            installation=approved_owner_installation,
+            evidence_store=authenticated_owner_evidence_store,
         )
     )
     approved_route_context_store = _route_context_store_for_bridge(
         bridge,
+        lifecycle=authenticated_owner_installation,
         capacity=source_capacity,
     )
     producer = FinalDecisionReviewWorkflowProducerV1(bridge=bridge)
@@ -235,7 +274,7 @@ def register_final_decision_review_production_sources(
         source_store=source_store,
         current_risk_loader=current_risk_loader,
     )
-    return FinalDecisionReviewProductionRuntimeV1(
+    runtime = FinalDecisionReviewProductionRuntimeV1(
         source_store=source_store,
         scenario_publisher=scenario_publisher,
         calculator_handoff=calculator_handoff,
@@ -248,8 +287,12 @@ def register_final_decision_review_production_sources(
         trusted_owner_composition=trusted_owner_composition,
         approved_owner_installation=approved_owner_installation,
         approved_owner_acquisition=approved_owner_acquisition,
+        authenticated_owner_evidence_store=authenticated_owner_evidence_store,
+        authenticated_owner_installation=authenticated_owner_installation,
         approved_route_context_store=approved_route_context_store,
         producer=producer,
         coordinator=coordinator,
         source_wiring=source_wiring,
     )
+    setattr(approved_route_context_store, "_production_runtime", runtime)
+    return runtime
