@@ -64,6 +64,25 @@
 - [ ] `trading_methods=false`.
 - [ ] При изменении схемы обновлён GPT Editor.
 
+### Final-review evidence dossier
+
+Каждая строка ниже должна быть записана как
+`FinalDecisionReviewAcceptanceEvidenceV1`. Галочка без датированного proof и SHA-256 не
+считается выполненной.
+
+- [ ] `render_source_commit` — Render использует ожидаемый merge commit.
+- [ ] `health_contract` — cache-busted `/health` подтверждает release contract.
+- [ ] `private_auth_negative` — запрос без valid Gateway key отклонён.
+- [ ] `exact_route_positive` — exact authenticated query возвращает compact response.
+- [ ] `gpt_schema_import` — актуальная OpenAPI schema импортирована в GPT Editor.
+- [ ] `gpt_authenticated_preview` — authenticated Action выполнен в Preview.
+- [ ] `gpt_action_list` — write/order/funds-movement Actions отсутствуют.
+- [ ] `rollback_restore` — rollback drill восстановил известный read-only release.
+- [ ] Dossier имеет восемь `passed`, `acceptance_completed=true` и
+      `trading_methods=false`.
+
+Статусы `not_executed` и `not_applicable` не закрывают production acceptance.
+
 ### Telegram retirement (только для PR удаления)
 
 - [x] После merge старый Render service удалён по removal runbook.
