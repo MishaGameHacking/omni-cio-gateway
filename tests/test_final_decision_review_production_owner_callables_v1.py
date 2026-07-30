@@ -72,7 +72,10 @@ def _request(
     ),
 ) -> ApprovedCalculatorInvocationRequestV1:
     return ApprovedCalculatorInvocationRequestV1(
-        invocation_id="invoke:production-owner:one",
+        invocation_id=(
+            f"invoke:production-owner:{operation.value}:"
+            f"{correlation_id.rsplit(':', maxsplit=1)[-1]}"
+        ),
         scenario_id="scenario:production-owner:one",
         correlation_id=correlation_id,
         operation=operation,
@@ -165,6 +168,7 @@ def test_publish_is_internal_bounded_and_does_not_call_owners() -> None:
     assert publication.order_created is False
     assert publication.trading_methods is False
     assert store.active_bundle_count(checked_at=NOW) == 1
+    assert store.active_pin_count(checked_at=NOW) == 0
     assert all(value == 0 for value in calls.values())
 
 
@@ -213,6 +217,7 @@ def test_router_dispatches_only_the_exact_scenario_bundle() -> None:
     assert bundle.correlation_id == "corr:production-owner:one"
     assert len(bundle.purchase_previews) == 1
     assert bundle.sell_previews == ()
+    assert store.active_pin_count(checked_at=NOW) == 0
     assert calls == {
         "decision": 1,
         "intent": 1,
@@ -261,6 +266,78 @@ def test_registration_uses_fixed_ids_without_owner_or_invocation_calls() -> None
     assert registration.trading_methods is False
     assert store.active_bundle_count() == 0
     assert invocation.calls == 0
+    assert store.active_pin_count() == 0
+
+
+def test_invocation_pin_prevents_owner_mix_after_lru_eviction() -> None:
+    original_calls = {
+        "decision": 0,
+        "intent": 0,
+        "capacity": 0,
+        "risk": 0,
+        "preview": 0,
+    }
+    replacement_calls = dict(original_calls)
+    unrelated_calls = dict(original_calls)
+    store = FinalDecisionReviewProductionOwnerCallableStoreV1(capacity=1)
+    store.publish_purchase(
+        scenario_id="scenario:production-owner:one",
+        correlation_id="corr:production-owner:one",
+        owners=_purchase_owners(original_calls),
+        published_at=NOW,
+    )
+    routed = FinalDecisionReviewProductionOwnerCallableRouterV1(
+        store=store,
+    ).purchase_owners()
+    request = _request()
+
+    routed.common.decision(request)
+    assert store.active_pin_count(checked_at=NOW) == 1
+
+    store.publish_purchase(
+        scenario_id="scenario:production-owner:other",
+        correlation_id="corr:production-owner:other",
+        owners=_purchase_owners(unrelated_calls),
+        published_at=NOW,
+    )
+    store.publish_purchase(
+        scenario_id="scenario:production-owner:one",
+        correlation_id="corr:production-owner:one",
+        owners=_purchase_owners(replacement_calls),
+        published_at=NOW,
+    )
+
+    routed.common.intent(request)
+    tuple(routed.previews(request))
+    assert original_calls["decision"] == 1
+    assert original_calls["intent"] == 1
+    assert original_calls["preview"] == 1
+    assert all(value == 0 for value in replacement_calls.values())
+    assert all(value == 0 for value in unrelated_calls.values())
+    assert store.active_pin_count(checked_at=NOW) == 0
+
+
+def test_invocation_pin_rejects_timestamp_rebinding() -> None:
+    calls = {"decision": 0, "intent": 0, "capacity": 0, "risk": 0, "preview": 0}
+    store = FinalDecisionReviewProductionOwnerCallableStoreV1()
+    store.publish_purchase(
+        scenario_id="scenario:production-owner:one",
+        correlation_id="corr:production-owner:one",
+        owners=_purchase_owners(calls),
+        published_at=NOW,
+    )
+    request = _request()
+    assert store.load_for_request(request, checked_at=NOW) is not None
+    rebound = request.model_copy(
+        update={"invoked_at": NOW + timedelta(seconds=1)},
+    )
+    with pytest.raises(
+        FinalDecisionReviewProductionOwnerCallableError,
+        match="FINAL_DECISION_REVIEW_PRODUCTION_OWNER_PIN_MISMATCH",
+    ):
+        store.load_for_request(rebound, checked_at=NOW)
+    assert store.release_for_request(request) is True
+    assert all(value == 0 for value in calls.values())
 
 
 def test_purchase_and_sell_publications_are_direction_isolated() -> None:
@@ -294,6 +371,15 @@ def test_purchase_and_sell_publications_are_direction_isolated() -> None:
     assert purchase.sell is None
     assert sell is not None and sell.sell is not None
     assert sell.purchase is None
+    assert store.active_pin_count(checked_at=NOW) == 2
+    assert store.release_for_request(_request()) is True
+    assert (
+        store.release_for_request(
+            _request(operation=ApprovedCalculatorOperation.SELL_REVIEW),
+        )
+        is True
+    )
+    assert store.active_pin_count(checked_at=NOW) == 0
     assert all(value == 0 for value in purchase_calls.values())
     assert all(value == 0 for value in sell_calls.values())
 
