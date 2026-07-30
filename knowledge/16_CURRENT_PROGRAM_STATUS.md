@@ -1,7 +1,7 @@
 # 16 — CURRENT PROGRAM STATUS
 
 Дата актуализации: 2026-07-30  
-Фактическая вершина программы после merge этого пакета: **PR-76**  
+Фактическая вершина программы после merge этого пакета: **PR-77**  
 Точная версия определяется текущей вершиной ветки `main`.
 
 ## Назначение документа
@@ -67,36 +67,44 @@ ledger, walk-forward/OOS stability и market-capacity gating.
 - **PR-73:** calculator-owned construction of the exact capacity-intent gate before PR-72;
 - **PR-74:** allowlisted, freshness-checked and replay-safe internal invocation boundary;
 - **PR-75:** explicit calculator-provider registry with typed bundle and context gates;
-- **PR-76:** typed adapters from existing read-only owners into fixed provider IDs.
+- **PR-76:** typed adapters from existing read-only owners into fixed provider IDs;
+- **PR-77:** scenario-scoped production routing for fixed purchase/sell owner callables.
 
-## PR-76 — existing calculator provider adapters v1
+## PR-77 — scenario-scoped production owner callable routing v1
 
-PR-76 adds composition adapters from existing read-only calculation owners into the PR-75
-provider bundle. The adapter does not duplicate or recompute financial values.
+PR-77 registers the two fixed PR-76 provider adapters in the production runtime and routes
+them only to owner-callable bundles published for an exact scenario, correlation and
+operation. It does not invent financial values and does not call any calculator at startup.
 
-### Typed owner ports
+### Process-local owner store
 
-The common owner set supplies:
+The bounded store accepts one typed purchase or sell owner bundle under the immutable key:
 
-1. one typed analytical decision;
-2. one typed exact-intent request;
-3. one or more typed capacity assessments;
-4. one explicit typed pro-forma risk evaluation.
+`(scenario_id, correlation_id, operation)`.
 
-A directional owner supplies exactly one non-empty purchase or sell preview tuple. Purchase
-and sell outputs are never mixed.
+Each bundle has an aware UTC publication time and a bounded TTL. An active duplicate is
+rejected, expired bundles are purged, and capacity overflow evicts the least-recently-used
+older bundle. Callables, payloads and account data are never exposed through HTTP or
+serialized into the repository.
 
-### Adapter gates
+### Exact routing gates
 
-- exact invocation operation before any owner call;
-- every configured owner must be callable;
-- every owner is invoked exactly once per provider call;
-- exception, raw mapping, wrong type, empty capacity or empty preview fails closed;
-- pro-forma risk retrieval time is preserved as bundle build time;
-- exact scenario and correlation IDs are copied from the approved request;
-- fixed provider IDs only: `provider:existing:purchase-review` and
-  `provider:existing:sell-review`;
-- provider registration performs no owner, network or broker call.
+- only `purchase_review` and `sell_review` operations are accepted;
+- scenario ID, correlation ID and operation must all match before the first owner call;
+- purchase and sell owner bundles are direction-isolated;
+- a bundle published after the approved invocation fails closed;
+- missing, expired, wrong-direction or wrong-correlation ownership fails closed;
+- active duplicates cannot replace owners during an invocation;
+- every typed owner output remains validated by the PR-76 adapter and PR-75 registry;
+- fixed provider IDs remain `provider:existing:purchase-review` and
+  `provider:existing:sell-review`.
+
+### Production registration
+
+`FinalDecisionReviewProductionRuntimeV1` now owns the bounded callable store and immutable
+registration receipt. Both fixed dispatchers are installed during normal `app:app` import,
+but the store begins empty and registration performs no owner, network, portfolio or broker
+call.
 
 ### Compatibility and safety
 
@@ -112,12 +120,13 @@ and sell outputs are never mixed.
 
 ## Remaining production boundary
 
-PR-76 defines and validates the adapters but production must still provide concrete read-only
-owner callables around the existing Decision Engine, capacity assessment, purchase/sell
-preview and pro-forma risk owners. Until those callables and actual acceptance exist:
+PR-77 makes the fixed providers available but intentionally starts with no scenario-specific
+owners. Trusted production composition must still publish concrete read-only Decision Engine,
+capacity, purchase/sell preview and explicit pro-forma risk callables before invoking a
+provider. Until that composition and actual acceptance exist:
 
-- the provider registry may remain empty after startup;
-- the scenario store may remain empty after restart;
+- the provider registry contains only the two fixed fail-closed dispatchers;
+- the owner-callable and scenario stores remain empty after restart;
 - exact acquisition may report missing scenario sources;
 - the final-review route may return `503`;
 - Render/GPT/rollback evidence remains `not_executed`;
@@ -127,13 +136,14 @@ preview and pro-forma risk owners. Until those callables and actual acceptance e
 
 PR-64 still requires eight real evidence cases: Render commit, health, auth-negative,
 exact-route-positive, GPT schema import, authenticated Preview, Action-list inspection and
-rollback restore. None may be marked passed solely because PR-76 CI is green.
+rollback restore. None may be marked passed solely because PR-77 CI is green.
 
 ## Что остаётся до полного релиза
 
 ### Backend and release acceptance
 
-- concrete owner callable wiring for one approved purchase and sell provider;
+- trusted scenario composition that publishes concrete owner callables for approved purchase
+  and sell review;
 - actual Render/Gateway acceptance and evidence recording;
 - actual GPT Editor import and authenticated Preview;
 - production-grade live ingestion for market, ratings, news and corporate events;
@@ -157,13 +167,14 @@ reconciliation требуют отдельной программы допуск
 
 ## Следующий рекомендуемый пакет
 
-**PR-77 — concrete production owner callable wiring v1**:
+**PR-78 — trusted production owner composition v1**:
 
-- wires only already existing read-only Decision Engine and capacity owners;
-- consumes broker purchase/sell previews from their existing typed owners;
+- constructs one scenario-scoped owner bundle from already existing read-only Decision Engine,
+  capacity and directional preview owners;
 - requires an explicit typed pro-forma risk provider and never substitutes current risk;
-- registers fixed PR-76 provider IDs without calling them at startup;
-- validates account, timestamp and request identity across owner outputs;
+- binds exact account, scenario, correlation, timestamp and operation before publication;
+- publishes the owner bundle before the fixed PR-77 dispatcher is invoked;
+- propagates missing, stale or wrong-type evidence as a safe unavailable outcome;
 - performs no HTTP route or production OpenAPI change;
 - preserves `app:app`, no broker writes and `trading_methods=false`.
 
