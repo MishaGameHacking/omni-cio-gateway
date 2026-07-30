@@ -18,29 +18,21 @@ Custom GPT ── Omni-CIO Gateway (`app:app`) ── T-Invest API
 - Telegram Companion выведен из эксплуатации; его package, Blueprint,
   webhook и активная конфигурация отсутствуют.
 - Portfolio market snapshot проходит внутреннюю contract v1 shadow validation;
-  публичный Action response остаётся без изменений, а будущие decision flows
-  получают отдельный fail-closed quality gate.
+  публичный Action response остаётся без изменений, а decision flows получают
+  отдельный fail-closed quality gate.
 - Private `GET /decision/final-review` возвращает только ранее сформированный и
-  проверенный compact response из bounded TTL source registry. Пустой registry
-  fail-closed возвращает `503`; маршрут не вызывает брокера и не создаёт решение
-  заново.
-- PR-79 добавляет внутренний acquisition-контроллер: invocation и masked account
-  берутся только из доверенного server context, все пять выбранных owner sources должны
-  быть свежими до PR-78, а production startup остаётся безопасно `unavailable` без
-  конкретных loaders. OpenAPI и 14 GET Actions не меняются.
-- PR-80 добавляет concrete typed installation boundary для уже существующих PR-78
-  purchase/sell owner ports. Один immutable server context получает фиксированные
-  PR-79 loaders только на время одного вызова; startup не выполняет installation,
-  owner calls, portfolio/network/broker calls.
-- PR-81 сохраняет из trusted publication только exact scenario ID, trusted
-  correlation, direction и masked account, а после existing Bearer auth и exact
-  route validation создаёт server-generated approved context. Контекст хранится
-  не более 300 секунд в bounded process-local store.
-- PR-82 сохраняет exact typed Decision/intent/capacity/pro-forma/preview snapshots
-  только после успешного approved calculator invocation. При выборе snapshot
-  owner ports заново привязываются к fresh server-generated invocation ID;
-  mismatch, stale state или отсутствие snapshot остаются fail-closed. Вызов PR-80
-  из GET lifecycle остаётся отдельным следующим пакетом.
+  проверенный compact response из bounded TTL registry. Пустой registry
+  fail-closed возвращает `503`; маршрут не создаёт решение заново.
+- PR-79…PR-80 формируют approved server-context acquisition и одноразовую
+  установку существующих typed purchase/sell owner ports.
+- PR-81…PR-83 завершают внутреннюю post-auth цепочку: trusted context capture →
+  exact typed owner snapshot → fresh invocation rebinding → один PR-80 call →
+  bounded redacted evidence. Missing, stale или mismatched data остаются
+  fail-closed; public response и OpenAPI не меняются.
+- PR-84 добавляет официальный read-only источник истории ключевой ставки Банка
+  России `DailyInfo.KeyRateXML`: fixed HTTPS endpoint, bounded streaming,
+  защищённый XML parser, Decimal-контракт, provenance и безопасные error codes.
+  Источник пока internal-only и не добавляет новый Action или dashboard field.
 - Runtime и CI устанавливают полностью pinned зависимости только после
   проверки SHA-256 hashes.
 - Regression Shield включает lint, formatting baseline, mypy, покрытие
@@ -69,6 +61,7 @@ app.py + runtime modules             Omni-CIO Gateway
 omni_cio/contracts/                  versioned financial contracts
 omni_cio/adapters/                   legacy-to-contract adapters
 omni_cio/quality/                    shadow validation and quality gates
+omni_cio/market/                     market, macro and capacity sources/analysis
 omni_cio/release/                    read-only release, route and acceptance controls
 broker_report_reconciliation/        официальный отчёт и сверка
 tests/                               unit, endpoint, OpenAPI, Regression Shield
@@ -129,7 +122,9 @@ Omni-CIO больше не содержит Telegram runtime. Полезная �
 - полный номер брокерского счёта;
 - реальные брокерские отчёты и операции пользователя;
 - Render secrets и секретный GPT Bearer key;
-- содержимое bounded final-review, approved-context и owner-snapshot registries после остановки процесса.
+- сырой XML Банка России и upstream fault/exception text;
+- содержимое bounded final-review, approved-context, owner-snapshot и evidence
+  registries после остановки процесса.
 
 Полный реестр: [`docs/inventory/PROJECT_ASSETS.md`](docs/inventory/PROJECT_ASSETS.md).
 
@@ -144,16 +139,14 @@ Omni-CIO больше не содержит Telegram runtime. Полезная �
 - [`docs/architecture/SYSTEM_OVERVIEW.md`](docs/architecture/SYSTEM_OVERVIEW.md) — архитектура.
 - [`docs/architecture/PORTFOLIO_SHADOW_VALIDATION_V1.md`](docs/architecture/PORTFOLIO_SHADOW_VALIDATION_V1.md) — shadow validation и decision gate.
 - [`docs/architecture/FINAL_DECISION_REVIEW_PRODUCTION_ROUTE_V1.md`](docs/architecture/FINAL_DECISION_REVIEW_PRODUCTION_ROUTE_V1.md) — production GET route, registry и fail-closed HTTP contract.
-- [`docs/architecture/FINAL_DECISION_REVIEW_APPROVED_OWNER_INSTALLATION_V1.md`](docs/architecture/FINAL_DECISION_REVIEW_APPROVED_OWNER_INSTALLATION_V1.md) — exact typed PR-78 owner ports into one PR-79 acquisition call.
-- [`docs/architecture/FINAL_DECISION_REVIEW_AUTHENTICATED_ROUTE_CONTEXT_V1.md`](docs/architecture/FINAL_DECISION_REVIEW_AUTHENTICATED_ROUTE_CONTEXT_V1.md) — trusted publication seed, post-auth approved context и bounded lifecycle.
-- [`docs/architecture/FINAL_DECISION_REVIEW_APPROVED_OWNER_SNAPSHOTS_V1.md`](docs/architecture/FINAL_DECISION_REVIEW_APPROVED_OWNER_SNAPSHOTS_V1.md) — exact typed snapshot capture и fresh authenticated rebinding.
+- [`docs/architecture/FINAL_DECISION_REVIEW_AUTHENTICATED_OWNER_INSTALLATION_V1.md`](docs/architecture/FINAL_DECISION_REVIEW_AUTHENTICATED_OWNER_INSTALLATION_V1.md) — post-auth snapshot selection и one-shot installation.
+- [`docs/architecture/CBR_KEY_RATE_SOURCE_V1.md`](docs/architecture/CBR_KEY_RATE_SOURCE_V1.md) — официальный источник ключевой ставки и security boundary.
 - [`docs/operations/DEPLOYMENT_RUNBOOK.md`](docs/operations/DEPLOYMENT_RUNBOOK.md) — gateway deployment.
 - [`docs/operations/TELEGRAM_REMOVAL_RUNBOOK.md`](docs/operations/TELEGRAM_REMOVAL_RUNBOOK.md) — очистка выведенного Telegram service.
+- [`knowledge/09_MARKET_DATA_AND_BUYING_POWER.txt`](knowledge/09_MARKET_DATA_AND_BUYING_POWER.txt) — market и macro source semantics.
 - [`knowledge/11_BROKER_REPORT_ASYNC_INTEGRITY.txt`](knowledge/11_BROKER_REPORT_ASYNC_INTEGRITY.txt) — асинхронный отчёт.
-- [`knowledge/12_TELEGRAM_RETIREMENT.txt`](knowledge/12_TELEGRAM_RETIREMENT.txt) — запрет возврата Telegram runtime без нового ADR.
-- [`knowledge/13_COMMUNICATION_STYLE_2026.txt`](knowledge/13_COMMUNICATION_STYLE_2026.txt) — современная речь и публикации.
 - [`knowledge/14_CI_SECURITY_BASELINE.txt`](knowledge/14_CI_SECURITY_BASELINE.txt) — dependency locks, quality и security gates.
-- [`knowledge/15_DATA_QUALITY_SHADOW_VALIDATION.txt`](knowledge/15_DATA_QUALITY_SHADOW_VALIDATION.txt) — статусы качества и fail-closed gate.
+- [`knowledge/16_CURRENT_PROGRAM_STATUS.md`](knowledge/16_CURRENT_PROGRAM_STATUS.md) — фактическая вершина и остаток программы.
 
 ## Локальный запуск gateway
 
