@@ -1,7 +1,7 @@
 # 16 — CURRENT PROGRAM STATUS
 
 Дата актуализации: 2026-07-30  
-Фактическая вершина программы после merge этого пакета: **PR-73**  
+Фактическая вершина программы после merge этого пакета: **PR-74**  
 Точная версия определяется текущей вершиной ветки `main`.
 
 ## Назначение документа
@@ -64,41 +64,44 @@ ledger, walk-forward/OOS stability и market-capacity gating.
 - **PR-70:** lazy production registration of source store, producer, coordinator and wiring;
 - **PR-71:** trusted typed scenario publication into the registered bounded store;
 - **PR-72:** calculator-owned purchase/sell preview handoff into trusted publication;
-- **PR-73:** calculator-owned construction of the exact capacity-intent gate before PR-72.
+- **PR-73:** calculator-owned construction of the exact capacity-intent gate before PR-72;
+- **PR-74:** allowlisted, freshness-checked and replay-safe internal invocation boundary.
 
-## PR-73 — calculator-owned intent workflow v1
+## PR-74 — approved calculator invocation boundary v1
 
-PR-73 accepts typed analytical decision and capacity evidence, constructs the exact
-`CapacityIntentDecisionGateV1` at the pro-forma risk timestamp and delegates purchase/sell
-preview gating and publication to PR-72.
+PR-74 adds one internal control-plane service over PR-73. It binds an allowlisted analytical
+operation to one safe invocation, scenario and correlation context before typed calculator
+artifacts can reach the scenario store.
 
-### Accepted source artifacts
+### Invocation request
 
-1. one typed `DecisionSetV1`;
-2. one typed exact-intent request;
-3. one or more typed capacity assessments;
-4. typed purchase or sell broker previews;
-5. one already calculated typed pro-forma risk evaluation;
-6. a safe scenario ID and optional aware publication timestamp.
+The request contains only:
 
-Raw mappings are rejected before store mutation.
+1. one safe invocation ID;
+2. one safe scenario ID;
+3. one safe correlation ID;
+4. one allowlisted `purchase_review` or `sell_review` operation;
+5. one timezone-aware invocation timestamp.
 
-### Trust gates
+Raw mappings, credentials, full account IDs and HTTP request bodies are rejected.
 
-- exact requested option and capacity-request identity;
-- complete and fresh capacity coverage;
-- exact intent parity between expected request and assessment;
-- exact preview coverage, price, lot and quantity parity through PR-72;
-- pro-forma timestamp used consistently across intent and preview gates;
-- conservative non-executing risk policy through the trusted publisher;
-- blocked analytical inputs remain blocked and can never become execution-ready.
+### Trust and replay gates
+
+- exact request-contract type;
+- operation/method and publication-direction parity;
+- maximum invocation age and future tolerance;
+- bounded TTL replay cache;
+- atomic validation, PR-73 call, result construction and replay commit under one lock;
+- failed workflow calls do not consume invocation IDs;
+- concurrent duplicates can complete at most once;
+- safe result contains only counts, timestamps and the trusted publication result.
 
 ### Compatibility and safety
 
 - Gateway version remains `3.10.0`;
 - production OpenAPI remains exactly 14 authenticated GET Actions;
 - no route, operation ID, query field or request body is added;
-- no public scenario publication method exists;
+- no public invocation/publication method exists;
 - no startup calculation or broker call;
 - no broker write method;
 - no trade authorization or order creation;
@@ -107,9 +110,9 @@ Raw mappings are rejected before store mutation.
 
 ## Remaining production boundary
 
-PR-73 does not choose an action and does not calculate capacity evidence, broker previews or
-pro-forma risk. A trusted calculator caller must still supply those typed source artifacts from
-existing read-only owners. Until that caller and actual production acceptance exist:
+PR-74 controls invocation but does not load or calculate decision, capacity, broker-preview or
+pro-forma risk artifacts. An allowlisted internal calculator provider must still assemble that
+typed bundle and call PR-74. Until that provider and actual production acceptance exist:
 
 - the scenario store may remain empty after restart;
 - exact acquisition may report missing scenario sources;
@@ -121,13 +124,13 @@ existing read-only owners. Until that caller and actual production acceptance ex
 
 PR-64 still requires eight real evidence cases: Render commit, health, auth-negative,
 exact-route-positive, GPT schema import, authenticated Preview, Action-list inspection and
-rollback restore. None may be marked passed solely because PR-73 CI is green.
+rollback restore. None may be marked passed solely because PR-74 CI is green.
 
 ## Что остаётся до полного релиза
 
 ### Backend and release acceptance
 
-- trusted invocation from the existing decision/capacity/preview/risk calculation owners;
+- allowlisted provider that assembles typed artifacts from existing calculation owners;
 - actual Render/Gateway acceptance and evidence recording;
 - actual GPT Editor import and authenticated Preview;
 - production-grade live ingestion for market, ratings, news and corporate events;
@@ -151,14 +154,14 @@ reconciliation требуют отдельной программы допуск
 
 ## Следующий рекомендуемый пакет
 
-**PR-74 — approved calculator invocation boundary v1**:
+**PR-75 — allowlisted calculator provider registry v1**:
 
-- accepts only an allowlisted internal calculator operation;
-- binds one decision, exact capacity evidence, broker previews and pro-forma risk to one
-  scenario ID and correlation context;
-- invokes PR-73 once under a process-local lock;
-- rejects duplicate, stale, mismatched or user-controlled raw source input;
-- records safe counts and timestamps only;
+- registers only explicit internal provider/operation pairs;
+- providers return one complete typed decision/capacity/preview/pro-forma bundle;
+- binds provider output to the PR-74 request scenario and correlation context;
+- rejects missing, extra, stale, mismatched or raw provider outputs;
+- invokes PR-74 once without startup broker calls;
+- records safe provider, operation, count and timestamp metadata only;
 - changes no HTTP route or production OpenAPI operation;
 - preserves `app:app`, no broker writes and `trading_methods=false`.
 
