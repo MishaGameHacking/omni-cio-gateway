@@ -53,6 +53,7 @@ def test_production_runtime_is_registered_without_startup_broker_call() -> None:
     assert runtime.source_wiring.source_store is runtime.source_store
     assert runtime.source_store.active_bundle_count() == 0
     assert runtime.owner_callable_store.active_bundle_count() == 0
+    assert runtime.owner_callable_store.active_pin_count() == 0
     assert (
         runtime.owner_callable_registration.purchase_provider_id == PURCHASE_PROVIDER_ID
     )
@@ -85,6 +86,7 @@ def test_registration_keeps_portfolio_loader_and_owner_store_lazy() -> None:
     assert calls == 0
     assert runtime.source_store.active_bundle_count() == 0
     assert runtime.owner_callable_store.active_bundle_count() == 0
+    assert runtime.owner_callable_store.active_pin_count() == 0
     assert runtime.owner_callable_registration.registered_provider_count == 2
 
 
