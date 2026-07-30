@@ -16,6 +16,34 @@ from omni_cio.contracts.v1.final_decision_review_acceptance import (
 from omni_cio.contracts.v1.observability import SafeCountMetricV1
 
 
+_EXPECTED_SOURCE_BY_CASE = {
+    FinalDecisionReviewAcceptanceCase.RENDER_SOURCE_COMMIT: (
+        FinalDecisionReviewAcceptanceEvidenceSource.RENDER
+    ),
+    FinalDecisionReviewAcceptanceCase.HEALTH_CONTRACT: (
+        FinalDecisionReviewAcceptanceEvidenceSource.GATEWAY
+    ),
+    FinalDecisionReviewAcceptanceCase.PRIVATE_AUTH_NEGATIVE: (
+        FinalDecisionReviewAcceptanceEvidenceSource.GATEWAY
+    ),
+    FinalDecisionReviewAcceptanceCase.EXACT_ROUTE_POSITIVE: (
+        FinalDecisionReviewAcceptanceEvidenceSource.GATEWAY
+    ),
+    FinalDecisionReviewAcceptanceCase.GPT_SCHEMA_IMPORT: (
+        FinalDecisionReviewAcceptanceEvidenceSource.GPT_EDITOR
+    ),
+    FinalDecisionReviewAcceptanceCase.GPT_AUTHENTICATED_PREVIEW: (
+        FinalDecisionReviewAcceptanceEvidenceSource.GPT_EDITOR
+    ),
+    FinalDecisionReviewAcceptanceCase.GPT_ACTION_LIST: (
+        FinalDecisionReviewAcceptanceEvidenceSource.GPT_EDITOR
+    ),
+    FinalDecisionReviewAcceptanceCase.ROLLBACK_RESTORE: (
+        FinalDecisionReviewAcceptanceEvidenceSource.ROLLBACK_RUNBOOK
+    ),
+}
+
+
 class FinalDecisionReviewAcceptanceError(ValueError):
     """Production acceptance evidence cannot be recorded safely."""
 
@@ -54,6 +82,25 @@ def _canonical_base_url(base_url: str) -> str:
     return f"https://{parsed.hostname}"
 
 
+def _validate_case_source(
+    case: FinalDecisionReviewAcceptanceCase,
+    status: FinalDecisionReviewAcceptanceEvidenceStatus,
+    source: FinalDecisionReviewAcceptanceEvidenceSource,
+) -> None:
+    if status is FinalDecisionReviewAcceptanceEvidenceStatus.NOT_EXECUTED:
+        return
+    if status is FinalDecisionReviewAcceptanceEvidenceStatus.NOT_APPLICABLE:
+        if source is not FinalDecisionReviewAcceptanceEvidenceSource.MANUAL_REVIEW:
+            raise FinalDecisionReviewAcceptanceError(
+                "FINAL_DECISION_REVIEW_ACCEPTANCE_MANUAL_REVIEW_REQUIRED"
+            )
+        return
+    if source is not _EXPECTED_SOURCE_BY_CASE[case]:
+        raise FinalDecisionReviewAcceptanceError(
+            "FINAL_DECISION_REVIEW_ACCEPTANCE_SOURCE_MISMATCH"
+        )
+
+
 def not_executed_final_decision_review_acceptance_evidence(
     case: FinalDecisionReviewAcceptanceCase,
 ) -> FinalDecisionReviewAcceptanceEvidenceV1:
@@ -89,10 +136,7 @@ def record_final_decision_review_acceptance_evidence(
         return not_executed_final_decision_review_acceptance_evidence(case)
 
     timestamp = _aware_utc(observed_at)
-    if source is FinalDecisionReviewAcceptanceEvidenceSource.NONE:
-        raise FinalDecisionReviewAcceptanceError(
-            "FINAL_DECISION_REVIEW_ACCEPTANCE_SOURCE_REQUIRED"
-        )
+    _validate_case_source(case, status, source)
     if reference is None or summary is None:
         raise FinalDecisionReviewAcceptanceError(
             "FINAL_DECISION_REVIEW_ACCEPTANCE_PROOF_REQUIRED"
@@ -110,13 +154,6 @@ def record_final_decision_review_acceptance_evidence(
     ):
         raise FinalDecisionReviewAcceptanceError(
             "FINAL_DECISION_REVIEW_ACCEPTANCE_ERROR_CODE_FORBIDDEN"
-        )
-    if (
-        status is FinalDecisionReviewAcceptanceEvidenceStatus.NOT_APPLICABLE
-        and source is not FinalDecisionReviewAcceptanceEvidenceSource.MANUAL_REVIEW
-    ):
-        raise FinalDecisionReviewAcceptanceError(
-            "FINAL_DECISION_REVIEW_ACCEPTANCE_MANUAL_REVIEW_REQUIRED"
         )
 
     digest = calculate_final_decision_review_acceptance_evidence_sha256(
@@ -166,6 +203,15 @@ def collect_final_decision_review_acceptance_evidence(
         if row.observed_at is not None and row.observed_at > timestamp:
             raise FinalDecisionReviewAcceptanceError(
                 "FINAL_DECISION_REVIEW_ACCEPTANCE_FUTURE_EVIDENCE"
+            )
+        _validate_case_source(row.case, row.status, row.source)
+        if (
+            row.case is FinalDecisionReviewAcceptanceCase.RENDER_SOURCE_COMMIT
+            and row.status is FinalDecisionReviewAcceptanceEvidenceStatus.PASSED
+            and row.reference != expected_commit_sha
+        ):
+            raise FinalDecisionReviewAcceptanceError(
+                "FINAL_DECISION_REVIEW_ACCEPTANCE_COMMIT_MISMATCH"
             )
         by_case[row.case] = row
 
