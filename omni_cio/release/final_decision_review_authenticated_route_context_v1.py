@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import re
 from threading import RLock
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 from uuid import uuid4
 
 from omni_cio.contracts.v1.capacity import OrderSide
@@ -95,13 +95,11 @@ class FinalDecisionReviewApprovedRouteContextCaptureV1:
     trading_methods: bool = False
 
 
-if TYPE_CHECKING:
-    ApprovedRouteContextObserverV1 = Callable[
-        [FinalDecisionReviewApprovedServerContextV1],
-        object,
-    ]
-else:
-    ApprovedRouteContextObserverV1 = Callable[..., object]
+class ApprovedRouteContextObserverV1(Protocol):
+    def __call__(
+        self,
+        context: FinalDecisionReviewApprovedServerContextV1,
+    ) -> object: ...
 
 
 def _aware_utc(value: datetime | None) -> datetime:
