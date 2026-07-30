@@ -1,7 +1,7 @@
 # 16 — CURRENT PROGRAM STATUS
 
 Дата актуализации: 2026-07-30  
-Фактическая вершина программы после merge этого пакета: **PR-95**  
+Фактическая вершина программы после merge этого пакета: **PR-96**  
 Точная версия определяется текущей вершиной ветки `main`.
 
 ## Назначение документа
@@ -33,8 +33,8 @@
   policy and deterministic fired/recovered evidence lifecycle;
 - **PR-89…PR-93:** official MOEX TQBR source, exact cache, safe observability,
   global operational alert policy and deterministic fired/recovered evidence;
-- **PR-94…PR-95:** fixed official ACRA issuer-level national-RU rating-action
-  source and bounded freshness cache.
+- **PR-94…PR-96:** fixed official ACRA issuer-level national-RU rating-action
+  source, bounded freshness cache and privacy-safe source/cache telemetry.
 
 ## PR-81…PR-83 authenticated owner lifecycle
 
@@ -86,49 +86,20 @@ MOEX and broker values are never silently averaged.
 
 ### Supported issuer records
 
-V1 accepts simple issuer-level Russian national-scale actions:
+V1 accepts simple issuer-level Russian national-scale assigned, affirmed,
+upgraded, downgraded and withdrawn actions. Each record contains normalized
+subject name, fixed issuer scope, agency-specific rating, action, explicit
+outlook when published, publication date and canonical official release URL.
 
-- assigned;
-- affirmed;
-- upgraded;
-- downgraded;
-- withdrawn.
+Issue/bond/note/tranche/RMBS/series/class/security actions, international-scale
+actions and multi-target/multi-rating titles are skipped as unsupported scope. A
+title that clearly presents one national-RU issuer action but no longer matches
+the allowlisted grammar fails closed.
 
-Each record contains normalized subject name, fixed issuer scope, rating,
-action, explicit outlook when published, publication date, canonical official
-release URL and immutable source/safety metadata.
-
-Ratings remain agency-specific strings such as `AAA(RU)`, `AA-(RU)` or
-`eA(RU)`. They are not converted to another agency scale and no numeric score is
-invented.
-
-### Unsupported versus malformed scope
-
-The parser safely skips:
-
-- issue/bond/note/tranche/RMBS/series/class/security actions;
-- international-scale actions without `(RU)`;
-- multi-target or multi-rating titles;
-- non-rating press releases.
-
-A title that clearly presents one national-RU issuer action but no longer
-matches the allowlisted grammar fails closed. Issue-level extraction requires a
-separate reviewed identity contract; PR-94 does not infer an issue from free
-text.
-
-### Transport and data safety
-
-- HTTPS verification, redirects disabled and `trust_env=false`;
-- no Authorization/Cookie headers or broker credentials;
-- bounded timeout, `Content-Length` and streamed byte total;
-- only HTML/XHTML content types;
-- script/style/noscript ignored;
-- numeric release URL, publication date and duplicate validation;
-- maximum 30 accepted records;
-- raw HTML, upstream body, exception type/text and traceback not retained;
-- fixed typed unavailable error codes.
-
-Import and startup perform no source call.
+Transport uses fixed HTTPS scope, redirects disabled, bounded streamed bytes,
+HTML/XHTML content validation, script/style/noscript exclusion and fixed typed
+errors. Raw HTML, body and exception text are not retained. Import/startup make
+no source call.
 
 ## PR-95 bounded ACRA rating-action cache
 
@@ -136,8 +107,7 @@ Import and startup perform no source call.
 - fresh TTL 900 seconds and stale retention 86400 seconds;
 - future-source tolerance 30 seconds;
 - retrieval freshness derives only from `snapshot.retrieved_at`;
-- each record's `published_on` remains separate source evidence and is never
-  refreshed or rewritten by a later HTTP retrieval;
+- record `published_on` dates remain separate source evidence;
 - one `RLock` provides single-flight refresh and protects prune/clear state;
 - still-fresh fallback after failed force refresh is explicit;
 - stale records remain hidden unless refresh failed and trusted
@@ -145,16 +115,42 @@ Import and startup perform no source call.
 - fully expired entries are removed before refresh;
 - wrong type, source identity, future timestamp and unavailable source fail
   closed with fixed cache error codes;
-- only typed PR-94 snapshots are retained, never raw HTML or exception text;
-- restart starts empty and import performs no network call.
+- only typed PR-94 snapshots are retained; restart starts empty.
 
-## Compatibility and safety after PR-95
+## PR-96 safe ACRA source/cache observability
+
+PR-96 maps only typed PR-94/95 results to existing immutable
+`ObservabilityEventV1`.
+
+### Source events
+
+- source available/unavailable outcome and severity;
+- provider `ACRA`, fixed operation and optional validated latency;
+- safe record count and fixed-source/issuer-scope boolean metrics;
+- fixed source error code on failure.
+
+### Cache events
+
+- explicit fresh/stale/unavailable freshness;
+- cache hit, refresh attempted/succeeded, stale available/exposed and display
+  allowed metrics;
+- external call `not_called` for cache hit without refresh;
+- successful refresh as success;
+- failed force refresh with fresh fallback as degraded/warning;
+- stale as degraded/warning and unavailable as failure/error.
+
+Events intentionally omit issuer name, rating, rating scale, outlook, action,
+release URL/id, publication date, raw HTML/title, account, portfolio, broker
+payload and upstream exception/body. Builders are pure: no automatic emission,
+logging, alerting or source/cache call.
+
+## Compatibility and safety after PR-96
 
 - `app:app` unchanged;
 - exactly 14 authenticated GET Actions unchanged;
 - no route, request body, public response field or frontend component;
 - no dependency, database, secret or Render migration;
-- no source/cache call at import/startup;
+- no source/cache call or event emission at import/startup;
 - no T-Invest call or broker write method;
 - `trading_methods=false`.
 
@@ -184,8 +180,8 @@ Green CI cannot mark these external cases passed.
 
 ### Backend and operations
 
-- add source-specific safe ACRA source/cache observability without issuer names,
-  ratings, release URLs or raw HTML;
+- add a bounded global operational ACRA alert/evidence lifecycle only after
+  canonical-event validation; no per-issuer or per-rating semantics;
 - add other recognized rating agencies only through separate fixed contracts;
 - locate exact CBR/MOEX/ACRA callers and bind lifecycles lazily;
 - build production-grade news and corporate-event ingestion;
@@ -208,18 +204,21 @@ Shadow, paper, preview и final-review инфраструктура не явл�
 switch, partial-fill и timeout reconciliation требуют отдельной программы
 допуска и решения владельца. Автономная торговля без подтверждения не включена.
 
-## Следующий пакет после PR-95
+## Следующий пакет после PR-96
 
-Ближайший независимый безопасный пакет — safe ACRA source/cache observability v1:
+Ближайший независимый безопасный пакет — bounded global ACRA operational alert
+policy v1:
 
-- source available/unavailable and cache fresh/stale/unavailable events only;
-- latency, refresh and display-state metadata without issuer names or ratings;
-- no release URL, publication date, raw HTML, account or exception payload;
-- pure builders only, no automatic emission or startup source call;
+- accept canonical PR-96 events only;
+- conditions limited to source/cache availability, stale exposure and failed
+  refresh while fresh cache remains usable;
+- no issuer, rating, outlook, release or financial thresholds;
+- bounded thresholds, deduplication, cooldown, recovery and retention;
+- no webhook, email, Telegram, pager or other outbound transport;
 - no route, Action, frontend field or broker method.
 
 ## Запрет ложного завершения
 
-Проект не считается полностью завершённым только потому, что PR-95 слит и CI
+Проект не считается полностью завершённым только потому, что PR-96 слит и CI
 зелёный. Полный релиз требует внешней Render/Gateway/GPT acceptance evidence,
 точного production owner binding и завершения оставшихся master-plan блоков.
