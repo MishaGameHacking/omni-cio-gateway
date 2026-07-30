@@ -153,6 +153,13 @@ from omni_cio.contracts.v1.pretrade import (
     PreviewFreshnessStatus,
     PreviewPriceBasis,
 )
+from omni_cio.contracts.v1.ratings import (
+    AcraIssuerRatingActionsSnapshotV1,
+    AcraIssuerRatingActionV1,
+    CreditRatingOutlook,
+    CreditRatingSourceErrorCode,
+    CreditRatingSourceStatus,
+)
 from omni_cio.contracts.v1.rebalancing import (
     RebalanceAlternativeKind,
     RebalanceAlternativeStatus,
@@ -190,6 +197,8 @@ SCHEMA_VERSION = "1.0"
 __all__ = [
     "SCHEMA_VERSION",
     "AccountReference",
+    "AcraIssuerRatingActionsSnapshotV1",
+    "AcraIssuerRatingActionV1",
     "AdvancedPortfolioAnalyticsV1",
     "AssetClassAllocationV1",
     "BondMetricsV1",
@@ -216,6 +225,9 @@ __all__ = [
     "ContractMetadata",
     "CorporateEventType",
     "CorporateEventV1",
+    "CreditRatingOutlook",
+    "CreditRatingSourceErrorCode",
+    "CreditRatingSourceStatus",
     "CreditRatingV1",
     "CurrencyCashFlowV1",
     "CurrencyPortfolioAnalyticsV1",
