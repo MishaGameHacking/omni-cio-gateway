@@ -1,7 +1,7 @@
 # 16 — CURRENT PROGRAM STATUS
 
 Дата актуализации: 2026-07-30  
-Фактическая вершина программы после merge этого пакета: **PR-75**  
+Фактическая вершина программы после merge этого пакета: **PR-76**  
 Точная версия определяется текущей вершиной ветки `main`.
 
 ## Назначение документа
@@ -66,46 +66,44 @@ ledger, walk-forward/OOS stability и market-capacity gating.
 - **PR-72:** calculator-owned purchase/sell preview handoff into trusted publication;
 - **PR-73:** calculator-owned construction of the exact capacity-intent gate before PR-72;
 - **PR-74:** allowlisted, freshness-checked and replay-safe internal invocation boundary;
-- **PR-75:** explicit calculator-provider registry with typed bundle and context gates.
+- **PR-75:** explicit calculator-provider registry with typed bundle and context gates;
+- **PR-76:** typed adapters from existing read-only owners into fixed provider IDs.
 
-## PR-75 — allowlisted calculator provider registry v1
+## PR-76 — existing calculator provider adapters v1
 
-PR-75 introduces one explicit internal registry of `(provider_id, operation)` pairs above the
-PR-74 invocation boundary. User-controlled provider names, dynamic module loading and raw
-provider payloads are not accepted.
+PR-76 adds composition adapters from existing read-only calculation owners into the PR-75
+provider bundle. The adapter does not duplicate or recompute financial values.
 
-### Provider bundle
+### Typed owner ports
 
-A provider returns one immutable typed bundle containing:
+The common owner set supplies:
 
-1. exact scenario and correlation IDs;
-2. one timezone-aware build timestamp;
-3. one typed analytical decision;
-4. one typed exact-intent request;
-5. one or more typed capacity assessments;
-6. exactly one non-empty purchase or sell preview tuple;
-7. one typed pro-forma risk evaluation.
+1. one typed analytical decision;
+2. one typed exact-intent request;
+3. one or more typed capacity assessments;
+4. one explicit typed pro-forma risk evaluation.
 
-The provider build timestamp must equal the pro-forma risk retrieval timestamp.
+A directional owner supplies exactly one non-empty purchase or sell preview tuple. Purchase
+and sell outputs are never mixed.
 
-### Registry gates
+### Adapter gates
 
-- safe provider ID and exact allowlisted operation;
-- duplicate registration rejection;
-- no provider call during registration or startup;
-- exact provider-output contract type;
-- exact scenario and correlation parity with PR-74 request;
-- source freshness and future tolerance;
-- purchase/sell operation and preview-direction parity;
-- stable provider failure code without exposing exception text;
-- handoff to PR-74 only after every registry gate passes.
+- exact invocation operation before any owner call;
+- every configured owner must be callable;
+- every owner is invoked exactly once per provider call;
+- exception, raw mapping, wrong type, empty capacity or empty preview fails closed;
+- pro-forma risk retrieval time is preserved as bundle build time;
+- exact scenario and correlation IDs are copied from the approved request;
+- fixed provider IDs only: `provider:existing:purchase-review` and
+  `provider:existing:sell-review`;
+- provider registration performs no owner, network or broker call.
 
 ### Compatibility and safety
 
 - Gateway version remains `3.10.0`;
 - production OpenAPI remains exactly 14 authenticated GET Actions;
 - no route, operation ID, query field or request body is added;
-- no dynamic provider discovery or public registration method exists;
+- no dynamic import or user-selected provider name;
 - no startup calculation or broker call;
 - no broker write method;
 - no trade authorization or order creation;
@@ -114,11 +112,11 @@ The provider build timestamp must equal the pro-forma risk retrieval timestamp.
 
 ## Remaining production boundary
 
-PR-75 provides the registry but does not implement or register concrete providers from the
-existing decision, capacity, broker-preview and pro-forma risk owners. Until those adapters and
-actual production acceptance exist:
+PR-76 defines and validates the adapters but production must still provide concrete read-only
+owner callables around the existing Decision Engine, capacity assessment, purchase/sell
+preview and pro-forma risk owners. Until those callables and actual acceptance exist:
 
-- the provider registry remains empty after startup;
+- the provider registry may remain empty after startup;
 - the scenario store may remain empty after restart;
 - exact acquisition may report missing scenario sources;
 - the final-review route may return `503`;
@@ -129,13 +127,13 @@ actual production acceptance exist:
 
 PR-64 still requires eight real evidence cases: Render commit, health, auth-negative,
 exact-route-positive, GPT schema import, authenticated Preview, Action-list inspection and
-rollback restore. None may be marked passed solely because PR-75 CI is green.
+rollback restore. None may be marked passed solely because PR-76 CI is green.
 
 ## Что остаётся до полного релиза
 
 ### Backend and release acceptance
 
-- concrete provider adapters reusing existing read-only calculation owners;
+- concrete owner callable wiring for one approved purchase and sell provider;
 - actual Render/Gateway acceptance and evidence recording;
 - actual GPT Editor import and authenticated Preview;
 - production-grade live ingestion for market, ratings, news and corporate events;
@@ -159,15 +157,14 @@ reconciliation требуют отдельной программы допуск
 
 ## Следующий рекомендуемый пакет
 
-**PR-76 — existing calculator provider adapters v1**:
+**PR-77 — concrete production owner callable wiring v1**:
 
-- maps existing read-only Decision Engine, capacity and broker-preview owners into provider
-  bundle ports without recalculating their values;
-- keeps pro-forma risk as an explicit typed dependency and rejects missing risk evidence;
-- registers explicit purchase and sell provider IDs only;
-- preserves source timestamps, masked account and exact request identity;
-- performs no provider call at startup;
-- changes no HTTP route or production OpenAPI operation;
+- wires only already existing read-only Decision Engine and capacity owners;
+- consumes broker purchase/sell previews from their existing typed owners;
+- requires an explicit typed pro-forma risk provider and never substitutes current risk;
+- registers fixed PR-76 provider IDs without calling them at startup;
+- validates account, timestamp and request identity across owner outputs;
+- performs no HTTP route or production OpenAPI change;
 - preserves `app:app`, no broker writes and `trading_methods=false`.
 
 ## Запрет ложного завершения
