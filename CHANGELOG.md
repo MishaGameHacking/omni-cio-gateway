@@ -5,6 +5,11 @@
 ## [Unreleased]
 
 ### Added
+- Versioned final-review production-acceptance evidence contract and offline collector с
+  восемью обязательными Render/Gateway/GPT/rollback case, статусами `not_executed`,
+  `passed`, `failed`, `not_applicable`, canonical SHA-256 proof binding, dependency order,
+  sensitive-data guards и запретом считать acceptance завершённой без восьми `passed`;
+  collector не выполняет network/deploy/GPT changes и сохраняет `trading_methods=false`.
 - End-to-end internal final-review orchestration, последовательно объединяющая PR-53
   response/shadow, PR-54 eligibility, PR-55 Action shadow, PR-56 input binding,
   PR-57 readiness, PR-58 route plan и PR-62 publication; первая заблокированная
