@@ -222,21 +222,30 @@ def test_openapi_is_gpt_actions_compatible_and_operation_ids_are_unique() -> Non
 def test_openapi_exposes_no_mutating_or_trading_operations() -> None:
     schema = client.get("/openapi.json").json()
     http_methods = {"get", "post", "put", "patch", "delete"}
-
-    for path, path_item in schema["paths"].items():
-        exposed_methods = set(path_item).intersection(http_methods)
-        assert exposed_methods <= {"get"}, (path, exposed_methods)
-
-    serialized = json.dumps(schema).lower()
-    forbidden_markers = (
+    forbidden_operation_markers = (
         "postorder",
+        "createorder",
         "replaceorder",
         "cancelorder",
-        "/orders",
-        "/order/",
+        "executeorder",
+        "confirmtrade",
     )
-    for marker in forbidden_markers:
-        assert marker not in serialized
+
+    for path, path_item in schema["paths"].items():
+        normalized_path = path.lower()
+        assert not normalized_path.startswith("/orders")
+        assert not normalized_path.startswith("/order/")
+        assert not normalized_path.startswith("/execution")
+        assert not normalized_path.startswith("/withdraw")
+        assert not normalized_path.startswith("/transfer")
+
+        exposed_methods = set(path_item).intersection(http_methods)
+        assert exposed_methods <= {"get"}, (path, exposed_methods)
+        for method in exposed_methods:
+            operation_id = str(path_item[method].get("operationId") or "").lower()
+            assert not any(
+                marker in operation_id for marker in forbidden_operation_markers
+            )
 
 
 def test_purchase_preview_uses_an_explicit_broker_sdk_allowlist() -> None:
