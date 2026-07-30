@@ -33,7 +33,7 @@
 | `omni_cio/release/final_decision_review_workflow_coordinator_v1.py` | Source-evidence, freshness, account and direction coordinator before PR-66 |
 | `omni_cio/release/final_decision_review_source_acquisition_v1.py` | Four typed loader ports, safe outcome mapping and exact PR-67 handoff |
 | `omni_cio/release/final_decision_review_production_sources_v1.py` | Atomic scenario source store, live current-risk loader and PR-68 production wiring |
-| `omni_cio/release/final_decision_review_production_registration_v1.py` | Lazy production runtime registration with one shared scenario store and trusted publisher |
+| `omni_cio/release/final_decision_review_production_registration_v1.py` | Lazy production runtime registration with shared stores, PR-79 acquisition and PR-80 installation boundaries |
 | `omni_cio/release/final_decision_review_trusted_scenario_publisher_v1.py` | Exact typed gate/risk trust boundary, masked-account parity, freshness and atomic publication |
 | `omni_cio/release/final_decision_review_calculator_handoff_v1.py` | PR-72 typed purchase/sell preview handoff into the canonical publisher |
 | `omni_cio/release/final_decision_review_calculator_intent_workflow_v1.py` | PR-73 exact capacity-intent gate construction before handoff |
@@ -43,6 +43,7 @@
 | `omni_cio/release/final_decision_review_production_owner_callables_v1.py` | PR-77 scenario-scoped fixed provider owner routing |
 | `omni_cio/release/final_decision_review_trusted_owner_composition_v1.py` | PR-78 one-shot typed owner materialization, pro-forma binding and cleanup |
 | `omni_cio/release/final_decision_review_approved_owner_acquisition_v1.py` | PR-79 server-context acquisition, exact fresh owner leases, account binding and safe unavailable mapping |
+| `omni_cio/release/final_decision_review_approved_owner_installation_v1.py` | PR-80 exact typed PR-78 owner-port installation into one PR-79 acquisition call |
 
 ## Конфигурация
 
@@ -80,6 +81,8 @@
 | `tests/test_final_decision_review_existing_calculator_providers_v1.py` | PR-76 existing calculator adapters |
 | `tests/test_final_decision_review_production_owner_callables_v1.py` | PR-77 owner callable store, routing and lifecycle |
 | `tests/test_final_decision_review_trusted_owner_composition_v1.py` | PR-78 exact pro-forma binding and one-shot cleanup |
+| `tests/test_final_decision_review_approved_owner_acquisition_v1.py` | PR-79 context/source freshness, selection, account binding and safe unavailable behavior |
+| `tests/test_final_decision_review_approved_owner_installation_v1.py` | PR-80 concrete typed installation, direction isolation, stale context and startup laziness |
 | `tests/test_portfolio_market_snapshot.py` | Рыночная оценка портфеля |
 | `tests/test_portfolio_analytics.py` | Структура и концентрация |
 | `tests/test_cash_liquidity.py` | Деньги и лимиты |
@@ -106,7 +109,7 @@
 | `knowledge/09_MARKET_DATA_AND_BUYING_POWER.txt` | Market и buying-power semantics |
 | `knowledge/10_OPERATIONS_ANALYTICS_AND_RECONCILIATION.txt` | Operations semantics |
 | `knowledge/11_BROKER_REPORT_ASYNC_INTEGRITY.txt` | Broker-report async semantics |
-| `knowledge/12_TELEGRAM_RETIREMENT.txt` | Решение о выводе Telegram из эксплуатации |
+| `knowledge/12_TELEGRAM_RETIREMENT.txt` | Решение о выводе Telegram runtime из эксплуатации |
 | `knowledge/13_COMMUNICATION_STYLE_2026.txt` | Активный стиль ChatGPT без transport-specific runtime |
 | `knowledge/14_CI_SECURITY_BASELINE.txt` | Воспроизводимый CI, quality/security gates и debt register |
 | `knowledge/15_VERSIONED_DATA_CONTRACTS.txt` | Контракт v1, совместимость и read-only инварианты PR-04 |
@@ -120,6 +123,7 @@
 | `docs/architecture/FINAL_DECISION_REVIEW_WORKFLOW_COORDINATOR_V1.md` | Canonical acquisition evidence, source gates, privacy boundary and remaining adapter gap |
 | `docs/architecture/FINAL_DECISION_REVIEW_PRODUCTION_SOURCES_V1.md` | Live current-risk source, atomic scenario bundle, loader wiring and remaining registration gap |
 | `docs/architecture/FINAL_DECISION_REVIEW_TRUSTED_SCENARIO_PUBLICATION_V1.md` | Typed calculator-to-store trust boundary, exact parity, lifecycle, safety and rollback |
+| `docs/architecture/FINAL_DECISION_REVIEW_APPROVED_OWNER_INSTALLATION_V1.md` | PR-80 typed owner installation, failure behavior, production boundary and rollback |
 | `gpt/MY_GPT_SETUP_RUNBOOK.md` | Точная настройка ChatGPT → My GPTs, Actions, Preview и rollback |
 | `gpt/` | Восстановление и настройка Custom GPT |
 | `docs/operations/TELEGRAM_REMOVAL_RUNBOOK.md` | Одноразовая внешняя очистка Telegram после merge |
