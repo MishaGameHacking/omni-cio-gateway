@@ -23,6 +23,28 @@ from omni_cio.contracts.v1.observability import (
 
 _SOURCE_EVENT_NAME = "market.moex_iss_tqbr_quote.source"
 _CACHE_EVENT_NAME = "market.moex_iss_tqbr_quote.cache"
+_SOURCE_COMPONENT = "market.moex_iss_tqbr_quote_source"
+_CACHE_COMPONENT = "market.moex_iss_tqbr_quote_cache"
+_PROVIDER = "Moscow Exchange ISS"
+_OPERATION = "TQBR public quote"
+_FEED_METRICS = {
+    "moex.public_feed": 1,
+    "moex.delayed_possible": 1,
+    "moex.realtime_guaranteed": 0,
+    "moex.informational_only": 1,
+}
+_SOURCE_METRIC_NAMES = frozenset({"moex.source_available", *_FEED_METRICS})
+_CACHE_METRIC_NAMES = frozenset(
+    {
+        "moex.cache_hit",
+        "moex.refresh_attempted",
+        "moex.refresh_succeeded",
+        "moex.stale_available",
+        "moex.stale_exposed",
+        "moex.display_allowed",
+        *_FEED_METRICS,
+    }
+)
 _SOURCE_KIND = MoexQuoteAlertKind.SOURCE_UNAVAILABLE
 _CACHE_KINDS = (
     MoexQuoteAlertKind.CACHE_UNAVAILABLE,
@@ -59,6 +81,160 @@ def _severity_for(kind: MoexQuoteAlertKind) -> ObservabilitySeverity:
     ):
         return ObservabilitySeverity.ERROR
     return ObservabilitySeverity.WARNING
+
+
+def _metric_values(event: ObservabilityEventV1) -> dict[str, int]:
+    return {metric.name: metric.value for metric in event.metrics}
+
+
+def _validate_common_event(event: ObservabilityEventV1) -> None:
+    external_call = event.external_call
+    if (
+        event.account is not None
+        or event.request_id is not None
+        or event.action_id is not None
+        or event.quality is not None
+        or event.completeness is not None
+        or event.exception_type is not None
+        or external_call is None
+        or external_call.provider != _PROVIDER
+        or external_call.operation != _OPERATION
+        or external_call.retry_count != 0
+        or external_call.rate_limit_remaining is not None
+    ):
+        raise MoexQuoteAlertPolicyError("MOEX_ALERT_EVENT_CONTRACT_INVALID")
+
+
+def _validate_source_event(event: ObservabilityEventV1) -> None:
+    _validate_common_event(event)
+    values = _metric_values(event)
+    external_call = event.external_call
+    assert external_call is not None
+    if (
+        event.component != _SOURCE_COMPONENT
+        or frozenset(values) != _SOURCE_METRIC_NAMES
+        or any(values.get(name) != value for name, value in _FEED_METRICS.items())
+        or values["moex.source_available"] not in (0, 1)
+        or external_call.freshness is not FreshnessTelemetry.UNKNOWN
+    ):
+        raise MoexQuoteAlertPolicyError("MOEX_ALERT_EVENT_CONTRACT_INVALID")
+    available = values["moex.source_available"] == 1
+    if available:
+        valid = (
+            event.outcome is ObservabilityOutcome.SUCCESS
+            and event.severity is ObservabilitySeverity.INFO
+            and event.error_code is None
+            and external_call.status is ExternalCallStatus.SUCCESS
+        )
+    else:
+        valid = (
+            event.outcome is ObservabilityOutcome.FAILURE
+            and event.severity is ObservabilitySeverity.ERROR
+            and event.error_code is not None
+            and external_call.status is ExternalCallStatus.FAILURE
+        )
+    if not valid:
+        raise MoexQuoteAlertPolicyError("MOEX_ALERT_EVENT_CONTRACT_INVALID")
+
+
+def _validate_cache_event(event: ObservabilityEventV1) -> None:
+    _validate_common_event(event)
+    values = _metric_values(event)
+    external_call = event.external_call
+    assert external_call is not None
+    if (
+        event.component != _CACHE_COMPONENT
+        or frozenset(values) != _CACHE_METRIC_NAMES
+        or any(values.get(name) != value for name, value in _FEED_METRICS.items())
+        or any(value not in (0, 1) for value in values.values())
+    ):
+        raise MoexQuoteAlertPolicyError("MOEX_ALERT_EVENT_CONTRACT_INVALID")
+
+    profile = (
+        event.outcome,
+        event.severity,
+        external_call.status,
+        external_call.freshness,
+        values["moex.cache_hit"],
+        values["moex.refresh_attempted"],
+        values["moex.refresh_succeeded"],
+        values["moex.stale_exposed"],
+        values["moex.display_allowed"],
+        event.error_code is not None,
+    )
+    allowed_profiles = {
+        (
+            ObservabilityOutcome.SUCCESS,
+            ObservabilitySeverity.INFO,
+            ExternalCallStatus.NOT_CALLED,
+            FreshnessTelemetry.FRESH,
+            1,
+            0,
+            0,
+            0,
+            1,
+            False,
+        ),
+        (
+            ObservabilityOutcome.SUCCESS,
+            ObservabilitySeverity.INFO,
+            ExternalCallStatus.SUCCESS,
+            FreshnessTelemetry.FRESH,
+            0,
+            1,
+            1,
+            0,
+            1,
+            False,
+        ),
+        (
+            ObservabilityOutcome.DEGRADED,
+            ObservabilitySeverity.WARNING,
+            ExternalCallStatus.FAILURE,
+            FreshnessTelemetry.FRESH,
+            1,
+            1,
+            0,
+            0,
+            1,
+            True,
+        ),
+        (
+            ObservabilityOutcome.DEGRADED,
+            ObservabilitySeverity.WARNING,
+            ExternalCallStatus.FAILURE,
+            FreshnessTelemetry.STALE,
+            1,
+            1,
+            0,
+            1,
+            1,
+            True,
+        ),
+        (
+            ObservabilityOutcome.FAILURE,
+            ObservabilitySeverity.ERROR,
+            ExternalCallStatus.FAILURE,
+            FreshnessTelemetry.UNKNOWN,
+            0,
+            1,
+            0,
+            0,
+            0,
+            True,
+        ),
+    }
+    if profile not in allowed_profiles:
+        raise MoexQuoteAlertPolicyError("MOEX_ALERT_EVENT_CONTRACT_INVALID")
+    if values["moex.stale_exposed"] > values["moex.stale_available"]:
+        raise MoexQuoteAlertPolicyError("MOEX_ALERT_EVENT_CONTRACT_INVALID")
+
+
+def _validate_known_event(event: ObservabilityEventV1) -> None:
+    if event.event_name == _SOURCE_EVENT_NAME:
+        _validate_source_event(event)
+    elif event.event_name == _CACHE_EVENT_NAME:
+        _validate_cache_event(event)
 
 
 def _signal_from_event(event: ObservabilityEventV1) -> MoexQuoteAlertKind | None:
@@ -127,6 +303,7 @@ class MoexQuoteAlertPolicyEvaluatorV1:
     ) -> tuple[MoexQuoteAlertEvaluationV1, ...]:
         if not isinstance(event, ObservabilityEventV1):
             raise MoexQuoteAlertPolicyError("MOEX_ALERT_EVENT_TYPE_INVALID")
+        _validate_known_event(event)
         evaluated_at = event.occurred_at.astimezone(timezone.utc)
         with self._lock:
             self._prune(evaluated_at)
