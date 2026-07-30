@@ -413,7 +413,7 @@ def test_orchestration_does_not_mutate_production_openapi() -> None:
 
 def test_result_tampering_and_naive_timestamp_are_rejected() -> None:
     result = _orchestrate()
-    payload = result.model_dump(mode="python")
+    payload = dict(result.__dict__)
     payload["production_schema_mutated"] = True
     with pytest.raises(ValidationError):
         FinalDecisionReviewOrchestrationResultV1.model_validate(payload)
