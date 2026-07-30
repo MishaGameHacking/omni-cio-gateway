@@ -223,10 +223,15 @@ capacity, explicit post-change risk scenario and selected directional preview ow
 Any missing, stale, failed or account-mismatched source returns the existing safe `503`
 outcome before financial owners are called.
 
-Production startup installs fixed missing context/source loaders and performs no context,
-calculator, portfolio, network or broker call. Therefore authenticated calls remain
-fail-closed until concrete server-context and existing-owner loader installation is reviewed.
-This is correct unavailable behavior, not a completed end-to-end workflow.
+PR-80 adds the concrete typed installation adapter for already-existing PR-78 purchase or
+sell owner ports. It creates fixed context-bound PR-79 loaders for exactly one acquisition
+call, never installs the opposite preview direction and preserves all PR-79/PR-78 gates.
+Production startup registers the adapter but performs no installation, owner, calculator,
+portfolio, network or broker call.
+
+Production remains fail-closed until a separately reviewed authenticated request lifecycle
+derives the exact masked server context and selects the existing typed owners. This is
+correct unavailable behavior, not a completed end-to-end workflow.
 
 ## 7. Обязательный контракт ответов Gateway
 
@@ -294,11 +299,12 @@ This is correct unavailable behavior, not a completed end-to-end workflow.
 
 ## 11. Acceptance and current next step
 
-После merge этого пакета функциональная вершина программы — PR-79. Контроллер acquisition
-готов, но production по умолчанию остаётся fail-closed: следующий номер не назначен, а
-ближайший доказанный gap — установка authenticated server-context producer и concrete
-loaders только для уже существующих read-only owners. Точный контракт следующего пакета
-определяется `knowledge/16_CURRENT_PROGRAM_STATUS.md` и фактической вершиной `main`.
+После merge этого пакета функциональная вершина программы — PR-80. Concrete typed owner
+installation готова, но production по умолчанию остаётся fail-closed. Следующий номер не
+назначен; ближайший доказанный gap — actual authenticated server request lifecycle, который
+создаёт exact masked approved context и выбирает только существующие typed owner ports до
+вызова PR-80. Точный контракт следующего пакета определяется
+`knowledge/16_CURRENT_PROGRAM_STATUS.md` и фактической вершиной `main`.
 
 Отдельно остаются восемь реальных production acceptance cases:
 
