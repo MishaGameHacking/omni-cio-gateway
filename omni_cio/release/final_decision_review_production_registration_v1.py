@@ -97,6 +97,27 @@ def _missing_approved_owner_context(
     return None
 
 
+def _route_context_store_for_bridge(
+    bridge: FinalDecisionReviewWorkflowBridgeV1,
+    *,
+    capacity: int,
+) -> FinalDecisionReviewApprovedRouteContextStoreV1:
+    observer = bridge.registry.approved_context_observer
+    existing_store = getattr(observer, "__self__", None)
+    if isinstance(existing_store, FinalDecisionReviewApprovedRouteContextStoreV1):
+        return existing_store
+    if observer is not None:
+        raise FinalDecisionReviewProductionRegistrationError(
+            "FINAL_DECISION_REVIEW_ROUTE_CONTEXT_OBSERVER_CONFLICT"
+        )
+    store = FinalDecisionReviewApprovedRouteContextStoreV1(
+        ttl_seconds=300,
+        capacity=capacity,
+    )
+    bridge.registry.attach_approved_context_observer(store.capture)
+    return store
+
+
 def register_final_decision_review_production_sources(
     *,
     bridge: FinalDecisionReviewWorkflowBridgeV1,
@@ -171,12 +192,9 @@ def register_final_decision_review_production_sources(
             ),
         )
     )
-    approved_route_context_store = FinalDecisionReviewApprovedRouteContextStoreV1(
-        ttl_seconds=300,
+    approved_route_context_store = _route_context_store_for_bridge(
+        bridge,
         capacity=source_capacity,
-    )
-    bridge.registry.attach_approved_context_observer(
-        approved_route_context_store.capture
     )
     producer = FinalDecisionReviewWorkflowProducerV1(bridge=bridge)
     coordinator = FinalDecisionReviewWorkflowCoordinatorV1(
