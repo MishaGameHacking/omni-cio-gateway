@@ -40,6 +40,17 @@ Custom GPT ── Omni-CIO Gateway (`app:app`) ── T-Invest API
   status, latency, freshness и safe count metrics без значения ставки, дат
   диапазона, XML, fault/exception text, счёта или broker payload. Event builders
   pure и не меняют public API.
+- PR-87 добавляет bounded alert policy над CBR telemetry: consecutive thresholds,
+  pending/fired/recovered state, deduplication, cooldown и retention без
+  финансовых порогов или внешних notification transports.
+- PR-88 добавляет детерминированный typed source/cache → event → evaluation →
+  bounded fired/recovered evidence lifecycle с безопасными sinks и без network
+  call при импорте или startup.
+- PR-89 добавляет официальный public MOEX ISS source для акций board `TQBR`:
+  фиксированный HTTPS endpoint, allowlisted JSON tables, Decimal/currency/time
+  validation, bounded streaming и redacted fail-closed errors. Feed явно
+  маркируется potentially delayed, non-realtime и informational-only; он не
+  заменяет broker `getMarketSnapshot`.
 - Runtime и CI устанавливают полностью pinned зависимости только после
   проверки SHA-256 hashes.
 - Regression Shield включает lint, formatting baseline, mypy, покрытие
@@ -131,10 +142,11 @@ Omni-CIO больше не содержит Telegram runtime. Полезная �
 - реальные брокерские отчёты и операции пользователя;
 - Render secrets и секретный GPT Bearer key;
 - сырой XML Банка России и upstream fault/exception text;
+- сырой MOEX ISS JSON и upstream body/exception text;
 - значение ставки или даты диапазона в observability events;
 - содержимое process-local CBR cache;
-- содержимое bounded final-review, approved-context, owner-snapshot и evidence
-  registries после остановки процесса.
+- содержимое bounded final-review, approved-context, owner-snapshot, alert и
+  evidence registries после остановки процесса.
 
 Полный реестр: [`docs/inventory/PROJECT_ASSETS.md`](docs/inventory/PROJECT_ASSETS.md).
 
@@ -153,9 +165,12 @@ Omni-CIO больше не содержит Telegram runtime. Полезная �
 - [`docs/architecture/CBR_KEY_RATE_SOURCE_V1.md`](docs/architecture/CBR_KEY_RATE_SOURCE_V1.md) — официальный источник ключевой ставки и security boundary.
 - [`docs/architecture/CBR_KEY_RATE_CACHE_V1.md`](docs/architecture/CBR_KEY_RATE_CACHE_V1.md) — cache, freshness и stale/unavailable policy.
 - [`docs/architecture/CBR_KEY_RATE_OBSERVABILITY_V1.md`](docs/architecture/CBR_KEY_RATE_OBSERVABILITY_V1.md) — safe source/cache telemetry without financial payload.
+- [`docs/architecture/CBR_KEY_RATE_ALERT_POLICY_V1.md`](docs/architecture/CBR_KEY_RATE_ALERT_POLICY_V1.md) — bounded alert policy without external transport.
+- [`docs/architecture/CBR_KEY_RATE_OPERATIONS_LIFECYCLE_V1.md`](docs/architecture/CBR_KEY_RATE_OPERATIONS_LIFECYCLE_V1.md) — bounded fired/recovered evidence lifecycle.
+- [`docs/architecture/MOEX_ISS_TQBR_QUOTE_SOURCE_V1.md`](docs/architecture/MOEX_ISS_TQBR_QUOTE_SOURCE_V1.md) — официальный public TQBR source, strict parser/transport и delayed informational-feed boundary.
 - [`docs/operations/DEPLOYMENT_RUNBOOK.md`](docs/operations/DEPLOYMENT_RUNBOOK.md) — gateway deployment.
 - [`docs/operations/TELEGRAM_REMOVAL_RUNBOOK.md`](docs/operations/TELEGRAM_REMOVAL_RUNBOOK.md) — очистка выведенного Telegram service.
-- [`knowledge/09_MARKET_DATA_AND_BUYING_POWER.txt`](knowledge/09_MARKET_DATA_AND_BUYING_POWER.txt) — market и macro source/cache semantics.
+- [`knowledge/09_MARKET_DATA_AND_BUYING_POWER.txt`](knowledge/09_MARKET_DATA_AND_BUYING_POWER.txt) — market, macro and MOEX source semantics.
 - [`knowledge/11_BROKER_REPORT_ASYNC_INTEGRITY.txt`](knowledge/11_BROKER_REPORT_ASYNC_INTEGRITY.txt) — асинхронный отчёт.
 - [`knowledge/14_CI_SECURITY_BASELINE.txt`](knowledge/14_CI_SECURITY_BASELINE.txt) — dependency locks, quality и security gates.
 - [`knowledge/16_CURRENT_PROGRAM_STATUS.md`](knowledge/16_CURRENT_PROGRAM_STATUS.md) — фактическая вершина и остаток программы.

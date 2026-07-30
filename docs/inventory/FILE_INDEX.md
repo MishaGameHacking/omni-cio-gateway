@@ -17,9 +17,11 @@
 | `omni_cio/contracts/v1/` | Strict immutable Pydantic contracts v1 |
 | `omni_cio/contracts/v1/macro.py` | PR-84/85 key-rate source and explicit cache result contracts |
 | `omni_cio/contracts/v1/alerting.py` | PR-87/88 alert policy, evaluation and fired/recovered evidence contracts |
+| `omni_cio/contracts/v1/moex.py` | PR-89 official MOEX ISS TQBR available/unavailable quote snapshot contracts |
 | `omni_cio/market/` | Market, capacity, bond, equity, fund and technical analysis |
 | `omni_cio/market/cbr_key_rate_v1.py` | PR-84 fixed official Bank of Russia SOAP source, bounded streaming and protected XML parsing |
 | `omni_cio/market/cbr_key_rate_cache_v1.py` | PR-85 exact-range bounded cache, single-flight refresh and explicit fresh/stale/unavailable lifecycle |
+| `omni_cio/market/moex_iss_quote_v1.py` | PR-89 fixed official public MOEX ISS TQBR quote source, strict JSON validation and bounded transport |
 | `omni_cio/observability/safe_events_v1.py` | Existing allowlisted structured event builder and JSON emitter |
 | `omni_cio/observability/cbr_key_rate_events_v1.py` | PR-86 source/cache status, latency, freshness and safe-count telemetry without financial payload |
 | `omni_cio/observability/cbr_key_rate_alert_policy_v1.py` | PR-87 bounded thresholds, cooldown, deduplication, recovery and retention lifecycle |
@@ -72,6 +74,8 @@
 | `tests/test_cbr_key_rate_alert_policy_retention_v1.py` | PR-87 pending retention and active-state cooldown preservation |
 | `tests/test_cbr_key_rate_alert_contract_exports_v1.py` | PR-87 public package export compatibility |
 | `tests/test_cbr_key_rate_operations_lifecycle_v1.py` | PR-88 event/evaluation/evidence ordering, sinks, concurrency, retention and privacy |
+| `tests/test_moex_iss_quote_source_v1.py` | PR-89 contracts, fixed source, JSON/identity/time validation, bounded transport and safety flags |
+| `tests/test_moex_iss_quote_contract_exports_v1.py` | PR-89 versioned contract and market-package export compatibility |
 | `tests/test_portfolio_market_snapshot.py` | Рыночная оценка портфеля |
 | `tests/test_portfolio_analytics.py` | Структура и концентрация |
 | `tests/test_cash_liquidity.py` | Деньги и лимиты |
@@ -103,6 +107,7 @@
 | `docs/architecture/CBR_KEY_RATE_OBSERVABILITY_V1.md` | PR-86 allowlisted telemetry without key-rate or upstream payload |
 | `docs/architecture/CBR_KEY_RATE_ALERT_POLICY_V1.md` | PR-87 bounded alert state, deduplication, cooldown and recovery policy |
 | `docs/architecture/CBR_KEY_RATE_OPERATIONS_LIFECYCLE_V1.md` | PR-88 deterministic internal composition and bounded operator evidence |
+| `docs/architecture/MOEX_ISS_TQBR_QUOTE_SOURCE_V1.md` | PR-89 fixed TQBR source, public-feed limitations and fail-closed parser/transport boundary |
 | `gpt/MY_GPT_SETUP_RUNBOOK.md` | Точная настройка ChatGPT → My GPTs, Actions, Preview и rollback |
 | `docs/operations/RELEASE_CHECKLIST.md` | Pre-merge, production and evidence checklist |
 

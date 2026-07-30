@@ -8,10 +8,11 @@
 
 1. Для счёта, денег, лимита вывода и позиций использовать только ответы gateway-методов getConnection, getPortfolioSnapshot и getEnrichedPortfolioSnapshot.
 2. Для идентификации инструмента использовать findInstrument. Для расчёта по конкретной бумаге выбирать точное совпадение по ticker/UID и проверять instrument_type, class_code, lot, api_trade_available_flag.
-3. Для текущих рыночных данных использовать getMarketSnapshot по точному instrument_uid.
+3. Для текущих рыночных данных и execution-style расчёта использовать getMarketSnapshot по точному instrument_uid.
 4. Для ключевой ставки использовать только typed snapshot официального источника Банка России `DailyInfo.KeyRateXML` после contract validation.
-5. Web Search использовать только для внешних фактов и новостей. Не подменять им данные брокерского счёта, стакана, котировки gateway или typed CBR snapshot.
-6. Если источники расходятся, не усреднять значения. Явно показать расхождение, время каждого источника и не делать уверенный вывод.
+5. Публичный `MoexIssTqbrQuoteSnapshotV1` допускается только как независимый информационный источник/сверка для акций режима TQBR. Он не заменяет broker gateway quote и не считается гарантированно real-time.
+6. Web Search использовать только для внешних фактов и новостей. Не подменять им данные брокерского счёта, стакана, котировки gateway, typed CBR snapshot или typed MOEX snapshot.
+7. Если источники расходятся, не усреднять значения. Явно показать расхождение, время каждого источника и не делать уверенный вывод.
 
 ## 2. Обязательная идентификация инструмента
 
@@ -168,3 +169,16 @@
 - Cache очищается при restart; наличие прежнего значения не гарантируется.
 - Fresh/stale timestamps ключевой ставки не объединять с датами брокерского счёта, портфеля или рыночного стакана.
 - Cache не даёт торговых полномочий и не меняет `trading_methods=false`.
+
+## 13. Публичная котировка MOEX ISS TQBR
+
+- Принимать только `MoexIssTqbrQuoteSnapshotV1` с точной identity `MOEX:TQBR:{SECID}` и source authority=`official`.
+- Источник ограничен акциями режима `TQBR`; нельзя автоматически применять его к облигациям, фондам, фьючерсам, валютам или другому board.
+- `public_unauthenticated_feed=true`, `delayed_data_possible=true`, `realtime_guaranteed=false` и `informational_use_only=true` являются обязательными ограничениями, а не декоративными флагами.
+- Всегда различать `quote.as_of` и `retrieved_at`; возраст рассчитывать от `quote.as_of`, а не от момента HTTP-ответа.
+- `LAST` является последней зарегистрированной сделкой; `BID`/`OFFER` являются публичной справочной рыночной информацией и не гарантируют доступность через брокера.
+- Для покупки, доступности лота и покупательной способности приоритет остаётся у broker gateway `getMarketSnapshot` по точному UID.
+- MOEX snapshot допускается для независимой сверки, оценки расхождения и информационного отображения. Не усреднять его с broker snapshot.
+- При `unavailable`, identity/schema/time/price mismatch показывать недоступность и безопасный error code; не переносить старое значение без отдельного cache/freshness контракта.
+- Не хранить сырой JSON, upstream body, exception text, cookies или credentials.
+- Публичная котировка MOEX не разрешает сделку, не является торговой рекомендацией и не меняет `trading_methods=false`.

@@ -12,6 +12,8 @@ omni-cio-gateway/
 ├── broker_report_reconciliation/  # официальный отчёт и сверка
 ├── omni_cio/
 │   ├── contracts/v1/              # versioned typed read-only contracts
+│   ├── market/                    # market/macro sources and analysis
+│   ├── observability/             # allowlisted telemetry and evidence
 │   └── release/                   # internal final-review release chain
 ├── tests/                         # unit, endpoint, OpenAPI, Regression Shield
 ├── knowledge/                     # правила предметной области для AI
@@ -44,6 +46,13 @@ final-review coordinators, adapters, registries, owner-acquisition и
 owner-installation boundaries размещаются в `omni_cio/release/`; они не создают
 публичный Action автоматически. Публичная регистрация остаётся явной и
 проверяется 14-GET release contract.
+
+Market and macro sources размещаются в `omni_cio/market/`. Каждый внешний
+source обязан иметь фиксированный host/path scope, typed available/unavailable
+contract, bounded transport, fail-closed parser и focused tests. Source module не
+регистрирует route, не вызывает сеть при импорте и не получает торговых
+полномочий. PR-89 ограничен публичным MOEX ISS `stock/shares/TQBR` и не является
+брокерской исполнимой котировкой.
 
 PR-80 `final_decision_review_approved_owner_installation_v1.py` является
 одноразовым typed adapter между существующими PR-78 owner ports и PR-79
@@ -98,6 +107,10 @@ full-SHA Action policy и secret-scan report handling.
 PR-80 тестируется отдельно: purchase/sell direction isolation, exact owner
 call count, stale server context, operation mismatch, startup laziness и
 отсутствие HTTP/broker-write surface.
+
+PR-89 тестируется отдельно: fixed TQBR URL, SECID injection guards, exact ISS
+table shape, Decimal/currency/time normalization, delayed public-feed flags,
+bounded transport, redacted failures, exports и отсутствие route/write surface.
 
 ## Что нельзя переносить без отдельного PR
 

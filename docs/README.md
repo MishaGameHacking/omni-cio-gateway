@@ -48,6 +48,7 @@
 - `architecture/CBR_KEY_RATE_OBSERVABILITY_V1.md` — allowlisted source/cache events with operational metadata only and no financial payload.
 - `architecture/CBR_KEY_RATE_ALERT_POLICY_V1.md` — bounded thresholds, pending/fired/recovered state, deduplication, cooldown and no outbound transport.
 - `architecture/CBR_KEY_RATE_OPERATIONS_LIFECYCLE_V1.md` — deterministic event/evaluation/evidence composition, bounded retention and safe sink handoff.
+- `architecture/MOEX_ISS_TQBR_QUOTE_SOURCE_V1.md` — fixed official public TQBR quote source, strict JSON/identity/freshness boundary and delayed informational-feed flags.
 
 ### Operations
 
@@ -101,4 +102,6 @@ Runtime и deployment contract удалены. Решение и запрет с
 ## Что не хранится в GitHub
 
 Секреты, реальные отчёты, полный номер счёта, пользовательские финансовые
-данные, сырой CBR XML, upstream fault text, process-local cache/alert/evidence state и финансовые значения в observability/alert payload не должны находиться в репозитории.
+данные, сырой CBR XML, сырой MOEX ISS JSON, upstream fault/body/exception text,
+process-local cache/alert/evidence state и финансовые значения в observability/
+alert payload не должны находиться в репозитории.

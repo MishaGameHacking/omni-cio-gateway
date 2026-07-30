@@ -69,6 +69,11 @@ from omni_cio.contracts.v1.market import (
     RatingScope,
     SourceAuthority,
 )
+from omni_cio.contracts.v1.moex import (
+    MoexIssQuoteErrorCode,
+    MoexIssQuoteStatus,
+    MoexIssTqbrQuoteSnapshotV1,
+)
 from omni_cio.contracts.v1.news import (
     DuplicateNewsOccurrenceV1,
     EntityResolutionStatus,
@@ -244,6 +249,9 @@ __all__ = [
     "MarketSourceV1",
     "MissingDataCode",
     "MissingDataV1",
+    "MoexIssQuoteErrorCode",
+    "MoexIssQuoteStatus",
+    "MoexIssTqbrQuoteSnapshotV1",
     "Money",
     "NetExternalFlowV1",
     "NewsContentFormat",

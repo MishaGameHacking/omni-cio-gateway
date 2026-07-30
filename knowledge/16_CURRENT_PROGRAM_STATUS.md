@@ -1,7 +1,7 @@
 # 16 — CURRENT PROGRAM STATUS
 
 Дата актуализации: 2026-07-30  
-Фактическая вершина программы после merge этого пакета: **PR-88**  
+Фактическая вершина программы после merge этого пакета: **PR-89**  
 Точная версия определяется текущей вершиной ветки `main`.
 
 ## Назначение документа
@@ -41,7 +41,9 @@
 - **PR-87:** bounded CBR alert-policy evaluator with consecutive thresholds,
   deduplication, cooldown, recovery and retention/capacity guards;
 - **PR-88:** deterministic typed source/cache event → evaluation → bounded
-  fired/recovered evidence lifecycle with safe sink handoff.
+  fired/recovered evidence lifecycle with safe sink handoff;
+- **PR-89:** fixed official public MOEX ISS TQBR quote source with strict
+  JSON/identity/Decimal/time validation and delayed informational-feed flags.
 
 ## PR-81…PR-83 authenticated owner lifecycle
 
@@ -173,23 +175,62 @@ No rate, date range, XML, account, money, broker payload, secret, exception text
 or trading authorization enters evidence. There is no automatic retry or
 outbound notification transport.
 
+## PR-89 official MOEX ISS TQBR quote source v1
+
+PR-89 adds one internal source for public Moscow Exchange ISS data on the fixed
+`stock/shares/TQBR` board.
+
+### Source and schema boundary
+
+- fixed `https://iss.moex.com` host, engine, market, board and JSON endpoint;
+- caller controls only a strict validated `SECID`;
+- exact allowlisted `securities` and `marketdata` columns;
+- exact single-row `SECID + TQBR` identity in both tables;
+- direct JSON Decimal parsing, duplicate-key rejection and no NaN/infinity;
+- `SUR`/`RUB` normalization to `RUB`;
+- positive finite `LAST`/`BID`/`OFFER`, at least one price and bid ≤ ask;
+- Moscow `SYSTIME` conversion to UTC with future-skew rejection;
+- existing `MarketSourceV1` and `MarketQuoteV1` contracts reused.
+
+### Transport and failure behavior
+
+- HTTPS/TLS verification, redirects disabled and `trust_env=false`;
+- no Authorization/Cookie headers or broker credentials;
+- bounded timeout, `Content-Length` and streamed response size;
+- only JSON content types accepted;
+- network/HTTP/content/schema/identity/time/price failures return one redacted
+  unavailable snapshot;
+- raw JSON, upstream body and exception text are never retained.
+
+### Public-feed limitations
+
+The snapshot permanently declares:
+
+- `public_unauthenticated_feed=true`;
+- `delayed_data_possible=true`;
+- `realtime_guaranteed=false`;
+- `informational_use_only=true`.
+
+PR-89 does not replace broker `getMarketSnapshot` for execution-style portfolio
+calculations. Broker and MOEX values are separate sources and cannot be silently
+averaged. No network call occurs at import/startup.
+
 ### Compatibility and safety
 
 - `app:app` remains unchanged;
 - exactly 14 authenticated GET Actions remain unchanged;
 - no route, request body, public response field or frontend component is added;
-- no source fetch/cache refresh during module import or application startup;
-- no T-Invest call or broker write method is added;
 - no dependency, secret, database or Render migration is required;
+- no T-Invest call or broker write method is added;
 - `trading_methods=false`.
 
 ## Frontend/owner discovery state
 
 Repository search did not find a registered existing frontend/dashboard owner
-or production caller for the key-rate field. PR-84…PR-88 therefore do not invent
-a duplicate UI, silently change an Action response or start network calls. The
-existing source/caller must first be located and registered before production
-binding is safe.
+or production caller for the CBR or new MOEX fields. PR-84…PR-89 therefore do
+not invent a duplicate UI, silently change an Action response or start network
+calls. The existing source/caller must first be located and registered before
+production binding is safe.
 
 ## Production acceptance state
 
@@ -211,13 +252,15 @@ access has not supplied all required Render/GPT evidence.
 
 ### Backend and operations
 
+- build exact-SECID/TQBR MOEX cache/freshness lifecycle with explicit
+  fresh/stale/unavailable and no-silent-stale policy;
 - locate the exact existing CBR caller/owner and register PR-88 lazily without a
   startup fetch or public API change;
 - define operator-facing runbook/retention acceptance for fired/recovered
   evidence and any later external routing;
 - locate the exact existing macro/dashboard owner or frontend source, then bind
-  the PR-85 result with explicit fresh/stale/unavailable presentation;
-- production-grade quote, rating, news and corporate-event ingestion;
+  CBR/MOEX results with explicit freshness and source presentation;
+- production-grade rating, news and corporate-event ingestion;
 - actual Render/Gateway acceptance and evidence recording;
 - actual GPT Editor import and authenticated Preview;
 - external versioned RAG with freshness and citation controls;
@@ -238,21 +281,22 @@ Shadow, paper, preview и final-review инфраструктура не явл�
 switch, partial-fill и timeout reconciliation требуют отдельной программы
 допуска и решения владельца. Автономная торговля без подтверждения не включена.
 
-## Следующий пакет после PR-88
+## Следующий пакет после PR-89
 
-Production registration PR-88 разрешена только после обнаружения точного
-существующего CBR caller/owner. До этого ближайшие независимые безопасные блоки:
+Ближайший независимый безопасный пакет — bounded MOEX quote cache/freshness v1:
 
-- production-grade MOEX quote source with provenance/freshness/fail-closed
-  contracts, without changing Actions;
-- operator runbook for PR-84…PR-88 evidence and recovery semantics;
-- continued frontend source discovery without creating a duplicate site.
+- exact identity `TQBR + SECID`;
+- explicit `fresh`, `stale`, `unavailable` contract;
+- no silent stale value and no hidden fallback;
+- single-flight refresh, bounded retention/capacity and restart-clear behavior;
+- source limitations and `as_of/retrieved_at/age` preserved;
+- no new Action, frontend field or startup network call.
 
 Production acceptance remains a separate mandatory external block and cannot be
 replaced by local tests.
 
 ## Запрет ложного завершения
 
-Проект не считается полностью завершённым только потому, что PR-88 слит или CI
+Проект не считается полностью завершённым только потому, что PR-89 слит или CI
 зелёный. Завершение разрешено объявлять только после всех согласованных пакетов,
 production acceptance и отдельной проверки полного Definition of Done.
