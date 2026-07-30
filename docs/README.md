@@ -31,7 +31,7 @@
 - `architecture/DECISIONS.md`
 - `architecture/FINAL_DECISION_REVIEW_PRODUCTION_ROUTE_V1.md` — private GET Action, bounded TTL registry, fail-closed HTTP and OpenAPI contract.
 - `architecture/FINAL_DECISION_REVIEW_PUBLISHER_V1.md` — internal exact-source publication, concurrency, replacement, eviction and safe observability.
-- `architecture/FINAL_DECISION_REVIEW_ORCHESTRATION_V1.md` — end-to-end PR-53…PR-62 composition, first-blocker semantics and unchanged production OpenAPI.
+- `architecture/FINAL_DECISION_REVIEW_ORCHESTRATION_V1.md` — end-to-end PR-53…PR-63 composition, first-blocker semantics and unchanged production OpenAPI.
 - `architecture/FINAL_DECISION_REVIEW_ACCEPTANCE_EVIDENCE_V1.md` — immutable Render/Gateway/GPT/rollback evidence, SHA-256 proof binding and completion rules.
 - `architecture/FINAL_DECISION_REVIEW_WORKFLOW_BRIDGE_V1.md` — production-importable typed workflow boundary, scenario/binding composition, TTL and no-route guarantees.
 - `architecture/FINAL_DECISION_REVIEW_WORKFLOW_PRODUCER_V1.md` — exactly-one buy/sell source, risk explanation, no-action behavior and coordinator boundary.
@@ -40,6 +40,7 @@
 - `architecture/FINAL_DECISION_REVIEW_TRUSTED_OWNER_COMPOSITION_V1.md` — one-shot typed owner materialization, explicit pro-forma binding, fixed-provider invocation and cleanup.
 - `architecture/FINAL_DECISION_REVIEW_APPROVED_OWNER_ACQUISITION_V1.md` — server-derived context, exact fresh owner leases, PR-78 invocation and existing 503 mapping.
 - `architecture/FINAL_DECISION_REVIEW_APPROVED_OWNER_INSTALLATION_V1.md` — exact typed PR-78 owner-port installation into one PR-79 acquisition call, failure behavior and rollback.
+- `architecture/FINAL_DECISION_REVIEW_AUTHENTICATED_ROUTE_CONTEXT_V1.md` — trusted publication seed, existing Bearer gate, exact approved context, bounded capture and rollback.
 
 ### Operations
 
