@@ -48,8 +48,10 @@ class MoexIssTqbrQuoteSnapshotV1(ContractModel):
     warnings: tuple[
         Annotated[str, Field(min_length=1, max_length=256)], ...
     ] = ()
+    public_unauthenticated_feed: Literal[True] = True
     delayed_data_possible: Literal[True] = True
     realtime_guaranteed: Literal[False] = False
+    informational_use_only: Literal[True] = True
     source_text_treated_as_data: Literal[True] = True
     external_instructions_executed: Literal[False] = False
     raw_json_stored: Literal[False] = False
