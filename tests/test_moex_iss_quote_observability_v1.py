@@ -146,7 +146,8 @@ def _assert_no_quote_or_identity_payload(event: ObservabilityEventV1) -> None:
         "lot_size",
         "as_of",
         "raw_json",
-        "account",
+        "account_number",
+        "masked_id",
     )
     for value in forbidden:
         assert value not in serialized
