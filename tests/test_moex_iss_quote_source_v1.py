@@ -125,8 +125,10 @@ def test_available_snapshot_contract_requires_consistent_official_quote() -> Non
     )
 
     assert snapshot.secid == "SBER"
+    assert snapshot.public_unauthenticated_feed is True
     assert snapshot.delayed_data_possible is True
     assert snapshot.realtime_guaranteed is False
+    assert snapshot.informational_use_only is True
     assert snapshot.raw_json_stored is False
     assert snapshot.trading_methods is False
 
