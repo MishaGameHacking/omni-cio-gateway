@@ -8,6 +8,7 @@ from omni_cio.contracts.v1.decision import DecisionSetV1
 from omni_cio.contracts.v1.decision_capacity import CapacityDecisionGatePolicyV1
 from omni_cio.contracts.v1.decision_capacity_intent import (
     CapacityIntentDecisionGateRequestV1,
+    CapacityIntentDecisionGateV1,
 )
 from omni_cio.contracts.v1.final_decision_review_trusted_scenario import (
     TrustedScenarioPublicationResultV1,
@@ -93,7 +94,7 @@ class FinalDecisionReviewCalculatorIntentWorkflowV1:
         intent_request: CapacityIntentDecisionGateRequestV1,
         capacity_assessments: Iterable[CapacityAssessmentV1],
         pro_forma_risk: RiskPolicyEvaluationV1,
-    ):
+    ) -> CapacityIntentDecisionGateV1:
         source_decision = _require_decision(decision)
         request = _require_request(intent_request)
         assessments = _typed_assessments(capacity_assessments)
@@ -106,7 +107,12 @@ class FinalDecisionReviewCalculatorIntentWorkflowV1:
                 policy=self._capacity_policy,
                 assessed_at=risk.metadata.retrieved_at,
             )
-        except (CapacityIntentDecisionGateError, AttributeError, TypeError, ValueError) as exc:
+        except (
+            CapacityIntentDecisionGateError,
+            AttributeError,
+            TypeError,
+            ValueError,
+        ) as exc:
             raise FinalDecisionReviewCalculatorIntentWorkflowError(str(exc)) from exc
 
     def publish_purchase(
