@@ -142,11 +142,39 @@ def test_parser_skips_issue_level_and_non_rating_documents() -> None:
     assert result.records[0].subject_name == "THE KHABAROVSK KRAI"
 
 
+def test_parser_skips_unsupported_non_national_and_multi_target_actions() -> None:
+    payload = _page(
+        (
+            "/press-releases/290/",
+            "ACRA AFFIRMS BB- TO INTERNATIONAL BANK, OUTLOOK STABLE",
+            "16 Jun 2026",
+        ),
+        (
+            "/press-releases/291/",
+            (
+                "ACRA AFFIRMS AAA(RU) TO FIRST ISSUER AND "
+                "AA(RU) TO SECOND ISSUER"
+            ),
+            "16 Jun 2026",
+        ),
+        (
+            "/press-releases/292/",
+            "ACRA AFFIRMS A(RU) TO SUPPORTED ISSUER, OUTLOOK STABLE",
+            "16 Jun 2026",
+        ),
+    )
+
+    result = parse_acra_issuer_rating_actions_html(payload, retrieved_at=NOW)
+
+    assert len(result.records) == 1
+    assert result.records[0].subject_name == "SUPPORTED ISSUER"
+
+
 def test_parser_rejects_unrecognized_issuer_action_shape() -> None:
     payload = _page(
         (
             "/press-releases/300/",
-            "ACRA AFFIRMS SOME COMPLEX RATING ACTION",
+            "ACRA AFFIRMS A(RU) TO",
             "16 Jun 2026",
         ),
     )
