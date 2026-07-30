@@ -52,6 +52,7 @@
 - `architecture/MOEX_ISS_TQBR_QUOTE_CACHE_V1.md` — exact TQBR+SECID cache, two-clock freshness, single-flight refresh and no-silent-stale policy.
 - `architecture/MOEX_ISS_TQBR_QUOTE_OBSERVABILITY_V1.md` — pure allowlisted source/cache telemetry without price, SECID, account or upstream payload.
 - `architecture/MOEX_ISS_TQBR_QUOTE_ALERT_POLICY_V1.md` — bounded global-only operational thresholds, cooldown, recovery and forged-event rejection without financial thresholds or outbound transport.
+- `architecture/MOEX_ISS_TQBR_QUOTE_OPERATIONS_LIFECYCLE_V1.md` — deterministic PR-91/92 composition and bounded fired/recovered global evidence with safe sink ordering.
 
 ### Operations
 

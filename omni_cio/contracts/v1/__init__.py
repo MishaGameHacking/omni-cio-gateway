@@ -80,6 +80,7 @@ from omni_cio.contracts.v1.moex import (
 from omni_cio.contracts.v1.moex_alerting import (
     MoexQuoteAlertDisposition,
     MoexQuoteAlertEvaluationV1,
+    MoexQuoteAlertEvidenceV1,
     MoexQuoteAlertKind,
     MoexQuoteAlertPolicyV1,
 )
@@ -264,6 +265,7 @@ __all__ = [
     "MoexIssTqbrQuoteSnapshotV1",
     "MoexQuoteAlertDisposition",
     "MoexQuoteAlertEvaluationV1",
+    "MoexQuoteAlertEvidenceV1",
     "MoexQuoteAlertKind",
     "MoexQuoteAlertPolicyV1",
     "MoexQuoteCacheErrorCode",

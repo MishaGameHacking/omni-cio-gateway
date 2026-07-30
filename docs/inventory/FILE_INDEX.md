@@ -18,7 +18,7 @@
 | `omni_cio/contracts/v1/macro.py` | PR-84/85 key-rate source and explicit cache result contracts |
 | `omni_cio/contracts/v1/alerting.py` | PR-87/88 CBR alert policy, evaluation and evidence contracts |
 | `omni_cio/contracts/v1/moex.py` | PR-89/90 MOEX ISS TQBR source and explicit cache result contracts |
-| `omni_cio/contracts/v1/moex_alerting.py` | PR-92 global-only MOEX operational alert policy/evaluation contracts |
+| `omni_cio/contracts/v1/moex_alerting.py` | PR-92/93 global MOEX alert policy, evaluation and fired/recovered evidence contracts |
 | `omni_cio/market/` | Market, capacity, bond, equity, fund and technical analysis |
 | `omni_cio/market/cbr_key_rate_v1.py` | PR-84 fixed official Bank of Russia SOAP source, bounded streaming and protected XML parsing |
 | `omni_cio/market/cbr_key_rate_cache_v1.py` | PR-85 exact-range bounded cache, single-flight refresh and explicit fresh/stale/unavailable lifecycle |
@@ -30,6 +30,7 @@
 | `omni_cio/observability/cbr_key_rate_operations_lifecycle_v1.py` | PR-88 deterministic event/evaluation/evidence composition and bounded safe sink handoff |
 | `omni_cio/observability/moex_iss_quote_events_v1.py` | PR-91 pure MOEX source/cache status builders without price, SECID, account or upstream payload |
 | `omni_cio/observability/moex_iss_quote_alert_policy_v1.py` | PR-92 canonical-event gate and bounded global operational alert state machine |
+| `omni_cio/observability/moex_iss_quote_operations_lifecycle_v1.py` | PR-93 deterministic event/evaluation/evidence composition and bounded safe sink handoff |
 | `omni_cio/release/final_decision_review_route_v1.py` | Production private GET route and safe handler boundary |
 | `omni_cio/release/final_decision_review_publisher_v1.py` | Trusted process-local exact-source publisher |
 | `omni_cio/release/final_decision_review_orchestration_v1.py` | PR-53…PR-63 composition and first-blocker handling |
@@ -87,6 +88,8 @@
 | `tests/test_moex_iss_quote_observability_exports_v1.py` | PR-91 observability package export compatibility |
 | `tests/test_moex_iss_quote_alert_policy_v1.py` | PR-92 canonical gate, global thresholds, cooldown, recovery, retention, concurrency and privacy |
 | `tests/test_moex_iss_quote_alert_policy_exports_v1.py` | PR-92 versioned contract and observability-package export compatibility |
+| `tests/test_moex_iss_quote_operations_lifecycle_v1.py` | PR-93 fired/recovered evidence, sink ordering, retention, eviction, concurrency and privacy |
+| `tests/test_moex_iss_quote_operations_lifecycle_exports_v1.py` | PR-93 contract and observability-package export compatibility |
 | `tests/test_portfolio_market_snapshot.py` | Рыночная оценка портфеля |
 | `tests/test_portfolio_analytics.py` | Структура и концентрация |
 | `tests/test_cash_liquidity.py` | Деньги и лимиты |
@@ -122,6 +125,7 @@
 | `docs/architecture/MOEX_ISS_TQBR_QUOTE_CACHE_V1.md` | PR-90 exact identity cache, two-clock freshness and no-silent-stale policy |
 | `docs/architecture/MOEX_ISS_TQBR_QUOTE_OBSERVABILITY_V1.md` | PR-91 pure status telemetry without price, SECID, account or upstream payload |
 | `docs/architecture/MOEX_ISS_TQBR_QUOTE_ALERT_POLICY_V1.md` | PR-92 global operational alert state without financial thresholds or external transport |
+| `docs/architecture/MOEX_ISS_TQBR_QUOTE_OPERATIONS_LIFECYCLE_V1.md` | PR-93 deterministic global fired/recovered evidence lifecycle |
 | `gpt/MY_GPT_SETUP_RUNBOOK.md` | Точная настройка ChatGPT → My GPTs, Actions, Preview и rollback |
 | `docs/operations/RELEASE_CHECKLIST.md` | Pre-merge, production and evidence checklist |
 
