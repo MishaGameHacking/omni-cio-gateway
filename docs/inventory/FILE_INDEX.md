@@ -33,11 +33,11 @@
 | `omni_cio/release/final_decision_review_workflow_coordinator_v1.py` | Source-evidence, freshness, account and direction coordinator before PR-66 |
 | `omni_cio/release/final_decision_review_source_acquisition_v1.py` | Four typed loader ports, safe outcome mapping and exact PR-67 handoff |
 | `omni_cio/release/final_decision_review_production_sources_v1.py` | Atomic scenario source store, live current-risk loader and PR-68 production wiring |
-| `omni_cio/release/final_decision_review_production_registration_v1.py` | Lazy production runtime registration with shared stores, PR-79/PR-80 boundaries and PR-81 context capture |
+| `omni_cio/release/final_decision_review_production_registration_v1.py` | Lazy production runtime registration with shared stores, PR-79/PR-80 boundaries, PR-81 context capture and PR-82 snapshot store |
 | `omni_cio/release/final_decision_review_trusted_scenario_publisher_v1.py` | Exact typed gate/risk trust boundary, masked-account parity, freshness and atomic publication |
 | `omni_cio/release/final_decision_review_calculator_handoff_v1.py` | PR-72 typed purchase/sell preview handoff into the canonical publisher |
 | `omni_cio/release/final_decision_review_calculator_intent_workflow_v1.py` | PR-73 exact capacity-intent gate construction before handoff |
-| `omni_cio/release/final_decision_review_approved_invocation_v1.py` | PR-74 allowlisted, freshness-checked and replay-safe invocation boundary |
+| `omni_cio/release/final_decision_review_approved_invocation_v1.py` | PR-74 allowlisted, freshness/replay-safe invocation and post-success PR-82 snapshot capture |
 | `omni_cio/release/final_decision_review_calculator_provider_registry_v1.py` | PR-75 fixed typed calculator-provider registry |
 | `omni_cio/release/final_decision_review_existing_calculator_providers_v1.py` | PR-76 adapters from existing read-only calculator owners |
 | `omni_cio/release/final_decision_review_production_owner_callables_v1.py` | PR-77 scenario-scoped fixed provider owner routing |
@@ -45,6 +45,7 @@
 | `omni_cio/release/final_decision_review_approved_owner_acquisition_v1.py` | PR-79 server-context acquisition, exact fresh owner leases, account binding and safe unavailable mapping |
 | `omni_cio/release/final_decision_review_approved_owner_installation_v1.py` | PR-80 exact typed PR-78 owner-port installation into one PR-79 acquisition call |
 | `omni_cio/release/final_decision_review_authenticated_route_context_v1.py` | PR-81 trusted seed, post-Bearer approved context derivation and bounded 300-second capture store |
+| `omni_cio/release/final_decision_review_approved_owner_snapshots_v1.py` | PR-82 exact typed post-invocation snapshot store and fresh authenticated owner-port rebinding |
 
 ## Конфигурация
 
@@ -85,6 +86,7 @@
 | `tests/test_final_decision_review_approved_owner_acquisition_v1.py` | PR-79 context/source freshness, selection, account binding and safe unavailable behavior |
 | `tests/test_final_decision_review_approved_owner_installation_v1.py` | PR-80 concrete typed installation, direction isolation, stale context and startup laziness |
 | `tests/test_final_decision_review_authenticated_route_context_v1.py` | PR-81 seed derivation, auth-negative guard, exact 200 capture, TTL/eviction, stale compatibility and 14-GET invariance |
+| `tests/test_final_decision_review_approved_owner_snapshots_v1.py` | PR-82 post-success capture, exact identity selection, fresh request rebinding, expiry and startup laziness |
 | `tests/test_portfolio_market_snapshot.py` | Рыночная оценка портфеля |
 | `tests/test_portfolio_analytics.py` | Структура и концентрация |
 | `tests/test_cash_liquidity.py` | Деньги и лимиты |
@@ -127,6 +129,7 @@
 | `docs/architecture/FINAL_DECISION_REVIEW_TRUSTED_SCENARIO_PUBLICATION_V1.md` | Typed calculator-to-store trust boundary, exact parity, lifecycle, safety and rollback |
 | `docs/architecture/FINAL_DECISION_REVIEW_APPROVED_OWNER_INSTALLATION_V1.md` | PR-80 typed owner installation, failure behavior, production boundary and rollback |
 | `docs/architecture/FINAL_DECISION_REVIEW_AUTHENTICATED_ROUTE_CONTEXT_V1.md` | PR-81 trusted context seed, post-auth derivation, bounded capture, compatibility and rollback |
+| `docs/architecture/FINAL_DECISION_REVIEW_APPROVED_OWNER_SNAPSHOTS_V1.md` | PR-82 typed snapshot capture, identity selection, fresh rebinding and next route-invocation gap |
 | `gpt/MY_GPT_SETUP_RUNBOOK.md` | Точная настройка ChatGPT → My GPTs, Actions, Preview и rollback |
 | `gpt/` | Восстановление и настройка Custom GPT |
 | `docs/operations/TELEGRAM_REMOVAL_RUNBOOK.md` | Одноразовая внешняя очистка Telegram после merge |

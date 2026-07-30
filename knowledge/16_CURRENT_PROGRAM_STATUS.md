@@ -1,7 +1,7 @@
 # 16 — CURRENT PROGRAM STATUS
 
 Дата актуализации: 2026-07-30  
-Фактическая вершина программы после merge этого пакета: **PR-81**  
+Фактическая вершина программы после merge этого пакета: **PR-82**  
 Точная версия определяется текущей вершиной ветки `main`.
 
 ## Назначение документа
@@ -17,7 +17,7 @@
 - PR-105 удалил неэкспортируемый duplicate PR-71 publisher path и закрыл issue #97; trusted scenario publisher остаётся каноническим.
 - `docs/master-plan/` сохраняет точную пользовательскую спецификацию, текстовую копию и иерархию источников.
 - `gpt/MY_GPT_SETUP_RUNBOOK.md` фиксирует текущую официальную настройку My GPTs/Actions.
-- Maintenance-пакеты не заменяют функциональные PR-79, PR-80 и PR-81.
+- Maintenance-пакеты не заменяют функциональные PR-79…PR-82.
 
 ## Неизменяемые границы
 
@@ -81,7 +81,8 @@ walk-forward/OOS stability и market-capacity gating.
 - **PR-78:** trusted one-shot composition with explicit pro-forma scenario binding;
 - **PR-79:** approved server-context acquisition of exact fresh owner leases before PR-78;
 - **PR-80:** concrete one-shot installation of existing typed owner ports into PR-79;
-- **PR-81:** authenticated route lifecycle for exact approved server-context derivation and bounded capture.
+- **PR-81:** authenticated route lifecycle for exact approved server-context derivation and bounded capture;
+- **PR-82:** exact typed owner snapshots captured after approved calculation and rebound to a fresh authenticated server invocation.
 
 ## PR-78 — trusted production owner composition v1
 
@@ -188,46 +189,83 @@ A missing or stale seed does not fabricate context and does not expose exception
 text. Legacy reviewed responses without a seed remain readable, so PR-81 does
 not silently change the existing compact GET contract.
 
-### Compatibility and safety
+## PR-82 — approved owner snapshot lifecycle v1
 
-- Gateway version remains `3.10.0`;
-- production OpenAPI remains exactly 14 authenticated GET Actions;
-- no route, operation ID, query/header/response field or request body is added;
-- no credentials or full account IDs are retained;
-- no broker or financial owner call is performed during context creation;
-- no broker write method is added;
-- `app:app` remains stable;
+PR-82 closes the data-retention gap between a successful allowlisted calculator
+invocation and the later authenticated route request without reconstructing a
+`DecisionSetV1` from HTTP fields.
+
+### Capture boundary
+
+Snapshot is created only after PR-74 successfully publishes one trusted
+purchase or sell scenario. It retains process-local typed objects:
+
+- exact `DecisionSetV1`;
+- `CapacityIntentDecisionGateRequestV1`;
+- exact `CapacityAssessmentV1` rows;
+- explicit `ProFormaRiskScenarioV1`;
+- purchase or sell preview rows;
+- scenario ID, trusted correlation, operation and masked account.
+
+Capture validates publication direction/account/timestamps, capacity-request
+identity, preview coverage and account binding. Failure prevents snapshot
+publication and does not consume the invocation replay ID.
+
+### Fresh authenticated rebinding
+
+Original calculator invocation ID is never reused. `select(context)` resolves
+only this key:
+
+```text
+scenario_id + trusted correlation_id + operation + masked account
+```
+
+The selected typed data is rebound to `context.invocation_request()`. Every
+new owner callable rejects any other request. Missing, expired, stale or
+mismatched snapshots fail closed and do not fabricate owners.
+
+### Runtime and privacy
+
+- process-local bounded store, default TTL 300 seconds and capacity 64;
+- expiry cannot exceed explicit pro-forma scenario freshness;
+- restart clears all snapshots;
+- startup snapshot count equals zero;
+- no raw Action body, credentials, full account ID or dynamic provider input;
+- no broker/network/portfolio call during registration or selection;
+- no HTTP/OpenAPI change;
+- no broker write method;
+- `app:app` and exactly 14 GET Actions remain unchanged;
 - `trading_methods=false`.
 
 ## Remaining production boundary
 
-PR-81 creates and captures the exact authenticated context, but intentionally
-does not select financial owners and does not invoke PR-80. The next reviewed
-package must, inside the same server-owned lifecycle:
+PR-82 provides exact typed owners for one fresh authenticated context, but
+intentionally does not invoke PR-80 from the route. The next reviewed package
+must, inside the existing server-owned post-auth lifecycle:
 
-- consume one fresh captured/just-created approved context;
-- select only already-existing typed Decision Engine, exact intent, capacity,
-  explicit post-change scenario and directional preview owner ports;
+- select one fresh PR-82 snapshot for the just-created approved context;
+- choose purchase or sell owners only from context operation;
 - invoke PR-80 once;
+- retain safe internal acquisition evidence without changing the compact response;
 - preserve exact scenario/correlation/operation/account identity;
-- return the existing safe `503` when any owner is missing, stale or mismatched;
+- keep the current response and fail-closed behavior when snapshot or owner evidence is unavailable;
 - avoid raw Action calculator values, credentials, full account IDs and dynamic provider selection.
 
-No autonomous trading is enabled. Owner-callable and final-review registries
-remain empty after restart.
+No autonomous trading is enabled. Owner-callable, snapshot and final-review
+registries remain empty after restart.
 
 ## Production acceptance state
 
 PR-64 still requires eight real evidence cases: Render commit, health,
 auth-negative, exact-route-positive, GPT schema import, authenticated Preview,
 Action-list inspection and rollback restore. None may be marked passed solely
-because PR-81 CI is green.
+because PR-82 CI is green.
 
 ## Что остаётся до полного релиза
 
 ### Backend and release acceptance
 
-- exact production selection of the existing typed owner ports and PR-80 invocation in the authenticated lifecycle;
+- invoke PR-80 once from the authenticated lifecycle using one exact PR-82 snapshot;
 - actual Render/Gateway acceptance and evidence recording;
 - actual GPT Editor import and authenticated Preview;
 - production-grade live ingestion for market, ratings, news and corporate events;
@@ -250,15 +288,15 @@ partial-fill и timeout reconciliation требуют отдельной про�
 решения владельца. Полностью автономная торговля без подтверждения не
 планируется.
 
-## Следующий пакет после PR-81
+## Следующий пакет после PR-82
 
 Следующий номер не назначается автоматически. Ближайший доказанный gap:
 
-- связать свежий approved context с точным existing typed owner bundle;
-- выбрать purchase или sell owners только по context operation;
-- вызвать PR-80 внутри server-owned lifecycle;
+- выбрать fresh snapshot только после authenticated server-context creation;
+- вызвать PR-80 one-shot installation для точного purchase/sell owner bundle;
+- сохранить безопасное внутреннее evidence и не менять compact GET response;
+- сохранить штатный fail-closed outcome при любой недоступности, stale state или mismatch;
 - не принимать raw owner outputs, credentials, provider names или full account IDs из Action;
-- сохранить штатный `503` при любой недоступности, устаревании или mismatch;
 - не менять 14-GET OpenAPI surface.
 
 Production acceptance остаётся отдельным внешним блоком и не заменяется

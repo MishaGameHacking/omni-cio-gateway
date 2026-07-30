@@ -41,6 +41,7 @@
 - `architecture/FINAL_DECISION_REVIEW_APPROVED_OWNER_ACQUISITION_V1.md` — server-derived context, exact fresh owner leases, PR-78 invocation and existing 503 mapping.
 - `architecture/FINAL_DECISION_REVIEW_APPROVED_OWNER_INSTALLATION_V1.md` — exact typed PR-78 owner-port installation into one PR-79 acquisition call, failure behavior and rollback.
 - `architecture/FINAL_DECISION_REVIEW_AUTHENTICATED_ROUTE_CONTEXT_V1.md` — trusted publication seed, existing Bearer gate, exact approved context, bounded capture and rollback.
+- `architecture/FINAL_DECISION_REVIEW_APPROVED_OWNER_SNAPSHOTS_V1.md` — post-invocation typed snapshots, exact identity selection and safe rebinding to a fresh authenticated server invocation.
 
 ### Operations
 
