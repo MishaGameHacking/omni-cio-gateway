@@ -1,7 +1,7 @@
 # 16 — CURRENT PROGRAM STATUS
 
 Дата актуализации: 2026-07-30  
-Фактическая вершина программы после merge этого пакета: **PR-87**  
+Фактическая вершина программы после merge этого пакета: **PR-88**  
 Точная версия определяется текущей вершиной ветки `main`.
 
 ## Назначение документа
@@ -39,7 +39,9 @@
 - **PR-86:** allowlisted source/cache observability events without key-rate,
   date-range, XML, account or upstream exception payloads;
 - **PR-87:** bounded CBR alert-policy evaluator with consecutive thresholds,
-  deduplication, cooldown, recovery and retention/capacity guards.
+  deduplication, cooldown, recovery and retention/capacity guards;
+- **PR-88:** deterministic typed source/cache event → evaluation → bounded
+  fired/recovered evidence lifecycle with safe sink handoff.
 
 ## PR-81…PR-83 authenticated owner lifecycle
 
@@ -119,15 +121,8 @@ value and date range are never metrics or event fields.
 PR-87 evaluates only the allowlisted PR-86 source/cache events. It does not
 inspect the key-rate value and does not send notifications.
 
-### Alert conditions
-
-- official source unavailable;
-- cache unavailable;
-- stale value explicitly exposed;
-- refresh failed while a still-fresh cached snapshot remained usable.
-
-### State and deduplication
-
+- conditions: source unavailable, cache unavailable, explicit stale exposure and
+  refresh failure while fresh cached data remains usable;
 - immutable typed policy/evaluation contracts;
 - consecutive status/count thresholds only, never financial thresholds;
 - `pending`, `fired`, `suppressed_cooldown`, `recovered` and `ignored` states;
@@ -142,20 +137,59 @@ inspect the key-rate value and does not send notifications.
 Alert evaluations contain no rate, date range, XML, account, exception text,
 broker payload or trading authorization. `trading_methods=false` is immutable.
 
+## PR-88 CBR operations evidence lifecycle v1
+
+PR-88 composes already-produced typed PR-84/85 results with PR-86 and PR-87. It
+does not fetch the source or refresh the cache at import/startup.
+
+### Deterministic lifecycle
+
+1. accept one typed source snapshot or cache result;
+2. build one allowlisted PR-86 event;
+3. evaluate it using PR-87;
+4. persist only `fired` and `recovered` evidence;
+5. call the safe event sink first and evidence sinks second;
+6. return one immutable internal batch with a redacted sink-failure count.
+
+One lifecycle `RLock` is retained through state mutation and sink invocation so
+concurrent calls cannot reorder event/evidence emission relative to alert-state
+evaluation.
+
+### Evidence boundary
+
+`CbrKeyRateAlertEvidenceV1` stores only opaque IDs, timestamp, source event name,
+kind, severity, fired/recovered disposition, counters, threshold and safe error
+code. It cannot represent pending, ignored or cooldown-suppressed state.
+
+Defaults and bounds:
+
+- evidence retention 86400 seconds, allowed 60…604800;
+- evidence capacity 64, allowed 1…256;
+- oldest eviction, read/observe pruning and restart/clear behavior;
+- optional typed event/evidence sinks;
+- sink exceptions become only `sink_failure_count`, never exception text.
+
+No rate, date range, XML, account, money, broker payload, secret, exception text
+or trading authorization enters evidence. There is no automatic retry or
+outbound notification transport.
+
 ### Compatibility and safety
 
 - `app:app` remains unchanged;
 - exactly 14 authenticated GET Actions remain unchanged;
 - no route, request body, public response field or frontend component is added;
+- no source fetch/cache refresh during module import or application startup;
 - no T-Invest call or broker write method is added;
-- no dependency, secret, database or Render migration is required.
+- no dependency, secret, database or Render migration is required;
+- `trading_methods=false`.
 
 ## Frontend/owner discovery state
 
 Repository search did not find a registered existing frontend/dashboard owner
-for the key-rate field. PR-84…PR-87 therefore do not invent a duplicate UI or
-silently change an Action response. The deployed frontend source must first be
-located and registered before a UI binding package is safe.
+or production caller for the key-rate field. PR-84…PR-88 therefore do not invent
+a duplicate UI, silently change an Action response or start network calls. The
+existing source/caller must first be located and registered before production
+binding is safe.
 
 ## Production acceptance state
 
@@ -177,11 +211,12 @@ access has not supplied all required Render/GPT evidence.
 
 ### Backend and operations
 
-- connect exact PR-84/85 call sites to PR-86 event construction and PR-87
-  evaluation through a bounded internal evidence/emission lifecycle;
-- define retention and operator-facing runbook for fired/recovered evidence;
+- locate the exact existing CBR caller/owner and register PR-88 lazily without a
+  startup fetch or public API change;
+- define operator-facing runbook/retention acceptance for fired/recovered
+  evidence and any later external routing;
 - locate the exact existing macro/dashboard owner or frontend source, then bind
-  the PR-85 cache result with explicit fresh/stale/unavailable presentation;
+  the PR-85 result with explicit fresh/stale/unavailable presentation;
 - production-grade quote, rating, news and corporate-event ingestion;
 - actual Render/Gateway acceptance and evidence recording;
 - actual GPT Editor import and authenticated Preview;
@@ -203,24 +238,21 @@ Shadow, paper, preview и final-review инфраструктура не явл�
 switch, partial-fill и timeout reconciliation требуют отдельной программы
 допуска и решения владельца. Автономная торговля без подтверждения не включена.
 
-## Следующий пакет после PR-87
+## Следующий пакет после PR-88
 
-Ближайший независимый operations gap — внутренний bounded emission/evidence
-lifecycle над PR-84…PR-87:
+Production registration PR-88 разрешена только после обнаружения точного
+существующего CBR caller/owner. До этого ближайшие независимые безопасные блоки:
 
-- exact source/cache call sites;
-- deterministic event → evaluation order;
-- bounded process-local fired/recovered evidence;
-- explicit retention, pruning and restart-clear behavior;
-- safe logger/metrics handoff without rate, XML, account or exception payload;
-- no outbound notification transport and no public Action change.
+- production-grade MOEX quote source with provenance/freshness/fail-closed
+  contracts, without changing Actions;
+- operator runbook for PR-84…PR-88 evidence and recovery semantics;
+- continued frontend source discovery without creating a duplicate site.
 
-Frontend binding remains blocked until the existing source/owner is located.
 Production acceptance remains a separate mandatory external block and cannot be
 replaced by local tests.
 
 ## Запрет ложного завершения
 
-Проект не считается полностью завершённым только потому, что PR-87 слит или CI
+Проект не считается полностью завершённым только потому, что PR-88 слит или CI
 зелёный. Завершение разрешено объявлять только после всех согласованных пакетов,
 production acceptance и отдельной проверки полного Definition of Done.
