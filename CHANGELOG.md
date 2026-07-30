@@ -5,6 +5,11 @@
 ## [Unreleased]
 
 ### Added
+- End-to-end internal final-review orchestration, последовательно объединяющая PR-53
+  response/shadow, PR-54 eligibility, PR-55 Action shadow, PR-56 input binding,
+  PR-57 readiness, PR-58 route plan и PR-62 publication; первая заблокированная
+  стадия останавливает цепочку, production OpenAPI не изменяется и
+  `trading_methods=false` сохраняется.
 - Internal final-review publisher с exact plan/binding context, one-lock-per-registry
   concurrency, `published/replaced` semantics, bounded-capacity eviction accounting,
   TTL/restart behavior и safe `ObservabilityEventV1`; publisher не создаёт HTTP method,

@@ -23,6 +23,7 @@
 - `architecture/DECISIONS.md`
 - `architecture/FINAL_DECISION_REVIEW_PRODUCTION_ROUTE_V1.md` — private GET Action, bounded TTL registry, fail-closed HTTP and OpenAPI contract.
 - `architecture/FINAL_DECISION_REVIEW_PUBLISHER_V1.md` — internal exact-source publication, concurrency, replacement, eviction and safe observability.
+- `architecture/FINAL_DECISION_REVIEW_ORCHESTRATION_V1.md` — end-to-end PR-53…PR-62 composition, first-blocker semantics and unchanged production OpenAPI.
 
 ### Operations
 
