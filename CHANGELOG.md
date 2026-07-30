@@ -5,6 +5,7 @@
 ## [Unreleased]
 
 ### Added
+- Approved server-side final-review owner acquisition with immutable masked context, exact fresh Decision/intent/capacity/pro-forma/directional owner leases, account-bound PR-78 invocation, fixed fail-closed production startup and reuse of the existing `FINAL_REVIEW_SOURCE_UNAVAILABLE` / HTTP 503 outcome; no Action, raw payload, credential, broker write or OpenAPI change is added.
 - Canonical `docs/master-plan/` with the exact Omni-CIO master-prompt v9 PDF,
   SHA-256 provenance, text-search copy and an explicit source-precedence policy.
 - Official-source `gpt/MY_GPT_SETUP_RUNBOOK.md` for ChatGPT → My GPTs,
