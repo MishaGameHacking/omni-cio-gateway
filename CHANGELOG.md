@@ -5,6 +5,10 @@
 ## [Unreleased]
 
 ### Added
+- Canonical `docs/master-plan/` with the exact Omni-CIO master-prompt v9 PDF,
+  SHA-256 provenance, text-search copy and an explicit source-precedence policy.
+- Official-source `gpt/MY_GPT_SETUP_RUNBOOK.md` for ChatGPT → My GPTs,
+  Bearer-authenticated Actions, Preview, private publishing and rollback.
 - Trusted internal scenario-source publisher accepting exactly one typed purchase/sell gate and
   one typed pro-forma risk evaluation with exact direction, instrument coverage, masked-account,
   timestamp, freshness and conservative-policy checks before atomic PR-69 store mutation;
@@ -147,9 +151,9 @@
 - Понятная шкала риска: зелёный, жёлтый, оранжевый, красный.
 - Разделение фактов, аналитических выводов и сценариев.
 - Правила умеренной нецензурной лексики без оскорбления пользователя и без подмены анализа эмоциями.
-- Отдельный стандарт Telegram-постов: короткие мобильные абзацы, главный вывод в начале, дата и источники.
+- Отдельный стандарт коротких мобильных сводок: главный вывод в начале, дата и источники.
 - Профиль знаний `knowledge/13_COMMUNICATION_STYLE_2026.txt`.
-- Компактный рабочий файл `gpt/INSTRUCTIONS_COMPACT.md`, рассчитанный на лимит 8000 символов GPT Editor.
+- Компактный рабочий файл `gpt/INSTRUCTIONS_COMPACT.md` для проверенной конфигурации GPT Editor.
 
 ### Removed
 - Duplicate PR-71 calculator publisher/registration implementation, its isolated tests and
@@ -162,6 +166,14 @@
   Regression Shield.
 
 ### Changed
+- Active Custom GPT instructions, configuration and communication profile no longer contain
+  retired Telegram-post behavior; transport history remains only in retirement documentation.
+- GPT configuration now records backend `v3.10.0`, exactly 14 GET Actions and current
+  official OpenAI setup constraints without an unsupported hard-coded editor limit.
+- Project entrypoints, status, inventory and repository policy now require the canonical
+  master plan and distinguish completed PR-78 work from the next PR-79 package.
+- Dependency audit confirms the minimal hash-locked runtime set; version upgrades remain
+  isolated dependency PRs.
 - Render и GitHub Actions устанавливают зависимости только с
   `--require-hashes`.
 - Все внешние GitHub Actions закреплены полными commit SHA.
