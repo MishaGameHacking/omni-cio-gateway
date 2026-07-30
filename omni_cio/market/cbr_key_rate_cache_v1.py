@@ -120,6 +120,15 @@ class CbrKeyRateCacheV1:
     def capacity(self) -> int:
         return self._capacity
 
+    def _prune(self, checked_at: datetime) -> None:
+        expired = [
+            key
+            for key, entry in self._entries.items()
+            if checked_at >= entry.stale_until
+        ]
+        for key in expired:
+            self._entries.pop(key, None)
+
     def _entry_for(
         self,
         key: CacheKeyV1,
@@ -153,6 +162,9 @@ class CbrKeyRateCacheV1:
         checked_at: datetime,
         served_from_cache: bool,
         refresh_attempted: bool,
+        refresh_succeeded: bool,
+        source_error_code: MacroDataErrorCode | None = None,
+        cache_error_code: MacroCacheErrorCode | None = None,
     ) -> CbrKeyRateCacheResultV1:
         return CbrKeyRateCacheResultV1(
             requested_from=key[0],
@@ -167,7 +179,9 @@ class CbrKeyRateCacheV1:
             stale_available=False,
             stale_value_exposed=False,
             refresh_attempted=refresh_attempted,
-            refresh_succeeded=refresh_attempted,
+            refresh_succeeded=refresh_succeeded,
+            source_error_code=source_error_code,
+            cache_error_code=cache_error_code,
             display_value_allowed=True,
         )
 
@@ -181,6 +195,17 @@ class CbrKeyRateCacheV1:
         source_error_code: MacroDataErrorCode | None,
         cache_error_code: MacroCacheErrorCode,
     ) -> CbrKeyRateCacheResultV1:
+        if entry is not None and checked_at < entry.fresh_until:
+            return self._fresh_result(
+                key=key,
+                entry=entry,
+                checked_at=checked_at,
+                served_from_cache=True,
+                refresh_attempted=True,
+                refresh_succeeded=False,
+                source_error_code=source_error_code,
+                cache_error_code=cache_error_code,
+            )
         stale_available = entry is not None and checked_at < entry.stale_until
         if stale_available and allow_stale and entry is not None:
             return CbrKeyRateCacheResultV1(
@@ -241,6 +266,7 @@ class CbrKeyRateCacheV1:
             raise CbrKeyRateCacheError("CBR_KEY_RATE_CACHE_FLAG_INVALID")
 
         with self._lock:
+            self._prune(now)
             entry = self._entry_for(key)
             if entry is not None and now < entry.fresh_until and not force_refresh:
                 return self._fresh_result(
@@ -249,6 +275,7 @@ class CbrKeyRateCacheV1:
                     checked_at=now,
                     served_from_cache=True,
                     refresh_attempted=False,
+                    refresh_succeeded=False,
                 )
 
             try:
@@ -319,7 +346,11 @@ class CbrKeyRateCacheV1:
                     checked_at=now,
                     served_from_cache=False,
                     refresh_attempted=True,
+                    refresh_succeeded=True,
                 )
+            if now >= refreshed.stale_until:
+                self._entries.pop(key, None)
+                refreshed = None
             return self._stale_or_unavailable_result(
                 key=key,
                 entry=refreshed,
@@ -329,8 +360,10 @@ class CbrKeyRateCacheV1:
                 cache_error_code=MacroCacheErrorCode.REFRESH_STALE,
             )
 
-    def active_entry_count(self) -> int:
+    def active_entry_count(self, *, checked_at: datetime | None = None) -> int:
+        now = _aware_utc(checked_at)
         with self._lock:
+            self._prune(now)
             return len(self._entries)
 
     def clear(self) -> None:
