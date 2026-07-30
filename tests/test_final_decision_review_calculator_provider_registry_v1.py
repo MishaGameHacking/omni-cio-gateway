@@ -86,7 +86,10 @@ class _FakeInvocation(FinalDecisionReviewApprovedInvocationV1):
         self.purchase_calls = 0
         self.sell_calls = 0
 
-    def invoke_purchase(self, **kwargs: Any) -> ApprovedCalculatorInvocationResultV1:  # type: ignore[override]
+    def invoke_purchase(
+        self,
+        **kwargs: Any,
+    ) -> ApprovedCalculatorInvocationResultV1:  # type: ignore[override]
         self.purchase_calls += 1
         request = cast(ApprovedCalculatorInvocationRequestV1, kwargs["request"])
         return ApprovedCalculatorInvocationResultV1(
@@ -97,7 +100,10 @@ class _FakeInvocation(FinalDecisionReviewApprovedInvocationV1):
             preview_count=1,
         )
 
-    def invoke_sell(self, **kwargs: Any) -> ApprovedCalculatorInvocationResultV1:  # type: ignore[override]
+    def invoke_sell(
+        self,
+        **kwargs: Any,
+    ) -> ApprovedCalculatorInvocationResultV1:  # type: ignore[override]
         self.sell_calls += 1
         request = cast(ApprovedCalculatorInvocationRequestV1, kwargs["request"])
         return ApprovedCalculatorInvocationResultV1(
@@ -132,9 +138,15 @@ def _bundle(
     )
 
 
-def _registry() -> tuple[FinalDecisionReviewCalculatorProviderRegistryV1, _FakeInvocation]:
+def _registry() -> tuple[
+    FinalDecisionReviewCalculatorProviderRegistryV1,
+    _FakeInvocation,
+]:
     invocation = _FakeInvocation()
-    return FinalDecisionReviewCalculatorProviderRegistryV1(invocation=invocation), invocation
+    registry = FinalDecisionReviewCalculatorProviderRegistryV1(
+        invocation=invocation,
+    )
+    return registry, invocation
 
 
 def test_registered_purchase_provider_invokes_approved_boundary_once() -> None:
@@ -142,7 +154,9 @@ def test_registered_purchase_provider_invokes_approved_boundary_once() -> None:
     request = _request(ApprovedCalculatorOperation.PURCHASE_REVIEW)
     provider_calls = 0
 
-    def provider(_: ApprovedCalculatorInvocationRequestV1) -> ApprovedCalculatorProviderBundleV1:
+    def provider(
+        _: ApprovedCalculatorInvocationRequestV1,
+    ) -> ApprovedCalculatorProviderBundleV1:
         nonlocal provider_calls
         provider_calls += 1
         return _bundle(purchase=True)
@@ -171,7 +185,11 @@ def test_registry_rejects_unknown_and_duplicate_provider() -> None:
         FinalDecisionReviewCalculatorProviderRegistryError,
         match="FINAL_DECISION_REVIEW_PROVIDER_NOT_REGISTERED",
     ):
-        registry.invoke(provider_id="provider:missing", request=request, completed_at=NOW)
+        registry.invoke(
+            provider_id="provider:missing",
+            request=request,
+            completed_at=NOW,
+        )
 
     provider = lambda _: _bundle(purchase=True)
     registry.register(
@@ -194,10 +212,22 @@ def test_registry_rejects_unknown_and_duplicate_provider() -> None:
 def test_context_and_direction_mismatches_fail_before_invocation() -> None:
     registry, invocation = _registry()
     request = _request(ApprovedCalculatorOperation.PURCHASE_REVIEW)
-    cases = (
-        ("provider:scenario", lambda _: _bundle(purchase=True, scenario_id="scenario:other"), "SCENARIO_MISMATCH"),
-        ("provider:correlation", lambda _: _bundle(purchase=True, correlation_id="corr:other"), "CORRELATION_MISMATCH"),
-        ("provider:direction", lambda _: _bundle(purchase=False), "DIRECTION_MISMATCH"),
+    cases: tuple[tuple[str, Any, str], ...] = (
+        (
+            "provider:scenario",
+            lambda _: _bundle(purchase=True, scenario_id="scenario:other"),
+            "SCENARIO_MISMATCH",
+        ),
+        (
+            "provider:correlation",
+            lambda _: _bundle(purchase=True, correlation_id="corr:other"),
+            "CORRELATION_MISMATCH",
+        ),
+        (
+            "provider:direction",
+            lambda _: _bundle(purchase=False),
+            "DIRECTION_MISMATCH",
+        ),
     )
     for provider_id, provider, error in cases:
         registry.register(
@@ -205,8 +235,15 @@ def test_context_and_direction_mismatches_fail_before_invocation() -> None:
             operation=ApprovedCalculatorOperation.PURCHASE_REVIEW,
             provider=provider,
         )
-        with pytest.raises(FinalDecisionReviewCalculatorProviderRegistryError, match=error):
-            registry.invoke(provider_id=provider_id, request=request, completed_at=NOW)
+        with pytest.raises(
+            FinalDecisionReviewCalculatorProviderRegistryError,
+            match=error,
+        ):
+            registry.invoke(
+                provider_id=provider_id,
+                request=request,
+                completed_at=NOW,
+            )
     assert invocation.purchase_calls == 0
 
 
@@ -214,18 +251,26 @@ def test_stale_future_exception_and_raw_output_fail_closed() -> None:
     registry, invocation = _registry()
     request = _request(ApprovedCalculatorOperation.PURCHASE_REVIEW)
 
-    def failed(_: ApprovedCalculatorInvocationRequestV1) -> ApprovedCalculatorProviderBundleV1:
+    def failed(
+        _: ApprovedCalculatorInvocationRequestV1,
+    ) -> ApprovedCalculatorProviderBundleV1:
         raise RuntimeError("sensitive provider detail")
 
     providers: tuple[tuple[str, Any, str], ...] = (
         (
             "provider:stale",
-            lambda _: _bundle(purchase=True, built_at=NOW - timedelta(seconds=301)),
+            lambda _: _bundle(
+                purchase=True,
+                built_at=NOW - timedelta(seconds=301),
+            ),
             "BUNDLE_STALE",
         ),
         (
             "provider:future",
-            lambda _: _bundle(purchase=True, built_at=NOW + timedelta(seconds=31)),
+            lambda _: _bundle(
+                purchase=True,
+                built_at=NOW + timedelta(seconds=31),
+            ),
             "BUNDLE_FROM_FUTURE",
         ),
         ("provider:failed", failed, "PROVIDER_CALL_FAILED"),
@@ -237,8 +282,15 @@ def test_stale_future_exception_and_raw_output_fail_closed() -> None:
             operation=ApprovedCalculatorOperation.PURCHASE_REVIEW,
             provider=provider,
         )
-        with pytest.raises(FinalDecisionReviewCalculatorProviderRegistryError, match=error):
-            registry.invoke(provider_id=provider_id, request=request, completed_at=NOW)
+        with pytest.raises(
+            FinalDecisionReviewCalculatorProviderRegistryError,
+            match=error,
+        ):
+            registry.invoke(
+                provider_id=provider_id,
+                request=request,
+                completed_at=NOW,
+            )
     assert invocation.purchase_calls == 0
 
 
