@@ -16,6 +16,9 @@ from omni_cio.release.final_decision_review_approved_owner_acquisition_v1 import
 from omni_cio.release.final_decision_review_approved_owner_installation_v1 import (
     FinalDecisionReviewApprovedOwnerInstallationV1,
 )
+from omni_cio.release.final_decision_review_approved_owner_snapshots_v1 import (
+    FinalDecisionReviewApprovedOwnerSnapshotStoreV1,
+)
 from omni_cio.release.final_decision_review_authenticated_route_context_v1 import (
     FinalDecisionReviewApprovedRouteContextStoreV1,
 )
@@ -65,6 +68,7 @@ class FinalDecisionReviewProductionRuntimeV1:
     scenario_publisher: FinalDecisionReviewTrustedScenarioPublisherV1
     calculator_handoff: FinalDecisionReviewCalculatorScenarioHandoffV1
     calculator_intent_workflow: FinalDecisionReviewCalculatorIntentWorkflowV1
+    approved_owner_snapshot_store: FinalDecisionReviewApprovedOwnerSnapshotStoreV1
     approved_invocation: FinalDecisionReviewApprovedInvocationV1
     provider_registry: FinalDecisionReviewCalculatorProviderRegistryV1
     owner_callable_store: FinalDecisionReviewProductionOwnerCallableStoreV1
@@ -81,6 +85,7 @@ class FinalDecisionReviewProductionRuntimeV1:
     internal_only: bool = True
     authenticated_route_context_capture_registered: bool = True
     startup_authenticated_context_count: int = 0
+    startup_approved_owner_snapshot_count: int = 0
     startup_broker_call_performed: bool = False
     startup_owner_installation_performed: bool = False
     startup_owner_acquisition_performed: bool = False
@@ -169,8 +174,15 @@ def register_final_decision_review_production_sources(
     calculator_intent_workflow = FinalDecisionReviewCalculatorIntentWorkflowV1(
         handoff=calculator_handoff,
     )
+    approved_owner_snapshot_store = (
+        FinalDecisionReviewApprovedOwnerSnapshotStoreV1(
+            ttl_seconds=300,
+            capacity=source_capacity,
+        )
+    )
     approved_invocation = FinalDecisionReviewApprovedInvocationV1(
         workflow=calculator_intent_workflow,
+        snapshot_store=approved_owner_snapshot_store,
     )
     provider_registry = FinalDecisionReviewCalculatorProviderRegistryV1(
         invocation=approved_invocation,
@@ -228,6 +240,7 @@ def register_final_decision_review_production_sources(
         scenario_publisher=scenario_publisher,
         calculator_handoff=calculator_handoff,
         calculator_intent_workflow=calculator_intent_workflow,
+        approved_owner_snapshot_store=approved_owner_snapshot_store,
         approved_invocation=approved_invocation,
         provider_registry=provider_registry,
         owner_callable_store=owner_callable_store,
