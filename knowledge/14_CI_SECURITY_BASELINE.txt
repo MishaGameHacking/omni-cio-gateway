@@ -112,3 +112,15 @@ User action
 PR-03 does not change Custom GPT Instructions, OpenAPI or Bearer
 authentication. No manual change in GPT Editor is required. After merge, the
 only operational check is the normal Render deploy and `/health` verification.
+
+Current dependency audit — 2026-07-30
+-------------------------------------
+- Direct runtime constraints remain limited to FastAPI, HTTPX, the private-registry
+  T-Bank SDK and Uvicorn standard extras.
+- Runtime and development locks remain exact and SHA-256 hash-locked.
+- No Telegram dependency or configuration is present.
+- `t-tech-investments==1.49.2` is resolved from the configured T-Bank package
+  index; an unrelated public PyPI project must never be used as a downgrade source.
+- Available FastAPI/Uvicorn updates and any pytest major transition require a
+  dedicated compatibility PR with regenerated locks and the full Regression Shield.
+- This governance package intentionally changes no dependency version.
