@@ -47,6 +47,7 @@
 - `architecture/CBR_KEY_RATE_CACHE_V1.md` — exact-range cache, explicit fresh/stale/unavailable states, single-flight refresh and no-silent-stale policy.
 - `architecture/CBR_KEY_RATE_OBSERVABILITY_V1.md` — allowlisted source/cache events with operational metadata only and no financial payload.
 - `architecture/CBR_KEY_RATE_ALERT_POLICY_V1.md` — bounded thresholds, pending/fired/recovered state, deduplication, cooldown and no outbound transport.
+- `architecture/CBR_KEY_RATE_OPERATIONS_LIFECYCLE_V1.md` — deterministic event/evaluation/evidence composition, bounded retention and safe sink handoff.
 
 ### Operations
 
@@ -100,4 +101,4 @@ Runtime и deployment contract удалены. Решение и запрет с
 ## Что не хранится в GitHub
 
 Секреты, реальные отчёты, полный номер счёта, пользовательские финансовые
-данные, сырой CBR XML, upstream fault text, process-local cache/alert state и финансовые значения в observability/alert payload не должны находиться в репозитории.
+данные, сырой CBR XML, upstream fault text, process-local cache/alert/evidence state и финансовые значения в observability/alert payload не должны находиться в репозитории.

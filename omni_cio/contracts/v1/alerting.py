@@ -13,6 +13,10 @@ from omni_cio.contracts.v1.observability import ObservabilitySeverity
 PositiveCount = Annotated[int, Field(ge=1, le=100)]
 NonNegativeSeconds = Annotated[int, Field(ge=0, le=604_800)]
 StateCapacity = Annotated[int, Field(ge=4, le=64)]
+EvidenceIdentifier = Annotated[
+    str,
+    Field(pattern=r"^[a-z][a-z0-9_.:-]{7,127}$"),
+]
 
 
 class CbrKeyRateAlertKind(StrEnum):
@@ -107,4 +111,43 @@ class CbrKeyRateAlertEvaluationV1(ContractModel):
             CbrKeyRateAlertDisposition.SUPPRESSED_COOLDOWN,
         ) and self.error_code is None:
             raise ValueError("fired or suppressed alert requires safe error code")
+        return self
+
+
+class CbrKeyRateAlertEvidenceV1(ContractModel):
+    evidence_id: EvidenceIdentifier
+    recorded_at: datetime
+    correlation_id: EvidenceIdentifier
+    source_event_name: Annotated[str, Field(min_length=3, max_length=128)]
+    disposition: CbrKeyRateAlertDisposition
+    kind: CbrKeyRateAlertKind
+    severity: ObservabilitySeverity
+    consecutive_occurrences: Annotated[int, Field(ge=1, le=1_000_000)]
+    threshold: PositiveCount
+    error_code: Annotated[
+        str | None,
+        Field(pattern=r"^[A-Z][A-Z0-9_]{2,63}$"),
+    ] = None
+    contains_sensitive_payload: Literal[False] = False
+    trading_methods: Literal[False] = False
+
+    @field_validator("recorded_at")
+    @classmethod
+    def require_aware_recorded_at(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("alert evidence timestamp must be timezone-aware")
+        return value.astimezone(timezone.utc)
+
+    @model_validator(mode="after")
+    def validate_evidence(self) -> CbrKeyRateAlertEvidenceV1:
+        if self.disposition not in (
+            CbrKeyRateAlertDisposition.FIRED,
+            CbrKeyRateAlertDisposition.RECOVERED,
+        ):
+            raise ValueError("alert evidence must represent fired or recovered state")
+        if self.disposition is CbrKeyRateAlertDisposition.FIRED:
+            if self.consecutive_occurrences < self.threshold:
+                raise ValueError("fired evidence must meet threshold")
+            if self.error_code is None:
+                raise ValueError("fired evidence requires safe error code")
         return self
