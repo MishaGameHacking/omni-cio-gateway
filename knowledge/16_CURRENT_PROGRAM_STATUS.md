@@ -1,7 +1,7 @@
 # 16 — CURRENT PROGRAM STATUS
 
 Дата актуализации: 2026-07-30  
-Фактическая вершина программы после merge этого пакета: **PR-62**  
+Фактическая вершина программы после merge этого пакета: **PR-63**  
 Точная версия определяется текущей вершиной ветки `main`.
 
 ## Назначение документа
@@ -56,75 +56,74 @@ ledger, walk-forward/OOS stability и market-capacity gating.
 - **PR-59:** route-handler shadow and safe observability;
 - **PR-60:** isolated FastAPI HTTP integration candidate;
 - **PR-61:** production private `GET /decision/final-review` and bounded TTL registry;
-- **PR-62:** trusted process-local publisher into that registry.
+- **PR-62:** trusted process-local publisher;
+- **PR-63:** end-to-end internal composition and fail-closed publication.
 
-## PR-62 — internal final-review publisher v1
+## PR-63 — end-to-end internal orchestration v1
 
-PR-62 adds an internal Python API only:
+PR-63 accepts an already formed `ProFormaRiskIntentBindingV1` and executes one ordered
+internal pipeline:
 
-```python
-publish_final_decision_review_source(
-    registry,
-    route_plan,
-    input_binding,
-    correlation_id=...,
-    request_id=...,
-    published_at=...,
-)
-```
+1. PR-53 compact response and shadow parity;
+2. PR-54 release eligibility;
+3. PR-55 Action/OpenAPI shadow;
+4. PR-56 exact query and input binding;
+5. PR-57 production-route readiness dossier;
+6. PR-58 implementation plan and acceptance matrix;
+7. PR-62 internal publication into the PR-61 registry.
 
-### Preconditions
+The first blocked stage stops the chain. Later artifacts remain absent and the registry is
+not mutated.
 
-Publication is rejected unless the route plan is ready and blocker-free, the binding is
-valid, and masked account, requested/final options, fingerprint, ordered instruments,
-count, query SHA-256, response SHA-256 and Action-candidate SHA-256 match exactly.
+### Production OpenAPI protection
 
-Trace identifiers and timezone-aware timestamps are validated before registry mutation.
+The current production schema is deep-copied. The existing PR-61 route must exactly match
+its reviewed method, operation ID, authentication, no-body contract and ordered eight query
+parameters. Only that route is removed from the copy before PR-55 candidate reconstruction.
+The actual production OpenAPI object and schema cache are never mutated.
 
-### Publication semantics
+### Result and safety
 
-- first exact context → `published`;
-- same active context → `replaced`;
-- another context beyond capacity → oldest-source eviction is counted;
-- expired source remains governed by PR-61 TTL;
-- a new process starts with an empty registry.
+`FinalDecisionReviewOrchestrationResultV1` reports:
 
-One publisher/lock is attached to each registry. Concurrent calls therefore share one
-atomic lookup/publish/count boundary.
+- `published` or `blocked`;
+- completed stage;
+- primary blocker;
+- contiguous intermediate artifacts;
+- publication result only after complete success.
 
-### Safe observability
+A validated no-action/`WAIT_FOR_DATA` response may be published. It remains a read-only
+abstention with `trade_authorized=false`, `order_created=false`,
+`execution_ready=false` and `trading_methods=false`.
 
-Publisher telemetry contains only correlation/request IDs, masked account and safe counts
-for active sources, eviction, replacement and instrument count. External-call status is
-always `not_called`.
+The orchestration:
 
-The publisher:
-
-- creates no HTTP endpoint;
+- creates no new HTTP route;
 - changes no production OpenAPI operation;
 - calls no broker;
-- recalculates no source values;
-- authorizes no trade or order;
-- preserves `trading_methods=false`.
+- recomputes no upstream financial source values;
+- authorizes no trade or order.
 
 ## Acceptance state
 
-### Eligible inside PR-62
+### Eligible inside PR-63
 
-- exact publication and replacement tests;
-- bounded-capacity eviction accounting;
-- concurrent publication semantics;
-- expiry and restart behavior;
-- fail-closed context, timestamp and trace validation;
-- safe publisher observability;
-- proof that production OpenAPI and HTTP method set are unchanged;
+- complete composition through authenticated production `200`;
+- safe no-action publication;
+- release-policy stop before Action construction;
+- production route substitution detection;
+- input-policy and readiness-control stops;
+- publication-trace stop with empty registry;
+- exact replacement on repeated orchestration;
+- unchanged production OpenAPI;
+- immutable result and timezone checks;
 - full Regression Shield and security gates.
 
 ### Must remain unexecuted until actual deployment
 
 - Render source-commit verification;
 - cache-busted `/health` verification;
-- live authenticated route call;
+- live authenticated route call against deployed commit;
 - GPT Editor OpenAPI import;
 - GPT Editor Preview;
 - post-import Action-list inspection;
@@ -132,9 +131,11 @@ The publisher:
 
 ## Что остаётся до полного релиза по мастер-плану
 
-### Backend и orchestration
+### Backend and release acceptance
 
-- end-to-end internal composition of PR-53 through PR-62 from validated read-only inputs;
+- versioned production-acceptance evidence contract and collector;
+- actual Render/Gateway post-deploy acceptance;
+- actual GPT Editor schema import and authenticated Preview;
 - production-grade live ingestion for market, ratings, news and corporate events;
 - external versioned RAG index with freshness and citation controls;
 - expanded observability, alerting and operational runbooks.
@@ -147,14 +148,6 @@ The publisher:
 - архив, сравнение периодов, расхождения, мобильный UI и обе темы;
 - проверить production site и интерактивные элементы.
 
-### Release acceptance
-
-- провести Render/Gateway post-deploy acceptance;
-- импортировать актуальную OpenAPI schema в GPT Editor;
-- выполнить authenticated GPT Preview;
-- провести end-to-end read-only acceptance на реальных, но не сохраняемых данных;
-- подтвердить rollback и incident procedures.
-
 ### Торговые этапы
 
 Shadow, paper и preview инфраструктура не являются разрешением на реальную торговлю.
@@ -164,17 +157,16 @@ reconciliation требуют отдельной программы допуск
 
 ## Следующий рекомендуемый пакет
 
-**PR-63 — final-review end-to-end internal orchestration composition v1**:
+**PR-64 — final-review production acceptance evidence contract v1**:
 
-- принимает только уже сформированный compact response и проверяемые release inputs;
-- последовательно строит eligibility, Action shadow, query binding, readiness dossier и
-  implementation plan;
-- публикует source через PR-62 только при полном прохождении всех gates;
-- возвращает fail-closed orchestration result с primary blocker;
+- вводит immutable evidence contract для Render commit, `/health`, live auth, exact route,
+  GPT Editor import/Preview, Action-list inspection и rollback;
+- различает `not_executed`, `passed`, `failed` и `not_applicable`;
+- не позволяет пометить acceptance выполненным без датированного доказательства;
+- маскирует secrets и account context;
+- не выполняет deployment или GPT Editor changes автоматически;
 - не добавляет HTTP endpoint и не меняет production OpenAPI;
-- не вызывает broker write methods;
-- сохраняет `trading_methods=false`;
-- не считает Render/GPT Preview acceptance выполненной заранее.
+- сохраняет `trading_methods=false`.
 
 ## Запрет ложного завершения
 
