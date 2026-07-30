@@ -24,6 +24,10 @@ from omni_cio.release.final_decision_review_approved_owner_acquisition_v1 import
     FinalDecisionReviewApprovedServerContextV1,
     unavailable_final_decision_review_approved_owner_source_loaders,
 )
+from omni_cio.release.final_decision_review_approved_owner_installation_v1 import (
+    FinalDecisionReviewApprovedOwnerInstallationError,
+    FinalDecisionReviewApprovedOwnerInstallationV1,
+)
 from omni_cio.release.final_decision_review_calculator_handoff_v1 import (
     FinalDecisionReviewCalculatorScenarioHandoffError,
     FinalDecisionReviewCalculatorScenarioHandoffV1,
@@ -164,6 +168,8 @@ __all__ = [
     "FinalDecisionReviewApprovedOwnerAcquisitionResultV1",
     "FinalDecisionReviewApprovedOwnerAcquisitionStatus",
     "FinalDecisionReviewApprovedOwnerAcquisitionV1",
+    "FinalDecisionReviewApprovedOwnerInstallationError",
+    "FinalDecisionReviewApprovedOwnerInstallationV1",
     "FinalDecisionReviewApprovedOwnerLeaseV1",
     "FinalDecisionReviewApprovedOwnerLoaderV1",
     "FinalDecisionReviewApprovedOwnerSourceEvidenceV1",
