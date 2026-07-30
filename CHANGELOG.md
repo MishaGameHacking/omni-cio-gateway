@@ -5,6 +5,10 @@
 ## [Unreleased]
 
 ### Added
+- Trusted internal scenario-source publisher accepting exactly one typed purchase/sell gate and
+  one typed pro-forma risk evaluation with exact direction, instrument coverage, masked-account,
+  timestamp, freshness and conservative-policy checks before atomic PR-69 store mutation;
+  raw payloads, credentials, public routes, broker writes and trading methods remain forbidden.
 - Production-facing final-review source wiring with an atomic bounded scenario bundle,
   existing portfolio-market → contract → analytics → conservative-risk current-risk loader,
   exact PR-68 acquisition ports, TTL/replacement/eviction lifecycle and fail-closed missing
