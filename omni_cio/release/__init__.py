@@ -28,6 +28,13 @@ from omni_cio.release.final_decision_review_approved_owner_installation_v1 impor
     FinalDecisionReviewApprovedOwnerInstallationError,
     FinalDecisionReviewApprovedOwnerInstallationV1,
 )
+from omni_cio.release.final_decision_review_approved_owner_snapshots_v1 import (
+    FinalDecisionReviewApprovedOwnerSnapshotBundleV1,
+    FinalDecisionReviewApprovedOwnerSnapshotCaptureV1,
+    FinalDecisionReviewApprovedOwnerSnapshotError,
+    FinalDecisionReviewApprovedOwnerSnapshotSelectionV1,
+    FinalDecisionReviewApprovedOwnerSnapshotStoreV1,
+)
 from omni_cio.release.final_decision_review_authenticated_route_context_v1 import (
     FinalDecisionReviewApprovedRouteContextCaptureV1,
     FinalDecisionReviewApprovedRouteContextSeedV1,
@@ -180,6 +187,11 @@ __all__ = [
     "FinalDecisionReviewApprovedOwnerInstallationV1",
     "FinalDecisionReviewApprovedOwnerLeaseV1",
     "FinalDecisionReviewApprovedOwnerLoaderV1",
+    "FinalDecisionReviewApprovedOwnerSnapshotBundleV1",
+    "FinalDecisionReviewApprovedOwnerSnapshotCaptureV1",
+    "FinalDecisionReviewApprovedOwnerSnapshotError",
+    "FinalDecisionReviewApprovedOwnerSnapshotSelectionV1",
+    "FinalDecisionReviewApprovedOwnerSnapshotStoreV1",
     "FinalDecisionReviewApprovedOwnerSourceEvidenceV1",
     "FinalDecisionReviewApprovedOwnerSourceLoadersV1",
     "FinalDecisionReviewApprovedOwnerSourceSlot",
