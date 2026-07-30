@@ -11,10 +11,12 @@
 1. Прочитай AGENTS.md.
 2. Прочитай README.md.
 3. Прочитай docs/README.md.
-4. Прочитай knowledge/00_PROJECT_MASTER_CONTEXT.md.
-5. Если задача касается Custom GPT — прочитай gpt/README.md, gpt/CONFIGURATION.md, gpt/INSTRUCTIONS_COMPACT.md, gpt/ACTIONS_CATALOG.md и профильные knowledge-файлы.
-6. Если задача касается старой Telegram-интеграции — прочитай knowledge/12_TELEGRAM_RETIREMENT.txt и docs/operations/TELEGRAM_REMOVAL_RUNBOOK.md. Не восстанавливай runtime без нового ADR и решения владельца.
-7. Проверь main, последние PR и GitHub Actions.
+4. Прочитай docs/master-plan/README.md и текстовую копию master plan.
+5. Прочитай knowledge/00_PROJECT_MASTER_CONTEXT.md.
+6. Прочитай knowledge/16_CURRENT_PROGRAM_STATUS.md.
+7. Если задача касается Custom GPT — прочитай gpt/README.md, gpt/CONFIGURATION.md, gpt/INSTRUCTIONS_COMPACT.md, gpt/ACTIONS_CATALOG.md и профильные knowledge-файлы.
+8. Если задача касается старой Telegram-интеграции — прочитай knowledge/12_TELEGRAM_RETIREMENT.txt и docs/operations/TELEGRAM_REMOVAL_RUNBOOK.md. Не восстанавливай runtime без нового ADR и решения владельца.
+9. Проверь main, последние PR и GitHub Actions.
 
 Обязательные инварианты:
 - строгий read-only режим;

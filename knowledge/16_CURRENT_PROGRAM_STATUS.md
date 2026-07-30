@@ -12,6 +12,13 @@
 `knowledge/00_PROJECT_MASTER_CONTEXT.md`. Код в `main` остаётся окончательным источником
 истины.
 
+## Repository maintenance after PR-78
+
+- PR-105 removed the unexported duplicate PR-71 publisher path and closed issue #97; the trusted scenario publisher remains canonical.
+- `docs/master-plan/` now preserves the exact user specification plus a text-search copy and source hierarchy.
+- `gpt/MY_GPT_SETUP_RUNBOOK.md` records the current official My GPTs/Actions setup.
+- This maintenance does not advance the functional top beyond PR-78 and does not replace PR-79.
+
 ## Неизменяемые границы
 
 - `trading_methods=false`;

@@ -29,8 +29,13 @@ REQUIRED_PATHS = (
     "knowledge/10_OPERATIONS_ANALYTICS_AND_RECONCILIATION.txt",
     "knowledge/11_BROKER_REPORT_ASYNC_INTEGRITY.txt",
     "knowledge/12_TELEGRAM_RETIREMENT.txt",
+    "knowledge/13_COMMUNICATION_STYLE_2026.txt",
     "knowledge/14_CI_SECURITY_BASELINE.txt",
+    "knowledge/16_CURRENT_PROGRAM_STATUS.md",
     "docs/README.md",
+    "docs/master-plan/README.md",
+    "docs/master-plan/OMNI_CIO_MASTER_PROMPT_V9.pdf",
+    "docs/master-plan/OMNI_CIO_MASTER_PROMPT_V9.txt",
     "docs/architecture/SYSTEM_OVERVIEW.md",
     "docs/architecture/REPOSITORY_STRUCTURE.md",
     "docs/architecture/DECISIONS.md",
@@ -40,8 +45,10 @@ REQUIRED_PATHS = (
     "docs/operations/TELEGRAM_REMOVAL_RUNBOOK.md",
     "docs/operations/RELEASE_CHECKLIST.md",
     "gpt/README.md",
+    "gpt/MY_GPT_SETUP_RUNBOOK.md",
     "gpt/CONFIGURATION.md",
     "gpt/INSTRUCTIONS.md",
+    "gpt/INSTRUCTIONS_COMPACT.md",
     "gpt/ACTIONS_CATALOG.md",
     "gpt/NEW_CHAT_PROMPT.md",
     ".github/CODEOWNERS",
@@ -321,6 +328,7 @@ def main() -> int:
     print("Gateway entrypoint: app:app")
     print("Telegram runtime: retired")
     print("Duplicate PR-71 scenario publisher: retired")
+    print("Canonical master plan: v9")
     return 0
 
 

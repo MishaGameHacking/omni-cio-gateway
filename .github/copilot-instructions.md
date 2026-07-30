@@ -5,15 +5,16 @@
 1. `AGENTS.md`;
 2. `README.md`;
 3. `docs/README.md`;
-4. `knowledge/00_PROJECT_MASTER_CONTEXT.md`;
-5. профильный файл `knowledge/`;
-6. `gpt/` для Custom GPT;
-7. `knowledge/12_TELEGRAM_RETIREMENT.txt` и removal runbook для проверки
-   завершённой миграции.
-
+4. `docs/master-plan/README.md` и текстовую копию master plan;
+5. `knowledge/00_PROJECT_MASTER_CONTEXT.md`;
+6. `knowledge/16_CURRENT_PROGRAM_STATUS.md`;
+7. профильный файл `knowledge/`;
+8. `gpt/` для Custom GPT;
+9. retirement profile/runbook только для проверки завершённой миграции.
 Обязательные правила:
 
 - Сохраняй строго read-only архитектуру.
+- Будущие торговые цели master plan не включают trading и не отменяют текущие запреты.
 - Не добавляй создание, отправку, замену или отмену заявок.
 - Сохраняй `trading_methods=false`.
 - Gateway Actions только GET и Bearer-protected.

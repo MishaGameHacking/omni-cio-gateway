@@ -2,65 +2,58 @@
 
 ## Purpose
 
-PR-70 registers the merged PR-69 production source layer inside the production `app:app`
-wrapper. Registration is internal-only and does not add an Action, request field or public
-publication endpoint.
+PR-70 introduced lazy internal registration of the PR-69 production source layer. The production object graph has since been extended by the reviewed PR-71…PR-78 packages. Registration remains internal-only and adds no Action, request field or public publication endpoint.
 
-## Runtime object graph
+## Current runtime object graph
 
-At import time the wrapper creates:
+`register_final_decision_review_production_sources()` composes:
 
-1. the existing production final-review workflow bridge;
-2. one `FinalDecisionReviewWorkflowProducerV1`;
-3. one `FinalDecisionReviewWorkflowCoordinatorV1`;
-4. one bounded `FinalDecisionReviewScenarioSourceStoreV1`;
-5. one lazy current-risk loader;
-6. one `FinalDecisionReviewProductionSourceWiringV1`.
+1. one bounded `FinalDecisionReviewScenarioSourceStoreV1`;
+2. the canonical `FinalDecisionReviewTrustedScenarioPublisherV1`;
+3. PR-72 calculator scenario handoff;
+4. PR-73 exact-intent workflow;
+5. PR-74 approved invocation boundary;
+6. PR-75 fixed calculator-provider registry;
+7. one bounded production owner-callable store;
+8. PR-76 adapters registered under two fixed purchase/sell provider IDs;
+9. PR-77 scenario-scoped owner-callable registration;
+10. PR-78 trusted one-shot owner composition;
+11. the existing workflow producer, coordinator, current-risk loader and production source wiring.
 
-The complete object graph is returned as `FinalDecisionReviewProductionRuntimeV1` and is
-exported through:
-
-- `final_decision_review_production_runtime`;
-- `final_decision_review_scenario_source_store`;
-- `final_decision_review_source_wiring`.
+The complete graph is returned as `FinalDecisionReviewProductionRuntimeV1`. The scenario publisher and all later components share the same bounded source/store chain; the retired duplicate PR-71 publisher path is forbidden by `scripts/check_repository_layout.py`.
 
 ## Startup laziness
 
-Registration receives a callable rather than a portfolio payload. The callable invokes the
-existing read-only portfolio-market engine with depth `1` and maximum `50` instruments only
-when trusted internal acquisition is explicitly requested.
-
-Importing `app.py` therefore:
+Registration receives callables, not financial payloads. Importing `app.py`:
 
 - does not connect to T-Invest;
 - does not load a portfolio;
-- does not calculate risk;
-- leaves the scenario source store empty.
+- does not execute Decision Engine or risk calculators;
+- starts without scenario-specific owner bundles;
+- keeps process-local stores empty and fail-closed after restart.
 
 ## Action compatibility
 
-The release remains version `3.10.0` and the production OpenAPI surface remains exactly 14
-private authenticated `GET` operations. No request body or mutating HTTP method is added.
+The Gateway remains version `3.10.0` with exactly 14 authenticated `GET` Actions. No request body, mutating HTTP method, broker-write surface or user-selected provider name is added.
 
 ## Safety invariants
 
 - `app:app` remains the Render entrypoint;
 - `trading_methods=false`;
-- no broker order create, replace or cancel call;
-- no public scenario-source publication method;
-- no startup network call;
-- no credentials or full account in runtime metadata;
-- empty or missing scenario sources remain fail-closed;
-- production source registration does not complete Render/GPT acceptance.
+- no order create, replace or cancel call;
+- no transfer, withdrawal, margin, short or derivatives execution;
+- no public callable or raw financial-payload publication surface;
+- no startup network/calculator call;
+- no credentials or full account identifier in runtime metadata;
+- missing or expired scenario sources remain fail-closed;
+- green CI does not complete Render/GPT acceptance.
 
-## Remaining boundary
+## Current remaining boundary
 
-The process-local source store is now registered, but it is not automatically populated.
-A trusted calculator-owned publisher must provide one exact purchase/sell pre-trade gate and
-the corresponding pro-forma risk evaluation. Until that package and actual production
-acceptance are completed, the final-review route may correctly return `503` after restart.
+PR-78 can validate and invoke already materialized typed owners, but it intentionally does not decide when a real request should acquire them. The next functional package is PR-79 approved server-side owner acquisition as defined by `knowledge/16_CURRENT_PROGRAM_STATUS.md`. It must derive context on the server, accept no raw calculator outputs or credentials from an Action, preserve the existing OpenAPI surface and call PR-78 only after all required read-only sources are present and fresh.
+
+Until that package and real production acceptance are complete, an empty store or `503` can be correct behavior.
 
 ## Rollback
 
-Revert PR-70. The private final-review GET route and PR-69 library remain available, but the
-production scenario store and acquisition wiring are no longer registered in `app.py`.
+Runtime rollback must revert the specific functional PR being deployed; this documentation package changes no runtime. The stable fallback remains the existing private GET route with empty fail-closed process-local sources, `app:app` and `trading_methods=false`.

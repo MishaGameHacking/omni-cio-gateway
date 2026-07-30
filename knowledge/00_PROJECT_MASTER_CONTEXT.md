@@ -2,12 +2,11 @@
 
 Дата актуализации: 2026-07-30  
 Текущий system release: **v4.1.0 ChatGPT-only Runtime**  
-Gateway API component после merge PR-61: **v3.10.0 Final Decision Review GET Route**
+Gateway API component: **v3.10.0 Final Decision Review GET Route**
 
 Этот документ — единая обезличенная проектная память. Его нужно читать первым при
 продолжении работы в новом чате, IDE, GitHub Copilot, Codex или другом проекте.
-Оперативный номер последнего этапа и следующий пакет уточняются по
-`knowledge/16_CURRENT_PROGRAM_STATUS.md` и фактической вершине `main`.
+Исходная пользовательская спецификация хранится в `docs/master-plan/`. Оперативный номер последнего этапа и следующий пакет уточняются по `knowledge/16_CURRENT_PROGRAM_STATUS.md` и фактической вершине `main`. Будущие цели master plan не отменяют действующий read-only lock и не считаются реализованными без кода, тестов и production acceptance.
 
 ## 0. Стратегическое решение владельца
 
@@ -87,7 +86,7 @@ Gateway отвечает за:
 - получение уже сформированного final decision review.
 
 Gateway entrypoint: `app:app`.  
-Gateway API version после PR-61: `3.10.0`.  
+Current Gateway API version: `3.10.0`.  
 Пользовательские Gateway Actions: только `GET`.
 
 ### 2.2. Custom GPT
@@ -287,19 +286,19 @@ end-to-end workflow.
 
 ## 11. Acceptance and current next step
 
-PR-61 может закрыть только pre-merge acceptance. После deploy отдельно требуются:
+Функциональная вершина программы — PR-78. Фактические детали и следующий рекомендуемый пакет PR-79 определяются `knowledge/16_CURRENT_PROGRAM_STATUS.md`.
+
+Отдельно остаются восемь реальных production acceptance cases:
 
 - Render source commit verification;
 - cache-busted `/health`;
-- production auth and route checks;
+- production auth-negative and route-positive checks;
 - GPT Editor OpenAPI import;
 - authenticated Preview;
 - complete Action-list inspection;
-- rollback drill.
+- rollback restore.
 
-Следующий пакет определяется `knowledge/16_CURRENT_PROGRAM_STATUS.md`. После PR-61 это
-internal read-only orchestration publisher into the bounded registry, без публичного
-publication endpoint и без broker write surface.
+Они не считаются выполненными по зелёному CI. До их фактической фиксации сохраняются `trading_methods=false`, GET-only Actions и fail-closed unavailable behavior.
 
 ## 12. Definition of Done
 

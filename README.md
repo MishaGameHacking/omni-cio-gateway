@@ -35,11 +35,13 @@ Custom GPT ── Omni-CIO Gateway (`app:app`) ── T-Invest API
 
 1. [`AGENTS.md`](AGENTS.md)
 2. [`docs/README.md`](docs/README.md)
-3. [`knowledge/00_PROJECT_MASTER_CONTEXT.md`](knowledge/00_PROJECT_MASTER_CONTEXT.md)
-4. [`knowledge/16_CURRENT_PROGRAM_STATUS.md`](knowledge/16_CURRENT_PROGRAM_STATUS.md)
-5. [`gpt/INSTRUCTIONS.md`](gpt/INSTRUCTIONS.md)
-6. [`gpt/ACTIONS_CATALOG.md`](gpt/ACTIONS_CATALOG.md)
-7. профильный файл из [`knowledge/`](knowledge/)
+3. [`docs/master-plan/README.md`](docs/master-plan/README.md)
+4. [`docs/master-plan/OMNI_CIO_MASTER_PROMPT_V9.txt`](docs/master-plan/OMNI_CIO_MASTER_PROMPT_V9.txt)
+5. [`knowledge/00_PROJECT_MASTER_CONTEXT.md`](knowledge/00_PROJECT_MASTER_CONTEXT.md)
+6. [`knowledge/16_CURRENT_PROGRAM_STATUS.md`](knowledge/16_CURRENT_PROGRAM_STATUS.md)
+7. [`gpt/INSTRUCTIONS.md`](gpt/INSTRUCTIONS.md)
+8. [`gpt/ACTIONS_CATALOG.md`](gpt/ACTIONS_CATALOG.md)
+9. профильный файл из [`knowledge/`](knowledge/)
 
 Готовый стартовый запрос: [`gpt/NEW_CHAT_PROMPT.md`](gpt/NEW_CHAT_PROMPT.md).
 
@@ -55,6 +57,7 @@ broker_report_reconciliation/        официальный отчёт и све
 tests/                               unit, endpoint, OpenAPI, Regression Shield
 knowledge/                           строгие правила предметной области
 gpt/                                 переносимая конфигурация Custom GPT
+docs/master-plan/                    исходная спецификация развития
 docs/architecture/                   архитектура и карта файлов
 docs/operations/                     deploy и release runbooks
 docs/inventory/                      реестр GitHub и внешних активов
@@ -80,7 +83,7 @@ scripts/                             безопасные локальные п�
 
 Профиль знаний: [`knowledge/13_COMMUNICATION_STYLE_2026.txt`](knowledge/13_COMMUNICATION_STYLE_2026.txt).
 
-Важно: GitHub хранит канонические инструкции, но не может автоматически заменить поле Instructions в GPT Editor. После изменения этого файла владелец вручную вставляет его полный текст в GPT Editor и нажимает **Update**. После PR-61 требуется повторный импорт OpenAPI, потому что список Actions меняется.
+GitHub хранит канонические инструкции, но не применяет их в GPT Editor автоматически. Точная настройка, Preview и rollback описаны в [`gpt/MY_GPT_SETUP_RUNBOOK.md`](gpt/MY_GPT_SETUP_RUNBOOK.md). OpenAPI повторно импортируется только после фактического изменения Action contract.
 
 ## ChatGPT-only runtime
 
@@ -88,9 +91,7 @@ Omni-CIO больше не содержит Telegram runtime. Полезная �
 не потеряна: она изначально находилась в Gateway, а удалённые модули
 обслуживали только Telegram transport, команды и форматирование.
 
-После merge внешний Telegram service и webhook нужно удалить вручную по
-[`docs/operations/TELEGRAM_REMOVAL_RUNBOOK.md`](docs/operations/TELEGRAM_REMOVAL_RUNBOOK.md).
-Удалять или изменять основной service `omni-cio-gateway` не нужно.
+Внешняя очистка старого Telegram service, webhook и token завершена владельцем 2026-07-28. История и контрольные проверки сохранены в [`docs/operations/TELEGRAM_REMOVAL_RUNBOOK.md`](docs/operations/TELEGRAM_REMOVAL_RUNBOOK.md); основной service `omni-cio-gateway` остаётся единственным backend runtime.
 
 ## Что хранится в GitHub
 
@@ -101,7 +102,7 @@ Omni-CIO больше не содержит Telegram runtime. Полезная �
 - канонические инструкции Custom GPT;
 - современный профиль общения и публикаций;
 - каталог Actions;
-- проектная память и дорожная карта;
+- исходный master plan, проектная память и дорожная карта;
 - runbooks и changelog.
 
 ## Что намеренно не хранится
@@ -121,6 +122,8 @@ Omni-CIO больше не содержит Telegram runtime. Полезная �
 - [`CHANGELOG.md`](CHANGELOG.md) — история релизов.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — рабочий процесс.
 - [`SECURITY.md`](SECURITY.md) — политика безопасности.
+- [`docs/master-plan/README.md`](docs/master-plan/README.md) — исходная спецификация и иерархия источников.
+- [`gpt/MY_GPT_SETUP_RUNBOOK.md`](gpt/MY_GPT_SETUP_RUNBOOK.md) — подключение в ChatGPT → My GPTs.
 - [`docs/architecture/SYSTEM_OVERVIEW.md`](docs/architecture/SYSTEM_OVERVIEW.md) — архитектура.
 - [`docs/architecture/PORTFOLIO_SHADOW_VALIDATION_V1.md`](docs/architecture/PORTFOLIO_SHADOW_VALIDATION_V1.md) — shadow validation и decision gate.
 - [`docs/architecture/FINAL_DECISION_REVIEW_PRODUCTION_ROUTE_V1.md`](docs/architecture/FINAL_DECISION_REVIEW_PRODUCTION_ROUTE_V1.md) — production GET route, registry и fail-closed HTTP contract.
@@ -172,9 +175,8 @@ security baseline. Полная команда secret scan закреплена 
 ## Деплой
 
 - Gateway: [`render.yaml`](render.yaml), entrypoint `app:app`.
-- После PR-61 необходимо отдельно подтвердить Render commit, `/health`, новый
-  OpenAPI contract, GPT Editor Preview и rollback. Эти проверки нельзя считать
-  выполненными до фактического deployment.
+- Функциональная вершина и следующий пакет указаны в `knowledge/16_CURRENT_PROGRAM_STATUS.md`.
+- Render/Gateway/GPT/rollback acceptance остаётся незавершённой, пока восемь реальных cases не зафиксированы как `passed`.
 
 ## Важная граница проекта
 

@@ -7,14 +7,22 @@
 
 1. `../AGENTS.md` — обязательные правила.
 2. `../README.md` — текущее состояние и запуск.
-3. `../knowledge/00_PROJECT_MASTER_CONTEXT.md` — стратегическая проектная память.
-4. `../knowledge/16_CURRENT_PROGRAM_STATUS.md` — фактический активный этап и оставшиеся пакеты.
-5. `architecture/SYSTEM_OVERVIEW.md` — компоненты и границы системы.
-6. `architecture/REPOSITORY_STRUCTURE.md` — назначение папок и файлов.
-7. `inventory/PROJECT_ASSETS.md` — GitHub и внешние системы.
-8. `inventory/FILE_INDEX.md` — индекс runtime, tests, configuration и knowledge.
+3. `master-plan/README.md` — иерархия исходной спецификации.
+4. `master-plan/OMNI_CIO_MASTER_PROMPT_V9.txt` — поисковая текстовая копия плана.
+5. `../knowledge/00_PROJECT_MASTER_CONTEXT.md` — стратегическая проектная память.
+6. `../knowledge/16_CURRENT_PROGRAM_STATUS.md` — фактический активный этап и оставшиеся пакеты.
+7. `architecture/SYSTEM_OVERVIEW.md` — компоненты и границы системы.
+8. `architecture/REPOSITORY_STRUCTURE.md` — назначение папок и файлов.
+9. `inventory/PROJECT_ASSETS.md` — GitHub и внешние системы.
+10. `inventory/FILE_INDEX.md` — индекс runtime, tests, configuration и knowledge.
 
 ## Разделы
+
+### Master plan
+
+- `master-plan/README.md`
+- `master-plan/OMNI_CIO_MASTER_PROMPT_V9.pdf`
+- `master-plan/OMNI_CIO_MASTER_PROMPT_V9.txt`
 
 ### Architecture
 
@@ -48,6 +56,7 @@
 Каноническая конфигурация помощника хранится в `../gpt/`:
 
 - `../gpt/README.md`
+- `../gpt/MY_GPT_SETUP_RUNBOOK.md`
 - `../gpt/CONFIGURATION.md`
 - `../gpt/INSTRUCTIONS.md`
 - `../gpt/INSTRUCTIONS_COMPACT.md`
@@ -57,7 +66,7 @@
 - `../gpt/BOT_ONLY_FILE_MANIFEST.md`
 - `../gpt/NEW_ACCOUNT_BOOTSTRAP.md`
 
-Для запуска Omni-CIO в новом аккаунте ChatGPT без переноса личных чатов используйте `../gpt/NEW_ACCOUNT_BOOTSTRAP.md`.
+Для настройки самого бота используйте `../gpt/MY_GPT_SETUP_RUNBOOK.md`; для запуска в новом аккаунте без переноса личных чатов — `../gpt/NEW_ACCOUNT_BOOTSTRAP.md`.
 
 ### Retired Telegram integration
 

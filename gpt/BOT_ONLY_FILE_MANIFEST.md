@@ -12,6 +12,9 @@ Custom GPT. Данные старого аккаунта ChatGPT, личные �
 | `README.md` | Текущая версия, архитектура, запуск и карта репозитория |
 | `docs/README.md` | Навигация по документации |
 | `knowledge/00_PROJECT_MASTER_CONTEXT.md` | Единая обезличенная память проекта |
+| `knowledge/16_CURRENT_PROGRAM_STATUS.md` | Что завершено и какой пакет следующий |
+| `docs/master-plan/README.md` | Иерархия и правила использования исходного master plan |
+| `docs/master-plan/OMNI_CIO_MASTER_PROMPT_V9.pdf` | Исходная пользовательская спецификация развития |
 | `gpt/PROJECT_INSTRUCTIONS.md` | Готовый текст для Project instructions |
 | `gpt/NEW_CHAT_PROMPT.md` | Стартовый запрос для нового чата после подключения GitHub |
 
@@ -19,12 +22,13 @@ Custom GPT. Данные старого аккаунта ChatGPT, личные �
 
 | Файл | Куда использовать |
 |---|---|
+| `gpt/MY_GPT_SETUP_RUNBOOK.md` | Пошаговая настройка ChatGPT → My GPTs |
 | `gpt/CONFIGURATION.md` | Имя, описание, starters, capabilities и publishing checklist |
 | `gpt/INSTRUCTIONS_COMPACT.md` | Полностью вставить в поле Instructions GPT Editor |
 | `gpt/ACTIONS_CATALOG.md` | Проверка списка Actions и operationId |
 | `knowledge/13_COMMUNICATION_STYLE_2026.txt` | Загрузить в Knowledge как расширенный профиль общения |
 
-Расширенный `gpt/INSTRUCTIONS.md` нужен для разработки и восстановления контекста, но не вставляется целиком в поле Instructions из-за лимита редактора.
+`gpt/INSTRUCTIONS_COMPACT.md` — проверенная рабочая версия для GPT Editor; расширенный `gpt/INSTRUCTIONS.md` нужен для разработки, аудита и восстановления контекста.
 
 ## 3. Профильные knowledge-файлы Gateway
 
@@ -59,6 +63,7 @@ Custom GPT. Данные старого аккаунта ChatGPT, личные �
 
 ## 5. Документация и эксплуатация
 
+- `docs/master-plan/` — исходная спецификация и её текстовая поисковая копия;
 - `docs/architecture/` — архитектура и структура;
 - `docs/operations/` — deploy и release runbooks;
 - `docs/inventory/` — реестр файлов и внешних компонентов;
