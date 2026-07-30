@@ -62,6 +62,9 @@
 - approved server-side owner acquisition для exact fresh Decision Engine,
   capacity, explicit pro-forma scenario и directional preview owners с server-derived
   masked context и штатным `503` при недоступности;
+- concrete typed owner installation для одного PR-79 acquisition call из уже
+  существующих PR-78 purchase/sell owner ports, без startup installation,
+  raw payload, нового Action или broker write surface;
 - weekly Dependabot для pip и GitHub Actions.
 
 ### Граница поддерживаемого runtime

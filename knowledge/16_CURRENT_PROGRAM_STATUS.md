@@ -1,7 +1,7 @@
 # 16 — CURRENT PROGRAM STATUS
 
 Дата актуализации: 2026-07-30  
-Фактическая вершина программы после merge этого пакета: **PR-79**  
+Фактическая вершина программы после merge этого пакета: **PR-80**  
 Точная версия определяется текущей вершиной ветки `main`.
 
 ## Назначение документа
@@ -15,9 +15,9 @@
 ## Repository maintenance after PR-78
 
 - PR-105 removed the unexported duplicate PR-71 publisher path and closed issue #97; the trusted scenario publisher remains canonical.
-- `docs/master-plan/` now preserves the exact user specification plus a text-search copy and source hierarchy.
+- `docs/master-plan/` preserves the exact user specification plus a text-search copy and source hierarchy.
 - `gpt/MY_GPT_SETUP_RUNBOOK.md` records the current official My GPTs/Actions setup.
-- This maintenance does not advance the functional top beyond PR-78 and does not replace PR-79.
+- This maintenance does not replace PR-79 or PR-80 and does not change the functional release contract.
 
 ## Неизменяемые границы
 
@@ -76,8 +76,9 @@ ledger, walk-forward/OOS stability и market-capacity gating.
 - **PR-75:** explicit calculator-provider registry with typed bundle and context gates;
 - **PR-76:** typed adapters from existing read-only owners into fixed provider IDs;
 - **PR-77:** scenario-scoped production routing for fixed purchase/sell owner callables;
-- **PR-78:** trusted one-shot composition with explicit pro-forma scenario binding.
-- **PR-79:** approved server-context acquisition of exact fresh owner leases before PR-78.
+- **PR-78:** trusted one-shot composition with explicit pro-forma scenario binding;
+- **PR-79:** approved server-context acquisition of exact fresh owner leases before PR-78;
+- **PR-80:** concrete one-shot installation of existing typed owner ports into PR-79.
 
 ## PR-78 — trusted production owner composition v1
 
@@ -162,33 +163,57 @@ logged.
 
 ### Production startup
 
-`FinalDecisionReviewProductionRuntimeV1` now owns the acquisition controller connected to
+`FinalDecisionReviewProductionRuntimeV1` owns the acquisition controller connected to
 the same PR-78 composition object. Startup installs fixed missing context/source loaders and
-performs no context, owner, calculator, portfolio, network or broker call. The controller
-therefore fails closed until exact production loaders are installed by a later reviewed
-package.
+performs no context, owner, calculator, portfolio, network or broker call.
+
+## PR-80 — approved typed owner installation v1
+
+PR-80 adds the concrete adapter that installs already-existing
+`FinalDecisionReviewTrustedPurchaseOwnerPortsV1` or
+`FinalDecisionReviewTrustedSellOwnerPortsV1` into one PR-79 acquisition call.
+
+### Exact installation contract
+
+- accepts only one immutable `FinalDecisionReviewApprovedServerContextV1` and one typed
+  directional PR-78 owner-port bundle;
+- verifies the context operation before creating any loader;
+- creates fixed Decision, intent, capacity, explicit pro-forma scenario and selected preview
+  loaders with one internal provider identity;
+- binds every loader to the exact immutable context;
+- leaves the opposite preview direction uninstalled and relies on PR-79 never to call it;
+- executes the temporary PR-79 acquisition once and retains no raw financial payload;
+- preserves all PR-79 freshness, account, direction, source-evidence and 503 gates;
+- preserves all PR-78 exact materialization, provider routing and cleanup gates.
+
+### Production registration
+
+`FinalDecisionReviewProductionRuntimeV1` owns one installer sharing the same PR-78
+composition as the PR-79 controller. Registration performs no installation or owner call.
+The default `app.py` startup still has no authenticated server context and therefore remains
+fail-closed; PR-80 is a typed installation boundary, not a fabricated live request lifecycle.
 
 ### Compatibility and safety
 
 - Gateway version remains `3.10.0`;
 - production OpenAPI remains exactly 14 authenticated GET Actions;
 - no route, operation ID, query field or request body is added;
-- no raw financial payload, credential, full account ID, dynamic import or user-selected
-  provider is accepted;
+- no raw calculator values, credentials, full account IDs or provider names are accepted
+  from an Action;
 - no broker order, replacement, cancellation, transfer or withdrawal method is added;
 - `app:app` remains stable;
 - `trading_methods=false`.
 
 ## Remaining production boundary
 
-PR-79 completes the approved acquisition controller but deliberately does not fabricate the
-runtime context or calculator inputs that production does not yet own. Until concrete
-server-context and existing-calculator loader installation is reviewed:
+PR-80 closes the concrete typed loader-installation gap but deliberately does not fabricate
+the authenticated server request lifecycle that production does not yet own. Until a later
+reviewed package derives and supplies the real server context and typed owner ports:
 
 - production acquisition returns the existing safe `503` unavailable outcome;
 - the public Action cannot publish callables, raw financial payloads or credentials;
 - no current-risk value can be substituted for explicit post-change risk;
-- the owner-callable and final-review registries remain empty after restart;
+- owner-callable and final-review registries remain empty after restart;
 - Render/GPT/rollback evidence remains `not_executed`;
 - no autonomous trading is enabled.
 
@@ -196,14 +221,14 @@ server-context and existing-calculator loader installation is reviewed:
 
 PR-64 still requires eight real evidence cases: Render commit, health, auth-negative,
 exact-route-positive, GPT schema import, authenticated Preview, Action-list inspection and
-rollback restore. None may be marked passed solely because PR-78 CI is green.
+rollback restore. None may be marked passed solely because PR-80 CI is green.
 
 ## Что остаётся до полного релиза
 
 ### Backend and release acceptance
 
-- concrete production installation of the authenticated server-context producer and
-  existing calculator owner loaders into the PR-79 controller;
+- concrete production derivation of authenticated server context from the actual request
+  lifecycle and exact selection of the already-existing typed owner ports before PR-80;
 - actual Render/Gateway acceptance and evidence recording;
 - actual GPT Editor import and authenticated Preview;
 - production-grade live ingestion for market, ratings, news and corporate events;
@@ -225,19 +250,19 @@ Confirm-before-trade, idempotency, TTL confirmation, kill switch, partial-fill �
 reconciliation требуют отдельной программы допуска и решения владельца. Полностью
 автономная торговля без подтверждения не планируется.
 
-## Следующий пакет после PR-79
+## Следующий пакет после PR-80
 
 Следующий номер не назначается автоматически. Ближайший доказанный функциональный gap:
 
-- определить фактический authenticated server request lifecycle, который может безопасно
-  создать `FinalDecisionReviewApprovedServerContextV1`;
-- установить concrete loaders только для уже существующих read-only Decision Engine,
-  capacity, directional preview и explicit post-change risk owners;
-- не принимать raw calculator outputs, credentials, provider names или full account IDs
-  из Action;
-- сохранить штатный `503`, если хотя бы один owner недоступен или устарел;
-- выполнить это отдельной веткой/PR после проверки реальных owner inputs и без изменения
-  14-GET OpenAPI surface.
+- определить фактический authenticated server request lifecycle, который после успешной
+  Gateway authentication может безопасно создать
+  `FinalDecisionReviewApprovedServerContextV1`;
+- выбрать только уже существующие typed Decision Engine, exact intent, capacity, explicit
+  post-change scenario и directional preview owner ports;
+- вызвать PR-80 без принятия raw calculator outputs, credentials, provider names или full
+  account IDs из Action;
+- сохранить штатный `503`, если контекст или хотя бы один owner недоступен или устарел;
+- выполнить это отдельной веткой/PR без изменения 14-GET OpenAPI surface.
 
 Production acceptance остаётся отдельным внешним блоком и не заменяется следующим backend
 PR.

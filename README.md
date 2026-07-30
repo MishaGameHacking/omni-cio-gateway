@@ -28,6 +28,11 @@ Custom GPT ── Omni-CIO Gateway (`app:app`) ── T-Invest API
   берутся только из доверенного server context, все пять выбранных owner sources должны
   быть свежими до PR-78, а production startup остаётся безопасно `unavailable` без
   конкретных loaders. OpenAPI и 14 GET Actions не меняются.
+- PR-80 добавляет concrete typed installation boundary для уже существующих PR-78
+  purchase/sell owner ports. Один immutable server context получает фиксированные
+  PR-79 loaders только на время одного вызова; startup не выполняет installation,
+  owner calls, portfolio/network/broker calls и остаётся fail-closed без реального
+  authenticated request lifecycle.
 - Runtime и CI устанавливают полностью pinned зависимости только после
   проверки SHA-256 hashes.
 - Regression Shield включает lint, formatting baseline, mypy, покрытие
@@ -131,6 +136,7 @@ Omni-CIO больше не содержит Telegram runtime. Полезная �
 - [`docs/architecture/SYSTEM_OVERVIEW.md`](docs/architecture/SYSTEM_OVERVIEW.md) — архитектура.
 - [`docs/architecture/PORTFOLIO_SHADOW_VALIDATION_V1.md`](docs/architecture/PORTFOLIO_SHADOW_VALIDATION_V1.md) — shadow validation и decision gate.
 - [`docs/architecture/FINAL_DECISION_REVIEW_PRODUCTION_ROUTE_V1.md`](docs/architecture/FINAL_DECISION_REVIEW_PRODUCTION_ROUTE_V1.md) — production GET route, registry и fail-closed HTTP contract.
+- [`docs/architecture/FINAL_DECISION_REVIEW_APPROVED_OWNER_INSTALLATION_V1.md`](docs/architecture/FINAL_DECISION_REVIEW_APPROVED_OWNER_INSTALLATION_V1.md) — exact typed PR-78 owner ports into one PR-79 acquisition call.
 - [`docs/operations/DEPLOYMENT_RUNBOOK.md`](docs/operations/DEPLOYMENT_RUNBOOK.md) — gateway deployment.
 - [`docs/operations/TELEGRAM_REMOVAL_RUNBOOK.md`](docs/operations/TELEGRAM_REMOVAL_RUNBOOK.md) — очистка выведенного Telegram service.
 - [`knowledge/11_BROKER_REPORT_ASYNC_INTEGRITY.txt`](knowledge/11_BROKER_REPORT_ASYNC_INTEGRITY.txt) — асинхронный отчёт.

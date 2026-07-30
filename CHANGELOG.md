@@ -5,6 +5,7 @@
 ## [Unreleased]
 
 ### Added
+- Concrete typed final-review owner installation from existing PR-78 purchase/sell owner ports into one exact PR-79 acquisition call, with context-bound fixed loaders, direction isolation, lazy production registration and preserved `FINAL_REVIEW_SOURCE_UNAVAILABLE` / HTTP 503 behavior; no Action, raw payload, credential, broker write or OpenAPI change is added.
 - Approved server-side final-review owner acquisition with immutable masked context, exact fresh Decision/intent/capacity/pro-forma/directional owner leases, account-bound PR-78 invocation, fixed fail-closed production startup and reuse of the existing `FINAL_REVIEW_SOURCE_UNAVAILABLE` / HTTP 503 outcome; no Action, raw payload, credential, broker write or OpenAPI change is added.
 - Canonical `docs/master-plan/` with the exact Omni-CIO master-prompt v9 PDF,
   SHA-256 provenance, text-search copy and an explicit source-precedence policy.
@@ -172,7 +173,7 @@
 - GPT configuration now records backend `v3.10.0`, exactly 14 GET Actions and current
   official OpenAI setup constraints without an unsupported hard-coded editor limit.
 - Project entrypoints, status, inventory and repository policy now require the canonical
-  master plan and distinguish completed PR-78 work from the next PR-79 package.
+  master plan and distinguish completed PR-80 work from the next authenticated lifecycle package.
 - Dependency audit confirms the minimal hash-locked runtime set; version upgrades remain
   isolated dependency PRs.
 - Render и GitHub Actions устанавливают зависимости только с
