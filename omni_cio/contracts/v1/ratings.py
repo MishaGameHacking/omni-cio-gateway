@@ -31,6 +31,23 @@ class CreditRatingSourceErrorCode(StrEnum):
     URL_INVALID = "CREDIT_RATING_SOURCE_URL_INVALID"
 
 
+class CreditRatingCacheStatus(StrEnum):
+    FRESH = "fresh"
+    STALE = "stale"
+    UNAVAILABLE = "unavailable"
+
+
+class CreditRatingCacheErrorCode(StrEnum):
+    EMPTY = "CREDIT_RATING_CACHE_EMPTY"
+    EXPIRED = "CREDIT_RATING_CACHE_EXPIRED"
+    STALE_NOT_ALLOWED = "CREDIT_RATING_CACHE_STALE_NOT_ALLOWED"
+    REFRESH_FAILED = "CREDIT_RATING_CACHE_REFRESH_FAILED"
+    REFRESH_TYPE_INVALID = "CREDIT_RATING_CACHE_REFRESH_TYPE_INVALID"
+    REFRESH_SOURCE_MISMATCH = "CREDIT_RATING_CACHE_REFRESH_SOURCE_MISMATCH"
+    REFRESH_FROM_FUTURE = "CREDIT_RATING_CACHE_REFRESH_FROM_FUTURE"
+    REFRESH_STALE = "CREDIT_RATING_CACHE_REFRESH_STALE"
+
+
 class CreditRatingOutlook(StrEnum):
     STABLE = "stable"
     POSITIVE = "positive"
@@ -147,6 +164,128 @@ class AcraIssuerRatingActionsSnapshotV1(ContractModel):
                 raise ValueError("available rating snapshot is inconsistent")
             if any(record.source != self.source for record in self.records):
                 raise ValueError("rating records must share the snapshot source")
+            release_urls = tuple(record.release_url for record in self.records)
+            if len(set(release_urls)) != len(release_urls):
+                raise ValueError("rating snapshot release URLs must be unique")
         elif self.source is not None or self.records or self.error_code is None:
             raise ValueError("unavailable rating snapshot is inconsistent")
+        return self
+
+
+class AcraIssuerRatingActionsCacheResultV1(ContractModel):
+    schema_name: Literal["acra_issuer_rating_actions_cache_result"] = (
+        "acra_issuer_rating_actions_cache_result"
+    )
+    schema_version: Literal["1.0"] = "1.0"
+    checked_at: datetime
+    status: CreditRatingCacheStatus
+    snapshot: AcraIssuerRatingActionsSnapshotV1 | None = None
+    age_seconds: Annotated[int | None, Field(ge=0)] = None
+    fresh_until: datetime | None = None
+    stale_until: datetime | None = None
+    served_from_cache: bool = False
+    stale_available: bool = False
+    stale_value_exposed: bool = False
+    refresh_attempted: bool = False
+    refresh_succeeded: bool = False
+    source_error_code: CreditRatingSourceErrorCode | None = None
+    cache_error_code: CreditRatingCacheErrorCode | None = None
+    display_records_allowed: bool = False
+    fixed_official_source: Literal[True] = True
+    issuer_scope_only: Literal[True] = True
+    raw_html_stored: Literal[False] = False
+    credentials_present: Literal[False] = False
+    full_account_identifier_present: Literal[False] = False
+    broker_write_called: Literal[False] = False
+    trade_authorized: Literal[False] = False
+    order_created: Literal[False] = False
+    trading_methods: Literal[False] = False
+
+    @field_validator("checked_at", "fresh_until", "stale_until")
+    @classmethod
+    def normalize_cache_timestamp(
+        cls,
+        value: datetime | None,
+    ) -> datetime | None:
+        if value is None:
+            return None
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("rating cache timestamps must be timezone-aware")
+        return value.astimezone(timezone.utc)
+
+    @model_validator(mode="after")
+    def validate_cache_result(self) -> AcraIssuerRatingActionsCacheResultV1:
+        if self.refresh_succeeded and not self.refresh_attempted:
+            raise ValueError("successful refresh requires an attempted refresh")
+        if self.refresh_succeeded and (
+            self.served_from_cache
+            or self.source_error_code is not None
+            or self.cache_error_code is not None
+        ):
+            raise ValueError("successful refresh cannot contain fallback metadata")
+        if self.fresh_until is not None and self.stale_until is not None:
+            if self.fresh_until > self.stale_until:
+                raise ValueError("fresh cache boundary cannot exceed stale boundary")
+        if self.snapshot is not None and (
+            self.snapshot.status is not CreditRatingSourceStatus.AVAILABLE
+            or self.snapshot.source is None
+            or self.snapshot.source.provider != "ACRA"
+            or self.snapshot.source.source_id
+            != "ACRA.press_releases.issuer_rating_actions"
+        ):
+            raise ValueError("cached ACRA snapshot identity is inconsistent")
+
+        if self.status is CreditRatingCacheStatus.FRESH:
+            if (
+                self.snapshot is None
+                or self.age_seconds is None
+                or self.fresh_until is None
+                or self.stale_until is None
+                or self.checked_at >= self.fresh_until
+                or not self.display_records_allowed
+                or self.stale_available
+                or self.stale_value_exposed
+            ):
+                raise ValueError("fresh ACRA cache result is inconsistent")
+        elif self.status is CreditRatingCacheStatus.STALE:
+            if (
+                self.snapshot is None
+                or self.age_seconds is None
+                or self.fresh_until is None
+                or self.stale_until is None
+                or self.checked_at < self.fresh_until
+                or self.checked_at >= self.stale_until
+                or not self.display_records_allowed
+                or not self.served_from_cache
+                or not self.stale_available
+                or not self.stale_value_exposed
+                or not self.refresh_attempted
+                or self.refresh_succeeded
+                or self.cache_error_code is None
+            ):
+                raise ValueError("stale ACRA cache result is inconsistent")
+        elif (
+            self.snapshot is not None
+            or self.age_seconds is not None
+            or self.served_from_cache
+            or self.stale_value_exposed
+            or self.display_records_allowed
+            or self.refresh_succeeded
+            or not self.refresh_attempted
+            or self.cache_error_code is None
+        ):
+            raise ValueError("unavailable ACRA cache result is inconsistent")
+
+        if self.stale_value_exposed and not self.stale_available:
+            raise ValueError("exposed stale records require stale availability")
+        if self.status is CreditRatingCacheStatus.UNAVAILABLE:
+            if self.stale_available:
+                if self.fresh_until is None or self.stale_until is None:
+                    raise ValueError(
+                        "hidden stale records require cache boundaries"
+                    )
+            elif self.fresh_until is not None or self.stale_until is not None:
+                raise ValueError(
+                    "empty unavailable result cannot retain cache boundaries"
+                )
         return self
