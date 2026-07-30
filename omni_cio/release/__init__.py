@@ -20,6 +20,11 @@ from omni_cio.release.final_decision_review_orchestration_v1 import (
     FinalDecisionReviewOrchestrationError,
     orchestrate_final_decision_review_publication,
 )
+from omni_cio.release.final_decision_review_production_registration_v1 import (
+    FinalDecisionReviewProductionRegistrationError,
+    FinalDecisionReviewProductionRuntimeV1,
+    register_final_decision_review_production_sources,
+)
 from omni_cio.release.final_decision_review_production_sources_v1 import (
     FinalDecisionReviewProductionSourceError,
     FinalDecisionReviewProductionSourceWiringV1,
@@ -87,6 +92,8 @@ __all__ = [
     "FinalDecisionReviewHandlerShadowError",
     "FinalDecisionReviewInputError",
     "FinalDecisionReviewOrchestrationError",
+    "FinalDecisionReviewProductionRegistrationError",
+    "FinalDecisionReviewProductionRuntimeV1",
     "FinalDecisionReviewProductionSourceError",
     "FinalDecisionReviewProductionSourceWiringV1",
     "FinalDecisionReviewPublisherError",
@@ -130,6 +137,7 @@ __all__ = [
     "publisher_for_registry",
     "purchase_gate_source_loader",
     "record_final_decision_review_acceptance_evidence",
+    "register_final_decision_review_production_sources",
     "risk_source_loader",
     "sell_gate_source_loader",
 ]
