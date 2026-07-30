@@ -33,6 +33,7 @@
 
 ## Контракты и документация
 
+- [ ] Изменение сопоставлено с `docs/master-plan/` и фактическим статусом в `knowledge/16_CURRENT_PROGRAM_STATUS.md`.
 - [ ] OpenAPI/operationId не изменены либо описана миграция.
 - [ ] Обновлён `CHANGELOG.md`.
 - [ ] Обновлён профильный `knowledge/` файл.
@@ -43,7 +44,7 @@
 
 ## Проверка после merge
 
-1. Дождаться Render deploy.
-2. Проверить `/health`, версию, commit SHA, `app:app` и `trading_methods=false`.
-3. При изменении схемы обновить GPT Actions.
-4. Выполнить один целевой smoke test без лишних Actions.
+1. Для runtime/deploy change дождаться Render deploy; для docs-only change явно указать, что deploy не требуется.
+2. Если runtime затронут, проверить `/health`, версию, commit SHA, `app:app` и `trading_methods=false`.
+3. При изменении схемы обновить GPT Actions по `gpt/MY_GPT_SETUP_RUNBOOK.md`.
+4. Выполнить один целевой smoke test без лишних Actions и зафиксировать acceptance state.
