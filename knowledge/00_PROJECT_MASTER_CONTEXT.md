@@ -216,9 +216,17 @@ The route uses a bounded process-local source registry:
 - missing/invalid Gateway key → `401`;
 - exact active source → `200`.
 
-Until a trusted internal orchestration publisher is connected, authenticated production
-calls are expected to return `503`. This is correct fail-closed behavior, not a completed
-end-to-end workflow.
+PR-79 adds an internal approved acquisition controller in front of the PR-78 trusted
+composition. Invocation identity and the masked account come only from fresh authenticated
+server context. The controller loads exactly the existing Decision Engine, exact intent,
+capacity, explicit post-change risk scenario and selected directional preview owner leases.
+Any missing, stale, failed or account-mismatched source returns the existing safe `503`
+outcome before financial owners are called.
+
+Production startup installs fixed missing context/source loaders and performs no context,
+calculator, portfolio, network or broker call. Therefore authenticated calls remain
+fail-closed until concrete server-context and existing-owner loader installation is reviewed.
+This is correct unavailable behavior, not a completed end-to-end workflow.
 
 ## 7. Обязательный контракт ответов Gateway
 
@@ -286,7 +294,11 @@ end-to-end workflow.
 
 ## 11. Acceptance and current next step
 
-Функциональная вершина программы — PR-78. Фактические детали и следующий рекомендуемый пакет PR-79 определяются `knowledge/16_CURRENT_PROGRAM_STATUS.md`.
+После merge этого пакета функциональная вершина программы — PR-79. Контроллер acquisition
+готов, но production по умолчанию остаётся fail-closed: следующий номер не назначен, а
+ближайший доказанный gap — установка authenticated server-context producer и concrete
+loaders только для уже существующих read-only owners. Точный контракт следующего пакета
+определяется `knowledge/16_CURRENT_PROGRAM_STATUS.md` и фактической вершиной `main`.
 
 Отдельно остаются восемь реальных production acceptance cases:
 
