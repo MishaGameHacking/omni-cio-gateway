@@ -3,9 +3,11 @@
 ## Перед началом
 
 1. Прочитайте `AGENTS.md`.
-2. Прочитайте `README.md` и `knowledge/00_PROJECT_MASTER_CONTEXT.md`.
-3. Откройте профильный документ в `knowledge/`.
-4. Проверьте `main`, открытые Pull Request и Regression Shield.
+2. Прочитайте `README.md` и `docs/README.md`.
+3. Прочитайте `docs/master-plan/README.md` и текстовую копию master plan.
+4. Прочитайте `knowledge/00_PROJECT_MASTER_CONTEXT.md` и `knowledge/16_CURRENT_PROGRAM_STATUS.md`.
+5. Откройте профильный документ в `knowledge/`.
+6. Проверьте `main`, issues, открытые Pull Request и Regression Shield.
 
 ## Неприкосновенные правила
 
