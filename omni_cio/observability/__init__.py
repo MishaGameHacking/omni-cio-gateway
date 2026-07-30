@@ -21,6 +21,11 @@ from omni_cio.observability.cbr_key_rate_operations_lifecycle_v1 import (
     CbrKeyRateOperationsLifecycleError,
     CbrKeyRateOperationsLifecycleV1,
 )
+from omni_cio.observability.moex_iss_quote_events_v1 import (
+    MoexIssQuoteObservabilityError,
+    build_moex_iss_quote_cache_event,
+    build_moex_iss_quote_source_event,
+)
 from omni_cio.observability.safe_events_v1 import (
     build_safe_event,
     emit_safe_event,
@@ -39,8 +44,11 @@ __all__ = [
     "CbrKeyRateOperationsBatchV1",
     "CbrKeyRateOperationsLifecycleError",
     "CbrKeyRateOperationsLifecycleV1",
+    "MoexIssQuoteObservabilityError",
     "build_cbr_key_rate_cache_event",
     "build_cbr_key_rate_source_event",
+    "build_moex_iss_quote_cache_event",
+    "build_moex_iss_quote_source_event",
     "build_safe_event",
     "emit_safe_event",
     "new_trace_id",
