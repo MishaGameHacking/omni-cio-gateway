@@ -1,7 +1,7 @@
 # 16 — CURRENT PROGRAM STATUS
 
 Дата актуализации: 2026-07-30  
-Фактическая вершина программы после merge этого пакета: **PR-77**  
+Фактическая вершина программы после merge этого пакета: **PR-78**  
 Точная версия определяется текущей вершиной ветки `main`.
 
 ## Назначение документа
@@ -68,53 +68,57 @@ ledger, walk-forward/OOS stability и market-capacity gating.
 - **PR-74:** allowlisted, freshness-checked and replay-safe internal invocation boundary;
 - **PR-75:** explicit calculator-provider registry with typed bundle and context gates;
 - **PR-76:** typed adapters from existing read-only owners into fixed provider IDs;
-- **PR-77:** scenario-scoped production routing for fixed purchase/sell owner callables.
+- **PR-77:** scenario-scoped production routing for fixed purchase/sell owner callables;
+- **PR-78:** trusted one-shot composition with explicit pro-forma scenario binding.
 
-## PR-77 — scenario-scoped production owner callable routing v1
+## PR-78 — trusted production owner composition v1
 
-PR-77 registers the two fixed PR-76 provider adapters in the production runtime and routes
-them only to owner-callable bundles published for an exact scenario, correlation and
-operation. It does not invent financial values and does not call any calculator at startup.
+PR-78 materializes already existing typed read-only owners once, validates that all outputs
+describe one exact post-change scenario, invokes one fixed PR-76 provider through the PR-77
+store, and removes the temporary owner bundle on success or downstream failure.
 
-### Process-local owner store
+### Explicit pro-forma contract
 
-The bounded store accepts one typed purchase or sell owner bundle under the immutable key:
+A plain `RiskPolicyEvaluationV1` does not prove whether it describes current or post-change
+risk. PR-78 therefore requires the existing `ProFormaRiskScenarioV1` owner output and
+revalidates:
 
-`(scenario_id, correlation_id, operation)`.
+- `current_portfolio_risk=false` and `pro_forma_post_change=true`;
+- method `exact_capacity_intent_post_change`;
+- canonical exact-intent fingerprint;
+- masked account, option, direction and capacity-request identity;
+- risk/scenario timestamp equality and bounded freshness;
+- no margin, short sale, derivatives or currency-operation policy;
+- no order, execution or trading capability.
 
-Each bundle has an aware UTC publication time and a bounded TTL. An active duplicate is
-rejected, expired bundles are purged, and capacity overflow evicts the least-recently-used
-older bundle. Callables, payloads and account data are never exposed through HTTP or
-serialized into the repository.
+Current portfolio risk cannot be substituted silently.
 
-### Exact routing gates
+### Materialization and exact binding
 
-- only `purchase_review` and `sell_review` operations are accepted;
-- scenario ID, correlation ID and operation must all match before the first owner call;
-- purchase and sell owner bundles are direction-isolated;
-- a bundle published after the approved invocation fails closed;
-- missing, expired, wrong-direction or wrong-correlation ownership fails closed;
-- first lookup pins one immutable owner bundle to the invocation ID;
-- LRU eviction or concurrent republication cannot mix owner sets mid-review;
-- pin capacity overflow and invocation-ID/key/timestamp reuse fail closed;
-- every typed owner output remains validated by the PR-76 adapter and PR-75 registry;
-- fixed provider IDs remain `provider:existing:purchase-review` and
-  `provider:existing:sell-review`.
+- decision, intent, capacity, pro-forma scenario and directional preview owners are each
+  called exactly once;
+- capacity and preview iterables are non-empty, typed and bounded to 100 rows;
+- capacity coverage exactly equals the expected intent requests;
+- preview stable keys exactly cover the intent instruments;
+- decision, previews, scenario and risk use the same masked account;
+- purchase and sell types remain isolated;
+- immutable snapshot accessors accept only the exact approved invocation request;
+- owner exception details are not returned in the safe error message.
 
-### Production registration
+### One-shot cleanup
 
-`FinalDecisionReviewProductionRuntimeV1` now owns the bounded callable store and immutable
-registration receipt. Both fixed dispatchers are installed during normal `app:app` import,
-but the store begins empty and registration performs no owner, network, portfolio or broker
-call.
+The validated snapshots are published under exact scenario, correlation and operation
+identity, invoked through the fixed provider ID, then removed. PR-78 releases any remaining
+invocation pin and discards the active owner bundle in a `finally` path. Production startup
+still contains no scenario-specific owners and performs no calculation or broker call.
 
 ### Compatibility and safety
 
 - Gateway version remains `3.10.0`;
 - production OpenAPI remains exactly 14 authenticated GET Actions;
 - no route, operation ID, query field or request body is added;
+- no public callable or financial-payload publication surface;
 - no dynamic import or user-selected provider name;
-- no startup calculation or broker call;
 - no broker write method;
 - no trade authorization or order creation;
 - `app:app` remains stable;
@@ -122,13 +126,14 @@ call.
 
 ## Remaining production boundary
 
-PR-77 makes the fixed providers available but intentionally starts with no scenario-specific
-owners. Trusted production composition must still publish concrete read-only Decision Engine,
-capacity, purchase/sell preview and explicit pro-forma risk callables before invoking a
-provider. Until that composition and actual acceptance exist:
+PR-78 provides a trusted server-side composition and invocation boundary but intentionally
+does not decide when a real user request should execute the Decision Engine, capacity,
+broker-preview and post-change risk calculators. Until an approved acquisition workflow
+binds those existing owners:
 
-- the provider registry contains only the two fixed fail-closed dispatchers;
+- production starts with only the two fixed fail-closed provider dispatchers;
 - the owner-callable and scenario stores remain empty after restart;
+- no public endpoint accepts callables, raw financial payloads or credentials;
 - exact acquisition may report missing scenario sources;
 - the final-review route may return `503`;
 - Render/GPT/rollback evidence remains `not_executed`;
@@ -138,14 +143,14 @@ provider. Until that composition and actual acceptance exist:
 
 PR-64 still requires eight real evidence cases: Render commit, health, auth-negative,
 exact-route-positive, GPT schema import, authenticated Preview, Action-list inspection and
-rollback restore. None may be marked passed solely because PR-77 CI is green.
+rollback restore. None may be marked passed solely because PR-78 CI is green.
 
 ## Что остаётся до полного релиза
 
 ### Backend and release acceptance
 
-- trusted scenario composition that publishes concrete owner callables for approved purchase
-  and sell review;
+- approved server-side acquisition that binds existing calculators to the trusted PR-78
+  owner ports;
 - actual Render/Gateway acceptance and evidence recording;
 - actual GPT Editor import and authenticated Preview;
 - production-grade live ingestion for market, ratings, news and corporate events;
@@ -169,15 +174,16 @@ reconciliation требуют отдельной программы допуск
 
 ## Следующий рекомендуемый пакет
 
-**PR-78 — trusted production owner composition v1**:
+**PR-79 — approved server-side owner acquisition v1**:
 
-- constructs one scenario-scoped owner bundle from already existing read-only Decision Engine,
-  capacity and directional preview owners;
-- requires an explicit typed pro-forma risk provider and never substitutes current risk;
-- binds exact account, scenario, correlation, timestamp and operation before publication;
-- publishes the owner bundle before the fixed PR-77 dispatcher is invoked;
-- propagates missing, stale or wrong-type evidence as a safe unavailable outcome;
-- performs no HTTP route or production OpenAPI change;
+- selects only existing read-only Decision Engine, capacity and directional preview owners;
+- requires an explicit post-change risk calculator that returns
+  `ProFormaRiskScenarioV1`;
+- derives scenario, correlation, operation and masked account from trusted server context;
+- never accepts raw calculator outputs, credentials or full account IDs from the Action;
+- calls PR-78 only after every required source is available and fresh;
+- maps missing or stale evidence to the existing safe unavailable outcome;
+- performs no new HTTP route or production OpenAPI change;
 - preserves `app:app`, no broker writes and `trading_methods=false`.
 
 ## Запрет ложного завершения

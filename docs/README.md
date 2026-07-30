@@ -29,6 +29,7 @@
 - `architecture/FINAL_DECISION_REVIEW_WORKFLOW_PRODUCER_V1.md` — exactly-one buy/sell source, risk explanation, no-action behavior and coordinator boundary.
 - `architecture/FINAL_DECISION_REVIEW_WORKFLOW_COORDINATOR_V1.md` — canonical acquisition evidence, source freshness/account/direction gates and adapter boundary.
 - `architecture/FINAL_DECISION_REVIEW_PRODUCTION_OWNER_CALLABLES_V1.md` — fixed provider dispatchers, exact scenario owner routing, bounded TTL lifecycle and fail-closed startup.
+- `architecture/FINAL_DECISION_REVIEW_TRUSTED_OWNER_COMPOSITION_V1.md` — one-shot typed owner materialization, explicit pro-forma binding, fixed-provider invocation and cleanup.
 
 ### Operations
 

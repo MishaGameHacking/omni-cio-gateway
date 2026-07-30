@@ -360,6 +360,18 @@ class FinalDecisionReviewProductionOwnerCallableStoreV1:
             self._pins.pop(request.invocation_id)
             return True
 
+    def discard_for_request(
+        self,
+        request: ApprovedCalculatorInvocationRequestV1,
+    ) -> bool:
+        if not isinstance(request, ApprovedCalculatorInvocationRequestV1):
+            raise FinalDecisionReviewProductionOwnerCallableError(
+                "FINAL_DECISION_REVIEW_PRODUCTION_OWNER_REQUEST_TYPE_INVALID"
+            )
+        key = (request.scenario_id, request.correlation_id, request.operation)
+        with self._lock:
+            return self._bundles.pop(key, None) is not None
+
     def active_bundle_count(self, *, checked_at: datetime | None = None) -> int:
         now = _aware_utc(checked_at)
         with self._lock:

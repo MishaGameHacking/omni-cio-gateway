@@ -29,6 +29,9 @@ from omni_cio.release.final_decision_review_production_sources_v1 import (
 from omni_cio.release.final_decision_review_trusted_scenario_publisher_v1 import (
     FinalDecisionReviewTrustedScenarioPublisherV1,
 )
+from omni_cio.release.final_decision_review_trusted_owner_composition_v1 import (
+    FinalDecisionReviewTrustedOwnerCompositionV1,
+)
 from omni_cio.release.final_decision_review_workflow_bridge_v1 import (
     FinalDecisionReviewWorkflowBridgeV1,
 )
@@ -56,6 +59,7 @@ class FinalDecisionReviewProductionRuntimeV1:
     owner_callable_registration: (
         FinalDecisionReviewProductionOwnerCallableRegistrationV1
     )
+    trusted_owner_composition: FinalDecisionReviewTrustedOwnerCompositionV1
     producer: FinalDecisionReviewWorkflowProducerV1
     coordinator: FinalDecisionReviewWorkflowCoordinatorV1
     source_wiring: FinalDecisionReviewProductionSourceWiringV1
@@ -115,6 +119,10 @@ def register_final_decision_review_production_sources(
             store=owner_callable_store,
         )
     )
+    trusted_owner_composition = FinalDecisionReviewTrustedOwnerCompositionV1(
+        registry=provider_registry,
+        store=owner_callable_store,
+    )
     producer = FinalDecisionReviewWorkflowProducerV1(bridge=bridge)
     coordinator = FinalDecisionReviewWorkflowCoordinatorV1(
         producer=producer,
@@ -138,6 +146,7 @@ def register_final_decision_review_production_sources(
         provider_registry=provider_registry,
         owner_callable_store=owner_callable_store,
         owner_callable_registration=owner_callable_registration,
+        trusted_owner_composition=trusted_owner_composition,
         producer=producer,
         coordinator=coordinator,
         source_wiring=source_wiring,
