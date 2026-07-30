@@ -101,7 +101,7 @@ def _reject_duplicate_pairs(pairs: list[tuple[str, object]]) -> JsonObject:
     return result
 
 
-def _reject_json_constant(value: str) -> object:
+def _reject_json_constant(_value: str) -> object:
     raise MoexIssQuoteSourceError(MoexIssQuoteErrorCode.JSON_INVALID.value)
 
 
@@ -332,7 +332,9 @@ def parse_moex_iss_tqbr_quote_json(
         short_name=short_name,
         lot_size=lot_size,
         decimals=decimals,
-        warnings=("Public MOEX ISS market data may be delayed.",),
+        warnings=(
+            "Public MOEX ISS market data may be delayed and is for informational use.",
+        ),
     )
 
 
