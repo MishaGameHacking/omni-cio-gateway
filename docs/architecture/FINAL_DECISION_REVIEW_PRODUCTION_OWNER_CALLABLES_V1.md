@@ -120,6 +120,10 @@ directional preview releases the pin in a `finally` block. An abandoned or earli
 invocation retains its pin only until the same bounded TTL expires. New pins fail closed when
 pin capacity is full; live pins are never evicted to admit another invocation.
 
+Trusted in-process composition may discard an exact active bundle after invocation. Discard
+does not invalidate an already pinned immutable object; pins are released explicitly or by
+TTL. No public delete or mutation route is created.
+
 The store is deliberately process-local:
 
 - restarts clear all owner bundles;
