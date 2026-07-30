@@ -226,7 +226,7 @@ def test_endpoint_returns_partial_failure_tolerant_portfolio_totals(monkeypatch)
     payload = response.json()
 
     assert payload["status"] == "ok"
-    assert payload["version"] == "3.9.1"
+    assert payload["version"] == gateway_module.APP_VERSION
     assert payload["trading_methods"] is False
     assert payload["quality"]["cash_like_portfolio_positions"] == 1
     assert payload["quality"]["unique_market_instruments"] == 1
