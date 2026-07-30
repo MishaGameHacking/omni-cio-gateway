@@ -72,12 +72,17 @@ provider/operation and counts. It contains no financial payload or internal sour
 - `trading_methods=false`;
 - production `app:app`, version `3.10.0` and the 14 authenticated GET Actions remain unchanged.
 
-## Remaining boundary
+## Historical boundary and later chain
 
-PR-71 does not manufacture the directional gate or the pro-forma risk evaluation. A later
-calculator-owned handoff must produce those exact typed artifacts from existing read-only
-calculators and invoke this publisher. Render, Gateway, GPT Editor, Preview, Action-list and
-rollback evidence remain unexecuted until actual production acceptance.
+PR-71 itself did not manufacture the directional gate or the pro-forma risk evaluation. That
+historical gap was addressed incrementally by PR-72…PR-78: typed calculator handoff, exact
+intent construction, approved invocation, fixed provider registry, existing-owner adapters,
+scenario-scoped routing and one-shot pro-forma-bound composition. The publisher in this
+document remains the sole canonical store boundary.
+
+The remaining gap is approved server-side acquisition of those existing owners (planned PR-79),
+not a second publisher. Render, Gateway, GPT Editor, Preview, Action-list and rollback evidence
+remain unexecuted until actual production acceptance.
 
 ## Reconciliation
 
