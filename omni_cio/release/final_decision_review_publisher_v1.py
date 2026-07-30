@@ -3,7 +3,6 @@ from __future__ import annotations
 import re
 from datetime import datetime, timezone
 from threading import RLock
-from weakref import WeakKeyDictionary
 
 from omni_cio.contracts.v1.final_decision_review_input import (
     FinalDecisionReviewInputBindingV1,
@@ -33,6 +32,7 @@ from omni_cio.release.final_decision_review_route_v1 import (
 
 
 _TRACE_IDENTIFIER = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_.:-]{7,127}$")
+_PUBLISHER_ATTRIBUTE = "_final_decision_review_publisher_v1"
 
 
 class FinalDecisionReviewPublisherError(ValueError):
@@ -199,23 +199,19 @@ class FinalDecisionReviewPublisherV1:
         )
 
 
-_PUBLISHER_CACHE_LOCK = RLock()
-_PUBLISHER_CACHE: WeakKeyDictionary[
-    FinalDecisionReviewSourceRegistryV1,
-    FinalDecisionReviewPublisherV1,
-] = WeakKeyDictionary()
+_PUBLISHER_ATTACHMENT_LOCK = RLock()
 
 
 def publisher_for_registry(
     registry: FinalDecisionReviewSourceRegistryV1,
 ) -> FinalDecisionReviewPublisherV1:
-    """Return one concurrency guard for each process-local source registry."""
+    """Return one concurrency guard attached to each process-local registry."""
 
-    with _PUBLISHER_CACHE_LOCK:
-        publisher = _PUBLISHER_CACHE.get(registry)
-        if publisher is None:
+    with _PUBLISHER_ATTACHMENT_LOCK:
+        publisher = getattr(registry, _PUBLISHER_ATTRIBUTE, None)
+        if not isinstance(publisher, FinalDecisionReviewPublisherV1):
             publisher = FinalDecisionReviewPublisherV1(registry)
-            _PUBLISHER_CACHE[registry] = publisher
+            setattr(registry, _PUBLISHER_ATTRIBUTE, publisher)
         return publisher
 
 
