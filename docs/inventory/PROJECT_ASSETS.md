@@ -1,6 +1,6 @@
 # Реестр компонентов и внешних активов
 
-Дата инвентаризации: 2026-07-29.
+Дата инвентаризации: 2026-07-30.
 
 Этот файл отвечает на вопрос: «Что новый чат получит из GitHub, а что нужно подключить отдельно?»
 
@@ -52,7 +52,7 @@
 - operations analytics;
 - broker report reconciliation и async integrity;
 - Render Blueprint `render.yaml`;
-- hash-locked runtime/development dependencies;
+- hash-locked runtime/development dependencies из четырёх прямых runtime constraints (`fastapi`, `httpx`, private-registry `t-tech-investments`, `uvicorn[standard]`);
 - unit и Regression Shield tests;
 - blocking Ruff, formatting, mypy, coverage, SCA, SAST и secret scan;
 - краткоживущие CI diagnostics с mypy, pytest и coverage output;
@@ -75,6 +75,7 @@
 
 ### Custom GPT Modern Financial Sage — 2026
 
+- пошаговая настройка My GPTs и Actions в `gpt/MY_GPT_SETUP_RUNBOOK.md`;
 - канонические инструкции в `gpt/INSTRUCTIONS.md`;
 - реестр ручной конфигурации в `gpt/CONFIGURATION.md`;
 - переносимый профиль `knowledge/13_COMMUNICATION_STYLE_2026.txt`;
@@ -88,6 +89,7 @@
 
 ### Проектная память
 
+- исходный PDF v9, текстовая поисковая копия и иерархия в `docs/master-plan/`;
 - `AGENTS.md`;
 - `knowledge/00_PROJECT_MASTER_CONTEXT.md`;
 - профильные файлы `knowledge/`;
@@ -132,6 +134,14 @@ GitHub хранит желаемую каноническую конфигура
 ### T-Invest
 
 Во внешней системе находятся брокерский счёт, токен, позиции, операции и официальные отчёты. GitHub хранит только клиентский код, схемы и фиктивные тестовые данные.
+
+### Dependency audit 2026-07-30
+
+- direct dependency set минимален и не содержит Telegram packages;
+- оба lock-файла exact-pinned и SHA-256 hash-locked;
+- production/CI используют `--require-hashes`;
+- новые upstream версии FastAPI/Uvicorn и переход pytest major проверяются только отдельными dependency PR, а не смешиваются с governance cleanup;
+- private `t-tech-investments==1.49.2` нельзя сравнивать или заменять одноимённым публичным PyPI package.
 
 ## 3. Ещё не подключено к этому репозиторию
 
