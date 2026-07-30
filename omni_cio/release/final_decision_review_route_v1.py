@@ -40,6 +40,7 @@ FINAL_REVIEW_SECURITY_SCHEME = "ApiKeyAuth"
 FINAL_REVIEW_REGISTRY_TTL_SECONDS = 15 * 60
 FINAL_REVIEW_REGISTRY_MAX_ENTRIES = 64
 _DIGEST_PATTERN = r"^[0-9a-f]{64}$"
+_TRACE_PATTERN = r"^[a-zA-Z0-9][a-zA-Z0-9_.:-]{7,127}$"
 
 
 class FinalDecisionReviewRouteError(ValueError):
@@ -300,9 +301,7 @@ def patch_final_decision_review_openapi(schema: dict[str, Any]) -> dict[str, Any
         "type": "http",
         "scheme": "bearer",
     }
-    operation = (
-        schema.get("paths", {}).get(FINAL_REVIEW_PATH, {}).get("get")
-    )
+    operation = schema.get("paths", {}).get(FINAL_REVIEW_PATH, {}).get("get")
     if not isinstance(operation, dict):
         raise FinalDecisionReviewRouteError(
             "FINAL_DECISION_REVIEW_OPENAPI_OPERATION_MISSING"
@@ -363,11 +362,21 @@ def register_final_decision_review_gateway(
         action_candidate_sha256: Annotated[str, Query(pattern=_DIGEST_PATTERN)],
         correlation_id: Annotated[
             str | None,
-            Header(alias="X-Correlation-ID", min_length=8, max_length=128),
+            Header(
+                alias="X-Correlation-ID",
+                min_length=8,
+                max_length=128,
+                pattern=_TRACE_PATTERN,
+            ),
         ] = None,
         request_id: Annotated[
             str | None,
-            Header(alias="X-Request-ID", min_length=8, max_length=128),
+            Header(
+                alias="X-Request-ID",
+                min_length=8,
+                max_length=128,
+                pattern=_TRACE_PATTERN,
+            ),
         ] = None,
     ) -> Any:
         handled_at = datetime.now(timezone.utc)
@@ -376,11 +385,22 @@ def register_final_decision_review_gateway(
             AccountReference(masked_id=account)
         except ValidationError:
             base.logger.warning(
-                "final_review_route rejected code=%s correlation_id=%s account=%s",
+                "final_review_route rejected code=%s correlation_id=%s "
+                "account_mask_valid=false",
                 FinalDecisionReviewHandlerErrorCode.INVALID_REQUEST.value,
                 correlation,
-                account[:64],
             )
+            return _error_response(
+                status=FinalDecisionReviewHandlerHttpStatus.BAD_REQUEST,
+                code=FinalDecisionReviewHandlerErrorCode.INVALID_REQUEST,
+                message="Canonical query parameters are invalid",
+            )
+
+        normalized_instruments = tuple(instrument_keys)
+        if (
+            instrument_count != len(normalized_instruments)
+            or len(set(normalized_instruments)) != len(normalized_instruments)
+        ):
             return _error_response(
                 status=FinalDecisionReviewHandlerHttpStatus.BAD_REQUEST,
                 code=FinalDecisionReviewHandlerErrorCode.INVALID_REQUEST,
@@ -393,7 +413,7 @@ def register_final_decision_review_gateway(
             final_option_id=final_option_id,
             intent_fingerprint=intent_fingerprint,
             instrument_count=instrument_count,
-            instrument_keys=tuple(instrument_keys),
+            instrument_keys=normalized_instruments,
             requested_at=handled_at,
         )
         if lookup.source is None:
@@ -408,7 +428,8 @@ def register_final_decision_review_gateway(
                 else FinalDecisionReviewHandlerHttpStatus.CONFLICT
             )
             base.logger.warning(
-                "final_review_route rejected code=%s correlation_id=%s account=%s active_sources=%s",
+                "final_review_route rejected code=%s correlation_id=%s "
+                "account=%s active_sources=%s",
                 code.value,
                 correlation,
                 account,
@@ -435,7 +456,7 @@ def register_final_decision_review_gateway(
                 final_option_id=final_option_id,
                 intent_fingerprint=intent_fingerprint,
                 instrument_count=instrument_count,
-                instrument_keys=tuple(instrument_keys),
+                instrument_keys=normalized_instruments,
                 response_sha256=response_sha256,
                 action_candidate_sha256=action_candidate_sha256,
             )
