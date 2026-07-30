@@ -15,9 +15,10 @@
 | `operations_analytics.py` | Operations Analytics & Cash Flow Reconciliation |
 | `broker_report_reconciliation/` | Generate/Get official report, pagination и reconciliation |
 | `omni_cio/contracts/v1/` | Strict immutable Pydantic contracts v1 |
-| `omni_cio/contracts/v1/macro.py` | PR-84 immutable key-rate observations, snapshot status, provenance and safe error codes |
+| `omni_cio/contracts/v1/macro.py` | PR-84/85 key-rate source and explicit cache result contracts |
 | `omni_cio/market/` | Market, capacity, bond, equity, fund and technical analysis |
 | `omni_cio/market/cbr_key_rate_v1.py` | PR-84 fixed official Bank of Russia SOAP source, bounded streaming and protected XML parsing |
+| `omni_cio/market/cbr_key_rate_cache_v1.py` | PR-85 exact-range bounded cache, single-flight refresh and explicit fresh/stale/unavailable lifecycle |
 | `omni_cio/release/final_decision_review_route_v1.py` | Production private GET route and safe handler boundary |
 | `omni_cio/release/final_decision_review_publisher_v1.py` | Trusted process-local exact-source publisher |
 | `omni_cio/release/final_decision_review_orchestration_v1.py` | PR-53…PR-63 composition and first-blocker handling |
@@ -60,6 +61,7 @@
 | `tests/test_final_decision_review_*` | PR-50…PR-83 contracts, route, lifecycle, owners, acceptance and invariance |
 | `tests/test_final_decision_review_authenticated_owner_installation_v1.py` | PR-83 post-auth success/failure/evidence/idempotent registration |
 | `tests/test_cbr_key_rate_source_v1.py` | PR-84 contract, fixed source, XML security, bounded transport and fail-closed errors |
+| `tests/test_cbr_key_rate_cache_v1.py` | PR-85 fresh/stale/unavailable contract, single-flight, pruning, eviction and no-silent-stale behavior |
 | `tests/test_portfolio_market_snapshot.py` | Рыночная оценка портфеля |
 | `tests/test_portfolio_analytics.py` | Структура и концентрация |
 | `tests/test_cash_liquidity.py` | Деньги и лимиты |
@@ -78,7 +80,7 @@
 | `docs/master-plan/` | Исходная спецификация v9, поисковая копия и приоритет источников |
 | `knowledge/00_PROJECT_MASTER_CONTEXT.md` | Полный стратегический контекст и roadmap |
 | `knowledge/16_CURRENT_PROGRAM_STATUS.md` | Фактическая вершина программы и следующий пакет |
-| `knowledge/09_MARKET_DATA_AND_BUYING_POWER.txt` | Market, macro source и buying-power semantics |
+| `knowledge/09_MARKET_DATA_AND_BUYING_POWER.txt` | Market, macro source/cache и buying-power semantics |
 | `knowledge/10_OPERATIONS_ANALYTICS_AND_RECONCILIATION.txt` | Operations semantics |
 | `knowledge/11_BROKER_REPORT_ASYNC_INTEGRITY.txt` | Broker-report async semantics |
 | `knowledge/12_TELEGRAM_RETIREMENT.txt` | Telegram retirement decision |
@@ -87,6 +89,7 @@
 | `knowledge/15_VERSIONED_DATA_CONTRACTS.txt` | Versioned contracts and quality profiles |
 | `docs/architecture/FINAL_DECISION_REVIEW_AUTHENTICATED_OWNER_INSTALLATION_V1.md` | PR-83 authenticated installation lifecycle |
 | `docs/architecture/CBR_KEY_RATE_SOURCE_V1.md` | PR-84 official source, parser and transport security boundary |
+| `docs/architecture/CBR_KEY_RATE_CACHE_V1.md` | PR-85 exact-range cache and explicit freshness/display policy |
 | `gpt/MY_GPT_SETUP_RUNBOOK.md` | Точная настройка ChatGPT → My GPTs, Actions, Preview и rollback |
 | `docs/operations/RELEASE_CHECKLIST.md` | Pre-merge, production and evidence checklist |
 
