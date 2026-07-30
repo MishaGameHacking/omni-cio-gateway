@@ -14,6 +14,7 @@ omni-cio-gateway/
 ├── knowledge/                     # правила предметной области для AI
 ├── gpt/                           # каноническая конфигурация Custom GPT
 ├── docs/
+│   ├── master-plan/               # исходная спецификация и поисковая копия
 │   ├── architecture/              # архитектура и карта файлов
 │   ├── operations/                # gateway и migration runbooks
 │   └── inventory/                 # реестр компонентов и внешних активов
@@ -51,17 +52,17 @@ Repository checks должны блокировать их случайное в
 - `11_` — асинхронный брокерский отчёт;
 - `12_` — решение о выводе Telegram runtime из эксплуатации.
 - `13_` — communication profile;
-- `14_` — CI, dependency и security baseline.
+- `14_` — CI, dependency и security baseline;
+- `15_` — versioned contracts и data-quality профили;
+- `16_` — фактическая вершина программы, acceptance и следующий пакет.
 
 ### `gpt/`
 
-Переносимая конфигурация единственного поддерживаемого интерфейса —
-Custom GPT.
+Переносимая конфигурация единственного поддерживаемого интерфейса — Custom GPT. `MY_GPT_SETUP_RUNBOOK.md` является канонической ручной процедурой подключения в ChatGPT → My GPTs.
 
 ### `docs/`
 
-Архитектура, runbooks, решения и inventory. Старый Telegram deployment
-имеет только removal runbook.
+`master-plan/` хранит неизменяемый PDF, текстовую поисковую копию и правила приоритета. `architecture/`, `operations/` и `inventory/` хранят реализованную архитектуру, runbooks и реестр. Старый Telegram deployment имеет только retirement history/removal runbook.
 
 ### `.github/workflows/`
 
