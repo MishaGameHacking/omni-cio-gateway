@@ -39,6 +39,7 @@
 - `architecture/FINAL_DECISION_REVIEW_PRODUCTION_OWNER_CALLABLES_V1.md` — fixed provider dispatchers, exact scenario owner routing, bounded TTL lifecycle and fail-closed startup.
 - `architecture/FINAL_DECISION_REVIEW_TRUSTED_OWNER_COMPOSITION_V1.md` — one-shot typed owner materialization, explicit pro-forma binding, fixed-provider invocation and cleanup.
 - `architecture/FINAL_DECISION_REVIEW_APPROVED_OWNER_ACQUISITION_V1.md` — server-derived context, exact fresh owner leases, PR-78 invocation and existing 503 mapping.
+- `architecture/FINAL_DECISION_REVIEW_APPROVED_OWNER_INSTALLATION_V1.md` — exact typed PR-78 owner-port installation into one PR-79 acquisition call, failure behavior and rollback.
 
 ### Operations
 
