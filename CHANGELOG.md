@@ -5,6 +5,10 @@
 ## [Unreleased]
 
 ### Added
+- Production-facing final-review source wiring with an atomic bounded scenario bundle,
+  existing portfolio-market → contract → analytics → conservative-risk current-risk loader,
+  exact PR-68 acquisition ports, TTL/replacement/eviction lifecycle and fail-closed missing
+  behavior; no public publication route, broker write, OpenAPI change or trading method is added.
 - Read-only final-review source acquisition adapter with four typed loader ports, selected
   buy/sell call routing, explicit available/missing/failed outcomes and safe timeout/type/
   timestamp error codes; exact artifacts and evidence are handed to PR-67 without payload,

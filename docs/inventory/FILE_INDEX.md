@@ -30,6 +30,8 @@
 | `omni_cio/release/final_decision_review_workflow_bridge_v1.py` | Production-importable typed risk/pre-trade bridge into PR-63 orchestration |
 | `omni_cio/release/final_decision_review_workflow_producer_v1.py` | Exactly-one buy/sell source, risk explanation and PR-65 producer pipeline |
 | `omni_cio/release/final_decision_review_workflow_coordinator_v1.py` | Source-evidence, freshness, account and direction coordinator before PR-66 |
+| `omni_cio/release/final_decision_review_source_acquisition_v1.py` | Four typed loader ports, safe outcome mapping and exact PR-67 handoff |
+| `omni_cio/release/final_decision_review_production_sources_v1.py` | Atomic scenario source store, live current-risk loader and PR-68 production wiring |
 
 ## Конфигурация
 
@@ -57,6 +59,8 @@
 | `tests/test_final_decision_review_workflow_bridge_v1.py` | Production bridge registration, exact route, no-action, HTTPS, trace, concurrency, TTL, restart and immutability |
 | `tests/test_final_decision_review_workflow_producer_v1.py` | Buy/sell producer, route 200, stale/account no-action, direction count, trace, concurrency and OpenAPI invariance |
 | `tests/test_final_decision_review_workflow_coordinator_v1.py` | Complete handoff, missing/failed/stale sources, account/direction mismatch, privacy and producer-call guards |
+| `tests/test_final_decision_review_source_acquisition_v1.py` | Loader routing, missing/failed/timeout/type/timestamp mapping and exact coordinator handoff |
+| `tests/test_final_decision_review_production_sources_v1.py` | Atomic bundle lifecycle, live current-risk composition, acquisition wiring and write-surface guards |
 | `tests/test_portfolio_market_snapshot.py` | Рыночная оценка портфеля |
 | `tests/test_portfolio_analytics.py` | Структура и концентрация |
 | `tests/test_cash_liquidity.py` | Деньги и лимиты |
@@ -91,6 +95,7 @@
 | `docs/architecture/FINAL_DECISION_REVIEW_WORKFLOW_BRIDGE_V1.md` | Typed production bridge, scenario/binding pipeline, fail-closed behavior and remaining live-producer gap |
 | `docs/architecture/FINAL_DECISION_REVIEW_WORKFLOW_PRODUCER_V1.md` | Buy/sell source pipeline, risk explanation, no-action behavior and remaining coordinator gap |
 | `docs/architecture/FINAL_DECISION_REVIEW_WORKFLOW_COORDINATOR_V1.md` | Canonical acquisition evidence, source gates, privacy boundary and remaining adapter gap |
+| `docs/architecture/FINAL_DECISION_REVIEW_PRODUCTION_SOURCES_V1.md` | Live current-risk source, atomic scenario bundle, loader wiring and remaining registration gap |
 | `gpt/` | Восстановление и настройка Custom GPT |
 | `docs/operations/TELEGRAM_REMOVAL_RUNBOOK.md` | Одноразовая внешняя очистка Telegram после merge |
 | `docs/operations/RELEASE_CHECKLIST.md` | Pre-merge, production and acceptance-evidence checklist |
