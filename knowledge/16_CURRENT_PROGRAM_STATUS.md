@@ -1,7 +1,7 @@
 # 16 — CURRENT PROGRAM STATUS
 
 Дата актуализации: 2026-07-30  
-Фактическая вершина программы после merge этого пакета: **PR-71**  
+Фактическая вершина программы после merge этого пакета: **PR-73**  
 Точная версия определяется текущей вершиной ветки `main`.
 
 ## Назначение документа
@@ -62,65 +62,54 @@ ledger, walk-forward/OOS stability и market-capacity gating.
 - **PR-68:** typed source acquisition adapter with safe outcome mapping;
 - **PR-69:** production-facing scenario store, live current-risk loader and PR-68 wiring;
 - **PR-70:** lazy production registration of source store, producer, coordinator and wiring;
-- **PR-71:** trusted typed scenario publication into the registered bounded store.
+- **PR-71:** trusted typed scenario publication into the registered bounded store;
+- **PR-72:** calculator-owned purchase/sell preview handoff into trusted publication;
+- **PR-73:** calculator-owned construction of the exact capacity-intent gate before PR-72.
 
-## PR-71 — trusted scenario source publication v1
+## PR-73 — calculator-owned intent workflow v1
 
-PR-71 adds one internal publisher to the PR-70 production runtime. The publisher and PR-69
-acquisition wiring share the same process-local bounded TTL store.
+PR-73 accepts typed analytical decision and capacity evidence, constructs the exact
+`CapacityIntentDecisionGateV1` at the pro-forma risk timestamp and delegates purchase/sell
+preview gating and publication to PR-72.
 
 ### Accepted source artifacts
 
-A publication contains exactly:
+1. one typed `DecisionSetV1`;
+2. one typed exact-intent request;
+3. one or more typed capacity assessments;
+4. typed purchase or sell broker previews;
+5. one already calculated typed pro-forma risk evaluation;
+6. a safe scenario ID and optional aware publication timestamp.
 
-1. one typed purchase or sell pre-trade gate;
-2. one typed pro-forma risk evaluation;
-3. one safe scenario ID;
-4. safe provider and operation identifiers;
-5. one timezone-aware publication timestamp.
+Raw mappings are rejected before store mutation.
 
-Raw dictionaries, credentials, full account IDs and request bodies are rejected.
+### Trust gates
 
-### Exact trust gates
+- exact requested option and capacity-request identity;
+- complete and fresh capacity coverage;
+- exact intent parity between expected request and assessment;
+- exact preview coverage, price, lot and quantity parity through PR-72;
+- pro-forma timestamp used consistently across intent and preview gates;
+- conservative non-executing risk policy through the trusted publisher;
+- blocked analytical inputs remain blocked and can never become execution-ready.
 
-Before mutating the store the publisher verifies:
-
-- exactly one buy/sell direction;
-- exact request-side consistency;
-- unique expected instrument keys;
-- exact preview coverage;
-- one masked account across all broker previews;
-- exact account parity with pro-forma risk;
-- exact gate/risk timestamp equality;
-- source freshness and future tolerance;
-- non-executing gate flags;
-- conservative risk policy with margin, shorts, derivatives and currency operations disabled.
-
-Failure occurs before publication and leaves the store unchanged.
-
-### Action compatibility
+### Compatibility and safety
 
 - Gateway version remains `3.10.0`;
 - production OpenAPI remains exactly 14 authenticated GET Actions;
 - no route, operation ID, query field or request body is added;
 - no public scenario publication method exists;
-- `app:app` remains stable.
-
-### Safety invariants
-
-- no startup broker call;
+- no startup calculation or broker call;
 - no broker write method;
-- no financial payload or internal source ID in publication metadata;
 - no trade authorization or order creation;
-- missing or invalid scenario data remains fail-closed;
+- `app:app` remains stable;
 - `trading_methods=false`.
 
 ## Remaining production boundary
 
-PR-71 accepts already calculated typed artifacts but does not manufacture them. A trusted
-calculator-owned handoff must build the exact directional gate and pro-forma risk from existing
-read-only calculation outputs and invoke the publisher. Until that handoff and actual
-production acceptance exist:
+PR-73 does not choose an action and does not calculate capacity evidence, broker previews or
+pro-forma risk. A trusted calculator caller must still supply those typed source artifacts from
+existing read-only owners. Until that caller and actual production acceptance exist:
 
 - the scenario store may remain empty after restart;
 - exact acquisition may report missing scenario sources;
@@ -132,13 +121,13 @@ production acceptance exist:
 
 PR-64 still requires eight real evidence cases: Render commit, health, auth-negative,
 exact-route-positive, GPT schema import, authenticated Preview, Action-list inspection and
-rollback restore. None may be marked passed solely because PR-71 CI is green.
+rollback restore. None may be marked passed solely because PR-73 CI is green.
 
 ## Что остаётся до полного релиза
 
 ### Backend and release acceptance
 
-- calculator-owned creation and handoff of exact directional gate and pro-forma risk;
+- trusted invocation from the existing decision/capacity/preview/risk calculation owners;
 - actual Render/Gateway acceptance and evidence recording;
 - actual GPT Editor import and authenticated Preview;
 - production-grade live ingestion for market, ratings, news and corporate events;
@@ -162,14 +151,14 @@ reconciliation требуют отдельной программы допуск
 
 ## Следующий рекомендуемый пакет
 
-**PR-72 — calculator-owned trusted scenario handoff v1**:
+**PR-74 — approved calculator invocation boundary v1**:
 
-- accepts only outputs from approved read-only gate/risk builders;
-- preserves exact gate and risk source timestamps;
-- derives scenario context without accepting user-controlled raw payloads;
-- invokes the PR-71 publisher through one internal service;
-- records safe handoff provenance and counts only;
-- proves blocked, stale, mismatch, restart and concurrency behavior;
+- accepts only an allowlisted internal calculator operation;
+- binds one decision, exact capacity evidence, broker previews and pro-forma risk to one
+  scenario ID and correlation context;
+- invokes PR-73 once under a process-local lock;
+- rejects duplicate, stale, mismatched or user-controlled raw source input;
+- records safe counts and timestamps only;
 - changes no HTTP route or production OpenAPI operation;
 - preserves `app:app`, no broker writes and `trading_methods=false`.
 
