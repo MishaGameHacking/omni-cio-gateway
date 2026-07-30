@@ -1,7 +1,7 @@
 # 16 — CURRENT PROGRAM STATUS
 
 Дата актуализации: 2026-07-30  
-Фактическая вершина программы после merge этого пакета: **PR-84**  
+Фактическая вершина программы после merge этого пакета: **PR-85**  
 Точная версия определяется текущей вершиной ветки `main`.
 
 ## Назначение документа
@@ -30,12 +30,12 @@
   source store, calculator handoff и exact capacity-intent gate;
 - **PR-74…PR-80:** allowlisted invocation, fixed providers, existing owners,
   scenario routing, one-shot composition, acquisition и installation;
-- **PR-81:** authenticated route-context derivation и bounded capture;
-- **PR-82:** exact typed owner snapshots и fresh invocation rebinding;
-- **PR-83:** post-auth snapshot selection, one PR-80 invocation и bounded
-  redacted internal evidence;
-- **PR-84:** official Bank of Russia key-rate source v1 with immutable macro
-  contracts, bounded HTTPS streaming and protected XML parsing.
+- **PR-81…PR-83:** authenticated context, typed owner snapshots, one PR-80
+  invocation and bounded redacted evidence;
+- **PR-84:** official Bank of Russia key-rate source with immutable Decimal
+  contracts, bounded HTTPS streaming and protected XML parsing;
+- **PR-85:** exact-range bounded cache with explicit fresh/stale/unavailable
+  lifecycle, single-flight refresh and no-silent-stale policy.
 
 ## PR-81…PR-83 authenticated owner lifecycle
 
@@ -53,58 +53,67 @@ Public response and OpenAPI remain unchanged.
 
 ## PR-84 official CBR key-rate source v1
 
-PR-84 creates a trusted internal source for the key-rate block that previously
-could remain unavailable or display dashes.
+PR-84 provides a trusted internal Bank of Russia `DailyInfo.KeyRateXML` source:
 
-### Fixed source identity
+- fixed official endpoint, SOAPAction and source identity;
+- typed `Decimal` effective-date observations;
+- TLS verification, redirects disabled, bounded timeout/range/content type;
+- `Content-Length` and streamed byte limits before parsing;
+- protected `pyexpat` parser rejecting DTD/entity/external entities;
+- nested and escaped XMLDocument support;
+- fixed redacted network/HTTP/XML/range/duplicate error codes;
+- no raw XML, upstream body, fault or exception storage.
 
-- provider: Bank of Russia;
-- service: `DailyInfo`;
-- operation/source ID: `KeyRateXML` / `DailyInfo.KeyRateXML`;
-- fixed HTTPS endpoint and SOAPAction;
-- source authority: `official`.
+The first draft parser was blocked by Bandit B314 and replaced rather than
+suppressed. PR-84 added no route, Action, dependency or broker call.
 
-Endpoint, operation and provider cannot be supplied from an Action, document,
-environment variable or user payload.
+## PR-85 CBR key-rate cache lifecycle v1
 
-### Typed contract
+PR-85 adds an internal process-local lifecycle over the PR-84 typed source.
 
-`CbrKeyRateSnapshotV1` retains only:
+### Exact identity and lifecycle
 
-- requested date range and UTC retrieval time;
-- `available`/`unavailable` status;
-- official provenance when available;
-- unique effective-date observations using exact `Decimal` rates;
-- latest observation in the requested range;
-- a bounded safe error code and warnings.
+- key: exact `(requested_from, requested_to)` range;
+- default fresh TTL: 3600 seconds;
+- default stale retention: 86400 seconds;
+- default capacity: 16 ranges;
+- fully expired entries are pruned and never returned;
+- oldest ranges are evicted when capacity is exceeded;
+- restart/`clear()` removes all entries;
+- loader is lazy and startup performs no network call.
 
-Available snapshots require an official source and exact latest-row parity.
-Unavailable snapshots cannot retain source data or observations.
+### Explicit status contract
 
-### Transport and XML security
+`CbrKeyRateCacheResultV1` distinguishes:
 
-- TLS verification and redirects disabled for owned transport;
-- timeout and requested range bounded;
-- XML/SOAP content type required;
-- `Content-Length` and streamed decoded bytes checked before parsing;
-- raw XML never enters the contract or repository;
-- `DOCTYPE`, entity declarations and external entities rejected;
-- parser uses a direct `pyexpat` tree builder with parameter entities disabled;
-- nested and escaped XMLDocument forms supported;
-- malformed XML, SOAP Fault, empty result, range mismatch and conflicting
-  duplicate dates fail closed with fixed error codes;
-- upstream body, fault and exception text are not exposed.
+- `fresh` — display permitted;
+- `stale` — display permitted only after a failed refresh and explicit trusted
+  `allow_stale=true`;
+- `unavailable` — no snapshot or numeric display value.
 
-Draft CI originally rejected `ElementTree.fromstring` with Bandit B314. The
-parser was replaced, not suppressed, and the repeated security run passed.
+Stale values are never silently presented as current. A failed forced refresh
+while the existing entry is still fresh preserves an explicit fresh-cache
+fallback with refresh failure metadata. Wrong type, wrong range, future source
+time, unavailable source and loader exceptions fail closed with fixed codes.
 
-### Compatibility
+### Single-flight and safety
 
-- no FastAPI route, GPT Action or dashboard field is added in PR-84;
-- no dependency or secret is added;
+A process-local `RLock` serializes lookup, refresh, publication, pruning and
+eviction. Concurrent empty-cache reads perform one loader call. Only typed PR-84
+snapshots are retained; raw XML, credentials, full account IDs and exception
+text are absent.
+
+- no FastAPI route, GPT Action or frontend field is added;
 - no T-Invest call or broker write method is added;
 - `app:app` and exactly 14 authenticated GET Actions remain unchanged;
 - `trading_methods=false`.
+
+## Frontend/owner discovery state
+
+Repository search did not find a registered existing frontend/dashboard owner
+for the key-rate field. PR-85 therefore does not invent a duplicate UI or
+silently change an Action response. The deployed frontend source must first be
+located and registered before a UI binding package is safe.
 
 ## Production acceptance state
 
@@ -126,8 +135,8 @@ access has not supplied all required Render/GPT evidence.
 
 ### Backend and operations
 
-- integrate the typed PR-84 snapshot into the exact existing macro/dashboard
-  owner with explicit cache, freshness and unavailable-display semantics;
+- locate the exact existing macro/dashboard owner or frontend source, then bind
+  the PR-85 cache result with explicit fresh/stale/unavailable presentation;
 - production-grade quote, rating, news and corporate-event ingestion;
 - actual Render/Gateway acceptance and evidence recording;
 - actual GPT Editor import and authenticated Preview;
@@ -149,22 +158,19 @@ Shadow, paper, preview и final-review инфраструктура не явл�
 switch, partial-fill и timeout reconciliation требуют отдельной программы
 допуска и решения владельца. Автономная торговля без подтверждения не включена.
 
-## Следующий пакет после PR-84
+## Следующий пакет после PR-85
 
-Ближайший доказанный backend gap — интеграция typed key-rate snapshot в один
-точно выбранный существующий owner:
+Ближайший безопасный шаг зависит от обнаружения существующего frontend/owner.
+До этого нельзя создавать новый дублирующий кабинет или молча менять public
+Action contract. Параллельно допустим следующий независимый production-source
+пакет из master plan, если он сохраняет versioned contracts, provenance,
+freshness, fail-closed behavior и read-only границы.
 
-- bounded cache and freshness policy;
-- explicit available/stale/unavailable presentation;
-- no silent reuse of an expired value;
-- no mixing with broker-account or market-price facts;
-- no public Action change unless separately versioned and accepted.
-
-Production acceptance остаётся параллельным обязательным внешним блоком и не
-может быть заменена локальными тестами.
+Production acceptance остаётся отдельным обязательным внешним блоком и не может
+быть заменена локальными тестами.
 
 ## Запрет ложного завершения
 
-Проект не считается полностью завершённым только потому, что PR-84 слит или CI
+Проект не считается полностью завершённым только потому, что PR-85 слит или CI
 зелёный. Завершение разрешено объявлять только после всех согласованных пакетов,
 production acceptance и отдельной проверки полного Definition of Done.
