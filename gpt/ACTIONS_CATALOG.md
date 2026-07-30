@@ -1,8 +1,8 @@
 # Каталог GPT Actions
 
-Текущий backend release: **v3.9.1**. Production schema импортируется из `/openapi.json` активного Render service.
+Текущий backend release: **v3.10.0**. Production schema импортируется из `/openapi.json` активного Render service.
 
-Все пользовательские Actions защищены Bearer key и работают только на чтение.
+Все пользовательские Actions защищены Bearer key и работают только на чтение, кроме публичного `gatewayHealth`.
 
 | operationId | HTTP | Path | Назначение |
 |---|---:|---|---|
@@ -19,6 +19,7 @@
 | `getPurchaseCapacityPreview` | GET | `/portfolio/purchase-capacity` | Предварительный read-only расчёт суммы и доступности покупки |
 | `getOperationsAnalytics` | GET | `/operations/analytics` | Категории операций, денежные потоки и reconciliation |
 | `getBrokerReportReconciliation` | GET | `/operations/broker-report-reconciliation` | Асинхронный официальный отчёт и сверка с операциями |
+| `getFinalDecisionReview` | GET | `/decision/final-review` | Получение ранее сформированного и проверенного compact final review по exact identity |
 
 ## Правила вызовов
 
@@ -28,6 +29,9 @@
 - `getPurchaseCapacityPreview` не создаёт заявку и не гарантирует исполнение.
 - `getBrokerReportReconciliation` принимает `days=1..31`.
 - Первый вызов отчёта без `task_id` возвращает `pending` и `task_id`; повторный вызов использует тот же ID.
+- `getFinalDecisionReview` не строит рекомендацию заново и не вызывает брокера. Он возвращает только активный внутренний source, уже прошедший read-only validation.
+- Для `getFinalDecisionReview` пустой или просроченный source registry означает `503`, а подмена account/option/fingerprint/instruments/digests — `409`.
+- `getFinalDecisionReview` не является подтверждением сделки и всегда возвращает `trade_authorized=false`, `order_created=false`, `execution_ready=false`, `trading_methods=false`.
 
 ## Стабильность контракта
 
@@ -42,9 +46,11 @@
 ## Обновление GPT Editor
 
 1. Дождаться production deploy.
-2. Проверить `/health`.
+2. Проверить `/health` и версию `3.10.0`.
 3. Импортировать актуальный `/openapi.json`.
 4. Установить Authentication → API Key → Bearer.
 5. Ввести секретный `GATEWAY_API_KEY` вручную.
-6. Убедиться, что список действий совпадает с таблицей.
-7. Выполнить один целевой тест и проверить, что другие методы не вызывались.
+6. Убедиться, что список действий совпадает с таблицей и содержит ровно один новый `getFinalDecisionReview`.
+7. Сначала проверить вызов без ключа: решение не должно возвращаться.
+8. Выполнить один целевой Preview-вызов только после появления активного reviewed source.
+9. Убедиться, что другие методы не вызывались и write/execute Actions отсутствуют.
