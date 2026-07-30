@@ -13,6 +13,9 @@ from omni_cio.release.final_decision_review_approved_owner_acquisition_v1 import
     FinalDecisionReviewApprovedServerContextV1,
     unavailable_final_decision_review_approved_owner_source_loaders,
 )
+from omni_cio.release.final_decision_review_approved_owner_installation_v1 import (
+    FinalDecisionReviewApprovedOwnerInstallationV1,
+)
 from omni_cio.release.final_decision_review_calculator_handoff_v1 import (
     FinalDecisionReviewCalculatorScenarioHandoffV1,
 )
@@ -66,12 +69,14 @@ class FinalDecisionReviewProductionRuntimeV1:
         FinalDecisionReviewProductionOwnerCallableRegistrationV1
     )
     trusted_owner_composition: FinalDecisionReviewTrustedOwnerCompositionV1
+    approved_owner_installation: FinalDecisionReviewApprovedOwnerInstallationV1
     approved_owner_acquisition: FinalDecisionReviewApprovedOwnerAcquisitionV1
     producer: FinalDecisionReviewWorkflowProducerV1
     coordinator: FinalDecisionReviewWorkflowCoordinatorV1
     source_wiring: FinalDecisionReviewProductionSourceWiringV1
     internal_only: bool = True
     startup_broker_call_performed: bool = False
+    startup_owner_installation_performed: bool = False
     startup_owner_acquisition_performed: bool = False
     public_source_publication_route_created: bool = False
     production_openapi_changed: bool = False
@@ -144,6 +149,9 @@ def register_final_decision_review_production_sources(
         registry=provider_registry,
         store=owner_callable_store,
     )
+    approved_owner_installation = FinalDecisionReviewApprovedOwnerInstallationV1(
+        composition=trusted_owner_composition,
+    )
     approved_owner_acquisition = (
         FinalDecisionReviewApprovedOwnerAcquisitionV1(
             composition=trusted_owner_composition,
@@ -181,6 +189,7 @@ def register_final_decision_review_production_sources(
         owner_callable_store=owner_callable_store,
         owner_callable_registration=owner_callable_registration,
         trusted_owner_composition=trusted_owner_composition,
+        approved_owner_installation=approved_owner_installation,
         approved_owner_acquisition=approved_owner_acquisition,
         producer=producer,
         coordinator=coordinator,
