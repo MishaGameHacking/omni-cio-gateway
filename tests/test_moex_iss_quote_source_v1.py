@@ -389,7 +389,7 @@ def test_fetch_invalid_json_is_redacted_and_guards_precede_network() -> None:
             200,
             request=request,
             headers={"content-type": "application/json"},
-            content=b'{"upstream_secret":"do not copy"',
+            content=b'{"upstream_private_text":"do not copy"',
         )
 
     snapshot = fetch_moex_iss_tqbr_quote(
@@ -398,7 +398,7 @@ def test_fetch_invalid_json_is_redacted_and_guards_precede_network() -> None:
         transport=httpx.MockTransport(invalid_json),
     )
     assert snapshot.error_code is MoexIssQuoteErrorCode.JSON_INVALID
-    assert "upstream_secret" not in " ".join(snapshot.warnings)
+    assert "upstream_private_text" not in " ".join(snapshot.warnings)
 
     called = False
 
