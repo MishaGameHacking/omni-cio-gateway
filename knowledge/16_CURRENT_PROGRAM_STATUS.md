@@ -1,7 +1,7 @@
 # 16 — CURRENT PROGRAM STATUS
 
 Дата актуализации: 2026-07-30  
-Фактическая вершина программы после merge этого пакета: **PR-70**  
+Фактическая вершина программы после merge этого пакета: **PR-71**  
 Точная версия определяется текущей вершиной ветки `main`.
 
 ## Назначение документа
@@ -61,38 +61,48 @@ ledger, walk-forward/OOS stability и market-capacity gating.
 - **PR-67:** acquisition-outcome coordinator and source handoff validation;
 - **PR-68:** typed source acquisition adapter with safe outcome mapping;
 - **PR-69:** production-facing scenario store, live current-risk loader and PR-68 wiring;
-- **PR-70:** lazy production registration of source store, producer, coordinator and wiring.
+- **PR-70:** lazy production registration of source store, producer, coordinator and wiring;
+- **PR-71:** trusted typed scenario publication into the registered bounded store.
 
-## PR-70 — production source registration v1
+## PR-71 — trusted scenario source publication v1
 
-PR-70 registers one complete internal runtime object graph in `app.py`:
+PR-71 adds one internal publisher to the PR-70 production runtime. The publisher and PR-69
+acquisition wiring share the same process-local bounded TTL store.
 
-1. existing final-review workflow bridge;
-2. one PR-66 producer;
-3. one PR-67 coordinator;
-4. one bounded PR-69 scenario source store;
-5. one lazy live current-risk loader;
-6. one PR-69 source acquisition wiring object.
+### Accepted source artifacts
 
-Production exports:
+A publication contains exactly:
 
-- `final_decision_review_production_runtime`;
-- `final_decision_review_scenario_source_store`;
-- `final_decision_review_source_wiring`.
+1. one typed purchase or sell pre-trade gate;
+2. one typed pro-forma risk evaluation;
+3. one safe scenario ID;
+4. safe provider and operation identifiers;
+5. one timezone-aware publication timestamp.
 
-### Startup laziness
+Raw dictionaries, credentials, full account IDs and request bodies are rejected.
 
-`app.py` passes a callable into the current-risk loader. The portfolio-market engine is not
-called during import or registration. T-Invest is contacted only if trusted internal code
-explicitly invokes acquisition.
+### Exact trust gates
 
-The initial scenario store is empty after every process restart.
+Before mutating the store the publisher verifies:
+
+- exactly one buy/sell direction;
+- exact request-side consistency;
+- unique expected instrument keys;
+- exact preview coverage;
+- one masked account across all broker previews;
+- exact account parity with pro-forma risk;
+- exact gate/risk timestamp equality;
+- source freshness and future tolerance;
+- non-executing gate flags;
+- conservative risk policy with margin, shorts, derivatives and currency operations disabled.
+
+Failure occurs before publication and leaves the store unchanged.
 
 ### Action compatibility
 
 - Gateway version remains `3.10.0`;
 - production OpenAPI remains exactly 14 authenticated GET Actions;
-- no path, operationId, query field or request body is added;
+- no route, operation ID, query field or request body is added;
 - no public scenario publication method exists;
 - `app:app` remains stable.
 
@@ -100,22 +110,21 @@ The initial scenario store is empty after every process restart.
 
 - no startup broker call;
 - no broker write method;
-- no credentials or full account in runtime metadata;
+- no financial payload or internal source ID in publication metadata;
 - no trade authorization or order creation;
-- missing scenario data remains fail-closed;
+- missing or invalid scenario data remains fail-closed;
 - `trading_methods=false`.
 
 ## Remaining production boundary
 
-The production source store and acquisition wiring are now registered, but the store is not
-automatically populated. A trusted calculator-owned handoff must publish one exact directional
-pre-trade gate and the corresponding pro-forma risk evaluation. It must preserve source
-timestamps and masked-account context and must not accept user-controlled raw payloads.
+PR-71 accepts already calculated typed artifacts but does not manufacture them. A trusted
+calculator-owned handoff must build the exact directional gate and pro-forma risk from existing
+read-only calculation outputs and invoke the publisher. Until that handoff and actual
+production acceptance exist:
 
-Until this handoff and actual acceptance exist:
-
+- the scenario store may remain empty after restart;
 - exact acquisition may report missing scenario sources;
-- final-review route may return `503` after restart;
+- the final-review route may return `503`;
 - Render/GPT/rollback evidence remains `not_executed`;
 - no autonomous trading is enabled.
 
@@ -123,13 +132,13 @@ Until this handoff and actual acceptance exist:
 
 PR-64 still requires eight real evidence cases: Render commit, health, auth-negative,
 exact-route-positive, GPT schema import, authenticated Preview, Action-list inspection and
-rollback restore. None may be marked passed solely because PR-70 CI is green.
+rollback restore. None may be marked passed solely because PR-71 CI is green.
 
 ## Что остаётся до полного релиза
 
 ### Backend and release acceptance
 
-- trusted calculator-owned scenario publication into the registered store;
+- calculator-owned creation and handoff of exact directional gate and pro-forma risk;
 - actual Render/Gateway acceptance and evidence recording;
 - actual GPT Editor import and authenticated Preview;
 - production-grade live ingestion for market, ratings, news and corporate events;
@@ -153,14 +162,14 @@ reconciliation требуют отдельной программы допуск
 
 ## Следующий рекомендуемый пакет
 
-**PR-71 — trusted scenario source publication v1**:
+**PR-72 — calculator-owned trusted scenario handoff v1**:
 
-- accepts only already typed purchase/sell gate and pro-forma risk artifacts;
-- requires exact direction, scenario, timestamp and masked-account parity;
-- rejects raw dictionaries, credentials, full account IDs and request bodies;
-- publishes one atomic PR-69 bundle through an internal Python API;
-- records safe provenance and counts without financial payload logging;
-- proves restart, replacement, stale, mismatch and concurrency behavior;
+- accepts only outputs from approved read-only gate/risk builders;
+- preserves exact gate and risk source timestamps;
+- derives scenario context without accepting user-controlled raw payloads;
+- invokes the PR-71 publisher through one internal service;
+- records safe handoff provenance and counts only;
+- proves blocked, stale, mismatch, restart and concurrency behavior;
 - changes no HTTP route or production OpenAPI operation;
 - preserves `app:app`, no broker writes and `trading_methods=false`.
 
