@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from threading import RLock
+from weakref import WeakKeyDictionary
 
 from omni_cio.contracts.v1.final_decision_review_input import (
     FinalDecisionReviewInputBindingV1,
@@ -173,3 +174,43 @@ class FinalDecisionReviewPublisherV1:
             registry_evicted_sources=evicted_sources,
             observability_event=event,
         )
+
+
+_PUBLISHER_CACHE_LOCK = RLock()
+_PUBLISHER_CACHE: WeakKeyDictionary[
+    FinalDecisionReviewSourceRegistryV1,
+    FinalDecisionReviewPublisherV1,
+] = WeakKeyDictionary()
+
+
+def publisher_for_registry(
+    registry: FinalDecisionReviewSourceRegistryV1,
+) -> FinalDecisionReviewPublisherV1:
+    """Return one concurrency guard for each process-local source registry."""
+
+    with _PUBLISHER_CACHE_LOCK:
+        publisher = _PUBLISHER_CACHE.get(registry)
+        if publisher is None:
+            publisher = FinalDecisionReviewPublisherV1(registry)
+            _PUBLISHER_CACHE[registry] = publisher
+        return publisher
+
+
+def publish_final_decision_review_source(
+    registry: FinalDecisionReviewSourceRegistryV1,
+    route_plan: FinalDecisionReviewRouteImplementationPlanV1,
+    input_binding: FinalDecisionReviewInputBindingV1,
+    *,
+    correlation_id: str,
+    request_id: str | None = None,
+    published_at: datetime | None = None,
+) -> FinalDecisionReviewPublicationResultV1:
+    """Publish through the shared internal publisher for a registry."""
+
+    return publisher_for_registry(registry).publish(
+        route_plan,
+        input_binding,
+        correlation_id=correlation_id,
+        request_id=request_id,
+        published_at=published_at,
+    )
