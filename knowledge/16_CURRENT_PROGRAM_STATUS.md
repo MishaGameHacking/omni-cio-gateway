@@ -1,7 +1,7 @@
 # 16 — CURRENT PROGRAM STATUS
 
 Дата актуализации: 2026-07-30  
-Фактическая вершина программы после merge этого пакета: **PR-65**  
+Фактическая вершина программы после merge этого пакета: **PR-66**  
 Точная версия определяется текущей вершиной ветки `main`.
 
 ## Назначение документа
@@ -56,97 +56,85 @@ ledger, walk-forward/OOS stability и market-capacity gating.
 - **PR-62:** trusted process-local publisher;
 - **PR-63:** end-to-end internal composition and fail-closed publication;
 - **PR-64:** production-acceptance evidence contract and offline collector;
-- **PR-65:** production-importable typed workflow bridge into PR-63.
+- **PR-65:** production-importable typed workflow bridge;
+- **PR-66:** live read-only workflow producer from buy/sell gates and risk evidence.
 
-## PR-65 — final-review workflow bridge v1
+## PR-66 — live read-only decision workflow producer v1
 
-PR-65 registers one internal object in `app.py`:
-
-```python
-final_decision_review_workflow_bridge = FinalDecisionReviewWorkflowBridgeV1(
-    registry=final_decision_review_registry,
-    openapi_provider=lambda: app.openapi(),
-    expected_app_version=APP_VERSION,
-)
-```
-
-No HTTP decorator, path, operationId, query parameter or request body is added.
+PR-66 exports `FinalDecisionReviewWorkflowProducerV1`. It is an internal Python API and
+adds no HTTP route, operationId, query parameter or request body.
 
 ### Typed inputs
 
-Bridge accepts only:
+Producer accepts:
 
-- `RiskPreTradeExplanationEnvelopeV1`;
-- ordered `CapacityOrderRequestV1` set;
+- exactly one `CapacityPreTradeDecisionGateV1` or
+  `CapacitySellPreTradeDecisionGateV1`;
+- current `RiskPolicyEvaluationV1`;
 - already calculated pro-forma `RiskPolicyEvaluationV1`;
 - safe scenario/correlation/request identifiers;
-- timezone-aware bridge timestamp.
+- timezone-aware production timestamp.
 
-It does not accept credentials, full account ID, raw JSON body, confirmation or execution
-controls.
+Credentials, full account ID, raw JSON payload, order confirmation and execution controls
+are not inputs.
 
-### Pipeline
+### Exact source pipeline
 
-1. Build exact `ProFormaRiskScenarioV1` from supplied risk metadata.
-2. Bind scenario to the current reviewed intent.
-3. Invoke PR-63 response → eligibility → Action shadow → input → readiness → plan chain.
-4. Publish through PR-62 into PR-61 registry.
-5. Existing authenticated GET returns the compact response.
+1. Existing directional builder confirms one homogeneous buy/sell source, coverage and
+   exact intent binding.
+2. Existing explanation builder rechecks masked account, current-risk freshness/readiness,
+   directional freshness, capacity and broker-preview layers.
+3. Expected capacity requests are read only from retained source gate intent; caller cannot
+   inject a second conflicting request set.
+4. PR-65 builds pro-forma scenario and binding.
+5. PR-63/PR-62 publish exact review or safe no-action response into PR-61 registry.
 
-The pro-forma timestamp comes from `risk_evaluation.metadata.retrieved_at`, while bridge time
-is used for freshness and publication.
+Producer does not fetch broker data and does not recompute previews or risk. Source authority
+remains with the typed source contracts.
 
-### Fail-closed behavior
+### Fail-closed and no-action behavior
 
-- structurally invalid scenario → blocked at `scenario`;
-- invalid binding → blocked at `binding`;
-- missing HTTPS server, OpenAPI drift or invalid trace → blocked at `orchestration`;
-- substituted quantity/instrument/intent → safe no-action binding and response;
-- blocked publication leaves registry unchanged;
-- all result safety flags remain false and `trading_methods=false`.
+- zero or two directional gates → structural block before explanation;
+- malformed source → structural block;
+- stale current risk, account mismatch, incomplete coverage or intent mismatch →
+  auditable `WAIT_FOR_DATA`/no-action;
+- invalid trace → downstream publication block with empty registry;
+- no blocked state is upgraded to ready;
+- all safety flags remain false and `trading_methods=false`.
 
 ### Concurrency and lifecycle
 
-- one bridge-level lock serializes scenario through publication;
-- exact concurrent calls use PR-62 `published/replaced` semantics;
-- PR-61 TTL, capacity and eviction rules remain unchanged;
-- restart creates an empty registry;
-- a validated caller must invoke the bridge after restart.
+- producer-level lock serializes directional review through bridge;
+- downstream bridge/publisher locks preserve exact replacement semantics;
+- concurrent exact workflows yield one initial publication and replacements;
+- PR-61 TTL, capacity, eviction and restart-empty behavior remain unchanged.
 
-## Remaining production gap
+## Remaining production boundary
 
-Repository search confirmed that `bind_pro_forma_risk_to_intent()` still has no live
-production caller outside its own module and tests. PR-65 exposes the correct production
-boundary, but it does not invent upstream risk evidence or auto-run on startup.
+PR-66 is the first complete typed producer from retained pre-trade/risk artifacts to the
+final-review registry. It deliberately does not fetch, schedule or persist those artifacts
+and does not auto-run at startup.
 
-Therefore after deploy:
+A runtime coordinator is still required to obtain fresh typed purchase/sell gate, current
+risk and pro-forma risk from the existing read-only calculations and invoke the producer.
+Until then:
 
-- registry may remain empty until a validated decision workflow calls the bridge;
-- exact positive route acceptance may still return `503` before that call;
+- registry may remain empty after restart;
+- exact positive route acceptance may return `503` before producer invocation;
 - Render/GPT/rollback evidence remains `not_executed`;
 - no autonomous trading is enabled.
 
 ## Production acceptance state
 
-PR-64 requires eight actual evidence case:
-
-1. Render source commit;
-2. cache-busted health contract;
-3. private auth negative;
-4. exact route positive;
-5. GPT schema import;
-6. authenticated GPT Preview;
-7. GPT Action-list inspection;
-8. rollback restore.
-
-None may be marked passed solely because PR-65 CI is green.
+PR-64 still requires eight real evidence cases: Render commit, health, auth-negative,
+exact-route-positive, GPT schema import, authenticated Preview, Action-list inspection and
+rollback restore. None may be marked passed solely because PR-66 CI is green.
 
 ## Что остаётся до полного релиза
 
 ### Backend and release acceptance
 
-- live read-only decision workflow that produces current explanation and pro-forma risk,
-  then invokes the PR-65 bridge;
+- runtime coordinator for obtaining fresh typed source artifacts and calling PR-66;
 - actual Render/Gateway acceptance and evidence recording;
 - actual GPT Editor import and authenticated Preview;
 - production-grade live ingestion for market, ratings, news and corporate events;
@@ -170,17 +158,17 @@ reconciliation требуют отдельной программы допуск
 
 ## Следующий рекомендуемый пакет
 
-**PR-66 — live read-only decision workflow producer v1**:
+**PR-67 — read-only decision workflow coordinator contract v1**:
 
-- определяет минимальный typed input bundle для current risk/pre-trade explanation and
-  pro-forma risk;
-- использует существующие read-only contracts and calculators;
-- вызывает PR-65 bridge только после source authority, freshness, account and intent gates;
-- не принимает credentials or execution controls;
-- не создаёт broker-write method;
-- добавляет no-action, stale, partial, restart and exact-source tests;
-- сохраняет GET-only OpenAPI, `app:app` и `trading_methods=false`;
-- не считает production acceptance выполненной до реального deploy/GPT evidence.
+- определяет typed handoff from existing read-only calculators to PR-66;
+- требует authority, freshness, masked-account and exact-intent evidence for every input;
+- records source acquisition outcomes without credentials or financial payload logs;
+- never fabricates missing purchase/sell gate or pro-forma risk;
+- invokes producer only when a complete bundle exists;
+- returns explicit no-action/blocked result otherwise;
+- adds restart, partial, stale, account mismatch and source failure tests;
+- preserves 14 GET Actions, `app:app`, no broker writes and `trading_methods=false`;
+- does not mark production acceptance complete before real deploy/GPT evidence.
 
 ## Запрет ложного завершения
 

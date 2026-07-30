@@ -44,6 +44,10 @@ from omni_cio.release.final_decision_review_workflow_bridge_v1 import (
     FinalDecisionReviewWorkflowBridgeError,
     FinalDecisionReviewWorkflowBridgeV1,
 )
+from omni_cio.release.final_decision_review_workflow_producer_v1 import (
+    FinalDecisionReviewWorkflowProducerError,
+    FinalDecisionReviewWorkflowProducerV1,
+)
 from omni_cio.release.live_acceptance_v1 import (
     FetchedJsonDocument,
     LiveReleaseAcceptanceError,
@@ -66,6 +70,8 @@ __all__ = [
     "FinalDecisionReviewRouteReadinessError",
     "FinalDecisionReviewWorkflowBridgeError",
     "FinalDecisionReviewWorkflowBridgeV1",
+    "FinalDecisionReviewWorkflowProducerError",
+    "FinalDecisionReviewWorkflowProducerV1",
     "LiveReleaseAcceptanceError",
     "ReadOnlyReleaseError",
     "TEST_APP_SERVER",
