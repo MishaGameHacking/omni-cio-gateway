@@ -69,6 +69,7 @@
 | `tests/test_cbr_key_rate_observability_v1.py` | PR-86 source/cache event mapping, payload exclusions, latency/type guards and no-write surface |
 | `tests/test_cbr_key_rate_alert_policy_v1.py` | PR-87 thresholds, firing, cooldown, recovery, concurrency, privacy and no-write surface |
 | `tests/test_cbr_key_rate_alert_policy_retention_v1.py` | PR-87 pending retention and active-state cooldown preservation |
+| `tests/test_cbr_key_rate_alert_contract_exports_v1.py` | PR-87 public package export compatibility |
 | `tests/test_portfolio_market_snapshot.py` | Рыночная оценка портфеля |
 | `tests/test_portfolio_analytics.py` | Структура и концентрация |
 | `tests/test_cash_liquidity.py` | Деньги и лимиты |
