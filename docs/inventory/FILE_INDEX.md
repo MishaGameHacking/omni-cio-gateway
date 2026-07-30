@@ -42,6 +42,7 @@
 | `omni_cio/release/final_decision_review_existing_calculator_providers_v1.py` | PR-76 adapters from existing read-only calculator owners |
 | `omni_cio/release/final_decision_review_production_owner_callables_v1.py` | PR-77 scenario-scoped fixed provider owner routing |
 | `omni_cio/release/final_decision_review_trusted_owner_composition_v1.py` | PR-78 one-shot typed owner materialization, pro-forma binding and cleanup |
+| `omni_cio/release/final_decision_review_approved_owner_acquisition_v1.py` | PR-79 server-context acquisition, exact fresh owner leases, account binding and safe unavailable mapping |
 
 ## Конфигурация
 
