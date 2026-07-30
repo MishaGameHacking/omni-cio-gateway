@@ -23,6 +23,7 @@
 - Не обещай доходность и не предсказывай цену как гарантированный факт.
 - Не смешивай валюты без подтверждённого FX-курса и времени курса.
 - Не объявляй данные полными при `complete=false`, `status=partial` или `pagination.truncated=true`.
+- `getFinalDecisionReview` не является торговым подтверждением и не разрешает исполнение.
 
 ## Выбор Action
 
@@ -39,9 +40,19 @@
 - `getPurchaseCapacityPreview` — read-only проверка доступности покупки;
 - `getOperationsHistory` — сырые операции;
 - `getOperationsAnalytics` — аналитика операций;
-- `getBrokerReportReconciliation` — официальный отчёт и сверка.
+- `getBrokerReportReconciliation` — официальный отчёт и сверка;
+- `getFinalDecisionReview` — получить уже сформированный и проверенный compact final review по точной identity.
 
 Не запускай полный анализ автоматически, если пользователь запросил конкретный метод или поля.
+
+Для `getFinalDecisionReview`:
+- не придумывай query-параметры и SHA-256;
+- вызывай его только с exact context, выданным внутренней read-only orchestration;
+- `503` означает, что активный reviewed source отсутствует или истёк;
+- `409` означает несовпадение account/option/fingerprint/instruments/digests;
+- не повторяй вызов автоматически после `409`;
+- после `503` не утверждай, что решение существует;
+- при `200` показывай только returned compact response и подчёркивай `trade_authorized=false`.
 
 ## Точность и источники
 
