@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import date, datetime, timezone
 from decimal import Decimal
 
@@ -96,7 +97,15 @@ def test_available_snapshot_contract_requires_latest_current_row() -> None:
     assert snapshot.trading_methods is False
 
     with pytest.raises(ValidationError):
-        snapshot.model_copy(update={"current": first}, revalidate_instances="always")
+        CbrKeyRateSnapshotV1(
+            requested_from=DATE_FROM,
+            requested_to=DATE_TO,
+            retrieved_at=NOW,
+            status=MacroDataStatus.AVAILABLE,
+            source=_official_source(),
+            observations=(first, latest),
+            current=first,
+        )
 
 
 def test_unavailable_snapshot_contract_requires_redacted_error() -> None:
@@ -245,14 +254,14 @@ def test_fetch_success_uses_fixed_https_endpoint_without_credentials() -> None:
 
 
 def test_fetch_network_http_content_type_size_and_redirect_fail_closed() -> None:
-    cases = (
-        (
-            lambda request: (_ for _ in ()).throw(
-                httpx.ConnectError("private failure", request=request)
-            ),
-            MacroDataErrorCode.NETWORK_ERROR,
-            1_000_000,
-        ),
+    def network_failure(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("private failure", request=request)
+
+    cases: tuple[
+        tuple[Callable[[httpx.Request], httpx.Response], MacroDataErrorCode, int],
+        ...,
+    ] = (
+        (network_failure, MacroDataErrorCode.NETWORK_ERROR, 1_000_000),
         (
             lambda request: httpx.Response(503, request=request),
             MacroDataErrorCode.HTTP_ERROR,
@@ -323,13 +332,22 @@ def test_fetch_invalid_xml_is_redacted_and_input_guards_precede_network() -> Non
     assert snapshot.error_code is MacroDataErrorCode.XML_INVALID
     assert "not-soap" not in " ".join(snapshot.warnings)
 
-    with pytest.raises(CbrKeyRateSourceError):
-        fetch_cbr_key_rate(
-            requested_from=DATE_TO,
-            requested_to=DATE_FROM,
-            retrieved_at=NOW,
-            client=httpx.Client(),
-        )
+    called = False
+
+    def must_not_call(request: httpx.Request) -> httpx.Response:
+        nonlocal called
+        called = True
+        return httpx.Response(200, request=request)
+
+    with httpx.Client(transport=httpx.MockTransport(must_not_call)) as client:
+        with pytest.raises(CbrKeyRateSourceError):
+            fetch_cbr_key_rate(
+                requested_from=DATE_TO,
+                requested_to=DATE_FROM,
+                retrieved_at=NOW,
+                client=client,
+            )
+    assert called is False
 
 
 def test_source_module_has_no_http_route_or_broker_write_surface() -> None:
