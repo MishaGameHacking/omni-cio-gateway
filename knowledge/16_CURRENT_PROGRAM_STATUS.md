@@ -1,7 +1,7 @@
 # 16 — CURRENT PROGRAM STATUS
 
 Дата актуализации: 2026-07-30  
-Фактическая вершина программы после merge этого пакета: **PR-86**  
+Фактическая вершина программы после merge этого пакета: **PR-87**  
 Точная версия определяется текущей вершиной ветки `main`.
 
 ## Назначение документа
@@ -37,7 +37,9 @@
 - **PR-85:** exact-range bounded cache with explicit fresh/stale/unavailable
   lifecycle, single-flight refresh and no-silent-stale policy;
 - **PR-86:** allowlisted source/cache observability events without key-rate,
-  date-range, XML, account or upstream exception payloads.
+  date-range, XML, account or upstream exception payloads;
+- **PR-87:** bounded CBR alert-policy evaluator with consecutive thresholds,
+  deduplication, cooldown, recovery and retention/capacity guards.
 
 ## PR-81…PR-83 authenticated owner lifecycle
 
@@ -112,20 +114,46 @@ Metrics are limited to safe counts/booleans: observation count, cache hit,
 refresh attempted/succeeded, stale exposed and display allowed. The key-rate
 value and date range are never metrics or event fields.
 
+## PR-87 bounded CBR alert policy v1
+
+PR-87 evaluates only the allowlisted PR-86 source/cache events. It does not
+inspect the key-rate value and does not send notifications.
+
+### Alert conditions
+
+- official source unavailable;
+- cache unavailable;
+- stale value explicitly exposed;
+- refresh failed while a still-fresh cached snapshot remained usable.
+
+### State and deduplication
+
+- immutable typed policy/evaluation contracts;
+- consecutive status/count thresholds only, never financial thresholds;
+- `pending`, `fired`, `suppressed_cooldown`, `recovered` and `ignored` states;
+- default cooldown 900 seconds and retention 86400 seconds;
+- pending state expires by retention;
+- active state cannot be forgotten before cooldown ends;
+- bounded process-local state with capacity 4 and saturating counters;
+- one `RLock` protects evaluation, pruning, recovery and clear;
+- out-of-order matching events fail closed;
+- no webhook, email, Telegram, pager or external alert transport.
+
+Alert evaluations contain no rate, date range, XML, account, exception text,
+broker payload or trading authorization. `trading_methods=false` is immutable.
+
 ### Compatibility and safety
 
-- builders are pure and do not emit automatically;
-- existing `ObservabilityEventV1`, `ExternalCallTelemetryV1` and
-  `build_safe_event` are reused;
-- no HTTP route, GPT Action, request body or frontend field is added;
+- `app:app` remains unchanged;
+- exactly 14 authenticated GET Actions remain unchanged;
+- no route, request body, public response field or frontend component is added;
 - no T-Invest call or broker write method is added;
-- `app:app` and exactly 14 authenticated GET Actions remain unchanged;
-- `trading_methods=false`.
+- no dependency, secret, database or Render migration is required.
 
 ## Frontend/owner discovery state
 
 Repository search did not find a registered existing frontend/dashboard owner
-for the key-rate field. PR-84…PR-86 therefore do not invent a duplicate UI or
+for the key-rate field. PR-84…PR-87 therefore do not invent a duplicate UI or
 silently change an Action response. The deployed frontend source must first be
 located and registered before a UI binding package is safe.
 
@@ -149,15 +177,16 @@ access has not supplied all required Render/GPT evidence.
 
 ### Backend and operations
 
-- define exact PR-84/85 telemetry emission points, bounded retention and
-  rate-limited alert policy for repeated unavailable/stale outcomes;
+- connect exact PR-84/85 call sites to PR-86 event construction and PR-87
+  evaluation through a bounded internal evidence/emission lifecycle;
+- define retention and operator-facing runbook for fired/recovered evidence;
 - locate the exact existing macro/dashboard owner or frontend source, then bind
   the PR-85 cache result with explicit fresh/stale/unavailable presentation;
 - production-grade quote, rating, news and corporate-event ingestion;
 - actual Render/Gateway acceptance and evidence recording;
 - actual GPT Editor import and authenticated Preview;
 - external versioned RAG with freshness and citation controls;
-- expanded observability, alerting and operational runbooks.
+- expanded operational runbooks and production monitoring acceptance.
 
 ### Web cabinet
 
@@ -174,16 +203,17 @@ Shadow, paper, preview и final-review инфраструктура не явл�
 switch, partial-fill и timeout reconciliation требуют отдельной программы
 допуска и решения владельца. Автономная торговля без подтверждения не включена.
 
-## Следующий пакет после PR-86
+## Следующий пакет после PR-87
 
-Ближайший независимый operations gap — bounded alert policy над typed PR-86
-events:
+Ближайший независимый operations gap — внутренний bounded emission/evidence
+lifecycle над PR-84…PR-87:
 
-- thresholds only from status/count windows, never financial values;
-- deduplication, cooldown and bounded process-local state;
-- no outbound webhook or external service until separately configured;
-- safe alert evidence without account, XML or exception payload;
-- no public Action change.
+- exact source/cache call sites;
+- deterministic event → evaluation order;
+- bounded process-local fired/recovered evidence;
+- explicit retention, pruning and restart-clear behavior;
+- safe logger/metrics handoff without rate, XML, account or exception payload;
+- no outbound notification transport and no public Action change.
 
 Frontend binding remains blocked until the existing source/owner is located.
 Production acceptance remains a separate mandatory external block and cannot be
@@ -191,6 +221,6 @@ replaced by local tests.
 
 ## Запрет ложного завершения
 
-Проект не считается полностью завершённым только потому, что PR-86 слит или CI
+Проект не считается полностью завершённым только потому, что PR-87 слит или CI
 зелёный. Завершение разрешено объявлять только после всех согласованных пакетов,
 production acceptance и отдельной проверки полного Definition of Done.
