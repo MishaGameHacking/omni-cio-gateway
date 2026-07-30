@@ -154,3 +154,17 @@
 - При `unavailable`, stale cache или contract mismatch показывать «Данные Банка России недоступны»/прочерк с безопасным error code. Не переносить последнее известное значение без явного cache/freshness контракта.
 - Не хранить сырой SOAP/XML, fault text или exception text.
 - Ключевая ставка является макрофактом и не разрешает сделку, не заменяет market snapshot и не меняет `trading_methods=false`.
+
+## 12. Cache и freshness ключевой ставки
+
+- Использовать только `CbrKeyRateCacheResultV1`; не читать process-local cache напрямую.
+- Cache identity включает точный диапазон `requested_from + requested_to`. Нельзя использовать snapshot другого диапазона.
+- `fresh` разрешает показ значения. Всегда показывать `effective_date`, `retrieved_at` и `age_seconds`, если UI/owner поддерживает эти поля.
+- Неудачный force refresh при ещё свежем cache допускает показ прежнего значения только как `fresh`, `served_from_cache=true`, `refresh_succeeded=false` и с безопасным refresh error code.
+- После fresh TTL значение считается stale. Показ stale разрешён только при explicit trusted policy `allow_stale=true`; обязательно визуально отметить stale и возраст.
+- Без explicit stale policy возвращать `unavailable`, даже если stale snapshot физически ещё хранится.
+- После stale TTL entry удаляется и не может быть показан.
+- Не подменять unavailable значением из web search, текста новости или предыдущего процесса.
+- Cache очищается при restart; наличие прежнего значения не гарантируется.
+- Fresh/stale timestamps ключевой ставки не объединять с датами брокерского счёта, портфеля или рыночного стакана.
+- Cache не даёт торговых полномочий и не меняет `trading_methods=false`.
