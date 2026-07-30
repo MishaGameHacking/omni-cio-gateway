@@ -55,6 +55,7 @@
 - `architecture/MOEX_ISS_TQBR_QUOTE_OPERATIONS_LIFECYCLE_V1.md` — deterministic PR-91/92 composition and bounded fired/recovered global evidence with safe sink ordering.
 - `architecture/ACRA_ISSUER_RATING_ACTION_SOURCE_V1.md` — fixed official issuer-level ACRA national-RU rating-action source with strict scope, HTML and failure boundaries.
 - `architecture/ACRA_ISSUER_RATING_ACTION_CACHE_V1.md` — fixed-source cache with explicit fresh/stale/unavailable states, single-flight refresh and no-silent-stale policy.
+- `architecture/ACRA_ISSUER_RATING_ACTION_OBSERVABILITY_V1.md` — pure source/cache telemetry without issuer, rating, outlook, release URL, publication date or raw HTML.
 
 ### Operations
 
