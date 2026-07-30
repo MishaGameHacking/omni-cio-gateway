@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from math import ceil
 from threading import RLock
 
@@ -29,6 +29,7 @@ _CACHE_KINDS = (
     CbrKeyRateAlertKind.STALE_VALUE_EXPOSED,
     CbrKeyRateAlertKind.REFRESH_FAILED_USING_FRESH_CACHE,
 )
+_MAX_CONSECUTIVE_OCCURRENCES = 1_000_000
 _FIXED_ERROR_CODES = {
     CbrKeyRateAlertKind.SOURCE_UNAVAILABLE: "CBR_KEY_RATE_SOURCE_UNAVAILABLE",
     CbrKeyRateAlertKind.CACHE_UNAVAILABLE: "CBR_KEY_RATE_CACHE_UNAVAILABLE",
@@ -139,13 +140,19 @@ class CbrKeyRateAlertPolicyEvaluatorV1:
             return tuple(evaluations)
 
     def _prune(self, evaluated_at: datetime) -> None:
-        retention = self._policy.state_retention_seconds
-        expired = [
-            kind
-            for kind, state in self._states.items()
-            if evaluated_at >= state.last_seen_at
-            and (evaluated_at - state.last_seen_at).total_seconds() > retention
-        ]
+        expired: list[CbrKeyRateAlertKind] = []
+        for kind, state in self._states.items():
+            if evaluated_at < state.last_seen_at:
+                continue
+            if state.active and state.last_fired_at is not None:
+                cooldown_end = state.last_fired_at + timedelta(
+                    seconds=self._policy.cooldown_seconds
+                )
+                if evaluated_at < cooldown_end:
+                    continue
+            age_seconds = (evaluated_at - state.last_seen_at).total_seconds()
+            if age_seconds > self._policy.state_retention_seconds:
+                expired.append(kind)
         for kind in expired:
             del self._states[kind]
 
@@ -197,7 +204,10 @@ class CbrKeyRateAlertPolicyEvaluatorV1:
                 last_seen_at=evaluated_at,
             )
             self._states[kind] = state
-        state.consecutive_occurrences += 1
+        state.consecutive_occurrences = min(
+            state.consecutive_occurrences + 1,
+            _MAX_CONSECUTIVE_OCCURRENCES,
+        )
         state.last_seen_at = evaluated_at
         self._states.move_to_end(kind)
         self._enforce_capacity()
