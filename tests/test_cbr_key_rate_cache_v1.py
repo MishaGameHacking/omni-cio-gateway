@@ -5,7 +5,6 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from threading import Barrier, Lock
 import time
-from typing import Any
 
 import pytest
 from pydantic import ValidationError
