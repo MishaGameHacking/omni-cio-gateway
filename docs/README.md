@@ -42,6 +42,7 @@
 - `architecture/FINAL_DECISION_REVIEW_APPROVED_OWNER_INSTALLATION_V1.md` — exact typed PR-78 owner-port installation into one PR-79 acquisition call, failure behavior and rollback.
 - `architecture/FINAL_DECISION_REVIEW_AUTHENTICATED_ROUTE_CONTEXT_V1.md` — trusted publication seed, existing Bearer gate, exact approved context, bounded capture and rollback.
 - `architecture/FINAL_DECISION_REVIEW_APPROVED_OWNER_SNAPSHOTS_V1.md` — post-invocation typed snapshots, exact identity selection and safe rebinding to a fresh authenticated server invocation.
+- `architecture/FINAL_DECISION_REVIEW_AUTHENTICATED_OWNER_INSTALLATION_V1.md` — post-auth snapshot selection, one PR-80 invocation and bounded redacted evidence.
 
 ### Operations
 
