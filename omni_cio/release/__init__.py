@@ -49,6 +49,15 @@ from omni_cio.release.final_decision_review_orchestration_v1 import (
     FinalDecisionReviewOrchestrationError,
     orchestrate_final_decision_review_publication,
 )
+from omni_cio.release.final_decision_review_production_owner_callables_v1 import (
+    FinalDecisionReviewProductionOwnerCallableBundleV1,
+    FinalDecisionReviewProductionOwnerCallableError,
+    FinalDecisionReviewProductionOwnerCallablePublicationV1,
+    FinalDecisionReviewProductionOwnerCallableRegistrationV1,
+    FinalDecisionReviewProductionOwnerCallableRouterV1,
+    FinalDecisionReviewProductionOwnerCallableStoreV1,
+    register_final_decision_review_production_owner_callables,
+)
 from omni_cio.release.final_decision_review_production_registration_v1 import (
     FinalDecisionReviewProductionRegistrationError,
     FinalDecisionReviewProductionRuntimeV1,
@@ -139,6 +148,12 @@ __all__ = [
     "FinalDecisionReviewHandlerShadowError",
     "FinalDecisionReviewInputError",
     "FinalDecisionReviewOrchestrationError",
+    "FinalDecisionReviewProductionOwnerCallableBundleV1",
+    "FinalDecisionReviewProductionOwnerCallableError",
+    "FinalDecisionReviewProductionOwnerCallablePublicationV1",
+    "FinalDecisionReviewProductionOwnerCallableRegistrationV1",
+    "FinalDecisionReviewProductionOwnerCallableRouterV1",
+    "FinalDecisionReviewProductionOwnerCallableStoreV1",
     "FinalDecisionReviewProductionRegistrationError",
     "FinalDecisionReviewProductionRuntimeV1",
     "FinalDecisionReviewProductionSourceError",
@@ -191,6 +206,7 @@ __all__ = [
     "purchase_gate_source_loader",
     "record_final_decision_review_acceptance_evidence",
     "register_existing_calculator_providers",
+    "register_final_decision_review_production_owner_callables",
     "register_final_decision_review_production_sources",
     "risk_source_loader",
     "sell_gate_source_loader",
