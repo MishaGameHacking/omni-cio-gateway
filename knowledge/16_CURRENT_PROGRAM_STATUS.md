@@ -1,23 +1,23 @@
 # 16 — CURRENT PROGRAM STATUS
 
 Дата актуализации: 2026-07-30  
-Фактическая вершина программы после merge этого пакета: **PR-80**  
+Фактическая вершина программы после merge этого пакета: **PR-81**  
 Точная версия определяется текущей вершиной ветки `main`.
 
 ## Назначение документа
 
-Этот файл — краткая оперативная карта программы. Он имеет приоритет для определения
-активного этапа, если master-context содержит более ранний номер PR. Стратегические правила
-и Definition of Done продолжают определяться `AGENTS.md` и
-`knowledge/00_PROJECT_MASTER_CONTEXT.md`. Код в `main` остаётся окончательным источником
-истины.
+Этот файл — оперативная карта программы. Он имеет приоритет для определения
+активного этапа, если master-context содержит более ранний номер PR.
+Стратегические правила и Definition of Done продолжают определяться
+`AGENTS.md` и `knowledge/00_PROJECT_MASTER_CONTEXT.md`. Код в `main` остаётся
+окончательным источником истины.
 
 ## Repository maintenance after PR-78
 
-- PR-105 removed the unexported duplicate PR-71 publisher path and closed issue #97; the trusted scenario publisher remains canonical.
-- `docs/master-plan/` preserves the exact user specification plus a text-search copy and source hierarchy.
-- `gpt/MY_GPT_SETUP_RUNBOOK.md` records the current official My GPTs/Actions setup.
-- This maintenance does not replace PR-79 or PR-80 and does not change the functional release contract.
+- PR-105 удалил неэкспортируемый duplicate PR-71 publisher path и закрыл issue #97; trusted scenario publisher остаётся каноническим.
+- `docs/master-plan/` сохраняет точную пользовательскую спецификацию, текстовую копию и иерархию источников.
+- `gpt/MY_GPT_SETUP_RUNBOOK.md` фиксирует текущую официальную настройку My GPTs/Actions.
+- Maintenance-пакеты не заменяют функциональные PR-79, PR-80 и PR-81.
 
 ## Неизменяемые границы
 
@@ -34,17 +34,19 @@
 
 ### P0 — безопасность и воспроизводимость
 
-В `main` находятся Telegram retirement, broker SDK read-only allowlist, запрет mutating
-Actions, hash-locked dependencies, Ruff/formatting/mypy/coverage, dependency audit, SAST,
-secret scan, стабильный `app:app`, GET-only release contract и маскирование счёта.
+В `main` находятся Telegram retirement, broker SDK read-only allowlist,
+запрет mutating Actions, hash-locked dependencies, Ruff/formatting/mypy/
+coverage, dependency audit, SAST, secret scan, стабильный `app:app`, GET-only
+release contract и маскирование счёта.
 
 ### P1 — аналитический backend
 
-Реализованы versioned read-only слои для portfolio, cash, operations, broker-report
-reconciliation, provenance, quality, analytics, concentration, stress, conservative risk,
-market evidence, safe news, instrument assessments, technical evidence, Decision Engine,
-threshold rebalancing, purchase/sell previews, shadow/paper workflows, encrypted paper
-ledger, walk-forward/OOS stability и market-capacity gating.
+Реализованы versioned read-only слои для portfolio, cash, operations,
+broker-report reconciliation, provenance, quality, analytics, concentration,
+stress, conservative risk, market evidence, safe news, instrument
+assessments, technical evidence, Decision Engine, threshold rebalancing,
+purchase/sell previews, shadow/paper workflows, encrypted paper ledger,
+walk-forward/OOS stability и market-capacity gating.
 
 ### Final-review release chain
 
@@ -78,157 +80,154 @@ ledger, walk-forward/OOS stability и market-capacity gating.
 - **PR-77:** scenario-scoped production routing for fixed purchase/sell owner callables;
 - **PR-78:** trusted one-shot composition with explicit pro-forma scenario binding;
 - **PR-79:** approved server-context acquisition of exact fresh owner leases before PR-78;
-- **PR-80:** concrete one-shot installation of existing typed owner ports into PR-79.
+- **PR-80:** concrete one-shot installation of existing typed owner ports into PR-79;
+- **PR-81:** authenticated route lifecycle for exact approved server-context derivation and bounded capture.
 
 ## PR-78 — trusted production owner composition v1
 
-PR-78 materializes already existing typed read-only owners once, validates that all outputs
-describe one exact post-change scenario, invokes one fixed PR-76 provider through the PR-77
-store, and removes the temporary owner bundle on success or downstream failure.
+PR-78 materializes already existing typed read-only owners once, validates
+that all outputs describe one exact post-change scenario, invokes one fixed
+PR-76 provider through the PR-77 store, and removes the temporary owner bundle
+on success or downstream failure.
 
 ### Explicit pro-forma contract
 
-A plain `RiskPolicyEvaluationV1` does not prove whether it describes current or post-change
-risk. PR-78 therefore requires the existing `ProFormaRiskScenarioV1` owner output and
-revalidates:
+A plain `RiskPolicyEvaluationV1` does not prove whether it describes current
+or post-change risk. PR-78 therefore requires the existing
+`ProFormaRiskScenarioV1` and revalidates exact intent fingerprint, masked
+account, option, direction, request coverage, timestamps, freshness and
+conservative no-margin/no-short/no-derivatives policy.
 
-- `current_portfolio_risk=false` and `pro_forma_post_change=true`;
-- method `exact_capacity_intent_post_change`;
-- canonical exact-intent fingerprint;
-- masked account, option, direction and capacity-request identity;
-- risk/scenario timestamp equality and bounded freshness;
-- no margin, short sale, derivatives or currency-operation policy;
-- no order, execution or trading capability.
+### Materialization and cleanup
 
-Current portfolio risk cannot be substituted silently.
-
-### Materialization and exact binding
-
-- decision, intent, capacity, pro-forma scenario and directional preview owners are each
-  called exactly once;
-- capacity and preview iterables are non-empty, typed and bounded to 100 rows;
-- capacity coverage exactly equals the expected intent requests;
-- preview stable keys exactly cover the intent instruments;
-- decision, previews, scenario and risk use the same masked account;
+- decision, intent, capacity, pro-forma scenario and selected preview owners are called exactly once;
+- capacity and previews are non-empty, typed and bounded;
 - purchase and sell types remain isolated;
-- immutable snapshot accessors accept only the exact approved invocation request;
-- owner exception details are not returned in the safe error message.
-
-### One-shot cleanup
-
-The validated snapshots are published under exact scenario, correlation and operation
-identity, invoked through the fixed provider ID, then removed. PR-78 releases any remaining
-invocation pin and discards the active owner bundle in a `finally` path. Production startup
-still contains no scenario-specific owners and performs no calculation or broker call.
-
-### Compatibility and safety
-
-- Gateway version remains `3.10.0`;
-- production OpenAPI remains exactly 14 authenticated GET Actions;
-- no route, operation ID, query field or request body is added;
-- no public callable or financial-payload publication surface;
-- no dynamic import or user-selected provider name;
-- no broker write method;
-- no trade authorization or order creation;
-- `app:app` remains stable;
-- `trading_methods=false`.
+- account, intent, instruments, scenario and timestamps must reconcile;
+- immutable accessors accept only the exact approved invocation request;
+- owner exception details are not returned;
+- temporary owner bundles and invocation pins are removed in `finally` paths.
 
 ## PR-79 — approved server-side owner acquisition v1
 
-PR-79 introduces the internal controller that obtains the exact PR-78 owner ports from
-server-owned loaders. It accepts no Action payload and derives invocation, scenario,
-correlation, operation and masked account only from
-`FinalDecisionReviewApprovedServerContextV1`.
+PR-79 obtains exact PR-78 owner ports from server-owned loaders. It accepts no
+Action payload and derives invocation, scenario, correlation, operation and
+masked account only from `FinalDecisionReviewApprovedServerContextV1`.
 
-### Exact acquisition gates
-
-- the server context must be typed, authenticated, masked and fresh before any owner loader
-  is called;
-- the Decision Engine, exact intent, capacity, explicit `ProFormaRiskScenarioV1` and one
-  directional preview lease are each loaded exactly once;
-- the unselected directional preview loader is never called;
-- all selected leases must be present, metadata-bound and no older than 300 seconds, with a
-  30-second future-clock tolerance;
-- missing, failed, timed-out, mismatched or stale evidence prevents PR-78 invocation;
-- decision, pro-forma scenario and every directional preview are rebound to the exact
-  server-context masked account;
-- owner output is still materialized only once by PR-78 and passes all PR-78 binding gates.
-
-### Safe unavailable behavior
-
-A blocked acquisition returns an internal `unavailable` result mapped to the existing
-`FINAL_REVIEW_SOURCE_UNAVAILABLE` / HTTP `503` handler outcome. Missing evidence is never
-reported as success or pending. Source and owner exception details are not returned or
-logged.
-
-### Production startup
-
-`FinalDecisionReviewProductionRuntimeV1` owns the acquisition controller connected to
-the same PR-78 composition object. Startup installs fixed missing context/source loaders and
-performs no context, owner, calculator, portfolio, network or broker call.
+- context must be typed, masked and fresh before any owner loader is called;
+- Decision, intent, capacity, explicit pro-forma scenario and one selected preview lease are each loaded exactly once;
+- the opposite preview direction is never called;
+- selected leases must be present, metadata-bound and fresh;
+- missing, failed, timed-out, mismatched or stale evidence prevents PR-78;
+- blocked acquisition maps to existing `FINAL_REVIEW_SOURCE_UNAVAILABLE` / HTTP `503`;
+- source and owner exception details are not returned or logged.
 
 ## PR-80 — approved typed owner installation v1
 
-PR-80 adds the concrete adapter that installs already-existing
+PR-80 installs already-existing
 `FinalDecisionReviewTrustedPurchaseOwnerPortsV1` or
 `FinalDecisionReviewTrustedSellOwnerPortsV1` into one PR-79 acquisition call.
 
-### Exact installation contract
+- accepts one immutable approved server context and one typed directional owner bundle;
+- validates operation before creating loaders;
+- creates fixed Decision, intent, capacity, explicit pro-forma and selected preview loaders;
+- binds every loader to the exact context;
+- leaves the opposite preview direction uninstalled;
+- invokes a temporary PR-79 acquisition once;
+- retains no raw financial payload;
+- preserves PR-79 freshness/account/source gates and PR-78 routing/cleanup gates.
 
-- accepts only one immutable `FinalDecisionReviewApprovedServerContextV1` and one typed
-  directional PR-78 owner-port bundle;
-- verifies the context operation before creating any loader;
-- creates fixed Decision, intent, capacity, explicit pro-forma scenario and selected preview
-  loaders with one internal provider identity;
-- binds every loader to the exact immutable context;
-- leaves the opposite preview direction uninstalled and relies on PR-79 never to call it;
-- executes the temporary PR-79 acquisition once and retains no raw financial payload;
-- preserves all PR-79 freshness, account, direction, source-evidence and 503 gates;
-- preserves all PR-78 exact materialization, provider routing and cleanup gates.
+Production registration remains lazy: startup performs no installation,
+owner, calculator, portfolio, network or broker call.
 
-### Production registration
+## PR-81 — authenticated route context lifecycle v1
 
-`FinalDecisionReviewProductionRuntimeV1` owns one installer sharing the same PR-78
-composition as the PR-79 controller. Registration performs no installation or owner call.
-The default `app.py` startup still has no authenticated server context and therefore remains
-fail-closed; PR-80 is a typed installation boundary, not a fabricated live request lifecycle.
+PR-81 closes the proven gap between trusted publication and an authenticated
+production request. It does not reconstruct identity from query parameters.
+Instead, trusted publication retains a minimal internal seed from the original
+`ProFormaRiskIntentBindingV1`:
+
+- exact `scenario_id`;
+- trusted publication `correlation_id`;
+- purchase/sell operation derived from the original direction;
+- masked `AccountReference`;
+- publication timestamp.
+
+The seed contains no credentials, full account identifier, positions, amounts,
+calculator output, order field or broker payload.
+
+### Authenticated derivation gates
+
+`GET /decision/final-review` creates an approved context only after:
+
+1. the existing Gateway Bearer dependency succeeds;
+2. exact bounded-registry source lookup succeeds;
+3. PR-59 handler shadow returns the exact compact reviewed response;
+4. seed account and response account match;
+5. seed operation and response direction match;
+6. seed is no older than 300 seconds and not more than 30 seconds in the future.
+
+Invocation ID is generated server-side. The Action `X-Correlation-ID` remains
+observability-only; owner routing uses the trusted publication correlation ID.
+
+### Bounded context capture
+
+`FinalDecisionReviewApprovedRouteContextStoreV1` retains only typed approved
+contexts:
+
+- process-local;
+- TTL 300 seconds;
+- default capacity 64;
+- duplicate invocation IDs rejected;
+- oldest context evicted at capacity;
+- restart clears all entries;
+- startup context count equals zero.
+
+Authentication failure occurs before the handler and cannot create a context.
+A missing or stale seed does not fabricate context and does not expose exception
+text. Legacy reviewed responses without a seed remain readable, so PR-81 does
+not silently change the existing compact GET contract.
 
 ### Compatibility and safety
 
 - Gateway version remains `3.10.0`;
 - production OpenAPI remains exactly 14 authenticated GET Actions;
-- no route, operation ID, query field or request body is added;
-- no raw calculator values, credentials, full account IDs or provider names are accepted
-  from an Action;
-- no broker order, replacement, cancellation, transfer or withdrawal method is added;
+- no route, operation ID, query/header/response field or request body is added;
+- no credentials or full account IDs are retained;
+- no broker or financial owner call is performed during context creation;
+- no broker write method is added;
 - `app:app` remains stable;
 - `trading_methods=false`.
 
 ## Remaining production boundary
 
-PR-80 closes the concrete typed loader-installation gap but deliberately does not fabricate
-the authenticated server request lifecycle that production does not yet own. Until a later
-reviewed package derives and supplies the real server context and typed owner ports:
+PR-81 creates and captures the exact authenticated context, but intentionally
+does not select financial owners and does not invoke PR-80. The next reviewed
+package must, inside the same server-owned lifecycle:
 
-- production acquisition returns the existing safe `503` unavailable outcome;
-- the public Action cannot publish callables, raw financial payloads or credentials;
-- no current-risk value can be substituted for explicit post-change risk;
-- owner-callable and final-review registries remain empty after restart;
-- Render/GPT/rollback evidence remains `not_executed`;
-- no autonomous trading is enabled.
+- consume one fresh captured/just-created approved context;
+- select only already-existing typed Decision Engine, exact intent, capacity,
+  explicit post-change scenario and directional preview owner ports;
+- invoke PR-80 once;
+- preserve exact scenario/correlation/operation/account identity;
+- return the existing safe `503` when any owner is missing, stale or mismatched;
+- avoid raw Action calculator values, credentials, full account IDs and dynamic provider selection.
+
+No autonomous trading is enabled. Owner-callable and final-review registries
+remain empty after restart.
 
 ## Production acceptance state
 
-PR-64 still requires eight real evidence cases: Render commit, health, auth-negative,
-exact-route-positive, GPT schema import, authenticated Preview, Action-list inspection and
-rollback restore. None may be marked passed solely because PR-80 CI is green.
+PR-64 still requires eight real evidence cases: Render commit, health,
+auth-negative, exact-route-positive, GPT schema import, authenticated Preview,
+Action-list inspection and rollback restore. None may be marked passed solely
+because PR-81 CI is green.
 
 ## Что остаётся до полного релиза
 
 ### Backend and release acceptance
 
-- concrete production derivation of authenticated server context from the actual request
-  lifecycle and exact selection of the already-existing typed owner ports before PR-80;
+- exact production selection of the existing typed owner ports and PR-80 invocation in the authenticated lifecycle;
 - actual Render/Gateway acceptance and evidence recording;
 - actual GPT Editor import and authenticated Preview;
 - production-grade live ingestion for market, ratings, news and corporate events;
@@ -245,30 +244,29 @@ rollback restore. None may be marked passed solely because PR-80 CI is green.
 
 ### Торговые этапы
 
-Shadow, paper и preview инфраструктура не являются разрешением на реальную торговлю.
-Confirm-before-trade, idempotency, TTL confirmation, kill switch, partial-fill и timeout
-reconciliation требуют отдельной программы допуска и решения владельца. Полностью
-автономная торговля без подтверждения не планируется.
+Shadow, paper и preview инфраструктура не являются разрешением на реальную
+торговлю. Confirm-before-trade, idempotency, TTL confirmation, kill switch,
+partial-fill и timeout reconciliation требуют отдельной программы допуска и
+решения владельца. Полностью автономная торговля без подтверждения не
+планируется.
 
-## Следующий пакет после PR-80
+## Следующий пакет после PR-81
 
-Следующий номер не назначается автоматически. Ближайший доказанный функциональный gap:
+Следующий номер не назначается автоматически. Ближайший доказанный gap:
 
-- определить фактический authenticated server request lifecycle, который после успешной
-  Gateway authentication может безопасно создать
-  `FinalDecisionReviewApprovedServerContextV1`;
-- выбрать только уже существующие typed Decision Engine, exact intent, capacity, explicit
-  post-change scenario и directional preview owner ports;
-- вызвать PR-80 без принятия raw calculator outputs, credentials, provider names или full
-  account IDs из Action;
-- сохранить штатный `503`, если контекст или хотя бы один owner недоступен или устарел;
-- выполнить это отдельной веткой/PR без изменения 14-GET OpenAPI surface.
+- связать свежий approved context с точным existing typed owner bundle;
+- выбрать purchase или sell owners только по context operation;
+- вызвать PR-80 внутри server-owned lifecycle;
+- не принимать raw owner outputs, credentials, provider names или full account IDs из Action;
+- сохранить штатный `503` при любой недоступности, устаревании или mismatch;
+- не менять 14-GET OpenAPI surface.
 
-Production acceptance остаётся отдельным внешним блоком и не заменяется следующим backend
-PR.
+Production acceptance остаётся отдельным внешним блоком и не заменяется
+следующим backend PR.
 
 ## Запрет ложного завершения
 
-Проект не считается полностью завершённым только потому, что отдельный PR слит или CI
-зелёный. Финальная фраза завершения разрешена только после закрытия всех согласованных
-пакетов, production acceptance и отдельной проверки полного Definition of Done.
+Проект не считается полностью завершённым только потому, что отдельный PR слит
+или CI зелёный. Финальная фраза завершения разрешена только после закрытия всех
+согласованных пакетов, production acceptance и отдельной проверки полного
+Definition of Done.
