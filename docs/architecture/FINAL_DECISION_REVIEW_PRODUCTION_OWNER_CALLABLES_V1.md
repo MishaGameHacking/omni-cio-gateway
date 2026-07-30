@@ -70,7 +70,8 @@ Publication is a direct in-process method intended only for trusted composition 
 - the receipt explicitly records no broker write, authorization or order creation.
 
 Rejecting active duplicates prevents a callable set from being silently replaced while an
-approved invocation is resolving its typed outputs.
+approved invocation begins. The first exact lookup then pins that immutable bundle to the
+invocation ID, so later LRU eviction or republication cannot mix owner sets mid-review.
 
 ## Invocation flow
 
@@ -95,6 +96,8 @@ The immutable owner bundle remains outside the HTTP layer throughout this flow.
 | Operation differs | Directional lookup fails |
 | Bundle expired | Bundle is purged and lookup fails |
 | Bundle was published after invocation time | Invocation fails |
+| Invocation-pin capacity is full | Lookup fails before first owner call |
+| One invocation ID is reused for a different key or timestamp | Lookup fails |
 | Owner raises | PR-76 converts it to a safe owner-call failure |
 | Owner returns a raw mapping or wrong type | PR-76 rejects the output |
 | Capacity or directional preview is empty | PR-76 rejects the output |
@@ -107,8 +110,15 @@ PR-77 does not change that response contract.
 ## Concurrency and lifecycle
 
 The store uses an `RLock` only for bounded map operations. Owner code is never called while
-the lock is held. Stored bundles are frozen dataclasses, and an active exact key cannot be
-replaced. Repeated lookups only refresh least-recently-used ordering.
+the lock is held. Stored bundles are frozen dataclasses.
+
+The first owner lookup pins the exact bundle to `invocation_id`. All later decision, intent,
+capacity, risk and preview lookups for that invocation return the pinned object, even if the
+active LRU entry is evicted and its key is republished concurrently. Reusing the invocation
+ID with another scenario, correlation, operation or invocation timestamp fails. The
+directional preview releases the pin in a `finally` block. An abandoned or earlier-failed
+invocation retains its pin only until the same bounded TTL expires. New pins fail closed when
+pin capacity is full; live pins are never evicted to admit another invocation.
 
 The store is deliberately process-local:
 
