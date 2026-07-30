@@ -32,7 +32,6 @@ from omni_cio.contracts.v1.decision_capacity_intent import (
     CapacityIntentDecisionGateRequestV1,
 )
 from omni_cio.contracts.v1.pretrade import (
-    PreTradeBlocker,
     PreTradePreviewV1,
     PreviewFreshnessStatus,
     PreviewPriceBasis,
@@ -84,9 +83,14 @@ def _metadata(schema_name: str) -> ContractMetadata:
     )
 
 
-def _request(side: OrderSide, *, quantity_lots: int | None = None) -> CapacityOrderRequestV1:
+def _request(
+    side: OrderSide,
+    *,
+    quantity_lots: int | None = None,
+) -> CapacityOrderRequestV1:
     lot_size = 1 if side is OrderSide.SELL else 10
-    lots = quantity_lots if quantity_lots is not None else (1 if side is OrderSide.SELL else 10)
+    default_lots = 1 if side is OrderSide.SELL else 10
+    lots = quantity_lots if quantity_lots is not None else default_lots
     price = Decimal("98") if side is OrderSide.SELL else Decimal("100")
     units = lot_size * lots
     return CapacityOrderRequestV1(
@@ -214,9 +218,18 @@ def _sell_preview() -> SellPreTradePreviewV1:
         canonical_commission=Money(amount=Decimal("1"), currency="RUB"),
         estimated_tax=Money(amount=Decimal("4"), currency="RUB"),
         net_proceeds=Money(amount=Decimal("95"), currency="RUB"),
-        estimated_post_sale_position_value=Money(amount=Decimal("400"), currency="RUB"),
-        estimated_portfolio_value_before=Money(amount=Decimal("1000"), currency="RUB"),
-        estimated_portfolio_value_after=Money(amount=Decimal("995"), currency="RUB"),
+        estimated_post_sale_position_value=Money(
+            amount=Decimal("400"),
+            currency="RUB",
+        ),
+        estimated_portfolio_value_before=Money(
+            amount=Decimal("1000"),
+            currency="RUB",
+        ),
+        estimated_portfolio_value_after=Money(
+            amount=Decimal("995"),
+            currency="RUB",
+        ),
         current_weight=Decimal("0.5"),
         lower_weight=Decimal("0.35"),
         target_weight=Decimal("0.4"),
@@ -324,7 +337,10 @@ def test_workflow_rejects_raw_assessments_before_store_mutation() -> None:
             pro_forma_risk=_risk(),
             published_at=NOW,
         )
-    assert workflow.handoff.publisher.source_store.active_bundle_count(checked_at=NOW) == 0
+    active = workflow.handoff.publisher.source_store.active_bundle_count(
+        checked_at=NOW
+    )
+    assert active == 0
 
 
 def test_runtime_workflow_reuses_exact_registered_handoff() -> None:
@@ -333,7 +349,10 @@ def test_runtime_workflow_reuses_exact_registered_handoff() -> None:
         portfolio_payload_loader=lambda: {},
     )
     assert runtime.calculator_intent_workflow.handoff is runtime.calculator_handoff
-    assert runtime.calculator_intent_workflow.handoff.publisher is runtime.scenario_publisher
+    assert (
+        runtime.calculator_intent_workflow.handoff.publisher
+        is runtime.scenario_publisher
+    )
     assert runtime.public_source_publication_route_created is False
     assert runtime.broker_write_called is False
     assert runtime.trading_methods is False
