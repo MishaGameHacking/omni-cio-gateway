@@ -5,6 +5,11 @@
 ## [Unreleased]
 
 ### Added
+- Live read-only final-review workflow producer from exactly one typed buy/sell pre-trade
+  gate plus current/pro-forma risk evidence; producer reuses existing directional,
+  account, freshness and exact-intent builders, derives requests only from retained source
+  contracts, publishes review or safe no-action through PR-65 and keeps the 14-GET surface,
+  no broker calls and `trading_methods=false`.
 - Process-local final-review workflow bridge, зарегистрированный в `app.py` без нового
   route: bridge принимает typed risk/pre-trade evidence, строит pro-forma scenario и exact
   binding, вызывает PR-63 orchestration, публикует safe review/no-action response через
