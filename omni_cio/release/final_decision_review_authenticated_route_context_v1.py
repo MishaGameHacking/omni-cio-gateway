@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import re
 from threading import RLock
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from omni_cio.contracts.v1.capacity import OrderSide
@@ -16,9 +17,11 @@ from omni_cio.contracts.v1.decision_pro_forma_risk_binding import (
 from omni_cio.contracts.v1.final_decision_review_approved_invocation import (
     ApprovedCalculatorOperation,
 )
-from omni_cio.release.final_decision_review_approved_owner_acquisition_v1 import (
-    FinalDecisionReviewApprovedServerContextV1,
-)
+
+if TYPE_CHECKING:
+    from omni_cio.release.final_decision_review_approved_owner_acquisition_v1 import (
+        FinalDecisionReviewApprovedServerContextV1,
+    )
 
 
 _SAFE_ID = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_.:-]{2,127}$")
@@ -160,6 +163,10 @@ def build_final_decision_review_authenticated_server_context(
     ),
 ) -> FinalDecisionReviewApprovedServerContextV1:
     """Create one approved context only after the existing Bearer gate passed."""
+    from omni_cio.release.final_decision_review_approved_owner_acquisition_v1 import (
+        FinalDecisionReviewApprovedServerContextV1,
+    )
+
     if not isinstance(seed, FinalDecisionReviewApprovedRouteContextSeedV1):
         raise FinalDecisionReviewAuthenticatedRouteContextError(
             "FINAL_DECISION_REVIEW_ROUTE_CONTEXT_SEED_INVALID"
@@ -252,6 +259,10 @@ class FinalDecisionReviewApprovedRouteContextStoreV1:
         *,
         captured_at: datetime | None = None,
     ) -> FinalDecisionReviewApprovedRouteContextCaptureV1:
+        from omni_cio.release.final_decision_review_approved_owner_acquisition_v1 import (
+            FinalDecisionReviewApprovedServerContextV1,
+        )
+
         if not isinstance(context, FinalDecisionReviewApprovedServerContextV1):
             raise FinalDecisionReviewAuthenticatedRouteContextError(
                 "FINAL_DECISION_REVIEW_ROUTE_CONTEXT_CAPTURE_TYPE_INVALID"
