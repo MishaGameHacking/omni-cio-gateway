@@ -43,12 +43,12 @@
 - `architecture/FINAL_DECISION_REVIEW_AUTHENTICATED_ROUTE_CONTEXT_V1.md` — trusted publication seed, existing Bearer gate, exact approved context, bounded capture and rollback.
 - `architecture/FINAL_DECISION_REVIEW_APPROVED_OWNER_SNAPSHOTS_V1.md` — post-invocation typed snapshots, exact identity selection and safe rebinding to a fresh authenticated server invocation.
 - `architecture/FINAL_DECISION_REVIEW_AUTHENTICATED_OWNER_INSTALLATION_V1.md` — post-auth snapshot selection, one PR-80 invocation and bounded redacted evidence.
+- `architecture/CBR_KEY_RATE_SOURCE_V1.md` — fixed official Bank of Russia source, bounded streaming, protected XML parsing and fail-closed macro contract.
 
 ### Operations
 
 - `operations/DEPLOYMENT_RUNBOOK.md` — основной gateway.
-- `operations/TELEGRAM_REMOVAL_RUNBOOK.md` — одноразовая очистка
-  выведенного Telegram service.
+- `operations/TELEGRAM_REMOVAL_RUNBOOK.md` — одноразовая очистка выведенного Telegram service.
 - `operations/RELEASE_CHECKLIST.md`
 
 ### Inventory
@@ -81,9 +81,7 @@ Runtime и deployment contract удалены. Решение и запрет с
 
 ### CI and security
 
-Воспроизводимые dependencies, quality/security gates, начальные
-thresholds и остаточный долг описаны в
-`../knowledge/14_CI_SECURITY_BASELINE.txt`.
+Воспроизводимые dependencies, quality/security gates, начальные thresholds и остаточный долг описаны в `../knowledge/14_CI_SECURITY_BASELINE.txt`.
 
 ### Current program status
 
@@ -98,6 +96,5 @@ thresholds и остаточный долг описаны в
 
 ## Что не хранится в GitHub
 
-Секреты, реальные отчёты, полный номер счёта и пользовательские
-финансовые данные не должны находиться в репозитории. Старые Telegram
-credentials, обнаруженные при внешней очистке, также нельзя сохранять.
+Секреты, реальные отчёты, полный номер счёта, пользовательские финансовые
+данные, сырой CBR XML и upstream fault text не должны находиться в репозитории.

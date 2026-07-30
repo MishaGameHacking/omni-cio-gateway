@@ -33,6 +33,12 @@ from omni_cio.contracts.v1.decision import (
     DecisionSetV1,
     InstrumentMarketReadinessV1,
 )
+from omni_cio.contracts.v1.macro import (
+    CbrKeyRateSnapshotV1,
+    KeyRateObservationV1,
+    MacroDataErrorCode,
+    MacroDataStatus,
+)
 from omni_cio.contracts.v1.market import (
     BondMetricsV1,
     ComponentStateV1,
@@ -167,6 +173,7 @@ __all__ = [
     "CategoryCashFlowV1",
     "CategoryTotalCheckV1",
     "CategoryTotalsCheckV1",
+    "CbrKeyRateSnapshotV1",
     "CheckStatus",
     "CircuitBreakerState",
     "CommissionDoubleCountProtectionV1",
@@ -206,6 +213,9 @@ __all__ = [
     "InstrumentReferenceV1",
     "InstrumentType",
     "IssueSeverity",
+    "KeyRateObservationV1",
+    "MacroDataErrorCode",
+    "MacroDataStatus",
     "MarketAssessmentStatus",
     "MarketFreshnessPolicyV1",
     "MarketLiquidityV1",
