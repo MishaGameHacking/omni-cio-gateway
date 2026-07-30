@@ -10,6 +10,10 @@ from omni_cio.release.final_decision_review_input_v1 import (
     bind_final_decision_review_read_only_input,
     build_final_decision_review_read_only_query,
 )
+from omni_cio.release.final_decision_review_orchestration_v1 import (
+    FinalDecisionReviewOrchestrationError,
+    orchestrate_final_decision_review_publication,
+)
 from omni_cio.release.final_decision_review_publisher_v1 import (
     FinalDecisionReviewPublisherError,
     FinalDecisionReviewPublisherV1,
@@ -44,6 +48,7 @@ __all__ = [
     "FetchedJsonDocument",
     "FinalDecisionReviewHandlerShadowError",
     "FinalDecisionReviewInputError",
+    "FinalDecisionReviewOrchestrationError",
     "FinalDecisionReviewPublisherError",
     "FinalDecisionReviewPublisherV1",
     "FinalDecisionReviewRoutePlanError",
@@ -62,6 +67,7 @@ __all__ = [
     "default_final_decision_review_acceptance_cases",
     "evaluate_final_decision_review_handler_shadow",
     "final_decision_review_handler_error_mapping",
+    "orchestrate_final_decision_review_publication",
     "publish_final_decision_review_source",
     "publisher_for_registry",
 ]
