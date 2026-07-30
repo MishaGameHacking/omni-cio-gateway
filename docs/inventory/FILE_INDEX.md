@@ -24,16 +24,16 @@
 | `omni_cio/contracts/v1/final_decision_review_workflow_producer.py` | Immutable directional/explanation/bridge producer result and safety mirrors |
 | `omni_cio/contracts/v1/final_decision_review_workflow_coordinator.py` | Canonical source acquisition evidence and coordinator result invariants |
 | `omni_cio/contracts/v1/final_decision_review_trusted_scenario.py` | Immutable trusted scenario publication result, source identity and safety invariants |
-| `omni_cio/release/final_decision_review_route_v1.py` | Production private GET route, bounded TTL source registry, OpenAPI security patch and safe handler boundary |
+| `omni_cio/release/final_decision_review_route_v1.py` | Production private GET route, bounded source registry, exact post-auth context creation and safe handler boundary |
 | `omni_cio/release/final_decision_review_publisher_v1.py` | Trusted process-local exact-source publisher with per-registry concurrency guard |
-| `omni_cio/release/final_decision_review_orchestration_v1.py` | PR-53…PR-62 composition, first-blocker handling and internal publication |
+| `omni_cio/release/final_decision_review_orchestration_v1.py` | PR-53…PR-63 composition, first-blocker handling, safe context seed and internal publication |
 | `omni_cio/release/final_decision_review_acceptance_v1.py` | Offline eight-case evidence recorder and complete-dossier collector |
 | `omni_cio/release/final_decision_review_workflow_bridge_v1.py` | Production-importable typed risk/pre-trade bridge into PR-63 orchestration |
 | `omni_cio/release/final_decision_review_workflow_producer_v1.py` | Exactly-one buy/sell source, risk explanation and PR-65 producer pipeline |
 | `omni_cio/release/final_decision_review_workflow_coordinator_v1.py` | Source-evidence, freshness, account and direction coordinator before PR-66 |
 | `omni_cio/release/final_decision_review_source_acquisition_v1.py` | Four typed loader ports, safe outcome mapping and exact PR-67 handoff |
 | `omni_cio/release/final_decision_review_production_sources_v1.py` | Atomic scenario source store, live current-risk loader and PR-68 production wiring |
-| `omni_cio/release/final_decision_review_production_registration_v1.py` | Lazy production runtime registration with shared stores, PR-79 acquisition and PR-80 installation boundaries |
+| `omni_cio/release/final_decision_review_production_registration_v1.py` | Lazy production runtime registration with shared stores, PR-79/PR-80 boundaries and PR-81 context capture |
 | `omni_cio/release/final_decision_review_trusted_scenario_publisher_v1.py` | Exact typed gate/risk trust boundary, masked-account parity, freshness and atomic publication |
 | `omni_cio/release/final_decision_review_calculator_handoff_v1.py` | PR-72 typed purchase/sell preview handoff into the canonical publisher |
 | `omni_cio/release/final_decision_review_calculator_intent_workflow_v1.py` | PR-73 exact capacity-intent gate construction before handoff |
@@ -44,6 +44,7 @@
 | `omni_cio/release/final_decision_review_trusted_owner_composition_v1.py` | PR-78 one-shot typed owner materialization, pro-forma binding and cleanup |
 | `omni_cio/release/final_decision_review_approved_owner_acquisition_v1.py` | PR-79 server-context acquisition, exact fresh owner leases, account binding and safe unavailable mapping |
 | `omni_cio/release/final_decision_review_approved_owner_installation_v1.py` | PR-80 exact typed PR-78 owner-port installation into one PR-79 acquisition call |
+| `omni_cio/release/final_decision_review_authenticated_route_context_v1.py` | PR-81 trusted seed, post-Bearer approved context derivation and bounded 300-second capture store |
 
 ## Конфигурация
 
@@ -83,6 +84,7 @@
 | `tests/test_final_decision_review_trusted_owner_composition_v1.py` | PR-78 exact pro-forma binding and one-shot cleanup |
 | `tests/test_final_decision_review_approved_owner_acquisition_v1.py` | PR-79 context/source freshness, selection, account binding and safe unavailable behavior |
 | `tests/test_final_decision_review_approved_owner_installation_v1.py` | PR-80 concrete typed installation, direction isolation, stale context and startup laziness |
+| `tests/test_final_decision_review_authenticated_route_context_v1.py` | PR-81 seed derivation, auth-negative guard, exact 200 capture, TTL/eviction, stale compatibility and 14-GET invariance |
 | `tests/test_portfolio_market_snapshot.py` | Рыночная оценка портфеля |
 | `tests/test_portfolio_analytics.py` | Структура и концентрация |
 | `tests/test_cash_liquidity.py` | Деньги и лимиты |
@@ -124,6 +126,7 @@
 | `docs/architecture/FINAL_DECISION_REVIEW_PRODUCTION_SOURCES_V1.md` | Live current-risk source, atomic scenario bundle, loader wiring and remaining registration gap |
 | `docs/architecture/FINAL_DECISION_REVIEW_TRUSTED_SCENARIO_PUBLICATION_V1.md` | Typed calculator-to-store trust boundary, exact parity, lifecycle, safety and rollback |
 | `docs/architecture/FINAL_DECISION_REVIEW_APPROVED_OWNER_INSTALLATION_V1.md` | PR-80 typed owner installation, failure behavior, production boundary and rollback |
+| `docs/architecture/FINAL_DECISION_REVIEW_AUTHENTICATED_ROUTE_CONTEXT_V1.md` | PR-81 trusted context seed, post-auth derivation, bounded capture, compatibility and rollback |
 | `gpt/MY_GPT_SETUP_RUNBOOK.md` | Точная настройка ChatGPT → My GPTs, Actions, Preview и rollback |
 | `gpt/` | Восстановление и настройка Custom GPT |
 | `docs/operations/TELEGRAM_REMOVAL_RUNBOOK.md` | Одноразовая внешняя очистка Telegram после merge |

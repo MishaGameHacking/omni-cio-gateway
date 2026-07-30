@@ -14,8 +14,12 @@ from fastapi import Depends, FastAPI, Header, Query
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
+from omni_cio.contracts.v1.capacity import OrderSide
 from omni_cio.contracts.v1.common import AccountReference
 from omni_cio.contracts.v1.final_decision_review import FinalDecisionReviewResponseV1
+from omni_cio.contracts.v1.final_decision_review_approved_invocation import (
+    ApprovedCalculatorOperation,
+)
 from omni_cio.contracts.v1.final_decision_review_handler_shadow import (
     FinalDecisionReviewHandlerErrorCode,
     FinalDecisionReviewHandlerHttpStatus,
@@ -28,6 +32,11 @@ from omni_cio.contracts.v1.final_decision_review_input import (
 from omni_cio.contracts.v1.final_decision_review_route_plan import (
     FinalDecisionReviewRouteImplementationPlanV1,
     FinalDecisionReviewRoutePlanStatus,
+)
+from omni_cio.release.final_decision_review_authenticated_route_context_v1 import (
+    ApprovedRouteContextObserverV1,
+    FinalDecisionReviewApprovedRouteContextSeedV1,
+    build_final_decision_review_authenticated_server_context,
 )
 from omni_cio.release.final_decision_review_handler_shadow_v1 import (
     evaluate_final_decision_review_handler_shadow,
@@ -59,6 +68,7 @@ class PublishedFinalDecisionReviewSourceV1:
     input_binding: FinalDecisionReviewInputBindingV1
     published_at: datetime
     expires_at: datetime
+    approved_context_seed: FinalDecisionReviewApprovedRouteContextSeedV1 | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,6 +129,16 @@ def _query_context_key(
     )
 
 
+def _operation_for_direction(direction: OrderSide) -> ApprovedCalculatorOperation:
+    if direction is OrderSide.BUY:
+        return ApprovedCalculatorOperation.PURCHASE_REVIEW
+    if direction is OrderSide.SELL:
+        return ApprovedCalculatorOperation.SELL_REVIEW
+    raise FinalDecisionReviewRouteError(
+        "FINAL_DECISION_REVIEW_ROUTE_CONTEXT_DIRECTION_INVALID"
+    )
+
+
 class FinalDecisionReviewSourceRegistryV1:
     """Bounded in-memory registry for already reviewed read-only responses.
 
@@ -147,7 +167,31 @@ class FinalDecisionReviewSourceRegistryV1:
             tuple[str, str, str, str, int, tuple[str, ...]],
             PublishedFinalDecisionReviewSourceV1,
         ] = OrderedDict()
+        self._approved_context_observer: ApprovedRouteContextObserverV1 | None = None
         self._lock = RLock()
+
+    @property
+    def approved_context_observer(self) -> ApprovedRouteContextObserverV1 | None:
+        with self._lock:
+            return self._approved_context_observer
+
+    def attach_approved_context_observer(
+        self,
+        observer: ApprovedRouteContextObserverV1,
+    ) -> None:
+        if not callable(observer):
+            raise FinalDecisionReviewRouteError(
+                "FINAL_DECISION_REVIEW_ROUTE_CONTEXT_OBSERVER_NOT_CALLABLE"
+            )
+        with self._lock:
+            if (
+                self._approved_context_observer is not None
+                and self._approved_context_observer is not observer
+            ):
+                raise FinalDecisionReviewRouteError(
+                    "FINAL_DECISION_REVIEW_ROUTE_CONTEXT_OBSERVER_ALREADY_ATTACHED"
+                )
+            self._approved_context_observer = observer
 
     def _prune(self, now: datetime) -> None:
         expired = [
@@ -161,10 +205,12 @@ class FinalDecisionReviewSourceRegistryV1:
         route_plan: FinalDecisionReviewRouteImplementationPlanV1,
         input_binding: FinalDecisionReviewInputBindingV1,
         *,
+        approved_context_seed: FinalDecisionReviewApprovedRouteContextSeedV1 | None = None,
         published_at: datetime | None = None,
     ) -> PublishedFinalDecisionReviewSourceV1:
         now = _aware_utc(published_at)
         source_binding = route_plan.readiness_dossier.input_binding
+        response = route_plan.readiness_dossier.response
         plan_ready = (
             route_plan.status
             is FinalDecisionReviewRoutePlanStatus.READY_FOR_IMPLEMENTATION_REVIEW
@@ -183,6 +229,15 @@ class FinalDecisionReviewSourceRegistryV1:
             and input_binding.action_candidate_sha256
             == source_binding.action_candidate_sha256
         )
+        seed_valid = (
+            approved_context_seed is None
+            or (
+                approved_context_seed.account == response.account
+                and approved_context_seed.operation
+                is _operation_for_direction(response.direction)
+                and approved_context_seed.observed_at == now
+            )
+        )
         if not plan_ready:
             raise FinalDecisionReviewRouteError(
                 "FINAL_DECISION_REVIEW_ROUTE_PLAN_NOT_READY"
@@ -195,12 +250,17 @@ class FinalDecisionReviewSourceRegistryV1:
             raise FinalDecisionReviewRouteError(
                 "FINAL_DECISION_REVIEW_SOURCE_IDENTITY_MISMATCH"
             )
+        if not seed_valid:
+            raise FinalDecisionReviewRouteError(
+                "FINAL_DECISION_REVIEW_ROUTE_CONTEXT_SEED_MISMATCH"
+            )
 
         source = PublishedFinalDecisionReviewSourceV1(
             route_plan=route_plan,
             input_binding=input_binding,
             published_at=now,
             expires_at=now + self._ttl,
+            approved_context_seed=approved_context_seed,
         )
         key = _query_context_key(input_binding.query)
         with self._lock:
@@ -486,6 +546,27 @@ def register_final_decision_review_gateway(
             ),
         )
         if shadow.response is not None:
+            seed = source.approved_context_seed
+            observer = source_registry.approved_context_observer
+            if seed is not None and observer is not None:
+                try:
+                    approved_context = (
+                        build_final_decision_review_authenticated_server_context(
+                            seed,
+                            account=shadow.response.account,
+                            direction=shadow.response.direction,
+                            authentication_confirmed=True,
+                            authenticated_at=handled_at,
+                        )
+                    )
+                    observer(approved_context)
+                except Exception:
+                    base.logger.warning(
+                        "final_review_route_context unavailable correlation_id=%s "
+                        "account=%s",
+                        correlation,
+                        account,
+                    )
             return JSONResponse(
                 status_code=int(FinalDecisionReviewHandlerHttpStatus.OK),
                 content=shadow.response.model_dump(mode="json"),

@@ -31,8 +31,12 @@ Custom GPT ── Omni-CIO Gateway (`app:app`) ── T-Invest API
 - PR-80 добавляет concrete typed installation boundary для уже существующих PR-78
   purchase/sell owner ports. Один immutable server context получает фиксированные
   PR-79 loaders только на время одного вызова; startup не выполняет installation,
-  owner calls, portfolio/network/broker calls и остаётся fail-closed без реального
-  authenticated request lifecycle.
+  owner calls, portfolio/network/broker calls.
+- PR-81 сохраняет из trusted publication только exact scenario ID, trusted
+  correlation, direction и masked account, а после existing Bearer auth и exact
+  route validation создаёт server-generated approved context. Контекст хранится
+  не более 300 секунд в bounded process-local store; owner selection и PR-80
+  invocation остаются отдельным следующим пакетом.
 - Runtime и CI устанавливают полностью pinned зависимости только после
   проверки SHA-256 hashes.
 - Regression Shield включает lint, formatting baseline, mypy, покрытие
@@ -121,7 +125,7 @@ Omni-CIO больше не содержит Telegram runtime. Полезная �
 - полный номер брокерского счёта;
 - реальные брокерские отчёты и операции пользователя;
 - Render secrets и секретный GPT Bearer key;
-- содержимое bounded final-review registry после остановки процесса.
+- содержимое bounded final-review и approved-context registries после остановки процесса.
 
 Полный реестр: [`docs/inventory/PROJECT_ASSETS.md`](docs/inventory/PROJECT_ASSETS.md).
 
@@ -137,6 +141,7 @@ Omni-CIO больше не содержит Telegram runtime. Полезная �
 - [`docs/architecture/PORTFOLIO_SHADOW_VALIDATION_V1.md`](docs/architecture/PORTFOLIO_SHADOW_VALIDATION_V1.md) — shadow validation и decision gate.
 - [`docs/architecture/FINAL_DECISION_REVIEW_PRODUCTION_ROUTE_V1.md`](docs/architecture/FINAL_DECISION_REVIEW_PRODUCTION_ROUTE_V1.md) — production GET route, registry и fail-closed HTTP contract.
 - [`docs/architecture/FINAL_DECISION_REVIEW_APPROVED_OWNER_INSTALLATION_V1.md`](docs/architecture/FINAL_DECISION_REVIEW_APPROVED_OWNER_INSTALLATION_V1.md) — exact typed PR-78 owner ports into one PR-79 acquisition call.
+- [`docs/architecture/FINAL_DECISION_REVIEW_AUTHENTICATED_ROUTE_CONTEXT_V1.md`](docs/architecture/FINAL_DECISION_REVIEW_AUTHENTICATED_ROUTE_CONTEXT_V1.md) — trusted publication seed, post-auth approved context и bounded lifecycle.
 - [`docs/operations/DEPLOYMENT_RUNBOOK.md`](docs/operations/DEPLOYMENT_RUNBOOK.md) — gateway deployment.
 - [`docs/operations/TELEGRAM_REMOVAL_RUNBOOK.md`](docs/operations/TELEGRAM_REMOVAL_RUNBOOK.md) — очистка выведенного Telegram service.
 - [`knowledge/11_BROKER_REPORT_ASYNC_INTEGRITY.txt`](knowledge/11_BROKER_REPORT_ASYNC_INTEGRITY.txt) — асинхронный отчёт.

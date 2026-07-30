@@ -24,6 +24,9 @@ from omni_cio.contracts.v1.observability import (
     ObservabilitySeverity,
     SafeCountMetricV1,
 )
+from omni_cio.release.final_decision_review_authenticated_route_context_v1 import (
+    FinalDecisionReviewApprovedRouteContextSeedV1,
+)
 from omni_cio.release.final_decision_review_route_v1 import (
     FinalDecisionReviewRouteError,
     FinalDecisionReviewSourceLookupStatus,
@@ -107,6 +110,9 @@ class FinalDecisionReviewPublisherV1:
         *,
         correlation_id: str,
         request_id: str | None = None,
+        approved_context_seed: (
+            FinalDecisionReviewApprovedRouteContextSeedV1 | None
+        ) = None,
         published_at: datetime | None = None,
     ) -> FinalDecisionReviewPublicationResultV1:
         now = _aware_utc(published_at)
@@ -135,6 +141,7 @@ class FinalDecisionReviewPublisherV1:
                 source = self._registry.publish(
                     route_plan,
                     input_binding,
+                    approved_context_seed=approved_context_seed,
                     published_at=now,
                 )
             except FinalDecisionReviewRouteError as exc:
@@ -222,6 +229,7 @@ def publish_final_decision_review_source(
     *,
     correlation_id: str,
     request_id: str | None = None,
+    approved_context_seed: FinalDecisionReviewApprovedRouteContextSeedV1 | None = None,
     published_at: datetime | None = None,
 ) -> FinalDecisionReviewPublicationResultV1:
     """Publish through the shared internal publisher for a registry."""
@@ -231,5 +239,6 @@ def publish_final_decision_review_source(
         input_binding,
         correlation_id=correlation_id,
         request_id=request_id,
+        approved_context_seed=approved_context_seed,
         published_at=published_at,
     )

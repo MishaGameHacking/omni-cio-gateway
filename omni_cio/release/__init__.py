@@ -28,6 +28,14 @@ from omni_cio.release.final_decision_review_approved_owner_installation_v1 impor
     FinalDecisionReviewApprovedOwnerInstallationError,
     FinalDecisionReviewApprovedOwnerInstallationV1,
 )
+from omni_cio.release.final_decision_review_authenticated_route_context_v1 import (
+    FinalDecisionReviewApprovedRouteContextCaptureV1,
+    FinalDecisionReviewApprovedRouteContextSeedV1,
+    FinalDecisionReviewApprovedRouteContextStoreV1,
+    FinalDecisionReviewAuthenticatedRouteContextError,
+    build_final_decision_review_approved_route_context_seed,
+    build_final_decision_review_authenticated_server_context,
+)
 from omni_cio.release.final_decision_review_calculator_handoff_v1 import (
     FinalDecisionReviewCalculatorScenarioHandoffError,
     FinalDecisionReviewCalculatorScenarioHandoffV1,
@@ -176,7 +184,11 @@ __all__ = [
     "FinalDecisionReviewApprovedOwnerSourceLoadersV1",
     "FinalDecisionReviewApprovedOwnerSourceSlot",
     "FinalDecisionReviewApprovedOwnerSourceStatus",
+    "FinalDecisionReviewApprovedRouteContextCaptureV1",
+    "FinalDecisionReviewApprovedRouteContextSeedV1",
+    "FinalDecisionReviewApprovedRouteContextStoreV1",
     "FinalDecisionReviewApprovedServerContextV1",
+    "FinalDecisionReviewAuthenticatedRouteContextError",
     "FinalDecisionReviewCalculatorIntentWorkflowError",
     "FinalDecisionReviewCalculatorIntentWorkflowV1",
     "FinalDecisionReviewCalculatorProviderRegistryError",
@@ -232,6 +244,8 @@ __all__ = [
     "bind_final_decision_review_read_only_input",
     "build_existing_purchase_provider",
     "build_existing_sell_provider",
+    "build_final_decision_review_approved_route_context_seed",
+    "build_final_decision_review_authenticated_server_context",
     "build_final_decision_review_read_only_query",
     "build_final_decision_review_route_implementation_plan",
     "build_final_decision_review_route_readiness_dossier",

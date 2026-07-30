@@ -9,6 +9,9 @@ import app as gateway
 from omni_cio.release.final_decision_review_approved_owner_installation_v1 import (
     FinalDecisionReviewApprovedOwnerInstallationV1,
 )
+from omni_cio.release.final_decision_review_authenticated_route_context_v1 import (
+    FinalDecisionReviewApprovedRouteContextStoreV1,
+)
 from omni_cio.release.final_decision_review_existing_calculator_providers_v1 import (
     PURCHASE_PROVIDER_ID,
     SELL_PROVIDER_ID,
@@ -56,6 +59,10 @@ def test_production_runtime_is_registered_without_startup_broker_call() -> None:
         runtime.approved_owner_installation,
         FinalDecisionReviewApprovedOwnerInstallationV1,
     )
+    assert isinstance(
+        runtime.approved_route_context_store,
+        FinalDecisionReviewApprovedRouteContextStoreV1,
+    )
     assert isinstance(runtime.producer, FinalDecisionReviewWorkflowProducerV1)
     assert isinstance(runtime.coordinator, FinalDecisionReviewWorkflowCoordinatorV1)
     assert isinstance(
@@ -80,7 +87,11 @@ def test_production_runtime_is_registered_without_startup_broker_call() -> None:
         runtime.approved_owner_installation.composition
         is runtime.trusted_owner_composition
     )
+    observer = gateway.final_decision_review_registry.approved_context_observer
+    assert getattr(observer, "__self__", None) is runtime.approved_route_context_store
     assert runtime.internal_only is True
+    assert runtime.authenticated_route_context_capture_registered is True
+    assert runtime.startup_authenticated_context_count == 0
     assert runtime.startup_broker_call_performed is False
     assert runtime.startup_owner_installation_performed is False
     assert runtime.startup_owner_acquisition_performed is False
@@ -109,6 +120,10 @@ def test_registration_keeps_portfolio_loader_and_owner_store_lazy() -> None:
     assert runtime.source_store.active_bundle_count() == 0
     assert runtime.owner_callable_store.active_bundle_count() == 0
     assert runtime.owner_callable_store.active_pin_count() == 0
+    assert (
+        runtime.approved_route_context_store
+        is gateway.final_decision_review_production_runtime.approved_route_context_store
+    )
     assert runtime.owner_callable_registration.registered_provider_count == 2
     assert runtime.trusted_owner_composition.registry is runtime.provider_registry
     assert runtime.trusted_owner_composition.store is runtime.owner_callable_store
@@ -116,6 +131,7 @@ def test_registration_keeps_portfolio_loader_and_owner_store_lazy() -> None:
         runtime.approved_owner_installation.composition
         is runtime.trusted_owner_composition
     )
+    assert runtime.startup_authenticated_context_count == 0
     assert runtime.startup_owner_installation_performed is False
 
 
@@ -169,6 +185,10 @@ def test_registration_source_has_no_route_or_broker_write_surface() -> None:
         Path(
             "omni_cio/release/"
             "final_decision_review_approved_owner_installation_v1.py"
+        ),
+        Path(
+            "omni_cio/release/"
+            "final_decision_review_authenticated_route_context_v1.py"
         ),
         Path("app.py"),
     )

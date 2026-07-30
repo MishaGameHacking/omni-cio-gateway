@@ -16,6 +16,9 @@ from omni_cio.release.final_decision_review_approved_owner_acquisition_v1 import
 from omni_cio.release.final_decision_review_approved_owner_installation_v1 import (
     FinalDecisionReviewApprovedOwnerInstallationV1,
 )
+from omni_cio.release.final_decision_review_authenticated_route_context_v1 import (
+    FinalDecisionReviewApprovedRouteContextStoreV1,
+)
 from omni_cio.release.final_decision_review_calculator_handoff_v1 import (
     FinalDecisionReviewCalculatorScenarioHandoffV1,
 )
@@ -71,10 +74,13 @@ class FinalDecisionReviewProductionRuntimeV1:
     trusted_owner_composition: FinalDecisionReviewTrustedOwnerCompositionV1
     approved_owner_installation: FinalDecisionReviewApprovedOwnerInstallationV1
     approved_owner_acquisition: FinalDecisionReviewApprovedOwnerAcquisitionV1
+    approved_route_context_store: FinalDecisionReviewApprovedRouteContextStoreV1
     producer: FinalDecisionReviewWorkflowProducerV1
     coordinator: FinalDecisionReviewWorkflowCoordinatorV1
     source_wiring: FinalDecisionReviewProductionSourceWiringV1
     internal_only: bool = True
+    authenticated_route_context_capture_registered: bool = True
+    startup_authenticated_context_count: int = 0
     startup_broker_call_performed: bool = False
     startup_owner_installation_performed: bool = False
     startup_owner_acquisition_performed: bool = False
@@ -89,6 +95,40 @@ class FinalDecisionReviewProductionRuntimeV1:
 def _missing_approved_owner_context(
 ) -> FinalDecisionReviewApprovedServerContextV1 | None:
     return None
+
+
+def _route_context_store_for_bridge(
+    bridge: FinalDecisionReviewWorkflowBridgeV1,
+    *,
+    capacity: int,
+) -> FinalDecisionReviewApprovedRouteContextStoreV1:
+    registry = getattr(bridge, "registry", None)
+    if registry is None:
+        return FinalDecisionReviewApprovedRouteContextStoreV1(
+            ttl_seconds=300,
+            capacity=capacity,
+        )
+
+    observer = getattr(registry, "approved_context_observer", None)
+    existing_store = getattr(observer, "__self__", None)
+    if isinstance(existing_store, FinalDecisionReviewApprovedRouteContextStoreV1):
+        return existing_store
+    if observer is not None:
+        raise FinalDecisionReviewProductionRegistrationError(
+            "FINAL_DECISION_REVIEW_ROUTE_CONTEXT_OBSERVER_CONFLICT"
+        )
+
+    attach_observer = getattr(registry, "attach_approved_context_observer", None)
+    if not callable(attach_observer):
+        raise FinalDecisionReviewProductionRegistrationError(
+            "FINAL_DECISION_REVIEW_ROUTE_CONTEXT_REGISTRY_INVALID"
+        )
+    store = FinalDecisionReviewApprovedRouteContextStoreV1(
+        ttl_seconds=300,
+        capacity=capacity,
+    )
+    attach_observer(store.capture)
+    return store
 
 
 def register_final_decision_review_production_sources(
@@ -165,6 +205,10 @@ def register_final_decision_review_production_sources(
             ),
         )
     )
+    approved_route_context_store = _route_context_store_for_bridge(
+        bridge,
+        capacity=source_capacity,
+    )
     producer = FinalDecisionReviewWorkflowProducerV1(bridge=bridge)
     coordinator = FinalDecisionReviewWorkflowCoordinatorV1(
         producer=producer,
@@ -191,6 +235,7 @@ def register_final_decision_review_production_sources(
         trusted_owner_composition=trusted_owner_composition,
         approved_owner_installation=approved_owner_installation,
         approved_owner_acquisition=approved_owner_acquisition,
+        approved_route_context_store=approved_route_context_store,
         producer=producer,
         coordinator=coordinator,
         source_wiring=source_wiring,
