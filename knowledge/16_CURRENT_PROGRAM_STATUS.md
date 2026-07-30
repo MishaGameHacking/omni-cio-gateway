@@ -1,21 +1,18 @@
 # 16 — CURRENT PROGRAM STATUS
 
 Дата актуализации: 2026-07-30  
-Фактическая вершина программы после merge этого пакета: **PR-64**  
+Фактическая вершина программы после merge этого пакета: **PR-65**  
 Точная версия определяется текущей вершиной ветки `main`.
 
 ## Назначение документа
 
-Этот файл является краткой оперативной картой программы. Он имеет приоритет для
-определения активного этапа, если `knowledge/00_PROJECT_MASTER_CONTEXT.md` содержит
-более ранний номер PR. Стратегические правила и Definition of Done продолжают
-определяться master-context и `AGENTS.md`.
+Этот файл — краткая оперативная карта программы. Он имеет приоритет для определения
+активного этапа, если master-context содержит более ранний номер PR. Стратегические правила
+и Definition of Done продолжают определяться `AGENTS.md` и
+`knowledge/00_PROJECT_MASTER_CONTEXT.md`. Код в `main` остаётся окончательным источником
+истины.
 
-Код в `main` остаётся окончательным источником истины.
-
-## Текущий режим
-
-Сохраняются без исключений:
+## Неизменяемые границы
 
 - `trading_methods=false`;
 - пользовательские Gateway Actions только `GET`;
@@ -23,7 +20,7 @@
 - отсутствие создания, отправки, замены и отмены заявок;
 - отсутствие переводов и вывода денег;
 - отсутствие margin, short и derivatives execution;
-- работа только через отдельную ветку и Pull Request;
+- отдельная ветка и Pull Request для каждого пакета;
 - squash merge только после полного Regression Shield.
 
 ## Завершённые контуры
@@ -58,88 +55,100 @@ ledger, walk-forward/OOS stability и market-capacity gating.
 - **PR-61:** production private `GET /decision/final-review` and bounded TTL registry;
 - **PR-62:** trusted process-local publisher;
 - **PR-63:** end-to-end internal composition and fail-closed publication;
-- **PR-64:** production-acceptance evidence contract and offline collector.
+- **PR-64:** production-acceptance evidence contract and offline collector;
+- **PR-65:** production-importable typed workflow bridge into PR-63.
 
-## PR-64 — production acceptance evidence v1
+## PR-65 — final-review workflow bridge v1
 
-PR-64 вводит восемь обязательных evidence-case:
+PR-65 registers one internal object in `app.py`:
 
-1. `render_source_commit`;
-2. `health_contract`;
-3. `private_auth_negative`;
-4. `exact_route_positive`;
-5. `gpt_schema_import`;
-6. `gpt_authenticated_preview`;
-7. `gpt_action_list`;
-8. `rollback_restore`.
+```python
+final_decision_review_workflow_bridge = FinalDecisionReviewWorkflowBridgeV1(
+    registry=final_decision_review_registry,
+    openapi_provider=lambda: app.openapi(),
+    expected_app_version=APP_VERSION,
+)
+```
 
-### Evidence statuses
+No HTTP decorator, path, operationId, query parameter or request body is added.
 
-- `not_executed` — проверка не проводилась, proof fields запрещены;
-- `passed` — есть UTC timestamp, типизированный source, safe reference, summary и SHA-256;
-- `failed` — есть те же доказательства и safe error code;
-- `not_applicable` — только датированное manual-review решение, не закрывающее acceptance.
+### Typed inputs
 
-Каждый executed row связан canonical SHA-256 с case, status, timestamp, source, reference,
-summary, error code и safe count metrics. Подмена proof field блокируется.
+Bridge accepts only:
 
-### Collector behavior
+- `RiskPreTradeExplanationEnvelopeV1`;
+- ordered `CapacityOrderRequestV1` set;
+- already calculated pro-forma `RiskPolicyEvaluationV1`;
+- safe scenario/correlation/request identifiers;
+- timezone-aware bridge timestamp.
 
-`collect_final_decision_review_acceptance_evidence(...)`:
+It does not accept credentials, full account ID, raw JSON body, confirmation or execution
+controls.
 
-- принимает ожидаемые merge commit, app version и HTTPS base URL;
-- принимает только уже сформированные observations;
-- проверяет source по case, Render commit identity, UTC time, duplicates и future evidence;
-- заполняет отсутствующие case статусом `not_executed`;
-- применяет dependency order от Render до GPT Action-list;
-- считает counters и overall status;
-- не выполняет network calls;
-- не меняет Render или GPT Editor;
-- сохраняет `trading_methods=false`.
+### Pipeline
 
-Полный `passed` возможен только при восьми `passed`. Любой `failed` переводит dossier в
-`failed`; `not_executed` и `not_applicable` оставляют acceptance незавершённой.
+1. Build exact `ProFormaRiskScenarioV1` from supplied risk metadata.
+2. Bind scenario to the current reviewed intent.
+3. Invoke PR-63 response → eligibility → Action shadow → input → readiness → plan chain.
+4. Publish through PR-62 into PR-61 registry.
+5. Existing authenticated GET returns the compact response.
 
-## Acceptance state после PR-64
+The pro-forma timestamp comes from `risk_evaluation.metadata.retrieved_at`, while bridge time
+is used for freshness and publication.
 
-Сам PR-64 не проводит production acceptance. После его merge ожидаемый начальный dossier:
+### Fail-closed behavior
 
-- восемь `not_executed`;
-- `overall_status=not_executed`;
-- `actual_deployment_verified=false`;
-- `gpt_preview_verified=false`;
-- `rollback_verified=false`;
-- `acceptance_completed=false`.
+- structurally invalid scenario → blocked at `scenario`;
+- invalid binding → blocked at `binding`;
+- missing HTTPS server, OpenAPI drift or invalid trace → blocked at `orchestration`;
+- substituted quantity/instrument/intent → safe no-action binding and response;
+- blocked publication leaves registry unchanged;
+- all result safety flags remain false and `trading_methods=false`.
 
-До фактического выполнения остаются:
+### Concurrency and lifecycle
 
-- Render source-commit verification;
-- cache-busted `/health` verification;
-- live unauthenticated negative route call;
-- live exact authenticated positive route call;
-- GPT Editor OpenAPI import;
-- GPT Editor authenticated Preview;
-- post-import Action-list inspection;
-- rollback drill.
+- one bridge-level lock serializes scenario through publication;
+- exact concurrent calls use PR-62 `published/replaced` semantics;
+- PR-61 TTL, capacity and eviction rules remain unchanged;
+- restart creates an empty registry;
+- a validated caller must invoke the bridge after restart.
 
-## Выявленный production-разрыв
+## Remaining production gap
 
-PR-61 route читает только process-local registry. PR-63 умеет построить и опубликовать
-reviewed source, но пока не подключён к production workflow, который формирует
-`ProFormaRiskIntentBindingV1`. После process restart registry пуст, поэтому route честно
-возвращает `503` до внутренней публикации.
+Repository search confirmed that `bind_pro_forma_risk_to_intent()` still has no live
+production caller outside its own module and tests. PR-65 exposes the correct production
+boundary, but it does not invent upstream risk evidence or auto-run on startup.
 
-Следовательно, positive-route acceptance нельзя считать готовой только по наличию route и
-collector. Нужен отдельный production bridge, который вызывает PR-63 внутри процесса без
-публичного publication endpoint и без broker write methods.
+Therefore after deploy:
 
-## Что остаётся до полного релиза по мастер-плану
+- registry may remain empty until a validated decision workflow calls the bridge;
+- exact positive route acceptance may still return `503` before that call;
+- Render/GPT/rollback evidence remains `not_executed`;
+- no autonomous trading is enabled.
+
+## Production acceptance state
+
+PR-64 requires eight actual evidence case:
+
+1. Render source commit;
+2. cache-busted health contract;
+3. private auth negative;
+4. exact route positive;
+5. GPT schema import;
+6. authenticated GPT Preview;
+7. GPT Action-list inspection;
+8. rollback restore.
+
+None may be marked passed solely because PR-65 CI is green.
+
+## Что остаётся до полного релиза
 
 ### Backend and release acceptance
 
-- production orchestration bridge from a validated read-only workflow into PR-63;
-- actual Render/Gateway post-deploy acceptance and evidence recording;
-- actual GPT Editor schema import and authenticated Preview;
+- live read-only decision workflow that produces current explanation and pro-forma risk,
+  then invokes the PR-65 bridge;
+- actual Render/Gateway acceptance and evidence recording;
+- actual GPT Editor import and authenticated Preview;
 - production-grade live ingestion for market, ratings, news and corporate events;
 - external versioned RAG index with freshness and citation controls;
 - expanded observability, alerting and operational runbooks.
@@ -156,24 +165,22 @@ collector. Нужен отдельный production bridge, который вы�
 
 Shadow, paper и preview инфраструктура не являются разрешением на реальную торговлю.
 Confirm-before-trade, idempotency, TTL confirmation, kill switch, partial-fill и timeout
-reconciliation требуют отдельной программы допуска и отдельного решения владельца.
-Полностью автономная торговля без подтверждения не планируется.
+reconciliation требуют отдельной программы допуска и решения владельца. Полностью
+автономная торговля без подтверждения не планируется.
 
 ## Следующий рекомендуемый пакет
 
-**PR-65 — final-review production orchestration bridge v1**:
+**PR-66 — live read-only decision workflow producer v1**:
 
-- находит существующий validated read-only workflow, создающий
-  `ProFormaRiskIntentBindingV1`;
-- вызывает PR-63 orchestration внутри того же процесса;
-- не создаёт HTTP publication endpoint;
-- не принимает source contracts или secrets через query/body;
-- публикует только exact blocker-free evidence chain;
-- добавляет restart/TTL/concurrency and failure-path tests;
-- сохраняет production OpenAPI, `app:app` и GET-only Action set;
-- не вызывает broker write methods;
-- сохраняет `trading_methods=false`;
-- не отмечает Render/GPT acceptance выполненной заранее.
+- определяет минимальный typed input bundle для current risk/pre-trade explanation and
+  pro-forma risk;
+- использует существующие read-only contracts and calculators;
+- вызывает PR-65 bridge только после source authority, freshness, account and intent gates;
+- не принимает credentials or execution controls;
+- не создаёт broker-write method;
+- добавляет no-action, stale, partial, restart and exact-source tests;
+- сохраняет GET-only OpenAPI, `app:app` и `trading_methods=false`;
+- не считает production acceptance выполненной до реального deploy/GPT evidence.
 
 ## Запрет ложного завершения
 
