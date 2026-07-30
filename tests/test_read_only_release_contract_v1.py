@@ -43,7 +43,7 @@ def test_effective_openapi_is_a_valid_read_only_gpt_action_release() -> None:
     manifest = _manifest()
 
     assert ENTRYPOINT == "app:app"
-    assert manifest.app_version == "3.9.1"
+    assert manifest.app_version == APP_VERSION
     assert manifest.entrypoint == "app:app"
     assert manifest.openapi_version.startswith("3.")
     assert manifest.server_urls == ("https://omni-cio-gateway.onrender.com",)
