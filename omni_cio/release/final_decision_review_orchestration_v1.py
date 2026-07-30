@@ -47,6 +47,7 @@ from omni_cio.release.final_decision_review_input_v1 import (
     build_final_decision_review_read_only_query,
 )
 from omni_cio.release.final_decision_review_openapi_shadow_v1 import (
+    FinalDecisionReviewOpenApiShadowError,
     build_final_decision_review_openapi_shadow,
 )
 from omni_cio.release.final_decision_review_publisher_v1 import (
@@ -65,6 +66,7 @@ from omni_cio.release.final_decision_review_route_v1 import (
     FINAL_REVIEW_SECURITY_SCHEME,
     FinalDecisionReviewSourceRegistryV1,
 )
+from omni_cio.release.read_only_contract_v1 import ReadOnlyReleaseError
 
 
 _HTTP_METHODS = {"get", "post", "put", "patch", "delete"}
@@ -84,6 +86,8 @@ def _aware_utc(value: datetime | None) -> datetime:
 
 
 def _blocker_value(value: object, fallback: str) -> str:
+    if value is None:
+        return fallback
     raw = getattr(value, "value", value)
     text = str(raw).strip()
     return text or fallback
@@ -239,7 +243,18 @@ def orchestrate_final_decision_review_publication(
 
     try:
         pre_route_schema = _production_pre_route_baseline(current_openapi_schema)
-    except FinalDecisionReviewOrchestrationError as exc:
+        action_shadow = build_final_decision_review_openapi_shadow(
+            pre_route_schema,
+            release_eligibility,
+            expected_app_version=expected_app_version,
+            approved_hosts=approved_hosts,
+            validated_at=now,
+        )
+    except (
+        FinalDecisionReviewOrchestrationError,
+        FinalDecisionReviewOpenApiShadowError,
+        ReadOnlyReleaseError,
+    ) as exc:
         return _blocked(
             orchestrated_at=now,
             stage=FinalDecisionReviewOrchestrationStage.ACTION_SHADOW,
@@ -248,13 +263,6 @@ def orchestrate_final_decision_review_publication(
             release_eligibility=release_eligibility,
         )
 
-    action_shadow = build_final_decision_review_openapi_shadow(
-        pre_route_schema,
-        release_eligibility,
-        expected_app_version=expected_app_version,
-        approved_hosts=approved_hosts,
-        validated_at=now,
-    )
     if (
         action_shadow.status
         is not FinalDecisionReviewActionCandidateStatus.SHADOW_VALID
