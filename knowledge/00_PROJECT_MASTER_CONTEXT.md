@@ -6,8 +6,7 @@ Gateway API component после merge PR-61: **v3.10.0 Final Decision Review GE
 
 Этот документ — единая обезличенная проектная память. Его нужно читать первым при
 продолжении работы в новом чате, IDE, GitHub Copilot, Codex или другом проекте.
-Оперативный номер последнего этапа и следующий пакет уточняются по
-`knowledge/16_CURRENT_PROGRAM_STATUS.md` и фактической вершине `main`.
+Исходная пользовательская спецификация хранится в `docs/master-plan/`. Оперативный номер последнего этапа и следующий пакет уточняются по `knowledge/16_CURRENT_PROGRAM_STATUS.md` и фактической вершине `main`. Будущие цели master plan не отменяют действующий read-only lock и не считаются реализованными без кода, тестов и production acceptance.
 
 ## 0. Стратегическое решение владельца
 
@@ -287,19 +286,19 @@ end-to-end workflow.
 
 ## 11. Acceptance and current next step
 
-PR-61 может закрыть только pre-merge acceptance. После deploy отдельно требуются:
+Функциональная вершина программы — PR-78. Фактические детали и следующий рекомендуемый пакет PR-79 определяются `knowledge/16_CURRENT_PROGRAM_STATUS.md`.
+
+Отдельно остаются восемь реальных production acceptance cases:
 
 - Render source commit verification;
 - cache-busted `/health`;
-- production auth and route checks;
+- production auth-negative and route-positive checks;
 - GPT Editor OpenAPI import;
 - authenticated Preview;
 - complete Action-list inspection;
-- rollback drill.
+- rollback restore.
 
-Следующий пакет определяется `knowledge/16_CURRENT_PROGRAM_STATUS.md`. После PR-61 это
-internal read-only orchestration publisher into the bounded registry, без публичного
-publication endpoint и без broker write surface.
+Они не считаются выполненными по зелёному CI. До их фактической фиксации сохраняются `trading_methods=false`, GET-only Actions и fail-closed unavailable behavior.
 
 ## 12. Definition of Done
 
