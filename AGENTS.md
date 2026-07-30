@@ -8,13 +8,14 @@
 
 1. Прочитать `README.md`.
 2. Прочитать `docs/README.md`.
-3. Прочитать `knowledge/00_PROJECT_MASTER_CONTEXT.md`.
-4. Прочитать `knowledge/16_CURRENT_PROGRAM_STATUS.md` для фактического активного этапа.
-5. Прочитать `gpt/INSTRUCTIONS.md` и `gpt/ACTIONS_CATALOG.md`, если задача касается Custom GPT.
-6. Прочитать профильный файл из `knowledge/`.
-7. Проверить `main`, открытые PR, последние релизы и GitHub Actions.
-8. Не считать старую переписку источником истины, если она расходится с кодом в `main`.
-
+3. Прочитать `docs/master-plan/README.md` и `docs/master-plan/OMNI_CIO_MASTER_PROMPT_V9.txt`.
+4. Прочитать `knowledge/00_PROJECT_MASTER_CONTEXT.md`.
+5. Прочитать `knowledge/16_CURRENT_PROGRAM_STATUS.md` для фактического активного этапа.
+6. Прочитать `gpt/INSTRUCTIONS.md` и `gpt/ACTIONS_CATALOG.md`, если задача касается Custom GPT.
+7. Прочитать профильный файл из `knowledge/`.
+8. Проверить `main`, открытые PR, последние релизы, issues и GitHub Actions.
+9. Не считать будущую цель из master plan реализованной без кода, тестов и acceptance.
+10. Не считать старую переписку источником истины, если она расходится с кодом в `main`.
 ## 2. Неприкосновенный read-only режим
 
 Запрещено добавлять или вызывать:
@@ -63,6 +64,7 @@
 - Gateway runtime и wrappers — в корне;
 - доменные правила — в `knowledge/`;
 - Custom GPT — в `gpt/`;
+- исходный master plan — в `docs/master-plan/`;
 - архитектура, runbooks и inventory — в `docs/`;
 - проверки — в `scripts/`;
 - постоянный CI и templates — в `.github/`.
@@ -149,6 +151,7 @@ active env configuration, imports и OpenAPI routes.
 
 - `CHANGELOG.md`;
 - `README.md`;
+- `docs/master-plan/README.md` и текстовую копию master plan;
 - `knowledge/00_PROJECT_MASTER_CONTEXT.md`;
 - `knowledge/16_CURRENT_PROGRAM_STATUS.md`;
 - профильный `knowledge/NN_*`;
