@@ -73,6 +73,15 @@ RETIRED_TELEGRAM_PATHS = (
     "docs/operations/TELEGRAM_COMPANION_RUNBOOK.md",
 )
 
+RETIRED_DUPLICATE_SCENARIO_PUBLISHER_PATHS = (
+    "omni_cio/release/final_decision_review_calculator_publication_v1.py",
+    "omni_cio/release/final_decision_review_calculator_registration_v1.py",
+    "tests/test_final_decision_review_calculator_publication_v1.py",
+    "tests/test_final_decision_review_calculator_registration_v1.py",
+    "docs/architecture/FINAL_DECISION_REVIEW_CALCULATOR_PUBLICATION_V1.md",
+    "docs/architecture/FINAL_DECISION_REVIEW_CALCULATOR_REGISTRATION_V1.md",
+)
+
 RETIRED_TELEGRAM_ENV_VARS = (
     "TELEGRAM_BOT_TOKEN",
     "TELEGRAM_WEBHOOK_SECRET",
@@ -175,6 +184,15 @@ def scan_runtime_broker_egress(failures: list[str]) -> None:
                     ),
                     failures,
                 )
+
+
+def scan_retired_duplicate_scenario_publishers(failures: list[str]) -> None:
+    for relative_path in RETIRED_DUPLICATE_SCENARIO_PUBLISHER_PATHS:
+        if (ROOT / relative_path).exists():
+            fail(
+                f"retired duplicate scenario publisher path is present: {relative_path}",
+                failures,
+            )
 
 
 def scan_retired_telegram_surface(failures: list[str]) -> None:
@@ -290,6 +308,7 @@ def main() -> int:
 
     scan_runtime_broker_egress(failures)
     scan_retired_telegram_surface(failures)
+    scan_retired_duplicate_scenario_publishers(failures)
 
     if failures:
         print("Repository layout check failed:", file=sys.stderr)
@@ -301,6 +320,7 @@ def main() -> int:
     print(f"Required files checked: {len(REQUIRED_PATHS)}")
     print("Gateway entrypoint: app:app")
     print("Telegram runtime: retired")
+    print("Duplicate PR-71 scenario publisher: retired")
     return 0
 
 
