@@ -1,7 +1,7 @@
 # 16 — CURRENT PROGRAM STATUS
 
 Дата актуализации: 2026-07-30  
-Фактическая вершина программы после merge этого пакета: **PR-78**  
+Фактическая вершина программы после merge этого пакета: **PR-79**  
 Точная версия определяется текущей вершиной ветки `main`.
 
 ## Назначение документа
@@ -77,6 +77,7 @@ ledger, walk-forward/OOS stability и market-capacity gating.
 - **PR-76:** typed adapters from existing read-only owners into fixed provider IDs;
 - **PR-77:** scenario-scoped production routing for fixed purchase/sell owner callables;
 - **PR-78:** trusted one-shot composition with explicit pro-forma scenario binding.
+- **PR-79:** approved server-context acquisition of exact fresh owner leases before PR-78.
 
 ## PR-78 — trusted production owner composition v1
 
@@ -131,18 +132,63 @@ still contains no scenario-specific owners and performs no calculation or broker
 - `app:app` remains stable;
 - `trading_methods=false`.
 
+## PR-79 — approved server-side owner acquisition v1
+
+PR-79 introduces the internal controller that obtains the exact PR-78 owner ports from
+server-owned loaders. It accepts no Action payload and derives invocation, scenario,
+correlation, operation and masked account only from
+`FinalDecisionReviewApprovedServerContextV1`.
+
+### Exact acquisition gates
+
+- the server context must be typed, authenticated, masked and fresh before any owner loader
+  is called;
+- the Decision Engine, exact intent, capacity, explicit `ProFormaRiskScenarioV1` and one
+  directional preview lease are each loaded exactly once;
+- the unselected directional preview loader is never called;
+- all selected leases must be present, metadata-bound and no older than 300 seconds, with a
+  30-second future-clock tolerance;
+- missing, failed, timed-out, mismatched or stale evidence prevents PR-78 invocation;
+- decision, pro-forma scenario and every directional preview are rebound to the exact
+  server-context masked account;
+- owner output is still materialized only once by PR-78 and passes all PR-78 binding gates.
+
+### Safe unavailable behavior
+
+A blocked acquisition returns an internal `unavailable` result mapped to the existing
+`FINAL_REVIEW_SOURCE_UNAVAILABLE` / HTTP `503` handler outcome. Missing evidence is never
+reported as success or pending. Source and owner exception details are not returned or
+logged.
+
+### Production startup
+
+`FinalDecisionReviewProductionRuntimeV1` now owns the acquisition controller connected to
+the same PR-78 composition object. Startup installs fixed missing context/source loaders and
+performs no context, owner, calculator, portfolio, network or broker call. The controller
+therefore fails closed until exact production loaders are installed by a later reviewed
+package.
+
+### Compatibility and safety
+
+- Gateway version remains `3.10.0`;
+- production OpenAPI remains exactly 14 authenticated GET Actions;
+- no route, operation ID, query field or request body is added;
+- no raw financial payload, credential, full account ID, dynamic import or user-selected
+  provider is accepted;
+- no broker order, replacement, cancellation, transfer or withdrawal method is added;
+- `app:app` remains stable;
+- `trading_methods=false`.
+
 ## Remaining production boundary
 
-PR-78 provides a trusted server-side composition and invocation boundary but intentionally
-does not decide when a real user request should execute the Decision Engine, capacity,
-broker-preview and post-change risk calculators. Until an approved acquisition workflow
-binds those existing owners:
+PR-79 completes the approved acquisition controller but deliberately does not fabricate the
+runtime context or calculator inputs that production does not yet own. Until concrete
+server-context and existing-calculator loader installation is reviewed:
 
-- production starts with only the two fixed fail-closed provider dispatchers;
-- the owner-callable and scenario stores remain empty after restart;
-- no public endpoint accepts callables, raw financial payloads or credentials;
-- exact acquisition may report missing scenario sources;
-- the final-review route may return `503`;
+- production acquisition returns the existing safe `503` unavailable outcome;
+- the public Action cannot publish callables, raw financial payloads or credentials;
+- no current-risk value can be substituted for explicit post-change risk;
+- the owner-callable and final-review registries remain empty after restart;
 - Render/GPT/rollback evidence remains `not_executed`;
 - no autonomous trading is enabled.
 
@@ -156,8 +202,8 @@ rollback restore. None may be marked passed solely because PR-78 CI is green.
 
 ### Backend and release acceptance
 
-- approved server-side acquisition that binds existing calculators to the trusted PR-78
-  owner ports;
+- concrete production installation of the authenticated server-context producer and
+  existing calculator owner loaders into the PR-79 controller;
 - actual Render/Gateway acceptance and evidence recording;
 - actual GPT Editor import and authenticated Preview;
 - production-grade live ingestion for market, ratings, news and corporate events;
@@ -179,19 +225,22 @@ Confirm-before-trade, idempotency, TTL confirmation, kill switch, partial-fill �
 reconciliation требуют отдельной программы допуска и решения владельца. Полностью
 автономная торговля без подтверждения не планируется.
 
-## Следующий рекомендуемый пакет
+## Следующий пакет после PR-79
 
-**PR-79 — approved server-side owner acquisition v1**:
+Следующий номер не назначается автоматически. Ближайший доказанный функциональный gap:
 
-- selects only existing read-only Decision Engine, capacity and directional preview owners;
-- requires an explicit post-change risk calculator that returns
-  `ProFormaRiskScenarioV1`;
-- derives scenario, correlation, operation and masked account from trusted server context;
-- never accepts raw calculator outputs, credentials or full account IDs from the Action;
-- calls PR-78 only after every required source is available and fresh;
-- maps missing or stale evidence to the existing safe unavailable outcome;
-- performs no new HTTP route or production OpenAPI change;
-- preserves `app:app`, no broker writes and `trading_methods=false`.
+- определить фактический authenticated server request lifecycle, который может безопасно
+  создать `FinalDecisionReviewApprovedServerContextV1`;
+- установить concrete loaders только для уже существующих read-only Decision Engine,
+  capacity, directional preview и explicit post-change risk owners;
+- не принимать raw calculator outputs, credentials, provider names или full account IDs
+  из Action;
+- сохранить штатный `503`, если хотя бы один owner недоступен или устарел;
+- выполнить это отдельной веткой/PR после проверки реальных owner inputs и без изменения
+  14-GET OpenAPI surface.
+
+Production acceptance остаётся отдельным внешним блоком и не заменяется следующим backend
+PR.
 
 ## Запрет ложного завершения
 
