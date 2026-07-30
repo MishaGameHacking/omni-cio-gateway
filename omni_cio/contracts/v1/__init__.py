@@ -2,6 +2,7 @@
 
 from omni_cio.contracts.v1.alerting import (
     CbrKeyRateAlertDisposition,
+    CbrKeyRateAlertEvidenceV1,
     CbrKeyRateAlertEvaluationV1,
     CbrKeyRateAlertKind,
     CbrKeyRateAlertPolicyV1,
@@ -183,6 +184,7 @@ __all__ = [
     "CategoryTotalCheckV1",
     "CategoryTotalsCheckV1",
     "CbrKeyRateAlertDisposition",
+    "CbrKeyRateAlertEvidenceV1",
     "CbrKeyRateAlertEvaluationV1",
     "CbrKeyRateAlertKind",
     "CbrKeyRateAlertPolicyV1",
