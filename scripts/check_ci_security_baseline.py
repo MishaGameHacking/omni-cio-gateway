@@ -16,8 +16,17 @@ LOCK_PATHS = (
 )
 
 FULL_SHA = re.compile(r"[0-9a-f]{40}")
+SECRET_SCAN_EXCLUDE_PATTERN = (
+    r"(^|[\\/])(\.git|\.venv|\.venv-ci|\.mypy_cache|\.ruff_cache|"
+    r"__pycache__|requirements(-dev)?\.txt|windows-.*requirements.*\.txt|"
+    r"coverage\.xml|pytest-results\.xml)([\\/]|$)"
+)
+EXTERNAL_VENV_ROOT_COMMAND = 'VENV_ROOT="$(cygpath -u "$RUNNER_TEMP")"'
+EXTERNAL_VENV_EXPORT_COMMAND = 'echo "VENV_PATH=$VENV_PATH" >> "$GITHUB_ENV"'
 
 REQUIRED_WORKFLOW_COMMANDS = {
+    "external Windows CI environment": EXTERNAL_VENV_ROOT_COMMAND,
+    "external CI environment export": EXTERNAL_VENV_EXPORT_COMMAND,
     "Windows lock projection": "python scripts/windows_ci_lock.py project",
     "hash-locked install": "--require-hashes -r windows-requirements-dev.txt",
     "lock consistency": "python -m piptools compile",
@@ -30,6 +39,7 @@ REQUIRED_WORKFLOW_COMMANDS = {
     "dependency audit": "python -m pip_audit",
     "SAST": "python -m bandit",
     "secret scan": "python -m detect_secrets",
+    "cross-platform secret-scan exclusions": SECRET_SCAN_EXCLUDE_PATTERN,
 }
 
 SELF_HOSTED_RUNNER_LABELS = "[self-hosted, Windows, X64, omni-cio-ci]"
@@ -137,6 +147,22 @@ def validate_workflow(failures: list[str]) -> None:
         failures.append("every checkout must disable persisted credentials")
     if "scripts\\bootstrap_windows_ci_python.cmd" not in text:
         failures.append("Regression Shield must bootstrap the verified Python runtime")
+    if "python -m venv .venv-ci" in text:
+        failures.append(
+            "CI virtual environments must be created outside the repository checkout"
+        )
+    if text.count(EXTERNAL_VENV_ROOT_COMMAND) < 2:
+        failures.append(
+            "every self-hosted job must create its virtual environment in RUNNER_TEMP"
+        )
+    if text.count(EXTERNAL_VENV_EXPORT_COMMAND) < 2:
+        failures.append(
+            "every self-hosted job must export its external virtual environment"
+        )
+    if text.count('rm -rf "$VENV_PATH"') < 4:
+        failures.append(
+            "every self-hosted job must reset and clean its external virtual environment"
+        )
 
 
 def validate_render_contract(failures: list[str]) -> None:
@@ -225,6 +251,7 @@ def main() -> int:
         print("CI/security baseline check passed.")
         print("Dependency locks: pinned and SHA-256 hashed")
         print("Windows projection: exact except allowlisted uvloop exclusion")
+        print("CI virtual environments: isolated in RUNNER_TEMP")
         print("GitHub Actions: pinned to full commit SHAs")
         print("Self-hosted PR isolation: same-repository only")
         print("Render entrypoint: app:app")
