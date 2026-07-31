@@ -21,11 +21,12 @@ PAYLOAD = (
     '</a><a href="/releases/2026/jul31a">31.07.2026</a>'
     "<h2>Аналитика</h2></body></html>"
 ).encode()
+_SENTINEL = "test-sentinel"
 
 
-class _PrivateClientAuth(httpx.Auth):
+class _InjectedClientAuth(httpx.Auth):
     def auth_flow(self, request: httpx.Request):
-        request.headers["X-Private-Auth"] = "private-auth-value"
+        request.headers["X-Test-Injected"] = _SENTINEL
         yield request
 
 
@@ -42,14 +43,14 @@ def test_injected_client_credentials_are_isolated_from_public_request() -> None:
 
     with httpx.Client(
         transport=httpx.MockTransport(handler),
-        auth=_PrivateClientAuth(),
+        auth=_InjectedClientAuth(),
         headers={
-            "Authorization": "Bearer private-token",
-            "Cookie": "session=private-cookie",
-            "Proxy-Authorization": "Basic private-proxy",
-            "X-API-Key": "private-api-key",
+            "Authorization": _SENTINEL,
+            "Cookie": _SENTINEL,
+            "Proxy-Authorization": _SENTINEL,
+            "X-API-Key": _SENTINEL,
         },
-        cookies={"persistent-session": "private-cookie"},
+        cookies={"test-cookie": _SENTINEL},
     ) as client:
         result = fetch_expert_ra_issuer_rating_actions(
             client=client,
@@ -63,7 +64,7 @@ def test_injected_client_credentials_are_isolated_from_public_request() -> None:
         "cookie",
         "proxy-authorization",
         "x-api-key",
-        "x-private-auth",
+        "x-test-injected",
     ):
         assert requests[0].headers.get(header) is None
     assert requests[0].headers["accept"] == "text/html,application/xhtml+xml"
@@ -80,7 +81,7 @@ def test_redirect_is_not_followed_even_when_injected_client_allows_redirects() -
         urls.append(str(request.url))
         return httpx.Response(
             302,
-            headers={"location": "https://example.com/private-target"},
+            headers={"location": "https://example.com/test-target"},
         )
 
     with httpx.Client(
