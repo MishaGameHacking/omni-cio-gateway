@@ -10,6 +10,14 @@ import sys
 _HASH_RE = re.compile(r"--hash=sha256:([0-9a-f]{64})")
 _NAME_RE = re.compile(r"^([A-Za-z0-9_.-]+)")
 _ALLOWED_WINDOWS_EXCLUSIONS = frozenset({"uvloop"})
+_WINDOWS_ADDITION_BLOCKS: dict[str, tuple[str, ...]] = {
+    "colorama": (
+        "colorama==0.4.6 \\\n",
+        "    --hash=sha256:08695f5cb7ed6e0531a20572697297273c47b8cae5a63ffc6d6ed5c201be6e44 \\\n",
+        "    --hash=sha256:4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6\n",
+        "    # via bandit\n",
+    ),
+}
 
 
 @dataclass(frozen=True)
@@ -53,7 +61,7 @@ def _split_lock(text: str) -> tuple[list[str], list[list[str]]]:
     return prefix, blocks
 
 
-def _parse_block(block: list[str]) -> LockedRequirement:
+def _parse_block(block: list[str] | tuple[str, ...]) -> LockedRequirement:
     first = block[0].strip()
     match = _NAME_RE.match(first)
     if match is None:
@@ -70,6 +78,16 @@ def _parse_block(block: list[str]) -> LockedRequirement:
         hashes=hashes,
         block=tuple(block),
     )
+
+
+def _windows_additions() -> dict[str, LockedRequirement]:
+    additions = {
+        name: _parse_block(block)
+        for name, block in _WINDOWS_ADDITION_BLOCKS.items()
+    }
+    if set(additions) != set(_WINDOWS_ADDITION_BLOCKS):
+        raise ValueError("invalid Windows addition map")
+    return additions
 
 
 def parse_lock(path: Path) -> dict[str, LockedRequirement]:
@@ -89,10 +107,12 @@ def project_lock(source: Path, destination: Path) -> None:
     text = source.read_text(encoding="utf-8")
     prefix, blocks = _split_lock(text)
     removed: set[str] = set()
-    output_blocks: list[list[str]] = []
+    output_blocks: list[list[str] | tuple[str, ...]] = []
+    source_names: set[str] = set()
 
     for block in blocks:
         requirement = _parse_block(block)
+        source_names.add(requirement.name)
         if requirement.name in _ALLOWED_WINDOWS_EXCLUSIONS:
             block_text = "".join(block).lower()
             if requirement.name == "uvloop" and "# via uvicorn" not in block_text:
@@ -107,6 +127,15 @@ def project_lock(source: Path, destination: Path) -> None:
             + ", ".join(sorted(_ALLOWED_WINDOWS_EXCLUSIONS))
         )
 
+    additions = _windows_additions()
+    collisions = source_names & additions.keys()
+    if collisions:
+        raise ValueError(
+            "Windows-only additions unexpectedly exist in Linux lock: "
+            + ", ".join(sorted(collisions))
+        )
+    output_blocks.extend(addition.block for addition in additions.values())
+
     destination.write_text(
         "".join(prefix) + "".join("".join(block) for block in output_blocks),
         encoding="utf-8",
@@ -114,13 +143,15 @@ def project_lock(source: Path, destination: Path) -> None:
     )
     print(
         f"Windows lock projection created: {destination} "
-        f"(excluded: {', '.join(sorted(removed))})"
+        f"(excluded: {', '.join(sorted(removed))}; "
+        f"added: {', '.join(sorted(additions))})"
     )
 
 
 def verify_projection(linux_lock: Path, windows_compiled_lock: Path) -> None:
     linux = parse_lock(linux_lock)
     windows = parse_lock(windows_compiled_lock)
+    additions = _windows_additions()
 
     missing_allowed = _ALLOWED_WINDOWS_EXCLUSIONS - linux.keys()
     if missing_allowed:
@@ -136,23 +167,31 @@ def verify_projection(linux_lock: Path, windows_compiled_lock: Path) -> None:
             + ", ".join(sorted(unexpected_windows))
         )
 
-    projected_linux = {
+    addition_collisions = linux.keys() & additions.keys()
+    if addition_collisions:
+        raise ValueError(
+            "Windows-only additions unexpectedly exist in Linux lock: "
+            + ", ".join(sorted(addition_collisions))
+        )
+
+    expected = {
         name: requirement
         for name, requirement in linux.items()
         if name not in _ALLOWED_WINDOWS_EXCLUSIONS
     }
-    linux_names = set(projected_linux)
+    expected.update(additions)
+    expected_names = set(expected)
     windows_names = set(windows)
-    if linux_names != windows_names:
-        missing = sorted(linux_names - windows_names)
-        extra = sorted(windows_names - linux_names)
+    if expected_names != windows_names:
+        missing = sorted(expected_names - windows_names)
+        extra = sorted(windows_names - expected_names)
         raise ValueError(
             f"Windows lock package set differs; missing={missing}, extra={extra}"
         )
 
     mismatches: list[str] = []
-    for name in sorted(linux_names):
-        left = projected_linux[name]
+    for name in sorted(expected_names):
+        left = expected[name]
         right = windows[name]
         if left.requirement != right.requirement:
             mismatches.append(
