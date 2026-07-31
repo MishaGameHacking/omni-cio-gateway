@@ -147,7 +147,7 @@ class _VisibleLinkParser(HTMLParser):
         self._anchor_open = False
         self._href: str | None = None
         self._anchor_chunks: list[str] = []
-        self._ignored_depth = 0
+        self._ignored_tags: list[str] = []
 
     def handle_starttag(
         self,
@@ -156,9 +156,9 @@ class _VisibleLinkParser(HTMLParser):
     ) -> None:
         lowered = tag.lower()
         if lowered in {"script", "style", "noscript"}:
-            self._ignored_depth += 1
+            self._ignored_tags.append(lowered)
             return
-        if lowered == "a" and self._ignored_depth == 0:
+        if lowered == "a" and not self._ignored_tags:
             if self._anchor_open:
                 raise ExpertRaRatingActionsSourceError(
                     CreditRatingSourceErrorCode.HTML_INVALID.value
@@ -173,13 +173,13 @@ class _VisibleLinkParser(HTMLParser):
     def handle_endtag(self, tag: str) -> None:
         lowered = tag.lower()
         if lowered in {"script", "style", "noscript"}:
-            if self._ignored_depth == 0:
+            if not self._ignored_tags or self._ignored_tags[-1] != lowered:
                 raise ExpertRaRatingActionsSourceError(
                     CreditRatingSourceErrorCode.HTML_INVALID.value
                 )
-            self._ignored_depth -= 1
+            self._ignored_tags.pop()
             return
-        if lowered == "a" and self._ignored_depth == 0:
+        if lowered == "a" and not self._ignored_tags:
             if not self._anchor_open:
                 raise ExpertRaRatingActionsSourceError(
                     CreditRatingSourceErrorCode.HTML_INVALID.value
@@ -192,7 +192,7 @@ class _VisibleLinkParser(HTMLParser):
             self._anchor_chunks = []
 
     def handle_data(self, data: str) -> None:
-        if self._ignored_depth:
+        if self._ignored_tags:
             return
         text = _normalize_text(data)
         if not text:
@@ -482,7 +482,7 @@ def parse_expert_ra_issuer_rating_actions_html(
     try:
         parser.feed(text)
         parser.close()
-        if parser._anchor_open or parser._ignored_depth != 0:
+        if parser._anchor_open or parser._ignored_tags:
             raise ExpertRaRatingActionsSourceError(
                 CreditRatingSourceErrorCode.HTML_INVALID.value
             )
