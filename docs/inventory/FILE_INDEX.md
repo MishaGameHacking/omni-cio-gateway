@@ -40,7 +40,7 @@ operations assets. Код в `main` остаётся окончательным 
 | `omni_cio/market/moex_iss_quote_cache_v1.py` | PR-90 exact TQBR+SECID cache and no-silent-stale policy |
 | `omni_cio/market/acra_rating_actions_v1.py` | PR-94 fixed official issuer-level ACRA source |
 | `omni_cio/market/acra_rating_actions_cache_v1.py` | PR-95 fixed-source single-flight ACRA cache |
-| `omni_cio/market/expert_ra_rating_actions_v1.py` | PR-99 fixed Expert RA issuer-only parser and bounded transport |
+| `omni_cio/market/expert_ra_rating_actions_v1.py` | PR-99 fixed Expert RA issuer-only parser and isolated bounded transport |
 | `omni_cio/market/` | Existing capacity, bond, equity, fund and technical analysis |
 
 ## Observability and operations evidence
@@ -110,8 +110,15 @@ Key entrypoints:
 | `tests/test_acra_rating_actions_alert_policy_exports_v1.py` | PR-97 export compatibility |
 | `tests/test_acra_rating_actions_operations_lifecycle_v1.py` | PR-98 terminal evidence and sinks |
 | `tests/test_acra_rating_actions_operations_lifecycle_exports_v1.py` | PR-98 export compatibility |
-| `tests/test_expert_ra_rating_actions_source_v1.py` | PR-99 contracts, five actions, filtering, URL/date/transport and safety |
-| `tests/test_expert_ra_rating_actions_exports_v1.py` | PR-99 contract/source export compatibility |
+| `tests/test_expert_ra_rating_actions_source_v1.py` | PR-99 five actions, filtering, failures and source behavior |
+| `tests/test_expert_ra_rating_actions_contract_url_v1.py` | PR-99 direct canonical release URL contract |
+| `tests/test_expert_ra_release_date_identity_v1.py` | PR-99 calendar, URL/publication and retrieval timestamp identity |
+| `tests/test_expert_ra_section_boundary_v1.py` | PR-99 live linked `/researches/` boundary and spoof rejection |
+| `tests/test_expert_ra_rating_actions_transport_hardening_v1.py` | PR-99 transport-only DI, allowlisted request and redirect block |
+| `tests/test_expert_ra_fetch_control_bounds_v1.py` | PR-99 finite and non-expansive fetch controls |
+| `tests/test_expert_ra_html_truncation_v1.py` | PR-99 unclosed anchor/script/style/noscript rejection |
+| `tests/test_expert_ra_rating_actions_usage_flags_v1.py` | PR-99 privacy and usage flags |
+| `tests/test_expert_ra_rating_actions_exports_v1.py` | PR-99 versioned contract/source exports |
 | `tests/test_portfolio_*` | Portfolio market and analytics |
 | `tests/test_purchase_capacity*.py` | Purchase preview integrity |
 | `tests/test_operations_analytics.py` | Operations and cash-flow reconciliation |
