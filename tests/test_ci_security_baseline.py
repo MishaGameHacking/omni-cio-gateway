@@ -3,6 +3,8 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
+import pytest
+
 
 SCRIPT_PATH = (
     Path(__file__).resolve().parents[1] / "scripts" / "check_ci_security_baseline.py"
@@ -55,6 +57,27 @@ def test_action_pin_validator_accepts_only_full_commit_sha() -> None:
 
     assert len(failures) == 1
     assert "actions/setup-python@v6" in failures[0]
+
+
+def test_workflow_validator_requires_self_hosted_isolation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workflow_path = tmp_path / "regression-shield.yml"
+    commands = "\n".join(baseline.REQUIRED_WORKFLOW_COMMANDS.values())
+    workflow_path.write_text(
+        f"permissions: contents: read\n{commands}\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(baseline, "WORKFLOW_PATH", workflow_path)
+    failures: list[str] = []
+
+    baseline.validate_workflow(failures)
+
+    assert any("dedicated self-hosted" in failure for failure in failures)
+    assert any("reject fork" in failure for failure in failures)
+    assert any("persisted credentials" in failure for failure in failures)
+    assert any("verified Python runtime" in failure for failure in failures)
 
 
 def test_detect_secrets_validator_reports_only_real_findings() -> None:
