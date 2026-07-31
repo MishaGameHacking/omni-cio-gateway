@@ -69,9 +69,8 @@ GitHub PR #128 открыт как draft на ветке
 - release path: `/releases/{20xx}/{jan..dec}{valid day}[a-z]?`;
 - source language: Russian.
 
-Caller-controlled URLs, redirects for the owned client, English/secondary hosts,
-query strings, fragments, unknown month tokens, calendar-invalid dates and
-arbitrary release paths are запрещены.
+Caller-controlled URLs, English/secondary hosts, query strings, fragments,
+unknown month tokens, calendar-invalid dates и arbitrary release paths запрещены.
 
 ### Supported data and grammar
 
@@ -93,51 +92,72 @@ Bond/issue/series/tranche/structured-finance, ESG, plural, complex и unsupporte
 scale actions пропускаются. Malformed title, явно заявляющий поддерживаемое
 singular issuer national-Russia действие, fail-closed отклоняется.
 
-### Page and transport boundary
+### Page boundary
 
-- extraction только между видимыми `Рейтинговые действия` и `Аналитика`;
+- scope открывается только plain visible `Рейтинговые действия`;
+- navigation link с тем же текстом не может открыть scope;
+- scope закрывается plain `Аналитика` либо exact official `/researches/` link;
+- external host, другой path, query или fragment не могут закрыть scope;
+- current live homepage structure verified against this boundary;
+- adjacent publication date required;
+- URL date обязана точно совпадать с `published_on`.
+
+### Transport and parser boundary
+
 - fixed HTTPS GET;
-- redirects disabled;
+- всегда создаётся отдельный isolated `httpx.Client`;
+- dependency injection только `httpx.BaseTransport`, shared client запрещён;
+- нет inherited auth, cookies, headers или request hooks;
+- `trust_env=false`, redirects disabled;
+- explicit allowlisted `Accept` и `User-Agent`;
+- caller может только уменьшать default timeout/response budget;
+- `NaN`, infinities, huge values и expanded budgets отклоняются до I/O;
 - HTML/XHTML only;
 - bounded declared и streamed bytes;
 - UTF-8/UTF-8-BOM only;
 - script/style/noscript content ignored;
-- adjacent publication date required;
+- unclosed anchor/script/style/noscript fail closed;
 - future-date tolerance bounded одним календарным днём;
 - release URL month/day calendar-valid;
-- URL date обязана точно совпадать с `published_on`;
 - available snapshot `retrieved_at` обязана совпадать с
   `source.retrieved_at`;
 - every record обязана использовать exact snapshot source;
 - duplicate conflicts fail closed;
 - raw title, HTML, upstream body и exception text не сохраняются.
 
-Contracts объявляют informational use only, no software-authorized
-redistribution, not an investment recommendation, no credentials/full account
-ID, no broker write, no order creation и `trading_methods=false`.
+Contracts экспортируются через direct module и общий `omni_cio.contracts.v1` и
+объявляют informational use only, no software-authorized redistribution, not an
+investment recommendation, no credentials/full account ID, no broker write, no
+order creation и `trading_methods=false`.
 
 ### Self-review fixes в активной ветке
 
-- исправлена grammar outlook tails: `со ... прогнозом`, `и изменил ...`, comma
-  form и bounded optional under-observation status;
-- усилена canonical release URL validation против host/path/query/slash и path
-  traversal bypasses;
-- запрещены произвольные трёхбуквенные month tokens;
-- добавлена calendar validation и URL date = publication date;
+- исправлена grammar outlook tails;
+- усилена release URL validation против host/path/query/slash/path traversal;
+- запрещены произвольные month tokens и calendar-invalid URL dates;
+- добавлена URL date = publication date;
 - добавлена publication/source retrieval tolerance;
-- добавлена exact snapshot/source retrieval timestamp consistency;
-- добавлены focused date-identity и timestamp-consistency tests.
+- добавлена exact snapshot/source timestamp consistency;
+- добавлен common versioned contract export;
+- исправлена live linked `Аналитика` boundary;
+- устранена утечка shared-client auth/cookies/event hooks через transport-only DI;
+- ограничены timeout/response controls;
+- добавлен fail-closed guard для truncated HTML;
+- добавлены focused regression tests для каждого инварианта.
 
 ### Текущая CI-блокировка
 
 Последние Regression Shield runs завершают оба jobs до выделения первого шага:
 `steps=null`, logs отсутствуют, diagnostics artifact отсутствует. GitHub Status
-не показывает общий активный incident. Репозиторий private и использует
-GitHub-hosted minutes/budget account policy.
+показывает Actions operational и не сообщает общий текущий incident.
 
+Репозиторий private; GitHub-hosted Actions зависят от account quota/budget и
+runner allocation. Точная account-level причина через repository API не видна.
 Эти runs не классифицируются как code-test failures, но и не принимаются как
-успешная валидация. PR-99 остаётся draft. Merge, ready-for-review и запуск PR-100
-запрещены до нормального полного Regression Shield на exact final SHA.
+успешная валидация.
+
+PR-99 остаётся draft. Merge, ready-for-review и запуск PR-100 запрещены до
+нормального полного Regression Shield на exact final SHA.
 
 ## Compatibility и safety активной ветки
 
