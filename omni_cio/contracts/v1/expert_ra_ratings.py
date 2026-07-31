@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
+import re
 from typing import Annotated, Literal
 
 from pydantic import Field, field_validator, model_validator
@@ -39,10 +40,26 @@ _EXPERT_RA_RATINGS = frozenset(
         "ruD",
     }
 )
+_EXPERT_RA_MONTH_NUMBERS = {
+    "jan": 1,
+    "feb": 2,
+    "mar": 3,
+    "apr": 4,
+    "may": 5,
+    "jun": 6,
+    "jul": 7,
+    "aug": 8,
+    "sep": 9,
+    "oct": 10,
+    "nov": 11,
+    "dec": 12,
+}
 _EXPERT_RA_RELEASE_URL_PATTERN = (
-    r"^https://raexpert\.ru/releases/20[0-9]{2}/"
-    r"[a-z]{3}(?:0[1-9]|[12][0-9]|3[01])[a-z]?$"
+    r"^https://raexpert\.ru/releases/(?P<year>20[0-9]{2})/"
+    r"(?P<month>jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)"
+    r"(?P<day>0[1-9]|[12][0-9]|3[01])[a-z]?$"
 )
+_EXPERT_RA_RELEASE_URL_RE = re.compile(_EXPERT_RA_RELEASE_URL_PATTERN)
 
 
 class ExpertRaIssuerRatingActionV1(ContractModel):
@@ -111,6 +128,23 @@ class ExpertRaIssuerRatingActionV1(ContractModel):
             or self.source.source_id != "EXPERT_RA.home.rating_actions"
         ):
             raise ValueError("Expert RA source identity is inconsistent")
+
+        release_match = _EXPERT_RA_RELEASE_URL_RE.fullmatch(self.release_url)
+        if release_match is None:
+            raise ValueError("Expert RA release URL identity is inconsistent")
+        try:
+            release_date = date(
+                int(release_match.group("year")),
+                _EXPERT_RA_MONTH_NUMBERS[release_match.group("month")],
+                int(release_match.group("day")),
+            )
+        except ValueError as exc:
+            raise ValueError("Expert RA release URL date is invalid") from exc
+        if release_date != self.published_on:
+            raise ValueError(
+                "Expert RA release URL date must match the publication date"
+            )
+
         if self.action is RatingAction.WITHDRAWN:
             if self.rating is not None or self.outlook is not None:
                 raise ValueError(
