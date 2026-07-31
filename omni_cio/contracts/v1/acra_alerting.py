@@ -13,6 +13,10 @@ from omni_cio.contracts.v1.observability import ObservabilitySeverity
 PositiveCount = Annotated[int, Field(ge=1, le=100)]
 NonNegativeSeconds = Annotated[int, Field(ge=0, le=604_800)]
 StateCapacity = Annotated[int, Field(ge=4, le=4)]
+OpaqueIdentifier = Annotated[
+    str,
+    Field(min_length=8, max_length=160, pattern=r"^[a-z][a-z:_.-]{7,159}$"),
+]
 SafeErrorCode = Annotated[
     str,
     Field(pattern=r"^[A-Z][A-Z0-9_]{2,63}$"),
@@ -134,4 +138,45 @@ class AcraRatingActionsAlertEvaluationV1(ContractModel):
             and self.error_code is None
         ):
             raise ValueError("fired or suppressed ACRA alert requires safe error code")
+        return self
+
+
+class AcraRatingActionsAlertEvidenceV1(ContractModel):
+    evidence_id: OpaqueIdentifier
+    recorded_at: datetime
+    correlation_id: OpaqueIdentifier
+    source_event_name: Annotated[str, Field(min_length=3, max_length=128)]
+    scope: Literal["global_acra_rating_actions_feed"] = (
+        "global_acra_rating_actions_feed"
+    )
+    disposition: AcraRatingActionsAlertDisposition
+    kind: AcraRatingActionsAlertKind
+    severity: ObservabilitySeverity
+    consecutive_occurrences: Annotated[int, Field(ge=1, le=1_000_000)]
+    threshold: PositiveCount
+    error_code: SafeErrorCode | None = None
+    contains_sensitive_payload: Literal[False] = False
+    issuer_identity_present: Literal[False] = False
+    rating_values_present: Literal[False] = False
+    financial_values_present: Literal[False] = False
+    external_notification_sent: Literal[False] = False
+    trading_methods: Literal[False] = False
+
+    @field_validator("recorded_at")
+    @classmethod
+    def require_aware_recorded_at(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("ACRA alert evidence timestamp must be timezone-aware")
+        return value.astimezone(timezone.utc)
+
+    @model_validator(mode="after")
+    def validate_evidence(self) -> AcraRatingActionsAlertEvidenceV1:
+        if self.disposition not in (
+            AcraRatingActionsAlertDisposition.FIRED,
+            AcraRatingActionsAlertDisposition.RECOVERED,
+        ):
+            raise ValueError("ACRA evidence stores only fired or recovered state")
+        if self.disposition is AcraRatingActionsAlertDisposition.FIRED:
+            if self.consecutive_occurrences < self.threshold or self.error_code is None:
+                raise ValueError("fired ACRA evidence requires threshold and error code")
         return self
