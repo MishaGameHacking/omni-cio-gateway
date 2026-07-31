@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 import re
 from typing import Annotated, Literal
 
@@ -60,6 +60,7 @@ _EXPERT_RA_RELEASE_URL_PATTERN = (
     r"(?P<day>0[1-9]|[12][0-9]|3[01])[a-z]?$"
 )
 _EXPERT_RA_RELEASE_URL_RE = re.compile(_EXPERT_RA_RELEASE_URL_PATTERN)
+_EXPERT_RA_PUBLICATION_FUTURE_TOLERANCE = timedelta(days=1)
 
 
 class ExpertRaIssuerRatingActionV1(ContractModel):
@@ -128,6 +129,12 @@ class ExpertRaIssuerRatingActionV1(ContractModel):
             or self.source.source_id != "EXPERT_RA.home.rating_actions"
         ):
             raise ValueError("Expert RA source identity is inconsistent")
+        if self.published_on > (
+            self.source.retrieved_at + EXPERT_RA_PUBLICATION_FUTURE_TOLERANCE
+        ).date():
+            raise ValueError(
+                "Expert RA publication date cannot be after source retrieval"
+            )
 
         release_match = _EXPERT_RA_RELEASE_URL_RE.fullmatch(self.release_url)
         if release_match is None:
@@ -195,6 +202,10 @@ class ExpertRaIssuerRatingActionsSnapshotV1(ContractModel):
         if self.status is CreditRatingSourceStatus.AVAILABLE:
             if self.source is None or not self.records or self.error_code is not None:
                 raise ValueError("available Expert RA snapshot is inconsistent")
+            if self.source.retrieved_at != self.retrieved_at:
+                raise ValueError(
+                    "Expert RA snapshot and source retrieval timestamps must match"
+                )
             if any(record.source != self.source for record in self.records):
                 raise ValueError("Expert RA records must share snapshot source")
             release_urls = tuple(record.release_url for record in self.records)
