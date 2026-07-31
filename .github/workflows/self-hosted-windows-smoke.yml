@@ -5,6 +5,7 @@ on:
     paths:
       - ".github/workflows/self-hosted-windows-smoke.yml"
       - ".github/workflows/regression-shield.yml"
+      - "scripts/bootstrap_windows_ci_python.cmd"
   workflow_dispatch:
 
 permissions:
@@ -38,26 +39,23 @@ jobs:
           echo Runner OS verified: %RUNNER_OS%
           echo Runner architecture: %RUNNER_ARCH%
 
-      - name: Configure PowerShell for runner service account
+      - name: Bootstrap isolated Python 3.12.10
+        shell: cmd
+        run: scripts\bootstrap_windows_ci_python.cmd
+
+      - name: Restore service-account PowerShell policy
+        if: always()
         shell: cmd
         run: >-
           powershell.exe -NoLogo -NoProfile -NonInteractive
           -ExecutionPolicy Bypass -Command
-          "Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy Bypass -Force;
-          if ((Get-ExecutionPolicy -Scope CurrentUser) -ne 'Bypass') { exit 1 }"
-
-      - name: Set up Python 3.12
-        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
-        with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: requirements-dev.txt
+          "Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy Undefined -Force"
 
       - name: Verify Python and workspace
         shell: cmd
         run: |
           @echo off
-          python -c "import pathlib, sys; assert sys.version_info[:2] == (3, 12); assert pathlib.Path('pyproject.toml').is_file(); print(sys.version)"
+          python -c "import pathlib, sys; assert sys.version_info[:3] == (3, 12, 10); assert pathlib.Path('pyproject.toml').is_file(); print(sys.version)"
           git status --short
 
       - name: Clean workspace
