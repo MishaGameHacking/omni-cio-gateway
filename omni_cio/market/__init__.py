@@ -47,6 +47,13 @@ from omni_cio.market.equity_fundamentals_v1 import (
     EquityFundamentalAssessmentError,
     assess_equity_fundamentals,
 )
+from omni_cio.market.expert_ra_rating_actions_v1 import (
+    EXPERT_RA_RATING_ACTIONS_ENDPOINT,
+    EXPERT_RA_RATING_ACTIONS_SOURCE_ID,
+    ExpertRaRatingActionsSourceError,
+    fetch_expert_ra_issuer_rating_actions,
+    parse_expert_ra_issuer_rating_actions_html,
+)
 from omni_cio.market.fund_structure_v1 import (
     FundStructuralAssessmentError,
     assess_fund_structure,
@@ -70,6 +77,8 @@ from omni_cio.market.technical_v1 import (
 __all__ = [
     "ACRA_RATING_ACTIONS_ENDPOINT",
     "ACRA_RATING_ACTIONS_SOURCE_ID",
+    "EXPERT_RA_RATING_ACTIONS_ENDPOINT",
+    "EXPERT_RA_RATING_ACTIONS_SOURCE_ID",
     "AcraIssuerRatingActionsCacheV1",
     "AcraRatingActionsCacheError",
     "AcraRatingActionsSourceError",
@@ -86,6 +95,7 @@ __all__ = [
     "CbrKeyRateCacheV1",
     "CbrKeyRateSourceError",
     "EquityFundamentalAssessmentError",
+    "ExpertRaRatingActionsSourceError",
     "FundStructuralAssessmentError",
     "MarketResearchAssessmentError",
     "MoexIssQuoteCacheError",
@@ -104,8 +114,10 @@ __all__ = [
     "build_moex_iss_tqbr_quote_url",
     "fetch_acra_issuer_rating_actions",
     "fetch_cbr_key_rate",
+    "fetch_expert_ra_issuer_rating_actions",
     "fetch_moex_iss_tqbr_quote",
     "parse_acra_issuer_rating_actions_html",
     "parse_cbr_key_rate_xml",
+    "parse_expert_ra_issuer_rating_actions_html",
     "parse_moex_iss_tqbr_quote_json",
 ]
