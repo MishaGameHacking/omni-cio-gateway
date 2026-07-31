@@ -177,7 +177,7 @@ def _read_secure_file(path: Path, *, maximum_size: int) -> bytes:
 
 
 def _atomic_write(root: Path, target: Path, payload: bytes) -> None:
-    temporary = root / f".{target.name}.{uuid4().hex}.tmp"
+    temporary = root / f".{uuid4().hex}.tmp"
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
     try:
         fd = os.open(temporary, flags, 0o600)
