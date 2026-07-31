@@ -9,10 +9,14 @@ from pydantic import Field, field_validator, model_validator
 from omni_cio.contracts.v1.common import ContractModel
 from omni_cio.contracts.v1.observability import ObservabilitySeverity
 
+
 PositiveCount = Annotated[int, Field(ge=1, le=100)]
 NonNegativeSeconds = Annotated[int, Field(ge=0, le=604_800)]
 StateCapacity = Annotated[int, Field(ge=4, le=4)]
-SafeErrorCode = Annotated[str, Field(pattern=r"^[A-Z][A-Z0-9_]{2,63}$")]
+SafeErrorCode = Annotated[
+    str,
+    Field(pattern=r"^[A-Z][A-Z0-9_]{2,63}$"),
+]
 
 
 class AcraRatingActionsAlertKind(StrEnum):
@@ -31,7 +35,9 @@ class AcraRatingActionsAlertDisposition(StrEnum):
 
 
 class AcraRatingActionsAlertPolicyV1(ContractModel):
-    scope: Literal["global_acra_rating_actions_feed"] = "global_acra_rating_actions_feed"
+    scope: Literal["global_acra_rating_actions_feed"] = (
+        "global_acra_rating_actions_feed"
+    )
     source_unavailable_threshold: PositiveCount = 3
     cache_unavailable_threshold: PositiveCount = 2
     stale_records_threshold: PositiveCount = 2
@@ -58,7 +64,9 @@ class AcraRatingActionsAlertPolicyV1(ContractModel):
 class AcraRatingActionsAlertEvaluationV1(ContractModel):
     evaluated_at: datetime
     source_event_name: Annotated[str, Field(min_length=3, max_length=128)]
-    scope: Literal["global_acra_rating_actions_feed"] = "global_acra_rating_actions_feed"
+    scope: Literal["global_acra_rating_actions_feed"] = (
+        "global_acra_rating_actions_feed"
+    )
     disposition: AcraRatingActionsAlertDisposition
     kind: AcraRatingActionsAlertKind | None = None
     severity: ObservabilitySeverity | None = None
@@ -69,6 +77,7 @@ class AcraRatingActionsAlertEvaluationV1(ContractModel):
     contains_sensitive_payload: Literal[False] = False
     issuer_identity_present: Literal[False] = False
     rating_values_present: Literal[False] = False
+    rating_thresholds_present: Literal[False] = False
     financial_thresholds_present: Literal[False] = False
     external_notification_sent: Literal[False] = False
     trading_methods: Literal[False] = False
@@ -85,31 +94,44 @@ class AcraRatingActionsAlertEvaluationV1(ContractModel):
         actionable = self.disposition is not AcraRatingActionsAlertDisposition.IGNORED
         if actionable and (self.kind is None or self.severity is None):
             raise ValueError("actionable ACRA alert requires kind and severity")
-        if not actionable and (self.kind is not None or self.severity is not None):
-            raise ValueError("ignored ACRA alert cannot carry alert identity")
-        if not actionable and (self.consecutive_occurrences or self.threshold):
-            raise ValueError("ignored ACRA alert cannot carry counters")
-        if self.disposition in (
+        if not actionable:
+            if self.kind is not None or self.severity is not None:
+                raise ValueError("ignored ACRA alert cannot carry alert identity")
+            if self.consecutive_occurrences != 0 or self.threshold != 0:
+                raise ValueError("ignored ACRA alert cannot carry counters")
+        active = self.disposition in (
             AcraRatingActionsAlertDisposition.PENDING,
             AcraRatingActionsAlertDisposition.FIRED,
             AcraRatingActionsAlertDisposition.SUPPRESSED_COOLDOWN,
-        ) and (self.threshold < 1 or self.consecutive_occurrences < 1):
+        )
+        if active and (self.threshold < 1 or self.consecutive_occurrences < 1):
             raise ValueError("active ACRA alert requires positive counters")
-        if self.disposition is AcraRatingActionsAlertDisposition.PENDING and self.consecutive_occurrences >= self.threshold:
+        if (
+            self.disposition is AcraRatingActionsAlertDisposition.PENDING
+            and self.consecutive_occurrences >= self.threshold
+        ):
             raise ValueError("pending ACRA alert must remain below threshold")
-        if self.disposition in (
-            AcraRatingActionsAlertDisposition.FIRED,
-            AcraRatingActionsAlertDisposition.SUPPRESSED_COOLDOWN,
-        ) and self.consecutive_occurrences < self.threshold:
-            raise ValueError("fired ACRA alert must meet threshold")
+        if (
+            self.disposition
+            in (
+                AcraRatingActionsAlertDisposition.FIRED,
+                AcraRatingActionsAlertDisposition.SUPPRESSED_COOLDOWN,
+            )
+            and self.consecutive_occurrences < self.threshold
+        ):
+            raise ValueError("fired or suppressed ACRA alert must meet threshold")
         if self.disposition is AcraRatingActionsAlertDisposition.SUPPRESSED_COOLDOWN:
             if self.cooldown_remaining_seconds < 1:
-                raise ValueError("ACRA cooldown requires remaining time")
+                raise ValueError("ACRA cooldown suppression requires remaining time")
         elif self.cooldown_remaining_seconds != 0:
-            raise ValueError("only ACRA cooldown suppression carries remaining time")
-        if self.disposition in (
-            AcraRatingActionsAlertDisposition.FIRED,
-            AcraRatingActionsAlertDisposition.SUPPRESSED_COOLDOWN,
-        ) and self.error_code is None:
-            raise ValueError("fired ACRA alert requires safe error code")
+            raise ValueError("only ACRA cooldown suppression may carry remaining time")
+        if (
+            self.disposition
+            in (
+                AcraRatingActionsAlertDisposition.FIRED,
+                AcraRatingActionsAlertDisposition.SUPPRESSED_COOLDOWN,
+            )
+            and self.error_code is None
+        ):
+            raise ValueError("fired or suppressed ACRA alert requires safe error code")
         return self
