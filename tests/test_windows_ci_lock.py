@@ -10,8 +10,8 @@ from scripts.windows_ci_lock import parse_lock, project_lock, verify_projection
 HASH_A = "a" * 64
 HASH_B = "b" * 64
 HASH_C = "c" * 64
-COLORAMA_SOURCE_HASH = "08695f5cb7ed6e0531a20572697297273c47b8cae5a63ffc6d6ed5c201be6e44"
-COLORAMA_WHEEL_HASH = "4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6"
+COLORAMA_SOURCE_HASH = "08695f5cb7ed6e0531a20572697297273c47b8cae5a63ffc6d6ed5c201be6e44"  # pragma: allowlist secret
+COLORAMA_WHEEL_HASH = "4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6"  # pragma: allowlist secret
 
 
 def _lock(*, uvloop_via_uvicorn: bool = True, extra: str = "") -> str:
