@@ -74,6 +74,10 @@ class ExpertRaIssuerRatingActionV1(ContractModel):
     agency_legal_name: Literal["АО «Эксперт РА»"] = "АО «Эксперт РА»"
     recognized_by_bank_of_russia: Literal[True] = True
     rating_scale: Literal["national_russia"] = "national_russia"
+    subject_identity_resolved: Literal[False] = False
+    stable_subject_id_present: Literal[False] = False
+    subject_name_is_source_text: Literal[True] = True
+    identity_resolution_required: Literal[True] = True
     rating: Annotated[str | None, Field(max_length=16)] = None
     action: RatingAction
     outlook: CreditRatingOutlook | None = None
@@ -179,6 +183,8 @@ class ExpertRaIssuerRatingActionsSnapshotV1(ContractModel):
     fixed_official_source: Literal[True] = True
     issuer_scope_only: Literal[True] = True
     agency_specific_scale_only: Literal[True] = True
+    subject_identity_resolution_required: Literal[True] = True
+    cross_agency_identity_merged: Literal[False] = False
     informational_use_only: Literal[True] = True
     redistribution_authorized: Literal[False] = False
     investment_recommendation: Literal[False] = False
