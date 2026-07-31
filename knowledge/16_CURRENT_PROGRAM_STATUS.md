@@ -104,12 +104,15 @@ Runtime identity is fixed:
 - endpoint `https://raexpert.ru/`;
 - provider `Expert RA`;
 - source id `EXPERT_RA.home.rating_actions`;
-- release host exactly `raexpert.ru`;
+- accepted official release hosts are `raexpert.ru` and fixed alias
+  `www.raexpert.ru`;
+- stored canonical release host is always `raexpert.ru`;
 - release path exactly `/releases/{20xx}/{monDD[a-z]?}`;
 - source language Russian.
 
-Caller-controlled URLs, redirects for the owned client, `www`/English/secondary
-hosts, query strings and arbitrary release paths are not allowed.
+Caller-controlled URLs, redirects for the owned client, English/secondary hosts,
+query strings, fragments and arbitrary release paths are not allowed. The fixed
+`www` alias is never selected dynamically and cannot change the endpoint.
 
 ### Supported data and grammar
 
@@ -118,9 +121,14 @@ singular issuer-level assigned, affirmed, upgraded, downgraded and withdrawn
 credit-rating actions only.
 
 The parser supports the agency-specific Russian national scale `ruAAA…ruD`.
-Visual Cyrillic/Latin A/B/C variants inside rating tokens are normalized and then
-checked against a closed allowlist. Stable, positive, negative and developing
-outlooks are captured only when explicitly present in a supported title.
+Visual Cyrillic/Latin A/B/C/R/D variants inside rating tokens are normalized and
+then checked against a closed allowlist. Stable, positive, negative and
+developing outlooks are captured only when explicitly present in a supported
+title, including a bounded optional continuation about status under observation.
+
+Extraction is confined to the visible homepage section from `Рейтинговые
+действия` up to `Аналитика`. Similar links outside this section cannot enter the
+snapshot.
 
 The parser skips bond/issue/series/tranche/structured-finance actions, ESG and
 other non-credit ratings, plural actions and unsupported scales. A malformed
@@ -134,6 +142,7 @@ closed.
 - bounded declared and streamed bytes;
 - UTF-8/UTF-8-BOM only;
 - scripts/styles/noscript ignored;
+- exact visible page-section boundary required;
 - adjacent valid publication dates with future-date rejection;
 - canonical release URL and duplicate-conflict checks;
 - bounded newest-first records;
