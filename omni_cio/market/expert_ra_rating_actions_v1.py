@@ -598,7 +598,7 @@ def _build_public_request(*, timeout_seconds: float) -> httpx.Request:
 
 def fetch_expert_ra_issuer_rating_actions(
     *,
-    client: httpx.Client | None = None,
+    transport: httpx.BaseTransport | None = None,
     retrieved_at: datetime | None = None,
     timeout_seconds: float = DEFAULT_EXPERT_RA_TIMEOUT_SECONDS,
     max_response_bytes: int = DEFAULT_EXPERT_RA_MAX_RESPONSE_BYTES,
@@ -613,8 +613,8 @@ def fetch_expert_ra_issuer_rating_actions(
             error_code=CreditRatingSourceErrorCode.SCHEMA_INVALID,
         )
 
-    owned_client = client is None
-    active_client = client or httpx.Client(
+    active_client = httpx.Client(
+        transport=transport,
         timeout=timeout_seconds,
         follow_redirects=False,
         trust_env=False,
@@ -678,8 +678,7 @@ def fetch_expert_ra_issuer_rating_actions(
             error_code=CreditRatingSourceErrorCode.NETWORK_ERROR,
         )
     finally:
-        if owned_client:
-            active_client.close()
+        active_client.close()
 
     try:
         return parse_expert_ra_issuer_rating_actions_html(
