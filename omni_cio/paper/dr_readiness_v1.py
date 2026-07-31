@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import os
 from pathlib import Path
 import re
+import shutil
 import stat
 from typing import Literal
 
@@ -91,12 +92,12 @@ def _capacity(
     minimum_free_bytes: int,
 ) -> PaperLedgerDrFilesystemCapacityV1:
     try:
-        usage = os.statvfs(root)
+        usage = shutil.disk_usage(root)
         device_id = root.stat().st_dev
     except OSError as exc:
         raise PaperLedgerDrAssessmentError("PAPER_DR_CAPACITY_READ_FAILED") from exc
-    total_bytes = usage.f_frsize * usage.f_blocks
-    free_bytes = usage.f_frsize * usage.f_bavail
+    total_bytes = usage.total
+    free_bytes = usage.free
     if total_bytes <= 0 or free_bytes < 0:
         raise PaperLedgerDrAssessmentError("PAPER_DR_CAPACITY_INVALID")
     return PaperLedgerDrFilesystemCapacityV1(
