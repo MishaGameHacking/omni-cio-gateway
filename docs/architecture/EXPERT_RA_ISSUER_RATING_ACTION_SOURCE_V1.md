@@ -14,10 +14,11 @@ The source was selected only after current external verification:
 - Bank of Russia decisions identify AO `Expert RA` and its Russian national
   scale using `ru...` values;
 - the official Russian site publishes a dedicated `Рейтинговые действия` block;
+- current homepage markup ends that block with a canonical linked
+  `Аналитика` heading at `/researches/`;
 - official release identities use stable
   `https://raexpert.ru/releases/{year}/{slug}` paths;
-- official examples cover assigned, affirmed, upgraded, downgraded and withdrawn
-  issuer actions;
+- current official examples include issuer actions and unsupported bond actions;
 - the source site states that rating information is informational and is not an
   investment recommendation.
 
@@ -42,10 +43,19 @@ is never selected dynamically and cannot change the endpoint.
 
 ## Page-scope boundary
 
-The HTML parser first identifies the visible heading `Рейтинговые действия` and
-limits extraction to the block ending at the visible `Аналитика` heading. Rating
-or news links elsewhere on the homepage cannot enter the snapshot merely because
-they contain similar words.
+The HTML parser opens the extraction scope only on a plain visible
+`Рейтинговые действия` heading. A navigation link with the same label cannot open
+the scope.
+
+The scope ends only on:
+
+- a plain visible `Аналитика` heading; or
+- the exact official internal `https://raexpert.ru/researches/` identity,
+  including the fixed `www` host alias.
+
+External hosts, other paths, query strings and fragments cannot terminate the
+scope. This matches the current live homepage while preserving fail-closed
+identity controls.
 
 A publication date may be a separate link to the same official release. The date
 is validated before the parser decides that a later action link begins the next
@@ -90,11 +100,18 @@ but no longer matches the allowlisted grammar fails closed.
 ## Transport and parsing controls
 
 - fixed HTTPS GET only;
-- redirects disabled for the owned client;
+- always-owned isolated `httpx.Client`;
+- dependency injection is transport-only via `httpx.BaseTransport`;
+- no shared client, inherited auth, cookies, headers or request hooks;
+- `trust_env=false` and redirects disabled;
+- explicit allowlisted `Accept` and `User-Agent` headers;
+- caller controls may only reduce the default timeout and response-byte budget;
+- `NaN`, infinities, huge values and expanded budgets are rejected before I/O;
 - HTML/XHTML content types only;
 - streamed byte limit with declared and actual size checks;
 - UTF-8/UTF-8-BOM only;
 - script, style and noscript content ignored;
+- unclosed anchor/script/style/noscript state fails as invalid HTML;
 - exact page-section markers required;
 - publication date must be adjacent, valid and not materially in the future;
 - release URL month/day must be calendar-valid and match `published_on`;
@@ -108,8 +125,9 @@ executed.
 ## Contract boundary
 
 `ExpertRaIssuerRatingActionV1` and
-`ExpertRaIssuerRatingActionsSnapshotV1` are separate from ACRA models. They
-permanently declare:
+`ExpertRaIssuerRatingActionsSnapshotV1` are separate from ACRA models. They are
+exported through both the direct module and `omni_cio.contracts.v1` and permanently
+declare:
 
 - fixed official source and issuer-only scope;
 - agency-specific scale only;
@@ -150,12 +168,13 @@ existing read-only OpenAPI remain unchanged.
 ## Tests
 
 Tests cover contracts, five action types, rating-glyph normalization, outlooks,
-issuer-only filtering, malformed supported titles, page-section confinement,
-URL confinement, calendar-valid release identity, URL/publication-date matching,
-source/snapshot retrieval timestamp matching, linked dates, duplicate conflicts,
-script exclusion, fixed endpoint use, content type/size, network failure
-redaction, invalid controls, exports and absence of generic URL, startup, route
-and broker-write surfaces.
+issuer-only filtering, malformed supported titles, live linked section boundary,
+spoofed boundary rejection, URL confinement, calendar-valid release identity,
+URL/publication-date matching, source/snapshot retrieval timestamp matching,
+linked dates, duplicate conflicts, script exclusion, truncated HTML, isolated
+transport, finite/non-expansive controls, fixed endpoint, content type/size,
+network failure redaction, versioned exports and absence of generic URL, startup,
+route and broker-write surfaces.
 
 ## Next package
 
