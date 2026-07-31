@@ -38,3 +38,10 @@ def test_expert_ra_records_and_snapshots_are_informational_only() -> None:
         assert value.redistribution_authorized is False
         assert value.investment_recommendation is False
         assert value.trading_methods is False
+
+    assert record.subject_identity_resolved is False
+    assert record.stable_subject_id_present is False
+    assert record.subject_name_is_source_text is True
+    assert record.identity_resolution_required is True
+    assert snapshot.subject_identity_resolution_required is True
+    assert snapshot.cross_agency_identity_merged is False
