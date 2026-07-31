@@ -23,6 +23,11 @@ from omni_cio.observability.acra_rating_actions_events_v1 import (
     build_acra_rating_actions_cache_event,
     build_acra_rating_actions_source_event,
 )
+from omni_cio.observability.acra_rating_actions_operations_lifecycle_v1 import (
+    AcraRatingActionsOperationsBatchV1,
+    AcraRatingActionsOperationsLifecycleError,
+    AcraRatingActionsOperationsLifecycleV1,
+)
 from omni_cio.observability.cbr_key_rate_alert_policy_v1 import (
     CbrKeyRateAlertPolicyError,
     CbrKeyRateAlertPolicyEvaluatorV1,
@@ -61,6 +66,9 @@ __all__ = [
     "AcraRatingActionsAlertPolicyError",
     "AcraRatingActionsAlertPolicyEvaluatorV1",
     "AcraRatingActionsObservabilityError",
+    "AcraRatingActionsOperationsBatchV1",
+    "AcraRatingActionsOperationsLifecycleError",
+    "AcraRatingActionsOperationsLifecycleV1",
     "CbrKeyRateAlertDisposition",
     "CbrKeyRateAlertEvidenceV1",
     "CbrKeyRateAlertEvaluationV1",
