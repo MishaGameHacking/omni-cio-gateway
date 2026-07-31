@@ -40,6 +40,12 @@ if defined GITHUB_PATH (
   >>"%GITHUB_PATH%" echo %PY_HOME%\Scripts
 )
 
+if defined GITHUB_ENV (
+  >>"%GITHUB_ENV%" echo PYTHONUTF8=1
+  >>"%GITHUB_ENV%" echo PYTHONIOENCODING=utf-8
+)
+
 echo Git Bash ready: %GIT_BASH_HOME%
 echo Python CI runtime ready: %PY_HOME%
+echo Python UTF-8 mode enabled for subsequent job steps.
 exit /b 0
