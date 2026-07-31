@@ -1,7 +1,7 @@
 # 16 — CURRENT PROGRAM STATUS
 
 Дата актуализации: 2026-07-31  
-Фактическая вершина программы после merge этого пакета: **PR-98**  
+Фактическая вершина программы после merge этого пакета: **PR-99**  
 Точная версия определяется текущей вершиной ветки `main`.
 
 ## Назначение документа
@@ -32,9 +32,10 @@
   policy and deterministic fired/recovered evidence lifecycle;
 - **PR-89…PR-93:** official MOEX TQBR source, exact cache, safe observability,
   global operational alert policy and deterministic fired/recovered evidence;
-- **PR-94…PR-98:** fixed official ACRA issuer-level national-RU rating-action
-  source, bounded freshness cache, privacy-safe telemetry, global operational
-  alert policy and deterministic fired/recovered evidence lifecycle.
+- **PR-94…PR-98:** fixed official ACRA issuer-level national-RU source, bounded
+  cache, privacy-safe telemetry, global alert policy and terminal evidence;
+- **PR-99:** separate fixed Expert RA issuer-level national-Russia rating-action
+  source with agency-specific contracts and protected HTML transport.
 
 ## PR-81…PR-83 authenticated owner lifecycle
 
@@ -72,70 +73,85 @@ MOEX and broker values are never silently averaged.
 
 ## PR-94…PR-98 ACRA lifecycle
 
-### Source and cache
+The ACRA chain uses one fixed official issuer-action endpoint and separate
+agency-specific `(RU)` contracts. It supports issuer-level assigned, affirmed,
+upgraded, downgraded and withdrawn actions, rejects malformed supported titles,
+skips issue/international/multi-target scope and never converts scales.
 
-- fixed official ACRA press-release endpoint and source identity;
-- issuer-level Russian national-scale assigned, affirmed, upgraded, downgraded
-  and withdrawn actions only;
-- no cross-agency scale conversion;
-- canonical official release URLs and publication dates;
-- unsupported issue-level, international-scale and multi-target titles skipped;
-- malformed supported single-issuer actions fail closed;
-- bounded HTML/XHTML transport with raw HTML/body/exception text excluded;
-- one-entry fresh/stale/unavailable cache with 900-second fresh TTL and
-  86,400-second stale retention;
-- stale records hidden unless refresh failed and trusted `allow_stale=true`;
-- no source/cache call at import or startup.
+The one-entry cache provides explicit fresh/stale/unavailable state,
+single-flight refresh and no-silent-stale behavior. Telemetry contains only
+operational metadata. The global alert policy accepts only complete canonical
+events and rejects duplicate or forged metrics. PR-98 composes event,
+evaluation and bounded terminal evidence under one `RLock`. Evidence and sink
+results contain no issuer, rating, outlook, release, account, broker or financial
+payload and no exception text.
 
-### Privacy-safe telemetry and global alert policy
+## PR-99 Expert RA fixed issuer-action source
 
-PR-96 events contain operational status, optional latency, bounded record count,
-cache-hit/refresh/stale/display flags, provider, operation, freshness and safe
-error code only.
+### External verification and fixed identity
 
-PR-97 accepts known event names only through a complete canonical gate:
+The package was started only after current external verification that:
 
-- exact event name, component, provider and operation;
-- exact metric set with duplicate metric names rejected;
-- bounded record count and fixed source/scope flags;
-- coherent outcome, severity, call-status, freshness and cache profile;
-- no account, request/action identity, exception type or generic payload.
+- Bank of Russia infrastructure materials list the current credit-rating-agency
+  register;
+- the Bank of Russia decision dated 7 July 2026 identifies AO Expert RA and its
+  national `ru...` scale;
+- the official Russian site publishes rating actions under stable
+  `https://raexpert.ru/releases/{year}/{slug}` identities.
 
-The alert scope is only `global_acra_rating_actions_feed`. Conditions are source
-unavailable, cache unavailable, explicit stale exposure and failed refresh with
-still-fresh fallback. State is bounded by thresholds, cooldown, retention,
-capacity, recovery and out-of-order rejection.
+Runtime identity is fixed:
 
-### PR-98 bounded operations evidence
+- endpoint `https://raexpert.ru/`;
+- provider `Expert RA`;
+- source id `EXPERT_RA.home.rating_actions`;
+- release host exactly `raexpert.ru`;
+- release path exactly `/releases/{20xx}/{monDD[a-z]?}`;
+- source language Russian.
 
-PR-98 composes the canonical PR-96 event and PR-97 evaluation under one internal
-`RLock` and retains only terminal `fired` and `recovered` evidence.
+Caller-controlled URLs, redirects for the owned client, `www`/English/secondary
+hosts, query strings and arbitrary release paths are not allowed.
 
-Evidence contains:
+### Supported data and grammar
 
-- opaque evidence and correlation identifiers;
-- UTC timestamp and canonical source event name;
-- fixed global scope;
-- operational kind, severity, occurrence count, threshold and safe error code;
-- immutable false-valued privacy, delivery and trading flags.
+PR-99 uses separate `ExpertRa...` contracts rather than ACRA records. It accepts
+singular issuer-level assigned, affirmed, upgraded, downgraded and withdrawn
+credit-rating actions only.
 
-Evidence excludes issuer, rating, outlook, action, release, publication date,
-raw HTML, account, portfolio, broker payload, financial values and exception
-text. Defaults are 86,400-second retention and capacity 64; both are bounded.
-Oldest evidence is evicted at capacity, expired evidence is pruned, and `clear()`
-resets evaluator plus evidence state. Process restart starts empty.
+The parser supports the agency-specific Russian national scale `ruAAA…ruD`.
+Visual Cyrillic/Latin A/B/C variants inside rating tokens are normalized and then
+checked against a closed allowlist. Stable, positive, negative and developing
+outlooks are captured only when explicitly present in a supported title.
 
-Optional event sink runs before evidence sinks for the same serialized call.
-Sink exceptions are reduced to `sink_failure_count`; exception text is discarded
-and already-recorded internal evidence is not erased.
+The parser skips bond/issue/series/tranche/structured-finance actions, ESG and
+other non-credit ratings, plural actions and unsupported scales. A malformed
+title that clearly claims a singular supported issuer credit-rating action fails
+closed.
 
-## Compatibility and safety after PR-98
+### Transport and data safety
+
+- fixed HTTPS GET;
+- HTML/XHTML only;
+- bounded declared and streamed bytes;
+- UTF-8/UTF-8-BOM only;
+- scripts/styles/noscript ignored;
+- adjacent valid publication dates with future-date rejection;
+- canonical release URL and duplicate-conflict checks;
+- bounded newest-first records;
+- raw title/HTML/body/exception text not stored;
+- source text treated only as data and external instructions never executed.
+
+Contracts declare informational use only, no software-authorized redistribution,
+not an investment recommendation, no credentials/full account ID, no broker
+write, no order creation and `trading_methods=false`.
+
+## Compatibility and safety after PR-99
 
 - `app:app` unchanged;
 - 14 GET Actions unchanged: 13 authenticated and public health;
 - no route, request body, public response field or frontend component;
 - no dependency, database, secret or Render migration;
-- no source/cache call, event emission, evaluation or sink invocation at startup;
+- no source fetch at import/startup;
+- no cache, observability, alert or evidence behavior for Expert RA yet;
 - no webhook, email, Telegram, pager or external transport;
 - no T-Invest call or broker write method;
 - `trading_methods=false`.
@@ -143,9 +159,9 @@ and already-recorded internal evidence is not erased.
 ## Frontend/owner discovery state
 
 Repository search has not identified a registered existing frontend/dashboard
-owner or production caller for the CBR/MOEX/ACRA fields. These packages do not
-invent a duplicate UI, silently change an Action response or start network
-calls. Exact owner discovery remains mandatory before production binding.
+owner or production caller for the CBR/MOEX/ACRA/Expert RA fields. These packages
+do not invent a duplicate UI, silently change an Action response or start
+network calls. Exact owner discovery remains mandatory before production binding.
 
 ## Production acceptance state
 
@@ -166,8 +182,10 @@ Green CI cannot mark these external cases passed.
 
 ### Backend and operations
 
+- add bounded Expert RA cache, telemetry and operational lifecycle only through
+  separate reviewed packages;
 - add other recognized rating agencies only through separate fixed contracts;
-- locate exact CBR/MOEX/ACRA callers and bind lifecycles lazily;
+- locate exact market-data callers and bind lifecycles lazily;
 - build production-grade news and corporate-event ingestion;
 - execute real Render/Gateway/GPT acceptance and record evidence;
 - add external versioned RAG with freshness and citation controls;
@@ -188,26 +206,23 @@ Shadow, paper, preview и final-review инфраструктура не явл�
 switch, partial-fill и timeout reconciliation требуют отдельной программы
 допуска и решения владельца. Автономная торговля без подтверждения не включена.
 
-## Следующий пакет после PR-98
+## Следующий пакет после PR-99
 
-Следующий независимый безопасный пакет должен начинать второй фиксированный
-контур российского кредитного рейтингового агентства только после проверки его
-официального публичного endpoint и формата:
+Ближайший независимый пакет — one-entry bounded Expert RA cache v1:
 
-- один конкретный зарегистрированный CRA provider;
-- один фиксированный HTTPS host/path и каноническая identity;
-- issuer-level Russian national-scale actions only;
-- отдельный agency-specific contract без сопоставления шкал с ACRA;
-- bounded protected transport and fail-closed parsing;
-- no generic caller-controlled URL, multi-agency adapter or hidden fallback;
-- no route, Action, frontend field, startup call, external notification or
-  broker method.
-
-Если официальный стабильный источник не может быть подтверждён, пакет не должен
-имитировать данные: блокируется реализация и фиксируется evidence о причине.
+- accept only typed PR-99 snapshots with exact provider/source identity;
+- fresh, stale and unavailable states;
+- retrieval freshness derived only from `snapshot.retrieved_at`;
+- publication dates retained as separate source evidence;
+- single-flight refresh under one lock;
+- stale hidden unless refresh failed and trusted `allow_stale=true`;
+- fully expired state pruned;
+- bounded controls, restart-empty and explicit clear;
+- no source fetch at import/startup;
+- no route, Action, frontend, external notification or broker method.
 
 ## Запрет ложного завершения
 
-Проект не считается полностью завершённым только потому, что PR-98 слит и CI
+Проект не считается полностью завершённым только потому, что PR-99 слит и CI
 зелёный. Полный релиз требует внешней Render/Gateway/GPT acceptance evidence,
 точного production owner binding и завершения оставшихся master-plan блоков.
