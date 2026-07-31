@@ -23,7 +23,7 @@ jobs:
     timeout-minutes: 35
     defaults:
       run:
-        shell: '"C:\Program Files\Git\bin\bash.exe" --noprofile --norc -eo pipefail {0}'
+        shell: bash
     env:
       TINVEST_TOKEN: regression-test-tinvest-token # pragma: allowlist secret
       GATEWAY_API_KEY: regression-test-gateway-key # pragma: allowlist secret
@@ -173,7 +173,7 @@ jobs:
     timeout-minutes: 35
     defaults:
       run:
-        shell: '"C:\Program Files\Git\bin\bash.exe" --noprofile --norc -eo pipefail {0}'
+        shell: bash
 
     steps:
       - name: Check out repository
