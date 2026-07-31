@@ -59,6 +59,9 @@ class ExpertRaIssuerRatingActionV1(ContractModel):
     release_url: Annotated[str, Field(min_length=1, max_length=512)]
     source: MarketSourceV1
     source_language: Literal["ru"] = "ru"
+    informational_use_only: Literal[True] = True
+    redistribution_authorized: Literal[False] = False
+    investment_recommendation: Literal[False] = False
     raw_title_stored: Literal[False] = False
     raw_html_stored: Literal[False] = False
     source_text_treated_as_data: Literal[True] = True
@@ -126,6 +129,9 @@ class ExpertRaIssuerRatingActionsSnapshotV1(ContractModel):
     fixed_official_source: Literal[True] = True
     issuer_scope_only: Literal[True] = True
     agency_specific_scale_only: Literal[True] = True
+    informational_use_only: Literal[True] = True
+    redistribution_authorized: Literal[False] = False
+    investment_recommendation: Literal[False] = False
     raw_html_stored: Literal[False] = False
     credentials_present: Literal[False] = False
     full_account_identifier_present: Literal[False] = False
