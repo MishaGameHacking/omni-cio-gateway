@@ -126,6 +126,11 @@ _SUPPORTED_RATINGS = frozenset(
         "ruD",
     }
 )
+_SENSITIVE_REQUEST_HEADERS = (
+    "authorization",
+    "proxy-authorization",
+    "cookie",
+)
 _MAX_CLOCK_SKEW = timedelta(days=1)
 
 
@@ -537,6 +542,18 @@ def _error_code_from_exception(
         return CreditRatingSourceErrorCode.SCHEMA_INVALID
 
 
+def _build_public_request(client: httpx.Client) -> httpx.Request:
+    request = client.build_request(
+        "GET",
+        EXPERT_RA_RATING_ACTIONS_ENDPOINT,
+        headers={"Accept": "text/html,application/xhtml+xml"},
+    )
+    for header in _SENSITIVE_REQUEST_HEADERS:
+        if header in request.headers:
+            del request.headers[header]
+    return request
+
+
 def fetch_expert_ra_issuer_rating_actions(
     *,
     client: httpx.Client | None = None,
@@ -565,12 +582,18 @@ def fetch_expert_ra_issuer_rating_actions(
         trust_env=False,
         headers={"Accept": "text/html,application/xhtml+xml"},
     )
+    request = _build_public_request(active_client)
     try:
-        with active_client.stream(
-            "GET",
-            EXPERT_RA_RATING_ACTIONS_ENDPOINT,
-            headers={"Accept": "text/html,application/xhtml+xml"},
+        with active_client.send(
+            request,
+            stream=True,
+            follow_redirects=False,
         ) as response:
+            if str(response.url) != EXPERT_RA_RATING_ACTIONS_ENDPOINT:
+                return _unavailable(
+                    retrieved_at=checked_at,
+                    error_code=CreditRatingSourceErrorCode.URL_INVALID,
+                )
             if response.status_code != 200:
                 return _unavailable(
                     retrieved_at=checked_at,
