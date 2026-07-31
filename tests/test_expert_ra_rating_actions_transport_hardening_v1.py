@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import inspect
 
 import httpx
 
@@ -21,16 +22,15 @@ PAYLOAD = (
     '</a><a href="/releases/2026/jul31a">31.07.2026</a>'
     "<h2>Аналитика</h2></body></html>"
 ).encode()
-_SENTINEL = "test-sentinel"
 
 
-class _InjectedClientAuth(httpx.Auth):
-    def auth_flow(self, request: httpx.Request):
-        request.headers["X-Test-Injected"] = _SENTINEL
-        yield request
+def test_source_accepts_transport_but_not_shared_client() -> None:
+    parameters = inspect.signature(fetch_expert_ra_issuer_rating_actions).parameters
+    assert "transport" in parameters
+    assert "client" not in parameters
 
 
-def test_injected_client_credentials_are_isolated_from_public_request() -> None:
+def test_mock_transport_receives_allowlisted_public_request() -> None:
     requests: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -41,32 +41,14 @@ def test_injected_client_credentials_are_isolated_from_public_request() -> None:
             content=PAYLOAD,
         )
 
-    with httpx.Client(
+    result = fetch_expert_ra_issuer_rating_actions(
         transport=httpx.MockTransport(handler),
-        auth=_InjectedClientAuth(),
-        headers={
-            "Authorization": _SENTINEL,
-            "Cookie": _SENTINEL,
-            "Proxy-Authorization": _SENTINEL,
-            "X-API-Key": _SENTINEL,
-        },
-        cookies={"test-cookie": _SENTINEL},
-    ) as client:
-        result = fetch_expert_ra_issuer_rating_actions(
-            client=client,
-            retrieved_at=NOW,
-        )
+        retrieved_at=NOW,
+    )
 
     assert result.status is CreditRatingSourceStatus.AVAILABLE
     assert len(requests) == 1
-    for header in (
-        "authorization",
-        "cookie",
-        "proxy-authorization",
-        "x-api-key",
-        "x-test-injected",
-    ):
-        assert requests[0].headers.get(header) is None
+    assert set(requests[0].headers) == {"host", "accept", "user-agent"}
     assert requests[0].headers["accept"] == "text/html,application/xhtml+xml"
     assert requests[0].headers["user-agent"] == "omni-cio-gateway/1.0"
     assert requests[0].extensions["timeout"] == httpx.Timeout(
@@ -74,7 +56,7 @@ def test_injected_client_credentials_are_isolated_from_public_request() -> None:
     ).as_dict()
 
 
-def test_redirect_is_not_followed_even_when_injected_client_allows_redirects() -> None:
+def test_redirect_is_not_followed() -> None:
     urls: list[str] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -84,14 +66,10 @@ def test_redirect_is_not_followed_even_when_injected_client_allows_redirects() -
             headers={"location": "https://example.com/test-target"},
         )
 
-    with httpx.Client(
+    result = fetch_expert_ra_issuer_rating_actions(
         transport=httpx.MockTransport(handler),
-        follow_redirects=True,
-    ) as client:
-        result = fetch_expert_ra_issuer_rating_actions(
-            client=client,
-            retrieved_at=NOW,
-        )
+        retrieved_at=NOW,
+    )
 
     assert urls == [EXPERT_RA_RATING_ACTIONS_ENDPOINT]
     assert result.status is CreditRatingSourceStatus.UNAVAILABLE
