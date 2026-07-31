@@ -1,7 +1,8 @@
 # 16 — CURRENT PROGRAM STATUS
 
 Дата актуализации: 2026-07-31  
-Фактическая слитая вершина программы: **PR-98**  
+Фактическая слитая функциональная вершина программы: **PR-98**  
+Слитая инфраструктурная миграция CI: **GitHub PR #129**  
 Активный незавершённый пакет: **PR-99 / GitHub PR #128**
 
 ## Назначение документа
@@ -35,9 +36,10 @@
 - **PR-94…PR-98:** fixed official ACRA issuer-level national-RU source, bounded
   cache, privacy-safe telemetry, global alert policy and terminal evidence.
 
-PR-99 не входит в завершённую цепочку до успешного CI и squash merge.
+PR-99 не входит в завершённую функциональную цепочку до успешного CI и squash
+merge.
 
-## Текущая слитая вершина — PR-98
+## Текущая слитая функциональная вершина — PR-98
 
 PR-98 предоставляет deterministic ACRA event → evaluation → bounded terminal
 evidence lifecycle. Evidence хранит только `fired` и `recovered`, не содержит
@@ -52,11 +54,48 @@ issuer, rating, outlook, release, account, broker или financial payload и н
 - compile, Ruff, formatting, stable `app:app`, 14-GET contract, dependency
   audit, SAST и secret scan прошли.
 
+## Слитая инфраструктурная миграция — GitHub PR #129
+
+GitHub-hosted jobs перестали получать runner allocation и завершались до первого
+шага без logs и diagnostics artifact. Отдельный PR #129 перевёл Regression
+Shield на repository-level self-hosted Windows runner `omni-cio-ci` без
+ослабления gate.
+
+Слитый CI-контур обеспечивает:
+
+- exact labels `[self-hosted, Windows, X64, omni-cio-ci]`;
+- same-repository guard для pull requests;
+- `permissions: contents: read` и `persist-credentials: false`;
+- официальный Python 3.12.10 с фиксированной SHA-256 проверкой;
+- отдельный virtual environment в `RUNNER_TEMP` для каждого job;
+- hash-locked Windows dependency projection с проверкой против canonical lock;
+- compile, structure, Ruff, formatting, mypy, stable `app:app`, 14-GET contract,
+  pytest/coverage, pip-audit, Bandit и detect-secrets;
+- обязательную очистку workspace и временной среды.
+
+PR #129 прошёл Regression Shield run #743 на exact head
+`f8c7e4a950d2e5b4ae2ef1857591430449690acb`:
+
+- 1012 тестов, 0 failures/errors/skips;
+- mypy: 179 source files;
+- line coverage 66.3%, branch coverage 48.85%;
+- оба quality/security jobs зелёные;
+- diagnostics artifact создан;
+- Self-Hosted Windows Smoke run #41 зелёный.
+
+Squash merge commit в `main`:
+`16127b21f2cf194a0a56114ce7ad0277e5d1a0a4`.
+
+Эта инфраструктурная миграция не меняет функциональную вершину программы,
+OpenAPI, Render runtime, broker SDK или разрешённые Actions.
+
 ## Активный пакет — PR-99 Expert RA fixed issuer-action source
 
 GitHub PR #128 открыт как draft на ветке
-`agent/expert-ra-rating-actions-source-v1`. Он mergeable и не отстаёт от `main`,
-но merge заблокирован отсутствием полноценного GitHub-hosted Regression Shield.
+`agent/expert-ra-rating-actions-source-v1`. После merge PR #129 ветка получила
+новый status commit, чтобы запустить полный Regression Shield на актуальном
+self-hosted CI-контуре. Ready-for-review и squash merge разрешены только после
+зелёного exact final SHA.
 
 ### Fixed identity
 
@@ -69,8 +108,8 @@ GitHub PR #128 открыт как draft на ветке
 - release path: `/releases/{20xx}/{jan..dec}{valid day}[a-z]?`;
 - source language: Russian.
 
-Caller-controlled URLs, English/secondary hosts, query strings, fragments,
-unknown month tokens, calendar-invalid dates и arbitrary release paths запрещены.
+Caller-controlled URLs, arbitrary hosts, query strings, fragments, unknown month
+tokens, calendar-invalid dates и произвольные release paths запрещены.
 
 ### Supported data and grammar
 
@@ -92,15 +131,24 @@ Bond/issue/series/tranche/structured-finance, ESG, plural, complex и unsupporte
 scale actions пропускаются. Malformed title, явно заявляющий поддерживаемое
 singular issuer national-Russia действие, fail-closed отклоняется.
 
+Source-title issuer text не считается стабильной canonical identity:
+
+- `subject_identity_resolved=false`;
+- `stable_subject_id_present=false`;
+- `subject_name_is_source_text=true`;
+- `identity_resolution_required=true`;
+- `cross_agency_identity_merged=false`.
+
 ### Page boundary
 
 - scope открывается только plain visible `Рейтинговые действия`;
 - navigation link с тем же текстом не может открыть scope;
 - scope закрывается plain `Аналитика` либо exact official `/researches/` link;
 - external host, другой path, query или fragment не могут закрыть scope;
-- current live homepage structure verified against this boundary;
 - adjacent publication date required;
-- URL date обязана точно совпадать с `published_on`.
+- linked date обязана canonicalize в тот же release, что и action;
+- URL date обязана точно совпадать с `published_on`;
+- `<a>` без `href` не может impersonate plain heading или boundary.
 
 ### Transport and parser boundary
 
@@ -122,6 +170,7 @@ singular issuer national-Russia действие, fail-closed отклоняет
 - available snapshot `retrieved_at` обязана совпадать с
   `source.retrieved_at`;
 - every record обязана использовать exact snapshot source;
+- snapshot ограничен 30 records и deterministic newest-first ordering;
 - duplicate conflicts fail closed;
 - raw title, HTML, upstream body и exception text не сохраняются.
 
@@ -129,35 +178,6 @@ Contracts экспортируются через direct module и общий `o
 объявляют informational use only, no software-authorized redistribution, not an
 investment recommendation, no credentials/full account ID, no broker write, no
 order creation и `trading_methods=false`.
-
-### Self-review fixes в активной ветке
-
-- исправлена grammar outlook tails;
-- усилена release URL validation против host/path/query/slash/path traversal;
-- запрещены произвольные month tokens и calendar-invalid URL dates;
-- добавлена URL date = publication date;
-- добавлена publication/source retrieval tolerance;
-- добавлена exact snapshot/source timestamp consistency;
-- добавлен common versioned contract export;
-- исправлена live linked `Аналитика` boundary;
-- устранена утечка shared-client auth/cookies/event hooks через transport-only DI;
-- ограничены timeout/response controls;
-- добавлен fail-closed guard для truncated HTML;
-- добавлены focused regression tests для каждого инварианта.
-
-### Текущая CI-блокировка
-
-Последние Regression Shield runs завершают оба jobs до выделения первого шага:
-`steps=null`, logs отсутствуют, diagnostics artifact отсутствует. GitHub Status
-показывает Actions operational и не сообщает общий текущий incident.
-
-Репозиторий private; GitHub-hosted Actions зависят от account quota/budget и
-runner allocation. Точная account-level причина через repository API не видна.
-Эти runs не классифицируются как code-test failures, но и не принимаются как
-успешная валидация.
-
-PR-99 остаётся draft. Merge, ready-for-review и запуск PR-100 запрещены до
-нормального полного Regression Shield на exact final SHA.
 
 ## Compatibility и safety активной ветки
 
@@ -197,7 +217,7 @@ Green CI не может отметить эти внешние проверки
 
 ### Backend and operations
 
-- завершить PR-99 только после полного Regression Shield;
+- завершить PR-99 только после полного Regression Shield на exact final SHA;
 - после merge PR-99 отдельными пакетами добавить Expert RA cache, telemetry,
   global alert policy и terminal evidence lifecycle;
 - добавлять другие CRA только отдельными fixed contracts;
