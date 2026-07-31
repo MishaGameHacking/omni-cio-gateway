@@ -45,10 +45,15 @@ jobs:
           echo "$PWD/.venv-ci/Scripts" >> "$GITHUB_PATH"
           .venv-ci/Scripts/python.exe -m pip --version
 
+      - name: Build strict Windows dependency projection
+        run: >-
+          python scripts/windows_ci_lock.py project
+          requirements-dev.txt windows-requirements-dev.txt
+
       - name: Install hash-locked dependencies
         run: >-
           python -m pip install --disable-pip-version-check
-          --require-hashes -r requirements-dev.txt
+          --require-hashes -r windows-requirements-dev.txt
 
       - name: Verify lock files are current
         run: |
@@ -58,7 +63,7 @@ jobs:
             --resolver=backtracking \
             --strip-extras \
             --quiet \
-            --output-file=requirements.txt \
+            --output-file=windows-compiled-requirements.txt \
             requirements.in
           python -m piptools compile \
             --allow-unsafe \
@@ -66,9 +71,12 @@ jobs:
             --resolver=backtracking \
             --strip-extras \
             --quiet \
-            --output-file=requirements-dev.txt \
+            --output-file=windows-compiled-requirements-dev.txt \
             requirements-dev.in
-          git diff --exit-code -- requirements.txt requirements-dev.txt
+          python scripts/windows_ci_lock.py verify \
+            requirements.txt windows-compiled-requirements.txt
+          python scripts/windows_ci_lock.py verify \
+            requirements-dev.txt windows-compiled-requirements-dev.txt
 
       - name: Verify CI and security policy
         run: python scripts/check_ci_security_baseline.py
@@ -157,6 +165,8 @@ jobs:
             mypy-results.txt
             pytest-results.xml
             coverage.xml
+            windows-compiled-requirements.txt
+            windows-compiled-requirements-dev.txt
           if-no-files-found: warn
           retention-days: 3
 
@@ -191,10 +201,17 @@ jobs:
           echo "$PWD/.venv-ci/Scripts" >> "$GITHUB_PATH"
           .venv-ci/Scripts/python.exe -m pip --version
 
+      - name: Build strict Windows dependency projections
+        run: |
+          python scripts/windows_ci_lock.py project \
+            requirements-dev.txt windows-requirements-dev.txt
+          python scripts/windows_ci_lock.py project \
+            requirements.txt windows-requirements.txt
+
       - name: Install hash-locked security tools
         run: >-
           python -m pip install --disable-pip-version-check
-          --require-hashes -r requirements-dev.txt
+          --require-hashes -r windows-requirements-dev.txt
 
       - name: Audit runtime dependencies
         run: >-
@@ -204,7 +221,7 @@ jobs:
           --strict
           --vulnerability-service osv
           --progress-spinner off
-          -r requirements.txt
+          -r windows-requirements.txt
 
       - name: Run medium/high-confidence SAST
         run: python -m bandit -c pyproject.toml -r . -ll -ii -q
@@ -213,7 +230,7 @@ jobs:
         run: >-
           python -m detect_secrets scan --all-files
           --exclude-files
-          '(^|/)(\.git|\.mypy_cache|\.ruff_cache|__pycache__|requirements(-dev)?\.txt|coverage\.xml|pytest-results\.xml)(/|$)'
+          '(^|/)(\.git|\.mypy_cache|\.ruff_cache|__pycache__|requirements(-dev)?\.txt|windows-.*requirements.*\.txt|coverage\.xml|pytest-results\.xml)(/|$)'
           | python scripts/check_ci_security_baseline.py --detect-secrets-report
 
       - name: Clean self-hosted workspace
