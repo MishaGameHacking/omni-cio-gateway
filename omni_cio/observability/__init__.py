@@ -1,5 +1,12 @@
 """Allowlist-based structured observability without sensitive payloads."""
 
+from omni_cio.contracts.v1.acra_alerting import (
+    AcraRatingActionsAlertDisposition,
+    AcraRatingActionsAlertEvidenceV1,
+    AcraRatingActionsAlertEvaluationV1,
+    AcraRatingActionsAlertKind,
+    AcraRatingActionsAlertPolicyV1,
+)
 from omni_cio.contracts.v1.alerting import (
     CbrKeyRateAlertDisposition,
     CbrKeyRateAlertEvidenceV1,
@@ -22,6 +29,11 @@ from omni_cio.observability.acra_rating_actions_events_v1 import (
     AcraRatingActionsObservabilityError,
     build_acra_rating_actions_cache_event,
     build_acra_rating_actions_source_event,
+)
+from omni_cio.observability.acra_rating_actions_operations_lifecycle_v1 import (
+    AcraRatingActionsOperationsBatchV1,
+    AcraRatingActionsOperationsLifecycleError,
+    AcraRatingActionsOperationsLifecycleV1,
 )
 from omni_cio.observability.cbr_key_rate_alert_policy_v1 import (
     CbrKeyRateAlertPolicyError,
@@ -58,9 +70,17 @@ from omni_cio.observability.safe_events_v1 import (
 )
 
 __all__ = [
+    "AcraRatingActionsAlertDisposition",
+    "AcraRatingActionsAlertEvidenceV1",
+    "AcraRatingActionsAlertEvaluationV1",
+    "AcraRatingActionsAlertKind",
     "AcraRatingActionsAlertPolicyError",
     "AcraRatingActionsAlertPolicyEvaluatorV1",
+    "AcraRatingActionsAlertPolicyV1",
     "AcraRatingActionsObservabilityError",
+    "AcraRatingActionsOperationsBatchV1",
+    "AcraRatingActionsOperationsLifecycleError",
+    "AcraRatingActionsOperationsLifecycleV1",
     "CbrKeyRateAlertDisposition",
     "CbrKeyRateAlertEvidenceV1",
     "CbrKeyRateAlertEvaluationV1",
