@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from html.parser import HTMLParser
+import math
 import re
 from typing import Final
 from urllib.parse import urljoin, urlparse
@@ -556,6 +557,29 @@ def _error_code_from_exception(
         return CreditRatingSourceErrorCode.SCHEMA_INVALID
 
 
+def _valid_fetch_controls(
+    *,
+    timeout_seconds: object,
+    max_response_bytes: object,
+) -> bool:
+    if (
+        isinstance(timeout_seconds, bool)
+        or not isinstance(timeout_seconds, (int, float))
+        or isinstance(max_response_bytes, bool)
+        or not isinstance(max_response_bytes, int)
+    ):
+        return False
+    try:
+        timeout_value = float(timeout_seconds)
+    except (OverflowError, ValueError):
+        return False
+    return (
+        math.isfinite(timeout_value)
+        and 0 < timeout_value <= DEFAULT_EXPERT_RA_TIMEOUT_SECONDS
+        and 1 <= max_response_bytes <= DEFAULT_EXPERT_RA_MAX_RESPONSE_BYTES
+    )
+
+
 def _build_public_request(*, timeout_seconds: float) -> httpx.Request:
     return httpx.Request(
         "GET",
@@ -576,13 +600,9 @@ def fetch_expert_ra_issuer_rating_actions(
     max_response_bytes: int = DEFAULT_EXPERT_RA_MAX_RESPONSE_BYTES,
 ) -> ExpertRaIssuerRatingActionsSnapshotV1:
     checked_at = _aware_utc(retrieved_at)
-    if (
-        isinstance(timeout_seconds, bool)
-        or not isinstance(timeout_seconds, (int, float))
-        or timeout_seconds <= 0
-        or isinstance(max_response_bytes, bool)
-        or not isinstance(max_response_bytes, int)
-        or max_response_bytes < 1
+    if not _valid_fetch_controls(
+        timeout_seconds=timeout_seconds,
+        max_response_bytes=max_response_bytes,
     ):
         return _unavailable(
             retrieved_at=checked_at,
