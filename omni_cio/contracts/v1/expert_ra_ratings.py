@@ -39,6 +39,10 @@ _EXPERT_RA_RATINGS = frozenset(
         "ruD",
     }
 )
+_EXPERT_RA_RELEASE_URL_PATTERN = (
+    r"^https://raexpert\.ru/releases/20[0-9]{2}/"
+    r"[a-z]{3}(?:0[1-9]|[12][0-9]|3[01])[a-z]?$"
+)
 
 
 class ExpertRaIssuerRatingActionV1(ContractModel):
@@ -56,7 +60,14 @@ class ExpertRaIssuerRatingActionV1(ContractModel):
     action: RatingAction
     outlook: CreditRatingOutlook | None = None
     published_on: date
-    release_url: Annotated[str, Field(min_length=1, max_length=512)]
+    release_url: Annotated[
+        str,
+        Field(
+            min_length=1,
+            max_length=512,
+            pattern=_EXPERT_RA_RELEASE_URL_PATTERN,
+        ),
+    ]
     source: MarketSourceV1
     source_language: Literal["ru"] = "ru"
     informational_use_only: Literal[True] = True
@@ -100,8 +111,6 @@ class ExpertRaIssuerRatingActionV1(ContractModel):
             or self.source.source_id != "EXPERT_RA.home.rating_actions"
         ):
             raise ValueError("Expert RA source identity is inconsistent")
-        if not self.release_url.startswith("https://raexpert.ru/releases/"):
-            raise ValueError("Expert RA release URL is outside fixed source scope")
         if self.action is RatingAction.WITHDRAWN:
             if self.rating is not None or self.outlook is not None:
                 raise ValueError(
