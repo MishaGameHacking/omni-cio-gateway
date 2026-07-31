@@ -144,6 +144,7 @@ class _VisibleLinkParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self.events: list[_HtmlEvent] = []
+        self._anchor_open = False
         self._href: str | None = None
         self._anchor_chunks: list[str] = []
         self._ignored_depth = 0
@@ -158,25 +159,35 @@ class _VisibleLinkParser(HTMLParser):
             self._ignored_depth += 1
             return
         if lowered == "a" and self._ignored_depth == 0:
-            if self._href is not None:
+            if self._anchor_open:
                 raise ExpertRaRatingActionsSourceError(
                     CreditRatingSourceErrorCode.HTML_INVALID.value
                 )
+            self._anchor_open = True
             self._href = next(
                 (value for name, value in attrs if name.lower() == "href"),
-                None,
-            )
+                "",
+            ) or ""
             self._anchor_chunks = []
 
     def handle_endtag(self, tag: str) -> None:
         lowered = tag.lower()
         if lowered in {"script", "style", "noscript"}:
-            self._ignored_depth = max(0, self._ignored_depth - 1)
+            if self._ignored_depth == 0:
+                raise ExpertRaRatingActionsSourceError(
+                    CreditRatingSourceErrorCode.HTML_INVALID.value
+                )
+            self._ignored_depth -= 1
             return
-        if lowered == "a" and self._href is not None:
+        if lowered == "a" and self._ignored_depth == 0:
+            if not self._anchor_open:
+                raise ExpertRaRatingActionsSourceError(
+                    CreditRatingSourceErrorCode.HTML_INVALID.value
+                )
             text = _normalize_text(" ".join(self._anchor_chunks))
             if text:
-                self.events.append(_HtmlEvent(text=text, href=self._href))
+                self.events.append(_HtmlEvent(text=text, href=self._href or ""))
+            self._anchor_open = False
             self._href = None
             self._anchor_chunks = []
 
@@ -186,7 +197,7 @@ class _VisibleLinkParser(HTMLParser):
         text = _normalize_text(data)
         if not text:
             return
-        if self._href is not None:
+        if self._anchor_open:
             self._anchor_chunks.append(text)
         else:
             self.events.append(_HtmlEvent(text=text, href=None))
@@ -311,10 +322,17 @@ def _find_publication_date(
     events: tuple[_HtmlEvent, ...],
     *,
     index: int,
+    release_url: str,
     retrieved_at: datetime,
 ) -> date:
     for candidate in events[index + 1 : min(len(events), index + 8)]:
         if _DATE_PATTERN.fullmatch(candidate.text):
+            if candidate.href is not None:
+                candidate_release_url = _canonical_release_url(candidate.href)
+                if candidate_release_url != release_url:
+                    raise ExpertRaRatingActionsSourceError(
+                        CreditRatingSourceErrorCode.IDENTITY_INVALID.value
+                    )
             return _parse_date(candidate.text, retrieved_at=retrieved_at)
         if _is_action_title(candidate.text):
             break
@@ -464,7 +482,7 @@ def parse_expert_ra_issuer_rating_actions_html(
     try:
         parser.feed(text)
         parser.close()
-        if parser._href is not None or parser._ignored_depth != 0:
+        if parser._anchor_open or parser._ignored_depth != 0:
             raise ExpertRaRatingActionsSourceError(
                 CreditRatingSourceErrorCode.HTML_INVALID.value
             )
@@ -494,6 +512,7 @@ def parse_expert_ra_issuer_rating_actions_html(
         published_on = _find_publication_date(
             events,
             index=index,
+            release_url=release_url,
             retrieved_at=checked_at,
         )
         try:
