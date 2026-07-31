@@ -364,11 +364,10 @@ def test_fetch_success_uses_fixed_endpoint_without_credentials() -> None:
             content=payload,
         )
 
-    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = fetch_expert_ra_issuer_rating_actions(
-            client=client,
-            retrieved_at=NOW,
-        )
+    result = fetch_expert_ra_issuer_rating_actions(
+        transport=httpx.MockTransport(handler),
+        retrieved_at=NOW,
+    )
     assert result.status is CreditRatingSourceStatus.AVAILABLE
     assert [str(request.url) for request in requests] == [
         EXPERT_RA_RATING_ACTIONS_ENDPOINT
@@ -406,14 +405,11 @@ def test_fetch_returns_redacted_unavailable(
     response: httpx.Response,
     expected_code: CreditRatingSourceErrorCode,
 ) -> None:
-    with httpx.Client(
-        transport=httpx.MockTransport(lambda _request: response)
-    ) as client:
-        result = fetch_expert_ra_issuer_rating_actions(
-            client=client,
-            retrieved_at=NOW,
-            max_response_bytes=100,
-        )
+    result = fetch_expert_ra_issuer_rating_actions(
+        transport=httpx.MockTransport(lambda _request: response),
+        retrieved_at=NOW,
+        max_response_bytes=100,
+    )
     assert result.status is CreditRatingSourceStatus.UNAVAILABLE
     assert result.error_code is expected_code
     assert result.source is None
@@ -424,11 +420,10 @@ def test_fetch_maps_network_and_parser_errors_without_text() -> None:
     def broken(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("private upstream detail", request=request)
 
-    with httpx.Client(transport=httpx.MockTransport(broken)) as client:
-        network = fetch_expert_ra_issuer_rating_actions(
-            client=client,
-            retrieved_at=NOW,
-        )
+    network = fetch_expert_ra_issuer_rating_actions(
+        transport=httpx.MockTransport(broken),
+        retrieved_at=NOW,
+    )
     assert network.error_code is CreditRatingSourceErrorCode.NETWORK_ERROR
     assert "private upstream detail" not in network.model_dump_json()
 
@@ -439,19 +434,16 @@ def test_fetch_maps_network_and_parser_errors_without_text() -> None:
             "12.07.2026",
         )
     )
-    with httpx.Client(
+    parser_failure = fetch_expert_ra_issuer_rating_actions(
         transport=httpx.MockTransport(
             lambda _request: httpx.Response(
                 200,
                 headers={"content-type": "text/html"},
                 content=malformed,
             )
-        )
-    ) as client:
-        parser_failure = fetch_expert_ra_issuer_rating_actions(
-            client=client,
-            retrieved_at=NOW,
-        )
+        ),
+        retrieved_at=NOW,
+    )
     assert parser_failure.error_code is CreditRatingSourceErrorCode.SCHEMA_INVALID
 
 
@@ -463,19 +455,18 @@ def test_invalid_controls_make_no_request() -> None:
         calls += 1
         return httpx.Response(200, content=b"")
 
-    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        for kwargs in (
-            {"timeout_seconds": 0},
-            {"timeout_seconds": True},
-            {"max_response_bytes": 0},
-            {"max_response_bytes": True},
-        ):
-            result = fetch_expert_ra_issuer_rating_actions(
-                client=client,
-                retrieved_at=NOW,
-                **kwargs,
-            )
-            assert result.error_code is CreditRatingSourceErrorCode.SCHEMA_INVALID
+    for kwargs in (
+        {"timeout_seconds": 0},
+        {"timeout_seconds": True},
+        {"max_response_bytes": 0},
+        {"max_response_bytes": True},
+    ):
+        result = fetch_expert_ra_issuer_rating_actions(
+            transport=httpx.MockTransport(handler),
+            retrieved_at=NOW,
+            **kwargs,
+        )
+        assert result.error_code is CreditRatingSourceErrorCode.SCHEMA_INVALID
     assert calls == 0
 
 
