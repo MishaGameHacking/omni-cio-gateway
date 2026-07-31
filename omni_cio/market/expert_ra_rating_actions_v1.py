@@ -30,7 +30,7 @@ DEFAULT_EXPERT_RA_MAX_RESPONSE_BYTES: Final = 1_500_000
 MAX_EXPERT_RA_RECORDS: Final = 30
 
 _ALLOWED_CONTENT_TYPES = {"text/html", "application/xhtml+xml"}
-_ALLOWED_RELEASE_HOST = "raexpert.ru"
+_ALLOWED_RELEASE_HOSTS = frozenset({"raexpert.ru", "www.raexpert.ru"})
 _ALLOWED_RELEASE_PATH = re.compile(
     r"^/releases/(?P<year>20[0-9]{2})/"
     r"(?P<slug>[a-z]{3}(?:0[1-9]|[12][0-9]|3[01])[a-z]?)/?$",
@@ -41,7 +41,7 @@ _DATE_PATTERN = re.compile(
     r"(?P<month>0[1-9]|1[0-2])\."
     r"(?P<year>20[0-9]{2})$"
 )
-_RATING_TOKEN = r"ru[AАBВCСRРDД]{1,3}[+-]?"
+_RATING_TOKEN = r"ru(?:[AАBВCС]{1,3}|[RР][DД]|[DД])[+-]?"
 _AGENCY_PREFIX = r"[«\"]?Эксперт РА[»\"]?"
 _RATING_OBJECT = r"(?:кредитный рейтинг|рейтинг кредитоспособности)"
 _ASSIGN_AFFIRM_PATTERN = re.compile(
@@ -61,8 +61,9 @@ _WITHDRAW_PATTERN = re.compile(
 )
 _OUTLOOK_TAIL = re.compile(
     r"^(?:"
-    r" и изменил прогноз (?:по рейтингу )?на "
+    r"(?:,| и) изменил прогноз(?: по рейтингу)? на "
     r"(?P<changed>стабильный|позитивный|негативный|развивающийся)"
+    r"(?: и (?:продлил|установил|снял) статус [«\"]под наблюдением[»\"])?"
     r"| со (?P<with>стабильным|позитивным|негативным|развивающимся) прогнозом"
     r")?$",
     re.IGNORECASE,
@@ -73,17 +74,18 @@ _UNSUPPORTED_COMPLEX = (
     "ОЖИДАЕМЫЙ КРЕДИТНЫЙ РЕЙТИНГ",
     "КРЕДИТНЫЕ РЕЙТИНГИ",
     "РЕЙТИНГИ КРЕДИТОСПОСОБНОСТИ",
-    "РЕЙТИНГ ПОД НАБЛЮДЕНИЕМ",
 )
 _ISSUE_MARKERS = (
     " ОБЛИГАЦ",
     " ВЫПУСК",
-    " СЕРИ",
+    " СЕРИИ ",
+    " СЕРИЯ ",
     " ТРАНШ",
-    " КЛАСС",
+    " КЛАСС ",
     " STRUCTUR",
     " ISIN",
     " ДОЛГОВОГО ИНСТРУМЕНТА",
+    " ИНСТРУМЕНТА СТРУКТУРИРОВАННОГО ФИНАНСИРОВАНИЯ",
 )
 _CONFUSABLES = str.maketrans(
     {
@@ -214,7 +216,7 @@ def _canonical_release_url(href: str) -> str:
     parsed = urlparse(joined)
     if (
         parsed.scheme != "https"
-        or parsed.netloc.lower() not in {_ALLOWED_RELEASE_HOST, "www.raexpert.ru"}
+        or parsed.netloc.lower() not in _ALLOWED_RELEASE_HOSTS
         or parsed.query
         or parsed.fragment
     ):
@@ -371,6 +373,10 @@ def _parse_action_title(
     if not _is_action_title(normalized):
         return None
     if _unsupported_title(normalized):
+        return None
+    if "КРЕДИТНЫЙ РЕЙТИНГ" not in normalized.upper() and (
+        "РЕЙТИНГ КРЕДИТОСПОСОБНОСТИ" not in normalized.upper()
+    ):
         return None
 
     match = _ASSIGN_AFFIRM_PATTERN.fullmatch(normalized)
@@ -570,21 +576,17 @@ def fetch_expert_ra_issuer_rating_actions(
                     retrieved_at=checked_at,
                     error_code=CreditRatingSourceErrorCode.HTTP_ERROR,
                 )
-            media_type = (
-                response.headers.get("content-type", "")
-                .split(";", 1)[0]
-                .strip()
-                .lower()
-            )
+            content_type = response.headers.get("content-type", "")
+            media_type = content_type.split(";", 1)[0].strip().lower()
             if media_type not in _ALLOWED_CONTENT_TYPES:
                 return _unavailable(
                     retrieved_at=checked_at,
                     error_code=CreditRatingSourceErrorCode.CONTENT_TYPE_INVALID,
                 )
-            declared = response.headers.get("content-length")
-            if declared is not None:
+            content_length = response.headers.get("content-length")
+            if content_length is not None:
                 try:
-                    declared_size = int(declared)
+                    declared_size = int(content_length)
                 except ValueError:
                     return _unavailable(
                         retrieved_at=checked_at,
