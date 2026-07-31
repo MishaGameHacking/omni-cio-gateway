@@ -135,7 +135,7 @@ class ExpertRaIssuerRatingActionV1(ContractModel):
         ):
             raise ValueError("Expert RA source identity is inconsistent")
         if self.published_on > (
-            self.source.retrieved_at + EXPERT_RA_PUBLICATION_FUTURE_TOLERANCE
+            self.source.retrieved_at + _EXPERT_RA_PUBLICATION_FUTURE_TOLERANCE
         ).date():
             raise ValueError(
                 "Expert RA publication date cannot be after source retrieval"
