@@ -11,30 +11,44 @@ ACRA ratings.
 
 The source was selected only after current external verification:
 
-- the Bank of Russia infrastructure register publishes the current credit rating
-  agency registry;
-- the Bank of Russia decision dated 7 July 2026 explicitly identifies AO
-  `Expert RA` and its Russian national scale using `ru...` values;
-- the official Russian site publishes rating-action links under stable
-  `https://raexpert.ru/releases/{year}/{slug}` identities;
+- Bank of Russia decisions identify AO `Expert RA` and its Russian national
+  scale using `ru...` values;
+- the official Russian site publishes a dedicated `Рейтинговые действия` block;
+- official release identities use stable
+  `https://raexpert.ru/releases/{year}/{slug}` paths;
 - official examples cover assigned, affirmed, upgraded, downgraded and withdrawn
-  issuer actions.
+  issuer actions;
+- the source site states that rating information is informational and is not an
+  investment recommendation.
 
-The repository does not store copies of the external pages. Live registry/source
-status must be re-verified before future production binding.
+The repository does not store copies of external pages. Live registry/source
+status and source-site terms must be re-verified before production binding.
 
 ## Fixed identity
 
-- endpoint: `https://raexpert.ru/`;
+- endpoint: exactly `https://raexpert.ru/`;
 - provider: `Expert RA`;
 - source id: `EXPERT_RA.home.rating_actions`;
-- release host: exactly `raexpert.ru`;
+- accepted release hosts: only `raexpert.ru` and its fixed `www.raexpert.ru`
+  alias;
+- canonical stored host: always `raexpert.ru`;
 - release path: exactly `/releases/{20xx}/{monDD[a-z]?}`;
 - source language: Russian;
-- redirects, caller-controlled URLs and secondary hosts are not allowed.
+- redirects, caller-controlled URLs and secondary domains are not allowed.
 
-`www.raexpert.ru`, `en.raexpert.ru`, query strings, fragments and arbitrary paths
-are rejected rather than silently canonicalized.
+`en.raexpert.ru`, query strings, fragments and arbitrary paths are rejected. The
+fixed `www` alias is never selected dynamically and cannot change the endpoint.
+
+## Page-scope boundary
+
+The HTML parser first identifies the visible heading `Рейтинговые действия` and
+limits extraction to the block ending at the visible `Аналитика` heading. Rating
+or news links elsewhere on the homepage cannot enter the snapshot merely because
+they contain similar words.
+
+A publication date may be a separate link to the same official release. The date
+is validated before the parser decides that a later action link begins the next
+record. Missing, invalid or materially future dates fail closed.
 
 ## Supported records
 
@@ -47,13 +61,13 @@ V1 accepts singular issuer-level actions only:
 - withdrawn.
 
 Supported rating values are the agency-specific Russian national scale from
-`ruAAA` through `ruD`, including allowed modifiers. Visually mixed Cyrillic and
-Latin A/B/C glyphs are normalized only inside the rating token and then checked
+`ruAAA` through `ruD`, including modifiers. Visually mixed Cyrillic and Latin
+A/B/C/R/D glyphs are normalized only inside the rating token and then checked
 against the closed allowlist.
 
-Stable, positive, negative and developing outlook wording may be captured when
-it is explicitly present in the title. The parser does not infer outlook from a
-rating or from another agency.
+Stable, positive, negative and developing outlook wording may be captured only
+when it matches the explicit title grammar. A non-empty unknown title suffix does
+not disappear silently; it fails with a typed outlook/schema error.
 
 ## Unsupported scope
 
@@ -62,13 +76,14 @@ The parser skips:
 - bond and other issue-level actions;
 - series, tranches and structured-finance instruments;
 - ESG and other non-credit ratings;
-- plural/multi-object rating actions;
+- plural or multi-object actions;
+- complex `пересмотрел и присвоил` titles that cannot be mapped without prior
+  rating evidence;
 - international scales;
 - publications without a supported rating action.
 
-A title that clearly claims a singular supported issuer credit-rating action but
-no longer matches the allowlisted grammar fails closed with a typed schema
-error.
+A title that clearly claims a singular supported issuer national-Russia action
+but no longer matches the allowlisted grammar fails closed.
 
 ## Transport and parsing controls
 
@@ -78,6 +93,7 @@ error.
 - streamed byte limit with declared and actual size checks;
 - UTF-8/UTF-8-BOM only;
 - script, style and noscript content ignored;
+- exact page-section markers required;
 - publication date must be adjacent, valid and not materially in the future;
 - release URL conflicts fail closed;
 - response records are bounded and sorted newest first;
@@ -102,8 +118,8 @@ permanently declare:
 - no broker write, trade authorization or order creation;
 - `trading_methods=false`.
 
-These flags are conservative software controls and do not replace the source
-site's terms or legal review.
+These flags are conservative software controls and do not replace source-site
+terms or legal review.
 
 ## Non-goals
 
@@ -118,16 +134,16 @@ PR-99 adds no:
 - external notification transport;
 - broker call or execution method.
 
-`app:app`, exactly 14 GET Actions total and the existing read-only OpenAPI remain
-unchanged.
+`app:app`, 14 GET Actions total (13 authenticated and public `/health`) and the
+existing read-only OpenAPI remain unchanged.
 
 ## Tests
 
 Tests cover contracts, five action types, rating-glyph normalization, outlooks,
-issuer-only filtering, malformed supported titles, URL confinement, date checks,
-duplicate conflicts, script exclusion, fixed endpoint use, content type/size,
-network failure redaction, invalid controls, exports and absence of generic URL,
-startup, route and broker-write surfaces.
+issuer-only filtering, malformed supported titles, page-section confinement,
+URL confinement, linked dates, duplicate conflicts, script exclusion, fixed
+endpoint use, content type/size, network failure redaction, invalid controls,
+exports and absence of generic URL, startup, route and broker-write surfaces.
 
 ## Next package
 
