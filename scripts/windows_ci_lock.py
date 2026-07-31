@@ -17,6 +17,12 @@ _WINDOWS_ADDITION_BLOCKS: dict[str, tuple[str, ...]] = {
         "    --hash=sha256:4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6\n",
         "    # via bandit\n",
     ),
+    "tzdata": (
+        'tzdata==2026.3 ; sys_platform == "win32" \\\n',
+        "    --hash=sha256:4a1518b8993086a7982523e071643f3c0e5f213e75b21318e78bcabfff9d1415 \\\n",  # pragma: allowlist secret
+        "    --hash=sha256:dc096730c87af6cab1b171c9d532be840741ff5d459015e7f6947bd7d7e54931\n",  # pragma: allowlist secret
+        "    # via -r requirements.in\n",
+    ),
 }
 
 
