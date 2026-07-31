@@ -19,7 +19,7 @@ not be decoded or used to reconstruct hidden identity.
 ## Supported operational conditions
 
 - source unavailable;
-- cache unavailable;
+- cache unavailable, including hidden stale records that were not allowed for display;
 - stale records explicitly exposed;
 - refresh failed while a still-fresh cached snapshot remains usable.
 
@@ -34,10 +34,12 @@ canonical:
 - exact event name and component;
 - provider `ACRA`;
 - operation `press_releases.issuer_rating_actions`;
-- exact allowlisted metric-name set;
-- fixed-official-source and issuer-scope flags;
+- exact allowlisted metric-name set with no duplicate metric names;
+- record count bounded from zero through the source maximum of 30;
+- fixed-official-source and issuer-scope flags equal to one;
 - valid outcome, severity, external-call status and freshness combination;
-- valid cache-hit, refresh, stale and display flags;
+- valid cache-hit, refresh, stale-available, stale-exposed and display flags;
+- positive record count only when a typed snapshot is displayable;
 - no account, request/action identity, exception type or generic payload.
 
 A forged same-name event fails closed before state changes. Unknown event names
@@ -63,9 +65,10 @@ exposures and three failed refreshes using fresh fallback. Default cooldown is
 ## Privacy and safety
 
 Evaluation serialization contains only global operational state, counters,
-thresholds, severity, disposition, source event name and safe error code.
-It contains no issuer, rating, outlook, action, release, publication date,
-financial value, account data, raw HTML, upstream body or exception text.
+thresholds, severity, disposition, source event name, safe error code and
+explicit false-valued privacy flags. It contains no issuer, rating value,
+outlook, action, release, publication date, financial value, account data, raw
+HTML, upstream body or exception text.
 
 The package adds no:
 
@@ -77,15 +80,15 @@ The package adds no:
 - broker call or write method;
 - order, cancellation, transfer or withdrawal capability.
 
-`app:app`, exactly 14 authenticated GET Actions and `trading_methods=false`
-remain unchanged.
+`app:app`, exactly 14 GET Actions and `trading_methods=false` remain unchanged.
 
 ## Tests
 
 Tests cover canonical mapping, thresholds, cooldown, recovery, sibling recovery,
-healthy-event recovery, retention, clear, concurrency, out-of-order rejection,
-forged-event rejection, privacy serialization, stable exports and absence of
-external transport or broker-write surfaces.
+healthy-event recovery, hidden stale handling, retention, clear, concurrency,
+out-of-order rejection, duplicate-metric and forged-profile rejection, privacy
+serialization, stable exports and absence of external transport or broker-write
+surfaces.
 
 ## Next package
 
