@@ -584,11 +584,12 @@ def fetch_expert_ra_issuer_rating_actions(
     )
     request = _build_public_request(active_client)
     try:
-        with active_client.send(
+        response = active_client.send(
             request,
             stream=True,
             follow_redirects=False,
-        ) as response:
+        )
+        try:
             if str(response.url) != EXPERT_RA_RATING_ACTIONS_ENDPOINT:
                 return _unavailable(
                     retrieved_at=checked_at,
@@ -631,6 +632,8 @@ def fetch_expert_ra_issuer_rating_actions(
                     )
                 chunks.append(chunk)
             payload = b"".join(chunks)
+        finally:
+            response.close()
     except httpx.HTTPError:
         return _unavailable(
             retrieved_at=checked_at,
