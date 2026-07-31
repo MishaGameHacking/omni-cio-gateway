@@ -32,12 +32,13 @@ status and source-site terms must be re-verified before production binding.
 - accepted release hosts: only `raexpert.ru` and its fixed `www.raexpert.ru`
   alias;
 - canonical stored host: always `raexpert.ru`;
-- release path: exactly `/releases/{20xx}/{monDD[a-z]?}`;
+- release path: exactly `/releases/{20xx}/{jan..dec}{valid day}[a-z]?`;
 - source language: Russian;
 - redirects, caller-controlled URLs and secondary domains are not allowed.
 
-`en.raexpert.ru`, query strings, fragments and arbitrary paths are rejected. The
-fixed `www` alias is never selected dynamically and cannot change the endpoint.
+`en.raexpert.ru`, query strings, fragments, unknown three-letter month tokens,
+calendar-invalid dates and arbitrary paths are rejected. The fixed `www` alias
+is never selected dynamically and cannot change the endpoint.
 
 ## Page-scope boundary
 
@@ -48,7 +49,8 @@ they contain similar words.
 
 A publication date may be a separate link to the same official release. The date
 is validated before the parser decides that a later action link begins the next
-record. Missing, invalid or materially future dates fail closed.
+record. Missing, invalid or materially future dates fail closed. The calendar
+date encoded in the canonical release URL must exactly equal `published_on`.
 
 ## Supported records
 
@@ -95,6 +97,7 @@ but no longer matches the allowlisted grammar fails closed.
 - script, style and noscript content ignored;
 - exact page-section markers required;
 - publication date must be adjacent, valid and not materially in the future;
+- release URL month/day must be calendar-valid and match `published_on`;
 - release URL conflicts fail closed;
 - response records are bounded and sorted newest first;
 - network/body/exception text is not retained in unavailable results.
@@ -117,6 +120,13 @@ permanently declare:
 - no credentials or full account identity;
 - no broker write, trade authorization or order creation;
 - `trading_methods=false`.
+
+Direct Pydantic construction enforces the same identity controls as the parser:
+
+- publication cannot exceed the one-day source-retrieval tolerance;
+- URL date and publication date must match exactly;
+- available snapshot `retrieved_at` must equal `source.retrieved_at`;
+- every record must share the exact snapshot source.
 
 These flags are conservative software controls and do not replace source-site
 terms or legal review.
@@ -141,9 +151,11 @@ existing read-only OpenAPI remain unchanged.
 
 Tests cover contracts, five action types, rating-glyph normalization, outlooks,
 issuer-only filtering, malformed supported titles, page-section confinement,
-URL confinement, linked dates, duplicate conflicts, script exclusion, fixed
-endpoint use, content type/size, network failure redaction, invalid controls,
-exports and absence of generic URL, startup, route and broker-write surfaces.
+URL confinement, calendar-valid release identity, URL/publication-date matching,
+source/snapshot retrieval timestamp matching, linked dates, duplicate conflicts,
+script exclusion, fixed endpoint use, content type/size, network failure
+redaction, invalid controls, exports and absence of generic URL, startup, route
+and broker-write surfaces.
 
 ## Next package
 
