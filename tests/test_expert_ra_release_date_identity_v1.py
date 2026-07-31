@@ -1,15 +1,19 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 from pydantic import ValidationError
 
 from omni_cio.contracts.v1.expert_ra_ratings import (
+    ExpertRaIssuerRatingActionsSnapshotV1,
     ExpertRaIssuerRatingActionV1,
 )
 from omni_cio.contracts.v1.market import MarketSourceV1, RatingAction, SourceAuthority
-from omni_cio.contracts.v1.ratings import CreditRatingSourceErrorCode
+from omni_cio.contracts.v1.ratings import (
+    CreditRatingSourceErrorCode,
+    CreditRatingSourceStatus,
+)
 from omni_cio.market.expert_ra_rating_actions_v1 import (
     EXPERT_RA_RATING_ACTIONS_SOURCE_ID,
     ExpertRaRatingActionsSourceError,
@@ -20,23 +24,28 @@ from omni_cio.market.expert_ra_rating_actions_v1 import (
 NOW = datetime(2026, 7, 31, 5, 30, tzinfo=timezone.utc)
 
 
-def _source() -> MarketSourceV1:
+def _source(*, retrieved_at: datetime = NOW) -> MarketSourceV1:
     return MarketSourceV1(
         provider="Expert RA",
         authority=SourceAuthority.OFFICIAL,
-        retrieved_at=NOW,
+        retrieved_at=retrieved_at,
         source_id=EXPERT_RA_RATING_ACTIONS_SOURCE_ID,
     )
 
 
-def _record(*, release_url: str, published_on: date) -> ExpertRaIssuerRatingActionV1:
+def _record(
+    *,
+    release_url: str,
+    published_on: date,
+    source: MarketSourceV1 | None = None,
+) -> ExpertRaIssuerRatingActionV1:
     return ExpertRaIssuerRatingActionV1(
         subject_name="АО «Тест»",
         rating="ruA",
         action=RatingAction.AFFIRMED,
         published_on=published_on,
         release_url=release_url,
-        source=_source(),
+        source=source or _source(),
     )
 
 
@@ -58,10 +67,34 @@ def test_contract_rejects_invalid_or_mismatched_release_dates(
 
 def test_contract_accepts_calendar_valid_matching_release_date() -> None:
     record = _record(
-        release_url="https://raexpert.ru/releases/2028/feb29a",
-        published_on=date(2028, 2, 29),
+        release_url="https://raexpert.ru/releases/2024/feb29a",
+        published_on=date(2024, 2, 29),
     )
-    assert record.published_on == date(2028, 2, 29)
+    assert record.published_on == date(2024, 2, 29)
+
+
+def test_contract_rejects_publication_beyond_retrieval_tolerance() -> None:
+    with pytest.raises(ValidationError):
+        _record(
+            release_url="https://raexpert.ru/releases/2026/aug02a",
+            published_on=date(2026, 8, 2),
+        )
+
+
+def test_snapshot_requires_exact_source_retrieval_timestamp() -> None:
+    source = _source()
+    record = _record(
+        release_url="https://raexpert.ru/releases/2026/jul30a",
+        published_on=date(2026, 7, 30),
+        source=source,
+    )
+    with pytest.raises(ValidationError):
+        ExpertRaIssuerRatingActionsSnapshotV1(
+            retrieved_at=NOW + timedelta(seconds=1),
+            status=CreditRatingSourceStatus.AVAILABLE,
+            source=source,
+            records=(record,),
+        )
 
 
 @pytest.mark.parametrize(
