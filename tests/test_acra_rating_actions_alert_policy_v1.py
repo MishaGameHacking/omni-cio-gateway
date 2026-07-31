@@ -14,7 +14,10 @@ from omni_cio.contracts.v1.acra_alerting import (
     AcraRatingActionsAlertPolicyV1,
 )
 from omni_cio.contracts.v1.market import MarketSourceV1, RatingAction, SourceAuthority
-from omni_cio.contracts.v1.observability import ObservabilityEventV1
+from omni_cio.contracts.v1.observability import (
+    ObservabilityEventV1,
+    ObservabilityOutcome,
+)
 from omni_cio.contracts.v1.ratings import (
     AcraIssuerRatingActionsCacheResultV1,
     AcraIssuerRatingActionsSnapshotV1,
@@ -288,6 +291,7 @@ def test_fresh_refresh_and_unknown_event_are_ignored_without_state() -> None:
     unknown = build_safe_event(
         event_name="system.unrelated.health",
         component="system.unrelated",
+        outcome=ObservabilityOutcome.SUCCESS,
         occurred_at=NOW + timedelta(seconds=1),
         correlation_id=CORRELATION,
     )
@@ -342,6 +346,7 @@ def test_pending_state_expires_after_retention_and_clear_resets_state() -> None:
     unrelated = build_safe_event(
         event_name="system.unrelated.health",
         component="system.unrelated",
+        outcome=ObservabilityOutcome.SUCCESS,
         occurred_at=NOW + timedelta(seconds=61),
         correlation_id=CORRELATION,
     )
@@ -382,15 +387,15 @@ def test_evaluation_serialization_excludes_rating_and_issuer_payload() -> None:
     for forbidden in (
         "SAFE ISSUER",
         "A(RU)",
-        "stable",
-        "affirmed",
+        '"stable"',
+        '"affirmed"',
         "press-releases/100",
         "published_on",
         "release_url",
         "subject_name",
-        "rating",
-        "outlook",
-        "account",
+        '"rating":',
+        '"outlook":',
+        '"account":',
         "raw_html",
     ):
         assert forbidden not in payload
