@@ -41,9 +41,13 @@ jobs:
 
       - name: Create isolated CI environment
         run: |
-          python -m venv .venv-ci
-          echo "$PWD/.venv-ci/Scripts" >> "$GITHUB_PATH"
-          .venv-ci/Scripts/python.exe -m pip --version
+          VENV_ROOT="$(cygpath -u "$RUNNER_TEMP")"
+          VENV_PATH="$VENV_ROOT/omni-cio-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${GITHUB_JOB}"
+          rm -rf "$VENV_PATH"
+          python -m venv "$VENV_PATH"
+          echo "VENV_PATH=$VENV_PATH" >> "$GITHUB_ENV"
+          echo "$(cygpath -w "$VENV_PATH/Scripts")" >> "$GITHUB_PATH"
+          "$VENV_PATH/Scripts/python.exe" -m pip --version
 
       - name: Build strict Windows dependency projection
         run: >-
@@ -173,6 +177,7 @@ jobs:
       - name: Clean self-hosted workspace
         if: always()
         run: |
+          rm -rf "$VENV_PATH"
           git reset --hard HEAD
           git clean -ffdx
 
@@ -197,9 +202,13 @@ jobs:
 
       - name: Create isolated CI environment
         run: |
-          python -m venv .venv-ci
-          echo "$PWD/.venv-ci/Scripts" >> "$GITHUB_PATH"
-          .venv-ci/Scripts/python.exe -m pip --version
+          VENV_ROOT="$(cygpath -u "$RUNNER_TEMP")"
+          VENV_PATH="$VENV_ROOT/omni-cio-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${GITHUB_JOB}"
+          rm -rf "$VENV_PATH"
+          python -m venv "$VENV_PATH"
+          echo "VENV_PATH=$VENV_PATH" >> "$GITHUB_ENV"
+          echo "$(cygpath -w "$VENV_PATH/Scripts")" >> "$GITHUB_PATH"
+          "$VENV_PATH/Scripts/python.exe" -m pip --version
 
       - name: Build strict Windows dependency projections
         run: |
@@ -230,11 +239,12 @@ jobs:
         run: >-
           python -m detect_secrets scan --all-files
           --exclude-files
-          '(^|/)(\.git|\.mypy_cache|\.ruff_cache|__pycache__|requirements(-dev)?\.txt|windows-.*requirements.*\.txt|coverage\.xml|pytest-results\.xml)(/|$)'
+          '(^|[\\/])(\.git|\.venv|\.venv-ci|\.mypy_cache|\.ruff_cache|__pycache__|requirements(-dev)?\.txt|windows-.*requirements.*\.txt|coverage\.xml|pytest-results\.xml)([\\/]|$)'
           | python scripts/check_ci_security_baseline.py --detect-secrets-report
 
       - name: Clean self-hosted workspace
         if: always()
         run: |
+          rm -rf "$VENV_PATH"
           git reset --hard HEAD
           git clean -ffdx
