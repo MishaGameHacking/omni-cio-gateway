@@ -26,18 +26,14 @@ jobs:
         uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
 
       - name: Verify runner and Git
-        shell: powershell
+        shell: cmd
         run: |
-          $ErrorActionPreference = "Stop"
-          if ($env:RUNNER_OS -ne "Windows") {
-            throw "Expected Windows runner, got '$env:RUNNER_OS'."
-          }
-          if (-not (Test-Path ".git")) {
-            throw "Repository checkout is missing."
-          }
+          @echo off
+          if not "%RUNNER_OS%"=="Windows" exit /b 1
+          if not exist .git exit /b 1
           git --version
-          Write-Host "Runner OS verified: $env:RUNNER_OS"
-          Write-Host "Runner architecture: $env:RUNNER_ARCH"
+          echo Runner OS verified: %RUNNER_OS%
+          echo Runner architecture: %RUNNER_ARCH%
 
       - name: Set up Python 3.12
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
@@ -47,16 +43,16 @@ jobs:
           cache-dependency-path: requirements-dev.txt
 
       - name: Verify Python and workspace
-        shell: powershell
+        shell: cmd
         run: |
-          $ErrorActionPreference = "Stop"
+          @echo off
           python -c "import pathlib, sys; assert sys.version_info[:2] == (3, 12); assert pathlib.Path('pyproject.toml').is_file(); print(sys.version)"
           git status --short
 
       - name: Clean workspace
         if: always()
-        shell: powershell
+        shell: cmd
         run: |
-          $ErrorActionPreference = "Continue"
+          @echo off
           git reset --hard HEAD
           git clean -ffdx
