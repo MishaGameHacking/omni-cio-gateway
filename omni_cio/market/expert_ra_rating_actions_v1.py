@@ -33,14 +33,72 @@ _ALLOWED_CONTENT_TYPES = {"text/html", "application/xhtml+xml"}
 _ALLOWED_RELEASE_HOST = "raexpert.ru"
 _ALLOWED_RELEASE_PATH = re.compile(
     r"^/releases/(?P<year>20[0-9]{2})/"
-    r"(?P<slug>[a-z]{3}(?:0[1-9]|[12][0-9]|3[01])[a-z]?)/?$"
+    r"(?P<slug>[a-z]{3}(?:0[1-9]|[12][0-9]|3[01])[a-z]?)/?$",
+    re.IGNORECASE,
 )
 _DATE_PATTERN = re.compile(
     r"^(?P<day>0[1-9]|[12][0-9]|3[01])\."
     r"(?P<month>0[1-9]|1[0-2])\."
     r"(?P<year>20[0-9]{2})$"
 )
-_RATING_TOKEN = re.compile(r"ru[ABCАВС]{1,3}[+-]?", re.IGNORECASE)
+_RATING_TOKEN = r"ru[AАBВCСRРDД]{1,3}[+-]?"
+_AGENCY_PREFIX = r"[«\"]?Эксперт РА[»\"]?"
+_RATING_OBJECT = r"(?:кредитный рейтинг|рейтинг кредитоспособности)"
+_ASSIGN_AFFIRM_PATTERN = re.compile(
+    rf"^{_AGENCY_PREFIX} (?P<verb>присвоил|подтвердил) {_RATING_OBJECT} "
+    rf"(?P<subject>.+?) на уровне (?P<rating>{_RATING_TOKEN})(?P<tail>.*)$",
+    re.IGNORECASE,
+)
+_UP_DOWN_PATTERN = re.compile(
+    rf"^{_AGENCY_PREFIX} (?P<verb>повысил|понизил) {_RATING_OBJECT} "
+    rf"(?P<subject>.+?) до уровня (?P<rating>{_RATING_TOKEN})(?P<tail>.*)$",
+    re.IGNORECASE,
+)
+_WITHDRAW_PATTERN = re.compile(
+    rf"^{_AGENCY_PREFIX} отозвал(?: без подтверждения)? {_RATING_OBJECT} "
+    r"(?P<subject>.+?)(?: в связи с .+)?$",
+    re.IGNORECASE,
+)
+_OUTLOOK_TAIL = re.compile(
+    r"^(?:"
+    r" и изменил прогноз (?:по рейтингу )?на "
+    r"(?P<changed>стабильный|позитивный|негативный|развивающийся)"
+    r"| со (?P<with>стабильным|позитивным|негативным|развивающимся) прогнозом"
+    r")?$",
+    re.IGNORECASE,
+)
+_ACTION_WORDS = ("ПРИСВОИЛ", "ПОДТВЕРДИЛ", "ПОВЫСИЛ", "ПОНИЗИЛ", "ОТОЗВАЛ")
+_UNSUPPORTED_COMPLEX = (
+    "ПЕРЕСМОТРЕЛ И ПРИСВОИЛ",
+    "ОЖИДАЕМЫЙ КРЕДИТНЫЙ РЕЙТИНГ",
+    "КРЕДИТНЫЕ РЕЙТИНГИ",
+    "РЕЙТИНГИ КРЕДИТОСПОСОБНОСТИ",
+    "РЕЙТИНГ ПОД НАБЛЮДЕНИЕМ",
+)
+_ISSUE_MARKERS = (
+    " ОБЛИГАЦ",
+    " ВЫПУСК",
+    " СЕРИ",
+    " ТРАНШ",
+    " КЛАСС",
+    " STRUCTUR",
+    " ISIN",
+    " ДОЛГОВОГО ИНСТРУМЕНТА",
+)
+_CONFUSABLES = str.maketrans(
+    {
+        "А": "A",
+        "а": "A",
+        "В": "B",
+        "в": "B",
+        "С": "C",
+        "с": "C",
+        "Р": "R",
+        "р": "R",
+        "Д": "D",
+        "д": "D",
+    }
+)
 _SUPPORTED_RATINGS = frozenset(
     {
         "ruAAA",
@@ -66,46 +124,7 @@ _SUPPORTED_RATINGS = frozenset(
         "ruD",
     }
 )
-_AGENCY_PREFIX = r"[«\"]?Эксперт РА[»\"]?"
-_RATING_OBJECT = r"(?:кредитный рейтинг|рейтинг кредитоспособности)"
-_ASSIGN_AFFIRM_PATTERN = re.compile(
-    rf"^{_AGENCY_PREFIX} (?P<verb>присвоил|подтвердил) {_RATING_OBJECT} "
-    rf"(?P<subject>.+?) на уровне (?P<rating>ru[ABCАВС]{{1,3}}[+-]?)(?P<tail>.*)$",
-    re.IGNORECASE,
-)
-_UP_DOWN_PATTERN = re.compile(
-    rf"^{_AGENCY_PREFIX} (?P<verb>повысил|понизил) {_RATING_OBJECT} "
-    rf"(?P<subject>.+?) до уровня (?P<rating>ru[ABCАВС]{{1,3}}[+-]?)(?P<tail>.*)$",
-    re.IGNORECASE,
-)
-_WITHDRAW_PATTERN = re.compile(
-    rf"^{_AGENCY_PREFIX} отозвал(?: без подтверждения)? {_RATING_OBJECT} "
-    rf"(?P<subject>.+?)(?: в связи с .+)?$",
-    re.IGNORECASE,
-)
-_ACTION_WORDS = ("присвоил", "подтвердил", "повысил", "понизил", "отозвал")
-_ISSUE_MARKERS = (
-    "облигац",
-    "выпуск",
-    "серии ",
-    " серия ",
-    "долгового инструмента",
-    "инструмента структурированного финансирования",
-    "структурированного финансирования",
-    "транш",
-    " класс ",
-    "isin",
-)
-_OUTLOOK_WORDS = {
-    "стабильный": CreditRatingOutlook.STABLE,
-    "позитивный": CreditRatingOutlook.POSITIVE,
-    "положительный": CreditRatingOutlook.POSITIVE,
-    "негативный": CreditRatingOutlook.NEGATIVE,
-    "отрицательный": CreditRatingOutlook.NEGATIVE,
-    "развивающийся": CreditRatingOutlook.DEVELOPING,
-}
 _MAX_CLOCK_SKEW = timedelta(days=1)
-_CYRILLIC_RATING_TRANSLATION = str.maketrans({"А": "A", "а": "A", "В": "B", "в": "B", "С": "C", "с": "C"})
 
 
 class ExpertRaRatingActionsSourceError(ValueError):
@@ -195,21 +214,21 @@ def _canonical_release_url(href: str) -> str:
     parsed = urlparse(joined)
     if (
         parsed.scheme != "https"
-        or parsed.netloc.lower() != _ALLOWED_RELEASE_HOST
+        or parsed.netloc.lower() not in {_ALLOWED_RELEASE_HOST, "www.raexpert.ru"}
         or parsed.query
         or parsed.fragment
     ):
         raise ExpertRaRatingActionsSourceError(
             CreditRatingSourceErrorCode.URL_INVALID.value
         )
-    match = _ALLOWED_RELEASE_PATH.fullmatch(parsed.path.lower())
+    match = _ALLOWED_RELEASE_PATH.fullmatch(parsed.path)
     if match is None:
         raise ExpertRaRatingActionsSourceError(
             CreditRatingSourceErrorCode.URL_INVALID.value
         )
     return (
         "https://raexpert.ru/releases/"
-        f"{match.group('year')}/{match.group('slug')}"
+        f"{match.group('year')}/{match.group('slug').lower()}"
     )
 
 
@@ -220,7 +239,11 @@ def _parse_date(text: str, *, retrieved_at: datetime) -> date:
             CreditRatingSourceErrorCode.TIMESTAMP_INVALID.value
         )
     try:
-        parsed = datetime.strptime(text, "%d.%m.%Y").date()
+        parsed = date(
+            int(match.group("year")),
+            int(match.group("month")),
+            int(match.group("day")),
+        )
     except ValueError as exc:
         raise ExpertRaRatingActionsSourceError(
             CreditRatingSourceErrorCode.TIMESTAMP_INVALID.value
@@ -232,14 +255,34 @@ def _parse_date(text: str, *, retrieved_at: datetime) -> date:
     return parsed
 
 
-def _is_release_href(href: str | None) -> bool:
-    if href is None:
-        return False
-    try:
-        _canonical_release_url(href)
-    except ExpertRaRatingActionsSourceError:
-        return False
-    return True
+def _rating_action_scope(
+    events: tuple[_HtmlEvent, ...],
+) -> tuple[_HtmlEvent, ...]:
+    start = next(
+        (
+            index
+            for index, event in enumerate(events)
+            if event.href is None and event.text == "Рейтинговые действия"
+        ),
+        None,
+    )
+    if start is None:
+        raise ExpertRaRatingActionsSourceError(
+            CreditRatingSourceErrorCode.SCHEMA_INVALID.value
+        )
+    end = next(
+        (
+            index
+            for index, event in enumerate(events[start + 1 :], start + 1)
+            if event.href is None and event.text == "Аналитика"
+        ),
+        None,
+    )
+    if end is None or end <= start + 1:
+        raise ExpertRaRatingActionsSourceError(
+            CreditRatingSourceErrorCode.SCHEMA_INVALID.value
+        )
+    return events[start + 1 : end]
 
 
 def _find_publication_date(
@@ -248,20 +291,23 @@ def _find_publication_date(
     index: int,
     retrieved_at: datetime,
 ) -> date:
-    upper = min(len(events), index + 14)
-    for candidate in events[index + 1 : upper]:
-        if candidate.href is not None and _is_release_href(candidate.href):
-            break
+    for candidate in events[index + 1 : min(len(events), index + 8)]:
         if _DATE_PATTERN.fullmatch(candidate.text):
             return _parse_date(candidate.text, retrieved_at=retrieved_at)
+        if _is_action_title(candidate.text):
+            break
     raise ExpertRaRatingActionsSourceError(
         CreditRatingSourceErrorCode.TIMESTAMP_INVALID.value
     )
 
 
 def _normalize_rating(value: str) -> str:
-    translated = value.translate(_CYRILLIC_RATING_TRANSLATION)
-    result = "ru" + translated[2:].upper()
+    translated = _normalize_text(value).translate(_CONFUSABLES)
+    if not translated.lower().startswith("ru"):
+        raise ExpertRaRatingActionsSourceError(
+            CreditRatingSourceErrorCode.RATING_INVALID.value
+        )
+    result = f"ru{translated[2:].upper()}"
     if result not in _SUPPORTED_RATINGS:
         raise ExpertRaRatingActionsSourceError(
             CreditRatingSourceErrorCode.RATING_INVALID.value
@@ -270,47 +316,61 @@ def _normalize_rating(value: str) -> str:
 
 
 def _normalize_outlook(tail: str) -> CreditRatingOutlook | None:
-    normalized = _normalize_text(tail).lower().strip(" ,.;")
-    if not normalized:
-        return None
-    if "прогноз" not in normalized:
-        return None
-    matches = [value for word, value in _OUTLOOK_WORDS.items() if word in normalized]
-    if len(set(matches)) != 1:
+    normalized = _normalize_text(tail)
+    match = _OUTLOOK_TAIL.fullmatch(normalized)
+    if match is None:
         raise ExpertRaRatingActionsSourceError(
             CreditRatingSourceErrorCode.OUTLOOK_INVALID.value
         )
-    return matches[0]
+    value = match.group("changed") or match.group("with")
+    if value is None:
+        return None
+    root = value.lower()
+    if root.startswith("стабиль"):
+        return CreditRatingOutlook.STABLE
+    if root.startswith("позитив"):
+        return CreditRatingOutlook.POSITIVE
+    if root.startswith("негатив"):
+        return CreditRatingOutlook.NEGATIVE
+    if root.startswith("развива"):
+        return CreditRatingOutlook.DEVELOPING
+    raise ExpertRaRatingActionsSourceError(
+        CreditRatingSourceErrorCode.OUTLOOK_INVALID.value
+    )
 
 
 def _require_simple_subject(value: str) -> str:
     result = _normalize_text(value.strip(" ,.;"))
-    if not result or len(result) > 256 or _RATING_TOKEN.search(result):
+    upper = f" {result.upper()} "
+    if (
+        not result
+        or len(result) > 256
+        or any(marker in upper for marker in _ISSUE_MARKERS)
+        or re.search(_RATING_TOKEN, result, re.IGNORECASE)
+    ):
         raise ExpertRaRatingActionsSourceError(
             CreditRatingSourceErrorCode.IDENTITY_INVALID.value
         )
     return result
 
 
-def _is_issue_level_title(title: str) -> bool:
-    lowered = title.lower()
-    return any(marker in lowered for marker in _ISSUE_MARKERS)
+def _is_action_title(value: str) -> bool:
+    upper = _normalize_text(value).upper()
+    return "ЭКСПЕРТ РА" in upper and any(word in upper for word in _ACTION_WORDS)
+
+
+def _unsupported_title(value: str) -> bool:
+    upper = f" {_normalize_text(value).upper()} "
+    return any(marker in upper for marker in (*_UNSUPPORTED_COMPLEX, *_ISSUE_MARKERS))
 
 
 def _parse_action_title(
     title: str,
 ) -> tuple[str, str | None, RatingAction, CreditRatingOutlook | None] | None:
     normalized = _normalize_text(title)
-    lowered = normalized.lower()
-    if "эксперт ра" not in lowered:
+    if not _is_action_title(normalized):
         return None
-    if not any(word in lowered for word in _ACTION_WORDS):
-        return None
-    if _is_issue_level_title(normalized):
-        return None
-    if "кредитные рейтинги" in lowered or "рейтинги кредитоспособности" in lowered:
-        return None
-    if "кредитный рейтинг" not in lowered and "рейтинг кредитоспособности" not in lowered:
+    if _unsupported_title(normalized):
         return None
 
     match = _ASSIGN_AFFIRM_PATTERN.fullmatch(normalized)
@@ -350,6 +410,8 @@ def _parse_action_title(
             None,
         )
 
+    if re.search(r" (?:на|до) уровне (?!ru)", normalized, re.IGNORECASE):
+        return None
     raise ExpertRaRatingActionsSourceError(
         CreditRatingSourceErrorCode.SCHEMA_INVALID.value
     )
@@ -383,15 +445,14 @@ def parse_expert_ra_issuer_rating_actions_html(
             CreditRatingSourceErrorCode.HTML_INVALID.value
         ) from exc
 
+    events = _rating_action_scope(tuple(parser.events))
     source = MarketSourceV1(
         provider=EXPERT_RA_RATING_ACTIONS_PROVIDER,
         authority=SourceAuthority.OFFICIAL,
         retrieved_at=checked_at,
         source_id=EXPERT_RA_RATING_ACTIONS_SOURCE_ID,
     )
-    events = tuple(parser.events)
     records_by_url: dict[str, ExpertRaIssuerRatingActionV1] = {}
-
     for index, event in enumerate(events):
         if event.href is None:
             continue
@@ -419,7 +480,6 @@ def parse_expert_ra_issuer_rating_actions_html(
             raise ExpertRaRatingActionsSourceError(
                 CreditRatingSourceErrorCode.SCHEMA_INVALID.value
             ) from exc
-
         previous = records_by_url.get(release_url)
         if previous is not None and previous != record:
             raise ExpertRaRatingActionsSourceError(
@@ -450,15 +510,6 @@ def parse_expert_ra_issuer_rating_actions_html(
     )
 
 
-def _error_code_from_exception(
-    error: ExpertRaRatingActionsSourceError,
-) -> CreditRatingSourceErrorCode:
-    try:
-        return CreditRatingSourceErrorCode(str(error))
-    except ValueError:
-        return CreditRatingSourceErrorCode.SCHEMA_INVALID
-
-
 def _unavailable(
     *,
     retrieved_at: datetime,
@@ -469,6 +520,15 @@ def _unavailable(
         status=CreditRatingSourceStatus.UNAVAILABLE,
         error_code=error_code,
     )
+
+
+def _error_code_from_exception(
+    error: ExpertRaRatingActionsSourceError,
+) -> CreditRatingSourceErrorCode:
+    try:
+        return CreditRatingSourceErrorCode(str(error))
+    except ValueError:
+        return CreditRatingSourceErrorCode.SCHEMA_INVALID
 
 
 def fetch_expert_ra_issuer_rating_actions(
@@ -510,17 +570,21 @@ def fetch_expert_ra_issuer_rating_actions(
                     retrieved_at=checked_at,
                     error_code=CreditRatingSourceErrorCode.HTTP_ERROR,
                 )
-            content_type = response.headers.get("content-type", "")
-            media_type = content_type.split(";", 1)[0].strip().lower()
+            media_type = (
+                response.headers.get("content-type", "")
+                .split(";", 1)[0]
+                .strip()
+                .lower()
+            )
             if media_type not in _ALLOWED_CONTENT_TYPES:
                 return _unavailable(
                     retrieved_at=checked_at,
                     error_code=CreditRatingSourceErrorCode.CONTENT_TYPE_INVALID,
                 )
-            content_length = response.headers.get("content-length")
-            if content_length is not None:
+            declared = response.headers.get("content-length")
+            if declared is not None:
                 try:
-                    declared_size = int(content_length)
+                    declared_size = int(declared)
                 except ValueError:
                     return _unavailable(
                         retrieved_at=checked_at,
