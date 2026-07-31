@@ -234,6 +234,25 @@ def _canonical_release_url(href: str) -> str:
     )
 
 
+def _is_analytics_boundary(event: _HtmlEvent) -> bool:
+    if event.text != "Аналитика":
+        return False
+    if event.href is None:
+        return True
+    if not isinstance(event.href, str) or not event.href.strip():
+        return False
+    parsed = urlparse(
+        urljoin(EXPERT_RA_RATING_ACTIONS_ENDPOINT, event.href.strip())
+    )
+    return (
+        parsed.scheme == "https"
+        and parsed.netloc.lower() in _ALLOWED_RELEASE_HOSTS
+        and parsed.path.rstrip("/") == "/researches"
+        and not parsed.query
+        and not parsed.fragment
+    )
+
+
 def _parse_date(text: str, *, retrieved_at: datetime) -> date:
     match = _DATE_PATTERN.fullmatch(text)
     if match is None:
@@ -276,7 +295,7 @@ def _rating_action_scope(
         (
             index
             for index, event in enumerate(events[start + 1 :], start + 1)
-            if event.href is None and event.text == "Аналитика"
+            if _is_analytics_boundary(event)
         ),
         None,
     )
