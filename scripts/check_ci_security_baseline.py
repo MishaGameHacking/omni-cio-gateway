@@ -18,8 +18,10 @@ LOCK_PATHS = (
 FULL_SHA = re.compile(r"[0-9a-f]{40}")
 
 REQUIRED_WORKFLOW_COMMANDS = {
-    "hash-locked install": "--require-hashes -r requirements-dev.txt",
+    "Windows lock projection": "python scripts/windows_ci_lock.py project",
+    "hash-locked install": "--require-hashes -r windows-requirements-dev.txt",
     "lock consistency": "python -m piptools compile",
+    "Windows lock verification": "python scripts/windows_ci_lock.py verify",
     "CI policy self-check": "python scripts/check_ci_security_baseline.py",
     "lint": "python -m ruff check .",
     "formatting": "python -m ruff format --check",
@@ -29,6 +31,12 @@ REQUIRED_WORKFLOW_COMMANDS = {
     "SAST": "python -m bandit",
     "secret scan": "python -m detect_secrets",
 }
+
+SELF_HOSTED_RUNNER_LABELS = "[self-hosted, Windows, X64, omni-cio-ci]"
+SAME_REPOSITORY_GUARD = (
+    "github.event_name != 'pull_request' || "
+    "github.event.pull_request.head.repo.full_name == github.repository"
+)
 
 
 def display_path(path: Path) -> str:
@@ -119,6 +127,16 @@ def validate_workflow(failures: list[str]) -> None:
         failures.append("security and quality gates may not use continue-on-error")
     if "contents: read" not in text:
         failures.append("workflow permissions must retain contents: read")
+    if SELF_HOSTED_RUNNER_LABELS not in text:
+        failures.append(
+            "Regression Shield must target the dedicated self-hosted Windows runner"
+        )
+    if text.count(SAME_REPOSITORY_GUARD) < 2:
+        failures.append("every self-hosted job must reject fork pull requests")
+    if text.count("persist-credentials: false") < 2:
+        failures.append("every checkout must disable persisted credentials")
+    if "scripts\\bootstrap_windows_ci_python.cmd" not in text:
+        failures.append("Regression Shield must bootstrap the verified Python runtime")
 
 
 def validate_render_contract(failures: list[str]) -> None:
@@ -206,7 +224,9 @@ def main() -> int:
     else:
         print("CI/security baseline check passed.")
         print("Dependency locks: pinned and SHA-256 hashed")
+        print("Windows projection: exact except allowlisted uvloop exclusion")
         print("GitHub Actions: pinned to full commit SHAs")
+        print("Self-hosted PR isolation: same-repository only")
         print("Render entrypoint: app:app")
     return 0
 
