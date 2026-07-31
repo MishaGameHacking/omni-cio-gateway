@@ -19,6 +19,7 @@ from omni_cio.contracts.v1.paper_backup import (
     PaperLedgerManifestStorageReceiptV1,
 )
 from omni_cio.contracts.v1.paper_recovery import PaperLedgerRecoveryManifestV1
+from omni_cio.paper.filesystem_v1 import fsync_directory, permissions_are_owner_only
 from omni_cio.paper.recovery_v1 import (
     PaperLedgerRecoveryError,
     build_paper_ledger_recovery_manifest,
@@ -87,7 +88,7 @@ def _resolve_primary(root: Path | str) -> Path:
         raise PaperLedgerBackupError("PAPER_BACKUP_PRIMARY_MISSING") from exc
     if not resolved.is_dir():
         raise PaperLedgerBackupError("PAPER_BACKUP_PRIMARY_NOT_DIRECTORY")
-    if resolved.stat().st_mode & 0o077:
+    if not permissions_are_owner_only(resolved.stat().st_mode):
         raise PaperLedgerBackupError("PAPER_BACKUP_PRIMARY_PERMISSIONS_UNSAFE")
     return resolved
 
@@ -123,15 +124,6 @@ def _write_all(fd: int, payload: bytes) -> None:
         written += amount
 
 
-def _fsync_directory(root: Path) -> None:
-    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
-    fd = os.open(root, flags)
-    try:
-        os.fsync(fd)
-    finally:
-        os.close(fd)
-
-
 @contextmanager
 def _exclusive_storage_lock(root: Path) -> Iterator[None]:
     lock_path = root / _STORAGE_LOCK_NAME
@@ -152,7 +144,7 @@ def _exclusive_storage_lock(root: Path) -> Iterator[None]:
             lock_path.unlink()
         except FileNotFoundError:
             pass
-        _fsync_directory(root)
+        fsync_directory(root)
 
 
 def _read_secure_file(path: Path, *, maximum_size: int) -> bytes:
@@ -167,7 +159,7 @@ def _read_secure_file(path: Path, *, maximum_size: int) -> bytes:
             raise PaperLedgerBackupError("PAPER_BACKUP_FILE_NOT_REGULAR")
         if info.st_nlink != 1:
             raise PaperLedgerBackupError("PAPER_BACKUP_FILE_HARDLINK_FORBIDDEN")
-        if info.st_mode & 0o077:
+        if not permissions_are_owner_only(info.st_mode):
             raise PaperLedgerBackupError("PAPER_BACKUP_FILE_PERMISSIONS_UNSAFE")
         if info.st_size <= 0 or info.st_size > maximum_size:
             raise PaperLedgerBackupError("PAPER_BACKUP_FILE_SIZE_INVALID")
@@ -185,7 +177,7 @@ def _read_secure_file(path: Path, *, maximum_size: int) -> bytes:
 
 
 def _atomic_write(root: Path, target: Path, payload: bytes) -> None:
-    temporary = root / f".{target.name}.{uuid4().hex}.tmp"
+    temporary = root / f".{uuid4().hex}.tmp"
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
     try:
         fd = os.open(temporary, flags, 0o600)
@@ -205,7 +197,7 @@ def _atomic_write(root: Path, target: Path, payload: bytes) -> None:
     try:
         os.replace(temporary, target)
         os.chmod(target, 0o600)
-        _fsync_directory(root)
+        fsync_directory(root)
     except Exception as exc:
         try:
             temporary.unlink()

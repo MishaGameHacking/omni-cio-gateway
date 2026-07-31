@@ -1,0 +1,67 @@
+name: Self-Hosted Windows Smoke
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/self-hosted-windows-smoke.yml"
+      - ".github/workflows/regression-shield.yml"
+      - "scripts/bootstrap_windows_ci_python.cmd"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: self-hosted-windows-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: Windows runner smoke test
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: Verify runner and Git
+        shell: cmd
+        run: |
+          @echo off
+          if not "%RUNNER_OS%"=="Windows" exit /b 1
+          if not exist .git exit /b 1
+          git --version
+          whoami
+          echo Runner OS verified: %RUNNER_OS%
+          echo Runner architecture: %RUNNER_ARCH%
+
+      - name: Bootstrap isolated Python 3.12.10
+        shell: cmd
+        run: scripts\bootstrap_windows_ci_python.cmd
+
+      - name: Restore service-account PowerShell policy
+        if: always()
+        shell: cmd
+        run: >-
+          powershell.exe -NoLogo -NoProfile -NonInteractive
+          -ExecutionPolicy Bypass -Command
+          "Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy Undefined -Force"
+
+      - name: Verify Python and workspace
+        shell: cmd
+        run: |
+          @echo off
+          python -c "import pathlib, sys; assert sys.version_info[:3] == (3, 12, 10); assert pathlib.Path('pyproject.toml').is_file(); print(sys.version)"
+          git status --short
+
+      - name: Clean workspace
+        if: always()
+        shell: cmd
+        run: |
+          @echo off
+          git reset --hard HEAD
+          git clean -ffdx

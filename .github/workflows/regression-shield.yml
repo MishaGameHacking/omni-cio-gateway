@@ -18,8 +18,12 @@ concurrency:
 jobs:
   quality-and-regression:
     name: Quality, contracts and coverage
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 35
+    defaults:
+      run:
+        shell: bash
     env:
       TINVEST_TOKEN: regression-test-tinvest-token # pragma: allowlist secret
       GATEWAY_API_KEY: regression-test-gateway-key # pragma: allowlist secret
@@ -28,20 +32,32 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
-
-      - name: Set up Python 3.12
-        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: |
-            requirements.txt
-            requirements-dev.txt
+          persist-credentials: false
+
+      - name: Bootstrap isolated Python 3.12.10
+        shell: cmd
+        run: scripts\bootstrap_windows_ci_python.cmd
+
+      - name: Create isolated CI environment
+        run: |
+          VENV_ROOT="$(cygpath -u "$RUNNER_TEMP")"
+          VENV_PATH="$VENV_ROOT/omni-cio-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${GITHUB_JOB}"
+          rm -rf "$VENV_PATH"
+          python -m venv "$VENV_PATH"
+          echo "VENV_PATH=$VENV_PATH" >> "$GITHUB_ENV"
+          echo "$(cygpath -w "$VENV_PATH/Scripts")" >> "$GITHUB_PATH"
+          "$VENV_PATH/Scripts/python.exe" -m pip --version
+
+      - name: Build strict Windows dependency projection
+        run: >-
+          python scripts/windows_ci_lock.py project
+          requirements-dev.txt windows-requirements-dev.txt
 
       - name: Install hash-locked dependencies
         run: >-
           python -m pip install --disable-pip-version-check
-          --require-hashes -r requirements-dev.txt
+          --require-hashes -r windows-requirements-dev.txt
 
       - name: Verify lock files are current
         run: |
@@ -51,7 +67,7 @@ jobs:
             --resolver=backtracking \
             --strip-extras \
             --quiet \
-            --output-file=requirements.txt \
+            --output-file=windows-compiled-requirements.txt \
             requirements.in
           python -m piptools compile \
             --allow-unsafe \
@@ -59,9 +75,12 @@ jobs:
             --resolver=backtracking \
             --strip-extras \
             --quiet \
-            --output-file=requirements-dev.txt \
+            --output-file=windows-compiled-requirements-dev.txt \
             requirements-dev.in
-          git diff --exit-code -- requirements.txt requirements-dev.txt
+          python scripts/windows_ci_lock.py verify \
+            requirements.txt windows-compiled-requirements.txt
+          python scripts/windows_ci_lock.py verify \
+            requirements-dev.txt windows-compiled-requirements-dev.txt
 
       - name: Verify CI and security policy
         run: python scripts/check_ci_security_baseline.py
@@ -150,29 +169,58 @@ jobs:
             mypy-results.txt
             pytest-results.xml
             coverage.xml
+            windows-compiled-requirements.txt
+            windows-compiled-requirements-dev.txt
           if-no-files-found: warn
           retention-days: 3
 
+      - name: Clean self-hosted workspace
+        if: always()
+        run: |
+          rm -rf "$VENV_PATH"
+          git reset --hard HEAD
+          git clean -ffdx
+
   security:
     name: Dependency, code and secret security
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 35
+    defaults:
+      run:
+        shell: bash
 
     steps:
       - name: Check out repository
         uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
-
-      - name: Set up Python 3.12
-        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: requirements-dev.txt
+          persist-credentials: false
+
+      - name: Bootstrap isolated Python 3.12.10
+        shell: cmd
+        run: scripts\bootstrap_windows_ci_python.cmd
+
+      - name: Create isolated CI environment
+        run: |
+          VENV_ROOT="$(cygpath -u "$RUNNER_TEMP")"
+          VENV_PATH="$VENV_ROOT/omni-cio-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${GITHUB_JOB}"
+          rm -rf "$VENV_PATH"
+          python -m venv "$VENV_PATH"
+          echo "VENV_PATH=$VENV_PATH" >> "$GITHUB_ENV"
+          echo "$(cygpath -w "$VENV_PATH/Scripts")" >> "$GITHUB_PATH"
+          "$VENV_PATH/Scripts/python.exe" -m pip --version
+
+      - name: Build strict Windows dependency projections
+        run: |
+          python scripts/windows_ci_lock.py project \
+            requirements-dev.txt windows-requirements-dev.txt
+          python scripts/windows_ci_lock.py project \
+            requirements.txt windows-requirements.txt
 
       - name: Install hash-locked security tools
         run: >-
           python -m pip install --disable-pip-version-check
-          --require-hashes -r requirements-dev.txt
+          --require-hashes -r windows-requirements-dev.txt
 
       - name: Audit runtime dependencies
         run: >-
@@ -182,7 +230,7 @@ jobs:
           --strict
           --vulnerability-service osv
           --progress-spinner off
-          -r requirements.txt
+          -r windows-requirements.txt
 
       - name: Run medium/high-confidence SAST
         run: python -m bandit -c pyproject.toml -r . -ll -ii -q
@@ -191,5 +239,12 @@ jobs:
         run: >-
           python -m detect_secrets scan --all-files
           --exclude-files
-          '(^|/)(\.git|\.mypy_cache|\.ruff_cache|__pycache__|requirements(-dev)?\.txt|coverage\.xml|pytest-results\.xml)(/|$)'
+          '(^|[\\/])(\.git|\.venv|\.venv-ci|\.mypy_cache|\.ruff_cache|__pycache__|requirements(-dev)?\.txt|windows-.*requirements.*\.txt|coverage\.xml|pytest-results\.xml)([\\/]|$)'
           | python scripts/check_ci_security_baseline.py --detect-secrets-report
+
+      - name: Clean self-hosted workspace
+        if: always()
+        run: |
+          rm -rf "$VENV_PATH"
+          git reset --hard HEAD
+          git clean -ffdx

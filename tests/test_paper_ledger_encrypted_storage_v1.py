@@ -249,8 +249,9 @@ def test_atomic_encrypted_round_trip_hides_plaintext_and_sets_permissions(
     assert restored == record
     assert b"paper_account_ledger" not in raw
     assert ACCOUNT.masked_id.encode() not in raw
-    assert stored.stat().st_mode & 0o777 == 0o600
-    assert (tmp_path / "paper").stat().st_mode & 0o777 == 0o700
+    if os.name != "nt":
+        assert stored.stat().st_mode & 0o777 == 0o600
+        assert (tmp_path / "paper").stat().st_mode & 0o777 == 0o700
     assert envelope.storage_backend_attached is True
     assert envelope.external_key_management is True
     assert envelope.execution_ready is False
@@ -415,7 +416,10 @@ def test_root_and_record_symlinks_are_rejected(tmp_path: Path) -> None:
     real = tmp_path / "real"
     real.mkdir()
     root_link = tmp_path / "root-link"
-    root_link.symlink_to(real, target_is_directory=True)
+    try:
+        root_link.symlink_to(real, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"symlink creation is unavailable on this Windows runner: {exc}")
     manager = _TestAeadKeyManager({"enc-a": ENCRYPTION_A})
 
     with pytest.raises(PaperLedgerStorageError, match="ROOT_SYMLINK_FORBIDDEN"):
@@ -459,13 +463,14 @@ def test_unsafe_permissions_and_envelope_metadata_tampering_are_rejected(
         key_manager=manager,
         encryption_key_id="enc-a",
     )
-    os.chmod(stored, 0o644)
-    with pytest.raises(PaperLedgerStorageError, match="PERMISSIONS_UNSAFE"):
-        load_encrypted_paper_ledger_archive(
-            root,
-            key_manager=manager,
-            signing_keys={"signing-a": SIGNING_A},
-        )
+    if os.name != "nt":
+        os.chmod(stored, 0o644)
+        with pytest.raises(PaperLedgerStorageError, match="PERMISSIONS_UNSAFE"):
+            load_encrypted_paper_ledger_archive(
+                root,
+                key_manager=manager,
+                signing_keys={"signing-a": SIGNING_A},
+            )
 
     os.chmod(stored, 0o600)
     data = json.loads(stored.read_text())

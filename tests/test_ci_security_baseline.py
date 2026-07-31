@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
+import re
+
+import pytest
 
 
 SCRIPT_PATH = (
@@ -55,6 +58,64 @@ def test_action_pin_validator_accepts_only_full_commit_sha() -> None:
 
     assert len(failures) == 1
     assert "actions/setup-python@v6" in failures[0]
+
+
+def test_workflow_validator_requires_self_hosted_isolation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workflow_path = tmp_path / "regression-shield.yml"
+    commands = "\n".join(baseline.REQUIRED_WORKFLOW_COMMANDS.values())
+    workflow_path.write_text(
+        f"permissions: contents: read\n{commands}\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(baseline, "WORKFLOW_PATH", workflow_path)
+    failures: list[str] = []
+
+    baseline.validate_workflow(failures)
+
+    assert any("dedicated self-hosted" in failure for failure in failures)
+    assert any("reject fork" in failure for failure in failures)
+    assert any("persisted credentials" in failure for failure in failures)
+    assert any("verified Python runtime" in failure for failure in failures)
+    assert any("RUNNER_TEMP" in failure for failure in failures)
+    assert any("external virtual environment" in failure for failure in failures)
+
+
+def test_workflow_validator_rejects_checkout_local_virtualenv(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workflow_path = tmp_path / "regression-shield.yml"
+    commands = "\n".join(baseline.REQUIRED_WORKFLOW_COMMANDS.values())
+    workflow_path.write_text(
+        f"{commands}\npython -m venv .venv-ci\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(baseline, "WORKFLOW_PATH", workflow_path)
+    failures: list[str] = []
+
+    baseline.validate_workflow(failures)
+
+    assert any("outside the repository checkout" in failure for failure in failures)
+
+
+def test_secret_scan_exclude_pattern_is_cross_platform() -> None:
+    pattern = re.compile(baseline.SECRET_SCAN_EXCLUDE_PATTERN)
+
+    excluded = (
+        ".venv/Lib/site-packages/example.py",
+        r".venv-ci\Lib\site-packages\example.py",
+        ".git/objects/aa/bb",
+        r"build\.mypy_cache\3.12\cache.json",
+        "requirements-dev.txt",
+        r"artifacts\windows-compiled-requirements.txt",
+    )
+    for candidate in excluded:
+        assert pattern.search(candidate), candidate
+
+    assert pattern.search("tests/test_windows_ci_lock.py") is None
 
 
 def test_detect_secrets_validator_reports_only_real_findings() -> None:

@@ -22,6 +22,7 @@ from omni_cio.paper.archive_v1 import (
     serialize_paper_ledger_record,
     verify_paper_ledger_archive_chain,
 )
+from omni_cio.paper.filesystem_v1 import fsync_directory, permissions_are_owner_only
 
 
 _MAX_ENVELOPE_BYTES = 12 * 1024 * 1024
@@ -249,15 +250,6 @@ def _prepare_root(root: Path) -> Path:
     return resolved
 
 
-def _fsync_directory(root: Path) -> None:
-    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
-    fd = os.open(root, flags)
-    try:
-        os.fsync(fd)
-    finally:
-        os.close(fd)
-
-
 def _write_all(fd: int, payload: bytes) -> None:
     view = memoryview(payload)
     written = 0
@@ -286,7 +278,7 @@ def _exclusive_writer_lock(root: Path) -> Iterator[None]:
             lock_path.unlink()
         except FileNotFoundError:
             pass
-        _fsync_directory(root)
+        fsync_directory(root)
 
 
 def _storage_name(record: PaperLedgerArchiveRecordV1) -> str:
@@ -311,7 +303,7 @@ def _atomic_write(root: Path, target: Path, payload: bytes) -> None:
     try:
         os.replace(temporary, target)
         os.chmod(target, 0o600)
-        _fsync_directory(root)
+        fsync_directory(root)
     except Exception:
         try:
             temporary.unlink()
@@ -364,7 +356,7 @@ def _read_secure_file(path: Path) -> bytes:
         info = os.fstat(fd)
         if not stat.S_ISREG(info.st_mode):
             raise PaperLedgerStorageError("PAPER_STORAGE_FILE_NOT_REGULAR")
-        if info.st_mode & 0o077:
+        if not permissions_are_owner_only(info.st_mode):
             raise PaperLedgerStorageError("PAPER_STORAGE_FILE_PERMISSIONS_UNSAFE")
         if info.st_size <= 0 or info.st_size > _MAX_ENVELOPE_BYTES:
             raise PaperLedgerStorageError("PAPER_STORAGE_FILE_SIZE_INVALID")

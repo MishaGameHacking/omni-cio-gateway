@@ -168,7 +168,8 @@ def test_cooldown_suppression_is_not_persisted_but_recovery_is() -> None:
     )
     assert len(recovered.evidence) == 1
     assert recovered.evidence[0].disposition is CbrKeyRateAlertDisposition.RECOVERED
-    assert [item.disposition for item in lifecycle.evidence()] == [
+    retained = lifecycle.evidence(checked_at=NOW + timedelta(minutes=2))
+    assert [item.disposition for item in retained] == [
         CbrKeyRateAlertDisposition.FIRED,
         CbrKeyRateAlertDisposition.RECOVERED,
     ]

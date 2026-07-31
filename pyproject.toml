@@ -66,4 +66,12 @@ show_missing = true
 skip_covered = false
 
 [tool.bandit]
-exclude_dirs = ["tests"]
+exclude_dirs = [
+  ".git",
+  ".mypy_cache",
+  ".pytest_cache",
+  ".ruff_cache",
+  ".venv-ci",
+  "__pycache__",
+  "tests",
+]

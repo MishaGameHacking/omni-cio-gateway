@@ -20,6 +20,7 @@ from omni_cio.contracts.v1.paper_recovery import (
     PaperLedgerRecoveryManifestV1,
     PaperLedgerRetentionPlanV1,
 )
+from omni_cio.paper.filesystem_v1 import permissions_are_owner_only
 from omni_cio.paper.storage_v1 import (
     ExternalPaperLedgerKeyManager,
     PaperLedgerStorageError,
@@ -118,7 +119,7 @@ def _read_secure_archive_file(path: Path) -> bytes:
         info = os.fstat(fd)
         if not stat.S_ISREG(info.st_mode):
             raise PaperLedgerRecoveryError("PAPER_RECOVERY_FILE_NOT_REGULAR")
-        if info.st_mode & 0o077:
+        if not permissions_are_owner_only(info.st_mode):
             raise PaperLedgerRecoveryError("PAPER_RECOVERY_FILE_PERMISSIONS_UNSAFE")
         if info.st_size <= 0 or info.st_size > _MAX_ARCHIVE_FILE_BYTES:
             raise PaperLedgerRecoveryError("PAPER_RECOVERY_FILE_SIZE_INVALID")
@@ -459,7 +460,7 @@ def diagnose_paper_ledger_writer_lock(
     info = lock_path.lstat()
     symlink_detected = stat.S_ISLNK(info.st_mode)
     regular_file = stat.S_ISREG(info.st_mode)
-    permissions_safe = not bool(info.st_mode & 0o077)
+    permissions_safe = permissions_are_owner_only(info.st_mode)
     age_seconds = max(0, int(timestamp.timestamp() - info.st_mtime))
     content_valid = False
     if regular_file and not symlink_detected and info.st_size <= 1024:

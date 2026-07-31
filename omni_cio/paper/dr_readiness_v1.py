@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import os
 from pathlib import Path
 import re
+import shutil
 import stat
 from typing import Literal
 
@@ -26,6 +27,7 @@ from omni_cio.contracts.v1.paper_recovery import (
     PaperLedgerLockDiagnosticV1,
     PaperLedgerRecoveryManifestV1,
 )
+from omni_cio.paper.filesystem_v1 import permissions_are_owner_only
 from omni_cio.paper.recovery_v1 import (
     PaperLedgerRecoveryError,
     diagnose_paper_ledger_writer_lock,
@@ -71,7 +73,7 @@ def _inspect_root(
         info = resolved.stat()
     except (FileNotFoundError, OSError):
         return None, blocker
-    if not stat.S_ISDIR(info.st_mode) or info.st_mode & 0o077:
+    if not stat.S_ISDIR(info.st_mode) or not permissions_are_owner_only(info.st_mode):
         return None, blocker
     return resolved, None
 
@@ -91,12 +93,12 @@ def _capacity(
     minimum_free_bytes: int,
 ) -> PaperLedgerDrFilesystemCapacityV1:
     try:
-        usage = os.statvfs(root)
+        usage = shutil.disk_usage(root)
         device_id = root.stat().st_dev
     except OSError as exc:
         raise PaperLedgerDrAssessmentError("PAPER_DR_CAPACITY_READ_FAILED") from exc
-    total_bytes = usage.f_frsize * usage.f_blocks
-    free_bytes = usage.f_frsize * usage.f_bavail
+    total_bytes = usage.total
+    free_bytes = usage.free
     if total_bytes <= 0 or free_bytes < 0:
         raise PaperLedgerDrAssessmentError("PAPER_DR_CAPACITY_INVALID")
     return PaperLedgerDrFilesystemCapacityV1(
@@ -158,7 +160,7 @@ def _temp_artifacts(
                 age_seconds=max(0, int((assessed_at - modified_at).total_seconds())),
                 regular_file=stat.S_ISREG(info.st_mode),
                 symlink_detected=stat.S_ISLNK(info.st_mode),
-                permissions_safe=not bool(info.st_mode & 0o077),
+                permissions_safe=permissions_are_owner_only(info.st_mode),
             )
         )
     return tuple(artifacts)
@@ -176,7 +178,7 @@ def _read_secure_manifest(path: Path) -> bytes:
             raise PaperLedgerDrAssessmentError("PAPER_DR_MANIFEST_NOT_REGULAR")
         if info.st_nlink != 1:
             raise PaperLedgerDrAssessmentError("PAPER_DR_MANIFEST_HARDLINK_FORBIDDEN")
-        if info.st_mode & 0o077:
+        if not permissions_are_owner_only(info.st_mode):
             raise PaperLedgerDrAssessmentError("PAPER_DR_MANIFEST_PERMISSIONS_UNSAFE")
         if info.st_size <= 0 or info.st_size > _MAX_MANIFEST_BYTES:
             raise PaperLedgerDrAssessmentError("PAPER_DR_MANIFEST_SIZE_INVALID")
