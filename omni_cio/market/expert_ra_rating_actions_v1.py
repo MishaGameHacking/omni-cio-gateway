@@ -464,6 +464,10 @@ def parse_expert_ra_issuer_rating_actions_html(
     try:
         parser.feed(text)
         parser.close()
+        if parser._href is not None or parser._ignored_depth != 0:
+            raise ExpertRaRatingActionsSourceError(
+                CreditRatingSourceErrorCode.HTML_INVALID.value
+            )
     except ExpertRaRatingActionsSourceError:
         raise
     except (AssertionError, RecursionError, ValueError) as exc:
