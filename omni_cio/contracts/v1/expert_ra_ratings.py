@@ -61,6 +61,7 @@ _EXPERT_RA_RELEASE_URL_PATTERN = (
 )
 _EXPERT_RA_RELEASE_URL_RE = re.compile(_EXPERT_RA_RELEASE_URL_PATTERN)
 _EXPERT_RA_PUBLICATION_FUTURE_TOLERANCE = timedelta(days=1)
+_MAX_EXPERT_RA_SNAPSHOT_RECORDS = 30
 
 
 class ExpertRaIssuerRatingActionV1(ContractModel):
@@ -174,7 +175,10 @@ class ExpertRaIssuerRatingActionsSnapshotV1(ContractModel):
     retrieved_at: datetime
     status: CreditRatingSourceStatus
     source: MarketSourceV1 | None = None
-    records: tuple[ExpertRaIssuerRatingActionV1, ...] = ()
+    records: Annotated[
+        tuple[ExpertRaIssuerRatingActionV1, ...],
+        Field(max_length=_MAX_EXPERT_RA_SNAPSHOT_RECORDS),
+    ] = ()
     error_code: CreditRatingSourceErrorCode | None = None
     warnings: tuple[
         Annotated[str, Field(min_length=1, max_length=256)],
@@ -217,6 +221,15 @@ class ExpertRaIssuerRatingActionsSnapshotV1(ContractModel):
             release_urls = tuple(record.release_url for record in self.records)
             if len(set(release_urls)) != len(release_urls):
                 raise ValueError("Expert RA release URLs must be unique")
+            expected_order = tuple(
+                sorted(
+                    self.records,
+                    key=lambda item: (item.published_on, item.release_url),
+                    reverse=True,
+                )
+            )
+            if self.records != expected_order:
+                raise ValueError("Expert RA records must be sorted newest first")
         elif self.source is not None or self.records or self.error_code is None:
             raise ValueError("unavailable Expert RA snapshot is inconsistent")
         return self
