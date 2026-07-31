@@ -47,20 +47,27 @@ The HTML parser opens the extraction scope only on a plain visible
 `Рейтинговые действия` heading. A navigation link with the same label cannot open
 the scope.
 
+Anchor state is tracked separately from the `href` value. Therefore an `<a>`
+element without `href`, or with a blank `href`, remains a link event and cannot
+impersonate plain heading text.
+
 The scope ends only on:
 
 - a plain visible `Аналитика` heading; or
 - the exact official internal `https://raexpert.ru/researches/` identity,
   including the fixed `www` host alias.
 
-External hosts, other paths, query strings and fragments cannot terminate the
-scope. This matches the current live homepage while preserving fail-closed
-identity controls.
+External hosts, other paths, query strings, fragments and no-`href` anchors
+cannot terminate the scope. This matches the current live homepage while
+preserving fail-closed identity controls.
 
-A publication date may be a separate link to the same official release. The date
-is validated before the parser decides that a later action link begins the next
-record. Missing, invalid or materially future dates fail closed. The calendar
-date encoded in the canonical release URL must exactly equal `published_on`.
+A publication date may be plain visible text or a separate link to the same
+official release. Every linked date is canonicalized under the same release URL
+rules as its action and must resolve to the exact same release. External, blank
+or different-release date links fail closed. The date is then validated before
+the parser decides that a later action link begins the next record. Missing,
+invalid or materially future dates fail closed. The calendar date encoded in the
+canonical release URL must exactly equal `published_on`.
 
 ## Supported records
 
@@ -113,6 +120,7 @@ but no longer matches the allowlisted grammar fails closed.
 - script, style and noscript content ignored;
 - unclosed anchor/script/style/noscript state fails as invalid HTML;
 - exact page-section markers required;
+- linked dates must use the exact action release identity;
 - publication date must be adjacent, valid and not materially in the future;
 - release URL month/day must be calendar-valid and match `published_on`;
 - release URL conflicts fail closed;
@@ -169,12 +177,13 @@ existing read-only OpenAPI remain unchanged.
 
 Tests cover contracts, five action types, rating-glyph normalization, outlooks,
 issuer-only filtering, malformed supported titles, live linked section boundary,
-spoofed boundary rejection, URL confinement, calendar-valid release identity,
-URL/publication-date matching, source/snapshot retrieval timestamp matching,
-linked dates, duplicate conflicts, script exclusion, truncated HTML, isolated
-transport, finite/non-expansive controls, fixed endpoint, content type/size,
-network failure redaction, versioned exports and absence of generic URL, startup,
-route and broker-write surfaces.
+no-`href` anchor isolation, spoofed boundary rejection, URL confinement,
+calendar-valid release identity, URL/publication-date matching, exact linked-date
+release identity, source/snapshot retrieval timestamp matching, duplicate
+conflicts, script exclusion, truncated HTML, isolated transport,
+finite/non-expansive controls, fixed endpoint, content type/size, network failure
+redaction, versioned exports and absence of generic URL, startup, route and
+broker-write surfaces.
 
 ## Next package
 
