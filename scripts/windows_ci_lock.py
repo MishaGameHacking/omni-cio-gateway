@@ -82,8 +82,7 @@ def _parse_block(block: list[str] | tuple[str, ...]) -> LockedRequirement:
 
 def _windows_additions() -> dict[str, LockedRequirement]:
     additions = {
-        name: _parse_block(block)
-        for name, block in _WINDOWS_ADDITION_BLOCKS.items()
+        name: _parse_block(block) for name, block in _WINDOWS_ADDITION_BLOCKS.items()
     }
     if set(additions) != set(_WINDOWS_ADDITION_BLOCKS):
         raise ValueError("invalid Windows addition map")
