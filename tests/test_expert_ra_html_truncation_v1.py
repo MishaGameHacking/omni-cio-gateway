@@ -41,3 +41,24 @@ def test_parser_rejects_truncated_open_state(truncated_tail: str) -> None:
             payload,
             retrieved_at=NOW,
         )
+
+
+@pytest.mark.parametrize("wrong_closing_tag", ["style", "script"])
+def test_parser_rejects_mismatched_ignored_tag(
+    wrong_closing_tag: str,
+) -> None:
+    payload = (
+        f"<html><body><noscript></{wrong_closing_tag}>"
+        "<h1>Рейтинговые действия</h1>"
+        f"{_VALID_ACTION}"
+        "<h2>Аналитика</h2></body></html>"
+    ).encode()
+
+    with pytest.raises(
+        ExpertRaRatingActionsSourceError,
+        match=CreditRatingSourceErrorCode.HTML_INVALID.value,
+    ):
+        parse_expert_ra_issuer_rating_actions_html(
+            payload,
+            retrieved_at=NOW,
+        )
