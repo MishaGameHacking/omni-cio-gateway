@@ -1,0 +1,62 @@
+name: Self-Hosted Windows Smoke
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/self-hosted-windows-smoke.yml"
+      - ".github/workflows/regression-shield.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: self-hosted-windows-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: Windows runner smoke test
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+
+      - name: Verify runner and Git
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          if ($env:RUNNER_OS -ne "Windows") {
+            throw "Expected Windows runner, got '$env:RUNNER_OS'."
+          }
+          if (-not (Test-Path ".git")) {
+            throw "Repository checkout is missing."
+          }
+          git --version
+          Write-Host "Runner OS verified: $env:RUNNER_OS"
+          Write-Host "Runner architecture: $env:RUNNER_ARCH"
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Verify Python and workspace
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          python -c "import pathlib, sys; assert sys.version_info[:2] == (3, 12); assert pathlib.Path('pyproject.toml').is_file(); print(sys.version)"
+          git status --short
+
+      - name: Clean workspace
+        if: always()
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Continue"
+          git reset --hard HEAD
+          git clean -ffdx
