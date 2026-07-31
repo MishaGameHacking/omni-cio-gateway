@@ -14,6 +14,10 @@ from omni_cio.contracts.v1.moex_alerting import (
     MoexQuoteAlertKind,
     MoexQuoteAlertPolicyV1,
 )
+from omni_cio.observability.acra_rating_actions_alert_policy_v1 import (
+    AcraRatingActionsAlertPolicyError,
+    AcraRatingActionsAlertPolicyEvaluatorV1,
+)
 from omni_cio.observability.acra_rating_actions_events_v1 import (
     AcraRatingActionsObservabilityError,
     build_acra_rating_actions_cache_event,
@@ -54,6 +58,8 @@ from omni_cio.observability.safe_events_v1 import (
 )
 
 __all__ = [
+    "AcraRatingActionsAlertPolicyError",
+    "AcraRatingActionsAlertPolicyEvaluatorV1",
     "AcraRatingActionsObservabilityError",
     "CbrKeyRateAlertDisposition",
     "CbrKeyRateAlertEvidenceV1",
