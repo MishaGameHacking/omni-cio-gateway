@@ -126,11 +126,6 @@ _SUPPORTED_RATINGS = frozenset(
         "ruD",
     }
 )
-_SENSITIVE_REQUEST_HEADERS = (
-    "authorization",
-    "proxy-authorization",
-    "cookie",
-)
 _MAX_CLOCK_SKEW = timedelta(days=1)
 
 
@@ -542,16 +537,16 @@ def _error_code_from_exception(
         return CreditRatingSourceErrorCode.SCHEMA_INVALID
 
 
-def _build_public_request(client: httpx.Client) -> httpx.Request:
-    request = client.build_request(
+def _build_public_request(*, timeout_seconds: float) -> httpx.Request:
+    return httpx.Request(
         "GET",
         EXPERT_RA_RATING_ACTIONS_ENDPOINT,
-        headers={"Accept": "text/html,application/xhtml+xml"},
+        headers={
+            "Accept": "text/html,application/xhtml+xml",
+            "User-Agent": "omni-cio-gateway/1.0",
+        },
+        extensions={"timeout": httpx.Timeout(timeout_seconds).as_dict()},
     )
-    for header in _SENSITIVE_REQUEST_HEADERS:
-        if header in request.headers:
-            del request.headers[header]
-    return request
 
 
 def fetch_expert_ra_issuer_rating_actions(
@@ -580,13 +575,13 @@ def fetch_expert_ra_issuer_rating_actions(
         timeout=timeout_seconds,
         follow_redirects=False,
         trust_env=False,
-        headers={"Accept": "text/html,application/xhtml+xml"},
     )
-    request = _build_public_request(active_client)
+    request = _build_public_request(timeout_seconds=float(timeout_seconds))
     try:
         response = active_client.send(
             request,
             stream=True,
+            auth=None,
             follow_redirects=False,
         )
         try:
