@@ -12,11 +12,11 @@ from omni_cio.contracts.v1.expert_ra_alerting import (
     ExpertRaRatingActionsAlertEvaluationV1,
     ExpertRaRatingActionsAlertEvidenceV1,
 )
-from omni_cio.contracts.v1.observability import ObservabilityEventV1
 from omni_cio.contracts.v1.expert_ra_ratings import (
     ExpertRaIssuerRatingActionsCacheResultV1,
     ExpertRaIssuerRatingActionsSnapshotV1,
 )
+from omni_cio.contracts.v1.observability import ObservabilityEventV1
 from omni_cio.observability.expert_ra_rating_actions_alert_policy_v1 import (
     ExpertRaRatingActionsAlertPolicyEvaluatorV1,
 )
@@ -35,7 +35,7 @@ EvidenceSinkV1 = Callable[[ExpertRaRatingActionsAlertEvidenceV1], None]
 
 
 class ExpertRaRatingActionsOperationsLifecycleError(ValueError):
-    """The internal EXPERT_RA operations lifecycle cannot run safely."""
+    """The internal Expert RA operations lifecycle cannot run safely."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -132,10 +132,18 @@ class ExpertRaRatingActionsOperationsLifecycleV1:
         occurred_at: datetime | None = None,
         correlation_id: str | None = None,
     ) -> ExpertRaRatingActionsOperationsBatchV1:
+        if not isinstance(snapshot, ExpertRaIssuerRatingActionsSnapshotV1):
+            raise ExpertRaRatingActionsOperationsLifecycleError(
+                "EXPERT_RA_OPERATIONS_SOURCE_TYPE_INVALID"
+            )
         event = build_expert_ra_rating_actions_source_event(
             snapshot,
             duration_ms=duration_ms,
-            occurred_at=(snapshot.retrieved_at if occurred_at is None else occurred_at),
+            occurred_at=(
+                snapshot.retrieved_at
+                if occurred_at is None
+                else occurred_at
+            ),
             correlation_id=correlation_id,
         )
         return self._process(event)
@@ -148,10 +156,16 @@ class ExpertRaRatingActionsOperationsLifecycleV1:
         occurred_at: datetime | None = None,
         correlation_id: str | None = None,
     ) -> ExpertRaRatingActionsOperationsBatchV1:
+        if not isinstance(result, ExpertRaIssuerRatingActionsCacheResultV1):
+            raise ExpertRaRatingActionsOperationsLifecycleError(
+                "EXPERT_RA_OPERATIONS_CACHE_TYPE_INVALID"
+            )
         event = build_expert_ra_rating_actions_cache_event(
             result,
             duration_ms=duration_ms,
-            occurred_at=(result.checked_at if occurred_at is None else occurred_at),
+            occurred_at=(
+                result.checked_at if occurred_at is None else occurred_at
+            ),
             correlation_id=correlation_id,
         )
         return self._process(event)
@@ -272,7 +286,7 @@ class ExpertRaRatingActionsOperationsLifecycleV1:
 
     @staticmethod
     def _aware_utc(value: datetime | None) -> datetime:
-        selected = value or datetime.now(timezone.utc)
+        selected = datetime.now(timezone.utc) if value is None else value
         if (
             not isinstance(selected, datetime)
             or selected.tzinfo is None
