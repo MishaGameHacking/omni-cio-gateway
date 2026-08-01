@@ -34,7 +34,8 @@ _ALLOWED_CONTENT_TYPES = {"text/html", "application/xhtml+xml"}
 _ALLOWED_RELEASE_HOSTS = frozenset({"raexpert.ru", "www.raexpert.ru"})
 _ALLOWED_RELEASE_PATH = re.compile(
     r"^/releases/(?P<year>20[0-9]{2})/"
-    r"(?P<slug>[a-z]{3}(?:0[1-9]|[12][0-9]|3[01])[a-z]?)/?$",
+    r"(?P<slug>(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)"
+    r"(?:0[1-9]|[12][0-9]|3[01])[a-z]?)/?$",
     re.IGNORECASE,
 )
 _DATE_PATTERN = re.compile(
