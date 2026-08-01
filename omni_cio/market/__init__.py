@@ -47,6 +47,12 @@ from omni_cio.market.equity_fundamentals_v1 import (
     EquityFundamentalAssessmentError,
     assess_equity_fundamentals,
 )
+from omni_cio.market.expert_ra_rating_actions_cache_v1 import (
+    DEFAULT_EXPERT_RA_RATING_CACHE_FRESH_SECONDS,
+    DEFAULT_EXPERT_RA_RATING_CACHE_STALE_SECONDS,
+    ExpertRaIssuerRatingActionsCacheV1,
+    ExpertRaRatingActionsCacheError,
+)
 from omni_cio.market.expert_ra_rating_actions_v1 import (
     EXPERT_RA_RATING_ACTIONS_ENDPOINT,
     EXPERT_RA_RATING_ACTIONS_SOURCE_ID,
@@ -89,12 +95,16 @@ __all__ = [
     "CBR_KEY_RATE_SOAP_ACTION",
     "DEFAULT_ACRA_RATING_CACHE_FRESH_SECONDS",
     "DEFAULT_ACRA_RATING_CACHE_STALE_SECONDS",
+    "DEFAULT_EXPERT_RA_RATING_CACHE_FRESH_SECONDS",
+    "DEFAULT_EXPERT_RA_RATING_CACHE_STALE_SECONDS",
     "MOEX_ISS_TQBR_QUOTE_ENDPOINT_TEMPLATE",
     "CapacityAssessmentError",
     "CbrKeyRateCacheError",
     "CbrKeyRateCacheV1",
     "CbrKeyRateSourceError",
     "EquityFundamentalAssessmentError",
+    "ExpertRaIssuerRatingActionsCacheV1",
+    "ExpertRaRatingActionsCacheError",
     "ExpertRaRatingActionsSourceError",
     "FundStructuralAssessmentError",
     "MarketResearchAssessmentError",
