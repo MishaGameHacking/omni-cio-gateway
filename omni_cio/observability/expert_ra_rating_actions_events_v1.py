@@ -50,7 +50,10 @@ def _safe_duration(value: Decimal | None) -> Decimal | None:
 def _safe_correlation_id(value: str | None) -> str | None:
     if value is None:
         return None
-    if not isinstance(value, str) or _OPAQUE_CORRELATION_ID.fullmatch(value) is None:
+    if (
+        not isinstance(value, str)
+        or _OPAQUE_CORRELATION_ID.fullmatch(value) is None
+    ):
         raise ExpertRaRatingActionsObservabilityError(
             "EXPERT_RA_RATING_ACTIONS_OBSERVABILITY_CORRELATION_ID_INVALID"
         )
@@ -72,7 +75,7 @@ def _validated_snapshot(
         validated = ExpertRaIssuerRatingActionsSnapshotV1.model_validate(
             value.model_dump(mode="python", warnings="error")
         )
-    except Exception as exc:
+    except Exception:
         raise ExpertRaRatingActionsObservabilityError(
             "EXPERT_RA_RATING_ACTIONS_OBSERVABILITY_SOURCE_INVALID"
         ) from None
@@ -94,7 +97,7 @@ def _validated_cache_result(
         validated = ExpertRaIssuerRatingActionsCacheResultV1.model_validate(
             value.model_dump(mode="python", warnings="error")
         )
-    except Exception as exc:
+    except Exception:
         raise ExpertRaRatingActionsObservabilityError(
             "EXPERT_RA_RATING_ACTIONS_OBSERVABILITY_CACHE_INVALID"
         ) from None
@@ -162,7 +165,10 @@ def build_expert_ra_rating_actions_source_event(
                 "expert_ra.fixed_official_source",
                 safe_snapshot.fixed_official_source,
             ),
-            _metric("expert_ra.issuer_scope_only", safe_snapshot.issuer_scope_only),
+            _metric(
+                "expert_ra.issuer_scope_only",
+                safe_snapshot.issuer_scope_only,
+            ),
             _metric(
                 "expert_ra.identity_resolution_required",
                 safe_snapshot.subject_identity_resolution_required,
@@ -294,7 +300,10 @@ def build_expert_ra_rating_actions_cache_event(
                 "expert_ra.fixed_official_source",
                 safe_result.fixed_official_source,
             ),
-            _metric("expert_ra.issuer_scope_only", safe_result.issuer_scope_only),
+            _metric(
+                "expert_ra.issuer_scope_only",
+                safe_result.issuer_scope_only,
+            ),
             _metric(
                 "expert_ra.identity_resolution_required",
                 safe_result.subject_identity_resolution_required,
