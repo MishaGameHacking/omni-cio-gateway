@@ -6,6 +6,7 @@ from typing import Any, cast
 
 import pytest
 
+from omni_cio.contracts.v1.observability import CircuitBreakerState
 from omni_cio.contracts.v1.expert_ra_ratings import (
     ExpertRaIssuerRatingActionsSnapshotV1,
 )
@@ -62,6 +63,19 @@ def test_known_event_requires_canonical_external_latency_projection() -> None:
     assert valid.external_call is not None
     forged_call = valid.external_call.model_copy(
         update={"latency_ms": Decimal("6")}
+    )
+    forged = valid.model_copy(update={"external_call": forged_call})
+
+    with pytest.raises(ExpertRaRatingActionsAlertPolicyError):
+        evaluator.evaluate(forged)
+    assert evaluator.state_count == 0
+
+def test_known_event_rejects_forged_circuit_breaker_state() -> None:
+    evaluator = ExpertRaRatingActionsAlertPolicyEvaluatorV1()
+    valid = _unavailable_source_event()
+    assert valid.external_call is not None
+    forged_call = valid.external_call.model_copy(
+        update={"circuit_breaker_state": CircuitBreakerState.OPEN}
     )
     forged = valid.model_copy(update={"external_call": forged_call})
 
