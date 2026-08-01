@@ -75,6 +75,13 @@ from omni_cio.market.moex_iss_quote_v1 import (
     fetch_moex_iss_tqbr_quote,
     parse_moex_iss_tqbr_quote_json,
 )
+from omni_cio.market.ncr_rating_actions_v1 import (
+    NCR_RATING_ACTIONS_ENDPOINT,
+    NCR_RATING_ACTIONS_SOURCE_ID,
+    NcrRatingActionsSourceError,
+    fetch_ncr_issuer_rating_actions,
+    parse_ncr_issuer_rating_actions_html,
+)
 from omni_cio.market.technical_v1 import (
     TechnicalIndicatorAssessmentError,
     assess_technical_indicators,
@@ -98,6 +105,8 @@ __all__ = [
     "DEFAULT_EXPERT_RA_RATING_CACHE_FRESH_SECONDS",
     "DEFAULT_EXPERT_RA_RATING_CACHE_STALE_SECONDS",
     "MOEX_ISS_TQBR_QUOTE_ENDPOINT_TEMPLATE",
+    "NCR_RATING_ACTIONS_ENDPOINT",
+    "NCR_RATING_ACTIONS_SOURCE_ID",
     "CapacityAssessmentError",
     "CbrKeyRateCacheError",
     "CbrKeyRateCacheV1",
@@ -111,6 +120,7 @@ __all__ = [
     "MoexIssQuoteCacheError",
     "MoexIssQuoteSourceError",
     "MoexIssTqbrQuoteCacheV1",
+    "NcrRatingActionsSourceError",
     "TechnicalIndicatorAssessmentError",
     "aggregate_bond_portfolio_rate_stress",
     "assess_bond_credit_risk",
@@ -126,8 +136,10 @@ __all__ = [
     "fetch_cbr_key_rate",
     "fetch_expert_ra_issuer_rating_actions",
     "fetch_moex_iss_tqbr_quote",
+    "fetch_ncr_issuer_rating_actions",
     "parse_acra_issuer_rating_actions_html",
     "parse_cbr_key_rate_xml",
     "parse_expert_ra_issuer_rating_actions_html",
     "parse_moex_iss_tqbr_quote_json",
+    "parse_ncr_issuer_rating_actions_html",
 ]
