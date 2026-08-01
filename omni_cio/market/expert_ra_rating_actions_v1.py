@@ -325,20 +325,23 @@ def _find_publication_date(
     release_url: str,
     retrieved_at: datetime,
 ) -> date:
-    for candidate in events[index + 1 : min(len(events), index + 8)]:
-        if _DATE_PATTERN.fullmatch(candidate.text):
-            if candidate.href is not None:
-                candidate_release_url = _canonical_release_url(candidate.href)
-                if candidate_release_url != release_url:
-                    raise ExpertRaRatingActionsSourceError(
-                        CreditRatingSourceErrorCode.IDENTITY_INVALID.value
-                    )
-            return _parse_date(candidate.text, retrieved_at=retrieved_at)
-        if _is_action_title(candidate.text):
-            break
-    raise ExpertRaRatingActionsSourceError(
-        CreditRatingSourceErrorCode.TIMESTAMP_INVALID.value
-    )
+    candidate_index = index + 1
+    if candidate_index >= len(events):
+        raise ExpertRaRatingActionsSourceError(
+            CreditRatingSourceErrorCode.TIMESTAMP_INVALID.value
+        )
+    candidate = events[candidate_index]
+    if _DATE_PATTERN.fullmatch(candidate.text) is None:
+        raise ExpertRaRatingActionsSourceError(
+            CreditRatingSourceErrorCode.TIMESTAMP_INVALID.value
+        )
+    if candidate.href is not None:
+        candidate_release_url = _canonical_release_url(candidate.href)
+        if candidate_release_url != release_url:
+            raise ExpertRaRatingActionsSourceError(
+                CreditRatingSourceErrorCode.IDENTITY_INVALID.value
+            )
+    return _parse_date(candidate.text, retrieved_at=retrieved_at)
 
 
 def _normalize_rating(value: str) -> str:
