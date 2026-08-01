@@ -1,143 +1,149 @@
-# Новый аккаунт ChatGPT: запуск Omni-CIO только из GitHub
+# Восстановление Omni-CIO Portfolio GPT из GitHub
 
-Каноническая настройка самого бота находится в `MY_GPT_SETUP_RUNBOOK.md`.
+Этот документ нужен только для восстановления проекта в новом аккаунте ChatGPT или после потери настроек. В обычной работе обновляется уже существующий GPT; дубликат создавать не нужно.
 
-Этот документ описывает перенос только проекта Omni-CIO. Экспорт старого аккаунта, перенос личных чатов и загрузка посторонних данных не нужны.
+## Целевой результат
 
-## Результат
+Восстанавливается один продукт:
 
-В новом аккаунте создаются:
+`Omni-CIO | Портфельный управляющий`
 
-1. новый ChatGPT Project для разработки;
-2. новый Custom GPT как интерфейс к существующему Gateway;
-3. подключение к тому же приватному GitHub-репозиторию;
-4. повторная ручная настройка только тех полей GPT Editor, которые GitHub технически не может установить сам.
+Он работает внутри ChatGPT, подключается к существующему read-only Gateway и помогает только с личным портфелем владельца.
 
-Существующие Gateway, Render Gateway service и T-Invest connection
-продолжают работать отдельно и не требуют копирования кода в другой
-репозиторий. Telegram Companion выведен из эксплуатации.
+Не восстанавливаются:
 
-## Шаг 1. Подключить GitHub
+- старые чаты и память аккаунта;
+- сайт, web-кабинет или приложение;
+- Telegram;
+- отдельный frontend;
+- собственная AI-модель;
+- write/trading methods.
 
-В новом аккаунте подключите GitHub и разрешите доступ только к:
+## 1. Подключить GitHub для разработки
+
+Разрешить доступ только к:
 
 ```text
 Misha2304/omni-cio-gateway
 ```
 
-Не создавайте копию репозитория и не переносите код вручную. Ветка `main` остаётся источником истины.
+Не создавать копию репозитория. Актуальный `main` остаётся источником истины.
 
-## Шаг 2. Создать новый ChatGPT Project
+## 2. Проект ChatGPT для разработки
 
-Рекомендуемое имя:
+Создание отдельного ChatGPT Project необязательно для работы самого Custom GPT, но удобно для разработки.
 
-```text
-Omni-CIO Development
-```
+При создании проекта:
 
-В Project instructions вставьте полный текст из:
+- рекомендуемое имя: `Omni-CIO Portfolio Development`;
+- Project instructions: полный текст `gpt/PROJECT_INSTRUCTIONS.md`;
+- первый запрос: полный текст `gpt/NEW_CHAT_PROMPT.md`.
 
-```text
-gpt/PROJECT_INSTRUCTIONS.md
-```
+## 3. Существующий или восстановленный Custom GPT
 
-В проект можно добавить основные справочные файлы из `gpt/BOT_ONLY_FILE_MANIFEST.md`, но при рабочем GitHub connector новый чат должен читать актуальные версии прямо из репозитория.
+Если GPT уже существует:
 
-## Шаг 3. Первый запрос в новом проекте
+1. Открыть My GPTs.
+2. Выбрать Omni-CIO.
+3. Нажать Edit GPT.
+4. Обновить его по `gpt/MY_GPT_SETUP_RUNBOOK.md`.
 
-Отправьте полный текст из:
+Создавать новый GPT разрешается только если старый действительно недоступен.
 
-```text
-gpt/NEW_CHAT_PROMPT.md
-```
+## 4. Канонические настройки
 
-Ожидаемое поведение нового чата:
+Использовать:
 
-- прочитать обязательные файлы;
-- проверить `main`;
-- показать system release и Gateway release;
-- проверить открытые PR и GitHub Actions;
-- подтвердить `trading_methods=false`;
-- ничего не изменять до показа плана.
+- `gpt/CONFIGURATION.md` — identity, capabilities и starters;
+- `gpt/INSTRUCTIONS_COMPACT.md` — поле Instructions;
+- `gpt/PERSONAL_PORTFOLIO_POLICY_TEMPLATE.md` — личная политика;
+- `gpt/ACTIONS_CATALOG.md` — сверка Actions;
+- `gpt/PORTFOLIO_GPT_ACCEPTANCE_V1.md` — Preview acceptance.
 
-## Шаг 4. Создать Custom GPT
+## 5. Knowledge
 
-Используйте реестр:
+Загрузить только:
 
-```text
-gpt/CONFIGURATION.md
-```
+1. Заполненную личную политику владельца.
+2. Минимальные справочные правила анализа портфеля и инструментов, если они нужны сверх Instructions.
+3. Нейтральный style/reference файл при необходимости.
 
-Обязательные действия в GPT Editor:
+Не загружать:
 
-1. Указать имя и описание из `CONFIGURATION.md`.
-2. Вставить полный текст `gpt/INSTRUCTIONS_COMPACT.md` в Instructions.
-3. Загрузить `knowledge/13_COMMUNICATION_STYLE_2026.txt` в Knowledge.
-4. Включить Web Search.
-5. Импортировать OpenAPI из production Gateway `/openapi.json`.
-6. Установить Authentication → API Key → Bearer.
-7. Ввести существующий `GATEWAY_API_KEY` вручную.
-8. Добавить starters из `CONFIGURATION.md`.
-9. Сохранить приватный режим доступа, пока владелец явно не решит иначе.
+- master plans;
+- CI/security runbooks;
+- GitHub history;
+- Telegram history;
+- release/evidence документы;
+- реальные brokerage payload;
+- секреты.
 
-## Шаг 5. Не переносить секреты через GitHub
+## 6. Capabilities
 
-Значения секретов берутся только из соответствующих внешних систем:
+Включить:
 
-- Gateway key и T-Invest token — Render Gateway Environment;
-- GPT Bearer key — GPT Editor.
+- Web Search;
+- Code Interpreter / Data Analysis;
+- Actions.
 
-Нельзя добавлять эти значения в issue, PR, commit, файл документации или чат с кодом.
+Выключить:
 
-## Шаг 6. Проверка нового Custom GPT
+- Image generation;
+- Apps.
 
-Выполните по одному целевому запросу.
+Выбрать модель, поддерживающую Custom Actions.
 
-### Gateway
+## 7. Actions и секреты
 
-```text
-Проверь шлюз. Вызови только gatewayHealth. Другие методы не вызывай.
-```
+1. Импортировать production Gateway `/openapi.json`.
+2. Authentication → API Key → Bearer.
+3. Ввести `GATEWAY_API_KEY` вручную.
+4. Проверить ровно 14 GET Actions.
+5. Проверить отсутствие order/cancel/transfer/withdraw methods.
+6. Проверить `trading_methods=false`.
 
-Проверьте:
+Значения `TINVEST_TOKEN` и `GATEWAY_API_KEY` не передаются в чат и не сохраняются в GitHub.
 
-- `status=ok`;
-- ожидаемую версию;
-- `build.entrypoint=app:app`;
-- `trading_methods=false`.
+## 8. Минимальная проверка
 
-### T-Invest
+В Preview выполнить:
 
 ```text
-Проверь подключение к T-Invest. Вызови только getConnection. Полный анализ не запускай.
+Проверь только состояние Gateway. Вызови только gatewayHealth.
 ```
-
-Проверьте маскированный счёт и read-only access level.
-
-### Портфель
 
 ```text
-Объясни состояние моего портфеля простыми словами. Сначала дай главный вывод, затем факты и риски. Используй современную речь.
+Проверь подключение. Вызови только getConnection.
 ```
 
-### Method isolation
+```text
+Проанализируй мой портфель: структура, риски, диверсификация и варианты действий.
+```
 
-Для каждого теста убедитесь, что GPT вызвал только запрошенный Action.
+Проверить:
 
-## Шаг 7. Готовность к разработке
+- маскированный account ID;
+- timestamp и quality;
+- отсутствие write methods;
+- наличие варианта «ничего не делать»;
+- отсутствие Telegram/site/autonomous-trading поведения.
 
-Новый проект готов, когда:
+Затем пройти полную матрицу `gpt/PORTFOLIO_GPT_ACCEPTANCE_V1.md`.
 
-- GitHub connector читает приватный репозиторий;
-- новый чат восстановил контекст из `main`;
-- Custom GPT видит ожидаемый список GET Actions;
-- Bearer authentication работает;
-- ответы показывают маскированный счёт;
-- `trading_methods=false`;
-- в GPT Editor вставлена полная актуальная версия `INSTRUCTIONS_COMPACT.md`;
-- современный стиль 2026 применяется без потери точности;
-- старый аккаунт не нужен как источник проектных данных.
+## 9. Готовность
 
-## Главное правило после переезда
+GPT готов, когда:
 
-Все новые решения, версии, инструкции и runbooks фиксируются в GitHub. Переписка нового аккаунта является рабочим контекстом, но не заменяет код и документацию в `main`.
+- используется канонический Instructions;
+- personal policy заполнена либо явно включён limited diagnostic mode;
+- Web Search, Data Analysis и Actions работают;
+- Image generation и Apps выключены;
+- Bearer auth работает;
+- Actions совпадают с каталогом;
+- Preview acceptance пройдена;
+- GPT остаётся private;
+- владелец нажал Update.
+
+## 10. Главное правило
+
+GitHub хранит конфигурацию и историю разработки, но не изменяет GPT Editor автоматически. Владелец вручную выполняет только защищённые и UI-действия; код, тесты, документацию и GitHub-проверки выполняет ChatGPT/агент.
