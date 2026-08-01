@@ -1,160 +1,166 @@
-# AGENTS.md — Omni-CIO Project Rules
+# AGENTS.md — обязательные правила Omni-CIO
 
 Этот файл обязателен для любого AI-агента, разработчика или нового чата, работающего с репозиторием.
 
 ## 1. Сначала восстановить контекст
 
-Перед изменением кода:
+Перед изменением кода или GPT-конфигурации:
 
 1. Прочитать `README.md`.
 2. Прочитать `docs/README.md`.
 3. Прочитать `docs/master-plan/README.md`.
-4. Прочитать текущий порядок исполнения `docs/master-plan/OMNI_CIO_FINAL_STEP_BY_STEP_MASTER_PROMPT_RU_V1.md`.
-5. Прочитать исходную стратегическую спецификацию `docs/master-plan/OMNI_CIO_MASTER_PROMPT_V9.txt`.
-6. Прочитать `knowledge/00_PROJECT_MASTER_CONTEXT.md`.
-7. Прочитать `knowledge/16_CURRENT_PROGRAM_STATUS.md` для фактического активного этапа.
-8. Прочитать `gpt/INSTRUCTIONS.md` и `gpt/ACTIONS_CATALOG.md`, если задача касается Custom GPT.
-9. Прочитать профильный файл из `knowledge/`.
-10. Проверить current `main`, открытые PR, Issues, review threads, последние merges и GitHub Actions.
-11. При работе с Custom GPT проверить фактический GPT Editor и Preview evidence либо явно отметить, что они недоступны.
-12. Не считать будущую цель master plan реализованной без кода, тестов и acceptance.
-13. Не считать старую переписку источником истины, если она расходится с фактическим состоянием.
+4. Прочитать `docs/master-plan/OMNI_CIO_PORTFOLIO_GPT_RESET_V1.md`.
+5. Прочитать `docs/master-plan/OMNI_CIO_FINAL_STEP_BY_STEP_MASTER_PROMPT_RU_V1.md` только в непротиворечащей части.
+6. Прочитать `knowledge/00_PROJECT_MASTER_CONTEXT.md` и `knowledge/16_CURRENT_PROGRAM_STATUS.md`.
+7. Для Custom GPT прочитать `gpt/INSTRUCTIONS.md`, `gpt/INSTRUCTIONS_COMPACT.md`, `gpt/CONFIGURATION.md` и `gpt/ACTIONS_CATALOG.md`.
+8. Проверить current `main`, открытые PR, Issues, review threads и GitHub Actions.
+9. Проверить фактический GPT Editor и Preview evidence либо явно отметить, что они доступны только владельцу.
+10. Не считать цель реализованной без кода, тестов и acceptance evidence.
 
-До завершения GPT-only audit запрещено начинать новые функциональные пакеты, кроме явно необходимой compatibility/CI работы и синхронизации канонического плана.
-
-## 2. Зафиксированный продукт и scope
+## 2. Единственный продукт
 
 Единственный пользовательский продукт — существующий Custom GPT Omni-CIO внутри ChatGPT.
 
+Текущий scope — персональный read-only помощник по управлению инвестиционным портфелем владельца.
+
+Он должен:
+
+- получать портфель через Gateway Actions;
+- анализировать структуру, концентрацию, ликвидность и риски;
+- проверять свежие новости и корпоративные события;
+- учитывать кредитные рейтинги и качество эмитентов;
+- искать кандидатов для свободных денег;
+- предлагать buy/sell/reduce/increase/hold/wait/do-nothing;
+- рассчитывать доступный объём и влияние на диверсификацию;
+- работать только по командам пользователя.
+
 Без отдельного нового решения владельца запрещено:
 
-- создавать или развивать отдельный сайт/web-кабинет;
-- создавать мобильное приложение;
-- создавать отдельный чат-интерфейс;
-- создавать дубликат Custom GPT;
-- создавать собственную AI-модель или отдельный reasoning server;
-- возвращать Telegram-бота как второй интерфейс.
+- создавать сайт, web-кабинет или мобильное приложение;
+- создавать отдельный чат-интерфейс или дубликат GPT;
+- создавать собственную AI-модель или reasoning server;
+- добавлять Telegram, Telegram API, публикации или drafts;
+- развивать публичный многопользовательский продукт;
+- начинать autonomous trading или broker-write work.
 
-Gateway является минимальным защищённым data layer для GPT Actions, а не пользовательским web-продуктом.
-
-Старые roadmap-пункты о frontend, web cabinet, SberInvestments HTML cabinet и обязательной внешней production RAG не продолжаются автоматически. В GPT-only audit они должны быть классифицированы как conflict, reusable capability, optional future package, deprecated/orphaned или доказанная часть end-to-end цепочки.
+Gateway — минимальный защищённый data layer для GPT Actions, а не пользовательский продукт.
 
 ## 3. Неприкосновенный read-only режим
 
-Запрещено добавлять или вызывать:
-
-- создание заявки;
-- отправку заявки;
-- замену заявки;
-- отмену заявки;
-- стоп-заявки;
-- любые другие методы, изменяющие брокерский счёт.
-
 Обязательные инварианты:
 
-- пользовательские Gateway Actions — только `GET`;
 - `trading_methods=false`;
-- Regression Shield отклоняет торговые operationId и mutating gateway routes;
-- Telegram runtime выведен из эксплуатации и не должен появляться в Gateway, OpenAPI или deployment configuration;
-- `app:app` остаётся стабильным entrypoint;
-- Shadow/Paper/Preview/Confirm-before-trade не разрешают execution без отдельной admission program и owner decision.
+- все пользовательские Gateway Actions — GET-only;
+- `app:app` — стабильный entrypoint;
+- отсутствуют order create, replace, cancel, stop-order, transfer и withdrawal;
+- отсутствуют скрытые тестовые торговые вызовы;
+- account ID маскируется;
+- неизвестные или неполные данные fail closed;
+- Telegram runtime и Telegram scope полностью отсутствуют.
 
-## 4. Секреты и персональные данные
+Shadow, Paper, broker-authoritative Preview и Confirm-before-trade не входят в текущий roadmap. Они могут рассматриваться только после отдельного owner decision и отдельной admission program.
 
-Никогда не сохранять в GitHub:
+## 4. Секреты и приватные данные
+
+Никогда не сохранять в GitHub, Instructions, Knowledge, тестах, логах или ответах:
 
 - `TINVEST_TOKEN`;
-- `GATEWAY_API_KEY` или `OMNI_GATEWAY_API_KEY`;
-- Telegram tokens, webhook secrets и user IDs;
-- полный номер брокерского счёта;
-- реальные брокерские отчёты, операции и позиции;
+- `GATEWAY_API_KEY`;
+- полный номер счёта;
+- реальные операции, позиции и брокерские отчёты;
 - Authorization headers;
-- секреты Render или GPT Editor.
+- Render или GPT Editor secrets.
 
-Допустимы только имена переменных и безопасные placeholders. Счёт в ответах должен быть маскирован.
+Допустимы только имена переменных и безопасные placeholders. Когда требуется секрет, дать владельцу короткую UI-инструкцию и не просить само значение.
 
-Когда требуется секрет, дать владельцу короткую UI-инструкцию и не просить само значение.
+## 5. Разделение ответственности
 
-## 5. Стабильность runtime и деплоя
+### Custom GPT
 
-- Gateway entrypoint: `app:app`.
-- Поддерживается только Gateway Render service из `render.yaml`.
-- `telegram_bot/`, `render.telegram.yaml` и `/telegram/webhook` выведены из эксплуатации и не должны возвращаться без отдельного ADR и решения владельца.
-- Перенос root runtime-модулей выполняется только отдельным refactor PR.
-- Import/startup не должен выполнять сеть без отдельного явного проекта и тестов.
-- CI не заменяет внешнюю Render/Gateway/GPT acceptance.
+- понимает команду;
+- выбирает минимально необходимый Action;
+- применяет обязательный аналитический workflow;
+- использует Web Search для свежих публичных фактов;
+- сравнивает альтернативы;
+- объясняет выводы и ограничения.
 
-## 6. Структура репозитория
+### Gateway
 
-- Gateway runtime и wrappers — в корне;
-- versioned domain packages — в `omni_cio/` и профильных модулях;
-- доменные правила — в `knowledge/`;
-- Custom GPT — в `gpt/`;
-- master plans — в `docs/master-plan/`;
-- архитектура, runbooks, audits и inventory — в `docs/`;
-- проверки — в `scripts/`;
-- постоянный CI и templates — в `.github/`.
+- авторизуется в T-Invest;
+- получает и нормализует приватные данные;
+- выполняет точные денежные расчёты;
+- проверяет freshness, completeness, identity, currency и pagination;
+- маскирует account ID;
+- блокирует неизвестные и write methods.
 
-Одноразовые release-patcher workflow нельзя оставлять в `main`.
-Dependency lock-файлы нельзя редактировать вручную. Внешние GitHub Actions должны быть закреплены полным commit SHA.
+### GitHub
 
-Каждый ключевой runtime-файл должен иметь consumer/test или явный статус compatibility/deprecated/roadmap.
+- хранит канонические Instructions, Knowledge templates, OpenAPI, Gateway, тесты и документацию;
+- не обновляет GPT Editor автоматически;
+- не хранит секреты.
 
-## 7. GPT Instructions, Knowledge и Actions
+## 6. GPT Instructions, Knowledge и Actions
 
 - Критический workflow, routing, priorities и stop conditions находятся в Instructions.
-- Knowledge используется для справочных методик и личной стратегии, а не для скрытого порядка действий.
+- Knowledge используется только для личной политики и справочных методик.
+- Project roadmap, CI runbooks, Telegram history и внутренние release-документы не загружаются в GPT Knowledge.
 - Один Action имеет одно строгое назначение.
-- Не допускается generic broker forwarding через `method/name/payload`.
-- OpenAPI описывает только фактическое поведение.
-- GPT использует Apps или Actions, но не оба режима одновременно, если официальная платформа не изменилась.
-- Actions и Knowledge проверяются в Preview перед Update существующего GPT.
+- Generic broker forwarding через `method/name/payload` запрещён.
+- GPT использует Actions, а не Apps, пока официальная платформа не изменилась.
 - Не создавать новый GPT вместо обновления существующего.
 
-Для каждого Action:
+Для каждого Action обязательны:
 
-- уникальный стабильный `operationId`;
-- Bearer-защита через `GATEWAY_API_KEY`;
-- явные `properties` у object schema;
+- стабильный уникальный `operationId`;
+- Bearer auth;
+- явная schema;
 - `status`, `version`, `retrieved_at`, masked account, `quality`, `complete`, `component_errors`, `warnings`, где применимо;
 - typed failure states;
-- неизвестные ошибки нельзя маскировать под `pending` или `ok`;
-- execution, withdrawal, transfer и token-management отсутствуют при `trading_methods=false`.
+- отсутствие execution, withdrawal, transfer и token-management.
 
-При изменении Action contract обновить `gpt/`, OpenAPI и профильный `knowledge/` файл.
+## 7. Аналитический стандарт
 
-## 8. Выведенный из эксплуатации Telegram runtime
+Каждая персональная рекомендация должна:
 
-- Не добавлять package `telegram_bot/`.
-- Не добавлять `render.telegram.yaml`.
-- Не публиковать `/telegram/webhook`.
-- Не возвращать Telegram-specific переменные в `.env.example`, `render.yaml` или dependency files.
-- История решения хранится в `knowledge/12_TELEGRAM_RETIREMENT.txt`.
-- Ручная очистка внешнего сервиса выполняется по `docs/operations/TELEGRAM_REMOVAL_RUNBOOK.md`.
-- В текущем релизе допустима только подготовка безопасного Telegram draft для ручной публикации.
+1. Получить актуальные приватные данные.
+2. Проверить качество и полноту.
+3. Разделить валюты.
+4. Оценить структуру, концентрацию, ликвидность и риск.
+5. Проверить релевантные свежие новости и рейтинги.
+6. Сравнить минимум три варианта: ничего не делать, ограниченное изменение, более существенное изменение.
+7. Применить личную политику владельца.
+8. Рассчитать лоты, сумму, комиссию, остаток и структуру после изменения.
+9. Указать условия отмены рекомендации, дату и источники.
 
-## 9. Деньги и качество данных
+Если личная политика не заполнена, допустимы диагностика и сценарии, но точные персональные sizing-нормативы не выдаются.
 
+## 8. Деньги и качество данных
+
+- Использовать `Decimal` или безопасную эквивалентную логику.
 - Не складывать валюты без подтверждённого FX и timestamp.
-- Денежные расчёты выполнять через `Decimal` или безопасную эквивалентную логику.
-- Не двойно учитывать комиссии, child operations, nested commissions или embedded trades.
+- Не путать штуки, позиции и лоты.
+- Для облигаций учитывать процент от номинала и НКД.
+- Не двойно учитывать payment, комиссии, child operations и embedded trades.
 - Не объявлять данные полными при `complete=false`, `status=partial`, stale/inconsistent state или `pagination.truncated=true`.
-- Проверять UID, lot, currency, quote, trading status, pagination, open orders и account scope.
-- Недостаточные данные должны приводить к abstain/missing-data, а не к оценке из воздуха.
-- Одна новость, rating или technical pattern не является доказанным торговым сигналом.
+- Проверять UID, lot, currency, quote, trading status, pagination и account scope.
+- Недостаточные данные приводят к abstain/missing-data.
+- Одна новость, rating или technical pattern не является достаточным сигналом.
 
-## 10. Брокерский отчёт T-Invest
+## 9. Структура репозитория
 
-Для `getBrokerReportReconciliation`:
+- Custom GPT — `gpt/`.
+- Product scope — `docs/master-plan/`.
+- Gateway runtime — корень и `omni_cio/`.
+- Доменные правила — `knowledge/`.
+- Tests — `tests/`.
+- Checks — `scripts/`.
+- Architecture, audits и runbooks — `docs/`.
+- CI — `.github/`.
 
-- `days=1..31`;
-- первый вызов без `task_id` и с `wait_seconds=0` возвращает `pending` и настоящий `task_id`;
-- повторный вызов использует тот же `task_id`;
-- T-Invest `30058` означает `pending`;
-- прочие ошибки остаются ошибками;
-- до готовности отчёта `complete=false`.
+Каждый активный runtime-файл должен иметь consumer/test или явный статус compatibility/deprecated.
+Dependency locks нельзя редактировать вручную. GitHub Actions закрепляются полным commit SHA.
 
-## 11. Тестирование
+## 10. Тестирование
 
 Минимум:
 
@@ -171,65 +177,54 @@ python -m compileall -q app.py app_v371.py app_v360.py main.py \
 python -m pytest -q --cov --cov-branch --cov-fail-under=60
 ```
 
-Дополнительно обязательны contract, integration, property, fuzz, security и failure tests по затронутому scope.
+По затронутому scope обязательны contract, failure, security и end-to-end tests.
+Custom GPT изменения требуют Preview matrix из `gpt/PORTFOLIO_GPT_ACCEPTANCE_V1.md`.
+Тесты не обращаются к реальным T-Invest или Render endpoints.
 
-Обязателен тест, подтверждающий отсутствие Telegram runtime, Blueprint, active env configuration, imports и OpenAPI routes.
+## 11. Git workflow
 
-Тесты не должны обращаться к реальным Render или T-Invest API.
-
-Custom GPT изменения требуют отдельной Preview matrix: intent routing, minimal Action call, warnings/timestamps, abstain on stale/partial, no invented fields, prompt-injection resistance и mobile readability.
-
-## 12. Git workflow
-
-- Работать в отдельной ветке от свежего `main`.
+- Отдельная ветка от свежего `main`.
 - Один логический scope — один PR.
-- Не смешивать dependency upgrade, architecture migration и новую функцию.
-- Делать логические commits.
-- Открывать draft PR по шаблону.
+- Draft PR до завершения проверок.
 - В PR фиксировать exact base/head, contracts, risks, tests и rollback.
-- Проверять head SHA, review threads, CI и artifacts.
-- Для релизов использовать squash merge.
 - Не merge при red, conflict, unresolved review или queued без evidence.
-- После merge проверять каждый затронутый production service отдельно.
-- Старый зелёный check не является доказательством после изменения `main`.
+- Для релизов использовать squash merge.
+- Старый green check не является доказательством после изменения head или `main`.
 
-## 13. Обновление проектной памяти
+## 12. Обновление памяти
 
-После значимого изменения обновить по затронутому scope:
+После значимого изменения обновить затронутые:
 
-- `CHANGELOG.md`;
 - `README.md`;
-- `docs/master-plan/README.md` и канонический master-plan index;
 - `knowledge/00_PROJECT_MASTER_CONTEXT.md`;
 - `knowledge/16_CURRENT_PROGRAM_STATUS.md`;
-- профильный `knowledge/NN_*`;
-- `gpt/`, если меняется Custom GPT;
-- `docs/inventory/PROJECT_ASSETS.md`;
-- deployment/acceptance runbook;
+- `gpt/`;
+- `docs/master-plan/README.md`;
 - issue #27;
-- `.github/copilot-instructions.md`, если меняются обязательные AI-правила.
+- inventory и runbooks, если изменился их scope.
 
-Исходные PDF не переписывать. Новую версию добавлять отдельным файлом с checksum и migration note.
+## 13. Внешние owner-only действия
 
-## 14. Внешние компоненты и owner-only evidence
+Пользователь выполняет только то, что нельзя безопасно выполнить инструментами:
 
-GitHub не заменяет:
+- создаёт/отзывает брокерский токен;
+- вводит секреты в Render и GPT Actions;
+- вставляет проверенные Instructions в существующий GPT;
+- загружает выбранные Knowledge-файлы;
+- импортирует OpenAPI;
+- запускает Preview-сценарии;
+- нажимает Update после acceptance.
 
-- Render Dashboard для secret/deploy state;
-- GPT Editor для публикации, capabilities и Bearer key;
-- T-Invest для реальных приватных данных;
-- Preview UI, если его нельзя проверить инструментами.
+Не перекладывать на пользователя код, архитектуру, тесты, OpenAPI или анализ GitHub.
 
-Не просить пользователя делать то, что можно выполнить через код или GitHub. Просить только owner-only действия без передачи секретов.
-
-## 15. Формат отчёта после этапа
+## 14. Формат отчёта
 
 1. Что найдено.
 2. Что изменено.
-3. Что реально проверено.
+3. Что проверено.
 4. Что осталось.
 5. Риски.
-6. GitHub: branch/base/head/PR/Actions/artifact/review/merge decision.
+6. GitHub: branch/base/head/PR/CI/artifact/review/merge decision.
 7. GPT Editor: sync/schema/Knowledge/Preview state.
-8. Действие пользователя: только необходимое owner-only действие.
+8. Одно необходимое owner-only действие.
 9. Следующий один логический этап.
