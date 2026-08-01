@@ -25,6 +25,7 @@ def test_runner_service_diagnostic_is_read_only_and_fail_closed() -> None:
         "[System.StringComparison]::OrdinalIgnoreCase",
         "Get-CimInstance",
         "Win32_Service",
+        "runner_root_exists = $runnerRootExists",
         "service_identity_matches = $serviceIdentityMatches",
         "service_start_mode = $serviceStartMode",
         'error_code = "RUNNER_SERVICE_WINDOWS_REQUIRED"',
@@ -50,6 +51,9 @@ def test_runner_service_diagnostic_is_read_only_and_fail_closed() -> None:
         "Invoke-RestMethod",
         ".credentials",
         '-like "*.$ExpectedRunnerName.service"',
+        "runner_root = $RunnerRoot",
+        "service_path =",
+        "PathName",
     ):
         assert forbidden not in text
 
