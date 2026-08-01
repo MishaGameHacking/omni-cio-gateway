@@ -29,6 +29,11 @@ powershell.exe -NoLogo -NoProfile -NonInteractive `
   -AsJson
 ```
 
+`ExpectedRunnerName` accepts only letters, digits, `.`, `_` and `-`, with a
+maximum length of 64 characters. The script performs an ordinal
+case-insensitive exact service-name suffix comparison; caller input is never
+interpreted as a PowerShell wildcard pattern.
+
 Healthy output requires all of the following:
 
 - runner root exists;
@@ -41,7 +46,9 @@ Healthy output requires all of the following:
 - service start mode is `Auto`.
 
 The diagnostic script is read-only. It does not start, stop, install, remove or
-reconfigure the runner service.
+reconfigure the runner service. Automatic output contains only bounded booleans,
+typed status, the expected runner name and service identity/state; it omits the
+local runner root and service executable path.
 
 ## Native Windows inspection
 
@@ -60,8 +67,8 @@ Get-Content C:\actions-runner\.service
 ```
 
 Do not print or copy `.credentials`, `.credentials_rsaparams`, registration
-tokens, GitHub App credentials or workflow secrets into issues, Pull Requests,
-logs or repository files.
+tokens, GitHub App credentials, workflow secrets or machine-local paths into
+issues, Pull Requests, logs or repository files.
 
 ## Recovery when the service exists
 
