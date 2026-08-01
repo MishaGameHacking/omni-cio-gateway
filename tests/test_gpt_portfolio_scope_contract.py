@@ -23,33 +23,34 @@ def test_portfolio_gpt_required_assets_exist() -> None:
 
 def test_compact_instructions_define_strict_portfolio_workflow() -> None:
     text = _read(INSTRUCTIONS)
+    text_lower = text.lower()
 
     for required in (
-        "персональный инвестиционный AI-ассистент",
+        "персональный инвестиционный ai-ассистент",
         "trading_methods=false",
-        "getPortfolioAnalytics",
-        "getCashLiquiditySnapshot",
-        "getPurchaseCapacityPreview",
-        "Ничего не делать",
-        "Ограниченное изменение",
-        "Более существенное изменение",
+        "getportfolioanalytics",
+        "getcashliquiditysnapshot",
+        "getpurchasecapacitypreview",
+        "ничего не делать",
+        "ограниченное изменение",
+        "более существенное изменение",
         "кредитные рейтинги",
         "качества данных",
-        "Личная политика",
-        "не создавай",
+        "личная политика",
+        "никогда не создавай",
     ):
-        assert required in text
+        assert required in text_lower
 
     for forbidden in (
         "в целом всё заебись",
         "пахнет пиздецом",
         "к собачьим хуям",
-        "подготовь Telegram-пост",
-        "publishTelegramChannelPost",
+        "подготовь telegram-пост",
+        "publishtelegramchannelpost",
         "создай отдельный сайт",
         "автономно торгуй",
     ):
-        assert forbidden not in text
+        assert forbidden not in text_lower
 
 
 def test_configuration_uses_existing_gpt_and_minimal_capabilities() -> None:
