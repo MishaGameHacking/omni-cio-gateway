@@ -1,15 +1,16 @@
 # 16 — CURRENT PROGRAM STATUS
 
 Дата актуализации: 2026-08-01  
-Фактическая слитая функциональная вершина программы: **PR-101**  
+Фактическая слитая функциональная вершина программы: **PR-102**  
 Слитая инфраструктурная миграция CI: **GitHub PR #129**  
-Активный незавершённый пакет: **PR-102 / Expert RA global alert policy v1**
+Активный незавершённый пакет: **PR-103 / Expert RA terminal evidence lifecycle v1**
 
 ## Назначение документа
 
-Это оперативная карта программы. Код в `main` остаётся окончательным источником
-истины. Стратегические требования и Definition of Done определяются `AGENTS.md`,
-`knowledge/00_PROJECT_MASTER_CONTEXT.md` и canonical master plan v9.
+Это оперативная карта программы. Код в `main` остаётся окончательным
+источником истины. Стратегические требования и Definition of Done определяются
+`AGENTS.md`, `knowledge/00_PROJECT_MASTER_CONTEXT.md` и canonical master plan
+v9.
 
 ## Неизменяемые границы
 
@@ -29,110 +30,107 @@
   collector, workflow/owner acquisition and authenticated evidence;
 - **PR-84…PR-88:** official CBR source, cache, safe observability, bounded global
   alert policy and deterministic terminal evidence lifecycle;
-- **PR-89…PR-93:** official MOEX TQBR source, exact cache, privacy-safe telemetry,
-  global operational alert policy and terminal evidence;
+- **PR-89…PR-93:** official MOEX TQBR source, exact cache, privacy-safe
+  telemetry, global operational alert policy and terminal evidence;
 - **PR-94…PR-98:** fixed official ACRA issuer-level national-RU source, bounded
   cache, privacy-safe telemetry, global alert policy and terminal evidence;
 - **PR-99:** fixed official Expert RA issuer-level national-Russia source;
-- **PR-100:** one-entry Expert RA cache with explicit fresh/stale/unavailable
-  semantics, single-flight refresh and validator-bypass revalidation;
+- **PR-100:** one-entry Expert RA cache with explicit
+  fresh/stale/unavailable semantics, single-flight refresh and
+  validator-bypass revalidation;
 - **PR-101:** pure privacy-safe Expert RA source/cache observability with strict
-  opaque trace IDs and no issuer/rating/action/release/publication payload.
+  opaque trace IDs and no issuer/rating/action/release/publication payload;
+- **PR-102:** bounded global-only Expert RA operational alert state machine with
+  canonical-event validation, cooldown, recovery and no delivery transport.
 
-## Текущая слитая функциональная вершина — PR-101
+## Текущая слитая функциональная вершина — PR-102
 
-GitHub PR #133 `PR-101: Add privacy-safe Expert RA observability v1` squash-merged
-в `main` commit:
+GitHub PR #134 `PR-102: Add global-only Expert RA alert policy v1`
+squash-merged в `main` commit:
 
-`10a6dc35f444a1b6bd933761b6d3818e4f43352c`.
+`6819899329b9902626f1a0ddb80f50b9d69dd01a`.
 
-### PR-101 guarantees
+### PR-102 guarantees
 
-- only allowlisted operational status/count metadata;
-- complete Pydantic revalidation of source/cache input before telemetry mapping;
-- no issuer/source-title/rating/scale/outlook/action/release/publication/raw HTML;
-- no account/portfolio/position/price/cash/broker payload;
-- no arbitrary exception details or credentials;
-- caller-supplied correlation id accepted only in opaque
-  `corr:` + 32 `a..p` format;
-- pure builders only, with no emitter, scheduler, route, startup hook, DB or
-  outbound transport;
-- no public API or frontend binding;
+- exactly four global operational kinds: source unavailable, cache unavailable,
+  stale records exposed and refresh failed while fresh cache is used;
+- fixed scope `global_expert_ra_rating_actions_feed`;
+- strict PR-101 event/component/provider/operation/metric/state validation;
+- canonical external-call profile including
+  `circuit_breaker_state=not_applicable`;
+- full policy and event Pydantic revalidation, including validator-bypassed
+  objects;
+- explicit `pending`, `fired`, `suppressed_cooldown`, `recovered` and
+  `ignored` dispositions;
+- bounded thresholds, cooldown, retention and exactly four global state slots;
+- same-timestamp serialization and fail-closed decreasing-time handling;
+- no issuer/rating/action/release/date/account/financial payload;
+- no external notifications, broker writes, route, frontend field or startup
+  task;
 - `trading_methods=false`.
 
-### Final PR-101 validation
+### Final PR-102 validation
 
-Regression Shield run #795 / workflow `30689278383` passed on exact head
-`cb8c5d9a28df8669a99824c74584685d83ca0ca6`:
+Regression Shield run #799 / workflow `30690311867` passed on exact head
+`94245e418ece1c84ec11360e190a6b078d27dae8`:
 
 - quality/contracts/coverage: success;
 - dependency/code/secret security: success;
-- pytest: 1120 passed, 0 failed;
+- pytest: 1143 passed, 0 failed;
 - total coverage: 61.97%, threshold >=60%;
-- mypy: 183 source files, no issues;
+- mypy: 185 source files, no issues;
 - compile, Ruff and formatting: passed;
 - stable `app:app`: passed;
 - exactly 14 GET Actions and forbidden surface count 0: passed;
 - `trading_methods=false`: passed;
 - dependency audit, Bandit and detect-secrets: passed;
-- diagnostics artifact ID `8815122416`;
+- diagnostics artifact ID `8815578140`;
 - artifact SHA-256:
-  `fb30b94756ee3dfb1e154b6a29cb88983e1997c34c605b48d5ae6a275cd94f7b`.
+  `d49329a7370f5d4bb76979004ac7346b251914875cb40d22a022858c8b22f1c8`.
 
-## Активный пакет — PR-102 Expert RA global alert policy v1
+## Активный пакет — PR-103 Expert RA terminal evidence lifecycle v1
 
 Рабочая ветка:
 
-`agent/expert-ra-rating-actions-alert-policy-v1`
+`agent/expert-ra-rating-actions-operations-lifecycle-v1`
 
-Она создана точно от PR-101 merge commit
-`10a6dc35f444a1b6bd933761b6d3818e4f43352c`.
+Она создана точно от PR-102 merge commit
+`6819899329b9902626f1a0ddb80f50b9d69dd01a`.
 
-PR-102 строит только global operational state machine поверх canonical PR-101
-events. Он не использует issuer/rating/action identity и не является delivery
-transport.
+PR-103 строит только bounded process-local terminal evidence поверх canonical
+PR-101 builders и PR-102 evaluator. Он не выполняет source/cache I/O, delivery
+или broker operation.
 
-### Exactly four operational alert kinds
+### PR-103 evidence boundary
 
-1. source unavailable;
-2. cache unavailable;
-3. stale records explicitly exposed after a failed refresh;
-4. refresh failed while a still-fresh cached snapshot is used.
+- only typed Expert RA source snapshot or cache result inputs;
+- event creation delegated to PR-101 canonical builders;
+- global alert state delegated to the exact PR-102 evaluator type;
+- one `RLock` serializes evaluation, evidence mutation and sink handoff;
+- only `fired` and `recovered` evaluations become evidence;
+- terminal evaluation is Pydantic-revalidated and bound to the exact event name
+  and UTC timestamp before recording;
+- deterministic ID is `expert-ra-evidence:` plus 64 `a..p` characters
+  derived from SHA-256 of allowlisted terminal fields;
+- correlation ID is excluded from the digest, retained evidence, returned batch
+  and sink payload;
+- full event payload is not retained or returned;
+- identical evidence is deduplicated and handed to the optional sink only once;
+- same-ID/different-content collision fails closed;
+- fired error codes are restricted to canonical credit-rating source/cache and
+  fixed Expert RA operational codes;
+- sink exceptions are reduced to a count without exception text;
+- retention defaults to 86,400 seconds and capacity to 64 records, with strict
+  configuration bounds, pruning, oldest-first eviction and `clear()`;
+- all issuer/rating/action/release/publication/raw payload/financial/threshold,
+  delivery, broker-write and trading flags remain false;
+- no route, GPT Action, frontend binding, startup task, logger, event sink,
+  webhook, email, Telegram or broker method.
 
-### Policy defaults
-
-- source unavailable threshold: 3;
-- cache unavailable threshold: 2;
-- stale exposed threshold: 2;
-- refresh-failure/fresh-cache threshold: 3;
-- cooldown: 900 seconds;
-- inactive-state retention: 86400 seconds;
-- capacity: exactly 4 global slots.
-
-### PR-102 safety and hardening
-
-- fixed scope `global_expert_ra_rating_actions_feed`;
-- policy is fully revalidated at evaluator construction, including
-  validator-bypassed models;
-- known PR-101 source/cache events are fully revalidated and must match exact
-  event/component/provider/operation/metric/state profiles before mutation;
-- opaque correlation id is mandatory for known Expert RA events;
-- forged metric sets, duplicate metrics, cross-agency flag changes, sensitive
-  payload flags and malformed profiles fail closed before state change;
-- `pending`, `fired`, `suppressed_cooldown`, `recovered`, `ignored` are explicit;
-- same-timestamp concurrent events are serialized by one `RLock`;
-- decreasing timestamp for a retained known signal fails closed;
-- inactive state is retention-pruned;
-- policy/evaluation contracts fix issuer identity, rating values, action identity,
-  rating thresholds, financial thresholds, external delivery, broker writes and
-  trading methods to false;
-- alert evaluation serialization contains no issuer/rating/action/release/date;
-- no route, GPT Action, frontend field, startup task, emitter, webhook, email,
-  Telegram or broker method.
-
-PR-102 must remain unmerged until a draft Pull Request is opened and Regression
-Shield passes both blocking jobs on the exact final head, diagnostics artifact is
-present, review threads are clear and GitHub reports the PR mergeable.
+PR-103 must remain unmerged until its draft Pull Request is opened, Regression
+Shield passes both blocking jobs on the exact final head, the diagnostics
+artifact is present, review threads are clear and GitHub reports the PR
+mergeable.
 
 ## Слитая CI-инфраструктура
 
@@ -171,9 +169,7 @@ CI cannot mark these external checks complete.
 
 ### Backend and operations
 
-- finish PR-102 after exact-head Regression Shield;
-- then separate **PR-103**: deterministic bounded Expert RA fired/recovered
-  terminal evidence lifecycle;
+- finish PR-103 after exact-head Regression Shield;
 - add other credit-rating agencies only as independent fixed reviewed sources;
 - identify exact production market-data callers and bind lifecycles lazily;
 - build production-grade news and corporate-event ingestion;
@@ -191,20 +187,23 @@ CI cannot mark these external checks complete.
 
 ### Trading stages
 
-Shadow, paper, preview and final-review components do not authorize live trading.
-Any future real execution needs a separate owner-approved admission program with
-confirm-before-trade, idempotency, confirmation TTL, kill switch, partial-fill
-and timeout reconciliation. Autonomous execution remains disabled.
+Shadow, paper, preview and final-review components do not authorize live
+trading. Any future real execution needs a separate owner-approved admission
+program with confirm-before-trade, idempotency, confirmation TTL, kill switch,
+partial-fill and timeout reconciliation. Autonomous execution remains disabled.
 
 ## Следующий безопасный пакет
 
-Current package: **PR-102 Expert RA global operational alert policy v1**.
+Current package: **PR-103 Expert RA deterministic terminal evidence
+lifecycle v1**.
 
-Only after PR-102 passes exact-head CI and squash-merges may PR-103 start.
+Only after PR-103 passes exact-head CI and squash-merges may the next independent
+fixed source or exact production owner binding package start.
 
 ## Запрет ложного завершения
 
 Проект не считается полностью завершённым после одного зелёного PR. Полный
 релиз требует внешней production acceptance evidence, exact owner/frontend
 binding, remaining market/news/RAG work and completion of the planned safety
-stages. Until then the system remains read-only with `trading_methods=false`.
+stages. Until then the system remains read-only with
+`trading_methods=false`.
