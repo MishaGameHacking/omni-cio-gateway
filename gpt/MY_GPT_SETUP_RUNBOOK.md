@@ -1,105 +1,236 @@
-# Подключение Omni-CIO в ChatGPT → My GPTs
+# Настройка существующего Omni-CIO в ChatGPT → My GPTs
 
-Дата проверки официальной документации: 2026-07-30.
+Дата актуализации: 2026-08-01
 
-Этот runbook настраивает существующий Custom GPT как интерфейс к read-only Omni-CIO Gateway. Он не деплоит Render, не меняет секреты и не включает торговлю.
+Этот runbook настраивает уже существующий Custom GPT как персонального read-only помощника по портфелю T-Invest.
+
+Он не создаёт новый GPT, сайт, приложение, Telegram-интеграцию или торговый режим.
 
 ## 1. Предварительные условия
 
-- аккаунт ChatGPT с правом создавать/редактировать GPT;
-- доступ к веб-версии ChatGPT: создание и редактирование GPT выполняется в web UI;
-- работающий production Gateway и его публичный base URL;
-- доступ владельца к секрету `GATEWAY_API_KEY` в Render;
-- актуальная ветка `main` и зелёный Regression Shield.
+- доступ к web-версии ChatGPT и существующему GPT;
+- работающий production Gateway;
+- доступ владельца к `GATEWAY_API_KEY` в Render;
+- актуальный green GitHub package;
+- read-only T-Invest token;
+- заполненная личная политика или готовность использовать limited diagnostic mode.
 
-Сначала проверьте в браузере:
+Проверить:
 
 - `<RENDER_EXTERNAL_URL>/health`;
 - `<RENDER_EXTERNAL_URL>/openapi.json`.
 
-Ожидается `version=3.10.0`, `build.entrypoint=app:app`, `trading_methods=false` и ровно 14 GET операций из `ACTIONS_CATALOG.md`.
+Ожидается:
 
-## 2. Открыть или создать GPT
+- Gateway version `3.10.0` либо актуальная задокументированная версия;
+- `build.entrypoint=app:app`;
+- `trading_methods=false`;
+- ровно 14 GET operations из `ACTIONS_CATALOG.md`;
+- write/transfer/withdraw methods отсутствуют.
 
-1. Откройте [Explore GPTs](https://chatgpt.com/gpts).
-2. Для нового бота нажмите Create. Для существующего: My GPTs → Omni-CIO → Edit GPT.
-3. Работайте в Configure и регулярно проверяйте результат в Preview.
+## 2. Открыть существующий GPT
 
-## 3. Основная конфигурация
+1. Открыть ChatGPT в браузере.
+2. Перейти: GPTs → Мои GPT.
+3. Выбрать существующий Omni-CIO.
+4. Нажать Edit GPT.
+5. Работать во вкладке Configure.
+6. Не создавать новый GPT.
 
-1. Имя, описание и starters возьмите из `CONFIGURATION.md`.
-2. Вставьте полный текст `INSTRUCTIONS_COMPACT.md` в Instructions.
-3. Не вставляйте токены, API keys, Authorization headers или полный номер счёта.
-4. В Knowledge загрузите только необходимые справочные документы. Рекомендуемый минимум — `knowledge/13_COMMUNICATION_STYLE_2026.txt`.
-5. Не загружайте master-plan PDF в production GPT Knowledge: он управляет разработкой и содержит будущие этапы, а не факты текущего runtime.
-6. Включите Web Search, если GPT должен проверять текущие публичные сведения.
+## 3. Identity
 
-## 4. Настроить Actions
+Взять из `CONFIGURATION.md`:
 
-1. В разделе Actions нажмите Create new action.
-2. Выберите Authentication → API Key → Bearer.
-3. Вставьте значение `GATEWAY_API_KEY` вручную. Не сохраняйте его в GitHub и не показывайте в Preview-ответах.
-4. Импортируйте schema по URL `<RENDER_EXTERNAL_URL>/openapi.json` либо вставьте фактическую schema из production.
-5. Сверьте каждую операцию с `ACTIONS_CATALOG.md`: ожидаются 14 `GET`, mutating methods отсутствуют.
-6. Не включайте Apps для этого GPT: GPT использует либо Apps, либо Actions.
-7. Выберите модель/режим с поддержкой Actions. Не используйте Pro mode для этого контура.
+- имя;
+- описание;
+- conversation starters.
 
-## 5. Проверки в Preview
+Рекомендуемое имя:
 
-Выполняйте по одному запросу и проверяйте, что GPT не вызывает лишние методы.
+`Omni-CIO | Портфельный управляющий`
+
+## 4. Instructions
+
+1. Удалить старый текст Instructions полностью.
+2. Вставить полный `INSTRUCTIONS_COMPACT.md`.
+3. Не добавлять старые website, Telegram, publishing или autonomous-trading правила.
+4. Не вставлять секреты и полный account ID.
+
+## 5. Knowledge
+
+Удалить конфликтующие и лишние Knowledge-файлы.
+
+Оставить минимальный набор:
+
+1. Заполненная personal portfolio policy.
+2. Компактная методика portfolio/instrument/news/rating analysis, если она нужна сверх Instructions.
+3. Нейтральный style/reference файл при необходимости.
+
+Не загружать:
+
+- master-plan PDF;
+- CI/security runbooks;
+- GitHub history;
+- Telegram history;
+- внутренние release/evidence docs;
+- реальные брокерские отчёты;
+- секреты.
+
+## 6. Capabilities
+
+Включить:
+
+- Web Search;
+- Code Interpreter / Data Analysis;
+- Actions.
+
+Выключить:
+
+- Image generation;
+- Apps.
+
+Выбрать модель/режим, поддерживающий Custom Actions. Режим, в котором Actions недоступны, не использовать.
+
+## 7. Actions
+
+1. Открыть Actions.
+2. Authentication → API Key → Bearer.
+3. Ввести `GATEWAY_API_KEY` вручную.
+4. Не показывать значение в чате, screenshot или документации.
+5. Импортировать `<RENDER_EXTERNAL_URL>/openapi.json`, если Editor schema отсутствует, устарела или contract изменился.
+6. Сверить полный список с `ACTIONS_CATALOG.md`.
+7. Убедиться, что присутствуют ровно 14 GET operationId.
+8. Убедиться, что отсутствуют POST/PUT/PATCH/DELETE и broker-write Actions.
+
+## 8. Быстрая техническая проверка
 
 ### Health
 
-`Проверь Gateway. Вызови только gatewayHealth.`
+Prompt:
 
-Проверьте `status`, `version`, `build.entrypoint=app:app`, `trading_methods=false`.
+`Проверь только состояние Gateway. Вызови только gatewayHealth.`
 
-### Authentication
+Проверить:
 
-Сначала убедитесь, что защищённый Action без корректного ключа не возвращает приватные данные. Затем с настроенным Bearer:
+- вызван один Action;
+- показаны version, entrypoint и `trading_methods=false`.
 
-`Проверь подключение к T-Invest. Вызови только getConnection.`
+### Connection
 
-Счёт должен быть маскирован.
+Prompt:
 
-### Read-only contract
+`Проверь подключение. Вызови только getConnection.`
 
-`Покажи read-only снимок портфеля. Вызови только getPortfolioSnapshot.`
+Проверить:
 
-Проверьте отсутствие order/execute/cancel/replace/transfer/withdraw Actions.
+- счёт маскирован;
+- других Actions нет.
 
-### Final review
+### Portfolio
 
-`Не создавай решение. Объясни, что означает безопасный unavailable-ответ getFinalDecisionReview.`
+Prompt:
 
-`503` без активного reviewed source допустим и не означает поломку. `409` нельзя автоматически повторять с придуманной identity. При `200` обязательны `trade_authorized=false`, `order_created=false`, `execution_ready=false`, `trading_methods=false`.
+`Покажи базовый снимок портфеля. Вызови только getPortfolioSnapshot.`
 
-## 6. Публикация
+Проверить:
 
-1. До production acceptance оставьте GPT приватным или invite-only.
-2. Нажмите Update после успешного Preview.
-3. Повторно откройте GPT и убедитесь, что настройки сохранились.
-4. Зафиксируйте фактические результаты восьми acceptance cases по `knowledge/16_CURRENT_PROGRAM_STATUS.md`; зелёный GitHub CI не заменяет эту проверку.
+- данные приватного портфеля пришли через Action;
+- нет write methods;
+- timestamp и quality не потеряны.
 
-## 7. Обновление и rollback
+## 9. Полная Preview acceptance
 
-- Если меняются только Instructions/Knowledge, замените их, проверьте Preview и нажмите Update.
-- Если меняется OpenAPI, сначала задеплойте Gateway, затем импортируйте production schema и снова проверьте все 14 Actions.
-- При ошибке верните предыдущий проверенный текст Instructions/schema, нажмите Update и повторите health/auth/read-only checks.
-- Никогда не «чините» импорт добавлением write endpoint или отключением Bearer authentication.
+Выполнить все обязательные сценарии:
 
-## 8. Частые проблемы
+`PORTFOLIO_GPT_ACCEPTANCE_V1.md`.
 
-- Action отсутствует: проверьте production `/openapi.json`, выбранный режим и повторите импорт.
-- GPT не вызывает Action: уберите конфликтующие/дублирующие инструкции, проверьте выбранную модель и сформулируйте один точный запрос.
-- Workspace блокирует домен: владелец workspace должен разрешить домен Gateway.
-- Knowledge влияет на поведение: перенесите правила поведения в Instructions; Knowledge оставьте справочным.
-- Ответ раскрывает лишнее: немедленно верните предыдущую конфигурацию и проверьте маскирование/секреты.
+Критические сценарии:
+
+- полный анализ портфеля;
+- концентрация и диверсификация;
+- новости по позициям;
+- облигации и рейтинги;
+- free-cash candidate search;
+- purchase capacity;
+- do-nothing option;
+- refusal on partial/stale data;
+- transaction refusal;
+- absence of website/Telegram scope.
+
+Для каждого сценария сохранить redacted evidence без секретов и полного account ID.
+
+## 10. Personal policy
+
+Заполнить `PERSONAL_PORTFOLIO_POLICY_TEMPLATE.md`.
+
+До загрузки заполненной политики GPT работает в limited diagnostic mode:
+
+- анализирует факты и риски;
+- показывает concentration;
+- строит сценарии;
+- не объявляет точные target weights персональной нормой.
+
+После заполнения повторно выполнить diversification и free-cash scenarios.
+
+## 11. Update
+
+Нажать Update только когда:
+
+- Instructions синхронизированы;
+- minimal Knowledge проверен;
+- Actions совпадают с каталогом;
+- Bearer работает;
+- обязательные Preview-сценарии прошли;
+- нет Telegram/site/autonomous-trading поведения;
+- `trading_methods=false` подтверждён.
+
+Оставить GPT private.
+
+## 12. Rollback
+
+При проблеме:
+
+1. Вернуть предыдущий проверенный текст Instructions.
+2. Вернуть предыдущий Knowledge set.
+3. При schema issue повторно импортировать последний проверенный production OpenAPI.
+4. Повторить health, connection и portfolio isolation tests.
+5. Нажать Update только после восстановления.
+
+Никогда не исправлять проблему отключением Bearer auth или добавлением write endpoint.
+
+## 13. Частые проблемы
+
+### GPT вызывает лишние Actions
+
+- проверить конфликты в Knowledge;
+- убедиться, что используется актуальный Instructions;
+- сформулировать один точный prompt;
+- проверить Action descriptions.
+
+### GPT не использует портфель перед подбором актива
+
+- проверить наличие workflow «сначала portfolio/cash/policy» в Instructions;
+- удалить старые generic analyst instructions;
+- повторить free-cash acceptance.
+
+### GPT выдаёт точные доли без personal policy
+
+- проверить loaded Knowledge;
+- убедиться, что limited diagnostic mode описан в Instructions;
+- повторить scenario E2.
+
+### GPT предлагает сделку
+
+- немедленно прекратить acceptance;
+- проверить OpenAPI и operationId;
+- проверить `trading_methods=false`;
+- вернуть предыдущую конфигурацию;
+- не нажимать Update.
 
 ## Официальные источники OpenAI
 
-- [Creating and editing GPTs](https://help.openai.com/en/articles/8554397-creating-and-editing-gpts)
-- [Configuring actions in GPTs](https://help.openai.com/en/articles/9442513-configuring-actions-in-gpts)
-- [Troubleshooting GPTs](https://help.openai.com/en/articles/11325361-troubleshooting-gpts)
-- [Sharing and publishing GPTs](https://help.openai.com/en/articles/8798878-sharing-and-publishing-gpts)
-- [GPTs in ChatGPT](https://help.openai.com/en/articles/8554407-gpts-in-chatgpt)
+- Creating and editing GPTs: `https://help.openai.com/en/articles/8554397-create-a-gpt`
+- Configuring actions in GPTs: `https://help.openai.com/en/articles/9442513`
+- GPTs in ChatGPT: `https://help.openai.com/en/articles/8554407-key-guidelines-for-writing-instructions-for-custom-gpts`
+
+Актуальные platform rules перепроверяются перед финальной GPT Editor acceptance.
