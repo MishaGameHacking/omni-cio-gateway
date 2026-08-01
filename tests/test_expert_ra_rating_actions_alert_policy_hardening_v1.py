@@ -6,10 +6,10 @@ from typing import Any, cast
 
 import pytest
 
-from omni_cio.contracts.v1.observability import CircuitBreakerState
 from omni_cio.contracts.v1.expert_ra_ratings import (
     ExpertRaIssuerRatingActionsSnapshotV1,
 )
+from omni_cio.contracts.v1.observability import CircuitBreakerState
 from omni_cio.contracts.v1.ratings import (
     CreditRatingSourceErrorCode,
     CreditRatingSourceStatus,
