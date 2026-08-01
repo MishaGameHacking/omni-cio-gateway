@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 from pathlib import Path
@@ -10,6 +11,42 @@ SCRIPT = ROOT / "scripts" / "check_self_hosted_windows_runner_service.ps1"
 RUNBOOK = (
     ROOT / "docs" / "operations" / "SELF_HOSTED_WINDOWS_RUNNER_SERVICE.md"
 )
+
+
+def _powershell() -> str | None:
+    return shutil.which("powershell.exe")
+
+
+def _run_diagnostic(
+    powershell: str,
+    runner_root: Path,
+    *,
+    expected_runner_name: str = "omni-ci-test-fixture",
+) -> tuple[subprocess.CompletedProcess[str], dict[str, object]]:
+    result = subprocess.run(
+        [
+            powershell,
+            "-NoLogo",
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(SCRIPT),
+            "-RunnerRoot",
+            str(runner_root),
+            "-ExpectedRunnerName",
+            expected_runner_name,
+            "-AsJson",
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    payload = json.loads(result.stdout.strip())
+    return result, payload
 
 
 def test_runner_service_diagnostic_is_read_only_and_fail_closed() -> None:
@@ -93,7 +130,7 @@ def test_runner_service_runbook_keeps_secrets_out_of_repository() -> None:
 
 
 def test_runner_service_script_parses_when_windows_powershell_is_available() -> None:
-    powershell = shutil.which("powershell.exe")
+    powershell = _powershell()
     if powershell is None:
         return
 
@@ -124,3 +161,61 @@ def test_runner_service_script_parses_when_windows_powershell_is_available() -> 
     )
 
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_runner_configuration_failures_are_typed_on_windows(
+    tmp_path: Path,
+) -> None:
+    powershell = _powershell()
+    if powershell is None:
+        return
+
+    (tmp_path / "run.cmd").write_text("@echo off\n", encoding="utf-8")
+
+    (tmp_path / ".runner").write_text("not-json", encoding="utf-8")
+    malformed, malformed_payload = _run_diagnostic(powershell, tmp_path)
+    assert malformed.returncode == 2
+    assert malformed_payload["error_code"] == "RUNNER_CONFIGURATION_INVALID"
+    assert malformed_payload["runner_ephemeral"] is None
+
+    (tmp_path / ".runner").write_text(
+        json.dumps({"AgentName": "other-runner", "Ephemeral": False}),
+        encoding="utf-8",
+    )
+    mismatch, mismatch_payload = _run_diagnostic(powershell, tmp_path)
+    assert mismatch.returncode == 2
+    assert mismatch_payload["error_code"] == (
+        "RUNNER_CONFIGURATION_IDENTITY_MISMATCH"
+    )
+    assert mismatch_payload["runner_configuration_valid"] is True
+
+    (tmp_path / ".runner").write_text(
+        json.dumps({"AgentName": "omni-ci-test-fixture", "Ephemeral": True}),
+        encoding="utf-8",
+    )
+    ephemeral, ephemeral_payload = _run_diagnostic(powershell, tmp_path)
+    assert ephemeral.returncode == 2
+    assert ephemeral_payload["error_code"] == "RUNNER_EPHEMERAL_UNSUPPORTED"
+    assert ephemeral_payload["runner_ephemeral"] is True
+
+
+def test_persistent_runner_configuration_reaches_service_gate_on_windows(
+    tmp_path: Path,
+) -> None:
+    powershell = _powershell()
+    if powershell is None:
+        return
+
+    (tmp_path / "run.cmd").write_text("@echo off\n", encoding="utf-8")
+    (tmp_path / ".runner").write_text(
+        json.dumps({"AgentName": "omni-ci-test-fixture"}),
+        encoding="utf-8",
+    )
+
+    result, payload = _run_diagnostic(powershell, tmp_path)
+
+    assert result.returncode == 2
+    assert payload["error_code"] == "RUNNER_SERVICE_MISSING"
+    assert payload["runner_configuration_valid"] is True
+    assert payload["runner_configuration_identity_matches"] is True
+    assert payload["runner_ephemeral"] is False
