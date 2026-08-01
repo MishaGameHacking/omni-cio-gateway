@@ -106,6 +106,11 @@ def test_snapshot_requires_exact_source_retrieval_timestamp() -> None:
             CreditRatingSourceErrorCode.URL_INVALID,
         ),
         (
+            "/releases/2026/feb31a",
+            "28.02.2026",
+            CreditRatingSourceErrorCode.URL_INVALID,
+        ),
+        (
             "/releases/2026/jul30a",
             "29.07.2026",
             CreditRatingSourceErrorCode.SCHEMA_INVALID,
