@@ -98,15 +98,24 @@ def test_snapshot_requires_exact_source_retrieval_timestamp() -> None:
 
 
 @pytest.mark.parametrize(
-    ("href", "published_on"),
+    ("href", "published_on", "error_code"),
     [
-        ("/releases/2026/xyz30a", "30.07.2026"),
-        ("/releases/2026/jul30a", "29.07.2026"),
+        (
+            "/releases/2026/xyz30a",
+            "30.07.2026",
+            CreditRatingSourceErrorCode.URL_INVALID,
+        ),
+        (
+            "/releases/2026/jul30a",
+            "29.07.2026",
+            CreditRatingSourceErrorCode.SCHEMA_INVALID,
+        ),
     ],
 )
 def test_parser_fails_closed_on_release_date_identity_drift(
     href: str,
     published_on: str,
+    error_code: CreditRatingSourceErrorCode,
 ) -> None:
     payload = (
         "<html><body><h1>Рейтинговые действия</h1>"
@@ -117,6 +126,6 @@ def test_parser_fails_closed_on_release_date_identity_drift(
     ).encode()
     with pytest.raises(
         ExpertRaRatingActionsSourceError,
-        match=CreditRatingSourceErrorCode.SCHEMA_INVALID.value,
+        match=error_code.value,
     ):
         parse_expert_ra_issuer_rating_actions_html(payload, retrieved_at=NOW)
