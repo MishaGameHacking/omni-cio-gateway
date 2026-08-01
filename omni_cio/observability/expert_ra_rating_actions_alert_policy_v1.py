@@ -20,6 +20,10 @@ from omni_cio.contracts.v1.observability import (
     ObservabilityOutcome,
     ObservabilitySeverity,
 )
+from omni_cio.contracts.v1.ratings import (
+    CreditRatingCacheErrorCode,
+    CreditRatingSourceErrorCode,
+)
 
 
 _SOURCE_EVENT_NAME = "market.expert_ra_rating_actions.source"
@@ -29,6 +33,10 @@ _CACHE_COMPONENT = "market.expert_ra_rating_actions_cache"
 _PROVIDER = "Expert RA"
 _OPERATION = "home.rating_actions"
 _OPAQUE_CORRELATION_ID = re.compile(r"^corr:[a-p]{32}$")
+_SOURCE_ERROR_CODES = frozenset(item.value for item in CreditRatingSourceErrorCode)
+_CACHE_ERROR_CODES = frozenset(
+    item.value for item in CreditRatingCacheErrorCode
+) | _SOURCE_ERROR_CODES
 _FIXED_METRICS = {
     "expert_ra.fixed_official_source": 1,
     "expert_ra.issuer_scope_only": 1,
@@ -168,6 +176,11 @@ def _validate_common(event: ObservabilityEventV1) -> None:
         or call.rate_limit_remaining is not None
     ):
         raise _contract_error()
+    if call.status is ExternalCallStatus.NOT_CALLED:
+        if call.latency_ms is not None:
+            raise _contract_error()
+    elif call.latency_ms != event.duration_ms:
+        raise _contract_error()
 
 
 def _validate_source(event: ObservabilityEventV1) -> None:
@@ -204,7 +217,7 @@ def _validate_source(event: ObservabilityEventV1) -> None:
             record_count == 0
             and event.outcome is ObservabilityOutcome.FAILURE
             and event.severity is ObservabilitySeverity.ERROR
-            and event.error_code is not None
+            and event.error_code in _SOURCE_ERROR_CODES
             and call.status is ExternalCallStatus.FAILURE
             and call.freshness is FreshnessTelemetry.UNKNOWN
         )
@@ -231,6 +244,10 @@ def _validate_cache(event: ObservabilityEventV1) -> None:
         or not 0 <= record_count <= _MAX_RECORD_COUNT
         or values["expert_ra.stale_exposed"]
         > values["expert_ra.stale_available"]
+        or (
+            event.error_code is not None
+            and event.error_code not in _CACHE_ERROR_CODES
+        )
     ):
         raise _contract_error()
 
@@ -400,7 +417,11 @@ class ExpertRaRatingActionsAlertPolicyEvaluatorV1:
         self,
         policy: ExpertRaRatingActionsAlertPolicyV1 | None = None,
     ) -> None:
-        candidate = policy or ExpertRaRatingActionsAlertPolicyV1()
+        candidate = (
+            ExpertRaRatingActionsAlertPolicyV1()
+            if policy is None
+            else policy
+        )
         self._policy = _validated_policy(candidate)
         self._states: OrderedDict[
             ExpertRaRatingActionsAlertKind,
