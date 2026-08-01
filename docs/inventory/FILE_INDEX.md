@@ -117,6 +117,11 @@ Key entrypoints:
 | `tests/test_expert_ra_rating_actions_transport_hardening_v1.py` | PR-99 transport-only DI, allowlisted request and redirect block |
 | `tests/test_expert_ra_fetch_control_bounds_v1.py` | PR-99 finite and non-expansive fetch controls |
 | `tests/test_expert_ra_html_truncation_v1.py` | PR-99 unclosed anchor/script/style/noscript rejection |
+| `tests/test_expert_ra_anchor_and_linked_date_identity_v1.py` | PR-99 no-`href` isolation and linked-date release identity |
+| `tests/test_expert_ra_adjacent_publication_date_v1.py` | PR-99 exact action/date adjacency and cross-association rejection |
+| `tests/test_expert_ra_outlook_contract_v1.py` | PR-99 direct outlook grammar parity with parser |
+| `tests/test_expert_ra_snapshot_bounds_order_v1.py` | PR-99 bounded snapshot size and deterministic newest-first ordering |
+| `tests/test_expert_ra_withdrawal_status_suffix_v1.py` | PR-99 bounded withdrawal/watch-status grammar and malformed suffix rejection |
 | `tests/test_expert_ra_rating_actions_usage_flags_v1.py` | PR-99 privacy and usage flags |
 | `tests/test_expert_ra_rating_actions_exports_v1.py` | PR-99 versioned contract/source exports |
 | `tests/test_portfolio_*` | Portfolio market and analytics |
