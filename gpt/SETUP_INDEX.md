@@ -72,7 +72,7 @@
 
 OpenAPI schema импортируется прямо по URL:
 
-`https://omni-cio-gateway-au6d.onrender.com/openapi.json`
+`https://omni-cio-gateway.onrender.com/openapi.json`
 
 В GPT Editor:
 
@@ -91,11 +91,11 @@ OpenAPI schema импортируется прямо по URL:
 Authentication:
 - `API Key`
 - `Bearer`
-- значение: **`GATEWAY_API_KEY` из Render**
+- значение: **`GATEWAY_API_KEY` из Render service `omni-cio-gateway`**
 
 ### В Render
 
-Environment:
+Environment текущего service `omni-cio-gateway`:
 - `GATEWAY_API_KEY`
 - `TINVEST_TOKEN`
 - `SSL_TBANK_VERIFY`
@@ -110,17 +110,23 @@ Environment:
 
 ## 5. Текущий production Gateway
 
+Service:
+
+`omni-cio-gateway`
+
 Base URL:
 
-`https://omni-cio-gateway-au6d.onrender.com`
+`https://omni-cio-gateway.onrender.com`
 
 Health:
 
-`https://omni-cio-gateway-au6d.onrender.com/health`
+`https://omni-cio-gateway.onrender.com/health`
 
 OpenAPI:
 
-`https://omni-cio-gateway-au6d.onrender.com/openapi.json`
+`https://omni-cio-gateway.onrender.com/openapi.json`
+
+Предыдущий Blueprint service `omni-cio-gateway-au6d` не использовать как endpoint этого GPT.
 
 Ожидание по `/health`:
 - status = ok;
