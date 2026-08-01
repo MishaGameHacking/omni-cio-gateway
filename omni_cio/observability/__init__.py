@@ -17,6 +17,7 @@ from omni_cio.contracts.v1.alerting import (
 from omni_cio.contracts.v1.expert_ra_alerting import (
     ExpertRaRatingActionsAlertDisposition,
     ExpertRaRatingActionsAlertEvaluationV1,
+    ExpertRaRatingActionsAlertEvidenceV1,
     ExpertRaRatingActionsAlertKind,
     ExpertRaRatingActionsAlertPolicyV1,
 )
@@ -64,6 +65,11 @@ from omni_cio.observability.expert_ra_rating_actions_events_v1 import (
     build_expert_ra_rating_actions_cache_event,
     build_expert_ra_rating_actions_source_event,
 )
+from omni_cio.observability.expert_ra_rating_actions_operations_lifecycle_v1 import (
+    ExpertRaRatingActionsOperationsBatchV1,
+    ExpertRaRatingActionsOperationsLifecycleError,
+    ExpertRaRatingActionsOperationsLifecycleV1,
+)
 from omni_cio.observability.moex_iss_quote_alert_policy_v1 import (
     MoexQuoteAlertPolicyError,
     MoexQuoteAlertPolicyEvaluatorV1,
@@ -109,11 +115,15 @@ __all__ = [
     "CbrKeyRateOperationsLifecycleV1",
     "ExpertRaRatingActionsAlertDisposition",
     "ExpertRaRatingActionsAlertEvaluationV1",
+    "ExpertRaRatingActionsAlertEvidenceV1",
     "ExpertRaRatingActionsAlertKind",
     "ExpertRaRatingActionsAlertPolicyError",
     "ExpertRaRatingActionsAlertPolicyEvaluatorV1",
     "ExpertRaRatingActionsAlertPolicyV1",
     "ExpertRaRatingActionsObservabilityError",
+    "ExpertRaRatingActionsOperationsBatchV1",
+    "ExpertRaRatingActionsOperationsLifecycleError",
+    "ExpertRaRatingActionsOperationsLifecycleV1",
     "MoexIssQuoteObservabilityError",
     "MoexQuoteAlertDisposition",
     "MoexQuoteAlertEvaluationV1",
