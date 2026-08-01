@@ -96,6 +96,30 @@ def _contract_error() -> ExpertRaRatingActionsAlertPolicyError:
     )
 
 
+def _policy_error() -> ExpertRaRatingActionsAlertPolicyError:
+    return ExpertRaRatingActionsAlertPolicyError(
+        "EXPERT_RA_RATING_ALERT_POLICY_INVALID"
+    )
+
+
+def _validated_policy(
+    policy: ExpertRaRatingActionsAlertPolicyV1,
+) -> ExpertRaRatingActionsAlertPolicyV1:
+    if not isinstance(policy, ExpertRaRatingActionsAlertPolicyV1):
+        raise ExpertRaRatingActionsAlertPolicyError(
+            "EXPERT_RA_RATING_ALERT_POLICY_TYPE_INVALID"
+        )
+    try:
+        validated = ExpertRaRatingActionsAlertPolicyV1.model_validate(
+            policy.model_dump(mode="python", warnings="error")
+        )
+    except Exception:
+        raise _policy_error() from None
+    if validated != policy:
+        raise _policy_error()
+    return validated
+
+
 def _event_contract_revalidates(event: ObservabilityEventV1) -> bool:
     try:
         validated = ObservabilityEventV1.model_validate(
@@ -376,7 +400,8 @@ class ExpertRaRatingActionsAlertPolicyEvaluatorV1:
         self,
         policy: ExpertRaRatingActionsAlertPolicyV1 | None = None,
     ) -> None:
-        self._policy = policy or ExpertRaRatingActionsAlertPolicyV1()
+        candidate = policy or ExpertRaRatingActionsAlertPolicyV1()
+        self._policy = _validated_policy(candidate)
         self._states: OrderedDict[
             ExpertRaRatingActionsAlertKind,
             _AlertState,
