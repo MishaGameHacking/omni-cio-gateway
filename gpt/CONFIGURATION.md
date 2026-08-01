@@ -1,5 +1,8 @@
 # Custom GPT configuration registry — Omni-CIO v8.4
 
+> ⚠️ Этот файл — РЕЕСТР НАСТРОЕК. НЕ вставлять его целиком в поле `Instructions` Custom GPT.
+> Для поля `Instructions` использовать только `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_4_1.txt`.
+
 ## Identity
 
 - Name: `Omni-CIO API | Управляющий и аналитик v8.4`
@@ -27,13 +30,14 @@
 
 ## Instructions
 
-В поле Instructions вставить **полное содержимое** файла:
+В поле `Instructions` вставить **полное содержимое только этого файла**:
 
-`gpt/INSTRUCTIONS_COMPACT.md`
+`gpt/CUSTOM_GPT_INSTRUCTIONS_V8_4_1.txt`
 
-Не сокращать его вручную и не смешивать с предыдущими версиями.
+Не вставлять туда `CONFIGURATION.md`, `SETUP_INDEX.md`, README или Knowledge-файлы.
+Не смешивать несколько версий Instructions.
 
-`gpt/INSTRUCTIONS.md` остаётся расширенной версией для разработки и аудита; в GPT Editor по умолчанию используется именно `INSTRUCTIONS_COMPACT.md`.
+`gpt/INSTRUCTIONS_COMPACT.md` и `gpt/INSTRUCTIONS.md` остаются разработческими/аудитными источниками, но production UI-файл для GPT Editor — `CUSTOM_GPT_INSTRUCTIONS_V8_4_1.txt`.
 
 ## Knowledge — production upload set
 
@@ -101,6 +105,8 @@ Expected Action surface:
 3. затем `getPortfolioAnalytics`;
 4. только после этого — анализ и DecisionCard.
 
+До успешного базового набора Web Search не должен заменять брокерские Actions.
+
 Если бот пишет «нет свежих данных» до попытки `getPortfolioSnapshot`, acceptance не пройден.
 
 ## Secrets boundary
@@ -119,7 +125,7 @@ GitHub хранит только имена переменных и инстру
 ## Publishing checklist
 
 1. Проверить `gpt/SETUP_INDEX.md`.
-2. Вставить `INSTRUCTIONS_COMPACT.md` без ручных изменений.
+2. Вставить `CUSTOM_GPT_INSTRUCTIONS_V8_4_1.txt` в поле Instructions без ручных изменений.
 3. Загрузить ровно 10 Knowledge-файлов без дублей.
 4. Выбрать recommended model `Thinking 5.6`.
 5. Web Search и Data Analysis включить; Image generation и Apps выключить.
