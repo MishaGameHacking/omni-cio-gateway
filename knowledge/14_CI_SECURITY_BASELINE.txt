@@ -137,13 +137,18 @@ Self-hosted Windows runner operations — 2026-08-01
 - Durable availability requires the official runner application to operate as a
   Windows service with `Running` state and automatic startup. An interactive
   `run.cmd` listener is not accepted as a durable operating mode.
-- Repository diagnostics are read-only and may inspect only runner root,
-  `.runner`, `run.cmd`, service identity, service state, start mode and service
-  executable path.
+- Repository diagnostics are read-only and may inspect only the existence of the
+  runner root and configuration markers plus service identity, state and start
+  mode.
+- Automatic diagnostic output must not expose the local runner root or service
+  executable path; only bounded booleans, typed status and service identity are
+  returned.
 - The diagnostic must not start, stop, install, remove or reconfigure a service;
   it must not access `.credentials`, registration tokens or workflow secrets.
 - Exact runner service identity is mandatory. A different
   `actions.runner.*` service must fail closed as an identity mismatch.
+- Caller-provided runner names are allowlisted and must never be interpreted as
+  PowerShell wildcard patterns.
 - Failure to query Windows service metadata is distinct from stopped or
   non-automatic service state and must use a separate typed error.
 - Administrative recovery remains an explicit owner action documented in
