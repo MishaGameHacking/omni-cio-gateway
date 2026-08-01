@@ -10,7 +10,7 @@ from omni_cio.contracts.v1.expert_ra_ratings import (
     ExpertRaIssuerRatingActionsSnapshotV1,
     ExpertRaIssuerRatingActionV1,
 )
-from omni_cio.contracts.v1.market import SourceAuthority
+from omni_cio.contracts.v1.market import MarketSourceV1, SourceAuthority
 from omni_cio.contracts.v1.ratings import (
     CreditRatingCacheErrorCode,
     CreditRatingCacheStatus,
@@ -61,6 +61,24 @@ def _age_seconds(
     checked_at: datetime,
 ) -> int:
     return max(0, int((checked_at - snapshot.retrieved_at).total_seconds()))
+
+
+def _safe_source_error_code(
+    snapshot: ExpertRaIssuerRatingActionsSnapshotV1,
+) -> CreditRatingSourceErrorCode | None:
+    value = snapshot.error_code
+    return value if isinstance(value, CreditRatingSourceErrorCode) else None
+
+
+def _snapshot_timestamp_valid(
+    snapshot: ExpertRaIssuerRatingActionsSnapshotV1,
+) -> bool:
+    value = snapshot.retrieved_at
+    return (
+        isinstance(value, datetime)
+        and value.tzinfo is not None
+        and value.utcoffset() is not None
+    )
 
 
 class ExpertRaIssuerRatingActionsCacheV1:
@@ -163,7 +181,7 @@ class ExpertRaIssuerRatingActionsCacheV1:
     ) -> bool:
         return (
             isinstance(record, ExpertRaIssuerRatingActionV1)
-            and snapshot.source is not None
+            and isinstance(snapshot.source, MarketSourceV1)
             and record.source == snapshot.source
             and record.agency == "EXPERT_RA"
             and record.scope == "issuer"
@@ -178,12 +196,19 @@ class ExpertRaIssuerRatingActionsCacheV1:
     ) -> bool:
         if (
             snapshot.status is not CreditRatingSourceStatus.AVAILABLE
-            or snapshot.source is None
+            or not _snapshot_timestamp_valid(snapshot)
+            or not isinstance(snapshot.source, MarketSourceV1)
             or snapshot.source.authority is not SourceAuthority.OFFICIAL
             or snapshot.source.provider != EXPERT_RA_RATING_ACTIONS_PROVIDER
             or snapshot.source.source_id != EXPERT_RA_RATING_ACTIONS_SOURCE_ID
             or snapshot.source.retrieved_at != snapshot.retrieved_at
+            or not isinstance(snapshot.records, tuple)
             or not snapshot.records
+            or not all(
+                isinstance(record, ExpertRaIssuerRatingActionV1)
+                for record in snapshot.records
+            )
+            or snapshot.error_code is not None
             or snapshot.subject_identity_resolution_required is not True
             or snapshot.cross_agency_identity_merged is not False
             or snapshot.trading_methods is not False
@@ -192,7 +217,10 @@ class ExpertRaIssuerRatingActionsCacheV1:
         release_urls = tuple(record.release_url for record in snapshot.records)
         if len(set(release_urls)) != len(release_urls):
             return False
-        if not all(cls._record_identity_valid(record, snapshot) for record in snapshot.records):
+        if not all(
+            cls._record_identity_valid(record, snapshot)
+            for record in snapshot.records
+        ):
             return False
         expected_order = tuple(
             sorted(
@@ -202,6 +230,19 @@ class ExpertRaIssuerRatingActionsCacheV1:
             )
         )
         return snapshot.records == expected_order
+
+    @staticmethod
+    def _unavailable_snapshot_valid(
+        snapshot: ExpertRaIssuerRatingActionsSnapshotV1,
+    ) -> bool:
+        return (
+            snapshot.status is CreditRatingSourceStatus.UNAVAILABLE
+            and _snapshot_timestamp_valid(snapshot)
+            and snapshot.source is None
+            and isinstance(snapshot.records, tuple)
+            and not snapshot.records
+            and isinstance(snapshot.error_code, CreditRatingSourceErrorCode)
+        )
 
     def _fresh_result(
         self,
@@ -337,20 +378,39 @@ class ExpertRaIssuerRatingActionsCacheV1:
                     source_error_code=None,
                     cache_error_code=CreditRatingCacheErrorCode.REFRESH_TYPE_INVALID,
                 )
+            if not _snapshot_timestamp_valid(snapshot):
+                return self._stale_or_unavailable_result(
+                    entry=entry,
+                    checked_at=now,
+                    allow_stale=allow_stale,
+                    source_error_code=None,
+                    cache_error_code=CreditRatingCacheErrorCode.REFRESH_SOURCE_MISMATCH,
+                )
+            source_error_code = _safe_source_error_code(snapshot)
             if snapshot.retrieved_at - now > self._future_tolerance:
                 return self._stale_or_unavailable_result(
                     entry=entry,
                     checked_at=now,
                     allow_stale=allow_stale,
-                    source_error_code=snapshot.error_code,
+                    source_error_code=source_error_code,
                     cache_error_code=CreditRatingCacheErrorCode.REFRESH_FROM_FUTURE,
                 )
             if snapshot.status is CreditRatingSourceStatus.UNAVAILABLE:
+                if not self._unavailable_snapshot_valid(snapshot):
+                    return self._stale_or_unavailable_result(
+                        entry=entry,
+                        checked_at=now,
+                        allow_stale=allow_stale,
+                        source_error_code=source_error_code,
+                        cache_error_code=(
+                            CreditRatingCacheErrorCode.REFRESH_SOURCE_MISMATCH
+                        ),
+                    )
                 return self._stale_or_unavailable_result(
                     entry=entry,
                     checked_at=now,
                     allow_stale=allow_stale,
-                    source_error_code=snapshot.error_code,
+                    source_error_code=source_error_code,
                     cache_error_code=(
                         CreditRatingCacheErrorCode.EMPTY
                         if entry is None
@@ -362,7 +422,7 @@ class ExpertRaIssuerRatingActionsCacheV1:
                     entry=entry,
                     checked_at=now,
                     allow_stale=allow_stale,
-                    source_error_code=snapshot.error_code,
+                    source_error_code=source_error_code,
                     cache_error_code=CreditRatingCacheErrorCode.REFRESH_SOURCE_MISMATCH,
                 )
 
