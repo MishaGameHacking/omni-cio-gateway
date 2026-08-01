@@ -23,10 +23,11 @@ acceptance.
 
 ## Evidence inspected
 
-- current `main` and recent merge history through PR-104;
+- `main` and recent merge history through functional PR-104 and infrastructure
+  PR #130;
 - open Pull Requests and issue #27;
-- PR #130 diff, source, tests, runbook, previous workflow run and job logs;
-- latest successful PR-104 Regression Shield evidence;
+- PR #130 diff, PowerShell source, tests, runbook, workflow runs and job logs;
+- latest successful PR-104 and PR #130 Regression Shield evidence;
 - `AGENTS.md`, README, project-memory/status files and dependency constraints;
 - current Python and GitHub Actions Dependabot queue;
 - official GitHub documentation for status checks, self-hosted runner service
@@ -34,25 +35,33 @@ acceptance.
 
 ## Current main verdict
 
-Latest `main` commit at audit start:
+Functional audit base:
 
 `34708f82d20e054bdd420ac1e9993c6d117e12d7`
 
-This is the squash merge of PR-104, the fixed NCR issuer rating-action source.
+This was the squash merge of PR-104, the fixed NCR issuer rating-action source.
 Its exact-head Regression Shield passed both blocking jobs with 1235 tests,
 61.97% coverage, mypy over 188 files, lock verification, Ruff, formatting,
 pip-audit, Bandit, secret scan, stable `app:app`, exactly 14 GET Actions and
 `trading_methods=false`.
 
-Therefore no current failing code/security check was found on the latest merged
-`main`. This does not prove that every future input path or production external
-integration is defect-free, and it does not close the external acceptance gap.
+Current `main` after the infrastructure correction:
+
+`52a818daa64f4290fd6f551fbbc7f77bea3a94b2`
+
+This is the squash merge of PR #130. Its fresh merge-ref Regression Shield run
+#810 passed both blocking jobs with 1241 tests, 61.97% coverage, mypy over 188
+files, all release-contract and security gates, and a diagnostics artifact.
+
+No failing repository code/security check was found at these accepted boundaries.
+This does not prove every future input path or external production integration
+is defect-free, and it does not close the production acceptance gap.
 
 ## Screenshot red-cross diagnosis
 
-The red cross shown beside PR #130 is the aggregate status of checks for the
-latest PR commit/merge-ref represented at that time. It is not a per-file error
-indicator and does not mean that every file in the PR is broken.
+The red cross shown beside PR #130 was the aggregate status of checks for the
+PR commit/merge-ref represented at that time. It was not a per-file error
+indicator and did not mean that every changed file was broken.
 
 Historical Regression Shield run #787 on old PR #130 head
 `931d47e4d4954976fd2477f2d330310242027160` had this result:
@@ -86,12 +95,12 @@ Additional gaps:
 
 - no explicit missing/invalid/mismatched service-marker states;
 - no Windows fixture tests for wildcard or oversized marker content;
-- fallback wildcard-first service discovery could silently choose a service
-  before exact identity was established.
+- fallback wildcard-first service discovery could choose a service before exact
+  identity was established.
 
-## PR #130 corrections applied
+## PR #130 corrections and acceptance
 
-The PR branch was updated to:
+The PR was updated to:
 
 - require `.service`;
 - cap `.service` at 1 KiB and reject empty content;
@@ -109,13 +118,31 @@ The PR branch was updated to:
   valid-but-uninstalled marker cases;
 - update the recovery runbook to use the exact validated `.service` value.
 
-The PR remains draft until the fresh exact-head Regression Shield completes.
+Final PR #130 head:
+
+`d0c1d3a06e7d0f4f4ea5a2d85908d6c4bf5d1a6b`.
+
+Regression Shield run #810:
+
+- security job: success;
+- quality/contracts/coverage job: success;
+- 1241 tests passed;
+- 19 warnings;
+- coverage 61.97%, threshold >=60%;
+- mypy: 188 source files, no issues;
+- `app:app`, exactly 14 GET Actions, forbidden surface count 0 and
+  `trading_methods=false` verified;
+- pip-audit, Bandit and secret scan passed;
+- diagnostics artifact ID `8817049137`.
+
+PR #130 was then squash-merged as
+`52a818daa64f4290fd6f551fbbc7f77bea3a94b2`.
 
 ## Documentation and project-memory drift
 
 The repository had contradictory current-state claims:
 
-- `knowledge/16_CURRENT_PROGRAM_STATUS.md` still described PR-104 as active and
+- `knowledge/16_CURRENT_PROGRAM_STATUS.md` described PR-104 as active and
   unmerged although PR-104 was already in `main`;
 - `knowledge/00_PROJECT_MASTER_CONTEXT.md` retained a local section claiming
   PR-81 was the current functional top;
@@ -125,14 +152,14 @@ The repository had contradictory current-state claims:
 This is operationally significant: a new agent following stale text could start
 the wrong package, duplicate work or misclassify a closed blocker.
 
-Corrective policy:
+Corrective policy implemented in audit PR #137:
 
 - current code in `main` wins over narrative documents;
 - `knowledge/16_CURRENT_PROGRAM_STATUS.md` carries the current merged top and
   next safe candidate;
-- long-lived master context must not hard-code a temporary active PR as an
+- long-lived master context does not hard-code a temporary active PR as an
   authoritative fact;
-- issue #27 is the live roadmap tracker and must be refreshed after merges;
+- issue #27 remains the live roadmap tracker and must be refreshed after merge;
 - CI success, external acceptance and future master-plan goals remain distinct.
 
 ## Dependency audit
@@ -157,10 +184,10 @@ Current direct development/security pins included:
 - `detect-secrets==1.5.0`.
 
 Open Dependabot PRs include FastAPI, pytest and major GitHub Action updates. A
-green icon on an older branch is insufficient because the merge-ref may predate
-PR-104. Required treatment for each dependency PR:
+green icon on an older branch is insufficient when the merge-ref predates the
+latest `main`. Required treatment for each dependency PR:
 
-1. rebase or regenerate a current merge-ref;
+1. regenerate a current merge-ref;
 2. review official release notes and breaking changes;
 3. regenerate all affected hash locks;
 4. inspect every transitive change;
@@ -174,13 +201,12 @@ blind auto-merges.
 
 ## Warning debt
 
-The latest green Regression Shield still reports 19 non-blocking warnings.
-Previously observed classes include:
+The latest green Regression Shield reports 19 non-blocking warnings:
 
 - deprecated Starlette/FastAPI TestClient integration path using current HTTPX;
 - deprecated T-Invest request identity fields based on `figi`;
 - Pydantic serializer warnings in final-review tests;
-- Node runtime deprecation warnings from older GitHub Action revisions.
+- GitHub Action Node runtime, `punycode` and legacy URL API warnings.
 
 These warnings did not fail the current release gate, but they are active debt.
 Each class needs one of:
@@ -198,13 +224,14 @@ The audited release boundary remains internally consistent:
 - user-facing Gateway remains read-only;
 - market/rating sources added after PR-84 remain internal fixed-source packages;
 - no public Action count increase was found;
-- no startup fetch or broker write was introduced by PR-104;
+- no startup fetch or broker write was introduced by PR-104 or PR #130;
 - Telegram runtime remains retired;
-- current source/cache/observability/alert/evidence packages are separated by
-  agency and do not authorize execution.
+- source/cache/observability/alert/evidence packages remain separated by agency
+  and do not authorize execution;
+- PR #130 changes only CI diagnostics, tests and documentation.
 
-Remaining chain gaps from the master plan are not defects in already-declared
-scope, but they are incomplete program work:
+Remaining chain gaps from the master plan are incomplete program work, not
+proof that already declared scopes are broken:
 
 - production-grade news and corporate events;
 - external versioned RAG with freshness and citations;
@@ -233,9 +260,8 @@ No repository document may mark these complete without real external evidence.
 
 Functional roadmap work remains paused until:
 
-- PR #130 passes fresh exact-head Regression Shield or is closed with a recorded
-  decision;
-- current-state documentation and issue #27 agree with `main`;
+- audit PR #137 passes exact-head Regression Shield and merges;
+- issue #27 agrees with the accepted `main` state;
 - warning classes are registered and prioritized;
 - every open dependency PR is classified as merge, revise, supersede or close;
 - no unresolved review thread or required check remains red;
@@ -248,10 +274,12 @@ startup fetch, frontend field, cross-agency scale merge or trading method.
 
 ## Audit status
 
-- latest merged `main`: green at PR-104 evidence boundary;
-- PR #130 source hardening: applied, fresh CI pending;
-- current program status reconciliation: applied in audit branch;
-- master-context and issue #27 stale references: identified for correction;
+- latest merged `main`: functional PR-104 plus CI infrastructure PR #130;
+- PR #130 source hardening: merged after full successful Regression Shield;
+- current program status reconciliation: applied in audit PR #137;
+- durable master context and README drift: corrected in audit PR #137;
+- issue #27 stale references: pending synchronization after audit merge;
 - dependency queue: classified, not blindly merged;
+- warning debt: identified and registered;
 - external acceptance: still open;
 - live trading: disabled.
