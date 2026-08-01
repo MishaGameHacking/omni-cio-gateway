@@ -20,15 +20,25 @@ def test_runner_service_diagnostic_is_read_only_and_fail_closed() -> None:
         '$ErrorActionPreference = "Stop"',
         "ValidatePattern('^[A-Za-z0-9._-]{1,64}$')",
         '$expectedServiceSuffix = ".$ExpectedRunnerName.service"',
+        "$runnerConfigInfo.Length -le 65536",
+        'Properties["AgentName"]',
+        'Properties["Ephemeral"]',
+        "ConvertFrom-Json -ErrorAction Stop",
+        "[System.StringComparison]::OrdinalIgnoreCase",
         'Get-Service -Name "actions.runner.*"',
         ".EndsWith(",
-        "[System.StringComparison]::OrdinalIgnoreCase",
         "Get-CimInstance",
         "Win32_Service",
         "runner_root_exists = $runnerRootExists",
+        "runner_configuration_valid = $runnerConfigurationValid",
+        "runner_configuration_identity_matches = $runnerConfigurationIdentityMatches",
+        "runner_ephemeral = $runnerEphemeral",
         "service_identity_matches = $serviceIdentityMatches",
         "service_start_mode = $serviceStartMode",
         'error_code = "RUNNER_SERVICE_WINDOWS_REQUIRED"',
+        '"RUNNER_CONFIGURATION_INVALID"',
+        '"RUNNER_CONFIGURATION_IDENTITY_MISMATCH"',
+        '"RUNNER_EPHEMERAL_UNSUPPORTED"',
         '"RUNNER_SERVICE_MISSING"',
         '"RUNNER_SERVICE_IDENTITY_MISMATCH"',
         '"RUNNER_SERVICE_QUERY_FAILED"',
@@ -52,8 +62,14 @@ def test_runner_service_diagnostic_is_read_only_and_fail_closed() -> None:
         ".credentials",
         '-like "*.$ExpectedRunnerName.service"',
         "runner_root = $RunnerRoot",
+        "service_name =",
         "service_path =",
         "PathName",
+        "GitHubUrl",
+        "ServerUrl",
+        "WorkFolder",
+        "AgentId",
+        "PoolName",
     ):
         assert forbidden not in text
 
@@ -69,6 +85,7 @@ def test_runner_service_runbook_keeps_secrets_out_of_repository() -> None:
     assert "registration token" in text.lower()
     assert "must never be stored" in text
     assert "trading_methods=false" in text
+    assert "RUNNER_EPHEMERAL_UNSUPPORTED" in text
     assert "TINVEST_TOKEN=" not in text
     assert "GATEWAY_API_KEY=" not in text
     assert "github_pat_" not in text
