@@ -125,6 +125,22 @@ class ExpertRaIssuerRatingActionV1(ContractModel):
             raise ValueError("Expert RA rating is outside the fixed national scale")
         return result
 
+    @field_validator("outlook")
+    @classmethod
+    def validate_outlook(
+        cls,
+        value: CreditRatingOutlook | None,
+    ) -> CreditRatingOutlook | None:
+        if value not in {
+            None,
+            CreditRatingOutlook.STABLE,
+            CreditRatingOutlook.POSITIVE,
+            CreditRatingOutlook.NEGATIVE,
+            CreditRatingOutlook.DEVELOPING,
+        }:
+            raise ValueError("Expert RA outlook is outside the supported source grammar")
+        return value
+
     @model_validator(mode="after")
     def validate_action(self) -> ExpertRaIssuerRatingActionV1:
         if self.source.authority is not SourceAuthority.OFFICIAL:
