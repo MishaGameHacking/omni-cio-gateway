@@ -477,8 +477,14 @@ def _parse_action_title(
 
     match = _WITHDRAW_PATTERN.fullmatch(normalized)
     if match is not None:
+        subject = _require_simple_subject(match.group("subject"))
+        subject_upper = f" {subject.upper()} "
+        if " СТАТУС " in subject_upper or " ПРОГНОЗ " in subject_upper:
+            raise ExpertRaRatingActionsSourceError(
+                CreditRatingSourceErrorCode.SCHEMA_INVALID.value
+            )
         return (
-            _require_simple_subject(match.group("subject")),
+            subject,
             None,
             RatingAction.WITHDRAWN,
             None,
