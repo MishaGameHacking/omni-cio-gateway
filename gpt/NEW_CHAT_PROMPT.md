@@ -1,57 +1,70 @@
-# Стартовый запрос для нового чата
+# Стартовый запрос для нового чата разработки
 
-Скопируйте этот текст в новый чат после подключения GitHub. Для запуска проекта в новом аккаунте сначала используйте `NEW_ACCOUNT_BOOTSTRAP.md` и `PROJECT_INSTRUCTIONS.md`.
+Скопируйте этот текст в новый чат после подключения GitHub.
 
 ```text
-Подключись к GitHub-репозиторию Misha2304/omni-cio-gateway.
+Подключись к приватному GitHub-репозиторию Misha2304/omni-cio-gateway.
+
+Цель проекта: довести существующий Custom GPT Omni-CIO до стабильного персонального read-only помощника по моему портфелю T-Invest.
 
 Сначала прочитай:
 1. AGENTS.md
-2. README.md
-3. docs/README.md
-4. docs/master-plan/README.md
-5. docs/master-plan/OMNI_CIO_MASTER_PROMPT_V9.txt
-6. knowledge/00_PROJECT_MASTER_CONTEXT.md
-7. knowledge/16_CURRENT_PROGRAM_STATUS.md
-8. gpt/README.md
+2. docs/master-plan/OMNI_CIO_PORTFOLIO_GPT_RESET_V1.md
+3. README.md
+4. docs/README.md
+5. knowledge/00_PROJECT_MASTER_CONTEXT.md
+6. knowledge/16_CURRENT_PROGRAM_STATUS.md
+7. gpt/README.md
+8. gpt/CONFIGURATION.md
 9. gpt/INSTRUCTIONS_COMPACT.md
-10. gpt/ACTIONS_CATALOG.md
-11. профильные файлы из knowledge/ по текущей задаче
+10. gpt/INSTRUCTIONS.md
+11. gpt/ACTIONS_CATALOG.md
+12. gpt/PORTFOLIO_GPT_ACCEPTANCE_V1.md
+13. gpt/PERSONAL_PORTFOLIO_POLICY_TEMPLATE.md
 
-Затем:
-- проверь актуальную ветку main;
-- проверь последние Pull Request и GitHub Actions;
-- считай код в main источником истины;
-- сохраняй строгий read-only режим;
-- не добавляй торговые endpoints;
-- сохраняй trading_methods=false;
-- сохраняй Render entrypoint app:app;
-- не сохраняй токены, ключи, полный номер счёта и реальные брокерские данные;
-- не используй историю, память или файлы других аккаунтов и проектов;
-- работай через отдельную ветку и Pull Request;
-- после значимого изменения обновляй project memory и профильную документацию.
+Затем проверь:
+- current main и его SHA;
+- открытые PR и Issues;
+- Regression Shield и artifacts;
+- review threads;
+- фактические 14 GET Actions;
+- stable app:app;
+- trading_methods=false;
+- текущие Instructions, Knowledge и GPT Editor state, если доступны.
 
-Перед началом кратко покажи:
-- текущий release;
-- commit main;
-- открытые PR;
-- состояние Regression Shield;
-- какие файлы прочитаны;
-- план безопасных изменений.
+Жёсткий scope:
+- только существующий Custom GPT внутри ChatGPT;
+- анализ моего реального портфеля;
+- новости, рейтинги, риски и диверсификация;
+- поиск активов для свободных денег;
+- hold/wait/reduce/sell/increase/buy/do-nothing рекомендации;
+- read-only расчёты;
+- работа только по моим командам.
 
-Пока ничего не изменяй.
+Не создавать и не развивать:
+- сайт, web-кабинет, приложение или frontend;
+- Telegram и publishing;
+- собственную AI-модель;
+- публичный сервис;
+- автономную торговлю;
+- broker write methods.
+
+Безопасность:
+- не хранить и не просить секреты;
+- не раскрывать полный account ID;
+- не создавать/менять/отменять заявки;
+- не выдавать stale/partial данные за надёжную рекомендацию;
+- не обещать доходность;
+- работать через отдельную ветку и PR;
+- не merge без exact-head green CI.
+
+После проверки:
+1. покажи фактическое текущее состояние;
+2. выбери один следующий логический пакет;
+3. создай ветку и draft PR;
+4. внеси код/документы/тесты;
+5. доведи CI до green;
+6. подготовь только одно необходимое owner-only действие для GPT Editor.
+
+Не предлагай новый сайт или новую архитектуру вокруг GPT. Сначала доведи end-to-end работу существующего GPT.
 ```
-
-## Для задачи по Custom GPT
-
-Дополнительно прочитайте всю папку `gpt/`, `knowledge/13_COMMUNICATION_STYLE_2026.txt` и проверьте production `/openapi.json` после Render deploy.
-
-## Для проверки завершённой миграции с Telegram
-
-Прочитайте `knowledge/12_TELEGRAM_RETIREMENT.txt` и
-`docs/operations/TELEGRAM_REMOVAL_RUNBOOK.md`. Не восстанавливайте
-удалённый runtime без нового ADR, threat model и решения владельца.
-
-## Для задачи по frontend
-
-Сначала прочитайте `docs/inventory/PROJECT_ASSETS.md`. Не создавайте новый сайт, пока не найден и не подтверждён исходный frontend-проект существующего Omni-CIO Bot.
