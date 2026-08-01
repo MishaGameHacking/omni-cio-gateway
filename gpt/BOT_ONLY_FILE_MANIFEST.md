@@ -1,104 +1,119 @@
-# Bot-only file manifest
+# Portfolio GPT file manifest
 
-Этот список содержит только файлы, относящиеся к Omni-CIO Gateway и
-Custom GPT. Данные старого аккаунта ChatGPT, личные чаты и посторонние
-проекты сюда не входят.
+Этот список содержит только файлы, необходимые для существующего Omni-CIO Custom GPT и его защищённого Gateway.
 
-## 1. Обязательные файлы для нового проекта ChatGPT
+## 1. Канонические файлы продукта
 
 | Файл | Назначение |
 |---|---|
-| `AGENTS.md` | Неприкосновенные правила разработки, read-only и Git workflow |
-| `README.md` | Текущая версия, архитектура, запуск и карта репозитория |
-| `docs/README.md` | Навигация по документации |
-| `knowledge/00_PROJECT_MASTER_CONTEXT.md` | Единая обезличенная память проекта |
-| `knowledge/16_CURRENT_PROGRAM_STATUS.md` | Что завершено и какой пакет следующий |
-| `docs/master-plan/README.md` | Иерархия и правила использования исходного master plan |
-| `docs/master-plan/OMNI_CIO_MASTER_PROMPT_V9.pdf` | Исходная пользовательская спецификация развития |
-| `gpt/PROJECT_INSTRUCTIONS.md` | Готовый текст для Project instructions |
-| `gpt/NEW_CHAT_PROMPT.md` | Стартовый запрос для нового чата после подключения GitHub |
+| `AGENTS.md` | Обязательные правила разработки и read-only границы |
+| `docs/master-plan/OMNI_CIO_PORTFOLIO_GPT_RESET_V1.md` | Текущий portfolio-only scope |
+| `knowledge/16_CURRENT_PROGRAM_STATUS.md` | Фактический текущий этап |
+| `gpt/INSTRUCTIONS_COMPACT.md` | Текст для поля Instructions GPT Editor |
+| `gpt/INSTRUCTIONS.md` | Расширенная версия для разработки и аудита |
+| `gpt/CONFIGURATION.md` | Имя, описание, capabilities, starters и publishing checklist |
+| `gpt/ACTIONS_CATALOG.md` | Фактические 14 read-only Actions |
+| `gpt/PERSONAL_PORTFOLIO_POLICY_TEMPLATE.md` | Шаблон личной инвестиционной политики |
+| `gpt/PORTFOLIO_GPT_ACCEPTANCE_V1.md` | Preview end-to-end acceptance |
+| `gpt/MY_GPT_SETUP_RUNBOOK.md` | UI-настройка существующего GPT |
 
-## 2. Обязательные файлы для нового Custom GPT
+## 2. Что вставляется и загружается в GPT Editor
 
-| Файл | Куда использовать |
-|---|---|
-| `gpt/MY_GPT_SETUP_RUNBOOK.md` | Пошаговая настройка ChatGPT → My GPTs |
-| `gpt/CONFIGURATION.md` | Имя, описание, starters, capabilities и publishing checklist |
-| `gpt/INSTRUCTIONS_COMPACT.md` | Полностью вставить в поле Instructions GPT Editor |
-| `gpt/ACTIONS_CATALOG.md` | Проверка списка Actions и operationId |
-| `knowledge/13_COMMUNICATION_STYLE_2026.txt` | Загрузить в Knowledge как расширенный профиль общения |
+### Instructions
 
-`gpt/INSTRUCTIONS_COMPACT.md` — проверенная рабочая версия для GPT Editor; расширенный `gpt/INSTRUCTIONS.md` нужен для разработки, аудита и восстановления контекста.
+Полностью вставить:
 
-## 3. Профильные knowledge-файлы Gateway
+- `gpt/INSTRUCTIONS_COMPACT.md`.
 
-Для разработки и проверок должны оставаться в репозитории все файлы `knowledge/NN_*`, включая правила:
+### Knowledge
 
-- идентификации инструментов;
-- рыночных данных;
-- рыночной оценки портфеля;
-- аналитики структуры и концентрации;
-- денег и ликвидности;
-- purchase-capacity preview и integrity;
-- операций и cash-flow reconciliation;
-- официального брокерского отчёта;
-- асинхронного task lifecycle;
-- решение о выводе Telegram Companion из эксплуатации;
-- современного стиля 2026.
+Загрузить минимальный набор:
 
-В новый ChatGPT Project не обязательно загружать каждый knowledge-файл вручную, если GitHub подключён и чат может прочитать репозиторий. Для Custom GPT Knowledge загружается только необходимый справочный файл стиля или другие явно выбранные документы.
+1. Заполненную личную политику на основе `gpt/PERSONAL_PORTFOLIO_POLICY_TEMPLATE.md`.
+2. Один компактный документ с методикой анализа портфеля/инструментов, если нужные правила не помещаются в Instructions.
+3. Один нейтральный style/reference файл при необходимости.
 
-## 4. Runtime и API
+Не загружать автоматически весь каталог `knowledge/`.
 
-В GitHub обязательно сохраняются:
+## 3. Что не загружается в production GPT Knowledge
 
-- `app.py` и Gateway runtime modules;
+- master plans и roadmap;
+- CI/security baseline;
+- GitHub issue/PR history;
+- architecture/release evidence;
+- Telegram history и removal runbook;
+- deployment diagnostics;
+- реальные операции, позиции и отчёты;
+- секреты;
+- полный account ID.
+
+## 4. Capabilities
+
+Включить:
+
+- Web Search;
+- Data Analysis / Code Interpreter;
+- Actions.
+
+Выключить:
+
+- Image generation;
+- Apps;
+- любые Telegram-интеграции.
+
+## 5. Runtime и API в GitHub
+
+Сохраняются:
+
+- `app.py` и Gateway runtime;
+- `omni_cio/`;
 - `broker_report_reconciliation/`;
 - `render.yaml`;
-- `requirements.txt` и dev dependencies;
+- hash-locked dependencies;
 - `tests/`;
 - `scripts/`;
 - `.github/`;
-- OpenAPI-контракт, формируемый работающим Gateway через `/openapi.json`.
+- production OpenAPI через `/openapi.json`.
 
-## 5. Документация и эксплуатация
+Gateway остаётся минимальным data/validation layer. Backend-файл сохраняется только при наличии consumer/test или явного compatibility status.
 
-- `docs/master-plan/` — исходная спецификация и её текстовая поисковая копия;
-- `docs/architecture/` — архитектура и структура;
-- `docs/operations/` — deploy и release runbooks;
-- `docs/inventory/` — реестр файлов и внешних компонентов;
-- `CHANGELOG.md` — история релизов;
-- `SECURITY.md` — правила безопасности;
-- `CONTRIBUTING.md` — порядок изменений.
+## 6. Полностью исключено из продукта
 
-## 6. Что намеренно не переносится и не хранится в GitHub
+- сайт и web-кабинет;
+- мобильное приложение;
+- отдельный frontend;
+- Telegram-бот;
+- Telegram drafts и publishing;
+- Telegram API и credentials;
+- собственная AI-модель;
+- autonomous execution;
+- broker write methods.
 
-- экспорт аккаунта ChatGPT;
-- старые личные чаты;
-- память и настройки другого аккаунта;
-- файлы других проектов;
+Исторические Telegram retirement files могут оставаться в репозитории как audit evidence, но не входят в продукт, GPT Knowledge, Actions или roadmap.
+
+## 7. Секреты
+
+Не хранить в GitHub:
+
 - `TINVEST_TOKEN`;
 - `GATEWAY_API_KEY`;
-- действующие или отозванные Telegram credentials;
-- полный номер брокерского счёта;
-- реальные операции, позиции и брокерские отчёты;
+- Authorization headers;
+- полный номер счёта;
 - Render secrets;
-- секретный Bearer key из GPT Editor.
+- реальные брокерские payload.
 
-## 7. Внешние настройки, которые вводятся вручную
+## 8. Owner-only действия
 
-GitHub хранит желаемую конфигурацию, но не секретные значения. В новом Custom GPT вручную выполняются только:
+Владелец вручную выполняет только:
 
-1. создание GPT;
-2. вставка `INSTRUCTIONS_COMPACT.md`;
-3. загрузка выбранных Knowledge-файлов;
-4. включение Web Search;
-5. импорт production `/openapi.json`;
-6. Authentication → API Key → Bearer;
-7. ввод существующего `GATEWAY_API_KEY` из Render;
-8. тест одного целевого GET Action;
-9. проверка `trading_methods=false`.
+1. вставку `INSTRUCTIONS_COMPACT.md` в существующий GPT;
+2. заполнение и загрузку personal policy;
+3. удаление конфликтующих Knowledge-файлов;
+4. включение Web Search и Data Analysis;
+5. выключение Image generation;
+6. импорт `/openapi.json`, когда schema changed/stale;
+7. ввод Bearer key;
+8. Preview acceptance;
+9. Update.
 
-Существующий Render Gateway и T-Invest token не создаются заново.
-Старый Telegram service выводится из эксплуатации по
-`docs/operations/TELEGRAM_REMOVAL_RUNBOOK.md`.
+ChatGPT/agent выполняет GitHub, код, тесты, OpenAPI review, документацию и подготовку точных UI-инструкций.
