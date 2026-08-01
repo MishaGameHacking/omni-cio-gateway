@@ -29,6 +29,7 @@ operations assets. Код в `main` остаётся окончательным 
 | `omni_cio/contracts/v1/ratings.py` | PR-94/95 ACRA issuer actions and source/cache contracts |
 | `omni_cio/contracts/v1/acra_alerting.py` | PR-97/98 global ACRA alert/evidence contracts |
 | `omni_cio/contracts/v1/expert_ra_ratings.py` | PR-99/100 separate Expert RA issuer-action, snapshot and cache-result contracts |
+| `omni_cio/contracts/v1/expert_ra_alerting.py` | PR-102 global-only Expert RA alert policy/evaluation contracts |
 
 ## Market and macro runtime
 
@@ -59,6 +60,7 @@ operations assets. Код в `main` остаётся окончательным 
 | `omni_cio/observability/acra_rating_actions_alert_policy_v1.py` | PR-97 strict global ACRA operational alert evaluator |
 | `omni_cio/observability/acra_rating_actions_operations_lifecycle_v1.py` | PR-98 deterministic event/evaluation and terminal evidence |
 | `omni_cio/observability/expert_ra_rating_actions_events_v1.py` | PR-101 pure Expert RA source/cache telemetry with opaque traces and no rating-action payload |
+| `omni_cio/observability/expert_ra_rating_actions_alert_policy_v1.py` | PR-102 global-only Expert RA operational alert state machine with forged-event rejection |
 
 ## Final-review release chain
 
@@ -131,6 +133,8 @@ Key entrypoints:
 | `tests/test_expert_ra_rating_actions_cache_exports_v1.py` | PR-100 cache export compatibility |
 | `tests/test_expert_ra_rating_actions_observability_v1.py` | PR-101 safe source/cache mapping, opaque trace and serialized privacy guards |
 | `tests/test_expert_ra_rating_actions_observability_exports_v1.py` | PR-101 observability export compatibility |
+| `tests/test_expert_ra_rating_actions_alert_policy_v1.py` | PR-102 global-only thresholds, cooldown/recovery, forgery and concurrency guards |
+| `tests/test_expert_ra_rating_actions_alert_policy_exports_v1.py` | PR-102 alert-policy export compatibility |
 | `tests/test_portfolio_*` | Portfolio market and analytics |
 | `tests/test_purchase_capacity*.py` | Purchase preview integrity |
 | `tests/test_operations_analytics.py` | Operations and cash-flow reconciliation |
@@ -156,6 +160,7 @@ Key entrypoints:
 | `docs/architecture/EXPERT_RA_ISSUER_RATING_ACTION_SOURCE_V1.md` | PR-99 fixed source, grammar, scale and transport boundary |
 | `docs/architecture/EXPERT_RA_ISSUER_RATING_ACTION_CACHE_V1.md` | PR-100 cache freshness, stale exposure and single-flight boundary |
 | `docs/architecture/EXPERT_RA_ISSUER_RATING_ACTION_OBSERVABILITY_V1.md` | PR-101 privacy-safe telemetry and opaque correlation boundary |
+| `docs/architecture/EXPERT_RA_RATING_ACTIONS_ALERT_POLICY_V1.md` | PR-102 global operational alert thresholds, forged-event gate and no-delivery boundary |
 | `docs/architecture/CBR_KEY_RATE_*` | PR-84…PR-88 CBR architecture |
 | `docs/architecture/MOEX_ISS_TQBR_QUOTE_*` | PR-89…PR-93 MOEX architecture |
 | `gpt/MY_GPT_SETUP_RUNBOOK.md` | Custom GPT setup, Preview and rollback |
@@ -166,4 +171,4 @@ Key entrypoints:
 При добавлении, переименовании или удалении ключевого runtime, contract, test или
 architecture file этот индекс обновляется в том же Pull Request. Секреты,
 реальные отчёты, account identifiers, raw CBR XML, raw MOEX JSON, raw ACRA или
-Expert RA HTML и process-local cache/evidence state в GitHub не хранятся.
+Expert RA HTML и process-local cache/alert/evidence state в GitHub не хранятся.
