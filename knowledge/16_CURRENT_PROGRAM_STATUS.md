@@ -2,7 +2,8 @@
 
 Дата актуализации: 2026-08-01  
 Фактическая слитая функциональная вершина `main`: **PR-104**  
-Последний merge commit: `34708f82d20e054bdd420ac1e9993c6d117e12d7`  
+Последний инфраструктурный merge: **PR #130**  
+Текущий `main` commit: `52a818daa64f4290fd6f551fbbc7f77bea3a94b2`  
 Текущий режим: **read-only audit hold**
 
 ## Назначение документа
@@ -62,22 +63,23 @@ Final Regression Shield run #806 прошёл на exact head
 - pip-audit, Bandit and detect-secrets passed;
 - diagnostics artifact was present.
 
-Это подтверждает зелёное состояние `main` на PR-104, но не доказывает внешнюю
-production acceptance.
+Это подтверждает зелёное состояние функционального `main` на PR-104, но не
+доказывает внешнюю production acceptance.
 
-## Audit hold перед продолжением roadmap
+## Слитая CI-инфраструктура — PR #130
 
-По команде владельца функциональная разработка временно приостановлена до
-закрытия следующих проверок.
+PR #130 `CI: make self-hosted Windows runner service diagnosable` был
+squash-merged в `main` commit:
 
-### 1. Draft infrastructure PR #130
+`52a818daa64f4290fd6f551fbbc7f77bea3a94b2`.
 
-PR #130 `CI: make self-hosted Windows runner service diagnosable` остаётся
-draft. Старый красный check относился к Regression Shield run #787: security
-job прошёл, а quality job упал на одном ACRA deterministic-clock test, который
-позже был исправлен отдельным PR #131 и уже находится в `main`.
+Старый красный check на скриншоте относился к Regression Shield run #787 на
+старом head: security job прошёл, а quality job упал на одном ACRA
+deterministic-clock test. Этот ACRA test был исправлен отдельным PR #131 и уже
+находился в `main` до финальной проверки PR #130.
 
-Повторный аудит самого PR #130 нашёл дополнительные реальные недостатки:
+Повторный ручной аудит PR #130 также нашёл и исправил реальные недостатки его
+собственного PowerShell boundary:
 
 - `.service` marker читался без отдельного byte bound;
 - его содержимое могло попасть в PowerShell `Get-Service -Name`, который
@@ -85,29 +87,40 @@ job прошёл, а quality job упал на одном ACRA deterministic-clo
 - отсутствовали отдельные typed states и tests для missing/invalid/mismatched
   service marker.
 
-PR #130 был усилен fail-closed: bounded `.service`, exact service identity,
+Финальная версия использует bounded `.service`, exact service identity,
 no wildcard-first discovery, redacted output и Windows-native regression tests.
-Merge запрещён до нового полного Regression Shield на текущем exact head.
+Regression Shield run #810 прошёл на exact head
+`d0c1d3a06e7d0f4f4ea5a2d85908d6c4bf5d1a6b`:
 
-### 2. Документационная согласованность
+- оба blocking jobs — success;
+- 1241 tests passed, 19 warnings;
+- total coverage 61.97%;
+- mypy: 188 source files, no issues;
+- lock projections, compile, Ruff, formatting, repository policy passed;
+- `app:app`, exactly 14 GET Actions and `trading_methods=false` passed;
+- pip-audit, Bandit and secret scan passed;
+- diagnostics artifact ID `8817049137`.
 
-До этого аудита оперативные документы расходились с фактическим `main`:
+## Audit hold перед продолжением roadmap
 
-- этот файл всё ещё называл PR-104 активным незавершённым пакетом после его
-  успешного merge;
+По команде владельца функциональная разработка остаётся приостановленной до
+закрытия текущего audit package PR #137 и следующих контрольных пунктов.
+
+### 1. Документационная согласованность
+
+До аудита оперативные документы расходились с фактическим `main`:
+
+- status file называл PR-104 активным незавершённым пакетом после его merge;
 - `knowledge/00_PROJECT_MASTER_CONTEXT.md` содержал устаревший локальный текст
   о вершине PR-81;
-- issue #27 описывал более раннюю вершину и блокер, который уже не соответствует
-  состоянию репозитория;
-- README подробно перечислял chain только до PR-91, хотя фактическая вершина
-  была PR-104.
+- issue #27 описывал более раннюю вершину и устаревший blocker state;
+- README подробно перечислял chain только до PR-91.
 
-Каноническое правило: номера active package нельзя считать истиной без проверки
-`main`, открытых PR и exact-head Actions. Этот файл обновлён до PR-104; остальные
-stale references должны быть устранены в том же audit package или явно
-помечены как исторические.
+PR #137 исправляет project memory, README, documentation index и file inventory.
+Каноническое правило: active package нельзя определять без проверки `main`,
+открытых PR и exact-head Actions.
 
-### 3. Dependency queue
+### 2. Dependency queue
 
 В `main` сохраняются отдельно зафиксированные и hash-locked версии:
 
@@ -121,22 +134,22 @@ stale references должны быть устранены в том же audit p
 - `mypy==2.3.0`.
 
 Открытые Dependabot PRs нельзя объединять только по зелёному значку в списке.
-Каждый должен получить свежий merge-ref против текущего `main`, review release
-notes, regenerated hash locks и полный Regression Shield. Особенно это касается
+Каждый должен получить свежий merge-ref против текущего `main`, official release
+review, regenerated hash locks и полный Regression Shield. Особенно это касается
 major переходов pytest и GitHub Actions.
 
-### 4. Warning debt
+### 3. Warning debt
 
-Последний зелёный Regression Shield всё ещё сообщает 19 warnings. Из ранее
-зафиксированных классов требуется отдельная совместимостная проверка:
+Regression Shield run #810 сообщает 19 non-blocking warnings. Зарегистрированы
+следующие классы:
 
 - Starlette/FastAPI TestClient transition away from deprecated `httpx` path;
 - deprecated T-Invest request identity fields based on `figi`;
 - Pydantic serializer warnings в final-review tests;
-- GitHub Action Node runtime deprecation warnings до завершения Action upgrades.
+- GitHub Action Node runtime and Node API deprecation warnings.
 
 Warnings не равны текущему падению CI, но не должны бессрочно считаться
-безопасными без классификации и regression tests.
+безопасными без отдельной классификации, migration plan и regression tests.
 
 ## Production acceptance state
 
@@ -157,8 +170,7 @@ CI не может отметить эти проверки выполненны
 
 ### Backend and operations
 
-- завершить и слить PR #130 только после нового exact-head green CI;
-- устранить stale project-memory and roadmap references;
+- завершить audit PR #137 и синхронизировать issue #27;
 - классифицировать и закрыть либо зарегистрировать все warning classes;
 - проверить Dependabot packages по одному, без blind auto-merge;
 - добавить другие credit-rating agencies только как independent fixed sources;
@@ -185,14 +197,14 @@ confirm-before-trade, idempotency, confirmation TTL, kill switch, partial-fill
 
 ## Следующий безопасный функциональный пакет
 
-После закрытия audit hold следующий логичный кандидат — отдельный
-**NCR rating-action cache v1** над PR-104 с explicit
+После merge audit PR #137 и синхронизации roadmap следующий логичный кандидат —
+отдельный **NCR rating-action cache v1** над PR-104 с explicit
 fresh/stale/unavailable semantics, single-flight refresh, bounded retention и
 no-silent-stale policy.
 
-Он не должен начинаться или сливаться одновременно с незавершённым audit/CI
-package. Другой следующий пакет допустим только после повторной сверки master
-plan, issue #27, текущего `main` и внешних приоритетов владельца.
+Он не должен добавлять route, startup fetch, frontend field, cross-agency scale
+merge или trading method. Другой следующий пакет допустим только после повторной
+сверки master plan, issue #27, текущего `main` и внешних приоритетов владельца.
 
 ## Запрет ложного завершения
 
