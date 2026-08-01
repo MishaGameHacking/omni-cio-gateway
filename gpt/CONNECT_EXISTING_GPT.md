@@ -34,17 +34,23 @@ Repository:
 
 `gpt/SETUP_INDEX.md`
 
-Production Render:
+Production Render service:
 
-`https://omni-cio-gateway-au6d.onrender.com`
+`omni-cio-gateway`
+
+Production URL:
+
+`https://omni-cio-gateway.onrender.com`
 
 Health:
 
-`https://omni-cio-gateway-au6d.onrender.com/health`
+`https://omni-cio-gateway.onrender.com/health`
 
 OpenAPI:
 
-`https://omni-cio-gateway-au6d.onrender.com/openapi.json`
+`https://omni-cio-gateway.onrender.com/openapi.json`
+
+Предыдущий Blueprint service `omni-cio-gateway-au6d` не использовать как endpoint этого GPT.
 
 ## 3. Открыть существующего GPT
 
@@ -145,7 +151,7 @@ Backend/Gateway — v3.10.0.
 
 Открыть в браузере:
 
-`https://omni-cio-gateway-au6d.onrender.com/health`
+`https://omni-cio-gateway.onrender.com/health`
 
 Проверить минимум:
 
@@ -168,7 +174,7 @@ Backend/Gateway — v3.10.0.
 
 - Authentication: `API Key`;
 - Mode: `Bearer`;
-- Secret: значение `GATEWAY_API_KEY` из Render.
+- Secret: значение `GATEWAY_API_KEY` из Render service `omni-cio-gateway`.
 
 Не использовать `TINVEST_TOKEN` в GPT Editor.
 
@@ -180,7 +186,7 @@ Backend/Gateway — v3.10.0.
 
 и использовать:
 
-`https://omni-cio-gateway-au6d.onrender.com/openapi.json`
+`https://omni-cio-gateway.onrender.com/openapi.json`
 
 После импорта сверить с:
 
@@ -192,13 +198,13 @@ Backend/Gateway — v3.10.0.
 
 ## 10. Секреты
 
-Render Environment хранит:
+Render Environment service `omni-cio-gateway` хранит:
 
 - `GATEWAY_API_KEY`;
 - `TINVEST_TOKEN`;
 - `SSL_TBANK_VERIFY`.
 
-GPT Editor знает только Bearer secret, совпадающий с `GATEWAY_API_KEY`.
+GPT Editor знает только Bearer secret, совпадающий с `GATEWAY_API_KEY` этого же service.
 
 GitHub не хранит значения секретов.
 
@@ -276,8 +282,8 @@ GitHub не хранит значения секретов.
 
 - изменение Instructions;
 - замена Knowledge-файлов;
-- повторный импорт OpenAPI при изменении Action schema;
-- Bearer secret при ротации `GATEWAY_API_KEY`;
+- повторный импорт OpenAPI при изменении Action schema или production endpoint;
+- Bearer secret при ротации `GATEWAY_API_KEY` или переключении между Render services;
 - Capabilities/Sharing.
 
 GitHub является source of truth и резервной копией, но GPT Editor не синхронизируется с GitHub автоматически.
@@ -293,12 +299,12 @@ GitHub является source of truth и резервной копией, но
 Порядок:
 
 1. GitHub `gpt/SETUP_INDEX.md`.
-2. Render `/health`.
+2. Render `/health` текущего service `omni-cio-gateway`.
 3. `CONFIGURATION.md`.
 4. `INSTRUCTIONS_COMPACT.md`.
 5. 10 файлов `gpt/knowledge/`.
-6. OpenAPI URL.
-7. API Key → Bearer (`GATEWAY_API_KEY`).
+6. OpenAPI URL `https://omni-cio-gateway.onrender.com/openapi.json`.
+7. API Key → Bearer (`GATEWAY_API_KEY` из этого же Render service).
 8. Preview acceptance.
 9. Update.
 
