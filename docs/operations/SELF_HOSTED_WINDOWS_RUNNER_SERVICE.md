@@ -35,6 +35,8 @@ Healthy output requires all of the following:
 - `.runner` configuration marker exists;
 - `run.cmd` exists;
 - a matching `actions.runner.*.omni-cio-ci.service` service exists;
+- the exact service identity matches `omni-cio-ci`;
+- Windows service metadata can be queried;
 - service state is `Running`;
 - service start mode is `Auto`.
 
@@ -110,6 +112,8 @@ messages or documentation.
 | `RUNNER_CONFIGURATION_MISSING` | `.runner` marker is absent | Reconfigure the runner through GitHub |
 | `RUNNER_COMMAND_MISSING` | `run.cmd` is absent | Restore the official runner application package |
 | `RUNNER_SERVICE_MISSING` | Interactive-only or removed service | Reconfigure the runner in service mode |
+| `RUNNER_SERVICE_IDENTITY_MISMATCH` | The discovered service belongs to a different runner name | Stop and inspect the mismatched registration; do not treat it as `omni-cio-ci` |
+| `RUNNER_SERVICE_QUERY_FAILED` | Windows service metadata could not be read | Check administrator/WMI access and Windows service health |
 | `RUNNER_SERVICE_NOT_AUTOMATIC` | Service will not reliably survive reboot | Set startup type to Automatic |
 | `RUNNER_SERVICE_NOT_RUNNING` | Registered service is stopped | Start the service and inspect Windows event/service logs |
 
@@ -126,5 +130,8 @@ messages or documentation.
 ## Official references
 
 - GitHub Docs: Configuring the self-hosted runner application as a service
+  (`https://docs.github.com/en/actions/how-tos/manage-runners/self-hosted-runners/configure-the-application`)
 - GitHub Docs: Adding self-hosted runners
+  (`https://docs.github.com/en/actions/how-tos/manage-runners/self-hosted-runners/add-runners`)
 - GitHub Docs: Monitoring and troubleshooting self-hosted runners
+  (`https://docs.github.com/en/actions/how-tos/manage-runners/self-hosted-runners/monitor-and-troubleshoot`)
