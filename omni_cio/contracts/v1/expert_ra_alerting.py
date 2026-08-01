@@ -16,11 +16,11 @@ StateCapacity = Annotated[int, Field(ge=4, le=4)]
 SafeErrorCode = Annotated[str, Field(pattern=r"^[A-Z][A-Z0-9_]{2,63}$")]
 OpaqueEvidenceIdentifier = Annotated[
     str,
-    Field(pattern=r"^expert-ra-alert-evidence:[a-p]{32}$"),
+    Field(pattern=r"^expert-ra-evidence:[a-p]{64}$"),
 ]
-OpaqueCorrelationIdentifier = Annotated[
-    str,
-    Field(pattern=r"^corr:[a-p]{32}$"),
+ExpertRaSourceEventName = Literal[
+    "market.expert_ra_rating_actions.source",
+    "market.expert_ra_rating_actions.cache",
 ]
 
 
@@ -183,14 +183,11 @@ class ExpertRaRatingActionsAlertEvaluationV1(ContractModel):
             )
         return self
 
+
 class ExpertRaRatingActionsAlertEvidenceV1(ContractModel):
     evidence_id: OpaqueEvidenceIdentifier
     recorded_at: datetime
-    correlation_id: OpaqueCorrelationIdentifier
-    source_event_name: Literal[
-        "market.expert_ra_rating_actions.source",
-        "market.expert_ra_rating_actions.cache",
-    ]
+    source_event_name: ExpertRaSourceEventName
     scope: Literal["global_expert_ra_rating_actions_feed"] = (
         "global_expert_ra_rating_actions_feed"
     )
@@ -201,10 +198,14 @@ class ExpertRaRatingActionsAlertEvidenceV1(ContractModel):
     threshold: PositiveCount
     error_code: SafeErrorCode | None = None
     contains_sensitive_payload: Literal[False] = False
+    correlation_id_present: Literal[False] = False
     issuer_identity_present: Literal[False] = False
     rating_values_present: Literal[False] = False
     action_identity_present: Literal[False] = False
+    release_identity_present: Literal[False] = False
+    publication_date_present: Literal[False] = False
     financial_values_present: Literal[False] = False
+    raw_source_payload_present: Literal[False] = False
     rating_thresholds_present: Literal[False] = False
     financial_thresholds_present: Literal[False] = False
     external_notification_sent: Literal[False] = False
@@ -264,4 +265,3 @@ class ExpertRaRatingActionsAlertEvidenceV1(ContractModel):
                 "recovered Expert RA evidence cannot retain an error code"
             )
         return self
-
