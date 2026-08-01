@@ -40,6 +40,10 @@ if ($env:OS -ne "Windows_NT") {
         runner_configuration_identity_matches = $false
         runner_ephemeral = $null
         run_command_present = $false
+        service_marker_present = $false
+        service_marker_valid = $false
+        service_marker_identity_matches = $false
+        service_query_succeeded = $false
         service_identity_matches = $false
         service_state = $null
         service_start_mode = $null
@@ -53,6 +57,7 @@ $serviceFilePath = Join-Path -Path $RunnerRoot -ChildPath ".service"
 $runnerConfigPath = Join-Path -Path $RunnerRoot -ChildPath ".runner"
 $runCommandPath = Join-Path -Path $RunnerRoot -ChildPath "run.cmd"
 $expectedServiceSuffix = ".$ExpectedRunnerName.service"
+$serviceNamePattern = '^actions\.runner\.[A-Za-z0-9._-]{1,480}\.service$'
 
 $runnerConfigurationPresent = Test-Path -LiteralPath $runnerConfigPath -PathType Leaf
 $runnerConfigurationValid = $false
@@ -61,9 +66,9 @@ $runnerEphemeral = $null
 
 if ($runnerConfigurationPresent) {
     try {
-        $runnerConfigInfo = Get-Item -LiteralPath $runnerConfigPath
+        $runnerConfigInfo = Get-Item -LiteralPath $runnerConfigPath -ErrorAction Stop
         if ($runnerConfigInfo.Length -le 65536) {
-            $runnerSettings = Get-Content -LiteralPath $runnerConfigPath -Raw |
+            $runnerSettings = Get-Content -LiteralPath $runnerConfigPath -Raw -ErrorAction Stop |
                 ConvertFrom-Json -ErrorAction Stop
             $agentNameProperty = $runnerSettings.PSObject.Properties["AgentName"]
             $ephemeralProperty = $runnerSettings.PSObject.Properties["Ephemeral"]
@@ -101,41 +106,104 @@ if ($runnerConfigurationPresent) {
     }
 }
 
+$runCommandPresent = Test-Path -LiteralPath $runCommandPath -PathType Leaf
+$serviceMarkerPresent = Test-Path -LiteralPath $serviceFilePath -PathType Leaf
+$serviceMarkerValid = $false
+$serviceMarkerIdentityMatches = $false
 $declaredServiceName = $null
-if (Test-Path -LiteralPath $serviceFilePath -PathType Leaf) {
-    $declaredServiceName = (Get-Content -LiteralPath $serviceFilePath -Raw).Trim()
-    if ([string]::IsNullOrWhiteSpace($declaredServiceName)) {
+
+if ($serviceMarkerPresent) {
+    try {
+        $serviceMarkerInfo = Get-Item -LiteralPath $serviceFilePath -ErrorAction Stop
+        if ($serviceMarkerInfo.Length -gt 0 -and $serviceMarkerInfo.Length -le 1024) {
+            $serviceNameCandidate = (
+                Get-Content -LiteralPath $serviceFilePath -Raw -ErrorAction Stop
+            ).Trim()
+            if ($serviceNameCandidate -match $serviceNamePattern) {
+                $serviceMarkerValid = $true
+                $serviceMarkerIdentityMatches = $serviceNameCandidate.EndsWith(
+                    $expectedServiceSuffix,
+                    [System.StringComparison]::OrdinalIgnoreCase
+                )
+                if ($serviceMarkerIdentityMatches) {
+                    $declaredServiceName = $serviceNameCandidate
+                }
+            }
+        }
+    }
+    catch {
+        $serviceMarkerValid = $false
+        $serviceMarkerIdentityMatches = $false
         $declaredServiceName = $null
     }
 }
 
 $service = $null
-if ($null -ne $declaredServiceName) {
-    $service = Get-Service -Name $declaredServiceName -ErrorAction SilentlyContinue
-}
-
-if ($null -eq $service) {
-    $service = Get-Service -Name "actions.runner.*" -ErrorAction SilentlyContinue |
-        Where-Object {
-            $_.Name.EndsWith(
-                $expectedServiceSuffix,
-                [System.StringComparison]::OrdinalIgnoreCase
-            )
-        } |
-        Select-Object -First 1
-}
-
 $serviceDetails = $null
-if ($null -ne $service) {
-    $escapedServiceName = $service.Name.Replace("'", "''")
-    $serviceDetails = Get-CimInstance `
-        -ClassName Win32_Service `
-        -Filter "Name='$escapedServiceName'" `
-        -ErrorAction SilentlyContinue
+$serviceQuerySucceeded = $false
+$serviceQueryFailed = $false
+
+if ($null -ne $declaredServiceName) {
+    try {
+        $matchingServices = @(
+            Get-Service -ErrorAction Stop |
+                Where-Object {
+                    [string]::Equals(
+                        $_.Name,
+                        $declaredServiceName,
+                        [System.StringComparison]::OrdinalIgnoreCase
+                    )
+                }
+        )
+        $serviceQuerySucceeded = $true
+        if ($matchingServices.Count -eq 1) {
+            $service = $matchingServices[0]
+        }
+        elseif ($matchingServices.Count -gt 1) {
+            $serviceQueryFailed = $true
+            $serviceQuerySucceeded = $false
+        }
+    }
+    catch {
+        $serviceQueryFailed = $true
+        $serviceQuerySucceeded = $false
+    }
+}
+
+if ($null -ne $service -and -not $serviceQueryFailed) {
+    try {
+        $serviceDetailsMatches = @(
+            Get-CimInstance -ClassName Win32_Service -ErrorAction Stop |
+                Where-Object {
+                    [string]::Equals(
+                        $_.Name,
+                        $declaredServiceName,
+                        [System.StringComparison]::OrdinalIgnoreCase
+                    )
+                }
+        )
+        if ($serviceDetailsMatches.Count -eq 1) {
+            $serviceDetails = $serviceDetailsMatches[0]
+        }
+        else {
+            $serviceQueryFailed = $true
+            $serviceQuerySucceeded = $false
+        }
+    }
+    catch {
+        $serviceQueryFailed = $true
+        $serviceQuerySucceeded = $false
+    }
 }
 
 $serviceIdentityMatches = (
     $null -ne $service -and
+    $null -ne $declaredServiceName -and
+    [string]::Equals(
+        $service.Name,
+        $declaredServiceName,
+        [System.StringComparison]::OrdinalIgnoreCase
+    ) -and
     $service.Name.EndsWith(
         $expectedServiceSuffix,
         [System.StringComparison]::OrdinalIgnoreCase
@@ -143,7 +211,6 @@ $serviceIdentityMatches = (
 )
 $serviceState = if ($null -ne $serviceDetails) { $serviceDetails.State } else { $null }
 $serviceStartMode = if ($null -ne $serviceDetails) { $serviceDetails.StartMode } else { $null }
-$runCommandPresent = Test-Path -LiteralPath $runCommandPath -PathType Leaf
 
 $healthy = (
     $runnerRootExists -and
@@ -152,6 +219,11 @@ $healthy = (
     $runnerConfigurationIdentityMatches -and
     $runnerEphemeral -eq $false -and
     $runCommandPresent -and
+    $serviceMarkerPresent -and
+    $serviceMarkerValid -and
+    $serviceMarkerIdentityMatches -and
+    $serviceQuerySucceeded -and
+    -not $serviceQueryFailed -and
     $null -ne $service -and
     $serviceIdentityMatches -and
     $null -ne $serviceDetails -and
@@ -177,6 +249,18 @@ elseif ($runnerEphemeral -eq $true) {
 }
 elseif (-not $runCommandPresent) {
     $errorCode = "RUNNER_COMMAND_MISSING"
+}
+elseif (-not $serviceMarkerPresent) {
+    $errorCode = "RUNNER_SERVICE_MARKER_MISSING"
+}
+elseif (-not $serviceMarkerValid) {
+    $errorCode = "RUNNER_SERVICE_MARKER_INVALID"
+}
+elseif (-not $serviceMarkerIdentityMatches) {
+    $errorCode = "RUNNER_SERVICE_MARKER_IDENTITY_MISMATCH"
+}
+elseif ($serviceQueryFailed -or -not $serviceQuerySucceeded) {
+    $errorCode = "RUNNER_SERVICE_QUERY_FAILED"
 }
 elseif ($null -eq $service) {
     $errorCode = "RUNNER_SERVICE_MISSING"
@@ -204,6 +288,10 @@ $result = [pscustomobject]@{
     runner_configuration_identity_matches = $runnerConfigurationIdentityMatches
     runner_ephemeral = $runnerEphemeral
     run_command_present = $runCommandPresent
+    service_marker_present = $serviceMarkerPresent
+    service_marker_valid = $serviceMarkerValid
+    service_marker_identity_matches = $serviceMarkerIdentityMatches
+    service_query_succeeded = $serviceQuerySucceeded
     service_identity_matches = $serviceIdentityMatches
     service_state = $serviceState
     service_start_mode = $serviceStartMode
