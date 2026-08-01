@@ -1,33 +1,63 @@
-# Custom GPT Omni-CIO
+# Custom GPT Omni-CIO Portfolio Assistant
 
-Эта папка хранит воспроизводимую конфигурацию пользовательского интерфейса Omni-CIO внутри ChatGPT. История чатов, память аккаунта и секреты для восстановления не нужны.
+Эта папка хранит воспроизводимую конфигурацию существующего Omni-CIO внутри ChatGPT.
 
-## Канонические точки входа
+## Канонические файлы
 
-- `MY_GPT_SETUP_RUNBOOK.md` — точная настройка в ChatGPT → My GPTs.
-- `CONFIGURATION.md` — желаемое состояние GPT Editor.
-- `INSTRUCTIONS_COMPACT.md` — рабочий текст для поля Instructions.
-- `INSTRUCTIONS.md` — расширенная каноническая версия поведения.
-- `ACTIONS_CATALOG.md` — ровно 14 production GET Actions.
-- `NEW_ACCOUNT_BOOTSTRAP.md` — запуск в новом аккаунте.
-- `BOT_ONLY_FILE_MANIFEST.md` — что относится к боту и что не переносится.
-- `PROJECT_INSTRUCTIONS.md` и `NEW_CHAT_PROMPT.md` — восстановление контекста разработки.
+- `INSTRUCTIONS_COMPACT.md` — полностью вставляется в GPT Editor.
+- `INSTRUCTIONS.md` — расширенная версия для разработки и аудита.
+- `CONFIGURATION.md` — имя, описание, capabilities, starters и publishing checklist.
+- `ACTIONS_CATALOG.md` — фактические 14 GET Actions.
+- `PERSONAL_PORTFOLIO_POLICY_TEMPLATE.md` — личная инвестиционная политика владельца.
+- `PORTFOLIO_GPT_ACCEPTANCE_V1.md` — Preview end-to-end acceptance.
+- `MY_GPT_SETUP_RUNBOOK.md` — точная ручная настройка существующего GPT.
+- `BOT_ONLY_FILE_MANIFEST.md` — минимальный набор файлов и исключения.
 
-Стратегическая спецификация разработки находится в `docs/master-plan/`; фактический выполненный этап и следующий пакет — в `knowledge/16_CURRENT_PROGRAM_STATUS.md`.
+Текущий product scope:
+
+`docs/master-plan/OMNI_CIO_PORTFOLIO_GPT_RESET_V1.md`.
+
+## Назначение
+
+Omni-CIO должен по команде владельца:
+
+- получать реальный портфель через Gateway;
+- анализировать структуру, концентрацию, ликвидность и риски;
+- проверять свежие новости и кредитные рейтинги;
+- искать подходящие инструменты;
+- предлагать hold/wait/reduce/sell/increase/buy/do-nothing;
+- рассчитывать доступный объём без создания заявки.
+
+## Что исключено
+
+- отдельный сайт;
+- web-кабинет;
+- мобильное приложение;
+- Telegram;
+- собственная AI-модель;
+- автономная торговля;
+- write Actions.
 
 ## Что вводится вручную
 
-- имя, описание, starters, модель и режим доступа;
-- текст из `INSTRUCTIONS_COMPACT.md`;
-- минимально необходимые Knowledge-файлы;
-- Web Search, если нужны текущие публичные сведения;
-- production `/openapi.json` в разделе Actions;
-- API Key с типом Bearer и секретным значением `GATEWAY_API_KEY`.
+Владелец вручную выполняет только:
 
-Секрет никогда не записывается в GitHub, Instructions или Knowledge. Подробная последовательность и проверки — в `MY_GPT_SETUP_RUNBOOK.md`.
+1. Открывает существующий GPT в web editor.
+2. Вставляет `INSTRUCTIONS_COMPACT.md`.
+3. Загружает заполненную personal policy и минимальный Knowledge.
+4. Включает Web Search и Data Analysis.
+5. Выключает Image generation.
+6. Проверяет/imports production `/openapi.json`.
+7. Вводит Bearer `GATEWAY_API_KEY` в защищённом поле.
+8. Проходит `PORTFOLIO_GPT_ACCEPTANCE_V1.md`.
+9. Нажимает Update.
+
+Секреты, полный account ID и реальные brokerage payload не хранятся в GitHub или Knowledge.
 
 ## Синхронизация
 
-Если меняется только поведение ответа, синхронизируйте оба файла Instructions, профиль `knowledge/13_COMMUNICATION_STYLE_2026.txt` и затем проверьте Preview. Если меняется OpenAPI, после production deploy повторно импортируйте schema и сверяйте весь каталог Actions.
-
-Внутри GPT нельзя считать Render/Gateway/GPT acceptance выполненной по одному зелёному CI. Статус acceptance фиксируется только после реальных проверок из `knowledge/16_CURRENT_PROGRAM_STATUS.md`.
+- Поведение изменилось → обновить оба Instructions и Preview acceptance.
+- GPT Editor settings изменились → обновить `CONFIGURATION.md`.
+- Action contract изменился → обновить OpenAPI и `ACTIONS_CATALOG.md`.
+- Личная политика изменилась → обновить только owner Knowledge file, не public repository secrets.
+- GitHub CI не заменяет реальный Preview.
