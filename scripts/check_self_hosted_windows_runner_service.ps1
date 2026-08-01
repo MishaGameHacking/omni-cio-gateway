@@ -33,13 +33,12 @@ if ($env:OS -ne "Windows_NT") {
     $result = [pscustomobject]@{
         healthy = $false
         error_code = "RUNNER_SERVICE_WINDOWS_REQUIRED"
-        runner_root = $RunnerRoot
+        runner_root_exists = $false
         expected_runner_name = $ExpectedRunnerName
         service_name = $null
         service_identity_matches = $false
         service_state = $null
         service_start_mode = $null
-        service_path = $null
         runner_configuration_present = $false
         run_command_present = $false
     }
@@ -96,7 +95,6 @@ $serviceIdentityMatches = (
 )
 $serviceState = if ($null -ne $serviceDetails) { $serviceDetails.State } else { $null }
 $serviceStartMode = if ($null -ne $serviceDetails) { $serviceDetails.StartMode } else { $null }
-$servicePath = if ($null -ne $serviceDetails) { $serviceDetails.PathName } else { $null }
 $runnerConfigurationPresent = Test-Path -LiteralPath $runnerConfigPath -PathType Leaf
 $runCommandPresent = Test-Path -LiteralPath $runCommandPath -PathType Leaf
 
@@ -140,13 +138,12 @@ elseif ($serviceState -ne "Running") {
 $result = [pscustomobject]@{
     healthy = $healthy
     error_code = $errorCode
-    runner_root = $RunnerRoot
+    runner_root_exists = $runnerRootExists
     expected_runner_name = $ExpectedRunnerName
     service_name = $serviceName
     service_identity_matches = $serviceIdentityMatches
     service_state = $serviceState
     service_start_mode = $serviceStartMode
-    service_path = $servicePath
     runner_configuration_present = $runnerConfigurationPresent
     run_command_present = $runCommandPresent
 }
