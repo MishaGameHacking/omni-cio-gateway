@@ -4,25 +4,27 @@
 
 ## Production Render service
 
-Current service:
+Current canonical service for the Custom GPT:
 
-`omni-cio-gateway-au6d`
+`omni-cio-gateway`
 
 Base URL:
 
-`https://omni-cio-gateway-au6d.onrender.com`
+`https://omni-cio-gateway.onrender.com`
 
 Health:
 
-`https://omni-cio-gateway-au6d.onrender.com/health`
+`https://omni-cio-gateway.onrender.com/health`
 
 OpenAPI:
 
-`https://omni-cio-gateway-au6d.onrender.com/openapi.json`
+`https://omni-cio-gateway.onrender.com/openapi.json`
+
+Previous Blueprint service `omni-cio-gateway-au6d` is not the active endpoint for this GPT and should not be used for new Action imports.
 
 ## Environment variables on Render
 
-Должны существовать:
+На текущем service `omni-cio-gateway` должны существовать:
 
 - `GATEWAY_API_KEY`
 - `TINVEST_TOKEN`
@@ -48,7 +50,7 @@ OpenAPI:
 Защищает публичный Omni-CIO Gateway от чужих запросов.
 
 Одно и то же секретное значение должно находиться:
-- в Render Environment как `GATEWAY_API_KEY`;
+- в Render Environment service `omni-cio-gateway` как `GATEWAY_API_KEY`;
 - в Custom GPT Action Authentication как `API Key → Bearer`.
 
 В GitHub хранится только имя переменной, не значение.
@@ -63,7 +65,7 @@ Production ожидает безопасное значение, предусм�
 
 Custom GPT
 → Authorization: Bearer <GATEWAY_API_KEY>
-→ Omni-CIO Gateway on Render
+→ `https://omni-cio-gateway.onrender.com`
 → TINVEST_TOKEN внутри server environment
 → T-Invest API
 
@@ -84,13 +86,13 @@ Custom GPT
 ## Rotation
 
 Если нужно заменить `TINVEST_TOKEN`:
-1. обновить только Render Environment;
+1. обновить только Render Environment service `omni-cio-gateway`;
 2. дождаться/restart deploy при необходимости;
 3. проверить `/health`;
 4. протестировать `getConnection` в GPT.
 
 Если нужно заменить `GATEWAY_API_KEY`:
-1. обновить Render Environment;
+1. обновить Render Environment service `omni-cio-gateway`;
 2. обновить Bearer secret в GPT Action Authentication тем же новым значением;
 3. проверить `gatewayHealth`;
 4. проверить `getConnection`.
@@ -109,8 +111,8 @@ GitHub-файлы при простой ротации секретов меня
 
 ## Дубликаты Render
 
-Custom GPT v8.4 настроен на production URL:
+Custom GPT v8.4 должен использовать только канонический production URL:
 
-`https://omni-cio-gateway-au6d.onrender.com`
+`https://omni-cio-gateway.onrender.com`
 
-Не переключать GPT на другой Render service только по совпадению имени. Перед изменением обязательно проверить `/health`, версию, commit/deployment и `trading_methods=false`.
+Если в Render остаётся `omni-cio-gateway-au6d`, считать его резервным/устаревшим до отдельного решения. Не смешивать его ключи, OpenAPI URL или логи с текущим service `omni-cio-gateway`.
