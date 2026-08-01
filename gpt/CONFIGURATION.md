@@ -1,63 +1,111 @@
-# Custom GPT configuration registry
+# Custom GPT configuration registry — Portfolio Assistant v1
 
 ## Identity
 
-- Name: `Omni-CIO API | Управляющий и аналитик`
-- Purpose: read-only investment data assistant and Gateway client.
+- Existing GPT: update in place; do not create a duplicate.
+- Recommended name: `Omni-CIO | Портфельный управляющий`.
 - Primary language: Russian.
-- Backend release: `v3.10.0`.
-- Communication profile: `Modern Financial Sage — 2026`.
+- Product: personal read-only portfolio assistant for the owner’s T-Invest account.
+- Backend: existing Omni-CIO Gateway, stable `app:app`.
 
 ## Recommended description
 
-> Безопасный read-only аналитик портфеля: получает проверяемые данные через Omni-CIO Gateway, объясняет портфель, рынок, ликвидность, операции и риски простым русским языком. Не создаёт заявки, не совершает сделки и не выводит деньги.
+> Личный инвестиционный AI-ассистент для моего портфеля T-Invest. Получает актуальные позиции через защищённые Actions, проверяет новости и кредитные рейтинги, анализирует риски и диверсификацию, помогает выбрать активы и рассчитать изменения. Работает только по моим командам и не совершает сделки.
 
-## Instructions and Knowledge
+## Instructions
 
-- В поле Instructions вставьте полный актуальный текст `INSTRUCTIONS_COMPACT.md`.
-- `INSTRUCTIONS.md` хранит расширенную каноническую версию для разработки и проверки.
-- В Knowledge загружайте только минимальные справочные файлы, например `knowledge/13_COMMUNICATION_STYLE_2026.txt`.
-- Master plan из `docs/master-plan/` является инструкцией разработки и по умолчанию не загружается в production GPT Knowledge.
-- Правила поведения и безопасности должны находиться в Instructions, а справочный материал — в Knowledge.
-- Секреты, полный номер счёта и реальные брокерские отчёты в Instructions/Knowledge запрещены.
+- Полностью вставить `gpt/INSTRUCTIONS_COMPACT.md` в поле Instructions существующего GPT.
+- `gpt/INSTRUCTIONS.md` — расширенная каноническая версия для разработки и аудита.
+- Не добавлять поверх канонического текста старые Telegram, website, publishing или autonomous-trading instructions.
+- При нехватке места сокращать примеры, но не удалять safety, quality gate, action routing, три варианта и personal policy requirements.
 
-## Actions
+## Knowledge
 
-- Schema source: production Render service `/openapi.json`.
-- Authentication: API Key, Bearer.
-- Secret value: ввести `GATEWAY_API_KEY` вручную; никогда не коммитить.
-- Expected surface: ровно 14 операций из `ACTIONS_CATALOG.md`, все `GET`.
-- Apps и Actions одновременно не используются; для Omni-CIO нужен режим Actions.
-- Выбранная модель/режим должны поддерживать Actions; Pro mode для этого контура не использовать.
+Production Knowledge должен быть минимальным.
 
-## Recommended conversation starters
+Загружать только:
 
-1. `Объясни состояние моего портфеля простыми словами: что хорошо, что плохо и где главный риск.`
-2. `Проверь подключение к T-Invest. Вызови только getConnection.`
-3. `Покажи read-only снимок моего портфеля и переведи цифры на человеческий язык.`
-4. `Проверь деньги и ликвидность без рекомендаций.`
-5. `Проанализируй компанию: факты, риски, сценарии, дата и источники.`
-6. `Запусти официальный брокерский отчёт за 31 день и верни task_id.`
-7. `Проверь Gateway. Вызови только gatewayHealth.`
+1. Заполненную личную политику владельца на основе `gpt/PERSONAL_PORTFOLIO_POLICY_TEMPLATE.md`.
+2. Краткие правила анализа портфеля, инструментов, новостей и рейтингов, если они не помещаются в Instructions.
+3. Один нейтральный style/reference файл без конфликтующих workflows.
+
+Не загружать:
+
+- master plans;
+- CI/security runbooks;
+- GitHub history;
+- Telegram retirement/history;
+- внутренние release/evidence документы;
+- секреты;
+- реальные брокерские отчёты;
+- полный account ID.
 
 ## Capabilities
 
-- Web Search включается для актуальных публичных данных о компаниях, отчётности, дивидендах, санкциях, ставках и новостях.
-- Для точных приватных данных счёта используются Gateway Actions, а не веб-поиск.
-- Code Interpreter опционален и не должен получать секреты или необезличенные приватные данные без явного действия пользователя.
-- Image generation для работы Gateway не требуется.
+Включить:
+
+- Web Search — свежие новости, раскрытия, рейтинги и рынок;
+- Code Interpreter / Data Analysis — расчёты, таблицы и графики;
+- Actions — Gateway API.
+
+Выключить:
+
+- Image generation — не требуется для portfolio workflow;
+- Apps — текущий GPT использует Actions, а не Apps.
+
+Модель должна поддерживать Custom Actions. Не выбирать режим, в котором Actions недоступны.
+
+## Actions
+
+- Schema source: production Gateway `/openapi.json`.
+- Authentication: API Key → Bearer.
+- Secret: `GATEWAY_API_KEY`, вводится владельцем вручную в защищённом поле.
+- Expected surface: ровно 14 GET operations из `gpt/ACTIONS_CATALOG.md`.
+- Write/execute/transfer/withdraw methods отсутствуют.
+- `trading_methods=false` обязателен.
+
+## Conversation starters
+
+1. `Проанализируй мой портфель: структура, риски, диверсификация и конкретные варианты действий.`
+2. `Проверь свежие новости и кредитные риски по активам моего портфеля.`
+3. `У меня есть свободные деньги. Сначала проверь портфель, затем предложи 3–5 подходящих активов.`
+4. `Какие позиции в моём портфеле стоит держать, сократить или пересмотреть?`
+5. `Сравни текущую структуру с моей личной инвестиционной политикой и предложи ребалансировку.`
+6. `Проверь, достаточно ли данных для надёжной рекомендации. Не додумывай недостающие цифры.`
+
+## Preview acceptance order
+
+1. `gatewayHealth` — проверить version, `app:app`, capabilities и `trading_methods=false`.
+2. `getConnection` — проверить маскированный счёт.
+3. Полный portfolio analysis по первому conversation starter.
+4. News/rating review по второму starter.
+5. Free-cash candidate search с purchase-capacity calculation.
+6. Stale/partial-data refusal scenario.
+7. Method-isolation scenario: попросить вызвать только один Action.
+8. Проверить отсутствие Telegram, website и trade-execution предложений.
+9. Выполнить полную матрицу `gpt/PORTFOLIO_GPT_ACCEPTANCE_V1.md`.
 
 ## Publishing checklist
 
-1. Выполнить `MY_GPT_SETUP_RUNBOOK.md`.
-2. Проверить production `/health`, `version=3.10.0`, `build.entrypoint=app:app` и `trading_methods=false`.
-3. Импортировать актуальный `/openapi.json` и сверить 14 GET Actions.
-4. Настроить Bearer authentication без копирования секрета в документацию.
-5. В Preview выполнить method-isolation, auth-negative и один безопасный authenticated test.
-6. Убедиться, что отсутствуют write/execute/transfer/withdraw Actions.
-7. Оставить GPT приватным или доступным только явно выбранным пользователям до production acceptance.
-8. Нажать Update только после прохождения проверок.
+1. Дождаться green GitHub package с exact head.
+2. Проверить production `/health`.
+3. Обновить Instructions в существующем GPT.
+4. Удалить устаревшие/конфликтующие Knowledge-файлы.
+5. Загрузить заполненную personal policy и выбранные minimal Knowledge files.
+6. Импортировать актуальный `/openapi.json`, только если contract changed или Editor schema stale.
+7. Проверить Bearer auth без раскрытия ключа.
+8. Пройти Preview acceptance.
+9. Оставить GPT private.
+10. Нажать Update только после успешной приёмки.
 
-## External UI state
+## External state
 
-Модель, sharing, capabilities, фактический текст Instructions, Knowledge и секретный Bearer key существуют только в GPT Editor. GitHub хранит желаемое состояние, но не применяет его автоматически.
+GitHub хранит желаемое состояние, но не применяет его автоматически к GPT Editor. Владелец вручную выполняет только:
+
+- вставку Instructions;
+- загрузку Knowledge;
+- ввод Bearer key;
+- Preview;
+- Update.
+
+ChatGPT/agent выполняет код, документы, тесты, OpenAPI review, GitHub branch/PR/CI и подготовку точных UI-шагов.
