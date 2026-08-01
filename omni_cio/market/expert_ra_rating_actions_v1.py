@@ -32,10 +32,24 @@ MAX_EXPERT_RA_RECORDS: Final = 30
 
 _ALLOWED_CONTENT_TYPES = {"text/html", "application/xhtml+xml"}
 _ALLOWED_RELEASE_HOSTS = frozenset({"raexpert.ru", "www.raexpert.ru"})
+_ALLOWED_RELEASE_MONTHS = {
+    "jan": 1,
+    "feb": 2,
+    "mar": 3,
+    "apr": 4,
+    "may": 5,
+    "jun": 6,
+    "jul": 7,
+    "aug": 8,
+    "sep": 9,
+    "oct": 10,
+    "nov": 11,
+    "dec": 12,
+}
 _ALLOWED_RELEASE_PATH = re.compile(
     r"^/releases/(?P<year>20[0-9]{2})/"
-    r"(?P<slug>(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)"
-    r"(?:0[1-9]|[12][0-9]|3[01])[a-z]?)/?$",
+    r"(?P<slug>(?P<month>jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)"
+    r"(?P<day>0[1-9]|[12][0-9]|3[01])[a-z]?)/?$",
     re.IGNORECASE,
 )
 _DATE_PATTERN = re.compile(
@@ -243,6 +257,16 @@ def _canonical_release_url(href: str) -> str:
         raise ExpertRaRatingActionsSourceError(
             CreditRatingSourceErrorCode.URL_INVALID.value
         )
+    try:
+        date(
+            int(match.group("year")),
+            _ALLOWED_RELEASE_MONTHS[match.group("month").lower()],
+            int(match.group("day")),
+        )
+    except ValueError as exc:
+        raise ExpertRaRatingActionsSourceError(
+            CreditRatingSourceErrorCode.URL_INVALID.value
+        ) from exc
     return (
         "https://raexpert.ru/releases/"
         f"{match.group('year')}/{match.group('slug').lower()}"
