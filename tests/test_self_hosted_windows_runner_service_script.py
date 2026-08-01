@@ -1,13 +1,15 @@
 from __future__ import annotations
 
-from pathlib import Path
 import shutil
 import subprocess
+from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "check_self_hosted_windows_runner_service.ps1"
-RUNBOOK = ROOT / "docs" / "operations" / "SELF_HOSTED_WINDOWS_RUNNER_SERVICE.md"
+RUNBOOK = (
+    ROOT / "docs" / "operations" / "SELF_HOSTED_WINDOWS_RUNNER_SERVICE.md"
+)
 
 
 def test_runner_service_diagnostic_is_read_only_and_fail_closed() -> None:
