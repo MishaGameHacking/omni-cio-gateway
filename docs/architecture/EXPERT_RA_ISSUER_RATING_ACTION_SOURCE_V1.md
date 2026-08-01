@@ -14,11 +14,12 @@ The source was selected only after current external verification:
 - Bank of Russia decisions identify AO `Expert RA` and its Russian national
   scale using `ru...` values;
 - the official Russian site publishes a dedicated `Рейтинговые действия` block;
-- current homepage markup ends that block with a canonical linked
-  `Аналитика` heading at `/researches/`;
+- current homepage markup exposes action/date pairs and ends that block with a
+  canonical linked `Аналитика` heading at `/researches/`;
 - official release identities use stable
   `https://raexpert.ru/releases/{year}/{slug}` paths;
-- current official examples include issuer actions and unsupported bond actions;
+- current official examples include issuer actions, unsupported bond actions,
+  developing outlooks and a withdrawal combined with removal of `под наблюдением`;
 - the source site states that rating information is informational and is not an
   investment recommendation.
 
@@ -38,8 +39,9 @@ status and source-site terms must be re-verified before production binding.
 - redirects, caller-controlled URLs and secondary domains are not allowed.
 
 `en.raexpert.ru`, query strings, fragments, unknown three-letter month tokens,
-calendar-invalid dates and arbitrary paths are rejected. The fixed `www` alias
-is never selected dynamically and cannot change the endpoint.
+calendar-invalid dates and arbitrary paths are rejected at the release-URL
+boundary. The fixed `www` alias is never selected dynamically and cannot change
+the endpoint.
 
 ## Page-scope boundary
 
@@ -62,12 +64,13 @@ cannot terminate the scope. This matches the current live homepage while
 preserving fail-closed identity controls.
 
 A publication date may be plain visible text or a separate link to the same
-official release. Every linked date is canonicalized under the same release URL
-rules as its action and must resolve to the exact same release. External, blank
-or different-release date links fail closed. The date is then validated before
-the parser decides that a later action link begins the next record. Missing,
-invalid or materially future dates fail closed. The calendar date encoded in the
-canonical release URL must exactly equal `published_on`.
+official release. The date must be the immediately following visible event after
+its action. The parser does not scan ahead across unrelated text. Every linked
+date is canonicalized under the same release URL rules as its action and must
+resolve to the exact same release. External, blank, different-release or
+non-adjacent date events fail closed. Missing, invalid or materially future dates
+also fail closed. The calendar date encoded in the canonical release URL must
+exactly equal `published_on`.
 
 ## Supported records
 
@@ -85,8 +88,17 @@ A/B/C/R/D glyphs are normalized only inside the rating token and then checked
 against the closed allowlist.
 
 Stable, positive, negative and developing outlook wording may be captured only
-when it matches the explicit title grammar. A non-empty unknown title suffix does
-not disappear silently; it fails with a typed outlook/schema error.
+when it matches the explicit title grammar. `Под наблюдением` is modeled only as
+a bounded source-title status suffix, not as a `CreditRatingOutlook` value.
+Direct contract construction therefore rejects the shared enum value
+`under_revision` for Expert RA v1. A non-empty unknown title suffix does not
+disappear silently; it fails with a typed outlook/schema error.
+
+A withdrawn action may use the exact official bounded suffix
+`и снял статус «под наблюдением»`. This suffix is not stored as issuer identity,
+rating or outlook. Withdrawal subject text containing residual control markers
+such as an unconsumed `статус` or `прогноз` fails closed instead of being stored
+inside `subject_name`.
 
 ## Unsupported scope
 
@@ -99,6 +111,8 @@ The parser skips:
 - complex `пересмотрел и присвоил` titles that cannot be mapped without prior
   rating evidence;
 - international scales;
+- standalone watch-status publications that do not contain one of the five
+  supported rating actions;
 - publications without a supported rating action.
 
 A title that clearly claims a singular supported issuer national-Russia action
@@ -118,11 +132,13 @@ but no longer matches the allowlisted grammar fails closed.
 - streamed byte limit with declared and actual size checks;
 - UTF-8/UTF-8-BOM only;
 - script, style and noscript content ignored;
-- unclosed anchor/script/style/noscript state fails as invalid HTML;
+- unclosed or mismatched anchor/script/style/noscript state fails as invalid HTML;
 - exact page-section markers required;
 - linked dates must use the exact action release identity;
-- publication date must be adjacent, valid and not materially in the future;
-- release URL month/day must be calendar-valid and match `published_on`;
+- publication date must be immediately adjacent, valid and not materially in the
+  future;
+- release URL month/day must be calendar-valid before canonicalization and match
+  `published_on`;
 - release URL conflicts fail closed;
 - response records are bounded and sorted newest first;
 - network/body/exception text is not retained in unavailable results.
@@ -147,12 +163,16 @@ declare:
 - no broker write, trade authorization or order creation;
 - `trading_methods=false`.
 
-Direct Pydantic construction enforces the same identity controls as the parser:
+Direct Pydantic construction enforces the same supported semantics as the parser:
 
+- rating must be inside the fixed Expert RA national-Russia allowlist;
+- outlook may be only stable, positive, negative, developing or absent;
 - publication cannot exceed the one-day source-retrieval tolerance;
+- URL month/day must be calendar-valid;
 - URL date and publication date must match exactly;
 - available snapshot `retrieved_at` must equal `source.retrieved_at`;
-- every record must share the exact snapshot source.
+- every record must share the exact snapshot source;
+- available snapshot records are bounded and already sorted newest first.
 
 These flags are conservative software controls and do not replace source-site
 terms or legal review.
@@ -175,12 +195,14 @@ existing read-only OpenAPI remain unchanged.
 
 ## Tests
 
-Tests cover contracts, five action types, rating-glyph normalization, outlooks,
-issuer-only filtering, malformed supported titles, live linked section boundary,
-no-`href` anchor isolation, spoofed boundary rejection, URL confinement,
-calendar-valid release identity, URL/publication-date matching, exact linked-date
-release identity, source/snapshot retrieval timestamp matching, duplicate
-conflicts, script exclusion, truncated HTML, isolated transport,
+Tests cover contracts, five action types, rating-glyph normalization, exact
+direct outlook grammar, bounded withdrawal/watch-status suffixes, issuer-only
+filtering, malformed supported titles, live linked section boundary, exact
+action/date adjacency, no-`href` anchor isolation, spoofed boundary rejection,
+URL confinement, explicit month allowlisting, calendar-valid release identity,
+URL/publication-date matching, exact linked-date release identity,
+source/snapshot retrieval timestamp matching, snapshot bounds/order, duplicate
+conflicts, script exclusion, truncated/mismatched HTML, isolated transport,
 finite/non-expansive controls, fixed endpoint, content type/size, network failure
 redaction, versioned exports and absence of generic URL, startup, route and
 broker-write surfaces.
