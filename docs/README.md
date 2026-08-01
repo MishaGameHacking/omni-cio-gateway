@@ -60,6 +60,7 @@
 - `architecture/ACRA_RATING_ACTIONS_OPERATIONS_LIFECYCLE_V1.md` — deterministic PR-96/97 composition and bounded fired/recovered evidence without issuer/rating payload.
 - `architecture/EXPERT_RA_ISSUER_RATING_ACTION_SOURCE_V1.md` — fixed Expert RA issuer-only national-scale source, canonical release identity, glyph normalization and bounded HTML transport.
 - `architecture/EXPERT_RA_ISSUER_RATING_ACTION_CACHE_V1.md` — one-entry Expert RA fresh/stale/unavailable cache, single-flight refresh and no-silent-stale policy.
+- `architecture/EXPERT_RA_ISSUER_RATING_ACTION_OBSERVABILITY_V1.md` — pure Expert RA source/cache telemetry with opaque trace IDs and no issuer/rating/action payload.
 
 ### Operations
 
