@@ -28,7 +28,7 @@ operations assets. Код в `main` остаётся окончательным 
 | `omni_cio/contracts/v1/moex_alerting.py` | PR-92/93 global MOEX alert/evidence contracts |
 | `omni_cio/contracts/v1/ratings.py` | PR-94/95 ACRA issuer actions and source/cache contracts |
 | `omni_cio/contracts/v1/acra_alerting.py` | PR-97/98 global ACRA alert/evidence contracts |
-| `omni_cio/contracts/v1/expert_ra_ratings.py` | PR-99 separate Expert RA issuer-action and snapshot contracts |
+| `omni_cio/contracts/v1/expert_ra_ratings.py` | PR-99/100 separate Expert RA issuer-action, snapshot and cache-result contracts |
 
 ## Market and macro runtime
 
@@ -41,6 +41,7 @@ operations assets. Код в `main` остаётся окончательным 
 | `omni_cio/market/acra_rating_actions_v1.py` | PR-94 fixed official issuer-level ACRA source |
 | `omni_cio/market/acra_rating_actions_cache_v1.py` | PR-95 fixed-source single-flight ACRA cache |
 | `omni_cio/market/expert_ra_rating_actions_v1.py` | PR-99 fixed Expert RA issuer-only parser and isolated bounded transport |
+| `omni_cio/market/expert_ra_rating_actions_cache_v1.py` | PR-100 one-entry single-flight Expert RA cache with explicit stale policy |
 | `omni_cio/market/` | Existing capacity, bond, equity, fund and technical analysis |
 
 ## Observability and operations evidence
@@ -124,6 +125,9 @@ Key entrypoints:
 | `tests/test_expert_ra_withdrawal_status_suffix_v1.py` | PR-99 bounded withdrawal/watch-status grammar and malformed suffix rejection |
 | `tests/test_expert_ra_rating_actions_usage_flags_v1.py` | PR-99 privacy and usage flags |
 | `tests/test_expert_ra_rating_actions_exports_v1.py` | PR-99 versioned contract/source exports |
+| `tests/test_expert_ra_rating_actions_cache_v1.py` | PR-100 fresh/stale/unavailable, single-flight, expiry and identity guards |
+| `tests/test_expert_ra_rating_actions_cache_bypass_v1.py` | PR-100 validator-bypassed malformed snapshot fail-closed coverage |
+| `tests/test_expert_ra_rating_actions_cache_exports_v1.py` | PR-100 cache export compatibility |
 | `tests/test_portfolio_*` | Portfolio market and analytics |
 | `tests/test_purchase_capacity*.py` | Purchase preview integrity |
 | `tests/test_operations_analytics.py` | Operations and cash-flow reconciliation |
@@ -147,6 +151,7 @@ Key entrypoints:
 | `docs/architecture/ACRA_RATING_ACTIONS_ALERT_POLICY_V1.md` | PR-97 global alert policy and canonical gate |
 | `docs/architecture/ACRA_RATING_ACTIONS_OPERATIONS_LIFECYCLE_V1.md` | PR-98 terminal evidence boundary |
 | `docs/architecture/EXPERT_RA_ISSUER_RATING_ACTION_SOURCE_V1.md` | PR-99 fixed source, grammar, scale and transport boundary |
+| `docs/architecture/EXPERT_RA_ISSUER_RATING_ACTION_CACHE_V1.md` | PR-100 cache freshness, stale exposure and single-flight boundary |
 | `docs/architecture/CBR_KEY_RATE_*` | PR-84…PR-88 CBR architecture |
 | `docs/architecture/MOEX_ISS_TQBR_QUOTE_*` | PR-89…PR-93 MOEX architecture |
 | `gpt/MY_GPT_SETUP_RUNBOOK.md` | Custom GPT setup, Preview and rollback |

@@ -41,6 +41,7 @@ from omni_cio.contracts.v1.decision import (
     InstrumentMarketReadinessV1,
 )
 from omni_cio.contracts.v1.expert_ra_ratings import (
+    ExpertRaIssuerRatingActionsCacheResultV1,
     ExpertRaIssuerRatingActionsSnapshotV1,
     ExpertRaIssuerRatingActionV1,
 )
@@ -256,6 +257,7 @@ __all__ = [
     "DuplicateNewsOccurrenceV1",
     "EntityResolutionStatus",
     "ExpectedPaymentSign",
+    "ExpertRaIssuerRatingActionsCacheResultV1",
     "ExpertRaIssuerRatingActionsSnapshotV1",
     "ExpertRaIssuerRatingActionV1",
     "ExternalCallStatus",
