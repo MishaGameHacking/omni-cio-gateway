@@ -340,11 +340,87 @@ final_decision_review_registry = (
 )
 
 _base_openapi = app.openapi
+_GPT_ACTIONS_HTTP_METHODS = frozenset(
+    {"get", "put", "post", "delete", "options", "head", "patch", "trace"}
+)
+_GPT_ACTIONS_IGNORED_TRACE_HEADERS = frozenset(
+    {"X-Correlation-ID", "X-Request-ID"}
+)
+
+
+def _patch_gpt_actions_openapi_compat(schema: dict[str, Any]) -> dict[str, Any]:
+    """Publish one Bearer scheme and omit headers unsupported by GPT Actions."""
+
+    components = schema.setdefault("components", {})
+    security_schemes = components.setdefault("securitySchemes", {})
+    canonical_security = security_schemes.get(
+        final_review_route.FINAL_REVIEW_SECURITY_SCHEME
+    )
+    if not isinstance(canonical_security, dict):
+        raise final_review_route.FinalDecisionReviewRouteError(
+            "GPT_ACTIONS_BEARER_SECURITY_SCHEME_MISSING"
+        )
+    if (
+        canonical_security.get("type") != "http"
+        or str(canonical_security.get("scheme", "")).lower() != "bearer"
+    ):
+        raise final_review_route.FinalDecisionReviewRouteError(
+            "GPT_ACTIONS_BEARER_SECURITY_SCHEME_INVALID"
+        )
+
+    # ChatGPT Actions supports one authentication scheme per Action definition.
+    # Keep the reviewed ApiKeyAuth Bearer contract and rewrite every protected
+    # operation to reference only that scheme. Public operations such as /health
+    # remain public because they do not declare operation-level security.
+    security_schemes.clear()
+    security_schemes[final_review_route.FINAL_REVIEW_SECURITY_SCHEME] = (
+        canonical_security
+    )
+
+    paths = schema.get("paths", {})
+    if not isinstance(paths, dict):
+        raise final_review_route.FinalDecisionReviewRouteError(
+            "GPT_ACTIONS_OPENAPI_PATHS_INVALID"
+        )
+    for path_item in paths.values():
+        if not isinstance(path_item, dict):
+            continue
+        for method, operation in path_item.items():
+            if method.lower() not in _GPT_ACTIONS_HTTP_METHODS:
+                continue
+            if not isinstance(operation, dict):
+                continue
+            if operation.get("security"):
+                operation["security"] = [
+                    {final_review_route.FINAL_REVIEW_SECURITY_SCHEME: []}
+                ]
+
+    final_operation = paths.get(final_review_route.FINAL_REVIEW_PATH, {}).get("get")
+    if not isinstance(final_operation, dict):
+        raise final_review_route.FinalDecisionReviewRouteError(
+            "FINAL_DECISION_REVIEW_OPENAPI_OPERATION_MISSING"
+        )
+    parameters = final_operation.get("parameters", [])
+    if not isinstance(parameters, list):
+        raise final_review_route.FinalDecisionReviewRouteError(
+            "FINAL_DECISION_REVIEW_OPENAPI_PARAMETERS_INVALID"
+        )
+    final_operation["parameters"] = [
+        parameter
+        for parameter in parameters
+        if not (
+            isinstance(parameter, dict)
+            and parameter.get("in") == "header"
+            and parameter.get("name") in _GPT_ACTIONS_IGNORED_TRACE_HEADERS
+        )
+    ]
+    return schema
 
 
 def openapi_v310() -> dict[str, Any]:
     schema = _base_openapi()
-    return final_review_route.patch_final_decision_review_openapi(schema)
+    schema = final_review_route.patch_final_decision_review_openapi(schema)
+    return _patch_gpt_actions_openapi_compat(schema)
 
 
 app.openapi = openapi_v310
