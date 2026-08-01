@@ -1,8 +1,8 @@
 # Индекс файлов проекта
 
 Этот файл перечисляет активные runtime, contracts, tests, architecture,
-operations and audit assets в текущей ветке. Код в актуальном `main` остаётся
-окончательным источником истины.
+operations and audit assets. Код в актуальном `main` остаётся окончательным
+источником истины.
 
 ## Gateway runtime
 
@@ -93,10 +93,8 @@ Key entrypoints:
 | `.github/pull_request_template.md` | Pull Request Definition of Done |
 | `scripts/check_repository_layout.py` | Layout and broker-write guards |
 | `scripts/check_ci_security_baseline.py` | Locks, Action pins and security policy |
+| `scripts/check_self_hosted_windows_runner_service.ps1` | Bounded read-only exact Windows runner service diagnostic |
 | `scripts/scan_tracked_secrets.py` | Tracked-secret scan |
-
-Draft PR #130 proposes a Windows runner diagnostic, tests and runbook. Those
-files are not active `main` assets until that PR passes fresh CI and merges.
 
 ## Tests
 
@@ -115,6 +113,7 @@ files are not active `main` assets until that PR passes fresh CI and merges.
 | `tests/test_broker_report*.py` | Broker report and async integrity |
 | `tests/test_ci_security_baseline.py` | Dependency/security baseline |
 | `tests/test_no_telegram_runtime.py` | Retired Telegram runtime guard |
+| `tests/test_self_hosted_windows_runner_service_script.py` | Static and Windows-native runner diagnostic guards |
 
 ## Architecture
 
@@ -137,6 +136,7 @@ files are not active `main` assets until that PR passes fresh CI and merges.
 | `docs/operations/DEPLOYMENT_RUNBOOK.md` | Render/Gateway deployment |
 | `docs/operations/RELEASE_CHECKLIST.md` | Merge and production evidence checklist |
 | `docs/operations/LIVE_READ_ONLY_ACCEPTANCE.md` | External Render/Gateway/GPT cases |
+| `docs/operations/SELF_HOSTED_WINDOWS_RUNNER_SERVICE.md` | Persistent Windows CI runner diagnosis and recovery |
 | `docs/operations/TELEGRAM_REMOVAL_RUNBOOK.md` | Retired Telegram cleanup history |
 
 ## Project memory and audits
