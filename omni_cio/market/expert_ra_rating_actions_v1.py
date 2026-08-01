@@ -58,7 +58,9 @@ _UP_DOWN_PATTERN = re.compile(
 )
 _WITHDRAW_PATTERN = re.compile(
     rf"^{_AGENCY_PREFIX} отозвал(?: без подтверждения)? {_RATING_OBJECT} "
-    r"(?P<subject>.+?)(?: в связи с .+)?$",
+    r"(?P<subject>.+?)"
+    r"(?: и снял статус [«\"]под наблюдением[»\"])?"
+    r"(?: в связи с .+)?$",
     re.IGNORECASE,
 )
 _OUTLOOK_TAIL = re.compile(
