@@ -15,7 +15,8 @@ Custom GPT ── Omni-CIO Gateway (`app:app`) ── T-Invest API
 - System release: **v4.1.0 ChatGPT-only Runtime**.
 - Gateway API component: **v3.10.0 Final Decision Review GET Route**.
 - Фактическая слитая функциональная вершина на 2026-08-01: **PR-104**.
-- Последний подтверждённый `main` merge: `34708f82d20e054bdd420ac1e9993c6d117e12d7`.
+- Последний инфраструктурный merge: **PR #130**.
+- Текущий `main`: `52a818daa64f4290fd6f551fbbc7f77bea3a94b2`.
 - Gateway production entrypoint: `app:app`.
 - User-facing surface: exactly 14 GET Actions.
 - `trading_methods=false`.
@@ -23,8 +24,8 @@ Custom GPT ── Omni-CIO Gateway (`app:app`) ── T-Invest API
 - Вывод, перевод денег и перевод ценных бумаг не реализуются.
 - Telegram Companion выведен из эксплуатации; package, Blueprint, webhook и
   активная конфигурация отсутствуют.
-- Functional roadmap временно находится в audit hold до закрытия PR #130,
-  документационных расхождений, warning debt и dependency queue review.
+- Functional roadmap временно находится в audit hold до merge PR #137,
+  синхронизации issue #27, warning debt и dependency queue review.
 
 Оперативное состояние и следующий безопасный пакет:
 [`knowledge/16_CURRENT_PROGRAM_STATUS.md`](knowledge/16_CURRENT_PROGRAM_STATUS.md).
@@ -60,6 +61,16 @@ Custom GPT ── Omni-CIO Gateway (`app:app`) ── T-Invest API
 Agency scales and subject identities are not merged through a generic adapter.
 These packages do not create routes, startup network calls or trading authority
 unless a separately reviewed contract explicitly says otherwise.
+
+### CI and release operations
+
+- hash-locked runtime and development dependencies;
+- full-SHA pinned GitHub Actions;
+- blocking Regression Shield for locks, compile, lint, types, contracts,
+  coverage, dependency audit, SAST and secret scan;
+- bounded read-only Windows runner diagnostic with exact `.runner` and
+  `.service` identity checks;
+- persistent-runner recovery runbook without credential or token storage.
 
 ## Safety invariants
 
@@ -259,7 +270,7 @@ Runbooks:
 
 ## Remaining program blocks
 
-- close the 2026-08-01 audit hold and PR #130;
+- merge the 2026-08-01 audit package and synchronize issue #27;
 - classify and remove warning debt;
 - review open dependency PRs against current `main`;
 - add remaining official sources only through separate fixed contracts;
