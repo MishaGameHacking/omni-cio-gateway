@@ -62,6 +62,7 @@
 - `architecture/EXPERT_RA_ISSUER_RATING_ACTION_CACHE_V1.md` — one-entry Expert RA fresh/stale/unavailable cache, single-flight refresh and no-silent-stale policy.
 - `architecture/EXPERT_RA_ISSUER_RATING_ACTION_OBSERVABILITY_V1.md` — pure Expert RA source/cache telemetry with opaque trace IDs and no issuer/rating/action payload.
 - `architecture/EXPERT_RA_RATING_ACTIONS_ALERT_POLICY_V1.md` — bounded global-only Expert RA operational thresholds, strict event-profile validation, cooldown/recovery and no external delivery.
+- `architecture/EXPERT_RA_RATING_ACTIONS_OPERATIONS_LIFECYCLE_V1.md` — deterministic Expert RA event/evaluation composition with bounded fired/recovered evidence and safe sink ordering.
 
 ### Operations
 
