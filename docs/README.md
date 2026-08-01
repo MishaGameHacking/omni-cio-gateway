@@ -68,6 +68,7 @@
 ### Operations
 
 - `operations/DEPLOYMENT_RUNBOOK.md` — основной gateway.
+- `operations/SELF_HOSTED_WINDOWS_RUNNER_SERVICE.md` — read-only диагностика и безопасное восстановление Windows-службы trusted CI runner.
 - `operations/TELEGRAM_REMOVAL_RUNBOOK.md` — одноразовая очистка выведенного Telegram service.
 - `operations/RELEASE_CHECKLIST.md`
 

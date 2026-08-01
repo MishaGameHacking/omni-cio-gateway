@@ -129,3 +129,42 @@ Current dependency audit — 2026-07-30
 - Available FastAPI/Uvicorn updates and any pytest major transition require a
   dedicated compatibility PR with regenerated locks and the full Regression Shield.
 - This governance package intentionally changes no dependency version.
+
+Self-hosted Windows runner operations — 2026-08-01
+--------------------------------------------------
+- Regression Shield targets the trusted repository runner labels
+  `[self-hosted, Windows, X64, omni-cio-ci]`.
+- Durable availability requires the official runner application to operate as a
+  persistent, non-ephemeral Windows service with `Running` state and automatic
+  startup. An interactive `run.cmd` listener is not accepted as a durable mode.
+- GitHub documents that an ephemeral self-hosted runner automatically
+  de-registers after processing one job. This repository does not run an
+  autoscaler that replaces one-shot runners, so `Ephemeral=true` is incompatible
+  with the two-job Regression Shield and must fail closed.
+- The official `actions/runner` `RunnerSettings` structure persists `AgentName`
+  and `Ephemeral` in `.runner`; diagnostics may read only those fields and must
+  never emit the raw `.runner` content.
+- `.runner` parsing is bounded to 64 KiB, requires valid JSON, a non-empty exact
+  `AgentName`, and a Boolean `Ephemeral` value when that property is present.
+  Omitted `Ephemeral` means the persisted default `false`.
+- Repository diagnostics are read-only and may inspect only the existence of the
+  runner root/configuration markers, derived runner identity/ephemeral state and
+  Windows service identity/state/start mode.
+- Automatic diagnostic output must not expose the local runner root, service
+  name, service executable path, GitHub URL, work folder, agent ID, pool data or
+  other `.runner` fields.
+- The diagnostic must not start, stop, install, remove or reconfigure a service;
+  it must not access `.credentials`, registration tokens or workflow secrets.
+- Exact `.runner` `AgentName` and service identity are mandatory. A mismatched
+  configuration or `actions.runner.*` service fails closed.
+- Caller-provided runner names are allowlisted and must never be interpreted as
+  PowerShell wildcard patterns.
+- Failure to parse runner configuration, identity mismatch, ephemeral mode and
+  failure to query Windows service metadata are distinct typed failures.
+- Administrative recovery remains an explicit owner action documented in
+  `docs/operations/SELF_HOSTED_WINDOWS_RUNNER_SERVICE.md`.
+- Short-lived registration tokens are operational inputs and must never be
+  committed, logged, pasted into Pull Requests or stored in project knowledge.
+- A queued job with `steps=null` is infrastructure evidence only. It is neither
+  a code-test failure nor successful validation; merge remains blocked until
+  the full Regression Shield completes on the exact final SHA.

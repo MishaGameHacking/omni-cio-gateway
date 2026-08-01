@@ -98,6 +98,7 @@ Key entrypoints:
 | `.github/pull_request_template.md` | Pull Request Definition of Done |
 | `scripts/check_repository_layout.py` | Layout и broker-write guards |
 | `scripts/check_ci_security_baseline.py` | Locks, Action pins и security policy |
+| `scripts/check_self_hosted_windows_runner_service.ps1` | Read-only Windows service health diagnostic for trusted `omni-cio-ci` runner |
 
 ## Tests
 
@@ -148,6 +149,7 @@ Key entrypoints:
 | `tests/test_operations_analytics.py` | Operations and cash-flow reconciliation |
 | `tests/test_broker_report*.py` | Broker report and async integrity |
 | `tests/test_ci_security_baseline.py` | Dependency/security baseline |
+| `tests/test_self_hosted_windows_runner_service_script.py` | Read-only guards, secret exclusions and Windows PowerShell parser check |
 | `tests/test_no_telegram_runtime.py` | Retired Telegram runtime guard |
 
 ## Project memory and architecture
@@ -174,6 +176,7 @@ Key entrypoints:
 | `docs/architecture/CBR_KEY_RATE_*` | PR-84…PR-88 CBR architecture |
 | `docs/architecture/MOEX_ISS_TQBR_QUOTE_*` | PR-89…PR-93 MOEX architecture |
 | `gpt/MY_GPT_SETUP_RUNBOOK.md` | Custom GPT setup, Preview and rollback |
+| `docs/operations/SELF_HOSTED_WINDOWS_RUNNER_SERVICE.md` | Trusted Windows runner service diagnostics and recovery boundaries |
 | `docs/operations/RELEASE_CHECKLIST.md` | Pre-merge and production evidence checklist |
 
 ## Правило актуальности
