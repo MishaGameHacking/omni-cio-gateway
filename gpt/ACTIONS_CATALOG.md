@@ -33,6 +33,15 @@
 - Для `getFinalDecisionReview` пустой или просроченный source registry означает `503`, а подмена account/option/fingerprint/instruments/digests — `409`.
 - `getFinalDecisionReview` не является подтверждением сделки и всегда возвращает `trade_authorized=false`, `order_created=false`, `execution_ready=false`, `trading_methods=false`.
 
+## Совместимость OpenAPI с GPT Actions
+
+Production `/openapi.json` должен импортироваться в GPT Editor без предупреждений о нескольких схемах аутентификации и без предупреждений о неподдерживаемых custom header parameters.
+
+- В публикуемой Action schema используется ровно одна Bearer security scheme: `ApiKeyAuth`.
+- Все защищённые операции ссылаются только на `ApiKeyAuth`; публичный `gatewayHealth` остаётся без authentication requirement.
+- Служебные `X-Correlation-ID` и `X-Request-ID` для `getFinalDecisionReview` не публикуются как Action parameters. Gateway по-прежнему может принять их при прямом HTTP-вызове, а при отсутствии correlation ID создаёт его серверно.
+- Это ограничение меняет только GPT-facing OpenAPI presentation и не ослабляет runtime authentication или read-only границы.
+
 ## Стабильность контракта
 
 Нельзя без migration plan менять:
@@ -51,6 +60,7 @@
 4. Установить Authentication → API Key → Bearer.
 5. Ввести секретный `GATEWAY_API_KEY` вручную.
 6. Убедиться, что список действий полностью совпадает с таблицей: ровно 14 GET operations, включая `getFinalDecisionReview`.
-7. Сначала проверить вызов без ключа: решение не должно возвращаться.
-8. Выполнить один целевой Preview-вызов только после появления активного reviewed source.
-9. Убедиться, что другие методы не вызывались и write/execute Actions отсутствуют.
+7. Убедиться, что импорт schema не показывает предупреждения `Found multiple security schemes` и не игнорирует `X-Correlation-ID` / `X-Request-ID`.
+8. Сначала проверить вызов без ключа: решение не должно возвращаться.
+9. Выполнить один целевой Preview-вызов только после появления активного reviewed source.
+10. Убедиться, что другие методы не вызывались и write/execute Actions отсутствуют.
