@@ -1,6 +1,6 @@
 # 16 — CURRENT PROGRAM STATUS
 
-Дата актуализации: 2026-07-31  
+Дата актуализации: 2026-08-01  
 Фактическая слитая функциональная вершина программы: **PR-98**  
 Слитая инфраструктурная миграция CI: **GitHub PR #129**  
 Активный незавершённый пакет: **PR-99 / GitHub PR #128**
@@ -92,10 +92,38 @@ OpenAPI, Render runtime, broker SDK или разрешённые Actions.
 ## Активный пакет — PR-99 Expert RA fixed issuer-action source
 
 GitHub PR #128 открыт как draft на ветке
-`agent/expert-ra-rating-actions-source-v1`. После merge PR #129 ветка получила
-новый status commit, чтобы запустить полный Regression Shield на актуальном
-self-hosted CI-контуре. Ready-for-review и squash merge разрешены только после
-зелёного exact final SHA.
+`agent/expert-ra-rating-actions-source-v1`. Текущий exact head после финальной
+волны self-review определяется вершиной PR и должен быть единственным SHA,
+принимаемым для merge evidence. Ready-for-review и squash merge разрешены только
+после зелёного Regression Shield на этом exact head.
+
+Regression Shield run #751 на более раннем head дошёл до полного test suite:
+lock/security/layout, compile, Ruff, formatting, mypy, stable `app:app`, 14 GET
+Actions, dependency audit, Bandit, secret scan и coverage прошли; 1074 теста
+прошли, один устаревший direct-contract fixture был корректно отклонён из-за
+несовпадения даты release URL и `published_on`. Fixture исправлен без ослабления
+production validation.
+
+После этого self-review выявил и закрыл дополнительные fail-closed границы:
+
+- publication date принимается только как immediately adjacent visible event;
+  look-ahead через посторонний visible content удалён;
+- unknown release month отклоняется как `URL_INVALID` на URL boundary;
+- calendar-invalid release identity, например `feb31`, отклоняется до создания
+  Pydantic record;
+- direct Expert RA outlook допускает только stable, positive, negative,
+  developing или absence; shared `under_revision` не является Expert RA outlook;
+- `под наблюдением` остаётся отдельным source-title status, а не outlook;
+- официальный withdrawal suffix `и снял статус «под наблюдением»` поддерживается
+  как bounded grammar, но не сохраняется в `subject_name`;
+- residual withdrawal control text `статус`/`прогноз` в разобранном subject
+  fail-closed отклоняется;
+- exact release slug сохраняет проверенный формат `{jan..dec}{valid day}[a-z]?`.
+
+Текущие Regression Shield runs после изменений создаются корректно, но trusted
+self-hosted Windows listener на момент этой записи не выделяет jobs: оба job
+остаются `queued` с `steps=null`. Это infrastructure evidence, не code success и
+не code failure. Merge остаётся заблокирован.
 
 ### Fixed identity
 
@@ -125,7 +153,8 @@ multi-agency adapter. Поддерживаются только singular issuer-
 Поддерживается агентская национальная шкала `ruAAA…ruD`. Визуально смешанные
 Cyrillic/Latin A/B/C/R/D нормализуются только внутри rating token и проверяются
 по закрытому allowlist. Outlook принимается только при точном совпадении
-поддерживаемой грамматики.
+поддерживаемой грамматики: stable, positive, negative, developing или absence.
+`Под наблюдением` не подменяет outlook.
 
 Bond/issue/series/tranche/structured-finance, ESG, plural, complex и unsupported
 scale actions пропускаются. Malformed title, явно заявляющий поддерживаемое
@@ -145,7 +174,7 @@ Source-title issuer text не считается стабильной canonical 
 - navigation link с тем же текстом не может открыть scope;
 - scope закрывается plain `Аналитика` либо exact official `/researches/` link;
 - external host, другой path, query или fragment не могут закрыть scope;
-- adjacent publication date required;
+- publication date должна быть immediately adjacent к action;
 - linked date обязана canonicalize в тот же release, что и action;
 - URL date обязана точно совпадать с `published_on`;
 - `<a>` без `href` не может impersonate plain heading или boundary.
@@ -164,9 +193,9 @@ Source-title issuer text не считается стабильной canonical 
 - bounded declared и streamed bytes;
 - UTF-8/UTF-8-BOM only;
 - script/style/noscript content ignored;
-- unclosed anchor/script/style/noscript fail closed;
+- unclosed или mismatched anchor/script/style/noscript fail closed;
 - future-date tolerance bounded одним календарным днём;
-- release URL month/day calendar-valid;
+- release URL month/day calendar-valid до canonicalization;
 - available snapshot `retrieved_at` обязана совпадать с
   `source.retrieved_at`;
 - every record обязана использовать exact snapshot source;
