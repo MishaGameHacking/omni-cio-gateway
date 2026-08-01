@@ -252,15 +252,21 @@ class ExpertRaRatingActionsAlertEvidenceV1(ContractModel):
             raise ValueError(
                 "Expert RA evidence severity and alert kind must agree"
             )
-        if self.disposition is ExpertRaRatingActionsAlertDisposition.FIRED:
-            if (
-                self.consecutive_occurrences < self.threshold
-                or self.error_code is None
-            ):
-                raise ValueError(
-                    "fired Expert RA evidence requires threshold and error code"
-                )
-        elif self.error_code is not None:
+        if self.consecutive_occurrences < self.threshold:
+            raise ValueError(
+                "terminal Expert RA evidence must meet its threshold"
+            )
+        if (
+            self.disposition is ExpertRaRatingActionsAlertDisposition.FIRED
+            and self.error_code is None
+        ):
+            raise ValueError(
+                "fired Expert RA evidence requires a safe error code"
+            )
+        if (
+            self.disposition is ExpertRaRatingActionsAlertDisposition.RECOVERED
+            and self.error_code is not None
+        ):
             raise ValueError(
                 "recovered Expert RA evidence cannot retain an error code"
             )
