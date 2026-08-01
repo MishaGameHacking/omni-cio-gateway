@@ -18,7 +18,11 @@ def test_runner_service_diagnostic_is_read_only_and_fail_closed() -> None:
     for required in (
         "Set-StrictMode -Version Latest",
         '$ErrorActionPreference = "Stop"',
+        "ValidatePattern('^[A-Za-z0-9._-]{1,64}$')",
+        '$expectedServiceSuffix = ".$ExpectedRunnerName.service"',
         'Get-Service -Name "actions.runner.*"',
+        ".EndsWith(",
+        "[System.StringComparison]::OrdinalIgnoreCase",
         "Get-CimInstance",
         "Win32_Service",
         "service_identity_matches = $serviceIdentityMatches",
@@ -45,6 +49,7 @@ def test_runner_service_diagnostic_is_read_only_and_fail_closed() -> None:
         "Invoke-WebRequest",
         "Invoke-RestMethod",
         ".credentials",
+        '-like "*.$ExpectedRunnerName.service"',
     ):
         assert forbidden not in text
 
