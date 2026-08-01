@@ -7,11 +7,13 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from hashlib import sha256
 from threading import RLock
+from typing import cast
 
 from omni_cio.contracts.v1.expert_ra_alerting import (
     ExpertRaRatingActionsAlertDisposition,
     ExpertRaRatingActionsAlertEvaluationV1,
     ExpertRaRatingActionsAlertEvidenceV1,
+    ExpertRaSourceEventName,
 )
 from omni_cio.contracts.v1.expert_ra_ratings import (
     ExpertRaIssuerRatingActionsCacheResultV1,
@@ -265,13 +267,22 @@ class ExpertRaRatingActionsOperationsLifecycleV1:
         evaluation: ExpertRaRatingActionsAlertEvaluationV1,
     ) -> tuple[ExpertRaRatingActionsAlertEvidenceV1, bool]:
         safe_evaluation = self._validated_terminal_evaluation(event, evaluation)
+        kind = safe_evaluation.kind
+        severity = safe_evaluation.severity
+        if kind is None or severity is None:
+            raise ExpertRaRatingActionsOperationsLifecycleError(
+                "EXPERT_RA_OPERATIONS_ALERT_IDENTITY_MISSING"
+            )
         item = ExpertRaRatingActionsAlertEvidenceV1(
             evidence_id=self._evidence_id(safe_evaluation),
             recorded_at=safe_evaluation.evaluated_at,
-            source_event_name=safe_evaluation.source_event_name,
+            source_event_name=cast(
+                ExpertRaSourceEventName,
+                safe_evaluation.source_event_name,
+            ),
             disposition=safe_evaluation.disposition,
-            kind=safe_evaluation.kind,
-            severity=safe_evaluation.severity,
+            kind=kind,
+            severity=severity,
             consecutive_occurrences=safe_evaluation.consecutive_occurrences,
             threshold=safe_evaluation.threshold,
             error_code=safe_evaluation.error_code,
