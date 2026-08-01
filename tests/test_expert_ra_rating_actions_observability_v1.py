@@ -328,7 +328,10 @@ def test_automatic_correlation_id_remains_opaque() -> None:
 
     assert event.correlation_id.startswith("corr:")
     assert len(event.correlation_id) == 37
-    assert all(character in "abcdefghijklmnop" for character in event.correlation_id[5:])
+    assert all(
+        character in "abcdefghijklmnop"
+        for character in event.correlation_id[5:]
+    )
     _assert_sensitive_rating_payload_absent(event)
 
 
