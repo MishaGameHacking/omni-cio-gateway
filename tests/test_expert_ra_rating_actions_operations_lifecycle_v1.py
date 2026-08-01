@@ -223,9 +223,15 @@ def test_evidence_contract_rejects_non_terminal_or_unbound_identity() -> None:
         {"source_event_name": "market.expert_ra_rating_actions.cache"},
         {"severity": "warning"},
         {"disposition": ExpertRaRatingActionsAlertDisposition.PENDING},
+        {"error_code": None},
         {
             "disposition": ExpertRaRatingActionsAlertDisposition.RECOVERED,
             "error_code": "EXPERT_RA_RATING_ACTIONS_SOURCE_UNAVAILABLE",
+        },
+        {
+            "disposition": ExpertRaRatingActionsAlertDisposition.RECOVERED,
+            "consecutive_occurrences": 1,
+            "error_code": None,
         },
     ):
         with pytest.raises(ValidationError):
