@@ -8,6 +8,7 @@
 - GPT configuration release: `v8.4`.
 - Backend/Gateway release: `v3.10.0`.
 - Communication profile: `Modern Financial Sage — 2026`.
+- Recommended model: `Thinking 5.6`.
 
 ## Description
 
@@ -17,10 +18,12 @@
 
 Использовать эти четыре основных starter-а:
 
-1. `УПРАВЛЯЙ ПОРТФЕЛЕМ — обнови данные и скажи, что делать.`
+1. `УПРАВЛЯЙ ПОРТФЕЛЕМ — сначала вызови getPortfolioSnapshot. Если успешно, вызови getCashLiquiditySnapshot и getPortfolioAnalytics. Затем проанализируй данные и скажи, что делать.`
 2. `АНАЛИТИК — объясни состояние портфеля простыми словами.`
 3. `НОВОСТИ — проверь важные события по моим компаниям.`
 4. `ЖУРНАЛ — покажи решения текущего разговора.`
+
+Первый starter намеренно содержит точные Action names. Это повышает надёжность dispatch в Custom GPT и не меняет read-only границу.
 
 ## Instructions
 
@@ -34,7 +37,7 @@
 
 ## Knowledge — production upload set
 
-В Knowledge существующего Custom GPT загрузить **ровно эти файлы из `gpt/knowledge/`**:
+В Knowledge существующего Custom GPT загрузить **ровно эти 10 файлов из `gpt/knowledge/`, каждый ровно один раз**:
 
 1. `02_GATEWAY_DATA_CONTRACT_V2_OPERATIONS.txt`
 2. `04_CIO_PORTFOLIO_MANAGER.txt`
@@ -47,7 +50,7 @@
 9. `11_RISK_DECOMPOSITION_AND_SIZING_GATES.txt`
 10. `13_COMMUNICATION_STYLE_2026.txt`
 
-Эта папка является каноническим набором для загрузки в GPT Knowledge. Не загружать туда master-plan, исходный код Gateway, реальные брокерские отчёты, полный accountId или секреты.
+Не загружать дубликаты Knowledge-файлов. Не загружать туда master-plan, исходный код Gateway, реальные брокерские отчёты, полный accountId или секреты.
 
 ## Capabilities
 
@@ -55,7 +58,7 @@
 
 - Web Search: **ON** — для свежих публичных сведений о компаниях, фондах, отчётности, дивидендах, санкциях, ставках и новостях.
 - Code Interpreter / Data Analysis: **ON** — для безопасных расчётов и анализа пользовательских файлов, без передачи секретов.
-- Image generation: **ON по текущему UI**, но для Gateway не требуется и не влияет на инвестиционную логику.
+- Image generation: **OFF** — для инвестиционного workflow не требуется и не должно конкурировать с Actions.
 - Apps: **OFF / не использовать вместе с Actions**.
 - Actions: **ON**.
 
@@ -63,21 +66,21 @@
 
 Production service:
 
-`https://omni-cio-gateway-au6d.onrender.com`
+`https://omni-cio-gateway.onrender.com`
 
 Schema URL:
 
-`https://omni-cio-gateway-au6d.onrender.com/openapi.json`
+`https://omni-cio-gateway.onrender.com/openapi.json`
 
 Health URL:
 
-`https://omni-cio-gateway-au6d.onrender.com/health`
+`https://omni-cio-gateway.onrender.com/health`
 
 Authentication:
 
 - Type: `API Key`
 - Auth mode: `Bearer`
-- Secret value: вручную ввести **значение `GATEWAY_API_KEY` из Render**.
+- Secret value: вручную ввести **значение `GATEWAY_API_KEY` из Render service `omni-cio-gateway`**.
 - `TINVEST_TOKEN` в GPT Editor не вставлять.
 
 Expected Action surface:
@@ -86,6 +89,19 @@ Expected Action surface:
 - все методы `GET`;
 - никаких create/order/execute/cancel/replace/transfer/withdraw методов;
 - `trading_methods=false`.
+
+## Portfolio dispatch acceptance
+
+Для starter `УПРАВЛЯЙ ПОРТФЕЛЕМ` успешное поведение начинается с реального Action-вызова, а не с текстового объяснения.
+
+Ожидаемый базовый порядок:
+
+1. `getPortfolioSnapshot`;
+2. при успехе — `getCashLiquiditySnapshot`;
+3. затем `getPortfolioAnalytics`;
+4. только после этого — анализ и DecisionCard.
+
+Если бот пишет «нет свежих данных» до попытки `getPortfolioSnapshot`, acceptance не пройден.
 
 ## Secrets boundary
 
@@ -104,14 +120,16 @@ GitHub хранит только имена переменных и инстру
 
 1. Проверить `gpt/SETUP_INDEX.md`.
 2. Вставить `INSTRUCTIONS_COMPACT.md` без ручных изменений.
-3. Загрузить 10 файлов из `gpt/knowledge/`.
-4. Проверить production `/health`: `status=ok`, `version=3.10.0`, `build.entrypoint=app:app`, `trading_methods=false`.
-5. Импортировать production `/openapi.json`.
-6. Сверить 14 GET Actions по `ACTIONS_CATALOG.md`.
-7. Настроить API Key → Bearer с `GATEWAY_API_KEY`.
-8. В Preview выполнить method-isolation, `gatewayHealth`, `getConnection` и один портфельный тест.
-9. Убедиться, что счёт маскирован и write Actions отсутствуют.
-10. Нажать Update только после успешных проверок.
+3. Загрузить ровно 10 Knowledge-файлов без дублей.
+4. Выбрать recommended model `Thinking 5.6`.
+5. Web Search и Data Analysis включить; Image generation и Apps выключить.
+6. Проверить production `/health`: `status=ok`, `version=3.10.0`, `build.entrypoint=app:app`, `trading_methods=false`.
+7. Импортировать `https://omni-cio-gateway.onrender.com/openapi.json`.
+8. Сверить 14 GET Actions по `ACTIONS_CATALOG.md`.
+9. Настроить API Key → Bearer с `GATEWAY_API_KEY`.
+10. В Preview выполнить method-isolation, `gatewayHealth`, `getConnection` и portfolio dispatch test.
+11. Убедиться, что счёт маскирован и write Actions отсутствуют.
+12. Нажать Update только после успешных проверок.
 
 ## External UI state
 
