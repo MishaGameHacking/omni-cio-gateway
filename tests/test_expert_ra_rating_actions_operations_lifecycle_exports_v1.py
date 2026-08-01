@@ -11,18 +11,16 @@ from omni_cio.observability.expert_ra_rating_actions_operations_lifecycle_v1 imp
     ExpertRaRatingActionsOperationsBatchV1 as DirectBatch,
 )
 from omni_cio.observability.expert_ra_rating_actions_operations_lifecycle_v1 import (
-    ExpertRaRatingActionsOperationsLifecycleError as DirectError,
+    ExpertRaRatingActionsOperationsLifecycleError as DirectLifecycleError,
 )
 from omni_cio.observability.expert_ra_rating_actions_operations_lifecycle_v1 import (
     ExpertRaRatingActionsOperationsLifecycleV1 as DirectLifecycle,
 )
 
 
-def test_expert_ra_operations_contract_export_is_stable() -> None:
+def test_expert_ra_operations_evidence_exports_are_stable() -> None:
     assert ExpertRaRatingActionsAlertEvidenceV1 is DirectEvidence
-
-
-def test_expert_ra_operations_runtime_exports_are_stable() -> None:
     assert ExpertRaRatingActionsOperationsBatchV1 is DirectBatch
-    assert ExpertRaRatingActionsOperationsLifecycleError is DirectError
+    assert ExpertRaRatingActionsOperationsLifecycleError is DirectLifecycleError
     assert ExpertRaRatingActionsOperationsLifecycleV1 is DirectLifecycle
+    assert issubclass(ExpertRaRatingActionsOperationsLifecycleError, ValueError)
