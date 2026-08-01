@@ -1,9 +1,9 @@
 # 16 — CURRENT PROGRAM STATUS
 
 Дата актуализации: 2026-08-01  
-Фактическая слитая функциональная вершина программы: **PR-100**  
+Фактическая слитая функциональная вершина программы: **PR-101**  
 Слитая инфраструктурная миграция CI: **GitHub PR #129**  
-Активный незавершённый пакет: **PR-101 / Expert RA observability v1**
+Активный незавершённый пакет: **PR-102 / Expert RA global alert policy v1**
 
 ## Назначение документа
 
@@ -28,153 +28,133 @@
 - **PR-50…PR-83:** private read-only final-review production chain, acceptance
   collector, workflow/owner acquisition and authenticated evidence;
 - **PR-84…PR-88:** official CBR source, cache, safe observability, bounded global
-  alert policy and deterministic fired/recovered evidence lifecycle;
+  alert policy and deterministic terminal evidence lifecycle;
 - **PR-89…PR-93:** official MOEX TQBR source, exact cache, privacy-safe telemetry,
   global operational alert policy and terminal evidence;
 - **PR-94…PR-98:** fixed official ACRA issuer-level national-RU source, bounded
   cache, privacy-safe telemetry, global alert policy and terminal evidence;
-- **PR-99:** fixed official Expert RA issuer-level national-Russia rating-action
-  source with strict HTML/URL/date/grammar and unresolved-identity boundaries;
+- **PR-99:** fixed official Expert RA issuer-level national-Russia source;
 - **PR-100:** one-entry Expert RA cache with explicit fresh/stale/unavailable
-  semantics, single-flight refresh and validator-bypass revalidation.
+  semantics, single-flight refresh and validator-bypass revalidation;
+- **PR-101:** pure privacy-safe Expert RA source/cache observability with strict
+  opaque trace IDs and no issuer/rating/action/release/publication payload.
 
-## Текущая слитая функциональная вершина — PR-100
+## Текущая слитая функциональная вершина — PR-101
 
-GitHub PR #132 `PR-100: Add bounded Expert RA rating-action cache v1` squash-merged
+GitHub PR #133 `PR-101: Add privacy-safe Expert RA observability v1` squash-merged
 в `main` commit:
 
-`d05d34883a283bd0b10e41e2bc48c0a81a948d92`.
+`10a6dc35f444a1b6bd933761b6d3818e4f43352c`.
 
-### PR-100 guarantees
+### PR-101 guarantees
 
-- fixed provider `Expert RA` and source id `EXPERT_RA.home.rating_actions`;
-- one process-local cache entry;
-- fresh TTL 900 seconds;
-- stale retention 86400 seconds;
-- freshness derives only from `snapshot.retrieved_at`;
-- publication date remains separate source evidence;
-- stale data is hidden unless refresh failed and trusted caller explicitly sets
-  `allow_stale=true`;
-- fully expired data is pruned;
-- `clear()` and restart-empty lifecycle;
-- one `RLock` provides single-flight initial load/refresh;
-- loader-returned typed objects are fully revalidated after serialization so
-  `model_construct()` or non-validating copy paths cannot weaken URL/date,
-  source, Literal, privacy or trading invariants;
-- loader/validation exception text is never copied into cache output;
-- no startup fetch, route, Action, DB, frontend binding or broker method.
+- only allowlisted operational status/count metadata;
+- complete Pydantic revalidation of source/cache input before telemetry mapping;
+- no issuer/source-title/rating/scale/outlook/action/release/publication/raw HTML;
+- no account/portfolio/position/price/cash/broker payload;
+- no arbitrary exception details or credentials;
+- caller-supplied correlation id accepted only in opaque
+  `corr:` + 32 `a..p` format;
+- pure builders only, with no emitter, scheduler, route, startup hook, DB or
+  outbound transport;
+- no public API or frontend binding;
+- `trading_methods=false`.
 
-### Final PR-100 validation
+### Final PR-101 validation
 
-Regression Shield run #793 / workflow `30688586258` passed on exact head
-`e76e561897e292e1e1db79dfca4d9edb341d5d66`:
+Regression Shield run #795 / workflow `30689278383` passed on exact head
+`cb8c5d9a28df8669a99824c74584685d83ca0ca6`:
 
 - quality/contracts/coverage: success;
 - dependency/code/secret security: success;
-- pytest: 1109 passed, 0 failed;
+- pytest: 1120 passed, 0 failed;
 - total coverage: 61.97%, threshold >=60%;
-- mypy: 182 source files, no issues;
+- mypy: 183 source files, no issues;
 - compile, Ruff and formatting: passed;
 - stable `app:app`: passed;
 - exactly 14 GET Actions and forbidden surface count 0: passed;
 - `trading_methods=false`: passed;
 - dependency audit, Bandit and detect-secrets: passed;
-- diagnostics artifact ID `8814880257`;
+- diagnostics artifact ID `8815122416`;
 - artifact SHA-256:
-  `2dddda71067ddc40f37e9df486f5d47671400554dbc7ce7035b9a7a34618cec7`.
+  `fb30b94756ee3dfb1e154b6a29cb88983e1997c34c605b48d5ae6a275cd94f7b`.
 
-## Активный пакет — PR-101 Expert RA observability v1
+## Активный пакет — PR-102 Expert RA global alert policy v1
 
 Рабочая ветка:
 
-`agent/expert-ra-rating-actions-observability-v1`
+`agent/expert-ra-rating-actions-alert-policy-v1`
 
-Она создана точно от PR-100 merge commit
-`d05d34883a283bd0b10e41e2bc48c0a81a948d92`.
+Она создана точно от PR-101 merge commit
+`10a6dc35f444a1b6bd933761b6d3818e4f43352c`.
 
-PR-101 строит только pure observability builders поверх typed PR-99 source и
-PR-100 cache. Он не является production emitter, route, scheduler или alert
-policy.
+PR-102 строит только global operational state machine поверх canonical PR-101
+events. Он не использует issuer/rating/action identity и не является delivery
+transport.
 
-### Allowed telemetry
+### Exactly four operational alert kinds
 
-Разрешены только фиксированные operational metadata/counts:
+1. source unavailable;
+2. cache unavailable;
+3. stale records explicitly exposed after a failed refresh;
+4. refresh failed while a still-fresh cached snapshot is used.
 
-- provider `Expert RA`;
-- operation `home.rating_actions`;
-- source/cache availability and freshness state;
-- fixed source/cache error code;
-- optional finite non-negative duration;
-- record count;
-- cache hit;
-- refresh attempted/succeeded;
-- stale available/exposed;
-- display allowed;
-- fixed-official-source and issuer-scope flags;
-- identity-resolution-required;
-- cross-agency-identity-merged, ожидается только false.
+### Policy defaults
 
-### Forbidden telemetry
+- source unavailable threshold: 3;
+- cache unavailable threshold: 2;
+- stale exposed threshold: 2;
+- refresh-failure/fresh-cache threshold: 3;
+- cooldown: 900 seconds;
+- inactive-state retention: 86400 seconds;
+- capacity: exactly 4 global slots.
 
-Запрещено переносить в event:
+### PR-102 safety and hardening
 
-- issuer/subject/source-title text;
-- rating, rating scale, outlook or action kind;
-- release URL or release identity;
-- publication date;
-- raw title/HTML/upstream body;
-- arbitrary exception text/type or traceback;
-- account, portfolio, position, price, cash or broker payload;
-- credential/cookie/Authorization/token;
-- caller-selected source URL;
-- investment recommendation or trade authorization.
+- fixed scope `global_expert_ra_rating_actions_feed`;
+- policy is fully revalidated at evaluator construction, including
+  validator-bypassed models;
+- known PR-101 source/cache events are fully revalidated and must match exact
+  event/component/provider/operation/metric/state profiles before mutation;
+- opaque correlation id is mandatory for known Expert RA events;
+- forged metric sets, duplicate metrics, cross-agency flag changes, sensitive
+  payload flags and malformed profiles fail closed before state change;
+- `pending`, `fired`, `suppressed_cooldown`, `recovered`, `ignored` are explicit;
+- same-timestamp concurrent events are serialized by one `RLock`;
+- decreasing timestamp for a retained known signal fails closed;
+- inactive state is retention-pruned;
+- policy/evaluation contracts fix issuer identity, rating values, action identity,
+  rating thresholds, financial thresholds, external delivery, broker writes and
+  trading methods to false;
+- alert evaluation serialization contains no issuer/rating/action/release/date;
+- no route, GPT Action, frontend field, startup task, emitter, webhook, email,
+  Telegram or broker method.
 
-### Extra PR-101 hardening
-
-- source/cache models reserialize with Pydantic warnings treated as errors and
-  fully revalidate before telemetry is derived;
-- validator-bypassed privacy/trading flags fail closed;
-- caller-supplied `correlation_id` is not free-form: accepted only as opaque
-  `corr:` plus 32 `a..p` entropy characters, matching `new_trace_id("corr")`;
-- omitted correlation id is generated by the existing safe-event builder;
-- serialized-event tests prove issuer/rating/outlook/action/release/date markers
-  are absent;
-- module has no app/router/startup/emitter/webhook/email/Telegram/order surface.
-
-PR-101 must remain unmerged until a draft Pull Request is opened and Regression
+PR-102 must remain unmerged until a draft Pull Request is opened and Regression
 Shield passes both blocking jobs on the exact final head, diagnostics artifact is
 present, review threads are clear and GitHub reports the PR mergeable.
 
 ## Слитая CI-инфраструктура
 
 GitHub PR #129 moved Regression Shield to trusted repository-level self-hosted
-Windows runner `omni-cio-ci` without weakening gates. The workflow uses:
+Windows runner `omni-cio-ci` without weakening gates. The workflow verifies
+hash-locked dependencies, repository/security policy, compile, Ruff, formatting,
+mypy, stable `app:app`, exact 14-GET release contract, pytest/coverage,
+pip-audit, Bandit, detect-secrets and workspace cleanup.
 
-- exact labels `[self-hosted, Windows, X64, omni-cio-ci]`;
-- same-repository PR isolation;
-- read-only contents permission and checkout without persisted credentials;
-- pinned Python 3.12.10 bootstrap;
-- isolated job virtual environments;
-- hash-locked Windows dependency projections;
-- compile/layout/Ruff/format/mypy/entrypoint/14-GET/pytest/coverage;
-- pip-audit/Bandit/detect-secrets;
-- workspace cleanup.
-
-An independent draft PR #130 contains a read-only Windows runner diagnostic and
-persistent-service runbook. It is infrastructure hardening, not a prerequisite
-for changing the functional release top while the current persistent runner is
-successfully processing both Regression Shield jobs.
+Independent draft PR #130 remains infrastructure hardening for read-only runner
+service diagnostics. It does not block the functional roadmap while the current
+persistent runner completes both Regression Shield jobs normally.
 
 ## Frontend/owner discovery state
 
-Repository work still has no approved production binding that would justify
-creating a duplicate frontend or silently adding market-data fields to an Action.
-The existing site/frontend must be located and reused before Web-cabinet work.
+No approved production binding justifies creating a duplicate frontend or
+silently adding these market-data states to a public Action. The existing
+site/frontend must be located and reused before Web-cabinet work.
 
 ## Production acceptance state
 
-PR-64 still requires eight external evidence cases before the project can be
-called production accepted:
+PR-64 still requires eight external evidence cases:
 
 1. Render commit;
 2. cache-busted health;
@@ -191,10 +171,7 @@ CI cannot mark these external checks complete.
 
 ### Backend and operations
 
-- finish PR-101 after exact-head Regression Shield;
-- then separate **PR-102**: global-only Expert RA operational alert policy over
-  PR-101 events, without issuer/rating/action identity, financial thresholds or
-  outbound delivery;
+- finish PR-102 after exact-head Regression Shield;
 - then separate **PR-103**: deterministic bounded Expert RA fired/recovered
   terminal evidence lifecycle;
 - add other credit-rating agencies only as independent fixed reviewed sources;
@@ -221,9 +198,9 @@ and timeout reconciliation. Autonomous execution remains disabled.
 
 ## Следующий безопасный пакет
 
-Current package: **PR-101 Expert RA privacy-safe observability v1**.
+Current package: **PR-102 Expert RA global operational alert policy v1**.
 
-Only after PR-101 passes exact-head CI and squash-merges may PR-102 start.
+Only after PR-102 passes exact-head CI and squash-merges may PR-103 start.
 
 ## Запрет ложного завершения
 
