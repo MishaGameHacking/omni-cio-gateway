@@ -36,6 +36,7 @@ if ($env:OS -ne "Windows_NT") {
         runner_root = $RunnerRoot
         expected_runner_name = $ExpectedRunnerName
         service_name = $null
+        service_identity_matches = $false
         service_state = $null
         service_start_mode = $null
         service_path = $null
@@ -73,10 +74,17 @@ if ($null -eq $service) {
 $serviceDetails = $null
 if ($null -ne $service) {
     $escapedServiceName = $service.Name.Replace("'", "''")
-    $serviceDetails = Get-CimInstance -ClassName Win32_Service -Filter "Name='$escapedServiceName'"
+    $serviceDetails = Get-CimInstance `
+        -ClassName Win32_Service `
+        -Filter "Name='$escapedServiceName'" `
+        -ErrorAction SilentlyContinue
 }
 
 $serviceName = if ($null -ne $service) { $service.Name } else { $declaredServiceName }
+$serviceIdentityMatches = (
+    $null -ne $service -and
+    $service.Name -like "*.$ExpectedRunnerName.service"
+)
 $serviceState = if ($null -ne $serviceDetails) { $serviceDetails.State } else { $null }
 $serviceStartMode = if ($null -ne $serviceDetails) { $serviceDetails.StartMode } else { $null }
 $servicePath = if ($null -ne $serviceDetails) { $serviceDetails.PathName } else { $null }
@@ -88,6 +96,8 @@ $healthy = (
     $runnerConfigurationPresent -and
     $runCommandPresent -and
     $null -ne $service -and
+    $serviceIdentityMatches -and
+    $null -ne $serviceDetails -and
     $serviceState -eq "Running" -and
     $serviceStartMode -eq "Auto"
 )
@@ -105,6 +115,12 @@ elseif (-not $runCommandPresent) {
 elseif ($null -eq $service) {
     $errorCode = "RUNNER_SERVICE_MISSING"
 }
+elseif (-not $serviceIdentityMatches) {
+    $errorCode = "RUNNER_SERVICE_IDENTITY_MISMATCH"
+}
+elseif ($null -eq $serviceDetails) {
+    $errorCode = "RUNNER_SERVICE_QUERY_FAILED"
+}
 elseif ($serviceStartMode -ne "Auto") {
     $errorCode = "RUNNER_SERVICE_NOT_AUTOMATIC"
 }
@@ -118,6 +134,7 @@ $result = [pscustomobject]@{
     runner_root = $RunnerRoot
     expected_runner_name = $ExpectedRunnerName
     service_name = $serviceName
+    service_identity_matches = $serviceIdentityMatches
     service_state = $serviceState
     service_start_mode = $serviceStartMode
     service_path = $servicePath
