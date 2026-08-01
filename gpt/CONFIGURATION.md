@@ -61,23 +61,25 @@
 
 ## Actions
 
-Production service:
+Canonical production service for this Custom GPT:
 
-`https://omni-cio-gateway-au6d.onrender.com`
+`https://omni-cio-gateway.onrender.com`
 
 Schema URL:
 
-`https://omni-cio-gateway-au6d.onrender.com/openapi.json`
+`https://omni-cio-gateway.onrender.com/openapi.json`
 
 Health URL:
 
-`https://omni-cio-gateway-au6d.onrender.com/health`
+`https://omni-cio-gateway.onrender.com/health`
+
+The previous Blueprint service `omni-cio-gateway-au6d` is not the active GPT endpoint and must not be used for new Action imports.
 
 Authentication:
 
 - Type: `API Key`
 - Auth mode: `Bearer`
-- Secret value: вручную ввести **значение `GATEWAY_API_KEY` из Render**.
+- Secret value: вручную ввести **значение `GATEWAY_API_KEY` из Render service `omni-cio-gateway`**.
 - `TINVEST_TOKEN` в GPT Editor не вставлять.
 
 Expected Action surface:
@@ -105,10 +107,10 @@ GitHub хранит только имена переменных и инстру
 1. Проверить `gpt/SETUP_INDEX.md`.
 2. Вставить `INSTRUCTIONS_COMPACT.md` без ручных изменений.
 3. Загрузить 10 файлов из `gpt/knowledge/`.
-4. Проверить production `/health`: `status=ok`, `version=3.10.0`, `build.entrypoint=app:app`, `trading_methods=false`.
-5. Импортировать production `/openapi.json`.
+4. Проверить `https://omni-cio-gateway.onrender.com/health`: `status=ok`, `version=3.10.0`, `build.entrypoint=app:app`, `trading_methods=false`.
+5. Импортировать `https://omni-cio-gateway.onrender.com/openapi.json`.
 6. Сверить 14 GET Actions по `ACTIONS_CATALOG.md`.
-7. Настроить API Key → Bearer с `GATEWAY_API_KEY`.
+7. Настроить API Key → Bearer с `GATEWAY_API_KEY` именно этого Render service.
 8. В Preview выполнить method-isolation, `gatewayHealth`, `getConnection` и один портфельный тест.
 9. Убедиться, что счёт маскирован и write Actions отсутствуют.
 10. Нажать Update только после успешных проверок.
