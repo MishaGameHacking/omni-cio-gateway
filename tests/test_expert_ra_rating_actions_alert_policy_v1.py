@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
+import json
 from typing import Any, cast
 
 from pydantic import ValidationError
@@ -211,6 +212,18 @@ def test_policy_is_global_without_identity_rating_action_financial_or_delivery()
         ExpertRaRatingActionsAlertPolicyV1(capacity=5)
 
 
+def test_validator_bypassed_policy_is_revalidated_before_use() -> None:
+    valid = ExpertRaRatingActionsAlertPolicyV1()
+    forged_capacity = valid.model_copy(update={"capacity": 5})
+    forged_rating_thresholds = valid.model_copy(
+        update={"rating_thresholds_present": True}
+    )
+
+    for policy in (forged_capacity, forged_rating_thresholds):
+        with pytest.raises(ExpertRaRatingActionsAlertPolicyError):
+            ExpertRaRatingActionsAlertPolicyEvaluatorV1(cast(Any, policy))
+
+
 def test_source_threshold_fire_cooldown_and_recovery() -> None:
     evaluator = ExpertRaRatingActionsAlertPolicyEvaluatorV1(_policy())
 
@@ -267,6 +280,29 @@ def test_cache_conditions_map_to_global_operational_kinds(
     assert evaluation.financial_thresholds_present is False
     assert evaluation.external_notification_sent is False
     assert evaluation.broker_write_called is False
+
+
+def test_alert_evaluation_serialization_contains_no_rating_action_payload() -> None:
+    evaluator = ExpertRaRatingActionsAlertPolicyEvaluatorV1(_policy())
+    evaluation = evaluator.evaluate(_cache_event("stale", at=NOW))[0]
+    serialized = json.dumps(
+        evaluation.model_dump(mode="json"),
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+
+    for forbidden in (
+        "НЕ ДОЛЖНО ПОПАСТЬ В ALERT",
+        "ruA",
+        "affirmed",
+        "stable",
+        "jul31a",
+        "2026-07-31",
+        "subject_name",
+        "release_url",
+        "published_on",
+    ):
+        assert forbidden not in serialized
 
 
 def test_cache_signal_recovers_active_sibling_before_new_pending_state() -> None:
@@ -360,7 +396,9 @@ def test_wrong_type_and_out_of_order_known_signal_fail_closed() -> None:
     with pytest.raises(ExpertRaRatingActionsAlertPolicyError):
         evaluator.evaluate(cast(Any, {"not": "an event"}))
 
-    evaluator.evaluate(_source_event(available=False, at=NOW + timedelta(seconds=2)))
+    evaluator.evaluate(
+        _source_event(available=False, at=NOW + timedelta(seconds=2))
+    )
     with pytest.raises(ExpertRaRatingActionsAlertPolicyError):
         evaluator.evaluate(_source_event(available=False, at=NOW))
 
@@ -410,10 +448,8 @@ def test_concurrent_source_failures_are_serialized_and_bounded() -> None:
     )
 
     def evaluate(index: int) -> int:
-        event = _source_event(
-            available=False,
-            at=NOW + timedelta(microseconds=index),
-        )
+        del index
+        event = _source_event(available=False, at=NOW)
         return evaluator.evaluate(event)[0].consecutive_occurrences
 
     with ThreadPoolExecutor(max_workers=8) as pool:
