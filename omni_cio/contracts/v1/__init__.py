@@ -74,6 +74,10 @@ from omni_cio.contracts.v1.market import (
     RatingScope,
     SourceAuthority,
 )
+from omni_cio.contracts.v1.ncr_ratings import (
+    NcrIssuerRatingActionsSnapshotV1,
+    NcrIssuerRatingActionV1,
+)
 from omni_cio.contracts.v1.moex import (
     MoexIssQuoteErrorCode,
     MoexIssQuoteStatus,
@@ -297,6 +301,8 @@ __all__ = [
     "MoexQuoteCacheErrorCode",
     "MoexQuoteCacheStatus",
     "Money",
+    "NcrIssuerRatingActionsSnapshotV1",
+    "NcrIssuerRatingActionV1",
     "NetExternalFlowV1",
     "NewsContentFormat",
     "NewsContentKind",

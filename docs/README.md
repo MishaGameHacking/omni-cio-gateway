@@ -63,6 +63,7 @@
 - `architecture/EXPERT_RA_ISSUER_RATING_ACTION_OBSERVABILITY_V1.md` — pure Expert RA source/cache telemetry with opaque trace IDs and no issuer/rating/action payload.
 - `architecture/EXPERT_RA_RATING_ACTIONS_ALERT_POLICY_V1.md` — bounded global-only Expert RA operational thresholds, strict event-profile validation, cooldown/recovery and no external delivery.
 - `architecture/EXPERT_RA_RATING_ACTIONS_OPERATIONS_LIFECYCLE_V1.md` — deterministic Expert RA composition with bounded correlation-free evidence, deduplication and new-record-only sink handoff.
+- `architecture/NCR_ISSUER_RATING_ACTION_SOURCE_V1.md` — fixed official NCR issuer-only national-Russia rating-action source with strict release/date identity, scale and HTML transport boundaries.
 
 ### Operations
 
@@ -116,7 +117,7 @@ Runtime и deployment contract удалены. Решение и запрет с
 ## Что не хранится в GitHub
 
 Секреты, реальные отчёты, полный номер счёта, пользовательские финансовые
-данные, сырой CBR XML, сырой MOEX ISS JSON, сырой ACRA или Expert RA HTML,
+данные, сырой CBR XML, сырой MOEX ISS JSON, сырой ACRA, Expert RA или NCR HTML,
 upstream fault/body/exception text, process-local cache/alert/evidence state и
 финансовые значения в observability/alert payload не должны находиться в
 репозитории.

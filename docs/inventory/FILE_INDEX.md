@@ -30,6 +30,7 @@ operations assets. Код в `main` остаётся окончательным 
 | `omni_cio/contracts/v1/acra_alerting.py` | PR-97/98 global ACRA alert/evidence contracts |
 | `omni_cio/contracts/v1/expert_ra_ratings.py` | PR-99/100 separate Expert RA issuer-action, snapshot and cache-result contracts |
 | `omni_cio/contracts/v1/expert_ra_alerting.py` | PR-102/103 global-only alert policy/evaluation and deterministic terminal-evidence contracts |
+| `omni_cio/contracts/v1/ncr_ratings.py` | PR-104 separate fixed-source NCR issuer-action and snapshot contracts |
 
 ## Market and macro runtime
 
@@ -43,6 +44,7 @@ operations assets. Код в `main` остаётся окончательным 
 | `omni_cio/market/acra_rating_actions_cache_v1.py` | PR-95 fixed-source single-flight ACRA cache |
 | `omni_cio/market/expert_ra_rating_actions_v1.py` | PR-99 fixed Expert RA issuer-only parser and isolated bounded transport |
 | `omni_cio/market/expert_ra_rating_actions_cache_v1.py` | PR-100 one-entry single-flight Expert RA cache with explicit stale policy |
+| `omni_cio/market/ncr_rating_actions_v1.py` | PR-104 fixed official NCR issuer-only parser and isolated bounded transport |
 | `omni_cio/market/` | Existing capacity, bond, equity, fund and technical analysis |
 
 ## Observability and operations evidence
@@ -138,6 +140,9 @@ Key entrypoints:
 | `tests/test_expert_ra_rating_actions_alert_policy_exports_v1.py` | PR-102 alert-policy export compatibility |
 | `tests/test_expert_ra_rating_actions_operations_lifecycle_v1.py` | PR-103 deterministic terminal evidence, privacy, deduplication, retention and concurrency |
 | `tests/test_expert_ra_rating_actions_operations_lifecycle_exports_v1.py` | PR-103 lifecycle/evidence export compatibility |
+| `tests/test_ncr_rating_actions_source_v1.py` | PR-104 contracts, action grammar, scope, identity, failures and source behavior |
+| `tests/test_ncr_rating_actions_transport_hardening_v1.py` | PR-104 transport-only DI, allowlisted request and redirect block |
+| `tests/test_ncr_rating_actions_exports_v1.py` | PR-104 versioned contract/source exports |
 | `tests/test_portfolio_*` | Portfolio market and analytics |
 | `tests/test_purchase_capacity*.py` | Purchase preview integrity |
 | `tests/test_operations_analytics.py` | Operations and cash-flow reconciliation |
@@ -165,6 +170,7 @@ Key entrypoints:
 | `docs/architecture/EXPERT_RA_ISSUER_RATING_ACTION_OBSERVABILITY_V1.md` | PR-101 privacy-safe telemetry and opaque correlation boundary |
 | `docs/architecture/EXPERT_RA_RATING_ACTIONS_ALERT_POLICY_V1.md` | PR-102 global operational alert thresholds, forged-event gate and no-delivery boundary |
 | `docs/architecture/EXPERT_RA_RATING_ACTIONS_OPERATIONS_LIFECYCLE_V1.md` | PR-103 deterministic correlation-free terminal evidence and bounded sink boundary |
+| `docs/architecture/NCR_ISSUER_RATING_ACTION_SOURCE_V1.md` | PR-104 fixed source, issuer-only grammar, NCR scale and transport boundary |
 | `docs/architecture/CBR_KEY_RATE_*` | PR-84…PR-88 CBR architecture |
 | `docs/architecture/MOEX_ISS_TQBR_QUOTE_*` | PR-89…PR-93 MOEX architecture |
 | `gpt/MY_GPT_SETUP_RUNBOOK.md` | Custom GPT setup, Preview and rollback |
@@ -174,5 +180,5 @@ Key entrypoints:
 
 При добавлении, переименовании или удалении ключевого runtime, contract, test или
 architecture file этот индекс обновляется в том же Pull Request. Секреты,
-реальные отчёты, account identifiers, raw CBR XML, raw MOEX JSON, raw ACRA или
-Expert RA HTML и process-local cache/alert/evidence state в GitHub не хранятся.
+реальные отчёты, account identifiers, raw CBR XML, raw MOEX JSON, raw ACRA,
+Expert RA или NCR HTML и process-local cache/alert/evidence state в GitHub не хранятся.
