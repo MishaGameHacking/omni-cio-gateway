@@ -129,3 +129,27 @@ Current dependency audit — 2026-07-30
 - Available FastAPI/Uvicorn updates and any pytest major transition require a
   dedicated compatibility PR with regenerated locks and the full Regression Shield.
 - This governance package intentionally changes no dependency version.
+
+Self-hosted Windows runner operations — 2026-08-01
+--------------------------------------------------
+- Regression Shield targets the trusted repository runner labels
+  `[self-hosted, Windows, X64, omni-cio-ci]`.
+- Durable availability requires the official runner application to operate as a
+  Windows service with `Running` state and automatic startup. An interactive
+  `run.cmd` listener is not accepted as a durable operating mode.
+- Repository diagnostics are read-only and may inspect only runner root,
+  `.runner`, `run.cmd`, service identity, service state, start mode and service
+  executable path.
+- The diagnostic must not start, stop, install, remove or reconfigure a service;
+  it must not access `.credentials`, registration tokens or workflow secrets.
+- Exact runner service identity is mandatory. A different
+  `actions.runner.*` service must fail closed as an identity mismatch.
+- Failure to query Windows service metadata is distinct from stopped or
+  non-automatic service state and must use a separate typed error.
+- Administrative recovery remains an explicit owner action documented in
+  `docs/operations/SELF_HOSTED_WINDOWS_RUNNER_SERVICE.md`.
+- Short-lived registration tokens are operational inputs and must never be
+  committed, logged, pasted into Pull Requests or stored in project knowledge.
+- A queued job with `steps=null` is infrastructure evidence only. It is neither
+  a code-test failure nor successful validation; merge remains blocked until
+  the full Regression Shield completes on the exact final SHA.
