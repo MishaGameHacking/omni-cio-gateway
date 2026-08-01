@@ -5,7 +5,7 @@ param(
     [string]$RunnerRoot = "C:\actions-runner",
 
     [Parameter()]
-    [ValidateNotNullOrEmpty()]
+    [ValidatePattern('^[A-Za-z0-9._-]{1,64}$')]
     [string]$ExpectedRunnerName = "omni-cio-ci",
 
     [Parameter()]
@@ -51,6 +51,7 @@ $runnerRootExists = Test-Path -LiteralPath $RunnerRoot -PathType Container
 $serviceFilePath = Join-Path -Path $RunnerRoot -ChildPath ".service"
 $runnerConfigPath = Join-Path -Path $RunnerRoot -ChildPath ".runner"
 $runCommandPath = Join-Path -Path $RunnerRoot -ChildPath "run.cmd"
+$expectedServiceSuffix = ".$ExpectedRunnerName.service"
 
 $declaredServiceName = $null
 if (Test-Path -LiteralPath $serviceFilePath -PathType Leaf) {
@@ -67,7 +68,12 @@ if ($null -ne $declaredServiceName) {
 
 if ($null -eq $service) {
     $service = Get-Service -Name "actions.runner.*" -ErrorAction SilentlyContinue |
-        Where-Object { $_.Name -like "*.$ExpectedRunnerName.service" } |
+        Where-Object {
+            $_.Name.EndsWith(
+                $expectedServiceSuffix,
+                [System.StringComparison]::OrdinalIgnoreCase
+            )
+        } |
         Select-Object -First 1
 }
 
@@ -83,7 +89,10 @@ if ($null -ne $service) {
 $serviceName = if ($null -ne $service) { $service.Name } else { $declaredServiceName }
 $serviceIdentityMatches = (
     $null -ne $service -and
-    $service.Name -like "*.$ExpectedRunnerName.service"
+    $service.Name.EndsWith(
+        $expectedServiceSuffix,
+        [System.StringComparison]::OrdinalIgnoreCase
+    )
 )
 $serviceState = if ($null -ne $serviceDetails) { $serviceDetails.State } else { $null }
 $serviceStartMode = if ($null -ne $serviceDetails) { $serviceDetails.StartMode } else { $null }
