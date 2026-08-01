@@ -14,6 +14,7 @@ from omni_cio.contracts.v1.expert_ra_alerting import (
     ExpertRaRatingActionsAlertPolicyV1,
 )
 from omni_cio.contracts.v1.observability import (
+    CircuitBreakerState,
     ExternalCallStatus,
     FreshnessTelemetry,
     ObservabilityEventV1,
@@ -174,6 +175,8 @@ def _validate_common(event: ObservabilityEventV1) -> None:
         or call.operation != _OPERATION
         or call.retry_count != 0
         or call.rate_limit_remaining is not None
+        or call.circuit_breaker_state
+        is not CircuitBreakerState.NOT_APPLICABLE
     ):
         raise _contract_error()
     if call.status is ExternalCallStatus.NOT_CALLED:
