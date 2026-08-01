@@ -1,16 +1,19 @@
 # 16 — CURRENT PROGRAM STATUS
 
 Дата актуализации: 2026-08-01  
-Фактическая слитая функциональная вершина программы: **PR-103**  
-Слитая инфраструктурная миграция CI: **GitHub PR #129**  
-Активный незавершённый пакет: **PR-104 / NCR issuer rating action source v1**
+Фактическая слитая функциональная вершина `main`: **PR-104**  
+Последний merge commit: `34708f82d20e054bdd420ac1e9993c6d117e12d7`  
+Текущий режим: **read-only audit hold**
 
 ## Назначение документа
 
 Это оперативная карта программы. Код в `main` остаётся окончательным
 источником истины. Стратегические требования и Definition of Done определяются
-`AGENTS.md`, `knowledge/00_PROJECT_MASTER_CONTEXT.md` и canonical master plan
-v9.
+`AGENTS.md`, `knowledge/00_PROJECT_MASTER_CONTEXT.md` и canonical master plan.
+
+Состояние открытых Pull Requests, GitHub Actions, Render, GPT Editor и внешних
+сервисов нельзя считать зафиксированным только этим файлом: перед каждым новым
+пакетом их нужно проверять повторно.
 
 ## Неизменяемые границы
 
@@ -34,166 +37,166 @@ v9.
   telemetry, global operational alert policy and terminal evidence;
 - **PR-94…PR-98:** fixed official ACRA issuer-level national-RU source, bounded
   cache, privacy-safe telemetry, global alert policy and terminal evidence;
-- **PR-99:** fixed official Expert RA issuer-level national-Russia source;
-- **PR-100:** one-entry Expert RA cache with explicit
-  fresh/stale/unavailable semantics, single-flight refresh and
-  validator-bypass revalidation;
-- **PR-101:** pure privacy-safe Expert RA source/cache observability with strict
-  opaque trace IDs and no issuer/rating/action/release/publication payload;
-- **PR-102:** bounded global-only Expert RA operational alert state machine with
-  canonical-event validation, cooldown, recovery and no delivery transport;
-- **PR-103:** bounded deterministic Expert RA terminal evidence lifecycle with
-  correlation-free retention, deduplication and safe sink handoff.
+- **PR-99…PR-103:** fixed Expert RA source, cache, observability, global alert
+  policy and deterministic terminal evidence lifecycle;
+- **PR-104:** fixed official NCR issuer-level national-Russia rating-action
+  source with strict release/date identity and isolated read-only transport.
 
-## Текущая слитая функциональная вершина — PR-103
+## Текущая слитая функциональная вершина — PR-104
 
-GitHub PR #135 `PR-103: Add deterministic Expert RA terminal evidence lifecycle v1`
+GitHub PR #136 `PR-104: Add fixed NCR issuer rating action source v1` был
 squash-merged в `main` commit:
 
-`60131cf142be9b245eacc3326854cdab7a2abe1c`.
+`34708f82d20e054bdd420ac1e9993c6d117e12d7`.
 
-### PR-103 guarantees
+Final Regression Shield run #806 прошёл на exact head
+`1ac0db542721c940ed0e3c5bf30ac08dfe8e2dae`:
 
-- only typed Expert RA source snapshot or cache result inputs;
-- canonical PR-101 event builders and the exact PR-102 evaluator;
-- only `fired` and `recovered` evaluations become retained evidence;
-- deterministic `expert-ra-evidence:` identifiers over allowlisted terminal
-  fields;
-- correlation ID and the full event payload excluded from retained evidence,
-  returned batches and sink payloads;
-- deduplication, collision rejection and new-record-only optional sink handoff;
-- bounded retention/capacity, deterministic pruning, eviction and `clear()`;
-- sink failures reduced to a count without exception text;
-- no issuer/rating/action/release/date/account/financial payload, delivery
-  transport, broker write, route, frontend field or startup task;
-- `trading_methods=false`.
-
-### Final PR-103 validation
-
-Regression Shield run #804 / workflow `30691504256` passed on exact head
-`af7a5fcaac9b050d1f93a6d6352d04ab65952b53`:
-
-- quality/contracts/coverage: success;
-- dependency/code/secret security: success;
-- pytest: 1157 passed, 19 non-blocking warnings;
-- total coverage: 61.97%, threshold >=60%;
-- mypy: 186 source files, no issues;
-- compile, Ruff, formatting baseline and lock verification: passed;
+- 1235 tests passed;
+- 19 non-blocking warnings;
+- total coverage 61.97%, threshold >=60%;
+- mypy: 188 source files, no issues;
+- compile, Ruff, formatting, lock and repository-policy checks passed;
 - stable `app:app`, exactly 14 GET Actions, forbidden surface count 0 and
-  `trading_methods=false`: passed;
-- pip-audit, Bandit and detect-secrets: passed;
-- diagnostics artifact ID `8815898287`;
-- artifact SHA-256:
-  `94e473064e2e269999d5a75f2fd92dcce41ecff831bd9a1e3218a3713a9dbd3b`.
+  `trading_methods=false` passed;
+- pip-audit, Bandit and detect-secrets passed;
+- diagnostics artifact was present.
 
-## Активный пакет — PR-104 NCR issuer rating action source v1
+Это подтверждает зелёное состояние `main` на PR-104, но не доказывает внешнюю
+production acceptance.
 
-Рабочая ветка:
+## Audit hold перед продолжением roadmap
 
-`agent/ncr-issuer-rating-action-source-v1`
+По команде владельца функциональная разработка временно приостановлена до
+закрытия следующих проверок.
 
-Она создана точно от PR-103 merge commit
-`60131cf142be9b245eacc3326854cdab7a2abe1c`.
+### 1. Draft infrastructure PR #130
 
-PR-104 добавляет отдельный fixed official NCR source boundary. Он не создаёт
-generic agency adapter, не объединяет шкалы или идентичности ACRA/Expert RA/NCR
-и не меняет публичный Gateway surface.
+PR #130 `CI: make self-hosted Windows runner service diagnosable` остаётся
+draft. Старый красный check относился к Regression Shield run #787: security
+job прошёл, а quality job упал на одном ACRA deterministic-clock test, который
+позже был исправлен отдельным PR #131 и уже находится в `main`.
 
-### PR-104 source boundary
+Повторный аудит самого PR #130 нашёл дополнительные реальные недостатки:
 
-- fixed `https://ratings.ru/ratings/press-releases/` GET endpoint;
-- exact provider/source id and canonical release identity;
-- separate NCR issuer-action and snapshot contracts;
-- singular assigned, affirmed, upgraded, downgraded and withdrawn actions only;
-- closed NCR national-Russia scale from `AAA.ru` through `C.ru`, plus `D`;
-- expected, issue-level, plural and mixed issuer/issue actions excluded;
-- bounded NCR outlook grammar including uncertain/under-review wording;
-- exact visible list headers, bounded row date association and URL/date match;
-- isolated transport-only injection, no inherited auth/cookies/hooks,
-  `trust_env=false`, no redirects and bounded timeout/response size;
-- no raw title/HTML storage, redistribution authorization, entity merge,
-  credentials, account identity, broker write or trading surface;
-- no cache, observability, alert, evidence, route, GPT Action, frontend binding
-  or startup task;
-- `trading_methods=false`.
+- `.service` marker читался без отдельного byte bound;
+- его содержимое могло попасть в PowerShell `Get-Service -Name`, который
+  поддерживает wildcard patterns;
+- отсутствовали отдельные typed states и tests для missing/invalid/mismatched
+  service marker.
 
-PR-104 must remain unmerged until its draft Pull Request is opened, Regression
-Shield passes both blocking jobs on the exact final head, the diagnostics
-artifact is present, review threads are clear and GitHub reports the PR
-mergeable.
+PR #130 был усилен fail-closed: bounded `.service`, exact service identity,
+no wildcard-first discovery, redacted output и Windows-native regression tests.
+Merge запрещён до нового полного Regression Shield на текущем exact head.
 
-## Слитая CI-инфраструктура
+### 2. Документационная согласованность
 
-GitHub PR #129 moved Regression Shield to trusted repository-level self-hosted
-Windows runner `omni-cio-ci` without weakening gates. The workflow verifies
-hash-locked dependencies, repository/security policy, compile, Ruff, formatting,
-mypy, stable `app:app`, exact 14-GET release contract, pytest/coverage,
-pip-audit, Bandit, detect-secrets and workspace cleanup.
+До этого аудита оперативные документы расходились с фактическим `main`:
 
-Independent draft PR #130 remains infrastructure hardening for read-only runner
-service diagnostics. It does not block the functional roadmap while the current
-persistent runner completes both Regression Shield jobs normally.
+- этот файл всё ещё называл PR-104 активным незавершённым пакетом после его
+  успешного merge;
+- `knowledge/00_PROJECT_MASTER_CONTEXT.md` содержал устаревший локальный текст
+  о вершине PR-81;
+- issue #27 описывал более раннюю вершину и блокер, который уже не соответствует
+  состоянию репозитория;
+- README подробно перечислял chain только до PR-91, хотя фактическая вершина
+  была PR-104.
 
-## Frontend/owner discovery state
+Каноническое правило: номера active package нельзя считать истиной без проверки
+`main`, открытых PR и exact-head Actions. Этот файл обновлён до PR-104; остальные
+stale references должны быть устранены в том же audit package или явно
+помечены как исторические.
 
-No approved production binding justifies creating a duplicate frontend or
-silently adding these market-data states to a public Action. The existing
-site/frontend must be located and reused before Web-cabinet work.
+### 3. Dependency queue
+
+В `main` сохраняются отдельно зафиксированные и hash-locked версии:
+
+- `fastapi==0.140.9`;
+- `httpx==0.28.1`;
+- `t-tech-investments==1.49.2`;
+- `uvicorn==0.51.0`;
+- `pytest==8.4.2`;
+- `pytest-cov==7.1.0`;
+- `ruff==0.16.0`;
+- `mypy==2.3.0`.
+
+Открытые Dependabot PRs нельзя объединять только по зелёному значку в списке.
+Каждый должен получить свежий merge-ref против текущего `main`, review release
+notes, regenerated hash locks и полный Regression Shield. Особенно это касается
+major переходов pytest и GitHub Actions.
+
+### 4. Warning debt
+
+Последний зелёный Regression Shield всё ещё сообщает 19 warnings. Из ранее
+зафиксированных классов требуется отдельная совместимостная проверка:
+
+- Starlette/FastAPI TestClient transition away from deprecated `httpx` path;
+- deprecated T-Invest request identity fields based on `figi`;
+- Pydantic serializer warnings в final-review tests;
+- GitHub Action Node runtime deprecation warnings до завершения Action upgrades.
+
+Warnings не равны текущему падению CI, но не должны бессрочно считаться
+безопасными без классификации и regression tests.
 
 ## Production acceptance state
 
-PR-64 still requires eight external evidence cases:
+Read-only production acceptance по-прежнему требует внешних evidence cases:
 
-1. Render commit;
-2. cache-busted health;
-3. auth-negative;
-4. exact-route-positive;
-5. GPT schema import;
+1. Render source commit verification;
+2. cache-busted `/health`;
+3. auth-negative check;
+4. exact-route positive check;
+5. GPT Editor schema import;
 6. authenticated Preview;
-7. Action-list inspection;
+7. complete Action-list inspection;
 8. rollback restore.
 
-CI cannot mark these external checks complete.
+CI не может отметить эти проверки выполненными.
 
 ## Что остаётся до полного релиза
 
 ### Backend and operations
 
-- finish PR-104 after exact-head Regression Shield;
-- add other credit-rating agencies only as independent fixed reviewed sources;
-- identify exact production market-data callers and bind lifecycles lazily;
-- build production-grade news and corporate-event ingestion;
-- execute real Render/Gateway/GPT acceptance and persist evidence;
-- add versioned external RAG with freshness/citation controls;
-- expand operational monitoring/runbooks.
+- завершить и слить PR #130 только после нового exact-head green CI;
+- устранить stale project-memory and roadmap references;
+- классифицировать и закрыть либо зарегистрировать все warning classes;
+- проверить Dependabot packages по одному, без blind auto-merge;
+- добавить другие credit-rating agencies только как independent fixed sources;
+- определить exact production market-data callers and lazy bindings;
+- построить production-grade news and corporate-event ingestion;
+- выполнить реальную Render/Gateway/GPT acceptance;
+- добавить versioned external RAG with freshness/citation controls;
+- расширить operational monitoring and incident runbooks.
 
 ### Web cabinet
 
-- locate and register the existing frontend source; do not create a duplicate;
-- implement safe official SberInvestments HTML report import without OCR;
-- archive reports, compare periods and surface reconciled discrepancies;
-- finish mobile layout and light/dark themes;
-- validate all interactive controls on the production site.
+- найти и зарегистрировать исходный frontend; не создавать дубликат;
+- реализовать безопасный официальный SberInvestments HTML import без OCR;
+- архивировать отчёты, сравнивать периоды и показывать reconciled differences;
+- завершить mobile layout и light/dark themes;
+- проверить production controls.
 
 ### Trading stages
 
-Shadow, paper, preview and final-review components do not authorize live
-trading. Any future real execution needs a separate owner-approved admission
-program with confirm-before-trade, idempotency, confirmation TTL, kill switch,
-partial-fill and timeout reconciliation. Autonomous execution remains disabled.
+Shadow, paper, preview и final-review компоненты не разрешают live trading.
+Любое будущее исполнение требует отдельной owner-approved admission program с
+confirm-before-trade, idempotency, confirmation TTL, kill switch, partial-fill
+и timeout reconciliation. Autonomous execution остаётся disabled.
 
-## Следующий безопасный пакет
+## Следующий безопасный функциональный пакет
 
-Current package: **PR-104 NCR issuer rating action source v1**.
+После закрытия audit hold следующий логичный кандидат — отдельный
+**NCR rating-action cache v1** над PR-104 с explicit
+fresh/stale/unavailable semantics, single-flight refresh, bounded retention и
+no-silent-stale policy.
 
-Only after PR-104 passes exact-head CI and squash-merges may a separate NCR
-cache, another independent fixed source or exact production owner binding
-package start.
+Он не должен начинаться или сливаться одновременно с незавершённым audit/CI
+package. Другой следующий пакет допустим только после повторной сверки master
+plan, issue #27, текущего `main` и внешних приоритетов владельца.
 
 ## Запрет ложного завершения
 
 Проект не считается полностью завершённым после одного зелёного PR. Полный
 релиз требует внешней production acceptance evidence, exact owner/frontend
-binding, remaining market/news/RAG work and completion of the planned safety
-stages. Until then the system remains read-only with
-`trading_methods=false`.
+binding, remaining market/news/RAG work and completion of planned safety stages.
+До этого система остаётся read-only с `trading_methods=false`.
