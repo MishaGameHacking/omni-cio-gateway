@@ -1,184 +1,176 @@
 # Индекс файлов проекта
 
-Этот файл перечисляет активные runtime, contracts, tests, architecture и
-operations assets. Код в `main` остаётся окончательным источником истины.
+Этот файл перечисляет активные runtime, contracts, tests, architecture,
+operations and audit assets. Код в актуальном `main` остаётся окончательным
+источником истины.
 
 ## Gateway runtime
 
 | Файл | Назначение |
 |---|---|
-| `app.py` | Стабильный production entrypoint `app:app`, OpenAPI и release wrapper |
+| `app.py` | Стабильный production entrypoint `app:app`, OpenAPI and release wrapper |
 | `app_v371.py` / `app_v360.py` | Архивные совместимые wrappers |
-| `main.py` | Историческое FastAPI-ядро, auth и базовые read-only routes |
+| `main.py` | Историческое FastAPI-ядро, auth and base read-only routes |
 | `portfolio_market.py` | Portfolio Market Snapshot |
 | `portfolio_analytics.py` | Portfolio Analytics Core |
 | `cash_liquidity.py` | Cash & Liquidity Diagnostics |
-| `purchase_capacity.py` / `purchase_capacity_integrity.py` | Purchase preview и integrity checks |
-| `operations_analytics.py` | Operations Analytics & Cash Flow Reconciliation |
-| `broker_report_reconciliation/` | Официальный broker report, pagination и reconciliation |
+| `purchase_capacity.py` / `purchase_capacity_integrity.py` | Purchase preview and integrity checks |
+| `operations_analytics.py` | Operations Analytics and Cash Flow Reconciliation |
+| `broker_report_reconciliation/` | Official broker report, pagination and reconciliation |
 
 ## Versioned contracts
 
-| Файл | Назначение |
+| Файл/папка | Назначение |
 |---|---|
-| `omni_cio/contracts/v1/` | Strict immutable Pydantic contracts v1 |
-| `omni_cio/contracts/v1/macro.py` | PR-84/85 CBR source/cache contracts |
-| `omni_cio/contracts/v1/alerting.py` | PR-87/88 CBR alert/evidence contracts |
-| `omni_cio/contracts/v1/moex.py` | PR-89/90 MOEX source/cache contracts |
-| `omni_cio/contracts/v1/moex_alerting.py` | PR-92/93 global MOEX alert/evidence contracts |
-| `omni_cio/contracts/v1/ratings.py` | PR-94/95 ACRA issuer actions and source/cache contracts |
-| `omni_cio/contracts/v1/acra_alerting.py` | PR-97/98 global ACRA alert/evidence contracts |
-| `omni_cio/contracts/v1/expert_ra_ratings.py` | PR-99/100 separate Expert RA issuer-action, snapshot and cache-result contracts |
-| `omni_cio/contracts/v1/expert_ra_alerting.py` | PR-102/103 global-only alert policy/evaluation and deterministic terminal-evidence contracts |
-| `omni_cio/contracts/v1/ncr_ratings.py` | PR-104 separate fixed-source NCR issuer-action and snapshot contracts |
+| `omni_cio/contracts/v1/` | Strict versioned Pydantic contracts |
+| `omni_cio/contracts/v1/macro.py` | CBR source/cache contracts |
+| `omni_cio/contracts/v1/alerting.py` | CBR alert/evidence contracts |
+| `omni_cio/contracts/v1/moex.py` | MOEX source/cache contracts |
+| `omni_cio/contracts/v1/moex_alerting.py` | MOEX alert/evidence contracts |
+| `omni_cio/contracts/v1/ratings.py` | ACRA issuer-action and cache contracts |
+| `omni_cio/contracts/v1/acra_alerting.py` | ACRA alert/evidence contracts |
+| `omni_cio/contracts/v1/expert_ra_ratings.py` | Expert RA source/cache contracts |
+| `omni_cio/contracts/v1/expert_ra_alerting.py` | Expert RA alert/evidence contracts |
+| `omni_cio/contracts/v1/ncr_ratings.py` | NCR issuer-action and source snapshot contracts |
 
 ## Market and macro runtime
 
-| Файл | Назначение |
+| Файл/маска | Назначение |
 |---|---|
-| `omni_cio/market/cbr_key_rate_v1.py` | PR-84 fixed Bank of Russia source and protected XML parsing |
-| `omni_cio/market/cbr_key_rate_cache_v1.py` | PR-85 exact-range fresh/stale/unavailable cache |
-| `omni_cio/market/moex_iss_quote_v1.py` | PR-89 fixed public MOEX ISS TQBR source |
-| `omni_cio/market/moex_iss_quote_cache_v1.py` | PR-90 exact TQBR+SECID cache and no-silent-stale policy |
-| `omni_cio/market/acra_rating_actions_v1.py` | PR-94 fixed official issuer-level ACRA source |
-| `omni_cio/market/acra_rating_actions_cache_v1.py` | PR-95 fixed-source single-flight ACRA cache |
-| `omni_cio/market/expert_ra_rating_actions_v1.py` | PR-99 fixed Expert RA issuer-only parser and isolated bounded transport |
-| `omni_cio/market/expert_ra_rating_actions_cache_v1.py` | PR-100 one-entry single-flight Expert RA cache with explicit stale policy |
-| `omni_cio/market/ncr_rating_actions_v1.py` | PR-104 fixed official NCR issuer-only parser and isolated bounded transport |
-| `omni_cio/market/` | Existing capacity, bond, equity, fund and technical analysis |
+| `omni_cio/market/cbr_key_rate_v1.py` | Fixed Bank of Russia source |
+| `omni_cio/market/cbr_key_rate_cache_v1.py` | Exact-range CBR cache |
+| `omni_cio/market/moex_iss_quote_v1.py` | Fixed public MOEX ISS TQBR source |
+| `omni_cio/market/moex_iss_quote_cache_v1.py` | Exact TQBR+SECID cache |
+| `omni_cio/market/acra_rating_actions_v1.py` | Fixed ACRA issuer-rating source |
+| `omni_cio/market/acra_rating_actions_cache_v1.py` | ACRA source cache |
+| `omni_cio/market/expert_ra_rating_actions_v1.py` | Fixed Expert RA issuer-rating source |
+| `omni_cio/market/expert_ra_rating_actions_cache_v1.py` | Expert RA source cache |
+| `omni_cio/market/ncr_rating_actions_v1.py` | Fixed NCR issuer-rating source |
+| `omni_cio/market/` | Capacity, bond, equity, fund and technical-analysis modules |
 
 ## Observability and operations evidence
 
-| Файл | Назначение |
+| Файл/маска | Назначение |
 |---|---|
 | `omni_cio/observability/safe_events_v1.py` | Allowlisted structured event builder/emitter |
-| `omni_cio/observability/cbr_key_rate_events_v1.py` | PR-86 CBR source/cache status telemetry |
-| `omni_cio/observability/cbr_key_rate_alert_policy_v1.py` | PR-87 bounded CBR alert policy |
-| `omni_cio/observability/cbr_key_rate_operations_lifecycle_v1.py` | PR-88 fired/recovered evidence lifecycle |
-| `omni_cio/observability/moex_iss_quote_events_v1.py` | PR-91 MOEX telemetry without price or SECID |
-| `omni_cio/observability/moex_iss_quote_alert_policy_v1.py` | PR-92 global MOEX alert state machine |
-| `omni_cio/observability/moex_iss_quote_operations_lifecycle_v1.py` | PR-93 global fired/recovered evidence lifecycle |
-| `omni_cio/observability/acra_rating_actions_events_v1.py` | PR-96 ACRA telemetry without issuer/rating content |
-| `omni_cio/observability/acra_rating_actions_alert_policy_v1.py` | PR-97 strict global ACRA operational alert evaluator |
-| `omni_cio/observability/acra_rating_actions_operations_lifecycle_v1.py` | PR-98 deterministic event/evaluation and terminal evidence |
-| `omni_cio/observability/expert_ra_rating_actions_events_v1.py` | PR-101 pure Expert RA source/cache telemetry with opaque traces and no rating-action payload |
-| `omni_cio/observability/expert_ra_rating_actions_alert_policy_v1.py` | PR-102 global-only Expert RA operational alert state machine with forged-event rejection |
-| `omni_cio/observability/expert_ra_rating_actions_operations_lifecycle_v1.py` | PR-103 bounded deterministic fired/recovered evidence with event/correlation non-retention |
+| `omni_cio/observability/cbr_key_rate_*` | CBR events, alert policy and evidence lifecycle |
+| `omni_cio/observability/moex_iss_quote_*` | MOEX events, alert policy and evidence lifecycle |
+| `omni_cio/observability/acra_rating_actions_*` | ACRA events, alert policy and evidence lifecycle |
+| `omni_cio/observability/expert_ra_rating_actions_*` | Expert RA events, alert policy and evidence lifecycle |
+
+NCR currently has a fixed source only. Any NCR cache, telemetry, alert or
+evidence package must be added separately.
 
 ## Final-review release chain
 
-`omni_cio/release/` contains the PR-50…PR-83 private read-only final-review
-chain: trusted publication, compact route, acceptance evidence, workflow bridge,
+`omni_cio/release/` contains the private read-only final-review chain:
+trusted publication, compact route, acceptance evidence, workflow bridge,
 source acquisition, calculator handoff, provider registry, approved owner
 composition/installation, authenticated context, typed snapshots and bounded
-redacted evidence. Public registration remains explicit and protected by the
-14-GET release contract.
+redacted evidence.
 
 Key entrypoints:
 
 | Файл | Назначение |
 |---|---|
 | `omni_cio/release/final_decision_review_route_v1.py` | Private GET route boundary |
-| `omni_cio/release/final_decision_review_acceptance_v1.py` | Offline eight-case production acceptance collector |
-| `omni_cio/release/final_decision_review_production_registration_v1.py` | Lazy runtime registration through PR-83 |
-| `omni_cio/release/final_decision_review_authenticated_owner_installation_v1.py` | Post-auth exact snapshot selection and bounded evidence |
+| `omni_cio/release/final_decision_review_acceptance_v1.py` | Offline production acceptance collector |
+| `omni_cio/release/final_decision_review_production_registration_v1.py` | Lazy runtime registration |
+| `omni_cio/release/final_decision_review_authenticated_owner_installation_v1.py` | Post-auth snapshot selection and evidence |
 
 ## Configuration and automation
 
 | Файл | Назначение |
 |---|---|
 | `render.yaml` | Единственный Gateway Render contract |
-| `requirements.in` / `requirements.txt` | Hash-locked production dependencies |
+| `requirements.in` / `requirements.txt` | Hash-locked runtime dependencies |
 | `requirements-dev.in` / `requirements-dev.txt` | Hash-locked development dependencies |
-| `pyproject.toml` | Ruff, mypy, pytest/coverage и Bandit baseline |
-| `.env.example` | Только имена переменных, без секретов |
+| `pyproject.toml` | Ruff, mypy, pytest/coverage and Bandit baseline |
+| `.env.example` | Только имена переменных и safe placeholders |
 | `.github/workflows/regression-shield.yml` | Blocking quality/contracts/coverage/security CI |
-| `.github/dependabot.yml` | Dependency updates |
+| `.github/dependabot.yml` | Dependency update policy |
 | `.github/CODEOWNERS` | Ownership |
 | `.github/pull_request_template.md` | Pull Request Definition of Done |
-| `scripts/check_repository_layout.py` | Layout и broker-write guards |
-| `scripts/check_ci_security_baseline.py` | Locks, Action pins и security policy |
+| `scripts/check_repository_layout.py` | Layout and broker-write guards |
+| `scripts/check_ci_security_baseline.py` | Locks, Action pins and security policy |
+| `scripts/check_self_hosted_windows_runner_service.ps1` | Read-only bounded exact Windows runner service diagnostic (draft PR #130 until merged) |
+| `scripts/scan_tracked_secrets.py` | Tracked-secret scan |
 
 ## Tests
 
 | Файл/маска | Область |
 |---|---|
-| `tests/test_regression_shield.py` | Entrypoint, OpenAPI, auth и read-only invariants |
-| `tests/test_final_decision_review_*` | PR-50…PR-83 release chain |
-| `tests/test_cbr_key_rate_*` | PR-84…PR-88 source, cache, telemetry, alert и evidence |
-| `tests/test_moex_iss_quote_*` | PR-89…PR-93 source, cache, telemetry, alert и evidence |
-| `tests/test_acra_rating_actions_source_v1.py` | PR-94 source contracts, parser, transport and safety |
-| `tests/test_acra_rating_actions_exports_v1.py` | PR-94 export compatibility |
-| `tests/test_acra_rating_actions_cache_v1.py` | PR-95 fresh/stale/unavailable, single-flight and expiry |
-| `tests/test_acra_rating_actions_cache_exports_v1.py` | PR-95 cache export compatibility |
-| `tests/test_acra_rating_actions_observability_v1.py` | PR-96 safe mapping and privacy |
-| `tests/test_acra_rating_actions_observability_exports_v1.py` | PR-96 export compatibility |
-| `tests/test_acra_rating_actions_alert_policy_v1.py` | PR-97 canonical gate, thresholds and recovery |
-| `tests/test_acra_rating_actions_alert_policy_exports_v1.py` | PR-97 export compatibility |
-| `tests/test_acra_rating_actions_operations_lifecycle_v1.py` | PR-98 terminal evidence and sinks |
-| `tests/test_acra_rating_actions_operations_lifecycle_exports_v1.py` | PR-98 export compatibility |
-| `tests/test_expert_ra_rating_actions_source_v1.py` | PR-99 five actions, filtering, failures and source behavior |
-| `tests/test_expert_ra_rating_actions_contract_url_v1.py` | PR-99 direct canonical release URL contract |
-| `tests/test_expert_ra_release_date_identity_v1.py` | PR-99 calendar, URL/publication and retrieval timestamp identity |
-| `tests/test_expert_ra_section_boundary_v1.py` | PR-99 live linked `/researches/` boundary and spoof rejection |
-| `tests/test_expert_ra_rating_actions_transport_hardening_v1.py` | PR-99 transport-only DI, allowlisted request and redirect block |
-| `tests/test_expert_ra_fetch_control_bounds_v1.py` | PR-99 finite and non-expansive fetch controls |
-| `tests/test_expert_ra_html_truncation_v1.py` | PR-99 unclosed anchor/script/style/noscript rejection |
-| `tests/test_expert_ra_anchor_and_linked_date_identity_v1.py` | PR-99 no-`href` isolation and linked-date release identity |
-| `tests/test_expert_ra_adjacent_publication_date_v1.py` | PR-99 exact action/date adjacency and cross-association rejection |
-| `tests/test_expert_ra_outlook_contract_v1.py` | PR-99 direct outlook grammar parity with parser |
-| `tests/test_expert_ra_snapshot_bounds_order_v1.py` | PR-99 bounded snapshot size and deterministic newest-first ordering |
-| `tests/test_expert_ra_withdrawal_status_suffix_v1.py` | PR-99 bounded withdrawal/watch-status grammar and malformed suffix rejection |
-| `tests/test_expert_ra_rating_actions_usage_flags_v1.py` | PR-99 privacy and usage flags |
-| `tests/test_expert_ra_rating_actions_exports_v1.py` | PR-99 versioned contract/source exports |
-| `tests/test_expert_ra_rating_actions_cache_v1.py` | PR-100 fresh/stale/unavailable, single-flight, expiry and identity guards |
-| `tests/test_expert_ra_rating_actions_cache_bypass_v1.py` | PR-100 validator-bypassed malformed snapshot fail-closed coverage |
-| `tests/test_expert_ra_rating_actions_cache_exports_v1.py` | PR-100 cache export compatibility |
-| `tests/test_expert_ra_rating_actions_observability_v1.py` | PR-101 safe source/cache mapping, opaque trace and serialized privacy guards |
-| `tests/test_expert_ra_rating_actions_observability_exports_v1.py` | PR-101 observability export compatibility |
-| `tests/test_expert_ra_rating_actions_alert_policy_v1.py` | PR-102 global-only thresholds, cooldown/recovery, forgery and concurrency guards |
-| `tests/test_expert_ra_rating_actions_alert_policy_exports_v1.py` | PR-102 alert-policy export compatibility |
-| `tests/test_expert_ra_rating_actions_operations_lifecycle_v1.py` | PR-103 deterministic terminal evidence, privacy, deduplication, retention and concurrency |
-| `tests/test_expert_ra_rating_actions_operations_lifecycle_exports_v1.py` | PR-103 lifecycle/evidence export compatibility |
-| `tests/test_ncr_rating_actions_source_v1.py` | PR-104 contracts, action grammar, scope, identity, failures and source behavior |
-| `tests/test_ncr_rating_actions_transport_hardening_v1.py` | PR-104 transport-only DI, allowlisted request and redirect block |
-| `tests/test_ncr_rating_actions_exports_v1.py` | PR-104 versioned contract/source exports |
+| `tests/test_regression_shield.py` | Entrypoint, OpenAPI, auth and read-only invariants |
+| `tests/test_final_decision_review_*` | Final-review release chain |
+| `tests/test_cbr_key_rate_*` | CBR source/cache/telemetry/alert/evidence |
+| `tests/test_moex_iss_quote_*` | MOEX source/cache/telemetry/alert/evidence |
+| `tests/test_acra_rating_actions_*` | ACRA source/cache/telemetry/alert/evidence |
+| `tests/test_expert_ra_*` | Expert RA source/cache/telemetry/alert/evidence |
+| `tests/test_ncr_rating_actions_*` | NCR source contracts, parser and transport |
 | `tests/test_portfolio_*` | Portfolio market and analytics |
 | `tests/test_purchase_capacity*.py` | Purchase preview integrity |
 | `tests/test_operations_analytics.py` | Operations and cash-flow reconciliation |
 | `tests/test_broker_report*.py` | Broker report and async integrity |
 | `tests/test_ci_security_baseline.py` | Dependency/security baseline |
 | `tests/test_no_telegram_runtime.py` | Retired Telegram runtime guard |
+| `tests/test_self_hosted_windows_runner_service_script.py` | Windows runner diagnostic safety and native fixture tests (draft PR #130 until merged) |
 
-## Project memory and architecture
+## Architecture
+
+| Файл/маска | Назначение |
+|---|---|
+| `docs/architecture/SYSTEM_OVERVIEW.md` | System overview |
+| `docs/architecture/REPOSITORY_STRUCTURE.md` | Repository structure |
+| `docs/architecture/DECISIONS.md` | Architecture decisions |
+| `docs/architecture/FINAL_DECISION_REVIEW_*` | Final-review contracts and lifecycle |
+| `docs/architecture/CBR_KEY_RATE_*` | CBR source/cache/operations chain |
+| `docs/architecture/MOEX_ISS_TQBR_QUOTE_*` | MOEX source/cache/operations chain |
+| `docs/architecture/ACRA_*` | ACRA source/cache/operations chain |
+| `docs/architecture/EXPERT_RA_*` | Expert RA source/cache/operations chain |
+| `docs/architecture/NCR_ISSUER_RATING_ACTION_SOURCE_V1.md` | NCR fixed source boundary |
+
+## Operations
 
 | Файл | Назначение |
 |---|---|
-| `AGENTS.md` | Обязательные правила работы |
-| `knowledge/00_PROJECT_MASTER_CONTEXT.md` | Стратегический контекст и roadmap |
+| `docs/operations/DEPLOYMENT_RUNBOOK.md` | Render/Gateway deployment |
+| `docs/operations/RELEASE_CHECKLIST.md` | Merge and production evidence checklist |
+| `docs/operations/LIVE_READ_ONLY_ACCEPTANCE.md` | External Render/Gateway/GPT cases |
+| `docs/operations/TELEGRAM_REMOVAL_RUNBOOK.md` | Retired Telegram cleanup history |
+| `docs/operations/SELF_HOSTED_WINDOWS_RUNNER_SERVICE.md` | Persistent Windows CI runner diagnosis and recovery (draft PR #130 until merged) |
+
+## Project memory and audits
+
+| Файл | Назначение |
+|---|---|
+| `AGENTS.md` | Mandatory project rules |
+| `README.md` | Current overview and local workflow |
+| `knowledge/00_PROJECT_MASTER_CONTEXT.md` | Durable architecture and safety context |
 | `knowledge/09_MARKET_DATA_AND_BUYING_POWER.txt` | Market/macro semantics |
 | `knowledge/14_CI_SECURITY_BASELINE.txt` | CI/security baseline |
-| `knowledge/15_VERSIONED_DATA_CONTRACTS.txt` | Versioned contracts rules |
-| `knowledge/16_CURRENT_PROGRAM_STATUS.md` | Фактическая вершина и следующий пакет |
-| `docs/architecture/ACRA_ISSUER_RATING_ACTION_SOURCE_V1.md` | PR-94 source boundary |
-| `docs/architecture/ACRA_ISSUER_RATING_ACTION_CACHE_V1.md` | PR-95 cache/freshness boundary |
-| `docs/architecture/ACRA_ISSUER_RATING_ACTION_OBSERVABILITY_V1.md` | PR-96 telemetry/privacy boundary |
-| `docs/architecture/ACRA_RATING_ACTIONS_ALERT_POLICY_V1.md` | PR-97 global alert policy and canonical gate |
-| `docs/architecture/ACRA_RATING_ACTIONS_OPERATIONS_LIFECYCLE_V1.md` | PR-98 terminal evidence boundary |
-| `docs/architecture/EXPERT_RA_ISSUER_RATING_ACTION_SOURCE_V1.md` | PR-99 fixed source, grammar, scale and transport boundary |
-| `docs/architecture/EXPERT_RA_ISSUER_RATING_ACTION_CACHE_V1.md` | PR-100 cache freshness, stale exposure and single-flight boundary |
-| `docs/architecture/EXPERT_RA_ISSUER_RATING_ACTION_OBSERVABILITY_V1.md` | PR-101 privacy-safe telemetry and opaque correlation boundary |
-| `docs/architecture/EXPERT_RA_RATING_ACTIONS_ALERT_POLICY_V1.md` | PR-102 global operational alert thresholds, forged-event gate and no-delivery boundary |
-| `docs/architecture/EXPERT_RA_RATING_ACTIONS_OPERATIONS_LIFECYCLE_V1.md` | PR-103 deterministic correlation-free terminal evidence and bounded sink boundary |
-| `docs/architecture/NCR_ISSUER_RATING_ACTION_SOURCE_V1.md` | PR-104 fixed source, issuer-only grammar, NCR scale and transport boundary |
-| `docs/architecture/CBR_KEY_RATE_*` | PR-84…PR-88 CBR architecture |
-| `docs/architecture/MOEX_ISS_TQBR_QUOTE_*` | PR-89…PR-93 MOEX architecture |
-| `gpt/MY_GPT_SETUP_RUNBOOK.md` | Custom GPT setup, Preview and rollback |
-| `docs/operations/RELEASE_CHECKLIST.md` | Pre-merge and production evidence checklist |
+| `knowledge/15_VERSIONED_DATA_CONTRACTS.txt` | Versioned contract rules |
+| `knowledge/16_CURRENT_PROGRAM_STATUS.md` | Current merged top, audit gates and next package |
+| `docs/audits/PROJECT_AUDIT_2026-08-01.md` | Repository-wide audit, defects, dependency and acceptance classification |
+| `docs/inventory/PROJECT_ASSETS.md` | GitHub and external assets |
+| `docs/inventory/FILE_INDEX.md` | This file |
+
+## Custom GPT
+
+| Файл/папка | Назначение |
+|---|---|
+| `gpt/INSTRUCTIONS.md` | Canonical assistant behavior |
+| `gpt/ACTIONS_CATALOG.md` | Exact Action catalog |
+| `gpt/MY_GPT_SETUP_RUNBOOK.md` | Setup, Preview and rollback |
+| `gpt/NEW_CHAT_PROMPT.md` | Context bootstrap |
+| `gpt/` | Remaining portable GPT configuration assets |
 
 ## Правило актуальности
 
-При добавлении, переименовании или удалении ключевого runtime, contract, test или
-architecture file этот индекс обновляется в том же Pull Request. Секреты,
-реальные отчёты, account identifiers, raw CBR XML, raw MOEX JSON, raw ACRA,
-Expert RA или NCR HTML и process-local cache/alert/evidence state в GitHub не хранятся.
+При добавлении, переименовании или удалении ключевого runtime, contract, test,
+architecture, operations or audit file этот индекс обновляется в том же Pull
+Request.
+
+Не хранить в GitHub secrets, реальные отчёты, full account identifiers, raw
+CBR XML, MOEX JSON, rating-agency HTML, upstream body/exception text,
+process-local cache/alert/evidence state, runner credentials or registration
+tokens.
