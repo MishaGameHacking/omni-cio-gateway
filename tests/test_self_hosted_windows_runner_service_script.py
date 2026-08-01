@@ -49,6 +49,14 @@ def _run_diagnostic(
     return result, payload
 
 
+def _write_persistent_runner_config(runner_root: Path) -> None:
+    (runner_root / "run.cmd").write_text("@echo off\n", encoding="utf-8")
+    (runner_root / ".runner").write_text(
+        json.dumps({"AgentName": "omni-ci-test-fixture"}),
+        encoding="utf-8",
+    )
+
+
 def test_runner_service_diagnostic_is_read_only_and_fail_closed() -> None:
     text = SCRIPT.read_text(encoding="utf-8")
 
@@ -58,24 +66,32 @@ def test_runner_service_diagnostic_is_read_only_and_fail_closed() -> None:
         "ValidatePattern('^[A-Za-z0-9._-]{1,64}$')",
         '$expectedServiceSuffix = ".$ExpectedRunnerName.service"',
         "$runnerConfigInfo.Length -le 65536",
+        "$serviceMarkerInfo.Length -le 1024",
+        "$serviceNamePattern",
         'Properties["AgentName"]',
         'Properties["Ephemeral"]',
         "ConvertFrom-Json -ErrorAction Stop",
         "[System.StringComparison]::OrdinalIgnoreCase",
-        'Get-Service -Name "actions.runner.*"',
-        ".EndsWith(",
-        "Get-CimInstance",
-        "Win32_Service",
+        "Get-Service -ErrorAction Stop",
+        "Get-CimInstance -ClassName Win32_Service -ErrorAction Stop",
+        "[string]::Equals(",
         "runner_root_exists = $runnerRootExists",
         "runner_configuration_valid = $runnerConfigurationValid",
         "runner_configuration_identity_matches = $runnerConfigurationIdentityMatches",
         "runner_ephemeral = $runnerEphemeral",
+        "service_marker_present = $serviceMarkerPresent",
+        "service_marker_valid = $serviceMarkerValid",
+        "service_marker_identity_matches = $serviceMarkerIdentityMatches",
+        "service_query_succeeded = $serviceQuerySucceeded",
         "service_identity_matches = $serviceIdentityMatches",
         "service_start_mode = $serviceStartMode",
         'error_code = "RUNNER_SERVICE_WINDOWS_REQUIRED"',
         '"RUNNER_CONFIGURATION_INVALID"',
         '"RUNNER_CONFIGURATION_IDENTITY_MISMATCH"',
         '"RUNNER_EPHEMERAL_UNSUPPORTED"',
+        '"RUNNER_SERVICE_MARKER_MISSING"',
+        '"RUNNER_SERVICE_MARKER_INVALID"',
+        '"RUNNER_SERVICE_MARKER_IDENTITY_MISMATCH"',
         '"RUNNER_SERVICE_MISSING"',
         '"RUNNER_SERVICE_IDENTITY_MISMATCH"',
         '"RUNNER_SERVICE_QUERY_FAILED"',
@@ -97,6 +113,7 @@ def test_runner_service_diagnostic_is_read_only_and_fail_closed() -> None:
         "Invoke-WebRequest",
         "Invoke-RestMethod",
         ".credentials",
+        'Get-Service -Name "actions.runner.*"',
         '-like "*.$ExpectedRunnerName.service"',
         "runner_root = $RunnerRoot",
         "service_name =",
@@ -123,6 +140,7 @@ def test_runner_service_runbook_keeps_secrets_out_of_repository() -> None:
     assert "must never be stored" in text
     assert "trading_methods=false" in text
     assert "RUNNER_EPHEMERAL_UNSUPPORTED" in text
+    assert "RUNNER_SERVICE_MARKER_INVALID" in text
     assert "TINVEST_TOKEN=" not in text
     assert "GATEWAY_API_KEY=" not in text
     assert "github_pat_" not in text
@@ -199,23 +217,70 @@ def test_runner_configuration_failures_are_typed_on_windows(
     assert ephemeral_payload["runner_ephemeral"] is True
 
 
-def test_persistent_runner_configuration_reaches_service_gate_on_windows(
+def test_persistent_runner_configuration_requires_service_marker_on_windows(
     tmp_path: Path,
 ) -> None:
     powershell = _powershell()
     if powershell is None:
         return
 
-    (tmp_path / "run.cmd").write_text("@echo off\n", encoding="utf-8")
-    (tmp_path / ".runner").write_text(
-        json.dumps({"AgentName": "omni-ci-test-fixture"}),
-        encoding="utf-8",
-    )
-
+    _write_persistent_runner_config(tmp_path)
     result, payload = _run_diagnostic(powershell, tmp_path)
 
     assert result.returncode == 2
-    assert payload["error_code"] == "RUNNER_SERVICE_MISSING"
+    assert payload["error_code"] == "RUNNER_SERVICE_MARKER_MISSING"
     assert payload["runner_configuration_valid"] is True
     assert payload["runner_configuration_identity_matches"] is True
     assert payload["runner_ephemeral"] is False
+    assert payload["service_marker_present"] is False
+
+
+def test_service_marker_is_bounded_exact_and_never_emitted_on_windows(
+    tmp_path: Path,
+) -> None:
+    powershell = _powershell()
+    if powershell is None:
+        return
+
+    _write_persistent_runner_config(tmp_path)
+    service_marker = tmp_path / ".service"
+
+    service_marker.write_text(
+        "actions.runner.*.omni-ci-test-fixture.service",
+        encoding="utf-8",
+    )
+    wildcard, wildcard_payload = _run_diagnostic(powershell, tmp_path)
+    assert wildcard.returncode == 2
+    assert wildcard_payload["error_code"] == "RUNNER_SERVICE_MARKER_INVALID"
+    assert wildcard_payload["service_marker_valid"] is False
+    assert "actions.runner" not in wildcard.stdout
+
+    service_marker.write_text("x" * 1025, encoding="utf-8")
+    oversized, oversized_payload = _run_diagnostic(powershell, tmp_path)
+    assert oversized.returncode == 2
+    assert oversized_payload["error_code"] == "RUNNER_SERVICE_MARKER_INVALID"
+    assert oversized_payload["service_marker_valid"] is False
+
+    service_marker.write_text(
+        "actions.runner.owner-repo.other-runner.service",
+        encoding="utf-8",
+    )
+    mismatch, mismatch_payload = _run_diagnostic(powershell, tmp_path)
+    assert mismatch.returncode == 2
+    assert mismatch_payload["error_code"] == (
+        "RUNNER_SERVICE_MARKER_IDENTITY_MISMATCH"
+    )
+    assert mismatch_payload["service_marker_valid"] is True
+    assert mismatch_payload["service_marker_identity_matches"] is False
+
+    service_marker.write_text(
+        "actions.runner.owner-repo.omni-ci-test-fixture.service",
+        encoding="utf-8",
+    )
+    missing, missing_payload = _run_diagnostic(powershell, tmp_path)
+    assert missing.returncode == 2
+    assert missing_payload["error_code"] == "RUNNER_SERVICE_MISSING"
+    assert missing_payload["service_marker_valid"] is True
+    assert missing_payload["service_marker_identity_matches"] is True
+    assert missing_payload["service_query_succeeded"] is True
+    assert "actions.runner" not in missing.stdout
