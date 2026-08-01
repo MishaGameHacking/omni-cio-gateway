@@ -96,19 +96,19 @@ $errorCode = $null
 if (-not $runnerRootExists) {
     $errorCode = "RUNNER_ROOT_MISSING"
 }
-elif (-not $runnerConfigurationPresent) {
+elseif (-not $runnerConfigurationPresent) {
     $errorCode = "RUNNER_CONFIGURATION_MISSING"
 }
-elif (-not $runCommandPresent) {
+elseif (-not $runCommandPresent) {
     $errorCode = "RUNNER_COMMAND_MISSING"
 }
-elif ($null -eq $service) {
+elseif ($null -eq $service) {
     $errorCode = "RUNNER_SERVICE_MISSING"
 }
-elif ($serviceStartMode -ne "Auto") {
+elseif ($serviceStartMode -ne "Auto") {
     $errorCode = "RUNNER_SERVICE_NOT_AUTOMATIC"
 }
-elif ($serviceState -ne "Running") {
+elseif ($serviceState -ne "Running") {
     $errorCode = "RUNNER_SERVICE_NOT_RUNNING"
 }
 
