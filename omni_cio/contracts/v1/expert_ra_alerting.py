@@ -14,6 +14,14 @@ PositiveCount = Annotated[int, Field(ge=1, le=100)]
 NonNegativeSeconds = Annotated[int, Field(ge=0, le=604_800)]
 StateCapacity = Annotated[int, Field(ge=4, le=4)]
 SafeErrorCode = Annotated[str, Field(pattern=r"^[A-Z][A-Z0-9_]{2,63}$")]
+OpaqueEvidenceIdentifier = Annotated[
+    str,
+    Field(pattern=r"^expert-ra-evidence:[a-p]{64}$"),
+]
+ExpertRaSourceEventName = Literal[
+    "market.expert_ra_rating_actions.source",
+    "market.expert_ra_rating_actions.cache",
+]
 
 
 class ExpertRaRatingActionsAlertKind(StrEnum):
@@ -172,5 +180,94 @@ class ExpertRaRatingActionsAlertEvaluationV1(ContractModel):
         ):
             raise ValueError(
                 "recovered Expert RA alert cannot retain an error code"
+            )
+        return self
+
+
+class ExpertRaRatingActionsAlertEvidenceV1(ContractModel):
+    evidence_id: OpaqueEvidenceIdentifier
+    recorded_at: datetime
+    source_event_name: ExpertRaSourceEventName
+    scope: Literal["global_expert_ra_rating_actions_feed"] = (
+        "global_expert_ra_rating_actions_feed"
+    )
+    disposition: ExpertRaRatingActionsAlertDisposition
+    kind: ExpertRaRatingActionsAlertKind
+    severity: ObservabilitySeverity
+    consecutive_occurrences: Annotated[int, Field(ge=1, le=1_000_000)]
+    threshold: PositiveCount
+    error_code: SafeErrorCode | None = None
+    contains_sensitive_payload: Literal[False] = False
+    correlation_id_present: Literal[False] = False
+    issuer_identity_present: Literal[False] = False
+    rating_values_present: Literal[False] = False
+    action_identity_present: Literal[False] = False
+    release_identity_present: Literal[False] = False
+    publication_date_present: Literal[False] = False
+    financial_values_present: Literal[False] = False
+    raw_source_payload_present: Literal[False] = False
+    rating_thresholds_present: Literal[False] = False
+    financial_thresholds_present: Literal[False] = False
+    external_notification_sent: Literal[False] = False
+    broker_write_called: Literal[False] = False
+    trading_methods: Literal[False] = False
+
+    @field_validator("recorded_at")
+    @classmethod
+    def require_aware_recorded_at(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError(
+                "Expert RA alert evidence timestamp must be timezone-aware"
+            )
+        return value.astimezone(timezone.utc)
+
+    @model_validator(mode="after")
+    def validate_evidence(self) -> ExpertRaRatingActionsAlertEvidenceV1:
+        if self.disposition not in (
+            ExpertRaRatingActionsAlertDisposition.FIRED,
+            ExpertRaRatingActionsAlertDisposition.RECOVERED,
+        ):
+            raise ValueError(
+                "Expert RA evidence stores only fired or recovered state"
+            )
+        expected_source = (
+            "market.expert_ra_rating_actions.source"
+            if self.kind is ExpertRaRatingActionsAlertKind.SOURCE_UNAVAILABLE
+            else "market.expert_ra_rating_actions.cache"
+        )
+        if self.source_event_name != expected_source:
+            raise ValueError(
+                "Expert RA evidence source event and alert kind must agree"
+            )
+        expected_severity = (
+            ObservabilitySeverity.ERROR
+            if self.kind
+            in (
+                ExpertRaRatingActionsAlertKind.SOURCE_UNAVAILABLE,
+                ExpertRaRatingActionsAlertKind.CACHE_UNAVAILABLE,
+            )
+            else ObservabilitySeverity.WARNING
+        )
+        if self.severity is not expected_severity:
+            raise ValueError(
+                "Expert RA evidence severity and alert kind must agree"
+            )
+        if self.consecutive_occurrences < self.threshold:
+            raise ValueError(
+                "terminal Expert RA evidence must meet its threshold"
+            )
+        if (
+            self.disposition is ExpertRaRatingActionsAlertDisposition.FIRED
+            and self.error_code is None
+        ):
+            raise ValueError(
+                "fired Expert RA evidence requires a safe error code"
+            )
+        if (
+            self.disposition is ExpertRaRatingActionsAlertDisposition.RECOVERED
+            and self.error_code is not None
+        ):
+            raise ValueError(
+                "recovered Expert RA evidence cannot retain an error code"
             )
         return self
