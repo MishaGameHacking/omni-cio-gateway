@@ -1,10 +1,51 @@
 # Bot-only file manifest
 
-Этот список содержит только файлы, относящиеся к Omni-CIO Gateway и
-Custom GPT. Данные старого аккаунта ChatGPT, личные чаты и посторонние
-проекты сюда не входят.
+Этот список содержит только файлы, относящиеся к Omni-CIO Gateway и Custom GPT. Данные старого аккаунта ChatGPT, личные чаты и посторонние проекты сюда не входят.
 
-## 1. Обязательные файлы для нового проекта ChatGPT
+## 1. Главная точка восстановления Custom GPT
+
+Начинать с:
+
+`gpt/SETUP_INDEX.md`
+
+Этот файл показывает:
+- что копировать в GPT Editor;
+- какие файлы скачать из GitHub;
+- что импортировать по URL;
+- где находятся секреты и почему они не хранятся в GitHub.
+
+## 2. Обязательные файлы для Custom GPT
+
+| Файл | Куда использовать |
+|---|---|
+| `gpt/SETUP_INDEX.md` | Главная карта восстановления |
+| `gpt/MY_GPT_SETUP_RUNBOOK.md` | Пошаговая настройка ChatGPT → My GPTs |
+| `gpt/CONFIGURATION.md` | Имя, описание, starters, capabilities и publishing checklist |
+| `gpt/INSTRUCTIONS_COMPACT.md` | Полностью вставить в поле Instructions GPT Editor |
+| `gpt/ACTIONS_CATALOG.md` | Проверка списка Actions и operationId |
+| `gpt/SECRETS_AND_RENDER.md` | Render/secrets boundary без секретных значений |
+| `gpt/knowledge/` | Скачать 10 `.txt` и загрузить в GPT Knowledge |
+
+`gpt/INSTRUCTIONS.md` — расширенная версия для разработки, аудита и восстановления логики; в GPT Editor по умолчанию вставляется `INSTRUCTIONS_COMPACT.md`.
+
+## 3. Production Knowledge upload set
+
+В `gpt/knowledge/` должны оставаться:
+
+1. `02_GATEWAY_DATA_CONTRACT_V2_OPERATIONS.txt`
+2. `04_CIO_PORTFOLIO_MANAGER.txt`
+3. `05_ANALYST_NEWS_SIMPLE_LANGUAGE.txt`
+4. `06_EVIDENCE_CREDIT_BANKRUPTCY.txt`
+5. `07_PERSONAL_STRATEGY.txt`
+6. `08_DECISION_JOURNAL_AND_QUALITY_CONTROL.txt`
+7. `09_AUTONOMOUS_ACTION_ORCHESTRATOR.txt`
+8. `10_DECISION_ENGINE_AND_CANDIDATE_COMPARISON.txt`
+9. `11_RISK_DECOMPOSITION_AND_SIZING_GATES.txt`
+10. `13_COMMUNICATION_STYLE_2026.txt`
+
+Этот каталог — канонический набор именно для загрузки в production Custom GPT Knowledge.
+
+## 4. Обязательные файлы для нового ChatGPT Project / разработки
 
 | Файл | Назначение |
 |---|---|
@@ -18,37 +59,7 @@ Custom GPT. Данные старого аккаунта ChatGPT, личные �
 | `gpt/PROJECT_INSTRUCTIONS.md` | Готовый текст для Project instructions |
 | `gpt/NEW_CHAT_PROMPT.md` | Стартовый запрос для нового чата после подключения GitHub |
 
-## 2. Обязательные файлы для нового Custom GPT
-
-| Файл | Куда использовать |
-|---|---|
-| `gpt/MY_GPT_SETUP_RUNBOOK.md` | Пошаговая настройка ChatGPT → My GPTs |
-| `gpt/CONFIGURATION.md` | Имя, описание, starters, capabilities и publishing checklist |
-| `gpt/INSTRUCTIONS_COMPACT.md` | Полностью вставить в поле Instructions GPT Editor |
-| `gpt/ACTIONS_CATALOG.md` | Проверка списка Actions и operationId |
-| `knowledge/13_COMMUNICATION_STYLE_2026.txt` | Загрузить в Knowledge как расширенный профиль общения |
-
-`gpt/INSTRUCTIONS_COMPACT.md` — проверенная рабочая версия для GPT Editor; расширенный `gpt/INSTRUCTIONS.md` нужен для разработки, аудита и восстановления контекста.
-
-## 3. Профильные knowledge-файлы Gateway
-
-Для разработки и проверок должны оставаться в репозитории все файлы `knowledge/NN_*`, включая правила:
-
-- идентификации инструментов;
-- рыночных данных;
-- рыночной оценки портфеля;
-- аналитики структуры и концентрации;
-- денег и ликвидности;
-- purchase-capacity preview и integrity;
-- операций и cash-flow reconciliation;
-- официального брокерского отчёта;
-- асинхронного task lifecycle;
-- решение о выводе Telegram Companion из эксплуатации;
-- современного стиля 2026.
-
-В новый ChatGPT Project не обязательно загружать каждый knowledge-файл вручную, если GitHub подключён и чат может прочитать репозиторий. Для Custom GPT Knowledge загружается только необходимый справочный файл стиля или другие явно выбранные документы.
-
-## 4. Runtime и API
+## 5. Runtime и API
 
 В GitHub обязательно сохраняются:
 
@@ -61,44 +72,34 @@ Custom GPT. Данные старого аккаунта ChatGPT, личные �
 - `.github/`;
 - OpenAPI-контракт, формируемый работающим Gateway через `/openapi.json`.
 
-## 5. Документация и эксплуатация
-
-- `docs/master-plan/` — исходная спецификация и её текстовая поисковая копия;
-- `docs/architecture/` — архитектура и структура;
-- `docs/operations/` — deploy и release runbooks;
-- `docs/inventory/` — реестр файлов и внешних компонентов;
-- `CHANGELOG.md` — история релизов;
-- `SECURITY.md` — правила безопасности;
-- `CONTRIBUTING.md` — порядок изменений.
-
 ## 6. Что намеренно не переносится и не хранится в GitHub
 
 - экспорт аккаунта ChatGPT;
 - старые личные чаты;
 - память и настройки другого аккаунта;
 - файлы других проектов;
-- `TINVEST_TOKEN`;
-- `GATEWAY_API_KEY`;
-- действующие или отозванные Telegram credentials;
+- значение `TINVEST_TOKEN`;
+- значение `GATEWAY_API_KEY`;
+- Authorization headers;
+- действующие или отозванные сторонние credentials;
 - полный номер брокерского счёта;
-- реальные операции, позиции и брокерские отчёты;
-- Render secrets;
+- реальные операции, позиции и брокерские отчёты как постоянная конфигурация;
+- Render secret exports;
 - секретный Bearer key из GPT Editor.
 
 ## 7. Внешние настройки, которые вводятся вручную
 
-GitHub хранит желаемую конфигурацию, но не секретные значения. В новом Custom GPT вручную выполняются только:
+GitHub хранит желаемую конфигурацию, но не секретные значения. В Custom GPT вручную выполняются только:
 
-1. создание GPT;
-2. вставка `INSTRUCTIONS_COMPACT.md`;
-3. загрузка выбранных Knowledge-файлов;
-4. включение Web Search;
-5. импорт production `/openapi.json`;
-6. Authentication → API Key → Bearer;
-7. ввод существующего `GATEWAY_API_KEY` из Render;
-8. тест одного целевого GET Action;
-9. проверка `trading_methods=false`.
+1. открыть существующий GPT или создать его при полном восстановлении;
+2. имя/описание/starters из `CONFIGURATION.md`;
+3. вставка `INSTRUCTIONS_COMPACT.md`;
+4. загрузка 10 файлов `gpt/knowledge/`;
+5. настройка capabilities;
+6. импорт production `/openapi.json`;
+7. Authentication → API Key → Bearer;
+8. ввод существующего `GATEWAY_API_KEY` из Render;
+9. Preview tests;
+10. Update.
 
-Существующий Render Gateway и T-Invest token не создаются заново.
-Старый Telegram service выводится из эксплуатации по
-`docs/operations/TELEGRAM_REMOVAL_RUNBOOK.md`.
+Существующий Render Gateway и T-Invest token не создаются заново без отдельной причины.
