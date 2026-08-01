@@ -25,7 +25,7 @@ from omni_cio.market.expert_ra_rating_actions_v1 import (
 )
 
 
-NOW = datetime(2026, 7, 31, 5, 30, tzinfo=timezone.utc)
+NOW = datetime(2026, 7, 28, 5, 30, tzinfo=timezone.utc)
 
 
 def _source() -> MarketSourceV1:
