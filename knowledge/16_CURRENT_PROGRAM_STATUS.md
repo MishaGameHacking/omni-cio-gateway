@@ -1,15 +1,15 @@
 # 16 — CURRENT PROGRAM STATUS
 
 Дата актуализации: 2026-08-01  
-Фактическая слитая функциональная вершина программы: **PR-98**  
+Фактическая слитая функциональная вершина программы: **PR-100**  
 Слитая инфраструктурная миграция CI: **GitHub PR #129**  
-Активный незавершённый пакет: **PR-99 / GitHub PR #128**
+Активный незавершённый пакет: **PR-101 / Expert RA observability v1**
 
 ## Назначение документа
 
 Это оперативная карта программы. Код в `main` остаётся окончательным источником
-истины; стратегические правила и Definition of Done определяются `AGENTS.md`,
-`knowledge/00_PROJECT_MASTER_CONTEXT.md` и исходным master plan.
+истины. Стратегические требования и Definition of Done определяются `AGENTS.md`,
+`knowledge/00_PROJECT_MASTER_CONTEXT.md` и canonical master plan v9.
 
 ## Неизменяемые границы
 
@@ -20,216 +20,161 @@
 - отсутствие переводов и вывода денег;
 - отсутствие margin, short и derivatives execution;
 - отдельная ветка и Pull Request для каждого пакета;
-- squash merge только после полного Regression Shield на exact head.
+- squash merge только после полного Regression Shield на exact head;
+- green CI не заменяет внешнюю Render/Gateway/GPT acceptance evidence.
 
 ## Завершённая release chain в `main`
 
-- **PR-50…PR-63:** compact final review, exact identity, private GET route,
-  trusted publication и end-to-end fail-closed orchestration;
-- **PR-64:** production-acceptance evidence contract и offline collector;
-- **PR-65…PR-83:** typed workflow bridge, producer, source acquisition,
-  calculator handoff, approved owner installation and authenticated evidence;
-- **PR-84…PR-88:** official CBR source, cache, safe observability, bounded alert
-  policy and deterministic fired/recovered evidence lifecycle;
-- **PR-89…PR-93:** official MOEX TQBR source, exact cache, safe observability,
-  global operational alert policy and deterministic fired/recovered evidence;
+- **PR-50…PR-83:** private read-only final-review production chain, acceptance
+  collector, workflow/owner acquisition and authenticated evidence;
+- **PR-84…PR-88:** official CBR source, cache, safe observability, bounded global
+  alert policy and deterministic fired/recovered evidence lifecycle;
+- **PR-89…PR-93:** official MOEX TQBR source, exact cache, privacy-safe telemetry,
+  global operational alert policy and terminal evidence;
 - **PR-94…PR-98:** fixed official ACRA issuer-level national-RU source, bounded
-  cache, privacy-safe telemetry, global alert policy and terminal evidence.
+  cache, privacy-safe telemetry, global alert policy and terminal evidence;
+- **PR-99:** fixed official Expert RA issuer-level national-Russia rating-action
+  source with strict HTML/URL/date/grammar and unresolved-identity boundaries;
+- **PR-100:** one-entry Expert RA cache with explicit fresh/stale/unavailable
+  semantics, single-flight refresh and validator-bypass revalidation.
 
-PR-99 не входит в завершённую функциональную цепочку до успешного CI и squash
-merge.
+## Текущая слитая функциональная вершина — PR-100
 
-## Текущая слитая функциональная вершина — PR-98
+GitHub PR #132 `PR-100: Add bounded Expert RA rating-action cache v1` squash-merged
+в `main` commit:
 
-PR-98 предоставляет deterministic ACRA event → evaluation → bounded terminal
-evidence lifecycle. Evidence хранит только `fired` и `recovered`, не содержит
-issuer, rating, outlook, release, account, broker или financial payload и не
-отправляется во внешние системы.
+`d05d34883a283bd0b10e41e2bc48c0a81a948d92`.
 
-Финальный Regression Shield PR-98 прошёл на exact head:
+### PR-100 guarantees
 
-- 1005 тестов, 0 failures/errors/skips;
-- mypy: 178 source files;
-- line coverage 66.3%, branch coverage 48.85%;
-- compile, Ruff, formatting, stable `app:app`, 14-GET contract, dependency
-  audit, SAST и secret scan прошли.
+- fixed provider `Expert RA` and source id `EXPERT_RA.home.rating_actions`;
+- one process-local cache entry;
+- fresh TTL 900 seconds;
+- stale retention 86400 seconds;
+- freshness derives only from `snapshot.retrieved_at`;
+- publication date remains separate source evidence;
+- stale data is hidden unless refresh failed and trusted caller explicitly sets
+  `allow_stale=true`;
+- fully expired data is pruned;
+- `clear()` and restart-empty lifecycle;
+- one `RLock` provides single-flight initial load/refresh;
+- loader-returned typed objects are fully revalidated after serialization so
+  `model_construct()` or non-validating copy paths cannot weaken URL/date,
+  source, Literal, privacy or trading invariants;
+- loader/validation exception text is never copied into cache output;
+- no startup fetch, route, Action, DB, frontend binding or broker method.
 
-## Слитая инфраструктурная миграция — GitHub PR #129
+### Final PR-100 validation
 
-GitHub-hosted jobs перестали получать runner allocation и завершались до первого
-шага без logs и diagnostics artifact. Отдельный PR #129 перевёл Regression
-Shield на repository-level self-hosted Windows runner `omni-cio-ci` без
-ослабления gate.
+Regression Shield run #793 / workflow `30688586258` passed on exact head
+`e76e561897e292e1e1db79dfca4d9edb341d5d66`:
 
-Слитый CI-контур обеспечивает:
+- quality/contracts/coverage: success;
+- dependency/code/secret security: success;
+- pytest: 1109 passed, 0 failed;
+- total coverage: 61.97%, threshold >=60%;
+- mypy: 182 source files, no issues;
+- compile, Ruff and formatting: passed;
+- stable `app:app`: passed;
+- exactly 14 GET Actions and forbidden surface count 0: passed;
+- `trading_methods=false`: passed;
+- dependency audit, Bandit and detect-secrets: passed;
+- diagnostics artifact ID `8814880257`;
+- artifact SHA-256:
+  `2dddda71067ddc40f37e9df486f5d47671400554dbc7ce7035b9a7a34618cec7`.
+
+## Активный пакет — PR-101 Expert RA observability v1
+
+Рабочая ветка:
+
+`agent/expert-ra-rating-actions-observability-v1`
+
+Она создана точно от PR-100 merge commit
+`d05d34883a283bd0b10e41e2bc48c0a81a948d92`.
+
+PR-101 строит только pure observability builders поверх typed PR-99 source и
+PR-100 cache. Он не является production emitter, route, scheduler или alert
+policy.
+
+### Allowed telemetry
+
+Разрешены только фиксированные operational metadata/counts:
+
+- provider `Expert RA`;
+- operation `home.rating_actions`;
+- source/cache availability and freshness state;
+- fixed source/cache error code;
+- optional finite non-negative duration;
+- record count;
+- cache hit;
+- refresh attempted/succeeded;
+- stale available/exposed;
+- display allowed;
+- fixed-official-source and issuer-scope flags;
+- identity-resolution-required;
+- cross-agency-identity-merged, ожидается только false.
+
+### Forbidden telemetry
+
+Запрещено переносить в event:
+
+- issuer/subject/source-title text;
+- rating, rating scale, outlook or action kind;
+- release URL or release identity;
+- publication date;
+- raw title/HTML/upstream body;
+- arbitrary exception text/type or traceback;
+- account, portfolio, position, price, cash or broker payload;
+- credential/cookie/Authorization/token;
+- caller-selected source URL;
+- investment recommendation or trade authorization.
+
+### Extra PR-101 hardening
+
+- source/cache models reserialize with Pydantic warnings treated as errors and
+  fully revalidate before telemetry is derived;
+- validator-bypassed privacy/trading flags fail closed;
+- caller-supplied `correlation_id` is not free-form: accepted only as opaque
+  `corr:` plus 32 `a..p` entropy characters, matching `new_trace_id("corr")`;
+- omitted correlation id is generated by the existing safe-event builder;
+- serialized-event tests prove issuer/rating/outlook/action/release/date markers
+  are absent;
+- module has no app/router/startup/emitter/webhook/email/Telegram/order surface.
+
+PR-101 must remain unmerged until a draft Pull Request is opened and Regression
+Shield passes both blocking jobs on the exact final head, diagnostics artifact is
+present, review threads are clear and GitHub reports the PR mergeable.
+
+## Слитая CI-инфраструктура
+
+GitHub PR #129 moved Regression Shield to trusted repository-level self-hosted
+Windows runner `omni-cio-ci` without weakening gates. The workflow uses:
 
 - exact labels `[self-hosted, Windows, X64, omni-cio-ci]`;
-- same-repository guard для pull requests;
-- `permissions: contents: read` и `persist-credentials: false`;
-- официальный Python 3.12.10 с фиксированной SHA-256 проверкой;
-- отдельный virtual environment в `RUNNER_TEMP` для каждого job;
-- hash-locked Windows dependency projection с проверкой против canonical lock;
-- compile, structure, Ruff, formatting, mypy, stable `app:app`, 14-GET contract,
-  pytest/coverage, pip-audit, Bandit и detect-secrets;
-- обязательную очистку workspace и временной среды.
+- same-repository PR isolation;
+- read-only contents permission and checkout without persisted credentials;
+- pinned Python 3.12.10 bootstrap;
+- isolated job virtual environments;
+- hash-locked Windows dependency projections;
+- compile/layout/Ruff/format/mypy/entrypoint/14-GET/pytest/coverage;
+- pip-audit/Bandit/detect-secrets;
+- workspace cleanup.
 
-PR #129 прошёл Regression Shield run #743 на exact head
-`f8c7e4a950d2e5b4ae2ef1857591430449690acb`:
-
-- 1012 тестов, 0 failures/errors/skips;
-- mypy: 179 source files;
-- line coverage 66.3%, branch coverage 48.85%;
-- оба quality/security jobs зелёные;
-- diagnostics artifact создан;
-- Self-Hosted Windows Smoke run #41 зелёный.
-
-Squash merge commit в `main`:
-`16127b21f2cf194a0a56114ce7ad0277e5d1a0a4`.
-
-Эта инфраструктурная миграция не меняет функциональную вершину программы,
-OpenAPI, Render runtime, broker SDK или разрешённые Actions.
-
-## Активный пакет — PR-99 Expert RA fixed issuer-action source
-
-GitHub PR #128 открыт как draft на ветке
-`agent/expert-ra-rating-actions-source-v1`. Текущий exact head после финальной
-волны self-review определяется вершиной PR и должен быть единственным SHA,
-принимаемым для merge evidence. Ready-for-review и squash merge разрешены только
-после зелёного Regression Shield на этом exact head.
-
-Regression Shield run #751 на более раннем head дошёл до полного test suite:
-lock/security/layout, compile, Ruff, formatting, mypy, stable `app:app`, 14 GET
-Actions, dependency audit, Bandit, secret scan и coverage прошли; 1074 теста
-прошли, один устаревший direct-contract fixture был корректно отклонён из-за
-несовпадения даты release URL и `published_on`. Fixture исправлен без ослабления
-production validation.
-
-После этого self-review выявил и закрыл дополнительные fail-closed границы:
-
-- publication date принимается только как immediately adjacent visible event;
-  look-ahead через посторонний visible content удалён;
-- unknown release month отклоняется как `URL_INVALID` на URL boundary;
-- calendar-invalid release identity, например `feb31`, отклоняется до создания
-  Pydantic record;
-- direct Expert RA outlook допускает только stable, positive, negative,
-  developing или absence; shared `under_revision` не является Expert RA outlook;
-- `под наблюдением` остаётся отдельным source-title status, а не outlook;
-- официальный withdrawal suffix `и снял статус «под наблюдением»` поддерживается
-  как bounded grammar, но не сохраняется в `subject_name`;
-- residual withdrawal control text `статус`/`прогноз` в разобранном subject
-  fail-closed отклоняется;
-- exact release slug сохраняет проверенный формат `{jan..dec}{valid day}[a-z]?`.
-
-Текущие Regression Shield runs после изменений создаются корректно, но trusted
-self-hosted Windows listener на момент этой записи не выделяет jobs: оба job
-остаются `queued` с `steps=null`. Это infrastructure evidence, не code success и
-не code failure. Merge остаётся заблокирован.
-
-### Fixed identity
-
-- endpoint: `https://raexpert.ru/`;
-- provider: `Expert RA`;
-- source id: `EXPERT_RA.home.rating_actions`;
-- accepted release hosts: `raexpert.ru` и фиксированный alias
-  `www.raexpert.ru`;
-- stored canonical host: всегда `raexpert.ru`;
-- release path: `/releases/{20xx}/{jan..dec}{valid day}[a-z]?`;
-- source language: Russian.
-
-Caller-controlled URLs, arbitrary hosts, query strings, fragments, unknown month
-tokens, calendar-invalid dates и произвольные release paths запрещены.
-
-### Supported data and grammar
-
-PR-99 использует отдельные `ExpertRa...` contracts, не ACRA records и не общий
-multi-agency adapter. Поддерживаются только singular issuer-level действия:
-
-- assigned;
-- affirmed;
-- upgraded;
-- downgraded;
-- withdrawn.
-
-Поддерживается агентская национальная шкала `ruAAA…ruD`. Визуально смешанные
-Cyrillic/Latin A/B/C/R/D нормализуются только внутри rating token и проверяются
-по закрытому allowlist. Outlook принимается только при точном совпадении
-поддерживаемой грамматики: stable, positive, negative, developing или absence.
-`Под наблюдением` не подменяет outlook.
-
-Bond/issue/series/tranche/structured-finance, ESG, plural, complex и unsupported
-scale actions пропускаются. Malformed title, явно заявляющий поддерживаемое
-singular issuer national-Russia действие, fail-closed отклоняется.
-
-Source-title issuer text не считается стабильной canonical identity:
-
-- `subject_identity_resolved=false`;
-- `stable_subject_id_present=false`;
-- `subject_name_is_source_text=true`;
-- `identity_resolution_required=true`;
-- `cross_agency_identity_merged=false`.
-
-### Page boundary
-
-- scope открывается только plain visible `Рейтинговые действия`;
-- navigation link с тем же текстом не может открыть scope;
-- scope закрывается plain `Аналитика` либо exact official `/researches/` link;
-- external host, другой path, query или fragment не могут закрыть scope;
-- publication date должна быть immediately adjacent к action;
-- linked date обязана canonicalize в тот же release, что и action;
-- URL date обязана точно совпадать с `published_on`;
-- `<a>` без `href` не может impersonate plain heading или boundary.
-
-### Transport and parser boundary
-
-- fixed HTTPS GET;
-- всегда создаётся отдельный isolated `httpx.Client`;
-- dependency injection только `httpx.BaseTransport`, shared client запрещён;
-- нет inherited auth, cookies, headers или request hooks;
-- `trust_env=false`, redirects disabled;
-- explicit allowlisted `Accept` и `User-Agent`;
-- caller может только уменьшать default timeout/response budget;
-- `NaN`, infinities, huge values и expanded budgets отклоняются до I/O;
-- HTML/XHTML only;
-- bounded declared и streamed bytes;
-- UTF-8/UTF-8-BOM only;
-- script/style/noscript content ignored;
-- unclosed или mismatched anchor/script/style/noscript fail closed;
-- future-date tolerance bounded одним календарным днём;
-- release URL month/day calendar-valid до canonicalization;
-- available snapshot `retrieved_at` обязана совпадать с
-  `source.retrieved_at`;
-- every record обязана использовать exact snapshot source;
-- snapshot ограничен 30 records и deterministic newest-first ordering;
-- duplicate conflicts fail closed;
-- raw title, HTML, upstream body и exception text не сохраняются.
-
-Contracts экспортируются через direct module и общий `omni_cio.contracts.v1` и
-объявляют informational use only, no software-authorized redistribution, not an
-investment recommendation, no credentials/full account ID, no broker write, no
-order creation и `trading_methods=false`.
-
-## Compatibility и safety активной ветки
-
-- `app:app` не изменён;
-- 14 GET Actions не изменены;
-- нет route, request body, public response field или frontend component;
-- нет dependency, database, secret или Render migration;
-- нет source fetch при import/startup;
-- нет cache, observability, alert или evidence для Expert RA;
-- нет webhook, email, Telegram, pager или внешней доставки;
-- нет T-Invest call или broker write method;
-- `trading_methods=false`.
+An independent draft PR #130 contains a read-only Windows runner diagnostic and
+persistent-service runbook. It is infrastructure hardening, not a prerequisite
+for changing the functional release top while the current persistent runner is
+successfully processing both Regression Shield jobs.
 
 ## Frontend/owner discovery state
 
-Repository search не выявил зарегистрированный существующий frontend/dashboard
-owner или production caller для CBR/MOEX/ACRA/Expert RA полей. Пакеты не создают
-дубликат UI, не меняют Action response и не запускают network calls. Exact owner
-discovery остаётся обязательным до production binding.
+Repository work still has no approved production binding that would justify
+creating a duplicate frontend or silently adding market-data fields to an Action.
+The existing site/frontend must be located and reused before Web-cabinet work.
 
 ## Production acceptance state
 
-PR-64 всё ещё требует восемь внешних evidence cases:
+PR-64 still requires eight external evidence cases before the project can be
+called production accepted:
 
 1. Render commit;
 2. cache-busted health;
@@ -240,54 +185,49 @@ PR-64 всё ещё требует восемь внешних evidence cases:
 7. Action-list inspection;
 8. rollback restore.
 
-Green CI не может отметить эти внешние проверки выполненными.
+CI cannot mark these external checks complete.
 
 ## Что остаётся до полного релиза
 
 ### Backend and operations
 
-- завершить PR-99 только после полного Regression Shield на exact final SHA;
-- после merge PR-99 отдельными пакетами добавить Expert RA cache, telemetry,
-  global alert policy и terminal evidence lifecycle;
-- добавлять другие CRA только отдельными fixed contracts;
-- найти exact market-data callers и bind lifecycles lazily;
-- построить production-grade news и corporate-event ingestion;
-- выполнить real Render/Gateway/GPT acceptance и записать evidence;
-- добавить external versioned RAG с freshness и citation controls;
-- расширить operational runbooks и monitoring acceptance.
+- finish PR-101 after exact-head Regression Shield;
+- then separate **PR-102**: global-only Expert RA operational alert policy over
+  PR-101 events, without issuer/rating/action identity, financial thresholds or
+  outbound delivery;
+- then separate **PR-103**: deterministic bounded Expert RA fired/recovered
+  terminal evidence lifecycle;
+- add other credit-rating agencies only as independent fixed reviewed sources;
+- identify exact production market-data callers and bind lifecycles lazily;
+- build production-grade news and corporate-event ingestion;
+- execute real Render/Gateway/GPT acceptance and persist evidence;
+- add versioned external RAG with freshness/citation controls;
+- expand operational monitoring/runbooks.
 
 ### Web cabinet
 
-- найти и зарегистрировать исходный frontend существующего сайта;
-- не создавать дубликат frontend;
-- реализовать безопасный HTML-импорт СберИнвестиций без OCR;
-- архив, сравнение периодов, расхождения, мобильный UI и обе темы;
-- проверить production site и интерактивные элементы.
+- locate and register the existing frontend source; do not create a duplicate;
+- implement safe official SberInvestments HTML report import without OCR;
+- archive reports, compare periods and surface reconciled discrepancies;
+- finish mobile layout and light/dark themes;
+- validate all interactive controls on the production site.
 
 ### Trading stages
 
-Shadow, paper, preview и final-review инфраструктура не являются разрешением на
-реальную торговлю. Confirm-before-trade, idempotency, TTL confirmation, kill
-switch, partial-fill и timeout reconciliation требуют отдельной программы
-допуска и решения владельца. Автономная торговля без подтверждения не включена.
+Shadow, paper, preview and final-review components do not authorize live trading.
+Any future real execution needs a separate owner-approved admission program with
+confirm-before-trade, idempotency, confirmation TTL, kill switch, partial-fill
+and timeout reconciliation. Autonomous execution remains disabled.
 
-## Следующий пакет после успешного PR-99
+## Следующий безопасный пакет
 
-Только после CI и merge PR-99 разрешён one-entry bounded Expert RA cache v1:
+Current package: **PR-101 Expert RA privacy-safe observability v1**.
 
-- typed PR-99 snapshots with exact provider/source identity;
-- fresh, stale и unavailable states;
-- retrieval freshness только из `snapshot.retrieved_at`;
-- publication dates как отдельное source evidence;
-- single-flight refresh under one lock;
-- stale hidden unless refresh failed and trusted `allow_stale=true`;
-- fully expired state pruned;
-- bounded controls, restart-empty и explicit clear;
-- no source fetch at import/startup;
-- no route, Action, frontend, external notification или broker method.
+Only after PR-101 passes exact-head CI and squash-merges may PR-102 start.
 
 ## Запрет ложного завершения
 
-Проект не считается полностью завершённым после одного зелёного PR. Полный релиз
-требует внешней Render/Gateway/GPT acceptance evidence, точного production owner
-binding и завершения оставшихся master-plan блоков.
+Проект не считается полностью завершённым после одного зелёного PR. Полный
+релиз требует внешней production acceptance evidence, exact owner/frontend
+binding, remaining market/news/RAG work and completion of the planned safety
+stages. Until then the system remains read-only with `trading_methods=false`.
