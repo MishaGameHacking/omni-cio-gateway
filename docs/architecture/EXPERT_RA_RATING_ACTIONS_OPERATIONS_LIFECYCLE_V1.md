@@ -57,8 +57,8 @@ ID. Concurrent callers cannot interleave evaluator/evidence state mutation.
   trading flags.
 
 The contract rejects `ignored`, `pending` and `suppressed_cooldown`
-evidence. Fired evidence must meet its threshold and carry a safe error code.
-Recovered evidence cannot retain an error code. Source event, kind and severity
+evidence. Every terminal record must meet its threshold. Fired evidence must carry
+a safe error code, while recovered evidence cannot retain one. Source event, kind and severity
 must match the canonical Expert RA operational profile.
 
 ## Deterministic identity and deduplication
