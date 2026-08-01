@@ -207,6 +207,23 @@ finite/non-expansive controls, fixed endpoint, content type/size, network failur
 redaction, versioned exports and absence of generic URL, startup, route and
 broker-write surfaces.
 
+## Validation continuity
+
+Regression Shield run #781 on the frozen PR-99 candidate reached the complete
+repository test suite. Security, lock consistency, repository layout, compile,
+Ruff, formatting, mypy, stable `app:app`, the 14-GET read-only contract and the
+coverage threshold all passed. The only failure was an existing ACRA lifecycle
+test that created evidence under a fixed 2026-07-31 clock and later read it
+without passing the same deterministic clock, so normal retention pruning used
+the actual 2026-08-01 time.
+
+The test-only clock correction was isolated in GitHub PR #131 and squash-merged
+to `main` after Regression Shield run #782 passed both blocking jobs on its exact
+head. Production ACRA retention/pruning behavior was not changed. Because the
+base branch changed, PR-99 still requires a new complete Regression Shield on a
+new exact head against the updated `main`; run #781 is diagnostic evidence but
+is not final merge evidence.
+
 ## Next package
 
 A separate reviewed package may add a one-entry bounded fresh/stale/unavailable
