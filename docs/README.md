@@ -93,11 +93,9 @@ cross-agency identity/scale merge is not implied by this index.
 - `operations/DEPLOYMENT_RUNBOOK.md` — Gateway deployment.
 - `operations/RELEASE_CHECKLIST.md` — release evidence and rollback.
 - `operations/LIVE_READ_ONLY_ACCEPTANCE.md` — external acceptance cases.
+- `operations/SELF_HOSTED_WINDOWS_RUNNER_SERVICE.md` — bounded read-only
+  diagnostics and recovery for the trusted persistent Windows runner.
 - `operations/TELEGRAM_REMOVAL_RUNBOOK.md` — retired Telegram cleanup history.
-
-The proposed Windows runner diagnostic and service recovery runbook remain in
-draft PR #130 until that PR passes fresh CI and merges. They are intentionally
-not indexed as active `main` files here.
 
 ### Inventory
 
@@ -128,6 +126,7 @@ Reproducible dependencies, full-SHA Action pins, quality/security gates and
 residual debt are described in:
 
 - `../knowledge/14_CI_SECURITY_BASELINE.txt`
+- `operations/SELF_HOSTED_WINDOWS_RUNNER_SERVICE.md`
 - `audits/PROJECT_AUDIT_2026-08-01.md`
 
 ### Current program status
