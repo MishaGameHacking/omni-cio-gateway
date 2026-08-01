@@ -40,6 +40,10 @@ from omni_cio.contracts.v1.decision import (
     DecisionSetV1,
     InstrumentMarketReadinessV1,
 )
+from omni_cio.contracts.v1.expert_ra_ratings import (
+    ExpertRaIssuerRatingActionsSnapshotV1,
+    ExpertRaIssuerRatingActionV1,
+)
 from omni_cio.contracts.v1.macro import (
     CbrKeyRateCacheResultV1,
     CbrKeyRateSnapshotV1,
@@ -252,6 +256,8 @@ __all__ = [
     "DuplicateNewsOccurrenceV1",
     "EntityResolutionStatus",
     "ExpectedPaymentSign",
+    "ExpertRaIssuerRatingActionsSnapshotV1",
+    "ExpertRaIssuerRatingActionV1",
     "ExternalCallStatus",
     "ExternalCallTelemetryV1",
     "FreshnessTelemetry",

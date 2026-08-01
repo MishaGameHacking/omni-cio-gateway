@@ -26,8 +26,9 @@ operations assets. Код в `main` остаётся окончательным 
 | `omni_cio/contracts/v1/alerting.py` | PR-87/88 CBR alert/evidence contracts |
 | `omni_cio/contracts/v1/moex.py` | PR-89/90 MOEX source/cache contracts |
 | `omni_cio/contracts/v1/moex_alerting.py` | PR-92/93 global MOEX alert/evidence contracts |
-| `omni_cio/contracts/v1/ratings.py` | PR-94/95 ACRA issuer actions and explicit source/cache contracts |
-| `omni_cio/contracts/v1/acra_alerting.py` | PR-97/98 global ACRA alert policy, evaluation and terminal evidence contracts |
+| `omni_cio/contracts/v1/ratings.py` | PR-94/95 ACRA issuer actions and source/cache contracts |
+| `omni_cio/contracts/v1/acra_alerting.py` | PR-97/98 global ACRA alert/evidence contracts |
+| `omni_cio/contracts/v1/expert_ra_ratings.py` | PR-99 separate Expert RA issuer-action and snapshot contracts |
 
 ## Market and macro runtime
 
@@ -39,6 +40,7 @@ operations assets. Код в `main` остаётся окончательным 
 | `omni_cio/market/moex_iss_quote_cache_v1.py` | PR-90 exact TQBR+SECID cache and no-silent-stale policy |
 | `omni_cio/market/acra_rating_actions_v1.py` | PR-94 fixed official issuer-level ACRA source |
 | `omni_cio/market/acra_rating_actions_cache_v1.py` | PR-95 fixed-source single-flight ACRA cache |
+| `omni_cio/market/expert_ra_rating_actions_v1.py` | PR-99 fixed Expert RA issuer-only parser and isolated bounded transport |
 | `omni_cio/market/` | Existing capacity, bond, equity, fund and technical analysis |
 
 ## Observability and operations evidence
@@ -52,9 +54,9 @@ operations assets. Код в `main` остаётся окончательным 
 | `omni_cio/observability/moex_iss_quote_events_v1.py` | PR-91 MOEX telemetry without price or SECID |
 | `omni_cio/observability/moex_iss_quote_alert_policy_v1.py` | PR-92 global MOEX alert state machine |
 | `omni_cio/observability/moex_iss_quote_operations_lifecycle_v1.py` | PR-93 global fired/recovered evidence lifecycle |
-| `omni_cio/observability/acra_rating_actions_events_v1.py` | PR-96 pure ACRA source/cache telemetry without issuer/rating content |
+| `omni_cio/observability/acra_rating_actions_events_v1.py` | PR-96 ACRA telemetry without issuer/rating content |
 | `omni_cio/observability/acra_rating_actions_alert_policy_v1.py` | PR-97 strict global ACRA operational alert evaluator |
-| `omni_cio/observability/acra_rating_actions_operations_lifecycle_v1.py` | PR-98 deterministic event/evaluation and bounded fired/recovered evidence |
+| `omni_cio/observability/acra_rating_actions_operations_lifecycle_v1.py` | PR-98 deterministic event/evaluation and terminal evidence |
 
 ## Final-review release chain
 
@@ -102,12 +104,26 @@ Key entrypoints:
 | `tests/test_acra_rating_actions_exports_v1.py` | PR-94 export compatibility |
 | `tests/test_acra_rating_actions_cache_v1.py` | PR-95 fresh/stale/unavailable, single-flight and expiry |
 | `tests/test_acra_rating_actions_cache_exports_v1.py` | PR-95 cache export compatibility |
-| `tests/test_acra_rating_actions_observability_v1.py` | PR-96 mapping, safe metrics, privacy and no-write surface |
-| `tests/test_acra_rating_actions_observability_exports_v1.py` | PR-96 observability export compatibility |
-| `tests/test_acra_rating_actions_alert_policy_v1.py` | PR-97 canonical gate, thresholds, cooldown, recovery, concurrency and privacy |
-| `tests/test_acra_rating_actions_alert_policy_exports_v1.py` | PR-97 contract/runtime export compatibility |
-| `tests/test_acra_rating_actions_operations_lifecycle_v1.py` | PR-98 terminal evidence, sinks, retention, concurrency and privacy |
-| `tests/test_acra_rating_actions_operations_lifecycle_exports_v1.py` | PR-98 evidence/lifecycle export compatibility |
+| `tests/test_acra_rating_actions_observability_v1.py` | PR-96 safe mapping and privacy |
+| `tests/test_acra_rating_actions_observability_exports_v1.py` | PR-96 export compatibility |
+| `tests/test_acra_rating_actions_alert_policy_v1.py` | PR-97 canonical gate, thresholds and recovery |
+| `tests/test_acra_rating_actions_alert_policy_exports_v1.py` | PR-97 export compatibility |
+| `tests/test_acra_rating_actions_operations_lifecycle_v1.py` | PR-98 terminal evidence and sinks |
+| `tests/test_acra_rating_actions_operations_lifecycle_exports_v1.py` | PR-98 export compatibility |
+| `tests/test_expert_ra_rating_actions_source_v1.py` | PR-99 five actions, filtering, failures and source behavior |
+| `tests/test_expert_ra_rating_actions_contract_url_v1.py` | PR-99 direct canonical release URL contract |
+| `tests/test_expert_ra_release_date_identity_v1.py` | PR-99 calendar, URL/publication and retrieval timestamp identity |
+| `tests/test_expert_ra_section_boundary_v1.py` | PR-99 live linked `/researches/` boundary and spoof rejection |
+| `tests/test_expert_ra_rating_actions_transport_hardening_v1.py` | PR-99 transport-only DI, allowlisted request and redirect block |
+| `tests/test_expert_ra_fetch_control_bounds_v1.py` | PR-99 finite and non-expansive fetch controls |
+| `tests/test_expert_ra_html_truncation_v1.py` | PR-99 unclosed anchor/script/style/noscript rejection |
+| `tests/test_expert_ra_anchor_and_linked_date_identity_v1.py` | PR-99 no-`href` isolation and linked-date release identity |
+| `tests/test_expert_ra_adjacent_publication_date_v1.py` | PR-99 exact action/date adjacency and cross-association rejection |
+| `tests/test_expert_ra_outlook_contract_v1.py` | PR-99 direct outlook grammar parity with parser |
+| `tests/test_expert_ra_snapshot_bounds_order_v1.py` | PR-99 bounded snapshot size and deterministic newest-first ordering |
+| `tests/test_expert_ra_withdrawal_status_suffix_v1.py` | PR-99 bounded withdrawal/watch-status grammar and malformed suffix rejection |
+| `tests/test_expert_ra_rating_actions_usage_flags_v1.py` | PR-99 privacy and usage flags |
+| `tests/test_expert_ra_rating_actions_exports_v1.py` | PR-99 versioned contract/source exports |
 | `tests/test_portfolio_*` | Portfolio market and analytics |
 | `tests/test_purchase_capacity*.py` | Purchase preview integrity |
 | `tests/test_operations_analytics.py` | Operations and cash-flow reconciliation |
@@ -128,8 +144,9 @@ Key entrypoints:
 | `docs/architecture/ACRA_ISSUER_RATING_ACTION_SOURCE_V1.md` | PR-94 source boundary |
 | `docs/architecture/ACRA_ISSUER_RATING_ACTION_CACHE_V1.md` | PR-95 cache/freshness boundary |
 | `docs/architecture/ACRA_ISSUER_RATING_ACTION_OBSERVABILITY_V1.md` | PR-96 telemetry/privacy boundary |
-| `docs/architecture/ACRA_RATING_ACTIONS_ALERT_POLICY_V1.md` | PR-97 global alert policy and canonical-event gate |
-| `docs/architecture/ACRA_RATING_ACTIONS_OPERATIONS_LIFECYCLE_V1.md` | PR-98 terminal evidence and sink-ordering boundary |
+| `docs/architecture/ACRA_RATING_ACTIONS_ALERT_POLICY_V1.md` | PR-97 global alert policy and canonical gate |
+| `docs/architecture/ACRA_RATING_ACTIONS_OPERATIONS_LIFECYCLE_V1.md` | PR-98 terminal evidence boundary |
+| `docs/architecture/EXPERT_RA_ISSUER_RATING_ACTION_SOURCE_V1.md` | PR-99 fixed source, grammar, scale and transport boundary |
 | `docs/architecture/CBR_KEY_RATE_*` | PR-84…PR-88 CBR architecture |
 | `docs/architecture/MOEX_ISS_TQBR_QUOTE_*` | PR-89…PR-93 MOEX architecture |
 | `gpt/MY_GPT_SETUP_RUNBOOK.md` | Custom GPT setup, Preview and rollback |
@@ -139,5 +156,5 @@ Key entrypoints:
 
 При добавлении, переименовании или удалении ключевого runtime, contract, test или
 architecture file этот индекс обновляется в том же Pull Request. Секреты,
-реальные отчёты, account identifiers, raw CBR XML, raw MOEX JSON, raw ACRA HTML и
-process-local cache/evidence state в GitHub не хранятся.
+реальные отчёты, account identifiers, raw CBR XML, raw MOEX JSON, raw ACRA или
+Expert RA HTML и process-local cache/evidence state в GitHub не хранятся.

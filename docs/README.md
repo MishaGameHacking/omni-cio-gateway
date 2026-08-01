@@ -58,6 +58,7 @@
 - `architecture/ACRA_ISSUER_RATING_ACTION_OBSERVABILITY_V1.md` — pure source/cache telemetry without issuer, rating, outlook, release URL, publication date or raw HTML.
 - `architecture/ACRA_RATING_ACTIONS_ALERT_POLICY_V1.md` — bounded global operational policy, strict canonical-event gate, cooldown/recovery and no external delivery.
 - `architecture/ACRA_RATING_ACTIONS_OPERATIONS_LIFECYCLE_V1.md` — deterministic PR-96/97 composition and bounded fired/recovered evidence without issuer/rating payload.
+- `architecture/EXPERT_RA_ISSUER_RATING_ACTION_SOURCE_V1.md` — fixed Expert RA issuer-only national-scale source, canonical release identity, glyph normalization and bounded HTML transport.
 
 ### Operations
 
@@ -111,6 +112,7 @@ Runtime и deployment contract удалены. Решение и запрет с
 ## Что не хранится в GitHub
 
 Секреты, реальные отчёты, полный номер счёта, пользовательские финансовые
-данные, сырой CBR XML, сырой MOEX ISS JSON, сырой ACRA HTML, upstream
-fault/body/exception text, process-local cache/alert/evidence state и финансовые
-значения в observability/alert payload не должны находиться в репозитории.
+данные, сырой CBR XML, сырой MOEX ISS JSON, сырой ACRA или Expert RA HTML,
+upstream fault/body/exception text, process-local cache/alert/evidence state и
+финансовые значения в observability/alert payload не должны находиться в
+репозитории.
