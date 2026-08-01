@@ -156,7 +156,9 @@ def test_pending_does_not_create_evidence_but_fired_and_recovered_do() -> None:
     assert fired.evidence[0].disposition is AcraRatingActionsAlertDisposition.FIRED
     assert recovered.evidence[0].disposition is AcraRatingActionsAlertDisposition.RECOVERED
     assert lifecycle.evidence_count == 2
-    assert lifecycle.evidence() == fired.evidence + recovered.evidence
+    assert lifecycle.evidence(
+        checked_at=NOW + timedelta(seconds=2)
+    ) == fired.evidence + recovered.evidence
 
 
 def test_evidence_contract_rejects_non_terminal_dispositions() -> None:
