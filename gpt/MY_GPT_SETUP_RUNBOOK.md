@@ -29,12 +29,12 @@ GitHub **не хранит значения секретов**.
 
 Текущий production Gateway:
 
-`https://omni-cio-gateway-au6d.onrender.com`
+`https://omni-cio-gateway.onrender.com`
 
 Сначала проверить:
 
-- `https://omni-cio-gateway-au6d.onrender.com/health`
-- `https://omni-cio-gateway-au6d.onrender.com/openapi.json`
+- `https://omni-cio-gateway.onrender.com/health`
+- `https://omni-cio-gateway.onrender.com/openapi.json`
 
 Ожидается:
 - `status=ok`;
@@ -42,6 +42,8 @@ GitHub **не хранит значения секретов**.
 - `build.entrypoint=app:app`;
 - `trading_methods=false`;
 - в OpenAPI — ровно 14 GET операций из `ACTIONS_CATALOG.md`.
+
+Предыдущий Blueprint service `omni-cio-gateway-au6d` не использовать для этого GPT.
 
 ## 3. Открыть существующий GPT
 
@@ -131,7 +133,7 @@ GitHub **не хранит значения секретов**.
 - Authentication: `API Key`;
 - Type: `Bearer`.
 
-В Secret/API key вставить **значение `GATEWAY_API_KEY` из Render**.
+В Secret/API key вставить **значение `GATEWAY_API_KEY` из Render service `omni-cio-gateway`**.
 
 Не вставлять туда `TINVEST_TOKEN`.
 
@@ -139,7 +141,7 @@ GitHub **не хранит значения секретов**.
 
 Импортировать из URL:
 
-`https://omni-cio-gateway-au6d.onrender.com/openapi.json`
+`https://omni-cio-gateway.onrender.com/openapi.json`
 
 После импорта проверить:
 - OpenAPI version читается без ошибок;
@@ -152,7 +154,7 @@ OpenAI GPT Actions используют OpenAPI-схему и отдельно �
 
 ## 9. Render и токены
 
-Открыть Render → service `omni-cio-gateway-au6d` → Environment.
+Открыть Render → service `omni-cio-gateway` → Environment.
 
 Должны существовать переменные:
 - `GATEWAY_API_KEY`;
@@ -165,7 +167,7 @@ OpenAI GPT Actions используют OpenAPI-схему и отдельно �
 
 Custom GPT
 → Bearer `GATEWAY_API_KEY`
-→ Omni-CIO Gateway on Render
+→ `https://omni-cio-gateway.onrender.com`
 → `TINVEST_TOKEN`
 → T-Invest API
 
@@ -247,9 +249,9 @@ Custom GPT
 
 Если меняется Gateway/OpenAPI:
 1. код → PR → CI → main;
-2. Render deploy;
+2. Render deploy service `omni-cio-gateway`;
 3. проверить `/health`;
-4. заново импортировать `/openapi.json`;
+4. заново импортировать `https://omni-cio-gateway.onrender.com/openapi.json`;
 5. сверить `ACTIONS_CATALOG.md`;
 6. Preview → Update.
 
