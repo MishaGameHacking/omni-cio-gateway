@@ -81,6 +81,19 @@ def _snapshot_timestamp_valid(
     )
 
 
+def _snapshot_contract_revalidates(
+    snapshot: ExpertRaIssuerRatingActionsSnapshotV1,
+) -> bool:
+    """Reject validator-bypassed models before any cache identity/use decision."""
+    try:
+        validated = ExpertRaIssuerRatingActionsSnapshotV1.model_validate(
+            snapshot.model_dump(mode="python", warnings="error")
+        )
+    except Exception:
+        return False
+    return validated == snapshot
+
+
 class ExpertRaIssuerRatingActionsCacheV1:
     """Single-flight fixed-source cache with explicit stale/unavailable semantics."""
 
@@ -195,7 +208,8 @@ class ExpertRaIssuerRatingActionsCacheV1:
         snapshot: ExpertRaIssuerRatingActionsSnapshotV1,
     ) -> bool:
         if (
-            snapshot.status is not CreditRatingSourceStatus.AVAILABLE
+            not _snapshot_contract_revalidates(snapshot)
+            or snapshot.status is not CreditRatingSourceStatus.AVAILABLE
             or not _snapshot_timestamp_valid(snapshot)
             or not isinstance(snapshot.source, MarketSourceV1)
             or snapshot.source.authority is not SourceAuthority.OFFICIAL
@@ -236,7 +250,8 @@ class ExpertRaIssuerRatingActionsCacheV1:
         snapshot: ExpertRaIssuerRatingActionsSnapshotV1,
     ) -> bool:
         return (
-            snapshot.status is CreditRatingSourceStatus.UNAVAILABLE
+            _snapshot_contract_revalidates(snapshot)
+            and snapshot.status is CreditRatingSourceStatus.UNAVAILABLE
             and _snapshot_timestamp_valid(snapshot)
             and snapshot.source is None
             and isinstance(snapshot.records, tuple)
