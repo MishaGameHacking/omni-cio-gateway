@@ -1,5 +1,6 @@
-"""Default-off real-money trading v1 core.
+"""Default-off real-money trading v1.
 
-This package is intentionally not registered in the production FastAPI/OpenAPI
-surface yet.  It exists only for isolated, fake-client-tested Phase 1 work.
+The package is isolated from the existing read-only credential. Real-money
+routes are conditionally registered only behind explicit server configuration,
+and execution additionally requires durable state plus exact owner confirmation.
 """
