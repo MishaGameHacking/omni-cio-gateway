@@ -165,7 +165,7 @@ def test_rest_client_sends_bearer_and_body_command() -> None:
     )
     assert client.command("PING") == "PONG"
     assert observed == {
-        "url": "https://unit-test.upstash.io/",
+        "url": "https://unit-test.upstash.io",
         "authorization": "Bearer unit-test-rest-value",  # pragma: allowlist secret
         "body": ["PING"],
     }
