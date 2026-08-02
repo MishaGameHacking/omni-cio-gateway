@@ -75,6 +75,8 @@ def test_durable_journal_survives_restart_and_unknown_counts(tmp_path: Path) -> 
     assert second.durable is True
     assert recovered.state == "unknown"
     assert recovered.order_id == item.order_id
+    assert recovered.confirmation_evidence_hash is not None
+    assert len(recovered.confirmation_evidence_hash) == 64
     assert second.integrity_check() == 1
     assert second.submitted_notional_for_moscow_date(
         submitted_at.astimezone(MOSCOW).date()
