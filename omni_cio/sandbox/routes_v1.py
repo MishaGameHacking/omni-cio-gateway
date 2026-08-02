@@ -261,12 +261,13 @@ def register_sandbox_trading_gateway(
             payload = _service().status()
         except SandboxApiFailure as exc:
             _raise_http(exc)
-        return SandboxStatusResponse(
+        data = {
             **payload,
-            configured=bool(os.environ.get(SANDBOX_TOKEN_ENV, "").strip()),
-            enabled=True,
+            "configured": bool(os.environ.get(SANDBOX_TOKEN_ENV, "").strip()),
+            "enabled": True,
             **_base_response(),
-        )
+        }
+        return SandboxStatusResponse.model_validate(data)
 
     @app.post(
         "/sandbox/account/open",
