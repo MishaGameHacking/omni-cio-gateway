@@ -42,6 +42,7 @@ REQUIRED_PATHS = (
     "docs/architecture/DECISIONS.md",
     "docs/operations/DEPLOYMENT_RUNBOOK.md",
     "docs/operations/RELEASE_CHECKLIST.md",
+    "docs/operations/SANDBOX_TRADING_RUNBOOK.md",
     "gpt/README.md",
     "gpt/SETUP_INDEX.md",
     "gpt/MY_GPT_SETUP_RUNBOOK.md",
@@ -52,6 +53,11 @@ REQUIRED_PATHS = (
     "gpt/BOT_ONLY_FILE_MANIFEST.md",
     "gpt/NEW_CHAT_PROMPT.md",
     "gpt/PROJECT_INSTRUCTIONS.md",
+    "omni_cio/sandbox/__init__.py",
+    "omni_cio/sandbox/client_v1.py",
+    "omni_cio/sandbox/service_v1.py",
+    "omni_cio/sandbox/routes_v1.py",
+    "tests/test_sandbox_trading_v1.py",
     ".github/CODEOWNERS",
     ".github/dependabot.yml",
     ".github/copilot-instructions.md",
@@ -106,6 +112,16 @@ FORBIDDEN_BROKER_SERVICES = {
     "sandbox",
 }
 
+SANDBOX_RUNTIME_ROOT = Path("omni_cio/sandbox")
+SANDBOX_ALLOWED_HOST = "https://sandbox-invest-public-api.tbank.ru/rest"
+SANDBOX_FORBIDDEN_TEXT = (
+    "https://invest-public-api.tbank.ru/rest",
+    "OrdersService/PostOrder",
+    'os.environ.get("TINVEST_TOKEN"',
+    "TINVEST_TRADING_TOKEN",
+    "TINVEST_TRANSFER_TOKEN",
+)
+
 
 def fail(message: str, failures: list[str]) -> None:
     failures.append(message)
@@ -117,6 +133,14 @@ def is_forbidden_broker_attribute(name: str) -> bool:
         or name in FORBIDDEN_BROKER_SERVICES
         or any(name.startswith(prefix) for prefix in FORBIDDEN_BROKER_METHOD_PREFIXES)
     )
+
+
+def is_sandbox_runtime(relative: Path) -> bool:
+    try:
+        relative.relative_to(SANDBOX_RUNTIME_ROOT)
+    except ValueError:
+        return False
+    return True
 
 
 def scan_runtime_broker_egress(failures: list[str]) -> None:
@@ -135,13 +159,19 @@ def scan_runtime_broker_egress(failures: list[str]) -> None:
             fail(f"cannot inspect runtime Python source {relative}: {exc}", failures)
             continue
 
+        # Narrow exception: checked-in code under omni_cio/sandbox may contain
+        # mutation-shaped method names because it is hard-bound to T-Invest's
+        # virtual Sandbox. Its host/token boundary is validated separately below.
+        if is_sandbox_runtime(relative):
+            continue
+
         for node in ast.walk(tree):
             if isinstance(node, ast.Attribute) and is_forbidden_broker_attribute(
                 node.attr
             ):
                 fail(
                     (
-                        "forbidden broker write surface referenced: "
+                        "forbidden real broker write surface referenced: "
                         f"{relative}:{node.lineno} ({node.attr})"
                     ),
                     failures,
@@ -157,11 +187,44 @@ def scan_runtime_broker_egress(failures: list[str]) -> None:
             ):
                 fail(
                     (
-                        "dynamic forbidden broker write surface referenced: "
+                        "dynamic forbidden real broker write surface referenced: "
                         f"{relative}:{node.lineno} ({node.args[1].value})"
                     ),
                     failures,
                 )
+
+
+def scan_sandbox_execution_boundary(failures: list[str]) -> None:
+    sandbox_root = ROOT / SANDBOX_RUNTIME_ROOT
+    if not sandbox_root.is_dir():
+        fail("sandbox runtime directory is missing", failures)
+        return
+
+    source_parts: list[str] = []
+    for path in sorted(sandbox_root.glob("*.py")):
+        try:
+            source_parts.append(path.read_text(encoding="utf-8"))
+        except OSError as exc:
+            fail(f"cannot inspect sandbox source {path}: {exc}", failures)
+    source = "\n".join(source_parts)
+
+    if SANDBOX_ALLOWED_HOST not in source:
+        fail("sandbox runtime does not declare the canonical sandbox REST host", failures)
+    if "TINVEST_SANDBOX_TOKEN" not in source:
+        fail("sandbox runtime does not require TINVEST_SANDBOX_TOKEN", failures)
+    if "SANDBOX_TRADING_ENABLED" not in source:
+        fail("sandbox runtime has no explicit kill switch", failures)
+    if "confirmMarginTrade" not in source or '"confirmMarginTrade": False' not in source:
+        fail("sandbox runtime does not hard-disable margin confirmation", failures)
+    if "x-openai-isConsequential" not in source:
+        fail("sandbox mutation Actions are not marked consequential", failures)
+
+    for forbidden in SANDBOX_FORBIDDEN_TEXT:
+        if forbidden in source:
+            fail(
+                f"sandbox runtime crosses production execution boundary: {forbidden}",
+                failures,
+            )
 
 
 def scan_retired_duplicate_scenario_publishers(failures: list[str]) -> None:
@@ -193,7 +256,7 @@ def main() -> int:
         if 'ENTRYPOINT = "app:app"' not in app_text:
             fail("app.py does not declare ENTRYPOINT = app:app", failures)
         if "trading_methods" not in app_text:
-            fail("app.py does not expose the read-only contract marker", failures)
+            fail("app.py does not expose the real-money read-only marker", failures)
 
     for path in ROOT.rglob("*"):
         if ".git" in path.parts or not path.is_file():
@@ -214,6 +277,7 @@ def main() -> int:
             fail(f"obsolete one-time workflow still present: {name}", failures)
 
     scan_runtime_broker_egress(failures)
+    scan_sandbox_execution_boundary(failures)
     scan_retired_duplicate_scenario_publishers(failures)
 
     if failures:
@@ -224,9 +288,10 @@ def main() -> int:
 
     print("Repository layout check passed.")
     print(f"Required files checked: {len(REQUIRED_PATHS)}")
-    print("Product surface: Custom GPT + read-only Gateway")
+    print("Product surface: Custom GPT + real-money read-only Gateway")
+    print("Optional execution surface: isolated T-Invest Sandbox")
     print("Gateway entrypoint: app:app")
-    print("Trading methods: disabled")
+    print("Real-money trading methods: disabled")
     return 0
 
 
