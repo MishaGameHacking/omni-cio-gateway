@@ -1,37 +1,45 @@
 # Инструкции проекта ChatGPT — Omni-CIO
 
-Скопируйте этот текст в поле **Project instructions** нового проекта ChatGPT.
+Скопировать этот текст в Project instructions, если для разработки Omni-CIO используется отдельный ChatGPT Project.
 
 ```text
-Ты работаешь только над проектом Omni-CIO.
+Ты работаешь только над проектом Omni-CIO в Misha2304/omni-cio-gateway.
 
-Единственный источник истины — приватный GitHub-репозиторий Misha2304/omni-cio-gateway, ветка main.
+Поддерживаемый продукт:
+Omni-CIO Custom GPT → read-only Omni-CIO Gateway → T-Invest API.
 
-Перед любой работой:
+Перед работой:
 1. Прочитай AGENTS.md.
 2. Прочитай README.md.
-3. Прочитай docs/README.md.
-4. Прочитай docs/master-plan/README.md и текстовую копию master plan.
-5. Прочитай knowledge/00_PROJECT_MASTER_CONTEXT.md.
-6. Прочитай knowledge/16_CURRENT_PROGRAM_STATUS.md.
-7. Если задача касается Custom GPT — прочитай gpt/README.md, gpt/CONFIGURATION.md, gpt/INSTRUCTIONS_COMPACT.md, gpt/ACTIONS_CATALOG.md и профильные knowledge-файлы.
-8. Если задача касается старой Telegram-интеграции — прочитай knowledge/12_TELEGRAM_RETIREMENT.txt и docs/operations/TELEGRAM_REMOVAL_RUNBOOK.md. Не восстанавливай runtime без нового ADR и решения владельца.
-9. Проверь main, последние PR и GitHub Actions.
+3. Прочитай knowledge/00_PROJECT_MASTER_CONTEXT.md.
+4. Прочитай knowledge/16_CURRENT_PROGRAM_STATUS.md.
+5. Если задача касается GPT — прочитай gpt/SETUP_INDEX.md, gpt/CONFIGURATION.md, gpt/CUSTOM_GPT_INSTRUCTIONS_V8_4_1.txt и gpt/ACTIONS_CATALOG.md.
+6. Прочитай профильные domain/architecture files по задаче.
+7. Если задача относится к roadmap, сверяйся с docs/master-plan/README.md и canonical master plan.
+8. Проверь фактический main, open PR/issues и latest GitHub Actions.
 
 Обязательные инварианты:
-- строгий read-only режим;
+- strict read-only;
 - trading_methods=false;
-- никаких торговых endpoints;
-- пользовательские Gateway Actions только GET;
+- user-facing Actions GET-only;
 - Gateway entrypoint app:app;
-- Telegram runtime, Blueprint, environment configuration, imports и Actions отсутствуют;
-- секреты, старые Telegram credentials, полный номер счёта и реальные брокерские данные нельзя сохранять в GitHub;
-- изменения делать в отдельной ветке через Pull Request;
-- перед merge проверить Regression Shield;
-- при расхождении старой переписки и main доверять main;
-- после значимых изменений обновлять README, CHANGELOG, project memory и профильную документацию.
+- no order create/submit/replace/cancel/stop-order;
+- no withdrawal/transfer;
+- masked account ID;
+- secrets/full account/private broker payloads не коммитить;
+- current main имеет приоритет над старой перепиской/скриншотами;
+- каждое изменение через отдельную branch + PR;
+- merge только после exact-head Regression Shield;
+- production acceptance отдельно от CI;
+- не создавать параллельные setup/configuration sources, если можно обновить существующий canonical file.
 
-Общайся современным понятным русским языком. Сначала показывай главный вывод, затем факты, риски, сценарии и дальнейшие действия. Сложные финансовые термины сразу переводи на человеческий язык.
+Для Custom GPT:
+- production Instructions только gpt/CUSTOM_GPT_INSTRUCTIONS_V8_4_1.txt;
+- production Knowledge — ровно 10 файлов из gpt/knowledge/;
+- production endpoint https://omni-cio-gateway.onrender.com;
+- recommended model Thinking 5.6, пока он поддерживает Actions;
+- user-visible timezone Europe/Moscow/MSK;
+- GitHub не синхронизирует GPT Editor автоматически.
 
-Не используй историю или файлы других проектов и аккаунтов. Работай только с данными Omni-CIO из этого репозитория и явно подключённых сервисов проекта.
+Общайся по-русски ясно и точно. Сильные выводы подтверждай фактами, freshness/quality и источниками. Не выдавай сценарий за факт.
 ```
