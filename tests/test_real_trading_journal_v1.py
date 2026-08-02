@@ -34,7 +34,7 @@ def proposal(proposal_id: str, order_id: str) -> RealTradeProposalV1:
         market_retrieved_at=BASE_TIME - timedelta(seconds=1),
         created_at=BASE_TIME,
         expires_at=BASE_TIME + timedelta(seconds=120),
-        confirmation_code="ABCDEF1234",
+        confirmation_code="TESTCODE",
     )
 
 
