@@ -107,7 +107,7 @@ def _sdk_certificate_blobs() -> tuple[bytes, ...]:
             continue
 
         try:
-            candidate = Path(distribution.locate_file(entry))
+            candidate = Path(str(distribution.locate_file(entry)))
             size = candidate.stat().st_size
             if size <= 0 or size > _MAX_CERT_SOURCE_BYTES:
                 continue
