@@ -4,7 +4,7 @@
 
 ## Production Render service
 
-Service:
+Единственный production service:
 
 `omni-cio-gateway`
 
@@ -20,6 +20,14 @@ OpenAPI:
 
 `https://omni-cio-gateway.onrender.com/openapi.json`
 
+Не использовать старые/альтернативные Render services. Не создавать второй Gateway, Telegram/publishing service или `*-au6d` duplicate для production Custom GPT.
+
+## Render topology
+
+Текущая целевая схема — один обычный Render Web Service, подключённый к GitHub `main`.
+
+Активный Blueprint не требуется. `render.yaml` хранится в репозитории как declarative/recovery contract для безопасного восстановления одного сервиса. Если существующий `omni-cio-gateway` уже работает, не надо создавать по `render.yaml` ещё один Web Service.
+
 ## Render Environment
 
 Production service использует:
@@ -28,7 +36,7 @@ Production service использует:
 - `TINVEST_TOKEN`
 - `SSL_TBANK_VERIFY`
 
-`render.yaml` задаёт безопасный deployment contract и не содержит secret values.
+`render.yaml` задаёт безопасный single-service deployment contract и не содержит secret values.
 
 ## `TINVEST_TOKEN`
 
@@ -116,4 +124,6 @@ Canonical production Gateway для Custom GPT один:
 
 `https://omni-cio-gateway.onrender.com`
 
-Не переключать GPT на старые/альтернативные Render service URLs. Перед любым endpoint change требуется отдельная проверка health, version, deployment commit, auth and `trading_methods=false`.
+Перед любым endpoint change требуется отдельная проверка health, version, deployment commit, auth и `trading_methods=false`.
+
+Если в Render снова появился второй сервис, сначала устранить причину его автоматического воссоздания (например, старый Blueprint), затем удалить только подтверждённый дубликат. Рабочий `omni-cio-gateway` не удалять.

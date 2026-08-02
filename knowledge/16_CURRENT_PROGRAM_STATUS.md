@@ -9,7 +9,8 @@ Repository cleanup package:
 - PR #147 — `Cleanup: reduce repository to active Omni-CIO bot and Gateway`;
 - cleanup squash commit: `2032c4d9be66892af25cbaf995f0eb29922436c3`;
 - exact-head Regression Shield run #871 completed successfully;
-- PR #148 synchronized this status after the cleanup and also passed a fresh Regression Shield before merge.
+- PR #148 synchronized this status after the cleanup and also passed a fresh Regression Shield before merge;
+- PR #149 removed the self-referential latest-main SHA from this status and passed Regression Shield run #875 before squash merge.
 
 Do not hardcode the ever-changing latest `main` SHA in this status document: merging the document itself changes `main`. For the exact current SHA, read the GitHub `main` ref. The cleanup commit above is stable evidence for the accepted cleanup package.
 
@@ -26,9 +27,23 @@ Previous product/configuration behavior package:
 - user-visible timezone: `Europe/Moscow` / MSK;
 - Gateway API: `v3.10.0`;
 - production endpoint: `https://omni-cio-gateway.onrender.com`;
+- production Render service: `omni-cio-gateway`;
 - entrypoint: `app:app`;
 - exactly 14 GET Actions;
 - `trading_methods=false`.
+
+## Final Render topology confirmed by owner
+
+On 2026-08-02 the owner removed the obsolete Render resources and disconnected the old Blueprint. The intended production topology is now:
+
+- one active Render Web Service: `omni-cio-gateway`;
+- no active Blueprint instance;
+- obsolete Telegram service removed;
+- obsolete duplicate/alternate Gateway service removed;
+- primary service remains connected to `Misha2304/omni-cio-gateway` / `main`;
+- owner-provided Render logs show repeated `GET /health` responses with HTTP `200` after the cleanup.
+
+`render.yaml` remains in GitHub as a single-service declarative/recovery contract. It must not be used to create a second production service while the existing `omni-cio-gateway` is healthy.
 
 ## Accepted repository structure
 
@@ -45,6 +60,8 @@ Cleanup #147:
 - retained current configuration/runtime/safety/test/maintenance documentation;
 - kept the original Omni-CIO master plan because it directly specifies this same bot;
 - kept `app_v371.py`, `app_v360.py` and `main.py` because current `app.py` still imports them.
+
+Repository search after Render cleanup shows no active source references to the retired Telegram service name or the old `*-au6d` production endpoint.
 
 ## GPT files requiring owner-side refresh after cleanup
 
@@ -110,17 +127,20 @@ No broker write, cancellation, withdrawal or transfer execution is supported.
 
 ## Immediate owner acceptance remaining
 
-1. Confirm production Render `/health` after cleanup deployment.
-2. Replace the two changed GPT Knowledge files listed above.
-3. Run Preview smoke tests:
+Render topology cleanup is complete and the primary service remains Live.
+
+Remaining GPT-side acceptance only:
+
+1. Replace the two changed GPT Knowledge files listed above if this has not already been done.
+2. Run Preview smoke tests:
    - `Проверь подключение к брокеру.`
    - `Сколько у меня сейчас денег?`
    - `Что у меня сейчас в портфеле?`
    - `Какие операции были за последние 90 дней?`
    - `УПРАВЛЯЙ ПОРТФЕЛЕМ — обнови данные и скажи, что делать.`
-4. Confirm masked account, MSK display and `trading_methods=false`.
-5. Press `Update`.
+3. Confirm masked account, MSK display and `trading_methods=false`.
+4. Press `Update` if GPT Editor still has pending configuration changes.
 
 ## Next maintenance priority
 
-After owner acceptance, keep repository structure stable. Address actual compatibility/warning debt through separate focused PRs without mixing it into portfolio behavior.
+Keep repository and Render topology stable: one Custom GPT, one production Gateway service, one canonical endpoint. Address actual compatibility/warning debt through separate focused PRs without mixing it into portfolio behavior.
