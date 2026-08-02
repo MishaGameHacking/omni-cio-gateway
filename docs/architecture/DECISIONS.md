@@ -1,111 +1,103 @@
-# Архитектурные решения
+# Архитектурные решения Omni-CIO
 
-## ADR-001 — Шлюз остаётся read-only
-
-**Статус:** принято.
-
-Публичный gateway не содержит методов создания, отправки, замены или отмены заявок. Контроль выполняют GET-only routes, `trading_methods=false` и Regression Shield.
-
-## ADR-002 — Gateway entrypoint остаётся `app:app`
+## ADR-001 — Gateway остаётся read-only
 
 **Статус:** принято.
 
-Render и GPT Actions зависят от стабильного FastAPI app. Исторические wrappers сохраняются до отдельной compatibility migration.
+User-facing Gateway не содержит broker write methods. Контроль: GET-only routes, `trading_methods=false`, code guards and Regression Shield.
 
-## ADR-003 — GitHub является источником проектной памяти
-
-**Статус:** принято.
-
-Новые чаты используют `AGENTS.md`, `knowledge/`, `gpt/`, `docs/` и код `main`, а не старую переписку.
-
-## ADR-004 — Секреты и реальные данные остаются вне GitHub
+## ADR-002 — Production entrypoint остаётся `app:app`
 
 **Статус:** принято.
 
-GitHub не хранит T-Invest token, Gateway key, любые действующие или
-отозванные transport credentials, полный номер счёта, реальные отчёты
-и финансовые данные.
+Render и GPT Actions зависят от стабильного FastAPI app. `app_v371.py`, `app_v360.py` и `main.py` остаются, пока `app.py` импортирует их. Консолидация wrappers требует отдельной compatibility migration.
 
-## ADR-005 — Frontend нельзя дублировать до определения источника
+## ADR-003 — Единственный пользовательский интерфейс — Custom GPT
 
 **Статус:** принято.
 
-Существующий сайт Omni-CIO сохраняется. Новый frontend не создаётся до регистрации настоящего исходного проекта.
+Не поддерживать параллельный frontend/publishing transport как отдельный продукт без нового решения владельца. Текущий UI — `Omni-CIO API | Управляющий и аналитик v8.4` внутри ChatGPT.
 
-## ADR-006 — Одноразовые workflow не живут в main
-
-**Статус:** принято.
-
-Release-patcher workflow допускаются только во временной ветке. В `main` остаётся постоянный Regression Shield.
-
-## ADR-007 — Telegram является отдельным service, а не частью Gateway
-
-**Статус:** заменено ADR-013.
-
-Telegram webhook имеет иной сетевой и эксплуатационный профиль, чем GPT Actions. Поэтому Telegram Companion запускается через `telegram_bot.app:app` и `render.telegram.yaml`. Сбой или неправильная конфигурация Telegram не должны ломать `app:app`.
-
-## ADR-008 — Telegram использует команды без OpenAI API
-
-**Статус:** заменено ADR-013.
-
-Telegram Companion использует фиксированные read-only команды. Это снижает стоимость, уменьшает неоднозначность маршрутизации и позволяет проверить безопасность. Свободный AI-диалог остаётся отдельным будущим релизом.
-
-## ADR-009 — Webhook настраивается автоматически при старте
-
-**Статус:** заменено ADR-013.
-
-Telegram service использует Render `RENDER_EXTERNAL_URL`, вызывает `getMe`, `setMyCommands` и `setWebhook`, а webhook защищается secret token. Ошибка auto setup не раскрывает секреты и отражается degraded health.
-
-## ADR-010 — Telegram не дублирует Gateway business logic
-
-**Статус:** заменено ADR-013.
-
-Telegram service вызывает существующие Gateway GET endpoints и не обращается к T-Invest напрямую. Он не пересчитывает финансовые показатели, а только выбирает безопасные поля, форматирует их и доставляет ответ.
-
-## ADR-011 — Retry разрешён только для идемпотентных временных сбоев
-
-**Статус:** заменено ADR-013.
-
-Telegram Companion может повторять только тот же GET-запрос к Gateway при сетевой ошибке или HTTP 408/425/429/5xx. Ошибки авторизации, валидации и любые изменяющие операции не повторяются. Исчерпание попыток остаётся ошибкой и не превращается в `ok`.
-
-## ADR-012 — Telegram normal output является краткой сводкой
-
-**Статус:** заменено ADR-013.
-
-Полный JSON неудобен в мобильном Telegram и может превышать лимит одного сообщения. v4.0.1 показывает небольшой фиксированный набор полей, сохраняет валюту и статусы качества Gateway, а длинный текст делит на маркированные части ниже лимита Telegram Bot API.
-
-## ADR-013 — Поддерживаемый интерфейс находится только в ChatGPT
+## ADR-004 — GitHub является источником кода и эталонной конфигурации
 
 **Статус:** принято.
 
-По решению владельца Telegram Companion выведен из эксплуатации.
-Удаляются `telegram_bot/`, `render.telegram.yaml`, Telegram tests и
-active environment configuration. Gateway и публичные Actions не
-меняются: единственный production entrypoint остаётся `app:app`,
-Actions остаются GET-only, `trading_methods=false`.
+`main` + tests/contracts являются источником runtime truth. `gpt/` содержит воспроизводимый эталон GPT configuration.
 
-Удалённые модули не содержали бизнес-логики Gateway. HTTP transport,
-command routing, webhook security, deduplication, rate limit и
-message formatting являлись Telegram-specific delivery layer, поэтому
-их перенос в Gateway создавал бы ненужную связанность.
+GitHub не является live storage фактически применённых GPT Editor settings: Instructions/Knowledge/Bearer secret после изменений применяются вручную и проверяются Preview.
 
-Возврат Telegram или другого transport допускается только новым ADR,
-threat model, отдельным deployment contract, тестами и явным решением
-владельца.
-
-## ADR-014 — CI и dependency supply chain работают fail-closed
+## ADR-005 — Один production Instructions file
 
 **Статус:** принято.
 
-Human-edited dependencies живут в `.in` constraints. Runtime и
-development lock-файлы содержат точные версии всех транзитивных
-зависимостей и SHA-256 hashes; Render и CI используют
-`--require-hashes`. Внешние GitHub Actions закреплены полным commit SHA.
+Production GPT Editor использует только:
 
-Regression Shield блокирует merge при ошибке lint, formatting
-baseline, mypy, coverage floor, pip-audit, Bandit, detect-secrets или
-self-test CI policy. Ослабление гейта требует отдельного
-аргументированного PR; `continue-on-error` запрещён.
+`gpt/CUSTOM_GPT_INSTRUCTIONS_V8_4_1.txt`
 
-Legacy quality debt расширяется инкрементально вместе с исправлениями,
-а не скрывается массовым autoformat в security PR.
+Параллельные compact/canonical Instructions copies не поддерживаются, чтобы не создавать конфликтующие источники истины.
+
+## ADR-006 — Один setup entrypoint
+
+**Статус:** принято.
+
+Настройка, восстановление и update flow начинаются с `gpt/SETUP_INDEX.md`. Отдельные competing setup guides не создаются, если информацию можно добавить туда или в disaster-recovery runbook.
+
+## ADR-007 — Secrets остаются вне GitHub
+
+**Статус:** принято.
+
+`TINVEST_TOKEN` хранится только в Render Environment. `GATEWAY_API_KEY` хранится в Render и как GPT Action Bearer secret. GitHub не содержит значения secrets, full account IDs или private broker payloads.
+
+## ADR-008 — Production Gateway endpoint единственный
+
+**Статус:** принято.
+
+Canonical service:
+
+`https://omni-cio-gateway.onrender.com`
+
+GPT Actions не должны ссылаться на старые альтернативные Render service names.
+
+## ADR-009 — Portfolio management is tool-first
+
+**Статус:** принято.
+
+До содержательного portfolio advice GPT выполняет:
+
+`getPortfolioSnapshot → getCashLiquiditySnapshot → getPortfolioAnalytics`
+
+Exact-action user request имеет приоритет и не запускает другие Actions.
+
+## ADR-010 — Fresh market gate before exact sizing
+
+**Статус:** принято.
+
+Если рынок не готов, нет fresh best ask или доступен stale last price, exact personalized lot sizing блокируется. Technical affordability не превращается автоматически в recommendation.
+
+## ADR-011 — Moscow is user-visible timezone
+
+**Статус:** принято.
+
+User-visible dates/times показываются по `Europe/Moscow`/MSK. Market open/closed определяется broker/Gateway trading status, а не только часами.
+
+## ADR-012 — CI/dependency supply chain fail-closed
+
+**Статус:** принято.
+
+- human-edited dependencies live in `.in` constraints;
+- lock files pin exact transitive versions + SHA-256 hashes;
+- external GitHub Actions pin full commit SHA;
+- Regression Shield blocks merge on contract/quality/security failures;
+- generated locks are not hand-edited.
+
+## ADR-013 — Master plan сохраняется как исходная спецификация этого проекта
+
+**Статус:** принято.
+
+`docs/master-plan/` не является мусором: он описывает развитие Omni-CIO. Однако будущие цели из master plan не считаются реализованными без current code, tests and acceptance.
+
+## ADR-014 — Repository cleanup must preserve real dependencies
+
+**Статус:** принято.
+
+Перед удалением файла проверяются imports, tests, configuration and runtime references. Исторически названный файл не считается мусором автоматически. Cleanup changes проходят через branch/PR/Regression Shield.
