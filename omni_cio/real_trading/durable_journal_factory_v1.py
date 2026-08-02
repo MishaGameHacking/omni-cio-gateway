@@ -30,6 +30,7 @@ def build_real_execution_journal(
     backend = os.environ.get(
         REAL_JOURNAL_BACKEND_ENV, DEFAULT_REAL_JOURNAL_BACKEND
     ).strip().lower()
+    journal: RealExecutionJournalV1
     if backend == "upstash":
         rest_url = os.environ.get(UPSTASH_REST_URL_ENV, "").strip()
         rest_token = os.environ.get(UPSTASH_REST_TOKEN_ENV, "").strip()
