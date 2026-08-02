@@ -26,7 +26,7 @@ Custom GPT Actions ──HTTPS/Bearer──> https://omni-cio-gateway.onrender.c
 
 ## Current release boundary
 
-Engineering Phases 0–2 of real-money execution v1 are merged. The final storage path is being migrated from a paid Render disk requirement to **free external Upstash Redis**, so the existing Render service can stay on the Free plan.
+Engineering Phases 0–2 of real-money execution v1 and the zero-cost durable-storage migration are merged. Production real-order state now defaults to **external Upstash Redis**, so the existing Render service can stay on the Free plan without a Persistent Disk.
 
 Real execution remains **default-off** until owner configuration + negative Preview acceptance:
 
@@ -204,7 +204,7 @@ Engineering merge alone is not sufficient.
 
 The feature is fully released only after:
 
-1. free Upstash journal migration is merged/deployed;
+1. free Upstash journal migration is merged and default-off deployment is healthy;
 2. canonical GPT v8.6 config is applied;
 3. owner creates a permanent Upstash Free database and installs only its REST URL/token in Render;
 4. owner provisions a separate non-transfer trading token;

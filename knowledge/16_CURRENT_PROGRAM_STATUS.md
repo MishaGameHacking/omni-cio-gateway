@@ -12,9 +12,10 @@ Current engineering state:
 - isolated T-Invest Sandbox execution: accepted and extensively Preview-tested;
 - real-money v1 Phases 0–2 engineering: merged;
 - canonical GPT behavior/config: v8.6.0 merged;
-- paid Render Persistent Disk requirement is being removed in favor of a free Upstash Redis durable journal;
-- Render service remains on Free plan;
-- real-money execution remains default-off until the free-storage migration is merged/deployed and owner Phase 3 configuration/negative acceptance passes;
+- zero-cost durable-state migration is merged via PR #170;
+- production real journal default is external Upstash Redis over HTTPS REST;
+- Render service remains on Free plan and no Persistent Disk is required for the selected production path;
+- real-money execution remains default-off until owner Phase 3 configuration/negative acceptance passes;
 - first real order has not been authorized or submitted as part of the release program.
 
 Do not declare the real buy/sell feature fully released until Phase 3, rollback drill and Phase 4 controlled real execution/reconciliation pass.
@@ -154,11 +155,13 @@ No real cancel/replace/transfer/withdraw/market/margin route exists in first rel
 
 Default-off read-only release contract remains green.
 
-## Free durable-storage migration — current engineering package
+## Zero-cost durable storage — merged
 
-The initial Phase 2 storage selected SQLite on a paid Render Persistent Disk. The owner cannot use the paid Render plan, so the production storage strategy is being migrated without weakening the real-order safety model.
+PR #170 — `Storage: keep real-money release on Render Free with Upstash` — passed exact-head Regression Shield run #958, including quality/contracts/coverage plus dependency audit/SAST/secret scan, and was squash-merged as commit:
 
-Selected default backend:
+`50dee22172985d27ac2ae8b7a04c76c5840e85f1`
+
+Production default backend:
 
 `UpstashRealExecutionJournalV1`
 
@@ -170,7 +173,7 @@ UPSTASH_REDIS_REST_URL=<Render Environment>
 UPSTASH_REDIS_REST_TOKEN=<Render secret>
 ```
 
-Target properties:
+Accepted engineering properties:
 
 - Render Web Service stays Free;
 - no `/var/data` disk required;
@@ -181,13 +184,13 @@ Target properties:
 - HMAC-authenticated Moscow-day notional counters;
 - authenticated proposal-count metadata detects missing/extra stored proposal rows;
 - atomic Redis Lua compare-and-swap for concurrent proposal/daily-limit mutation;
-- durable reservation still happens before T-Invest `PostOrder`;
+- durable reservation happens before T-Invest `PostOrder`;
 - definitive rejection releases daily reserved notional;
 - `unknown` remains reserved;
 - storage outage/tamper fails closed and never falls back to ephemeral memory;
 - SQLite remains an explicit compatibility/test backend only.
 
-Upstash currently documents a Free Redis tier and no-credit-card creation. Pricing/limits remain an external provider condition, not a safety assumption.
+Provider pricing/limits are an external availability condition, not an authorization or safety assumption.
 
 Durable-storage document: `docs/operations/REAL_TRADING_DURABLE_STORAGE_V1.md`.
 
@@ -228,11 +231,11 @@ Expected production behavior while `REAL_TRADING_ENABLED=false`:
 - +8 Sandbox Actions if `SANDBOX_TRADING_ENABLED=true`;
 - no Real Trading Actions.
 
-This remains the safe state during code/document deployment.
+This is the safe owner-configuration starting state.
 
-## Next gate after free-storage PR merges — Phase 3 owner configuration, NO REAL SUBMIT
+## Next gate — Phase 3 owner configuration, NO REAL SUBMIT
 
-The next owner-only work will be:
+The next owner-only work is:
 
 1. create/claim one permanent Upstash Redis Free database;
 2. add its HTTPS REST URL and REST token only to Render Environment;
@@ -276,15 +279,15 @@ It must be:
 
 Do not use the final completion phrase until all of these are complete:
 
-- free durable-storage code merged after exact-head Regression Shield/security;
-- free default-off deployment healthy;
-- permanent Upstash Free database configured;
-- GPT v8.6 configuration applied;
-- owner Phase 3 negative Preview acceptance;
-- kill-switch rollback drill;
-- first controlled real order explicitly authorized;
-- broker state reconciled;
-- real portfolio/operations reconciled;
-- replay protection verified without a second submit.
+- [x] free durable-storage code merged after exact-head Regression Shield/security;
+- [ ] free default-off deployment healthy after owner secret configuration;
+- [ ] permanent Upstash Free database configured;
+- [ ] GPT v8.6 configuration applied in GPT Editor;
+- [ ] owner Phase 3 negative Preview acceptance;
+- [ ] kill-switch rollback drill;
+- [ ] first controlled real order explicitly authorized;
+- [ ] broker state reconciled;
+- [ ] real portfolio/operations reconciled;
+- [ ] replay protection verified without a second submit.
 
-Until then the release is engineering-ready/default-off, not fully owner-accepted real-money production.
+Until then the release is engineering-complete/default-off, not fully owner-accepted real-money production.
