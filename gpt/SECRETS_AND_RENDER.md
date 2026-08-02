@@ -4,7 +4,7 @@
 
 ## Production Render service
 
-Единственный production service:
+Единственный service:
 
 `omni-cio-gateway`
 
@@ -20,27 +20,46 @@ OpenAPI:
 
 `https://omni-cio-gateway.onrender.com/openapi.json`
 
-Не использовать старые/альтернативные Render services. Не создавать второй Gateway, Telegram/publishing service или `*-au6d` duplicate для production Custom GPT.
+Не использовать старые/альтернативные Render services. Не создавать второй Gateway или отдельный trading service ради Sandbox.
 
 ## Render topology
 
-Текущая целевая схема — один обычный Render Web Service, подключённый к GitHub `main`.
+Один обычный Render Web Service, подключённый к GitHub `main`.
 
-Активный Blueprint не требуется. `render.yaml` хранится в репозитории как declarative/recovery contract для безопасного восстановления одного сервиса. Если существующий `omni-cio-gateway` уже работает, не надо создавать по `render.yaml` ещё один Web Service.
+Активный Blueprint не требуется. `render.yaml` хранится как recovery contract и не должен создавать второй production service, пока текущий `omni-cio-gateway` работает.
 
-## Render Environment
+## Render Environment — разделение секретов
 
-Production service использует:
+Базовый production service использует:
 
-- `GATEWAY_API_KEY`
-- `TINVEST_TOKEN`
-- `SSL_TBANK_VERIFY`
+- `GATEWAY_API_KEY`;
+- `TINVEST_TOKEN`;
+- `SSL_TBANK_VERIFY`.
 
-`render.yaml` задаёт безопасный single-service deployment contract и не содержит secret values.
+После Sandbox backend acceptance дополнительно:
+
+- `TINVEST_SANDBOX_TOKEN`;
+- `SANDBOX_TRADING_ENABLED`;
+- `SANDBOX_CONFIRMATION_TTL_SECONDS`.
+
+### Критическое правило
+
+`TINVEST_TOKEN` и `TINVEST_SANDBOX_TOKEN` — разные секреты и выполняют разные роли. Sandbox-тест не требует и не разрешает повышать существующий `TINVEST_TOKEN` до full-access.
+
+Рекомендуемая Sandbox конфигурация:
+
+```text
+TINVEST_TOKEN=<существующий read-only production token>
+TINVEST_SANDBOX_TOKEN=<отдельный Sandbox token>
+GATEWAY_API_KEY=<существующий Gateway secret>
+SANDBOX_TRADING_ENABLED=true
+SANDBOX_CONFIRMATION_TTL_SECONDS=120
+SSL_TBANK_VERIFY=True
+```
 
 ## `TINVEST_TOKEN`
 
-Используется только Gateway на Render для read-only связи с T-Invest API.
+Production broker credential. В текущей архитектуре остаётся **read-only**.
 
 Не вставлять его:
 
@@ -51,67 +70,125 @@ Production service использует:
 - в Issue/PR/comment;
 - в пользовательский ответ.
 
+Sandbox-код не должен читать эту переменную.
+
+## `TINVEST_SANDBOX_TOKEN`
+
+Используется только серверным `omni_cio/sandbox/` контуром для T-Invest Sandbox.
+
+Требования:
+
+- отдельный Sandbox token;
+- хранится только в Render Environment;
+- не вставляется в GPT Editor;
+- не записывается в GitHub;
+- не используется против production T-Invest host;
+- не переиспользуется как будущий real-money full-access token.
+
+## `SANDBOX_TRADING_ENABLED`
+
+Server-side kill switch.
+
+- отсутствует / `false` → Sandbox routes не регистрируются;
+- `true` → Sandbox routes публикуются в `/openapi.json` и требуют `GATEWAY_API_KEY`.
+
+Rollback виртуального execution начинается с возврата:
+
+```text
+SANDBOX_TRADING_ENABLED=false
+```
+
+и redeploy/restart.
+
+## `SANDBOX_CONFIRMATION_TTL_SECONDS`
+
+TTL конкретного Sandbox trade proposal.
+
+- default: `120` секунд;
+- допустимый диапазон runtime: `30..600`;
+- истёкший proposal нельзя execute — формируется новый.
+
 ## `GATEWAY_API_KEY`
 
-Защищает Omni-CIO Gateway.
+Защищает Omni-CIO Gateway между Custom GPT и Render.
 
-Одно и то же secret value должно быть:
+Одно и то же secret value:
 
-- в Render Environment как `GATEWAY_API_KEY`;
-- в Custom GPT Action Authentication как `API Key → Bearer`.
+- Render Environment: `GATEWAY_API_KEY`;
+- Custom GPT Action Authentication: `API Key → Bearer`.
 
-GitHub хранит только имя переменной.
+При включении Sandbox **не менять** этот ключ без отдельной причины. Sandbox Actions используют тот же Gateway Bearer, но broker Sandbox token остаётся только внутри Render.
 
 ## `SSL_TBANK_VERIFY`
 
-Production ожидает TLS verification согласно `render.yaml`/runtime. Не отключать проверку только ради устранения сетевой ошибки без отдельного security analysis.
+TLS verification не отключать ради устранения сетевой ошибки без отдельного security analysis.
 
 ## Правильная цепочка
 
 ```text
 Custom GPT
-  ↓ Authorization: Bearer <GATEWAY_API_KEY>
+  │ Authorization: Bearer <GATEWAY_API_KEY>
+  ▼
 Omni-CIO Gateway on Render
-  ↓ TINVEST_TOKEN stored server-side
-T-Invest API
+  ├── <TINVEST_TOKEN> ──────────────► real T-Invest / read-only
+  │
+  └── <TINVEST_SANDBOX_TOKEN> ─────► T-Invest Sandbox / virtual only
 ```
 
-Custom GPT не должен напрямую получать T-Invest token.
+Custom GPT не должен напрямую получать ни один T-Invest token.
 
-## Health contract
+## Health / acceptance
 
-`/health` может показывать boolean/configured state, но не secret values.
-
-Ожидается:
+Baseline `/health` ожидает:
 
 - `status=ok`;
-- `version=3.10.0`;
-- `entrypoint=app:app` или эквивалентный build marker;
-- `trading_methods=false`;
-- T-Invest token configured;
+- current Gateway version;
+- `entrypoint=app:app`;
+- `trading_methods=false` для real-money contour;
+- production T-Invest token configured;
 - Gateway API key configured.
+
+Sandbox readiness проверять отдельным `getSandboxTradingStatus`, а не переопределять смысл production `/health`.
 
 ## Rotation
 
-### T-Invest token
+### Production T-Invest read-only token
 
-1. Обновить только `TINVEST_TOKEN` в Render Environment.
-2. Перезапустить/deploy service, если Render требует.
-3. Проверить `/health`.
-4. Проверить `getConnection` через GPT.
+1. Обновить только `TINVEST_TOKEN` в Render.
+2. Redeploy/restart, если требуется.
+3. `/health`.
+4. `getConnection` через GPT.
 
-GPT Action Bearer при этом не меняется.
+GPT Action Bearer и Sandbox token не меняются.
+
+### Sandbox token
+
+1. Сначала `SANDBOX_TRADING_ENABLED=false`.
+2. Обновить только `TINVEST_SANDBOX_TOKEN` в Render.
+3. Redeploy/restart.
+4. Включить `SANDBOX_TRADING_ENABLED=true`.
+5. Redeploy/restart.
+6. Проверить `getSandboxTradingStatus`.
+7. Выполнить маленький virtual acceptance flow.
 
 ### Gateway key
 
 1. Обновить `GATEWAY_API_KEY` в Render.
 2. В GPT Editor заменить Bearer secret тем же новым значением.
-3. Проверить `gatewayHealth`/`getConnection`.
+3. Проверить `gatewayHealth`/`getConnection` и Sandbox status, если Sandbox включён.
 4. Не коммитить значение в GitHub.
+
+## Будущий real-money token
+
+Не создавать и не устанавливать его в рамках Sandbox release.
+
+Если после полного Sandbox acceptance будет принято отдельное решение о реальных сделках, использовать **отдельную переменную** для account-specific full-access token. Не заменять read-only `TINVEST_TOKEN` втихую и не использовать transfer-access token без отдельного архитектурного решения.
 
 ## Что не хранить в GitHub
 
 - значения `TINVEST_TOKEN`;
+- значения `TINVEST_SANDBOX_TOKEN`;
+- будущие real full-access/transfer-access token values;
 - значения `GATEWAY_API_KEY`;
 - Authorization headers;
 - full account ID;
@@ -120,10 +197,10 @@ GPT Action Bearer при этом не меняется.
 
 ## Single-service rule
 
-Canonical production Gateway для Custom GPT один:
+Canonical Gateway один:
 
 `https://omni-cio-gateway.onrender.com`
 
-Перед любым endpoint change требуется отдельная проверка health, version, deployment commit, auth и `trading_methods=false`.
+Sandbox — это дополнительный изолированный контур внутри этого сервиса, а не второй Render service.
 
-Если в Render снова появился второй сервис, сначала устранить причину его автоматического воссоздания (например, старый Blueprint), затем удалить только подтверждённый дубликат. Рабочий `omni-cio-gateway` не удалять.
+Полный порядок включения и тестирования: `docs/operations/SANDBOX_TRADING_RUNBOOK.md`.
