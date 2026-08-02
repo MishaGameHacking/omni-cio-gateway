@@ -119,14 +119,14 @@ def proposal(
         market_retrieved_at=BASE_TIME - timedelta(seconds=1),
         created_at=BASE_TIME,
         expires_at=BASE_TIME + timedelta(seconds=120),
-        confirmation_code="ABCDEF1234",
+        confirmation_code="ABCDEF1234",  # pragma: allowlist secret
     )
 
 
 def journal(
     store: FakeRedisRest,
     *,
-    secret: str = "gateway-test-secret",
+    secret: str = "gateway-test-secret",  # pragma: allowlist secret
 ) -> UpstashRealExecutionJournalV1:
     return UpstashRealExecutionJournalV1(
         "https://unit-test.upstash.io",
@@ -189,14 +189,17 @@ def test_put_get_and_restart_recovery() -> None:
 
 def test_wrong_gateway_secret_fails_closed() -> None:
     store = FakeRedisRest()
-    first = journal(store, secret="first-secret")
+    first = journal(store, secret="first-secret")  # pragma: allowlist secret
     item = proposal(
         "11111111-1111-4111-8111-111111111111",
         "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
     )
     first.put(item)
     with pytest.raises(JournalIntegrityError):
-        journal(store, secret="different-secret")
+        journal(
+            store,
+            secret="different-secret",  # pragma: allowlist secret
+        )
 
 
 def test_proposal_tampering_is_detected() -> None:
