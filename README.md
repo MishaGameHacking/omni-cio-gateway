@@ -1,11 +1,14 @@
-# Omni-CIO — Custom GPT + read-only T-Invest Gateway
+# Omni-CIO — Custom GPT + T-Invest Gateway
 
 Omni-CIO — личный инвестиционный аналитик внутри ChatGPT. Единственный пользовательский интерфейс проекта — Custom GPT `Omni-CIO API | Управляющий и аналитик v8.4`.
 
 ```text
-GitHub main ──> Render: Omni-CIO Gateway (`app:app`) ──> T-Invest API
+GitHub main ──> Render: Omni-CIO Gateway (`app:app`)
      │                         │
-     │                         └── read-only broker/market data
+     │                         ├── TINVEST_TOKEN ──> production T-Invest read-only
+     │                         │
+     │                         └── optional TINVEST_SANDBOX_TOKEN
+     │                                      └──> T-Invest Sandbox only
      │
      └──> эталон GPT configuration
                 │
@@ -16,22 +19,24 @@ Custom GPT Actions ──HTTPS/Bearer──> https://omni-cio-gateway.onrender.c
 
 ## Текущее production-состояние
 
-- Production Instructions: **v8.4.1**.
+- Production Instructions: **v8.4.1** до отдельного Sandbox GPT acceptance.
 - GPT UI configuration: **v8.4**.
 - Recommended model: **Thinking 5.6**.
-- Gateway API: **v3.10.0**.
+- Gateway API: **v3.10.0** до merge следующего release.
 - Production entrypoint: **`app:app`**.
 - Production Render service: **`omni-cio-gateway`**.
-- User-facing API: **ровно 14 GET Actions**.
-- `trading_methods=false`.
+- При выключенном Sandbox user-facing API: **ровно 14 GET Actions**.
+- Реальный `TINVEST_TOKEN`: read-only.
+- `trading_methods=false` для real-money contour.
 - Broker account ID показывается только маскированно.
 - User-visible timezone: **Москва / Europe/Moscow / MSK**.
-- Создание, отправка, замена и отмена заявок отсутствуют.
 - Вывод/перевод денег и ценных бумаг отсутствуют.
 
 Текущий статус: `knowledge/16_CURRENT_PROGRAM_STATUS.md`.
 
 ## Что умеет бот
+
+Production read-only:
 
 - проверять Gateway и подключение T-Invest;
 - получать портфель и позиции;
@@ -40,31 +45,46 @@ Custom GPT Actions ──HTTPS/Bearer──> https://omni-cio-gateway.onrender.c
 - анализировать структуру и концентрацию;
 - получать market snapshot инструмента и портфеля;
 - находить инструмент;
-- проверять technical purchase capacity без создания заявки;
+- проверять technical purchase/sale capacity без создания реальной заявки;
 - получать историю и аналитику операций;
 - сверять официальный broker report T-Invest;
 - выполнять read-only final decision review;
-- анализировать рыночные/макро/рейтинговые данные, поддерживаемые runtime;
-- использовать Web Search для свежих публичных новостей/событий после получения broker facts;
-- объяснять результат современным понятным русским языком;
-- сравнивать действие с вариантом `NO_ACTION/CASH`.
+- использовать Web Search для свежих публичных новостей/событий после broker facts;
+- сравнивать действие с `NO_ACTION/CASH`.
 
-## Что бот не делает
+Optional Sandbox execution release добавляет виртуальный контур:
 
-- не торгует;
-- не создаёт и не отправляет заявки;
-- не заменяет и не отменяет заявки;
-- не выводит деньги;
-- не меняет брокерский счёт;
+- отдельный Sandbox token;
+- виртуальный Sandbox account;
+- виртуальное пополнение;
+- Sandbox portfolio/positions;
+- BUY/SELL proposal;
+- own-funds / own-position max-lots preflight;
+- короткоживущее подтверждение конкретной неизменяемой заявки;
+- повторный preflight непосредственно перед submit;
+- UUID/idempotency protection;
+- order-state verification;
+- Sandbox cancel с отдельным подтверждением;
+- fail-closed при timeout/неопределённом результате.
+
+Sandbox-контур включается только через `SANDBOX_TRADING_ENABLED=true` и не меняет реальный брокерский счёт.
+
+## Что бот по-прежнему не делает
+
+- не торгует реальными деньгами;
+- не использует production `OrdersService/PostOrder`;
+- не заменяет и не отменяет реальные заявки;
+- не выводит и не переводит деньги;
+- не автоматизирует margin;
 - не обещает доходность;
-- не использует stale price как подтверждённую цену покупки;
+- не использует stale price как подтверждённую цену реальной покупки;
 - не хранит broker tokens в GitHub.
 
 ## Как им пользоваться
 
 Пользователь не обязан знать названия Actions.
 
-Примеры:
+Примеры production read-only:
 
 - `Сколько у меня сейчас денег?`
 - `Что у меня сейчас в портфеле?`
@@ -80,14 +100,20 @@ Custom GPT Actions ──HTTPS/Bearer──> https://omni-cio-gateway.onrender.c
 
 Если пользователь просит `вызови только <Action>`, вызывается только этот Action.
 
+После отдельного Sandbox enable виртуальная сделка всегда идёт двумя фазами:
+
+`prepareSandboxTrade → показать параметры и причину → пользователь подтверждает exact phrase → executeSandboxTrade → getSandboxOrderState`
+
+Одно сообщение «купи» не является достаточным подтверждением submit.
+
 ## Как GitHub связан с ботом
 
 GitHub выполняет две роли:
 
-1. **Backend source** — код Gateway хранится в `main`; Render разворачивает production Gateway из репозитория согласно своей deploy-настройке.
+1. **Backend source** — код Gateway хранится в `main`; Render разворачивает production Gateway из репозитория согласно deploy-настройке.
 2. **Configuration source** — GitHub хранит эталон Name/Description/Instructions/Knowledge/Action catalog.
 
-Важно: **GPT Editor не синхронизируется с GitHub автоматически**. Если менялись Instructions или Knowledge, владелец вручную применяет актуальные файлы из `main`, выполняет Preview и нажимает `Update`.
+Важно: **GPT Editor не синхронизируется с GitHub автоматически**. Если менялись Instructions, Knowledge или OpenAPI surface, владелец вручную применяет актуальные данные из `main`, выполняет Preview и нажимает `Update`.
 
 Custom GPT в работе обращается **к Render Gateway**, а не к GitHub.
 
@@ -100,11 +126,12 @@ Custom GPT в работе обращается **к Render Gateway**, а не �
 Ключевые файлы:
 
 - `gpt/CONFIGURATION.md` — Name, Description, starters, model, capabilities;
-- `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_4_1.txt` — единственные production Instructions;
+- `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_4_1.txt` — текущие production Instructions до Sandbox GPT release;
 - `gpt/knowledge/` — ровно 10 Knowledge-файлов;
-- `gpt/ACTIONS_CATALOG.md` — 14 GET Actions;
+- `gpt/ACTIONS_CATALOG.md` — production Actions;
 - `gpt/SECRETS_AND_RENDER.md` — секреты и Render;
-- `gpt/MY_GPT_SETUP_RUNBOOK.md` — полное восстановление.
+- `gpt/MY_GPT_SETUP_RUNBOOK.md` — полное восстановление;
+- `docs/operations/SANDBOX_TRADING_RUNBOOK.md` — включение и acceptance виртуальной торговли.
 
 Production URLs:
 
@@ -118,13 +145,19 @@ GitHub хранит только имена переменных/placeholder val
 
 Никогда не коммитить:
 
-- `TINVEST_TOKEN`;
+- значение `TINVEST_TOKEN`;
+- значение `TINVEST_SANDBOX_TOKEN`;
+- будущие full-access/transfer-access broker token values;
 - значение `GATEWAY_API_KEY`;
 - Authorization headers;
 - полный accountId;
 - реальные приватные broker payloads как configuration files.
 
-`TINVEST_TOKEN` находится только в Render. `GATEWAY_API_KEY` находится в Render и как Bearer secret в GPT Action.
+Render separation:
+
+- `TINVEST_TOKEN` — существующий production read-only token, не менять ради Sandbox;
+- `TINVEST_SANDBOX_TOKEN` — отдельный Sandbox token;
+- `GATEWAY_API_KEY` — Bearer secret между GPT и Gateway.
 
 ## Структура репозитория
 
@@ -139,6 +172,7 @@ purchase_capacity*.py           read-only purchase capacity
 operations_analytics.py         operations analytics
 broker_report_reconciliation/   official T-Invest report reconciliation
 omni_cio/                       contracts, quality, analytics, market, risk, release
+omni_cio/sandbox/               optional isolated T-Invest Sandbox execution
 
 gpt/                            Custom GPT configuration and Knowledge
 knowledge/                      engineering/domain memory used by development/runtime
@@ -169,38 +203,46 @@ requirements*.in/.txt           pinned runtime/dev dependencies
 
 Каждое логическое изменение:
 
-`branch → PR → Regression Shield → review → squash merge → production acceptance`
+`branch → PR → Regression Shield → review → squash merge → external acceptance`
 
 ## Проверки
 
 Основной merge gate — `.github/workflows/regression-shield.yml`.
 
-Он проверяет:
+Для обычного production состояния он сохраняет:
 
 - repository layout;
 - stable `app:app`;
-- GET-only release contract;
-- `trading_methods=false`;
+- 14 GET Action contract при выключенном Sandbox;
+- `trading_methods=false` для real-money contour;
 - compile/lint/format/type checks;
 - pytest + branch coverage;
 - dependency audit;
 - SAST;
 - secret scan.
 
+Sandbox release дополнительно тестирует confirmation, TTL, idempotency, ambiguous submit, own-funds/own-position limits, masking и отсутствие production write endpoint/token coupling.
+
 Тесты не должны обращаться к реальным T-Invest или production Render endpoints.
 
-## Production acceptance
+## Acceptance
 
 После backend/OpenAPI изменения CI недостаточно. Нужно отдельно проверить:
 
 1. deployed Render commit;
 2. `/health`;
 3. authentication boundary;
-4. нужный production endpoint;
-5. GPT OpenAPI import, если contract менялся;
-6. authenticated Preview;
-7. полный список Actions;
-8. rollback path.
+4. read-only production routes;
+5. Sandbox status после enable;
+6. GPT OpenAPI import;
+7. virtual BUY;
+8. BUY order state;
+9. virtual SELL;
+10. SELL order state;
+11. tamper/expiry/duplicate negative cases;
+12. kill switch и rollback.
+
+Полный порядок: `docs/operations/SANDBOX_TRADING_RUNBOOK.md`.
 
 ## Master plan
 
@@ -216,3 +258,4 @@ requirements*.in/.txt           pinned runtime/dev dependencies
 - `docs/architecture/REPOSITORY_STRUCTURE.md` — структура и зависимости.
 - `docs/operations/DEPLOYMENT_RUNBOOK.md` — Render deployment.
 - `docs/operations/RELEASE_CHECKLIST.md` — выпуск и rollback.
+- `docs/operations/SANDBOX_TRADING_RUNBOOK.md` — Sandbox execution acceptance.
