@@ -11,14 +11,16 @@ from fastapi import Depends, FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from .client_v1 import RealTradingApiFailure
+from .durable_journal_codec_v1 import JournalIntegrityError, JournalStorageError
+from .durable_journal_factory_v1 import (
+    DEFAULT_REAL_JOURNAL_BACKEND,
+    REAL_JOURNAL_BACKEND_ENV,
+    build_real_execution_journal,
+)
+from .journal_v1 import RealExecutionJournalV1
 from .market_context_v1 import market_context_from_snapshot
 from .models_v1 import RealMarketContextV1, RealTradingPolicyV1
 from .service_v1 import RealTradingServiceV1, mask_account_id
-from .sqlite_journal_v1 import (
-    JournalIntegrityError,
-    JournalStorageError,
-    SQLiteRealExecutionJournalV1,
-)
 
 
 REAL_TRADING_ENV = "REAL_TRADING_ENABLED"
@@ -111,12 +113,22 @@ def _policy() -> RealTradingPolicyV1:
     return policy
 
 
+def _journal_backend_name() -> str:
+    return (
+        os.environ.get(REAL_JOURNAL_BACKEND_ENV, DEFAULT_REAL_JOURNAL_BACKEND)
+        .strip()
+        .lower()
+        or DEFAULT_REAL_JOURNAL_BACKEND
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class StaticRuntimeV1:
     token: str
     gateway_secret: str
     policy: RealTradingPolicyV1
-    journal: SQLiteRealExecutionJournalV1
+    journal_backend: str
+    journal: RealExecutionJournalV1
 
 
 def _static_runtime(journal_path: Path) -> StaticRuntimeV1:
@@ -135,10 +147,10 @@ def _static_runtime(journal_path: Path) -> StaticRuntimeV1:
             http_status=503,
         )
     try:
-        journal = SQLiteRealExecutionJournalV1(
-            journal_path, gateway_secret=gateway_secret
+        backend, journal = build_real_execution_journal(
+            gateway_secret=gateway_secret,
+            sqlite_path=journal_path,
         )
-        journal.integrity_check()
     except (JournalIntegrityError, JournalStorageError) as exc:
         raise RealTradingApiFailure(
             code="REAL_DURABLE_JOURNAL_UNAVAILABLE",
@@ -149,6 +161,7 @@ def _static_runtime(journal_path: Path) -> StaticRuntimeV1:
         token=token,
         gateway_secret=gateway_secret,
         policy=_policy(),
+        journal_backend=backend,
         journal=journal,
     )
 
@@ -194,6 +207,7 @@ class RealTradingStatusResponse(BaseModel):
     confirmation_ttl_seconds: int | None = None
     market_max_age_seconds: int | None = None
     durable_journal: bool
+    journal_backend: str | None = None
     journal_integrity: str
     proposal_rows: int | None = None
     real_money: bool
@@ -360,6 +374,7 @@ def register_real_trading_gateway(
                 mutation_routes_registered=False,
                 execution_ready=False,
                 durable_journal=False,
+                journal_backend=_journal_backend_name(),
                 journal_integrity="unavailable",
                 real_money=True,
                 real_trading_methods=False,
@@ -383,6 +398,7 @@ def register_real_trading_gateway(
                 confirmation_ttl_seconds=runtime.policy.confirmation_ttl_seconds,
                 market_max_age_seconds=runtime.policy.market_max_age_seconds,
                 durable_journal=True,
+                journal_backend=runtime.journal_backend,
                 journal_integrity="ok",
                 real_money=True,
                 real_trading_methods=True,
@@ -402,6 +418,7 @@ def register_real_trading_gateway(
             confirmation_ttl_seconds=runtime.policy.confirmation_ttl_seconds,
             market_max_age_seconds=runtime.policy.market_max_age_seconds,
             durable_journal=True,
+            journal_backend=runtime.journal_backend,
             journal_integrity="ok",
             proposal_rows=rows,
             real_money=True,

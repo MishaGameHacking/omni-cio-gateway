@@ -13,7 +13,7 @@
 
 ## Production description
 
-> Личный GPT для T-Invest. Получает портфель, операции, ликвидность, инструменты и рынок через Omni-CIO Gateway; анализирует структуру и варианты действий. Production read-only credential остаётся отдельным. Sandbox выполняет только виртуальные сделки. Отдельный real execution contour может отправить настоящую BUY/SELL LIMIT-заявку только после готового server-side preflight и точного короткоживущего подтверждения владельца в новом сообщении.
+> Личный GPT для T-Invest. Получает портфель, операции, ликвидность, инструменты и рынок через Omni-CIO Gateway; анализирует структуру и варианты действий. Production read-only credential остаётся отдельным. Sandbox выполняет только виртуальные сделки. Отдельный real execution contour может отправить настоящую BUY/SELL LIMIT-заявку только после server-side preflight и точного короткоживущего подтверждения владельца в новом сообщении. Durable real-order state хранится во внешнем бесплатном Upstash Redis, поэтому Render service может оставаться на Free plan.
 
 ## Conversation starters
 
@@ -64,6 +64,8 @@ Historical fallbacks:
 
 Production service: `https://omni-cio-gateway.onrender.com`
 
+Render instance: **Free**.
+
 OpenAPI: `https://omni-cio-gateway.onrender.com/openapi.json`
 
 Health: `https://omni-cio-gateway.onrender.com/health`
@@ -72,7 +74,7 @@ Authentication:
 
 - API Key → Bearer;
 - value = existing `GATEWAY_API_KEY` из Render;
-- никакой T-Invest token в GPT Editor не вставляется.
+- никакой T-Invest или Upstash token в GPT Editor не вставляется.
 
 Полный условный surface: `gpt/ACTIONS_CATALOG.md`.
 
@@ -89,6 +91,16 @@ Authentication:
 ### Real execution
 
 Real contour использует отдельный `TINVEST_TRADING_TOKEN` и никогда не заменяет/не читает read-only token как fallback.
+
+Free durable state uses server-only configuration:
+
+```text
+REAL_TRADING_JOURNAL_BACKEND=upstash
+UPSTASH_REDIS_REST_URL=<configured in Render>
+UPSTASH_REDIS_REST_TOKEN=<secret configured in Render>
+```
+
+No Render Persistent Disk is required for the selected production path.
 
 При valid real enable доступны только:
 
@@ -111,7 +123,8 @@ Real v1:
 - UUID idempotency;
 - ambiguous submit = no retry;
 - `submitted` != `filled`;
-- durable proposal/submission state required.
+- durable proposal/submission state required;
+- durable journal outage/tamper blocks submit rather than degrading to memory/disk fallback.
 
 No real withdrawal, transfer, token management, MARKET/BESTPRICE, stop order, replace, async submit, autonomous execution or real cancellation in the first release.
 
@@ -141,7 +154,7 @@ Normal real BUY/SELL:
 9. immediately `getRealOrderState`;
 10. after broker-confirmed fill, read back portfolio/liquidity/operations as needed.
 
-Wrong/expired phrase, account mismatch, stale market, hard-limit violation or insufficient own funds/position must fail closed.
+Wrong/expired phrase, account mismatch, stale market, hard-limit violation, insufficient own funds/position or durable-journal failure must fail closed.
 
 ## Secrets boundary
 
@@ -150,6 +163,7 @@ Never store in GitHub/Knowledge/Instructions/user response:
 - values of `TINVEST_TOKEN`;
 - values of `TINVEST_SANDBOX_TOKEN`;
 - values of `TINVEST_TRADING_TOKEN`;
+- values of `UPSTASH_REDIS_REST_TOKEN`;
 - values of `GATEWAY_API_KEY`;
 - Authorization headers;
 - full broker account ID;
@@ -164,14 +178,15 @@ Details: `gpt/SECRETS_AND_RENDER.md`.
 3. Apply `CUSTOM_GPT_INSTRUCTIONS_V8_6_0.txt` fully.
 4. Keep exactly 10 Knowledge files.
 5. Keep recommended model/capabilities above.
-6. Check deployed `/health`.
-7. Re-import production `/openapi.json` whenever conditional Action surface changes.
-8. Compare with `gpt/ACTIONS_CATALOG.md`.
-9. Run read-only + Sandbox regression smoke.
-10. Before first real order, complete Phase 3 of `docs/operations/REAL_TRADING_RELEASE_RUNBOOK.md` with no submit.
-11. First real order only after a new explicit owner instruction and controlled acceptance.
-12. Click `Update` only after Preview acceptance.
+6. Keep Render service on Free; no paid disk is required.
+7. Check deployed `/health`.
+8. Re-import production `/openapi.json` whenever conditional Action surface changes.
+9. Compare with `gpt/ACTIONS_CATALOG.md`.
+10. Run read-only + Sandbox regression smoke.
+11. Before first real order, complete Phase 3 of `docs/operations/REAL_TRADING_RELEASE_RUNBOOK.md` with no submit.
+12. First real order only after a new explicit owner instruction and controlled acceptance.
+13. Click `Update` only after Preview acceptance.
 
 ## GitHub ↔ GPT Editor boundary
 
-GitHub is the canonical source/history. It does not automatically apply Instructions, Knowledge, model selection, Bearer secret or OpenAPI import inside GPT Editor.
+GitHub is the canonical source/history. It does not automatically apply Instructions, Knowledge, model selection, Bearer secret, Upstash credentials or OpenAPI import inside GPT Editor.

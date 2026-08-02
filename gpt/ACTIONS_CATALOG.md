@@ -56,7 +56,7 @@ Real-money Actions регистрируются только при `REAL_TRADIN
 
 | operationId | HTTP | Path | Consequential | Назначение |
 |---|---:|---|---:|---|
-| `getRealTradingStatus` | GET | `/real-trading/status` | no | Readiness, account binding, limits, durable journal integrity |
+| `getRealTradingStatus` | GET | `/real-trading/status` | no | Readiness, account binding, limits, durable journal integrity/backend |
 | `prepareRealTrade` | POST | `/real-trading/trade/prepare` | no submit | Создать immutable real LIMIT proposal и exact short-lived phrase |
 | `executeRealTrade` | POST | `/real-trading/trade/execute` | **yes** | Submit ровно одного ранее подготовленного proposal после exact owner phrase |
 | `getRealOrderState` | GET | `/real-trading/order/state` | no | Broker reconciliation по исходному request UUID |
@@ -83,8 +83,13 @@ Real-money Actions регистрируются только при `REAL_TRADIN
 - timeout/network/5xx после возможного submit → `unknown_do_not_resubmit`; автоматического retry нет;
 - `getRealOrderState` использует `ORDER_ID_TYPE_REQUEST`;
 - `submitted` не означает `filled`; fill подтверждается только broker execution status;
-- durable SQLite journal находится на persistent disk и хранит proposal state, request UUID, daily reservation и confirmation evidence hash;
-- broker token/Authorization header в journal не сохраняются.
+- production durable journal по умолчанию использует внешний Upstash Redis Free через HTTPS REST;
+- `REAL_TRADING_JOURNAL_BACKEND=upstash` + server-only `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN`;
+- journal хранит HMAC-authenticated proposal/meta/daily-limit state и confirmation evidence; broker token/Authorization header не сохраняются;
+- atomic Redis Lua compare-and-swap связывает proposal transition с daily-cap reservation;
+- journal outage/tamper fail closed и не разрешают fallback на process memory;
+- Render service может оставаться Free; Persistent Disk для выбранного production backend не требуется;
+- SQLite backend остаётся только explicit compatibility/test option.
 
 ### Запрещено в real v1
 
@@ -111,7 +116,7 @@ Real-money Actions регистрируются только при `REAL_TRADIN
 | OFF | Real ready | 14 baseline + 4 Real |
 | ON | Real ready | 14 baseline + 8 Sandbox + 4 Real |
 
-`getRealTradingStatus` является авторитетным readiness endpoint для real execution. Базовые legacy health/read-only flags не должны использоваться как разрешение на реальную сделку.
+`getRealTradingStatus` является авторитетным readiness endpoint для real execution. В free production path он также должен показывать `journal_backend=upstash`. Базовые legacy health/read-only flags не должны использоваться как разрешение на реальную сделку.
 
 ## 5. GPT Actions compatibility
 
@@ -128,11 +133,12 @@ Real-money Actions регистрируются только при `REAL_TRADIN
 После намеренного owner enable/deploy:
 
 1. проверить `getRealTradingStatus` вне сделки;
-2. импортировать заново production `/openapi.json`;
-3. Authentication оставить API Key → Bearer с тем же `GATEWAY_API_KEY`;
-4. сверить operationId с таблицами выше;
-5. применить целиком `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_0.txt`;
-6. выполнить Phase 3 negative Preview acceptance из `docs/operations/REAL_TRADING_RELEASE_RUNBOOK.md`;
-7. только после negative acceptance и rollback drill переходить к первой минимальной real LIMIT order по отдельному явному разрешению владельца.
+2. убедиться, что `journal_backend=upstash`, `durable_journal=true`, `journal_integrity=ok`;
+3. импортировать заново production `/openapi.json`;
+4. Authentication оставить API Key → Bearer с тем же `GATEWAY_API_KEY`;
+5. сверить operationId с таблицами выше;
+6. применить целиком `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_0.txt`;
+7. выполнить Phase 3 negative Preview acceptance из `docs/operations/REAL_TRADING_RELEASE_RUNBOOK.md`;
+8. только после negative acceptance и rollback drill переходить к первой минимальной real LIMIT order по отдельному явному разрешению владельца.
 
-GitHub не обновляет GPT Editor автоматически.
+GitHub не обновляет GPT Editor/Render/Upstash автоматически.
