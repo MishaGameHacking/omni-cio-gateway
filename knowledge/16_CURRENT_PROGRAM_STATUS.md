@@ -12,73 +12,96 @@ Repository cleanup package:
 - PR #148 synchronized this status after the cleanup and also passed a fresh Regression Shield before merge;
 - PR #149 removed the self-referential latest-main SHA from this status and passed Regression Shield run #875 before squash merge.
 
-Do not hardcode the ever-changing latest `main` SHA in this status document: merging the document itself changes `main`. For the exact current SHA, read the GitHub `main` ref. The cleanup commit above is stable evidence for the accepted cleanup package.
+Do not hardcode the ever-changing latest `main` SHA in this status document: merging the document itself changes `main`. For the exact current SHA, read the GitHub `main` ref.
 
 Previous product/configuration behavior package:
 
 - PR #146 — tool-first Custom GPT portfolio routing;
-- production Instructions release remains `v8.4.1`.
+- accepted production Instructions remain `v8.4.1` until Sandbox owner acceptance.
+
+## Sandbox execution backend accepted into main
+
+PR #160 — `Sandbox: add confirmed T-Invest virtual trade execution` — was squash-merged after exact-head Regression Shield run #909 completed successfully on both jobs:
+
+- Quality, contracts and coverage — success;
+- Dependency, code and secret security — success.
+
+Merged Sandbox backend provides an **optional virtual execution contour only**. It does not enable real-money trading.
+
+Key properties:
+
+- T-Invest Sandbox egress is hard-bound to `sandbox-invest-public-api.tbank.ru/rest`;
+- uses only separate `TINVEST_SANDBOX_TOKEN`;
+- `TINVEST_TOKEN` remains the existing production read-only token;
+- server kill switch: `SANDBOX_TRADING_ENABLED`;
+- default/off state preserves the existing 14-GET production Action surface;
+- BUY/SELL is two-phase: proposal/preflight → exact short-lived confirmation → submit;
+- confirmation is bound to immutable order parameters;
+- own-funds/own-position limits are checked during prepare and again immediately before submit;
+- UUID request/order id provides idempotency;
+- duplicate successful execution does not submit twice;
+- ambiguous timeout/5xx after submit never auto-retries;
+- margin confirmation is hard-disabled;
+- Sandbox account identifiers are masked in user-facing payloads;
+- withdrawal/transfer, real broker writes, stop-order automation and automatic replace are absent.
+
+Candidate GPT Instructions for Sandbox acceptance:
+
+`gpt/CUSTOM_GPT_INSTRUCTIONS_V8_5_0.txt`
+
+Owner runbook:
+
+`docs/operations/SANDBOX_TRADING_RUNBOOK.md`
 
 ## Production baseline
+
+Until the owner explicitly enables Sandbox in Render and refreshes GPT OpenAPI/Instructions:
 
 - Custom GPT: `Omni-CIO API | Управляющий и аналитик v8.4`;
 - production Instructions: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_4_1.txt`;
 - recommended model: `Thinking 5.6`;
 - user-visible timezone: `Europe/Moscow` / MSK;
-- Gateway API: `v3.10.0`;
 - production endpoint: `https://omni-cio-gateway.onrender.com`;
 - production Render service: `omni-cio-gateway`;
 - entrypoint: `app:app`;
-- exactly 14 GET Actions;
-- `trading_methods=false`.
+- real broker Action surface: exactly 14 GET Actions while Sandbox is disabled;
+- real-money `trading_methods=false`;
+- real `TINVEST_TOKEN` remains read-only.
 
-## Final Render topology confirmed by owner
+## Render topology
 
-On 2026-08-02 the owner removed the obsolete Render resources and disconnected the old Blueprint. The intended production topology is now:
+Intended topology remains one active Render Web Service:
 
-- one active Render Web Service: `omni-cio-gateway`;
+- `omni-cio-gateway`;
 - no active Blueprint instance;
 - obsolete Telegram service removed;
 - obsolete duplicate/alternate Gateway service removed;
-- primary service remains connected to `Misha2304/omni-cio-gateway` / `main`;
-- owner-provided Render logs show repeated `GET /health` responses with HTTP `200` after the cleanup.
+- service connected to `Misha2304/omni-cio-gateway` / `main`;
+- `render.yaml` remains only a declarative/recovery contract.
 
-`render.yaml` remains in GitHub as a single-service declarative/recovery contract. It must not be used to create a second production service while the existing `omni-cio-gateway` is healthy.
+Sandbox does **not** require a second Render service. It is an optional isolated contour inside the same Gateway.
 
-## Accepted repository structure
+## Repository structure
 
-Repository is organized around one supported product:
+Repository remains organized around one supported product:
 
-`Omni-CIO Custom GPT → read-only Omni-CIO Gateway → T-Invest API`
+`Omni-CIO Custom GPT → Omni-CIO Gateway → T-Invest API`
 
-Cleanup #147:
+Primary areas:
 
-- removed obsolete duplicate GPT setup/instructions files;
-- removed stale dated audit/inventory artifacts;
-- removed unused external-transport-specific active artifacts;
-- made `gpt/SETUP_INDEX.md` the single setup/update/recovery entrypoint;
-- retained current configuration/runtime/safety/test/maintenance documentation;
-- kept the original Omni-CIO master plan because it directly specifies this same bot;
-- kept `app_v371.py`, `app_v360.py` and `main.py` because current `app.py` still imports them.
+- runtime/wrappers — root + `omni_cio/`;
+- Sandbox execution — `omni_cio/sandbox/` only;
+- GPT configuration — `gpt/`;
+- engineering/domain memory — `knowledge/`;
+- master plan — `docs/master-plan/`;
+- active architecture/runbooks — `docs/architecture/`, `docs/operations/`;
+- regression/security — `tests/`, `scripts/`, `.github/`.
 
-Repository search after Render cleanup shows no active source references to the retired Telegram service name or the old `*-au6d` production endpoint.
+`app_v371.py`, `app_v360.py` and `main.py` remain runtime dependencies and must not be deleted as legacy without a separate compatibility refactor.
 
-## GPT files requiring owner-side refresh after cleanup
+## Accepted read-only Preview baseline
 
-GitHub does not synchronize Knowledge into GPT Editor automatically.
-
-PR #147 changed two production Knowledge files:
-
-- `gpt/knowledge/05_ANALYST_NEWS_SIMPLE_LANGUAGE.txt`;
-- `gpt/knowledge/13_COMMUNICATION_STYLE_2026.txt`.
-
-To make the live Custom GPT match current `main`, replace only those two files in GPT Editor, keeping the total production Knowledge set at exactly 10 files, then run Preview smoke tests and press `Update`.
-
-Production Instructions and Action/OpenAPI contract were not changed by cleanup #147, so no Instructions replacement or OpenAPI re-import is required solely because of this cleanup.
-
-## Previously observed Preview acceptance
-
-Owner Preview tests confirmed:
+Previously observed owner Preview tests confirmed:
 
 - broker connection;
 - money/balance query;
@@ -97,19 +120,27 @@ Fresh-market gate blocks exact personalized lot sizing without market readiness/
 
 ## Secret boundary
 
-GitHub does not store real values of:
+GitHub stores no real values of:
 
 - `TINVEST_TOKEN`;
+- `TINVEST_SANDBOX_TOKEN`;
+- future real full-access/transfer-access broker token values;
 - `GATEWAY_API_KEY`;
 - Authorization headers;
 - full account IDs;
 - private broker payloads as configuration.
 
-`TINVEST_TOKEN` remains in Render. `GATEWAY_API_KEY` remains in Render and GPT Action Bearer configuration.
+Render separation:
+
+- `TINVEST_TOKEN` — production read-only;
+- `TINVEST_SANDBOX_TOKEN` — Sandbox only;
+- `GATEWAY_API_KEY` — GPT → Gateway Bearer secret.
 
 ## Supported capability scope
 
-Omni-CIO supports read-only:
+### Real production contour
+
+Still read-only:
 
 - health/T-Invest connection;
 - portfolio and enriched positions;
@@ -123,24 +154,40 @@ Omni-CIO supports read-only:
 - final decision review;
 - relevant public web/news context through GPT Web Search.
 
-No broker write, cancellation, withdrawal or transfer execution is supported.
+### Optional Sandbox contour after owner enable
+
+- Sandbox status/accounts;
+- virtual account bootstrap/funding;
+- virtual portfolio/positions;
+- BUY/SELL proposal and preflight;
+- explicit confirmed virtual submit;
+- order-state verification;
+- explicit confirmed Sandbox cancellation.
+
+Real-money order submission/cancellation/replace, withdrawal and transfer remain unsupported.
 
 ## Immediate owner acceptance remaining
 
-Render topology cleanup is complete and the primary service remains Live.
+Code development and automated Regression Shield for the Sandbox backend are complete. External acceptance now requires owner-side secrets/configuration because GitHub cannot create T-Invest tokens or edit Render/GPT Editor secrets.
 
-Remaining GPT-side acceptance only:
+Required sequence:
 
-1. Replace the two changed GPT Knowledge files listed above if this has not already been done.
-2. Run Preview smoke tests:
-   - `Проверь подключение к брокеру.`
-   - `Сколько у меня сейчас денег?`
-   - `Что у меня сейчас в портфеле?`
-   - `Какие операции были за последние 90 дней?`
-   - `УПРАВЛЯЙ ПОРТФЕЛЕМ — обнови данные и скажи, что делать.`
-3. Confirm masked account, MSK display and `trading_methods=false`.
-4. Press `Update` if GPT Editor still has pending configuration changes.
+1. Create a dedicated **Sandbox token** in T-Invest. Do not replace or elevate the existing production read-only token.
+2. In Render `omni-cio-gateway → Environment` add:
+   - `TINVEST_SANDBOX_TOKEN=<dedicated sandbox token>`;
+   - `SANDBOX_TRADING_ENABLED=true`;
+   - `SANDBOX_CONFIRMATION_TTL_SECONDS=120`.
+3. Keep unchanged:
+   - `TINVEST_TOKEN` (read-only);
+   - `GATEWAY_API_KEY`;
+   - `SSL_TBANK_VERIFY=True`.
+4. Wait for healthy redeploy and verify `getSandboxTradingStatus`.
+5. In GPT Editor replace Instructions with `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_5_0.txt`.
+6. Re-import production `/openapi.json`; expect 14 baseline + 8 Sandbox Actions and no real-money mutation Actions.
+7. Keep the same 10 Knowledge files.
+8. Run the virtual BUY, SELL, order-state, duplicate, expiry, tamper and kill-switch acceptance in `docs/operations/SANDBOX_TRADING_RUNBOOK.md`.
+9. Press `Update` only after acceptance passes.
 
-## Next maintenance priority
+## Next development stage
 
-Keep repository and Render topology stable: one Custom GPT, one production Gateway service, one canonical endpoint. Address actual compatibility/warning debt through separate focused PRs without mixing it into portfolio behavior.
+After full Sandbox owner acceptance, open a **separate** real-money execution design/release. That future stage must use a separate account-scoped full-access token and an equally strict confirmation/reconciliation/kill-switch boundary. It must not silently promote `TINVEST_TOKEN`, and it must not include transfer-access unless separately designed and explicitly approved.
