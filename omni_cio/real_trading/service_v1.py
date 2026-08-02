@@ -10,7 +10,11 @@ from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
 from .client_v1 import RealTradingApiFailure, RealTradingRestClientV1
-from .journal_v1 import RealExecutionJournalV1
+from .journal_v1 import (
+    JournalDailyCapExceeded,
+    JournalStateConflict,
+    RealExecutionJournalV1,
+)
 from .models_v1 import RealMarketContextV1, RealTradeProposalV1, RealTradingPolicyV1
 
 
@@ -402,7 +406,7 @@ class RealTradingServiceV1:
             )
         return available_lots, total, commission, limits, preview
 
-    def _daily_budget_check(self, *, total: Decimal, now: datetime) -> None:
+    def _daily_budget_preview_check(self, *, total: Decimal, now: datetime) -> None:
         day = now.astimezone(MOSCOW).date()
         already = self._journal.submitted_notional_for_moscow_date(day)
         if already + total > self._policy.max_daily_rub:
@@ -476,7 +480,7 @@ class RealTradingServiceV1:
             quantity_lots=quantity_lots,
             limit_price=price,
         )
-        self._daily_budget_check(total=total, now=current)
+        self._daily_budget_preview_check(total=total, now=current)
 
         proposal_id = str(uuid4())
         order_id = str(uuid4())
@@ -625,16 +629,20 @@ class RealTradingServiceV1:
                 message="Broker order preview changed; prepare and confirm a fresh proposal.",
                 http_status=409,
             )
-        self._daily_budget_check(total=total, now=current)
 
         try:
-            self._journal.transition(
+            self._journal.reserve_submission(
                 proposal_id,
-                allowed_from=frozenset({"prepared"}),
-                state="submitting",
                 submitted_at=current,
+                max_daily_rub=self._policy.max_daily_rub,
             )
-        except RuntimeError as exc:
+        except JournalDailyCapExceeded as exc:
+            raise RealTradingApiFailure(
+                code="REAL_DAILY_CAP_EXCEEDED",
+                message="Order would exceed the atomic daily submission cap.",
+                http_status=409,
+            ) from exc
+        except JournalStateConflict as exc:
             raise RealTradingApiFailure(
                 code="REAL_PROPOSAL_STATE_CONFLICT",
                 message="Proposal state changed concurrently.",
