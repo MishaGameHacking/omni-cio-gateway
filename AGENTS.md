@@ -6,9 +6,11 @@
 
 Поддерживается один пользовательский продукт:
 
-`Omni-CIO Custom GPT → read-only Omni-CIO Gateway → T-Invest API`
+`Omni-CIO Custom GPT → Omni-CIO Gateway → T-Invest API`
 
-Не создавать параллельный дубликат Custom GPT, отдельный frontend, publishing transport или broker execution surface без нового явного решения владельца.
+Production broker contour остаётся read-only. Отдельно допускается только явно включённый T-Invest Sandbox-контур для виртуальных сделок.
+
+Не создавать параллельный дубликат Custom GPT, отдельный frontend, publishing transport или второй broker execution surface без нового явного решения владельца.
 
 ## 2. Сначала восстановить контекст
 
@@ -23,31 +25,53 @@
 7. Проверить фактический `main`, открытые PR, issues и GitHub Actions.
 8. Не считать старый чат, screenshot или временный PR источником истины, если они расходятся с `main`.
 
-## 3. Неприкосновенный read-only режим
+## 3. Broker execution boundary
 
-Запрещено добавлять, публиковать или вызывать:
+### 3.1 Real-money production
 
-- создание заявки;
-- отправку заявки;
+Без отдельного нового release запрещено добавлять, публиковать или вызывать против реального счёта:
+
+- создание/отправку заявки;
 - замену заявки;
 - отмену заявки;
 - stop-order execution;
 - withdrawal/transfer;
-- любые другие broker methods, изменяющие счёт.
+- любые другие broker methods, изменяющие реальный счёт.
 
-Обязательные инварианты:
+Обязательные production-инварианты:
 
-- user-facing Gateway Actions только `GET`;
-- `trading_methods=false`;
+- `TINVEST_TOKEN` остаётся read-only;
+- `real_trading_methods=false` / существующий `trading_methods=false` сохраняется для реального контура;
 - stable Render entrypoint `app:app`;
 - masked account ID;
 - fail-closed при неполных/противоречивых данных.
+
+### 3.2 Единственное разрешённое исключение: T-Invest Sandbox
+
+Виртуальные broker writes допускаются только внутри `omni_cio/sandbox/` и только при одновременном выполнении всех условий:
+
+- вызовы жёстко направлены на `https://sandbox-invest-public-api.tbank.ru/rest`;
+- используется только `TINVEST_SANDBOX_TOKEN`, никогда `TINVEST_TOKEN`;
+- `SANDBOX_TRADING_ENABLED=true` выставлен явно;
+- ответы явно маркируются `sandbox=true`, `real_money=false`;
+- торговая заявка создаётся как proposal, затем требует отдельного явного подтверждения пользователя;
+- подтверждение короткоживущее и привязано к неизменяемым параметрам заявки;
+- перед submit повторно проверяются broker limits;
+- используется UUID idempotency key;
+- неоднозначный timeout/5xx после submit никогда не приводит к автоматическому повторному submit;
+- margin не подтверждается (`confirmMarginTrade=false`);
+- transfer/withdrawal запрещены;
+- sandbox stop-orders и автоматическая замена заявок не входят в первый execution release.
+
+Нельзя расширять это исключение на production host, production OrdersService или full-access real token в том же PR.
 
 ## 4. Секреты и приватные данные
 
 Никогда не сохранять в GitHub:
 
 - `TINVEST_TOKEN`;
+- `TINVEST_SANDBOX_TOKEN`;
+- будущие full-access/transfer-access broker token values;
 - значение `GATEWAY_API_KEY`;
 - Authorization headers;
 - полный broker account ID;
@@ -65,23 +89,25 @@
 - Deployment contract: `render.yaml`.
 - `app_v371.py`, `app_v360.py` и `main.py` сейчас являются зависимостями `app.py`; не удалять их как legacy-мусор без отдельного compatibility refactor.
 - Root runtime migration выполняется только отдельным PR с полным Regression Shield.
+- Sandbox routes должны отсутствовать из OpenAPI, пока `SANDBOX_TRADING_ENABLED` не включён явно.
 
 ## 6. Custom GPT configuration
 
-Единственные production Instructions:
+Единственные production Instructions до отдельного GPT execution release:
 
 `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_4_1.txt`
 
 Production Knowledge: ровно 10 файлов из `gpt/knowledge/`, перечисленных в `gpt/CONFIGURATION.md`.
 
-GitHub хранит эталон, но не синхронизирует GPT Editor автоматически. После изменения Instructions/Knowledge требуется ручное применение в GPT Editor + Preview + `Update`.
+GitHub хранит эталон, но не синхронизирует GPT Editor автоматически. После изменения Instructions/Knowledge/OpenAPI требуется ручное применение в GPT Editor + Preview + `Update`.
 
 Для Action contract:
 
 - OpenAPI: `https://omni-cio-gateway.onrender.com/openapi.json`;
 - Bearer auth через `GATEWAY_API_KEY`;
 - operationId должен быть уникальным и стабильным;
-- expected surface — exactly 14 GET Actions;
+- при выключенном Sandbox expected surface — exactly 14 GET Actions;
+- Sandbox mutation Actions публикуются только при явном Sandbox enable и помечаются consequential;
 - schema object responses должны оставаться совместимыми с GPT Actions;
 - неизвестные ошибки нельзя маскировать под `ok`/`pending`.
 
@@ -98,6 +124,8 @@ Exact-action запрос имеет приоритет: если пользов
 
 Web Search не заменяет Gateway для фактов о счёте/портфеле.
 
+Sandbox-сделка не может быть выведена из одного текстового намерения: сначала proposal/preflight, затем отдельное подтверждение, затем submit.
+
 ## 8. Money/data quality
 
 - Деньги считать exact decimal logic.
@@ -107,6 +135,7 @@ Web Search не заменяет Gateway для фактов о счёте/по�
 - last price не является гарантированной ценой сделки.
 - при отсутствии fresh best ask / market readiness точный sizing решения блокируется.
 - `withdraw_limits` не считать автоматически buying budget.
+- Для Sandbox BUY использовать own-funds `GetSandboxMaxLots`; для SELL — own-position `sellMaxLots`; margin fields не использовать для автоматического sizing.
 
 ## 9. T-Invest broker report
 
@@ -123,6 +152,7 @@ Web Search не заменяет Gateway для фактов о счёте/по�
 ## 10. Repository structure
 
 - Runtime/wrappers — root + `omni_cio/`.
+- Sandbox execution contour — только `omni_cio/sandbox/`.
 - GPT configuration — `gpt/`.
 - Engineering/domain memory — `knowledge/`.
 - Original Omni-CIO specification — `docs/master-plan/`.
@@ -147,9 +177,19 @@ python -m mypy
 python -m compileall -q app.py app_v371.py app_v360.py main.py \
   portfolio_market.py portfolio_analytics.py cash_liquidity.py \
   purchase_capacity.py purchase_capacity_integrity.py \
-  operations_analytics.py broker_report_reconciliation tests scripts
+  operations_analytics.py broker_report_reconciliation omni_cio tests scripts
 python -m pytest -q --cov --cov-branch --cov-fail-under=60
 ```
+
+Для Sandbox release дополнительно обязательны негативные тесты:
+
+- production URL/token не используются;
+- flag off не меняет production OpenAPI;
+- wrong/expired confirmation не submit-ит заявку;
+- duplicate execution не создаёт вторую заявку;
+- ambiguous submission не повторяется автоматически;
+- own-funds/own-position limit превышение блокируется;
+- account IDs маскируются.
 
 Merge evidence — полный `.github/workflows/regression-shield.yml` на exact head.
 
@@ -164,6 +204,7 @@ Merge evidence — полный `.github/workflows/regression-shield.yml` на e
 - Перед merge проверить head SHA, CI и review threads.
 - Release changes merge через squash после зелёного exact-head Regression Shield.
 - После backend merge выполнить production acceptance затронутых routes.
+- Sandbox execution merge не означает автоматическое включение Sandbox в Render: enable — отдельный owner acceptance step.
 
 ## 13. Документация после значимого изменения
 
@@ -183,7 +224,7 @@ Merge evidence — полный `.github/workflows/regression-shield.yml` на e
 GitHub не заменяет:
 
 - Render Dashboard для secrets/deploy state;
-- GPT Editor для фактически применённых Instructions/Knowledge/model/Bearer;
-- T-Invest API для live broker data.
+- GPT Editor для фактически применённых Instructions/Knowledge/model/Bearer/OpenAPI;
+- T-Invest API для live broker/sandbox data.
 
 Green CI не доказывает production state. После релевантных изменений нужна реальная Render/Gateway/GPT acceptance.
