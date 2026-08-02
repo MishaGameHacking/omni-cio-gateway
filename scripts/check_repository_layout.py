@@ -209,12 +209,17 @@ def scan_sandbox_execution_boundary(failures: list[str]) -> None:
     source = "\n".join(source_parts)
 
     if SANDBOX_ALLOWED_HOST not in source:
-        fail("sandbox runtime does not declare the canonical sandbox REST host", failures)
+        fail(
+            "sandbox runtime does not declare the canonical sandbox REST host", failures
+        )
     if "TINVEST_SANDBOX_TOKEN" not in source:
         fail("sandbox runtime does not require TINVEST_SANDBOX_TOKEN", failures)
     if "SANDBOX_TRADING_ENABLED" not in source:
         fail("sandbox runtime has no explicit kill switch", failures)
-    if "confirmMarginTrade" not in source or '"confirmMarginTrade": False' not in source:
+    if (
+        "confirmMarginTrade" not in source
+        or '"confirmMarginTrade": False' not in source
+    ):
         fail("sandbox runtime does not hard-disable margin confirmation", failures)
     if "x-openai-isConsequential" not in source:
         fail("sandbox mutation Actions are not marked consequential", failures)
