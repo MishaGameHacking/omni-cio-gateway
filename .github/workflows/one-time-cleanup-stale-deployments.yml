@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - maintenance/cleanup-stale-github-deployments
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: read
