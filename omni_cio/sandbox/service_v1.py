@@ -103,6 +103,18 @@ def _account_id(account: dict[str, Any]) -> str:
     return str(account.get("id") or account.get("accountId") or "").strip()
 
 
+def _integer_field(container: Any, field: str) -> int | None:
+    if not isinstance(container, dict):
+        return None
+    value = container.get(field)
+    if value is None:
+        return None
+    try:
+        return int(str(value))
+    except (TypeError, ValueError):
+        return None
+
+
 @dataclass(frozen=True, slots=True)
 class TradeProposalV1:
     proposal_id: str
@@ -187,7 +199,7 @@ class SandboxTradingServiceV1:
         client: SandboxRestClientV1 | None = None,
         store: ProposalStoreV1 | None = None,
     ) -> None:
-        if confirmation_ttl_seconds < 30 or confirmation_ttl_seconds > MAX_CONFIRMATION_TTL_SECONDS:
+        if not 30 <= confirmation_ttl_seconds <= MAX_CONFIRMATION_TTL_SECONDS:
             raise SandboxApiFailure(
                 code="SANDBOX_CONFIRMATION_TTL_INVALID",
                 message="Confirmation TTL must be between 30 and 600 seconds.",
@@ -222,7 +234,11 @@ class SandboxTradingServiceV1:
                 http_status=502,
             )
         result = [item for item in accounts if isinstance(item, dict)]
-        return [item for item in result if _enum_status(item) in {"", "ACCOUNT_STATUS_OPEN"}]
+        return [
+            item
+            for item in result
+            if _enum_status(item) in {"", "ACCOUNT_STATUS_OPEN"}
+        ]
 
     def resolve_single_account(self) -> tuple[str, dict[str, Any]]:
         accounts = self.get_accounts()
@@ -235,7 +251,10 @@ class SandboxTradingServiceV1:
         if len(accounts) != 1:
             raise SandboxApiFailure(
                 code="MULTIPLE_OPEN_SANDBOX_ACCOUNTS",
-                message="Exactly one open Sandbox account is required for autonomous routing.",
+                message=(
+                    "Exactly one open Sandbox account is required for "
+                    "autonomous routing."
+                ),
                 http_status=409,
             )
         account = accounts[0]
@@ -278,7 +297,9 @@ class SandboxTradingServiceV1:
             "OpenSandboxAccount",
             {"name": name[:100]},
         )
-        account_id = str(payload.get("accountId") or payload.get("account_id") or "")
+        account_id = str(
+            payload.get("accountId") or payload.get("account_id") or ""
+        )
         if not account_id:
             raise SandboxApiFailure(
                 code="SANDBOX_OPEN_ACCOUNT_RESPONSE_INVALID",
@@ -295,7 +316,10 @@ class SandboxTradingServiceV1:
         if amount_rub <= 0 or amount_rub > Decimal("10000000"):
             raise SandboxApiFailure(
                 code="SANDBOX_PAYIN_AMOUNT_INVALID",
-                message="Sandbox pay-in must be greater than 0 and at most 10,000,000 RUB.",
+                message=(
+                    "Sandbox pay-in must be greater than 0 and at most "
+                    "10,000,000 RUB."
+                ),
                 http_status=400,
             )
         account_id, _ = self.resolve_single_account()
@@ -338,6 +362,75 @@ class SandboxTradingServiceV1:
         ).hexdigest()
         return digest[:10].upper()
 
+    def _preflight(
+        self,
+        *,
+        account_id: str,
+        instrument_id: str,
+        direction: str,
+        quantity_lots: int,
+        order_type: str,
+        quotation: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        max_lots_payload: dict[str, Any] = {
+            "accountId": account_id,
+            "instrumentId": instrument_id,
+        }
+        if quotation is not None:
+            max_lots_payload["price"] = quotation
+        max_lots = self._client.post("GetSandboxMaxLots", max_lots_payload)
+
+        if direction == "BUY":
+            buy_limits = max_lots.get("buyLimits")
+            limit_field = (
+                "buyMaxMarketLots" if order_type == "MARKET" else "buyMaxLots"
+            )
+            available_lots = _integer_field(buy_limits, limit_field)
+            if available_lots is None and order_type == "MARKET":
+                available_lots = _integer_field(buy_limits, "buyMaxLots")
+        else:
+            available_lots = _integer_field(
+                max_lots.get("sellLimits"),
+                "sellMaxLots",
+            )
+
+        if available_lots is None:
+            raise SandboxApiFailure(
+                code="SANDBOX_LIMITS_INCOMPLETE",
+                message=(
+                    "GetSandboxMaxLots did not return the required own-funds/"
+                    "own-position limit. Submission is blocked."
+                ),
+                http_status=409,
+            )
+        if quantity_lots > available_lots:
+            raise SandboxApiFailure(
+                code="SANDBOX_QUANTITY_EXCEEDS_LIMIT",
+                message=(
+                    f"Requested {quantity_lots} lots but Sandbox reports only "
+                    f"{available_lots} available without margin."
+                ),
+                http_status=409,
+            )
+
+        preview: dict[str, Any] | None = None
+        if quotation is not None:
+            preview = self._client.post(
+                "GetSandboxOrderPrice",
+                {
+                    "accountId": account_id,
+                    "instrumentId": instrument_id,
+                    "price": quotation,
+                    "direction": f"ORDER_DIRECTION_{direction}",
+                    "quantity": str(quantity_lots),
+                },
+            )
+        return {
+            "available_lots": available_lots,
+            "max_lots": _sanitize_payload(max_lots),
+            "order_price": _sanitize_payload(preview) if preview is not None else None,
+        }
+
     def prepare_trade(
         self,
         *,
@@ -361,52 +454,79 @@ class SandboxTradingServiceV1:
         order_type = order_type.upper()
         price_type = price_type.upper()
         if direction not in {"BUY", "SELL"}:
-            raise SandboxApiFailure("SANDBOX_DIRECTION_INVALID", "Direction must be BUY or SELL.", 400)
+            raise SandboxApiFailure(
+                "SANDBOX_DIRECTION_INVALID",
+                "Direction must be BUY or SELL.",
+                400,
+            )
         if order_type not in {"MARKET", "LIMIT"}:
-            raise SandboxApiFailure("SANDBOX_ORDER_TYPE_INVALID", "Order type must be MARKET or LIMIT.", 400)
+            raise SandboxApiFailure(
+                "SANDBOX_ORDER_TYPE_INVALID",
+                "Order type must be MARKET or LIMIT.",
+                400,
+            )
         if price_type not in {"CURRENCY", "POINT"}:
-            raise SandboxApiFailure("SANDBOX_PRICE_TYPE_INVALID", "Price type must be CURRENCY or POINT.", 400)
+            raise SandboxApiFailure(
+                "SANDBOX_PRICE_TYPE_INVALID",
+                "Price type must be CURRENCY or POINT.",
+                400,
+            )
         if quantity_lots < 1 or quantity_lots > 1_000_000:
-            raise SandboxApiFailure("SANDBOX_QUANTITY_INVALID", "Quantity lots is outside the allowed range.", 400)
-        if len(rationale.strip()) > 1500:
-            raise SandboxApiFailure("SANDBOX_RATIONALE_TOO_LONG", "Rationale is too long.", 400)
+            raise SandboxApiFailure(
+                "SANDBOX_QUANTITY_INVALID",
+                "Quantity lots is outside the allowed range.",
+                400,
+            )
+        rationale = rationale.strip()
+        if not rationale:
+            raise SandboxApiFailure(
+                "SANDBOX_RATIONALE_REQUIRED",
+                "A short rationale is required before a trade can be proposed.",
+                400,
+            )
+        if len(rationale) > 1500:
+            raise SandboxApiFailure(
+                "SANDBOX_RATIONALE_TOO_LONG",
+                "Rationale is too long.",
+                400,
+            )
 
         quotation: dict[str, Any] | None = None
         normalized_price: str | None = None
         if order_type == "LIMIT":
             if limit_price is None:
-                raise SandboxApiFailure("SANDBOX_LIMIT_PRICE_REQUIRED", "Limit order requires limit_price.", 400)
+                raise SandboxApiFailure(
+                    "SANDBOX_LIMIT_PRICE_REQUIRED",
+                    "Limit order requires limit_price.",
+                    400,
+                )
             parsed_price = decimal_from_text(limit_price)
             quotation = decimal_to_quotation(parsed_price)
             normalized_price = format(parsed_price, "f")
         elif limit_price is not None:
-            raise SandboxApiFailure("SANDBOX_MARKET_PRICE_FORBIDDEN", "Market order must not include limit_price.", 400)
+            raise SandboxApiFailure(
+                "SANDBOX_MARKET_PRICE_FORBIDDEN",
+                "Market order must not include limit_price.",
+                400,
+            )
 
         account_id, _ = self.resolve_single_account()
-        max_lots_payload: dict[str, Any] = {
-            "accountId": account_id,
-            "instrumentId": instrument_id,
-        }
-        if quotation is not None:
-            max_lots_payload["price"] = quotation
-        max_lots = self._client.post("GetSandboxMaxLots", max_lots_payload)
-
-        preview: dict[str, Any] | None = None
-        if quotation is not None:
-            preview = self._client.post(
-                "GetSandboxOrderPrice",
-                {
-                    "accountId": account_id,
-                    "instrumentId": instrument_id,
-                    "price": quotation,
-                    "direction": f"ORDER_DIRECTION_{direction}",
-                    "quantity": str(quantity_lots),
-                },
-            )
+        preflight = self._preflight(
+            account_id=account_id,
+            instrument_id=instrument_id,
+            direction=direction,
+            quantity_lots=quantity_lots,
+            order_type=order_type,
+            quotation=quotation,
+        )
 
         created_at = now or utc_now()
         if created_at.tzinfo is None:
-            raise SandboxApiFailure("SANDBOX_TIME_INVALID", "Timestamp must be timezone-aware.", 500)
+            raise SandboxApiFailure(
+                "SANDBOX_TIME_INVALID",
+                "Timestamp must be timezone-aware.",
+                500,
+            )
         created_at = created_at.astimezone(timezone.utc)
         expires_at = created_at + timedelta(seconds=self._ttl)
         proposal_id = str(uuid4())
@@ -426,11 +546,6 @@ class SandboxTradingServiceV1:
                 "expires_at": expires_at.isoformat(),
             }
         )
-        confirmation_code = self._confirmation_code(canonical)
-        evidence = {
-            "max_lots": _sanitize_payload(max_lots),
-            "order_price": _sanitize_payload(preview) if preview is not None else None,
-        }
         proposal = TradeProposalV1(
             proposal_id=proposal_id,
             order_id=order_id,
@@ -441,11 +556,11 @@ class SandboxTradingServiceV1:
             order_type=order_type,
             limit_price=normalized_price,
             price_type=price_type,
-            rationale=rationale.strip(),
+            rationale=rationale,
             created_at=created_at,
             expires_at=expires_at,
-            confirmation_code=confirmation_code,
-            broker_response_json=_json_dump(evidence),
+            confirmation_code=self._confirmation_code(canonical),
+            broker_response_json=_json_dump(preflight),
         )
         self._store.put(proposal)
         return proposal
@@ -463,7 +578,10 @@ class SandboxTradingServiceV1:
         if proposal.state in {"submitting", "unknown"}:
             raise SandboxApiFailure(
                 code="SANDBOX_ORDER_SUBMISSION_UNCERTAIN",
-                message="Submission state is uncertain; query the order by request id instead of resubmitting.",
+                message=(
+                    "Submission state is uncertain; query the order by request id "
+                    "instead of resubmitting."
+                ),
                 http_status=409,
                 ambiguous_submission=True,
             )
@@ -476,7 +594,11 @@ class SandboxTradingServiceV1:
 
         current_time = now or utc_now()
         if current_time.tzinfo is None:
-            raise SandboxApiFailure("SANDBOX_TIME_INVALID", "Timestamp must be timezone-aware.", 500)
+            raise SandboxApiFailure(
+                "SANDBOX_TIME_INVALID",
+                "Timestamp must be timezone-aware.",
+                500,
+            )
         current_time = current_time.astimezone(timezone.utc)
         if current_time > proposal.expires_at:
             self._store.transition(
@@ -486,7 +608,9 @@ class SandboxTradingServiceV1:
             )
             raise SandboxApiFailure(
                 code="SANDBOX_CONFIRMATION_EXPIRED",
-                message="Proposal confirmation window has expired; prepare a fresh trade.",
+                message=(
+                    "Proposal confirmation window has expired; prepare a fresh trade."
+                ),
                 http_status=409,
             )
         if not hmac.compare_digest(
@@ -498,6 +622,23 @@ class SandboxTradingServiceV1:
                 http_status=403,
             )
 
+        quotation = (
+            decimal_to_quotation(decimal_from_text(proposal.limit_price))
+            if proposal.limit_price is not None
+            else None
+        )
+        # Recheck broker limits and preliminary limit-order cost immediately
+        # before crossing the submission boundary. A successful prepare call is
+        # never treated as durable authorization to submit later.
+        self._preflight(
+            account_id=proposal.account_id,
+            instrument_id=proposal.instrument_id,
+            direction=proposal.direction,
+            quantity_lots=proposal.quantity_lots,
+            order_type=proposal.order_type,
+            quotation=quotation,
+        )
+
         self._store.transition(
             proposal_id,
             allowed_from=frozenset({"prepared"}),
@@ -507,7 +648,6 @@ class SandboxTradingServiceV1:
             "accountId": proposal.account_id,
             "quantity": str(proposal.quantity_lots),
             "direction": f"ORDER_DIRECTION_{proposal.direction}",
-            "accountId": proposal.account_id,
             "orderType": f"ORDER_TYPE_{proposal.order_type}",
             "orderId": proposal.order_id,
             "instrumentId": proposal.instrument_id,
@@ -515,8 +655,8 @@ class SandboxTradingServiceV1:
             "priceType": f"PRICE_TYPE_{proposal.price_type}",
             "confirmMarginTrade": False,
         }
-        if proposal.limit_price is not None:
-            payload["price"] = decimal_to_quotation(decimal_from_text(proposal.limit_price))
+        if quotation is not None:
+            payload["price"] = quotation
 
         try:
             response = self._client.post("PostSandboxOrder", payload)
@@ -548,7 +688,6 @@ class SandboxTradingServiceV1:
                 "accountId": account_id,
                 "orderId": order_id,
                 "orderIdType": "ORDER_ID_TYPE_REQUEST",
-                "priceType": "PRICE_TYPE_CURRENCY",
             },
         )
         return {
