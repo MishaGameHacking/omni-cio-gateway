@@ -56,6 +56,8 @@ class RealExecutionJournalV1(Protocol):
         confirmation_evidence_hash: str | None = None,
     ) -> RealTradeProposalV1: ...
 
+    def integrity_check(self) -> int: ...
+
 
 class InMemoryRealExecutionJournalV1:
     """Test-only journal. It must never satisfy production enable checks."""
@@ -131,6 +133,10 @@ class InMemoryRealExecutionJournalV1:
             )
             self._items[proposal_id] = updated
             return updated
+
+    def integrity_check(self) -> int:
+        with self._lock:
+            return len(self._items)
 
     def _submitted_notional_for_moscow_date_unlocked(self, day: date) -> Decimal:
         total = Decimal("0")
