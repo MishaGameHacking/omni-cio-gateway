@@ -2,7 +2,7 @@
 
 Дата актуализации: 2026-08-02
 
-Этот файл хранит короткую долговременную память **одного проекта**: личного Custom GPT Omni-CIO и его read-only Gateway для T-Invest.
+Этот файл хранит короткую долговременную память **одного проекта**: личного Custom GPT Omni-CIO и его Gateway для T-Invest.
 
 ## 1. Поддерживаемый продукт
 
@@ -15,28 +15,30 @@
 ```text
 Custom GPT → Omni-CIO Gateway (`app:app`) → T-Invest API
                     │
-                    └→ market/macro/rating/read-only analytics modules
+                    ├→ production T-Invest read-only
+                    └→ optional isolated T-Invest Sandbox execution
 ```
 
 GitHub хранит backend-код и эталон GPT configuration. Render запускает Gateway. GPT Editor хранит фактически применённые Instructions/Knowledge/Bearer configuration и не синхронизируется с GitHub автоматически.
 
 ## 2. Current production baseline
 
-- Production Instructions: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_4_1.txt`.
-- UI configuration: v8.4.
+- Read-only Instructions baseline: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_4_1.txt`.
+- Canonical Sandbox-enabled Instructions: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_5_0.txt`.
+- UI configuration/name remains v8.4 unless changed manually by the owner.
 - Recommended model: Thinking 5.6.
 - User timezone: Europe/Moscow / MSK.
-- Gateway API: v3.10.0.
 - Production endpoint: `https://omni-cio-gateway.onrender.com`.
 - Entrypoint: `app:app`.
-- User-facing surface: exactly 14 GET Actions.
-- `trading_methods=false`.
+- With Sandbox disabled, user-facing surface remains exactly 14 GET Actions.
+- With Sandbox explicitly enabled, 8 isolated Sandbox Actions are added.
+- Real production contour remains read-only: `real_trading_methods=false` / existing `trading_methods=false`.
 
-Текущий exact status и accepted main commit: `knowledge/16_CURRENT_PROGRAM_STATUS.md`.
+Текущий exact status: `knowledge/16_CURRENT_PROGRAM_STATUS.md`.
 
 ## 3. Что делает Gateway
 
-Gateway предоставляет read-only данные и расчёты для:
+Production read-only data and analytics:
 
 - health / T-Invest connection;
 - portfolio snapshot;
@@ -51,32 +53,58 @@ Gateway предоставляет read-only данные и расчёты дл
 - official T-Invest broker-report generation/reconciliation;
 - final read-only decision review.
 
+Optional isolated Sandbox execution:
+
+- Sandbox status/account bootstrap/funding;
+- Sandbox portfolio;
+- BUY/SELL proposal and own-funds/own-position preflight;
+- exact short-lived confirmation;
+- confirmed submit with duplicate/idempotency protection;
+- order-state verification;
+- confirmed Sandbox cancellation.
+
 Внутренние market/macro/rating modules помогают quality/risk/decision layers, но сами по себе не дают торговых полномочий.
 
 ## 4. Абсолютная safety boundary
 
-Текущий проект запрещает:
+### Real production
 
-- создание/отправку/замену/отмену orders;
+До отдельного real-money execution release запрещено:
+
+- создание/отправка/замена/отмена real orders;
 - stop-order execution;
 - withdrawal/transfer;
-- autonomous trading;
+- autonomous real trading;
 - раскрытие полного account ID;
 - хранение live tokens/keys в GitHub;
 - утверждение stale/partial data как complete/current.
 
 Обязательны:
 
-- GET-only Actions;
-- `trading_methods=false`;
+- real production remains read-only;
+- `real_trading_methods=false`;
 - masked account;
 - fail-closed quality gates;
 - exact decimal money logic;
 - source/freshness separation.
 
+### Sandbox exception
+
+Virtual writes are allowed only through `omni_cio/sandbox/` and only when:
+
+- `TINVEST_SANDBOX_TOKEN` is used;
+- egress is bound to T-Invest Sandbox;
+- `SANDBOX_TRADING_ENABLED=true`;
+- responses prove `sandbox=true`, `real_money=false`;
+- proposal/preflight happens before submit;
+- the owner sends a separate exact confirmation phrase;
+- broker limits are revalidated immediately before submit;
+- duplicate/ambiguous submit protection stays fail-closed;
+- withdrawal/transfer and margin automation remain absent.
+
 ## 5. GPT behavior
 
-При запросах управления портфелем production GPT обязан сначала получить broker facts:
+При запросах управления реальным портфелем GPT обязан сначала получить broker facts:
 
 1. `getPortfolioSnapshot`;
 2. при успехе `getCashLiquiditySnapshot`;
@@ -84,6 +112,8 @@ Gateway предоставляет read-only данные и расчёты дл
 4. затем анализ.
 
 Exact-action запросы имеют приоритет и не должны запускать другие Actions.
+
+Sandbox execution is never inferred from an ordinary request to manage the real portfolio. Sandbox must be explicit and uses the separate two-phase confirmation protocol from Instructions v8.5.0.
 
 Web Search используется для свежего публичного контекста, но не заменяет Gateway для фактов о счёте/деньгах/позициях.
 
@@ -93,7 +123,8 @@ Web Search используется для свежего публичного �
 - fresh best ask/trading status нужны для точного market-sensitive decision;
 - при закрытом рынке/отсутствующем ask/stale price exact sizing не выводится как персональная рекомендация;
 - `withdraw_limits` != автоматически buying budget;
-- technical affordability != personal sizing.
+- technical affordability != personal sizing;
+- Sandbox BUY uses own-funds max-lots; Sandbox SELL uses own-position sell max-lots; margin capacity is not used for automatic sizing.
 
 ## 7. Data quality
 
@@ -106,15 +137,20 @@ Web Search используется для свежего публичного �
 - instrument identity;
 - currency/unit/lot;
 - market availability;
-- reconciliation state.
+- reconciliation state;
+- REAL vs SANDBOX contour.
 
 Не double-count top-level payment, nested commissions, child operations или embedded trades.
 
 ## 8. Secrets
 
-`TINVEST_TOKEN` находится только в Render Environment.
+Render separation:
 
-`GATEWAY_API_KEY` находится в Render и как Bearer secret в GPT Action.
+- `TINVEST_TOKEN` — production read-only;
+- `TINVEST_SANDBOX_TOKEN` — Sandbox only;
+- `GATEWAY_API_KEY` — GPT → Gateway Bearer secret.
+
+Future real-money trading, if implemented, must use a new separate account-scoped trading token. It must never overwrite or promote `TINVEST_TOKEN` and must not include transfer/withdrawal access.
 
 В GitHub хранить только names/placeholders, но не значения.
 
@@ -129,9 +165,11 @@ Web Search используется для свежего публичного �
 - `SECURITY.md` — security boundary.
 - `gpt/SETUP_INDEX.md` — единая настройка/обновление/восстановление.
 - `gpt/CONFIGURATION.md` — exact GPT UI state.
-- `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_4_1.txt` — production Instructions.
+- `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_4_1.txt` — read-only baseline Instructions.
+- `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_5_0.txt` — Sandbox-enabled Instructions.
 - `gpt/knowledge/` — production Knowledge set.
-- `gpt/ACTIONS_CATALOG.md` — 14 Actions.
+- `gpt/ACTIONS_CATALOG.md` — Action catalog.
+- `docs/operations/SANDBOX_TRADING_RUNBOOK.md` — Sandbox enable/acceptance.
 - `docs/master-plan/` — исходная спецификация развития именно Omni-CIO.
 - `docs/architecture/` — действующая архитектура/contracts.
 - `docs/operations/` — deploy/release/acceptance procedures.
@@ -140,24 +178,16 @@ Web Search используется для свежего публичного �
 
 Любое значимое изменение:
 
-`branch → PR → exact-head Regression Shield → review → squash merge → production acceptance`
+`branch → PR → exact-head Regression Shield → review → squash merge → production/external acceptance`
 
 Не править `main` напрямую и не считать старую переписку источником истины при расхождении с текущим code/configuration.
 
-## 12. Definition of current readiness
+## 12. Current readiness
 
-Рабочий бот считается настроенным, если:
+Read-only production baseline is accepted.
 
-- Gateway health отвечает;
-- T-Invest connection отвечает;
-- Action surface = 14 GET;
-- Bearer auth работает;
-- simple natural-language routing вызывает нужные Actions;
-- portfolio-management запускает tool-first chain;
-- account masked;
-- MSK display работает;
-- stale-market sizing gate работает;
-- `trading_methods=false` сохраняется;
-- Preview acceptance пройден.
+Sandbox backend PR #160 and TLS fix PR #162 are merged. Owner Preview on 2026-08-02 demonstrated account bootstrap/funding, portfolio, MARKET BUY/SELL, negative own-position rejection, confirmation expiry, confirmation mismatch rejection, replay protection, LIMIT order state/cancel and portfolio reconciliation while `real_money=false` and `real_trading_methods=false`.
 
-Любая будущая функция считается существующей только после кода, тестов и acceptance.
+Remaining Sandbox recovery/hardening acceptance is tracked in `knowledge/16_CURRENT_PROGRAM_STATUS.md`; it does not enable real-money execution.
+
+The next engineering program is a **separate real-money execution release**, beginning with threat model/design and default-off server controls. Real broker writes remain disabled until that release passes code review, Regression Shield and owner acceptance.
