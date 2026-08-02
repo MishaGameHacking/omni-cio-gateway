@@ -6,10 +6,17 @@ from decimal import Decimal
 from typing import Literal
 
 
+# Absolute code ceilings for the first real-money release. Render-configured
+# limits must be <= these values and are expected to be much lower during owner
+# acceptance. Raising these ceilings requires a new reviewed code release.
+REAL_V1_ABSOLUTE_MAX_ORDER_RUB = Decimal("100000")
+REAL_V1_ABSOLUTE_MAX_DAILY_RUB = Decimal("300000")
+
+
 ProposalState = Literal[
     "prepared",
     "submitting",
-    "executed",
+    "submitted",
     "failed",
     "unknown",
     "expired",
@@ -31,6 +38,10 @@ class RealTradingPolicyV1:
             raise ValueError("max_daily_rub must be a positive finite Decimal")
         if self.max_daily_rub < self.max_order_rub:
             raise ValueError("max_daily_rub must be >= max_order_rub")
+        if self.max_order_rub > REAL_V1_ABSOLUTE_MAX_ORDER_RUB:
+            raise ValueError("max_order_rub exceeds the v1 absolute code ceiling")
+        if self.max_daily_rub > REAL_V1_ABSOLUTE_MAX_DAILY_RUB:
+            raise ValueError("max_daily_rub exceeds the v1 absolute code ceiling")
         if not 30 <= self.confirmation_ttl_seconds <= 600:
             raise ValueError("confirmation TTL must be between 30 and 600 seconds")
         if not 1 <= self.market_max_age_seconds <= 60:
@@ -47,6 +58,7 @@ class RealMarketContextV1:
     instrument_type: str
     lot: int
     currency: str
+    min_price_increment: Decimal
     api_trade_available: bool
     limit_orders_available: bool
     trading_status: str
