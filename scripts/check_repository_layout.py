@@ -7,6 +7,8 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 
+# Keep this list intentionally small: only files required to run, configure,
+# recover, test and safely maintain the current Omni-CIO Custom GPT + Gateway.
 REQUIRED_PATHS = (
     "README.md",
     "AGENTS.md",
@@ -23,14 +25,13 @@ REQUIRED_PATHS = (
     ".env.example",
     "scripts/check_ci_security_baseline.py",
     "tests/test_ci_security_baseline.py",
-    "tests/test_no_telegram_runtime.py",
     "knowledge/00_PROJECT_MASTER_CONTEXT.md",
     "knowledge/09_MARKET_DATA_AND_BUYING_POWER.txt",
     "knowledge/10_OPERATIONS_ANALYTICS_AND_RECONCILIATION.txt",
     "knowledge/11_BROKER_REPORT_ASYNC_INTEGRITY.txt",
-    "knowledge/12_TELEGRAM_RETIREMENT.txt",
     "knowledge/13_COMMUNICATION_STYLE_2026.txt",
     "knowledge/14_CI_SECURITY_BASELINE.txt",
+    "knowledge/15_VERSIONED_DATA_CONTRACTS.txt",
     "knowledge/16_CURRENT_PROGRAM_STATUS.md",
     "docs/README.md",
     "docs/master-plan/README.md",
@@ -39,18 +40,18 @@ REQUIRED_PATHS = (
     "docs/architecture/SYSTEM_OVERVIEW.md",
     "docs/architecture/REPOSITORY_STRUCTURE.md",
     "docs/architecture/DECISIONS.md",
-    "docs/inventory/PROJECT_ASSETS.md",
-    "docs/inventory/FILE_INDEX.md",
     "docs/operations/DEPLOYMENT_RUNBOOK.md",
-    "docs/operations/TELEGRAM_REMOVAL_RUNBOOK.md",
     "docs/operations/RELEASE_CHECKLIST.md",
     "gpt/README.md",
+    "gpt/SETUP_INDEX.md",
     "gpt/MY_GPT_SETUP_RUNBOOK.md",
     "gpt/CONFIGURATION.md",
-    "gpt/INSTRUCTIONS.md",
-    "gpt/INSTRUCTIONS_COMPACT.md",
+    "gpt/CUSTOM_GPT_INSTRUCTIONS_V8_4_1.txt",
     "gpt/ACTIONS_CATALOG.md",
+    "gpt/SECRETS_AND_RENDER.md",
+    "gpt/BOT_ONLY_FILE_MANIFEST.md",
     "gpt/NEW_CHAT_PROMPT.md",
+    "gpt/PROJECT_INSTRUCTIONS.md",
     ".github/CODEOWNERS",
     ".github/dependabot.yml",
     ".github/copilot-instructions.md",
@@ -72,14 +73,6 @@ FORBIDDEN_WORKFLOWS = {
     "upgrade-v390.yml",
 }
 
-RETIRED_TELEGRAM_PATHS = (
-    "telegram_bot",
-    "render.telegram.yaml",
-    "tests/test_telegram_companion.py",
-    "knowledge/12_TELEGRAM_COMPANION.txt",
-    "docs/operations/TELEGRAM_COMPANION_RUNBOOK.md",
-)
-
 RETIRED_DUPLICATE_SCENARIO_PUBLISHER_PATHS = (
     "omni_cio/release/final_decision_review_calculator_publication_v1.py",
     "omni_cio/release/final_decision_review_calculator_registration_v1.py",
@@ -87,28 +80,6 @@ RETIRED_DUPLICATE_SCENARIO_PUBLISHER_PATHS = (
     "tests/test_final_decision_review_calculator_registration_v1.py",
     "docs/architecture/FINAL_DECISION_REVIEW_CALCULATOR_PUBLICATION_V1.md",
     "docs/architecture/FINAL_DECISION_REVIEW_CALCULATOR_REGISTRATION_V1.md",
-)
-
-RETIRED_TELEGRAM_ENV_VARS = (
-    "TELEGRAM_BOT_TOKEN",
-    "TELEGRAM_WEBHOOK_SECRET",
-    "TELEGRAM_ALLOWED_USER_IDS",
-    "OMNI_GATEWAY_URL",
-    "OMNI_GATEWAY_API_KEY",
-    "TELEGRAM_AUTO_CONFIGURE",
-    "TELEGRAM_PUBLIC_BASE_URL",
-    "TELEGRAM_REQUEST_TIMEOUT_SECONDS",
-    "TELEGRAM_GATEWAY_RETRY_ATTEMPTS",
-    "TELEGRAM_GATEWAY_RETRY_DELAY_SECONDS",
-    "TELEGRAM_MAX_RESPONSE_CHARS",
-    "TELEGRAM_MIN_REQUEST_INTERVAL_SECONDS",
-)
-
-RETIRED_TELEGRAM_DEPENDENCIES = (
-    "aiogram",
-    "pytelegrambotapi",
-    "python-telegram-bot",
-    "telethon",
 )
 
 FORBIDDEN_BROKER_METHOD_PREFIXES = (
@@ -202,77 +173,6 @@ def scan_retired_duplicate_scenario_publishers(failures: list[str]) -> None:
             )
 
 
-def scan_retired_telegram_surface(failures: list[str]) -> None:
-    for relative_path in RETIRED_TELEGRAM_PATHS:
-        if (ROOT / relative_path).exists():
-            fail(f"retired Telegram path is still present: {relative_path}", failures)
-
-    for relative_path in (
-        ".env.example",
-        "render.yaml",
-        "requirements.in",
-        "requirements.txt",
-        "requirements-dev.in",
-        "requirements-dev.txt",
-    ):
-        path = ROOT / relative_path
-        if not path.is_file():
-            continue
-        text = path.read_text(encoding="utf-8")
-        for variable in RETIRED_TELEGRAM_ENV_VARS:
-            if variable in text:
-                fail(
-                    f"retired Telegram configuration remains in {relative_path}: "
-                    f"{variable}",
-                    failures,
-                )
-
-    for relative_path in (
-        "requirements.in",
-        "requirements.txt",
-        "requirements-dev.in",
-        "requirements-dev.txt",
-    ):
-        path = ROOT / relative_path
-        if not path.is_file():
-            continue
-        dependencies = path.read_text(encoding="utf-8").lower()
-        for dependency in RETIRED_TELEGRAM_DEPENDENCIES:
-            if dependency in dependencies:
-                fail(
-                    f"retired Telegram dependency remains in {relative_path}: "
-                    f"{dependency}",
-                    failures,
-                )
-
-    for path in ROOT.rglob("*.py"):
-        relative = path.relative_to(ROOT)
-        if any(
-            part in {".git", ".venv", "tests", "scripts", "__pycache__"}
-            for part in relative.parts
-        ):
-            continue
-        try:
-            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(relative))
-        except (OSError, SyntaxError) as exc:
-            fail(f"cannot inspect runtime Python source {relative}: {exc}", failures)
-            continue
-        for node in ast.walk(tree):
-            modules: tuple[str, ...] = ()
-            if isinstance(node, ast.Import):
-                modules = tuple(alias.name for alias in node.names)
-            elif isinstance(node, ast.ImportFrom) and node.module:
-                modules = (node.module,)
-            if any(
-                module == "telegram_bot" or module.startswith("telegram_bot.")
-                for module in modules
-            ):
-                fail(
-                    f"retired Telegram runtime import remains: {relative}",
-                    failures,
-                )
-
-
 def main() -> int:
     failures: list[str] = []
 
@@ -314,7 +214,6 @@ def main() -> int:
             fail(f"obsolete one-time workflow still present: {name}", failures)
 
     scan_runtime_broker_egress(failures)
-    scan_retired_telegram_surface(failures)
     scan_retired_duplicate_scenario_publishers(failures)
 
     if failures:
@@ -325,10 +224,9 @@ def main() -> int:
 
     print("Repository layout check passed.")
     print(f"Required files checked: {len(REQUIRED_PATHS)}")
+    print("Product surface: Custom GPT + read-only Gateway")
     print("Gateway entrypoint: app:app")
-    print("Telegram runtime: retired")
-    print("Duplicate PR-71 scenario publisher: retired")
-    print("Canonical master plan: v9")
+    print("Trading methods: disabled")
     return 0
 
 
