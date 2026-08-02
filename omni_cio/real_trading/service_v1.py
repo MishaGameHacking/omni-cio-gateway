@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 import hashlib
 import hmac
 import json
-from typing import Any, Callable, Protocol
-from uuid import uuid4
+from typing import Any, Callable, Literal, Protocol, cast
+from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
 from .client_v1 import RealTradingApiFailure, RealTradingRestClientV1
@@ -30,6 +29,17 @@ MarketContextProviderV1 = Callable[[str], RealMarketContextV1]
 
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _normalize_now(value: datetime | None) -> datetime:
+    current = value or utc_now()
+    if current.tzinfo is None:
+        raise RealTradingApiFailure(
+            code="REAL_TIME_INVALID",
+            message="Real-trading timestamps must be timezone-aware.",
+            http_status=500,
+        )
+    return current.astimezone(timezone.utc)
 
 
 def mask_account_id(account_id: str) -> str:
@@ -157,7 +167,7 @@ def _account_status(account: dict[str, Any]) -> str:
 class RealTradingServiceV1:
     """Isolated core for the future real-money release.
 
-    This class is deliberately not wired into FastAPI/OpenAPI.  Production
+    This class is deliberately not wired into FastAPI/OpenAPI. Production
     enable is forbidden unless a durable journal is provided.
     """
 
@@ -173,7 +183,14 @@ class RealTradingServiceV1:
         client: RealBrokerClientV1 | None = None,
         require_durable_journal: bool = True,
     ) -> None:
-        policy.validate()
+        try:
+            policy.validate()
+        except ValueError as exc:
+            raise RealTradingApiFailure(
+                code="REAL_TRADING_POLICY_INVALID",
+                message=str(exc),
+                http_status=503,
+            ) from exc
         secret = gateway_secret.strip()
         if not secret:
             raise RealTradingApiFailure(
@@ -413,7 +430,7 @@ class RealTradingServiceV1:
         rationale: str,
         now: datetime | None = None,
     ) -> RealTradeProposalV1:
-        current = (now or utc_now()).astimezone(timezone.utc)
+        current = _normalize_now(now)
         instrument_uid = instrument_uid.strip()
         if not instrument_uid or len(instrument_uid) > 120:
             raise RealTradingApiFailure(
@@ -421,13 +438,14 @@ class RealTradingServiceV1:
                 "instrument_uid must contain 1..120 characters.",
                 400,
             )
-        direction = direction.upper()
-        if direction not in {"BUY", "SELL"}:
+        normalized_direction = direction.upper()
+        if normalized_direction not in {"BUY", "SELL"}:
             raise RealTradingApiFailure(
                 "REAL_DIRECTION_INVALID",
                 "Direction must be BUY or SELL.",
                 400,
             )
+        typed_direction = cast(Literal["BUY", "SELL"], normalized_direction)
         if quantity_lots < 1 or quantity_lots > 1_000_000:
             raise RealTradingApiFailure(
                 "REAL_QUANTITY_INVALID",
@@ -454,7 +472,7 @@ class RealTradingServiceV1:
         available, total, commission, limits, preview = self._preflight(
             account_id=account_id,
             instrument_uid=instrument_uid,
-            direction=direction,
+            direction=typed_direction,
             quantity_lots=quantity_lots,
             limit_price=price,
         )
@@ -473,7 +491,7 @@ class RealTradingServiceV1:
                 "instrument_uid": instrument_uid,
                 "ticker": market.ticker,
                 "isin": market.isin,
-                "direction": direction,
+                "direction": typed_direction,
                 "quantity_lots": quantity_lots,
                 "order_type": "LIMIT",
                 "limit_price": format(price, "f"),
@@ -494,7 +512,7 @@ class RealTradingServiceV1:
             instrument_uid=instrument_uid,
             ticker=market.ticker,
             isin=market.isin,
-            direction=direction,  # type: ignore[arg-type]
+            direction=typed_direction,
             quantity_lots=quantity_lots,
             limit_price=price,
             rationale=rationale,
@@ -528,7 +546,17 @@ class RealTradingServiceV1:
                 http_status=404,
             ) from exc
 
+        phrase_matches = hmac.compare_digest(
+            confirmation_phrase.strip().encode("utf-8"),
+            proposal.confirmation_phrase.encode("utf-8"),
+        )
         if proposal.state == "executed":
+            if not phrase_matches:
+                raise RealTradingApiFailure(
+                    code="REAL_CONFIRMATION_MISMATCH",
+                    message="Exact real-trade confirmation phrase is required.",
+                    http_status=403,
+                )
             return proposal, True
         if proposal.state in {"submitting", "unknown"}:
             raise RealTradingApiFailure(
@@ -544,7 +572,7 @@ class RealTradingServiceV1:
                 http_status=409,
             )
 
-        current = (now or utc_now()).astimezone(timezone.utc)
+        current = _normalize_now(now)
         if current > proposal.expires_at:
             self._journal.transition(
                 proposal_id,
@@ -556,10 +584,7 @@ class RealTradingServiceV1:
                 message="Confirmation expired; prepare a fresh real trade.",
                 http_status=409,
             )
-        if not hmac.compare_digest(
-            confirmation_phrase.strip().encode("utf-8"),
-            proposal.confirmation_phrase.encode("utf-8"),
-        ):
+        if not phrase_matches:
             raise RealTradingApiFailure(
                 code="REAL_CONFIRMATION_MISMATCH",
                 message="Exact real-trade confirmation phrase is required.",
@@ -568,21 +593,16 @@ class RealTradingServiceV1:
 
         account_id, _ = self.resolve_bound_account()
         market = self._validate_market(proposal.instrument_uid, now=current)
-        if (
-            market.ticker != proposal.ticker
-            or market.isin != proposal.isin
-            or market.retrieved_at == proposal.market_retrieved_at
-        ):
-            # A fresh read is mandatory; identity must remain unchanged.
-            if market.ticker != proposal.ticker or market.isin != proposal.isin:
-                raise RealTradingApiFailure(
-                    code="REAL_INSTRUMENT_IDENTITY_CHANGED",
-                    message="Instrument identity changed after confirmation.",
-                    http_status=409,
-                )
+        if market.ticker != proposal.ticker or market.isin != proposal.isin:
+            raise RealTradingApiFailure(
+                code="REAL_INSTRUMENT_IDENTITY_CHANGED",
+                message="Instrument identity changed after confirmation.",
+                http_status=409,
+            )
+        if market.retrieved_at <= proposal.market_retrieved_at:
             raise RealTradingApiFailure(
                 code="REAL_MARKET_REVALIDATION_REQUIRED",
-                message="A fresh market snapshot is required immediately before submit.",
+                message="A newer market snapshot is required immediately before submit.",
                 http_status=409,
             )
 
@@ -655,6 +675,14 @@ class RealTradingServiceV1:
         return completed, False
 
     def order_state(self, order_id: str) -> dict[str, Any]:
+        try:
+            UUID(order_id)
+        except ValueError as exc:
+            raise RealTradingApiFailure(
+                code="REAL_ORDER_ID_INVALID",
+                message="order_id must be a UUID request id.",
+                http_status=400,
+            ) from exc
         account_id, _ = self.resolve_bound_account()
         payload = self._client.post(
             "GetOrderState",
