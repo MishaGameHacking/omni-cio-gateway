@@ -74,8 +74,14 @@ def money(value: Decimal) -> dict[str, Any]:
 
 
 class MarketSequence:
-    def __init__(self, times: list[datetime]) -> None:
+    def __init__(
+        self,
+        times: list[datetime],
+        *,
+        min_price_increment: Decimal = Decimal("0.01"),
+    ) -> None:
         self._times = list(times)
+        self._min_price_increment = min_price_increment
         self.calls = 0
 
     def __call__(self, instrument_uid: str) -> RealMarketContextV1:
@@ -88,6 +94,7 @@ class MarketSequence:
             instrument_type="share",
             lot=1,
             currency="RUB",
+            min_price_increment=self._min_price_increment,
             api_trade_available=True,
             limit_orders_available=True,
             trading_status="SECURITY_TRADING_STATUS_NORMAL_TRADING",
@@ -158,6 +165,21 @@ def test_production_constructor_requires_durable_journal() -> None:
     assert exc_info.value.code == "REAL_DURABLE_JOURNAL_REQUIRED"
 
 
+def test_policy_rejects_values_above_v1_absolute_ceiling() -> None:
+    with pytest.raises(RealTradingApiFailure) as exc_info:
+        RealTradingServiceV1(
+            token="dedicated",
+            gateway_secret="secret",
+            expected_account_id=ACCOUNT_ID,
+            policy=policy(daily="300001", order="100001"),
+            journal=InMemoryRealExecutionJournalV1(),
+            market_context_provider=MarketSequence([BASE_TIME]),
+            client=FakeBroker(),
+            require_durable_journal=False,
+        )
+    assert exc_info.value.code == "REAL_TRADING_POLICY_INVALID"
+
+
 def test_real_rest_client_has_fixed_host_and_method_allowlist() -> None:
     client = RealTradingRestClientV1("dedicated")
     assert client.base_url == "https://invest-public-api.tbank.ru/rest"
@@ -175,6 +197,25 @@ def test_prepare_is_limit_only_and_does_not_submit() -> None:
     assert proposal.preview_commission_rub == Decimal("1")
     assert proposal.available_lots == 10
     assert proposal.confirmation_phrase.startswith("ПОДТВЕРЖДАЮ РЕАЛЬНУЮ СДЕЛКУ ")
+    assert "PostOrder" not in [method for method, _ in broker.calls]
+
+
+def test_limit_price_must_match_instrument_price_step() -> None:
+    market = MarketSequence(
+        [BASE_TIME - timedelta(seconds=1)],
+        min_price_increment=Decimal("0.05"),
+    )
+    svc, broker, _ = service(market=market)
+    with pytest.raises(RealTradingApiFailure) as exc_info:
+        svc.prepare_trade(
+            instrument_uid=INSTRUMENT_UID,
+            direction="BUY",
+            quantity_lots=1,
+            limit_price="270.03",
+            rationale="price-step rejection",
+            now=BASE_TIME,
+        )
+    assert exc_info.value.code == "REAL_PRICE_STEP_MISMATCH"
     assert "PostOrder" not in [method for method, _ in broker.calls]
 
 
@@ -214,7 +255,7 @@ def test_execute_submits_limit_day_currency_without_margin() -> None:
         now=BASE_TIME + timedelta(seconds=10),
     )
     assert replay is False
-    assert completed.state == "executed"
+    assert completed.state == "submitted"
     post_payloads = [payload for method, payload in broker.calls if method == "PostOrder"]
     assert len(post_payloads) == 1
     payload = post_payloads[0]
@@ -240,12 +281,12 @@ def test_successful_replay_does_not_submit_twice() -> None:
         proposal.confirmation_phrase,
         now=BASE_TIME + timedelta(seconds=11),
     )
-    assert completed.state == "executed"
+    assert completed.state == "submitted"
     assert replay is True
     assert [method for method, _ in broker.calls].count("PostOrder") == 1
 
 
-def test_ambiguous_submit_is_never_retried() -> None:
+def test_ambiguous_submit_is_never_retried_and_can_be_reconciled() -> None:
     broker = FakeBroker()
     broker.post_failure = RealTradingApiFailure(
         code="REAL_TRADING_TRANSPORT_AMBIGUOUS",
@@ -272,6 +313,11 @@ def test_ambiguous_submit_is_never_retried() -> None:
         )
     assert second.value.code == "REAL_ORDER_SUBMISSION_UNCERTAIN"
     assert [method for method, _ in broker.calls].count("PostOrder") == 1
+
+    reconciled = svc.reconcile_proposal(proposal.proposal_id)
+    assert reconciled.state == "submitted"
+    assert [method for method, _ in broker.calls].count("PostOrder") == 1
+    assert [method for method, _ in broker.calls].count("GetOrderState") == 1
 
 
 def test_buy_uses_own_funds_not_margin_limit() -> None:
