@@ -4,10 +4,10 @@ from dataclasses import replace
 from datetime import date, datetime
 from decimal import Decimal
 from threading import RLock
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 from zoneinfo import ZoneInfo
 
-from .models_v1 import RealTradeProposalV1
+from .models_v1 import ProposalState, RealTradeProposalV1
 
 
 MOSCOW = ZoneInfo("Europe/Moscow")
@@ -43,7 +43,7 @@ class RealExecutionJournalV1(Protocol):
         proposal_id: str,
         *,
         allowed_from: frozenset[str],
-        state: str,
+        state: ProposalState,
         **changes: Any,
     ) -> RealTradeProposalV1: ...
 
@@ -85,7 +85,7 @@ class InMemoryRealExecutionJournalV1:
         proposal_id: str,
         *,
         allowed_from: frozenset[str],
-        state: str,
+        state: ProposalState,
         **changes: Any,
     ) -> RealTradeProposalV1:
         with self._lock:
@@ -119,7 +119,7 @@ class InMemoryRealExecutionJournalV1:
                 raise JournalDailyCapExceeded("daily submission cap exceeded")
             updated = replace(
                 current,
-                state="submitting",
+                state=cast(ProposalState, "submitting"),
                 submitted_at=submitted_at,
             )
             self._items[proposal_id] = updated
@@ -131,7 +131,7 @@ class InMemoryRealExecutionJournalV1:
             submitted_at = proposal.submitted_at
             if submitted_at is None:
                 continue
-            if proposal.state not in {"submitting", "executed", "unknown"}:
+            if proposal.state not in {"submitting", "submitted", "unknown"}:
                 continue
             if _moscow_date(submitted_at) == day:
                 total += proposal.preview_total_rub
