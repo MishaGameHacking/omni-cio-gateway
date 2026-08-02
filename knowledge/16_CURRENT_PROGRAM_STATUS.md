@@ -2,124 +2,122 @@
 
 Дата актуализации: 2026-08-02
 
-## Current accepted baseline
+## Current accepted main
 
-Последний принятый product/configuration merge:
+Latest accepted repository cleanup:
 
-- PR #146 — `GPT: make portfolio management Action dispatch tool-first`;
-- squash-merged в `main`;
-- accepted main commit before repository cleanup: `99a57d753f2ab50e16ddc79a36f0f9cfcfe9777a`;
-- exact-head Regression Shield run #864: `success`.
+- PR #147 — `Cleanup: reduce repository to active Omni-CIO bot and Gateway`;
+- squash-merged after exact-head Regression Shield run #871 completed successfully;
+- current accepted `main` commit: `2032c4d9be66892af25cbaf995f0eb29922436c3`.
 
-Production baseline:
+Previous product/configuration behavior package:
+
+- PR #146 — tool-first Custom GPT portfolio routing;
+- production Instructions release remains `v8.4.1`.
+
+## Production baseline
 
 - Custom GPT: `Omni-CIO API | Управляющий и аналитик v8.4`;
-- production Instructions: `v8.4.1`;
+- production Instructions: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_4_1.txt`;
 - recommended model: `Thinking 5.6`;
-- user timezone: Moscow / `Europe/Moscow`;
-- Gateway: `v3.10.0`;
+- user-visible timezone: `Europe/Moscow` / MSK;
+- Gateway API: `v3.10.0`;
 - production endpoint: `https://omni-cio-gateway.onrender.com`;
 - entrypoint: `app:app`;
 - exactly 14 GET Actions;
 - `trading_methods=false`.
 
-## Owner Preview acceptance already observed
+## Accepted repository structure
 
-Preview tests confirmed working natural-language routing for:
+Repository is now organized around one supported product:
+
+`Omni-CIO Custom GPT → read-only Omni-CIO Gateway → T-Invest API`
+
+Cleanup #147:
+
+- removed obsolete duplicate GPT setup/instructions files;
+- removed stale dated audit/inventory artifacts;
+- removed unused external-transport-specific active artifacts;
+- made `gpt/SETUP_INDEX.md` the single setup/update/recovery entrypoint;
+- retained only current configuration/runtime/safety/test/maintenance documentation;
+- kept the original Omni-CIO master plan because it directly specifies this same bot;
+- kept `app_v371.py`, `app_v360.py` and `main.py` because current `app.py` still imports them.
+
+## GPT files requiring owner-side refresh after cleanup
+
+GitHub does not synchronize Knowledge into GPT Editor automatically.
+
+PR #147 changed two production Knowledge files:
+
+- `gpt/knowledge/05_ANALYST_NEWS_SIMPLE_LANGUAGE.txt`;
+- `gpt/knowledge/13_COMMUNICATION_STYLE_2026.txt`.
+
+To make the live Custom GPT match current `main`, replace only those two files in GPT Editor, keeping the total production Knowledge set at exactly 10 files, then run Preview smoke tests and press `Update`.
+
+Production Instructions and Action/OpenAPI contract were not changed by cleanup #147, so no Instructions replacement or OpenAPI re-import is required solely because of this cleanup.
+
+## Previously observed Preview acceptance
+
+Owner Preview tests confirmed:
 
 - broker connection;
-- current money/balance;
-- current portfolio composition;
-- 90-day operations;
-- exact single-Action requests;
-- portfolio management flow;
+- money/balance query;
+- current portfolio query;
+- 90-day operations query;
+- exact single-Action isolation;
+- portfolio-management routing;
 - masked account display;
 - Moscow time display.
 
-Portfolio-management Instructions require:
+Portfolio-management baseline:
 
 `getPortfolioSnapshot → getCashLiquiditySnapshot → getPortfolioAnalytics → analysis`
 
-Market/sizing rules block exact personalized lot sizing when a fresh best ask / market-ready state is unavailable.
+Fresh-market gate blocks exact personalized lot sizing without market readiness/fresh best ask.
 
-## Current repository cleanup package
-
-Active branch:
-
-`cleanup/bot-only-repository`
-
-Purpose:
-
-- keep only files directly required by Omni-CIO configuration, runtime, safety, tests and maintenance;
-- consolidate GPT setup into one source of truth;
-- remove obsolete setup duplicates and dated audit/inventory clutter;
-- remove external publishing/transport-specific artifacts from active project files;
-- preserve all runtime dependencies required by `app.py`;
-- preserve original Omni-CIO master plan because it is directly related to this bot's development.
-
-Cleanup must merge only after a fresh Regression Shield succeeds on its exact final head.
-
-## Deliberately retained runtime dependencies
-
-The following files are not garbage even though names look historical:
-
-- `app_v371.py`;
-- `app_v360.py`;
-- `main.py`.
-
-Current `app.py` imports these wrappers/core. Deleting them now would break production. Removing them requires a separate compatibility refactor after this cleanup.
-
-## Secret state
+## Secret boundary
 
 GitHub does not store real values of:
 
 - `TINVEST_TOKEN`;
 - `GATEWAY_API_KEY`;
 - Authorization headers;
-- full account IDs.
+- full account IDs;
+- private broker payloads as configuration.
 
-`TINVEST_TOKEN` stays in Render. `GATEWAY_API_KEY` stays in Render and GPT Action Bearer configuration.
+`TINVEST_TOKEN` remains in Render. `GATEWAY_API_KEY` remains in Render and GPT Action Bearer configuration.
 
-## Current supported capability scope
+## Supported capability scope
 
 Omni-CIO supports read-only:
 
-- Gateway health and T-Invest connection;
-- portfolio/enriched portfolio;
+- health/T-Invest connection;
+- portfolio and enriched positions;
 - instrument search;
 - market snapshots;
 - portfolio analytics;
 - cash/liquidity diagnostics;
 - purchase-capacity preview;
 - operations history/analytics;
-- broker-report reconciliation;
+- official broker-report reconciliation;
 - final decision review;
 - relevant public web/news context through GPT Web Search.
 
-No broker write execution is supported.
+No broker write, cancellation, withdrawal or transfer execution is supported.
 
-## Next maintenance priorities after cleanup
+## Immediate owner acceptance remaining
 
-1. Merge this cleanup only after green Regression Shield.
-2. Verify Render `/health` after merge.
-3. Apply only changed GPT Knowledge files to GPT Editor when needed.
-4. Run standard Preview smoke tests.
-5. Keep repository structure stable; future functionality uses one logical PR at a time.
-6. Address genuine runtime compatibility/warning debt separately without mixing it into product behavior.
+1. Confirm production Render `/health` after PR #147 deployment.
+2. Replace the two changed GPT Knowledge files listed above.
+3. Run Preview smoke tests:
+   - `Проверь подключение к брокеру.`
+   - `Сколько у меня сейчас денег?`
+   - `Что у меня сейчас в портфеле?`
+   - `Какие операции были за последние 90 дней?`
+   - `УПРАВЛЯЙ ПОРТФЕЛЕМ — обнови данные и скажи, что делать.`
+4. Confirm masked account, MSK display and `trading_methods=false`.
+5. Press `Update`.
 
-## Definition of healthy current bot
+## Next maintenance priority
 
-Healthy state requires:
-
-- production Render health OK;
-- T-Invest connection OK;
-- exactly 14 GET Actions;
-- correct Bearer auth;
-- masked account;
-- `trading_methods=false`;
-- simple-command routing works;
-- portfolio-management Action chain works;
-- no stale-price personalized sizing;
-- Preview tests pass after GPT configuration changes.
-
-Green GitHub CI alone does not prove the external GPT/Render state; external acceptance remains a separate final check after backend/configuration changes.
+After owner acceptance, keep repository structure stable. Address actual compatibility/warning debt through separate focused PRs without mixing it into portfolio behavior.
