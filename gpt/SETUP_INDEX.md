@@ -4,17 +4,18 @@
 
 `Omni-CIO API | Управляющий и аналитик v8.4`
 
-UI-name меняется владельцем вручную. Канонические backend/config semantics теперь соответствуют **Instructions v8.6.0**.
+UI-name меняется владельцем вручную. Канонические backend/config semantics соответствуют **Instructions v8.6.0**.
 
 ## Архитектура
 
 ```text
 GitHub (код + эталон конфигурации)
         │
-        ├── Render → Omni-CIO Gateway (`app:app`)
+        ├── Render Free → Omni-CIO Gateway (`app:app`)
         │             ├── TINVEST_TOKEN → production read-only
         │             ├── TINVEST_SANDBOX_TOKEN → optional Sandbox
-        │             └── TINVEST_TRADING_TOKEN → optional confirmed real execution
+        │             ├── TINVEST_TRADING_TOKEN → optional confirmed real execution
+        │             └── HTTPS → Upstash Redis Free → durable real-order journal
         │
         └── вручную → GPT Editor
                       ├── Instructions v8.6.0
@@ -22,7 +23,7 @@ GitHub (код + эталон конфигурации)
                       └── Actions → production OpenAPI
 ```
 
-GitHub не меняет GPT Editor автоматически. Instructions, Knowledge, OpenAPI import и Bearer key применяются владельцем вручную.
+GitHub не меняет GPT Editor, Render Environment или Upstash автоматически. Instructions, Knowledge, OpenAPI import и Bearer key применяются владельцем вручную.
 
 ## Каноническая конфигурация
 
@@ -32,9 +33,11 @@ GitHub не меняет GPT Editor автоматически. Instructions, Kn
 - Recommended model: `Thinking 5.6`.
 - Timezone: `Europe/Moscow` / MSK.
 - Gateway: `https://omni-cio-gateway.onrender.com`.
+- Render instance: **Free**.
 - OpenAPI: `https://omni-cio-gateway.onrender.com/openapi.json`.
 - Health: `https://omni-cio-gateway.onrender.com/health`.
 - Entrypoint: `app:app`.
+- Default real durable backend: `upstash`.
 
 ## 1. Instructions
 
@@ -52,7 +55,8 @@ GitHub не меняет GPT Editor автоматически. Instructions, Kn
 - real proposal и real submit всегда разные user turns;
 - submit требует exact short-lived phrase;
 - `submitted` не считается `filled` без broker fill state;
-- ambiguous submit никогда не повторяется автоматически.
+- ambiguous submit никогда не повторяется автоматически;
+- durable journal failure blocks execution.
 
 ## 2. Knowledge — ровно 10 файлов
 
@@ -101,8 +105,9 @@ Authentication:
 
 - отдельный `TINVEST_TRADING_TOKEN`;
 - valid per-order/daily limits;
-- durable journal на `/var/data`;
-- успешную journal integrity initialization.
+- `REAL_TRADING_JOURNAL_BACKEND=upstash`;
+- valid `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN`;
+- успешную durable-journal integrity initialization.
 
 Если static readiness не выполнен, публикуется только `getRealTradingStatus`; real mutation routes не публикуются.
 
@@ -115,9 +120,9 @@ Authentication:
 
 `cancelRealOrder`, replace, transfer, withdrawal, margin, MARKET execution в first real release отсутствуют.
 
-## 4. Render secrets/config
+## 4. Render Free secrets/config
 
-Никогда не вводить T-Invest tokens в GPT Editor.
+Никогда не вводить T-Invest или Upstash tokens в GPT Editor.
 
 ### Всегда
 
@@ -135,12 +140,22 @@ Authentication:
 
 - `TINVEST_TRADING_TOKEN` — отдельный account-scoped full-access trading token **без transfer access**;
 - `REAL_TRADING_ENABLED=true|false`;
+- `REAL_TRADING_JOURNAL_BACKEND=upstash`;
+- `UPSTASH_REDIS_REST_URL`;
+- `UPSTASH_REDIS_REST_TOKEN`;
 - `REAL_TRADING_MAX_ORDER_RUB`;
 - `REAL_TRADING_MAX_DAILY_RUB`;
 - optional `REAL_TRADING_CONFIRMATION_TTL_SECONDS`;
 - optional `REAL_TRADING_MARKET_MAX_AGE_SECONDS`.
 
-Persistent disk должен быть смонтирован в существующий Render service по `/var/data` до real enable.
+**Render Persistent Disk не нужен.** Сервис остаётся на Free plan; durable state хранится во внешнем Upstash Redis Free.
+
+Upstash Free references:
+
+- `https://upstash.com/redis`
+- `https://upstash.com/pricing/redis`
+
+Для production использовать постоянную Free database в аккаунте, а не unclaimed 72-hour scratch DB.
 
 Подробности: `gpt/SECRETS_AND_RENDER.md` и `docs/operations/REAL_TRADING_RELEASE_RUNBOOK.md`.
 
@@ -192,18 +207,20 @@ Persistent disk должен быть смонтирован в существу
 
 До реальной заявки обязательно пройти Phase 3 без submit:
 
-1. отдельный account-scoped trading token;
-2. persistent disk `/var/data`;
-3. маленькие hard limits;
-4. controlled real enable;
-5. `getRealTradingStatus` ready + masked account;
-6. wrong phrase rejection;
-7. expiry rejection;
-8. hard-limit rejection;
-9. stale/unsupported market rejection;
-10. SELL beyond owned position rejection;
-11. rollback drill: `REAL_TRADING_ENABLED=false` removes real Actions;
-12. read-only and Sandbox regression smoke.
+1. permanent Upstash Redis Free database;
+2. `REAL_TRADING_JOURNAL_BACKEND=upstash` + REST URL/token in Render;
+3. отдельный account-scoped trading token;
+4. маленькие hard limits;
+5. controlled real enable;
+6. `getRealTradingStatus` ready + `journal_backend=upstash` + masked account;
+7. wrong phrase rejection;
+8. expiry rejection;
+9. hard-limit rejection;
+10. stale/unsupported market rejection;
+11. SELL beyond owned position rejection;
+12. Render restart persistence check;
+13. rollback drill: `REAL_TRADING_ENABLED=false` removes real Actions;
+14. read-only and Sandbox regression smoke.
 
 Первая настоящая сделка — только после нового явного разрешения владельца в Phase 4, minimum practical size, LIMIT only, submit once, immediate `getRealOrderState`, then real portfolio reconciliation.
 
@@ -214,6 +231,7 @@ Persistent disk должен быть смонтирован в существу
 - Canonical Instructions: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_0.txt`.
 - Actions: production `/openapi.json` + `gpt/ACTIONS_CATALOG.md`.
 - Secrets/Render: `gpt/SECRETS_AND_RENDER.md`.
+- Durable journal: `docs/operations/REAL_TRADING_DURABLE_STORAGE_V1.md`.
 - Real release: `docs/operations/REAL_TRADING_RELEASE_RUNBOOK.md`.
 - Current engineering status: `knowledge/16_CURRENT_PROGRAM_STATUS.md`.
 - Development rules: `AGENTS.md`.
