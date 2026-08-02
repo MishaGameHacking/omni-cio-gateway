@@ -1,116 +1,119 @@
-# Omni-CIO GPT — Secrets and Render boundary
+# Omni-CIO — Secrets and Render boundary
 
-Этот файл хранит **только архитектуру и имена переменных**. Значения секретов сюда не записываются.
+Этот файл хранит только архитектуру и имена переменных. Значения secrets никогда не записываются в GitHub.
 
 ## Production Render service
 
-Current service:
+Service:
 
-`omni-cio-gateway-au6d`
+`omni-cio-gateway`
 
 Base URL:
 
-`https://omni-cio-gateway-au6d.onrender.com`
+`https://omni-cio-gateway.onrender.com`
 
 Health:
 
-`https://omni-cio-gateway-au6d.onrender.com/health`
+`https://omni-cio-gateway.onrender.com/health`
 
 OpenAPI:
 
-`https://omni-cio-gateway-au6d.onrender.com/openapi.json`
+`https://omni-cio-gateway.onrender.com/openapi.json`
 
-## Environment variables on Render
+## Render Environment
 
-Должны существовать:
+Production service использует:
 
 - `GATEWAY_API_KEY`
 - `TINVEST_TOKEN`
 - `SSL_TBANK_VERIFY`
 
-Значения не хранить в GitHub.
+`render.yaml` задаёт безопасный deployment contract и не содержит secret values.
 
-## Что делает каждый секрет
+## `TINVEST_TOKEN`
 
-### `TINVEST_TOKEN`
+Используется только Gateway на Render для read-only связи с T-Invest API.
 
-Используется **только Gateway на Render** для read-only связи с T-Invest API.
+Не вставлять его:
 
-Не вставлять:
 - в GPT Instructions;
 - в GPT Knowledge;
 - в GPT Action Authentication;
 - в GitHub;
-- в issue/PR/comment/log вручную.
+- в Issue/PR/comment;
+- в пользовательский ответ.
 
-### `GATEWAY_API_KEY`
+## `GATEWAY_API_KEY`
 
-Защищает публичный Omni-CIO Gateway от чужих запросов.
+Защищает Omni-CIO Gateway.
 
-Одно и то же секретное значение должно находиться:
+Одно и то же secret value должно быть:
+
 - в Render Environment как `GATEWAY_API_KEY`;
 - в Custom GPT Action Authentication как `API Key → Bearer`.
 
-В GitHub хранится только имя переменной, не значение.
+GitHub хранит только имя переменной.
 
-### `SSL_TBANK_VERIFY`
+## `SSL_TBANK_VERIFY`
 
-Управляет проверкой TLS/SSL соединения с T-Invest согласно runtime-конфигурации проекта.
-
-Production ожидает безопасное значение, предусмотренное `render.yaml` и Gateway runtime.
+Production ожидает TLS verification согласно `render.yaml`/runtime. Не отключать проверку только ради устранения сетевой ошибки без отдельного security analysis.
 
 ## Правильная цепочка
 
+```text
 Custom GPT
-→ Authorization: Bearer <GATEWAY_API_KEY>
-→ Omni-CIO Gateway on Render
-→ TINVEST_TOKEN внутри server environment
-→ T-Invest API
+  ↓ Authorization: Bearer <GATEWAY_API_KEY>
+Omni-CIO Gateway on Render
+  ↓ TINVEST_TOKEN stored server-side
+T-Invest API
+```
 
-Пользовательский GPT не должен напрямую знать T-Invest token.
+Custom GPT не должен напрямую получать T-Invest token.
 
 ## Health contract
 
-`/health` может подтверждать наличие конфигурации через boolean/state поля, но не должен возвращать сами секреты.
+`/health` может показывать boolean/configured state, но не secret values.
 
-Ожидаемые инварианты:
+Ожидается:
+
 - `status=ok`;
 - `version=3.10.0`;
-- `build.entrypoint=app:app`;
+- `entrypoint=app:app` или эквивалентный build marker;
 - `trading_methods=false`;
-- gateway API key configured;
-- T-Invest token configured.
+- T-Invest token configured;
+- Gateway API key configured.
 
 ## Rotation
 
-Если нужно заменить `TINVEST_TOKEN`:
-1. обновить только Render Environment;
-2. дождаться/restart deploy при необходимости;
-3. проверить `/health`;
-4. протестировать `getConnection` в GPT.
+### T-Invest token
 
-Если нужно заменить `GATEWAY_API_KEY`:
-1. обновить Render Environment;
-2. обновить Bearer secret в GPT Action Authentication тем же новым значением;
-3. проверить `gatewayHealth`;
-4. проверить `getConnection`.
+1. Обновить только `TINVEST_TOKEN` в Render Environment.
+2. Перезапустить/deploy service, если Render требует.
+3. Проверить `/health`.
+4. Проверить `getConnection` через GPT.
 
-GitHub-файлы при простой ротации секретов менять не нужно.
+GPT Action Bearer при этом не меняется.
 
-## Запрещено хранить в GitHub
+### Gateway key
+
+1. Обновить `GATEWAY_API_KEY` в Render.
+2. В GPT Editor заменить Bearer secret тем же новым значением.
+3. Проверить `gatewayHealth`/`getConnection`.
+4. Не коммитить значение в GitHub.
+
+## Что не хранить в GitHub
 
 - значения `TINVEST_TOKEN`;
 - значения `GATEWAY_API_KEY`;
 - Authorization headers;
-- полный номер брокерского счёта;
-- приватные операции и позиции как конфигурационные данные;
-- реальные брокерские отчёты, если они содержат чувствительные данные;
-- секретные Render exports.
+- full account ID;
+- private broker reports/operations/positions as configuration data;
+- Render secret exports.
 
-## Дубликаты Render
+## Single-service rule
 
-Custom GPT v8.4 настроен на production URL:
+Canonical production Gateway для Custom GPT один:
 
-`https://omni-cio-gateway-au6d.onrender.com`
+`https://omni-cio-gateway.onrender.com`
 
-Не переключать GPT на другой Render service только по совпадению имени. Перед изменением обязательно проверить `/health`, версию, commit/deployment и `trading_methods=false`.
+Не переключать GPT на старые/альтернативные Render service URLs. Перед любым endpoint change требуется отдельная проверка health, version, deployment commit, auth and `trading_methods=false`.
