@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import date, datetime
 from decimal import Decimal
+import hashlib
 from threading import RLock
 from typing import Any, Protocol, cast
 from zoneinfo import ZoneInfo
@@ -22,14 +23,11 @@ class JournalDailyCapExceeded(RuntimeError):
 
 
 class RealExecutionJournalV1(Protocol):
-    """Durable-journal contract required by future real-money execution.
+    """Journal contract required by real-money execution.
 
-    Production wiring must provide a durable implementation. The in-memory
-    implementation below exists only for unit tests and isolated Phase 1 work.
-
-    `reserve_submission` is intentionally atomic: daily-budget validation and
-    prepared -> submitting transition must happen in one durable transaction so
-    concurrent confirmations cannot both pass the same daily limit.
+    `reserve_submission` is atomic: daily-budget validation and prepared ->
+    submitting transition happen together so concurrent confirmations cannot
+    both consume the same remaining daily budget.
     """
 
     durable: bool
@@ -119,11 +117,17 @@ class InMemoryRealExecutionJournalV1:
             already = self._submitted_notional_for_moscow_date_unlocked(day)
             if already + current.preview_total_rub > max_daily_rub:
                 raise JournalDailyCapExceeded("daily submission cap exceeded")
+            evidence = confirmation_evidence_hash or hashlib.sha256(
+                (
+                    f"{current.proposal_id}\n{current.order_id}\n"
+                    f"{current.confirmation_phrase}"
+                ).encode("utf-8")
+            ).hexdigest()
             updated = replace(
                 current,
                 state=cast(ProposalState, "submitting"),
                 submitted_at=submitted_at,
-                confirmation_evidence_hash=confirmation_evidence_hash,
+                confirmation_evidence_hash=evidence,
             )
             self._items[proposal_id] = updated
             return updated
