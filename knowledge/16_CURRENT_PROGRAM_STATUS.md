@@ -1,228 +1,259 @@
 # 16 — CURRENT PROGRAM STATUS
 
-Дата актуализации: 2026-08-02
+Дата актуализации: 2026-08-03
 
-## Accepted cleanup baseline
+## Executive state
 
-Repository cleanup package:
+Omni-CIO remains one supported Custom GPT + one production Render Gateway.
 
-- PR #147 — `Cleanup: reduce repository to active Omni-CIO bot and Gateway`;
-- cleanup squash commit: `2032c4d9be66892af25cbaf995f0eb29922436c3`;
-- exact-head Regression Shield run #871 completed successfully;
-- PR #148 synchronized this status after the cleanup and also passed a fresh Regression Shield before merge;
-- PR #149 removed the self-referential latest-main SHA from this status and passed Regression Shield run #875 before squash merge.
+Current engineering state:
 
-Do not hardcode the ever-changing latest `main` SHA in this status document: merging the document itself changes `main`. For the exact current SHA, read the GitHub `main` ref.
+- production read-only analytics contour: accepted;
+- isolated T-Invest Sandbox execution: accepted and extensively Preview-tested;
+- real-money v1 **Phases 0–2 engineering are now merged**;
+- real-money execution remains default-off until owner Phase 3 configuration and negative Preview acceptance;
+- first real order has **not** been authorized or submitted as part of the release program;
+- do not declare the real buy/sell feature fully released until Phase 3, rollback drill and Phase 4 controlled real execution/reconciliation pass.
 
-Previous product/configuration behavior package:
+## Canonical Custom GPT configuration
 
-- PR #146 — tool-first Custom GPT portfolio routing;
-- production read-only Instructions baseline was `v8.4.1`;
-- canonical Sandbox-enabled Instructions are `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_5_0.txt`.
-
-## Sandbox execution backend accepted into main
-
-PR #160 — `Sandbox: add confirmed T-Invest virtual trade execution` — was squash-merged after exact-head Regression Shield run #909 completed successfully.
-
-PR #162 — `Sandbox: fix Render TLS for T-Invest REST` — was squash-merged as main commit `95daa1670d637a09153745a2b79c1b9c6edb333c` after exact-head Regression Shield passed. It fixes the Sandbox REST TLS/CA path used from Render without weakening certificate verification.
-
-Merged Sandbox backend provides an **optional virtual execution contour only**. It does not enable real-money trading.
-
-Key properties:
-
-- T-Invest Sandbox egress is hard-bound to `sandbox-invest-public-api.tbank.ru/rest`;
-- uses only separate `TINVEST_SANDBOX_TOKEN`;
-- production `TINVEST_TOKEN` remains read-only;
-- server kill switch: `SANDBOX_TRADING_ENABLED`;
-- default/off state preserves the existing 14-GET production Action surface;
-- enabled state adds 8 Sandbox Actions and no real-money mutation Actions;
-- BUY/SELL is two-phase: proposal/preflight → exact short-lived confirmation → submit;
-- confirmation is bound to immutable order parameters;
-- own-funds/own-position limits are checked during prepare and again immediately before submit;
-- UUID request/order id provides idempotency;
-- duplicate successful execution does not submit twice;
-- ambiguous timeout/5xx after submit never auto-retries;
-- margin confirmation is hard-disabled;
-- Sandbox account identifiers are masked in user-facing payloads;
-- withdrawal/transfer, real broker writes, stop-order automation and automatic replace are absent.
-
-Canonical Sandbox Instructions:
-
-`gpt/CUSTOM_GPT_INSTRUCTIONS_V8_5_0.txt`
-
-Owner runbook:
-
-`docs/operations/SANDBOX_TRADING_RUNBOOK.md`
-
-## Owner Preview acceptance observed on 2026-08-02
-
-The owner enabled the isolated Sandbox contour in Render with a dedicated Sandbox token, refreshed the GPT Action surface, and performed live Preview acceptance against the deployed Gateway.
-
-Observed successful scenarios:
-
-- `getSandboxTradingStatus` returned healthy Sandbox state with `real_money=false`;
-- Sandbox account creation required the exact owner confirmation phrase;
-- virtual account funding required a separate exact owner confirmation phrase;
-- `getSandboxPortfolio` reflected virtual cash and later virtual positions;
-- SBER instrument identity and market snapshot were resolved before trading tests;
-- MARKET BUY proposal required a short-lived exact confirmation and executed only after a new user message;
-- MARKET SELL executed against an existing Sandbox position;
-- SELL without an owned position was blocked before execution;
-- expired confirmation was rejected and required a fresh proposal;
-- wrong confirmation phrase returned `SANDBOX_CONFIRMATION_MISMATCH` and did not change the portfolio;
-- duplicate confirmation of an already submitted proposal returned replay/idempotency protection instead of creating a second order;
-- LIMIT BUY remained active in `NEW`, was queried by `getSandboxOrderState`, cancelled through `cancelSandboxOrder`, and subsequently reported `CANCELLED` with zero lots filled;
-- portfolio checks after negative-confirmation tests confirmed no extra virtual position was created;
-- throughout the observed tests responses remained `sandbox=true`, `real_money=false`, `sandbox_trading_methods=true`, `real_trading_methods=false`.
-
-This is strong evidence that the core Sandbox execution path and confirmation/replay/cancel protections work through the real GPT → Render → T-Invest Sandbox chain.
-
-### Remaining Sandbox hardening acceptance
-
-The owner has **not yet externally exercised every destructive/recovery scenario from the runbook**. Before treating the full Sandbox runbook as exhausted, still verify when convenient:
-
-- kill-switch rollback: `SANDBOX_TRADING_ENABLED=false` removes Sandbox routes from OpenAPI;
-- multiple-open-Sandbox-account fail-closed behavior;
-- proposal invalidation after Render restart;
-- ambiguous post-submit timeout/5xx recovery via `unknown_do_not_resubmit` + order-state reconciliation.
-
-These remaining checks do not justify enabling any real-money trading method.
-
-## Current production boundary
-
-- Custom GPT product: `Omni-CIO API | Управляющий и аналитик v8.4`;
+- UI/product name currently remains `Omni-CIO API | Управляющий и аналитик v8.4` until owner manually renames it;
+- canonical behavior instructions: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_0.txt` after this release package is merged/applied;
+- historical Sandbox instructions: v8.5.0;
+- historical read-only fallback: v8.4.1;
 - recommended model: `Thinking 5.6`;
 - user-visible timezone: `Europe/Moscow` / MSK;
-- production endpoint: `https://omni-cio-gateway.onrender.com`;
-- production Render service: `omni-cio-gateway`;
-- entrypoint: `app:app`;
-- real broker contour remains read-only;
-- production `TINVEST_TOKEN` remains read-only;
-- `real_trading_methods=false`;
-- no real order create/submit/cancel/replace endpoint is published;
-- withdrawal/transfer methods are absent.
+- production Gateway: `https://omni-cio-gateway.onrender.com`;
+- entrypoint: `app:app`.
 
-When `SANDBOX_TRADING_ENABLED=false`, expected Action surface remains exactly 14 GET Actions. When explicitly enabled, the separate Sandbox surface is available in addition to the read-only production Actions.
+GitHub does not automatically update GPT Editor Instructions/Knowledge/OpenAPI.
 
-## Render topology
+## Production read-only contour
 
-Intended topology remains one active Render Web Service:
+Existing `TINVEST_TOKEN` remains read-only and must stay read-only.
 
-- `omni-cio-gateway`;
-- no active Blueprint instance;
-- obsolete Telegram service removed;
-- obsolete duplicate/alternate Gateway service removed;
-- service connected to `Misha2304/omni-cio-gateway` / `main`;
-- `render.yaml` remains only a declarative/recovery contract.
+Supported read-only facts include:
 
-Sandbox does **not** require a second Render service. It is an optional isolated contour inside the same Gateway.
+- connection/account masking;
+- portfolio and enriched positions;
+- cash/liquidity;
+- instrument search;
+- market snapshot and order book;
+- portfolio market snapshot/analytics;
+- purchase-capacity preview;
+- operations history/analytics;
+- official broker-report reconciliation;
+- reviewed decision retrieval;
+- public web/news context through GPT when required.
 
-Render secret/config separation:
-
-- `TINVEST_TOKEN` — production read-only;
-- `TINVEST_SANDBOX_TOKEN` — Sandbox only;
-- `GATEWAY_API_KEY` — GPT → Gateway Bearer secret;
-- `SANDBOX_TRADING_ENABLED` — Sandbox kill switch;
-- `SANDBOX_CONFIRMATION_TTL_SECONDS` — short-lived confirmation TTL.
-
-## Repository structure
-
-Repository remains organized around one supported product:
-
-`Omni-CIO Custom GPT → Omni-CIO Gateway → T-Invest API`
-
-Primary areas:
-
-- runtime/wrappers — root + `omni_cio/`;
-- Sandbox execution — `omni_cio/sandbox/` only;
-- GPT configuration — `gpt/`;
-- engineering/domain memory — `knowledge/`;
-- master plan — `docs/master-plan/`;
-- active architecture/runbooks — `docs/architecture/`, `docs/operations/`;
-- regression/security — `tests/`, `scripts/`, `.github/`.
-
-`app_v371.py`, `app_v360.py` and `main.py` remain runtime dependencies and must not be deleted as legacy without a separate compatibility refactor.
-
-## Accepted read-only Preview baseline
-
-Previously observed owner Preview tests confirmed:
-
-- broker connection;
-- money/balance query;
-- current portfolio query;
-- 90-day operations query;
-- exact single-Action isolation;
-- portfolio-management routing;
-- masked account display;
-- Moscow time display.
-
-Portfolio-management baseline:
+Portfolio-management routing baseline:
 
 `getPortfolioSnapshot → getCashLiquiditySnapshot → getPortfolioAnalytics → analysis`
 
-Fresh-market gate blocks exact personalized lot sizing without market readiness/fresh best ask.
+Fresh-market gate blocks exact personalized sizing when market/order-book evidence is stale or incomplete.
 
-## Secret boundary
+## Sandbox execution accepted
 
-GitHub stores no real values of:
+Merged Sandbox backend uses a separate `TINVEST_SANDBOX_TOKEN`, fixed Sandbox host and server kill switch.
+
+Owner Preview acceptance on 2026-08-02 demonstrated:
+
+- healthy `getSandboxTradingStatus` with `real_money=false`;
+- confirmed virtual account creation/funding;
+- virtual portfolio read-back;
+- SBER identity/market resolution;
+- MARKET BUY and SELL with two-phase exact confirmation;
+- SELL-without-position rejection;
+- expiry rejection;
+- wrong phrase rejection;
+- replay/idempotency protection;
+- LIMIT order status → confirmed cancellation → CANCELLED state;
+- portfolio reconciliation after tests;
+- all observed Sandbox responses remained isolated from real money.
+
+Sandbox remains independent of real execution.
+
+## Real-money release program — Phase 0 complete
+
+Tracking issue: #164.
+
+Merged design package defines:
+
+- separate account-scoped `TINVEST_TRADING_TOKEN`;
+- never promote/overwrite `TINVEST_TOKEN`;
+- no transfer-access token;
+- `REAL_TRADING_ENABLED=false` default-off;
+- LIMIT/CURRENCY/DAY cash-security v1 only;
+- no margin/short/derivatives/currency execution/stop/replace/async;
+- immutable proposal + exact short-lived owner confirmation in a new message;
+- own-funds/own-position preflight;
+- account binding/masking;
+- server hard caps;
+- idempotency + ambiguous-submit no-retry;
+- durable state requirement;
+- rollback and staged acceptance.
+
+Architecture: `docs/architecture/REAL_TRADING_V1.md`.
+
+Runbook: `docs/operations/REAL_TRADING_RELEASE_RUNBOOK.md`.
+
+## Real-money release program — Phase 1 complete
+
+Merged `omni_cio/real_trading/` core provides:
+
+- production REST host fixed to `https://invest-public-api.tbank.ru/rest`;
+- narrow method allowlist;
+- dedicated token passed explicitly; no `TINVEST_TOKEN` environment fallback inside real package;
+- exactly one open trading account required and bound to the read-only account;
+- cash share/ETF + RUB + LIMIT only;
+- exact price-step validation;
+- `GetMaxLots` own-funds BUY / own-position SELL checks;
+- `GetOrderPrice` cost/commission preview;
+- configurable order/daily caps plus immutable code ceilings;
+- trusted fresh market gate;
+- HMAC-bound proposal/confirmation;
+- pre-submit account/market/preflight revalidation;
+- atomic daily reservation;
+- UUID idempotency;
+- `PostOrder` with `TIME_IN_FORCE_DAY`, `PRICE_TYPE_CURRENCY`, `confirmMarginTrade=false`;
+- definitive rejection → failed;
+- possible-submit transport/5xx ambiguity → unknown/do-not-resubmit;
+- request-id `GetOrderState` reconciliation;
+- masked/sanitized broker data;
+- production requires a durable journal.
+
+Fake-client/security/regression tests are merged and green.
+
+## Real-money release program — Phase 2 complete in backend
+
+PR #168 — `Trading: add durable state and conditional real-money Actions` — passed exact-head Regression Shield/security and was squash-merged as commit:
+
+`68e2a658c6d379e8e446b6bc0b46d78beb70c755`
+
+Merged Phase 2 adds:
+
+### Durable execution state
+
+`SQLiteRealExecutionJournalV1`:
+
+- fixed production path `/var/data/omni-cio-real-trading.sqlite3`;
+- intended for a Render persistent disk mounted at `/var/data`;
+- WAL + `synchronous=FULL`;
+- `BEGIN IMMEDIATE` atomic reservation;
+- canonical proposal JSON;
+- HMAC row integrity + revision protection;
+- restart recovery;
+- submitted/unknown daily accounting;
+- confirmation evidence hash persisted;
+- offline tamper detection;
+- broker tokens/Authorization headers are never stored.
+
+### Trusted market adapter
+
+Real execution consumes the established read-only market snapshot but fails closed unless:
+
+- requested/resolved UID identity matches;
+- reference/trading status/order book components are complete;
+- identity has no conflict;
+- instrument type is v1-supported;
+- lot/min-price increment are valid;
+- API trading + limit order flags allow the request;
+- freshness is proven by `order_book.time`, not merely gateway request time.
+
+### Conditional Actions
+
+When `REAL_TRADING_ENABLED=false`, all Real Trading Actions are absent.
+
+When flag is true but mandatory static config/journal is invalid, only safe readiness status can publish; mutation routes remain absent.
+
+When static readiness is valid, only these real Actions register:
+
+- `getRealTradingStatus`;
+- `prepareRealTrade`;
+- `executeRealTrade` — consequential;
+- `getRealOrderState`.
+
+No real cancel/replace/transfer/withdraw/market/margin route exists in first release.
+
+Default-off read-only release contract remains green: existing baseline OpenAPI is unchanged until owner intentionally enables real routes.
+
+## Current secret/infrastructure boundary
+
+GitHub stores no values of:
 
 - `TINVEST_TOKEN`;
 - `TINVEST_SANDBOX_TOKEN`;
-- future real full-access/transfer-access broker token values;
+- `TINVEST_TRADING_TOKEN`;
 - `GATEWAY_API_KEY`;
 - Authorization headers;
 - full account IDs;
 - private broker payloads as configuration.
 
-## Supported capability scope
+One Render service remains canonical.
 
-### Real production contour
+Real execution additionally requires owner-provisioned persistent disk `/var/data` and a separate non-transfer trading token.
 
-Still read-only:
+Details: `gpt/SECRETS_AND_RENDER.md`.
 
-- health/T-Invest connection;
-- portfolio and enriched positions;
-- instrument search;
-- market snapshots;
-- portfolio analytics;
-- cash/liquidity diagnostics;
-- purchase-capacity preview;
-- operations history/analytics;
-- official broker-report reconciliation;
-- final decision review;
-- relevant public web/news context through GPT Web Search.
+## Current Action surface before owner real enable
 
-### Optional Sandbox contour after explicit enable
+Expected production behavior while `REAL_TRADING_ENABLED=false`:
 
-- Sandbox status/accounts;
-- virtual account bootstrap/funding;
-- virtual portfolio/positions;
-- BUY/SELL proposal and preflight;
-- explicit confirmed virtual submit;
-- order-state verification;
-- explicit confirmed Sandbox cancellation.
+- baseline 14 read-only GET Actions;
+- +8 Sandbox Actions if `SANDBOX_TRADING_ENABLED=true`;
+- **no Real Trading Actions**.
 
-Real-money order submission/cancellation/replace, withdrawal and transfer remain unsupported.
+This remains the safe state during code/document deployment.
 
-## Next development stage
+## Next gate — Phase 3 owner configuration, NO REAL SUBMIT
 
-The next engineering package is a **separate real-money execution design/release program**. Development may proceed in isolated branches, but real broker writes remain disabled until the new release has its own threat model, tests, exact-head Regression Shield and owner acceptance.
+Engineering Phases 0–2 are complete. The next genuinely owner-only work is:
 
-Mandatory design boundary for that future release:
+1. attach Render persistent disk to existing `omni-cio-gateway`, mount `/var/data`;
+2. issue separate account-scoped full-access T-Invest trading token without transfer access;
+3. store only in Render as `TINVEST_TRADING_TOKEN`;
+4. keep `TINVEST_TOKEN` unchanged/read-only;
+5. configure deliberately small `REAL_TRADING_MAX_ORDER_RUB` and `REAL_TRADING_MAX_DAILY_RUB`;
+6. keep `REAL_TRADING_ENABLED=false` initially;
+7. deploy/read-only + Sandbox smoke;
+8. controlled enable;
+9. import new OpenAPI in GPT Editor and apply Instructions v8.6.0;
+10. complete negative Preview acceptance with **zero real submit**;
+11. prove kill-switch rollback removes Real Trading Actions.
 
-- never promote or overwrite the existing `TINVEST_TOKEN`;
-- use a separate account-scoped trading token with only the minimum broker permissions required for orders;
-- keep withdrawal/transfer completely absent from the Action surface and implementation;
-- separate real-trading kill switch, default `false`;
-- proposal/preflight first, then an exact short-lived owner confirmation in a new message, then submit;
-- revalidate instrument, account, quantity, price/market state, own funds/position and risk limits immediately before submit;
-- immutable proposal parameters and UUID/idempotency protection;
-- fail closed on stale/incomplete/contradictory data;
-- ambiguous submit must never auto-resubmit and must reconcile order state;
-- hard per-order and daily notional/lot limits configurable server-side;
-- production order state and portfolio must be reconciled after execution;
-- account IDs remain masked;
-- explicit audit trail without tokens, full account IDs or private payload dumps;
-- no margin automation, no stop-order automation, no auto-replace in the first real-money release.
+Exact steps are in `docs/operations/REAL_TRADING_RELEASE_RUNBOOK.md` and `gpt/SETUP_INDEX.md`.
 
-Until that separate release passes, `real_trading_methods=false` is an invariant.
+## Phase 4 still required for Definition of Done
+
+After Phase 3 passes, a first real order requires a **new explicit owner instruction at that time**.
+
+It must be:
+
+- liquid supported cash security;
+- minimum practical size;
+- LIMIT only;
+- fresh market;
+- complete proposal;
+- exact confirmation in a new message;
+- submit once;
+- immediate `getRealOrderState`;
+- broker fill/partial-fill truth preserved;
+- real portfolio/operations reconciled;
+- idempotent replay verified safely;
+- stop on any ambiguity.
+
+## Definition of Done
+
+Do not use the final completion phrase until all of these are complete:
+
+- code merged;
+- exact-head Regression Shield/security green;
+- GPT v8.6 configuration package merged/applied;
+- owner Phase 3 negative Preview acceptance;
+- kill-switch rollback drill;
+- first controlled real order explicitly authorized;
+- broker state reconciled;
+- real portfolio/operations reconciled;
+- replay protection verified without a second submit.
+
+Until then the release is **engineering-ready, not fully owner-accepted real-money production**.
