@@ -126,8 +126,8 @@ def service(
         [BASE_TIME - timedelta(seconds=1), BASE_TIME + timedelta(seconds=9)]
     )
     result = RealTradingServiceV1(
-        token="dedicated-trading-token",
-        gateway_secret="gateway-secret",
+        token="dedicated-trading-token",  # pragma: allowlist secret
+        gateway_secret="gateway-secret",  # pragma: allowlist secret
         expected_account_id=ACCOUNT_ID,
         policy=policy(daily=daily, order=order),
         journal=journal,
@@ -154,8 +154,8 @@ def test_production_constructor_requires_durable_journal() -> None:
     journal = InMemoryRealExecutionJournalV1()
     with pytest.raises(RealTradingApiFailure) as exc_info:
         RealTradingServiceV1(
-            token="dedicated",
-            gateway_secret="secret",
+            token="dedicated",  # pragma: allowlist secret
+            gateway_secret="secret",  # pragma: allowlist secret
             expected_account_id=ACCOUNT_ID,
             policy=policy(),
             journal=journal,
@@ -168,8 +168,8 @@ def test_production_constructor_requires_durable_journal() -> None:
 def test_policy_rejects_values_above_v1_absolute_ceiling() -> None:
     with pytest.raises(RealTradingApiFailure) as exc_info:
         RealTradingServiceV1(
-            token="dedicated",
-            gateway_secret="secret",
+            token="dedicated",  # pragma: allowlist secret
+            gateway_secret="secret",  # pragma: allowlist secret
             expected_account_id=ACCOUNT_ID,
             policy=policy(daily="300001", order="100001"),
             journal=InMemoryRealExecutionJournalV1(),
@@ -435,11 +435,11 @@ def test_order_state_reconciles_by_request_id_and_masks_account() -> None:
 def test_sanitizer_redacts_sensitive_keys_recursively() -> None:
     payload = {
         "accountId": ACCOUNT_ID,
-        "token": "secret-token",
-        "nested": {"Authorization": "Bearer secret"},
+        "token": "secret-token",  # pragma: allowlist secret
+        "nested": {"Authorization": "Bearer secret"},  # pragma: allowlist secret
     }
     encoded = sanitized_json(payload)
     assert ACCOUNT_ID not in encoded
-    assert "secret-token" not in encoded
-    assert "Bearer secret" not in encoded
+    assert "secret-token" not in encoded  # pragma: allowlist secret
+    assert "Bearer secret" not in encoded  # pragma: allowlist secret
     assert "***1234" in encoded
