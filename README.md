@@ -1,300 +1,218 @@
-# Omni-CIO Control Center
+# Omni-CIO — Custom GPT + read-only T-Invest Gateway
 
-Приватная read-only система инвестиционной аналитики для российского рынка.
-Поддерживаемый пользовательский интерфейс находится в Custom GPT внутри
-ChatGPT:
+Omni-CIO — личный инвестиционный аналитик внутри ChatGPT. Единственный пользовательский интерфейс проекта — Custom GPT `Omni-CIO API | Управляющий и аналитик v8.4`.
 
 ```text
-Custom GPT ── Omni-CIO Gateway (`app:app`) ── T-Invest API
-                         │
-                         └── official market, macro and rating sources
+GitHub main ──> Render: Omni-CIO Gateway (`app:app`) ──> T-Invest API
+     │                         │
+     │                         └── read-only broker/market data
+     │
+     └──> эталон GPT configuration
+                │
+                └── вручную → GPT Editor
+
+Custom GPT Actions ──HTTPS/Bearer──> https://omni-cio-gateway.onrender.com
 ```
 
-## Текущее состояние
+## Текущее production-состояние
 
-- System release: **v4.1.0 ChatGPT-only Runtime**.
-- Gateway API component: **v3.10.0 Final Decision Review GET Route**.
-- Фактическая слитая функциональная вершина на 2026-08-01: **PR-104**.
-- Последний инфраструктурный merge: **PR #130**.
-- Текущий `main`: `52a818daa64f4290fd6f551fbbc7f77bea3a94b2`.
-- Gateway production entrypoint: `app:app`.
-- User-facing surface: exactly 14 GET Actions.
+- Production Instructions: **v8.4.1**.
+- GPT UI configuration: **v8.4**.
+- Recommended model: **Thinking 5.6**.
+- Gateway API: **v3.10.0**.
+- Production entrypoint: **`app:app`**.
+- Production Render service: **`omni-cio-gateway`**.
+- User-facing API: **ровно 14 GET Actions**.
 - `trading_methods=false`.
-- Создание, отправка, замена и отмена заявок запрещены.
-- Вывод, перевод денег и перевод ценных бумаг не реализуются.
-- Telegram Companion выведен из эксплуатации; package, Blueprint, webhook и
-  активная конфигурация отсутствуют.
-- Functional roadmap временно находится в audit hold до merge текущего audit
-  package, синхронизации issue #27, warning debt и dependency queue review.
+- Broker account ID показывается только маскированно.
+- User-visible timezone: **Москва / Europe/Moscow / MSK**.
+- Создание, отправка, замена и отмена заявок отсутствуют.
+- Вывод/перевод денег и ценных бумаг отсутствуют.
 
-Оперативное состояние и следующий безопасный пакет:
-[`knowledge/16_CURRENT_PROGRAM_STATUS.md`](knowledge/16_CURRENT_PROGRAM_STATUS.md).
+Текущий статус: `knowledge/16_CURRENT_PROGRAM_STATUS.md`.
 
-Аудит 2026-08-01:
-[`docs/audits/PROJECT_AUDIT_2026-08-01.md`](docs/audits/PROJECT_AUDIT_2026-08-01.md).
+## Что умеет бот
 
-## Что уже реализовано
+- проверять Gateway и подключение T-Invest;
+- получать портфель и позиции;
+- обогащать идентификаторы инструментов;
+- показывать деньги, блокировки и ликвидность;
+- анализировать структуру и концентрацию;
+- получать market snapshot инструмента и портфеля;
+- находить инструмент;
+- проверять technical purchase capacity без создания заявки;
+- получать историю и аналитику операций;
+- сверять официальный broker report T-Invest;
+- выполнять read-only final decision review;
+- анализировать рыночные/макро/рейтинговые данные, поддерживаемые runtime;
+- использовать Web Search для свежих публичных новостей/событий после получения broker facts;
+- объяснять результат современным понятным русским языком;
+- сравнивать действие с вариантом `NO_ACTION/CASH`.
 
-### Gateway and portfolio
+## Что бот не делает
 
-- connection and health;
-- portfolio snapshots and instrument enrichment;
-- portfolio market snapshot and analytics;
-- cash and liquidity diagnostics;
-- purchase-capacity preview and integrity;
-- operations history, analytics and cash-flow reconciliation;
-- official T-Invest broker-report generation and reconciliation;
-- private read-only final-decision-review retrieval;
-- fail-closed quality, risk, shadow, paper and preview controls.
+- не торгует;
+- не создаёт и не отправляет заявки;
+- не заменяет и не отменяет заявки;
+- не выводит деньги;
+- не меняет брокерский счёт;
+- не обещает доходность;
+- не использует stale price как подтверждённую цену покупки;
+- не хранит broker tokens в GitHub.
 
-### Official sources
+## Как им пользоваться
 
-- Bank of Russia key-rate source, exact cache, safe observability, global alert
-  policy and deterministic evidence lifecycle;
-- MOEX ISS TQBR quote source, exact cache, safe observability, global alert
-  policy and deterministic evidence lifecycle;
-- separate ACRA issuer-rating source, cache, observability, alert and evidence;
-- separate Expert RA issuer-rating source, cache, observability, alert and
-  evidence;
-- separate NCR issuer-rating source.
+Пользователь не обязан знать названия Actions.
 
-Agency scales and subject identities are not merged through a generic adapter.
-These packages do not create routes, startup network calls or trading authority
-unless a separately reviewed contract explicitly says otherwise.
+Примеры:
 
-### CI and release operations
+- `Сколько у меня сейчас денег?`
+- `Что у меня сейчас в портфеле?`
+- `Проверь подключение к брокеру.`
+- `Какие операции были за последние 90 дней?`
+- `АНАЛИТИК — объясни состояние портфеля простыми словами.`
+- `НОВОСТИ — проверь важные события по моим компаниям.`
+- `УПРАВЛЯЙ ПОРТФЕЛЕМ — обнови данные и скажи, что делать.`
 
-- hash-locked runtime and development dependencies;
-- full-SHA pinned GitHub Actions;
-- blocking Regression Shield for locks, compile, lint, types, contracts,
-  coverage, dependency audit, SAST and secret scan;
-- bounded read-only Windows runner diagnostic with exact `.runner` and
-  `.service` identity checks;
-- persistent-runner recovery runbook without credential or token storage.
+Для режима управления базовый обязательный dispatch:
 
-## Safety invariants
+`getPortfolioSnapshot → getCashLiquiditySnapshot → getPortfolioAnalytics → анализ`
 
-- all user-facing Gateway Actions are GET-only;
-- `trading_methods=false` is verified by Regression Shield;
-- `app:app` remains the stable Render entrypoint;
-- no order, stop-order, cancellation, transfer or withdrawal operation is
-  published or allowed;
-- account identifiers are masked;
-- secrets and real brokerage payloads are not stored in GitHub;
-- currencies are not combined without verified FX and timestamp;
-- monetary calculations use exact decimal logic;
-- stale, partial, truncated or contradictory data fail closed;
-- no test calls real Render or T-Invest production endpoints;
-- each package uses a separate branch and Pull Request;
-- squash merge is allowed only after exact-head Regression Shield.
+Если пользователь просит `вызови только <Action>`, вызывается только этот Action.
 
-Canonical rules: [`AGENTS.md`](AGENTS.md).
+## Как GitHub связан с ботом
 
-## Начать работу
+GitHub выполняет две роли:
 
-Новый чат, Codex, Copilot или IDE должны прочитать:
+1. **Backend source** — код Gateway хранится в `main`; Render разворачивает production Gateway из репозитория согласно своей deploy-настройке.
+2. **Configuration source** — GitHub хранит эталон Name/Description/Instructions/Knowledge/Action catalog.
 
-1. [`AGENTS.md`](AGENTS.md)
-2. [`README.md`](README.md)
-3. [`docs/README.md`](docs/README.md)
-4. [`docs/master-plan/README.md`](docs/master-plan/README.md)
-5. [`docs/master-plan/OMNI_CIO_MASTER_PROMPT_V9.txt`](docs/master-plan/OMNI_CIO_MASTER_PROMPT_V9.txt)
-6. [`knowledge/00_PROJECT_MASTER_CONTEXT.md`](knowledge/00_PROJECT_MASTER_CONTEXT.md)
-7. [`knowledge/16_CURRENT_PROGRAM_STATUS.md`](knowledge/16_CURRENT_PROGRAM_STATUS.md)
-8. [`gpt/INSTRUCTIONS.md`](gpt/INSTRUCTIONS.md)
-9. [`gpt/ACTIONS_CATALOG.md`](gpt/ACTIONS_CATALOG.md)
-10. профильный файл из [`knowledge/`](knowledge/)
-11. current `main`, open PRs, issue #27 and latest GitHub Actions
+Важно: **GPT Editor не синхронизируется с GitHub автоматически**. Если менялись Instructions или Knowledge, владелец вручную применяет актуальные файлы из `main`, выполняет Preview и нажимает `Update`.
 
-Готовый стартовый запрос: [`gpt/NEW_CHAT_PROMPT.md`](gpt/NEW_CHAT_PROMPT.md).
+Custom GPT в работе обращается **к Render Gateway**, а не к GitHub.
 
-Старая переписка или временный номер PR не заменяют фактический `main`.
+## Настройка и восстановление GPT
 
-## Карта репозитория
+Начинать только с:
+
+`gpt/SETUP_INDEX.md`
+
+Ключевые файлы:
+
+- `gpt/CONFIGURATION.md` — Name, Description, starters, model, capabilities;
+- `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_4_1.txt` — единственные production Instructions;
+- `gpt/knowledge/` — ровно 10 Knowledge-файлов;
+- `gpt/ACTIONS_CATALOG.md` — 14 GET Actions;
+- `gpt/SECRETS_AND_RENDER.md` — секреты и Render;
+- `gpt/MY_GPT_SETUP_RUNBOOK.md` — полное восстановление.
+
+Production URLs:
+
+- Base: `https://omni-cio-gateway.onrender.com`
+- Health: `https://omni-cio-gateway.onrender.com/health`
+- OpenAPI: `https://omni-cio-gateway.onrender.com/openapi.json`
+
+## Секреты
+
+GitHub хранит только имена переменных/placeholder values.
+
+Никогда не коммитить:
+
+- `TINVEST_TOKEN`;
+- значение `GATEWAY_API_KEY`;
+- Authorization headers;
+- полный accountId;
+- реальные приватные broker payloads как configuration files.
+
+`TINVEST_TOKEN` находится только в Render. `GATEWAY_API_KEY` находится в Render и как Bearer secret в GPT Action.
+
+## Структура репозитория
 
 ```text
-app.py + runtime modules             Omni-CIO Gateway
-omni_cio/contracts/                  versioned financial contracts
-omni_cio/adapters/                   broker/legacy adapters
-omni_cio/quality/                    validation and quality gates
-omni_cio/market/                     market, macro and rating sources
-omni_cio/analytics/                  portfolio and financial analytics
-omni_cio/risk/                       risk controls and scenarios
-omni_cio/decision/                   decision and final-review logic
-omni_cio/observability/              allowlisted structured telemetry
-omni_cio/release/                    release and acceptance controls
-broker_report_reconciliation/        official report reconciliation
-tests/                               unit, endpoint, OpenAPI and policy tests
-knowledge/                           domain rules and project memory
-gpt/                                 portable Custom GPT configuration
-docs/master-plan/                    owner specification
-docs/architecture/                   architecture and contracts
-docs/operations/                     deploy, acceptance and recovery runbooks
-docs/audits/                         dated repository audits
-docs/inventory/                      GitHub and external asset inventory
-scripts/                             local and CI safety checks
-.github/                             workflows, templates and governance
+app.py                          production Gateway wrapper / entrypoint
+app_v371.py                     runtime compatibility dependency
+app_v360.py                     runtime compatibility dependency
+main.py                         runtime core dependency
+portfolio_*.py                  portfolio market/analytics
+cash_liquidity.py               cash/liquidity diagnostics
+purchase_capacity*.py           read-only purchase capacity
+operations_analytics.py         operations analytics
+broker_report_reconciliation/   official T-Invest report reconciliation
+omni_cio/                       contracts, quality, analytics, market, risk, release
+
+gpt/                            Custom GPT configuration and Knowledge
+knowledge/                      engineering/domain memory used by development/runtime
+docs/master-plan/               original Omni-CIO development specification
+docs/architecture/              active architecture/contracts
+docs/operations/                deploy/release/acceptance runbooks
+
+tests/                          regression/contract/security tests
+scripts/                        repository/CI/security checks
+.github/                        Regression Shield and GitHub governance
+render.yaml                     single production Render contract
+requirements*.in/.txt           pinned runtime/dev dependencies
 ```
 
-Полная схема:
-[`docs/architecture/REPOSITORY_STRUCTURE.md`](docs/architecture/REPOSITORY_STRUCTURE.md).
+`app_v371.py`, `app_v360.py` и `main.py` не удаляются как «старые»: текущий `app.py` всё ещё импортирует их. Их удаление возможно только через отдельный compatibility refactor с тестами.
 
-## Custom GPT
+## Разработка
 
-Canonical GPT instructions and Action catalog live in `gpt/`.
+Перед изменениями прочитать:
 
-- GitHub does not update GPT Editor automatically.
-- Bearer key and publication state stay outside GitHub.
-- OpenAPI must be re-imported only after a real contract change.
-- Authenticated Preview and complete Action-list inspection are required.
-- Current official OpenAI documentation must be rechecked at acceptance time.
+1. `AGENTS.md`
+2. `README.md`
+3. `knowledge/00_PROJECT_MASTER_CONTEXT.md`
+4. `knowledge/16_CURRENT_PROGRAM_STATUS.md`
+5. `gpt/SETUP_INDEX.md`, если задача касается Custom GPT
+6. профильный domain file
+7. current `main`, open PRs, issues and GitHub Actions
 
-Setup and rollback:
-[`gpt/MY_GPT_SETUP_RUNBOOK.md`](gpt/MY_GPT_SETUP_RUNBOOK.md).
+Каждое логическое изменение:
 
-## ChatGPT-only runtime
+`branch → PR → Regression Shield → review → squash merge → production acceptance`
 
-Omni-CIO no longer contains Telegram runtime. The removed modules were transport
-and formatting code; supported financial logic remains in Gateway/domain
-modules.
+## Проверки
 
-External cleanup of the old Telegram service, webhook and token was completed
-by the owner on 2026-07-28. History and controls:
-[`docs/operations/TELEGRAM_REMOVAL_RUNBOOK.md`](docs/operations/TELEGRAM_REMOVAL_RUNBOOK.md).
+Основной merge gate — `.github/workflows/regression-shield.yml`.
 
-Returning Telegram requires a separate ADR, threat model, deployment contract,
-tests and explicit owner approval.
+Он проверяет:
 
-## Dependency policy
+- repository layout;
+- stable `app:app`;
+- GET-only release contract;
+- `trading_methods=false`;
+- compile/lint/format/type checks;
+- pytest + branch coverage;
+- dependency audit;
+- SAST;
+- secret scan.
 
-Human-edited direct constraints:
-
-- `requirements.in`;
-- `requirements-dev.in`.
-
-Generated locks:
-
-- `requirements.txt`;
-- `requirements-dev.txt`.
-
-Rules:
-
-- exact versions and SHA-256 hashes;
-- install with `--require-hashes`;
-- do not edit lock files manually;
-- dependency upgrades use dedicated compatibility PRs;
-- inspect release notes and all transitive changes;
-- regenerate locks and run full Regression Shield;
-- GitHub Actions remain pinned to full commit SHAs;
-- a historical green Dependabot icon is not enough after `main` changes.
-
-Current direct pins and open upgrade queue are recorded in
-[`knowledge/16_CURRENT_PROGRAM_STATUS.md`](knowledge/16_CURRENT_PROGRAM_STATUS.md).
-
-## Локальный запуск Gateway
-
-Linux/macOS:
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-python -m pip install --require-hashes -r requirements-dev.txt
-export TINVEST_TOKEN="..."
-export GATEWAY_API_KEY="..."
-export SSL_TBANK_VERIFY="True"
-uvicorn app:app --reload
-```
-
-Windows PowerShell:
-
-```powershell
-py -3.12 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --require-hashes -r requirements-dev.txt
-$env:TINVEST_TOKEN = "..."
-$env:GATEWAY_API_KEY = "..."
-$env:SSL_TBANK_VERIFY = "True"
-uvicorn app:app --reload
-```
-
-Never commit real tokens or paste them into issues, PRs, logs or chat.
-
-## Обязательные проверки
-
-```bash
-python scripts/check_ci_security_baseline.py
-python scripts/check_repository_layout.py
-python -m ruff check .
-python -m ruff format --check scripts tests/test_ci_security_baseline.py
-python -m mypy
-python -m compileall -q app.py app_v371.py app_v360.py main.py \
-  portfolio_market.py portfolio_analytics.py cash_liquidity.py \
-  purchase_capacity.py purchase_capacity_integrity.py \
-  operations_analytics.py broker_report_reconciliation tests scripts
-python -m pytest -q --cov=app --cov=main \
-  --cov=portfolio_market --cov=portfolio_analytics \
-  --cov=cash_liquidity --cov=purchase_capacity \
-  --cov=purchase_capacity_integrity --cov=operations_analytics \
-  --cov=sdk_order_compat --cov=broker_report_reconciliation \
-  --cov-branch --cov-fail-under=60
-python -m pip_audit --require-hashes --disable-pip --strict \
-  --vulnerability-service osv --progress-spinner off \
-  -r requirements.txt
-python -m bandit -q -lll -iii -r . \
-  -x tests,.venv,venv,htmlcov,broker_report_reconciliation/_parts \
-  --exclude "./broker_report_reconciliation/__init__.py"
-python scripts/scan_tracked_secrets.py
-```
-
-GitHub Regression Shield is the required source of merge evidence. Focused
-local tests do not replace the complete workflow.
+Тесты не должны обращаться к реальным T-Invest или production Render endpoints.
 
 ## Production acceptance
 
-Green CI does not prove external production state. Required evidence remains:
+После backend/OpenAPI изменения CI недостаточно. Нужно отдельно проверить:
 
-1. Render source commit verification;
-2. cache-busted `/health`;
-3. auth-negative production check;
-4. exact-route positive production check;
-5. GPT Editor schema import;
+1. deployed Render commit;
+2. `/health`;
+3. authentication boundary;
+4. нужный production endpoint;
+5. GPT OpenAPI import, если contract менялся;
 6. authenticated Preview;
-7. complete Action-list inspection;
-8. rollback restore.
+7. полный список Actions;
+8. rollback path.
 
-Runbooks:
+## Master plan
 
-- [`docs/operations/DEPLOYMENT_RUNBOOK.md`](docs/operations/DEPLOYMENT_RUNBOOK.md)
-- [`docs/operations/RELEASE_CHECKLIST.md`](docs/operations/RELEASE_CHECKLIST.md)
-- [`docs/operations/LIVE_READ_ONLY_ACCEPTANCE.md`](docs/operations/LIVE_READ_ONLY_ACCEPTANCE.md)
-- [`docs/operations/SELF_HOSTED_WINDOWS_RUNNER_SERVICE.md`](docs/operations/SELF_HOSTED_WINDOWS_RUNNER_SERVICE.md)
+`docs/master-plan/` сохранён намеренно: это исходная спецификация развития **этого же Omni-CIO**, а не посторонний проект. Будущие идеи из master plan не считаются реализованными, пока их нет в коде, тестах и acceptance.
 
-## Remaining program blocks
+## Главные документы
 
-- merge the 2026-08-01 audit package and synchronize issue #27;
-- classify and remove warning debt;
-- review open dependency PRs against current `main`;
-- add remaining official sources only through separate fixed contracts;
-- production-grade news and corporate-event ingestion;
-- external versioned RAG with freshness and citations;
-- exact production frontend/owner binding;
-- safe SberInvestments HTML import, archive and comparison;
-- broader monitoring, rollback and incident operations;
-- real Render/Gateway/GPT acceptance.
-
-Any live-trading work is a separate owner-approved admission program. Shadow,
-paper, preview and final review do not authorize execution.
-
-## Основные документы
-
-- [`AGENTS.md`](AGENTS.md) — mandatory engineering and safety rules.
-- [`knowledge/00_PROJECT_MASTER_CONTEXT.md`](knowledge/00_PROJECT_MASTER_CONTEXT.md) — durable project context.
-- [`knowledge/16_CURRENT_PROGRAM_STATUS.md`](knowledge/16_CURRENT_PROGRAM_STATUS.md) — current merged top and audit gates.
-- [`docs/audits/PROJECT_AUDIT_2026-08-01.md`](docs/audits/PROJECT_AUDIT_2026-08-01.md) — latest repository-wide audit.
-- [`CHANGELOG.md`](CHANGELOG.md) — release history.
-- [`CONTRIBUTING.md`](CONTRIBUTING.md) — contribution workflow.
-- [`SECURITY.md`](SECURITY.md) — security policy.
-- [`docs/master-plan/README.md`](docs/master-plan/README.md) — owner specification hierarchy.
-- [`docs/architecture/SYSTEM_OVERVIEW.md`](docs/architecture/SYSTEM_OVERVIEW.md) — system architecture.
-- [`docs/inventory/PROJECT_ASSETS.md`](docs/inventory/PROJECT_ASSETS.md) — repository and external assets.
-- [`gpt/MY_GPT_SETUP_RUNBOOK.md`](gpt/MY_GPT_SETUP_RUNBOOK.md) — GPT setup and rollback.
+- `AGENTS.md` — обязательные инженерные правила.
+- `SECURITY.md` — финансовая и secret boundary.
+- `knowledge/00_PROJECT_MASTER_CONTEXT.md` — долговременный контекст.
+- `knowledge/16_CURRENT_PROGRAM_STATUS.md` — фактическое текущее состояние.
+- `gpt/SETUP_INDEX.md` — настройка/обновление/восстановление GPT.
+- `docs/architecture/REPOSITORY_STRUCTURE.md` — структура и зависимости.
+- `docs/operations/DEPLOYMENT_RUNBOOK.md` — Render deployment.
+- `docs/operations/RELEASE_CHECKLIST.md` — выпуск и rollback.
