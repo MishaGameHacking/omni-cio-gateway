@@ -8,17 +8,16 @@
 - Purpose: личный инвестиционный аналитик и клиент Omni-CIO Gateway.
 - Primary language: Russian.
 - User timezone: `Europe/Moscow` / MSK.
-- Current accepted GPT configuration release: `v8.4`.
-- Current accepted production Instructions: `v8.4.1`.
-- Sandbox acceptance Instructions candidate: `v8.5.0`.
-- Backend/Gateway accepted baseline: `v3.10.0` до merge Sandbox release.
+- UI/product name release: `v8.4` until manually renamed by the owner.
+- Accepted read-only Instructions baseline: `v8.4.1`.
+- Canonical Sandbox-enabled Instructions after owner Preview acceptance: `v8.5.0`.
 - Recommended model: `Thinking 5.6`.
 
 ## Current production description
 
-> Личный GPT для T-Invest. Сам получает портфель, операции, ликвидность, параметры инструментов и котировки через Omni-CIO Gateway. Реальный брокерский контур работает только на чтение. В режиме «УПРАВЛЯЙ ПОРТФЕЛЕМ» анализирует структуру, сравнивает варианты и формирует план.
+> Личный GPT для T-Invest. Сам получает портфель, операции, ликвидность, параметры инструментов и котировки через Omni-CIO Gateway. Реальный брокерский контур работает только на чтение. В режиме «УПРАВЛЯЙ ПОРТФЕЛЕМ» анализирует структуру, сравнивает варианты и формирует план. Отдельный T-Invest Sandbox-контур может выполнять только виртуальные BUY/SELL после двухфазного точного подтверждения пользователя.
 
-После Sandbox backend acceptance отдельная песочница может быть включена для виртуальных BUY/SELL с обязательным двухфазным подтверждением. Это не real-money trading.
+Sandbox не является real-money trading. Реальный `TINVEST_TOKEN` остаётся read-only.
 
 ## Conversation starters
 
@@ -31,15 +30,15 @@
 
 ## Instructions
 
-До Sandbox enable в поле `Instructions` остаётся 100% содержимого:
-
-`gpt/CUSTOM_GPT_INSTRUCTIONS_V8_4_1.txt`
-
-После merge Sandbox backend, настройки отдельного Sandbox token в Render, включения Sandbox routes и успешного `getSandboxTradingStatus` для Sandbox acceptance заменить Instructions целиком на:
+Canonical Instructions for the currently Sandbox-capable configuration:
 
 `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_5_0.txt`
 
-Не смешивать версии вручную. `v8.5.0` разрешает broker mutation только когда Action явно является Sandbox (`sandbox=true`, `real_money=false`); реальный контур остаётся read-only.
+`v8.5.0` сохраняет real production read-only и разрешает broker mutation только когда Action явно является Sandbox (`sandbox=true`, `real_money=false`). Если Sandbox routes выключены/отсутствуют, те же Instructions fail closed и не придумывают execution surface.
+
+`gpt/CUSTOM_GPT_INSTRUCTIONS_V8_4_1.txt` сохраняется как accepted read-only fallback/baseline, но не является источником Sandbox behavior.
+
+Не смешивать версии вручную.
 
 ## Knowledge — ровно 10 файлов
 
@@ -91,9 +90,9 @@ Authentication:
 
 - ровно 14 GET Actions из `gpt/ACTIONS_CATALOG.md`;
 - никаких real create/order/execute/cancel/replace/transfer/withdraw методов;
-- `trading_methods=false`.
+- `real_trading_methods=false`.
 
-### Sandbox acceptance surface
+### Sandbox-enabled surface
 
 При `SANDBOX_TRADING_ENABLED=true` дополнительно публикуются только Sandbox Actions:
 
@@ -131,6 +130,10 @@ Sandbox execution не включается автоматически обыч�
 6. Затем `getSandboxOrderState`.
 7. При `unknown_do_not_resubmit` никакого повторного submit; только status reconciliation.
 
+Owner Preview on 2 August 2026 demonstrated this two-phase flow plus confirmation expiry, confirmation mismatch rejection, replay protection, LIMIT order state/cancel and portfolio reconciliation while `real_money=false` and `real_trading_methods=false`.
+
+Remaining recovery/hardening scenarios are tracked in `knowledge/16_CURRENT_PROGRAM_STATUS.md` and `docs/operations/SANDBOX_TRADING_RUNBOOK.md`.
+
 ## Market/sizing acceptance
 
 Для инвестиционного решения, если рынок закрыт, нет свежего `best ask` или доступен только stale `last price`:
@@ -147,7 +150,7 @@ GitHub хранит только имена переменных и инстру
 
 - `TINVEST_TOKEN`;
 - `TINVEST_SANDBOX_TOKEN`;
-- будущего real full-access token;
+- будущего real account-scoped trading token;
 - `GATEWAY_API_KEY`;
 - Authorization header;
 - полный broker accountId;
@@ -155,37 +158,32 @@ GitHub хранит только имена переменных и инстру
 
 Подробности: `gpt/SECRETS_AND_RENDER.md` и `docs/operations/SANDBOX_TRADING_RUNBOOK.md`.
 
-## Publishing/update checklist — current read-only
+## Publishing/update checklist — current Sandbox-capable configuration
 
 1. Открыть `gpt/SETUP_INDEX.md`.
-2. Использовать `CUSTOM_GPT_INSTRUCTIONS_V8_4_1.txt`.
+2. Использовать `CUSTOM_GPT_INSTRUCTIONS_V8_5_0.txt`.
 3. Ровно 10 Knowledge-файлов.
 4. `Thinking 5.6`, пока модель доступна и поддерживает Actions.
 5. Web Search + Data Analysis ON; Image generation + Apps OFF.
 6. Проверить `/health`.
 7. Импортировать production `/openapi.json`.
-8. Сверить 14 GET Actions.
-9. API Key → Bearer с `GATEWAY_API_KEY`.
-10. Preview smoke tests.
-11. Маскированный account ID + MSK.
-12. `Update` только после успешных проверок.
+8. Если Sandbox выключен — сверить 14 GET Actions. Если Sandbox включён — 14 baseline + 8 Sandbox Actions.
+9. Убедиться, что real-money mutation Actions отсутствуют.
+10. API Key → Bearer с существующим `GATEWAY_API_KEY`.
+11. Preview smoke tests для real read-only маршрутизации.
+12. При Sandbox enable — Preview status + proposal/confirmation safety checks из runbook.
+13. Маскированный account ID + MSK.
+14. `Update` только после успешных проверок.
 
-## Publishing/update checklist — Sandbox acceptance
+## Sandbox Render requirements
 
-Только после green/merged Sandbox backend:
+Для Sandbox-capable setup:
 
-1. Выполнить `docs/operations/SANDBOX_TRADING_RUNBOOK.md` до раздела Render secrets.
-2. В Render добавить отдельный `TINVEST_SANDBOX_TOKEN`; существующий `TINVEST_TOKEN` не менять.
-3. `SANDBOX_TRADING_ENABLED=true`, TTL 120.
-4. Дождаться healthy redeploy.
-5. Проверить `getSandboxTradingStatus` напрямую через Gateway/OpenAPI.
-6. В GPT Editor заменить Instructions целиком на `CUSTOM_GPT_INSTRUCTIONS_V8_5_0.txt`.
-7. Knowledge оставить теми же 10 файлами.
-8. Повторно импортировать `/openapi.json`.
-9. Проверить, что видны 14 baseline Actions + 8 Sandbox Actions и нет real-money mutation Actions.
-10. Bearer `GATEWAY_API_KEY` не менять.
-11. Выполнить virtual BUY/SELL/negative acceptance из Sandbox runbook.
-12. После успеха нажать `Update`.
+1. `TINVEST_SANDBOX_TOKEN` — отдельный Sandbox token.
+2. `SANDBOX_TRADING_ENABLED=true` — только когда owner намеренно включает Sandbox routes.
+3. `SANDBOX_CONFIRMATION_TTL_SECONDS=120`.
+4. Существующие `TINVEST_TOKEN` и `GATEWAY_API_KEY` не менять.
+5. При rollback поставить `SANDBOX_TRADING_ENABLED=false`, redeploy/restart и переимпортировать OpenAPI при изменении Action surface.
 
 ## Важная граница GitHub ↔ GPT Editor
 
