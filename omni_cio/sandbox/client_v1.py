@@ -1,7 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
+from importlib import metadata
 import json
+import os
+from pathlib import Path
+import re
+import ssl
 from typing import Any, Callable
 
 import httpx
@@ -23,6 +29,13 @@ _ALLOWED_METHODS = frozenset(
         "GetSandboxOrderState",
         "CancelSandboxOrder",
     }
+)
+
+_TBANK_VERIFY_TRUE = frozenset({"1", "true", "yes", "on"})
+_CERT_FILE_SUFFIXES = frozenset({".pem", ".crt", ".cer", ".der"})
+_MAX_CERT_SOURCE_BYTES = 512 * 1024
+_PEM_CERT_PATTERN = re.compile(
+    br"-----BEGIN CERTIFICATE-----[\r\nA-Za-z0-9+/= ]+-----END CERTIFICATE-----"
 )
 
 
@@ -62,6 +75,92 @@ def _extract_error(response: httpx.Response) -> tuple[str, str]:
     return code, message
 
 
+def _ssl_tbank_verify_enabled() -> bool:
+    return os.environ.get("SSL_TBANK_VERIFY", "").strip().lower() in _TBANK_VERIFY_TRUE
+
+
+@lru_cache(maxsize=1)
+def _sdk_certificate_blobs() -> tuple[bytes, ...]:
+    """Locate CA material shipped by the locked T-Invest Python SDK.
+
+    T-Invest SDK 1.49.2 supports ``SSL_TBANK_VERIFY=True`` by using its bundled
+    Ministry of Digital Development certificate material.  The Sandbox REST
+    client uses httpx rather than the SDK's gRPC channel, so it must explicitly
+    add the same trusted CA material to its SSLContext instead of relying on
+    certifi alone.
+    """
+
+    try:
+        distribution = metadata.distribution("t-tech-investments")
+    except metadata.PackageNotFoundError:
+        return ()
+
+    blobs: list[bytes] = []
+    seen: set[bytes] = set()
+    for entry in distribution.files or ():
+        normalized = str(entry).replace("\\", "/").lower()
+        suffix = Path(normalized).suffix
+        # Certificate files are loaded directly. Python sources are inspected
+        # only for embedded PEM blocks because the SDK may bundle CA bytes in a
+        # module instead of a standalone file.
+        if suffix not in _CERT_FILE_SUFFIXES and suffix != ".py":
+            continue
+
+        try:
+            candidate = Path(str(distribution.locate_file(entry)))
+            size = candidate.stat().st_size
+            if size <= 0 or size > _MAX_CERT_SOURCE_BYTES:
+                continue
+            data = candidate.read_bytes()
+        except (OSError, TypeError, ValueError):
+            continue
+
+        pem_blocks = _PEM_CERT_PATTERN.findall(data)
+        if pem_blocks:
+            for block in pem_blocks:
+                normalized_block = block.strip() + b"\n"
+                if normalized_block not in seen:
+                    seen.add(normalized_block)
+                    blobs.append(normalized_block)
+            continue
+
+        if suffix in _CERT_FILE_SUFFIXES and data not in seen:
+            seen.add(data)
+            blobs.append(data)
+
+    return tuple(blobs)
+
+
+def _load_ca_blob(context: ssl.SSLContext, blob: bytes) -> bool:
+    try:
+        if b"-----BEGIN CERTIFICATE-----" in blob:
+            context.load_verify_locations(cadata=blob.decode("ascii"))
+            return True
+        pem = ssl.DER_cert_to_PEM_cert(blob)
+        context.load_verify_locations(cadata=pem)
+        return True
+    except (OSError, UnicodeError, ValueError, ssl.SSLError):
+        return False
+
+
+def _sandbox_ssl_context() -> ssl.SSLContext:
+    context = ssl.create_default_context()
+    if not _ssl_tbank_verify_enabled():
+        return context
+
+    loaded = sum(_load_ca_blob(context, blob) for blob in _sdk_certificate_blobs())
+    if loaded == 0:
+        raise SandboxApiFailure(
+            code="SANDBOX_TLS_CA_UNAVAILABLE",
+            message=(
+                "SSL_TBANK_VERIFY is enabled, but the locked T-Invest Python SDK "
+                "certificate bundle could not be loaded for Sandbox REST TLS."
+            ),
+            http_status=503,
+        )
+    return context
+
+
 class SandboxRestClientV1:
     """Minimal client that cannot be redirected to the production T-Invest host."""
 
@@ -72,6 +171,7 @@ class SandboxRestClientV1:
         timeout_seconds: float = 12.0,
         transport: httpx.BaseTransport | None = None,
         client_factory: Callable[..., httpx.Client] = httpx.Client,
+        ssl_context: ssl.SSLContext | None = None,
     ) -> None:
         token = token.strip()
         if not token:
@@ -84,6 +184,7 @@ class SandboxRestClientV1:
         self._timeout = httpx.Timeout(timeout_seconds)
         self._transport = transport
         self._client_factory = client_factory
+        self._ssl_context = ssl_context or _sandbox_ssl_context()
 
     @property
     def base_url(self) -> str:
@@ -109,6 +210,8 @@ class SandboxRestClientV1:
         kwargs: dict[str, Any] = {
             "timeout": self._timeout,
             "follow_redirects": False,
+            "trust_env": False,
+            "verify": self._ssl_context,
         }
         if self._transport is not None:
             kwargs["transport"] = self._transport
@@ -117,18 +220,28 @@ class SandboxRestClientV1:
             with self._client_factory(**kwargs) as client:
                 response = client.post(url, headers=headers, json=payload)
         except (httpx.TimeoutException, httpx.NetworkError) as exc:
+            ambiguous = method == "PostSandboxOrder"
             raise SandboxApiFailure(
-                code="SANDBOX_TRANSPORT_AMBIGUOUS",
+                code=(
+                    "SANDBOX_TRANSPORT_AMBIGUOUS"
+                    if ambiguous
+                    else "SANDBOX_TRANSPORT_ERROR"
+                ),
                 message=type(exc).__name__,
                 http_status=503,
-                ambiguous_submission=(method == "PostSandboxOrder"),
+                ambiguous_submission=ambiguous,
             ) from exc
         except httpx.HTTPError as exc:
+            ambiguous = method == "PostSandboxOrder"
             raise SandboxApiFailure(
-                code="SANDBOX_TRANSPORT_ERROR",
+                code=(
+                    "SANDBOX_TRANSPORT_AMBIGUOUS"
+                    if ambiguous
+                    else "SANDBOX_TRANSPORT_ERROR"
+                ),
                 message=type(exc).__name__,
                 http_status=502,
-                ambiguous_submission=(method == "PostSandboxOrder"),
+                ambiguous_submission=ambiguous,
             ) from exc
 
         tracking_id = response.headers.get("x-tracking-id")
