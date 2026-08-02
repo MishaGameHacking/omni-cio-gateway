@@ -2,7 +2,6 @@
 
 # CI/security tool upgrades require a dedicated compatibility PR.
 bandit==1.9.4
-coverage==7.15.2
 detect-secrets==1.5.0
 filelock==3.32.0
 mypy==2.3.0
