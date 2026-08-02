@@ -55,6 +55,7 @@ class RealExecutionJournalV1(Protocol):
         *,
         submitted_at: datetime,
         max_daily_rub: Decimal,
+        confirmation_evidence_hash: str | None = None,
     ) -> RealTradeProposalV1: ...
 
 
@@ -106,6 +107,7 @@ class InMemoryRealExecutionJournalV1:
         *,
         submitted_at: datetime,
         max_daily_rub: Decimal,
+        confirmation_evidence_hash: str | None = None,
     ) -> RealTradeProposalV1:
         if submitted_at.tzinfo is None:
             raise ValueError("journal timestamps must be timezone-aware")
@@ -121,6 +123,7 @@ class InMemoryRealExecutionJournalV1:
                 current,
                 state=cast(ProposalState, "submitting"),
                 submitted_at=submitted_at,
+                confirmation_evidence_hash=confirmation_evidence_hash,
             )
             self._items[proposal_id] = updated
             return updated
