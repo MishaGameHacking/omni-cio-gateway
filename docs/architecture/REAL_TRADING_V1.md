@@ -1,80 +1,87 @@
 # Real-money execution v1 — threat model and architecture
 
-Status: **DESIGN ONLY / NOT IMPLEMENTED / DEFAULT-OFF**
+Status: **PHASES 0–2 IMPLEMENTED / DEFAULT-OFF / OWNER ACCEPTANCE REQUIRED**
 
 Tracking issue: #164.
 
-This document defines the safety architecture for a future real-money BUY/SELL release. It does **not** authorize a production token change and does not add a real broker-write route.
+This document defines the safety architecture for Omni-CIO real-money BUY/SELL. It does not authorize a broker order by itself. The default deployed state is `REAL_TRADING_ENABLED=false`.
 
-## 1. Scope
+## 1. Product scope
 
-Goal: allow the existing Omni-CIO Custom GPT to prepare and, only after an exact short-lived owner confirmation in a separate user message, submit a narrowly constrained real order through T-Invest.
+The first real-money release intentionally supports less than T-Invest supports.
 
-First real-money release deliberately supports less than T-Invest itself supports.
+Allowed:
 
-### v1 allowed product scope
-
-- one existing T-Invest account selected by an **account-scoped full-access token**;
+- one existing T-Invest account bound by an account-scoped full-access **non-transfer** token;
 - BUY and SELL only;
-- cash securities only;
-- **LIMIT orders only** in v1;
+- supported cash share/ETF only;
+- RUB only;
+- LIMIT orders only;
 - `TIME_IN_FORCE_DAY` only;
 - `PRICE_TYPE_CURRENCY` only;
-- explicit owner confirmation for every order;
-- read order state after submit;
-- real cancellation only as a separately confirmed operation after the submit path is accepted.
+- own-funds BUY / own-position SELL only;
+- explicit owner confirmation for every submit;
+- request-id order-state reconciliation.
 
-### v1 explicitly excluded
+Explicitly excluded:
 
-- MARKET / BESTPRICE orders;
-- bonds and futures where point-price semantics complicate the first execution release;
-- currencies and derivatives;
+- MARKET / BESTPRICE;
+- bonds/futures/options/currency execution in v1;
 - margin / uncovered positions;
 - stop orders;
-- replace order;
-- asynchronous order submit;
+- ReplaceOrder;
+- PostOrderAsync;
 - automatic re-submit;
 - autonomous recurring trading;
 - withdrawal or transfer of money;
 - transfer of securities;
-- bank detail changes;
-- token creation/rotation through GPT;
-- account opening/closing;
-- participation in placements.
+- bank/account mutation;
+- token management through GPT;
+- real cancellation in the first submit milestone.
 
-Reducing v1 to LIMIT/CURRENCY cash-security orders makes the maximum unit price explicit and confirmation-bound. Broader order types can be a later release after separate acceptance.
+The LIMIT-only restriction makes the owner-confirmed maximum unit price explicit and confirmation-bound.
 
-## 2. Current invariant before this release
+## 2. Credential contours
 
-Until this program is implemented, reviewed, merged and externally accepted:
+```text
+Custom GPT
+  │ Bearer GATEWAY_API_KEY
+  ▼
+Omni-CIO Gateway / Render Free
+  │
+  ├── TINVEST_TOKEN ───────────────► production read-only APIs
+  ├── TINVEST_SANDBOX_TOKEN ──────► T-Invest Sandbox only
+  ├── TINVEST_TRADING_TOKEN ──────► production OrdersService allowlist only
+  └── HTTPS ───────────────────────► Upstash Redis Free durable journal
+```
 
-- `TINVEST_TOKEN` remains production read-only;
-- `real_trading_methods=false`;
-- no real mutation Action is published;
-- Sandbox remains the only broker-write contour;
-- no owner action is required to create a real trading token.
+Rules:
 
-## 3. Official broker contract used by this design
+- existing `TINVEST_TOKEN` remains read-only;
+- `TINVEST_TRADING_TOKEN` is a new separate account-scoped full-access token;
+- trading token must not have transfer access;
+- `omni_cio.real_trading` never falls back to `TINVEST_TOKEN`;
+- the model never receives a T-Invest token, Upstash REST token or full account id.
 
-Current T-Bank Dev Portal documentation distinguishes read-only, full-access, transfer-access, account-scoped and Sandbox tokens. A token can be scoped to a specific account and have full-access rights without being a transfer-access token.
+## 3. Official broker methods used
 
-Relevant production REST methods are:
+Relevant T-Invest REST methods:
 
+- `UsersService/GetAccounts` for trading-token account binding;
 - `OrdersService/GetMaxLots`;
 - `OrdersService/GetOrderPrice`;
 - `OrdersService/PostOrder`;
 - `OrdersService/GetOrderState`;
-- `OrdersService/GetOrders` for limited same-day recovery context;
-- `OrdersService/CancelOrder` in the later cancellation sub-phase.
+- optionally `OrdersService/GetOrders` for limited recovery diagnostics.
 
-Important broker semantics used here:
+Important semantics:
 
-- `PostOrder.orderId` is a client UID/idempotency key and is limited to 36 characters;
-- order quantity is expressed in **lots**;
-- `GetOrderState` supports `ORDER_ID_TYPE_REQUEST` to resolve the order by the client request/idempotency id;
-- `GetMaxLots` separates own-funds BUY limits from margin BUY limits, and own-position SELL limits from margin SELL limits;
-- `confirmMarginTrade` defaults to false and Omni-CIO v1 always sends false;
-- `GetOrderPrice` provides a preliminary value for a **limit** order.
+- `PostOrder.orderId` is the client UUID/idempotency key;
+- order quantity is in lots;
+- `GetOrderState` can resolve by `ORDER_ID_TYPE_REQUEST`;
+- `GetMaxLots` separates own-funds/own-position limits from margin limits;
+- `confirmMarginTrade=false` is hard-coded;
+- `GetOrderPrice` supplies the preliminary LIMIT-order cost/commission data used by the preflight.
 
 Reference URLs:
 
@@ -85,403 +92,325 @@ Reference URLs:
 - https://developer.tbank.ru/invest/api/orders-service-get-order-price
 - https://developer.tbank.ru/invest/api/orders-service-get-order-state
 
-## 4. Trust boundaries
+## 4. Conditional publication / kill switch
 
-```text
-Owner
-  │ exact confirmation in a new ChatGPT message
-  ▼
-Custom GPT
-  │ Bearer GATEWAY_API_KEY
-  ▼
-Omni-CIO Gateway / Render
-  │
-  ├── TINVEST_TOKEN ───────────────► production read-only APIs
-  │
-  ├── TINVEST_SANDBOX_TOKEN ──────► Sandbox only
-  │
-  └── TINVEST_TRADING_TOKEN ──────► production OrdersService allowlist only
-                                      (future, default-off)
-```
-
-The model never receives any T-Invest token or full broker account id.
-
-## 5. Credential separation
-
-Future variable:
-
-`TINVEST_TRADING_TOKEN`
-
-Requirements:
-
-- new secret; never reuse `TINVEST_TOKEN`;
-- account-scoped to the intended account;
-- full-access sufficient for trading;
-- **not** transfer-access;
-- stored only in Render Environment;
-- never emitted in exceptions, logs, GPT payloads, PRs, issues or documentation;
-- read by `omni_cio/real_trading/` only;
-- real-trading module must never fall back to `TINVEST_TOKEN` if the new token is missing.
-
-Missing/invalid `TINVEST_TRADING_TOKEN` means real execution is unavailable, not degraded to another credential.
-
-## 6. Conditional publication and kill switch
-
-Future variable:
-
-`REAL_TRADING_ENABLED=false`
+`REAL_TRADING_ENABLED=false` is the default and rollback state.
 
 Rules:
 
-- absent/false: real mutation routes are not registered and do not appear in OpenAPI;
-- true: registration still fails closed unless every mandatory safety setting is valid;
-- Sandbox enable does not imply real enable;
-- real enable does not alter read-only or Sandbox credentials.
+- false/absent → all Real Trading Actions absent from OpenAPI;
+- true + invalid static readiness → status-only fail-closed surface;
+- true + valid token, policy and durable journal → narrow four-Action surface can register;
+- Sandbox enable is independent;
+- real enable never changes read-only or Sandbox credentials.
 
-Emergency rollback begins with:
+Emergency rollback:
 
-`REAL_TRADING_ENABLED=false`
+1. set `REAL_TRADING_ENABLED=false`;
+2. redeploy/restart;
+3. verify real routes disappear;
+4. reconcile any unresolved broker request UUIDs before deleting operational evidence.
 
-then deploy/restart and OpenAPI refresh in GPT Editor if the Action surface changes.
+## 5. Server-side limits
 
-## 7. Required server-side limits
+Mandatory before real mutation routes can publish:
 
-Enabling v1 must fail closed unless these settings are valid positive values:
+- `REAL_TRADING_MAX_ORDER_RUB`;
+- `REAL_TRADING_MAX_DAILY_RUB`;
+- optional/default `REAL_TRADING_CONFIRMATION_TTL_SECONDS=120`;
+- optional/default `REAL_TRADING_MARKET_MAX_AGE_SECONDS=15`.
 
-- `REAL_TRADING_MAX_ORDER_RUB` — maximum confirmed order notional/preview cost;
-- `REAL_TRADING_MAX_DAILY_RUB` — maximum daily submitted/executed notional budget;
-- `REAL_TRADING_CONFIRMATION_TTL_SECONDS` — proposed default 120, allowed 30..600.
+Policy validation additionally enforces immutable code ceilings. Broker transaction limits are not a substitute for Omni-CIO limits.
 
-A code-level absolute ceiling should also exist so an accidental Environment value cannot silently remove the safety bound. The concrete ceiling is a release parameter and must be chosen before Phase 1 implementation, not guessed in this design document.
+Initial owner acceptance uses deliberately small values:
 
-Optional stricter controls:
+```text
+REAL_TRADING_MAX_ORDER_RUB=1000
+REAL_TRADING_MAX_DAILY_RUB=2000
+```
 
-- maximum lots per order;
-- instrument allowlist/denylist;
-- maximum number of real submissions per UTC/MSK trading day;
-- owner-configured cash reserve / max target position share.
+## 6. Account binding
 
-Broker-provided transaction limits are not a substitute for Omni-CIO limits.
-
-## 8. Account binding
-
-Real execution must resolve exactly one account from `TINVEST_TRADING_TOKEN` and bind proposals to its internal full id.
+Real execution resolves exactly one open account through `TINVEST_TRADING_TOKEN` and compares it with the production read-only account.
 
 Fail closed if:
 
-- token exposes zero eligible accounts;
-- token unexpectedly exposes multiple eligible accounts;
-- trading-token account differs from the account selected by the production read-only context;
-- account status is not open/eligible;
-- account id cannot be resolved.
+- zero eligible accounts;
+- multiple eligible accounts;
+- trading-token account differs from read-only account;
+- account status/id cannot be resolved.
 
-User-facing output contains only a masked id.
+Full account id exists only where required for broker calls/durable internal proposal state. User-facing output is masked.
 
-The full id may exist transiently in process memory for the broker request but is never sent to the model.
+## 7. Instrument and market gate
 
-## 9. Broker method allowlist
+Before proposal and again immediately before submit:
 
-The real-trading client must expose only the small method set needed for v1.
+- requested/resolved UID identity matches;
+- no identity conflict;
+- instrument type is v1 allowlisted;
+- currency is RUB;
+- lot and min-price increment valid;
+- API trade available;
+- LIMIT orders available;
+- current trading status present;
+- market/reference/order-book components complete;
+- order-book timestamp is fresh within configured max age;
+- requested limit price is an exact multiple of `min_price_increment`.
 
-Phase 1 allowlist:
+Stale `last price` does not satisfy the executable market gate.
 
-- account validation method(s) required to prove account binding;
-- `GetMaxLots`;
-- `GetOrderPrice`;
-- `PostOrder`;
-- `GetOrderState`;
-- optionally `GetOrders` for same-day recovery diagnostics.
+## 8. Financial preflight
 
-Cancellation sub-phase adds only:
+### BUY
 
-- `CancelOrder`.
+- only own-funds `buyMaxLots`;
+- margin BUY capacity ignored;
+- requested lots <= own-funds maximum;
+- `GetOrderPrice` preview available/parseable;
+- preview total <= per-order hard cap;
+- daily cap available.
 
-Explicitly not implemented:
+### SELL
 
-- `ReplaceOrder`;
-- `PostOrderAsync`;
-- StopOrdersService methods;
-- transfer/withdraw methods;
-- account/bank mutation methods.
+- only own-position `sellMaxLots`;
+- no short/uncovered sale;
+- requested lots <= owned-position maximum;
+- preview and hard-limit checks pass.
 
-Unknown broker method name => local rejection before network I/O.
+`confirmMarginTrade=false` on every submit.
 
-## 10. Proposal state machine
+## 9. Immutable proposal and confirmation
 
-```text
-prepared
-   │ exact owner phrase + all revalidation passes
-   ▼
-submitting ───────► executed
-   │
-   ├──────────────► failed        (definitive broker rejection)
-   │
-   └──────────────► unknown       (timeout/5xx after possible submit)
-
-prepared ─────────► expired
-```
-
-No transition from `unknown` back to `submitting`.
-
-`unknown` means **DO NOT RESUBMIT**. Recovery is reconciliation only.
-
-## 11. Immutable proposal
-
-`prepareRealTrade` must bind, at minimum:
+`prepareRealTrade` binds at minimum:
 
 - proposal id;
 - UUID broker request/order id;
 - internal account id;
-- instrument UID plus resolved ticker/ISIN/class where available;
+- instrument UID/ticker/ISIN;
 - direction;
 - lots;
 - order type = LIMIT;
 - exact limit price;
 - price type = CURRENCY;
 - time-in-force = DAY;
-- rationale / decision reference;
-- preflight own-funds or own-position limit;
-- broker preliminary cost/commission fields used by the implementation;
-- application hard-limit result;
-- market/data-quality snapshot reference and freshness timestamp;
-- created time;
-- expiration time.
+- rationale;
+- preliminary total/commission;
+- own-funds/own-position available lots;
+- market timestamp;
+- created/expiry timestamps.
 
-The confirmation code is HMAC-bound to the canonical immutable payload.
-
-Execution accepts only:
-
-- `proposal_id`;
-- exact `confirmation_phrase`.
-
-It does not accept instrument, side, quantity or price again, preventing confirmation-time parameter substitution.
-
-## 12. Exact confirmation protocol
-
-Proposed phrase form:
+Confirmation phrase:
 
 `ПОДТВЕРЖДАЮ РЕАЛЬНУЮ СДЕЛКУ <CODE>`
 
 Requirements:
 
-- generated server-side from the immutable proposal;
-- displayed only after a successful proposal/preflight;
-- owner must send it in a **new user message**;
-- exact comparison; no typo correction, normalization beyond surrounding whitespace, or model-generated substitute;
+- server-generated/HMAC-bound to canonical immutable proposal;
+- separate user message required;
+- exact comparison;
 - short TTL;
-- one proposal / one confirmation;
-- successful replay returns prior result and never creates a second broker submission.
+- execution endpoint accepts only `proposal_id` + exact phrase, not price/side/quantity again;
+- broad instructions such as “управляй портфелем” never count as confirmation.
 
-A broad instruction such as “управляй портфелем самостоятельно” is never a trade confirmation.
+## 10. Pre-submit revalidation
 
-## 13. Instrument and market gate
+A prepared proposal is not durable authorization.
 
-Before proposal and again immediately before submit:
+Immediately before `PostOrder`, repeat:
 
-- exact instrument identity is resolved;
-- instrument is API-tradable;
-- v1 security type is allowlisted;
-- lot size and currency are known;
-- trading status permits the intended LIMIT order;
-- data is complete and sufficiently fresh;
-- no identity conflict exists;
-- no stale/partial/contradictory market state is treated as current.
-
-Because v1 is LIMIT-only, the owner-confirmed limit price is the maximum unit price for a BUY order. The system still must show best bid/ask and freshness so the owner can judge whether that limit is sensible.
-
-## 14. Financial preflight
-
-### BUY
-
-Use only broker **own-funds** limits from `GetMaxLots`; never use margin capacity for sizing or authorization.
-
-Check:
-
-- requested lots <= own-funds maximum;
-- broker preliminary LIMIT-order value from `GetOrderPrice` is available and parseable;
-- previewed notional/cost <= `REAL_TRADING_MAX_ORDER_RUB`;
-- daily budget remains available;
-- optional reserve/portfolio risk limits pass.
-
-### SELL
-
-Use only broker **own-position** `sell_max_lots`.
-
-Check:
-
-- requested lots <= owned-position maximum;
-- no short/uncovered sale;
-- notional and daily limits pass;
-- instrument/position identity matches exactly.
-
-`confirmMarginTrade=false` is hard-coded on every submit.
-
-## 15. Pre-submit revalidation
-
-A successful prepare is never durable authorization to submit later.
-
-Immediately before `PostOrder`, re-run:
-
-- feature flag and mandatory configuration;
+- feature/static readiness;
 - account binding;
-- proposal TTL and HMAC confirmation;
+- TTL/confirmation;
 - instrument identity/tradability;
-- market/data-quality gate;
-- own-funds / own-position `GetMaxLots`;
-- `GetOrderPrice` for the exact LIMIT order;
-- per-order hard cap;
-- daily hard cap;
+- fresh market gate;
+- own-funds/own-position `GetMaxLots`;
+- exact `GetOrderPrice` preview;
+- per-order cap;
+- atomic daily cap reservation;
 - duplicate/idempotency state.
 
-Any material mismatch blocks submission and requires a new proposal.
+Material change blocks submit and requires a fresh proposal.
 
-## 16. Idempotency and ambiguous-submit recovery
+## 11. Proposal state machine
 
-Generate a UUID v4 request id before submission and persist it with the proposal.
+```text
+prepared
+   │ exact owner phrase + revalidation + durable reserve
+   ▼
+submitting ───────► submitted
+   │
+   ├──────────────► failed       (definitive broker rejection)
+   └──────────────► unknown      (timeout/5xx after possible submit)
 
-Submit once using that same `orderId`.
+prepared ─────────► expired
+```
 
-If the broker definitively rejects before submission, return `failed`.
+`submitted` means broker request submission path succeeded; it does **not** mean filled. Fill is reported only from broker execution status.
 
-If there is a timeout, connection break, or 5xx after the request may have crossed the network boundary:
+No transition from `unknown` back to `submitting`. `unknown` means **DO NOT RESUBMIT**.
 
-- state = `unknown_do_not_resubmit`;
-- never call `PostOrder` again automatically;
-- reconcile via `GetOrderState` with `ORDER_ID_TYPE_REQUEST` using the original UUID;
-- optionally use `GetOrders` only as supplementary same-day evidence;
-- if broker state cannot be proved, stop and require owner-visible manual resolution rather than duplicate risk.
+## 12. Idempotency and ambiguous-submit recovery
 
-## 17. Durable state requirement
+Generate UUID v4 before submit and persist it with the proposal.
 
-Sandbox intentionally stores proposals in memory so a restart invalidates them. That is acceptable for virtual money.
+Submit once using that UUID as `orderId`.
 
-Real trading is different. A production execution contour needs durable minimal state for:
+- successful replay returns prior result and never calls `PostOrder` twice;
+- definitive rejection → `failed`;
+- timeout/network/5xx after possible submit → `unknown_do_not_resubmit`;
+- reconcile through `GetOrderState` + `ORDER_ID_TYPE_REQUEST` with the original UUID;
+- if broker state cannot be proved, stop and require owner-visible resolution rather than duplicate risk.
+
+## 13. Durable state — zero-cost production choice
+
+Real trading requires persistent state across Render Free sleep, restart and deploy.
+
+Selected default backend:
+
+```text
+REAL_TRADING_JOURNAL_BACKEND=upstash
+UPSTASH_REDIS_REST_URL=<HTTPS *.upstash.io endpoint>
+UPSTASH_REDIS_REST_TOKEN=<Render secret>
+```
+
+A Render Persistent Disk is **not** required for the selected project deployment.
+
+The Upstash journal persists:
 
 - proposal lifecycle;
 - request UUID/idempotency;
-- submit result / ambiguous state;
-- owner confirmation evidence hash;
+- submit/unknown state;
+- confirmation evidence hash;
 - daily hard-limit accounting;
-- reconciliation status;
-- safe recovery after process restart.
+- reconciliation result data.
 
-**In-memory state or ordinary ephemeral Render filesystem is not sufficient for real-money release.**
+It does not store T-Invest/Upstash/Gateway token values.
 
-Phase 1 implementation must not proceed to real enable until a durable storage strategy is selected and tested. The store must contain no broker token and no unnecessary full private payload dumps.
+### Integrity
 
-This is an intentional release gate, not an invitation to create another user-facing service. A persistence dependency may be added only through a separate reviewed infrastructure decision.
+Application-authenticated structures:
 
-## 18. Audit trail and redaction
+- journal metadata with schema/revision/proposal count + HMAC;
+- each proposal envelope with revision + canonical proposal JSON + HMAC;
+- each Moscow-day notional counter with revision/value + HMAC.
 
-Audit minimal structured facts:
+`integrity_check()` verifies stored proposal count, every proposal envelope and counted daily totals.
 
-- timestamp;
-- event type;
-- proposal id;
-- request UUID;
-- masked account;
-- instrument public identifiers;
+Tamper/missing/corrupt storage fails closed.
+
+### Atomicity
+
+Upstash Redis `EVAL` is used for short compare-and-swap Lua scripts only.
+
+`reserve_submission()` atomically changes:
+
+1. proposal `prepared → submitting`;
+2. signed daily notional counter.
+
+This prevents concurrent confirmations from both consuming the same remaining daily limit.
+
+Definitive broker rejection changes `submitting → failed` and atomically releases the reserved daily notional. `unknown` remains counted.
+
+### External storage failure
+
+Storage failure affects availability, never authorization:
+
+- no durable reserve → no broker submit;
+- no fallback to in-memory/ephemeral state;
+- after possible broker submit, storage/broker ambiguity never authorizes automatic retry.
+
+SQLite remains an explicit compatibility/test backend for installations with a real persistent filesystem.
+
+Details: `docs/operations/REAL_TRADING_DURABLE_STORAGE_V1.md`.
+
+## 14. Audit/redaction
+
+Minimal normalized facts may be recorded:
+
+- timestamps;
+- proposal/request UUID;
+- public instrument identifiers;
 - direction/lots/limit price;
 - gate outcomes;
-- broker status code/category;
+- broker status category;
 - idempotency/reconciliation state.
 
-Never audit:
+Never expose/store as audit data:
 
 - token values;
 - Authorization headers;
-- full account id;
-- full private broker payloads if a minimal normalized result is enough;
-- exact confirmation secret/code in long-lived logs.
+- full account id in user-facing output;
+- unnecessary full private broker payload dumps;
+- exact confirmation phrase in long-lived logs.
 
-## 19. Cancellation policy
+## 15. OpenAPI/GPT surface
 
-Real cancellation is not part of the first submit milestone.
+Default OFF: no real Actions.
 
-When added:
+Static failure with flag ON: safe `getRealTradingStatus` only.
 
-- only a known real order created/reconciled by this contour;
-- separate proposal/confirmation step;
-- exact phrase bound to order id and current state;
-- call only `CancelOrder`;
-- verify final state with `GetOrderState`;
-- no implicit replace.
+Ready surface:
 
-## 20. OpenAPI/GPT surface
+- `getRealTradingStatus`;
+- `prepareRealTrade`;
+- `executeRealTrade` — consequential;
+- `getRealOrderState`.
 
-No real routes while `REAL_TRADING_ENABLED=false`.
+No `cancelRealOrder`/replace/withdraw/transfer/market/margin Action in first release.
 
-Planned staged Actions only after backend tests pass:
+## 16. CI / negative-test requirements
 
-- `getRealTradingStatus` — readiness only;
-- `prepareRealTrade` — proposal, no submit;
-- `executeRealTrade` — consequential, exact confirmation;
-- `getRealOrderState` — reconciliation;
-- `cancelRealOrder` — later cancellation sub-phase.
+CI uses fake/mock broker/storage transports only.
 
-Every real execution response must say explicitly that it concerns real money and provide masked account + broker order status. GPT must never infer a fill from an HTTP 200 alone.
+Mandatory coverage includes:
 
-## 21. CI / negative-test matrix
+- real flag off → routes absent;
+- missing trading token/storage credentials → no mutation routes;
+- no read-only token fallback;
+- fixed production broker host;
+- account mismatch/multiple accounts fail closed;
+- unsupported instrument/currency/order modes blocked;
+- stale/incomplete market blocked;
+- invalid price step blocked;
+- invalid/hard caps blocked;
+- BUY above own-funds / SELL above own-position blocked;
+- wrong/expired confirmation → zero broker submit;
+- duplicate execution → one submit total;
+- ambiguous submit → no automatic retry;
+- full account/token redaction;
+- durable restart recovery;
+- durable tamper detection;
+- concurrent daily-cap atomicity;
+- external journal host/TLS restriction;
+- no live T-Invest/Render/Upstash calls in CI.
 
-Tests must use fake clients; CI must not contact T-Invest or Render.
+## 17. Release gates
 
-Mandatory negative coverage:
+Real-money BUY/SELL is not complete until:
 
-- real flag off => routes absent;
-- missing trading token => unavailable;
-- real module never reads/falls back to `TINVEST_TOKEN`;
-- transfer-access methods are not implemented;
-- unexpected/multiple account => fail closed;
-- account mismatch with read-only context => fail closed;
-- unsupported instrument type => blocked;
-- MARKET/BESTPRICE/POINT/margin => blocked;
-- stale/incomplete data => blocked;
-- invalid/missing server limits => enable fails closed;
-- per-order cap exceeded => blocked;
-- daily cap exceeded => blocked;
-- BUY above own-funds limit => blocked;
-- SELL above own-position limit => blocked;
-- wrong confirmation => no submit;
-- expired confirmation => no submit;
-- proposal tamper => no submit;
-- changed preflight/market state => no submit;
-- duplicate execution => no second `PostOrder`;
-- ambiguous submission => no automatic retry;
-- account ids/token/header redaction;
-- restart recovery from durable `submitting/unknown` state;
-- no live network access in tests.
+1. threat model/core/conditional routes/free durable storage merged after exact-head Regression Shield/security;
+2. owner configures permanent Upstash Free Redis credentials in Render;
+3. owner configures separate account-scoped non-transfer trading token;
+4. default-off deployment/read-only/Sandbox regression passes;
+5. controlled real enable readiness passes;
+6. wrong/expired/hard-cap/stale/over-position negative acceptance passes with zero real submit;
+7. Render restart proves Upstash persistence;
+8. kill-switch rollback removes real Actions;
+9. owner explicitly authorizes first minimal real LIMIT order;
+10. order state and real portfolio/operations reconcile;
+11. replay proves no second submit.
 
-## 22. Release gates
+Before gate 9 no real order should be sent.
 
-Real-money execution is not complete until all gates pass:
+## 18. Rollback
 
-1. Phase 0 architecture/threat model approved and merged.
-2. Durable storage design selected.
-3. Phase 1 isolated backend + negative tests green.
-4. Exact-head Regression Shield green.
-5. Security review shows no withdrawal/transfer/secret leakage path.
-6. Conditional OpenAPI surface tested with flag off/on.
-7. Owner provisions a separate account-scoped full-access trading token only when asked.
-8. Owner acceptance proves kill switch, wrong/expired/tampered confirmation and read-only regression with **no real submit**.
-9. A final explicitly authorized controlled minimal real LIMIT order is prepared, confirmed, submitted once and reconciled.
-10. Replay protection and real portfolio/order-state reconciliation are verified.
+At anomaly:
 
-Before gate 9, no real trade should be sent.
-
-## 23. Rollback
-
-At any anomaly:
-
-1. set `REAL_TRADING_ENABLED=false`;
+1. `REAL_TRADING_ENABLED=false`;
 2. redeploy/restart;
-3. ensure real mutation routes disappear from OpenAPI;
-4. revoke `TINVEST_TRADING_TOKEN` if credential compromise is suspected;
-5. keep read-only `TINVEST_TOKEN` unchanged;
-6. reconcile any `submitting/unknown` request UUIDs; never blindly replay;
-7. document the incident without secrets/private payloads.
-
-## 24. Non-goals for the first real release
-
-The first release is intentionally boring: one confirmed LIMIT order at a time, strong preflight, small server limits, durable idempotency and reconciliation.
-
-Autonomous recurring trading, market orders, derivatives, margin, transfer access, stop orders and order replacement require separate future releases.
+3. real routes disappear;
+4. keep `TINVEST_TOKEN` unchanged;
+5. revoke `TINVEST_TRADING_TOKEN` if compromise suspected;
+6. keep Upstash journal until all `submitting`/`unknown` UUIDs are reconciled;
+7. never blindly replay a broker request.
