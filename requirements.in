@@ -4,7 +4,7 @@
 # Runtime framework upgrades require a dedicated compatibility PR.
 # These exact versions preserve the currently tested production lock.
 annotated-doc==0.0.4
-fastapi==0.140.9
+fastapi==0.141.1
 httpx==0.28.1
 t-tech-investments==1.49.2
 tzdata==2026.3; sys_platform == "win32"
