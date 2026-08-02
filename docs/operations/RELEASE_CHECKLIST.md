@@ -1,94 +1,111 @@
-# Release checklist
+# Omni-CIO release checklist
 
-## 1. Подготовка
+## 1. Scope
 
 - [ ] `main` актуален.
-- [ ] Открытые PR и Issues проверены.
-- [ ] Новая ветка создана от текущего `main`.
-- [ ] Прочитаны `AGENTS.md`, master context и профильный knowledge-файл.
-- [ ] Определено, какие компоненты меняются: Gateway, Custom GPT или frontend.
-- [ ] Версии компонентов явно указаны.
+- [ ] Открытые PR/Issues проверены.
+- [ ] Branch создана от текущего `main`.
+- [ ] Прочитаны `AGENTS.md`, current status и профильный файл.
+- [ ] Изменение относится непосредственно к Omni-CIO Custom GPT, Gateway, его данным, безопасности, тестам или эксплуатации.
+- [ ] Один логический scope на PR.
 
-## 2. Код и контракты
+## 2. Read-only contract
 
 - [ ] Gateway entrypoint остаётся `app:app`.
-- [ ] Gateway Actions только `GET`.
-- [ ] `trading_methods=false` во всех интерфейсах.
-- [ ] Не добавлены order create/replace/cancel/submit методы.
-- [ ] Telegram runtime, Blueprint, environment variables и imports отсутствуют.
-- [ ] OpenAPI object schemas содержат явные `properties`.
-- [ ] Секреты, старые Telegram credentials и полный ID счёта отсутствуют в diff.
-- [ ] Валюты не складываются без подтверждённого FX.
-
-## 3. Тесты
-
-- [ ] `python scripts/check_repository_layout.py` проходит.
-- [ ] `python scripts/check_ci_security_baseline.py` проходит.
-- [ ] Ruff lint и formatting baseline проходят.
-- [ ] mypy baseline проходит.
-- [ ] `python -m compileall ...` проходит.
-- [ ] `python -m pytest ... --cov-fail-under=60` проходит.
-- [ ] pip-audit, Bandit и detect-secrets проходят.
-- [ ] Happy path покрыт.
-- [ ] Partial/error path покрыт.
-- [ ] Read-only и отсутствие торговли покрыты.
-- [ ] `tests/test_no_telegram_runtime.py` подтверждает отсутствие
-      Telegram package, config, imports и OpenAPI routes.
-- [ ] Regression Shield зелёный.
-- [ ] Все external Actions pinned полным commit SHA.
-- [ ] Lock-файлы pinned, hashed и согласованы с `.in`.
-
-## 4. Документация
-
-- [ ] Обновлён `CHANGELOG.md`.
-- [ ] Обновлён `README.md`.
-- [ ] Обновлён master context.
-- [ ] Обновлён профильный `knowledge/NN_*`.
-- [ ] Обновлён asset inventory.
-- [ ] Обновлён соответствующий deployment runbook.
-- [ ] `gpt/` обновлён, если менялся Action contract.
-
-## 5. Pull Request
-
-- [ ] Описание содержит изменение, безопасность, тесты и post-merge проверку.
-- [ ] Head SHA зафиксирован.
-- [ ] Нет нерешённых review threads.
-- [ ] Для релиза выбран squash merge.
-
-## 6. Production
-
-### Gateway
-
-- [ ] Render deploy использует merge commit.
-- [ ] `/health` подтверждает Gateway version, commit SHA и `app:app`.
+- [ ] User-facing Actions только GET.
 - [ ] `trading_methods=false`.
-- [ ] При изменении схемы обновлён GPT Editor.
+- [ ] Нет create/submit/replace/cancel/stop-order/withdraw/transfer surface.
+- [ ] Account ID маскирован.
+- [ ] Секреты и реальные private broker payloads отсутствуют в diff.
+- [ ] OpenAPI object schemas совместимы с GPT Actions.
+- [ ] Валюты не агрегируются без verified FX + timestamp.
+- [ ] Partial/truncated/stale state не выдаётся за complete/current.
 
-### Final-review evidence dossier
+## 3. Runtime/dependencies
 
-Каждая строка ниже должна быть записана как
-`FinalDecisionReviewAcceptanceEvidenceV1`. Галочка без датированного proof и SHA-256 не
-считается выполненной.
+- [ ] Не удалены runtime dependencies текущего `app.py` без отдельного compatibility refactor.
+- [ ] Dependency `.in` изменяются осознанно.
+- [ ] Generated locks не редактируются вручную.
+- [ ] Runtime/dev locks pinned + hashed.
+- [ ] External GitHub Actions pinned full SHA.
 
-- [ ] `render_source_commit` — Render использует ожидаемый merge commit.
-- [ ] `health_contract` — cache-busted `/health` подтверждает release contract.
-- [ ] `private_auth_negative` — запрос без valid Gateway key отклонён.
-- [ ] `exact_route_positive` — exact authenticated query возвращает compact response.
-- [ ] `gpt_schema_import` — актуальная OpenAPI schema импортирована в GPT Editor.
-- [ ] `gpt_authenticated_preview` — authenticated Action выполнен в Preview.
-- [ ] `gpt_action_list` — write/order/funds-movement Actions отсутствуют.
-- [ ] `rollback_restore` — rollback drill восстановил известный read-only release.
-- [ ] Dossier имеет восемь `passed`, `acceptance_completed=true` и
-      `trading_methods=false`.
+## 4. Tests / Regression Shield
 
-Статусы `not_executed` и `not_applicable` не закрывают production acceptance.
+- [ ] `python scripts/check_repository_layout.py`.
+- [ ] `python scripts/check_ci_security_baseline.py`.
+- [ ] Ruff lint.
+- [ ] Formatting baseline.
+- [ ] mypy.
+- [ ] compileall.
+- [ ] pytest + branch coverage >=60%.
+- [ ] dependency audit.
+- [ ] Bandit.
+- [ ] secret scan.
+- [ ] relevant happy path.
+- [ ] relevant partial/error paths.
+- [ ] read-only/no-write invariants.
+- [ ] exact-head Regression Shield fully green.
 
-### Telegram retirement (только для PR удаления)
+## 5. Documentation/configuration
 
-- [x] После merge старый Render service удалён по removal runbook.
-- [x] Telegram environment variables удалены вместе со старым service.
-- [x] Webhook удалён.
-- [x] Старый токен отозван в BotFather.
-- [ ] Gateway `/health` после очистки остаётся исправным.
+Обновлять только затронутые источники истины:
 
-- [ ] Project memory позволяет новому чату понять релиз только из GitHub.
+- [ ] `README.md`, если меняется использование/архитектура.
+- [ ] `CHANGELOG.md`, если изменение release-visible.
+- [ ] `knowledge/00_PROJECT_MASTER_CONTEXT.md`, если меняется архитектура/границы.
+- [ ] `knowledge/16_CURRENT_PROGRAM_STATUS.md`, если меняется accepted status.
+- [ ] профильный domain/architecture file.
+- [ ] `gpt/` при изменении Custom GPT configuration/behavior/action contract.
+- [ ] deploy/recovery runbook при эксплуатационном изменении.
+
+Не создавать параллельные setup/inventory/audit файлы без реальной необходимости.
+
+## 6. Pull Request
+
+- [ ] PR описывает purpose, changes, safety, tests and post-merge acceptance.
+- [ ] Head SHA зафиксирован перед final merge decision.
+- [ ] Нет unresolved review threads.
+- [ ] Нет merge conflicts.
+- [ ] Squash merge используется для release package.
+
+## 7. Production Gateway acceptance
+
+После backend/deployment change:
+
+- [ ] Render deploy использует ожидаемый main commit.
+- [ ] `https://omni-cio-gateway.onrender.com/health` возвращает healthy read-only contract.
+- [ ] `version=3.10.0` либо ожидаемая новая версия.
+- [ ] `app:app`.
+- [ ] `trading_methods=false`.
+- [ ] auth-negative test отклоняется.
+- [ ] нужный auth-positive endpoint работает.
+
+## 8. GPT acceptance
+
+Если менялись Instructions/Knowledge/Actions:
+
+- [ ] Production Instructions взяты из `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_4_1.txt` либо явно новой канонической версии.
+- [ ] В Knowledge ровно 10 актуальных файлов без дублей.
+- [ ] Recommended supported model выбран.
+- [ ] Production OpenAPI повторно импортирован, если contract менялся.
+- [ ] Action list сверена с `gpt/ACTIONS_CATALOG.md`.
+- [ ] Bearer secret настроен без публикации значения.
+- [ ] `gatewayHealth` smoke test.
+- [ ] `getConnection` smoke test.
+- [ ] simple balance/portfolio command test.
+- [ ] operations test.
+- [ ] `УПРАВЛЯЙ ПОРТФЕЛЕМ` запускает tool-first chain.
+- [ ] user-visible time по Москве.
+- [ ] stale-market sizing gate работает.
+- [ ] account ID masked.
+- [ ] `trading_methods=false`.
+- [ ] Нажат `Update` после Preview acceptance.
+
+## 9. Rollback
+
+- [ ] Известен предыдущий accepted GitHub commit.
+- [ ] Render rollback path известен.
+- [ ] Для GPT configuration известно, какие Instructions/Knowledge восстановить.
+- [ ] Secrets не ротируются без отдельной причины.
+
+Green CI не заменяет реальные Render/GPT проверки, когда изменение затрагивает production state.
