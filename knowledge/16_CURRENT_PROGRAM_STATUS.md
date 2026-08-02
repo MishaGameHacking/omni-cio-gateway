@@ -2,13 +2,16 @@
 
 Дата актуализации: 2026-08-02
 
-## Current accepted main
+## Accepted cleanup baseline
 
-Latest accepted repository cleanup:
+Repository cleanup package:
 
 - PR #147 — `Cleanup: reduce repository to active Omni-CIO bot and Gateway`;
-- squash-merged after exact-head Regression Shield run #871 completed successfully;
-- current accepted `main` commit: `2032c4d9be66892af25cbaf995f0eb29922436c3`.
+- cleanup squash commit: `2032c4d9be66892af25cbaf995f0eb29922436c3`;
+- exact-head Regression Shield run #871 completed successfully;
+- PR #148 synchronized this status after the cleanup and also passed a fresh Regression Shield before merge.
+
+Do not hardcode the ever-changing latest `main` SHA in this status document: merging the document itself changes `main`. For the exact current SHA, read the GitHub `main` ref. The cleanup commit above is stable evidence for the accepted cleanup package.
 
 Previous product/configuration behavior package:
 
@@ -29,7 +32,7 @@ Previous product/configuration behavior package:
 
 ## Accepted repository structure
 
-Repository is now organized around one supported product:
+Repository is organized around one supported product:
 
 `Omni-CIO Custom GPT → read-only Omni-CIO Gateway → T-Invest API`
 
@@ -39,7 +42,7 @@ Cleanup #147:
 - removed stale dated audit/inventory artifacts;
 - removed unused external-transport-specific active artifacts;
 - made `gpt/SETUP_INDEX.md` the single setup/update/recovery entrypoint;
-- retained only current configuration/runtime/safety/test/maintenance documentation;
+- retained current configuration/runtime/safety/test/maintenance documentation;
 - kept the original Omni-CIO master plan because it directly specifies this same bot;
 - kept `app_v371.py`, `app_v360.py` and `main.py` because current `app.py` still imports them.
 
@@ -107,7 +110,7 @@ No broker write, cancellation, withdrawal or transfer execution is supported.
 
 ## Immediate owner acceptance remaining
 
-1. Confirm production Render `/health` after PR #147 deployment.
+1. Confirm production Render `/health` after cleanup deployment.
 2. Replace the two changed GPT Knowledge files listed above.
 3. Run Preview smoke tests:
    - `Проверь подключение к брокеру.`
