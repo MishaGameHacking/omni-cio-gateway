@@ -1,16 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from functools import lru_cache
-from importlib import metadata
 import json
-import os
-from pathlib import Path
-import re
 import ssl
 from typing import Any, Callable
 
 import httpx
+
+from omni_cio.tbank_tls import TBankTlsCaUnavailable, build_tbank_ssl_context
 
 
 SANDBOX_REST_BASE_URL = "https://sandbox-invest-public-api.tbank.ru/rest"
@@ -29,13 +26,6 @@ _ALLOWED_METHODS = frozenset(
         "GetSandboxOrderState",
         "CancelSandboxOrder",
     }
-)
-
-_TBANK_VERIFY_TRUE = frozenset({"1", "true", "yes", "on"})
-_CERT_FILE_SUFFIXES = frozenset({".pem", ".crt", ".cer", ".der"})
-_MAX_CERT_SOURCE_BYTES = 512 * 1024
-_PEM_CERT_PATTERN = re.compile(
-    br"-----BEGIN CERTIFICATE-----[\r\nA-Za-z0-9+/= ]+-----END CERTIFICATE-----"
 )
 
 
@@ -75,90 +65,15 @@ def _extract_error(response: httpx.Response) -> tuple[str, str]:
     return code, message
 
 
-def _ssl_tbank_verify_enabled() -> bool:
-    return os.environ.get("SSL_TBANK_VERIFY", "").strip().lower() in _TBANK_VERIFY_TRUE
-
-
-@lru_cache(maxsize=1)
-def _sdk_certificate_blobs() -> tuple[bytes, ...]:
-    """Locate CA material shipped by the locked T-Invest Python SDK.
-
-    T-Invest SDK 1.49.2 supports ``SSL_TBANK_VERIFY=True`` by using its bundled
-    Ministry of Digital Development certificate material.  The Sandbox REST
-    client uses httpx rather than the SDK's gRPC channel, so it must explicitly
-    add the same trusted CA material to its SSLContext instead of relying on
-    certifi alone.
-    """
-
-    try:
-        distribution = metadata.distribution("t-tech-investments")
-    except metadata.PackageNotFoundError:
-        return ()
-
-    blobs: list[bytes] = []
-    seen: set[bytes] = set()
-    for entry in distribution.files or ():
-        normalized = str(entry).replace("\\", "/").lower()
-        suffix = Path(normalized).suffix
-        # Certificate files are loaded directly. Python sources are inspected
-        # only for embedded PEM blocks because the SDK may bundle CA bytes in a
-        # module instead of a standalone file.
-        if suffix not in _CERT_FILE_SUFFIXES and suffix != ".py":
-            continue
-
-        try:
-            candidate = Path(str(distribution.locate_file(entry)))
-            size = candidate.stat().st_size
-            if size <= 0 or size > _MAX_CERT_SOURCE_BYTES:
-                continue
-            data = candidate.read_bytes()
-        except (OSError, TypeError, ValueError):
-            continue
-
-        pem_blocks = _PEM_CERT_PATTERN.findall(data)
-        if pem_blocks:
-            for block in pem_blocks:
-                normalized_block = block.strip() + b"\n"
-                if normalized_block not in seen:
-                    seen.add(normalized_block)
-                    blobs.append(normalized_block)
-            continue
-
-        if suffix in _CERT_FILE_SUFFIXES and data not in seen:
-            seen.add(data)
-            blobs.append(data)
-
-    return tuple(blobs)
-
-
-def _load_ca_blob(context: ssl.SSLContext, blob: bytes) -> bool:
-    try:
-        if b"-----BEGIN CERTIFICATE-----" in blob:
-            context.load_verify_locations(cadata=blob.decode("ascii"))
-            return True
-        pem = ssl.DER_cert_to_PEM_cert(blob)
-        context.load_verify_locations(cadata=pem)
-        return True
-    except (OSError, UnicodeError, ValueError, ssl.SSLError):
-        return False
-
-
 def _sandbox_ssl_context() -> ssl.SSLContext:
-    context = ssl.create_default_context()
-    if not _ssl_tbank_verify_enabled():
-        return context
-
-    loaded = sum(_load_ca_blob(context, blob) for blob in _sdk_certificate_blobs())
-    if loaded == 0:
+    try:
+        return build_tbank_ssl_context()
+    except TBankTlsCaUnavailable as exc:
         raise SandboxApiFailure(
             code="SANDBOX_TLS_CA_UNAVAILABLE",
-            message=(
-                "SSL_TBANK_VERIFY is enabled, but the locked T-Invest Python SDK "
-                "certificate bundle could not be loaded for Sandbox REST TLS."
-            ),
+            message=str(exc),
             http_status=503,
-        )
-    return context
+        ) from exc
 
 
 class SandboxRestClientV1:
@@ -247,8 +162,6 @@ class SandboxRestClientV1:
         tracking_id = response.headers.get("x-tracking-id")
         if response.status_code < 200 or response.status_code >= 300:
             code, message = _extract_error(response)
-            # 5xx after a submission can be ambiguous: the broker may have
-            # accepted the idempotent request before the response was lost.
             ambiguous = method == "PostSandboxOrder" and response.status_code >= 500
             raise SandboxApiFailure(
                 code=code,
