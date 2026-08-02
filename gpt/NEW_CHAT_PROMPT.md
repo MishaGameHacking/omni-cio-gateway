@@ -1,6 +1,6 @@
-# Стартовый запрос для нового чата
+# Стартовый запрос для нового рабочего чата Omni-CIO
 
-Скопируйте этот текст в новый чат после подключения GitHub. Для запуска проекта в новом аккаунте сначала используйте `NEW_ACCOUNT_BOOTSTRAP.md` и `PROJECT_INSTRUCTIONS.md`.
+Использовать, когда нужно продолжить разработку/обслуживание проекта в новом чате после подключения GitHub.
 
 ```text
 Подключись к GitHub-репозиторию Misha2304/omni-cio-gateway.
@@ -8,50 +8,43 @@
 Сначала прочитай:
 1. AGENTS.md
 2. README.md
-3. docs/README.md
-4. docs/master-plan/README.md
-5. docs/master-plan/OMNI_CIO_MASTER_PROMPT_V9.txt
-6. knowledge/00_PROJECT_MASTER_CONTEXT.md
-7. knowledge/16_CURRENT_PROGRAM_STATUS.md
-8. gpt/README.md
-9. gpt/INSTRUCTIONS_COMPACT.md
-10. gpt/ACTIONS_CATALOG.md
-11. профильные файлы из knowledge/ по текущей задаче
+3. knowledge/00_PROJECT_MASTER_CONTEXT.md
+4. knowledge/16_CURRENT_PROGRAM_STATUS.md
+5. gpt/SETUP_INDEX.md
+6. gpt/CONFIGURATION.md
+7. gpt/CUSTOM_GPT_INSTRUCTIONS_V8_4_1.txt
+8. gpt/ACTIONS_CATALOG.md
+9. профильные domain/architecture files по текущей задаче
+10. docs/master-plan/README.md только если задача касается roadmap/новой функциональности
 
-Затем:
-- проверь актуальную ветку main;
-- проверь последние Pull Request и GitHub Actions;
-- считай код в main источником истины;
-- сохраняй строгий read-only режим;
-- не добавляй торговые endpoints;
-- сохраняй trading_methods=false;
-- сохраняй Render entrypoint app:app;
-- не сохраняй токены, ключи, полный номер счёта и реальные брокерские данные;
-- не используй историю, память или файлы других аккаунтов и проектов;
-- работай через отдельную ветку и Pull Request;
-- после значимого изменения обновляй project memory и профильную документацию.
+Затем проверь:
+- фактический main;
+- открытые Pull Requests и Issues;
+- latest Regression Shield;
+- production contract, если задача затрагивает Render/Gateway/GPT.
 
-Перед началом кратко покажи:
-- текущий release;
-- commit main;
-- открытые PR;
-- состояние Regression Shield;
-- какие файлы прочитаны;
-- план безопасных изменений.
+Обязательные инварианты:
+- один пользовательский продукт: Omni-CIO Custom GPT + read-only Gateway;
+- trading_methods=false;
+- user-facing Actions GET-only;
+- Render entrypoint app:app;
+- никаких broker write/withdraw/transfer methods;
+- account IDs только masked;
+- secrets не сохранять в GitHub;
+- не считать старые чаты/скриншоты источником истины при расхождении с main;
+- изменения делать через отдельную branch + PR;
+- merge только после exact-head Regression Shield;
+- после backend/GPT change выполнять соответствующую production/Preview acceptance.
 
-Пока ничего не изменяй.
+Перед изменениями кратко покажи:
+- current main SHA;
+- текущий product/configuration release;
+- open PR/issues, относящиеся к задаче;
+- состояние CI;
+- какие canonical files прочитаны;
+- план изменения.
+
+Не создавай новые параллельные setup/configuration документы, если информация относится к существующему gpt/SETUP_INDEX.md или другому canonical file.
 ```
 
-## Для задачи по Custom GPT
-
-Дополнительно прочитайте всю папку `gpt/`, `knowledge/13_COMMUNICATION_STYLE_2026.txt` и проверьте production `/openapi.json` после Render deploy.
-
-## Для проверки завершённой миграции с Telegram
-
-Прочитайте `knowledge/12_TELEGRAM_RETIREMENT.txt` и
-`docs/operations/TELEGRAM_REMOVAL_RUNBOOK.md`. Не восстанавливайте
-удалённый runtime без нового ADR, threat model и решения владельца.
-
-## Для задачи по frontend
-
-Сначала прочитайте `docs/inventory/PROJECT_ASSETS.md`. Не создавайте новый сайт, пока не найден и не подтверждён исходный frontend-проект существующего Omni-CIO Bot.
+Для задачи по настройке самого Custom GPT использовать `gpt/SETUP_INDEX.md` как главный источник.
