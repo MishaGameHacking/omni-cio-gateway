@@ -1,94 +1,68 @@
-# Подключение Omni-CIO v8.4 в ChatGPT → My GPTs
+# Omni-CIO v8.4 — полный setup/recovery runbook
 
-Дата проверки официальной документации OpenAI: 2026-08-01.
+Этот документ нужен для полного восстановления существующего Custom GPT после сбоя, удаления Action или перехода на новый GPT Editor. Для обычного обслуживания сначала использовать `gpt/SETUP_INDEX.md`.
 
-Этот runbook настраивает **существующий** Custom GPT как интерфейс к read-only Omni-CIO Gateway. Он не создаёт новый Gateway, не меняет T-Invest token и не включает торговлю.
+## 1. Архитектура
 
-Главная точка входа: `gpt/SETUP_INDEX.md`.
+```text
+GitHub main → Render service `omni-cio-gateway` → T-Invest API
+      │
+      └→ эталон GPT configuration → вручную GPT Editor
 
-## 1. Что хранит GitHub
+Custom GPT Actions → HTTPS Bearer → https://omni-cio-gateway.onrender.com
+```
 
-GitHub является резервной и канонической копией настройки:
+GitHub не содержит значений secrets и не обновляет GPT Editor автоматически.
 
-- имя/описание/starters/capabilities — `CONFIGURATION.md`;
-- Instructions — `INSTRUCTIONS_COMPACT.md`;
-- Knowledge для загрузки — папка `gpt/knowledge/`;
-- список 14 Actions — `ACTIONS_CATALOG.md`;
-- Render/secrets boundary — `SECRETS_AND_RENDER.md`;
-- этот пошаговый runbook.
+## 2. Production baseline
 
-GitHub **не хранит значения секретов**.
+- GPT: `Omni-CIO API | Управляющий и аналитик v8.4`
+- Production Instructions: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_4_1.txt`
+- Recommended model: `Thinking 5.6`
+- Gateway: `v3.10.0`
+- Entrypoint: `app:app`
+- Base URL: `https://omni-cio-gateway.onrender.com`
+- Health: `https://omni-cio-gateway.onrender.com/health`
+- OpenAPI: `https://omni-cio-gateway.onrender.com/openapi.json`
+- Expected Action surface: exactly 14 GET operations
+- Safety: `trading_methods=false`
 
-## 2. Предварительные условия
+## 3. Проверить Render до GPT Editor
 
-- ChatGPT-план и права, позволяющие редактировать GPT;
-- редактирование выполняется через web-интерфейс ChatGPT;
-- работающий production Gateway;
-- доступ владельца к Render Environment;
-- значение `GATEWAY_API_KEY` доступно владельцу только для ручного ввода в GPT Editor.
+Открыть production `/health` и убедиться:
 
-Текущий production Gateway:
-
-`https://omni-cio-gateway-au6d.onrender.com`
-
-Сначала проверить:
-
-- `https://omni-cio-gateway-au6d.onrender.com/health`
-- `https://omni-cio-gateway-au6d.onrender.com/openapi.json`
-
-Ожидается:
 - `status=ok`;
 - `version=3.10.0`;
-- `build.entrypoint=app:app`;
-- `trading_methods=false`;
-- в OpenAPI — ровно 14 GET операций из `ACTIONS_CATALOG.md`.
+- `build.entrypoint=app:app` или эквивалентный entrypoint marker;
+- `trading_methods=false`.
 
-## 3. Открыть существующий GPT
+В Render Environment production service должны быть:
 
-1. Открыть ChatGPT в браузере.
-2. Перейти в GPTs → My GPTs.
-3. Найти `Omni-CIO API | Управляющий и аналитик`.
-4. Нажать Edit / значок карандаша.
-5. Работать во вкладке Configure / Конфигурация.
+- `GATEWAY_API_KEY`;
+- `TINVEST_TOKEN`;
+- `SSL_TBANK_VERIFY=True`.
 
-Не создавать второй дубликат GPT, если существующий бот доступен.
+Значения не копировать в GitHub, issues, chats, Instructions или Knowledge.
 
-## 4. Имя, описание и starters
+## 4. Настроить GPT Editor
 
-Открыть `gpt/CONFIGURATION.md`.
+Открыть существующий Omni-CIO в `Мои GPT → Редактировать → Конфигурация`.
 
-Скопировать из него:
-- Name;
-- Description;
-- четыре Conversation starters.
+### Name / Description / starters
 
-Рекомендуемое имя текущей конфигурации:
+Сверить с `gpt/CONFIGURATION.md`.
 
-`Omni-CIO API | Управляющий и аналитик v8.4`
+### Instructions
 
-## 5. Instructions — что именно копировать
+Удалить старое содержимое поля Instructions и вставить **целиком**:
 
-Открыть в GitHub:
+`gpt/CUSTOM_GPT_INSTRUCTIONS_V8_4_1.txt`
 
-`gpt/INSTRUCTIONS_COMPACT.md`
+Не смешивать с Git history или локальными копиями.
 
-Нажать Raw или открыть содержимое файла и **скопировать весь текст целиком**.
+### Knowledge
 
-В GPT Editor:
-- удалить старый текст поля Instructions;
-- вставить новый полностью;
-- не смешивать v8.3 и v8.4;
-- не вставлять токены или ключи.
-
-`INSTRUCTIONS.md` не требуется копировать в GPT Editor — это расширенная разработческая версия.
-
-## 6. Knowledge — какие файлы скачать
-
-В GitHub открыть папку:
-
-`gpt/knowledge/`
-
-Скачать и загрузить в Knowledge **все 10 файлов**:
+Удалить старые дубликаты и загрузить ровно 10 файлов:
 
 1. `02_GATEWAY_DATA_CONTRACT_V2_OPERATIONS.txt`
 2. `04_CIO_PORTFOLIO_MANAGER.txt`
@@ -101,173 +75,98 @@ GitHub **не хранит значения секретов**.
 9. `11_RISK_DECOMPOSITION_AND_SIZING_GATES.txt`
 10. `13_COMMUNICATION_STYLE_2026.txt`
 
-Перед загрузкой удалить из GPT Knowledge предыдущие одноимённые версии, чтобы не было конфликтующих дублей.
+### Capabilities
 
-Не загружать в production GPT Knowledge:
-- master-plan PDF;
-- исходный код Gateway;
-- реальные брокерские отчёты как постоянную knowledge-базу;
-- секреты;
-- полный accountId.
+- Web Search: ON
+- Data Analysis / Code Interpreter: ON
+- Image generation: OFF для текущего инвестиционного workflow
+- Apps: не использовать вместе с Actions
+- Actions: ON
 
-## 7. Capabilities
+### Recommended model
 
-Сверить с `CONFIGURATION.md`.
+Выбрать `Thinking 5.6`, пока эта модель доступна в GPT Editor и поддерживает Actions.
 
-Текущая рабочая конфигурация:
-- Web Search — ON;
-- Code Interpreter / Data Analysis — ON;
-- Image generation — ON в текущем UI, но для Gateway не обязательна;
-- Apps — не использовать вместе с Actions;
-- Actions — настроены на Omni-CIO Gateway.
+## 5. Настроить Action
 
-## 8. Actions
+Schema import URL:
 
-В существующем Action открыть настройки.
+`https://omni-cio-gateway.onrender.com/openapi.json`
 
-### Authentication
+Authentication:
 
-Выбрать:
-- Authentication: `API Key`;
-- Type: `Bearer`.
+- `API Key`
+- `Bearer`
+- secret: текущее значение `GATEWAY_API_KEY` из Render
 
-В Secret/API key вставить **значение `GATEWAY_API_KEY` из Render**.
+`TINVEST_TOKEN` в GPT Editor **не вводится**.
 
-Не вставлять туда `TINVEST_TOKEN`.
+После импорта сверить operationId с `gpt/ACTIONS_CATALOG.md`: ожидается ровно 14 GET Actions.
 
-### Schema
+## 6. Preview acceptance
 
-Импортировать из URL:
+Открыть новый Preview-чат и выполнить:
 
-`https://omni-cio-gateway-au6d.onrender.com/openapi.json`
+1. `Проверь шлюз. Вызови только gatewayHealth. Другие методы не вызывай.`
+2. `Проверь подключение к брокеру.`
+3. `Сколько у меня сейчас денег?`
+4. `Что у меня сейчас в портфеле?`
+5. `Какие операции были за последние 90 дней?`
+6. `УПРАВЛЯЙ ПОРТФЕЛЕМ — обнови данные и скажи, что делать.`
 
-После импорта проверить:
-- OpenAPI version читается без ошибок;
-- backend info version = `3.10.0`;
-- список Actions совпадает с `ACTIONS_CATALOG.md`;
-- ровно 14 GET операций;
-- write/execute/transfer/withdraw Actions отсутствуют.
+Для portfolio-management должен реально выполняться базовый dispatch:
 
-OpenAI GPT Actions используют OpenAPI-схему и отдельно настроенную authentication; для server-to-server API key поддерживается Bearer.
+`getPortfolioSnapshot → getCashLiquiditySnapshot → getPortfolioAnalytics`
 
-## 9. Render и токены
+Только потом разрешён содержательный анализ.
 
-Открыть Render → service `omni-cio-gateway-au6d` → Environment.
+Acceptance также требует:
 
-Должны существовать переменные:
-- `GATEWAY_API_KEY`;
-- `TINVEST_TOKEN`;
-- `SSL_TBANK_VERIFY`.
+- masked account ID;
+- время пользователя по Москве;
+- read-only поведение;
+- no write Actions;
+- `trading_methods=false`;
+- no stale-price sizing при закрытом/неподтверждённом рынке.
 
-Значения не копировать в GitHub.
-
-Правильная цепочка:
-
-Custom GPT
-→ Bearer `GATEWAY_API_KEY`
-→ Omni-CIO Gateway on Render
-→ `TINVEST_TOKEN`
-→ T-Invest API
-
-Подробнее: `SECRETS_AND_RENDER.md`.
-
-## 10. Preview — обязательные проверки
-
-Проверять по одному запросу.
-
-### Test A — Gateway
-
-`Проверь Gateway. Вызови только gatewayHealth. Другие методы не вызывай.`
-
-Ожидание:
-- status ok;
-- version 3.10.0;
-- app:app;
-- trading_methods=false.
-
-### Test B — Authentication
-
-`Проверь подключение к T-Invest. Вызови только getConnection. Полный анализ не запускай.`
-
-Ожидание:
-- успешный ответ;
-- счёт маскирован;
-- никаких других Actions.
-
-### Test C — Method isolation
-
-`Вызови только getPortfolioSnapshot. Операции не вызывай. Рекомендаций не давай.`
-
-Ожидание:
-- вызван только snapshot;
-- нет лишних рекомендаций.
-
-### Test D — автономное управление
-
-`УПРАВЛЯЙ ПОРТФЕЛЕМ — обнови данные и скажи, что делать.`
-
-Ожидание:
-- бот сам обращается к Gateway;
-- не просит вручную «обновить доступ», пока Action не вернул реальную ошибку;
-- сначала анализирует портфель и структурный пробел;
-- сравнивает действие с бездействием;
-- не выдаёт technical max lots за персонально рекомендуемое количество;
-- при существенном решении формирует DecisionCard.
-
-### Test E — закрытый рынок / нет ask
-
-Если best ask отсутствует или рынок закрыт:
-- last price не выдаётся за текущую цену покупки;
-- точный план маркируется `WAIT_FOR_FRESH_MARKET` или как условный сценарий.
-
-### Test F — final review
-
-`503` без активного reviewed source допустим и не означает поломку.
-`409` нельзя автоматически повторять с придуманной identity.
-При `200` обязательны read-only признаки и `trading_methods=false`.
-
-## 11. Сохранение
+## 7. Сохранение
 
 После успешного Preview:
-1. Нажать Update.
+
+1. Нажать `Update`.
 2. Закрыть редактор.
-3. Повторно открыть GPT.
-4. Проверить, что Instructions, Knowledge и Action сохранились.
-5. Выполнить `gatewayHealth` и `getConnection` ещё раз.
+3. Открыть GPT заново.
+4. Повторить `Проверь подключение к брокеру` и один portfolio query.
 
-## 12. Обновление через GitHub в будущем
+## 8. Recovery by failure type
 
-Если меняется только логика GPT:
-1. изменения сначала в GitHub;
-2. обновить `INSTRUCTIONS_COMPACT.md` и/или файлы `gpt/knowledge/`;
-3. пройти PR/CI;
-4. после merge скачать/скопировать изменённые файлы в GPT Editor;
-5. пройти Preview;
-6. нажать Update.
+### Бот отвечает, но Actions не вызываются
 
-Если меняется Gateway/OpenAPI:
-1. код → PR → CI → main;
-2. Render deploy;
-3. проверить `/health`;
-4. заново импортировать `/openapi.json`;
-5. сверить `ACTIONS_CATALOG.md`;
-6. Preview → Update.
+- убедиться, что выбрана модель, поддерживающая Actions;
+- проверить, что Action присутствует в GPT Editor;
+- проверить production OpenAPI import;
+- проверить Bearer key;
+- начать новый Preview-чат;
+- выполнить exact-action test.
 
-## 13. Rollback
+### `401/403`
 
-Если новая версия GPT ведёт себя хуже:
-- в GitHub открыть предыдущий проверенный commit/tag;
-- восстановить прошлый `INSTRUCTIONS_COMPACT.md`;
-- скачать прошлые файлы из `gpt/knowledge/`;
-- загрузить их в GPT;
-- повторить health/auth/method-isolation tests.
+Проверить соответствие `GATEWAY_API_KEY` между Render и GPT Action Bearer. Не менять `TINVEST_TOKEN`, если проблема относится к Gateway auth.
 
-Секреты при rollback не меняются без отдельной причины.
+### Gateway health работает, connection не работает
 
-## 14. Официальные источники OpenAI
+Проверить `TINVEST_TOKEN` в Render и T-Invest access. Не переносить token в GPT.
 
-- Creating and editing GPTs: https://help.openai.com/en/articles/8554397
-- Configuring actions in GPTs: https://help.openai.com/en/articles/9442513-gpt-actions-domain-settings-chatgpt-enterprise
-- GPTs in ChatGPT: https://help.openai.com/en/articles/8554407-creating-a-gpt
+### После backend update изменились operationId/schema
 
-Эти источники подтверждают разделение Instructions/Knowledge/Capabilities/Actions, необходимость OpenAPI schema для Actions, настройку authentication и тестирование GPT через Preview перед Update.
+Повторно импортировать production `/openapi.json` и сверить `ACTIONS_CATALOG.md`.
+
+### Поведение GPT ухудшилось после Instructions/Knowledge update
+
+Вернуться к последнему проверенному commit GitHub, восстановить соответствующий production Instructions/Knowledge и повторить Preview acceptance.
+
+## 9. Правило обновления
+
+Все изменения сначала фиксируются в GitHub через отдельную branch/PR. Backend merge разрешён только после Regression Shield. Изменения GPT UI затем вручную применяются из `main` и подтверждаются Preview.
+
+Подробная матрица обновлений находится в `gpt/SETUP_INDEX.md`.
