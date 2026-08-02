@@ -4,16 +4,28 @@
 
 ## [Unreleased]
 
+### T-Invest Sandbox execution
+
+- PR #160 добавил изолированный optional T-Invest Sandbox-контур для виртуальных BUY/SELL; real-money production остаётся read-only.
+- Отдельный `TINVEST_SANDBOX_TOKEN` не заменяет существующий read-only `TINVEST_TOKEN`.
+- `SANDBOX_TRADING_ENABLED=false` по умолчанию сохраняет прежний production Action surface.
+- Добавлены Sandbox account/status/portfolio, proposal/preflight, confirmed submit, order-state и confirmed cancel.
+- Виртуальная сделка двухфазная: immutable proposal → короткоживущее exact confirmation → submit.
+- BUY/SELL limits проверяются при prepare и повторно непосредственно перед submit.
+- Добавлены UUID idempotency, duplicate protection и fail-closed `unknown_do_not_resubmit` для неоднозначного timeout/5xx.
+- Margin confirmation жёстко выключен; withdrawal/transfer, real order execution, auto-replace и stop-order automation не добавлены.
+- Добавлен candidate `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_5_0.txt` и owner runbook `docs/operations/SANDBOX_TRADING_RUNBOOK.md`.
+- Exact-head Regression Shield #909 прошёл quality/contracts/coverage и dependency/code/secret security до squash merge PR #160.
+
 ### Repository cleanup
 
-- Консолидирована структура вокруг одного продукта: Omni-CIO Custom GPT + read-only Gateway.
+- Консолидирована структура вокруг одного продукта: Omni-CIO Custom GPT + Gateway.
 - `gpt/SETUP_INDEX.md` назначен единственной точкой настройки, обновления и восстановления.
-- `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_4_1.txt` остаётся единственным production Instructions source.
+- `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_4_1.txt` остаётся accepted production Instructions до Sandbox owner acceptance.
 - Удалены obsolete duplicate setup/instructions, dated audit/inventory artifacts и неиспользуемые external-transport artifacts.
 - Активные GPT Knowledge/communication files очищены от внешнего publishing behavior.
 - README/AGENTS/SECURITY/architecture/status синхронизированы с production endpoint `https://omni-cio-gateway.onrender.com`.
 - Runtime dependencies `app_v371.py`, `app_v360.py` и `main.py` намеренно сохранены, потому что current `app.py` всё ещё их импортирует.
-- Read-only invariants не меняются: 14 GET Actions, `app:app`, `trading_methods=false`, no broker write/withdraw/transfer surface.
 
 ## [2026-08-02] Custom GPT v8.4.1 acceptance
 
