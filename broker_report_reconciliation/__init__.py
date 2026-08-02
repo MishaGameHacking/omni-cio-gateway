@@ -6,14 +6,12 @@ for _part in sorted((_Path(__file__).parent / "_parts").glob("*.pyfrag")):
     # The loader executes only checked-in fragments from this fixed package path.
     exec(compile(_source, str(_part), "exec"), _globals, _globals)  # nosec B102
 
-del _Path, _globals, _part, _source
+# app.py already invokes this package's dynamically assembled register_gateway
+# hook before freezing its OpenAPI provider. Preserve that reviewed hook and add
+# the explicitly enabled Sandbox extension after broker-report registration.
+_register_broker_report_gateway = _globals["register_gateway"]
 
-# app.py already invokes this package's register_gateway hook before freezing its
-# OpenAPI provider. Keep the production default unchanged, but use that existing
-# registration point for the explicitly enabled, isolated Sandbox extension.
-# The sandbox module itself hard-binds all broker writes to the documented
-# sandbox host and never receives TINVEST_TOKEN.
-_register_broker_report_gateway = register_gateway
+del _Path, _part, _source
 
 
 def register_gateway(*, app, base, app_version):
@@ -30,3 +28,7 @@ def register_gateway(*, app, base, app_version):
         app_version=app_version,
     )
     return result
+
+
+_globals["register_gateway"] = register_gateway
+del _globals
