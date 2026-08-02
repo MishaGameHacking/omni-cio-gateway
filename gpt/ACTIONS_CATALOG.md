@@ -1,66 +1,82 @@
-# Каталог GPT Actions
+# Каталог Omni-CIO GPT Actions
 
-Текущий backend release: **v3.10.0**. Production schema импортируется из `/openapi.json` активного Render service.
+Backend release: **v3.10.0**.
 
-Все пользовательские Actions защищены Bearer key и работают только на чтение, кроме публичного `gatewayHealth`.
+Production Gateway:
+
+`https://omni-cio-gateway.onrender.com`
+
+Production schema:
+
+`https://omni-cio-gateway.onrender.com/openapi.json`
+
+Все пользовательские операции работают только на чтение. `gatewayHealth` публичный; остальные используют Bearer `GATEWAY_API_KEY`.
 
 | operationId | HTTP | Path | Назначение |
 |---|---:|---|---|
-| `gatewayHealth` | GET | `/health` | Версия, build, capabilities, Regression Shield |
-| `getConnection` | GET | `/connection` | Проверка T-Invest подключения и маскированного счёта |
-| `getPortfolioSnapshot` | GET | `/snapshot` | Базовый снимок портфеля и денежных остатков |
-| `getEnrichedPortfolioSnapshot` | GET | `/snapshot/enriched` | Снимок с UID, FIGI, ISIN, ticker и identity checks |
-| `findInstrument` | GET | `/instruments/search` | Умный поиск справочного инструмента |
+| `gatewayHealth` | GET | `/health` | Версия, build, capabilities, read-only contract |
+| `getConnection` | GET | `/connection` | T-Invest connection и masked account |
+| `getPortfolioSnapshot` | GET | `/snapshot` | Базовый портфель и cash |
+| `getEnrichedPortfolioSnapshot` | GET | `/snapshot/enriched` | Позиции + UID/FIGI/ISIN/ticker/identity checks |
+| `findInstrument` | GET | `/instruments/search` | Поиск инструмента |
 | `getOperationsHistory` | GET | `/operations` | Сырая read-only история операций |
-| `getMarketSnapshot` | GET | `/market/snapshot` | Цена, стакан, статус торгов и источники одного инструмента |
-| `getPortfolioMarketSnapshot` | GET | `/portfolio/market-snapshot` | Рыночная оценка всего портфеля по валютам |
-| `getPortfolioAnalytics` | GET | `/portfolio/analytics` | Структура, доли, концентрация и качество оценки |
-| `getCashLiquiditySnapshot` | GET | `/portfolio/cash-liquidity` | Сопоставление позиций и лимитов вывода |
-| `getPurchaseCapacityPreview` | GET | `/portfolio/purchase-capacity` | Предварительный read-only расчёт суммы и доступности покупки |
-| `getOperationsAnalytics` | GET | `/operations/analytics` | Категории операций, денежные потоки и reconciliation |
-| `getBrokerReportReconciliation` | GET | `/operations/broker-report-reconciliation` | Асинхронный официальный отчёт и сверка с операциями |
-| `getFinalDecisionReview` | GET | `/decision/final-review` | Получение ранее сформированного и проверенного compact final review по exact identity |
+| `getMarketSnapshot` | GET | `/market/snapshot` | Цена, order book, trading status одного инструмента |
+| `getPortfolioMarketSnapshot` | GET | `/portfolio/market-snapshot` | Рыночная оценка портфеля |
+| `getPortfolioAnalytics` | GET | `/portfolio/analytics` | Структура, доли, концентрация, quality |
+| `getCashLiquiditySnapshot` | GET | `/portfolio/cash-liquidity` | Cash/liquidity/withdraw-limit diagnostics |
+| `getPurchaseCapacityPreview` | GET | `/portfolio/purchase-capacity` | Read-only technical purchase capacity |
+| `getOperationsAnalytics` | GET | `/operations/analytics` | Категории операций, cash flow, reconciliation |
+| `getBrokerReportReconciliation` | GET | `/operations/broker-report-reconciliation` | Async official T-Invest report reconciliation |
+| `getFinalDecisionReview` | GET | `/decision/final-review` | Read-only retrieval of an already prepared reviewed decision source |
 
-## Правила вызовов
+## Инварианты
 
-- Когда пользователь пишет «вызови только X», нельзя вызывать другие Actions.
-- `gatewayHealth` не подтверждает T-Invest token — для этого нужен `getConnection`.
-- `getOperationsHistory` и `getOperationsAnalytics` не являются взаимозаменяемыми.
-- `getPurchaseCapacityPreview` не создаёт заявку и не гарантирует исполнение.
-- `getBrokerReportReconciliation` принимает `days=1..31`.
-- Первый вызов отчёта без `task_id` возвращает `pending` и `task_id`; повторный вызов использует тот же ID.
-- `getFinalDecisionReview` не строит рекомендацию заново и не вызывает брокера. Он возвращает только активный внутренний source, уже прошедший read-only validation.
-- Для `getFinalDecisionReview` пустой или просроченный source registry означает `503`, а подмена account/option/fingerprint/instruments/digests — `409`.
-- `getFinalDecisionReview` не является подтверждением сделки и всегда возвращает `trade_authorized=false`, `order_created=false`, `execution_ready=false`, `trading_methods=false`.
+- Ровно 14 GET operations.
+- Никаких order create/submit/replace/cancel/stop-order/withdraw/transfer operations.
+- `trading_methods=false`.
+- `gatewayHealth` не подтверждает broker connection; для этого `getConnection`.
+- `getPurchaseCapacityPreview` не создаёт заявку и не превращает technical capacity в recommendation.
+- `getFinalDecisionReview` не создаёт новую рекомендацию и не подтверждает execution.
 
-## Совместимость OpenAPI с GPT Actions
+## Broker report
 
-Production `/openapi.json` должен импортироваться в GPT Editor без предупреждений о нескольких схемах аутентификации и без предупреждений о неподдерживаемых custom header parameters.
+`getBrokerReportReconciliation`:
 
-- В публикуемой Action schema используется ровно одна Bearer security scheme: `ApiKeyAuth`.
-- Все защищённые операции ссылаются только на `ApiKeyAuth`; публичный `gatewayHealth` остаётся без authentication requirement.
-- Служебные `X-Correlation-ID` и `X-Request-ID` для `getFinalDecisionReview` не публикуются как Action parameters. Gateway по-прежнему может принять их при прямом HTTP-вызове, а при отсутствии correlation ID создаёт его серверно.
-- Это ограничение меняет только GPT-facing OpenAPI presentation и не ослабляет runtime authentication или read-only границы.
+- `days=1..31`;
+- первый async вызов без `task_id`;
+- T-Invest `30058` = report pending;
+- повторная проверка использует тот же returned `task_id`;
+- complete only when `complete=true`.
 
-## Стабильность контракта
+## GPT Actions OpenAPI compatibility
 
-Нельзя без migration plan менять:
+- одна Bearer security scheme: `ApiKeyAuth`;
+- `gatewayHealth` остаётся public;
+- остальные protected operations ссылаются на `ApiKeyAuth`;
+- служебные correlation headers не публикуются как обязательные GPT Action parameters;
+- response contracts сохраняют user-safe masked/read-only fields.
+
+## Contract stability
+
+Без migration plan не менять:
 
 - `operationId`;
-- публичные paths;
-- тип HTTP-метода;
+- paths;
+- HTTP method type;
 - Bearer authentication;
-- ключевые поля `status`, `version`, `retrieved_at`, `quality`, `complete`, `component_errors`, `warnings`, `trading_methods`.
+- ключевые `status/version/retrieved_at/quality/complete/component_errors/warnings/trading_methods` semantics.
 
-## Обновление GPT Editor
+## GPT Editor update
 
-1. Дождаться production deploy.
-2. Проверить `/health` и версию `3.10.0`.
-3. Импортировать актуальный `/openapi.json`.
-4. Установить Authentication → API Key → Bearer.
-5. Ввести секретный `GATEWAY_API_KEY` вручную.
-6. Убедиться, что список действий полностью совпадает с таблицей: ровно 14 GET operations, включая `getFinalDecisionReview`.
-7. Убедиться, что импорт schema не показывает предупреждения `Found multiple security schemes` и не игнорирует `X-Correlation-ID` / `X-Request-ID`.
-8. Сначала проверить вызов без ключа: решение не должно возвращаться.
-9. Выполнить один целевой Preview-вызов только после появления активного reviewed source.
-10. Убедиться, что другие методы не вызывались и write/execute Actions отсутствуют.
+Повторный OpenAPI import нужен, когда реально изменился Action/OpenAPI contract.
+
+После такого изменения:
+
+1. deploy Gateway;
+2. проверить production `/health`;
+3. импортировать production `/openapi.json`;
+4. Authentication → API Key → Bearer;
+5. вручную ввести `GATEWAY_API_KEY`;
+6. убедиться, что видны ровно 14 GET operations;
+7. Preview smoke tests;
+8. `Update`.
