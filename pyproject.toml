@@ -36,6 +36,7 @@ files = [
   "omni_cio/observability",
   "omni_cio/release",
   "omni_cio/sandbox",
+  "omni_cio/real_trading",
   "scripts/check_ci_security_baseline.py",
   "scripts/check_live_read_only_release.py",
   "scripts/check_read_only_release_contract.py",
