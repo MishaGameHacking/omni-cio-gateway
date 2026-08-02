@@ -1,42 +1,31 @@
 # Документация Omni-CIO
 
-Эта папка — навигационный центр проекта. Она дополняет `knowledge/`, но не
-заменяет код, contracts или профильные правила Gateway.
+Документация поддерживает один продукт: Custom GPT Omni-CIO и read-only Gateway.
 
 ## Быстрый вход
 
-1. `../AGENTS.md` — обязательные правила.
-2. `../README.md` — текущее состояние и запуск.
-3. `master-plan/README.md` — иерархия исходной спецификации.
-4. `master-plan/OMNI_CIO_MASTER_PROMPT_V9.txt` — текстовая копия плана.
-5. `../knowledge/00_PROJECT_MASTER_CONTEXT.md` — долговременная память.
-6. `../knowledge/16_CURRENT_PROGRAM_STATUS.md` — текущая вершина и audit gates.
-7. `audits/PROJECT_AUDIT_2026-08-01.md` — последний полный аудит.
-8. `architecture/SYSTEM_OVERVIEW.md` — компоненты и границы.
-9. `architecture/REPOSITORY_STRUCTURE.md` — назначение папок и файлов.
-10. `inventory/PROJECT_ASSETS.md` — GitHub и внешние системы.
-11. `inventory/FILE_INDEX.md` — индекс runtime, tests and knowledge.
+1. `../README.md` — что это, как пользоваться и как обновлять.
+2. `../AGENTS.md` — обязательные правила разработки.
+3. `../knowledge/00_PROJECT_MASTER_CONTEXT.md` — долговременный контекст.
+4. `../knowledge/16_CURRENT_PROGRAM_STATUS.md` — текущий accepted status.
+5. `../gpt/SETUP_INDEX.md` — настройка/восстановление Custom GPT.
+6. `architecture/SYSTEM_OVERVIEW.md` — текущая архитектура.
+7. `architecture/REPOSITORY_STRUCTURE.md` — структура и dependencies.
+8. `architecture/DECISIONS.md` — действующие ADR.
+9. `operations/DEPLOYMENT_RUNBOOK.md` — Render deployment.
+10. `operations/RELEASE_CHECKLIST.md` — release/acceptance checklist.
 
-Фактический `main` и exact-head GitHub Actions имеют приоритет над временными
-номерами PR в документах.
+## Master plan
 
-## Разделы
-
-### Master plan
+`master-plan/` хранит исходную спецификацию развития именно Omni-CIO:
 
 - `master-plan/README.md`
 - `master-plan/OMNI_CIO_MASTER_PROMPT_V9.pdf`
 - `master-plan/OMNI_CIO_MASTER_PROMPT_V9.txt`
 
-### Audits
+Master plan определяет направление, но не доказывает, что future feature уже реализована. Current code/tests/status имеют приоритет для фактического состояния.
 
-- `audits/PROJECT_AUDIT_2026-08-01.md` — проверка `main`, PR #130,
-  dependencies, warnings, documentation drift and acceptance gaps.
-
-Аудит фиксирует доказанное состояние на дату проверки. Быстро меняющиеся
-сведения об открытых PR и CI нужно перепроверять в GitHub.
-
-### Architecture
+## Architecture
 
 Core:
 
@@ -44,115 +33,51 @@ Core:
 - `architecture/REPOSITORY_STRUCTURE.md`
 - `architecture/DECISIONS.md`
 
-Final-review chain:
+Остальные architecture files документируют существующие portfolio, market, quality, rating and final-review modules. Их удаление требует проверки corresponding runtime/tests.
 
-- `architecture/FINAL_DECISION_REVIEW_PRODUCTION_ROUTE_V1.md`
-- `architecture/FINAL_DECISION_REVIEW_PUBLISHER_V1.md`
-- `architecture/FINAL_DECISION_REVIEW_ORCHESTRATION_V1.md`
-- `architecture/FINAL_DECISION_REVIEW_ACCEPTANCE_EVIDENCE_V1.md`
-- `architecture/FINAL_DECISION_REVIEW_WORKFLOW_BRIDGE_V1.md`
-- `architecture/FINAL_DECISION_REVIEW_WORKFLOW_PRODUCER_V1.md`
-- `architecture/FINAL_DECISION_REVIEW_WORKFLOW_COORDINATOR_V1.md`
-- `architecture/FINAL_DECISION_REVIEW_PRODUCTION_OWNER_CALLABLES_V1.md`
-- `architecture/FINAL_DECISION_REVIEW_TRUSTED_OWNER_COMPOSITION_V1.md`
-- `architecture/FINAL_DECISION_REVIEW_APPROVED_OWNER_ACQUISITION_V1.md`
-- `architecture/FINAL_DECISION_REVIEW_APPROVED_OWNER_INSTALLATION_V1.md`
-- `architecture/FINAL_DECISION_REVIEW_AUTHENTICATED_ROUTE_CONTEXT_V1.md`
-- `architecture/FINAL_DECISION_REVIEW_APPROVED_OWNER_SNAPSHOTS_V1.md`
-- `architecture/FINAL_DECISION_REVIEW_AUTHENTICATED_OWNER_INSTALLATION_V1.md`
+## Operations
 
-Official source chains:
+Основные runbooks:
 
-- `architecture/CBR_KEY_RATE_SOURCE_V1.md`
-- `architecture/CBR_KEY_RATE_CACHE_V1.md`
-- `architecture/CBR_KEY_RATE_OBSERVABILITY_V1.md`
-- `architecture/CBR_KEY_RATE_ALERT_POLICY_V1.md`
-- `architecture/CBR_KEY_RATE_OPERATIONS_LIFECYCLE_V1.md`
-- `architecture/MOEX_ISS_TQBR_QUOTE_SOURCE_V1.md`
-- `architecture/MOEX_ISS_TQBR_QUOTE_CACHE_V1.md`
-- `architecture/MOEX_ISS_TQBR_QUOTE_OBSERVABILITY_V1.md`
-- `architecture/MOEX_ISS_TQBR_QUOTE_ALERT_POLICY_V1.md`
-- `architecture/MOEX_ISS_TQBR_QUOTE_OPERATIONS_LIFECYCLE_V1.md`
-- `architecture/ACRA_ISSUER_RATING_ACTION_SOURCE_V1.md`
-- `architecture/ACRA_ISSUER_RATING_ACTION_CACHE_V1.md`
-- `architecture/ACRA_ISSUER_RATING_ACTION_OBSERVABILITY_V1.md`
-- `architecture/ACRA_RATING_ACTIONS_ALERT_POLICY_V1.md`
-- `architecture/ACRA_RATING_ACTIONS_OPERATIONS_LIFECYCLE_V1.md`
-- `architecture/EXPERT_RA_ISSUER_RATING_ACTION_SOURCE_V1.md`
-- `architecture/EXPERT_RA_ISSUER_RATING_ACTION_CACHE_V1.md`
-- `architecture/EXPERT_RA_ISSUER_RATING_ACTION_OBSERVABILITY_V1.md`
-- `architecture/EXPERT_RA_RATING_ACTIONS_ALERT_POLICY_V1.md`
-- `architecture/EXPERT_RA_RATING_ACTIONS_OPERATIONS_LIFECYCLE_V1.md`
-- `architecture/NCR_ISSUER_RATING_ACTION_SOURCE_V1.md`
+- `operations/DEPLOYMENT_RUNBOOK.md`
+- `operations/RELEASE_CHECKLIST.md`
+- `operations/LIVE_READ_ONLY_ACCEPTANCE.md`
+- `operations/SELF_HOSTED_WINDOWS_RUNNER_SERVICE.md` — сохраняется, пока Regression Shield использует соответствующий self-hosted Windows runner.
 
-Each source keeps its own identity, scale and failure contract. A generic
-cross-agency identity/scale merge is not implied by this index.
+## Custom GPT
 
-### Operations
+Canonical configuration: `../gpt/`.
 
-- `operations/DEPLOYMENT_RUNBOOK.md` — Gateway deployment.
-- `operations/RELEASE_CHECKLIST.md` — release evidence and rollback.
-- `operations/LIVE_READ_ONLY_ACCEPTANCE.md` — external acceptance cases.
-- `operations/SELF_HOSTED_WINDOWS_RUNNER_SERVICE.md` — bounded read-only
-  diagnostics and recovery for the trusted persistent Windows runner.
-- `operations/TELEGRAM_REMOVAL_RUNBOOK.md` — retired Telegram cleanup history.
+Главный файл:
 
-### Inventory
+`../gpt/SETUP_INDEX.md`
 
-- `inventory/PROJECT_ASSETS.md`
-- `inventory/FILE_INDEX.md`
+Production Instructions:
 
-### Custom GPT
+`../gpt/CUSTOM_GPT_INSTRUCTIONS_V8_4_1.txt`
 
-Canonical configuration lives in `../gpt/`:
+Production Knowledge:
 
-- `../gpt/README.md`
-- `../gpt/MY_GPT_SETUP_RUNBOOK.md`
-- `../gpt/CONFIGURATION.md`
-- `../gpt/INSTRUCTIONS.md`
-- `../gpt/INSTRUCTIONS_COMPACT.md`
-- `../gpt/ACTIONS_CATALOG.md`
-- `../gpt/NEW_CHAT_PROMPT.md`
-- `../gpt/PROJECT_INSTRUCTIONS.md`
-- `../gpt/BOT_ONLY_FILE_MANIFEST.md`
-- `../gpt/NEW_ACCOUNT_BOOTSTRAP.md`
+ровно 10 файлов `../gpt/knowledge/`.
 
-GitHub does not apply these files to GPT Editor automatically. Actual schema
-import, Bearer configuration, Preview and rollback are external owner actions.
+GitHub не применяет эти файлы к GPT Editor автоматически. После configuration change владелец вручную применяет затронутые Instructions/Knowledge, выполняет Preview и нажимает `Update`.
 
-### CI and security
+## CI/security
 
-Reproducible dependencies, full-SHA Action pins, quality/security gates and
-residual debt are described in:
+- `.github/workflows/regression-shield.yml` — основной merge gate.
+- `../scripts/check_repository_layout.py` — active repository structure + broker-write guard.
+- `../scripts/check_ci_security_baseline.py` — CI/dependency/security policy.
+- `../SECURITY.md` — security boundary.
 
-- `../knowledge/14_CI_SECURITY_BASELINE.txt`
-- `operations/SELF_HOSTED_WINDOWS_RUNNER_SERVICE.md`
-- `audits/PROJECT_AUDIT_2026-08-01.md`
+## Не хранить в GitHub
 
-### Current program status
+- T-Invest token;
+- Gateway Bearer key value;
+- Authorization headers;
+- полный broker account ID;
+- private broker reports/positions/operations как configuration data;
+- Render/GPT secret exports.
 
-The current merged top, audit hold, dependency queue and next safe package are
-recorded in `../knowledge/16_CURRENT_PROGRAM_STATUS.md`. Verify it against
-GitHub before starting work.
+## Правило документации
 
-### Domain knowledge
-
-Specific financial, data-quality and release rules live in `../knowledge/` and
-have priority over short descriptions in this index.
-
-## Retired Telegram integration
-
-Runtime and deployment contract are removed. The decision and anti-regression
-rules are in `../knowledge/12_TELEGRAM_RETIREMENT.txt`; external cleanup history
-is in `operations/TELEGRAM_REMOVAL_RUNBOOK.md`.
-
-## What must not be stored in GitHub
-
-- tokens, Bearer keys and credentials;
-- full account identifiers;
-- real reports, operations or positions;
-- raw CBR XML, MOEX JSON or rating-agency HTML;
-- upstream body/fault/exception text;
-- process-local cache, alert or evidence state;
-- private financial values in observability payloads;
-- runner credential/configuration files or registration tokens.
+Не создавать новый setup/audit/inventory file, если информацию можно добавить в существующий canonical document. Цель структуры — минимум конфликтующих источников истины.

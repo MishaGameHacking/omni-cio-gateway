@@ -1,16 +1,17 @@
 # Custom GPT configuration registry — Omni-CIO v8.4
 
-> ⚠️ Этот файл — РЕЕСТР НАСТРОЕК. НЕ вставлять его целиком в поле `Instructions` Custom GPT.
-> Для поля `Instructions` использовать только `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_4_1.txt`.
+> Этот файл — реестр настроек. Не вставлять его целиком в поле Instructions.
+> Production Instructions находятся только в `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_4_1.txt`.
 
 ## Identity
 
 - Name: `Omni-CIO API | Управляющий и аналитик v8.4`
 - Purpose: личный read-only инвестиционный аналитик и клиент Omni-CIO Gateway.
 - Primary language: Russian.
+- User timezone: `Europe/Moscow` / MSK.
 - GPT configuration release: `v8.4`.
+- Production Instructions release: `v8.4.1`.
 - Backend/Gateway release: `v3.10.0`.
-- Communication profile: `Modern Financial Sage — 2026`.
 - Recommended model: `Thinking 5.6`.
 
 ## Description
@@ -19,29 +20,22 @@
 
 ## Conversation starters
 
-Использовать эти четыре основных starter-а:
-
 1. `УПРАВЛЯЙ ПОРТФЕЛЕМ — сначала вызови getPortfolioSnapshot. Если успешно, вызови getCashLiquiditySnapshot и getPortfolioAnalytics. Затем проанализируй данные и скажи, что делать.`
 2. `АНАЛИТИК — объясни состояние портфеля простыми словами.`
 3. `НОВОСТИ — проверь важные события по моим компаниям.`
 4. `ЖУРНАЛ — покажи решения текущего разговора.`
 
-Первый starter намеренно содержит точные Action names. Это повышает надёжность dispatch в Custom GPT и не меняет read-only границу.
+Первый starter намеренно содержит Action names для максимально надёжного dispatch. Простые естественные команды также должны маршрутизироваться автоматически по Instructions.
 
 ## Instructions
 
-В поле `Instructions` вставить **полное содержимое только этого файла**:
+В поле `Instructions` вставить **100% содержимого**:
 
 `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_4_1.txt`
 
-Не вставлять туда `CONFIGURATION.md`, `SETUP_INDEX.md`, README или Knowledge-файлы.
-Не смешивать несколько версий Instructions.
+Других production Instructions-файлов нет. Не смешивать старые версии из чатов, локальных копий или Git history.
 
-`gpt/INSTRUCTIONS_COMPACT.md` и `gpt/INSTRUCTIONS.md` остаются разработческими/аудитными источниками, но production UI-файл для GPT Editor — `CUSTOM_GPT_INSTRUCTIONS_V8_4_1.txt`.
-
-## Knowledge — production upload set
-
-В Knowledge существующего Custom GPT загрузить **ровно эти 10 файлов из `gpt/knowledge/`, каждый ровно один раз**:
+## Knowledge — ровно 10 файлов
 
 1. `02_GATEWAY_DATA_CONTRACT_V2_OPERATIONS.txt`
 2. `04_CIO_PORTFOLIO_MANAGER.txt`
@@ -54,15 +48,13 @@
 9. `11_RISK_DECOMPOSITION_AND_SIZING_GATES.txt`
 10. `13_COMMUNICATION_STYLE_2026.txt`
 
-Не загружать дубликаты Knowledge-файлов. Не загружать туда master-plan, исходный код Gateway, реальные брокерские отчёты, полный accountId или секреты.
+Каждый файл загружать один раз. Не загружать исходный код, master plan, реальные брокерские отчёты, accountId или secrets.
 
 ## Capabilities
 
-Для текущей конфигурации:
-
-- Web Search: **ON** — для свежих публичных сведений о компаниях, фондах, отчётности, дивидендах, санкциях, ставках и новостях.
-- Code Interpreter / Data Analysis: **ON** — для безопасных расчётов и анализа пользовательских файлов, без передачи секретов.
-- Image generation: **OFF** — для инвестиционного workflow не требуется и не должно конкурировать с Actions.
+- Web Search: **ON**.
+- Code Interpreter / Data Analysis: **ON**.
+- Image generation: **OFF** для текущего инвестиционного workflow.
 - Apps: **OFF / не использовать вместе с Actions**.
 - Actions: **ON**.
 
@@ -83,60 +75,62 @@ Health URL:
 Authentication:
 
 - Type: `API Key`
-- Auth mode: `Bearer`
-- Secret value: вручную ввести **значение `GATEWAY_API_KEY` из Render service `omni-cio-gateway`**.
-- `TINVEST_TOKEN` в GPT Editor не вставлять.
+- Mode: `Bearer`
+- Value: `GATEWAY_API_KEY` из Render service `omni-cio-gateway`
+- `TINVEST_TOKEN` в GPT Editor не вставлять
 
-Expected Action surface:
+Expected surface:
 
-- ровно 14 операций из `gpt/ACTIONS_CATALOG.md`;
-- все методы `GET`;
+- ровно 14 GET Actions из `gpt/ACTIONS_CATALOG.md`;
 - никаких create/order/execute/cancel/replace/transfer/withdraw методов;
 - `trading_methods=false`.
 
 ## Portfolio dispatch acceptance
 
-Для starter `УПРАВЛЯЙ ПОРТФЕЛЕМ` успешное поведение начинается с реального Action-вызова, а не с текстового объяснения.
-
-Ожидаемый базовый порядок:
+Для `УПРАВЛЯЙ ПОРТФЕЛЕМ` ожидаемый обязательный старт:
 
 1. `getPortfolioSnapshot`;
-2. при успехе — `getCashLiquiditySnapshot`;
-3. затем `getPortfolioAnalytics`;
-4. только после этого — анализ и DecisionCard.
+2. при успехе `getCashLiquiditySnapshot`;
+3. `getPortfolioAnalytics`;
+4. только затем анализ, рынок/кандидаты при необходимости и DecisionCard.
 
-До успешного базового набора Web Search не должен заменять брокерские Actions.
+Если бот пишет «нет свежих данных» до реальной попытки первого Action, acceptance не пройден.
 
-Если бот пишет «нет свежих данных» до попытки `getPortfolioSnapshot`, acceptance не пройден.
+## Market/sizing acceptance
+
+Если рынок закрыт, нет свежего `best ask` или доступен только stale `last price`:
+
+- решение должно быть `WAIT_FOR_FRESH_MARKET`/эквивалентное ожидание;
+- точное количество лотов не должно подаваться как персональный sizing;
+- stale price не используется как подтверждённая цена покупки.
 
 ## Secrets boundary
 
-GitHub хранит только имена переменных и инструкции.
+GitHub хранит только имена переменных и инструкции. Никогда не коммитить:
 
-Никогда не коммитить:
 - `TINVEST_TOKEN`;
 - значение `GATEWAY_API_KEY`;
 - Authorization header;
-- полный брокерский accountId;
-- реальные позиции/операции как конфигурационные данные.
+- полный broker accountId;
+- реальные позиции/операции как configuration data.
 
 Подробности: `gpt/SECRETS_AND_RENDER.md`.
 
-## Publishing checklist
+## Publishing/update checklist
 
-1. Проверить `gpt/SETUP_INDEX.md`.
-2. Вставить `CUSTOM_GPT_INSTRUCTIONS_V8_4_1.txt` в поле Instructions без ручных изменений.
+1. Открыть `gpt/SETUP_INDEX.md`.
+2. Вставить `CUSTOM_GPT_INSTRUCTIONS_V8_4_1.txt` без ручного смешивания версий.
 3. Загрузить ровно 10 Knowledge-файлов без дублей.
-4. Выбрать recommended model `Thinking 5.6`.
-5. Web Search и Data Analysis включить; Image generation и Apps выключить.
-6. Проверить production `/health`: `status=ok`, `version=3.10.0`, `build.entrypoint=app:app`, `trading_methods=false`.
-7. Импортировать `https://omni-cio-gateway.onrender.com/openapi.json`.
-8. Сверить 14 GET Actions по `ACTIONS_CATALOG.md`.
-9. Настроить API Key → Bearer с `GATEWAY_API_KEY`.
-10. В Preview выполнить method-isolation, `gatewayHealth`, `getConnection` и portfolio dispatch test.
-11. Убедиться, что счёт маскирован и write Actions отсутствуют.
-12. Нажать Update только после успешных проверок.
+4. Выбрать `Thinking 5.6`, пока эта модель доступна и поддерживает Actions.
+5. Web Search + Data Analysis ON; Image generation + Apps OFF.
+6. Проверить `/health`: `status=ok`, `version=3.10.0`, `entrypoint=app:app`, `trading_methods=false`.
+7. Импортировать production `/openapi.json`.
+8. Сверить 14 GET Actions.
+9. Настроить API Key → Bearer.
+10. Выполнить Preview smoke tests из `SETUP_INDEX.md`.
+11. Проверить маскирование account ID и московское время.
+12. Нажать `Update` только после успешных проверок.
 
-## External UI state
+## Важная граница GitHub ↔ GPT Editor
 
-GitHub хранит желаемое и воспроизводимое состояние, но не может автоматически применить изменения к GPT Editor. Имя, sharing, capabilities, фактически загруженные Knowledge-файлы и Bearer secret всё равно вводятся/проверяются вручную в интерфейсе ChatGPT.
+GitHub — эталон и история версий. Он не применяет Instructions, Knowledge, model selection, sharing state или Bearer secret в GPT Editor автоматически. Эти значения применяются/проверяются вручную после изменения соответствующего GitHub-файла.

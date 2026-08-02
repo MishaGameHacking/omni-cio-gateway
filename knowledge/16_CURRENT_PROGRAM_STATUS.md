@@ -1,214 +1,125 @@
 # 16 — CURRENT PROGRAM STATUS
 
-Дата актуализации: 2026-08-01  
-Фактическая слитая функциональная вершина `main`: **PR-104**  
-Последний инфраструктурный merge: **PR #130**  
-Текущий `main` commit: `52a818daa64f4290fd6f551fbbc7f77bea3a94b2`  
-Текущий режим: **read-only audit hold**
+Дата актуализации: 2026-08-02
 
-## Назначение документа
+## Current accepted baseline
 
-Это оперативная карта программы. Код в `main` остаётся окончательным
-источником истины. Стратегические требования и Definition of Done определяются
-`AGENTS.md`, `knowledge/00_PROJECT_MASTER_CONTEXT.md` и canonical master plan.
+Последний принятый product/configuration merge:
 
-Состояние открытых Pull Requests, GitHub Actions, Render, GPT Editor и внешних
-сервисов нельзя считать зафиксированным только этим файлом: перед каждым новым
-пакетом их нужно проверять повторно.
+- PR #146 — `GPT: make portfolio management Action dispatch tool-first`;
+- squash-merged в `main`;
+- accepted main commit before repository cleanup: `99a57d753f2ab50e16ddc79a36f0f9cfcfe9777a`;
+- exact-head Regression Shield run #864: `success`.
 
-## Неизменяемые границы
+Production baseline:
 
+- Custom GPT: `Omni-CIO API | Управляющий и аналитик v8.4`;
+- production Instructions: `v8.4.1`;
+- recommended model: `Thinking 5.6`;
+- user timezone: Moscow / `Europe/Moscow`;
+- Gateway: `v3.10.0`;
+- production endpoint: `https://omni-cio-gateway.onrender.com`;
+- entrypoint: `app:app`;
+- exactly 14 GET Actions;
+- `trading_methods=false`.
+
+## Owner Preview acceptance already observed
+
+Preview tests confirmed working natural-language routing for:
+
+- broker connection;
+- current money/balance;
+- current portfolio composition;
+- 90-day operations;
+- exact single-Action requests;
+- portfolio management flow;
+- masked account display;
+- Moscow time display.
+
+Portfolio-management Instructions require:
+
+`getPortfolioSnapshot → getCashLiquiditySnapshot → getPortfolioAnalytics → analysis`
+
+Market/sizing rules block exact personalized lot sizing when a fresh best ask / market-ready state is unavailable.
+
+## Current repository cleanup package
+
+Active branch:
+
+`cleanup/bot-only-repository`
+
+Purpose:
+
+- keep only files directly required by Omni-CIO configuration, runtime, safety, tests and maintenance;
+- consolidate GPT setup into one source of truth;
+- remove obsolete setup duplicates and dated audit/inventory clutter;
+- remove external publishing/transport-specific artifacts from active project files;
+- preserve all runtime dependencies required by `app.py`;
+- preserve original Omni-CIO master plan because it is directly related to this bot's development.
+
+Cleanup must merge only after a fresh Regression Shield succeeds on its exact final head.
+
+## Deliberately retained runtime dependencies
+
+The following files are not garbage even though names look historical:
+
+- `app_v371.py`;
+- `app_v360.py`;
+- `main.py`.
+
+Current `app.py` imports these wrappers/core. Deleting them now would break production. Removing them requires a separate compatibility refactor after this cleanup.
+
+## Secret state
+
+GitHub does not store real values of:
+
+- `TINVEST_TOKEN`;
+- `GATEWAY_API_KEY`;
+- Authorization headers;
+- full account IDs.
+
+`TINVEST_TOKEN` stays in Render. `GATEWAY_API_KEY` stays in Render and GPT Action Bearer configuration.
+
+## Current supported capability scope
+
+Omni-CIO supports read-only:
+
+- Gateway health and T-Invest connection;
+- portfolio/enriched portfolio;
+- instrument search;
+- market snapshots;
+- portfolio analytics;
+- cash/liquidity diagnostics;
+- purchase-capacity preview;
+- operations history/analytics;
+- broker-report reconciliation;
+- final decision review;
+- relevant public web/news context through GPT Web Search.
+
+No broker write execution is supported.
+
+## Next maintenance priorities after cleanup
+
+1. Merge this cleanup only after green Regression Shield.
+2. Verify Render `/health` after merge.
+3. Apply only changed GPT Knowledge files to GPT Editor when needed.
+4. Run standard Preview smoke tests.
+5. Keep repository structure stable; future functionality uses one logical PR at a time.
+6. Address genuine runtime compatibility/warning debt separately without mixing it into product behavior.
+
+## Definition of healthy current bot
+
+Healthy state requires:
+
+- production Render health OK;
+- T-Invest connection OK;
+- exactly 14 GET Actions;
+- correct Bearer auth;
+- masked account;
 - `trading_methods=false`;
-- ровно 14 пользовательских GET Actions: 13 authenticated и public `/health`;
-- Render entrypoint `app:app`;
-- отсутствие создания, отправки, замены и отмены заявок;
-- отсутствие переводов и вывода денег;
-- отсутствие margin, short и derivatives execution;
-- отдельная ветка и Pull Request для каждого пакета;
-- squash merge только после полного Regression Shield на exact head;
-- green CI не заменяет внешнюю Render/Gateway/GPT acceptance evidence.
+- simple-command routing works;
+- portfolio-management Action chain works;
+- no stale-price personalized sizing;
+- Preview tests pass after GPT configuration changes.
 
-## Завершённая release chain в `main`
-
-- **PR-50…PR-83:** private read-only final-review production chain, acceptance
-  collector, workflow/owner acquisition and authenticated evidence;
-- **PR-84…PR-88:** official CBR source, cache, safe observability, bounded global
-  alert policy and deterministic terminal evidence lifecycle;
-- **PR-89…PR-93:** official MOEX TQBR source, exact cache, privacy-safe
-  telemetry, global operational alert policy and terminal evidence;
-- **PR-94…PR-98:** fixed official ACRA issuer-level national-RU source, bounded
-  cache, privacy-safe telemetry, global alert policy and terminal evidence;
-- **PR-99…PR-103:** fixed Expert RA source, cache, observability, global alert
-  policy and deterministic terminal evidence lifecycle;
-- **PR-104:** fixed official NCR issuer-level national-Russia rating-action
-  source with strict release/date identity and isolated read-only transport.
-
-## Текущая слитая функциональная вершина — PR-104
-
-GitHub PR #136 `PR-104: Add fixed NCR issuer rating action source v1` был
-squash-merged в `main` commit:
-
-`34708f82d20e054bdd420ac1e9993c6d117e12d7`.
-
-Final Regression Shield run #806 прошёл на exact head
-`1ac0db542721c940ed0e3c5bf30ac08dfe8e2dae`:
-
-- 1235 tests passed;
-- 19 non-blocking warnings;
-- total coverage 61.97%, threshold >=60%;
-- mypy: 188 source files, no issues;
-- compile, Ruff, formatting, lock and repository-policy checks passed;
-- stable `app:app`, exactly 14 GET Actions, forbidden surface count 0 and
-  `trading_methods=false` passed;
-- pip-audit, Bandit and detect-secrets passed;
-- diagnostics artifact was present.
-
-Это подтверждает зелёное состояние функционального `main` на PR-104, но не
-доказывает внешнюю production acceptance.
-
-## Слитая CI-инфраструктура — PR #130
-
-PR #130 `CI: make self-hosted Windows runner service diagnosable` был
-squash-merged в `main` commit:
-
-`52a818daa64f4290fd6f551fbbc7f77bea3a94b2`.
-
-Старый красный check на скриншоте относился к Regression Shield run #787 на
-старом head: security job прошёл, а quality job упал на одном ACRA
-deterministic-clock test. Этот ACRA test был исправлен отдельным PR #131 и уже
-находился в `main` до финальной проверки PR #130.
-
-Повторный ручной аудит PR #130 также нашёл и исправил реальные недостатки его
-собственного PowerShell boundary:
-
-- `.service` marker читался без отдельного byte bound;
-- его содержимое могло попасть в PowerShell `Get-Service -Name`, который
-  поддерживает wildcard patterns;
-- отсутствовали отдельные typed states и tests для missing/invalid/mismatched
-  service marker.
-
-Финальная версия использует bounded `.service`, exact service identity,
-no wildcard-first discovery, redacted output и Windows-native regression tests.
-Regression Shield run #810 прошёл на exact head
-`d0c1d3a06e7d0f4f4ea5a2d85908d6c4bf5d1a6b`:
-
-- оба blocking jobs — success;
-- 1241 tests passed, 19 warnings;
-- total coverage 61.97%;
-- mypy: 188 source files, no issues;
-- lock projections, compile, Ruff, formatting, repository policy passed;
-- `app:app`, exactly 14 GET Actions and `trading_methods=false` passed;
-- pip-audit, Bandit and secret scan passed;
-- diagnostics artifact ID `8817049137`.
-
-## Audit hold перед продолжением roadmap
-
-По команде владельца функциональная разработка остаётся приостановленной до
-закрытия текущего audit package и следующих контрольных пунктов.
-
-### 1. Документационная согласованность
-
-До аудита оперативные документы расходились с фактическим `main`:
-
-- status file называл PR-104 активным незавершённым пакетом после его merge;
-- `knowledge/00_PROJECT_MASTER_CONTEXT.md` содержал устаревший локальный текст
-  о вершине PR-81;
-- issue #27 описывал более раннюю вершину и устаревший blocker state;
-- README подробно перечислял chain только до PR-91.
-
-Текущий audit package исправляет project memory, README, documentation index и
-file inventory. Каноническое правило: active package нельзя определять без
-проверки `main`, открытых PR и exact-head Actions.
-
-### 2. Dependency queue
-
-В `main` сохраняются отдельно зафиксированные и hash-locked версии:
-
-- `fastapi==0.140.9`;
-- `httpx==0.28.1`;
-- `t-tech-investments==1.49.2`;
-- `uvicorn==0.51.0`;
-- `pytest==8.4.2`;
-- `pytest-cov==7.1.0`;
-- `ruff==0.16.0`;
-- `mypy==2.3.0`.
-
-Открытые Dependabot PRs нельзя объединять только по зелёному значку в списке.
-Каждый должен получить свежий merge-ref против текущего `main`, official release
-review, regenerated hash locks и полный Regression Shield. Особенно это касается
-major переходов pytest и GitHub Actions.
-
-### 3. Warning debt
-
-Regression Shield run #810 сообщает 19 non-blocking warnings. Зарегистрированы
-следующие классы:
-
-- Starlette/FastAPI TestClient transition away from deprecated `httpx` path;
-- deprecated T-Invest request identity fields based on `figi`;
-- Pydantic serializer warnings в final-review tests;
-- GitHub Action Node runtime and Node API deprecation warnings.
-
-Warnings не равны текущему падению CI, но не должны бессрочно считаться
-безопасными без отдельной классификации, migration plan и regression tests.
-
-## Production acceptance state
-
-Read-only production acceptance по-прежнему требует внешних evidence cases:
-
-1. Render source commit verification;
-2. cache-busted `/health`;
-3. auth-negative check;
-4. exact-route positive check;
-5. GPT Editor schema import;
-6. authenticated Preview;
-7. complete Action-list inspection;
-8. rollback restore.
-
-CI не может отметить эти проверки выполненными.
-
-## Что остаётся до полного релиза
-
-### Backend and operations
-
-- завершить audit package и синхронизировать issue #27;
-- классифицировать и закрыть либо зарегистрировать все warning classes;
-- проверить Dependabot packages по одному, без blind auto-merge;
-- добавить другие credit-rating agencies только как independent fixed sources;
-- определить exact production market-data callers and lazy bindings;
-- построить production-grade news and corporate-event ingestion;
-- выполнить реальную Render/Gateway/GPT acceptance;
-- добавить versioned external RAG with freshness/citation controls;
-- расширить operational monitoring and incident runbooks.
-
-### Web cabinet
-
-- найти и зарегистрировать исходный frontend; не создавать дубликат;
-- реализовать безопасный официальный SberInvestments HTML import без OCR;
-- архивировать отчёты, сравнивать периоды и показывать reconciled differences;
-- завершить mobile layout и light/dark themes;
-- проверить production controls.
-
-### Trading stages
-
-Shadow, paper, preview и final-review компоненты не разрешают live trading.
-Любое будущее исполнение требует отдельной owner-approved admission program с
-confirm-before-trade, idempotency, confirmation TTL, kill switch, partial-fill
-и timeout reconciliation. Autonomous execution остаётся disabled.
-
-## Следующий безопасный функциональный пакет
-
-После merge audit package и синхронизации roadmap следующий логичный кандидат —
-отдельный **NCR rating-action cache v1** над PR-104 с explicit
-fresh/stale/unavailable semantics, single-flight refresh, bounded retention и
-no-silent-stale policy.
-
-Он не должен добавлять route, startup fetch, frontend field, cross-agency scale
-merge или trading method. Другой следующий пакет допустим только после повторной
-сверки master plan, issue #27, текущего `main` и внешних приоритетов владельца.
-
-## Запрет ложного завершения
-
-Проект не считается полностью завершённым после одного зелёного PR. Полный
-релиз требует внешней production acceptance evidence, exact owner/frontend
-binding, remaining market/news/RAG work and completion of planned safety stages.
-До этого система остаётся read-only с `trading_methods=false`.
+Green GitHub CI alone does not prove the external GPT/Render state; external acceptance remains a separate final check after backend/configuration changes.

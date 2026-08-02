@@ -1,151 +1,142 @@
-# Структура репозитория
+# Структура репозитория Omni-CIO
+
+Репозиторий организован вокруг одного продукта: Custom GPT Omni-CIO и его read-only Gateway.
 
 ## Каноническое дерево
 
 ```text
 omni-cio-gateway/
-├── app.py                         # стабильный gateway entrypoint
-├── app_v371.py                    # архивный совместимый wrapper
-├── app_v360.py                    # базовый legacy wrapper
-├── main.py                        # историческое ядро FastAPI
-├── *_analytics.py / *_market.py   # доменные gateway-модули
-├── broker_report_reconciliation/  # официальный отчёт и сверка
+├── app.py                         # production Gateway wrapper / app:app
+├── app_v371.py                    # current compatibility dependency
+├── app_v360.py                    # current compatibility dependency
+├── main.py                        # current FastAPI/auth core dependency
+├── portfolio_market.py
+├── portfolio_analytics.py
+├── cash_liquidity.py
+├── purchase_capacity.py
+├── purchase_capacity_integrity.py
+├── operations_analytics.py
+├── sdk_order_compat.py
+├── broker_report_reconciliation/
 ├── omni_cio/
-│   ├── contracts/v1/              # versioned typed read-only contracts
-│   ├── market/                    # market/macro sources and analysis
-│   ├── observability/             # allowlisted telemetry and evidence
-│   └── release/                   # internal final-review release chain
-├── tests/                         # unit, endpoint, OpenAPI, Regression Shield
-├── knowledge/                     # правила предметной области для AI
-├── gpt/                           # каноническая конфигурация Custom GPT
+│   ├── contracts/                 # typed/versioned contracts
+│   ├── adapters/                  # compatibility/read adapters
+│   ├── quality/                   # quality/freshness validation
+│   ├── market/                    # read-only market/macro/rating sources
+│   ├── analytics/                 # analytics modules
+│   ├── risk/                      # risk/scenario layers
+│   ├── decision/                  # decision layers
+│   ├── observability/             # safe telemetry/evidence
+│   └── release/                   # read-only release/final-review chain
+│
+├── gpt/
+│   ├── SETUP_INDEX.md             # single setup/update/recovery entrypoint
+│   ├── CONFIGURATION.md           # GPT Editor registry
+│   ├── CUSTOM_GPT_INSTRUCTIONS_V8_4_1.txt
+│   ├── ACTIONS_CATALOG.md
+│   ├── SECRETS_AND_RENDER.md
+│   ├── MY_GPT_SETUP_RUNBOOK.md
+│   ├── BOT_ONLY_FILE_MANIFEST.md
+│   ├── PROJECT_INSTRUCTIONS.md
+│   ├── NEW_CHAT_PROMPT.md
+│   └── knowledge/                 # exactly 10 production upload files
+│
+├── knowledge/                     # engineering/domain project memory
 ├── docs/
-│   ├── master-plan/               # исходная спецификация и поисковая копия
-│   ├── architecture/              # архитектура и карта файлов
-│   ├── operations/                # gateway и migration runbooks
-│   └── inventory/                 # реестр компонентов и внешних активов
-├── scripts/                       # локальные безопасные проверки
-├── .github/                       # CI, templates и ownership
-├── render.yaml                    # Gateway deploy contract
-├── requirements.in                # production constraints
-├── requirements.txt               # pinned + SHA-256 runtime lock
-├── requirements-dev.in            # development constraints
-├── requirements-dev.txt           # pinned + SHA-256 development lock
-├── pyproject.toml                  # Ruff, mypy, pytest, coverage, Bandit
+│   ├── master-plan/               # original Omni-CIO specification
+│   ├── architecture/              # active architecture/contracts
+│   └── operations/                # deploy/release/acceptance runbooks
+├── tests/                         # regression/contracts/security tests
+├── scripts/                       # CI/security/repository checks
+├── .github/                       # workflows/templates/governance
+├── render.yaml                    # single production Render contract
+├── requirements.in
+├── requirements.txt
+├── requirements-dev.in
+├── requirements-dev.txt
+├── pyproject.toml
 ├── .env.example
-└── project documentation
+├── README.md
+├── AGENTS.md
+└── SECURITY.md
 ```
 
-## Правила размещения
+## Runtime rule
 
-### Gateway runtime
+Корневые wrapper files не являются мусором, пока их импортирует current runtime.
 
-В корне остаются файлы, необходимые для совместимости production gateway. Новые крупные функции не добавляются в `main.py`; они живут в отдельном модуле.
+`app.py` в текущей release chain использует `app_v371.py`, `app_v360.py` и `main.py`. Удалять/перемещать их можно только отдельным compatibility refactor после изменения imports, OpenAPI/auth behavior and full Regression Shield.
 
-Versioned domain contracts размещаются в `omni_cio/contracts/v1/`. Внутренние
-final-review coordinators, adapters, registries, owner-acquisition и
-owner-installation boundaries размещаются в `omni_cio/release/`; они не создают
-публичный Action автоматически. Публичная регистрация остаётся явной и
-проверяется 14-GET release contract.
+## `gpt/`
 
-Market and macro sources размещаются в `omni_cio/market/`. Каждый внешний
-source обязан иметь фиксированный host/path scope, typed available/unavailable
-contract, bounded transport, fail-closed parser и focused tests. Source module не
-регистрирует route, не вызывает сеть при импорте и не получает торговых
-полномочий. PR-89 ограничен публичным MOEX ISS `stock/shares/TQBR` и не является
-брокерской исполнимой котировкой.
+`gpt/` хранит воспроизводимую конфигурацию Custom GPT.
 
-Source-specific cache modules также размещаются в `omni_cio/market/`. Они
-принимают только typed source snapshots, имеют exact identity, bounded TTL/
-capacity, single-flight refresh и explicit fresh/stale/unavailable contract.
-PR-90 не регистрирует production caller, не вызывает сеть при импорте и не
-разрешает stale без явной trusted policy.
+Правила:
 
-Allowlisted telemetry builders размещаются в `omni_cio/observability/`. PR-91
-принимает только typed PR-89/90 результаты и строит immutable operational events
-без цены, SECID, market timestamp, account, raw payload или exception text. Эти
-builders не эмитят события автоматически, не регистрируют sink и не запускают
-source/cache lifecycle при import/startup.
+- один setup entrypoint: `SETUP_INDEX.md`;
+- один production Instructions file: `CUSTOM_GPT_INSTRUCTIONS_V8_4_1.txt`;
+- ровно 10 production Knowledge files;
+- production endpoint only: `https://omni-cio-gateway.onrender.com`;
+- GitHub не синхронизирует GPT Editor автоматически.
 
-PR-80 `final_decision_review_approved_owner_installation_v1.py` является
-одноразовым typed adapter между существующими PR-78 owner ports и PR-79
-acquisition. Он не является HTTP handler, source-publication route или
-calculator implementation.
+## `knowledge/`
 
-### Retired transport paths
+Engineering/domain memory остаётся только там, где она помогает поддерживать current runtime, safety, data quality или roadmap state.
 
-`telegram_bot/`, `render.telegram.yaml` и `/telegram/webhook` удалены.
-Repository checks должны блокировать их случайное возвращение.
+- `00_` — durable project context;
+- domain-specific files — market/operations/report/security/contracts;
+- `16_` — current accepted status.
 
-### `knowledge/`
+Production GPT Knowledge берётся **не из root `knowledge/`**, а из `gpt/knowledge/`.
 
-Нумерация:
+## `docs/master-plan/`
 
-- `00_` — общий контекст;
-- `01_..08_` — базовые возможности;
-- `09_` — рынок и покупательная способность;
-- `10_` — операции;
-- `11_` — асинхронный брокерский отчёт;
-- `12_` — решение о выводе Telegram runtime из эксплуатации.
-- `13_` — communication profile;
-- `14_` — CI, dependency и security baseline;
-- `15_` — versioned contracts и data-quality профили;
-- `16_` — фактическая вершина программы, acceptance и следующий пакет.
+Master plan сохраняется, потому что напрямую описывает развитие Omni-CIO. Это historical/source specification, а не доказательство текущей реализации.
 
-### `gpt/`
+## `docs/architecture/`
 
-Переносимая конфигурация единственного поддерживаемого интерфейса — Custom GPT. `MY_GPT_SETUP_RUNBOOK.md` является канонической ручной процедурой подключения в ChatGPT → My GPTs.
+Здесь остаются contracts/ADRs, связанные с существующим Gateway and analytical layers. Датированные duplicate inventories/audits не являются обязательной частью структуры.
 
-### `docs/`
+## `docs/operations/`
 
-`master-plan/` хранит неизменяемый PDF, текстовую поисковую копию и правила приоритета. `architecture/`, `operations/` и `inventory/` хранят реализованную архитектуру, runbooks и реестр. Старый Telegram deployment имеет только retirement history/removal runbook.
+Хранят только procedures, необходимые для текущего Gateway/GPT lifecycle: deployment, release, live read-only acceptance, CI runner/recovery where applicable.
 
-### `.github/workflows/`
+## `.github/`
 
-Только постоянные workflow. Regression Shield проверяет Gateway
-entrypoint, read-only contract, отсутствие retired runtime, lock
-integrity, quality, coverage и security. Все external Actions pinned
-полным commit SHA. Одноразовые patch/bootstrap workflow удаляются до
-merge.
+Постоянный Regression Shield и repository governance. One-off patch/bootstrap workflows не остаются в `main`.
 
-### `tests/`
+## `tests/`
 
-Обязателен отдельный тест отсутствия Telegram package, Blueprint,
-configuration, imports и OpenAPI routes. Реальные T-Invest вызовы
-запрещены.
+Тесты должны доказывать реальные current invariants, а не поддерживать удалённые historical integrations.
 
-`tests/test_ci_security_baseline.py` проверяет parser lock-файлов,
-full-SHA Action policy и secret-scan report handling.
+Критически проверять:
 
-PR-80 тестируется отдельно: purchase/sell direction isolation, exact owner
-call count, stale server context, operation mismatch, startup laziness и
-отсутствие HTTP/broker-write surface.
+- GET-only Action surface;
+- `app:app`;
+- `trading_methods=false`;
+- no broker write methods;
+- auth/OpenAPI;
+- monetary/data-quality logic;
+- broker-report/operations/portfolio flows;
+- current market/risk/release contracts.
 
-PR-89 тестируется отдельно: fixed TQBR URL, SECID injection guards, exact ISS
-table shape, Decimal/currency/time normalization, delayed public-feed flags,
-bounded transport, redacted failures, exports и отсутствие route/write surface.
+## Dependencies
 
-PR-90 тестируется отдельно: strict cache-state contract, exact key isolation,
-two-clock age, fresh/forced/stale/unavailable lifecycle, single-flight,
-pruning/eviction/clear, wrong type/identity/future guards, exports и отсутствие
-route/startup/write surface.
+- direct constraints: `requirements.in`, `requirements-dev.in`;
+- generated hash-locked projections: `requirements.txt`, `requirements-dev.txt`;
+- locks не редактируются вручную;
+- dependencies unrelated to current runtime must not be added.
 
-PR-91 тестируется отдельно: source/cache status mapping, external-call state,
-latency/freshness semantics, safe metrics, serialized payload exclusions,
-package exports и отсутствие emit/route/startup/broker-write surface.
+## Cleanup rule
 
-## Что нельзя переносить без отдельного PR
+Перед удалением любого файла:
 
-- `app.py` и `app:app`;
-- wrapper-модули gateway;
-- operationId и публичные Gateway paths;
-- ключевые поля ответов, используемые Custom GPT.
+1. проверить imports;
+2. проверить tests;
+3. проверить CI/scripts;
+4. проверить Render/GPT configuration;
+5. проверить docs/knowledge references;
+6. удалить только в отдельной branch/PR;
+7. выполнить full Regression Shield.
 
-## Deployment separation
-
-`render.yaml` является единственным deployment contract в репозитории.
-
-## Будущий рефакторинг
-
-Gateway-код может перейти в пакет `omni_cio_gateway/` только через
-compatibility migration. Новый transport integration потребует
-отдельного ADR и security review.
+Название `legacy`, `old`, `archive` или версия в filename само по себе не доказывает, что файл безопасно удалить.
