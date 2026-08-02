@@ -35,6 +35,9 @@ def enable_static_config(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     monkeypatch.setenv("REAL_TRADING_MAX_ORDER_RUB", "1000")
     monkeypatch.setenv("REAL_TRADING_MAX_DAILY_RUB", "2000")
+    # Unit tests use the explicit local compatibility backend. Production
+    # defaults to free Upstash and does not need a Render persistent disk.
+    monkeypatch.setenv("REAL_TRADING_JOURNAL_BACKEND", "sqlite")
 
 
 def test_flag_off_publishes_no_real_action(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -48,7 +51,10 @@ def test_flag_off_publishes_no_real_action(monkeypatch: pytest.MonkeyPatch) -> N
         market_snapshot_provider=lambda instrument_uid: {"instrument_uid": instrument_uid},
     )
     assert registered is False
-    assert not any(name.startswith(("getReal", "prepareReal", "executeReal")) for name in operation_ids(app))
+    assert not any(
+        name.startswith(("getReal", "prepareReal", "executeReal"))
+        for name in operation_ids(app)
+    )
 
 
 def test_invalid_static_config_publishes_status_only(
@@ -63,6 +69,7 @@ def test_invalid_static_config_publishes_status_only(
     )
     monkeypatch.setenv("REAL_TRADING_MAX_ORDER_RUB", "1000")
     monkeypatch.setenv("REAL_TRADING_MAX_DAILY_RUB", "2000")
+    monkeypatch.setenv("REAL_TRADING_JOURNAL_BACKEND", "sqlite")
     app = FastAPI()
     registered = routes_v1.maybe_register_real_trading_gateway(
         app=app,
@@ -71,6 +78,41 @@ def test_invalid_static_config_publishes_status_only(
         expected_account_id_provider=lambda: "account",
         market_snapshot_provider=lambda instrument_uid: {"instrument_uid": instrument_uid},
         journal_path=tmp_path / "real.sqlite3",
+    )
+    ids = operation_ids(app)
+    assert registered is False
+    assert "getRealTradingStatus" in ids
+    assert "prepareRealTrade" not in ids
+    assert "executeRealTrade" not in ids
+    assert "getRealOrderState" not in ids
+
+
+def test_free_default_requires_upstash_credentials_before_mutations(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("REAL_TRADING_ENABLED", "true")
+    monkeypatch.setenv(
+        "TINVEST_TRADING_TOKEN",
+        "unit-test-trading-value",  # pragma: allowlist secret
+    )
+    monkeypatch.setenv(
+        "GATEWAY_API_KEY",
+        "unit-test-gateway-value",  # pragma: allowlist secret
+    )
+    monkeypatch.setenv("REAL_TRADING_MAX_ORDER_RUB", "1000")
+    monkeypatch.setenv("REAL_TRADING_MAX_DAILY_RUB", "2000")
+    monkeypatch.delenv("REAL_TRADING_JOURNAL_BACKEND", raising=False)
+    monkeypatch.delenv("UPSTASH_REDIS_REST_URL", raising=False)
+    monkeypatch.delenv("UPSTASH_REDIS_REST_TOKEN", raising=False)
+    app = FastAPI()
+    registered = routes_v1.maybe_register_real_trading_gateway(
+        app=app,
+        base=fake_base(),
+        app_version="test",
+        expected_account_id_provider=lambda: "account",
+        market_snapshot_provider=lambda instrument_uid: {"instrument_uid": instrument_uid},
+        journal_path=tmp_path / "unused.sqlite3",
     )
     ids = operation_ids(app)
     assert registered is False
