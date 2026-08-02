@@ -7,6 +7,8 @@ from typing import Any, Callable
 
 import httpx
 
+from omni_cio.tbank_tls import TBankTlsCaUnavailable, build_tbank_ssl_context
+
 
 REAL_REST_BASE_URL = "https://invest-public-api.tbank.ru/rest"
 USERS_SERVICE = "tinkoff.public.invest.api.contract.v1.UsersService"
@@ -58,11 +60,22 @@ def _extract_error(response: httpx.Response) -> tuple[str, str]:
     return code, message
 
 
+def _real_ssl_context() -> ssl.SSLContext:
+    try:
+        return build_tbank_ssl_context()
+    except TBankTlsCaUnavailable as exc:
+        raise RealTradingApiFailure(
+            code="REAL_TRADING_TLS_CA_UNAVAILABLE",
+            message=str(exc),
+            http_status=503,
+        ) from exc
+
+
 class RealTradingRestClientV1:
     """Minimal allowlisted production REST client for the future trading token.
 
     The constructor accepts the dedicated trading token explicitly and never
-    reads environment variables.  In particular, it has no fallback to the
+    reads environment variables. In particular, it has no fallback to the
     existing production read-only token.
     """
 
@@ -86,7 +99,7 @@ class RealTradingRestClientV1:
         self._timeout = httpx.Timeout(timeout_seconds)
         self._transport = transport
         self._client_factory = client_factory
-        self._ssl_context = ssl_context or ssl.create_default_context()
+        self._ssl_context = ssl_context or _real_ssl_context()
 
     @property
     def base_url(self) -> str:
