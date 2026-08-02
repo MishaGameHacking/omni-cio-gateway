@@ -1,172 +1,118 @@
-# Omni-CIO v8.4 — полный setup/recovery runbook
+# Omni-CIO v8.6 — setup / recovery runbook
 
-Этот документ нужен для полного восстановления существующего Custom GPT после сбоя, удаления Action или перехода на новый GPT Editor. Для обычного обслуживания сначала использовать `gpt/SETUP_INDEX.md`.
+Для обычной настройки сначала читать `gpt/SETUP_INDEX.md`. Этот документ — короткий recovery checklist, если GPT Editor пришлось настраивать заново.
 
-## 1. Архитектура
+## 1. Canonical runtime
 
-```text
-GitHub main → Render service `omni-cio-gateway` → T-Invest API
-      │
-      └→ эталон GPT configuration → вручную GPT Editor
+- GitHub repo: `Misha2304/omni-cio-gateway`.
+- Deploy branch: `main`.
+- Render service: `omni-cio-gateway`.
+- Entrypoint: `app:app`.
+- Base URL: `https://omni-cio-gateway.onrender.com`.
+- Health: `https://omni-cio-gateway.onrender.com/health`.
+- OpenAPI: `https://omni-cio-gateway.onrender.com/openapi.json`.
 
-Custom GPT Actions → HTTPS Bearer → https://omni-cio-gateway.onrender.com
-```
+Один Gateway service. Не создавать duplicate service для Sandbox или real trading.
 
-GitHub не содержит значений secrets и не обновляет GPT Editor автоматически.
+## 2. Canonical GPT configuration
 
-## 2. Production baseline
+- UI name may still show `Omni-CIO API | Управляющий и аналитик v8.4` until owner renames it.
+- Canonical Instructions behavior: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_0.txt`.
+- Recommended model: `Thinking 5.6`.
+- Timezone: MSK / `Europe/Moscow`.
+- Web Search: ON.
+- Data Analysis: ON.
+- Image generation: OFF for investment workflow.
+- Apps: do not combine with Actions.
 
-- GPT: `Omni-CIO API | Управляющий и аналитик v8.4`
-- Production Instructions: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_4_1.txt`
-- Recommended model: `Thinking 5.6`
-- Gateway: `v3.10.0`
-- Entrypoint: `app:app`
-- Base URL: `https://omni-cio-gateway.onrender.com`
-- Health: `https://omni-cio-gateway.onrender.com/health`
-- OpenAPI: `https://omni-cio-gateway.onrender.com/openapi.json`
-- Expected Action surface: exactly 14 GET operations
-- Safety: `trading_methods=false`
+## 3. Knowledge
 
-## 3. Проверить Render до GPT Editor
+Upload exactly the 10 files listed in `gpt/SETUP_INDEX.md` / `gpt/CONFIGURATION.md`, one copy each.
 
-Открыть production `/health` и убедиться:
+Never upload secrets, source code, full account IDs or private broker reports as configuration.
 
-- `status=ok`;
-- `version=3.10.0`;
-- `build.entrypoint=app:app` или эквивалентный entrypoint marker;
-- `trading_methods=false`.
+## 4. Action authentication
 
-В Render Environment production service должны быть:
-
-- `GATEWAY_API_KEY`;
-- `TINVEST_TOKEN`;
-- `SSL_TBANK_VERIFY=True`.
-
-Значения не копировать в GitHub, issues, chats, Instructions или Knowledge.
-
-## 4. Настроить GPT Editor
-
-Открыть существующий Omni-CIO в `Мои GPT → Редактировать → Конфигурация`.
-
-### Name / Description / starters
-
-Сверить с `gpt/CONFIGURATION.md`.
-
-### Instructions
-
-Удалить старое содержимое поля Instructions и вставить **целиком**:
-
-`gpt/CUSTOM_GPT_INSTRUCTIONS_V8_4_1.txt`
-
-Не смешивать с Git history или локальными копиями.
-
-### Knowledge
-
-Удалить старые дубликаты и загрузить ровно 10 файлов:
-
-1. `02_GATEWAY_DATA_CONTRACT_V2_OPERATIONS.txt`
-2. `04_CIO_PORTFOLIO_MANAGER.txt`
-3. `05_ANALYST_NEWS_SIMPLE_LANGUAGE.txt`
-4. `06_EVIDENCE_CREDIT_BANKRUPTCY.txt`
-5. `07_PERSONAL_STRATEGY.txt`
-6. `08_DECISION_JOURNAL_AND_QUALITY_CONTROL.txt`
-7. `09_AUTONOMOUS_ACTION_ORCHESTRATOR.txt`
-8. `10_DECISION_ENGINE_AND_CANDIDATE_COMPARISON.txt`
-9. `11_RISK_DECOMPOSITION_AND_SIZING_GATES.txt`
-10. `13_COMMUNICATION_STYLE_2026.txt`
-
-### Capabilities
-
-- Web Search: ON
-- Data Analysis / Code Interpreter: ON
-- Image generation: OFF для текущего инвестиционного workflow
-- Apps: не использовать вместе с Actions
-- Actions: ON
-
-### Recommended model
-
-Выбрать `Thinking 5.6`, пока эта модель доступна в GPT Editor и поддерживает Actions.
-
-## 5. Настроить Action
-
-Schema import URL:
-
-`https://omni-cio-gateway.onrender.com/openapi.json`
+Import production OpenAPI URL.
 
 Authentication:
 
-- `API Key`
-- `Bearer`
-- secret: текущее значение `GATEWAY_API_KEY` из Render
+- Type: API Key;
+- Mode: Bearer;
+- Value: current `GATEWAY_API_KEY` from Render.
 
-`TINVEST_TOKEN` в GPT Editor **не вводится**.
+Never paste T-Invest tokens into GPT Editor.
 
-После импорта сверить operationId с `gpt/ACTIONS_CATALOG.md`: ожидается ровно 14 GET Actions.
+## 5. Action surface recovery
 
-## 6. Preview acceptance
+Use `gpt/ACTIONS_CATALOG.md` as source of truth.
 
-Открыть новый Preview-чат и выполнить:
+Default safe state:
 
-1. `Проверь шлюз. Вызови только gatewayHealth. Другие методы не вызывай.`
-2. `Проверь подключение к брокеру.`
-3. `Сколько у меня сейчас денег?`
-4. `Что у меня сейчас в портфеле?`
-5. `Какие операции были за последние 90 дней?`
-6. `УПРАВЛЯЙ ПОРТФЕЛЕМ — обнови данные и скажи, что делать.`
+- real flag OFF → no Real Trading Actions;
+- Sandbox flag OFF → 14 baseline GET Actions;
+- Sandbox flag ON → baseline + 8 Sandbox Actions.
 
-Для portfolio-management должен реально выполняться базовый dispatch:
+After controlled real enable and valid static readiness:
 
-`getPortfolioSnapshot → getCashLiquiditySnapshot → getPortfolioAnalytics`
+- `getRealTradingStatus`;
+- `prepareRealTrade`;
+- `executeRealTrade`;
+- `getRealOrderState`.
 
-Только потом разрешён содержательный анализ.
+No real cancel/replace/withdraw/transfer/MARKET/margin Actions belong to first release.
 
-Acceptance также требует:
+## 6. Render secret recovery
 
-- masked account ID;
-- время пользователя по Москве;
-- read-only поведение;
-- no write Actions;
-- `trading_methods=false`;
-- no stale-price sizing при закрытом/неподтверждённом рынке.
+See `gpt/SECRETS_AND_RENDER.md`.
 
-## 7. Сохранение
+Never change the role separation:
 
-После успешного Preview:
+- `TINVEST_TOKEN` = production read-only;
+- `TINVEST_SANDBOX_TOKEN` = Sandbox only;
+- `TINVEST_TRADING_TOKEN` = real order execution only, account-scoped and non-transfer;
+- `GATEWAY_API_KEY` = GPT → Gateway authentication.
 
-1. Нажать `Update`.
-2. Закрыть редактор.
-3. Открыть GPT заново.
-4. Повторить `Проверь подключение к брокеру` и один portfolio query.
+Real execution additionally needs persistent disk `/var/data` and small server caps.
 
-## 8. Recovery by failure type
+## 7. Preview smoke after recovery
 
-### Бот отвечает, но Actions не вызываются
+Read-only:
 
-- убедиться, что выбрана модель, поддерживающая Actions;
-- проверить, что Action присутствует в GPT Editor;
-- проверить production OpenAPI import;
-- проверить Bearer key;
-- начать новый Preview-чат;
-- выполнить exact-action test.
+1. gatewayHealth only;
+2. getConnection;
+3. balance;
+4. portfolio;
+5. 90-day operations;
+6. `УПРАВЛЯЙ ПОРТФЕЛЕМ` → portfolio snapshot → cash liquidity → analytics → analysis.
 
-### `401/403`
+Sandbox if enabled:
 
-Проверить соответствие `GATEWAY_API_KEY` между Render и GPT Action Bearer. Не менять `TINVEST_TOKEN`, если проблема относится к Gateway auth.
+- status;
+- virtual portfolio;
+- two-phase proposal/confirmation;
+- wrong/expired confirmation rejection;
+- replay protection.
 
-### Gateway health работает, connection не работает
+Real if enabled:
 
-Проверить `TINVEST_TOKEN` в Render и T-Invest access. Не переносить token в GPT.
+- follow `docs/operations/REAL_TRADING_RELEASE_RUNBOOK.md` exactly;
+- run Phase 3 negative acceptance before any correct real confirmation;
+- prove rollback kill switch;
+- first real order only under a new explicit owner instruction.
 
-### После backend update изменились operationId/schema
+## 8. Publishing
 
-Повторно импортировать production `/openapi.json` и сверить `ACTIONS_CATALOG.md`.
+Click GPT Editor `Update` only when:
 
-### Поведение GPT ухудшилось после Instructions/Knowledge update
+- Instructions v8.6 copied completely;
+- Knowledge count correct;
+- Action surface matches current flags/readiness;
+- Bearer authentication works;
+- read-only smoke passes;
+- Sandbox smoke passes if enabled;
+- real Phase 3 acceptance passes if real contour is being published.
 
-Вернуться к последнему проверенному commit GitHub, восстановить соответствующий production Instructions/Knowledge и повторить Preview acceptance.
+## 9. GitHub boundary
 
-## 9. Правило обновления
-
-Все изменения сначала фиксируются в GitHub через отдельную branch/PR. Backend merge разрешён только после Regression Shield. Изменения GPT UI затем вручную применяются из `main` и подтверждаются Preview.
-
-Подробная матрица обновлений находится в `gpt/SETUP_INDEX.md`.
+A GitHub merge/deploy does not automatically modify GPT Editor. Conversely, changing GPT Editor does not update GitHub. Keep GitHub `main` as the canonical reproducible configuration.

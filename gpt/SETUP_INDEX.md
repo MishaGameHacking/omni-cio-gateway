@@ -1,72 +1,62 @@
 # Omni-CIO Custom GPT — единая карта настройки и восстановления
 
-Это **главная точка входа** для настройки, обновления и восстановления единственного поддерживаемого бота:
+Главная точка входа для единственного поддерживаемого бота:
 
 `Omni-CIO API | Управляющий и аналитик v8.4`
 
-Архитектура:
+UI-name меняется владельцем вручную. Канонические backend/config semantics теперь соответствуют **Instructions v8.6.0**.
+
+## Архитектура
 
 ```text
-GitHub (код + эталон настроек)
+GitHub (код + эталон конфигурации)
         │
-        ├── Render deploy → Omni-CIO Gateway (`app:app`)
-        │                         │
-        │                         ├── production T-Invest read-only
-        │                         └── optional T-Invest Sandbox execution
+        ├── Render → Omni-CIO Gateway (`app:app`)
+        │             ├── TINVEST_TOKEN → production read-only
+        │             ├── TINVEST_SANDBOX_TOKEN → optional Sandbox
+        │             └── TINVEST_TRADING_TOKEN → optional confirmed real execution
         │
-        └── вручную → GPT Editor: Instructions + Knowledge
-                                  │
-                                  └── Actions → Render Gateway
+        └── вручную → GPT Editor
+                      ├── Instructions v8.6.0
+                      ├── 10 Knowledge files
+                      └── Actions → production OpenAPI
 ```
 
-## Что GitHub делает и чего не делает
-
-GitHub — источник истины, резервная копия и история версий кода/настроек Omni-CIO.
-
-GitHub **не меняет поле Instructions и Knowledge внутри GPT Editor автоматически**. После изменения этих файлов их нужно вручную применить в GPT Editor и нажать `Update`.
-
-Gateway-код хранится в GitHub и разворачивается отдельным Render service. Custom GPT обращается не к GitHub, а к production Gateway через Actions.
+GitHub не меняет GPT Editor автоматически. Instructions, Knowledge, OpenAPI import и Bearer key применяются владельцем вручную.
 
 ## Каноническая конфигурация
 
-- GPT UI/product name: `v8.4` until manually renamed by the owner.
-- Accepted read-only Instructions baseline: `v8.4.1`.
-- Canonical Sandbox-enabled Instructions after owner Preview acceptance: `v8.5.0`.
+- GPT Instructions: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_0.txt`.
+- Sandbox fallback/history: `v8.5.0`.
+- Read-only fallback/history: `v8.4.1`.
 - Recommended model: `Thinking 5.6`.
-- Production base URL: `https://omni-cio-gateway.onrender.com`.
+- Timezone: `Europe/Moscow` / MSK.
+- Gateway: `https://omni-cio-gateway.onrender.com`.
 - OpenAPI: `https://omni-cio-gateway.onrender.com/openapi.json`.
 - Health: `https://omni-cio-gateway.onrender.com/health`.
-- Gateway entrypoint: `app:app`.
-- Sandbox OFF surface: exactly `14` GET operations.
-- Sandbox ON surface: 14 baseline + 8 isolated Sandbox Actions.
-- Real-money safety invariant: `real_trading_methods=false`.
-- User-visible timezone: Moscow / `Europe/Moscow` / MSK.
+- Entrypoint: `app:app`.
 
-## 1. Что копировать в GPT Editor
+## 1. Instructions
 
-### Name, Description, starters and capabilities
+В GPT Editor использовать целиком только:
 
-Использовать:
+`gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_0.txt`
 
-`gpt/CONFIGURATION.md`
+Не смешивать версии.
 
-### Instructions
+Ключевая модель безопасности v8.6:
 
-Для текущей Sandbox-capable конфигурации использовать **только**:
+- production broker facts остаются отдельным read-only contour;
+- Sandbox — только виртуальные деньги;
+- real BUY/SELL возможен только через опубликованный Real Trading surface;
+- real proposal и real submit всегда разные user turns;
+- submit требует exact short-lived phrase;
+- `submitted` не считается `filled` без broker fill state;
+- ambiguous submit никогда не повторяется автоматически.
 
-`gpt/CUSTOM_GPT_INSTRUCTIONS_V8_5_0.txt`
+## 2. Knowledge — ровно 10 файлов
 
-В GPT Editor:
-
-`Конфигурация → Инструкции`
-
-Старый текст удалить полностью и вставить весь файл целиком. Не смешивать несколько версий Instructions.
-
-`gpt/CUSTOM_GPT_INSTRUCTIONS_V8_4_1.txt` сохраняется как read-only fallback/baseline, но не содержит Sandbox execution protocol.
-
-## 2. Что загрузить в Knowledge
-
-Загрузить **ровно 10 файлов** из `gpt/knowledge/`, каждый один раз:
+Загрузить по одному экземпляру каждого файла из `gpt/knowledge/`:
 
 1. `02_GATEWAY_DATA_CONTRACT_V2_OPERATIONS.txt`
 2. `04_CIO_PORTFOLIO_MANAGER.txt`
@@ -79,81 +69,93 @@ Gateway-код хранится в GitHub и разворачивается от
 9. `11_RISK_DECOMPOSITION_AND_SIZING_GATES.txt`
 10. `13_COMMUNICATION_STYLE_2026.txt`
 
-Перед заменой изменённого файла удалить старую одноимённую копию из Knowledge, затем загрузить новую. Дубликаты запрещены.
+Не загружать broker reports, source code, account IDs или secrets в Knowledge.
 
-## 3. Как подключены Actions
+## 3. Actions
 
-В GPT Editor открыть существующее действие Omni-CIO и импортировать schema по URL:
+GPT Editor → существующий Omni-CIO Action → импорт schema:
 
 `https://omni-cio-gateway.onrender.com/openapi.json`
 
 Authentication:
 
-- Type: `API Key`
-- Mode: `Bearer`
-- Value: текущее значение `GATEWAY_API_KEY` из Render service `omni-cio-gateway`
+- Type: `API Key`;
+- Mode: `Bearer`;
+- Value: существующий `GATEWAY_API_KEY` из Render.
 
-Ожидаемый список operationId находится в:
+Полный условный Action surface: `gpt/ACTIONS_CATALOG.md`.
 
-`gpt/ACTIONS_CATALOG.md`
+### Default safe state
 
-При `SANDBOX_TRADING_ENABLED=false` после импорта должно быть ровно 14 GET Actions.
+`REAL_TRADING_ENABLED=false` означает отсутствие Real Trading Actions в OpenAPI.
 
-При `SANDBOX_TRADING_ENABLED=true` дополнительно должны появиться только 8 Sandbox Actions:
+При `SANDBOX_TRADING_ENABLED=false` также отсутствуют Sandbox Actions; остаются 14 baseline GET Actions.
 
-- `getSandboxTradingStatus`;
-- `openSandboxAccount`;
-- `fundSandboxAccount`;
-- `getSandboxPortfolio`;
-- `prepareSandboxTrade`;
-- `executeSandboxTrade`;
-- `getSandboxOrderState`;
-- `cancelSandboxOrder`.
+### Sandbox enabled
 
-Ни в одном режиме не должно быть real-money create/order/execute/cancel/replace/transfer/withdraw Actions.
+`SANDBOX_TRADING_ENABLED=true` добавляет 8 изолированных Sandbox Actions.
 
-## 4. Где находятся T-Invest tokens
+### Real enabled
 
-Оба T-Invest tokens хранятся **только в Render Environment** и никогда не вводятся в GPT Editor:
+`REAL_TRADING_ENABLED=true` сам по себе недостаточен. Gateway также требует:
 
-- `TINVEST_TOKEN` — production read-only;
-- `TINVEST_SANDBOX_TOKEN` — отдельный Sandbox token.
+- отдельный `TINVEST_TRADING_TOKEN`;
+- valid per-order/daily limits;
+- durable journal на `/var/data`;
+- успешную journal integrity initialization.
 
-Render Environment для Sandbox-capable production service:
+Если static readiness не выполнен, публикуется только `getRealTradingStatus`; real mutation routes не публикуются.
 
-- `TINVEST_TOKEN`
-- `TINVEST_SANDBOX_TOKEN`
-- `GATEWAY_API_KEY`
-- `SSL_TBANK_VERIFY=True`
-- `SANDBOX_TRADING_ENABLED=true|false`
-- `SANDBOX_CONFIRMATION_TTL_SECONDS=120`
+При полной готовности добавляются только:
 
-Границы секретов: `gpt/SECRETS_AND_RENDER.md`.
+- `getRealTradingStatus`;
+- `prepareRealTrade`;
+- `executeRealTrade`;
+- `getRealOrderState`.
 
-## 5. Полная настройка существующего или восстановленного GPT
+`cancelRealOrder`, replace, transfer, withdrawal, margin, MARKET execution в first real release отсутствуют.
 
-1. Открыть `ChatGPT → Мои GPT → Omni-CIO → Редактировать`.
-2. Сверить Name/Description/starters по `gpt/CONFIGURATION.md`.
-3. Вставить `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_5_0.txt` целиком.
-4. Загрузить ровно 10 Knowledge-файлов из списка выше.
-5. Выбрать recommended model `Thinking 5.6`.
-6. Включить Web Search.
-7. Включить Data Analysis / Code Interpreter.
-8. Image generation для инвестиционного workflow оставить выключенным.
-9. Apps не использовать вместе с Actions.
-10. В Action импортировать production OpenAPI URL.
-11. Настроить API Key → Bearer с `GATEWAY_API_KEY`.
-12. Сверить Action surface с текущим `SANDBOX_TRADING_ENABLED`.
-13. Запустить Preview tests из раздела ниже.
-14. Нажать `Update` только после успешных тестов.
+## 4. Render secrets/config
 
-Подробный аварийный runbook: `gpt/MY_GPT_SETUP_RUNBOOK.md`.
+Никогда не вводить T-Invest tokens в GPT Editor.
 
-## 6. Минимальные Preview tests
+### Всегда
 
-### Real production read-only smoke
+- `TINVEST_TOKEN` — existing production read-only;
+- `GATEWAY_API_KEY`;
+- `SSL_TBANK_VERIFY=True`.
 
-В новом Preview-чате выполнить по очереди:
+### Sandbox optional
+
+- `TINVEST_SANDBOX_TOKEN`;
+- `SANDBOX_TRADING_ENABLED=true|false`;
+- `SANDBOX_CONFIRMATION_TTL_SECONDS=120`.
+
+### Real execution optional
+
+- `TINVEST_TRADING_TOKEN` — отдельный account-scoped full-access trading token **без transfer access**;
+- `REAL_TRADING_ENABLED=true|false`;
+- `REAL_TRADING_MAX_ORDER_RUB`;
+- `REAL_TRADING_MAX_DAILY_RUB`;
+- optional `REAL_TRADING_CONFIRMATION_TTL_SECONDS`;
+- optional `REAL_TRADING_MARKET_MAX_AGE_SECONDS`.
+
+Persistent disk должен быть смонтирован в существующий Render service по `/var/data` до real enable.
+
+Подробности: `gpt/SECRETS_AND_RENDER.md` и `docs/operations/REAL_TRADING_RELEASE_RUNBOOK.md`.
+
+## 5. Capabilities в GPT Editor
+
+- Recommended model: `Thinking 5.6`.
+- Web Search: ON.
+- Data Analysis / Code Interpreter: ON.
+- Image generation: OFF для investment workflow.
+- Apps: не использовать вместе с Actions.
+- Actions: ON.
+
+## 6. Read-only Preview smoke
+
+В новом Preview-чате:
 
 1. `Проверь шлюз. Вызови только gatewayHealth. Другие методы не вызывай.`
 2. `Проверь подключение к брокеру.`
@@ -162,100 +164,58 @@ Render Environment для Sandbox-capable production service:
 5. `Какие операции были за последние 90 дней?`
 6. `УПРАВЛЯЙ ПОРТФЕЛЕМ — обнови данные и скажи, что делать.`
 
-Для пункта 6 ожидаемая базовая цепочка:
+Для пункта 6 обязательный старт:
 
 `getPortfolioSnapshot → getCashLiquiditySnapshot → getPortfolioAnalytics → анализ`
 
-Проверить дополнительно:
+Проверить masked account, MSK и отсутствие stale sizing.
 
-- account ID показывается только маскированно;
-- пользовательские даты отображаются по Москве;
-- `real_trading_methods=false`;
-- бот не утверждает, что совершил real сделку;
-- при закрытом/неподтверждённом рынке не выдаёт точный sizing по stale last price.
+## 7. Sandbox acceptance
 
-### Sandbox smoke when enabled
+Когда Sandbox включён:
 
-1. `getSandboxTradingStatus` → `sandbox=true`, `real_money=false`.
-2. Proposal through `prepareSandboxTrade` must not submit anything.
-3. `executeSandboxTrade` requires exact short-lived phrase from a separate user message.
-4. Wrong/expired phrase must fail closed.
-5. After submit, verify `getSandboxOrderState`.
-6. Duplicate confirmation must not create a second broker order.
-7. For cancellation, use only Sandbox order + explicit confirmation and verify final state.
+- `getSandboxTradingStatus` → `sandbox=true`, `real_money=false`;
+- proposal не submit-ит;
+- execute требует exact phrase из нового user turn;
+- wrong/expired phrase fail closed;
+- duplicate confirmation не создаёт вторую заявку;
+- после submit `getSandboxOrderState`;
+- cancellation только Sandbox + отдельное confirmation.
 
-Full sequence: `docs/operations/SANDBOX_TRADING_RUNBOOK.md`.
+Полный runbook: `docs/operations/SANDBOX_TRADING_RUNBOOK.md`.
 
-## 7. Как обновлять бот
+## 8. Real-money staged acceptance
 
-### Изменились только Instructions
+Первый real enable выполняется строго по:
 
-1. Изменение проходит через branch/PR в GitHub.
-2. После merge открыть актуальный `CUSTOM_GPT_INSTRUCTIONS_V8_5_0.txt` из `main`.
-3. Заменить Instructions в GPT Editor целиком.
-4. Preview test.
-5. `Update`.
+`docs/operations/REAL_TRADING_RELEASE_RUNBOOK.md`
 
-### Изменился Knowledge-файл
+До реальной заявки обязательно пройти Phase 3 без submit:
 
-1. Merge изменения в GitHub.
-2. В GPT Editor удалить старую одноимённую копию.
-3. Скачать новую копию из `gpt/knowledge/` и загрузить её.
-4. Проверить, что всего ровно 10 Knowledge-файлов.
-5. Preview test → `Update`.
+1. отдельный account-scoped trading token;
+2. persistent disk `/var/data`;
+3. маленькие hard limits;
+4. controlled real enable;
+5. `getRealTradingStatus` ready + masked account;
+6. wrong phrase rejection;
+7. expiry rejection;
+8. hard-limit rejection;
+9. stale/unsupported market rejection;
+10. SELL beyond owned position rejection;
+11. rollback drill: `REAL_TRADING_ENABLED=false` removes real Actions;
+12. read-only and Sandbox regression smoke.
 
-### Изменился Gateway-код без изменения OpenAPI
+Первая настоящая сделка — только после нового явного разрешения владельца в Phase 4, minimum practical size, LIMIT only, submit once, immediate `getRealOrderState`, then real portfolio reconciliation.
 
-1. Merge только после зелёного Regression Shield.
-2. Render разворачивает commit из `main` согласно своей настройке deploy.
-3. Проверить `/health` и нужный endpoint.
-4. GPT schema повторно импортировать не нужно, если API contract не менялся.
+## 9. Источники истины
 
-### Изменился OpenAPI / Action contract
-
-1. Merge и deploy Gateway.
-2. Проверить production `/health`.
-3. Повторно импортировать `https://omni-cio-gateway.onrender.com/openapi.json` в GPT Actions.
-4. Сверить surface с `ACTIONS_CATALOG.md` и текущим Sandbox flag.
-5. Убедиться, что real-money mutation Actions отсутствуют.
-6. Preview acceptance → `Update`.
-
-### Изменился секрет
-
-- `TINVEST_TOKEN`: заменить только в Render и сохранять read-only.
-- `TINVEST_SANDBOX_TOKEN`: заменить только в Render.
-- `GATEWAY_API_KEY`: заменить в Render и тем же значением обновить Bearer key в GPT Action.
-- Секреты никогда не сохранять в GitHub, Knowledge или Instructions.
-
-## 8. Что умеет текущий бот
-
-Через Gateway и доступные публичные источники Omni-CIO умеет:
-
-- проверить Gateway и подключение T-Invest;
-- получить текущий портфель и обогащённые позиции;
-- показать деньги и ликвидность;
-- анализировать структуру и концентрацию;
-- получить рыночный snapshot инструмента и портфеля;
-- найти инструмент;
-- проверить техническую покупательную способность без real заявки;
-- получить историю и аналитику операций;
-- сверять официальный broker report;
-- выполнять read-only final decision review;
-- объяснять данные простым русским языком;
-- проверять свежие публичные новости/события через Web Search, когда это действительно требуется;
-- при Sandbox enable создавать виртуальный Sandbox account, пополнять его виртуальными деньгами, готовить/подтверждать Sandbox BUY/SELL, проверять состояние и отменять Sandbox orders.
-
-Он **не умеет и не должен** создавать, отправлять, заменять или отменять реальные заявки, выводить/переводить деньги или менять права брокерского доступа.
-
-## 9. Что является источником истины
-
-- Runtime/API: фактический `main` GitHub + deployed Render Gateway.
-- GPT UI configuration: `gpt/CONFIGURATION.md`.
-- Canonical Sandbox-capable Instructions: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_5_0.txt`.
-- Read-only fallback Instructions: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_4_1.txt`.
-- Production Knowledge: ровно 10 файлов `gpt/knowledge/`.
+- Runtime/API: deployed commit from GitHub `main`.
+- GPT registry: `gpt/CONFIGURATION.md`.
+- Canonical Instructions: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_0.txt`.
 - Actions: production `/openapi.json` + `gpt/ACTIONS_CATALOG.md`.
+- Secrets/Render: `gpt/SECRETS_AND_RENDER.md`.
+- Real release: `docs/operations/REAL_TRADING_RELEASE_RUNBOOK.md`.
+- Current engineering status: `knowledge/16_CURRENT_PROGRAM_STATUS.md`.
 - Development rules: `AGENTS.md`.
-- Exact current status: `knowledge/16_CURRENT_PROGRAM_STATUS.md`.
 
-Не восстанавливать бот из старых чатов, скриншотов или локальных копий, если они расходятся с `main`.
+Не восстанавливать конфигурацию из старых чатов/скриншотов, если они расходятся с `main`.
