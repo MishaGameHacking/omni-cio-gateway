@@ -87,6 +87,7 @@ class RealTradeProposalV1:
     confirmation_code: str
     state: ProposalState = "prepared"
     submitted_at: datetime | None = None
+    confirmation_evidence_hash: str | None = None
     broker_response_json: str | None = None
     failure_code: str | None = None
     failure_message: str | None = None
