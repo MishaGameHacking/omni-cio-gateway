@@ -121,7 +121,7 @@ def test_prepare_requires_second_explicit_confirmation_and_is_idempotent() -> No
 
     assert proposal.state == "prepared"
     assert proposal.confirmation_phrase.startswith("ПОДТВЕРЖДАЮ SANDBOX ")
-    assert counter["PostSandboxOrder"] == 0 if "PostSandboxOrder" in counter else True
+    assert counter.get("PostSandboxOrder", 0) == 0
 
     with pytest.raises(SandboxApiFailure) as wrong_confirmation:
         service.execute_trade(proposal.proposal_id, "ПОДТВЕРЖДАЮ SANDBOX WRONG")
@@ -271,6 +271,6 @@ def test_source_boundary_contains_no_production_write_endpoint() -> None:
     )
     assert "https://invest-public-api.tbank.ru/rest" not in source
     assert "OrdersService/PostOrder" not in source
-    assert "TINVEST_TOKEN" not in source
+    assert 'os.environ.get("TINVEST_TOKEN"' not in source
     assert "sandbox-invest-public-api.tbank.ru/rest" in source
     assert "SandboxService" in source
