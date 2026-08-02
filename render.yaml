@@ -13,3 +13,9 @@ services:
         sync: false
       - key: GATEWAY_API_KEY
         sync: false
+      - key: TINVEST_SANDBOX_TOKEN
+        sync: false
+      - key: SANDBOX_TRADING_ENABLED
+        value: "false"
+      - key: SANDBOX_CONFIRMATION_TTL_SECONDS
+        value: "120"
