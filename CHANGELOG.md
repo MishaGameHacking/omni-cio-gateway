@@ -4,16 +4,31 @@
 
 ## [Unreleased]
 
+### T-Invest Sandbox execution
+
+- PR #160 добавил изолированный optional T-Invest Sandbox-контур для виртуальных BUY/SELL; real-money production остаётся read-only.
+- Отдельный `TINVEST_SANDBOX_TOKEN` не заменяет существующий read-only `TINVEST_TOKEN`.
+- `SANDBOX_TRADING_ENABLED=false` по умолчанию сохраняет прежний production Action surface.
+- Добавлены Sandbox account/status/portfolio, proposal/preflight, confirmed submit, order-state и confirmed cancel.
+- Виртуальная сделка двухфазная: immutable proposal → короткоживущее exact confirmation → submit.
+- BUY/SELL limits проверяются при prepare и повторно непосредственно перед submit.
+- Добавлены UUID idempotency, duplicate protection и fail-closed `unknown_do_not_resubmit` для неоднозначного timeout/5xx.
+- Margin confirmation жёстко выключен; withdrawal/transfer, real order execution, auto-replace и stop-order automation не добавлены.
+- PR #162 исправил Render TLS/CA transport для T-Invest Sandbox REST без отключения проверки сертификатов.
+- Owner Preview acceptance 2 августа 2026 подтвердил Sandbox status/account/funding/portfolio, MARKET BUY/SELL, own-position rejection, expiration rejection, exact-confirmation mismatch rejection, replay protection, LIMIT order state, cancel и последующую сверку виртуального портфеля.
+- Во всех наблюдавшихся Sandbox-тестах real-money contour оставался выключен: `real_money=false`, `real_trading_methods=false`.
+- Полный recovery/hardening runbook ещё включает отдельную проверку kill switch, multiple-account fail-closed, restart invalidation и ambiguous post-submit reconciliation.
+- Canonical Sandbox-enabled GPT Instructions: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_5_0.txt`.
+
 ### Repository cleanup
 
-- Консолидирована структура вокруг одного продукта: Omni-CIO Custom GPT + read-only Gateway.
+- Консолидирована структура вокруг одного продукта: Omni-CIO Custom GPT + Gateway.
 - `gpt/SETUP_INDEX.md` назначен единственной точкой настройки, обновления и восстановления.
-- `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_4_1.txt` остаётся единственным production Instructions source.
+- `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_4_1.txt` остаётся accepted read-only baseline; `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_5_0.txt` — canonical Sandbox-enabled Instructions.
 - Удалены obsolete duplicate setup/instructions, dated audit/inventory artifacts и неиспользуемые external-transport artifacts.
 - Активные GPT Knowledge/communication files очищены от внешнего publishing behavior.
 - README/AGENTS/SECURITY/architecture/status синхронизированы с production endpoint `https://omni-cio-gateway.onrender.com`.
 - Runtime dependencies `app_v371.py`, `app_v360.py` и `main.py` намеренно сохранены, потому что current `app.py` всё ещё их импортирует.
-- Read-only invariants не меняются: 14 GET Actions, `app:app`, `trading_methods=false`, no broker write/withdraw/transfer surface.
 
 ## [2026-08-02] Custom GPT v8.4.1 acceptance
 
