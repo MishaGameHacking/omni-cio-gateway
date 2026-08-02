@@ -1,22 +1,20 @@
 from __future__ import annotations
 
-from datetime import datetime
 from decimal import Decimal
 import os
 from types import SimpleNamespace
-from typing import Any, Literal
+from typing import Any, Literal, NoReturn
 
 from fastapi import Depends, FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from .client_v1 import SandboxApiFailure, SandboxRestClientV1
+from .client_v1 import SandboxApiFailure
 from .service_v1 import (
     DEFAULT_CONFIRMATION_TTL_SECONDS,
     ProposalStoreV1,
     SANDBOX_CANCEL_CONFIRMATION,
     SANDBOX_FUND_CONFIRMATION,
     SandboxTradingServiceV1,
-    decimal_from_text,
 )
 
 
@@ -60,7 +58,7 @@ def _service() -> SandboxTradingServiceV1:
     )
 
 
-def _raise_http(exc: SandboxApiFailure) -> None:
+def _raise_http(exc: SandboxApiFailure) -> NoReturn:
     detail: dict[str, Any] = {
         "code": exc.code,
         "message": exc.message,
@@ -416,9 +414,9 @@ def register_sandbox_trading_gateway(
     ) -> SandboxOrderStatusResponse:
         try:
             payload = _service().order_state(order_id)
-        except (SandboxApiFailure, ValueError) as exc:
-            if isinstance(exc, SandboxApiFailure):
-                _raise_http(exc)
+        except SandboxApiFailure as exc:
+            _raise_http(exc)
+        except ValueError as exc:
             raise HTTPException(
                 status_code=400,
                 detail={"code": "SANDBOX_ORDER_ID_INVALID"},
@@ -441,9 +439,9 @@ def register_sandbox_trading_gateway(
             )
         try:
             payload = _service().cancel_order(request.order_id)
-        except (SandboxApiFailure, ValueError) as exc:
-            if isinstance(exc, SandboxApiFailure):
-                _raise_http(exc)
+        except SandboxApiFailure as exc:
+            _raise_http(exc)
+        except ValueError as exc:
             raise HTTPException(
                 status_code=400,
                 detail={"code": "SANDBOX_ORDER_ID_INVALID"},
