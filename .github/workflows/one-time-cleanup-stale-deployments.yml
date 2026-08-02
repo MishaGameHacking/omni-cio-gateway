@@ -1,0 +1,115 @@
+name: One-time stale deployment cleanup
+
+on:
+  push:
+    branches:
+      - maintenance/cleanup-stale-github-deployments
+
+permissions:
+  contents: read
+  deployments: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Remove retired Render deployment records
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+
+          repo = os.environ["REPOSITORY"]
+          token = os.environ["GH_TOKEN"]
+          retired = ("omni-cio-gateway-au6d", "omni-cio-telegram-bot")
+          protected = "omni-cio-gateway"
+          api = "https://api.github.com"
+          headers = {
+              "Accept": "application/vnd.github+json",
+              "Authorization": f"Bearer {token}",
+              "X-GitHub-Api-Version": "2022-11-28",
+              "User-Agent": "omni-cio-maintenance",
+          }
+
+          def request(method, path, payload=None, tolerate=()):
+              data = None if payload is None else json.dumps(payload).encode("utf-8")
+              req = urllib.request.Request(api + path, data=data, headers=headers, method=method)
+              try:
+                  with urllib.request.urlopen(req, timeout=30) as response:
+                      raw = response.read()
+                      return None if not raw else json.loads(raw.decode("utf-8"))
+              except urllib.error.HTTPError as exc:
+                  if exc.code in tolerate:
+                      print(f"Tolerated HTTP {exc.code}: {method} {path}")
+                      return None
+                  body = exc.read().decode("utf-8", errors="replace")
+                  raise RuntimeError(f"HTTP {exc.code}: {method} {path}: {body}") from exc
+
+          protected_found = request(
+              "GET",
+              f"/repos/{repo}/deployments?environment={urllib.parse.quote(protected)}&per_page=1",
+          ) or []
+          if not protected_found:
+              raise RuntimeError(
+                  "Safety stop: no deployment record found for protected production environment "
+                  f"{protected!r}; refusing stale cleanup."
+              )
+
+          for environment in retired:
+              deployment_ids = []
+              page = 1
+              while True:
+                  items = request(
+                      "GET",
+                      f"/repos/{repo}/deployments?environment={urllib.parse.quote(environment)}&per_page=100&page={page}",
+                  ) or []
+                  if not items:
+                      break
+                  deployment_ids.extend(
+                      item["id"] for item in items if item.get("environment") == environment
+                  )
+                  if len(items) < 100:
+                      break
+                  page += 1
+
+              print(f"{environment}: found {len(deployment_ids)} deployment records")
+              for deployment_id in deployment_ids:
+                  request(
+                      "POST",
+                      f"/repos/{repo}/deployments/{deployment_id}/statuses",
+                      {
+                          "state": "inactive",
+                          "environment": environment,
+                          "description": "Retired Render service cleanup",
+                      },
+                      tolerate=(409, 422),
+                  )
+                  request(
+                      "DELETE",
+                      f"/repos/{repo}/deployments/{deployment_id}",
+                      tolerate=(404,),
+                  )
+
+              remaining = request(
+                  "GET",
+                  f"/repos/{repo}/deployments?environment={urllib.parse.quote(environment)}&per_page=1",
+              ) or []
+              if remaining:
+                  raise RuntimeError(f"Cleanup incomplete for {environment!r}")
+
+          final_protected = request(
+              "GET",
+              f"/repos/{repo}/deployments?environment={urllib.parse.quote(protected)}&per_page=1",
+          ) or []
+          if not final_protected:
+              raise RuntimeError("Safety failure: protected production deployment disappeared")
+
+          print("Stale deployment cleanup completed; production deployment records preserved.")
+          PY
