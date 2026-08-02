@@ -10,23 +10,28 @@ Current engineering state:
 
 - production read-only analytics contour: accepted;
 - isolated T-Invest Sandbox execution: accepted and extensively Preview-tested;
-- real-money v1 **Phases 0–2 engineering are now merged**;
-- real-money execution remains default-off until owner Phase 3 configuration and negative Preview acceptance;
-- first real order has **not** been authorized or submitted as part of the release program;
-- do not declare the real buy/sell feature fully released until Phase 3, rollback drill and Phase 4 controlled real execution/reconciliation pass.
+- real-money v1 Phases 0–2 engineering: merged;
+- canonical GPT behavior/config: v8.6.0 merged;
+- paid Render Persistent Disk requirement is being removed in favor of a free Upstash Redis durable journal;
+- Render service remains on Free plan;
+- real-money execution remains default-off until the free-storage migration is merged/deployed and owner Phase 3 configuration/negative acceptance passes;
+- first real order has not been authorized or submitted as part of the release program.
+
+Do not declare the real buy/sell feature fully released until Phase 3, rollback drill and Phase 4 controlled real execution/reconciliation pass.
 
 ## Canonical Custom GPT configuration
 
 - UI/product name currently remains `Omni-CIO API | Управляющий и аналитик v8.4` until owner manually renames it;
-- canonical behavior instructions: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_0.txt` after this release package is merged/applied;
+- canonical behavior instructions: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_0.txt`;
 - historical Sandbox instructions: v8.5.0;
 - historical read-only fallback: v8.4.1;
 - recommended model: `Thinking 5.6`;
 - user-visible timezone: `Europe/Moscow` / MSK;
 - production Gateway: `https://omni-cio-gateway.onrender.com`;
+- Render instance type: Free;
 - entrypoint: `app:app`.
 
-GitHub does not automatically update GPT Editor Instructions/Knowledge/OpenAPI.
+GitHub does not automatically update GPT Editor Instructions/Knowledge/OpenAPI or external secrets.
 
 ## Production read-only contour
 
@@ -124,41 +129,13 @@ Merged `omni_cio/real_trading/` core provides:
 
 Fake-client/security/regression tests are merged and green.
 
-## Real-money release program — Phase 2 complete in backend
+## Real-money release program — Phase 2 backend merged
 
 PR #168 — `Trading: add durable state and conditional real-money Actions` — passed exact-head Regression Shield/security and was squash-merged as commit:
 
 `68e2a658c6d379e8e446b6bc0b46d78beb70c755`
 
-Merged Phase 2 adds:
-
-### Durable execution state
-
-`SQLiteRealExecutionJournalV1`:
-
-- fixed production path `/var/data/omni-cio-real-trading.sqlite3`;
-- intended for a Render persistent disk mounted at `/var/data`;
-- WAL + `synchronous=FULL`;
-- `BEGIN IMMEDIATE` atomic reservation;
-- canonical proposal JSON;
-- HMAC row integrity + revision protection;
-- restart recovery;
-- submitted/unknown daily accounting;
-- confirmation evidence hash persisted;
-- offline tamper detection;
-- broker tokens/Authorization headers are never stored.
-
-### Trusted market adapter
-
-Real execution consumes the established read-only market snapshot but fails closed unless:
-
-- requested/resolved UID identity matches;
-- reference/trading status/order book components are complete;
-- identity has no conflict;
-- instrument type is v1-supported;
-- lot/min-price increment are valid;
-- API trading + limit order flags allow the request;
-- freshness is proven by `order_book.time`, not merely gateway request time.
+Merged Phase 2 provides trusted market adapter, conditional Action publication, proposal persistence contract, restart recovery semantics and journal integrity gates.
 
 ### Conditional Actions
 
@@ -175,7 +152,56 @@ When static readiness is valid, only these real Actions register:
 
 No real cancel/replace/transfer/withdraw/market/margin route exists in first release.
 
-Default-off read-only release contract remains green: existing baseline OpenAPI is unchanged until owner intentionally enables real routes.
+Default-off read-only release contract remains green.
+
+## Free durable-storage migration — current engineering package
+
+The initial Phase 2 storage selected SQLite on a paid Render Persistent Disk. The owner cannot use the paid Render plan, so the production storage strategy is being migrated without weakening the real-order safety model.
+
+Selected default backend:
+
+`UpstashRealExecutionJournalV1`
+
+Server configuration:
+
+```text
+REAL_TRADING_JOURNAL_BACKEND=upstash
+UPSTASH_REDIS_REST_URL=<Render Environment>
+UPSTASH_REDIS_REST_TOKEN=<Render secret>
+```
+
+Target properties:
+
+- Render Web Service stays Free;
+- no `/var/data` disk required;
+- external durable state survives Render Free sleep/deploy/restart;
+- REST endpoint restricted to HTTPS `*.upstash.io`;
+- HMAC-authenticated journal metadata;
+- HMAC-authenticated proposal envelopes;
+- HMAC-authenticated Moscow-day notional counters;
+- authenticated proposal-count metadata detects missing/extra stored proposal rows;
+- atomic Redis Lua compare-and-swap for concurrent proposal/daily-limit mutation;
+- durable reservation still happens before T-Invest `PostOrder`;
+- definitive rejection releases daily reserved notional;
+- `unknown` remains reserved;
+- storage outage/tamper fails closed and never falls back to ephemeral memory;
+- SQLite remains an explicit compatibility/test backend only.
+
+Upstash currently documents a Free Redis tier and no-credit-card creation. Pricing/limits remain an external provider condition, not a safety assumption.
+
+Durable-storage document: `docs/operations/REAL_TRADING_DURABLE_STORAGE_V1.md`.
+
+## Trusted real market adapter
+
+Real execution consumes the established read-only market snapshot but fails closed unless:
+
+- requested/resolved UID identity matches;
+- reference/trading status/order book components are complete;
+- identity has no conflict;
+- instrument type is v1-supported;
+- lot/min-price increment are valid;
+- API trading + limit order flags allow the request;
+- freshness is proven by `order_book.time`, not merely gateway request time.
 
 ## Current secret/infrastructure boundary
 
@@ -184,14 +210,13 @@ GitHub stores no values of:
 - `TINVEST_TOKEN`;
 - `TINVEST_SANDBOX_TOKEN`;
 - `TINVEST_TRADING_TOKEN`;
+- `UPSTASH_REDIS_REST_TOKEN`;
 - `GATEWAY_API_KEY`;
 - Authorization headers;
 - full account IDs;
 - private broker payloads as configuration.
 
-One Render service remains canonical.
-
-Real execution additionally requires owner-provisioned persistent disk `/var/data` and a separate non-transfer trading token.
+One Render Free service remains canonical.
 
 Details: `gpt/SECRETS_AND_RENDER.md`.
 
@@ -201,27 +226,32 @@ Expected production behavior while `REAL_TRADING_ENABLED=false`:
 
 - baseline 14 read-only GET Actions;
 - +8 Sandbox Actions if `SANDBOX_TRADING_ENABLED=true`;
-- **no Real Trading Actions**.
+- no Real Trading Actions.
 
 This remains the safe state during code/document deployment.
 
-## Next gate — Phase 3 owner configuration, NO REAL SUBMIT
+## Next gate after free-storage PR merges — Phase 3 owner configuration, NO REAL SUBMIT
 
-Engineering Phases 0–2 are complete. The next genuinely owner-only work is:
+The next owner-only work will be:
 
-1. attach Render persistent disk to existing `omni-cio-gateway`, mount `/var/data`;
-2. issue separate account-scoped full-access T-Invest trading token without transfer access;
-3. store only in Render as `TINVEST_TRADING_TOKEN`;
-4. keep `TINVEST_TOKEN` unchanged/read-only;
-5. configure deliberately small `REAL_TRADING_MAX_ORDER_RUB` and `REAL_TRADING_MAX_DAILY_RUB`;
-6. keep `REAL_TRADING_ENABLED=false` initially;
-7. deploy/read-only + Sandbox smoke;
-8. controlled enable;
-9. import new OpenAPI in GPT Editor and apply Instructions v8.6.0;
-10. complete negative Preview acceptance with **zero real submit**;
-11. prove kill-switch rollback removes Real Trading Actions.
+1. create/claim one permanent Upstash Redis Free database;
+2. add its HTTPS REST URL and REST token only to Render Environment;
+3. keep `REAL_TRADING_JOURNAL_BACKEND=upstash`;
+4. issue separate account-scoped full-access T-Invest trading token without transfer access;
+5. store it only as `TINVEST_TRADING_TOKEN`;
+6. keep `TINVEST_TOKEN` unchanged/read-only;
+7. keep initial caps at 1000 RUB per order / 2000 RUB per day;
+8. keep `REAL_TRADING_ENABLED=false` initially;
+9. deploy and run read-only/Sandbox smoke;
+10. controlled enable;
+11. apply/re-import GPT v8.6 configuration;
+12. complete negative Preview acceptance with zero real submit;
+13. restart Render and prove Upstash journal persistence;
+14. prove kill-switch rollback removes Real Trading Actions.
 
-Exact steps are in `docs/operations/REAL_TRADING_RELEASE_RUNBOOK.md` and `gpt/SETUP_INDEX.md`.
+No Render upgrade or persistent disk purchase is required.
+
+Exact steps: `docs/operations/REAL_TRADING_RELEASE_RUNBOOK.md` and `gpt/SETUP_INDEX.md`.
 
 ## Phase 4 still required for Definition of Done
 
@@ -246,9 +276,10 @@ It must be:
 
 Do not use the final completion phrase until all of these are complete:
 
-- code merged;
-- exact-head Regression Shield/security green;
-- GPT v8.6 configuration package merged/applied;
+- free durable-storage code merged after exact-head Regression Shield/security;
+- free default-off deployment healthy;
+- permanent Upstash Free database configured;
+- GPT v8.6 configuration applied;
 - owner Phase 3 negative Preview acceptance;
 - kill-switch rollback drill;
 - first controlled real order explicitly authorized;
@@ -256,4 +287,4 @@ Do not use the final completion phrase until all of these are complete:
 - real portfolio/operations reconciled;
 - replay protection verified without a second submit.
 
-Until then the release is **engineering-ready, not fully owner-accepted real-money production**.
+Until then the release is engineering-ready/default-off, not fully owner-accepted real-money production.
