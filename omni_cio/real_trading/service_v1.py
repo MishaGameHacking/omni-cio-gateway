@@ -168,6 +168,21 @@ def _account_status(account: dict[str, Any]) -> str:
     return str(account.get("status") or "").upper()
 
 
+def _validate_price_step(price: Decimal, step: Decimal) -> None:
+    if not step.is_finite() or step <= 0:
+        raise RealTradingApiFailure(
+            code="REAL_PRICE_STEP_INVALID",
+            message="Instrument minimum price increment is missing or invalid.",
+            http_status=409,
+        )
+    if price % step != 0:
+        raise RealTradingApiFailure(
+            code="REAL_PRICE_STEP_MISMATCH",
+            message="Limit price must be an exact multiple of the instrument price step.",
+            http_status=409,
+        )
+
+
 class RealTradingServiceV1:
     """Isolated core for the future real-money release.
 
@@ -287,6 +302,12 @@ class RealTradingServiceV1:
             raise RealTradingApiFailure(
                 code="REAL_INSTRUMENT_NOT_TRADABLE",
                 message="Instrument is not available for the required LIMIT order.",
+                http_status=409,
+            )
+        if not market.trading_status.strip():
+            raise RealTradingApiFailure(
+                code="REAL_TRADING_STATUS_MISSING",
+                message="Current trading status is required before real trading.",
                 http_status=409,
             )
         if market.instrument_type.strip().lower() not in self._policy.allowed_instrument_types:
@@ -473,6 +494,7 @@ class RealTradingServiceV1:
 
         account_id, _ = self.resolve_bound_account()
         market = self._validate_market(instrument_uid, now=current)
+        _validate_price_step(price, market.min_price_increment)
         available, total, commission, limits, preview = self._preflight(
             account_id=account_id,
             instrument_uid=instrument_uid,
@@ -499,6 +521,7 @@ class RealTradingServiceV1:
                 "quantity_lots": quantity_lots,
                 "order_type": "LIMIT",
                 "limit_price": format(price, "f"),
+                "min_price_increment": format(market.min_price_increment, "f"),
                 "price_type": "CURRENCY",
                 "time_in_force": "DAY",
                 "preview_total_rub": format(total, "f"),
@@ -554,7 +577,7 @@ class RealTradingServiceV1:
             confirmation_phrase.strip().encode("utf-8"),
             proposal.confirmation_phrase.encode("utf-8"),
         )
-        if proposal.state == "executed":
+        if proposal.state == "submitted":
             if not phrase_matches:
                 raise RealTradingApiFailure(
                     code="REAL_CONFIRMATION_MISMATCH",
@@ -609,6 +632,7 @@ class RealTradingServiceV1:
                 message="A newer market snapshot is required immediately before submit.",
                 http_status=409,
             )
+        _validate_price_step(proposal.limit_price, market.min_price_increment)
 
         available, total, commission, _, _ = self._preflight(
             account_id=account_id,
@@ -668,7 +692,7 @@ class RealTradingServiceV1:
             self._journal.transition(
                 proposal_id,
                 allowed_from=frozenset({"submitting"}),
-                state=target_state,
+                state=cast(Any, target_state),
                 failure_code=exc.code,
                 failure_message=exc.message,
             )
@@ -677,7 +701,7 @@ class RealTradingServiceV1:
         completed = self._journal.transition(
             proposal_id,
             allowed_from=frozenset({"submitting"}),
-            state="executed",
+            state="submitted",
             broker_response_json=sanitized_json(response),
         )
         return completed, False
@@ -707,6 +731,47 @@ class RealTradingServiceV1:
             "order_id": order_id,
             "broker_response_json": sanitized_json(payload),
         }
+
+    def reconcile_proposal(self, proposal_id: str) -> RealTradeProposalV1:
+        try:
+            proposal = self._journal.get(proposal_id)
+        except KeyError as exc:
+            raise RealTradingApiFailure(
+                code="REAL_PROPOSAL_NOT_FOUND",
+                message="Real-trading proposal was not found.",
+                http_status=404,
+            ) from exc
+        if proposal.state not in {"submitting", "unknown", "submitted"}:
+            raise RealTradingApiFailure(
+                code="REAL_PROPOSAL_NOT_RECONCILABLE",
+                message=f"Proposal state is {proposal.state}.",
+                http_status=409,
+            )
+        account_id, _ = self.resolve_bound_account()
+        payload = self._client.post(
+            "GetOrderState",
+            {
+                "accountId": account_id,
+                "orderId": proposal.order_id,
+                "orderIdType": "ORDER_ID_TYPE_REQUEST",
+                "priceType": "PRICE_TYPE_CURRENCY",
+            },
+        )
+        if proposal.state == "submitted":
+            return self._journal.transition(
+                proposal_id,
+                allowed_from=frozenset({"submitted"}),
+                state="submitted",
+                broker_response_json=sanitized_json(payload),
+            )
+        return self._journal.transition(
+            proposal_id,
+            allowed_from=frozenset({"submitting", "unknown"}),
+            state="submitted",
+            broker_response_json=sanitized_json(payload),
+            failure_code=None,
+            failure_message=None,
+        )
 
     @property
     def production_enable_ready(self) -> bool:
