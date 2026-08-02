@@ -614,7 +614,8 @@ class SandboxTradingServiceV1:
                 http_status=409,
             )
         if not hmac.compare_digest(
-            confirmation_phrase.strip(), proposal.confirmation_phrase
+            confirmation_phrase.strip().encode("utf-8"),
+            proposal.confirmation_phrase.encode("utf-8"),
         ):
             raise SandboxApiFailure(
                 code="SANDBOX_CONFIRMATION_MISMATCH",
