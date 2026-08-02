@@ -1,46 +1,54 @@
 # GitHub Copilot Instructions — Omni-CIO
 
+Работай только над существующим Omni-CIO Custom GPT и его read-only Gateway.
+
 Перед изменениями прочитай:
 
 1. `AGENTS.md`;
 2. `README.md`;
-3. `docs/README.md`;
-4. `docs/master-plan/README.md` и текстовую копию master plan;
-5. `knowledge/00_PROJECT_MASTER_CONTEXT.md`;
-6. `knowledge/16_CURRENT_PROGRAM_STATUS.md`;
-7. профильный файл `knowledge/`;
-8. `gpt/` для Custom GPT;
-9. retirement profile/runbook только для проверки завершённой миграции.
+3. `knowledge/00_PROJECT_MASTER_CONTEXT.md`;
+4. `knowledge/16_CURRENT_PROGRAM_STATUS.md`;
+5. профильный domain/architecture file;
+6. для GPT-задач — `gpt/SETUP_INDEX.md`, `gpt/CONFIGURATION.md`, `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_4_1.txt`, `gpt/ACTIONS_CATALOG.md`;
+7. master plan только для roadmap/new-functionality work;
+8. фактический `main`, open PR/issues and GitHub Actions.
+
 Обязательные правила:
 
-- Сохраняй строго read-only архитектуру.
-- Будущие торговые цели master plan не включают trading и не отменяют текущие запреты.
-- Не добавляй создание, отправку, замену или отмену заявок.
-- Сохраняй `trading_methods=false`.
-- Gateway Actions только GET и Bearer-protected.
-- Telegram runtime, Blueprint, environment configuration, imports и
-  OpenAPI routes отсутствуют. Не восстанавливай их без нового ADR,
-  threat model и решения владельца.
-- Не помещай в код, тесты, документацию или логи T-Invest token,
-  Gateway key, действующие или отозванные Telegram credentials, полный
-  номер счёта или реальные отчёты.
-- Gateway entrypoint — `app:app`.
-- Денежные суммы считай отдельно по валютам без скрытого FX.
-- Не допускай двойного учёта top-level payment, nested commission, child operations или embedded trades.
-- Не маскируй неизвестные исключения под `pending`.
-- Не редактируй generated lock-файлы вручную; dependencies меняются
-  через `.in` и pip-tools.
-- External GitHub Actions должны использовать full commit SHA.
+- strict read-only architecture;
+- `trading_methods=false`;
+- user-facing Gateway Actions only GET and Bearer-protected;
+- no order create/submit/replace/cancel/stop-order;
+- no withdrawal/transfer;
+- Gateway entrypoint `app:app`;
+- production endpoint `https://omni-cio-gateway.onrender.com`;
+- account ID masked;
+- no T-Invest token, Gateway key values, Authorization headers, full account IDs or private broker payloads in GitHub/logs/docs;
+- money stays separated by currency without verified FX;
+- no double-count of payments/commissions/child operations/embedded trades;
+- unknown failures are not silently converted to `ok`/`pending`;
+- no stale-price personalized sizing;
+- generated lock files are not hand-edited;
+- external GitHub Actions pin full commit SHA.
 
-Для брокерского отчёта:
+Custom GPT rules:
+
+- production Instructions only `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_4_1.txt`;
+- production Knowledge exactly 10 files from `gpt/knowledge/`;
+- GitHub is configuration source, not automatic GPT Editor synchronization;
+- portfolio management dispatch starts `getPortfolioSnapshot → getCashLiquiditySnapshot → getPortfolioAnalytics`;
+- user-visible time uses Europe/Moscow/MSK;
+- Web Search cannot substitute Gateway broker facts.
+
+Broker report rules:
 
 - `days=1..31`;
-- первый вызов без `task_id` и с `wait_seconds=0` возвращает `pending` и настоящий ID;
-- повторный вызов использует тот же ID;
-- T-Invest `30058` означает `pending`;
-- до готовности `complete=false`.
+- first async call without `task_id`;
+- T-Invest `30058` means report pending;
+- reuse exact returned `task_id`;
+- ready only when `complete=true`.
 
-Проверки:
+Required validation:
 
 ```bash
 python scripts/check_ci_security_baseline.py
@@ -55,4 +63,4 @@ python -m compileall -q app.py app_v371.py app_v360.py main.py \
 python -m pytest -q --cov --cov-branch --cov-fail-under=60
 ```
 
-Работай через отдельную ветку и PR. Обновляй changelog, master context, профильный knowledge, inventory и runbook.
+Каждое изменение делай через отдельную branch + PR. Merge release package только после exact-head Regression Shield. Не создавай дублирующие setup/configuration documents, если можно обновить canonical file.
