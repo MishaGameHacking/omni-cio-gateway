@@ -1,170 +1,113 @@
 14 — REPRODUCIBLE CI AND SECURITY BASELINE
 
-Status
-------
-PR-03 establishes a reproducible, fail-closed CI baseline without changing
-the Gateway API, market logic or trading permissions.
+Purpose
+-------
+Define the current fail-closed CI/security contract for the Omni-CIO Custom GPT + read-only Gateway repository.
 
-Immutable runtime invariants
-----------------------------
-- Render entrypoint remains `app:app`.
-- Public Actions remain GET-only.
+Runtime invariants
+------------------
+- Render entrypoint: `app:app`.
+- User-facing Gateway Actions: exactly 14 GET operations.
 - `trading_methods=false`.
-- No order, stop-order, sandbox, withdrawal or transfer method is added.
-- Tests do not call the real T-Invest API.
+- No order create/submit/replace/cancel/stop-order methods.
+- No withdrawal/transfer methods.
+- Account identifiers are masked.
+- Tests do not call real T-Invest or production Render endpoints.
 
 Dependency supply chain
 -----------------------
-- Human-edited top-level constraints live in `requirements.in` and
-  `requirements-dev.in`.
-- Generated `requirements.txt` and `requirements-dev.txt` pin every direct
-  and transitive package to an exact version and include SHA-256 hashes.
-- Production and CI install with `pip --require-hashes`.
-- Lock files are generated with Python 3.12 and pip-tools 7.6.0 using
-  `--allow-unsafe`, so build dependencies such as `setuptools` are also
-  exact and hashed rather than inherited implicitly from the runner image.
-- Lock files must not be edited by hand.
-- Dependabot checks Python packages and GitHub Actions weekly.
-
-To refresh locks in a dedicated dependency PR:
-
-1. review release notes and security advisories;
-2. update only the relevant `.in` constraint when necessary;
-3. run both pip-tools compile commands from Regression Shield;
-4. inspect all version and hash changes;
-5. run the full Regression Shield;
-6. document compatibility and rollback.
+- Human-edited direct constraints: `requirements.in`, `requirements-dev.in`.
+- Generated locks: `requirements.txt`, `requirements-dev.txt`.
+- Locks pin exact direct/transitive versions and SHA-256 hashes.
+- Production/CI install with `--require-hashes`.
+- Generated locks are never edited manually.
+- Dependency upgrades use a dedicated compatibility PR, regenerated locks and full Regression Shield.
+- The private `t-tech-investments` package must resolve from the configured T-Bank package index; an unrelated public package is not a substitute.
 
 GitHub Actions supply chain
 ---------------------------
-Every external Action is pinned to a full 40-character commit SHA. A
-human-readable version comment is kept beside the SHA. Tags alone are not
-accepted because a tag can move.
+- External Actions pin full 40-character commit SHA.
+- Workflow/tag upgrades require a dedicated compatibility check.
+- A historical green workflow run does not replace exact-head validation after the branch changes.
 
-Quality baseline
-----------------
-- Ruff correctness baseline: E4, E7, E9 and F across Python sources.
-- Ruff formatting gate: `scripts/` and the PR-03 policy test.
-- mypy baseline: six already-compatible analytics/support modules and both
-  repository policy scripts.
-- Full legacy Ruff/mypy expansion is intentionally deferred to focused PRs.
+Quality gates
+-------------
+Regression Shield must include blocking checks for:
 
-Measured legacy debt before PR-03:
+- repository layout/read-only contract;
+- compile;
+- Ruff correctness baseline;
+- formatting baseline;
+- mypy baseline;
+- pytest;
+- branch-inclusive coverage >=60%;
+- dependency audit;
+- Bandit medium/high SAST findings;
+- secret scan;
+- stable `app:app` and 14-GET OpenAPI contract.
 
-- full Ruff rule set: 113 findings;
-- full Ruff formatter: 23 Python files would change;
-- full mypy target set: 9 errors in `main.py` and `purchase_capacity.py`;
-- selected mypy baseline: zero errors in six modules.
+Checks must fail closed. Broad `continue-on-error` is not accepted for merge-critical quality/security gates.
 
-These numbers are a debt register, not ignored test results. New PRs must not
-weaken the active baseline and should expand it together with actual fixes.
+Repository layout guard
+-----------------------
+`scripts/check_repository_layout.py` verifies:
 
-Coverage baseline
------------------
-The GitHub-hosted bootstrap run measured:
+- required current bot/runtime/configuration files;
+- `app:app`;
+- read-only marker;
+- absence of obsolete one-time workflows;
+- absence of forbidden broker write surfaces in runtime Python;
+- absence of retired duplicate final-review scenario publisher paths.
 
-- 42 tests passed before adding the PR-03 policy tests;
-- 2,826 statements in the configured runtime scope;
-- 1,840 covered lines;
-- branch-inclusive total coverage: 60.8%.
+The layout guard intentionally focuses on current product invariants rather than preserving historical integrations.
 
-Regression Shield therefore starts with `--cov-fail-under=60`. The threshold
-may only stay equal or increase. It must not be reduced merely to merge a PR.
+Money/data integrity
+--------------------
+- Exact decimal representation for money.
+- Currencies remain separate without verified FX + timestamp.
+- No duplicate counting of top-level payment, nested commission, child operations or embedded trades.
+- Partial/truncated/stale/contradictory data fail closed.
+- last price is not an executable guarantee.
 
-Security gates
---------------
-- SCA: pip-audit checks the hash-locked runtime dependency set through
-  OSV. This backend accepts the private T-Bank package identity instead of
-  treating its absence from PyPI metadata as a collection failure.
-- SAST: Bandit blocks medium/high-severity findings with medium/high
-  confidence.
-- Secret scan: detect-secrets scans repository content and a policy script
-  fails if any finding remains.
-- Repository policy test validates lock hashes, full-SHA Action pins,
-  mandatory gates and the Render install/entrypoint contract.
+Accepted narrow code-loading exception
+--------------------------------------
+`broker_report_reconciliation/__init__.py` loads only checked-in `.pyfrag` files from a fixed package directory. Bandit B102 is narrowly documented on that fixed loader. External request/document/environment values must never control loader path or source text.
 
-Accepted narrow exception
--------------------------
-`broker_report_reconciliation/__init__.py` loads only checked-in `.pyfrag`
-files from a fixed package directory. Bandit B102 is suppressed on that
-single loader line with an explicit explanation. No filename, path or source
-text comes from a request, document, news item or environment variable.
+Treat changes in `_parts/*.pyfrag` as runtime-code changes. A future refactor may remove the dynamic loader, but until then it remains part of the tested production runtime.
 
-Residual risk: checked-in fragments still execute as Python. Reviewers must
-treat changes in `_parts/*.pyfrag` as runtime code and the repository must not
-allow external uploads into that directory. A future package refactor should
-remove the dynamic loader.
+Self-hosted Windows runner
+--------------------------
+Regression Shield currently depends on the trusted repository runner labels:
 
-The private `t-tech-investments` package may have no entry in public advisory
-databases. Its absence is not interpreted as proof of safety. Every SDK update
-still requires the official T-Bank changelog/release review, exact version pin,
-new hashes and the complete Regression Shield.
+`[self-hosted, Windows, X64, omni-cio-ci]`
+
+Operational requirements:
+
+- runner is persistent/non-ephemeral;
+- exact runner identity is checked;
+- diagnostics are read-only;
+- diagnostics do not emit credentials, registration tokens, raw `.runner` content, local paths or secret values;
+- diagnostic failures are distinct from code-test failures;
+- a queued job is not successful validation;
+- merge remains blocked until the complete exact-head Regression Shield finishes.
+
+Administrative recovery is documented in `docs/operations/SELF_HOSTED_WINDOWS_RUNNER_SERVICE.md`.
+
+Secret boundary
+---------------
+Never commit:
+
+- `TINVEST_TOKEN`;
+- value of `GATEWAY_API_KEY`;
+- Authorization headers;
+- full account IDs;
+- private broker reports/positions/operations as configuration data;
+- runner credentials/registration tokens.
 
 Failure policy
 --------------
-Quality and security checks are blocking and may not use
-`continue-on-error`. A timeout, dependency resolution problem, audit failure,
-secret finding or coverage regression blocks merge. It does not authorize a
-trade, a hidden retry against the broker or a weakening of the check.
+Timeouts, dependency resolution failures, audit findings, secret findings, test failures or coverage regression block merge. They do not authorize weakening the safety contract or bypassing checks.
 
-User action
------------
-PR-03 does not change Custom GPT Instructions, OpenAPI or Bearer
-authentication. No manual change in GPT Editor is required. After merge, the
-only operational check is the normal Render deploy and `/health` verification.
-
-Current dependency audit — 2026-07-30
--------------------------------------
-- Direct runtime constraints remain limited to FastAPI, HTTPX, the private-registry
-  T-Bank SDK and Uvicorn standard extras.
-- Runtime and development locks remain exact and SHA-256 hash-locked.
-- Direct runtime lock snapshot: `fastapi==0.140.9`, `httpx==0.28.1`,
-  `t-tech-investments==1.49.2`, `uvicorn==0.51.0`.
-- Direct quality/security pins include `ruff==0.16.0`, `mypy==2.3.0`,
-  `pip-audit==2.10.1`, `bandit==1.9.4`, `detect-secrets==1.5.0`,
-  `pytest==8.4.2` and `pytest-cov==7.1.0`.
-- No Telegram dependency or configuration is present.
-- `t-tech-investments==1.49.2` is resolved from the configured T-Bank package
-  index; an unrelated public PyPI project must never be used as a downgrade source.
-- Available FastAPI/Uvicorn updates and any pytest major transition require a
-  dedicated compatibility PR with regenerated locks and the full Regression Shield.
-- This governance package intentionally changes no dependency version.
-
-Self-hosted Windows runner operations — 2026-08-01
---------------------------------------------------
-- Regression Shield targets the trusted repository runner labels
-  `[self-hosted, Windows, X64, omni-cio-ci]`.
-- Durable availability requires the official runner application to operate as a
-  persistent, non-ephemeral Windows service with `Running` state and automatic
-  startup. An interactive `run.cmd` listener is not accepted as a durable mode.
-- GitHub documents that an ephemeral self-hosted runner automatically
-  de-registers after processing one job. This repository does not run an
-  autoscaler that replaces one-shot runners, so `Ephemeral=true` is incompatible
-  with the two-job Regression Shield and must fail closed.
-- The official `actions/runner` `RunnerSettings` structure persists `AgentName`
-  and `Ephemeral` in `.runner`; diagnostics may read only those fields and must
-  never emit the raw `.runner` content.
-- `.runner` parsing is bounded to 64 KiB, requires valid JSON, a non-empty exact
-  `AgentName`, and a Boolean `Ephemeral` value when that property is present.
-  Omitted `Ephemeral` means the persisted default `false`.
-- Repository diagnostics are read-only and may inspect only the existence of the
-  runner root/configuration markers, derived runner identity/ephemeral state and
-  Windows service identity/state/start mode.
-- Automatic diagnostic output must not expose the local runner root, service
-  name, service executable path, GitHub URL, work folder, agent ID, pool data or
-  other `.runner` fields.
-- The diagnostic must not start, stop, install, remove or reconfigure a service;
-  it must not access `.credentials`, registration tokens or workflow secrets.
-- Exact `.runner` `AgentName` and service identity are mandatory. A mismatched
-  configuration or `actions.runner.*` service fails closed.
-- Caller-provided runner names are allowlisted and must never be interpreted as
-  PowerShell wildcard patterns.
-- Failure to parse runner configuration, identity mismatch, ephemeral mode and
-  failure to query Windows service metadata are distinct typed failures.
-- Administrative recovery remains an explicit owner action documented in
-  `docs/operations/SELF_HOSTED_WINDOWS_RUNNER_SERVICE.md`.
-- Short-lived registration tokens are operational inputs and must never be
-  committed, logged, pasted into Pull Requests or stored in project knowledge.
-- A queued job with `steps=null` is infrastructure evidence only. It is neither
-  a code-test failure nor successful validation; merge remains blocked until
-  the full Regression Shield completes on the exact final SHA.
+Production boundary
+-------------------
+Green CI validates repository state, not the external production environment. After relevant backend/OpenAPI changes separately verify Render health/auth/route behavior and GPT Preview according to `docs/operations/RELEASE_CHECKLIST.md` and `gpt/SETUP_INDEX.md`.
