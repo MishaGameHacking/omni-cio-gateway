@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from threading import Barrier, Thread
+from zoneinfo import ZoneInfo
 
 from omni_cio.real_trading.journal_v1 import (
     InMemoryRealExecutionJournalV1,
@@ -12,6 +13,7 @@ from omni_cio.real_trading.models_v1 import RealTradeProposalV1
 
 
 BASE_TIME = datetime(2026, 8, 3, 7, 0, tzinfo=timezone.utc)
+MOSCOW = ZoneInfo("Europe/Moscow")
 
 
 def proposal(proposal_id: str, order_id: str) -> RealTradeProposalV1:
@@ -76,9 +78,8 @@ def test_daily_cap_reservation_is_atomic_under_concurrency() -> None:
 
     assert len(successes) == 1
     assert len(failures) == 1
-    assert journal.submitted_notional_for_moscow_date(
-        (BASE_TIME + timedelta(seconds=10)).astimezone().date()
-    ) in {Decimal("0"), Decimal("1000")}
+    day = (BASE_TIME + timedelta(seconds=10)).astimezone(MOSCOW).date()
+    assert journal.submitted_notional_for_moscow_date(day) == Decimal("1000")
 
     states = {journal.get(first.proposal_id).state, journal.get(second.proposal_id).state}
     assert states == {"prepared", "submitting"}
