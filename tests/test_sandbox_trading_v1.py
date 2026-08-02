@@ -15,7 +15,7 @@ from omni_cio.sandbox.client_v1 import (
 from omni_cio.sandbox.routes_v1 import (
     maybe_register_sandbox_trading_gateway,
     register_sandbox_trading_gateway,
-    test_base,
+    test_base as _test_base,
 )
 from omni_cio.sandbox.service_v1 import SandboxTradingServiceV1
 
@@ -46,7 +46,13 @@ def _handler_with_counter(counter: dict[str, int]):
         if method == "GetSandboxMaxLots":
             return httpx.Response(
                 200,
-                json={"buyLimits": {"buyMaxLots": "10"}},
+                json={
+                    "buyLimits": {
+                        "buyMaxLots": "10",
+                        "buyMaxMarketLots": "10",
+                    },
+                    "sellLimits": {"sellMaxLots": "10"},
+                },
             )
         if method == "GetSandboxOrderPrice":
             return httpx.Response(
@@ -135,6 +141,8 @@ def test_prepare_requires_second_explicit_confirmation_and_is_idempotent() -> No
     assert replay is False
     assert executed.state == "executed"
     assert counter["PostSandboxOrder"] == 1
+    assert counter["GetSandboxMaxLots"] == 2
+    assert counter["GetSandboxOrderPrice"] == 2
 
     executed_again, replay_again = service.execute_trade(
         proposal.proposal_id,
@@ -186,7 +194,15 @@ def test_ambiguous_submission_is_never_automatically_retried() -> None:
                 },
             )
         if method == "GetSandboxMaxLots":
-            return httpx.Response(200, json={"buyLimits": {"buyMaxLots": "10"}})
+            return httpx.Response(
+                200,
+                json={
+                    "buyLimits": {
+                        "buyMaxLots": "10",
+                        "buyMaxMarketLots": "10",
+                    }
+                },
+            )
         if method == "PostSandboxOrder":
             raise httpx.ReadTimeout("response lost", request=request)
         raise AssertionError(method)
@@ -221,6 +237,23 @@ def test_ambiguous_submission_is_never_automatically_retried() -> None:
     assert counter["PostSandboxOrder"] == 1
 
 
+def test_quantity_above_own_funds_limit_is_blocked() -> None:
+    counter: dict[str, int] = {}
+    service = _service(counter)
+    with pytest.raises(SandboxApiFailure) as blocked:
+        service.prepare_trade(
+            instrument_id=INSTRUMENT_ID,
+            direction="BUY",
+            quantity_lots=11,
+            order_type="MARKET",
+            limit_price=None,
+            price_type="CURRENCY",
+            rationale="Limit test",
+        )
+    assert blocked.value.code == "SANDBOX_QUANTITY_EXCEEDS_LIMIT"
+    assert counter.get("PostSandboxOrder", 0) == 0
+
+
 def test_sandbox_payload_masks_account_id() -> None:
     counter: dict[str, int] = {}
     service = _service(counter)
@@ -235,7 +268,7 @@ def test_registration_is_off_by_default(monkeypatch: pytest.MonkeyPatch) -> None
     app = FastAPI()
     registered = maybe_register_sandbox_trading_gateway(
         app=app,
-        base=test_base(),
+        base=_test_base(),
         app_version="test",
     )
     assert registered is False
@@ -249,7 +282,7 @@ def test_enabled_openapi_marks_mutations_consequential(
     app = FastAPI()
     register_sandbox_trading_gateway(
         app=app,
-        base=test_base(),
+        base=_test_base(),
         app_version="test",
     )
     schema = app.openapi()
