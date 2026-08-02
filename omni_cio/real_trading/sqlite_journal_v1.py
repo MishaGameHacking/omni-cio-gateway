@@ -68,6 +68,7 @@ def _encode(proposal: RealTradeProposalV1) -> str:
         "confirmation_code": proposal.confirmation_code,
         "state": proposal.state,
         "submitted_at": _iso(proposal.submitted_at),
+        "confirmation_evidence_hash": proposal.confirmation_evidence_hash,
         "broker_response_json": proposal.broker_response_json,
         "failure_code": proposal.failure_code,
         "failure_message": proposal.failure_message,
@@ -104,6 +105,11 @@ def _decode(raw: str) -> RealTradeProposalV1:
             confirmation_code=str(data["confirmation_code"]),
             state=cast(ProposalState, state),
             submitted_at=_optional_datetime(data.get("submitted_at"), "submitted_at"),
+            confirmation_evidence_hash=(
+                None
+                if data.get("confirmation_evidence_hash") is None
+                else str(data["confirmation_evidence_hash"])
+            ),
             broker_response_json=(
                 None
                 if data.get("broker_response_json") is None
@@ -194,6 +200,12 @@ class SQLiteRealExecutionJournalV1:
 
     def _mac(self, proposal_id: str, revision: int, payload: str) -> str:
         message = f"{proposal_id}\n{revision}\n{payload}".encode("utf-8")
+        return hmac.new(self._key, message, hashlib.sha256).hexdigest()
+
+    def _confirmation_evidence(self, proposal: RealTradeProposalV1) -> str:
+        message = (
+            f"{proposal.proposal_id}\n{proposal.order_id}\n{proposal.confirmation_phrase}"
+        ).encode("utf-8")
         return hmac.new(self._key, message, hashlib.sha256).hexdigest()
 
     def _verified(self, row: sqlite3.Row) -> RealTradeProposalV1:
@@ -316,6 +328,7 @@ class SQLiteRealExecutionJournalV1:
         *,
         submitted_at: datetime,
         max_daily_rub: Decimal,
+        confirmation_evidence_hash: str | None = None,
     ) -> RealTradeProposalV1:
         if submitted_at.tzinfo is None:
             raise ValueError("journal timestamps must be timezone-aware")
@@ -331,10 +344,12 @@ class SQLiteRealExecutionJournalV1:
                     > max_daily_rub
                 ):
                     raise JournalDailyCapExceeded("daily submission cap exceeded")
+                evidence = confirmation_evidence_hash or self._confirmation_evidence(current)
                 updated = replace(
                     current,
                     state=cast(ProposalState, "submitting"),
                     submitted_at=submitted_at,
+                    confirmation_evidence_hash=evidence,
                 )
                 result = self._write(connection, updated, int(row["revision"]))
                 connection.commit()
