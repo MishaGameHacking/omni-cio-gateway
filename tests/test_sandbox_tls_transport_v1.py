@@ -6,6 +6,7 @@ import ssl
 import httpx
 import pytest
 
+from omni_cio import tbank_tls
 from omni_cio.sandbox import client_v1
 from omni_cio.sandbox.client_v1 import SandboxApiFailure, SandboxRestClientV1
 
@@ -30,15 +31,15 @@ def test_sdk_certificate_discovery_accepts_embedded_pem(
         def locate_file(self, entry: Path) -> Path:
             return tmp_path / entry
 
-    client_v1._sdk_certificate_blobs.cache_clear()
+    tbank_tls.sdk_certificate_blobs.cache_clear()
     monkeypatch.setattr(
-        client_v1.metadata,
+        tbank_tls.metadata,
         "distribution",
         lambda package_name: FakeDistribution(),
     )
 
-    assert client_v1._sdk_certificate_blobs() == (_FAKE_PEM,)
-    client_v1._sdk_certificate_blobs.cache_clear()
+    assert tbank_tls.sdk_certificate_blobs() == (_FAKE_PEM,)
+    tbank_tls.sdk_certificate_blobs.cache_clear()
 
 
 def test_ssl_tbank_verify_adds_sdk_ca_to_httpx_context(
@@ -52,10 +53,10 @@ def test_ssl_tbank_verify_adds_sdk_ca_to_httpx_context(
 
     context = FakeContext()
     monkeypatch.setenv("SSL_TBANK_VERIFY", "True")
-    monkeypatch.setattr(client_v1.ssl, "create_default_context", lambda: context)
-    monkeypatch.setattr(client_v1, "_sdk_certificate_blobs", lambda: (_FAKE_PEM,))
+    monkeypatch.setattr(tbank_tls.ssl, "create_default_context", lambda: context)
+    monkeypatch.setattr(tbank_tls, "sdk_certificate_blobs", lambda: (_FAKE_PEM,))
 
-    result = client_v1._sandbox_ssl_context()
+    result = tbank_tls.build_tbank_ssl_context()
 
     assert result is context
     assert len(loaded) == 1
@@ -66,7 +67,11 @@ def test_missing_sdk_ca_fails_closed_when_ssl_tbank_verify_is_enabled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("SSL_TBANK_VERIFY", "True")
-    monkeypatch.setattr(client_v1, "_sdk_certificate_blobs", lambda: ())
+    monkeypatch.setattr(
+        client_v1,
+        "build_tbank_ssl_context",
+        lambda: (_ for _ in ()).throw(tbank_tls.TBankTlsCaUnavailable("missing CA")),
+    )
 
     with pytest.raises(SandboxApiFailure) as failure:
         client_v1._sandbox_ssl_context()
@@ -80,7 +85,7 @@ def test_non_submission_connect_error_is_not_labeled_ambiguous() -> None:
         raise httpx.ConnectError("connect failed", request=request)
 
     client = SandboxRestClientV1(
-        "sandbox-test-token",
+        "sandbox-test-token",  # pragma: allowlist secret
         transport=httpx.MockTransport(handler),
         ssl_context=ssl.create_default_context(),
     )
@@ -97,7 +102,7 @@ def test_submission_connect_error_remains_fail_closed_and_ambiguous() -> None:
         raise httpx.ConnectError("response state unknown", request=request)
 
     client = SandboxRestClientV1(
-        "sandbox-test-token",
+        "sandbox-test-token",  # pragma: allowlist secret
         transport=httpx.MockTransport(handler),
         ssl_context=ssl.create_default_context(),
     )
