@@ -9,13 +9,13 @@ from typing import Any
 import httpx
 import pytest
 
+from omni_cio.real_trading import upstash_journal_v1 as module
 from omni_cio.real_trading.durable_journal_codec_v1 import (
     JournalIntegrityError,
     JournalStorageError,
 )
 from omni_cio.real_trading.journal_v1 import JournalDailyCapExceeded
 from omni_cio.real_trading.models_v1 import RealTradeProposalV1
-from omni_cio.real_trading import upstash_journal_v1 as module
 from omni_cio.real_trading.upstash_journal_v1 import (
     UpstashRealExecutionJournalV1,
     UpstashRedisRestClientV1,
@@ -208,8 +208,21 @@ def test_proposal_tampering_is_detected() -> None:
     )
     durable.put(item)
     raw = store.hashes[module._PROPOSALS_KEY][item.proposal_id]
-    store.hashes[module._PROPOSALS_KEY][item.proposal_id] = raw.replace(
-        '"quantity_lots":1', '"quantity_lots":9'
+    envelope = json.loads(raw)
+    payload = json.loads(envelope["payload_json"])
+    payload["quantity_lots"] = 9
+    envelope["payload_json"] = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    # Deliberately keep the old row_mac so application-level integrity must fail.
+    store.hashes[module._PROPOSALS_KEY][item.proposal_id] = json.dumps(
+        envelope,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
     )
     with pytest.raises(JournalIntegrityError):
         durable.integrity_check()
@@ -258,7 +271,10 @@ def test_atomic_daily_cap_under_concurrent_confirmations() -> None:
         except JournalDailyCapExceeded:
             blocked.append(item.proposal_id)
 
-    workers = [Thread(target=reserve, args=(first,)), Thread(target=reserve, args=(second,))]
+    workers = [
+        Thread(target=reserve, args=(first,)),
+        Thread(target=reserve, args=(second,)),
+    ]
     for worker in workers:
         worker.start()
     for worker in workers:
