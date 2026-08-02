@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 REAL_ROOT = ROOT / "omni_cio" / "real_trading"
 
 
-def test_phase1_real_trading_is_not_registered_in_gateway() -> None:
+def test_phase2_surface_is_indirect_and_default_off() -> None:
     runtime_files = [
         ROOT / "app.py",
         ROOT / "app_v371.py",
@@ -15,9 +15,17 @@ def test_phase1_real_trading_is_not_registered_in_gateway() -> None:
         ROOT / "main.py",
     ]
     combined = "\n".join(path.read_text(encoding="utf-8") for path in runtime_files)
+    # The stable entrypoint/read-only modules do not import or call the real
+    # execution package directly. Registration stays behind the existing
+    # extension hook and its explicit environment kill switch.
     assert "omni_cio.real_trading" not in combined
     assert "register_real_trading" not in combined
-    assert not (REAL_ROOT / "routes_v1.py").exists()
+    assert (REAL_ROOT / "routes_v1.py").exists()
+
+    routes_source = (REAL_ROOT / "routes_v1.py").read_text(encoding="utf-8")
+    assert 'REAL_TRADING_ENV = "REAL_TRADING_ENABLED"' in routes_source
+    assert "if not real_trading_enabled():" in routes_source
+    assert "return False" in routes_source
 
 
 def test_phase1_client_is_hard_bound_and_has_no_readonly_token_fallback() -> None:
