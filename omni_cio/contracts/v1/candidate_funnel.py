@@ -140,7 +140,7 @@ class CandidateCostBasisV1(ContractModel):
     instrument_uid: Annotated[str, Field(min_length=1, max_length=128)]
     price_basis: CandidatePriceBasis
     nominal: Money | None = None
-    accrued_interest_per_unit: Money | None = None
+    accrued_interest_per_lot: Money | None = None
 
     @model_validator(mode="after")
     def validate_basis(self) -> CandidateCostBasisV1:
@@ -150,11 +150,11 @@ class CandidateCostBasisV1(ContractModel):
             if self.nominal.amount <= 0:
                 raise ValueError("bond nominal must be positive")
             if (
-                self.accrued_interest_per_unit is not None
-                and self.accrued_interest_per_unit.currency != self.nominal.currency
+                self.accrued_interest_per_lot is not None
+                and self.accrued_interest_per_lot.currency != self.nominal.currency
             ):
                 raise ValueError("bond nominal and accrued interest currency mismatch")
-        elif self.nominal is not None or self.accrued_interest_per_unit is not None:
+        elif self.nominal is not None or self.accrued_interest_per_lot is not None:
             raise ValueError("currency price basis cannot carry bond nominal/ACI")
         return self
 
