@@ -324,11 +324,11 @@ def test_unknown_or_empty_input_requests_clarification() -> None:
 
 
 def test_router_output_does_not_store_raw_user_text() -> None:
-    secret_like_phrase = "Купи SBER реально, моя приватная заметка 12345"
-    route = route_user_intent(secret_like_phrase)
+    private_note_phrase = "Купи SBER реально, моя приватная заметка 12345"
+    route = route_user_intent(private_note_phrase)
 
     serialized = route.model_dump_json()
-    assert secret_like_phrase not in serialized
+    assert private_note_phrase not in serialized
     assert "приватная заметка" not in serialized
 
 
