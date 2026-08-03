@@ -4,7 +4,7 @@
 
 ## [Unreleased]
 
-### Omni-CIO v8.6.1 — owner-accepted release candidate
+### Omni-CIO v8.6.1 — released / owner accepted
 
 - GPT Editor payload переведён на `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt`, который помещается в текущий лимит Instructions; полный v8.6.0 остаётся engineering reference.
 - UI-name владельцем обновлён до `Omni-CIO API | Управляющий и аналитик v8.6.1`.
@@ -20,8 +20,17 @@
   - read-only exact-action path остаётся изолированным;
   - kill switch `REAL_TRADING_ENABLED=false` успешно возвращает Gateway в healthy read-only state;
   - re-enable восстанавливает ready state и durable proposal rows.
-- Hard-cap, stale-market, SELL-over-position, replay and ambiguous-submit protections остаются покрыты fake-client/regression tests; live tests не форсируются, если для этого пришлось бы ослабить более ранние safety gates.
-- Единственный оставшийся real-release gate: Phase 4 — одна явно авторизованная минимальная real LIMIT order, broker-state reconciliation, real portfolio/operations reconciliation и safe replay proving no second submit.
+- Hard-cap, stale-market, SELL-over-position, replay and ambiguous-submit protections покрыты fake-client/regression tests; live tests не форсировались, если для этого пришлось бы ослабить более ранние safety gates.
+- Owner Phase 4 acceptance 3 августа 2026 завершён:
+  - владелец явно разрешил первую controlled real trade;
+  - подготовлена и отправлена одна реальная LIMIT BUY заявка SBER на 1 лот;
+  - broker state reconciled to `EXECUTION_REPORT_STATUS_FILL`, `lots_executed=1`, `fill_confirmed=true`;
+  - цена исполнения 280.55 RUB, комиссия 0.84 RUB;
+  - real portfolio reconciled: SBER = 1 акция / 1 лот;
+  - operations history reconciled: executed purchase 280.55 RUB + commission 0.84 RUB;
+  - exact confirmation replay returned the already submitted/filled proposal state and did not call `executeRealTrade` again;
+  - no second broker submit was created.
+- Real BUY/SELL v1 Definition of Done полностью закрыт. Release status: **100% complete**.
 
 ### Real-money execution v1 engineering
 
