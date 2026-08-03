@@ -325,6 +325,8 @@ def _evaluate_security(
 
     if evidence.instrument_uid != row.identity.uid:
         blockers.append(CandidateBlockerCode.MARKET_IDENTITY_MISMATCH)
+    if evidence.exposure.portfolio_snapshot_sha256 != gap.portfolio_snapshot_sha256:
+        blockers.append(CandidateBlockerCode.PORTFOLIO_SNAPSHOT_MISMATCH)
     if evidence.quote.currency != row.identity.currency:
         blockers.append(CandidateBlockerCode.TARGET_CURRENCY_MISMATCH)
     if not _market_trusted(evidence):
@@ -514,10 +516,15 @@ def build_candidate_funnel(
         else:
             eligible.append(row)
 
+    eligible_uids = {row.identity.uid for row in eligible if row.identity.uid}
     evidence_by_uid: dict[str, list[CandidateEvidenceV1]] = defaultdict(list)
     for item in evidence:
         evidence_by_uid[item.instrument_uid].append(item)
-    if any(len(items) > 1 for items in evidence_by_uid.values()):
+    if any(
+        len(items) > 1
+        for uid, items in evidence_by_uid.items()
+        if uid in eligible_uids
+    ):
         global_blockers.append(CandidateGlobalBlockerCode.DUPLICATE_EVIDENCE)
 
     missing_evidence_uids = {
