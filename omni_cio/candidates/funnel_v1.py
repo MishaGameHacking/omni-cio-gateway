@@ -9,7 +9,6 @@ from typing import Iterable
 
 from omni_cio.contracts.v1.candidate_funnel import (
     CandidateBlockerCode,
-    CandidateCostBasisV1,
     CandidateEvidenceV1,
     CandidateFactorGradesV1,
     CandidateFunnelResultV1,
@@ -42,15 +41,6 @@ _TRUSTED_AUTHORITIES = {
 _MARKET_MAX_AGE_SECONDS = 300
 _FUTURE_TOLERANCE_SECONDS = 60
 
-_FACTOR_WEIGHTS = {
-    "role_fit": 25,
-    "diversification": 20,
-    "liquidity": 20,
-    "cost": 15,
-    "permanent_loss": 10,
-    "freshness": 10,
-}
-
 
 class CandidateFunnelEvaluationError(ValueError):
     """The funnel cannot be evaluated safely from the supplied snapshots."""
@@ -72,11 +62,6 @@ def _canonical_json(value: object) -> str:
         sort_keys=True,
         separators=(",", ":"),
     )
-
-
-def _append_unique[T](target: list[T], value: T) -> None:
-    if value not in target:
-        target.append(value)
 
 
 def _market_code(row: UniverseInstrumentV1) -> str | None:
@@ -163,16 +148,9 @@ def _cash_score(gap: PortfolioGapV1) -> CandidateScoreV1:
         kind=CandidateKind.NO_ACTION_CASH,
         candidate_id="cash:no_action",
         role=gap.role,
-        rank_points=_rank_points(factors),
+        rank_points=factors.rank_points(),
         factors=factors,
         research_required=False,
-    )
-
-
-def _rank_points(factors: CandidateFactorGradesV1) -> int:
-    return sum(
-        int(getattr(factors, name)) * weight
-        for name, weight in _FACTOR_WEIGHTS.items()
     )
 
 
@@ -193,7 +171,7 @@ def _freshness_grade(
     if blockers:
         return None, tuple(sorted(set(blockers), key=str))
 
-    age = max(max(ages), Decimal("0"))
+    age = max(max(ages), 0.0)
     if age <= 30:
         return 4, ()
     if age <= 60:
@@ -405,7 +383,7 @@ def _evaluate_security(
             kind=CandidateKind.SECURITY,
             candidate_id=f"uid:{row.identity.uid}",
             role=gap.role,
-            rank_points=_rank_points(factors),
+            rank_points=factors.rank_points(),
             factors=factors,
             instrument_uid=row.identity.uid,
             ticker=row.identity.ticker,
