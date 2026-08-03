@@ -21,7 +21,7 @@ The engine follows established portfolio-governance principles:
 - diversification and risk limits are evaluated at total-portfolio level;
 - missing owner constraints are not replaced by model guesses.
 
-External design references used for engineering review include CFA Institute guidance on individual IPS elements, investment planning and the duty to establish client objectives/constraints before investment action.
+External design references used for engineering review include CFA-style IPS practice and the requirement to establish client objectives/constraints before portfolio action.
 
 ## 3. Required owner policy dimensions
 
@@ -35,6 +35,7 @@ A sizing-ready policy records:
 - maximum acceptable drawdown;
 - maximum position, economic-group, sector and currency exposures;
 - allowed markets and instrument classes;
+- any explicit prohibited markets and instrument classes;
 - tax-constraint review status;
 - account type;
 - rebalancing band;
@@ -45,7 +46,7 @@ The engine deliberately does not infer:
 - reserve = zero;
 - risk tolerance from age;
 - risk capacity from portfolio size alone;
-- allowed markets/classes from current holdings;
+- allowed/prohibited markets or classes from current holdings;
 - a credit floor from the instruments already owned.
 
 ## 4. Provenance
@@ -58,9 +59,11 @@ Provenance identifies whether the value came from:
 - verified account data;
 - a system safe default.
 
-Preference/constraint fields required for personal sizing must be owner-confirmed. Account type may be satisfied by verified account data without redundant owner confirmation.
+For personal sizing, owner preference/constraint fields must come from `OWNER_INPUT` and be owner-confirmed. A system safe default may remain useful as a separate safety fallback but cannot satisfy a personal-policy field. Account type is the narrow exception: verified account data may satisfy it without redundant owner confirmation; owner-supplied account type still requires owner confirmation.
 
-A value without provenance is not sizing-ready.
+Material deny constraints are policy fields too. If prohibited markets or prohibited instrument classes are configured, they require their own acceptable provenance and owner confirmation.
+
+A value with missing or unacceptable provenance is not sizing-ready.
 
 ## 5. Lifecycle and annual review
 
@@ -80,11 +83,12 @@ The review interval cannot exceed 366 days. A policy is fail-closed for personal
 - annual review is due/overdue;
 - a required field is missing;
 - provenance is missing;
+- provenance source is unacceptable for personal policy;
 - an owner-required field is not confirmed.
 
 ## 6. Deterministic fingerprint
 
-`policy_fingerprint_sha256()` hashes the canonical immutable policy payload using stable JSON ordering. Semantically set-like collections such as markets and instrument classes are normalized. Provenance rows are sorted by policy field before hashing.
+`policy_fingerprint_sha256()` hashes the canonical immutable policy payload using stable JSON ordering. Semantically set-like collections such as allowed/prohibited markets and instrument classes are normalized. Provenance rows are sorted by policy field before hashing.
 
 Later immutable portfolio plans must reference the exact `policy_id`, version and SHA-256 fingerprint used for their calculations. Any material policy change therefore changes the reference.
 
@@ -92,13 +96,17 @@ Later immutable portfolio plans must reference the exact `policy_id`, version an
 
 The contract rejects contradictory or structurally unsafe policy values:
 
+- a market cannot be both allowed and prohibited;
 - an instrument type cannot be both allowed and prohibited;
 - liquidity reserve currency must equal base currency;
 - group/sector caps cannot be smaller than a single-position cap;
 - rebalancing band cannot exceed 50%;
 - bond permission requires both a rating floor and named rating scale;
 - supersession must move forward in version number;
-- timestamps must be timezone-aware.
+- timestamps must be timezone-aware;
+- non-owner provenance cannot assert `owner_confirmed=true`.
+
+Before-normalization validators accept raw Pydantic input only after explicit collection type narrowing; scalar strings/numbers are rejected instead of being accidentally iterated into policy collections.
 
 No raw notes/free-text policy field is provided. Full numeric account identifiers are rejected from provenance source IDs.
 
@@ -129,9 +137,10 @@ WP2 is complete only when:
 1. versioned IPS contract and deterministic evaluator exist;
 2. incomplete policies remain drafts and block personal sizing;
 3. no zero-reserve or risk-tolerance inference occurs;
-4. provenance/owner-confirmation gates are tested;
-5. annual review and supersession are tested;
-6. policy fingerprint is stable and mutation-sensitive;
-7. protected execution permissions cannot be enabled;
-8. ruff, mypy, full tests and exact-head Regression Shield are green;
-9. squash merge completes and epic #176 marks WP2 complete.
+4. provenance/source/owner-confirmation gates are tested;
+5. allow/deny constraint contradictions are rejected;
+6. annual review and supersession are tested;
+7. policy fingerprint is stable and mutation-sensitive;
+8. protected execution permissions cannot be enabled;
+9. ruff, mypy, full tests and exact-head Regression Shield are green;
+10. squash merge completes and epic #176 marks WP2 complete.
