@@ -1,29 +1,36 @@
 # Custom GPT configuration registry — Omni-CIO
 
-> Реестр настроек. Не вставлять этот файл целиком в Instructions.
+> Канонический реестр настроек единственного поддерживаемого Omni-CIO. Не вставлять этот файл целиком в Instructions.
 
 ## Identity
 
 - Current UI name: `Omni-CIO API | Управляющий и аналитик v8.6.1`.
 - Canonical GPT Editor behavior/config release: **v8.6.1 Compact**.
-- Full engineering reference: **v8.6.0**.
+- Canonical Instructions: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt`.
+- Full engineering reference: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_0.txt`.
 - Purpose: личный инвестиционный аналитик и строго подтверждаемый исполнитель T-Invest.
 - Primary language: Russian.
 - User timezone: `Europe/Moscow` / MSK.
 - Recommended model: `Thinking 5.6`.
 
+Active development program:
+
+`docs/master-plan/OMNI_CIO_V9_PORTFOLIO_AUTOPILOT_PROGRAM.md`
+
+Program status: **OWNER-APPROVED / PROGRAM LOCKED**. Stable production baseline v8.6.1 must remain available while v9 is developed.
+
 ## Production description
 
-> Личный инвестиционный GPT для T-Invest через Omni-CIO Gateway. Анализирует портфель, операции, ликвидность, рынок и риски. Реальные торговые действия доступны только через защищённый двухэтапный протокол prepare → точное подтверждение → execute с жёсткими лимитами, без маржи и шортов.
+> Личный инвестиционный GPT для T-Invest через Omni-CIO Gateway. Анализирует портфель, операции, ликвидность, рынок и риски. Реальные торговые действия доступны только через защищённый протокол prepare → точное подтверждение → execute с жёсткими серверными ограничениями, без маржи и шортов.
 
-## Conversation starters
+## Conversation starters — current production
 
-1. `УПРАВЛЯЙ ПОРТФЕЛЕМ — сначала вызови getPortfolioSnapshot. Если успешно, вызови getCashLiquiditySnapshot и getPortfolioAnalytics. Затем проанализируй данные и скажи, что делать.`
+1. `УПРАВЛЯЙ ПОРТФЕЛЕМ — обнови данные и скажи, что делать.`
 2. `АНАЛИТИК — объясни состояние портфеля простыми словами.`
 3. `НОВОСТИ — проверь важные события по моим компаниям.`
 4. `ЖУРНАЛ — покажи решения текущего разговора.`
 
-Обычная portfolio-management команда не является разрешением на реальную сделку.
+Пользователь не обязан знать названия Actions для обычного анализа. Exact-action диагностические запросы остаются поддержанными. Обычная portfolio-management команда не является разрешением на реальную сделку.
 
 ## Instructions
 
@@ -37,12 +44,12 @@ Full engineering reference:
 
 Historical fallbacks:
 
-- `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_5_0.txt` — Sandbox-capable, real production read-only;
-- `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_4_1.txt` — read-only fallback.
+- `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_5_0.txt` — Sandbox-capable historical release;
+- `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_4_1.txt` — read-only historical fallback.
 
 Не смешивать версии и не вставлять полный v8.6.0 поверх compact payload.
 
-## Knowledge — ровно 10 файлов
+## Knowledge — ровно 10 production files
 
 1. `02_GATEWAY_DATA_CONTRACT_V2_OPERATIONS.txt`
 2. `04_CIO_PORTFOLIO_MANAGER.txt`
@@ -71,6 +78,8 @@ Production service: `https://omni-cio-gateway.onrender.com`
 
 Render instance: **Free**.
 
+Entrypoint: `app:app`.
+
 OpenAPI: `https://omni-cio-gateway.onrender.com/openapi.json`
 
 Health: `https://omni-cio-gateway.onrender.com/health`
@@ -81,21 +90,47 @@ Authentication:
 - value = existing `GATEWAY_API_KEY` из Render;
 - никакой T-Invest или Upstash token в GPT Editor не вставляется.
 
-### Baseline read-only
+### Production read-only
 
-При `REAL_TRADING_ENABLED=false` real Actions отсутствуют.
+`TINVEST_TOKEN` всегда остаётся read-only. Portfolio-management baseline:
 
-При `SANDBOX_TRADING_ENABLED=false` остаются 14 baseline GET Actions.
+`getPortfolioSnapshot → getCashLiquiditySnapshot → getPortfolioAnalytics → analysis`.
 
 ### Sandbox
 
-`SANDBOX_TRADING_ENABLED=true` добавляет 8 virtual-only Sandbox Actions. Sandbox responses: `sandbox=true`, `real_money=false`.
+`SANDBOX_TRADING_ENABLED=true` добавляет только isolated virtual Sandbox Actions. Sandbox responses остаются `sandbox=true`, `real_money=false`.
 
-### Real execution
+### Real execution v1
 
-Real contour использует отдельный `TINVEST_TRADING_TOKEN` и никогда не заменяет/не читает read-only token как fallback.
+Real contour использует только отдельный `TINVEST_TRADING_TOKEN` и durable Upstash journal.
 
-Durable state:
+Conditional real Actions:
+
+- `getRealTradingStatus`;
+- `prepareRealTrade`;
+- `executeRealTrade`;
+- `getRealOrderState`.
+
+Real v1 boundary:
+
+- BUY/SELL only;
+- supported cash share/ETF, RUB;
+- LIMIT / CURRENCY / DAY only;
+- own funds / own position only;
+- margin and uncovered short forbidden;
+- hard caps mandatory;
+- stale/incomplete market blocks proposal;
+- immutable proposal + exact short-lived confirmation in a new owner turn;
+- UUID idempotency;
+- ambiguous possible-submit = no automatic retry;
+- `submitted` != `filled` without broker proof;
+- durable proposal/submission state required.
+
+No real withdrawal, transfer, token management, MARKET/BESTPRICE, stop order, replace, async submit, autonomous recurring execution or first-release real cancellation.
+
+## Durable state / Render names
+
+Production real journal:
 
 ```text
 REAL_TRADING_JOURNAL_BACKEND=upstash
@@ -103,102 +138,55 @@ UPSTASH_REDIS_REST_URL=<configured in Render>
 UPSTASH_REDIS_REST_TOKEN=<secret configured in Render>
 ```
 
-No Render Persistent Disk is required.
+Other external config names are documented in `gpt/SECRETS_AND_RENDER.md`. Secret values never belong in GitHub or GPT Knowledge.
 
-При valid real enable доступны только:
+## v8.6.1 owner acceptance — COMPLETE
 
-- `getRealTradingStatus`;
-- `prepareRealTrade`;
-- `executeRealTrade`;
-- `getRealOrderState`.
-
-Real v1:
-
-- BUY/SELL only;
-- cash share/ETF, RUB;
-- LIMIT / CURRENCY / DAY only;
-- own funds / own position only;
-- margin and short forbidden;
-- hard caps mandatory;
-- stale/incomplete market blocks proposal;
-- immutable proposal + TTL + exact phrase;
-- no same-turn prepare+execute;
-- UUID idempotency;
-- ambiguous submit = no retry;
-- `submitted` != `filled`;
-- durable proposal/submission state required.
-
-No real withdrawal, transfer, token management, MARKET/BESTPRICE, stop order, replace, async submit, autonomous execution or real cancellation in first release.
-
-## Portfolio dispatch acceptance
-
-For `УПРАВЛЯЙ ПОРТФЕЛЕМ`:
-
-1. `getPortfolioSnapshot`;
-2. if success → `getCashLiquiditySnapshot`;
-3. `getPortfolioAnalytics`;
-4. then analysis/market/candidates.
-
-Real execution starts only after separate explicit real BUY/SELL intent.
-
-## Real confirmation acceptance
-
-Normal real BUY/SELL:
-
-1. fresh broker/market facts;
-2. `getRealTradingStatus` ready;
-3. `prepareRealTrade`;
-4. show `REAL MONEY`, masked account, parameters, preliminary amount/commission, TTL and exact phrase;
-5. explicitly say nothing has been submitted;
-6. stop;
-7. owner sends exact phrase in a new message;
-8. only then `executeRealTrade` with original `proposal_id`;
-9. immediately `getRealOrderState`;
-10. after broker-confirmed fill, read back portfolio/liquidity/operations as needed.
-
-Wrong/expired phrase, account mismatch, stale market, hard-limit violation, insufficient own funds/position or durable-journal failure must fail closed.
-
-## Owner acceptance state
-
-Completed on 2026-08-03 with zero real submit:
+Completed 2026-08-03:
 
 - permanent Upstash Free configured;
-- dedicated trading token configured separately;
-- saved GPT v8.6.1 + 10 Knowledge files + refreshed production OpenAPI;
-- readiness `status=ready`, `execution_ready=true`, `journal_backend=upstash`, `journal_integrity=ok`;
+- dedicated trading token separated from read-only token;
+- saved GPT v8.6.1 + exactly 10 Knowledge files + refreshed production OpenAPI;
+- real readiness `status=ready`, `execution_ready=true`, `journal_backend=upstash`, `journal_integrity=ok`;
 - expiry and wrong-confirmation rejection;
 - own-funds/margin-protection rejection;
 - read-only isolation;
-- kill-switch rollback to `trading_methods=false`;
-- recovery to ready.
+- kill-switch rollback and recovery;
+- one explicitly authorized real LIMIT BUY SBER accepted and filled;
+- broker state reconciled to `EXECUTION_REPORT_STATUS_FILL`, 1/1 lot;
+- real portfolio/operations reconciled;
+- exact confirmation replay produced no second `executeRealTrade` and no second broker submit.
 
-Only Phase 4 remains: one explicitly authorized first real LIMIT order + broker state + portfolio/operations reconciliation + idempotent replay.
+**Release state: Omni-CIO v8.6.1 real BUY/SELL v1 = 100% complete.**
 
-## Secrets boundary
+Release completion does not relax any safety rule for future orders.
 
-Never store in GitHub/Knowledge/Instructions/user response values of:
+## v9 development / migration boundary
 
-- `TINVEST_TOKEN`;
-- `TINVEST_SANDBOX_TOKEN`;
-- `TINVEST_TRADING_TOKEN`;
-- `UPSTASH_REDIS_REST_TOKEN`;
-- `GATEWAY_API_KEY`;
-- Authorization headers;
-- full broker account ID.
+Canonical program:
 
-## Publishing checklist
+`docs/master-plan/OMNI_CIO_V9_PORTFOLIO_AUTOPILOT_PROGRAM.md`
 
-1. Apply `CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt` fully.
-2. Keep exactly 10 Knowledge files.
-3. Recommended model `Thinking 5.6`; Web Search/Data Analysis ON; image generation OFF.
-4. Keep Render Free; no paid disk.
-5. Import production `/openapi.json` whenever conditional Action surface changes.
+Protected baseline contract:
+
+`docs/architecture/V9_BASELINE_AND_RECOVERY_CONTRACT.md`
+
+v9 is implemented incrementally behind explicit compatibility/feature boundaries. Research, analysis, screening, strategy selection, plan creation and monitoring may become autonomous. Unconfirmed real-money writes remain prohibited.
+
+Do not change GPT Editor to v9 until WP15 and its owner Preview acceptance are complete.
+
+## Publishing / recovery checklist
+
+1. Restore UI name exactly: `Omni-CIO API | Управляющий и аналитик v8.6.1` until a later release is accepted.
+2. Apply `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt` fully.
+3. Keep exactly the 10 Knowledge files above.
+4. Recommended model `Thinking 5.6`; Web Search/Data Analysis ON; image generation OFF.
+5. Import `https://omni-cio-gateway.onrender.com/openapi.json`.
 6. Authentication = API Key → Bearer using existing `GATEWAY_API_KEY`.
-7. Run read-only/Sandbox regression smoke.
-8. Complete Phase 3 before first real submit.
-9. First real order only after a new explicit owner instruction in Phase 4.
-10. `Update` only after Preview acceptance.
+7. Verify read-only smoke; verify Sandbox/Real only if those contours are enabled.
+8. Keep Render entrypoint `app:app` and current secret-role separation.
+9. `Update` GPT only after Preview acceptance of the affected configuration.
 
-## GitHub ↔ GPT Editor boundary
+## GitHub ↔ external systems boundary
 
-GitHub is the canonical source/history. It does not automatically apply Instructions, Knowledge, model selection, Bearer secret, Upstash credentials or OpenAPI import inside GPT Editor.
+GitHub is canonical for code/config reference, but it does not automatically apply Instructions, Knowledge, model selection, Bearer secret, Render secret values, Upstash state or OpenAPI import inside GPT Editor.
