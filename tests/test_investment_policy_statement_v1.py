@@ -43,6 +43,7 @@ _REQUIRED_PROVENANCE_FIELDS = (
     PolicyField.MINIMUM_CREDIT_QUALITY,
     PolicyField.ALLOWED_MARKETS,
     PolicyField.ALLOWED_INSTRUMENT_TYPES,
+    PolicyField.PROHIBITED_INSTRUMENT_TYPES,
     PolicyField.TAX_STATUS,
     PolicyField.ACCOUNT_TYPE,
     PolicyField.REBALANCE_BAND,
@@ -132,6 +133,7 @@ def test_complete_owner_confirmed_policy_is_ready_for_personal_sizing() -> None:
     assert assessment.blockers == ()
     assert assessment.missing_fields == ()
     assert assessment.missing_provenance == ()
+    assert assessment.invalid_provenance == ()
     assert assessment.unconfirmed_owner_fields == ()
     assert assessment.annual_review_required is False
     assert assessment.execution_permissions_unchanged is True
@@ -180,6 +182,38 @@ def test_owner_confirmation_is_required_for_personal_constraints() -> None:
 
     assert PolicyField.MAX_DRAWDOWN in assessment.unconfirmed_owner_fields
     assert PolicyReadinessBlocker.OWNER_CONFIRMATION_REQUIRED in assessment.blockers
+    assert assessment.ready_for_personal_sizing is False
+
+
+def test_non_owner_provenance_cannot_assert_owner_confirmation() -> None:
+    with pytest.raises(ValidationError, match="non-owner provenance"):
+        PolicyFieldProvenanceV1(
+            field=PolicyField.RISK_WILLINGNESS,
+            source_kind=PolicySourceKind.SYSTEM_SAFE_DEFAULT,
+            owner_confirmed=True,
+            confirmed_at=EFFECTIVE,
+            source_id="safe-default",
+        )
+
+
+def test_system_default_cannot_satisfy_personal_policy_provenance() -> None:
+    rows = list(_provenance())
+    index = next(
+        i for i, row in enumerate(rows) if row.field is PolicyField.RISK_WILLINGNESS
+    )
+    rows[index] = PolicyFieldProvenanceV1(
+        field=PolicyField.RISK_WILLINGNESS,
+        source_kind=PolicySourceKind.SYSTEM_SAFE_DEFAULT,
+        owner_confirmed=False,
+        confirmed_at=EFFECTIVE,
+        source_id="safe-default",
+    )
+    policy = _complete_policy(provenance=tuple(rows))
+
+    assessment = assess_investment_policy(policy, assessed_at=ASSESS_AT)
+
+    assert PolicyField.RISK_WILLINGNESS in assessment.invalid_provenance
+    assert PolicyReadinessBlocker.INVALID_PROVENANCE in assessment.blockers
     assert assessment.ready_for_personal_sizing is False
 
 
@@ -236,11 +270,35 @@ def test_allowed_and_prohibited_instrument_types_cannot_overlap() -> None:
         _complete_policy(prohibited_instrument_types=(InstrumentType.BOND,))
 
 
+def test_allowed_and_prohibited_markets_cannot_overlap() -> None:
+    with pytest.raises(ValidationError, match="market cannot be both allowed and prohibited"):
+        _complete_policy(prohibited_markets=("moex",))
+
+
+def test_material_deny_constraints_require_owner_provenance() -> None:
+    policy = _complete_policy(prohibited_markets=("SPB",))
+    assessment = assess_investment_policy(policy, assessed_at=ASSESS_AT)
+    assert PolicyField.PROHIBITED_MARKETS in assessment.missing_provenance
+    assert assessment.ready_for_personal_sizing is False
+
+    provenance = (*_provenance(), PolicyFieldProvenanceV1(
+        field=PolicyField.PROHIBITED_MARKETS,
+        source_kind=PolicySourceKind.OWNER_INPUT,
+        owner_confirmed=True,
+        confirmed_at=EFFECTIVE,
+        source_id="owner-prohibited-markets",
+    ))
+    ready_policy = _complete_policy(prohibited_markets=("SPB",), provenance=provenance)
+    assert assess_investment_policy(
+        ready_policy, assessed_at=ASSESS_AT
+    ).ready_for_personal_sizing is True
+
+
 def test_policy_collection_inputs_fail_closed_on_scalars() -> None:
-    with pytest.raises(ValidationError, match="allowed_markets must be a collection"):
+    with pytest.raises(ValidationError, match="markets must be a collection"):
         _complete_policy(allowed_markets="MOEX")
-    with pytest.raises(ValidationError, match="allowed_markets must be a collection"):
-        _complete_policy(allowed_markets=42)
+    with pytest.raises(ValidationError, match="markets must be a collection"):
+        _complete_policy(prohibited_markets=42)
     with pytest.raises(ValidationError, match="instrument types must be a collection"):
         _complete_policy(allowed_instrument_types="share")
     with pytest.raises(ValidationError, match="instrument types must be a collection"):
