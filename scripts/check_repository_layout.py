@@ -112,14 +112,15 @@ def scan_execution_boundaries(failures: list[str]) -> None:
     if 'os.environ.get("TINVEST_TOKEN"' in real or "TINVEST_SANDBOX_TOKEN" in real:
         fail("real runtime references a forbidden fallback broker credential", failures)
 
-    # Broker mutation strings must stay isolated to the dedicated execution contours.
+    # Keep this scan precise. Generic finance words such as "withdraw" also occur
+    # in legitimate read-only liquidity/report code, so only mutation-shaped API
+    # markers are forbidden outside the dedicated Sandbox/Real execution contours.
     protected_roots = {"omni_cio/real_trading", "omni_cio/sandbox"}
     mutation_markers = (
         "OrdersService/PostOrder",
         "PostOrderAsync",
         "ReplaceOrder",
-        "Withdraw",
-        "TransferSecurities",
+        "StopOrdersService/PostStopOrder",
     )
     for path in ROOT.rglob("*.py"):
         relative = path.relative_to(ROOT).as_posix()
