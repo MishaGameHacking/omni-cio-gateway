@@ -2,9 +2,9 @@
 
 Главная точка входа для единственного поддерживаемого бота:
 
-`Omni-CIO API | Управляющий и аналитик v8.4`
+`Omni-CIO API | Управляющий и аналитик v8.6.1`
 
-UI-name меняется владельцем вручную. Канонические backend/config semantics соответствуют **Instructions v8.6.1 Compact**, с полным engineering reference в v8.6.0.
+Canonical GPT Editor semantics соответствуют **Instructions v8.6.1 Compact**, с полным engineering reference в v8.6.0.
 
 ## Архитектура
 
@@ -23,13 +23,13 @@ GitHub (код + эталон конфигурации)
                       └── Actions → production OpenAPI
 ```
 
-GitHub не меняет GPT Editor, Render Environment или Upstash автоматически. Instructions, Knowledge, OpenAPI import и Bearer key применяются владельцем вручную.
+GitHub не меняет GPT Editor, Render Environment или Upstash автоматически.
 
 ## Каноническая конфигурация
 
 - GPT Editor Instructions: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt`.
 - Full v8.6 engineering reference: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_0.txt`.
-- Sandbox fallback/history: `v8.5.0`.
+- Sandbox history: `v8.5.0`.
 - Read-only fallback/history: `v8.4.1`.
 - Recommended model: `Thinking 5.6`.
 - Timezone: `Europe/Moscow` / MSK.
@@ -46,22 +46,19 @@ GitHub не меняет GPT Editor, Render Environment или Upstash авто�
 
 `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt`
 
-Полный `CUSTOM_GPT_INSTRUCTIONS_V8_6_0.txt` остаётся инженерным reference и не вставляется поверх compact payload. Не смешивать версии.
+Полный `CUSTOM_GPT_INSTRUCTIONS_V8_6_0.txt` остаётся инженерным reference. Не смешивать версии.
 
-Ключевая модель безопасности v8.6:
+Ключевая модель безопасности:
 
-- production broker facts остаются отдельным read-only contour;
-- Sandbox — только виртуальные деньги;
-- real BUY/SELL возможен только через опубликованный Real Trading surface;
+- read-only, Sandbox и Real — отдельные contours;
 - real proposal и real submit всегда разные user turns;
 - submit требует exact short-lived phrase;
-- `submitted` не считается `filled` без broker fill state;
+- `submitted` не считается `filled` без broker proof;
 - ambiguous submit никогда не повторяется автоматически;
-- durable journal failure blocks execution.
+- durable journal failure blocks execution;
+- `REAL_TRADING_ENABLED=false` — master rollback.
 
 ## 2. Knowledge — ровно 10 файлов
-
-Загрузить по одному экземпляру каждого файла из `gpt/knowledge/`:
 
 1. `02_GATEWAY_DATA_CONTRACT_V2_OPERATIONS.txt`
 2. `04_CIO_PORTFOLIO_MANAGER.txt`
@@ -88,29 +85,25 @@ Authentication:
 - Mode: `Bearer`;
 - Value: существующий `GATEWAY_API_KEY` из Render.
 
-Полный условный Action surface: `gpt/ACTIONS_CATALOG.md`.
-
 ### Default safe state
 
-`REAL_TRADING_ENABLED=false` означает отсутствие Real Trading Actions в OpenAPI.
+`REAL_TRADING_ENABLED=false` → Real Trading Actions отсутствуют.
 
-При `SANDBOX_TRADING_ENABLED=false` также отсутствуют Sandbox Actions; остаются 14 baseline GET Actions.
+`SANDBOX_TRADING_ENABLED=false` → Sandbox Actions отсутствуют; остаются 14 baseline GET Actions.
 
 ### Sandbox enabled
 
-`SANDBOX_TRADING_ENABLED=true` добавляет 8 изолированных Sandbox Actions.
+`SANDBOX_TRADING_ENABLED=true` добавляет 8 virtual-only Sandbox Actions.
 
 ### Real enabled
 
-`REAL_TRADING_ENABLED=true` сам по себе недостаточен. Gateway также требует:
+Valid real readiness требует:
 
 - отдельный `TINVEST_TRADING_TOKEN`;
 - valid per-order/daily limits;
 - `REAL_TRADING_JOURNAL_BACKEND=upstash`;
-- valid `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN`;
-- успешную durable-journal integrity initialization.
-
-Если static readiness не выполнен, публикуется только `getRealTradingStatus`; real mutation routes не публикуются.
+- valid Upstash REST URL/token;
+- durable-journal integrity.
 
 При полной готовности добавляются только:
 
@@ -119,48 +112,39 @@ Authentication:
 - `executeRealTrade`;
 - `getRealOrderState`.
 
-`cancelRealOrder`, replace, transfer, withdrawal, margin, MARKET execution в first real release отсутствуют.
+No real cancellation/replace/transfer/withdraw/margin/MARKET execution in first release.
 
 ## 4. Render Free secrets/config
 
 Никогда не вводить T-Invest или Upstash tokens в GPT Editor.
 
-### Всегда
+Always:
 
 - `TINVEST_TOKEN` — existing production read-only;
 - `GATEWAY_API_KEY`;
 - `SSL_TBANK_VERIFY=True`.
 
-### Sandbox optional
+Sandbox optional:
 
 - `TINVEST_SANDBOX_TOKEN`;
 - `SANDBOX_TRADING_ENABLED=true|false`;
 - `SANDBOX_CONFIRMATION_TTL_SECONDS=120`.
 
-### Real execution optional
+Real execution:
 
 - `TINVEST_TRADING_TOKEN` — отдельный account-scoped full-access trading token **без transfer access**;
 - `REAL_TRADING_ENABLED=true|false`;
 - `REAL_TRADING_JOURNAL_BACKEND=upstash`;
 - `UPSTASH_REDIS_REST_URL`;
 - `UPSTASH_REDIS_REST_TOKEN`;
-- `REAL_TRADING_MAX_ORDER_RUB`;
-- `REAL_TRADING_MAX_DAILY_RUB`;
-- optional `REAL_TRADING_CONFIRMATION_TTL_SECONDS`;
-- optional `REAL_TRADING_MARKET_MAX_AGE_SECONDS`.
+- `REAL_TRADING_MAX_ORDER_RUB=1000`;
+- `REAL_TRADING_MAX_DAILY_RUB=2000`;
+- `REAL_TRADING_CONFIRMATION_TTL_SECONDS=120`;
+- `REAL_TRADING_MARKET_MAX_AGE_SECONDS=15`.
 
-**Render Persistent Disk не нужен.** Сервис остаётся на Free plan; durable state хранится во внешнем Upstash Redis Free.
+Render Persistent Disk не нужен.
 
-Upstash Free references:
-
-- `https://upstash.com/redis`
-- `https://upstash.com/pricing/redis`
-
-Для production использовать постоянную Free database в аккаунте, а не unclaimed 72-hour scratch DB.
-
-Подробности: `gpt/SECRETS_AND_RENDER.md` и `docs/operations/REAL_TRADING_RELEASE_RUNBOOK.md`.
-
-## 5. Capabilities в GPT Editor
+## 5. GPT Editor capabilities
 
 - Recommended model: `Thinking 5.6`.
 - Web Search: ON.
@@ -169,73 +153,80 @@ Upstash Free references:
 - Apps: не использовать вместе с Actions.
 - Actions: ON.
 
-## 6. Read-only Preview smoke
+## 6. Read-only portfolio routing
 
-В новом Preview-чате:
-
-1. `Проверь шлюз. Вызови только gatewayHealth. Другие методы не вызывай.`
-2. `Проверь подключение к брокеру.`
-3. `Сколько у меня сейчас денег?`
-4. `Что у меня сейчас в портфеле?`
-5. `Какие операции были за последние 90 дней?`
-6. `УПРАВЛЯЙ ПОРТФЕЛЕМ — обнови данные и скажи, что делать.`
-
-Для пункта 6 обязательный старт:
+Для `УПРАВЛЯЙ ПОРТФЕЛЕМ` обязательный старт:
 
 `getPortfolioSnapshot → getCashLiquiditySnapshot → getPortfolioAnalytics → анализ`
 
-Проверить masked account, MSK и отсутствие stale sizing.
+Portfolio-management команда не является разрешением на реальную сделку.
+
+Exact-action запросы изолированы.
 
 ## 7. Sandbox acceptance
 
-Когда Sandbox включён:
+Owner Preview acceptance 2026-08-02 подтвердил:
 
-- `getSandboxTradingStatus` → `sandbox=true`, `real_money=false`;
-- proposal не submit-ит;
-- execute требует exact phrase из нового user turn;
-- wrong/expired phrase fail closed;
-- duplicate confirmation не создаёт вторую заявку;
-- после submit `getSandboxOrderState`;
-- cancellation только Sandbox + отдельное confirmation.
+- `real_money=false`;
+- account/funding/portfolio;
+- BUY/SELL proposal + exact confirmation;
+- wrong/expired phrase rejection;
+- replay protection;
+- own-position rejection;
+- LIMIT state/cancel;
+- portfolio reconciliation.
 
-Полный runbook: `docs/operations/SANDBOX_TRADING_RUNBOOK.md`.
+## 8. Real-money owner acceptance
 
-## 8. Real-money staged acceptance
+Owner Phase 3 completed on 2026-08-03 with **zero real submit**.
 
-Первый real enable выполняется строго по:
+Verified:
 
-`docs/operations/REAL_TRADING_RELEASE_RUNBOOK.md`
+1. permanent Upstash Redis Free configured;
+2. separate account-scoped trading token configured;
+3. real status ready + masked account + `journal_backend=upstash` + `journal_integrity=ok`;
+4. GPT v8.6.1 Compact applied and saved;
+5. production OpenAPI refreshed and four real Actions visible;
+6. technical proposal created without submit;
+7. wrong confirmation rejected;
+8. expired confirmation rejected;
+9. own-funds guard rejected excessive BUY without margin fallback;
+10. read-only exact-action isolation remained intact;
+11. Render rollback `REAL_TRADING_ENABLED=false` produced healthy `/health` with `trading_methods=false`;
+12. re-enable recovered `status=ready`, `execution_ready=true`, journal integrity ok and durable proposal rows.
 
-До реальной заявки обязательно пройти Phase 3 без submit:
+Hard-cap, stale-market, SELL-over-position, replay and ambiguous-submit safety remain covered by merged regression tests.
 
-1. permanent Upstash Redis Free database;
-2. `REAL_TRADING_JOURNAL_BACKEND=upstash` + REST URL/token in Render;
-3. отдельный account-scoped trading token;
-4. маленькие hard limits;
-5. controlled real enable;
-6. `getRealTradingStatus` ready + `journal_backend=upstash` + masked account;
-7. wrong phrase rejection;
-8. expiry rejection;
-9. hard-limit rejection;
-10. stale/unsupported market rejection;
-11. SELL beyond owned position rejection;
-12. Render restart persistence check;
-13. rollback drill: `REAL_TRADING_ENABLED=false` removes real Actions;
-14. read-only and Sandbox regression smoke.
+## 9. ONLY remaining release gate — Phase 4
 
-Первая настоящая сделка — только после нового явного разрешения владельца в Phase 4, minimum practical size, LIMIT only, submit once, immediate `getRealOrderState`, then real portfolio reconciliation.
+One first controlled real order requires a **new explicit owner instruction at execution time**.
 
-## 9. Источники истины
+Required sequence:
+
+1. highly liquid supported cash share/ETF, normally 1 lot, preliminary total < 1000 RUB;
+2. LIMIT only, fresh market, exact identity, own-funds/own-position preflight;
+3. `prepareRealTrade` shows REAL MONEY proposal + exact phrase and stops;
+4. owner sends exact phrase in a new user turn;
+5. `executeRealTrade` submits once;
+6. immediate `getRealOrderState`;
+7. broker-confirmed fill/partial fill only;
+8. reconcile real portfolio/cash/operations;
+9. replay same confirmation once to prove no second submit;
+10. ambiguity → never resubmit, reconcile only.
+
+Full procedure: `docs/operations/REAL_TRADING_RELEASE_RUNBOOK.md`.
+
+## 10. Источники истины
 
 - Runtime/API: deployed commit from GitHub `main`.
 - GPT registry: `gpt/CONFIGURATION.md`.
-- Canonical GPT Editor Instructions: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt`.
-- Full v8.6 engineering reference: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_0.txt`.
+- GPT Editor Instructions: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt`.
+- Full reference: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_0.txt`.
 - Actions: production `/openapi.json` + `gpt/ACTIONS_CATALOG.md`.
 - Secrets/Render: `gpt/SECRETS_AND_RENDER.md`.
 - Durable journal: `docs/operations/REAL_TRADING_DURABLE_STORAGE_V1.md`.
 - Real release: `docs/operations/REAL_TRADING_RELEASE_RUNBOOK.md`.
-- Current engineering status: `knowledge/16_CURRENT_PROGRAM_STATUS.md`.
+- Current status: `knowledge/16_CURRENT_PROGRAM_STATUS.md`.
 - Development rules: `AGENTS.md`.
 
 Не восстанавливать конфигурацию из старых чатов/скриншотов, если они расходятся с `main`.

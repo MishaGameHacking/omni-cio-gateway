@@ -4,44 +4,55 @@
 
 ## [Unreleased]
 
-### Real-money execution v1 — default-off engineering release
+### Omni-CIO v8.6.1 — owner-accepted release candidate
 
-- Issue #164 ведёт отдельную staged release программу реальных BUY/SELL без повышения прав существующего `TINVEST_TOKEN`.
+- GPT Editor payload переведён на `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt`, который помещается в текущий лимит Instructions; полный v8.6.0 остаётся engineering reference.
+- UI-name владельцем обновлён до `Omni-CIO API | Управляющий и аналитик v8.6.1`.
+- Production OpenAPI повторно импортирован; saved GPT видит read-only, Sandbox и conditional Real Trading surfaces.
+- Permanent Upstash Redis Free настроен как production durable real journal; Render остаётся Free, Persistent Disk не требуется.
+- Dedicated `TINVEST_TRADING_TOKEN` настроен отдельно от неизменяемого read-only `TINVEST_TOKEN`.
+- Owner Phase 3 acceptance 3 августа 2026 прошёл с нулевым real submit:
+  - real readiness `status=ready`, `execution_ready=true`, `journal_backend=upstash`, `journal_integrity=ok`;
+  - technical LIMIT proposal создаётся без submit;
+  - expired confirmation → rejection, zero submit;
+  - wrong confirmation → rejection before execute, zero submit;
+  - excessive BUY блокируется own-funds guard without margin fallback;
+  - read-only exact-action path остаётся изолированным;
+  - kill switch `REAL_TRADING_ENABLED=false` успешно возвращает Gateway в healthy read-only state;
+  - re-enable восстанавливает ready state и durable proposal rows.
+- Hard-cap, stale-market, SELL-over-position, replay and ambiguous-submit protections остаются покрыты fake-client/regression tests; live tests не форсируются, если для этого пришлось бы ослабить более ранние safety gates.
+- Единственный оставшийся real-release gate: Phase 4 — одна явно авторизованная минимальная real LIMIT order, broker-state reconciliation, real portfolio/operations reconciliation и safe replay proving no second submit.
+
+### Real-money execution v1 engineering
+
+- Issue #164 ведёт staged release программу реальных BUY/SELL без повышения прав существующего `TINVEST_TOKEN`.
 - PR #168 добавил durable state contract и conditional real-money Actions: `getRealTradingStatus`, `prepareRealTrade`, `executeRealTrade`, `getRealOrderState`.
-- PR #169 синхронизировал canonical GPT behavior/config до `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_0.txt`.
+- PR #169 синхронизировал full v8.6 behavior reference.
+- PR #170 заменил production durable journal на external Upstash Redis Free over HTTPS REST while keeping Render Free.
 - Real v1 поддерживает только supported cash share/ETF, RUB, BUY/SELL, LIMIT/CURRENCY/DAY, own-funds/own-position.
-- Margin/short, MARKET/BESTPRICE, derivatives/currencies, stop orders, ReplaceOrder, async submit, transfer/withdrawal, autonomous execution и first-release real cancellation отсутствуют.
+- Margin/short, MARKET/BESTPRICE, derivatives/currencies, stop orders, ReplaceOrder, async submit, transfer/withdrawal, autonomous execution и real cancellation отсутствуют.
 - Proposal immutable/HMAC-bound; exact phrase требуется новым user message; preflight повторяется перед submit.
-- UUID request id даёт idempotency; possible-submit ambiguity → `unknown_do_not_resubmit`; `submitted` не считается `filled` без broker proof.
-- Hard per-order/daily limits и immutable code ceilings fail closed.
-- Initial Phase 2 durable implementation used SQLite on `/var/data`, but Render Free does not support Persistent Disks.
-- Current zero-cost migration replaces the **production default** journal with external Upstash Redis Free over HTTPS REST while keeping Render service on the Free plan.
-- Free journal authenticates metadata, proposal envelopes and Moscow-day notional counters with application HMAC and uses atomic Redis Lua compare-and-swap for proposal/daily-cap reservation.
+- UUID request id даёт idempotency; possible-submit ambiguity → unknown/do-not-resubmit; `submitted` не считается `filled` без broker proof.
+- Hard per-order/daily limits и immutable ceilings fail closed.
+- Journal authenticates metadata, proposal envelopes and Moscow-day counters and uses atomic Redis Lua compare-and-swap.
 - Missing/unreachable/tampered durable storage publishes no usable real mutation path and never falls back to ephemeral memory.
-- SQLite remains an explicit compatibility/test backend only.
-- `REAL_TRADING_ENABLED=false` remains the safe default; no real order is authorized merely by deploying the code.
 
 ### T-Invest Sandbox execution
 
-- PR #160 добавил изолированный optional T-Invest Sandbox-контур для виртуальных BUY/SELL; real-money production remained read-only at that release stage.
-- Отдельный `TINVEST_SANDBOX_TOKEN` не заменяет существующий read-only `TINVEST_TOKEN`.
-- `SANDBOX_TRADING_ENABLED=false` по умолчанию сохраняет прежний production Action surface.
-- Добавлены Sandbox account/status/portfolio, proposal/preflight, confirmed submit, order-state и confirmed cancel.
-- Виртуальная сделка двухфазная: immutable proposal → короткоживущее exact confirmation → submit.
-- BUY/SELL limits проверяются при prepare и повторно непосредственно перед submit.
-- Добавлены UUID idempotency, duplicate protection и fail-closed `unknown_do_not_resubmit` для неоднозначного timeout/5xx.
-- Margin confirmation жёстко выключен; withdrawal/transfer, auto-replace и stop-order automation не добавлены.
-- PR #162 исправил Render TLS/CA transport для T-Invest Sandbox REST без отключения проверки сертификатов.
-- Owner Preview acceptance 2 августа 2026 подтвердил Sandbox status/account/funding/portfolio, MARKET BUY/SELL, own-position rejection, expiration rejection, exact-confirmation mismatch rejection, replay protection, LIMIT order state, cancel и последующую сверку виртуального портфеля.
-- Во всех наблюдавшихся Sandbox-тестах `real_money=false`.
+- PR #160 добавил изолированный optional Sandbox-контур для virtual BUY/SELL.
+- `TINVEST_SANDBOX_TOKEN` не заменяет `TINVEST_TOKEN`.
+- `SANDBOX_TRADING_ENABLED=false` сохраняет production baseline surface.
+- Sandbox proposal → exact confirmation → submit, with repeated limits, UUID idempotency and ambiguous-submit no-retry.
+- Margin confirmation off; withdrawal/transfer/auto-replace/stop automation absent.
+- PR #162 исправил Render TLS/CA transport для Sandbox REST без отключения certificate verification.
+- Owner Preview acceptance 2 августа 2026 подтвердил Sandbox account/funding/portfolio, MARKET BUY/SELL, own-position rejection, expiry/mismatch rejection, replay protection, LIMIT state/cancel и reconciliation.
+- Sandbox responses remain `real_money=false`.
 
 ### Repository cleanup
 
-- Консолидирована структура вокруг одного продукта: Omni-CIO Custom GPT + Gateway.
-- `gpt/SETUP_INDEX.md` назначен единственной точкой настройки, обновления и восстановления.
-- Исторические Instructions сохранены как fallback; current canonical behavior — v8.6.0.
-- Удалены obsolete duplicate setup/instructions, dated audit/inventory artifacts и неиспользуемые external-transport artifacts.
-- README/AGENTS/SECURITY/architecture/status синхронизируются с production endpoint `https://omni-cio-gateway.onrender.com`.
+- Структура консолидирована вокруг одного продукта: Omni-CIO Custom GPT + Gateway.
+- `gpt/SETUP_INDEX.md` — единая точка настройки/восстановления.
+- Current GPT Editor behavior — v8.6.1 Compact; v8.6.0 — full reference.
 - Runtime dependencies `app_v371.py`, `app_v360.py` и `main.py` намеренно сохранены, потому что current `app.py` всё ещё их импортирует.
 
 ## [2026-08-02] Custom GPT v8.4.1 acceptance
@@ -49,20 +60,20 @@
 - PR #146 сделал portfolio-management routing tool-first.
 - Для `УПРАВЛЯЙ ПОРТФЕЛЕМ` обязательна цепочка `getPortfolioSnapshot → getCashLiquiditySnapshot → getPortfolioAnalytics` до анализа.
 - Exact-action запросы изолированы.
-- Recommended model зафиксирован как Thinking 5.6 на основании Preview acceptance.
-- Canonical production endpoint: `https://omni-cio-gateway.onrender.com`.
+- Recommended model зафиксирован как Thinking 5.6.
+- Canonical endpoint: `https://omni-cio-gateway.onrender.com`.
 - User-visible timezone: Europe/Moscow / MSK.
 - Market gate блокирует exact personalized sizing при отсутствии fresh best ask / market readiness.
-- Production Knowledge set: ровно 10 файлов без дублей.
+- Production Knowledge set: ровно 10 файлов.
 
 ## [2026-08-01] Gateway v3.10.0 baseline
 
 - Read-only Gateway surface стабилизирован на 14 GET Actions.
 - Добавлен private read-only `getFinalDecisionReview` contract.
 - Сохранены Bearer protection, masked account output и `app:app`.
-- Portfolio, market, liquidity, operations, purchase-capacity и broker-report reconciliation workflows покрыты Regression Shield.
-- Dependency/security baseline использует pinned/hash-locked locks, lint/type/tests/coverage, dependency audit, SAST and secret scan.
+- Portfolio, market, liquidity, operations, purchase-capacity и broker-report workflows покрыты Regression Shield.
+- Security baseline использует pinned/hash-locked locks, lint/type/tests/coverage, dependency audit, SAST and secret scan.
 
 ## История до текущего baseline
 
-Полная инженерная последовательность, старые feature PR и прежние версии файлов доступны через Git commit/PR history. Они не являются текущей configuration-инструкцией и не должны использоваться вместо `main`, `README.md`, `knowledge/16_CURRENT_PROGRAM_STATUS.md` и `gpt/SETUP_INDEX.md`.
+Полная инженерная последовательность доступна через Git commit/PR history. Старые версии не являются текущей configuration-инструкцией и не должны использоваться вместо `main`, `README.md`, `knowledge/16_CURRENT_PROGRAM_STATUS.md` и `gpt/SETUP_INDEX.md`.
