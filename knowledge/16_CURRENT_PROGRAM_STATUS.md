@@ -6,166 +6,88 @@
 
 Omni-CIO remains one supported Custom GPT + one production Render Gateway.
 
-Current engineering state:
+Current production state:
 
-- production read-only analytics contour: accepted;
-- isolated T-Invest Sandbox execution: accepted and extensively Preview-tested;
-- real-money v1 Phases 0–2 engineering: merged;
-- canonical GPT behavior/config: v8.6.0 merged;
-- zero-cost durable-state migration is merged via PR #170;
-- production real journal default is external Upstash Redis over HTTPS REST;
-- Render service remains on Free plan and no Persistent Disk is required for the selected production path;
-- real-money execution remains default-off until owner Phase 3 configuration/negative acceptance passes;
-- first real order has not been authorized or submitted as part of the release program.
+- production read-only analytics: accepted;
+- isolated T-Invest Sandbox execution: accepted and Preview-tested;
+- real-money v1 engineering Phases 0–2: merged and Regression-Shielded;
+- zero-cost durable journal migration: merged and deployed;
+- production real journal: permanent Upstash Redis over HTTPS REST;
+- Render remains on Free plan, no Persistent Disk required;
+- Custom GPT UI/config: `Omni-CIO API | Управляющий и аналитик v8.6.1`;
+- GPT Editor Instructions: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt`;
+- real contour is currently enabled and reports `status=ready`, `execution_ready=true`, `journal_backend=upstash`, `journal_integrity=ok`;
+- owner Phase 3 negative acceptance and kill-switch rollback drill are complete;
+- no real broker order has been submitted during acceptance testing;
+- Phase 4 first controlled real order remains the only release gate requiring a new explicit owner authorization at execution time.
 
-Do not declare the real buy/sell feature fully released until Phase 3, rollback drill and Phase 4 controlled real execution/reconciliation pass.
+Do not call the real BUY/SELL feature fully released until Phase 4 submit, broker-state reconciliation, portfolio/operations reconciliation, and idempotent replay are complete.
 
-## Canonical Custom GPT configuration
+## Canonical configuration
 
-- UI/product name currently remains `Omni-CIO API | Управляющий и аналитик v8.4` until owner manually renames it;
-- canonical behavior instructions: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_0.txt`;
-- historical Sandbox instructions: v8.5.0;
-- historical read-only fallback: v8.4.1;
-- recommended model: `Thinking 5.6`;
-- user-visible timezone: `Europe/Moscow` / MSK;
-- production Gateway: `https://omni-cio-gateway.onrender.com`;
-- Render instance type: Free;
-- entrypoint: `app:app`.
+- UI name: `Omni-CIO API | Управляющий и аналитик v8.6.1`.
+- Canonical GPT Editor Instructions: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt`.
+- Full v8.6 engineering reference: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_0.txt`.
+- Recommended model: `Thinking 5.6`.
+- Timezone: `Europe/Moscow` / MSK.
+- Gateway: `https://omni-cio-gateway.onrender.com`.
+- Render plan: Free.
+- Entrypoint: `app:app`.
+- Production Knowledge: exactly 10 canonical files.
 
-GitHub does not automatically update GPT Editor Instructions/Knowledge/OpenAPI or external secrets.
+GitHub is canonical for code/config reference but does not automatically synchronize GPT Editor, Render secrets, or Upstash.
 
-## Production read-only contour
+## Broker contours
 
-Existing `TINVEST_TOKEN` remains read-only and must stay read-only.
+### Production read-only
 
-Supported read-only facts include:
+`TINVEST_TOKEN` remains read-only and separate from execution credentials.
 
-- connection/account masking;
-- portfolio and enriched positions;
-- cash/liquidity;
-- instrument search;
-- market snapshot and order book;
-- portfolio market snapshot/analytics;
-- purchase-capacity preview;
-- operations history/analytics;
-- official broker-report reconciliation;
-- reviewed decision retrieval;
-- public web/news context through GPT when required.
+Supported facts include connection, portfolio, enriched positions, cash/liquidity, instrument search, market snapshots, analytics, purchase-capacity preview, operations, broker-report reconciliation and final decision review.
 
-Portfolio-management routing baseline:
+Portfolio-management baseline:
 
 `getPortfolioSnapshot → getCashLiquiditySnapshot → getPortfolioAnalytics → analysis`
 
-Fresh-market gate blocks exact personalized sizing when market/order-book evidence is stale or incomplete.
+### Sandbox
 
-## Sandbox execution accepted
+Uses only `TINVEST_SANDBOX_TOKEN`, fixed Sandbox host and `SANDBOX_TRADING_ENABLED`.
 
-Merged Sandbox backend uses a separate `TINVEST_SANDBOX_TOKEN`, fixed Sandbox host and server kill switch.
+Owner Preview acceptance on 2026-08-02 demonstrated virtual account/funding/portfolio, BUY/SELL, exact confirmation, wrong/expired confirmation rejection, replay protection, own-position rejection, LIMIT state/cancel and final portfolio reconciliation. All observed responses remained `real_money=false`.
 
-Owner Preview acceptance on 2026-08-02 demonstrated:
+### Real execution v1
 
-- healthy `getSandboxTradingStatus` with `real_money=false`;
-- confirmed virtual account creation/funding;
-- virtual portfolio read-back;
-- SBER identity/market resolution;
-- MARKET BUY and SELL with two-phase exact confirmation;
-- SELL-without-position rejection;
-- expiry rejection;
-- wrong phrase rejection;
-- replay/idempotency protection;
-- LIMIT order status → confirmed cancellation → CANCELLED state;
-- portfolio reconciliation after tests;
-- all observed Sandbox responses remained isolated from real money.
+Uses only separate account-scoped `TINVEST_TRADING_TOKEN` without transfer access.
 
-Sandbox remains independent of real execution.
-
-## Real-money release program — Phase 0 complete
-
-Tracking issue: #164.
-
-Merged design package defines:
-
-- separate account-scoped `TINVEST_TRADING_TOKEN`;
-- never promote/overwrite `TINVEST_TOKEN`;
-- no transfer-access token;
-- `REAL_TRADING_ENABLED=false` default-off;
-- LIMIT/CURRENCY/DAY cash-security v1 only;
-- no margin/short/derivatives/currency execution/stop/replace/async;
-- immutable proposal + exact short-lived owner confirmation in a new message;
-- own-funds/own-position preflight;
-- account binding/masking;
-- server hard caps;
-- idempotency + ambiguous-submit no-retry;
-- durable state requirement;
-- rollback and staged acceptance.
-
-Architecture: `docs/architecture/REAL_TRADING_V1.md`.
-
-Runbook: `docs/operations/REAL_TRADING_RELEASE_RUNBOOK.md`.
-
-## Real-money release program — Phase 1 complete
-
-Merged `omni_cio/real_trading/` core provides:
-
-- production REST host fixed to `https://invest-public-api.tbank.ru/rest`;
-- narrow method allowlist;
-- dedicated token passed explicitly; no `TINVEST_TOKEN` environment fallback inside real package;
-- exactly one open trading account required and bound to the read-only account;
-- cash share/ETF + RUB + LIMIT only;
-- exact price-step validation;
-- `GetMaxLots` own-funds BUY / own-position SELL checks;
-- `GetOrderPrice` cost/commission preview;
-- configurable order/daily caps plus immutable code ceilings;
-- trusted fresh market gate;
-- HMAC-bound proposal/confirmation;
-- pre-submit account/market/preflight revalidation;
-- atomic daily reservation;
-- UUID idempotency;
-- `PostOrder` with `TIME_IN_FORCE_DAY`, `PRICE_TYPE_CURRENCY`, `confirmMarginTrade=false`;
-- definitive rejection → failed;
-- possible-submit transport/5xx ambiguity → unknown/do-not-resubmit;
-- request-id `GetOrderState` reconciliation;
-- masked/sanitized broker data;
-- production requires a durable journal.
-
-Fake-client/security/regression tests are merged and green.
-
-## Real-money release program — Phase 2 backend merged
-
-PR #168 — `Trading: add durable state and conditional real-money Actions` — passed exact-head Regression Shield/security and was squash-merged as commit:
-
-`68e2a658c6d379e8e446b6bc0b46d78beb70c755`
-
-Merged Phase 2 provides trusted market adapter, conditional Action publication, proposal persistence contract, restart recovery semantics and journal integrity gates.
-
-### Conditional Actions
-
-When `REAL_TRADING_ENABLED=false`, all Real Trading Actions are absent.
-
-When flag is true but mandatory static config/journal is invalid, only safe readiness status can publish; mutation routes remain absent.
-
-When static readiness is valid, only these real Actions register:
+Conditional Actions:
 
 - `getRealTradingStatus`;
 - `prepareRealTrade`;
-- `executeRealTrade` — consequential;
+- `executeRealTrade`;
 - `getRealOrderState`.
 
-No real cancel/replace/transfer/withdraw/market/margin route exists in first release.
+Real v1 is deliberately narrow:
 
-Default-off read-only release contract remains green.
+- BUY/SELL only;
+- supported cash share/ETF only;
+- RUB;
+- LIMIT / CURRENCY / DAY only;
+- own-funds BUY / own-position SELL;
+- no margin/short;
+- fresh trusted order book;
+- exact price step;
+- immutable proposal + exact short-lived owner confirmation in a new user turn;
+- server hard caps;
+- UUID idempotency;
+- ambiguous possible-submit = unknown/do-not-resubmit;
+- broker reconciliation required;
+- `submitted` never means `filled` without broker proof.
 
-## Zero-cost durable storage — merged
+No withdrawal/transfer, securities transfer, MARKET/BESTPRICE, derivatives/currencies, stop orders, ReplaceOrder, async submit, autonomous recurring execution or first-release real cancellation exists.
 
-PR #170 — `Storage: keep real-money release on Render Free with Upstash` — passed exact-head Regression Shield run #958, including quality/contracts/coverage plus dependency audit/SAST/secret scan, and was squash-merged as commit:
+## Durable journal
 
-`50dee22172985d27ac2ae8b7a04c76c5840e85f1`
-
-Production default backend:
-
-`UpstashRealExecutionJournalV1`
-
-Server configuration:
+Selected production backend:
 
 ```text
 REAL_TRADING_JOURNAL_BACKEND=upstash
@@ -173,121 +95,87 @@ UPSTASH_REDIS_REST_URL=<Render Environment>
 UPSTASH_REDIS_REST_TOKEN=<Render secret>
 ```
 
-Accepted engineering properties:
+Accepted properties:
 
-- Render Web Service stays Free;
-- no `/var/data` disk required;
-- external durable state survives Render Free sleep/deploy/restart;
-- REST endpoint restricted to HTTPS `*.upstash.io`;
-- HMAC-authenticated journal metadata;
-- HMAC-authenticated proposal envelopes;
-- HMAC-authenticated Moscow-day notional counters;
-- authenticated proposal-count metadata detects missing/extra stored proposal rows;
-- atomic Redis Lua compare-and-swap for concurrent proposal/daily-limit mutation;
-- durable reservation happens before T-Invest `PostOrder`;
-- definitive rejection releases daily reserved notional;
-- `unknown` remains reserved;
-- storage outage/tamper fails closed and never falls back to ephemeral memory;
-- SQLite remains an explicit compatibility/test backend only.
+- survives Render Free sleep/deploy/restart;
+- no Render disk required;
+- HTTPS `*.upstash.io` restriction;
+- HMAC-authenticated metadata/proposals/day counters;
+- atomic Redis Lua compare-and-swap for proposal transition + daily cap reservation;
+- no fallback to memory when storage is unavailable;
+- tamper/missing/corrupt state fails closed;
+- broker/Gateway/Upstash secrets are not stored in proposal data.
 
-Provider pricing/limits are an external availability condition, not an authorization or safety assumption.
+## Owner Phase 3 acceptance — COMPLETE
 
-Durable-storage document: `docs/operations/REAL_TRADING_DURABLE_STORAGE_V1.md`.
+Completed on 2026-08-03 with zero real submit.
 
-## Trusted real market adapter
+Observed/accepted:
 
-Real execution consumes the established read-only market snapshot but fails closed unless:
+1. permanent Upstash Free database configured in Render;
+2. dedicated T-Invest trading token configured separately from read-only token;
+3. initial limits: 1000 RUB/order, 2000 RUB/day, 120 s confirmation TTL, 15 s market freshness;
+4. `getRealTradingStatus` returned ready, masked account, durable journal true, `journal_backend=upstash`, `journal_integrity=ok`;
+5. Custom GPT updated to v8.6.1 Compact, 10 Knowledge files retained, production OpenAPI re-imported;
+6. saved GPT (not only Preview) successfully called only `getRealTradingStatus` and remained ready;
+7. technical `prepareRealTrade` generated a proposal without broker submit;
+8. expired exact confirmation rejected with `REAL_CONFIRMATION_EXPIRED`, no fill and no broker submit;
+9. deliberately wrong confirmation rejected before `executeRealTrade`, no broker submit;
+10. BUY request beyond own-funds lot limit rejected with `REAL_QUANTITY_EXCEEDS_LIMIT`, proving no margin fallback;
+11. read-only `getPortfolioSnapshot` remained isolated and returned masked real account data;
+12. kill switch tested: `REAL_TRADING_ENABLED=false` redeploy kept `/health` healthy and reported `trading_methods=false`;
+13. real contour re-enabled and returned to `status=ready`, `execution_ready=true`, `journal_integrity=ok` with proposal rows preserved.
 
-- requested/resolved UID identity matches;
-- reference/trading status/order book components are complete;
-- identity has no conflict;
-- instrument type is v1-supported;
-- lot/min-price increment are valid;
-- API trading + limit order flags allow the request;
-- freshness is proven by `order_book.time`, not merely gateway request time.
+Hard-cap, stale-market, SELL-over-position, replay and ambiguous-submit protections are also covered by merged fake-client/regression tests. The live hard-cap scenario could not be isolated because the real account own-funds limit rejected the attempted >1000 RUB test first; no real submit was made.
 
-## Current secret/infrastructure boundary
+## Current safety state
 
-GitHub stores no values of:
+Current owner-visible readiness after rollback recovery:
 
-- `TINVEST_TOKEN`;
-- `TINVEST_SANDBOX_TOKEN`;
-- `TINVEST_TRADING_TOKEN`;
-- `UPSTASH_REDIS_REST_TOKEN`;
-- `GATEWAY_API_KEY`;
-- Authorization headers;
-- full account IDs;
-- private broker payloads as configuration.
+- real contour enabled;
+- `status=ready`;
+- `execution_ready=true`;
+- `journal_backend=upstash`;
+- `journal_integrity=ok`;
+- account masked;
+- order cap 1000 RUB;
+- daily cap 2000 RUB;
+- Sandbox false for real status;
+- no accepted Phase 4 real submit yet.
 
-One Render Free service remains canonical.
+`REAL_TRADING_ENABLED=false` remains the master rollback action for any anomaly.
 
-Details: `gpt/SECRETS_AND_RENDER.md`.
+## Phase 4 — ONLY REMAINING RELEASE GATE
 
-## Current Action surface before owner real enable
+The first controlled real order requires a new explicit owner instruction at that time. General development autonomy or a portfolio-management command is not sufficient authorization.
 
-Expected production behavior while `REAL_TRADING_ENABLED=false`:
+Required first-order sequence:
 
-- baseline 14 read-only GET Actions;
-- +8 Sandbox Actions if `SANDBOX_TRADING_ENABLED=true`;
-- no Real Trading Actions.
-
-This is the safe owner-configuration starting state.
-
-## Next gate — Phase 3 owner configuration, NO REAL SUBMIT
-
-The next owner-only work is:
-
-1. create/claim one permanent Upstash Redis Free database;
-2. add its HTTPS REST URL and REST token only to Render Environment;
-3. keep `REAL_TRADING_JOURNAL_BACKEND=upstash`;
-4. issue separate account-scoped full-access T-Invest trading token without transfer access;
-5. store it only as `TINVEST_TRADING_TOKEN`;
-6. keep `TINVEST_TOKEN` unchanged/read-only;
-7. keep initial caps at 1000 RUB per order / 2000 RUB per day;
-8. keep `REAL_TRADING_ENABLED=false` initially;
-9. deploy and run read-only/Sandbox smoke;
-10. controlled enable;
-11. apply/re-import GPT v8.6 configuration;
-12. complete negative Preview acceptance with zero real submit;
-13. restart Render and prove Upstash journal persistence;
-14. prove kill-switch rollback removes Real Trading Actions.
-
-No Render upgrade or persistent disk purchase is required.
-
-Exact steps: `docs/operations/REAL_TRADING_RELEASE_RUNBOOK.md` and `gpt/SETUP_INDEX.md`.
-
-## Phase 4 still required for Definition of Done
-
-After Phase 3 passes, a first real order requires a **new explicit owner instruction at that time**.
-
-It must be:
-
-- liquid supported cash security;
-- minimum practical size;
-- LIMIT only;
-- fresh market;
-- complete proposal;
-- exact confirmation in a new message;
-- submit once;
-- immediate `getRealOrderState`;
-- broker fill/partial-fill truth preserved;
-- real portfolio/operations reconciled;
-- idempotent replay verified safely;
-- stop on any ambiguity.
+1. choose a highly liquid supported cash security, normally 1 lot, preliminary total < 1000 RUB;
+2. LIMIT only, fresh trusted market, exact identity, own-funds/own-position preflight;
+3. `prepareRealTrade` and show REAL MONEY proposal + exact phrase, then stop;
+4. owner sends exact phrase in a new message;
+5. `executeRealTrade` submits once;
+6. immediately `getRealOrderState`;
+7. do not call it filled unless broker status proves fill;
+8. after fill/partial fill, reconcile real portfolio/cash/operations;
+9. replay the same confirmation once as an idempotency release test — it must not create a second broker submit;
+10. on any ambiguity, never resubmit; reconcile only.
 
 ## Definition of Done
 
-Do not use the final completion phrase until all of these are complete:
-
-- [x] free durable-storage code merged after exact-head Regression Shield/security;
-- [ ] free default-off deployment healthy after owner secret configuration;
-- [ ] permanent Upstash Free database configured;
-- [ ] GPT v8.6 configuration applied in GPT Editor;
-- [ ] owner Phase 3 negative Preview acceptance;
-- [ ] kill-switch rollback drill;
-- [ ] first controlled real order explicitly authorized;
+- [x] threat model/design merged;
+- [x] isolated backend merged;
+- [x] durable state + conditional OpenAPI merged;
+- [x] zero-cost Upstash journal migration merged and deployed;
+- [x] permanent Upstash Free database configured;
+- [x] dedicated trading token configured separately;
+- [x] GPT v8.6.1 Compact applied and saved;
+- [x] owner Phase 3 negative acceptance completed with zero real submit;
+- [x] kill-switch rollback + recovery completed;
+- [ ] first controlled real order explicitly authorized and submitted;
 - [ ] broker state reconciled;
 - [ ] real portfolio/operations reconciled;
-- [ ] replay protection verified without a second submit.
+- [ ] idempotent replay verified with no second submit.
 
-Until then the release is engineering-complete/default-off, not fully owner-accepted real-money production.
+Until the final four unchecked items pass, Omni-CIO is release-candidate/owner-accepted for safety gates, but the real BUY/SELL feature is not yet 100% released.
