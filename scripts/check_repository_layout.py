@@ -24,7 +24,10 @@ REQUIRED_PATHS = (
     "pyproject.toml",
     ".env.example",
     "scripts/check_ci_security_baseline.py",
+    "scripts/check_gpt_recovery_consistency.py",
+    "scripts/check_repository_layout.py",
     "tests/test_ci_security_baseline.py",
+    "tests/test_gpt_recovery_consistency.py",
     "knowledge/00_PROJECT_MASTER_CONTEXT.md",
     "knowledge/09_MARKET_DATA_AND_BUYING_POWER.txt",
     "knowledge/10_OPERATIONS_ANALYTICS_AND_RECONCILIATION.txt",
@@ -37,17 +40,21 @@ REQUIRED_PATHS = (
     "docs/master-plan/README.md",
     "docs/master-plan/OMNI_CIO_MASTER_PROMPT_V9.pdf",
     "docs/master-plan/OMNI_CIO_MASTER_PROMPT_V9.txt",
+    "docs/master-plan/OMNI_CIO_V9_PORTFOLIO_AUTOPILOT_PROGRAM.md",
     "docs/architecture/SYSTEM_OVERVIEW.md",
     "docs/architecture/REPOSITORY_STRUCTURE.md",
     "docs/architecture/DECISIONS.md",
+    "docs/architecture/V9_BASELINE_AND_RECOVERY_CONTRACT.md",
     "docs/operations/DEPLOYMENT_RUNBOOK.md",
     "docs/operations/RELEASE_CHECKLIST.md",
     "docs/operations/SANDBOX_TRADING_RUNBOOK.md",
+    "docs/operations/REAL_TRADING_RELEASE_RUNBOOK.md",
     "gpt/README.md",
     "gpt/SETUP_INDEX.md",
     "gpt/MY_GPT_SETUP_RUNBOOK.md",
     "gpt/CONFIGURATION.md",
-    "gpt/CUSTOM_GPT_INSTRUCTIONS_V8_4_1.txt",
+    "gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt",
+    "gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_0.txt",
     "gpt/ACTIONS_CATALOG.md",
     "gpt/SECRETS_AND_RENDER.md",
     "gpt/BOT_ONLY_FILE_MANIFEST.md",
@@ -57,6 +64,7 @@ REQUIRED_PATHS = (
     "omni_cio/sandbox/client_v1.py",
     "omni_cio/sandbox/service_v1.py",
     "omni_cio/sandbox/routes_v1.py",
+    "omni_cio/real_trading/__init__.py",
     "tests/test_sandbox_trading_v1.py",
     ".github/CODEOWNERS",
     ".github/dependabot.yml",
@@ -210,7 +218,8 @@ def scan_sandbox_execution_boundary(failures: list[str]) -> None:
 
     if SANDBOX_ALLOWED_HOST not in source:
         fail(
-            "sandbox runtime does not declare the canonical sandbox REST host", failures
+            "sandbox runtime does not declare the canonical sandbox REST host",
+            failures,
         )
     if "TINVEST_SANDBOX_TOKEN" not in source:
         fail("sandbox runtime does not require TINVEST_SANDBOX_TOKEN", failures)
@@ -261,7 +270,7 @@ def main() -> int:
         if 'ENTRYPOINT = "app:app"' not in app_text:
             fail("app.py does not declare ENTRYPOINT = app:app", failures)
         if "trading_methods" not in app_text:
-            fail("app.py does not expose the real-money read-only marker", failures)
+            fail("app.py does not expose the trading surface marker", failures)
 
     for path in ROOT.rglob("*"):
         if ".git" in path.parts or not path.is_file():
@@ -273,7 +282,8 @@ def main() -> int:
             )
         if "__pycache__" in path.parts or path.suffix in {".pyc", ".pyo"}:
             fail(
-                f"generated Python artifact present: {path.relative_to(ROOT)}", failures
+                f"generated Python artifact present: {path.relative_to(ROOT)}",
+                failures,
             )
 
     workflow_dir = ROOT / ".github" / "workflows"
@@ -293,10 +303,11 @@ def main() -> int:
 
     print("Repository layout check passed.")
     print(f"Required files checked: {len(REQUIRED_PATHS)}")
-    print("Product surface: Custom GPT + real-money read-only Gateway")
-    print("Optional execution surface: isolated T-Invest Sandbox")
+    print("Product surface: one Custom GPT + one production Gateway")
+    print("Execution contours: read-only + isolated Sandbox + confirmed Real v1")
+    print("Protected production release: Omni-CIO v8.6.1")
+    print("Active development program: Omni-CIO v9 Portfolio Autopilot")
     print("Gateway entrypoint: app:app")
-    print("Real-money trading methods: disabled")
     return 0
 
 

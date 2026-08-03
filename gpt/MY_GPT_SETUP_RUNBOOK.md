@@ -1,6 +1,8 @@
-# Omni-CIO v8.6 — setup / recovery runbook
+# Omni-CIO v8.6.1 — setup / recovery runbook
 
-Для обычной настройки сначала читать `gpt/SETUP_INDEX.md`. Этот документ — короткий recovery checklist, если GPT Editor пришлось настраивать заново.
+Для обычной настройки сначала читать `gpt/SETUP_INDEX.md`. Этот документ — пошаговый recovery checklist, если текущий Omni-CIO пришлось настраивать заново.
+
+Текущий production baseline остаётся v8.6.1 до завершения и отдельного acceptance программы v9.
 
 ## 1. Canonical runtime
 
@@ -13,12 +15,13 @@
 - Health: `https://omni-cio-gateway.onrender.com/health`.
 - OpenAPI: `https://omni-cio-gateway.onrender.com/openapi.json`.
 
-Один Gateway service. Не создавать duplicate service для Sandbox или real trading. Persistent Disk для выбранной production architecture не нужен.
+Один Gateway service. Не создавать duplicate service для Sandbox, real trading или v9.
 
 ## 2. Canonical GPT configuration
 
-- UI name may still show `Omni-CIO API | Управляющий и аналитик v8.4` until owner renames it.
-- Canonical Instructions behavior: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_0.txt`.
+- UI name: `Omni-CIO API | Управляющий и аналитик v8.6.1`.
+- Canonical Instructions: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt`.
+- Full engineering reference: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_0.txt`.
 - Recommended model: `Thinking 5.6`.
 - Timezone: MSK / `Europe/Moscow`.
 - Web Search: ON.
@@ -26,15 +29,30 @@
 - Image generation: OFF for investment workflow.
 - Apps: do not combine with Actions.
 
-## 3. Knowledge
+Do not paste the full v8.6.0 reference on top of the compact Instructions.
 
-Upload exactly the 10 files listed in `gpt/SETUP_INDEX.md` / `gpt/CONFIGURATION.md`, one copy each.
+## 3. Knowledge — exactly 10
 
-Never upload secrets, source code, full account IDs or private broker reports as configuration.
+Upload exactly:
+
+1. `02_GATEWAY_DATA_CONTRACT_V2_OPERATIONS.txt`
+2. `04_CIO_PORTFOLIO_MANAGER.txt`
+3. `05_ANALYST_NEWS_SIMPLE_LANGUAGE.txt`
+4. `06_EVIDENCE_CREDIT_BANKRUPTCY.txt`
+5. `07_PERSONAL_STRATEGY.txt`
+6. `08_DECISION_JOURNAL_AND_QUALITY_CONTROL.txt`
+7. `09_AUTONOMOUS_ACTION_ORCHESTRATOR.txt`
+8. `10_DECISION_ENGINE_AND_CANDIDATE_COMPARISON.txt`
+9. `11_RISK_DECOMPOSITION_AND_SIZING_GATES.txt`
+10. `13_COMMUNICATION_STYLE_2026.txt`
+
+Never upload secrets, source code, full account IDs or private broker reports as GPT configuration.
 
 ## 4. Action authentication
 
-Import production OpenAPI URL.
+Import:
+
+`https://omni-cio-gateway.onrender.com/openapi.json`
 
 Authentication:
 
@@ -46,35 +64,33 @@ Never paste T-Invest or Upstash tokens into GPT Editor.
 
 ## 5. Action surface recovery
 
-Use `gpt/ACTIONS_CATALOG.md` as source of truth.
+Use `gpt/ACTIONS_CATALOG.md` as the static reference and production `/openapi.json` as the deployed surface.
 
-Default safe state:
+Read-only remains available independently of optional execution contours.
 
-- real flag OFF → no Real Trading Actions;
-- Sandbox flag OFF → 14 baseline GET Actions;
-- Sandbox flag ON → baseline + 8 Sandbox Actions.
+Sandbox uses only its dedicated token/host and remains virtual.
 
-After controlled real enable and valid static readiness:
+Valid real enable exposes only:
 
 - `getRealTradingStatus`;
 - `prepareRealTrade`;
 - `executeRealTrade`;
 - `getRealOrderState`.
 
-No real cancel/replace/withdraw/transfer/MARKET/margin Actions belong to first release.
+No real cancel/replace/withdraw/transfer/MARKET/margin Actions belong to v8.6.1.
 
-## 6. Render Free secret/storage recovery
+## 6. Render / storage recovery
 
 See `gpt/SECRETS_AND_RENDER.md`.
 
-Never change the role separation:
+Preserve role separation:
 
 - `TINVEST_TOKEN` = production read-only;
 - `TINVEST_SANDBOX_TOKEN` = Sandbox only;
 - `TINVEST_TRADING_TOKEN` = real order execution only, account-scoped and non-transfer;
 - `GATEWAY_API_KEY` = GPT → Gateway authentication.
 
-Real execution durable state uses external Upstash Redis Free:
+Real execution durable state:
 
 ```text
 REAL_TRADING_JOURNAL_BACKEND=upstash
@@ -82,59 +98,76 @@ UPSTASH_REDIS_REST_URL=<Upstash HTTPS endpoint>
 UPSTASH_REDIS_REST_TOKEN=<secret REST token>
 ```
 
-The Upstash REST token stays only in Render Environment. The GPT never receives it.
+The Upstash token stays only in Render Environment.
 
-Real execution also needs small server caps. Initial acceptance values:
+Risk/cap values must be restored from the accepted Render configuration and canonical documentation. Never infer secret values or production limits from chat history.
 
-```text
-REAL_TRADING_MAX_ORDER_RUB=1000
-REAL_TRADING_MAX_DAILY_RUB=2000
-REAL_TRADING_CONFIRMATION_TTL_SECONDS=120
-REAL_TRADING_MARKET_MAX_AGE_SECONDS=15
-```
+## 7. Recovery smoke
 
-Keep `REAL_TRADING_ENABLED=false` until the negative acceptance stage described in the release runbook.
+### Read-only
 
-## 7. Preview smoke after recovery
+1. `/health` or `gatewayHealth`;
+2. `getConnection`;
+3. portfolio snapshot;
+4. cash/liquidity;
+5. analytics;
+6. operations;
+7. normal `УПРАВЛЯЙ ПОРТФЕЛЕМ` routing.
 
-Read-only:
+### Sandbox if enabled
 
-1. gatewayHealth only;
-2. getConnection;
-3. balance;
-4. portfolio;
-5. 90-day operations;
-6. `УПРАВЛЯЙ ПОРТФЕЛЕМ` → portfolio snapshot → cash liquidity → analytics → analysis.
-
-Sandbox if enabled:
-
-- status;
-- virtual portfolio;
-- two-phase proposal/confirmation;
+- status and virtual portfolio;
+- proposal/confirmation separation;
 - wrong/expired confirmation rejection;
 - replay protection.
 
-Real if enabled:
+### Real if enabled
 
-- follow `docs/operations/REAL_TRADING_RELEASE_RUNBOOK.md` exactly;
-- `getRealTradingStatus` must report `journal_backend=upstash`, durable/integrity ready and masked account;
-- run Phase 3 negative acceptance before any correct real confirmation;
-- restart/redeploy Render Free and prove journal persistence;
-- prove rollback kill switch;
-- first real order only under a new explicit owner instruction.
+- `getRealTradingStatus` must be ready and account-masked;
+- durable journal must report Upstash/integrity ready;
+- do not create a real proposal merely for recovery unless an affected release requires it;
+- `REAL_TRADING_ENABLED=false` remains the master rollback state.
 
-## 8. Publishing
+The v8.6.1 first-real-order acceptance is already complete and does not need to be repeated during ordinary recovery.
+
+## 8. v8.6.1 accepted release state
+
+Completed 2026-08-03:
+
+- real readiness and durable journal accepted;
+- wrong/expired confirmation protections accepted;
+- own-funds protection accepted;
+- kill-switch rollback/recovery accepted;
+- one real SBER LIMIT BUY was explicitly authorized and broker-filled;
+- portfolio and operations reconciled;
+- exact confirmation replay created no second submit.
+
+**Release state: v8.6.1 = 100% complete.**
+
+## 9. v9 development boundary
+
+Active owner-approved program:
+
+`docs/master-plan/OMNI_CIO_V9_PORTFOLIO_AUTOPILOT_PROGRAM.md`
+
+Protected baseline/migration/rollback contract:
+
+`docs/architecture/V9_BASELINE_AND_RECOVERY_CONTRACT.md`
+
+Do not configure the live GPT as v9 until WP15 is complete and owner Preview acceptance is performed. Development packages must preserve the v8.6.1 production path until their own exit gates pass.
+
+## 10. Publishing
 
 Click GPT Editor `Update` only when:
 
-- Instructions v8.6 copied completely;
-- Knowledge count correct;
+- UI name and canonical Instructions match this runbook;
+- Knowledge count is exactly 10;
 - Action surface matches current flags/readiness;
 - Bearer authentication works;
-- read-only smoke passes;
-- Sandbox smoke passes if enabled;
-- real Phase 3 acceptance passes if real contour is being published.
+- relevant smoke checks pass.
 
-## 9. GitHub / external-service boundary
+## 11. GitHub / external-service boundary
 
-A GitHub merge/deploy does not automatically modify GPT Editor, Render Environment or Upstash. Conversely, changing those services does not update GitHub. Keep GitHub `main` as the canonical reproducible configuration.
+A GitHub merge/deploy does not automatically modify GPT Editor, Render Environment or Upstash. Conversely, changing external services does not update GitHub.
+
+Keep GitHub `main` as the canonical reproducible code/config reference, with secret values remaining external.
