@@ -310,19 +310,14 @@ def _market_trusted(evidence: CandidateEvidenceV1) -> bool:
     )
 
 
-def _evaluate_security(
+def _comparable_evidence_blockers(
     *,
     row: UniverseInstrumentV1,
     evidence: CandidateEvidenceV1,
     gap: PortfolioGapV1,
-    policy: InvestmentPolicyStatementV1,
     assessed_at: datetime,
-) -> tuple[CandidateScoreV1 | None, tuple[CandidateBlockerCode, ...]]:
+) -> tuple[CandidateBlockerCode, ...]:
     blockers: list[CandidateBlockerCode] = []
-    role_grade = _role_fit_grade(gap.role, row.identity.instrument_type)
-    if role_grade is None:
-        blockers.append(CandidateBlockerCode.ROLE_MISMATCH)
-
     if evidence.instrument_uid != row.identity.uid:
         blockers.append(CandidateBlockerCode.MARKET_IDENTITY_MISMATCH)
     if evidence.exposure.portfolio_snapshot_sha256 != gap.portfolio_snapshot_sha256:
@@ -332,7 +327,7 @@ def _evaluate_security(
     if not _market_trusted(evidence):
         blockers.append(CandidateBlockerCode.MARKET_SOURCE_UNTRUSTED)
 
-    freshness_grade, freshness_blockers = _freshness_grade(
+    _, freshness_blockers = _freshness_grade(
         evidence,
         assessed_at=assessed_at,
     )
@@ -341,6 +336,41 @@ def _evaluate_security(
     minimum_lot_cost, cost_blocker = _minimum_lot_cost(row=row, evidence=evidence)
     if cost_blocker is not None:
         blockers.append(cost_blocker)
+    if (
+        minimum_lot_cost is not None
+        and evidence.exposure.portfolio_value.currency != minimum_lot_cost.currency
+    ):
+        blockers.append(CandidateBlockerCode.PORTFOLIO_VALUE_CURRENCY_MISMATCH)
+    return tuple(sorted(set(blockers), key=str))
+
+
+def _evaluate_security(
+    *,
+    row: UniverseInstrumentV1,
+    evidence: CandidateEvidenceV1,
+    gap: PortfolioGapV1,
+    policy: InvestmentPolicyStatementV1,
+    assessed_at: datetime,
+) -> tuple[CandidateScoreV1 | None, tuple[CandidateBlockerCode, ...]]:
+    quality_blockers = _comparable_evidence_blockers(
+        row=row,
+        evidence=evidence,
+        gap=gap,
+        assessed_at=assessed_at,
+    )
+    if quality_blockers:
+        return None, quality_blockers
+
+    blockers: list[CandidateBlockerCode] = []
+    role_grade = _role_fit_grade(gap.role, row.identity.instrument_type)
+    if role_grade is None:
+        blockers.append(CandidateBlockerCode.ROLE_MISMATCH)
+
+    freshness_grade, _ = _freshness_grade(
+        evidence,
+        assessed_at=assessed_at,
+    )
+    minimum_lot_cost, _ = _minimum_lot_cost(row=row, evidence=evidence)
     if minimum_lot_cost is not None:
         if minimum_lot_cost.currency != gap.target_currency:
             blockers.append(CandidateBlockerCode.TARGET_CURRENCY_MISMATCH)
@@ -547,6 +577,42 @@ def build_candidate_funnel(
         )
 
     if global_blockers:
+        return _blocked_result(
+            assessed_at=now,
+            gap=gap,
+            policy=policy,
+            universe=universe,
+            blockers=global_blockers,
+            rejected=tuple(
+                sorted(rejected, key=lambda item: (item.instrument_uid, item.ticker or ""))
+            ),
+        )
+
+    evidence_quality_rejected = False
+    for row in eligible:
+        uid = row.identity.uid
+        if uid is None:
+            continue
+        blockers = _comparable_evidence_blockers(
+            row=row,
+            evidence=evidence_by_uid[uid][0],
+            gap=gap,
+            assessed_at=now,
+        )
+        if blockers:
+            evidence_quality_rejected = True
+            rejected.append(
+                RejectedCandidateV1(
+                    instrument_uid=uid,
+                    ticker=row.identity.ticker,
+                    blockers=blockers,
+                )
+            )
+
+    if evidence_quality_rejected:
+        global_blockers.append(
+            CandidateGlobalBlockerCode.EVIDENCE_COVERAGE_INCOMPLETE
+        )
         return _blocked_result(
             assessed_at=now,
             gap=gap,
