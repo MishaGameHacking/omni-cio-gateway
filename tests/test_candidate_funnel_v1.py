@@ -242,6 +242,7 @@ def _evidence(
     ask: Decimal = Decimal("100.00"),
     as_of: datetime = NOW,
     authority: SourceAuthority = SourceAuthority.OFFICIAL,
+    portfolio_snapshot_sha256: str = "a" * 64,
     portfolio_value: Decimal = Decimal("1000000"),
     position_weight: Decimal = Decimal("0"),
     group_weight: Decimal = Decimal("0"),
@@ -301,6 +302,7 @@ def _evidence(
         ),
         exposure=CandidateExposureContextV1(
             instrument_uid=uid,
+            portfolio_snapshot_sha256=portfolio_snapshot_sha256,
             portfolio_value=Money(amount=portfolio_value, currency=row.identity.currency),
             current_position_weight=position_weight,
             current_group_weight=group_weight,
@@ -450,6 +452,27 @@ def test_duplicate_evidence_blocks_funnel() -> None:
     assert result.decision_ready is False
 
 
+def test_duplicate_evidence_for_static_rejection_does_not_block_eligible_universe() -> None:
+    eligible = _universe_row("uid-a", "AAA")
+    rejected = _universe_row("uid-usd", "USD", currency="USD")
+    rejected_evidence = _evidence(rejected)
+    result = build_candidate_funnel(
+        gap=_gap(urgency=GapUrgency.HIGH),
+        policy=_policy(),
+        universe=_universe(eligible, rejected),
+        evidence=(
+            _evidence(eligible),
+            rejected_evidence,
+            rejected_evidence,
+        ),
+        assessed_at=NOW,
+    )
+
+    assert CandidateGlobalBlockerCode.DUPLICATE_EVIDENCE not in result.global_blockers
+    assert result.decision_ready is True
+    assert result.research_shortlist[0].instrument_uid == "uid-a"
+
+
 def test_stale_or_future_market_evidence_cannot_receive_score() -> None:
     share = _universe_row("uid-a", "AAA")
     stale = build_candidate_funnel(
@@ -537,6 +560,20 @@ def test_unaffordable_minimum_lot_is_rejected() -> None:
     )
 
     assert CandidateBlockerCode.UNAFFORDABLE_MIN_LOT in result.rejected[0].blockers
+
+
+def test_exposure_must_match_gap_portfolio_snapshot() -> None:
+    share = _universe_row("uid-snapshot", "SNAP")
+    result = build_candidate_funnel(
+        gap=_gap(),
+        policy=_policy(),
+        universe=_universe(share),
+        evidence=(_evidence(share, portfolio_snapshot_sha256="c" * 64),),
+        assessed_at=NOW,
+    )
+
+    assert CandidateBlockerCode.PORTFOLIO_SNAPSHOT_MISMATCH in result.rejected[0].blockers
+    assert result.research_shortlist == ()
 
 
 def test_one_lot_concentration_headroom_is_hard_blocker() -> None:
