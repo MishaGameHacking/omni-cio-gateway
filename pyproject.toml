@@ -30,6 +30,7 @@ files = [
   "omni_cio/market",
   "omni_cio/news",
   "omni_cio/decision",
+  "omni_cio/router",
   "omni_cio/rebalancing",
   "omni_cio/pretrade",
   "omni_cio/paper",
