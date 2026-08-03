@@ -10,50 +10,101 @@
 
 `Omni-CIO API | Управляющий и аналитик v8.6.1`
 
-Canonical GPT Editor behavior payload: **v8.6.1 Compact**.
-
-Full engineering reference: **v8.6.0**.
-
-Архитектура:
+Current production GPT behavior: **v8.6.1 Compact**.
 
 ```text
 Custom GPT → Omni-CIO Gateway (`app:app`, Render Free)
                     │
                     ├→ TINVEST_TOKEN → production read-only
                     ├→ TINVEST_SANDBOX_TOKEN → optional T-Invest Sandbox
-                    ├→ TINVEST_TRADING_TOKEN → optional confirmed real LIMIT BUY/SELL
+                    ├→ TINVEST_TRADING_TOKEN → confirmed narrow real LIMIT BUY/SELL
                     └→ Upstash Redis Free → durable real-execution journal
 ```
 
 GitHub хранит backend-код и эталон GPT configuration. Render запускает Gateway. GPT Editor хранит фактически применённые Instructions/Knowledge/Bearer configuration и не синхронизируется с GitHub автоматически.
 
-## 2. Current production baseline
+## 2. Production baseline — v8.6.1 COMPLETE
 
 - Canonical GPT Editor Instructions: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt`.
 - Full v8.6 reference: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_0.txt`.
-- Historical Sandbox fallback: v8.5.0.
-- Historical read-only fallback: v8.4.1.
 - UI name: `Omni-CIO API | Управляющий и аналитик v8.6.1`.
 - Recommended model: Thinking 5.6.
-- User timezone: Europe/Moscow / MSK.
+- Timezone: Europe/Moscow / MSK.
 - Production endpoint: `https://omni-cio-gateway.onrender.com`.
 - Render plan: Free.
 - Entrypoint: `app:app`.
-- With Sandbox and Real disabled: exactly 14 baseline GET Actions.
-- Sandbox enable adds 8 isolated virtual-only Actions.
-- Valid Real enable adds at most 4 narrow real Actions.
-- `REAL_TRADING_ENABLED=false` remains master rollback state.
+- Production Knowledge: exactly 10 canonical files.
+- `REAL_TRADING_ENABLED=false` remains master rollback.
 
-Owner Phase 3 + kill-switch drill completed on 2026-08-03. Real contour recovered to `status=ready`, `execution_ready=true`, `journal_backend=upstash`, `journal_integrity=ok` after rollback.
+Owner Phase 3 + kill-switch drill completed on 2026-08-03.
 
-Exact status: `knowledge/16_CURRENT_PROGRAM_STATUS.md`.
+Owner Phase 4 also completed on 2026-08-03:
 
-## 3. Gateway capability contours
+- one controlled real SBER LIMIT BUY submitted exactly once;
+- broker reconciled to `EXECUTION_REPORT_STATUS_FILL`;
+- 1/1 lot executed at 280.55 RUB;
+- commission reconciled at 0.84 RUB;
+- portfolio reconciled to SBER 1 share / 1 lot;
+- operations reconciled purchase + commission;
+- exact confirmation replay created no second submit.
+
+**v8.6.1 real BUY/SELL v1 Definition of Done is 100% complete.**
+
+Exact current status: `knowledge/16_CURRENT_PROGRAM_STATUS.md`.
+
+## 3. Active owner-approved program — v9 Portfolio Autopilot
+
+Canonical program:
+
+`docs/master-plan/OMNI_CIO_V9_PORTFOLIO_AUTOPILOT_PROGRAM.md`
+
+Supporting engineering research:
+
+`docs/architecture/V9_RESEARCH_AND_ENGINEERING_PRINCIPLES.md`
+
+Tracker:
+
+GitHub issue #175 — `EPIC: Omni-CIO v9 Portfolio Autopilot / Capital Management Engine`.
+
+Program goal:
+
+- ordinary human language as the primary portfolio interface;
+- autonomous read-only data collection, universe discovery, screening and research;
+- versioned Investment Policy Statement;
+- structured credit/rating/default analysis;
+- fund look-through/X-Ray;
+- deterministic candidate funnel, risk engine, strategy selector and optimizer;
+- immutable portfolio plans with before/after risk/cash/costs;
+- read-only Watchtower monitoring;
+- minimal owner intervention for routine development and analysis;
+- explicit owner authorization retained for high-impact real-money writes.
+
+Until the v9 Definition of Done is complete, this is the mandatory roadmap priority except critical production/security/API/dependency maintenance.
+
+Current development starts at **WP0 — Baseline freeze and recovery correctness**.
+
+## 4. v9 target architecture
+
+```text
+Human language
+→ Natural Language CIO Router / Task Orchestrator
+→ Portfolio State + IPS
+→ Market Universe + deterministic Candidate Funnel
+→ Research/Evidence + Credit + Fund X-Ray
+→ Risk + Strategy + Optimizer
+→ Immutable Portfolio Plan + Final Review
+→ protected confirmed execution boundary
+→ reconciliation + journal + Watchtower
+```
+
+Critical financial calculations, constraints and execution gates belong in deterministic Gateway code. The LLM interprets intent, synthesizes research and explains results; it does not bypass server policy.
+
+## 5. Broker capability contours
 
 ### Production read-only
 
 - health / connection;
-- portfolio snapshot and enriched positions;
+- portfolio/enriched positions;
 - instrument search;
 - instrument/portfolio market snapshots;
 - portfolio analytics;
@@ -63,17 +114,11 @@ Exact status: `knowledge/16_CURRENT_PROGRAM_STATUS.md`.
 - broker-report reconciliation;
 - final decision review.
 
-### Optional Sandbox
+### Sandbox
 
-- status/account/funding;
-- virtual portfolio;
-- BUY/SELL proposal + own-funds/own-position preflight;
-- exact short-lived confirmation;
-- confirmed virtual submit with idempotency protection;
-- order-state verification;
-- confirmed Sandbox cancellation.
+Uses only `TINVEST_SANDBOX_TOKEN`; virtual account/funding/portfolio and confirmed virtual BUY/SELL remain isolated with `real_money=false`.
 
-### Optional real execution v1
+### Real execution v1
 
 Conditional Actions:
 
@@ -82,46 +127,40 @@ Conditional Actions:
 - `executeRealTrade`;
 - `getRealOrderState`.
 
-Real v1:
+Current real v1 remains narrow:
 
 - BUY/SELL only;
-- supported cash share/ETF only;
+- supported cash share/ETF;
 - RUB;
-- LIMIT/CURRENCY/DAY only;
-- own funds / own position only;
-- exact short-lived owner confirmation in a separate turn;
-- fresh trusted order book;
-- hard per-order/daily limits;
+- LIMIT/CURRENCY/DAY;
+- own-funds BUY / own-position SELL;
+- fresh trusted market;
+- hard caps;
+- immutable proposal;
+- exact owner confirmation in a separate turn;
 - UUID idempotency;
 - no automatic retry after possible submit;
 - broker reconciliation required.
 
-## 4. Absolute safety boundary
+v9 planning text does not automatically authorize broader mutations.
 
-Never implement/publish in first real release:
+## 6. Absolute safety boundary
 
-- withdrawal/transfer of money;
-- securities transfer;
-- MARKET/BESTPRICE real execution;
-- margin/short;
-- futures/options/currency execution;
-- stop orders;
-- ReplaceOrder/PostOrderAsync;
-- autonomous recurring execution;
-- token management through GPT;
-- real cancellation before its own later reviewed sub-release.
+Always preserve unless separately threat-modeled, implemented, tested and owner-accepted:
 
-Always:
+- `TINVEST_TOKEN` remains read-only;
+- separate non-transfer trading credential;
+- masked account IDs;
+- own-funds BUY / own-position SELL;
+- no margin/short by default;
+- stale/incomplete/contradictory critical data fail closed;
+- exact decimal money logic;
+- submit is not fill without broker proof;
+- ambiguous writes are not automatically retried;
+- durable journal + idempotency + kill switch remain required;
+- no withdrawal/transfer authority as a portfolio-management convenience.
 
-- keep `TINVEST_TOKEN` read-only;
-- use separate account-scoped full-access **non-transfer** `TINVEST_TRADING_TOKEN`;
-- mask user-facing account ID;
-- fail closed on stale/incomplete/contradictory data;
-- use exact decimal money logic;
-- never call `submitted` a fill without broker proof;
-- never automatically resubmit ambiguous broker requests.
-
-## 5. Durable real-execution state
+## 7. Durable real-execution state
 
 Production backend:
 
@@ -131,126 +170,84 @@ UPSTASH_REDIS_REST_URL=<Render Environment>
 UPSTASH_REDIS_REST_TOKEN=<Render secret>
 ```
 
-Render Free has no free Persistent Disk, so production durability is external Upstash Redis over HTTPS.
+Properties accepted in v8.6.1:
 
-Journal safety:
+- survives Render sleep/deploy/restart;
+- HMAC-authenticated metadata/proposals/day counters;
+- atomic Redis Lua compare-and-swap;
+- no fallback to memory on durable-storage failure;
+- no broker/Gateway/Upstash secrets stored in proposal data.
 
-- server-selected backend only;
-- HTTPS `*.upstash.io` restriction;
-- HMAC-authenticated metadata/proposal envelopes/day counters;
-- atomic Redis Lua compare-and-swap for proposal transition + daily cap;
-- no fallback to memory when storage is unavailable;
-- no broker/Gateway/Upstash token stored in proposal data;
-- restart/deploy/sleep preserves real proposal/request UUID state.
+## 8. GPT behavior baseline and v9 direction
 
-SQLite remains compatibility/test only.
+Current v8.6.1 `УПРАВЛЯЙ ПОРТФЕЛЕМ` starts:
 
-## 6. GPT behavior
-
-For `УПРАВЛЯЙ ПОРТФЕЛЕМ`:
-
-1. `getPortfolioSnapshot`;
-2. on success `getCashLiquiditySnapshot`;
-3. `getPortfolioAnalytics`;
-4. analysis.
+`getPortfolioSnapshot → getCashLiquiditySnapshot → getPortfolioAnalytics → analysis`
 
 This is analysis, not trade authorization.
 
-Real execution requires separate explicit real BUY/SELL intent. Normal flow:
+v9 will make user interaction substantially simpler: ordinary Russian phrases map to typed workflows internally. The user should not need Action names, UIDs or API syntax for normal portfolio management.
 
-1. current broker/market facts;
-2. `getRealTradingStatus` ready;
-3. `prepareRealTrade`;
-4. show REAL MONEY proposal, masked account, exact parameters, amount/commission, expiry and phrase;
-5. stop — no submit;
-6. owner sends exact phrase in a new message;
-7. only then `executeRealTrade`;
-8. immediately `getRealOrderState`;
-9. after broker-confirmed fill, reconcile real portfolio/cash/operations.
-
-Wrong/expired phrase must never be repaired or substituted by GPT.
-
-Exact-action requests remain isolated.
-
-## 7. Owner Phase 3 acceptance status
-
-Completed on 2026-08-03 with zero real submit.
-
-Verified live:
-
-- permanent Upstash configuration;
-- dedicated trading credential separated from read-only token;
-- saved GPT v8.6.1 + 10 Knowledge files + refreshed OpenAPI;
-- `getRealTradingStatus` ready, durable journal true, `journal_integrity=ok`;
-- technical proposal creation without submit;
-- expiry rejection;
-- wrong confirmation rejection;
-- own-funds guard without margin fallback;
-- read-only exact-action isolation;
-- kill switch to `trading_methods=false`;
-- recovery back to ready with proposal rows preserved.
-
-Hard cap, stale market, SELL-over-position, replay and ambiguous-submit remain covered by merged fake-client/regression tests. Do not force unsafe live conditions merely to duplicate code-level evidence.
-
-## 8. Market / sizing rules
+## 9. Market / sizing rules
 
 - last price != guaranteed execution price;
-- fresh order-book/trading status required for real proposal;
-- stale/partial market blocks real execution;
-- `withdraw_limits` != automatic buying budget;
-- technical affordability != personal sizing;
-- Sandbox/Real BUY use own-funds limit, SELL own-position limit;
-- margin capacity is ignored for authorization.
+- fresh executable market required for real proposal;
+- stale/partial critical market data blocks execution;
+- `withdraw_limits` != buying budget;
+- technical affordability != personal strategy sizing;
+- capital scaling and server execution caps are separate control planes;
+- margin capacity does not authorize sizing under current policy.
 
-## 9. Secrets
+## 10. Secrets
 
 Render only:
 
-- `TINVEST_TOKEN` — production read-only;
-- `TINVEST_SANDBOX_TOKEN` — Sandbox only;
-- `TINVEST_TRADING_TOKEN` — real execution only, non-transfer;
-- `GATEWAY_API_KEY` — GPT → Gateway Bearer;
-- `UPSTASH_REDIS_REST_URL` — real journal endpoint;
-- `UPSTASH_REDIS_REST_TOKEN` — real journal secret.
+- `TINVEST_TOKEN`;
+- `TINVEST_SANDBOX_TOKEN`;
+- `TINVEST_TRADING_TOKEN`;
+- `GATEWAY_API_KEY`;
+- `UPSTASH_REDIS_REST_URL`;
+- `UPSTASH_REDIS_REST_TOKEN`.
 
 Never commit values or expose them in GPT responses, issues, PRs or Knowledge.
 
-## 10. Runtime dependency warning
+## 11. Runtime dependency warning
 
-Current `app.py` still depends on `app_v371.py`, `app_v360.py` and wrapper/core files. Do not delete them as legacy without a separate compatibility refactor and full Regression Shield.
+Current `app.py` still depends on `app_v371.py`, `app_v360.py` and wrapper/core files. Do not delete them as legacy without compatibility refactor and full Regression Shield.
 
-## 11. Canonical files
+## 12. Canonical files
 
-- `README.md` — product/runtime overview.
-- `AGENTS.md` — engineering rules.
+- `README.md` — production overview.
+- `AGENTS.md` — mandatory engineering + active program-lock rules.
 - `SECURITY.md` — security boundary.
-- `gpt/SETUP_INDEX.md` — setup/recovery entry.
+- `docs/master-plan/OMNI_CIO_V9_PORTFOLIO_AUTOPILOT_PROGRAM.md` — active Release-2 roadmap.
+- `docs/architecture/V9_RESEARCH_AND_ENGINEERING_PRINCIPLES.md` — research/design lessons.
+- `knowledge/16_CURRENT_PROGRAM_STATUS.md` — current WP/status.
+- `gpt/SETUP_INDEX.md` — current production setup/recovery entry.
 - `gpt/CONFIGURATION.md` — GPT UI/config registry.
-- `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt` — GPT Editor Instructions.
-- `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_0.txt` — full engineering reference.
-- `gpt/knowledge/` — canonical 10 Knowledge files.
-- `gpt/ACTIONS_CATALOG.md` — conditional Action catalog.
-- `gpt/SECRETS_AND_RENDER.md` — secret/free-infrastructure boundary.
-- `docs/operations/SANDBOX_TRADING_RUNBOOK.md` — Sandbox acceptance.
-- `docs/architecture/REAL_TRADING_V1.md` — real architecture.
-- `docs/operations/REAL_TRADING_DURABLE_STORAGE_V1.md` — durable journal.
-- `docs/operations/REAL_TRADING_RELEASE_RUNBOOK.md` — staged owner release.
-- `docs/master-plan/` — original development specification.
+- `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt` — current production Instructions.
+- `gpt/knowledge/` — current production Knowledge.
+- `gpt/ACTIONS_CATALOG.md` — Action catalog.
+- `docs/operations/REAL_TRADING_RELEASE_RUNBOOK.md` — real release procedure/evidence.
 
-## 12. Git workflow
+## 13. Git workflow
 
-Significant change:
+Significant changes:
 
-`branch → PR → exact-head Regression Shield/security → review → squash merge → external acceptance`
+`branch → PR → exact-head Regression Shield/security → review → squash merge → external acceptance when needed`
 
-Do not bypass CI for broker-write or durable-state code.
+Do not bypass CI for broker-write, policy, orchestration, optimization, research-safety or durable-state code.
 
-## 13. Current readiness
+## 14. Current readiness
 
-Read-only production: accepted.
+Production v8.6.1:
 
-Sandbox: accepted with `real_money=false`.
+- read-only: accepted;
+- Sandbox: accepted;
+- real BUY/SELL v1: accepted and complete.
 
-Real execution engineering + infrastructure + owner Phase 3 + rollback/recovery: accepted.
+Development:
 
-**Only remaining release gate:** Phase 4 first controlled real order, which requires a new explicit owner instruction at execution time, followed by broker state, portfolio/operations reconciliation and safe idempotent replay with no second submit.
+- v9 Portfolio Autopilot is the active program;
+- WP0 is the current work package;
+- no unfinished v9 behavior may be claimed as production-ready or silently applied to GPT Editor.
