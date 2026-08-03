@@ -150,7 +150,7 @@ class InvestmentPolicyStatementV1(ContractModel):
     max_currency_weight: UnitInterval | None = None
 
     minimum_credit_rating: CreditRating | None = None
-    credit_rating_scale: Annotated[str | None, Field(max_length=32)] = None
+    credit_rating_scale: Annotated[str | None, Field(min_length=1, max_length=32)] = None
 
     allowed_markets: tuple[MarketCode, ...] = ()
     prohibited_markets: tuple[MarketCode, ...] = ()
@@ -229,7 +229,7 @@ class InvestmentPolicyStatementV1(ContractModel):
             if self.max_sector_weight < self.max_position_weight:
                 raise ValueError("sector limit cannot be below single-position limit")
         if InstrumentType.BOND in self.allowed_instrument_types:
-            if bool(self.minimum_credit_rating) != bool(self.credit_rating_scale):
+            if not self.minimum_credit_rating or not self.credit_rating_scale:
                 raise ValueError(
                     "bond policy requires both minimum credit rating and rating scale"
                 )
