@@ -93,6 +93,8 @@ _ANALYSIS_MARKERS = (
     "проверь портфел",
     "обнови портфел",
     "покажи портфел",
+    "что с портфел",
+    "как мой портфел",
     "что изменилось",
     "структура портфел",
     "баланс",
@@ -103,17 +105,21 @@ _MANAGEMENT_MARKERS = (
     "управляй портфел",
     "управлять портфел",
     "скажи что делать",
+    "сделай портфел лучше",
     "подготовь лучший план",
     "лучший план на текущий капитал",
     "ребалансир",
+    "диверсифик",
     "перестрой портфел",
 )
 _CASH_MARKERS = (
     "распредели свободн",
-    "куда вложить свободн",
+    "распредели деньги",
+    "куда вложить",
+    "куда инвестировать",
     "свободные деньги",
     "свободных денег",
-    "что купить на свободн",
+    "что купить на ",
 )
 _RISK_MARKERS = (
     "проверь риск",
@@ -135,9 +141,14 @@ _RESEARCH_MARKERS = (
     "стоит ли продать",
     "проанализируй актив",
     "проанализируй компанию",
+    "найди лучшие",
+    "сравни кандидат",
+    "проверь новост",
 )
 _PLAN_MARKERS = (
     "проверь план",
+    "покажи план",
+    "объясни план",
     "оцени план",
     "пересмотри план",
     "review план",
@@ -147,6 +158,8 @@ _MONITORING_MARKERS = (
     "монитор",
     "уведомляй",
     "отслеживай",
+    "сообщи когда",
+    "сообщай если",
 )
 _GATEWAY_DIAGNOSTIC_MARKERS = (
     "проверь шлюз",
@@ -222,7 +235,7 @@ def _detect_exact_actions(raw_text: str, normalized_text: str) -> tuple[str, ...
     if not found:
         return ()
 
-    starts_with_action = any(position == 0 for position, _ in found)
+    starts_with_action = any(not raw_text[:position].strip() for position, _ in found)
     has_invocation_cue = _contains_any(normalized_text, _EXACT_ACTION_CUES)
     if not starts_with_action and not has_invocation_cue:
         return ()
