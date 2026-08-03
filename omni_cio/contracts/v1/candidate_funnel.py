@@ -84,6 +84,7 @@ class CandidateBlockerCode(StrEnum):
     COST_BASIS_INVALID = "cost_basis_invalid"
     BUDGET_CURRENCY_MISMATCH = "budget_currency_mismatch"
     UNAFFORDABLE_MIN_LOT = "unaffordable_min_lot"
+    PORTFOLIO_SNAPSHOT_MISMATCH = "portfolio_snapshot_mismatch"
     PORTFOLIO_VALUE_CURRENCY_MISMATCH = "portfolio_value_currency_mismatch"
     POSITION_LIMIT = "position_limit"
     GROUP_LIMIT = "group_limit"
@@ -115,6 +116,7 @@ class PortfolioGapV1(ContractModel):
 
 class CandidateExposureContextV1(ContractModel):
     instrument_uid: Annotated[str, Field(min_length=1, max_length=128)]
+    portfolio_snapshot_sha256: Sha256
     portfolio_value: Money
     current_position_weight: UnitInterval
     current_group_weight: UnitInterval
