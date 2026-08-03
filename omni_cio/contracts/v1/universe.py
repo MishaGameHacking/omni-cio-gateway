@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from datetime import datetime, timezone
 from enum import StrEnum
 from typing import Annotated, Literal
@@ -56,6 +57,8 @@ class UniverseAccountEligibilityV1(ContractModel):
             return ()
         if isinstance(value, str):
             value = (value,)
+        if isinstance(value, bytes) or not isinstance(value, Iterable):
+            raise ValueError("qualified_for_work_with must be a collection")
         return tuple(sorted({str(item).strip() for item in value if str(item).strip()}))
 
 
@@ -83,6 +86,8 @@ class UniverseInstrumentV1(ContractModel):
             return ()
         if isinstance(value, str):
             value = (value,)
+        if isinstance(value, bytes) or not isinstance(value, Iterable):
+            raise ValueError("required_tests must be a collection")
         return tuple(sorted({str(item).strip() for item in value if str(item).strip()}))
 
     @model_validator(mode="after")
@@ -103,9 +108,8 @@ class UniverseInstrumentV1(ContractModel):
         return self
 
 
-class UniverseFetchBatchV1(ContractModel):
+class UniverseCatalogV1(ContractModel):
     retrieved_at: datetime
-    account: UniverseAccountEligibilityV1
     completed_operations: tuple[UniverseSourceOperation, ...]
     instruments: tuple[UniverseInstrumentV1, ...] = ()
     source_errors: tuple[
@@ -125,7 +129,24 @@ class UniverseFetchBatchV1(ContractModel):
     def normalize_completed_operations(cls, value: object) -> object:
         if value is None:
             return ()
+        if isinstance(value, (str, bytes)) or not isinstance(value, Iterable):
+            raise ValueError("completed_operations must be a collection")
         return tuple(sorted(set(value), key=str))
+
+    @field_validator("source_errors", mode="before")
+    @classmethod
+    def normalize_source_errors(cls, value: object) -> object:
+        if value is None:
+            return ()
+        if isinstance(value, (str, bytes)) or not isinstance(value, Iterable):
+            raise ValueError("source_errors must be a collection")
+        return tuple(sorted({str(item).strip() for item in value if str(item).strip()}))
+
+
+class UniverseFetchBatchV1(ContractModel):
+    catalog: UniverseCatalogV1
+    account: UniverseAccountEligibilityV1
+    account_source_error: Annotated[str | None, Field(max_length=128)] = None
 
 
 class UniverseExcludedInstrumentV1(ContractModel):
@@ -135,6 +156,8 @@ class UniverseExcludedInstrumentV1(ContractModel):
     @field_validator("reasons", mode="before")
     @classmethod
     def normalize_reasons(cls, value: object) -> object:
+        if isinstance(value, (str, bytes)) or not isinstance(value, Iterable):
+            raise ValueError("reasons must be a collection")
         return tuple(sorted(set(value), key=str))
 
 
@@ -147,19 +170,25 @@ class UniverseIdentityConflictV1(ContractModel):
     @field_validator("instrument_uids", mode="before")
     @classmethod
     def normalize_uids(cls, value: object) -> object:
+        if isinstance(value, (str, bytes)) or not isinstance(value, Iterable):
+            raise ValueError("instrument_uids must be a collection")
         return tuple(sorted({str(item) for item in value}))
 
 
 class UniverseSourceCountV1(ContractModel):
     operation: UniverseSourceOperation
     received: Annotated[int, Field(ge=0)]
+    unique: Annotated[int, Field(ge=0)]
     accepted: Annotated[int, Field(ge=0)]
     excluded: Annotated[int, Field(ge=0)]
+    duplicates_removed: Annotated[int, Field(ge=0)] = 0
 
     @model_validator(mode="after")
     def validate_counts(self) -> UniverseSourceCountV1:
-        if self.accepted + self.excluded != self.received:
-            raise ValueError("accepted + excluded must equal received")
+        if self.unique + self.duplicates_removed != self.received:
+            raise ValueError("unique + duplicates_removed must equal received")
+        if self.accepted + self.excluded != self.unique:
+            raise ValueError("accepted + excluded must equal unique")
         return self
 
 
@@ -184,6 +213,13 @@ class MarketUniverseSnapshotV1(ContractModel):
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("retrieved_at must be timezone-aware")
         return value.astimezone(timezone.utc)
+
+    @field_validator("completed_operations", mode="before")
+    @classmethod
+    def normalize_completed_operations(cls, value: object) -> object:
+        if isinstance(value, (str, bytes)) or not isinstance(value, Iterable):
+            raise ValueError("completed_operations must be a collection")
+        return tuple(sorted(set(value), key=str))
 
     @model_validator(mode="after")
     def validate_snapshot(self) -> MarketUniverseSnapshotV1:
