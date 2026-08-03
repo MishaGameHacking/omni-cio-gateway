@@ -1,21 +1,22 @@
 # Omni-CIO — Custom GPT + T-Invest Gateway
 
-Omni-CIO — личный инвестиционный аналитик и строго подтверждаемый исполнитель внутри ChatGPT. Пользовательский интерфейс проекта — Custom GPT `Omni-CIO API | Управляющий и аналитик v8.4` (UI-name сохраняется до ручного переименования владельцем).
+Omni-CIO — личный инвестиционный аналитик и строго подтверждаемый исполнитель внутри ChatGPT.
 
-Canonical behavior/config release: **v8.6.0**.
+Current UI/config release: **`Omni-CIO API | Управляющий и аналитик v8.6.1`**.
+
+Canonical GPT Editor Instructions: **`gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt`**.
+
+Full v8.6 engineering reference: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_0.txt`.
 
 ```text
 GitHub main ──> Render Free: `omni-cio-gateway` (`app:app`)
      │                         │
      │                         ├── TINVEST_TOKEN
      │                         │      └── production T-Invest read-only
-     │                         │
      │                         ├── optional TINVEST_SANDBOX_TOKEN
      │                         │      └── T-Invest Sandbox / virtual only
-     │                         │
      │                         ├── optional TINVEST_TRADING_TOKEN
-     │                         │      └── production confirmed LIMIT BUY/SELL only
-     │                         │
+     │                         │      └── confirmed production LIMIT BUY/SELL only
      │                         └── HTTPS → Upstash Redis Free
      │                                └── durable real-execution journal
      │
@@ -26,13 +27,21 @@ Custom GPT Actions ──HTTPS/Bearer──> https://omni-cio-gateway.onrender.c
 
 ## Current release boundary
 
-Engineering Phases 0–2 of real-money execution v1 and the zero-cost durable-storage migration are merged. Production real-order state now defaults to **external Upstash Redis**, so the existing Render service can stay on the Free plan without a Persistent Disk.
+Engineering Phases 0–2 are merged and green. Zero-cost durable state is deployed on permanent Upstash Redis while the Render service remains on the Free plan.
 
-Real execution remains **default-off** until owner configuration + negative Preview acceptance:
+Owner Phase 3 acceptance on 2026-08-03 is complete with **zero real broker submit**:
 
-`REAL_TRADING_ENABLED=false`
+- `getRealTradingStatus` ready;
+- durable journal = Upstash, integrity ok;
+- exact-confirmation mismatch rejected;
+- expired confirmation rejected;
+- own-funds guard rejected a request before margin use;
+- read-only contour remained isolated;
+- kill switch `REAL_TRADING_ENABLED=false` was deployed and verified;
+- recovery back to `status=ready` was verified;
+- saved GPT v8.6.1 (not only Preview) passed readiness.
 
-Deployment of current `main` therefore does not itself authorize or submit a real order.
+The only remaining Definition-of-Done gate is Phase 4: one explicitly authorized first real LIMIT order, broker-state reconciliation, real portfolio/operations reconciliation and idempotent replay with no second submit.
 
 Current status: `knowledge/16_CURRENT_PROGRAM_STATUS.md`.
 
@@ -44,58 +53,35 @@ Real release runbook: `docs/operations/REAL_TRADING_RELEASE_RUNBOOK.md`.
 
 Uses existing `TINVEST_TOKEN`, which remains read-only.
 
-Capabilities include:
+Capabilities include health/connection, portfolio/enrichment, cash/liquidity, instrument search, market snapshots, portfolio analytics, purchase-capacity preview, operations analytics/history, broker-report reconciliation and final decision review.
 
-- health/connection;
-- portfolio and enriched positions;
-- money/liquidity;
-- instrument search;
-- market snapshots;
-- portfolio analytics;
-- technical purchase capacity;
-- operations history/analytics;
-- official broker-report reconciliation;
-- final decision review;
-- public web/news context through GPT.
+Portfolio-management routing starts:
 
-Default baseline surface is 14 GET Actions when Sandbox and Real switches are both off.
+`getPortfolioSnapshot → getCashLiquiditySnapshot → getPortfolioAnalytics → analysis`
 
 ### 2. Optional Sandbox
 
 Uses only `TINVEST_SANDBOX_TOKEN` and fixed Sandbox host.
 
-With `SANDBOX_TRADING_ENABLED=true` adds 8 virtual-only Actions for:
+With `SANDBOX_TRADING_ENABLED=true` adds virtual-only account/funding/portfolio/proposal/execution/state/cancel behavior. Sandbox is always `real_money=false`.
 
-- status/account;
-- virtual funding/portfolio;
-- BUY/SELL proposal;
-- exact-confirmed execution;
-- state reconciliation;
-- explicit Sandbox cancellation.
-
-Sandbox is always `real_money=false`.
-
-Owner Preview on 2 August 2026 validated core BUY/SELL, confirmation mismatch/expiry, replay protection, LIMIT status/cancel and portfolio reconciliation.
+Owner Preview on 2 August 2026 validated BUY/SELL, confirmation mismatch/expiry, replay protection, own-position rejection, LIMIT state/cancel and portfolio reconciliation.
 
 ### 3. Optional real execution v1
 
-Uses only separate `TINVEST_TRADING_TOKEN`.
+Uses only separate `TINVEST_TRADING_TOKEN`; it never replaces or falls back to `TINVEST_TOKEN`.
 
-It never replaces/falls back to `TINVEST_TOKEN`.
+Selected production requirements:
 
-Requirements before publish:
-
-- `REAL_TRADING_ENABLED=true`;
-- account-scoped full-access **non-transfer** trading token;
+- `REAL_TRADING_ENABLED=true` for active contour;
+- account-scoped full-access trading token without transfer access;
 - small server order/daily caps;
 - `REAL_TRADING_JOURNAL_BACKEND=upstash`;
-- permanent Upstash Redis Free database credentials in Render;
+- permanent Upstash Redis credentials stored only in Render;
 - durable journal integrity;
 - exactly one open trading account matching the read-only account.
 
-No Render Persistent Disk or paid Render instance is required for the selected production path.
-
-Narrow real Action surface:
+Narrow Real Action surface:
 
 - `getRealTradingStatus`;
 - `prepareRealTrade`;
@@ -115,15 +101,14 @@ First release allows only:
 - exact price step;
 - fresh trusted order book;
 - immutable proposal;
-- exact short-lived owner phrase in a **new user turn**;
+- exact short-lived owner phrase in a new user turn;
 - submit once with UUID idempotency;
-- immediate broker state reconciliation.
+- immediate broker-state reconciliation.
 
 Hard prohibitions:
 
-- withdrawal/transfer;
-- securities transfer;
-- token creation/rotation through GPT;
+- withdrawal/transfer/securities transfer;
+- token management through GPT;
 - MARKET/BESTPRICE;
 - margin/short;
 - futures/options/currency execution;
@@ -132,15 +117,15 @@ Hard prohibitions:
 - async submit;
 - automatic retry;
 - autonomous recurring trading;
-- real cancellation in the first real-submit milestone.
+- real cancellation in the first release.
 
-`submitted` is not reported as `filled` unless broker execution status explicitly proves fill.
+`submitted` is never reported as `filled` unless broker execution status proves fill.
 
-Ambiguous possible-submit failure becomes `unknown_do_not_resubmit`; only state reconciliation is allowed.
+Ambiguous possible-submit failure becomes unknown/do-not-resubmit; only reconciliation is allowed.
 
 ## Free durable execution state
 
-Default production backend:
+Production backend:
 
 ```text
 REAL_TRADING_JOURNAL_BACKEND=upstash
@@ -151,68 +136,52 @@ UPSTASH_REDIS_REST_TOKEN=<secret>
 Properties:
 
 - works from Render Free over outbound HTTPS;
-- survives Render sleep, deploys and process restarts;
-- HMAC-authenticated journal metadata;
-- HMAC-authenticated proposal envelopes;
-- HMAC-authenticated daily counters;
-- atomic Lua compare-and-swap for proposal transition + daily cap reservation;
-- proposal/request UUID lifecycle;
-- owner-confirmation evidence hash;
-- unknown/submitted daily accounting;
+- survives Render sleep/deploy/restart;
+- HMAC-authenticated journal metadata/proposals/day counters;
+- atomic Redis Lua compare-and-swap for proposal transition + daily cap;
+- UUID proposal/request lifecycle;
 - no broker token storage;
-- fail closed if storage is missing, unavailable or tampered.
+- fail closed if storage is unavailable or tampered.
 
-Current Upstash documentation states its Free Redis tier can be created without a payment card. Provider limits can change, so this project treats the provider as an availability dependency, never as an authorization mechanism.
-
-References:
-
-- `https://upstash.com/redis`
-- `https://upstash.com/pricing/redis`
-- `docs/operations/REAL_TRADING_DURABLE_STORAGE_V1.md`
-
-SQLite remains an explicit compatibility backend for environments that already have a persistent disk, but is not required for this project's zero-cost deployment.
+SQLite remains compatibility/test only.
 
 ## Canonical GPT configuration
 
 Start: `gpt/SETUP_INDEX.md`.
 
-Canonical Instructions:
+Instructions: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt`.
 
-`gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_0.txt`
+Registry: `gpt/CONFIGURATION.md`.
 
-Actions catalog:
+Actions: `gpt/ACTIONS_CATALOG.md`.
 
-`gpt/ACTIONS_CATALOG.md`
-
-Secrets/Render boundary:
-
-`gpt/SECRETS_AND_RENDER.md`
+Secrets/Render boundary: `gpt/SECRETS_AND_RENDER.md`.
 
 ## Development workflow
 
 Rules: `AGENTS.md`.
 
-Use branch → PR → exact-head Regression Shield → merge. Do not bypass CI for broker-write code.
+Use branch → PR → exact-head Regression Shield → squash merge. Do not bypass CI for broker-write code.
 
 Stable Render entrypoint remains `app:app`.
 
-Default-off read-only contract must remain green when conditional execution flags are false.
-
 ## Definition of Done for real BUY/SELL
 
-Engineering merge alone is not sufficient.
+Completed:
 
-The feature is fully released only after:
+1. threat model/design;
+2. isolated backend;
+3. durable Upstash state + conditional Actions;
+4. canonical v8.6.1 Compact GPT config applied;
+5. permanent Upstash + dedicated trading token configured;
+6. Phase 3 negative acceptance with zero submit;
+7. kill-switch rollback and recovery.
 
-1. free Upstash journal migration is merged and default-off deployment is healthy;
-2. canonical GPT v8.6 config is applied;
-3. owner creates a permanent Upstash Free database and installs only its REST URL/token in Render;
-4. owner provisions a separate non-transfer trading token;
-5. Phase 3 negative Preview acceptance passes with zero real submit;
-6. kill-switch rollback is proven;
-7. owner explicitly authorizes the first controlled real LIMIT order;
-8. broker order state is reconciled;
-9. real portfolio/operations are reconciled;
-10. safe replay proves no second submit.
+Remaining:
 
-Until then the code remains default-off and no real broker mutation is authorized.
+8. owner explicitly authorizes one first controlled real LIMIT order;
+9. broker order state is reconciled;
+10. real portfolio/operations are reconciled;
+11. replay proves no second submit.
+
+Until those final steps pass, the system is release-candidate and safety-accepted, but the real BUY/SELL feature is not yet 100% released.
