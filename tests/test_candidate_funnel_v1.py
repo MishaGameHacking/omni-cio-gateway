@@ -270,7 +270,7 @@ def _evidence(
             instrument_uid=uid,
             price_basis=price_basis,
             nominal=Money(amount=nominal, currency=row.identity.currency),
-            accrued_interest_per_unit=Money(
+            accrued_interest_per_lot=Money(
                 amount=accrued,
                 currency=row.identity.currency,
             ),
@@ -492,6 +492,8 @@ def test_stale_or_future_market_evidence_cannot_receive_score() -> None:
 
     assert CandidateBlockerCode.MARKET_STALE in stale.rejected[0].blockers
     assert CandidateBlockerCode.MARKET_FUTURE_TIMESTAMP in future.rejected[0].blockers
+    assert CandidateGlobalBlockerCode.EVIDENCE_COVERAGE_INCOMPLETE in stale.global_blockers
+    assert CandidateGlobalBlockerCode.EVIDENCE_COVERAGE_INCOMPLETE in future.global_blockers
     assert stale.research_shortlist == ()
     assert future.research_shortlist == ()
 
@@ -507,6 +509,7 @@ def test_untrusted_market_source_is_rejected_before_scoring() -> None:
     )
 
     assert CandidateBlockerCode.MARKET_SOURCE_UNTRUSTED in result.rejected[0].blockers
+    assert CandidateGlobalBlockerCode.EVIDENCE_COVERAGE_INCOMPLETE in result.global_blockers
 
 
 def test_policy_deny_and_role_mismatch_happen_before_market_coverage() -> None:
@@ -573,6 +576,7 @@ def test_exposure_must_match_gap_portfolio_snapshot() -> None:
     )
 
     assert CandidateBlockerCode.PORTFOLIO_SNAPSHOT_MISMATCH in result.rejected[0].blockers
+    assert CandidateGlobalBlockerCode.EVIDENCE_COVERAGE_INCOMPLETE in result.global_blockers
     assert result.research_shortlist == ()
 
 
@@ -600,7 +604,7 @@ def test_one_lot_concentration_headroom_is_hard_blocker() -> None:
     assert CandidateBlockerCode.POSITION_LIMIT in result.rejected[0].blockers
 
 
-def test_bond_minimum_lot_cost_uses_percent_nominal_plus_accrued_interest() -> None:
+def test_bond_minimum_lot_cost_uses_percent_nominal_plus_per_lot_accrued_interest() -> None:
     bond = _universe_row(
         "uid-bond",
         "BOND",
@@ -626,7 +630,7 @@ def test_bond_minimum_lot_cost_uses_percent_nominal_plus_accrued_interest() -> N
     security = next(
         row for row in result.ranked_alternatives if row.kind is CandidateKind.SECURITY
     )
-    assert security.minimum_lot_cost == Money(amount=Decimal("1920"), currency="RUB")
+    assert security.minimum_lot_cost == Money(amount=Decimal("1910"), currency="RUB")
 
 
 def test_wrong_price_basis_is_rejected_for_bond_and_share() -> None:
