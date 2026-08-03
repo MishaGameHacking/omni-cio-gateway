@@ -31,6 +31,7 @@ REQUIRED_PATHS = (
     "tests/test_natural_language_cio_router_v1.py",
     "tests/test_investment_policy_statement_v1.py",
     "tests/test_market_universe_v1.py",
+    "tests/test_candidate_funnel_v1.py",
     "knowledge/00_PROJECT_MASTER_CONTEXT.md",
     "knowledge/09_MARKET_DATA_AND_BUYING_POWER.txt",
     "knowledge/10_OPERATIONS_ANALYTICS_AND_RECONCILIATION.txt",
@@ -51,6 +52,7 @@ REQUIRED_PATHS = (
     "docs/architecture/V9_NATURAL_LANGUAGE_CIO_ROUTER.md",
     "docs/architecture/V9_INVESTMENT_POLICY_STATEMENT.md",
     "docs/architecture/V9_MARKET_UNIVERSE_ENGINE.md",
+    "docs/architecture/V9_DETERMINISTIC_CANDIDATE_FUNNEL.md",
     "docs/operations/DEPLOYMENT_RUNBOOK.md",
     "docs/operations/RELEASE_CHECKLIST.md",
     "docs/operations/SANDBOX_TRADING_RUNBOOK.md",
@@ -69,6 +71,7 @@ REQUIRED_PATHS = (
     "omni_cio/contracts/v1/intent_router.py",
     "omni_cio/contracts/v1/investment_policy.py",
     "omni_cio/contracts/v1/universe.py",
+    "omni_cio/contracts/v1/candidate_funnel.py",
     "omni_cio/router/__init__.py",
     "omni_cio/router/intent_v1.py",
     "omni_cio/policy/__init__.py",
@@ -78,6 +81,8 @@ REQUIRED_PATHS = (
     "omni_cio/universe/engine_v1.py",
     "omni_cio/universe/service_v1.py",
     "omni_cio/universe/tinvest_v1.py",
+    "omni_cio/candidates/__init__.py",
+    "omni_cio/candidates/funnel_v1.py",
     "omni_cio/sandbox/__init__.py",
     "omni_cio/sandbox/client_v1.py",
     "omni_cio/sandbox/service_v1.py",
@@ -159,6 +164,16 @@ UNIVERSE_FORBIDDEN_TEXT = (
     "find_instrument",
     "TINVEST_TRADING_TOKEN",
     "TINVEST_SANDBOX_TOKEN",
+    "prepareRealTrade",
+    "executeRealTrade",
+    "prepareSandboxTrade",
+    "executeSandboxTrade",
+)
+
+CANDIDATE_RUNTIME_ROOT = Path("omni_cio/candidates")
+CANDIDATE_FORBIDDEN_TEXT = (
+    "t_tech_investments",
+    "TINVEST_",
     "prepareRealTrade",
     "executeRealTrade",
     "prepareSandboxTrade",
@@ -315,6 +330,39 @@ def scan_universe_execution_boundary(failures: list[str]) -> None:
                 )
 
 
+def scan_candidate_execution_boundary(failures: list[str]) -> None:
+    candidate_root = ROOT / CANDIDATE_RUNTIME_ROOT
+    if not candidate_root.is_dir():
+        fail("candidate funnel runtime directory is missing", failures)
+        return
+
+    for path in sorted(candidate_root.glob("*.py")):
+        try:
+            source = path.read_text(encoding="utf-8")
+            tree = ast.parse(source, filename=str(path))
+        except (OSError, SyntaxError) as exc:
+            fail(f"cannot inspect candidate funnel source {path}: {exc}", failures)
+            continue
+
+        for forbidden in CANDIDATE_FORBIDDEN_TEXT:
+            if forbidden in source:
+                fail(
+                    f"candidate funnel crosses pure-engine boundary: {forbidden}",
+                    failures,
+                )
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Attribute) and node.attr in {
+                "orders",
+                "stop_orders",
+                "sandbox",
+            }:
+                fail(
+                    f"candidate funnel references forbidden broker service: {node.attr}",
+                    failures,
+                )
+
+
 def scan_retired_duplicate_scenario_publishers(failures: list[str]) -> None:
     for relative_path in RETIRED_DUPLICATE_SCENARIO_PUBLISHER_PATHS:
         if (ROOT / relative_path).exists():
@@ -368,6 +416,7 @@ def main() -> int:
     scan_runtime_broker_egress(failures)
     scan_sandbox_execution_boundary(failures)
     scan_universe_execution_boundary(failures)
+    scan_candidate_execution_boundary(failures)
     scan_retired_duplicate_scenario_publishers(failures)
 
     if failures:

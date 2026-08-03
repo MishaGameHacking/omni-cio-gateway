@@ -24,7 +24,7 @@
   - missing/invalid provenance, missing owner confirmation, stale/review-due, not-effective и superseded policy fail closed;
   - deterministic SHA-256 policy reference предназначен для будущих immutable plans;
   - margin, short, withdrawal, transfer и autonomous real execution остаются `Literal[False]`.
-- WP3 Market Universe Engine находится в активной разработке через issue #188 / draft PR #189:
+- WP3 Market Universe Engine завершён через PR #189 и squash-merged в `main` как `5ae81aa921999a6d4b1bb15aa0c506f7dea92a3f` после exact-head Regression Shield #1019:
   - universe строится из T-Invest `Shares`, `Bonds`, `Etfs` с `INSTRUMENT_STATUS_BASE`, без LLM/`FindInstrument` brute-force enumeration;
   - сохраняются UID/position_uid/FIGI/ISIN/ticker+class_code и broker eligibility evidence;
   - exact duplicates удаляются, stable-alias identity conflicts fail closed;
@@ -33,6 +33,16 @@
   - catalog fingerprint source-order invariant и mutation-sensitive;
   - cache хранит только complete/validated BASE catalog, а degraded catalog не кэшируется;
   - repository guard запрещает universe package использовать `FindInstrument`, trading/Sandbox mutation credentials and services.
+- WP4 Deterministic Candidate Funnel разрабатывается через issue #190 / draft PR #191:
+  - portfolio gap → role → hard blockers → ordinal score → CASH comparison → bounded WP5 shortlist;
+  - неполное evidence coverage всего policy+role-eligible universe fail closed и не публикует частичный ranking;
+  - stale/future/untrusted market evidence блокируется до score;
+  - fixed factor weights проверяются самим Pydantic contract, LLM score injection отсутствует;
+  - `NO_ACTION/CASH` всегда присутствует и может занять первое место;
+  - minimum-lot affordability и one-lot position/group/sector/currency headroom проверяются до shortlist;
+  - bond price points конвертируются через nominal + accrued interest, без share-style `price × lot` ошибки;
+  - ranking, tie-breaks и funnel SHA-256 детерминированы и source-order invariant;
+  - candidate runtime остаётся pure/internal и repository guard запрещает broker SDK/tokens/mutation services.
 - Applied Custom GPT остаётся v8.6.1 до WP15; текущая v9 разработка не является разрешением на более широкий real-money execution.
 
 ### Omni-CIO v8.6.1 — released / owner accepted
