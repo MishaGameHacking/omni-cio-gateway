@@ -78,9 +78,9 @@ _PREPARE_ACTIONS = frozenset({"prepareSandboxTrade", "prepareRealTrade"})
 _EXECUTE_ACTIONS = frozenset({"executeSandboxTrade", "executeRealTrade"})
 
 _INTENT_PRIORITY: tuple[CioIntent, ...] = (
+    CioIntent.PLAN_REVIEW,
     CioIntent.PORTFOLIO_MANAGEMENT,
     CioIntent.CASH_ALLOCATION,
-    CioIntent.PLAN_REVIEW,
     CioIntent.MONITORING,
     CioIntent.RISK,
     CioIntent.RESEARCH,
