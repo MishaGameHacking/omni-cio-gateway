@@ -9,7 +9,9 @@ INSTRUCTIONS_PATH = "gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt"
 ENGINEERING_REFERENCE = "gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_0.txt"
 PROGRAM_PATH = "docs/master-plan/OMNI_CIO_V9_PORTFOLIO_AUTOPILOT_PROGRAM.md"
 BASELINE_CONTRACT = "docs/architecture/V9_BASELINE_AND_RECOVERY_CONTRACT.md"
-BASELINE_COMMIT = "baba0fb73e0483fc82b3f0bc7c2f15cbd71d804e"
+BASELINE_COMMIT = (  # pragma: allowlist secret
+    "baba0fb73e0483fc82b3f0bc7c2f15cbd71d804e"
+)
 GATEWAY_URL = "https://omni-cio-gateway.onrender.com"
 OPENAPI_URL = f"{GATEWAY_URL}/openapi.json"
 HEALTH_URL = f"{GATEWAY_URL}/health"
@@ -87,13 +89,17 @@ def reject_stale_markers(file_name: str, text: str) -> None:
     folded = text.casefold()
     for marker in STALE_RELEASE_MARKERS:
         if marker.casefold() in folded:
-            raise AssertionError(f"{file_name}: stale recovery marker found: {marker!r}")
+            raise AssertionError(
+                f"{file_name}: stale recovery marker found: {marker!r}"
+            )
 
 
 def check_knowledge_registry(contents: dict[str, str]) -> None:
     expected = set(KNOWLEDGE_FILES)
     knowledge_root = ROOT / "gpt" / "knowledge"
-    actual = {path.name for path in knowledge_root.glob("*.txt") if path.is_file()}
+    actual = {
+        path.name for path in knowledge_root.glob("*.txt") if path.is_file()
+    }
     if actual != expected:
         missing = sorted(expected - actual)
         extra = sorted(actual - expected)
@@ -143,7 +149,8 @@ def check_action_registry() -> None:
 
 
 def main() -> None:
-    contents = {name: read(name) for name in set(RECOVERY_DOCS + IDENTITY_DOCS + STATUS_DOCS)}
+    file_names = set(RECOVERY_DOCS + IDENTITY_DOCS + STATUS_DOCS)
+    contents = {name: read(name) for name in file_names}
 
     for name in IDENTITY_DOCS:
         require(contents[name], UI_NAME, name)
@@ -158,28 +165,30 @@ def main() -> None:
     for name in STATUS_DOCS:
         reject_stale_markers(name, contents[name])
 
-    require(
-        contents["knowledge/16_CURRENT_PROGRAM_STATUS.md"],
-        "100% complete",
-        "knowledge/16_CURRENT_PROGRAM_STATUS.md",
-    )
-    require(
-        contents["knowledge/16_CURRENT_PROGRAM_STATUS.md"],
-        "idempotent replay verified with no second submit",
-        "knowledge/16_CURRENT_PROGRAM_STATUS.md",
-    )
-    require(
-        contents["knowledge/16_CURRENT_PROGRAM_STATUS.md"],
-        PROGRAM_PATH,
-        "knowledge/16_CURRENT_PROGRAM_STATUS.md",
-    )
+    status_name = "knowledge/16_CURRENT_PROGRAM_STATUS.md"
+    status = contents[status_name]
+    require(status, "100% complete", status_name)
+    require(status, "idempotent replay verified with no second submit", status_name)
+    require(status, PROGRAM_PATH, status_name)
 
     for name in ("gpt/SETUP_INDEX.md", "gpt/MY_GPT_SETUP_RUNBOOK.md"):
         require(contents[name], HEALTH_URL, name)
 
-    require(contents["gpt/SETUP_INDEX.md"], ENGINEERING_REFERENCE, "gpt/SETUP_INDEX.md")
-    require(contents["gpt/CONFIGURATION.md"], ENGINEERING_REFERENCE, "gpt/CONFIGURATION.md")
-    require(contents["gpt/BOT_ONLY_FILE_MANIFEST.md"], PROGRAM_PATH, "gpt/BOT_ONLY_FILE_MANIFEST.md")
+    require(
+        contents["gpt/SETUP_INDEX.md"],
+        ENGINEERING_REFERENCE,
+        "gpt/SETUP_INDEX.md",
+    )
+    require(
+        contents["gpt/CONFIGURATION.md"],
+        ENGINEERING_REFERENCE,
+        "gpt/CONFIGURATION.md",
+    )
+    require(
+        contents["gpt/BOT_ONLY_FILE_MANIFEST.md"],
+        PROGRAM_PATH,
+        "gpt/BOT_ONLY_FILE_MANIFEST.md",
+    )
 
     check_knowledge_registry(contents)
     check_instruction_payload()
@@ -189,7 +198,10 @@ def main() -> None:
     print("GPT recovery consistency: OK")
     print(f"UI: {UI_NAME}")
     print(f"Instructions: {INSTRUCTIONS_PATH}")
-    print(f"Instructions chars: {len(read(INSTRUCTIONS_PATH))}/{INSTRUCTIONS_MAX_CHARS}")
+    print(
+        "Instructions chars: "
+        f"{len(read(INSTRUCTIONS_PATH))}/{INSTRUCTIONS_MAX_CHARS}"
+    )
     print(f"Knowledge files: {len(KNOWLEDGE_FILES)}")
     print(f"Protected baseline commit: {BASELINE_COMMIT}")
     print(f"Active program: {PROGRAM_PATH}")
