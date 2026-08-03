@@ -6,6 +6,10 @@
 
 `Omni-CIO Custom GPT → Omni-CIO Gateway → T-Invest API`
 
+Current production UI:
+
+`Omni-CIO API | Управляющий и аналитик v8.6.1`
+
 Не создавать второго Custom GPT, отдельный дублирующий frontend, второй Gateway или параллельный execution surface без явного решения владельца.
 
 ## 2. Главная точка восстановления
@@ -14,11 +18,24 @@
 
 Она содержит единый сценарий настройки, восстановления и обновления.
 
+Canonical production registry:
+
+- Gateway: `https://omni-cio-gateway.onrender.com`;
+- OpenAPI: `https://omni-cio-gateway.onrender.com/openapi.json`;
+- Health: `https://omni-cio-gateway.onrender.com/health`;
+- Entrypoint: `app:app`;
+- Instructions: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt`;
+- full engineering reference: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_0.txt`.
+
 ## 3. Активная программа развития
 
 `docs/master-plan/OMNI_CIO_V9_PORTFOLIO_AUTOPILOT_PROGRAM.md`
 
-Программа owner-approved и program-locked. Пока её Definition of Done не завершён, разработка должна следовать её work packages. Допустимы также только блокирующие исправления, security/dependency maintenance и сохранение стабильного v8.6.1.
+Программа owner-approved и program-locked. Пока её Definition of Done не завершён, разработка должна следовать WP0–WP15. Допустимы также только блокирующие исправления, security/dependency maintenance и сохранение стабильного v8.6.1.
+
+Protected baseline/migration contract:
+
+`docs/architecture/V9_BASELINE_AND_RECOVERY_CONTRACT.md`
 
 ## 4. Production Custom GPT files
 
@@ -38,6 +55,8 @@ Development continuity:
 - `gpt/PROJECT_INSTRUCTIONS.md`;
 - `gpt/NEW_CHAT_PROMPT.md`;
 - `AGENTS.md`;
+- `knowledge/00_PROJECT_MASTER_CONTEXT.md`;
+- `knowledge/16_CURRENT_PROGRAM_STATUS.md`;
 - `docs/master-plan/OMNI_CIO_V9_PORTFOLIO_AUTOPILOT_PROGRAM.md`.
 
 ## 5. Production Knowledge upload set
@@ -74,14 +93,21 @@ Development continuity:
 - `SECURITY.md`;
 - `knowledge/00_PROJECT_MASTER_CONTEXT.md`;
 - `knowledge/16_CURRENT_PROGRAM_STATUS.md`;
-- `docs/master-plan/`;
+- `docs/master-plan/OMNI_CIO_V9_PORTFOLIO_AUTOPILOT_PROGRAM.md`;
+- `docs/architecture/V9_BASELINE_AND_RECOVERY_CONTRACT.md`;
 - `docs/architecture/`;
 - `docs/operations/`;
 - `gpt/` recovery/configuration sources.
 
 Не создавать duplicate setup/audit docs вместо обновления существующего source of truth.
 
-## 8. Secrets и приватные данные
+## 8. Production release state
+
+Omni-CIO v8.6.1 real BUY/SELL v1 is **100% complete** and owner-accepted. The first controlled real SBER order was broker-filled, reconciled to portfolio/operations and replayed without a second submit.
+
+This accepted baseline remains protected while v9 is developed.
+
+## 9. Secrets и приватные данные
 
 В GitHub не хранятся:
 
@@ -92,7 +118,7 @@ Development continuity:
 - реальные приватные позиции/операции/отчёты;
 - private keys/certificates.
 
-## 9. Внешние ручные настройки
+## 10. Внешние ручные настройки
 
 GitHub хранит эталон, но не может сам заполнить GPT Editor или Render Environment.
 
