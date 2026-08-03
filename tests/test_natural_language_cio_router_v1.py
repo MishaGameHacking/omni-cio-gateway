@@ -195,7 +195,7 @@ def test_execution_phrase_without_direction_requires_clarification() -> None:
 
 
 def test_real_confirmation_is_classified_but_not_server_authorized() -> None:
-    route = route_user_intent("ПОДТВЕРЖДАЮ РЕАЛЬНУЮ СДЕЛКУ 8BEC36B3E2")
+    route = route_user_intent("ПОДТВЕРЖДАЮ РЕАЛЬНУЮ СДЕЛКУ")
 
     assert route.primary_intent is CioIntent.EXECUTION
     assert route.workflow is CioWorkflow.EXECUTION_CONFIRMATION
@@ -208,7 +208,7 @@ def test_real_confirmation_is_classified_but_not_server_authorized() -> None:
 
 
 def test_sandbox_confirmation_stays_isolated() -> None:
-    route = route_user_intent("ПОДТВЕРЖДАЮ SANDBOX СДЕЛКУ ABC123")
+    route = route_user_intent("ПОДТВЕРЖДАЮ SANDBOX СДЕЛКУ")
 
     assert route.primary_intent is CioIntent.EXECUTION
     assert route.execution_contour is ExecutionContour.SANDBOX
