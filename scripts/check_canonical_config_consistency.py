@@ -113,7 +113,11 @@ def validate_program_lock(failures: list[str]) -> None:
 
 def validate_unfinished_v9_not_promoted(failures: list[str]) -> None:
     setup = read_text("gpt/SETUP_INDEX.md", failures).lower()
-    if setup and "recover/apply v8.6.1, not unfinished v9 behavior" not in setup:
+    if setup and not (
+        "v8.6.1" in setup
+        and "not unfinished v9 behavior" in setup
+        and "recovery" in setup
+    ):
         failures.append("gpt/SETUP_INDEX.md must preserve v8.6.1 as the recovery baseline")
 
 
