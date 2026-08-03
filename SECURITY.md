@@ -1,12 +1,12 @@
 # Omni-CIO security policy
 
-Omni-CIO работает с финансовыми данными. Production read-only, Sandbox и conditional real execution являются отдельными контурами с разными credentials и независимыми kill switches.
+Omni-CIO работает с финансовыми данными. Production read-only, Sandbox и conditional real execution — отдельные contours с разными credentials и независимыми kill switches.
 
-Реальный write-контур существует в коде только как узкий default-off release: он не публикуется при `REAL_TRADING_ENABLED=false` и не считается готовым/авторизованным без durable journal, dedicated trading token, server limits и owner acceptance.
+Real execution v1 существует только как узкий server-gated surface. Без valid dedicated token, durable journal, limits, fresh market and owner confirmation submit must fail closed.
 
-## Секреты и приватные данные
+## Secrets and private data
 
-Никогда не публиковать в GitHub Issues, Pull Requests, source files или документации значения:
+Never publish values of:
 
 - `TINVEST_TOKEN`;
 - `TINVEST_SANDBOX_TOKEN`;
@@ -14,22 +14,22 @@ Omni-CIO работает с финансовыми данными. Production r
 - `UPSTASH_REDIS_REST_TOKEN`;
 - `GATEWAY_API_KEY`;
 - Authorization/Bearer headers;
-- полный broker account ID;
-- реальные приватные broker reports/positions/operations;
+- full broker account ID;
+- private broker reports/positions/operations as configuration;
 - Render/GPT/Upstash credentials;
 - private keys/certificates.
 
-Использовать только безопасные placeholders и маскированные идентификаторы.
+Use only placeholders and masked IDs.
 
-## Production credential isolation
+## Credential isolation
 
 ### Read-only
 
 `TINVEST_TOKEN`:
 
-- остаётся read-only;
-- никогда не повышается до full-access ради real execution;
-- real-trading package не использует его как fallback.
+- remains read-only;
+- never promoted to full-access;
+- never used as fallback by real-trading package.
 
 ### Sandbox
 
@@ -43,64 +43,57 @@ Omni-CIO работает с финансовыми данными. Production r
 
 `TINVEST_TRADING_TOKEN`:
 
-- separate account-scoped full-access token;
-- **без transfer access**;
-- только для narrow `omni_cio.real_trading` OrdersService allowlist;
-- не хранится в durable journal;
-- не возвращается GPT/user.
+- separate account-scoped full-access trading token;
+- **without transfer access**;
+- only for narrow `omni_cio.real_trading` OrdersService allowlist;
+- never stored in durable journal;
+- never returned to GPT/user.
 
-## Критические production runtime-инварианты
+## Production runtime invariants
 
-- `app:app` — стабильный production entrypoint.
-- Secrets поступают через environment variables.
-- Account identifiers маскируются перед user-facing output.
-- Ошибки очищаются от sensitive payload before exposure.
-- Purchase/sale-capacity analytics не создаёт заявок.
-- Withdrawal/transfer/securities-transfer surface отсутствует.
-- Real MARKET/BESTPRICE execution отсутствует.
-- Margin/short, stop order, replace, async submit и autonomous recurring execution отсутствуют в real v1.
-- `REAL_TRADING_ENABLED=false` — default/rollback state; real Actions отсутствуют из OpenAPI.
-- Real flag сам по себе не достаточен: invalid token/policy/durable journal fail closed.
-- Реальный submit возможен только после separate proposal и exact short-lived owner confirmation в новом user turn.
-- `submitted` никогда не считается `filled` без broker execution status.
-- ambiguous possible-submit state никогда не auto-retry-ится.
+- `app:app` stable entrypoint;
+- secrets via environment variables;
+- account IDs masked before user-facing output;
+- errors sanitized;
+- analytics/purchase-capacity never create orders;
+- withdrawal/transfer/securities-transfer surface absent;
+- real MARKET/BESTPRICE absent;
+- margin/short/stop/replace/async/autonomous recurring execution absent in real v1;
+- `REAL_TRADING_ENABLED=false` removes real Actions and is master rollback;
+- real flag alone is insufficient: invalid token/policy/journal fails closed;
+- real submit only after separate proposal + exact short-lived owner phrase in a new user turn;
+- `submitted` never means `filled` without broker proof;
+- possible-submit ambiguity never auto-retries.
 
-## T-Invest Sandbox boundary
+## Sandbox boundary
 
-Sandbox execution может быть зарегистрирован только при `SANDBOX_TRADING_ENABLED=true`.
+Sandbox mutation requires `SANDBOX_TRADING_ENABLED=true` and fixed `sandbox-invest-public-api.tbank.ru` host.
 
-Защитные требования:
+Required:
 
-- outbound host жёстко фиксирован на `sandbox-invest-public-api.tbank.ru`;
-- используется отдельный `TINVEST_SANDBOX_TOKEN`;
-- `TINVEST_TOKEN` не передаётся sandbox-клиенту;
-- sandbox responses явно маркируются `sandbox=true` и `real_money=false`;
-- поддерживаются только allowlisted Sandbox methods;
-- transfer/withdrawal и production real account mutation не входят в sandbox package;
+- separate token;
+- `sandbox=true`, `real_money=false`;
+- allowlisted methods only;
+- no transfer/withdrawal;
 - `confirmMarginTrade=false`;
-- BUY sizing сверяется только с own-funds limits;
-- SELL sizing сверяется только с own-position limits;
-- proposal не является submit;
-- подтверждение HMAC-bound к параметрам, имеет короткий TTL и не меняет заявку;
-- broker limits повторно проверяются непосредственно перед submit;
-- request `orderId` — UUID/idempotency key;
-- повтор execution после успешного submit не создаёт вторую заявку;
-- timeout/5xx после possible submit никогда не приводит к automatic retry;
-- закрытие/пополнение/отмена Sandbox требуют явных подтверждений;
-- sandbox account ID маскируется.
-
-Sandbox in-memory proposal state намеренно инвалидируется restart-ом. Это относится только к виртуальному contour.
+- BUY own-funds / SELL own-position limits;
+- immutable proposal + exact short-lived confirmation;
+- repeat preflight before submit;
+- UUID idempotency;
+- no duplicate submit;
+- ambiguous submit no retry;
+- masked account.
 
 ## Real execution v1 boundary
 
-Conditional real Actions:
+Published only when readiness is valid:
 
 - `getRealTradingStatus`;
 - `prepareRealTrade`;
 - consequential `executeRealTrade`;
 - `getRealOrderState`.
 
-Real v1 разрешает только:
+Allowed:
 
 - BUY/SELL;
 - supported cash share/ETF;
@@ -110,24 +103,24 @@ Real v1 разрешает только:
 - own-position SELL;
 - exact price step;
 - fresh trusted order book;
-- small configurable per-order/daily caps below immutable code ceilings.
+- small per-order/daily caps.
 
 Prepare/execute separation:
 
-1. server resolves/binds exactly one trading account to read-only account;
-2. fresh market + instrument identity checked;
+1. bind exactly one trading account to read-only account;
+2. check instrument identity + fresh market;
 3. `GetMaxLots` / `GetOrderPrice` preflight;
-4. durable immutable proposal created;
-5. user receives exact phrase and submit stops;
-6. exact phrase must arrive in a new user turn;
-7. account/market/financial preflight repeats;
-8. durable atomic daily reservation occurs **before** broker `PostOrder`;
-9. submit occurs once using UUID idempotency key;
-10. broker state is reconciled by request UUID.
+4. create durable immutable proposal;
+5. return exact phrase and stop;
+6. phrase must arrive in new user turn;
+7. repeat account/market/financial preflight;
+8. durable atomic daily reservation before `PostOrder`;
+9. submit once with UUID idempotency key;
+10. reconcile broker state by request UUID.
 
-Wrong/expired confirmation, changed preflight, insufficient own funds/position, account mismatch, stale market, hard-limit failure, durable-journal error or integrity failure all fail closed before submit.
+Wrong/expired phrase, changed preflight, insufficient own funds/position, account mismatch, stale market, hard-limit failure, journal outage/tamper/integrity failure all fail closed before submit.
 
-## Free durable real-execution journal
+## Durable journal
 
 Selected production backend:
 
@@ -137,126 +130,100 @@ UPSTASH_REDIS_REST_URL=<HTTPS *.upstash.io endpoint>
 UPSTASH_REDIS_REST_TOKEN=<Render secret>
 ```
 
-This allows the Render service to remain on the Free plan without relying on its ephemeral filesystem.
-
 Security requirements:
 
-- Upstash URL must be HTTPS and `*.upstash.io`;
-- REST token stays only in Render Environment;
-- `trust_env=false`, redirects disabled;
-- no fallback to process memory if Upstash is unavailable;
-- journal metadata is HMAC-authenticated;
-- each proposal envelope is revision/HMAC-authenticated;
-- each Moscow-day notional counter is revision/HMAC-authenticated;
-- authenticated proposal-count metadata is checked against stored proposal count;
-- `integrity_check()` recomputes expected counted proposal totals and compares signed day counters;
-- Redis Lua is limited to exact compare-and-swap updates for atomic journal state/daily-cap reservation;
-- broker/Gateway/Upstash tokens are not stored inside proposal data;
+- HTTPS Upstash host restriction;
+- REST token only in Render Environment;
+- redirects disabled / no proxy-env trust for journal client;
+- no fallback to memory;
+- HMAC-authenticated metadata/proposals/day counters;
+- authenticated proposal count;
+- integrity recomputation;
+- atomic Redis Lua compare-and-swap for state + daily cap;
+- secrets excluded from proposal data;
 - tamper/missing/corrupt state blocks readiness/submission.
 
-SQLite durable journal remains an explicit compatibility/test backend only. It is not the selected production path for the current zero-cost deployment.
+SQLite remains compatibility/test only.
 
 ## Ambiguous broker submit
 
-Network timeout/connection break/5xx after `PostOrder` may mean the request crossed the broker boundary.
+Timeout/connection break/5xx after `PostOrder` may mean the broker received the request.
 
 Required behavior:
 
-- proposal becomes `unknown` / `unknown_do_not_resubmit`;
-- its daily notional remains reserved;
-- automatic second `PostOrder` is forbidden;
-- reconciliation uses the original request UUID and `GetOrderState` / `ORDER_ID_TYPE_REQUEST`;
-- unresolved ambiguity is owner-visible and blocks automatic continuation.
+- proposal → `unknown` / do-not-resubmit;
+- daily notional remains reserved;
+- second `PostOrder` forbidden;
+- reconcile original UUID through `GetOrderState` / request-id mode;
+- unresolved ambiguity blocks automatic continuation.
 
-A definitive broker rejection becomes `failed` and releases the reserved daily notional atomically.
+Definitive broker rejection → failed and releases reserved notional atomically.
 
 ## Custom GPT boundary
 
-Canonical Instructions: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_0.txt`.
+Canonical GPT Editor Instructions:
 
-- OpenAPI импортируется только из production Gateway.
-- Authentication: API Key → Bearer с `GATEWAY_API_KEY`.
-- Broker/Upstash tokens не передаются в GPT Editor.
-- Default real flag OFF keeps all Real Trading Actions absent.
-- Sandbox mutation Actions publish only after Sandbox enable.
-- Real mutation Actions publish only after real enable + valid static readiness.
-- Consequential UI никогда не заменяет server-side exact-confirmation gate.
-- Ordinary portfolio-management request не является торговым подтверждением.
-- Apps не используются одновременно с Actions.
-- GitHub не синхронизирует GPT Editor/Render/Upstash автоматически.
+`gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt`
+
+Full engineering reference:
+
+`gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_0.txt`
+
+- OpenAPI only from production Gateway;
+- Authentication = API Key → Bearer using `GATEWAY_API_KEY`;
+- broker/Upstash tokens never enter GPT Editor;
+- ordinary portfolio management is not trade confirmation;
+- consequential UI never replaces server-side exact-confirmation gate;
+- Apps not used together with Actions;
+- GitHub does not sync GPT Editor/Render/Upstash automatically.
 
 ## Data integrity
 
-- Не смешивать валюты без verified FX + timestamp.
-- Для денег использовать exact decimal logic.
-- Partial/truncated/stale/contradictory data fail closed.
-- Не double-count commissions/child operations/embedded trades.
-- last price не выдавать за гарантированную executable price.
-- при отсутствии fresh market data exact real proposal блокируется.
-- Sandbox fill не является доказательством production fill/price behavior.
-- Durable-journal availability/integrity не заменяет broker state; после submit всегда нужна broker reconciliation.
+- exact decimal logic;
+- verified FX + timestamp before currency mixing;
+- partial/truncated/stale/contradictory data fail closed;
+- no commission/operation double count;
+- last price not executable guarantee;
+- fresh market required for real proposal;
+- Sandbox fill is not production fill evidence;
+- durable journal is not broker state; after submit broker reconciliation is mandatory.
 
-## Dependency and CI security
+## CI security
 
-- Runtime/dev dependencies pinned и hash-locked.
-- Lock files не редактируются вручную.
-- External GitHub Actions pinned full commit SHA.
-- Regression Shield проверяет compile, lint, formatting, types, contracts, tests, coverage, dependency audit, SAST and secret scan.
-- Merge gates не используют broad `continue-on-error` для security/contract checks.
-- Tests real/Sandbox execution use fake/mock transports; CI не отправляет broker orders и не использует live secrets.
+- dependencies pinned/hash-locked;
+- lock files not edited manually;
+- external GitHub Actions pinned to full SHA;
+- Regression Shield covers compile, lint, formatting, types, contracts, tests, coverage, dependency audit, SAST and secret scan;
+- tests use fake/mock transports and never submit live broker orders.
 
-## Перед merge real-execution/storage release
+Required regression evidence includes wrong/expired confirmation, own-funds/own-position guards, hard caps, account mismatch, stale market, replay single-submit, ambiguous-submit no-retry, masking/redaction, journal persistence/integrity and conditional OpenAPI.
 
-Подтвердить:
+## Owner acceptance state
 
-- stable `app:app`;
-- default-off baseline OpenAPI unchanged;
-- `TINVEST_TOKEN` no fallback in real package;
-- dedicated production order host/method allowlist;
-- no transfer/withdraw/cancel/replace/market/margin surface in real v1;
-- wrong/expired confirmation cannot submit;
-- own-funds/own-position failures block submit;
-- preflight repeats immediately before submit;
-- duplicate execution produces one broker submit total;
-- ambiguous submission produces no retry;
-- account IDs/secrets redacted;
-- durable journal survives simulated restart;
-- journal tamper is detected;
-- daily cap is atomic under concurrency;
-- Upstash backend rejects non-HTTPS/non-Upstash hosts;
-- missing Upstash credentials publish no real mutation surface;
-- no live network calls in CI;
-- exact-head Regression Shield + dependency/SAST/secret security green.
+Phase 3 completed on 2026-08-03 with zero real submit:
 
-## External owner acceptance before first real order
+- permanent Upstash + dedicated trading token configured;
+- small caps configured;
+- saved GPT v8.6.1 returned ready with `journal_integrity=ok`;
+- wrong/expired confirmation rejected;
+- own-funds guard rejected excessive BUY without margin fallback;
+- read-only isolation remained intact;
+- kill switch deployed and produced healthy read-only state;
+- re-enable recovered ready state with durable proposal rows.
 
-Green CI is insufficient. Before first real submit:
+## Final release gate
 
-1. deploy default-off on existing Render Free service;
-2. configure permanent Upstash Free database credentials in Render only;
-3. configure separate account-scoped non-transfer T-Invest trading token;
-4. configure small limits;
-5. enable real contour intentionally;
-6. `getRealTradingStatus` → ready, masked account, `journal_backend=upstash`;
-7. read-only/Sandbox regression smoke;
-8. wrong phrase rejection;
-9. expiry rejection;
-10. hard-cap rejection;
-11. stale-market rejection;
-12. over-position SELL rejection;
-13. restart Render and verify durable journal survives;
-14. rollback drill `REAL_TRADING_ENABLED=false` removes real Actions;
-15. only after these checks may owner explicitly authorize the first controlled real LIMIT order.
+Before release can be called 100% complete, Phase 4 still requires:
+
+1. a **new explicit owner instruction** authorizing the first controlled real LIMIT order;
+2. proposal shown before submit;
+3. exact phrase from a new owner message;
+4. one `PostOrder` only;
+5. immediate broker-state reconciliation;
+6. broker-confirmed fill/partial-fill truth;
+7. real portfolio/cash/operations reconciliation;
+8. one safe replay proving no second submit.
+
+At any anomaly: disable `REAL_TRADING_ENABLED`, preserve journal evidence and reconcile before further action.
 
 Full procedure: `docs/operations/REAL_TRADING_RELEASE_RUNBOOK.md`.
-
-## Сообщение об уязвимости
-
-Не прикладывать реальные secrets или financial payloads. Указать:
-
-- затронутый commit/release;
-- endpoint/module;
-- шаги воспроизведения на фиктивных данных;
-- ожидаемое и фактическое поведение;
-- влияние;
-- безопасный вариант исправления.
