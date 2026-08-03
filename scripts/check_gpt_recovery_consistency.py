@@ -9,8 +9,8 @@ INSTRUCTIONS_PATH = "gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt"
 ENGINEERING_REFERENCE = "gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_0.txt"
 PROGRAM_PATH = "docs/master-plan/OMNI_CIO_V9_PORTFOLIO_AUTOPILOT_PROGRAM.md"
 BASELINE_CONTRACT = "docs/architecture/V9_BASELINE_AND_RECOVERY_CONTRACT.md"
-BASELINE_COMMIT = (  # pragma: allowlist secret
-    "baba0fb73e0483fc82b3f0bc7c2f15cbd71d804e"
+BASELINE_COMMIT = (
+    "baba0fb73e0483fc82b3f0bc7c2f15cbd71d804e"  # pragma: allowlist secret
 )
 GATEWAY_URL = "https://omni-cio-gateway.onrender.com"
 OPENAPI_URL = f"{GATEWAY_URL}/openapi.json"
