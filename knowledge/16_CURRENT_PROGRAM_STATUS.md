@@ -6,35 +6,81 @@
 
 Omni-CIO remains one supported Custom GPT + one production Render Gateway.
 
-Current production state:
+### Production baseline — COMPLETE
+
+**Omni-CIO v8.6.1 real BUY/SELL v1 is owner-accepted and 100% complete.**
+
+Accepted production facts:
 
 - production read-only analytics: accepted;
-- isolated T-Invest Sandbox execution: accepted and Preview-tested;
-- real-money v1 engineering Phases 0–2: merged and Regression-Shielded;
-- zero-cost durable journal migration: merged and deployed;
-- production real journal: permanent Upstash Redis over HTTPS REST;
-- Render remains on Free plan, no Persistent Disk required;
-- Custom GPT UI/config: `Omni-CIO API | Управляющий и аналитик v8.6.1`;
-- GPT Editor Instructions: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt`;
-- real contour is enabled and reports `status=ready`, `execution_ready=true`, `journal_backend=upstash`, `journal_integrity=ok`;
-- owner Phase 3 negative acceptance and kill-switch rollback drill are complete;
-- owner Phase 4 first controlled real order is complete;
-- broker-state, real portfolio/operations and replay/idempotency acceptance are complete;
-- real BUY/SELL v1 Definition of Done is **100% complete**.
+- isolated T-Invest Sandbox execution: accepted;
+- durable real journal: permanent Upstash Redis over HTTPS;
+- Render remains Free;
+- current GPT: `Omni-CIO API | Управляющий и аналитик v8.6.1`;
+- current Instructions: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt`;
+- owner Phase 3 negative acceptance + kill-switch rollback/recovery complete;
+- owner Phase 4 first controlled real order complete;
+- broker `FILL`, portfolio/operations reconciliation and replay/idempotency acceptance complete.
 
-## Canonical configuration
+First accepted real lifecycle:
+
+`prepare → exact owner confirmation → single submit → broker reconciliation → portfolio/operations reconciliation → safe replay`.
+
+### Active development program — LOCKED
+
+Owner approved **Omni-CIO v9 / Release 2 — Portfolio Autopilot & Capital Management Program**.
+
+Canonical program:
+
+`docs/master-plan/OMNI_CIO_V9_PORTFOLIO_AUTOPILOT_PROGRAM.md`
+
+Supporting research:
+
+`docs/architecture/V9_RESEARCH_AND_ENGINEERING_PRINCIPLES.md`
+
+Tracker:
+
+GitHub issue **#175 — EPIC: Omni-CIO v9 Portfolio Autopilot / Capital Management Engine**.
+
+Rule:
+
+- continue from the earliest incomplete v9 work package;
+- no competing roadmap until the v9 Definition of Done is complete;
+- exceptions only for critical production/security/API compatibility and mandatory dependency/CI maintenance;
+- v8.6.1 remains the protected fallback/recovery baseline.
+
+## Current v9 work package
+
+**WP0 — Baseline freeze and recovery correctness**
+
+Progress on branch `feat/v9-portfolio-autopilot-program-lock`:
+
+- [x] canonical v9 program exists on `main` and is owner-approved/program-locked;
+- [x] GitHub epic #175 aligned to WP0–WP15;
+- [x] external engineering research/principles documented;
+- [x] `AGENTS.md` program-lock rules added on WP0 branch;
+- [x] stale `knowledge/00_PROJECT_MASTER_CONTEXT.md` Phase-4-only status corrected on WP0 branch;
+- [ ] stale `gpt/SETUP_INDEX.md` release-gate wording corrected;
+- [ ] canonical config consistency CI check/tests added;
+- [ ] repository-layout CI aligned with accepted v8.6.1 + v9 sources;
+- [ ] exact-head Regression Shield green;
+- [ ] WP0 PR reviewed and merged.
+
+No v9 runtime behavior is enabled by WP0 documentation work.
+
+## Canonical production configuration — v8.6.1 fallback
 
 - UI name: `Omni-CIO API | Управляющий и аналитик v8.6.1`.
-- Canonical GPT Editor Instructions: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt`.
-- Full v8.6 engineering reference: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_0.txt`.
-- Recommended model: `Thinking 5.6`.
-- Timezone: `Europe/Moscow` / MSK.
+- Instructions: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt`.
+- Full v8.6 reference: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_0.txt`.
+- Recommended model: Thinking 5.6.
+- Timezone: Europe/Moscow / MSK.
 - Gateway: `https://omni-cio-gateway.onrender.com`.
-- Render plan: Free.
+- Render: Free.
 - Entrypoint: `app:app`.
 - Production Knowledge: exactly 10 canonical files.
 
-GitHub is canonical for code/config reference but does not automatically synchronize GPT Editor, Render secrets, or Upstash.
+GitHub is canonical for code/config reference but does not automatically synchronize GPT Editor, Render secrets or Upstash.
 
 ## Broker contours
 
@@ -42,142 +88,71 @@ GitHub is canonical for code/config reference but does not automatically synchro
 
 `TINVEST_TOKEN` remains read-only and separate from execution credentials.
 
-Supported facts include connection, portfolio, enriched positions, cash/liquidity, instrument search, market snapshots, analytics, purchase-capacity preview, operations, broker-report reconciliation and final decision review.
-
-Portfolio-management baseline:
+Current v8.6.1 portfolio-management baseline:
 
 `getPortfolioSnapshot → getCashLiquiditySnapshot → getPortfolioAnalytics → analysis`
 
+v9 will evolve this into natural-language typed orchestration while preserving write-authority isolation.
+
 ### Sandbox
 
-Uses only `TINVEST_SANDBOX_TOKEN`, fixed Sandbox host and `SANDBOX_TRADING_ENABLED`.
-
-Owner Preview acceptance on 2026-08-02 demonstrated virtual account/funding/portfolio, BUY/SELL, exact confirmation, wrong/expired confirmation rejection, replay protection, own-position rejection, LIMIT state/cancel and final portfolio reconciliation. All observed responses remained `real_money=false`.
+Uses only `TINVEST_SANDBOX_TOKEN`; virtual execution remains `real_money=false`.
 
 ### Real execution v1
 
 Uses only separate account-scoped `TINVEST_TRADING_TOKEN` without transfer access.
 
-Conditional Actions:
+Current conditional Actions:
 
 - `getRealTradingStatus`;
 - `prepareRealTrade`;
 - `executeRealTrade`;
 - `getRealOrderState`.
 
-Real v1 is deliberately narrow:
+Current v8.6.1 restrictions remain:
 
 - BUY/SELL only;
-- supported cash share/ETF only;
+- supported cash share/ETF;
 - RUB;
-- LIMIT / CURRENCY / DAY only;
+- LIMIT / CURRENCY / DAY;
 - own-funds BUY / own-position SELL;
 - no margin/short;
-- fresh trusted order book;
-- exact price step;
-- immutable proposal + exact short-lived owner confirmation in a new user turn;
+- fresh trusted market;
+- immutable proposal + exact short-lived owner confirmation;
 - server hard caps;
 - UUID idempotency;
-- ambiguous possible-submit = unknown/do-not-resubmit;
-- broker reconciliation required;
-- `submitted` never means `filled` without broker proof.
+- ambiguity = reconcile only;
+- broker proof required for fill.
 
-No withdrawal/transfer, securities transfer, MARKET/BESTPRICE, derivatives/currencies, stop orders, ReplaceOrder, async submit, autonomous recurring execution or first-release real cancellation exists.
-
-## Durable journal
-
-Selected production backend:
-
-```text
-REAL_TRADING_JOURNAL_BACKEND=upstash
-UPSTASH_REDIS_REST_URL=<Render Environment>
-UPSTASH_REDIS_REST_TOKEN=<Render secret>
-```
-
-Accepted properties:
-
-- survives Render Free sleep/deploy/restart;
-- no Render disk required;
-- HTTPS `*.upstash.io` restriction;
-- HMAC-authenticated metadata/proposals/day counters;
-- atomic Redis Lua compare-and-swap for proposal transition + daily cap reservation;
-- no fallback to memory when storage is unavailable;
-- tamper/missing/corrupt state fails closed;
-- broker/Gateway/Upstash secrets are not stored in proposal data.
-
-## Owner Phase 3 acceptance — COMPLETE
-
-Completed on 2026-08-03 with zero real submit.
-
-Observed/accepted:
-
-1. permanent Upstash Free database configured in Render;
-2. dedicated T-Invest trading token configured separately from read-only token;
-3. initial limits: 1000 RUB/order, 2000 RUB/day, 120 s confirmation TTL, 15 s market freshness;
-4. `getRealTradingStatus` returned ready, masked account, durable journal true, `journal_backend=upstash`, `journal_integrity=ok`;
-5. Custom GPT updated to v8.6.1 Compact, 10 Knowledge files retained, production OpenAPI re-imported;
-6. saved GPT successfully called only `getRealTradingStatus` and remained ready;
-7. technical proposal generation worked without broker submit;
-8. expired confirmation rejected with `REAL_CONFIRMATION_EXPIRED`;
-9. deliberately wrong confirmation rejected before execution;
-10. excessive BUY rejected by own-funds protection;
-11. read-only contour remained isolated;
-12. kill switch returned Gateway to healthy read-only state;
-13. re-enable restored real readiness with durable journal integrity.
-
-Hard-cap, stale-market, SELL-over-position, replay and ambiguous-submit protections remain covered by merged fake-client/regression tests.
-
-## Owner Phase 4 acceptance — COMPLETE
-
-Completed on 2026-08-03 with explicit owner authorization for the first controlled real order.
-
-Accepted sequence:
-
-1. `getRealTradingStatus` confirmed ready real contour;
-2. fresh SBER market snapshot was obtained;
-3. `prepareRealTrade` created a 1-lot real LIMIT BUY proposal below the 1000 RUB per-order cap;
-4. exact confirmation was supplied by the owner in a new message;
-5. exactly one real broker submit was performed;
-6. broker initially reported `EXECUTION_REPORT_STATUS_NEW` and zero lots executed;
-7. subsequent `getRealOrderState` reconciled `EXECUTION_REPORT_STATUS_FILL`, `lots_executed=1`, `fill_confirmed=true`;
-8. executed price reconciled at 280.55 RUB and executed commission at 0.84 RUB;
-9. real portfolio reconciled to SBER = 1 share / 1 lot;
-10. operations history reconciled the executed SBER purchase at 280.55 RUB and commission at 0.84 RUB;
-11. exact confirmation replay did not invoke `executeRealTrade` again and returned the already submitted/filled proposal state;
-12. no second broker submit or second SBER purchase was created.
-
-This completes the first real-money owner acceptance and proves the full narrow execution lifecycle:
-
-`prepare → exact owner confirmation → single submit → broker reconciliation → portfolio/operations reconciliation → safe replay`.
+v9 roadmap text does not authorize new mutations by itself.
 
 ## Current safety state
 
-- real contour enabled;
-- `status=ready`;
-- `execution_ready=true`;
-- `journal_backend=upstash`;
-- `journal_integrity=ok`;
 - account output masked;
-- order cap 1000 RUB;
-- daily cap 2000 RUB;
-- `REAL_TRADING_ENABLED=false` remains the master rollback action for any anomaly.
+- durable Upstash journal remains required;
+- initial accepted server caps remain unchanged during WP0;
+- `REAL_TRADING_ENABLED=false` remains master rollback;
+- production v8.6.1 stays available while v9 is built.
 
-Release completion does **not** relax any safety rule: every future order still requires fresh market/preflight, a new immutable proposal and an exact short-lived owner confirmation.
+## v9 work-package checklist
 
-## Definition of Done
+- [ ] WP0 — Baseline freeze and recovery correctness
+- [ ] WP1 — Natural Language CIO Router
+- [ ] WP2 — Investment Policy Statement Engine
+- [ ] WP3 — Market Universe Engine
+- [ ] WP4 — Deterministic Candidate Funnel
+- [ ] WP5 — Research & Evidence Engine
+- [ ] WP6 — Credit, Rating & Default Engine 2.0
+- [ ] WP7 — Fund X-Ray Engine
+- [ ] WP8 — Portfolio Risk Engine 2.0
+- [ ] WP9 — Meta-Strategy Selector
+- [ ] WP10 — Portfolio Optimizer & Capital Scaling
+- [ ] WP11 — Immutable Portfolio Plan Protocol
+- [ ] WP12 — Safe Plan Execution Engine
+- [ ] WP13 — Portfolio Watchtower
+- [ ] WP14 — Decision Journal, Evaluation & Learning Loop
+- [ ] WP15 — Custom GPT v9 Configuration & Recovery
 
-- [x] threat model/design merged;
-- [x] isolated backend merged;
-- [x] durable state + conditional OpenAPI merged;
-- [x] zero-cost Upstash journal migration merged and deployed;
-- [x] permanent Upstash Free database configured;
-- [x] dedicated trading token configured separately;
-- [x] GPT v8.6.1 Compact applied and saved;
-- [x] owner Phase 3 negative acceptance completed with zero real submit;
-- [x] kill-switch rollback + recovery completed;
-- [x] first controlled real order explicitly authorized and submitted;
-- [x] broker state reconciled;
-- [x] real portfolio/operations reconciled;
-- [x] idempotent replay verified with no second submit.
-
-**Release state: Omni-CIO v8.6.1 real BUY/SELL v1 — 100% complete.**
+**Current release:** v8.6.1 stable/accepted.  
+**Active development:** v9, WP0.  
+**Do not mark v9 complete until the canonical program Definition of Done is fully satisfied.**
