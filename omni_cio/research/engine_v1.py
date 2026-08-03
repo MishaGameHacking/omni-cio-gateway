@@ -354,15 +354,7 @@ def build_research_dossier(
         raw_content_stored=False,
         trading_methods=False,
     )
-    payload = provisional.model_dump(mode="json", exclude={"dossier_sha256"})
-    from omni_cio.contracts.v1.research_evidence import _canonical_json  # noqa: PLC0415
-
-    import hashlib  # noqa: PLC0415
-
-    dossier_sha256 = hashlib.sha256(_canonical_json(payload).encode("utf-8")).hexdigest()
-    return ResearchDossierV1.model_validate(
-        {
-            **payload,
-            "dossier_sha256": dossier_sha256,
-        }
-    )
+    dossier_sha256 = research_dossier_sha256(provisional)
+    payload = provisional.model_dump(mode="json")
+    payload["dossier_sha256"] = dossier_sha256
+    return ResearchDossierV1.model_validate(payload)
