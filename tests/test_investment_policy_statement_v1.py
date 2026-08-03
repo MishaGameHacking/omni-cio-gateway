@@ -236,6 +236,17 @@ def test_allowed_and_prohibited_instrument_types_cannot_overlap() -> None:
         _complete_policy(prohibited_instrument_types=(InstrumentType.BOND,))
 
 
+def test_policy_collection_inputs_fail_closed_on_scalars() -> None:
+    with pytest.raises(ValidationError, match="allowed_markets must be a collection"):
+        _complete_policy(allowed_markets="MOEX")
+    with pytest.raises(ValidationError, match="allowed_markets must be a collection"):
+        _complete_policy(allowed_markets=42)
+    with pytest.raises(ValidationError, match="instrument types must be a collection"):
+        _complete_policy(allowed_instrument_types="share")
+    with pytest.raises(ValidationError, match="instrument types must be a collection"):
+        _complete_policy(prohibited_instrument_types=42)
+
+
 def test_group_and_sector_limits_cannot_be_below_position_limit() -> None:
     with pytest.raises(ValidationError, match="group limit"):
         _complete_policy(max_position_weight=Decimal("0.20"), max_group_weight=Decimal("0.10"))
