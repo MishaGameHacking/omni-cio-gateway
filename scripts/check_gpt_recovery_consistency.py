@@ -203,7 +203,9 @@ def main() -> None:
     print("GPT recovery consistency: OK")
     print(f"UI: {UI_NAME}")
     print(f"Instructions: {INSTRUCTIONS_PATH}")
-    print(f"Instructions chars: {len(read(INSTRUCTIONS_PATH))}/{INSTRUCTIONS_MAX_CHARS}")
+    print(
+        f"Instructions chars: {len(read(INSTRUCTIONS_PATH))}/{INSTRUCTIONS_MAX_CHARS}"
+    )
     print(f"Knowledge files: {len(KNOWLEDGE_FILES)}")
     print(f"Protected baseline commit: {BASELINE_COMMIT}")
     print(f"Active program: {PROGRAM_PATH}")
