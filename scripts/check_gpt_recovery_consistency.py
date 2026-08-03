@@ -98,9 +98,7 @@ def reject_stale_markers(file_name: str, text: str) -> None:
 def check_knowledge_registry(contents: dict[str, str]) -> None:
     expected = set(KNOWLEDGE_FILES)
     knowledge_root = ROOT / "gpt" / "knowledge"
-    actual = {
-        path.name for path in knowledge_root.glob("*.txt") if path.is_file()
-    }
+    actual = {path.name for path in knowledge_root.glob("*.txt") if path.is_file()}
     if actual != expected:
         missing = sorted(expected - actual)
         extra = sorted(actual - expected)
@@ -205,10 +203,7 @@ def main() -> None:
     print("GPT recovery consistency: OK")
     print(f"UI: {UI_NAME}")
     print(f"Instructions: {INSTRUCTIONS_PATH}")
-    print(
-        "Instructions chars: "
-        f"{len(read(INSTRUCTIONS_PATH))}/{INSTRUCTIONS_MAX_CHARS}"
-    )
+    print(f"Instructions chars: {len(read(INSTRUCTIONS_PATH))}/{INSTRUCTIONS_MAX_CHARS}")
     print(f"Knowledge files: {len(KNOWLEDGE_FILES)}")
     print(f"Protected baseline commit: {BASELINE_COMMIT}")
     print(f"Active program: {PROGRAM_PATH}")
