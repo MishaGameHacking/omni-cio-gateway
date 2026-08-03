@@ -22,11 +22,12 @@ A security ranking is permitted only when all of the following are available:
 - an active, effective, current and personal-sizing-ready WP2 IPS;
 - a decision-ready WP3 universe with canonical content SHA-256;
 - one and only one comparable evidence bundle for every security that survives static policy/role filtering;
+- every exposure/concentration row bound to the same portfolio snapshot fingerprint as the gap;
 - a timezone-aware assessment timestamp.
 
 If the IPS or universe is not ready, the result is fail closed and contains only the `NO_ACTION/CASH` alternative.
 
-If market/exposure evidence covers only part of the eligible universe, partial ranking is forbidden. The funnel returns `EVIDENCE_COVERAGE_INCOMPLETE`, no security shortlist and the cash alternative. This is the principal anti-selection-bias guard.
+If market/exposure evidence covers only part of the eligible universe, or any eligible evidence bundle is stale, untrusted, identity-inconsistent, price-basis-invalid or bound to another portfolio snapshot, partial ranking is forbidden. The funnel returns `EVIDENCE_COVERAGE_INCOMPLETE`, no security shortlist and the cash alternative. This is the principal anti-selection-bias guard.
 
 ## 3. Candidate roles
 
@@ -54,15 +55,21 @@ Static blockers run before market evidence is requested:
 - target-currency mismatch;
 - explicit WP3 insufficient-liquidity flag.
 
-Comparable-evidence blockers then include:
+Comparable-evidence quality blockers then include:
 
-- missing/duplicate evidence;
+- missing/duplicate evidence for an eligible candidate;
 - untrusted market source;
 - stale or materially future-dated quote/liquidity evidence;
 - invalid security/market identity;
+- exposure from a different portfolio snapshot;
 - invalid price basis;
+- portfolio-value currency mismatch.
+
+Any such quality blocker makes the eligible-universe comparison incomplete and blocks the whole security ranking. Static-rejected instruments do not need market evidence and duplicate evidence for those rows does not poison an otherwise complete eligible comparison.
+
+Candidate-specific feasibility blockers are evaluated only after comparable evidence is complete:
+
 - minimum lot above supplied budget;
-- portfolio-value currency mismatch;
 - one-minimum-lot breach of position/group/sector/currency IPS limits;
 - preliminary permanent-loss screen = block.
 
@@ -86,13 +93,15 @@ T-Invest market-data methods used by future evidence collection include official
 
 Shares/ETFs use currency ask × lot.
 
-Bonds must explicitly declare `PERCENT_OF_NOMINAL` cost basis and carry nominal value. The screen converts broker points/percent-of-nominal to currency before comparing affordability or concentration:
+Bonds must explicitly declare `PERCENT_OF_NOMINAL` cost basis and carry nominal value. T-Invest market-data bond prices are points, where one point is one percent of nominal. The broker `aci_value`/НКД used by this contract is treated as a currency amount **per one lot**, consistent with the T-Invest order documentation.
 
-`minimum lot cost = ((best ask / 100) × nominal + accrued interest per unit) × lot`
+For one candidate lot the screen calculates:
+
+`minimum lot cost = (best ask / 100) × nominal × lot_size + accrued_interest_per_lot`
 
 A bond without nominal basis is rejected. A non-bond carrying percent-of-nominal basis is rejected.
 
-This avoids the known category error of treating a bond quote such as `95` as 95 RUB.
+This avoids two category errors: treating a bond quote such as `95` as 95 RUB, and multiplying a per-lot accrued-interest amount by lot size a second time.
 
 ## 7. Ordinal score — no false precision
 
@@ -123,7 +132,7 @@ For the candidate lot, the engine calculates:
 
 It projects position, group, sector and currency weights and hard-blocks any IPS limit breach. For candidates inside limits, the worst normalized remaining headroom determines the diversification grade.
 
-No FX conversion is invented. Portfolio value and candidate lot cost must be in the same currency for this screen.
+No FX conversion is invented. Portfolio value and candidate lot cost must be in the same currency for this screen. The exposure row must carry the exact same `portfolio_snapshot_sha256` as the portfolio gap, otherwise the security ranking fails closed as incomplete evidence.
 
 ## 9. `NO_ACTION/CASH` is first-class
 
@@ -180,13 +189,14 @@ WP4 is complete only when:
 
 1. versioned gap/evidence/score/result contracts exist;
 2. score arithmetic is contract-bound to documented weights;
-3. policy/universe readiness and full eligible-universe evidence coverage fail closed;
-4. policy/role blockers precede scoring;
-5. stale/untrusted market evidence cannot score;
-6. bond nominal conversion is covered;
-7. budget and concentration headroom blockers are covered;
-8. CASH is always present and can rank first;
-9. source-order invariance, tie-breaks, bounded shortlist and fingerprint are tested;
-10. repository guard + mypy cover the package;
-11. exact-head Regression Shield is fully green;
-12. PR is squash-merged and epic #176 marks WP4 complete.
+3. policy/universe readiness and full eligible-universe evidence coverage/quality fail closed;
+4. exposure evidence is bound to the exact portfolio snapshot fingerprint;
+5. policy/role blockers precede scoring;
+6. stale/untrusted market evidence cannot produce a partial security ranking;
+7. bond nominal and per-lot accrued-interest conversion is covered;
+8. budget and concentration headroom blockers are covered;
+9. CASH is always present and can rank first;
+10. source-order invariance, tie-breaks, bounded shortlist and fingerprint are tested;
+11. repository guard + mypy cover the package;
+12. exact-head Regression Shield is fully green;
+13. PR is squash-merged and epic #176 marks WP4 complete.
