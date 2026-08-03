@@ -91,16 +91,24 @@ def scan_execution_boundaries(failures: list[str]) -> None:
     real = read_tree(REAL_ROOT, failures)
 
     if SANDBOX_HOST not in sandbox:
-        fail("sandbox runtime is not hard-bound to the canonical Sandbox host", failures)
+        fail(
+            "sandbox runtime is not hard-bound to the canonical Sandbox host", failures
+        )
     if "TINVEST_SANDBOX_TOKEN" not in sandbox:
         fail("sandbox runtime does not require TINVEST_SANDBOX_TOKEN", failures)
     if "SANDBOX_TRADING_ENABLED" not in sandbox:
         fail("sandbox runtime does not expose a kill switch", failures)
     if REAL_HOST in sandbox or "TINVEST_TRADING_TOKEN" in sandbox:
-        fail("sandbox runtime crosses the real execution credential/host boundary", failures)
+        fail(
+            "sandbox runtime crosses the real execution credential/host boundary",
+            failures,
+        )
 
     if REAL_HOST not in real:
-        fail("real runtime is not hard-bound to the canonical production REST host", failures)
+        fail(
+            "real runtime is not hard-bound to the canonical production REST host",
+            failures,
+        )
     if "TINVEST_TRADING_TOKEN" not in real:
         fail("real runtime does not require the dedicated trading token", failures)
     if "REAL_TRADING_ENABLED" not in real:
@@ -142,7 +150,9 @@ def scan_execution_boundaries(failures: list[str]) -> None:
 
 
 def scan_program_and_recovery(failures: list[str]) -> None:
-    program = ROOT / "docs" / "master-plan" / "OMNI_CIO_V9_PORTFOLIO_AUTOPILOT_PROGRAM.md"
+    program = (
+        ROOT / "docs" / "master-plan" / "OMNI_CIO_V9_PORTFOLIO_AUTOPILOT_PROGRAM.md"
+    )
     if program.is_file():
         text = program.read_text(encoding="utf-8")
         if "OWNER-APPROVED / PROGRAM LOCKED" not in text:
