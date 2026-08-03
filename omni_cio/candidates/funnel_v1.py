@@ -196,12 +196,12 @@ def _minimum_lot_cost(
             return None, CandidateBlockerCode.COST_BASIS_INVALID
         if basis.nominal is None or basis.nominal.currency != currency:
             return None, CandidateBlockerCode.COST_BASIS_INVALID
-        accrued = basis.accrued_interest_per_unit
+        accrued = basis.accrued_interest_per_lot
         if accrued is not None and accrued.currency != currency:
             return None, CandidateBlockerCode.COST_BASIS_INVALID
         accrued_amount = accrued.amount if accrued is not None else Decimal("0")
-        per_unit = ask / Decimal("100") * basis.nominal.amount + accrued_amount
-        return Money(amount=per_unit * lot, currency=currency), None
+        price_amount = ask / Decimal("100") * basis.nominal.amount * lot
+        return Money(amount=price_amount + accrued_amount, currency=currency), None
 
     if basis.price_basis is not CandidatePriceBasis.CURRENCY:
         return None, CandidateBlockerCode.COST_BASIS_INVALID
