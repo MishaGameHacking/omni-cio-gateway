@@ -515,7 +515,10 @@ def test_untrusted_market_source_is_rejected_before_scoring() -> None:
 def test_policy_deny_and_role_mismatch_happen_before_market_coverage() -> None:
     share = _universe_row("uid-share", "AAA")
     bond = _universe_row("uid-bond", "BOND", InstrumentType.BOND)
-    deny_policy = _policy(prohibited_instrument_types=(InstrumentType.SHARE,))
+    deny_policy = _policy(
+        allowed_instrument_types=(InstrumentType.BOND, InstrumentType.ETF),
+        prohibited_instrument_types=(InstrumentType.SHARE,),
+    )
     deny = build_candidate_funnel(
         gap=_gap(),
         policy=deny_policy,
