@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from contextlib import AbstractContextManager
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal
 from types import SimpleNamespace
 from typing import Any
 
@@ -20,6 +19,7 @@ from omni_cio.contracts.v1.portfolio import InstrumentType
 from omni_cio.contracts.v1.research_evidence import (
     ContradictionSeverity,
     CoverageGapReason,
+    EvidenceCoverageProbeV1,
     EvidenceFactType,
     EvidenceRequirementV1,
     EvidenceSourceClass,
@@ -33,7 +33,9 @@ from omni_cio.contracts.v1.research_evidence import (
 )
 from omni_cio.news import sanitize_news_document
 from omni_cio.research import (
+    ResearchEvidenceCacheV1,
     ResearchEvidenceError,
+    ResearchRefreshRateLimited,
     build_research_dossier,
     context_record_from_sanitized_document,
 )
@@ -41,20 +43,6 @@ from omni_cio.research.tinvest_v1 import TInvestResearchAdapterV1
 
 
 NOW = datetime(2026, 8, 3, 18, 0, tzinfo=timezone.utc)
-
-
-def _target(
-    *,
-    instrument_type: InstrumentType = InstrumentType.SHARE,
-    asset_uid: str | None = "asset-1",
-) -> ResearchTargetV1:
-    return ResearchTargetV1(
-        funnel_sha256="a" * 64,
-        candidate_id="uid:instrument-1",
-        instrument_uid="instrument-1",
-        instrument_type=instrument_type,
-        asset_uid=asset_uid,
-    )
 
 
 def _source(
@@ -71,6 +59,23 @@ def _source(
         authority=authority,
         source_id=source_id,
         retrieved_at=retrieved_at,
+    )
+
+
+def _target(
+    *,
+    instrument_type: InstrumentType = InstrumentType.SHARE,
+    asset_uid: str | None = "asset-1",
+) -> ResearchTargetV1:
+    return ResearchTargetV1(
+        funnel_sha256="a" * 64,
+        candidate_id="uid:instrument-1",
+        instrument_uid="instrument-1",
+        instrument_type=instrument_type,
+        asset_uid=asset_uid,
+        asset_uid_source=(
+            _source(source_id="asset-identity") if asset_uid is not None else None
+        ),
     )
 
 
@@ -139,6 +144,27 @@ def test_target_must_bind_candidate_id_to_exact_uid() -> None:
             candidate_id="uid:other",
             instrument_uid="instrument-1",
             instrument_type=InstrumentType.SHARE,
+        )
+
+
+def test_asset_uid_requires_trusted_broker_provenance() -> None:
+    with pytest.raises(ValidationError, match="supplied together"):
+        ResearchTargetV1(
+            funnel_sha256="a" * 64,
+            candidate_id="uid:instrument-1",
+            instrument_uid="instrument-1",
+            instrument_type=InstrumentType.SHARE,
+            asset_uid="asset-1",
+        )
+
+    with pytest.raises(ValidationError, match="broker source"):
+        ResearchTargetV1(
+            funnel_sha256="a" * 64,
+            candidate_id="uid:instrument-1",
+            instrument_uid="instrument-1",
+            instrument_type=InstrumentType.SHARE,
+            asset_uid="asset-1",
+            asset_uid_source=_source(EvidenceSourceClass.REGULATOR),
         )
 
 
@@ -322,8 +348,6 @@ def test_allow_empty_requirement_needs_fresh_successful_probe() -> None:
         minimum_records=0,
         allow_empty=True,
     )
-    from omni_cio.contracts.v1.research_evidence import EvidenceCoverageProbeV1
-
     probe = EvidenceCoverageProbeV1(
         instrument_uid="instrument-1",
         fact_type=EvidenceFactType.DIVIDEND,
@@ -501,13 +525,16 @@ class _FakeClient:
         self.instruments = instruments
 
 
-def test_tinvest_adapter_uses_current_structured_read_only_surfaces() -> None:
-    instruments = _FakeInstruments()
-    adapter = TInvestResearchAdapterV1(
+def _adapter(instruments: _FakeInstruments) -> TInvestResearchAdapterV1:
+    return TInvestResearchAdapterV1(
         "test-token",
         client_factory=lambda _token: _FakeContext(_FakeClient(instruments)),
     )
-    records, probes = adapter.fetch(
+
+
+def test_tinvest_adapter_uses_current_structured_read_only_surfaces() -> None:
+    instruments = _FakeInstruments()
+    records, probes = _adapter(instruments).fetch(
         target=_target(instrument_type=InstrumentType.BOND),
         retrieved_at=NOW,
     )
@@ -525,11 +552,7 @@ def test_tinvest_adapter_uses_current_structured_read_only_surfaces() -> None:
 
 def test_tinvest_zero_fundamental_is_treated_as_unavailable_not_economic_zero() -> None:
     instruments = _FakeInstruments()
-    adapter = TInvestResearchAdapterV1(
-        "test-token",
-        client_factory=lambda _token: _FakeContext(_FakeClient(instruments)),
-    )
-    records, _ = adapter.fetch(target=_target(), retrieved_at=NOW)
+    records, _ = _adapter(instruments).fetch(target=_target(), retrieved_at=NOW)
 
     keys = {row.fact_key for row in records}
     assert "fundamental.ebitda_ttm" not in keys
@@ -537,14 +560,61 @@ def test_tinvest_zero_fundamental_is_treated_as_unavailable_not_economic_zero() 
 
 def test_tinvest_missing_asset_uid_produces_failed_fundamental_probe() -> None:
     instruments = _FakeInstruments()
-    adapter = TInvestResearchAdapterV1(
-        "test-token",
-        client_factory=lambda _token: _FakeContext(_FakeClient(instruments)),
-    )
-    _, probes = adapter.fetch(target=_target(asset_uid=None), retrieved_at=NOW)
+    _, probes = _adapter(instruments).fetch(target=_target(asset_uid=None), retrieved_at=NOW)
 
     fundamental = next(
         row for row in probes if row.fact_type is EvidenceFactType.FUNDAMENTAL
     )
     assert fundamental.success is False
     assert fundamental.source_error == "asset_uid_missing"
+
+
+def test_research_cache_reuses_complete_batch_and_throttles_forced_refresh() -> None:
+    instruments = _FakeInstruments()
+    adapter = _adapter(instruments)
+    cache = ResearchEvidenceCacheV1(
+        ttl_seconds=60,
+        min_refresh_interval_seconds=30,
+        max_entries=4,
+    )
+    target = _target()
+
+    first = cache.load(adapter, target=target, now=NOW)
+    second = cache.load(adapter, target=target, now=NOW + timedelta(seconds=10))
+
+    assert first.cache_hit is False
+    assert first.cacheable is True
+    assert first.source_calls == 3
+    assert second.cache_hit is True
+    assert second.source_calls == 0
+    assert len(instruments.calls) == 3
+
+    with pytest.raises(ResearchRefreshRateLimited, match="RATE_LIMITED_UNTIL"):
+        cache.load(
+            adapter,
+            target=target,
+            now=NOW + timedelta(seconds=10),
+            force_refresh=True,
+        )
+
+    refreshed = cache.load(
+        adapter,
+        target=target,
+        now=NOW + timedelta(seconds=61),
+    )
+    assert refreshed.cache_hit is False
+    assert len(instruments.calls) == 6
+
+
+def test_failed_source_batch_is_not_cached() -> None:
+    instruments = _FakeInstruments()
+    adapter = _adapter(instruments)
+    cache = ResearchEvidenceCacheV1(ttl_seconds=60, min_refresh_interval_seconds=10)
+    target = _target(asset_uid=None)
+
+    first = cache.load(adapter, target=target, now=NOW)
+    second = cache.load(adapter, target=target, now=NOW + timedelta(seconds=5))
+
+    assert first.cacheable is False
+    assert second.cache_hit is False
+    assert len(instruments.calls) == 4
