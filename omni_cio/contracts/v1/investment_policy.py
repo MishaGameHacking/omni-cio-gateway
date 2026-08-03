@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from enum import StrEnum
@@ -176,6 +177,8 @@ class InvestmentPolicyStatementV1(ContractModel):
     def normalize_markets(cls, value: object) -> object:
         if value is None:
             return ()
+        if isinstance(value, (str, bytes)) or not isinstance(value, Iterable):
+            raise ValueError("allowed_markets must be a collection of market codes")
         return tuple(sorted({str(item).strip().upper() for item in value}))
 
     @field_validator("allowed_instrument_types", "prohibited_instrument_types", mode="before")
@@ -183,6 +186,8 @@ class InvestmentPolicyStatementV1(ContractModel):
     def normalize_instrument_types(cls, value: object) -> object:
         if value is None:
             return ()
+        if isinstance(value, (str, bytes)) or not isinstance(value, Iterable):
+            raise ValueError("instrument types must be a collection")
         return tuple(sorted(set(value), key=str))
 
     @model_validator(mode="after")
