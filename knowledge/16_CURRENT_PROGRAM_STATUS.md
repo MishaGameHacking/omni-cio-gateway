@@ -16,6 +16,7 @@ Current production release remains **v8.6.1**:
 - durable journal: Upstash Redis over HTTPS;
 - Render: Free;
 - stable entrypoint: `app:app`;
+- idempotent replay verified with no second submit;
 - applied GPT remains v8.6.1 until WP15.
 
 Protected v8.6.1 release commit:
@@ -123,6 +124,6 @@ Phase 4 completed 2026-08-03 with one explicitly authorized controlled real SBER
 - 1/1 lot executed at 280.55 RUB;
 - commission 0.84 RUB;
 - portfolio and operations reconciled;
-- confirmation replay produced no second submit.
+- idempotent replay verified with no second submit.
 
 **Production release state: Omni-CIO v8.6.1 real BUY/SELL v1 — 100% complete.**
