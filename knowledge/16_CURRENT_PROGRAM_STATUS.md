@@ -75,26 +75,49 @@ Accepted behavior:
 
 Architecture: `docs/architecture/V9_INVESTMENT_POLICY_STATEMENT.md`.
 
-### WP3 — Market Universe Engine: IN PROGRESS
+### WP3 — Market Universe Engine: COMPLETE
 
-Tracking: issue #188 / draft PR #189.  
-Branch: `v9/wp3-market-universe`.  
+- issue #188 / PR #189;
+- merged to `main` as `5ae81aa921999a6d4b1bb15aa0c506f7dea92a3f`;
+- exact-head Regression Shield #1019 fully green;
+- quality/contracts/coverage and dependency/SAST/secret security = success;
+- unresolved review threads = 0.
+
+Accepted behavior:
+
+- broker universe uses T-Invest `Shares`, `Bonds`, `Etfs` with `INSTRUMENT_STATUS_BASE`;
+- UID / position UID / FIGI / ISIN / ticker+class_code identity evidence is preserved;
+- exact duplicate rows are removed and stable-alias conflicts fail closed;
+- API/account/IIS/qualification/required-test/TCA eligibility is deterministic;
+- account eligibility refresh does not retain `user_id` or full account ID;
+- incomplete sources, invalid rows, identity conflicts and unknown eligibility never become `decision_ready`;
+- content SHA-256 is source-order invariant and mutation-sensitive;
+- only a complete validated BASE catalog is cached; account eligibility remains fresh;
+- `FindInstrument` brute-force and broker mutation surfaces are forbidden by repository guard.
+
 Architecture: `docs/architecture/V9_MARKET_UNIVERSE_ENGINE.md`.
 
-Current implementation builds a reproducible broker-grounded universe from T-Invest:
+### WP4 — Deterministic Candidate Funnel: IN PROGRESS
 
-- `Shares`, `Bonds`, `Etfs` only;
-- `INSTRUMENT_STATUS_BASE` for the API-tradable base list;
-- UID / position UID / FIGI / ISIN / ticker+class_code identity evidence;
-- deterministic exact-duplicate removal and stable-alias conflict detection;
-- API buy/sell, IIS, qualified-investor, missing-test, TCA, OTC, liquidity and real-exchange evidence;
-- account eligibility refresh without retaining `user_id` or full account ID;
-- fail-closed quality for incomplete sources, invalid rows, identity conflicts or unknown account eligibility;
-- deterministic source-order-invariant SHA-256 content fingerprint;
-- six-hour validated catalog cache while account eligibility stays fresh;
-- repository guard explicitly forbids `FindInstrument` enumeration and trading/Sandbox mutation surfaces in the WP3 runtime.
+Tracking: issue #190 / draft PR #191.  
+Branch: `v9/wp4-deterministic-candidate-funnel`.  
+Architecture: `docs/architecture/V9_DETERMINISTIC_CANDIDATE_FUNNEL.md`.
 
-WP3 adds no public route, OpenAPI Action or GPT Editor change. It is not complete until exact-head Regression Shield is green and the package is squash-merged.
+Current implementation converts a verified portfolio gap into a deterministic shortlist for WP5:
+
+- role compatibility and IPS/universe readiness gates run before score;
+- partial evidence coverage of the eligible universe fails closed to prevent first-found-ticker bias;
+- trusted/fresh quote and liquidity evidence are required for scoring;
+- fixed ordinal scoring weights are contract-validated and cannot be replaced by an LLM score;
+- `NO_ACTION/CASH` is always present and may rank first;
+- minimum-lot affordability and one-lot concentration headroom are checked before publication;
+- bond quotes use percent-of-nominal + accrued-interest conversion, not share-style price × lot;
+- source-order-invariant ranking, stable tie-breaks and result SHA-256 are deterministic;
+- rejected candidates retain machine-readable reasons;
+- research shortlist is bounded for WP5;
+- candidate package is pure/internal and repository guard forbids broker SDK/token/mutation dependencies.
+
+WP4 adds no public route, OpenAPI Action or GPT Editor change. It is not complete until exact-head Regression Shield is green, unresolved review threads are zero and PR #191 is squash-merged.
 
 ## Canonical production configuration
 
@@ -118,7 +141,7 @@ Real v1 uses only dedicated `TINVEST_TRADING_TOKEN` and remains limited to the a
 
 `fresh facts → immutable proposal → exact owner confirmation in a new user turn → one submit/idempotency → broker reconciliation`.
 
-WP1–WP3 add no withdrawal/transfer, margin/short, MARKET/BESTPRICE, autonomous recurring execution or token management.
+WP1–WP4 add no withdrawal/transfer, margin/short, MARKET/BESTPRICE, autonomous recurring execution or token management.
 
 `REAL_TRADING_ENABLED=false` remains the master rollback state.
 
