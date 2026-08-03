@@ -7,24 +7,32 @@
 ### Omni-CIO v9 Portfolio Autopilot — program development
 
 - Owner-approved v9 program закреплён как единственный активный roadmap в `docs/master-plan/OMNI_CIO_V9_PORTFOLIO_AUTOPILOT_PROGRAM.md`; стабильный v8.6.1 остаётся защищённым production baseline до завершения соответствующих v9 exit gates.
-- WP0 Baseline freeze and recovery correctness завершён через PR #181: recovery/configuration sources согласованы с v8.6.1, protected baseline commit зафиксирован, v9 program lock и правило earliest dependency-ready incomplete WP проверяются автоматически; exact-head Regression Shield #989 прошёл.
+- WP0 Baseline freeze and recovery correctness завершён через PR #181; exact-head Regression Shield #989 прошёл.
 - WP1 Natural Language CIO Router завершён через PR #184 и squash-merged в `main` как `7f6772889837ba632dc40c893d080a35b5f902ff` после exact-head Regression Shield #1002:
-  - versioned `IntentRouteV1` классифицирует обычные русские запросы на analysis, portfolio management, risk, research, cash allocation, plan review, execution, monitoring и diagnostics;
-  - exact-action scope остаётся изолированным, а разговорное упоминание Action не считается вызовом;
-  - advisory `стоит ли купить/продать` отделён от imperative execution;
-  - bare BUY/SELL, real/Sandbox ambiguity и BUY/SELL ambiguity fail closed;
-  - router всегда возвращает `execution_authorized=false`; v8.6.1 server confirmation/HMAC/TTL/idempotency/preflight остаются авторитетными;
-  - raw user free text не сохраняется в routing state;
-  - расширенный Russian acceptance corpus покрывает распространённые опечатки и неоднозначности.
-- WP2 Investment Policy Statement Engine разрабатывается как internal/additive слой без изменения `app.py`, OpenAPI, broker clients или applied GPT:
+  - обычные русские запросы детерминированно маршрутизируются без знания Action names;
+  - exact-action scope изолирован;
+  - advice отделён от execution;
+  - ambiguity fail closed;
+  - router всегда возвращает `execution_authorized=false`.
+- WP2 Investment Policy Statement Engine завершён через PR #187 и squash-merged в `main` как `75c9ae078309f32d1519b76cbedd89a221b62bf0` после exact-head Regression Shield #1014:
   - versioned owner IPS отделён от неперсонализированного `ConservativeRiskPolicyV1`;
   - objective, horizon, explicit liquidity reserve, risk willingness/capacity, max drawdown, concentration caps, credit floor, account/tax constraints и rebalance band моделируются явно;
   - allowed/prohibited markets and instrument classes проверяются на противоречия;
-  - material deny constraints требуют provenance и owner confirmation;
-  - system safe defaults не могут удовлетворять owner policy provenance для personal sizing;
+  - material deny constraints требуют owner provenance/confirmation;
+  - system safe defaults не могут удовлетворять personal-policy provenance;
+  - bond permission требует и rating floor, и named rating scale;
   - missing/invalid provenance, missing owner confirmation, stale/review-due, not-effective и superseded policy fail closed;
   - deterministic SHA-256 policy reference предназначен для будущих immutable plans;
   - margin, short, withdrawal, transfer и autonomous real execution остаются `Literal[False]`.
+- WP3 Market Universe Engine находится в активной разработке через issue #188 / draft PR #189:
+  - universe строится из T-Invest `Shares`, `Bonds`, `Etfs` с `INSTRUMENT_STATUS_BASE`, без LLM/`FindInstrument` brute-force enumeration;
+  - сохраняются UID/position_uid/FIGI/ISIN/ticker+class_code и broker eligibility evidence;
+  - exact duplicates удаляются, stable-alias identity conflicts fail closed;
+  - account qualification обновляется отдельно от кэшируемого broker catalog, без сохранения `user_id`/full account ID;
+  - incomplete sources, invalid rows, unknown account eligibility и conflicts не становятся `decision_ready`;
+  - catalog fingerprint source-order invariant и mutation-sensitive;
+  - cache хранит только complete/validated BASE catalog, а degraded catalog не кэшируется;
+  - repository guard запрещает universe package использовать `FindInstrument`, trading/Sandbox mutation credentials and services.
 - Applied Custom GPT остаётся v8.6.1 до WP15; текущая v9 разработка не является разрешением на более широкий real-money execution.
 
 ### Omni-CIO v8.6.1 — released / owner accepted

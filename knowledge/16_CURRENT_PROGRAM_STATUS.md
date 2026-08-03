@@ -39,55 +39,62 @@ Development follows the earliest dependency-ready incomplete package. Stable v8.
 
 - issue #178 / PR #181;
 - merged to `main` as `4fd3993bdb56162bb730dca25e3ada7046e560cc`;
-- exact-head Regression Shield #989 green;
-- protected v8.6.1 baseline, GPT recovery consistency, exact Knowledge registry and v9 program lock are machine-checked.
+- exact-head Regression Shield #989 green.
 
 ### WP1 — Natural Language CIO Router: COMPLETE
 
 - issue #182 / PR #184;
 - merged to `main` as `7f6772889837ba632dc40c893d080a35b5f902ff`;
-- exact-head Regression Shield #1002 green for quality/contracts/coverage and dependency/SAST/secret security;
+- exact-head Regression Shield #1002 fully green;
+- deterministic Russian routing, exact-action isolation and fail-closed execution ambiguity accepted;
+- router remains internal/read-only and hard-codes `execution_authorized=false`.
+
+Architecture: `docs/architecture/V9_NATURAL_LANGUAGE_CIO_ROUTER.md`.
+
+### WP2 — Investment Policy Statement Engine: COMPLETE
+
+- issue #186 / PR #187;
+- merged to `main` as `75c9ae078309f32d1519b76cbedd89a221b62bf0`;
+- exact-head Regression Shield #1014 fully green;
+- quality/contracts/coverage and dependency/SAST/secret security = success;
 - unresolved review threads = 0.
 
 Accepted behavior:
 
-- deterministic Russian routing without Action-name knowledge;
-- exact Action invocation locks scope and is never expanded;
-- conversational Action-name mention does not invoke it;
-- advisory `стоит ли купить/продать` is not execution;
-- bare BUY/SELL requires an explicit real/Sandbox contour;
-- real/Sandbox and BUY/SELL ambiguity fail closed;
-- common Russian portfolio/diversification typos are normalized;
-- explicit plan review beats rebalance keywords;
-- raw user free text is not retained in route state;
-- every route hard-codes `execution_authorized=false`;
-- no `app.py`, OpenAPI, broker or GPT Editor change.
+- versioned owner IPS is separate from non-personalized `ConservativeRiskPolicyV1`;
+- objective, horizon, explicit liquidity reserve, risk willingness/capacity and maximum drawdown are explicit;
+- position/group/sector/currency concentration limits are deterministic;
+- allowed/prohibited markets and instrument classes cannot conflict;
+- material deny constraints require owner provenance/confirmation;
+- system safe defaults cannot impersonate owner policy;
+- bond permission requires both rating floor and named rating scale;
+- annual review/effective/superseded states fail closed;
+- deterministic SHA-256 policy reference binds future immutable plans;
+- incomplete/invalid/unconfirmed policy blocks personal sizing;
+- margin, short, withdrawal, transfer and autonomous real execution remain `Literal[False]`.
 
-Architecture: `docs/architecture/V9_NATURAL_LANGUAGE_CIO_ROUTER.md`.
-
-### WP2 — Investment Policy Statement Engine: IN PROGRESS
-
-Tracking: issue #186.  
-Branch: `v9/wp2-investment-policy-statement`.  
 Architecture: `docs/architecture/V9_INVESTMENT_POLICY_STATEMENT.md`.
 
-Current WP2 implementation adds:
+### WP3 — Market Universe Engine: IN PROGRESS
 
-- versioned `InvestmentPolicyStatementV1` owner-policy contract;
-- objective, horizon, explicit liquidity reserve, risk willingness, risk capacity and maximum drawdown;
-- position/group/sector/currency concentration limits;
-- allowed/prohibited markets and instrument classes;
-- bond credit-quality floor + rating scale;
-- tax/account review state and rebalance band;
-- per-field provenance and owner-confirmation state;
-- deterministic annual-review/effective/supersession gates;
-- deterministic policy SHA-256 reference for later immutable plans;
-- incomplete-policy blockers for personal sizing;
-- `Literal[False]` protections for margin, short sales, withdrawals, transfers and autonomous real execution.
+Tracking: issue #188 / draft PR #189.  
+Branch: `v9/wp3-market-universe`.  
+Architecture: `docs/architecture/V9_MARKET_UNIVERSE_ENGINE.md`.
 
-WP2 deliberately does **not** replace `ConservativeRiskPolicyV1`. The existing conservative policy remains a non-personalized safety baseline. No reserve, risk tolerance, capacity or personal sizing value is inferred from age, current holdings or technical affordability.
+Current implementation builds a reproducible broker-grounded universe from T-Invest:
 
-WP2 is not complete until tests, ruff, mypy and exact-head Regression Shield pass and the package is squash-merged.
+- `Shares`, `Bonds`, `Etfs` only;
+- `INSTRUMENT_STATUS_BASE` for the API-tradable base list;
+- UID / position UID / FIGI / ISIN / ticker+class_code identity evidence;
+- deterministic exact-duplicate removal and stable-alias conflict detection;
+- API buy/sell, IIS, qualified-investor, missing-test, TCA, OTC, liquidity and real-exchange evidence;
+- account eligibility refresh without retaining `user_id` or full account ID;
+- fail-closed quality for incomplete sources, invalid rows, identity conflicts or unknown account eligibility;
+- deterministic source-order-invariant SHA-256 content fingerprint;
+- six-hour validated catalog cache while account eligibility stays fresh;
+- repository guard explicitly forbids `FindInstrument` enumeration and trading/Sandbox mutation surfaces in the WP3 runtime.
+
+WP3 adds no public route, OpenAPI Action or GPT Editor change. It is not complete until exact-head Regression Shield is green and the package is squash-merged.
 
 ## Canonical production configuration
 
@@ -111,7 +118,7 @@ Real v1 uses only dedicated `TINVEST_TRADING_TOKEN` and remains limited to the a
 
 `fresh facts → immutable proposal → exact owner confirmation in a new user turn → one submit/idempotency → broker reconciliation`.
 
-No withdrawal/transfer, margin/short, MARKET/BESTPRICE, autonomous recurring execution or token management is added by WP1/WP2.
+WP1–WP3 add no withdrawal/transfer, margin/short, MARKET/BESTPRICE, autonomous recurring execution or token management.
 
 `REAL_TRADING_ENABLED=false` remains the master rollback state.
 

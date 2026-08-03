@@ -30,6 +30,7 @@ REQUIRED_PATHS = (
     "tests/test_gpt_recovery_consistency.py",
     "tests/test_natural_language_cio_router_v1.py",
     "tests/test_investment_policy_statement_v1.py",
+    "tests/test_market_universe_v1.py",
     "knowledge/00_PROJECT_MASTER_CONTEXT.md",
     "knowledge/09_MARKET_DATA_AND_BUYING_POWER.txt",
     "knowledge/10_OPERATIONS_ANALYTICS_AND_RECONCILIATION.txt",
@@ -49,6 +50,7 @@ REQUIRED_PATHS = (
     "docs/architecture/V9_BASELINE_AND_RECOVERY_CONTRACT.md",
     "docs/architecture/V9_NATURAL_LANGUAGE_CIO_ROUTER.md",
     "docs/architecture/V9_INVESTMENT_POLICY_STATEMENT.md",
+    "docs/architecture/V9_MARKET_UNIVERSE_ENGINE.md",
     "docs/operations/DEPLOYMENT_RUNBOOK.md",
     "docs/operations/RELEASE_CHECKLIST.md",
     "docs/operations/SANDBOX_TRADING_RUNBOOK.md",
@@ -66,10 +68,16 @@ REQUIRED_PATHS = (
     "gpt/PROJECT_INSTRUCTIONS.md",
     "omni_cio/contracts/v1/intent_router.py",
     "omni_cio/contracts/v1/investment_policy.py",
+    "omni_cio/contracts/v1/universe.py",
     "omni_cio/router/__init__.py",
     "omni_cio/router/intent_v1.py",
     "omni_cio/policy/__init__.py",
     "omni_cio/policy/ips_v1.py",
+    "omni_cio/universe/__init__.py",
+    "omni_cio/universe/cache_v1.py",
+    "omni_cio/universe/engine_v1.py",
+    "omni_cio/universe/service_v1.py",
+    "omni_cio/universe/tinvest_v1.py",
     "omni_cio/sandbox/__init__.py",
     "omni_cio/sandbox/client_v1.py",
     "omni_cio/sandbox/service_v1.py",
@@ -138,6 +146,23 @@ SANDBOX_FORBIDDEN_TEXT = (
     'os.environ.get("TINVEST_TOKEN"',
     "TINVEST_TRADING_TOKEN",
     "TINVEST_TRANSFER_TOKEN",
+)
+
+UNIVERSE_RUNTIME_ROOT = Path("omni_cio/universe")
+UNIVERSE_REQUIRED_TEXT = (
+    "InstrumentStatus.INSTRUMENT_STATUS_BASE",
+    '"shares"',
+    '"bonds"',
+    '"etfs"',
+)
+UNIVERSE_FORBIDDEN_TEXT = (
+    "find_instrument",
+    "TINVEST_TRADING_TOKEN",
+    "TINVEST_SANDBOX_TOKEN",
+    "prepareRealTrade",
+    "executeRealTrade",
+    "prepareSandboxTrade",
+    "executeSandboxTrade",
 )
 
 
@@ -251,6 +276,45 @@ def scan_sandbox_execution_boundary(failures: list[str]) -> None:
             )
 
 
+def scan_universe_execution_boundary(failures: list[str]) -> None:
+    universe_root = ROOT / UNIVERSE_RUNTIME_ROOT
+    if not universe_root.is_dir():
+        fail("market universe runtime directory is missing", failures)
+        return
+
+    source_parts: list[str] = []
+    for path in sorted(universe_root.glob("*.py")):
+        try:
+            source_parts.append(path.read_text(encoding="utf-8"))
+        except OSError as exc:
+            fail(f"cannot inspect universe source {path}: {exc}", failures)
+    source = "\n".join(source_parts)
+
+    for required in UNIVERSE_REQUIRED_TEXT:
+        if required not in source:
+            fail(f"market universe source contract missing: {required}", failures)
+    for forbidden in UNIVERSE_FORBIDDEN_TEXT:
+        if forbidden in source:
+            fail(f"market universe crosses read-only boundary: {forbidden}", failures)
+
+    for path in sorted(universe_root.glob("*.py")):
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        except (OSError, SyntaxError) as exc:
+            fail(f"cannot parse universe source {path}: {exc}", failures)
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Attribute) and node.attr in {
+                "orders",
+                "stop_orders",
+                "sandbox",
+            }:
+                fail(
+                    f"market universe references forbidden broker service: {node.attr}",
+                    failures,
+                )
+
+
 def scan_retired_duplicate_scenario_publishers(failures: list[str]) -> None:
     for relative_path in RETIRED_DUPLICATE_SCENARIO_PUBLISHER_PATHS:
         if (ROOT / relative_path).exists():
@@ -303,6 +367,7 @@ def main() -> int:
 
     scan_runtime_broker_egress(failures)
     scan_sandbox_execution_boundary(failures)
+    scan_universe_execution_boundary(failures)
     scan_retired_duplicate_scenario_publishers(failures)
 
     if failures:
