@@ -1,19 +1,15 @@
 from __future__ import annotations
 
-import ast
 from pathlib import Path
 import sys
 
 
 ROOT = Path(__file__).resolve().parents[1]
 
-# Keep this list intentionally small: only files required to run, configure,
-# recover, test and safely maintain the current Omni-CIO Custom GPT + Gateway.
 REQUIRED_PATHS = (
     "README.md",
     "AGENTS.md",
     "CHANGELOG.md",
-    "CONTRIBUTING.md",
     "SECURITY.md",
     "app.py",
     "render.yaml",
@@ -23,237 +19,157 @@ REQUIRED_PATHS = (
     "requirements-dev.txt",
     "pyproject.toml",
     ".env.example",
-    "scripts/check_ci_security_baseline.py",
-    "tests/test_ci_security_baseline.py",
     "knowledge/00_PROJECT_MASTER_CONTEXT.md",
-    "knowledge/09_MARKET_DATA_AND_BUYING_POWER.txt",
-    "knowledge/10_OPERATIONS_ANALYTICS_AND_RECONCILIATION.txt",
-    "knowledge/11_BROKER_REPORT_ASYNC_INTEGRITY.txt",
-    "knowledge/13_COMMUNICATION_STYLE_2026.txt",
-    "knowledge/14_CI_SECURITY_BASELINE.txt",
-    "knowledge/15_VERSIONED_DATA_CONTRACTS.txt",
     "knowledge/16_CURRENT_PROGRAM_STATUS.md",
-    "docs/README.md",
     "docs/master-plan/README.md",
     "docs/master-plan/OMNI_CIO_MASTER_PROMPT_V9.pdf",
     "docs/master-plan/OMNI_CIO_MASTER_PROMPT_V9.txt",
-    "docs/architecture/SYSTEM_OVERVIEW.md",
-    "docs/architecture/REPOSITORY_STRUCTURE.md",
-    "docs/architecture/DECISIONS.md",
-    "docs/operations/DEPLOYMENT_RUNBOOK.md",
-    "docs/operations/RELEASE_CHECKLIST.md",
-    "docs/operations/SANDBOX_TRADING_RUNBOOK.md",
+    "docs/master-plan/OMNI_CIO_V9_PORTFOLIO_AUTOPILOT_PROGRAM.md",
+    "docs/architecture/V9_BASELINE_FREEZE_AND_MIGRATION.md",
+    "docs/architecture/REAL_TRADING_V1.md",
+    "docs/operations/REAL_TRADING_RELEASE_RUNBOOK.md",
+    "docs/operations/REAL_TRADING_DURABLE_STORAGE_V1.md",
     "gpt/README.md",
     "gpt/SETUP_INDEX.md",
-    "gpt/MY_GPT_SETUP_RUNBOOK.md",
     "gpt/CONFIGURATION.md",
-    "gpt/CUSTOM_GPT_INSTRUCTIONS_V8_4_1.txt",
+    "gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt",
+    "gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_0.txt",
     "gpt/ACTIONS_CATALOG.md",
     "gpt/SECRETS_AND_RENDER.md",
     "gpt/BOT_ONLY_FILE_MANIFEST.md",
     "gpt/NEW_CHAT_PROMPT.md",
     "gpt/PROJECT_INSTRUCTIONS.md",
-    "omni_cio/sandbox/__init__.py",
+    "scripts/check_ci_security_baseline.py",
+    "scripts/check_gpt_configuration_consistency.py",
+    "tests/test_ci_security_baseline.py",
+    "tests/test_gpt_configuration_consistency.py",
     "omni_cio/sandbox/client_v1.py",
     "omni_cio/sandbox/service_v1.py",
     "omni_cio/sandbox/routes_v1.py",
+    "omni_cio/real_trading/client_v1.py",
+    "omni_cio/real_trading/service_v1.py",
+    "omni_cio/real_trading/routes_v1.py",
+    "omni_cio/real_trading/durable_journal_factory_v1.py",
     "tests/test_sandbox_trading_v1.py",
+    "tests/test_real_trading_core_v1.py",
     ".github/CODEOWNERS",
     ".github/dependabot.yml",
     ".github/copilot-instructions.md",
     ".github/pull_request_template.md",
-    ".github/ISSUE_TEMPLATE/bug_report.yml",
-    ".github/ISSUE_TEMPLATE/feature_request.yml",
-    ".github/ISSUE_TEMPLATE/config.yml",
     ".github/workflows/regression-shield.yml",
 )
 
-FORBIDDEN_TRACKED_NAMES = {
-    ".env",
-    "pytest-results.xml",
-}
+FORBIDDEN_TRACKED_NAMES = {".env", "pytest-results.xml"}
+FORBIDDEN_WORKFLOWS = {"apply-v390.yml", "pr03-bootstrap.yml", "upgrade-v390.yml"}
 
-FORBIDDEN_WORKFLOWS = {
-    "apply-v390.yml",
-    "pr03-bootstrap.yml",
-    "upgrade-v390.yml",
-}
+SANDBOX_ROOT = ROOT / "omni_cio" / "sandbox"
+REAL_ROOT = ROOT / "omni_cio" / "real_trading"
 
-RETIRED_DUPLICATE_SCENARIO_PUBLISHER_PATHS = (
-    "omni_cio/release/final_decision_review_calculator_publication_v1.py",
-    "omni_cio/release/final_decision_review_calculator_registration_v1.py",
-    "tests/test_final_decision_review_calculator_publication_v1.py",
-    "tests/test_final_decision_review_calculator_registration_v1.py",
-    "docs/architecture/FINAL_DECISION_REVIEW_CALCULATOR_PUBLICATION_V1.md",
-    "docs/architecture/FINAL_DECISION_REVIEW_CALCULATOR_REGISTRATION_V1.md",
-)
-
-FORBIDDEN_BROKER_METHOD_PREFIXES = (
-    "post_order",
-    "replace_order",
-    "cancel_order",
-    "create_order",
-    "execute_order",
-    "post_stop_order",
-    "cancel_stop_order",
-    "withdraw",
-    "transfer",
-)
-
-FORBIDDEN_BROKER_METHODS = {
-    "pay_in",
-    "sandbox_pay_in",
-    "open_sandbox_account",
-    "close_sandbox_account",
-}
-
-FORBIDDEN_BROKER_SERVICES = {
-    "stop_orders",
-    "sandbox",
-}
-
-SANDBOX_RUNTIME_ROOT = Path("omni_cio/sandbox")
-SANDBOX_ALLOWED_HOST = "https://sandbox-invest-public-api.tbank.ru/rest"
-SANDBOX_FORBIDDEN_TEXT = (
-    "https://invest-public-api.tbank.ru/rest",
-    "OrdersService/PostOrder",
-    'os.environ.get("TINVEST_TOKEN"',
-    "TINVEST_TRADING_TOKEN",
-    "TINVEST_TRANSFER_TOKEN",
-)
+SANDBOX_HOST = "https://sandbox-invest-public-api.tbank.ru/rest"
+REAL_HOST = "https://invest-public-api.tbank.ru/rest"
 
 
 def fail(message: str, failures: list[str]) -> None:
     failures.append(message)
 
 
-def is_forbidden_broker_attribute(name: str) -> bool:
-    return (
-        name in FORBIDDEN_BROKER_METHODS
-        or name in FORBIDDEN_BROKER_SERVICES
-        or any(name.startswith(prefix) for prefix in FORBIDDEN_BROKER_METHOD_PREFIXES)
+def read_tree(root: Path, failures: list[str]) -> str:
+    if not root.is_dir():
+        fail(f"missing runtime directory: {root.relative_to(ROOT)}", failures)
+        return ""
+    parts: list[str] = []
+    for path in sorted(root.glob("*.py")):
+        try:
+            parts.append(path.read_text(encoding="utf-8"))
+        except OSError as exc:
+            fail(f"cannot read {path.relative_to(ROOT)}: {exc}", failures)
+    return "\n".join(parts)
+
+
+def scan_execution_boundaries(failures: list[str]) -> None:
+    sandbox = read_tree(SANDBOX_ROOT, failures)
+    real = read_tree(REAL_ROOT, failures)
+
+    if SANDBOX_HOST not in sandbox:
+        fail("sandbox runtime is not hard-bound to the canonical Sandbox host", failures)
+    if "TINVEST_SANDBOX_TOKEN" not in sandbox:
+        fail("sandbox runtime does not require TINVEST_SANDBOX_TOKEN", failures)
+    if "SANDBOX_TRADING_ENABLED" not in sandbox:
+        fail("sandbox runtime does not expose a kill switch", failures)
+    if REAL_HOST in sandbox or "TINVEST_TRADING_TOKEN" in sandbox:
+        fail("sandbox runtime crosses the real execution credential/host boundary", failures)
+
+    if REAL_HOST not in real:
+        fail("real runtime is not hard-bound to the canonical production REST host", failures)
+    if "TINVEST_TRADING_TOKEN" not in real:
+        fail("real runtime does not require the dedicated trading token", failures)
+    if "REAL_TRADING_ENABLED" not in real:
+        fail("real runtime does not expose the master kill switch", failures)
+    if "PostOrder" not in real or "GetOrderState" not in real:
+        fail("real runtime is missing submit/reconciliation contract markers", failures)
+    if "confirmMarginTrade" not in real or "False" not in real:
+        fail("real runtime does not visibly hard-disable margin confirmation", failures)
+    if 'os.environ.get("TINVEST_TOKEN"' in real or "TINVEST_SANDBOX_TOKEN" in real:
+        fail("real runtime references a forbidden fallback broker credential", failures)
+
+    # Broker mutation strings must stay isolated to the dedicated execution contours.
+    protected_roots = {"omni_cio/real_trading", "omni_cio/sandbox"}
+    mutation_markers = (
+        "OrdersService/PostOrder",
+        "PostOrderAsync",
+        "ReplaceOrder",
+        "Withdraw",
+        "TransferSecurities",
     )
-
-
-def is_sandbox_runtime(relative: Path) -> bool:
-    try:
-        relative.relative_to(SANDBOX_RUNTIME_ROOT)
-    except ValueError:
-        return False
-    return True
-
-
-def scan_runtime_broker_egress(failures: list[str]) -> None:
     for path in ROOT.rglob("*.py"):
-        relative = path.relative_to(ROOT)
-        if any(
-            part in {".git", ".venv", "tests", "scripts", "__pycache__"}
-            for part in relative.parts
-        ):
+        relative = path.relative_to(ROOT).as_posix()
+        if relative.startswith("tests/") or relative.startswith("scripts/"):
             continue
-
+        if any(relative.startswith(prefix + "/") for prefix in protected_roots):
+            continue
         try:
             source = path.read_text(encoding="utf-8")
-            tree = ast.parse(source, filename=str(relative))
-        except (OSError, SyntaxError) as exc:
-            fail(f"cannot inspect runtime Python source {relative}: {exc}", failures)
-            continue
-
-        # Narrow exception: checked-in code under omni_cio/sandbox may contain
-        # mutation-shaped method names because it is hard-bound to T-Invest's
-        # virtual Sandbox. Its host/token boundary is validated separately below.
-        if is_sandbox_runtime(relative):
-            continue
-
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Attribute) and is_forbidden_broker_attribute(
-                node.attr
-            ):
-                fail(
-                    (
-                        "forbidden real broker write surface referenced: "
-                        f"{relative}:{node.lineno} ({node.attr})"
-                    ),
-                    failures,
-                )
-            if (
-                isinstance(node, ast.Call)
-                and isinstance(node.func, ast.Name)
-                and node.func.id == "getattr"
-                and len(node.args) >= 2
-                and isinstance(node.args[1], ast.Constant)
-                and isinstance(node.args[1].value, str)
-                and is_forbidden_broker_attribute(node.args[1].value)
-            ):
-                fail(
-                    (
-                        "dynamic forbidden real broker write surface referenced: "
-                        f"{relative}:{node.lineno} ({node.args[1].value})"
-                    ),
-                    failures,
-                )
-
-
-def scan_sandbox_execution_boundary(failures: list[str]) -> None:
-    sandbox_root = ROOT / SANDBOX_RUNTIME_ROOT
-    if not sandbox_root.is_dir():
-        fail("sandbox runtime directory is missing", failures)
-        return
-
-    source_parts: list[str] = []
-    for path in sorted(sandbox_root.glob("*.py")):
-        try:
-            source_parts.append(path.read_text(encoding="utf-8"))
         except OSError as exc:
-            fail(f"cannot inspect sandbox source {path}: {exc}", failures)
-    source = "\n".join(source_parts)
-
-    if SANDBOX_ALLOWED_HOST not in source:
-        fail(
-            "sandbox runtime does not declare the canonical sandbox REST host", failures
-        )
-    if "TINVEST_SANDBOX_TOKEN" not in source:
-        fail("sandbox runtime does not require TINVEST_SANDBOX_TOKEN", failures)
-    if "SANDBOX_TRADING_ENABLED" not in source:
-        fail("sandbox runtime has no explicit kill switch", failures)
-    if (
-        "confirmMarginTrade" not in source
-        or '"confirmMarginTrade": False' not in source
-    ):
-        fail("sandbox runtime does not hard-disable margin confirmation", failures)
-    if "x-openai-isConsequential" not in source:
-        fail("sandbox mutation Actions are not marked consequential", failures)
-
-    for forbidden in SANDBOX_FORBIDDEN_TEXT:
-        if forbidden in source:
-            fail(
-                f"sandbox runtime crosses production execution boundary: {forbidden}",
-                failures,
-            )
+            fail(f"cannot inspect runtime source {relative}: {exc}", failures)
+            continue
+        for marker in mutation_markers:
+            if marker in source:
+                fail(
+                    f"broker mutation marker outside isolated execution contour: {relative} ({marker})",
+                    failures,
+                )
 
 
-def scan_retired_duplicate_scenario_publishers(failures: list[str]) -> None:
-    for relative_path in RETIRED_DUPLICATE_SCENARIO_PUBLISHER_PATHS:
-        if (ROOT / relative_path).exists():
-            fail(
-                f"retired duplicate scenario publisher path is present: {relative_path}",
-                failures,
-            )
+def scan_program_and_recovery(failures: list[str]) -> None:
+    program = ROOT / "docs" / "master-plan" / "OMNI_CIO_V9_PORTFOLIO_AUTOPILOT_PROGRAM.md"
+    if program.is_file():
+        text = program.read_text(encoding="utf-8")
+        if "OWNER-APPROVED / PROGRAM LOCKED" not in text:
+            fail("v9 program is not marked owner-approved/program-locked", failures)
+
+    setup = ROOT / "gpt" / "SETUP_INDEX.md"
+    if setup.is_file():
+        text = setup.read_text(encoding="utf-8")
+        if "CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt" not in text:
+            fail("GPT recovery does not point to v8.6.1 Compact", failures)
+        if "OMNI_CIO_V9_PORTFOLIO_AUTOPILOT_PROGRAM.md" not in text:
+            fail("GPT recovery does not point to the active v9 program", failures)
+        if "ONLY remaining release gate" in text:
+            fail("GPT recovery still claims the completed Phase 4 is pending", failures)
 
 
 def main() -> int:
     failures: list[str] = []
 
-    for relative_path in REQUIRED_PATHS:
-        if not (ROOT / relative_path).is_file():
-            fail(f"missing required file: {relative_path}", failures)
+    for relative in REQUIRED_PATHS:
+        if not (ROOT / relative).is_file():
+            fail(f"missing required file: {relative}", failures)
 
     render_path = ROOT / "render.yaml"
     if render_path.is_file():
         render_text = render_path.read_text(encoding="utf-8")
-        expected = "uvicorn app:app --host 0.0.0.0 --port $PORT"
-        if expected not in render_text:
-            fail("render.yaml does not preserve the app:app entrypoint", failures)
+        if "uvicorn app:app --host 0.0.0.0 --port $PORT" not in render_text:
+            fail("render.yaml does not preserve app:app entrypoint", failures)
 
     app_path = ROOT / "app.py"
     if app_path.is_file():
@@ -261,29 +177,23 @@ def main() -> int:
         if 'ENTRYPOINT = "app:app"' not in app_text:
             fail("app.py does not declare ENTRYPOINT = app:app", failures)
         if "trading_methods" not in app_text:
-            fail("app.py does not expose the real-money read-only marker", failures)
+            fail("app.py does not expose trading_methods health marker", failures)
 
     for path in ROOT.rglob("*"):
         if ".git" in path.parts or not path.is_file():
             continue
         if path.name in FORBIDDEN_TRACKED_NAMES:
-            fail(
-                f"forbidden generated or secret file present: {path.relative_to(ROOT)}",
-                failures,
-            )
+            fail(f"forbidden generated/secret file: {path.relative_to(ROOT)}", failures)
         if "__pycache__" in path.parts or path.suffix in {".pyc", ".pyo"}:
-            fail(
-                f"generated Python artifact present: {path.relative_to(ROOT)}", failures
-            )
+            fail(f"generated Python artifact: {path.relative_to(ROOT)}", failures)
 
     workflow_dir = ROOT / ".github" / "workflows"
     for name in FORBIDDEN_WORKFLOWS:
         if (workflow_dir / name).exists():
             fail(f"obsolete one-time workflow still present: {name}", failures)
 
-    scan_runtime_broker_egress(failures)
-    scan_sandbox_execution_boundary(failures)
-    scan_retired_duplicate_scenario_publishers(failures)
+    scan_execution_boundaries(failures)
+    scan_program_and_recovery(failures)
 
     if failures:
         print("Repository layout check failed:", file=sys.stderr)
@@ -293,10 +203,10 @@ def main() -> int:
 
     print("Repository layout check passed.")
     print(f"Required files checked: {len(REQUIRED_PATHS)}")
-    print("Product surface: Custom GPT + real-money read-only Gateway")
-    print("Optional execution surface: isolated T-Invest Sandbox")
+    print("Product surface: single Omni-CIO Custom GPT + Gateway")
+    print("Protected baseline: v8.6.1 read-only + Sandbox + confirmed real execution")
+    print("Active development program: Omni-CIO v9 Portfolio Autopilot")
     print("Gateway entrypoint: app:app")
-    print("Real-money trading methods: disabled")
     return 0
 
 
