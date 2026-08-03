@@ -9,10 +9,12 @@ from omni_cio.contracts.v1.investment_policy import (
     InvestmentPolicyAssessmentV1,
     InvestmentPolicyStatementV1,
     PolicyField,
+    PolicyFieldProvenanceV1,
     PolicyLifecycle,
     PolicyReadinessBlocker,
     PolicyReadinessStatus,
     PolicyReferenceV1,
+    PolicySourceKind,
     TaxConstraintStatus,
 )
 from omni_cio.contracts.v1.portfolio import InstrumentType
@@ -34,10 +36,6 @@ _BASE_REQUIRED_FIELDS: tuple[PolicyField, ...] = (
     PolicyField.TAX_STATUS,
     PolicyField.ACCOUNT_TYPE,
     PolicyField.REBALANCE_BAND,
-)
-
-_OWNER_CONFIRMATION_FIELDS = frozenset(
-    field for field in _BASE_REQUIRED_FIELDS if field is not PolicyField.ACCOUNT_TYPE
 )
 
 
@@ -89,6 +87,10 @@ def _required_fields(policy: InvestmentPolicyStatementV1) -> tuple[PolicyField, 
     fields = list(_BASE_REQUIRED_FIELDS)
     if InstrumentType.BOND in policy.allowed_instrument_types:
         fields.append(PolicyField.MINIMUM_CREDIT_QUALITY)
+    if policy.prohibited_markets:
+        fields.append(PolicyField.PROHIBITED_MARKETS)
+    if policy.prohibited_instrument_types:
+        fields.append(PolicyField.PROHIBITED_INSTRUMENT_TYPES)
     return tuple(fields)
 
 
@@ -109,8 +111,10 @@ def _field_is_present(policy: InvestmentPolicyStatementV1, field: PolicyField) -
             and policy.credit_rating_scale is not None
         ),
         PolicyField.ALLOWED_MARKETS: bool(policy.allowed_markets),
-        PolicyField.ALLOWED_INSTRUMENT_TYPES: bool(
-            policy.allowed_instrument_types
+        PolicyField.PROHIBITED_MARKETS: bool(policy.prohibited_markets),
+        PolicyField.ALLOWED_INSTRUMENT_TYPES: bool(policy.allowed_instrument_types),
+        PolicyField.PROHIBITED_INSTRUMENT_TYPES: bool(
+            policy.prohibited_instrument_types
         ),
         PolicyField.TAX_STATUS: (
             policy.tax_constraint_status is not TaxConstraintStatus.UNKNOWN
@@ -121,6 +125,27 @@ def _field_is_present(policy: InvestmentPolicyStatementV1, field: PolicyField) -
         PolicyField.REBALANCE_BAND: policy.rebalance_band_weight is not None,
     }
     return checks[field]
+
+
+def _provenance_source_is_acceptable(
+    field: PolicyField,
+    row: PolicyFieldProvenanceV1,
+) -> bool:
+    if field is PolicyField.ACCOUNT_TYPE:
+        return row.source_kind in (
+            PolicySourceKind.OWNER_INPUT,
+            PolicySourceKind.VERIFIED_ACCOUNT_DATA,
+        )
+    return row.source_kind is PolicySourceKind.OWNER_INPUT
+
+
+def _owner_confirmation_is_required(
+    field: PolicyField,
+    row: PolicyFieldProvenanceV1,
+) -> bool:
+    if field is PolicyField.ACCOUNT_TYPE:
+        return row.source_kind is PolicySourceKind.OWNER_INPUT
+    return True
 
 
 def _append_unique[T](target: list[T], value: T) -> None:
@@ -147,16 +172,20 @@ def assess_investment_policy(
         for field in required
         if field not in missing_fields and field not in provenance_by_field
     )
-
-    owner_confirmation_fields = set(_OWNER_CONFIRMATION_FIELDS)
-    if PolicyField.MINIMUM_CREDIT_QUALITY in required:
-        owner_confirmation_fields.add(PolicyField.MINIMUM_CREDIT_QUALITY)
+    invalid_provenance = tuple(
+        field
+        for field in required
+        if field not in missing_fields
+        and field not in missing_provenance
+        and not _provenance_source_is_acceptable(field, provenance_by_field[field])
+    )
     unconfirmed_owner_fields = tuple(
         field
         for field in required
         if field not in missing_fields
         and field not in missing_provenance
-        and field in owner_confirmation_fields
+        and field not in invalid_provenance
+        and _owner_confirmation_is_required(field, provenance_by_field[field])
         and not provenance_by_field[field].owner_confirmed
     )
 
@@ -174,6 +203,8 @@ def assess_investment_policy(
         _append_unique(blockers, PolicyReadinessBlocker.MISSING_REQUIRED_FIELD)
     if missing_provenance:
         _append_unique(blockers, PolicyReadinessBlocker.MISSING_PROVENANCE)
+    if invalid_provenance:
+        _append_unique(blockers, PolicyReadinessBlocker.INVALID_PROVENANCE)
     if unconfirmed_owner_fields:
         _append_unique(blockers, PolicyReadinessBlocker.OWNER_CONFIRMATION_REQUIRED)
 
@@ -195,6 +226,7 @@ def assess_investment_policy(
         ready_for_personal_sizing=not blockers,
         missing_fields=missing_fields,
         missing_provenance=missing_provenance,
+        invalid_provenance=invalid_provenance,
         unconfirmed_owner_fields=unconfirmed_owner_fields,
         blockers=tuple(blockers),
         annual_review_required=now >= policy.review_due_at,
