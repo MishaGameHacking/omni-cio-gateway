@@ -263,6 +263,16 @@ def test_real_status_exact_action_is_read_only() -> None:
     assert route.execution_authorized is False
 
 
+def test_action_name_mentioned_conversationally_is_not_invoked() -> None:
+    route = route_user_intent("Что делает getPortfolioSnapshot?")
+
+    assert route.primary_intent is CioIntent.UNKNOWN
+    assert route.exact_actions == ()
+    assert route.exact_action_scope_locked is False
+    assert route.clarification_required is True
+    assert route.execution_authorized is False
+
+
 def test_gateway_and_connection_diagnostics_are_distinct() -> None:
     gateway = route_user_intent("Проверь шлюз")
     connection = route_user_intent("Проверь подключение к T-Invest")
@@ -282,10 +292,21 @@ def test_compound_request_has_deterministic_primary_and_secondary_intent() -> No
     assert route.secondary_intents == (CioIntent.RISK,)
 
 
-def test_normalization_handles_case_and_yo() -> None:
-    route = route_user_intent("  ПРОВЕРЬ   РИСКИ   ПОРТФЁЛЯ!!! ")
+@pytest.mark.parametrize(
+    ("text", "intent"),
+    (
+        ("ПРОВЕРЬ РИСКИ ПОРТФЁЛЯ!!!", CioIntent.RISK),
+        ("Проанализируй партфель", CioIntent.ANALYSIS),
+        ("Управляй партфелем", CioIntent.PORTFOLIO_MANAGEMENT),
+    ),
+)
+def test_normalization_handles_case_yo_and_common_portfolio_typos(
+    text: str,
+    intent: CioIntent,
+) -> None:
+    route = route_user_intent(text)
 
-    assert route.primary_intent is CioIntent.RISK
+    assert route.primary_intent is intent
 
 
 def test_unknown_or_empty_input_requests_clarification() -> None:
