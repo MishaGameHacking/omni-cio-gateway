@@ -31,6 +31,7 @@ files = [
   "omni_cio/news",
   "omni_cio/decision",
   "omni_cio/router",
+  "omni_cio/policy",
   "omni_cio/rebalancing",
   "omni_cio/pretrade",
   "omni_cio/paper",
