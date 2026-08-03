@@ -32,6 +32,7 @@ REQUIRED_WORKFLOW_COMMANDS = {
     "lock consistency": "python -m piptools compile",
     "Windows lock verification": "python scripts/windows_ci_lock.py verify",
     "CI policy self-check": "python scripts/check_ci_security_baseline.py",
+    "canonical production/program consistency": "python scripts/check_canonical_config_consistency.py",
     "lint": "python -m ruff check .",
     "formatting": "python -m ruff format --check",
     "type checking": "python -m mypy",
@@ -92,13 +93,10 @@ def validate_lock_file(path: Path, failures: list[str]) -> None:
     for block in blocks:
         requirement = block.split("\\", maxsplit=1)[0].strip()
         if "==" not in requirement:
-            failures.append(
-                f"unpinned requirement in {display_path(path)}: {requirement}"
-            )
+            failures.append(f"unpinned requirement in {display_path(path)}: {requirement}")
         if "--hash=sha256:" not in block:
             failures.append(
-                f"requirement without SHA-256 hash in {display_path(path)}: "
-                f"{requirement}"
+                f"requirement without SHA-256 hash in {display_path(path)}: {requirement}"
             )
 
 
@@ -111,15 +109,13 @@ def validate_action_pins(workflow_text: str, failures: list[str]) -> None:
         if value.startswith("./"):
             continue
         if "@" not in value:
-            failures.append(
-                f"Action without ref at {WORKFLOW_PATH.name}:{line_number}: {value}"
-            )
+            failures.append(f"Action without ref at {WORKFLOW_PATH.name}:{line_number}: {value}")
             continue
         ref = value.rsplit("@", maxsplit=1)[1]
         if not FULL_SHA.fullmatch(ref):
             failures.append(
-                f"Action is not pinned to a full commit SHA at "
-                f"{WORKFLOW_PATH.name}:{line_number}: {value}"
+                f"Action is not pinned to a full commit SHA at {WORKFLOW_PATH.name}:"
+                f"{line_number}: {value}"
             )
 
 
@@ -138,9 +134,7 @@ def validate_workflow(failures: list[str]) -> None:
     if "contents: read" not in text:
         failures.append("workflow permissions must retain contents: read")
     if SELF_HOSTED_RUNNER_LABELS not in text:
-        failures.append(
-            "Regression Shield must target the dedicated self-hosted Windows runner"
-        )
+        failures.append("Regression Shield must target the dedicated self-hosted Windows runner")
     if text.count(SAME_REPOSITORY_GUARD) < 2:
         failures.append("every self-hosted job must reject fork pull requests")
     if text.count("persist-credentials: false") < 2:
@@ -148,21 +142,13 @@ def validate_workflow(failures: list[str]) -> None:
     if "scripts\\bootstrap_windows_ci_python.cmd" not in text:
         failures.append("Regression Shield must bootstrap the verified Python runtime")
     if "python -m venv .venv-ci" in text:
-        failures.append(
-            "CI virtual environments must be created outside the repository checkout"
-        )
+        failures.append("CI virtual environments must be created outside the repository checkout")
     if text.count(EXTERNAL_VENV_ROOT_COMMAND) < 2:
-        failures.append(
-            "every self-hosted job must create its virtual environment in RUNNER_TEMP"
-        )
+        failures.append("every self-hosted job must create its virtual environment in RUNNER_TEMP")
     if text.count(EXTERNAL_VENV_EXPORT_COMMAND) < 2:
-        failures.append(
-            "every self-hosted job must export its external virtual environment"
-        )
+        failures.append("every self-hosted job must export its external virtual environment")
     if text.count('rm -rf "$VENV_PATH"') < 4:
-        failures.append(
-            "every self-hosted job must reset and clean its external virtual environment"
-        )
+        failures.append("every self-hosted job must reset and clean its external virtual environment")
 
 
 def validate_render_contract(failures: list[str]) -> None:
@@ -170,7 +156,6 @@ def validate_render_contract(failures: list[str]) -> None:
     if not path.is_file():
         failures.append("missing render.yaml")
         return
-
     text = path.read_text(encoding="utf-8")
     if "pip install --require-hashes -r requirements.txt" not in text:
         failures.append("Render must install the hash-locked runtime dependencies")
@@ -178,15 +163,11 @@ def validate_render_contract(failures: list[str]) -> None:
         failures.append("Render must preserve the app:app entrypoint")
 
 
-def validate_detect_secrets_report(
-    report: dict[str, Any],
-    failures: list[str],
-) -> None:
+def validate_detect_secrets_report(report: dict[str, Any], failures: list[str]) -> None:
     results = report.get("results")
     if not isinstance(results, dict):
         failures.append("detect-secrets output does not contain a results object")
         return
-
     for filename, findings in results.items():
         if not isinstance(findings, list):
             failures.append(f"invalid detect-secrets findings for {filename}")
@@ -197,19 +178,15 @@ def validate_detect_secrets_report(
                 continue
             line_number = finding.get("line_number", "unknown")
             finding_type = finding.get("type", "unknown")
-            failures.append(
-                f"potential secret: {filename}:{line_number} ({finding_type})"
-            )
+            failures.append(f"potential secret: {filename}:{line_number} ({finding_type})")
 
 
 def validate_repository_baseline() -> list[str]:
     failures: list[str] = []
-
     for path in LOCK_PATHS:
         validate_lock_file(path, failures)
     validate_workflow(failures)
     validate_render_contract(failures)
-
     bootstrap = ROOT / ".github" / "workflows" / "pr03-bootstrap.yml"
     if bootstrap.exists():
         failures.append("temporary PR-03 bootstrap workflow must not be committed")
@@ -255,6 +232,7 @@ def main() -> int:
         print("GitHub Actions: pinned to full commit SHAs")
         print("Self-hosted PR isolation: same-repository only")
         print("Render entrypoint: app:app")
+        print("Canonical v8.6.1/v9 program consistency gate: required")
     return 0
 
 
