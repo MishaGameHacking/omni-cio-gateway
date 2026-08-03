@@ -1,4 +1,4 @@
-# Permanent read-only quality and security checks for Omni-CIO Gateway.
+# Permanent quality and security checks for Omni-CIO Gateway.
 name: Regression Shield
 
 on:
@@ -88,6 +88,9 @@ jobs:
       - name: Verify repository structure
         run: python scripts/check_repository_layout.py
 
+      - name: Verify canonical production fallback and v9 program lock
+        run: python scripts/check_canonical_config_consistency.py
+
       - name: Compile gateway sources
         run: >-
           python -m compileall -q app.py app_v371.py app_v360.py main.py
@@ -101,7 +104,7 @@ jobs:
       - name: Check formatting baseline
         run: >-
           python -m ruff format --check
-          scripts tests/test_ci_security_baseline.py
+          scripts tests/test_ci_security_baseline.py tests/test_canonical_config_consistency.py
 
       - name: Type-check baseline
         run: |
@@ -134,7 +137,7 @@ jobs:
           assert "final_decision_review" in app.base.CAPABILITIES
           assert "regression_shield" in app.base.CAPABILITIES
           print("Gateway entrypoint:", app.app.version)
-          print("Trading methods:", health["trading_methods"])
+          print("Trading methods in CI-safe env:", health["trading_methods"])
           PY
 
       - name: Verify read-only GPT Actions release contract
