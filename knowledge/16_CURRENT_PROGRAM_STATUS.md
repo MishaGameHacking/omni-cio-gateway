@@ -40,17 +40,30 @@ Protected baseline/migration contract:
 
 Development must follow WP0 → WP15 and must not replace or weaken stable v8.6.1 before the relevant package exit gate and acceptance are complete.
 
-### Current package
+### Package progress
 
-**WP0 — Baseline freeze and recovery correctness: IN PROGRESS.**
+**WP0 — Baseline freeze and recovery correctness: COMPLETE.**
 
-Current WP0 work:
+- protected v8.6.1 release commit pinned;
+- canonical GPT recovery/config sources reconciled;
+- v9 program/next-WP discipline enforced in `AGENTS.md`;
+- recovery/version/Knowledge consistency gate added;
+- repository-layout guard aligned with read-only + Sandbox + confirmed Real v1;
+- exact-head Regression Shield #989 passed quality/contracts/coverage and dependency/SAST/secret security;
+- PR #181 squash-merged to `main`.
 
-- protected v8.6.1 release commit documented;
-- canonical v9 program already locked;
-- GPT recovery/version consistency checker introduced;
-- recovery documentation drift is being reconciled;
-- Regression Shield integration/green exact-head evidence remains required before WP0 is closed.
+**WP1 — Natural Language CIO Router: IN PROGRESS.**
+
+Current WP1 work:
+
+- versioned intent taxonomy implemented in `omni_cio/orchestration/intent_router_v1.py`;
+- natural Russian normalization and narrow typo handling implemented;
+- exact-action diagnostics retain absolute isolation priority;
+- natural buy/sell language produces safe plan/preflight/owner-gate descriptors rather than broker-write Actions;
+- future capabilities are represented as internal steps with explicit WP dependencies, not invented operationIds;
+- architecture/threat contract added at `docs/architecture/V9_NATURAL_LANGUAGE_CIO_ROUTER_V1.md`;
+- Russian acceptance suite added at `tests/test_intent_router_v1.py`;
+- exact-head Regression Shield and squash merge remain required before WP1 can close.
 
 No user-facing v9 configuration is active yet.
 
