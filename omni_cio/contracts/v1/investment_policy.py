@@ -66,7 +66,9 @@ class PolicyField(StrEnum):
     MAX_CURRENCY_WEIGHT = "max_currency_weight"
     MINIMUM_CREDIT_QUALITY = "minimum_credit_quality"
     ALLOWED_MARKETS = "allowed_markets"
+    PROHIBITED_MARKETS = "prohibited_markets"
     ALLOWED_INSTRUMENT_TYPES = "allowed_instrument_types"
+    PROHIBITED_INSTRUMENT_TYPES = "prohibited_instrument_types"
     TAX_STATUS = "tax_status"
     ACCOUNT_TYPE = "account_type"
     REBALANCE_BAND = "rebalance_band"
@@ -101,6 +103,12 @@ class PolicyFieldProvenanceV1(ContractModel):
         if compact.isdigit() and len(compact) >= 10:
             raise ValueError("source_id must not contain a full account identifier")
         return value
+
+    @model_validator(mode="after")
+    def validate_owner_confirmation_source(self) -> PolicyFieldProvenanceV1:
+        if self.owner_confirmed and self.source_kind is not PolicySourceKind.OWNER_INPUT:
+            raise ValueError("non-owner provenance cannot assert owner confirmation")
+        return self
 
 
 class LiquidityReserveV1(ContractModel):
@@ -145,6 +153,7 @@ class InvestmentPolicyStatementV1(ContractModel):
     credit_rating_scale: Annotated[str | None, Field(max_length=32)] = None
 
     allowed_markets: tuple[MarketCode, ...] = ()
+    prohibited_markets: tuple[MarketCode, ...] = ()
     allowed_instrument_types: tuple[InstrumentType, ...] = ()
     prohibited_instrument_types: tuple[InstrumentType, ...] = ()
 
@@ -172,13 +181,13 @@ class InvestmentPolicyStatementV1(ContractModel):
     def normalize_currency(cls, value: object) -> object:
         return value.upper() if isinstance(value, str) else value
 
-    @field_validator("allowed_markets", mode="before")
+    @field_validator("allowed_markets", "prohibited_markets", mode="before")
     @classmethod
     def normalize_markets(cls, value: object) -> object:
         if value is None:
             return ()
         if isinstance(value, (str, bytes)) or not isinstance(value, Iterable):
-            raise ValueError("allowed_markets must be a collection of market codes")
+            raise ValueError("markets must be a collection of market codes")
         return tuple(sorted({str(item).strip().upper() for item in value}))
 
     @field_validator("allowed_instrument_types", "prohibited_instrument_types", mode="before")
@@ -202,6 +211,8 @@ class InvestmentPolicyStatementV1(ContractModel):
             raise ValueError("first IPS version cannot supersede another version")
         if self.supersedes_version is not None and int(self.supersedes_version) >= int(self.version):
             raise ValueError("supersedes_version must be older than version")
+        if set(self.allowed_markets) & set(self.prohibited_markets):
+            raise ValueError("market cannot be both allowed and prohibited")
         if set(self.allowed_instrument_types) & set(self.prohibited_instrument_types):
             raise ValueError("instrument type cannot be both allowed and prohibited")
         if (
@@ -251,6 +262,7 @@ class PolicyReadinessBlocker(StrEnum):
     POLICY_SUPERSEDED = "policy_superseded"
     MISSING_REQUIRED_FIELD = "missing_required_field"
     MISSING_PROVENANCE = "missing_provenance"
+    INVALID_PROVENANCE = "invalid_provenance"
     OWNER_CONFIRMATION_REQUIRED = "owner_confirmation_required"
 
 
@@ -261,6 +273,7 @@ class InvestmentPolicyAssessmentV1(ContractModel):
     ready_for_personal_sizing: bool
     missing_fields: tuple[PolicyField, ...] = ()
     missing_provenance: tuple[PolicyField, ...] = ()
+    invalid_provenance: tuple[PolicyField, ...] = ()
     unconfirmed_owner_fields: tuple[PolicyField, ...] = ()
     blockers: tuple[PolicyReadinessBlocker, ...] = ()
     annual_review_required: bool
