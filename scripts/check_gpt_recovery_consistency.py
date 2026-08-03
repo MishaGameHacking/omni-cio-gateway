@@ -46,6 +46,7 @@ IDENTITY_DOCS = (
 )
 
 STATUS_DOCS = (
+    "AGENTS.md",
     "README.md",
     "knowledge/00_PROJECT_MASTER_CONTEXT.md",
     "knowledge/16_CURRENT_PROGRAM_STATUS.md",
@@ -138,6 +139,12 @@ def check_program_lock() -> None:
     require(contract, BASELINE_COMMIT, BASELINE_CONTRACT)
     require(contract, INSTRUCTIONS_PATH, BASELINE_CONTRACT)
     require(contract, PROGRAM_PATH, BASELINE_CONTRACT)
+
+    agent_rules = read("AGENTS.md")
+    require(agent_rules, PROGRAM_PATH, "AGENTS.md")
+    require(agent_rules, BASELINE_CONTRACT, "AGENTS.md")
+    require(agent_rules, BASELINE_COMMIT, "AGENTS.md")
+    require(agent_rules, "самый ранний незавершённый work package", "AGENTS.md")
 
 
 def check_action_registry() -> None:
