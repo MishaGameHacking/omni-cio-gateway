@@ -8,6 +8,7 @@ from typing import Any, Protocol
 
 from t_tech.invest import Client
 
+from omni_cio.contracts.v1.market import SourceAuthority
 from omni_cio.contracts.v1.research_evidence import (
     EvidenceCoverageProbeV1,
     EvidenceFactType,
@@ -53,6 +54,7 @@ _FUNDAMENTAL_FIELDS = (
     "roic",
     "dividend_yield_daily_ttm",
 )
+_TINVEST_PROVIDER_NAMES = {"t-invest", "t-bank", "tbank"}
 
 
 class TInvestResearchAdapterError(RuntimeError):
@@ -113,7 +115,7 @@ def _source(method: str, retrieved_at: datetime) -> ResearchSourceV1:
     return ResearchSourceV1(
         provider="T-Invest",
         source_class=EvidenceSourceClass.BROKER,
-        authority="primary",
+        authority=SourceAuthority.PRIMARY,
         source_id=method,
         retrieved_at=retrieved_at,
     )
@@ -128,10 +130,9 @@ def _fundamental_records(
     source = _source("GetAssetFundamentals", retrieved_at)
     records: list[EvidenceRecordV1] = []
     for row in rows:
-        if target.asset_uid is not None:
-            row_asset_uid = str(getattr(row, "asset_uid", "") or "")
-            if row_asset_uid and row_asset_uid != target.asset_uid:
-                continue
+        row_asset_uid = str(getattr(row, "asset_uid", "") or "")
+        if target.asset_uid is None or row_asset_uid != target.asset_uid:
+            continue
         currency = str(getattr(row, "currency", "") or "").upper()
         for field in _FUNDAMENTAL_FIELDS:
             canonical = _decimal_text(getattr(row, field, None))
@@ -149,14 +150,16 @@ def _fundamental_records(
                     fact_key=f"fundamental.{field}",
                     value=EvidenceValueV1(
                         value_type=(
-                            EvidenceValueType.MONEY if money else EvidenceValueType.DECIMAL
+                            EvidenceValueType.MONEY
+                            if money
+                            else EvidenceValueType.DECIMAL
                         ),
                         canonical_value=canonical,
                         currency=currency if money else None,
                     ),
                     source=source,
                     use=EvidenceUse.DECISION_GRADE,
-                    source_record_id=f"{target.asset_uid or target.instrument_uid}:{field}",
+                    source_record_id=f"{target.asset_uid}:{field}",
                     material=True,
                 )
             )
@@ -175,6 +178,7 @@ def _report_records(
         report_date = _timestamp(getattr(row, "report_date", None))
         if report_date is None:
             continue
+        created_at = _timestamp(getattr(row, "created_at", None))
         year = int(getattr(row, "period_year", 0) or 0)
         number = int(getattr(row, "period_num", 0) or 0)
         period_type = _enum_text(getattr(row, "period_type", None))
@@ -191,7 +195,7 @@ def _report_records(
                 source=source,
                 use=EvidenceUse.DECISION_GRADE,
                 source_record_id=source_record_id,
-                published_at=report_date,
+                published_at=created_at or report_date,
                 effective_at=report_date,
                 material=True,
             )
@@ -275,6 +279,12 @@ def _bond_event_records(
     return tuple(records)
 
 
+def _tinvest_asset_identity_ready(target: ResearchTargetV1) -> bool:
+    if target.asset_uid is None or target.asset_uid_source is None:
+        return False
+    return target.asset_uid_source.provider.strip().casefold() in _TINVEST_PROVIDER_NAMES
+
+
 class TInvestResearchAdapterV1:
     """Read-only normalization of structured T-Invest research surfaces."""
 
@@ -304,7 +314,7 @@ class TInvestResearchAdapterV1:
         probes: list[EvidenceCoverageProbeV1] = []
 
         with self._client_factory(self._token) as client:
-            if target.asset_uid:
+            if _tinvest_asset_identity_ready(target):
                 try:
                     response = client.instruments.get_asset_fundamentals(
                         assets=[target.asset_uid]
@@ -338,6 +348,11 @@ class TInvestResearchAdapterV1:
                         )
                     )
             else:
+                error = (
+                    "asset_uid_missing"
+                    if target.asset_uid is None
+                    else "asset_uid_source_not_tinvest"
+                )
                 probes.append(
                     EvidenceCoverageProbeV1(
                         instrument_uid=target.instrument_uid,
@@ -345,7 +360,7 @@ class TInvestResearchAdapterV1:
                         source_class=EvidenceSourceClass.BROKER,
                         checked_at=now,
                         success=False,
-                        source_error="asset_uid_missing",
+                        source_error=error,
                     )
                 )
 
@@ -399,7 +414,7 @@ class TInvestResearchAdapterV1:
                         )
                     )
 
-            if target.instrument_type.value == "bond":
+            if target.instrument_type is InstrumentType.BOND:
                 try:
                     response = client.instruments.get_bond_events(
                         instrument_id=target.instrument_uid,
