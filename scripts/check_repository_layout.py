@@ -7,8 +7,8 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 
-# Keep this list intentionally small: only files required to run, configure,
-# recover, test and safely maintain the current Omni-CIO Custom GPT + Gateway.
+# Files required to run, configure, recover, test and safely maintain the
+# current Omni-CIO product plus the active owner-approved v9 roadmap.
 REQUIRED_PATHS = (
     "README.md",
     "AGENTS.md",
@@ -24,7 +24,9 @@ REQUIRED_PATHS = (
     "pyproject.toml",
     ".env.example",
     "scripts/check_ci_security_baseline.py",
+    "scripts/check_canonical_config_consistency.py",
     "tests/test_ci_security_baseline.py",
+    "tests/test_canonical_config_consistency.py",
     "knowledge/00_PROJECT_MASTER_CONTEXT.md",
     "knowledge/09_MARKET_DATA_AND_BUYING_POWER.txt",
     "knowledge/10_OPERATIONS_ANALYTICS_AND_RECONCILIATION.txt",
@@ -37,17 +39,21 @@ REQUIRED_PATHS = (
     "docs/master-plan/README.md",
     "docs/master-plan/OMNI_CIO_MASTER_PROMPT_V9.pdf",
     "docs/master-plan/OMNI_CIO_MASTER_PROMPT_V9.txt",
+    "docs/master-plan/OMNI_CIO_V9_PORTFOLIO_AUTOPILOT_PROGRAM.md",
+    "docs/architecture/V9_RESEARCH_AND_ENGINEERING_PRINCIPLES.md",
     "docs/architecture/SYSTEM_OVERVIEW.md",
     "docs/architecture/REPOSITORY_STRUCTURE.md",
     "docs/architecture/DECISIONS.md",
     "docs/operations/DEPLOYMENT_RUNBOOK.md",
     "docs/operations/RELEASE_CHECKLIST.md",
     "docs/operations/SANDBOX_TRADING_RUNBOOK.md",
+    "docs/operations/REAL_TRADING_RELEASE_RUNBOOK.md",
     "gpt/README.md",
     "gpt/SETUP_INDEX.md",
     "gpt/MY_GPT_SETUP_RUNBOOK.md",
     "gpt/CONFIGURATION.md",
-    "gpt/CUSTOM_GPT_INSTRUCTIONS_V8_4_1.txt",
+    "gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt",
+    "gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_0.txt",
     "gpt/ACTIONS_CATALOG.md",
     "gpt/SECRETS_AND_RENDER.md",
     "gpt/BOT_ONLY_FILE_MANIFEST.md",
@@ -57,6 +63,7 @@ REQUIRED_PATHS = (
     "omni_cio/sandbox/client_v1.py",
     "omni_cio/sandbox/service_v1.py",
     "omni_cio/sandbox/routes_v1.py",
+    "omni_cio/real_trading/__init__.py",
     "tests/test_sandbox_trading_v1.py",
     ".github/CODEOWNERS",
     ".github/dependabot.yml",
@@ -68,16 +75,8 @@ REQUIRED_PATHS = (
     ".github/workflows/regression-shield.yml",
 )
 
-FORBIDDEN_TRACKED_NAMES = {
-    ".env",
-    "pytest-results.xml",
-}
-
-FORBIDDEN_WORKFLOWS = {
-    "apply-v390.yml",
-    "pr03-bootstrap.yml",
-    "upgrade-v390.yml",
-}
+FORBIDDEN_TRACKED_NAMES = {".env", "pytest-results.xml"}
+FORBIDDEN_WORKFLOWS = {"apply-v390.yml", "pr03-bootstrap.yml", "upgrade-v390.yml"}
 
 RETIRED_DUPLICATE_SCENARIO_PUBLISHER_PATHS = (
     "omni_cio/release/final_decision_review_calculator_publication_v1.py",
@@ -99,18 +98,13 @@ FORBIDDEN_BROKER_METHOD_PREFIXES = (
     "withdraw",
     "transfer",
 )
-
 FORBIDDEN_BROKER_METHODS = {
     "pay_in",
     "sandbox_pay_in",
     "open_sandbox_account",
     "close_sandbox_account",
 }
-
-FORBIDDEN_BROKER_SERVICES = {
-    "stop_orders",
-    "sandbox",
-}
+FORBIDDEN_BROKER_SERVICES = {"stop_orders", "sandbox"}
 
 SANDBOX_RUNTIME_ROOT = Path("omni_cio/sandbox")
 SANDBOX_ALLOWED_HOST = "https://sandbox-invest-public-api.tbank.ru/rest"
@@ -159,21 +153,20 @@ def scan_runtime_broker_egress(failures: list[str]) -> None:
             fail(f"cannot inspect runtime Python source {relative}: {exc}", failures)
             continue
 
-        # Narrow exception: checked-in code under omni_cio/sandbox may contain
-        # mutation-shaped method names because it is hard-bound to T-Invest's
-        # virtual Sandbox. Its host/token boundary is validated separately below.
-        if is_sandbox_runtime(relative):
+        # Existing Sandbox is separately boundary-checked. Current real execution
+        # is reviewed by its dedicated real-trading regression suite and feature
+        # flags; this legacy scan is for accidental writes outside those packages.
+        if is_sandbox_runtime(relative) or relative.parts[:2] == (
+            "omni_cio",
+            "real_trading",
+        ):
             continue
 
         for node in ast.walk(tree):
-            if isinstance(node, ast.Attribute) and is_forbidden_broker_attribute(
-                node.attr
-            ):
+            if isinstance(node, ast.Attribute) and is_forbidden_broker_attribute(node.attr):
                 fail(
-                    (
-                        "forbidden real broker write surface referenced: "
-                        f"{relative}:{node.lineno} ({node.attr})"
-                    ),
+                    f"forbidden broker write surface referenced outside execution packages: "
+                    f"{relative}:{node.lineno} ({node.attr})",
                     failures,
                 )
             if (
@@ -186,10 +179,8 @@ def scan_runtime_broker_egress(failures: list[str]) -> None:
                 and is_forbidden_broker_attribute(node.args[1].value)
             ):
                 fail(
-                    (
-                        "dynamic forbidden real broker write surface referenced: "
-                        f"{relative}:{node.lineno} ({node.args[1].value})"
-                    ),
+                    f"dynamic forbidden broker write surface referenced outside execution packages: "
+                    f"{relative}:{node.lineno} ({node.args[1].value})",
                     failures,
                 )
 
@@ -209,36 +200,25 @@ def scan_sandbox_execution_boundary(failures: list[str]) -> None:
     source = "\n".join(source_parts)
 
     if SANDBOX_ALLOWED_HOST not in source:
-        fail(
-            "sandbox runtime does not declare the canonical sandbox REST host", failures
-        )
+        fail("sandbox runtime does not declare the canonical sandbox REST host", failures)
     if "TINVEST_SANDBOX_TOKEN" not in source:
         fail("sandbox runtime does not require TINVEST_SANDBOX_TOKEN", failures)
     if "SANDBOX_TRADING_ENABLED" not in source:
         fail("sandbox runtime has no explicit kill switch", failures)
-    if (
-        "confirmMarginTrade" not in source
-        or '"confirmMarginTrade": False' not in source
-    ):
+    if "confirmMarginTrade" not in source or '"confirmMarginTrade": False' not in source:
         fail("sandbox runtime does not hard-disable margin confirmation", failures)
     if "x-openai-isConsequential" not in source:
         fail("sandbox mutation Actions are not marked consequential", failures)
 
     for forbidden in SANDBOX_FORBIDDEN_TEXT:
         if forbidden in source:
-            fail(
-                f"sandbox runtime crosses production execution boundary: {forbidden}",
-                failures,
-            )
+            fail(f"sandbox runtime crosses production execution boundary: {forbidden}", failures)
 
 
 def scan_retired_duplicate_scenario_publishers(failures: list[str]) -> None:
     for relative_path in RETIRED_DUPLICATE_SCENARIO_PUBLISHER_PATHS:
         if (ROOT / relative_path).exists():
-            fail(
-                f"retired duplicate scenario publisher path is present: {relative_path}",
-                failures,
-            )
+            fail(f"retired duplicate scenario publisher path is present: {relative_path}", failures)
 
 
 def main() -> int:
@@ -261,20 +241,15 @@ def main() -> int:
         if 'ENTRYPOINT = "app:app"' not in app_text:
             fail("app.py does not declare ENTRYPOINT = app:app", failures)
         if "trading_methods" not in app_text:
-            fail("app.py does not expose the real-money read-only marker", failures)
+            fail("app.py does not expose the execution-surface health marker", failures)
 
     for path in ROOT.rglob("*"):
         if ".git" in path.parts or not path.is_file():
             continue
         if path.name in FORBIDDEN_TRACKED_NAMES:
-            fail(
-                f"forbidden generated or secret file present: {path.relative_to(ROOT)}",
-                failures,
-            )
+            fail(f"forbidden generated or secret file present: {path.relative_to(ROOT)}", failures)
         if "__pycache__" in path.parts or path.suffix in {".pyc", ".pyo"}:
-            fail(
-                f"generated Python artifact present: {path.relative_to(ROOT)}", failures
-            )
+            fail(f"generated Python artifact present: {path.relative_to(ROOT)}", failures)
 
     workflow_dir = ROOT / ".github" / "workflows"
     for name in FORBIDDEN_WORKFLOWS:
@@ -293,10 +268,10 @@ def main() -> int:
 
     print("Repository layout check passed.")
     print(f"Required files checked: {len(REQUIRED_PATHS)}")
-    print("Product surface: Custom GPT + real-money read-only Gateway")
-    print("Optional execution surface: isolated T-Invest Sandbox")
+    print("Product surface: one Custom GPT + one Omni-CIO Gateway")
+    print("Production fallback: v8.6.1")
+    print("Active roadmap: Omni-CIO v9 Portfolio Autopilot")
     print("Gateway entrypoint: app:app")
-    print("Real-money trading methods: disabled")
     return 0
 
 
