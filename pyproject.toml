@@ -34,6 +34,7 @@ files = [
   "omni_cio/policy",
   "omni_cio/universe",
   "omni_cio/candidates",
+  "omni_cio/research",
   "omni_cio/rebalancing",
   "omni_cio/pretrade",
   "omni_cio/paper",
