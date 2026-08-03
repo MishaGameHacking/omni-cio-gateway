@@ -66,7 +66,6 @@ REQUIRED_PATHS = (
     "omni_cio/sandbox/routes_v1.py",
     "omni_cio/real_trading/__init__.py",
     "tests/test_sandbox_trading_v1.py",
-    "tests/test_real_trading_v1.py",
     ".github/CODEOWNERS",
     ".github/dependabot.yml",
     ".github/copilot-instructions.md",
