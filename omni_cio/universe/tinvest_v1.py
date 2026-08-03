@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from contextlib import AbstractContextManager
 from datetime import datetime, timezone
 from enum import Enum
@@ -11,6 +12,7 @@ from t_tech.invest import Client, InstrumentStatus
 from omni_cio.contracts.v1.investment_policy import AccountPolicyType
 from omni_cio.contracts.v1.portfolio import InstrumentIdentity, InstrumentType
 from omni_cio.contracts.v1.universe import (
+    REQUIRED_UNIVERSE_OPERATIONS,
     UniverseAccountEligibilityV1,
     UniverseCatalogV1,
     UniverseInstrumentV1,
@@ -29,6 +31,13 @@ def _required_attr(value: object, name: str) -> object:
     if not hasattr(value, name):
         raise UniverseSourceRowError(f"missing required broker field: {name}")
     return getattr(value, name)
+
+
+def _required_iterable(value: object, name: str) -> Iterable[object]:
+    result = _required_attr(value, name)
+    if isinstance(result, (str, bytes)) or not isinstance(result, Iterable):
+        raise UniverseSourceRowError(f"broker field {name} must be iterable")
+    return result
 
 
 def _required_bool(value: object, name: str) -> bool:
@@ -76,12 +85,11 @@ def _test_codes(value: object, name: str) -> tuple[str, ...]:
     raw = getattr(value, name, ())
     if raw is None:
         return ()
-    if isinstance(raw, (str, bytes)):
+    if isinstance(raw, str):
         raw = (raw,)
-    try:
-        return tuple(sorted({str(item).strip() for item in raw if str(item).strip()}))
-    except TypeError as exc:
-        raise UniverseSourceRowError(f"broker field {name} must be iterable") from exc
+    if isinstance(raw, bytes) or not isinstance(raw, Iterable):
+        raise UniverseSourceRowError(f"broker field {name} must be iterable")
+    return tuple(sorted({str(item).strip() for item in raw if str(item).strip()}))
 
 
 def _instrument_from_sdk(
@@ -191,28 +199,37 @@ class TInvestUniverseAdapterV1:
             (UniverseSourceOperation.ETFS, InstrumentType.ETF, "etfs"),
         )
 
-        with self._client_factory(self._token) as client:
-            for operation, instrument_type, method_name in operations:
-                try:
-                    method = getattr(client.instruments, method_name)
-                    response = method(
-                        instrument_status=InstrumentStatus.INSTRUMENT_STATUS_BASE
-                    )
-                    rows = _required_attr(response, "instruments")
-                    for row in rows:  # type: ignore[union-attr]
-                        try:
-                            instruments.append(
-                                _instrument_from_sdk(
-                                    row,
-                                    source_operation=operation,
-                                    instrument_type=instrument_type,
+        try:
+            with self._client_factory(self._token) as client:
+                for operation, instrument_type, method_name in operations:
+                    try:
+                        method = getattr(client.instruments, method_name)
+                        response = method(
+                            instrument_status=InstrumentStatus.INSTRUMENT_STATUS_BASE
+                        )
+                        rows = _required_iterable(response, "instruments")
+                        for row in rows:
+                            try:
+                                instruments.append(
+                                    _instrument_from_sdk(
+                                        row,
+                                        source_operation=operation,
+                                        instrument_type=instrument_type,
+                                    )
                                 )
-                            )
-                        except (UniverseSourceRowError, ValidationError, ValueError):
-                            invalid_rows += 1
-                    completed.append(operation)
-                except Exception as exc:  # One failed list makes the catalog incomplete.
-                    source_errors.append(_error_code(operation.value, exc))
+                            except (UniverseSourceRowError, ValidationError, ValueError):
+                                invalid_rows += 1
+                        completed.append(operation)
+                    except Exception as exc:
+                        source_errors.append(_error_code(operation.value, exc))
+        except Exception as exc:
+            source_errors = [
+                _error_code(operation.value, exc)
+                for operation in REQUIRED_UNIVERSE_OPERATIONS
+            ]
+            completed = []
+            instruments = []
+            invalid_rows = 0
 
         return UniverseCatalogV1(
             retrieved_at=timestamp,
