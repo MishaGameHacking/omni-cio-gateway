@@ -99,11 +99,23 @@ class ResearchTargetV1(ContractModel):
     instrument_uid: Annotated[str, Field(min_length=1, max_length=128)]
     instrument_type: InstrumentType
     asset_uid: Annotated[str | None, Field(max_length=128)] = None
+    asset_uid_source: ResearchSourceV1 | None = None
 
     @model_validator(mode="after")
     def validate_candidate_identity(self) -> ResearchTargetV1:
         if self.candidate_id != f"uid:{self.instrument_uid}":
             raise ValueError("research target candidate_id must bind exact instrument UID")
+        if (self.asset_uid is None) != (self.asset_uid_source is None):
+            raise ValueError("asset UID and asset UID provenance must be supplied together")
+        if self.asset_uid_source is not None:
+            if self.asset_uid_source.source_class is not EvidenceSourceClass.BROKER:
+                raise ValueError("T-Invest asset UID provenance must be broker source")
+            if self.asset_uid_source.authority not in {
+                SourceAuthority.PRIMARY,
+                SourceAuthority.OFFICIAL,
+                SourceAuthority.REGULATED,
+            }:
+                raise ValueError("asset UID provenance must be trusted")
         return self
 
 
@@ -219,13 +231,20 @@ class EvidenceRequirementV1(ContractModel):
             raise ValueError("source_classes must be a collection")
         return tuple(sorted(set(value), key=str))
 
+    @field_validator("fact_key_prefix", mode="before")
+    @classmethod
+    def normalize_fact_key_prefix(cls, value: object) -> object:
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise ValueError("fact_key_prefix must be text")
+        normalized = value.strip().lower()
+        if not normalized:
+            raise ValueError("fact_key_prefix cannot be blank")
+        return normalized
+
     @model_validator(mode="after")
     def validate_requirement(self) -> EvidenceRequirementV1:
-        if self.fact_key_prefix is not None:
-            normalized = self.fact_key_prefix.strip().lower()
-            if not normalized:
-                raise ValueError("fact_key_prefix cannot be blank")
-            object.__setattr__(self, "fact_key_prefix", normalized)
         if self.allow_empty_after_successful_probe and self.minimum_decision_grade_records != 0:
             raise ValueError("allow-empty requirement must set minimum records to zero")
         return self
@@ -252,6 +271,49 @@ class EvidenceContradictionV1(ContractModel):
         if isinstance(value, (str, bytes)) or not isinstance(value, Iterable):
             raise ValueError("contradiction values must be a collection")
         return tuple(sorted(set(value)))
+
+
+class ResearchSourceLoadV1(ContractModel):
+    target: ResearchTargetV1
+    loaded_at: datetime
+    source_fetched_at: datetime
+    expires_at: datetime
+    next_refresh_at: datetime
+    cache_hit: bool
+    source_calls: Annotated[int, Field(ge=0, le=32)]
+    cacheable: bool
+    records: tuple[EvidenceRecordV1, ...] = ()
+    probes: tuple[EvidenceCoverageProbeV1, ...] = ()
+    raw_content_stored: Literal[False] = False
+    trading_methods: Literal[False] = False
+
+    @field_validator(
+        "loaded_at",
+        "source_fetched_at",
+        "expires_at",
+        "next_refresh_at",
+    )
+    @classmethod
+    def normalize_load_timestamp(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("research load timestamps must be timezone-aware")
+        return value.astimezone(timezone.utc)
+
+    @model_validator(mode="after")
+    def validate_load(self) -> ResearchSourceLoadV1:
+        if self.expires_at < self.source_fetched_at:
+            raise ValueError("research cache expiry cannot predate source fetch")
+        if self.next_refresh_at < self.source_fetched_at:
+            raise ValueError("research next refresh cannot predate source fetch")
+        if self.cache_hit and self.source_calls != 0:
+            raise ValueError("cache hit cannot perform source calls")
+        if self.cache_hit and not self.cacheable:
+            raise ValueError("cache hit must come from cacheable evidence")
+        if any(row.instrument_uid != self.target.instrument_uid for row in self.records):
+            raise ValueError("research load record UID mismatch")
+        if any(probe.instrument_uid != self.target.instrument_uid for probe in self.probes):
+            raise ValueError("research load probe UID mismatch")
+        return self
 
 
 class ResearchDossierV1(ContractModel):
@@ -324,6 +386,8 @@ def evidence_record_sha256(record: EvidenceRecordV1) -> str:
 
 def make_evidence_record(**values: object) -> EvidenceRecordV1:
     provisional = dict(values)
+    provisional.setdefault("schema_version", "1.0")
+    provisional.setdefault("material", True)
     provisional["record_sha256"] = "0" * 64
     candidate = EvidenceRecordV1.model_construct(**provisional)
     provisional["record_sha256"] = evidence_record_sha256(candidate)
