@@ -164,6 +164,22 @@ _CONNECTION_DIAGNOSTIC_MARKERS = (
 )
 _OPERATIONS_MARKERS = ("операц", "что изменилось")
 
+_EXACT_ACTION_CUES = (
+    "вызови",
+    "вызвать",
+    "сначала",
+    "затем",
+    "потом",
+    "только action",
+    "only action",
+    "call only",
+)
+_TYPO_REPLACEMENTS = (
+    ("партфел", "портфел"),
+    ("деверсифик", "диверсифик"),
+    ("диферсифик", "диверсифик"),
+)
+
 _BUY_IMPERATIVE = re.compile(r"\b(?:купи|покупай|приобрети|возьми)\b")
 _SELL_IMPERATIVE = re.compile(r"\b(?:продай|продавай)\b")
 _EXECUTION_TERMS = (
@@ -183,23 +199,34 @@ def _normalize(text: str) -> str:
     value = unicodedata.normalize("NFKC", str(text or ""))
     value = value.casefold().replace("ё", "е")
     value = re.sub(r"[^\w\s./:-]+", " ", value, flags=re.UNICODE)
-    return re.sub(r"\s+", " ", value).strip()
+    value = re.sub(r"\s+", " ", value).strip()
+    for typo, replacement in _TYPO_REPLACEMENTS:
+        value = value.replace(typo, replacement)
+    return value
 
 
 def _contains_any(text: str, markers: tuple[str, ...]) -> bool:
     return any(marker in text for marker in markers)
 
 
-def _detect_exact_actions(text: str) -> tuple[str, ...]:
+def _detect_exact_actions(raw_text: str, normalized_text: str) -> tuple[str, ...]:
     found: list[tuple[int, str]] = []
     for action in KNOWN_ACTIONS:
         match = re.search(
             rf"(?<![A-Za-z0-9_]){re.escape(action)}(?![A-Za-z0-9_])",
-            text,
+            raw_text,
             flags=re.IGNORECASE,
         )
         if match is not None:
             found.append((match.start(), action))
+    if not found:
+        return ()
+
+    starts_with_action = any(position == 0 for position, _ in found)
+    has_invocation_cue = _contains_any(normalized_text, _EXACT_ACTION_CUES)
+    if not starts_with_action and not has_invocation_cue:
+        return ()
+
     found.sort(key=lambda row: row[0])
     return tuple(action for _, action in found)
 
@@ -440,11 +467,11 @@ def route_user_intent(user_text: str) -> IntentRouteV1:
     """Classify a user request without performing I/O or authorizing execution."""
 
     raw = str(user_text or "")
-    exact_actions = _detect_exact_actions(raw)
+    normalized = _normalize(raw)
+    exact_actions = _detect_exact_actions(raw, normalized)
     if exact_actions:
         return _exact_action_route(exact_actions)
 
-    normalized = _normalize(raw)
     if not normalized:
         return IntentRouteV1(
             primary_intent=CioIntent.UNKNOWN,
