@@ -1,6 +1,6 @@
 # Real-money trading v1 — staged release runbook
 
-Status: **PHASE 3 OWNER ACCEPTANCE + KILL-SWITCH DRILL PASSED. PHASE 4 FIRST CONTROLLED REAL ORDER IS THE ONLY REMAINING RELEASE GATE.**
+Status: **RELEASE COMPLETE. PHASES 0–4 OWNER-ACCEPTED. REAL BUY/SELL v1 DEFINITION OF DONE = 100%.**
 
 Architecture: `docs/architecture/REAL_TRADING_V1.md`.
 
@@ -99,98 +99,17 @@ REAL_TRADING_MARKET_MAX_AGE_SECONDS=15
 
 Completed on 2026-08-03.
 
-### 3.1 Default-off deployment
-
 Verified:
 
-- `/health` healthy;
-- read-only contour remained available;
-- durable Upstash configuration initialized;
-- no paid Render upgrade/disk required.
-
-### 3.2 Controlled real enable
-
-`REAL_TRADING_ENABLED=true` was deployed intentionally.
-
-`getRealTradingStatus` returned:
-
-- `status=ready`;
-- `enabled=true`;
-- `configured=true`;
-- `mutation_routes_registered=true`;
-- `execution_ready=true`;
-- masked account only;
-- caps 1000 / 2000 RUB;
-- confirmation TTL 120 s;
-- market freshness 15 s;
-- `durable_journal=true`;
-- `journal_backend=upstash`;
-- `journal_integrity=ok`;
-- `real_money=true`;
-- `real_trading_methods=true`;
-- `sandbox=false`;
-- `error_code=null`.
-
-### 3.3 Custom GPT refresh
-
-Applied and saved:
-
-- UI name `Omni-CIO API | Управляющий и аналитик v8.6.1`;
-- Instructions `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt`;
-- exactly 10 canonical Knowledge files;
-- production OpenAPI re-imported from `https://omni-cio-gateway.onrender.com/openapi.json`;
-- API Key → Bearer authentication retained;
-- saved GPT (not only Preview) successfully called `getRealTradingStatus` alone.
-
-Full v8.6 engineering reference remains `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_0.txt` and is not pasted on top of Compact.
-
-### 3.4 Negative acceptance results
-
-#### Test A — readiness: PASS
-
-Ready state and durable journal integrity confirmed with zero submit.
-
-#### Test B — read-only regression: PASS for exercised exact-action path
-
-`getPortfolioSnapshot` remained read-only, masked account and did not create a real proposal.
-
-The established portfolio-management routing remains covered by prior acceptance/regression:
-
-`getPortfolioSnapshot → getCashLiquiditySnapshot → getPortfolioAnalytics → analysis`
-
-#### Test C — wrong confirmation: PASS
-
-A technical LIMIT proposal was prepared. A deliberately incorrect confirmation phrase was rejected before `executeRealTrade`; no broker order was sent.
-
-#### Test D — expiry: PASS
-
-An exact phrase sent after TTL was rejected with `REAL_CONFIRMATION_EXPIRED`; no broker submit and no fill.
-
-#### Test E — hard cap: ENGINEERING PASS; live isolation not possible without bypassing own-funds guard
-
-A live >1000 RUB attempt was rejected earlier by `GetMaxLots` own-funds protection with `REAL_QUANTITY_EXCEEDS_LIMIT`; no broker submit.
-
-The hard-cap path itself is covered by regression test `test_order_hard_cap_blocks_before_submit`, which requires `REAL_ORDER_CAP_EXCEEDED` and proves `PostOrder` is not called.
-
-Do not fund the real account merely to force this live test.
-
-#### Test F — stale market: ENGINEERING PASS
-
-Regression test requires `REAL_MARKET_DATA_STALE` and zero `PostOrder`.
-
-Do not intentionally create unsafe/stale live market conditions merely for release evidence.
-
-#### Test G — SELL beyond own position: ENGINEERING PASS
-
-Regression test requires own-position rejection and zero `PostOrder`; margin/short limits are not used.
-
-#### Test H — Upstash restart/deploy persistence: PASS
-
-Proposal row count persisted across Render deploy/rollback/re-enable cycle, and readiness returned with `journal_integrity=ok`.
-
-#### Test I — Sandbox independence: PREVIOUSLY ACCEPTED
-
-Sandbox owner acceptance on 2026-08-02 established `real_money=false` and isolated Sandbox behavior.
+- readiness and durable Upstash journal integrity;
+- saved GPT v8.6.1 configuration and conditional Actions;
+- wrong confirmation rejection;
+- expired confirmation rejection;
+- own-funds protection without margin fallback;
+- read-only isolation;
+- engineering hard-cap/stale-market/SELL-over-position protections;
+- Upstash persistence across deploy/restart;
+- Sandbox independence.
 
 ## 4. Kill-switch rollback drill — COMPLETE
 
@@ -202,69 +121,100 @@ On 2026-08-03:
 4. read-only Gateway capabilities remained present;
 5. durable Upstash state remained intact;
 6. owner restored `REAL_TRADING_ENABLED=true`;
-7. saved GPT then returned to `status=ready`, `execution_ready=true`, `journal_backend=upstash`, `journal_integrity=ok`, `real_trading_methods=true`.
+7. saved GPT returned to `status=ready`, `execution_ready=true`, `journal_backend=upstash`, `journal_integrity=ok`, `real_trading_methods=true`.
 
-PASS. Rollback/recovery is proven before Phase 4.
+PASS. Rollback/recovery was proven before Phase 4.
 
-## 5. Phase 4 — first controlled real order
+## 5. Phase 4 — first controlled real order — COMPLETE
 
-This is the **only remaining release gate**.
+Completed on 2026-08-03 after a new explicit owner instruction authorizing the first controlled real-money transaction.
 
-It requires a **new explicit owner instruction at the time of the real order**. General development autonomy, release intent or ordinary portfolio management is not enough to call `executeRealTrade`.
+### Candidate and proposal
 
-Candidate requirements:
+Selected instrument: SBER cash share.
 
-- highly liquid supported cash share/ETF;
-- normally 1 lot;
-- preliminary total < 1000 RUB;
-- LIMIT only;
-- fresh trusted order book/trading status;
-- exact instrument identity;
-- complete own-funds/own-position preflight;
+Accepted candidate properties:
+
+- highly liquid supported cash share;
+- BUY;
+- 1 lot / 1 share;
+- LIMIT / CURRENCY / DAY;
+- fresh trusted market snapshot;
+- exact price step;
+- own-funds preflight;
 - no margin;
-- clear rationale and NO_ACTION alternative.
+- preliminary total below the 1000 RUB server cap.
 
-### Proposal turn
+The owner received a clearly labelled REAL MONEY proposal with masked account, exact price, preliminary amount/commission, available lots, market freshness, expiry and exact confirmation phrase. `executeRealTrade` was not called in the proposal turn.
 
-GPT must:
+### Confirmation and submit
 
-1. label `REAL MONEY` clearly;
-2. show masked account;
-3. show instrument/ticker;
-4. show BUY/SELL;
-5. show lots/units;
-6. show exact LIMIT price;
-7. show preliminary total/commission;
-8. show own-funds/own-position limit;
-9. show server cap result;
-10. show market freshness;
-11. show rationale/expiry;
-12. show exact `confirmation_phrase`;
-13. state **«Реальная заявка ещё не отправлена»**;
-14. stop without calling `executeRealTrade`.
+The owner supplied the exact short-lived confirmation phrase in a new message.
 
-### Confirmation turn
+Exactly one real LIMIT order was submitted.
 
-Only a new owner message containing the exact phrase may call:
+Initial broker state:
 
-`executeRealTrade(proposal_id, exact phrase)`
+- `EXECUTION_REPORT_STATUS_NEW`;
+- 0 of 1 lot executed;
+- no false claim of fill.
 
-No typo correction/substitution.
+### Broker-state reconciliation
 
-### Immediately after submit
+A subsequent `getRealOrderState` returned:
 
-1. call `getRealOrderState` for the same proposal;
-2. do not call a submitted order filled unless broker status proves fill;
-3. after fill/partial fill, read back real portfolio/cash/operations as needed;
-4. reconcile amount/commission/position;
-5. replay the same confirmation once only as the release idempotency test — it must not create a second broker submit;
-6. if any state is ambiguous, **never resubmit** — reconcile only.
+- `status=reconciled`;
+- `executionReportStatus=EXECUTION_REPORT_STATUS_FILL`;
+- `direction=BUY`;
+- `quantity_lots=1`;
+- `lots_executed=1`;
+- `limit_price=280.55 RUB`;
+- `executed_price=280.55 RUB`;
+- `executed_commission=0.84 RUB`;
+- `real_money=true`;
+- `sandbox=false`;
+- `fill_confirmed=true`.
+
+PASS.
+
+### Real portfolio/operations reconciliation
+
+Read-back confirmed:
+
+- cash balance 718.61 RUB;
+- SBER position = 1 share / 1 lot;
+- SBER average price 280.55 RUB;
+- executed SBER purchase = 280.55 RUB;
+- commission = 0.84 RUB;
+- total cash debit including commission = 281.39 RUB.
+
+The portfolio and operations state reconciled to the broker-confirmed fill.
+
+PASS.
+
+### Replay/idempotency acceptance
+
+The exact confirmation phrase used for the completed proposal was replayed once as the release test.
+
+Observed result:
+
+- replay returned the already submitted/filled proposal state;
+- `EXECUTION_REPORT_STATUS_FILL` remained the reconciled state;
+- `lotsExecuted=1/1`;
+- `fill_confirmed=true`;
+- `executeRealTrade` was **not** called again;
+- no second broker submit was created;
+- no second SBER purchase appeared.
+
+PASS.
+
+The complete real-money lifecycle is now owner-accepted:
+
+`prepare → exact owner confirmation → single submit → broker reconciliation → portfolio/operations reconciliation → safe replay`.
 
 ## 6. First-release cancellation policy
 
 Real cancellation is not part of this release. `cancelRealOrder` is not published and `ReplaceOrder` is forbidden.
-
-For the first controlled order choose parameters intended to execute promptly and avoid leaving an unwanted open order.
 
 ## 7. Rollback after release
 
@@ -277,6 +227,8 @@ At any anomaly:
 5. revoke `TINVEST_TRADING_TOKEN` if necessary;
 6. preserve Upstash while unresolved `submitting`/`unknown` orders exist;
 7. reconcile broker state before deleting operational evidence.
+
+Release completion does not weaken the safety contract. Every future real order still requires a fresh trusted market/preflight, a new immutable proposal, and a new exact owner confirmation.
 
 ## 8. Definition of Done
 
@@ -292,9 +244,9 @@ At any anomaly:
 - [x] permanent Upstash Free database configured in Render;
 - [x] owner Phase 3 negative acceptance complete;
 - [x] kill-switch rollback/recovery drill complete;
-- [ ] first minimal real order explicitly authorized and submitted;
-- [ ] broker state reconciled;
-- [ ] real portfolio/operations reconciled;
-- [ ] idempotent replay verified with no second submit.
+- [x] first minimal real order explicitly authorized and submitted;
+- [x] broker state reconciled;
+- [x] real portfolio/operations reconciled;
+- [x] idempotent replay verified with no second submit.
 
-Only after the final four unchecked items become complete can the real BUY/SELL release be called 100% finished.
+**Real BUY/SELL v1 release is 100% finished.**
