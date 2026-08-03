@@ -6,18 +6,17 @@
 
 Omni-CIO remains one supported Custom GPT + one production Render Gateway.
 
-Current production release:
+Current production release remains **v8.6.1**:
 
 - UI/config: `Omni-CIO API | Управляющий и аналитик v8.6.1`;
 - canonical Instructions: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt`;
-- production read-only analytics: accepted;
+- read-only analytics: accepted;
 - isolated T-Invest Sandbox: accepted;
-- real-money BUY/SELL v1: accepted and released;
-- durable real journal: Upstash Redis over HTTPS;
-- Render remains on Free plan;
+- real BUY/SELL v1: owner-accepted and release-complete;
+- durable journal: Upstash Redis over HTTPS;
+- Render: Free;
 - stable entrypoint: `app:app`;
-- real BUY/SELL v1 Definition of Done is **100% complete**;
-- `idempotent replay verified with no second submit`.
+- applied GPT remains v8.6.1 until WP15.
 
 Protected v8.6.1 release commit:
 
@@ -29,150 +28,101 @@ Canonical owner-approved/program-locked roadmap:
 
 `docs/master-plan/OMNI_CIO_V9_PORTFOLIO_AUTOPILOT_PROGRAM.md`
 
-Tracking epic: GitHub issue #176.
+Tracking epic: #176.
 
-Protected baseline/migration contract:
-
-`docs/architecture/V9_BASELINE_AND_RECOVERY_CONTRACT.md`
-
-Development follows WP0 → WP15. Stable v8.6.1 remains recoverable and its real-execution safety contract may not be weakened by v9 feature work.
+Development follows the earliest dependency-ready incomplete package. Stable v8.6.1 remains recoverable and its real-execution safety contract cannot be weakened by v9 feature work.
 
 ## Work-package progress
 
 ### WP0 — Baseline freeze and recovery correctness: COMPLETE
 
-Merged to `main` via PR #181 as commit:
+- issue #178 / PR #181;
+- merged to `main` as `4fd3993bdb56162bb730dca25e3ada7046e560cc`;
+- exact-head Regression Shield #989 green;
+- protected v8.6.1 baseline, GPT recovery consistency, exact Knowledge registry and v9 program lock are machine-checked.
 
-`4fd3993bdb56162bb730dca25e3ada7046e560cc`
+### WP1 — Natural Language CIO Router: COMPLETE
 
-Accepted evidence:
+- issue #182 / PR #184;
+- merged to `main` as `7f6772889837ba632dc40c893d080a35b5f902ff`;
+- exact-head Regression Shield #1002 green for quality/contracts/coverage and dependency/SAST/secret security;
+- unresolved review threads = 0.
 
-- protected v8.6.1 release commit pinned;
-- GPT recovery/configuration drift reconciled;
-- exact 10-file Knowledge registry enforced;
-- active v9 program lock enforced;
-- `AGENTS.md` requires the earliest dependency-ready incomplete work package;
-- deterministic GPT recovery consistency checker and tests added;
-- repository-layout guard recognizes read-only + Sandbox + confirmed Real v1;
-- no runtime broker/OpenAPI/secret change;
-- exact-head Regression Shield run #989: quality/contracts/coverage = success, dependency/SAST/secret security = success.
+Accepted behavior:
 
-### WP1 — Natural Language CIO Router: IN PROGRESS
+- deterministic Russian routing without Action-name knowledge;
+- exact Action invocation locks scope and is never expanded;
+- conversational Action-name mention does not invoke it;
+- advisory `стоит ли купить/продать` is not execution;
+- bare BUY/SELL requires an explicit real/Sandbox contour;
+- real/Sandbox and BUY/SELL ambiguity fail closed;
+- common Russian portfolio/diversification typos are normalized;
+- explicit plan review beats rebalance keywords;
+- raw user free text is not retained in route state;
+- every route hard-codes `execution_authorized=false`;
+- no `app.py`, OpenAPI, broker or GPT Editor change.
 
-Tracking: GitHub issue #182.  
 Architecture: `docs/architecture/V9_NATURAL_LANGUAGE_CIO_ROUTER.md`.
 
-Current implementation branch adds an internal deterministic router for:
+### WP2 — Investment Policy Statement Engine: IN PROGRESS
 
-- exact-action diagnostics;
-- portfolio analysis and management;
-- risk review;
-- issuer/instrument research;
-- free-cash allocation;
-- plan review;
-- execution intent/confirmation classification;
-- monitoring intent;
-- fail-closed unknown/ambiguous intent.
+Tracking: issue #186.  
+Branch: `v9/wp2-investment-policy-statement`.  
+Architecture: `docs/architecture/V9_INVESTMENT_POLICY_STATEMENT.md`.
 
-Safety properties of the WP1 contract:
+Current WP2 implementation adds:
 
-- pure classifier, no I/O;
-- no public route and no OpenAPI change;
-- no GPT Editor change;
-- raw user text is not returned in routing state;
-- advisory `стоит ли купить` is distinct from imperative execution;
-- exact Action names lock scope and are never expanded;
-- bare BUY/SELL does not silently become a real trade;
-- real/Sandbox and BUY/SELL ambiguity requests clarification;
-- confirmation phrases are classified but not server-validated;
-- every route hard-codes `execution_authorized=false`;
-- current v8.6.1 proposal/TTL/HMAC/idempotency/preflight gates remain authoritative.
+- versioned `InvestmentPolicyStatementV1` owner-policy contract;
+- objective, horizon, explicit liquidity reserve, risk willingness, risk capacity and maximum drawdown;
+- position/group/sector/currency concentration limits;
+- allowed/prohibited markets and instrument classes;
+- bond credit-quality floor + rating scale;
+- tax/account review state and rebalance band;
+- per-field provenance and owner-confirmation state;
+- deterministic annual-review/effective/supersession gates;
+- deterministic policy SHA-256 reference for later immutable plans;
+- incomplete-policy blockers for personal sizing;
+- `Literal[False]` protections for margin, short sales, withdrawals, transfers and autonomous real execution.
 
-WP1 is not complete until its exact-head Regression Shield is green and the package is squash-merged.
+WP2 deliberately does **not** replace `ConservativeRiskPolicyV1`. The existing conservative policy remains a non-personalized safety baseline. No reserve, risk tolerance, capacity or personal sizing value is inferred from age, current holdings or technical affordability.
 
-No user-facing v9 configuration is active yet. Applied GPT remains v8.6.1 until WP15.
+WP2 is not complete until tests, ruff, mypy and exact-head Regression Shield pass and the package is squash-merged.
 
 ## Canonical production configuration
 
-- UI name: `Omni-CIO API | Управляющий и аналитик v8.6.1`.
-- Instructions: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt`.
-- Full v8.6 engineering reference: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_0.txt`.
-- Recommended model: `Thinking 5.6`.
-- Production endpoint: `https://omni-cio-gateway.onrender.com`.
-- Render plan: Free.
-- Entrypoint: `app:app`.
-- Production Knowledge: exactly 10 files from `gpt/CONFIGURATION.md`.
+- UI: `Omni-CIO API | Управляющий и аналитик v8.6.1`;
+- Instructions: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt`;
+- engineering reference: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_0.txt`;
+- Gateway: `https://omni-cio-gateway.onrender.com`;
+- Render plan: Free;
+- entrypoint: `app:app`;
+- production Knowledge: exactly 10 files from `gpt/CONFIGURATION.md`.
 
-GitHub is canonical for code/config reference but does not automatically synchronize GPT Editor, Render secrets or Upstash state.
+GitHub remains canonical for code/config reference but does not automatically synchronize GPT Editor, Render secrets or Upstash.
 
-## Broker contours
+## Broker/execution safety remains unchanged
 
-### Production read-only
+Production read-only uses only `TINVEST_TOKEN`.
 
-`TINVEST_TOKEN` remains read-only and separate from execution credentials.
+Sandbox uses only `TINVEST_SANDBOX_TOKEN` and remains `real_money=false`.
 
-Current portfolio-management baseline remains:
+Real v1 uses only dedicated `TINVEST_TRADING_TOKEN` and remains limited to the accepted narrow flow:
 
-`getPortfolioSnapshot → getCashLiquiditySnapshot → getPortfolioAnalytics → analysis`.
+`fresh facts → immutable proposal → exact owner confirmation in a new user turn → one submit/idempotency → broker reconciliation`.
 
-### Sandbox
+No withdrawal/transfer, margin/short, MARKET/BESTPRICE, autonomous recurring execution or token management is added by WP1/WP2.
 
-Uses only `TINVEST_SANDBOX_TOKEN` and its isolated Sandbox contour. Sandbox remains `real_money=false`.
+`REAL_TRADING_ENABLED=false` remains the master rollback state.
 
-### Real execution v1
+## v8.6.1 owner acceptance evidence
 
-Uses only separate account-scoped `TINVEST_TRADING_TOKEN` without transfer access.
+Phase 4 completed 2026-08-03 with one explicitly authorized controlled real SBER LIMIT BUY:
 
-Published conditional Actions remain:
-
-- `getRealTradingStatus`;
-- `prepareRealTrade`;
-- `executeRealTrade`;
-- `getRealOrderState`.
-
-Current safety contract remains BUY/SELL, supported cash share/ETF, RUB, LIMIT/CURRENCY/DAY, own funds/own position, fresh trusted market, immutable proposal, exact short-lived owner confirmation in a new user turn, UUID idempotency, durable journal and broker reconciliation.
-
-`submitted` never means `filled` without broker proof. Ambiguous possible-submit remains unknown/do-not-resubmit.
-
-Not published: withdrawal/transfer, securities transfer, MARKET/BESTPRICE, margin/short, derivatives/currency execution, stop orders, ReplaceOrder, async submit, autonomous recurring real-money execution or token management through GPT.
-
-## Durable journal
-
-Selected production backend:
-
-```text
-REAL_TRADING_JOURNAL_BACKEND=upstash
-UPSTASH_REDIS_REST_URL=<Render Environment>
-UPSTASH_REDIS_REST_TOKEN=<Render secret>
-```
-
-Outage/tamper remains fail-closed with no process-memory fallback.
-
-## Owner acceptance evidence for v8.6.1
-
-Owner Phase 3 and kill-switch recovery completed on 2026-08-03.
-
-Owner Phase 4 then completed with explicit authorization for one controlled real SBER LIMIT BUY:
-
-- exactly one broker submit;
+- exactly one submit;
 - broker reconciled `EXECUTION_REPORT_STATUS_FILL`;
 - 1/1 lot executed at 280.55 RUB;
-- executed commission 0.84 RUB;
-- real portfolio reconciled to SBER = 1 share / 1 lot;
-- operations reconciled purchase + commission;
-- confirmation replay did not invoke `executeRealTrade` again;
-- no second broker submit or second purchase.
+- commission 0.84 RUB;
+- portfolio and operations reconciled;
+- confirmation replay produced no second submit.
 
-## Current safety state
-
-- v8.6.1 production baseline remains active;
-- real execution remains explicit-confirmation only;
-- account output masked;
-- `REAL_TRADING_ENABLED=false` remains the master rollback action;
-- v9 development does not authorize broader live execution.
-
-## v9 sequence after WP1
-
-Next dependency-ready package after WP1 is WP2 — Investment Policy Statement Engine, followed by universe, deterministic candidate funnel, research/credit/fund engines, risk/strategy/optimizer, immutable plans, safe plan execution, Watchtower, evaluation journal and final GPT v9 recovery/configuration.
-
-**Release state: Omni-CIO v8.6.1 real BUY/SELL v1 — 100% complete.**
+**Production release state: Omni-CIO v8.6.1 real BUY/SELL v1 — 100% complete.**
