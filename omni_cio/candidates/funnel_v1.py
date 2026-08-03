@@ -511,7 +511,7 @@ def build_candidate_funnel(
         global_blockers.append(CandidateGlobalBlockerCode.UNIVERSE_NOT_READY)
 
     if global_blockers:
-        rejected = tuple(
+        blocked_rejections = tuple(
             RejectedCandidateV1(
                 instrument_uid=row.identity.uid or "missing-uid",
                 ticker=row.identity.ticker,
@@ -528,7 +528,7 @@ def build_candidate_funnel(
             policy=policy,
             universe=universe,
             blockers=global_blockers,
-            rejected=rejected,
+            rejected=blocked_rejections,
         )
 
     rejected: list[RejectedCandidateV1] = []
