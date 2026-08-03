@@ -27,21 +27,23 @@ Custom GPT Actions ──HTTPS/Bearer──> https://omni-cio-gateway.onrender.c
 
 ## Current release boundary
 
+**Omni-CIO v8.6.1 real-money BUY/SELL v1 is fully released and owner-accepted as of 2026-08-03.**
+
 Engineering Phases 0–2 are merged and green. Zero-cost durable state is deployed on permanent Upstash Redis while the Render service remains on the Free plan.
 
-Owner Phase 3 acceptance on 2026-08-03 is complete with **zero real broker submit**:
+Owner Phase 3 acceptance completed successfully, including wrong/expired confirmation rejection, own-funds protection, read-only isolation, durable Upstash persistence, kill-switch rollback and recovery.
 
-- `getRealTradingStatus` ready;
-- durable journal = Upstash, integrity ok;
-- exact-confirmation mismatch rejected;
-- expired confirmation rejected;
-- own-funds guard rejected a request before margin use;
-- read-only contour remained isolated;
-- kill switch `REAL_TRADING_ENABLED=false` was deployed and verified;
-- recovery back to `status=ready` was verified;
-- saved GPT v8.6.1 (not only Preview) passed readiness.
+Owner Phase 4 acceptance then completed with one explicitly authorized real LIMIT BUY of 1 lot SBER:
 
-The only remaining Definition-of-Done gate is Phase 4: one explicitly authorized first real LIMIT order, broker-state reconciliation, real portfolio/operations reconciliation and idempotent replay with no second submit.
+- broker accepted the real order;
+- `getRealOrderState` reconciled `EXECUTION_REPORT_STATUS_FILL`;
+- 1 of 1 lot executed at 280.55 RUB;
+- executed commission reconciled at 0.84 RUB;
+- real portfolio showed SBER = 1 share / 1 lot;
+- operations history showed the executed SBER purchase and separate commission operation;
+- replay of the exact confirmation phrase did not call `executeRealTrade` again and did not create a second broker submit.
+
+The complete Definition of Done for real BUY/SELL v1 is now satisfied.
 
 Current status: `knowledge/16_CURRENT_PROGRAM_STATUS.md`.
 
@@ -175,13 +177,10 @@ Completed:
 4. canonical v8.6.1 Compact GPT config applied;
 5. permanent Upstash + dedicated trading token configured;
 6. Phase 3 negative acceptance with zero submit;
-7. kill-switch rollback and recovery.
+7. kill-switch rollback and recovery;
+8. owner explicitly authorized and submitted one first controlled real LIMIT order;
+9. broker order state reconciled to confirmed fill;
+10. real portfolio/operations reconciled;
+11. replay proved no second submit.
 
-Remaining:
-
-8. owner explicitly authorizes one first controlled real LIMIT order;
-9. broker order state is reconciled;
-10. real portfolio/operations are reconciled;
-11. replay proves no second submit.
-
-Until those final steps pass, the system is release-candidate and safety-accepted, but the real BUY/SELL feature is not yet 100% released.
+**Status: real BUY/SELL v1 release 100% complete.**

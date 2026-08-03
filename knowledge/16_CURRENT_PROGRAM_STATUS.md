@@ -16,12 +16,11 @@ Current production state:
 - Render remains on Free plan, no Persistent Disk required;
 - Custom GPT UI/config: `Omni-CIO API | Управляющий и аналитик v8.6.1`;
 - GPT Editor Instructions: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt`;
-- real contour is currently enabled and reports `status=ready`, `execution_ready=true`, `journal_backend=upstash`, `journal_integrity=ok`;
+- real contour is enabled and reports `status=ready`, `execution_ready=true`, `journal_backend=upstash`, `journal_integrity=ok`;
 - owner Phase 3 negative acceptance and kill-switch rollback drill are complete;
-- no real broker order has been submitted during acceptance testing;
-- Phase 4 first controlled real order remains the only release gate requiring a new explicit owner authorization at execution time.
-
-Do not call the real BUY/SELL feature fully released until Phase 4 submit, broker-state reconciliation, portfolio/operations reconciliation, and idempotent replay are complete.
+- owner Phase 4 first controlled real order is complete;
+- broker-state, real portfolio/operations and replay/idempotency acceptance are complete;
+- real BUY/SELL v1 Definition of Done is **100% complete**.
 
 ## Canonical configuration
 
@@ -117,50 +116,53 @@ Observed/accepted:
 3. initial limits: 1000 RUB/order, 2000 RUB/day, 120 s confirmation TTL, 15 s market freshness;
 4. `getRealTradingStatus` returned ready, masked account, durable journal true, `journal_backend=upstash`, `journal_integrity=ok`;
 5. Custom GPT updated to v8.6.1 Compact, 10 Knowledge files retained, production OpenAPI re-imported;
-6. saved GPT (not only Preview) successfully called only `getRealTradingStatus` and remained ready;
-7. technical `prepareRealTrade` generated a proposal without broker submit;
-8. expired exact confirmation rejected with `REAL_CONFIRMATION_EXPIRED`, no fill and no broker submit;
-9. deliberately wrong confirmation rejected before `executeRealTrade`, no broker submit;
-10. BUY request beyond own-funds lot limit rejected with `REAL_QUANTITY_EXCEEDS_LIMIT`, proving no margin fallback;
-11. read-only `getPortfolioSnapshot` remained isolated and returned masked real account data;
-12. kill switch tested: `REAL_TRADING_ENABLED=false` redeploy kept `/health` healthy and reported `trading_methods=false`;
-13. real contour re-enabled and returned to `status=ready`, `execution_ready=true`, `journal_integrity=ok` with proposal rows preserved.
+6. saved GPT successfully called only `getRealTradingStatus` and remained ready;
+7. technical proposal generation worked without broker submit;
+8. expired confirmation rejected with `REAL_CONFIRMATION_EXPIRED`;
+9. deliberately wrong confirmation rejected before execution;
+10. excessive BUY rejected by own-funds protection;
+11. read-only contour remained isolated;
+12. kill switch returned Gateway to healthy read-only state;
+13. re-enable restored real readiness with durable journal integrity.
 
-Hard-cap, stale-market, SELL-over-position, replay and ambiguous-submit protections are also covered by merged fake-client/regression tests. The live hard-cap scenario could not be isolated because the real account own-funds limit rejected the attempted >1000 RUB test first; no real submit was made.
+Hard-cap, stale-market, SELL-over-position, replay and ambiguous-submit protections remain covered by merged fake-client/regression tests.
+
+## Owner Phase 4 acceptance — COMPLETE
+
+Completed on 2026-08-03 with explicit owner authorization for the first controlled real order.
+
+Accepted sequence:
+
+1. `getRealTradingStatus` confirmed ready real contour;
+2. fresh SBER market snapshot was obtained;
+3. `prepareRealTrade` created a 1-lot real LIMIT BUY proposal below the 1000 RUB per-order cap;
+4. exact confirmation was supplied by the owner in a new message;
+5. exactly one real broker submit was performed;
+6. broker initially reported `EXECUTION_REPORT_STATUS_NEW` and zero lots executed;
+7. subsequent `getRealOrderState` reconciled `EXECUTION_REPORT_STATUS_FILL`, `lots_executed=1`, `fill_confirmed=true`;
+8. executed price reconciled at 280.55 RUB and executed commission at 0.84 RUB;
+9. real portfolio reconciled to SBER = 1 share / 1 lot;
+10. operations history reconciled the executed SBER purchase at 280.55 RUB and commission at 0.84 RUB;
+11. exact confirmation replay did not invoke `executeRealTrade` again and returned the already submitted/filled proposal state;
+12. no second broker submit or second SBER purchase was created.
+
+This completes the first real-money owner acceptance and proves the full narrow execution lifecycle:
+
+`prepare → exact owner confirmation → single submit → broker reconciliation → portfolio/operations reconciliation → safe replay`.
 
 ## Current safety state
-
-Current owner-visible readiness after rollback recovery:
 
 - real contour enabled;
 - `status=ready`;
 - `execution_ready=true`;
 - `journal_backend=upstash`;
 - `journal_integrity=ok`;
-- account masked;
+- account output masked;
 - order cap 1000 RUB;
 - daily cap 2000 RUB;
-- Sandbox false for real status;
-- no accepted Phase 4 real submit yet.
+- `REAL_TRADING_ENABLED=false` remains the master rollback action for any anomaly.
 
-`REAL_TRADING_ENABLED=false` remains the master rollback action for any anomaly.
-
-## Phase 4 — ONLY REMAINING RELEASE GATE
-
-The first controlled real order requires a new explicit owner instruction at that time. General development autonomy or a portfolio-management command is not sufficient authorization.
-
-Required first-order sequence:
-
-1. choose a highly liquid supported cash security, normally 1 lot, preliminary total < 1000 RUB;
-2. LIMIT only, fresh trusted market, exact identity, own-funds/own-position preflight;
-3. `prepareRealTrade` and show REAL MONEY proposal + exact phrase, then stop;
-4. owner sends exact phrase in a new message;
-5. `executeRealTrade` submits once;
-6. immediately `getRealOrderState`;
-7. do not call it filled unless broker status proves fill;
-8. after fill/partial fill, reconcile real portfolio/cash/operations;
-9. replay the same confirmation once as an idempotency release test — it must not create a second broker submit;
-10. on any ambiguity, never resubmit; reconcile only.
+Release completion does **not** relax any safety rule: every future order still requires fresh market/preflight, a new immutable proposal and an exact short-lived owner confirmation.
 
 ## Definition of Done
 
@@ -173,9 +175,9 @@ Required first-order sequence:
 - [x] GPT v8.6.1 Compact applied and saved;
 - [x] owner Phase 3 negative acceptance completed with zero real submit;
 - [x] kill-switch rollback + recovery completed;
-- [ ] first controlled real order explicitly authorized and submitted;
-- [ ] broker state reconciled;
-- [ ] real portfolio/operations reconciled;
-- [ ] idempotent replay verified with no second submit.
+- [x] first controlled real order explicitly authorized and submitted;
+- [x] broker state reconciled;
+- [x] real portfolio/operations reconciled;
+- [x] idempotent replay verified with no second submit.
 
-Until the final four unchecked items pass, Omni-CIO is release-candidate/owner-accepted for safety gates, but the real BUY/SELL feature is not yet 100% released.
+**Release state: Omni-CIO v8.6.1 real BUY/SELL v1 — 100% complete.**
