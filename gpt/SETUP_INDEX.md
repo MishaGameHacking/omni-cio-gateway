@@ -4,7 +4,7 @@
 
 `Omni-CIO API | Управляющий и аналитик v8.4`
 
-UI-name меняется владельцем вручную. Канонические backend/config semantics соответствуют **Instructions v8.6.0**.
+UI-name меняется владельцем вручную. Канонические backend/config semantics соответствуют **Instructions v8.6.1 Compact**, с полным engineering reference в v8.6.0.
 
 ## Архитектура
 
@@ -18,7 +18,7 @@ GitHub (код + эталон конфигурации)
         │             └── HTTPS → Upstash Redis Free → durable real-order journal
         │
         └── вручную → GPT Editor
-                      ├── Instructions v8.6.0
+                      ├── Instructions v8.6.1 Compact
                       ├── 10 Knowledge files
                       └── Actions → production OpenAPI
 ```
@@ -27,7 +27,8 @@ GitHub не меняет GPT Editor, Render Environment или Upstash авто�
 
 ## Каноническая конфигурация
 
-- GPT Instructions: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_0.txt`.
+- GPT Editor Instructions: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt`.
+- Full v8.6 engineering reference: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_0.txt`.
 - Sandbox fallback/history: `v8.5.0`.
 - Read-only fallback/history: `v8.4.1`.
 - Recommended model: `Thinking 5.6`.
@@ -43,9 +44,9 @@ GitHub не меняет GPT Editor, Render Environment или Upstash авто�
 
 В GPT Editor использовать целиком только:
 
-`gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_0.txt`
+`gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt`
 
-Не смешивать версии.
+Полный `CUSTOM_GPT_INSTRUCTIONS_V8_6_0.txt` остаётся инженерным reference и не вставляется поверх compact payload. Не смешивать версии.
 
 Ключевая модель безопасности v8.6:
 
@@ -228,7 +229,8 @@ Upstash Free references:
 
 - Runtime/API: deployed commit from GitHub `main`.
 - GPT registry: `gpt/CONFIGURATION.md`.
-- Canonical Instructions: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_0.txt`.
+- Canonical GPT Editor Instructions: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt`.
+- Full v8.6 engineering reference: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_0.txt`.
 - Actions: production `/openapi.json` + `gpt/ACTIONS_CATALOG.md`.
 - Secrets/Render: `gpt/SECRETS_AND_RENDER.md`.
 - Durable journal: `docs/operations/REAL_TRADING_DURABLE_STORAGE_V1.md`.
