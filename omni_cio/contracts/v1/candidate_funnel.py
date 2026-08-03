@@ -15,10 +15,18 @@ from omni_cio.contracts.v1.portfolio import InstrumentType
 
 
 UnitInterval = Annotated[Decimal, Field(ge=0, le=1, allow_inf_nan=False)]
-PositiveMoneyAmount = Annotated[Decimal, Field(gt=0, allow_inf_nan=False)]
 Grade = Annotated[int, Field(ge=0, le=4)]
 RankPoints = Annotated[int, Field(ge=0, le=400)]
 Sha256 = Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+
+CANDIDATE_FACTOR_WEIGHTS: dict[str, int] = {
+    "role_fit": 25,
+    "diversification": 20,
+    "liquidity": 20,
+    "cost": 15,
+    "permanent_loss": 10,
+    "freshness": 10,
+}
 
 
 class CandidateRole(StrEnum):
@@ -82,7 +90,6 @@ class CandidateBlockerCode(StrEnum):
     SECTOR_LIMIT = "sector_limit"
     CURRENCY_LIMIT = "currency_limit"
     PERMANENT_LOSS_BLOCKED = "permanent_loss_blocked"
-    OUTSIDE_RESEARCH_SHORTLIST = "outside_research_shortlist"
 
 
 class PortfolioGapV1(ContractModel):
@@ -151,6 +158,7 @@ class CandidateCostBasisV1(ContractModel):
 
 
 class CandidateRiskScreenV1(ContractModel):
+    screen_model: Literal["preliminary_loss_v1"] = "preliminary_loss_v1"
     instrument_uid: Annotated[str, Field(min_length=1, max_length=128)]
     status: PreliminaryLossStatus
     evidence_codes: tuple[
@@ -202,6 +210,12 @@ class CandidateFactorGradesV1(ContractModel):
     permanent_loss: Grade
     freshness: Grade
 
+    def rank_points(self) -> int:
+        return sum(
+            int(getattr(self, name)) * weight
+            for name, weight in CANDIDATE_FACTOR_WEIGHTS.items()
+        )
+
 
 class CandidateScoreV1(ContractModel):
     kind: CandidateKind
@@ -216,20 +230,26 @@ class CandidateScoreV1(ContractModel):
     research_required: bool
 
     @model_validator(mode="after")
-    def validate_kind(self) -> CandidateScoreV1:
+    def validate_score(self) -> CandidateScoreV1:
+        if self.rank_points != self.factors.rank_points():
+            raise ValueError("rank_points must reconcile to fixed ordinal factor weights")
         security_fields = (
             self.instrument_uid,
             self.instrument_type,
             self.minimum_lot_cost,
         )
-        if self.kind is CandidateKind.SECURITY and any(
-            item is None for item in security_fields
-        ):
-            raise ValueError("security score requires instrument identity and lot cost")
-        if self.kind is CandidateKind.NO_ACTION_CASH and any(
-            item is not None for item in security_fields
-        ):
-            raise ValueError("cash alternative cannot carry security fields")
+        if self.kind is CandidateKind.SECURITY:
+            if any(item is None for item in security_fields):
+                raise ValueError(
+                    "security score requires instrument identity and lot cost"
+                )
+            if not self.research_required:
+                raise ValueError("security candidate must require deep research")
+        else:
+            if any(item is not None for item in (*security_fields, self.ticker)):
+                raise ValueError("cash alternative cannot carry security fields")
+            if self.research_required:
+                raise ValueError("cash alternative cannot require security research")
         return self
 
 
@@ -289,6 +309,18 @@ class CandidateFunnelResultV1(ContractModel):
         ]
         if len(cash_rows) != 1:
             raise ValueError("funnel requires exactly one NO_ACTION/CASH alternative")
+        expected_ranked = tuple(
+            sorted(
+                self.ranked_alternatives,
+                key=lambda row: (
+                    -row.rank_points,
+                    0 if row.kind is CandidateKind.NO_ACTION_CASH else 1,
+                    row.candidate_id,
+                ),
+            )
+        )
+        if self.ranked_alternatives != expected_ranked:
+            raise ValueError("ranked alternatives must use deterministic ordering")
         if len(self.research_shortlist) > self.gap.max_research_candidates:
             raise ValueError("research shortlist exceeds configured bound")
         if any(
@@ -296,6 +328,16 @@ class CandidateFunnelResultV1(ContractModel):
             for row in self.research_shortlist
         ):
             raise ValueError("research shortlist may contain securities only")
+        ranked_security_ids = {
+            row.candidate_id
+            for row in self.ranked_alternatives
+            if row.kind is CandidateKind.SECURITY
+        }
+        if any(
+            row.candidate_id not in ranked_security_ids
+            for row in self.research_shortlist
+        ):
+            raise ValueError("research shortlist must come from ranked securities")
         if self.decision_ready != (not self.global_blockers):
             raise ValueError("decision_ready must match global blockers")
         if not self.decision_ready and self.research_shortlist:
