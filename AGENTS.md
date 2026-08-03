@@ -2,6 +2,35 @@
 
 Этот файл обязателен для любого AI-агента, разработчика или нового чата, который меняет `Misha2304/omni-cio-gateway`.
 
+## 0. ACTIVE PROGRAM LOCK — Omni-CIO v9 / Release 2
+
+Owner-approved canonical program:
+
+`docs/master-plan/OMNI_CIO_V9_PORTFOLIO_AUTOPILOT_PROGRAM.md`
+
+Supporting engineering research:
+
+`docs/architecture/V9_RESEARCH_AND_ENGINEERING_PRINCIPLES.md`
+
+Until the v9 program-level Definition of Done is complete:
+
+1. roadmap/development work must continue from the earliest incomplete v9 work package;
+2. do not start a competing roadmap, second bot, second Gateway, duplicate frontend or unrelated execution surface;
+3. permitted interruptions are limited to critical production/security fixes, broker/API compatibility required to keep v8.6.1 operational, and mandatory dependency/CI/security maintenance;
+4. a roadmap change requires a new explicit owner decision and a reviewed GitHub amendment;
+5. accepted v8.6.1 is a protected production/recovery baseline throughout v9 development;
+6. no v9 capability may be represented as implemented before code, tests, exact-head CI and required acceptance prove it.
+
+Before v9 roadmap work read, in order:
+
+1. this `AGENTS.md`;
+2. `docs/master-plan/OMNI_CIO_V9_PORTFOLIO_AUTOPILOT_PROGRAM.md`;
+3. `knowledge/16_CURRENT_PROGRAM_STATUS.md`;
+4. `docs/architecture/V9_RESEARCH_AND_ENGINEERING_PRINCIPLES.md`;
+5. the relevant phase architecture/tests.
+
+Development autonomy is broad for code, tests, research, documentation and read-only analysis. It is **not** authorization for unattended real-money broker writes.
+
 ## 1. Product boundary
 
 Поддерживается один пользовательский продукт:
@@ -74,24 +103,30 @@ Real BUY/SELL разрешён только через `omni_cio.real_trading` �
 - `submitted` != `filled` без broker proof;
 - account IDs маскируются.
 
-First-release real surface:
+Current real surface:
 
 - `getRealTradingStatus`;
 - `prepareRealTrade`;
 - `executeRealTrade`;
 - `getRealOrderState`.
 
-Не публиковать в real v1: transfer/withdraw/securities transfer, MARKET/BESTPRICE, margin/short, futures/options/currency execution, stop orders, ReplaceOrder, PostOrderAsync, autonomous recurring execution, real cancellation.
+Current v8.6.1 real v1 does not publish transfer/withdraw/securities transfer, MARKET/BESTPRICE, margin/short, futures/options/currency execution, stop orders, ReplaceOrder, PostOrderAsync, autonomous recurring execution or real cancellation.
 
 `REAL_TRADING_ENABLED=false` — master rollback state: real mutation Actions должны исчезать из OpenAPI.
 
+### 3.4 v9 execution evolution
+
+The active v9 program may design immutable portfolio plans and safer staged execution, but roadmap text alone authorizes nothing. Each new mutation capability requires its own threat model, deterministic implementation, fake-client/regression coverage, feature flag and required owner production acceptance.
+
+Research and monitoring may become substantially more autonomous while real-money execution remains separately authorized.
+
 ## 4. Owner authorization boundary
 
-Engineering autonomy не является разрешением отправить первую реальную заявку.
+Engineering autonomy is not broker-write authorization.
 
-До первого real submit должен быть пройден `docs/operations/REAL_TRADING_RELEASE_RUNBOOK.md` Phase 3 + kill-switch drill.
+The first controlled real v8.6.1 order has already passed owner acceptance. Future production orders continue to follow the current confirmed protocol until a separately reviewed v9 authorization protocol is implemented and accepted.
 
-Первая настоящая заявка требует нового явного сообщения владельца в момент Phase 4. Даже после `prepareRealTrade` submit невозможен без точной server-generated confirmation phrase в новом user turn.
+A generic request such as `УПРАВЛЯЙ ПОРТФЕЛЕМ` may authorize autonomous read-only analysis/research/plan construction, but it does not silently authorize real-money submission.
 
 ## 5. Secrets и приватные данные
 
@@ -124,7 +159,7 @@ Conditional execution routes должны отсутствовать, когда
 
 ## 7. Custom GPT configuration
 
-Canonical GPT Editor Instructions:
+Current production GPT Editor Instructions:
 
 `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt`
 
@@ -142,9 +177,11 @@ Authentication: API Key → Bearer using `GATEWAY_API_KEY` only.
 
 GitHub не синхронизирует GPT Editor автоматически. После изменения Instructions/Knowledge/OpenAPI требуется owner apply + Preview + `Update`.
 
+Unfinished v9 files must not be applied to the production GPT before their release gate says they are ready.
+
 ## 8. Portfolio-management routing
 
-Для `УПРАВЛЯЙ ПОРТФЕЛЕМ` обязательный старт:
+Current v8.6.1 `УПРАВЛЯЙ ПОРТФЕЛЕМ` starts with:
 
 1. `getPortfolioSnapshot`;
 2. при успехе `getCashLiquiditySnapshot`;
@@ -155,6 +192,8 @@ Portfolio management не является real-trade authorization.
 
 Exact-action запрос имеет приоритет: если пользователь говорит `вызови только X`, другие Actions не вызываются.
 
+v9 will evolve normal portfolio requests into a typed natural-language orchestration graph, but must retain exact-action isolation and write-authority separation.
+
 ## 9. Money/data quality
 
 - exact decimal logic;
@@ -164,7 +203,8 @@ Exact-action запрос имеет приоритет: если пользов
 - last price не считать гарантированной ценой сделки;
 - stale/incomplete market блокирует real proposal;
 - `withdraw_limits` не считать buying budget;
-- BUY sizing только own funds, SELL только own position; margin fields не авторизуют sizing.
+- BUY sizing только own funds, SELL только own position; margin fields не авторизуют sizing;
+- strategy sizing and broker technical affordability are separate gates.
 
 ## 10. T-Invest broker report
 
@@ -192,6 +232,8 @@ Exact-action запрос имеет приоритет: если пользов
 
 Не создавать duplicate setup/audit docs вместо обновления существующего source of truth.
 
+New v9 domain code should prefer cohesive `omni_cio/` packages (policy, universe, research, credit, funds, risk, optimizer, planning, watchtower/orchestration) instead of creating more root-level wrappers unless compatibility requires it.
+
 ## 12. Tests and Regression Shield
 
 Минимальные проверки:
@@ -199,8 +241,9 @@ Exact-action запрос имеет приоритет: если пользов
 ```bash
 python scripts/check_ci_security_baseline.py
 python scripts/check_repository_layout.py
+python scripts/check_canonical_config_consistency.py
 python -m ruff check .
-python -m ruff format --check scripts tests/test_ci_security_baseline.py
+python -m ruff format --check scripts tests/test_ci_security_baseline.py tests/test_canonical_config_consistency.py
 python -m mypy
 python -m compileall -q app.py app_v371.py app_v360.py main.py \
   portfolio_market.py portfolio_analytics.py cash_liquidity.py \
@@ -222,6 +265,8 @@ Execution regression дополнительно обязан доказыват�
 - durable journal outage/tamper fail closed;
 - conditional OpenAPI surface корректен.
 
+v9 regression additionally must cover the program evaluation cases: intent routing, policy compliance, universe identity/filtering, evidence provenance/conflicts, credit/rating identity, fund overlap, capital scaling, prompt-injection isolation and bounded research loops.
+
 CI tests не должны обращаться к live T-Invest/Render.
 
 Merge evidence — полный `.github/workflows/regression-shield.yml` на exact head.
@@ -236,6 +281,8 @@ Merge evidence — полный `.github/workflows/regression-shield.yml` на e
 - release changes merge через squash после зелёного exact-head Regression Shield;
 - после backend/config merge выполнить production acceptance затронутых routes.
 
+The v9 program may span many PRs; each PR must identify its WP and may not mark a later WP complete without its required evidence.
+
 ## 14. Documentation after significant change
 
 Обновлять только затронутые источники истины:
@@ -245,7 +292,8 @@ Merge evidence — полный `.github/workflows/regression-shield.yml` на e
 - `knowledge/00_PROJECT_MASTER_CONTEXT.md`;
 - `knowledge/16_CURRENT_PROGRAM_STATUS.md`;
 - `gpt/` при изменении Custom GPT;
-- relevant architecture/runbook.
+- relevant architecture/runbook;
+- active v9 program status when a WP changes state.
 
 ## 15. External boundaries
 
@@ -255,4 +303,4 @@ GitHub не заменяет:
 - GPT Editor для применённых Instructions/Knowledge/model/Bearer/OpenAPI;
 - T-Invest API для live broker state.
 
-Green CI не доказывает production state. Для release-visible изменений нужна owner acceptance.
+Green CI не доказывает production state. Для release-visible изменений нужна соответствующая production/owner acceptance.
