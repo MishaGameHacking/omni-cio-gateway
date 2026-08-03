@@ -5,7 +5,7 @@
 ## Identity
 
 - Current UI name until owner manually renames it: `Omni-CIO API | Управляющий и аналитик v8.4`.
-- Canonical behavior/config release: **v8.6.0**.
+- Canonical behavior/config release: **v8.6.1 Compact**.
 - Purpose: личный инвестиционный аналитик и строго подтверждаемый исполнитель T-Invest.
 - Primary language: Russian.
 - User timezone: `Europe/Moscow` / MSK.
@@ -26,7 +26,11 @@
 
 ## Instructions
 
-Canonical:
+Canonical GPT Editor payload (fits the editor character limit with guarded headroom):
+
+`gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt`
+
+Full engineering reference for the same v8.6 behavior model:
 
 `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_0.txt`
 
@@ -35,7 +39,7 @@ Historical fallbacks:
 - `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_5_0.txt` — Sandbox-capable, real production read-only;
 - `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_4_1.txt` — read-only fallback.
 
-Не смешивать версии.
+Не смешивать версии и не вставлять полный v8.6.0 поверх compact payload.
 
 ## Knowledge — ровно 10 файлов
 
@@ -175,7 +179,7 @@ Details: `gpt/SECRETS_AND_RENDER.md`.
 
 1. All relevant code/config PRs merged after exact-head Regression Shield.
 2. Open `gpt/SETUP_INDEX.md`.
-3. Apply `CUSTOM_GPT_INSTRUCTIONS_V8_6_0.txt` fully.
+3. Apply `CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt` fully.
 4. Keep exactly 10 Knowledge files.
 5. Keep recommended model/capabilities above.
 6. Keep Render service on Free; no paid disk is required.
