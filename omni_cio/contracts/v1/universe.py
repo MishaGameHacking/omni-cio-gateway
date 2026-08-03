@@ -25,6 +25,15 @@ REQUIRED_UNIVERSE_OPERATIONS: tuple[UniverseSourceOperation, ...] = (
 )
 
 
+def _normalize_operation_collection(value: object) -> tuple[UniverseSourceOperation, ...]:
+    if value is None:
+        return ()
+    if isinstance(value, (str, bytes)) or not isinstance(value, Iterable):
+        raise ValueError("completed_operations must be a collection")
+    parsed = {UniverseSourceOperation(item) for item in value}
+    return tuple(operation for operation in REQUIRED_UNIVERSE_OPERATIONS if operation in parsed)
+
+
 class UniverseExclusionCode(StrEnum):
     API_NOT_AVAILABLE = "api_not_available"
     BUY_NOT_AVAILABLE = "buy_not_available"
@@ -127,11 +136,7 @@ class UniverseCatalogV1(ContractModel):
     @field_validator("completed_operations", mode="before")
     @classmethod
     def normalize_completed_operations(cls, value: object) -> object:
-        if value is None:
-            return ()
-        if isinstance(value, (str, bytes)) or not isinstance(value, Iterable):
-            raise ValueError("completed_operations must be a collection")
-        return tuple(sorted(set(value), key=str))
+        return _normalize_operation_collection(value)
 
     @field_validator("source_errors", mode="before")
     @classmethod
@@ -217,9 +222,7 @@ class MarketUniverseSnapshotV1(ContractModel):
     @field_validator("completed_operations", mode="before")
     @classmethod
     def normalize_completed_operations(cls, value: object) -> object:
-        if isinstance(value, (str, bytes)) or not isinstance(value, Iterable):
-            raise ValueError("completed_operations must be a collection")
-        return tuple(sorted(set(value), key=str))
+        return _normalize_operation_collection(value)
 
     @model_validator(mode="after")
     def validate_snapshot(self) -> MarketUniverseSnapshotV1:
