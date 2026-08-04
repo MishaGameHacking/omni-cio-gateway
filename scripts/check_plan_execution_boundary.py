@@ -45,7 +45,7 @@ FORBIDDEN_TEXT = (
     "CancelOrder",
     "StopOrder",
     "confirmMarginTrade=True",
-    "confirmMarginTrade\": true",
+    'confirmMarginTrade": true',
     "ORDER_TYPE_MARKET",
     "ORDER_TYPE_BESTPRICE",
     "securities_transfer",
@@ -192,7 +192,10 @@ def main() -> int:
                 _fail(f"WP12 legacy adapter method missing: {method}", failures)
         for forbidden_method in ("cancel", "replace", "withdraw", "transfer"):
             if f"def {forbidden_method}" in adapter:
-                _fail(f"WP12 adapter exposes forbidden method: {forbidden_method}", failures)
+                _fail(
+                    f"WP12 adapter exposes forbidden method: {forbidden_method}",
+                    failures,
+                )
 
     if PUBLIC_SERVICE_PATH.is_file():
         public_service = PUBLIC_SERVICE_PATH.read_text(encoding="utf-8")
@@ -208,7 +211,9 @@ def main() -> int:
                 _fail(f"WP12 audited facade hardening missing: {required}", failures)
 
     package_init = EXECUTION_ROOT / "__init__.py"
-    if package_init.is_file() and CORE_MODULE in package_init.read_text(encoding="utf-8"):
+    if package_init.is_file() and CORE_MODULE in package_init.read_text(
+        encoding="utf-8"
+    ):
         _fail("frozen WP12 core must not be exported by package __init__", failures)
 
     if failures:
