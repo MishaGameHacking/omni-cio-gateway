@@ -7,7 +7,6 @@ from typing import Iterable
 
 from omni_cio.contracts.v1.credit import (
     CreditBlockerCode,
-    CreditDefaultEventV1,
     CreditEvidenceInputV1,
     CreditFloorAssessmentV1,
     CreditFloorBasis,
@@ -21,7 +20,10 @@ from omni_cio.contracts.v1.credit import (
     DebtSeniority,
     credit_passport_sha256,
 )
-from omni_cio.contracts.v1.investment_policy import InvestmentPolicyStatementV1
+from omni_cio.contracts.v1.investment_policy import (
+    InvestmentPolicyStatementV1,
+    PolicyReferenceV1,
+)
 from omni_cio.contracts.v1.portfolio import InstrumentType
 from omni_cio.contracts.v1.research_evidence import EvidenceUse, ResearchDossierV1
 from omni_cio.policy import policy_reference
@@ -197,6 +199,16 @@ def _current_ratings(
     return tuple(current), contradiction
 
 
+def _current_rating_map(
+    ratings: Iterable[CreditRatingObservationV1],
+) -> dict[tuple[object, ...], CreditRatingObservationV1]:
+    current, _ = _current_ratings(ratings)
+    return {
+        (row.subject, row.subject_id, row.agency, row.scale): row
+        for row in current
+    }
+
+
 def _eligible_guarantor_ids(evidence: CreditEvidenceInputV1) -> set[str]:
     return {
         row.guarantor_entity_id
@@ -298,7 +310,10 @@ def _assess_floor(
     selected_grade = _canonical_grade(policy_scale, selected.rating)
     if selected_grade is None:
         blockers.append(CreditBlockerCode.RATING_SYMBOL_UNRECOGNIZED)
-    elif floor_grade is not None and _GRADE_RANK[selected_grade] < _GRADE_RANK[floor_grade]:
+    elif (
+        floor_grade is not None
+        and _GRADE_RANK[selected_grade] < _GRADE_RANK[floor_grade]
+    ):
         blockers.append(CreditBlockerCode.RATING_BELOW_FLOOR)
 
     return CreditFloorAssessmentV1(
@@ -313,30 +328,11 @@ def _assess_floor(
     )
 
 
-def _rating_state(passport: CreditPassportV1) -> tuple[tuple[object, ...], ...]:
-    return tuple(
-        sorted(
-            (
-                row.subject.value,
-                row.subject_id,
-                row.agency.value,
-                row.scale.value,
-                row.rating,
-                row.outlook,
-                row.watch,
-                row.action.value,
-                row.effective_at.isoformat(),
-            )
-            for row in passport.ratings
-        )
-    )
-
-
 def _reanalysis_trigger(
     *,
     previous: CreditPassportV1 | None,
     dossier: ResearchDossierV1,
-    policy_ref: object,
+    policy_ref: PolicyReferenceV1,
     evidence: CreditEvidenceInputV1,
 ) -> CreditReanalysisTriggerV1:
     if previous is None:
@@ -349,21 +345,24 @@ def _reanalysis_trigger(
         codes.append(CreditReanalysisTriggerCode.POLICY_CHANGED)
     if previous.issue_terms != evidence.issue_terms:
         codes.append(CreditReanalysisTriggerCode.ISSUE_TERMS_CHANGED)
-    if previous.default_events != tuple(sorted(evidence.default_events, key=lambda row: row.event_id)):
+    canonical_events = tuple(
+        sorted(evidence.default_events, key=lambda row: row.event_id)
+    )
+    if previous.default_events != canonical_events:
         codes.append(CreditReanalysisTriggerCode.DEFAULT_EVENT_CHANGED)
 
-    current_ratings = tuple(sorted(evidence.ratings, key=lambda row: row.observation_id))
-    previous_by_key = {
-        (row.subject, row.subject_id, row.agency, row.scale): row for row in previous.ratings
-    }
-    current_by_key = {
-        (row.subject, row.subject_id, row.agency, row.scale): row for row in current_ratings
-    }
+    previous_by_key = _current_rating_map(previous.ratings)
+    current_by_key = _current_rating_map(evidence.ratings)
     keys = set(previous_by_key) | set(current_by_key)
     for key in keys:
         old = previous_by_key.get(key)
         new = current_by_key.get(key)
-        if old is None or new is None or old.rating != new.rating or old.action != new.action:
+        if (
+            old is None
+            or new is None
+            or old.rating != new.rating
+            or old.action != new.action
+        ):
             _append_unique(codes, CreditReanalysisTriggerCode.RATING_CHANGED)
         if old is None or new is None or old.outlook != new.outlook:
             _append_unique(codes, CreditReanalysisTriggerCode.OUTLOOK_CHANGED)
@@ -387,7 +386,10 @@ def build_credit_passport(
         raise CreditEngineError("CREDIT_ENGINE_REQUIRES_BOND_TARGET")
 
     blockers: list[CreditBlockerCode] = []
-    if dossier.target != evidence.target or dossier.dossier_sha256 != evidence.dossier_sha256:
+    if (
+        dossier.target != evidence.target
+        or dossier.dossier_sha256 != evidence.dossier_sha256
+    ):
         blockers.append(CreditBlockerCode.DOSSIER_BINDING_MISMATCH)
     if not dossier.decision_ready:
         blockers.append(CreditBlockerCode.DOSSIER_NOT_READY)
@@ -405,9 +407,15 @@ def build_credit_passport(
     if any(event.active for event in evidence.default_events):
         blockers.append(CreditBlockerCode.ACTIVE_DEFAULT_EVENT)
 
-    canonical_ratings = tuple(sorted(evidence.ratings, key=lambda row: row.observation_id))
-    canonical_events = tuple(sorted(evidence.default_events, key=lambda row: row.event_id))
-    canonical_guarantors = tuple(sorted(evidence.guarantors, key=lambda row: row.entity_id))
+    canonical_ratings = tuple(
+        sorted(evidence.ratings, key=lambda row: row.observation_id)
+    )
+    canonical_events = tuple(
+        sorted(evidence.default_events, key=lambda row: row.event_id)
+    )
+    canonical_guarantors = tuple(
+        sorted(evidence.guarantors, key=lambda row: row.entity_id)
+    )
     policy_ref = policy_reference(policy)
     reanalysis = _reanalysis_trigger(
         previous=previous,
