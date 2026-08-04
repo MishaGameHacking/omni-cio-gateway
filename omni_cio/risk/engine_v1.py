@@ -74,6 +74,7 @@ _LIMIT_BLOCKERS = {
 _READINESS_BLOCKERS = {
     RiskBlockerCode.IPS_NOT_READY,
     RiskBlockerCode.POLICY_BINDING_MISMATCH,
+    RiskBlockerCode.FX_EVIDENCE_STALE,
     RiskBlockerCode.EXPOSURE_INCOMPLETE,
     RiskBlockerCode.FUND_XRAY_REQUIRED,
     RiskBlockerCode.FUND_XRAY_NOT_READY,
@@ -488,6 +489,7 @@ def _vectors(
         )
 
     data_unknown_codes = {
+        RiskBlockerCode.FX_EVIDENCE_STALE,
         RiskBlockerCode.EXPOSURE_INCOMPLETE,
         RiskBlockerCode.FUND_XRAY_REQUIRED,
         RiskBlockerCode.FUND_XRAY_NOT_READY,
@@ -504,6 +506,10 @@ def _vectors(
         code in blockers for code in data_unknown_codes
     )
 
+    fund_credit_positions = sum(
+        row.instrument_type.value == "etf" and row.fund_credit is not None
+        for row in portfolio.positions
+    )
     return (
         RiskVectorV1(
             kind=RiskVectorKind.PERMANENT_LOSS,
@@ -564,6 +570,7 @@ def _vectors(
             metrics=(
                 "bond_positions="
                 f"{sum(row.instrument_type.value == 'bond' for row in portfolio.positions)}",
+                f"fund_credit_positions={fund_credit_positions}",
             ),
             evidence_codes=tuple(
                 code.value.upper()
@@ -636,6 +643,14 @@ def _assess_state(
     limits = _policy_limits(policy, settings)
 
     for position in portfolio.positions:
+        if position.fx is not None:
+            fx_age = (assessed_at - position.fx.as_of).total_seconds()
+            if (
+                fx_age > settings.fx_max_age_seconds
+                or fx_age < -settings.future_tolerance_seconds
+            ):
+                _append_unique(blockers, RiskBlockerCode.FX_EVIDENCE_STALE)
+
         if _missing_hard_limit_exposure(position, limits):
             _append_unique(blockers, RiskBlockerCode.EXPOSURE_INCOMPLETE)
         if position.exposure_mode.value == "fund_lookthrough":
@@ -643,6 +658,17 @@ def _assess_state(
                 _append_unique(blockers, RiskBlockerCode.FUND_XRAY_REQUIRED)
             elif not position.fund_xray_decision_ready:
                 _append_unique(blockers, RiskBlockerCode.FUND_XRAY_NOT_READY)
+
+            fund_credit = position.fund_credit
+            if fund_credit is None:
+                _append_unique(blockers, RiskBlockerCode.CREDIT_EVIDENCE_REQUIRED)
+            else:
+                if fund_credit.unknown_weight > 0:
+                    _append_unique(blockers, RiskBlockerCode.CREDIT_NOT_READY)
+                if fund_credit.active_default_weight > 0:
+                    _append_unique(blockers, RiskBlockerCode.ACTIVE_DEFAULT)
+                if fund_credit.floor_breach_weight > 0:
+                    _append_unique(blockers, RiskBlockerCode.CREDIT_FLOOR_BREACH)
 
         if position.instrument_type.value == "bond":
             credit = position.credit
@@ -837,7 +863,7 @@ def assess_portfolio_risk(
         "policy_reference": portfolio.policy_reference,
         "before": before,
         "after": after,
-        "proposed_trade_ids": tuple(row.trade_id for row in effects),
+        "proposed_trade_ids": tuple(sorted({row.trade_id for row in effects})),
         "new_blockers": new_blockers,
         "resolved_blockers": resolved_blockers,
         "decision_ready": decision_ready,
