@@ -18,6 +18,7 @@ from omni_cio.contracts.v1.plan_execution import (
     PlanExecutionSessionState,
     PlanExecutionStageState,
 )
+from omni_cio.contracts.v1.portfolio_optimizer import PortfolioOptimizerSettingsV1
 from omni_cio.plan_execution import (
     InMemoryPlanExecutionJournalV1,
     SafePlanExecutionError,
@@ -512,17 +513,37 @@ def test_partial_cancel_records_fill_and_never_resubmits_same_day() -> None:
     assert harness.primitive.prepare_calls == 1
 
 
-def test_real_order_cap_splits_plan_into_positive_deterministic_stages() -> None:
-    fixture = build_execution_fixture()
-    harness = Harness(fixture, max_order_rub=Decimal("25000"))
+def test_optimizer_staging_splits_plan_into_required_execution_days() -> None:
+    fixture = build_execution_fixture(
+        optimizer_settings=PortfolioOptimizerSettingsV1(
+            maximum_daily_turnover_participation=Decimal("0.005"),
+        )
+    )
+    harness = Harness(fixture)
     session = harness.service.prepare_plan(
         plan=fixture.plan,
         now=NOW + timedelta(minutes=1),
     )
     stages = session.instrument_states[0].stages
-    assert len(stages) == 3
-    assert tuple(row.planned_lots for row in stages) == (167, 167, 166)
+    assert len(stages) == 2
+    assert tuple(row.planned_lots for row in stages) == (250, 250)
     assert sum(row.planned_lots for row in stages) == 500
+    assert stages[1].not_before_moscow_date == stages[0].not_before_moscow_date + timedelta(days=1)
+
+
+def test_real_order_cap_cannot_extend_immutable_plan_horizon() -> None:
+    fixture = build_execution_fixture()
+    harness = Harness(fixture, max_order_rub=Decimal("25000"))
+
+    with pytest.raises(SafePlanExecutionError) as exc_info:
+        harness.service.prepare_plan(
+            plan=fixture.plan,
+            now=NOW + timedelta(minutes=1),
+        )
+
+    assert exc_info.value.code == "PLAN_EXECUTION_PLAN_HORIZON_TOO_SHORT"
+    assert harness.primitive.prepare_calls == 0
+    assert harness.primitive.execute_calls == 0
 
 
 def test_no_action_plan_never_creates_execution_session() -> None:
