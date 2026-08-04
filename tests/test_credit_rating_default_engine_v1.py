@@ -385,8 +385,8 @@ def test_same_timestamp_rating_contradiction_fails_closed() -> None:
         dossier,
         first.record_sha256,
         ratings=(
-            _rating(first.record_sha256, observation_id="rating_a", rating="A(RU)"),
-            _rating(second.record_sha256, observation_id="rating_b", rating="BBB(RU)"),
+            _rating(first.record_sha256, observation_id="rating_alpha", rating="A(RU)"),
+            _rating(second.record_sha256, observation_id="rating_beta", rating="BBB(RU)"),
         ),
     )
     result = build_credit_passport(
