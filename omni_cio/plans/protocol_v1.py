@@ -438,6 +438,8 @@ def build_portfolio_plan(
     )
 
     no_action = optimizer.selected_regime is StrategyRegime.NO_ACTION
+    legs: tuple[PortfolioPlanLegV1, ...]
+    baselines: tuple[PlanMarketBaselineV1, ...]
     if no_action:
         legs = (
             PortfolioPlanLegV1(
@@ -445,7 +447,7 @@ def build_portfolio_plan(
                 action=PortfolioPlanAction.NO_ACTION,
             ),
         )
-        baselines: tuple[PlanMarketBaselineV1, ...] = ()
+        baselines = ()
     else:
         plan_legs: list[PortfolioPlanLegV1] = []
         baseline_rows: list[PlanMarketBaselineV1] = []
