@@ -20,37 +20,44 @@ Canonical roadmap: `docs/master-plan/OMNI_CIO_V9_PORTFOLIO_AUTOPILOT_PROGRAM.md`
 - WP7 Fund X-Ray Engine — PR #198, merge `15505272...`, #1064;
 - WP8 Portfolio Risk Engine 2.0 — PR #201, merge `24e027f1...`, #1078;
 - WP9 Meta-Strategy Selector — PR #204, merge `f758fd73...`, exact-head #1088;
-- WP10 Portfolio Optimizer & Capital Scaling — PR #206, squash merge `f73929771bcae4058c3c83b3d0632b8d66b8d05f`, exact-head Regression Shield #1105 on `2ff38f962718e58ec9c12e0e89fd2605310592cc`.
+- WP10 Portfolio Optimizer & Capital Scaling — PR #206, squash merge `f73929771bcae4058c3c83b3d0632b8d66b8d05f`, exact-head #1105;
+- WP11 Immutable Portfolio Plan Protocol — PR #208, squash merge `7c3006d332041ec352f0c2eab8c7cb70e4c1a6af`, exact-head Regression Shield #1114 on `b97a62412fe8accf8ebec528a63d8ad0b5087154`.
 
-### WP11 — Immutable Portfolio Plan Protocol — final merge gate
+### WP12 — Safe Plan Execution Engine — final merge gate
 
-Tracking: issue #207 / draft PR #208 / branch `v9/wp11-immutable-portfolio-plan`.
+Tracking: issue #209 / draft PR #211 / branch `v9/wp12-safe-plan-execution`.
 
 Implemented:
 
-- frozen/versioned `PORTFOLIO_PLAN` contract with deterministic canonical SHA-256;
-- exact portfolio + WP2 policy + current WP8 + WP9 + WP10 + target WP8 bindings;
-- full re-validation of upstream Pydantic payloads and recomputation of WP8/WP9/WP10 hashes to catch stale-hash and recalculated-hash `model_copy` tampering;
-- exact deterministic WP10 target rows and ordered BUY/SELL/NO_ACTION legs;
-- clean execution price, bond НКД, settlement notional, commission, estimated SELL tax, cash delta and current/target cash preserved separately;
-- plan arithmetic reconciled to embedded optimizer legs, target rows and WP8 before/after states;
-- build-time freshness gates for market, friction and FX evidence;
-- BUY eligibility required only for BUY; an already-held SELL is not falsely blocked by loss of buy eligibility;
-- explicit validity window and complete hard-cancellation code set;
-- review-time market/friction/FX freshness plus clean-price/НКД/spread/turnover/depth/FX drift gates;
-- extreme measured drift can exceed 10,000 bps without contract overflow while bounded tolerances still cancel the plan;
-- any material plan mutation changes the exact plan SHA and therefore changes the plan-specific approval challenge;
-- actionable challenge is `ПОДТВЕРЖДАЮ ПЛАН <PLAN_SHA_PREFIX>` and is exposed only by a valid review;
-- review remains read-only with `execution_authorized=false` and `trading_methods=false`;
-- no broker client/token/journal/order submit/cancel/replace authority, no public route/OpenAPI/GPT Editor change;
-- dedicated immutable-plan repository boundary guard plus mypy scope;
-- architecture, threat-model and data-contract documents.
+- versioned plan-execution contracts for session, immutable instrument binding, stage, attempt, broker snapshot and current read-only state;
+- exact canonical WP11 plan SHA plus exact plan-specific owner approval phrase before any real stage can become eligible;
+- approval recording is idempotent and performs zero broker submit;
+- accepted v8.6.1 `RealTradingServiceV1` remains the only real BUY/SELL submit primitive; WP12 adds no second broker client or token path;
+- current portfolio/cash, policy/risk/strategy/optimizer/target-risk identities, instrument UID/ticker/ISIN/lot size, quote freshness, price step, spread, turnover, depth and plan-drift evidence are revalidated immediately before stage preparation and again before submit;
+- existing v8.6.1 `GetMaxLots` own-funds/own-position preflight, per-order cap and atomic daily cap remain authoritative;
+- only `LIMIT / CURRENCY / DAY`, RUB, cash share/ETF BUY/SELL remains inside the proven real-money surface;
+- durable revisioned execution journal with compare-and-swap semantics and production Upstash implementation;
+- restart/CAS/stale-writer/tamper/wrong-secret acceptance coverage for the durable journal;
+- deterministic broker reconciliation normalizes exact request/proposal state and rejects malformed/overflow broker evidence;
+- `NEW` / partial broker state remains active and is never resubmitted;
+- broker-terminal state requires independent read-only portfolio/cash reconciliation before the next stage;
+- partial terminal fill carries only the broker-confirmed remainder to the following Moscow day;
+- possible-submit ambiguity halts all remaining legs and allows only reconciliation of the original request id; replay cannot duplicate `PostOrder`;
+- plan expiry blocks new stage preparation/submit but never suppresses reconciliation for an order that already may have reached the broker;
+- post-approval strategy/optimizer/target-risk SHA drift fails closed; before first confirmed fill, the starting portfolio snapshot and current-risk SHA must still match WP11 exactly;
+- WP11 plan expiry now spans the WP10 `required_execution_days` horizon while retaining the short final-day validity tail;
+- multi-leg staged scheduling is tranche-first (`stage_index`) and exact-leg-sequence second, keeping portfolio staging synchronized by day;
+- a specific immutable instrument may submit at most one staged slice per Moscow calendar day;
+- existing hard caps may make a slice smaller only when the resulting real stage count still fits inside immutable WP11 expiry; otherwise preparation fails with `PLAN_EXECUTION_PLAN_HORIZON_TOO_SHORT` rather than extending the plan or increasing caps;
+- permanent `scripts/check_plan_execution_boundary.py` prevents a direct broker/Sandbox mutation path and enforces hard-disabled autonomous/margin/short/withdrawal/transfer authority;
+- WP12 package and boundary guard are included in mypy scope;
+- architecture, threat-model and data-contract documents are canonicalized under `docs/architecture/`.
 
-Acceptance coverage includes the real WP2→WP8→WP9→WP10→WP11 actionable chain, full NO_ACTION chain, source-order invariance, immutable hash/challenge mutation sensitivity, stale/missing/future evidence, pre-valid/expired review, clean-price and bond-НКД drift, liquidity/spread deterioration, friction change, BUY/SELL eligibility semantics, FX drift/freshness, unknown observation rejection and model-copy tamper rejection.
+Acceptance coverage includes owner approval/no-submit, complete one-submit lifecycle, partial fill, terminal reconciliation, completed replay, already-submitted replay, ambiguous-submit reconciliation-only recovery, expiry semantics, upstream SHA drift, instrument drift, NO_ACTION no-session, deterministic WP10 multi-day staging, tranche ordering, same-instrument daily cadence, hard-cap horizon rejection, durable storage integrity and repository authority boundaries.
 
-The code/test head `9f410f88e31fa161fcd713b9636ab7f460a6f5d6` passed security, Ruff, format, mypy, `app:app`, the read-only GPT Actions contract and full Regression Shield #1111. Status/changelog synchronization changes the PR head, so WP11 remains in final merge gate until the new exact-head Regression Shield and review-thread checks are green and PR #208 is squash-merged.
+WP12 remains **IN PROGRESS** only until the final branch head passes the exact-head Regression Shield, review threads are zero and PR #211 is squash-merged. No GPT Editor change and no real-cap increase is part of this gate.
 
-Next dependency after merge: **WP12 — Safe Plan Execution Engine**, reusing the proven v8.6.1 single-order protocol rather than creating a second execution stack.
+Next dependency after WP12 merge: **WP13 — Portfolio Watchtower**.
 
 Applied Custom GPT remains v8.6.1 until WP15; current v9 development is not authorization for broader real-money execution.
 
