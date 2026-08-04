@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+import hmac
 
 from omni_cio.contracts.v1.plan_execution import (
     BrokerExecutionStatus,
@@ -69,6 +70,100 @@ class SafePlanExecutionServiceV1(_core.SafePlanExecutionServiceV1):
                     halt_code=PlanExecutionHaltCode.PREPARE_REJECTED,
                 )
         return super().prepare_plan(plan=canonical, now=current)
+
+    def approve_plan(
+        self,
+        *,
+        execution_id: str,
+        plan: PortfolioPlanV1,
+        owner_approval_phrase: str,
+        now: datetime | None = None,
+    ) -> PlanExecutionAdvanceResultV1:
+        """Record the exact Unicode owner challenge without submitting an order."""
+        current = _core._aware_utc(now)
+        canonical = _core._canonical_plan(plan)
+        session = self._journal.get(execution_id)
+        if session.plan_sha256 != canonical.plan_sha256:
+            return self._halt(
+                session,
+                PlanExecutionHaltCode.PLAN_INVALID,
+                "Execution session does not match immutable plan.",
+            )
+        if session.owner_approved:
+            return self._result(
+                PlanExecutionAdvanceAction.REPLAY,
+                session,
+                "Exact plan approval was already recorded; no submit repeated.",
+            )
+        if current >= canonical.expires_at:
+            return self._halt(
+                session,
+                PlanExecutionHaltCode.PLAN_EXPIRED,
+                "Plan expired before owner approval.",
+            )
+
+        expected_phrase = canonical.owner_approval_phrase or ""
+        exact_match = bool(expected_phrase) and hmac.compare_digest(
+            owner_approval_phrase.encode("utf-8"),
+            expected_phrase.encode("utf-8"),
+        )
+        if not exact_match:
+            return self._halt(
+                session,
+                PlanExecutionHaltCode.OWNER_APPROVAL_MISMATCH,
+                "Exact owner approval phrase for this plan is required.",
+            )
+
+        state = self._state(canonical, current)
+        matched, code, message = _core._progress_match(
+            plan=canonical,
+            session=session,
+            state=state,
+            settings=self._settings,
+            now=current,
+        )
+        if not matched:
+            return self._halt(
+                session,
+                code or PlanExecutionHaltCode.PORTFOLIO_PROGRESS_MISMATCH,
+                message or "Current state no longer matches plan start.",
+            )
+        bindings = {
+            item.binding.stable_key: item.binding
+            for item in session.instrument_states
+        }
+        review = self._initial_review(canonical, state, bindings, current)
+        if (
+            not review.plan_valid
+            or review.expected_owner_approval_phrase != expected_phrase
+        ):
+            return self._halt(
+                session,
+                PlanExecutionHaltCode.PLAN_INVALID,
+                "Plan became invalid before owner approval.",
+            )
+
+        evidence_sha = _core._sha(
+            "plan-owner-approval-v1",
+            execution_id,
+            canonical.plan_sha256,
+            owner_approval_phrase,
+        )
+        updated = _core._session_update(
+            session,
+            state=PlanExecutionSessionState.ACTIVE,
+            last_reviewed_at=current,
+            last_review_sha256=review.review_sha256,
+            owner_approved=True,
+            owner_approved_at=current,
+            owner_approval_evidence_sha256=evidence_sha,
+        )
+        committed = self._commit(session, updated)
+        return self._result(
+            PlanExecutionAdvanceAction.APPROVED,
+            committed,
+            "Exact immutable plan approval recorded; no broker submit occurred.",
+        )
 
     @staticmethod
     def _next_execution_stage(
