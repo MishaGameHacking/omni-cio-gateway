@@ -38,6 +38,7 @@ files = [
   "omni_cio/credit",
   "omni_cio/funds",
   "omni_cio/strategy",
+  "omni_cio/optimizer",
   "omni_cio/rebalancing",
   "omni_cio/pretrade",
   "omni_cio/paper",
@@ -50,6 +51,7 @@ files = [
   "scripts/check_live_read_only_release.py",
   "scripts/check_read_only_release_contract.py",
   "scripts/check_repository_layout.py",
+  "scripts/check_optimizer_boundary.py",
 ]
 
 [tool.pytest.ini_options]
