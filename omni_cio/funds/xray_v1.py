@@ -182,7 +182,9 @@ def _direct_overlap(
     if not holdings or not direct:
         return None
     direct_keys = {row.holding_key for row in direct if row.portfolio_weight > 0}
-    shared = tuple(sorted(row.holding_key for row in holdings if row.holding_key in direct_keys))
+    shared = tuple(
+        sorted(row.holding_key for row in holdings if row.holding_key in direct_keys)
+    )
     if not shared:
         return FundOverlapV1(
             kind=FundOverlapKind.DIRECT_HOLDINGS,
@@ -259,6 +261,7 @@ def build_fund_xray(
         not universe.decision_ready
         or len(universe_rows) != 1
         or universe_rows[0].identity.instrument_type is not InstrumentType.ETF
+        or universe_rows[0].identity != profile.instrument
     ):
         blockers.append(FundBlockerCode.UNIVERSE_BINDING_MISMATCH)
 
