@@ -36,10 +36,12 @@ class SafePlanExecutionServiceV1(_core.SafePlanExecutionServiceV1):
 
     The full fail-closed state machine lives in ``service_core_v1``. This facade
     carries only cross-WP hardening discovered during WP12 review: immutable-plan
-    expiry blocks any *new* prepare/submit, while already submitted orders remain
-    reconcilable; and broker-terminal reconciliation retains the exact plan for
-    deterministic SELL tax allowance accounting. Broker submit remains owned by
-    the existing RealTradingServiceV1 path inherited through the core service.
+    expiry blocks any *new* prepare/submit, fresh strategy/optimizer/target-risk
+    identity remains bound before every stage action, while already submitted
+    orders remain reconcilable; and broker-terminal reconciliation retains the
+    exact plan for deterministic SELL tax allowance accounting. Broker submit
+    remains owned by the existing RealTradingServiceV1 path inherited through
+    the core service.
     """
 
     def advance_execution(
@@ -88,6 +90,55 @@ class SafePlanExecutionServiceV1(_core.SafePlanExecutionServiceV1):
             plan=canonical,
             now=current,
         )
+
+    def _runtime_guard(
+        self,
+        plan: PortfolioPlanV1,
+        session: PlanExecutionSessionV1,
+        stage: PlanExecutionStageV1,
+        now: datetime,
+    ):
+        state = self._state(plan, now)
+        if state.strategy_selection_sha256 != plan.strategy_selection_sha256:
+            raise SafePlanExecutionError(
+                "PLAN_EXECUTION_STRATEGY_BINDING_CHANGED",
+                "Strategy selection changed after immutable plan approval.",
+                halt_code=PlanExecutionHaltCode.PLAN_INVALID,
+            )
+        if state.optimizer_sha256 != plan.optimizer_sha256:
+            raise SafePlanExecutionError(
+                "PLAN_EXECUTION_OPTIMIZER_BINDING_CHANGED",
+                "Optimizer result changed after immutable plan approval.",
+                halt_code=PlanExecutionHaltCode.PLAN_INVALID,
+            )
+        if (
+            state.target_risk_assessment_sha256
+            != plan.target_risk_assessment_sha256
+        ):
+            raise SafePlanExecutionError(
+                "PLAN_EXECUTION_TARGET_RISK_BINDING_CHANGED",
+                "Target risk assessment changed after immutable plan approval.",
+                halt_code=PlanExecutionHaltCode.PLAN_INVALID,
+            )
+
+        no_confirmed_fill = all(
+            row.broker_terminal_lots == 0 for row in _core._all_stages(session)
+        )
+        if no_confirmed_fill:
+            if state.portfolio_snapshot_sha256 != plan.portfolio_snapshot_sha256:
+                raise SafePlanExecutionError(
+                    "PLAN_EXECUTION_INITIAL_PORTFOLIO_BINDING_CHANGED",
+                    "Portfolio snapshot changed before the first confirmed fill.",
+                    halt_code=PlanExecutionHaltCode.PORTFOLIO_PROGRESS_MISMATCH,
+                )
+            if state.risk_assessment_sha256 != plan.current_risk_assessment_sha256:
+                raise SafePlanExecutionError(
+                    "PLAN_EXECUTION_INITIAL_RISK_BINDING_CHANGED",
+                    "Current risk assessment changed before the first confirmed fill.",
+                    halt_code=PlanExecutionHaltCode.CURRENT_RISK_NOT_READY,
+                )
+
+        return super()._runtime_guard(plan, session, stage, now)
 
     def _reconcile_broker(
         self,
