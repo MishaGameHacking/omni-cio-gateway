@@ -620,7 +620,7 @@ def test_small_capital_skips_candidate_that_cannot_form_meaningful_lot() -> None
         stable_key=candidate_template.stable_key,
         component=StrategyComponentKind.QUALITY_DEBT,
         current_lots=0,
-        lot_size=20,
+        lot_size=300,
         native_currency="RUB",
         base_currency="RUB",
         unit_native_price=Decimal("1000"),
