@@ -9,6 +9,7 @@ from .journal_v1 import (
     WatchtowerJournalStorageError,
     WatchtowerJournalV1,
 )
+from .provider_v1 import CanonicalWatchtowerEvidenceProviderV1, WatchtowerProviderError
 from .qstash_v1 import (
     QStashScheduleClientV1,
     QStashScheduleError,
@@ -31,6 +32,7 @@ from .upstash_journal_v1 import (
 )
 
 __all__ = [
+    "CanonicalWatchtowerEvidenceProviderV1",
     "InMemoryWatchtowerJournalV1",
     "PortfolioWatchtowerV1",
     "QStashScheduleClientV1",
@@ -49,6 +51,7 @@ __all__ = [
     "WatchtowerJournalIntegrityError",
     "WatchtowerJournalStorageError",
     "WatchtowerJournalV1",
+    "WatchtowerProviderError",
     "WatchtowerRuntimeError",
     "WatchtowerScheduledRequestV1",
     "WatchtowerScheduledRunnerV1",
