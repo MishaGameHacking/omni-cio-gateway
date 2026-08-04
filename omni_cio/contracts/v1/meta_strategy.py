@@ -139,10 +139,30 @@ class StrategyComparisonV1(ContractModel):
     risk_fit: ComparisonGrade
     liquidity_fit: ComparisonGrade
     friction_weight: FrictionWeight | None = None
+    friction_as_of: datetime | None = None
+    friction_source_sha256s: tuple[Sha256, ...] = ()
     blockers: tuple[StrategyCandidateBlockerCode, ...] = ()
     rationale_codes: tuple[
         Annotated[str, Field(pattern=r"^[A-Z][A-Z0-9_]{2,63}$")], ...
     ] = ()
+
+    @field_validator("friction_as_of")
+    @classmethod
+    def normalize_friction_timestamp(cls, value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("comparison friction timestamp must be timezone-aware")
+        return value.astimezone(timezone.utc)
+
+    @field_validator("friction_source_sha256s", mode="before")
+    @classmethod
+    def normalize_friction_sources(cls, value: object) -> object:
+        if value is None:
+            return ()
+        if isinstance(value, (str, bytes)) or not isinstance(value, Iterable):
+            raise ValueError("comparison friction sources must be a collection")
+        return tuple(sorted(set(value)))
 
     @field_validator("blockers", mode="before")
     @classmethod
@@ -168,11 +188,17 @@ class StrategyComparisonV1(ContractModel):
             raise ValueError("feasible strategy cannot carry candidate blockers")
         if not self.feasible and not self.blockers:
             raise ValueError("infeasible strategy requires at least one blocker")
-        if self.regime is StrategyRegime.NO_ACTION and self.friction_weight not in (
-            None,
-            Decimal("0"),
-        ):
-            raise ValueError("NO_ACTION friction must be zero or absent")
+
+        if self.regime is StrategyRegime.NO_ACTION:
+            if self.friction_weight not in (None, Decimal("0")):
+                raise ValueError("NO_ACTION friction must be zero or absent")
+            if self.friction_as_of is not None or self.friction_source_sha256s:
+                raise ValueError("NO_ACTION cannot carry friction provenance")
+        elif self.friction_weight is None:
+            if self.friction_as_of is not None or self.friction_source_sha256s:
+                raise ValueError("absent friction weight cannot carry provenance")
+        elif self.friction_as_of is None or not self.friction_source_sha256s:
+            raise ValueError("actionable friction must carry timestamp and sources")
         return self
 
 
@@ -188,8 +214,14 @@ class MetaStrategySelectionV1(ContractModel):
     policy_reference: PolicyReferenceV1
     risk_assessment_sha256: Sha256
     selected_regime: StrategyRegime
-    components: Annotated[tuple[StrategyComponentV1, ...], Field(min_length=4, max_length=4)]
-    comparisons: Annotated[tuple[StrategyComparisonV1, ...], Field(min_length=5, max_length=5)]
+    components: Annotated[
+        tuple[StrategyComponentV1, ...],
+        Field(min_length=4, max_length=4),
+    ]
+    comparisons: Annotated[
+        tuple[StrategyComparisonV1, ...],
+        Field(min_length=5, max_length=5),
+    ]
     blockers: tuple[StrategySelectionBlockerCode, ...] = ()
     review_conditions: Annotated[
         tuple[StrategyReviewConditionV1, ...],
