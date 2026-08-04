@@ -9,6 +9,8 @@ ROOT = Path(__file__).resolve().parents[1]
 EXECUTION_ROOT = ROOT / "omni_cio" / "plan_execution"
 CONTRACT_PATH = ROOT / "omni_cio" / "contracts" / "v1" / "plan_execution.py"
 ADAPTER_PATH = EXECUTION_ROOT / "adapter_v1.py"
+PUBLIC_SERVICE_PATH = EXECUTION_ROOT / "service_v1.py"
+CORE_MODULE = "service_core_v1"
 
 REQUIRED_PATHS = (
     "omni_cio/contracts/v1/plan_execution.py",
@@ -19,7 +21,12 @@ REQUIRED_PATHS = (
     "omni_cio/plan_execution/service_core_v1.py",
     "omni_cio/plan_execution/service_v1.py",
     "omni_cio/plan_execution/upstash_journal_v1.py",
+    "tests/v9_execution_fixture.py",
     "tests/test_plan_execution_boundary_v1.py",
+    "tests/test_plan_execution_broker_reconciliation_v1.py",
+    "tests/test_plan_execution_upstash_journal_v1.py",
+    "tests/test_safe_plan_execution_bindings_v1.py",
+    "tests/test_safe_plan_execution_v1.py",
     "docs/architecture/V9_SAFE_PLAN_EXECUTION.md",
     "docs/architecture/V9_SAFE_PLAN_EXECUTION_THREAT_MODEL.md",
     "docs/architecture/V9_SAFE_PLAN_EXECUTION_DATA_CONTRACT.md",
@@ -97,7 +104,10 @@ def _scan_python(path: Path, failures: list[str]) -> None:
                     failures,
                 )
             if module == "omni_cio.real_trading.service_v1" and path != ADAPTER_PATH:
-                _fail(f"only WP12 adapter may import RealTradingServiceV1: {relative}", failures)
+                _fail(
+                    f"only WP12 adapter may import RealTradingServiceV1: {relative}",
+                    failures,
+                )
             if module == "omni_cio.real_trading.client_v1":
                 imported = {item.name for item in node.names}
                 if imported - {"RealTradingApiFailure"}:
@@ -105,6 +115,11 @@ def _scan_python(path: Path, failures: list[str]) -> None:
                         f"WP12 may import only RealTradingApiFailure from client_v1: {relative}",
                         failures,
                     )
+            if CORE_MODULE in module and path != PUBLIC_SERVICE_PATH:
+                _fail(
+                    f"frozen WP12 core may be imported only by service_v1.py: {relative}",
+                    failures,
+                )
         elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
             if node.func.attr in FORBIDDEN_CALL_ATTRIBUTES:
                 _fail(
@@ -112,6 +127,27 @@ def _scan_python(path: Path, failures: list[str]) -> None:
                     f"{relative}:{node.lineno} ({node.func.attr})",
                     failures,
                 )
+
+
+def _scan_core_imports(failures: list[str]) -> None:
+    """Prevent the frozen compatibility core from becoming a second public API."""
+
+    for path in ROOT.rglob("*.py"):
+        relative = path.relative_to(ROOT)
+        if any(part in {".git", ".venv", "__pycache__"} for part in relative.parts):
+            continue
+        if path == PUBLIC_SERVICE_PATH:
+            continue
+        try:
+            source = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            _fail(f"cannot inspect core import boundary {relative}: {exc}", failures)
+            continue
+        if "service_core_v1" in source:
+            _fail(
+                f"frozen WP12 core referenced outside audited facade: {relative}",
+                failures,
+            )
 
 
 def main() -> int:
@@ -125,6 +161,7 @@ def main() -> int:
     else:
         for path in sorted(EXECUTION_ROOT.glob("*.py")):
             _scan_python(path, failures)
+    _scan_core_imports(failures)
 
     if CONTRACT_PATH.is_file():
         _scan_python(CONTRACT_PATH, failures)
@@ -156,6 +193,23 @@ def main() -> int:
             if f"def {forbidden_method}" in adapter:
                 _fail(f"WP12 adapter exposes forbidden method: {forbidden_method}", failures)
 
+    if PUBLIC_SERVICE_PATH.is_file():
+        public_service = PUBLIC_SERVICE_PATH.read_text(encoding="utf-8")
+        for required in (
+            "class SafePlanExecutionServiceV1(_core.SafePlanExecutionServiceV1)",
+            "def advance_execution(",
+            "def _runtime_guard(",
+            "def _reconcile_broker(",
+            "PlanExecutionHaltCode.PLAN_EXPIRED",
+            "_core._tax_allowance(plan, stage, snapshot.lots_executed)",
+        ):
+            if required not in public_service:
+                _fail(f"WP12 audited facade hardening missing: {required}", failures)
+
+    package_init = EXECUTION_ROOT / "__init__.py"
+    if package_init.is_file() and "service_core_v1" in package_init.read_text(encoding="utf-8"):
+        _fail("frozen WP12 core must not be exported by package __init__", failures)
+
     if failures:
         print("Safe plan execution boundary check failed:", file=sys.stderr)
         for failure in failures:
@@ -164,6 +218,7 @@ def main() -> int:
 
     print("Safe plan execution boundary check passed.")
     print("Broker submit implementation: existing v8.6.1 primitive only")
+    print("Frozen compatibility core: private behind audited facade")
     print("Direct broker/Sandbox mutation surface: absent")
     print("Transfer/withdraw/margin/short/autonomous recurring execution: disabled")
     return 0
