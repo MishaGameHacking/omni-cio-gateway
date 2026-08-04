@@ -5,7 +5,10 @@ from decimal import Decimal
 from typing import Any, cast
 
 from omni_cio.contracts.v1.plan_execution import (
+    BrokerExecutionStatus,
     PlanExecutionAdvanceAction,
+    PlanExecutionAttemptState,
+    PlanExecutionAttemptV1,
     PlanExecutionInstrumentBindingV1,
     PlanExecutionInstrumentStateV1,
     PlanExecutionSessionState,
@@ -108,6 +111,22 @@ def test_next_stage_advances_by_tranche_then_preserves_leg_sequence() -> None:
         ).model_dump(mode="python")
     )
     moscow_day = (NOW + timedelta(hours=3)).date()
+    terminal_attempt = PlanExecutionAttemptV1(
+        attempt_index=1,
+        quantity_lots=1,
+        state=PlanExecutionAttemptState.TERMINAL,
+        proposal_id="proposal-stage-1",
+        order_request_id="request-stage-1",
+        limit_price=Decimal("100"),
+        prepared_at=NOW,
+        submitted_at=NOW,
+        reconciled_at=NOW,
+        broker_status=BrokerExecutionStatus.FILLED,
+        lots_executed=1,
+        total_order_amount_rub=Decimal("100"),
+        executed_commission_rub=Decimal("0"),
+        broker_response_sha256="f" * 64,
+    )
     first_leg_first_slice = PlanExecutionStageV1(
         stage_id="5" * 64,
         leg_sequence=1,
@@ -119,7 +138,9 @@ def test_next_stage_advances_by_tranche_then_preserves_leg_sequence() -> None:
         broker_terminal_lots=1,
         portfolio_reconciled_lots=1,
         state=PlanExecutionStageState.FILLED,
+        attempts=(terminal_attempt,),
         not_before_moscow_date=moscow_day,
+        last_submission_moscow_date=moscow_day,
     )
     first_leg_second_slice = PlanExecutionStageV1(
         stage_id="6" * 64,
