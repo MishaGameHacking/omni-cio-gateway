@@ -73,6 +73,7 @@ def test_actionable_plan_is_exact_immutable_and_read_only() -> None:
     assert plan.risk_before == fixture.current_risk.after
     assert fixture.optimizer.target_risk_assessment is not None
     assert plan.risk_after == fixture.optimizer.target_risk_assessment.after
+    assert len(plan.cancellation_conditions) == len(PlanCancellationCode)
 
     with pytest.raises(ValidationError):
         plan.target_cash_base = Decimal("1")
@@ -166,6 +167,27 @@ def test_clean_price_drift_cancels_plan_and_hides_approval_phrase() -> None:
     assert review.expected_owner_approval_phrase is None
 
 
+def test_extreme_price_drift_is_reported_without_contract_overflow() -> None:
+    fixture = build_fixture()
+    observations = list(exact_observations(fixture.plan))
+    bond = observations[0]
+    observations[0] = _replace_observation(
+        bond,
+        clean_unit_price_base=bond.clean_unit_price_base * Decimal("3"),
+    )
+
+    review = review_portfolio_plan(
+        plan=fixture.plan,
+        review_input=_review_input(
+            fixture=fixture,
+            observations=tuple(observations),
+        ),
+    )
+
+    assert review.drift_results[0].clean_price_drift_bps == Decimal("20000")
+    assert PlanCancellationCode.CLEAN_PRICE_DRIFT_EXCEEDED in review.cancellation_codes
+
+
 def test_bond_accrued_interest_drift_cancels_plan() -> None:
     fixture = build_fixture()
     observations = list(exact_observations(fixture.plan))
@@ -197,7 +219,9 @@ def test_spread_and_liquidity_capacity_deterioration_cancel_plan() -> None:
     observations[0] = _replace_observation(
         bond,
         spread_bps=bond.spread_bps + Decimal("100"),
-        average_daily_turnover_base=bond.average_daily_turnover_base * Decimal("0.4"),
+        average_daily_turnover_base=(
+            bond.average_daily_turnover_base * Decimal("0.4")
+        ),
         top_of_book_depth_base=bond.top_of_book_depth_base * Decimal("0.4"),
     )
 
@@ -237,6 +261,29 @@ def test_friction_or_buy_eligibility_change_cancels_plan() -> None:
     assert PlanCancellationCode.ACCOUNT_ELIGIBILITY_CHANGED in review.cancellation_codes
 
 
+def test_stale_market_and_friction_observation_cancel_plan() -> None:
+    fixture = build_fixture()
+    observations = list(exact_observations(fixture.plan))
+    bond = observations[0]
+    observations[0] = _replace_observation(
+        bond,
+        observed_at=NOW - timedelta(minutes=10),
+        friction_as_of=NOW - timedelta(days=2),
+    )
+
+    review = review_portfolio_plan(
+        plan=fixture.plan,
+        review_input=_review_input(
+            fixture=fixture,
+            observations=tuple(observations),
+        ),
+    )
+
+    assert PlanCancellationCode.MARKET_EVIDENCE_STALE in review.cancellation_codes
+    assert PlanCancellationCode.FRICTION_EVIDENCE_STALE in review.cancellation_codes
+    assert review.plan_valid is False
+
+
 def test_missing_market_observation_cancels_plan() -> None:
     fixture = build_fixture()
 
@@ -246,6 +293,21 @@ def test_missing_market_observation_cancels_plan() -> None:
     )
 
     assert PlanCancellationCode.MARKET_EVIDENCE_MISSING in review.cancellation_codes
+    assert review.plan_valid is False
+
+
+def test_review_before_plan_creation_is_cancelled() -> None:
+    fixture = build_fixture()
+    review = review_portfolio_plan(
+        plan=fixture.plan,
+        review_input=_review_input(
+            fixture=fixture,
+            reviewed_at=NOW - timedelta(seconds=1),
+        ),
+    )
+
+    assert PlanCancellationCode.PLAN_NOT_YET_VALID in review.cancellation_codes
+    assert review.status is PlanReviewStatus.CANCELLED
     assert review.plan_valid is False
 
 
@@ -311,4 +373,76 @@ def test_builder_rejects_mutated_optimizer_market_binding() -> None:
             optimizer=fixture.optimizer,
             optimizer_assets=(mutated_bond, share),
             created_at=NOW,
+        )
+
+
+def test_builder_rejects_stale_market_evidence() -> None:
+    fixture = build_fixture()
+    bond, share = fixture.assets
+    assert bond.market_evidence is not None
+    stale_market = bond.market_evidence.model_copy(
+        update={"as_of": NOW - timedelta(minutes=10)}
+    )
+    stale_bond = bond.model_copy(update={"market_evidence": stale_market})
+
+    with pytest.raises(PortfolioPlanError, match="PLAN_MARKET_EVIDENCE_STALE"):
+        build_portfolio_plan(
+            portfolio=fixture.portfolio,
+            policy=fixture.policy,
+            policy_assessment=fixture.assessment,
+            current_risk=fixture.current_risk,
+            strategy=fixture.strategy,
+            optimizer=fixture.optimizer,
+            optimizer_assets=(stale_bond, share),
+            created_at=NOW,
+        )
+
+
+def test_builder_rejects_tampered_optimizer_hash() -> None:
+    fixture = build_fixture()
+    tampered = fixture.optimizer.model_copy(update={"optimizer_sha256": "f" * 64})
+
+    with pytest.raises(PortfolioPlanError, match="PLAN_OPTIMIZER_OBJECT_TAMPERED"):
+        build_portfolio_plan(
+            portfolio=fixture.portfolio,
+            policy=fixture.policy,
+            policy_assessment=fixture.assessment,
+            current_risk=fixture.current_risk,
+            strategy=fixture.strategy,
+            optimizer=tampered,
+            optimizer_assets=fixture.assets,
+            created_at=NOW,
+        )
+
+
+def test_review_rejects_model_copy_plan_tampering() -> None:
+    fixture = build_fixture()
+    tampered = fixture.plan.model_copy(
+        update={"target_cash_base": fixture.plan.target_cash_base + Decimal("1")}
+    )
+
+    with pytest.raises(PortfolioPlanError, match="PLAN_OBJECT_TAMPERED"):
+        review_portfolio_plan(
+            plan=tampered,
+            review_input=_review_input(fixture=fixture),
+        )
+
+
+def test_review_rejects_observation_for_unknown_plan_leg() -> None:
+    fixture = build_fixture()
+    observations = list(exact_observations(fixture.plan))
+    observations.append(
+        _replace_observation(
+            observations[0],
+            stable_key="share:UNKNOWN-PLAN-LEG",
+        )
+    )
+
+    with pytest.raises(PortfolioPlanError, match="PLAN_REVIEW_OBSERVATION_SET_MISMATCH"):
+        review_portfolio_plan(
+            plan=fixture.plan,
+            review_input=_review_input(
+                fixture=fixture,
+                observations=tuple(observations),
+            ),
         )
