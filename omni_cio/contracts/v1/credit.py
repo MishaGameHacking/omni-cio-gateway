@@ -52,6 +52,14 @@ class CreditRatingScale(StrEnum):
     NRA_RU_NATIONAL = "nra_ru_national"
 
 
+_AGENCY_SCALE_COMPATIBILITY = {
+    CreditRatingAgency.ACRA: CreditRatingScale.ACRA_RU_NATIONAL,
+    CreditRatingAgency.EXPERT_RA: CreditRatingScale.EXPERT_RA_RU_NATIONAL,
+    CreditRatingAgency.NKR: CreditRatingScale.NKR_RU_NATIONAL,
+    CreditRatingAgency.NRA: CreditRatingScale.NRA_RU_NATIONAL,
+}
+
+
 class CreditRatingSubject(StrEnum):
     ISSUE = "issue"
     ISSUER = "issuer"
@@ -139,7 +147,11 @@ class CreditGuaranteeV1(ContractModel):
 
     @model_validator(mode="after")
     def validate_substitution(self) -> CreditGuaranteeV1:
-        if self.credit_substitution_eligible and self.guarantee_type is not GuaranteeType.FULL_IRREVOCABLE_UNCONDITIONAL:
+        if (
+            self.credit_substitution_eligible
+            and self.guarantee_type
+            is not GuaranteeType.FULL_IRREVOCABLE_UNCONDITIONAL
+        ):
             raise ValueError(
                 "credit substitution requires full irrevocable unconditional guarantee"
             )
@@ -176,7 +188,10 @@ class DebtIssueTermsV1(ContractModel):
 
 
 class CreditRatingObservationV1(ContractModel):
-    observation_id: Annotated[str, Field(pattern=r"^rating_[a-z0-9][a-z0-9_-]{2,95}$")]
+    observation_id: Annotated[
+        str,
+        Field(pattern=r"^rating_[a-z0-9][a-z0-9_-]{2,95}$"),
+    ]
     subject: CreditRatingSubject
     subject_id: Annotated[str, Field(min_length=1, max_length=128)]
     agency: CreditRatingAgency
@@ -207,9 +222,18 @@ class CreditRatingObservationV1(ContractModel):
             raise ValueError("rating source hashes must be a collection")
         return tuple(sorted(set(value)))
 
+    @model_validator(mode="after")
+    def validate_agency_scale(self) -> CreditRatingObservationV1:
+        if _AGENCY_SCALE_COMPATIBILITY[self.agency] is not self.scale:
+            raise ValueError("rating agency and scale are incompatible")
+        return self
+
 
 class CreditDefaultEventV1(ContractModel):
-    event_id: Annotated[str, Field(pattern=r"^credit_event_[a-z0-9][a-z0-9_-]{2,95}$")]
+    event_id: Annotated[
+        str,
+        Field(pattern=r"^credit_event_[a-z0-9][a-z0-9_-]{2,95}$"),
+    ]
     event_type: CreditDefaultEventType
     subject_id: Annotated[str, Field(min_length=1, max_length=128)]
     occurred_at: datetime
@@ -260,13 +284,48 @@ class CreditEvidenceInputV1(ContractModel):
             raise ValueError("issue terms must bind research target instrument UID")
         if self.issue_terms.issuer_entity_id != self.issuer.entity_id:
             raise ValueError("issue issuer id must match issuer identity")
+
         guarantor_ids = {row.entity_id for row in self.guarantors}
-        if any(row.kind is not CreditEntityKind.GUARANTOR for row in self.guarantors):
+        if any(
+            row.kind is not CreditEntityKind.GUARANTOR for row in self.guarantors
+        ):
             raise ValueError("guarantor identities must have GUARANTOR kind")
         if len(guarantor_ids) != len(self.guarantors):
             raise ValueError("guarantor identities must be unique")
-        if any(row.guarantor_entity_id not in guarantor_ids for row in self.issue_terms.guarantees):
+        if any(
+            row.guarantor_entity_id not in guarantor_ids
+            for row in self.issue_terms.guarantees
+        ):
             raise ValueError("issue guarantee references missing guarantor identity")
+
+        rating_ids = [row.observation_id for row in self.ratings]
+        if len(rating_ids) != len(set(rating_ids)):
+            raise ValueError("rating observation ids must be unique")
+        event_ids = [row.event_id for row in self.default_events]
+        if len(event_ids) != len(set(event_ids)):
+            raise ValueError("credit event ids must be unique")
+
+        for rating in self.ratings:
+            if rating.subject is CreditRatingSubject.ISSUE:
+                expected = self.target.instrument_uid
+                if rating.subject_id != expected:
+                    raise ValueError("issue rating subject does not match instrument UID")
+            elif rating.subject is CreditRatingSubject.ISSUER:
+                if rating.subject_id != self.issuer.entity_id:
+                    raise ValueError("issuer rating subject does not match issuer identity")
+            elif rating.subject_id not in guarantor_ids:
+                raise ValueError("guarantor rating subject is outside identity graph")
+
+        allowed_event_subjects = {
+            self.target.instrument_uid,
+            self.issuer.entity_id,
+            *guarantor_ids,
+        }
+        if any(
+            event.subject_id not in allowed_event_subjects
+            for event in self.default_events
+        ):
+            raise ValueError("credit event subject is outside identity graph")
         return self
 
 
@@ -292,7 +351,10 @@ class CreditFloorAssessmentV1(ContractModel):
     @model_validator(mode="after")
     def validate_assessment(self) -> CreditFloorAssessmentV1:
         selected = self.selected_observation_id is not None
-        if selected != (self.selected_rating is not None and self.selected_subject_id is not None):
+        selected_fields_complete = (
+            self.selected_rating is not None and self.selected_subject_id is not None
+        )
+        if selected != selected_fields_complete:
             raise ValueError("selected credit observation fields must be supplied together")
         if self.meets_floor and self.blockers:
             raise ValueError("credit floor cannot pass with blockers")
@@ -361,7 +423,11 @@ class CreditPassportV1(ContractModel):
         if self.decision_ready != (not self.blockers):
             raise ValueError("credit decision readiness must match blockers")
         active_adverse = any(row.active for row in self.default_events)
-        expected_strong = self.decision_ready and self.floor_assessment.meets_floor and not active_adverse
+        expected_strong = (
+            self.decision_ready
+            and self.floor_assessment.meets_floor
+            and not active_adverse
+        )
         if self.strong_recommendation_allowed != expected_strong:
             raise ValueError("strong recommendation state does not reconcile")
         if self.passport_sha256 != credit_passport_sha256(self):
@@ -370,7 +436,12 @@ class CreditPassportV1(ContractModel):
 
 
 def _canonical_json(value: object) -> str:
-    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
 
 
 def credit_passport_sha256(passport: CreditPassportV1) -> str:
