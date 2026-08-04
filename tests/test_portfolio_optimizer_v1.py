@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from omni_cio.contracts.v1.investment_policy import (
     AccountPolicyType,
     InvestmentObjective,
+    InvestmentPolicyAssessmentV1,
     InvestmentPolicyStatementV1,
     LiquidityReserveV1,
     PolicyField,
@@ -16,6 +18,7 @@ from omni_cio.contracts.v1.investment_policy import (
     TaxConstraintStatus,
 )
 from omni_cio.contracts.v1.meta_strategy import (
+    MetaStrategySelectionV1,
     StrategyComponentKind,
     StrategyFrictionEvidenceV1,
     StrategyRegime,
@@ -28,10 +31,12 @@ from omni_cio.contracts.v1.portfolio_optimizer import (
     OptimizerScenarioKind,
     OptimizerTradeSide,
     OptimizerWarningCode,
+    PortfolioOptimizerResultV1,
     PortfolioOptimizerSettingsV1,
 )
 from omni_cio.contracts.v1.portfolio_risk import (
     PermanentLossStatus,
+    PortfolioRiskAssessmentV1,
     PortfolioRiskInputV1,
     PositionCreditRiskInputV1,
     PositionLiquidityRiskInputV1,
@@ -71,6 +76,16 @@ _REQUIRED_PROVENANCE_FIELDS = (
     PolicyField.ACCOUNT_TYPE,
     PolicyField.REBALANCE_BAND,
 )
+
+
+@dataclass(frozen=True)
+class BaseInputs:
+    policy: InvestmentPolicyStatementV1
+    assessment: InvestmentPolicyAssessmentV1
+    portfolio: PortfolioRiskInputV1
+    risk: PortfolioRiskAssessmentV1
+    strategy: MetaStrategySelectionV1
+    assets: tuple[OptimizerAssetV1, ...]
 
 
 def _provenance() -> tuple[PolicyFieldProvenanceV1, ...]:
@@ -224,23 +239,38 @@ def _position(
     )
 
 
+def _market(
+    *,
+    stable_key: str,
+    clean_price: Decimal,
+    source_sha256: str,
+    accrued_interest_per_lot: Decimal | None = None,
+    average_daily_turnover: Decimal = Decimal("5000000"),
+    top_of_book_depth: Decimal = Decimal("1000000"),
+    as_of: datetime = ASSESS_AT,
+) -> OptimizerMarketEvidenceV1:
+    return OptimizerMarketEvidenceV1(
+        stable_key=stable_key,
+        as_of=as_of,
+        source_sha256=source_sha256,
+        clean_unit_price_base=clean_price,
+        accrued_interest_per_lot_base=accrued_interest_per_lot,
+        spread_bps=Decimal("20"),
+        average_daily_turnover_base=average_daily_turnover,
+        top_of_book_depth_base=top_of_book_depth,
+    )
+
+
 def _base_inputs(
     *,
     policy: InvestmentPolicyStatementV1 | None = None,
-) -> tuple[
-    InvestmentPolicyStatementV1,
-    object,
-    PortfolioRiskInputV1,
-    object,
-    object,
-    tuple[OptimizerAssetV1, ...],
-]:
+) -> BaseInputs:
     policy_value = policy or _policy()
-    policy_assessment = assess_investment_policy(
+    assessment = assess_investment_policy(
         policy_value,
         assessed_at=ASSESS_AT,
     )
-    assert policy_assessment.ready_for_personal_sizing
+    assert assessment.ready_for_personal_sizing
 
     bond = _position(
         stable_key="bond:QUALITY-1",
@@ -262,19 +292,19 @@ def _base_inputs(
     )
     portfolio = PortfolioRiskInputV1(
         portfolio_snapshot_sha256=SNAPSHOT_SHA,
-        policy_reference=policy_assessment.reference,
+        policy_reference=assessment.reference,
         base_currency="RUB",
         cash_base=Decimal("300000"),
         positions=(bond, share),
     )
-    current_risk = assess_portfolio_risk(
+    risk = assess_portfolio_risk(
         portfolio=portfolio,
         policy=policy_value,
-        policy_assessment=policy_assessment,
+        policy_assessment=assessment,
         assessed_at=ASSESS_AT,
     )
-    assert current_risk.decision_ready
-    assert current_risk.after.policy_compliant
+    assert risk.decision_ready
+    assert risk.after.policy_compliant
 
     friction = tuple(
         StrategyFrictionEvidenceV1(
@@ -294,8 +324,8 @@ def _base_inputs(
     strategy = select_meta_strategy(
         portfolio_snapshot_sha256=SNAPSHOT_SHA,
         policy=policy_value,
-        policy_assessment=policy_assessment,
-        risk=current_risk,
+        policy_assessment=assessment,
+        risk=risk,
         friction_evidence=friction,
         selected_at=ASSESS_AT,
     )
@@ -308,21 +338,19 @@ def _base_inputs(
         lot_size=1,
         native_currency="RUB",
         base_currency="RUB",
-        unit_native_price=Decimal("1000"),
-        unit_base_price=Decimal("1000"),
+        unit_full_value_native=Decimal("1000"),
+        unit_full_value_base=Decimal("1000"),
         risk_template=bond,
         account_eligible=True,
         commission_bps=Decimal("10"),
         estimated_sell_tax_bps=Decimal("0"),
         friction_as_of=ASSESS_AT,
         friction_source_sha256s=("1" * 64,),
-        market_evidence=OptimizerMarketEvidenceV1(
+        market_evidence=_market(
             stable_key=bond.stable_key,
-            as_of=ASSESS_AT,
+            clean_price=Decimal("1000"),
+            accrued_interest_per_lot=Decimal("0"),
             source_sha256="2" * 64,
-            spread_bps=Decimal("20"),
-            average_daily_turnover_base=Decimal("5000000"),
-            top_of_book_depth_base=Decimal("1000000"),
         ),
     )
     share_asset = OptimizerAssetV1(
@@ -332,53 +360,66 @@ def _base_inputs(
         lot_size=1,
         native_currency="RUB",
         base_currency="RUB",
-        unit_native_price=Decimal("100"),
-        unit_base_price=Decimal("100"),
+        unit_full_value_native=Decimal("100"),
+        unit_full_value_base=Decimal("100"),
         risk_template=share,
         account_eligible=True,
         commission_bps=Decimal("10"),
         estimated_sell_tax_bps=Decimal("0"),
         friction_as_of=ASSESS_AT,
         friction_source_sha256s=("3" * 64,),
-        market_evidence=OptimizerMarketEvidenceV1(
+        market_evidence=_market(
             stable_key=share.stable_key,
-            as_of=ASSESS_AT,
+            clean_price=Decimal("100"),
             source_sha256="4" * 64,
-            spread_bps=Decimal("20"),
-            average_daily_turnover_base=Decimal("10000000"),
-            top_of_book_depth_base=Decimal("2000000"),
+            average_daily_turnover=Decimal("10000000"),
+            top_of_book_depth=Decimal("2000000"),
         ),
     )
-    return (
-        policy_value,
-        policy_assessment,
-        portfolio,
-        current_risk,
-        strategy,
-        (bond_asset, share_asset),
+    return BaseInputs(
+        policy=policy_value,
+        assessment=assessment,
+        portfolio=portfolio,
+        risk=risk,
+        strategy=strategy,
+        assets=(bond_asset, share_asset),
     )
 
 
-def _target(result: object, stable_key: str):
+def _target(
+    result: PortfolioOptimizerResultV1,
+    stable_key: str,
+):
     return next(row for row in result.targets if row.stable_key == stable_key)
 
 
-def _scenario(result: object, kind: OptimizerScenarioKind):
+def _scenario(
+    result: PortfolioOptimizerResultV1,
+    kind: OptimizerScenarioKind,
+):
     return next(row for row in result.scenarios if row.kind is kind)
 
 
-def test_optimizer_builds_lot_executable_target_and_revalidates_wp8() -> None:
-    policy, assessment, portfolio, risk, strategy, assets = _base_inputs()
-
-    result = optimize_portfolio(
-        portfolio=portfolio,
-        policy=policy,
-        policy_assessment=assessment,
-        current_risk=risk,
-        strategy=strategy,
-        assets=assets,
+def _optimize(
+    base: BaseInputs,
+    *,
+    assets: tuple[OptimizerAssetV1, ...] | None = None,
+    settings: PortfolioOptimizerSettingsV1 | None = None,
+) -> PortfolioOptimizerResultV1:
+    return optimize_portfolio(
+        portfolio=base.portfolio,
+        policy=base.policy,
+        policy_assessment=base.assessment,
+        current_risk=base.risk,
+        strategy=base.strategy,
+        assets=assets or base.assets,
+        settings=settings,
         optimized_at=ASSESS_AT,
     )
+
+
+def test_optimizer_builds_lot_executable_target_and_revalidates_wp8() -> None:
+    result = _optimize(_base_inputs())
 
     assert result.optimizer_ready is True
     assert result.plan_eligible is True
@@ -389,6 +430,8 @@ def test_optimizer_builds_lot_executable_target_and_revalidates_wp8() -> None:
     assert leg.stable_key == "bond:QUALITY-1"
     assert leg.quantity_lots == 100
     assert leg.gross_notional_base == Decimal("100000")
+    assert leg.accrued_interest_base == Decimal("0")
+    assert leg.settlement_notional_base == Decimal("100000")
     assert leg.commission_base == Decimal("100.00")
     assert leg.cash_delta_base == Decimal("-100100.00")
     assert leg.partial_fill_aware is True
@@ -401,26 +444,9 @@ def test_optimizer_builds_lot_executable_target_and_revalidates_wp8() -> None:
 
 
 def test_optimizer_is_source_order_invariant() -> None:
-    policy, assessment, portfolio, risk, strategy, assets = _base_inputs()
-
-    first = optimize_portfolio(
-        portfolio=portfolio,
-        policy=policy,
-        policy_assessment=assessment,
-        current_risk=risk,
-        strategy=strategy,
-        assets=assets,
-        optimized_at=ASSESS_AT,
-    )
-    reordered = optimize_portfolio(
-        portfolio=portfolio,
-        policy=policy,
-        policy_assessment=assessment,
-        current_risk=risk,
-        strategy=strategy,
-        assets=tuple(reversed(assets)),
-        optimized_at=ASSESS_AT,
-    )
+    base = _base_inputs()
+    first = _optimize(base)
+    reordered = _optimize(base, assets=tuple(reversed(base.assets)))
 
     assert first.optimizer_sha256 == reordered.optimizer_sha256
     assert first.legs == reordered.legs
@@ -428,30 +454,22 @@ def test_optimizer_is_source_order_invariant() -> None:
 
 
 def test_large_capital_capacity_scales_target_and_requires_staging() -> None:
-    policy, assessment, portfolio, risk, strategy, assets = _base_inputs()
-    bond, share = assets
+    base = _base_inputs()
+    bond, share = base.assets
     constrained_bond = bond.model_copy(
         update={
-            "market_evidence": OptimizerMarketEvidenceV1(
+            "market_evidence": _market(
                 stable_key=bond.stable_key,
-                as_of=ASSESS_AT,
+                clean_price=Decimal("1000"),
+                accrued_interest_per_lot=Decimal("0"),
                 source_sha256="5" * 64,
-                spread_bps=Decimal("20"),
-                average_daily_turnover_base=Decimal("300000"),
-                top_of_book_depth_base=Decimal("100000"),
+                average_daily_turnover=Decimal("300000"),
+                top_of_book_depth=Decimal("100000"),
             )
         }
     )
 
-    result = optimize_portfolio(
-        portfolio=portfolio,
-        policy=policy,
-        policy_assessment=assessment,
-        current_risk=risk,
-        strategy=strategy,
-        assets=(constrained_bond, share),
-        optimized_at=ASSESS_AT,
-    )
+    result = _optimize(base, assets=(constrained_bond, share))
 
     assert result.optimizer_ready is True
     assert OptimizerWarningCode.CAPACITY_SCALED in result.warnings
@@ -463,25 +481,16 @@ def test_large_capital_capacity_scales_target_and_requires_staging() -> None:
 
 
 def test_commission_cannot_spend_owner_liquidity_reserve() -> None:
-    policy = _policy(
-        liquidity_reserve=LiquidityReserveV1(
-            amount=Decimal("200000"),
-            currency="RUB",
+    base = _base_inputs(
+        policy=_policy(
+            liquidity_reserve=LiquidityReserveV1(
+                amount=Decimal("200000"),
+                currency="RUB",
+            )
         )
     )
-    policy, assessment, portfolio, risk, strategy, assets = _base_inputs(
-        policy=policy
-    )
 
-    result = optimize_portfolio(
-        portfolio=portfolio,
-        policy=policy,
-        policy_assessment=assessment,
-        current_risk=risk,
-        strategy=strategy,
-        assets=assets,
-        optimized_at=ASSESS_AT,
-    )
+    result = _optimize(base)
 
     assert result.optimizer_ready is True
     assert OptimizerWarningCode.CASH_RESERVE_SCALED_BUYS in result.warnings
@@ -492,19 +501,11 @@ def test_commission_cannot_spend_owner_liquidity_reserve() -> None:
 
 
 def test_missing_market_evidence_fails_closed_without_assuming_capacity() -> None:
-    policy, assessment, portfolio, risk, strategy, assets = _base_inputs()
-    bond, share = assets
+    base = _base_inputs()
+    bond, share = base.assets
     missing_market = bond.model_copy(update={"market_evidence": None})
 
-    result = optimize_portfolio(
-        portfolio=portfolio,
-        policy=policy,
-        policy_assessment=assessment,
-        current_risk=risk,
-        strategy=strategy,
-        assets=(missing_market, share),
-        optimized_at=ASSESS_AT,
-    )
+    result = _optimize(base, assets=(missing_market, share))
 
     assert result.optimizer_ready is False
     assert OptimizerBlockerCode.MARKET_EVIDENCE_MISSING in result.blockers
@@ -513,8 +514,8 @@ def test_missing_market_evidence_fails_closed_without_assuming_capacity() -> Non
 
 
 def test_missing_friction_evidence_fails_closed_without_zero_fee_assumption() -> None:
-    policy, assessment, portfolio, risk, strategy, assets = _base_inputs()
-    bond, share = assets
+    base = _base_inputs()
+    bond, share = base.assets
     missing_friction = bond.model_copy(
         update={
             "commission_bps": None,
@@ -523,64 +524,69 @@ def test_missing_friction_evidence_fails_closed_without_zero_fee_assumption() ->
         }
     )
 
-    result = optimize_portfolio(
-        portfolio=portfolio,
-        policy=policy,
-        policy_assessment=assessment,
-        current_risk=risk,
-        strategy=strategy,
-        assets=(missing_friction, share),
-        optimized_at=ASSESS_AT,
-    )
+    result = _optimize(base, assets=(missing_friction, share))
 
     assert result.optimizer_ready is False
     assert OptimizerBlockerCode.FRICTION_EVIDENCE_MISSING in result.blockers
     assert result.plan_eligible is False
 
 
-def test_stale_market_evidence_blocks_target() -> None:
-    policy, assessment, portfolio, risk, strategy, assets = _base_inputs()
-    bond, share = assets
-    stale = bond.model_copy(
-        update={
-            "market_evidence": bond.market_evidence.model_copy(
-                update={"as_of": ASSESS_AT - timedelta(hours=1)}
-            )
-        }
+def test_missing_bond_accrued_interest_fails_closed_instead_of_using_zero() -> None:
+    base = _base_inputs()
+    bond, share = base.assets
+    assert bond.market_evidence is not None
+    missing_aci_market = bond.market_evidence.model_copy(
+        update={"accrued_interest_per_lot_base": None}
     )
+    missing_aci = bond.model_copy(update={"market_evidence": missing_aci_market})
 
-    result = optimize_portfolio(
-        portfolio=portfolio,
-        policy=policy,
-        policy_assessment=assessment,
-        current_risk=risk,
-        strategy=strategy,
-        assets=(stale, share),
-        optimized_at=ASSESS_AT,
+    result = _optimize(base, assets=(missing_aci, share))
+
+    assert result.optimizer_ready is False
+    assert OptimizerBlockerCode.ACCRUED_INTEREST_EVIDENCE_MISSING in result.blockers
+    assert _target(result, bond.stable_key).target_lots == bond.current_lots
+
+
+def test_market_price_binding_mismatch_fails_closed() -> None:
+    base = _base_inputs()
+    bond, share = base.assets
+    assert bond.market_evidence is not None
+    mismatched_market = bond.market_evidence.model_copy(
+        update={"clean_unit_price_base": Decimal("999")}
     )
+    mismatched = bond.model_copy(update={"market_evidence": mismatched_market})
+
+    result = _optimize(base, assets=(mismatched, share))
+
+    assert result.optimizer_ready is False
+    assert OptimizerBlockerCode.MARKET_PRICE_BINDING_MISMATCH in result.blockers
+    assert result.plan_eligible is False
+
+
+def test_stale_market_evidence_blocks_target() -> None:
+    base = _base_inputs()
+    bond, share = base.assets
+    assert bond.market_evidence is not None
+    stale_market = bond.market_evidence.model_copy(
+        update={"as_of": ASSESS_AT - timedelta(hours=1)}
+    )
+    stale = bond.model_copy(update={"market_evidence": stale_market})
+
+    result = _optimize(base, assets=(stale, share))
 
     assert result.optimizer_ready is False
     assert OptimizerBlockerCode.MARKET_EVIDENCE_STALE in result.blockers
 
 
 def test_wp8_target_sector_breach_blocks_plan_eligibility() -> None:
-    policy = _policy(
-        max_position_weight=Decimal("0.40"),
-        max_sector_weight=Decimal("0.40"),
-    )
-    policy, assessment, portfolio, risk, strategy, assets = _base_inputs(
-        policy=policy
+    base = _base_inputs(
+        policy=_policy(
+            max_position_weight=Decimal("0.40"),
+            max_sector_weight=Decimal("0.40"),
+        )
     )
 
-    result = optimize_portfolio(
-        portfolio=portfolio,
-        policy=policy,
-        policy_assessment=assessment,
-        current_risk=risk,
-        strategy=strategy,
-        assets=assets,
-        optimized_at=ASSESS_AT,
-    )
+    result = _optimize(base)
 
     assert result.target_risk_assessment is not None
     assert result.target_risk_assessment.after.policy_compliant is False
@@ -589,16 +595,16 @@ def test_wp8_target_sector_breach_blocks_plan_eligibility() -> None:
 
 
 def test_same_version_policy_mutation_breaks_binding() -> None:
-    policy, assessment, portfolio, risk, strategy, assets = _base_inputs()
+    base = _base_inputs()
     mutated = _policy(max_position_weight=Decimal("0.45"))
 
     result = optimize_portfolio(
-        portfolio=portfolio,
+        portfolio=base.portfolio,
         policy=mutated,
-        policy_assessment=assessment,
-        current_risk=risk,
-        strategy=strategy,
-        assets=assets,
+        policy_assessment=base.assessment,
+        current_risk=base.risk,
+        strategy=base.strategy,
+        assets=base.assets,
         optimized_at=ASSESS_AT,
     )
 
@@ -608,8 +614,8 @@ def test_same_version_policy_mutation_breaks_binding() -> None:
 
 
 def test_small_capital_skips_candidate_that_cannot_form_meaningful_lot() -> None:
-    policy, assessment, portfolio, risk, strategy, assets = _base_inputs()
-    bond, share = assets
+    base = _base_inputs()
+    bond, share = base.assets
     candidate_template = _position(
         stable_key="bond:BIG-LOT",
         instrument_type=InstrumentType.BOND,
@@ -626,35 +632,28 @@ def test_small_capital_skips_candidate_that_cannot_form_meaningful_lot() -> None
         lot_size=300,
         native_currency="RUB",
         base_currency="RUB",
-        unit_native_price=Decimal("1000"),
-        unit_base_price=Decimal("1000"),
+        unit_full_value_native=Decimal("1000"),
+        unit_full_value_base=Decimal("1000"),
         risk_template=candidate_template,
         account_eligible=True,
         commission_bps=Decimal("10"),
         estimated_sell_tax_bps=Decimal("0"),
         friction_as_of=ASSESS_AT,
         friction_source_sha256s=("6" * 64,),
-        market_evidence=OptimizerMarketEvidenceV1(
+        market_evidence=_market(
             stable_key=candidate_template.stable_key,
-            as_of=ASSESS_AT,
+            clean_price=Decimal("1000"),
+            accrued_interest_per_lot=Decimal("0"),
             source_sha256="7" * 64,
-            spread_bps=Decimal("20"),
-            average_daily_turnover_base=Decimal("5000000"),
-            top_of_book_depth_base=Decimal("1000000"),
         ),
     )
 
-    result = optimize_portfolio(
-        portfolio=portfolio,
-        policy=policy,
-        policy_assessment=assessment,
-        current_risk=risk,
-        strategy=strategy,
+    result = _optimize(
+        base,
         assets=(bond, share, big_lot),
         settings=PortfolioOptimizerSettingsV1(
             minimum_meaningful_position_weight=Decimal("0.15")
         ),
-        optimized_at=ASSESS_AT,
     )
 
     assert OptimizerWarningCode.MICROPOSITION_SKIPPED in result.warnings
