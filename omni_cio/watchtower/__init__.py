@@ -1,6 +1,10 @@
 """Read-only Portfolio Watchtower for Omni-CIO v9."""
 
 from .engine_v1 import PortfolioWatchtowerV1, WatchtowerError
+from .installation_v1 import (
+    WatchtowerProviderInstallationV1,
+    install_watchtower_canonical_provider,
+)
 from .journal_v1 import (
     InMemoryWatchtowerJournalV1,
     WatchtowerJournalConflict,
@@ -52,8 +56,10 @@ __all__ = [
     "WatchtowerJournalStorageError",
     "WatchtowerJournalV1",
     "WatchtowerProviderError",
+    "WatchtowerProviderInstallationV1",
     "WatchtowerRuntimeError",
     "WatchtowerScheduledRequestV1",
     "WatchtowerScheduledRunnerV1",
     "WatchtowerUpstashRestClientV1",
+    "install_watchtower_canonical_provider",
 ]
