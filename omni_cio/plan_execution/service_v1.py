@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from omni_cio.contracts.v1.plan_execution import (
     BrokerExecutionStatus,
@@ -34,15 +34,56 @@ LegEvidenceProviderV1 = _core.LegEvidenceProviderV1
 class SafePlanExecutionServiceV1(_core.SafePlanExecutionServiceV1):
     """Audited WP12 facade over the accepted v8.6.1 execution primitive.
 
-    The full fail-closed state machine lives in ``service_core_v1``. This facade
-    carries only cross-WP hardening discovered during WP12 review: immutable-plan
-    expiry blocks any *new* prepare/submit, fresh strategy/optimizer/target-risk
-    identity remains bound before every stage action, no second plan stage may be
-    submitted on the same Moscow calendar day, while already submitted orders
-    remain reconcilable; and broker-terminal reconciliation retains the exact plan
-    for deterministic SELL tax allowance accounting. Broker submit remains owned
-    by the existing RealTradingServiceV1 path inherited through the core service.
+    Cross-WP hardening lives here so the core state machine remains reviewable:
+    immutable-plan expiry blocks any new prepare/submit; the current strategy,
+    optimizer and target-risk identities remain bound before every stage action;
+    staged legs advance by tranche/day while preserving leg sequence inside each
+    tranche; and a single instrument cannot submit two staged slices on one Moscow
+    calendar day. Already-submitted orders always remain broker-reconcilable.
+    Broker submit itself remains owned exclusively by the existing
+    ``RealTradingServiceV1`` path inherited through the core service.
     """
+
+    def prepare_plan(
+        self,
+        *,
+        plan: PortfolioPlanV1,
+        now: datetime | None = None,
+    ) -> PlanExecutionSessionV1:
+        current = _core._aware_utc(now)
+        canonical = _core._canonical_plan(plan)
+        actionable = _core._actionable_legs(canonical)
+        if actionable:
+            actual_execution_days = max(
+                _core._stage_count(row.optimizer_leg, self._real_policy)
+                for row in actionable
+                if row.optimizer_leg is not None
+            )
+            last_slice_time = current + timedelta(days=actual_execution_days - 1)
+            if last_slice_time >= canonical.expires_at:
+                raise SafePlanExecutionError(
+                    "PLAN_EXECUTION_PLAN_HORIZON_TOO_SHORT",
+                    "Existing real-money hard cap would stretch staged execution "
+                    "beyond immutable plan expiry; a fresh plan or separately "
+                    "authorized cap-policy change is required.",
+                    halt_code=PlanExecutionHaltCode.PREPARE_REJECTED,
+                )
+        return super().prepare_plan(plan=canonical, now=current)
+
+    @staticmethod
+    def _next_execution_stage(
+        session: PlanExecutionSessionV1,
+    ) -> PlanExecutionStageV1 | None:
+        """Return the next immutable tranche stage without reordering its legs."""
+        remaining = sorted(
+            (
+                row
+                for row in _core._all_stages(session)
+                if row.state is not PlanExecutionStageState.FILLED
+            ),
+            key=lambda row: (row.stage_index, row.leg_sequence, row.stage_id),
+        )
+        return remaining[0] if remaining else None
 
     def advance_execution(
         self,
@@ -54,41 +95,106 @@ class SafePlanExecutionServiceV1(_core.SafePlanExecutionServiceV1):
         current = _core._aware_utc(now)
         canonical = _core._canonical_plan(plan)
         session = self._journal.get(execution_id)
-        if current >= canonical.expires_at and session.state not in {
-            PlanExecutionSessionState.COMPLETED,
-            PlanExecutionSessionState.AWAITING_BROKER_RECONCILIATION,
-            PlanExecutionSessionState.AWAITING_PORTFOLIO_RECONCILIATION,
+        if session.plan_sha256 != canonical.plan_sha256:
+            return self._halt(
+                session,
+                PlanExecutionHaltCode.PLAN_INVALID,
+                "Execution session no longer matches immutable plan.",
+            )
+        if session.state is PlanExecutionSessionState.COMPLETED:
+            return self._result(
+                PlanExecutionAdvanceAction.REPLAY,
+                session,
+                "Execution is already completed; replay performed no submit.",
+            )
+        if not session.owner_approved:
+            raise SafePlanExecutionError(
+                "PLAN_EXECUTION_OWNER_APPROVAL_REQUIRED",
+                "Exact plan approval is required before stage preparation.",
+            )
+
+        if session.state is PlanExecutionSessionState.HALTED:
+            if session.halt_code is not PlanExecutionHaltCode.AMBIGUOUS_SUBMISSION:
+                return self._result(
+                    PlanExecutionAdvanceAction.HALTED,
+                    session,
+                    session.halt_message or "Execution is halted.",
+                )
+            ambiguous = next(
+                (
+                    row
+                    for row in _core._all_stages(session)
+                    if row.attempts
+                    and row.attempts[-1].state is PlanExecutionAttemptState.UNKNOWN
+                ),
+                None,
+            )
+            if ambiguous is None:
+                return self._result(
+                    PlanExecutionAdvanceAction.HALTED,
+                    session,
+                    "Ambiguous session has no recoverable request id.",
+                )
+            recovered = _core._session_update(
+                session,
+                state=PlanExecutionSessionState.AWAITING_BROKER_RECONCILIATION,
+                halt_code=None,
+                halt_message=None,
+            )
+            committed = self._commit(session, recovered)
+            return self._reconcile_broker(
+                canonical,
+                committed,
+                _core._stage(committed, ambiguous.stage_id),
+                current,
+            )
+
+        current_stage = self._next_execution_stage(session)
+        if current_stage is None:
+            committed = self._commit(
+                session,
+                _core._session_update(
+                    session,
+                    state=PlanExecutionSessionState.COMPLETED,
+                ),
+            )
+            return self._result(
+                PlanExecutionAdvanceAction.COMPLETED,
+                committed,
+                "All immutable plan stages are complete.",
+            )
+
+        if current >= canonical.expires_at and current_stage.state not in {
+            PlanExecutionStageState.AWAITING_BROKER_RECONCILIATION,
+            PlanExecutionStageState.BROKER_TERMINAL,
         }:
-            if (
-                session.state is PlanExecutionSessionState.HALTED
-                and session.halt_code is PlanExecutionHaltCode.AMBIGUOUS_SUBMISSION
-            ):
-                # A possible submit must be reconciled even after plan expiry.
-                return super().advance_execution(
-                    execution_id=execution_id,
-                    plan=canonical,
-                    now=current,
-                )
-            stage = _core._next_stage(session)
-            if stage is not None and stage.state in {
-                PlanExecutionStageState.AWAITING_BROKER_RECONCILIATION,
-                PlanExecutionStageState.BROKER_TERMINAL,
-            }:
-                return super().advance_execution(
-                    execution_id=execution_id,
-                    plan=canonical,
-                    now=current,
-                )
             return self._halt(
                 session,
                 PlanExecutionHaltCode.PLAN_EXPIRED,
                 "Immutable plan expired; no new stage may be prepared or submitted.",
-                stage=stage,
+                stage=current_stage,
             )
-        return super().advance_execution(
-            execution_id=execution_id,
-            plan=canonical,
-            now=current,
+
+        if current_stage.state is PlanExecutionStageState.PENDING:
+            return self._prepare_stage(canonical, session, current_stage, current)
+        if current_stage.state is PlanExecutionStageState.PREPARED:
+            return self._submit_stage(canonical, session, current_stage, current)
+        if current_stage.state is PlanExecutionStageState.AWAITING_BROKER_RECONCILIATION:
+            return self._reconcile_broker(canonical, session, current_stage, current)
+        if current_stage.state is PlanExecutionStageState.BROKER_TERMINAL:
+            return self._reconcile_portfolio(canonical, session, current_stage, current)
+        if current_stage.state is PlanExecutionStageState.HALTED:
+            return self._result(
+                PlanExecutionAdvanceAction.HALTED,
+                session,
+                "Current immutable plan stage is halted.",
+                stage_id=current_stage.stage_id,
+            )
+        return self._result(
+            PlanExecutionAdvanceAction.REPLAY,
+            session,
+            "Stage state does not permit a new submit.",
+            stage_id=current_stage.stage_id,
         )
 
     def _runtime_guard(
@@ -149,14 +255,15 @@ class SafePlanExecutionServiceV1(_core.SafePlanExecutionServiceV1):
     ) -> PlanExecutionAdvanceResultV1:
         today = _core._moscow_date(now)
         if any(
-            row.last_submission_moscow_date == today
+            row.stable_key == stage.stable_key
+            and row.last_submission_moscow_date == today
             for row in _core._all_stages(session)
         ):
             return self._result(
                 PlanExecutionAdvanceAction.WAITING_NEXT_STAGE_DAY,
                 session,
-                "Another immutable plan stage was already submitted today; "
-                "no second Moscow-day stage is allowed.",
+                "A staged slice for this immutable instrument was already "
+                "submitted today; no second same-day slice is allowed.",
                 stage_id=stage.stage_id,
             )
         return super()._prepare_stage(plan, session, stage, now)
