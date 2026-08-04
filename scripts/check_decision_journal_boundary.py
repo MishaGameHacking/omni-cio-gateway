@@ -14,10 +14,12 @@ REQUIRED_PATHS = (
     "omni_cio/decision_journal/__init__.py",
     "omni_cio/decision_journal/evaluation_v1.py",
     "omni_cio/decision_journal/journal_v1.py",
+    "omni_cio/decision_journal/recorder_v1.py",
     "omni_cio/decision_journal/replay_v1.py",
     "omni_cio/decision_journal/upstash_journal_v1.py",
     "tests/test_decision_journal_v1.py",
     "tests/test_decision_journal_upstash_v1.py",
+    "tests/test_decision_journal_recorder_v1.py",
     "tests/test_decision_journal_boundary_v1.py",
     "docs/architecture/V9_DECISION_JOURNAL_EVALUATION.md",
     "docs/architecture/V9_DECISION_JOURNAL_THREAT_MODEL.md",
@@ -141,6 +143,7 @@ def main() -> int:
     print(
         "Storage model: append-only immutable decisions + separate outcomes/evaluations"
     )
+    print("Production recorder: exact DecisionSet/risk/plan/execution SHA bindings")
     print("Counterfactuals: evidence-bound only; unavailable remains unavailable")
     print("Offline replay: sanitized/synthetic/fake-broker only")
     print("Production self-modification: disabled")
