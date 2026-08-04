@@ -17,6 +17,7 @@ from omni_cio.contracts.v1.meta_strategy import (
     StrategyComponentKind,
     StrategyRegime,
 )
+from omni_cio.contracts.v1.portfolio import InstrumentType
 from omni_cio.contracts.v1.portfolio_optimizer import (
     OptimizerAssetV1,
     OptimizerBlockerCode,
@@ -316,10 +317,10 @@ def _initial_target_lots(
             )
         for asset in candidates:
             desired_weights[asset.stable_key] = per_asset_weight
-            lot_notional = asset.unit_base_price * Decimal(asset.lot_size)
+            lot_full_value = asset.unit_full_value_base * Decimal(asset.lot_size)
             desired_value = total_value * per_asset_weight
             meaningful_floor = max(
-                lot_notional,
+                lot_full_value,
                 total_value * settings.minimum_meaningful_position_weight,
             )
             if desired_value < meaningful_floor:
@@ -329,7 +330,7 @@ def _initial_target_lots(
                 )
                 targets[asset.stable_key] = 0
                 continue
-            desired_lots = _floor_ratio(desired_value, lot_notional)
+            desired_lots = _floor_ratio(desired_value, lot_full_value)
             if (
                 asset.account_eligible is not True
                 and desired_lots > asset.current_lots
@@ -417,27 +418,51 @@ def _validate_trade_evidence(
             blockers,
             OptimizerBlockerCode.MARKET_EVIDENCE_MISSING,
         )
+        return False
+
+    age = (optimized_at - evidence.as_of).total_seconds()
+    if age > settings.market_max_age_seconds:
+        _append_unique(
+            blockers,
+            OptimizerBlockerCode.MARKET_EVIDENCE_STALE,
+        )
         ready = False
-    else:
-        age = (optimized_at - evidence.as_of).total_seconds()
-        if age > settings.market_max_age_seconds:
+    if age < -settings.future_tolerance_seconds:
+        _append_unique(
+            blockers,
+            OptimizerBlockerCode.MARKET_EVIDENCE_FUTURE,
+        )
+        ready = False
+    if evidence.spread_bps > settings.maximum_spread_bps:
+        _append_unique(
+            blockers,
+            OptimizerBlockerCode.SPREAD_TOO_WIDE,
+        )
+        ready = False
+
+    if asset.risk_template.instrument_type is InstrumentType.BOND:
+        if evidence.accrued_interest_per_lot_base is None:
             _append_unique(
                 blockers,
-                OptimizerBlockerCode.MARKET_EVIDENCE_STALE,
+                OptimizerBlockerCode.ACCRUED_INTEREST_EVIDENCE_MISSING,
             )
             ready = False
-        if age < -settings.future_tolerance_seconds:
-            _append_unique(
-                blockers,
-                OptimizerBlockerCode.MARKET_EVIDENCE_FUTURE,
+        else:
+            expected_full = evidence.clean_unit_price_base + (
+                evidence.accrued_interest_per_lot_base / Decimal(asset.lot_size)
             )
-            ready = False
-        if evidence.spread_bps > settings.maximum_spread_bps:
-            _append_unique(
-                blockers,
-                OptimizerBlockerCode.SPREAD_TOO_WIDE,
-            )
-            ready = False
+            if asset.unit_full_value_base != expected_full:
+                _append_unique(
+                    blockers,
+                    OptimizerBlockerCode.MARKET_PRICE_BINDING_MISMATCH,
+                )
+                ready = False
+    elif asset.unit_full_value_base != evidence.clean_unit_price_base:
+        _append_unique(
+            blockers,
+            OptimizerBlockerCode.MARKET_PRICE_BINDING_MISMATCH,
+        )
+        ready = False
     return ready
 
 
@@ -468,7 +493,7 @@ def _capacity_scale(
         return current_lots
     evidence = asset.market_evidence
     assert evidence is not None
-    lot_notional = asset.unit_base_price * Decimal(asset.lot_size)
+    clean_lot_notional = evidence.clean_unit_price_base * Decimal(asset.lot_size)
     safe_daily = min(
         evidence.average_daily_turnover_base
         * settings.maximum_daily_turnover_participation,
@@ -476,7 +501,7 @@ def _capacity_scale(
         * settings.maximum_top_of_book_participation,
     )
     safe_total = safe_daily * Decimal(settings.maximum_staging_days)
-    safe_lots = _floor_ratio(safe_total, lot_notional)
+    safe_lots = _floor_ratio(safe_total, clean_lot_notional)
     if safe_lots <= 0:
         _append_unique(
             blockers,
@@ -516,8 +541,14 @@ def _leg(
     assert asset.friction_source_sha256s
     evidence = asset.market_evidence
     assert evidence is not None
+    accrued_per_lot = evidence.accrued_interest_per_lot_base or Decimal("0")
     sell_tax_bps = asset.estimated_sell_tax_bps or Decimal("0")
-    gross = Decimal(quantity_lots * asset.lot_size) * asset.unit_base_price
+    gross = (
+        Decimal(quantity_lots * asset.lot_size)
+        * evidence.clean_unit_price_base
+    )
+    accrued = Decimal(quantity_lots) * accrued_per_lot
+    settlement = gross + accrued
     commission = _money(
         gross * asset.commission_bps / Decimal("10000"),
         settings.money_quantum,
@@ -531,9 +562,9 @@ def _leg(
         else Decimal("0").quantize(settings.money_quantum)
     )
     cash_delta = (
-        -(gross + commission)
+        -(settlement + commission)
         if side is OptimizerTradeSide.BUY
-        else gross - commission - tax
+        else settlement - commission - tax
     )
     safe_daily = min(
         evidence.average_daily_turnover_base
@@ -552,8 +583,11 @@ def _leg(
         target_lots=target_lots,
         quantity_lots=quantity_lots,
         lot_size=asset.lot_size,
-        reference_unit_price_base=asset.unit_base_price,
+        reference_clean_unit_price_base=evidence.clean_unit_price_base,
         gross_notional_base=gross,
+        accrued_interest_per_lot_base=accrued_per_lot,
+        accrued_interest_base=accrued,
+        settlement_notional_base=settlement,
         commission_bps=asset.commission_bps,
         commission_base=commission,
         estimated_sell_tax_bps=sell_tax_bps,
@@ -630,15 +664,19 @@ def _scale_buys_to_reserve(
         if shortage <= 0:
             break
         asset = asset_map[leg.stable_key]
+        evidence = asset.market_evidence
+        assert evidence is not None
         commission_per_lot = _money(
-            asset.unit_base_price
+            evidence.clean_unit_price_base
             * Decimal(asset.lot_size)
             * (asset.commission_bps or Decimal("0"))
             / Decimal("10000"),
             settings.money_quantum,
         )
+        accrued_per_lot = evidence.accrued_interest_per_lot_base or Decimal("0")
         cash_per_lot = (
-            asset.unit_base_price * Decimal(asset.lot_size)
+            evidence.clean_unit_price_base * Decimal(asset.lot_size)
+            + accrued_per_lot
             + commission_per_lot
         )
         reduce_lots = min(
@@ -670,8 +708,8 @@ def _risk_position_for_target(
         return None
     units = target_lots * asset.lot_size
     payload = asset.risk_template.model_dump(mode="python")
-    payload["native_market_value"] = Decimal(units) * asset.unit_native_price
-    payload["base_market_value"] = Decimal(units) * asset.unit_base_price
+    payload["native_market_value"] = Decimal(units) * asset.unit_full_value_native
+    payload["base_market_value"] = Decimal(units) * asset.unit_full_value_base
     return RiskPositionV1.model_validate(payload)
 
 
@@ -714,7 +752,7 @@ def _targets(
     for asset in assets:
         target_value = (
             Decimal(target_lots[asset.stable_key] * asset.lot_size)
-            * asset.unit_base_price
+            * asset.unit_full_value_base
         )
         target_weight = (
             target_value / target_total
@@ -954,7 +992,7 @@ def optimize_portfolio(
         )
     if any(
         Decimal(target_lots[row.stable_key] * row.lot_size)
-        * row.unit_base_price
+        * row.unit_full_value_base
         < portfolio.total_value_base * desired_weights[row.stable_key]
         for row in asset_values
         if desired_weights[row.stable_key] > 0
