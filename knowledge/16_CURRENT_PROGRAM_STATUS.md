@@ -33,229 +33,110 @@ Tracking epic: #176.
 
 Development follows the earliest dependency-ready incomplete package. Stable v8.6.1 remains recoverable and its real-execution safety contract cannot be weakened by v9 feature work.
 
-## Work-package progress
+## Work-package evidence
 
-### WP0 — Baseline freeze and recovery correctness: COMPLETE
+| WP | State | Issue / PR | Merge / CI evidence |
+|---|---|---|---|
+| WP0 Baseline freeze | COMPLETE | #178 / #181 | `4fd3993b...`, Regression Shield #989 |
+| WP1 Natural Language CIO Router | COMPLETE | #182 / #184 | `7f677288...`, #1002 |
+| WP2 Investment Policy Statement | COMPLETE | #186 / #187 | `75c9ae07...`, #1014 |
+| WP3 Market Universe Engine | COMPLETE | #188 / #189 | `5ae81aa9...`, #1019 |
+| WP4 Deterministic Candidate Funnel | COMPLETE | #190 / #191 | `3946fc9a...`, #1035 |
+| WP5 Research & Evidence Engine | COMPLETE | #193 / #194 | `f8f0bb95...`, #1043 |
+| WP6 Credit, Rating & Default 2.0 | COMPLETE | #195 / #196 | `64316008...`, #1057 |
+| WP7 Fund X-Ray Engine | COMPLETE | #197 / #198 | `15505272...`, #1064 |
+| WP8 Portfolio Risk Engine 2.0 | COMPLETE | #199 / #201 | `24e027f1...`, #1078 |
+| WP9 Meta-Strategy Selector | COMPLETE | #203 / #204 | `f758fd73...`, exact-head #1088 on `d95d56a9...` |
+| WP10 Portfolio Optimizer & Capital Scaling | IN PROGRESS | #205 / draft #206 | branch `v9/wp10-portfolio-optimizer` |
+| WP11 Immutable Portfolio Plan Protocol | PENDING | — | starts only after WP10 merge |
+| WP12 Safe Plan Execution Engine | PENDING | — | — |
+| WP13 Portfolio Watchtower | PENDING | — | — |
+| WP14 Decision Journal / Evaluation | PENDING | — | — |
+| WP15 Custom GPT v9 Configuration & Recovery | PENDING | — | applied GPT stays v8.6.1 until then |
 
-- issue #178 / PR #181;
-- merged to `main` as `4fd3993bdb56162bb730dca25e3ada7046e560cc`;
-- exact-head Regression Shield #989 green.
+Detailed accepted behavior for completed packages remains in their versioned architecture documents and Git/PR history. This status file is the current operational index, not a duplicate of every architecture specification.
 
-### WP1 — Natural Language CIO Router: COMPLETE
+## WP9 completion evidence
 
-- issue #182 / PR #184;
-- merged to `main` as `7f6772889837ba632dc40c893d080a35b5f902ff`;
-- exact-head Regression Shield #1002 fully green;
-- deterministic Russian routing, exact-action isolation and fail-closed execution ambiguity accepted;
-- router remains internal/read-only and hard-codes `execution_authorized=false`.
+WP9 — Meta-Strategy Selector is complete:
 
-Architecture: `docs/architecture/V9_NATURAL_LANGUAGE_CIO_ROUTER.md`.
+- issue #203 / PR #204;
+- squash-merged to `main` as `f758fd7325e5d3e6602fa441cc65f8cd3e10c2c3`;
+- final tested head `d95d56a967aa822a22a2f8bbdec95748ad9734f7`;
+- exact-head Regression Shield #1088 fully green;
+- unresolved review threads/reviews/comments = 0 at merge gate;
+- exact portfolio + WP2 policy + current WP8 risk binding;
+- bounded five-regime comparison including `NO_ACTION`;
+- risk willingness/capacity/horizon/WP8 state constrain strategy before ranking;
+- fresh cost/tax provenance required;
+- no expected-return or macro-regime forecast input;
+- deterministic selection fingerprint and review/cancellation conditions;
+- `omni_cio/strategy` internal/read-only with `trading_methods=false`.
 
-### WP2 — Investment Policy Statement Engine: COMPLETE
-
-- issue #186 / PR #187;
-- merged to `main` as `75c9ae078309f32d1519b76cbedd89a221b62bf0`;
-- exact-head Regression Shield #1014 fully green;
-- quality/contracts/coverage and dependency/SAST/secret security = success;
-- unresolved review threads = 0.
-
-Accepted behavior:
-
-- versioned owner IPS is separate from non-personalized `ConservativeRiskPolicyV1`;
-- objective, horizon, explicit liquidity reserve, risk willingness/capacity and maximum drawdown are explicit;
-- position/group/sector/currency concentration limits are deterministic;
-- allowed/prohibited markets and instrument classes cannot conflict;
-- material deny constraints require owner provenance/confirmation;
-- system safe defaults cannot impersonate owner policy;
-- bond permission requires both rating floor and named rating scale;
-- annual review/effective/superseded states fail closed;
-- deterministic SHA-256 policy reference binds future immutable plans;
-- incomplete/invalid/unconfirmed policy blocks personal sizing;
-- margin, short, withdrawal, transfer and autonomous real execution remain `Literal[False]`.
-
-Architecture: `docs/architecture/V9_INVESTMENT_POLICY_STATEMENT.md`.
-
-### WP3 — Market Universe Engine: COMPLETE
-
-- issue #188 / PR #189;
-- merged to `main` as `5ae81aa921999a6d4b1bb15aa0c506f7dea92a3f`;
-- exact-head Regression Shield #1019 fully green;
-- quality/contracts/coverage and dependency/SAST/secret security = success;
-- unresolved review threads = 0.
-
-Accepted behavior:
-
-- broker universe uses T-Invest `Shares`, `Bonds`, `Etfs` with `INSTRUMENT_STATUS_BASE`;
-- UID / position UID / FIGI / ISIN / ticker+class_code identity evidence is preserved;
-- exact duplicate rows are removed and stable-alias conflicts fail closed;
-- API/account/IIS/qualification/required-test/TCA eligibility is deterministic;
-- account eligibility refresh does not retain `user_id` or full account ID;
-- incomplete sources, invalid rows, identity conflicts and unknown eligibility never become `decision_ready`;
-- content SHA-256 is source-order invariant and mutation-sensitive;
-- only a complete validated BASE catalog is cached; account eligibility remains fresh;
-- `FindInstrument` brute-force and broker mutation surfaces are forbidden by repository guard.
-
-Architecture: `docs/architecture/V9_MARKET_UNIVERSE_ENGINE.md`.
-
-### WP4 — Deterministic Candidate Funnel: COMPLETE
-
-- issue #190 / PR #191;
-- merged to `main` as `3946fc9af995338504dee8002c82c630ab8629b7`;
-- exact-head Regression Shield #1035 fully green;
-- quality/contracts/coverage and dependency/SAST/secret security = success;
-- unresolved review threads = 0.
-
-Accepted behavior:
-
-- portfolio gap binds to exact portfolio/IPS/universe fingerprints;
-- hard policy, evidence, affordability and concentration blockers run before scoring;
-- incomplete comparable evidence for the policy+role-eligible universe forbids partial ranking;
-- fixed ordinal scoring is contract-validated and cannot be replaced by subjective LLM scoring;
-- `NO_ACTION/CASH` is always present and can rank first;
-- minimum-lot feasibility and one-lot position/group/sector/currency headroom are checked before shortlist publication;
-- T-Invest bond point pricing and per-lot accrued-interest arithmetic are handled without share-style errors;
-- ranking, tie-breaks and funnel SHA-256 are deterministic and source-order invariant;
-- rejected candidates keep machine-readable reasons;
-- candidate runtime remains pure/read-only with `trading_methods=false`.
-
-Architecture: `docs/architecture/V9_DETERMINISTIC_CANDIDATE_FUNNEL.md`.
-
-### WP5 — Research & Evidence Engine: COMPLETE
-
-- issue #193 / PR #194;
-- merged to `main` as `f8f0bb95fc9692d68ce89c820a6ccbd1ff9868aa`;
-- exact-head Regression Shield #1043 fully green on `ca376e364bf3cd94f792edc69fb091bca87025ef`;
-- quality/contracts/coverage and dependency/SAST/secret security = success;
-- unresolved review threads = 0.
-
-Accepted behavior:
-
-- bounded WP4 shortlist becomes source-backed WP5 dossiers bound to exact candidate/funnel identity;
-- source hierarchy prioritizes broker/exchange/issuer/official disclosure/regulator/rating agency; media remains context-only;
-- every material record carries source provenance, timestamps, deterministic freshness and a canonical record SHA-256;
-- T-Invest structured research surfaces include asset fundamentals, report schedules, dividends and bond events;
-- official-source retrieval is bounded by deterministic budgets, cache keys, TTLs and rate limits;
-- external/prompt-injection-shaped text remains inert data and cannot alter control flow or execution authority;
-- coverage gaps and contradictions are explicit; unresolved critical contradictions block strong recommendation;
-- dossier SHA-256 is deterministic and source-order invariant;
-- raw external content is not persisted in the dossier contract;
-- research runtime adds no broker mutation, public execution route, OpenAPI Action or GPT Editor change.
-
-Architecture: `docs/architecture/V9_RESEARCH_EVIDENCE_ENGINE.md`.
-
-### WP6 — Credit, Rating & Default Engine 2.0: COMPLETE
-
-- issue #195 / PR #196;
-- merged to `main` as `643160085520f1a2a333385aa7431d1b595b2eef`;
-- exact-head Regression Shield #1057 fully green on `3375faf6ceef3e48f0be565c37738280280a3b8b`;
-- quality/contracts/coverage and dependency/SAST/secret security = success;
-- unresolved review threads = 0.
-
-Accepted behavior:
-
-- Credit Passport binds exact WP5 dossier evidence and the WP2 policy reference;
-- issue, issuer, guarantor, guarantee terms and seniority remain distinct identities;
-- ACRA, Expert RA, NKR and NRA Russian national scales are explicit and agency/scale compatibility is contract-enforced;
-- incompatible rating scales are not averaged or silently crosswalked;
-- issue rating is preferred, while issuer proxy and eligible-guarantor basis remain explicitly labeled;
-- minimum-credit-quality assessment is deterministic and fail-closed;
-- maturity, offer, coupon, amortization, collateral and guarantee terms are structured;
-- optional leverage, coverage, liquidity and 12-month refinancing metrics remain provenance-bound and are never fabricated when missing;
-- default, technical default, restructuring and payment-delay events are preserved; active events fail closed;
-- conflicting latest rating observations fail closed and current state is based on latest effective time;
-- dossier/policy/rating/outlook/watch/default/terms/financial changes create deterministic re-analysis triggers;
-- Credit Passport SHA-256 is canonical and source-order invariant;
-- research and credit runtime boundaries are repository-guarded;
-- `trading_methods=false`; no broker mutation, public route, OpenAPI Action or GPT Editor change.
-
-Architecture: `docs/architecture/V9_CREDIT_RATING_DEFAULT_ENGINE.md`.
-
-### WP7 — Fund X-Ray Engine: COMPLETE
-
-- issue #197 / PR #198;
-- merged to `main` as `15505272872681cb7c3ad1e845affaa79f6ebdc1`;
-- exact-head Regression Shield #1064 fully green on `c5086a7f86840a320cecd8b10c3c4878091b5e88`;
-- blocking dependency hardening #202 was carried and closed by WP8 PR #201;
-- unresolved review threads = 0.
-
-Accepted behavior:
-
-- exact binding to WP5 research target and full WP3 `InstrumentIdentity`/universe fingerprint;
-- fund wrapper identity remains separate from underlying holdings;
-- composition modes distinguish full holdings, partial holdings, documented buckets and unavailable composition;
-- partial holdings are never rescaled to 100%; undisclosed residual remains `UNKNOWN`;
-- asset-class/sector/currency/issuer/geography exposures are derived without inventing classifications;
-- schema v1.1 adds credit-quality look-through with `UNKNOWN` preservation plus weighted duration with explicit measured coverage; partial duration/credit evidence is never extrapolated to the whole fund;
-- credit-quality labels remain evidence only and are not silently crosswalked into WP2 credit-floor compliance;
-- top-1/top-5 and HHI expose hidden concentration for holdings-based composition;
-- direct-holding overlap and fund-to-fund overlap are deterministic;
-- fund manager/benchmark/strategy/AUM/turnover/tracking-error/expense metadata is optional and provenance-bound;
-- stale/missing composition fails closed while preserving evidence;
-- source hashes must exist as decision-grade records in the exact WP5 dossier;
-- impossible weights/coverage states and stale/mismatched liquidity are rejected;
-- Fund X-Ray SHA-256 is canonical and source-order invariant;
-- acceptance/integrity/duration-credit suites are repository-guarded;
-- fund runtime is pure/internal and repository guard forbids broker SDK/tokens/mutation services.
-
-Architecture: `docs/architecture/V9_FUND_XRAY_ENGINE.md`.
-
-### WP8 — Portfolio Risk Engine 2.0: COMPLETE
-
-- issue #199 / PR #201;
-- dependency hardening issue #202 closed with the same PR;
-- squash-merged to `main` as `24e027f1e576451571d18af88f758a69828f6aed`;
-- exact-head Regression Shield #1078 fully green on `039a28f1c7a6dafcf424777fe976ac1dd89cecff`;
-- unresolved review threads = 0.
-
-Accepted behavior:
-
-- exact WP2 IPS fingerprint binding plus exact portfolio snapshot fingerprint reference;
-- eight independent vectors: permanent-loss, market, concentration, liquidity, credit, currency, inflation/opportunity and data quality;
-- no composite risk score that can average away a hard breach;
-- explicit FX-to-base provenance, exact native→base reconciliation and FX freshness for every cross-currency position; no implicit FX conversion;
-- Top-1/Top-3/Top-5 plus position/issuer/group/sector/asset-class/currency concentration;
-- ETF positions require WP7 Fund X-Ray look-through and caller-supplied `POSITION` exposure is forbidden to prevent wrapper/underlying double counting;
-- exact-X-Ray-bound Fund Credit Summary records credit-applicable, assessed, unknown, floor-breach and active-default weights; ETF wrappers cannot silently appear credit-safe;
-- direct bond positions require WP6 credit evidence; active default and IPS credit-floor failures are hard breaches;
-- owner IPS liquidity reserve is hard; stale/missing liquidity is explicit; exit-days scale with actual position size and daily exit capacity;
-- deterministic stress scenarios enforce owner max-drawdown;
-- hypothetical proposed trades rebuild a full after-state and record new/resolved blockers;
-- proposal effects and assessment SHA are canonical and invariant to equivalent input order;
-- changed policy payload with the same id/version fails exact fingerprint binding;
-- system guardrails cannot impersonate owner-confirmed hard policy;
-- missing Fund Credit, unknown fund-credit weight, stale FX and other incomplete evidence remain explicit readiness blockers;
-- acceptance/hardening suites and repository guard protect these invariants;
-- `omni_cio/risk` is pure/read-only and repository-guarded against broker SDK/tokens/mutation methods.
-
-Architecture: `docs/architecture/V9_PORTFOLIO_RISK_ENGINE.md`.
-
-### WP9 — Meta-Strategy Selector: IN PROGRESS
-
-Tracking: issue #203 / draft PR #204.  
-Branch: `v9/wp9-meta-strategy-selector`.  
 Architecture: `docs/architecture/V9_META_STRATEGY_SELECTOR.md`.
 
-Current implementation builds a deterministic policy-bound regime selection:
+## WP10 — current implementation package
 
-- exact portfolio snapshot + recomputed WP2 IPS fingerprint/reference + exact current WP8 assessment binding;
-- hypothetical WP8 trade assessments cannot impersonate the current portfolio state;
-- exactly five bounded regimes are compared: `NO_ACTION`, `CAPITAL_PRESERVATION`, `DEFENSIVE_BALANCED`, `BALANCED_CORE`, `GROWTH_CORE`;
-- owner risk willingness/capacity, horizon and WP8 current risk cap the feasible regime set before ranking;
-- hard policy/risk breaches cannot be averaged away by objective fit, liquidity fit or lower friction;
-- current hard breach makes `NO_ACTION` infeasible while still permitting a sufficiently defensive remediation regime when evidence is decision-ready;
-- liquidity reserve, quality debt, diversified core and bounded active ideas are explicit directives;
-- bounded active ideas are never required and are allowed only for high willingness + high capacity + compliant current risk in `GROWTH_CORE`;
-- structurally feasible actionable regimes require fresh explicit transition-cost + tax evidence;
-- friction amount, timestamp and source SHA-256 provenance are bound into the immutable selection fingerprint;
-- unsupported expected-return, alpha and macro-regime forecast inputs are absent;
-- deterministic tie-breaks prefer safety, objective/liquidity fit, lower explicit friction and then stable identifiers;
-- policy/portfolio/risk/friction/tax changes carry explicit review or cancellation conditions;
-- selection SHA-256 is canonical and source-order invariant while source mutation changes the fingerprint;
-- `omni_cio/strategy` is pure/internal/read-only and protected by both dedicated and canonical repository guards;
-- mypy scope includes the strategy package;
-- applied GPT remains v8.6.1 and no public route/OpenAPI/GPT Editor change is part of WP9.
+Tracking: issue #205 / draft PR #206.  
+Branch: `v9/wp10-portfolio-optimizer`.  
+Architecture: `docs/architecture/V9_PORTFOLIO_OPTIMIZER.md`.
 
-WP9 is not complete until Ruff/mypy/full exact-head Regression Shield are green, unresolved review threads are zero and PR #204 is squash-merged. Only the final exact-head CI run after all code/documentation fixes counts as merge evidence.
+WP10 converts the exact WP9 strategy into deterministic lot-executable portfolio targets and then revalidates the complete hypothetical target through WP8.
+
+Current implementation includes:
+
+- exact portfolio snapshot + recomputed WP2 IPS fingerprint/reference + current WP8 assessment + WP9 selection binding;
+- current WP8 baseline must have no proposed trades and identical before/after states;
+- every current `RiskPositionV1` must bind exactly to an optimizer asset row;
+- fixed reviewable WP9 regime component budgets with no expected-return/alpha input;
+- WP9 `FORBIDDEN` / `ALLOWED` / `REQUIRED` component semantics preserved;
+- owner liquidity reserve can only increase cash allocation;
+- max-position policy applied before lot conversion;
+- whole-lot deterministic sizing and explicit minimum meaningful-position rules;
+- maximum target-position count and stable-key tie-breaks for small capital;
+- clean execution-price evidence separated from full economic valuation;
+- market evidence carries timestamp, source SHA-256, spread, turnover, top-of-book depth and clean price;
+- bond market evidence carries НКД per lot; missing НКД blocks the trade instead of becoming zero;
+- bond full value reconciles as `clean price + НКД / lot_size`;
+- clean gross notional, НКД, settlement notional, commission, estimated SELL tax and signed cash delta are distinct leg fields;
+- BUY cash is `-(settlement + commission)` and SELL cash is `settlement - commission - estimated tax`;
+- large-capital sizing is bounded by average-turnover participation, top-of-book participation and maximum staging days;
+- oversized trades are scaled to safe whole-lot capacity rather than declared fully executable;
+- every leg records required execution days and `partial_fill_aware=true` without creating any order;
+- cash is recomputed after settlement/НКД/fees and BUYs are reduced before the owner reserve can be spent;
+- account-ineligible/unknown BUY exposure fails closed;
+- stale/future market or friction evidence, wide spread and mutated price binding fail closed;
+- deterministic trade IDs use sanitized stable key + SHA suffix; multi-leg ordering is canonical by full trade ID;
+- CURRENT / TARGET / NO_ACTION scenarios are explicit and contain no return forecast;
+- every changed target position becomes a real `ProposedTradeRiskEffectV1` and is passed into WP8;
+- WP8 target must be decision-ready and policy-compliant, and its before-state must exactly equal the supplied current WP8 after-state;
+- optimizer and target fingerprints are deterministic/source-order invariant;
+- dedicated optimizer boundary guard forbids broker mutation/token surfaces and forecast/execution-authority fields;
+- `omni_cio/optimizer` is in mypy scope and remains internal/read-only with `trading_methods=false`.
+
+Acceptance coverage includes:
+
+- normal lot-executable rebalance;
+- source-order invariance;
+- large-capacity scaling and staged execution;
+- reserve-after-fees protection;
+- missing/stale market evidence;
+- missing friction evidence;
+- missing bond НКД evidence;
+- market-price binding mutation;
+- WP8 target policy breach;
+- same-version IPS mutation;
+- small-cap microposition elimination;
+- trade-ID collision-shaped multi-leg ordering;
+- non-zero bond НКД settlement arithmetic.
+
+WP10 is **not complete** until the final exact-head Regression Shield after all code/documentation changes is fully green, review threads are zero and PR #206 is squash-merged. Checks from an older SHA are evidence only; they are not the merge gate.
+
+## Next dependency after WP10
+
+Only after WP10 is squash-merged, continue with **WP11 — Immutable Portfolio Plan Protocol**.
+
+WP11 must bind the exact portfolio, IPS, evidence, market, WP8 risk, WP9 strategy and WP10 optimizer result into a versioned immutable `PORTFOLIO_PLAN`; preserve ordered BUY/SELL/NO_ACTION legs, expected settlement/fees/cash/target weights/risk before-after, validity/drift/cancellation conditions, and a final read-only review. Any mutation must invalidate prior approval and plan replay must not duplicate orders.
 
 ## Canonical production configuration
 
@@ -279,7 +160,7 @@ Real v1 uses only dedicated `TINVEST_TRADING_TOKEN` and remains limited to the a
 
 `fresh facts → immutable proposal → exact owner confirmation in a new user turn → one submit/idempotency → broker reconciliation`.
 
-WP1–WP9 add no withdrawal/transfer, margin/short, MARKET/BESTPRICE, autonomous recurring execution or token management.
+WP1–WP10 add no withdrawal/transfer, margin/short, MARKET/BESTPRICE, autonomous recurring execution or token management.
 
 `REAL_TRADING_ENABLED=false` remains the master rollback state.
 
