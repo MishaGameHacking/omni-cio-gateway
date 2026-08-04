@@ -3,6 +3,7 @@
 ## Protected assets
 
 - immutable decision-time evidence and expectation bindings;
+- exact production binding across DecisionSet, WP8 risk, WP11 plan and WP12 execution identities;
 - realized outcome evidence;
 - evaluation outputs and benchmark availability state;
 - sanitized offline replay datasets;
@@ -16,6 +17,18 @@
 Threat: after observing the outcome, a historical decision or expectation is edited to appear better calibrated.
 
 Controls: strict frozen contracts, canonical record hashes, append-only journal API, no update/delete method, and separate outcome/evaluation records. A conflicting payload under an existing immutable identity fails closed.
+
+### Cross-version audit rebinding
+
+Threat: a decision record is assembled from a current DecisionSet but a different portfolio/risk/plan/execution generation, making the audit trail internally plausible but historically false.
+
+Controls: the production recorder requires the supplied WP11 plan to bind the exact WP8 `PolicyReferenceV1`, portfolio snapshot SHA, current-risk assessment SHA, and before/after risk states. Optional WP12 execution must bind the exact supplied WP11 `plan_sha256`. Caller-supplied strategy/optimizer identities cannot disagree with the plan. A HOLD/WAIT decision cannot be rebound to an actionable plan.
+
+### False execution attribution
+
+Threat: the journal claims a plan was executed when the canonical WP12 state does not contain owner approval.
+
+Controls: `APPROVED_PLAN` requires owner-approved WP12 execution state. `EXECUTED_PLAN` additionally requires evidence of executed lots. Executed lots without owner approval fail closed. WP14 never grants approval and never submits an order.
 
 ### Forged counterfactuals
 
@@ -61,10 +74,10 @@ Controls: regression result has `production_change_applied=false` and `self_modi
 
 ### Execution authority escalation
 
-Threat: WP14 obtains broker mutation access while evaluating decisions.
+Threat: WP14 obtains broker mutation access while evaluating or recording decisions.
 
-Controls: permanent repository guard rejects imports/calls from real trading, Sandbox and broker mutation APIs. The package has no execution endpoints and no broker token configuration.
+Controls: permanent repository guard rejects imports/calls from real trading, Sandbox and broker mutation APIs. The production recorder accepts immutable contracts and journal storage only. The package has no execution endpoints, broker client or broker token configuration.
 
 ## Failure posture
 
-WP14 fails closed on malformed hashes, timezone ambiguity, identity conflicts, missing source bindings, journal integrity errors, durable storage failures, incomplete replay case coverage and unsafe unsanitized production dataset export.
+WP14 fails closed on malformed hashes, timezone ambiguity, identity conflicts, cross-WP binding mismatches, executed-lot/approval inconsistency, missing source bindings, journal integrity errors, durable storage failures, incomplete replay case coverage and unsafe unsanitized production dataset export.
