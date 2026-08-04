@@ -1,276 +1,149 @@
-# Omni-CIO — Secrets, free durable storage and Render boundary
+# Omni-CIO — external secrets, Render, Upstash and QStash boundary
 
-Этот файл хранит только архитектуру и **имена** переменных. Значения secrets никогда не записываются в GitHub.
+This file records only **roles and environment variable names**. Secret values never belong in GitHub, GPT Instructions, GPT Knowledge or user-facing responses.
 
-## Production service
+## 1. Single production service
 
-Единственный поддерживаемый Render Web Service:
+- Render service: `omni-cio-gateway`;
+- base URL: `https://omni-cio-gateway.onrender.com`;
+- entrypoint: `app:app`;
+- current project instance: Render Free.
 
-`omni-cio-gateway`
+Read-only, optional Sandbox, confirmed Real execution and hidden Watchtower routes remain in this single Gateway. Do not create a second v9 service.
 
-Base URL: `https://omni-cio-gateway.onrender.com`
+## 2. Broker credential separation
 
-Entrypoint: `app:app`
-
-Instance type for the current project: **Render Free**.
-
-Не создавать отдельный trading service и не покупать Persistent Disk ради real-trading journal. Read-only, Sandbox и conditional real execution живут в одном Gateway, но используют разные broker credentials и разные server-side switches.
-
-## Three broker credential contours
-
-### 1. Production read-only
+### Production read-only
 
 `TINVEST_TOKEN`
 
-- существующий production read-only token;
-- не повышать права;
-- не заменять full-access token-ом;
-- real execution package не использует его как fallback.
+Read-only production credential. Never upgrade its role and never use it as a real-execution fallback.
 
-### 2. Sandbox
+### Sandbox
 
 `TINVEST_SANDBOX_TOKEN`
 
-- отдельный Sandbox token;
-- работает только через T-Invest Sandbox;
-- виртуальные деньги only.
+Separate Sandbox credential; virtual money only.
 
-### 3. Real execution
+### Real execution
 
 `TINVEST_TRADING_TOKEN`
 
-- отдельный **account-scoped full-access trading token**;
-- scope должен соответствовать одному intended broker account;
-- **не transfer-access**;
-- используется только `omni_cio.real_trading`;
-- не заменяет `TINVEST_TOKEN`;
-- token value не возвращается пользователю и не сохраняется в execution journal.
+Separate account-scoped real-execution credential without transfer authority. Used only by the reviewed real-trading contour; never stored in GPT or execution journal.
 
-## Gateway secret
+## 3. GPT → Gateway authentication
 
 `GATEWAY_API_KEY`
 
-Одно secret value используется:
+- exists in external server configuration;
+- GPT Action Authentication uses API Key → Bearer with the same externally managed value;
+- value is never written to GitHub/Knowledge/Instructions.
 
-- Render Environment: `GATEWAY_API_KEY`;
-- GPT Action Authentication: API Key → Bearer.
+If this credential is rotated, GPT Action authentication must also be updated. Follow the durable-state migration implications before rotating because existing journal authentication may depend on it.
 
-T-Invest и Upstash tokens в GPT Editor не вводятся.
-
-## TLS
+## 4. TLS
 
 `SSL_TBANK_VERIFY=True`
 
-TLS verification T-Invest не отключать. Sandbox и real REST clients fail closed при TLS/CA проблеме.
+Do not disable broker TLS verification. Upstash/QStash connections use HTTPS and fail closed on invalid endpoint/transport state.
 
-Upstash durable journal использует только HTTPS endpoint `*.upstash.io` с обычной системной TLS verification и не разрешает произвольный HTTP/host из конфигурации.
+## 5. Sandbox switches
 
-## Sandbox environment
+Relevant names:
 
-```text
-TINVEST_TOKEN=<existing read-only production token>
-TINVEST_SANDBOX_TOKEN=<separate Sandbox token>
-GATEWAY_API_KEY=<existing Gateway secret>
-SANDBOX_TRADING_ENABLED=true|false
-SANDBOX_CONFIRMATION_TTL_SECONDS=120
-SSL_TBANK_VERIFY=True
-```
+- `SANDBOX_TRADING_ENABLED`;
+- `SANDBOX_CONFIRMATION_TTL_SECONDS`;
+- `TINVEST_SANDBOX_TOKEN`.
 
-Rollback Sandbox:
+Rollback: set `SANDBOX_TRADING_ENABLED=false`, redeploy/restart, then refresh OpenAPI if the public Action surface changed.
 
-`SANDBOX_TRADING_ENABLED=false` → redeploy/restart → Sandbox routes absent.
+## 6. Real execution switches / durable state
 
-## Real execution environment — zero-cost production path
+Relevant names:
 
-До owner acceptance keep:
+- `REAL_TRADING_ENABLED`;
+- `REAL_TRADING_JOURNAL_BACKEND`;
+- `UPSTASH_REDIS_REST_URL`;
+- `UPSTASH_REDIS_REST_TOKEN`;
+- `REAL_TRADING_MAX_ORDER_RUB`;
+- `REAL_TRADING_MAX_DAILY_RUB`;
+- `REAL_TRADING_CONFIRMATION_TTL_SECONDS`;
+- `REAL_TRADING_MARKET_MAX_AGE_SECONDS`;
+- `TINVEST_TRADING_TOKEN`.
 
-```text
-REAL_TRADING_ENABLED=false
-```
+Selected production durable backend remains Upstash over HTTPS. Process memory and ordinary Render Free ephemeral filesystem are not production real-execution journals.
 
-Required free durable-storage variables:
+Master real-money kill switch:
 
-```text
-REAL_TRADING_JOURNAL_BACKEND=upstash
-UPSTASH_REDIS_REST_URL=<Upstash HTTPS endpoint>
-UPSTASH_REDIS_REST_TOKEN=<Upstash REST secret>
-```
+`REAL_TRADING_ENABLED=false`
 
-Required real-execution variables before controlled enable:
+This disables the Real mutation surface; it never authorizes a trade when true. Every real order still requires the reviewed proposal/owner-confirmation/idempotency/reconciliation lifecycle.
 
-```text
-TINVEST_TOKEN=<UNCHANGED read-only token>
-TINVEST_TRADING_TOKEN=<separate account-scoped full-access non-transfer token>
-GATEWAY_API_KEY=<existing Gateway secret>
-REAL_TRADING_ENABLED=false
-REAL_TRADING_JOURNAL_BACKEND=upstash
-UPSTASH_REDIS_REST_URL=<secret/configured in Render>
-UPSTASH_REDIS_REST_TOKEN=<secret/configured in Render>
-REAL_TRADING_MAX_ORDER_RUB=1000
-REAL_TRADING_MAX_DAILY_RUB=2000
-REAL_TRADING_CONFIRMATION_TTL_SECONDS=120
-REAL_TRADING_MARKET_MAX_AGE_SECONDS=15
-SSL_TBANK_VERIFY=True
-```
+## 7. Watchtower / QStash names
 
-Code ceilings exist above Render-configured caps; configuration cannot raise v1 beyond the reviewed code ceiling.
+When Watchtower is intentionally enabled, the reviewed WP13 runtime uses:
 
-## Free durable storage gate
+- `WATCHTOWER_ENABLED`;
+- `WATCHTOWER_PUBLIC_BASE_URL` or the existing external Render URL;
+- `WATCHTOWER_QSTASH_SCHEDULE_ID`;
+- `WATCHTOWER_JOURNAL_SECRET`;
+- `WATCHTOWER_CRON`;
+- `QSTASH_TOKEN`;
+- `QSTASH_CURRENT_SIGNING_KEY`;
+- `QSTASH_NEXT_SIGNING_KEY`;
+- shared Upstash REST endpoint/credential names above.
 
-Real execution cannot use process memory or the ordinary Render Free ephemeral filesystem.
+Operational authority/source: `docs/operations/V9_WATCHTOWER_RUNBOOK.md`.
 
-Default backend:
+The three Watchtower routes remain internal/hidden from GPT OpenAPI. QStash delivery signatures protect them; these scheduler credentials are never GPT Action credentials.
 
-`REAL_TRADING_JOURNAL_BACKEND=upstash`
+Watchtower rollback:
 
-External persistence:
+`WATCHTOWER_ENABLED=false`
 
-- one Upstash Redis database on the current Free plan;
-- HTTPS REST only;
-- no Render disk;
-- no payment card required by Upstash for its normal free database as of the current documented plan;
-- provider limits/pricing can change, so availability is always fail-closed.
+It does not require changing broker execution secrets and never authorizes real trading.
 
-Official Upstash references:
+## 8. Durable namespaces / role isolation
 
-- `https://upstash.com/redis`
-- `https://upstash.com/pricing/redis`
-- `https://upstash.com/docs/redis/features/restapi`
+The project may reuse one reviewed Upstash database/transport while keeping separate logical namespaces and HMAC roles for real execution, Watchtower and decision/evaluation state.
 
-Do **not** use an unclaimed `start-redis` scratch database for production: Upstash documents those scratch databases as expiring after 72 hours unless claimed.
+Do not assume one HMAC secret can safely substitute for another package-specific secret. Missing/wrong integrity material fails closed.
 
-If URL/token missing, Redis is unreachable, HMAC integrity fails, limits invalid or broker token missing:
+WP14 decision journal/replay code stores hashes/safe audit state, not reusable GPT secrets or private broker payloads.
 
-- real execution is not ready;
-- mutation routes are not published when static initialization fails;
-- no real broker order is submitted.
-
-Journal properties:
-
-- external durable Redis state survives Render Free sleep/deploy/restart;
-- proposal/meta/daily-counter values are HMAC-authenticated with a key derived from `GATEWAY_API_KEY`;
-- metadata count is compared with stored proposal count;
-- atomic Redis Lua compare-and-swap protects proposal state + daily hard limit;
-- proposal/request UUID/state/confirmation evidence/daily accounting only;
-- no broker token or Authorization header is stored.
-
-Details: `docs/operations/REAL_TRADING_DURABLE_STORAGE_V1.md`.
-
-## Optional SQLite compatibility backend
-
-`REAL_TRADING_JOURNAL_BACKEND=sqlite`
-
-remains supported for tests or installations with a real persistent filesystem. On Render it requires a paid persistent disk and is therefore **not** the selected production path for this project.
-
-## Real kill switch
-
-`REAL_TRADING_ENABLED`
-
-- absent/false → all Real Trading Actions absent from OpenAPI;
-- true + incomplete static config → status-only fail-closed surface;
-- true + valid token + policy + durable journal → narrow real surface can register.
-
-Kill switch does **not** authorize a trade. Every order still needs fresh proposal + exact owner confirmation in a new message.
-
-Rollback begins with:
+## 9. Correct topology
 
 ```text
-REAL_TRADING_ENABLED=false
+EXISTING Omni-CIO GPT
+      │ Bearer Gateway authentication only
+      ▼
+Omni-CIO Gateway / Render
+      ├─ read-only broker credential ─► Production read-only
+      ├─ Sandbox credential ─────────► Sandbox / virtual only
+      ├─ real execution credential ──► Confirmed real BUY/SELL contour
+      ├─ HTTPS ──────────────────────► Upstash durable state
+      └─ signed hidden callbacks ◄───► QStash Watchtower schedule
 ```
 
-then redeploy/restart and re-import OpenAPI in GPT Editor if the Action surface changed.
+The GPT receives none of the broker/storage/scheduler credentials.
 
-## Real hard-limit variables
+## 10. Rotation principles
 
-`REAL_TRADING_MAX_ORDER_RUB`
+- Read-only credential: rotate only its external value, then read-only smoke.
+- Sandbox credential: disable Sandbox first, rotate externally, redeploy, virtual smoke, re-enable deliberately.
+- Real execution credential: set `REAL_TRADING_ENABLED=false`, rotate only the real credential, redeploy, verify status/account binding before deliberate re-enable.
+- Upstash credential: disable affected write/scheduler contours, preserve database/state, rotate externally, verify integrity before re-enable.
+- QStash token/signing keys: keep Watchtower disabled while rotating, verify signed fake delivery + schedule reconciliation, then re-enable deliberately.
+- Gateway bearer credential: coordinate Gateway and GPT Action authentication and existing durable-state migration requirements; never rotate casually during unresolved real execution state.
 
-- mandatory before real publish;
-- positive finite decimal;
-- must be below/equal immutable code ceiling.
+## 11. Never store as configuration artifacts
 
-`REAL_TRADING_MAX_DAILY_RUB`
+Do not commit or upload secret values, Authorization headers, full broker account identifiers, private positions/operations/reports, private keys/certificates or external secret exports.
 
-- mandatory before real publish;
-- positive finite decimal;
-- must be >= per-order cap;
-- must be below/equal immutable code ceiling.
+Permanent GPT Knowledge is reusable reference content only. Current account facts are retrieved through authenticated Actions.
 
-`REAL_TRADING_CONFIRMATION_TTL_SECONDS`
+## 12. WP15 recovery boundary
 
-- default 120;
-- accepted range 30..600.
+WP15 changes the **existing GPT configuration**, not server secret values. The owner applies only the Gateway Bearer authentication in the GPT Editor; all other secrets remain external.
 
-`REAL_TRADING_MARKET_MAX_AGE_SECONDS`
-
-- default 15;
-- accepted range 1..60;
-- freshness uses trusted order-book timestamp.
-
-## Correct connection topology
-
-```text
-Custom GPT
-  │ Authorization: Bearer <GATEWAY_API_KEY>
-  ▼
-Omni-CIO Gateway / Render Free
-  ├── <TINVEST_TOKEN> ──────────────► Production T-Invest / read-only
-  ├── <TINVEST_SANDBOX_TOKEN> ─────► T-Invest Sandbox / virtual only
-  ├── <TINVEST_TRADING_TOKEN> ─────► Production T-Invest / confirmed LIMIT BUY/SELL only
-  └── HTTPS ───────────────────────► Upstash Redis Free / durable execution journal
-```
-
-Custom GPT directly receives none of these infrastructure secrets.
-
-## Rotation
-
-### Read-only token
-
-Update only `TINVEST_TOKEN`, then read-only smoke. Trading/Sandbox tokens unchanged.
-
-### Sandbox token
-
-Disable Sandbox → update `TINVEST_SANDBOX_TOKEN` → redeploy → enable → status + virtual smoke.
-
-### Real trading token
-
-1. set `REAL_TRADING_ENABLED=false`;
-2. revoke/replace only `TINVEST_TRADING_TOKEN`;
-3. keep `TINVEST_TOKEN` unchanged;
-4. redeploy;
-5. controlled status/account-binding acceptance before re-enable.
-
-### Upstash REST token
-
-1. set `REAL_TRADING_ENABLED=false`;
-2. ensure no unresolved `submitting`/`unknown` proposal is being actively reconciled;
-3. rotate only `UPSTASH_REDIS_REST_TOKEN` in Upstash/Render;
-4. keep the same Redis database and data;
-5. redeploy and verify `getRealTradingStatus` before re-enable.
-
-### Gateway key
-
-If `GATEWAY_API_KEY` changes, also update GPT Action Bearer. Because durable-journal MACs are derived from this secret, do **not** casually rotate it while retaining an existing real execution journal. Follow a dedicated migration/retention procedure or reinitialize only when no unresolved real proposals/orders remain.
-
-## Never store in GitHub / Knowledge / Instructions / user responses
-
-- values of `TINVEST_TOKEN`;
-- values of `TINVEST_SANDBOX_TOKEN`;
-- values of `TINVEST_TRADING_TOKEN`;
-- values of `UPSTASH_REDIS_REST_TOKEN`;
-- values of `GATEWAY_API_KEY`;
-- Authorization headers;
-- full broker account IDs;
-- private positions/operations as configuration;
-- Render secret exports.
-
-The Upstash endpoint itself is less sensitive than its token, but the project still keeps connection details in Render rather than GPT Knowledge.
-
-## Release order
-
-Real-money owner configuration is allowed only after the free-storage migration is merged and exact-head Regression Shield/security checks are green.
-
-Then follow exactly:
-
-`docs/operations/REAL_TRADING_RELEASE_RUNBOOK.md`
-
-GitHub changes do not configure Render, Upstash or GPT Editor automatically.
+Repository merge does not modify Render/Upstash/QStash/GPT Editor automatically. Full upgrade/Preview/rollback steps: `gpt/MY_GPT_SETUP_RUNBOOK.md`.
