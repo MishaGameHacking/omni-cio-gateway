@@ -37,7 +37,7 @@ jobs:
 
       - name: Bootstrap isolated Python 3.12.10
         shell: cmd
-        run: scripts\bootstrap_windows_ci_python.cmd
+        run: scripts\\bootstrap_windows_ci_python.cmd
 
       - name: Create isolated CI environment
         run: |
@@ -67,6 +67,7 @@ jobs:
             --resolver=backtracking \
             --strip-extras \
             --quiet \
+            --constraint=requirements.txt \
             --output-file=windows-compiled-requirements.txt \
             requirements.in
           python -m piptools compile \
@@ -199,7 +200,7 @@ jobs:
 
       - name: Bootstrap isolated Python 3.12.10
         shell: cmd
-        run: scripts\bootstrap_windows_ci_python.cmd
+        run: scripts\\bootstrap_windows_ci_python.cmd
 
       - name: Create isolated CI environment
         run: |
@@ -240,7 +241,7 @@ jobs:
         run: >-
           python -m detect_secrets scan --all-files
           --exclude-files
-          '(^|[\\/])(\.git|\.venv|\.venv-ci|\.mypy_cache|\.ruff_cache|__pycache__|requirements(-dev)?\.txt|windows-.*requirements.*\.txt|coverage\.xml|pytest-results\.xml)([\\/]|$)'
+          '(^|[\\/])(\\.git|\\.venv|\\.venv-ci|\\.mypy_cache|\\.ruff_cache|__pycache__|requirements(-dev)?\\.txt|windows-.*requirements.*\\.txt|coverage\\.xml|pytest-results\\.xml)([\\/]|$)'
           | python scripts/check_ci_security_baseline.py --detect-secrets-report
 
       - name: Clean self-hosted workspace
