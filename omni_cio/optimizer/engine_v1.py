@@ -578,7 +578,7 @@ def _build_legs(
     target_lots: dict[str, int],
     settings: PortfolioOptimizerSettingsV1,
 ) -> tuple[OptimizerRebalanceLegV1, ...]:
-    return tuple(
+    rows = tuple(
         _leg(
             asset=row,
             target_lots=target_lots[row.stable_key],
@@ -587,6 +587,7 @@ def _build_legs(
         for row in assets
         if target_lots[row.stable_key] != row.current_lots
     )
+    return tuple(sorted(rows, key=lambda row: row.trade_id))
 
 
 def _scale_buys_to_reserve(
