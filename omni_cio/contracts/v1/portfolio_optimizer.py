@@ -13,6 +13,7 @@ from pydantic import Field, field_validator, model_validator
 from omni_cio.contracts.v1.common import ContractModel, CurrencyCode
 from omni_cio.contracts.v1.investment_policy import PolicyReferenceV1
 from omni_cio.contracts.v1.meta_strategy import StrategyComponentKind, StrategyRegime
+from omni_cio.contracts.v1.portfolio import InstrumentType
 from omni_cio.contracts.v1.portfolio_risk import (
     PortfolioRiskAssessmentV1,
     RiskBlockerCode,
@@ -57,6 +58,8 @@ class OptimizerBlockerCode(StrEnum):
     MARKET_EVIDENCE_MISSING = "market_evidence_missing"
     MARKET_EVIDENCE_STALE = "market_evidence_stale"
     MARKET_EVIDENCE_FUTURE = "market_evidence_future"
+    MARKET_PRICE_BINDING_MISMATCH = "market_price_binding_mismatch"
+    ACCRUED_INTEREST_EVIDENCE_MISSING = "accrued_interest_evidence_missing"
     SPREAD_TOO_WIDE = "spread_too_wide"
     ZERO_SAFE_CAPACITY = "zero_safe_capacity"
     LIQUIDITY_RESERVE_UNFUNDED = "liquidity_reserve_unfunded"
@@ -91,6 +94,8 @@ class OptimizerMarketEvidenceV1(ContractModel):
     stable_key: Annotated[str, Field(min_length=3, max_length=256)]
     as_of: datetime
     source_sha256: Sha256
+    clean_unit_price_base: PositiveDecimal
+    accrued_interest_per_lot_base: NonNegativeDecimal | None = None
     spread_bps: Bps
     average_daily_turnover_base: PositiveDecimal
     top_of_book_depth_base: PositiveDecimal
@@ -110,8 +115,8 @@ class OptimizerAssetV1(ContractModel):
     lot_size: PositiveInt
     native_currency: CurrencyCode
     base_currency: CurrencyCode
-    unit_native_price: PositiveDecimal
-    unit_base_price: PositiveDecimal
+    unit_full_value_native: PositiveDecimal
+    unit_full_value_base: PositiveDecimal
     risk_template: RiskPositionV1
     account_eligible: bool | None
     commission_bps: Bps | None = None
@@ -153,25 +158,45 @@ class OptimizerAssetV1(ContractModel):
             raise ValueError("optimizer asset native currency mismatch")
         if self.risk_template.base_currency != self.base_currency:
             raise ValueError("optimizer asset base currency mismatch")
-        if self.market_evidence is not None and self.market_evidence.stable_key != self.stable_key:
-            raise ValueError("optimizer market evidence identity mismatch")
+
+        evidence = self.market_evidence
+        if evidence is not None:
+            if evidence.stable_key != self.stable_key:
+                raise ValueError("optimizer market evidence identity mismatch")
+            if self.risk_template.instrument_type is InstrumentType.BOND:
+                if evidence.accrued_interest_per_lot_base is not None:
+                    expected_full_base = evidence.clean_unit_price_base + (
+                        evidence.accrued_interest_per_lot_base / Decimal(self.lot_size)
+                    )
+                    if self.unit_full_value_base != expected_full_base:
+                        raise ValueError(
+                            "bond full unit value must equal clean price plus accrued interest"
+                        )
+            else:
+                if evidence.accrued_interest_per_lot_base is not None:
+                    raise ValueError("non-bond market evidence cannot carry accrued interest")
+                if self.unit_full_value_base != evidence.clean_unit_price_base:
+                    raise ValueError("non-bond full unit value must equal clean market price")
 
         current_units = self.current_lots * self.lot_size
-        expected_native = Decimal(current_units) * self.unit_native_price
-        expected_base = Decimal(current_units) * self.unit_base_price
+        expected_native = Decimal(current_units) * self.unit_full_value_native
+        expected_base = Decimal(current_units) * self.unit_full_value_base
         if self.risk_template.native_market_value != expected_native:
             raise ValueError("current native value does not reconcile to lots")
         if self.risk_template.base_market_value != expected_base:
             raise ValueError("current base value does not reconcile to lots")
 
         if self.native_currency == self.base_currency:
-            if self.unit_native_price != self.unit_base_price:
-                raise ValueError("base-currency unit prices must match")
+            if self.unit_full_value_native != self.unit_full_value_base:
+                raise ValueError("base-currency full unit values must match")
         else:
             if self.risk_template.fx is None:
                 raise ValueError("cross-currency optimizer asset requires risk FX")
-            if self.unit_base_price != self.unit_native_price * self.risk_template.fx.rate_to_base:
-                raise ValueError("optimizer unit price does not reconcile to FX")
+            if (
+                self.unit_full_value_base
+                != self.unit_full_value_native * self.risk_template.fx.rate_to_base
+            ):
+                raise ValueError("optimizer full unit value does not reconcile to FX")
         return self
 
 
@@ -225,8 +250,11 @@ class OptimizerRebalanceLegV1(ContractModel):
     target_lots: NonNegativeInt
     quantity_lots: PositiveInt
     lot_size: PositiveInt
-    reference_unit_price_base: PositiveDecimal
+    reference_clean_unit_price_base: PositiveDecimal
     gross_notional_base: PositiveDecimal
+    accrued_interest_per_lot_base: NonNegativeDecimal
+    accrued_interest_base: NonNegativeDecimal
+    settlement_notional_base: PositiveDecimal
     commission_bps: Bps
     commission_base: NonNegativeDecimal
     estimated_sell_tax_bps: Bps
@@ -259,17 +287,30 @@ class OptimizerRebalanceLegV1(ContractModel):
             raise ValueError("BUY leg must increase lots")
         if self.side is OptimizerTradeSide.SELL and self.target_lots >= self.current_lots:
             raise ValueError("SELL leg must decrease lots")
-        expected_notional = (
-            Decimal(self.quantity_lots * self.lot_size) * self.reference_unit_price_base
+
+        expected_gross = (
+            Decimal(self.quantity_lots * self.lot_size)
+            * self.reference_clean_unit_price_base
         )
-        if self.gross_notional_base != expected_notional:
-            raise ValueError("optimizer leg notional does not reconcile")
+        if self.gross_notional_base != expected_gross:
+            raise ValueError("optimizer leg clean notional does not reconcile")
+        expected_accrued = (
+            Decimal(self.quantity_lots) * self.accrued_interest_per_lot_base
+        )
+        if self.accrued_interest_base != expected_accrued:
+            raise ValueError("optimizer leg accrued interest does not reconcile")
+        expected_settlement = self.gross_notional_base + self.accrued_interest_base
+        if self.settlement_notional_base != expected_settlement:
+            raise ValueError("optimizer leg settlement notional does not reconcile")
+
         if self.side is OptimizerTradeSide.BUY and self.estimated_tax_base != 0:
             raise ValueError("BUY leg cannot carry estimated sell tax")
         expected_cash = (
-            -(self.gross_notional_base + self.commission_base)
+            -(self.settlement_notional_base + self.commission_base)
             if self.side is OptimizerTradeSide.BUY
-            else self.gross_notional_base - self.commission_base - self.estimated_tax_base
+            else self.settlement_notional_base
+            - self.commission_base
+            - self.estimated_tax_base
         )
         if self.cash_delta_base != expected_cash:
             raise ValueError("optimizer leg cash delta does not reconcile")
@@ -317,7 +358,10 @@ class PortfolioOptimizerResultV1(ContractModel):
     selected_regime: StrategyRegime
     targets: tuple[OptimizerTargetPositionV1, ...]
     legs: tuple[OptimizerRebalanceLegV1, ...]
-    scenarios: Annotated[tuple[OptimizerScenarioV1, ...], Field(min_length=3, max_length=3)]
+    scenarios: Annotated[
+        tuple[OptimizerScenarioV1, ...],
+        Field(min_length=3, max_length=3),
+    ]
     blockers: tuple[OptimizerBlockerCode, ...] = ()
     warnings: tuple[OptimizerWarningCode, ...] = ()
     target_risk_assessment: PortfolioRiskAssessmentV1 | None = None
@@ -392,14 +436,20 @@ class PortfolioOptimizerResultV1(ContractModel):
         if self.optimizer_ready != expected_ready:
             raise ValueError("optimizer readiness must match blockers")
         if self.target_risk_assessment is not None:
-            if self.target_risk_assessment.portfolio_snapshot_sha256 != self.portfolio_snapshot_sha256:
+            if (
+                self.target_risk_assessment.portfolio_snapshot_sha256
+                != self.portfolio_snapshot_sha256
+            ):
                 raise ValueError("target risk portfolio binding mismatch")
             if self.target_risk_assessment.policy_reference != self.policy_reference:
                 raise ValueError("target risk policy binding mismatch")
         if self.plan_eligible:
             if not self.optimizer_ready or not self.legs:
                 raise ValueError("plan eligibility requires ready optimizer with trade legs")
-            if self.target_risk_assessment is None or not self.target_risk_assessment.plan_eligible:
+            if (
+                self.target_risk_assessment is None
+                or not self.target_risk_assessment.plan_eligible
+            ):
                 raise ValueError("plan eligibility requires WP8 target risk approval")
         if self.optimizer_sha256 != portfolio_optimizer_sha256(self):
             raise ValueError("optimizer SHA-256 does not match canonical payload")
