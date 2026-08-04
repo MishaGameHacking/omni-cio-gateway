@@ -4,7 +4,7 @@
 
 ## Executive state
 
-Omni-CIO remains **one Custom GPT + one production Render Gateway**. The protected production release remains **v8.6.1** until WP15.
+Omni-CIO remains **one Custom GPT + one production Render Gateway**. The protected production release **v8.6.1 is 100% complete and protected** while the v9 program continues; the applied Custom GPT remains v8.6.1 until WP15.
 
 Production invariants:
 
@@ -43,7 +43,7 @@ Development always continues with the earliest dependency-ready incomplete work 
 | WP10 Portfolio Optimizer & Capital Scaling | COMPLETE | #205 / #206 | `f7392977...`, exact-head #1105 on `2ff38f96...` |
 | WP11 Immutable Portfolio Plan Protocol | COMPLETE | #207 / #208 | squash merge `7c3006d332041ec352f0c2eab8c7cb70e4c1a6af`; exact-head Regression Shield #1114 on `b97a6241...` |
 | WP12 Safe Plan Execution Engine | IN PROGRESS — FINAL GATE | #209 / draft #211 | implementation, architecture, threat/data contracts and acceptance tests complete on `v9/wp12-safe-plan-execution`; final exact-head Regression Shield + zero review threads + squash merge still required |
-| WP13 Portfolio Watchtower | PENDING | — | starts only after WP12 merge |
+| WP13 Portfolio Watchtower | PENDING | #212 | starts only after WP12 merge |
 | WP14 Decision Journal / Evaluation | PENDING | — | — |
 | WP15 Custom GPT v9 Configuration & Recovery | PENDING | — | applied GPT remains v8.6.1 until then |
 
@@ -120,7 +120,7 @@ WP12 is **not complete** until the final branch head passes the full exact-head 
 
 ## Next dependency after WP12
 
-After WP12 squash merge, continue with **WP13 — Portfolio Watchtower** from the canonical master plan. WP13 must be monitoring/read-only by default and must not create a recurring autonomous real-money executor.
+After WP12 squash merge, continue with **WP13 — Portfolio Watchtower** from the canonical master plan. Tracking issue: #212. WP13 must be monitoring/read-only by default and must not create a recurring autonomous real-money executor.
 
 ## Canonical production configuration
 
@@ -146,4 +146,4 @@ WP12 orchestrates that same proven primitive for an exact owner-approved WP11 pl
 
 Owner Phase 4 on 2026-08-03 proved one explicitly authorized SBER LIMIT BUY with exactly one submit, broker-confirmed fill and portfolio/operations reconciliation. Canonical recovery invariant: **idempotent replay verified with no second submit**.
 
-**Production release state: Omni-CIO v8.6.1 real BUY/SELL v1 — complete and protected while v9 development continues.**
+**Production release state: Omni-CIO v8.6.1 real BUY/SELL v1 — 100% complete and protected while v9 development continues.**
