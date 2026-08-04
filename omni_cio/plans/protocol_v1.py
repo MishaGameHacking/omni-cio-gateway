@@ -477,13 +477,20 @@ def build_portfolio_plan(
     target_scenario = _scenario(optimizer, OptimizerScenarioKind.TARGET)
     target_risk = optimizer.target_risk_assessment
     assert target_risk is not None
+    execution_days = max(
+        (row.required_execution_days for row in optimizer.legs),
+        default=1,
+    )
 
     values = {
         "schema_version": "1.0",
         "object_type": "PORTFOLIO_PLAN",
         "created_at": evaluation_time,
         "expires_at": evaluation_time
-        + timedelta(seconds=settings_value.validity_seconds),
+        + timedelta(
+            days=execution_days - 1,
+            seconds=settings_value.validity_seconds,
+        ),
         "portfolio_snapshot_sha256": portfolio.portfolio_snapshot_sha256,
         "policy_reference": policy_assessment.reference,
         "current_risk_assessment_sha256": current_risk.assessment_sha256,
