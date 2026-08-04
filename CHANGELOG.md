@@ -53,20 +53,34 @@
   - contradictions эксплицитны, а unresolved critical contradiction блокирует strong recommendation;
   - dossier fingerprint детерминирован и source-order invariant;
   - no broker mutation, public execution route, OpenAPI or GPT Editor change in WP5.
-- WP6 Credit, Rating & Default Engine 2.0 находится в активной разработке через issue #195 / draft PR #196:
+- WP6 Credit, Rating & Default Engine 2.0 завершён через PR #196 и squash-merged в `main` как `643160085520f1a2a333385aa7431d1b595b2eef` после exact-head Regression Shield #1057:
   - Credit Passport привязан к exact WP5 dossier fingerprint и WP2 policy reference;
   - issue / issuer / guarantor / guarantee / seniority моделируются раздельно;
-  - все material credit inputs ссылаются на decision-grade WP5 evidence hashes;
-  - ACRA, Expert RA, NKR и NRA Russian national rating scales моделируются явно;
+  - material credit inputs ссылаются на decision-grade WP5 evidence hashes;
+  - ACRA, Expert RA, NKR и NRA Russian national scales моделируются явно, agency/scale compatibility contract-enforced;
   - incompatible scales не усредняются и не получают скрытый crosswalk;
   - minimum credit floor сравнивается детерминированно на совместимой named scale;
   - issue rating предпочтителен, issuer proxy и eligible guarantor basis маркируются явно;
+  - maturity/offer/coupon/amortization/collateral/guarantee terms структурированы;
+  - optional leverage/coverage/liquidity/12-month refinancing metrics provenance-bound и не фабрикуются при отсутствии данных;
   - default, technical default, restructuring и payment delay сохраняются как отдельные события, active events fail closed;
-  - same-timestamp rating contradictions fail closed;
-  - dossier/policy/rating/outlook/watch/default/terms changes создают deterministic re-analysis triggers;
+  - current rating state определяется по latest effective observation, а same-timestamp contradictions fail closed;
+  - dossier/policy/rating/outlook/watch/default/terms/financial changes создают deterministic re-analysis triggers;
   - passport SHA-256 детерминирован и source-order invariant;
   - repository guard защищает WP5 research и WP6 credit runtime boundaries;
   - no broker mutation, public execution route, OpenAPI or GPT Editor change in WP6.
+- WP7 Fund X-Ray Engine находится в активной разработке через issue #197:
+  - ETF wrapper связывается с exact WP5 research target и WP3 universe fingerprint;
+  - composition states различают full holdings, partial holdings, documented exposure buckets и unavailable;
+  - partial holdings не нормализуются до 100%, undisclosed residual остаётся `UNKNOWN`;
+  - asset-class/sector/currency/issuer/geography look-through выводится только из disclosed weights;
+  - top-1/top-5 и HHI показывают hidden concentration для holdings-based composition;
+  - direct-holding overlap и fund-to-fund overlap вычисляются детерминированно;
+  - manager/benchmark/strategy/AUM/turnover/tracking-error/expense metadata остаётся optional/provenance-bound;
+  - stale composition fail closed, missing composition не фабрикуется;
+  - xray SHA-256 детерминирован и source-order invariant;
+  - fund runtime pure/internal и repository guard запрещает broker SDK/tokens/mutation services;
+  - no public execution route, OpenAPI or GPT Editor change in WP7.
 - Applied Custom GPT остаётся v8.6.1 до WP15; текущая v9 разработка не является разрешением на более широкий real-money execution.
 
 ### Omni-CIO v8.6.1 — released / owner accepted
