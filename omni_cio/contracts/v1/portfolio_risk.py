@@ -85,6 +85,7 @@ class RiskBlockerCode(StrEnum):
     POLICY_BINDING_MISMATCH = "policy_binding_mismatch"
     PORTFOLIO_VALUE_NON_POSITIVE = "portfolio_value_non_positive"
     FX_PROVENANCE_MISSING = "fx_provenance_missing"
+    FX_EVIDENCE_STALE = "fx_evidence_stale"
     EXPOSURE_INCOMPLETE = "exposure_incomplete"
     FUND_XRAY_REQUIRED = "fund_xray_required"
     FUND_XRAY_NOT_READY = "fund_xray_not_ready"
@@ -161,6 +162,38 @@ class PositionCreditRiskInputV1(ContractModel):
     active_default_event: bool
 
 
+class FundCreditRiskInputV1(ContractModel):
+    fund_xray_sha256: Sha256
+    applicable_weight: UnitWeight
+    assessed_weight: UnitWeight
+    floor_breach_weight: UnitWeight = Decimal("0")
+    active_default_weight: UnitWeight = Decimal("0")
+    unknown_weight: UnitWeight
+    source_sha256s: Annotated[tuple[Sha256, ...], Field(min_length=1)]
+
+    @field_validator("source_sha256s", mode="before")
+    @classmethod
+    def normalize_sources(cls, value: object) -> object:
+        if isinstance(value, (str, bytes)) or not isinstance(value, Iterable):
+            raise ValueError("fund credit source hashes must be a collection")
+        result = tuple(sorted(set(value)))
+        if not result:
+            raise ValueError("fund credit source hashes cannot be empty")
+        return result
+
+    @model_validator(mode="after")
+    def validate_coverage(self) -> FundCreditRiskInputV1:
+        if abs(
+            self.assessed_weight + self.unknown_weight - self.applicable_weight
+        ) > Decimal("0.0001"):
+            raise ValueError("fund credit assessed + unknown weight must reconcile")
+        if self.floor_breach_weight > self.assessed_weight:
+            raise ValueError("fund credit floor breach cannot exceed assessed weight")
+        if self.active_default_weight > self.assessed_weight:
+            raise ValueError("fund active-default weight cannot exceed assessed weight")
+        return self
+
+
 class PositionPermanentLossInputV1(ContractModel):
     status: PermanentLossStatus
     evidence_sha256s: tuple[Sha256, ...] = ()
@@ -187,6 +220,7 @@ class RiskPositionV1(ContractModel):
     exposures: Annotated[tuple[RiskExposureSliceV1, ...], Field(min_length=1)]
     fund_xray_sha256: Sha256 | None = None
     fund_xray_decision_ready: bool | None = None
+    fund_credit: FundCreditRiskInputV1 | None = None
     liquidity: PositionLiquidityRiskInputV1 | None = None
     credit: PositionCreditRiskInputV1 | None = None
     permanent_loss: PositionPermanentLossInputV1
@@ -252,19 +286,25 @@ class RiskPositionV1(ContractModel):
                 raise ValueError("fund look-through mode requires ETF instrument")
             if self.fund_xray_sha256 is None or self.fund_xray_decision_ready is None:
                 raise ValueError("fund look-through requires X-Ray identity/readiness")
+            if (
+                self.fund_credit is not None
+                and self.fund_credit.fund_xray_sha256 != self.fund_xray_sha256
+            ):
+                raise ValueError("fund credit summary must bind exact Fund X-Ray SHA")
         else:
             if self.instrument_type is InstrumentType.ETF:
                 raise ValueError("ETF risk position requires fund look-through mode")
             if (
                 self.fund_xray_sha256 is not None
                 or self.fund_xray_decision_ready is not None
+                or self.fund_credit is not None
             ):
                 raise ValueError("direct position cannot carry fund X-Ray fields")
 
         if self.instrument_type is InstrumentType.BOND and self.credit is None:
             raise ValueError("bond risk position requires credit evidence")
         if self.instrument_type is not InstrumentType.BOND and self.credit is not None:
-            raise ValueError("non-bond risk position cannot carry credit evidence")
+            raise ValueError("non-bond risk position cannot carry direct credit evidence")
         return self
 
 
@@ -348,6 +388,7 @@ class RiskEngineSettingsV1(ContractModel):
     max_exit_days_soft: PositiveDecimal = Decimal("5")
     max_spread_bps_soft: NonNegativeDecimal = Decimal("200")
     liquidity_max_age_seconds: Annotated[int, Field(ge=30)] = 300
+    fx_max_age_seconds: Annotated[int, Field(ge=30)] = 3600
     future_tolerance_seconds: Annotated[int, Field(ge=0)] = 60
 
     @field_validator("additional_limits", mode="before")
