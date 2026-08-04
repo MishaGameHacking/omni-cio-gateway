@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from datetime import date, datetime, timezone
+from decimal import Decimal
 from enum import StrEnum
 import hashlib
 import json
@@ -9,12 +10,16 @@ from typing import Annotated, Literal
 
 from pydantic import Field, field_validator, model_validator
 
-from omni_cio.contracts.v1.common import ContractModel
+from omni_cio.contracts.v1.common import ContractModel, CurrencyCode, FiniteDecimal
 from omni_cio.contracts.v1.investment_policy import PolicyReferenceV1
 from omni_cio.contracts.v1.research_evidence import ResearchTargetV1
 
 
 Sha256 = Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+NonNegativeDecimal = Annotated[
+    Decimal,
+    Field(ge=Decimal("0"), allow_inf_nan=False),
+]
 
 
 class CreditEntityKind(StrEnum):
@@ -38,6 +43,29 @@ class GuaranteeType(StrEnum):
     UNKNOWN = "unknown"
 
 
+class CreditCouponType(StrEnum):
+    FIXED = "fixed"
+    FLOATING = "floating"
+    VARIABLE = "variable"
+    ZERO = "zero"
+    UNKNOWN = "unknown"
+
+
+class CreditMetricKind(StrEnum):
+    NET_DEBT_TO_EBITDA = "net_debt_to_ebitda"
+    INTEREST_COVERAGE = "interest_coverage"
+    CURRENT_RATIO = "current_ratio"
+    CASH_TO_DEBT_DUE_12M = "cash_to_debt_due_12m"
+    AVAILABLE_LIQUIDITY = "available_liquidity"
+    DEBT_DUE_12M = "debt_due_12m"
+    TOTAL_DEBT = "total_debt"
+
+
+class CreditMetricUnit(StrEnum):
+    RATIO = "ratio"
+    CURRENCY = "currency"
+
+
 class CreditRatingAgency(StrEnum):
     ACRA = "acra"
     EXPERT_RA = "expert_ra"
@@ -57,6 +85,17 @@ _AGENCY_SCALE_COMPATIBILITY = {
     CreditRatingAgency.EXPERT_RA: CreditRatingScale.EXPERT_RA_RU_NATIONAL,
     CreditRatingAgency.NKR: CreditRatingScale.NKR_RU_NATIONAL,
     CreditRatingAgency.NRA: CreditRatingScale.NRA_RU_NATIONAL,
+}
+_RATIO_METRICS = {
+    CreditMetricKind.NET_DEBT_TO_EBITDA,
+    CreditMetricKind.INTEREST_COVERAGE,
+    CreditMetricKind.CURRENT_RATIO,
+    CreditMetricKind.CASH_TO_DEBT_DUE_12M,
+}
+_CURRENCY_METRICS = {
+    CreditMetricKind.AVAILABLE_LIQUIDITY,
+    CreditMetricKind.DEBT_DUE_12M,
+    CreditMetricKind.TOTAL_DEBT,
 }
 
 
@@ -115,6 +154,13 @@ class CreditReanalysisTriggerCode(StrEnum):
     WATCH_CHANGED = "watch_changed"
     DEFAULT_EVENT_CHANGED = "default_event_changed"
     ISSUE_TERMS_CHANGED = "issue_terms_changed"
+    FINANCIAL_METRICS_CHANGED = "financial_metrics_changed"
+
+
+def _normalize_hashes(value: object, *, label: str) -> tuple[str, ...]:
+    if isinstance(value, (str, bytes)) or not isinstance(value, Iterable):
+        raise ValueError(f"{label} source hashes must be a collection")
+    return tuple(sorted(set(value)))
 
 
 class CreditEntityIdentityV1(ContractModel):
@@ -127,9 +173,7 @@ class CreditEntityIdentityV1(ContractModel):
     @field_validator("source_record_sha256s", mode="before")
     @classmethod
     def normalize_sources(cls, value: object) -> object:
-        if isinstance(value, (str, bytes)) or not isinstance(value, Iterable):
-            raise ValueError("entity source hashes must be a collection")
-        return tuple(sorted(set(value)))
+        return _normalize_hashes(value, label="entity")
 
 
 class CreditGuaranteeV1(ContractModel):
@@ -141,9 +185,7 @@ class CreditGuaranteeV1(ContractModel):
     @field_validator("source_record_sha256s", mode="before")
     @classmethod
     def normalize_sources(cls, value: object) -> object:
-        if isinstance(value, (str, bytes)) or not isinstance(value, Iterable):
-            raise ValueError("guarantee source hashes must be a collection")
-        return tuple(sorted(set(value)))
+        return _normalize_hashes(value, label="guarantee")
 
     @model_validator(mode="after")
     def validate_substitution(self) -> CreditGuaranteeV1:
@@ -164,6 +206,8 @@ class DebtIssueTermsV1(ContractModel):
     seniority: DebtSeniority
     maturity_date: date | None = None
     offer_date: date | None = None
+    coupon_type: CreditCouponType = CreditCouponType.UNKNOWN
+    coupon_rate_percent: NonNegativeDecimal | None = None
     amortizing: bool | None = None
     secured: bool | None = None
     guarantees: tuple[CreditGuaranteeV1, ...] = ()
@@ -172,18 +216,68 @@ class DebtIssueTermsV1(ContractModel):
     @field_validator("source_record_sha256s", mode="before")
     @classmethod
     def normalize_sources(cls, value: object) -> object:
+        return _normalize_hashes(value, label="issue term")
+
+    @field_validator("guarantees", mode="before")
+    @classmethod
+    def normalize_guarantees(cls, value: object) -> object:
+        if value is None:
+            return ()
         if isinstance(value, (str, bytes)) or not isinstance(value, Iterable):
-            raise ValueError("issue term source hashes must be a collection")
-        return tuple(sorted(set(value)))
+            raise ValueError("guarantees must be a collection")
+        return tuple(
+            sorted(
+                value,
+                key=lambda row: str(getattr(row, "guarantor_entity_id", row)),
+            )
+        )
 
     @model_validator(mode="after")
-    def validate_dates(self) -> DebtIssueTermsV1:
+    def validate_terms(self) -> DebtIssueTermsV1:
         if self.offer_date is not None and self.maturity_date is not None:
             if self.offer_date > self.maturity_date:
                 raise ValueError("offer date cannot follow maturity date")
         guarantor_ids = [row.guarantor_entity_id for row in self.guarantees]
         if len(guarantor_ids) != len(set(guarantor_ids)):
             raise ValueError("issue guarantees must have unique guarantor ids")
+        if self.coupon_type is CreditCouponType.ZERO:
+            if self.coupon_rate_percent not in (None, Decimal("0")):
+                raise ValueError("zero-coupon issue cannot carry a positive coupon rate")
+        return self
+
+
+class CreditFinancialMetricV1(ContractModel):
+    metric_id: Annotated[
+        str,
+        Field(pattern=r"^credit_metric_[a-z0-9][a-z0-9_-]{2,95}$"),
+    ]
+    kind: CreditMetricKind
+    value: FiniteDecimal
+    unit: CreditMetricUnit
+    currency: CurrencyCode | None = None
+    as_of: date
+    source_record_sha256s: Annotated[tuple[Sha256, ...], Field(min_length=1)]
+
+    @field_validator("currency", mode="before")
+    @classmethod
+    def normalize_currency(cls, value: object) -> object:
+        return value.upper() if isinstance(value, str) else value
+
+    @field_validator("source_record_sha256s", mode="before")
+    @classmethod
+    def normalize_sources(cls, value: object) -> object:
+        return _normalize_hashes(value, label="financial metric")
+
+    @model_validator(mode="after")
+    def validate_metric(self) -> CreditFinancialMetricV1:
+        if self.kind in _RATIO_METRICS:
+            if self.unit is not CreditMetricUnit.RATIO or self.currency is not None:
+                raise ValueError("ratio credit metric requires ratio unit and no currency")
+        elif self.kind in _CURRENCY_METRICS:
+            if self.unit is not CreditMetricUnit.CURRENCY or self.currency is None:
+                raise ValueError("currency credit metric requires currency unit and currency")
+            if self.value < 0:
+                raise ValueError("currency credit metric cannot be negative")
         return self
 
 
@@ -218,9 +312,7 @@ class CreditRatingObservationV1(ContractModel):
     @field_validator("source_record_sha256s", mode="before")
     @classmethod
     def normalize_sources(cls, value: object) -> object:
-        if isinstance(value, (str, bytes)) or not isinstance(value, Iterable):
-            raise ValueError("rating source hashes must be a collection")
-        return tuple(sorted(set(value)))
+        return _normalize_hashes(value, label="rating")
 
     @model_validator(mode="after")
     def validate_agency_scale(self) -> CreditRatingObservationV1:
@@ -252,9 +344,7 @@ class CreditDefaultEventV1(ContractModel):
     @field_validator("source_record_sha256s", mode="before")
     @classmethod
     def normalize_sources(cls, value: object) -> object:
-        if isinstance(value, (str, bytes)) or not isinstance(value, Iterable):
-            raise ValueError("credit event source hashes must be a collection")
-        return tuple(sorted(set(value)))
+        return _normalize_hashes(value, label="credit event")
 
     @model_validator(mode="after")
     def validate_resolution(self) -> CreditDefaultEventV1:
@@ -273,6 +363,7 @@ class CreditEvidenceInputV1(ContractModel):
     issuer: CreditEntityIdentityV1
     guarantors: tuple[CreditEntityIdentityV1, ...] = ()
     issue_terms: DebtIssueTermsV1
+    financial_metrics: tuple[CreditFinancialMetricV1, ...] = ()
     ratings: tuple[CreditRatingObservationV1, ...] = ()
     default_events: tuple[CreditDefaultEventV1, ...] = ()
 
@@ -298,6 +389,9 @@ class CreditEvidenceInputV1(ContractModel):
         ):
             raise ValueError("issue guarantee references missing guarantor identity")
 
+        metric_ids = [row.metric_id for row in self.financial_metrics]
+        if len(metric_ids) != len(set(metric_ids)):
+            raise ValueError("credit financial metric ids must be unique")
         rating_ids = [row.observation_id for row in self.ratings]
         if len(rating_ids) != len(set(rating_ids)):
             raise ValueError("rating observation ids must be unique")
@@ -307,8 +401,7 @@ class CreditEvidenceInputV1(ContractModel):
 
         for rating in self.ratings:
             if rating.subject is CreditRatingSubject.ISSUE:
-                expected = self.target.instrument_uid
-                if rating.subject_id != expected:
+                if rating.subject_id != self.target.instrument_uid:
                     raise ValueError("issue rating subject does not match instrument UID")
             elif rating.subject is CreditRatingSubject.ISSUER:
                 if rating.subject_id != self.issuer.entity_id:
@@ -392,6 +485,7 @@ class CreditPassportV1(ContractModel):
     issuer: CreditEntityIdentityV1
     guarantors: tuple[CreditEntityIdentityV1, ...] = ()
     issue_terms: DebtIssueTermsV1
+    financial_metrics: tuple[CreditFinancialMetricV1, ...] = ()
     ratings: tuple[CreditRatingObservationV1, ...] = ()
     default_events: tuple[CreditDefaultEventV1, ...] = ()
     floor_assessment: CreditFloorAssessmentV1
