@@ -14,6 +14,14 @@ class WatchtowerJournalConflict(WatchtowerJournalError):
     pass
 
 
+class WatchtowerJournalIntegrityError(WatchtowerJournalError):
+    pass
+
+
+class WatchtowerJournalStorageError(WatchtowerJournalError):
+    pass
+
+
 class WatchtowerJournalV1(Protocol):
     @property
     def durable(self) -> bool: ...
