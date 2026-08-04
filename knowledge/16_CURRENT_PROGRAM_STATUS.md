@@ -175,7 +175,7 @@ Architecture: `docs/architecture/V9_CREDIT_RATING_DEFAULT_ENGINE.md`.
 - issue #197 / PR #198;
 - merged to `main` as `15505272872681cb7c3ad1e845affaa79f6ebdc1`;
 - exact-head Regression Shield #1064 fully green on `c5086a7f86840a320cecd8b10c3c4878091b5e88`;
-- blocking dependency hardening #202 is carried by WP8 PR #201;
+- blocking dependency hardening #202 was carried and closed by WP8 PR #201;
 - unresolved review threads = 0.
 
 Accepted behavior:
@@ -199,14 +199,15 @@ Accepted behavior:
 
 Architecture: `docs/architecture/V9_FUND_XRAY_ENGINE.md`.
 
-### WP8 — Portfolio Risk Engine 2.0: IN PROGRESS
+### WP8 — Portfolio Risk Engine 2.0: COMPLETE
 
-Tracking: issue #199 / draft PR #201.  
-Dependency hardening: issue #202.  
-Branch: `v9/wp8-portfolio-risk-engine`.  
-Architecture: `docs/architecture/V9_PORTFOLIO_RISK_ENGINE.md`.
+- issue #199 / PR #201;
+- dependency hardening issue #202 closed with the same PR;
+- squash-merged to `main` as `24e027f1e576451571d18af88f758a69828f6aed`;
+- exact-head Regression Shield #1078 fully green on `039a28f1c7a6dafcf424777fe976ac1dd89cecff`;
+- unresolved review threads = 0.
 
-Current implementation builds deterministic policy-bound current/after-trade risk:
+Accepted behavior:
 
 - exact WP2 IPS fingerprint binding plus exact portfolio snapshot fingerprint reference;
 - eight independent vectors: permanent-loss, market, concentration, liquidity, credit, currency, inflation/opportunity and data quality;
@@ -226,7 +227,35 @@ Current implementation builds deterministic policy-bound current/after-trade ris
 - acceptance/hardening suites and repository guard protect these invariants;
 - `omni_cio/risk` is pure/read-only and repository-guarded against broker SDK/tokens/mutation methods.
 
-WP8 is not complete until Ruff/format/mypy/full exact-head Regression Shield are green, unresolved review threads are zero and PR #201 is squash-merged. Only the final exact-head CI run after all documentation/code fixes counts as merge evidence.
+Architecture: `docs/architecture/V9_PORTFOLIO_RISK_ENGINE.md`.
+
+### WP9 — Meta-Strategy Selector: IN PROGRESS
+
+Tracking: issue #203 / draft PR #204.  
+Branch: `v9/wp9-meta-strategy-selector`.  
+Architecture: `docs/architecture/V9_META_STRATEGY_SELECTOR.md`.
+
+Current implementation builds a deterministic policy-bound regime selection:
+
+- exact portfolio snapshot + recomputed WP2 IPS fingerprint/reference + exact current WP8 assessment binding;
+- hypothetical WP8 trade assessments cannot impersonate the current portfolio state;
+- exactly five bounded regimes are compared: `NO_ACTION`, `CAPITAL_PRESERVATION`, `DEFENSIVE_BALANCED`, `BALANCED_CORE`, `GROWTH_CORE`;
+- owner risk willingness/capacity, horizon and WP8 current risk cap the feasible regime set before ranking;
+- hard policy/risk breaches cannot be averaged away by objective fit, liquidity fit or lower friction;
+- current hard breach makes `NO_ACTION` infeasible while still permitting a sufficiently defensive remediation regime when evidence is decision-ready;
+- liquidity reserve, quality debt, diversified core and bounded active ideas are explicit directives;
+- bounded active ideas are never required and are allowed only for high willingness + high capacity + compliant current risk in `GROWTH_CORE`;
+- structurally feasible actionable regimes require fresh explicit transition-cost + tax evidence;
+- friction amount, timestamp and source SHA-256 provenance are bound into the immutable selection fingerprint;
+- unsupported expected-return, alpha and macro-regime forecast inputs are absent;
+- deterministic tie-breaks prefer safety, objective/liquidity fit, lower explicit friction and then stable identifiers;
+- policy/portfolio/risk/friction/tax changes carry explicit review or cancellation conditions;
+- selection SHA-256 is canonical and source-order invariant while source mutation changes the fingerprint;
+- `omni_cio/strategy` is pure/internal/read-only and protected by both dedicated and canonical repository guards;
+- mypy scope includes the strategy package;
+- applied GPT remains v8.6.1 and no public route/OpenAPI/GPT Editor change is part of WP9.
+
+WP9 is not complete until Ruff/mypy/full exact-head Regression Shield are green, unresolved review threads are zero and PR #204 is squash-merged. Only the final exact-head CI run after all code/documentation fixes counts as merge evidence.
 
 ## Canonical production configuration
 
@@ -250,7 +279,7 @@ Real v1 uses only dedicated `TINVEST_TRADING_TOKEN` and remains limited to the a
 
 `fresh facts → immutable proposal → exact owner confirmation in a new user turn → one submit/idempotency → broker reconciliation`.
 
-WP1–WP8 add no withdrawal/transfer, margin/short, MARKET/BESTPRICE, autonomous recurring execution or token management.
+WP1–WP9 add no withdrawal/transfer, margin/short, MARKET/BESTPRICE, autonomous recurring execution or token management.
 
 `REAL_TRADING_ENABLED=false` remains the master rollback state.
 
