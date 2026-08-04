@@ -58,6 +58,7 @@ Safe Plan Execution:
 - supports deterministic staged LIMIT execution, partial-fill state and durable CAS/idempotency;
 - revalidates portfolio/risk/strategy/optimizer/market/instrument state before progression;
 - ambiguous possible-submit halts and reconciles without a second submit;
+- canonical recovery invariant: **idempotent replay verified with no second submit**;
 - preserves own-funds BUY, own-position SELL, RUB share/ETF and LIMIT/CURRENCY/DAY boundaries;
 - adds no transfer, withdrawal, margin, short, MARKET/BESTPRICE, stop/replace/async or autonomous recurring real execution.
 
