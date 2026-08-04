@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import base64
 from dataclasses import dataclass
-from datetime import datetime, timezone
 import hashlib
 import hmac
 import json
@@ -280,7 +279,9 @@ class QStashScheduleClientV1:
         payload = self._request("GET", "/v2/schedules")
         if not isinstance(payload, list):
             raise QStashScheduleError("QStash schedule list is invalid")
-        return tuple(sorted((self._status(row) for row in payload), key=lambda row: row.schedule_id))
+        return tuple(
+            sorted((self._status(row) for row in payload), key=lambda row: row.schedule_id)
+        )
 
     def ensure_schedule(self, spec: QStashScheduleSpecV1) -> QStashScheduleStatusV1:
         destination = quote(spec.destination_url, safe="")
