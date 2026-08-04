@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Mapping
@@ -30,10 +31,35 @@ def _aware_utc(value: datetime | None = None) -> datetime:
     return result.astimezone(timezone.utc)
 
 
+def _required_utc(value: object, *, code: str) -> datetime:
+    if not isinstance(value, datetime):
+        raise DecisionEvaluationError(code)
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise DecisionEvaluationError(code)
+    return value.astimezone(timezone.utc)
+
+
+def _canonical_hashes(value: object, *, code: str) -> tuple[object, ...]:
+    if isinstance(value, (str, bytes)) or not isinstance(value, Iterable):
+        raise DecisionEvaluationError(code)
+    result = tuple(sorted(set(value)))
+    if not result:
+        raise DecisionEvaluationError(code)
+    return result
+
+
 def finalize_decision_record(values: Mapping[str, object]) -> DecisionJournalRecordV1:
     """Create one immutable decision record with canonical identity and digest."""
 
     payload = dict(values)
+    payload["recorded_at"] = _required_utc(
+        payload.get("recorded_at"),
+        code="DECISION_JOURNAL_TIMESTAMP_MUST_BE_AWARE",
+    )
+    payload["evidence_sha256s"] = _canonical_hashes(
+        payload.get("evidence_sha256s"),
+        code="DECISION_JOURNAL_EVIDENCE_REQUIRED",
+    )
     payload["decision_id"] = "0" * 64
     payload["record_sha256"] = "0" * 64
     provisional = DecisionJournalRecordV1.model_construct(**payload)
@@ -47,6 +73,14 @@ def finalize_outcome_record(values: Mapping[str, object]) -> DecisionOutcomeReco
     """Create one immutable realized-outcome record without touching the decision."""
 
     payload = dict(values)
+    payload["observed_at"] = _required_utc(
+        payload.get("observed_at"),
+        code="DECISION_OUTCOME_TIMESTAMP_MUST_BE_AWARE",
+    )
+    payload["source_sha256s"] = _canonical_hashes(
+        payload.get("source_sha256s"),
+        code="DECISION_OUTCOME_SOURCES_REQUIRED",
+    )
     payload["outcome_id"] = "0" * 64
     payload["outcome_sha256"] = "0" * 64
     provisional = DecisionOutcomeRecordV1.model_construct(**payload)
