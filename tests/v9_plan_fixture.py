@@ -382,6 +382,100 @@ def build_fixture(
     )
 
 
+def build_no_action_fixture() -> PlanFixture:
+    payload = policy().model_dump(mode="python")
+    payload.update(
+        objective=InvestmentObjective.INCOME,
+        risk_willingness=RiskLevel.LOW,
+        risk_capacity=RiskLevel.LOW,
+        allowed_instrument_types=(InstrumentType.SHARE,),
+    )
+    ips = InvestmentPolicyStatementV1.model_validate(payload)
+    assessment = assess_investment_policy(ips, assessed_at=NOW)
+    assert assessment.ready_for_personal_sizing
+
+    share = _position(
+        stable_key="share:NO-ACTION-CORE",
+        instrument_type=InstrumentType.SHARE,
+        value=Decimal("400000"),
+        issuer="issuer_no_action",
+    )
+    portfolio = PortfolioRiskInputV1(
+        portfolio_snapshot_sha256="5" * 64,
+        policy_reference=assessment.reference,
+        base_currency="RUB",
+        cash_base=Decimal("600000"),
+        positions=(share,),
+    )
+    current_risk = assess_portfolio_risk(
+        portfolio=portfolio,
+        policy=ips,
+        policy_assessment=assessment,
+        assessed_at=NOW,
+    )
+    assert current_risk.plan_eligible
+
+    strategy = select_meta_strategy(
+        portfolio_snapshot_sha256=portfolio.portfolio_snapshot_sha256,
+        policy=ips,
+        policy_assessment=assessment,
+        risk=current_risk,
+        friction_evidence=(),
+        selected_at=NOW,
+    )
+    assert strategy.decision_ready
+    assert strategy.selected_regime is StrategyRegime.NO_ACTION
+    assert strategy.optimizer_eligible is False
+
+    assets = (
+        OptimizerAssetV1(
+            stable_key=share.stable_key,
+            component=StrategyComponentKind.DIVERSIFIED_CORE,
+            current_lots=4000,
+            lot_size=1,
+            native_currency="RUB",
+            base_currency="RUB",
+            unit_full_value_native=Decimal("100"),
+            unit_full_value_base=Decimal("100"),
+            risk_template=share,
+            account_eligible=True,
+        ),
+    )
+    optimizer = optimize_portfolio(
+        portfolio=portfolio,
+        policy=ips,
+        policy_assessment=assessment,
+        current_risk=current_risk,
+        strategy=strategy,
+        assets=assets,
+        optimized_at=NOW,
+    )
+    assert optimizer.optimizer_ready
+    assert optimizer.plan_eligible is False
+    assert optimizer.legs == ()
+
+    plan = build_portfolio_plan(
+        portfolio=portfolio,
+        policy=ips,
+        policy_assessment=assessment,
+        current_risk=current_risk,
+        strategy=strategy,
+        optimizer=optimizer,
+        optimizer_assets=assets,
+        created_at=NOW,
+    )
+    return PlanFixture(
+        policy=ips,
+        assessment=assessment,
+        portfolio=portfolio,
+        current_risk=current_risk,
+        strategy=strategy,
+        optimizer=optimizer,
+        assets=assets,
+        plan=plan,
+    )
+
+
 def exact_observations(plan: PortfolioPlanV1) -> tuple[PlanMarketObservationV1, ...]:
     return tuple(
         PlanMarketObservationV1(
