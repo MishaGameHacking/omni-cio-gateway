@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 from decimal import Decimal
 from enum import StrEnum
 import hashlib
@@ -10,7 +10,7 @@ from typing import Annotated, Literal
 
 from pydantic import Field, field_validator, model_validator
 
-from omni_cio.contracts.v1.common import ContractModel, CurrencyCode, FiniteDecimal
+from omni_cio.contracts.v1.common import ContractModel, CurrencyCode
 from omni_cio.contracts.v1.market import MarketLiquidityV1
 from omni_cio.contracts.v1.portfolio import InstrumentIdentity
 from omni_cio.contracts.v1.research_evidence import ResearchTargetV1
