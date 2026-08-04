@@ -33,6 +33,10 @@ Bps = Annotated[
     Decimal,
     Field(ge=Decimal("0"), le=Decimal("10000"), allow_inf_nan=False),
 ]
+UnboundedBps = Annotated[
+    Decimal,
+    Field(ge=Decimal("0"), allow_inf_nan=False),
+]
 Ratio = Annotated[
     Decimal,
     Field(ge=Decimal("0"), le=Decimal("1"), allow_inf_nan=False),
@@ -47,6 +51,7 @@ class PortfolioPlanAction(StrEnum):
 
 
 class PlanCancellationCode(StrEnum):
+    PLAN_NOT_YET_VALID = "plan_not_yet_valid"
     PLAN_EXPIRED = "plan_expired"
     PORTFOLIO_CHANGED = "portfolio_changed"
     POLICY_CHANGED = "policy_changed"
@@ -57,6 +62,10 @@ class PlanCancellationCode(StrEnum):
     MARKET_EVIDENCE_MISSING = "market_evidence_missing"
     MARKET_EVIDENCE_STALE = "market_evidence_stale"
     MARKET_EVIDENCE_FUTURE = "market_evidence_future"
+    FRICTION_EVIDENCE_STALE = "friction_evidence_stale"
+    FRICTION_EVIDENCE_FUTURE = "friction_evidence_future"
+    FX_EVIDENCE_STALE = "fx_evidence_stale"
+    FX_EVIDENCE_FUTURE = "fx_evidence_future"
     CLEAN_PRICE_DRIFT_EXCEEDED = "clean_price_drift_exceeded"
     ACCRUED_INTEREST_DRIFT_EXCEEDED = "accrued_interest_drift_exceeded"
     SPREAD_DRIFT_EXCEEDED = "spread_drift_exceeded"
@@ -75,6 +84,8 @@ class PlanReviewStatus(StrEnum):
 
 class PortfolioPlanDriftToleranceV1(ContractModel):
     market_max_age_seconds: Annotated[int, Field(ge=30)] = 300
+    friction_max_age_seconds: Annotated[int, Field(ge=60)] = 86400
+    fx_max_age_seconds: Annotated[int, Field(ge=30)] = 300
     future_tolerance_seconds: Annotated[int, Field(ge=0)] = 60
     max_clean_price_drift_bps: Bps = Decimal("50")
     max_accrued_interest_drift_bps: Bps = Decimal("10")
@@ -103,7 +114,7 @@ class PlanMarketBaselineV1(ContractModel):
     friction_source_sha256s: Annotated[tuple[Sha256, ...], Field(min_length=1)]
     commission_bps: Bps
     estimated_sell_tax_bps: Bps
-    account_eligible: Literal[True]
+    account_eligible: bool | None
     fx_rate_to_base: PositiveDecimal | None = None
     fx_source_sha256: Sha256 | None = None
     fx_as_of: datetime | None = None
@@ -155,6 +166,7 @@ class PlanMarketObservationV1(ContractModel):
     spread_bps: Bps
     average_daily_turnover_base: PositiveDecimal
     top_of_book_depth_base: PositiveDecimal
+    friction_as_of: datetime
     friction_source_sha256s: Annotated[tuple[Sha256, ...], Field(min_length=1)]
     commission_bps: Bps
     estimated_sell_tax_bps: Bps
@@ -163,11 +175,11 @@ class PlanMarketObservationV1(ContractModel):
     fx_source_sha256: Sha256 | None = None
     fx_as_of: datetime | None = None
 
-    @field_validator("observed_at")
+    @field_validator("observed_at", "friction_as_of")
     @classmethod
-    def normalize_timestamp(cls, value: datetime) -> datetime:
+    def normalize_required_timestamp(cls, value: datetime) -> datetime:
         if value.tzinfo is None or value.utcoffset() is None:
-            raise ValueError("plan market observation timestamp must be timezone-aware")
+            raise ValueError("plan observation timestamp must be timezone-aware")
         return value.astimezone(timezone.utc)
 
     @field_validator("fx_as_of")
@@ -254,7 +266,7 @@ class PortfolioPlanV1(ContractModel):
     drift_tolerance: PortfolioPlanDriftToleranceV1
     cancellation_conditions: Annotated[
         tuple[PlanCancellationConditionV1, ...],
-        Field(min_length=18, max_length=18),
+        Field(min_length=23, max_length=23),
     ]
     approval_required: bool
     owner_approval_phrase: Annotated[str, Field(min_length=16, max_length=96)] | None
@@ -311,9 +323,14 @@ class PortfolioPlanV1(ContractModel):
 
         actions = [row.action for row in self.legs]
         no_action = PortfolioPlanAction.NO_ACTION in actions
-        if no_action and (len(actions) != 1 or actions[0] is not PortfolioPlanAction.NO_ACTION):
+        if no_action and (
+            len(actions) != 1
+            or actions[0] is not PortfolioPlanAction.NO_ACTION
+        ):
             raise ValueError("NO_ACTION plan cannot mix with actionable legs")
-        actionable_legs = tuple(row for row in self.legs if row.optimizer_leg is not None)
+        actionable_legs = tuple(
+            row for row in self.legs if row.optimizer_leg is not None
+        )
         baseline_keys = [row.stable_key for row in self.market_baselines]
         if len(baseline_keys) != len(set(baseline_keys)):
             raise ValueError("plan market baselines must have unique stable keys")
@@ -325,24 +342,61 @@ class PortfolioPlanV1(ContractModel):
         if set(baseline_keys) != expected_baselines:
             raise ValueError("plan baselines must match actionable plan legs exactly")
 
+        target_keys = [row.stable_key for row in self.targets]
+        if len(target_keys) != len(set(target_keys)):
+            raise ValueError("portfolio plan targets must have unique stable keys")
+        target_map = {row.stable_key: row for row in self.targets}
+        for row in actionable_legs:
+            leg = row.optimizer_leg
+            assert leg is not None
+            target = target_map.get(leg.stable_key)
+            if target is None:
+                raise ValueError("actionable plan leg must have a target row")
+            if (
+                target.current_lots != leg.current_lots
+                or target.target_lots != leg.target_lots
+                or target.lot_size != leg.lot_size
+            ):
+                raise ValueError("plan target lots must reconcile to exact optimizer leg")
+
         clean = sum(
-            (row.optimizer_leg.gross_notional_base for row in actionable_legs if row.optimizer_leg),
+            (
+                row.optimizer_leg.gross_notional_base
+                for row in actionable_legs
+                if row.optimizer_leg
+            ),
             Decimal("0"),
         )
         accrued = sum(
-            (row.optimizer_leg.accrued_interest_base for row in actionable_legs if row.optimizer_leg),
+            (
+                row.optimizer_leg.accrued_interest_base
+                for row in actionable_legs
+                if row.optimizer_leg
+            ),
             Decimal("0"),
         )
         settlement = sum(
-            (row.optimizer_leg.settlement_notional_base for row in actionable_legs if row.optimizer_leg),
+            (
+                row.optimizer_leg.settlement_notional_base
+                for row in actionable_legs
+                if row.optimizer_leg
+            ),
             Decimal("0"),
         )
         commission = sum(
-            (row.optimizer_leg.commission_base for row in actionable_legs if row.optimizer_leg),
+            (
+                row.optimizer_leg.commission_base
+                for row in actionable_legs
+                if row.optimizer_leg
+            ),
             Decimal("0"),
         )
         tax = sum(
-            (row.optimizer_leg.estimated_tax_base for row in actionable_legs if row.optimizer_leg),
+            (
+                row.optimizer_leg.estimated_tax_base
+                for row in actionable_legs
+                if row.optimizer_leg
+            ),
             Decimal("0"),
         )
         if self.total_clean_turnover_base != clean:
@@ -355,6 +409,46 @@ class PortfolioPlanV1(ContractModel):
             raise ValueError("plan commission does not reconcile")
         if self.total_estimated_tax_base != tax:
             raise ValueError("plan estimated tax does not reconcile")
+
+        current_positions_value = sum(
+            (row.current_value_base for row in self.targets),
+            Decimal("0"),
+        )
+        target_positions_value = sum(
+            (row.target_value_base for row in self.targets),
+            Decimal("0"),
+        )
+        if self.current_value_base != current_positions_value + self.current_cash_base:
+            raise ValueError("plan current value does not reconcile to targets plus cash")
+        if self.target_value_base != target_positions_value + self.target_cash_base:
+            raise ValueError("plan target value does not reconcile to targets plus cash")
+        if (
+            self.risk_before.total_value_base != self.current_value_base
+            or self.risk_before.cash_base != self.current_cash_base
+        ):
+            raise ValueError("plan current risk state does not reconcile to current scenario")
+        if (
+            self.risk_after.total_value_base != self.target_value_base
+            or self.risk_after.cash_base != self.target_cash_base
+        ):
+            raise ValueError("plan target risk state does not reconcile to target scenario")
+
+        if no_action:
+            if any(
+                value != 0
+                for value in (
+                    self.total_clean_turnover_base,
+                    self.total_accrued_interest_base,
+                    self.total_settlement_turnover_base,
+                    self.total_commission_base,
+                    self.total_estimated_tax_base,
+                )
+            ):
+                raise ValueError("NO_ACTION plan cannot carry turnover or costs")
+            if any(row.current_lots != row.target_lots for row in self.targets):
+                raise ValueError("NO_ACTION plan cannot change target lots")
+            if self.risk_before != self.risk_after:
+                raise ValueError("NO_ACTION plan risk before/after must match")
 
         condition_codes = [row.code for row in self.cancellation_conditions]
         if set(condition_codes) != set(PlanCancellationCode):
@@ -413,12 +507,12 @@ class PortfolioPlanReviewInputV1(ContractModel):
 
 class PlanMarketDriftResultV1(ContractModel):
     stable_key: Annotated[str, Field(min_length=3, max_length=256)]
-    clean_price_drift_bps: Bps | None = None
-    accrued_interest_drift_bps: Bps | None = None
-    spread_widening_bps: Bps | None = None
+    clean_price_drift_bps: UnboundedBps | None = None
+    accrued_interest_drift_bps: UnboundedBps | None = None
+    spread_widening_bps: UnboundedBps | None = None
     turnover_ratio: Ratio | None = None
     top_of_book_depth_ratio: Ratio | None = None
-    fx_drift_bps: Bps | None = None
+    fx_drift_bps: UnboundedBps | None = None
     cancellation_codes: tuple[PlanCancellationCode, ...] = ()
 
     @field_validator("cancellation_codes", mode="before")
@@ -440,7 +534,10 @@ class PortfolioPlanReviewV1(ContractModel):
     drift_results: tuple[PlanMarketDriftResultV1, ...]
     cancellation_codes: tuple[PlanCancellationCode, ...] = ()
     plan_valid: bool
-    expected_owner_approval_phrase: Annotated[str, Field(min_length=16, max_length=96)] | None
+    expected_owner_approval_phrase: Annotated[
+        str,
+        Field(min_length=16, max_length=96),
+    ] | None
     execution_authorized: Literal[False] = False
     review_sha256: Sha256
     trading_methods: Literal[False] = False
