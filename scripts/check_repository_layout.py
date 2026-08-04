@@ -34,6 +34,7 @@ REQUIRED_PATHS = (
     "tests/test_research_evidence_v1.py",
     "tests/test_research_official_v1.py",
     "tests/test_credit_rating_default_engine_v1.py",
+    "tests/test_credit_contract_integrity_v1.py",
     "knowledge/00_PROJECT_MASTER_CONTEXT.md",
     "knowledge/09_MARKET_DATA_AND_BUYING_POWER.txt",
     "knowledge/10_OPERATIONS_ANALYTICS_AND_RECONCILIATION.txt",
@@ -216,10 +217,7 @@ def is_forbidden_broker_attribute(name: str) -> bool:
     return (
         name in FORBIDDEN_BROKER_METHODS
         or name in FORBIDDEN_BROKER_SERVICES
-        or any(
-            name.startswith(prefix)
-            for prefix in FORBIDDEN_BROKER_METHOD_PREFIXES
-        )
+        or any(name.startswith(prefix) for prefix in FORBIDDEN_BROKER_METHOD_PREFIXES)
     )
 
 
@@ -285,7 +283,9 @@ def scan_sandbox_execution_boundary(failures: list[str]) -> None:
             fail(f"cannot inspect sandbox source {path}: {exc}", failures)
     source = "\n".join(source_parts)
     if SANDBOX_ALLOWED_HOST not in source:
-        fail("sandbox runtime does not declare the canonical sandbox REST host", failures)
+        fail(
+            "sandbox runtime does not declare the canonical sandbox REST host", failures
+        )
     if "TINVEST_SANDBOX_TOKEN" not in source:
         fail("sandbox runtime does not require TINVEST_SANDBOX_TOKEN", failures)
     if "SANDBOX_TRADING_ENABLED" not in source:
