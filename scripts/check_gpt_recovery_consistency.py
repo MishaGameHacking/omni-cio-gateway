@@ -195,7 +195,9 @@ def check_recovery_docs() -> None:
         require(text, "Do not", file_name)
         require(text, "Update", file_name)
 
-    require(runbook, "Owner Preview acceptance — mandatory", "gpt/MY_GPT_SETUP_RUNBOOK.md")
+    require(
+        runbook, "Owner Preview acceptance — mandatory", "gpt/MY_GPT_SETUP_RUNBOOK.md"
+    )
     require(runbook, "Do not Create a new GPT", "gpt/MY_GPT_SETUP_RUNBOOK.md")
     require(runbook, "Internal v9 capability honesty", "gpt/MY_GPT_SETUP_RUNBOOK.md")
 
@@ -275,10 +277,7 @@ def main() -> None:
     print("GPT v9 recovery/configuration consistency: OK")
     print(f"Target UI: {TARGET_UI_NAME}")
     print(f"Target Instructions: {TARGET_INSTRUCTIONS}")
-    print(
-        f"Instructions chars: {len(read(TARGET_INSTRUCTIONS))}/"
-        f"{INSTRUCTIONS_MAX_CHARS}"
-    )
+    print(f"Instructions chars: {len(read(TARGET_INSTRUCTIONS))}/{INSTRUCTIONS_MAX_CHARS}")
     print(f"Knowledge files: {len(KNOWLEDGE_FILES)}")
     print(f"Protected rollback UI: {PROTECTED_UI_NAME}")
     print(f"Protected baseline commit: {BASELINE_COMMIT}")
