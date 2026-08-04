@@ -32,14 +32,62 @@ LegEvidenceProviderV1 = _core.LegEvidenceProviderV1
 
 
 class SafePlanExecutionServiceV1(_core.SafePlanExecutionServiceV1):
-    """WP12 public orchestrator with audited terminal reconciliation.
+    """Audited WP12 facade over the accepted v8.6.1 execution primitive.
 
     The full fail-closed state machine lives in ``service_core_v1``. This facade
-    intentionally overrides only broker-terminal reconciliation so the plan
-    object remains available for deterministic SELL tax allowance calculations.
-    No broker submit implementation is introduced here; submission still flows
-    through the existing v8.6.1 single-order primitive owned by the base class.
+    carries only cross-WP hardening discovered during WP12 review: immutable-plan
+    expiry blocks any *new* prepare/submit, while already submitted orders remain
+    reconcilable; and broker-terminal reconciliation retains the exact plan for
+    deterministic SELL tax allowance accounting. Broker submit remains owned by
+    the existing RealTradingServiceV1 path inherited through the core service.
     """
+
+    def advance_execution(
+        self,
+        *,
+        execution_id: str,
+        plan: PortfolioPlanV1,
+        now: datetime | None = None,
+    ) -> PlanExecutionAdvanceResultV1:
+        current = _core._aware_utc(now)
+        canonical = _core._canonical_plan(plan)
+        session = self._journal.get(execution_id)
+        if current >= canonical.expires_at and session.state not in {
+            PlanExecutionSessionState.COMPLETED,
+            PlanExecutionSessionState.AWAITING_BROKER_RECONCILIATION,
+            PlanExecutionSessionState.AWAITING_PORTFOLIO_RECONCILIATION,
+        }:
+            if (
+                session.state is PlanExecutionSessionState.HALTED
+                and session.halt_code is PlanExecutionHaltCode.AMBIGUOUS_SUBMISSION
+            ):
+                # A possible submit must be reconciled even after plan expiry.
+                return super().advance_execution(
+                    execution_id=execution_id,
+                    plan=canonical,
+                    now=current,
+                )
+            stage = _core._next_stage(session)
+            if stage is not None and stage.state in {
+                PlanExecutionStageState.AWAITING_BROKER_RECONCILIATION,
+                PlanExecutionStageState.BROKER_TERMINAL,
+            }:
+                return super().advance_execution(
+                    execution_id=execution_id,
+                    plan=canonical,
+                    now=current,
+                )
+            return self._halt(
+                session,
+                PlanExecutionHaltCode.PLAN_EXPIRED,
+                "Immutable plan expired; no new stage may be prepared or submitted.",
+                stage=stage,
+            )
+        return super().advance_execution(
+            execution_id=execution_id,
+            plan=canonical,
+            now=current,
+        )
 
     def _reconcile_broker(
         self,
