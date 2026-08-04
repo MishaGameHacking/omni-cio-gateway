@@ -30,7 +30,9 @@ def _spec() -> QStashScheduleSpecV1:
     cron = _required("WATCHTOWER_CRON")
     parsed = urlparse(base)
     if parsed.scheme != "https" or not parsed.hostname or parsed.path not in {"", "/"}:
-        raise QStashScheduleError("WATCHTOWER_PUBLIC_BASE_URL must be a bare HTTPS origin")
+        raise QStashScheduleError(
+            "WATCHTOWER_PUBLIC_BASE_URL must be a bare HTTPS origin"
+        )
     schedule_id = os.getenv("WATCHTOWER_QSTASH_SCHEDULE_ID", SCHEDULE_ID).strip()
     return QStashScheduleSpecV1(
         schedule_id=schedule_id,
