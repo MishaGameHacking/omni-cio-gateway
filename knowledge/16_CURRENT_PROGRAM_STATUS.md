@@ -1,6 +1,6 @@
 # 16 — CURRENT PROGRAM STATUS
 
-Дата актуализации: 2026-08-03
+Дата актуализации: 2026-08-04
 
 ## Executive state
 
@@ -97,27 +97,50 @@ Accepted behavior:
 
 Architecture: `docs/architecture/V9_MARKET_UNIVERSE_ENGINE.md`.
 
-### WP4 — Deterministic Candidate Funnel: IN PROGRESS
+### WP4 — Deterministic Candidate Funnel: COMPLETE
 
-Tracking: issue #190 / draft PR #191.  
-Branch: `v9/wp4-deterministic-candidate-funnel`.  
+- issue #190 / PR #191;
+- merged to `main` as `3946fc9af995338504dee8002c82c630ab8629b7`;
+- exact-head Regression Shield #1035 fully green;
+- quality/contracts/coverage and dependency/SAST/secret security = success;
+- unresolved review threads = 0.
+
+Accepted behavior:
+
+- portfolio gap binds to exact portfolio/IPS/universe fingerprints;
+- hard policy, evidence, affordability and concentration blockers run before scoring;
+- incomplete comparable evidence for the policy+role-eligible universe forbids partial ranking;
+- fixed ordinal scoring is contract-validated and cannot be replaced by subjective LLM scoring;
+- `NO_ACTION/CASH` is always present and can rank first;
+- minimum-lot feasibility and one-lot position/group/sector/currency headroom are checked before shortlist publication;
+- T-Invest bond point pricing and per-lot accrued-interest arithmetic are handled without share-style errors;
+- ranking, tie-breaks and funnel SHA-256 are deterministic and source-order invariant;
+- rejected candidates keep machine-readable reasons;
+- candidate runtime remains pure/read-only with `trading_methods=false`.
+
 Architecture: `docs/architecture/V9_DETERMINISTIC_CANDIDATE_FUNNEL.md`.
 
-Current implementation converts a verified portfolio gap into a deterministic shortlist for WP5:
+### WP5 — Research & Evidence Engine: IN PROGRESS
 
-- role compatibility and IPS/universe readiness gates run before score;
-- partial evidence coverage of the eligible universe fails closed to prevent first-found-ticker bias;
-- trusted/fresh quote and liquidity evidence are required for scoring;
-- fixed ordinal scoring weights are contract-validated and cannot be replaced by an LLM score;
-- `NO_ACTION/CASH` is always present and may rank first;
-- minimum-lot affordability and one-lot concentration headroom are checked before publication;
-- bond quotes use percent-of-nominal + accrued-interest conversion, not share-style price × lot;
-- source-order-invariant ranking, stable tie-breaks and result SHA-256 are deterministic;
-- rejected candidates retain machine-readable reasons;
-- research shortlist is bounded for WP5;
-- candidate package is pure/internal and repository guard forbids broker SDK/token/mutation dependencies.
+Tracking: issue #193 / draft PR #194.  
+Branch: `v9/wp5-research-evidence-engine`.  
+Architecture: `docs/architecture/V9_RESEARCH_EVIDENCE_ENGINE.md`.
 
-WP4 adds no public route, OpenAPI Action or GPT Editor change. It is not complete until exact-head Regression Shield is green, unresolved review threads are zero and PR #191 is squash-merged.
+Current implementation turns the bounded WP4 research shortlist into auditable research dossiers:
+
+- versioned source, fact, claim, contradiction, freshness, coverage and dossier contracts;
+- exact binding to WP4 funnel/candidate identity and verified instrument UID;
+- source hierarchy prioritizes broker/exchange/issuer/official disclosure/regulator/rating agency over secondary media context;
+- every material fact carries publisher/source identity, authority, timestamps and deterministic freshness state;
+- T-Invest structured research surfaces include asset fundamentals, report schedules, dividends and bond events;
+- official-source retrieval policy is bounded by deterministic budgets, cache keys, TTLs and rate limits;
+- external text is normalized as inert data and cannot grant execution authority or alter control flow;
+- contradiction graph is explicit; unresolved critical contradictions block strong recommendation/research-ready state;
+- dossier SHA-256 is deterministic and source-order invariant;
+- unsupported claims retain machine-readable rejection reasons;
+- research package adds no broker mutation, public execution route, OpenAPI Action or GPT Editor change.
+
+WP5 is not complete until repository guards/docs are finalized, exact-head Regression Shield is fully green, unresolved review threads are zero and PR #194 is squash-merged.
 
 ## Canonical production configuration
 
@@ -141,7 +164,7 @@ Real v1 uses only dedicated `TINVEST_TRADING_TOKEN` and remains limited to the a
 
 `fresh facts → immutable proposal → exact owner confirmation in a new user turn → one submit/idempotency → broker reconciliation`.
 
-WP1–WP4 add no withdrawal/transfer, margin/short, MARKET/BESTPRICE, autonomous recurring execution or token management.
+WP1–WP5 add no withdrawal/transfer, margin/short, MARKET/BESTPRICE, autonomous recurring execution or token management.
 
 `REAL_TRADING_ENABLED=false` remains the master rollback state.
 
