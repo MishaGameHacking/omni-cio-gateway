@@ -6,6 +6,8 @@
 
 Omni-CIO remains **one Custom GPT + one production Render Gateway**. The protected applied GPT release remains **v8.6.1** until WP15 is merged and then explicitly applied to the existing GPT in Preview. The owner-approved v9 program has completed WP0–WP13; WP14 is in its final exact-head delivery gate; WP15 is the only remaining package after WP14.
 
+Protected baseline release state: **Omni-CIO v8.6.1 real BUY/SELL v1 = 100% complete and protected.**
+
 Production invariants:
 
 - current applied UI/config: `Omni-CIO API | Управляющий и аналитик v8.6.1`;
@@ -14,6 +16,7 @@ Production invariants:
 - one production Gateway only;
 - production read-only, Sandbox and Real contours remain separated;
 - real BUY/SELL remains exact-owner-confirmed, immutable, idempotent, fail-closed and broker-reconciled;
+- canonical recovery invariant: **idempotent replay verified with no second submit**;
 - durable real execution state remains Upstash Redis over HTTPS;
 - `REAL_TRADING_ENABLED=false` remains the master real-money rollback;
 - v9 research/monitoring/evaluation does not implicitly broaden broker-write authority;
