@@ -10,6 +10,7 @@ EXECUTION_ROOT = ROOT / "omni_cio" / "plan_execution"
 CONTRACT_PATH = ROOT / "omni_cio" / "contracts" / "v1" / "plan_execution.py"
 ADAPTER_PATH = EXECUTION_ROOT / "adapter_v1.py"
 PUBLIC_SERVICE_PATH = EXECUTION_ROOT / "service_v1.py"
+GUARD_PATH = Path(__file__).resolve()
 CORE_MODULE = "service_core_v1"
 
 REQUIRED_PATHS = (
@@ -136,14 +137,14 @@ def _scan_core_imports(failures: list[str]) -> None:
         relative = path.relative_to(ROOT)
         if any(part in {".git", ".venv", "__pycache__"} for part in relative.parts):
             continue
-        if path == PUBLIC_SERVICE_PATH:
+        if path in {PUBLIC_SERVICE_PATH, GUARD_PATH}:
             continue
         try:
             source = path.read_text(encoding="utf-8")
         except OSError as exc:
             _fail(f"cannot inspect core import boundary {relative}: {exc}", failures)
             continue
-        if "service_core_v1" in source:
+        if CORE_MODULE in source:
             _fail(
                 f"frozen WP12 core referenced outside audited facade: {relative}",
                 failures,
@@ -207,7 +208,7 @@ def main() -> int:
                 _fail(f"WP12 audited facade hardening missing: {required}", failures)
 
     package_init = EXECUTION_ROOT / "__init__.py"
-    if package_init.is_file() and "service_core_v1" in package_init.read_text(encoding="utf-8"):
+    if package_init.is_file() and CORE_MODULE in package_init.read_text(encoding="utf-8"):
         _fail("frozen WP12 core must not be exported by package __init__", failures)
 
     if failures:
