@@ -16,7 +16,7 @@ The execution engine is a deterministic orchestrator over the existing `RealTrad
 
 - `omni_cio/contracts/v1/plan_execution.py` — versioned plan-execution/session/stage/attempt/reconciliation contracts.
 - `omni_cio/plan_execution/service_core_v1.py` — fail-closed deterministic state machine.
-- `omni_cio/plan_execution/service_v1.py` — audited public facade with terminal broker reconciliation.
+- `omni_cio/plan_execution/service_v1.py` — audited public facade with horizon, tranche-order and terminal broker reconciliation hardening.
 - `omni_cio/plan_execution/adapter_v1.py` — thin adapter to the accepted v8.6.1 single-order service.
 - `omni_cio/plan_execution/journal_v1.py` — revisioned compare-and-swap journal protocol and in-memory test implementation.
 - `omni_cio/plan_execution/upstash_journal_v1.py` — durable Upstash implementation for production plan state.
@@ -40,9 +40,12 @@ Preparation requires:
 4. exact starting lots and cash reconciliation;
 5. current risk decision-ready and policy-compliant state;
 6. trusted instrument identity/lot-size binding;
-7. a fresh valid WP11 review built from current market observations.
+7. a fresh valid WP11 review built from current market observations;
+8. proof that the currently configured real-money hard cap can fit every required slice inside the immutable plan validity horizon.
 
 Owner approval is accepted only for the exact `owner_approval_phrase` embedded in the same immutable plan. The approval evidence is hashed into the session. Repeated approval returns an idempotent replay result and never submits an order.
+
+The WP11 validity horizon is derived from WP10 `required_execution_days`. The short `validity_seconds` window remains the final-day approval/execution tail. WP12 may make a leg smaller because an existing hard cap is tighter, but it must fail preparation if that would require more calendar stages than the still-valid immutable plan authorizes. WP12 never auto-extends the plan and never auto-increases the cap.
 
 ## Per-stage revalidation
 
@@ -63,7 +66,11 @@ A price change between stage preparation and submit resets the stage for a fresh
 
 ## Staged LIMIT execution
 
-The immutable optimizer leg is split deterministically only when required by the WP10 execution-days metadata or the existing v8.6.1 per-order hard cap. The engine permits at most one staged slice per Moscow calendar day. Stage quantity is never increased beyond the exact immutable leg.
+The immutable optimizer leg is split deterministically when WP10 requires several execution days. A tighter existing v8.6.1 per-order hard cap may make individual slices smaller only when the resulting stage count still fits inside the same immutable plan horizon.
+
+Stages are scheduled by tranche first and exact leg sequence second. For a two-leg/two-day plan the deterministic order is `leg1/stage1 → leg2/stage1 → leg1/stage2 → leg2/stage2`. This preserves the disclosed leg order inside each tranche while keeping the portfolio rebalance synchronized across the approved execution horizon.
+
+A given immutable instrument/leg may submit at most one staged slice per Moscow calendar day. Different legs may proceed sequentially on the same day only after the prior leg is broker-terminal and independently reconciled, and the existing atomic daily RUB cap remains authoritative. Stage quantity is never increased beyond the exact immutable leg.
 
 Only `LIMIT / CURRENCY / DAY` orders are used. The accepted v8.6.1 surface remains share/ETF, RUB, own-funds BUY and own-position SELL. A future extension to another instrument type requires a separately reviewed real-money safety change; the existence of a WP11 plan is not sufficient.
 
@@ -73,6 +80,8 @@ After any submit, no later stage can proceed until the exact request id is recon
 
 Read-only portfolio/cash reconciliation is then required before the engine advances. The engine derives expected lots from broker-confirmed progress, not from the requested quantity. SELL estimated-tax allowance is tracked separately so cash reconciliation does not falsely demand exact tax timing.
 
+A partial terminal fill returns the same stage to `PENDING` with only the broker-confirmed remainder, and its earliest next attempt is the following Moscow day. It cannot be converted into a same-day replacement order.
+
 ## Replay and ambiguity
 
 The deterministic execution id, revisioned journal, v8.6.1 proposal UUID/idempotency and broker request-id reconciliation form one replay boundary.
@@ -81,7 +90,8 @@ The deterministic execution id, revisioned journal, v8.6.1 proposal UUID/idempot
 - repeated owner approval does not submit;
 - an already-submitted underlying proposal is recorded as replay without a second submit;
 - `submitting` / `unknown` or an ambiguous transport result halts remaining legs;
-- recovery from ambiguity is reconciliation-only for the original request id.
+- recovery from ambiguity is reconciliation-only for the original request id;
+- plan expiry never suppresses reconciliation of a request that may already have reached the broker.
 
 ## Durable state and rollback
 
@@ -101,9 +111,10 @@ WP12 does not add:
 - ReplaceOrder or asynchronous submit;
 - autonomous recurring real-money execution;
 - automatic cap increases;
+- automatic extension/reissue of an approved plan;
 - a second broker client or trading token path;
 - GPT Editor changes before WP15.
 
 ## Exit gate
 
-WP12 is complete only after architecture/threat/data contracts, boundary guards, mypy scope, fake-client acceptance coverage for replay/ambiguity/partial fills/halt/reconciliation, security checks, exact-head Regression Shield, zero unresolved review threads and squash merge. Any minimal-real acceptance remains a separate explicit owner-controlled release step before increasing real caps.
+WP12 is complete only after architecture/threat/data contracts, boundary guards, mypy scope, fake-client acceptance coverage for replay/ambiguity/partial fills/halt/reconciliation/staging/horizon, security checks, exact-head Regression Shield, zero unresolved review threads and squash merge. Any minimal-real acceptance remains a separate explicit owner-controlled release step before increasing real caps.
