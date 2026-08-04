@@ -1,5 +1,19 @@
 # WP14 — Decision Journal Data Contract
 
+## Canonical production recorder
+
+`build_production_decision_record()` is the required adapter from live canonical decision objects into the immutable journal contract. It does not accept raw broker payloads and does not create a second identity system for objects that already carry canonical SHA fields.
+
+Bindings:
+
+- `DecisionSetV1` → canonical SHA-256 of its full normalized JSON payload;
+- every `DecisionEvidenceV1` row → canonical SHA-256, sorted/deduplicated by the decision journal contract;
+- WP8 `PortfolioRiskAssessmentV1` → exact `assessment_sha256`, `portfolio_snapshot_sha256`, `PolicyReferenceV1`, and before/after risk states;
+- optional WP11 `PortfolioPlanV1` → exact `plan_sha256`, `strategy_selection_sha256`, `optimizer_sha256`, current-risk assessment SHA and before/after risk states;
+- optional WP12 `PlanExecutionSessionV1` → exact `execution_id` and exact WP11 plan SHA.
+
+Plan policy/portfolio/risk bindings must equal the supplied WP8 assessment. Execution must bind the exact supplied plan. Executed lots require owner-approved WP12 state. Any mismatch fails closed before a journal append.
+
 ## Canonical record classes
 
 ### DecisionJournalRecordV1
@@ -45,6 +59,18 @@ A deterministic derived record binding exact decision/outcome record hashes. It 
 - concentration/cash/execution-quality deltas;
 - safety literals proving no hindsight rewrite, counterfactual fabrication or production-rule modification.
 
+## Decision action derivation
+
+The recorder derives the journal action from canonical evidence rather than caller-provided labels:
+
+- preferred `HOLD` → `HOLD`;
+- preferred `WAIT_FOR_DATA` → `WAIT_FOR_DATA`;
+- preferred review-change option plus unapproved/no execution → `REVIEW_CHANGE`;
+- bound WP12 owner-approved execution with no executed lots → `APPROVED_PLAN`;
+- bound WP12 owner-approved execution containing executed lots → `EXECUTED_PLAN`.
+
+A HOLD/WAIT decision cannot bind an actionable plan. Execution cannot exist without a plan. Executed lots without owner approval are rejected.
+
 ## Canonical arithmetic
 
 Realized period result:
@@ -80,7 +106,9 @@ Evaluation completeness is `COMPLETE` only when the decision-time data was marke
 
 ## Canonical hashing
 
-Every record uses sorted-key compact UTF-8 JSON and SHA-256. Self-hash fields are excluded from their own digest calculation. Immutable IDs exclude both the ID and digest fields, then the final digest includes the computed ID.
+Every journal/outcome/evaluation record uses sorted-key compact UTF-8 JSON and SHA-256. Self-hash fields are excluded from their own digest calculation. Immutable IDs exclude both the ID and digest fields, then the final digest includes the computed ID.
+
+For upstream contracts that already own canonical identity, WP14 stores their existing digest fields rather than recomputing a competing identity. `DecisionSetV1` and individual decision-evidence rows are the exception because those contracts do not expose self digests; the production recorder hashes their normalized JSON payloads directly.
 
 Evidence/source hash collections are sorted and deduplicated before validation.
 
