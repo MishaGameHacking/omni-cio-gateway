@@ -516,7 +516,7 @@ def test_partial_cancel_records_fill_and_never_resubmits_same_day() -> None:
 def test_optimizer_staging_splits_plan_into_required_execution_days() -> None:
     fixture = build_execution_fixture(
         optimizer_settings=PortfolioOptimizerSettingsV1(
-            maximum_daily_turnover_participation=Decimal("0.005"),
+            maximum_daily_turnover_participation=Decimal("0.004"),
         )
     )
     harness = Harness(fixture)
