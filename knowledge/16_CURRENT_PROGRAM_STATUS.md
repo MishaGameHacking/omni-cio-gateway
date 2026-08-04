@@ -143,29 +143,55 @@ Accepted behavior:
 
 Architecture: `docs/architecture/V9_RESEARCH_EVIDENCE_ENGINE.md`.
 
-### WP6 — Credit, Rating & Default Engine 2.0: IN PROGRESS
+### WP6 — Credit, Rating & Default Engine 2.0: COMPLETE
 
-Tracking: issue #195 / draft PR #196.  
-Branch: `v9/wp6-credit-rating-default-engine`.  
+- issue #195 / PR #196;
+- merged to `main` as `643160085520f1a2a333385aa7431d1b595b2eef`;
+- exact-head Regression Shield #1057 fully green on `3375faf6ceef3e48f0be565c37738280280a3b8b`;
+- quality/contracts/coverage and dependency/SAST/secret security = success;
+- unresolved review threads = 0.
+
+Accepted behavior:
+
+- Credit Passport binds exact WP5 dossier evidence and the WP2 policy reference;
+- issue, issuer, guarantor, guarantee terms and seniority remain distinct identities;
+- ACRA, Expert RA, NKR and NRA Russian national scales are explicit and agency/scale compatibility is contract-enforced;
+- incompatible rating scales are not averaged or silently crosswalked;
+- issue rating is preferred, while issuer proxy and eligible-guarantor basis remain explicitly labeled;
+- minimum-credit-quality assessment is deterministic and fail-closed;
+- maturity, offer, coupon, amortization, collateral and guarantee terms are structured;
+- optional leverage, coverage, liquidity and 12-month refinancing metrics remain provenance-bound and are never fabricated when missing;
+- default, technical default, restructuring and payment-delay events are preserved; active events fail closed;
+- conflicting latest rating observations fail closed and current state is based on latest effective time;
+- dossier/policy/rating/outlook/watch/default/terms/financial changes create deterministic re-analysis triggers;
+- Credit Passport SHA-256 is canonical and source-order invariant;
+- research and credit runtime boundaries are repository-guarded;
+- `trading_methods=false`; no broker mutation, public route, OpenAPI Action or GPT Editor change.
+
 Architecture: `docs/architecture/V9_CREDIT_RATING_DEFAULT_ENGINE.md`.
 
-Current implementation builds a deterministic Credit Passport for bond candidates:
+### WP7 — Fund X-Ray Engine: IN PROGRESS
 
-- exact binding to the WP5 dossier fingerprint and WP2 policy reference;
-- issuer, issue, guarantor, guarantee terms and seniority remain separate identities;
-- every material credit input references decision-grade WP5 evidence hashes;
-- ACRA, Expert RA, NKR and NRA Russian national scales are explicit and agency-specific;
-- incompatible rating scales are not averaged or silently crosswalked;
-- policy minimum-credit-quality comparison is deterministic and fail-closed;
-- issue rating is preferred; issuer proxy and eligible guarantor basis remain explicitly labeled;
-- default, technical default, restructuring and payment-delay events are preserved and active events block readiness;
-- conflicting latest rating observations fail closed;
-- dossier/policy/rating/outlook/watch/default/terms changes create deterministic re-analysis triggers;
-- Credit Passport SHA-256 is canonical and source-order invariant;
-- repository guard now protects both inherited WP5 research boundaries and WP6 credit boundaries;
-- credit runtime adds no broker SDK, mutation, public route, OpenAPI Action or GPT Editor change.
+Tracking: issue #197.  
+Branch: `v9/wp7-fund-xray-engine`.  
+Architecture: `docs/architecture/V9_FUND_XRAY_ENGINE.md`.
 
-WP6 is not complete until exact-head Regression Shield is fully green, unresolved review threads are zero and PR #196 is squash-merged.
+Current implementation expands ETF wrappers into deterministic look-through analytics:
+
+- exact binding to WP5 research target and WP3 universe fingerprint;
+- fund wrapper identity remains separate from underlying holdings;
+- composition modes distinguish full holdings, partial holdings, documented buckets and unavailable composition;
+- partial holdings are never rescaled to 100%; undisclosed residual remains `UNKNOWN`;
+- asset-class/sector/currency/issuer/geography exposures are derived without inventing classifications;
+- top-1/top-5 and HHI expose hidden concentration for holdings-based composition;
+- direct-holding overlap and fund-to-fund overlap are deterministic;
+- fund manager/benchmark/strategy/AUM/turnover/tracking-error/expense metadata is optional and provenance-bound;
+- stale composition fails closed while preserving evidence;
+- source hashes must exist as decision-grade records in the exact WP5 dossier;
+- Fund X-Ray SHA-256 is canonical and source-order invariant;
+- fund runtime is pure/internal and repository guard forbids broker SDK/tokens/mutation services.
+
+WP7 is not complete until exact-head Regression Shield is fully green, unresolved review threads are zero and its PR is squash-merged.
 
 ## Canonical production configuration
 
@@ -189,7 +215,7 @@ Real v1 uses only dedicated `TINVEST_TRADING_TOKEN` and remains limited to the a
 
 `fresh facts → immutable proposal → exact owner confirmation in a new user turn → one submit/idempotency → broker reconciliation`.
 
-WP1–WP6 add no withdrawal/transfer, margin/short, MARKET/BESTPRICE, autonomous recurring execution or token management.
+WP1–WP7 add no withdrawal/transfer, margin/short, MARKET/BESTPRICE, autonomous recurring execution or token management.
 
 `REAL_TRADING_ENABLED=false` remains the master rollback state.
 
