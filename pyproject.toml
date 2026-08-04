@@ -64,6 +64,7 @@ files = [
   "scripts/check_plan_boundary.py",
   "scripts/check_plan_execution_boundary.py",
   "scripts/check_watchtower_boundary.py",
+  "scripts/reconcile_watchtower_schedule.py",
 ]
 
 [tool.pytest.ini_options]
