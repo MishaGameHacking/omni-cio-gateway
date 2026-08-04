@@ -10,6 +10,7 @@ from omni_cio.contracts.v1.fund_xray import (
     FundCompositionMode,
     FundCompositionV1,
     FundConcentrationV1,
+    FundDurationSummaryV1,
     FundExposureDimension,
     FundFreshnessPolicyV1,
     FundHoldingV1,
@@ -37,6 +38,7 @@ _DIMENSION_FIELDS = {
     FundExposureDimension.CURRENCY: "currency",
     FundExposureDimension.ISSUER: "issuer_key",
     FundExposureDimension.GEOGRAPHY: "geography",
+    FundExposureDimension.CREDIT_QUALITY: "credit_quality",
 }
 
 
@@ -175,6 +177,27 @@ def _concentration(
     )
 
 
+def _duration_summary(
+    holdings: tuple[FundHoldingV1, ...],
+) -> FundDurationSummaryV1 | None:
+    measured = tuple(row for row in holdings if row.duration_years is not None)
+    measured_weight = sum((row.weight for row in measured), Decimal("0"))
+    if measured_weight <= 0:
+        return None
+    weighted_duration = sum(
+        (
+            row.weight * row.duration_years
+            for row in measured
+            if row.duration_years is not None
+        ),
+        Decimal("0"),
+    ) / measured_weight
+    return FundDurationSummaryV1(
+        weighted_duration_years=weighted_duration,
+        measured_weight=measured_weight,
+    )
+
+
 def _direct_overlap(
     holdings: tuple[FundHoldingV1, ...],
     direct: tuple[DirectUnderlyingExposureV1, ...],
@@ -308,6 +331,7 @@ def build_fund_xray(
         composition.holdings,
         composition.reported_coverage_weight,
     )
+    duration = _duration_summary(composition.holdings)
     overlaps: list[FundOverlapV1] = []
     direct_overlap = _direct_overlap(composition.holdings, direct_exposures)
     if direct_overlap is not None:
@@ -319,7 +343,7 @@ def build_fund_xray(
 
     canonical_blockers = tuple(sorted(set(blockers), key=str))
     values = {
-        "schema_version": "1.0",
+        "schema_version": "1.1",
         "assessed_at": evaluation_time,
         "dossier_sha256": dossier.dossier_sha256,
         "universe_sha256": universe.content_sha256,
@@ -329,6 +353,7 @@ def build_fund_xray(
         "liquidity": liquidity,
         "exposures": exposures,
         "concentration": concentration,
+        "duration": duration,
         "overlaps": tuple(overlaps),
         "unknown_weight": _unknown_weight(composition),
         "blockers": canonical_blockers,

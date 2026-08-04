@@ -69,11 +69,12 @@
   - passport SHA-256 детерминирован и source-order invariant;
   - repository guard защищает WP5 research и WP6 credit runtime boundaries;
   - no broker mutation, public execution route, OpenAPI or GPT Editor change in WP6.
-- WP7 Fund X-Ray Engine находится в активной разработке через issue #197:
-  - ETF wrapper связывается с exact WP5 research target и WP3 universe fingerprint;
+- WP7 Fund X-Ray Engine завершён через PR #198 и squash-merged в `main` как `15505272872681cb7c3ad1e845affaa79f6ebdc1` после exact-head Regression Shield #1064; blocking dependency hardening #202 включено в WP8 PR #201:
+  - ETF wrapper связывается с exact WP5 research target и full WP3 `InstrumentIdentity` / universe fingerprint;
   - composition states различают full holdings, partial holdings, documented exposure buckets и unavailable;
   - partial holdings не нормализуются до 100%, undisclosed residual остаётся `UNKNOWN`;
   - asset-class/sector/currency/issuer/geography look-through выводится только из disclosed weights;
+  - WP7 schema v1.1 добавляет credit-quality look-through с `UNKNOWN` preservation и weighted duration вместе с measured coverage, без extrapolation partial evidence;
   - top-1/top-5 и HHI показывают hidden concentration для holdings-based composition;
   - direct-holding overlap и fund-to-fund overlap вычисляются детерминированно;
   - manager/benchmark/strategy/AUM/turnover/tracking-error/expense metadata остаётся optional/provenance-bound;
@@ -81,6 +82,19 @@
   - xray SHA-256 детерминирован и source-order invariant;
   - fund runtime pure/internal и repository guard запрещает broker SDK/tokens/mutation services;
   - no public execution route, OpenAPI or GPT Editor change in WP7.
+- WP8 Portfolio Risk Engine 2.0 находится в активной разработке через issue #199 / draft PR #201:
+  - exact portfolio snapshot и recomputed WP2 IPS fingerprint связывают risk state с конкретной политикой и данными;
+  - permanent-loss, market, concentration, liquidity, credit, currency, inflation/opportunity и data-quality сохраняются как восемь независимых vectors; composite score отсутствует;
+  - cross-currency positions требуют explicit FX provenance, exact native→base reconciliation и freshness;
+  - Top-1/Top-3/Top-5 плюс position/issuer/group/sector/asset-class/currency concentration считаются детерминированно;
+  - ETF требуют WP7 Fund X-Ray look-through, caller-supplied `POSITION` exposure запрещён для защиты от wrapper/underlying double counting;
+  - exact-X-Ray-bound Fund Credit Summary сохраняет applicable/assessed/unknown/floor-breach/default weights и не выводит credit safety из wrapper ETF;
+  - direct bonds требуют WP6 credit evidence; default и IPS credit-floor breach остаются hard blockers;
+  - owner liquidity reserve, stale/missing liquidity, spread и position-size-aware exit capacity учитываются отдельно;
+  - deterministic stress scenarios проверяют owner max-drawdown;
+  - hypothetical trade effects строят полный after-state, новые/устранённые blockers и канонический SHA, invariant к порядку эквивалентных trade effects;
+  - SYSTEM_GUARDRAIL не может притворяться owner-confirmed hard policy;
+  - `omni_cio/risk` pure/read-only и repository-guarded; no broker mutation/public route/OpenAPI/GPT Editor change.
 - Applied Custom GPT остаётся v8.6.1 до WP15; текущая v9 разработка не является разрешением на более широкий real-money execution.
 
 ### Omni-CIO v8.6.1 — released / owner accepted

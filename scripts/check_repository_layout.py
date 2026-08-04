@@ -37,6 +37,9 @@ REQUIRED_PATHS = (
     "tests/test_credit_contract_integrity_v1.py",
     "tests/test_fund_xray_v1.py",
     "tests/test_fund_xray_integrity_v1.py",
+    "tests/test_fund_xray_duration_credit_v1.py",
+    "tests/test_portfolio_risk_engine_v1.py",
+    "tests/test_portfolio_risk_hardening_v1.py",
     "knowledge/00_PROJECT_MASTER_CONTEXT.md",
     "knowledge/09_MARKET_DATA_AND_BUYING_POWER.txt",
     "knowledge/10_OPERATIONS_ANALYTICS_AND_RECONCILIATION.txt",
@@ -61,6 +64,7 @@ REQUIRED_PATHS = (
     "docs/architecture/V9_RESEARCH_EVIDENCE_ENGINE.md",
     "docs/architecture/V9_CREDIT_RATING_DEFAULT_ENGINE.md",
     "docs/architecture/V9_FUND_XRAY_ENGINE.md",
+    "docs/architecture/V9_PORTFOLIO_RISK_ENGINE.md",
     "docs/operations/DEPLOYMENT_RUNBOOK.md",
     "docs/operations/RELEASE_CHECKLIST.md",
     "docs/operations/SANDBOX_TRADING_RUNBOOK.md",
@@ -83,6 +87,7 @@ REQUIRED_PATHS = (
     "omni_cio/contracts/v1/research_evidence.py",
     "omni_cio/contracts/v1/credit.py",
     "omni_cio/contracts/v1/fund_xray.py",
+    "omni_cio/contracts/v1/portfolio_risk.py",
     "omni_cio/router/__init__.py",
     "omni_cio/router/intent_v1.py",
     "omni_cio/policy/__init__.py",
@@ -105,6 +110,9 @@ REQUIRED_PATHS = (
     "omni_cio/credit/engine_v1.py",
     "omni_cio/funds/__init__.py",
     "omni_cio/funds/xray_v1.py",
+    "omni_cio/risk/__init__.py",
+    "omni_cio/risk/engine_v1.py",
+    "omni_cio/risk/policy_v1.py",
     "omni_cio/sandbox/__init__.py",
     "omni_cio/sandbox/client_v1.py",
     "omni_cio/sandbox/service_v1.py",
@@ -216,6 +224,18 @@ CREDIT_FORBIDDEN_TEXT = (
 
 FUND_RUNTIME_ROOT = Path("omni_cio/funds")
 FUND_FORBIDDEN_TEXT = (
+    "t_tech_investments",
+    "t_tech.invest",
+    "TINVEST_",
+    "prepareRealTrade",
+    "executeRealTrade",
+    "prepareSandboxTrade",
+    "executeSandboxTrade",
+    "confirmMarginTrade",
+)
+
+RISK_RUNTIME_ROOT = Path("omni_cio/risk")
+RISK_FORBIDDEN_TEXT = (
     "t_tech_investments",
     "t_tech.invest",
     "TINVEST_",
@@ -435,6 +455,15 @@ def scan_fund_execution_boundary(failures: list[str]) -> None:
     )
 
 
+def scan_risk_execution_boundary(failures: list[str]) -> None:
+    _scan_pure_or_read_only_package(
+        root=RISK_RUNTIME_ROOT,
+        label="portfolio risk engine",
+        forbidden_text=RISK_FORBIDDEN_TEXT,
+        failures=failures,
+    )
+
+
 def scan_retired_duplicate_scenario_publishers(failures: list[str]) -> None:
     for relative_path in RETIRED_DUPLICATE_SCENARIO_PUBLISHER_PATHS:
         if (ROOT / relative_path).exists():
@@ -491,6 +520,7 @@ def main() -> int:
     scan_research_execution_boundary(failures)
     scan_credit_execution_boundary(failures)
     scan_fund_execution_boundary(failures)
+    scan_risk_execution_boundary(failures)
     scan_retired_duplicate_scenario_publishers(failures)
 
     if failures:
