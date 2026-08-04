@@ -33,16 +33,26 @@
   - catalog fingerprint source-order invariant и mutation-sensitive;
   - cache хранит только complete/validated BASE catalog, а degraded catalog не кэшируется;
   - repository guard запрещает universe package использовать `FindInstrument`, trading/Sandbox mutation credentials and services.
-- WP4 Deterministic Candidate Funnel разрабатывается через issue #190 / draft PR #191:
+- WP4 Deterministic Candidate Funnel завершён через PR #191 и squash-merged в `main` как `3946fc9af995338504dee8002c82c630ab8629b7` после exact-head Regression Shield #1035:
   - portfolio gap → role → hard blockers → ordinal score → CASH comparison → bounded WP5 shortlist;
   - неполное evidence coverage всего policy+role-eligible universe fail closed и не публикует частичный ranking;
   - stale/future/untrusted market evidence блокируется до score;
   - fixed factor weights проверяются самим Pydantic contract, LLM score injection отсутствует;
   - `NO_ACTION/CASH` всегда присутствует и может занять первое место;
   - minimum-lot affordability и one-lot position/group/sector/currency headroom проверяются до shortlist;
-  - bond price points конвертируются через nominal + accrued interest, без share-style `price × lot` ошибки;
+  - bond price points и per-lot accrued interest обрабатываются без share-style арифметической ошибки;
   - ranking, tie-breaks и funnel SHA-256 детерминированы и source-order invariant;
   - candidate runtime остаётся pure/internal и repository guard запрещает broker SDK/tokens/mutation services.
+- WP5 Research & Evidence Engine находится в активной разработке через issue #193 / draft PR #194:
+  - bounded WP4 shortlist превращается в source-backed research dossiers с точной привязкой к funnel/candidate/instrument identity;
+  - source hierarchy приоритизирует broker/exchange/issuer/official disclosure/regulator/rating agency, а media остаётся contextual secondary evidence;
+  - material facts/claims несут source provenance, timestamps, freshness и machine-readable support state;
+  - T-Invest structured research adapter нормализует asset fundamentals, report schedules, dividends и bond events;
+  - external text остаётся inert data и не может менять control flow или execution authority;
+  - bounded retrieval, deterministic cache keys/TTLs и rate-limit policy включены в architecture contract;
+  - contradictions эксплицитны, а unresolved critical contradiction блокирует strong recommendation/research-ready state;
+  - dossier fingerprint детерминирован и source-order invariant;
+  - no broker mutation, public execution route, OpenAPI or GPT Editor change in WP5.
 - Applied Custom GPT остаётся v8.6.1 до WP15; текущая v9 разработка не является разрешением на более широкий real-money execution.
 
 ### Omni-CIO v8.6.1 — released / owner accepted
