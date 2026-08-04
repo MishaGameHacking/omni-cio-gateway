@@ -20,6 +20,7 @@ from .replay_v1 import (
     build_replay_dataset,
     evaluate_regression_candidate,
 )
+from .upstash_journal_v1 import UpstashDecisionJournalV1
 
 __all__ = [
     "DecisionEvaluationError",
@@ -30,6 +31,7 @@ __all__ = [
     "DecisionJournalV1",
     "DecisionReplayError",
     "InMemoryDecisionJournalV1",
+    "UpstashDecisionJournalV1",
     "build_replay_case",
     "build_replay_dataset",
     "evaluate_decision",
