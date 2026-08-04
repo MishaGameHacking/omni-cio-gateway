@@ -105,7 +105,9 @@ def main() -> int:
         _scan_python(CONTRACT_PATH, failures)
         contract_text = CONTRACT_PATH.read_text(encoding="utf-8")
         if "trading_methods: Literal[False]" not in contract_text:
-            _fail("strategy contract does not hard-code trading_methods=false", failures)
+            _fail(
+                "strategy contract does not hard-code trading_methods=false", failures
+            )
 
     if failures:
         print("Meta-strategy boundary check failed:", file=sys.stderr)
