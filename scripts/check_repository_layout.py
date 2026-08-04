@@ -36,6 +36,7 @@ REQUIRED_PATHS = (
     "tests/test_credit_rating_default_engine_v1.py",
     "tests/test_credit_contract_integrity_v1.py",
     "tests/test_fund_xray_v1.py",
+    "tests/test_fund_xray_integrity_v1.py",
     "knowledge/00_PROJECT_MASTER_CONTEXT.md",
     "knowledge/09_MARKET_DATA_AND_BUYING_POWER.txt",
     "knowledge/10_OPERATIONS_ANALYTICS_AND_RECONCILIATION.txt",
