@@ -229,6 +229,10 @@ class RiskPositionV1(ContractModel):
             if self.base_market_value != self.native_market_value * self.fx.rate_to_base:
                 raise ValueError("base market value does not reconcile to explicit FX rate")
 
+        if any(
+            row.dimension is RiskExposureDimension.POSITION for row in self.exposures
+        ):
+            raise ValueError("POSITION exposure is engine-derived and cannot be supplied")
         keys = [(row.dimension, row.bucket_key) for row in self.exposures]
         if len(keys) != len(set(keys)):
             raise ValueError("risk exposure buckets must be unique per dimension")
