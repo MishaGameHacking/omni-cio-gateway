@@ -564,7 +564,10 @@ def test_stale_market_evidence_blocks_target() -> None:
 
 
 def test_wp8_target_sector_breach_blocks_plan_eligibility() -> None:
-    policy = _policy(max_sector_weight=Decimal("0.40"))
+    policy = _policy(
+        max_position_weight=Decimal("0.40"),
+        max_sector_weight=Decimal("0.40"),
+    )
     policy, assessment, portfolio, risk, strategy, assets = _base_inputs(
         policy=policy
     )
