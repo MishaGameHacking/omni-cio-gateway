@@ -47,6 +47,7 @@ class FundExposureDimension(StrEnum):
     CURRENCY = "currency"
     ISSUER = "issuer"
     GEOGRAPHY = "geography"
+    CREDIT_QUALITY = "credit_quality"
 
 
 class FundOverlapKind(StrEnum):
@@ -123,12 +124,22 @@ class FundHoldingV1(ContractModel):
     sector: Annotated[str | None, Field(max_length=128)] = None
     currency: CurrencyCode | None = None
     geography: Annotated[str | None, Field(max_length=128)] = None
+    duration_years: NonNegativeDecimal | None = None
+    credit_quality: Annotated[str | None, Field(max_length=128)] = None
     source_record_sha256s: Annotated[tuple[Sha256, ...], Field(min_length=1)]
 
     @field_validator("currency", mode="before")
     @classmethod
     def normalize_currency(cls, value: object) -> object:
         return value.upper() if isinstance(value, str) else value
+
+    @field_validator("credit_quality", mode="before")
+    @classmethod
+    def normalize_credit_quality(cls, value: object) -> object:
+        if not isinstance(value, str):
+            return value
+        normalized = value.strip()
+        return normalized or None
 
     @field_validator("source_record_sha256s", mode="before")
     @classmethod
@@ -266,6 +277,17 @@ class FundConcentrationV1(ContractModel):
     measured_coverage_weight: UnitWeight
 
 
+class FundDurationSummaryV1(ContractModel):
+    weighted_duration_years: NonNegativeDecimal
+    measured_weight: UnitWeight
+
+    @model_validator(mode="after")
+    def validate_measurement(self) -> FundDurationSummaryV1:
+        if self.measured_weight <= 0:
+            raise ValueError("duration summary requires positive measured coverage")
+        return self
+
+
 class DirectUnderlyingExposureV1(ContractModel):
     holding_key: Annotated[str, Field(min_length=3, max_length=256)]
     portfolio_weight: UnitWeight
@@ -314,7 +336,7 @@ class FundFreshnessPolicyV1(ContractModel):
 
 
 class FundXRayV1(ContractModel):
-    schema_version: Literal["1.0"] = "1.0"
+    schema_version: Literal["1.1"] = "1.1"
     assessed_at: datetime
     dossier_sha256: Sha256
     universe_sha256: Sha256
@@ -324,6 +346,7 @@ class FundXRayV1(ContractModel):
     liquidity: MarketLiquidityV1 | None = None
     exposures: tuple[FundLookThroughExposureV1, ...] = ()
     concentration: FundConcentrationV1 | None = None
+    duration: FundDurationSummaryV1 | None = None
     overlaps: tuple[FundOverlapV1, ...] = ()
     unknown_weight: UnitWeight
     blockers: tuple[FundBlockerCode, ...] = ()
