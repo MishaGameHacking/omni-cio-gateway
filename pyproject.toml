@@ -7,6 +7,12 @@ target-version = "py312"
 # Additional rule families are enabled only with their fixes in later PRs.
 select = ["E4", "E7", "E9", "F"]
 
+[tool.ruff.lint.per-file-ignores]
+# WP12 keeps one inert legacy compatibility import in the private execution
+# core. Suppress only that unused-import diagnostic; all other Ruff and mypy
+# checks remain active for the package.
+"omni_cio/plan_execution/service_core_v1.py" = ["F401"]
+
 [tool.mypy]
 python_version = "3.12"
 check_untyped_defs = true
