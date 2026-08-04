@@ -43,16 +43,30 @@
   - bond price points и per-lot accrued interest обрабатываются без share-style арифметической ошибки;
   - ranking, tie-breaks и funnel SHA-256 детерминированы и source-order invariant;
   - candidate runtime остаётся pure/internal и repository guard запрещает broker SDK/tokens/mutation services.
-- WP5 Research & Evidence Engine находится в активной разработке через issue #193 / draft PR #194:
+- WP5 Research & Evidence Engine завершён через PR #194 и squash-merged в `main` как `f8f0bb95fc9692d68ce89c820a6ccbd1ff9868aa` после exact-head Regression Shield #1043:
   - bounded WP4 shortlist превращается в source-backed research dossiers с точной привязкой к funnel/candidate/instrument identity;
   - source hierarchy приоритизирует broker/exchange/issuer/official disclosure/regulator/rating agency, а media остаётся contextual secondary evidence;
-  - material facts/claims несут source provenance, timestamps, freshness и machine-readable support state;
+  - material facts несут source provenance, timestamps, freshness и canonical record SHA-256;
   - T-Invest structured research adapter нормализует asset fundamentals, report schedules, dividends и bond events;
-  - external text остаётся inert data и не может менять control flow или execution authority;
-  - bounded retrieval, deterministic cache keys/TTLs и rate-limit policy включены в architecture contract;
-  - contradictions эксплицитны, а unresolved critical contradiction блокирует strong recommendation/research-ready state;
+  - external/prompt-injection-shaped text остаётся inert data и не может менять control flow или execution authority;
+  - bounded retrieval, deterministic cache keys/TTLs и rate-limit policy закреплены контрактами;
+  - contradictions эксплицитны, а unresolved critical contradiction блокирует strong recommendation;
   - dossier fingerprint детерминирован и source-order invariant;
   - no broker mutation, public execution route, OpenAPI or GPT Editor change in WP5.
+- WP6 Credit, Rating & Default Engine 2.0 находится в активной разработке через issue #195 / draft PR #196:
+  - Credit Passport привязан к exact WP5 dossier fingerprint и WP2 policy reference;
+  - issue / issuer / guarantor / guarantee / seniority моделируются раздельно;
+  - все material credit inputs ссылаются на decision-grade WP5 evidence hashes;
+  - ACRA, Expert RA, NKR и NRA Russian national rating scales моделируются явно;
+  - incompatible scales не усредняются и не получают скрытый crosswalk;
+  - minimum credit floor сравнивается детерминированно на совместимой named scale;
+  - issue rating предпочтителен, issuer proxy и eligible guarantor basis маркируются явно;
+  - default, technical default, restructuring и payment delay сохраняются как отдельные события, active events fail closed;
+  - same-timestamp rating contradictions fail closed;
+  - dossier/policy/rating/outlook/watch/default/terms changes создают deterministic re-analysis triggers;
+  - passport SHA-256 детерминирован и source-order invariant;
+  - repository guard защищает WP5 research и WP6 credit runtime boundaries;
+  - no broker mutation, public execution route, OpenAPI or GPT Editor change in WP6.
 - Applied Custom GPT остаётся v8.6.1 до WP15; текущая v9 разработка не является разрешением на более широкий real-money execution.
 
 ### Omni-CIO v8.6.1 — released / owner accepted

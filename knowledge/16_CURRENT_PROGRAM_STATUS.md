@@ -120,27 +120,52 @@ Accepted behavior:
 
 Architecture: `docs/architecture/V9_DETERMINISTIC_CANDIDATE_FUNNEL.md`.
 
-### WP5 — Research & Evidence Engine: IN PROGRESS
+### WP5 — Research & Evidence Engine: COMPLETE
 
-Tracking: issue #193 / draft PR #194.  
-Branch: `v9/wp5-research-evidence-engine`.  
+- issue #193 / PR #194;
+- merged to `main` as `f8f0bb95fc9692d68ce89c820a6ccbd1ff9868aa`;
+- exact-head Regression Shield #1043 fully green on `ca376e364bf3cd94f792edc69fb091bca87025ef`;
+- quality/contracts/coverage and dependency/SAST/secret security = success;
+- unresolved review threads = 0.
+
+Accepted behavior:
+
+- bounded WP4 shortlist becomes source-backed WP5 dossiers bound to exact candidate/funnel identity;
+- source hierarchy prioritizes broker/exchange/issuer/official disclosure/regulator/rating agency; media remains context-only;
+- every material record carries source provenance, timestamps, deterministic freshness and a canonical record SHA-256;
+- T-Invest structured research surfaces include asset fundamentals, report schedules, dividends and bond events;
+- official-source retrieval is bounded by deterministic budgets, cache keys, TTLs and rate limits;
+- external/prompt-injection-shaped text remains inert data and cannot alter control flow or execution authority;
+- coverage gaps and contradictions are explicit; unresolved critical contradictions block strong recommendation;
+- dossier SHA-256 is deterministic and source-order invariant;
+- raw external content is not persisted in the dossier contract;
+- research runtime adds no broker mutation, public execution route, OpenAPI Action or GPT Editor change.
+
 Architecture: `docs/architecture/V9_RESEARCH_EVIDENCE_ENGINE.md`.
 
-Current implementation turns the bounded WP4 research shortlist into auditable research dossiers:
+### WP6 — Credit, Rating & Default Engine 2.0: IN PROGRESS
 
-- versioned source, fact, claim, contradiction, freshness, coverage and dossier contracts;
-- exact binding to WP4 funnel/candidate identity and verified instrument UID;
-- source hierarchy prioritizes broker/exchange/issuer/official disclosure/regulator/rating agency over secondary media context;
-- every material fact carries publisher/source identity, authority, timestamps and deterministic freshness state;
-- T-Invest structured research surfaces include asset fundamentals, report schedules, dividends and bond events;
-- official-source retrieval policy is bounded by deterministic budgets, cache keys, TTLs and rate limits;
-- external text is normalized as inert data and cannot grant execution authority or alter control flow;
-- contradiction graph is explicit; unresolved critical contradictions block strong recommendation/research-ready state;
-- dossier SHA-256 is deterministic and source-order invariant;
-- unsupported claims retain machine-readable rejection reasons;
-- research package adds no broker mutation, public execution route, OpenAPI Action or GPT Editor change.
+Tracking: issue #195 / draft PR #196.  
+Branch: `v9/wp6-credit-rating-default-engine`.  
+Architecture: `docs/architecture/V9_CREDIT_RATING_DEFAULT_ENGINE.md`.
 
-WP5 is not complete until repository guards/docs are finalized, exact-head Regression Shield is fully green, unresolved review threads are zero and PR #194 is squash-merged.
+Current implementation builds a deterministic Credit Passport for bond candidates:
+
+- exact binding to the WP5 dossier fingerprint and WP2 policy reference;
+- issuer, issue, guarantor, guarantee terms and seniority remain separate identities;
+- every material credit input references decision-grade WP5 evidence hashes;
+- ACRA, Expert RA, NKR and NRA Russian national scales are explicit and agency-specific;
+- incompatible rating scales are not averaged or silently crosswalked;
+- policy minimum-credit-quality comparison is deterministic and fail-closed;
+- issue rating is preferred; issuer proxy and eligible guarantor basis remain explicitly labeled;
+- default, technical default, restructuring and payment-delay events are preserved and active events block readiness;
+- conflicting latest rating observations fail closed;
+- dossier/policy/rating/outlook/watch/default/terms changes create deterministic re-analysis triggers;
+- Credit Passport SHA-256 is canonical and source-order invariant;
+- repository guard now protects both inherited WP5 research boundaries and WP6 credit boundaries;
+- credit runtime adds no broker SDK, mutation, public route, OpenAPI Action or GPT Editor change.
+
+WP6 is not complete until exact-head Regression Shield is fully green, unresolved review threads are zero and PR #196 is squash-merged.
 
 ## Canonical production configuration
 
@@ -164,7 +189,7 @@ Real v1 uses only dedicated `TINVEST_TRADING_TOKEN` and remains limited to the a
 
 `fresh facts → immutable proposal → exact owner confirmation in a new user turn → one submit/idempotency → broker reconciliation`.
 
-WP1–WP5 add no withdrawal/transfer, margin/short, MARKET/BESTPRICE, autonomous recurring execution or token management.
+WP1–WP6 add no withdrawal/transfer, margin/short, MARKET/BESTPRICE, autonomous recurring execution or token management.
 
 `REAL_TRADING_ENABLED=false` remains the master rollback state.
 

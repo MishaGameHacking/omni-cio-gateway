@@ -7,8 +7,6 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 
-# Keep this list intentionally small: only files required to run, configure,
-# recover, test and safely maintain the current Omni-CIO Custom GPT + Gateway.
 REQUIRED_PATHS = (
     "README.md",
     "AGENTS.md",
@@ -32,6 +30,11 @@ REQUIRED_PATHS = (
     "tests/test_investment_policy_statement_v1.py",
     "tests/test_market_universe_v1.py",
     "tests/test_candidate_funnel_v1.py",
+    "tests/test_research_binding_v1.py",
+    "tests/test_research_evidence_v1.py",
+    "tests/test_research_official_v1.py",
+    "tests/test_credit_rating_default_engine_v1.py",
+    "tests/test_credit_contract_integrity_v1.py",
     "knowledge/00_PROJECT_MASTER_CONTEXT.md",
     "knowledge/09_MARKET_DATA_AND_BUYING_POWER.txt",
     "knowledge/10_OPERATIONS_ANALYTICS_AND_RECONCILIATION.txt",
@@ -53,6 +56,8 @@ REQUIRED_PATHS = (
     "docs/architecture/V9_INVESTMENT_POLICY_STATEMENT.md",
     "docs/architecture/V9_MARKET_UNIVERSE_ENGINE.md",
     "docs/architecture/V9_DETERMINISTIC_CANDIDATE_FUNNEL.md",
+    "docs/architecture/V9_RESEARCH_EVIDENCE_ENGINE.md",
+    "docs/architecture/V9_CREDIT_RATING_DEFAULT_ENGINE.md",
     "docs/operations/DEPLOYMENT_RUNBOOK.md",
     "docs/operations/RELEASE_CHECKLIST.md",
     "docs/operations/SANDBOX_TRADING_RUNBOOK.md",
@@ -72,6 +77,8 @@ REQUIRED_PATHS = (
     "omni_cio/contracts/v1/investment_policy.py",
     "omni_cio/contracts/v1/universe.py",
     "omni_cio/contracts/v1/candidate_funnel.py",
+    "omni_cio/contracts/v1/research_evidence.py",
+    "omni_cio/contracts/v1/credit.py",
     "omni_cio/router/__init__.py",
     "omni_cio/router/intent_v1.py",
     "omni_cio/policy/__init__.py",
@@ -83,6 +90,15 @@ REQUIRED_PATHS = (
     "omni_cio/universe/tinvest_v1.py",
     "omni_cio/candidates/__init__.py",
     "omni_cio/candidates/funnel_v1.py",
+    "omni_cio/research/__init__.py",
+    "omni_cio/research/binding_v1.py",
+    "omni_cio/research/cache_v1.py",
+    "omni_cio/research/engine_v1.py",
+    "omni_cio/research/external_context_v1.py",
+    "omni_cio/research/official_v1.py",
+    "omni_cio/research/tinvest_v1.py",
+    "omni_cio/credit/__init__.py",
+    "omni_cio/credit/engine_v1.py",
     "omni_cio/sandbox/__init__.py",
     "omni_cio/sandbox/client_v1.py",
     "omni_cio/sandbox/service_v1.py",
@@ -99,17 +115,12 @@ REQUIRED_PATHS = (
     ".github/workflows/regression-shield.yml",
 )
 
-FORBIDDEN_TRACKED_NAMES = {
-    ".env",
-    "pytest-results.xml",
-}
-
+FORBIDDEN_TRACKED_NAMES = {".env", "pytest-results.xml"}
 FORBIDDEN_WORKFLOWS = {
     "apply-v390.yml",
     "pr03-bootstrap.yml",
     "upgrade-v390.yml",
 }
-
 RETIRED_DUPLICATE_SCENARIO_PUBLISHER_PATHS = (
     "omni_cio/release/final_decision_review_calculator_publication_v1.py",
     "omni_cio/release/final_decision_review_calculator_registration_v1.py",
@@ -118,7 +129,6 @@ RETIRED_DUPLICATE_SCENARIO_PUBLISHER_PATHS = (
     "docs/architecture/FINAL_DECISION_REVIEW_CALCULATOR_PUBLICATION_V1.md",
     "docs/architecture/FINAL_DECISION_REVIEW_CALCULATOR_REGISTRATION_V1.md",
 )
-
 FORBIDDEN_BROKER_METHOD_PREFIXES = (
     "post_order",
     "replace_order",
@@ -130,18 +140,13 @@ FORBIDDEN_BROKER_METHOD_PREFIXES = (
     "withdraw",
     "transfer",
 )
-
 FORBIDDEN_BROKER_METHODS = {
     "pay_in",
     "sandbox_pay_in",
     "open_sandbox_account",
     "close_sandbox_account",
 }
-
-FORBIDDEN_BROKER_SERVICES = {
-    "stop_orders",
-    "sandbox",
-}
+FORBIDDEN_BROKER_SERVICES = {"stop_orders", "sandbox"}
 
 SANDBOX_RUNTIME_ROOT = Path("omni_cio/sandbox")
 SANDBOX_ALLOWED_HOST = "https://sandbox-invest-public-api.tbank.ru/rest"
@@ -180,6 +185,29 @@ CANDIDATE_FORBIDDEN_TEXT = (
     "executeSandboxTrade",
 )
 
+RESEARCH_RUNTIME_ROOT = Path("omni_cio/research")
+RESEARCH_FORBIDDEN_TEXT = (
+    "TINVEST_TRADING_TOKEN",
+    "TINVEST_SANDBOX_TOKEN",
+    "prepareRealTrade",
+    "executeRealTrade",
+    "prepareSandboxTrade",
+    "executeSandboxTrade",
+    "confirmMarginTrade",
+)
+
+CREDIT_RUNTIME_ROOT = Path("omni_cio/credit")
+CREDIT_FORBIDDEN_TEXT = (
+    "t_tech_investments",
+    "t_tech.invest",
+    "TINVEST_",
+    "prepareRealTrade",
+    "executeRealTrade",
+    "prepareSandboxTrade",
+    "executeSandboxTrade",
+    "confirmMarginTrade",
+)
+
 
 def fail(message: str, failures: list[str]) -> None:
     failures.append(message)
@@ -209,29 +237,21 @@ def scan_runtime_broker_egress(failures: list[str]) -> None:
             for part in relative.parts
         ):
             continue
-
         try:
             source = path.read_text(encoding="utf-8")
             tree = ast.parse(source, filename=str(relative))
         except (OSError, SyntaxError) as exc:
             fail(f"cannot inspect runtime Python source {relative}: {exc}", failures)
             continue
-
-        # Narrow exception: checked-in code under omni_cio/sandbox may contain
-        # mutation-shaped method names because it is hard-bound to T-Invest's
-        # virtual Sandbox. Its host/token boundary is validated separately below.
         if is_sandbox_runtime(relative):
             continue
-
         for node in ast.walk(tree):
             if isinstance(node, ast.Attribute) and is_forbidden_broker_attribute(
                 node.attr
             ):
                 fail(
-                    (
-                        "forbidden real broker write surface referenced: "
-                        f"{relative}:{node.lineno} ({node.attr})"
-                    ),
+                    "forbidden real broker write surface referenced: "
+                    f"{relative}:{node.lineno} ({node.attr})",
                     failures,
                 )
             if (
@@ -244,10 +264,8 @@ def scan_runtime_broker_egress(failures: list[str]) -> None:
                 and is_forbidden_broker_attribute(node.args[1].value)
             ):
                 fail(
-                    (
-                        "dynamic forbidden real broker write surface referenced: "
-                        f"{relative}:{node.lineno} ({node.args[1].value})"
-                    ),
+                    "dynamic forbidden real broker write surface referenced: "
+                    f"{relative}:{node.lineno} ({node.args[1].value})",
                     failures,
                 )
 
@@ -257,7 +275,6 @@ def scan_sandbox_execution_boundary(failures: list[str]) -> None:
     if not sandbox_root.is_dir():
         fail("sandbox runtime directory is missing", failures)
         return
-
     source_parts: list[str] = []
     for path in sorted(sandbox_root.glob("*.py")):
         try:
@@ -265,11 +282,9 @@ def scan_sandbox_execution_boundary(failures: list[str]) -> None:
         except OSError as exc:
             fail(f"cannot inspect sandbox source {path}: {exc}", failures)
     source = "\n".join(source_parts)
-
     if SANDBOX_ALLOWED_HOST not in source:
         fail(
-            "sandbox runtime does not declare the canonical sandbox REST host",
-            failures,
+            "sandbox runtime does not declare the canonical sandbox REST host", failures
         )
     if "TINVEST_SANDBOX_TOKEN" not in source:
         fail("sandbox runtime does not require TINVEST_SANDBOX_TOKEN", failures)
@@ -282,7 +297,6 @@ def scan_sandbox_execution_boundary(failures: list[str]) -> None:
         fail("sandbox runtime does not hard-disable margin confirmation", failures)
     if "x-openai-isConsequential" not in source:
         fail("sandbox mutation Actions are not marked consequential", failures)
-
     for forbidden in SANDBOX_FORBIDDEN_TEXT:
         if forbidden in source:
             fail(
@@ -296,7 +310,6 @@ def scan_universe_execution_boundary(failures: list[str]) -> None:
     if not universe_root.is_dir():
         fail("market universe runtime directory is missing", failures)
         return
-
     source_parts: list[str] = []
     for path in sorted(universe_root.glob("*.py")):
         try:
@@ -304,14 +317,12 @@ def scan_universe_execution_boundary(failures: list[str]) -> None:
         except OSError as exc:
             fail(f"cannot inspect universe source {path}: {exc}", failures)
     source = "\n".join(source_parts)
-
     for required in UNIVERSE_REQUIRED_TEXT:
         if required not in source:
             fail(f"market universe source contract missing: {required}", failures)
     for forbidden in UNIVERSE_FORBIDDEN_TEXT:
         if forbidden in source:
             fail(f"market universe crosses read-only boundary: {forbidden}", failures)
-
     for path in sorted(universe_root.glob("*.py")):
         try:
             tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
@@ -330,27 +341,27 @@ def scan_universe_execution_boundary(failures: list[str]) -> None:
                 )
 
 
-def scan_candidate_execution_boundary(failures: list[str]) -> None:
-    candidate_root = ROOT / CANDIDATE_RUNTIME_ROOT
-    if not candidate_root.is_dir():
-        fail("candidate funnel runtime directory is missing", failures)
+def _scan_pure_or_read_only_package(
+    *,
+    root: Path,
+    label: str,
+    forbidden_text: tuple[str, ...],
+    failures: list[str],
+) -> None:
+    package_root = ROOT / root
+    if not package_root.is_dir():
+        fail(f"{label} runtime directory is missing", failures)
         return
-
-    for path in sorted(candidate_root.glob("*.py")):
+    for path in sorted(package_root.glob("*.py")):
         try:
             source = path.read_text(encoding="utf-8")
             tree = ast.parse(source, filename=str(path))
         except (OSError, SyntaxError) as exc:
-            fail(f"cannot inspect candidate funnel source {path}: {exc}", failures)
+            fail(f"cannot inspect {label} source {path}: {exc}", failures)
             continue
-
-        for forbidden in CANDIDATE_FORBIDDEN_TEXT:
+        for forbidden in forbidden_text:
             if forbidden in source:
-                fail(
-                    f"candidate funnel crosses pure-engine boundary: {forbidden}",
-                    failures,
-                )
-
+                fail(f"{label} crosses protected boundary: {forbidden}", failures)
         for node in ast.walk(tree):
             if isinstance(node, ast.Attribute) and node.attr in {
                 "orders",
@@ -358,9 +369,43 @@ def scan_candidate_execution_boundary(failures: list[str]) -> None:
                 "sandbox",
             }:
                 fail(
-                    f"candidate funnel references forbidden broker service: {node.attr}",
+                    f"{label} references forbidden broker service: {node.attr}",
                     failures,
                 )
+            if isinstance(node, ast.Attribute) and is_forbidden_broker_attribute(
+                node.attr
+            ):
+                fail(
+                    f"{label} references forbidden broker method: {node.attr}",
+                    failures,
+                )
+
+
+def scan_candidate_execution_boundary(failures: list[str]) -> None:
+    _scan_pure_or_read_only_package(
+        root=CANDIDATE_RUNTIME_ROOT,
+        label="candidate funnel",
+        forbidden_text=CANDIDATE_FORBIDDEN_TEXT,
+        failures=failures,
+    )
+
+
+def scan_research_execution_boundary(failures: list[str]) -> None:
+    _scan_pure_or_read_only_package(
+        root=RESEARCH_RUNTIME_ROOT,
+        label="research engine",
+        forbidden_text=RESEARCH_FORBIDDEN_TEXT,
+        failures=failures,
+    )
+
+
+def scan_credit_execution_boundary(failures: list[str]) -> None:
+    _scan_pure_or_read_only_package(
+        root=CREDIT_RUNTIME_ROOT,
+        label="credit engine",
+        forbidden_text=CREDIT_FORBIDDEN_TEXT,
+        failures=failures,
+    )
 
 
 def scan_retired_duplicate_scenario_publishers(failures: list[str]) -> None:
@@ -374,7 +419,6 @@ def scan_retired_duplicate_scenario_publishers(failures: list[str]) -> None:
 
 def main() -> int:
     failures: list[str] = []
-
     for relative_path in REQUIRED_PATHS:
         if not (ROOT / relative_path).is_file():
             fail(f"missing required file: {relative_path}", failures)
@@ -417,6 +461,8 @@ def main() -> int:
     scan_sandbox_execution_boundary(failures)
     scan_universe_execution_boundary(failures)
     scan_candidate_execution_boundary(failures)
+    scan_research_execution_boundary(failures)
+    scan_credit_execution_boundary(failures)
     scan_retired_duplicate_scenario_publishers(failures)
 
     if failures:
