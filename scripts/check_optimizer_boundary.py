@@ -7,9 +7,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 OPTIMIZER_ROOT = ROOT / "omni_cio" / "optimizer"
-CONTRACT_PATH = (
-    ROOT / "omni_cio" / "contracts" / "v1" / "portfolio_optimizer.py"
-)
+CONTRACT_PATH = ROOT / "omni_cio" / "contracts" / "v1" / "portfolio_optimizer.py"
 
 REQUIRED_PATHS = (
     "omni_cio/contracts/v1/portfolio_optimizer.py",
