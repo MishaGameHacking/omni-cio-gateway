@@ -19,6 +19,7 @@ from omni_cio.contracts.v1.investment_policy import (
     TaxConstraintStatus,
 )
 from omni_cio.contracts.v1.meta_strategy import (
+    MetaStrategySelectionV1,
     StrategyCandidateBlockerCode,
     StrategyComponentDirective,
     StrategyComponentKind,
@@ -186,7 +187,6 @@ def _risk(
     severity_overrides: dict[RiskVectorKind, RiskSeverity] | None = None,
 ) -> tuple[PortfolioRiskAssessmentV1, object]:
     policy_assessment = assess_investment_policy(policy, assessed_at=ASSESS_AT)
-    assert policy_assessment.ready_for_personal_sizing
     state = _risk_state(
         hard_kind=hard_kind,
         severity_overrides=severity_overrides,
@@ -241,11 +241,17 @@ def _friction(
     )
 
 
-def _comparison(selection: object, regime: StrategyRegime):
+def _comparison(
+    selection: MetaStrategySelectionV1,
+    regime: StrategyRegime,
+):
     return next(row for row in selection.comparisons if row.regime is regime)
 
 
-def _component_row(selection: object, kind: StrategyComponentKind):
+def _component_row(
+    selection: MetaStrategySelectionV1,
+    kind: StrategyComponentKind,
+):
     return next(row for row in selection.components if row.kind is kind)
 
 
@@ -407,7 +413,7 @@ def test_hypothetical_wp8_assessment_cannot_impersonate_current_risk() -> None:
     assert selection.optimizer_eligible is False
 
 
-def test_unknown_tax_context_blocks_strategy_selection() -> None:
+def test_unknown_tax_context_preserves_wp2_and_wp9_fail_closed_semantics() -> None:
     policy = _policy(tax_constraint_status=TaxConstraintStatus.UNKNOWN)
     risk, policy_assessment = _risk(policy)
 
@@ -420,6 +426,8 @@ def test_unknown_tax_context_blocks_strategy_selection() -> None:
         selected_at=ASSESS_AT,
     )
 
+    assert policy_assessment.ready_for_personal_sizing is False
+    assert StrategySelectionBlockerCode.IPS_NOT_READY in selection.blockers
     assert StrategySelectionBlockerCode.TAX_CONTEXT_UNKNOWN in selection.blockers
     assert selection.decision_ready is False
 
