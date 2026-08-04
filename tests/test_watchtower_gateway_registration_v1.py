@@ -18,7 +18,7 @@ def test_watchtower_is_registered_on_single_gateway_but_hidden_from_openapi() ->
 
     schema_paths = set(gateway.app.openapi().get("paths", {}))
     assert INTERNAL_PATHS.isdisjoint(schema_paths)
-    assert gateway.app.title == "Omni-CIO API"
+    assert gateway.app.title == "Omni-CIO Read-Only Gateway"
 
     registry = gateway.app.state.watchtower_provider_registry
     assert isinstance(registry, WatchtowerEvidenceProviderRegistryV1)
