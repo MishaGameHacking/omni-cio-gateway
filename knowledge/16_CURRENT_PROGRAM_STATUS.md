@@ -147,6 +147,6 @@ WP1–WP11 do not add withdrawal/transfer, margin/short, MARKET/BESTPRICE, auton
 
 ## v8.6.1 owner acceptance evidence
 
-Owner Phase 4 on 2026-08-03 proved one explicitly authorized SBER LIMIT BUY with exactly one submit, broker-confirmed fill, portfolio/operations reconciliation and idempotent confirmation replay with no second submit.
+Owner Phase 4 on 2026-08-03 proved one explicitly authorized SBER LIMIT BUY with exactly one submit, broker-confirmed fill and portfolio/operations reconciliation. Canonical recovery invariant: **idempotent replay verified with no second submit**.
 
 **Production release state: Omni-CIO v8.6.1 real BUY/SELL v1 — 100% complete and protected while v9 development continues.**
