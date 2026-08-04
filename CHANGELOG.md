@@ -19,38 +19,38 @@ Canonical roadmap: `docs/master-plan/OMNI_CIO_V9_PORTFOLIO_AUTOPILOT_PROGRAM.md`
 - WP6 Credit, Rating & Default Engine 2.0 — PR #196, merge `64316008...`, #1057;
 - WP7 Fund X-Ray Engine — PR #198, merge `15505272...`, #1064;
 - WP8 Portfolio Risk Engine 2.0 — PR #201, merge `24e027f1...`, #1078;
-- WP9 Meta-Strategy Selector — PR #204, squash merge `f758fd7325e5d3e6602fa441cc65f8cd3e10c2c3`, exact-head Regression Shield #1088 on `d95d56a967aa822a22a2f8bbdec95748ad9734f7`.
+- WP9 Meta-Strategy Selector — PR #204, merge `f758fd73...`, exact-head #1088;
+- WP10 Portfolio Optimizer & Capital Scaling — PR #206, squash merge `f73929771bcae4058c3c83b3d0632b8d66b8d05f`, exact-head Regression Shield #1105 on `2ff38f962718e58ec9c12e0e89fd2605310592cc`.
 
-WP9 accepted behavior includes exact portfolio/WP2/WP8 binding, bounded five-regime selection with `NO_ACTION`, pre-ranking owner-risk caps, fresh cost/tax provenance, deterministic review/cancellation conditions, no expected-return or macro-regime forecast input, canonical SHA-256 and a pure internal strategy runtime with `trading_methods=false`.
+### WP11 — Immutable Portfolio Plan Protocol — final merge gate
 
-### WP10 — Portfolio Optimizer & Capital Scaling — active
+Tracking: issue #207 / draft PR #208 / branch `v9/wp11-immutable-portfolio-plan`.
 
-Tracking: issue #205 / draft PR #206 / branch `v9/wp10-portfolio-optimizer`.
+Implemented:
 
-Implemented in the current WP10 branch:
+- frozen/versioned `PORTFOLIO_PLAN` contract with deterministic canonical SHA-256;
+- exact portfolio + WP2 policy + current WP8 + WP9 + WP10 + target WP8 bindings;
+- full re-validation of upstream Pydantic payloads and recomputation of WP8/WP9/WP10 hashes to catch stale-hash and recalculated-hash `model_copy` tampering;
+- exact deterministic WP10 target rows and ordered BUY/SELL/NO_ACTION legs;
+- clean execution price, bond НКД, settlement notional, commission, estimated SELL tax, cash delta and current/target cash preserved separately;
+- plan arithmetic reconciled to embedded optimizer legs, target rows and WP8 before/after states;
+- build-time freshness gates for market, friction and FX evidence;
+- BUY eligibility required only for BUY; an already-held SELL is not falsely blocked by loss of buy eligibility;
+- explicit validity window and complete hard-cancellation code set;
+- review-time market/friction/FX freshness plus clean-price/НКД/spread/turnover/depth/FX drift gates;
+- extreme measured drift can exceed 10,000 bps without contract overflow while bounded tolerances still cancel the plan;
+- any material plan mutation changes the exact plan SHA and therefore changes the plan-specific approval challenge;
+- actionable challenge is `ПОДТВЕРЖДАЮ ПЛАН <PLAN_SHA_PREFIX>` and is exposed only by a valid review;
+- review remains read-only with `execution_authorized=false` and `trading_methods=false`;
+- no broker client/token/journal/order submit/cancel/replace authority, no public route/OpenAPI/GPT Editor change;
+- dedicated immutable-plan repository boundary guard plus mypy scope;
+- architecture, threat-model and data-contract documents.
 
-- exact binding to portfolio snapshot, recomputed WP2 IPS fingerprint/reference, exact current WP8 risk and exact WP9 selection;
-- deterministic fixed component budgets per bounded WP9 regime; no alpha/expected-return optimizer;
-- owner reserve and max-position limits before lot conversion;
-- small-capital minimum meaningful-position and whole-lot rules;
-- large-capital spread, turnover participation, top-of-book participation, maximum staging days and partial-fill-aware metadata;
-- clean execution price separated from full economic valuation;
-- market price itself is part of structured market evidence with timestamp/source SHA-256;
-- bonds keep clean price and НКД separate; missing НКД blocks a trade instead of assuming zero;
-- bond full value reconciles to clean price + НКД/lot-size, preserving the project-wide full-value convention;
-- leg arithmetic keeps clean gross, accrued interest, settlement notional, commission, estimated SELL tax and signed cash delta separate;
-- owner reserve is rechecked after settlement/НКД/fees; BUYs are reduced deterministically before reserve can be spent;
-- account-ineligible/unknown BUYs fail closed;
-- stale/future market/friction evidence, price-binding mismatch, wide spread and zero safe capacity fail closed;
-- deterministic trade IDs include a stable SHA suffix and multi-leg output is canonical by full trade ID;
-- CURRENT / TARGET / NO_ACTION scenarios contain no return forecast;
-- every changed target position is converted to a real WP8 hypothetical trade effect and revalidated through the WP8 risk engine;
-- target risk must be decision-ready, policy-compliant and based on the exact supplied current-risk baseline;
-- optimizer runtime remains internal/read-only, broker-mutation surfaces are repository-guarded, and `trading_methods=false` is contract-enforced.
+Acceptance coverage includes the real WP2→WP8→WP9→WP10→WP11 actionable chain, full NO_ACTION chain, source-order invariance, immutable hash/challenge mutation sensitivity, stale/missing/future evidence, pre-valid/expired review, clean-price and bond-НКД drift, liquidity/spread deterioration, friction change, BUY/SELL eligibility semantics, FX drift/freshness, unknown observation rejection and model-copy tamper rejection.
 
-WP10 acceptance coverage includes normal rebalancing, source-order invariance, large-capacity scaling/staging, reserve-after-fees, missing/stale evidence, price-binding mutation, missing bond НКД, WP8 target policy breach, same-version IPS mutation, small-cap micropositions, collision-shaped trade-ID ordering and non-zero bond accrued-interest settlement.
+The code/test head `9f410f88e31fa161fcd713b9636ab7f460a6f5d6` passed security, Ruff, format, mypy, `app:app`, the read-only GPT Actions contract and full Regression Shield #1111. Status/changelog synchronization changes the PR head, so WP11 remains in final merge gate until the new exact-head Regression Shield and review-thread checks are green and PR #208 is squash-merged.
 
-WP10 is not complete until the **final exact-head** Regression Shield after all code/documentation changes is green, review threads are zero and PR #206 is squash-merged.
+Next dependency after merge: **WP12 — Safe Plan Execution Engine**, reusing the proven v8.6.1 single-order protocol rather than creating a second execution stack.
 
 Applied Custom GPT remains v8.6.1 until WP15; current v9 development is not authorization for broader real-money execution.
 
