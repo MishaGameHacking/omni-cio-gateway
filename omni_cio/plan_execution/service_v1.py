@@ -37,11 +37,11 @@ class SafePlanExecutionServiceV1(_core.SafePlanExecutionServiceV1):
     The full fail-closed state machine lives in ``service_core_v1``. This facade
     carries only cross-WP hardening discovered during WP12 review: immutable-plan
     expiry blocks any *new* prepare/submit, fresh strategy/optimizer/target-risk
-    identity remains bound before every stage action, while already submitted
-    orders remain reconcilable; and broker-terminal reconciliation retains the
-    exact plan for deterministic SELL tax allowance accounting. Broker submit
-    remains owned by the existing RealTradingServiceV1 path inherited through
-    the core service.
+    identity remains bound before every stage action, no second plan stage may be
+    submitted on the same Moscow calendar day, while already submitted orders
+    remain reconcilable; and broker-terminal reconciliation retains the exact plan
+    for deterministic SELL tax allowance accounting. Broker submit remains owned
+    by the existing RealTradingServiceV1 path inherited through the core service.
     """
 
     def advance_execution(
@@ -139,6 +139,27 @@ class SafePlanExecutionServiceV1(_core.SafePlanExecutionServiceV1):
                 )
 
         return super()._runtime_guard(plan, session, stage, now)
+
+    def _prepare_stage(
+        self,
+        plan: PortfolioPlanV1,
+        session: PlanExecutionSessionV1,
+        stage: PlanExecutionStageV1,
+        now: datetime,
+    ) -> PlanExecutionAdvanceResultV1:
+        today = _core._moscow_date(now)
+        if any(
+            row.last_submission_moscow_date == today
+            for row in _core._all_stages(session)
+        ):
+            return self._result(
+                PlanExecutionAdvanceAction.WAITING_NEXT_STAGE_DAY,
+                session,
+                "Another immutable plan stage was already submitted today; "
+                "no second Moscow-day stage is allowed.",
+                stage_id=stage.stage_id,
+            )
+        return super()._prepare_stage(plan, session, stage, now)
 
     def _reconcile_broker(
         self,
