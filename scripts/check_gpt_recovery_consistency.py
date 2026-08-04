@@ -277,7 +277,9 @@ def main() -> None:
     print("GPT v9 recovery/configuration consistency: OK")
     print(f"Target UI: {TARGET_UI_NAME}")
     print(f"Target Instructions: {TARGET_INSTRUCTIONS}")
-    print(f"Instructions chars: {len(read(TARGET_INSTRUCTIONS))}/{INSTRUCTIONS_MAX_CHARS}")
+    print(
+        f"Instructions chars: {len(read(TARGET_INSTRUCTIONS))}/{INSTRUCTIONS_MAX_CHARS}"
+    )
     print(f"Knowledge files: {len(KNOWLEDGE_FILES)}")
     print(f"Protected rollback UI: {PROTECTED_UI_NAME}")
     print(f"Protected baseline commit: {BASELINE_COMMIT}")
