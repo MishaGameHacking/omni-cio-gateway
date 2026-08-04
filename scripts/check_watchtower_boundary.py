@@ -70,7 +70,10 @@ def _scan(path: Path, failures: list[str]) -> None:
 
     for forbidden in FORBIDDEN_TEXT:
         if forbidden in source:
-            _fail(f"Watchtower crosses protected authority boundary: {relative}: {forbidden}", failures)
+            _fail(
+                f"Watchtower crosses protected authority boundary: {relative}: {forbidden}",
+                failures,
+            )
 
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
@@ -117,7 +120,10 @@ def main() -> int:
             if literal not in contract:
                 _fail(f"WP13 safety literal missing: {literal}", failures)
         if "EXECUTE" in contract or "SUBMIT" in contract:
-            _fail("Watchtower contract must not define an execution/submit action", failures)
+            _fail(
+                "Watchtower contract must not define an execution/submit action",
+                failures,
+            )
 
     if failures:
         print("Portfolio Watchtower boundary check failed:", file=sys.stderr)
