@@ -175,6 +175,7 @@ Architecture: `docs/architecture/V9_CREDIT_RATING_DEFAULT_ENGINE.md`.
 - issue #197 / PR #198;
 - merged to `main` as `15505272872681cb7c3ad1e845affaa79f6ebdc1`;
 - exact-head Regression Shield #1064 fully green on `c5086a7f86840a320cecd8b10c3c4878091b5e88`;
+- blocking dependency hardening #202 is carried by WP8 PR #201;
 - unresolved review threads = 0.
 
 Accepted behavior:
@@ -184,6 +185,8 @@ Accepted behavior:
 - composition modes distinguish full holdings, partial holdings, documented buckets and unavailable composition;
 - partial holdings are never rescaled to 100%; undisclosed residual remains `UNKNOWN`;
 - asset-class/sector/currency/issuer/geography exposures are derived without inventing classifications;
+- schema v1.1 adds credit-quality look-through with `UNKNOWN` preservation plus weighted duration with explicit measured coverage; partial duration/credit evidence is never extrapolated to the whole fund;
+- credit-quality labels remain evidence only and are not silently crosswalked into WP2 credit-floor compliance;
 - top-1/top-5 and HHI expose hidden concentration for holdings-based composition;
 - direct-holding overlap and fund-to-fund overlap are deterministic;
 - fund manager/benchmark/strategy/AUM/turnover/tracking-error/expense metadata is optional and provenance-bound;
@@ -191,14 +194,15 @@ Accepted behavior:
 - source hashes must exist as decision-grade records in the exact WP5 dossier;
 - impossible weights/coverage states and stale/mismatched liquidity are rejected;
 - Fund X-Ray SHA-256 is canonical and source-order invariant;
-- acceptance/integrity suites are repository-guarded;
+- acceptance/integrity/duration-credit suites are repository-guarded;
 - fund runtime is pure/internal and repository guard forbids broker SDK/tokens/mutation services.
 
 Architecture: `docs/architecture/V9_FUND_XRAY_ENGINE.md`.
 
 ### WP8 — Portfolio Risk Engine 2.0: IN PROGRESS
 
-Tracking: issue #199.  
+Tracking: issue #199 / draft PR #201.  
+Dependency hardening: issue #202.  
 Branch: `v9/wp8-portfolio-risk-engine`.  
 Architecture: `docs/architecture/V9_PORTFOLIO_RISK_ENGINE.md`.
 
@@ -207,19 +211,22 @@ Current implementation builds deterministic policy-bound current/after-trade ris
 - exact WP2 IPS fingerprint binding plus exact portfolio snapshot fingerprint reference;
 - eight independent vectors: permanent-loss, market, concentration, liquidity, credit, currency, inflation/opportunity and data quality;
 - no composite risk score that can average away a hard breach;
-- explicit FX-to-base provenance for every cross-currency position; no implicit FX conversion;
+- explicit FX-to-base provenance, exact native→base reconciliation and FX freshness for every cross-currency position; no implicit FX conversion;
 - Top-1/Top-3/Top-5 plus position/issuer/group/sector/asset-class/currency concentration;
-- ETF positions require WP7 Fund X-Ray look-through and caller-supplied `POSITION` exposure is forbidden to prevent wrapper double counting;
-- bond positions require WP6 credit evidence; active default and IPS credit-floor failures are hard breaches;
+- ETF positions require WP7 Fund X-Ray look-through and caller-supplied `POSITION` exposure is forbidden to prevent wrapper/underlying double counting;
+- exact-X-Ray-bound Fund Credit Summary records credit-applicable, assessed, unknown, floor-breach and active-default weights; ETF wrappers cannot silently appear credit-safe;
+- direct bond positions require WP6 credit evidence; active default and IPS credit-floor failures are hard breaches;
 - owner IPS liquidity reserve is hard; stale/missing liquidity is explicit; exit-days scale with actual position size and daily exit capacity;
 - deterministic stress scenarios enforce owner max-drawdown;
 - hypothetical proposed trades rebuild a full after-state and record new/resolved blockers;
+- proposal effects and assessment SHA are canonical and invariant to equivalent input order;
 - changed policy payload with the same id/version fails exact fingerprint binding;
 - system guardrails cannot impersonate owner-confirmed hard policy;
-- canonical assessment SHA-256 and input-order invariance are acceptance-tested;
+- missing Fund Credit, unknown fund-credit weight, stale FX and other incomplete evidence remain explicit readiness blockers;
+- acceptance/hardening suites and repository guard protect these invariants;
 - `omni_cio/risk` is pure/read-only and repository-guarded against broker SDK/tokens/mutation methods.
 
-WP8 is not complete until Ruff/format/mypy/full exact-head Regression Shield are green, unresolved review threads are zero and its PR is squash-merged.
+WP8 is not complete until Ruff/format/mypy/full exact-head Regression Shield are green, unresolved review threads are zero and PR #201 is squash-merged. Only the final exact-head CI run after all documentation/code fixes counts as merge evidence.
 
 ## Canonical production configuration
 
