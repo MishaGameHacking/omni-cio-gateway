@@ -1395,7 +1395,6 @@ class SafePlanExecutionServiceV1:
         stage: PlanExecutionStageV1,
         now: datetime,
     ) -> PlanExecutionAdvanceResultV1:
-        del plan
         if not stage.attempts or not stage.attempts[-1].proposal_id:
             return self._halt(
                 session,
@@ -1404,6 +1403,7 @@ class SafePlanExecutionServiceV1:
                 stage=stage,
             )
         attempt = stage.attempts[-1]
+        assert attempt.proposal_id is not None
         try:
             proposal = self._single_order.reconcile_proposal(attempt.proposal_id)
             snapshot = broker_snapshot_from_proposal(proposal)
