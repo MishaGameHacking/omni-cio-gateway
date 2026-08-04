@@ -10,9 +10,11 @@ WATCHTOWER_ROOT = ROOT / "omni_cio" / "watchtower"
 CONTRACT_PATH = ROOT / "omni_cio" / "contracts" / "v1" / "watchtower.py"
 
 REQUIRED_PATHS = (
+    "broker_report_reconciliation/__init__.py",
     "omni_cio/contracts/v1/watchtower.py",
     "omni_cio/watchtower/__init__.py",
     "omni_cio/watchtower/engine_v1.py",
+    "omni_cio/watchtower/installation_v1.py",
     "omni_cio/watchtower/journal_v1.py",
     "omni_cio/watchtower/provider_v1.py",
     "omni_cio/watchtower/qstash_v1.py",
@@ -22,12 +24,15 @@ REQUIRED_PATHS = (
     "scripts/reconcile_watchtower_schedule.py",
     "tests/test_portfolio_watchtower_v1.py",
     "tests/test_watchtower_boundary_v1.py",
+    "tests/test_watchtower_gateway_registration_v1.py",
+    "tests/test_watchtower_installation_v1.py",
     "tests/test_watchtower_qstash_v1.py",
     "tests/test_watchtower_runtime_routes_v1.py",
     "tests/test_watchtower_upstash_journal_v1.py",
     "docs/architecture/V9_PORTFOLIO_WATCHTOWER.md",
     "docs/architecture/V9_PORTFOLIO_WATCHTOWER_THREAT_MODEL.md",
     "docs/architecture/V9_PORTFOLIO_WATCHTOWER_DATA_CONTRACT.md",
+    "docs/operations/V9_WATCHTOWER_RUNBOOK.md",
 )
 
 FORBIDDEN_TEXT = (
@@ -135,6 +140,17 @@ def main() -> int:
                 failures,
             )
 
+    gateway_hook = ROOT / "broker_report_reconciliation" / "__init__.py"
+    if gateway_hook.is_file():
+        gateway_source = gateway_hook.read_text(encoding="utf-8")
+        for required in (
+            "register_watchtower_routes",
+            "WatchtowerEvidenceProviderRegistryV1",
+            "watchtower_provider_registry",
+        ):
+            if required not in gateway_source:
+                _fail(f"WP13 Gateway registration missing: {required}", failures)
+
     if failures:
         print("Portfolio Watchtower boundary check failed:", file=sys.stderr)
         for failure in failures:
@@ -145,6 +161,7 @@ def main() -> int:
     print("Runtime: read-only evidence reducer + durable dedup state")
     print("QStash boundary: signed internal scheduling only")
     print("Gateway routes: internal and excluded from GPT OpenAPI")
+    print("Canonical provider installation: explicit and lazy")
     print("Broker/Sandbox mutation authority: absent")
     print("Autonomous real execution: disabled")
     return 0
