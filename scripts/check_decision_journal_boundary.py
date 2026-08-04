@@ -138,7 +138,9 @@ def main() -> int:
         return 1
 
     print("Decision Journal boundary check passed.")
-    print("Storage model: append-only immutable decisions + separate outcomes/evaluations")
+    print(
+        "Storage model: append-only immutable decisions + separate outcomes/evaluations"
+    )
     print("Counterfactuals: evidence-bound only; unavailable remains unavailable")
     print("Offline replay: sanitized/synthetic/fake-broker only")
     print("Production self-modification: disabled")
