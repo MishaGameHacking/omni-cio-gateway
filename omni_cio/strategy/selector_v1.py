@@ -278,7 +278,7 @@ def _components(
     risk: PortfolioRiskAssessmentV1,
 ) -> tuple[StrategyComponentV1, ...]:
     if regime is StrategyRegime.NO_ACTION:
-        return tuple(
+        rows = tuple(
             _component(
                 kind,
                 StrategyComponentDirective.FORBIDDEN,
@@ -286,6 +286,7 @@ def _components(
             )
             for kind in StrategyComponentKind
         )
+        return tuple(sorted(rows, key=lambda row: row.kind.value))
 
     debt_available = _quality_debt_available(policy)
     core_available = _diversified_core_available(policy)
@@ -375,11 +376,11 @@ def _components(
             ),
         )
     )
-    return tuple(rows)
+    return tuple(sorted(rows, key=lambda row: row.kind.value))
 
 
 def _review_conditions() -> tuple[StrategyReviewConditionV1, ...]:
-    return (
+    rows = (
         StrategyReviewConditionV1(
             code=StrategyReviewCode.POLICY_CHANGED,
             action=StrategyReviewAction.CANCEL,
@@ -405,6 +406,7 @@ def _review_conditions() -> tuple[StrategyReviewConditionV1, ...]:
             action=StrategyReviewAction.REVIEW,
         ),
     )
+    return tuple(sorted(rows, key=lambda row: row.code.value))
 
 
 def select_meta_strategy(
