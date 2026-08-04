@@ -1,15 +1,20 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 
 import pytest
 
 from omni_cio.contracts.v1.credit import (
+    CreditCouponType,
     CreditDefaultEventType,
     CreditDefaultEventV1,
     CreditEntityIdentityV1,
     CreditEntityKind,
     CreditEvidenceInputV1,
+    CreditFinancialMetricV1,
+    CreditMetricKind,
+    CreditMetricUnit,
     CreditRatingAction,
     CreditRatingAgency,
     CreditRatingObservationV1,
@@ -155,12 +160,15 @@ def _evidence(
     dossier: ResearchDossierV1,
     source_hash: str,
     ratings: tuple[CreditRatingObservationV1, ...],
+    *,
+    financial_metrics: tuple[CreditFinancialMetricV1, ...] = (),
 ) -> CreditEvidenceInputV1:
     return CreditEvidenceInputV1(
         dossier_sha256=dossier.dossier_sha256,
         target=TARGET,
         issuer=_issuer(source_hash),
         issue_terms=_terms(source_hash),
+        financial_metrics=financial_metrics,
         ratings=ratings,
     )
 
@@ -249,6 +257,53 @@ def test_duplicate_rating_observation_ids_are_rejected() -> None:
         _evidence(dossier, record.record_sha256, rows)
 
 
+def test_zero_coupon_terms_reject_positive_coupon_rate() -> None:
+    with pytest.raises(ValueError, match="zero-coupon"):
+        DebtIssueTermsV1(
+            instrument_uid=TARGET.instrument_uid,
+            issuer_entity_id="credit_issuer_1",
+            seniority=DebtSeniority.SENIOR_UNSECURED,
+            coupon_type=CreditCouponType.ZERO,
+            coupon_rate_percent=Decimal("1"),
+            source_record_sha256s=("a" * 64,),
+        )
+
+
+def test_currency_metric_requires_currency_and_nonnegative_value() -> None:
+    with pytest.raises(ValueError, match="requires currency"):
+        CreditFinancialMetricV1(
+            metric_id="credit_metric_liquidity",
+            kind=CreditMetricKind.AVAILABLE_LIQUIDITY,
+            value=Decimal("100"),
+            unit=CreditMetricUnit.CURRENCY,
+            as_of=NOW.date(),
+            source_record_sha256s=("a" * 64,),
+        )
+    with pytest.raises(ValueError, match="cannot be negative"):
+        CreditFinancialMetricV1(
+            metric_id="credit_metric_debt",
+            kind=CreditMetricKind.TOTAL_DEBT,
+            value=Decimal("-1"),
+            unit=CreditMetricUnit.CURRENCY,
+            currency="RUB",
+            as_of=NOW.date(),
+            source_record_sha256s=("a" * 64,),
+        )
+
+
+def test_ratio_metric_rejects_currency_unit() -> None:
+    with pytest.raises(ValueError, match="ratio credit metric"):
+        CreditFinancialMetricV1(
+            metric_id="credit_metric_leverage",
+            kind=CreditMetricKind.NET_DEBT_TO_EBITDA,
+            value=Decimal("2.1"),
+            unit=CreditMetricUnit.CURRENCY,
+            currency="RUB",
+            as_of=NOW.date(),
+            source_record_sha256s=("a" * 64,),
+        )
+
+
 def test_reanalysis_uses_latest_effective_rating_not_observation_id_order() -> None:
     record = _record("credit.rating", "history")
     dossier = _dossier(record)
@@ -296,3 +351,50 @@ def test_reanalysis_uses_latest_effective_rating_not_observation_id_order() -> N
     assert CreditReanalysisTriggerCode.RATING_CHANGED not in updated.reanalysis.codes
     assert CreditReanalysisTriggerCode.OUTLOOK_CHANGED not in updated.reanalysis.codes
     assert CreditReanalysisTriggerCode.WATCH_CHANGED not in updated.reanalysis.codes
+
+
+def test_financial_metric_change_triggers_reanalysis_and_is_fingerprinted() -> None:
+    rating_record = _record("credit.rating", "A(RU)")
+    metric_record = _record("credit.metric", "net debt / EBITDA")
+    dossier = _dossier(rating_record, metric_record)
+    rating = _rating(
+        rating_record.record_sha256,
+        observation_id="rating_main",
+        rating="A(RU)",
+        effective_at=NOW,
+    )
+    first_metric = CreditFinancialMetricV1(
+        metric_id="credit_metric_leverage",
+        kind=CreditMetricKind.NET_DEBT_TO_EBITDA,
+        value=Decimal("2.0"),
+        unit=CreditMetricUnit.RATIO,
+        as_of=NOW.date(),
+        source_record_sha256s=(metric_record.record_sha256,),
+    )
+    initial = build_credit_passport(
+        dossier=dossier,
+        policy=_policy(),
+        evidence=_evidence(
+            dossier,
+            rating_record.record_sha256,
+            (rating,),
+            financial_metrics=(first_metric,),
+        ),
+        assessed_at=NOW,
+    )
+    second_metric = first_metric.model_copy(update={"value": Decimal("2.4")})
+    updated = build_credit_passport(
+        dossier=dossier,
+        policy=_policy(),
+        evidence=_evidence(
+            dossier,
+            rating_record.record_sha256,
+            (rating,),
+            financial_metrics=(second_metric,),
+        ),
+        previous=initial,
+        assessed_at=NOW,
+    )
+
+    assert CreditReanalysisTriggerCode.FINANCIAL_METRICS_CHANGED in updated.reanalysis.codes
+    assert updated.passport_sha256 != initial.passport_sha256
