@@ -8,7 +8,7 @@ for _part in sorted((_Path(__file__).parent / "_parts").glob("*.pyfrag")):
 
 # app.py invokes this package's assembled register_gateway hook before freezing
 # its OpenAPI provider. Preserve that reviewed hook and attach explicitly enabled
-# broker-write extensions here so disabled modes remain absent from the schema.
+# extensions here so disabled modes remain absent from the GPT Actions schema.
 _register_broker_report_gateway = _globals["register_gateway"]
 
 del _Path, _part, _source
@@ -19,6 +19,18 @@ def register_gateway(*, app, base, app_version):
         app=app,
         base=base,
         app_version=app_version,
+    )
+
+    from omni_cio.watchtower.routes_v1 import register_watchtower_routes
+    from omni_cio.watchtower.runtime_v1 import WatchtowerEvidenceProviderRegistryV1
+
+    watchtower_registry = getattr(app.state, "watchtower_provider_registry", None)
+    if not isinstance(watchtower_registry, WatchtowerEvidenceProviderRegistryV1):
+        watchtower_registry = WatchtowerEvidenceProviderRegistryV1()
+        app.state.watchtower_provider_registry = watchtower_registry
+    app.state.watchtower_route_registration = register_watchtower_routes(
+        app,
+        provider_registry=watchtower_registry,
     )
 
     from omni_cio.sandbox import maybe_register_sandbox_trading_gateway
