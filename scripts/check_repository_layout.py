@@ -24,6 +24,7 @@ REQUIRED_PATHS = (
     "scripts/check_ci_security_baseline.py",
     "scripts/check_gpt_recovery_consistency.py",
     "scripts/check_repository_layout.py",
+    "scripts/check_strategy_boundary.py",
     "tests/test_ci_security_baseline.py",
     "tests/test_gpt_recovery_consistency.py",
     "tests/test_natural_language_cio_router_v1.py",
@@ -40,6 +41,8 @@ REQUIRED_PATHS = (
     "tests/test_fund_xray_duration_credit_v1.py",
     "tests/test_portfolio_risk_engine_v1.py",
     "tests/test_portfolio_risk_hardening_v1.py",
+    "tests/test_meta_strategy_selector_v1.py",
+    "tests/test_meta_strategy_boundary_v1.py",
     "knowledge/00_PROJECT_MASTER_CONTEXT.md",
     "knowledge/09_MARKET_DATA_AND_BUYING_POWER.txt",
     "knowledge/10_OPERATIONS_ANALYTICS_AND_RECONCILIATION.txt",
@@ -65,6 +68,7 @@ REQUIRED_PATHS = (
     "docs/architecture/V9_CREDIT_RATING_DEFAULT_ENGINE.md",
     "docs/architecture/V9_FUND_XRAY_ENGINE.md",
     "docs/architecture/V9_PORTFOLIO_RISK_ENGINE.md",
+    "docs/architecture/V9_META_STRATEGY_SELECTOR.md",
     "docs/operations/DEPLOYMENT_RUNBOOK.md",
     "docs/operations/RELEASE_CHECKLIST.md",
     "docs/operations/SANDBOX_TRADING_RUNBOOK.md",
@@ -88,6 +92,7 @@ REQUIRED_PATHS = (
     "omni_cio/contracts/v1/credit.py",
     "omni_cio/contracts/v1/fund_xray.py",
     "omni_cio/contracts/v1/portfolio_risk.py",
+    "omni_cio/contracts/v1/meta_strategy.py",
     "omni_cio/router/__init__.py",
     "omni_cio/router/intent_v1.py",
     "omni_cio/policy/__init__.py",
@@ -113,6 +118,8 @@ REQUIRED_PATHS = (
     "omni_cio/risk/__init__.py",
     "omni_cio/risk/engine_v1.py",
     "omni_cio/risk/policy_v1.py",
+    "omni_cio/strategy/__init__.py",
+    "omni_cio/strategy/selector_v1.py",
     "omni_cio/sandbox/__init__.py",
     "omni_cio/sandbox/client_v1.py",
     "omni_cio/sandbox/service_v1.py",
@@ -236,6 +243,18 @@ FUND_FORBIDDEN_TEXT = (
 
 RISK_RUNTIME_ROOT = Path("omni_cio/risk")
 RISK_FORBIDDEN_TEXT = (
+    "t_tech_investments",
+    "t_tech.invest",
+    "TINVEST_",
+    "prepareRealTrade",
+    "executeRealTrade",
+    "prepareSandboxTrade",
+    "executeSandboxTrade",
+    "confirmMarginTrade",
+)
+
+STRATEGY_RUNTIME_ROOT = Path("omni_cio/strategy")
+STRATEGY_FORBIDDEN_TEXT = (
     "t_tech_investments",
     "t_tech.invest",
     "TINVEST_",
@@ -464,6 +483,15 @@ def scan_risk_execution_boundary(failures: list[str]) -> None:
     )
 
 
+def scan_strategy_execution_boundary(failures: list[str]) -> None:
+    _scan_pure_or_read_only_package(
+        root=STRATEGY_RUNTIME_ROOT,
+        label="meta-strategy selector",
+        forbidden_text=STRATEGY_FORBIDDEN_TEXT,
+        failures=failures,
+    )
+
+
 def scan_retired_duplicate_scenario_publishers(failures: list[str]) -> None:
     for relative_path in RETIRED_DUPLICATE_SCENARIO_PUBLISHER_PATHS:
         if (ROOT / relative_path).exists():
@@ -521,6 +549,7 @@ def main() -> int:
     scan_credit_execution_boundary(failures)
     scan_fund_execution_boundary(failures)
     scan_risk_execution_boundary(failures)
+    scan_strategy_execution_boundary(failures)
     scan_retired_duplicate_scenario_publishers(failures)
 
     if failures:
