@@ -47,6 +47,7 @@ files = [
   "omni_cio/optimizer",
   "omni_cio/plans",
   "omni_cio/plan_execution",
+  "omni_cio/watchtower",
   "omni_cio/rebalancing",
   "omni_cio/pretrade",
   "omni_cio/paper",
@@ -62,6 +63,8 @@ files = [
   "scripts/check_optimizer_boundary.py",
   "scripts/check_plan_boundary.py",
   "scripts/check_plan_execution_boundary.py",
+  "scripts/check_watchtower_boundary.py",
+  "scripts/reconcile_watchtower_schedule.py",
 ]
 
 [tool.pytest.ini_options]
