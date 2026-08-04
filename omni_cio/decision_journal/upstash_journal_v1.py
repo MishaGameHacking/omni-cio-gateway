@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
-from typing import Any, Literal, TypeVar
+from typing import Any, Literal, TypeAlias, TypeVar
 
 from omni_cio.contracts.v1.decision_journal import (
     DecisionEvaluationRecordV1,
@@ -49,6 +49,9 @@ _Record = TypeVar(
     DecisionJournalRecordV1,
     DecisionOutcomeRecordV1,
     DecisionEvaluationRecordV1,
+)
+_RecordValue: TypeAlias = (
+    DecisionJournalRecordV1 | DecisionOutcomeRecordV1 | DecisionEvaluationRecordV1
 )
 _RecordKind = Literal["decision", "outcome", "evaluation"]
 
@@ -387,12 +390,12 @@ class UpstashDecisionJournalV1:
 
     def integrity_check(self) -> tuple[int, int, int]:
         _, _, expected_decisions, expected_outcomes, expected_evaluations = self._read_meta()
-        keys = (
+        keys: tuple[tuple[str, _RecordKind, int], ...] = (
             (_DECISIONS_KEY, "decision", expected_decisions),
             (_OUTCOMES_KEY, "outcome", expected_outcomes),
             (_EVALUATIONS_KEY, "evaluation", expected_evaluations),
         )
-        decoded: dict[_RecordKind, list[_Record]] = {
+        decoded: dict[_RecordKind, list[_RecordValue]] = {
             "decision": [],
             "outcome": [],
             "evaluation": [],
@@ -415,16 +418,12 @@ class UpstashDecisionJournalV1:
             rows = self._all_rows(key)
             if len(rows) != count * 2:
                 raise DecisionJournalIntegrityError("decision journal row count invalid")
-            typed_kind = kind
-            assert typed_kind in {"decision", "outcome", "evaluation"}
             for index in range(0, len(rows), 2):
                 record_id = rows[index]
                 raw = rows[index + 1]
                 if not isinstance(record_id, str) or not isinstance(raw, str):
                     raise DecisionJournalIntegrityError("decision journal row type invalid")
-                decoded[typed_kind].append(
-                    self._decode_row(typed_kind, record_id, raw)  # type: ignore[arg-type]
-                )
+                decoded[kind].append(self._decode_row(kind, record_id, raw))
 
         decisions = {
             row.decision_id: row
