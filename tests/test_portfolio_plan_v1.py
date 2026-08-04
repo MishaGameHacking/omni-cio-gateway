@@ -8,6 +8,7 @@ import pytest
 
 from omni_cio.contracts.v1.portfolio_plan import (
     PlanCancellationCode,
+    PlanMarketBaselineV1,
     PlanMarketObservationV1,
     PlanReviewStatus,
     PortfolioPlanAction,
@@ -16,7 +17,13 @@ from omni_cio.contracts.v1.portfolio_plan import (
     portfolio_plan_sha256,
 )
 from omni_cio.plans import PortfolioPlanError, build_portfolio_plan, review_portfolio_plan
-from tests.v9_plan_fixture import NOW, build_fixture, exact_observations
+from omni_cio.plans.protocol_v1 import _market_drift
+from tests.v9_plan_fixture import (
+    NOW,
+    build_fixture,
+    build_no_action_fixture,
+    exact_observations,
+)
 
 
 def _review_input(
@@ -77,6 +84,36 @@ def test_actionable_plan_is_exact_immutable_and_read_only() -> None:
 
     with pytest.raises(ValidationError):
         plan.target_cash_base = Decimal("1")
+
+
+def test_full_no_action_chain_builds_explicit_non_approvable_plan() -> None:
+    fixture = build_no_action_fixture()
+    plan = fixture.plan
+
+    assert plan.selected_regime.value == "no_action"
+    assert len(plan.legs) == 1
+    assert plan.legs[0].action is PortfolioPlanAction.NO_ACTION
+    assert plan.legs[0].optimizer_leg is None
+    assert plan.market_baselines == ()
+    assert plan.approval_required is False
+    assert plan.owner_approval_phrase is None
+    assert plan.total_clean_turnover_base == 0
+    assert plan.total_settlement_turnover_base == 0
+    assert plan.total_commission_base == 0
+    assert plan.total_estimated_tax_base == 0
+    assert plan.current_cash_base == plan.target_cash_base
+    assert plan.risk_before == plan.risk_after
+    assert plan.execution_authorized is False
+    assert plan.trading_methods is False
+
+    review = review_portfolio_plan(
+        plan=plan,
+        review_input=_review_input(fixture=fixture, observations=()),
+    )
+    assert review.status is PlanReviewStatus.VALID
+    assert review.plan_valid is True
+    assert review.expected_owner_approval_phrase is None
+    assert review.execution_authorized is False
 
 
 def test_any_material_plan_mutation_changes_identity_and_approval_challenge() -> None:
@@ -259,6 +296,58 @@ def test_friction_or_buy_eligibility_change_cancels_plan() -> None:
 
     assert PlanCancellationCode.FRICTION_CHANGED in review.cancellation_codes
     assert PlanCancellationCode.ACCOUNT_ELIGIBILITY_CHANGED in review.cancellation_codes
+
+
+def test_sell_review_does_not_require_buy_eligibility() -> None:
+    fixture = build_fixture()
+    baseline = fixture.plan.market_baselines[0]
+    baseline_payload = baseline.model_dump(mode="python")
+    baseline_payload["account_eligible"] = False
+    sell_baseline = PlanMarketBaselineV1.model_validate(baseline_payload)
+    observation = exact_observations(fixture.plan)[0]
+    sell_observation = _replace_observation(observation, account_eligible=False)
+
+    drift = _market_drift(
+        baseline=sell_baseline,
+        observation=sell_observation,
+        action=PortfolioPlanAction.SELL,
+        reviewed_at=NOW + timedelta(minutes=1),
+        plan=fixture.plan,
+    )
+
+    assert PlanCancellationCode.ACCOUNT_ELIGIBILITY_CHANGED not in drift.cancellation_codes
+
+
+def test_fx_value_and_freshness_drift_cancel_plan() -> None:
+    fixture = build_fixture()
+    baseline = fixture.plan.market_baselines[0]
+    baseline_payload = baseline.model_dump(mode="python")
+    baseline_payload.update(
+        fx_rate_to_base=Decimal("90"),
+        fx_source_sha256="a" * 64,
+        fx_as_of=NOW,
+    )
+    fx_baseline = PlanMarketBaselineV1.model_validate(baseline_payload)
+    observation = exact_observations(fixture.plan)[0]
+    fx_observation = _replace_observation(
+        observation,
+        fx_rate_to_base=Decimal("91"),
+        fx_source_sha256="b" * 64,
+        fx_as_of=NOW - timedelta(minutes=10),
+    )
+
+    drift = _market_drift(
+        baseline=fx_baseline,
+        observation=fx_observation,
+        action=PortfolioPlanAction.BUY,
+        reviewed_at=NOW + timedelta(minutes=1),
+        plan=fixture.plan,
+    )
+
+    assert PlanCancellationCode.FX_DRIFT_EXCEEDED in drift.cancellation_codes
+    assert PlanCancellationCode.FX_EVIDENCE_STALE in drift.cancellation_codes
+    assert drift.fx_drift_bps is not None
+    assert drift.fx_drift_bps > Decimal("50")
 
 
 def test_stale_market_and_friction_observation_cancel_plan() -> None:
