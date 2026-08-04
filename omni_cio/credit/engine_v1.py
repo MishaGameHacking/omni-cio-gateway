@@ -125,6 +125,8 @@ def _source_hashes(evidence: CreditEvidenceInputV1) -> tuple[str, ...]:
         hashes.update(guarantor.source_record_sha256s)
     for guarantee in evidence.issue_terms.guarantees:
         hashes.update(guarantee.source_record_sha256s)
+    for metric in evidence.financial_metrics:
+        hashes.update(metric.source_record_sha256s)
     for rating in evidence.ratings:
         hashes.update(rating.source_record_sha256s)
     for event in evidence.default_events:
@@ -345,6 +347,13 @@ def _reanalysis_trigger(
         codes.append(CreditReanalysisTriggerCode.POLICY_CHANGED)
     if previous.issue_terms != evidence.issue_terms:
         codes.append(CreditReanalysisTriggerCode.ISSUE_TERMS_CHANGED)
+
+    canonical_metrics = tuple(
+        sorted(evidence.financial_metrics, key=lambda row: row.metric_id)
+    )
+    if previous.financial_metrics != canonical_metrics:
+        codes.append(CreditReanalysisTriggerCode.FINANCIAL_METRICS_CHANGED)
+
     canonical_events = tuple(
         sorted(evidence.default_events, key=lambda row: row.event_id)
     )
@@ -407,6 +416,9 @@ def build_credit_passport(
     if any(event.active for event in evidence.default_events):
         blockers.append(CreditBlockerCode.ACTIVE_DEFAULT_EVENT)
 
+    canonical_metrics = tuple(
+        sorted(evidence.financial_metrics, key=lambda row: row.metric_id)
+    )
     canonical_ratings = tuple(
         sorted(evidence.ratings, key=lambda row: row.observation_id)
     )
@@ -434,6 +446,7 @@ def build_credit_passport(
         "issuer": evidence.issuer,
         "guarantors": canonical_guarantors,
         "issue_terms": evidence.issue_terms,
+        "financial_metrics": canonical_metrics,
         "ratings": canonical_ratings,
         "default_events": canonical_events,
         "floor_assessment": floor,
