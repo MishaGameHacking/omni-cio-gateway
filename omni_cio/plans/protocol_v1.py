@@ -5,16 +5,24 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import TypeVar
 
+from pydantic import ValidationError
+
 from omni_cio.contracts.v1.investment_policy import (
     InvestmentPolicyAssessmentV1,
     InvestmentPolicyStatementV1,
 )
-from omni_cio.contracts.v1.meta_strategy import MetaStrategySelectionV1, StrategyRegime
+from omni_cio.contracts.v1.meta_strategy import (
+    MetaStrategySelectionV1,
+    StrategyRegime,
+    meta_strategy_sha256,
+)
+from omni_cio.contracts.v1.portfolio import InstrumentType
 from omni_cio.contracts.v1.portfolio_optimizer import (
     OptimizerAssetV1,
     OptimizerScenarioKind,
     OptimizerTradeSide,
     PortfolioOptimizerResultV1,
+    portfolio_optimizer_sha256,
 )
 from omni_cio.contracts.v1.portfolio_plan import (
     PlanCancellationCode,
@@ -36,6 +44,7 @@ from omni_cio.contracts.v1.portfolio_plan import (
 from omni_cio.contracts.v1.portfolio_risk import (
     PortfolioRiskAssessmentV1,
     PortfolioRiskInputV1,
+    portfolio_risk_sha256,
 )
 from omni_cio.policy import policy_fingerprint_sha256
 
@@ -73,6 +82,25 @@ def _all_cancellation_conditions() -> tuple[PlanCancellationConditionV1, ...]:
     )
 
 
+def _validate_hash_integrity(
+    *,
+    current_risk: PortfolioRiskAssessmentV1,
+    strategy: MetaStrategySelectionV1,
+    optimizer: PortfolioOptimizerResultV1,
+) -> None:
+    if current_risk.assessment_sha256 != portfolio_risk_sha256(current_risk):
+        raise PortfolioPlanError("PLAN_CURRENT_RISK_OBJECT_TAMPERED")
+    if strategy.selection_sha256 != meta_strategy_sha256(strategy):
+        raise PortfolioPlanError("PLAN_STRATEGY_OBJECT_TAMPERED")
+    if optimizer.optimizer_sha256 != portfolio_optimizer_sha256(optimizer):
+        raise PortfolioPlanError("PLAN_OPTIMIZER_OBJECT_TAMPERED")
+    target_risk = optimizer.target_risk_assessment
+    if target_risk is not None and (
+        target_risk.assessment_sha256 != portfolio_risk_sha256(target_risk)
+    ):
+        raise PortfolioPlanError("PLAN_TARGET_RISK_OBJECT_TAMPERED")
+
+
 def _validate_bindings(
     *,
     portfolio: PortfolioRiskInputV1,
@@ -82,6 +110,11 @@ def _validate_bindings(
     strategy: MetaStrategySelectionV1,
     optimizer: PortfolioOptimizerResultV1,
 ) -> None:
+    _validate_hash_integrity(
+        current_risk=current_risk,
+        strategy=strategy,
+        optimizer=optimizer,
+    )
     if not policy_assessment.ready_for_personal_sizing:
         raise PortfolioPlanError("PLAN_IPS_NOT_READY")
     if (
@@ -99,6 +132,8 @@ def _validate_bindings(
         or current_risk.proposed_trade_ids
         or current_risk.before != current_risk.after
         or not current_risk.decision_ready
+        or current_risk.after.total_value_base != portfolio.total_value_base
+        or current_risk.after.cash_base != portfolio.cash_base
     ):
         raise PortfolioPlanError("PLAN_CURRENT_RISK_BINDING_MISMATCH")
     if (
@@ -140,22 +175,123 @@ def _validate_bindings(
             raise PortfolioPlanError("ACTIONABLE_TARGET_RISK_NOT_PLAN_ELIGIBLE")
 
 
+def _canonical_assets(
+    optimizer_assets: Iterable[OptimizerAssetV1],
+) -> tuple[OptimizerAssetV1, ...]:
+    canonical: list[OptimizerAssetV1] = []
+    for row in optimizer_assets:
+        try:
+            canonical.append(
+                OptimizerAssetV1.model_validate(row.model_dump(mode="python"))
+            )
+        except ValidationError as exc:
+            raise PortfolioPlanError("PLAN_OPTIMIZER_ASSET_TAMPERED") from exc
+    result = tuple(sorted(canonical, key=lambda row: row.stable_key))
+    keys = [row.stable_key for row in result]
+    if len(keys) != len(set(keys)):
+        raise PortfolioPlanError("PLAN_OPTIMIZER_ASSET_KEYS_MUST_BE_UNIQUE")
+    return result
+
+
+def _validate_asset_portfolio_binding(
+    *,
+    portfolio: PortfolioRiskInputV1,
+    assets: tuple[OptimizerAssetV1, ...],
+    optimizer: PortfolioOptimizerResultV1,
+) -> dict[str, OptimizerAssetV1]:
+    asset_map = {row.stable_key: row for row in assets}
+    target_keys = {row.stable_key for row in optimizer.targets}
+    if set(asset_map) != target_keys:
+        raise PortfolioPlanError("PLAN_OPTIMIZER_ASSET_SET_MISMATCH")
+
+    portfolio_map = {row.stable_key: row for row in portfolio.positions}
+    current_asset_keys = {row.stable_key for row in assets if row.current_lots > 0}
+    if current_asset_keys != set(portfolio_map):
+        raise PortfolioPlanError("PLAN_CURRENT_ASSET_SET_MISMATCH")
+    for stable_key, position in portfolio_map.items():
+        asset = asset_map.get(stable_key)
+        if asset is None or asset.risk_template != position:
+            raise PortfolioPlanError("PLAN_PORTFOLIO_ASSET_BINDING_MISMATCH")
+    return asset_map
+
+
+def _age_seconds(*, as_of: datetime, now: datetime) -> float:
+    return (now - as_of).total_seconds()
+
+
+def _require_fresh_build_evidence(
+    *,
+    asset: OptimizerAssetV1,
+    created_at: datetime,
+    settings: PortfolioPlanSettingsV1,
+    side: OptimizerTradeSide,
+) -> None:
+    market = asset.market_evidence
+    if market is None:
+        raise PortfolioPlanError("PLAN_MARKET_EVIDENCE_REQUIRED")
+    tolerance = settings.drift_tolerance
+    market_age = _age_seconds(as_of=market.as_of, now=created_at)
+    if market_age > tolerance.market_max_age_seconds:
+        raise PortfolioPlanError("PLAN_MARKET_EVIDENCE_STALE")
+    if market_age < -tolerance.future_tolerance_seconds:
+        raise PortfolioPlanError("PLAN_MARKET_EVIDENCE_FUTURE")
+
+    if asset.friction_as_of is None or not asset.friction_source_sha256s:
+        raise PortfolioPlanError("PLAN_FRICTION_EVIDENCE_REQUIRED")
+    friction_age = _age_seconds(as_of=asset.friction_as_of, now=created_at)
+    if friction_age > tolerance.friction_max_age_seconds:
+        raise PortfolioPlanError("PLAN_FRICTION_EVIDENCE_STALE")
+    if friction_age < -tolerance.future_tolerance_seconds:
+        raise PortfolioPlanError("PLAN_FRICTION_EVIDENCE_FUTURE")
+
+    fx = asset.risk_template.fx
+    if fx is not None:
+        fx_age = _age_seconds(as_of=fx.as_of, now=created_at)
+        if fx_age > tolerance.fx_max_age_seconds:
+            raise PortfolioPlanError("PLAN_FX_EVIDENCE_STALE")
+        if fx_age < -tolerance.future_tolerance_seconds:
+            raise PortfolioPlanError("PLAN_FX_EVIDENCE_FUTURE")
+
+    if side is OptimizerTradeSide.BUY and asset.account_eligible is not True:
+        raise PortfolioPlanError("PLAN_BUY_ACCOUNT_NOT_ELIGIBLE")
+    if (
+        asset.risk_template.instrument_type is InstrumentType.BOND
+        and market.accrued_interest_per_lot_base is None
+    ):
+        raise PortfolioPlanError("PLAN_BOND_ACCRUED_INTEREST_REQUIRED")
+
+
 def _baseline_from_asset(
     *,
     asset: OptimizerAssetV1,
     optimizer_leg,
+    created_at: datetime,
+    settings: PortfolioPlanSettingsV1,
 ) -> PlanMarketBaselineV1:
+    _require_fresh_build_evidence(
+        asset=asset,
+        created_at=created_at,
+        settings=settings,
+        side=optimizer_leg.side,
+    )
     market = asset.market_evidence
-    if market is None:
-        raise PortfolioPlanError("PLAN_MARKET_EVIDENCE_REQUIRED")
-    if asset.friction_as_of is None or not asset.friction_source_sha256s:
-        raise PortfolioPlanError("PLAN_FRICTION_EVIDENCE_REQUIRED")
+    assert market is not None
+    assert asset.friction_as_of is not None
+    assert asset.friction_source_sha256s
     if asset.commission_bps is None:
         raise PortfolioPlanError("PLAN_COMMISSION_EVIDENCE_REQUIRED")
-    if optimizer_leg.side is OptimizerTradeSide.SELL and asset.estimated_sell_tax_bps is None:
+    if (
+        optimizer_leg.side is OptimizerTradeSide.SELL
+        and asset.estimated_sell_tax_bps is None
+    ):
         raise PortfolioPlanError("PLAN_SELL_TAX_EVIDENCE_REQUIRED")
 
-    market_aci = market.accrued_interest_per_lot_base or Decimal("0")
+    if asset.risk_template.instrument_type is InstrumentType.BOND:
+        if market.accrued_interest_per_lot_base is None:
+            raise PortfolioPlanError("PLAN_BOND_ACCRUED_INTEREST_REQUIRED")
+        market_aci = market.accrued_interest_per_lot_base
+    else:
+        market_aci = Decimal("0")
     if optimizer_leg.market_source_sha256 != market.source_sha256:
         raise PortfolioPlanError("PLAN_MARKET_SOURCE_BINDING_MISMATCH")
     if optimizer_leg.reference_clean_unit_price_base != market.clean_unit_price_base:
@@ -217,15 +353,12 @@ def build_portfolio_plan(
         strategy=strategy,
         optimizer=optimizer,
     )
-
-    assets = tuple(sorted(optimizer_assets, key=lambda row: row.stable_key))
-    asset_keys = [row.stable_key for row in assets]
-    if len(asset_keys) != len(set(asset_keys)):
-        raise PortfolioPlanError("PLAN_OPTIMIZER_ASSET_KEYS_MUST_BE_UNIQUE")
-    asset_map = {row.stable_key: row for row in assets}
-    target_keys = {row.stable_key for row in optimizer.targets}
-    if set(asset_map) != target_keys:
-        raise PortfolioPlanError("PLAN_OPTIMIZER_ASSET_SET_MISMATCH")
+    assets = _canonical_assets(optimizer_assets)
+    asset_map = _validate_asset_portfolio_binding(
+        portfolio=portfolio,
+        assets=assets,
+        optimizer=optimizer,
+    )
 
     no_action = optimizer.selected_regime is StrategyRegime.NO_ACTION
     if no_action:
@@ -244,7 +377,12 @@ def build_portfolio_plan(
             if asset is None:
                 raise PortfolioPlanError("PLAN_LEG_ASSET_MISSING")
             baseline_rows.append(
-                _baseline_from_asset(asset=asset, optimizer_leg=optimizer_leg)
+                _baseline_from_asset(
+                    asset=asset,
+                    optimizer_leg=optimizer_leg,
+                    created_at=evaluation_time,
+                    settings=settings_value,
+                )
             )
             plan_legs.append(
                 PortfolioPlanLegV1(
@@ -341,11 +479,17 @@ def _market_drift(
         )
 
     tolerance = plan.drift_tolerance
-    age = (reviewed_at - observation.observed_at).total_seconds()
-    if age > tolerance.market_max_age_seconds:
+    market_age = _age_seconds(as_of=observation.observed_at, now=reviewed_at)
+    if market_age > tolerance.market_max_age_seconds:
         _append_unique(codes, PlanCancellationCode.MARKET_EVIDENCE_STALE)
-    if age < -tolerance.future_tolerance_seconds:
+    if market_age < -tolerance.future_tolerance_seconds:
         _append_unique(codes, PlanCancellationCode.MARKET_EVIDENCE_FUTURE)
+
+    friction_age = _age_seconds(as_of=observation.friction_as_of, now=reviewed_at)
+    if friction_age > tolerance.friction_max_age_seconds:
+        _append_unique(codes, PlanCancellationCode.FRICTION_EVIDENCE_STALE)
+    if friction_age < -tolerance.future_tolerance_seconds:
+        _append_unique(codes, PlanCancellationCode.FRICTION_EVIDENCE_FUTURE)
 
     clean_drift = _drift_bps(
         observation.clean_unit_price_base,
@@ -362,7 +506,11 @@ def _market_drift(
             _append_unique(codes, PlanCancellationCode.MARKET_EVIDENCE_MISSING)
         else:
             clean_lot = baseline.clean_unit_price_base * Decimal(baseline.lot_size)
-            aci_drift = abs(observed_aci - baseline_aci) / clean_lot * Decimal("10000")
+            aci_drift = (
+                abs(observed_aci - baseline_aci)
+                / clean_lot
+                * Decimal("10000")
+            )
             if aci_drift > tolerance.max_accrued_interest_drift_bps:
                 _append_unique(
                     codes,
@@ -405,9 +553,14 @@ def _market_drift(
 
     fx_drift: Decimal | None = None
     if baseline.fx_rate_to_base is not None:
-        if observation.fx_rate_to_base is None:
+        if observation.fx_rate_to_base is None or observation.fx_as_of is None:
             _append_unique(codes, PlanCancellationCode.FX_DRIFT_EXCEEDED)
         else:
+            fx_age = _age_seconds(as_of=observation.fx_as_of, now=reviewed_at)
+            if fx_age > tolerance.fx_max_age_seconds:
+                _append_unique(codes, PlanCancellationCode.FX_EVIDENCE_STALE)
+            if fx_age < -tolerance.future_tolerance_seconds:
+                _append_unique(codes, PlanCancellationCode.FX_EVIDENCE_FUTURE)
             fx_drift = _drift_bps(
                 observation.fx_rate_to_base,
                 baseline.fx_rate_to_base,
@@ -425,8 +578,17 @@ def _market_drift(
         turnover_ratio=turnover_ratio,
         top_of_book_depth_ratio=depth_ratio,
         fx_drift_bps=fx_drift,
-        cancellation_codes=tuple(sorted(set(codes), key=str)),
+        cancellation_codes=tuple(
+            sorted(set(codes), key=lambda item: item.value)
+        ),
     )
+
+
+def _canonical_plan_for_review(plan: PortfolioPlanV1) -> PortfolioPlanV1:
+    try:
+        return PortfolioPlanV1.model_validate(plan.model_dump(mode="python"))
+    except ValidationError as exc:
+        raise PortfolioPlanError("PLAN_OBJECT_TAMPERED") from exc
 
 
 def review_portfolio_plan(
@@ -435,11 +597,14 @@ def review_portfolio_plan(
     review_input: PortfolioPlanReviewInputV1,
 ) -> PortfolioPlanReviewV1:
     """Review exact plan identity and market drift without execution authority."""
+    plan = _canonical_plan_for_review(plan)
     reviewed_at = review_input.reviewed_at
     codes: list[PlanCancellationCode] = []
+    if reviewed_at < plan.created_at:
+        codes.append(PlanCancellationCode.PLAN_NOT_YET_VALID)
     expired = reviewed_at >= plan.expires_at
     if expired:
-        codes.append(PlanCancellationCode.PLAN_EXPIRED)
+        _append_unique(codes, PlanCancellationCode.PLAN_EXPIRED)
     if review_input.portfolio_snapshot_sha256 != plan.portfolio_snapshot_sha256:
         _append_unique(codes, PlanCancellationCode.PORTFOLIO_CHANGED)
     if review_input.policy_reference != plan.policy_reference:
@@ -462,6 +627,9 @@ def review_portfolio_plan(
     observations = {
         row.stable_key: row for row in review_input.market_observations
     }
+    baseline_keys = {row.stable_key for row in plan.market_baselines}
+    if not set(observations).issubset(baseline_keys):
+        raise PortfolioPlanError("PLAN_REVIEW_OBSERVATION_SET_MISMATCH")
     action_by_key = {
         row.optimizer_leg.stable_key: row.action
         for row in plan.legs
@@ -481,7 +649,9 @@ def review_portfolio_plan(
         for code in drift.cancellation_codes:
             _append_unique(codes, code)
 
-    canonical_codes = tuple(sorted(set(codes), key=str))
+    canonical_codes = tuple(
+        sorted(set(codes), key=lambda item: item.value)
+    )
     valid = not canonical_codes
     status = (
         PlanReviewStatus.EXPIRED
