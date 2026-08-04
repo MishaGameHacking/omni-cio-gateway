@@ -4,7 +4,7 @@
 
 ## Executive state
 
-Omni-CIO remains **one Custom GPT + one production Render Gateway**. The protected production release **v8.6.1 is 100% complete and protected** while the v9 program continues; the applied Custom GPT remains v8.6.1 until WP15.
+Omni-CIO remains **one Custom GPT + one production Render Gateway**. The protected production release **v8.6.1 is 100% complete and protected** while the owner-approved v9 program continues. The applied Custom GPT remains v8.6.1 until WP15.
 
 Production invariants:
 
@@ -12,10 +12,10 @@ Production invariants:
 - canonical Instructions: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt`;
 - stable Render entrypoint: `app:app`;
 - production read-only, Sandbox and Real contours remain separated;
-- real BUY/SELL v1 is owner-accepted and release-complete;
-- durable real journal: Upstash Redis over HTTPS;
+- real BUY/SELL v1 remains owner-confirmed, immutable, idempotent and broker-reconciled;
+- durable real journal remains Upstash Redis over HTTPS;
 - `REAL_TRADING_ENABLED=false` remains the master real-money rollback;
-- v9 development does not alter the applied Custom GPT before WP15 and never grants broader real-money authority implicitly.
+- v9 development does not alter the applied Custom GPT before WP15 and does not grant broader real-money authority implicitly.
 
 Protected v8.6.1 release commit: `baba0fb73e0483fc82b3f0bc7c2f15cbd71d804e`.
 
@@ -24,7 +24,7 @@ Protected v8.6.1 release commit: `baba0fb73e0483fc82b3f0bc7c2f15cbd71d804e`.
 Roadmap: `docs/master-plan/OMNI_CIO_V9_PORTFOLIO_AUTOPILOT_PROGRAM.md`  
 Tracking epic: #176.
 
-Development always continues with the earliest dependency-ready incomplete work package. No duplicate bot, second Gateway, separate frontend or competing roadmap is permitted.
+Development continues with the earliest dependency-ready incomplete work package. No duplicate bot, second Gateway, separate frontend, competing scheduler or parallel execution stack is permitted.
 
 ## Work-package evidence
 
@@ -40,87 +40,83 @@ Development always continues with the earliest dependency-ready incomplete work 
 | WP7 Fund X-Ray Engine | COMPLETE | #197 / #198 | `15505272...`, #1064 |
 | WP8 Portfolio Risk Engine 2.0 | COMPLETE | #199 / #201 | `24e027f1...`, #1078 |
 | WP9 Meta-Strategy Selector | COMPLETE | #203 / #204 | `f758fd73...`, exact-head #1088 |
-| WP10 Portfolio Optimizer & Capital Scaling | COMPLETE | #205 / #206 | `f7392977...`, exact-head #1105 on `2ff38f96...` |
-| WP11 Immutable Portfolio Plan Protocol | COMPLETE | #207 / #208 | squash merge `7c3006d332041ec352f0c2eab8c7cb70e4c1a6af`; exact-head Regression Shield #1114 on `b97a6241...` |
-| WP12 Safe Plan Execution Engine | IN PROGRESS — FINAL GATE | #209 / draft #211 | implementation, architecture, threat/data contracts and acceptance tests complete on `v9/wp12-safe-plan-execution`; final exact-head Regression Shield + zero review threads + squash merge still required |
-| WP13 Portfolio Watchtower | PENDING | #212 | starts only after WP12 merge |
-| WP14 Decision Journal / Evaluation | PENDING | — | — |
+| WP10 Portfolio Optimizer & Capital Scaling | COMPLETE | #205 / #206 | `f7392977...`, exact-head #1105 |
+| WP11 Immutable Portfolio Plan Protocol | COMPLETE | #207 / #208 | `7c3006d332041ec352f0c2eab8c7cb70e4c1a6af`, exact-head #1114 |
+| WP12 Safe Plan Execution Engine | COMPLETE | #209 / #211 | `8f247fd3b966c16eb08fdfeed080010bdcbedde9`, exact-head #1160 on `e7022b89...` |
+| WP13 Portfolio Watchtower | IN PROGRESS — FINAL EXACT-HEAD GATE | #212 / draft #213 | implementation/source sync complete on `v9/wp13-portfolio-watchtower`; final Regression Shield + security + zero review threads + squash merge required |
+| WP14 Decision Journal / Evaluation & Learning Loop | PENDING | #214 | implementation starts only after WP13 merge |
 | WP15 Custom GPT v9 Configuration & Recovery | PENDING | — | applied GPT remains v8.6.1 until then |
 
-## WP11 completion evidence
+## WP12 completion evidence
 
-WP11 is complete and merged:
+WP12 is complete and squash-merged to `main` as `8f247fd3b966c16eb08fdfeed080010bdcbedde9` after exact-head Regression Shield #1160 on `e7022b89e4d212ecdd7ac72e0ff9e88170c4e724` with zero unresolved review threads.
 
-- issue #207 / PR #208;
-- squash-merged to `main` as `7c3006d332041ec352f0c2eab8c7cb70e4c1a6af`;
-- final tested head `b97a62412fe8accf8ebec528a63d8ad0b5087154`;
-- exact-head Regression Shield #1114 fully green;
-- exact immutable `PORTFOLIO_PLAN` binds portfolio + WP2 + WP8 + WP9 + WP10 + target WP8 state;
-- deterministic ordered BUY/SELL/NO_ACTION legs, full cash/friction/НКД/tax semantics and material-drift cancellation;
-- exact owner challenge derived from plan SHA;
-- `execution_authorized=false` and `trading_methods=false` remain hard WP11 invariants;
-- no broker-write authority exists in WP11.
+Safe Plan Execution:
 
-Architecture:
+- executes only an exact owner-approved immutable WP11 plan;
+- reuses the protected v8.6.1 real-order primitive instead of adding a second broker stack;
+- supports deterministic staged LIMIT execution, partial-fill state and durable CAS/idempotency;
+- revalidates portfolio/risk/strategy/optimizer/market/instrument state before progression;
+- ambiguous possible-submit halts and reconciles without a second submit;
+- preserves own-funds BUY, own-position SELL, RUB share/ETF and LIMIT/CURRENCY/DAY boundaries;
+- adds no transfer, withdrawal, margin, short, MARKET/BESTPRICE, stop/replace/async or autonomous recurring real execution.
 
-- `docs/architecture/V9_IMMUTABLE_PORTFOLIO_PLAN.md`;
-- `docs/architecture/V9_IMMUTABLE_PORTFOLIO_PLAN_THREAT_MODEL.md`;
-- `docs/architecture/V9_IMMUTABLE_PORTFOLIO_PLAN_DATA_CONTRACT.md`.
+## WP13 — Portfolio Watchtower
 
-## WP12 — Safe Plan Execution Engine
+Tracking: issue #212 / draft PR #213.  
+Branch: `v9/wp13-portfolio-watchtower`.  
+Dependency base: WP12 merge `8f247fd3b966c16eb08fdfeed080010bdcbedde9`.
 
-Tracking: issue #209 / draft PR #211.  
-Branch: `v9/wp12-safe-plan-execution`.
+Implemented architecture:
 
-Architecture:
+- versioned Watchtower input/state/alert/evaluation contracts;
+- deterministic reducer over canonical WP6 Credit, WP8 Portfolio Risk and market evidence rather than duplicate analytics;
+- material rating downgrade/watch, active default, corporate event, liquidity, concentration, policy drift and data-quality signals;
+- severity, semantic fingerprints and transport-delivery deduplication;
+- no notification when no material alert is emitted;
+- replay-safe duplicate QStash delivery handling;
+- durable Watchtower state with separate Upstash namespace, HMAC-authenticated state envelopes and compare-and-swap updates;
+- strict HTTPS-only Upstash REST client and fail-closed durable-state behavior;
+- QStash schedule client with one canonical custom schedule ID, bounded retries, callbacks/failure callbacks and body redaction;
+- exact raw-body + exact-destination QStash signature verification with current/next signing-key rotation;
+- hidden internal POST routes excluded from GPT Actions OpenAPI;
+- feature flag defaults disabled and canonical evidence provider installation is explicit/fail-closed;
+- schedule reconciliation CLI and operations/recovery runbook;
+- permanent repository boundary guard and mypy coverage.
 
-- `docs/architecture/V9_SAFE_PLAN_EXECUTION.md`;
-- `docs/architecture/V9_SAFE_PLAN_EXECUTION_THREAT_MODEL.md`;
-- `docs/architecture/V9_SAFE_PLAN_EXECUTION_DATA_CONTRACT.md`.
+Hard WP13 safety invariants:
 
-Implemented safety boundary:
+- `execution_authorized=false`;
+- `trading_methods=false`;
+- no broker write token/client in Watchtower runtime;
+- no autonomous recurring real-money execution;
+- no transfer/withdrawal/margin/short authority;
+- monitoring may request review/recommendation or a future proposed immutable plan, but cannot authorize or submit a real order;
+- applied Custom GPT remains v8.6.1.
 
-- exact canonical WP11 plan SHA and exact owner approval challenge are required;
-- approval records authorization for the exact plan but never submits by itself;
-- WP12 reuses the accepted v8.6.1 `RealTradingServiceV1` proposal/preflight/idempotency/reconciliation primitive instead of adding a second broker stack;
-- every stage revalidates portfolio progress, cash, policy/risk/strategy/optimizer/target-risk identity, broker instrument identity/lot size, fresh quote, price step, spread, turnover, depth and plan drift;
-- the existing v8.6.1 own-funds/own-position `GetMaxLots`, per-order cap and atomic daily cap remain authoritative and are repeated immediately before submit;
-- only `LIMIT / CURRENCY / DAY`, RUB, share/ETF, own-funds BUY and own-position SELL remain inside the proven real-money surface;
-- deterministic execution journal uses compare-and-swap revisioning; production requires durable Upstash storage;
-- broker NEW/PARTIAL remains active and is never resubmitted;
-- terminal fills require independent read-only portfolio/cash reconciliation before progression;
-- partial terminal fill returns only the remainder to the following Moscow day;
-- ambiguous possible-submit halts all remaining plan work and permits only original request-id reconciliation; replay cannot duplicate `PostOrder`;
-- plan expiry blocks new prepare/submit but never suppresses reconciliation of a request that may already have reached the broker;
-- current WP8/WP9/WP10/target-risk SHA drift after approval fails closed;
-- before first confirmed fill, the portfolio snapshot and current-risk SHA must still equal the exact WP11 starting state;
-- WP11 validity now spans the exact WP10 `required_execution_days` horizon while retaining the short final-day validity tail;
-- WP12 schedules multi-leg plans by tranche (`stage_index`) and then exact leg sequence, so portfolio staging remains synchronized;
-- a given immutable instrument may submit at most one staged slice per Moscow calendar day;
-- a tighter real-order cap may reduce slice size only when all required stages still fit inside immutable plan expiry; otherwise preparation fails with `PLAN_EXECUTION_PLAN_HORIZON_TOO_SHORT` instead of extending authorization or raising the cap.
+Acceptance/security coverage includes:
 
-Permanent guards and acceptance coverage include:
+- clean initial baseline and silent no-change behavior;
+- initial critical default alert;
+- rating/default/corporate/liquidity/concentration/policy/data-quality signals;
+- semantic dedup and condition recurrence after recovery;
+- duplicate delivery replay safety;
+- deterministic/canonical alert and evaluation hashing;
+- in-memory and durable Upstash state semantics;
+- stale-writer/CAS conflict, wrong-secret/tamper and storage-failure tests;
+- QStash current/next key signature verification, body/URL mismatch rejection, bounded retries and observable schedule state;
+- signed hidden runtime routes and callback acknowledgements;
+- single `app:app` Gateway registration while Watchtower routes remain absent from GPT OpenAPI;
+- disabled-by-default and missing-provider fail-closed behavior;
+- repository guard preventing broker/Sandbox mutation authority inside WP13.
 
-- `scripts/check_plan_execution_boundary.py` repository authority check;
-- mypy scope for the execution package and boundary guard;
-- full fake-client lifecycle: approval, one submit, partial fill, terminal reconciliation and completed replay;
-- already-submitted proposal replay with zero duplicate submits;
-- ambiguous-submit reconciliation-only recovery;
-- instrument and upstream SHA drift fail-closed tests;
-- plan-expiry/new-submit vs prior-submit reconciliation semantics;
-- deterministic WP10 two-day staging and same-instrument Moscow-day cadence;
-- hard-cap horizon-stretch rejection;
-- durable Upstash restart/CAS/stale-writer/tamper/wrong-secret tests;
-- broker reconciliation normalization and malformed-state rejection;
-- explicit NO_ACTION no-session behavior;
-- durable journal required by default;
-- hard-coded prohibition of transfer/withdrawal, margin, short, MARKET/BESTPRICE, stop/replace/async submit and autonomous recurring execution.
+WP13 is **not complete** until the source-synced branch head passes the full exact-head Regression Shield and security jobs, review threads remain zero and PR #213 is squash-merged.
 
-WP12 is **not complete** until the final branch head passes the full exact-head Regression Shield, review threads are zero and PR #211 is squash-merged. No GPT Editor change and no real-cap increase is part of this development gate.
+## WP14 dependency
 
-## Next dependency after WP12
+Tracking issue: #214.
 
-After WP12 squash merge, continue with **WP13 — Portfolio Watchtower** from the canonical master plan. Tracking issue: #212. WP13 must be monitoring/read-only by default and must not create a recurring autonomous real-money executor.
+WP14 starts from `main` only after WP13 squash merge. Canonical scope is Decision Journal, Evaluation & Learning Loop: immutable decision/evidence/policy/plan/execution/outcome records; expected-vs-realized evaluation without hindsight rewriting; NO_ACTION and policy-objective benchmarks; quality metrics; sanitized synthetic/fake-broker offline replay datasets; and no self-modifying production rules without reviewed code/config changes.
 
 ## Canonical production configuration
 
@@ -132,18 +128,14 @@ After WP12 squash merge, continue with **WP13 — Portfolio Watchtower** from th
 - entrypoint: `app:app`;
 - production Knowledge: exactly 10 files from `gpt/CONFIGURATION.md`.
 
-GitHub remains canonical for code/config/recovery reference but does not automatically synchronize GPT Editor, Render secrets or Upstash.
+GitHub remains canonical for code/config/recovery reference but does not automatically synchronize GPT Editor, Render secrets, QStash or Upstash environment values.
 
-## Broker/execution safety remains unchanged
+## Real-money boundary remains unchanged
 
-Production read-only uses only `TINVEST_TOKEN`. Sandbox uses `TINVEST_SANDBOX_TOKEN`. Real v1 uses the dedicated `TINVEST_TRADING_TOKEN` and remains limited to the accepted narrow lifecycle:
+Production read-only uses `TINVEST_TOKEN`. Sandbox uses `TINVEST_SANDBOX_TOKEN`. Real v1 uses the dedicated `TINVEST_TRADING_TOKEN` and remains limited to:
 
-`fresh facts → immutable proposal → exact owner confirmation in a new user turn → one submit/idempotency → broker reconciliation`.
+`fresh facts → immutable proposal/plan → exact owner confirmation in a new user turn → one submit/idempotency → broker reconciliation`.
 
-WP12 orchestrates that same proven primitive for an exact owner-approved WP11 plan; it does not add withdrawal/transfer, margin/short, MARKET/BESTPRICE, autonomous recurring real execution or token management.
-
-## v8.6.1 owner acceptance evidence
-
-Owner Phase 4 on 2026-08-03 proved one explicitly authorized SBER LIMIT BUY with exactly one submit, broker-confirmed fill and portfolio/operations reconciliation. Canonical recovery invariant: **idempotent replay verified with no second submit**.
+Neither WP13 nor planned WP14 adds withdrawal/transfer, margin/short, MARKET/BESTPRICE, autonomous recurring real execution or token management.
 
 **Production release state: Omni-CIO v8.6.1 real BUY/SELL v1 — 100% complete and protected while v9 development continues.**
