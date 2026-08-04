@@ -15,6 +15,7 @@ REQUIRED_PATHS = (
     "omni_cio/optimizer/engine_v1.py",
     "tests/test_portfolio_optimizer_v1.py",
     "tests/test_portfolio_optimizer_boundary_v1.py",
+    "tests/test_portfolio_optimizer_ordering_v1.py",
     "docs/architecture/V9_PORTFOLIO_OPTIMIZER.md",
 )
 
