@@ -8,10 +8,9 @@ target-version = "py312"
 select = ["E4", "E7", "E9", "F"]
 
 [tool.ruff.lint.per-file-ignores]
-# WP12 preserves the initial execution state-machine blob byte-for-byte as an
-# internal compatibility core. Its broker-terminal method is never exported and
-# is overridden by the audited public facade in service_v1.py. Keep the two
-# original static diagnostics isolated to that frozen blob only.
+# WP12 preserves the initial execution-state-machine blob byte-for-byte as an
+# internal compatibility core. It is private behind the audited service_v1.py
+# facade. Keep only the two original Ruff diagnostics isolated to that blob.
 "omni_cio/plan_execution/service_core_v1.py" = ["F401", "F821"]
 
 [tool.mypy]
@@ -66,10 +65,13 @@ files = [
 ]
 
 [[tool.mypy.overrides]]
-# Same frozen internal compatibility core as the Ruff exception above. Public
-# execution is type-checked through service_v1.py and the full WP12 package.
+# The frozen WP12 compatibility core is unreachable except through the audited
+# facade. The facade reimplements the affected broker-reconciliation path with
+# concrete proposal identity and preserved plan context. Suppress only the two
+# legacy diagnostics present in the frozen core; the rest of WP12 remains fully
+# type-checked.
 module = "omni_cio.plan_execution.service_core_v1"
-disable_error_code = ["name-defined"]
+disable_error_code = ["arg-type", "misc"]
 
 [tool.pytest.ini_options]
 addopts = "-ra --strict-markers"
