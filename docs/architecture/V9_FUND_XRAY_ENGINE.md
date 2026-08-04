@@ -1,6 +1,6 @@
 # Omni-CIO v9 — Fund X-Ray Engine
 
-Status: **WP7 implementation contract**  
+Status: **WP7 implementation contract; v1.1 dependency hardening completed inside WP8**  
 Parent program: `docs/master-plan/OMNI_CIO_V9_PORTFOLIO_AUTOPILOT_PROGRAM.md`  
 Protected production baseline: **Omni-CIO v8.6.1**
 
@@ -10,13 +10,13 @@ WP7 expands ETF/fund wrappers into explicit underlying exposure instead of treat
 
 Canonical sequence:
 
-`WP3 fund identity + WP5 evidence → fund profile → composition → look-through exposures → hidden concentration → direct/fund overlap → immutable Fund X-Ray`
+`WP3 fund identity + WP5 evidence → fund profile → composition → look-through exposures → duration/credit-quality view → hidden concentration → direct/fund overlap → immutable Fund X-Ray`
 
 The X-Ray is analytics only. It does not recommend an order or authorize execution.
 
 ## 2. Exact fund identity
 
-A fund is bound to the exact broker instrument UID from the WP5 research target and to the exact WP3 universe fingerprint.
+A fund is bound to the exact broker instrument UID from the WP5 research target and to the exact WP3 universe fingerprint and full `InstrumentIdentity`.
 
 The wrapper identity remains separate from every underlying holding. The wrapper is not added again to look-through exposure, preventing double counting of `fund + constituents`.
 
@@ -44,6 +44,8 @@ Every holding has:
 - reported weight;
 - optional underlying instrument UID;
 - optional issuer, asset class, sector, currency and geography;
+- optional duration in years when decision-grade evidence supports it;
+- optional credit-quality label when decision-grade evidence supports it;
 - WP5 evidence hashes.
 
 Duplicate stable keys are rejected. Total disclosed holding weight may not exceed 100%.
@@ -58,7 +60,8 @@ When security-level holdings are unavailable, WP7 can preserve official buckets 
 - sector;
 - currency;
 - issuer;
-- geography.
+- geography;
+- credit quality when officially documented.
 
 Each dimension is reconciled independently and may not exceed 100%. Missing residual within a dimension becomes `UNKNOWN`; it is never distributed proportionally across known buckets.
 
@@ -66,9 +69,24 @@ Each dimension is reconciled independently and may not exceed 100%. Missing resi
 
 For holdings-based composition, WP7 derives all supported dimensions directly from holding weights.
 
-If a known holding lacks a classification, that weight becomes `UNKNOWN` for that dimension. If composition itself is partial, the undisclosed residual is also `UNKNOWN`.
+If a known holding lacks a classification or credit-quality label, that weight becomes `UNKNOWN` for that dimension. If composition itself is partial, the undisclosed residual is also `UNKNOWN`.
 
 This means derived exposure retains uncertainty rather than making the reported slice look like the whole portfolio.
+
+### Duration
+
+Fund X-Ray schema v1.1 adds `FundDurationSummaryV1` with:
+
+- `weighted_duration_years`;
+- `measured_weight`.
+
+Duration is averaged only across holdings that actually carry duration evidence. Coverage is reported separately. Example: if only 30% of a fund has supported duration data and that slice has duration 5 years, the X-Ray reports duration 5 years **measured on 30% coverage**. It does not claim that the entire fund has duration 5 years.
+
+### Credit quality
+
+Schema v1.1 also adds `CREDIT_QUALITY` as a look-through exposure dimension. Known labels retain their disclosed weights; holdings without supported labels and undisclosed residual become `UNKNOWN`.
+
+Credit-quality labels are evidence, not an implicit rating crosswalk. WP7 does not average incompatible rating scales or infer WP2 policy-floor compliance. Downstream WP8 must use explicit provenance-bound fund-credit assessment rather than guessing from labels.
 
 ## 7. Hidden concentration
 
@@ -129,6 +147,8 @@ Every profile/composition/holding/bucket evidence hash must exist in the exact b
 
 Media/context-only records cannot independently support Fund X-Ray state. Missing hashes fail closed.
 
+Duration and credit-quality fields are optional and must remain absent when evidence does not support them. Their absence is never silently converted to zero duration or investment-grade credit.
+
 ## 12. Determinism
 
 Canonical ordering is applied to:
@@ -139,7 +159,7 @@ Canonical ordering is applied to:
 - overlaps by kind/counterpart;
 - source hashes and blocker codes.
 
-`xray_sha256` binds the exact assessment time, WP5 dossier fingerprint, WP3 universe fingerprint, fund identity, profile, composition, liquidity, look-through exposures, concentration, overlap, uncertainty and blockers.
+`xray_sha256` binds the exact assessment time, WP5 dossier fingerprint, WP3 universe fingerprint, fund identity, profile, composition, liquidity, look-through exposures, concentration, measured duration, overlap, uncertainty and blockers.
 
 Equivalent source ordering therefore produces the same fingerprint.
 
@@ -159,19 +179,20 @@ WP7 is internal/read-only and adds no:
 
 ## 14. Exit gate
 
-WP7 is complete only when:
+WP7 plus v1.1 dependency hardening is complete only when:
 
 1. versioned fund profile/composition/holding/exposure/overlap/X-Ray contracts exist;
-2. WP5 dossier and WP3 universe binding fail closed;
+2. WP5 dossier and full WP3 universe identity binding fail closed;
 3. full/partial/bucket/unavailable composition states are explicit;
 4. full holding weights reconcile and partial holdings are never normalized to 100%;
-5. sector/currency/issuer/geography/asset-class look-through preserves unknown residual;
-6. top holdings and HHI expose hidden concentration without inventing missing composition;
-7. direct-holding and fund-to-fund overlap are deterministic;
-8. fund costs/benchmark/management metadata remain provenance-bound and optional when unavailable;
-9. stale/missing composition is explicit and cannot silently become fresh/full;
-10. source-order invariance and X-Ray fingerprint are tested;
-11. repository guard and mypy cover the package;
-12. exact-head Regression Shield is fully green;
-13. unresolved review threads are zero;
-14. PR is squash-merged and epic #176 marks WP7 complete.
+5. sector/currency/issuer/geography/asset-class/credit-quality look-through preserves unknown residual;
+6. duration exposes weighted value together with measured coverage and never extrapolates partial evidence;
+7. top holdings and HHI expose hidden concentration without inventing missing composition;
+8. direct-holding and fund-to-fund overlap are deterministic;
+9. fund costs/benchmark/management metadata remain provenance-bound and optional when unavailable;
+10. stale/missing composition is explicit and cannot silently become fresh/full;
+11. source-order invariance and X-Ray fingerprint are tested;
+12. repository guard and mypy cover the package;
+13. exact-head Regression Shield is fully green;
+14. unresolved review threads are zero;
+15. the dependency-hardening issue #202 is closed by the WP8 merge that contains the fix.
