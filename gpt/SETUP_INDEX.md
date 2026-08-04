@@ -1,195 +1,151 @@
 # Omni-CIO Custom GPT — единая карта настройки и восстановления
 
-Главная точка входа для единственного поддерживаемого бота:
+Главная точка входа для **единственного** поддерживаемого Omni-CIO GPT.
 
-`Omni-CIO API | Управляющий и аналитик v8.6.1`
+## Release state
 
-Production baseline: **v8.6.1**.  
-Canonical GPT Editor Instructions: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt`.  
-Full engineering reference: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_0.txt`.
+Repository target: **v9.0.0**  
+Target UI: `Omni-CIO API | Управляющий и аналитик v9.0.0`  
+Target Instructions: `gpt/CUSTOM_GPT_INSTRUCTIONS_V9_0_0_COMPACT.txt`  
+Target Knowledge manifest: `gpt/KNOWLEDGE_MANIFEST_V9_0_0.md`
 
-Активная программа разработки второго большого релиза:
+Applied external GPT remains **v8.6.1** until WP15 repository gates are green, merged, and the owner completes Preview + `Update` on the existing GPT. Protected rollback Instructions remain `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt`.
 
-`docs/master-plan/OMNI_CIO_V9_PORTFOLIO_AUTOPILOT_PROGRAM.md`
+Canonical program: `docs/master-plan/OMNI_CIO_V9_PORTFOLIO_AUTOPILOT_PROGRAM.md`.
 
-Статус программы: **OWNER-APPROVED / PROGRAM LOCKED**. До закрытия её Definition of Done не начинать конкурирующий roadmap, второго бота, второй Gateway или отдельный execution surface.
-
-## Архитектура
+## Architecture
 
 ```text
-GitHub (код + эталон конфигурации)
-        │
-        ├── Render Free → Omni-CIO Gateway (`app:app`)
-        │             ├── TINVEST_TOKEN → production read-only
-        │             ├── TINVEST_SANDBOX_TOKEN → optional Sandbox
-        │             ├── TINVEST_TRADING_TOKEN → confirmed real execution
-        │             └── HTTPS → Upstash Redis Free → durable real-order journal
-        │
-        └── вручную → GPT Editor
-                      ├── Instructions v8.6.1 Compact
-                      ├── 10 Knowledge files
-                      └── Actions → production OpenAPI
+GitHub main ──► Render Free / Omni-CIO Gateway (`app:app`)
+                    │
+                    ├─ production read-only broker contour
+                    ├─ optional Sandbox contour
+                    ├─ confirmed real-execution contour
+                    ├─ Upstash durable state
+                    └─ hidden QStash/Watchtower scheduler routes
+
+GitHub canonical config ──owner applies──► EXISTING Omni-CIO GPT
+                                           ├─ v9 Instructions
+                                           ├─ exact v9 Knowledge set
+                                           └─ existing Action refreshed from production OpenAPI
 ```
 
-GitHub не меняет GPT Editor, Render Environment или Upstash автоматически.
+Do not create a second GPT, Gateway, frontend, scheduler or broker stack.
 
-## 1. Каноническая конфигурация
+## 1. Target GPT configuration
 
-- UI name: `Omni-CIO API | Управляющий и аналитик v8.6.1`.
-- GPT Editor Instructions: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt`.
-- Full engineering reference: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_0.txt`.
-- Recommended model: `Thinking 5.6`.
-- Timezone: `Europe/Moscow` / MSK.
+- Name: `Omni-CIO API | Управляющий и аналитик v9.0.0`.
+- Description/starters/capabilities: `gpt/CONFIGURATION.md`.
+- Instructions: `gpt/CUSTOM_GPT_INSTRUCTIONS_V9_0_0_COMPACT.txt`.
+- Knowledge: exact manifest `gpt/KNOWLEDGE_MANIFEST_V9_0_0.md`.
 - Gateway: `https://omni-cio-gateway.onrender.com`.
 - OpenAPI: `https://omni-cio-gateway.onrender.com/openapi.json`.
 - Health: `https://omni-cio-gateway.onrender.com/health`.
-- Render plan: Free.
 - Entrypoint: `app:app`.
-- Real durable backend: Upstash Redis over HTTPS.
+- Timezone: `Europe/Moscow` / MSK.
+- Actions: ON.
+- Apps: OFF while Actions are used.
+- Web Search: ON for public context.
+- Data Analysis: ON when supported.
+- Model: select a currently available **non-Pro model that supports Custom GPT Actions**, then verify in Preview.
 
-Не смешивать compact Instructions с полным v8.6.0 reference.
+## 2. Upgrade the existing GPT — never create a duplicate
 
-## 2. Knowledge — ровно 10 файлов
+After WP15 repository merge:
 
-1. `02_GATEWAY_DATA_CONTRACT_V2_OPERATIONS.txt`
-2. `04_CIO_PORTFOLIO_MANAGER.txt`
-3. `05_ANALYST_NEWS_SIMPLE_LANGUAGE.txt`
-4. `06_EVIDENCE_CREDIT_BANKRUPTCY.txt`
-5. `07_PERSONAL_STRATEGY.txt`
-6. `08_DECISION_JOURNAL_AND_QUALITY_CONTROL.txt`
-7. `09_AUTONOMOUS_ACTION_ORCHESTRATOR.txt`
-8. `10_DECISION_ENGINE_AND_CANDIDATE_COMPARISON.txt`
-9. `11_RISK_DECOMPOSITION_AND_SIZING_GATES.txt`
-10. `13_COMMUNICATION_STYLE_2026.txt`
+1. On ChatGPT **web**, open the existing Omni-CIO GPT.
+2. Select Edit/Configure. Do **not** use Create.
+3. Replace Name/Description/starters with the target registry values.
+4. Replace Instructions fully with the v9 compact file.
+5. Replace Knowledge with the exact v9 manifest set; each file once.
+6. Keep Apps OFF and Actions ON.
+7. Refresh the existing Action from production `/openapi.json`.
+8. Authentication remains API Key → Bearer with the existing external `GATEWAY_API_KEY`.
+9. Run Preview acceptance from `gpt/MY_GPT_SETUP_RUNBOOK.md`.
+10. Only after Preview passes, select `Update` on the existing GPT.
+11. Record owner acceptance/restoration evidence in GitHub.
 
-Каждый файл загружать один раз. Secrets, accountId, private broker reports и source code в Knowledge не помещать.
+Repository merge alone does not mean applied production GPT v9 is accepted.
 
-## 3. Actions
+## 3. Knowledge
 
-GPT Editor → существующий Omni-CIO Action → импорт schema:
+Single source of truth: `gpt/KNOWLEDGE_MANIFEST_V9_0_0.md`.
 
-`https://omni-cio-gateway.onrender.com/openapi.json`
+Current target contains exactly 10 text-forward reference files under `gpt/knowledge/`. Knowledge is reference material; behavioral/execution safety belongs in Instructions and server enforcement.
 
-Authentication:
+Never upload account-specific/private broker data or authentication material as permanent Knowledge.
 
-- Type: `API Key`;
-- Mode: `Bearer`;
-- Value: существующий `GATEWAY_API_KEY` из Render.
+## 4. Actions
 
-### Baseline read-only
+Static reviewed catalog: `gpt/ACTIONS_CATALOG.md`.  
+Runtime authority: effective production `https://omni-cio-gateway.onrender.com/openapi.json`.
 
-При выключенных execution flags остаются baseline GET Actions.
+The baseline read-only portfolio chain remains:
 
-### Sandbox
+`getPortfolioSnapshot → getCashLiquiditySnapshot → getPortfolioAnalytics → analysis`.
 
-`SANDBOX_TRADING_ENABLED=true` добавляет только изолированные virtual-only Sandbox Actions. Sandbox всегда `sandbox=true`, `real_money=false`.
+Internal WP1–WP14 Python engines are **not automatically GPT Actions**. The GPT may call only operationIds present in imported OpenAPI and must not claim an internal engine ran without returned evidence.
 
-### Real execution v1
-
-Valid real readiness требует отдельный `TINVEST_TRADING_TOKEN`, валидные caps, durable Upstash journal и совпадение торгового/read-only счёта.
-
-Публикуются только:
+Conditional Sandbox/Real operations remain server-controlled. Current reviewed Real operationIds are:
 
 - `getRealTradingStatus`;
 - `prepareRealTrade`;
 - `executeRealTrade`;
 - `getRealOrderState`.
 
-Real v1 остаётся: BUY/SELL, supported cash share/ETF, RUB, LIMIT/CURRENCY/DAY, own funds/own position, no margin/short, immutable proposal, exact short-lived confirmation, UUID idempotency and broker reconciliation.
+WP15 does not broaden their authority.
 
-No transfer/withdraw, MARKET/BESTPRICE, derivatives/currency execution, stop orders, replace, async submit, autonomous recurring real execution or token management through GPT.
+## 5. Authentication / secrets boundary
 
-## 4. Render / secrets
+GPT Action authentication:
 
-Никогда не вводить T-Invest или Upstash tokens в GPT Editor.
+- Type: API Key;
+- Mode: Bearer;
+- Value: existing `GATEWAY_API_KEY` from the external server configuration.
 
-Required names:
+No broker, durable-state or scheduler secret is copied into Instructions or Knowledge. Canonical role/env-name reference: `gpt/SECRETS_AND_RENDER.md`.
 
-- `TINVEST_TOKEN` — production read-only;
-- `GATEWAY_API_KEY` — GPT → Gateway Bearer;
-- `SSL_TBANK_VERIFY=True`.
+## 6. Watchtower
 
-Optional Sandbox:
+Watchtower routes are hidden from GPT OpenAPI and remain read-only/background infrastructure. Operational configuration is documented in `docs/operations/V9_WATCHTOWER_RUNBOOK.md`.
 
-- `TINVEST_SANDBOX_TOKEN`;
-- `SANDBOX_TRADING_ENABLED`.
+Watchtower alerts can trigger analysis/review but never authorize a real order.
 
-Real execution:
+## 7. Real execution safety
 
-- `TINVEST_TRADING_TOKEN` — separate account-scoped full-access trading token without transfer access;
-- `REAL_TRADING_ENABLED`;
-- `REAL_TRADING_JOURNAL_BACKEND=upstash`;
-- `UPSTASH_REDIS_REST_URL`;
-- `UPSTASH_REDIS_REST_TOKEN`;
-- `REAL_TRADING_MAX_ORDER_RUB`;
-- `REAL_TRADING_MAX_DAILY_RUB`;
-- `REAL_TRADING_CONFIRMATION_TTL_SECONDS`;
-- `REAL_TRADING_MARKET_MAX_AGE_SECONDS`.
+A portfolio-management request, recommendation or plan is not execution authority.
 
-Secret values остаются только во внешних системах.
+Real execution remains:
 
-## 5. GPT Editor capabilities
+`fresh facts → immutable proposal/plan context → exact owner confirmation in a NEW turn → one idempotent submit → broker reconciliation`.
 
-- Recommended model: `Thinking 5.6`.
-- Web Search: ON.
-- Data Analysis / Code Interpreter: ON.
-- Image generation: OFF для investment workflow.
-- Apps: не использовать вместе с Actions.
-- Actions: ON.
+Still forbidden: transfer/withdrawal, margin/short, MARKET/BESTPRICE, stop/replace/async, automatic retry after possible-submit ambiguity, autonomous recurring real execution and token management through GPT.
 
-## 6. Portfolio routing
+Master rollback remains `REAL_TRADING_ENABLED=false`.
 
-Для `УПРАВЛЯЙ ПОРТФЕЛЕМ` production v8.6.1 стартует:
+Protected v8.6.1 recovery invariant remains: **idempotent replay verified with no second submit**.
 
-`getPortfolioSnapshot → getCashLiquiditySnapshot → getPortfolioAnalytics → анализ`.
+## 8. Recovery / rollback
 
-Portfolio-management запрос не является разрешением на реальную сделку. Exact-action запросы остаются изолированными.
+Full runbook: `gpt/MY_GPT_SETUP_RUNBOOK.md`.
 
-В v9 этот UX расширяется Natural Language CIO Router, но текущий безопасный routing сохраняется до отдельного acceptance соответствующего work package.
+Protected rollback configuration remains available from Git history/current protected files:
 
-## 7. Acceptance state v8.6.1
+- UI `Omni-CIO API | Управляющий и аналитик v8.6.1`;
+- `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt`;
+- stable Gateway `app:app`;
+- existing server secret-role separation.
 
-Real BUY/SELL v1 полностью owner-accepted 2026-08-03:
+Do not restore from old chat text/screenshots if they disagree with current `main`.
 
-- readiness и durable Upstash journal подтверждены;
-- wrong/expired confirmation fail closed;
-- own-funds protection подтверждена;
-- kill switch и recovery подтверждены;
-- первая реальная LIMIT BUY SBER исполнена брокером;
-- `getRealOrderState` подтвердил `EXECUTION_REPORT_STATUS_FILL`, 1/1 lot;
-- portfolio/operations reconciled;
-- replay exact confirmation не создал второго broker submit.
+## 9. Sources of truth
 
-**Release state: v8.6.1 = 100% complete.**
-
-Полный runbook: `docs/operations/REAL_TRADING_RELEASE_RUNBOOK.md`.
-
-## 8. v9 development boundary
-
-Active program:
-
-`docs/master-plan/OMNI_CIO_V9_PORTFOLIO_AUTOPILOT_PROGRAM.md`
-
-Protected baseline/recovery contract:
-
-`docs/architecture/V9_BASELINE_AND_RECOVERY_CONTRACT.md`
-
-Каждый v9 package: architecture → deterministic implementation → fake-client/unit/integration tests → security → exact-head Regression Shield → squash merge → feature-flag/shadow acceptance as required.
-
-Production v8.6.1 не заменяется, пока новый пакет не прошёл свой exit gate.
-
-## 9. Источники истины
-
-- Runtime/API: deployed GitHub `main` commit.
-- Program: `docs/master-plan/OMNI_CIO_V9_PORTFOLIO_AUTOPILOT_PROGRAM.md`.
-- GPT registry: `gpt/CONFIGURATION.md`.
-- GPT Editor Instructions: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt`.
-- Full reference: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_0.txt`.
-- Bot manifest: `gpt/BOT_ONLY_FILE_MANIFEST.md`.
-- Actions: production `/openapi.json` + `gpt/ACTIONS_CATALOG.md`.
-- Secrets/Render: `gpt/SECRETS_AND_RENDER.md`.
-- Real release: `docs/operations/REAL_TRADING_RELEASE_RUNBOOK.md`.
-- Current status: `knowledge/16_CURRENT_PROGRAM_STATUS.md`.
-- Development rules: `AGENTS.md`.
-
-Не восстанавливать конфигурацию из старых чатов/скриншотов, если они расходятся с `main`.
+- runtime/API: deployed GitHub `main`;
+- v9 program: `docs/master-plan/OMNI_CIO_V9_PORTFOLIO_AUTOPILOT_PROGRAM.md`;
+- GPT target registry: `gpt/CONFIGURATION.md`;
+- target Instructions: `gpt/CUSTOM_GPT_INSTRUCTIONS_V9_0_0_COMPACT.txt`;
+- Knowledge: `gpt/KNOWLEDGE_MANIFEST_V9_0_0.md`;
+- Actions: production `/openapi.json` + `gpt/ACTIONS_CATALOG.md`;
+- secrets/env roles: `gpt/SECRETS_AND_RENDER.md`;
+- full recovery/Preview: `gpt/MY_GPT_SETUP_RUNBOOK.md`;
+- status: `knowledge/16_CURRENT_PROGRAM_STATUS.md`.

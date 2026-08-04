@@ -1,320 +1,213 @@
 # 00 — OMNI-CIO PROJECT MASTER CONTEXT
 
-Дата актуализации: 2026-08-03
+Дата актуализации: 2026-08-04
 
-Этот файл хранит короткую долговременную память **одного проекта**: личного Custom GPT Omni-CIO и его Gateway для T-Invest.
+Этот файл хранит короткую долговременную память **одного проекта**: одного Custom GPT Omni-CIO и одного production Gateway для T-Invest.
 
-## 1. Поддерживаемый продукт
+## 1. Product identity
 
-Единственный пользовательский интерфейс:
+Repository target configuration:
 
-`Omni-CIO API | Управляющий и аналитик v8.6.1`
+`Omni-CIO API | Управляющий и аналитик v9.0.0`
 
-Production GPT Editor payload:
+Target GPT Editor payload:
+
+`gpt/CUSTOM_GPT_INSTRUCTIONS_V9_0_0_COMPACT.txt`
+
+Target Knowledge source:
+
+`gpt/KNOWLEDGE_MANIFEST_V9_0_0.md`
+
+Applied external GPT remains **v8.6.1** until the WP15 repository release is merged and owner Preview + `Update` acceptance is completed and recorded. Protected rollback Instructions remain:
 
 `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt`
 
-Full engineering reference:
+Never create a second GPT to apply v9.
 
-`gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_0.txt`
-
-Архитектура:
+## 2. Runtime architecture
 
 ```text
-Custom GPT → Omni-CIO Gateway (`app:app`, Render Free)
-                    │
-                    ├→ TINVEST_TOKEN → production read-only
-                    ├→ TINVEST_SANDBOX_TOKEN → optional T-Invest Sandbox
-                    ├→ TINVEST_TRADING_TOKEN → confirmed real LIMIT BUY/SELL
-                    └→ Upstash Redis Free → durable real-execution journal
+EXISTING Omni-CIO GPT
+        │
+        ▼
+Omni-CIO Gateway (`app:app`, Render Free)
+        ├─ production read-only broker contour
+        ├─ optional T-Invest Sandbox contour
+        ├─ exact-owner-confirmed Real execution contour
+        ├─ Upstash durable state
+        └─ hidden signed Watchtower/QStash routes
 ```
 
-GitHub хранит backend-код и эталон GPT configuration. Render запускает Gateway. GPT Editor хранит фактически применённые Instructions/Knowledge/Bearer configuration и не синхронизируется с GitHub автоматически.
+GitHub stores code plus canonical target/recovery configuration. Render runs the Gateway. GPT Editor holds the actually applied Instructions/Knowledge/Action authentication and is not synchronized automatically by GitHub.
 
-## 2. Protected production baseline
-
-**Omni-CIO v8.6.1 real BUY/SELL v1 полностью released и owner-accepted.**
+## 3. Protected v8.6.1 baseline
 
 Protected release commit:
 
 `baba0fb73e0483fc82b3f0bc7c2f15cbd71d804e`
 
-Accepted real-money lifecycle:
+Owner-accepted real BUY/SELL v1 remains **100% complete**.
 
-`prepare → exact owner confirmation → single broker submit → broker state → confirmed fill → portfolio/operations reconciliation → safe replay with no second submit`.
+Canonical recovery invariant: **idempotent replay verified with no second submit**.
 
-Observed first real acceptance:
+Accepted real lifecycle remains:
 
-- SBER BUY, 1 lot / 1 share;
-- LIMIT order accepted by T-Invest;
-- broker reconciled `EXECUTION_REPORT_STATUS_FILL`;
-- 1/1 lot executed at 280.55 RUB;
-- executed commission 0.84 RUB;
-- real portfolio reconciled to SBER = 1 share / 1 lot;
-- operations reconciled purchase and separate commission;
-- exact confirmation replay did not call `executeRealTrade` again and did not create a second broker order.
+`fresh facts → prepare immutable proposal → exact owner confirmation in a NEW turn → one idempotent broker submit → broker reconciliation → confirmed fill only with broker proof`.
 
-**Release state: v8.6.1 = 100% complete.**
+The first controlled real SBER acceptance and portfolio/operations reconciliation remain historical release evidence; WP15 does not require repeating a real-money order merely to update GPT configuration.
 
-## 3. Active v9 program
+## 4. v9 program
 
-Owner-approved second-major-release program:
+Canonical owner-approved / program-locked roadmap:
 
 `docs/master-plan/OMNI_CIO_V9_PORTFOLIO_AUTOPILOT_PROGRAM.md`
 
-Status: **OWNER-APPROVED / PROGRAM LOCKED**.
+Tracking epic: #176.
 
-Until its Definition of Done is complete:
+WP0–WP14 are complete. WP15 Custom GPT v9 Configuration & Recovery is the final active package until repository delivery and owner external Preview/Update acceptance are complete.
 
-- do not start a competing roadmap, duplicate bot, second Gateway, separate frontend or unrelated execution surface;
-- allowed work is a listed v9 package, blocking defect repair, security/dependency maintenance or preservation of stable v8.6.1;
-- v8.6.1 must remain recoverable and operational throughout development;
-- no v9 capability may be represented as implemented before code, tests, CI and required acceptance prove it.
+Exact current state: `knowledge/16_CURRENT_PROGRAM_STATUS.md`.
 
-Protected baseline/migration contract:
+## 5. v9 implemented capability stack
 
-`docs/architecture/V9_BASELINE_AND_RECOVERY_CONTRACT.md`
+The repository contains reviewed deterministic components for:
 
-Tracking epic: GitHub issue #176.
+- natural-language CIO routing;
+- Investment Policy Statement/readiness;
+- market universe;
+- candidate funnel;
+- research/evidence;
+- credit/rating/default;
+- Fund X-Ray;
+- portfolio risk 2.0;
+- meta-strategy selection;
+- optimizer/capital scaling;
+- immutable portfolio plans;
+- safe plan execution over the protected real-order primitive;
+- read-only Portfolio Watchtower;
+- append-only decision journal/evaluation/replay.
 
-## 4. Current production configuration
+These internal engines are **not automatically GPT Actions**. The GPT may call only operationIds present in the effective production `/openapi.json`, and it must not claim an internal engine ran without returned Action/evidence.
 
-- Canonical GPT Editor Instructions: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt`.
-- Full v8.6 reference: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_0.txt`.
-- UI name: `Omni-CIO API | Управляющий и аналитик v8.6.1`.
-- Recommended model: Thinking 5.6.
-- User timezone: Europe/Moscow / MSK.
-- Production endpoint: `https://omni-cio-gateway.onrender.com`.
-- Render plan: Free.
-- Entrypoint: `app:app`.
-- Production Knowledge: exactly 10 files from `gpt/CONFIGURATION.md`.
-- Real durable journal: external Upstash Redis over HTTPS.
-- `REAL_TRADING_ENABLED=false` remains master rollback state.
+## 6. Production Action contours
 
-Exact status: `knowledge/16_CURRENT_PROGRAM_STATUS.md`.
+Gateway/OpenAPI:
 
-## 5. Gateway capability contours
+- `https://omni-cio-gateway.onrender.com`;
+- `https://omni-cio-gateway.onrender.com/openapi.json`;
+- stable entrypoint `app:app`.
 
-### Production read-only
-
-Capabilities include:
-
-- health / connection;
-- portfolio snapshot and enriched positions;
-- instrument search;
-- instrument/portfolio market snapshots;
-- portfolio analytics;
-- cash/liquidity diagnostics;
-- purchase-capacity preview;
-- operations history/analytics/reconciliation;
-- broker-report reconciliation;
-- final decision review.
-
-Current production portfolio-management routing:
+Baseline portfolio-management read-only routing:
 
 `getPortfolioSnapshot → getCashLiquiditySnapshot → getPortfolioAnalytics → analysis`.
 
-### Optional Sandbox
-
-Uses only `TINVEST_SANDBOX_TOKEN` and fixed Sandbox host.
-
-Sandbox remains virtual-only:
-
-- `sandbox=true`;
-- `real_money=false`;
-- own-funds/own-position preflight;
-- exact short-lived confirmation;
-- idempotent submit;
-- isolated virtual order state/cancel behavior.
-
-### Real execution v1
-
-Conditional Actions:
+Current reviewed Real operationIds:
 
 - `getRealTradingStatus`;
 - `prepareRealTrade`;
 - `executeRealTrade`;
 - `getRealOrderState`.
 
-Real v1 remains deliberately narrow:
+Sandbox operations remain virtual-only and separately enabled.
 
-- BUY/SELL only;
-- supported cash share/ETF only;
-- RUB;
-- LIMIT/CURRENCY/DAY only;
-- own funds / own position only;
-- exact short-lived owner confirmation in a separate turn;
-- fresh trusted market/order book;
-- hard per-order/daily limits;
-- UUID idempotency;
-- no automatic retry after possible submit;
-- broker reconciliation required.
+Watchtower scheduler/callback routes remain hidden from GPT OpenAPI.
 
-## 6. Absolute execution safety boundary
+## 7. Absolute execution boundary
 
 Always preserve:
 
-- `TINVEST_TOKEN` remains read-only;
-- separate account-scoped full-access non-transfer `TINVEST_TRADING_TOKEN` for real execution;
-- read-only, Sandbox and Real remain isolated;
-- immutable proposal before real submit;
-- explicit exact owner confirmation in a new message;
-- `PostOrder` at most once per proposal/request UUID;
-- ambiguous possible-submit → unknown/do-not-resubmit, reconciliation only;
-- `submitted` is never called `filled` without broker proof;
-- own-funds BUY and own-position SELL;
-- margin/short disabled;
-- stale/incomplete/contradictory market blocks execution;
-- durable journal outage/tamper fails closed;
-- account IDs are masked;
-- secrets never enter GitHub, Knowledge or user-visible output.
+- production read-only broker credential is never a real-execution fallback;
+- Sandbox and Real remain isolated;
+- no real submit merely from advisory/portfolio-management wording;
+- real execution requires server readiness, supported instrument/order rules, fresh market, own-funds BUY or own-position SELL, hard caps and immutable proposal/plan context;
+- exact owner phrase arrives in a new message before execute;
+- at most one submit per request/proposal identity;
+- ambiguous possible-submit → no automatic retry, reconciliation only;
+- submitted != filled without broker proof;
+- no withdrawal/transfer, margin/short, MARKET/BESTPRICE, stop/replace/async, token management or autonomous recurring real-money execution under the current reviewed surface;
+- account identity user-facing only masked;
+- secret values/private broker payloads never enter GitHub, GPT Knowledge or public responses.
 
-Not part of current real release:
+Master real rollback: `REAL_TRADING_ENABLED=false`.
 
-- withdrawal/transfer of money;
-- securities transfer;
-- MARKET/BESTPRICE real execution;
-- margin/short;
-- futures/options/currency execution;
-- stop orders;
-- ReplaceOrder/PostOrderAsync;
-- autonomous recurring real-money execution;
-- token management through GPT.
+Watchtower rollback: `WATCHTOWER_ENABLED=false`.
 
-Future v9 work must not weaken these boundaries without a separately approved threat model and release.
+## 8. Decision discipline
 
-## 7. Durable real-execution state
+For personal recommendations:
 
-Production backend:
+- facts/calculations/assumptions/recommendation stay distinct;
+- freshness/completeness/identity are checked before strong conclusions;
+- owner IPS/policy constraints precede personal sizing;
+- define structural portfolio gap before choosing tickers;
+- compare alternatives on one scale and include `NO_ACTION`;
+- hard blockers cannot be averaged away;
+- free cash is not by itself a reason to buy;
+- concentration, liquidity, credit/default, currency, fund look-through/overlap and data quality matter when applicable;
+- stale market cannot be presented as exact executable sizing;
+- clean bond price and accrued interest remain distinct.
 
-```text
-REAL_TRADING_JOURNAL_BACKEND=upstash
-UPSTASH_REDIS_REST_URL=<Render Environment>
-UPSTASH_REDIS_REST_TOKEN=<Render secret>
-```
+Critical constraints and calculations belong in deterministic code/server contracts where implemented; GPT reasoning never overrides server enforcement.
 
-Properties:
+## 9. WP15 target configuration
 
-- works from Render Free over HTTPS;
-- survives Render sleep/deploy/restart;
-- HMAC-authenticated metadata/proposal/day-counter state;
-- atomic transition/daily-cap reservation;
-- no memory fallback on outage;
-- secret values are not stored inside proposals.
+Canonical target sources:
 
-SQLite remains compatibility/test only.
+- `gpt/SETUP_INDEX.md` — upgrade/recovery entry;
+- `gpt/CONFIGURATION.md` — target registry;
+- `gpt/CUSTOM_GPT_INSTRUCTIONS_V9_0_0_COMPACT.txt` — target Instructions;
+- `gpt/KNOWLEDGE_MANIFEST_V9_0_0.md` — exact Knowledge set;
+- `gpt/ACTIONS_CATALOG.md` — reviewed Action catalog;
+- `gpt/SECRETS_AND_RENDER.md` — external role/env-name boundary;
+- `gpt/MY_GPT_SETUP_RUNBOOK.md` — Preview/Update/rollback procedure;
+- `docs/architecture/V9_CUSTOM_GPT_CONFIGURATION_AND_RECOVERY.md` — WP15 architecture;
+- `docs/architecture/V9_CUSTOM_GPT_CONFIGURATION_THREAT_MODEL.md` — WP15 threats.
 
-## 8. GPT behavior baseline
+Target editor policy:
 
-For ordinary `УПРАВЛЯЙ ПОРТФЕЛЕМ` in production v8.6.1:
+- Actions ON;
+- Apps OFF while custom Actions are used;
+- Web Search for public context;
+- Data Analysis when supported;
+- choose a currently available non-Pro model that supports Custom GPT Actions and verify it in Preview;
+- user-facing timezone `Europe/Moscow` / MSK.
 
-1. `getPortfolioSnapshot`;
-2. if successful `getCashLiquiditySnapshot`;
-3. `getPortfolioAnalytics`;
-4. analysis.
+## 10. External owner boundary
 
-This is analysis, not trade authorization.
+GitHub cannot press `Update` in GPT Editor, upload Knowledge to the external GPT or supply external secret values.
 
-Exact-action requests remain isolated: `вызови только X` means no other Actions.
+After the WP15 repository PR passes exact-head CI/security and is squash-merged, the owner must update the **existing** GPT in ChatGPT web using `gpt/MY_GPT_SETUP_RUNBOOK.md`, complete Preview acceptance/restoration demonstration and then select `Update`.
 
-Normal real order lifecycle remains:
+Until that evidence is recorded:
 
-1. obtain current broker/market facts;
-2. verify real readiness;
-3. `prepareRealTrade`;
-4. show REAL MONEY proposal, masked account, exact terms, preview, expiry and phrase;
-5. stop;
-6. owner sends exact phrase in a new message;
-7. only then `executeRealTrade`;
-8. broker-state reconciliation;
-9. portfolio/operations reconciliation after confirmed execution.
+- repository target = v9.0.0;
+- applied external GPT = v8.6.1.
 
-## 9. v9 target behavior
+Do not conflate these states.
 
-The v9 program evolves the same product toward:
+## 11. Secrets / external roles
 
-- natural-language intent routing without Action-name knowledge;
-- versioned Investment Policy Statement;
-- full broker-available market-universe ingestion;
-- deterministic candidate funnel;
-- evidence/research engine;
-- credit/rating/default engine 2.0;
-- Fund X-Ray;
-- portfolio risk engine 2.0;
-- meta-strategy selection;
-- portfolio optimizer and capital scaling;
-- immutable multi-leg portfolio plans;
-- confirmed plan execution;
-- read-only Watchtower;
-- durable decision journal/evaluation loop;
-- final Custom GPT v9 configuration and full GitHub recovery.
+Canonical role/env-name source: `gpt/SECRETS_AND_RENDER.md`.
 
-Critical financial constraints and calculations belong in deterministic Gateway code. The model interprets intent, synthesizes evidence and explains decisions; it must not bypass server policy.
+External roles include read-only broker, Sandbox broker, separate real-execution broker, Gateway bearer, Upstash durable-state and Watchtower/QStash credentials. Values remain outside GitHub/chat/Knowledge.
 
-## 10. Market / sizing rules
+## 12. Runtime compatibility warning
 
-- last price != guaranteed execution price;
-- fresh order-book/trading status required for real proposal;
-- stale/partial market blocks real execution;
-- `withdraw_limits` != automatic buying budget;
-- technical affordability != personal sizing;
-- BUY sizing uses own funds, SELL sizing own position;
-- margin capacity is ignored for authorization;
-- larger capital must be handled by risk/liquidity/participation/staged-execution logic, not by simply raising one hard cap.
+Current `app.py` still depends on compatibility/runtime wrapper files including `app_v371.py` and `app_v360.py`. Do not delete them merely because they look legacy; a compatibility refactor requires its own regression evidence.
 
-## 11. Evidence / credit direction
-
-Important claims should prioritize official/primary evidence. Rating logic must distinguish issuer, issue and guarantor and preserve agency/scale/date/outlook rather than average incompatible ratings.
-
-v9 must use deterministic identity and evidence provenance before strong portfolio recommendations.
-
-## 12. Secrets
-
-Render/external systems only:
-
-- `TINVEST_TOKEN` — production read-only;
-- `TINVEST_SANDBOX_TOKEN` — Sandbox only;
-- `TINVEST_TRADING_TOKEN` — real execution only, non-transfer;
-- `GATEWAY_API_KEY` — GPT → Gateway Bearer;
-- `UPSTASH_REDIS_REST_URL` — journal endpoint;
-- `UPSTASH_REDIS_REST_TOKEN` — journal secret.
-
-Never commit values or expose them in GPT responses, issues, PRs or Knowledge.
-
-## 13. Runtime dependency warning
-
-Current `app.py` still depends on `app_v371.py`, `app_v360.py` and wrapper/core files. Do not delete them as legacy without a separate compatibility refactor and full Regression Shield.
-
-## 14. Canonical files
-
-- `README.md` — product/runtime overview.
-- `AGENTS.md` — engineering rules.
-- `knowledge/00_PROJECT_MASTER_CONTEXT.md` — long-lived project context.
-- `knowledge/16_CURRENT_PROGRAM_STATUS.md` — current state.
-- `docs/master-plan/OMNI_CIO_V9_PORTFOLIO_AUTOPILOT_PROGRAM.md` — locked v9 roadmap.
-- `docs/architecture/V9_BASELINE_AND_RECOVERY_CONTRACT.md` — protected baseline/migration contract.
-- `gpt/SETUP_INDEX.md` — recovery entry.
-- `gpt/CONFIGURATION.md` — GPT registry.
-- `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt` — production Instructions.
-- `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_0.txt` — engineering reference.
-- `gpt/knowledge/` — canonical production Knowledge.
-- `gpt/ACTIONS_CATALOG.md` — Action catalog.
-- `gpt/SECRETS_AND_RENDER.md` — external secret boundary.
-- `docs/operations/REAL_TRADING_RELEASE_RUNBOOK.md` — accepted real release evidence.
-
-## 15. Git workflow
+## 13. Git workflow
 
 Significant changes:
 
-`branch → PR → exact-head Regression Shield/security → review → squash merge → external acceptance when required`.
+`branch → PR → exact-head Regression Shield/security → zero unresolved review threads → squash merge → external owner acceptance when required`.
 
-Do not bypass CI for broker-write or durable-state changes.
+Never report an external acceptance step as complete merely because repository CI is green.
 
-## 16. Current readiness
+## 14. Current readiness
 
-- read-only production: accepted;
-- Sandbox: accepted;
-- real BUY/SELL v1: accepted and release-complete;
-- v8.6.1 protected baseline: active;
-- v9 program: active/locked, under development;
-- user-facing GPT remains v8.6.1 until WP15 is completed and owner-accepted.
+- production read-only: accepted;
+- Sandbox: accepted/conditional;
+- real BUY/SELL v1: accepted and protected;
+- WP0–WP14: complete;
+- WP15 repository target: in progress;
+- external applied GPT: v8.6.1 until owner Preview/Update evidence.
