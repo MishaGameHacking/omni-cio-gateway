@@ -16,7 +16,10 @@ from omni_cio.contracts.v1.plan_execution import (
     PlanExecutionPositionV1,
     PlanExecutionQuoteV1,
 )
-from omni_cio.contracts.v1.portfolio_optimizer import OptimizerAssetV1
+from omni_cio.contracts.v1.portfolio_optimizer import (
+    OptimizerAssetV1,
+    PortfolioOptimizerSettingsV1,
+)
 from omni_cio.contracts.v1.portfolio_plan import PlanMarketObservationV1, PortfolioPlanV1
 from omni_cio.contracts.v1.portfolio_risk import (
     PortfolioRiskAssessmentV1,
@@ -55,7 +58,10 @@ def _position_value(position: RiskPositionV1, value: Decimal) -> RiskPositionV1:
     )
 
 
-def build_execution_fixture() -> ExecutionFixture:
+def build_execution_fixture(
+    *,
+    optimizer_settings: PortfolioOptimizerSettingsV1 | None = None,
+) -> ExecutionFixture:
     """Build a complete WP2→WP8→WP9→WP10→WP11 share BUY plan."""
 
     seed = build_fixture()
@@ -132,6 +138,7 @@ def build_execution_fixture() -> ExecutionFixture:
         current_risk=risk,
         strategy=strategy,
         assets=assets,
+        settings=optimizer_settings,
         optimized_at=NOW,
     )
     assert optimizer.plan_eligible
