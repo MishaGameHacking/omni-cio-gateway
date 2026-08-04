@@ -5,7 +5,6 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, ROUND_FLOOR
 import hashlib
 import hmac
-from typing import TypeVar
 from zoneinfo import ZoneInfo
 
 from pydantic import ValidationError
@@ -44,14 +43,10 @@ from .broker_reconciliation_v1 import (
     PlanExecutionBrokerStateError,
     broker_snapshot_from_proposal,
 )
-from .journal_v1 import (
-    PlanExecutionJournalConflict,
-    PlanExecutionJournalV1,
-)
+from .journal_v1 import PlanExecutionJournalConflict, PlanExecutionJournalV1
 
 
 MOSCOW = ZoneInfo("Europe/Moscow")
-_T = TypeVar("_T")
 
 InstrumentBindingProviderV1 = Callable[
     [str, datetime],
@@ -109,7 +104,7 @@ def _ceil_ratio(numerator: int, denominator: int) -> int:
     return (numerator + denominator - 1) // denominator
 
 
-def _floor_decimal_ratio(numerator: Decimal, denominator: Decimal) -> int:
+def _floor_money_ratio(numerator: Decimal, denominator: Decimal) -> int:
     if denominator <= 0:
         raise SafePlanExecutionError(
             "PLAN_EXECUTION_RATIO_INVALID",
@@ -122,49 +117,45 @@ def _signed_lots(side: PlanExecutionSide, lots: int) -> int:
     return lots if side is PlanExecutionSide.BUY else -lots
 
 
-def _direction(action: PortfolioPlanAction) -> PlanExecutionSide:
+def _side(action: PortfolioPlanAction) -> PlanExecutionSide:
     if action is PortfolioPlanAction.BUY:
         return PlanExecutionSide.BUY
     if action is PortfolioPlanAction.SELL:
         return PlanExecutionSide.SELL
     raise SafePlanExecutionError(
         "PLAN_EXECUTION_NO_ACTION",
-        "NO_ACTION plan has no real-money execution leg.",
+        "NO_ACTION plan has no real execution leg.",
     )
 
 
 def _canonical_plan(plan: PortfolioPlanV1) -> PortfolioPlanV1:
     try:
-        result = PortfolioPlanV1.model_validate(plan.model_dump(mode="python"))
+        canonical = PortfolioPlanV1.model_validate(plan.model_dump(mode="python"))
     except (AttributeError, ValidationError) as exc:
         raise SafePlanExecutionError(
             "PLAN_EXECUTION_PLAN_TAMPERED",
-            "Immutable portfolio plan failed canonical validation.",
+            "Immutable plan failed canonical validation.",
             halt_code=PlanExecutionHaltCode.PLAN_INVALID,
         ) from exc
-    if result.plan_sha256 != portfolio_plan_sha256(result):
+    if canonical.plan_sha256 != portfolio_plan_sha256(canonical):
         raise SafePlanExecutionError(
             "PLAN_EXECUTION_PLAN_HASH_MISMATCH",
-            "Immutable portfolio plan hash does not match its payload.",
+            "Immutable plan hash does not match its payload.",
             halt_code=PlanExecutionHaltCode.PLAN_INVALID,
         )
-    return result
+    return canonical
 
 
-def _baseline_map(plan: PortfolioPlanV1) -> dict[str, PlanMarketBaselineV1]:
+def _actionable_legs(plan: PortfolioPlanV1):
+    return tuple(row for row in plan.legs if row.optimizer_leg is not None)
+
+
+def _baselines(plan: PortfolioPlanV1) -> dict[str, PlanMarketBaselineV1]:
     return {row.stable_key: row for row in plan.market_baselines}
 
 
-def _position_map(state: PlanExecutionCurrentStateV1) -> dict[str, int]:
+def _positions(state: PlanExecutionCurrentStateV1) -> dict[str, int]:
     return {row.stable_key: row.lots for row in state.positions}
-
-
-def _target_current_lots(plan: PortfolioPlanV1) -> dict[str, int]:
-    return {row.stable_key: row.current_lots for row in plan.targets}
-
-
-def _actionable_plan_legs(plan: PortfolioPlanV1):
-    return tuple(row for row in plan.legs if row.optimizer_leg is not None)
 
 
 def _all_stages(session: PlanExecutionSessionV1) -> tuple[PlanExecutionStageV1, ...]:
@@ -175,107 +166,119 @@ def _all_stages(session: PlanExecutionSessionV1) -> tuple[PlanExecutionStageV1, 
     )
 
 
-def _stage_by_id(
-    session: PlanExecutionSessionV1,
-    stage_id: str,
-) -> PlanExecutionStageV1:
-    for stage in _all_stages(session):
-        if stage.stage_id == stage_id:
-            return stage
+def _next_stage(session: PlanExecutionSessionV1) -> PlanExecutionStageV1 | None:
+    remaining = sorted(
+        (
+            row
+            for row in _all_stages(session)
+            if row.state is not PlanExecutionStageState.FILLED
+        ),
+        key=lambda row: (row.leg_sequence, row.stage_index, row.stage_id),
+    )
+    return remaining[0] if remaining else None
+
+
+def _stage(session: PlanExecutionSessionV1, stage_id: str) -> PlanExecutionStageV1:
+    for row in _all_stages(session):
+        if row.stage_id == stage_id:
+            return row
     raise SafePlanExecutionError(
         "PLAN_EXECUTION_STAGE_NOT_FOUND",
-        "Plan execution stage was not found.",
+        "Execution stage was not found.",
     )
 
 
-def _instrument_for_stage(
+def _instrument(
     session: PlanExecutionSessionV1,
-    stage: PlanExecutionStageV1,
+    stable_key: str,
 ) -> PlanExecutionInstrumentStateV1:
-    for item in session.instrument_states:
-        if item.binding.stable_key == stage.stable_key:
-            return item
+    for row in session.instrument_states:
+        if row.binding.stable_key == stable_key:
+            return row
     raise SafePlanExecutionError(
         "PLAN_EXECUTION_INSTRUMENT_NOT_FOUND",
-        "Plan execution instrument state was not found.",
+        "Execution instrument state was not found.",
     )
 
 
-def _replace_stage(
+def _session_update(
+    session: PlanExecutionSessionV1,
+    **updates: object,
+) -> PlanExecutionSessionV1:
+    payload = session.model_copy(
+        update={"revision": session.revision + 1, **updates}
+    ).model_dump(mode="python")
+    return PlanExecutionSessionV1.model_validate(payload)
+
+
+def _stage_update(
     session: PlanExecutionSessionV1,
     updated_stage: PlanExecutionStageV1,
-    *,
     **session_updates: object,
 ) -> PlanExecutionSessionV1:
-    instruments: list[PlanExecutionInstrumentStateV1] = []
     found = False
-    for item in session.instrument_states:
+    instruments: list[PlanExecutionInstrumentStateV1] = []
+    for instrument in session.instrument_states:
         stages: list[PlanExecutionStageV1] = []
-        for stage in item.stages:
+        for stage in instrument.stages:
             if stage.stage_id == updated_stage.stage_id:
                 stages.append(updated_stage)
                 found = True
             else:
                 stages.append(stage)
-        instruments.append(item.model_copy(update={"stages": tuple(stages)}))
+        instruments.append(
+            PlanExecutionInstrumentStateV1.model_validate(
+                instrument.model_copy(update={"stages": tuple(stages)}).model_dump(
+                    mode="python"
+                )
+            )
+        )
     if not found:
         raise SafePlanExecutionError(
             "PLAN_EXECUTION_STAGE_NOT_FOUND",
-            "Cannot update unknown plan execution stage.",
+            "Cannot update an unknown execution stage.",
         )
-    values = {
-        "instrument_states": tuple(instruments),
-        "revision": session.revision + 1,
+    return _session_update(
+        session,
+        instrument_states=tuple(instruments),
         **session_updates,
-    }
-    return PlanExecutionSessionV1.model_validate(
-        session.model_copy(update=values).model_dump(mode="python")
     )
 
 
-def _replace_session(
-    session: PlanExecutionSessionV1,
-    **updates: object,
-) -> PlanExecutionSessionV1:
-    return PlanExecutionSessionV1.model_validate(
-        session.model_copy(
-            update={"revision": session.revision + 1, **updates}
-        ).model_dump(mode="python")
+def _stage_sizes(quantity: int, stage_count: int) -> tuple[int, ...]:
+    base, extra = divmod(quantity, stage_count)
+    values = tuple(
+        base + (1 if index < extra else 0)
+        for index in range(stage_count)
     )
-
-
-def _next_stage(session: PlanExecutionSessionV1) -> PlanExecutionStageV1 | None:
-    candidates = sorted(
-        (
-            stage
-            for stage in _all_stages(session)
-            if stage.state is not PlanExecutionStageState.FILLED
-        ),
-        key=lambda row: (row.leg_sequence, row.stage_index, row.stage_id),
-    )
-    return candidates[0] if candidates else None
-
-
-def _stage_slice_sizes(total_lots: int, count: int) -> tuple[int, ...]:
-    base, extra = divmod(total_lots, count)
-    sizes = tuple(base + (1 if index < extra else 0) for index in range(count))
-    if not sizes or min(sizes) <= 0 or sum(sizes) != total_lots:
+    if not values or min(values) <= 0 or sum(values) != quantity:
         raise SafePlanExecutionError(
             "PLAN_EXECUTION_STAGE_SIZING_INVALID",
-            "Cannot divide plan leg into positive deterministic stages.",
+            "Cannot build positive deterministic stage quantities.",
         )
-    return sizes
+    return values
 
 
-def _limit_price_step_ok(price: Decimal, step: Decimal) -> bool:
-    return step > 0 and price % step == 0
+def _binding_same(
+    left: PlanExecutionInstrumentBindingV1,
+    right: PlanExecutionInstrumentBindingV1,
+) -> bool:
+    return (
+        left.stable_key == right.stable_key
+        and left.instrument_uid == right.instrument_uid
+        and left.ticker == right.ticker
+        and left.isin == right.isin
+        and left.instrument_type == right.instrument_type
+        and left.lot_size == right.lot_size
+        and left.source_sha256 == right.source_sha256
+    )
 
 
 def _drift_bps(current: Decimal, baseline: Decimal) -> Decimal:
     return abs(current - baseline) / baseline * Decimal("10000")
 
 
-def _evidence_guard(
+def _market_guard(
     *,
     baseline: PlanMarketBaselineV1,
     binding: PlanExecutionInstrumentBindingV1,
@@ -287,92 +290,93 @@ def _evidence_guard(
 ) -> Decimal:
     observation = evidence.observation
     quote = evidence.quote
-    if binding.stable_key != baseline.stable_key:
+    if (
+        binding.stable_key != baseline.stable_key
+        or quote.stable_key != binding.stable_key
+        or quote.instrument_uid != binding.instrument_uid
+        or quote.lot_size != binding.lot_size
+        or binding.lot_size != baseline.lot_size
+    ):
         raise SafePlanExecutionError(
             "PLAN_EXECUTION_INSTRUMENT_BINDING_MISMATCH",
-            "Instrument binding stable key does not match plan baseline.",
-            halt_code=PlanExecutionHaltCode.INSTRUMENT_BINDING_MISMATCH,
-        )
-    if quote.stable_key != binding.stable_key or quote.instrument_uid != binding.instrument_uid:
-        raise SafePlanExecutionError(
-            "PLAN_EXECUTION_QUOTE_IDENTITY_MISMATCH",
-            "Execution quote does not match bound instrument identity.",
-            halt_code=PlanExecutionHaltCode.INSTRUMENT_BINDING_MISMATCH,
-        )
-    if quote.lot_size != binding.lot_size or binding.lot_size != baseline.lot_size:
-        raise SafePlanExecutionError(
-            "PLAN_EXECUTION_LOT_BINDING_MISMATCH",
-            "Execution lot size changed from the immutable plan.",
+            "Current broker identity/lot binding differs from immutable plan.",
             halt_code=PlanExecutionHaltCode.INSTRUMENT_BINDING_MISMATCH,
         )
     if binding.instrument_type not in {"share", "etf"}:
         raise SafePlanExecutionError(
             "PLAN_EXECUTION_INSTRUMENT_TYPE_NOT_SUPPORTED",
-            "WP12 real execution is restricted to the proven share/ETF surface.",
+            "WP12 execution stays on the proven share/ETF real-money surface.",
             halt_code=PlanExecutionHaltCode.INSTRUMENT_TYPE_NOT_SUPPORTED,
         )
 
     quote_age = (now - quote.as_of).total_seconds()
-    if quote_age > settings.quote_max_age_seconds or (
-        quote_age < -settings.future_tolerance_seconds
+    if (
+        quote_age > settings.quote_max_age_seconds
+        or quote_age < -settings.future_tolerance_seconds
     ):
         raise SafePlanExecutionError(
             "PLAN_EXECUTION_QUOTE_STALE",
-            "Fresh execution quote is required immediately before stage action.",
+            "Fresh executable quote is required immediately before stage action.",
             halt_code=PlanExecutionHaltCode.EXECUTION_QUOTE_STALE,
         )
 
     tolerance = plan.drift_tolerance
-    observation_age = (now - observation.observed_at).total_seconds()
-    if observation_age > tolerance.market_max_age_seconds or (
-        observation_age < -tolerance.future_tolerance_seconds
+    market_age = (now - observation.observed_at).total_seconds()
+    if (
+        market_age > tolerance.market_max_age_seconds
+        or market_age < -tolerance.future_tolerance_seconds
     ):
         raise SafePlanExecutionError(
             "PLAN_EXECUTION_MARKET_EVIDENCE_STALE",
-            "Plan market observation is stale or future-dated.",
+            "Plan market evidence is stale or future-dated.",
             halt_code=PlanExecutionHaltCode.PLAN_MARKET_DRIFT,
         )
     friction_age = (now - observation.friction_as_of).total_seconds()
-    if friction_age > tolerance.friction_max_age_seconds or (
-        friction_age < -tolerance.future_tolerance_seconds
+    if (
+        friction_age > tolerance.friction_max_age_seconds
+        or friction_age < -tolerance.future_tolerance_seconds
     ):
         raise SafePlanExecutionError(
             "PLAN_EXECUTION_FRICTION_EVIDENCE_STALE",
             "Plan friction evidence is stale or future-dated.",
             halt_code=PlanExecutionHaltCode.PLAN_MARKET_DRIFT,
         )
-    if _drift_bps(
-        observation.clean_unit_price_base,
-        baseline.clean_unit_price_base,
-    ) > tolerance.max_clean_price_drift_bps:
+    if (
+        _drift_bps(
+            observation.clean_unit_price_base,
+            baseline.clean_unit_price_base,
+        )
+        > tolerance.max_clean_price_drift_bps
+    ):
         raise SafePlanExecutionError(
             "PLAN_EXECUTION_CLEAN_PRICE_DRIFT",
-            "Clean market price drift exceeded immutable plan tolerance.",
+            "Clean price moved beyond immutable plan tolerance.",
             halt_code=PlanExecutionHaltCode.PLAN_MARKET_DRIFT,
         )
     if baseline.accrued_interest_per_lot_base is not None:
-        if observation.accrued_interest_per_lot_base is None:
+        current_aci = observation.accrued_interest_per_lot_base
+        if current_aci is None:
             raise SafePlanExecutionError(
                 "PLAN_EXECUTION_ACCRUED_INTEREST_MISSING",
-                "Bond accrued-interest evidence is missing.",
+                "Required accrued-interest evidence is missing.",
                 halt_code=PlanExecutionHaltCode.PLAN_MARKET_DRIFT,
             )
         clean_lot = baseline.clean_unit_price_base * Decimal(baseline.lot_size)
-        accrued_drift = (
-            abs(
-                observation.accrued_interest_per_lot_base
-                - baseline.accrued_interest_per_lot_base
-            )
+        if (
+            abs(current_aci - baseline.accrued_interest_per_lot_base)
             / clean_lot
             * Decimal("10000")
-        )
-        if accrued_drift > tolerance.max_accrued_interest_drift_bps:
+            > tolerance.max_accrued_interest_drift_bps
+        ):
             raise SafePlanExecutionError(
                 "PLAN_EXECUTION_ACCRUED_INTEREST_DRIFT",
-                "Accrued-interest drift exceeded immutable plan tolerance.",
+                "Accrued interest moved beyond immutable plan tolerance.",
                 halt_code=PlanExecutionHaltCode.PLAN_MARKET_DRIFT,
             )
-    if observation.spread_bps - baseline.spread_bps > tolerance.max_spread_widening_bps:
+    if (
+        observation.spread_bps - baseline.spread_bps
+        > tolerance.max_spread_widening_bps
+    ):
         raise SafePlanExecutionError(
             "PLAN_EXECUTION_SPREAD_DRIFT",
             "Spread widened beyond immutable plan tolerance.",
@@ -388,7 +392,7 @@ def _evidence_guard(
     ):
         raise SafePlanExecutionError(
             "PLAN_EXECUTION_LIQUIDITY_DRIFT",
-            "Market capacity deteriorated below immutable plan tolerance.",
+            "Liquidity capacity fell below immutable plan tolerance.",
             halt_code=PlanExecutionHaltCode.EXECUTION_LIQUIDITY_DROPPED,
         )
     if (
@@ -398,13 +402,13 @@ def _evidence_guard(
     ):
         raise SafePlanExecutionError(
             "PLAN_EXECUTION_FRICTION_CHANGED",
-            "Commission/tax evidence changed from the immutable plan.",
+            "Commission/tax evidence changed after plan creation.",
             halt_code=PlanExecutionHaltCode.PLAN_MARKET_DRIFT,
         )
     if side is PlanExecutionSide.BUY and observation.account_eligible is not True:
         raise SafePlanExecutionError(
             "PLAN_EXECUTION_BUY_ELIGIBILITY_CHANGED",
-            "BUY eligibility changed after immutable plan creation.",
+            "BUY eligibility changed after plan creation.",
             halt_code=PlanExecutionHaltCode.PLAN_MARKET_DRIFT,
         )
     if baseline.fx_rate_to_base is not None:
@@ -415,77 +419,51 @@ def _evidence_guard(
                 halt_code=PlanExecutionHaltCode.PLAN_MARKET_DRIFT,
             )
         fx_age = (now - observation.fx_as_of).total_seconds()
-        if fx_age > tolerance.fx_max_age_seconds or (
-            fx_age < -tolerance.future_tolerance_seconds
+        if (
+            fx_age > tolerance.fx_max_age_seconds
+            or fx_age < -tolerance.future_tolerance_seconds
+            or _drift_bps(observation.fx_rate_to_base, baseline.fx_rate_to_base)
+            > tolerance.max_fx_drift_bps
         ):
             raise SafePlanExecutionError(
-                "PLAN_EXECUTION_FX_EVIDENCE_STALE",
-                "FX evidence is stale or future-dated.",
-                halt_code=PlanExecutionHaltCode.PLAN_MARKET_DRIFT,
-            )
-        if _drift_bps(
-            observation.fx_rate_to_base,
-            baseline.fx_rate_to_base,
-        ) > tolerance.max_fx_drift_bps:
-            raise SafePlanExecutionError(
                 "PLAN_EXECUTION_FX_DRIFT",
-                "FX drift exceeded immutable plan tolerance.",
+                "FX evidence is stale or outside immutable plan tolerance.",
                 halt_code=PlanExecutionHaltCode.PLAN_MARKET_DRIFT,
             )
 
     limit_price = quote.limit_price(side)
-    if not _limit_price_step_ok(limit_price, quote.min_price_increment):
+    if quote.min_price_increment <= 0 or limit_price % quote.min_price_increment != 0:
         raise SafePlanExecutionError(
             "PLAN_EXECUTION_PRICE_STEP_MISMATCH",
             "Server-selected LIMIT price is not on the instrument price step.",
             halt_code=PlanExecutionHaltCode.EXECUTION_PRICE_STEP_MISMATCH,
         )
-    if _drift_bps(
-        limit_price,
-        observation.clean_unit_price_base,
-    ) > settings.max_execution_price_change_bps:
+    if (
+        _drift_bps(limit_price, observation.clean_unit_price_base)
+        > settings.max_execution_price_change_bps
+    ):
         raise SafePlanExecutionError(
             "PLAN_EXECUTION_BOOK_PRICE_CHANGED",
-            "Executable side of book moved too far from the current clean price.",
+            "Executable bid/ask moved too far from current clean price.",
             halt_code=PlanExecutionHaltCode.EXECUTION_PRICE_CHANGED,
         )
     return limit_price
-
-
-def _review_input(
-    *,
-    plan: PortfolioPlanV1,
-    state: PlanExecutionCurrentStateV1,
-    evidences: Iterable[PlanExecutionLegEvidenceV1],
-    now: datetime,
-) -> PortfolioPlanReviewInputV1:
-    return PortfolioPlanReviewInputV1(
-        reviewed_at=now,
-        portfolio_snapshot_sha256=state.portfolio_snapshot_sha256,
-        policy_reference=state.policy_reference,
-        current_risk_assessment_sha256=state.risk_assessment_sha256,
-        strategy_selection_sha256=state.strategy_selection_sha256,
-        optimizer_sha256=state.optimizer_sha256,
-        target_risk_assessment_sha256=state.target_risk_assessment_sha256,
-        market_observations=tuple(row.observation for row in evidences),
-    )
 
 
 def _expected_positions(
     plan: PortfolioPlanV1,
     session: PlanExecutionSessionV1,
 ) -> dict[str, int]:
-    result = _target_current_lots(plan)
+    result = {row.stable_key: row.current_lots for row in plan.targets}
     for stage in _all_stages(session):
-        if stage.broker_terminal_lots:
-            result[stage.stable_key] = result.get(stage.stable_key, 0) + _signed_lots(
-                stage.side,
-                stage.broker_terminal_lots,
-            )
+        result[stage.stable_key] = result.get(stage.stable_key, 0) + _signed_lots(
+            stage.side,
+            stage.broker_terminal_lots,
+        )
     return result
 
 
-def _progress_matches(
+def _progress_match(
     *,
     plan: PortfolioPlanV1,
     session: PlanExecutionSessionV1,
@@ -494,11 +472,11 @@ def _progress_matches(
     now: datetime,
 ) -> tuple[bool, PlanExecutionHaltCode | None, str | None]:
     age = (now - state.observed_at).total_seconds()
-    if age > settings.max_portfolio_reconciliation_age_seconds or age < 0:
+    if age < 0 or age > settings.max_portfolio_reconciliation_age_seconds:
         return (
             False,
             PlanExecutionHaltCode.PORTFOLIO_RECONCILIATION_TIMEOUT,
-            "Current portfolio state is stale or future-dated.",
+            "Read-only portfolio state is stale or future-dated.",
         )
     if state.policy_reference != plan.policy_reference:
         return False, PlanExecutionHaltCode.POLICY_CHANGED, "Owner policy changed."
@@ -516,14 +494,16 @@ def _progress_matches(
         )
 
     expected = _expected_positions(plan, session)
-    observed = _position_map(state)
-    observed_complete = {key: observed.get(key, 0) for key in expected}
-    unexpected = {key: lots for key, lots in observed.items() if key not in expected and lots}
-    if observed_complete != expected or unexpected:
+    observed = _positions(state)
+    normalized = {key: observed.get(key, 0) for key in expected}
+    unexpected = {
+        key: lots for key, lots in observed.items() if key not in expected and lots
+    }
+    if normalized != expected or unexpected:
         return (
             False,
             PlanExecutionHaltCode.PORTFOLIO_PROGRESS_MISMATCH,
-            "Portfolio lots do not match broker-confirmed execution progress.",
+            "Portfolio lots do not match broker-confirmed plan progress.",
         )
 
     expected_cash = plan.current_cash_base + session.confirmed_cash_delta_rub
@@ -542,57 +522,41 @@ def _progress_matches(
     return True, None, None
 
 
-def _tax_allowance_for_fills(
-    *,
+def _tax_allowance(
     plan: PortfolioPlanV1,
     stage: PlanExecutionStageV1,
-    filled_lots: int,
+    lots: int,
 ) -> Decimal:
-    if stage.side is not PlanExecutionSide.SELL or filled_lots <= 0:
+    if stage.side is not PlanExecutionSide.SELL or lots <= 0:
         return Decimal("0")
-    plan_leg = next(
+    leg = next(
         row.optimizer_leg
         for row in plan.legs
         if row.optimizer_leg is not None
         and row.optimizer_leg.stable_key == stage.stable_key
     )
-    assert plan_leg is not None
-    if plan_leg.quantity_lots <= 0:
-        return Decimal("0")
-    return (
-        plan_leg.estimated_tax_base
-        * Decimal(filled_lots)
-        / Decimal(plan_leg.quantity_lots)
-    )
+    assert leg is not None
+    return leg.estimated_tax_base * Decimal(lots) / Decimal(leg.quantity_lots)
 
 
-def _stage_quantity_for_cap(
-    *,
-    plan_leg,
-    policy: RealTradingPolicyV1,
-) -> tuple[int, int]:
-    quantity = plan_leg.quantity_lots
+def _stage_count(plan_leg, policy: RealTradingPolicyV1) -> int:
     per_lot = (
         plan_leg.settlement_notional_base
         + plan_leg.commission_base
         + plan_leg.estimated_tax_base
-    ) / Decimal(quantity)
-    max_lots_by_cap = _floor_decimal_ratio(policy.max_order_rub, per_lot)
-    if max_lots_by_cap <= 0:
+    ) / Decimal(plan_leg.quantity_lots)
+    max_lots = _floor_money_ratio(policy.max_order_rub, per_lot)
+    if max_lots <= 0:
         raise SafePlanExecutionError(
             "PLAN_EXECUTION_ORDER_CAP_TOO_SMALL",
             "One immutable plan lot exceeds the existing real-order cap.",
             halt_code=PlanExecutionHaltCode.PREPARE_REJECTED,
         )
-    stage_count = max(
-        plan_leg.required_execution_days,
-        _ceil_ratio(quantity, max_lots_by_cap),
-    )
-    return stage_count, max_lots_by_cap
+    return max(plan_leg.required_execution_days, _ceil_ratio(plan_leg.quantity_lots, max_lots))
 
 
 class SafePlanExecutionServiceV1:
-    """Owner-confirmed, fail-closed orchestrator over v8.6.1 real orders."""
+    """Fail-closed plan orchestrator over the accepted v8.6.1 order primitive."""
 
     def __init__(
         self,
@@ -616,13 +580,13 @@ class SafePlanExecutionServiceV1:
         if require_durable_journal and not journal.durable:
             raise SafePlanExecutionError(
                 "PLAN_EXECUTION_DURABLE_JOURNAL_REQUIRED",
-                "Real plan execution requires a durable plan-session journal.",
+                "Real plan execution requires a durable session journal.",
             )
         self._single_order = single_order
         self._real_policy = real_policy
         self._journal = journal
         self._binding_provider = instrument_binding_provider
-        self._current_state_provider = current_state_provider
+        self._state_provider = current_state_provider
         self._evidence_provider = leg_evidence_provider
         self._settings = settings or PlanExecutionSettingsV1()
 
@@ -640,16 +604,16 @@ class SafePlanExecutionServiceV1:
         except PlanExecutionJournalConflict as exc:
             raise SafePlanExecutionError(
                 "PLAN_EXECUTION_JOURNAL_CONFLICT",
-                "Plan execution state changed concurrently.",
+                "Execution session changed concurrently.",
                 halt_code=PlanExecutionHaltCode.JOURNAL_CONFLICT,
             ) from exc
 
     def _result(
         self,
-        *,
         action: PlanExecutionAdvanceAction,
         session: PlanExecutionSessionV1,
         message: str,
+        *,
         stage_id: str | None = None,
         proposal_id: str | None = None,
         broker_snapshot=None,
@@ -672,47 +636,44 @@ class SafePlanExecutionServiceV1:
     def _halt(
         self,
         session: PlanExecutionSessionV1,
-        *,
         code: PlanExecutionHaltCode,
         message: str,
+        *,
         stage: PlanExecutionStageV1 | None = None,
     ) -> PlanExecutionAdvanceResultV1:
-        if stage is not None:
-            halted_stage = PlanExecutionStageV1.model_validate(
-                stage.model_copy(update={"state": PlanExecutionStageState.HALTED}).model_dump(
-                    mode="python"
-                )
-            )
-            updated = _replace_stage(
+        if stage is None:
+            updated = _session_update(
                 session,
-                halted_stage,
                 state=PlanExecutionSessionState.HALTED,
                 halt_code=code,
                 halt_message=message,
             )
         else:
-            updated = _replace_session(
+            halted = PlanExecutionStageV1.model_validate(
+                stage.model_copy(
+                    update={"state": PlanExecutionStageState.HALTED}
+                ).model_dump(mode="python")
+            )
+            updated = _stage_update(
                 session,
+                halted,
                 state=PlanExecutionSessionState.HALTED,
                 halt_code=code,
                 halt_message=message,
             )
         committed = self._commit(session, updated)
         return self._result(
-            action=PlanExecutionAdvanceAction.HALTED,
-            session=committed,
+            PlanExecutionAdvanceAction.HALTED,
+            committed,
+            message,
             stage_id=stage.stage_id if stage else None,
-            message=message,
         )
 
-    def _current_state(
-        self,
-        plan: PortfolioPlanV1,
-        now: datetime,
-    ) -> PlanExecutionCurrentStateV1:
+    def _state(self, plan: PortfolioPlanV1, now: datetime) -> PlanExecutionCurrentStateV1:
         try:
+            supplied = self._state_provider(plan, now)
             return PlanExecutionCurrentStateV1.model_validate(
-                self._current_state_provider(plan, now).model_dump(mode="python")
+                supplied.model_dump(mode="python")
             )
         except Exception as exc:
             raise SafePlanExecutionError(
@@ -721,19 +682,16 @@ class SafePlanExecutionServiceV1:
                 halt_code=PlanExecutionHaltCode.CURRENT_RISK_NOT_READY,
             ) from exc
 
-    def _binding(
-        self,
-        stable_key: str,
-        now: datetime,
-    ) -> PlanExecutionInstrumentBindingV1:
+    def _binding(self, stable_key: str, now: datetime) -> PlanExecutionInstrumentBindingV1:
         try:
+            supplied = self._binding_provider(stable_key, now)
             binding = PlanExecutionInstrumentBindingV1.model_validate(
-                self._binding_provider(stable_key, now).model_dump(mode="python")
+                supplied.model_dump(mode="python")
             )
         except Exception as exc:
             raise SafePlanExecutionError(
                 "PLAN_EXECUTION_INSTRUMENT_BINDING_MISSING",
-                "Trusted execution instrument binding is unavailable.",
+                "Trusted instrument binding is unavailable.",
                 halt_code=PlanExecutionHaltCode.INSTRUMENT_BINDING_MISSING,
             ) from exc
         if binding.stable_key != stable_key:
@@ -746,23 +704,61 @@ class SafePlanExecutionServiceV1:
 
     def _evidence(
         self,
-        *,
         baseline: PlanMarketBaselineV1,
         binding: PlanExecutionInstrumentBindingV1,
         now: datetime,
     ) -> PlanExecutionLegEvidenceV1:
         try:
+            supplied = self._evidence_provider(baseline, binding, now)
             return PlanExecutionLegEvidenceV1.model_validate(
-                self._evidence_provider(baseline, binding, now).model_dump(
-                    mode="python"
-                )
+                supplied.model_dump(mode="python")
             )
         except Exception as exc:
             raise SafePlanExecutionError(
                 "PLAN_EXECUTION_EVIDENCE_MISSING",
-                "Trusted execution quote/evidence is unavailable.",
+                "Trusted market execution evidence is unavailable.",
                 halt_code=PlanExecutionHaltCode.EXECUTION_EVIDENCE_MISSING,
             ) from exc
+
+    def _initial_review(
+        self,
+        plan: PortfolioPlanV1,
+        state: PlanExecutionCurrentStateV1,
+        bindings: dict[str, PlanExecutionInstrumentBindingV1],
+        now: datetime,
+    ):
+        evidence: list[PlanExecutionLegEvidenceV1] = []
+        for baseline in plan.market_baselines:
+            binding = bindings[baseline.stable_key]
+            row = self._evidence(baseline, binding, now)
+            plan_leg = next(
+                item for item in plan.legs
+                if item.optimizer_leg is not None
+                and item.optimizer_leg.stable_key == baseline.stable_key
+            )
+            _market_guard(
+                baseline=baseline,
+                binding=binding,
+                evidence=row,
+                side=_side(plan_leg.action),
+                plan=plan,
+                settings=self._settings,
+                now=now,
+            )
+            evidence.append(row)
+        return review_portfolio_plan(
+            plan=plan,
+            review_input=PortfolioPlanReviewInputV1(
+                reviewed_at=now,
+                portfolio_snapshot_sha256=state.portfolio_snapshot_sha256,
+                policy_reference=state.policy_reference,
+                current_risk_assessment_sha256=state.risk_assessment_sha256,
+                strategy_selection_sha256=state.strategy_selection_sha256,
+                optimizer_sha256=state.optimizer_sha256,
+                target_risk_assessment_sha256=state.target_risk_assessment_sha256,
+                market_observations=tuple(row.observation for row in evidence),
+            ),
+        )
 
     def prepare_plan(
         self,
@@ -772,7 +768,7 @@ class SafePlanExecutionServiceV1:
     ) -> PlanExecutionSessionV1:
         current = _aware_utc(now)
         plan = _canonical_plan(plan)
-        if not plan.approval_required or not _actionable_plan_legs(plan):
+        if not plan.approval_required or not _actionable_legs(plan):
             raise SafePlanExecutionError(
                 "PLAN_EXECUTION_NO_ACTION",
                 "NO_ACTION plan does not create a real execution session.",
@@ -780,22 +776,27 @@ class SafePlanExecutionServiceV1:
         if current >= plan.expires_at:
             raise SafePlanExecutionError(
                 "PLAN_EXECUTION_PLAN_EXPIRED",
-                "Immutable portfolio plan expired before execution preparation.",
+                "Plan expired before execution preparation.",
                 halt_code=PlanExecutionHaltCode.PLAN_EXPIRED,
             )
 
-        state = self._current_state(plan, current)
-        initial_expected = _target_current_lots(plan)
-        observed = _position_map(state)
-        observed_complete = {key: observed.get(key, 0) for key in initial_expected}
-        unexpected = {key: lots for key, lots in observed.items() if key not in initial_expected and lots}
-        if observed_complete != initial_expected or unexpected:
+        state = self._state(plan, current)
+        expected = {row.stable_key: row.current_lots for row in plan.targets}
+        observed = _positions(state)
+        normalized = {key: observed.get(key, 0) for key in expected}
+        unexpected = {
+            key: lots for key, lots in observed.items() if key not in expected and lots
+        }
+        if normalized != expected or unexpected:
             raise SafePlanExecutionError(
                 "PLAN_EXECUTION_INITIAL_PORTFOLIO_MISMATCH",
-                "Current portfolio lots differ from immutable plan start state.",
+                "Current positions differ from immutable plan start state.",
                 halt_code=PlanExecutionHaltCode.PORTFOLIO_PROGRESS_MISMATCH,
             )
-        if abs(state.cash_base - plan.current_cash_base) > self._settings.cash_reconciliation_tolerance_rub:
+        if (
+            abs(state.cash_base - plan.current_cash_base)
+            > self._settings.cash_reconciliation_tolerance_rub
+        ):
             raise SafePlanExecutionError(
                 "PLAN_EXECUTION_INITIAL_CASH_MISMATCH",
                 "Current cash differs from immutable plan start state.",
@@ -804,7 +805,7 @@ class SafePlanExecutionServiceV1:
         if not state.risk_decision_ready or not state.risk_policy_compliant:
             raise SafePlanExecutionError(
                 "PLAN_EXECUTION_INITIAL_RISK_NOT_READY",
-                "Current risk state is not safe for plan execution.",
+                "Current risk state is not safe for execution.",
                 halt_code=(
                     PlanExecutionHaltCode.CURRENT_RISK_POLICY_BREACH
                     if not state.risk_policy_compliant
@@ -812,53 +813,29 @@ class SafePlanExecutionServiceV1:
                 ),
             )
 
-        baselines = _baseline_map(plan)
         bindings: dict[str, PlanExecutionInstrumentBindingV1] = {}
-        evidences: list[PlanExecutionLegEvidenceV1] = []
-        for plan_leg in _actionable_plan_legs(plan):
-            optimizer_leg = plan_leg.optimizer_leg
-            assert optimizer_leg is not None
-            binding = self._binding(optimizer_leg.stable_key, current)
-            baseline = baselines[optimizer_leg.stable_key]
-            evidence = self._evidence(
-                baseline=baseline,
-                binding=binding,
-                now=current,
-            )
-            side = _direction(plan_leg.action)
-            _evidence_guard(
-                baseline=baseline,
-                binding=binding,
-                evidence=evidence,
-                side=side,
-                plan=plan,
-                settings=self._settings,
-                now=current,
-            )
-            if binding.lot_size != optimizer_leg.lot_size:
+        for plan_leg in _actionable_legs(plan):
+            leg = plan_leg.optimizer_leg
+            assert leg is not None
+            binding = self._binding(leg.stable_key, current)
+            if binding.lot_size != leg.lot_size:
                 raise SafePlanExecutionError(
                     "PLAN_EXECUTION_LOT_BINDING_MISMATCH",
-                    "Broker lot size differs from immutable plan leg.",
+                    "Current lot size differs from immutable plan leg.",
                     halt_code=PlanExecutionHaltCode.INSTRUMENT_BINDING_MISMATCH,
                 )
-            if binding.instrument_type not in self._real_policy.allowed_instrument_types:
+            if (
+                binding.instrument_type not in {"share", "etf"}
+                or binding.instrument_type not in self._real_policy.allowed_instrument_types
+            ):
                 raise SafePlanExecutionError(
                     "PLAN_EXECUTION_REAL_POLICY_TYPE_BLOCKED",
-                    "Instrument type is outside existing real-trading policy.",
+                    "Instrument is outside the proven v8.6.1 real-money surface.",
                     halt_code=PlanExecutionHaltCode.INSTRUMENT_TYPE_NOT_SUPPORTED,
                 )
-            bindings[optimizer_leg.stable_key] = binding
-            evidences.append(evidence)
+            bindings[leg.stable_key] = binding
 
-        review = review_portfolio_plan(
-            plan=plan,
-            review_input=_review_input(
-                plan=plan,
-                state=state,
-                evidences=evidences,
-                now=current,
-            ),
-        )
+        review = self._initial_review(plan, state, bindings, current)
         if not review.plan_valid or review.expected_owner_approval_phrase is None:
             raise SafePlanExecutionError(
                 "PLAN_EXECUTION_INITIAL_REVIEW_INVALID",
@@ -866,17 +843,13 @@ class SafePlanExecutionServiceV1:
                 halt_code=PlanExecutionHaltCode.PLAN_INVALID,
             )
 
-        instrument_states: list[PlanExecutionInstrumentStateV1] = []
         prepared_day = _moscow_date(current)
-        for plan_leg in _actionable_plan_legs(plan):
-            optimizer_leg = plan_leg.optimizer_leg
-            assert optimizer_leg is not None
-            side = _direction(plan_leg.action)
-            stage_count, _ = _stage_quantity_for_cap(
-                plan_leg=optimizer_leg,
-                policy=self._real_policy,
-            )
-            sizes = _stage_slice_sizes(optimizer_leg.quantity_lots, stage_count)
+        instruments: list[PlanExecutionInstrumentStateV1] = []
+        for plan_leg in _actionable_legs(plan):
+            leg = plan_leg.optimizer_leg
+            assert leg is not None
+            count = _stage_count(leg, self._real_policy)
+            sizes = _stage_sizes(leg.quantity_lots, count)
             stages = tuple(
                 PlanExecutionStageV1(
                     stage_id=_sha(
@@ -884,45 +857,44 @@ class SafePlanExecutionServiceV1:
                         plan.plan_sha256,
                         plan_leg.sequence,
                         index,
-                        optimizer_leg.stable_key,
+                        leg.stable_key,
                     ),
                     leg_sequence=plan_leg.sequence,
-                    stable_key=optimizer_leg.stable_key,
-                    side=side,
+                    stable_key=leg.stable_key,
+                    side=_side(plan_leg.action),
                     stage_index=index,
-                    stage_count=stage_count,
+                    stage_count=count,
                     planned_lots=size,
                     not_before_moscow_date=prepared_day + timedelta(days=index - 1),
                 )
                 for index, size in enumerate(sizes, start=1)
             )
-            instrument_states.append(
+            instruments.append(
                 PlanExecutionInstrumentStateV1(
-                    binding=bindings[optimizer_leg.stable_key],
+                    binding=bindings[leg.stable_key],
                     stages=stages,
                 )
             )
 
-        execution_id = _sha("plan-execution-v1", plan.plan_sha256)
         session = PlanExecutionSessionV1(
-            execution_id=execution_id,
+            execution_id=_sha("plan-execution-v1", plan.plan_sha256),
             plan_sha256=plan.plan_sha256,
             initial_review_sha256=review.review_sha256,
             prepared_at=current,
             last_reviewed_at=current,
             last_review_sha256=review.review_sha256,
             state=PlanExecutionSessionState.PREPARED,
-            instrument_states=tuple(instrument_states),
+            instrument_states=tuple(instruments),
         )
         try:
             return self._journal.put(session)
         except PlanExecutionJournalConflict as exc:
-            existing = self._journal.get(execution_id)
+            existing = self._journal.get(session.execution_id)
             if existing.plan_sha256 == plan.plan_sha256:
                 return existing
             raise SafePlanExecutionError(
                 "PLAN_EXECUTION_ID_CONFLICT",
-                "Execution id already exists for a different plan payload.",
+                "Execution id already belongs to another payload.",
                 halt_code=PlanExecutionHaltCode.JOURNAL_CONFLICT,
             ) from exc
 
@@ -940,31 +912,34 @@ class SafePlanExecutionServiceV1:
         if session.plan_sha256 != plan.plan_sha256:
             return self._halt(
                 session,
-                code=PlanExecutionHaltCode.PLAN_INVALID,
-                message="Execution session does not match immutable plan SHA.",
+                PlanExecutionHaltCode.PLAN_INVALID,
+                "Execution session does not match immutable plan.",
             )
         if session.owner_approved:
             return self._result(
-                action=PlanExecutionAdvanceAction.REPLAY,
-                session=session,
-                message="Exact plan approval was already recorded; no submit repeated.",
+                PlanExecutionAdvanceAction.REPLAY,
+                session,
+                "Exact plan approval was already recorded; no submit repeated.",
             )
         if current >= plan.expires_at:
             return self._halt(
                 session,
-                code=PlanExecutionHaltCode.PLAN_EXPIRED,
-                message="Immutable plan expired before owner approval.",
+                PlanExecutionHaltCode.PLAN_EXPIRED,
+                "Plan expired before owner approval.",
             )
-        expected = plan.owner_approval_phrase or ""
-        if not expected or not hmac.compare_digest(owner_approval_phrase, expected):
+        expected_phrase = plan.owner_approval_phrase or ""
+        if not expected_phrase or not hmac.compare_digest(
+            owner_approval_phrase,
+            expected_phrase,
+        ):
             return self._halt(
                 session,
-                code=PlanExecutionHaltCode.OWNER_APPROVAL_MISMATCH,
-                message="Exact owner approval phrase for this plan is required.",
+                PlanExecutionHaltCode.OWNER_APPROVAL_MISMATCH,
+                "Exact owner approval phrase for this plan is required.",
             )
 
-        state = self._current_state(plan, current)
-        matched, code, message = _progress_matches(
+        state = self._state(plan, current)
+        matched, code, message = _progress_match(
             plan=plan,
             session=session,
             state=state,
@@ -974,45 +949,52 @@ class SafePlanExecutionServiceV1:
         if not matched:
             return self._halt(
                 session,
-                code=code or PlanExecutionHaltCode.PORTFOLIO_PROGRESS_MISMATCH,
-                message=message or "Current state no longer matches plan start.",
+                code or PlanExecutionHaltCode.PORTFOLIO_PROGRESS_MISMATCH,
+                message or "Current state no longer matches plan start.",
+            )
+        bindings = {
+            item.binding.stable_key: item.binding
+            for item in session.instrument_states
+        }
+        review = self._initial_review(plan, state, bindings, current)
+        if not review.plan_valid or review.expected_owner_approval_phrase != expected_phrase:
+            return self._halt(
+                session,
+                PlanExecutionHaltCode.PLAN_INVALID,
+                "Plan became invalid before owner approval.",
             )
 
-        evidence_hash = _sha(
+        evidence_sha = _sha(
             "plan-owner-approval-v1",
             execution_id,
             plan.plan_sha256,
             owner_approval_phrase,
         )
-        updated = _replace_session(
+        updated = _session_update(
             session,
             state=PlanExecutionSessionState.ACTIVE,
+            last_reviewed_at=current,
+            last_review_sha256=review.review_sha256,
             owner_approved=True,
             owner_approved_at=current,
-            owner_approval_evidence_sha256=evidence_hash,
+            owner_approval_evidence_sha256=evidence_sha,
         )
         committed = self._commit(session, updated)
         return self._result(
-            action=PlanExecutionAdvanceAction.APPROVED,
-            session=committed,
-            message="Exact immutable plan approval recorded; no broker submit occurred.",
+            PlanExecutionAdvanceAction.APPROVED,
+            committed,
+            "Exact immutable plan approval recorded; no broker submit occurred.",
         )
 
     def _runtime_guard(
         self,
-        *,
         plan: PortfolioPlanV1,
         session: PlanExecutionSessionV1,
         stage: PlanExecutionStageV1,
         now: datetime,
-    ) -> tuple[
-        PlanExecutionCurrentStateV1,
-        PlanExecutionInstrumentBindingV1,
-        PlanExecutionLegEvidenceV1,
-        Decimal,
-    ]:
-        state = self._current_state(plan, now)
-        matched, code, message = _progress_matches(
+    ) -> tuple[PlanExecutionInstrumentBindingV1, Decimal]:
+        state = self._state(plan, now)
+        matched, code, message = _progress_match(
             plan=plan,
             session=session,
             state=state,
@@ -1022,20 +1004,20 @@ class SafePlanExecutionServiceV1:
         if not matched:
             raise SafePlanExecutionError(
                 "PLAN_EXECUTION_PROGRESS_DRIFT",
-                message or "Current portfolio progress does not reconcile.",
+                message or "Portfolio progress does not reconcile.",
                 halt_code=code or PlanExecutionHaltCode.PORTFOLIO_PROGRESS_MISMATCH,
             )
-        instrument = _instrument_for_stage(session, stage)
+        stored = _instrument(session, stage.stable_key).binding
         binding = self._binding(stage.stable_key, now)
-        if binding != instrument.binding:
+        if not _binding_same(stored, binding):
             raise SafePlanExecutionError(
                 "PLAN_EXECUTION_INSTRUMENT_BINDING_CHANGED",
-                "Trusted execution identity changed after session preparation.",
+                "Broker instrument identity changed after session preparation.",
                 halt_code=PlanExecutionHaltCode.INSTRUMENT_BINDING_MISMATCH,
             )
-        baseline = _baseline_map(plan)[stage.stable_key]
-        evidence = self._evidence(baseline=baseline, binding=binding, now=now)
-        limit_price = _evidence_guard(
+        baseline = _baselines(plan)[stage.stable_key]
+        evidence = self._evidence(baseline, binding, now)
+        limit_price = _market_guard(
             baseline=baseline,
             binding=binding,
             evidence=evidence,
@@ -1044,52 +1026,38 @@ class SafePlanExecutionServiceV1:
             settings=self._settings,
             now=now,
         )
-        return state, binding, evidence, limit_price
+        return binding, limit_price
 
     def _prepare_stage(
         self,
-        *,
         plan: PortfolioPlanV1,
         session: PlanExecutionSessionV1,
         stage: PlanExecutionStageV1,
         now: datetime,
     ) -> PlanExecutionAdvanceResultV1:
         today = _moscow_date(now)
-        if today < stage.not_before_moscow_date:
+        if today < stage.not_before_moscow_date or stage.last_submission_moscow_date == today:
             return self._result(
-                action=PlanExecutionAdvanceAction.WAITING_NEXT_STAGE_DAY,
-                session=session,
+                PlanExecutionAdvanceAction.WAITING_NEXT_STAGE_DAY,
+                session,
+                "Stage is intentionally deferred; no same-day staged resubmit is allowed.",
                 stage_id=stage.stage_id,
-                message="Stage is intentionally deferred to a later Moscow date.",
-            )
-        if stage.last_submission_moscow_date == today:
-            return self._result(
-                action=PlanExecutionAdvanceAction.WAITING_NEXT_STAGE_DAY,
-                session=session,
-                stage_id=stage.stage_id,
-                message="No second staged submit is allowed on the same Moscow date.",
             )
         try:
-            _, binding, _, limit_price = self._runtime_guard(
-                plan=plan,
-                session=session,
-                stage=stage,
-                now=now,
-            )
+            binding, limit_price = self._runtime_guard(plan, session, stage, now)
         except SafePlanExecutionError as exc:
             return self._halt(
                 session,
-                code=exc.halt_code or PlanExecutionHaltCode.PLAN_MARKET_DRIFT,
-                message=exc.message,
+                exc.halt_code or PlanExecutionHaltCode.PLAN_MARKET_DRIFT,
+                exc.message,
                 stage=stage,
             )
-
         quantity = stage.remaining_lots
         if quantity <= 0:
             return self._halt(
                 session,
-                code=PlanExecutionHaltCode.BROKER_FILL_OVERFLOW,
-                message="Pending stage has no remaining lots.",
+                PlanExecutionHaltCode.BROKER_FILL_OVERFLOW,
+                "Pending stage has no remaining lots.",
                 stage=stage,
             )
         try:
@@ -1107,33 +1075,31 @@ class SafePlanExecutionServiceV1:
         except RealTradingApiFailure as exc:
             if exc.code == "REAL_DAILY_CAP_EXCEEDED":
                 return self._result(
-                    action=PlanExecutionAdvanceAction.WAITING_NEXT_STAGE_DAY,
-                    session=session,
+                    PlanExecutionAdvanceAction.WAITING_NEXT_STAGE_DAY,
+                    session,
+                    "Existing v8.6.1 daily real-money cap deferred this stage.",
                     stage_id=stage.stage_id,
-                    message="Existing v8.6.1 daily real-money cap defers this stage.",
                 )
             return self._halt(
                 session,
-                code=PlanExecutionHaltCode.PREPARE_REJECTED,
-                message=f"Legacy real-trading preflight rejected stage: {exc.code}.",
+                PlanExecutionHaltCode.PREPARE_REJECTED,
+                f"Legacy real-trading preflight rejected stage: {exc.code}.",
                 stage=stage,
             )
-
         if (
             proposal.instrument_uid != binding.instrument_uid
+            or proposal.ticker != binding.ticker
+            or proposal.isin != binding.isin
             or proposal.direction != stage.side.value
             or proposal.quantity_lots != quantity
             or proposal.limit_price != limit_price
-            or proposal.ticker != binding.ticker
-            or proposal.isin != binding.isin
         ):
             return self._halt(
                 session,
-                code=PlanExecutionHaltCode.INSTRUMENT_BINDING_MISMATCH,
-                message="Prepared legacy proposal differs from server-bound plan stage.",
+                PlanExecutionHaltCode.INSTRUMENT_BINDING_MISMATCH,
+                "Prepared legacy proposal differs from server-bound stage.",
                 stage=stage,
             )
-
         attempt = PlanExecutionAttemptV1(
             attempt_index=len(stage.attempts) + 1,
             quantity_lots=quantity,
@@ -1151,23 +1117,24 @@ class SafePlanExecutionServiceV1:
                 }
             ).model_dump(mode="python")
         )
-        updated = _replace_stage(
+        committed = self._commit(
             session,
-            updated_stage,
-            state=PlanExecutionSessionState.ACTIVE,
+            _stage_update(
+                session,
+                updated_stage,
+                state=PlanExecutionSessionState.ACTIVE,
+            ),
         )
-        committed = self._commit(session, updated)
         return self._result(
-            action=PlanExecutionAdvanceAction.STAGE_PREPARED,
-            session=committed,
+            PlanExecutionAdvanceAction.STAGE_PREPARED,
+            committed,
+            "Legacy immutable proposal prepared; no submit occurred.",
             stage_id=stage.stage_id,
             proposal_id=proposal.proposal_id,
-            message="Legacy immutable single-order proposal prepared; no submit occurred.",
         )
 
-    def _submit_prepared_stage(
+    def _submit_stage(
         self,
-        *,
         plan: PortfolioPlanV1,
         session: PlanExecutionSessionV1,
         stage: PlanExecutionStageV1,
@@ -1176,34 +1143,29 @@ class SafePlanExecutionServiceV1:
         if not stage.attempts:
             return self._halt(
                 session,
-                code=PlanExecutionHaltCode.JOURNAL_CONFLICT,
-                message="Prepared stage has no execution attempt.",
+                PlanExecutionHaltCode.JOURNAL_CONFLICT,
+                "Prepared stage has no execution attempt.",
                 stage=stage,
             )
         attempt = stage.attempts[-1]
         if attempt.state is not PlanExecutionAttemptState.PREPARED or not attempt.proposal_id:
             return self._halt(
                 session,
-                code=PlanExecutionHaltCode.JOURNAL_CONFLICT,
-                message="Prepared stage attempt state is inconsistent.",
+                PlanExecutionHaltCode.JOURNAL_CONFLICT,
+                "Prepared stage attempt is inconsistent.",
                 stage=stage,
             )
         try:
-            _, _, _, fresh_limit = self._runtime_guard(
-                plan=plan,
-                session=session,
-                stage=stage,
-                now=now,
-            )
+            _, fresh_limit = self._runtime_guard(plan, session, stage, now)
         except SafePlanExecutionError as exc:
             return self._halt(
                 session,
-                code=exc.halt_code or PlanExecutionHaltCode.PLAN_MARKET_DRIFT,
-                message=exc.message,
+                exc.halt_code or PlanExecutionHaltCode.PLAN_MARKET_DRIFT,
+                exc.message,
                 stage=stage,
             )
         if attempt.limit_price != fresh_limit:
-            failed_attempt = PlanExecutionAttemptV1.model_validate(
+            failed = PlanExecutionAttemptV1.model_validate(
                 attempt.model_copy(
                     update={
                         "state": PlanExecutionAttemptState.FAILED,
@@ -1211,65 +1173,66 @@ class SafePlanExecutionServiceV1:
                     }
                 ).model_dump(mode="python")
             )
-            updated_stage = PlanExecutionStageV1.model_validate(
+            pending = PlanExecutionStageV1.model_validate(
                 stage.model_copy(
                     update={
                         "state": PlanExecutionStageState.PENDING,
-                        "attempts": (*stage.attempts[:-1], failed_attempt),
+                        "attempts": (*stage.attempts[:-1], failed),
                     }
                 ).model_dump(mode="python")
             )
-            updated = _replace_stage(session, updated_stage, state=PlanExecutionSessionState.ACTIVE)
-            committed = self._commit(session, updated)
+            committed = self._commit(session, _stage_update(session, pending))
             return self._result(
-                action=PlanExecutionAdvanceAction.REPLAY,
-                session=committed,
+                PlanExecutionAdvanceAction.REPLAY,
+                committed,
+                "Executable LIMIT price changed; stage was reset for fresh preparation.",
                 stage_id=stage.stage_id,
-                message="Executable LIMIT price changed; stage must be safely re-prepared.",
             )
 
         proposal = self._single_order.get_proposal(attempt.proposal_id)
-        if proposal.state != "prepared":
-            if proposal.state in {"submitting", "unknown"}:
-                return self._halt(
+        if proposal.state in {"submitting", "unknown"}:
+            return self._halt(
+                session,
+                PlanExecutionHaltCode.AMBIGUOUS_SUBMISSION,
+                "Underlying proposal is uncertain; do not resubmit.",
+                stage=stage,
+            )
+        if proposal.state == "submitted":
+            submitted = PlanExecutionAttemptV1.model_validate(
+                attempt.model_copy(
+                    update={
+                        "state": PlanExecutionAttemptState.SUBMITTED,
+                        "submitted_at": proposal.submitted_at or now,
+                        "idempotent_replay": True,
+                    }
+                ).model_dump(mode="python")
+            )
+            waiting = PlanExecutionStageV1.model_validate(
+                stage.model_copy(
+                    update={
+                        "state": PlanExecutionStageState.AWAITING_BROKER_RECONCILIATION,
+                        "attempts": (*stage.attempts[:-1], submitted),
+                        "last_submission_moscow_date": _moscow_date(now),
+                    }
+                ).model_dump(mode="python")
+            )
+            committed = self._commit(
+                session,
+                _stage_update(
                     session,
-                    code=PlanExecutionHaltCode.AMBIGUOUS_SUBMISSION,
-                    message="Underlying proposal is in uncertain submission state; do not resubmit.",
-                    stage=stage,
-                )
-            if proposal.state == "submitted":
-                submitted_attempt = PlanExecutionAttemptV1.model_validate(
-                    attempt.model_copy(
-                        update={
-                            "state": PlanExecutionAttemptState.SUBMITTED,
-                            "submitted_at": proposal.submitted_at or now,
-                            "idempotent_replay": True,
-                        }
-                    ).model_dump(mode="python")
-                )
-                updated_stage = PlanExecutionStageV1.model_validate(
-                    stage.model_copy(
-                        update={
-                            "state": PlanExecutionStageState.AWAITING_BROKER_RECONCILIATION,
-                            "attempts": (*stage.attempts[:-1], submitted_attempt),
-                            "last_submission_moscow_date": _moscow_date(now),
-                        }
-                    ).model_dump(mode="python")
-                )
-                updated = _replace_stage(
-                    session,
-                    updated_stage,
+                    waiting,
                     state=PlanExecutionSessionState.AWAITING_BROKER_RECONCILIATION,
-                )
-                committed = self._commit(session, updated)
-                return self._result(
-                    action=PlanExecutionAdvanceAction.REPLAY,
-                    session=committed,
-                    stage_id=stage.stage_id,
-                    proposal_id=proposal.proposal_id,
-                    message="Underlying proposal was already submitted; no second submit occurred.",
-                )
-            failed_attempt = PlanExecutionAttemptV1.model_validate(
+                ),
+            )
+            return self._result(
+                PlanExecutionAdvanceAction.REPLAY,
+                committed,
+                "Underlying proposal was already submitted; no second submit occurred.",
+                stage_id=stage.stage_id,
+                proposal_id=proposal.proposal_id,
+            )
+        if proposal.state != "prepared":
+            failed = PlanExecutionAttemptV1.model_validate(
                 attempt.model_copy(
                     update={
                         "state": (
@@ -1281,23 +1244,21 @@ class SafePlanExecutionServiceV1:
                     }
                 ).model_dump(mode="python")
             )
-            updated_stage = PlanExecutionStageV1.model_validate(
+            pending = PlanExecutionStageV1.model_validate(
                 stage.model_copy(
                     update={
                         "state": PlanExecutionStageState.PENDING,
-                        "attempts": (*stage.attempts[:-1], failed_attempt),
+                        "attempts": (*stage.attempts[:-1], failed),
                     }
                 ).model_dump(mode="python")
             )
-            updated = _replace_stage(session, updated_stage, state=PlanExecutionSessionState.ACTIVE)
-            committed = self._commit(session, updated)
+            committed = self._commit(session, _stage_update(session, pending))
             return self._result(
-                action=PlanExecutionAdvanceAction.REPLAY,
-                session=committed,
+                PlanExecutionAdvanceAction.REPLAY,
+                committed,
+                "Underlying proposal is no longer prepared; fresh preparation is required.",
                 stage_id=stage.stage_id,
-                message="Underlying proposal is no longer prepared; stage may be safely re-prepared.",
             )
-
         try:
             completed, replay = self._single_order.execute_trade(
                 proposal.proposal_id,
@@ -1306,7 +1267,7 @@ class SafePlanExecutionServiceV1:
             )
         except RealTradingApiFailure as exc:
             if exc.ambiguous_submission or exc.code == "REAL_ORDER_SUBMISSION_UNCERTAIN":
-                unknown_attempt = PlanExecutionAttemptV1.model_validate(
+                unknown = PlanExecutionAttemptV1.model_validate(
                     attempt.model_copy(
                         update={
                             "state": PlanExecutionAttemptState.UNKNOWN,
@@ -1315,47 +1276,47 @@ class SafePlanExecutionServiceV1:
                         }
                     ).model_dump(mode="python")
                 )
-                updated_stage = PlanExecutionStageV1.model_validate(
+                waiting = PlanExecutionStageV1.model_validate(
                     stage.model_copy(
                         update={
                             "state": PlanExecutionStageState.AWAITING_BROKER_RECONCILIATION,
-                            "attempts": (*stage.attempts[:-1], unknown_attempt),
+                            "attempts": (*stage.attempts[:-1], unknown),
                             "last_submission_moscow_date": _moscow_date(now),
                         }
                     ).model_dump(mode="python")
                 )
-                updated = _replace_stage(
+                updated = _stage_update(
                     session,
-                    updated_stage,
+                    waiting,
                     state=PlanExecutionSessionState.HALTED,
                     halt_code=PlanExecutionHaltCode.AMBIGUOUS_SUBMISSION,
                     halt_message=(
-                        "Submit result is ambiguous; remaining plan execution is halted "
-                        "until exact request-id reconciliation."
+                        "Submit result is ambiguous; all remaining legs are halted "
+                        "until request-id reconciliation."
                     ),
                 )
                 committed = self._commit(session, updated)
                 return self._result(
-                    action=PlanExecutionAdvanceAction.HALTED,
-                    session=committed,
+                    PlanExecutionAdvanceAction.HALTED,
+                    committed,
+                    "Ambiguous submit: do not resubmit this proposal.",
                     stage_id=stage.stage_id,
                     proposal_id=proposal.proposal_id,
-                    message="Ambiguous submit: do not resubmit this stage.",
                 )
             if exc.code == "REAL_MARKET_REVALIDATION_REQUIRED":
                 return self._result(
-                    action=PlanExecutionAdvanceAction.REPLAY,
-                    session=session,
+                    PlanExecutionAdvanceAction.REPLAY,
+                    session,
+                    "Legacy primitive requires a newer trusted market snapshot before submit.",
                     stage_id=stage.stage_id,
                     proposal_id=proposal.proposal_id,
-                    message="Legacy primitive requires a newer trusted market snapshot before submit.",
                 )
             if exc.code in {
                 "REAL_CONFIRMATION_EXPIRED",
                 "REAL_PREFLIGHT_CHANGED",
                 "REAL_DAILY_CAP_EXCEEDED",
             }:
-                failed_attempt = PlanExecutionAttemptV1.model_validate(
+                failed = PlanExecutionAttemptV1.model_validate(
                     attempt.model_copy(
                         update={
                             "state": (
@@ -1367,34 +1328,33 @@ class SafePlanExecutionServiceV1:
                         }
                     ).model_dump(mode="python")
                 )
-                updated_stage = PlanExecutionStageV1.model_validate(
+                pending = PlanExecutionStageV1.model_validate(
                     stage.model_copy(
                         update={
                             "state": PlanExecutionStageState.PENDING,
-                            "attempts": (*stage.attempts[:-1], failed_attempt),
+                            "attempts": (*stage.attempts[:-1], failed),
                         }
                     ).model_dump(mode="python")
                 )
-                updated = _replace_stage(session, updated_stage, state=PlanExecutionSessionState.ACTIVE)
-                committed = self._commit(session, updated)
+                committed = self._commit(session, _stage_update(session, pending))
                 return self._result(
-                    action=(
+                    (
                         PlanExecutionAdvanceAction.WAITING_NEXT_STAGE_DAY
                         if exc.code == "REAL_DAILY_CAP_EXCEEDED"
                         else PlanExecutionAdvanceAction.REPLAY
                     ),
-                    session=committed,
+                    committed,
+                    f"Legacy preflight changed ({exc.code}); no unsafe retry occurred.",
                     stage_id=stage.stage_id,
-                    message=f"Legacy submit preflight changed ({exc.code}); no unsafe retry occurred.",
                 )
             return self._halt(
                 session,
-                code=PlanExecutionHaltCode.SUBMIT_PREFLIGHT_CHANGED,
-                message=f"Legacy execution rejected stage: {exc.code}.",
+                PlanExecutionHaltCode.SUBMIT_PREFLIGHT_CHANGED,
+                f"Legacy execution rejected stage: {exc.code}.",
                 stage=stage,
             )
 
-        submitted_attempt = PlanExecutionAttemptV1.model_validate(
+        submitted = PlanExecutionAttemptV1.model_validate(
             attempt.model_copy(
                 update={
                     "state": PlanExecutionAttemptState.SUBMITTED,
@@ -1403,42 +1363,44 @@ class SafePlanExecutionServiceV1:
                 }
             ).model_dump(mode="python")
         )
-        updated_stage = PlanExecutionStageV1.model_validate(
+        waiting = PlanExecutionStageV1.model_validate(
             stage.model_copy(
                 update={
                     "state": PlanExecutionStageState.AWAITING_BROKER_RECONCILIATION,
-                    "attempts": (*stage.attempts[:-1], submitted_attempt),
+                    "attempts": (*stage.attempts[:-1], submitted),
                     "last_submission_moscow_date": _moscow_date(now),
                 }
             ).model_dump(mode="python")
         )
-        updated = _replace_stage(
+        committed = self._commit(
             session,
-            updated_stage,
-            state=PlanExecutionSessionState.AWAITING_BROKER_RECONCILIATION,
+            _stage_update(
+                session,
+                waiting,
+                state=PlanExecutionSessionState.AWAITING_BROKER_RECONCILIATION,
+            ),
         )
-        committed = self._commit(session, updated)
         return self._result(
-            action=PlanExecutionAdvanceAction.STAGE_SUBMITTED,
-            session=committed,
+            PlanExecutionAdvanceAction.STAGE_SUBMITTED,
+            committed,
+            "Exactly one legacy LIMIT submit reserved; broker reconciliation is required.",
             stage_id=stage.stage_id,
             proposal_id=completed.proposal_id,
-            message="Exactly one legacy LIMIT submit reserved; broker reconciliation is required.",
         )
 
     def _reconcile_broker(
         self,
-        *,
         plan: PortfolioPlanV1,
         session: PlanExecutionSessionV1,
         stage: PlanExecutionStageV1,
         now: datetime,
     ) -> PlanExecutionAdvanceResultV1:
+        del plan
         if not stage.attempts or not stage.attempts[-1].proposal_id:
             return self._halt(
                 session,
-                code=PlanExecutionHaltCode.JOURNAL_CONFLICT,
-                message="Broker-reconciliation stage has no proposal identity.",
+                PlanExecutionHaltCode.JOURNAL_CONFLICT,
+                "Broker-reconciliation stage has no proposal identity.",
                 stage=stage,
             )
         attempt = stage.attempts[-1]
@@ -1447,17 +1409,17 @@ class SafePlanExecutionServiceV1:
             snapshot = broker_snapshot_from_proposal(proposal)
         except RealTradingApiFailure as exc:
             return self._result(
-                action=PlanExecutionAdvanceAction.REPLAY,
-                session=session,
+                PlanExecutionAdvanceAction.REPLAY,
+                session,
+                f"Broker state is not yet reconcilable ({exc.code}); no resubmit occurred.",
                 stage_id=stage.stage_id,
                 proposal_id=attempt.proposal_id,
-                message=f"Broker state is not yet reconcilable ({exc.code}); no resubmit occurred.",
             )
         except PlanExecutionBrokerStateError as exc:
             return self._halt(
                 session,
-                code=PlanExecutionHaltCode.BROKER_RECONCILIATION_INCOMPLETE,
-                message=str(exc),
+                PlanExecutionHaltCode.BROKER_RECONCILIATION_INCOMPLETE,
+                str(exc),
                 stage=stage,
             )
 
@@ -1465,7 +1427,7 @@ class SafePlanExecutionServiceV1:
             BrokerExecutionStatus.NEW,
             BrokerExecutionStatus.PARTIALLY_FILLED,
         }:
-            active_attempt = PlanExecutionAttemptV1.model_validate(
+            active = PlanExecutionAttemptV1.model_validate(
                 attempt.model_copy(
                     update={
                         "state": PlanExecutionAttemptState.ACTIVE,
@@ -1479,22 +1441,24 @@ class SafePlanExecutionServiceV1:
             )
             updated_stage = PlanExecutionStageV1.model_validate(
                 stage.model_copy(
-                    update={"attempts": (*stage.attempts[:-1], active_attempt)}
+                    update={"attempts": (*stage.attempts[:-1], active)}
                 ).model_dump(mode="python")
             )
-            updated = _replace_stage(
+            committed = self._commit(
                 session,
-                updated_stage,
-                state=PlanExecutionSessionState.AWAITING_BROKER_RECONCILIATION,
+                _stage_update(
+                    session,
+                    updated_stage,
+                    state=PlanExecutionSessionState.AWAITING_BROKER_RECONCILIATION,
+                ),
             )
-            committed = self._commit(session, updated)
             return self._result(
-                action=PlanExecutionAdvanceAction.BROKER_ACTIVE,
-                session=committed,
+                PlanExecutionAdvanceAction.BROKER_ACTIVE,
+                committed,
+                "Broker order remains active/partially filled; remainder is not resubmitted.",
                 stage_id=stage.stage_id,
                 proposal_id=attempt.proposal_id,
                 broker_snapshot=snapshot,
-                message="Broker order remains active/partially filled; no remainder resubmit is allowed.",
             )
 
         if snapshot.status in {
@@ -1503,8 +1467,8 @@ class SafePlanExecutionServiceV1:
         }:
             return self._halt(
                 session,
-                code=PlanExecutionHaltCode.BROKER_REJECTED,
-                message=f"Broker terminal status {snapshot.status.value} halts remaining plan legs.",
+                PlanExecutionHaltCode.BROKER_REJECTED,
+                f"Broker status {snapshot.status.value} halted all remaining plan legs.",
                 stage=stage,
             )
 
@@ -1513,16 +1477,15 @@ class SafePlanExecutionServiceV1:
             for row in stage.attempts[:-1]
             if row.state is PlanExecutionAttemptState.TERMINAL
         )
-        new_total_terminal = prior_terminal + snapshot.lots_executed
-        if new_total_terminal > stage.planned_lots:
+        terminal_lots = prior_terminal + snapshot.lots_executed
+        if terminal_lots > stage.planned_lots:
             return self._halt(
                 session,
-                code=PlanExecutionHaltCode.BROKER_FILL_OVERFLOW,
-                message="Broker fills exceed immutable stage quantity.",
+                PlanExecutionHaltCode.BROKER_FILL_OVERFLOW,
+                "Broker fills exceed immutable stage quantity.",
                 stage=stage,
             )
-
-        terminal_attempt = PlanExecutionAttemptV1.model_validate(
+        terminal = PlanExecutionAttemptV1.model_validate(
             attempt.model_copy(
                 update={
                     "state": PlanExecutionAttemptState.TERMINAL,
@@ -1535,54 +1498,49 @@ class SafePlanExecutionServiceV1:
                 }
             ).model_dump(mode="python")
         )
-        updated_stage = PlanExecutionStageV1.model_validate(
+        broker_terminal = PlanExecutionStageV1.model_validate(
             stage.model_copy(
                 update={
                     "state": PlanExecutionStageState.BROKER_TERMINAL,
-                    "broker_terminal_lots": new_total_terminal,
-                    "attempts": (*stage.attempts[:-1], terminal_attempt),
+                    "broker_terminal_lots": terminal_lots,
+                    "attempts": (*stage.attempts[:-1], terminal),
                 }
             ).model_dump(mode="python")
         )
-        signed_cash = (
+        cash_delta = (
             -snapshot.total_order_amount_rub
             if stage.side is PlanExecutionSide.BUY
             else snapshot.total_order_amount_rub
         )
-        updated = _replace_stage(
+        updated = _stage_update(
             session,
-            updated_stage,
+            broker_terminal,
             state=PlanExecutionSessionState.AWAITING_PORTFOLIO_RECONCILIATION,
-            confirmed_cash_delta_rub=session.confirmed_cash_delta_rub + signed_cash,
+            confirmed_cash_delta_rub=session.confirmed_cash_delta_rub + cash_delta,
             estimated_tax_allowance_rub=(
                 session.estimated_tax_allowance_rub
-                + _tax_allowance_for_fills(
-                    plan=plan,
-                    stage=stage,
-                    filled_lots=snapshot.lots_executed,
-                )
+                + _tax_allowance(plan, stage, snapshot.lots_executed)
             ),
         )
         committed = self._commit(session, updated)
         return self._result(
-            action=PlanExecutionAdvanceAction.BROKER_TERMINAL,
-            session=committed,
+            PlanExecutionAdvanceAction.BROKER_TERMINAL,
+            committed,
+            "Broker terminal state recorded; independent portfolio reconciliation is required.",
             stage_id=stage.stage_id,
             proposal_id=attempt.proposal_id,
             broker_snapshot=snapshot,
-            message="Broker terminal state recorded; independent portfolio reconciliation is required.",
         )
 
     def _reconcile_portfolio(
         self,
-        *,
         plan: PortfolioPlanV1,
         session: PlanExecutionSessionV1,
         stage: PlanExecutionStageV1,
         now: datetime,
     ) -> PlanExecutionAdvanceResultV1:
-        state = self._current_state(plan, now)
-        matched, code, message = _progress_matches(
+        state = self._state(plan, now)
+        matched, code, message = _progress_match(
             plan=plan,
             session=session,
             state=state,
@@ -1596,77 +1554,75 @@ class SafePlanExecutionServiceV1:
                 if row.state is PlanExecutionAttemptState.TERMINAL
                 and row.reconciled_at is not None
             ]
-            latest_terminal = max(terminal_times) if terminal_times else now
+            latest = max(terminal_times) if terminal_times else now
             if (
                 code in {
                     PlanExecutionHaltCode.PORTFOLIO_PROGRESS_MISMATCH,
                     PlanExecutionHaltCode.CASH_RECONCILIATION_MISMATCH,
                 }
-                and (now - latest_terminal).total_seconds()
+                and (now - latest).total_seconds()
                 <= self._settings.max_portfolio_reconciliation_age_seconds
             ):
                 return self._result(
-                    action=PlanExecutionAdvanceAction.REPLAY,
-                    session=session,
+                    PlanExecutionAdvanceAction.REPLAY,
+                    session,
+                    "Waiting for read-only portfolio/cash to reflect broker-terminal fill.",
                     stage_id=stage.stage_id,
-                    message="Waiting for read-only portfolio/cash state to reflect broker-terminal fill.",
                 )
             return self._halt(
                 session,
-                code=code or PlanExecutionHaltCode.PORTFOLIO_RECONCILIATION_TIMEOUT,
-                message=message or "Portfolio reconciliation failed.",
+                code or PlanExecutionHaltCode.PORTFOLIO_RECONCILIATION_TIMEOUT,
+                message or "Portfolio reconciliation failed.",
                 stage=stage,
             )
 
         remaining = stage.remaining_lots
-        if remaining == 0:
-            next_state = PlanExecutionStageState.FILLED
-            not_before = stage.not_before_moscow_date
-        else:
-            next_state = PlanExecutionStageState.PENDING
-            not_before = max(
-                stage.not_before_moscow_date,
-                _moscow_date(now) + timedelta(days=1),
-            )
+        filled = remaining == 0
         updated_stage = PlanExecutionStageV1.model_validate(
             stage.model_copy(
                 update={
-                    "state": next_state,
+                    "state": (
+                        PlanExecutionStageState.FILLED
+                        if filled
+                        else PlanExecutionStageState.PENDING
+                    ),
                     "portfolio_reconciled_lots": stage.broker_terminal_lots,
-                    "not_before_moscow_date": not_before,
+                    "not_before_moscow_date": (
+                        stage.not_before_moscow_date
+                        if filled
+                        else _moscow_date(now) + timedelta(days=1)
+                    ),
                 }
             ).model_dump(mode="python")
         )
-        updated = _replace_stage(
+        updated = _stage_update(
             session,
             updated_stage,
             state=PlanExecutionSessionState.ACTIVE,
         )
-        if all(
-            candidate.stage_id == stage.stage_id
-            or candidate.state is PlanExecutionStageState.FILLED
-            for candidate in _all_stages(session)
-        ) and next_state is PlanExecutionStageState.FILLED:
+        if filled and all(
+            row.stage_id == stage.stage_id
+            or row.state is PlanExecutionStageState.FILLED
+            for row in _all_stages(session)
+        ):
             updated = PlanExecutionSessionV1.model_validate(
                 updated.model_copy(
                     update={"state": PlanExecutionSessionState.COMPLETED}
                 ).model_dump(mode="python")
             )
         committed = self._commit(session, updated)
-        action = (
-            PlanExecutionAdvanceAction.COMPLETED
-            if committed.state is PlanExecutionSessionState.COMPLETED
-            else PlanExecutionAdvanceAction.PORTFOLIO_RECONCILED
-        )
+        if committed.state is PlanExecutionSessionState.COMPLETED:
+            return self._result(
+                PlanExecutionAdvanceAction.COMPLETED,
+                committed,
+                "Plan execution completed and independently reconciled.",
+                stage_id=stage.stage_id,
+            )
         return self._result(
-            action=action,
-            session=committed,
+            PlanExecutionAdvanceAction.PORTFOLIO_RECONCILED,
+            committed,
+            "Broker fill reconciled to read-only portfolio; next stage may proceed.",
             stage_id=stage.stage_id,
-            message=(
-                "Plan execution completed and reconciled."
-                if action is PlanExecutionAdvanceAction.COMPLETED
-                else "Broker fill reconciled to read-only portfolio; next stage may proceed."
-            ),
         )
 
     def advance_execution(
@@ -1682,43 +1638,42 @@ class SafePlanExecutionServiceV1:
         if session.plan_sha256 != plan.plan_sha256:
             return self._halt(
                 session,
-                code=PlanExecutionHaltCode.PLAN_INVALID,
-                message="Execution session no longer matches immutable plan.",
+                PlanExecutionHaltCode.PLAN_INVALID,
+                "Execution session no longer matches immutable plan.",
             )
         if session.state is PlanExecutionSessionState.COMPLETED:
             return self._result(
-                action=PlanExecutionAdvanceAction.REPLAY,
-                session=session,
-                message="Plan execution already completed; replay performed no submit.",
+                PlanExecutionAdvanceAction.REPLAY,
+                session,
+                "Execution is already completed; replay performed no submit.",
             )
         if not session.owner_approved:
             raise SafePlanExecutionError(
                 "PLAN_EXECUTION_OWNER_APPROVAL_REQUIRED",
-                "Exact immutable plan approval is required before any stage preparation.",
+                "Exact plan approval is required before stage preparation.",
             )
         if session.state is PlanExecutionSessionState.HALTED:
             if session.halt_code is not PlanExecutionHaltCode.AMBIGUOUS_SUBMISSION:
                 return self._result(
-                    action=PlanExecutionAdvanceAction.HALTED,
-                    session=session,
-                    message=session.halt_message or "Plan execution is halted.",
+                    PlanExecutionAdvanceAction.HALTED,
+                    session,
+                    session.halt_message or "Execution is halted.",
                 )
             ambiguous = next(
                 (
-                    stage
-                    for stage in _all_stages(session)
-                    if stage.attempts
-                    and stage.attempts[-1].state is PlanExecutionAttemptState.UNKNOWN
+                    row for row in _all_stages(session)
+                    if row.attempts
+                    and row.attempts[-1].state is PlanExecutionAttemptState.UNKNOWN
                 ),
                 None,
             )
             if ambiguous is None:
                 return self._result(
-                    action=PlanExecutionAdvanceAction.HALTED,
-                    session=session,
-                    message="Ambiguous session has no recoverable request id; manual stop remains.",
+                    PlanExecutionAdvanceAction.HALTED,
+                    session,
+                    "Ambiguous session has no recoverable request id.",
                 )
-            recovered = _replace_session(
+            recovered = _session_update(
                 session,
                 state=PlanExecutionSessionState.AWAITING_BROKER_RECONCILIATION,
                 halt_code=None,
@@ -1726,64 +1681,43 @@ class SafePlanExecutionServiceV1:
             )
             committed = self._commit(session, recovered)
             return self._reconcile_broker(
-                plan=plan,
-                session=committed,
-                stage=_stage_by_id(committed, ambiguous.stage_id),
-                now=current,
+                plan,
+                committed,
+                _stage(committed, ambiguous.stage_id),
+                current,
             )
 
-        stage = _next_stage(session)
-        if stage is None:
-            completed = _replace_session(
+        current_stage = _next_stage(session)
+        if current_stage is None:
+            committed = self._commit(
                 session,
-                state=PlanExecutionSessionState.COMPLETED,
+                _session_update(session, state=PlanExecutionSessionState.COMPLETED),
             )
-            committed = self._commit(session, completed)
             return self._result(
-                action=PlanExecutionAdvanceAction.COMPLETED,
-                session=committed,
-                message="All immutable plan stages are completed.",
+                PlanExecutionAdvanceAction.COMPLETED,
+                committed,
+                "All immutable plan stages are complete.",
             )
-        if stage.state is PlanExecutionStageState.PENDING:
-            return self._prepare_stage(
-                plan=plan,
-                session=session,
-                stage=stage,
-                now=current,
-            )
-        if stage.state is PlanExecutionStageState.PREPARED:
-            return self._submit_prepared_stage(
-                plan=plan,
-                session=session,
-                stage=stage,
-                now=current,
-            )
-        if stage.state is PlanExecutionStageState.AWAITING_BROKER_RECONCILIATION:
-            return self._reconcile_broker(
-                plan=plan,
-                session=session,
-                stage=stage,
-                now=current,
-            )
-        if stage.state is PlanExecutionStageState.BROKER_TERMINAL:
-            return self._reconcile_portfolio(
-                plan=plan,
-                session=session,
-                stage=stage,
-                now=current,
-            )
-        if stage.state is PlanExecutionStageState.HALTED:
+        if current_stage.state is PlanExecutionStageState.PENDING:
+            return self._prepare_stage(plan, session, current_stage, current)
+        if current_stage.state is PlanExecutionStageState.PREPARED:
+            return self._submit_stage(plan, session, current_stage, current)
+        if current_stage.state is PlanExecutionStageState.AWAITING_BROKER_RECONCILIATION:
+            return self._reconcile_broker(plan, session, current_stage, current)
+        if current_stage.state is PlanExecutionStageState.BROKER_TERMINAL:
+            return self._reconcile_portfolio(plan, session, current_stage, current)
+        if current_stage.state is PlanExecutionStageState.HALTED:
             return self._result(
-                action=PlanExecutionAdvanceAction.HALTED,
-                session=session,
-                stage_id=stage.stage_id,
-                message="Current immutable plan stage is halted.",
+                PlanExecutionAdvanceAction.HALTED,
+                session,
+                "Current immutable plan stage is halted.",
+                stage_id=current_stage.stage_id,
             )
         return self._result(
-            action=PlanExecutionAdvanceAction.REPLAY,
-            session=session,
-            stage_id=stage.stage_id,
-            message="Stage state does not require a new submit.",
+            PlanExecutionAdvanceAction.REPLAY,
+            session,
+            "Stage state does not permit a new submit.",
+            stage_id=current_stage.stage_id,
         )
 
     def status(self, execution_id: str) -> PlanExecutionSessionV1:
