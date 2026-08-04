@@ -476,11 +476,12 @@ def _vectors(
 
     inflation_rate = macro.annual_inflation_rate
     opportunity_rate = macro.annual_cash_opportunity_rate
-    macro_unknown = inflation_rate is None or opportunity_rate is None
-    if macro_unknown:
+    if inflation_rate is None or opportunity_rate is None:
+        macro_unknown = True
         macro_severity = RiskSeverity.UNKNOWN
         macro_drag = None
     else:
+        macro_unknown = False
         macro_drag = cash_weight * max(inflation_rate, opportunity_rate)
         macro_severity = _severity_from_ratio(
             macro_drag,
