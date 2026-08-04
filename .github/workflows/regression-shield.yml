@@ -75,6 +75,7 @@ jobs:
             --resolver=backtracking \
             --strip-extras \
             --quiet \
+            --constraint=requirements-dev.txt \
             --output-file=windows-compiled-requirements-dev.txt \
             requirements-dev.in
           python scripts/windows_ci_lock.py verify \
