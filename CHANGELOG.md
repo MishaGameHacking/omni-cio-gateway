@@ -82,7 +82,7 @@
   - xray SHA-256 детерминирован и source-order invariant;
   - fund runtime pure/internal и repository guard запрещает broker SDK/tokens/mutation services;
   - no public execution route, OpenAPI or GPT Editor change in WP7.
-- WP8 Portfolio Risk Engine 2.0 находится в активной разработке через issue #199 / draft PR #201:
+- WP8 Portfolio Risk Engine 2.0 завершён через issue #199 / PR #201 и squash-merged в `main` как `24e027f1e576451571d18af88f758a69828f6aed` после exact-head Regression Shield #1078:
   - exact portfolio snapshot и recomputed WP2 IPS fingerprint связывают risk state с конкретной политикой и данными;
   - permanent-loss, market, concentration, liquidity, credit, currency, inflation/opportunity и data-quality сохраняются как восемь независимых vectors; composite score отсутствует;
   - cross-currency positions требуют explicit FX provenance, exact native→base reconciliation и freshness;
@@ -95,6 +95,17 @@
   - hypothetical trade effects строят полный after-state, новые/устранённые blockers и канонический SHA, invariant к порядку эквивалентных trade effects;
   - SYSTEM_GUARDRAIL не может притворяться owner-confirmed hard policy;
   - `omni_cio/risk` pure/read-only и repository-guarded; no broker mutation/public route/OpenAPI/GPT Editor change.
+- WP9 Meta-Strategy Selector находится в активной разработке через issue #203 / draft PR #204:
+  - exact portfolio snapshot + WP2 policy fingerprint/reference + exact current WP8 assessment связываются до выбора режима;
+  - сравниваются только `NO_ACTION`, `CAPITAL_PRESERVATION`, `DEFENSIVE_BALANCED`, `BALANCED_CORE`, `GROWTH_CORE`;
+  - owner risk willingness/capacity, horizon и WP8 current risk ограничивают regime set до ranking;
+  - hard breaches не усредняются с objective/liquidity/cost factors;
+  - liquidity reserve, quality debt, diversified core и bounded active представлены явными component directives;
+  - feasible actionable regimes требуют fresh transition-cost + tax evidence с timestamp и source SHA-256 provenance;
+  - отсутствуют expected-return и macro-regime forecast inputs;
+  - `NO_ACTION` остаётся baseline, а current hard breach делает его infeasible для remediation path;
+  - review/cancellation triggers и selection SHA-256 детерминированы;
+  - `omni_cio/strategy` pure/internal/read-only, mypy + canonical repository guard расширены на WP9.
 - Applied Custom GPT остаётся v8.6.1 до WP15; текущая v9 разработка не является разрешением на более широкий real-money execution.
 
 ### Omni-CIO v8.6.1 — released / owner accepted

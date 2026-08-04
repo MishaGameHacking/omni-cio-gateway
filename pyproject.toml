@@ -37,6 +37,7 @@ files = [
   "omni_cio/research",
   "omni_cio/credit",
   "omni_cio/funds",
+  "omni_cio/strategy",
   "omni_cio/rebalancing",
   "omni_cio/pretrade",
   "omni_cio/paper",
