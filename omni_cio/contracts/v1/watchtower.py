@@ -266,4 +266,12 @@ def watchtower_state_sha256(value: WatchtowerStateV1) -> str:
 
 def watchtower_evaluation_sha256(value: WatchtowerEvaluationV1) -> str:
     payload = value.model_dump(mode="json", exclude={"evaluation_sha256"})
+    alerts = payload.get("alerts", [])
+    if isinstance(alerts, list):
+        payload["alerts"] = sorted(
+            alerts,
+            key=lambda row: (
+                str(row.get("alert_id", "")) if isinstance(row, dict) else str(row)
+            ),
+        )
     return _sha(payload)
