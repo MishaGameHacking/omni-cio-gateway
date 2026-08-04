@@ -9,6 +9,7 @@ from typing import Any, Protocol
 from t_tech.invest import Client
 
 from omni_cio.contracts.v1.market import SourceAuthority
+from omni_cio.contracts.v1.portfolio import InstrumentType
 from omni_cio.contracts.v1.research_evidence import (
     EvidenceCoverageProbeV1,
     EvidenceFactType,
