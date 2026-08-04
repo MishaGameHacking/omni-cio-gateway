@@ -6,12 +6,33 @@ WP14 adds a durable audit/evaluation layer without adding execution authority. I
 
 ## Architecture
 
-The package is `omni_cio.decision_journal` and has four internal responsibilities:
+The package is `omni_cio.decision_journal` and has five internal responsibilities:
 
-1. **Decision record** — immutable hash-bound snapshot of policy, portfolio, decision/evidence/risk/strategy/optimizer/plan/execution identities and decision-time quality/target metrics.
-2. **Outcome record** — separate append-only evidence record for the evaluation horizon. It contains realized portfolio value, external flow, optional evidence-bound benchmarks and outcome quality metrics.
-3. **Evaluation record** — deterministic comparison of the immutable decision and outcome. It computes period result, optional benchmark excess and quality deltas without mutating either source record.
-4. **Offline replay/regression** — sanitized cases containing only hashes, expected action/completeness and benchmark labels. Candidate model/prompt/rule/config behavior can become `ready_for_review`; WP14 never applies a production change.
+1. **Production recorder** — binds the canonical `DecisionSetV1` to the exact WP8 portfolio-risk assessment and, when present, the exact WP11 immutable plan and WP12 execution session. Cross-WP SHA mismatches fail closed.
+2. **Decision record** — immutable hash-bound snapshot of policy, portfolio, decision/evidence/risk/strategy/optimizer/plan/execution identities and decision-time quality/target metrics.
+3. **Outcome record** — separate append-only evidence record for the evaluation horizon. It contains realized portfolio value, external flow, optional evidence-bound benchmarks and outcome quality metrics.
+4. **Evaluation record** — deterministic comparison of the immutable decision and outcome. It computes period result, optional benchmark excess and quality deltas without mutating either source record.
+5. **Offline replay/regression** — sanitized cases containing only hashes, expected action/completeness and benchmark labels. Candidate model/prompt/rule/config behavior can become `ready_for_review`; WP14 never applies a production change.
+
+## Production decision audit binding
+
+`build_production_decision_record()` is the canonical WP14 adapter for production decision objects. It deliberately reuses the identity authority that already exists upstream rather than inventing a second digest protocol:
+
+- `DecisionSetV1` and each contained evidence row are hashed as canonical sorted-key compact UTF-8 JSON because those contracts do not expose a self digest;
+- WP8 contributes its canonical `assessment_sha256` and the exact `portfolio_snapshot_sha256` / `PolicyReferenceV1` it assessed;
+- WP11 contributes `plan_sha256`, `strategy_selection_sha256`, `optimizer_sha256`, its exact current-risk assessment SHA, and exact before/after risk states;
+- WP12 contributes `execution_id` and must bind the exact WP11 `plan_sha256`.
+
+When a plan is supplied, its policy, portfolio, current-risk SHA and before/after risk states must match the supplied WP8 assessment exactly. When execution is supplied, its plan SHA must match the supplied WP11 plan exactly. A decision whose preferred option is HOLD or WAIT_FOR_DATA cannot be rebound to an actionable plan.
+
+Journal action state is evidence-derived and fail-closed:
+
+- HOLD / WAIT_FOR_DATA when no actionable plan is bound;
+- REVIEW_CHANGE when an immutable plan is present but not owner-approved for execution;
+- APPROVED_PLAN only when the bound WP12 execution session records owner approval;
+- EXECUTED_PLAN only when the bound WP12 execution state contains executed lots and owner approval is present.
+
+Executed lots without owner approval are rejected. The recorder has no broker client/token and its only storage mutation is append-only `journal.put_decision()`.
 
 ## Immutable event model
 
