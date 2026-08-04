@@ -82,6 +82,68 @@ def _all_cancellation_conditions() -> tuple[PlanCancellationConditionV1, ...]:
     )
 
 
+def _canonical_upstream(
+    *,
+    portfolio: PortfolioRiskInputV1,
+    policy: InvestmentPolicyStatementV1,
+    policy_assessment: InvestmentPolicyAssessmentV1,
+    current_risk: PortfolioRiskAssessmentV1,
+    strategy: MetaStrategySelectionV1,
+    optimizer: PortfolioOptimizerResultV1,
+) -> tuple[
+    PortfolioRiskInputV1,
+    InvestmentPolicyStatementV1,
+    InvestmentPolicyAssessmentV1,
+    PortfolioRiskAssessmentV1,
+    MetaStrategySelectionV1,
+    PortfolioOptimizerResultV1,
+]:
+    try:
+        canonical_portfolio = PortfolioRiskInputV1.model_validate(
+            portfolio.model_dump(mode="python")
+        )
+    except ValidationError as exc:
+        raise PortfolioPlanError("PLAN_PORTFOLIO_OBJECT_TAMPERED") from exc
+    try:
+        canonical_policy = InvestmentPolicyStatementV1.model_validate(
+            policy.model_dump(mode="python")
+        )
+    except ValidationError as exc:
+        raise PortfolioPlanError("PLAN_POLICY_OBJECT_TAMPERED") from exc
+    try:
+        canonical_assessment = InvestmentPolicyAssessmentV1.model_validate(
+            policy_assessment.model_dump(mode="python")
+        )
+    except ValidationError as exc:
+        raise PortfolioPlanError("PLAN_POLICY_ASSESSMENT_OBJECT_TAMPERED") from exc
+    try:
+        canonical_risk = PortfolioRiskAssessmentV1.model_validate(
+            current_risk.model_dump(mode="python")
+        )
+    except ValidationError as exc:
+        raise PortfolioPlanError("PLAN_CURRENT_RISK_OBJECT_TAMPERED") from exc
+    try:
+        canonical_strategy = MetaStrategySelectionV1.model_validate(
+            strategy.model_dump(mode="python")
+        )
+    except ValidationError as exc:
+        raise PortfolioPlanError("PLAN_STRATEGY_OBJECT_TAMPERED") from exc
+    try:
+        canonical_optimizer = PortfolioOptimizerResultV1.model_validate(
+            optimizer.model_dump(mode="python")
+        )
+    except ValidationError as exc:
+        raise PortfolioPlanError("PLAN_OPTIMIZER_OBJECT_TAMPERED") from exc
+    return (
+        canonical_portfolio,
+        canonical_policy,
+        canonical_assessment,
+        canonical_risk,
+        canonical_strategy,
+        canonical_optimizer,
+    )
+
+
 def _validate_hash_integrity(
     *,
     current_risk: PortfolioRiskAssessmentV1,
@@ -184,7 +246,7 @@ def _canonical_assets(
             canonical.append(
                 OptimizerAssetV1.model_validate(row.model_dump(mode="python"))
             )
-        except ValidationError as exc:
+        except (AttributeError, ValidationError) as exc:
             raise PortfolioPlanError("PLAN_OPTIMIZER_ASSET_TAMPERED") from exc
     result = tuple(sorted(canonical, key=lambda row: row.stable_key))
     keys = [row.stable_key for row in result]
@@ -345,6 +407,21 @@ def build_portfolio_plan(
     """Build an immutable reviewable plan without granting execution authority."""
     evaluation_time = _aware_utc(created_at)
     settings_value = settings or PortfolioPlanSettingsV1()
+    (
+        portfolio,
+        policy,
+        policy_assessment,
+        current_risk,
+        strategy,
+        optimizer,
+    ) = _canonical_upstream(
+        portfolio=portfolio,
+        policy=policy,
+        policy_assessment=policy_assessment,
+        current_risk=current_risk,
+        strategy=strategy,
+        optimizer=optimizer,
+    )
     _validate_bindings(
         portfolio=portfolio,
         policy=policy,
@@ -587,7 +664,7 @@ def _market_drift(
 def _canonical_plan_for_review(plan: PortfolioPlanV1) -> PortfolioPlanV1:
     try:
         return PortfolioPlanV1.model_validate(plan.model_dump(mode="python"))
-    except ValidationError as exc:
+    except (AttributeError, ValidationError) as exc:
         raise PortfolioPlanError("PLAN_OBJECT_TAMPERED") from exc
 
 
