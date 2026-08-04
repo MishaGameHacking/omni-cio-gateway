@@ -4,38 +4,26 @@
 
 ## Executive state
 
-Omni-CIO remains **one Custom GPT + one production Render Gateway**. The protected applied GPT release remains **v8.6.1** until WP15 is merged and then explicitly applied to the existing GPT in Preview. The owner-approved v9 program has completed WP0–WP13; WP14 is in its final exact-head delivery gate; WP15 is the only remaining package after WP14.
+Omni-CIO remains **one Custom GPT + one production Render Gateway**.
 
-Protected baseline release state: **Omni-CIO v8.6.1 real BUY/SELL v1 = 100% complete and protected.**
+- Protected applied GPT: **v8.6.1** until WP15 owner Preview + `Update` are completed.
+- Repository target GPT: **v9.0.0**.
+- Target UI: `Omni-CIO API | Управляющий и аналитик v9.0.0`.
+- Target Instructions: `gpt/CUSTOM_GPT_INSTRUCTIONS_V9_0_0_COMPACT.txt`.
+- Target Knowledge manifest: `gpt/KNOWLEDGE_MANIFEST_V9_0_0.md`.
+- Stable Gateway entrypoint: `app:app`.
+- Canonical roadmap: `docs/master-plan/OMNI_CIO_V9_PORTFOLIO_AUTOPILOT_PROGRAM.md`.
+- Tracking epic: #176.
 
-Production invariants:
+Protected baseline release state remains **Omni-CIO v8.6.1 real BUY/SELL v1 = 100% complete and protected**.
 
-- current applied UI/config: `Omni-CIO API | Управляющий и аналитик v8.6.1`;
-- current applied Instructions: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt`;
-- stable Render entrypoint: `app:app`;
-- one production Gateway only;
-- production read-only, Sandbox and Real contours remain separated;
-- real BUY/SELL remains exact-owner-confirmed, immutable, idempotent, fail-closed and broker-reconciled;
-- canonical recovery invariant: **idempotent replay verified with no second submit**;
-- durable real execution state remains Upstash Redis over HTTPS;
-- `REAL_TRADING_ENABLED=false` remains the master real-money rollback;
-- v9 research/monitoring/evaluation does not implicitly broaden broker-write authority;
-- no duplicate GPT, second Gateway, separate frontend, competing scheduler or second broker stack.
-
-Protected v8.6.1 release commit: `baba0fb73e0483fc82b3f0bc7c2f15cbd71d804e`.
-
-## Canonical v9 program
-
-Roadmap: `docs/master-plan/OMNI_CIO_V9_PORTFOLIO_AUTOPILOT_PROGRAM.md`  
-Tracking epic: #176.
-
-Dependency order remains WP13 → WP14 → WP15. WP14 started strictly from the WP13 merge on `main`; WP15 must start strictly from the eventual WP14 squash merge.
+Canonical recovery invariant remains: **idempotent replay verified with no second submit**.
 
 ## Work-package evidence
 
 | WP | State | Issue / PR | Merge / CI evidence |
 |---|---|---|---|
-| WP0 Baseline freeze | COMPLETE | #178 / #181 | `4fd3993b...`, Regression Shield #989 |
+| WP0 Baseline freeze | COMPLETE | #178 / #181 | `4fd3993b...`, #989 |
 | WP1 Natural Language CIO Router | COMPLETE | #182 / #184 | `7f677288...`, #1002 |
 | WP2 Investment Policy Statement | COMPLETE | #186 / #187 | `75c9ae07...`, #1014 |
 | WP3 Market Universe Engine | COMPLETE | #188 / #189 | `5ae81aa9...`, #1019 |
@@ -48,77 +36,79 @@ Dependency order remains WP13 → WP14 → WP15. WP14 started strictly from the 
 | WP10 Portfolio Optimizer & Capital Scaling | COMPLETE | #205 / #206 | `f7392977...`, #1105 |
 | WP11 Immutable Portfolio Plan Protocol | COMPLETE | #207 / #208 | `7c3006d332041ec352f0c2eab8c7cb70e4c1a6af`, #1114 |
 | WP12 Safe Plan Execution Engine | COMPLETE | #209 / #211 | `8f247fd3b966c16eb08fdfeed080010bdcbedde9`, #1160 |
-| WP13 Portfolio Watchtower | COMPLETE | #212 / #213 | `251a528aebd6a2ecf0617828c43d39e14a38d69e`, exact-head #1199 on `91198ab4...`, zero review threads |
-| WP14 Decision Journal / Evaluation & Learning Loop | IN PROGRESS — FINAL EXACT-HEAD GATE | #214 / draft #215 | implementation + production recorder + docs/source sync complete on `v9/wp14-decision-journal-evaluation`; final exact-head Regression Shield/security + zero threads + squash merge required |
-| WP15 Custom GPT v9 Configuration & Recovery | PENDING | #216 | start only from WP14 merge; current applied GPT remains v8.6.1 |
+| WP13 Portfolio Watchtower | COMPLETE | #212 / #213 | `251a528aebd6a2ecf0617828c43d39e14a38d69e`, #1199 |
+| WP14 Decision Journal / Evaluation | COMPLETE | #214 / #215 | `507b7f53e3ab924f0d484e348528c23b79ffce9d`; exact-head #1231 on `56488ddd...`; Windows smoke #65; zero threads |
+| WP15 Custom GPT v9 Configuration & Recovery | IN PROGRESS | #216 | branch `v9/wp15-custom-gpt-configuration-recovery` starts strictly from WP14 merge `507b7f53...`; repository config target v9.0.0 under development |
 
-## WP13 completion evidence
+## WP14 completion evidence
 
-WP13 is complete and squash-merged to `main` as `251a528aebd6a2ecf0617828c43d39e14a38d69e` after exact-head Regression Shield #1199 on `91198ab471f5666d06e90b44ce1a85e60ea406b8`, with quality/full pytest/coverage and security SUCCESS and zero unresolved review threads.
+WP14 was squash-merged into `main` as `507b7f53e3ab924f0d484e348528c23b79ffce9d` after exact-head Regression Shield #1231 on `56488dddb8a07d0da1cc880e15cb2650e2c6f174`.
 
-Portfolio Watchtower provides deterministic scheduled read-only monitoring, material alerting/deduplication, replay-safe QStash delivery, HMAC/CAS Upstash state, signed hidden scheduler/callback routes, disabled-by-default/fail-closed installation and recovery tooling. It has no broker write token/client and cannot authorize or submit a real trade.
+The exact head passed:
 
-## WP14 — Decision Journal, Evaluation & Learning Loop
+- reproducible dependency-lock checks;
+- repository/security policy;
+- compile, Ruff, formatting and mypy;
+- stable `app:app` and read-only GPT Action contract;
+- full pytest/coverage;
+- dependency audit, SAST and secret scan;
+- Windows smoke #65;
+- zero unresolved review threads.
 
-Tracking: #214 / draft PR #215.  
-Branch: `v9/wp14-decision-journal-evaluation`.  
-Dependency base: WP13 merge `251a528aebd6a2ecf0617828c43d39e14a38d69e`.
+Decision journal/evaluation remains append-only, evidence-bound, non-self-modifying and without broker-write authority.
 
-Implemented architecture:
+## WP15 — current work
 
-- strict immutable `DecisionJournalRecordV1`, `DecisionOutcomeRecordV1`, `DecisionEvaluationRecordV1` and replay/regression contracts;
-- canonical SHA-bound decision identity and separate append-only outcome/evaluation identity;
-- production recorder binding canonical `DecisionSetV1` → exact WP8 portfolio-risk assessment → optional exact WP11 plan → optional exact WP12 execution session;
-- cross-WP policy/portfolio/risk/strategy/optimizer/plan/execution mismatches fail closed;
-- executed lots cannot be journaled as executed without owner-approved WP12 state;
-- deterministic realized-period result net of external flows;
-- evidence-bound `NO_ACTION` and policy-objective benchmarks; unavailable counterfactuals remain explicitly unavailable;
-- data-completeness, research-coverage, concentration, cash-weight and execution-quality metrics;
-- append-only in-memory journal and separate durable Upstash namespace using reviewed HTTPS transport, row/meta HMAC and atomic CAS semantics;
-- sanitized synthetic/fake-broker replay datasets and deterministic regression comparison for MODEL/PROMPT/RULES/CONFIG candidates;
-- candidate changes may become review-ready only; WP14 cannot self-modify or deploy production prompts/rules/policy/config;
-- permanent repository boundary guard scans the full WP14 runtime and rejects real-trading/Sandbox broker mutation authority;
-- dependency lock verification remains strict/hash-bound and now constrains both runtime and dev re-compiles to the reviewed lock state to avoid extra-index resolver drift.
+Tracking: issue #216.  
+Branch: `v9/wp15-custom-gpt-configuration-recovery`.  
+Dependency base: WP14 merge `507b7f53e3ab924f0d484e348528c23b79ffce9d`.
 
-Hard WP14 invariants:
+Repository target configuration already includes/in development:
 
-- historical expectations are immutable;
-- outcomes/evaluations are separate records;
-- no fabricated counterfactual precision;
-- `execution_authorized=false` and `trading_methods=false` in WP14 contracts;
-- no broker token/client, order submit/cancel/replace, transfer, withdrawal, margin, short or autonomous real-money execution in the journal/evaluation package;
-- no full account identifier, raw private broker payload or secret in replay datasets;
-- applied Custom GPT remains v8.6.1 until WP15.
+- compact v9 Instructions within editor-size guard;
+- canonical v9 Knowledge manifest;
+- Russian human-language conversation starters;
+- reviewed Actions/OpenAPI policy that never invents internal engine operationIds;
+- upgrade-in-place architecture and threat model;
+- recovery/runbook covering existing GPT, Actions, external authentication roles, Render/Upstash/QStash boundaries and rollback;
+- version/recovery consistency CI guard;
+- owner Preview acceptance checklist.
 
-WP14 is **not complete** until the final branch head passes the full exact-head Regression Shield and security jobs, review threads remain zero and PR #215 is squash-merged.
+Hard WP15 boundary:
 
-## WP15 dependency and target
+- update the **existing** GPT; do not create a duplicate;
+- GitHub target readiness does not equal applied external acceptance;
+- internal v9 engines are not claimed as GPT Actions unless operationIds exist in effective `/openapi.json`;
+- Apps remain OFF while custom Actions are used;
+- broker/storage/scheduler secret values remain external;
+- real execution remains exact-owner-confirmed, immutable, idempotent, fail-closed and broker-reconciled;
+- no transfer/withdrawal, margin/short, MARKET/BESTPRICE, autonomous recurring real execution or token management is added by configuration.
 
-Tracking: #216.
+WP15 repository work is not complete until its exact-head Regression Shield/security is green, review threads are zero and its PR is squash-merged.
 
-After WP14 merges, WP15 upgrades the **existing** Omni-CIO GPT rather than creating another bot. Required GitHub deliverables are compact v9 Instructions, canonical Knowledge manifest, Russian conversation starters, reviewed production Actions/OpenAPI catalog, version-consistency CI, full recovery/secret-boundary runbook and owner Preview acceptance checklist/restoration demonstration.
+The **program** is not complete until the owner then applies the merged target to the existing GPT in ChatGPT web, passes Preview acceptance/restoration demonstration, selects `Update`, and records acceptance evidence.
 
-The current applied GPT is not modified before WP15 passes its own repository gate.
+## Canonical target/recovery files
 
-## Canonical current production configuration
+- target registry: `gpt/CONFIGURATION.md`;
+- setup index: `gpt/SETUP_INDEX.md`;
+- target Instructions: `gpt/CUSTOM_GPT_INSTRUCTIONS_V9_0_0_COMPACT.txt`;
+- Knowledge: `gpt/KNOWLEDGE_MANIFEST_V9_0_0.md`;
+- Actions: `gpt/ACTIONS_CATALOG.md`;
+- external secret roles: `gpt/SECRETS_AND_RENDER.md`;
+- full upgrade/Preview/rollback: `gpt/MY_GPT_SETUP_RUNBOOK.md`;
+- WP15 architecture: `docs/architecture/V9_CUSTOM_GPT_CONFIGURATION_AND_RECOVERY.md`;
+- protected rollback Instructions: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt`.
 
-- UI: `Omni-CIO API | Управляющий и аналитик v8.6.1`;
-- Instructions: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt`;
-- engineering reference: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_0.txt`;
-- setup/recovery index: `gpt/SETUP_INDEX.md`;
-- Gateway: `https://omni-cio-gateway.onrender.com`;
-- OpenAPI: `https://omni-cio-gateway.onrender.com/openapi.json`;
-- Render entrypoint: `app:app`;
-- production Knowledge: current v8.6.1 set from `gpt/CONFIGURATION.md` until WP15 changes are merged and explicitly applied.
+Gateway remains `https://omni-cio-gateway.onrender.com` with production OpenAPI at `https://omni-cio-gateway.onrender.com/openapi.json`.
 
-GitHub is canonical for code/config/recovery reference but does not automatically synchronize the GPT Editor, Render secrets, QStash or Upstash environment values.
+## Applied-vs-target rule
 
-## Real-money boundary remains unchanged
+Until owner Preview/Update evidence is recorded:
 
-Production read-only uses `TINVEST_TOKEN`. Sandbox uses `TINVEST_SANDBOX_TOKEN`. Real execution uses the separate `TINVEST_TRADING_TOKEN` and remains bounded by:
+- applied GPT = v8.6.1;
+- repository target = v9.0.0.
 
-`fresh facts → immutable proposal/plan → exact owner confirmation in a new user turn → one idempotent submit → broker reconciliation`.
+Never infer applied v9 merely because the GitHub branch/PR has v9 files.
 
-WP13/WP14 add no withdrawal/transfer, margin/short, MARKET/BESTPRICE, autonomous recurring real execution or token management.
-
-**Current release state: applied Omni-CIO v8.6.1 remains protected while WP14 closes and WP15 is prepared.**
+**Current state: WP14 complete; WP15 is the final active package; protected v8.6.1 remains recoverable and safe while v9.0.0 target configuration is completed.**
