@@ -32,6 +32,10 @@ REQUIRED_PATHS = (
     "tests/test_investment_policy_statement_v1.py",
     "tests/test_market_universe_v1.py",
     "tests/test_candidate_funnel_v1.py",
+    "tests/test_research_binding_v1.py",
+    "tests/test_research_evidence_v1.py",
+    "tests/test_research_official_v1.py",
+    "tests/test_credit_rating_default_engine_v1.py",
     "knowledge/00_PROJECT_MASTER_CONTEXT.md",
     "knowledge/09_MARKET_DATA_AND_BUYING_POWER.txt",
     "knowledge/10_OPERATIONS_ANALYTICS_AND_RECONCILIATION.txt",
@@ -53,6 +57,8 @@ REQUIRED_PATHS = (
     "docs/architecture/V9_INVESTMENT_POLICY_STATEMENT.md",
     "docs/architecture/V9_MARKET_UNIVERSE_ENGINE.md",
     "docs/architecture/V9_DETERMINISTIC_CANDIDATE_FUNNEL.md",
+    "docs/architecture/V9_RESEARCH_EVIDENCE_ENGINE.md",
+    "docs/architecture/V9_CREDIT_RATING_DEFAULT_ENGINE.md",
     "docs/operations/DEPLOYMENT_RUNBOOK.md",
     "docs/operations/RELEASE_CHECKLIST.md",
     "docs/operations/SANDBOX_TRADING_RUNBOOK.md",
@@ -72,6 +78,8 @@ REQUIRED_PATHS = (
     "omni_cio/contracts/v1/investment_policy.py",
     "omni_cio/contracts/v1/universe.py",
     "omni_cio/contracts/v1/candidate_funnel.py",
+    "omni_cio/contracts/v1/research_evidence.py",
+    "omni_cio/contracts/v1/credit.py",
     "omni_cio/router/__init__.py",
     "omni_cio/router/intent_v1.py",
     "omni_cio/policy/__init__.py",
@@ -83,6 +91,15 @@ REQUIRED_PATHS = (
     "omni_cio/universe/tinvest_v1.py",
     "omni_cio/candidates/__init__.py",
     "omni_cio/candidates/funnel_v1.py",
+    "omni_cio/research/__init__.py",
+    "omni_cio/research/binding_v1.py",
+    "omni_cio/research/cache_v1.py",
+    "omni_cio/research/engine_v1.py",
+    "omni_cio/research/external_context_v1.py",
+    "omni_cio/research/official_v1.py",
+    "omni_cio/research/tinvest_v1.py",
+    "omni_cio/credit/__init__.py",
+    "omni_cio/credit/engine_v1.py",
     "omni_cio/sandbox/__init__.py",
     "omni_cio/sandbox/client_v1.py",
     "omni_cio/sandbox/service_v1.py",
@@ -178,6 +195,29 @@ CANDIDATE_FORBIDDEN_TEXT = (
     "executeRealTrade",
     "prepareSandboxTrade",
     "executeSandboxTrade",
+)
+
+RESEARCH_RUNTIME_ROOT = Path("omni_cio/research")
+RESEARCH_FORBIDDEN_TEXT = (
+    "TINVEST_TRADING_TOKEN",
+    "TINVEST_SANDBOX_TOKEN",
+    "prepareRealTrade",
+    "executeRealTrade",
+    "prepareSandboxTrade",
+    "executeSandboxTrade",
+    "confirmMarginTrade",
+)
+
+CREDIT_RUNTIME_ROOT = Path("omni_cio/credit")
+CREDIT_FORBIDDEN_TEXT = (
+    "t_tech_investments",
+    "t_tech.invest",
+    "TINVEST_",
+    "prepareRealTrade",
+    "executeRealTrade",
+    "prepareSandboxTrade",
+    "executeSandboxTrade",
+    "confirmMarginTrade",
 )
 
 
@@ -330,26 +370,29 @@ def scan_universe_execution_boundary(failures: list[str]) -> None:
                 )
 
 
-def scan_candidate_execution_boundary(failures: list[str]) -> None:
-    candidate_root = ROOT / CANDIDATE_RUNTIME_ROOT
-    if not candidate_root.is_dir():
-        fail("candidate funnel runtime directory is missing", failures)
+def _scan_pure_or_read_only_package(
+    *,
+    root: Path,
+    label: str,
+    forbidden_text: tuple[str, ...],
+    failures: list[str],
+) -> None:
+    package_root = ROOT / root
+    if not package_root.is_dir():
+        fail(f"{label} runtime directory is missing", failures)
         return
 
-    for path in sorted(candidate_root.glob("*.py")):
+    for path in sorted(package_root.glob("*.py")):
         try:
             source = path.read_text(encoding="utf-8")
             tree = ast.parse(source, filename=str(path))
         except (OSError, SyntaxError) as exc:
-            fail(f"cannot inspect candidate funnel source {path}: {exc}", failures)
+            fail(f"cannot inspect {label} source {path}: {exc}", failures)
             continue
 
-        for forbidden in CANDIDATE_FORBIDDEN_TEXT:
+        for forbidden in forbidden_text:
             if forbidden in source:
-                fail(
-                    f"candidate funnel crosses pure-engine boundary: {forbidden}",
-                    failures,
-                )
+                fail(f"{label} crosses protected boundary: {forbidden}", failures)
 
         for node in ast.walk(tree):
             if isinstance(node, ast.Attribute) and node.attr in {
@@ -358,9 +401,41 @@ def scan_candidate_execution_boundary(failures: list[str]) -> None:
                 "sandbox",
             }:
                 fail(
-                    f"candidate funnel references forbidden broker service: {node.attr}",
+                    f"{label} references forbidden broker service: {node.attr}",
                     failures,
                 )
+            if isinstance(node, ast.Attribute) and is_forbidden_broker_attribute(node.attr):
+                fail(
+                    f"{label} references forbidden broker method: {node.attr}",
+                    failures,
+                )
+
+
+def scan_candidate_execution_boundary(failures: list[str]) -> None:
+    _scan_pure_or_read_only_package(
+        root=CANDIDATE_RUNTIME_ROOT,
+        label="candidate funnel",
+        forbidden_text=CANDIDATE_FORBIDDEN_TEXT,
+        failures=failures,
+    )
+
+
+def scan_research_execution_boundary(failures: list[str]) -> None:
+    _scan_pure_or_read_only_package(
+        root=RESEARCH_RUNTIME_ROOT,
+        label="research engine",
+        forbidden_text=RESEARCH_FORBIDDEN_TEXT,
+        failures=failures,
+    )
+
+
+def scan_credit_execution_boundary(failures: list[str]) -> None:
+    _scan_pure_or_read_only_package(
+        root=CREDIT_RUNTIME_ROOT,
+        label="credit engine",
+        forbidden_text=CREDIT_FORBIDDEN_TEXT,
+        failures=failures,
+    )
 
 
 def scan_retired_duplicate_scenario_publishers(failures: list[str]) -> None:
@@ -417,6 +492,8 @@ def main() -> int:
     scan_sandbox_execution_boundary(failures)
     scan_universe_execution_boundary(failures)
     scan_candidate_execution_boundary(failures)
+    scan_research_execution_boundary(failures)
+    scan_credit_execution_boundary(failures)
     scan_retired_duplicate_scenario_publishers(failures)
 
     if failures:
