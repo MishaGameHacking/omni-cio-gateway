@@ -14,13 +14,16 @@ REQUIRED_PATHS = (
     "omni_cio/watchtower/__init__.py",
     "omni_cio/watchtower/engine_v1.py",
     "omni_cio/watchtower/journal_v1.py",
+    "omni_cio/watchtower/provider_v1.py",
     "omni_cio/watchtower/qstash_v1.py",
     "omni_cio/watchtower/routes_v1.py",
     "omni_cio/watchtower/runtime_v1.py",
     "omni_cio/watchtower/upstash_journal_v1.py",
+    "scripts/reconcile_watchtower_schedule.py",
     "tests/test_portfolio_watchtower_v1.py",
     "tests/test_watchtower_boundary_v1.py",
     "tests/test_watchtower_qstash_v1.py",
+    "tests/test_watchtower_runtime_routes_v1.py",
     "tests/test_watchtower_upstash_journal_v1.py",
     "docs/architecture/V9_PORTFOLIO_WATCHTOWER.md",
     "docs/architecture/V9_PORTFOLIO_WATCHTOWER_THREAT_MODEL.md",
@@ -141,6 +144,7 @@ def main() -> int:
     print("Portfolio Watchtower boundary check passed.")
     print("Runtime: read-only evidence reducer + durable dedup state")
     print("QStash boundary: signed internal scheduling only")
+    print("Gateway routes: internal and excluded from GPT OpenAPI")
     print("Broker/Sandbox mutation authority: absent")
     print("Autonomous real execution: disabled")
     return 0
