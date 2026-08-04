@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
+from typing import Literal
 
 from omni_cio.contracts.v1.meta_strategy import (
     StrategyFrictionEvidenceV1,
@@ -55,12 +56,7 @@ def _position_value(position: RiskPositionV1, value: Decimal) -> RiskPositionV1:
 
 
 def build_execution_fixture() -> ExecutionFixture:
-    """Build a complete WP2→WP8→WP9→WP10→WP11 share BUY plan.
-
-    The seed fixture is reused only for stable policy/instrument metadata. The
-    portfolio, risk, strategy, optimizer and immutable plan are recomputed from
-    a new snapshot where the diversified-core share is 50,000 RUB below target.
-    """
+    """Build a complete WP2→WP8→WP9→WP10→WP11 share BUY plan."""
 
     seed = build_fixture()
     bond_seed = next(
@@ -190,7 +186,7 @@ def execution_binding(
     fixture: ExecutionFixture,
     *,
     as_of: datetime,
-    instrument_type: str = "share",
+    instrument_type: Literal["share", "etf", "bond"] = "share",
 ) -> PlanExecutionInstrumentBindingV1:
     baseline = fixture.plan.market_baselines[0]
     return PlanExecutionInstrumentBindingV1(
