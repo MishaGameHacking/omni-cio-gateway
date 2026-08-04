@@ -17,6 +17,8 @@ REQUIRED_PATHS = (
     "tests/test_portfolio_plan_v1.py",
     "tests/test_portfolio_plan_boundary_v1.py",
     "docs/architecture/V9_IMMUTABLE_PORTFOLIO_PLAN.md",
+    "docs/architecture/V9_IMMUTABLE_PORTFOLIO_PLAN_THREAT_MODEL.md",
+    "docs/architecture/V9_IMMUTABLE_PORTFOLIO_PLAN_DATA_CONTRACT.md",
 )
 
 FORBIDDEN_TEXT = (
