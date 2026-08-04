@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from datetime import datetime, timezone
-from typing import Mapping
 
 from omni_cio.contracts.v1.decision_journal import (
     BenchmarkAvailability,
