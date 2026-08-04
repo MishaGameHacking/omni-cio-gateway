@@ -105,17 +105,26 @@ def _deduplicate_records(
     return tuple(selected), total - len(selected)
 
 
-def _matches_requirement(
+def _matches_fact_identity(
     record: EvidenceRecordV1,
     requirement: EvidenceRequirementV1,
 ) -> bool:
     if record.fact_type is not requirement.fact_type:
         return False
-    if record.source.source_class not in requirement.source_classes:
-        return False
     if requirement.fact_key_prefix is not None and not record.fact_key.startswith(
         requirement.fact_key_prefix
     ):
+        return False
+    return True
+
+
+def _matches_requirement(
+    record: EvidenceRecordV1,
+    requirement: EvidenceRequirementV1,
+) -> bool:
+    if not _matches_fact_identity(record, requirement):
+        return False
+    if record.source.source_class not in requirement.source_classes:
         return False
     return True
 
@@ -139,7 +148,10 @@ def _coverage_gap(
     probes: tuple[EvidenceCoverageProbeV1, ...],
     assessed_at: datetime,
 ) -> EvidenceCoverageGapV1 | None:
-    matching = tuple(row for row in records if _matches_requirement(row, requirement))
+    observed = tuple(
+        row for row in records if _matches_fact_identity(row, requirement)
+    )
+    matching = tuple(row for row in observed if _matches_requirement(row, requirement))
     decision_grade = tuple(
         row for row in matching if row.use is EvidenceUse.DECISION_GRADE
     )
@@ -182,7 +194,7 @@ def _coverage_gap(
             reason = CoverageGapReason.PROBE_STALE
     elif requirement.allow_empty_after_successful_probe and not requirement_probes:
         reason = CoverageGapReason.PROBE_MISSING
-    elif matching and not decision_grade:
+    elif observed and not decision_grade:
         reason = CoverageGapReason.NO_DECISION_GRADE_RECORD
     elif requirement.minimum_decision_grade_records > 0:
         reason = CoverageGapReason.INSUFFICIENT_RECORDS
