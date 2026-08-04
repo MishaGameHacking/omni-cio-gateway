@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from datetime import datetime, timezone
 from decimal import Decimal
+from typing import TypeVar
 
 from omni_cio.contracts.v1.investment_policy import (
     InvestmentObjective,
@@ -40,6 +41,8 @@ class MetaStrategyError(ValueError):
     """Strategy inputs cannot be compared safely or deterministically."""
 
 
+_T = TypeVar("_T")
+
 _REGIME_RANK = {
     StrategyRegime.CAPITAL_PRESERVATION: 0,
     StrategyRegime.DEFENSIVE_BALANCED: 1,
@@ -69,7 +72,7 @@ def _aware_utc(value: datetime | None) -> datetime:
     return result.astimezone(timezone.utc)
 
 
-def _append_unique(target: list[object], value: object) -> None:
+def _append_unique(target: list[_T], value: _T) -> None:
     if value not in target:
         target.append(value)
 
@@ -100,10 +103,12 @@ def _quality_debt_available(policy: InvestmentPolicyStatementV1) -> bool:
 
 
 def _policy_risk_cap(policy: InvestmentPolicyStatementV1) -> int:
-    levels = [policy.risk_willingness, policy.risk_capacity]
-    if any(level is None for level in levels):
+    if policy.risk_willingness is None or policy.risk_capacity is None:
         return 0
-    return min(_RISK_LEVEL_RANK[level] for level in levels if level is not None)
+    return min(
+        _RISK_LEVEL_RANK[policy.risk_willingness],
+        _RISK_LEVEL_RANK[policy.risk_capacity],
+    )
 
 
 def _horizon_cap(policy: InvestmentPolicyStatementV1) -> int:
@@ -123,9 +128,7 @@ def _vectors(risk: PortfolioRiskAssessmentV1) -> dict[RiskVectorKind, RiskSeveri
 
 def _risk_state_cap(risk: PortfolioRiskAssessmentV1) -> int:
     vectors = _vectors(risk)
-    hard_kinds = {
-        row.kind for row in risk.after.vectors if row.hard_breach
-    }
+    hard_kinds = {row.kind for row in risk.after.vectors if row.hard_breach}
     if hard_kinds & {
         RiskVectorKind.PERMANENT_LOSS,
         RiskVectorKind.MARKET,
@@ -517,6 +520,12 @@ def select_meta_strategy(
                     friction_row.total_friction_weight
                     if friction_row is not None
                     else None
+                ),
+                friction_as_of=(
+                    friction_row.as_of if friction_row is not None else None
+                ),
+                friction_source_sha256s=(
+                    friction_row.source_sha256s if friction_row is not None else ()
                 ),
                 blockers=candidate_blockers,
                 rationale_codes=(
