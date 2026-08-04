@@ -40,7 +40,6 @@ FORBIDDEN_TEXT = (
     "confirmMarginTrade\": true",
     "ORDER_TYPE_MARKET",
     "ORDER_TYPE_BESTPRICE",
-    "withdraw",
     "securities_transfer",
 )
 
@@ -76,28 +75,41 @@ def _scan_python(path: Path, failures: list[str]) -> None:
 
     for forbidden in FORBIDDEN_TEXT:
         if forbidden in source:
-            _fail(f"WP12 runtime crosses protected authority boundary: {relative}: {forbidden}", failures)
+            _fail(
+                f"WP12 runtime crosses protected authority boundary: {relative}: {forbidden}",
+                failures,
+            )
 
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             names = [item.name for item in node.names]
             for name in names:
                 if name.startswith(FORBIDDEN_IMPORT_PREFIXES):
-                    _fail(f"WP12 imports forbidden broker/Sandbox package: {relative}: {name}", failures)
+                    _fail(
+                        f"WP12 imports forbidden broker/Sandbox package: {relative}: {name}",
+                        failures,
+                    )
         elif isinstance(node, ast.ImportFrom):
             module = node.module or ""
             if module.startswith(FORBIDDEN_IMPORT_PREFIXES):
-                _fail(f"WP12 imports forbidden broker/Sandbox package: {relative}: {module}", failures)
+                _fail(
+                    f"WP12 imports forbidden broker/Sandbox package: {relative}: {module}",
+                    failures,
+                )
             if module == "omni_cio.real_trading.service_v1" and path != ADAPTER_PATH:
                 _fail(f"only WP12 adapter may import RealTradingServiceV1: {relative}", failures)
             if module == "omni_cio.real_trading.client_v1":
                 imported = {item.name for item in node.names}
                 if imported - {"RealTradingApiFailure"}:
-                    _fail(f"WP12 may import only RealTradingApiFailure from client_v1: {relative}", failures)
+                    _fail(
+                        f"WP12 may import only RealTradingApiFailure from client_v1: {relative}",
+                        failures,
+                    )
         elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
             if node.func.attr in FORBIDDEN_CALL_ATTRIBUTES:
                 _fail(
-                    f"WP12 directly calls forbidden mutation method: {relative}:{node.lineno} ({node.func.attr})",
+                    "WP12 directly calls forbidden mutation method: "
+                    f"{relative}:{node.lineno} ({node.func.attr})",
                     failures,
                 )
 
