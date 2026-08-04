@@ -10,7 +10,7 @@ WP6 converts a WP5 decision-grade research dossier for a bond into a determinist
 
 Canonical sequence:
 
-`WP5 dossier + WP2 credit floor + debt identity graph → current rating state → default/event gates → credit-floor assessment → immutable Credit Passport`
+`WP5 dossier + WP2 credit floor + debt identity graph → terms/financial evidence → current rating state → default/event gates → credit-floor assessment → immutable Credit Passport`
 
 ## 2. Identity is not fungible
 
@@ -28,7 +28,7 @@ Unknown seniority is fail-closed because recovery/default risk differs materiall
 
 ## 3. Source and provenance boundary
 
-Every entity, issue term, rating and adverse-credit event references SHA-256 hashes of WP5 evidence records. WP6 accepts those references only when:
+Every entity, issue term, financial metric, rating and adverse-credit event references SHA-256 hashes of WP5 evidence records. WP6 accepts those references only when:
 
 - the hash exists in the exact bound WP5 dossier;
 - the source record is `decision_grade`;
@@ -48,7 +48,7 @@ Version 1 explicitly models the four Russian credit rating agencies in the Bank 
 - NKR / НКР;
 - NRA / НРА.
 
-Supported scale ids are agency-specific Russian national scales. Agency/scale identity is part of each observation.
+Supported scale ids are agency-specific Russian national scales. Agency/scale identity is part of each observation and an incompatible agency/scale pair is rejected by the contract.
 
 The engine deliberately does **not** average ratings and does **not** silently convert one agency scale into another. The Bank of Russia publishes regulatory thresholds separately for each agency scale and also publishes a dedicated scale-comparison table; therefore any future cross-scale mapping must be a separately versioned policy/data artifact, not an implicit heuristic.
 
@@ -82,7 +82,33 @@ The parser preserves agency-specific syntax:
 
 A symbol outside the supported syntax fails closed. The resulting rank is used only for deterministic minimum-quality comparison. It is not a probability of default, expected loss, expected return or cross-agency average.
 
-## 7. Default and distress events
+## 7. Debt terms and issuer financial evidence
+
+Issue terms explicitly preserve, when supported by decision-grade evidence:
+
+- maturity date;
+- offer date;
+- coupon type and current/fixed coupon rate when known;
+- amortization flag;
+- secured/collateral flag;
+- seniority/subordination;
+- guarantee terms and credit-substitution eligibility.
+
+A zero-coupon issue cannot carry a positive coupon rate. Guarantees are canonicalized by guarantor identity so source ordering cannot change the passport fingerprint.
+
+The optional financial-evidence layer is structured rather than inferred. Version 1 can carry:
+
+- net debt / EBITDA;
+- interest coverage;
+- current ratio;
+- cash / debt due within 12 months;
+- available liquidity;
+- debt due within 12 months;
+- total debt.
+
+Ratio and currency metrics are separate units. Currency metrics require an explicit ISO currency and cannot be negative. Missing metrics stay missing: WP6 does not fabricate leverage, coverage or refinancing numbers. Metric changes are fingerprinted and trigger re-analysis.
+
+## 8. Default and distress events
 
 WP6 explicitly represents:
 
@@ -91,34 +117,39 @@ WP6 explicitly represents:
 - restructuring;
 - payment delay.
 
-An unresolved event is an active adverse-credit event and blocks credit readiness / strong recommendation. Resolved events remain in the passport history and fingerprint.
+An unresolved event is an active adverse-credit event and blocks credit readiness / strong recommendation. Resolved events remain in the passport history and fingerprint. Event subjects must belong to the exact issue/issuer/guarantor identity graph.
 
-## 8. Re-analysis triggers
+## 9. Re-analysis triggers
 
 When a previous Credit Passport is supplied, the engine deterministically records re-analysis triggers for:
 
 - WP5 dossier fingerprint change;
 - IPS policy fingerprint change;
-- rating/action change;
+- rating/action change based on the latest effective rating state;
 - outlook change;
 - watch change;
 - default-event set change;
-- issue-term change.
+- issue-term change;
+- financial-metric change.
+
+Adding irrelevant older rating history does not create a false current-rating change when the latest effective state is unchanged.
 
 The trigger is data-state only. It does not autonomously trade or publish a new plan.
 
-## 9. Determinism
+## 10. Determinism
 
 Input ordering is canonicalized before publication:
 
 - guarantors by stable entity id;
+- guarantees by guarantor identity;
+- financial metrics by stable metric id;
 - rating observations by stable observation id;
 - default events by stable event id;
 - blockers and re-analysis codes deduplicated and sorted.
 
 `passport_sha256` binds the full canonical passport, including the exact dossier fingerprint and IPS policy reference.
 
-## 10. Safety boundary
+## 11. Safety boundary
 
 WP6 is internal and pure. It adds no:
 
@@ -132,20 +163,21 @@ WP6 is internal and pure. It adds no:
 
 `CreditPassportV1.trading_methods` is `Literal[False]`.
 
-## 11. Exit gate
+## 12. Exit gate
 
 WP6 is complete only when:
 
-1. versioned credit entity, issue-term, rating, event, floor and passport contracts exist;
+1. versioned credit entity, issue-term, financial-metric, rating, event, floor and passport contracts exist;
 2. WP5 dossier binding and source provenance are fail-closed;
 3. issuer / issue / guarantor / seniority remain distinct;
 4. incompatible agency scales are not averaged or silently mapped;
 5. rating-floor assessment is deterministic;
-6. unresolved rating contradictions fail closed;
-7. active default / technical default / restructuring / payment delay fails closed;
-8. rating/default/policy/terms changes produce deterministic re-analysis triggers;
-9. passport fingerprint is source-order invariant;
-10. repository guard and mypy cover the package;
-11. tests, Ruff, mypy and full Regression Shield pass on the exact final head;
-12. unresolved review threads are zero;
-13. PR is squash-merged and epic #176 marks WP6 complete.
+6. maturity/coupon/offer/collateral and optional leverage/coverage/refinancing evidence are structured and provenance-bound;
+7. unresolved rating contradictions fail closed;
+8. active default / technical default / restructuring / payment delay fails closed;
+9. rating/default/policy/terms/financial changes produce deterministic re-analysis triggers;
+10. passport fingerprint is source-order invariant;
+11. repository guard and mypy cover the package;
+12. tests, Ruff, mypy and full Regression Shield pass on the exact final head;
+13. unresolved review threads are zero;
+14. PR is squash-merged and epic #176 marks WP6 complete.
