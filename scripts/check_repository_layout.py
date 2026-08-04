@@ -7,8 +7,6 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 
-# Keep this list intentionally small: only files required to run, configure,
-# recover, test and safely maintain the current Omni-CIO Custom GPT + Gateway.
 REQUIRED_PATHS = (
     "README.md",
     "AGENTS.md",
@@ -116,17 +114,12 @@ REQUIRED_PATHS = (
     ".github/workflows/regression-shield.yml",
 )
 
-FORBIDDEN_TRACKED_NAMES = {
-    ".env",
-    "pytest-results.xml",
-}
-
+FORBIDDEN_TRACKED_NAMES = {".env", "pytest-results.xml"}
 FORBIDDEN_WORKFLOWS = {
     "apply-v390.yml",
     "pr03-bootstrap.yml",
     "upgrade-v390.yml",
 }
-
 RETIRED_DUPLICATE_SCENARIO_PUBLISHER_PATHS = (
     "omni_cio/release/final_decision_review_calculator_publication_v1.py",
     "omni_cio/release/final_decision_review_calculator_registration_v1.py",
@@ -135,7 +128,6 @@ RETIRED_DUPLICATE_SCENARIO_PUBLISHER_PATHS = (
     "docs/architecture/FINAL_DECISION_REVIEW_CALCULATOR_PUBLICATION_V1.md",
     "docs/architecture/FINAL_DECISION_REVIEW_CALCULATOR_REGISTRATION_V1.md",
 )
-
 FORBIDDEN_BROKER_METHOD_PREFIXES = (
     "post_order",
     "replace_order",
@@ -147,18 +139,13 @@ FORBIDDEN_BROKER_METHOD_PREFIXES = (
     "withdraw",
     "transfer",
 )
-
 FORBIDDEN_BROKER_METHODS = {
     "pay_in",
     "sandbox_pay_in",
     "open_sandbox_account",
     "close_sandbox_account",
 }
-
-FORBIDDEN_BROKER_SERVICES = {
-    "stop_orders",
-    "sandbox",
-}
+FORBIDDEN_BROKER_SERVICES = {"stop_orders", "sandbox"}
 
 SANDBOX_RUNTIME_ROOT = Path("omni_cio/sandbox")
 SANDBOX_ALLOWED_HOST = "https://sandbox-invest-public-api.tbank.ru/rest"
@@ -229,7 +216,10 @@ def is_forbidden_broker_attribute(name: str) -> bool:
     return (
         name in FORBIDDEN_BROKER_METHODS
         or name in FORBIDDEN_BROKER_SERVICES
-        or any(name.startswith(prefix) for prefix in FORBIDDEN_BROKER_METHOD_PREFIXES)
+        or any(
+            name.startswith(prefix)
+            for prefix in FORBIDDEN_BROKER_METHOD_PREFIXES
+        )
     )
 
 
@@ -249,29 +239,21 @@ def scan_runtime_broker_egress(failures: list[str]) -> None:
             for part in relative.parts
         ):
             continue
-
         try:
             source = path.read_text(encoding="utf-8")
             tree = ast.parse(source, filename=str(relative))
         except (OSError, SyntaxError) as exc:
             fail(f"cannot inspect runtime Python source {relative}: {exc}", failures)
             continue
-
-        # Narrow exception: checked-in code under omni_cio/sandbox may contain
-        # mutation-shaped method names because it is hard-bound to T-Invest's
-        # virtual Sandbox. Its host/token boundary is validated separately below.
         if is_sandbox_runtime(relative):
             continue
-
         for node in ast.walk(tree):
             if isinstance(node, ast.Attribute) and is_forbidden_broker_attribute(
                 node.attr
             ):
                 fail(
-                    (
-                        "forbidden real broker write surface referenced: "
-                        f"{relative}:{node.lineno} ({node.attr})"
-                    ),
+                    "forbidden real broker write surface referenced: "
+                    f"{relative}:{node.lineno} ({node.attr})",
                     failures,
                 )
             if (
@@ -284,10 +266,8 @@ def scan_runtime_broker_egress(failures: list[str]) -> None:
                 and is_forbidden_broker_attribute(node.args[1].value)
             ):
                 fail(
-                    (
-                        "dynamic forbidden real broker write surface referenced: "
-                        f"{relative}:{node.lineno} ({node.args[1].value})"
-                    ),
+                    "dynamic forbidden real broker write surface referenced: "
+                    f"{relative}:{node.lineno} ({node.args[1].value})",
                     failures,
                 )
 
@@ -297,7 +277,6 @@ def scan_sandbox_execution_boundary(failures: list[str]) -> None:
     if not sandbox_root.is_dir():
         fail("sandbox runtime directory is missing", failures)
         return
-
     source_parts: list[str] = []
     for path in sorted(sandbox_root.glob("*.py")):
         try:
@@ -305,12 +284,8 @@ def scan_sandbox_execution_boundary(failures: list[str]) -> None:
         except OSError as exc:
             fail(f"cannot inspect sandbox source {path}: {exc}", failures)
     source = "\n".join(source_parts)
-
     if SANDBOX_ALLOWED_HOST not in source:
-        fail(
-            "sandbox runtime does not declare the canonical sandbox REST host",
-            failures,
-        )
+        fail("sandbox runtime does not declare the canonical sandbox REST host", failures)
     if "TINVEST_SANDBOX_TOKEN" not in source:
         fail("sandbox runtime does not require TINVEST_SANDBOX_TOKEN", failures)
     if "SANDBOX_TRADING_ENABLED" not in source:
@@ -322,7 +297,6 @@ def scan_sandbox_execution_boundary(failures: list[str]) -> None:
         fail("sandbox runtime does not hard-disable margin confirmation", failures)
     if "x-openai-isConsequential" not in source:
         fail("sandbox mutation Actions are not marked consequential", failures)
-
     for forbidden in SANDBOX_FORBIDDEN_TEXT:
         if forbidden in source:
             fail(
@@ -336,7 +310,6 @@ def scan_universe_execution_boundary(failures: list[str]) -> None:
     if not universe_root.is_dir():
         fail("market universe runtime directory is missing", failures)
         return
-
     source_parts: list[str] = []
     for path in sorted(universe_root.glob("*.py")):
         try:
@@ -344,14 +317,12 @@ def scan_universe_execution_boundary(failures: list[str]) -> None:
         except OSError as exc:
             fail(f"cannot inspect universe source {path}: {exc}", failures)
     source = "\n".join(source_parts)
-
     for required in UNIVERSE_REQUIRED_TEXT:
         if required not in source:
             fail(f"market universe source contract missing: {required}", failures)
     for forbidden in UNIVERSE_FORBIDDEN_TEXT:
         if forbidden in source:
             fail(f"market universe crosses read-only boundary: {forbidden}", failures)
-
     for path in sorted(universe_root.glob("*.py")):
         try:
             tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
@@ -381,7 +352,6 @@ def _scan_pure_or_read_only_package(
     if not package_root.is_dir():
         fail(f"{label} runtime directory is missing", failures)
         return
-
     for path in sorted(package_root.glob("*.py")):
         try:
             source = path.read_text(encoding="utf-8")
@@ -389,11 +359,9 @@ def _scan_pure_or_read_only_package(
         except (OSError, SyntaxError) as exc:
             fail(f"cannot inspect {label} source {path}: {exc}", failures)
             continue
-
         for forbidden in forbidden_text:
             if forbidden in source:
                 fail(f"{label} crosses protected boundary: {forbidden}", failures)
-
         for node in ast.walk(tree):
             if isinstance(node, ast.Attribute) and node.attr in {
                 "orders",
@@ -404,7 +372,9 @@ def _scan_pure_or_read_only_package(
                     f"{label} references forbidden broker service: {node.attr}",
                     failures,
                 )
-            if isinstance(node, ast.Attribute) and is_forbidden_broker_attribute(node.attr):
+            if isinstance(node, ast.Attribute) and is_forbidden_broker_attribute(
+                node.attr
+            ):
                 fail(
                     f"{label} references forbidden broker method: {node.attr}",
                     failures,
@@ -449,7 +419,6 @@ def scan_retired_duplicate_scenario_publishers(failures: list[str]) -> None:
 
 def main() -> int:
     failures: list[str] = []
-
     for relative_path in REQUIRED_PATHS:
         if not (ROOT / relative_path).is_file():
             fail(f"missing required file: {relative_path}", failures)
