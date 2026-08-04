@@ -32,6 +32,7 @@ from omni_cio.contracts.v1.portfolio_risk import (
     StressScenarioResultV1,
     portfolio_risk_sha256,
 )
+from omni_cio.policy import policy_fingerprint_sha256
 
 
 class PortfolioRiskError(ValueError):
@@ -275,9 +276,7 @@ def _liquidity_results(
                 unknown = True
                 _append_unique(blockers, RiskBlockerCode.LIQUIDITY_EVIDENCE_MISSING)
             else:
-                exit_days = (
-                    position.base_market_value / source.daily_exit_capacity_base
-                )
+                exit_days = position.base_market_value / source.daily_exit_capacity_base
 
         rows.append(
             LiquidityPositionResultV1(
@@ -621,7 +620,6 @@ def _assess_state(
     portfolio: PortfolioRiskInputV1,
     *,
     policy: InvestmentPolicyStatementV1,
-    policy_assessment: InvestmentPolicyAssessmentV1,
     settings: RiskEngineSettingsV1,
     scenarios: tuple[StressScenarioDefinitionV1, ...],
     macro: MacroRiskAssumptionsV1,
@@ -779,13 +777,14 @@ def assess_portfolio_risk(
         portfolio.policy_reference != policy_assessment.reference
         or portfolio.policy_reference.policy_id != policy.policy_id
         or portfolio.policy_reference.version != policy.version
+        or portfolio.policy_reference.fingerprint_sha256
+        != policy_fingerprint_sha256(policy)
     ):
         inherited.append(RiskBlockerCode.POLICY_BINDING_MISMATCH)
 
     before = _assess_state(
         portfolio,
         policy=policy,
-        policy_assessment=policy_assessment,
         settings=settings_value,
         scenarios=scenario_values,
         macro=macro_value,
@@ -815,7 +814,6 @@ def assess_portfolio_risk(
     after = _assess_state(
         after_input,
         policy=policy,
-        policy_assessment=policy_assessment,
         settings=settings_value,
         scenarios=scenario_values,
         macro=macro_value,
