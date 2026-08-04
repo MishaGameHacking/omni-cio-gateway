@@ -11,7 +11,7 @@ from tests.v9_plan_fixture import build_fixture
 def test_staged_plan_validity_covers_optimizer_execution_horizon() -> None:
     fixture = build_execution_fixture(
         optimizer_settings=PortfolioOptimizerSettingsV1(
-            maximum_daily_turnover_participation=Decimal("0.005"),
+            maximum_daily_turnover_participation=Decimal("0.004"),
         )
     )
     execution_days = max(
