@@ -14,9 +14,21 @@ WP12 consumes, but does not reinterpret, the following upstream identities:
 - WP9 strategy selection SHA;
 - WP10 optimizer SHA;
 - target WP8 risk assessment SHA;
-- exact WP11 BUY/SELL legs and market baselines.
+- exact WP11 BUY/SELL legs and market baselines;
+- each WP10 leg's exact `required_execution_days` and the WP11 `expires_at` derived from the maximum approved execution horizon.
 
 A plan with `NO_ACTION`, `approval_required=false`, a stale canonical SHA, or no actionable legs cannot create a real execution session.
+
+## Validity and stage-count semantics
+
+WP11 keeps `PortfolioPlanSettingsV1.validity_seconds` as the short final-day validity tail. For actionable plans, `expires_at` additionally spans `max(required_execution_days) - 1` calendar days from plan creation. A one-day plan therefore keeps the short original expiry, while a legitimate staged plan remains immutable and reviewable through its approved WP10 horizon.
+
+WP12 derives each real stage count as the maximum of:
+
+1. the exact WP10 `required_execution_days`; and
+2. the number of slices required by the currently configured v8.6.1 per-order hard cap.
+
+If the hard-cap-derived stage count is larger than the immutable WP11 horizon can support, `prepare_plan` fails with `PLAN_EXECUTION_PLAN_HORIZON_TOO_SHORT`. The session is not created, no owner approval is recorded, no proposal is prepared and no broker submit is possible. The engine never mutates `expires_at` and never increases a hard cap.
 
 ## `PlanExecutionSessionV1`
 
@@ -76,6 +88,8 @@ The quote exposes the deterministic executable LIMIT reference: best ask for BUY
 
 No broker token, full account id or arbitrary raw payload is part of this contract.
 
+Before the first confirmed fill, the current portfolio snapshot SHA and current-risk SHA must still equal the exact WP11 start bindings. Before every stage action, strategy, optimizer and target-risk SHA values must still equal the exact approved plan bindings.
+
 ## Stage model
 
 Each immutable leg is split into one or more `PlanExecutionStageV1` rows. Stage identity is deterministic from plan SHA, leg sequence, stage index and stable key.
@@ -92,6 +106,10 @@ A stage records:
 - state.
 
 Stage/attempt indices must be contiguous. Broker-terminal lots cannot exceed planned lots. Portfolio-reconciled lots cannot exceed broker-terminal lots.
+
+Pending work is selected deterministically by `(stage_index, leg_sequence, stage_id)`. This creates portfolio-level tranches: all eligible first slices retain exact leg order before second slices become eligible. For a specific stable key, any stage with a submission recorded on the current Moscow date blocks another slice for that same instrument until the next Moscow date.
+
+A terminal partial fill does not create a new leg. The same stage records broker-terminal progress, returns only its remainder to `PENDING`, and moves its earliest next date to the following Moscow day.
 
 ## Attempt model
 
@@ -131,6 +149,10 @@ Confirmed cash movement is based on broker-terminal order evidence:
 - estimated SELL tax remains a separate allowance rather than being double-counted into broker proceeds.
 
 Read-only current cash must remain within the deterministic expected range after confirmed broker progress plus the bounded tax allowance and configured RUB tolerance.
+
+## Expiry and reconciliation
+
+`expires_at` blocks new stage preparation and new submit. It does not erase broker reality. If a stage was already submitted, or may have been submitted ambiguously, the exact request id remains eligible only for broker reconciliation and subsequent read-only portfolio/cash reconciliation after expiry. No replacement submit becomes legal because the plan expired.
 
 ## Revision and atomicity
 
