@@ -9,7 +9,9 @@ import pytest
 SCRIPT_PATH = (
     Path(__file__).resolve().parents[1] / "scripts" / "check_v10_toolchain_baseline.py"
 )
-SPEC = importlib.util.spec_from_file_location("check_v10_toolchain_baseline", SCRIPT_PATH)
+SPEC = importlib.util.spec_from_file_location(
+    "check_v10_toolchain_baseline", SCRIPT_PATH
+)
 assert SPEC is not None and SPEC.loader is not None
 toolchain = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(toolchain)
