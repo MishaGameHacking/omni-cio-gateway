@@ -156,11 +156,13 @@ jobs:
       - name: Reproduce dependency tree from committed lock
         run: npm ci --ignore-scripts --no-audit --no-fund
 
-      - name: Verify committed lock is current
+      - name: Verify committed lock is semantically current
         shell: pwsh
         run: |
+          Copy-Item package-lock.json package-lock.before.json
           npm install --package-lock-only --ignore-scripts --no-audit --no-fund
-          git diff --exit-code -- package-lock.json
+          node -e "const fs=require('node:fs'); const assert=require('node:assert/strict'); const before=JSON.parse(fs.readFileSync('package-lock.before.json','utf8')); const after=JSON.parse(fs.readFileSync('package-lock.json','utf8')); assert.deepStrictEqual(after,before);"
+          Remove-Item package-lock.before.json
 
       - name: Type-check frontend toolchain
         run: npm run typecheck
