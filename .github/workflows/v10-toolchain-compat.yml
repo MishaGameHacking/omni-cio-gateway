@@ -101,10 +101,13 @@ jobs:
       - name: Run full deterministic test suite
         run: python -m pytest -q
 
-  node-candidate:
-    name: Node 24.18.0 / npm 11.16.0 candidate
+  frontend-candidate:
+    name: Node 24.18.0 / React-Vite-TypeScript candidate
     runs-on: windows-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: tests/toolchain/frontend
 
     steps:
       - name: Check out repository
@@ -125,3 +128,33 @@ jobs:
           if ((npm --version) -ne "11.16.0") { exit 1 }
           node --version
           npm --version
+
+      - name: Generate candidate lock without lifecycle scripts
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+
+      - name: Reproduce dependency tree from candidate lock
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Type-check candidate frontend toolchain
+        run: npm run typecheck
+
+      - name: Build non-product frontend smoke fixture
+        run: npm run build
+
+      - name: Audit frontend dependencies
+        run: npm audit --audit-level=high
+
+      - name: Generate CycloneDX frontend SBOM
+        shell: pwsh
+        run: npm sbom --package-lock-only --sbom-format cyclonedx --sbom-type application | Out-File -Encoding utf8 frontend-sbom.cdx.json
+
+      - name: Upload candidate lock and SBOM
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: v10-frontend-toolchain-candidate
+          path: |
+            tests/toolchain/frontend/package-lock.json
+            tests/toolchain/frontend/frontend-sbom.cdx.json
+          if-no-files-found: warn
+          retention-days: 3
