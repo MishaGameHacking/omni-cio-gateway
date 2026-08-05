@@ -1,62 +1,77 @@
 # Omni-CIO V10 — Program Lock
 
-Status: **OWNER-APPROVED PROGRAM / DEVELOPMENT STARTED / WP0 ACTIVE**  
+Status: **OWNER-APPROVED PROGRAM / DEVELOPMENT STARTED / WP0 COMPLETE ON ACCEPTED MAIN / WP1 NEXT**  
 Baseline: **Omni-CIO v9.0.0 — COMPLETE / PROTECTED**  
 Searchable canonical plan: `docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.md`  
 Owner-readable PDF: `docs/master-plan/Omni-CIO_V10_Master_Plan_RU.pdf`  
 Integrity manifest: `docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.sha256`  
 Plan-readiness audit: `docs/master-plan/OMNI_CIO_V10_PLAN_READINESS_AUDIT.md`  
 Start/WP0 record: `docs/master-plan/OMNI_CIO_V10_START_RECORD.md`  
-Account-independence audit trail: `docs/master-plan/OMNI_CIO_V10_ACCOUNT_INDEPENDENCE_AMENDMENT.md`
+Current progress authority: `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`
+
+> Authority note: `WP0 COMPLETE / WP1 NEXT` is effective only when this file is present on accepted `main` after the focused WP0 PR passes exact-head CI/security and is squash-merged. In an unmerged PR it is the acceptance candidate, not accepted project state.
 
 ## 1. Authority
 
-The owner has approved Omni-CIO V10 as the next and only feature-development program after the completed V9 program and explicitly issued **`START V10`** on 2026-08-05.
+The owner approved Omni-CIO V10 as the next and only feature-development program after completed V9 and explicitly issued **`START V10`** on 2026-08-05.
 
 The canonical detailed program is stored as one synchronized pair:
 
-- `OMNI_CIO_V10_MASTER_PLAN.md` — searchable source for developers, AI agents, code review and future automation;
-- `Omni-CIO_V10_Master_Plan_RU.pdf` — rendered owner-readable copy of the same approved program;
-- `OMNI_CIO_V10_MASTER_PLAN.sha256` — integrity fingerprints for both canonical files.
-
-The owner-approved AI/GPT migration requirements and Account Independence / Deployment Portability requirements are already consolidated into the canonical Master Plan. `OMNI_CIO_V10_ACCOUNT_INDEPENDENCE_AMENDMENT.md` remains historical audit evidence, not a competing source of truth.
+- `OMNI_CIO_V10_MASTER_PLAN.md` — searchable source for developers, AI agents, code review and automation;
+- `Omni-CIO_V10_Master_Plan_RU.pdf` — owner-readable synchronized copy;
+- `OMNI_CIO_V10_MASTER_PLAN.sha256` — integrity fingerprints.
 
 Current canonical SHA-256 values:
 
 - PDF: `afb165183594d59c6218a419341f67fe5496f9567221efcf7521378914b6f106`
 - Markdown: `80df1efd750d1f56bf3a1b097e0c8fef4414b9bb65aced503c669313dd55be25`
 
-If these values ever differ from `OMNI_CIO_V10_MASTER_PLAN.sha256`, or if Markdown/PDF diverge substantively, V10 feature work must stop until an owner-reviewed documentation PR restores one synchronized canonical program and regenerates the manifest.
+If the manifest diverges from either canonical plan artifact, or Markdown/PDF diverge substantively, V10 feature work stops until owner-reviewed correction restores one canonical program.
 
-## 2. Development start state
+## 2. Program state and sequence
 
-The finalized planning program was accepted on `main` by squash-merged PR #227. The owner subsequently issued the explicit start command `START V10` on 2026-08-05.
+Planning was accepted by squash-merged PR #227 on start baseline:
 
-Current authorized implementation scope is only:
+`159316c5b211977b0d9125dffb86210316ae10d3`
 
-**WP0 — V10 Program Lock / Architecture Freeze verification.**
+Post-merge Regression Shield run #1332 succeeded on that exact SHA.
 
-The start command is recorded in:
+WP0 architecture freeze is delivered by focused PR #228. Once its exact-head CI/security is green, review blockers are zero and the PR is squash-merged to `main`:
 
-`docs/master-plan/OMNI_CIO_V10_START_RECORD.md`
+- Block A becomes **COMPLETE — 5%**;
+- overall V10 becomes **5% COMPLETE**;
+- next authorized package becomes **WP1 — Repository Architecture and boundaries**.
 
-Starting V10 does **not** broaden V9 runtime, broker or Real-money authority. Later work packages remain blocked until the current WP Exit Gate is accepted on `main`.
+WP2 and later remain blocked until WP1 Exit Gate is accepted. Lenovo one-time setup remains Block C after WP1–WP4.
 
-## 3. Program exclusivity
+## 3. WP0 frozen architecture authority
 
-All developers/AI agents must follow the canonical work-package sequence and exit gates.
+WP0 establishes these V10 architecture sources:
+
+- `docs/architecture/V10_SYSTEM_ARCHITECTURE.md`;
+- `docs/architecture/V10_SECURITY_BOUNDARIES.md`;
+- `docs/architecture/V10_DATA_FLOW.md`;
+- `docs/architecture/V10_THREAT_MODEL.md`;
+- `docs/architecture/V10_RECOVERY_CONTRACT.md`;
+- `docs/architecture/V10_ADR_PROCESS.md`;
+- `docs/architecture/V10_V9_BASELINE_FREEZE.md`;
+- ADR-019 in `docs/architecture/DECISIONS.md`.
+
+These documents implement the Master Plan; they do not override it. A material architecture/scope change requires an ADR and, when scope/authority changes, an owner-approved program amendment.
+
+## 4. Program exclusivity
 
 Until V10 reaches full Definition of Done and owner acceptance:
 
 - do not start V11 or another competing version program;
 - do not create a parallel frontend, Telegram architecture, AI stack, Gateway, broker/execution stack or competing roadmap;
 - do not skip directly to public/multi-user, billing or Real execution;
-- brainstormed chat ideas are not scope unless incorporated through owner-approved program amendment;
+- brainstormed chat ideas are not approved scope unless incorporated through the program-amendment process;
 - the mandatory AI sequence remains: GPT Knowledge Migration -> Knowledge/RAG -> Tool Registry/authority firewall -> Omni-CIO AI Copilot/Agent Orchestrator -> shared Web/Telegram AI -> bounded Autonomous Research Agent -> Custom GPT parity/decommission gate;
-- the current Custom GPT cannot be removed before parity evidence and explicit owner acceptance;
+- current Custom GPT cannot be removed before parity evidence and explicit owner acceptance;
 - Account Independence / Deployment Portability remains binding throughout every block.
 
-### 3.1 Account Independence / Deployment Portability invariant
+## 5. Account Independence / Deployment Portability invariant
 
 - no personal ChatGPT, website-builder, IDE, hosting account, developer workstation or single runtime node may become the unique engineering source of truth;
 - Web/API/AI/Telegram source, configuration schemas/defaults, DB migrations, tests, CI, deployment/bootstrap/recovery contracts and mandatory AI policies are repository-controlled where technically reasonable;
@@ -66,25 +81,23 @@ Until V10 reaches full Definition of Done and owner acceptance:
 - GitHub engineering access never implies broker trading authority;
 - final V10 acceptance requires clean-room recovery/portability from GitHub + documented bootstrap + authorized backup + separately restored runtime secrets.
 
-## 4. Sequential delivery rule
+## 6. Sequential delivery rule
 
 Default discipline:
 
-`restore context -> identify current WP -> focused branch -> implementation + tests -> security/boundary review -> exact-head Regression Shield -> resolve review threads -> squash merge -> update V10 status -> next WP`
+`restore context -> identify exactly one current WP -> focused branch -> implementation + tests -> security/boundary review -> exact-head Regression Shield -> resolve review threads -> squash merge -> update V10 status -> next WP`
 
-A WP is not complete because files/UI exist. Completion requires its defined Exit Gate and required integration/recovery evidence.
+A WP is not complete because files/UI exist. Completion requires its Exit Gate and required integration/recovery evidence.
 
-The first implementation work package after `START V10` is WP0. Later work packages cannot be treated as substitutes for an incomplete earlier gate.
-
-## 5. Money and safety boundary
+## 7. Money and safety boundary
 
 The completed V9 money/safety invariants remain binding unless a later V10 WP explicitly replaces a boundary and passes all acceptance gates:
 
-- production read-only, Sandbox and Real credentials remain isolated;
+- production READ, Sandbox and Real credentials remain isolated;
 - Real uses a separate account-scoped trading credential without transfer authority;
 - no autonomous unconfirmed real-money execution;
 - immutable plan before submit;
-- confirmation remains short-lived and bound to the exact plan hash;
+- confirmation remains short-lived and bound to exact plan hash;
 - one possible broker submit per idempotent identity;
 - ambiguous possible-submit is never automatically retried;
 - `submitted` is not `filled` without broker evidence;
@@ -93,53 +106,35 @@ The completed V9 money/safety invariants remain binding unless a later V10 WP ex
 - developer/repository access is never trading authorization;
 - unhealthy time sync, durable state, audit persistence or external approval-auth gate blocks Real submit as defined by the canonical plan.
 
-## 6. Source-of-truth order during V10
+Existing master rollback remains:
 
-During V10 implementation, use this authority order:
+`REAL_TRADING_ENABLED=false`.
+
+## 8. Source-of-truth order during V10
 
 1. accepted `main`;
 2. `AGENTS.md`;
 3. this Program Lock;
-4. paired canonical program `OMNI_CIO_V10_MASTER_PLAN.md` + `Omni-CIO_V10_Master_Plan_RU.pdf` and integrity manifest;
+4. paired canonical V10 Master Plan Markdown/PDF + integrity manifest;
 5. `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`;
-6. relevant V10 architecture/ADR/runbook files accepted by the current WP;
+6. accepted current V10 architecture/ADR/runbook files;
 7. current PR/CI/runtime acceptance evidence;
-8. historical planning amendments/audits only as trace evidence, never to override the accepted canonical program.
+8. historical amendments/audits only as trace evidence.
 
-If canonical sources conflict, feature development stops until the conflict is resolved by an owner-reviewed documentation change.
+If canonical sources conflict, feature development stops until conflict is resolved by owner-reviewed change.
 
-## 7. Planning-readiness acceptance evidence
+## 9. Branch / CI protection rule
 
-Before `START V10`, accepted `main` proved:
+At WP0 start GitHub reported `main` without server-side branch protection. This does not authorize direct pushes.
 
-- canonical Markdown/PDF are synchronized and SHA-256 tracked;
-- weights A-J are exactly `5/9/12/14/14/8/18/8/7/5 = 100%`;
-- AI/GPT migration and Account Independence are inside the canonical plan;
-- data-at-rest, RPO/RTO, Web TLS/OWNER auth, runtime update, time-sync and logging/privacy requirements are explicit;
-- temporary plan-generation tooling is absent;
-- `OMNI_CIO_V10_PLAN_READINESS_AUDIT.md` has no substantive planning blocker;
-- exact-head Regression Shield/security was green;
-- zero unresolved PR review blockers remained;
-- the plan was squash-merged into `main` while V10 implementation progress was `0% / NOT STARTED`.
+Until WP3 evaluates/configures the strongest protection available for this private repository, the mandatory process is manually enforced:
 
-Planning acceptance evidence is PR #227 plus post-merge Regression Shield run #1332 on start SHA `159316c5b211977b0d9125dffb86210316ae10d3`.
+`focused branch -> PR -> exact-head Regression Shield/security -> zero unresolved review blockers -> squash merge`.
 
-## 8. Current WP0 gate
+WP3 must explicitly evaluate required status checks/conversation resolution/restrictions available for the owner's GitHub plan. Unsupported paid/platform controls require documented compensating controls rather than silent omission.
 
-WP0 must verify Architecture Freeze without introducing feature work. It may close only after:
+## 10. Completion rule
 
-- the explicit owner start is recorded;
-- canonical plan/status/start sources are consistent;
-- V9 recovery and runtime authority remain unchanged;
-- no out-of-order/parallel feature stack is introduced;
-- exact-head Regression Shield/security passes;
-- zero review blockers remain;
-- the focused WP0 PR is squash-merged to `main`.
-
-After WP0 acceptance, Block A becomes 5% complete and WP1 is the next authorized work package. Lenovo setup remains later in Block C after WP1–WP4.
-
-## 9. Completion rule
-
-V10 itself is not complete until the canonical program reaches 100%, the final evidence matrix is complete, clean-room recovery/portability and all final security/reliability gates pass, and the owner accepts the final release.
+V10 is not complete until the canonical program reaches 100%, final capability evidence matrix is complete, clean-room recovery/portability and final security/reliability gates pass, and the owner accepts the final release.
 
 Until then no successor version is authorized.
