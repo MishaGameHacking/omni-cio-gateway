@@ -1,6 +1,6 @@
 # Архитектурные решения Omni-CIO
 
-Этот файл фиксирует действующие решения для applied Omni-CIO v9.0.0. Исторические решения не удаляются молча: если правило изменилось reviewed program/release, оно помечается superseded.
+Этот файл фиксирует действующие решения для applied Omni-CIO v9.0.0 и последовательно развиваемой V10. Исторические решения не удаляются молча: если правило изменилось reviewed program/release, оно помечается superseded.
 
 ## ADR-001 — Production read-only credential remains read-only; Gateway has isolated contours
 
@@ -20,11 +20,11 @@ Conditional POST Actions допустимы только в reviewed Sandbox/Rea
 
 Render и GPT Actions зависят от стабильного FastAPI app. `app_v371.py`, `app_v360.py` и `main.py` остаются, пока `app.py` импортирует их. Консолидация wrappers требует отдельной compatibility migration и полного Regression Shield.
 
-## ADR-003 — Единственный пользовательский интерфейс — существующий Custom GPT v9.0.0
+## ADR-003 — Единственный пользовательский интерфейс текущего V9 runtime — существующий Custom GPT v9.0.0
 
-**Статус:** принято.
+**Статус:** принято для текущего V9 runtime; будущий V10 Web/Telegram не заменяет этот boundary до своих Exit Gates.
 
-Поддерживается один GPT:
+Поддерживается один applied GPT:
 
 `Omni-CIO API | Управляющий и аналитик v9.0.0`.
 
@@ -39,6 +39,8 @@ Protected rollback UI/Instructions v8.6.1 остаются в GitHub как reco
 `main` + tests/contracts являются runtime/recovery source of truth. `gpt/` содержит applied/recovery GPT configuration.
 
 GitHub не нажимает GPT Editor `Update`, не хранит secret values и не синхронизирует Render/GPT/Upstash/QStash автоматически. External applied-state claims требуют owner evidence.
+
+V10 расширяет этот принцип: GitHub является engineering Control Plane для Web/API/AI/Telegram/configuration schemas/migrations/deployment/recovery, но runtime secrets/private portfolio state остаются вне GitHub.
 
 ## ADR-005 — Один applied Instructions payload + один protected rollback payload
 
@@ -75,9 +77,11 @@ Protected rollback Instructions:
 
 GitHub хранит только env/role names и placeholders, не values/full account IDs/private broker payloads.
 
+V10 добавляет future Telegram/local-runtime/encryption credentials в тот же принцип: значения остаются runtime-only и выдаются по минимальной роли.
+
 ## ADR-008 — Один production Gateway endpoint
 
-**Статус:** принято.
+**Статус:** принято для текущего V9 runtime.
 
 Canonical service:
 
@@ -87,7 +91,7 @@ OpenAPI authority:
 
 `https://omni-cio-gateway.onrender.com/openapi.json`
 
-Не поддерживать старые/альтернативные production service names.
+Не поддерживать старые/альтернативные production service names. V10 не меняет этот runtime endpoint до отдельного accepted deployment/migration package.
 
 ## ADR-009 — Portfolio management is tool-first; exact Action isolation preserved
 
@@ -112,6 +116,8 @@ Real preflight дополнительно требует supported identity, fre
 **Статус:** принято.
 
 User-visible dates/times используют `Europe/Moscow`/MSK. Trading readiness определяется broker/Gateway state, а не только часами.
+
+V10 persistent canonical timestamps use UTC with explicit source/receive semantics; MSK remains a presentation concern unless later owner policy changes it.
 
 ## ADR-012 — CI/dependency supply chain fail-closed
 
@@ -141,7 +147,7 @@ One-time bootstrap payloads/generated CI projections are removed once their work
 
 ## ADR-015 — Effective production OpenAPI is GPT Action authority
 
-**Статус:** принято.
+**Статус:** принято for current V9 Custom GPT.
 
 Internal WP1–WP14 modules are not automatically GPT Actions. GPT может вызвать/утверждать server execution только для operationId, реально опубликованного effective `/openapi.json` и подтверждённого returned evidence.
 
@@ -153,6 +159,8 @@ Reviewed Real operationIds:
 - `getRealOrderState`.
 
 Sandbox outputs всегда virtual. Watchtower scheduler/callback routes hidden from GPT OpenAPI.
+
+V10 Web/Telegram/AI tool authority will use separate reviewed internal contracts; it cannot infer broker authority from the V9 OpenAPI or vice versa.
 
 ## ADR-016 — Real execution requires explicit owner confirmation and broker reconciliation
 
@@ -172,12 +180,64 @@ Scheduled live acceptance performs public GETs only to `/health` and `/openapi.j
 
 The baseline GET-only release contract remains useful for safe-mode/unit verification, but is not the production-wide scheduled authority check after reviewed v9 execution contours exist.
 
-## ADR-018 — v9 feature program complete; repository is in controlled maintenance mode
+## ADR-018 — v9 feature program complete; repository entered controlled maintenance mode
 
-**Статус:** принято.
+**Статус:** superseded for feature-program governance by ADR-019; remains true for the current V9 runtime maintenance boundary.
 
-WP0–WP15 repository delivery and owner external acceptance are complete. Current changes are maintenance/security/dependency/recovery work only unless the owner explicitly approves a new program.
+WP0–WP15 repository delivery and owner external acceptance are complete. V9 remains in controlled maintenance while V10 is developed and until a specific V10 work package safely replaces a boundary.
 
-Every significant maintenance change still follows:
+Every significant change still follows:
 
 `branch → focused tests/guards → exact-head Regression Shield/security → zero unresolved threads → squash merge`.
+
+## ADR-019 — V10 is the exclusive active feature program; V9 remains protected runtime baseline
+
+**Статус:** accepted by owner `START V10` command, implementation begins at WP0.
+
+**Date:** 2026-08-05  
+**Current V10 WP at adoption:** WP0 — Program Lock / Architecture Freeze verification.
+
+### Context
+
+V9 has completed WP0–WP15 and is owner-accepted. The owner approved the canonical V10 Master Plan and subsequently issued explicit `START V10`. V10 must become an account-independent Personal Autonomous Investment Platform without sacrificing current V9 safety/recovery.
+
+### Decision
+
+- V10 is the only authorized feature-development program until its final 100% Definition of Done/owner acceptance.
+- Work proceeds strictly WP-by-WP according to `OMNI_CIO_V10_MASTER_PLAN.md`.
+- V9 remains the current production/recovery runtime until individual V10 packages explicitly replace a boundary and pass their Exit Gates.
+- GitHub is the V10 engineering Control Plane; runtime nodes are replaceable Data Plane instances.
+- One Core serves future Web/Telegram/AI adapters; parallel competing stacks are prohibited.
+- AI has no direct broker-write authority.
+- Current Custom GPT assets are migrated/retained until explicit parity/decommission acceptance.
+- Real execution continues to require deterministic constraints, immutable plan, explicit owner approval, idempotency and broker reconciliation.
+
+### Alternatives considered
+
+- continue indefinitely inside Custom GPT only — rejected because it keeps account/platform dependency and weak background autonomy;
+- build a second independent site/bot stack — rejected because it duplicates business logic and creates conflicting authorities;
+- replace V9 runtime immediately — rejected because it removes proven rollback before V10 is accepted.
+
+### Security / money-authority impact
+
+No authority expansion at WP0. `START V10` is engineering authorization only. V9 read-only/Sandbox/Real boundaries and kill switches remain binding.
+
+### Data / migration impact
+
+None at WP0. V10 persistence/migrations begin only in their later accepted packages.
+
+### Operational impact
+
+Current production remains V9. V10 begins with documentation/governance/architecture freeze, then repository/toolchain/CI before Lenovo setup or feature runtime.
+
+### Failure mode / rollback
+
+If a V10 package fails, stop that package, retain V9 production and recover from the last accepted V10/main state. Do not weaken V9 to force V10 forward.
+
+### Verification
+
+WP0 requires canonical architecture/security/data-flow/threat/recovery docs, ADR process, baseline Regression Shield, no secrets/private payloads, and focused PR acceptance.
+
+### Supersedes
+
+Supersedes ADR-018 only for *feature-program governance*. ADR-018 remains historical evidence and the V9 runtime remains controlled-maintenance/protected until replaced by accepted V10 boundaries.

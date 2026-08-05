@@ -28,9 +28,9 @@ WP0–WP15 repository delivery and owner external acceptance are **complete**. T
 
 Current accepted V9 runtime mode remains **controlled maintenance** until a future V10 work package safely replaces a specific boundary.
 
-### 2.1 V10 is the exclusive next feature program
+### 2.1 V10 is the exclusive active feature program
 
-Owner-approved/program-locked next program:
+Owner-approved/program-locked program:
 
 `docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.md`
 
@@ -46,27 +46,35 @@ Progress/status authority:
 
 `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`
 
-Current V10 state: **PROGRAM LOCKED / DEVELOPMENT NOT STARTED / 0%**.
+Start/WP0 evidence:
 
-Mandatory V10 AI scope is part of the locked plan: migrate the existing GPT Instructions/Knowledge/Actions into versioned System Policy + Knowledge/RAG + Tool Registry; build one Omni-CIO AI Copilot/Agent Orchestrator used by Web and Telegram; support a bounded Autonomous Research Agent; keep financial sizing/execution deterministic; and do not decommission the current Custom GPT until the explicit parity gate and owner acceptance.
+`docs/master-plan/OMNI_CIO_V10_START_RECORD.md`
 
-The V10 program lock does **not** itself authorize implementation. V10 feature work begins only after a new explicit owner instruction to start V10 development.
+Current accepted state when this file is read from `main`: **WP0 COMPLETE / BLOCK A COMPLETE / V10 5% / WP1 NEXT**.
 
-V10 planning-readiness rule: before that start instruction, accepted `main` must contain the consolidated Markdown/PDF pair + regenerated SHA-256 manifest + plan-readiness audit, exact-head CI/security must be green, and V10 must still be 0%.
+If this text is viewed inside the unmerged WP0 PR, the 5% state is only the acceptance candidate and becomes authoritative only after exact-head CI/security is green and the PR is squash-merged.
 
-Once V10 development starts, all feature work must follow the canonical V10 plan sequentially. Until V10 reaches its full Definition of Done and 100% completion:
+The owner explicitly issued **`START V10`** on 2026-08-05. The next authorized package after WP0 acceptance is **WP1 — Repository Architecture and boundaries**. WP2 and later remain blocked until WP1 Exit Gate is accepted.
+
+Mandatory V10 AI scope remains locked: migrate existing GPT Instructions/Knowledge/Actions into versioned System Policy + Knowledge/RAG + Tool Registry; build one Omni-CIO AI Copilot/Agent Orchestrator used by Web and Telegram; support a bounded Autonomous Research Agent; keep financial sizing/execution deterministic; and do not decommission the current Custom GPT until the explicit parity gate and owner acceptance.
+
+All V10 work must follow the canonical plan sequentially. Until V10 reaches its full Definition of Done and 100% completion:
 
 - do not start V11 or another competing version program;
 - do not create a parallel frontend, Telegram architecture, AI stack, Gateway, broker/execution stack or competing roadmap outside the approved V10 program;
 - do not skip directly to later V10 blocks such as public/multi-user, billing or Real execution;
-- do not treat brainstormed chat ideas as approved scope when they are absent from the canonical V10 program;
+- do not treat brainstormed chat ideas as approved scope when absent from the canonical V10 program;
 - new scope goes to backlog/program-amendment review and requires explicit owner approval.
 
-Before the owner starts V10 implementation, permitted changes remain limited to V9 security/critical maintenance, dependency maintenance, recovery and documentation correctness that do not broaden runtime authority.
+The planned one-time Lenovo setup is deliberately Block C after WP1–WP4 establish repository architecture, toolchain, CI and release/deployment contracts. Do not configure the V10 Lenovo runtime out of order.
 
 Protected baseline/recovery contract:
 
 `docs/architecture/V9_BASELINE_AND_RECOVERY_CONTRACT.md`
+
+Protected V10 baseline freeze:
+
+`docs/architecture/V10_V9_BASELINE_FREEZE.md`
 
 Protected v8.6.1 release commit:
 
@@ -82,20 +90,27 @@ Read in this order:
 
 1. `README.md`;
 2. `knowledge/00_PROJECT_MASTER_CONTEXT.md`;
-3. `knowledge/16_CURRENT_PROGRAM_STATUS.md` for the accepted V9 runtime baseline;
+3. `knowledge/16_CURRENT_PROGRAM_STATUS.md` for accepted V9 runtime baseline;
 4. `docs/master-plan/OMNI_CIO_V10_PROGRAM_LOCK.md`;
 5. `docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.md`;
 6. `docs/master-plan/Omni-CIO_V10_Master_Plan_RU.pdf`;
 7. `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`;
-7. `gpt/SETUP_INDEX.md` and `gpt/CONFIGURATION.md` for GPT-visible/recovery work;
-8. `docs/architecture/SYSTEM_OVERVIEW.md`;
-9. `docs/architecture/REPOSITORY_STRUCTURE.md`;
-10. relevant architecture/runbook;
-11. actual `main`, open PR/issues and GitHub Actions.
+8. `docs/architecture/V10_SYSTEM_ARCHITECTURE.md`;
+9. `docs/architecture/V10_SECURITY_BOUNDARIES.md`;
+10. `docs/architecture/V10_DATA_FLOW.md`;
+11. `docs/architecture/V10_THREAT_MODEL.md`;
+12. `docs/architecture/V10_RECOVERY_CONTRACT.md`;
+13. `docs/architecture/V10_ADR_PROCESS.md` and `docs/architecture/DECISIONS.md`;
+14. `docs/architecture/V10_V9_BASELINE_FREEZE.md`;
+15. `gpt/SETUP_INDEX.md` and `gpt/CONFIGURATION.md` for current GPT-visible/recovery work;
+16. `docs/architecture/SYSTEM_OVERVIEW.md` for current V9 runtime architecture;
+17. `docs/architecture/REPOSITORY_STRUCTURE.md` for the current physical repository tree until WP1 changes it;
+18. relevant current-WP architecture/runbook;
+19. actual `main`, open PR/issues and GitHub Actions.
 
-Use the completed V9 master plan when auditing original V9 requirements. Use `OMNI_CIO_V10_MASTER_PLAN.md` + its regenerated V10 PDF + V10 program lock as the authority for future V10 feature work.
+Use the completed V9 master plan when auditing original V9 requirements. Use `OMNI_CIO_V10_MASTER_PLAN.md` + its V10 PDF + V10 Program Lock as authority for V10 feature work.
 
-Old chat/screenshot is not source of truth when it conflicts with current accepted `main` plus explicit owner-approved program evidence.
+Old chat/screenshot is not source of truth when it conflicts with accepted `main` plus explicit owner-approved program evidence.
 
 ## 4. Broker execution boundary
 
@@ -168,7 +183,7 @@ Forbidden under current reviewed Real surface:
 
 Engineering autonomy, Watchtower alerts, portfolio-management prompts, recommendations and plans are not authorization for a new Real trade.
 
-Every Real submit still requires the server-side reviewed confirmation/idempotency/preflight lifecycle. Never infer permission from `управляй портфелем`, maintenance instructions, V10 program approval or prior acceptance.
+Every Real submit still requires the server-side reviewed confirmation/idempotency/preflight lifecycle. Never infer permission from `управляй портфелем`, maintenance instructions, `START V10`, V10 program approval or prior acceptance.
 
 ## 6. Internal v9 engines versus GPT Actions
 
@@ -188,13 +203,13 @@ Exact-action requests remain isolated: `вызови только X` must not ex
 
 Hidden Watchtower/QStash routes stay excluded from GPT OpenAPI.
 
-V10 migration rule: the current GPT Instructions/Knowledge/Actions/configuration are source assets for migration and fallback. Do not delete or weaken them merely because a local model or Web Copilot exists; removal from the required runtime path happens only after the V10 Custom GPT parity/decommission gate.
+V10 migration rule: current GPT Instructions/Knowledge/Actions/configuration are source assets for migration and fallback. Do not delete or weaken them merely because a local model or Web Copilot exists; removal from the required runtime path happens only after the V10 Custom GPT parity/decommission gate.
 
-## 7. Maintenance and future V10 delivery discipline
+## 7. Maintenance and V10 delivery discipline
 
-Every significant maintenance package and, once started, every V10 work package follows:
+Every significant maintenance package and every V10 work package follows:
 
-1. restore the current source of truth and identify exactly one current WP/defect;
+1. restore current source of truth and identify exactly one current WP/defect;
 2. one focused branch/PR;
 3. do not implement work outside the current approved V10 WP;
 4. update architecture/data/threat/recovery docs when a boundary changes;
@@ -204,8 +219,8 @@ Every significant maintenance package and, once started, every V10 work package 
 8. exact-head Regression Shield + security;
 9. zero unresolved review threads;
 10. squash merge with expected-head protection where available;
-11. update `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md` only from merged evidence when V10 is active;
-12. begin the next WP only after the current WP exit gate is satisfied.
+11. update `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md` from accepted evidence;
+12. begin next WP only after current WP Exit Gate is satisfied.
 
 Do not weaken CI, safety checks or type/lint/security policy just to make a dependency, maintenance or V10 PR green.
 
@@ -251,7 +266,7 @@ Use only env/role names, safe placeholders and masked IDs.
 
 ## 10. Runtime/deployment
 
-Until a future V10 WP explicitly replaces a runtime boundary and passes its exit gate:
+Until a future V10 WP explicitly replaces a runtime boundary and passes its Exit Gate:
 
 - production service: `omni-cio-gateway`;
 - endpoint: `https://omni-cio-gateway.onrender.com`;
@@ -317,7 +332,7 @@ For `getBrokerReportReconciliation` preserve the async contract:
 
 ## 14. Repository structure
 
-Current V9 structure remains authoritative until changed by the appropriate future V10 WP:
+Current V9 physical structure remains authoritative until WP1 deliberately changes it:
 
 - root wrappers/runtime + `omni_cio/`;
 - Sandbox: `omni_cio/sandbox/`;
@@ -379,7 +394,7 @@ Versioned filenames are not proof of obsolescence. Conversely, one-time bootstra
 - Sandbox: conditional/virtual;
 - Real BUY/SELL lifecycle: accepted/protected;
 - current V9 runtime mode: controlled maintenance;
-- V10: **owner-approved program locked, development not started, 0%**;
+- V10 on accepted `main` after WP0 merge: **5% complete / WP0 complete / WP1 next**;
 - successor versions: **not authorized until V10 reaches 100% and final acceptance**.
 
 Current V9 runtime status: `knowledge/16_CURRENT_PROGRAM_STATUS.md`.  
