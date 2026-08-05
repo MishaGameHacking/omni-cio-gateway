@@ -1,7 +1,7 @@
 # Repository owner and default reviewer
 * @Misha2304
 
-# Gateway runtime and deployment
+# Current V9 Gateway runtime and deployment compatibility layer
 /app.py @Misha2304
 /app_v*.py @Misha2304
 /main.py @Misha2304
@@ -10,9 +10,15 @@
 /requirements*.in @Misha2304
 /pyproject.toml @Misha2304
 
-# Domain engines
+# Deterministic financial Core and current domain engines
+/omni_cio/ @Misha2304
 /*.py @Misha2304
 /broker_report_reconciliation/ @Misha2304
+
+# Reserved V10 application/adaptor roots
+/apps/ @Misha2304
+/ai/ @Misha2304
+/infrastructure/ @Misha2304
 
 # Safety, CI and automation
 /.github/ @Misha2304
@@ -21,7 +27,7 @@
 /AGENTS.md @Misha2304
 /SECURITY.md @Misha2304
 
-# Project memory and interfaces
+# Project memory, architecture and current GPT recovery
 /knowledge/ @Misha2304
 /docs/ @Misha2304
 /gpt/ @Misha2304
