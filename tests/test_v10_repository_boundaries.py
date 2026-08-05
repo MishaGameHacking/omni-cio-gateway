@@ -70,7 +70,7 @@ def test_future_ai_adapter_cannot_reference_trading_secret(
     ai_root = tmp_path / "ai"
     ai_root.mkdir()
     (ai_root / "unsafe.py").write_text(
-        'secret_name = "TINVEST_TRADING_TOKEN"\n',
+        'secret_name = "TINVEST_TRADING_TOKEN"\n',  # pragma: allowlist secret
         encoding="utf-8",
     )
     monkeypatch.setattr(boundaries, "ROOT", tmp_path)
