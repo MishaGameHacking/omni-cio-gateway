@@ -14,6 +14,44 @@ GENERATED_DEPENDENCY_PROJECTIONS = (
     "compiled-requirements-dev.txt",
 )
 
+CURRENT_STATE_DOCS = (
+    "README.md",
+    "AGENTS.md",
+    "CONTRIBUTING.md",
+    "CHANGELOG.md",
+    "docs/README.md",
+    "docs/master-plan/README.md",
+    "knowledge/00_PROJECT_MASTER_CONTEXT.md",
+    "knowledge/16_CURRENT_PROGRAM_STATUS.md",
+    "gpt/README.md",
+    "gpt/SETUP_INDEX.md",
+    "gpt/CONFIGURATION.md",
+    "gpt/NEW_CHAT_PROMPT.md",
+    "gpt/PROJECT_INSTRUCTIONS.md",
+    ".github/copilot-instructions.md",
+    ".github/pull_request_template.md",
+    ".github/ISSUE_TEMPLATE/feature_request.yml",
+)
+
+STALE_CURRENT_STATE_MARKERS = (
+    "Applied external GPT remains **v8.6.1**",
+    "Applied Custom GPT remains v8.6.1 until WP15",
+    "Applied GPT remains v8.6.1 until WP15",
+    "WP15 repository target: in progress",
+    "WP15 is the final active package",
+    "WP12 remains **IN PROGRESS**",
+    "Next dependency after WP12 merge",
+    "Current GPT Editor behavior is v8.6.1 Compact",
+    "CUSTOM_GPT_INSTRUCTIONS_V8_4_1.txt",
+    "strict read-only architecture",
+    "User-facing endpoints остаются только `GET`",
+    "Предложения, связанные с автоматической торговлей, созданием или отправкой заявок, не соответствуют архитектуре проекта",
+)
+
+
+def _read(relative: str) -> str:
+    return (ROOT / relative).read_text(encoding="utf-8")
+
 
 def test_one_time_v390_bootstrap_artifacts_are_retired() -> None:
     assert not (ROOT / ".v390").exists()
@@ -47,13 +85,9 @@ def test_dependency_sources_and_locks_stay_canonical_at_root() -> None:
 
 
 def test_applied_gpt_state_is_v9_not_pending_wp15() -> None:
-    status = (ROOT / "knowledge" / "16_CURRENT_PROGRAM_STATUS.md").read_text(
-        encoding="utf-8"
-    )
-    master = (ROOT / "knowledge" / "00_PROJECT_MASTER_CONTEXT.md").read_text(
-        encoding="utf-8"
-    )
-    config = (ROOT / "gpt" / "CONFIGURATION.md").read_text(encoding="utf-8")
+    status = _read("knowledge/16_CURRENT_PROGRAM_STATUS.md")
+    master = _read("knowledge/00_PROJECT_MASTER_CONTEXT.md")
+    config = _read("gpt/CONFIGURATION.md")
 
     assert "Applied external GPT: **v9.0.0**" in status
     assert "Applied external GPT: **v9.0.0**" in config
@@ -69,3 +103,31 @@ def test_applied_gpt_state_is_v9_not_pending_wp15() -> None:
         assert marker not in status
         assert marker not in master
         assert marker not in config
+
+
+def test_current_operational_docs_do_not_reintroduce_pre_v9_status() -> None:
+    for relative in CURRENT_STATE_DOCS:
+        text = _read(relative)
+        for marker in STALE_CURRENT_STATE_MARKERS:
+            assert marker not in text, f"{relative}: stale current-state marker {marker!r}"
+
+
+def test_current_navigation_describes_completed_v9_maintenance_state() -> None:
+    changelog = _read("CHANGELOG.md")
+    contributing = _read("CONTRIBUTING.md")
+    copilot = _read(".github/copilot-instructions.md")
+    master_plan_index = _read("docs/master-plan/README.md")
+
+    for text, relative in (
+        (changelog, "CHANGELOG.md"),
+        (contributing, "CONTRIBUTING.md"),
+        (copilot, ".github/copilot-instructions.md"),
+        (master_plan_index, "docs/master-plan/README.md"),
+    ):
+        assert "v9.0.0" in text, relative
+        assert "controlled maintenance" in text, relative
+
+    assert "WP0–WP15" in changelog
+    assert "historical" in changelog.casefold()
+    assert "completed" in master_plan_index.casefold()
+    assert "effective production" in copilot
