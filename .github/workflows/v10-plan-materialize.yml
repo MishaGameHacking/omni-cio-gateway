@@ -13,7 +13,7 @@ permissions:
 jobs:
   materialize:
     name: Build and commit canonical V10 plan
-    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    runs-on: windows-latest
     timeout-minutes: 15
 
     steps:
@@ -83,7 +83,7 @@ jobs:
           )
           $edge = $edgeCandidates | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
           if (-not $edge) {
-            throw 'Microsoft Edge is required to materialize the approved PDF on the Windows runner.'
+            throw 'Microsoft Edge is required to materialize the approved PDF.'
           }
 
           $pdfPath = Join-Path (Resolve-Path 'docs/master-plan').Path 'Omni-CIO_V10_Master_Plan_RU.pdf'
