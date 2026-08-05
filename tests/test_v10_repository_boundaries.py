@@ -11,7 +11,9 @@ SCRIPT_PATH = (
     / "scripts"
     / "check_v10_repository_boundaries.py"
 )
-SPEC = importlib.util.spec_from_file_location("check_v10_repository_boundaries", SCRIPT_PATH)
+SPEC = importlib.util.spec_from_file_location(
+    "check_v10_repository_boundaries", SCRIPT_PATH
+)
 assert SPEC is not None and SPEC.loader is not None
 boundaries = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(boundaries)
@@ -107,7 +109,9 @@ def test_single_execution_authority_rejects_duplicate_root(
 
     boundaries.validate_single_execution_authority(failures)
 
-    assert any("Real execution authority must exist exactly once" in item for item in failures)
+    assert any(
+        "Real execution authority must exist exactly once" in item for item in failures
+    )
 
 
 def test_codeowners_requires_explicit_v10_roots(
@@ -122,4 +126,7 @@ def test_codeowners_requires_explicit_v10_roots(
 
     boundaries.validate_codeowners(failures)
 
-    assert any("CODEOWNERS is missing explicit V10 ownership patterns" in item for item in failures)
+    assert any(
+        "CODEOWNERS is missing explicit V10 ownership patterns" in item
+        for item in failures
+    )
