@@ -1,22 +1,27 @@
 # Структура репозитория Omni-CIO
 
-Репозиторий организован вокруг одного продукта:
+Статус: **V10 WP1 — repository architecture authority**  
+Current production/recovery runtime: **Omni-CIO v9.0.0**  
+Active feature program: **Omni-CIO V10**
 
-`Omni-CIO Custom GPT → Omni-CIO Gateway → T-Invest API`
+## 1. Главный принцип
 
-Applied production GPT: **v9.0.0**, owner-accepted in place on 2026-08-05.  
-Protected rollback: **v8.6.1**.  
-Completed canonical program: `docs/master-plan/OMNI_CIO_V9_PORTFOLIO_AUTOPILOT_PROGRAM.md`.  
-Current mode: **controlled maintenance**.
+Репозиторий организован вокруг **одного продукта и одного финансового Core**.
 
-## Каноническое дерево
+V10 не создаёт второй независимый бот/сайт/Gateway. Текущий V9 runtime сохраняется как compatibility/recovery layer, а новые Web, Telegram, AI и infrastructure-компоненты подключаются к одному Core по мере прохождения своих Work Packages.
+
+Инженерный source of truth — private GitHub repository. Ни ChatGPT-аккаунт, ни Lenovo, ни hosting dashboard, ни IDE не являются владельцем проекта.
+
+## 2. Current accepted physical tree
+
+Пока соответствующий V10 Work Package не провёл безопасную миграцию, текущая физическая структура V9 остаётся рабочей:
 
 ```text
 omni-cio-gateway/
 ├── app.py                         # production wrapper / app:app
 ├── app_v371.py                    # current compatibility dependency
 ├── app_v360.py                    # current compatibility dependency
-├── main.py                        # current FastAPI/auth/read-only core dependency
+├── main.py                        # current FastAPI/auth/Gateway dependency
 ├── portfolio_market.py
 ├── portfolio_analytics.py
 ├── cash_liquidity.py
@@ -24,59 +29,22 @@ omni-cio-gateway/
 ├── purchase_capacity_integrity.py
 ├── operations_analytics.py
 ├── sdk_order_compat.py
-├── broker_report_reconciliation/  # Gateway extension hook / broker reports
-├── omni_cio/
-│   ├── contracts/                 # typed/versioned contracts
-│   ├── adapters/                  # compatibility/read adapters
-│   ├── quality/                   # quality/freshness validation
-│   ├── market/                    # read-only market/macro sources
-│   ├── analytics/                 # analytics modules
-│   ├── router/                    # natural-language CIO routing
-│   ├── policy/                    # IPS/readiness
-│   ├── universe/                  # investable universe
-│   ├── candidates/                # deterministic funnel
-│   ├── research/                  # evidence/research
-│   ├── credit/                    # credit/rating/default
-│   ├── funds/                     # Fund X-Ray
-│   ├── risk/                      # portfolio risk
-│   ├── strategy/                  # meta-strategy
-│   ├── optimizer/                 # capital scaling/optimizer
-│   ├── plans/                     # immutable plans
-│   ├── plan_execution/            # safe staged plan execution
-│   ├── decision_journal/          # append-only decision/evaluation journal
-│   ├── watchtower/                # read-only monitoring
-│   ├── observability/             # safe telemetry/evidence
-│   ├── release/                   # release/live-authority checks
-│   ├── sandbox/                   # isolated virtual T-Invest Sandbox execution
-│   └── real_trading/              # exact-owner-confirmed Real BUY/SELL
-│
-├── gpt/
-│   ├── SETUP_INDEX.md             # single setup/update/recovery entrypoint
-│   ├── CONFIGURATION.md           # applied GPT registry
-│   ├── CUSTOM_GPT_INSTRUCTIONS_V9_0_0_COMPACT.txt
-│   ├── KNOWLEDGE_MANIFEST_V9_0_0.md
-│   ├── CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt  # protected rollback
-│   ├── ACTIONS_CATALOG.md
-│   ├── SECRETS_AND_RENDER.md
-│   ├── MY_GPT_SETUP_RUNBOOK.md
-│   ├── BOT_ONLY_FILE_MANIFEST.md
-│   ├── PROJECT_INSTRUCTIONS.md
-│   ├── NEW_CHAT_PROMPT.md
-│   └── knowledge/                 # exactly 10 applied Knowledge files
-│
+├── broker_report_reconciliation/
+├── omni_cio/                      # deterministic financial Core/domain packages
+├── gpt/                           # current applied GPT configuration/recovery
 ├── knowledge/                     # engineering/domain project memory
 ├── docs/
-│   ├── master-plan/               # completed locked v9 program + source spec
-│   ├── architecture/              # active architecture/contracts
-│   └── operations/                # deploy/release/acceptance/maintenance runbooks
-├── tests/                         # regression/contracts/security tests
-├── scripts/                       # CI/security/recovery consistency checks
-├── .github/                       # workflows/templates/governance/Dependabot
-├── render.yaml                    # single production Render contract
-├── requirements.in                # runtime direct constraints
-├── requirements.txt               # generated hash-locked runtime set
-├── requirements-dev.in            # CI/test/security direct constraints
-├── requirements-dev.txt           # generated hash-locked dev set
+│   ├── master-plan/
+│   ├── architecture/
+│   └── operations/
+├── tests/
+├── scripts/
+├── .github/
+├── render.yaml                    # current V9 production deployment contract
+├── requirements.in
+├── requirements.txt
+├── requirements-dev.in
+├── requirements-dev.txt
 ├── pyproject.toml
 ├── .env.example
 ├── README.md
@@ -84,118 +52,222 @@ omni-cio-gateway/
 └── SECURITY.md
 ```
 
-One-time bootstrap payloads and generated CI projection files are not part of the canonical tree and must not be committed after their task is complete.
+Root wrappers are **not legacy merely because they have versioned names**. `app.py` still depends on current compatibility paths; moving/removing them requires the responsible later V10 migration package and full regression proof.
 
-## Runtime rule
+Stable V9 entrypoint remains `app:app` until explicitly retired by an accepted V10 deployment migration.
 
-Root wrapper files are current dependencies, not removable legacy.
+## 3. Canonical V10 target ownership
 
-`app.py` still uses `app_v371.py`, `app_v360.py` and `main.py`. Moving/removing them requires a separate compatibility refactor, import/OpenAPI/auth proof and full Regression Shield.
+V10 reserves the following top-level ownership model:
 
-Stable Render entrypoint remains `app:app`.
+```text
+omni-cio-gateway/
+│
+├── apps/                          # presentation / transport adapters only
+│   ├── api/                       # V10 API application adapter
+│   ├── web/                       # V10 Web application
+│   └── telegram/                  # V10 Telegram adapter
+│
+├── omni_cio/                      # ONE deterministic financial Core
+│   ├── contracts/
+│   ├── adapters/
+│   ├── quality/
+│   ├── analytics/
+│   ├── market/
+│   ├── router/
+│   ├── policy/
+│   ├── universe/
+│   ├── candidates/
+│   ├── research/
+│   ├── credit/
+│   ├── funds/
+│   ├── risk/
+│   ├── decision/
+│   ├── strategy/
+│   ├── optimizer/
+│   ├── plans/
+│   ├── plan_execution/
+│   ├── watchtower/
+│   ├── decision_journal/
+│   ├── observability/
+│   ├── release/
+│   ├── sandbox/
+│   └── real_trading/
+│
+├── ai/                            # V10 AI policy/provider/RAG/evals/orchestrator
+│   ├── providers/                 # created by Block G when authorized
+│   ├── prompts/
+│   ├── schemas/
+│   ├── rag/
+│   └── evals/
+│
+├── infrastructure/                # replaceable runtime/deployment infrastructure
+│   ├── windows/                   # Lenovo/bootstrap/services
+│   ├── deployment/
+│   ├── backup/
+│   └── health/
+│
+├── gpt/                           # retained migration/recovery source until parity gate
+├── knowledge/                     # repository-safe engineering memory
+├── docs/
+├── tests/
+├── scripts/
+└── .github/
+```
 
-## Broker contour isolation
+### Important
 
-Production architecture contains three deliberately isolated contours:
+`apps/`, `ai/` and `infrastructure/` are **reserved roots**, not permission to implement them early. They are created only by the Work Package that owns their runtime responsibility. WP1 defines their location and boundaries; it does not create the Web, Telegram, AI or Lenovo runtime.
 
-1. read-only via `TINVEST_TOKEN`;
-2. optional Sandbox via `TINVEST_SANDBOX_TOKEN` and `omni_cio/sandbox/`;
-3. optional exact-owner-confirmed real execution via `TINVEST_TRADING_TOKEN`, `omni_cio/real_trading/` and durable state.
+## 4. Why `omni_cio/` remains the Core root
 
-The production read-only credential is never a fallback for Real execution. The reviewed Real contour does not permit transfers, margin, shorts, MARKET/BESTPRICE, stop/replace/async or autonomous recurring real-money execution.
+V10 does **not** perform a cosmetic wholesale move from existing `omni_cio/<domain>` packages into a new `omni_cio/core/` wrapper merely to make the tree look newer.
 
-## `gpt/`
+The existing reviewed domain packages already are the financial Core. Moving hundreds of imports before there is a functional need would create migration risk without product value.
 
-`gpt/` stores the reproducible configuration and recovery assets for the **existing** applied v9 GPT.
+Therefore:
 
-Rules:
+- `omni_cio/` is the canonical deterministic Core root;
+- domain packages remain at their existing stable paths until an evidence-backed package needs a specific move;
+- future transport/UI/AI code stays outside the financial Core in its reserved adapter roots;
+- compatibility wrappers remain until explicit retirement evidence exists.
 
-- one setup entrypoint: `gpt/SETUP_INDEX.md`;
-- applied Instructions: `gpt/CUSTOM_GPT_INSTRUCTIONS_V9_0_0_COMPACT.txt`;
-- exact Knowledge registry: `gpt/KNOWLEDGE_MANIFEST_V9_0_0.md`;
-- protected rollback Instructions: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt`;
-- exactly 10 applied Knowledge files;
-- production endpoint: `https://omni-cio-gateway.onrender.com`;
-- GitHub does not synchronize GPT Editor automatically.
+## 5. Ownership matrix
 
-Owner acceptance of the existing GPT is recorded in completed issue #216 and epic #176.
+| Repository area | Authority / purpose | May own financial business logic? | May own broker-write secret? |
+|---|---|---:|---:|
+| `omni_cio/` | deterministic Core | yes | only isolated execution service as later approved |
+| `omni_cio/real_trading/` | low-level Personal Real authority | narrow execution only | yes, runtime-only access |
+| `omni_cio/plan_execution/` | immutable staged execution lifecycle | narrow plan execution | no raw secret storage |
+| `apps/api/` | V10 API adapter | no duplicate calculations | no |
+| `apps/web/` | Web UI | no | no |
+| `apps/telegram/` | alerts/entry adapter | no | Telegram token only at runtime, not broker token |
+| `ai/` | AI/RAG/orchestration/evals | no canonical money calculations | no |
+| `infrastructure/` | bootstrap/deploy/backup/health definitions | no | no committed secrets |
+| `gpt/` | current GPT migration/recovery source | no new Core logic | no |
+| `knowledge/` | repository-safe project/domain memory | no runtime authority | no |
+| `docs/` | architecture/program/runbooks | no runtime authority | no |
+| `.github/` | review/CI/control-plane automation | no | no broker secrets |
 
-## `knowledge/`
+`CODEOWNERS` explicitly covers these areas. CODEOWNERS is reviewer/ownership metadata, not a substitute for runtime authorization.
 
-Engineering/domain memory remains only where it supports current runtime, safety, data quality or maintenance continuity.
+## 6. Single-authority rules
 
-- `00_PROJECT_MASTER_CONTEXT.md` — long-lived project context;
-- domain-specific files — market/operations/report/security/contracts;
-- `16_CURRENT_PROGRAM_STATUS.md` — current applied/repository state.
+The repository must keep exactly one canonical implementation of each critical authority.
 
-Production GPT Knowledge comes from `gpt/knowledge/`, not root `knowledge/`.
+Examples:
 
-## `docs/master-plan/`
+- one deterministic Core root: `omni_cio/`;
+- one direct Real package: `omni_cio/real_trading/`;
+- one safe plan-execution lifecycle: `omni_cio/plan_execution/`;
+- one Sandbox package: `omni_cio/sandbox/`;
+- one canonical Web application: future `apps/web/`;
+- one Telegram adapter: future `apps/telegram/`;
+- one AI orchestration stack: future `ai/`;
+- one V10 progress authority: `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
 
-`OMNI_CIO_V9_PORTFOLIO_AUTOPILOT_PROGRAM.md` is the completed owner-approved/program-locked v9 specification and audit trail. It remains recovery/history authority for what was approved; current code/tests/status determine the active implementation state.
+Forbidden competing top-level roots include ad-hoc `frontend/`, `website/`, `telegram_bot/`, `backend/`, `server/`, `omni_cio_v10/` or a second top-level `execution/` stack.
 
-## `docs/architecture/`
+## 7. Import / authority boundaries
 
-Contains active contracts and ADRs. Protected baseline/migration contract:
+### Core
 
-`docs/architecture/V9_BASELINE_AND_RECOVERY_CONTRACT.md`.
+Core packages may depend on shared contracts and reviewed lower-level services, but critical package cycles are forbidden by the V10 repository-boundary guard.
 
-Do not create duplicate inventory/audit documents when an existing source of truth should be updated.
+### Web / Telegram / AI
 
-## `docs/operations/`
+- presentation/AI adapters must not import `omni_cio.real_trading` directly;
+- AI, Web and Telegram must not own the plan-execution authority;
+- AI never receives direct broker-write credentials;
+- future API exposure must call reviewed Core/service interfaces rather than reimplementing sizing/risk/approval logic;
+- a later explicit API work package may expose a reviewed approval/execution facade, but direct broker client access from UI/AI remains forbidden.
 
-Contains procedures required for the current Gateway/GPT lifecycle, including deployment, Real release, durable state, Watchtower, live authority acceptance, dependency maintenance and recovery.
+## 8. Machine-checked repository guard
 
-## `.github/`
+Permanent V10 structural boundary checker:
 
-Permanent Regression Shield and repository governance. One-off patch/bootstrap workflows must not remain in `main`. Dependabot is a proposal generator; no dependency update is authorized until current-main exact-head CI/security succeeds.
+`scripts/check_v10_repository_boundaries.py`
 
-## `tests/` and `scripts/`
+It checks at minimum:
 
-Tests/scripts must prove current invariants, including:
+- canonical V10 authority files exist;
+- protected V9 compatibility paths remain present;
+- no competing top-level V10 application/runtime tree appears;
+- Real and plan-execution authority roots are unique;
+- future Web/Telegram/AI adapters cannot import low-level Real authority directly;
+- critical Core package dependency graph contains no circular package dependency;
+- explicit CODEOWNERS coverage exists for V10 roots.
 
-- stable `app:app` and auth/OpenAPI;
-- baseline read-only/Sandbox/Real isolation;
-- exact confirmation and idempotent execution safety;
-- durable journal fail-closed behavior;
-- monetary/data-quality logic;
-- broker-report/operations/portfolio flows;
-- current market/risk/release contracts;
-- GPT v9 recovery/version/Knowledge consistency;
-- live deployed OpenAPI authority without protected mutation calls;
-- post-v9 repository hygiene.
+Regression Shield runs this checker on every significant PR.
 
-Regression CI must not call live T-Invest or protected Render Actions. The separate live-authority workflow performs public `/health` and `/openapi.json` GET checks only.
+## 9. Move/delete protocol
 
-## Dependencies
+Before moving/deleting any existing runtime or recovery path:
 
-Canonical sources remain at repository root because Render and CI consume them there:
+1. search imports/references;
+2. inspect tests and fixture paths;
+3. inspect CI/scripts;
+4. inspect Render/current GPT/recovery docs;
+5. determine the owning V10 WP;
+6. document replacement/migration path;
+7. preserve compatibility wrapper where needed;
+8. add deterministic regression guard;
+9. pass exact-head Regression Shield/security;
+10. squash merge only after review blockers are zero.
 
-- `requirements.in` — runtime direct constraints;
-- `requirements.txt` — generated/hash-locked runtime dependency set;
-- `requirements-dev.in` — CI/test/security direct constraints;
-- `requirements-dev.txt` — generated/hash-locked development dependency set.
+A versioned filename is not evidence of obsolescence.
 
-Lock files are generated from `.in` sources and verified by Regression Shield. Generated Windows projection files are CI artifacts and are not committed. Known-incompatible toolchain versions are held narrowly in Dependabot policy rather than weakening lock verification.
+## 10. Account independence / developer portability
 
-## Maintenance rule
+A new authorized developer must be able to:
 
-Every maintenance package follows:
+`clone repository -> read AGENTS/Program Lock/current status/architecture -> install from locked dependencies -> run checks -> create focused branch -> PR -> CI -> reviewed deploy`
 
-`branch → focused change → deterministic tests/guards → exact-head Regression Shield/security → zero unresolved review threads → squash merge`.
+without access to the original ChatGPT account.
 
-If a change alters GPT Editor state or the reviewed Action contract, owner Preview/Update acceptance on the **same** GPT is additionally required.
+No authoritative Web/AI/Telegram application setting may exist only inside a personal account dashboard when it can be represented as repository-controlled schema/configuration.
 
-## Cleanup rule
+Hosting/domain replacement is a deployment/configuration change, not creation of a new website/project.
 
-Before deleting or moving any existing file:
+Secret values remain a separate runtime provisioning process and are never implied by GitHub developer access.
 
-1. check imports;
-2. check tests/CI/scripts;
-3. check Render/GPT configuration;
-4. check docs/knowledge references;
-5. prove the replacement path;
-6. use a separate branch/PR;
-7. run full Regression Shield.
+## 11. Current V9 compatibility ownership
 
-A filename containing `legacy`, `old`, `archive` or a version number is not evidence that it is safe to delete.
+Until later V10 migration packages explicitly replace them:
+
+- current Render production service remains V9;
+- `app:app` remains stable;
+- root wrappers remain dependencies;
+- existing GPT v9.0.0 remains applied;
+- `gpt/` remains a protected migration/recovery source;
+- V9 broker execution invariants remain binding.
+
+WP1 changes repository **structure authority and guardrails**, not production runtime behavior.
+
+## 12. Development/test reproducibility boundary
+
+The repository owns:
+
+- dependency source/locks;
+- CI workflows;
+- safe example configuration;
+- architecture/runbooks;
+- future bootstrap/deployment definitions.
+
+A developer workstation may cache dependencies/tools, but that cache is never source of truth.
+
+Exact toolchain versions and the clean Windows setup path are finalized by WP2 and later Block C; WP1 only fixes where those artifacts belong.
+
+## 13. Current delivery sequence
+
+At accepted WP0 main:
+
+- Block A = COMPLETE (5%);
+- WP1 = current/next authorized package;
+- WP2–WP4 remain blocked until their predecessors pass;
+- Lenovo configuration remains Block C;
+- Web/Telegram/AI runtime is still not authorized.
+
+## 14. Cleanup rule
+
+Do not create duplicate setup/configuration/inventory documents when this file or another canonical source can be updated. Historical audit records may remain when needed for traceability, but they cannot compete with current authority.
