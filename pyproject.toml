@@ -62,6 +62,7 @@ files = [
   "scripts/check_read_only_release_contract.py",
   "scripts/check_repository_layout.py",
   "scripts/check_v10_repository_boundaries.py",
+  "scripts/check_v10_toolchain_baseline.py",
   "scripts/check_optimizer_boundary.py",
   "scripts/check_plan_boundary.py",
   "scripts/check_plan_execution_boundary.py",
