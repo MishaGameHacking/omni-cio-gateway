@@ -1,8 +1,10 @@
 # Omni-CIO security policy
 
-Omni-CIO работает с финансовыми данными. Production read-only, Sandbox и conditional real execution — отдельные contours с разными credentials и независимыми kill switches.
+Omni-CIO работает с финансовыми данными. Production read-only, Sandbox и conditional Real execution — отдельные contours с разными credentials и independent kill switches.
 
-Real execution v1 существует только как узкий server-gated surface. Без valid dedicated token, durable journal, limits, fresh market and owner confirmation submit must fail closed.
+Applied GPT: **v9.0.0**, owner-accepted in place on 2026-08-05. Protected v8.6.1 rollback evidence remains valid.
+
+Real execution exists only as a narrow server-gated surface. Without valid dedicated token, durable state, limits, fresh market and exact owner confirmation, submit must fail closed.
 
 ## Secrets and private data
 
@@ -13,13 +15,14 @@ Never publish values of:
 - `TINVEST_TRADING_TOKEN`;
 - `UPSTASH_REDIS_REST_TOKEN`;
 - `GATEWAY_API_KEY`;
+- QStash/Watchtower signing or scheduling secret values;
 - Authorization/Bearer headers;
 - full broker account ID;
 - private broker reports/positions/operations as configuration;
 - Render/GPT/Upstash credentials;
 - private keys/certificates.
 
-Use only placeholders and masked IDs.
+Use only env/role names, placeholders and masked IDs.
 
 ## Credential isolation
 
@@ -29,7 +32,7 @@ Use only placeholders and masked IDs.
 
 - remains read-only;
 - never promoted to full-access;
-- never used as fallback by real-trading package.
+- never used as fallback by Real execution.
 
 ### Sandbox
 
@@ -37,33 +40,35 @@ Use only placeholders and masked IDs.
 
 - Sandbox only;
 - fixed Sandbox host;
-- virtual money only.
+- virtual money only;
+- never presented as proof of production mutation.
 
 ### Real execution
 
 `TINVEST_TRADING_TOKEN`:
 
-- separate account-scoped full-access trading token;
+- separate account-scoped trading token;
 - **without transfer access**;
-- only for narrow `omni_cio.real_trading` OrdersService allowlist;
+- only for reviewed `omni_cio.real_trading` OrdersService allowlist;
 - never stored in durable journal;
 - never returned to GPT/user.
 
 ## Production runtime invariants
 
-- `app:app` stable entrypoint;
-- secrets via environment variables;
+- stable `app:app` entrypoint;
+- secrets via external environment/GPT secret storage only;
 - account IDs masked before user-facing output;
 - errors sanitized;
-- analytics/purchase-capacity never create orders;
+- analytics/research/optimizer/Watchtower never authorize an order by themselves;
 - withdrawal/transfer/securities-transfer surface absent;
-- real MARKET/BESTPRICE absent;
-- margin/short/stop/replace/async/autonomous recurring execution absent in real v1;
-- `REAL_TRADING_ENABLED=false` removes real Actions and is master rollback;
-- real flag alone is insufficient: invalid token/policy/journal fails closed;
-- real submit only after separate proposal + exact short-lived owner phrase in a new user turn;
+- Real MARKET/BESTPRICE absent;
+- margin/short/stop/replace/async/autonomous recurring execution absent;
+- `REAL_TRADING_ENABLED=false` removes Real mutation authority and is master rollback;
+- Real feature flag alone is insufficient: invalid token/policy/journal/preflight fails closed;
+- Real submit only after immutable proposal/plan context + exact short-lived owner phrase in a **new** user turn;
 - `submitted` never means `filled` without broker proof;
-- possible-submit ambiguity never auto-retries.
+- possible-submit ambiguity never auto-retries;
+- internal v9 engine documentation is never treated as evidence that a server Action ran.
 
 ## Sandbox boundary
 
@@ -84,45 +89,47 @@ Required:
 - ambiguous submit no retry;
 - masked account.
 
-## Real execution v1 boundary
+## Real execution boundary
 
-Published only when readiness is valid:
+Reviewed operationIds:
 
 - `getRealTradingStatus`;
 - `prepareRealTrade`;
 - consequential `executeRealTrade`;
 - `getRealOrderState`.
 
-Allowed:
+The server may publish status-only while fail-closed, or the complete reviewed Real surface when readiness is valid.
+
+Allowed v1 execution characteristics:
 
 - BUY/SELL;
 - supported cash share/ETF;
 - RUB;
-- LIMIT / CURRENCY / DAY;
+- LIMIT / CURRENCY / DAY only;
 - own-funds BUY;
 - own-position SELL;
 - exact price step;
 - fresh trusted order book;
-- small per-order/daily caps.
+- server per-order/daily hard caps.
 
 Prepare/execute separation:
 
-1. bind exactly one trading account to read-only account;
+1. bind exactly one trading account to the read-only account;
 2. check instrument identity + fresh market;
-3. `GetMaxLots` / `GetOrderPrice` preflight;
-4. create durable immutable proposal;
+3. broker affordability/order-price preflight;
+4. create durable immutable proposal/plan execution context;
 5. return exact phrase and stop;
-6. phrase must arrive in new user turn;
-7. repeat account/market/financial preflight;
-8. durable atomic daily reservation before `PostOrder`;
-9. submit once with UUID idempotency key;
-10. reconcile broker state by request UUID.
+6. phrase must arrive in a new owner turn;
+7. repeat account/market/financial/risk preflight;
+8. durable atomic reservation/idempotency before submit;
+9. submit once with UUID identity;
+10. reconcile broker state by original request UUID.
 
 Wrong/expired phrase, changed preflight, insufficient own funds/position, account mismatch, stale market, hard-limit failure, journal outage/tamper/integrity failure all fail closed before submit.
 
-## Durable journal
+## Durable state
 
-Selected production backend:
+Selected production real journal backend:
 
 ```text
 REAL_TRADING_JOURNAL_BACKEND=upstash
@@ -133,49 +140,52 @@ UPSTASH_REDIS_REST_TOKEN=<Render secret>
 Security requirements:
 
 - HTTPS Upstash host restriction;
-- REST token only in Render Environment;
+- REST token only in external environment;
 - redirects disabled / no proxy-env trust for journal client;
-- no fallback to memory;
-- HMAC-authenticated metadata/proposals/day counters;
-- authenticated proposal count;
+- no unsafe fallback to memory;
+- HMAC-authenticated durable records where defined;
 - integrity recomputation;
-- atomic Redis Lua compare-and-swap for state + daily cap;
-- secrets excluded from proposal data;
+- atomic compare-and-swap/reservation semantics;
+- secrets excluded from records;
 - tamper/missing/corrupt state blocks readiness/submission.
 
-SQLite remains compatibility/test only.
+Watchtower and Decision Journal use separate reviewed namespaces/contracts; one subsystem must not reinterpret another subsystem's records.
 
 ## Ambiguous broker submit
 
-Timeout/connection break/5xx after `PostOrder` may mean the broker received the request.
+Timeout/connection break/5xx after broker submit may mean the broker received the request.
 
 Required behavior:
 
-- proposal → `unknown` / do-not-resubmit;
-- daily notional remains reserved;
-- second `PostOrder` forbidden;
-- reconcile original UUID through `GetOrderState` / request-id mode;
+- proposal/stage → unknown / do-not-resubmit;
+- reserved limit remains protected until reconciliation semantics release it;
+- second submit forbidden;
+- reconcile original UUID through broker state;
 - unresolved ambiguity blocks automatic continuation.
 
-Definitive broker rejection → failed and releases reserved notional atomically.
+Definitive broker rejection may move to failed/release reservation only through the reviewed atomic lifecycle.
 
 ## Custom GPT boundary
 
-Canonical GPT Editor Instructions:
+Applied GPT Editor Instructions:
+
+`gpt/CUSTOM_GPT_INSTRUCTIONS_V9_0_0_COMPACT.txt`
+
+Protected rollback Instructions:
 
 `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt`
 
-Full engineering reference:
-
-`gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_0.txt`
-
 - OpenAPI only from production Gateway;
-- Authentication = API Key → Bearer using `GATEWAY_API_KEY`;
-- broker/Upstash tokens never enter GPT Editor;
-- ordinary portfolio management is not trade confirmation;
+- Authentication = API Key → Bearer using external `GATEWAY_API_KEY`;
+- broker/Upstash/QStash tokens never enter Instructions/Knowledge;
+- ordinary portfolio management/advisory wording is not trade confirmation;
 - consequential UI never replaces server-side exact-confirmation gate;
-- Apps not used together with Actions;
-- GitHub does not sync GPT Editor/Render/Upstash automatically.
+- Apps remain OFF while custom Actions are used;
+- GitHub does not sync GPT Editor/Render/Upstash/QStash automatically;
+- effective production `/openapi.json` is Action authority;
+- internal v9 modules are not invented as Actions.
+
+Owner acceptance confirmed the existing GPT was upgraded in place to v9.0.0 and post-Update Action routing worked without submitting a live order during configuration acceptance.
 
 ## Data integrity
 
@@ -184,46 +194,74 @@ Full engineering reference:
 - partial/truncated/stale/contradictory data fail closed;
 - no commission/operation double count;
 - last price not executable guarantee;
-- fresh market required for real proposal;
+- fresh market required for Real proposal/market-sensitive sizing;
 - Sandbox fill is not production fill evidence;
-- durable journal is not broker state; after submit broker reconciliation is mandatory.
+- durable journal is not broker state; after submit broker reconciliation is mandatory;
+- expected decision state is not rewritten with hindsight; outcome/evaluation records remain separate.
 
-## CI security
+## Watchtower security
 
-- dependencies pinned/hash-locked;
-- lock files not edited manually;
-- external GitHub Actions pinned to full SHA;
-- Regression Shield covers compile, lint, formatting, types, contracts, tests, coverage, dependency audit, SAST and secret scan;
-- tests use fake/mock transports and never submit live broker orders.
+Watchtower is read-only monitoring/orchestration. Hidden signed scheduler/callback routes are not GPT Actions. Alerts/review triggers never authorize real execution.
 
-Required regression evidence includes wrong/expired confirmation, own-funds/own-position guards, hard caps, account mismatch, stale market, replay single-submit, ambiguous-submit no-retry, masking/redaction, journal persistence/integrity and conditional OpenAPI.
+Default rollback:
+
+`WATCHTOWER_ENABLED=false`.
+
+QStash signing/scheduling credentials and Watchtower journal secret values remain external and never enter GPT Knowledge/Instructions.
+
+## Live Gateway Authority Acceptance
+
+The scheduled live check performs only public GET requests to:
+
+- `/health`;
+- `/openapi.json`.
+
+It does not send a Gateway/Broker token and never calls a protected Action. It validates the deployed schema against the reviewed baseline/Sandbox/Real allowlists, canonical methods/paths, consequential markers and forbidden path classes.
+
+The previous production-wide GET-only live check is retired because reviewed v9 may conditionally publish protected Sandbox/Real POST Actions. Baseline GET-only contract tests remain useful for safe-mode verification.
+
+## CI / dependency security
+
+- direct dependency constraints live in `requirements.in` / `requirements-dev.in`;
+- generated locks are exact/hash-locked and not hand-edited;
+- generated Windows projections are ephemeral CI artifacts;
+- external GitHub Actions pin full SHA;
+- Regression Shield covers lock reproducibility, repository/security policy, compile, lint, formatting, types, entrypoint/contracts, tests/coverage, dependency audit, SAST and secret scan;
+- tests use fake/mock transports and never submit live broker orders;
+- Dependabot updates are proposals only;
+- known-incompatible toolchain releases are held narrowly/documented rather than bypassing a gate.
+
+Required regression evidence includes wrong/expired confirmation, own-funds/own-position guards, hard caps, account mismatch, stale market, replay single-submit, ambiguous-submit no-retry, masking/redaction, durable persistence/integrity and conditional OpenAPI.
 
 ## Owner acceptance state
 
-Phase 3 completed on 2026-08-03 with zero real submit:
+Protected v8.6.1 real BUY/SELL acceptance is **100% complete**, including broker/portfolio/operations reconciliation and the canonical invariant:
 
-- permanent Upstash + dedicated trading token configured;
-- small caps configured;
-- saved GPT v8.6.1 returned ready with `journal_integrity=ok`;
-- wrong/expired confirmation rejected;
-- own-funds guard rejected excessive BUY without margin fallback;
-- read-only isolation remained intact;
-- kill switch deployed and produced healthy read-only state;
-- re-enable recovered ready state with durable proposal rows.
+**idempotent replay verified with no second submit**.
 
-## Final release gate
+Applied v9.0.0 Custom GPT acceptance is also complete. It verified, without a new live order:
 
-Before release can be called 100% complete, Phase 4 still requires:
+- existing GPT upgraded rather than duplicated;
+- exact v9 Instructions/Knowledge/OpenAPI/authentication applied;
+- exact `gatewayHealth` isolation;
+- read-only portfolio/cash/analytics routing;
+- advisory SBER request did not prepare/execute a real order;
+- Watchtower/journal explanation did not fabricate server execution;
+- Real readiness check called only `getRealTradingStatus` and did not call prepare/execute;
+- recovery documentation remains available.
 
-1. a **new explicit owner instruction** authorizing the first controlled real LIMIT order;
-2. proposal shown before submit;
-3. exact phrase from a new owner message;
-4. one `PostOrder` only;
-5. immediate broker-state reconciliation;
-6. broker-confirmed fill/partial-fill truth;
-7. real portfolio/cash/operations reconciliation;
-8. one safe replay proving no second submit.
+Issues #216 and #176 are completed.
 
-At any anomaly: disable `REAL_TRADING_ENABLED`, preserve journal evidence and reconcile before further action.
+## Maintenance security rule
 
-Full procedure: `docs/operations/REAL_TRADING_RELEASE_RUNBOOK.md`.
+WP0–WP15 is complete. Maintenance changes must not silently broaden broker/GPT authority.
+
+Required path:
+
+`branch → focused tests/guards → exact-head Regression Shield/security → zero unresolved review threads → squash merge`.
+
+If a future change modifies the applied GPT configuration or reviewed Action surface, owner Preview/Update acceptance on the same GPT is required again.
+
+At any Real safety anomaly: set `REAL_TRADING_ENABLED=false`, preserve durable/broker evidence and reconcile before further action.
+
+Full Real procedure: `docs/operations/REAL_TRADING_RELEASE_RUNBOOK.md`.
