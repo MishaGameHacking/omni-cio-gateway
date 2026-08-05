@@ -1,0 +1,138 @@
+name: Materialize V10 master plan
+
+on:
+  push:
+    branches:
+      - v10/program-lock
+    paths:
+      - .github/workflows/v10-plan-materialize.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    name: Build and commit canonical V10 plan
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out V10 program-lock branch
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v7.0.1
+        with:
+          ref: v10/program-lock
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Materialize searchable Markdown and PDF
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $parts = Get-ChildItem '.v10-plan-material' -Filter 'part-*.md' | Sort-Object Name
+          if ($parts.Count -ne 9) {
+            throw "Expected exactly 9 approved V10 plan source parts, found $($parts.Count)."
+          }
+
+          $content = [string]::Concat(($parts | ForEach-Object {
+            Get-Content $_.FullName -Raw -Encoding UTF8
+          }))
+          if ($content.Length -lt 50000 -or $content -notmatch 'WP50 - V10\.0\.0 Final Release') {
+            throw 'V10 plan source is incomplete.'
+          }
+
+          $masterPlan = 'docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.md'
+          [System.IO.File]::WriteAllText(
+            $masterPlan,
+            $content,
+            [System.Text.UTF8Encoding]::new($false)
+          )
+
+          $headers = @{
+            Accept = 'application/vnd.github+json'
+            Authorization = "Bearer $env:GH_TOKEN"
+            'X-GitHub-Api-Version' = '2026-03-10'
+          }
+          $payload = @{
+            text = $content
+            mode = 'gfm'
+            context = $env:GITHUB_REPOSITORY
+          } | ConvertTo-Json -Depth 4 -Compress
+          $rendered = Invoke-RestMethod \
+            -Uri 'https://api.github.com/markdown' \
+            -Method Post \
+            -Headers $headers \
+            -ContentType 'application/json' \
+            -Body $payload
+
+          $style = @'
+          @page { size: A4; margin: 15mm 16mm 17mm 16mm; }
+          body { font-family: "Segoe UI", Arial, sans-serif; font-size: 10.5pt; line-height: 1.38; color: #111; }
+          h1 { font-size: 22pt; margin-top: 20pt; page-break-after: avoid; }
+          h2 { font-size: 16pt; margin-top: 16pt; page-break-after: avoid; }
+          h3 { font-size: 12.5pt; margin-top: 12pt; page-break-after: avoid; }
+          p, li { orphans: 3; widows: 3; }
+          table { width: 100%; border-collapse: collapse; font-size: 8.8pt; margin: 8pt 0; }
+          th, td { border: 1px solid #aaa; padding: 4px 5px; vertical-align: top; }
+          th { background: #f2f2f2; }
+          pre, code { font-family: Consolas, "Courier New", monospace; overflow-wrap: anywhere; }
+          pre { white-space: pre-wrap; border: 1px solid #ddd; padding: 7px; background: #f8f8f8; }
+          a { color: #0645ad; overflow-wrap: anywhere; }
+          blockquote { border-left: 3px solid #999; margin-left: 0; padding-left: 10px; color: #444; }
+          '@
+          $html = "<!doctype html><html><head><meta charset='utf-8'><title>Omni-CIO V10 Master Plan</title><style>$style</style></head><body>$rendered</body></html>"
+          $htmlPath = Join-Path $env:RUNNER_TEMP 'omni-cio-v10-master-plan.html'
+          [System.IO.File]::WriteAllText(
+            $htmlPath,
+            $html,
+            [System.Text.UTF8Encoding]::new($false)
+          )
+
+          $edgeCandidates = @(
+            (Join-Path $env:ProgramFiles 'Microsoft\Edge\Application\msedge.exe'),
+            (Join-Path ${env:ProgramFiles(x86)} 'Microsoft\Edge\Application\msedge.exe')
+          )
+          $edge = $edgeCandidates | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+          if (-not $edge) {
+            throw 'Microsoft Edge is required to materialize the approved PDF on the Windows runner.'
+          }
+
+          $pdfPath = Join-Path (Resolve-Path 'docs/master-plan').Path 'Omni-CIO_V10_Master_Plan_RU.pdf'
+          $uri = ([System.Uri]::new((Resolve-Path $htmlPath).Path)).AbsoluteUri
+          & $edge --headless --disable-gpu --no-pdf-header-footer "--print-to-pdf=$pdfPath" $uri
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path $pdfPath)) {
+            throw 'PDF generation failed.'
+          }
+
+          $bytes = [System.IO.File]::ReadAllBytes($pdfPath)
+          if ($bytes.Length -lt 50000) {
+            throw "Generated PDF is unexpectedly small: $($bytes.Length) bytes."
+          }
+          if ([System.Text.Encoding]::ASCII.GetString($bytes, 0, 5) -ne '%PDF-') {
+            throw 'Generated file is not a PDF.'
+          }
+
+          $pdfSha = (Get-FileHash -Algorithm SHA256 $pdfPath).Hash.ToLowerInvariant()
+          $sourceSha = (Get-FileHash -Algorithm SHA256 $masterPlan).Hash.ToLowerInvariant()
+          $manifest = @(
+            "$pdfSha  Omni-CIO_V10_Master_Plan_RU.pdf",
+            "$sourceSha  OMNI_CIO_V10_MASTER_PLAN.md"
+          ) -join "`n"
+          [System.IO.File]::WriteAllText(
+            'docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.sha256',
+            "$manifest`n",
+            [System.Text.UTF8Encoding]::new($false)
+          )
+
+          Remove-Item '.v10-plan-material' -Recurse -Force
+          if (Test-Path '.v10-plan-source') { Remove-Item '.v10-plan-source' -Recurse -Force }
+          if (Test-Path '.v10-pdf-payload') { Remove-Item '.v10-pdf-payload' -Recurse -Force }
+          Remove-Item '.github/workflows/v10-plan-materialize.yml' -Force
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'docs: materialize canonical V10 master plan PDF'
+          git push origin HEAD:v10/program-lock
