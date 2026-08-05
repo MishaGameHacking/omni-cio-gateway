@@ -1,12 +1,34 @@
 # Master plan Omni-CIO
 
-Эта папка хранит канонические программы развития Omni-CIO.
+Эта папка хранит **завершённые owner-approved спецификации и audit trail** развития Omni-CIO. Она не является текущей очередью незавершённых задач.
 
-## Активная программа — обязательный приоритет
+## Omni-CIO v9 Portfolio Autopilot — completed program
 
-- `OMNI_CIO_V9_PORTFOLIO_AUTOPILOT_PROGRAM.md` — **owner-approved, program-locked** план второго большого релиза: Natural Language CIO, IPS, полный рыночный universe, candidate funnel, research/evidence, credit/default engine, Fund X-Ray, risk/strategy/optimizer, immutable portfolio plans, confirmed execution, Watchtower и полный recovery contract.
+Canonical completed program:
 
-До завершения Definition of Done этой программы запрещено запускать конкурирующий roadmap, отдельный продукт, второго бота, второй Gateway или несогласованный execution surface. Допустимы только работы по пакетам v9, устранение блокирующих дефектов, безопасность/зависимости и поддержание стабильного v8.6.1.
+`OMNI_CIO_V9_PORTFOLIO_AUTOPILOT_PROGRAM.md`
+
+Status:
+
+- WP0–WP15 полностью реализованы и merged;
+- existing Omni-CIO Custom GPT upgraded in place to **v9.0.0**;
+- owner external acceptance completed on 2026-08-05;
+- tracking epic #176 and WP15 #216 are closed completed;
+- repository mode: **controlled maintenance**;
+- protected v8.6.1 remains available only as recovery rollback baseline.
+
+Текущий applied/repository status определяется `../../knowledge/16_CURRENT_PROGRAM_STATUS.md`, а не историческим wording внутри программы или старых issues/PR.
+
+## Для чего использовать master plan сейчас
+
+Используйте v9 program для:
+
+- проверки исходно утверждённых требований и Definition of Done;
+- архитектурного/audit trace между WP0–WP15;
+- recovery-context, если нужно понять происхождение текущего design;
+- оценки того, требует ли новая идея новой owner-approved программы.
+
+**Не используйте** completed master plan как список “что делать дальше”. Новая feature work вне maintenance/security/compatibility/recovery требует отдельного явного owner-approved scope/program.
 
 ## Исходная пользовательская спецификация
 
@@ -19,23 +41,44 @@ SHA-256 PDF: `1fa50e7ca08f9701879bbc98c77f04e12cd66d52d2802e5f44d360e620f530f8`.
 
 Аудит 2026-07-30 подтвердил, что приложенные версии `(8)` и `(9)` побайтно идентичны, поэтому в репозитории хранится одна каноническая копия v9 без дубля.
 
-## Иерархия источников
+## Иерархия источников истины
 
-1. Код, тесты и фактический `main` определяют реализованное поведение.
-2. `AGENTS.md`, Regression Shield и security policies определяют обязательные технические границы.
-3. `OMNI_CIO_V9_PORTFOLIO_AUTOPILOT_PROGRAM.md` определяет активную owner-approved программу и порядок работ.
-4. Исходный PDF/TXT master prompt определяет исходные требования и контекст.
-5. `knowledge/16_CURRENT_PROGRAM_STATUS.md` определяет, что уже завершено и какой пакет следующий.
-6. Профильные `knowledge/`, `docs/` и `gpt/` уточняют отдельные контуры.
+Для **текущего состояния**:
 
-Будущие цели программы не являются разрешением считать их реализованными. Любое изменение broker-write режима требует отдельного threat model, реализации, тестов, feature flag, production acceptance и PR.
+1. фактический accepted `main`, код, tests и deployed contract определяют реализованное runtime behavior;
+2. `AGENTS.md`, `SECURITY.md`, Regression Shield и security policies определяют обязательные engineering/safety boundaries;
+3. `knowledge/16_CURRENT_PROGRAM_STATUS.md` определяет текущий applied/repository status;
+4. `README.md`, `docs/README.md`, `gpt/SETUP_INDEX.md` и `gpt/CONFIGURATION.md` дают актуальную навигацию/recovery state;
+5. effective production `/openapi.json` определяет runtime GPT Action authority.
 
-## Правило изменений
+Для **истории/требований**:
+
+1. `OMNI_CIO_V9_PORTFOLIO_AUTOPILOT_PROGRAM.md` — утверждённая completed v9 program specification;
+2. PDF/TXT master prompt — исходные пользовательские требования;
+3. closed issues, merged PR, review comments and commits — implementation evidence at the time they were created.
+
+Historical issue/PR text may correctly say that v8.6.1 was applied or a WP was incomplete **at that historical moment**. Such text is not a current-state instruction after v9 acceptance.
+
+## Постоянные safety boundaries после v9
+
+Completion of v9 does not remove the execution boundary:
+
+- production read-only credential remains isolated;
+- Sandbox remains virtual and separately credentialed;
+- Real execution remains exact-owner-confirmed, immutable, idempotent, fail-closed and broker-reconciled;
+- effective OpenAPI is the only GPT Action authority;
+- internal engines are not automatically Actions;
+- transfer/withdrawal, margin/short, MARKET/BESTPRICE, stop/replace/async and autonomous recurring real-money execution remain outside the reviewed surface;
+- stable Gateway entrypoint remains `app:app`.
+
+## Правило дальнейших изменений
 
 - не редактировать исходный PDF;
 - не подменять требования предположениями;
-- изменения активной программы — только после явного решения владельца и reviewed PR;
-- изменения статуса фиксировать в `knowledge/16_CURRENT_PROGRAM_STATUS.md`;
-- каждый функциональный пакет вести отдельной веткой и PR;
-- не хранить рядом токены, ключи, реальные номера счетов или брокерские отчёты;
-- стабильный v8.6.1 сохранять доступным и откатываемым на всём протяжении v9-разработки.
+- не “переоткрывать” completed WP только из-за старого unchecked checklist в historical issue;
+- maintenance/security/dependency/recovery work делать через focused branch + PR;
+- новую feature program начинать только после явного owner approval;
+- текущий status фиксировать в `knowledge/16_CURRENT_PROGRAM_STATUS.md`;
+- applied GPT configuration менять только через reviewed repository change → owner Preview → `Update` на том же GPT;
+- не создавать второй GPT/Gateway/frontend/scheduler или competing setup/configuration source;
+- protected v8.6.1 rollback assets сохранять до отдельного reviewed решения об их retirement.
