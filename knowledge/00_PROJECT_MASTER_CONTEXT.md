@@ -232,11 +232,24 @@ Owner issued explicit **`START V10`** on 2026-08-05. Start evidence:
 
 `docs/master-plan/OMNI_CIO_V10_START_RECORD.md`
 
-Current authorized WP:
+WP0 architecture freeze sources:
 
-**WP0 — V10 Program Lock / Architecture Freeze verification.**
+- `docs/architecture/V10_SYSTEM_ARCHITECTURE.md`;
+- `docs/architecture/V10_SECURITY_BOUNDARIES.md`;
+- `docs/architecture/V10_DATA_FLOW.md`;
+- `docs/architecture/V10_THREAT_MODEL.md`;
+- `docs/architecture/V10_RECOVERY_CONTRACT.md`;
+- `docs/architecture/V10_ADR_PROCESS.md`;
+- `docs/architecture/V10_V9_BASELINE_FREEZE.md`;
+- ADR-019 in `docs/architecture/DECISIONS.md`.
 
-Current accepted V10 progress remains **0% until WP0 Exit Gate is merged**. After WP0 acceptance, Block A becomes 5% complete and WP1 is next.
+On accepted `main` after the focused WP0 acceptance merge:
+
+- **WP0 / Block A = COMPLETE**;
+- **V10 progress = 5%**;
+- next authorized package = **WP1 — Repository Architecture and boundaries**.
+
+If this file is viewed in the unmerged WP0 PR, that completion state is only the acceptance candidate and is not authoritative until exact-head CI/security is green and the PR is squash-merged.
 
 V10 target architecture is GitHub-controlled and account-independent: Lenovo is the first replaceable Personal runtime node; Web, Telegram and the future AI Copilot share one Core; AI has no direct broker-write authority; current GPT knowledge/configuration is migrated and retained until parity acceptance; Real execution remains deterministic, explicit-owner-confirmed, immutable, idempotent and reconciled.
 
