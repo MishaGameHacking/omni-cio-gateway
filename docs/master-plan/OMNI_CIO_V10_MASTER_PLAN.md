@@ -41,7 +41,7 @@
 <thead>
 <tr class="header">
 <th><strong>Ключевой принцип<br />
-</strong>Сначала безопасность и воспроизводимость. Затем инфраструктура. Затем Core. Затем сайт. Затем Telegram. Затем Research/AI. Затем Guardian. И только после длительного Shadow Mode - персональное исполнение реальных сделок.</th>
+</strong>Сначала безопасность и воспроизводимость. Затем инфраструктура. Затем Core. Затем сайт. Затем Telegram. Затем AI Copilot/Research Intelligence. Затем Guardian. И только после длительного Shadow Mode - персональное исполнение реальных сделок.</th>
 </tr>
 </thead>
 <tbody>
@@ -68,7 +68,7 @@
 
 - BLOCK F - Telegram и связь с Web
 
-- BLOCK G - Research + Local AI
+- BLOCK G - AI Copilot, Research Intelligence и GPT Migration
 
 - BLOCK H - Guardian / Watchtower Loop
 
@@ -92,7 +92,7 @@
 
 # 1. Цель V10 и целевая архитектура
 
-**Главная цель:** вынести Omni-CIO из обязательной зависимости от Custom GPT и превратить готовый V9 в самостоятельную персональную инвестиционную операционную систему, работающую 24/7 на постоянно включённом Lenovo, управляемую через GitHub, с единым сайтом, Telegram-оповещениями и опциональным локальным AI Researcher.
+**Главная цель:** вынести Omni-CIO из обязательной зависимости от Custom GPT и превратить готовый V9 в самостоятельную персональную инвестиционную операционную систему, работающую 24/7 на постоянно включённом Lenovo, управляемую через GitHub, с единым сайтом, Telegram-оповещениями и собственным Omni-CIO AI Copilot / Agent Orchestrator. AI-provider является сменным (локальный open-weight/Ollama first), а финансовый Core обязан сохранять безопасную детерминированную работу и явный degraded mode при недоступности AI.
 
 - GitHub - Control Plane и долговременная память разработки: код, архитектура, тесты, зависимости, releases, runbooks и recovery.
 
@@ -104,7 +104,11 @@
 
 - Telegram - тревожная система и быстрый вход на правильную страницу Web; не отдельный финансовый мозг.
 
-- Local AI - сменный Research Intelligence Layer. Его отсутствие не ломает Core и не даёт модели прямых прав на брокерские записи.
+- Omni-CIO AI Copilot / Agent Orchestrator - собственный conversational и orchestration layer внутри Web/Telegram, который заменяет обязательную зависимость от Custom GPT, использует только разрешённые tools Core и не получает прямого broker-write authority.
+
+- Local/replaceable AI Provider - локальный open-weight provider через Ollama является первым кандидатом; provider может быть заменён без переписывания Core. Недоступность AI не ломает финансовые safety engines.
+
+- GPT Knowledge Migration - Instructions, Knowledge, Actions contracts, полезные prompt/workflow patterns и recovery-конфигурация существующего GPT сохраняются, нормализуются и мигрируют в versioned System Policy + Knowledge/RAG + Tool Registry. Custom GPT не удаляется до отдельного parity/decommission gate.
 
 - T-Invest - источник реального портфеля/рынка и отдельный защищённый execution contour для OWNER.
 
@@ -114,7 +118,7 @@ v
 LENOVO OMNI-CIO NODE 24/7  
 \|-- Core (Portfolio / Risk / Optimizer / Watchtower / Plans / Journal)  
 \|-- PostgreSQL / Local State  
-\|-- Research Collector / Optional AI  
+\|-- Research Collector / AI Copilot / Research Agent  
 \|-- Web API + Web App  
 \|-- Telegram Bot  
 \`-- T-Invest read + isolated OWNER execution
@@ -127,7 +131,7 @@ LENOVO OMNI-CIO NODE 24/7
 
 3.  Real READ token, Sandbox token и Real TRADING token всегда разделены. Trading token не является fallback для чтения и не попадает в GitHub.
 
-4.  AI не имеет прямого PostOrder/execute права. AI создаёт структурированное research/evidence; финансовые ограничения, sizing и execution authority находятся в детерминированном Core.
+4.  AI не имеет прямого PostOrder/execute права. AI Copilot может вести диалог, запускать allowlisted read-only/analytical tools, собирать и объяснять research/evidence и оркестрировать безопасные аналитические workflows; финансовые ограничения, sizing, immutable plan approval и execution authority находятся в детерминированном Core.
 
 5.  Каждый Real plan immutable. Изменение хотя бы одной существенной части отменяет старое подтверждение.
 
@@ -145,22 +149,18 @@ LENOVO OMNI-CIO NODE 24/7
 
 # 3. Модель прогресса и Definition of Done
 
-| **Блок** | **Назначение**                 | **Вес** | **Статус при старте** |
-|----------|--------------------------------|---------|-----------------------|
-| A        | Архитектура и защита V9        | 5%      | NOT STARTED           |
-| B        | GitHub, зависимости и CI/CD    | 10%     | NOT STARTED           |
-| C        | Lenovo Node / инфраструктура   | 15%     | NOT STARTED           |
-| D        | V10 Core и данные              | 15%     | NOT STARTED           |
-| E        | Web Platform                   | 15%     | NOT STARTED           |
-| F        | Telegram                       | 8%      | NOT STARTED           |
-| G        | Research + Local AI            | 12%     | NOT STARTED           |
-| H        | Guardian / Watchtower Loop     | 8%      | NOT STARTED           |
-| I        | Personal Real Execution        | 7%      | NOT STARTED           |
-| J        | Hardening / Recovery / Release | 5%      | NOT STARTED           |
-D           |
-| H        | Guardian / Watchtower Loop     | 8%      | NOT STARTED           |
-| I        | Personal Real Execution        | 7%      | NOT STARTED           |
-| J        | Hardening / Recovery / Release | 5%      | NOT STARTED           |
+| **Блок** | **Назначение**                                      | **Вес** | **Статус при старте** |
+|----------|-----------------------------------------------------|---------|-----------------------|
+| A        | Архитектура и защита V9                             | 5%      | NOT STARTED           |
+| B        | GitHub, зависимости и CI/CD                         | 9%      | NOT STARTED           |
+| C        | Lenovo Node / инфраструктура                        | 12%     | NOT STARTED           |
+| D        | V10 Core и данные                                   | 14%     | NOT STARTED           |
+| E        | Web Platform                                        | 14%     | NOT STARTED           |
+| F        | Telegram                                            | 8%      | NOT STARTED           |
+| G        | AI Copilot, Research Intelligence и GPT Migration   | 18%     | NOT STARTED           |
+| H        | Guardian / Watchtower Loop                          | 8%      | NOT STARTED           |
+| I        | Personal Real Execution                             | 7%      | NOT STARTED           |
+| J        | Hardening / Recovery / Release                      | 5%      | NOT STARTED           |
 
 - Процент блока засчитывается только после Exit Gate, а не после появления файлов или UI.
 
@@ -926,7 +926,7 @@ D           |
 
 **Зависимости:** WP25, Block E
 
-# BLOCK G - Research + Local AI (12%)
+# BLOCK G - AI Copilot, Research Intelligence и GPT Migration (18%)
 
 ## WP27 - Trusted Source Registry
 
@@ -1016,6 +1016,54 @@ D           |
 
 **Зависимости:** WP29
 
+## WP30A - GPT Knowledge Migration и canonical AI knowledge source
+
+**Цель:** Не потерять интеллект, правила и накопленные знания существующего Custom GPT при переходе на собственный AI layer.
+
+**Результаты / deliverables**
+
+- Инвентаризировать и version-control текущие GPT Instructions, Knowledge files, Actions/OpenAPI contracts, setup/recovery configuration и полезные workflow/prompt patterns.
+
+- Разделить мигрируемый материал на: `SYSTEM_POLICY` (поведение/границы), `KNOWLEDGE_RAG` (справочные знания), `TOOL_CONTRACTS` (разрешённые действия), `REFERENCE_GPT` (архив/recovery).
+
+- Не переносить устаревшие исторические инструкции как current authority; каждая запись получает source/version/status.
+
+- Никакие секреты, реальные broker payloads или приватные conversation exports не коммитятся в GitHub.
+
+**Обязательная проверка**
+
+- Diff/inventory текущих GPT-visible assets против migration manifest; duplicate/conflicting instruction detection; secret scan.
+
+**Exit Gate**
+
+- Для каждой действующей функции GPT понятно, где находится её V10-эквивалент или почему она намеренно исключена; исходная GPT-конфигурация остаётся восстановимой.
+
+**Зависимости:** WP30
+
+## WP30B - AI Knowledge/RAG и long-term memory architecture
+
+**Цель:** Создать собственную управляемую память Omni-CIO вместо зависимости от Knowledge storage Custom GPT.
+
+**Результаты / deliverables**
+
+- Versioned Knowledge Base с provenance, document/version identity, freshness и controlled re-indexing.
+
+- RAG retrieval policy: authority order, source filters, tenant/OWNER boundary, max-context budget, citation/source references.
+
+- Разделить долговременную проектную память GitHub и приватное runtime state: portfolio/incident/research/decision/journal остаются в локальной DB и не попадают в GitHub.
+
+- Conversation memory хранит только необходимый контекст и не становится источником истины для financial facts.
+
+**Обязательная проверка**
+
+- Wrong-document retrieval, stale knowledge, cross-scope leakage, poisoned document/prompt-injection retrieval, empty retrieval.
+
+**Exit Gate**
+
+- AI может объяснить ответ с указанием конкретного source/evidence, а отсутствие релевантного знания приводит к unknown/abstain, а не к выдумке.
+
+**Зависимости:** WP30A
+
 ## WP31 - Lenovo AI Benchmark и model selection
 
 **Цель:** Выбрать минимальную модель, которая проходит именно Omni-CIO задачи на реальном железе.
@@ -1064,15 +1112,113 @@ D           |
 
 **Зависимости:** WP31
 
+## WP32A - AI Tool Registry и authority firewall
+
+**Цель:** Дать собственному AI реальные возможности Omni-CIO без выдачи ему неконтролируемой власти.
+
+**Результаты / deliverables**
+
+- Единый versioned Tool Registry для Web AI, Telegram AI и autonomous research agent.
+
+- Категории tools: read-only portfolio/market, research/evidence, analytical Core, plan preview; broker-write tools отсутствуют из AI registry.
+
+- Per-tool input/output schema, timeout, audit id, authorization context, rate/concurrency limits.
+
+- Tool output проходит validation/sanitization перед возвратом модели; model text не интерпретируется как executable instruction.
+
+**Обязательная проверка**
+
+- Unknown tool, argument injection, tool-chain escalation, excessive agency, repeated tool loop, malformed output.
+
+**Exit Gate**
+
+- Ни один AI prompt/документ/пользовательский текст не может расширить allowlist или получить broker-write/secret access.
+
+**Зависимости:** WP32
+
+## WP32B - Omni-CIO AI Copilot / Agent Orchestrator
+
+**Цель:** Создать собственный интеллектуальный интерфейс, который заменит Custom GPT как обязательный пользовательский слой.
+
+**Результаты / deliverables**
+
+- Один Agent Orchestrator для Web и Telegram: intent -> context -> allowed tools -> evidence -> answer/action proposal.
+
+- Поддержать owner queries: portfolio status, asset investigation, Watchtower incident explanation, risk/credit questions, research request, optimizer/plan explanation и system status.
+
+- Ответы обязаны отделять broker facts, deterministic Core calculations, source evidence, AI inference и unknowns.
+
+- Агент не принимает owner approval за Real plan и не преобразует свободный текст в broker submit.
+
+- Provider abstraction позволяет LOCAL/OLLAMA и будущие provider adapters; financial Core не зависит от конкретной модели.
+
+**Обязательная проверка**
+
+- Multi-turn context, stale session, ambiguous intent, prompt injection, tool-call loop, unsupported request, provider failure/degraded mode.
+
+**Exit Gate**
+
+- Владелец может управлять аналитическими функциями Omni-CIO на естественном языке без Custom GPT, при этом authority не шире детерминированных APIs.
+
+**Зависимости:** WP32A
+
+## WP32C - Web AI Copilot и Telegram AI surface
+
+**Цель:** Дать один и тот же AI-мозг в основном Web App и Telegram, не создавать два расходящихся бота.
+
+**Результаты / deliverables**
+
+- Web: отдельный Omni-CIO AI Copilot workspace с citations/evidence/tool activity summary и deep links на Portfolio/Incident/Research/Decision.
+
+- Telegram: компактный conversational adapter к тому же Orchestrator; сложные результаты открываются в Web/Mini App.
+
+- Единая session/identity/authorization модель; Telegram не хранит второй knowledge base или отдельные prompts.
+
+- Degraded state явно сообщает, когда AI недоступен, а deterministic Portfolio/Watchtower функции продолжают работать.
+
+**Обязательная проверка**
+
+- Одинаковый intent даёт согласованный Core evidence в Web/Telegram; owner auth; long response handoff; session isolation.
+
+**Exit Gate**
+
+- Custom GPT больше не нужен как единственный способ разговаривать с Omni-CIO; Web и Telegram используют один V10 AI Orchestrator.
+
+**Зависимости:** WP32B, Blocks E/F integration contracts
+
+## WP32D - Autonomous Research Agent
+
+**Цель:** Использовать AI не только по запросу владельца, но и как ограниченного автономного исследователя material events.
+
+**Результаты / deliverables**
+
+- Watchtower/Research Collector может создавать AI research job только по утверждённым triggers/materiality policy.
+
+- Agent собирает дополнительные trusted sources, сравнивает claims, ищет contradiction/noise и формирует structured research dossier.
+
+- Бесконечный open-ended web crawl запрещён: source registry, query/time/token budgets, dedup и stop conditions обязательны.
+
+- Autonomous agent не создаёт Real plan approval и не выполняет trades; результат возвращается в Evidence -> Credit/Risk -> Optimizer pipeline.
+
+**Обязательная проверка**
+
+- Noisy news burst, duplicate sources, malicious webpage instructions, missing official confirmation, resource budget exhaustion.
+
+**Exit Gate**
+
+- Material incident может получить автономный evidence-backed research dossier без участия владельца, но никакое финансовое действие не происходит только по решению LLM.
+
+**Зависимости:** WP32C
+
 ## WP33 - AI Evaluation Harness и optional LoRA gate
 
-**Цель:** Проверять модель объективно до использования в реальном Guardian workflow.
+**Цель:** Проверять не только модель, но весь AI Copilot/Research/Tool/RAG контур объективно до использования в реальном Guardian workflow.
 
 **Результаты / deliverables**
 
 - Corpus: downgrade/default/delisting/liquidity/report/news noise/duplicate/rumor/contradictions/stale/wrong identity.
 
-- Metrics: grounded factual precision, materiality, contradiction detection, unknown recognition, schema success, tool discipline.
+- Metrics: grounded factual precision, materiality, contradiction detection, unknown recognition, schema success, tool discipline, retrieval quality, agent task success, excessive-agency violations и prompt-injection resistance.
 
 - OWASP AI security requirements применить как security checklist для AI-enabled части.
 
@@ -1086,7 +1232,31 @@ D           |
 
 - AI provider допускается в production Guardian только после прохождения заранее заданных порогов; иначе AI_ENABLED=false.
 
-**Зависимости:** WP32
+**Зависимости:** WP32D
+
+## WP33A - Custom GPT parity, fallback и decommission gate
+
+**Цель:** Не отключить существующий GPT раньше, чем собственный V10 AI доказал функциональный паритет по нужным возможностям.
+
+**Результаты / deliverables**
+
+- Parity matrix: текущие GPT Instructions/Knowledge/Actions/owner workflows -> V10 Copilot/RAG/Tools/Core equivalents.
+
+- Golden сценарии сравнивают: portfolio Q&A, research, incident explanation, risk/optimizer explanation, missing-data behavior, source grounding и safety boundaries.
+
+- Custom GPT остаётся reference/fallback до owner acceptance этого gate; его recovery/configuration assets не удаляются после decommission.
+
+- Решение об отключении платной GPT-зависимости принимается только после доказанного V10 parity; до этого обе поверхности могут существовать параллельно без расхождения source of truth.
+
+**Обязательная проверка**
+
+- Blind parity suite + owner acceptance; проверить, что V10 не потерял критические знания/границы из существующего GPT.
+
+**Exit Gate**
+
+- Владелец может прекратить использовать Custom GPT без потери обязательных возможностей Omni-CIO; V10 AI остаётся provider-replaceable, а GPT config сохранён как audit/recovery reference.
+
+**Зависимости:** WP33
 
 # BLOCK H - Guardian / Watchtower Loop (8%)
 
@@ -1484,7 +1654,7 @@ D           |
 
 12. Unit: детерминированные финансовые функции, parsers, validators, state transitions.
 
-13. Contract: API DTO, DB schema, broker adapters, AI schema, Telegram auth.
+13. Contract: API DTO, DB schema, broker adapters, AI schema, RAG/tool registry contracts, Telegram auth.
 
 14. Integration: Core+DB, Core+T-Invest read, Watchtower+Research, Telegram+Web deep-link.
 
@@ -1494,7 +1664,7 @@ D           |
 
 17. Property/fuzz: decimals, identity mapping, malformed source data, replay/idempotency.
 
-18. Security: ASVS/AISVS requirements, SAST, dependency, secrets, negative authorization.
+18. Security: ASVS/AISVS requirements, OWASP LLM prompt-injection/excessive-agency checks, SAST, dependency, secrets, negative authorization.
 
 19. Failure injection: network/DB/reboot/timeout/duplicate/possible-submit.
 
@@ -1595,7 +1765,15 @@ D           |
 
 - Watchtower реально обнаруживает material events, дедуплицирует и создаёт incidents.
 
-- Research хранит provenance; AI можно выключить без поломки системы.
+- Research хранит provenance; AI failure переводит Copilot/Research в явный degraded mode, но не ломает deterministic Core/Watchtower safety.
+
+- GPT Instructions/Knowledge/Actions migration manifest завершён; System Policy, Knowledge/RAG и Tool Registry имеют versioned source of truth.
+
+- Web AI Copilot и Telegram AI используют один Agent Orchestrator и один authority model.
+
+- Autonomous Research Agent умеет исследовать material events по trusted-source/budget policy без прямого trading authority.
+
+- Custom GPT parity/decommission gate пройден до отказа от платной GPT-зависимости.
 
 - Web полностью выполняет роль основного кабинета и показывает факты/риски/решения/планы/health.
 
@@ -1613,7 +1791,7 @@ D           |
 
 - Fault injection/security/soak tests проходят без P0/P1 blockers.
 
-- Custom GPT можно отключить - Personal Omni-CIO продолжает мониторинг, анализ и Web/Telegram работу.
+- Custom GPT можно отключить только после WP33A parity/owner acceptance; Personal Omni-CIO после этого сохраняет conversational AI, мониторинг, research, анализ и Web/Telegram работу, а GPT configuration остаётся архивным recovery/reference asset.
 
 <table>
 <colgroup>
@@ -1638,6 +1816,12 @@ D           |
 - **GitHub - Adding self-hosted runners:** [<u>https://docs.github.com/en/actions/how-tos/manage-runners/self-hosted-runners/add-runners</u>](https://docs.github.com/en/actions/how-tos/manage-runners/self-hosted-runners/add-runners) - GitHub рекомендует self-hosted runners использовать только с private repositories из-за риска выполнения кода из public forks/PR.
 
 - **Telegram - Mini Apps:** [<u>https://core.telegram.org/bots/webapps</u>](https://core.telegram.org/bots/webapps) - Mini Apps позволяют использовать один mobile-first Web App внутри Telegram; initData требуется валидировать server-side и проверять freshness auth_date.
+
+- **OpenAI - GPTs in ChatGPT:** [<u>https://help.openai.com/en/articles/8554407-gpts-in-chatgpt</u>](https://help.openai.com/en/articles/8554407-gpts-in-chatgpt) - Existing GPT capabilities are explicitly separated into Instructions, Knowledge, capabilities and Actions; V10 migration preserves this separation instead of treating the GPT as an opaque model.
+
+- **OpenAI - Creating and editing GPTs:** [<u>https://help.openai.com/en/articles/8554397-creating-a-custom-gpt</u>](https://help.openai.com/en/articles/8554397-creating-a-custom-gpt) - Instructions define behavior while Knowledge is reference material; this is the migration basis for System Policy vs Knowledge/RAG.
+
+- **OWASP GenAI - LLM01 Prompt Injection:** [<u>https://genai.owasp.org/llmrisk/llm01-prompt-injection/</u>](https://genai.owasp.org/llmrisk/llm01-prompt-injection/) - AI Copilot/Research security tests must cover prompt injection, excessive agency, improper output handling and retrieval-related trust boundaries.
 
 - **Ollama - Tool calling:** [<u>https://docs.ollama.com/capabilities/tool-calling</u>](https://docs.ollama.com/capabilities/tool-calling) - Локальный model provider может вызывать ограниченный allowlist tools.
 

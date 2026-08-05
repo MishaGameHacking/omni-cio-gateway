@@ -49,7 +49,9 @@ Until V10 reaches its complete Definition of Done:
 - do not create a parallel frontend, Telegram architecture, AI stack, Gateway, execution stack or competing roadmap outside the approved V10 program;
 - do not skip directly to Real execution, public/multi-user mode, billing or another later work package;
 - do not reinterpret brainstormed chat ideas as approved scope if they are not in the canonical V10 program;
-- new ideas go to a backlog/program-amendment proposal and require explicit owner approval before changing V10 scope.
+- new ideas go to a backlog/program-amendment proposal and require explicit owner approval before changing V10 scope;
+- the owner-approved AI amendment is mandatory V10 scope: GPT Knowledge Migration -> Knowledge/RAG -> Tool Registry -> Omni-CIO AI Copilot/Agent Orchestrator -> shared Web/Telegram AI surface -> Autonomous Research Agent -> Custom GPT parity/decommission gate;
+- do not remove or decommission the existing Custom GPT/configuration before the parity gate and explicit owner acceptance.
 
 ## 4. Sequential delivery rule
 

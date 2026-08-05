@@ -27,17 +27,19 @@ Overall V10 progress: **0% — NOT STARTED**
 | Block | Planned weight | State |
 |---|---:|---|
 | A. Architecture and V9 protection | 5% | NOT STARTED |
-| B. GitHub, dependencies and CI/CD | 10% | NOT STARTED |
-| C. Lenovo Omni-CIO Node / infrastructure | 15% | NOT STARTED |
-| D. V10 Core and data | 15% | NOT STARTED |
-| E. Omni-CIO Web Platform | 15% | NOT STARTED |
+| B. GitHub, dependencies and CI/CD | 9% | NOT STARTED |
+| C. Lenovo Omni-CIO Node / infrastructure | 12% | NOT STARTED |
+| D. V10 Core and data | 14% | NOT STARTED |
+| E. Omni-CIO Web Platform | 14% | NOT STARTED |
 | F. Telegram | 8% | NOT STARTED |
-| G. Research + Local AI | 12% | NOT STARTED |
+| G. AI Copilot / Research / GPT Migration | 18% | NOT STARTED |
 | H. Guardian / Watchtower Loop | 8% | NOT STARTED |
 | I. Personal Real Execution | 7% | NOT STARTED |
 | J. Integration / hardening / recovery / release | 5% | NOT STARTED |
 
 Current implementation WP: **NONE**.
+
+Owner-approved plan amendment recorded before implementation: **V10 includes mandatory GPT Knowledge Migration, own Omni-CIO AI Copilot/Agent Orchestrator, shared Web/Telegram AI surface, Autonomous Research Agent and a Custom GPT parity/decommission gate.** This amendment does not start development; overall progress remains 0%.
 
 Next implementation WP after explicit owner start instruction: **WP0 — V10 Program Lock / Architecture Freeze verification**, followed by the canonical sequence in the PDF.
 

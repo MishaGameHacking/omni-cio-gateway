@@ -44,6 +44,8 @@ Progress/status authority:
 
 Current V10 state: **PROGRAM LOCKED / DEVELOPMENT NOT STARTED / 0%**.
 
+Mandatory V10 AI scope is part of the locked plan: migrate the existing GPT Instructions/Knowledge/Actions into versioned System Policy + Knowledge/RAG + Tool Registry; build one Omni-CIO AI Copilot/Agent Orchestrator used by Web and Telegram; support a bounded Autonomous Research Agent; keep financial sizing/execution deterministic; and do not decommission the current Custom GPT until the explicit parity gate and owner acceptance.
+
 The V10 program lock does **not** itself authorize implementation. V10 feature work begins only after a new explicit owner instruction to start V10 development.
 
 Once V10 development starts, all feature work must follow the canonical V10 plan sequentially. Until V10 reaches its full Definition of Done and 100% completion:
@@ -84,7 +86,7 @@ Read in this order:
 10. relevant architecture/runbook;
 11. actual `main`, open PR/issues and GitHub Actions.
 
-Use the completed V9 master plan when auditing original V9 requirements. Use the V10 PDF + V10 program lock as the authority for future V10 feature work.
+Use the completed V9 master plan when auditing original V9 requirements. Use `OMNI_CIO_V10_MASTER_PLAN.md` + its regenerated V10 PDF + V10 program lock as the authority for future V10 feature work.
 
 Old chat/screenshot is not source of truth when it conflicts with current accepted `main` plus explicit owner-approved program evidence.
 
@@ -178,6 +180,8 @@ Baseline portfolio routing remains:
 Exact-action requests remain isolated: `вызови только X` must not expand to other Actions.
 
 Hidden Watchtower/QStash routes stay excluded from GPT OpenAPI.
+
+V10 migration rule: the current GPT Instructions/Knowledge/Actions/configuration are source assets for migration and fallback. Do not delete or weaken them merely because a local model or Web Copilot exists; removal from the required runtime path happens only after the V10 Custom GPT parity/decommission gate.
 
 ## 7. Maintenance and future V10 delivery discipline
 
