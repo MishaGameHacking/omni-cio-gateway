@@ -18,6 +18,10 @@ Mandatory planning amendments recorded before implementation:
 
 - `docs/master-plan/OMNI_CIO_V10_ACCOUNT_INDEPENDENCE_AMENDMENT.md`
 
+Pre-development readiness audit:
+
+- `docs/master-plan/OMNI_CIO_V10_PLAN_READINESS_AUDIT.md`
+
 Protected baseline:
 
 **Omni-CIO v9.0.0 — COMPLETE / owner-accepted / controlled maintenance.**
@@ -66,13 +70,30 @@ Detailed authority: `docs/master-plan/OMNI_CIO_V10_ACCOUNT_INDEPENDENCE_AMENDMEN
 
 These amendments do **not** start development; overall progress remains 0%.
 
-Before the owner authorizes the first V10 feature implementation, all mandatory 0%-phase amendments must be reconciled/consolidated into the next paired Master Plan Markdown/PDF revision and its SHA-256 manifest must be regenerated. No feature code may begin from a split or contradictory plan set.
+## Pre-development readiness audit
 
-Next implementation WP after explicit owner start instruction and canonical-plan consolidation: **WP0 — V10 Program Lock / Architecture Freeze verification**, followed by the canonical sequence.
+A full plan-readiness audit identified documentation/safety items that must be closed **before the first feature-development WP starts**.
+
+Current readiness verdict: **NOT READY TO START FEATURE IMPLEMENTATION YET**.
+
+Blocking items are defined in `docs/master-plan/OMNI_CIO_V10_PLAN_READINESS_AUDIT.md` and include:
+
+- consolidate all mandatory amendments into the canonical paired Master Plan Markdown/PDF and regenerate hashes;
+- normalize progress weights everywhere to the single 100% allocation in this status file;
+- normalize the canonical current-status path to `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`;
+- resolve DRAFT vs PROGRAM LOCKED wording in the paired canonical plan;
+- finish exact-head CI/review acceptance and merge PR #227 before feature branches begin;
+- make data-at-rest protection, RPO/RTO, external Web ingress/TLS/auth, runtime update policy and logging/privacy/retention requirements explicit in the consolidated plan.
+
+Until those items are closed, an owner message saying to start V10 must be treated as authorization to **finish the planning lock first**, not as permission to skip directly into Web/Telegram/AI/Real feature code.
+
+Before the owner authorizes the first V10 feature implementation, all mandatory 0%-phase amendments and readiness-audit corrections must be reconciled/consolidated into the next paired Master Plan Markdown/PDF revision and its SHA-256 manifest must be regenerated. No feature code may begin from a split or contradictory plan set.
+
+Next implementation WP after explicit owner start instruction **and readiness closure/canonical-plan consolidation**: **WP0 — V10 Program Lock / Architecture Freeze verification**, followed by the canonical sequence.
 
 ## Program rule
 
-No V10 feature implementation begins from this status document alone. An explicit owner instruction to start V10 development is required.
+No V10 feature implementation begins from this status document alone. An explicit owner instruction to start V10 development is required after the planning/readiness gate is closed.
 
 After V10 development starts:
 
