@@ -77,20 +77,30 @@ jobs:
           $htmlPath = Join-Path $env:RUNNER_TEMP 'omni-cio-v10-master-plan.html'
           [System.IO.File]::WriteAllText($htmlPath, $html, [System.Text.UTF8Encoding]::new($false))
 
-          $edgeCandidates = @(
-            (Join-Path $env:ProgramFiles 'Microsoft\Edge\Application\msedge.exe'),
-            (Join-Path ${env:ProgramFiles(x86)} 'Microsoft\Edge\Application\msedge.exe')
+          $chromeCandidates = @(
+            (Join-Path $env:ProgramFiles 'Google\Chrome\Application\chrome.exe'),
+            (Join-Path ${env:ProgramFiles(x86)} 'Google\Chrome\Application\chrome.exe')
           )
-          $edge = $edgeCandidates | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
-          if (-not $edge) {
-            throw 'Microsoft Edge is required to materialize the approved PDF.'
+          $chrome = $chromeCandidates | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+          if (-not $chrome) {
+            throw 'Google Chrome is required to materialize the approved PDF.'
           }
 
           $pdfPath = Join-Path (Resolve-Path 'docs/master-plan').Path 'Omni-CIO_V10_Master_Plan_RU.pdf'
           $uri = ([System.Uri]::new((Resolve-Path $htmlPath).Path)).AbsoluteUri
-          & $edge --headless --disable-gpu --no-pdf-header-footer "--print-to-pdf=$pdfPath" $uri
-          if ($LASTEXITCODE -ne 0 -or -not (Test-Path $pdfPath)) {
-            throw 'PDF generation failed.'
+          $chromeArgs = @(
+            '--headless',
+            '--disable-gpu',
+            '--no-pdf-header-footer',
+            "--print-to-pdf=$pdfPath",
+            $uri
+          )
+          $process = Start-Process -FilePath $chrome -ArgumentList $chromeArgs -Wait -PassThru -NoNewWindow
+          for ($i = 0; $i -lt 20 -and -not (Test-Path $pdfPath); $i++) {
+            Start-Sleep -Milliseconds 500
+          }
+          if (-not (Test-Path $pdfPath)) {
+            throw "PDF generation failed; Chrome exit code $($process.ExitCode)."
           }
 
           $bytes = [System.IO.File]::ReadAllBytes($pdfPath)
