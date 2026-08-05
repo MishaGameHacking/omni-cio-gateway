@@ -91,7 +91,7 @@ DIRECT_REAL_IMPORT_FORBIDDEN_ROOTS = (
     Path("ai"),
 )
 DIRECT_REAL_MODULE_PREFIX = "omni_cio.real_trading"
-TRADING_SECRET_MARKER = "TINVEST_TRADING_TOKEN"
+TRADING_SECRET_MARKER = "TINVEST_TRADING_TOKEN"  # pragma: allowlist secret
 
 # The AI and presentation adapters additionally cannot own the plan-execution
 # authority. The API adapter is intentionally excluded because a later approved
