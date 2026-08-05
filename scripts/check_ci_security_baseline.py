@@ -33,6 +33,7 @@ REQUIRED_WORKFLOW_COMMANDS = {
     "Windows lock verification": "python scripts/windows_ci_lock.py verify",
     "CI policy self-check": "python scripts/check_ci_security_baseline.py",
     "V10 repository boundaries": "python scripts/check_v10_repository_boundaries.py",
+    "V10 toolchain baseline": "python scripts/check_v10_toolchain_baseline.py",
     "lint": "python -m ruff check .",
     "formatting": "python -m ruff format --check",
     "type checking": "python -m mypy",
@@ -256,6 +257,7 @@ def main() -> int:
         print("GitHub Actions: pinned to full commit SHAs")
         print("Self-hosted PR isolation: same-repository only")
         print("V10 repository boundary guard: required")
+        print("V10 toolchain baseline guard: required")
         print("Render entrypoint: app:app")
     return 0
 
