@@ -60,9 +60,7 @@ def _requirements_pins(failures: list[str]) -> dict[str, str]:
     return pins
 
 
-def validate_python_baseline(
-    baseline: dict[str, Any], failures: list[str]
-) -> None:
+def validate_python_baseline(baseline: dict[str, Any], failures: list[str]) -> None:
     backend = baseline.get("backend")
     if not isinstance(backend, dict):
         failures.append("toolchain baseline is missing backend object")
@@ -91,7 +89,9 @@ def _require_exact_direct_version(
     package_name: str, version: Any, failures: list[str]
 ) -> None:
     if not isinstance(version, str) or not version:
-        failures.append(f"frontend direct dependency has invalid version: {package_name}")
+        failures.append(
+            f"frontend direct dependency has invalid version: {package_name}"
+        )
         return
     if version.lower() == "latest" or version.startswith(
         FORBIDDEN_DIRECT_VERSION_PREFIXES[:-1]
@@ -99,15 +99,16 @@ def _require_exact_direct_version(
         failures.append(
             f"frontend direct dependency must use exact version: {package_name}={version}"
         )
-    if any(token in version for token in ("git+", "github:", "file:", "http://", "https://")):
+    if any(
+        token in version
+        for token in ("git+", "github:", "file:", "http://", "https://")
+    ):
         failures.append(
             f"frontend direct dependency uses unreviewed source: {package_name}={version}"
         )
 
 
-def validate_frontend_baseline(
-    baseline: dict[str, Any], failures: list[str]
-) -> None:
+def validate_frontend_baseline(baseline: dict[str, Any], failures: list[str]) -> None:
     frontend = baseline.get("frontend")
     if not isinstance(frontend, dict):
         failures.append("toolchain baseline is missing frontend object")
@@ -130,7 +131,9 @@ def validate_frontend_baseline(
     }
     for (group, package_name), baseline_name in expected_fields.items():
         group_value = package.get(group)
-        actual = group_value.get(package_name) if isinstance(group_value, dict) else None
+        actual = (
+            group_value.get(package_name) if isinstance(group_value, dict) else None
+        )
         expected = frontend.get(baseline_name)
         if actual != expected:
             failures.append(
@@ -172,7 +175,9 @@ def validate_frontend_baseline(
 
     allowed_registry = baseline.get("registry_policy", {}).get("npm")
     allowed_licenses = baseline.get("allowed_frontend_licenses")
-    if not isinstance(allowed_registry, str) or not allowed_registry.startswith("https://"):
+    if not isinstance(allowed_registry, str) or not allowed_registry.startswith(
+        "https://"
+    ):
         failures.append("V10 npm registry policy must be an HTTPS URL")
         allowed_registry = ""
     if not isinstance(allowed_licenses, list) or not all(
@@ -190,8 +195,10 @@ def validate_frontend_baseline(
             failures.append(f"invalid package-lock metadata for {path}")
             continue
         resolved = metadata.get("resolved")
-        if isinstance(resolved, str) and allowed_registry and not resolved.startswith(
-            allowed_registry
+        if (
+            isinstance(resolved, str)
+            and allowed_registry
+            and not resolved.startswith(allowed_registry)
         ):
             failures.append(f"unapproved npm registry/source for {path}: {resolved}")
         license_name = metadata.get("license")
@@ -203,9 +210,7 @@ def validate_frontend_baseline(
             )
 
 
-def validate_database_baseline(
-    baseline: dict[str, Any], failures: list[str]
-) -> None:
+def validate_database_baseline(baseline: dict[str, Any], failures: list[str]) -> None:
     database = baseline.get("database")
     if not isinstance(database, dict):
         failures.append("toolchain baseline is missing database object")
