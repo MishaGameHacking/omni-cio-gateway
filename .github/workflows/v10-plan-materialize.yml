@@ -13,7 +13,7 @@ permissions:
 jobs:
   materialize:
     name: Build and commit canonical V10 plan
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     timeout-minutes: 15
 
     steps:
@@ -60,7 +60,7 @@ jobs:
 
           $style = @'
           @page { size: A4; margin: 15mm 16mm 17mm 16mm; }
-          body { font-family: "Segoe UI", Arial, sans-serif; font-size: 10.5pt; line-height: 1.38; color: #111; }
+          body { font-family: "DejaVu Sans", Arial, sans-serif; font-size: 10.5pt; line-height: 1.38; color: #111; }
           h1 { font-size: 22pt; margin-top: 20pt; page-break-after: avoid; }
           h2 { font-size: 16pt; margin-top: 16pt; page-break-after: avoid; }
           h3 { font-size: 12.5pt; margin-top: 12pt; page-break-after: avoid; }
@@ -68,7 +68,7 @@ jobs:
           table { width: 100%; border-collapse: collapse; font-size: 8.8pt; margin: 8pt 0; }
           th, td { border: 1px solid #aaa; padding: 4px 5px; vertical-align: top; }
           th { background: #f2f2f2; }
-          pre, code { font-family: Consolas, "Courier New", monospace; overflow-wrap: anywhere; }
+          pre, code { font-family: "DejaVu Sans Mono", monospace; overflow-wrap: anywhere; }
           pre { white-space: pre-wrap; border: 1px solid #ddd; padding: 7px; background: #f8f8f8; }
           a { color: #0645ad; overflow-wrap: anywhere; }
           blockquote { border-left: 3px solid #999; margin-left: 0; padding-left: 10px; color: #444; }
@@ -77,30 +77,15 @@ jobs:
           $htmlPath = Join-Path $env:RUNNER_TEMP 'omni-cio-v10-master-plan.html'
           [System.IO.File]::WriteAllText($htmlPath, $html, [System.Text.UTF8Encoding]::new($false))
 
-          $chromeCandidates = @(
-            (Join-Path $env:ProgramFiles 'Google\Chrome\Application\chrome.exe'),
-            (Join-Path ${env:ProgramFiles(x86)} 'Google\Chrome\Application\chrome.exe')
-          )
-          $chrome = $chromeCandidates | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
-          if (-not $chrome) {
-            throw 'Google Chrome is required to materialize the approved PDF.'
-          }
-
+          $chrome = (Get-Command google-chrome -ErrorAction Stop).Source
           $pdfPath = Join-Path (Resolve-Path 'docs/master-plan').Path 'Omni-CIO_V10_Master_Plan_RU.pdf'
           $uri = ([System.Uri]::new((Resolve-Path $htmlPath).Path)).AbsoluteUri
-          $chromeArgs = @(
-            '--headless',
-            '--disable-gpu',
-            '--no-pdf-header-footer',
-            "--print-to-pdf=$pdfPath",
-            $uri
-          )
-          $process = Start-Process -FilePath $chrome -ArgumentList $chromeArgs -Wait -PassThru -NoNewWindow
+          & $chrome --headless=new --disable-gpu --no-sandbox --no-pdf-header-footer "--print-to-pdf=$pdfPath" $uri
           for ($i = 0; $i -lt 20 -and -not (Test-Path $pdfPath); $i++) {
             Start-Sleep -Milliseconds 500
           }
           if (-not (Test-Path $pdfPath)) {
-            throw "PDF generation failed; Chrome exit code $($process.ExitCode)."
+            throw 'PDF generation failed.'
           }
 
           $bytes = [System.IO.File]::ReadAllBytes($pdfPath)
