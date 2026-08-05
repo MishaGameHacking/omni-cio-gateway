@@ -6,19 +6,19 @@
 
 `Omni-CIO Custom GPT → Omni-CIO Gateway → T-Invest API`
 
-Repository target UI:
+Applied and repository-aligned UI:
 
 `Omni-CIO API | Управляющий и аналитик v9.0.0`
 
-Applied external GPT remains v8.6.1 until owner Preview acceptance + `Update` are recorded after WP15 repository merge.
+The existing GPT was owner-updated in place and accepted on 2026-08-05. Do not create a second Custom GPT, duplicate frontend, second Gateway, competing scheduler or parallel broker/execution stack.
 
-Не создавать второй Custom GPT, duplicate frontend, второй Gateway, competing scheduler или parallel broker/execution stack.
+Protected rollback UI remains `Omni-CIO API | Управляющий и аналитик v8.6.1`.
 
 ## 2. Главная точка восстановления
 
 `gpt/SETUP_INDEX.md`
 
-Canonical target registry:
+Canonical applied/recovery registry:
 
 - config: `gpt/CONFIGURATION.md`;
 - Instructions: `gpt/CUSTOM_GPT_INSTRUCTIONS_V9_0_0_COMPACT.txt`;
@@ -37,7 +37,9 @@ Protected rollback payload remains `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.t
 
 `docs/master-plan/OMNI_CIO_V9_PORTFOLIO_AUTOPILOT_PROGRAM.md`
 
-WP15 configuration/recovery contracts:
+WP0–WP15 and owner external acceptance are complete. Tracking issue #216 and epic #176 are closed completed.
+
+WP15 configuration/recovery contracts remain:
 
 - `docs/architecture/V9_CUSTOM_GPT_CONFIGURATION_AND_RECOVERY.md`;
 - `docs/architecture/V9_CUSTOM_GPT_CONFIGURATION_THREAT_MODEL.md`.
@@ -46,13 +48,13 @@ WP15 configuration/recovery contracts:
 
 | File | Purpose |
 |---|---|
-| `gpt/SETUP_INDEX.md` | Single setup/upgrade entrypoint |
-| `gpt/CONFIGURATION.md` | Target identity, description, starters, capabilities |
-| `gpt/CUSTOM_GPT_INSTRUCTIONS_V9_0_0_COMPACT.txt` | Canonical v9 target Instructions |
+| `gpt/SETUP_INDEX.md` | Single setup/recovery entrypoint |
+| `gpt/CONFIGURATION.md` | Applied identity, description, starters, capabilities |
+| `gpt/CUSTOM_GPT_INSTRUCTIONS_V9_0_0_COMPACT.txt` | Canonical applied v9 Instructions |
 | `gpt/KNOWLEDGE_MANIFEST_V9_0_0.md` | Exact Knowledge upload registry |
 | `gpt/ACTIONS_CATALOG.md` | Reviewed effective Action policy |
 | `gpt/SECRETS_AND_RENDER.md` | External secrets/environment boundary |
-| `gpt/MY_GPT_SETUP_RUNBOOK.md` | Upgrade, Preview, recovery and rollback |
+| `gpt/MY_GPT_SETUP_RUNBOOK.md` | Preview, recovery and rollback |
 | `gpt/knowledge/` | Exact manifest-listed reference files |
 | `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt` | Protected rollback Instructions |
 
@@ -70,44 +72,38 @@ Only operationIds present in effective imported production `/openapi.json` are G
 
 Internal v9 routing/policy/universe/research/credit/fund/risk/strategy/optimizer/plan/execution/Watchtower/journal modules are not automatically Actions. The GPT may use their reviewed semantics as reference discipline but cannot claim server execution without returned evidence.
 
-WP15 does not add a second Action gateway or broaden broker-write authority implicitly.
-
 ## 7. Runtime files that must remain
 
 - `app.py` and current compatibility/runtime dependencies;
 - `broker_report_reconciliation/` gateway extension hook;
 - `omni_cio/` domain/runtime packages including v9 modules;
 - `render.yaml` and non-secret environment templates;
-- dependency/lock files;
+- canonical dependency inputs/lock files;
 - tests/scripts/workflows including Regression Shield;
 - architecture/operations/recovery documentation.
 
+One-time bootstrap payload chunks and generated CI projections are **not** runtime assets and must not be retained once their release task is complete.
+
 ## 8. Protected execution boundary
 
-Real BUY/SELL remains exact-owner-confirmed, immutable, idempotent and broker-reconciled. v8.6.1 acceptance remains **100% complete** and rollback-safe.
+Real BUY/SELL remains exact-owner-confirmed, immutable, idempotent and broker-reconciled. Protected v8.6.1 acceptance remains **100% complete** and rollback-safe.
 
 Canonical recovery invariant: **idempotent replay verified with no second submit**.
 
-WP15 configuration does not authorize transfer/withdrawal, margin/short, MARKET/BESTPRICE, autonomous recurring real execution, automatic retry after ambiguity or token management through GPT.
+Current v9 configuration does not authorize transfer/withdrawal, margin/short, MARKET/BESTPRICE, autonomous recurring real execution, automatic retry after ambiguity or token management through GPT.
 
 ## 9. External/manual boundary
 
-GitHub cannot itself alter the existing GPT Editor state or supply secret values.
-
-After repository merge the owner-only application step is:
+GitHub cannot itself alter GPT Editor state or supply secret values. Owner acceptance for current v9 has already been recorded. Any future change follows the same discipline:
 
 1. open the **existing** GPT on ChatGPT web;
 2. Edit/Configure, never Create;
-3. apply Name/Description/starters;
-4. paste v9 compact Instructions;
-5. upload exact Knowledge manifest set;
-6. keep Apps OFF / Actions ON;
-7. refresh production OpenAPI and existing Bearer authentication;
-8. run Preview acceptance;
-9. `Update` the same GPT;
-10. record acceptance/restoration evidence in GitHub.
-
-Until that evidence exists, applied production GPT is still reported as v8.6.1.
+3. apply reviewed Name/Description/starters/Instructions/Knowledge;
+4. keep Apps OFF / Actions ON;
+5. refresh production OpenAPI and existing Bearer authentication if required;
+6. run Preview acceptance;
+7. `Update` the same GPT only after Preview passes;
+8. record non-secret acceptance/restoration evidence in GitHub.
 
 ## 10. Recovery authority
 
