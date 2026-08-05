@@ -1,7 +1,7 @@
-import { StrictMode } from "react";
+import { StrictMode, type ReactElement } from "react";
 import { createRoot } from "react-dom/client";
 
-function ToolchainSmoke(): JSX.Element {
+function ToolchainSmoke(): ReactElement {
   return <main>Omni-CIO V10 toolchain smoke</main>;
 }
 
