@@ -6,6 +6,7 @@ on:
       - v10/program-lock
     paths:
       - .github/workflows/v10-plan-finalize.yml
+      - scripts/_finalize_v10_plan_once.py
   workflow_dispatch:
 
 permissions:
@@ -28,7 +29,7 @@ jobs:
       - name: Consolidate and verify V10 canonical plan
         run: |
           python scripts/_finalize_v10_plan_once.py
-          git diff --check
+          git diff --check -- . ':!docs/master-plan/Omni-CIO_V10_Master_Plan_RU.pdf'
 
       - name: Commit canonical plan consolidation
         run: |
