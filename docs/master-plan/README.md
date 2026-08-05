@@ -1,6 +1,21 @@
 # Master plan Omni-CIO
 
-Эта папка хранит **завершённые owner-approved спецификации и audit trail** развития Omni-CIO. Она не является текущей очередью незавершённых задач.
+Эта папка хранит **owner-approved master programs, program locks и audit trail** развития Omni-CIO. Завершённые программы не являются очередью задач; активная программа определяется её Program Lock/Current Status.
+
+## Omni-CIO V10 Personal Autonomous Investment Platform — approved plan, implementation 0%
+
+Canonical planning artifacts:
+
+- `OMNI_CIO_V10_MASTER_PLAN.md` — searchable canonical program for developers/AI/code review;
+- `Omni-CIO_V10_Master_Plan_RU.pdf` — owner-readable synchronized copy;
+- `OMNI_CIO_V10_MASTER_PLAN.sha256` — integrity manifest;
+- `OMNI_CIO_V10_PROGRAM_LOCK.md` — scope/precedence/exclusivity lock;
+- `OMNI_CIO_V10_PLAN_READINESS_AUDIT.md` — pre-development readiness audit;
+- `OMNI_CIO_V10_ACCOUNT_INDEPENDENCE_AMENDMENT.md` — historical owner-approved amendment retained as audit trail after consolidation.
+
+Current V10 progress authority: `../../knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
+
+V10 feature implementation remains **0% / NOT STARTED** until an explicit owner `START V10` instruction after the program-lock PR is accepted into `main`. V9 remains the protected runtime/recovery baseline until a future V10 work package intentionally replaces a boundary and passes its exit gate.
 
 ## Omni-CIO v9 Portfolio Autopilot — completed program
 
