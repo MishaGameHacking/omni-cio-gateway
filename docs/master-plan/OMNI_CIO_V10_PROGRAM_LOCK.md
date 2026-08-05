@@ -1,107 +1,90 @@
 # Omni-CIO V10 — Program Lock
 
-Status: **OWNER-APPROVED PROGRAM / DEVELOPMENT NOT STARTED**  
+Status: **OWNER-APPROVED PROGRAM / PLAN FINALIZED / DEVELOPMENT NOT STARTED**  
 Baseline: **Omni-CIO v9.0.0 — COMPLETE / PROTECTED**  
 Searchable canonical plan: `docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.md`  
 Owner-readable PDF: `docs/master-plan/Omni-CIO_V10_Master_Plan_RU.pdf`  
 Integrity manifest: `docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.sha256`  
-Account-independence audit trail: `docs/master-plan/OMNI_CIO_V10_ACCOUNT_INDEPENDENCE_AMENDMENT.md` (requirements consolidated into canonical Master Plan)
+Plan-readiness audit: `docs/master-plan/OMNI_CIO_V10_PLAN_READINESS_AUDIT.md`  
+Account-independence audit trail: `docs/master-plan/OMNI_CIO_V10_ACCOUNT_INDEPENDENCE_AMENDMENT.md`
 
 ## 1. Authority
 
 The owner has approved Omni-CIO V10 as the next and only feature-development program after the completed V9 program.
 
-The canonical detailed program is stored as a paired artifact:
+The canonical detailed program is stored as one synchronized pair:
 
-- `OMNI_CIO_V10_MASTER_PLAN.md` is the searchable source for developers, AI agents, code review and future automation;
-- `Omni-CIO_V10_Master_Plan_RU.pdf` is the rendered owner-readable copy of that approved program;
-- `OMNI_CIO_V10_MASTER_PLAN.sha256` records integrity fingerprints for both files.
+- `OMNI_CIO_V10_MASTER_PLAN.md` — searchable source for developers, AI agents, code review and future automation;
+- `Omni-CIO_V10_Master_Plan_RU.pdf` — rendered owner-readable copy of the same approved program;
+- `OMNI_CIO_V10_MASTER_PLAN.sha256` — integrity fingerprints for both canonical files.
 
-Owner-approved mandatory amendments recorded while V10 is still at 0% are part of the locked program when explicitly referenced by this Program Lock. The current mandatory portability amendment is:
+The owner-approved AI/GPT migration requirements and Account Independence / Deployment Portability requirements are already consolidated into the canonical Master Plan. `OMNI_CIO_V10_ACCOUNT_INDEPENDENCE_AMENDMENT.md` remains historical audit evidence, not a competing source of truth.
 
-- `OMNI_CIO_V10_ACCOUNT_INDEPENDENCE_AMENDMENT.md` — GitHub-controlled engineering source of truth, account independence, deployment portability, no UI-builder lock-in, reproducible development/deployment and strict separation between developer access and broker-secret/money authority.
+Current canonical SHA-256 values:
 
-The current PDF SHA-256 is:
+- PDF: `afb165183594d59c6218a419341f67fe5496f9567221efcf7521378914b6f106`
+- Markdown: `80df1efd750d1f56bf3a1b097e0c8fef4414b9bb65aced503c669313dd55be25`
 
-`f9b7c0a00d277e6c6228fda47d3deb261b317bebf460ffe7d8c01fb4a19c0ec8`
-
-The current Markdown SHA-256 is:
-
-`e09d85310a26e9901d0c2d573398025ecfb15d9e294f4219cf8a0dbe1d65f852`
-
-The current canonical Master Plan revision consolidates all owner-approved 0%-phase amendments, including AI/GPT migration and Account Independence / Deployment Portability. The standalone amendment remains only as an audit trail. Markdown/PDF integrity is tracked by the regenerated manifest; feature work must stop if substantive divergence is later introduced.
-
-This file exists to make the program lock explicit and immediately searchable for every developer, AI agent, CI-maintenance session and future chat.
+If these values ever differ from `OMNI_CIO_V10_MASTER_PLAN.sha256`, or if Markdown/PDF diverge substantively, V10 feature work must stop until an owner-reviewed documentation PR restores one synchronized canonical program and regenerates the manifest.
 
 ## 2. No implementation yet
 
-Recording and approving the V10 program does **not** start V10 feature development. It only records the approved plan and locks future scope.
+Finalizing/merging this program does **not** start V10 implementation and does not broaden V9 runtime or broker authority.
 
-V10 implementation may begin only after a new explicit owner instruction to start V10 development.
+V10 implementation begins only after a separate explicit owner command `START V10` after the finalized plan exists on accepted `main` with green exact-head CI/security.
 
-Until that instruction, allowed repository work is limited to:
-
-- preserving the accepted V9 baseline;
-- security/critical maintenance required to keep V9 recoverable;
-- dependency maintenance that passes the existing exact-head safety gates;
-- documentation/recovery corrections and owner-approved plan amendments that do not broaden runtime authority.
+Until that command, allowed work remains limited to V9 security/critical maintenance, dependency/recovery maintenance and documentation correctness that do not broaden runtime authority.
 
 ## 3. Program exclusivity
 
-Once V10 implementation starts, developers and AI agents must follow the canonical V10 plan sequentially.
+Once V10 implementation starts, all developers/AI agents must follow the canonical work-package sequence and exit gates.
 
-Until V10 reaches its complete Definition of Done:
+Until V10 reaches full Definition of Done and owner acceptance:
 
 - do not start V11 or another competing version program;
-- do not create a parallel frontend, Telegram architecture, AI stack, Gateway, execution stack or competing roadmap outside the approved V10 program;
-- do not skip directly to Real execution, public/multi-user mode, billing or another later work package;
-- do not reinterpret brainstormed chat ideas as approved scope if they are not in the canonical V10 program or an explicit mandatory amendment referenced by this Program Lock;
-- new ideas go to a backlog/program-amendment proposal and require explicit owner approval before changing V10 scope;
-- the owner-approved AI amendment is mandatory V10 scope: GPT Knowledge Migration -> Knowledge/RAG -> Tool Registry -> Omni-CIO AI Copilot/Agent Orchestrator -> shared Web/Telegram AI surface -> Autonomous Research Agent -> Custom GPT parity/decommission gate;
-- the owner-approved account-independence amendment is mandatory V10 scope: GitHub is the engineering Control Plane/source of truth; Web/API/AI/Telegram/deployment must be rebuildable without the originating ChatGPT/developer/website-builder account; hosting/runtime must be replaceable; developer GitHub access must not reveal broker trading secrets;
-- do not remove or decommission the existing Custom GPT/configuration before the parity gate and explicit owner acceptance.
+- do not create a parallel frontend, Telegram architecture, AI stack, Gateway, broker/execution stack or competing roadmap;
+- do not skip directly to public/multi-user, billing or Real execution;
+- brainstormed chat ideas are not scope unless incorporated through owner-approved program amendment;
+- the mandatory AI sequence remains: GPT Knowledge Migration -> Knowledge/RAG -> Tool Registry/authority firewall -> Omni-CIO AI Copilot/Agent Orchestrator -> shared Web/Telegram AI -> bounded Autonomous Research Agent -> Custom GPT parity/decommission gate;
+- the current Custom GPT cannot be removed before parity evidence and explicit owner acceptance;
+- Account Independence / Deployment Portability remains binding throughout every block.
 
 ### 3.1 Account Independence / Deployment Portability invariant
 
-The following is binding throughout V10:
-
-- no personal ChatGPT account, website-builder account, IDE account, hosting account, developer workstation or single physical runtime may become the unique source of truth for the product;
-- application code, configuration schemas/defaults, migrations, AI System Policy/RAG/Tool Registry, deployment definitions, tests, bootstrap and recovery documentation are repository-controlled wherever technically reasonable;
-- the primary Web application is source-controlled code and must not depend on proprietary UI-builder state that cannot be rebuilt from GitHub;
-- Lenovo is the first Personal V10 runtime, not the architectural owner of the project; another approved node must be able to run an accepted release using documented prerequisites;
-- actual broker/Telegram/encryption secrets and private portfolio/runtime state remain outside GitHub;
-- granting a developer GitHub engineering role never implicitly grants real-money authority;
-- V10 final acceptance requires a clean-room portability/recovery rehearsal from GitHub + documented bootstrap + authorized backup + separately restored runtime secrets.
-
-Detailed acceptance criteria are defined in `OMNI_CIO_V10_ACCOUNT_INDEPENDENCE_AMENDMENT.md`.
+- no personal ChatGPT, website-builder, IDE, hosting account, developer workstation or single runtime node may become the unique engineering source of truth;
+- Web/API/AI/Telegram source, configuration schemas/defaults, DB migrations, tests, CI, deployment/bootstrap/recovery contracts and mandatory AI policies are repository-controlled where technically reasonable;
+- primary Web is source-controlled application code, not proprietary UI-builder state;
+- Lenovo is the first Personal runtime node, not the architectural owner; accepted V10 releases must be portable to another approved node;
+- broker/Telegram/encryption secrets and private portfolio/runtime state remain outside GitHub;
+- GitHub engineering access never implies broker trading authority;
+- final V10 acceptance requires clean-room recovery/portability from GitHub + documented bootstrap + authorized backup + separately restored runtime secrets.
 
 ## 4. Sequential delivery rule
 
-Future V10 work must use the program work-package order and exit gates.
-
 Default discipline:
 
-`restore context → identify current WP → focused branch → implementation + tests → security/boundary review → exact-head Regression Shield → resolve review threads → squash merge → update V10 status → next WP`
+`restore context -> identify current WP -> focused branch -> implementation + tests -> security/boundary review -> exact-head Regression Shield -> resolve review threads -> squash merge -> update V10 status -> next WP`
 
-A later WP must not be treated as complete merely because code exists. Completion requires its defined exit gate and required integration evidence.
+A WP is not complete because files/UI exist. Completion requires its defined Exit Gate and required integration/recovery evidence.
 
-Before the first feature-development WP starts, accepted `main` must contain this consolidated canonical paired Master Plan, its regenerated integrity manifest, a green plan-readiness audit and exact-head CI.
+The first implementation work package after `START V10` is WP0. Later work packages cannot be treated as substitutes for an incomplete earlier gate.
 
 ## 5. Money and safety boundary
 
-The completed V9 safety invariants remain binding throughout V10:
+The completed V9 money/safety invariants remain binding unless a later V10 WP explicitly replaces a boundary and passes all acceptance gates:
 
-- production read-only, Sandbox and Real authority remain isolated;
-- real execution uses a separate account-scoped trading credential without transfer authority;
+- production read-only, Sandbox and Real credentials remain isolated;
+- Real uses a separate account-scoped trading credential without transfer authority;
 - no autonomous unconfirmed real-money execution;
-- immutable plan/proposal before submit;
-- owner confirmation remains plan-bound and short-lived;
+- immutable plan before submit;
+- confirmation remains short-lived and bound to the exact plan hash;
 - one possible broker submit per idempotent identity;
 - ambiguous possible-submit is never automatically retried;
 - `submitted` is not `filled` without broker evidence;
-- no withdrawal/transfer, margin/short or hidden expansion of broker authority;
-- secrets/private portfolio payloads never enter GitHub;
-- repository/developer access is never treated as trading-secret authorization.
+- no withdrawal/transfer, margin/short or hidden authority expansion;
+- AI has no direct broker-write authority;
+- developer/repository access is never trading authorization;
+- unhealthy time sync, durable state, audit persistence or external approval-auth gate blocks Real submit as defined by the canonical plan.
 
 ## 6. Source-of-truth order during V10
 
@@ -109,41 +92,33 @@ When V10 implementation begins, use this authority order:
 
 1. accepted `main`;
 2. `AGENTS.md`;
-3. this program-lock file;
-4. the paired canonical V10 program: `OMNI_CIO_V10_MASTER_PLAN.md` + `Omni-CIO_V10_Master_Plan_RU.pdf`;
+3. this Program Lock;
+4. paired canonical program `OMNI_CIO_V10_MASTER_PLAN.md` + `Omni-CIO_V10_Master_Plan_RU.pdf` and integrity manifest;
 5. `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`;
-6. historical amendment/audit records, including `OMNI_CIO_V10_ACCOUNT_INDEPENDENCE_AMENDMENT.md`;
-7. relevant V10 architecture/runbook files created by the current work package;
-8. current PR/CI evidence.
+6. relevant V10 architecture/ADR/runbook files accepted by the current WP;
+7. current PR/CI/runtime acceptance evidence;
+8. historical planning amendments/audits only as trace evidence, never to override the accepted canonical program.
 
-If the Markdown and PDF ever differ in substantive program content, V10 feature development must stop until the discrepancy is resolved through an owner-reviewed documentation PR and regenerated integrity manifest. Neither artifact may be silently edited to change scope.
+If canonical sources conflict, feature development stops until the conflict is resolved by an owner-reviewed documentation change.
 
-Historical V9 issues, PRs and old chat remain audit/context evidence and cannot override the accepted V10 program.
+## 7. Final planning-readiness invariant
 
-## 7. Completion rule
-
-V10 is not complete until the canonical program reaches **100%** and the final V10 Definition of Done is satisfied and owner-accepted.
-
-In addition to the existing Definition of Done, final V10 acceptance requires proof that:
-
-- the Web application and supported development environment are reproducible from repository-controlled source/configuration contracts;
-- an accepted V10 release can be deployed to a fresh approved runtime without the originating ChatGPT/developer account;
-- private state and secrets are restored through documented separate recovery paths rather than Git history;
-- the deployed runtime identifies the expected reviewed release/Git SHA;
-- engineering access can be granted without disclosing OWNER broker trading credentials;
-- the account-independence/portability rehearsal defined by the mandatory amendment is green.
-
-Until then, no successor version is authorized.
-
-
-## 8. Final planning-readiness invariant
-
-Before `START V10`, accepted `main` must prove:
+Before the owner may issue `START V10`, accepted `main` must prove:
 
 - canonical Markdown/PDF are synchronized and SHA-256 tracked;
-- weights A-J are 5/9/12/14/14/8/18/8/7/5 = 100%;
-- Account Independence and AI/GPT migration are inside the canonical plan;
-- disk-at-rest, RPO/RTO, Web TLS/auth, runtime update, time-sync and logging/privacy requirements are explicit;
-- `OMNI_CIO_V10_PLAN_READINESS_AUDIT.md` has no open planning blocker;
-- exact-head Regression Shield/security are green;
-- plan is merged to `main` while V10 implementation progress remains 0%.
+- weights A-J are exactly `5/9/12/14/14/8/18/8/7/5 = 100%`;
+- AI/GPT migration and Account Independence are inside the canonical plan;
+- data-at-rest, RPO/RTO, Web TLS/OWNER auth, runtime update, time-sync and logging/privacy requirements are explicit;
+- temporary plan-generation tooling is absent;
+- `OMNI_CIO_V10_PLAN_READINESS_AUDIT.md` has no substantive planning blocker;
+- exact-head Regression Shield/security is green;
+- zero unresolved PR review blockers remain;
+- the plan is squash-merged into `main` while V10 implementation progress remains `0% / NOT STARTED`.
+
+After those gates the planning state is **READY — WAITING FOR OWNER `START V10` COMMAND**.
+
+## 8. Completion rule
+
+V10 itself is not complete until the canonical program reaches 100%, the final evidence matrix is complete, clean-room recovery/portability and all final security/reliability gates pass, and the owner accepts the final release.
+
+Until then no successor version is authorized.
