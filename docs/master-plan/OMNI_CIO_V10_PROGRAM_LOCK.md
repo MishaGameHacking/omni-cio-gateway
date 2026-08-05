@@ -18,11 +18,11 @@ The canonical detailed program is stored as a paired artifact:
 
 The current PDF SHA-256 is:
 
-`cb6018fa4816850e86509de9470b9cd45308216d7d8b910bb4036cacbb017b84`
+`f9b7c0a00d277e6c6228fda47d3deb261b317bebf460ffe7d8c01fb4a19c0ec8`
 
 The current Markdown SHA-256 is:
 
-`2bb63791e7564b2df32563f23d5bf425d3ede7a67f645e7420f24aaf53078c0c`
+`e09d85310a26e9901d0c2d573398025ecfb15d9e294f4219cf8a0dbe1d65f852`
 
 This file exists to make the program lock explicit and immediately searchable for every developer, AI agent, CI-maintenance session and future chat.
 
