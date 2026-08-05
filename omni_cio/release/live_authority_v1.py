@@ -89,7 +89,9 @@ class LiveGatewayAuthorityAcceptanceV1:
     real_execution_ready_surface: bool
 
 
-def _extract_actions(openapi: Mapping[str, Any]) -> dict[str, tuple[str, str, Mapping[str, Any]]]:
+def _extract_actions(
+    openapi: Mapping[str, Any],
+) -> dict[str, tuple[str, str, Mapping[str, Any]]]:
     raw_paths = _mapping(openapi.get("paths"), "LIVE_OPENAPI_PATHS_REQUIRED")
     actions: dict[str, tuple[str, str, Mapping[str, Any]]] = {}
     for raw_path, raw_item in raw_paths.items():
@@ -113,7 +115,9 @@ def _extract_actions(openapi: Mapping[str, Any]) -> dict[str, tuple[str, str, Ma
     return actions
 
 
-def _validate_action_surface(actions: Mapping[str, tuple[str, str, Mapping[str, Any]]]) -> None:
+def _validate_action_surface(
+    actions: Mapping[str, tuple[str, str, Mapping[str, Any]]],
+) -> None:
     missing_baseline = set(BASELINE_ACTIONS) - set(actions)
     if missing_baseline:
         raise LiveReleaseAcceptanceError("LIVE_BASELINE_ACTIONS_INCOMPLETE")
@@ -138,7 +142,7 @@ def _validate_action_surface(actions: Mapping[str, tuple[str, str, Mapping[str, 
         raise LiveReleaseAcceptanceError("LIVE_SANDBOX_SURFACE_PARTIAL")
 
     real_present = set(actions) & set(REAL_ACTIONS)
-    allowed_real_shapes = (
+    allowed_real_shapes: tuple[set[str], ...] = (
         set(),
         {"getRealTradingStatus"},
         set(REAL_ACTIONS),
