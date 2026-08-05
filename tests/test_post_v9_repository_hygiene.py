@@ -1,9 +1,18 @@
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+GENERATED_DEPENDENCY_PROJECTIONS = (
+    "windows-requirements.txt",
+    "windows-requirements-dev.txt",
+    "windows-compiled-requirements.txt",
+    "windows-compiled-requirements-dev.txt",
+    "compiled-requirements.txt",
+    "compiled-requirements-dev.txt",
+)
 
 
 def test_one_time_v390_bootstrap_artifacts_are_retired() -> None:
@@ -19,13 +28,22 @@ def test_dependency_sources_and_locks_stay_canonical_at_root() -> None:
     ):
         assert (ROOT / name).is_file(), name
 
-    for generated_name in (
-        "windows-compiled-requirements.txt",
-        "windows-compiled-requirements-dev.txt",
-        "compiled-requirements.txt",
-        "compiled-requirements-dev.txt",
-    ):
-        assert not (ROOT / generated_name).exists(), generated_name
+    tracked = subprocess.run(
+        ["git", "ls-files", "--cached", "--", *GENERATED_DEPENDENCY_PROJECTIONS],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.splitlines()
+    assert not tracked, f"generated dependency projections are tracked: {tracked}"
+
+    for generated_name in GENERATED_DEPENDENCY_PROJECTIONS:
+        ignored = subprocess.run(
+            ["git", "check-ignore", "--quiet", "--", generated_name],
+            cwd=ROOT,
+            check=False,
+        )
+        assert ignored.returncode == 0, f"{generated_name} must stay gitignored"
 
 
 def test_applied_gpt_state_is_v9_not_pending_wp15() -> None:
