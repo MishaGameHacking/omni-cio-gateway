@@ -18,7 +18,6 @@ The owner approved Omni-CIO V10 as the next and only feature-development program
 The canonical detailed program is stored as one synchronized pair:
 
 - `OMNI_CIO_V10_MASTER_PLAN.md` — searchable source for developers, AI agents, code review and automation;
-- `Omni_CIO_V10_Master_Plan_RU.pdf` is not a valid alternate path; the canonical PDF remains `Omni-CIO_V10_Master_Plan_RU.pdf`;
 - `Omni-CIO_V10_Master_Plan_RU.pdf` — owner-readable synchronized copy;
 - `OMNI_CIO_V10_MASTER_PLAN.sha256` — integrity fingerprints.
 
