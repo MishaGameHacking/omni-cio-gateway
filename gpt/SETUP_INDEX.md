@@ -5,18 +5,19 @@
 ## Release state
 
 Repository target: **v9.0.0**  
+Applied external GPT: **v9.0.0**, owner-accepted on 2026-08-05  
 Target UI: `Omni-CIO API | Управляющий и аналитик v9.0.0`  
 Target Instructions: `gpt/CUSTOM_GPT_INSTRUCTIONS_V9_0_0_COMPACT.txt`  
 Target Knowledge manifest: `gpt/KNOWLEDGE_MANIFEST_V9_0_0.md`
 
-Applied external GPT remains **v8.6.1** until WP15 repository gates are green, merged, and the owner completes Preview + `Update` on the existing GPT. Protected rollback Instructions remain `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt`.
+Protected rollback UI remains `Omni-CIO API | Управляющий и аналитик v8.6.1`; protected rollback Instructions remain `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt`.
 
 Canonical program: `docs/master-plan/OMNI_CIO_V9_PORTFOLIO_AUTOPILOT_PROGRAM.md`.
 
 ## Architecture
 
 ```text
-GitHub main ──► Render Free / Omni-CIO Gateway (`app:app`)
+GitHub main ──► Render / Omni-CIO Gateway (`app:app`)
                     │
                     ├─ production read-only broker contour
                     ├─ optional Sandbox contour
@@ -24,15 +25,15 @@ GitHub main ──► Render Free / Omni-CIO Gateway (`app:app`)
                     ├─ Upstash durable state
                     └─ hidden QStash/Watchtower scheduler routes
 
-GitHub canonical config ──owner applies──► EXISTING Omni-CIO GPT
-                                           ├─ v9 Instructions
-                                           ├─ exact v9 Knowledge set
-                                           └─ existing Action refreshed from production OpenAPI
+GitHub canonical config ──owner applies/recovers──► EXISTING Omni-CIO GPT v9.0.0
+                                                    ├─ v9 Instructions
+                                                    ├─ exact v9 Knowledge set
+                                                    └─ existing production OpenAPI Action
 ```
 
 Do not create a second GPT, Gateway, frontend, scheduler or broker stack.
 
-## 1. Target GPT configuration
+## 1. Applied GPT configuration
 
 - Name: `Omni-CIO API | Управляющий и аналитик v9.0.0`.
 - Description/starters/capabilities: `gpt/CONFIGURATION.md`.
@@ -47,17 +48,19 @@ Do not create a second GPT, Gateway, frontend, scheduler or broker stack.
 - Apps: OFF while Actions are used.
 - Web Search: ON for public context.
 - Data Analysis: ON when supported.
-- Model: select a currently available **non-Pro model that supports Custom GPT Actions**, then verify in Preview.
+- Model: a currently available **non-Pro model that supports Custom GPT Actions**, verified in owner acceptance.
 
-## 2. Upgrade the existing GPT — never create a duplicate
+Owner evidence in #216 confirms the **existing** GPT was upgraded in place, not duplicated, and post-Update Action routing worked without a live trade.
 
-After WP15 repository merge:
+## 2. Future update / recovery procedure — never create a duplicate
+
+For any future applied-state change:
 
 1. On ChatGPT **web**, open the existing Omni-CIO GPT.
 2. Select Edit/Configure. Do **not** use Create.
-3. Replace Name/Description/starters with the target registry values.
-4. Replace Instructions fully with the v9 compact file.
-5. Replace Knowledge with the exact v9 manifest set; each file once.
+3. Apply Name/Description/starters from `gpt/CONFIGURATION.md`.
+4. Replace Instructions with the intended canonical payload.
+5. Replace Knowledge with the exact manifest set; each file once.
 6. Keep Apps OFF and Actions ON.
 7. Refresh the existing Action from production `/openapi.json`.
 8. Authentication remains API Key → Bearer with the existing external `GATEWAY_API_KEY`.
@@ -65,13 +68,13 @@ After WP15 repository merge:
 10. Only after Preview passes, select `Update` on the existing GPT.
 11. Record owner acceptance/restoration evidence in GitHub.
 
-Repository merge alone does not mean applied production GPT v9 is accepted.
+Repository merge alone never changes the external GPT Editor state.
 
 ## 3. Knowledge
 
 Single source of truth: `gpt/KNOWLEDGE_MANIFEST_V9_0_0.md`.
 
-Current target contains exactly 10 text-forward reference files under `gpt/knowledge/`. Knowledge is reference material; behavioral/execution safety belongs in Instructions and server enforcement.
+Production contains exactly 10 text-forward reference files under `gpt/knowledge/`. Knowledge is reference material; behavioral/execution safety belongs in Instructions and server enforcement.
 
 Never upload account-specific/private broker data or authentication material as permanent Knowledge.
 
@@ -86,14 +89,12 @@ The baseline read-only portfolio chain remains:
 
 Internal WP1–WP14 Python engines are **not automatically GPT Actions**. The GPT may call only operationIds present in imported OpenAPI and must not claim an internal engine ran without returned evidence.
 
-Conditional Sandbox/Real operations remain server-controlled. Current reviewed Real operationIds are:
+Conditional Sandbox/Real operations remain server-controlled. Reviewed Real operationIds are:
 
 - `getRealTradingStatus`;
 - `prepareRealTrade`;
 - `executeRealTrade`;
 - `getRealOrderState`.
-
-WP15 does not broaden their authority.
 
 ## 5. Authentication / secrets boundary
 
@@ -129,7 +130,7 @@ Protected v8.6.1 recovery invariant remains: **idempotent replay verified with n
 
 Full runbook: `gpt/MY_GPT_SETUP_RUNBOOK.md`.
 
-Protected rollback configuration remains available from Git history/current protected files:
+Protected rollback configuration remains available from GitHub:
 
 - UI `Omni-CIO API | Управляющий и аналитик v8.6.1`;
 - `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt`;
@@ -142,8 +143,8 @@ Do not restore from old chat text/screenshots if they disagree with current `mai
 
 - runtime/API: deployed GitHub `main`;
 - v9 program: `docs/master-plan/OMNI_CIO_V9_PORTFOLIO_AUTOPILOT_PROGRAM.md`;
-- GPT target registry: `gpt/CONFIGURATION.md`;
-- target Instructions: `gpt/CUSTOM_GPT_INSTRUCTIONS_V9_0_0_COMPACT.txt`;
+- GPT applied registry: `gpt/CONFIGURATION.md`;
+- Instructions: `gpt/CUSTOM_GPT_INSTRUCTIONS_V9_0_0_COMPACT.txt`;
 - Knowledge: `gpt/KNOWLEDGE_MANIFEST_V9_0_0.md`;
 - Actions: production `/openapi.json` + `gpt/ACTIONS_CATALOG.md`;
 - secrets/env roles: `gpt/SECRETS_AND_RENDER.md`;
