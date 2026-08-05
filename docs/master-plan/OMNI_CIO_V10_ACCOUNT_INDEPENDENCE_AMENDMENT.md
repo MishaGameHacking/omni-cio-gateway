@@ -280,3 +280,8 @@ It **does not start V10 implementation**, does not deploy a site, does not alter
 Current V10 state remains:
 
 `PROGRAM LOCKED / DEVELOPMENT NOT STARTED / 0%`
+
+
+## 10. Consolidation status
+
+This amendment's mandatory requirements have been incorporated into the canonical `OMNI_CIO_V10_MASTER_PLAN.md` and regenerated paired PDF during the final plan-readiness pass. This file is retained as historical owner-approved audit evidence. It is no longer a competing source of truth; if wording differs, the accepted canonical Master Plan + Program Lock govern future implementation.

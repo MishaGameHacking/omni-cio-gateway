@@ -3,7 +3,7 @@
 Audit date: **2026-08-05**  
 Audited branch: **`v10/program-lock`**  
 Program state: **0% / DEVELOPMENT NOT STARTED**  
-Readiness verdict at this audit: **NOT READY TO START FEATURE IMPLEMENTATION YET**
+Readiness verdict after consolidation: **SUBSTANTIVE PLAN READY; PROCEDURAL PR/CI ACCEPTANCE PENDING**
 
 ## 1. Purpose
 
@@ -184,3 +184,26 @@ Until this audit is closed:
 - do not start V11 or a competing roadmap.
 
 This audit is governance/documentation only.
+
+
+## 8. Consolidation closure record
+
+The canonical-plan finalization closes the substantive findings as follows:
+
+- **B1 CLOSED** — Account Independence requirements are incorporated into canonical Markdown/PDF; amendment retained only as audit trail.
+- **B2 CLOSED** — all canonical progress weights normalized to A/B/C/D/E/F/G/H/I/J = 5/9/12/14/14/8/18/8/7/5 = 100%.
+- **B3 CLOSED** — canonical status path normalized to `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
+- **B4 CLOSED** — canonical plan status normalized to OWNER-APPROVED / PROGRAM LOCKED / DEVELOPMENT NOT STARTED.
+- **S1 INCORPORATED** — at-rest/full-disk/private-state physical-loss requirements added.
+- **S2 INCORPORATED** — RPO/RTO definition and measured recovery evidence required.
+- **S3 INCORPORATED** — external Web TLS/direct-browser OWNER auth/session/CSRF/origin/host/rate-limit gate added.
+- **S4 INCORPORATED** — Windows/runner/driver/PostgreSQL/Ollama/model controlled-update and rollback policy added.
+- **S5 INCORPORATED** — logging/privacy/retention/crash-dump/audit integrity policy added.
+- Additional prevention controls added for clock/NTP drift, UTC timestamp semantics, AI model provenance, source-governance/retention and clean-room portability.
+
+The only remaining gates are procedural:
+
+- **B5** closes when PR #227 is squash-merged to accepted `main` after owner/plan acceptance.
+- **B6** closes when the final exact-head Regression Shield/security is green.
+
+No feature implementation is authorized by this closure record.

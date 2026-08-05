@@ -4,7 +4,7 @@ Updated: 2026-08-05
 
 ## Executive state
 
-Omni-CIO V10 is **OWNER-APPROVED / PROGRAM LOCKED / DEVELOPMENT NOT STARTED**.
+Omni-CIO V10 is **OWNER-APPROVED / PROGRAM LOCKED / PLAN CONSOLIDATED / DEVELOPMENT NOT STARTED**.
 
 Canonical program PDF:
 
@@ -14,9 +14,12 @@ Searchable program lock:
 
 `docs/master-plan/OMNI_CIO_V10_PROGRAM_LOCK.md`
 
-Mandatory planning amendments recorded before implementation:
+Consolidated planning scope:
 
-- `docs/master-plan/OMNI_CIO_V10_ACCOUNT_INDEPENDENCE_AMENDMENT.md`
+- AI/GPT migration requirements are embedded in the canonical Master Plan;
+- Account Independence / Deployment Portability requirements are embedded in the canonical Master Plan;
+- `docs/master-plan/OMNI_CIO_V10_ACCOUNT_INDEPENDENCE_AMENDMENT.md` is retained as the audit trail of the original amendment;
+- `docs/master-plan/OMNI_CIO_V10_PLAN_READINESS_AUDIT.md` records final pre-development acceptance checks.
 
 Pre-development readiness audit:
 
@@ -108,3 +111,8 @@ After V10 development starts:
 Real-money authority is not expanded by approving the V10 plan or by granting GitHub access to a developer. Current V9 execution boundaries remain in force until a future V10 work package explicitly implements, tests and receives the required acceptance for a replacement boundary.
 
 Master rollback remains the accepted V9 recovery path until V10 final release acceptance.
+
+
+## Planning acceptance additions
+
+The final canonical plan explicitly includes: full-disk/private-state at-rest protection; measured RPO/RTO; external TLS/direct-browser OWNER-auth/session/rate-limit gate; runtime/OS/driver/DB/Ollama/model controlled-update policy; time synchronization/UTC semantics; logging/privacy/retention/crash-dump policy; and clean-room deployment portability.

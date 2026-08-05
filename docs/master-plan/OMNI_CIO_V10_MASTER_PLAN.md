@@ -4,7 +4,7 @@
 
 **Канонический Master Plan разработки от A до Я**
 
-**Статус: DRAFT / разработка не начата**
+**Статус: OWNER-APPROVED / PROGRAM LOCKED / DEVELOPMENT NOT STARTED**
 
 Базовая версия: Omni-CIO v9.0.0 (завершена и защищена как reference/rollback)
 
@@ -123,6 +123,43 @@ LENOVO OMNI-CIO NODE 24/7
 \|-- Telegram Bot  
 \`-- T-Invest read + isolated OWNER execution
 
+## 1.1 Account Independence / Deployment Portability — обязательный архитектурный инвариант
+
+V10 не принадлежит конкретному ChatGPT-аккаунту, разработчику, IDE, website-builder, хостингу или одному физическому компьютеру. Инженерный источник истины — private GitHub repository; runtime является заменяемым Data Plane.
+
+```text
+PRIVATE GITHUB REPOSITORY
+  = engineering Control Plane / source of truth
+
+  code / Web / API / Telegram / AI policy
+  configuration schemas and safe defaults
+  database migrations
+  tests / CI / release manifests
+  bootstrap / deployment / recovery runbooks
+             |
+             | reviewed release
+             v
+APPROVED V10 RUNTIME NODE
+  = replaceable Data Plane
+
+  local secret store
+  broker credentials
+  private portfolio/database state
+  Decision Journal private payloads
+  runtime cache / machine-specific state
+```
+
+Обязательные правила:
+
+- Web является обычным source-controlled приложением и не может иметь authoritative state только в UI-builder/hosting dashboard;
+- другой авторизованный разработчик должен восстановить engineering context из GitHub и продолжить branch -> tests -> PR -> review -> deploy без доступа к исходному ChatGPT-аккаунту;
+- Lenovo — первый Personal V10 node, но не архитектурный владелец системы; перенос на другой approved node не должен требовать переписывания Web/Core;
+- GitHub хранит код, схемы, policies и способы provisioning, но не реальные broker/Telegram tokens, encryption keys, полные account IDs или приватные portfolio payloads;
+- GitHub engineering access никогда не означает broker trading authority;
+- production release обязан идентифицироваться V10 version + Git SHA;
+- до V10=100% обязателен clean-room portability/recovery rehearsal: GitHub + documented bootstrap + authorized backup + отдельно восстановленные secrets -> рабочий новый node;
+- существующий `OMNI_CIO_V10_ACCOUNT_INDEPENDENCE_AMENDMENT.md` после этой консолидации сохраняется как audit trail исходного owner-approved amendment, но не как отдельный конкурирующий source of truth.
+
 # 2. Неизменяемые инженерные правила
 
 1.  V9 не уничтожается и остаётся защищённой reference/rollback версией до полного V10 acceptance.
@@ -147,6 +184,20 @@ LENOVO OMNI-CIO NODE 24/7
 
 11. Public/multi-user архитектура может быть подготовлена на уровне моделей, но не активируется в V10 Personal.
 
+12. GitHub является единственным инженерным source of truth для Web/API/AI/Telegram/configuration contracts/migrations/deployment/recovery; account-only hidden configuration запрещена.
+
+13. Доступ разработчика к GitHub не выдаёт broker/Telegram/encryption secrets и не расширяет real-money authority.
+
+14. External Web ingress запрещён до отдельного TLS + OWNER authentication + session + CSRF/origin/host + rate-limit security gate. Real approval surface не публикуется наружу раньше этого gate.
+
+15. Private local data и secret store должны учитывать угрозу физической потери Lenovo/SSD: full-disk или эквивалентная at-rest защита, отдельное хранение recovery key и проверяемое восстановление.
+
+16. Системное время является security/data dependency: Windows/NTP clock sync контролируется; canonical timestamps хранятся в UTC; опасный clock drift блокирует short-lived confirmations, Telegram freshness checks и Real execution.
+
+17. Logging/privacy policy задаётся до production: allowlist диагностических полей, обязательное masking/omission private data, log rotation/retention, crash-dump policy и audit-log integrity.
+
+18. Runtime/OS/model updates выполняются как контролируемые изменения: Windows, GitHub Runner, NVIDIA driver, PostgreSQL, Ollama и AI model artifacts проходят compatibility/security/eval gate и имеют rollback; auto-update не может тихо изменить real-money behavior.
+
 # 3. Модель прогресса и Definition of Done
 
 | **Блок** | **Назначение**                                      | **Вес** | **Статус при старте** |
@@ -164,7 +215,7 @@ LENOVO OMNI-CIO NODE 24/7
 
 - Процент блока засчитывается только после Exit Gate, а не после появления файлов или UI.
 
-- После каждого accepted merge обновляется `knowledge/V10_CURRENT_PROGRAM_STATUS.md`: completed WPs, текущий WP, blockers, next step, общий процент.
+- После каждого accepted merge обновляется `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`: completed WPs, текущий WP, blockers, next step, общий процент.
 
 - Следующий WP нельзя начинать, если текущий Exit Gate имеет P0/P1 blocker.
 
@@ -178,7 +229,7 @@ LENOVO OMNI-CIO NODE 24/7
 
 **Результаты / deliverables**
 
-- Создать канонический V10 master-plan в GitHub и `V10_CURRENT_PROGRAM_STATUS.md`.
+- Создать канонический V10 master-plan в GitHub и `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
 
 - Создать V10 system architecture, security boundaries, data flow, threat model и recovery contract.
 
@@ -204,9 +255,22 @@ LENOVO OMNI-CIO NODE 24/7
 
 - Нет незаявленного второго Gateway, второго execution stack или дублирующего проекта.
 
-**Участие владельца:** Только утвердить программу V10 отдельной командой. До этого этап остаётся DRAFT.
+**Участие владельца:** Только утвердить программу V10 отдельной командой. До отдельной команды владельца `START V10` функциональная разработка остаётся запрещена, а прогресс остаётся 0%.
 
-# BLOCK B - GitHub, зависимости и CI/CD (10%)
+### WP0 pre-development plan-acceptance gate
+
+До первого feature-кода WP0 обязан подтвердить, что:
+
+- этот Markdown и owner-readable PDF содержательно синхронизированы и имеют новый SHA-256 manifest;
+- веса A-J везде одинаковы и суммируются ровно в 100%;
+- canonical status path — только `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`;
+- AI/GPT migration и Account Independence уже находятся внутри канонического Master Plan;
+- `OMNI_CIO_V10_PLAN_READINESS_AUDIT.md` не имеет открытых planning blockers;
+- accepted `main` содержит V10 Program Lock;
+- exact-head Regression Shield/security зелёный;
+- V10 всё ещё 0% и не получает новых runtime/trading прав от самого факта утверждения плана.
+
+# BLOCK B - GitHub, зависимости и CI/CD (9%)
 
 ## WP1 - Repository Architecture и boundaries
 
@@ -237,6 +301,13 @@ LENOVO OMNI-CIO NODE 24/7
 - Нет двух competing реализаций одного финансового engine.
 
 **Зависимости:** WP0
+
+### WP1 mandatory portability additions
+
+- Зафиксировать repository ownership Web/API/AI/Telegram/infrastructure/configuration artifacts.
+- Запретить authoritative application settings, существующие только в личном account dashboard.
+- Development/test environment должен воспроизводиться из repository documentation + dependency locks + safe local config examples.
+- Hosting/domain replacement считается deployment/configuration change, а не созданием нового сайта.
 
 ## WP2 - Toolchain и Dependency Baseline
 
@@ -342,7 +413,14 @@ LENOVO OMNI-CIO NODE 24/7
 
 **Зависимости:** WP3
 
-# BLOCK C - Lenovo Omni-CIO Node (15%)
+### WP4 mandatory release portability additions
+
+- Accepted deploy выполняется только из reviewed Git commit/release evidence, не из untracked working tree.
+- Release manifest фиксирует backend/frontend build hash, dependency/SBOM identity, migration version и Git SHA.
+- Runtime `/system`/Admin UI показывает только non-secret installed version/Git SHA/build timestamp.
+- Provider-specific deployment state минимизируется и документируется, чтобы перенос Lenovo -> другой approved node не создавал новый проект.
+
+# BLOCK C - Lenovo Omni-CIO Node (12%)
 
 ## WP5 - Hardware/OS Audit и эксплуатационный профиль
 
@@ -367,6 +445,19 @@ LENOVO OMNI-CIO NODE 24/7
 - Создан OWNER_NODE_PROFILE без серийных номеров/персональных данных; аппаратные лимиты известны.
 
 **Участие владельца:** Один раз выполнить диагностические команды/дать скриншоты через удалённый рабочий стол при необходимости.
+
+### WP5 mandatory 24/7 node hardening additions
+
+Hardware/OS audit дополнительно обязан проверить и записать:
+
+- фактическое состояние full-disk encryption (BitLocker where supported или owner-approved equivalent) и отдельный recovery-key custody plan;
+- Windows Time/NTP health, UTC canonical time policy и допустимый clock-drift threshold;
+- battery/AC behavior, restart after power loss, thermals under sustained AI load и safe shutdown behavior;
+- SSD free-space threshold и low-disk fail-safe;
+- network interface/firewall baseline и запрет случайного public listener;
+- какая часть данных считается private-at-rest и какие процессы имеют к ней ACL.
+
+Exit Gate WP5 дополнительно: сценарий физической потери выключенного диска не должен автоматически раскрывать broker secrets/private DB; clock drift выше принятого threshold детектируется и блокирует чувствительные операции.
 
 ## WP6 - OS identities и privilege separation
 
@@ -405,6 +496,13 @@ LENOVO OMNI-CIO NODE 24/7
 <tbody>
 </tbody>
 </table>
+
+### WP6 mandatory privilege additions
+
+- `omni-ci-runner` не получает право читать `TINVEST_TRADING_TOKEN`/Telegram secret/private DB dumps.
+- `omni-cio-runtime` запускается с минимальными локальными ACL и не является Windows administrator без доказанной необходимости.
+- Deployment controller принимает только reviewed release identity и не исполняет произвольный PR payload в контексте trading secrets.
+- GitHub collaborator role и runtime-secret provisioning являются двумя независимыми процедурами.
 
 ## WP7 - One-Time Bootstrap
 
@@ -466,6 +564,12 @@ LENOVO OMNI-CIO NODE 24/7
 
 **Участие владельца:** Один раз локально ввести секреты, когда соответствующий контур будет готов.
 
+### WP8 mandatory secret lifecycle additions
+
+- Для каждого секрета определить owner, purpose, scope, rotation/revocation procedure и признак компрометации.
+- Recovery keys/private encryption material хранятся отдельно от GitHub и отдельно от зашифрованного backup, который они защищают.
+- Никакой diagnostic bundle/crash dump не может включать raw secrets.
+
 ## WP9 - Autostart, supervision и self-healing
 
 **Цель:** После Windows Update/reboot система должна самостоятельно вернуться в рабочее безопасное состояние.
@@ -493,6 +597,22 @@ LENOVO OMNI-CIO NODE 24/7
 - После reboot OWNER получает HEALTHY/DEGRADED status без ручного запуска приложений.
 
 **Зависимости:** WP8
+
+### WP9A - Runtime patching, time, observability и controlled restart policy
+
+До 24/7 эксплуатации создать единый operations contract для:
+
+- Windows security updates и predictable maintenance/reboot window;
+- GitHub Runner update health;
+- NVIDIA driver updates;
+- PostgreSQL minor/security updates;
+- Ollama runtime/model updates;
+- service restart backoff, crash-loop detection и owner alert;
+- NTP/time-drift monitoring;
+- CPU/RAM/GPU/VRAM/temperature/disk thresholds;
+- structured logging с private-data allowlist, rotation/retention и crash-dump policy.
+
+Любой update, способный изменить calculations, AI behavior, DB compatibility или broker execution path, сначала проходит staging/regression/eval и имеет documented rollback.
 
 ## WP10 - Backup, restore и off-device recovery
 
@@ -524,7 +644,18 @@ LENOVO OMNI-CIO NODE 24/7
 
 **Участие владельца:** Предоставить одно off-device место хранения или внешний диск, если его нет.
 
-# BLOCK D - V10 Core и данные (15%)
+### WP10 mandatory recovery objectives
+
+WP10 обязан определить измеримые значения:
+
+- **RPO (Recovery Point Objective)** — максимально допустимую потерю private durable state;
+- **RTO (Recovery Time Objective)** — максимально допустимое время восстановления Personal V10 node;
+- backup frequency/retention/off-device policy, выведенные из этих целей;
+- отдельные recovery paths для GitHub-controlled source, encrypted DB/private state и runtime secrets.
+
+Точные числа выбираются после WP5 hardware/storage audit, но отсутствие определённых и протестированных RPO/RTO является blocker для Exit Gate WP10.
+
+# BLOCK D - V10 Core и данные (14%)
 
 ## WP11 - V9 Core Extraction
 
@@ -577,6 +708,12 @@ LENOVO OMNI-CIO NODE 24/7
 - Нет неявных глобальных singleton-данных, которые сделали бы будущую изоляцию невозможной.
 
 **Зависимости:** WP11
+
+### WP12 mandatory temporal/data identity additions
+
+- Все persisted timestamps имеют явную timezone semantics; canonical storage — UTC, display timezone — presentation concern.
+- Market/evidence timestamps различают `published_at`, `retrieved_at`, broker/server time и local receive time.
+- Instrument/account/portfolio identities versioned; никакая AI/news строка не связывается с позицией только по похожему имени.
 
 ## WP13 - PostgreSQL persistence и migrations
 
@@ -666,7 +803,7 @@ LENOVO OMNI-CIO NODE 24/7
 
 **Участие владельца:** Локально предоставить read-only T-Invest token, когда read layer будет готов.
 
-# BLOCK E - Omni-CIO Web Platform (15%)
+# BLOCK E - Omni-CIO Web Platform (14%)
 
 ## WP16 - Web Design System
 
@@ -834,6 +971,29 @@ LENOVO OMNI-CIO NODE 24/7
 
 **Зависимости:** WP21
 
+## WP22A - External Web Access / OWNER Authentication Security Gate
+
+**Цель:** Не превращать локальный Personal кабинет в публично доступную поверхность до завершения security design.
+
+**Обязательные deliverables**
+
+- Решить, нужен ли вообще public ingress; безопасный private remote-access вариант рассматривается первым.
+- Если внешний ingress нужен: TLS termination, certificate issuance/renewal, HSTS/host allowlist, trusted reverse-proxy chain.
+- Отдельная OWNER authentication для ordinary browser; Telegram Mini App identity не является единственным способом входа.
+- Server-side sessions: short/defined lifetime, rotation, explicit revoke/logout, secure/HttpOnly/SameSite cookies или эквивалентный reviewed механизм.
+- CSRF protection, Origin/Referer/Host checks где применимо, CORS deny-by-default.
+- Login/API rate limiting и lockout/abuse policy без возможности self-DoS критического monitoring path.
+- Real-plan approval endpoint требует step-up/recent OWNER authentication и никогда не доверяет только deep-link URL.
+- External ingress configuration repository-controlled; secret keys/cert private material остаются runtime-only.
+
+**Обязательная проверка**
+
+- ASVS 5.0.0 relevant controls; invalid/stolen/expired session; CSRF; host-header; origin; brute-force/rate-limit; direct API call without UI; Telegram initData replay/staleness.
+
+**Exit Gate**
+
+- До green gate Web остаётся local/private; Real approval surface не публикуется наружу.
+
 # BLOCK F - Telegram и связь с Web (8%)
 
 ## WP23 - Telegram Bot Foundation
@@ -879,6 +1039,12 @@ LENOVO OMNI-CIO NODE 24/7
 - Ни один Mini App request не получает OWNER scope только из client-provided fields.
 
 **Зависимости:** WP23
+
+### Telegram authentication invariant
+
+- Backend принимает Telegram identity только из валидированного `Telegram.WebApp.initData`; `initDataUnsafe` не является trusted authority.
+- `auth_date` freshness проверяется server-side; replay/expired Mini App sessions отвергаются.
+- Telegram OWNER ID whitelist не заменяет Web session security и не выдаёт broker secret.
 
 ## WP25 - Alert Delivery Policy
 
@@ -947,6 +1113,18 @@ LENOVO OMNI-CIO NODE 24/7
 **Exit Gate**
 
 - Каждый material claim может сослаться на canonical evidence record.
+
+### WP27 source-governance additions
+
+Для каждого внешнего source registry хранит не только authority/freshness, но и:
+
+- supported retrieval method/API/public page;
+- terms/license/redistribution constraints, если применимы;
+- parser version;
+- expected update cadence;
+- allowed retention of raw content vs normalized evidence.
+
+Недоступный или юридически/технически запрещённый способ получения данных не обходится scraping-hack'ом без отдельного review.
 
 ## WP28 - Research Collector и normalization
 
@@ -1088,6 +1266,19 @@ LENOVO OMNI-CIO NODE 24/7
 
 **Участие владельца:** Разрешить локальную установку Ollama/model weights; если место/железо не подходит, AI остаётся disabled.
 
+### WP31 mandatory model provenance / capacity additions
+
+Каждый AI candidate фиксирует:
+
+- exact model name/version/digest/quantization;
+- license and source repository;
+- expected RAM/VRAM/context limits;
+- measured latency/throughput/thermal profile on Lenovo;
+- eval-suite result and accepted threshold;
+- rollback artifact/previous accepted model.
+
+Model/runtime auto-update запрещён. Новая модель становится accepted только после повторного Omni-CIO eval и security/tool-authority checks.
+
 ## WP32 - Structured AI Researcher
 
 **Цель:** Использовать AI для чтения/синтеза, но не для прямого финансового исполнения.
@@ -1209,6 +1400,13 @@ LENOVO OMNI-CIO NODE 24/7
 - Material incident может получить автономный evidence-backed research dossier без участия владельца, но никакое финансовое действие не происходит только по решению LLM.
 
 **Зависимости:** WP32C
+
+### AI/RAG security invariant
+
+- External documents/news are untrusted data, never System Policy or tool authorization.
+- Prompt-injection-shaped content cannot expand Tool Registry authority, reveal secrets or disable deterministic safety gates.
+- Retrieved chunks carry provenance and are filtered/escaped before model use; model output remains untrusted until schema/evidence validation.
+- AI context/logging avoids raw broker secrets/private identifiers; tool results expose least data required.
 
 ## WP33 - AI Evaluation Harness и optional LoRA gate
 
@@ -1398,6 +1596,10 @@ LENOVO OMNI-CIO NODE 24/7
 
 **Участие владельца:** Наблюдать реальные рекомендации и сообщать о явно неверных/неудобных результатах; никаких торговых подтверждений на этом этапе.
 
+### WP39 Shadow Mode acceptance criteria
+
+Shadow duration is not a calendar checkbox. Exit requires enough representative incidents to exercise normal, stale-data, contradictory-research, AI-unavailable, broker-unavailable and no-action cases. If natural incidents are insufficient, deterministic replay/synthetic scenarios supplement, but do not falsify live evidence.
+
 ## WP40 - Immutable Plan Approval
 
 **Цель:** Одно подтверждение владельца разрешает только заранее полностью раскрытый plan.
@@ -1443,6 +1645,16 @@ LENOVO OMNI-CIO NODE 24/7
 - Никаких hidden extra legs; state machine воспроизводима по Journal.
 
 **Зависимости:** WP40
+
+### Real execution additional preconditions
+
+Real submit is additionally blocked when any of the following is true:
+
+- system clock/time sync unhealthy beyond accepted threshold;
+- OWNER session/confirmation expired or cannot be cryptographically bound to exact plan hash;
+- durable state/DB is read-only, degraded or reconciliation state unknown;
+- audit log cannot persist required immutable execution evidence;
+- external ingress/auth gate is not green for the surface from which approval arrives.
 
 ## WP42 - Drift Stop и re-plan
 
@@ -1578,6 +1790,20 @@ LENOVO OMNI-CIO NODE 24/7
 
 **Зависимости:** WP46
 
+### WP47 mandatory expanded security acceptance
+
+Security acceptance must explicitly cover:
+
+- at-rest protection / physical disk-loss threat;
+- OWNER browser auth, Telegram initData validation, session revocation and step-up approval;
+- TLS/certificate/reverse-proxy configuration if external ingress enabled;
+- CSRF/CORS/Origin/Host and external rate limits;
+- GitHub runner -> deploy controller -> runtime privilege boundary;
+- secret rotation/revocation and diagnostic/crash-dump leakage;
+- logging allowlist, masking, retention and audit integrity;
+- AI prompt injection, poisoned RAG, tool escalation/excessive agency and data exfiltration checks using OWASP AISVS as a verification baseline;
+- dependency/SBOM/license findings and exact exceptions with owner-approved rationale.
+
 ## WP48 - Performance/Thermal/24x7 Acceptance
 
 **Цель:** Доказать, что выбранный Lenovo способен стабильно держать Personal V10.
@@ -1599,6 +1825,10 @@ LENOVO OMNI-CIO NODE 24/7
 - Нет memory leak/thermal crash/resource starvation в acceptance window.
 
 **Зависимости:** WP47
+
+### WP48 24/7 soak specifics
+
+Soak test records CPU/RAM/GPU/VRAM, GPU/CPU temperatures, disk growth/free-space, DB size, queue depth, restart count, clock drift, Telegram/Web latency, AI latency and Watchtower cycle timing. Threshold breach must create a bounded alert rather than silently degrading into unsafe Real behavior.
 
 ## WP49 - Disaster Recovery Rehearsal
 
@@ -1622,6 +1852,22 @@ LENOVO OMNI-CIO NODE 24/7
 
 **Участие владельца:** Помочь только с физическим/удалённым доступом к тестовой машине/backup при rehearsal.
 
+### WP49 mandatory clean-room portability and RPO/RTO proof
+
+Disaster Recovery rehearsal is simultaneously the Account Independence acceptance test:
+
+1. Start from a fresh approved machine/environment with no original developer working tree.
+2. Restore source/release only from accepted GitHub evidence.
+3. Run documented bootstrap/deployment.
+4. Restore authorized encrypted private backup.
+5. Restore runtime secrets through the separate documented secret procedure.
+6. Prove installed V10 version/Git SHA.
+7. Prove measured recovery meets accepted RPO/RTO.
+8. Prove another authorized developer can modify/test Web without receiving OWNER trading credentials.
+9. Prove no hidden ChatGPT/website-builder/hosting-dashboard setting is required.
+
+Failure of any point blocks WP50.
+
 ## WP50 - V10.0.0 Final Release и protected rollback
 
 **Цель:** Закрыть программу только после доказанного production readiness.
@@ -1644,7 +1890,7 @@ LENOVO OMNI-CIO NODE 24/7
 
 **Exit Gate**
 
-- `knowledge/V10_CURRENT_PROGRAM_STATUS.md` = 100% COMPLETE; дальнейший feature work требует новой программы/maintenance scope.
+- `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md` = 100% COMPLETE; дальнейший feature work требует новой программы/maintenance scope.
 
 **Зависимости:** WP49
 
@@ -1699,7 +1945,7 @@ LENOVO OMNI-CIO NODE 24/7
 
 22. Перед каждым сеансом прочитать AGENTS.md, README.md, PROJECT_MASTER_CONTEXT, V10_CURRENT_PROGRAM_STATUS, этот master-plan, relevant architecture/runbook, open PR/issues и latest Actions.
 
-23. Выбрать ровно один текущий WP из `V10_CURRENT_PROGRAM_STATUS.md`. Не начинать соседний WP ради удобства.
+23. Выбрать ровно один текущий WP из `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`. Не начинать соседний WP ради удобства.
 
 24. Создать focused branch; сформулировать acceptance criteria до написания кода.
 
@@ -1807,6 +2053,14 @@ LENOVO OMNI-CIO NODE 24/7
 </tbody>
 </table>
 
+## 19.1 Final pre-release evidence matrix
+
+Перед `V10 = 100% COMPLETE` должна существовать evidence matrix, связывающая каждую заявленную capability с:
+
+`requirement -> implementation commit -> deterministic tests -> security control -> runtime/shadow evidence -> rollback/recovery evidence -> owner acceptance where required`.
+
+Ни сайт, ни презентация, ни AI-текст не являются доказательством capability без этой цепочки. Любая функция, не имеющая evidence chain, считается незавершённой или явно исключённой из release scope.
+
 # 20. Реестр внешних технических ориентиров и источников
 
 **Важно:** эти ссылки используются как planning references. Перед каждым implementation WP конкретные версии и требования должны быть повторно проверены по официальным источникам.
@@ -1837,6 +2091,20 @@ LENOVO OMNI-CIO NODE 24/7
 
 - **OWASP AISVS:** [<u>https://owasp.org/www-project-artificial-intelligence-security-verification-standard-aisvs-docs/</u>](https://owasp.org/www-project-artificial-intelligence-security-verification-standard-aisvs-docs/) - AISVS 1.0 released 24.06.2026 - дополнительный security checklist для AI-enabled части.
 
+### Technical baseline re-check — 05.08.2026
+
+На этапе финальной проверки плана официальные источники подтверждали следующие ориентиры (версии всё равно перепроверяются перед WP2/WP31 implementation):
+
+- React docs: latest documented line 19.2;
+- Vite: 8.1 current supported minor line;
+- PostgreSQL: 18.4 current stable release line (PostgreSQL 19 на дату аудита был beta, поэтому не является production baseline V10);
+- OWASP ASVS: latest stable 5.0.0;
+- OWASP AISVS: version 1.0 live since 24.06.2026;
+- Telegram Mini Apps: server-side validation of `initData` + freshness check via `auth_date`;
+- Ollama: tool calling + JSON-schema structured outputs supported;
+- T-Invest: read-only token cannot place orders; account-specific token scoping available;
+- GitHub: self-hosted runner uses outbound HTTPS and private-repository use remains the recommended safety posture.
+
 # Приложение A. Шаблон V10_CURRENT_PROGRAM_STATUS.md
 
 **Рекомендуемая структура канонического файла прогресса:**
@@ -1850,12 +2118,12 @@ State: NOT STARTED
   
 \## Blocks  
 A Architecture ........ 0/5  
-B GitHub/CI ........... 0/10  
-C Lenovo Node ......... 0/15  
-D Core/Data ........... 0/15  
-E Web ................. 0/15  
+B GitHub/CI ........... 0/9
+C Lenovo Node ......... 0/12
+D Core/Data ........... 0/14
+E Web ................. 0/14
 F Telegram ............ 0/8  
-G Research/AI ......... 0/12  
+G Research/AI ......... 0/18
 H Guardian ............ 0/8  
 I Real Execution ...... 0/7  
 J Hardening/Release ... 0/5  

@@ -32,6 +32,10 @@ Current accepted V9 runtime mode remains **controlled maintenance** until a futu
 
 Owner-approved/program-locked next program:
 
+`docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.md`
+
+Paired owner-readable PDF:
+
 `docs/master-plan/Omni-CIO_V10_Master_Plan_RU.pdf`
 
 Searchable scope lock:
@@ -47,6 +51,8 @@ Current V10 state: **PROGRAM LOCKED / DEVELOPMENT NOT STARTED / 0%**.
 Mandatory V10 AI scope is part of the locked plan: migrate the existing GPT Instructions/Knowledge/Actions into versioned System Policy + Knowledge/RAG + Tool Registry; build one Omni-CIO AI Copilot/Agent Orchestrator used by Web and Telegram; support a bounded Autonomous Research Agent; keep financial sizing/execution deterministic; and do not decommission the current Custom GPT until the explicit parity gate and owner acceptance.
 
 The V10 program lock does **not** itself authorize implementation. V10 feature work begins only after a new explicit owner instruction to start V10 development.
+
+V10 planning-readiness rule: before that start instruction, accepted `main` must contain the consolidated Markdown/PDF pair + regenerated SHA-256 manifest + plan-readiness audit, exact-head CI/security must be green, and V10 must still be 0%.
 
 Once V10 development starts, all feature work must follow the canonical V10 plan sequentially. Until V10 reaches its full Definition of Done and 100% completion:
 
@@ -78,8 +84,9 @@ Read in this order:
 2. `knowledge/00_PROJECT_MASTER_CONTEXT.md`;
 3. `knowledge/16_CURRENT_PROGRAM_STATUS.md` for the accepted V9 runtime baseline;
 4. `docs/master-plan/OMNI_CIO_V10_PROGRAM_LOCK.md`;
-5. `docs/master-plan/Omni-CIO_V10_Master_Plan_RU.pdf`;
-6. `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`;
+5. `docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.md`;
+6. `docs/master-plan/Omni-CIO_V10_Master_Plan_RU.pdf`;
+7. `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`;
 7. `gpt/SETUP_INDEX.md` and `gpt/CONFIGURATION.md` for GPT-visible/recovery work;
 8. `docs/architecture/SYSTEM_OVERVIEW.md`;
 9. `docs/architecture/REPOSITORY_STRUCTURE.md`;

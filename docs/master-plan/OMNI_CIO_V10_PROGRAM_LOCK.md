@@ -5,7 +5,7 @@ Baseline: **Omni-CIO v9.0.0 — COMPLETE / PROTECTED**
 Searchable canonical plan: `docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.md`  
 Owner-readable PDF: `docs/master-plan/Omni-CIO_V10_Master_Plan_RU.pdf`  
 Integrity manifest: `docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.sha256`  
-Mandatory portability amendment: `docs/master-plan/OMNI_CIO_V10_ACCOUNT_INDEPENDENCE_AMENDMENT.md`
+Account-independence audit trail: `docs/master-plan/OMNI_CIO_V10_ACCOUNT_INDEPENDENCE_AMENDMENT.md` (requirements consolidated into canonical Master Plan)
 
 ## 1. Authority
 
@@ -29,7 +29,7 @@ The current Markdown SHA-256 is:
 
 `e09d85310a26e9901d0c2d573398025ecfb15d9e294f4219cf8a0dbe1d65f852`
 
-These hashes identify the current paired base-plan revision. The mandatory amendment is separately version-controlled and does not silently mutate the hashed base artifacts. **Before V10 feature implementation begins, all owner-approved mandatory amendments must be reconciled/consolidated into the next paired Master Plan Markdown/PDF revision and the integrity manifest must be regenerated.** No feature code may start while the canonical plan artifacts and the mandatory-amendment set disagree.
+The current canonical Master Plan revision consolidates all owner-approved 0%-phase amendments, including AI/GPT migration and Account Independence / Deployment Portability. The standalone amendment remains only as an audit trail. Markdown/PDF integrity is tracked by the regenerated manifest; feature work must stop if substantive divergence is later introduced.
 
 This file exists to make the program lock explicit and immediately searchable for every developer, AI agent, CI-maintenance session and future chat.
 
@@ -85,7 +85,7 @@ Default discipline:
 
 A later WP must not be treated as complete merely because code exists. Completion requires its defined exit gate and required integration evidence.
 
-Before the first feature-development WP starts, the owner-approved mandatory amendments recorded during the 0% planning phase must be consolidated into the canonical paired Master Plan artifacts and their hashes regenerated.
+Before the first feature-development WP starts, accepted `main` must contain this consolidated canonical paired Master Plan, its regenerated integrity manifest, a green plan-readiness audit and exact-head CI.
 
 ## 5. Money and safety boundary
 
@@ -110,13 +110,13 @@ When V10 implementation begins, use this authority order:
 1. accepted `main`;
 2. `AGENTS.md`;
 3. this program-lock file;
-4. owner-approved mandatory V10 amendments referenced by this Program Lock, currently including `OMNI_CIO_V10_ACCOUNT_INDEPENDENCE_AMENDMENT.md`;
-5. the paired canonical V10 program: `OMNI_CIO_V10_MASTER_PLAN.md` + `Omni-CIO_V10_Master_Plan_RU.pdf` after mandatory-amendment consolidation;
-6. `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`;
+4. the paired canonical V10 program: `OMNI_CIO_V10_MASTER_PLAN.md` + `Omni-CIO_V10_Master_Plan_RU.pdf`;
+5. `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`;
+6. historical amendment/audit records, including `OMNI_CIO_V10_ACCOUNT_INDEPENDENCE_AMENDMENT.md`;
 7. relevant V10 architecture/runbook files created by the current work package;
 8. current PR/CI evidence.
 
-If the Markdown and PDF ever differ in substantive program content, or a mandatory amendment has not yet been consolidated before feature implementation, V10 feature development must stop until the discrepancy is resolved through an owner-reviewed documentation PR. Neither artifact may be silently edited to change scope.
+If the Markdown and PDF ever differ in substantive program content, V10 feature development must stop until the discrepancy is resolved through an owner-reviewed documentation PR and regenerated integrity manifest. Neither artifact may be silently edited to change scope.
 
 Historical V9 issues, PRs and old chat remain audit/context evidence and cannot override the accepted V10 program.
 
@@ -134,3 +134,16 @@ In addition to the existing Definition of Done, final V10 acceptance requires pr
 - the account-independence/portability rehearsal defined by the mandatory amendment is green.
 
 Until then, no successor version is authorized.
+
+
+## 8. Final planning-readiness invariant
+
+Before `START V10`, accepted `main` must prove:
+
+- canonical Markdown/PDF are synchronized and SHA-256 tracked;
+- weights A-J are 5/9/12/14/14/8/18/8/7/5 = 100%;
+- Account Independence and AI/GPT migration are inside the canonical plan;
+- disk-at-rest, RPO/RTO, Web TLS/auth, runtime update, time-sync and logging/privacy requirements are explicit;
+- `OMNI_CIO_V10_PLAN_READINESS_AUDIT.md` has no open planning blocker;
+- exact-head Regression Shield/security are green;
+- plan is merged to `main` while V10 implementation progress remains 0%.
