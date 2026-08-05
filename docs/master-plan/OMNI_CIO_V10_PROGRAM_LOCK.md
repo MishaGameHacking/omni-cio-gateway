@@ -2,17 +2,33 @@
 
 Status: **OWNER-APPROVED PROGRAM / DEVELOPMENT NOT STARTED**  
 Baseline: **Omni-CIO v9.0.0 — COMPLETE / PROTECTED**  
-Canonical V10 plan PDF: `docs/master-plan/Omni-CIO_V10_Master_Plan_RU.pdf`
+Searchable canonical plan: `docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.md`  
+Owner-readable PDF: `docs/master-plan/Omni-CIO_V10_Master_Plan_RU.pdf`  
+Integrity manifest: `docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.sha256`
 
 ## 1. Authority
 
 The owner has approved Omni-CIO V10 as the next and only feature-development program after the completed V9 program.
 
-The canonical detailed work plan is the PDF listed above. This file exists to make the program lock explicit and searchable for every developer, AI agent, CI-maintenance session and future chat.
+The canonical detailed program is stored as a paired artifact:
+
+- `OMNI_CIO_V10_MASTER_PLAN.md` is the searchable source for developers, AI agents, code review and future automation;
+- `Omni-CIO_V10_Master_Plan_RU.pdf` is the rendered owner-readable copy of that approved program;
+- `OMNI_CIO_V10_MASTER_PLAN.sha256` records integrity fingerprints for both files.
+
+The current PDF SHA-256 is:
+
+`cb6018fa4816850e86509de9470b9cd45308216d7d8b910bb4036cacbb017b84`
+
+The current Markdown SHA-256 is:
+
+`2bb63791e7564b2df32563f23d5bf425d3ede7a67f645e7420f24aaf53078c0c`
+
+This file exists to make the program lock explicit and immediately searchable for every developer, AI agent, CI-maintenance session and future chat.
 
 ## 2. No implementation yet
 
-This commit/PR does **not** start V10 feature development. It only records the approved plan and locks future scope.
+Recording and approving the V10 program does **not** start V10 feature development. It only records the approved plan and locks future scope.
 
 V10 implementation may begin only after a new explicit owner instruction to start V10 development.
 
@@ -67,15 +83,17 @@ When V10 implementation begins, use this authority order:
 1. accepted `main`;
 2. `AGENTS.md`;
 3. this program-lock file;
-4. `docs/master-plan/Omni-CIO_V10_Master_Plan_RU.pdf`;
+4. the paired canonical V10 program: `OMNI_CIO_V10_MASTER_PLAN.md` + `Omni-CIO_V10_Master_Plan_RU.pdf`;
 5. `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`;
 6. relevant V10 architecture/runbook files created by the current work package;
 7. current PR/CI evidence.
+
+If the Markdown and PDF ever differ in substantive program content, V10 feature development must stop until the discrepancy is resolved through an owner-reviewed documentation PR. Neither artifact may be silently edited to change scope.
 
 Historical V9 issues, PRs and old chat remain audit/context evidence and cannot override the accepted V10 program.
 
 ## 7. Completion rule
 
-V10 is not complete until the canonical program reaches **100%** and the final V10 Definition of Done is satisfied.
+V10 is not complete until the canonical program reaches **100%** and the final V10 Definition of Done is satisfied and owner-accepted.
 
 Until then, no successor version is authorized.
