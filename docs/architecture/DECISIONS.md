@@ -1,54 +1,81 @@
 # Архитектурные решения Omni-CIO
 
-## ADR-001 — Gateway остаётся read-only
+Этот файл фиксирует действующие решения для applied Omni-CIO v9.0.0. Исторические решения не удаляются молча: если правило изменилось reviewed program/release, оно помечается superseded.
 
-**Статус:** принято.
+## ADR-001 — Production read-only credential remains read-only; Gateway has isolated contours
 
-User-facing Gateway не содержит broker write methods. Контроль: GET-only routes, `trading_methods=false`, code guards and Regression Shield.
+**Статус:** supersedes прежнее «весь Gateway GET-only».
+
+Production `TINVEST_TOKEN` остаётся read-only и никогда не используется как Real fallback. Gateway теперь содержит три явно изолированных контура:
+
+1. baseline read-only;
+2. optional virtual Sandbox;
+3. optional exact-owner-confirmed Real BUY/SELL.
+
+Conditional POST Actions допустимы только в reviewed Sandbox/Real surfaces и не означают общий broker-write доступ. Legacy marker `trading_methods=false` сохраняется. Transfer/withdrawal, margin/short, MARKET/BESTPRICE, stop/replace/async и autonomous recurring real execution не входят в reviewed surface.
 
 ## ADR-002 — Production entrypoint остаётся `app:app`
 
 **Статус:** принято.
 
-Render и GPT Actions зависят от стабильного FastAPI app. `app_v371.py`, `app_v360.py` и `main.py` остаются, пока `app.py` импортирует их. Консолидация wrappers требует отдельной compatibility migration.
+Render и GPT Actions зависят от стабильного FastAPI app. `app_v371.py`, `app_v360.py` и `main.py` остаются, пока `app.py` импортирует их. Консолидация wrappers требует отдельной compatibility migration и полного Regression Shield.
 
-## ADR-003 — Единственный пользовательский интерфейс — Custom GPT
-
-**Статус:** принято.
-
-Не поддерживать параллельный frontend/publishing transport как отдельный продукт без нового решения владельца. Текущий UI — `Omni-CIO API | Управляющий и аналитик v8.4` внутри ChatGPT.
-
-## ADR-004 — GitHub является источником кода и эталонной конфигурации
+## ADR-003 — Единственный пользовательский интерфейс — существующий Custom GPT v9.0.0
 
 **Статус:** принято.
 
-`main` + tests/contracts являются источником runtime truth. `gpt/` содержит воспроизводимый эталон GPT configuration.
+Поддерживается один GPT:
 
-GitHub не является live storage фактически применённых GPT Editor settings: Instructions/Knowledge/Bearer secret после изменений применяются вручную и проверяются Preview.
+`Omni-CIO API | Управляющий и аналитик v9.0.0`.
 
-## ADR-005 — Один production Instructions file
+Он был upgraded in place и owner-accepted 2026-08-05. Не создавать duplicate GPT/frontend/Gateway/scheduler как recovery или maintenance shortcut.
 
-**Статус:** принято.
+Protected rollback UI/Instructions v8.6.1 остаются в GitHub как recovery evidence, а не как current applied version.
 
-Production GPT Editor использует только:
-
-`gpt/CUSTOM_GPT_INSTRUCTIONS_V8_4_1.txt`
-
-Параллельные compact/canonical Instructions copies не поддерживаются, чтобы не создавать конфликтующие источники истины.
-
-## ADR-006 — Один setup entrypoint
+## ADR-004 — GitHub является canonical code/config/recovery source, но не external applied-state store
 
 **Статус:** принято.
 
-Настройка, восстановление и update flow начинаются с `gpt/SETUP_INDEX.md`. Отдельные competing setup guides не создаются, если информацию можно добавить туда или в disaster-recovery runbook.
+`main` + tests/contracts являются runtime/recovery source of truth. `gpt/` содержит applied/recovery GPT configuration.
 
-## ADR-007 — Secrets остаются вне GitHub
+GitHub не нажимает GPT Editor `Update`, не хранит secret values и не синхронизирует Render/GPT/Upstash/QStash автоматически. External applied-state claims требуют owner evidence.
+
+## ADR-005 — Один applied Instructions payload + один protected rollback payload
+
+**Статус:** supersedes v8.4 production-file decision.
+
+Applied GPT Editor Instructions:
+
+`gpt/CUSTOM_GPT_INSTRUCTIONS_V9_0_0_COMPACT.txt`
+
+Protected rollback Instructions:
+
+`gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt`
+
+Нельзя создавать competing production Instructions copies. Исторические engineering/reference files не считаются applied payload.
+
+## ADR-006 — Один setup/recovery entrypoint
 
 **Статус:** принято.
 
-`TINVEST_TOKEN` хранится только в Render Environment. `GATEWAY_API_KEY` хранится в Render и как GPT Action Bearer secret. GitHub не содержит значения secrets, full account IDs или private broker payloads.
+Настройка, восстановление и future update flow начинаются с `gpt/SETUP_INDEX.md`. Не создавать competing setup/audit guides, если информацию можно обновить в существующем canonical document.
 
-## ADR-008 — Production Gateway endpoint единственный
+## ADR-007 — Secrets остаются вне GitHub и разделены по ролям
+
+**Статус:** принято.
+
+Отдельные external roles:
+
+- production read-only broker credential;
+- Sandbox broker credential;
+- Real execution credential без transfer access;
+- Gateway Bearer credential;
+- Upstash durable-state credentials;
+- Watchtower/QStash credentials.
+
+GitHub хранит только env/role names и placeholders, не values/full account IDs/private broker payloads.
+
+## ADR-008 — Один production Gateway endpoint
 
 **Статус:** принято.
 
@@ -56,48 +83,101 @@ Canonical service:
 
 `https://omni-cio-gateway.onrender.com`
 
-GPT Actions не должны ссылаться на старые альтернативные Render service names.
+OpenAPI authority:
 
-## ADR-009 — Portfolio management is tool-first
+`https://omni-cio-gateway.onrender.com/openapi.json`
 
-**Статус:** принято.
+Не поддерживать старые/альтернативные production service names.
 
-До содержательного portfolio advice GPT выполняет:
-
-`getPortfolioSnapshot → getCashLiquiditySnapshot → getPortfolioAnalytics`
-
-Exact-action user request имеет приоритет и не запускает другие Actions.
-
-## ADR-010 — Fresh market gate before exact sizing
+## ADR-009 — Portfolio management is tool-first; exact Action isolation preserved
 
 **Статус:** принято.
 
-Если рынок не готов, нет fresh best ask или доступен stale last price, exact personalized lot sizing блокируется. Technical affordability не превращается автоматически в recommendation.
+Baseline portfolio chain:
+
+`getPortfolioSnapshot → getCashLiquiditySnapshot → getPortfolioAnalytics → analysis`.
+
+Exact-action request имеет приоритет и не расширяется. Portfolio management/advisory wording не является Real authorization.
+
+## ADR-010 — Fresh/data-quality gates precede exact market-sensitive sizing or execution
+
+**Статус:** принято.
+
+Stale/incomplete/contradictory data не выдаются как exact executable truth. Last price не является гарантией исполнения. Technical capacity/free cash не превращаются автоматически в personal sizing.
+
+Real preflight дополнительно требует supported identity, fresh trusted market, own-funds BUY/own-position SELL, exact price step, limits и durable state.
 
 ## ADR-011 — Moscow is user-visible timezone
 
 **Статус:** принято.
 
-User-visible dates/times показываются по `Europe/Moscow`/MSK. Market open/closed определяется broker/Gateway trading status, а не только часами.
+User-visible dates/times используют `Europe/Moscow`/MSK. Trading readiness определяется broker/Gateway state, а не только часами.
 
 ## ADR-012 — CI/dependency supply chain fail-closed
 
 **Статус:** принято.
 
-- human-edited dependencies live in `.in` constraints;
-- lock files pin exact transitive versions + SHA-256 hashes;
+- human-edited direct dependencies live in `requirements.in` / `requirements-dev.in`;
+- generated locks pin exact transitive versions + SHA-256 hashes;
+- generated Windows projections are CI artifacts and are not committed;
 - external GitHub Actions pin full commit SHA;
-- Regression Shield blocks merge on contract/quality/security failures;
-- generated locks are not hand-edited.
+- Regression Shield blocks merge on lock/contract/quality/security failure;
+- Dependabot PR is a proposal, not merge authorization;
+- known-incompatible toolchain versions are held narrowly/documented rather than weakening a gate.
 
-## ADR-013 — Master plan сохраняется как исходная спецификация этого проекта
-
-**Статус:** принято.
-
-`docs/master-plan/` не является мусором: он описывает развитие Omni-CIO. Однако будущие цели из master plan не считаются реализованными без current code, tests and acceptance.
-
-## ADR-014 — Repository cleanup must preserve real dependencies
+## ADR-013 — v9 master plan remains completed specification/audit trail
 
 **Статус:** принято.
 
-Перед удалением файла проверяются imports, tests, configuration and runtime references. Исторически названный файл не считается мусором автоматически. Cleanup changes проходят через branch/PR/Regression Shield.
+`docs/master-plan/OMNI_CIO_V9_PORTFOLIO_AUTOPILOT_PROGRAM.md` описывает owner-approved WP0–WP15. Program complete; current code/tests/status determine active implementation. Master-plan files remain recovery/history evidence, not an active queue of unfinished work.
+
+## ADR-014 — Repository cleanup must preserve real dependencies and delete one-time artifacts after proof
+
+**Статус:** принято.
+
+Перед удалением файла проверяются imports, tests, CI, configuration and runtime references. Versioned filenames are not automatically legacy.
+
+One-time bootstrap payloads/generated CI projections are removed once their workflow/references are retired and a regression guard prevents return.
+
+## ADR-015 — Effective production OpenAPI is GPT Action authority
+
+**Статус:** принято.
+
+Internal WP1–WP14 modules are not automatically GPT Actions. GPT может вызвать/утверждать server execution только для operationId, реально опубликованного effective `/openapi.json` и подтверждённого returned evidence.
+
+Reviewed Real operationIds:
+
+- `getRealTradingStatus`;
+- `prepareRealTrade`;
+- `executeRealTrade`;
+- `getRealOrderState`.
+
+Sandbox outputs всегда virtual. Watchtower scheduler/callback routes hidden from GPT OpenAPI.
+
+## ADR-016 — Real execution requires explicit owner confirmation and broker reconciliation
+
+**Статус:** принято.
+
+Real lifecycle:
+
+`fresh facts → immutable proposal/plan context → exact owner confirmation in NEW turn → one idempotent submit → broker reconciliation`.
+
+Ambiguous possible-submit never auto-retries. `submitted` != `filled` without broker evidence. Protected v8.6.1 first-real-order acceptance remains 100% complete and rollback evidence remains valid.
+
+## ADR-017 — Live acceptance validates reviewed authority, not obsolete production-wide GET-only state
+
+**Статус:** принято.
+
+Scheduled live acceptance performs public GETs only to `/health` and `/openapi.json`. It verifies exact reviewed baseline/Sandbox/Real allowlists, methods/paths, consequential markers and forbidden surfaces without sending broker/Gateway credentials or invoking a protected Action.
+
+The baseline GET-only release contract remains useful for safe-mode/unit verification, but is not the production-wide scheduled authority check after reviewed v9 execution contours exist.
+
+## ADR-018 — v9 feature program complete; repository is in controlled maintenance mode
+
+**Статус:** принято.
+
+WP0–WP15 repository delivery and owner external acceptance are complete. Current changes are maintenance/security/dependency/recovery work only unless the owner explicitly approves a new program.
+
+Every significant maintenance change still follows:
+
+`branch → focused tests/guards → exact-head Regression Shield/security → zero unresolved threads → squash merge`.
