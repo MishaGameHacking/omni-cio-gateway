@@ -2,7 +2,7 @@
 
 Дата актуализации: 2026-08-05
 
-Этот файл хранит короткую долговременную память **одного проекта**: одного Custom GPT Omni-CIO и одного production Gateway для T-Invest.
+Этот файл хранит короткую долговременную память **одного проекта**: текущего Custom GPT Omni-CIO / production Gateway V9 и последовательно развиваемой автономной платформы V10.
 
 ## 1. Product identity
 
@@ -42,6 +42,8 @@ Omni-CIO Gateway (`app:app`, Render)
 
 GitHub stores code plus canonical applied/recovery configuration. Render runs the Gateway. GPT Editor holds the applied Instructions/Knowledge/Action authentication and is not synchronized automatically by GitHub.
 
+This remains the accepted runtime while V10 is developed. V10 does not silently replace any V9 runtime boundary before the relevant V10 work package passes its Exit Gate.
+
 ## 3. Protected v8.6.1 rollback baseline
 
 Protected release commit:
@@ -66,7 +68,7 @@ Canonical owner-approved / program-locked roadmap:
 
 Tracking epic #176 is complete. WP0–WP15 repository delivery and owner external acceptance are complete.
 
-Exact current state: `knowledge/16_CURRENT_PROGRAM_STATUS.md`.
+Exact current V9 runtime state: `knowledge/16_CURRENT_PROGRAM_STATUS.md`.
 
 ## 5. v9 capability stack
 
@@ -147,7 +149,7 @@ For personal recommendations:
 - stale market cannot be presented as exact executable sizing;
 - clean bond price and accrued interest remain distinct.
 
-Critical constraints and calculations belong in deterministic code/server contracts where implemented; GPT reasoning never overrides server enforcement.
+Critical constraints and calculations belong in deterministic code/server contracts where implemented; GPT/AI reasoning never overrides server enforcement.
 
 ## 9. Applied GPT configuration / recovery
 
@@ -178,11 +180,15 @@ GitHub cannot press `Update` in GPT Editor or supply external secret values. The
 
 Future configuration changes still require the same rule: repository review first, then owner-controlled Preview/Update on the **same** GPT when external state changes are required.
 
+V10 does not decommission the current Custom GPT until the explicit V10 parity/decommission gate passes and the owner accepts that transition.
+
 ## 11. Secrets / external roles
 
 Canonical role/env-name source: `gpt/SECRETS_AND_RENDER.md`.
 
 External roles include read-only broker, Sandbox broker, separate real-execution broker, Gateway bearer, Upstash durable-state and Watchtower/QStash credentials. Values remain outside GitHub/chat/Knowledge.
+
+Future V10 Telegram, local AI/runtime and encryption secret values also remain outside GitHub and outside ordinary developer access.
 
 ## 12. Runtime compatibility warning
 
@@ -196,12 +202,42 @@ Significant changes:
 
 Dependency updates are proposals, not automatic authorization. Generated hash locks remain derived from their `.in` sources and are verified by CI. Known-incompatible tooling is held narrowly rather than weakening the gate.
 
-## 14. Current readiness
+During V10, begin the next work package only after the current WP Exit Gate is accepted on `main`.
+
+## 14. Current V9 readiness
 
 - applied Custom GPT: **v9.0.0 owner-accepted**;
 - production read-only: accepted;
 - Sandbox: accepted/conditional;
 - real BUY/SELL v1: accepted and protected;
 - WP0–WP15: complete;
-- repository mode: controlled maintenance;
+- repository/runtime mode: controlled maintenance while V10 is built;
 - protected v8.6.1 rollback: retained and recoverable.
+
+## 15. V10 active program
+
+Canonical V10 program:
+
+`docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.md`
+
+Program Lock:
+
+`docs/master-plan/OMNI_CIO_V10_PROGRAM_LOCK.md`
+
+Current progress authority:
+
+`knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`
+
+Owner issued explicit **`START V10`** on 2026-08-05. Start evidence:
+
+`docs/master-plan/OMNI_CIO_V10_START_RECORD.md`
+
+Current authorized WP:
+
+**WP0 — V10 Program Lock / Architecture Freeze verification.**
+
+Current accepted V10 progress remains **0% until WP0 Exit Gate is merged**. After WP0 acceptance, Block A becomes 5% complete and WP1 is next.
+
+V10 target architecture is GitHub-controlled and account-independent: Lenovo is the first replaceable Personal runtime node; Web, Telegram and the future AI Copilot share one Core; AI has no direct broker-write authority; current GPT knowledge/configuration is migrated and retained until parity acceptance; Real execution remains deterministic, explicit-owner-confirmed, immutable, idempotent and reconciled.
+
+The planned one-time Lenovo setup is deliberately later in Block C, after WP1–WP4 establish repository architecture, toolchain, CI and release/deployment contracts.
