@@ -1,5 +1,5 @@
-name: Ошибка gateway
-description: Сообщить о воспроизводимой ошибке без секретов и персональных данных
+name: Ошибка Omni-CIO
+description: Сообщить о воспроизводимой ошибке Custom GPT/Gateway без секретов и персональных данных
 title: "[Bug] "
 labels: [bug]
 assignees: [Misha2304]
@@ -7,42 +7,48 @@ body:
   - type: markdown
     attributes:
       value: |
-        Не вставляйте токены, API-ключи, полный номер счёта, Authorization headers или реальные брокерские отчёты.
+        Current applied state: existing Omni-CIO GPT v9.0.0 + production Gateway `app:app`. Не вставляйте токены, API-ключи, Authorization headers, полный номер счёта, private positions/operations/reports или secret exports. Для Real/Sandbox ошибок используйте минимальный безопасный reproduction без нового live submit, если он не является отдельно owner-authorized acceptance action.
   - type: input
     id: version
     attributes:
       label: Версия
-      description: Значение `version` из `/health` или ответа Action.
+      description: Значение `version` из `/health`, ответа Action или applied GPT version.
     validations:
       required: true
   - type: input
     id: commit
     attributes:
       label: Commit SHA
-      description: `build.commit_sha`, если доступен.
+      description: `build.commit_sha` / deployed SHA, если доступен.
   - type: dropdown
     id: component
     attributes:
       label: Компонент
       options:
-        - gateway health / connection
-        - portfolio snapshot
-        - market data
-        - portfolio analytics
-        - cash and liquidity
-        - purchase capacity
+        - gateway health / connection / auth
+        - portfolio snapshot / market valuation
+        - market data / instrument identity
+        - portfolio analytics / risk
+        - cash / liquidity / purchase capacity
         - operations analytics
-        - broker report
-        - OpenAPI / GPT Actions
+        - broker report reconciliation
+        - policy / universe / research / optimizer / plan
+        - Sandbox execution
+        - Real execution readiness / prepare / execute / reconciliation
+        - Watchtower / QStash / durable state
+        - decision journal / evaluation
+        - OpenAPI / Custom GPT Actions
+        - GPT configuration / Knowledge / recovery
         - Render deployment
-        - documentation
+        - CI / dependencies / security
+        - documentation / repository hygiene
     validations:
       required: true
   - type: textarea
     id: steps
     attributes:
       label: Шаги воспроизведения
-      description: Используйте только маскированные и фиктивные значения.
+      description: Используйте только маскированные и фиктивные значения. Не публикуйте exact confirmation phrase/token/private payload, если это может раскрыть чувствительные данные.
     validations:
       required: true
   - type: textarea
@@ -57,12 +63,19 @@ body:
       label: Фактическое поведение
     validations:
       required: true
+  - type: textarea
+    id: source_of_truth
+    attributes:
+      label: С чем сравнивали
+      description: Укажите relevant canonical doc/contract, effective OpenAPI, accepted main behavior или runbook. Старый issue/PR/comment сам по себе не является current source of truth.
   - type: checkboxes
     id: safety
     attributes:
       label: Проверка безопасности
       options:
-        - label: В сообщении нет секретов и полного номера счёта.
+        - label: В сообщении нет секретов, Authorization headers, полного account ID или private broker payloads.
           required: true
-        - label: Ошибка воспроизводится без совершения сделки.
+        - label: Reproduction не требует transfer/withdrawal, margin/short или иного запрещённого authority.
+          required: true
+        - label: Если ошибка касается Real execution, duplicate submit не выполнялся; ambiguous possible-submit оставлен на reconciliation.
           required: true
