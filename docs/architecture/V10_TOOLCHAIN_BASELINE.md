@@ -1,218 +1,255 @@
 # Omni-CIO V10 — Toolchain and Dependency Baseline
 
-Status: **WP2 IN PROGRESS — compatibility candidates, not final pins**  
-Runtime effect: **none until WP2 Exit Gate is accepted**  
-Protected production baseline: **V9 `app:app` / Python 3.12.10 compatibility remains unchanged during evaluation**
+Status: **WP2 SELECTED BASELINE / FINAL EXIT GATE PENDING**  
+Runtime effect: **none until later runtime migration packages**  
+Protected production baseline: **V9 `app:app` remains unchanged on its accepted runtime while V10 tooling is prepared**  
+Machine-readable authority: `docs/architecture/V10_TOOLCHAIN_BASELINE.json`
 
 ## 1. Purpose
 
-WP2 selects one reproducible development/toolchain baseline before Lenovo bootstrap and before Web/Telegram/AI product implementation.
+WP2 freezes one reproducible development/toolchain baseline before Lenovo bootstrap and before Web/Telegram/AI product implementation.
 
-The rule is evidence-first:
+Selection rule:
 
 `official supported release -> clean compatibility build -> deterministic lock -> security/license/SBOM checks -> exact-head V9 regression -> accepted pin`.
 
-Newest is not automatically safest. Existing is not automatically acceptable forever.
+Newest was not accepted merely because it was newest. The selected versions below passed project-specific compatibility evidence.
 
-## 2. Current proven backend baseline
+## 2. Selected V10 baseline
 
-Accepted V9 currently uses:
+### Backend
 
-- Python `3.12.10` in the Windows CI bootstrap;
-- FastAPI `0.141.1`;
-- Uvicorn `0.51.0`;
-- HTTPX `0.28.1`;
-- `t-tech-investments==1.49.3`;
-- root `requirements.in` / `requirements-dev.in` plus SHA-256 hash-locked generated requirements files;
-- stable production entrypoint `app:app`.
+- Python: **3.14.6**;
+- FastAPI: **0.141.1**;
+- Uvicorn: **0.51.0**;
+- HTTPX: **0.28.1**;
+- T-Tech Investments SDK: **1.49.3**;
+- Python direct dependency sources: root `requirements.in` / `requirements-dev.in`;
+- generated Python locks: root `requirements.txt` / `requirements-dev.txt`, exact and SHA-256 hash locked.
 
-This baseline is proven for compatibility. It is **not yet accepted as the long-term V10 Python baseline**.
+### Frontend toolchain
 
-## 3. Fresh release review at WP2 start
+- Node.js: **24.18.0 LTS**;
+- npm: **11.16.0**;
+- npm lock format: **package-lock v3**;
+- React: **19.2.8**;
+- React DOM: **19.2.8**;
+- Vite: **8.1.5**;
+- `@vitejs/plugin-react`: **6.0.4**;
+- TypeScript: **7.0.2**;
+- `@types/node`: **24.13.3**;
+- `@types/react`: **19.2.17**;
+- `@types/react-dom`: **19.2.3**.
 
-Review date: `2026-08-05`.
+The accepted WP2 frontend fixture lives under `tests/toolchain/frontend/`. It proves the toolchain only; it is **not** the Omni-CIO Web product and contains no portfolio/business/execution implementation.
+
+### Database compatibility target
+
+- PostgreSQL major: **18**;
+- reviewed/tested patch baseline: **18.4**.
+
+WP2 freezes the supported version policy only. PostgreSQL runtime installation/configuration remains Block C and schemas/data services remain later V10 work packages.
+
+## 3. Why Python 3.14.6 was selected
+
+The accepted V9 Windows CI bootstrap uses Python `3.12.10`. Official Python release guidance states that 3.12.10 was the final regular 3.12 bugfix release with binary installers; later 3.12 security releases are source-only. Therefore WP2 evaluated newer Windows-installable Python lines rather than freezing the future V10 platform to the old compatibility interpreter.
+
+Official review sources:
+
+- `https://www.python.org/downloads/release/python-31210/`;
+- `https://www.python.org/doc/versions/`;
+- `https://www.python.org/downloads/release/python-3146/`.
+
+WP2 clean Windows compatibility run `31050239756` tested:
+
+- Python `3.12.10` — **SUCCESS**;
+- Python `3.13.14` — **SUCCESS**;
+- Python `3.14.6` — **SUCCESS**.
+
+For each candidate the workflow proved:
+
+- exact interpreter identity;
+- strict Windows projection of the existing hash-locked dependency set;
+- dependency installation including the broker SDK;
+- repository structure guard;
+- V10 repository-boundary guard;
+- source compilation;
+- stable `app:app` import and `/health` contract;
+- the full deterministic pytest suite.
+
+Because `3.14.6` passed the same protected project gates and is the newer supported maintenance line, WP2 selects **Python 3.14.6 for future V10 development/toolchain work**.
+
+This does **not** upgrade the current Render/V9 production runtime in WP2. Runtime migration happens only in the work package that owns that deployment boundary.
+
+## 4. Concurrency portability defect found during evaluation
+
+The initial 3.13/3.14 matrix exposed two tests whose concurrency assertions accidentally depended on thread scheduling order. The production evaluators correctly reject chronologically out-of-order events, but the tests submitted increasing microsecond timestamps concurrently and assumed workers would acquire the lock in submission order.
+
+WP2 corrected only the concurrency tests:
+
+- ACRA rating-actions alert policy;
+- MOEX ISS quote alert policy.
+
+The concurrency tests now use equal timestamps, proving serialization/fire-once behavior without assuming scheduler ordering. Separate explicit out-of-order tests remain unchanged and continue to prove fail-closed temporal ordering.
+
+No production alerting logic, broker authority or execution behavior was weakened.
+
+## 5. Node/npm/frontend selection evidence
+
+Node.js release policy recommends Active/Maintenance LTS for production applications. WP2 therefore selected Node 24 LTS rather than a Current line.
+
+Official sources:
+
+- `https://nodejs.org/en/about/previous-releases`;
+- `https://nodejs.org/en/blog/release/v24.18.0`.
+
+The clean Windows frontend job in run `31050239756` proved:
+
+- exact Node `24.18.0`;
+- exact npm `11.16.0`;
+- deterministic generated package-lock v3;
+- `npm ci` reproduction;
+- strict TypeScript typecheck;
+- Vite production build of the non-product smoke fixture;
+- `npm audit --audit-level=high`;
+- CycloneDX SBOM generation.
+
+The successful candidate lock was reviewed and committed as:
+
+`tests/toolchain/frontend/package-lock.json`.
+
+Accepted CI no longer generates a lock as its source of truth; it installs from the committed lock and verifies that the selected npm version would not change it.
+
+## 6. Frontend dependency and license policy
+
+Direct frontend/toolchain dependencies use exact versions. `latest`, caret/tilde ranges, git URLs, file references and arbitrary HTTP sources are forbidden for direct V10 toolchain dependencies.
+
+The committed lock is restricted to the reviewed npm registry:
+
+`https://registry.npmjs.org/`
+
+Allowed licenses observed in the locked frontend dependency tree and accepted for this Personal V10 toolchain are:
+
+- `0BSD`;
+- `Apache-2.0`;
+- `BSD-3-Clause`;
+- `ISC`;
+- `MIT`;
+- `MPL-2.0`.
+
+The permanent guard is:
+
+`scripts/check_v10_toolchain_baseline.py`
+
+It fails if:
+
+- required direct Python dependencies stop matching the selected baseline;
+- `requirements.in` introduces a non-exact direct pin;
+- frontend direct versions become floating;
+- Node/npm/package-manager identity drifts;
+- package-lock root metadata diverges from `package.json`;
+- package-lock version changes unexpectedly;
+- an npm package resolves outside the approved registry;
+- a locked npm dependency lacks license metadata;
+- a locked npm dependency uses a license outside the reviewed allowlist;
+- the PostgreSQL baseline drifts silently.
+
+## 7. SBOM / vulnerability policy
+
+WP2 CI produces non-secret CycloneDX SBOM evidence for both ecosystems:
 
 ### Python
 
-Official Python release sources show:
+`pip-audit` runs against the strict Windows projection of the hash-locked development dependency set and:
 
-- Python `3.12.10` was the final regular 3.12 bugfix release with Windows binary installers;
-- later Python 3.12 security releases are source-only and the 3.12 line is security-fixes-only until October 2028;
-- Python `3.13.14` and `3.14.6` are current supported maintenance releases.
-
-Sources:
-
-- `https://www.python.org/downloads/release/python-31210/`
-- `https://www.python.org/downloads/release/python-31213/`
-- `https://www.python.org/downloads/release/python-31314/`
-- `https://www.python.org/doc/versions/`
-
-Decision rule: WP2 must test newer Windows-installable Python candidates before deciding whether to retain 3.12.10 for V10.
-
-### FastAPI / current broker SDK
-
-Current FastAPI/Uvicorn metadata supports newer Python versions. `t-tech-investments` declares Python `>=3.8.1,<4.0.0`, but its published classifiers explicitly list through Python 3.12. Therefore a Python 3.13/3.14 move requires actual project compatibility evidence; metadata range alone is insufficient for this broker-critical system.
-
-Sources:
-
-- `https://pypi.org/project/fastapi/`
-- `https://pypi.org/project/uvicorn/0.51.0/`
-- `https://pypi.org/project/t-tech-investments/`
-
-### Node.js / npm
-
-Node.js `24.18.0` is current LTS (`Krypton`) and bundles npm `11.16.0`.
-
-Sources:
-
-- `https://nodejs.org/en/about/previous-releases`
-- `https://nodejs.org/en/blog/release/v24.18.0`
-
-Candidate:
-
-- Node.js `24.18.0`;
-- npm `11.16.0`;
-- npm `package-lock.json` lockfile v3 unless the compatibility build exposes a blocker.
-
-V10 does not select Node Current v26 for the baseline because Node's own release guidance recommends production applications use Active/Maintenance LTS.
-
-### React / Vite / TypeScript
-
-Fresh official/package release evidence:
-
-- React stable line: `19.2`;
-- current React package patch observed at review: `19.2.8`;
-- Vite regular-patch stable line: `8.1`;
-- current Vite package patch observed at review: `8.1.5`;
-- `@vitejs/plugin-react`: `6.0.4`;
-- TypeScript `7.0` is a stable new native compiler generation; current package patch observed at review: `7.0.2`.
-
-Sources:
-
-- `https://react.dev/versions`
-- `https://www.npmjs.com/package/react`
-- `https://vite.dev/releases`
-- `https://www.npmjs.com/package/vite`
-- `https://www.npmjs.com/package/@vitejs/plugin-react`
-- `https://devblogs.microsoft.com/typescript/announcing-typescript-7-0/`
-
-Candidate toolchain for a **non-product smoke project only**:
-
-- React `19.2.8`;
-- React DOM `19.2.8`;
-- Vite `8.1.5`;
-- `@vitejs/plugin-react` `6.0.4`;
-- TypeScript `7.0.2`.
-
-The Web product itself is still blocked until its later V10 work package. WP2 may create only the minimum deterministic fixture needed to prove the frontend toolchain and lock format.
-
-### PostgreSQL
-
-PostgreSQL `18.4` is the current supported stable PostgreSQL 18 release at WP2 start. PostgreSQL 19 is still development/beta and is not a V10 Personal baseline candidate.
-
-Sources:
-
-- `https://www.postgresql.org/docs/release/18.4/`
-- `https://www.postgresql.org/docs/current/`
-
-Candidate baseline: PostgreSQL major `18`, tested patch baseline `18.4`. Runtime installation occurs later in Block C; WP2 freezes compatibility/version policy only.
-
-## 4. Version-selection principles
-
-### Backend Python
-
-A V10 Python pin must satisfy all of:
-
-1. official supported Windows distribution or a separately reviewed reproducible runtime artifact;
-2. current hash-locked dependencies install cleanly;
-3. `app:app` imports and health contract remain unchanged;
-4. full regression suite passes;
-5. broker SDK import/client compatibility passes;
-6. dependency audit/SAST/secret scan remain green;
-7. no hidden reliance on an original developer machine.
-
-Python candidates to evaluate in WP2:
-
-- `3.13.14` — primary migration candidate;
-- `3.14.6` — forward candidate;
-- `3.12.10` — compatibility control only.
-
-WP2 will select the highest supported candidate that satisfies broker/runtime compatibility without weakening gates. If neither newer candidate passes, retaining 3.12.10 requires a documented security/update mitigation because later 3.12 security releases are source-only.
+- fails on known audited dependency vulnerabilities according to the existing strict policy;
+- generates `python-sbom.cdx.json` in CycloneDX JSON format.
 
 ### Frontend
 
-The frontend toolchain baseline must:
+The selected npm lock is audited with:
 
-- use Node LTS, not Current;
-- use exact package versions in source control;
-- commit a deterministic npm lockfile before WP2 acceptance;
-- run `npm ci`, not floating `npm install`, in accepted CI;
-- run typecheck/build/audit against the lock;
-- contain no product portfolio logic during WP2.
+`npm audit --audit-level=high`
 
-### PostgreSQL
+and generates:
 
-WP2 freezes the major/stable patch policy. It does not install the DB on Lenovo and does not create production schemas before the later data/Core work packages.
+`frontend-sbom.cdx.json`
 
-## 5. Lock/source-of-truth policy
+through npm's lock-based CycloneDX SBOM command.
+
+SBOM artifacts are CI evidence only. They contain package/dependency metadata, not broker tokens, account IDs, portfolio data or other runtime secrets.
+
+## 8. Source-of-truth policy
 
 ### Python
 
-Canonical human-edited sources remain:
+Human-edited direct sources:
 
 - `requirements.in`;
 - `requirements-dev.in`.
 
-Canonical generated locks remain:
+Generated/verified locks:
 
 - `requirements.txt`;
 - `requirements-dev.txt`.
 
-Locks must remain exact and SHA-256 hashed. Generated Windows projection files remain ephemeral CI artifacts.
+Generated Windows projections remain ephemeral CI artifacts and are not committed.
 
 ### JavaScript
 
-Canonical WP2 source will be exact-version `package.json` plus committed `package-lock.json` generated by the accepted npm version. The package manager version is part of the toolchain identity.
+Human-edited direct source:
 
-No `latest`, caret (`^`) or tilde (`~`) range is accepted for V10 direct critical frontend/toolchain dependencies.
+`tests/toolchain/frontend/package.json`
 
-## 6. Dependency provenance / license / SBOM policy
+Committed deterministic lock:
 
-Before WP2 acceptance, CI must produce/check a non-secret dependency manifest containing at minimum:
+`tests/toolchain/frontend/package-lock.json`
 
-- ecosystem;
-- normalized package name;
-- exact resolved version;
-- direct/transitive classification where available;
-- license expression/declared license where available;
-- lock/source identity.
+Package manager identity:
 
-Minimum deny policy:
+`npm@11.16.0`
 
-- missing exact version for a critical direct dependency;
-- known high/critical vulnerability not explicitly blocked/mitigated by an accepted exception;
-- package with a denied/non-redistributable license for the intended use;
-- dependency sourced from an unreviewed registry/path;
-- generated lock mismatch.
+Accepted CI uses `npm ci` from the committed lock and checks lock reproducibility.
 
-The manifest/SBOM contains no secret values, account identifiers or private portfolio data.
+### Machine-readable V10 baseline
 
-## 7. CI design during WP2
+`docs/architecture/V10_TOOLCHAIN_BASELINE.json`
 
-WP2 introduces a GitHub-hosted Windows compatibility gate before Lenovo setup. It is intentionally separate from the existing protected self-hosted V9 Regression Shield.
+This JSON is intentionally paired with this explanatory document so CI can validate exact pins without parsing prose.
 
-Evaluation stages:
+## 9. PostgreSQL policy
 
-1. Python compatibility matrix on clean GitHub-hosted Windows;
-2. exact selected Python baseline;
-3. exact Node/npm bootstrap;
-4. deterministic non-product frontend fixture `npm ci` + typecheck + build;
-5. dependency manifest/license/audit checks;
-6. existing self-hosted Regression Shield/security on the same PR head.
+Official reviewed source:
 
-The compatibility matrix may be temporary during WP2. Accepted `main` keeps only the final selected baseline gate, not exploratory CI noise.
+`https://www.postgresql.org/docs/release/18.4/`
 
-## 8. Non-goals
+V10 selects PostgreSQL 18 as its stable major baseline with patch `18.4` as the reviewed WP2 reference. Future security/maintenance patch updates remain controlled dependency/runtime changes and require compatibility/recovery evidence; PostgreSQL 19 development/beta is not the Personal V10 baseline.
+
+## 10. Dependency maintenance
+
+Dependabot remains proposal-only:
+
+- Python ecosystem at repository root;
+- npm ecosystem at `/tests/toolchain/frontend` for the selected V10 frontend toolchain;
+- GitHub Actions at repository root.
+
+No Dependabot proposal is automatic merge authorization. Current-main exact-head compatibility/security evidence remains required.
+
+## 11. CI design after candidate selection
+
+Exploratory Python matrix evidence is retained in the WP2 PR/run history, but accepted workflow configuration keeps only the selected baseline:
+
+- clean GitHub-hosted Windows + Python `3.14.6`;
+- clean GitHub-hosted Windows + Node `24.18.0` / npm `11.16.0`;
+- machine-readable toolchain/dependency policy check;
+- committed-lock `npm ci` / lock reproducibility;
+- frontend typecheck/build/audit/SBOM;
+- Python full test/audit/SBOM;
+- existing self-hosted Regression Shield/security on the same PR head.
+
+The GitHub-hosted toolchain gate supplements the protected V9 Regression Shield; it does not replace or weaken it.
+
+## 12. Non-goals
 
 WP2 does not:
 
@@ -225,14 +262,16 @@ WP2 does not:
 - expand broker-write/Real authority;
 - retire the current Custom GPT.
 
-## 9. Exit Gate
+## 13. Exit Gate
 
-WP2 is complete only when:
+WP2 becomes COMPLETE only after the final PR head proves:
 
-- one exact backend/frontend/database toolchain baseline is selected from passing evidence;
-- exact locks are committed and reproducible;
-- clean GitHub-hosted Windows compatibility/build is green;
-- dependency/SBOM/license policy is machine-checkable;
-- current V9 `app:app` regression/security remains green;
+- selected baseline JSON and explanatory document agree;
+- exact Python and npm locks are reproducible;
+- clean GitHub-hosted Windows selected-baseline jobs are green;
+- dependency/audit/SBOM/license policy is green;
+- current V9 `app:app` Regression Shield/security remains green;
 - zero unresolved review blockers remain;
 - focused WP2 PR is squash-merged to `main`.
+
+After acceptance, WP3 becomes the next authorized work package. Accepted V10 progress remains 5% until all of Block B is complete.
