@@ -8,11 +8,11 @@ updates:
     cooldown:
       default-days: 7
     ignore:
-      # pip 26.2 removes an internal symbol still imported by pip-tools 7.6.0.
+      # pip 26.2.x removes an internal symbol still imported by pip-tools 7.6.0.
       # Keep the last verified pip until upstream pip-tools publishes compatibility.
       - dependency-name: pip
         versions:
-          - "26.2"
+          - ">=26.2,<26.3"
 
   - package-ecosystem: github-actions
     directory: /
