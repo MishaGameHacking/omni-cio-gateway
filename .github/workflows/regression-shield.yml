@@ -90,6 +90,9 @@ jobs:
       - name: Verify repository structure
         run: python scripts/check_repository_layout.py
 
+      - name: Verify V10 repository boundaries
+        run: python scripts/check_v10_repository_boundaries.py
+
       - name: Compile gateway sources
         run: >-
           python -m compileall -q app.py app_v371.py app_v360.py main.py
@@ -104,6 +107,7 @@ jobs:
         run: >-
           python -m ruff format --check
           scripts tests/test_ci_security_baseline.py
+          tests/test_v10_repository_boundaries.py
 
       - name: Type-check baseline
         run: |

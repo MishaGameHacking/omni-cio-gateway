@@ -50,11 +50,11 @@ Start/WP0 evidence:
 
 `docs/master-plan/OMNI_CIO_V10_START_RECORD.md`
 
-Current accepted state when this file is read from `main`: **WP0 COMPLETE / BLOCK A COMPLETE / V10 5% / WP1 NEXT**.
+Current accepted state when this file is read from `main` after the focused WP1 acceptance merge: **WP1 COMPLETE / BLOCK B IN PROGRESS / V10 5% ACCEPTED / WP2 NEXT**.
 
-If this text is viewed inside the unmerged WP0 PR, the 5% state is only the acceptance candidate and becomes authoritative only after exact-head CI/security is green and the PR is squash-merged.
+If this text is viewed inside the unmerged WP1 PR, that state is only the acceptance candidate and becomes authoritative only after final exact-head CI/security is green and the PR is squash-merged.
 
-The owner explicitly issued **`START V10`** on 2026-08-05. The next authorized package after WP0 acceptance is **WP1 — Repository Architecture and boundaries**. WP2 and later remain blocked until WP1 Exit Gate is accepted.
+The owner explicitly issued **`START V10`** on 2026-08-05. The next authorized package after WP1 acceptance is **WP2 — Toolchain and Dependency Baseline**. WP3 and later remain blocked until their predecessor Exit Gates are accepted.
 
 Mandatory V10 AI scope remains locked: migrate existing GPT Instructions/Knowledge/Actions into versioned System Policy + Knowledge/RAG + Tool Registry; build one Omni-CIO AI Copilot/Agent Orchestrator used by Web and Telegram; support a bounded Autonomous Research Agent; keep financial sizing/execution deterministic; and do not decommission the current Custom GPT until the explicit parity gate and owner acceptance.
 
@@ -104,7 +104,7 @@ Read in this order:
 14. `docs/architecture/V10_V9_BASELINE_FREEZE.md`;
 15. `gpt/SETUP_INDEX.md` and `gpt/CONFIGURATION.md` for current GPT-visible/recovery work;
 16. `docs/architecture/SYSTEM_OVERVIEW.md` for current V9 runtime architecture;
-17. `docs/architecture/REPOSITORY_STRUCTURE.md` for the current physical repository tree until WP1 changes it;
+17. `docs/architecture/REPOSITORY_STRUCTURE.md` for canonical current/target repository ownership;
 18. relevant current-WP architecture/runbook;
 19. actual `main`, open PR/issues and GitHub Actions.
 
@@ -332,7 +332,9 @@ For `getBrokerReportReconciliation` preserve the async contract:
 
 ## 14. Repository structure
 
-Current V9 physical structure remains authoritative until WP1 deliberately changes it:
+Accepted WP1 repository ownership is defined by `docs/architecture/REPOSITORY_STRUCTURE.md` and guarded by `scripts/check_v10_repository_boundaries.py`.
+
+Current physical V9 runtime remains in place until later migration packages explicitly replace it:
 
 - root wrappers/runtime + `omni_cio/`;
 - Sandbox: `omni_cio/sandbox/`;
@@ -348,6 +350,8 @@ Current V9 physical structure remains authoritative until WP1 deliberately chang
 - tests: `tests/`;
 - CI/security: `scripts/`, `.github/`.
 
+Reserved V10 roots `apps/`, `ai/` and `infrastructure/` are created only by their owning work packages; WP1 defines their ownership but does not implement those runtimes.
+
 One-time bootstrap payloads and generated CI projections must not remain in accepted `main` after their task is complete.
 
 Do not create duplicate setup/audit/inventory docs instead of updating existing sources of truth.
@@ -359,6 +363,7 @@ Regression Shield is the merge gate and must remain strict. It covers at minimum
 - lock reproducibility;
 - CI/security policy;
 - repository structure/boundaries;
+- V10 repository authority guard;
 - source compilation;
 - Ruff lint/format;
 - mypy baseline;
@@ -394,7 +399,7 @@ Versioned filenames are not proof of obsolescence. Conversely, one-time bootstra
 - Sandbox: conditional/virtual;
 - Real BUY/SELL lifecycle: accepted/protected;
 - current V9 runtime mode: controlled maintenance;
-- V10 on accepted `main` after WP0 merge: **5% complete / WP0 complete / WP1 next**;
+- V10 on accepted `main` after WP1 merge: **5% accepted / WP1 complete / WP2 next**;
 - successor versions: **not authorized until V10 reaches 100% and final acceptance**.
 
 Current V9 runtime status: `knowledge/16_CURRENT_PROGRAM_STATUS.md`.  

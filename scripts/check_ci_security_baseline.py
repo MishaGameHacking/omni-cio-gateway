@@ -32,6 +32,7 @@ REQUIRED_WORKFLOW_COMMANDS = {
     "lock consistency": "python -m piptools compile",
     "Windows lock verification": "python scripts/windows_ci_lock.py verify",
     "CI policy self-check": "python scripts/check_ci_security_baseline.py",
+    "V10 repository boundaries": "python scripts/check_v10_repository_boundaries.py",
     "lint": "python -m ruff check .",
     "formatting": "python -m ruff format --check",
     "type checking": "python -m mypy",
@@ -254,6 +255,7 @@ def main() -> int:
         print("CI virtual environments: isolated in RUNNER_TEMP")
         print("GitHub Actions: pinned to full commit SHAs")
         print("Self-hosted PR isolation: same-repository only")
+        print("V10 repository boundary guard: required")
         print("Render entrypoint: app:app")
     return 0
 

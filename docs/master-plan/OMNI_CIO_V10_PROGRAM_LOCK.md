@@ -1,7 +1,7 @@
 # Omni-CIO V10 — Program Lock
 
-Status: **OWNER-APPROVED PROGRAM / DEVELOPMENT STARTED / WP0 COMPLETE ON ACCEPTED MAIN / WP1 NEXT**  
-Baseline: **Omni-CIO v9.0.0 — COMPLETE / PROTECTED**  
+Status: **OWNER-APPROVED PROGRAM / DEVELOPMENT STARTED / WP1 COMPLETE ON ACCEPTED MAIN / WP2 NEXT**  
+Baseline: **Omni-CIO v9.0.0 — COMPLETE / PROTECTED / controlled maintenance**  
 Searchable canonical plan: `docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.md`  
 Owner-readable PDF: `docs/master-plan/Omni-CIO_V10_Master_Plan_RU.pdf`  
 Integrity manifest: `docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.sha256`  
@@ -9,7 +9,7 @@ Plan-readiness audit: `docs/master-plan/OMNI_CIO_V10_PLAN_READINESS_AUDIT.md`
 Start/WP0 record: `docs/master-plan/OMNI_CIO_V10_START_RECORD.md`  
 Current progress authority: `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`
 
-> Authority note: `WP0 COMPLETE / WP1 NEXT` is effective only when this file is present on accepted `main` after the focused WP0 PR passes exact-head CI/security and is squash-merged. In an unmerged PR it is the acceptance candidate, not accepted project state.
+> Authority note: `WP1 COMPLETE / WP2 NEXT` is effective only when this file is present on accepted `main` after the focused WP1 PR passes final exact-head CI/security and is squash-merged. In an unmerged PR it is the acceptance candidate, not accepted project state.
 
 ## 1. Authority
 
@@ -36,17 +36,23 @@ Planning was accepted by squash-merged PR #227 on start baseline:
 
 Post-merge Regression Shield run #1332 succeeded on that exact SHA.
 
-WP0 architecture freeze is delivered by focused PR #228. Once its exact-head CI/security is green, review blockers are zero and the PR is squash-merged to `main`:
+WP0 architecture freeze was accepted by squash-merged PR #228 as:
 
-- Block A becomes **COMPLETE — 5%**;
-- overall V10 becomes **5% COMPLETE**;
-- next authorized package becomes **WP1 — Repository Architecture and boundaries**.
+`7c5de954eed10dd406e743c38f7bdef6b0634108`
 
-WP2 and later remain blocked until WP1 Exit Gate is accepted. Lenovo one-time setup remains Block C after WP1–WP4.
+That acceptance closed Block A at **5%** and authorized WP1.
 
-## 3. WP0 frozen architecture authority
+WP1 repository architecture/boundaries are delivered by focused PR #229. Once its final exact-head Regression Shield/security is green, review blockers are zero and the PR is squash-merged to `main`:
 
-WP0 establishes these V10 architecture sources:
+- WP1 becomes **COMPLETE**;
+- overall accepted V10 progress remains **5%** because Block B carries one 9% block weight and is not credited piecemeal;
+- next authorized package becomes **WP2 — Toolchain and Dependency Baseline**.
+
+WP3 and later remain blocked until predecessor Exit Gates are accepted. Lenovo one-time setup remains Block C after WP1–WP4.
+
+## 3. Frozen architecture and repository authority
+
+WP0 establishes these architecture sources:
 
 - `docs/architecture/V10_SYSTEM_ARCHITECTURE.md`;
 - `docs/architecture/V10_SECURITY_BOUNDARIES.md`;
@@ -57,7 +63,15 @@ WP0 establishes these V10 architecture sources:
 - `docs/architecture/V10_V9_BASELINE_FREEZE.md`;
 - ADR-019 in `docs/architecture/DECISIONS.md`.
 
-These documents implement the Master Plan; they do not override it. A material architecture/scope change requires an ADR and, when scope/authority changes, an owner-approved program amendment.
+WP1 adds the repository architecture authority:
+
+- `docs/architecture/REPOSITORY_STRUCTURE.md`;
+- `.github/CODEOWNERS`;
+- `scripts/check_v10_repository_boundaries.py`;
+- focused tests in `tests/test_v10_repository_boundaries.py`;
+- permanent Regression Shield wiring for the V10 boundary guard.
+
+These documents/checks implement the Master Plan; they do not override it. A material architecture/scope change requires an ADR and, when scope/authority changes, an owner-approved program amendment.
 
 ## 4. Program exclusivity
 
@@ -80,6 +94,8 @@ Until V10 reaches full Definition of Done and owner acceptance:
 - broker/Telegram/encryption secrets and private portfolio/runtime state remain outside GitHub;
 - GitHub engineering access never implies broker trading authority;
 - final V10 acceptance requires clean-room recovery/portability from GitHub + documented bootstrap + authorized backup + separately restored runtime secrets.
+
+WP1 specifically fixes repository ownership for future `apps/`, `ai/` and `infrastructure/` artifacts and prohibits account-only authoritative application settings where repository-controlled representation is technically possible.
 
 ## 6. Sequential delivery rule
 
