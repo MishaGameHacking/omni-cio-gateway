@@ -4,19 +4,20 @@ Updated: 2026-08-05
 
 ## Executive state
 
-Omni-CIO V10: **DEVELOPMENT STARTED / WP1 IN PROGRESS**.
+Omni-CIO V10: **DEVELOPMENT STARTED / WP1 COMPLETE ON ACCEPTED MAIN / WP2 NEXT**.
 
 Accepted implementation progress: **5%**.
 
 Accepted completed work:
 
-- Block A / WP0 — **COMPLETE (5%)**.
+- Block A / WP0 — **COMPLETE (5%)**;
+- Block B / WP1 — **COMPLETE as work package; Block B remains IN PROGRESS and its 9% block weight is not yet credited**.
 
-Current authorized work package:
+Next authorized work package after WP1 acceptance:
 
-**WP1 — Repository Architecture and boundaries.**
+**WP2 — Toolchain and Dependency Baseline.**
 
-WP2 and later remain blocked until WP1 Exit Gate is accepted on `main`.
+> Authority note: while this file is viewed inside the unmerged WP1 PR, `WP1 COMPLETE / WP2 NEXT` is the acceptance candidate. It becomes authoritative only after final exact-head Regression Shield/security is green, review blockers are zero and PR #229 is squash-merged to `main`.
 
 Owner start command: **`START V10`** received 2026-08-05.
 
@@ -38,6 +39,7 @@ Starting or advancing V10 never expands broker/Real-money authority by itself.
 - ADR process/registry: `docs/architecture/V10_ADR_PROCESS.md`, `docs/architecture/DECISIONS.md`
 - protected V9 baseline freeze: `docs/architecture/V10_V9_BASELINE_FREEZE.md`
 - repository architecture: `docs/architecture/REPOSITORY_STRUCTURE.md`
+- repository boundary guard: `scripts/check_v10_repository_boundaries.py`
 
 Protected runtime/recovery baseline remains:
 
@@ -48,7 +50,7 @@ Protected runtime/recovery baseline remains:
 | Block | Planned weight | State |
 |---|---:|---|
 | A. Architecture and V9 protection | 5% | COMPLETE — WP0 |
-| B. GitHub, dependencies and CI/CD | 9% | WP1 IN PROGRESS |
+| B. GitHub, dependencies and CI/CD | 9% | WP1 COMPLETE / WP2 NEXT |
 | C. Lenovo Omni-CIO Node / infrastructure | 12% | NOT STARTED |
 | D. V10 Core and data | 14% | NOT STARTED |
 | E. Omni-CIO Web Platform | 14% | NOT STARTED |
@@ -59,7 +61,7 @@ Protected runtime/recovery baseline remains:
 | J. Integration / hardening / recovery / release | 5% | NOT STARTED |
 | **TOTAL** | **100% planned** | **5% ACCEPTED** |
 
-No partial Block B percentage is credited: the block weight is accepted only after its defined Exit Gates. Individual WP state is tracked separately.
+No partial Block B percentage is credited: the 9% block weight becomes accepted only after all Block B Exit Gates are complete. Individual WP completion is tracked separately.
 
 ## Accepted WP0 evidence
 
@@ -69,33 +71,42 @@ WP0 focused PR #228 was squash-merged to `main` as:
 
 WP0 exact-head Regression Shield/security passed before merge. WP0 added architecture freeze, security/data/recovery/threat boundaries, ADR governance and protected V9 baseline evidence without introducing Web, Telegram, AI runtime, Lenovo bootstrap, Core refactor or new execution authority.
 
-## WP1 objective
+## WP1 delivered scope
 
-Prepare the repository for long-term V10 development without duplicate stacks or hidden account-owned configuration.
+WP1 prepares the repository for long-term V10 development without duplicate stacks or hidden account-owned configuration.
 
-WP1 must establish:
+Delivered in focused PR #229:
 
-- one canonical current/target repository structure;
-- explicit ownership of Web/API/Telegram/AI/infrastructure/Core paths;
-- permanent machine-checked repository/authority boundaries;
-- critical Core import-cycle detection;
-- protection against duplicate Real/plan-execution/application roots;
-- preservation of V9 compatibility/recovery paths;
-- developer/account portability from GitHub source of truth.
+- one canonical current/target repository structure in `docs/architecture/REPOSITORY_STRUCTURE.md`;
+- explicit CODEOWNERS for Core, future Web/API/Telegram/AI/infrastructure, docs, knowledge, tests and CI;
+- `omni_cio/` retained as the one deterministic financial Core instead of a cosmetic high-risk wholesale move;
+- future `apps/`, `ai/` and `infrastructure/` roots reserved but not implemented out of sequence;
+- permanent `scripts/check_v10_repository_boundaries.py`;
+- focused repository-boundary tests;
+- direct Real authority and plan-execution authority kept unique;
+- future Web/Telegram/AI prevented from importing low-level Real authority directly;
+- critical Core package dependency graph checked for circular dependency;
+- V9 compatibility paths and stable `app:app` preserved;
+- developer/account portability documented from GitHub + locks + safe repository configuration/examples;
+- stale navigation sources synchronized so V10 is the active feature program while V9 remains controlled-maintenance production/recovery runtime.
 
-## WP1 current branch
+No Web, Telegram runtime, AI runtime, Lenovo bootstrap, PostgreSQL runtime or new broker execution authority is introduced by WP1.
 
-Focused branch:
+## WP1 verification evidence
 
-`v10/wp1-repository-architecture`
+During WP1 development, Regression Shield run #1355 on head `d7fe2ccd54e43c171e62670f73464ccbec67472e` passed both jobs after the initial navigation-contract regression was corrected:
 
-Current WP1 work is allowed to change repository architecture documentation, ownership metadata, static boundary guards/tests and CI wiring required by WP1.
+- Dependency, code and secret security — **SUCCESS**;
+- Quality, contracts and coverage — **SUCCESS**;
+- Windows runner smoke — **SUCCESS**.
 
-It is **not** authorization to implement the Web, Telegram bot, AI runtime, Lenovo services, PostgreSQL runtime or new broker execution capability.
+That run proved the substantive repository-boundary implementation. Because status/navigation handoff commits follow it, the **final PR head must run the same exact-head gates again before merge**.
+
+The original failing run identified one existing repository-hygiene contract: `.github/copilot-instructions.md` had lost the literal V9 `controlled maintenance` marker. The fix restored that protected V9 description without reverting the V10 architecture changes. Final tests then passed.
 
 ## WP1 Exit Gate
 
-WP1 becomes accepted only when:
+WP1 is accepted only when all of the following are true on the final PR head:
 
 1. `AGENTS.md` + `REPOSITORY_STRUCTURE.md` make component ownership/authority unambiguous;
 2. there is no competing implementation of a financial engine/application stack;
@@ -104,17 +115,25 @@ WP1 becomes accepted only when:
 5. V9 compatibility and `app:app` remain green;
 6. exact-head Regression Shield/security is green;
 7. zero unresolved review blockers remain;
-8. focused WP1 PR is squash-merged to `main`.
+8. focused WP1 PR #229 is squash-merged to `main`.
 
-After WP1 acceptance:
+After that merge:
 
-- overall accepted V10 progress remains **5%** until Block B is completed according to the canonical block-weight rule;
-- WP1 state becomes COMPLETE;
-- **WP2 — Toolchain and Dependency Baseline** becomes the next authorized package.
+- WP1 state = **COMPLETE**;
+- overall accepted V10 progress = **5%**;
+- Block B remains active;
+- **WP2 — Toolchain and Dependency Baseline** becomes the current authorized package;
+- WP3 and later remain blocked by sequence.
+
+## WP2 scope boundary
+
+WP2 may establish the supported/reproducible development stack only after WP1 acceptance. According to the canonical plan it covers Python/FastAPI compatibility, React + TypeScript + Vite frontend baseline, PostgreSQL stable branch selection, exact Python/Node/package-manager/lock formats, dependency/SBOM/license policy and reproducible clean Windows/CI builds.
+
+WP2 is **not** permission to start the Web product, Lenovo services, Telegram, AI runtime or Real V10 execution.
 
 ## Lenovo sequencing
 
-Do not perform the one-time Lenovo V10 setup yet.
+Do not perform the one-time Lenovo V10 runtime setup yet.
 
 Block C starts only after WP1–WP4 establish repository architecture, toolchain, CI and release/deployment contracts. This preserves the owner goal of configuring the Lenovo once from a stable, reproducible foundation.
 
