@@ -168,12 +168,15 @@ def check_target_registry() -> None:
     configuration = read("gpt/CONFIGURATION.md")
     for marker in (
         "Repository target config: **v9.0.0**",
-        "Applied external GPT remains **v8.6.1**",
+        "Applied external GPT: **v9.0.0**",
         "Actions: **ON**",
         "Apps: **OFF**",
         "non-Pro model that supports Custom GPT Actions",
     ):
         require(configuration, marker, "gpt/CONFIGURATION.md")
+    reject(
+        configuration, "Applied external GPT remains **v8.6.1**", "gpt/CONFIGURATION.md"
+    )
     reject(configuration, "Recommended model: `Thinking 5.6`", "gpt/CONFIGURATION.md")
 
 
@@ -235,6 +238,11 @@ def check_program_and_rollback() -> None:
         require(text, PROTECTED_INSTRUCTIONS, relative)
 
     status = read("knowledge/16_CURRENT_PROGRAM_STATUS.md")
+    require(
+        status,
+        "Applied external GPT: **v9.0.0**",
+        "knowledge/16_CURRENT_PROGRAM_STATUS.md",
+    )
     require(status, "100% complete", "knowledge/16_CURRENT_PROGRAM_STATUS.md")
     require(
         status,
@@ -275,8 +283,8 @@ def main() -> None:
     check_external_secret_boundary()
 
     print("GPT v9 recovery/configuration consistency: OK")
-    print(f"Target UI: {TARGET_UI_NAME}")
-    print(f"Target Instructions: {TARGET_INSTRUCTIONS}")
+    print(f"Applied UI: {TARGET_UI_NAME}")
+    print(f"Applied Instructions: {TARGET_INSTRUCTIONS}")
     print(
         f"Instructions chars: {len(read(TARGET_INSTRUCTIONS))}/{INSTRUCTIONS_MAX_CHARS}"
     )

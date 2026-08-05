@@ -1,14 +1,15 @@
 # Custom GPT configuration registry — Omni-CIO
 
-> Канонический реестр **целевой** конфигурации единственного поддерживаемого Omni-CIO. Не вставлять этот файл целиком в Instructions.
+> Канонический реестр **единственного** поддерживаемого Omni-CIO GPT. Не вставлять этот файл целиком в Instructions.
 
 ## Release state
 
 - Repository target config: **v9.0.0**.
+- Applied external GPT: **v9.0.0**, owner-accepted in place on 2026-08-05.
 - Target UI name: `Omni-CIO API | Управляющий и аналитик v9.0.0`.
 - Target Instructions: `gpt/CUSTOM_GPT_INSTRUCTIONS_V9_0_0_COMPACT.txt`.
 - Target Knowledge manifest: `gpt/KNOWLEDGE_MANIFEST_V9_0_0.md`.
-- Applied external GPT remains **v8.6.1** until owner Preview acceptance + `Update` are completed and recorded after the WP15 repository merge.
+- Protected rollback UI remains `Omni-CIO API | Управляющий и аналитик v8.6.1`.
 - Protected rollback Instructions remain `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt`.
 
 Purpose: личный инвестиционный CIO/аналитик T-Invest и строго подтверждаемый исполнитель.  
@@ -23,7 +24,7 @@ WP15 architecture:
 
 `docs/architecture/V9_CUSTOM_GPT_CONFIGURATION_AND_RECOVERY.md`
 
-## Production description — target v9
+## Production description — v9
 
 > Личный инвестиционный CIO в ChatGPT для T-Invest через единый Omni-CIO Gateway. Обновляет факты портфеля, анализирует ликвидность, рынок, риски и альтернативы, сравнивает решения с NO_ACTION и формирует проверяемый план. Реальные сделки возможны только через фактически опубликованные Real Actions и защищённый протокол prepare → точное подтверждение владельца новым сообщением → execute → broker reconciliation.
 
@@ -38,7 +39,7 @@ WP15 architecture:
 
 ## Instructions
 
-Canonical target GPT Editor payload:
+Applied GPT Editor payload:
 
 `gpt/CUSTOM_GPT_INSTRUCTIONS_V9_0_0_COMPACT.txt`
 
@@ -54,7 +55,7 @@ Canonical source:
 
 `gpt/KNOWLEDGE_MANIFEST_V9_0_0.md`
 
-Production target remains an exact 10-file text-forward reference set under `gpt/knowledge/`. Every file is uploaded once; unlisted legacy duplicates are removed. Behavior and execution safety live in Instructions/server code, not only in Knowledge.
+Production contains the exact 10-file text-forward reference set under `gpt/knowledge/`. Every file is uploaded once; unlisted legacy duplicates are removed. Behavior and execution safety live in Instructions/server code, not only in Knowledge.
 
 ## GPT capabilities
 
@@ -70,8 +71,7 @@ Production target remains an exact 10-file text-forward reference set under `gpt
 Production service: `https://omni-cio-gateway.onrender.com`  
 OpenAPI: `https://omni-cio-gateway.onrender.com/openapi.json`  
 Health: `https://omni-cio-gateway.onrender.com/health`  
-Entrypoint: `app:app`  
-Render plan: Free unless deliberately changed outside this config.
+Entrypoint: `app:app`
 
 Authentication in GPT Editor:
 
@@ -108,7 +108,7 @@ Real contour remains isolated and conditional. Existing reviewed operationIds ar
 - `executeRealTrade`;
 - `getRealOrderState`.
 
-They remain governed by the server readiness/feature flag, separate trading credential, durable state, own-funds/own-position checks, hard caps, fresh market, immutable proposal, exact short-lived owner confirmation in a **new** user turn, idempotency and broker reconciliation.
+They remain governed by server readiness/feature flag, separate trading credential, durable state, own-funds/own-position checks, hard caps, fresh market, immutable proposal, exact short-lived owner confirmation in a **new** user turn, idempotency and broker reconciliation.
 
 No configuration change implicitly enables withdrawal/transfer, margin/short, MARKET/BESTPRICE, stop/replace/async, automatic retry or autonomous recurring real execution.
 
@@ -116,25 +116,26 @@ No configuration change implicitly enables withdrawal/transfer, margin/short, MA
 
 Owner-accepted v8.6.1 remains recoverable in GitHub. Its real BUY/SELL v1 Definition of Done remains **100% complete**, including the canonical recovery invariant: **idempotent replay verified with no second submit**.
 
-WP15 does not delete or weaken that evidence.
+This rollback evidence is not the currently applied GPT version.
 
-## Upgrade-in-place / publishing checklist
+## Applied-state evidence
 
-Repository readiness does not equal applied GPT acceptance.
+Owner acceptance on 2026-08-05 confirmed the existing GPT was upgraded rather than duplicated, v9 Instructions/Knowledge/OpenAPI/authentication were applied, `Update` succeeded, read-only/Action routing smoke passed, real readiness was isolated to status-only, and no live order was submitted during configuration acceptance. Evidence is recorded in completed issue #216 and epic #176.
 
-After the WP15 repository PR is merged, owner-controlled external application is:
+## Recovery / future update checklist
 
-1. On **ChatGPT web**, open the existing Omni-CIO GPT and choose Edit/Configure — do **not** Create a new GPT.
-2. Change name to `Omni-CIO API | Управляющий и аналитик v9.0.0`.
-3. Apply the target description/starters from this file.
-4. Replace Instructions fully with `gpt/CUSTOM_GPT_INSTRUCTIONS_V9_0_0_COMPACT.txt`.
-5. Replace Knowledge with the exact manifest set.
-6. Keep Apps OFF; enable Actions and desired supported capabilities.
-7. Refresh the existing production Action from `/openapi.json`; authentication remains API Key → Bearer with the existing external `GATEWAY_API_KEY`.
-8. Run the Preview acceptance checklist from `gpt/MY_GPT_SETUP_RUNBOOK.md`.
-9. Only after Preview passes, select **Update** on the existing GPT.
-10. Record acceptance/restoration evidence in GitHub; only then mark applied production GPT v9.0.0.
+For any future recovery or configuration change, edit the **existing** GPT:
+
+1. Open ChatGPT web → existing Omni-CIO GPT → Edit/Configure; do **not** Create a new GPT.
+2. Restore/apply Name/Description/starters from this registry.
+3. Apply `gpt/CUSTOM_GPT_INSTRUCTIONS_V9_0_0_COMPACT.txt`, or the protected v8.6.1 rollback payload only when deliberately rolling back.
+4. Upload the exact Knowledge manifest set.
+5. Keep Apps OFF while Actions are ON.
+6. Refresh the existing production Action from `/openapi.json`; authentication remains API Key → Bearer with the external `GATEWAY_API_KEY`.
+7. Run `gpt/MY_GPT_SETUP_RUNBOOK.md` Preview acceptance.
+8. Select **Update** only after Preview passes.
+9. Record non-secret acceptance/restoration evidence in GitHub.
 
 ## GitHub ↔ external systems boundary
 
-GitHub stores canonical code/config/recovery reference. It cannot itself press GPT Editor `Update`, upload Knowledge to the external GPT, or supply external secret values. Applied-state claims therefore require explicit owner acceptance evidence after repository merge.
+GitHub stores canonical code/config/recovery reference. It cannot itself press GPT Editor `Update`, upload Knowledge to the external GPT, or supply external secret values. Applied-state changes therefore require explicit owner evidence.

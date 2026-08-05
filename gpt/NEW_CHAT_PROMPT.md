@@ -15,8 +15,10 @@
 7. gpt/CUSTOM_GPT_INSTRUCTIONS_V9_0_0_COMPACT.txt
 8. gpt/KNOWLEDGE_MANIFEST_V9_0_0.md
 9. gpt/ACTIONS_CATALOG.md
-10. профильные domain/architecture files по текущей задаче
-11. docs/master-plan/OMNI_CIO_V9_PORTFOLIO_AUTOPILOT_PROGRAM.md, если программа ещё не закрыта или задача касается roadmap/release evidence
+10. docs/architecture/SYSTEM_OVERVIEW.md
+11. docs/architecture/REPOSITORY_STRUCTURE.md
+12. профильные domain/architecture/runbook files по текущей задаче
+13. docs/master-plan/OMNI_CIO_V9_PORTFOLIO_AUTOPILOT_PROGRAM.md, если нужен audit исходных v9 requirements или планируется новая owner-approved программа
 
 Затем проверь:
 - фактический main SHA;
@@ -26,32 +28,35 @@
 - production contract, если задача затрагивает Render/Gateway/GPT.
 
 Release state различай строго:
-- repository target GPT config = v9.0.0;
-- applied external GPT может оставаться v8.6.1 до owner Preview + Update evidence;
+- repository/applied GPT config = v9.0.0;
+- existing external GPT owner-accepted in place on 2026-08-05;
+- WP0–WP15 and owner acceptance complete; current mode = controlled maintenance;
 - protected rollback Instructions = gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt.
 
 Обязательные инварианты:
-- один пользовательский продукт: один Omni-CIO Custom GPT + один Gateway `app:app`;
+- один пользовательский продукт: один existing Omni-CIO Custom GPT + один Gateway `app:app`;
 - read-only broker credential, Sandbox и Real execution изолированы;
 - internal v9 engine не является GPT Action без operationId в effective production OpenAPI;
-- real execution только через reviewed server lifecycle: readiness → immutable proposal/plan context → exact owner confirmation новым сообщением → one idempotent submit → broker reconciliation;
+- Real execution только через reviewed server lifecycle: readiness → immutable proposal/plan context → exact owner confirmation новым сообщением → one idempotent submit → broker reconciliation;
 - no withdrawal/transfer, margin/short, MARKET/BESTPRICE, automatic retry after ambiguous possible-submit или autonomous recurring real-money execution;
 - account IDs только masked;
 - secret values/private broker payloads не сохранять в GitHub или GPT Knowledge;
-- не считать старые чаты/скриншоты источником истины при расхождении с main;
+- не считать старые чаты/скриншоты источником истины при расхождении с accepted main + explicit owner evidence;
 - изменения делать через отдельную branch + PR;
-- merge только после exact-head Regression Shield/security и zero unresolved review threads;
+- merge только после current-head Regression Shield/security и zero unresolved review threads;
+- dependency/Dependabot PR не сливать только потому, что версия новее;
+- locks generated from `.in` sources; known-incompatible tooling held narrowly rather than weakening CI;
 - repository merge и applied external GPT acceptance — разные состояния;
-- после GPT config change выполнять owner Preview/Update acceptance на существующем GPT, не создавать новый;
+- после future GPT config/Action change выполнять owner Preview/Update acceptance на существующем GPT, не создавать новый;
 - не создавать parallel setup/configuration документы вместо обновления canonical sources.
 
 Перед изменениями кратко зафиксируй:
 - current main SHA;
-- repository target config и applied external config, если известно;
+- applied/rollback GPT state;
 - open PR/issues по задаче;
 - состояние CI;
 - какие canonical files прочитаны;
-- ближайший dependency-ready шаг.
+- точный maintenance/dependency/security defect или owner-approved scope.
 ```
 
 Для настройки самого Custom GPT использовать `gpt/SETUP_INDEX.md` как главный источник.

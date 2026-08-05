@@ -35,6 +35,10 @@ dist/
 build/
 *.egg-info/
 
+# Ephemeral CI dependency projections — generated at runtime, never commit
+windows-*requirements*.txt
+compiled-requirements*.txt
+
 # Broker/user data — never commit
 broker-reports/
 private-data/

@@ -6,30 +6,29 @@
 
 Поддерживается один пользовательский продукт:
 
-`Omni-CIO Custom GPT → Omni-CIO Gateway → T-Invest API`
+`Existing Omni-CIO Custom GPT v9.0.0 → Omni-CIO Gateway (app:app) → T-Invest API`
+
+Applied GPT v9.0.0 owner-accepted in place on 2026-08-05. Protected rollback v8.6.1 remains in GitHub.
 
 Три broker-контура изолированы:
 
 1. production read-only через `TINVEST_TOKEN`;
-2. optional Sandbox через `TINVEST_SANDBOX_TOKEN`;
-3. optional real execution v1 через отдельный `TINVEST_TRADING_TOKEN` + durable journal.
+2. optional virtual Sandbox через `TINVEST_SANDBOX_TOKEN`;
+3. optional exact-owner-confirmed Real execution через отдельный `TINVEST_TRADING_TOKEN` + durable state.
 
-Не создавать второй Custom GPT, отдельный frontend, параллельный execution surface или новый broker gateway без явного решения владельца.
+Не создавать второй Custom GPT, отдельный frontend, duplicate Gateway, competing scheduler или parallel broker/execution stack без отдельного owner-approved program.
 
-## 2. Active v9 program lock
+## 2. Program state
 
-Активная owner-approved / program-locked программа:
+Owner-approved/program-locked v9 program:
 
 `docs/master-plan/OMNI_CIO_V9_PORTFOLIO_AUTOPILOT_PROGRAM.md`
 
-До полного закрытия её Definition of Done:
+WP0–WP15 repository delivery and owner external acceptance are **complete**. Tracking epic #176 and WP15 #216 are closed completed.
 
-1. это default product roadmap;
-2. feature work должен относиться к одному из WP0–WP15, blocking defect, security/dependency maintenance или сохранению стабильного v8.6.1;
-3. по умолчанию брать самый ранний незавершённый work package, зависимости которого уже выполнены;
-4. не начинать конкурирующий roadmap, duplicate bot/frontend/gateway или параллельный execution surface;
-5. applied production GPT остаётся v8.6.1 до WP15;
-6. будущий v9 scope нельзя выдавать за уже реализованный без code + tests + CI + required acceptance.
+Current repository mode: **controlled maintenance**.
+
+Feature work outside maintenance/security/dependency/recovery requires a new explicit owner-approved program. Do not reinterpret the completed v9 master plan as an unfinished queue.
 
 Protected baseline/recovery contract:
 
@@ -39,277 +38,299 @@ Protected v8.6.1 release commit:
 
 `baba0fb73e0483fc82b3f0bc7c2f15cbd71d804e`
 
-## 3. Сначала восстановить контекст
+Protected acceptance invariant remains:
 
-Перед изменением кода:
+**idempotent replay verified with no second submit**.
+
+## 3. Restore context before changes
+
+Read in this order:
 
 1. `README.md`;
 2. `knowledge/00_PROJECT_MASTER_CONTEXT.md`;
 3. `knowledge/16_CURRENT_PROGRAM_STATUS.md`;
-4. `docs/master-plan/OMNI_CIO_V9_PORTFOLIO_AUTOPILOT_PROGRAM.md` пока v9 active;
-5. для GPT — `gpt/SETUP_INDEX.md`, `gpt/CONFIGURATION.md`, `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt`, `gpt/ACTIONS_CATALOG.md`;
-6. профильный architecture/runbook;
-7. `docs/master-plan/README.md` при roadmap-задаче;
-8. фактический `main`, открытые PR/issues, current work package и GitHub Actions.
+4. `gpt/SETUP_INDEX.md` and `gpt/CONFIGURATION.md` for GPT-visible/recovery work;
+5. `docs/architecture/SYSTEM_OVERVIEW.md`;
+6. `docs/architecture/REPOSITORY_STRUCTURE.md`;
+7. relevant architecture/runbook;
+8. actual `main`, open PR/issues and GitHub Actions.
 
-Старый чат или screenshot не является источником истины, если расходится с `main`.
+Use the completed master plan when auditing original v9 requirements or considering a new owner-approved program.
+
+Old chat/screenshot is not source of truth when it conflicts with current accepted `main` plus explicit external owner evidence.
 
 ## 4. Broker execution boundary
 
 ### 4.1 Production read-only
 
-`TINVEST_TOKEN` всегда остаётся read-only. Его запрещено повышать до full-access, заменять trading token-ом или использовать как fallback внутри real execution.
+`TINVEST_TOKEN` always remains read-only. It must never be promoted, replaced with the trading token, or used as fallback by Real execution.
 
-### 4.2 T-Invest Sandbox
+### 4.2 Sandbox
 
-Sandbox writes разрешены только внутри изолированного sandbox contour:
+Sandbox writes are allowed only inside `omni_cio/sandbox/` when explicitly enabled:
 
-- fixed host `https://sandbox-invest-public-api.tbank.ru/rest`;
-- только `TINVEST_SANDBOX_TOKEN`;
+- fixed Sandbox host;
+- `TINVEST_SANDBOX_TOKEN` only;
 - `SANDBOX_TRADING_ENABLED=true`;
 - `sandbox=true`, `real_money=false`;
-- proposal → отдельное exact confirmation → submit;
+- reviewed methods only;
+- immutable proposal → exact confirmation → submit;
 - UUID idempotency;
-- ambiguous submit не повторяется;
-- margin/transfer/withdraw запрещены.
+- ambiguous submit never auto-retries;
+- transfer/withdraw/margin remain forbidden.
 
-### 4.3 Real execution v1
+Sandbox evidence is never production portfolio mutation evidence.
 
-Real BUY/SELL разрешён только через `omni_cio.real_trading` и только когда серверная готовность полностью valid.
+### 4.3 Real execution
 
-Обязательные инварианты:
+Real BUY/SELL is allowed only through reviewed `omni_cio.real_trading` / plan-execution lifecycle and only when server readiness is valid.
 
-- отдельный account-scoped `TINVEST_TRADING_TOKEN` без transfer access;
-- `REAL_TRADING_ENABLED=true`;
-- durable journal = Upstash Redis over HTTPS (selected production path);
-- supported cash share/ETF, RUB;
-- LIMIT / CURRENCY / DAY only;
+Mandatory invariants:
+
+- separate account-scoped `TINVEST_TRADING_TOKEN` without transfer access;
+- `REAL_TRADING_ENABLED=true` for Real authority;
+- durable reviewed state backend; no unsafe memory fallback;
+- supported cash instrument and reviewed currency/order parameters;
 - own-funds BUY / own-position SELL;
-- `confirmMarginTrade=false`;
+- no margin/short;
 - fresh trusted market/order book;
 - exact price step;
-- small server per-order/daily hard caps;
-- immutable proposal;
-- exact short-lived confirmation из нового user turn;
-- повторный preflight непосредственно перед submit;
-- UUID idempotency;
-- `PostOrder` максимум один раз на proposal/request UUID;
-- ambiguous possible-submit → unknown/do-not-resubmit, только reconciliation;
-- `submitted` != `filled` без broker proof;
-- account IDs маскируются.
+- server per-order/daily hard caps;
+- immutable proposal/plan context;
+- exact short-lived owner confirmation from a **new** user turn;
+- repeat preflight immediately before submit;
+- UUID/idempotency binding;
+- one possible broker submit per request identity;
+- ambiguous possible-submit → unknown/do-not-resubmit, reconciliation only;
+- `submitted` != `filled` without broker proof;
+- account IDs masked.
 
-First-release real surface:
+Reviewed Real operationIds:
 
 - `getRealTradingStatus`;
 - `prepareRealTrade`;
 - `executeRealTrade`;
 - `getRealOrderState`.
 
-Не публиковать в protected real v1 path: transfer/withdraw/securities transfer, MARKET/BESTPRICE, margin/short, futures/options/currency execution, stop orders, ReplaceOrder, PostOrderAsync, autonomous recurring execution, real cancellation.
+Forbidden under current reviewed Real surface:
 
-`REAL_TRADING_ENABLED=false` — master rollback state: real mutation Actions должны исчезать из OpenAPI.
+- transfer/withdraw/securities transfer;
+- MARKET/BESTPRICE;
+- margin/short;
+- futures/options as autonomous Real execution;
+- stop orders;
+- replace/async submit;
+- token management;
+- autonomous recurring Real-money execution;
+- automatic retry after possible-submit ambiguity.
 
-Owner acceptance 2026-08-03 доказал first real SBER fill, broker/portfolio/operations reconciliation и replay без второго submit. Это не ослабляет safety contract для следующих сделок.
+`REAL_TRADING_ENABLED=false` is the master Real rollback.
 
 ## 5. Owner authorization boundary
 
-Engineering autonomy не является разрешением на конкретную новую реальную сделку.
+Engineering autonomy, Watchtower alerts, portfolio-management prompts, recommendations and plans are not authorization for a new Real trade.
 
-После v8.6.1 release каждая реальная операция по-прежнему требует действующий preflight/proposal/confirmation contract. Future v9 may simplify UX through an immutable portfolio plan, but it must preserve explicit owner approval before any real-money submit unless a separately owner-approved threat model and release explicitly changes that boundary.
+Every Real submit still requires the server-side reviewed confirmation/idempotency/preflight lifecycle. Never infer permission from `управляй портфелем`, maintenance instructions or prior acceptance.
 
-Нельзя интерпретировать `управляй портфелем`, автономную разработку или read-only monitoring как разрешение на broker write.
+## 6. Internal v9 engines versus GPT Actions
 
-## 6. v9 delivery discipline
+WP1–WP14 internal modules are not automatically GPT Actions.
 
-Каждый work package проходит:
+Runtime GPT Action authority is the effective production:
 
-1. architecture/data/threat contract;
-2. versioned models/interfaces;
-3. deterministic implementation;
-4. fake-client/unit/contract/integration tests;
-5. regression coverage старого behavior при disabled feature flag;
-6. security/secret review;
-7. documentation/source-of-truth update;
-8. exact-head Regression Shield;
-9. squash merge;
-10. feature-flagged deploy;
-11. shadow/Sandbox/minimal-real acceptance, только если пакет этого требует.
+`https://omni-cio-gateway.onrender.com/openapi.json`
 
-Новые v9 engines должны быть additive/shadow-first. Feature flag обязан иметь safe default, validation, rollback value и tests proving old behavior when disabled. Execution-affecting flag failure = fail closed.
+The GPT may claim a server call only when that operationId is actually published and returned evidence proves the call.
 
-Durable state must be versioned. Не reinterpret existing real journal destructively; schema migration должна быть explicit/tested, unresolved broker/plan state сохраняется через rollback, broker state reconciled before destructive cleanup.
+Baseline portfolio routing remains:
 
-## 7. Secrets и приватные данные
+`getPortfolioSnapshot → getCashLiquiditySnapshot → getPortfolioAnalytics → analysis`.
 
-Никогда не сохранять/публиковать значения:
+Exact-action requests remain isolated: `вызови только X` must not expand to other Actions.
+
+Hidden Watchtower/QStash routes stay excluded from GPT OpenAPI.
+
+## 7. Maintenance delivery discipline
+
+Every significant maintenance package follows:
+
+1. identify current source of truth and exact defect;
+2. one focused branch/PR;
+3. update architecture/data/threat/recovery docs only when boundary changes;
+4. deterministic tests/guards for the defect;
+5. preserve old behavior/safety where relevant;
+6. review secrets/private-data exposure;
+7. exact-head Regression Shield + security;
+8. zero unresolved review threads;
+9. squash merge with expected-head protection where available;
+10. external Preview/Update only if applied GPT configuration/Action contract changed.
+
+Do not weaken CI, safety checks or type/lint/security policy just to make a dependency or maintenance PR green.
+
+## 8. Dependency policy
+
+Canonical dependency sources remain at repository root because Render/CI consume them directly:
+
+- `requirements.in` — runtime direct constraints;
+- `requirements.txt` — generated/hash-locked runtime set;
+- `requirements-dev.in` — CI/test/security direct constraints;
+- `requirements-dev.txt` — generated/hash-locked dev set.
+
+Rules:
+
+- edit `.in` sources, not generated locks by hand;
+- regenerate/verify locks deterministically;
+- generated Windows projection files are ephemeral CI artifacts and must not be committed;
+- Dependabot PRs are proposals, not merge authorization;
+- patch/minor/major updates all require current-main exact-head CI;
+- major runtime/SDK updates get explicit compatibility review;
+- known-incompatible toolchain versions are held narrowly/documented, never forced by disabling lock verification;
+- external GitHub Actions remain pinned to full commit SHA.
+
+Maintenance policy: `docs/operations/DEPENDENCY_MAINTENANCE.md` when present on accepted `main`.
+
+## 9. Secrets and private data
+
+Never persist/publish values of:
 
 - `TINVEST_TOKEN`;
 - `TINVEST_SANDBOX_TOKEN`;
 - `TINVEST_TRADING_TOKEN`;
 - `UPSTASH_REDIS_REST_TOKEN`;
 - `GATEWAY_API_KEY`;
+- QStash/Watchtower signing/scheduling secrets;
 - Authorization headers;
-- полный broker account ID;
-- private positions/operations/reports как configuration data;
+- full broker account ID;
+- private positions/operations/reports as repository configuration;
 - private keys/certificates.
 
-Только env names, safe placeholders и masked IDs.
+Use only env/role names, safe placeholders and masked IDs.
 
-## 8. Runtime/deployment
+## 10. Runtime/deployment
 
 - production service: `omni-cio-gateway`;
 - endpoint: `https://omni-cio-gateway.onrender.com`;
-- Render plan: Free;
 - entrypoint: `app:app`;
 - deployment contract: `render.yaml`;
-- selected durable real journal: external Upstash Redis Free over HTTPS;
-- Render Persistent Disk не требуется;
-- `app_v371.py`, `app_v360.py`, `main.py` остаются current dependencies `app.py` до отдельного compatibility refactor.
+- durable state uses reviewed external Upstash paths where configured;
+- `app_v371.py`, `app_v360.py`, `main.py` remain current dependencies until a separate compatibility refactor proves replacement.
 
-Conditional execution routes должны отсутствовать, когда соответствующий kill switch выключен.
+Conditional execution routes must disappear/fail closed according to their kill switches/readiness contracts.
 
-## 9. Custom GPT configuration
+## 11. Applied Custom GPT configuration
 
-Current applied UI/config release:
+Current applied UI:
 
-`Omni-CIO API | Управляющий и аналитик v8.6.1`
+`Omni-CIO API | Управляющий и аналитик v9.0.0`
 
-Canonical GPT Editor Instructions:
+Applied Instructions:
+
+`gpt/CUSTOM_GPT_INSTRUCTIONS_V9_0_0_COMPACT.txt`
+
+Applied Knowledge:
+
+`gpt/KNOWLEDGE_MANIFEST_V9_0_0.md` — exactly 10 files, once each.
+
+Protected rollback Instructions:
 
 `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt`
-
-Full engineering reference:
-
-`gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_0.txt`
-
-Production Knowledge: ровно 10 файлов из `gpt/knowledge/`, перечисленных в `gpt/CONFIGURATION.md`.
 
 OpenAPI:
 
 `https://omni-cio-gateway.onrender.com/openapi.json`
 
-Authentication: API Key → Bearer using `GATEWAY_API_KEY` only.
+Authentication: API Key → Bearer using external `GATEWAY_API_KEY` only.
 
-GitHub не синхронизирует GPT Editor автоматически. Applied GPT остаётся v8.6.1 до WP15; после reviewed GPT-visible changes требуется owner apply + Preview + `Update`.
+Apps stay OFF while custom Actions are used. Secret values never enter Instructions/Knowledge.
 
-## 10. Portfolio-management routing
+GitHub does not synchronize GPT Editor automatically. Current v9 owner acceptance is complete. Future GPT-visible changes require review → Preview → `Update` on the **same** GPT → non-secret evidence.
 
-Для `УПРАВЛЯЙ ПОРТФЕЛЕМ` обязательный protected v8.6.1 старт:
-
-1. `getPortfolioSnapshot`;
-2. при успехе `getCashLiquiditySnapshot`;
-3. `getPortfolioAnalytics`;
-4. затем анализ.
-
-Portfolio management не является real-trade authorization.
-
-Exact-action запрос имеет приоритет: если пользователь говорит `вызови только X`, другие Actions не вызываются.
-
-WP1 may generalize natural-language routing, but it must preserve exact-action isolation and broker-write authorization boundaries.
-
-## 11. Money/data quality
+## 12. Money/data quality
 
 - exact decimal logic;
-- не смешивать валюты без verified FX + timestamp;
-- не double-count commissions/child operations/embedded trades;
-- `complete=false`, partial или truncated не выдавать как полный результат;
-- last price не считать гарантированной ценой сделки;
-- stale/incomplete market блокирует real proposal;
-- `withdraw_limits` не считать buying budget;
-- technical affordability не считать personal sizing;
-- BUY sizing только own funds, SELL только own position; margin fields не авторизуют sizing.
+- do not mix currencies without verified FX + timestamp;
+- do not double-count commissions/child operations/embedded trades;
+- incomplete/partial/truncated/contradictory data is not full truth;
+- last price is not guaranteed execution price;
+- stale market blocks unjustified exact sizing/Real proposal;
+- `withdraw_limits` is not automatically buying budget;
+- technical affordability is not personal sizing;
+- free cash alone is not a reason to buy;
+- BUY uses own funds, SELL own position under reviewed Real lifecycle.
 
-## 12. T-Invest broker report
+## 13. Broker-report integrity
 
-Для `getBrokerReportReconciliation` сохранять async contract:
+For `getBrokerReportReconciliation` preserve the async contract:
 
 - `days=1..31`;
-- первый вызов без `task_id`;
-- `wait_seconds=0` может вернуть `pending` + настоящий `task_id`;
-- повторная проверка использует тот же `task_id`;
-- T-Invest `30058` = report pending;
-- прочие ошибки не переименовывать в pending;
-- готовность только при `complete=true`.
+- first request without `task_id`;
+- `wait_seconds=0` may return `pending` + real `task_id`;
+- follow-up uses same `task_id`;
+- T-Invest `30058` means pending;
+- unrelated errors are not renamed pending;
+- ready/full result only when contract says complete.
 
-## 13. Repository structure
+## 14. Repository structure
 
-- runtime/wrappers — root + `omni_cio/`;
-- Sandbox — `omni_cio/sandbox/`;
-- Real execution — `omni_cio/real_trading/`;
-- future v9 engines — только agreed package paths внутри существующего product tree;
-- GPT config — `gpt/`;
-- engineering memory — `knowledge/`;
-- architecture — `docs/architecture/`;
-- active program — `docs/master-plan/`;
-- release runbooks — `docs/operations/`;
-- tests — `tests/`;
-- CI/security — `scripts/`, `.github/`.
+- root wrappers/runtime + `omni_cio/`;
+- Sandbox: `omni_cio/sandbox/`;
+- Real: `omni_cio/real_trading/`;
+- safe plan execution: `omni_cio/plan_execution/`;
+- Watchtower: `omni_cio/watchtower/`;
+- decision journal/evaluation: `omni_cio/decision_journal/`;
+- GPT config/recovery: `gpt/`;
+- engineering memory: `knowledge/`;
+- architecture: `docs/architecture/`;
+- completed v9 program spec: `docs/master-plan/`;
+- runbooks/maintenance: `docs/operations/`;
+- tests: `tests/`;
+- CI/security: `scripts/`, `.github/`.
 
-Не создавать duplicate setup/audit docs вместо обновления существующего source of truth.
+One-time bootstrap payloads and generated CI projections must not remain in accepted `main` after their task is complete.
 
-## 14. Tests and Regression Shield
+Do not create duplicate setup/audit/inventory docs instead of updating existing sources of truth.
 
-Минимальные проверки:
+## 15. Required verification
 
-```bash
-python scripts/check_ci_security_baseline.py
-python scripts/check_repository_layout.py
-python scripts/check_gpt_recovery_consistency.py
-python -m ruff check .
-python -m ruff format --check scripts tests/test_ci_security_baseline.py
-python -m mypy
-python -m compileall -q app.py app_v371.py app_v360.py main.py \
-  portfolio_market.py portfolio_analytics.py cash_liquidity.py \
-  purchase_capacity.py purchase_capacity_integrity.py \
-  operations_analytics.py broker_report_reconciliation omni_cio tests scripts
-python -m pytest -q --cov --cov-branch --cov-fail-under=60
-```
+Regression Shield is the merge gate and must remain strict. It covers at minimum:
 
-Execution regression дополнительно обязан доказывать:
+- lock reproducibility;
+- CI/security policy;
+- repository structure/boundaries;
+- source compilation;
+- Ruff lint/format;
+- mypy baseline;
+- `app:app` stability;
+- GPT Action/recovery contracts;
+- pytest/coverage;
+- dependency audit;
+- SAST;
+- secret scan.
 
-- wrong/expired confirmation не submit-ит;
-- replay не создаёт второй `PostOrder`;
-- ambiguous submit не retry-ится;
-- own-funds/own-position violations блокируются;
-- hard caps fail closed;
-- account mismatch/ambiguity fail closed;
-- stale market fail closed;
-- secrets/account IDs redacted;
-- durable journal outage/tamper fail closed;
-- conditional OpenAPI surface корректен.
+The separate live Gateway authority workflow may perform public `/health` + `/openapi.json` GET verification only. It must never send secrets or call protected broker Actions.
 
-CI tests не должны обращаться к live T-Invest/Render.
+## 16. Cleanup discipline
 
-Merge evidence — полный `.github/workflows/regression-shield.yml` на exact head.
+Before deleting/moving anything:
 
-## 15. Git workflow
+1. search imports/references;
+2. inspect tests/CI/scripts;
+3. inspect Render/GPT/recovery docs;
+4. prove replacement/retirement;
+5. add a regression guard where appropriate;
+6. use a focused branch/PR;
+7. pass exact-head Regression Shield/security.
 
-- отдельная branch;
-- один логический scope на PR;
-- dependency locks вручную не править;
-- external Actions pinned full SHA;
-- перед merge проверить head SHA, CI, review threads;
-- release/package changes merge через squash после зелёного exact-head Regression Shield;
-- после backend/config merge выполнить production acceptance затронутых routes, если package gate этого требует.
+Versioned filenames are not proof of obsolescence. Conversely, one-time bootstrap/generated artifacts should not be kept forever once their references are proven retired.
 
-## 16. Documentation after significant change
+## 17. Current status
 
-Обновлять только затронутые источники истины:
+- applied GPT: **v9.0.0 owner-accepted**;
+- WP0–WP15: complete;
+- protected v8.6.1 rollback: retained;
+- production read-only: accepted;
+- Sandbox: conditional/virtual;
+- Real BUY/SELL lifecycle: accepted/protected;
+- repository mode: controlled maintenance.
 
-- `README.md`;
-- `CHANGELOG.md`;
-- `knowledge/00_PROJECT_MASTER_CONTEXT.md`;
-- `knowledge/16_CURRENT_PROGRAM_STATUS.md`;
-- `gpt/` при изменении Custom GPT;
-- relevant architecture/runbook;
-- v9 program/status при progression work package.
-
-## 17. External boundaries
-
-GitHub не заменяет:
-
-- Render Dashboard для secrets/deploy state;
-- GPT Editor для применённых Instructions/Knowledge/model/Bearer/OpenAPI;
-- T-Invest API для live broker state.
-
-Green CI не доказывает production state. Для release-visible изменений нужна соответствующая acceptance evidence.
+Current exact status: `knowledge/16_CURRENT_PROGRAM_STATUS.md`.

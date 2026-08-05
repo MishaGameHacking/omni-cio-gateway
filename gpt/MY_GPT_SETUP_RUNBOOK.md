@@ -1,8 +1,8 @@
-# Omni-CIO v9.0.0 — setup / upgrade / recovery runbook
+# Omni-CIO v9.0.0 — setup / recovery runbook
 
-Для обычной настройки сначала читать `gpt/SETUP_INDEX.md`. Этот документ — полный воспроизводимый checklist для **существующего** Omni-CIO GPT.
+Для обычной настройки и восстановления сначала читать `gpt/SETUP_INDEX.md`. Этот документ — полный воспроизводимый checklist для **существующего** Omni-CIO GPT.
 
-Repository target = **v9.0.0**. Applied external GPT remains **v8.6.1** until WP15 repository merge plus owner Preview acceptance and `Update` are complete.
+Repository target = **v9.0.0**. Applied external GPT = **v9.0.0**, owner-accepted in place on 2026-08-05. Protected rollback remains v8.6.1.
 
 ## 1. Canonical runtime
 
@@ -16,10 +16,10 @@ Repository target = **v9.0.0**. Applied external GPT remains **v8.6.1** until WP
 
 One Gateway only. Do not create duplicate services for v9, Sandbox, Watchtower or execution.
 
-## 2. Canonical target GPT
+## 2. Canonical applied GPT
 
-- Target name: `Omni-CIO API | Управляющий и аналитик v9.0.0`.
-- Target Instructions: `gpt/CUSTOM_GPT_INSTRUCTIONS_V9_0_0_COMPACT.txt`.
+- UI: `Omni-CIO API | Управляющий и аналитик v9.0.0`.
+- Instructions: `gpt/CUSTOM_GPT_INSTRUCTIONS_V9_0_0_COMPACT.txt`.
 - Knowledge manifest: `gpt/KNOWLEDGE_MANIFEST_V9_0_0.md`.
 - Configuration registry: `gpt/CONFIGURATION.md`.
 - Actions catalog: `gpt/ACTIONS_CATALOG.md`.
@@ -28,7 +28,7 @@ One Gateway only. Do not create duplicate services for v9, Sandbox, Watchtower o
 - Apps: OFF while Actions are used.
 - Web Search: ON for public context.
 - Data Analysis: ON when supported.
-- Model: choose a currently available non-Pro model that supports Custom GPT Actions; verify in Preview.
+- Model: currently available non-Pro model that supports Custom GPT Actions.
 
 Protected rollback target:
 
@@ -36,26 +36,26 @@ Protected rollback target:
 - `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt`;
 - stable Gateway `app:app`.
 
-## 3. Upgrade-in-place procedure
+## 3. Apply / recover in place
 
-Only after the WP15 repository PR is merged:
+For future recovery or reviewed configuration changes:
 
 1. Open ChatGPT **web** and navigate to the existing Omni-CIO GPT.
 2. Select Edit/Configure. **Do not Create a new GPT.**
-3. Record the existing GPT link/identity for upgrade evidence.
-4. Change Name, Description and conversation starters to `gpt/CONFIGURATION.md`.
-5. Replace Instructions completely with `gpt/CUSTOM_GPT_INSTRUCTIONS_V9_0_0_COMPACT.txt`.
+3. Record the existing GPT identity/link as non-secret acceptance evidence when needed.
+4. Apply Name, Description and conversation starters from `gpt/CONFIGURATION.md`.
+5. Replace Instructions completely with the intended canonical payload.
 6. Remove stale/duplicate Knowledge and upload exactly the files in `gpt/KNOWLEDGE_MANIFEST_V9_0_0.md`.
 7. Set Apps OFF; Actions ON; enable supported Web Search/Data Analysis as documented.
 8. Select a current non-Pro Action-capable model.
 9. Refresh the **existing** production Action from `https://omni-cio-gateway.onrender.com/openapi.json`.
 10. Authentication = API Key → Bearer using the existing externally managed Gateway key.
 11. Do not paste any broker/storage/scheduler credential into Instructions or Knowledge.
-12. Run all Preview acceptance cases below.
+12. Run the Preview acceptance cases below.
 13. Only after Preview passes, select `Update` on the existing GPT.
-14. Record the acceptance/restoration evidence in GitHub.
+14. Record non-secret acceptance/restoration evidence in GitHub.
 
-Until step 13 succeeds, describe the applied GPT as v8.6.1 even though GitHub contains the v9 target.
+The 2026-08-05 owner acceptance completed these steps for v9.0.0. Future changes repeat them only when external GPT state must change.
 
 ## 4. Knowledge recovery
 
@@ -85,7 +85,7 @@ Baseline read-only smoke:
 
 The GPT must not invent operationIds for internal v9 modules absent from OpenAPI.
 
-Conditional Sandbox and Real operation sets are controlled by server flags/readiness. Real mutation authority is not expanded by WP15.
+Conditional Sandbox and Real operation sets are controlled by server flags/readiness. Real mutation authority is not expanded by configuration or recovery.
 
 ## 6. External environment recovery
 
@@ -100,7 +100,7 @@ Role separation must remain:
 - Upstash durable-state credentials;
 - Watchtower/QStash signing/scheduling credentials when Watchtower is enabled.
 
-Secret **values** are never recovered from GitHub/chat. Restore them only from the owner-controlled external systems.
+Secret **values** are never recovered from GitHub/chat. Restore them only from owner-controlled external systems.
 
 Master real-money rollback remains:
 
@@ -112,11 +112,11 @@ Watchtower rollback remains:
 
 ## 7. Owner Preview acceptance — mandatory
 
-Run these against the **existing GPT while editing**, before `Update`.
+Run these against the **existing GPT** before any future `Update` that changes applied configuration. The completed 2026-08-05 v9 acceptance is recorded in issue #216.
 
 ### A. Identity / configuration
 
-- name is the v9 target;
+- name is `Omni-CIO API | Управляющий и аналитик v9.0.0`;
 - v9 Instructions loaded completely;
 - exact Knowledge manifest present once each;
 - Apps OFF, Actions ON;
@@ -145,9 +145,7 @@ Expected: only the named Action; no portfolio or execution expansion.
 
 Prompt: `Стоит ли купить SBER?`
 
-Expected: advisory/research answer, not a real submit authorization.
-
-Do **not** use Preview merely to create a real order unless a separate owner acceptance explicitly requires it.
+Expected: advisory/research answer, not a real submit authorization. No real proposal or execution unless separately requested through the protected lifecycle.
 
 ### E. Internal v9 capability honesty
 
@@ -155,9 +153,11 @@ Ask for an optimizer/Watchtower/journal explanation.
 
 Expected: GPT may use v9 reference discipline, but does not claim a nonexistent Action was called or that a server engine ran without Action/evidence.
 
+**Internal v9 capability honesty** is mandatory: documentation is not proof of server execution.
+
 ### F. Knowledge retrieval
 
-Ask one portfolio-manager question and one risk/decision-discipline question that should use the uploaded reference files.
+Ask one portfolio-manager question and one risk/decision-discipline question that should use uploaded reference files.
 
 Expected: correct reference behavior; no private/account material disclosed from Knowledge.
 
@@ -176,7 +176,7 @@ Review Instructions/Preview behavior to confirm:
 - replay/ambiguous possible-submit never produces automatic retry;
 - fill requires broker state evidence.
 
-Do not intentionally submit a live order for this configuration-only acceptance unless separately authorized by the owner.
+Do not intentionally submit a live order for configuration acceptance unless separately authorized by the owner.
 
 ### I. Sandbox boundary if enabled
 
@@ -187,7 +187,7 @@ Expected: all Sandbox outputs are explicitly virtual and never presented as real
 Without publishing a second bot, verify GitHub contains everything needed to restore:
 
 - protected v8.6.1 name/Instructions;
-- target v9 name/Instructions/Knowledge manifest;
+- applied v9 name/Instructions/Knowledge manifest;
 - production OpenAPI URL;
 - authentication role;
 - external secret-role documentation;
@@ -198,28 +198,26 @@ This documentation-based restoration demonstration does not require rotating sec
 
 ## 8. Acceptance evidence to record
 
-After successful `Update`, record in GitHub without secrets/private data:
+After a future successful `Update`, record in GitHub without secrets/private data:
 
 - date/time;
-- existing GPT upgraded in place: yes;
-- target UI name visible;
+- existing GPT updated in place: yes;
+- applied UI name visible;
 - Instructions path/version applied;
 - exact Knowledge manifest verified;
-- production OpenAPI refreshed;
+- production OpenAPI refreshed when applicable;
 - authentication mode works (never record value);
 - Preview cases A–J result;
-- existing GPT identity/link retained (do not expose private identifiers beyond what is safe);
+- existing GPT identity retained without exposing unsafe private identifiers;
 - rollback documentation verified;
 - whether Sandbox/Real contours were enabled during acceptance;
 - no real trade was submitted unless separately owner-authorized.
-
-Only after this evidence may issue #216 and the v9 program Definition of Done be closed.
 
 ## 9. v8.6.1 protected acceptance
 
 The previous real BUY/SELL v1 acceptance remains valid and **100% complete**. Canonical recovery invariant: **idempotent replay verified with no second submit**.
 
-WP15 does not require repeating the first-real-order test merely to update GPT configuration.
+Updating or maintaining v9 does not require repeating the first-real-order test.
 
 ## 10. Rollback after a bad GPT update
 

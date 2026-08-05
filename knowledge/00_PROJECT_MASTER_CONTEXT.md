@@ -1,36 +1,38 @@
 # 00 — OMNI-CIO PROJECT MASTER CONTEXT
 
-Дата актуализации: 2026-08-04
+Дата актуализации: 2026-08-05
 
 Этот файл хранит короткую долговременную память **одного проекта**: одного Custom GPT Omni-CIO и одного production Gateway для T-Invest.
 
 ## 1. Product identity
 
-Repository target configuration:
+Applied and repository-aligned production configuration:
 
 `Omni-CIO API | Управляющий и аналитик v9.0.0`
 
-Target GPT Editor payload:
+Applied GPT Editor payload:
 
 `gpt/CUSTOM_GPT_INSTRUCTIONS_V9_0_0_COMPACT.txt`
 
-Target Knowledge source:
+Applied Knowledge source:
 
 `gpt/KNOWLEDGE_MANIFEST_V9_0_0.md`
 
-Applied external GPT remains **v8.6.1** until the WP15 repository release is merged and owner Preview + `Update` acceptance is completed and recorded. Protected rollback Instructions remain:
+Owner acceptance for the existing GPT completed on 2026-08-05. Issues #176 and #216 are closed completed.
+
+Protected rollback Instructions remain:
 
 `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt`
 
-Never create a second GPT to apply v9.
+Never create a second GPT to recover or maintain v9.
 
 ## 2. Runtime architecture
 
 ```text
-EXISTING Omni-CIO GPT
+EXISTING Omni-CIO GPT v9.0.0
         │
         ▼
-Omni-CIO Gateway (`app:app`, Render Free)
+Omni-CIO Gateway (`app:app`, Render)
         ├─ production read-only broker contour
         ├─ optional T-Invest Sandbox contour
         ├─ exact-owner-confirmed Real execution contour
@@ -38,9 +40,9 @@ Omni-CIO Gateway (`app:app`, Render Free)
         └─ hidden signed Watchtower/QStash routes
 ```
 
-GitHub stores code plus canonical target/recovery configuration. Render runs the Gateway. GPT Editor holds the actually applied Instructions/Knowledge/Action authentication and is not synchronized automatically by GitHub.
+GitHub stores code plus canonical applied/recovery configuration. Render runs the Gateway. GPT Editor holds the applied Instructions/Knowledge/Action authentication and is not synchronized automatically by GitHub.
 
-## 3. Protected v8.6.1 baseline
+## 3. Protected v8.6.1 rollback baseline
 
 Protected release commit:
 
@@ -54,7 +56,7 @@ Accepted real lifecycle remains:
 
 `fresh facts → prepare immutable proposal → exact owner confirmation in a NEW turn → one idempotent broker submit → broker reconciliation → confirmed fill only with broker proof`.
 
-The first controlled real SBER acceptance and portfolio/operations reconciliation remain historical release evidence; WP15 does not require repeating a real-money order merely to update GPT configuration.
+The protected baseline is rollback evidence, not the currently applied GPT version.
 
 ## 4. v9 program
 
@@ -62,13 +64,11 @@ Canonical owner-approved / program-locked roadmap:
 
 `docs/master-plan/OMNI_CIO_V9_PORTFOLIO_AUTOPILOT_PROGRAM.md`
 
-Tracking epic: #176.
-
-WP0–WP14 are complete. WP15 Custom GPT v9 Configuration & Recovery is the final active package until repository delivery and owner external Preview/Update acceptance are complete.
+Tracking epic #176 is complete. WP0–WP15 repository delivery and owner external acceptance are complete.
 
 Exact current state: `knowledge/16_CURRENT_PROGRAM_STATUS.md`.
 
-## 5. v9 implemented capability stack
+## 5. v9 capability stack
 
 The repository contains reviewed deterministic components for:
 
@@ -101,16 +101,16 @@ Baseline portfolio-management read-only routing:
 
 `getPortfolioSnapshot → getCashLiquiditySnapshot → getPortfolioAnalytics → analysis`.
 
-Current reviewed Real operationIds:
+Reviewed Real operationIds:
 
 - `getRealTradingStatus`;
 - `prepareRealTrade`;
 - `executeRealTrade`;
 - `getRealOrderState`.
 
-Sandbox operations remain virtual-only and separately enabled.
+Sandbox operations remain virtual-only and separately enabled. Watchtower scheduler/callback routes remain hidden from GPT OpenAPI.
 
-Watchtower scheduler/callback routes remain hidden from GPT OpenAPI.
+Owner post-update smoke confirmed exact `gatewayHealth` isolation, portfolio/cash/analytics routing, advisory SBER behavior without proposal/submit, honest Watchtower/journal explanation, and real-readiness isolation to `getRealTradingStatus` with no prepare/execute.
 
 ## 7. Absolute execution boundary
 
@@ -149,13 +149,13 @@ For personal recommendations:
 
 Critical constraints and calculations belong in deterministic code/server contracts where implemented; GPT reasoning never overrides server enforcement.
 
-## 9. WP15 target configuration
+## 9. Applied GPT configuration / recovery
 
-Canonical target sources:
+Canonical sources:
 
-- `gpt/SETUP_INDEX.md` — upgrade/recovery entry;
-- `gpt/CONFIGURATION.md` — target registry;
-- `gpt/CUSTOM_GPT_INSTRUCTIONS_V9_0_0_COMPACT.txt` — target Instructions;
+- `gpt/SETUP_INDEX.md` — setup/recovery entry;
+- `gpt/CONFIGURATION.md` — applied registry;
+- `gpt/CUSTOM_GPT_INSTRUCTIONS_V9_0_0_COMPACT.txt` — applied Instructions;
 - `gpt/KNOWLEDGE_MANIFEST_V9_0_0.md` — exact Knowledge set;
 - `gpt/ACTIONS_CATALOG.md` — reviewed Action catalog;
 - `gpt/SECRETS_AND_RENDER.md` — external role/env-name boundary;
@@ -163,27 +163,20 @@ Canonical target sources:
 - `docs/architecture/V9_CUSTOM_GPT_CONFIGURATION_AND_RECOVERY.md` — WP15 architecture;
 - `docs/architecture/V9_CUSTOM_GPT_CONFIGURATION_THREAT_MODEL.md` — WP15 threats.
 
-Target editor policy:
+Editor policy:
 
 - Actions ON;
 - Apps OFF while custom Actions are used;
 - Web Search for public context;
 - Data Analysis when supported;
-- choose a currently available non-Pro model that supports Custom GPT Actions and verify it in Preview;
+- use a currently available non-Pro model that supports Custom GPT Actions;
 - user-facing timezone `Europe/Moscow` / MSK.
 
 ## 10. External owner boundary
 
-GitHub cannot press `Update` in GPT Editor, upload Knowledge to the external GPT or supply external secret values.
+GitHub cannot press `Update` in GPT Editor or supply external secret values. The v9 external application and acceptance were completed by the owner and recorded in #216.
 
-After the WP15 repository PR passes exact-head CI/security and is squash-merged, the owner must update the **existing** GPT in ChatGPT web using `gpt/MY_GPT_SETUP_RUNBOOK.md`, complete Preview acceptance/restoration demonstration and then select `Update`.
-
-Until that evidence is recorded:
-
-- repository target = v9.0.0;
-- applied external GPT = v8.6.1.
-
-Do not conflate these states.
+Future configuration changes still require the same rule: repository review first, then owner-controlled Preview/Update on the **same** GPT when external state changes are required.
 
 ## 11. Secrets / external roles
 
@@ -195,19 +188,20 @@ External roles include read-only broker, Sandbox broker, separate real-execution
 
 Current `app.py` still depends on compatibility/runtime wrapper files including `app_v371.py` and `app_v360.py`. Do not delete them merely because they look legacy; a compatibility refactor requires its own regression evidence.
 
-## 13. Git workflow
+## 13. Git / maintenance workflow
 
 Significant changes:
 
 `branch → PR → exact-head Regression Shield/security → zero unresolved review threads → squash merge → external owner acceptance when required`.
 
-Never report an external acceptance step as complete merely because repository CI is green.
+Dependency updates are proposals, not automatic authorization. Generated hash locks remain derived from their `.in` sources and are verified by CI. Known-incompatible tooling is held narrowly rather than weakening the gate.
 
 ## 14. Current readiness
 
+- applied Custom GPT: **v9.0.0 owner-accepted**;
 - production read-only: accepted;
 - Sandbox: accepted/conditional;
 - real BUY/SELL v1: accepted and protected;
-- WP0–WP14: complete;
-- WP15 repository target: in progress;
-- external applied GPT: v8.6.1 until owner Preview/Update evidence.
+- WP0–WP15: complete;
+- repository mode: controlled maintenance;
+- protected v8.6.1 rollback: retained and recoverable.
