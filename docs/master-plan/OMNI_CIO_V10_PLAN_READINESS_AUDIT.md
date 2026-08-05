@@ -3,207 +3,145 @@
 Audit date: **2026-08-05**  
 Audited branch: **`v10/program-lock`**  
 Program state: **0% / DEVELOPMENT NOT STARTED**  
-Readiness verdict after consolidation: **SUBSTANTIVE PLAN READY; PROCEDURAL PR/CI ACCEPTANCE PENDING**
+Readiness verdict: **PLAN CONTENT COMPLETE — FINAL EXACT-HEAD CI + MERGE TO MAIN REQUIRED**
 
 ## 1. Purpose
 
-This is a pre-development release-readiness audit of the V10 plan itself. It does not start V10 implementation and does not change V9 runtime authority.
+This is the pre-development release-readiness audit of the V10 plan itself. It does not start V10 implementation and does not change V9 runtime authority.
 
-The goal is to prevent plan defects, contradictory sources of truth and missing safety requirements from being discovered only after Web/Telegram/AI/real-money implementation has already started.
+The objective is to prevent contradictory requirements, hidden account dependencies and safety omissions from being discovered only after Web/Telegram/AI/real-money implementation starts.
 
-## 2. What is already strong / accepted in the plan
+## 2. Architecture accepted by the audit
 
-The current V10 program already has the correct high-level sequence and safety architecture:
+The canonical V10 program now explicitly requires:
 
-- V9 remains protected as reference/rollback;
-- GitHub is the engineering Control Plane and long-term source of truth;
-- Lenovo is the first replaceable runtime node, not the owner of the project architecture;
-- Web is one repository-controlled primary application;
-- Telegram is an alert/entry surface to the same Core/Web system, not a second financial brain;
-- GPT knowledge is migrated before Custom GPT may be retired;
-- one shared Omni-CIO AI Copilot/Agent Orchestrator is planned for Web and Telegram;
-- AI has no direct broker-write authority;
-- evidence, Risk, Optimizer, immutable Plans and execution remain controlled/deterministic boundaries;
-- Research uses trusted-source provenance, freshness, contradiction handling and bounded autonomous AI research;
-- read-only / Sandbox / Real credentials remain separated;
-- Real execution remains immutable-plan, explicit-owner-approved, idempotent, drift-stopped and broker-reconciled;
-- Shadow Mode precedes Real execution;
-- backup, restore, fault injection, security acceptance, soak testing and disaster recovery are explicit final gates;
-- Account Independence / Deployment Portability is a mandatory V10 invariant;
-- public multi-user, billing and public Real execution are intentionally excluded from V10 Personal.
+- V9 retained as protected reference/rollback until V10 final acceptance;
+- private GitHub repository as engineering Control Plane/source of truth;
+- Lenovo as the first replaceable Personal V10 runtime node, not the architectural owner;
+- one repository-controlled Web application and one Omni-CIO Core;
+- Telegram as alert/entry surface, not a second financial brain;
+- migration of current Custom GPT Instructions/Knowledge/Actions before any decommission;
+- one Omni-CIO AI Copilot/Agent Orchestrator shared by Web and Telegram;
+- replaceable AI provider with deterministic Core operation when AI is unavailable;
+- AI denied direct broker-write authority;
+- evidence provenance/freshness/identity binding before strong conclusions;
+- Risk/Optimizer/immutable Plan/confirmation/execution as deterministic authority boundaries;
+- separated read-only, Sandbox and Real credentials;
+- Shadow Mode before Personal Real execution;
+- idempotent execution, no automatic retry after possible-submit ambiguity, and broker reconciliation;
+- external Web ingress blocked until TLS/OWNER-auth/session/CSRF/origin/host/rate-limit gate passes;
+- developer GitHub access separated from broker-secret/real-money authority;
+- full-disk/private-state at-rest protection and physical-loss threat handling;
+- measurable RPO/RTO and tested backup/restore;
+- controlled Windows/runner/NVIDIA/PostgreSQL/Ollama/model update and rollback policy;
+- UTC/time-sync/clock-drift controls for timestamps and short-lived approvals;
+- logging/privacy/retention/crash-dump/audit-integrity contract;
+- AI model provenance, digest/quantization/license/eval/rollback evidence;
+- source retrieval/terms/retention governance;
+- clean-room Account Independence / Deployment Portability rehearsal;
+- final evidence matrix mapping each released capability to implementation/tests/security/runtime/recovery evidence;
+- public multi-user, billing and public Real execution intentionally excluded from V10 Personal.
 
-## 3. Hard pre-development blockers found
+## 3. Findings from the first audit and closure status
 
-The following items must be corrected before the first V10 feature-development WP is authorized.
+### B1 — Account Independence amendment not consolidated
 
-### B1 — Mandatory amendment is not yet consolidated into the canonical paired Master Plan
+**CLOSED.** The mandatory Account Independence / Deployment Portability requirements are now embedded directly in `OMNI_CIO_V10_MASTER_PLAN.md` and its regenerated PDF. The standalone amendment remains only as historical owner-approved audit evidence.
 
-`OMNI_CIO_V10_ACCOUNT_INDEPENDENCE_AMENDMENT.md` is owner-approved mandatory scope, but the hashed canonical Master Plan Markdown/PDF pair still predates this amendment.
+### B2 — Progress weights inconsistent
 
-The Program Lock and Current Program Status already correctly require consolidation before feature implementation.
+**CLOSED.** The canonical allocation is exactly:
 
-**Required fix:** merge the amendment into the canonical Master Plan Markdown, regenerate the owner-readable PDF, regenerate SHA-256 manifest, and remove the split-plan state before starting WP0 feature work.
+| Block | Weight |
+|---|---:|
+| A | 5% |
+| B | 9% |
+| C | 12% |
+| D | 14% |
+| E | 14% |
+| F | 8% |
+| G | 18% |
+| H | 8% |
+| I | 7% |
+| J | 5% |
+| **TOTAL** | **100%** |
 
-### B2 — Progress weights are internally inconsistent inside the Master Plan
+Block headings, progress table and status template are normalized to the same allocation.
 
-The authoritative progress table currently totals 100% using:
+### B3 — Current-status filename inconsistent
 
-- A 5
-- B 9
-- C 12
-- D 14
-- E 14
-- F 8
-- G 18
-- H 8
-- I 7
-- J 5
+**CLOSED.** Canonical V10 progress authority is only:
 
-However, several block headings still show older weights (`B 10%`, `C 15%`, `D 15%`, `E 15%`) and Appendix A still contains the pre-AI-amendment weight template including `G 12%`.
+`knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`
 
-**Required fix:** use exactly one weight set everywhere. The current status table above is the canonical 100% allocation unless the owner explicitly changes it.
+### B4 — Plan status wording inconsistent
 
-### B3 — Current-status filename is inconsistent inside the Master Plan
+**CLOSED.** Canonical plan status is:
 
-The Master Plan still contains references to `knowledge/V10_CURRENT_PROGRAM_STATUS.md`, while the actual canonical status file is `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
+`OWNER-APPROVED / PROGRAM LOCKED / DEVELOPMENT NOT STARTED`
 
-**Required fix:** normalize every program reference to `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
+### B5 — Program not yet accepted into `main`
 
-### B4 — Plan status wording is inconsistent
+**PROCEDURAL GATE.** PR #227 must be squash-merged after final exact-head CI/security is green and zero review blockers remain. The merge records the plan as accepted-main authority; it does not start implementation.
 
-The Master Plan header still says `DRAFT / разработка не начата`, while Program Lock and Current Status say `OWNER-APPROVED / PROGRAM LOCKED / DEVELOPMENT NOT STARTED`.
+### B6 — Exact-head Regression Shield
 
-**Required fix:** after this readiness audit is closed, the canonical Master Plan header/PDF must use one unambiguous planning status. Feature implementation must not start while the canonical artifacts disagree about whether the plan is draft or locked/approved.
+**PROCEDURAL GATE.** Final branch head after cleanup must pass the existing Regression Shield/security checks before merge.
 
-### B5 — PR #227 is still draft and is not in accepted `main`
+## 4. Safety findings and closure status
 
-The V10 program exists on `v10/program-lock`; it is not yet the accepted-main program baseline.
+### S1 — Data at rest / physical loss
 
-**Required fix:** after all plan corrections, paired Markdown/PDF consolidation, regenerated hashes, green exact-head CI and zero unresolved review threads, PR #227 must be owner-accepted and squash-merged before feature-development branches start from the V10 plan.
+**INCORPORATED.** V10 now requires full-disk encryption (BitLocker where supported or owner-approved equivalent), separate recovery-key custody and physical disk-loss coverage for secrets/private DB/Journal state.
 
-### B6 — Exact-head Regression Shield is not yet fully green at audit time
+### S2 — RPO / RTO
 
-Security job is green, but the quality/contracts/coverage job is still running at the time this audit file is written.
+**INCORPORATED.** WP10/WP49 must define measurable Recovery Point Objective and Recovery Time Objective, derive backup frequency/retention from them and prove restoration against those targets.
 
-**Required fix:** documentation/program-lock head must have the required green exact-head gates before final plan acceptance.
+### S3 — External Web ingress / TLS / OWNER auth
 
-## 4. Important safety details that must become explicit during canonical-plan consolidation
+**INCORPORATED.** WP22A requires explicit decision whether public ingress is needed, TLS/certificate lifecycle, ordinary-browser OWNER authentication, server-side sessions, rotation/revocation, CSRF/Origin/Host/CORS controls, external rate limits and step-up/recent authentication for Real-plan approval.
 
-These are not new product features. They are pre-agreed safety/operations acceptance details that should be made explicit so they are not forgotten during implementation.
+### S4 — Long-lived node update policy
 
-### S1 — Data-at-rest protection for a lost/stolen Lenovo or SSD
+**INCORPORATED.** Windows, GitHub Runner, NVIDIA driver, PostgreSQL, Ollama and AI model updates are controlled changes with compatibility/security/eval evidence and rollback. Model/runtime auto-update cannot silently change real-money behavior.
 
-The plan protects secrets and encrypted backups but does not currently make full-disk/private-database at-rest protection explicit.
+### S5 — Logging/privacy/retention
 
-Add to Node/Security acceptance:
+**INCORPORATED.** V10 requires private-data logging allowlists/masking, rotation/retention, crash-dump policy, diagnostic separation and audit-log integrity expectations.
 
-- verify Windows full-disk encryption (for example BitLocker where supported) or an equivalent owner-approved at-rest control;
-- define recovery-key ownership/storage separately from GitHub;
-- ensure DB, local private Journal/state and secret-store threat model includes physical disk loss.
+### Additional prevention controls
 
-### S2 — Explicit RPO / RTO targets
+**INCORPORATED.** Canonical plan additionally covers system clock/NTP drift, UTC timestamp semantics, AI model provenance, external-source terms/retention governance, prompt-injection/RAG/tool escalation boundaries, durable-state health before Real submit and clean-room portability.
 
-Backup/restore is present, but recovery objectives are not quantified.
+## 5. Technical-baseline verification
 
-Add to WP10/WP49:
+At the audit date, official documentation was rechecked for the main V10 assumptions. The canonical plan records these as planning references only; exact versions and behavior must be rechecked at the implementation gate rather than assumed forever.
 
-- target Recovery Point Objective (maximum acceptable private-state loss);
-- target Recovery Time Objective (maximum acceptable restoration time);
-- backup frequency/retention derived from those targets;
-- test evidence against the targets.
+The verification confirmed the continued viability of the selected architecture: GitHub self-hosted runners; Telegram Mini Apps server-side identity validation; Ollama tool calling/structured JSON; T-Invest read-only credential separation; OWASP ASVS/AISVS verification baselines; current stable React/Vite/PostgreSQL lines.
 
-Exact numbers may be chosen at WP0/WP10 after hardware/storage audit; the requirement to define and test them is mandatory.
+## 6. Canonical artifacts after consolidation
 
-### S3 — External Web ingress / TLS / owner authentication gate
+The plan is controlled by:
 
-The plan already says external HTTPS ingress is activated only after a security gate and Telegram `initData` must be validated. Before external access is enabled, architecture must explicitly define:
+- `docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.md` — searchable canonical plan;
+- `docs/master-plan/Omni-CIO_V10_Master_Plan_RU.pdf` — synchronized owner-readable copy;
+- `docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.sha256` — integrity manifest;
+- `docs/master-plan/OMNI_CIO_V10_PROGRAM_LOCK.md` — precedence/exclusivity/safety lock;
+- `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md` — progress authority;
+- this readiness audit — acceptance evidence;
+- `OMNI_CIO_V10_ACCOUNT_INDEPENDENCE_AMENDMENT.md` — historical audit trail, not a competing canonical source.
 
-- TLS termination/certificate lifecycle;
-- direct-browser OWNER authentication (not only Telegram Mini App identity);
-- session lifetime/rotation/revocation;
-- CSRF/origin/host controls;
-- rate limits for externally reachable auth/API surfaces;
-- safe remote-access fallback if public ingress is not needed.
+## 7. Final readiness gate
 
-No Real approval surface may be exposed externally before this gate passes.
+The substantive content of the V10 plan is complete. The plan becomes formally **READY — WAITING FOR OWNER `START V10` COMMAND** only when all of the following are true on accepted `main`:
 
-### S4 — Runtime/OS/model update policy
+1. canonical Markdown/PDF pair and manifest are present;
+2. their content/integrity checks pass;
+3. temporary plan-generation tooling is removed;
+4. exact-head Regression Shield/security is green;
+5. no unresolved PR review thread/blocker remains;
+6. PR #227 is squash-merged to `main`;
+7. V10 progress still reads **0% / DEVELOPMENT NOT STARTED**.
 
-Dependency policy is strong, but the long-lived Lenovo node also needs an operational patch policy covering:
-
-- Windows security updates/reboot handling;
-- GitHub runner updates;
-- NVIDIA driver updates;
-- PostgreSQL minor/security updates;
-- Ollama/model updates and model hash/license provenance;
-- rollback after a bad infrastructure/model update.
-
-Updates must be staged/verified rather than automatically changing real-money behavior without regression evidence.
-
-### S5 — Logging/privacy/retention contract
-
-Logs are already required to redact secrets, but V10 should define before production use:
-
-- which portfolio/user/system fields may be logged;
-- which fields must always be masked/omitted;
-- log retention/rotation;
-- crash-dump policy;
-- audit-log integrity expectations;
-- separation between developer diagnostics and private OWNER financial data.
-
-## 5. External technical-baseline verification performed
-
-The plan's major technology assumptions were checked against current official documentation during this audit:
-
-- GitHub self-hosted runners remain supported and GitHub recommends private repositories for self-hosted runners;
-- Telegram Mini Apps still require server-side validation of `initData` and allow freshness checking through `auth_date`;
-- Ollama supports tool calling and JSON-schema structured outputs;
-- T-Invest documents a read-only token that cannot place trading orders and supports account-specific token scoping;
-- OWASP ASVS 5.0.0 is the current stable Web/AppSec verification baseline;
-- OWASP AISVS 1.0 is live for AI-enabled security verification;
-- React 19.2, Vite 8.1 and PostgreSQL 18.4 are current/supported reference lines at the audit date, but exact versions must still be rechecked at WP2 implementation time.
-
-These checks support the plan direction; they do not replace implementation-time compatibility/security review.
-
-## 6. Readiness rule
-
-The plan may be declared **READY — WAITING FOR OWNER COMMAND TO START V10** only when all B1–B6 are closed and S1–S5 are incorporated into the canonical Master Plan/architecture acceptance criteria.
-
-The final readiness sequence is:
-
-`fix plan inconsistencies -> consolidate all mandatory amendments -> regenerate Markdown/PDF hashes -> exact-head CI green -> zero review blockers -> owner accepts/squash-merges PR #227 -> V10 remains 0% until a separate explicit START V10 command`
-
-## 7. No-development rule
-
-Until this audit is closed:
-
-- do not begin WP0 feature implementation;
-- do not create V10 Web/Telegram/AI runtime code;
-- do not alter V9 production authority;
-- do not enable new Real-money permissions;
-- do not start V11 or a competing roadmap.
-
-This audit is governance/documentation only.
-
-
-## 8. Consolidation closure record
-
-The canonical-plan finalization closes the substantive findings as follows:
-
-- **B1 CLOSED** — Account Independence requirements are incorporated into canonical Markdown/PDF; amendment retained only as audit trail.
-- **B2 CLOSED** — all canonical progress weights normalized to A/B/C/D/E/F/G/H/I/J = 5/9/12/14/14/8/18/8/7/5 = 100%.
-- **B3 CLOSED** — canonical status path normalized to `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
-- **B4 CLOSED** — canonical plan status normalized to OWNER-APPROVED / PROGRAM LOCKED / DEVELOPMENT NOT STARTED.
-- **S1 INCORPORATED** — at-rest/full-disk/private-state physical-loss requirements added.
-- **S2 INCORPORATED** — RPO/RTO definition and measured recovery evidence required.
-- **S3 INCORPORATED** — external Web TLS/direct-browser OWNER auth/session/CSRF/origin/host/rate-limit gate added.
-- **S4 INCORPORATED** — Windows/runner/driver/PostgreSQL/Ollama/model controlled-update and rollback policy added.
-- **S5 INCORPORATED** — logging/privacy/retention/crash-dump/audit integrity policy added.
-- Additional prevention controls added for clock/NTP drift, UTC timestamp semantics, AI model provenance, source-governance/retention and clean-room portability.
-
-The only remaining gates are procedural:
-
-- **B5** closes when PR #227 is squash-merged to accepted `main` after owner/plan acceptance.
-- **B6** closes when the final exact-head Regression Shield/security is green.
-
-No feature implementation is authorized by this closure record.
+The merge of the plan is documentation/governance acceptance only. **It does not authorize Web/Telegram/AI/runtime feature implementation and does not expand Real-money authority.** A separate explicit owner command is still required to start WP0.
