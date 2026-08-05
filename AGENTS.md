@@ -16,19 +16,45 @@ Applied GPT v9.0.0 owner-accepted in place on 2026-08-05. Protected rollback v8.
 2. optional virtual Sandbox через `TINVEST_SANDBOX_TOKEN`;
 3. optional exact-owner-confirmed Real execution через отдельный `TINVEST_TRADING_TOKEN` + durable state.
 
-Не создавать второй Custom GPT, отдельный frontend, duplicate Gateway, competing scheduler или parallel broker/execution stack без отдельного owner-approved program.
+Не создавать второй Custom GPT, отдельный frontend, duplicate Gateway, competing scheduler или parallel broker/execution stack вне явно утверждённой программы V10.
 
 ## 2. Program state
 
-Owner-approved/program-locked v9 program:
+Completed owner-approved/program-locked v9 program:
 
 `docs/master-plan/OMNI_CIO_V9_PORTFOLIO_AUTOPILOT_PROGRAM.md`
 
 WP0–WP15 repository delivery and owner external acceptance are **complete**. Tracking epic #176 and WP15 #216 are closed completed.
 
-Current repository mode: **controlled maintenance**.
+Current accepted V9 runtime mode remains **controlled maintenance** until a future V10 work package safely replaces a specific boundary.
 
-Feature work outside maintenance/security/dependency/recovery requires a new explicit owner-approved program. Do not reinterpret the completed v9 master plan as an unfinished queue.
+### 2.1 V10 is the exclusive next feature program
+
+Owner-approved/program-locked next program:
+
+`docs/master-plan/Omni-CIO_V10_Master_Plan_RU.pdf`
+
+Searchable scope lock:
+
+`docs/master-plan/OMNI_CIO_V10_PROGRAM_LOCK.md`
+
+Progress/status authority:
+
+`knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`
+
+Current V10 state: **PROGRAM LOCKED / DEVELOPMENT NOT STARTED / 0%**.
+
+The V10 program lock does **not** itself authorize implementation. V10 feature work begins only after a new explicit owner instruction to start V10 development.
+
+Once V10 development starts, all feature work must follow the canonical V10 plan sequentially. Until V10 reaches its full Definition of Done and 100% completion:
+
+- do not start V11 or another competing version program;
+- do not create a parallel frontend, Telegram architecture, AI stack, Gateway, broker/execution stack or competing roadmap outside the approved V10 program;
+- do not skip directly to later V10 blocks such as public/multi-user, billing or Real execution;
+- do not treat brainstormed chat ideas as approved scope when they are absent from the canonical V10 program;
+- new scope goes to backlog/program-amendment review and requires explicit owner approval.
+
+Before the owner starts V10 implementation, permitted changes remain limited to V9 security/critical maintenance, dependency maintenance, recovery and documentation correctness that do not broaden runtime authority.
 
 Protected baseline/recovery contract:
 
@@ -48,16 +74,19 @@ Read in this order:
 
 1. `README.md`;
 2. `knowledge/00_PROJECT_MASTER_CONTEXT.md`;
-3. `knowledge/16_CURRENT_PROGRAM_STATUS.md`;
-4. `gpt/SETUP_INDEX.md` and `gpt/CONFIGURATION.md` for GPT-visible/recovery work;
-5. `docs/architecture/SYSTEM_OVERVIEW.md`;
-6. `docs/architecture/REPOSITORY_STRUCTURE.md`;
-7. relevant architecture/runbook;
-8. actual `main`, open PR/issues and GitHub Actions.
+3. `knowledge/16_CURRENT_PROGRAM_STATUS.md` for the accepted V9 runtime baseline;
+4. `docs/master-plan/OMNI_CIO_V10_PROGRAM_LOCK.md`;
+5. `docs/master-plan/Omni-CIO_V10_Master_Plan_RU.pdf`;
+6. `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`;
+7. `gpt/SETUP_INDEX.md` and `gpt/CONFIGURATION.md` for GPT-visible/recovery work;
+8. `docs/architecture/SYSTEM_OVERVIEW.md`;
+9. `docs/architecture/REPOSITORY_STRUCTURE.md`;
+10. relevant architecture/runbook;
+11. actual `main`, open PR/issues and GitHub Actions.
 
-Use the completed master plan when auditing original v9 requirements or considering a new owner-approved program.
+Use the completed V9 master plan when auditing original V9 requirements. Use the V10 PDF + V10 program lock as the authority for future V10 feature work.
 
-Old chat/screenshot is not source of truth when it conflicts with current accepted `main` plus explicit external owner evidence.
+Old chat/screenshot is not source of truth when it conflicts with current accepted `main` plus explicit owner-approved program evidence.
 
 ## 4. Broker execution boundary
 
@@ -130,7 +159,7 @@ Forbidden under current reviewed Real surface:
 
 Engineering autonomy, Watchtower alerts, portfolio-management prompts, recommendations and plans are not authorization for a new Real trade.
 
-Every Real submit still requires the server-side reviewed confirmation/idempotency/preflight lifecycle. Never infer permission from `управляй портфелем`, maintenance instructions or prior acceptance.
+Every Real submit still requires the server-side reviewed confirmation/idempotency/preflight lifecycle. Never infer permission from `управляй портфелем`, maintenance instructions, V10 program approval or prior acceptance.
 
 ## 6. Internal v9 engines versus GPT Actions
 
@@ -150,22 +179,24 @@ Exact-action requests remain isolated: `вызови только X` must not ex
 
 Hidden Watchtower/QStash routes stay excluded from GPT OpenAPI.
 
-## 7. Maintenance delivery discipline
+## 7. Maintenance and future V10 delivery discipline
 
-Every significant maintenance package follows:
+Every significant maintenance package and, once started, every V10 work package follows:
 
-1. identify current source of truth and exact defect;
+1. restore the current source of truth and identify exactly one current WP/defect;
 2. one focused branch/PR;
-3. update architecture/data/threat/recovery docs only when boundary changes;
-4. deterministic tests/guards for the defect;
-5. preserve old behavior/safety where relevant;
-6. review secrets/private-data exposure;
-7. exact-head Regression Shield + security;
-8. zero unresolved review threads;
-9. squash merge with expected-head protection where available;
-10. external Preview/Update only if applied GPT configuration/Action contract changed.
+3. do not implement work outside the current approved V10 WP;
+4. update architecture/data/threat/recovery docs when a boundary changes;
+5. deterministic tests/guards for new behavior or repaired defects;
+6. preserve prior safety/recovery behavior where relevant;
+7. review secrets/private-data exposure;
+8. exact-head Regression Shield + security;
+9. zero unresolved review threads;
+10. squash merge with expected-head protection where available;
+11. update `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md` only from merged evidence when V10 is active;
+12. begin the next WP only after the current WP exit gate is satisfied.
 
-Do not weaken CI, safety checks or type/lint/security policy just to make a dependency or maintenance PR green.
+Do not weaken CI, safety checks or type/lint/security policy just to make a dependency, maintenance or V10 PR green.
 
 ## 8. Dependency policy
 
@@ -199,6 +230,7 @@ Never persist/publish values of:
 - `UPSTASH_REDIS_REST_TOKEN`;
 - `GATEWAY_API_KEY`;
 - QStash/Watchtower signing/scheduling secrets;
+- future Telegram bot tokens or local V10 runtime secret values;
 - Authorization headers;
 - full broker account ID;
 - private positions/operations/reports as repository configuration;
@@ -207,6 +239,8 @@ Never persist/publish values of:
 Use only env/role names, safe placeholders and masked IDs.
 
 ## 10. Runtime/deployment
+
+Until a future V10 WP explicitly replaces a runtime boundary and passes its exit gate:
 
 - production service: `omni-cio-gateway`;
 - endpoint: `https://omni-cio-gateway.onrender.com`;
@@ -243,7 +277,7 @@ Authentication: API Key → Bearer using external `GATEWAY_API_KEY` only.
 
 Apps stay OFF while custom Actions are used. Secret values never enter Instructions/Knowledge.
 
-GitHub does not synchronize GPT Editor automatically. Current v9 owner acceptance is complete. Future GPT-visible changes require review → Preview → `Update` on the **same** GPT → non-secret evidence.
+GitHub does not synchronize GPT Editor automatically. Current v9 owner acceptance is complete. Future GPT-visible changes require review → Preview → `Update` on the **same** GPT → non-secret evidence unless a later owner-accepted V10 WP explicitly retires that interface.
 
 ## 12. Money/data quality
 
@@ -272,6 +306,8 @@ For `getBrokerReportReconciliation` preserve the async contract:
 
 ## 14. Repository structure
 
+Current V9 structure remains authoritative until changed by the appropriate future V10 WP:
+
 - root wrappers/runtime + `omni_cio/`;
 - Sandbox: `omni_cio/sandbox/`;
 - Real: `omni_cio/real_trading/`;
@@ -281,7 +317,7 @@ For `getBrokerReportReconciliation` preserve the async contract:
 - GPT config/recovery: `gpt/`;
 - engineering memory: `knowledge/`;
 - architecture: `docs/architecture/`;
-- completed v9 program spec: `docs/master-plan/`;
+- master programs: `docs/master-plan/`;
 - runbooks/maintenance: `docs/operations/`;
 - tests: `tests/`;
 - CI/security: `scripts/`, `.github/`.
@@ -300,8 +336,8 @@ Regression Shield is the merge gate and must remain strict. It covers at minimum
 - source compilation;
 - Ruff lint/format;
 - mypy baseline;
-- `app:app` stability;
-- GPT Action/recovery contracts;
+- `app:app` stability until intentionally retired by accepted V10 work;
+- GPT Action/recovery contracts while GPT remains applied;
 - pytest/coverage;
 - dependency audit;
 - SAST;
@@ -326,11 +362,14 @@ Versioned filenames are not proof of obsolescence. Conversely, one-time bootstra
 ## 17. Current status
 
 - applied GPT: **v9.0.0 owner-accepted**;
-- WP0–WP15: complete;
+- V9 WP0–WP15: complete;
 - protected v8.6.1 rollback: retained;
 - production read-only: accepted;
 - Sandbox: conditional/virtual;
 - Real BUY/SELL lifecycle: accepted/protected;
-- repository mode: controlled maintenance.
+- current V9 runtime mode: controlled maintenance;
+- V10: **owner-approved program locked, development not started, 0%**;
+- successor versions: **not authorized until V10 reaches 100% and final acceptance**.
 
-Current exact status: `knowledge/16_CURRENT_PROGRAM_STATUS.md`.
+Current V9 runtime status: `knowledge/16_CURRENT_PROGRAM_STATUS.md`.  
+Current V10 program status: `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
