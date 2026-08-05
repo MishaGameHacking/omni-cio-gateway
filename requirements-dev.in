@@ -4,7 +4,7 @@
 bandit==1.9.4
 coverage==7.15.2
 detect-secrets==1.5.0
-filelock==3.32.0
+filelock==3.32.2
 mypy==2.3.0
 packaging==26.2
 pip==26.1.2
