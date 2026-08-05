@@ -165,7 +165,9 @@ def validate_no_competing_roots(failures: list[str]) -> None:
     for name in RESERVED_V10_ROOTS:
         path = ROOT / name
         if path.exists() and not path.is_dir():
-            _fail(f"reserved V10 root must be a directory when present: {name}", failures)
+            _fail(
+                f"reserved V10 root must be a directory when present: {name}", failures
+            )
 
 
 def validate_single_execution_authority(failures: list[str]) -> None:
@@ -228,7 +230,10 @@ def validate_adapter_authority(failures: list[str]) -> None:
                 source = path.read_text(encoding="utf-8")
                 imported = _module_imports(source, relative)
             except (OSError, SyntaxError) as exc:
-                _fail(f"cannot inspect presentation/AI adapter {relative}: {exc}", failures)
+                _fail(
+                    f"cannot inspect presentation/AI adapter {relative}: {exc}",
+                    failures,
+                )
                 continue
             if any(
                 module == PLAN_EXECUTION_MODULE_PREFIX
