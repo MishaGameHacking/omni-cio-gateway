@@ -69,17 +69,18 @@ jobs:
           python -m pip install --disable-pip-version-check
           --require-hashes -r windows-requirements-dev.txt
 
+      - name: Verify repository structure before compilation
+        run: python scripts/check_repository_layout.py
+
+      - name: Verify V10 repository boundaries before compilation
+        run: python scripts/check_v10_repository_boundaries.py
+
       - name: Compile protected runtime and Core
         run: >-
           python -m compileall -q app.py app_v371.py app_v360.py main.py
           portfolio_market.py portfolio_analytics.py cash_liquidity.py
           purchase_capacity.py purchase_capacity_integrity.py
           operations_analytics.py broker_report_reconciliation omni_cio tests scripts
-
-      - name: Verify repository and V10 boundaries
-        run: |
-          python scripts/check_repository_layout.py
-          python scripts/check_v10_repository_boundaries.py
 
       - name: Verify stable app entrypoint
         shell: pwsh
