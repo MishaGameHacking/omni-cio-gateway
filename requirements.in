@@ -6,7 +6,7 @@
 annotated-doc==0.0.4
 fastapi==0.141.1
 httpx==0.28.1
-t-tech-investments==1.49.2
+t-tech-investments==1.49.3
 tzdata==2026.3; sys_platform == "win32"
 uvicorn[standard]==0.51.0
 websockets==16.1.1

@@ -1097,9 +1097,9 @@ stevedore==5.9.0 \
     --hash=sha256:abbd0af7a38a8bbb1d6adea2e35b17609cf004eaac323e88a8d8963640dd2b3c \
     --hash=sha256:e520945d4c257700eddc1eb1d79df04b2ea578eef185e0e3fa5b442fc848d3f7
     # via bandit
-t-tech-investments==1.49.2 \
-    --hash=sha256:b417747cb93487c962addd8da4cefe98d50b6cbdb81bfd353f1ae7f19012effe \
-    --hash=sha256:db96e148f937675d91d1b4fdf6e2f9d347e9d6856dbefb7cb1823af26f2d9b25
+t-tech-investments==1.49.3 \
+    --hash=sha256:018cd34007d9308d755ca583e502224a8009211d52f903bcbfa48853d47fa9de \
+    --hash=sha256:31be3e3a757bba1d54d88c5db0a1a8d4e685c30ca4280c7e478604ca817dbe7b
     # via -r requirements.in
 tomli==2.4.1 \
     --hash=sha256:01f520d4f53ef97964a240a035ec2a869fe1a37dde002b57ebc4417a27ccd853 \
