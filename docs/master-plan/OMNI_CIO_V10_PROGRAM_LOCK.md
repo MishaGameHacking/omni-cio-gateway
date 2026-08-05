@@ -1,16 +1,17 @@
 # Omni-CIO V10 — Program Lock
 
-Status: **OWNER-APPROVED PROGRAM / PLAN FINALIZED / DEVELOPMENT NOT STARTED**  
+Status: **OWNER-APPROVED PROGRAM / DEVELOPMENT STARTED / WP0 ACTIVE**  
 Baseline: **Omni-CIO v9.0.0 — COMPLETE / PROTECTED**  
 Searchable canonical plan: `docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.md`  
 Owner-readable PDF: `docs/master-plan/Omni-CIO_V10_Master_Plan_RU.pdf`  
 Integrity manifest: `docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.sha256`  
 Plan-readiness audit: `docs/master-plan/OMNI_CIO_V10_PLAN_READINESS_AUDIT.md`  
+Start/WP0 record: `docs/master-plan/OMNI_CIO_V10_START_RECORD.md`  
 Account-independence audit trail: `docs/master-plan/OMNI_CIO_V10_ACCOUNT_INDEPENDENCE_AMENDMENT.md`
 
 ## 1. Authority
 
-The owner has approved Omni-CIO V10 as the next and only feature-development program after the completed V9 program.
+The owner has approved Omni-CIO V10 as the next and only feature-development program after the completed V9 program and explicitly issued **`START V10`** on 2026-08-05.
 
 The canonical detailed program is stored as one synchronized pair:
 
@@ -27,17 +28,23 @@ Current canonical SHA-256 values:
 
 If these values ever differ from `OMNI_CIO_V10_MASTER_PLAN.sha256`, or if Markdown/PDF diverge substantively, V10 feature work must stop until an owner-reviewed documentation PR restores one synchronized canonical program and regenerates the manifest.
 
-## 2. No implementation yet
+## 2. Development start state
 
-Finalizing/merging this program does **not** start V10 implementation and does not broaden V9 runtime or broker authority.
+The finalized planning program was accepted on `main` by squash-merged PR #227. The owner subsequently issued the explicit start command `START V10` on 2026-08-05.
 
-V10 implementation begins only after a separate explicit owner command `START V10` after the finalized plan exists on accepted `main` with green exact-head CI/security.
+Current authorized implementation scope is only:
 
-Until that command, allowed work remains limited to V9 security/critical maintenance, dependency/recovery maintenance and documentation correctness that do not broaden runtime authority.
+**WP0 — V10 Program Lock / Architecture Freeze verification.**
+
+The start command is recorded in:
+
+`docs/master-plan/OMNI_CIO_V10_START_RECORD.md`
+
+Starting V10 does **not** broaden V9 runtime, broker or Real-money authority. Later work packages remain blocked until the current WP Exit Gate is accepted on `main`.
 
 ## 3. Program exclusivity
 
-Once V10 implementation starts, all developers/AI agents must follow the canonical work-package sequence and exit gates.
+All developers/AI agents must follow the canonical work-package sequence and exit gates.
 
 Until V10 reaches full Definition of Done and owner acceptance:
 
@@ -88,7 +95,7 @@ The completed V9 money/safety invariants remain binding unless a later V10 WP ex
 
 ## 6. Source-of-truth order during V10
 
-When V10 implementation begins, use this authority order:
+During V10 implementation, use this authority order:
 
 1. accepted `main`;
 2. `AGENTS.md`;
@@ -101,9 +108,9 @@ When V10 implementation begins, use this authority order:
 
 If canonical sources conflict, feature development stops until the conflict is resolved by an owner-reviewed documentation change.
 
-## 7. Final planning-readiness invariant
+## 7. Planning-readiness acceptance evidence
 
-Before the owner may issue `START V10`, accepted `main` must prove:
+Before `START V10`, accepted `main` proved:
 
 - canonical Markdown/PDF are synchronized and SHA-256 tracked;
 - weights A-J are exactly `5/9/12/14/14/8/18/8/7/5 = 100%`;
@@ -111,13 +118,27 @@ Before the owner may issue `START V10`, accepted `main` must prove:
 - data-at-rest, RPO/RTO, Web TLS/OWNER auth, runtime update, time-sync and logging/privacy requirements are explicit;
 - temporary plan-generation tooling is absent;
 - `OMNI_CIO_V10_PLAN_READINESS_AUDIT.md` has no substantive planning blocker;
-- exact-head Regression Shield/security is green;
-- zero unresolved PR review blockers remain;
-- the plan is squash-merged into `main` while V10 implementation progress remains `0% / NOT STARTED`.
+- exact-head Regression Shield/security was green;
+- zero unresolved PR review blockers remained;
+- the plan was squash-merged into `main` while V10 implementation progress was `0% / NOT STARTED`.
 
-After those gates the planning state is **READY — WAITING FOR OWNER `START V10` COMMAND**.
+Planning acceptance evidence is PR #227 plus post-merge Regression Shield run #1332 on start SHA `159316c5b211977b0d9125dffb86210316ae10d3`.
 
-## 8. Completion rule
+## 8. Current WP0 gate
+
+WP0 must verify Architecture Freeze without introducing feature work. It may close only after:
+
+- the explicit owner start is recorded;
+- canonical plan/status/start sources are consistent;
+- V9 recovery and runtime authority remain unchanged;
+- no out-of-order/parallel feature stack is introduced;
+- exact-head Regression Shield/security passes;
+- zero review blockers remain;
+- the focused WP0 PR is squash-merged to `main`.
+
+After WP0 acceptance, Block A becomes 5% complete and WP1 is the next authorized work package. Lenovo setup remains later in Block C after WP1–WP4.
+
+## 9. Completion rule
 
 V10 itself is not complete until the canonical program reaches 100%, the final evidence matrix is complete, clean-room recovery/portability and all final security/reliability gates pass, and the owner accepts the final release.
 
