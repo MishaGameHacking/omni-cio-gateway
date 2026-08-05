@@ -10,7 +10,7 @@ Active feature program:
 
 `Omni-CIO V10 — Personal Autonomous Investment Platform`.
 
-V9 remains owner-accepted/protected while V10 is built. The owner issued `START V10` on 2026-08-05.
+V9 remains owner-accepted/protected in **controlled maintenance** while V10 is built. The owner issued `START V10` on 2026-08-05.
 
 ## Перед изменениями
 
