@@ -44,11 +44,7 @@ jobs:
           }
 
           $masterPlan = 'docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.md'
-          [System.IO.File]::WriteAllText(
-            $masterPlan,
-            $content,
-            [System.Text.UTF8Encoding]::new($false)
-          )
+          [System.IO.File]::WriteAllText($masterPlan, $content, [System.Text.UTF8Encoding]::new($false))
 
           $headers = @{
             Accept = 'application/vnd.github+json'
@@ -60,12 +56,7 @@ jobs:
             mode = 'gfm'
             context = $env:GITHUB_REPOSITORY
           } | ConvertTo-Json -Depth 4 -Compress
-          $rendered = Invoke-RestMethod \
-            -Uri 'https://api.github.com/markdown' \
-            -Method Post \
-            -Headers $headers \
-            -ContentType 'application/json' \
-            -Body $payload
+          $rendered = Invoke-RestMethod -Uri 'https://api.github.com/markdown' -Method Post -Headers $headers -ContentType 'application/json' -Body $payload
 
           $style = @'
           @page { size: A4; margin: 15mm 16mm 17mm 16mm; }
@@ -84,11 +75,7 @@ jobs:
           '@
           $html = "<!doctype html><html><head><meta charset='utf-8'><title>Omni-CIO V10 Master Plan</title><style>$style</style></head><body>$rendered</body></html>"
           $htmlPath = Join-Path $env:RUNNER_TEMP 'omni-cio-v10-master-plan.html'
-          [System.IO.File]::WriteAllText(
-            $htmlPath,
-            $html,
-            [System.Text.UTF8Encoding]::new($false)
-          )
+          [System.IO.File]::WriteAllText($htmlPath, $html, [System.Text.UTF8Encoding]::new($false))
 
           $edgeCandidates = @(
             (Join-Path $env:ProgramFiles 'Microsoft\Edge\Application\msedge.exe'),
@@ -120,11 +107,7 @@ jobs:
             "$pdfSha  Omni-CIO_V10_Master_Plan_RU.pdf",
             "$sourceSha  OMNI_CIO_V10_MASTER_PLAN.md"
           ) -join "`n"
-          [System.IO.File]::WriteAllText(
-            'docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.sha256',
-            "$manifest`n",
-            [System.Text.UTF8Encoding]::new($false)
-          )
+          [System.IO.File]::WriteAllText('docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.sha256', "$manifest`n", [System.Text.UTF8Encoding]::new($false))
 
           Remove-Item '.v10-plan-material' -Recurse -Force
           if (Test-Path '.v10-plan-source') { Remove-Item '.v10-plan-source' -Recurse -Force }
