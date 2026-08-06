@@ -13,6 +13,7 @@ FULL_WORKFLOW = WORKFLOWS / "regression-shield.yml"
 TOOLCHAIN_WORKFLOW = WORKFLOWS / "v10-toolchain-compat.yml"
 FRONTEND_FIXTURE = ROOT / "tests" / "toolchain" / "frontend"
 FULL_SHA = re.compile(r"[0-9a-f]{40}")
+PATH_FILTER = re.compile(r"(?m)^\s+paths(?:-ignore)?:\s*$")
 
 
 def display(path: Path) -> str:
@@ -74,7 +75,7 @@ def validate_fast_workflow(failures: list[str]) -> None:
         return
     if "pull_request:" not in text:
         failures.append("Fast PR Checks must run for pull_request events")
-    if re.search(r"(?m)^\s+paths(?:-ignore)?:\s*$", text):
+    if PATH_FILTER.search(text):
         failures.append(
             "Fast PR Checks may not use path filters; required-check identity must always exist"
         )
@@ -107,6 +108,8 @@ def validate_full_workflow(failures: list[str]) -> None:
     text = validate_common_workflow(FULL_WORKFLOW, failures)
     if not text:
         return
+    if PATH_FILTER.search(text):
+        failures.append("Regression Shield may not use PR path filters")
     require_tokens(
         text,
         (
@@ -136,12 +139,19 @@ def validate_toolchain_workflow(failures: list[str]) -> None:
     text = validate_common_workflow(TOOLCHAIN_WORKFLOW, failures)
     if not text:
         return
+    if PATH_FILTER.search(text):
+        failures.append(
+            "V10 Toolchain Compatibility may not use PR path filters on an acceptance gate"
+        )
     require_tokens(
         text,
         (
             "name: V10 Toolchain Compatibility",
             'python-version: "3.14.6"',
             'node-version: "24.18.0"',
+            "python -m ruff check .",
+            "python -m ruff format --check",
+            "python -m mypy",
             "npm run typecheck",
             "npm run lint",
             "npm test",
@@ -210,7 +220,11 @@ def validate_future_web_contract(failures: list[str]) -> None:
             failures.append(f"apps/web requires `{name}` script when Web is introduced")
     playwright_config = any(
         (web / name).is_file()
-        for name in ("playwright.config.ts", "playwright.config.js", "playwright.config.mjs")
+        for name in (
+            "playwright.config.ts",
+            "playwright.config.js",
+            "playwright.config.mjs",
+        )
     )
     if not playwright_config:
         failures.append("apps/web requires Playwright configuration when Web is introduced")
@@ -254,7 +268,11 @@ def validate_capability_contracts(failures: list[str]) -> None:
             "database migrations exist without tests/contracts/db_migrations/test_*.py"
         )
 
-    authority_roots = (ROOT / "apps" / "api", ROOT / "apps" / "telegram", ROOT / "ai")
+    authority_roots = (
+        ROOT / "apps" / "api",
+        ROOT / "apps" / "telegram",
+        ROOT / "ai",
+    )
     if any(path.exists() for path in authority_roots) and not has_python_contract(
         contracts / "authority"
     ):
@@ -303,7 +321,7 @@ def main() -> int:
     print("V10 Regression Shield contract passed.")
     print("Fast PR lane: GitHub-hosted, no path filtering, no secrets")
     print("Full exact-head lane: protected self-hosted V9 regression/security")
-    print("Toolchain lane: Python 3.14.6 + Node 24.18.0")
+    print("Toolchain lane: Python 3.14.6 + Node 24.18.0 + hosted static quality")
     print("Frontend baseline: typecheck + lint + unit + build")
     print("Future capability test contracts: fail-closed when roots appear")
     print("Money-path test families: protected")
