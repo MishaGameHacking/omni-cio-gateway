@@ -62,6 +62,8 @@ Read the amendment itself for exact requirements and block-by-block elaboration.
 
 ## Omni-CIO v9 Portfolio Autopilot — completed protected runtime program
 
+The accepted applied runtime is **Omni-CIO v9.0.0**.
+
 Canonical completed program:
 
 `OMNI_CIO_V9_PORTFOLIO_AUTOPILOT_PROGRAM.md`.
@@ -93,8 +95,9 @@ Historical issue/PR text may describe an older state correctly at that time. It 
 
 V10 development does not silently remove V9 safety boundaries:
 
-- READ, Sandbox and Real credentials stay isolated;
-- Real execution stays exact-owner-confirmed, immutable, idempotent, fail-closed and broker-reconciled;
+- production read-only credential remains isolated;
+- Sandbox remains virtual and separately credentialed;
+- Real execution remains exact-owner-confirmed, immutable, idempotent, fail-closed and broker-reconciled;
 - AI has no direct broker-write authority;
 - GitHub engineering access is never trading authorization;
 - current `app:app` / GPT recovery behavior stays protected until an accepted V10 migration replaces it;
