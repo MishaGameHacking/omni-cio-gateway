@@ -1,11 +1,10 @@
-# Permanent read-only quality and security checks for Omni-CIO Gateway.
+# Permanent post-merge read-only quality and security checks for Omni-CIO Gateway.
 name: Regression Shield
 
 on:
   push:
     branches:
       - main
-  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -18,7 +17,6 @@ concurrency:
 jobs:
   quality-and-regression:
     name: Quality, contracts and coverage
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 35
     defaults:
@@ -197,7 +195,6 @@ jobs:
 
   security:
     name: Dependency, code and secret security
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 35
     defaults:
