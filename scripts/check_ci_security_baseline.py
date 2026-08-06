@@ -21,6 +21,7 @@ SECRET_SCAN_EXCLUDE_PATTERN = (
     r"__pycache__|requirements(-dev)?\.txt|windows-.*requirements.*\.txt|"
     r"coverage\.xml|pytest-results\.xml)([\\/]|$)"
 )
+GENERATED_SECRET_SCAN_PATH = re.compile(r"(^|[\\/])\.pytest_cache([\\/]|$)")
 EXTERNAL_VENV_ROOT_COMMAND = 'VENV_ROOT="$(cygpath -u "$RUNNER_TEMP")"'
 EXTERNAL_VENV_EXPORT_COMMAND = 'echo "VENV_PATH=$VENV_PATH" >> "$GITHUB_ENV"'
 
@@ -189,6 +190,8 @@ def validate_detect_secrets_report(
         return
 
     for filename, findings in results.items():
+        if GENERATED_SECRET_SCAN_PATH.search(filename):
+            continue
         if not isinstance(findings, list):
             failures.append(f"invalid detect-secrets findings for {filename}")
             continue
