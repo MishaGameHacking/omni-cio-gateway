@@ -81,7 +81,9 @@ def validate_fast_workflow(failures: list[str]) -> None:
     if "self-hosted" in text:
         failures.append("Fast PR Checks must not use a self-hosted runner")
     if "secrets." in text or "${{ secrets" in text:
-        failures.append("Fast PR Checks must not consume repository/environment secrets")
+        failures.append(
+            "Fast PR Checks must not consume repository/environment secrets"
+        )
     require_tokens(
         text,
         (
@@ -239,7 +241,9 @@ def validate_frontend_fixture(failures: list[str]) -> None:
     for name in ("typecheck", "lint", "test", "build"):
         value = scripts.get(name)
         if not isinstance(value, str) or not value.strip():
-            failures.append(f"frontend baseline is missing deterministic `{name}` script")
+            failures.append(
+                f"frontend baseline is missing deterministic `{name}` script"
+            )
     for path in (
         FRONTEND_FIXTURE / "scripts" / "lint.mjs",
         FRONTEND_FIXTURE / "tests" / "smoke_contract.test.ts",
@@ -280,7 +284,9 @@ def validate_future_web_contract(failures: list[str]) -> None:
             "playwright.config.mjs",
         )
     ):
-        failures.append("apps/web requires Playwright configuration when Web is introduced")
+        failures.append(
+            "apps/web requires Playwright configuration when Web is introduced"
+        )
     if not list(web.rglob("*.spec.ts")) and not list(web.rglob("*.spec.tsx")):
         failures.append("apps/web requires at least one Playwright *.spec.ts[x] test")
 
@@ -289,9 +295,17 @@ def validate_capability_contracts(failures: list[str]) -> None:
     contracts = ROOT / "tests" / "contracts"
     capabilities = (
         (ROOT / "apps" / "api", contracts / "api", "API schema/contract"),
-        (ROOT / "apps" / "telegram", contracts / "telegram", "Telegram signature/freshness"),
+        (
+            ROOT / "apps" / "telegram",
+            contracts / "telegram",
+            "Telegram signature/freshness",
+        ),
         (ROOT / "ai", contracts / "ai", "AI schema/authority"),
-        (ROOT / "infrastructure" / "backup", contracts / "backup_restore", "backup/restore"),
+        (
+            ROOT / "infrastructure" / "backup",
+            contracts / "backup_restore",
+            "backup/restore",
+        ),
     )
     for capability, tests, label in capabilities:
         if capability.exists() and not has_python_contract(tests):
@@ -361,8 +375,12 @@ def main() -> int:
         return 1
     print("V10 Regression Shield contract passed.")
     print("Fast PR lane: GitHub-hosted Linux acceleration, cached, no secrets")
-    print("Hosted toolchain lane: clean GitHub-hosted Windows Python/Node compatibility")
-    print("Authoritative PR lane: self-hosted Windows full protected-runtime regression/security")
+    print(
+        "Hosted toolchain lane: clean GitHub-hosted Windows Python/Node compatibility"
+    )
+    print(
+        "Authoritative PR lane: self-hosted Windows full protected-runtime regression/security"
+    )
     print("Post-merge lane: self-hosted Regression Shield sentinel on main")
     print("Toolchain installation is intentionally excluded from the Lenovo merge gate")
     print("Frontend baseline: typecheck + lint + unit + build")
