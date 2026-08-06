@@ -1,0 +1,98 @@
+name: V10 Fast PR Checks
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: v10-fast-pr-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  policy-and-source:
+    name: Fast policy and source contracts
+    runs-on: windows-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up selected Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14.6"
+
+      - name: Verify exact interpreter
+        shell: pwsh
+        run: |
+          if ((python -c "import platform; print(platform.python_version())") -ne "3.14.6") { exit 1 }
+
+      - name: Verify CI and security baseline
+        run: python scripts/check_ci_security_baseline.py
+
+      - name: Verify repository structure
+        run: python scripts/check_repository_layout.py
+
+      - name: Verify V10 repository boundaries
+        run: python scripts/check_v10_repository_boundaries.py
+
+      - name: Verify V10 toolchain baseline
+        run: python scripts/check_v10_toolchain_baseline.py
+
+      - name: Verify V10 Regression Shield contract
+        run: python scripts/check_v10_regression_shield.py
+
+      - name: Compile policy and boundary sources
+        run: >-
+          python -m compileall -q scripts omni_cio/contracts
+          omni_cio/plan_execution omni_cio/sandbox omni_cio/real_trading
+
+      - name: Run WP3 guard unit tests
+        run: python -m unittest tests.test_v10_regression_shield
+
+  frontend-contracts:
+    name: Fast frontend type lint unit build
+    runs-on: windows-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: tests/toolchain/frontend
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up selected Node.js LTS
+        uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
+        with:
+          node-version: "24.18.0"
+          package-manager-cache: false
+
+      - name: Verify exact Node.js and npm versions
+        shell: pwsh
+        run: |
+          if ((node --version) -ne "v24.18.0") { exit 1 }
+          if ((npm --version) -ne "11.16.0") { exit 1 }
+
+      - name: Reproduce dependency tree from committed lock
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Type-check frontend baseline
+        run: npm run typecheck
+
+      - name: Lint frontend baseline
+        run: npm run lint
+
+      - name: Run frontend unit tests
+        run: npm test
+
+      - name: Build frontend baseline
+        run: npm run build
