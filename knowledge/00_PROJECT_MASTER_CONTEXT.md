@@ -1,265 +1,248 @@
 # 00 — OMNI-CIO PROJECT MASTER CONTEXT
 
-Дата актуализации: 2026-08-05
+Дата актуализации: 2026-08-07
 
-Этот файл хранит короткую долговременную память **одного проекта**: текущего Custom GPT Omni-CIO / production Gateway V9 и последовательно развиваемой автономной платформы V10.
+Этот файл хранит короткую долговременную память **одного проекта**: защищённого owner-accepted V9 runtime и последовательно развиваемой автономной платформы V10.
 
 ## 1. Product identity
 
-Applied and repository-aligned production configuration:
+Текущий applied production/recovery baseline:
 
-`Omni-CIO API | Управляющий и аналитик v9.0.0`
+`Omni-CIO API | Управляющий и аналитик v9.0.0`.
 
-Applied GPT Editor payload:
+Applied repository sources:
 
-`gpt/CUSTOM_GPT_INSTRUCTIONS_V9_0_0_COMPACT.txt`
+- Instructions: `gpt/CUSTOM_GPT_INSTRUCTIONS_V9_0_0_COMPACT.txt`;
+- Knowledge: `gpt/KNOWLEDGE_MANIFEST_V9_0_0.md`;
+- Gateway: `app:app` on the current Render service;
+- protected rollback Instructions: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt`.
 
-Applied Knowledge source:
+Не создавать второй GPT для recovery/maintenance. V10 мигрирует полезные GPT assets в самостоятельную платформу, но текущий GPT остаётся recovery/parity reference до явного decommission gate.
 
-`gpt/KNOWLEDGE_MANIFEST_V9_0_0.md`
-
-Owner acceptance for the existing GPT completed on 2026-08-05. Issues #176 and #216 are closed completed.
-
-Protected rollback Instructions remain:
-
-`gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt`
-
-Never create a second GPT to recover or maintain v9.
-
-## 2. Runtime architecture
+## 2. Protected V9 runtime
 
 ```text
 EXISTING Omni-CIO GPT v9.0.0
-        │
-        ▼
-Omni-CIO Gateway (`app:app`, Render)
-        ├─ production read-only broker contour
-        ├─ optional T-Invest Sandbox contour
-        ├─ exact-owner-confirmed Real execution contour
-        ├─ Upstash durable state
-        └─ hidden signed Watchtower/QStash routes
+        |
+        v
+Omni-CIO Gateway (`app:app`)
+        |-- production read-only contour
+        |-- optional virtual Sandbox contour
+        |-- exact-owner-confirmed Real execution contour
+        |-- durable state / Watchtower support
+        `-- protected V9 engines and recovery contracts
 ```
 
-GitHub stores code plus canonical applied/recovery configuration. Render runs the Gateway. GPT Editor holds the applied Instructions/Knowledge/Action authentication and is not synchronized automatically by GitHub.
+V9 WP0–WP15 are complete and owner-accepted. V9 remains controlled maintenance while V10 is built. V10 must not silently replace a V9 runtime boundary before the responsible WP passes its Exit Gate.
 
-This remains the accepted runtime while V10 is developed. V10 does not silently replace any V9 runtime boundary before the relevant V10 work package passes its Exit Gate.
+Protected v8.6.1 recovery commit:
 
-## 3. Protected v8.6.1 rollback baseline
+`baba0fb73e0483fc82b3f0bc7c2f15cbd71d804e`.
 
-Protected release commit:
+Protected execution invariant:
 
-`baba0fb73e0483fc82b3f0bc7c2f15cbd71d804e`
+**idempotent replay verified with no second submit**.
 
-Owner-accepted real BUY/SELL v1 remains **100% complete**.
+## 3. V10 program state
 
-Canonical recovery invariant: **idempotent replay verified with no second submit**.
+OWNER issued `START V10` on 2026-08-05.
 
-Accepted real lifecycle remains:
+Accepted:
 
-`fresh facts → prepare immutable proposal → exact owner confirmation in a NEW turn → one idempotent broker submit → broker reconciliation → confirmed fill only with broker proof`.
+- WP0 — COMPLETE;
+- WP1 — COMPLETE;
+- WP2 — COMPLETE;
+- WP3 — COMPLETE;
+- GitHub Pro hybrid CI + Lenovo continuity infrastructure — COMPLETE.
 
-The protected baseline is rollback evidence, not the currently applied GPT version.
+Current accepted V10 progress remains **5%** because Block B is credited only after WP4/Block Exit Gate.
 
-## 4. v9 program
+**Next authorized implementation package: WP4 — Release, build provenance and deployment contract.**
 
-Canonical owner-approved / program-locked roadmap:
+Exact state authority: `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
 
-`docs/master-plan/OMNI_CIO_V9_PORTFOLIO_AUTOPILOT_PROGRAM.md`
+## 4. V10 authority/navigation
 
-Tracking epic #176 is complete. WP0–WP15 repository delivery and owner external acceptance are complete.
+Base program:
 
-Exact current V9 runtime state: `knowledge/16_CURRENT_PROGRAM_STATUS.md`.
+- `docs/master-plan/OMNI_CIO_V10_PROGRAM_LOCK.md`;
+- `docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.md`;
+- `docs/master-plan/Omni-CIO_V10_Master_Plan_RU.pdf`;
+- `docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.sha256`.
 
-## 5. v9 capability stack
+Accepted implementation clarifications:
 
-The repository contains reviewed deterministic components for:
+- `docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md`;
+- `docs/master-plan/OMNI_CIO_V10_CONCRETE_EXECUTION_PLAN_AMENDMENT.md`;
+- `docs/architecture/V10_AI_CORTEX_CONTRACT.json`.
 
-- natural-language CIO routing;
-- Investment Policy Statement/readiness;
-- market universe;
-- candidate funnel;
-- research/evidence;
-- credit/rating/default;
-- Fund X-Ray;
-- portfolio risk 2.0;
-- meta-strategy selection;
-- optimizer/capital scaling;
-- immutable portfolio plans;
-- safe plan execution over the protected real-order primitive;
-- read-only Portfolio Watchtower;
-- append-only decision journal/evaluation/replay.
+Architectural sources include V10 system/security/data-flow/threat/recovery/ADR/repository/toolchain/Regression-Shield documents under `docs/architecture/`.
 
-These internal engines are **not automatically GPT Actions**. The GPT may call only operationIds present in the effective production `/openapi.json`, and it must not claim an internal engine ran without returned Action/evidence.
+Chat memory does not override accepted GitHub authority.
 
-## 6. Production Action contours
+## 5. GitHub Control Plane
 
-Gateway/OpenAPI:
+Repository: `MishaGameHacking/omni-cio-gateway`.
 
-- `https://omni-cio-gateway.onrender.com`;
-- `https://omni-cio-gateway.onrender.com/openapi.json`;
-- stable entrypoint `app:app`.
+Accepted current `main` after hybrid-CI hardening:
 
-Baseline portfolio-management read-only routing:
+`4b034e52c94619f1a7b2cf5dcae5248185a5f45b`.
 
-`getPortfolioSnapshot → getCashLiquiditySnapshot → getPortfolioAnalytics → analysis`.
+Infrastructure PR #242 established:
 
-Reviewed Real operationIds:
+- private protected `main`;
+- squash-only merge discipline;
+- required `V10 authoritative merge gate` from GitHub Actions;
+- GitHub-hosted fast/clean-room acceleration;
+- Lenovo `omni-cio-ci` authoritative heavy Windows gate/continuity;
+- successful post-merge Regression Shield on accepted main.
 
-- `getRealTradingStatus`;
-- `prepareRealTrade`;
-- `executeRealTrade`;
-- `getRealOrderState`.
+The Lenovo already being a GitHub runner does **not** mean the V10 application/AI node is implemented. Full node provisioning remains Block C after WP4.
 
-Sandbox operations remain virtual-only and separately enabled. Watchtower scheduler/callback routes remain hidden from GPT OpenAPI.
+## 6. Core product principle
 
-Owner post-update smoke confirmed exact `gatewayHealth` isolation, portfolio/cash/analytics routing, advisory SBER behavior without proposal/submit, honest Watchtower/journal explanation, and real-readiness isolation to `getRealTradingStatus` with no prepare/execute.
+V10 is one system with two cooperating layers:
 
-## 7. Absolute execution boundary
+```text
+DETERMINISTIC CORE  <---- typed safe tools ---->  OMNI-CIO CORTEX
+financial truth                                local intelligence
+```
 
-Always preserve:
+### Deterministic Core
 
-- production read-only broker credential is never a real-execution fallback;
-- Sandbox and Real remain isolated;
-- no real submit merely from advisory/portfolio-management wording;
-- real execution requires server readiness, supported instrument/order rules, fresh market, own-funds BUY or own-position SELL, hard caps and immutable proposal/plan context;
-- exact owner phrase arrives in a new message before execute;
-- at most one submit per request/proposal identity;
-- ambiguous possible-submit → no automatic retry, reconciliation only;
-- submitted != filled without broker proof;
-- no withdrawal/transfer, margin/short, MARKET/BESTPRICE, stop/replace/async, token management or autonomous recurring real-money execution under the current reviewed surface;
-- account identity user-facing only masked;
-- secret values/private broker payloads never enter GitHub, GPT Knowledge or public responses.
+Owns exact financial/accounting facts, validation, normalization, reconciliation, calculations, source identity/freshness and money-path enforcement.
 
-Master real rollback: `REAL_TRADING_ENABLED=false`.
+### Omni-CIO Cortex
 
-Watchtower rollback: `WATCHTOWER_ENABLED=false`.
+Owns explanation, bounded research, conversational assistance, orchestration, monitoring and non-authoritative scenarios/drafts.
 
-## 8. Decision discipline
+**AI never replaces deterministic accounting/calculations and never owns broker-write authority.**
 
-For personal recommendations:
+## 7. V10 portfolio/accounting target
 
-- facts/calculations/assumptions/recommendation stay distinct;
-- freshness/completeness/identity are checked before strong conclusions;
-- owner IPS/policy constraints precede personal sizing;
-- define structural portfolio gap before choosing tickers;
-- compare alternatives on one scale and include `NO_ACTION`;
-- hard blockers cannot be averaged away;
-- free cash is not by itself a reason to buy;
-- concentration, liquidity, credit/default, currency, fund look-through/overlap and data quality matter when applicable;
-- stale market cannot be presented as exact executable sizing;
-- clean bond price and accrued interest remain distinct.
+For the new V10 Web cabinet, the primary accounting/portfolio target is **verified broker HTML account report import**.
 
-Critical constraints and calculations belong in deterministic code/server contracts where implemented; GPT/AI reasoning never overrides server enforcement.
+Required direction:
 
-## 9. Applied GPT configuration / recovery
+- parse data only; never execute report HTML/JS/CSS;
+- arbitrary period detection;
+- MIME/encoding/size/structure validation;
+- SHA-256 duplicate handling;
+- normalize positions, cash, trades, commissions, taxes, coupons/dividends and accrued interest;
+- review before acceptance;
+- archive/history/compare/replace/delete;
+- reconciliation and explicit discrepancies;
+- truthful recognized/partial/unsupported states;
+- no photo/screenshot/OCR portfolio workflow.
 
-Canonical sources:
+MOEX provides supported **current-market enrichment**, not broker accounting truth. V10 must visibly distinguish broker period-end state from current market estimate.
 
-- `gpt/SETUP_INDEX.md` — setup/recovery entry;
-- `gpt/CONFIGURATION.md` — applied registry;
-- `gpt/CUSTOM_GPT_INSTRUCTIONS_V9_0_0_COMPACT.txt` — applied Instructions;
-- `gpt/KNOWLEDGE_MANIFEST_V9_0_0.md` — exact Knowledge set;
-- `gpt/ACTIONS_CATALOG.md` — reviewed Action catalog;
-- `gpt/SECRETS_AND_RENDER.md` — external role/env-name boundary;
-- `gpt/MY_GPT_SETUP_RUNBOOK.md` — Preview/Update/rollback procedure;
-- `docs/architecture/V9_CUSTOM_GPT_CONFIGURATION_AND_RECOVERY.md` — WP15 architecture;
-- `docs/architecture/V9_CUSTOM_GPT_CONFIGURATION_THREAT_MODEL.md` — WP15 threats.
+## 8. Local-first AI baseline
 
-Editor policy:
+Approved initial baseline:
 
-- Actions ON;
-- Apps OFF while custom Actions are used;
-- Web Search for public context;
-- Data Analysis when supported;
-- use a currently available non-Pro model that supports Custom GPT Actions;
-- user-facing timezone `Europe/Moscow` / MSK.
+- model: **Qwen3.5-4B**;
+- inference runtime: **Ollama**;
+- deployment target: validated 4-bit build such as Q4_K_M;
+- Russian is first-class;
+- initial context: 8K; 16K only after measured acceptance;
+- AI provider remains replaceable;
+- no paid AI inference subscription is required for V10 DoD.
 
-## 10. External owner boundary
+AI specialization sequence:
 
-GitHub cannot press `Update` in GPT Editor or supply external secret values. The v9 external application and acceptance were completed by the owner and recorded in #216.
+`System Policy → typed Tool Registry → Knowledge/RAG → sanitized evals → local benchmark → QLoRA only if measured persistent gaps remain`.
 
-Future configuration changes still require the same rule: repository review first, then owner-controlled Preview/Update on the **same** GPT when external state changes are required.
+Do not fine-tune first merely because it is possible.
 
-V10 does not decommission the current Custom GPT until the explicit V10 parity/decommission gate passes and the owner accepts that transition.
+## 9. 24/7 AI/operator model
 
-## 11. Secrets / external roles
+V10 Cortex is an **event-driven autonomous operator**, not an endless thinking loop.
 
-Canonical role/env-name source: `gpt/SECRETS_AND_RENDER.md`.
+Typical triggers include user questions, accepted report imports, discrepancies, stale data, Watchtower events, connector failures, scheduled research refreshes, system-health degradation and missing evidence.
 
-External roles include read-only broker, Sandbox broker, separate real-execution broker, Gateway bearer, Upstash durable-state and Watchtower/QStash credentials. Values remain outside GitHub/chat/Knowledge.
+AI outage must produce controlled degraded mode; deterministic Core remains usable.
 
-Future V10 Telegram, local AI/runtime and encryption secret values also remain outside GitHub and outside ordinary developer access.
+Initial orchestration candidate: LangGraph OSS with durable checkpoint/resume/HITL behavior behind a replaceable orchestration boundary.
 
-## 12. Runtime compatibility warning
+## 10. Research/evidence direction
 
-Current `app.py` still depends on compatibility/runtime wrapper files including `app_v371.py` and `app_v360.py`. Do not delete them merely because they look legacy; a compatibility refactor requires its own regression evidence.
+No-subscription-first research baseline:
 
-## 13. Git / maintenance workflow
+- internal SearchProvider interface;
+- self-hosted SearXNG first;
+- bounded HTTP/document retrieval first;
+- Playwright only as bounded JS/browser fallback;
+- Evidence Store for source identity, authority class, retrieved/published timestamps, instrument/issuer binding, fact/claim and freshness/contradiction state.
 
-Significant changes:
+Research priority:
 
-`branch → PR → exact-head Regression Shield/security → zero unresolved review threads → squash merge → external owner acceptance when required`.
+`broker report → MOEX → CBR/regulator → issuer/primary source → reputable secondary source → general Web discovery`.
 
-Dependency updates are proposals, not automatic authorization. Generated hash locks remain derived from their `.in` sources and are verified by CI. Known-incompatible tooling is held narrowly rather than weakening the gate.
+External retrieved text is untrusted data and cannot grant itself tool/system authority.
 
-During V10, begin the next work package only after the current WP Exit Gate is accepted on `main`.
+## 11. AI/tool authority boundary
 
-## 14. Current V9 readiness
+AI may autonomously use allowlisted read/analysis/research tools and bounded cache/evidence/checkpoint writes.
 
-- applied Custom GPT: **v9.0.0 owner-accepted**;
-- production read-only: accepted;
-- Sandbox: accepted/conditional;
-- real BUY/SELL v1: accepted and protected;
-- WP0–WP15: complete;
-- repository/runtime mode: controlled maintenance while V10 is built;
-- protected v8.6.1 rollback: retained and recoverable.
+AI never receives directly:
 
-## 15. V10 active program
+- raw trading token;
+- arbitrary PostOrder/execute tool;
+- transfer/withdrawal authority;
+- unrestricted SQL/filesystem/network scanner;
+- unrestricted Administrator/PowerShell shell;
+- GitHub ruleset/CI/OWNER bypass;
+- Real-money confirmation authority.
 
-Canonical V10 program:
+Destructive/security/admin/secret/merge/Real-money operations remain explicit human/engineering boundaries.
 
-`docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.md`
+## 12. Real-money boundary
 
-Program Lock:
+Always preserve until a responsible later V10 WP explicitly replaces and proves a boundary:
 
-`docs/master-plan/OMNI_CIO_V10_PROGRAM_LOCK.md`
+- READ, Sandbox and Real credentials isolated;
+- no advisory wording/AI/Watchtower/Telegram/GitHub change equals submit authorization;
+- Real uses immutable plan/proposal + exact short-lived OWNER confirmation in a new turn + preflight + one idempotent submit + reconciliation;
+- ambiguous possible-submit is not automatically retried;
+- `submitted != filled` without broker proof;
+- no transfer/withdrawal, margin/short, hidden autonomous execution authority.
 
-Current progress authority:
+Master Real rollback: `REAL_TRADING_ENABLED=false`.
 
-`knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`
+## 13. Lenovo role and OWNER participation
 
-Owner issued explicit **`START V10`** on 2026-08-05. Start evidence:
+Lenovo is the first replaceable Personal runtime node and currently also the GitHub self-hosted runner.
 
-`docs/master-plan/OMNI_CIO_V10_START_RECORD.md`
+Future V10 node design must arbitrate CI vs AI workload so authoritative CI is not starved by background inference/research/training.
 
-Accepted WP0 architecture freeze sources:
+Engineering agent handles GitHub/code/CI directly whenever possible. OWNER participation is requested only for genuinely non-delegable local/account/secret/security actions.
 
-- `docs/architecture/V10_SYSTEM_ARCHITECTURE.md`;
-- `docs/architecture/V10_SECURITY_BOUNDARIES.md`;
-- `docs/architecture/V10_DATA_FLOW.md`;
-- `docs/architecture/V10_THREAT_MODEL.md`;
-- `docs/architecture/V10_RECOVERY_CONTRACT.md`;
-- `docs/architecture/V10_ADR_PROCESS.md`;
-- `docs/architecture/V10_V9_BASELINE_FREEZE.md`;
-- ADR-019 in `docs/architecture/DECISIONS.md`.
+Preferred local workflow:
 
-WP1 repository architecture/boundary authority:
+`PowerShell → Administrator only if necessary → one reviewed idempotent block → PASS/FAIL evidence`.
 
-- `docs/architecture/REPOSITORY_STRUCTURE.md`;
-- `.github/CODEOWNERS`;
-- `scripts/check_v10_repository_boundaries.py`;
-- `tests/test_v10_repository_boundaries.py`;
-- permanent Regression Shield boundary step.
+Permanent AI processes run least-privilege, not permanently as Administrator.
 
-On accepted `main` after the focused WP1 acceptance merge:
+## 14. Subscription/cost direction
 
-- **WP0 / Block A = COMPLETE**;
-- **WP1 = COMPLETE**;
-- **V10 accepted progress remains 5%** until all of Block B is complete;
-- next authorized package = **WP2 — Toolchain and Dependency Baseline**.
+Design target is minimum recurring subscriptions.
 
-If this file is viewed in the unmerged WP1 PR, that handoff state is only the acceptance candidate and is not authoritative until final exact-head CI/security is green and the PR is squash-merged.
+- GitHub Pro: accepted engineering subscription;
+- local Qwen/Ollama: no AI inference subscription;
+- LangGraph OSS: no required hosted-agent subscription;
+- SearXNG: no required search API subscription;
+- Playwright: local open-source browser automation;
+- paid AI/search/agent SaaS: not required for V10 Definition of Done.
 
-V10 target architecture is GitHub-controlled and account-independent: Lenovo is the first replaceable Personal runtime node; Web, Telegram and the future AI Copilot share one Core; AI has no direct broker-write authority; current GPT knowledge/configuration is migrated and retained until parity acceptance; Real execution remains deterministic, explicit-owner-confirmed, immutable, idempotent and reconciled.
+If a future safe requirement genuinely needs a paid service, stop and present benefit/cost/alternatives to OWNER before adding it.
 
-The planned one-time Lenovo setup is deliberately later in Block C, after WP1–WP4 establish repository architecture, toolchain, CI and release/deployment contracts.
+## 15. Development workflow
+
+Significant changes follow:
+
+`branch → focused PR → exact-head required CI/security → zero unresolved blockers → squash merge → post-merge verification when required`.
+
+Do not weaken CI/safety because a tool/model/dependency is inconvenient.
+
+Do not start the full Lenovo V10 runtime, Web, Telegram, AI Cortex or later money authority out of order. Current next package is read from `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
