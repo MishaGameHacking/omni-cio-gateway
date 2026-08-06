@@ -5,8 +5,10 @@
 **Applies to:** V10 Block E (WP16-WP22A) and every later V10 capability rendered or operated through Web/Mobile/Mini App  
 **Current program sequencing:** unchanged; this amendment does not authorize implementation ahead of the current V10 work package  
 **Canonical detailed Web authority:** `docs/architecture/V10_WEB_PRODUCT_BLUEPRINT.md`  
+**Productization/account authority:** `docs/master-plan/OMNI_CIO_V10_PRODUCTIZATION_AND_OWNER_ACCOUNT_AMENDMENT.md`  
+**OWNER/T-Invest connection authority:** `docs/architecture/V10_OWNER_ACCOUNT_AND_TINVEST_CONNECTION_CONTRACT.md`  
 **Machine-readable companion:** `docs/architecture/V10_WEB_PRODUCT_BLUEPRINT.json`  
-**Owner-readable visual companion:** the approved `Omni-CIO V10 Web Blueprint` presentation generated during planning; visual direction is summarized in the canonical blueprint below and is supplementary to implementation contracts.
+**Owner-readable visual companion:** `docs/presentation/Omni-CIO_V10_Web_Blueprint_Presentation_RU.pdf`
 
 ## 1. Why this amendment exists
 
@@ -40,12 +42,15 @@ A visual mockup is design evidence only. It is never capability evidence.
 10. **Failures are a product state.** Broker offline, AI unavailable, stale data, partial sync, failed backup and recovering services must remain understandable without opening a terminal.
 11. **No silent double action.** Double tap, retry, stale page, duplicate submission and network ambiguity are handled idempotently/fail-closed for consequential actions.
 12. **Visual quality is regression-tested.** Accepted key-screen screenshots become CI baselines after WP16/WP17 establish the real frontend.
+13. **READ-first broker onboarding.** Portfolio-dependent UI is unavailable until a validated T-Invest READ connection exists; no demo truth substitutes for it.
+14. **Optional execution authority.** TRADING connection is a separate optional capability and never required for normal analysis/monitoring.
 
 ## 4. Scope locked by this amendment
 
 The detailed blueprint must cover at minimum:
 
-- login/session and first-run state;
+- login/session, personal OWNER account and first-run state;
+- Account/Connections with mandatory T-Invest READ and optional isolated TRADING credential status;
 - application shell and global health/freshness;
 - Dashboard/Overview;
 - Portfolio and Assets;
@@ -97,3 +102,4 @@ At the next intentional canonical Master Plan synchronization, this amendment ma
 ## 7. No implementation authorization
 
 This amendment is planning/governance work only. It does not authorize creating `apps/` early, starting WP16 before predecessor Exit Gates, changing the current V9 runtime, exposing external ingress, enabling public/multi-user production, or expanding broker-write authority.
+
