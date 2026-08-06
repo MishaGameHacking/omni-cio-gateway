@@ -6,7 +6,7 @@ param(
     [string]$InfrastructureBranch = "infra/github-pro-hybrid-ci",
     [int]$PreMergeTimeoutMinutes = 45,
     [int]$PostMergeTimeoutMinutes = 70,
-    [int]$ApiRetries = 12
+    [int]$ApiRetries = 20
 )
 
 $ErrorActionPreference = "Stop"
@@ -34,25 +34,43 @@ function Invoke-GhJson {
             $Path
         )
 
-        if ($null -eq $Body) {
-            $raw = & gh @args 2>$null
+        # Windows PowerShell 5.1 can promote native stderr from gh.exe to a
+        # terminating NativeCommandError when $ErrorActionPreference is Stop.
+        # Temporarily downgrade native-command errors so transient TLS/API
+        # failures can be retried instead of aborting the finalizer.
+        $savedErrorActionPreference = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
+        try {
+            if ($null -eq $Body) {
+                $raw = & gh @args 2>&1
+            }
+            else {
+                $json = $Body | ConvertTo-Json -Depth 100 -Compress
+                $raw = $json | & gh @args --input - 2>&1
+            }
+            $exitCode = $LASTEXITCODE
         }
-        else {
-            $json = $Body | ConvertTo-Json -Depth 100 -Compress
-            $raw = $json | & gh @args --input - 2>$null
+        finally {
+            $ErrorActionPreference = $savedErrorActionPreference
         }
 
-        if ($LASTEXITCODE -eq 0) {
+        if ($exitCode -eq 0) {
             if (-not $raw) { return $null }
-            return ($raw | ConvertFrom-Json)
+            $text = ($raw | Out-String).Trim()
+            if (-not $text) { return $null }
+            return ($text | ConvertFrom-Json)
         }
+
+        $detail = (($raw | Out-String).Trim() -replace "\r?\n", " | ")
+        if ($detail.Length -gt 350) { $detail = $detail.Substring(0, 350) }
 
         if ($attempt -ge $Retries) {
-            throw ("GitHub API remained unavailable after {0} attempts: {1} {2}" -f $Retries, $Method, $Path)
+            throw ("GitHub API remained unavailable after {0} attempts: {1} {2}. Last error: {3}" -f $Retries, $Method, $Path, $detail)
         }
 
-        $delay = [Math]::Min(5 * $attempt, 30)
+        $delay = [Math]::Min(4 * $attempt, 30)
         Write-Host ("Transient GitHub API/Actions error. Retry {0}/{1} in {2}s: {3} {4}" -f $attempt, $Retries, $delay, $Method, $Path) -ForegroundColor Yellow
+        if ($detail) { Write-Host ("  {0}" -f $detail) -ForegroundColor DarkYellow }
         Start-Sleep -Seconds $delay
     }
 }
