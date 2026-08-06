@@ -1,8 +1,10 @@
 import { StrictMode, type ReactElement } from "react";
 import { createRoot } from "react-dom/client";
 
+import { buildToolchainSmokeLabel } from "./smoke_contract";
+
 function ToolchainSmoke(): ReactElement {
-  return <main>Omni-CIO V10 toolchain smoke</main>;
+  return <main>{buildToolchainSmokeLabel("WP3 protected")}</main>;
 }
 
 const root = document.getElementById("root");

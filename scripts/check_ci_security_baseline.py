@@ -34,6 +34,7 @@ REQUIRED_WORKFLOW_COMMANDS = {
     "CI policy self-check": "python scripts/check_ci_security_baseline.py",
     "V10 repository boundaries": "python scripts/check_v10_repository_boundaries.py",
     "V10 toolchain baseline": "python scripts/check_v10_toolchain_baseline.py",
+    "V10 Regression Shield": "python scripts/check_v10_regression_shield.py",
     "lint": "python -m ruff check .",
     "formatting": "python -m ruff format --check",
     "type checking": "python -m mypy",
@@ -258,6 +259,7 @@ def main() -> int:
         print("Self-hosted PR isolation: same-repository only")
         print("V10 repository boundary guard: required")
         print("V10 toolchain baseline guard: required")
+        print("V10 Regression Shield guard: required")
         print("Render entrypoint: app:app")
     return 0
 

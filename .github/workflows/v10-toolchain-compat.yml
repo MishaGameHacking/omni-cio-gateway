@@ -2,24 +2,6 @@ name: V10 Toolchain Compatibility
 
 on:
   pull_request:
-    paths:
-      - ".github/workflows/v10-toolchain-compat.yml"
-      - "requirements.in"
-      - "requirements.txt"
-      - "requirements-dev.in"
-      - "requirements-dev.txt"
-      - "pyproject.toml"
-      - "scripts/**"
-      - "tests/toolchain/**"
-      - "tests/test_*"
-      - "omni_cio/**"
-      - "app.py"
-      - "app_v371.py"
-      - "app_v360.py"
-      - "main.py"
-      - "docs/architecture/V10_TOOLCHAIN_BASELINE.md"
-      - "docs/architecture/V10_TOOLCHAIN_BASELINE.json"
-      - "knowledge/17_V10_CURRENT_PROGRAM_STATUS.md"
   workflow_dispatch:
 
 permissions:
@@ -67,6 +49,9 @@ jobs:
       - name: Verify selected toolchain and dependency policy
         run: python scripts/check_v10_toolchain_baseline.py
 
+      - name: Verify V10 Regression Shield contract
+        run: python scripts/check_v10_regression_shield.py
+
       - name: Verify repository structure before compilation
         run: python scripts/check_repository_layout.py
 
@@ -79,6 +64,20 @@ jobs:
           portfolio_market.py portfolio_analytics.py cash_liquidity.py
           purchase_capacity.py purchase_capacity_integrity.py
           operations_analytics.py broker_report_reconciliation omni_cio tests scripts
+
+      - name: Run hosted Ruff lint
+        run: python -m ruff check .
+
+      - name: Run hosted formatting guard
+        run: >-
+          python -m ruff format --check
+          scripts tests/test_ci_security_baseline.py
+          tests/test_v10_repository_boundaries.py
+          tests/test_v10_toolchain_baseline.py
+          tests/test_v10_regression_shield.py
+
+      - name: Run hosted mypy baseline
+        run: python -m mypy
 
       - name: Verify stable app entrypoint
         shell: pwsh
@@ -153,6 +152,10 @@ jobs:
         working-directory: .
         run: python scripts/check_v10_toolchain_baseline.py
 
+      - name: Verify V10 Regression Shield contract
+        working-directory: .
+        run: python scripts/check_v10_regression_shield.py
+
       - name: Reproduce dependency tree from committed lock
         run: npm ci --ignore-scripts --no-audit --no-fund
 
@@ -166,6 +169,12 @@ jobs:
 
       - name: Type-check frontend toolchain
         run: npm run typecheck
+
+      - name: Lint frontend toolchain
+        run: npm run lint
+
+      - name: Run frontend unit tests
+        run: npm test
 
       - name: Build non-product frontend smoke fixture
         run: npm run build
