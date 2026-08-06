@@ -231,19 +231,17 @@ jobs:
           cache-dependency-path: requirements-dev.txt
 
       - name: Verify exact V10 Python interpreter
-        shell: pwsh
-        run: |
-          if ((python -c "import platform; print(platform.python_version())") -ne "3.14.6") { exit 1 }
+        run: test "$(python -c 'import platform; print(platform.python_version())')" = "3.14.6"
 
       - name: Create isolated V10 Python environment
-        shell: pwsh
         run: |
-          $v10 = Join-Path $env:RUNNER_TEMP "omni-cio-v10-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
-          if (Test-Path $v10) { Remove-Item -Recurse -Force $v10 }
-          python -m venv $v10
-          "V10_VENV_PATH=$v10" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          (Join-Path $v10 "Scripts") | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-          & (Join-Path $v10 "Scripts\python.exe") -m pip --version
+          V10_VENV_ROOT="$(cygpath -u "$RUNNER_TEMP")"
+          V10_VENV_PATH="$V10_VENV_ROOT/omni-cio-v10-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          rm -rf "$V10_VENV_PATH"
+          python -m venv "$V10_VENV_PATH"
+          echo "V10_VENV_PATH=$V10_VENV_PATH" >> "$GITHUB_ENV"
+          echo "$(cygpath -w "$V10_VENV_PATH/Scripts")" >> "$GITHUB_PATH"
+          "$V10_VENV_PATH/Scripts/python.exe" -m pip --version
 
       - name: Install V10 Python dependency baseline
         run: |
@@ -268,10 +266,9 @@ jobs:
           cache-dependency-path: tests/toolchain/frontend/package-lock.json
 
       - name: Verify exact V10 Node.js and npm versions
-        shell: pwsh
         run: |
-          if ((node --version) -ne "v24.18.0") { exit 1 }
-          if ((npm --version) -ne "11.16.0") { exit 1 }
+          test "$(node --version)" = "v24.18.0"
+          test "$(npm --version)" = "11.16.0"
 
       - name: Run V10 frontend compatibility suite
         working-directory: tests/toolchain/frontend
@@ -298,10 +295,9 @@ jobs:
 
       - name: Clean self-hosted workspace
         if: always()
-        shell: pwsh
         run: |
-          foreach ($path in @($env:VENV_PATH, $env:V10_VENV_PATH)) {
-            if ($path -and (Test-Path $path)) { Remove-Item -Recurse -Force $path }
-          }
+          for path in "${VENV_PATH:-}" "${V10_VENV_PATH:-}"; do
+            if [ -n "$path" ]; then rm -rf "$path"; fi
+          done
           git reset --hard HEAD
           git clean -ffdx
