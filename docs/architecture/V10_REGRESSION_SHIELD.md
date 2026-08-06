@@ -126,7 +126,7 @@ Policy:
 - do not move broker/private runtime secrets into hosted CI;
 - do not weaken required safety checks merely to reduce minute consumption.
 
-Repository/account billing budgets, included-usage alerts, default `GITHUB_TOKEN` permissions and repository artifact/log retention are account/repository controls configured outside version-controlled workflow files.
+Repository/account billing budgets, included-usage alerts, default `GITHUB_TOKEN` permissions and repository artifact/log retention are account/repository controls configured outside version-controlled workflow files. The safe owner-side repository settings and ruleset cutover are scripted in `scripts/configure_github_pro_hybrid_ci.ps1`.
 
 ## 5. Frontend quality contract before the product Web package exists
 
@@ -217,11 +217,11 @@ This infrastructure package is complete only after:
 2. GitHub-hosted clean Windows toolchain checks are green on the same head;
 3. `Windows runner smoke test` and `V10 authoritative merge gate` are green on the same head;
 4. zero unresolved review threads remain;
-5. the current seven-check `Protect main` policy permits the infrastructure PR to merge without bypass;
-6. the PR is squash-merged with expected-head protection;
-7. post-merge `Regression Shield` on `main` is green;
-8. `Protect main` is then cut over to require only the stable `V10 authoritative merge gate` context while retaining strict/up-to-date policy and all non-status protection rules;
-9. repository Actions defaults are set to read-only `GITHUB_TOKEN`, PR approval by Actions disabled, and short artifact/log retention is configured;
+5. repository Actions defaults are set to read-only `GITHUB_TOKEN`, PR approval by Actions is disabled, full-SHA Action pinning is required, and short artifact/log retention is configured;
+6. while PR #242 is still open and its authoritative exact-head check is green, `Protect main` is cut over from the transitional seven-check list to the single stable `V10 authoritative merge gate` context, preserving strict/up-to-date policy, squash-only merge, empty bypass list, deletion block and force-push block;
+7. server-side `Protect main` is re-read and verified after the cutover;
+8. PR #242 is squash-merged with expected-head protection and no bypass;
+9. post-merge `Regression Shield` on `main` is green;
 10. included-usage alerts/budget controls are enabled at the owner account level.
 
 This is infrastructure hardening only. It does **not** start WP4 or any later V10 product work.
