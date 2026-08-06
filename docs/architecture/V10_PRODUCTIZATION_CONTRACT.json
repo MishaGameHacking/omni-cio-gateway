@@ -1,0 +1,68 @@
+{
+  "schema_version": "1.0",
+  "status": "owner-approved-binding-elaboration",
+  "date": "2026-08-06",
+  "v10_primary_goal": "productize_and_migrate_accepted_v9_into_self_contained_personal_platform",
+  "feature_expansion_intent": false,
+  "active_product_identity": {
+    "mode": "single_owner_personal_v10",
+    "owner_account_required": true,
+    "public_signup": false,
+    "public_multi_tenant": false,
+    "billing": false,
+    "future_isolation_ready": true
+  },
+  "broker_connections": {
+    "read": {
+      "required_for_portfolio_capabilities": true,
+      "permission": "t_invest_read_only",
+      "broker_write": false,
+      "fallback_to_trading_token": false
+    },
+    "trading": {
+      "required_for_normal_analysis": false,
+      "optional": true,
+      "permission": "account_scoped_full_access_without_transfer_authority",
+      "blanket_autonomous_permission": false,
+      "requires_exact_immutable_plan_owner_approval": true,
+      "ai_access_to_secret_or_broker_write": false
+    }
+  },
+  "supported_operating_modes": [
+    "setup_no_read",
+    "analysis_read_only",
+    "shadow",
+    "real_eligible_owner_confirmed"
+  ],
+  "shared_surfaces": {
+    "web_primary_cabinet": true,
+    "telegram_adapter": true,
+    "single_ai_agent_orchestrator_for_web_and_telegram": true,
+    "duplicate_business_logic_stacks_forbidden": true
+  },
+  "v9_migration": {
+    "parity_ledger_required": true,
+    "custom_gpt_required_path_retirement_before_parity": false,
+    "v9_protected_rollback_until_v10_acceptance": true,
+    "silent_capability_loss_allowed": false
+  },
+  "ai_developer_handoff": {
+    "engineering_source_of_truth": "github_repository",
+    "specific_chatgpt_account_required": false,
+    "chat_history_is_authority": false,
+    "authorized_ai_session_restores_context_from_repo": true,
+    "owner_routine_coding_required": false,
+    "owner_non_delegable_actions_only": true
+  },
+  "non_goals": [
+    "public_mass_registration",
+    "billing_subscriptions",
+    "public_multi_tenant_production",
+    "multiple_brokers",
+    "autonomous_unconfirmed_real_trading",
+    "transfer_withdrawal_margin_short_authority",
+    "second_web_app",
+    "second_core",
+    "second_ai_brain"
+  ]
+}
