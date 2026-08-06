@@ -150,9 +150,7 @@ def validate_toolchain_workflow(failures: list[str]) -> None:
     if not text:
         return
     if PATH_FILTER.search(text):
-        failures.append(
-            "V10 Toolchain Compatibility may not use PR path filters"
-        )
+        failures.append("V10 Toolchain Compatibility may not use PR path filters")
     if "self-hosted" in text:
         failures.append("V10 Toolchain Compatibility must remain GitHub-hosted")
     require_tokens(
@@ -162,7 +160,7 @@ def validate_toolchain_workflow(failures: list[str]) -> None:
             "runs-on: windows-latest",
             'python-version: "3.14.6"',
             'node-version: "24.18.0"',
-            'cache: pip',
+            "cache: pip",
             'cache: "npm"',
             "python -m ruff check .",
             "python -m ruff format --check",
@@ -204,7 +202,7 @@ def validate_authoritative_workflow(failures: list[str]) -> None:
             "scripts\\bootstrap_windows_ci_python.cmd",
             'python-version: "3.14.6"',
             'node-version: "24.18.0"',
-            'cache: pip',
+            "cache: pip",
             'cache: "npm"',
             "python scripts/check_ci_security_baseline.py",
             "python scripts/check_repository_layout.py",
@@ -391,7 +389,9 @@ def main() -> int:
     print("V10 Regression Shield contract passed.")
     print("Fast PR lane: GitHub-hosted Linux acceleration, cached, no secrets")
     print("Hosted toolchain lane: clean GitHub-hosted Windows compatibility")
-    print("Authoritative PR lane: self-hosted Windows full regression/security/toolchain")
+    print(
+        "Authoritative PR lane: self-hosted Windows full regression/security/toolchain"
+    )
     print("Post-merge lane: self-hosted Regression Shield sentinel on main")
     print("Frontend baseline: typecheck + lint + unit + build")
     print("Future capability test contracts: fail-closed when roots appear")
