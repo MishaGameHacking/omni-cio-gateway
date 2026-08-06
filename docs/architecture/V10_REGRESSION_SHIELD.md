@@ -12,7 +12,7 @@ The contract is layered:
 
 1. **Fast PR Checks** run in parallel on GitHub-hosted Linux for quick repository/policy/frontend feedback.
 2. **V10 Toolchain Compatibility** runs on clean GitHub-hosted Windows and proves the selected Python/Node baseline.
-3. **V10 Authoritative Merge Gate** runs on the OWNER Lenovo self-hosted Windows runner and independently covers the mandatory regression, security, V10 toolchain and frontend compatibility surface required to merge.
+3. **Self-Hosted Windows CI** runs on the OWNER Lenovo. Its `V10 authoritative merge gate` job independently covers the mandatory regression, security, V10 toolchain and frontend compatibility surface required to merge. Its `Windows runner smoke test` job remains the focused runner/bootstrap diagnostic.
 4. **Regression Shield** remains a post-merge sentinel on `main` for protected-runtime monitoring.
 5. GitHub-hosted lanes are acceleration and independent evidence. The self-hosted authoritative lane is the continuity path if included hosted minutes are exhausted or hosted execution is otherwise unavailable.
 
@@ -71,11 +71,14 @@ This remains the clean hosted Windows compatibility lane for:
 
 The lane provides independent clean-machine evidence while GitHub-hosted capacity is available.
 
-### 3.3 V10 Authoritative Merge Gate
+### 3.3 Self-Hosted Windows CI / authoritative merge gate
 
-`V10 Authoritative Merge Gate` is the PR continuity and merge-authority lane.
+The existing `.github/workflows/self-hosted-windows-smoke.yml` workflow is retained so PR checks are available before this infrastructure package reaches `main`. Its workflow name is now `Self-Hosted Windows CI` and it owns two same-repository jobs:
 
-It runs only on the dedicated same-repository OWNER Lenovo self-hosted Windows runner and has no GitHub-hosted dependency.
+- `Windows runner smoke test` — focused runner/bootstrap diagnostic and transitional required context during cutover;
+- `V10 authoritative merge gate` — the PR continuity and merge-authority job.
+
+The authoritative job runs only on the dedicated OWNER Lenovo self-hosted Windows runner and has no GitHub-hosted dependency.
 
 It must independently cover at minimum:
 
@@ -91,12 +94,12 @@ It must independently cover at minimum:
 - runtime dependency audit;
 - Bandit SAST;
 - detect-secrets scan;
-- V10 Python **3.14.6** compatibility;
+- isolated V10 Python **3.14.6** compatibility environment;
 - V10 Node **24.18.0** / npm **11.16.0** compatibility;
 - frontend typecheck/lint/unit/build/audit;
-- cleanup of the self-hosted workspace after every result.
+- cleanup of both isolated Python environments and the self-hosted workspace after every result.
 
-The GitHub `main` ruleset should require this single stable context:
+After cutover, the GitHub `main` ruleset should require this single stable context:
 
 `V10 authoritative merge gate`
 
@@ -107,10 +110,6 @@ Hosted acceleration contexts remain visible and useful, but they must not be the
 `Regression Shield` runs on pushes to `main` and by manual dispatch. It is a post-merge sentinel for the protected current runtime and security surface.
 
 It remains self-hosted and retains the established quality/security/coverage checks. It does not replace the PR authoritative gate and does not need to consume GitHub-hosted minutes.
-
-### 3.5 Self-Hosted Windows Smoke
-
-`Self-Hosted Windows Smoke` remains a focused runner/bootstrap diagnostic workflow. It is useful for runner maintenance and infrastructure changes, but the authoritative merge gate itself verifies Windows/X64 identity and therefore provides the normal PR merge authority.
 
 ## 4. GitHub Pro resource policy
 
@@ -127,7 +126,7 @@ Policy:
 - do not move broker/private runtime secrets into hosted CI;
 - do not weaken required safety checks merely to reduce minute consumption.
 
-Repository/account billing budgets and quota notifications are account-level controls and are configured outside version-controlled workflow files.
+Repository/account billing budgets, included-usage alerts, default `GITHUB_TOKEN` permissions and repository artifact/log retention are account/repository controls configured outside version-controlled workflow files.
 
 ## 5. Frontend quality contract before the product Web package exists
 
@@ -216,10 +215,13 @@ This infrastructure package is complete only after:
 
 1. GitHub-hosted fast checks are green on the exact PR head;
 2. GitHub-hosted clean Windows toolchain checks are green on the same head;
-3. `V10 authoritative merge gate` is green on the same head;
+3. `Windows runner smoke test` and `V10 authoritative merge gate` are green on the same head;
 4. zero unresolved review threads remain;
-5. `Protect main` is updated to require the stable authoritative context without bypass;
+5. the current seven-check `Protect main` policy permits the infrastructure PR to merge without bypass;
 6. the PR is squash-merged with expected-head protection;
-7. post-merge `Regression Shield` on `main` is green.
+7. post-merge `Regression Shield` on `main` is green;
+8. `Protect main` is then cut over to require only the stable `V10 authoritative merge gate` context while retaining strict/up-to-date policy and all non-status protection rules;
+9. repository Actions defaults are set to read-only `GITHUB_TOKEN`, PR approval by Actions disabled, and short artifact/log retention is configured;
+10. included-usage alerts/budget controls are enabled at the owner account level.
 
 This is infrastructure hardening only. It does **not** start WP4 or any later V10 product work.
