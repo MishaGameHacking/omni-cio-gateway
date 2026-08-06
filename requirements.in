@@ -3,7 +3,7 @@
 
 # Runtime framework upgrades require a dedicated compatibility PR.
 # These exact versions preserve the currently tested production lock.
-annotated-doc==0.0.4
+annotated-doc==0.0.5
 fastapi==0.141.1
 httpx==0.28.1
 t-tech-investments==1.49.3
