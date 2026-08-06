@@ -65,6 +65,20 @@ jobs:
           purchase_capacity.py purchase_capacity_integrity.py
           operations_analytics.py broker_report_reconciliation omni_cio tests scripts
 
+      - name: Run hosted Ruff lint
+        run: python -m ruff check .
+
+      - name: Run hosted formatting guard
+        run: >-
+          python -m ruff format --check
+          scripts tests/test_ci_security_baseline.py
+          tests/test_v10_repository_boundaries.py
+          tests/test_v10_toolchain_baseline.py
+          tests/test_v10_regression_shield.py
+
+      - name: Run hosted mypy baseline
+        run: python -m mypy
+
       - name: Verify stable app entrypoint
         shell: pwsh
         run: |
