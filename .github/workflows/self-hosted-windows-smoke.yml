@@ -223,12 +223,27 @@ jobs:
           '(^|[\\/])(\.git|\.venv|\.venv-ci|\.mypy_cache|\.pytest_cache|\.ruff_cache|__pycache__|requirements(-dev)?\.txt|windows-.*requirements.*\.txt|coverage\.xml|pytest-results\.xml)([\\/]|$)'
           | python scripts/check_ci_security_baseline.py --detect-secrets-report
 
+      - name: Temporarily allow pinned setup action scripts
+        shell: cmd
+        run: >-
+          powershell.exe -NoLogo -NoProfile -NonInteractive
+          -ExecutionPolicy Bypass -Command
+          "Write-Host ('Execution policy before setup-python: ' + (Get-ExecutionPolicy)); Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy Bypass -Force; Write-Host ('Execution policy for service account: ' + (Get-ExecutionPolicy))"
+
       - name: Set up V10 Python 3.14.6 compatibility runtime
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.14.6"
           cache: pip
           cache-dependency-path: requirements-dev.txt
+
+      - name: Restore service-account PowerShell policy after setup-python
+        if: always()
+        shell: cmd
+        run: >-
+          powershell.exe -NoLogo -NoProfile -NonInteractive
+          -ExecutionPolicy Bypass -Command
+          "Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy Undefined -Force"
 
       - name: Verify exact V10 Python interpreter
         run: test "$(python -c 'import platform; print(platform.python_version())')" = "3.14.6"
