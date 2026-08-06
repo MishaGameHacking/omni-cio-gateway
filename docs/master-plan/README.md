@@ -1,145 +1,105 @@
 # Master plan Omni-CIO
 
-Эта папка хранит **owner-approved master programs, program locks и audit trail** развития Omni-CIO. Завершённые программы не являются очередью задач; активная программа определяется её Program Lock и Current Status.
+Эта папка хранит **owner-approved master programs, Program Locks, active amendments и audit trail** развития Omni-CIO. Завершённые программы не являются очередью задач; активная программа определяется Program Lock + Current Status + accepted active amendments.
 
 ## Omni-CIO V10 Personal Autonomous Investment Platform — active feature program
 
-Owner approved the canonical V10 program and issued explicit **`START V10`** on 2026-08-05.
+OWNER approved the canonical V10 program and issued explicit **`START V10`** on 2026-08-05.
 
-Canonical artifacts:
+Canonical base artifacts:
 
-- `OMNI_CIO_V10_MASTER_PLAN.md` — searchable canonical program for developers/AI/code review;
+- `OMNI_CIO_V10_MASTER_PLAN.md` — searchable base program for developers/AI/code review;
 - `Omni-CIO_V10_Master_Plan_RU.pdf` — owner-readable synchronized copy;
 - `OMNI_CIO_V10_MASTER_PLAN.sha256` — integrity manifest;
-- `OMNI_CIO_V10_PROGRAM_LOCK.md` — scope/precedence/exclusivity lock;
+- `OMNI_CIO_V10_PROGRAM_LOCK.md` — scope/precedence/exclusivity/current protection lock;
 - `OMNI_CIO_V10_PLAN_READINESS_AUDIT.md` — pre-development readiness audit;
-- `OMNI_CIO_V10_START_RECORD.md` — explicit owner start/WP0 evidence;
-- `OMNI_CIO_V10_ACCOUNT_INDEPENDENCE_AMENDMENT.md` — historical owner-approved amendment retained as audit trail after consolidation.
+- `OMNI_CIO_V10_START_RECORD.md` — explicit owner start/WP0 evidence.
+
+Accepted amendment discovery:
+
+- `OMNI_CIO_V10_AMENDMENTS_INDEX.md` — mandatory index of active/superseded amendments;
+- `OMNI_CIO_V10_CONCRETE_EXECUTION_PLAN_AMENDMENT.md` — binding concrete data/AI/autonomy/Lenovo/subscription implementation decisions;
+- `../architecture/V10_AI_CORTEX_CONTRACT.json` — machine-readable companion contract;
+- `OMNI_CIO_V10_ACCOUNT_INDEPENDENCE_AMENDMENT.md` — historical owner-approved amendment already consolidated into the base plan and retained for provenance.
 
 Current V10 progress authority:
 
-`../../knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`
+`../../knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
 
-Do **not** hard-code the current WP/progress from historical PR text or this index. The status file on accepted `main` is the authority.
+Do **not** hard-code the current WP/progress from historical PR text or this index. The status file on accepted `main` is the current-state authority.
 
-V10 is implemented strictly one Work Package at a time. Starting a development WP does not expand broker authority or retire V9 by itself.
+The synchronized Master Plan Markdown/PDF pair must not be edited independently. New OWNER-approved implementation detail may be recorded by focused amendment; a later intentional consolidation must regenerate/review the synchronized pair and its integrity manifest together.
+
+## Current V10 delivery chain
+
+Canonical sequence remains defined by the Master Plan. Current accepted early sequence is:
+
+- WP0 — Program Lock / Architecture Freeze — accepted;
+- WP1 — Repository Architecture / boundaries — accepted;
+- WP2 — Toolchain / Dependency Baseline — accepted;
+- WP3 — Regression Shield / repository protection — accepted;
+- **WP4 — Release / build provenance / deployment contract — next**;
+- only after WP4 / Block B Exit Gate may the full Block C Lenovo V10 runtime setup begin.
+
+The already-operational Lenovo GitHub self-hosted runner is accepted CI infrastructure; it is not proof that Block C application/AI/database runtime is implemented.
+
+## Concrete V10 product lock
+
+The accepted concrete amendment clarifies the intended implementation without changing block weights/order:
+
+- Deterministic Core owns financial/accounting truth;
+- V10 accounting target uses verified broker HTML reports; no photo/screenshot/OCR portfolio workflow;
+- MOEX is current-market enrichment and stays distinct from broker period-end facts;
+- local-first Omni-CIO Cortex baseline is Qwen3.5-4B via Ollama behind a replaceable provider;
+- paid AI/search/hosted-agent SaaS is not required for V10 Definition of Done;
+- System Policy + typed tools + RAG + evals precede QLoRA;
+- 24/7 autonomy is event-driven/checkpointed;
+- SearXNG-first research + bounded HTTP/Playwright retrieval + Evidence Store;
+- AI has no direct broker-write/admin/GitHub-bypass/Real-money authority;
+- OWNER local participation is minimized to non-delegable actions, preferably one reviewed PowerShell block.
+
+Read the amendment itself for exact requirements and block-by-block elaboration.
 
 ## Omni-CIO v9 Portfolio Autopilot — completed protected runtime program
 
 Canonical completed program:
 
-`OMNI_CIO_V9_PORTFOLIO_AUTOPILOT_PROGRAM.md`
+`OMNI_CIO_V9_PORTFOLIO_AUTOPILOT_PROGRAM.md`.
 
-Status:
+V9 WP0–WP15 repository delivery and owner external acceptance are complete. Current runtime mode remains **controlled maintenance** while V10 is developed. Protected v8.6.1 remains a recovery rollback baseline.
 
-- WP0–WP15 полностью реализованы и merged;
-- existing Omni-CIO Custom GPT upgraded in place to **v9.0.0**;
-- owner external acceptance completed on 2026-08-05;
-- tracking epic #176 and WP15 #216 are closed completed;
-- current V9 runtime mode: **controlled maintenance** while V10 is developed;
-- protected v8.6.1 remains available as recovery rollback baseline.
+Current V9 applied/runtime status:
 
-Current V9 applied/runtime status is:
+`../../knowledge/16_CURRENT_PROGRAM_STATUS.md`.
 
-`../../knowledge/16_CURRENT_PROGRAM_STATUS.md`
+V9 remains the protected production/recovery baseline until a responsible later V10 WP explicitly replaces a boundary and passes its Exit Gate.
 
-V9 remains the protected production/recovery baseline until a responsible later V10 Work Package explicitly replaces a boundary and passes its Exit Gate.
+## Source-of-truth hierarchy
 
-## Current V10 delivery chain
-
-Canonical sequence is defined only by `OMNI_CIO_V10_MASTER_PLAN.md` and `../../knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
-
-Accepted early-program structure:
-
-- WP0 — Program Lock / Architecture Freeze;
-- WP1 — Repository Architecture and boundaries;
-- WP2 — Toolchain and Dependency Baseline;
-- WP3 — V10 Regression Shield;
-- WP4 — Release/build provenance/deployment contract;
-- only then Block C Lenovo runtime setup begins.
-
-This list is navigation, not evidence that any listed WP is complete. Completion comes only from accepted `main` + Exit Gate evidence recorded in the current status file.
-
-## Для чего использовать master plans
-
-Используйте V10 Master Plan для:
-
-- текущей утверждённой scope/sequence/Definition of Done;
-- проверки Work Package deliverables/Exit Gates;
-- архитектурных/security/recovery требований;
-- оценки, требует ли новая идея owner-approved program amendment.
-
-Используйте completed V9 program для:
-
-- проверки исходно утверждённых V9 требований и Definition of Done;
-- architecture/audit trace между V9 WP0–WP15;
-- recovery-context для происхождения текущего design;
-- регрессионной проверки защищённого runtime baseline.
-
-**Не используйте** completed V9 plan как список “что делать дальше”. Активная feature queue — только accepted V10 program/status.
-
-## Исходная пользовательская спецификация V9
-
-- `OMNI_CIO_MASTER_PROMPT_V9.pdf` — исходный документ, 39 страниц;
-- `OMNI_CIO_MASTER_PROMPT_V9.txt` — машинное извлечение текста для поиска, code review и AI-контекста; при расхождении приоритет у PDF.
-
-Исходное имя вложения: `Мастер-промт Omni-CIO(9).pdf`.
-
-SHA-256 PDF: `1fa50e7ca08f9701879bbc98c77f04e12cd66d52d2802e5f44d360e620f530f8`.
-
-Аудит 2026-07-30 подтвердил, что приложенные версии `(8)` и `(9)` побайтно идентичны, поэтому в репозитории хранится одна каноническая копия V9 без дубля.
-
-## Иерархия источников истины
-
-Для **текущего V10 development state**:
+For current V10 development:
 
 1. accepted `main`;
 2. `../../AGENTS.md`;
 3. `OMNI_CIO_V10_PROGRAM_LOCK.md`;
-4. paired `OMNI_CIO_V10_MASTER_PLAN.md` + PDF + SHA manifest;
-5. `../../knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`;
-6. accepted V10 architecture/ADR/current-WP files;
-7. exact-head PR/CI evidence.
+4. synchronized `OMNI_CIO_V10_MASTER_PLAN.md` + PDF + SHA manifest;
+5. `OMNI_CIO_V10_AMENDMENTS_INDEX.md` + accepted active amendments;
+6. `../../knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`;
+7. accepted V10 architecture/ADR/current-WP contracts;
+8. exact-head PR/CI/runtime evidence.
 
-Для **текущего V9 runtime/applied state**:
+Historical issue/PR text may describe an older state correctly at that time. It is not current authority after later acceptance.
 
-1. accepted `main`, code/tests and deployed contract;
-2. `../../knowledge/16_CURRENT_PROGRAM_STATUS.md`;
-3. `../../gpt/SETUP_INDEX.md`, `../../gpt/CONFIGURATION.md` and effective production `/openapi.json`;
-4. protected V9 recovery contracts.
+## Permanent safety boundaries
 
-Для **истории/требований**:
+V10 development does not silently remove V9 safety boundaries:
 
-1. V10 Master Plan — owner-approved active program specification;
-2. V9 completed program — completed V9 specification/audit trail;
-3. PDF/TXT V9 master prompt — original V9 input requirements;
-4. closed issues, merged PRs, review comments and commits — implementation evidence at the time they were created.
-
-Historical issue/PR text may correctly describe an older applied version or unfinished WP **at that historical moment**. It is not a current-state instruction after later acceptance.
-
-## Постоянные safety boundaries
-
-V10 development does not remove existing safety boundaries:
-
-- production read-only credential remains isolated;
-- Sandbox remains virtual and separately credentialed;
-- Real execution remains exact-owner-confirmed, immutable, idempotent, fail-closed and broker-reconciled;
-- effective OpenAPI remains current GPT Action authority while the V9 GPT is applied;
-- internal engines are not automatically GPT Actions;
+- READ, Sandbox and Real credentials stay isolated;
+- Real execution stays exact-owner-confirmed, immutable, idempotent, fail-closed and broker-reconciled;
 - AI has no direct broker-write authority;
-- transfer/withdrawal, margin/short, MARKET/BESTPRICE, stop/replace/async and autonomous recurring real-money execution remain outside the current reviewed surface;
-- stable current Gateway entrypoint remains `app:app` until an accepted V10 migration explicitly replaces it.
+- GitHub engineering access is never trading authorization;
+- current `app:app` / GPT recovery behavior stays protected until an accepted V10 migration replaces it;
+- no competing GPT/Gateway/Web/Telegram/AI/execution source of truth.
 
-## Правило дальнейших изменений
+## Further-change rule
 
-- не редактировать исходный V9 PDF;
-- не подменять требования предположениями;
-- не “переоткрывать” completed V9 WP из-за старого unchecked checklist;
-- V10 делать строго current-WP focused branch + PR;
-- следующую WP начинать только после acceptance Exit Gate предыдущей;
-- новую V11/competing program не начинать до V10 final acceptance;
-- текущий V10 status фиксировать только в `../../knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`;
-- текущий V9 runtime status фиксировать в `../../knowledge/16_CURRENT_PROGRAM_STATUS.md`;
-- applied GPT configuration менять только через reviewed repository change → owner Preview → `Update` на том же GPT;
-- не создавать второй GPT/Gateway/frontend/Telegram/AI/execution source of truth;
-- protected V9/v8.6.1 rollback assets сохранять до отдельного reviewed retirement decision.
+V10 work proceeds one current WP at a time through focused branch/PR, exact-head required CI/security and squash merge. New material scope is accepted only through the amendment process. V11/competing programs remain prohibited until V10 final acceptance.
