@@ -2,7 +2,7 @@ name: Ошибка Omni-CIO
 description: Сообщить о воспроизводимой ошибке Custom GPT/Gateway без секретов и персональных данных
 title: "[Bug] "
 labels: [bug]
-assignees: [Misha2304]
+assignees: [MishaGameHacking]
 body:
   - type: markdown
     attributes:
