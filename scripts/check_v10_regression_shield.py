@@ -11,6 +11,7 @@ WORKFLOWS = ROOT / ".github" / "workflows"
 FAST_WORKFLOW = WORKFLOWS / "v10-pr-fast-checks.yml"
 FULL_WORKFLOW = WORKFLOWS / "regression-shield.yml"
 TOOLCHAIN_WORKFLOW = WORKFLOWS / "v10-toolchain-compat.yml"
+AUTHORITATIVE_WORKFLOW = WORKFLOWS / "v10-authoritative-merge-gate.yml"
 FRONTEND_FIXTURE = ROOT / "tests" / "toolchain" / "frontend"
 FULL_SHA = re.compile(r"[0-9a-f]{40}")
 PATH_FILTER = re.compile(r"(?m)^\s+paths(?:-ignore)?:\s*$")
@@ -89,12 +90,14 @@ def validate_fast_workflow(failures: list[str]) -> None:
         text,
         (
             "name: V10 Fast PR Checks",
-            "runs-on: windows-latest",
+            "runs-on: ubuntu-latest",
+            "cancel-in-progress: true",
             "python scripts/check_ci_security_baseline.py",
             "python scripts/check_repository_layout.py",
             "python scripts/check_v10_repository_boundaries.py",
             "python scripts/check_v10_toolchain_baseline.py",
             "python scripts/check_v10_regression_shield.py",
+            'cache: "npm"',
             "npm ci --ignore-scripts --no-audit --no-fund",
             "npm run typecheck",
             "npm run lint",
@@ -111,11 +114,18 @@ def validate_full_workflow(failures: list[str]) -> None:
     if not text:
         return
     if PATH_FILTER.search(text):
-        failures.append("Regression Shield may not use PR path filters")
+        failures.append("Regression Shield may not use path filters")
+    if "\n  pull_request:" in text:
+        failures.append(
+            "Regression Shield is the post-merge sentinel; PR authority belongs to the authoritative gate"
+        )
     require_tokens(
         text,
         (
             "name: Regression Shield",
+            "push:",
+            "branches:",
+            "- main",
             "runs-on: [self-hosted, Windows, X64, omni-cio-ci]",
             "python scripts/check_ci_security_baseline.py",
             "python scripts/check_v10_repository_boundaries.py",
@@ -133,8 +143,6 @@ def validate_full_workflow(failures: list[str]) -> None:
         "Regression Shield",
         failures,
     )
-    if "github.event.pull_request.head.repo.full_name == github.repository" not in text:
-        failures.append("Regression Shield must reject fork PRs on self-hosted jobs")
 
 
 def validate_toolchain_workflow(failures: list[str]) -> None:
@@ -143,14 +151,19 @@ def validate_toolchain_workflow(failures: list[str]) -> None:
         return
     if PATH_FILTER.search(text):
         failures.append(
-            "V10 Toolchain Compatibility may not use PR path filters on an acceptance gate"
+            "V10 Toolchain Compatibility may not use PR path filters"
         )
+    if "self-hosted" in text:
+        failures.append("V10 Toolchain Compatibility must remain GitHub-hosted")
     require_tokens(
         text,
         (
             "name: V10 Toolchain Compatibility",
+            "runs-on: windows-latest",
             'python-version: "3.14.6"',
             'node-version: "24.18.0"',
+            'cache: pip',
+            'cache: "npm"',
             "python -m ruff check .",
             "python -m ruff format --check",
             "python -m mypy",
@@ -165,6 +178,56 @@ def validate_toolchain_workflow(failures: list[str]) -> None:
             "frontend-sbom.cdx.json",
         ),
         "V10 Toolchain Compatibility",
+        failures,
+    )
+
+
+def validate_authoritative_workflow(failures: list[str]) -> None:
+    text = validate_common_workflow(AUTHORITATIVE_WORKFLOW, failures)
+    if not text:
+        return
+    if "pull_request:" not in text:
+        failures.append("Authoritative Merge Gate must run for pull_request events")
+    if PATH_FILTER.search(text):
+        failures.append("Authoritative Merge Gate may not use PR path filters")
+    if "github.event.pull_request.head.repo.full_name == github.repository" not in text:
+        failures.append("Authoritative Merge Gate must reject fork PRs")
+    if "secrets." in text or "${{ secrets" in text:
+        failures.append("Authoritative Merge Gate must not consume repository secrets")
+    require_tokens(
+        text,
+        (
+            "name: V10 Authoritative Merge Gate",
+            "name: V10 authoritative merge gate",
+            "runs-on: [self-hosted, Windows, X64, omni-cio-ci]",
+            "cancel-in-progress: true",
+            "scripts\\bootstrap_windows_ci_python.cmd",
+            'python-version: "3.14.6"',
+            'node-version: "24.18.0"',
+            'cache: pip',
+            'cache: "npm"',
+            "python scripts/check_ci_security_baseline.py",
+            "python scripts/check_repository_layout.py",
+            "python scripts/check_v10_repository_boundaries.py",
+            "python scripts/check_v10_toolchain_baseline.py",
+            "python scripts/check_v10_regression_shield.py",
+            "python -m ruff check .",
+            "python -m ruff format --check",
+            "python -m mypy",
+            "python -m pytest",
+            "--cov-fail-under=",
+            "python -m pip_audit",
+            "python -m bandit",
+            "python -m detect_secrets",
+            "npm ci --ignore-scripts --no-audit --no-fund",
+            "npm run typecheck",
+            "npm run lint",
+            "npm test",
+            "npm run build",
+            "npm audit --audit-level=high",
+            "git clean -ffdx",
+        ),
+        "V10 Authoritative Merge Gate",
         failures,
     )
 
@@ -311,6 +374,7 @@ def validate_repository() -> list[str]:
     validate_fast_workflow(failures)
     validate_full_workflow(failures)
     validate_toolchain_workflow(failures)
+    validate_authoritative_workflow(failures)
     validate_frontend_fixture(failures)
     validate_capability_contracts(failures)
     validate_money_path_protection(failures)
@@ -325,9 +389,10 @@ def main() -> int:
             print(f"- {failure}", file=sys.stderr)
         return 1
     print("V10 Regression Shield contract passed.")
-    print("Fast PR lane: GitHub-hosted, no path filtering, no secrets")
-    print("Full exact-head lane: protected self-hosted V9 regression/security")
-    print("Toolchain lane: Python 3.14.6 + Node 24.18.0 + hosted static quality")
+    print("Fast PR lane: GitHub-hosted Linux acceleration, cached, no secrets")
+    print("Hosted toolchain lane: clean GitHub-hosted Windows compatibility")
+    print("Authoritative PR lane: self-hosted Windows full regression/security/toolchain")
+    print("Post-merge lane: self-hosted Regression Shield sentinel on main")
     print("Frontend baseline: typecheck + lint + unit + build")
     print("Future capability test contracts: fail-closed when roots appear")
     print("Money-path test families: protected")
