@@ -1,92 +1,139 @@
-# Omni-CIO V10 — Regression Shield and CI Protection Contract
+# Omni-CIO V10 — Regression Shield and Hybrid CI Protection Contract
 
-Status: **WP3 IMPLEMENTATION COMPLETE CANDIDATE / ACCEPTANCE BLOCKED BY GITHUB SERVER-SIDE PROTECTION**  
-Scope: CI/repository protection only  
+Status: **PRE-WP4 GITHUB INFRASTRUCTURE HARDENING / NO PRODUCT FEATURE WORK**  
+Scope: GitHub Actions, repository protection and CI continuity only  
 Protected runtime: current V9 `app:app` remains unchanged until an owning later WP intentionally migrates it
 
 ## 1. Purpose
 
-WP3 makes CI the primary engineering barrier against hidden regressions before any runtime or release reaches the OWNER node.
+The repository uses a hybrid CI model so GitHub Pro accelerates development without becoming a single point of failure.
 
-The contract is intentionally layered:
+The contract is layered:
 
-1. **Fast PR checks** provide low-cost deterministic feedback without using private runtime secrets or the self-hosted OWNER runner.
-2. **Toolchain compatibility** proves the selected WP2 Python/Node baseline on clean GitHub-hosted Windows.
-3. **Full exact-head Regression Shield** runs the protected V9 quality/security/contracts/coverage surface on the dedicated self-hosted Windows runner.
-4. **Acceptance** is allowed only from the same unchanged PR head that passed every mandatory lane and has zero unresolved review blockers.
+1. **Fast PR Checks** run in parallel on GitHub-hosted Linux for quick repository/policy/frontend feedback.
+2. **V10 Toolchain Compatibility** runs on clean GitHub-hosted Windows and proves the selected Python/Node baseline.
+3. **V10 Authoritative Merge Gate** runs on the OWNER Lenovo self-hosted Windows runner and independently covers the mandatory regression, security, V10 toolchain and frontend compatibility surface required to merge.
+4. **Regression Shield** remains a post-merge sentinel on `main` for protected-runtime monitoring.
+5. GitHub-hosted lanes are acceleration and independent evidence. The self-hosted authoritative lane is the continuity path if included hosted minutes are exhausted or hosted execution is otherwise unavailable.
 
-A green fast lane never substitutes for the full acceptance gate.
+A green fast or hosted toolchain lane never substitutes for the authoritative self-hosted merge gate.
 
 ## 2. Non-negotiable invariants
 
 - Mandatory jobs may not use `continue-on-error: true`.
 - External GitHub Actions are pinned to full commit SHA.
 - Workflow permissions remain least-privilege; repository checkout does not persist credentials.
-- Self-hosted jobs reject fork pull requests and use isolated temporary environments outside the checkout.
+- Self-hosted PR jobs reject fork pull requests and use the dedicated `self-hosted, Windows, X64, omni-cio-ci` runner labels.
 - CI must not receive broker/Telegram/AI/private-database secrets merely to run tests.
-- A failing mandatory gate is repaired; it is not bypassed by deleting, path-filtering away, renaming, or softening the check.
+- Test-only placeholder environment values are allowed only where existing deterministic tests require them.
+- A failing mandatory gate is repaired; it is not bypassed by deleting, path-filtering away, renaming or softening the check.
 - Current V9 money-path replay/idempotency and execution-safety tests remain protected.
 - `app:app` stays part of the protected regression contract until a later accepted WP owns its migration.
 - Generated dependency/SBOM evidence may contain package metadata only, never portfolio/account/private runtime state.
+- Hosted dependency caches must be keyed from committed lock inputs; caches are acceleration only and never replace deterministic installs.
+- Stale PR runs may be cancelled through `concurrency` so included GitHub-hosted minutes are not wasted on obsolete commits.
 
 ## 3. CI lanes
 
-### 3.1 Fast PR Checks
+### 3.1 GitHub-hosted Fast PR Checks
 
-Purpose: detect deterministic repository/policy/source regressions quickly on GitHub-hosted infrastructure.
+Purpose: fail quickly before the OWNER runner spends time on the full gate.
 
 Required characteristics:
 
-- `pull_request` only;
-- no repository or environment secrets;
-- no self-hosted runner;
+- `pull_request` + manual dispatch;
+- `ubuntu-latest` standard GitHub-hosted runners;
+- no repository/environment secrets;
+- no self-hosted dependency;
 - pinned checkout/setup Actions;
 - repository/V10-boundary policy checks;
 - CI/security policy self-check;
 - selected V10 toolchain policy check;
-- Python source compilation and focused policy/unit tests that do not require private runtime state;
-- frontend baseline type/lint/unit checks from committed lock when the frontend fixture/product package is present.
+- Python source compilation and focused policy/unit tests;
+- frontend baseline type/lint/unit/build from committed lock;
+- npm dependency cache keyed by the committed frontend lock;
+- `cancel-in-progress: true` per PR.
 
-Fast checks are advisory for speed but mandatory as a named lane for V10 PR acceptance once WP3 is accepted.
+These jobs are intentionally fast parallel acceleration. They are not the continuity authority when hosted quota is unavailable.
 
-### 3.2 V10 Toolchain Compatibility
+### 3.2 GitHub-hosted V10 Toolchain Compatibility
 
-The accepted WP2 workflow remains the clean GitHub-hosted Windows compatibility lane for:
+This remains the clean hosted Windows compatibility lane for:
 
-- Python 3.14.6;
-- Node 24.18.0 / npm 11.16.0;
-- deterministic lock reproduction;
+- Python **3.14.6**;
+- Node.js **24.18.0** / npm **11.16.0**;
+- deterministic Windows dependency projection;
 - hosted Ruff/format/mypy quality evidence;
 - full deterministic backend tests on the selected future V10 interpreter;
-- frontend type/lint/unit/build/audit/SBOM evidence.
+- frontend type/lint/unit/build/audit/SBOM evidence;
+- pip and npm caches keyed by committed dependency locks;
+- `cancel-in-progress: true` per PR.
 
-WP3 must not weaken this lane.
+The lane provides independent clean-machine evidence while GitHub-hosted capacity is available.
 
-### 3.3 Full Regression Shield
+### 3.3 V10 Authoritative Merge Gate
 
-The existing `Regression Shield` remains the authoritative exact-head acceptance gate for the protected runtime and financial Core.
+`V10 Authoritative Merge Gate` is the PR continuity and merge-authority lane.
 
-It retains at minimum:
+It runs only on the dedicated same-repository OWNER Lenovo self-hosted Windows runner and has no GitHub-hosted dependency.
 
-- hash-lock reproducibility;
-- repository and V10 authority/boundary checks;
+It must independently cover at minimum:
+
+- runner OS/architecture identity;
+- protected current Python **3.12.10** runtime bootstrap;
+- hash-lock projection/reproducibility;
+- CI/security/repository/V10 authority guards;
 - compile;
 - Ruff lint and format;
-- mypy baseline;
-- stable `app:app` and GPT Action/recovery contracts while applicable;
-- pytest with coverage threshold;
+- mypy;
+- stable `app:app` and read-only release contracts;
+- full pytest + branch coverage threshold;
 - runtime dependency audit;
-- SAST;
-- secret scan;
-- critical execution/replay/idempotency contracts already represented in the deterministic test suite.
+- Bandit SAST;
+- detect-secrets scan;
+- V10 Python **3.14.6** compatibility;
+- V10 Node **24.18.0** / npm **11.16.0** compatibility;
+- frontend typecheck/lint/unit/build/audit;
+- cleanup of the self-hosted workspace after every result.
 
-The full gate uses the dedicated self-hosted Windows runner only for same-repository PRs.
+The GitHub `main` ruleset should require this single stable context:
 
-## 4. Frontend quality contract before the product Web package exists
+`V10 authoritative merge gate`
 
-WP3 must not create the Omni-CIO Web product out of sequence. The accepted WP2 fixture under `tests/toolchain/frontend/` is therefore the only current frontend executable surface.
+Hosted acceleration contexts remain visible and useful, but they must not be the only path that can authorize a merge after hosted-minute exhaustion.
 
-WP3 may add non-product deterministic lint/unit fixtures around that baseline. When the future canonical Web package is introduced by Block E, CI must require all of:
+### 3.4 Post-merge Regression Shield
+
+`Regression Shield` runs on pushes to `main` and by manual dispatch. It is a post-merge sentinel for the protected current runtime and security surface.
+
+It remains self-hosted and retains the established quality/security/coverage checks. It does not replace the PR authoritative gate and does not need to consume GitHub-hosted minutes.
+
+### 3.5 Self-Hosted Windows Smoke
+
+`Self-Hosted Windows Smoke` remains a focused runner/bootstrap diagnostic workflow. It is useful for runner maintenance and infrastructure changes, but the authoritative merge gate itself verifies Windows/X64 identity and therefore provides the normal PR merge authority.
+
+## 4. GitHub Pro resource policy
+
+For the private repository, standard GitHub-hosted runners are used deliberately as acceleration while included plan capacity is available.
+
+Policy:
+
+- prefer Linux hosted runners for platform-neutral fast feedback;
+- retain clean hosted Windows where Windows compatibility itself is the evidence;
+- use dependency caching to avoid repeated downloads;
+- cancel obsolete PR runs when a newer commit supersedes them;
+- retain artifacts only for short diagnostic windows;
+- keep self-hosted Lenovo execution independent of the hosted-minute quota;
+- do not move broker/private runtime secrets into hosted CI;
+- do not weaken required safety checks merely to reduce minute consumption.
+
+Repository/account billing budgets and quota notifications are account-level controls and are configured outside version-controlled workflow files.
+
+## 5. Frontend quality contract before the product Web package exists
+
+The accepted WP2 fixture under `tests/toolchain/frontend/` remains the only current frontend executable surface.
+
+When the future canonical Web package is introduced by its owning V10 work package, CI must require all of:
 
 - deterministic install from committed lock;
 - TypeScript typecheck;
@@ -97,13 +144,11 @@ WP3 may add non-product deterministic lint/unit fixtures around that baseline. W
 - dependency audit;
 - no secret/private data in browser test fixtures.
 
-A Web package without the required scripts/config/tests is a CI failure, not a reason to skip the lane.
+A Web package without required scripts/config/tests is a CI failure, not a reason to skip the lane.
 
-## 5. Capability-aware mandatory test contracts
+## 6. Capability-aware mandatory test contracts
 
-Some WP3 test categories target capabilities that intentionally do not exist yet. WP3 therefore establishes fail-closed repository contracts instead of creating fake product implementations.
-
-When the owning future WP introduces the capability, the matching tests become mandatory in the same PR.
+When later V10 work introduces a capability, the matching tests become mandatory in the same PR.
 
 | Capability introduced later | Mandatory test evidence once present |
 |---|---|
@@ -114,75 +159,67 @@ When the owning future WP introduces the capability, the matching tests become m
 | AI schemas/providers/tools | structured schema validation, unknown/abstain behavior, tool allowlist/authority-firewall tests |
 | Web critical workflows | Playwright smoke/E2E using non-secret deterministic fixtures |
 
-The CI policy guard must detect a newly introduced capability root/configuration without its required test evidence.
+The CI policy guard detects a newly introduced capability root/configuration without its required test evidence.
 
-## 6. Money-path protection
+## 7. Money-path protection
 
-WP3 does not change execution authority. It protects the existing safety evidence by requiring the full deterministic suite and explicit repository guard checks for critical execution contracts.
+This infrastructure package does not change execution authority.
 
-At minimum the protected suite must continue to cover the established semantics relevant to Real/Sandbox/plan execution:
+The authoritative gate must continue to protect semantics relevant to Real/Sandbox/plan execution, including:
 
 - immutable proposal/plan context;
 - exact confirmation lifecycle;
 - UUID/idempotency binding;
 - one possible broker submit per request identity;
 - ambiguous possible-submit => unknown/reconcile, never blind retry;
-- submitted != filled without broker evidence;
+- `submitted` != `filled` without broker evidence;
 - fail-closed stale/missing/contradictory inputs where required.
 
-Future execution WPs may add tests, but WP3 may not weaken these existing invariants.
+Future execution WPs may add tests, but this CI architecture may not weaken these invariants.
 
-## 7. Anti-bypass policy
+## 8. Anti-bypass policy
 
 The repository CI guard fails if it detects any of the following on mandatory V10 workflows:
 
 - `continue-on-error: true`;
 - floating external Action refs;
 - unsafe self-hosted execution for fork PRs;
-- persisted checkout credentials on mandatory jobs;
-- removal of required Regression Shield commands;
+- persisted checkout credentials;
+- removal of required authoritative regression/security/toolchain commands;
 - removal of selected-toolchain policy checks;
-- a capability root that appears without its mandatory test contract;
+- a capability root without its mandatory test contract;
 - future Web package without type/lint/unit/build/E2E contract;
-- a workflow design where required checks can remain absent solely because a changed path did not match a path filter.
+- a required PR workflow whose check can disappear solely because of a path filter.
 
-## 8. Branch-protection expectation
+## 9. GitHub server-side protection expectation
 
-Repository-side branch/ruleset administration is an account-level control and may not be writable through every GitHub integration. WP3 therefore separates two obligations:
+The private `main` branch remains protected by the active repository ruleset `Protect main`.
 
-1. **repository-enforced evidence:** workflows and guards are version-controlled, deterministic and cannot silently soften themselves;
-2. **GitHub settings evidence:** before WP3 acceptance, verify that the repository's merge policy actually blocks significant PR merge while mandatory checks are red or missing, or document the exact owner-admin setting required if the connected integration cannot read/change it.
+Required invariants:
 
-No claim of branch protection is made without evidence from GitHub itself.
+- target: `main` only;
+- enforcement: active;
+- bypass list: empty;
+- deletion blocked;
+- force-push blocked;
+- PR required before merge;
+- unresolved review conversations block merge;
+- allowed merge method: squash only;
+- required status policy is strict/up-to-date;
+- the stable required context after hybrid-CI cutover is `V10 authoritative merge gate`.
 
-### 8.1 Verified account-level blocker — 2026-08-06
+Hosted Fast PR and Toolchain Compatibility checks remain enabled even when they are not server-side merge blockers, because they provide parallel clean-runner evidence and faster failure discovery.
 
-The canonical repository is private. GitHub's repository rulesets endpoint reports that rulesets for this private repository are unavailable on the current account plan and requires an eligible paid plan. The branch-protection endpoint is also not readable through the installed integration, so there is no evidence that `main` currently has an equivalent server-side required-check rule.
+## 10. Cutover sequence
 
-This is an **acceptance blocker**, not a reason to weaken WP3:
+This infrastructure package is complete only after:
 
-- the repository must remain private;
-- making it public is not an acceptable workaround;
-- the OWNER account must use a GitHub plan that supports protected branches/rulesets for private repositories (GitHub Pro or another eligible private-repository plan);
-- after eligibility is available, `main` must require the mandatory V10 checks and disallow bypass for the acceptance contract;
-- only then may the final unchanged-head acceptance evidence be used for squash merge.
+1. GitHub-hosted fast checks are green on the exact PR head;
+2. GitHub-hosted clean Windows toolchain checks are green on the same head;
+3. `V10 authoritative merge gate` is green on the same head;
+4. zero unresolved review threads remain;
+5. `Protect main` is updated to require the stable authoritative context without bypass;
+6. the PR is squash-merged with expected-head protection;
+7. post-merge `Regression Shield` on `main` is green.
 
-Until server-side protection is proven, PR #236 remains unmerged and WP4 remains blocked even if every repository-controlled CI job is green.
-
-## 9. WP3 Exit Gate
-
-WP3 is complete only when:
-
-- fast PR and full acceptance lanes are distinct and documented;
-- V9 quality/security gates remain mandatory;
-- selected WP2 toolchain lane remains mandatory;
-- frontend baseline has deterministic type/lint/unit coverage and future Playwright/E2E is fail-closed when Web appears;
-- DB/API/authority/backup/Telegram/AI capability contracts are machine-checked when their roots appear;
-- critical money-path safety tests remain protected;
-- anti-bypass guard tests are green;
-- final exact-head Fast PR Checks + V10 Toolchain Compatibility + Regression Shield/security are green;
-- GitHub server-side protection for private `main` requires the mandatory checks and prevents bypass;
-- zero unresolved review blockers remain;
-- focused WP3 PR is squash-merged to `main`.
-
-After acceptance, WP4 — Release, build provenance and deployment contract — becomes next.
+This is infrastructure hardening only. It does **not** start WP4 or any later V10 product work.
