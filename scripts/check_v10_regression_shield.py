@@ -11,7 +11,7 @@ WORKFLOWS = ROOT / ".github" / "workflows"
 FAST_WORKFLOW = WORKFLOWS / "v10-pr-fast-checks.yml"
 FULL_WORKFLOW = WORKFLOWS / "regression-shield.yml"
 TOOLCHAIN_WORKFLOW = WORKFLOWS / "v10-toolchain-compat.yml"
-AUTHORITATIVE_WORKFLOW = WORKFLOWS / "v10-authoritative-merge-gate.yml"
+AUTHORITATIVE_WORKFLOW = WORKFLOWS / "self-hosted-windows-smoke.yml"
 FRONTEND_FIXTURE = ROOT / "tests" / "toolchain" / "frontend"
 FULL_SHA = re.compile(r"[0-9a-f]{40}")
 PATH_FILTER = re.compile(r"(?m)^\s+paths(?:-ignore)?:\s*$")
@@ -195,7 +195,8 @@ def validate_authoritative_workflow(failures: list[str]) -> None:
     require_tokens(
         text,
         (
-            "name: V10 Authoritative Merge Gate",
+            "name: Self-Hosted Windows CI",
+            "name: Windows runner smoke test",
             "name: V10 authoritative merge gate",
             "runs-on: [self-hosted, Windows, X64, omni-cio-ci]",
             "cancel-in-progress: true",
