@@ -44,6 +44,14 @@ The Lenovo gate deliberately does **not** install Python 3.14 or Node.js during 
 
 This separation is permanent architecture, not an outage workaround: the Lenovo lane proves the protected production runtime and security invariants; GitHub-hosted lanes prove clean modern-toolchain compatibility and provide acceleration.
 
+## Why this split is faster and safer
+
+- Heavy deterministic regression/security work stays on the always-available Lenovo runner and does not consume hosted minutes.
+- Clean Python 3.14.6 and Node 24.18.0 compatibility runs in fresh GitHub-hosted Windows VMs, where `setup-python` and `setup-node` are designed to work without mutating the Lenovo service account.
+- GitHub-hosted jobs can run in parallel, so Pro minutes buy latency reduction rather than duplicating the same serial work.
+- The authoritative Lenovo gate never depends on MSI installation, administrator escalation, or a mutable machine-wide toolchain during a PR run.
+- If hosted minutes are exhausted, the protected-runtime merge gate remains usable; the hosted compatibility lane resumes when quota/capacity returns.
+
 ## Security invariants
 
 - repository remains private;
