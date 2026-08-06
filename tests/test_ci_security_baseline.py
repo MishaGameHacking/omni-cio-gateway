@@ -76,11 +76,28 @@ def test_workflow_validator_requires_self_hosted_isolation(
     baseline.validate_workflow(failures)
 
     assert any("dedicated self-hosted" in failure for failure in failures)
-    assert any("reject fork" in failure for failure in failures)
     assert any("persisted credentials" in failure for failure in failures)
     assert any("verified Python runtime" in failure for failure in failures)
     assert any("RUNNER_TEMP" in failure for failure in failures)
     assert any("external virtual environment" in failure for failure in failures)
+
+
+def test_workflow_validator_rejects_pull_request_trigger(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workflow_path = tmp_path / "regression-shield.yml"
+    commands = "\n".join(baseline.REQUIRED_WORKFLOW_COMMANDS.values())
+    workflow_path.write_text(
+        f"on:\n  pull_request:\npermissions: contents: read\n{commands}\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(baseline, "WORKFLOW_PATH", workflow_path)
+    failures: list[str] = []
+
+    baseline.validate_workflow(failures)
+
+    assert any("post-merge only" in failure for failure in failures)
 
 
 def test_workflow_validator_rejects_checkout_local_virtualenv(
