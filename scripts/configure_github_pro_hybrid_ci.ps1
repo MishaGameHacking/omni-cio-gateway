@@ -16,7 +16,7 @@ $ExpectedRepo = "omni-cio-gateway"
 
 function Invoke-GhJson {
     param(
-        [Parameter(Mandatory = $true)][ValidateSet("GET", "PUT")][string]$Method,
+        [Parameter(Mandatory = $true)][ValidateSet("GET", "PUT", "PATCH")][string]$Method,
         [Parameter(Mandatory = $true)][string]$Path,
         [object]$Body
     )
@@ -30,11 +30,17 @@ function Invoke-GhJson {
     )
 
     if ($null -eq $Body) {
-        return (& gh @args | ConvertFrom-Json)
+        $raw = & gh @args
+        if ($LASTEXITCODE -ne 0) { throw "GitHub API request failed: $Method $Path" }
+        if (-not $raw) { return $null }
+        return ($raw | ConvertFrom-Json)
     }
 
     $json = $Body | ConvertTo-Json -Depth 100 -Compress
-    return ($json | & gh @args --input -)
+    $raw = $json | & gh @args --input -
+    if ($LASTEXITCODE -ne 0) { throw "GitHub API request failed: $Method $Path" }
+    if (-not $raw) { return $null }
+    return ($raw | ConvertFrom-Json)
 }
 
 function Assert-OwnerSession {
@@ -140,6 +146,15 @@ if ($ApplyRepositorySettings) {
         throw "RetentionDays must be between 1 and 400 for a private repository."
     }
 
+    Invoke-GhJson -Method PATCH -Path "repos/$Repository" -Body @{
+        allow_squash_merge = $true
+        allow_merge_commit = $false
+        allow_rebase_merge = $false
+        allow_auto_merge = $false
+        delete_branch_on_merge = $true
+        allow_update_branch = $true
+    } | Out-Null
+
     Invoke-GhJson -Method PUT -Path "repos/$Repository/actions/permissions" -Body @{
         enabled = $true
         allowed_actions = "all"
@@ -155,7 +170,10 @@ if ($ApplyRepositorySettings) {
         days = $RetentionDays
     } | Out-Null
 
-    Write-Host "Applied repository Actions policy: enabled, full-SHA pinning, read-only default GITHUB_TOKEN, PR approvals disabled, retention=$RetentionDays days."
+    Invoke-GhJson -Method PUT -Path "repos/$Repository/vulnerability-alerts" | Out-Null
+    Invoke-GhJson -Method PUT -Path "repos/$Repository/automated-security-fixes" | Out-Null
+
+    Write-Host "Applied repository policy: squash-only merge UI, delete merged branches, update-branch enabled, Actions full-SHA pinning, read-only default GITHUB_TOKEN, PR approvals disabled, retention=$RetentionDays days, Dependabot alerts/security fixes enabled."
 }
 
 if ($CutoverRuleset) {
@@ -191,11 +209,16 @@ if ($CutoverRuleset) {
 }
 
 if ($Verify -or (-not $ApplyRepositorySettings -and -not $CutoverRuleset)) {
+    $repo = Invoke-GhJson -Method GET -Path "repos/$Repository"
     $workflowPolicy = Invoke-GhJson -Method GET -Path "repos/$Repository/actions/permissions/workflow"
     $retention = Invoke-GhJson -Method GET -Path "repos/$Repository/actions/permissions/artifact-and-log-retention"
     $ruleset = Get-Ruleset
     Assert-RulesetInvariant -Ruleset $ruleset
 
+    Write-Host "Squash merge:" $repo.allow_squash_merge
+    Write-Host "Merge commits:" $repo.allow_merge_commit
+    Write-Host "Rebase merge:" $repo.allow_rebase_merge
+    Write-Host "Update branch button:" $repo.allow_update_branch
     Write-Host "Default workflow permissions:" $workflowPolicy.default_workflow_permissions
     Write-Host "Actions may approve PRs:" $workflowPolicy.can_approve_pull_request_reviews
     Write-Host "Artifact/log retention days:" $retention.days
