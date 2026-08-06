@@ -4,22 +4,21 @@ Updated: 2026-08-06
 
 ## Executive state
 
-Omni-CIO V10: **WP2 COMPLETE CANDIDATE / ACCEPTANCE MERGE PENDING / WP3 NEXT AFTER ACCEPTANCE**.
+Omni-CIO V10: **DEVELOPMENT STARTED / WP2 COMPLETE / WP3 NEXT**.
 
 Accepted implementation progress: **5%**.
 
-Accepted completed work:
+Accepted completed work after focused PR #230 acceptance on `main`:
 
 - Block A / WP0 — **COMPLETE (5%)**;
-- Block B / WP1 — **COMPLETE as work package; Block B remains IN PROGRESS and its 9% block weight is not yet credited**.
+- Block B / WP1 — **COMPLETE**;
+- Block B / WP2 — **COMPLETE as work package; Block B remains IN PROGRESS and its 9% block weight is not yet credited**.
 
-Current authorized work package until the focused WP2 PR is accepted on `main`:
+Next authorized work package after WP2 acceptance:
 
-**WP2 — Toolchain and Dependency Baseline.**
+**WP3 — V10 Regression Shield / repository protection.**
 
-WP2 implementation and pre-handoff Exit Gate evidence are complete on PR #230 head `f122cd7c2a79d58783189f365c9129c14a681cd5`. This status handoff commit intentionally changes the PR head, so the same exact-head Regression Shield/security/toolchain gates must pass again before squash merge.
-
-After that exact-head rerun and squash merge, **WP2 becomes accepted COMPLETE and WP3 — V10 Regression Shield / repository protection becomes NEXT**. WP3 implementation must not start before WP2 acceptance on `main`.
+> Authority note: while this file is viewed inside the unmerged WP2 PR #230, `WP2 COMPLETE / WP3 NEXT` is the acceptance candidate. It becomes authoritative only after the final exact-head Regression Shield/security/toolchain/Windows gates are green, review blockers are zero, and PR #230 is squash-merged to `main`. Until that merge, WP2 remains the active authorized package and WP3 implementation must not start.
 
 Owner start command: **`START V10`** received 2026-08-05.
 
@@ -47,7 +46,7 @@ Protected production/recovery baseline remains:
 | Block | Planned weight | State |
 |---|---:|---|
 | A. Architecture and V9 protection | 5% | COMPLETE — WP0 |
-| B. GitHub, dependencies and CI/CD | 9% | WP1 COMPLETE / WP2 COMPLETE CANDIDATE — ACCEPTANCE MERGE PENDING |
+| B. GitHub, dependencies and CI/CD | 9% | WP1 COMPLETE / WP2 COMPLETE / WP3 NEXT |
 | C. Lenovo Omni-CIO Node / infrastructure | 12% | NOT STARTED |
 | D. V10 Core and data | 14% | NOT STARTED |
 | E. Omni-CIO Web Platform | 14% | NOT STARTED |
@@ -131,13 +130,13 @@ During that evaluation, two concurrency tests were found to rely on scheduler or
 
 The selected frontend baseline proves deterministic `npm ci`, typecheck, Vite build, npm audit and CycloneDX SBOM generation without implementing the Omni-CIO Web product.
 
-## WP2 pre-handoff Exit Gate evidence
+## WP2 Exit Gate evidence
 
 Focused PR:
 
 `#230 — V10 WP2: establish reproducible toolchain baseline`
 
-Pre-handoff exact head:
+Substantive implementation head before the final status-only handoff:
 
 `f122cd7c2a79d58783189f365c9129c14a681cd5`
 
@@ -154,26 +153,32 @@ On that exact head:
 - unresolved PR review threads — **0**;
 - PR is mergeable.
 
-This pre-handoff head satisfies the substantive WP2 implementation gate. The present status handoff commit deliberately requires one final exact-head rerun before merge so status/documentation cannot bypass the same protection.
+The status handoff that records `WP2 COMPLETE / WP3 NEXT` intentionally changes the PR head after this substantive evidence. Therefore PR #230 is accepted only if the same mandatory exact-head gates are green again on the final status-handoff head immediately before merge. No further code/toolchain changes are allowed between that final green evidence and squash merge.
 
 ## WP2 Exit Gate
 
-WP2 may become accepted COMPLETE only when:
+WP2 is accepted COMPLETE only when all of the following are true on the final PR head:
 
-1. one exact documented Python/Node/package-manager/frontend/PostgreSQL baseline is selected from evidence — **SATISFIED**;
-2. backend compatibility remains green and V9 `app:app` is preserved — **SATISFIED on pre-handoff head**;
-3. frontend toolchain has deterministic locked inputs and a clean non-product build smoke — **SATISFIED**;
-4. dependency/SBOM/license policy is machine-checkable — **SATISFIED**;
-5. clean GitHub-hosted Windows/toolchain checks are reproducible — **SATISFIED on pre-handoff head**;
-6. existing self-hosted Regression Shield/security remains green — **SATISFIED on pre-handoff head; MUST RE-RUN ON STATUS-HANDOFF HEAD**;
-7. zero unresolved review blockers remain — **SATISFIED**;
-8. focused WP2 PR is squash-merged to `main` — **PENDING**.
+1. one exact documented Python/Node/package-manager/frontend/PostgreSQL baseline is selected from evidence;
+2. backend compatibility remains green and V9 `app:app` is preserved;
+3. frontend toolchain has deterministic locked inputs and a clean non-product build smoke;
+4. dependency/SBOM/license policy is machine-checkable;
+5. clean GitHub-hosted Windows/toolchain checks are reproducible;
+6. existing self-hosted Regression Shield/security is green;
+7. zero unresolved review blockers remain;
+8. focused WP2 PR #230 is squash-merged to `main`.
 
-Final acceptance sequence:
+Acceptance sequence:
 
 `status handoff -> exact-head Regression Shield + toolchain + Windows smoke green -> zero blockers -> squash merge PR #230 -> WP2 COMPLETE on main -> WP3 NEXT`.
 
-After WP2 acceptance, **WP3 — V10 Regression Shield / repository protection** becomes the next authorized work package. Overall accepted V10 progress remains 5% until all of Block B is complete.
+After WP2 acceptance, **WP3 — V10 Regression Shield / repository protection** is the next authorized work package. Overall accepted V10 progress remains 5% until all of Block B is complete.
+
+## WP3 scope boundary
+
+According to the canonical plan, WP3 strengthens CI as the primary barrier against hidden defects before runtime. It must preserve V9 quality/security gates, add frontend TypeScript/lint/unit/E2E coverage, establish future DB migration/API schema/authority/backup-restore/Telegram-signature/AI-schema test contracts, add Playwright smoke/E2E for critical Web workflows when the Web surface exists, and separate fast PR checks from the full exact-head regression/security gate.
+
+WP3 does **not** authorize implementation of the Web product, PostgreSQL schemas/runtime, Telegram runtime, AI runtime, Lenovo bootstrap or new broker execution authority ahead of their owning work packages. CI scaffolding must remain capability-aware and must not create competing placeholder product stacks merely to satisfy a future test category.
 
 ## Lenovo sequencing
 
