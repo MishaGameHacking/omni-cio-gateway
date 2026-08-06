@@ -46,10 +46,6 @@ REQUIRED_WORKFLOW_COMMANDS = {
 }
 
 SELF_HOSTED_RUNNER_LABELS = "[self-hosted, Windows, X64, omni-cio-ci]"
-SAME_REPOSITORY_GUARD = (
-    "github.event_name != 'pull_request' || "
-    "github.event.pull_request.head.repo.full_name == github.repository"
-)
 
 
 def display_path(path: Path) -> str:
@@ -140,12 +136,14 @@ def validate_workflow(failures: list[str]) -> None:
         failures.append("security and quality gates may not use continue-on-error")
     if "contents: read" not in text:
         failures.append("workflow permissions must retain contents: read")
+    if "\n  pull_request:" in text:
+        failures.append(
+            "Regression Shield must remain post-merge only; PR authority belongs to the authoritative gate"
+        )
     if SELF_HOSTED_RUNNER_LABELS not in text:
         failures.append(
             "Regression Shield must target the dedicated self-hosted Windows runner"
         )
-    if text.count(SAME_REPOSITORY_GUARD) < 2:
-        failures.append("every self-hosted job must reject fork pull requests")
     if text.count("persist-credentials: false") < 2:
         failures.append("every checkout must disable persisted credentials")
     if "scripts\\bootstrap_windows_ci_python.cmd" not in text:
@@ -256,7 +254,7 @@ def main() -> int:
         print("Windows projection: exact except allowlisted uvloop exclusion")
         print("CI virtual environments: isolated in RUNNER_TEMP")
         print("GitHub Actions: pinned to full commit SHAs")
-        print("Self-hosted PR isolation: same-repository only")
+        print("Regression Shield: post-merge only on dedicated self-hosted runner")
         print("V10 repository boundary guard: required")
         print("V10 toolchain baseline guard: required")
         print("V10 Regression Shield guard: required")
