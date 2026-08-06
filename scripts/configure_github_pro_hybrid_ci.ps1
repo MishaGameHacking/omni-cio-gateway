@@ -3,9 +3,11 @@ param(
     [switch]$ApplyRepositorySettings,
     [switch]$CutoverRuleset,
     [switch]$Verify,
+    [switch]$Finalize,
     [string]$Repository = "MishaGameHacking/omni-cio-gateway",
     [int]$RulesetId = 20519289,
-    [int]$RetentionDays = 7
+    [int]$RetentionDays = 7,
+    [int]$WorkflowTimeoutMinutes = 110
 )
 
 $ErrorActionPreference = "Stop"
@@ -13,10 +15,17 @@ $ApiVersion = "2026-03-10"
 $RequiredAuthoritativeContext = "V10 authoritative merge gate"
 $ExpectedOwner = "MishaGameHacking"
 $ExpectedRepo = "omni-cio-gateway"
+$InfrastructurePr = 242
+$InfrastructureBranch = "infra/github-pro-hybrid-ci"
+$Workflows = @(
+    "v10-pr-fast-checks.yml",
+    "v10-toolchain-compat.yml",
+    "self-hosted-windows-smoke.yml"
+)
 
 function Invoke-GhJson {
     param(
-        [Parameter(Mandatory = $true)][ValidateSet("GET", "PUT", "PATCH")][string]$Method,
+        [Parameter(Mandatory = $true)][ValidateSet("GET", "POST", "PUT", "PATCH")][string]$Method,
         [Parameter(Mandatory = $true)][string]$Path,
         [object]$Body
     )
@@ -74,7 +83,20 @@ function Get-RunnerState {
     if ($null -eq $runner) {
         throw "Required self-hosted runner omni-cio-ci with Windows/X64/omni-cio-ci labels was not found."
     }
+    if ($runner.status -ne "online") {
+        throw "Required self-hosted runner omni-cio-ci is not online."
+    }
     return $runner
+}
+
+function Get-InfrastructurePr {
+    $pr = Invoke-GhJson -Method GET -Path "repos/$Repository/pulls/$InfrastructurePr"
+    if ($pr.state -ne "open") { throw "Infrastructure PR #$InfrastructurePr must be open." }
+    if ($pr.base.ref -ne "main") { throw "Infrastructure PR must target main." }
+    if ($pr.head.ref -ne $InfrastructureBranch) {
+        throw "Unexpected infrastructure branch: $($pr.head.ref)"
+    }
+    return $pr
 }
 
 function Get-Ruleset {
@@ -113,10 +135,9 @@ function Assert-RulesetInvariant {
 }
 
 function Assert-AuthoritativeCheckGreen {
-    $pr = Invoke-GhJson -Method GET -Path "repos/$Repository/pulls/242"
-    if ($pr.state -ne "open") { throw "Infrastructure PR #242 must be open during cutover verification." }
+    $pr = Get-InfrastructurePr
     $head = $pr.head.sha
-    $checks = Invoke-GhJson -Method GET -Path "repos/$Repository/commits/$head/check-runs"
+    $checks = Invoke-GhJson -Method GET -Path "repos/$Repository/commits/$head/check-runs?per_page=100"
 
     $required = @(
         "Fast policy and source contracts",
@@ -137,11 +158,83 @@ function Assert-AuthoritativeCheckGreen {
     return $head
 }
 
-Assert-OwnerSession
-$runner = Get-RunnerState
-Write-Host "Runner:" $runner.name $runner.status "busy=" $runner.busy
+function Start-WorkflowDispatch {
+    param(
+        [Parameter(Mandatory = $true)][string]$Workflow,
+        [Parameter(Mandatory = $true)][string]$Ref
+    )
+    Invoke-GhJson -Method POST -Path "repos/$Repository/actions/workflows/$Workflow/dispatches" -Body @{ ref = $Ref } | Out-Null
+    Write-Host "Dispatched:" $Workflow "on" $Ref
+}
 
-if ($ApplyRepositorySettings) {
+function Wait-WorkflowForHead {
+    param(
+        [Parameter(Mandatory = $true)][string]$Workflow,
+        [Parameter(Mandatory = $true)][string]$HeadSha,
+        [Parameter(Mandatory = $true)][string]$Branch,
+        [int]$TimeoutMinutes = 110
+    )
+
+    $encodedBranch = [uri]::EscapeDataString($Branch)
+    $deadline = (Get-Date).AddMinutes($TimeoutMinutes)
+    $run = $null
+
+    while ((Get-Date) -lt $deadline) {
+        $runs = Invoke-GhJson -Method GET -Path "repos/$Repository/actions/workflows/$Workflow/runs?branch=$encodedBranch&event=workflow_dispatch&per_page=20"
+        $run = @($runs.workflow_runs | Where-Object head_sha -eq $HeadSha | Sort-Object created_at -Descending) | Select-Object -First 1
+        if ($null -ne $run) { break }
+        Start-Sleep -Seconds 3
+    }
+    if ($null -eq $run) { throw "Timed out waiting for $Workflow to appear for $HeadSha" }
+
+    Write-Host "Watching:" $Workflow "run" $run.id
+    while ((Get-Date) -lt $deadline) {
+        $current = Invoke-GhJson -Method GET -Path "repos/$Repository/actions/runs/$($run.id)"
+        Write-Host ("[{0}] {1}: {2}" -f (Get-Date -Format "HH:mm:ss"), $Workflow, $current.status)
+        if ($current.status -eq "completed") {
+            if ($current.conclusion -ne "success") {
+                throw "$Workflow failed for exact head $HeadSha: $($current.conclusion) (run $($current.id))"
+            }
+            Write-Host "GREEN:" $Workflow "run" $current.id
+            return $current
+        }
+        Start-Sleep -Seconds 15
+    }
+    throw "Timed out waiting for $Workflow to complete for $HeadSha"
+}
+
+function Wait-PostMergeRegressionShield {
+    param(
+        [Parameter(Mandatory = $true)][string]$MainSha,
+        [int]$TimeoutMinutes = 90
+    )
+
+    $deadline = (Get-Date).AddMinutes($TimeoutMinutes)
+    $run = $null
+    while ((Get-Date) -lt $deadline) {
+        $runs = Invoke-GhJson -Method GET -Path "repos/$Repository/actions/workflows/regression-shield.yml/runs?branch=main&event=push&per_page=20"
+        $run = @($runs.workflow_runs | Where-Object head_sha -eq $MainSha | Sort-Object created_at -Descending) | Select-Object -First 1
+        if ($null -ne $run) { break }
+        Start-Sleep -Seconds 3
+    }
+    if ($null -eq $run) { throw "Post-merge Regression Shield did not appear for main SHA $MainSha" }
+
+    while ((Get-Date) -lt $deadline) {
+        $current = Invoke-GhJson -Method GET -Path "repos/$Repository/actions/runs/$($run.id)"
+        Write-Host ("[{0}] Regression Shield: {1}" -f (Get-Date -Format "HH:mm:ss"), $current.status)
+        if ($current.status -eq "completed") {
+            if ($current.conclusion -ne "success") {
+                throw "Post-merge Regression Shield failed: $($current.conclusion) (run $($current.id))"
+            }
+            Write-Host "GREEN: post-merge Regression Shield run" $current.id
+            return $current
+        }
+        Start-Sleep -Seconds 15
+    }
+    throw "Timed out waiting for post-merge Regression Shield"
+}
+
+function Apply-RepositoryPolicy {
     if ($RetentionDays -lt 1 -or $RetentionDays -gt 400) {
         throw "RetentionDays must be between 1 and 400 for a private repository."
     }
@@ -173,10 +266,10 @@ if ($ApplyRepositorySettings) {
     Invoke-GhJson -Method PUT -Path "repos/$Repository/vulnerability-alerts" | Out-Null
     Invoke-GhJson -Method PUT -Path "repos/$Repository/automated-security-fixes" | Out-Null
 
-    Write-Host "Applied repository policy: squash-only merge UI, delete merged branches, update-branch enabled, Actions full-SHA pinning, read-only default GITHUB_TOKEN, PR approvals disabled, retention=$RetentionDays days, Dependabot alerts/security fixes enabled."
+    Write-Host "Applied repository policy: squash-only, delete merged branches, update-branch enabled, Actions full-SHA pinning, read-only default GITHUB_TOKEN, Actions PR approvals disabled, retention=$RetentionDays days, Dependabot enabled."
 }
 
-if ($CutoverRuleset) {
+function Cutover-Ruleset {
     $head = Assert-AuthoritativeCheckGreen
     $ruleset = Get-Ruleset
     Assert-RulesetInvariant -Ruleset $ruleset
@@ -206,23 +299,96 @@ if ($CutoverRuleset) {
 
     Invoke-GhJson -Method PUT -Path "repos/$Repository/rulesets/$RulesetId" -Body $body | Out-Null
     Write-Host "Cut over Protect main to authoritative context on exact PR head $head."
+    return $head
 }
 
-if ($Verify -or (-not $ApplyRepositorySettings -and -not $CutoverRuleset)) {
+function Merge-InfrastructurePr {
+    param([Parameter(Mandatory = $true)][string]$ExpectedHead)
+
+    $merge = Invoke-GhJson -Method PUT -Path "repos/$Repository/pulls/$InfrastructurePr/merge" -Body @{
+        merge_method = "squash"
+        sha = $ExpectedHead
+        commit_title = "Infra: GitHub Pro hybrid CI + Lenovo continuity (#$InfrastructurePr)"
+        commit_message = "Finalize hosted acceleration with self-hosted authoritative continuity."
+    }
+    if (-not $merge.merged) { throw "Infrastructure PR merge failed: $($merge.message)" }
+    Write-Host "Merged infrastructure PR #$InfrastructurePr:" $merge.sha
+    return $merge.sha
+}
+
+function Verify-FinalState {
     $repo = Invoke-GhJson -Method GET -Path "repos/$Repository"
     $workflowPolicy = Invoke-GhJson -Method GET -Path "repos/$Repository/actions/permissions/workflow"
     $retention = Invoke-GhJson -Method GET -Path "repos/$Repository/actions/permissions/artifact-and-log-retention"
     $ruleset = Get-Ruleset
     Assert-RulesetInvariant -Ruleset $ruleset
 
-    Write-Host "Squash merge:" $repo.allow_squash_merge
-    Write-Host "Merge commits:" $repo.allow_merge_commit
-    Write-Host "Rebase merge:" $repo.allow_rebase_merge
-    Write-Host "Update branch button:" $repo.allow_update_branch
-    Write-Host "Default workflow permissions:" $workflowPolicy.default_workflow_permissions
-    Write-Host "Actions may approve PRs:" $workflowPolicy.can_approve_pull_request_reviews
-    Write-Host "Artifact/log retention days:" $retention.days
-    Write-Host "Protect main required contexts:"
-    ($ruleset.rules | Where-Object type -eq "required_status_checks").parameters.required_status_checks |
-        ForEach-Object { Write-Host " -" $_.context }
+    if (-not $repo.allow_squash_merge -or $repo.allow_merge_commit -or $repo.allow_rebase_merge) {
+        throw "Repository merge policy drift detected."
+    }
+    if (-not $repo.delete_branch_on_merge -or -not $repo.allow_update_branch) {
+        throw "Repository branch hygiene policy drift detected."
+    }
+    if ($workflowPolicy.default_workflow_permissions -ne "read") {
+        throw "Default GITHUB_TOKEN must remain read-only."
+    }
+    if ($workflowPolicy.can_approve_pull_request_reviews) {
+        throw "GitHub Actions must not approve pull requests."
+    }
+    if ($retention.days -ne $RetentionDays) {
+        throw "Unexpected artifact/log retention: $($retention.days)"
+    }
+
+    $required = @(($ruleset.rules | Where-Object type -eq "required_status_checks").parameters.required_status_checks)
+    if ($required.Count -ne 1 -or $required[0].context -ne $RequiredAuthoritativeContext) {
+        throw "Protect main must require only the authoritative continuity gate after cutover."
+    }
+
+    Write-Host "FINAL VERIFY: PASS"
+    Write-Host "Repository:" $repo.full_name
+    Write-Host "Main protection:" $ruleset.name $ruleset.enforcement
+    Write-Host "Required merge context:" $required[0].context
+    Write-Host "Default GITHUB_TOKEN:" $workflowPolicy.default_workflow_permissions
+    Write-Host "Artifact/log retention:" $retention.days "days"
+}
+
+Assert-OwnerSession
+$runner = Get-RunnerState
+Write-Host "Runner:" $runner.name $runner.status "busy=" $runner.busy
+
+if ($Finalize) {
+    Apply-RepositoryPolicy
+    $pr = Get-InfrastructurePr
+    $head = $pr.head.sha
+    Write-Host "Exact infrastructure head:" $head
+
+    foreach ($workflow in $Workflows) {
+        Start-WorkflowDispatch -Workflow $workflow -Ref $InfrastructureBranch
+    }
+    foreach ($workflow in $Workflows) {
+        Wait-WorkflowForHead -Workflow $workflow -HeadSha $head -Branch $InfrastructureBranch -TimeoutMinutes $WorkflowTimeoutMinutes | Out-Null
+    }
+
+    $validatedHead = Cutover-Ruleset
+    if ($validatedHead -ne $head) {
+        throw "PR head moved during finalization. Expected $head, got $validatedHead."
+    }
+
+    $mainSha = Merge-InfrastructurePr -ExpectedHead $head
+    Wait-PostMergeRegressionShield -MainSha $mainSha -TimeoutMinutes 90 | Out-Null
+    Verify-FinalState
+    Write-Host "GITHUB HYBRID CI FINALIZATION COMPLETE. WP4 remains untouched."
+    exit 0
+}
+
+if ($ApplyRepositorySettings) {
+    Apply-RepositoryPolicy
+}
+
+if ($CutoverRuleset) {
+    Cutover-Ruleset | Out-Null
+}
+
+if ($Verify -or (-not $ApplyRepositorySettings -and -not $CutoverRuleset)) {
+    Verify-FinalState
 }
