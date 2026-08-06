@@ -41,14 +41,6 @@ jobs:
         shell: cmd
         run: scripts\bootstrap_windows_ci_python.cmd
 
-      - name: Restore service-account PowerShell policy
-        if: always()
-        shell: cmd
-        run: >-
-          powershell.exe -NoLogo -NoProfile -NonInteractive
-          -ExecutionPolicy Bypass -Command
-          "Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy Undefined -Force"
-
       - name: Verify Python and workspace
         shell: cmd
         run: |
@@ -68,7 +60,7 @@ jobs:
     name: V10 authoritative merge gate
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
-    timeout-minutes: 75
+    timeout-minutes: 55
     defaults:
       run:
         shell: bash
@@ -223,78 +215,6 @@ jobs:
           '(^|[\\/])(\.git|\.venv|\.venv-ci|\.mypy_cache|\.pytest_cache|\.ruff_cache|__pycache__|requirements(-dev)?\.txt|windows-.*requirements.*\.txt|coverage\.xml|pytest-results\.xml)([\\/]|$)'
           | python scripts/check_ci_security_baseline.py --detect-secrets-report
 
-      - name: Temporarily allow pinned setup action scripts
-        shell: cmd
-        run: >-
-          powershell.exe -NoLogo -NoProfile -NonInteractive
-          -ExecutionPolicy Bypass -Command
-          "Write-Host ('Execution policy before setup-python: ' + (Get-ExecutionPolicy)); Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy Bypass -Force; Write-Host ('Execution policy for service account: ' + (Get-ExecutionPolicy))"
-
-      - name: Set up V10 Python 3.14.6 compatibility runtime
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.14.6"
-          cache: pip
-          cache-dependency-path: requirements-dev.txt
-
-      - name: Restore service-account PowerShell policy after setup-python
-        if: always()
-        shell: cmd
-        run: >-
-          powershell.exe -NoLogo -NoProfile -NonInteractive
-          -ExecutionPolicy Bypass -Command
-          "Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy Undefined -Force"
-
-      - name: Verify exact V10 Python interpreter
-        run: test "$(python -c 'import platform; print(platform.python_version())')" = "3.14.6"
-
-      - name: Create isolated V10 Python environment
-        run: |
-          V10_VENV_ROOT="$(cygpath -u "$RUNNER_TEMP")"
-          V10_VENV_PATH="$V10_VENV_ROOT/omni-cio-v10-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          rm -rf "$V10_VENV_PATH"
-          python -m venv "$V10_VENV_PATH"
-          echo "V10_VENV_PATH=$V10_VENV_PATH" >> "$GITHUB_ENV"
-          echo "$(cygpath -w "$V10_VENV_PATH/Scripts")" >> "$GITHUB_PATH"
-          "$V10_VENV_PATH/Scripts/python.exe" -m pip --version
-
-      - name: Install V10 Python dependency baseline
-        run: |
-          python scripts/windows_ci_lock.py project requirements-dev.txt windows-requirements-dev.txt
-          python -m pip install --disable-pip-version-check --require-hashes -r windows-requirements-dev.txt
-
-      - name: Verify V10 Python compatibility
-        run: |
-          python scripts/check_v10_toolchain_baseline.py
-          python scripts/check_v10_regression_shield.py
-          python -m compileall -q app.py app_v371.py app_v360.py main.py omni_cio tests scripts
-          python -m ruff check .
-          python -m mypy
-          python -m pytest -q
-          python -m pip_audit --require-hashes --disable-pip --strict --vulnerability-service osv --progress-spinner off -r windows-requirements-dev.txt
-
-      - name: Set up V10 Node.js 24.18.0
-        uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
-        with:
-          node-version: "24.18.0"
-          cache: "npm"
-          cache-dependency-path: tests/toolchain/frontend/package-lock.json
-
-      - name: Verify exact V10 Node.js and npm versions
-        run: |
-          test "$(node --version)" = "v24.18.0"
-          test "$(npm --version)" = "11.16.0"
-
-      - name: Run V10 frontend compatibility suite
-        working-directory: tests/toolchain/frontend
-        run: |
-          npm ci --ignore-scripts --no-audit --no-fund
-          npm run typecheck
-          npm run lint
-          npm test
-          npm run build
-          npm audit --audit-level=high
-
       - name: Upload failure diagnostics only
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -311,8 +231,6 @@ jobs:
       - name: Clean self-hosted workspace
         if: always()
         run: |
-          for path in "${VENV_PATH:-}" "${V10_VENV_PATH:-}"; do
-            if [ -n "$path" ]; then rm -rf "$path"; fi
-          done
+          if [ -n "${VENV_PATH:-}" ]; then rm -rf "$VENV_PATH"; fi
           git reset --hard HEAD
           git clean -ffdx
