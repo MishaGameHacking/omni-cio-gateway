@@ -1,6 +1,6 @@
 # Omni-CIO V10 — Regression Shield and CI Protection Contract
 
-Status: **WP3 IN PROGRESS**  
+Status: **WP3 IMPLEMENTATION COMPLETE CANDIDATE / ACCEPTANCE BLOCKED BY GITHUB SERVER-SIDE PROTECTION**  
 Scope: CI/repository protection only  
 Protected runtime: current V9 `app:app` remains unchanged until an owning later WP intentionally migrates it
 
@@ -56,8 +56,9 @@ The accepted WP2 workflow remains the clean GitHub-hosted Windows compatibility 
 - Python 3.14.6;
 - Node 24.18.0 / npm 11.16.0;
 - deterministic lock reproduction;
+- hosted Ruff/format/mypy quality evidence;
 - full deterministic backend tests on the selected future V10 interpreter;
-- frontend type/build/audit/SBOM evidence.
+- frontend type/lint/unit/build/audit/SBOM evidence.
 
 WP3 must not weaken this lane.
 
@@ -154,6 +155,20 @@ Repository-side branch/ruleset administration is an account-level control and ma
 
 No claim of branch protection is made without evidence from GitHub itself.
 
+### 8.1 Verified account-level blocker — 2026-08-06
+
+The canonical repository is private. GitHub's repository rulesets endpoint reports that rulesets for this private repository are unavailable on the current account plan and requires an eligible paid plan. The branch-protection endpoint is also not readable through the installed integration, so there is no evidence that `main` currently has an equivalent server-side required-check rule.
+
+This is an **acceptance blocker**, not a reason to weaken WP3:
+
+- the repository must remain private;
+- making it public is not an acceptable workaround;
+- the OWNER account must use a GitHub plan that supports protected branches/rulesets for private repositories (GitHub Pro or another eligible private-repository plan);
+- after eligibility is available, `main` must require the mandatory V10 checks and disallow bypass for the acceptance contract;
+- only then may the final unchanged-head acceptance evidence be used for squash merge.
+
+Until server-side protection is proven, PR #236 remains unmerged and WP4 remains blocked even if every repository-controlled CI job is green.
+
 ## 9. WP3 Exit Gate
 
 WP3 is complete only when:
@@ -166,6 +181,7 @@ WP3 is complete only when:
 - critical money-path safety tests remain protected;
 - anti-bypass guard tests are green;
 - final exact-head Fast PR Checks + V10 Toolchain Compatibility + Regression Shield/security are green;
+- GitHub server-side protection for private `main` requires the mandatory checks and prevents bypass;
 - zero unresolved review blockers remain;
 - focused WP3 PR is squash-merged to `main`.
 
