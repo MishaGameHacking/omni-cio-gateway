@@ -2,7 +2,7 @@ name: Улучшение Omni-CIO
 description: Предложить maintenance-улучшение или новую owner-approved возможность без нарушения текущих safety boundaries
 title: "[Enhancement] "
 labels: [enhancement]
-assignees: [Misha2304]
+assignees: [MishaGameHacking]
 body:
   - type: markdown
     attributes:
