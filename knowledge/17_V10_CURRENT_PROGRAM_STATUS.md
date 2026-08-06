@@ -1,10 +1,10 @@
 # 17 — V10 CURRENT PROGRAM STATUS
 
-Updated: 2026-08-05
+Updated: 2026-08-06
 
 ## Executive state
 
-Omni-CIO V10: **DEVELOPMENT STARTED / WP2 IN PROGRESS**.
+Omni-CIO V10: **WP2 COMPLETE CANDIDATE / ACCEPTANCE MERGE PENDING / WP3 NEXT AFTER ACCEPTANCE**.
 
 Accepted implementation progress: **5%**.
 
@@ -13,11 +13,13 @@ Accepted completed work:
 - Block A / WP0 — **COMPLETE (5%)**;
 - Block B / WP1 — **COMPLETE as work package; Block B remains IN PROGRESS and its 9% block weight is not yet credited**.
 
-Current authorized work package:
+Current authorized work package until the focused WP2 PR is accepted on `main`:
 
 **WP2 — Toolchain and Dependency Baseline.**
 
-WP3 and later remain blocked until WP2 Exit Gate is accepted on `main`.
+WP2 implementation and pre-handoff Exit Gate evidence are complete on PR #230 head `f122cd7c2a79d58783189f365c9129c14a681cd5`. This status handoff commit intentionally changes the PR head, so the same exact-head Regression Shield/security/toolchain gates must pass again before squash merge.
+
+After that exact-head rerun and squash merge, **WP2 becomes accepted COMPLETE and WP3 — V10 Regression Shield / repository protection becomes NEXT**. WP3 implementation must not start before WP2 acceptance on `main`.
 
 Owner start command: **`START V10`** received 2026-08-05.
 
@@ -33,7 +35,8 @@ Starting or advancing V10 never expands broker/Real-money authority by itself.
 - security boundaries: `docs/architecture/V10_SECURITY_BOUNDARIES.md`
 - repository architecture: `docs/architecture/REPOSITORY_STRUCTURE.md`
 - protected V9 baseline: `docs/architecture/V10_V9_BASELINE_FREEZE.md`
-- WP2 toolchain authority under development: `docs/architecture/V10_TOOLCHAIN_BASELINE.md`
+- WP2 selected toolchain authority: `docs/architecture/V10_TOOLCHAIN_BASELINE.md`
+- machine-readable WP2 authority: `docs/architecture/V10_TOOLCHAIN_BASELINE.json`
 
 Protected production/recovery baseline remains:
 
@@ -44,7 +47,7 @@ Protected production/recovery baseline remains:
 | Block | Planned weight | State |
 |---|---:|---|
 | A. Architecture and V9 protection | 5% | COMPLETE — WP0 |
-| B. GitHub, dependencies and CI/CD | 9% | WP1 COMPLETE / WP2 IN PROGRESS |
+| B. GitHub, dependencies and CI/CD | 9% | WP1 COMPLETE / WP2 COMPLETE CANDIDATE — ACCEPTANCE MERGE PENDING |
 | C. Lenovo Omni-CIO Node / infrastructure | 12% | NOT STARTED |
 | D. V10 Core and data | 14% | NOT STARTED |
 | E. Omni-CIO Web Platform | 14% | NOT STARTED |
@@ -101,46 +104,76 @@ WP2 covers only:
 - dependency/SBOM/license policy;
 - clean Windows/GitHub-hosted compatibility evidence.
 
-## WP2 initial evidence and candidates
+## WP2 selected baseline
 
-The repository currently proves a production-compatible backend on Python **3.12.10**, FastAPI **0.141.1**, Uvicorn **0.51.0** and the existing hash-locked Python dependency set.
+The evidence-selected V10 development baseline is:
 
-Fresh official-source review performed at WP2 start found:
+- Python **3.14.6**;
+- FastAPI **0.141.1**;
+- Uvicorn **0.51.0**;
+- Node.js **24.18.0 LTS**;
+- npm **11.16.0** with package-lock v3;
+- React **19.2.8**;
+- React DOM **19.2.8**;
+- Vite **8.1.5**;
+- TypeScript **7.0.2**;
+- PostgreSQL **18 / reviewed patch baseline 18.4**.
 
-- Python 3.12.10 is the final 3.12 release with Windows binary installers; later 3.12 security releases are source-only, so WP2 must not silently call 3.12.10 a long-term V10 security baseline without evaluating a newer Python minor;
-- Python 3.13.14 and 3.14.6 are current supported maintenance releases and are compatibility candidates;
-- Node.js 24.18.0 is current LTS and bundles npm 11.16.0;
-- React 19.2 is the current stable React line;
-- Vite 8.1 is the current regular-patch stable line;
-- PostgreSQL 18.4 is the current supported stable PostgreSQL 18 release;
-- TypeScript 7.0 is stable, but because it is a new native compiler generation, WP2 must verify compatibility rather than select it only because it is newest.
+Python remains governed by exact direct `.in` sources and SHA-256 hash-locked generated locks. The non-product frontend toolchain fixture uses exact direct versions plus committed deterministic `package-lock.json`. Machine-readable authority is `docs/architecture/V10_TOOLCHAIN_BASELINE.json` and the permanent policy guard is `scripts/check_v10_toolchain_baseline.py`.
 
-Exact V10 pins are not accepted until the WP2 compatibility/build checks prove them.
+WP2 does **not** migrate the current Render/V9 runtime interpreter or install PostgreSQL. Those runtime boundaries remain owned by later work packages.
 
-## WP2 current branch
+## WP2 compatibility and defect evidence
 
-Focused branch:
+Clean GitHub-hosted Windows candidate evaluation proved Python 3.12.10, 3.13.14 and 3.14.6 against the protected application/test surface. Python 3.14.6 was selected after all candidates passed.
 
-`v10/wp2-toolchain-baseline`
+During that evaluation, two concurrency tests were found to rely on scheduler ordering rather than the intended temporal contract. Only those tests were corrected to use equal timestamps for serialization/fire-once evidence; separate explicit out-of-order fail-closed tests remain. Production ACRA/MOEX policy logic was not weakened.
 
-The branch starts from accepted WP1 main:
+The selected frontend baseline proves deterministic `npm ci`, typecheck, Vite build, npm audit and CycloneDX SBOM generation without implementing the Omni-CIO Web product.
 
-`dbd459b280de84d3f571b458b46f1039880312ca`
+## WP2 pre-handoff Exit Gate evidence
+
+Focused PR:
+
+`#230 — V10 WP2: establish reproducible toolchain baseline`
+
+Pre-handoff exact head:
+
+`f122cd7c2a79d58783189f365c9129c14a681cd5`
+
+On that exact head:
+
+- Regression Shield run **#1391** / Actions run `31052381836` — **SUCCESS**;
+  - Quality, contracts and coverage — **SUCCESS**;
+  - Dependency, code and secret security — **SUCCESS**;
+- Self-Hosted Windows Smoke run **#86** / Actions run `31052378965` — **SUCCESS**;
+- V10 Toolchain Compatibility run **#26** / Actions run `31052378987` — **SUCCESS**;
+  - Python 3.14.6 V10 baseline — **SUCCESS**;
+  - Node 24.18.0 / React-Vite-TypeScript baseline — **SUCCESS**;
+- exact selected-toolchain policy, lock reproducibility, full deterministic tests, dependency audit, SAST, secret scan and both Python/frontend CycloneDX SBOM paths are green;
+- unresolved PR review threads — **0**;
+- PR is mergeable.
+
+This pre-handoff head satisfies the substantive WP2 implementation gate. The present status handoff commit deliberately requires one final exact-head rerun before merge so status/documentation cannot bypass the same protection.
 
 ## WP2 Exit Gate
 
-WP2 may become COMPLETE only when:
+WP2 may become accepted COMPLETE only when:
 
-1. one exact documented Python/Node/package-manager/frontend/PostgreSQL baseline is selected from evidence;
-2. backend compatibility remains green and V9 `app:app` is preserved;
-3. frontend toolchain has deterministic locked inputs and a clean non-product build smoke;
-4. dependency/SBOM/license policy is machine-checkable;
-5. clean GitHub-hosted Windows/toolchain checks are reproducible;
-6. existing self-hosted Regression Shield/security remains green;
-7. zero unresolved review blockers remain;
-8. focused WP2 PR is squash-merged to `main`.
+1. one exact documented Python/Node/package-manager/frontend/PostgreSQL baseline is selected from evidence — **SATISFIED**;
+2. backend compatibility remains green and V9 `app:app` is preserved — **SATISFIED on pre-handoff head**;
+3. frontend toolchain has deterministic locked inputs and a clean non-product build smoke — **SATISFIED**;
+4. dependency/SBOM/license policy is machine-checkable — **SATISFIED**;
+5. clean GitHub-hosted Windows/toolchain checks are reproducible — **SATISFIED on pre-handoff head**;
+6. existing self-hosted Regression Shield/security remains green — **SATISFIED on pre-handoff head; MUST RE-RUN ON STATUS-HANDOFF HEAD**;
+7. zero unresolved review blockers remain — **SATISFIED**;
+8. focused WP2 PR is squash-merged to `main` — **PENDING**.
 
-After WP2 acceptance, **WP3 — V10 Regression Shield / repository protection** becomes the next authorized work package. Overall accepted V10 progress remains 5% until Block B completes.
+Final acceptance sequence:
+
+`status handoff -> exact-head Regression Shield + toolchain + Windows smoke green -> zero blockers -> squash merge PR #230 -> WP2 COMPLETE on main -> WP3 NEXT`.
+
+After WP2 acceptance, **WP3 — V10 Regression Shield / repository protection** becomes the next authorized work package. Overall accepted V10 progress remains 5% until all of Block B is complete.
 
 ## Lenovo sequencing
 
