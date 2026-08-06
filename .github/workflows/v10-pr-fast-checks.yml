@@ -14,7 +14,7 @@ concurrency:
 jobs:
   policy-and-source:
     name: Fast policy and source contracts
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     timeout-minutes: 10
 
     steps:
@@ -29,9 +29,8 @@ jobs:
           python-version: "3.14.6"
 
       - name: Verify exact interpreter
-        shell: pwsh
-        run: |
-          if ((python -c "import platform; print(platform.python_version())") -ne "3.14.6") { exit 1 }
+        shell: bash
+        run: test "$(python -c 'import platform; print(platform.python_version())')" = "3.14.6"
 
       - name: Verify CI and security baseline
         run: python scripts/check_ci_security_baseline.py
@@ -53,12 +52,12 @@ jobs:
           python -m compileall -q scripts omni_cio/contracts
           omni_cio/plan_execution omni_cio/sandbox omni_cio/real_trading
 
-      - name: Run WP3 guard unit tests
+      - name: Run CI guard unit tests
         run: python -m unittest tests.test_v10_regression_shield
 
   frontend-contracts:
     name: Fast frontend type lint unit build
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:
       run:
@@ -70,17 +69,18 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Set up selected Node.js LTS
+      - name: Set up selected Node.js LTS with npm cache
         uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
         with:
           node-version: "24.18.0"
-          package-manager-cache: false
+          cache: "npm"
+          cache-dependency-path: tests/toolchain/frontend/package-lock.json
 
       - name: Verify exact Node.js and npm versions
-        shell: pwsh
+        shell: bash
         run: |
-          if ((node --version) -ne "v24.18.0") { exit 1 }
-          if ((npm --version) -ne "11.16.0") { exit 1 }
+          test "$(node --version)" = "v24.18.0"
+          test "$(npm --version)" = "11.16.0"
 
       - name: Reproduce dependency tree from committed lock
         run: npm ci --ignore-scripts --no-audit --no-fund
