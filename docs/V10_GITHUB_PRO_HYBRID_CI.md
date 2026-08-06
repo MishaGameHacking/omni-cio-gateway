@@ -42,7 +42,7 @@ The required `V10 authoritative merge gate` runs the protected production-runtim
 
 The Lenovo gate deliberately does **not** install Python 3.14 or Node.js during a PR job. Runtime installation inside a self-hosted Windows service account introduced unnecessary MSI/administrator coupling and made merge authority less deterministic. Exact V10 Python/Node compatibility remains an independent GitHub-hosted clean-room lane.
 
-This separation is intentional: the Lenovo lane proves the protected production runtime and security invariants; GitHub-hosted lanes prove clean modern-toolchain compatibility and provide acceleration.
+This separation is permanent architecture, not an outage workaround: the Lenovo lane proves the protected production runtime and security invariants; GitHub-hosted lanes prove clean modern-toolchain compatibility and provide acceleration.
 
 ## Security invariants
 
