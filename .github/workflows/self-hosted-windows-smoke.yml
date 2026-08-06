@@ -220,7 +220,7 @@ jobs:
         run: >-
           python -m detect_secrets scan --all-files
           --exclude-files
-          '(^|[\\/])(\.git|\.venv|\.venv-ci|\.mypy_cache|\.ruff_cache|__pycache__|requirements(-dev)?\.txt|windows-.*requirements.*\.txt|coverage\.xml|pytest-results\.xml)([\\/]|$)'
+          '(^|[\\/])(\.git|\.venv|\.venv-ci|\.mypy_cache|\.pytest_cache|\.ruff_cache|__pycache__|requirements(-dev)?\.txt|windows-.*requirements.*\.txt|coverage\.xml|pytest-results\.xml)([\\/]|$)'
           | python scripts/check_ci_security_baseline.py --detect-secrets-report
 
       - name: Set up V10 Python 3.14.6 compatibility runtime
