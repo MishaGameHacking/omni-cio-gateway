@@ -82,7 +82,9 @@ def validate_fast_workflow(failures: list[str]) -> None:
     if "self-hosted" in text:
         failures.append("Fast PR Checks must not use a self-hosted runner")
     if "secrets." in text or "${{ secrets" in text:
-        failures.append("Fast PR Checks must not consume repository/environment secrets")
+        failures.append(
+            "Fast PR Checks must not consume repository/environment secrets"
+        )
     require_tokens(
         text,
         (
@@ -184,7 +186,9 @@ def validate_frontend_fixture(failures: list[str]) -> None:
     for name in ("typecheck", "lint", "test", "build"):
         value = scripts.get(name)
         if not isinstance(value, str) or not value.strip():
-            failures.append(f"frontend baseline is missing deterministic `{name}` script")
+            failures.append(
+                f"frontend baseline is missing deterministic `{name}` script"
+            )
     required_paths = (
         FRONTEND_FIXTURE / "scripts" / "lint.mjs",
         FRONTEND_FIXTURE / "tests" / "smoke_contract.test.ts",
@@ -227,7 +231,9 @@ def validate_future_web_contract(failures: list[str]) -> None:
         )
     )
     if not playwright_config:
-        failures.append("apps/web requires Playwright configuration when Web is introduced")
+        failures.append(
+            "apps/web requires Playwright configuration when Web is introduced"
+        )
     e2e_files = list(web.rglob("*.spec.ts")) + list(web.rglob("*.spec.tsx"))
     if not e2e_files:
         failures.append("apps/web requires at least one Playwright *.spec.ts[x] test")
