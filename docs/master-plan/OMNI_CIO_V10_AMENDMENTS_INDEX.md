@@ -33,7 +33,8 @@ Binding clarification that V10 is primarily the productization/migration of acce
 Detailed authorities:
 
 - `docs/architecture/V10_OWNER_ACCOUNT_AND_TINVEST_CONNECTION_CONTRACT.md`;
-- `docs/architecture/V10_V9_TO_V10_PRODUCTIZATION_MATRIX.md`.
+- `docs/architecture/V10_V9_TO_V10_PRODUCTIZATION_MATRIX.md`;
+- `docs/architecture/V10_PRODUCTIZATION_CONTRACT.json`.
 
 ## No chat-only scope
 
