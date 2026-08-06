@@ -4,7 +4,7 @@ Updated: 2026-08-06
 
 ## Executive state
 
-Omni-CIO V10: **DEVELOPMENT STARTED / WP3 IN PROGRESS**.
+Omni-CIO V10: **DEVELOPMENT STARTED / WP3 IMPLEMENTATION COMPLETE CANDIDATE / ACCEPTANCE BLOCKED**.
 
 Accepted implementation progress: **5%**.
 
@@ -19,7 +19,7 @@ Current authorized work package:
 
 **WP3 — V10 Regression Shield / repository protection.**
 
-WP4 and later remain blocked until the WP3 Exit Gate is accepted on `main`.
+WP3 repository-controlled implementation is complete as a candidate. Acceptance is intentionally blocked until all final exact-head gates pass and GitHub server-side merge protection for private `main` is proven. PR #236 must remain unmerged until then. WP4 and later remain blocked.
 
 Owner start command: **`START V10`** received 2026-08-05.
 
@@ -37,7 +37,7 @@ Starting or advancing V10 never expands broker/Real-money authority by itself.
 - protected V9 baseline: `docs/architecture/V10_V9_BASELINE_FREEZE.md`
 - accepted toolchain authority: `docs/architecture/V10_TOOLCHAIN_BASELINE.md`
 - machine-readable toolchain authority: `docs/architecture/V10_TOOLCHAIN_BASELINE.json`
-- WP3 CI architecture under development: `docs/architecture/V10_REGRESSION_SHIELD.md`
+- WP3 CI/protection authority: `docs/architecture/V10_REGRESSION_SHIELD.md`
 
 Protected production/recovery baseline remains:
 
@@ -48,7 +48,7 @@ Protected production/recovery baseline remains:
 | Block | Planned weight | State |
 |---|---:|---|
 | A. Architecture and V9 protection | 5% | COMPLETE — WP0 |
-| B. GitHub, dependencies and CI/CD | 9% | WP1 COMPLETE / WP2 COMPLETE / WP3 IN PROGRESS |
+| B. GitHub, dependencies and CI/CD | 9% | WP1 COMPLETE / WP2 COMPLETE / WP3 COMPLETE CANDIDATE — ACCEPTANCE BLOCKED |
 | C. Lenovo Omni-CIO Node / infrastructure | 12% | NOT STARTED |
 | D. V10 Core and data | 14% | NOT STARTED |
 | E. Omni-CIO Web Platform | 14% | NOT STARTED |
@@ -127,42 +127,63 @@ Canonical WP3 deliverables:
 - keep critical money-path replay/idempotency checks mandatory;
 - prevent CI failures from being bypassed by disabling or softening mandatory checks.
 
-## WP3 sequence and scope boundary
+## WP3 implementation candidate
 
 Focused branch:
 
 `v10/wp3-regression-shield`
 
+Focused PR:
+
+`#236 — V10 WP3: harden Regression Shield and PR gates`
+
 Starting point:
 
 `3e3a89791d7f1594e4e1ba52125f8361708ae29d`
 
-WP3 may build CI policy, workflows, contract guards, non-product test fixtures and documentation needed to enforce future component quality. It must not implement product capabilities owned by later packages merely to make a future test category exist.
+Repository-controlled implementation now includes:
 
-Therefore:
+- GitHub-hosted `V10 Fast PR Checks` with no secrets, no self-hosted dependency and no PR path filtering;
+- exact-head `V10 Toolchain Compatibility` on every PR with Python 3.14.6 and Node 24.18.0;
+- hosted Ruff/format/mypy plus the full deterministic Python suite and audits/SBOM;
+- deterministic frontend typecheck/lint/unit/build/audit/SBOM on the non-product WP2 fixture;
+- permanent `scripts/check_v10_regression_shield.py` anti-bypass guard;
+- self-protection through the pre-existing CI/security baseline;
+- fail-closed future contracts for Web Playwright/E2E, DB migrations, API schemas, authority, backup/restore, Telegram signatures and AI schemas when their owning capabilities appear;
+- protected Real/Sandbox/plan-execution test families;
+- preserved V9 `app:app`, current execution authority and recovery boundaries.
 
-- Web runtime/UI remains blocked until Block E;
-- PostgreSQL runtime/schemas remain blocked until their owning infrastructure/Core packages;
-- Telegram runtime remains blocked until Block F;
-- AI runtime/RAG/Copilot remains blocked until Block G;
-- Lenovo bootstrap remains blocked until Block C after WP4;
-- broker/Real execution authority remains unchanged.
+No Web product, PostgreSQL runtime/schema, Telegram runtime, AI runtime, Lenovo bootstrap or new broker-write authority was introduced by WP3.
 
-Capability-specific future gates must be fail-closed: when a capability root is introduced by its owning package, the matching mandatory tests/configuration become required rather than silently skipped.
+## Verified WP3 acceptance blockers
+
+### 1. GitHub server-side merge protection
+
+The repository is private. On 2026-08-06 GitHub's rulesets API reported that private-repository rulesets are unavailable on the current account plan and require an eligible paid plan. The branch-protection endpoint is not readable through the installed integration, so no equivalent server-side required-check enforcement on `main` can currently be proven.
+
+The repository must remain private. Making it public is not an acceptable workaround.
+
+WP3 therefore cannot be accepted or merged until the OWNER account uses a GitHub plan supporting protected branches/rulesets for private repositories and `main` is configured to require the mandatory V10 checks without bypass.
+
+### 2. Final exact-head self-hosted gates
+
+The final PR head must also complete the dedicated self-hosted `Regression Shield` and Windows smoke checks successfully. A queued or unavailable self-hosted runner is an infrastructure wait state, not permission to substitute a weaker hosted gate.
 
 ## WP3 Exit Gate
 
-WP3 may become COMPLETE only when all of the following are true on the final PR head:
+WP3 may become COMPLETE only when all of the following are true on one unchanged final PR head:
 
 1. existing V9 quality/security gates remain mandatory and green;
 2. fast PR checks are distinct from the full exact-head regression/security acceptance gate;
 3. frontend baseline has deterministic type/lint/unit test coverage and an enforced future E2E/Playwright contract without creating the product Web app early;
 4. capability-aware contracts require DB migration/API schema/authority/backup-restore/Telegram-signature/AI-schema tests when those capabilities appear;
 5. critical money-path replay/idempotency tests remain explicitly protected;
-6. mandatory workflows cannot use `continue-on-error`, floating external Actions or unsafe self-hosted fork execution;
-7. exact-head Regression Shield/security/toolchain/fast checks are green;
-8. zero unresolved review blockers remain;
-9. focused WP3 PR is squash-merged to `main`.
+6. mandatory workflows cannot use `continue-on-error`, floating external Actions, PR path-filter bypasses or unsafe self-hosted fork execution;
+7. exact-head Fast PR Checks and V10 Toolchain Compatibility are green;
+8. exact-head self-hosted Regression Shield/security and Windows smoke are green;
+9. GitHub server-side protection for private `main` requires the mandatory checks and prevents bypass;
+10. zero unresolved review blockers remain;
+11. focused WP3 PR #236 is squash-merged to `main`.
 
 After WP3 acceptance, **WP4 — Release, build provenance and deployment contract** becomes the next authorized work package. Overall accepted V10 progress remains 5% until Block B completes.
 
