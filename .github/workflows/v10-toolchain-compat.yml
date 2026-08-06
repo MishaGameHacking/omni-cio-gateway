@@ -1,0 +1,187 @@
+name: V10 Toolchain Compatibility
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/v10-toolchain-compat.yml"
+      - "requirements.in"
+      - "requirements.txt"
+      - "requirements-dev.in"
+      - "requirements-dev.txt"
+      - "pyproject.toml"
+      - "scripts/**"
+      - "tests/toolchain/**"
+      - "tests/test_*"
+      - "omni_cio/**"
+      - "app.py"
+      - "app_v371.py"
+      - "app_v360.py"
+      - "main.py"
+      - "docs/architecture/V10_TOOLCHAIN_BASELINE.md"
+      - "docs/architecture/V10_TOOLCHAIN_BASELINE.json"
+      - "knowledge/17_V10_CURRENT_PROGRAM_STATUS.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: v10-toolchain-compat-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python-baseline:
+    name: Python 3.14.6 V10 baseline
+    runs-on: windows-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up selected Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14.6"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Verify exact interpreter
+        shell: pwsh
+        run: |
+          if ((python -c "import platform; print(platform.python_version())") -ne "3.14.6") { exit 1 }
+          python -c "import platform; print(platform.python_version())"
+
+      - name: Build strict Windows dependency projection
+        run: >-
+          python scripts/windows_ci_lock.py project
+          requirements-dev.txt windows-requirements-dev.txt
+
+      - name: Install hash-locked Windows dependencies
+        run: >-
+          python -m pip install --disable-pip-version-check
+          --require-hashes -r windows-requirements-dev.txt
+
+      - name: Verify selected toolchain and dependency policy
+        run: python scripts/check_v10_toolchain_baseline.py
+
+      - name: Verify repository structure before compilation
+        run: python scripts/check_repository_layout.py
+
+      - name: Verify V10 repository boundaries before compilation
+        run: python scripts/check_v10_repository_boundaries.py
+
+      - name: Compile protected runtime and Core
+        run: >-
+          python -m compileall -q app.py app_v371.py app_v360.py main.py
+          portfolio_market.py portfolio_analytics.py cash_liquidity.py
+          purchase_capacity.py purchase_capacity_integrity.py
+          operations_analytics.py broker_report_reconciliation omni_cio tests scripts
+
+      - name: Verify stable app entrypoint
+        shell: pwsh
+        run: |
+          @'
+          import app
+          from fastapi.testclient import TestClient
+
+          assert app.ENTRYPOINT == "app:app"
+          assert app.app is app.base.app
+          health = TestClient(app.app).get("/health")
+          assert health.status_code == 200
+          payload = health.json()
+          assert payload["trading_methods"] is False
+          print("app:app compatibility OK", payload["version"])
+          '@ | python -
+
+      - name: Run full deterministic test suite
+        run: python -m pytest -q
+
+      - name: Audit Python dependency lock
+        run: >-
+          python -m pip_audit --require-hashes --disable-pip --strict
+          --vulnerability-service osv --progress-spinner off
+          -r windows-requirements-dev.txt
+
+      - name: Generate CycloneDX Python SBOM
+        run: >-
+          python -m pip_audit --require-hashes --disable-pip
+          --vulnerability-service osv --progress-spinner off
+          -f cyclonedx-json -o python-sbom.cdx.json
+          -r windows-requirements-dev.txt
+
+      - name: Upload Python SBOM
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: v10-python-toolchain-sbom
+          path: python-sbom.cdx.json
+          if-no-files-found: warn
+          retention-days: 3
+
+  frontend-baseline:
+    name: Node 24.18.0 / React-Vite-TypeScript baseline
+    runs-on: windows-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: tests/toolchain/frontend
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up selected Node.js LTS
+        uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
+        with:
+          node-version: "24.18.0"
+          package-manager-cache: false
+
+      - name: Verify exact Node.js and npm versions
+        shell: pwsh
+        run: |
+          if ((node --version) -ne "v24.18.0") { exit 1 }
+          if ((npm --version) -ne "11.16.0") { exit 1 }
+          node --version
+          npm --version
+
+      - name: Verify selected toolchain and dependency policy
+        working-directory: .
+        run: python scripts/check_v10_toolchain_baseline.py
+
+      - name: Reproduce dependency tree from committed lock
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Verify committed lock is semantically current
+        shell: pwsh
+        run: |
+          Copy-Item package-lock.json package-lock.before.json
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+          node -e "const fs=require('node:fs'); const assert=require('node:assert/strict'); const before=JSON.parse(fs.readFileSync('package-lock.before.json','utf8')); const after=JSON.parse(fs.readFileSync('package-lock.json','utf8')); assert.deepStrictEqual(after,before);"
+          Remove-Item package-lock.before.json
+
+      - name: Type-check frontend toolchain
+        run: npm run typecheck
+
+      - name: Build non-product frontend smoke fixture
+        run: npm run build
+
+      - name: Audit frontend dependencies
+        run: npm audit --audit-level=high
+
+      - name: Generate CycloneDX frontend SBOM
+        shell: pwsh
+        run: npm sbom --package-lock-only --sbom-format cyclonedx --sbom-type application | Out-File -Encoding utf8 frontend-sbom.cdx.json
+
+      - name: Upload frontend SBOM
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: v10-frontend-toolchain-sbom
+          path: tests/toolchain/frontend/frontend-sbom.cdx.json
+          if-no-files-found: warn
+          retention-days: 3

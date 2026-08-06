@@ -317,14 +317,11 @@ def test_pending_state_expires_after_retention_and_clear_resets_state() -> None:
     assert evaluator.state_count == 0
 
 
-def test_concurrent_threshold_updates_are_serialized() -> None:
+def test_concurrent_equal_timestamp_updates_are_serialized() -> None:
     evaluator = MoexQuoteAlertPolicyEvaluatorV1(
         _policy(source_unavailable_threshold=1, cooldown_seconds=60)
     )
-    events = [
-        _source_event(available=False, at=NOW + timedelta(microseconds=index))
-        for index in range(20)
-    ]
+    events = [_source_event(available=False, at=NOW) for _ in range(20)]
     with ThreadPoolExecutor(max_workers=8) as executor:
         results = list(executor.map(lambda event: evaluator.evaluate(event)[0], events))
 
