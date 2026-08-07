@@ -100,6 +100,14 @@ jobs:
           if errorlevel 1 exit /b %errorlevel%
           echo WP5_NODE_PROFILE_PATH=%PROFILE%>>"%GITHUB_ENV%"
 
+      - name: Apply sanitized WP5 OWNER physical evidence
+        if: startsWith(github.head_ref, 'v10/wp5-') || github.event_name == 'workflow_dispatch'
+        shell: cmd
+        run: |
+          @echo off
+          python scripts\apply_v10_node_owner_evidence.py "%WP5_NODE_PROFILE_PATH%" docs\architecture\V10_WP5_OWNER_PHYSICAL_EVIDENCE.json --thresholds infrastructure\windows\wp5_node_thresholds.json
+          if errorlevel 1 exit /b %errorlevel%
+
       - name: Assess and validate WP5 OWNER node profile
         if: startsWith(github.head_ref, 'v10/wp5-') || github.event_name == 'workflow_dispatch'
         shell: cmd
