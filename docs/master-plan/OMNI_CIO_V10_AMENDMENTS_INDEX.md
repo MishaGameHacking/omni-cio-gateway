@@ -92,6 +92,37 @@ Locks the OWNER-approved product behavior for Block F before implementation:
 
 This amendment is planning authority only and does not start Block F or change the current WP4-next implementation sequence.
 
+### 5. Autonomous Portfolio Governance / Zero-Custody / Commercial Model
+
+`OMNI_CIO_V10_AUTONOMOUS_PORTFOLIO_GOVERNANCE_AND_COMMERCIAL_MODEL_AMENDMENT.md`
+
+Machine-readable / legal companions:
+
+- `../architecture/V10_AUTONOMOUS_PORTFOLIO_GOVERNANCE_CONTRACT.json`;
+- `../architecture/V10_RUSSIAN_MARKET_UNIVERSE_AND_SANCTIONS_POLICY.json`;
+- `../architecture/V10_ZERO_CUSTODY_LICENSE_UPDATE_CONTRACT.json`;
+- `../legal/V10_RU_COMMERCIAL_LEGAL_GATES.md`.
+
+This amendment locks the OWNER-approved product definition across the existing A-J program without renumbering blocks or crediting implementation progress:
+
+- the central product is autonomous portfolio governance, not a dashboard/chat/trading robot;
+- the deterministic system operates 24/7; Cortex is an on-demand bounded research/interpretation/negotiation specialist that the system or OWNER may invoke;
+- every held asset receives explicit health/freshness/trend state and monitoring intensity is risk/materiality based;
+- the system dynamically screens the supported broker universe through a Russian-market-only policy, sanctions/custody hard gates, eligibility, liquidity/data-quality and asset-class rules;
+- sanctions `BLOCKED` assets cannot be new BUY candidates; naive name-only screening is insufficient;
+- diversification is multi-dimensional and optimizer output may be `NO_CHANGE`, one-to-one replacement, one-to-many split or multi-position rebalance;
+- the normal user output is one ranked concrete primary proposal rather than an unordered idea catalogue;
+- proposal rejection/revision creates a bounded OWNER dialogue and versioned soft preference/constraint update; hard safety policy cannot be overridden by chat;
+- Real execution remains cash-only BUY/SELL after immutable OWNER approval and fresh preflight; no margin/leverage/uncovered short/transfers/withdrawals;
+- private investment state and broker secrets remain Personal Node zero-custody by default;
+- commercial access uses a full 7-day trial then fixed 1/3/6/12 month manual prepaid periods; no auto-renewal/recurring charge;
+- supported Personal Nodes automatically converge to approved STABLE releases through a signed/verified/rollback-safe updater;
+- commercial launch is fail-closed on explicit Russian-law personal-data, consumer, payment/KKT, broker-terms, investment-advisory/autoconsulting and production legal gates.
+
+The amendment also narrows the AI contract: the **system** is the primary 24/7 autonomous actor, not an endlessly-running LLM.
+
+This is planning authority only. It does not start billing, updater, Portfolio Guardian, Real execution or any later block. Current implementation order remains WP4 next.
+
 ## Draft/superseded planning material
 
 Open or historical PR descriptions must not be treated as active plan authority merely because they contain V10 ideas. In particular, any older unmerged planning PR that conflicts with the accepted Concrete Execution Plan must be closed/superseded rather than merged as a competing roadmap.
