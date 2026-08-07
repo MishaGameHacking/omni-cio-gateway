@@ -1,10 +1,15 @@
 version: 2
 updates:
+  # V10 WP2 selected an exact reproducible toolchain baseline.
+  # Routine version-update PRs are temporarily paused while WP4 finalizes
+  # release/build provenance. Dependabot security updates remain separate and
+  # repository security/audit checks remain mandatory. Re-enable routine
+  # version updates only through an explicit reviewed baseline/dependency change.
   - package-ecosystem: pip
     directory: /
     schedule:
       interval: weekly
-    open-pull-requests-limit: 3
+    open-pull-requests-limit: 0
     cooldown:
       default-days: 7
     ignore:
@@ -18,7 +23,7 @@ updates:
     directory: /tests/toolchain/frontend
     schedule:
       interval: weekly
-    open-pull-requests-limit: 3
+    open-pull-requests-limit: 0
     cooldown:
       default-days: 7
 
@@ -26,6 +31,6 @@ updates:
     directory: /
     schedule:
       interval: weekly
-    open-pull-requests-limit: 3
+    open-pull-requests-limit: 0
     cooldown:
       default-days: 7
