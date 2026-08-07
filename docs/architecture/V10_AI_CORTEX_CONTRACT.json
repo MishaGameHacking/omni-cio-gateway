@@ -1,25 +1,36 @@
 {
-  "schema_version": "1.0.0",
+  "schema_version": "1.1.0",
   "program": "Omni-CIO V10",
   "component": "Omni-CIO Cortex",
   "status": "owner-approved-planning-baseline",
   "architecture": {
     "financial_truth_owner": "deterministic_core",
+    "autonomous_24_7_owner": "guardian_watchtower_decision_pipeline",
     "ai_role": [
       "interpret",
       "explain",
       "research",
       "orchestrate_allowlisted_tools",
-      "monitor",
+      "resolve_public_evidence_gaps",
+      "conduct_owner_clarification_and_revision_dialogue",
+      "normalize_natural_language_intent",
       "generate_non_authoritative_scenarios_and_drafts"
     ],
     "ai_forbidden_roles": [
       "financial_ledger",
       "portfolio_source_of_truth",
+      "always_on_autonomous_portfolio_controller",
+      "canonical_portfolio_decision_engine",
       "broker_write_authority",
       "security_policy_bypass",
       "unrestricted_admin_shell"
-    ]
+    ],
+    "internal_system_ai_interaction": {
+      "system_may_invoke_cortex_without_user_prompt": true,
+      "reasons_must_be_typed_and_bounded": true,
+      "hidden_chain_of_thought_persistence_required": false,
+      "structured_tool_evidence_audit_required": true
+    }
   },
   "default_model": {
     "family": "Qwen3.5",
@@ -50,10 +61,13 @@
       "moex",
       "cbr_or_regulator",
       "issuer_official",
+      "official_sanctions_source",
       "other_primary_source",
       "reputable_secondary_media",
       "general_web"
     ],
+    "privacy_firewall_required_before_outbound_research": true,
+    "private_portfolio_context_to_public_search_by_default": false,
     "evidence_required_fields": [
       "source_identity",
       "source_class",
@@ -82,7 +96,10 @@
       "retrieve_public_official_data",
       "bounded_web_search_and_fetch",
       "write_research_cache_evidence_and_checkpoints",
-      "create_non_money_alerts_and_drafts"
+      "create_non_money_alerts_and_drafts",
+      "explain_system_selected_proposal",
+      "ask_owner_for_clarification",
+      "draft_preference_change_for_deterministic_validation"
     ],
     "human_or_engineering_approval": [
       "destructive_private_data_deletion",
@@ -98,23 +115,26 @@
       "raw_broker_trading_token",
       "arbitrary_broker_execute_tool",
       "transfer_or_withdrawal_authority",
+      "margin_or_short_override",
+      "sanctions_hard_gate_override",
       "unrestricted_admin_shell",
       "ci_or_owner_approval_bypass"
     ]
   },
   "autonomy": {
-    "mode": "event_driven",
+    "mode": "system_event_driven_cortex_on_demand",
+    "system_not_llm_is_primary_24_7_autonomous_actor": true,
     "endless_think_loop_forbidden": true,
-    "approved_trigger_classes": [
+    "approved_cortex_trigger_classes": [
       "user_question",
-      "new_accepted_broker_report",
-      "report_discrepancy",
-      "stale_market_or_source_data",
-      "deterministic_watchtower_event",
-      "connector_failure",
-      "scheduled_research_refresh",
-      "system_health_degradation",
-      "evidence_gap"
+      "system_evidence_gap",
+      "public_disclosure_interpretation",
+      "conflicting_public_evidence",
+      "deterministic_watchtower_event_needing_explanation",
+      "proposal_owner_explanation",
+      "proposal_rejection_or_revision",
+      "system_owner_clarification_request",
+      "scheduled_research_refresh_when_deep_interpretation_required"
     ]
   },
   "specialization_sequence": [
@@ -130,7 +150,8 @@
     "invented_exact_financial_facts_allowed_in_critical_fixtures": 0,
     "critical_tool_schema_validation_required": true,
     "prompt_injection_external_text_must_remain_data": true,
-    "ai_unavailable_deterministic_core_must_operate": true
+    "ai_unavailable_deterministic_core_and_guardian_must_operate": true,
+    "cortex_must_not_override_hard_portfolio_policy": true
   },
   "cost_policy": {
     "github_pro": "already_accepted_subscription",
