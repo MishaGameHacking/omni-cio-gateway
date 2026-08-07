@@ -26,6 +26,20 @@ The WP5 acceptance retest uses the intended conservative 24/7 node operating pro
 
 The power-plan change is reversible and is an operating-profile decision, not a threshold change.
 
+## Preferred local acceptance launcher
+
+Use the repository launcher instead of manually coordinating multiple PowerShell windows:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File infrastructure\windows\run_wp5_owner_acceptance.ps1
+```
+
+The launcher self-elevates through the normal Windows UAC prompt, performs read-only runner/network/AC preflight checks, temporarily switches to the standard Balanced power plan, launches AIDA64, starts the privacy-safe GPU sampler, waits for the configured duration, scans only relevant System event metadata, writes sanitized local evidence under `C:\ProgramData\OmniCIO\wp5`, and restores the previous power plan.
+
+It does **not** grant Administrator rights to the GitHub runner, does not expose BitLocker recovery material, does not collect usernames/hostnames/IP/MAC/stable device identifiers, and does not automate arbitrary desktop input.
+
+AIDA64 Extreme still requires the OWNER to configure the Stability Test checkboxes and click `Start` / `Stop` in the interactive desktop session. The launcher deliberately avoids brittle GUI automation and keeps the self-hosted runner non-interactive and least-privileged.
+
 ## AIDA64 workload
 
 Use AIDA64 Extreme System Stability Test with exactly:
@@ -41,7 +55,7 @@ Minimum duration is 30 minutes. Stop immediately for a crash, thermal shutdown, 
 
 ## GPU telemetry
 
-A combined load test is accepted only when GPU peak temperature is recorded. In a second elevated PowerShell window, run the repository sampler at the same time as AIDA64:
+A combined load test is accepted only when GPU peak temperature is recorded. The preferred launcher starts the sampler automatically. For manual fallback, in a second elevated PowerShell window run:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File infrastructure\windows\measure_wp5_gpu_load.ps1 `
