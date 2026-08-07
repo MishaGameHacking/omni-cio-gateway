@@ -341,7 +341,7 @@ $batteryConservation = if ($null -eq $battery) {
 } else {
     Get-NormalizedLenovoSetting -Pattern '(?i)conservation|battery.*charge' -UnknownValue "UNKNOWN_REQUIRES_OWNER_CHECK"
 }
-$restartAfterPowerLoss = Get-NormalizedLenovoSetting -Pattern '(?i)after.*power.*loss|restore.*ac|ac.*power.*loss' -UnknownValue "UNKNOWN_REQUIRES_FIRMWARE_CHECK"
+$restartAfterPowerLoss = Get-NormalizedLenovoSetting -Pattern '(?i)after.*power.*loss|restore.*ac|ac.*power.*loss|on.*by.*ac.*attach' -UnknownValue "UNKNOWN_REQUIRES_FIRMWARE_CHECK"
 $power = [ordered]@{
     battery_present = ($null -ne $battery)
     ac_online = $acOnline
