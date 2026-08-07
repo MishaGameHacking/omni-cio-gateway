@@ -47,7 +47,7 @@ Protected execution invariant:
 
 OWNER issued `START V10` on 2026-08-05.
 
-Accepted:
+Accepted implementation:
 
 - WP0 — COMPLETE;
 - WP1 — COMPLETE;
@@ -55,9 +55,13 @@ Accepted:
 - WP3 — COMPLETE;
 - GitHub Pro hybrid CI + Lenovo continuity infrastructure — COMPLETE.
 
-Current accepted V10 progress remains **5%** because Block B is credited only after WP4/Block Exit Gate.
+Accepted planning authority additionally includes the concrete local-first AI/Cortex clarification and the OWNER-approved GitHub Pro maximum-utilization/migration-development clarification. Planning amendments do not increase implementation progress by themselves.
+
+Current accepted V10 implementation progress remains **5%** because Block B is credited only after WP4/Block Exit Gate.
 
 **Next authorized implementation package: WP4 — Release, build provenance and deployment contract.**
+
+The planning package that defines GitHub Pro utilization, V9->V10 parity/reuse discipline and WP execution instructions does **not** start WP4.
 
 Exact state authority: `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
 
@@ -70,11 +74,21 @@ Base program:
 - `docs/master-plan/Omni-CIO_V10_Master_Plan_RU.pdf`;
 - `docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.sha256`.
 
-Accepted implementation clarifications:
+Accepted implementation clarifications are indexed by:
 
-- `docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md`;
+- `docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md`.
+
+Important active authorities include:
+
 - `docs/master-plan/OMNI_CIO_V10_CONCRETE_EXECUTION_PLAN_AMENDMENT.md`;
-- `docs/architecture/V10_AI_CORTEX_CONTRACT.json`.
+- `docs/master-plan/OMNI_CIO_V10_GITHUB_PRO_AND_MIGRATION_IMPLEMENTATION_AMENDMENT.md`;
+- `docs/master-plan/OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md`;
+- `docs/master-plan/OMNI_CIO_V10_GITHUB_PRO_IMPLEMENTATION_CHECKLIST.md`;
+- `docs/architecture/V10_AI_CORTEX_CONTRACT.json`;
+- `docs/architecture/V10_GITHUB_PRO_UTILIZATION_CONTRACT.json`;
+- `docs/architecture/V10_V9_TO_V10_PARITY_LEDGER.json`;
+- `docs/architecture/V10_COMPONENT_REUSE_MATRIX.json`;
+- `docs/architecture/V10_RELEASE_MANIFEST.schema.json`.
 
 Architectural sources include V10 system/security/data-flow/threat/recovery/ADR/repository/toolchain/Regression-Shield documents under `docs/architecture/`.
 
@@ -84,9 +98,9 @@ Chat memory does not override accepted GitHub authority.
 
 Repository: `MishaGameHacking/omni-cio-gateway`.
 
-Accepted current `main` after hybrid-CI hardening:
+Accepted `main` before the GitHub-Pro planning PR is:
 
-`4b034e52c94619f1a7b2cf5dcae5248185a5f45b`.
+`5743608389dd0fc6eba4dc33540a61016dc98914`.
 
 Infrastructure PR #242 established:
 
@@ -95,11 +109,41 @@ Infrastructure PR #242 established:
 - required `V10 authoritative merge gate` from GitHub Actions;
 - GitHub-hosted fast/clean-room acceleration;
 - Lenovo `omni-cio-ci` authoritative heavy Windows gate/continuity;
-- successful post-merge Regression Shield on accepted main.
+- successful post-merge Regression Shield on its accepted main.
+
+GitHub Pro is the approved primary engineering subscription/Control Plane. V10 must use the included GitHub capabilities plus Lenovo/open-source components before proposing another recurring paid engineering service.
+
+Approved compute split:
+
+- GitHub-hosted Ubuntu — fast PR feedback;
+- GitHub-hosted Windows — disposable, path-aware clean-room/toolchain compatibility;
+- Lenovo `omni-cio-ci` — authoritative heavy checks and future local AI/GPU evaluations.
+
+Hosted Actions minutes are acceleration capacity, not the sole compute path. Quota pressure must reduce hosted acceleration rather than weaken exact-head safety gates.
+
+WP4 is planned to establish release manifest/provenance, `v10.*` release identity, native immutable releases where current GitHub support permits, complementary tag protection, path-aware CI, cache/artifact/minute budget controls and exact rollback evidence. It must not start Block C or install the AI runtime.
 
 The Lenovo already being a GitHub runner does **not** mean the V10 application/AI node is implemented. Full node provisioning remains Block C after WP4.
 
-## 6. Core product principle
+## 6. V10 migration/productization rule
+
+V10 is **not** a greenfield rewrite and is not a feature-expansion exercise.
+
+Default migration flow:
+
+`accepted V9 capability -> identify V10 owner -> parity ledger -> reuse decision -> contract -> smallest implementation -> deterministic parity evidence -> staged cutover -> retirement only after acceptance`.
+
+Every material capability in scope must be represented in `V10_V9_TO_V10_PARITY_LEDGER.json` and end as `PARITY_PROVEN` or explicitly OWNER-approved `INTENTIONALLY_RETIRED` before final V10 acceptance unless the Master Plan assigns it to a later version.
+
+Component preference:
+
+`REUSE_AS_IS > WRAP_ADAPTER > EXTRACT_TO_CORE > REWRITE_REQUIRED > RETIRE`.
+
+A rewrite requires a concrete security/correctness/runtime/architecture/data-migration reason. Newer/cleaner/easier code or developer/AI preference is not enough.
+
+Every implementation WP uses `OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md` so future engineering sessions know the accepted baseline, allowed changes, explicit non-goals, contracts, failure cases, CI routing, rollback, Exit Gate and evidence before coding.
+
+## 7. Core product principle
 
 V10 is one system with two cooperating layers:
 
@@ -118,7 +162,7 @@ Owns explanation, bounded research, conversational assistance, orchestration, mo
 
 **AI never replaces deterministic accounting/calculations and never owns broker-write authority.**
 
-## 7. V10 portfolio/accounting target
+## 8. V10 portfolio/accounting target
 
 For the new V10 Web cabinet, the primary accounting/portfolio target is **verified broker HTML account report import**.
 
@@ -137,7 +181,23 @@ Required direction:
 
 MOEX provides supported **current-market enrichment**, not broker accounting truth. V10 must visibly distinguish broker period-end state from current market estimate.
 
-## 8. Local-first AI baseline
+## 9. Canonical data/state rules
+
+Web, Telegram and Cortex consume versioned Core contracts instead of reimplementing financial meaning.
+
+Planned canonical families include portfolio/report/position/cash/trade/reconciliation/risk/evidence/incident/decision/plan/execution/system-health/capability DTOs as their owning WPs arrive.
+
+Cross-system rules:
+
+- Decimal-safe money/quantity representation;
+- explicit currency, source and schema version;
+- UTC canonical timestamps and `as_of` where material;
+- canonical IDs rather than display-name matching;
+- `0`, `unknown`, `not_available`, `not_applicable`, `stale`, `partial` are distinct;
+- common operational state vocabulary: `READY | PARTIAL | STALE | DEGRADED | BLOCKED | ERROR | OFFLINE | RECOVERING | OWNER_ACTION_REQUIRED`;
+- each degraded state says what remains trustworthy and what action becomes blocked.
+
+## 10. Local-first AI baseline
 
 Approved initial baseline:
 
@@ -155,7 +215,7 @@ AI specialization sequence:
 
 Do not fine-tune first merely because it is possible.
 
-## 9. 24/7 AI/operator model
+## 11. 24/7 AI/operator model
 
 V10 Cortex is an **event-driven autonomous operator**, not an endless thinking loop.
 
@@ -165,7 +225,7 @@ AI outage must produce controlled degraded mode; deterministic Core remains usab
 
 Initial orchestration candidate: LangGraph OSS with durable checkpoint/resume/HITL behavior behind a replaceable orchestration boundary.
 
-## 10. Research/evidence direction
+## 12. Research/evidence direction
 
 No-subscription-first research baseline:
 
@@ -181,7 +241,7 @@ Research priority:
 
 External retrieved text is untrusted data and cannot grant itself tool/system authority.
 
-## 11. AI/tool authority boundary
+## 13. AI/tool authority boundary
 
 AI may autonomously use allowlisted read/analysis/research tools and bounded cache/evidence/checkpoint writes.
 
@@ -197,7 +257,7 @@ AI never receives directly:
 
 Destructive/security/admin/secret/merge/Real-money operations remain explicit human/engineering boundaries.
 
-## 12. Real-money boundary
+## 14. Real-money boundary
 
 Always preserve until a responsible later V10 WP explicitly replaces and proves a boundary:
 
@@ -210,7 +270,7 @@ Always preserve until a responsible later V10 WP explicitly replaces and proves 
 
 Master Real rollback: `REAL_TRADING_ENABLED=false`.
 
-## 13. Lenovo role and OWNER participation
+## 15. Lenovo role and OWNER participation
 
 Lenovo is the first replaceable Personal runtime node and currently also the GitHub self-hosted runner.
 
@@ -224,24 +284,27 @@ Preferred local workflow:
 
 Permanent AI processes run least-privilege, not permanently as Administrator.
 
-## 14. Subscription/cost direction
+## 16. Subscription/cost direction
 
 Design target is minimum recurring subscriptions.
 
-- GitHub Pro: accepted engineering subscription;
+- GitHub Pro: accepted engineering subscription and primary V10 engineering Control Plane;
 - local Qwen/Ollama: no AI inference subscription;
 - LangGraph OSS: no required hosted-agent subscription;
 - SearXNG: no required search API subscription;
 - Playwright: local open-source browser automation;
-- paid AI/search/agent SaaS: not required for V10 Definition of Done.
+- paid AI/search/agent/security/CI SaaS: not required for V10 Definition of Done;
+- GitHub Enterprise/GitHub Advanced Security products: not required for V10 Definition of Done.
 
-If a future safe requirement genuinely needs a paid service, stop and present benefit/cost/alternatives to OWNER before adding it.
+Before any new recurring paid service is added, GitHub Pro + Lenovo + open-source/self-hosted alternatives must be shown insufficient, with cost/lock-in/fallback documented and OWNER approval recorded through an amendment.
 
-## 15. Development workflow
+GitHub metered usage should use included-usage alerts and budget/stop-usage controls where supported so the accepted Pro subscription is maximized without accidental paid overage.
+
+## 17. Development workflow
 
 Significant changes follow:
 
-`branch → focused PR → exact-head required CI/security → zero unresolved blockers → squash merge → post-merge verification when required`.
+`restore GitHub authority → identify exactly one current WP → inspect accepted V9 implementation → update parity/reuse decisions → fill WP execution contract → focused branch → smallest implementation + deterministic tests → cheapest relevant checks → exact-head authoritative gates → resolve blockers → squash merge → post-merge verification → status/parity/provenance update → next WP`.
 
 Do not weaken CI/safety because a tool/model/dependency is inconvenient.
 

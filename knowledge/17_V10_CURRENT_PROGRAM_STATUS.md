@@ -14,13 +14,15 @@ Accepted completed work:
 - Block B / WP1 — **COMPLETE**;
 - Block B / WP2 — **COMPLETE**;
 - Block B / WP3 — **COMPLETE**;
-- GitHub Pro hybrid CI / Lenovo continuity hardening — **COMPLETE infrastructure hardening, no V10 product scope credited**.
+- GitHub Pro hybrid CI / Lenovo continuity hardening — **COMPLETE infrastructure hardening, no V10 product scope credited**;
+- concrete AI/local-first planning amendment — **ACCEPTED planning authority, no runtime implementation credited**;
+- GitHub Pro maximum-utilization + migration implementation discipline — **OWNER-APPROVED planning authority in PR #244, no runtime implementation credited**.
 
-Current authorized implementation work package after acceptance of the current planning amendment:
+Current authorized implementation work package remains:
 
 **WP4 — Release, build provenance and deployment contract.**
 
-This planning amendment itself is governance/documentation only and does **not** start WP4 runtime implementation.
+PR #244 is planning/governance/contracts only. It must not be interpreted as starting WP4, Block C, Web, broker-report implementation, Telegram, Cortex runtime or any later V10 implementation.
 
 Owner start command: **`START V10`** received 2026-08-05.
 
@@ -39,7 +41,14 @@ Accepted planning elaborations are discoverable through:
 
 - `docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md`;
 - `docs/master-plan/OMNI_CIO_V10_CONCRETE_EXECUTION_PLAN_AMENDMENT.md`;
-- `docs/architecture/V10_AI_CORTEX_CONTRACT.json`.
+- `docs/master-plan/OMNI_CIO_V10_GITHUB_PRO_AND_MIGRATION_IMPLEMENTATION_AMENDMENT.md`;
+- `docs/master-plan/OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md`;
+- `docs/master-plan/OMNI_CIO_V10_GITHUB_PRO_IMPLEMENTATION_CHECKLIST.md`;
+- `docs/architecture/V10_AI_CORTEX_CONTRACT.json`;
+- `docs/architecture/V10_GITHUB_PRO_UTILIZATION_CONTRACT.json`;
+- `docs/architecture/V10_V9_TO_V10_PARITY_LEDGER.json`;
+- `docs/architecture/V10_COMPONENT_REUSE_MATRIX.json`;
+- `docs/architecture/V10_RELEASE_MANIFEST.schema.json`.
 
 Architecture/protection authorities include:
 
@@ -72,37 +81,12 @@ Protected production/recovery baseline remains:
 
 No partial Block B percentage is credited. Its 9% weight becomes accepted only after WP4 and the Block B Exit Gate are accepted.
 
-## Accepted WP0 evidence
+## Accepted WP0–WP3 evidence
 
-WP0 PR #228 was squash-merged as:
-
-`7c5de954eed10dd406e743c38f7bdef6b0634108`
-
-It established the V10 architecture freeze without widening runtime or money authority.
-
-## Accepted WP1 evidence
-
-WP1 PR #229 was squash-merged as:
-
-`dbd459b280de84d3f571b458b46f1039880312ca`
-
-It established canonical repository ownership, one deterministic `omni_cio/` Core, repository-boundary guards and protected V9 compatibility.
-
-## Accepted WP2 evidence
-
-WP2 PR #230 was squash-merged as:
-
-`3e3a89791d7f1594e4e1ba52125f8361708ae29d`
-
-It froze the V10 toolchain/dependency baseline and its compatibility gates without starting Web/Telegram/AI/runtime migration.
-
-## Accepted WP3 evidence
-
-WP3 PR #236 — `V10 WP3: harden Regression Shield and PR gates` — is **MERGED**.
-
-Squash merge commit:
-
-`289ff563e99a64bbf8b5a289e84668dde58ef42a`
+- WP0 PR #228 -> `7c5de954eed10dd406e743c38f7bdef6b0634108`;
+- WP1 PR #229 -> `dbd459b280de84d3f571b458b46f1039880312ca`;
+- WP2 PR #230 -> `3e3a89791d7f1594e4e1ba52125f8361708ae29d`;
+- WP3 PR #236 -> `289ff563e99a64bbf8b5a289e84668dde58ef42a`.
 
 WP3 established the permanent Regression Shield/anti-bypass contracts, fast hosted PR feedback, compatibility gates, capability-aware future contracts and required protection model for private `main`.
 
@@ -110,11 +94,7 @@ WP3 established the permanent Regression Shield/anti-bypass contracts, fast host
 
 Infrastructure PR #242 — `Infra: GitHub Pro hybrid CI + Lenovo continuity` — is **MERGED**.
 
-Current accepted `main` after that merge:
-
-`4b034e52c94619f1a7b2cf5dcae5248185a5f45b`
-
-Post-merge `Regression Shield` run `31128835442` completed **SUCCESS** on that exact `main` SHA.
+Post-merge `Regression Shield` run `31128835442` completed **SUCCESS** on that infrastructure main SHA.
 
 The accepted hybrid model is:
 
@@ -127,13 +107,13 @@ The accepted hybrid model is:
 
 The Lenovo already being a GitHub self-hosted runner does **not** mean Block C V10 runtime is implemented. Ollama/Cortex/DB/Web/Telegram/research/node bootstrap remain future Block C+ work after WP4.
 
-## Owner-approved concrete V10 implementation lock
+## Accepted concrete V10 planning lock
 
-The current planning amendment makes the previously broad V10 direction concrete without changing block weights or order:
+The current active planning authorities make the V10 direction concrete without changing block weights/order:
 
 - deterministic Core is the financial/accounting source of truth;
 - V10 portfolio/accounting target uses verified broker HTML reports; no photo/screenshot/OCR portfolio workflow;
-- MOEX is current-market enrichment and must remain distinct from broker period-end accounting facts;
+- MOEX is current-market enrichment and remains distinct from broker period-end accounting facts;
 - AI is a local-first **Omni-CIO Cortex**, not a general-purpose chatbot;
 - initial AI baseline is **Qwen3.5-4B via Ollama**, replaceable behind an AI-provider boundary;
 - paid AI/search/agent SaaS is not required for V10 Definition of Done;
@@ -145,21 +125,45 @@ The current planning amendment makes the previously broad V10 direction concrete
 - AI has no direct broker-write token/tool, unrestricted administrator shell, GitHub protection bypass or Real-money authority;
 - OWNER local participation is requested only for genuinely non-delegable actions, preferably as one reviewed PowerShell block.
 
-Exact details and machine-readable invariants live in the amendment and `V10_AI_CORTEX_CONTRACT.json` rather than chat memory.
+## GitHub Pro maximum-utilization / migration-development lock
+
+PR #244 adds planning authority only. Future implementation must obey:
+
+- V10 is migration/productization of the accepted system, not a greenfield rewrite;
+- every material V9 capability in scope is tracked in the parity ledger;
+- material components receive `REUSE_AS_IS | WRAP_ADAPTER | EXTRACT_TO_CORE | REWRITE_REQUIRED | RETIRE` decisions before replacement work;
+- default preference is reuse/wrap/extract; rewrite requires a concrete reason and parity evidence;
+- every WP uses `OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md`;
+- GitHub Pro is maximized before another recurring paid engineering subscription is proposed;
+- GitHub-hosted Ubuntu is the fast lane, hosted Windows is the path-aware clean-room compatibility lane, Lenovo is the authoritative/heavy and later GPU AI-eval lane;
+- hosted Actions minutes are a finite acceleration budget; quota exhaustion must not disable authoritative safety gates;
+- Actions cache/artifacts are used for build acceleration/short-lived evidence, never private portfolio state, secrets, DB backups or model weights;
+- Codespaces is optional clean-room development/handoff, never production/Real/broker-secret storage;
+- GitHub Releases + protected `v10.*` tag identity + release manifest become WP4 provenance goals;
+- GitHub Environments are deployment identity/history/scoping, not broker-secret custody;
+- Dependabot and repository-controlled SAST/dependency/secret/SBOM checks remain the no-extra-subscription supply-chain baseline;
+- Enterprise/GHAS-only private-repository features are not V10 prerequisites;
+- new recurring paid service requires explicit OWNER-approved amendment after documenting why GitHub Pro + Lenovo + open-source/self-hosted alternatives are insufficient.
 
 ## Current authorized next step — WP4
 
 WP4 remains the next implementation package. It must finish release/build provenance and deployment contracts before the full V10 Lenovo runtime is configured.
 
-In addition to the base Master Plan, WP4 must make future AI/model provenance representable in release metadata, including provider/model identity, digest, quantization, license, policy revision and optional adapter revision. WP4 does **not** itself implement the AI runtime.
+WP4 is now pre-specified to include:
+
+- release manifest generation/validation against `V10_RELEASE_MANIFEST.schema.json`;
+- exact Git SHA/version/toolchain/dependency-lock/SBOM provenance;
+- `v10.*` release/tag identity and strongest safe current-plan tag protection;
+- path-aware hosted CI routing;
+- documented hosted-minute/cache/artifact budget and review procedure;
+- exact CI evidence linkage and rollback target;
+- future AI model/policy/adapter provenance fields without installing AI during WP4;
+- fail-closed tests for malformed/incomplete provenance;
+- no dependence on Enterprise-only private artifact attestations.
+
+WP4 must **not** install Ollama/Qwen, build the V10 Web product, change broker accounting behavior, configure the full V10 Lenovo application node or start Block C.
 
 After WP4 and the Block B Exit Gate are accepted, Block C may begin the reproducible Lenovo V10 node/bootstrap work.
-
-## Lenovo sequencing
-
-The GitHub runner is already operational and is part of accepted CI infrastructure. Full V10 node provisioning remains deliberately sequenced after WP4 and includes future runtime/database/health/watchdog/Ollama/resource-arbitration work under Block C.
-
-Do not install or expose the full V10 local AI/runtime stack merely because the hardware is available.
 
 ## Money/safety rule
 

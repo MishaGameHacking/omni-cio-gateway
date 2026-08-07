@@ -48,6 +48,19 @@ Locks the concrete 2026-08-07 OWNER decisions:
 - AI never receives direct broker-write/admin/bypass authority;
 - OWNER local participation is minimized to reviewed PowerShell operations only when GitHub/code/CI cannot perform the action remotely.
 
+### 3. GitHub Pro Maximum Utilization / V10 Migration Implementation Contract
+
+`OMNI_CIO_V10_GITHUB_PRO_AND_MIGRATION_IMPLEMENTATION_AMENDMENT.md`
+
+Machine-readable companions:
+
+- `../architecture/V10_GITHUB_PRO_UTILIZATION_CONTRACT.json`;
+- `../architecture/V10_V9_TO_V10_PARITY_LEDGER.json`;
+- `../architecture/V10_COMPONENT_REUSE_MATRIX.json`;
+- `../architecture/V10_RELEASE_MANIFEST.schema.json`.
+
+Locks the OWNER-approved rule that GitHub Pro is the V10 engineering Control Plane and that V10 is a controlled productization/migration of the accepted V9 system, not a greenfield rewrite or feature-expansion program. It defines CI compute routing across GitHub-hosted runners and the Lenovo self-hosted runner, Actions-minute/cache/artifact budgets, Codespaces clean-room use, Releases/tag provenance, environment usage, dependency automation, parity/reuse rules, canonical acceptance oracles, WP execution format, cutover discipline, scope firewall, and a subscription-minimization policy.
+
 ## Draft/superseded planning material
 
 Open or historical PR descriptions must not be treated as active plan authority merely because they contain V10 ideas. In particular, any older unmerged planning PR that conflicts with the accepted Concrete Execution Plan must be closed/superseded rather than merged as a competing roadmap.
