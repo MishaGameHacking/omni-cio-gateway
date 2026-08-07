@@ -39,7 +39,7 @@ def _resolve_ref(schema_root: dict[str, Any], ref: str) -> dict[str, Any]:
     for part in ref[2:].split("/"):
         node = node[part.replace("~1", "/").replace("~0", "~")]
     if not isinstance(node, dict):
-        raise ManifestError(f"schema ref does not resolve to object: {ref}")
+        raise ManifestError(f"schema ref does not resolve to an object: {ref}")
     return node
 
 
@@ -68,7 +68,11 @@ def _validate_schema_node(
 ) -> None:
     if "$ref" in schema:
         _validate_schema_node(
-            value, _resolve_ref(schema_root, str(schema["$ref"])), schema_root, path, failures
+            value,
+            _resolve_ref(schema_root, str(schema["$ref"])),
+            schema_root,
+            path,
+            failures,
         )
         return
 
@@ -76,7 +80,9 @@ def _validate_schema_node(
     if expected is not None:
         allowed = [expected] if isinstance(expected, str) else list(expected)
         if not any(_type_ok(value, item) for item in allowed):
-            failures.append(f"{path}: expected type {allowed}, got {type(value).__name__}")
+            failures.append(
+                f"{path}: expected type {allowed}, got {type(value).__name__}"
+            )
             return
 
     if "const" in schema and value != schema["const"]:
@@ -109,13 +115,22 @@ def _validate_schema_node(
         if isinstance(min_items, int) and len(value) < min_items:
             failures.append(f"{path}: array has fewer than {min_items} items")
         if schema.get("uniqueItems"):
-            normalized = [json.dumps(item, sort_keys=True, separators=(",", ":")) for item in value]
+            normalized = [
+                json.dumps(item, sort_keys=True, separators=(",", ":"))
+                for item in value
+            ]
             if len(normalized) != len(set(normalized)):
                 failures.append(f"{path}: array items must be unique")
         item_schema = schema.get("items")
         if isinstance(item_schema, dict):
             for index, item in enumerate(value):
-                _validate_schema_node(item, item_schema, schema_root, f"{path}[{index}]", failures)
+                _validate_schema_node(
+                    item,
+                    item_schema,
+                    schema_root,
+                    f"{path}[{index}]",
+                    failures,
+                )
 
     if isinstance(value, dict):
         required = schema.get("required", [])
@@ -126,15 +141,22 @@ def _validate_schema_node(
         properties = schema.get("properties", {})
         if isinstance(properties, dict):
             for key, child in value.items():
-                if key in properties and isinstance(properties[key], dict):
+                child_schema = properties.get(key)
+                if isinstance(child_schema, dict):
                     _validate_schema_node(
-                        child, properties[key], schema_root, f"{path}.{key}", failures
+                        child,
+                        child_schema,
+                        schema_root,
+                        f"{path}.{key}",
+                        failures,
                     )
                 elif schema.get("additionalProperties") is False:
                     failures.append(f"{path}: unexpected property {key!r}")
 
 
-def validate_against_schema(manifest: dict[str, Any], schema: dict[str, Any]) -> list[str]:
+def validate_against_schema(
+    manifest: dict[str, Any], schema: dict[str, Any]
+) -> list[str]:
     failures: list[str] = []
     _validate_schema_node(manifest, schema, schema, "$", failures)
     return failures
@@ -172,7 +194,9 @@ def semantic_failures(
     if not isinstance(release_tag, str) or VERSION_RE.fullmatch(release_tag) is None:
         failures.append("release_tag must use the v10.* release namespace")
     if expected_git_sha is not None and git_sha != expected_git_sha:
-        failures.append(f"manifest git_sha {git_sha!r} does not match expected {expected_git_sha!r}")
+        failures.append(
+            f"manifest git_sha {git_sha!r} does not match expected {expected_git_sha!r}"
+        )
 
     build = manifest.get("build", {})
     source_ref = build.get("source_ref") if isinstance(build, dict) else None
@@ -189,14 +213,19 @@ def semantic_failures(
         ]
         hosted = evidence.get("hosted_compatibility", [])
         if isinstance(hosted, list):
-            ci_runs.extend((f"hosted_compatibility[{i}]", item) for i, item in enumerate(hosted))
+            ci_runs.extend(
+                (f"hosted_compatibility[{index}]", item)
+                for index, item in enumerate(hosted)
+            )
         for label, run in ci_runs:
             if not isinstance(run, dict):
                 continue
             if run.get("conclusion") != "success":
                 failures.append(f"ci_evidence.{label} must conclude success")
             if run.get("git_sha") != git_sha:
-                failures.append(f"ci_evidence.{label}.git_sha must equal manifest git_sha")
+                failures.append(
+                    f"ci_evidence.{label}.git_sha must equal manifest git_sha"
+                )
 
     rollback = manifest.get("rollback", {})
     update = manifest.get("update_delivery")
@@ -207,23 +236,35 @@ def semantic_failures(
         if update.get("rollback_target") not in (None, rollback.get("target")):
             failures.append("update_delivery.rollback_target must match rollback.target")
         if update.get("channel") == "STABLE":
-            for field in ("signed_metadata_ref", "signing_identity_ref", "metadata_expires_at"):
+            for field in (
+                "signed_metadata_ref",
+                "signing_identity_ref",
+                "metadata_expires_at_utc",
+            ):
                 if not update.get(field):
                     failures.append(f"STABLE update_delivery requires {field}")
             if update.get("rollback_compatible") is not True:
-                failures.append("STABLE update_delivery requires rollback_compatible=true")
+                failures.append(
+                    "STABLE update_delivery requires rollback_compatible=true"
+                )
         artifacts = update.get("artifacts", [])
         if isinstance(artifacts, list):
-            for idx, artifact in enumerate(artifacts):
+            for index, artifact in enumerate(artifacts):
                 if not isinstance(artifact, dict):
                     continue
                 digest = artifact.get("sha256")
                 if not isinstance(digest, str) or SHA256_RE.fullmatch(digest) is None:
-                    failures.append(f"update_delivery.artifacts[{idx}].sha256 invalid")
+                    failures.append(
+                        f"update_delivery.artifacts[{index}].sha256 invalid"
+                    )
 
     ai = manifest.get("ai")
     if isinstance(ai, dict) and ai.get("enabled") is False:
-        for field in ("base_model", "model_digest_sha256", "adapter_digest"):
+        for field in (
+            "base_model",
+            "model_digest_sha256",
+            "adapter_digest_sha256",
+        ):
             if ai.get(field) not in (None, ""):
                 failures.append(f"ai.{field} must be null when AI is disabled for WP4")
 
@@ -234,10 +275,14 @@ def semantic_failures(
             _check_digest_entries(dependency_locks, root, "dependency_locks", failures)
         if isinstance(sbom, list):
             _check_digest_entries(sbom, root, "sbom", failures)
+
         if isinstance(rollback, dict):
             instructions = rollback.get("instructions_ref")
             if isinstance(instructions, str) and not (root / instructions).is_file():
-                failures.append(f"rollback instructions do not exist: {instructions}")
+                failures.append(
+                    f"rollback instructions do not exist: {instructions}"
+                )
+
         contracts = manifest.get("contracts", {})
         if isinstance(contracts, dict):
             for field in (
@@ -250,6 +295,7 @@ def semantic_failures(
                 ref = contracts.get(field)
                 if isinstance(ref, str) and not (root / ref).is_file():
                     failures.append(f"contracts.{field} does not exist: {ref}")
+
         if isinstance(update, dict):
             artifacts = update.get("artifacts", [])
             if isinstance(artifacts, list):
@@ -277,7 +323,9 @@ def validate_manifest(
     schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     failures = validate_against_schema(manifest, schema)
-    failures.extend(semantic_failures(manifest, root=root, expected_git_sha=expected_git_sha))
+    failures.extend(
+        semantic_failures(manifest, root=root, expected_git_sha=expected_git_sha)
+    )
     return failures
 
 
@@ -285,7 +333,7 @@ def _parse_requirement_lock(path: Path) -> list[dict[str, str]]:
     components: dict[str, dict[str, str]] = {}
     for raw in path.read_text(encoding="utf-8").splitlines():
         line = raw.strip()
-        if not line or line.startswith("#") or line.startswith("-") or line.startswith("--"):
+        if not line or line.startswith(("#", "-", "--")):
             continue
         line = line.split(";", 1)[0].strip()
         match = re.match(r"^([A-Za-z0-9_.-]+)==([^\s\\]+)", line)
@@ -327,14 +375,21 @@ def _parse_npm_lock(path: Path) -> list[dict[str, str]]:
     return [components[key] for key in sorted(components)]
 
 
-def write_cyclonedx(path: Path, components: list[dict[str, str]], release_version: str) -> None:
+def _cyclonedx_serial(release_version: str, name: str) -> str:
+    raw = hashlib.sha256((release_version + name).encode()).hexdigest()[:32]
+    return (
+        f"urn:uuid:{raw[:8]}-{raw[8:12]}-{raw[12:16]}-"
+        f"{raw[16:20]}-{raw[20:]}"
+    )
+
+
+def write_cyclonedx(
+    path: Path, components: list[dict[str, str]], release_version: str
+) -> None:
     payload = {
         "bomFormat": "CycloneDX",
         "specVersion": "1.6",
-        "serialNumber": (
-            "urn:uuid:"
-            + hashlib.sha256((release_version + path.name).encode()).hexdigest()[:32]
-        ),
+        "serialNumber": _cyclonedx_serial(release_version, path.name),
         "version": 1,
         "metadata": {
             "component": {
@@ -346,7 +401,9 @@ def write_cyclonedx(path: Path, components: list[dict[str, str]], release_versio
         "components": components,
     }
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
 
 
 def _digest_entry(path: Path, root: Path) -> dict[str, str]:
@@ -387,7 +444,7 @@ def build_manifest(args: argparse.Namespace) -> dict[str, Any]:
 
     ci_evidence = json.loads(Path(args.ci_evidence).read_text(encoding="utf-8"))
     manifest: dict[str, Any] = {
-        "schema_version": 1,
+        "schema_version": "1",
         "release_version": args.release_version,
         "release_tag": args.release_version,
         "git_sha": git_sha,
@@ -428,7 +485,7 @@ def build_manifest(args: argparse.Namespace) -> dict[str, Any]:
             "quantization": None,
             "context_tokens": None,
             "policy_version": "WP4-NOT-INSTALLED",
-            "adapter_digest": None,
+            "adapter_digest_sha256": None,
             "eval_contract": None,
             "eval_result": None,
         },
@@ -442,9 +499,9 @@ def build_manifest(args: argparse.Namespace) -> dict[str, Any]:
                     "size_bytes": source_artifact.stat().st_size,
                 }
             ],
-            "signed_metadata_ref": args.signed_metadata_ref,
-            "signing_identity_ref": args.signing_identity_ref,
-            "metadata_expires_at": args.metadata_expires_at,
+            "signed_metadata_ref": args.signed_metadata_ref or None,
+            "signing_identity_ref": args.signing_identity_ref or None,
+            "metadata_expires_at_utc": args.metadata_expires_at_utc or None,
             "database_compatibility": "WP4_NO_V10_DATABASE_RUNTIME",
             "api_compatibility": "WP4_V9_APP_APP_UNCHANGED",
             "model_compatibility": "WP4_AI_NOT_INSTALLED",
@@ -453,14 +510,14 @@ def build_manifest(args: argparse.Namespace) -> dict[str, Any]:
         },
         "ci_evidence": ci_evidence,
         "bootstrap": {
-            "bootstrap_manifest": None,
-            "target_os": "Windows",
-            "target_arch": "X64",
+            "version": None,
+            "compatibility": "WP4_CONTRACT_ONLY_NO_NODE_RUNTIME",
+            "recovery_contract_version": None,
         },
         "rollback": {
             "target": args.rollback_target,
             "instructions_ref": "docs/architecture/V10_V9_BASELINE_FREEZE.md",
-            "database_rollback": "NOT_APPLICABLE_WP4",
+            "database_constraints": "NOT_APPLICABLE_WP4",
             "ai_rollback": "NOT_APPLICABLE_WP4",
         },
     }
@@ -497,7 +554,8 @@ def _verify_run(
     run = fetcher(base, token)
     if run.get("name") != expected_workflow:
         raise ManifestError(
-            f"run {run_id} workflow mismatch: {run.get('name')!r} != {expected_workflow!r}"
+            f"run {run_id} workflow mismatch: {run.get('name')!r} != "
+            f"{expected_workflow!r}"
         )
     if run.get("head_sha") != expected_sha:
         raise ManifestError(f"run {run_id} head_sha does not match release SHA")
@@ -505,10 +563,10 @@ def _verify_run(
         raise ManifestError(f"run {run_id} conclusion is not success")
     if required_job is not None:
         jobs = fetcher(base + "/jobs?per_page=100", token)
-        job_rows = jobs.get("jobs", [])
+        rows = jobs.get("jobs", [])
         matched = [
             row
-            for row in job_rows
+            for row in rows
             if isinstance(row, dict)
             and row.get("name") == required_job
             and row.get("conclusion") == "success"
@@ -602,7 +660,7 @@ def main(argv: list[str] | None = None) -> int:
     generate.add_argument("--minimum-supported-version", required=True)
     generate.add_argument("--signed-metadata-ref")
     generate.add_argument("--signing-identity-ref")
-    generate.add_argument("--metadata-expires-at")
+    generate.add_argument("--metadata-expires-at-utc")
     generate.add_argument("--output", required=True)
 
     args = parser.parse_args(argv)
@@ -619,6 +677,7 @@ def main(argv: list[str] | None = None) -> int:
                 return 1
             print("V10 release manifest validation passed.")
             return 0
+
         if args.command == "generate-sbom":
             if VERSION_RE.fullmatch(args.release_version) is None:
                 raise ManifestError("release-version must use v10.*")
@@ -633,16 +692,19 @@ def main(argv: list[str] | None = None) -> int:
                 args.release_version,
             )
             return 0
+
         if args.command == "verify-ci":
             if GIT_SHA_RE.fullmatch(args.git_sha) is None:
                 raise ManifestError("git-sha must be a 40-character lowercase SHA")
             evidence = build_ci_evidence(args)
-            Path(args.output).parent.mkdir(parents=True, exist_ok=True)
-            Path(args.output).write_text(
+            output = Path(args.output)
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_text(
                 json.dumps(evidence, indent=2, sort_keys=True) + "\n",
                 encoding="utf-8",
             )
             return 0
+
         if args.command == "generate":
             manifest = build_manifest(args)
             output = Path(args.output)
