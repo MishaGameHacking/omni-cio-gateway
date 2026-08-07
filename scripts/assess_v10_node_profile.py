@@ -18,7 +18,9 @@ def main(argv: list[str] | None = None) -> int:
 
     profile_path = Path(args.profile)
     try:
-        profile = json.loads(profile_path.read_text(encoding="utf-8"))
+        # Windows PowerShell 5.1 writes `-Encoding utf8` with a BOM. Accept it
+        # on first read, then rewrite the canonical profile as BOM-less UTF-8.
+        profile = json.loads(profile_path.read_text(encoding="utf-8-sig"))
         thresholds = json.loads(Path(args.thresholds).read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         print(f"WP5 assessment failed: {exc}", file=sys.stderr)
