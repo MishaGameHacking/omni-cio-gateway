@@ -7,7 +7,13 @@ Owner-readable PDF: `docs/master-plan/Omni-CIO_V10_Master_Plan_RU.pdf`
 Integrity manifest: `docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.sha256`  
 Amendments index: `docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md`  
 Concrete execution amendment: `docs/master-plan/OMNI_CIO_V10_CONCRETE_EXECUTION_PLAN_AMENDMENT.md`  
+GitHub Pro / migration implementation amendment: `docs/master-plan/OMNI_CIO_V10_GITHUB_PRO_AND_MIGRATION_IMPLEMENTATION_AMENDMENT.md`  
+Mandatory WP template: `docs/master-plan/OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md`  
 Machine-readable AI contract: `docs/architecture/V10_AI_CORTEX_CONTRACT.json`  
+Machine-readable GitHub Pro contract: `docs/architecture/V10_GITHUB_PRO_UTILIZATION_CONTRACT.json`  
+V9->V10 parity ledger: `docs/architecture/V10_V9_TO_V10_PARITY_LEDGER.json`  
+Component reuse matrix: `docs/architecture/V10_COMPONENT_REUSE_MATRIX.json`  
+Release manifest schema: `docs/architecture/V10_RELEASE_MANIFEST.schema.json`  
 Current progress authority: `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`
 
 ## 1. Authority
@@ -33,9 +39,8 @@ Accepted evidence:
 - WP1 accepted by PR #229 as `dbd459b280de84d3f571b458b46f1039880312ca`;
 - WP2 accepted by PR #230 as `3e3a89791d7f1594e4e1ba52125f8361708ae29d`;
 - WP3 accepted by PR #236 as `289ff563e99a64bbf8b5a289e84668dde58ef42a`;
-- GitHub Pro hybrid CI + Lenovo continuity hardening accepted by PR #242; current accepted `main` after that infrastructure merge is `4b034e52c94619f1a7b2cf5dcae5248185a5f45b`.
-
-Post-merge Regression Shield run `31128835442` succeeded on that accepted `main` SHA.
+- GitHub Pro hybrid CI + Lenovo continuity hardening accepted by PR #242;
+- concrete AI/local-first planning accepted by PR #243 as `5743608389dd0fc6eba4dc33540a61016dc98914`.
 
 **WP4 — Release, build provenance and deployment contract is the next authorized implementation package.**
 
@@ -59,11 +64,11 @@ Architecture sources established by accepted work include:
 - `docs/architecture/V10_REGRESSION_SHIELD.md`;
 - `.github/CODEOWNERS` and permanent repository/CI guards.
 
-The accepted Concrete Execution Plan additionally freezes ambiguous implementation choices without changing the canonical block order/weights.
+Accepted planning amendments additionally freeze ambiguous implementation choices without changing the canonical block order/weights.
 
 ## 4. Concrete V10 implementation lock
 
-The following OWNER-approved rules are binding for later owning work packages:
+The following OWNER-approved rules are binding for later owning work packages.
 
 ### 4.1 One product, two cooperating layers
 
@@ -129,7 +134,41 @@ Preferred local interaction:
 
 The permanent AI process must run least-privilege rather than as Administrator.
 
-Exact details are authoritative in `OMNI_CIO_V10_CONCRETE_EXECUTION_PLAN_AMENDMENT.md` and `V10_AI_CORTEX_CONTRACT.json`.
+### 4.8 V10 is migration/productization, not a rewrite
+
+Every material accepted V9 capability in V10 scope must be tracked through the parity ledger and receive a component reuse decision before material replacement work starts.
+
+Default engineering preference:
+
+`REUSE_AS_IS > WRAP_ADAPTER > EXTRACT_TO_CORE > REWRITE_REQUIRED > RETIRE`.
+
+No component is rewritten merely because a newer framework or cleaner design is available. `REWRITE_REQUIRED` needs a concrete security/correctness/runtime/architecture reason and parity evidence.
+
+Material V9 capability retirement is blocked until parity/recovery/cutover gates pass or the OWNER explicitly approves `INTENTIONALLY_RETIRED`.
+
+### 4.9 GitHub Pro maximum-utilization lock
+
+GitHub Pro is the default engineering subscription and must be used before proposing another recurring paid engineering service.
+
+Approved V10 compute model:
+
+- GitHub-hosted Ubuntu = fast PR lane;
+- GitHub-hosted Windows = disposable path-aware clean-room compatibility lane;
+- Lenovo `omni-cio-ci` = authoritative heavy/self-hosted lane and later local AI/GPU eval lane.
+
+The project must use hosted minutes as a finite acceleration budget, preserve heavy validation on Lenovo where safe, use caches/artifacts deliberately, and keep release provenance/recovery source-controlled.
+
+V10 Definition of Done must not depend on GitHub Enterprise-only/private-repository features, GitHub Advanced Security products, paid AI/search APIs or another paid CI/security SaaS.
+
+Plan-gated capabilities are replaced only where necessary by repository-controlled/open-source checks; lack of a premium feature is never a reason to weaken the safety requirement.
+
+### 4.10 Unified WP execution discipline
+
+Every implementation WP must follow `OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md` and define accepted baseline, reuse/parity decisions, allowed changes, non-goals, interfaces, data/security effects, positive/negative tests, CI routing, rollback, Exit Gate and evidence.
+
+Work discovered outside the current Exit Gate is not silently implemented. It becomes a current blocker/defect, future-WP item or OWNER-approved amendment.
+
+Exact details are authoritative in the active amendments and machine-readable contracts, not chat memory.
 
 ## 5. Program exclusivity
 
@@ -162,7 +201,7 @@ A WP is not complete because files/UI exist. Completion requires its Exit Gate a
 
 ## 8. GitHub protection rule
 
-Private `main` is now protected by the accepted `Protect main` ruleset. The accepted merge model requires:
+Private `main` is protected by the accepted `Protect main` ruleset. The accepted merge model requires:
 
 - pull request workflow;
 - squash as the only merge method;
@@ -172,6 +211,8 @@ Private `main` is now protected by the accepted `Protect main` ruleset. The acce
 - no direct weakening of CI/ruleset to make a PR green.
 
 GitHub-hosted lanes provide fast/clean-room acceleration. Lenovo `omni-cio-ci` remains the authoritative heavy Windows/continuity lane. Infrastructure outages are handled by documented incident procedures, not permanent weakening of protection.
+
+Release/tag/deployment protections added in later WPs must use the strongest safe controls available on the current GitHub Pro plan without pretending Enterprise-only controls exist.
 
 ## 9. Money and safety boundary
 
@@ -206,6 +247,6 @@ When canonical authorities conflict materially, feature work stops until an OWNE
 
 ## 11. Completion rule
 
-V10 is not complete until the canonical 100% program, accepted amendments, final capability/evidence matrix, AI/local-first/degraded-mode gates, clean-room recovery/portability, final security/reliability gates and OWNER acceptance all pass.
+V10 is not complete until the canonical 100% program, accepted amendments, final capability/evidence matrix, V9->V10 parity ledger, AI/local-first/degraded-mode gates, clean-room recovery/portability, final security/reliability gates and OWNER acceptance all pass.
 
 Until then no successor version is authorized.
