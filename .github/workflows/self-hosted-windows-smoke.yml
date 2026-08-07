@@ -140,6 +140,25 @@ jobs:
           python scripts/check_v10_toolchain_baseline.py
           python scripts/check_v10_regression_shield.py
 
+      - name: Collect privacy-safe WP5 OWNER node profile
+        if: startsWith(github.head_ref, 'v10/wp5-') || github.event_name == 'workflow_dispatch'
+        shell: pwsh
+        run: |
+          $profile = Join-Path $env:RUNNER_TEMP "owner-node-profile.json"
+          ./infrastructure/windows/collect_owner_node_profile.ps1 -OutputPath $profile
+          "WP5_NODE_PROFILE_PATH=$profile" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Assess and validate WP5 OWNER node profile
+        if: startsWith(github.head_ref, 'v10/wp5-') || github.event_name == 'workflow_dispatch'
+        shell: pwsh
+        run: |
+          python scripts/assess_v10_node_profile.py "$env:WP5_NODE_PROFILE_PATH" --thresholds infrastructure/windows/wp5_node_thresholds.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python scripts/validate_v10_node_profile.py "$env:WP5_NODE_PROFILE_PATH" --thresholds infrastructure/windows/wp5_node_thresholds.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $safe = Get-Content -LiteralPath $env:WP5_NODE_PROFILE_PATH -Raw | ConvertFrom-Json | ConvertTo-Json -Compress -Depth 20
+          Write-Host "WP5_OWNER_NODE_PROFILE_JSON=$safe"
+
       - name: Compile protected runtime and Core
         run: >-
           python -m compileall -q app.py app_v371.py app_v360.py main.py
