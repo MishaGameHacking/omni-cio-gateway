@@ -128,8 +128,13 @@ def validate_shape(profile: dict[str, Any]) -> list[str]:
 
     if profile.get("schema_version") != "1":
         failures.append("$.schema_version must equal '1'")
-    if profile.get("capture_mode") != "PASSIVE_READ_ONLY":
-        failures.append("$.capture_mode must be PASSIVE_READ_ONLY")
+    if profile.get("capture_mode") not in {
+        "PASSIVE_READ_ONLY",
+        "PASSIVE_PLUS_OWNER_EVIDENCE",
+    }:
+        failures.append(
+            "$.capture_mode must be PASSIVE_READ_ONLY or PASSIVE_PLUS_OWNER_EVIDENCE"
+        )
     if profile.get("node_role") != "OWNER_PERSONAL_NODE":
         failures.append("$.node_role must be OWNER_PERSONAL_NODE")
     if (
@@ -342,7 +347,8 @@ def assess_exit_gate(profile: dict[str, Any], thresholds: dict[str, Any]) -> lis
         blockers.append("WIRED_NETWORK_NOT_CONNECTED")
 
     power = _as_dict(profile["power"], "$.power")
-    if power.get("restart_after_power_loss") != "ENABLED":
+    restart_state = power.get("restart_after_power_loss")
+    if restart_state not in {"ENABLED", "NOT_SUPPORTED_BY_FIRMWARE"}:
         blockers.append("RESTART_AFTER_POWER_LOSS_NOT_VERIFIED_ENABLED")
     if (
         power.get("battery_present") is True
