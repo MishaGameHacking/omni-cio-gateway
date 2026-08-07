@@ -246,7 +246,9 @@ class V10ReleaseWorkflowContractTests(unittest.TestCase):
         self.assertNotIn("softprops/action-gh-release", text)
         self.assertNotIn("gh release create", text)
 
-    def test_hosted_workflows_use_internal_path_router_not_trigger_filters(self) -> None:
+    def test_hosted_workflows_use_internal_path_router_not_trigger_filters(
+        self,
+    ) -> None:
         for relative in (
             ".github/workflows/v10-pr-fast-checks.yml",
             ".github/workflows/v10-toolchain-compat.yml",
