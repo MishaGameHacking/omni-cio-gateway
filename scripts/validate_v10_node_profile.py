@@ -183,9 +183,7 @@ def validate_shape(profile: dict[str, Any]) -> list[str]:
                 failures.append("$.hardware.cpu.model must be a non-empty string")
             for key in ("physical_cores", "logical_processors"):
                 if not isinstance(cpu.get(key), int) or cpu.get(key, 0) < 1:
-                    failures.append(
-                        f"$.hardware.cpu.{key} must be a positive integer"
-                    )
+                    failures.append(f"$.hardware.cpu.{key} must be a positive integer")
         else:
             failures.append("$.hardware.cpu must be an object")
         memory = hardware.get("memory")
@@ -255,9 +253,7 @@ def validate_shape(profile: dict[str, Any]) -> list[str]:
     return failures
 
 
-def assess_exit_gate(
-    profile: dict[str, Any], thresholds: dict[str, Any]
-) -> list[str]:
+def assess_exit_gate(profile: dict[str, Any], thresholds: dict[str, Any]) -> list[str]:
     blockers: list[str] = []
     security = _as_dict(profile["security"], "$.security")
     encryption = _as_dict(
@@ -276,9 +272,7 @@ def assess_exit_gate(
     time_data = _as_dict(profile["time"], "$.time")
     clock_policy = _as_dict(thresholds["clock"], "$.thresholds.clock")
     offset = time_data.get("offset_ms")
-    time_service_running = (
-        str(time_data.get("service_status", "")).upper() == "RUNNING"
-    )
+    time_service_running = str(time_data.get("service_status", "")).upper() == "RUNNING"
     if not time_service_running:
         blockers.append("WINDOWS_TIME_SERVICE_NOT_RUNNING")
     if not isinstance(offset, (int, float)):
@@ -317,9 +311,10 @@ def assess_exit_gate(
         blockers.append("PHYSICAL_DISK_HEALTH_UNKNOWN")
     else:
         for disk in disks:
-            if not isinstance(disk, dict) or str(
-                disk.get("health_status", "")
-            ).lower() != "healthy":
+            if (
+                not isinstance(disk, dict)
+                or str(disk.get("health_status", "")).lower() != "healthy"
+            ):
                 blockers.append("PHYSICAL_DISK_NOT_HEALTHY")
                 break
 
@@ -368,9 +363,7 @@ def assess_exit_gate(
     return sorted(set(blockers))
 
 
-def validate_profile(
-    profile: dict[str, Any], thresholds: dict[str, Any]
-) -> list[str]:
+def validate_profile(profile: dict[str, Any], thresholds: dict[str, Any]) -> list[str]:
     failures = validate_shape(profile)
     if failures:
         return failures
@@ -383,9 +376,10 @@ def validate_profile(
     if exit_gate.get("status") != expected_status:
         failures.append(f"$.exit_gate.status must be {expected_status}")
     recorded = exit_gate.get("blocking_reasons")
-    if not isinstance(recorded, list) or sorted(
-        set(str(item) for item in recorded)
-    ) != blockers:
+    if (
+        not isinstance(recorded, list)
+        or sorted(set(str(item) for item in recorded)) != blockers
+    ):
         failures.append(
             "$.exit_gate.blocking_reasons must exactly match computed blockers"
         )
