@@ -82,7 +82,8 @@ Manual release-candidate workflow. It validates only accepted `main`, requires e
 - missing/damaged dependency lock, SBOM, or update artifact;
 - STABLE metadata without signing identity, signed metadata reference, expiry, or rollback compatibility;
 - unknown path classification attempts;
-- non-main release candidate.
+- non-main release candidate;
+- malformed or non-existent Git rollback commit identity.
 
 ## 9. Observability and cost controls
 
@@ -96,7 +97,7 @@ Manual release-candidate workflow. It validates only accepted `main`, requires e
 
 WP4 changes are repository/CI controls only. Rollback is a normal reviewed revert of the WP4 squash commit. V9 remains running through the protected `app:app` baseline.
 
-Release rollback metadata points to `v9.0.0@app:app` unless a later owning release explicitly supplies a newer approved rollback target.
+Release rollback metadata defaults to the exact last completed V9 feature-program acceptance commit: `git:b9e4fabcb54f8f6e0ba206f030c35f2fafa2ce62@app:app`. A later owning release may supply a newer approved exact Git rollback identity; the release workflow rejects malformed or non-existent commit targets.
 
 ## 11. Server-side GitHub controls
 
