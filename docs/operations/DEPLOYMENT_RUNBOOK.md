@@ -31,7 +31,7 @@ Production topology должна содержать только один раб
 ## После merge в main
 
 1. Открыть единственный Render service `omni-cio-gateway`.
-2. Убедиться, что source repository — `Misha2304/omni-cio-gateway`, branch — `main`.
+2. Убедиться, что source repository — `MishaGameHacking/omni-cio-gateway`, branch — `main`.
 3. Убедиться, что source commit совпадает с merge commit.
 4. Дождаться статуса Live.
 5. Проверить логи запуска: `uvicorn app:app`.
