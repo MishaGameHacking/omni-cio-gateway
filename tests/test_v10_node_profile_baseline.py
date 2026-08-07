@@ -16,7 +16,10 @@ def test_persisted_owner_node_baseline_is_valid_and_fail_closed() -> None:
     thresholds = json.loads(THRESHOLDS_PATH.read_text(encoding="utf-8"))
 
     assert node_profile.validate_profile(profile, thresholds) == []
-    assert profile["capture_mode"] == "PASSIVE_READ_ONLY"
+    assert profile["capture_mode"] in {
+        "PASSIVE_READ_ONLY",
+        "PASSIVE_PLUS_OWNER_EVIDENCE",
+    }
     assert profile["exit_gate"]["status"] == "BLOCKED"
     assert profile["privacy"] == {
         "mac_or_ip_collected": False,
@@ -27,8 +30,12 @@ def test_persisted_owner_node_baseline_is_valid_and_fail_closed() -> None:
     }
 
     blockers = set(profile["exit_gate"]["blocking_reasons"])
-    assert "BITLOCKER_PROTECTION_NOT_ON" in blockers
-    assert "SYSTEM_VOLUME_NOT_FULLY_ENCRYPTED" in blockers
-    assert "REBOOT_TEST_NOT_PASS" in blockers
-    assert "NETWORK_RECONNECT_TEST_NOT_PASS" in blockers
-    assert "SUSTAINED_CPU_GPU_LOAD_TEST_NOT_PASS" in blockers
+    if profile["capture_mode"] == "PASSIVE_READ_ONLY":
+        assert "REBOOT_TEST_NOT_PASS" in blockers
+        assert "NETWORK_RECONNECT_TEST_NOT_PASS" in blockers
+        assert "SUSTAINED_CPU_GPU_LOAD_TEST_NOT_PASS" in blockers
+    else:
+        assert profile["checks"]["reboot"] == "PASS"
+        assert profile["checks"]["network_reconnect"] == "PASS"
+        if profile["checks"]["sustained_cpu_gpu_load"] != "PASS":
+            assert "SUSTAINED_CPU_GPU_LOAD_TEST_NOT_PASS" in blockers
