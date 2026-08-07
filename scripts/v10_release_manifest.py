@@ -176,7 +176,9 @@ def _check_digest_entries(
             continue
         actual = sha256_file(target)
         if actual != expected:
-            failures.append(f"{label}: digest mismatch for {rel}: {actual} != {expected}")
+            failures.append(
+                f"{label}: digest mismatch for {rel}: {actual} != {expected}"
+            )
 
 
 def semantic_failures(
@@ -234,7 +236,9 @@ def semantic_failures(
         if not isinstance(minimum, str) or VERSION_RE.fullmatch(minimum) is None:
             failures.append("update_delivery.minimum_supported_version must use v10.*")
         if update.get("rollback_target") not in (None, rollback.get("target")):
-            failures.append("update_delivery.rollback_target must match rollback.target")
+            failures.append(
+                "update_delivery.rollback_target must match rollback.target"
+            )
         if update.get("channel") == "STABLE":
             for field in (
                 "signed_metadata_ref",
@@ -279,9 +283,7 @@ def semantic_failures(
         if isinstance(rollback, dict):
             instructions = rollback.get("instructions_ref")
             if isinstance(instructions, str) and not (root / instructions).is_file():
-                failures.append(
-                    f"rollback instructions do not exist: {instructions}"
-                )
+                failures.append(f"rollback instructions do not exist: {instructions}")
 
         contracts = manifest.get("contracts", {})
         if isinstance(contracts, dict):
@@ -377,10 +379,7 @@ def _parse_npm_lock(path: Path) -> list[dict[str, str]]:
 
 def _cyclonedx_serial(release_version: str, name: str) -> str:
     raw = hashlib.sha256((release_version + name).encode()).hexdigest()[:32]
-    return (
-        f"urn:uuid:{raw[:8]}-{raw[8:12]}-{raw[12:16]}-"
-        f"{raw[16:20]}-{raw[20:]}"
-    )
+    return f"urn:uuid:{raw[:8]}-{raw[8:12]}-{raw[12:16]}-{raw[16:20]}-{raw[20:]}"
 
 
 def write_cyclonedx(
