@@ -15,6 +15,12 @@ AUTHORITATIVE_WORKFLOW = WORKFLOWS / "self-hosted-windows-smoke.yml"
 FRONTEND_FIXTURE = ROOT / "tests" / "toolchain" / "frontend"
 FULL_SHA = re.compile(r"[0-9a-f]{40}")
 PATH_FILTER = re.compile(r"(?m)^\s+paths(?:-ignore)?:\s*$")
+DIAGNOSTICS_SOFT_FAIL = re.compile(
+    r"(?ms)^\s*- name: Upload test diagnostics\s*$"
+    r".*?^\s+id: diagnostics_upload\s*$"
+    r".*?^\s+continue-on-error: true\s*$"
+    r".*?^\s+uses: actions/upload-artifact@[0-9a-f]{40}.*?$"
+)
 
 
 def display(path: Path) -> str:
@@ -55,14 +61,28 @@ def validate_action_pins(path: Path, text: str, failures: list[str]) -> None:
             )
 
 
+def validate_soft_fail_policy(path: Path, text: str, failures: list[str]) -> None:
+    count = text.count("continue-on-error: true")
+    if count == 0:
+        return
+    if (
+        path != FULL_WORKFLOW
+        or count != 1
+        or DIAGNOSTICS_SOFT_FAIL.search(text) is None
+    ):
+        failures.append(
+            f"{display(path)} may not soften mandatory jobs; only the post-merge "
+            "diagnostics artifact transport may be best-effort"
+        )
+
+
 def validate_common_workflow(path: Path, failures: list[str]) -> str:
     if not path.is_file():
         failures.append(f"missing mandatory workflow: {display(path)}")
         return ""
     text = path.read_text(encoding="utf-8")
     validate_action_pins(path, text, failures)
-    if "continue-on-error: true" in text:
-        failures.append(f"{display(path)} may not soften mandatory jobs")
+    validate_soft_fail_policy(path, text, failures)
     if "contents: read" not in text:
         failures.append(f"{display(path)} must retain least-privilege contents: read")
     if "persist-credentials: false" not in text:
@@ -137,6 +157,10 @@ def validate_full_workflow(failures: list[str]) -> None:
             "python -m pip_audit",
             "python -m bandit",
             "python -m detect_secrets",
+            "id: diagnostics_upload",
+            "continue-on-error: true",
+            "Report diagnostics upload degradation",
+            "steps.diagnostics_upload.outcome != 'success'",
         ),
         "Regression Shield",
         failures,
@@ -386,6 +410,7 @@ def main() -> int:
     print("Frontend baseline: typecheck + lint + unit + build")
     print("Future capability test contracts: fail-closed when roots appear")
     print("Money-path test families: protected")
+    print("Post-merge diagnostic artifact transport: best-effort, non-authoritative")
     return 0
 
 

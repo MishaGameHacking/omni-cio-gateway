@@ -24,6 +24,12 @@ SECRET_SCAN_EXCLUDE_PATTERN = (
 GENERATED_SECRET_SCAN_PATH = re.compile(r"(^|[\\/])\.pytest_cache([\\/]|$)")
 EXTERNAL_VENV_ROOT_COMMAND = 'VENV_ROOT="$(cygpath -u "$RUNNER_TEMP")"'
 EXTERNAL_VENV_EXPORT_COMMAND = 'echo "VENV_PATH=$VENV_PATH" >> "$GITHUB_ENV"'
+DIAGNOSTICS_SOFT_FAIL = re.compile(
+    r"(?ms)^\s*- name: Upload test diagnostics\s*$"
+    r".*?^\s+id: diagnostics_upload\s*$"
+    r".*?^\s+continue-on-error: true\s*$"
+    r".*?^\s+uses: actions/upload-artifact@[0-9a-f]{40}.*?$"
+)
 
 REQUIRED_WORKFLOW_COMMANDS = {
     "external Windows CI environment": EXTERNAL_VENV_ROOT_COMMAND,
@@ -123,6 +129,17 @@ def validate_action_pins(workflow_text: str, failures: list[str]) -> None:
             )
 
 
+def validate_soft_fail_policy(workflow_text: str, failures: list[str]) -> None:
+    count = workflow_text.count("continue-on-error: true")
+    if count == 0:
+        return
+    if count != 1 or DIAGNOSTICS_SOFT_FAIL.search(workflow_text) is None:
+        failures.append(
+            "security and quality gates may not use continue-on-error; only the "
+            "post-merge diagnostics artifact transport may be best-effort"
+        )
+
+
 def validate_workflow(failures: list[str]) -> None:
     if not WORKFLOW_PATH.is_file():
         failures.append("missing .github/workflows/regression-shield.yml")
@@ -130,11 +147,10 @@ def validate_workflow(failures: list[str]) -> None:
 
     text = WORKFLOW_PATH.read_text(encoding="utf-8")
     validate_action_pins(text, failures)
+    validate_soft_fail_policy(text, failures)
     for label, command in REQUIRED_WORKFLOW_COMMANDS.items():
         if command not in text:
             failures.append(f"Regression Shield is missing {label}: {command}")
-    if "continue-on-error: true" in text:
-        failures.append("security and quality gates may not use continue-on-error")
     if "contents: read" not in text:
         failures.append("workflow permissions must retain contents: read")
     if "\n  pull_request:" in text:
@@ -261,6 +277,7 @@ def main() -> int:
         print("V10 repository boundary guard: required")
         print("V10 toolchain baseline guard: required")
         print("V10 Regression Shield guard: required")
+        print("Diagnostics artifact transport: best-effort and non-authoritative")
         print("Render entrypoint: app:app")
     return 0
 

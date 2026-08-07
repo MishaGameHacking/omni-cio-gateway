@@ -172,8 +172,13 @@ jobs:
           --cov-report=xml:coverage.xml
           --cov-fail-under=60
 
+      # Diagnostics are useful evidence but are not an authority gate. GitHub's
+      # artifact blob transport may fail independently after every mandatory
+      # test/security check has succeeded, especially on a self-hosted runner.
       - name: Upload test diagnostics
+        id: diagnostics_upload
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: regression-diagnostics
@@ -185,6 +190,12 @@ jobs:
             windows-compiled-requirements-dev.txt
           if-no-files-found: warn
           retention-days: 3
+
+      - name: Report diagnostics upload degradation
+        if: always() && steps.diagnostics_upload.outcome != 'success'
+        run: >-
+          echo "::warning::Regression diagnostics artifact transport failed;
+          mandatory quality/security results remain authoritative in this run."
 
       - name: Clean self-hosted workspace
         if: always()
