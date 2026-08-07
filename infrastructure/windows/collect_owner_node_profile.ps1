@@ -297,7 +297,8 @@ catch {
 }
 $wiredSpeedMbps = $null
 if ($wiredAdapters.Count -gt 0) {
-    $speeds = @($wiredAdapters | Where-Object { $null -ne $_.Speed } | ForEach-Object { [double]$_.Speed / 1MB })
+    # Win32_NetworkAdapter.Speed is bits per second. Convert to decimal Mbps.
+    $speeds = @($wiredAdapters | Where-Object { $null -ne $_.Speed } | ForEach-Object { [double]$_.Speed / 1000000.0 })
     if ($speeds.Count -gt 0) {
         $wiredSpeedMbps = Round-Number -Value (($speeds | Measure-Object -Maximum).Maximum) -Digits 0
     }
