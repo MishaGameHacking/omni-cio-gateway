@@ -12,10 +12,18 @@ ALLOWED_TOP_LEVEL = {
     "schema_version",
     "attested_at_utc",
     "source_class",
+    "full_disk_encryption",
     "recovery_key_custody_status",
     "battery_conservation",
     "restart_after_power_loss",
     "checks",
+}
+ALLOWED_ENCRYPTION_KEYS = {
+    "provider",
+    "volume_status",
+    "protection_status",
+    "encryption_percentage",
+    "encryption_method",
 }
 ALLOWED_CHECKS = {"reboot", "network_reconnect", "sustained_cpu_gpu_load"}
 ALLOWED_LOAD_KEYS = {
@@ -77,6 +85,31 @@ def validate_owner_evidence(evidence: dict[str, Any]) -> None:
         raise EvidenceError(
             "$evidence.attested_at_utc must include timezone information"
         )
+
+    encryption = _require_dict(
+        evidence.get("full_disk_encryption"), "$evidence.full_disk_encryption"
+    )
+    _require_exact_keys(
+        encryption,
+        ALLOWED_ENCRYPTION_KEYS,
+        "$evidence.full_disk_encryption",
+    )
+    if encryption.get("provider") != "BITLOCKER":
+        raise EvidenceError("OWNER encryption evidence provider must be BITLOCKER")
+    if encryption.get("volume_status") != "FullyEncrypted":
+        raise EvidenceError("OWNER encryption evidence must be FullyEncrypted")
+    if encryption.get("protection_status") != "ON":
+        raise EvidenceError("OWNER BitLocker protection evidence must be ON")
+    if _require_number(
+        encryption.get("encryption_percentage"),
+        "$evidence.full_disk_encryption.encryption_percentage",
+        0,
+        100,
+    ) != 100.0:
+        raise EvidenceError("OWNER encryption evidence must report 100 percent")
+    method = encryption.get("encryption_method")
+    if not isinstance(method, str) or not method.strip():
+        raise EvidenceError("OWNER encryption method must be a non-empty string")
 
     if evidence.get("recovery_key_custody_status") != "OWNER_CONFIRMED_SEPARATE":
         raise EvidenceError("recovery-key evidence may only confirm separate custody")
@@ -169,9 +202,13 @@ def apply_owner_evidence(
 ) -> str:
     validate_owner_evidence(evidence)
     profile["capture_mode"] = "PASSIVE_PLUS_OWNER_EVIDENCE"
-    profile["security"]["full_disk_encryption"]["recovery_key_custody_status"] = (
-        evidence["recovery_key_custody_status"]
-    )
+    encryption = evidence["full_disk_encryption"]
+    profile_encryption = profile["security"]["full_disk_encryption"]
+    for key in ALLOWED_ENCRYPTION_KEYS:
+        profile_encryption[key] = encryption[key]
+    profile_encryption["recovery_key_custody_status"] = evidence[
+        "recovery_key_custody_status"
+    ]
     profile["power"]["battery_conservation"] = evidence["battery_conservation"]
     profile["power"]["restart_after_power_loss"] = evidence["restart_after_power_loss"]
     profile["checks"]["reboot"] = evidence["checks"]["reboot"]
