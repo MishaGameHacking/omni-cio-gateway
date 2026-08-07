@@ -65,7 +65,11 @@ def validate_soft_fail_policy(path: Path, text: str, failures: list[str]) -> Non
     count = text.count("continue-on-error: true")
     if count == 0:
         return
-    if path != FULL_WORKFLOW or count != 1 or DIAGNOSTICS_SOFT_FAIL.search(text) is None:
+    if (
+        path != FULL_WORKFLOW
+        or count != 1
+        or DIAGNOSTICS_SOFT_FAIL.search(text) is None
+    ):
         failures.append(
             f"{display(path)} may not soften mandatory jobs; only the post-merge "
             "diagnostics artifact transport may be best-effort"
