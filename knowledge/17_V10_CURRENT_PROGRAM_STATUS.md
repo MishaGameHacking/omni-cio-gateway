@@ -16,13 +16,14 @@ Accepted completed work:
 - Block B / WP3 — **COMPLETE**;
 - GitHub Pro hybrid CI / Lenovo continuity hardening — **COMPLETE infrastructure hardening, no V10 product scope credited**;
 - concrete AI/local-first planning amendment — **ACCEPTED planning authority, no runtime implementation credited**;
-- GitHub Pro maximum-utilization + migration implementation discipline — **OWNER-APPROVED planning authority in PR #244, no runtime implementation credited**.
+- GitHub Pro maximum-utilization + migration implementation discipline — **OWNER-APPROVED planning authority, no runtime implementation credited**;
+- Telegram product/interaction/delivery contract — **OWNER-APPROVED planning authority, no Block F runtime implementation credited**.
 
 Current authorized implementation work package remains:
 
 **WP4 — Release, build provenance and deployment contract.**
 
-PR #244 is planning/governance/contracts only. It must not be interpreted as starting WP4, Block C, Web, broker-report implementation, Telegram, Cortex runtime or any later V10 implementation.
+Planning/governance/contracts do not start WP4, Block C, Web, broker-report implementation, Telegram runtime, Cortex runtime or any later V10 implementation.
 
 Owner start command: **`START V10`** received 2026-08-05.
 
@@ -42,10 +43,14 @@ Accepted planning elaborations are discoverable through:
 - `docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md`;
 - `docs/master-plan/OMNI_CIO_V10_CONCRETE_EXECUTION_PLAN_AMENDMENT.md`;
 - `docs/master-plan/OMNI_CIO_V10_GITHUB_PRO_AND_MIGRATION_IMPLEMENTATION_AMENDMENT.md`;
+- `docs/master-plan/OMNI_CIO_V10_TELEGRAM_PRODUCT_AND_INTERACTION_AMENDMENT.md`;
+- `docs/master-plan/OMNI_CIO_V10_TELEGRAM_IMPLEMENTATION_CHECKLIST.md`;
 - `docs/master-plan/OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md`;
 - `docs/master-plan/OMNI_CIO_V10_GITHUB_PRO_IMPLEMENTATION_CHECKLIST.md`;
 - `docs/architecture/V10_AI_CORTEX_CONTRACT.json`;
 - `docs/architecture/V10_GITHUB_PRO_UTILIZATION_CONTRACT.json`;
+- `docs/architecture/V10_TELEGRAM_PRODUCT_CONTRACT.json`;
+- `docs/architecture/V10_TELEGRAM_MESSAGE_REGISTRY.json`;
 - `docs/architecture/V10_V9_TO_V10_PARITY_LEDGER.json`;
 - `docs/architecture/V10_COMPONENT_REUSE_MATRIX.json`;
 - `docs/architecture/V10_RELEASE_MANIFEST.schema.json`.
@@ -72,7 +77,7 @@ Protected production/recovery baseline remains:
 | C. Lenovo Omni-CIO Node / infrastructure | 12% | NOT STARTED as V10 runtime block |
 | D. V10 Core and data | 14% | NOT STARTED |
 | E. Omni-CIO Web Platform | 14% | NOT STARTED |
-| F. Telegram | 8% | NOT STARTED |
+| F. Telegram | 8% | NOT STARTED — product/interaction contract pre-approved only |
 | G. AI Copilot / Research / GPT Migration | 18% | NOT STARTED |
 | H. Guardian / Watchtower Loop | 8% | NOT STARTED |
 | I. Personal Real Execution | 7% | NOT STARTED |
@@ -127,7 +132,7 @@ The current active planning authorities make the V10 direction concrete without 
 
 ## GitHub Pro maximum-utilization / migration-development lock
 
-PR #244 adds planning authority only. Future implementation must obey:
+Future implementation must obey:
 
 - V10 is migration/productization of the accepted system, not a greenfield rewrite;
 - every material V9 capability in scope is tracked in the parity ledger;
@@ -145,11 +150,31 @@ PR #244 adds planning authority only. Future implementation must obey:
 - Enterprise/GHAS-only private-repository features are not V10 prerequisites;
 - new recurring paid service requires explicit OWNER-approved amendment after documenting why GitHub Pro + Lenovo + open-source/self-hosted alternatives are insufficient.
 
+## Telegram product/interaction planning lock
+
+The accepted Telegram planning contract pre-defines Block F without starting it:
+
+- Telegram is an OWNER-only private companion interface to the same Core/Web/Cortex;
+- initial transport is long polling from the Personal Node, with no required public webhook ingress;
+- compact commands are `/start`, `/help`, `/status`, `/portfolio`, `/alerts`, `/system`, `/app`;
+- Telegram consumes canonical Core DTOs and owns no financial calculations or broker-write authority;
+- message families/privacy/buttons are versioned in `V10_TELEGRAM_MESSAGE_REGISTRY.json`;
+- alert delivery is durable, idempotent, deduplicated and quiet on clean Watchtower runs;
+- material incident progression edits/reuses the existing Telegram message where practical;
+- Mini App identity is trusted only after server-side validation of Telegram `initData`, freshness/replay checks and V10 session issuance;
+- callbacks/deep links are opaque and server-authorized; URL/button possession is never authority;
+- Mini App uses the same V10 Web frontend/API rather than a Telegram-specific duplicate product;
+- live AI chat remains a later WP32C activation of the same shared Cortex after AI prerequisites/evals;
+- Telegram/API/AI failure degrades explicitly without changing deterministic financial authority;
+- no recurring paid Telegram middleware/bot SaaS is required for V10 Definition of Done.
+
+This contract does not authorize BotFather/token creation, Telegram runtime installation or Block F coding now.
+
 ## Current authorized next step — WP4
 
 WP4 remains the next implementation package. It must finish release/build provenance and deployment contracts before the full V10 Lenovo runtime is configured.
 
-WP4 is now pre-specified to include:
+WP4 is pre-specified to include:
 
 - release manifest generation/validation against `V10_RELEASE_MANIFEST.schema.json`;
 - exact Git SHA/version/toolchain/dependency-lock/SBOM provenance;
@@ -161,12 +186,12 @@ WP4 is now pre-specified to include:
 - fail-closed tests for malformed/incomplete provenance;
 - no dependence on Enterprise-only private artifact attestations.
 
-WP4 must **not** install Ollama/Qwen, build the V10 Web product, change broker accounting behavior, configure the full V10 Lenovo application node or start Block C.
+WP4 must **not** install Ollama/Qwen, build the V10 Web product, change broker accounting behavior, configure the full V10 Lenovo application node, create/configure the Telegram bot or start Block C/F.
 
 After WP4 and the Block B Exit Gate are accepted, Block C may begin the reproducible Lenovo V10 node/bootstrap work.
 
 ## Money/safety rule
 
-GitHub access, AI output, research result, Watchtower alert, Telegram message, `START V10`, development approval or model output is never broker-submit authorization.
+GitHub access, AI output, research result, Watchtower alert, Telegram message, Telegram button, `START V10`, development approval or model output is never broker-submit authorization.
 
 Current V9 money-path invariants and kill switches remain binding until an explicitly responsible later V10 work package replaces a boundary and passes its Exit Gate.
