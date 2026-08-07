@@ -24,6 +24,10 @@
     "gpu_abort_load_test_c": 87,
     "acpi_zone_warn_c": 85,
     "acpi_zone_abort_load_test_c": 95,
+    "cpu_core_warn_c": 90,
+    "cpu_core_abort_load_test_c": 95,
+    "cpu_throttling_warn_percent": 1,
+    "cpu_throttling_block_average_percent": 5,
     "manufacturer_limit_takes_precedence_when_lower": true
   },
   "load_test": {
@@ -31,7 +35,8 @@
     "target_duration_minutes": 45,
     "maximum_duration_minutes": 60,
     "sample_interval_seconds": 5,
-    "thermal_abort_required": true
+    "thermal_abort_required": true,
+    "combined_gpu_peak_required": true
   },
   "network": {
     "wired_connection_required_for_24x7_node": true,
