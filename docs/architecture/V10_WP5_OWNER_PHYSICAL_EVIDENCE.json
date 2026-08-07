@@ -1,0 +1,24 @@
+{
+  "schema_version": "1",
+  "attested_at_utc": "2026-08-07T20:17:00+00:00",
+  "source_class": "OWNER_UI_AND_PHYSICAL_TEST",
+  "recovery_key_custody_status": "OWNER_CONFIRMED_SEPARATE",
+  "battery_conservation": "ENABLED",
+  "restart_after_power_loss": "NOT_SUPPORTED_BY_FIRMWARE",
+  "checks": {
+    "reboot": "PASS",
+    "network_reconnect": "PASS",
+    "sustained_cpu_gpu_load": {
+      "tool": "AIDA64_EXTREME",
+      "tool_version": "8.35.8400",
+      "duration_seconds": 1830,
+      "cpu_peak_c": 96.0,
+      "cpu_throttling_max_percent": 33.0,
+      "cpu_throttling_average_percent": 18.0,
+      "gpu_load_started": true,
+      "gpu_peak_c": null,
+      "system_crash": false,
+      "thermal_shutdown": false
+    }
+  }
+}
