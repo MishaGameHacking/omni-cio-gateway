@@ -36,10 +36,13 @@ def test_current_owner_evidence_is_applied_without_claiming_thermal_pass() -> No
     load_result = owner_evidence.apply_owner_evidence(profile, EVIDENCE, THRESHOLDS)
 
     assert profile["capture_mode"] == "PASSIVE_PLUS_OWNER_EVIDENCE"
-    assert (
-        profile["security"]["full_disk_encryption"]["recovery_key_custody_status"]
-        == "OWNER_CONFIRMED_SEPARATE"
-    )
+    encryption = profile["security"]["full_disk_encryption"]
+    assert encryption["provider"] == "BITLOCKER"
+    assert encryption["volume_status"] == "FullyEncrypted"
+    assert encryption["protection_status"] == "ON"
+    assert encryption["encryption_percentage"] == 100.0
+    assert encryption["encryption_method"] == "XtsAes128"
+    assert encryption["recovery_key_custody_status"] == "OWNER_CONFIRMED_SEPARATE"
     assert profile["power"]["battery_conservation"] == "ENABLED"
     assert profile["power"]["restart_after_power_loss"] == "NOT_SUPPORTED_BY_FIRMWARE"
     assert profile["checks"]["reboot"] == "PASS"
@@ -73,6 +76,14 @@ def test_gpu_peak_is_required_for_combined_load_acceptance() -> None:
 def test_owner_evidence_is_strict_and_rejects_extra_secret_shaped_fields() -> None:
     evidence = copy.deepcopy(EVIDENCE)
     evidence["recovery_key"] = "must-never-be-recorded"
+
+    with pytest.raises(owner_evidence.EvidenceError):
+        owner_evidence.validate_owner_evidence(evidence)
+
+
+def test_owner_evidence_rejects_unprotected_bitlocker_state() -> None:
+    evidence = copy.deepcopy(EVIDENCE)
+    evidence["full_disk_encryption"]["protection_status"] = "OFF"
 
     with pytest.raises(owner_evidence.EvidenceError):
         owner_evidence.validate_owner_evidence(evidence)
