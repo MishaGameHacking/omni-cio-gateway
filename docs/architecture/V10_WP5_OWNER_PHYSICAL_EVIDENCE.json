@@ -2,6 +2,13 @@
   "schema_version": "1",
   "attested_at_utc": "2026-08-07T20:17:00+00:00",
   "source_class": "OWNER_UI_AND_PHYSICAL_TEST",
+  "full_disk_encryption": {
+    "provider": "BITLOCKER",
+    "volume_status": "FullyEncrypted",
+    "protection_status": "ON",
+    "encryption_percentage": 100.0,
+    "encryption_method": "XtsAes128"
+  },
   "recovery_key_custody_status": "OWNER_CONFIRMED_SEPARATE",
   "battery_conservation": "ENABLED",
   "restart_after_power_loss": "NOT_SUPPORTED_BY_FIRMWARE",
