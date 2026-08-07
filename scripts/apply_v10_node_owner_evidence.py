@@ -100,12 +100,15 @@ def validate_owner_evidence(evidence: dict[str, Any]) -> None:
         raise EvidenceError("OWNER encryption evidence must be FullyEncrypted")
     if encryption.get("protection_status") != "ON":
         raise EvidenceError("OWNER BitLocker protection evidence must be ON")
-    if _require_number(
-        encryption.get("encryption_percentage"),
-        "$evidence.full_disk_encryption.encryption_percentage",
-        0,
-        100,
-    ) != 100.0:
+    if (
+        _require_number(
+            encryption.get("encryption_percentage"),
+            "$evidence.full_disk_encryption.encryption_percentage",
+            0,
+            100,
+        )
+        != 100.0
+    ):
         raise EvidenceError("OWNER encryption evidence must report 100 percent")
     method = encryption.get("encryption_method")
     if not isinstance(method, str) or not method.strip():
