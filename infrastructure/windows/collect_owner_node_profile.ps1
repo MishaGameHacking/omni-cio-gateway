@@ -44,10 +44,15 @@ function Get-NormalizedLenovoSetting {
             return $UnknownValue
         }
         $raw = [string]$match.CurrentSetting
-        if ($raw -match '(?i),\s*(Enabled|On|Power On|Last State)\s*;?$') {
+        $parts = $raw -split ',', 2
+        if ($parts.Count -lt 2) {
+            return $UnknownValue
+        }
+        $value = (($parts[1] -split ';', 2)[0]).Trim()
+        if ($value -match '(?i)^(Enable|Enabled|On|Power On|Last State)$') {
             return "ENABLED"
         }
-        if ($raw -match '(?i),\s*(Disabled|Off|Power Off)\s*;?$') {
+        if ($value -match '(?i)^(Disable|Disabled|Off|Power Off)$') {
             return "DISABLED"
         }
         return $UnknownValue
