@@ -118,6 +118,36 @@ def test_workflow_validator_rejects_checkout_local_virtualenv(
     assert any("outside the repository checkout" in failure for failure in failures)
 
 
+def test_soft_fail_policy_rejects_mandatory_gate() -> None:
+    failures: list[str] = []
+    baseline.validate_soft_fail_policy(
+        "steps:\n"
+        "  - name: Run Regression Shield with coverage\n"
+        "    continue-on-error: true\n"
+        "    run: python -m pytest\n",
+        failures,
+    )
+
+    assert len(failures) == 1
+    assert "only the post-merge diagnostics artifact" in failures[0]
+
+
+def test_soft_fail_policy_allows_diagnostics_artifact_transport() -> None:
+    failures: list[str] = []
+    baseline.validate_soft_fail_policy(
+        "steps:\n"
+        "  - name: Upload test diagnostics\n"
+        "    id: diagnostics_upload\n"
+        "    if: always()\n"
+        "    continue-on-error: true\n"
+        "    uses: actions/upload-artifact@"
+        "043fb46d1a93c77aae656e7c1c64a875d1fc6a0a\n",
+        failures,
+    )
+
+    assert failures == []
+
+
 def test_secret_scan_exclude_pattern_is_cross_platform() -> None:
     pattern = re.compile(baseline.SECRET_SCAN_EXCLUDE_PATTERN)
 
