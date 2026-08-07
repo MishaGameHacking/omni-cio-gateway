@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://omni-cio.local/schemas/v10-release-manifest.schema.json",
   "title": "Omni-CIO V10 Release Manifest",
-  "description": "Planning-time canonical schema for reproducible V10 release identity. WP4 implements generation/validation; this schema does not itself start WP4.",
+  "description": "Planning-time canonical schema for reproducible V10 release identity. WP4 implements generation/validation; future updater fields are optional until their owning WP and this schema does not itself start runtime implementation.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -100,6 +100,38 @@
         "adapter_digest_sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
         "eval_contract": {"type": ["string", "null"]},
         "eval_result": {"type": ["string", "null"], "enum": ["PASS", "FAIL", "NOT_APPLICABLE", null]}
+      }
+    },
+    "update_delivery": {
+      "description": "Optional planning fields for future automatic STABLE update/version-convergence runtime. WP4 records provenance shape; the updater is implemented only in its owning later WP.",
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["channel", "minimum_supported_version", "artifacts", "rollback_compatible"],
+      "properties": {
+        "channel": {"type": "string", "enum": ["INTERNAL", "STAGING", "STABLE"]},
+        "minimum_supported_version": {"type": "string", "minLength": 1},
+        "signed_metadata_ref": {"type": ["string", "null"]},
+        "signing_identity_ref": {"type": ["string", "null"]},
+        "metadata_expires_at_utc": {"type": ["string", "null"], "format": "date-time"},
+        "artifacts": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "sha256"],
+            "properties": {
+              "name": {"type": "string", "minLength": 1},
+              "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+              "size_bytes": {"type": ["integer", "null"], "minimum": 0}
+            }
+          }
+        },
+        "database_compatibility": {"type": ["string", "null"]},
+        "api_compatibility": {"type": ["string", "null"]},
+        "model_compatibility": {"type": ["string", "null"]},
+        "rollback_compatible": {"type": "boolean"},
+        "rollback_target": {"type": ["string", "null"]}
       }
     },
     "ci_evidence": {
