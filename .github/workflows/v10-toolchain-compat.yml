@@ -13,8 +13,42 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  route:
+    name: Classify Windows compatibility paths
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      python: ${{ steps.route.outputs.hosted_windows_python }}
+      frontend: ${{ steps.route.outputs.hosted_windows_frontend }}
+      categories: ${{ steps.route.outputs.categories }}
+
+    steps:
+      - name: Check out repository with comparison history
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Classify changed paths
+        id: route
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            git diff --name-only "$BASE_SHA" "$HEAD_SHA" > "$RUNNER_TEMP/v10-changed-paths.txt"
+          else
+            git ls-files > "$RUNNER_TEMP/v10-changed-paths.txt"
+          fi
+          python scripts/v10_ci_router.py \
+            --paths-file "$RUNNER_TEMP/v10-changed-paths.txt" \
+            --github-output "$GITHUB_OUTPUT"
+
   python-baseline:
     name: Python 3.14.6 V10 baseline
+    needs: route
+    if: needs.route.outputs.python == 'true'
     runs-on: windows-latest
     timeout-minutes: 25
 
@@ -76,6 +110,7 @@ jobs:
           tests/test_v10_repository_boundaries.py
           tests/test_v10_toolchain_baseline.py
           tests/test_v10_regression_shield.py
+          tests/test_v10_release_provenance.py
 
       - name: Run hosted mypy baseline
         run: python -m mypy
@@ -123,6 +158,8 @@ jobs:
 
   frontend-baseline:
     name: Node 24.18.0 / React-Vite-TypeScript baseline
+    needs: route
+    if: needs.route.outputs.frontend == 'true'
     runs-on: windows-latest
     timeout-minutes: 15
     defaults:
