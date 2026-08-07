@@ -8,8 +8,13 @@ Integrity manifest: `docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.sha256`
 Amendments index: `docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md`  
 Concrete execution amendment: `docs/master-plan/OMNI_CIO_V10_CONCRETE_EXECUTION_PLAN_AMENDMENT.md`  
 GitHub Pro / migration implementation amendment: `docs/master-plan/OMNI_CIO_V10_GITHUB_PRO_AND_MIGRATION_IMPLEMENTATION_AMENDMENT.md`  
+Autonomous governance/commercial amendment: `docs/master-plan/OMNI_CIO_V10_AUTONOMOUS_PORTFOLIO_GOVERNANCE_AND_COMMERCIAL_MODEL_AMENDMENT.md`  
 Mandatory WP template: `docs/master-plan/OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md`  
 Machine-readable AI contract: `docs/architecture/V10_AI_CORTEX_CONTRACT.json`  
+Machine-readable portfolio-governance contract: `docs/architecture/V10_AUTONOMOUS_PORTFOLIO_GOVERNANCE_CONTRACT.json`  
+Russian-market/sanctions policy: `docs/architecture/V10_RUSSIAN_MARKET_UNIVERSE_AND_SANCTIONS_POLICY.json`  
+Zero-custody/license/update contract: `docs/architecture/V10_ZERO_CUSTODY_LICENSE_UPDATE_CONTRACT.json`  
+Russian commercial/legal gates: `docs/legal/V10_RU_COMMERCIAL_LEGAL_GATES.md`  
 Machine-readable GitHub Pro contract: `docs/architecture/V10_GITHUB_PRO_UTILIZATION_CONTRACT.json`  
 V9->V10 parity ledger: `docs/architecture/V10_V9_TO_V10_PARITY_LEDGER.json`  
 Component reuse matrix: `docs/architecture/V10_COMPONENT_REUSE_MATRIX.json`  
@@ -40,7 +45,10 @@ Accepted evidence:
 - WP2 accepted by PR #230 as `3e3a89791d7f1594e4e1ba52125f8361708ae29d`;
 - WP3 accepted by PR #236 as `289ff563e99a64bbf8b5a289e84668dde58ef42a`;
 - GitHub Pro hybrid CI + Lenovo continuity hardening accepted by PR #242;
-- concrete AI/local-first planning accepted by PR #243 as `5743608389dd0fc6eba4dc33540a61016dc98914`.
+- concrete AI/local-first planning accepted by PR #243 as `5743608389dd0fc6eba4dc33540a61016dc98914`;
+- GitHub Pro/migration planning accepted by PR #244;
+- Telegram product planning accepted by PR #245;
+- pre-WP4 repository hygiene accepted by PR #246.
 
 **WP4 — Release, build provenance and deployment contract is the next authorized implementation package.**
 
@@ -75,8 +83,9 @@ The following OWNER-approved rules are binding for later owning work packages.
 V10 uses one **Deterministic Core** and one **Omni-CIO Cortex**.
 
 - Deterministic Core owns financial/accounting truth, normalization, reconciliation, exact calculations, source identity, permissions and money-path enforcement.
-- AI Cortex owns interpretation, explanation, bounded research, tool orchestration, monitoring and non-authoritative scenarios/drafts.
-- AI must never silently replace deterministic numbers with its own arithmetic.
+- AI Cortex owns interpretation, explanation, bounded research, tool orchestration, OWNER clarification/negotiation and non-authoritative scenarios/drafts.
+- The **Guardian/Watchtower/Decision system**, not the LLM, is the primary 24/7 autonomous actor.
+- AI must never silently replace deterministic numbers with its own arithmetic or become the canonical portfolio Decision Engine.
 
 ### 4.2 V10 portfolio/accounting target
 
@@ -104,6 +113,8 @@ Do not jump directly to fine-tuning. The sequence is:
 
 Autonomy is **event-driven**, checkpointed and bounded. Endless untriggered LLM thinking is forbidden.
 
+The autonomous system continuously runs deterministic/scheduled/event-driven monitoring, asset-health, Watchtower, risk, sanctions/custody, universe-screening, proposal and reconciliation workflows. Cortex is invoked only when language/research/interpretation or OWNER dialogue adds value.
+
 Approved research baseline is a provider abstraction with self-hosted SearXNG first, normal bounded HTTP retrieval first and Playwright only as a browser fallback. Material research must use evidence/provenance/freshness/identity binding.
 
 LangGraph OSS is the initial orchestration candidate for durable workflows/checkpoint/resume/HITL; the deterministic Core must not depend on LangGraph internals.
@@ -117,6 +128,7 @@ AI never receives directly:
 - raw broker trading secret;
 - arbitrary broker execute/PostOrder tool;
 - transfer/withdrawal authority;
+- margin/short/sanctions hard-gate override;
 - unrestricted administrator shell/PowerShell;
 - arbitrary filesystem/SQL/network authority;
 - GitHub protection/CI/OWNER bypass;
@@ -170,6 +182,50 @@ Work discovered outside the current Exit Gate is not silently implemented. It be
 
 Exact details are authoritative in the active amendments and machine-readable contracts, not chat memory.
 
+### 4.11 Product mission — Autonomous Portfolio Governance
+
+The central product is continuous evidence-backed portfolio governance, not a dashboard/chatbot/trading robot.
+
+The system must monitor all held assets, maintain explicit health/freshness/trend state, detect material deterioration/opportunity, screen the allowed investment universe, evaluate portfolio impact and produce one ranked primary restructuring proposal or `NO_CHANGE`.
+
+The normal proposal may replace one asset with one, split exposure across multiple assets, rebalance multiple positions or deliberately make no change. The system must include anti-churn/material-improvement discipline so small score differences do not cause needless turnover.
+
+### 4.12 Russian-market-only / sanctions-custody policy
+
+Commercial V10 candidate selection is Russian-market-only under a documented instrument-classification policy. Broker availability alone is insufficient.
+
+Sanctions/custody risk is a hard first-class policy. `BLOCKED` instruments are excluded from new BUY proposals. Naive display-name-only sanctions matching is insufficient; evidence freshness and applicable ownership/control relationships must be handled by the owning implementation.
+
+The product must not claim that a Russian issuer/instrument guarantees immunity from blocking/freeze. Custody, settlement, payment currency/index and external infrastructure dependencies remain analyzed risks.
+
+### 4.13 OWNER proposal negotiation and cash-only execution
+
+The system selects a concrete proposal and explains before/after portfolio effects. OWNER may approve, reject or request revision.
+
+Rejection/revision triggers a concise Cortex dialogue and versioned soft PreferenceProfile/constraint change. Hard policy cannot be overridden by conversation.
+
+Real execution supports only confirmed BUY/SELL within own cash/owned free quantity. Margin, leverage, uncovered short positions, transfers and withdrawals remain prohibited. Only an exact valid immutable proposal after fresh preflight may reach the isolated execution service.
+
+### 4.14 Zero-custody / fixed-term paid access
+
+Private investment state is Personal Node authority by default. Central Omni-CIO infrastructure must not become a portfolio/broker-secret/private-Cortex-history database.
+
+The narrow central commercial plane may hold only payment/license/update/security records required for paid access and lawful operations, subject to an explicit field-level data inventory.
+
+Commercial access model is:
+
+`7-day full trial -> manual prepaid 1/3/6/12 month access -> EXPIRED -> explicit new payment to renew`.
+
+Auto-renewal and recurring charges are not part of V10.
+
+### 4.15 Automatic supported-version convergence and Russian-law launch gates
+
+Active supported Personal Nodes automatically converge to the approved `STABLE` release. The normal product flow must not require users to manually download installers or permanently pin obsolete versions.
+
+Updates must be signed/verified, rollback-safe, staged/atomic, health-checked and isolated from broker secrets/private state. Real execution pauses during unsafe update windows.
+
+Commercial/public activation is fail-closed until the legal gates in `docs/legal/V10_RU_COMMERCIAL_LEGAL_GATES.md` are accepted for the actual business/data/deployment model. Engineering does not self-certify compliance with 152-FZ, consumer law, 39-FZ, broker API commercial terms, KKT/payment rules or Bank of Russia investment-advisory/software requirements.
+
 ## 5. Program exclusivity
 
 Until V10 reaches full Definition of Done and OWNER acceptance:
@@ -177,7 +233,7 @@ Until V10 reaches full Definition of Done and OWNER acceptance:
 - do not start V11 or another competing version program;
 - do not create a parallel frontend, Telegram architecture, AI stack, Gateway, broker/execution stack or competing roadmap;
 - do not merge an older unaccepted planning PR if it conflicts with an accepted amendment;
-- do not skip directly to public/multi-user, billing or Real execution;
+- do not skip directly to central public/multi-user SaaS, billing runtime or Real execution outside the responsible later work package and legal/security gates;
 - brainstormed chat ideas are not approved scope until incorporated through an OWNER-approved amendment;
 - the current Custom GPT remains migration/recovery evidence until explicit parity/decommission acceptance;
 - Account Independence / Deployment Portability remains binding.
@@ -247,6 +303,6 @@ When canonical authorities conflict materially, feature work stops until an OWNE
 
 ## 11. Completion rule
 
-V10 is not complete until the canonical 100% program, accepted amendments, final capability/evidence matrix, V9->V10 parity ledger, AI/local-first/degraded-mode gates, clean-room recovery/portability, final security/reliability gates and OWNER acceptance all pass.
+V10 is not complete until the canonical 100% program, accepted amendments, final capability/evidence matrix, V9->V10 parity ledger, autonomous portfolio-governance gates, Russian-market/sanctions/custody gates, AI/local-first/degraded-mode gates, zero-custody/commercial/update gates, clean-room recovery/portability, final security/reliability/legal production gates and OWNER acceptance all pass.
 
 Until then no successor version is authorized.
