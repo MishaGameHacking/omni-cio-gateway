@@ -63,6 +63,34 @@ class V10RegressionShieldGuardTests(unittest.TestCase):
             failures,
         )
 
+    def test_soft_fail_policy_rejects_mandatory_step(self) -> None:
+        failures: list[str] = []
+        shield.validate_soft_fail_policy(
+            shield.FULL_WORKFLOW,
+            "steps:\n"
+            "  - name: Run Regression Shield with coverage\n"
+            "    continue-on-error: true\n"
+            "    run: python -m pytest\n",
+            failures,
+        )
+        self.assertEqual(len(failures), 1)
+        self.assertIn("only the post-merge diagnostics artifact", failures[0])
+
+    def test_soft_fail_policy_allows_only_diagnostics_transport(self) -> None:
+        failures: list[str] = []
+        shield.validate_soft_fail_policy(
+            shield.FULL_WORKFLOW,
+            "steps:\n"
+            "  - name: Upload test diagnostics\n"
+            "    id: diagnostics_upload\n"
+            "    if: always()\n"
+            "    continue-on-error: true\n"
+            "    uses: actions/upload-artifact@"
+            "043fb46d1a93c77aae656e7c1c64a875d1fc6a0a\n",
+            failures,
+        )
+        self.assertEqual(failures, [])
+
     def test_current_repository_satisfies_wp3_guard(self) -> None:
         self.assertEqual(shield.validate_repository(), [])
 
