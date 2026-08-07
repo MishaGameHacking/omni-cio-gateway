@@ -13,6 +13,25 @@
     "paid_search_api_required": false,
     "paid_ci_security_saas_required": false
   },
+  "current_plan_reference": {
+    "github_actions_hosted_minutes_per_month": 3000,
+    "github_actions_storage_gb": 1,
+    "github_packages_storage_gb": 2,
+    "github_packages_data_transfer_gb_per_month": 10,
+    "codespaces_core_hours_per_month": 180,
+    "codespaces_storage_gb_month": 20,
+    "git_lfs_storage_gb_month": 10,
+    "git_lfs_bandwidth_gb_month": 10,
+    "actions_cache_gb_per_repository": 10,
+    "must_recheck_before_plan_gated_implementation": true
+  },
+  "billing_guard": {
+    "paid_overage_required_for_definition_of_done": false,
+    "included_usage_alerts_target": [90, 100],
+    "use_github_budgets_to_prevent_unplanned_metered_spend": true,
+    "default_paid_metered_budget_policy": "HARD_STOP_OR_ZERO_OVERAGE_WHERE_GITHUB_SUPPORTS_IT",
+    "owner_action_required_for_account_billing_settings": true
+  },
   "control_plane": {
     "repository": "MishaGameHacking/omni-cio-gateway",
     "visibility": "private",
@@ -103,6 +122,7 @@
     ]
   },
   "artifact_policy": {
+    "included_actions_storage_gb_reference": 1,
     "default_pr_retention_days": [1, 3],
     "prefer_job_summary_for_human_readable_diagnostics": true,
     "allowed": [
@@ -121,9 +141,21 @@
       "indefinite_large_datasets"
     ]
   },
+  "git_lfs": {
+    "role": "OPTIONAL_FOR_LARGE_NON_SECRET_VERSIONED_TEST_ASSETS_ONLY_IF_NEEDED",
+    "default_use": false,
+    "forbidden": [
+      "private_broker_reports",
+      "private_database_backups",
+      "secrets",
+      "production_qwen_model_weights"
+    ]
+  },
   "codespaces": {
     "role": "optional_clean_room_development_and_handoff",
     "production_role": false,
+    "included_core_hours_reference": 180,
+    "included_storage_gb_month_reference": 20,
     "allowed": [
       "clean_clone",
       "core_frontend_contract_development",
@@ -142,9 +174,14 @@
   "releases": {
     "tag_namespace": "v10.*",
     "release_manifest_schema": "docs/architecture/V10_RELEASE_MANIFEST.schema.json",
-    "protect_release_tags": true,
+    "enable_native_immutable_releases_if_available_on_current_repository": true,
+    "immutable_release_effect_expected": [
+      "published_release_tag_cannot_move",
+      "published_release_assets_cannot_be_modified_or_deleted"
+    ],
+    "protect_release_tags_with_ruleset_where_useful": true,
     "private_repository_native_artifact_attestations_required": false,
-    "native_attestations_future_enhancement_if_plan_supports_private_repo": true
+    "native_private_artifact_attestations_future_enhancement_if_plan_supports_private_repo": true
   },
   "environments": {
     "planned": ["v9-recovery", "v10-staging", "v10-production"],
@@ -183,9 +220,11 @@
     "release_manifest_generator_and_validator",
     "git_sha_version_toolchain_lock_sbom_provenance",
     "release_tag_contract",
+    "enable_native_immutable_releases_if_available",
     "release_tag_protection",
     "path_aware_hosted_ci",
     "actions_budget_monitoring_runbook",
+    "github_billing_budget_and_included_usage_alert_runbook",
     "ci_run_evidence_linkage",
     "rollback_target_and_instructions",
     "future_ai_provenance_fields_without_ai_install",
