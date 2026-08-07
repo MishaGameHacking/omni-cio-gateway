@@ -12,13 +12,18 @@ This checklist translates the approved GitHub Pro utilization policy into concre
 - [ ] bind release manifest to exact Git SHA and selected toolchain/lock digests;
 - [ ] include SBOM digest(s) and exact CI run evidence;
 - [ ] create release/pre-release naming contract under `v10.*`;
-- [ ] configure strongest safe release-tag immutability/protection available on current plan;
+- [ ] enable native GitHub immutable releases if still available/suitable for this private personal repository;
+- [ ] verify immutable release behavior for future published releases: tag pinned to commit and release assets protected from later modification/deletion;
+- [ ] add tag ruleset/protection only where it complements immutable releases and does not break the reviewed release workflow;
 - [ ] implement path-aware hosted CI classifier/routing;
 - [ ] keep fast policy/source checks on every PR;
 - [ ] keep authoritative exact-head gate required for merge candidates;
 - [ ] route heavy repeatable checks to Lenovo when safe;
 - [ ] preserve hosted Windows as disposable compatibility lane, not authoritative production state;
 - [ ] document 50/25/15/10 hosted-minute planning budget and usage-review procedure;
+- [ ] document current included quotas used by V10 planning: Actions minutes/storage, cache, Codespaces, Packages and LFS;
+- [ ] enable GitHub included-usage alerts at 90% and 100% if not already enabled;
+- [ ] configure account/repository metered-product budget guard(s) so unintended paid overage is blocked where GitHub supports a hard stop; OWNER performs only the account-level step if the connector cannot;
 - [ ] tune cache keys/retention for pip/npm and later Playwright where applicable;
 - [ ] enforce short-lived PR artifacts and job-summary preference;
 - [ ] fail closed when required provenance fields are missing/invalid;
@@ -30,6 +35,7 @@ This checklist translates the approved GitHub Pro utilization policy into concre
 
 - [ ] add reviewed `.devcontainer` only if useful for clean-room development/handoff;
 - [ ] prove Codespaces is optional and contains no production broker/private state by default;
+- [ ] prefer smaller Codespaces machine/short idle timeout for clean-room work so included core-hours are not wasted;
 - [ ] keep Lenovo runtime identity isolated from GitHub runner identity;
 - [ ] implement bootstrap/recovery from GitHub-controlled configuration;
 - [ ] document/verify environment topology migration for `v9-recovery`, `v10-staging`, `v10-production` as appropriate;
@@ -68,7 +74,8 @@ For every owning WP:
 - [ ] require relevant V10 gates for dependency PRs;
 - [ ] keep GitHub Actions pinned to reviewed immutable commit SHAs;
 - [ ] keep least-privilege workflow permissions;
-- [ ] keep repository-controlled SAST/dependency/secret/SBOM checks where native private-repo Pro features are unavailable.
+- [ ] keep repository-controlled SAST/dependency/secret/SBOM checks where native private-repo Pro features are unavailable;
+- [ ] use Git LFS only if a later WP truly needs large non-secret versioned fixtures; do not use it for model weights, private broker reports, DB backups or secrets.
 
 ## Subscription gate
 
