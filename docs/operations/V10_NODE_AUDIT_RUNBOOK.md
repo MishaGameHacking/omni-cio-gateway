@@ -41,6 +41,8 @@ The collector is deliberately passive. It queries existing Windows/NVIDIA state 
 
 The resulting JSON may be committed only after the privacy validator passes.
 
+The self-hosted GitHub runner service intentionally remains low privilege. If an admin-only fact such as BitLocker state is unavailable in the service context, do **not** elevate the runner merely to make WP5 pass. Use the strict sanitized OWNER evidence overlay for that indivisible admin/physical fact.
+
 ## 3. Evidence sources
 
 WP5 relies on Windows/NVIDIA supported interfaces where available:
@@ -69,6 +71,18 @@ The profile may record only:
 The recovery key itself must stay outside the node/repository/CI/chat. OWNER confirmation is binary: `OWNER_CONFIRMED_SEPARATE` or not confirmed.
 
 If BitLocker is unavailable/off/partial, WP5 remains blocked. Enabling or changing encryption is an OWNER/admin action and is not performed by the passive collector.
+
+For physical/admin checks that passive CI cannot prove, the fixed safe overlay is:
+
+`docs/architecture/V10_WP5_OWNER_PHYSICAL_EVIDENCE.json`
+
+Apply it only through:
+
+```powershell
+python .\scripts\apply_v10_node_owner_evidence.py $profile .\docs\architecture\V10_WP5_OWNER_PHYSICAL_EVIDENCE.json --thresholds .\infrastructure\windows\wp5_node_thresholds.json
+```
+
+The overlay validator accepts only a fixed field set; raw recovery-key/key-protector material is rejected.
 
 ## 5. Windows Time / UTC guard
 
@@ -114,23 +128,25 @@ Record only normalized operational state:
 - Lenovo battery-conservation state where queryable;
 - restart-after-power-loss state where queryable.
 
-Firmware-only values that Windows cannot prove remain `UNKNOWN_*` and block WP5 until verified. Unknown is never silently converted to PASS.
+Firmware-only values that Windows cannot prove remain `UNKNOWN_*` and block WP5 until verified. If a direct firmware audit proves the setting is absent, record `NOT_SUPPORTED_BY_FIRMWARE`; do not fabricate `ENABLED`.
 
 ## 9. Controlled thermal/load test
 
 Master Plan requires a controlled 30–60 minute CPU/GPU load test. The accepted initial target is 45 minutes, sampled every 5 seconds.
 
-Abort immediately when:
+Current fail-closed acceptance includes:
 
-- GPU reaches 87 °C;
-- ACPI thermal zone reaches 95 °C;
-- a lower manufacturer-defined safe limit is reached;
-- Windows reports thermal shutdown/throttling instability;
-- the OWNER observes abnormal fan/power/battery behavior.
+- CPU core peak <= 95 °C;
+- CPU throttling average <= 5%;
+- GPU peak temperature must be recorded and <= 87 °C;
+- no crash or thermal shutdown;
+- any lower manufacturer-defined limit takes precedence.
 
-Warnings begin at 80 °C GPU / 85 °C ACPI zone.
+A CPU-only burn is **not** accepted as the mandatory CPU/GPU test. If no reviewed GPU workload generator exists locally, record `GPU_LOAD_GENERATOR_REQUIRED`; do not fake a PASS from `nvidia-smi` telemetry alone.
 
-A CPU-only burn is **not** accepted as the mandatory CPU/GPU test. If no reviewed GPU workload generator exists locally, record `GPU_LOAD_GENERATOR_REQUIRED`; do not fake a PASS from `nvidia-smi` telemetry alone. WP5 must use a bounded, reviewed local workload and temperature-abort monitor before acceptance.
+The first OWNER AIDA64 combined run (CPU/cache/memory/GPU, FPU and disks off) lasted 30m30s and proved system stability, but reached 96 °C CPU peak with 18% average throttling and did not capture GPU peak temperature. It is therefore retained as `FAIL` for WP5 thermal headroom, not rewritten as PASS.
+
+Use `docs/operations/V10_WP5_THERMAL_RETEST.md` for the conservative acceptance retest. Use `infrastructure/windows/measure_wp5_gpu_load.ps1` concurrently to capture aggregate GPU temperature/utilization/power without device identifiers.
 
 ## 10. Reboot and network-reconnect checks
 
