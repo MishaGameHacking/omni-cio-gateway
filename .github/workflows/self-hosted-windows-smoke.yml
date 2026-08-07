@@ -68,6 +68,7 @@ jobs:
       TINVEST_TOKEN: regression-test-tinvest-token # pragma: allowlist secret
       GATEWAY_API_KEY: regression-test-gateway-key # pragma: allowlist secret
       RENDER_EXTERNAL_URL: https://omni-cio-gateway.onrender.com
+      PYTHONDONTWRITEBYTECODE: "1"
 
     steps:
       - name: Check out repository
