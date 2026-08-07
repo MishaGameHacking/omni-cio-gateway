@@ -53,15 +53,17 @@ def classify_path(path: str) -> set[str]:
     ):
         categories.add("backend_core_contracts")
 
-    if normalized.startswith(("broker_report_reconciliation/", "tests/fixtures/broker")):
+    if normalized.startswith(
+        ("broker_report_reconciliation/", "tests/fixtures/broker")
+    ):
         categories.add("broker_parser_data")
 
     if normalized.startswith(("apps/web/", "tests/toolchain/frontend/")):
         categories.add("frontend")
 
-    if normalized.startswith(("infrastructure/", "deploy/", "ops/")) or normalized.startswith(
-        "scripts/bootstrap"
-    ):
+    if normalized.startswith(
+        ("infrastructure/", "deploy/", "ops/")
+    ) or normalized.startswith("scripts/bootstrap"):
         categories.add("infrastructure_bootstrap")
 
     if normalized.startswith(("ai/", "tests/contracts/ai/", "tests/evals/")):
@@ -100,7 +102,9 @@ def classify(paths: list[str]) -> dict[str, object]:
 
     docs_only = bool(categories) and categories == {"docs_program"}
     fast_frontend = bool(
-        categories.intersection({"frontend", "dependency_toolchain", "release_security_authority"})
+        categories.intersection(
+            {"frontend", "dependency_toolchain", "release_security_authority"}
+        )
     )
     windows_python = bool(
         categories.intersection(
@@ -114,7 +118,9 @@ def classify(paths: list[str]) -> dict[str, object]:
         )
     )
     windows_frontend = bool(
-        categories.intersection({"frontend", "dependency_toolchain", "release_security_authority"})
+        categories.intersection(
+            {"frontend", "dependency_toolchain", "release_security_authority"}
+        )
     )
 
     return {
@@ -145,7 +151,9 @@ def emit_github_outputs(result: dict[str, object], path: Path) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Classify V10 changed paths for hosted CI")
+    parser = argparse.ArgumentParser(
+        description="Classify V10 changed paths for hosted CI"
+    )
     parser.add_argument("paths", nargs="*")
     parser.add_argument("--paths-file")
     parser.add_argument("--github-output")
