@@ -4,9 +4,9 @@ Updated: 2026-08-07
 
 ## Executive state
 
-Omni-CIO V10: **DEVELOPMENT STARTED / WP3 COMPLETE / BLOCK B IN PROGRESS / WP4 NEXT**.
+Omni-CIO V10: **DEVELOPMENT ACTIVE / WP4 COMPLETE / BLOCK B COMPLETE / WP5 NEXT**.
 
-Accepted implementation progress: **5%**.
+Accepted implementation progress: **14%**.
 
 Accepted completed work:
 
@@ -14,17 +14,19 @@ Accepted completed work:
 - Block B / WP1 — **COMPLETE**;
 - Block B / WP2 — **COMPLETE**;
 - Block B / WP3 — **COMPLETE**;
-- GitHub Pro hybrid CI / Lenovo continuity hardening — **COMPLETE infrastructure hardening, no V10 product scope credited**;
+- Block B / WP4 — **COMPLETE (Block B accepted at 9%)**;
+- GitHub Pro hybrid CI / Lenovo continuity hardening — **COMPLETE infrastructure hardening**;
+- V10 release/build provenance, protected `v10.*` tag identity, immutable-release operating contract and fail-closed deployment provenance — **COMPLETE**;
 - concrete AI/local-first planning amendment — **ACCEPTED planning authority, no runtime implementation credited**;
 - GitHub Pro maximum-utilization + migration implementation discipline — **OWNER-APPROVED planning authority, no runtime implementation credited**;
 - Telegram product/interaction/delivery contract — **OWNER-APPROVED planning authority, no Block F runtime implementation credited**;
 - Autonomous Portfolio Governance / Russian-market / zero-custody / commercial-access / automatic-update / Russian-law planning — **OWNER-APPROVED planning authority, no later-block runtime implementation credited**.
 
-Current authorized implementation work package remains:
+Current authorized implementation work package is now:
 
-**WP4 — Release, build provenance and deployment contract.**
+**WP5 — Hardware/OS Audit и эксплуатационный профиль Lenovo Omni-CIO Node.**
 
-Planning/governance/contracts do not start WP4, Block C, Web, broker-report implementation, Telegram runtime, Cortex runtime, Portfolio Guardian runtime, billing/license runtime, updater runtime, Real execution or any later V10 implementation.
+WP5 may establish only the fact-based node/hardware/OS/security/operational profile defined by the Master Plan. It does not authorize Ollama/Qwen/Cortex, Web, Telegram runtime, broker HTML runtime, Guardian/Watchtower V10 runtime, billing/license, updater runtime or any change to Real-money authority.
 
 Owner start command: **`START V10`** received 2026-08-05.
 
@@ -68,7 +70,9 @@ Architecture/protection authorities include:
 - `docs/architecture/REPOSITORY_STRUCTURE.md`;
 - `docs/architecture/V10_V9_BASELINE_FREEZE.md`;
 - `docs/architecture/V10_TOOLCHAIN_BASELINE.md` + `.json`;
-- `docs/architecture/V10_REGRESSION_SHIELD.md`.
+- `docs/architecture/V10_REGRESSION_SHIELD.md`;
+- `docs/architecture/V10_WP4_EXECUTION_CONTRACT.md`;
+- `docs/operations/V10_RELEASE_PROVENANCE_RUNBOOK.md`.
 
 Protected production/recovery baseline remains:
 
@@ -79,8 +83,8 @@ Protected production/recovery baseline remains:
 | Block | Planned weight | Accepted state |
 |---|---:|---|
 | A. Architecture and V9 protection | 5% | COMPLETE — WP0 |
-| B. GitHub, dependencies and CI/CD | 9% | WP1 COMPLETE / WP2 COMPLETE / WP3 COMPLETE / WP4 NEXT |
-| C. Lenovo Omni-CIO Node / infrastructure | 12% | NOT STARTED as V10 runtime block |
+| B. GitHub, dependencies and CI/CD | 9% | COMPLETE — WP1 / WP2 / WP3 / WP4 |
+| C. Lenovo Omni-CIO Node / infrastructure | 12% | WP5 NEXT — runtime not yet started |
 | D. V10 Core and data | 14% | NOT STARTED |
 | E. Omni-CIO Web Platform | 14% | NOT STARTED |
 | F. Telegram | 8% | NOT STARTED — product/interaction contract pre-approved only |
@@ -88,18 +92,23 @@ Protected production/recovery baseline remains:
 | H. Guardian / Watchtower Loop | 8% | NOT STARTED — autonomous portfolio-governance role pre-approved only |
 | I. Personal Real Execution | 7% | NOT STARTED — cash-only confirmed execution policy pre-approved only |
 | J. Integration / hardening / recovery / release | 5% | NOT STARTED — commercial/license/update/legal-gate planning pre-approved only |
-| **TOTAL** | **100% planned** | **5% ACCEPTED** |
+| **TOTAL** | **100% planned** | **14% ACCEPTED** |
 
-No partial Block B percentage is credited. Its 9% weight becomes accepted only after WP4 and the Block B Exit Gate are accepted.
+Block B's full 9% weight is accepted only because WP4 and the Block B Exit Gate are now complete.
 
-## Accepted WP0–WP3 evidence
+## Accepted WP0–WP4 evidence
 
 - WP0 PR #228 -> `7c5de954eed10dd406e743c38f7bdef6b0634108`;
 - WP1 PR #229 -> `dbd459b280de84d3f571b458b46f1039880312ca`;
 - WP2 PR #230 -> `3e3a89791d7f1594e4e1ba52125f8361708ae29d`;
-- WP3 PR #236 -> `289ff563e99a64bbf8b5a289e84668dde58ef42a`.
+- WP3 PR #236 -> `289ff563e99a64bbf8b5a289e84668dde58ef42a`;
+- WP4 primary PR #248 -> `cc37bdce69331e8b03f5fd46554dc486616414f6`;
+- WP4 artifact-transport hardening PR #249 -> `6c97df17f0de21a27ec0d12ee9699d2a00fab53f`;
+- post-merge Regression Shield #1433 / run `31181814984` on `6c97df17f0de21a27ec0d12ee9699d2a00fab53f` -> **SUCCESS**.
 
 WP3 established the permanent Regression Shield/anti-bypass contracts, fast hosted PR feedback, compatibility gates, capability-aware future contracts and required protection model for private `main`.
+
+WP4 established deterministic release/build provenance, exact SHA/version/toolchain/dependency-lock/SBOM/CI linkage, fail-closed manifest validation, rollback identity, protected `v10.*` tag policy, immutable-release operating contract, path-aware hosted CI routing and future signed-updater/AI provenance fields without installing their runtimes. The only best-effort CI element is short-lived diagnostic artifact transport; mandatory quality, security and money-authority gates remain fail-closed.
 
 ## GitHub Pro hybrid CI / Lenovo continuity evidence
 
@@ -112,11 +121,13 @@ The accepted hybrid model is:
 - GitHub-hosted runners = fast/clean-room acceleration and modern-toolchain compatibility;
 - Lenovo `omni-cio-ci` = authoritative heavy Windows gate and continuity lane;
 - private `main` = protected by active `Protect main` ruleset;
+- `v10.*` release tags = protected by active `Protect V10 release tags` ruleset with no permanent bypass;
+- release immutability = enabled for future published releases;
 - required merge context = `V10 authoritative merge gate` from GitHub Actions;
 - merge method = squash only;
 - no permanent bypass is part of the accepted protection model.
 
-The Lenovo already being a GitHub self-hosted runner does **not** mean Block C V10 runtime is implemented. Ollama/Cortex/DB/Web/Telegram/research/node bootstrap remain future Block C+ work after WP4.
+The Lenovo already being a GitHub self-hosted runner does **not** mean Block C V10 runtime is implemented. Ollama/Cortex/DB/Web/Telegram/research/node bootstrap remain future work and must follow their owning WPs.
 
 ## Accepted concrete V10 planning lock
 
@@ -178,7 +189,7 @@ Future implementation must obey:
 - hosted Actions minutes are a finite acceleration budget; quota exhaustion must not disable authoritative safety gates;
 - Actions cache/artifacts are used for build acceleration/short-lived evidence, never private portfolio state, secrets, DB backups or model weights;
 - Codespaces is optional clean-room development/handoff, never production/Real/broker-secret storage;
-- GitHub Releases + protected `v10.*` tag identity + release manifest become WP4 provenance goals;
+- GitHub Releases + protected `v10.*` tag identity + release manifest are accepted WP4 provenance controls;
 - GitHub Environments are deployment identity/history/scoping, not broker-secret custody;
 - Dependabot and repository-controlled SAST/dependency/secret/SBOM checks remain the no-extra-subscription supply-chain baseline;
 - Enterprise/GHAS-only private-repository features are not V10 prerequisites;
@@ -204,26 +215,27 @@ The accepted Telegram planning contract pre-defines Block F without starting it:
 
 This contract does not authorize BotFather/token creation, Telegram runtime installation or Block F coding now.
 
-## Current authorized next step — WP4
+## Current authorized next step — WP5
 
-WP4 remains the next implementation package. It must finish release/build provenance and deployment contracts before the full V10 Lenovo runtime is configured.
+WP5 is now the next implementation package and begins Block C only after this canonical acceptance record is merged.
 
-WP4 is pre-specified to include:
+WP5 goal: produce a fact-based, privacy-safe `OWNER_NODE_PROFILE` for the Lenovo Omni-CIO Node before any V10 node runtime installation.
 
-- release manifest generation/validation against `V10_RELEASE_MANIFEST.schema.json`;
-- exact Git SHA/version/toolchain/dependency-lock/SBOM provenance;
-- `v10.*` release/tag identity and strongest safe current-plan tag protection;
-- path-aware hosted CI routing;
-- documented hosted-minute/cache/artifact budget and review procedure;
-- exact CI evidence linkage and rollback target;
-- future AI model/policy/adapter provenance fields without installing AI during WP4;
-- future automatic-update provenance fields (artifact digest/signing identity/channel/minimum-supported-version/rollback compatibility) without implementing the updater during WP4;
-- fail-closed tests for malformed/incomplete provenance;
-- no dependence on Enterprise-only private artifact attestations.
+WP5 must include at minimum:
 
-WP4 must **not** install Ollama/Qwen, build the V10 Web product, change broker accounting behavior, configure the full V10 Lenovo application node, create/configure the Telegram bot, implement Portfolio Guardian, billing/license service, automatic updater or start Block C/F/H/I/J runtime work.
+- actual CPU, RAM, GPU model/VRAM, SSD capacity/free space, Windows build and NVIDIA driver facts;
+- wired-network, reboot/power behavior, battery/AC and thermal/resource observations;
+- disk health and free-space fail-safe thresholds;
+- BitLocker/equivalent full-disk-encryption status and recovery-key custody plan without recording the key;
+- Windows Time/NTP health, UTC canonical policy and clock-drift detection threshold;
+- firewall/network baseline and confirmation that no V10 service is accidentally exposed publicly;
+- private-at-rest ACL/data classification boundary;
+- sanitized audit output with no serial numbers, MAC/IP addresses, usernames, broker secrets, account identifiers or private portfolio data;
+- controlled CPU/GPU load evidence and reboot/network-reconnect evidence required by the WP5 Exit Gate, using OWNER participation only where a physical/admin action cannot be safely delegated.
 
-After WP4 and the Block B Exit Gate are accepted, Block C may begin the reproducible Lenovo V10 node/bootstrap work.
+WP5 must **not** install Ollama/Qwen/Cortex, configure Web/Telegram, implement broker HTML runtime, Guardian/Watchtower, billing/license, updater runtime or modify broker/Real-money execution authority.
+
+After WP5 passes its Exit Gate, only the next WP explicitly authorized by the Master Plan may begin.
 
 ## Money/safety rule
 
