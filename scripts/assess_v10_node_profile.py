@@ -5,11 +5,13 @@ import json
 from pathlib import Path
 import sys
 
-from scripts.validate_v10_node_profile import assess_exit_gate, validate_shape
+from validate_v10_node_profile import assess_exit_gate, validate_shape
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Compute canonical WP5 node Exit Gate state")
+    parser = argparse.ArgumentParser(
+        description="Compute canonical WP5 node Exit Gate state"
+    )
     parser.add_argument("profile")
     parser.add_argument("--thresholds", required=True)
     args = parser.parse_args(argv)
@@ -22,7 +24,10 @@ def main(argv: list[str] | None = None) -> int:
         print(f"WP5 assessment failed: {exc}", file=sys.stderr)
         return 1
     if not isinstance(profile, dict) or not isinstance(thresholds, dict):
-        print("WP5 assessment failed: profile and thresholds must be JSON objects", file=sys.stderr)
+        print(
+            "WP5 assessment failed: profile and thresholds must be JSON objects",
+            file=sys.stderr,
+        )
         return 1
 
     failures = validate_shape(profile)
