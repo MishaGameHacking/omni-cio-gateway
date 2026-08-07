@@ -22,6 +22,7 @@ WP5 may add only:
 
 - passive Windows hardware/OS/security/network/time/power/thermal collectors;
 - a sanitized `OWNER_NODE_PROFILE` schema, validator and factual snapshot;
+- a strict sanitized OWNER-evidence overlay for indivisible physical/UI checks after passive collection is exhausted;
 - conservative resource/thermal/disk/time/network thresholds;
 - controlled stability-test tooling and runbooks;
 - CI evidence collection scoped to WP5;
@@ -44,7 +45,7 @@ No broker credentials or real portfolio data are needed for WP5.
 
 ## 5. Privacy contract
 
-The repository-safe profile must never contain:
+The repository-safe profile and OWNER evidence must never contain:
 
 - hardware serial numbers, device UUIDs or other stable device identifiers;
 - MAC addresses, IP addresses, SSIDs or public/private network addresses;
@@ -53,7 +54,7 @@ The repository-safe profile must never contain:
 - broker/Telegram/API tokens or secret values;
 - account identifiers or private portfolio data.
 
-Collectors may record only the minimum operational facts needed for the WP5 Exit Gate. The validator rejects forbidden key names and common identifier-shaped values.
+Collectors and OWNER evidence may record only the minimum operational facts needed for the WP5 Exit Gate. The validator rejects forbidden key names and common identifier-shaped values.
 
 ## 6. Factual profile contract
 
@@ -74,6 +75,8 @@ The profile covers:
 - passive thermal sensor data;
 - mandatory disk/reboot/network-reconnect/sustained-load checks.
 
+`PASSIVE_READ_ONLY` identifies collector-only facts. `PASSIVE_PLUS_OWNER_EVIDENCE` means the passive profile was augmented only by the fixed sanitized evidence contract in `docs/architecture/V10_WP5_OWNER_PHYSICAL_EVIDENCE.json`; it never means arbitrary OWNER prose or secrets were trusted.
+
 ## 7. Fail-closed rules
 
 WP5 Exit Gate remains blocked when any material fact is unknown or unsafe, including:
@@ -84,8 +87,11 @@ WP5 Exit Gate remains blocked when any material fact is unknown or unsafe, inclu
 - low disk space or unhealthy physical disk;
 - required Windows Firewall profile disabled or inbound baseline unsafe;
 - wired network unavailable;
-- restart-after-power-loss or battery-conservation behavior not verified where applicable;
+- battery-conservation behavior not verified where applicable;
+- restart-after-power-loss state unknown or explicitly disabled when firmware provides the capability;
 - reboot/network-reconnect/30–60 minute controlled CPU/GPU load checks not passed.
+
+A firmware audit may produce `NOT_SUPPORTED_BY_FIRMWARE` for restart-after-power-loss only when the setting is demonstrably absent. That state is an explicit availability limitation, not an invented `ENABLED` value. For this battery-backed Lenovo it is accepted for WP5 and carried forward into WP9 operations design: short AC interruptions have battery ride-through, while complete battery depletion/full shutdown still requires manual power-on.
 
 Clock drift and unknown time are represented as a deterministic sensitive-operation gate. This is a WP5 safety fact only; it does not grant any broker-write authority.
 
@@ -96,8 +102,11 @@ The WP5 thresholds are intentionally conservative engineering defaults, not manu
 - clock warning at 500 ms absolute offset; sensitive operations blocked at 2,000 ms or unknown time;
 - system disk warning below 20% or 50 GiB free; block below 10% or 20 GiB;
 - memory warning at 85%; block starting new heavy work at 95%;
-- GPU warning at 80 °C and controlled-load abort at 87 °C;
-- ACPI zone warning at 85 °C and load abort at 95 °C;
+- GPU warning at 80 °C and controlled-load abort above 87 °C;
+- ACPI zone warning at 85 °C and controlled-load abort above 95 °C;
+- observed CPU-core warning at 90 °C and controlled-load acceptance ceiling at 95 °C;
+- CPU throttling warning at 1%; average throttling above 5% fails sustained-load acceptance;
+- combined CPU/GPU acceptance requires an observed GPU peak temperature;
 - any lower manufacturer limit takes precedence;
 - controlled load duration: minimum 30 min, target 45 min, maximum 60 min.
 
@@ -111,6 +120,7 @@ A later measured/manufacturer-backed adjustment requires a reviewed WP-owned cha
 - Windows Time offset is converted into PASS/BLOCK_DRIFT/BLOCK_UNKNOWN_TIME consistently;
 - low-space and disk-health rules are deterministic;
 - firewall/wired/power facts are deterministic where queryable;
+- OWNER evidence overlay accepts only fixed safe fields and computes load PASS/FAIL from canonical thresholds;
 - a fully safe synthetic profile computes `PASS`;
 - an initial passive profile with physical tests not yet run remains structurally valid but computes `BLOCKED`.
 
@@ -124,6 +134,8 @@ A later measured/manufacturer-backed adjustment requires a reviewed WP-owned cha
 - low disk blocks;
 - disabled firewall or missing wired network blocks;
 - missing reboot/network/load evidence blocks;
+- sustained load above canonical thermal/throttling limits remains `FAIL` even if the machine did not crash;
+- missing combined-load GPU peak remains `FAIL`;
 - no test or documentation may convert an unknown hardware fact into an assumed PASS.
 
 ## 11. OWNER participation boundary
@@ -135,22 +147,22 @@ Automation must exhaust passive/read-only evidence first. OWNER participation is
 - a controlled 30–60 minute load test if a safe GPU workload generator is unavailable through the accepted local toolchain;
 - firmware-only power-loss/battery-conservation settings that Windows cannot read reliably.
 
-OWNER is never asked to paste secrets or recovery-key material into chat/GitHub.
+OWNER evidence is reduced to the fixed repository-safe JSON fields before CI uses it. OWNER is never asked to paste secrets or recovery-key material into chat/GitHub.
 
 ## 12. Binary Exit Gate
 
 WP5 is COMPLETE only when all are true:
 
 - focused WP5 PR is based on accepted current `main`;
-- passive collector and validator tests are green;
+- passive collector, OWNER-evidence overlay and validator tests are green;
 - factual sanitized `OWNER_NODE_PROFILE` is captured from the Lenovo;
 - CPU/RAM/GPU/VRAM/storage/Windows/NVIDIA-driver facts are known;
 - disk health/free-space checks pass;
 - full-disk encryption and separate recovery-key custody are proven without storing the key;
 - Windows Time/UTC/drift guard passes;
 - firewall/wired-network baseline passes and no V10 public listener exists;
-- battery/AC/restart-after-power-loss facts are acceptable;
-- 30–60 minute controlled CPU/GPU load completes without threshold abort or thermal shutdown;
+- battery/AC/restart-after-power-loss facts are acceptable or an unsupported firmware limitation is explicitly recorded;
+- 30–60 minute controlled CPU/GPU load passes the canonical thermal/throttling thresholds without thermal shutdown;
 - reboot and network reconnect checks pass;
 - exact-head Fast/hosted/authoritative CI is green;
 - V9 `app:app` and money-authority invariants are unchanged;
