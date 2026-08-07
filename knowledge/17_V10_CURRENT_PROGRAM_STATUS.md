@@ -17,13 +17,14 @@ Accepted completed work:
 - GitHub Pro hybrid CI / Lenovo continuity hardening — **COMPLETE infrastructure hardening, no V10 product scope credited**;
 - concrete AI/local-first planning amendment — **ACCEPTED planning authority, no runtime implementation credited**;
 - GitHub Pro maximum-utilization + migration implementation discipline — **OWNER-APPROVED planning authority, no runtime implementation credited**;
-- Telegram product/interaction/delivery contract — **OWNER-APPROVED planning authority, no Block F runtime implementation credited**.
+- Telegram product/interaction/delivery contract — **OWNER-APPROVED planning authority, no Block F runtime implementation credited**;
+- Autonomous Portfolio Governance / Russian-market / zero-custody / commercial-access / automatic-update / Russian-law planning — **OWNER-APPROVED planning authority, no later-block runtime implementation credited**.
 
 Current authorized implementation work package remains:
 
 **WP4 — Release, build provenance and deployment contract.**
 
-Planning/governance/contracts do not start WP4, Block C, Web, broker-report implementation, Telegram runtime, Cortex runtime or any later V10 implementation.
+Planning/governance/contracts do not start WP4, Block C, Web, broker-report implementation, Telegram runtime, Cortex runtime, Portfolio Guardian runtime, billing/license runtime, updater runtime, Real execution or any later V10 implementation.
 
 Owner start command: **`START V10`** received 2026-08-05.
 
@@ -45,9 +46,14 @@ Accepted planning elaborations are discoverable through:
 - `docs/master-plan/OMNI_CIO_V10_GITHUB_PRO_AND_MIGRATION_IMPLEMENTATION_AMENDMENT.md`;
 - `docs/master-plan/OMNI_CIO_V10_TELEGRAM_PRODUCT_AND_INTERACTION_AMENDMENT.md`;
 - `docs/master-plan/OMNI_CIO_V10_TELEGRAM_IMPLEMENTATION_CHECKLIST.md`;
+- `docs/master-plan/OMNI_CIO_V10_AUTONOMOUS_PORTFOLIO_GOVERNANCE_AND_COMMERCIAL_MODEL_AMENDMENT.md`;
 - `docs/master-plan/OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md`;
 - `docs/master-plan/OMNI_CIO_V10_GITHUB_PRO_IMPLEMENTATION_CHECKLIST.md`;
 - `docs/architecture/V10_AI_CORTEX_CONTRACT.json`;
+- `docs/architecture/V10_AUTONOMOUS_PORTFOLIO_GOVERNANCE_CONTRACT.json`;
+- `docs/architecture/V10_RUSSIAN_MARKET_UNIVERSE_AND_SANCTIONS_POLICY.json`;
+- `docs/architecture/V10_ZERO_CUSTODY_LICENSE_UPDATE_CONTRACT.json`;
+- `docs/legal/V10_RU_COMMERCIAL_LEGAL_GATES.md`;
 - `docs/architecture/V10_GITHUB_PRO_UTILIZATION_CONTRACT.json`;
 - `docs/architecture/V10_TELEGRAM_PRODUCT_CONTRACT.json`;
 - `docs/architecture/V10_TELEGRAM_MESSAGE_REGISTRY.json`;
@@ -79,9 +85,9 @@ Protected production/recovery baseline remains:
 | E. Omni-CIO Web Platform | 14% | NOT STARTED |
 | F. Telegram | 8% | NOT STARTED — product/interaction contract pre-approved only |
 | G. AI Copilot / Research / GPT Migration | 18% | NOT STARTED |
-| H. Guardian / Watchtower Loop | 8% | NOT STARTED |
-| I. Personal Real Execution | 7% | NOT STARTED |
-| J. Integration / hardening / recovery / release | 5% | NOT STARTED |
+| H. Guardian / Watchtower Loop | 8% | NOT STARTED — autonomous portfolio-governance role pre-approved only |
+| I. Personal Real Execution | 7% | NOT STARTED — cash-only confirmed execution policy pre-approved only |
+| J. Integration / hardening / recovery / release | 5% | NOT STARTED — commercial/license/update/legal-gate planning pre-approved only |
 | **TOTAL** | **100% planned** | **5% ACCEPTED** |
 
 No partial Block B percentage is credited. Its 9% weight becomes accepted only after WP4 and the Block B Exit Gate are accepted.
@@ -122,13 +128,41 @@ The current active planning authorities make the V10 direction concrete without 
 - AI is a local-first **Omni-CIO Cortex**, not a general-purpose chatbot;
 - initial AI baseline is **Qwen3.5-4B via Ollama**, replaceable behind an AI-provider boundary;
 - paid AI/search/agent SaaS is not required for V10 Definition of Done;
-- 24/7 autonomy is event-driven and checkpointed, not an endless LLM loop;
+- 24/7 portfolio autonomy belongs to the deterministic/event-driven system; Cortex is invoked on demand for research/interpretation/explanation/OWNER negotiation;
 - initial agent orchestration candidate is LangGraph OSS;
 - self-hosted SearXNG is the initial search-provider baseline with bounded HTTP/Playwright retrieval;
-- all material research uses Evidence Store provenance/freshness/identity binding;
+- all material research uses Evidence Store provenance/freshness/identity binding and a Privacy Firewall before outbound research;
 - System Policy + typed tools + RAG + evals precede any QLoRA decision;
 - AI has no direct broker-write token/tool, unrestricted administrator shell, GitHub protection bypass or Real-money authority;
 - OWNER local participation is requested only for genuinely non-delegable actions, preferably as one reviewed PowerShell block.
+
+## Autonomous Portfolio Governance product lock
+
+The accepted product definition now makes the central value proposition explicit:
+
+- V10 continuously monitors every held asset with a versioned health/freshness/trend state;
+- monitoring intensity increases with materiality, deterioration or uncertainty;
+- the investable candidate universe is dynamically derived from broker-available instruments and narrowed through Russian-market, sanctions/custody, eligibility, no-margin/no-short, liquidity/data-quality and asset-class policy;
+- broker availability alone is not sufficient for V10 eligibility;
+- sanctions `BLOCKED` assets are excluded from new BUY proposals; Russian-market classification is not marketed as zero-freeze-risk;
+- diversification is multi-dimensional across issuer/sector/asset-class/credit/duration/economic-currency/liquidity/income/commodity/correlation/sanctions-custody/OWNER constraints;
+- optimizer may output `NO_CHANGE`, one-to-one replacement, one-to-many split or multi-position rebalance;
+- anti-churn/material-improvement policy is mandatory;
+- the default user result is one ranked concrete primary proposal with before/after portfolio impact, not an unordered idea list;
+- OWNER may approve/reject/revise; rejection/revision is handled through shared Cortex dialogue and versioned soft preference/constraint updates;
+- hard safety policy cannot be overridden through conversation;
+- Real execution remains exact immutable OWNER-approved cash-only BUY/SELL with fresh preflight, idempotency and reconciliation.
+
+## Zero-custody / commercial / update planning lock
+
+- Personal Node remains authority for portfolio, broker reports, broker secrets, private trading state and private Cortex history;
+- the narrow central plane may hold only payment/license/update/security/legally-required commercial records after field-level inventory;
+- paid access is a full 7-day trial followed by manual fixed 1/3/6/12 month prepaid periods;
+- no automatic renewal or recurring debit is part of V10;
+- expiry does not delete or take custody of user local data;
+- active supported Personal Nodes automatically converge to approved `STABLE` releases through signed/verified/rollback-safe updates;
+- Update Agent survives subscription expiry so renewal does not require manual reinstall;
+- commercial production is blocked until the Russian-law gates in `docs/legal/V10_RU_COMMERCIAL_LEGAL_GATES.md` are accepted for the actual provider/data/business model.
 
 ## GitHub Pro maximum-utilization / migration-development lock
 
@@ -183,10 +217,11 @@ WP4 is pre-specified to include:
 - documented hosted-minute/cache/artifact budget and review procedure;
 - exact CI evidence linkage and rollback target;
 - future AI model/policy/adapter provenance fields without installing AI during WP4;
+- future automatic-update provenance fields (artifact digest/signing identity/channel/minimum-supported-version/rollback compatibility) without implementing the updater during WP4;
 - fail-closed tests for malformed/incomplete provenance;
 - no dependence on Enterprise-only private artifact attestations.
 
-WP4 must **not** install Ollama/Qwen, build the V10 Web product, change broker accounting behavior, configure the full V10 Lenovo application node, create/configure the Telegram bot or start Block C/F.
+WP4 must **not** install Ollama/Qwen, build the V10 Web product, change broker accounting behavior, configure the full V10 Lenovo application node, create/configure the Telegram bot, implement Portfolio Guardian, billing/license service, automatic updater or start Block C/F/H/I/J runtime work.
 
 After WP4 and the Block B Exit Gate are accepted, Block C may begin the reproducible Lenovo V10 node/bootstrap work.
 
