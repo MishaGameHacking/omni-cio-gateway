@@ -61,6 +61,37 @@ Machine-readable companions:
 
 Locks the OWNER-approved rule that GitHub Pro is the V10 engineering Control Plane and that V10 is a controlled productization/migration of the accepted V9 system, not a greenfield rewrite or feature-expansion program. It defines CI compute routing across GitHub-hosted runners and the Lenovo self-hosted runner, Actions-minute/cache/artifact budgets, Codespaces clean-room use, Releases/tag provenance, environment usage, dependency automation, parity/reuse rules, canonical acceptance oracles, WP execution format, cutover discipline, scope firewall, and a subscription-minimization policy.
 
+### 4. Telegram Product / Interaction / Delivery Contract
+
+`OMNI_CIO_V10_TELEGRAM_PRODUCT_AND_INTERACTION_AMENDMENT.md`
+
+Planning checklist:
+
+`OMNI_CIO_V10_TELEGRAM_IMPLEMENTATION_CHECKLIST.md`
+
+Machine-readable companions:
+
+- `../architecture/V10_TELEGRAM_PRODUCT_CONTRACT.json`;
+- `../architecture/V10_TELEGRAM_MESSAGE_REGISTRY.json`.
+
+Locks the OWNER-approved product behavior for Block F before implementation:
+
+- Telegram is an OWNER-only private companion interface, not a second Core/Web/AI product;
+- long polling is the initial transport; public webhook ingress is not required;
+- the compact command surface is `/start`, `/help`, `/status`, `/portfolio`, `/alerts`, `/system`, `/app`;
+- Telegram consumes canonical Core DTOs and never owns financial calculations or broker-write logic;
+- BotFather/manual OWNER work is minimized to creating/confirming the bot and locally storing/rotating its token;
+- Mini App identity requires server-side validation of Telegram `initData`, freshness/replay controls and a short-lived V10 session;
+- message families, privacy levels and buttons are versioned in a registry;
+- alert delivery is durable, idempotent, deduplicated and edits an existing incident message when practical;
+- callback/deep-link values are opaque, server-validated and never authority by possession alone;
+- Telegram Mini App is the same Web frontend/codebase, not a second UI implementation;
+- AI conversation is not implemented early in Block F; WP32C later activates the same shared Omni-CIO Cortex for Web and Telegram after AI prerequisites/evals;
+- degraded modes preserve deterministic commands where Core remains available;
+- no recurring paid Telegram/bot middleware/SaaS is required for V10 Definition of Done.
+
+This amendment is planning authority only and does not start Block F or change the current WP4-next implementation sequence.
+
 ## Draft/superseded planning material
 
 Open or historical PR descriptions must not be treated as active plan authority merely because they contain V10 ideas. In particular, any older unmerged planning PR that conflicts with the accepted Concrete Execution Plan must be closed/superseded rather than merged as a competing roadmap.
