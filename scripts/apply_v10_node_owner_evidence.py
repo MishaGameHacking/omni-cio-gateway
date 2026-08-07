@@ -74,12 +74,16 @@ def validate_owner_evidence(evidence: dict[str, Any]) -> None:
     except ValueError as exc:
         raise EvidenceError("$evidence.attested_at_utc must be RFC3339") from exc
     if parsed.tzinfo is None:
-        raise EvidenceError("$evidence.attested_at_utc must include timezone information")
+        raise EvidenceError(
+            "$evidence.attested_at_utc must include timezone information"
+        )
 
     if evidence.get("recovery_key_custody_status") != "OWNER_CONFIRMED_SEPARATE":
         raise EvidenceError("recovery-key evidence may only confirm separate custody")
     if evidence.get("battery_conservation") not in {"ENABLED", "NOT_APPLICABLE"}:
-        raise EvidenceError("battery_conservation evidence must be ENABLED or NOT_APPLICABLE")
+        raise EvidenceError(
+            "battery_conservation evidence must be ENABLED or NOT_APPLICABLE"
+        )
     if evidence.get("restart_after_power_loss") not in {
         "ENABLED",
         "NOT_SUPPORTED_BY_FIRMWARE",
@@ -105,7 +109,9 @@ def validate_owner_evidence(evidence: dict[str, Any]) -> None:
         "$evidence.checks.sustained_cpu_gpu_load",
     )
     if load.get("tool") != "AIDA64_EXTREME":
-        raise EvidenceError("only AIDA64_EXTREME evidence is accepted for this WP5 record")
+        raise EvidenceError(
+            "only AIDA64_EXTREME evidence is accepted for this WP5 record"
+        )
     if not isinstance(load.get("tool_version"), str) or not load.get("tool_version"):
         raise EvidenceError("tool_version must be a non-empty string")
     _require_number(load.get("duration_seconds"), "duration_seconds", 1, 86400)
@@ -151,7 +157,9 @@ def assess_load_evidence(evidence: dict[str, Any], thresholds: dict[str, Any]) -
     gpu_peak = load.get("gpu_peak_c")
     if load_policy.get("combined_gpu_peak_required", True) and gpu_peak is None:
         return "FAIL"
-    if gpu_peak is not None and float(gpu_peak) > float(thermal["gpu_abort_load_test_c"]):
+    if gpu_peak is not None and float(gpu_peak) > float(
+        thermal["gpu_abort_load_test_c"]
+    ):
         return "FAIL"
     return "PASS"
 
@@ -161,13 +169,11 @@ def apply_owner_evidence(
 ) -> str:
     validate_owner_evidence(evidence)
     profile["capture_mode"] = "PASSIVE_PLUS_OWNER_EVIDENCE"
-    profile["security"]["full_disk_encryption"]["recovery_key_custody_status"] = evidence[
-        "recovery_key_custody_status"
-    ]
+    profile["security"]["full_disk_encryption"]["recovery_key_custody_status"] = (
+        evidence["recovery_key_custody_status"]
+    )
     profile["power"]["battery_conservation"] = evidence["battery_conservation"]
-    profile["power"]["restart_after_power_loss"] = evidence[
-        "restart_after_power_loss"
-    ]
+    profile["power"]["restart_after_power_loss"] = evidence["restart_after_power_loss"]
     profile["checks"]["reboot"] = evidence["checks"]["reboot"]
     profile["checks"]["network_reconnect"] = evidence["checks"]["network_reconnect"]
     load_result = assess_load_evidence(evidence, thresholds)
@@ -189,8 +195,10 @@ def main(argv: list[str] | None = None) -> int:
         profile = json.loads(profile_path.read_text(encoding="utf-8-sig"))
         evidence = json.loads(Path(args.evidence).read_text(encoding="utf-8"))
         thresholds = json.loads(Path(args.thresholds).read_text(encoding="utf-8"))
-        if not isinstance(profile, dict) or not isinstance(evidence, dict) or not isinstance(
-            thresholds, dict
+        if (
+            not isinstance(profile, dict)
+            or not isinstance(evidence, dict)
+            or not isinstance(thresholds, dict)
         ):
             raise EvidenceError("profile, evidence and thresholds must be JSON objects")
         load_result = apply_owner_evidence(profile, evidence, thresholds)
