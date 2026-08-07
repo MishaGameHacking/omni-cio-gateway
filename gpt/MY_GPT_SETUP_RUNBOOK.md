@@ -6,7 +6,7 @@ Repository target = **v9.0.0**. Applied external GPT = **v9.0.0**, owner-accepte
 
 ## 1. Canonical runtime
 
-- GitHub repo: `Misha2304/omni-cio-gateway`.
+- GitHub repo: `MishaGameHacking/omni-cio-gateway`.
 - Deploy branch: `main`.
 - Render service: `omni-cio-gateway`.
 - Base URL: `https://omni-cio-gateway.onrender.com`.
