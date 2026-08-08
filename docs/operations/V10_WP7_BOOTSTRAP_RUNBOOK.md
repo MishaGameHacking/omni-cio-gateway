@@ -21,7 +21,7 @@ The following remain outside WP7 mutation authority:
 
 WP7 reuses the accepted `omni-cio-runtime` and `omni-cio-execution` disabled non-admin role anchors. It refuses apply if those WP6 postconditions are absent.
 
-The WP7 runner probe deliberately does **not** read `.runner` or credential material after WP6 hardening. It validates the bounded `.service` marker, the exact installed Windows service, running/automatic state, non-admin service identity and that the executing CI process matches that service identity. The probe emits booleans/error codes only.
+The WP7 runner probe deliberately does **not** read `.runner`, `.service` or credential material after WP6 hardening. It discovers the standard `actions.runner.*` Windows service through the service manager, binds it to the reviewed runner-name suffix and `C:\actions-runner` service path, requires running/automatic state and a non-admin service identity, and requires the executing CI process to match that service identity. The probe emits booleans/error codes only.
 
 ## 3. Selected prerequisites
 
@@ -228,8 +228,9 @@ Cleanup deliberately leaves public prerequisites installed. It does not alter WP
 - Python Windows installer documentation: traditional installer supports `/quiet` plus `InstallAllUsers=1` and machine-wide default target selection.
 - Python `3.14.6` official release artifact and checksum are the source pinned in the machine-readable contract.
 - Microsoft `winget-pkgs` issue `#355596` documents the current `Python.Python.3.14 --scope machine` user-scope defect that WP7 avoids rather than working around after installation.
+- GitHub's Windows self-hosted runner documentation exposes `Get-Service "actions.runner.*"` as the service-health surface; WP7 uses the service manager instead of reading WP6-protected runner-private files.
 
-These references justify the installer transport only. The selected V10 runtime version remains governed by the accepted WP2 toolchain baseline.
+These references justify the installer transport and runner audit surface only. The selected V10 runtime version remains governed by the accepted WP2 toolchain baseline.
 
 ## 12. Exit Gate evidence
 
