@@ -207,28 +207,28 @@ function Test-MachineVisiblePath {
 function Get-PythonInfo {
     $version = $null
     $path = $null
-    try {
-        $payload = & py.exe -3.14 -c `
-            "import json,sys; print(json.dumps({'v':'.'.join(map(str,sys.version_info[:3])),'p':sys.executable}))" `
-            2>$null | Out-String
-        if ($LASTEXITCODE -eq 0 -and $payload.Trim()) {
-            $parsed = $payload.Trim() | ConvertFrom-Json -ErrorAction Stop
-            $version = [string]$parsed.v
-            $path = [string]$parsed.p
-        }
-    }
-    catch {
-        $version = $null
-        $path = $null
+    $machineCandidate = "C:\Program Files\Python314\python.exe"
+    if (Test-Path -LiteralPath $machineCandidate -PathType Leaf) {
+        $version = Invoke-VersionCommand -FilePath $machineCandidate -Arguments @(
+            "-c",
+            "import sys; print('.'.join(map(str, sys.version_info[:3])))"
+        )
+        $path = $machineCandidate
     }
     if (-not $version) {
-        $candidate = "C:\Program Files\Python314\python.exe"
-        if (Test-Path -LiteralPath $candidate -PathType Leaf) {
-            $version = Invoke-VersionCommand -FilePath $candidate -Arguments @(
-                "-c",
-                "import sys; print('.'.join(map(str, sys.version_info[:3])))"
-            )
-            $path = $candidate
+        try {
+            $payload = & py.exe -3.14 -c `
+                "import json,sys; print(json.dumps({'v':'.'.join(map(str,sys.version_info[:3])),'p':sys.executable}))" `
+                2>$null | Out-String
+            if ($LASTEXITCODE -eq 0 -and $payload.Trim()) {
+                $parsed = $payload.Trim() | ConvertFrom-Json -ErrorAction Stop
+                $version = [string]$parsed.v
+                $path = [string]$parsed.p
+            }
+        }
+        catch {
+            $version = $null
+            $path = $null
         }
     }
     return [ordered]@{
@@ -246,18 +246,21 @@ function Get-CommandInfo {
         [string]$VersionPattern
     )
 
-    $version = Invoke-VersionCommand -FilePath $CommandName -Arguments $Arguments
+    $version = $null
     $path = $null
-    try {
-        $command = Get-Command $CommandName -ErrorAction Stop
-        $path = [string]$command.Source
-    }
-    catch {
-        $path = $null
-    }
-    if (-not $version -and (Test-Path -LiteralPath $FallbackPath -PathType Leaf)) {
+    if (Test-Path -LiteralPath $FallbackPath -PathType Leaf) {
         $version = Invoke-VersionCommand -FilePath $FallbackPath -Arguments $Arguments
         $path = $FallbackPath
+    }
+    if (-not $version) {
+        $version = Invoke-VersionCommand -FilePath $CommandName -Arguments $Arguments
+        try {
+            $command = Get-Command $CommandName -ErrorAction Stop
+            $path = [string]$command.Source
+        }
+        catch {
+            $path = $null
+        }
     }
     if ($StripLeadingV -and $version -and $version.StartsWith("v")) {
         $version = $version.Substring(1)
@@ -340,6 +343,75 @@ function Get-Prerequisites {
     }
 }
 
+function Install-ExactPythonPackage {
+    $installerUrl = [string]$contract.toolchain.python.installer_url
+    $expectedHash = ([string]$contract.toolchain.python.installer_sha256).ToUpperInvariant()
+    $expectedUrl = "https://www.python.org/ftp/python/$pythonVersion/python-$pythonVersion-amd64.exe"
+    if (-not [string]::Equals(
+        $installerUrl,
+        $expectedUrl,
+        [System.StringComparison]::Ordinal
+    )) {
+        throw "PYTHON_INSTALLER_URL_POLICY_MISMATCH"
+    }
+    if ($expectedHash -notmatch '^[A-F0-9]{64}$') {
+        throw "PYTHON_INSTALLER_HASH_POLICY_INVALID"
+    }
+
+    $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) "omni-cio-wp7"
+    $installerPath = Join-Path $tempRoot "python-$pythonVersion-amd64.exe"
+    New-Item -ItemType Directory -Path $tempRoot -Force | Out-Null
+    try {
+        Write-Host "Downloading reviewed Python $pythonVersion installer from python.org"
+        Invoke-WebRequest -Uri $installerUrl -OutFile $installerPath -UseBasicParsing
+        $actualHash = (Get-FileHash -LiteralPath $installerPath -Algorithm SHA256).Hash.ToUpperInvariant()
+        if (-not [string]::Equals(
+            $actualHash,
+            $expectedHash,
+            [System.StringComparison]::Ordinal
+        )) {
+            throw "PYTHON_INSTALLER_SHA256_MISMATCH"
+        }
+
+        $signature = Get-AuthenticodeSignature -LiteralPath $installerPath
+        if ($signature.Status -ne [System.Management.Automation.SignatureStatus]::Valid) {
+            throw "PYTHON_INSTALLER_AUTHENTICODE_INVALID"
+        }
+
+        $arguments = @(
+            "/quiet",
+            "InstallAllUsers=1",
+            "PrependPath=0",
+            "Include_launcher=1",
+            "InstallLauncherAllUsers=1",
+            "Include_pip=1",
+            "Include_dev=1",
+            "Include_exe=1",
+            "Include_lib=1",
+            "Include_test=0"
+        )
+        $process = Start-Process `
+            -FilePath $installerPath `
+            -ArgumentList $arguments `
+            -Wait `
+            -PassThru
+        if ($process.ExitCode -ne 0) {
+            throw "PYTHON_INSTALLER_FAILED:$($process.ExitCode)"
+        }
+    }
+    finally {
+        if (Test-Path -LiteralPath $installerPath -PathType Leaf) {
+            Remove-Item -LiteralPath $installerPath -Force -ErrorAction SilentlyContinue
+        }
+        if (Test-Path -LiteralPath $tempRoot -PathType Container) {
+            $remaining = @(Get-ChildItem -LiteralPath $tempRoot -Force -ErrorAction SilentlyContinue)
+            if ($remaining.Count -eq 0) {
+                Remove-Item -LiteralPath $tempRoot -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+}
+
 function Install-ExactWingetPackage {
     param([string]$Id, [string]$Version, [switch]$Interactive)
 
@@ -384,21 +456,16 @@ function Install-MissingPrerequisites {
         if ($Before[$name].state -eq "MISMATCH") {
             throw "PREREQUISITE_VERSION_MISMATCH:$name"
         }
-        if ($Before[$name].state -eq "NOT_MACHINE_VISIBLE") {
-            throw "PREREQUISITE_NOT_MACHINE_VISIBLE:$name"
-        }
     }
-    if ($Before.python.state -eq "MISSING") {
-        Install-ExactWingetPackage `
-            -Id ([string]$contract.toolchain.python.winget_id) `
-            -Version ([string]$contract.toolchain.python.winget_version)
+    if ($Before.python.state -in @("MISSING", "NOT_MACHINE_VISIBLE")) {
+        Install-ExactPythonPackage
     }
-    if ($Before.node.state -eq "MISSING") {
+    if ($Before.node.state -in @("MISSING", "NOT_MACHINE_VISIBLE")) {
         Install-ExactWingetPackage `
             -Id ([string]$contract.toolchain.node.winget_id) `
             -Version ([string]$contract.toolchain.node.winget_version)
     }
-    if ($Before.postgresql.state -eq "MISSING") {
+    if ($Before.postgresql.state -in @("MISSING", "NOT_MACHINE_VISIBLE")) {
         Install-ExactWingetPackage `
             -Id ([string]$contract.toolchain.postgresql.winget_id) `
             -Version ([string]$contract.toolchain.postgresql.winget_version) `
@@ -810,13 +877,13 @@ foreach ($roleSpec in @(
 $prerequisitesBefore = Get-Prerequisites
 $installedThisRun = @()
 if ($InstallPrerequisites) {
-    if ($prerequisitesBefore.python.state -eq "MISSING") {
-        $installedThisRun += "Python.Python.3.14@$([string]$contract.toolchain.python.winget_version)"
+    if ($prerequisitesBefore.python.state -in @("MISSING", "NOT_MACHINE_VISIBLE")) {
+        $installedThisRun += "python.org/python-$pythonVersion-amd64.exe@sha256:$([string]$contract.toolchain.python.installer_sha256)"
     }
-    if ($prerequisitesBefore.node.state -eq "MISSING") {
+    if ($prerequisitesBefore.node.state -in @("MISSING", "NOT_MACHINE_VISIBLE")) {
         $installedThisRun += "OpenJS.NodeJS.LTS@$([string]$contract.toolchain.node.winget_version)"
     }
-    if ($prerequisitesBefore.postgresql.state -eq "MISSING") {
+    if ($prerequisitesBefore.postgresql.state -in @("MISSING", "NOT_MACHINE_VISIBLE")) {
         $installedThisRun += "PostgreSQL.PostgreSQL.18@$([string]$contract.toolchain.postgresql.winget_version)"
     }
     Install-MissingPrerequisites -Before $prerequisitesBefore
