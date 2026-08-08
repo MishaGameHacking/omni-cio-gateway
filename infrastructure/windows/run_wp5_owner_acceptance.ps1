@@ -2,6 +2,8 @@
 param(
     [ValidateRange(30, 60)]
     [int]$DurationMinutes = 30,
+    [ValidateRange(50, 100)]
+    [int]$MaxProcessorPerformancePercent = 90,
     [string]$Aida64Path = "C:\Program Files (x86)\FinalWire\AIDA64 Extreme\aida64.exe"
 )
 
@@ -18,11 +20,42 @@ function Invoke-SelfElevated {
     $arguments = @(
         "-NoProfile",
         "-ExecutionPolicy", "Bypass",
-        "-File", ('"{0}"' -f $PSCommandPath),
+        "-File", ('\"{0}\"' -f $PSCommandPath),
         "-DurationMinutes", $DurationMinutes,
-        "-Aida64Path", ('"{0}"' -f $Aida64Path)
+        "-MaxProcessorPerformancePercent", $MaxProcessorPerformancePercent,
+        "-Aida64Path", ('\"{0}\"' -f $Aida64Path)
     )
     Start-Process -FilePath "powershell.exe" -Verb RunAs -ArgumentList ($arguments -join " ")
+}
+
+function New-TemporaryNodePowerScheme {
+    param(
+        [Parameter(Mandatory = $true)]
+        [int]$MaximumProcessorPercent
+    )
+
+    $duplicateText = powercfg /duplicatescheme SCHEME_BALANCED
+    if ($LASTEXITCODE -ne 0) {
+        throw "Could not duplicate the Windows Balanced power plan."
+    }
+    $schemeMatch = [regex]::Match(($duplicateText -join " "), "[0-9a-fA-F-]{36}")
+    if (-not $schemeMatch.Success) {
+        throw "Could not determine the temporary Balanced power-plan GUID."
+    }
+
+    $schemeGuid = $schemeMatch.Value
+    powercfg /changename $schemeGuid "Omni-CIO WP5 Temporary Node Test" | Out-Null
+    powercfg /setacvalueindex $schemeGuid SUB_PROCESSOR PROCTHROTTLEMAX $MaximumProcessorPercent | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        powercfg /delete $schemeGuid | Out-Null
+        throw "Could not apply the temporary maximum processor performance state."
+    }
+    powercfg /setactive $schemeGuid | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        powercfg /delete $schemeGuid | Out-Null
+        throw "Could not activate the temporary WP5 node power plan."
+    }
+    return $schemeGuid
 }
 
 if (-not (Test-IsAdministrator)) {
@@ -31,7 +64,6 @@ if (-not (Test-IsAdministrator)) {
     exit 0
 }
 
-$repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $gpuSampler = Join-Path $PSScriptRoot "measure_wp5_gpu_load.ps1"
 if (-not (Test-Path -LiteralPath $gpuSampler)) {
     throw "GPU sampler not found: $gpuSampler"
@@ -73,6 +105,7 @@ if ($powerOnline -eq $false) {
 $activeSchemeText = powercfg /getactivescheme
 $activeSchemeMatch = [regex]::Match(($activeSchemeText -join " "), "[0-9a-fA-F-]{36}")
 $previousScheme = if ($activeSchemeMatch.Success) { $activeSchemeMatch.Value } else { $null }
+$temporaryScheme = $null
 
 $stateRoot = Join-Path $env:ProgramData "OmniCIO\wp5"
 New-Item -ItemType Directory -Force -Path $stateRoot | Out-Null
@@ -90,8 +123,9 @@ try {
     Write-Host "GitHub HTTPS: PASS"
     if ($powerOnline -eq $true) { Write-Host "AC power: connected" }
     Write-Host ""
-    Write-Host "Switching temporarily to the standard Windows Balanced power plan..."
-    powercfg /setactive SCHEME_BALANCED | Out-Null
+    Write-Host "Creating a temporary conservative 24/7 node power profile..."
+    Write-Host "Maximum processor performance during this test: $MaxProcessorPerformancePercent%"
+    $temporaryScheme = New-TemporaryNodePowerScheme -MaximumProcessorPercent $MaxProcessorPerformancePercent
 
     Write-Host "Launching AIDA64 Extreme..."
     Start-Process -FilePath $Aida64Path | Out-Null
@@ -105,8 +139,9 @@ try {
     Write-Host "  Stress local disks   OFF"
     Write-Host "  Stress GPU(s)        ON"
     Write-Host ""
-    Write-Host "Do not press Start yet. Configure the checkboxes, then return here."
-    Read-Host "Press ENTER when AIDA64 is configured and ready"
+    Write-Host "Configure the checkboxes and click Clear." -ForegroundColor Yellow
+    Write-Host "Then click Start in AIDA64 FIRST. Once the elapsed timer is visibly running, return here immediately."
+    Read-Host "Press ENTER only AFTER AIDA64 has already started"
 
     $testStart = Get-Date
     $durationSeconds = $DurationMinutes * 60
@@ -114,17 +149,17 @@ try {
     $samplerArgs = @(
         "-NoProfile",
         "-ExecutionPolicy", "Bypass",
-        "-File", ('"{0}"' -f $gpuSampler),
+        "-File", ('\"{0}\"' -f $gpuSampler),
         "-DurationSeconds", $durationSeconds,
         "-SampleIntervalSeconds", 5,
-        "-OutputPath", ('"{0}"' -f $gpuOutput)
+        "-OutputPath", ('\"{0}\"' -f $gpuOutput)
     )
     $sampler = Start-Process -FilePath "powershell.exe" -ArgumentList ($samplerArgs -join " ") -WindowStyle Hidden -PassThru
 
     Write-Host ""
-    Write-Host "NOW click Start in AIDA64." -ForegroundColor Green
-    Write-Host "The telemetry window is running for $DurationMinutes minutes."
-    Write-Host "Stop immediately if there is a crash, thermal shutdown, or sustained temperature beyond the WP5 guardrails."
+    Write-Host "AIDA64 should already be running. Keep it running until the two completion beeps." -ForegroundColor Green
+    Write-Host "The telemetry window is now running for $DurationMinutes minutes."
+    Write-Host "Stop immediately for a crash, thermal shutdown, or sustained temperature beyond the WP5 guardrails."
     Write-Host ""
 
     Wait-Process -Id $sampler.Id
@@ -155,6 +190,7 @@ try {
         started_utc = $testStart.ToUniversalTime().ToString("o")
         ended_utc = $eventEnd.ToUniversalTime().ToString("o")
         duration_minutes_requested = $DurationMinutes
+        max_processor_performance_percent = $MaxProcessorPerformancePercent
         relevant_system_event_count = @($events).Count
         relevant_system_events = @($events)
         privacy = [ordered]@{
@@ -181,6 +217,14 @@ try {
             Write-Host "Previous Windows power plan restored."
         } catch {
             Write-Warning "Could not restore the previous power plan automatically."
+        }
+    }
+    if ($null -ne $temporaryScheme) {
+        try {
+            powercfg /delete $temporaryScheme | Out-Null
+            Write-Host "Temporary WP5 power plan removed."
+        } catch {
+            Write-Warning "Could not remove the temporary WP5 power plan automatically."
         }
     }
 }
