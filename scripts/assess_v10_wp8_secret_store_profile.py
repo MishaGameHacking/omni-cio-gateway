@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-import sys
 from typing import Any
 
 EXPECTED_CLASSES = {
@@ -53,7 +52,7 @@ def _walk_forbidden_keys(value: Any, path: str = "$") -> list[str]:
             blockers.extend(_walk_forbidden_keys(child, f"{path}.{key}"))
     elif isinstance(value, list):
         for index, child in enumerate(value):
-            blockers.extend(_walk_forbidden_keys(child, f"{path}[{index}]") )
+            blockers.extend(_walk_forbidden_keys(child, f"{path}[{index}]"))
     return blockers
 
 
@@ -145,7 +144,11 @@ def assess(profile: dict[str, Any], *, require_runner_denial: bool = True) -> li
         for field in ("directory_present", "sentinel_present", "intended_read_grant"):
             if item.get(field) is not True:
                 blockers.append(f"CLASS_{field.upper()}_NOT_TRUE:{class_id}")
-        for field in ("runner_read_data_grant", "runner_write_grant", "broad_read_exposure"):
+        for field in (
+            "runner_read_data_grant",
+            "runner_write_grant",
+            "broad_read_exposure",
+        ):
             if item.get(field) is not False:
                 blockers.append(f"CLASS_{field.upper()}_NOT_FALSE:{class_id}")
         if item.get("real_secret_provisioned") is not False:
@@ -185,7 +188,9 @@ def assess(profile: dict[str, Any], *, require_runner_denial: bool = True) -> li
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Assess sanitized V10 WP8 secret-store evidence")
+    parser = argparse.ArgumentParser(
+        description="Assess sanitized V10 WP8 secret-store evidence"
+    )
     parser.add_argument("profile", type=Path)
     parser.add_argument(
         "--owner-preview",
