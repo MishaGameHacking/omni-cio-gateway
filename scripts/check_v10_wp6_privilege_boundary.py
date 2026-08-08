@@ -92,12 +92,16 @@ def validate_contract_shape(contract: dict[str, Any]) -> list[str]:
         failures.append("ordinary runtime must not read execution secret")
     if runtime.get("runner_configuration_write_access") != "DENY":
         failures.append("ordinary runtime must not modify runner configuration")
+    if runtime.get("runner_root_access") != "DENY":
+        failures.append("ordinary runtime must be denied runner-root access")
     if runtime.get("broker_write_authority") != "DENY":
         failures.append("ordinary runtime must not receive broker-write authority")
 
     execution = _expect_mapping(roles.get("execution", {}), "roles.execution")
     if execution.get("administrator") is not False:
         failures.append("execution identity must be non-admin")
+    if execution.get("runner_root_access") != "DENY":
+        failures.append("execution identity must be denied runner-root access")
     if execution.get("transfer_withdraw_margin_short_authority") != "DENY":
         failures.append("execution identity must retain forbidden money authorities")
 
