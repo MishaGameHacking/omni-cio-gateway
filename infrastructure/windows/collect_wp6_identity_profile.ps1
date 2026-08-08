@@ -8,7 +8,9 @@ $ErrorActionPreference = "Stop"
 $runtimeRoleName = "omni-cio-runtime"
 $executionRoleName = "omni-cio-execution"
 $secretSentinel = "C:\ProgramData\OmniCIO\secrets\execution\wp6-ci-deny-sentinel.txt"
-$runnerConfig = "C:\actions-runner\.runner"
+$runnerRoot = "C:\actions-runner"
+$runnerConfig = Join-Path $runnerRoot ".runner"
+$runnerSensitiveNames = @(".runner", ".credentials", ".credentials_rsaparams", ".service")
 
 function Get-AccountClass {
     param([string]$StartName)
@@ -136,6 +138,17 @@ function Test-BroadAclAllow {
     return $false
 }
 
+function Get-RunnerSensitivePaths {
+    return @(
+        foreach ($name in $runnerSensitiveNames) {
+            $path = Join-Path $runnerRoot $name
+            if (Test-Path -LiteralPath $path -PathType Leaf) {
+                $path
+            }
+        }
+    )
+}
+
 $runnerServices = @(
     Get-CimInstance Win32_Service |
         Where-Object { $_.Name -like "actions.runner.*" }
@@ -234,11 +247,20 @@ if ($sentinelKnownPresent) {
     $secretBroadReadExposure = Test-BroadAclAllow -Path $secretSentinel -Mask $readMask
 }
 
+$runnerSensitivePaths = @(Get-RunnerSensitivePaths)
 $runtimeRunnerWriteGrant = $false
 $runnerConfigBroadWriteExposure = $null
-if (Test-Path -LiteralPath $runnerConfig) {
-    $runtimeRunnerWriteGrant = Test-AclAllow -Path $runnerConfig -Sid $runtimeSid -Mask $writeMask
-    $runnerConfigBroadWriteExposure = Test-BroadAclAllow -Path $runnerConfig -Mask $writeMask
+if ($runnerSensitivePaths.Count -gt 0) {
+    $runtimeRunnerWriteGrant = [bool](
+        $runnerSensitivePaths |
+            Where-Object { Test-AclAllow -Path $_ -Sid $runtimeSid -Mask $writeMask } |
+            Select-Object -First 1
+    )
+    $runnerConfigBroadWriteExposure = [bool](
+        $runnerSensitivePaths |
+            Where-Object { Test-BroadAclAllow -Path $_ -Mask $writeMask } |
+            Select-Object -First 1
+    )
 }
 
 $profile = [ordered]@{
