@@ -55,15 +55,27 @@ def validate() -> list[str]:
     wp6_paths = wp6.get("local_paths", {})
     wp6_roles = wp6.get("roles", {})
 
-    _require(failures, contract.get("schema_version") == "1", "schema_version must be '1'")
-    _require(failures, contract.get("work_package") == "WP8", "work_package must be WP8")
-    _require(failures, provider.get("type") == "WINDOWS_DPAPI", "provider must be WINDOWS_DPAPI")
+    _require(
+        failures, contract.get("schema_version") == "1", "schema_version must be '1'"
+    )
+    _require(
+        failures, contract.get("work_package") == "WP8", "work_package must be WP8"
+    )
+    _require(
+        failures,
+        provider.get("type") == "WINDOWS_DPAPI",
+        "provider must be WINDOWS_DPAPI",
+    )
     _require(
         failures,
         provider.get("api") == "System.Security.Cryptography.ProtectedData",
         "provider API must be ProtectedData",
     )
-    _require(failures, provider.get("scope") == "LOCAL_MACHINE", "DPAPI scope must be LOCAL_MACHINE")
+    _require(
+        failures,
+        provider.get("scope") == "LOCAL_MACHINE",
+        "DPAPI scope must be LOCAL_MACHINE",
+    )
     _require(
         failures,
         provider.get("authorization_boundary") == "PROTECTED_NTFS_DACL",
@@ -90,17 +102,20 @@ def validate() -> list[str]:
     )
     _require(
         failures,
-        paths.get("wp6_execution_sentinel") == wp6_paths.get("execution_acl_sentinel"),
+        paths.get("wp6_execution_sentinel")
+        == wp6_paths.get("execution_acl_sentinel"),
         "WP8 must preserve WP6 execution sentinel",
     )
     _require(
         failures,
-        identities.get("runtime_role") == wp6_roles.get("runtime", {}).get("role_name"),
+        identities.get("runtime_role")
+        == wp6_roles.get("runtime", {}).get("role_name"),
         "WP8 runtime role must match WP6",
     )
     _require(
         failures,
-        identities.get("execution_role") == wp6_roles.get("execution", {}).get("role_name"),
+        identities.get("execution_role")
+        == wp6_roles.get("execution", {}).get("role_name"),
         "WP8 execution role must match WP6",
     )
 
@@ -127,7 +142,11 @@ def validate() -> list[str]:
             item.get("real_value_required_for_wp8") is False,
             f"real value unexpectedly required for {item.get('id')}",
         )
-    _require(failures, actual_classes == expected_classes, "secret class/consumer matrix is not exact")
+    _require(
+        failures,
+        actual_classes == expected_classes,
+        "secret class/consumer matrix is not exact",
+    )
 
     for key, expected in {
         "inheritance_protected": True,
@@ -139,7 +158,8 @@ def validate() -> list[str]:
 
     _require(
         failures,
-        lifecycle.get("states") == ["UNPROVISIONED", "ACTIVE", "REVOKED", "COMPROMISED"],
+        lifecycle.get("states")
+        == ["UNPROVISIONED", "ACTIVE", "REVOKED", "COMPROMISED"],
         "lifecycle states are not exact",
     )
     forbidden_metadata = set(lifecycle.get("forbidden_metadata_fields", []))
@@ -179,7 +199,11 @@ def validate() -> list[str]:
         "trading_methods": False,
         "gateway_entrypoint": "app:app",
     }.items():
-        _require(failures, acceptance.get(key) == expected, f"acceptance.{key} must equal {expected!r}")
+        _require(
+            failures,
+            acceptance.get(key) == expected,
+            f"acceptance.{key} must equal {expected!r}",
+        )
 
     for fragment in (
         "[switch]$Apply",
@@ -204,7 +228,9 @@ def validate() -> list[str]:
         "process_dumps_collected = $false",
         "Real secret values used: NO",
     ):
-        _require(failures, fragment in provisioner, f"provisioner missing guard: {fragment}")
+        _require(
+            failures, fragment in provisioner, f"provisioner missing guard: {fragment}"
+        )
 
     for fragment in (
         "TINVEST_TOKEN",
@@ -215,7 +241,11 @@ def validate() -> list[str]:
         "Start-Service",
         "Remove-LocalUser",
     ):
-        _require(failures, fragment.lower() not in provisioner.lower(), f"provisioner contains forbidden marker: {fragment}")
+        _require(
+            failures,
+            fragment.lower() not in provisioner.lower(),
+            f"provisioner contains forbidden marker: {fragment}",
+        )
 
     param_match = re.search(r"param\((.*?)\)\s*\n\s*Set-StrictMode", manager, re.S)
     _require(failures, param_match is not None, "manager param block not found")
@@ -231,7 +261,11 @@ def validate() -> list[str]:
             "apikey",
             "connectionstring",
         ):
-            _require(failures, forbidden not in param_block, f"manager exposes plaintext parameter: {forbidden}")
+            _require(
+                failures,
+                forbidden not in param_block,
+                f"manager exposes plaintext parameter: {forbidden}",
+            )
 
     for fragment in (
         'if ($env:GITHUB_ACTIONS -eq "true")',
