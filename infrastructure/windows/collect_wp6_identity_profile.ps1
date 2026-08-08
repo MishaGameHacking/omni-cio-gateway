@@ -8,6 +8,7 @@ $ErrorActionPreference = "Stop"
 $runtimeRoleName = "omni-cio-runtime"
 $executionRoleName = "omni-cio-execution"
 $secretSentinel = "C:\ProgramData\OmniCIO\secrets\execution\wp6-ci-deny-sentinel.txt"
+$executionRoot = Split-Path -Parent $secretSentinel
 $runnerRoot = "C:\actions-runner"
 $runnerConfig = Join-Path $runnerRoot ".runner"
 $runnerSensitiveNames = @(".runner", ".credentials", ".credentials_rsaparams", ".service")
@@ -274,6 +275,14 @@ if ($sentinelKnownPresent) {
     $executionSecretReadGrant = Test-AclAllow -Path $secretSentinel -Sid $executionSid -Mask $readMask
     $secretBroadReadExposure = Test-BroadAclAllow -Path $secretSentinel -Mask $readMask
 }
+
+$executionDirectoryReadGrant = Test-AclAllow -Path $executionRoot -Sid $executionSid -Mask $readMask
+$executionSentinelAnyAllow = Test-AclAllow `
+    -Path $secretSentinel `
+    -Sid $executionSid `
+    -Mask ([int64][System.Security.AccessControl.FileSystemRights]::FullControl)
+Write-Host "WP6 ACL diagnostic: execution-directory-read-grant=$executionDirectoryReadGrant"
+Write-Host "WP6 ACL diagnostic: execution-sentinel-any-allow=$executionSentinelAnyAllow"
 
 $runtimeRunnerRootDeny = Test-AclDeny -Path $runnerRoot -Sid $runtimeSid -Mask $writeMask
 $executionRunnerRootDeny = Test-AclDeny -Path $runnerRoot -Sid $executionSid -Mask $writeMask
