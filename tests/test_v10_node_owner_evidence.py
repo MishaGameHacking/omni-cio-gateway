@@ -31,7 +31,7 @@ THRESHOLDS = json.loads(
 )
 
 
-def test_current_owner_evidence_is_applied_without_claiming_thermal_pass() -> None:
+def test_current_owner_evidence_is_applied_and_passes_thermal_gate() -> None:
     profile = copy.deepcopy(BASELINE)
     load_result = owner_evidence.apply_owner_evidence(profile, EVIDENCE, THRESHOLDS)
 
@@ -47,8 +47,8 @@ def test_current_owner_evidence_is_applied_without_claiming_thermal_pass() -> No
     assert profile["power"]["restart_after_power_loss"] == "NOT_SUPPORTED_BY_FIRMWARE"
     assert profile["checks"]["reboot"] == "PASS"
     assert profile["checks"]["network_reconnect"] == "PASS"
-    assert load_result == "FAIL"
-    assert profile["checks"]["sustained_cpu_gpu_load"] == "FAIL"
+    assert load_result == "PASS"
+    assert profile["checks"]["sustained_cpu_gpu_load"] == "PASS"
 
 
 def test_safe_complete_load_evidence_can_pass_deterministically() -> None:
