@@ -10,19 +10,24 @@ $ErrorActionPreference = "Stop"
 $root = "C:\ProgramData\OmniCIO"
 $ownershipMarker = "OMNI-CIO-V10-WP7-NON-SECRET-OWNED-v1"
 $ownershipMarkerName = ".omni-cio-wp7-owned"
+$servicesRoot = Join-Path $root "services"
+$logsRoot = Join-Path $root "logs"
+$dataRoot = Join-Path $root "data"
+$runtimeRoot = Join-Path $root "runtime"
+$bootstrapRoot = Join-Path $root "bootstrap"
 $ownedPaths = @(
-    Join-Path $root "services",
-    Join-Path $root "logs",
-    Join-Path $root "data",
-    Join-Path $root "runtime",
-    Join-Path $root "bootstrap"
+    $servicesRoot,
+    $logsRoot,
+    $dataRoot,
+    $runtimeRoot,
+    $bootstrapRoot
 )
 $allowedFiles = @{
-    (Join-Path $root "services") = @($ownershipMarkerName, "wp7-service-definitions.json")
-    (Join-Path $root "logs") = @($ownershipMarkerName)
-    (Join-Path $root "data") = @($ownershipMarkerName)
-    (Join-Path $root "runtime") = @($ownershipMarkerName)
-    (Join-Path $root "bootstrap") = @($ownershipMarkerName, "wp7-bootstrap-state.json")
+    $servicesRoot = @($ownershipMarkerName, "wp7-service-definitions.json")
+    $logsRoot = @($ownershipMarkerName)
+    $dataRoot = @($ownershipMarkerName)
+    $runtimeRoot = @($ownershipMarkerName)
+    $bootstrapRoot = @($ownershipMarkerName, "wp7-bootstrap-state.json")
 }
 $futureServiceNames = @(
     "OmniCIO.Core",
@@ -117,7 +122,7 @@ function Get-CleanupState {
 }
 
 function Write-State {
-    param([hashtable]$State)
+    param([System.Collections.IDictionary]$State)
 
     if ($AsJson) {
         $State | ConvertTo-Json -Depth 6 -Compress
