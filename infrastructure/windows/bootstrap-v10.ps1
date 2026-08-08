@@ -15,7 +15,7 @@ if ($Apply -and $Verify) {
 if ($InstallPrerequisites -and -not $Apply) {
     throw "-InstallPrerequisites is valid only together with -Apply."
 }
-if ($env:OS -ne "Windows_NT" -and $Apply) {
+if ($Apply -and $env:OS -ne "Windows_NT") {
     throw "WP7 bootstrap mutation requires Windows."
 }
 
@@ -23,7 +23,6 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $contractPath = Join-Path $repoRoot "docs\architecture\V10_WP7_BOOTSTRAP_CONTRACT.json"
 $toolchainPath = Join-Path $repoRoot "docs\architecture\V10_TOOLCHAIN_BASELINE.json"
 $runnerChecker = Join-Path $repoRoot "scripts\check_self_hosted_windows_runner_service.ps1"
-
 $contract = Get-Content -LiteralPath $contractPath -Raw -ErrorAction Stop |
     ConvertFrom-Json -ErrorAction Stop
 $toolchain = Get-Content -LiteralPath $toolchainPath -Raw -ErrorAction Stop |
@@ -72,7 +71,6 @@ $nodeVersion = [string]$toolchain.frontend.node
 $npmVersion = [string]$toolchain.frontend.npm
 $postgresMajor = [int]$toolchain.database.postgresql_major
 $postgresVersion = [string]$toolchain.database.tested_patch
-
 if ($pythonVersion -ne [string]$contract.toolchain.python.runtime_version) {
     throw "WP7 Python target does not match the selected V10 toolchain."
 }
@@ -115,24 +113,13 @@ function Get-LocalRoleState {
     param([string]$Name)
 
     if ($env:OS -ne "Windows_NT") {
-        return [ordered]@{
-            present = $false
-            enabled = $null
-            administrator = $null
-            sid = $null
-        }
+        return [ordered]@{ present = $false; enabled = $null; administrator = $null; sid = $null }
     }
-
     try {
         $role = Get-LocalUser -Name $Name -ErrorAction Stop
     }
     catch {
-        return [ordered]@{
-            present = $false
-            enabled = $null
-            administrator = $null
-            sid = $null
-        }
+        return [ordered]@{ present = $false; enabled = $null; administrator = $null; sid = $null }
     }
 
     $isAdmin = $null
@@ -145,7 +132,6 @@ function Get-LocalRoleState {
     catch {
         $isAdmin = $null
     }
-
     return [ordered]@{
         present = $true
         enabled = [bool]$role.Enabled
@@ -156,16 +142,10 @@ function Get-LocalRoleState {
 
 function Get-RunnerHealth {
     if ($env:OS -ne "Windows_NT") {
-        return [ordered]@{
-            healthy = $false
-            error_code = "RUNNER_SERVICE_WINDOWS_REQUIRED"
-        }
+        return [ordered]@{ healthy = $false; error_code = "RUNNER_SERVICE_WINDOWS_REQUIRED" }
     }
     if (-not (Test-Path -LiteralPath $runnerChecker -PathType Leaf)) {
-        return [ordered]@{
-            healthy = $false
-            error_code = "RUNNER_CHECKER_MISSING"
-        }
+        return [ordered]@{ healthy = $false; error_code = "RUNNER_CHECKER_MISSING" }
     }
 
     $raw = & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass `
@@ -177,10 +157,7 @@ function Get-RunnerHealth {
         $parsed = $raw | Out-String | ConvertFrom-Json -ErrorAction Stop
     }
     catch {
-        return [ordered]@{
-            healthy = $false
-            error_code = "RUNNER_CHECKER_OUTPUT_INVALID"
-        }
+        return [ordered]@{ healthy = $false; error_code = "RUNNER_CHECKER_OUTPUT_INVALID" }
     }
     return [ordered]@{
         healthy = [bool]$parsed.healthy
@@ -189,10 +166,7 @@ function Get-RunnerHealth {
 }
 
 function Invoke-VersionCommand {
-    param(
-        [string]$FilePath,
-        [string[]]$Arguments
-    )
+    param([string]$FilePath, [string[]]$Arguments)
 
     try {
         $output = & $FilePath @Arguments 2>$null | Out-String
@@ -218,7 +192,6 @@ function Test-MachineVisiblePath {
     catch {
         return $false
     }
-
     foreach ($privateRoot in @($env:USERPROFILE, $env:LOCALAPPDATA, $env:APPDATA)) {
         if ([string]::IsNullOrWhiteSpace($privateRoot)) {
             continue
@@ -233,8 +206,7 @@ function Test-MachineVisiblePath {
 
 function Get-PythonInfo {
     $version = $null
-    $executable = $null
-
+    $path = $null
     try {
         $payload = & py.exe -3.14 -c `
             "import json,sys; print(json.dumps({'v':'.'.join(map(str,sys.version_info[:3])),'p':sys.executable}))" `
@@ -242,14 +214,13 @@ function Get-PythonInfo {
         if ($LASTEXITCODE -eq 0 -and $payload.Trim()) {
             $parsed = $payload.Trim() | ConvertFrom-Json -ErrorAction Stop
             $version = [string]$parsed.v
-            $executable = [string]$parsed.p
+            $path = [string]$parsed.p
         }
     }
     catch {
         $version = $null
-        $executable = $null
+        $path = $null
     }
-
     if (-not $version) {
         $candidate = "C:\Program Files\Python314\python.exe"
         if (Test-Path -LiteralPath $candidate -PathType Leaf) {
@@ -257,87 +228,42 @@ function Get-PythonInfo {
                 "-c",
                 "import sys; print('.'.join(map(str, sys.version_info[:3])))"
             )
-            $executable = $candidate
+            $path = $candidate
         }
     }
-
     return [ordered]@{
         version = $version
-        machine_visible = Test-MachineVisiblePath -Path $executable
+        machine_visible = Test-MachineVisiblePath -Path $path
     }
 }
 
-function Get-NodeInfo {
-    $version = Invoke-VersionCommand -FilePath "node.exe" -Arguments @("--version")
+function Get-CommandInfo {
+    param(
+        [string]$CommandName,
+        [string]$FallbackPath,
+        [string[]]$Arguments,
+        [switch]$StripLeadingV,
+        [string]$VersionPattern
+    )
+
+    $version = Invoke-VersionCommand -FilePath $CommandName -Arguments $Arguments
     $path = $null
     try {
-        $command = Get-Command node.exe -ErrorAction Stop
+        $command = Get-Command $CommandName -ErrorAction Stop
         $path = [string]$command.Source
     }
     catch {
         $path = $null
     }
-    if (-not $version) {
-        $candidate = "C:\Program Files\nodejs\node.exe"
-        if (Test-Path -LiteralPath $candidate -PathType Leaf) {
-            $version = Invoke-VersionCommand -FilePath $candidate -Arguments @("--version")
-            $path = $candidate
-        }
+    if (-not $version -and (Test-Path -LiteralPath $FallbackPath -PathType Leaf)) {
+        $version = Invoke-VersionCommand -FilePath $FallbackPath -Arguments $Arguments
+        $path = $FallbackPath
     }
-    if ($version -and $version.StartsWith("v")) {
+    if ($StripLeadingV -and $version -and $version.StartsWith("v")) {
         $version = $version.Substring(1)
     }
-    return [ordered]@{
-        version = $version
-        machine_visible = Test-MachineVisiblePath -Path $path
-    }
-}
-
-function Get-NpmInfo {
-    $version = Invoke-VersionCommand -FilePath "npm.cmd" -Arguments @("--version")
-    $path = $null
-    try {
-        $command = Get-Command npm.cmd -ErrorAction Stop
-        $path = [string]$command.Source
-    }
-    catch {
-        $path = $null
-    }
-    if (-not $version) {
-        $candidate = "C:\Program Files\nodejs\npm.cmd"
-        if (Test-Path -LiteralPath $candidate -PathType Leaf) {
-            $version = Invoke-VersionCommand -FilePath $candidate -Arguments @("--version")
-            $path = $candidate
-        }
-    }
-    return [ordered]@{
-        version = $version
-        machine_visible = Test-MachineVisiblePath -Path $path
-    }
-}
-
-function Get-PostgreSqlInfo {
-    $version = $null
-    $path = $null
-    $candidates = @("psql.exe", "C:\Program Files\PostgreSQL\18\bin\psql.exe")
-    foreach ($candidate in $candidates) {
-        $value = Invoke-VersionCommand -FilePath $candidate -Arguments @("--version")
-        if ($value -and $value -match '([0-9]+\.[0-9]+)') {
-            $version = $Matches[1]
-            if ($candidate -eq "psql.exe") {
-                try {
-                    $command = Get-Command psql.exe -ErrorAction Stop
-                    $path = [string]$command.Source
-                }
-                catch {
-                    $path = $null
-                }
-            }
-            else {
-                $path = $candidate
-            }
-            break
-        }
+    if ($VersionPattern -and $version -and $version -match $VersionPattern) {
+        $version = $Matches[1]
     }
     return [ordered]@{
         version = $version
@@ -346,11 +272,7 @@ function Get-PostgreSqlInfo {
 }
 
 function Get-PrerequisiteState {
-    param(
-        [string]$Expected,
-        [string]$Actual,
-        [bool]$MachineVisible
-    )
+    param([string]$Expected, [string]$Actual, [bool]$MachineVisible)
 
     if ([string]::IsNullOrWhiteSpace($Actual)) {
         return "MISSING"
@@ -375,9 +297,20 @@ function Get-Prerequisites {
     }
 
     $python = Get-PythonInfo
-    $node = Get-NodeInfo
-    $npm = Get-NpmInfo
-    $postgres = Get-PostgreSqlInfo
+    $node = Get-CommandInfo `
+        -CommandName "node.exe" `
+        -FallbackPath "C:\Program Files\nodejs\node.exe" `
+        -Arguments @("--version") `
+        -StripLeadingV
+    $npm = Get-CommandInfo `
+        -CommandName "npm.cmd" `
+        -FallbackPath "C:\Program Files\nodejs\npm.cmd" `
+        -Arguments @("--version")
+    $postgres = Get-CommandInfo `
+        -CommandName "psql.exe" `
+        -FallbackPath "C:\Program Files\PostgreSQL\18\bin\psql.exe" `
+        -Arguments @("--version") `
+        -VersionPattern '([0-9]+\.[0-9]+)'
 
     return [ordered]@{
         python = [ordered]@{
@@ -408,17 +341,12 @@ function Get-Prerequisites {
 }
 
 function Install-ExactWingetPackage {
-    param(
-        [string]$Id,
-        [string]$Version,
-        [switch]$Interactive
-    )
+    param([string]$Id, [string]$Version, [switch]$Interactive)
 
     $winget = Get-Command winget.exe -ErrorAction SilentlyContinue
     if ($null -eq $winget) {
         throw "WINGET_NOT_AVAILABLE"
     }
-
     $arguments = @(
         "install",
         "--id", $Id,
@@ -460,7 +388,6 @@ function Install-MissingPrerequisites {
             throw "PREREQUISITE_NOT_MACHINE_VISIBLE:$name"
         }
     }
-
     if ($Before.python.state -eq "MISSING") {
         Install-ExactWingetPackage `
             -Id ([string]$contract.toolchain.python.winget_id) `
@@ -485,7 +412,6 @@ function New-AllowRule {
         [System.Security.AccessControl.FileSystemRights]$Rights,
         [System.Security.AccessControl.InheritanceFlags]$Inheritance
     )
-
     return [System.Security.AccessControl.FileSystemAccessRule]::new(
         $Identity,
         $Rights,
@@ -568,7 +494,6 @@ function Ensure-OwnedDirectory {
         Set-Content -LiteralPath $marker -Value $ownershipMarker -Encoding ASCII -NoNewline
         $changed = $true
     }
-
     if ($AclClass -eq "OWNER_ONLY") {
         Set-OwnerOnlyDirectoryAcl -Path $Path
     }
@@ -587,10 +512,7 @@ function Get-ServiceDefinitionsJson {
 }
 
 function Ensure-ExactFile {
-    param(
-        [string]$Path,
-        [string]$ExpectedContent
-    )
+    param([string]$Path, [string]$ExpectedContent)
 
     if (Test-Path -LiteralPath $Path) {
         $existing = Get-Content -LiteralPath $Path -Raw -ErrorAction Stop
@@ -662,7 +584,6 @@ function Ensure-Wp7State {
             $changes += 1
         }
     }
-
     if (Ensure-ExactFile -Path $serviceDefinitionsPath -ExpectedContent (Get-ServiceDefinitionsJson)) {
         $changes += 1
     }
@@ -732,16 +653,12 @@ function Test-FutureServicesInactive {
 }
 
 function Get-Profile {
-    param(
-        [string]$Mode,
-        [bool]$IdempotenceVerified
-    )
+    param([string]$Mode, [bool]$IdempotenceVerified)
 
     $prerequisites = Get-Prerequisites
     $runtimeState = Get-LocalRoleState -Name $runtimeName
     $executionState = Get-LocalRoleState -Name $executionName
     $runner = Get-RunnerHealth
-
     $rolesValid = (
         $runtimeState.present -eq $true -and
         $runtimeState.enabled -eq $false -and
@@ -750,7 +667,6 @@ function Get-Profile {
         $executionState.enabled -eq $false -and
         $executionState.administrator -eq $false
     )
-
     $ownedDirectoriesReady = (
         (Test-OwnedDirectory -Path $bootstrapRoot) -and
         (Test-OwnedDirectory -Path $runtimeRoot) -and
@@ -778,14 +694,14 @@ function Get-Profile {
         $reasons += "IDEMPOTENCE_NOT_PROVEN"
     }
 
-    $status = if ($reasons.Count -eq 0) {
-        "PASS"
+    if ($reasons.Count -eq 0) {
+        $status = "PASS"
     }
     elseif ($Mode -eq "PREVIEW") {
-        "OWNER_ACTION_REQUIRED"
+        $status = "OWNER_ACTION_REQUIRED"
     }
     else {
-        "FAIL"
+        $status = "FAIL"
     }
 
     return [ordered]@{
@@ -834,16 +750,11 @@ function Write-Profile {
         $Profile | ConvertTo-Json -Depth 10 -Compress
         return
     }
-
     Write-Host "WP7 bootstrap mode: $($Profile.mode)"
-    Write-Host "WP7 bootstrap status: $($Profile.status)" -ForegroundColor $(
-        if ($Profile.status -eq "PASS") { "Green" }
-        elseif ($Profile.status -eq "OWNER_ACTION_REQUIRED") { "Yellow" }
-        else { "Red" }
-    )
+    Write-Host "WP7 bootstrap status: $($Profile.status)"
     foreach ($name in @("python", "node", "npm", "postgresql")) {
         $item = $Profile.prerequisites[$name]
-        Write-Host "Prerequisite $name: $($item.state) (expected $($item.expected))"
+        Write-Host "Prerequisite ${name}: $($item.state) (expected $($item.expected))"
     }
     Write-Host "Runner healthy: $($Profile.runner.healthy)"
     Write-Host "WP7 directories ready: $($Profile.bootstrap.owned_directories_ready)"
@@ -927,7 +838,6 @@ if ($notExact.Count -gt 0) {
 
 $existingInstalled = @(Get-ExistingInstalledPackages)
 $installedByWp7 = @($existingInstalled + $installedThisRun | Sort-Object -Unique)
-
 $firstPassChanges = Ensure-Wp7State `
     -RuntimeSid $runtimeBefore.sid `
     -InstalledPackages $installedByWp7
@@ -941,7 +851,6 @@ if (-not $idempotenceVerified) {
 
 Write-Host "WP7 bootstrap first-pass structural changes: $firstPassChanges"
 Write-Host "WP7 bootstrap second-pass structural changes: $secondPassChanges"
-
 $profile = Get-Profile -Mode "APPLY" -IdempotenceVerified $idempotenceVerified
 Write-Profile -Profile $profile
 if ($profile.status -eq "PASS") {
