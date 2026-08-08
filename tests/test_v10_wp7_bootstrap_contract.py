@@ -1,0 +1,151 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+from scripts import check_v10_wp7_bootstrap_contract as wp7
+
+
+ROOT = Path(__file__).resolve().parents[1]
+BOOTSTRAP = ROOT / "infrastructure" / "windows" / "bootstrap-v10.ps1"
+ROLLBACK = ROOT / "infrastructure" / "windows" / "rollback_wp7_bootstrap.ps1"
+CONTRACT = ROOT / "docs" / "architecture" / "V10_WP7_BOOTSTRAP_CONTRACT.json"
+EXECUTION_CONTRACT = ROOT / "docs" / "architecture" / "V10_WP7_EXECUTION_CONTRACT.md"
+
+
+def test_wp7_contract_guard_passes() -> None:
+    assert wp7.validate() == []
+
+
+def test_wp7_assets_exist() -> None:
+    for path in (BOOTSTRAP, ROLLBACK, CONTRACT, EXECUTION_CONTRACT):
+        assert path.is_file(), path
+
+
+def test_bootstrap_is_preview_by_default_and_requires_explicit_apply() -> None:
+    text = BOOTSTRAP.read_text(encoding="utf-8")
+    assert "[switch]$Apply" in text
+    assert "[switch]$Verify" in text
+    assert "if (-not $Apply -and -not $Verify)" in text
+    assert 'Get-Profile -Mode "PREVIEW"' in text
+    assert "WP7 bootstrap -Apply requires an elevated OWNER-admin PowerShell" in text
+
+
+def test_bootstrap_has_no_secret_value_parameters_or_real_authority() -> None:
+    text = BOOTSTRAP.read_text(encoding="utf-8")
+    param_block = text.split("param(", 1)[1].split("Set-StrictMode", 1)[0].lower()
+    for marker in (
+        "token",
+        "secret",
+        "password",
+        "api_key",
+        "apikey",
+        "authorization",
+        "connectionstring",
+        "connection_string",
+    ):
+        assert marker not in param_block
+    for marker in (
+        "TINVEST_TRADING_TOKEN",
+        "TINVEST_TOKEN",
+        "TELEGRAM_BOT_TOKEN",
+        "REAL_TRADING_ENABLED=true",
+        "New-Service",
+        "sc.exe create",
+    ):
+        assert marker.lower() not in text.lower()
+
+
+def test_bootstrap_never_reconfigures_runner() -> None:
+    text = BOOTSTRAP.read_text(encoding="utf-8").lower()
+    assert "check_self_hosted_windows_runner_service.ps1" in text
+    assert "config.cmd remove" not in text
+    assert "config.cmd --url" not in text
+    assert "svc.cmd install" not in text
+    assert "svc.cmd uninstall" not in text
+
+
+def test_bootstrap_uses_exact_pinned_winget_resolution() -> None:
+    text = BOOTSTRAP.read_text(encoding="utf-8")
+    assert '"--id", $Id' in text
+    assert '"--exact"' in text
+    assert '"--version", $Version' in text
+    assert '"--source", "winget"' in text
+    assert '"--scope", "machine"' in text
+    assert "latest" not in text.lower()
+
+
+def test_toolchain_contract_matches_selected_baseline() -> None:
+    policy = json.loads(CONTRACT.read_text(encoding="utf-8"))
+    baseline = json.loads(
+        (ROOT / "docs" / "architecture" / "V10_TOOLCHAIN_BASELINE.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert policy["toolchain"]["python"]["runtime_version"] == baseline["backend"]["python"]
+    assert policy["toolchain"]["node"]["runtime_version"] == baseline["frontend"]["node"]
+    assert policy["toolchain"]["npm"]["runtime_version"] == baseline["frontend"]["npm"]
+    assert (
+        policy["toolchain"]["postgresql"]["runtime_version"]
+        == baseline["database"]["tested_patch"]
+    )
+    assert (
+        policy["toolchain"]["postgresql"]["major"]
+        == baseline["database"]["postgresql_major"]
+    )
+
+
+def test_bootstrap_idempotence_is_a_required_runtime_postcondition() -> None:
+    text = BOOTSTRAP.read_text(encoding="utf-8")
+    assert "firstPassChanges" in text
+    assert "secondPassChanges" in text
+    assert "$secondPassChanges -eq 0" in text
+    assert "WP7 bootstrap second pass was not idempotent" in text
+    assert "idempotence_verified" in text
+
+
+def test_bootstrap_only_defines_future_services_and_does_not_activate_them() -> None:
+    text = BOOTSTRAP.read_text(encoding="utf-8")
+    policy = json.loads(CONTRACT.read_text(encoding="utf-8"))
+    assert all(
+        item["activation"] == "FUTURE_WP_ONLY"
+        for item in policy["service_definitions"]
+    )
+    assert "DEFINITIONS_ONLY_FUTURE_ACTIVATION" in text
+    assert "Test-FutureServicesInactive" in text
+    assert "New-Service" not in text
+    assert "Start-Service" not in text
+
+
+def test_wp8_secret_root_is_bound_but_never_mutated() -> None:
+    text = BOOTSTRAP.read_text(encoding="utf-8")
+    assert '$secretRoot = Join-Path $expectedRoot "secrets"' in text
+    for command in ("New-Item", "Set-Content", "Remove-Item", "Set-Acl"):
+        assert f"{command} -LiteralPath $secretRoot" not in text
+        assert f"{command} -Path $secretRoot" not in text
+
+
+def test_rollback_is_marker_guarded_and_never_uninstalls_prerequisites() -> None:
+    text = ROLLBACK.read_text(encoding="utf-8")
+    assert "Test-OwnedDirectory" in text
+    assert "safe_to_cleanup" in text
+    assert "unexpected_entries" in text
+    assert "future_services_present" in text
+    assert "Prerequisites will be uninstalled: NO" in text
+    assert "WP6 identities/runner/secret boundary will be changed: NO" in text
+    assert "winget uninstall" not in text.lower()
+    assert "Remove-LocalUser" not in text
+
+
+def test_privacy_profile_is_explicitly_fail_closed_against_secret_collection() -> None:
+    text = BOOTSTRAP.read_text(encoding="utf-8")
+    for flag in (
+        "raw_usernames_collected = $false",
+        "sids_emitted = $false",
+        "hostnames_collected = $false",
+        "addresses_collected = $false",
+        "secret_values_collected = $false",
+        "runner_credentials_collected = $false",
+        "private_data_collected = $false",
+    ):
+        assert flag in text
