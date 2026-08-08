@@ -21,6 +21,8 @@ The following remain outside WP7 mutation authority:
 
 WP7 reuses the accepted `omni-cio-runtime` and `omni-cio-execution` disabled non-admin role anchors. It refuses apply if those WP6 postconditions are absent.
 
+The WP7 runner probe deliberately does **not** read `.runner` or credential material after WP6 hardening. It validates the bounded `.service` marker, the exact installed Windows service, running/automatic state, non-admin service identity and that the executing CI process matches that service identity. The probe emits booleans/error codes only.
+
 ## 3. Selected prerequisites
 
 Version authority is `docs/architecture/V10_TOOLCHAIN_BASELINE.json`.
@@ -32,7 +34,26 @@ WP7 requires exactly:
 - npm `11.16.0`;
 - PostgreSQL `18.4` (major 18).
 
-The repository bootstrap contract additionally pins exact WinGet package identities/versions rather than resolving `latest`.
+These are the **accepted WP2 project baseline**, not an instruction to resolve the newest upstream release during bootstrap. A later toolchain upgrade requires its own compatibility/recovery evidence.
+
+### Python installation policy
+
+Python is not installed through `Python.Python.3.14 --scope machine`. The current upstream WinGet package path has a documented scope defect in which a requested machine install can be recorded/resolved as user scope. WP7 therefore uses the official Python.org traditional x64 installer for the frozen `3.14.6` baseline.
+
+The repository contract pins:
+
+- exact URL: `https://www.python.org/ftp/python/3.14.6/python-3.14.6-amd64.exe`;
+- SHA-256: `14B3E9A710A3FCF0BD9B55AB6B60412BD91227563F813FC49040CABC0209E0BD`;
+- all-users installation (`InstallAllUsers=1`);
+- no user PATH mutation (`PrependPath=0`);
+- SHA-256 verification before execution;
+- valid Authenticode signature before execution.
+
+The downloaded installer is temporary and is removed after the installation attempt. WP7 detects the machine installation at `C:\Program Files\Python314\python.exe` before consulting any per-user Python launcher result.
+
+### Node.js and PostgreSQL installation policy
+
+Node.js and PostgreSQL continue to use exact WinGet package identities and exact versions with `--exact`, `--version`, `--source winget` and `--scope machine`. No package is resolved from `latest`.
 
 The bootstrap never passes a password/token/secret as a command-line argument. If the official PostgreSQL installer needs a local database password, it is entered only in that installer UI; it is never typed into the PowerShell command, printed by the bootstrap or stored in GitHub. WP7 does not create an Omni-CIO application schema or private database payload.
 
@@ -76,7 +97,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass `
   -File .\infrastructure\windows\bootstrap-v10.ps1 -Apply
 ```
 
-If one or more approved public prerequisites are missing, use the same reviewed script with exact-package installation enabled:
+If one or more approved public prerequisites are missing or exist only in a non-machine-visible user location, use the same reviewed script with exact prerequisite installation enabled:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass `
@@ -84,18 +105,20 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass `
   -Apply -InstallPrerequisites
 ```
 
+This option may access only the reviewed public package/installer sources described in the committed contract. It does not accept or retrieve an Omni-CIO secret.
+
 Do not:
 
 - add token/password/secret arguments;
 - paste a GitHub registration token;
 - run `git fetch` or `git pull` in the privileged hand-off;
-- disable certificate/package hash verification;
+- disable certificate, Authenticode or package-hash verification;
 - select `latest` package versions;
 - manually reconfigure the GitHub runner as a shortcut.
 
 ### PostgreSQL installer interaction
 
-If WinGet starts the reviewed PostgreSQL installer and it asks for a local database password, enter it only in the installer UI. Do not paste it into this chat, a GitHub issue, PowerShell, a log or a screenshot.
+If WinGet starts the reviewed PostgreSQL installer and it asks for a local database password, enter it only in the installer UI. Do not paste it into chat, a GitHub issue, PowerShell, a log or a screenshot.
 
 WP7 records no password value. Application DB schema/credentials/private data remain outside this WP.
 
@@ -146,8 +169,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass `
 
 WP7 verification requires simultaneously:
 
-- exact selected prerequisites;
-- healthy persistent `omni-cio-ci` runner;
+- exact selected prerequisites from machine-visible locations;
+- healthy persistent `omni-cio-ci` Windows service without reading protected runner-private configuration;
 - WP6 runtime/execution roles present, disabled and non-admin;
 - all WP7 directories correctly marked;
 - exact service-definition/state files;
@@ -155,7 +178,7 @@ WP7 verification requires simultaneously:
 - privacy flags false;
 - no secret-value use.
 
-The authoritative GitHub workflow performs this privacy-safe verification from the CI identity after OWNER apply.
+The authoritative GitHub workflow performs this privacy-safe verification from the CI service identity after OWNER apply.
 
 ## 9. Guarded cleanup / rollback
 
@@ -186,22 +209,34 @@ Cleanup deliberately leaves public prerequisites installed. It does not alter WP
 
 | Code/state | Meaning | Response |
 |---|---|---|
-| `PREREQUISITES_NOT_EXACT` | One or more selected runtime versions are missing/mismatched | Use reviewed exact install path for missing packages; inspect mismatch rather than silently upgrade/downgrade |
-| `RUNNER_NOT_HEALTHY` | Existing durable runner contract is not green | Follow `SELF_HOSTED_WINDOWS_RUNNER_SERVICE.md`; do not re-register blindly |
+| `PREREQUISITES_NOT_EXACT` | One or more selected runtime versions are missing/mismatched/not machine-visible | Use the reviewed exact install path; inspect a real machine-version mismatch rather than silently replacing it |
+| `PYTHON_INSTALLER_URL_POLICY_MISMATCH` | Contract URL is not the reviewed Python.org artifact | Stop; review repository drift |
+| `PYTHON_INSTALLER_HASH_POLICY_INVALID` | Contract SHA-256 is malformed | Stop; review repository drift |
+| `PYTHON_INSTALLER_SHA256_MISMATCH` | Download does not match committed SHA-256 | Delete/stop; do not execute the artifact |
+| `PYTHON_INSTALLER_AUTHENTICODE_INVALID` | Windows cannot validate the downloaded installer signature | Stop; do not execute the artifact |
+| `RUNNER_NOT_HEALTHY` | Existing durable runner service contract is not green | Inspect service/identity state; do not re-register blindly |
 | `WP6_ROLES_NOT_VALID` | Required least-privilege anchors are missing/enabled/admin/unknown | Stop; repair WP6 boundary rather than recreating it in WP7 |
 | `WP7_DIRECTORIES_NOT_READY` | Bootstrap-owned state has not been applied | OWNER apply from reviewed checkout |
 | `SERVICE_DEFINITIONS_NOT_READY` | Definition file absent or changed | Stop and inspect repository/local drift |
 | `FUTURE_SERVICE_ACTIVATED_EARLY` | Later application service exists before its owning WP | FAIL; remove/resolve unauthorized early activation through reviewed recovery |
-| `WINGET_NOT_AVAILABLE` | Windows Package Manager unavailable for a requested install | OWNER action required to restore supported Windows package-management capability |
-| `PREREQUISITE_VERSION_MISMATCH:*` | A different version is already installed | Do not auto-replace; inspect compatibility/rollback first |
+| `WINGET_NOT_AVAILABLE` | Windows Package Manager unavailable for Node/PostgreSQL install | OWNER action required to restore supported package-management capability |
+| `PREREQUISITE_VERSION_MISMATCH:*` | A different machine-visible version is already installed | Do not auto-replace; inspect compatibility/rollback first |
 | cleanup `safe_to_cleanup=false` | WP7 state is unowned or already consumed | Do not delete; classify ownership before recovery |
 
-## 11. Exit Gate evidence
+## 11. Upstream references captured during WP7 hardening
+
+- Python Windows installer documentation: traditional installer supports `/quiet` plus `InstallAllUsers=1` and machine-wide default target selection.
+- Python `3.14.6` official release artifact and checksum are the source pinned in the machine-readable contract.
+- Microsoft `winget-pkgs` issue `#355596` documents the current `Python.Python.3.14 --scope machine` user-scope defect that WP7 avoids rather than working around after installation.
+
+These references justify the installer transport only. The selected V10 runtime version remains governed by the accepted WP2 toolchain baseline.
+
+## 12. Exit Gate evidence
 
 WP7 is accepted only after:
 
 1. hosted/static checks pass;
-2. hosted Windows clean-room preview proves non-mutation;
+2. hosted Windows clean-room preview proves non-mutation and PowerShell 5.1 parsing;
 3. exact-head Lenovo preflight is reviewed;
 4. OWNER applies the exact reviewed checkout once;
 5. the bootstrap proves its second ensure pass makes zero structural changes;
