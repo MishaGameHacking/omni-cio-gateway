@@ -11,6 +11,10 @@ TOOLCHAIN_PATH = ROOT / "docs" / "architecture" / "V10_TOOLCHAIN_BASELINE.json"
 BOOTSTRAP_PATH = ROOT / "infrastructure" / "windows" / "bootstrap-v10.ps1"
 ROLLBACK_PATH = ROOT / "infrastructure" / "windows" / "rollback_wp7_bootstrap.ps1"
 
+PYTHON_INSTALLER_SHA256 = (
+    "14B3E9A710A3FCF0BD9B55AB6B60412BD91227563F813FC49040CABC0209E0BD"
+)
+
 
 class ContractError(ValueError):
     pass
@@ -78,8 +82,25 @@ def validate() -> list[str]:
     if selected_pg.get("major") != base_database.get("postgresql_major"):
         failures.append("WP7 PostgreSQL major must match V10 toolchain")
 
+    python_url = (
+        f"https://www.python.org/ftp/python/{expected_versions['python']}/"
+        f"python-{expected_versions['python']}-amd64.exe"
+    )
+    if selected_python.get("installer_url") != python_url:
+        failures.append("unexpected WP7 official Python installer URL")
+    if selected_python.get("installer_sha256") != PYTHON_INSTALLER_SHA256:
+        failures.append("unexpected WP7 Python installer SHA-256")
+    if selected_python.get("installer_publisher") != "Python Software Foundation":
+        failures.append("unexpected WP7 Python installer publisher")
+    if (
+        selected_python.get("install_policy")
+        != "EXACT_VERSION_OFFICIAL_INSTALLER_SHA256_MACHINE"
+    ):
+        failures.append("unexpected WP7 Python installation policy")
+    if "winget_id" in selected_python or "winget_version" in selected_python:
+        failures.append("WP7 Python must not depend on WinGet package scope resolution")
+
     package_expectations = {
-        "python": ("Python.Python.3.14", expected_versions["python"]),
         "node": ("OpenJS.NodeJS.LTS", expected_versions["node"]),
         "postgresql": ("PostgreSQL.PostgreSQL.18", "18.4-2"),
     }
@@ -133,6 +154,8 @@ def validate() -> list[str]:
         failures.append("WP7 bootstrap must not re-register the runner")
     if bootstrap.get("future_application_service_activation_allowed") is not False:
         failures.append("WP7 bootstrap must not activate future application services")
+    if bootstrap.get("public_download_hash_verification_required") is not True:
+        failures.append("WP7 public downloads must be hash verified")
 
     profile_contract = _mapping(contract.get("profile"), "profile")
     states = profile_contract.get("allowed_prerequisite_states")
@@ -181,6 +204,14 @@ def validate() -> list[str]:
         "Get-LocalRoleState",
         "Test-MachineVisiblePath",
         'return "NOT_MACHINE_VISIBLE"',
+        '"C:\\Program Files\\Python314\\python.exe"',
+        "Install-ExactPythonPackage",
+        "Invoke-WebRequest -Uri $installerUrl -OutFile $installerPath",
+        "Get-FileHash -LiteralPath $installerPath -Algorithm SHA256",
+        "Get-AuthenticodeSignature -LiteralPath $installerPath",
+        '"InstallAllUsers=1"',
+        '"PrependPath=0"',
+        '"Include_test=0"',
         "Install-ExactWingetPackage",
         '"--exact"',
         '"--version"',
@@ -209,6 +240,8 @@ def validate() -> list[str]:
         "New-Service",
         "sc.exe create",
         "Set-Service -Name OmniCIO",
+        "contract.toolchain.python.winget_id",
+        "contract.toolchain.python.winget_version",
     )
     for fragment in forbidden_bootstrap_fragments:
         if fragment.lower() in bootstrap_text.lower():
@@ -267,7 +300,8 @@ def main() -> int:
     print("V10 WP7 bootstrap contract check passed.")
     print("Default mode: PREVIEW")
     print("Apply authority: OWNER administrator only")
-    print("Package resolution: exact IDs + pinned versions")
+    print("Python source: exact python.org artifact + SHA-256 + Authenticode")
+    print("Node/PostgreSQL package resolution: exact IDs + pinned versions")
     print("Prerequisite visibility: machine-wide required")
     print("Runner registration: untouched")
     print("Secret-value inputs: forbidden")
