@@ -93,7 +93,7 @@ function Test-AclAllow {
         [int64]$Mask
     )
 
-    if (-not $Sid -or -not (Test-Path -LiteralPath $Path)) {
+    if (-not $Sid) {
         return $false
     }
     try {
@@ -190,23 +190,30 @@ $runtimeState = Get-LocalRoleState -Name $runtimeRoleName
 $executionState = Get-LocalRoleState -Name $executionRoleName
 
 $sentinelReadResult = "NOT_CONFIGURED"
-if (Test-Path -LiteralPath $secretSentinel) {
-    try {
-        $stream = [System.IO.File]::Open(
-            $secretSentinel,
-            [System.IO.FileMode]::Open,
-            [System.IO.FileAccess]::Read,
-            [System.IO.FileShare]::ReadWrite
-        )
-        $stream.Dispose()
-        $sentinelReadResult = "ACCESS_GRANTED"
-    }
-    catch [System.UnauthorizedAccessException] {
-        $sentinelReadResult = "ACCESS_DENIED"
-    }
-    catch {
-        $sentinelReadResult = "ERROR"
-    }
+$sentinelKnownPresent = $false
+try {
+    $stream = [System.IO.File]::Open(
+        $secretSentinel,
+        [System.IO.FileMode]::Open,
+        [System.IO.FileAccess]::Read,
+        [System.IO.FileShare]::ReadWrite
+    )
+    $stream.Dispose()
+    $sentinelKnownPresent = $true
+    $sentinelReadResult = "ACCESS_GRANTED"
+}
+catch [System.UnauthorizedAccessException] {
+    $sentinelKnownPresent = $true
+    $sentinelReadResult = "ACCESS_DENIED"
+}
+catch [System.IO.FileNotFoundException] {
+    $sentinelReadResult = "NOT_CONFIGURED"
+}
+catch [System.IO.DirectoryNotFoundException] {
+    $sentinelReadResult = "NOT_CONFIGURED"
+}
+catch {
+    $sentinelReadResult = "ERROR"
 }
 
 $readMask = [int64][System.Security.AccessControl.FileSystemRights]::Read
@@ -221,7 +228,7 @@ $executionSid = $executionState.sid
 $runtimeSecretReadGrant = $false
 $executionSecretReadGrant = $false
 $secretBroadReadExposure = $false
-if (Test-Path -LiteralPath $secretSentinel) {
+if ($sentinelKnownPresent) {
     $runtimeSecretReadGrant = Test-AclAllow -Path $secretSentinel -Sid $runtimeSid -Mask $readMask
     $executionSecretReadGrant = Test-AclAllow -Path $secretSentinel -Sid $executionSid -Mask $readMask
     $secretBroadReadExposure = Test-BroadAclAllow -Path $secretSentinel -Mask $readMask
@@ -260,7 +267,7 @@ $profile = [ordered]@{
         execution_secret_direct_read_grant = [bool]$executionSecretReadGrant
     }
     boundaries = [ordered]@{
-        execution_secret_sentinel_present = (Test-Path -LiteralPath $secretSentinel)
+        execution_secret_sentinel_present = $sentinelKnownPresent
         runner_execution_secret_read = $sentinelReadResult
         execution_secret_broad_read_exposure = [bool]$secretBroadReadExposure
         runner_config_present = (Test-Path -LiteralPath $runnerConfig)
