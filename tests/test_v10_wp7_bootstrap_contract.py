@@ -82,9 +82,18 @@ def test_toolchain_contract_matches_selected_baseline() -> None:
             encoding="utf-8"
         )
     )
-    assert policy["toolchain"]["python"]["runtime_version"] == baseline["backend"]["python"]
-    assert policy["toolchain"]["node"]["runtime_version"] == baseline["frontend"]["node"]
-    assert policy["toolchain"]["npm"]["runtime_version"] == baseline["frontend"]["npm"]
+    assert (
+        policy["toolchain"]["python"]["runtime_version"]
+        == baseline["backend"]["python"]
+    )
+    assert (
+        policy["toolchain"]["node"]["runtime_version"]
+        == baseline["frontend"]["node"]
+    )
+    assert (
+        policy["toolchain"]["npm"]["runtime_version"]
+        == baseline["frontend"]["npm"]
+    )
     assert (
         policy["toolchain"]["postgresql"]["runtime_version"]
         == baseline["database"]["tested_patch"]
@@ -93,6 +102,16 @@ def test_toolchain_contract_matches_selected_baseline() -> None:
         policy["toolchain"]["postgresql"]["major"]
         == baseline["database"]["postgresql_major"]
     )
+
+
+def test_machine_visibility_is_part_of_the_exit_gate() -> None:
+    text = BOOTSTRAP.read_text(encoding="utf-8")
+    policy = json.loads(CONTRACT.read_text(encoding="utf-8"))
+    assert "Test-MachineVisiblePath" in text
+    assert 'return "NOT_MACHINE_VISIBLE"' in text
+    assert "machine_visible" in text
+    assert "NOT_MACHINE_VISIBLE" in policy["profile"]["allowed_prerequisite_states"]
+    assert policy["exit_gate"]["prerequisites_machine_visible"] is True
 
 
 def test_bootstrap_idempotence_is_a_required_runtime_postcondition() -> None:
@@ -104,9 +123,26 @@ def test_bootstrap_idempotence_is_a_required_runtime_postcondition() -> None:
     assert "idempotence_verified" in text
 
 
+def test_repeat_apply_preserves_package_ownership_metadata() -> None:
+    text = BOOTSTRAP.read_text(encoding="utf-8")
+    assert "Get-ExistingInstalledPackages" in text
+    assert "$existingInstalled + $installedThisRun" in text
+    assert "installed_by_wp7" in text
+    assert "Existing WP7 bootstrap state ownership/schema mismatch" in text
+
+
 def test_bootstrap_only_defines_future_services_and_does_not_activate_them() -> None:
     text = BOOTSTRAP.read_text(encoding="utf-8")
     policy = json.loads(CONTRACT.read_text(encoding="utf-8"))
+    expected_names = {
+        "OmniCIO.Core",
+        "OmniCIO.WebApi",
+        "OmniCIO.ResearchAI",
+        "OmniCIO.Execution",
+    }
+    assert {item["windows_service_name"] for item in policy["service_definitions"]} == (
+        expected_names
+    )
     assert all(
         item["activation"] == "FUTURE_WP_ONLY"
         for item in policy["service_definitions"]
