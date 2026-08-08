@@ -52,21 +52,28 @@ jobs:
             Assert-FalseFlag $gpu.privacy.address_collected 'address_collected'
             Assert-FalseFlag $gpu.privacy.process_list_collected 'process_list_collected'
 
+            if ($null -eq $gpu.PSObject.Properties['observed_duration_seconds']) {
+              throw 'Local GPU evidence predates observed-duration validation; a fresh acceptance run is required.'
+            }
+
             $gpuPeak = [double]$gpu.gpu_temperature_c.maximum
             $gpuAverage = [double]$gpu.gpu_temperature_c.average
             $gpuUtilAverage = [double]$gpu.gpu_utilization_percent.average
             $gpuUtilMaximum = [double]$gpu.gpu_utilization_percent.maximum
             $sampleCount = [int]$gpu.sample_count
             $durationSeconds = [int]$gpu.duration_seconds
+            $observedDurationSeconds = [int]$gpu.observed_duration_seconds
 
             if ($gpuPeak -lt 0 -or $gpuPeak -gt 125) { throw 'Local GPU peak temperature is outside the accepted evidence range.' }
             if ($gpuAverage -lt 0 -or $gpuAverage -gt 125) { throw 'Local GPU average temperature is outside the accepted evidence range.' }
             if ($gpuUtilAverage -lt 0 -or $gpuUtilAverage -gt 100) { throw 'Local GPU average utilization is outside the accepted evidence range.' }
             if ($gpuUtilMaximum -lt 0 -or $gpuUtilMaximum -gt 100) { throw 'Local GPU maximum utilization is outside the accepted evidence range.' }
             if ($sampleCount -lt 1 -or $durationSeconds -lt 1) { throw 'Local GPU evidence contains an invalid duration or sample count.' }
+            if ($observedDurationSeconds -lt $durationSeconds) { throw 'Local GPU evidence did not observe the complete requested duration.' }
 
             Write-Host "WP5_LOCAL_GPU_EVIDENCE_PRESENT=true"
             Write-Host "WP5_LOCAL_GPU_DURATION_SECONDS=$durationSeconds"
+            Write-Host "WP5_LOCAL_GPU_OBSERVED_DURATION_SECONDS=$observedDurationSeconds"
             Write-Host "WP5_LOCAL_GPU_SAMPLE_COUNT=$sampleCount"
             Write-Host "WP5_LOCAL_GPU_TEMP_PEAK_C=$gpuPeak"
             Write-Host "WP5_LOCAL_GPU_TEMP_AVG_C=$gpuAverage"
