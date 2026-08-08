@@ -220,19 +220,19 @@ function Save-RunnerAclBackup {
     }
 
     $rootAcl = Get-Acl -LiteralPath $runnerRoot -ErrorAction Stop
-    $entries = @(
-        [ordered]@{
-            name = "."
-            sddl = $rootAcl.Sddl
+    $entries = @()
+    $entries += [ordered]@{
+        name = "."
+        sddl = $rootAcl.Sddl
+    }
+    foreach ($path in $Paths) {
+        $acl = Get-Acl -LiteralPath $path -ErrorAction Stop
+        $entries += [ordered]@{
+            name = [System.IO.Path]::GetFileName($path)
+            sddl = $acl.Sddl
         }
-        foreach ($path in $Paths) {
-            $acl = Get-Acl -LiteralPath $path -ErrorAction Stop
-            [ordered]@{
-                name = [System.IO.Path]::GetFileName($path)
-                sddl = $acl.Sddl
-            }
-        }
-    )
+    }
+
     $payload = [ordered]@{
         schema_version = "1"
         files = $entries
