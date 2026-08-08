@@ -36,12 +36,27 @@ def test_provisioning_refuses_local_system_and_does_not_reconfigure_runner() -> 
     assert "svc.cmd uninstall" not in text
 
 
-def test_rollback_is_marker_guarded_and_does_not_remove_runner() -> None:
+def test_provisioning_hardens_only_reviewed_runner_config_files_with_local_backup() -> None:
+    text = PROVISION.read_text(encoding="utf-8")
+    for name in (".runner", ".credentials", ".credentials_rsaparams", ".service"):
+        assert f'"{name}"' in text
+    assert "runner-config-acl-backup.json" in text
+    assert "Save-RunnerAclBackup" in text
+    assert "Set-RunnerSensitiveFileAcl" in text
+    assert "-Rights Modify" in text
+    assert "SYSTEM, Administrators and the runner service identity" in text
+
+
+def test_rollback_is_marker_guarded_restores_runner_acl_and_does_not_remove_runner() -> None:
     text = ROLLBACK.read_text(encoding="utf-8")
     assert "WP6 ownership marker" in text
     assert "Refusing to remove enabled role account" in text
-    assert "GitHub runner registration/service was not modified" in text
-    assert "actions.runner" not in text
+    assert "runner-config-acl-backup.json" in text
+    assert "Restore-RunnerAclBackup" in text
+    assert "SetSecurityDescriptorSddlForm" in text
+    assert "GitHub runner registration/service account was not modified" in text
+    assert "config.cmd remove" not in text
+    assert "svc.cmd uninstall" not in text
 
 
 def test_collector_has_privacy_flags_and_does_not_emit_identity_values() -> None:
@@ -60,11 +75,20 @@ def test_collector_has_privacy_flags_and_does_not_emit_identity_values() -> None
     assert "currentSid = $profile" not in text
 
 
+def test_collector_audits_all_sensitive_runner_config_surfaces() -> None:
+    text = COLLECTOR.read_text(encoding="utf-8")
+    for name in (".runner", ".credentials", ".credentials_rsaparams", ".service"):
+        assert f'"{name}"' in text
+    assert "runnerConfigBroadWriteExposure" in text
+    assert "runtimeRunnerWriteGrant" in text
+
+
 def test_identity_audit_has_no_secret_context_and_uses_non_persistent_checkout() -> None:
     text = AUDIT_WORKFLOW.read_text(encoding="utf-8")
     assert "permissions:\n  contents: read" in text
     assert "persist-credentials: false" in text
     assert "secrets." not in text
+    assert "provision_wp6_privilege_boundary.ps1" in text
     assert "collect_wp6_identity_profile.ps1" in text
     assert "assess_v10_wp6_identity_profile.py" in text
 
