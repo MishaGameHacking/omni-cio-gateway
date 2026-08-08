@@ -70,21 +70,25 @@
   "service_definitions": [
     {
       "id": "core-runtime",
+      "windows_service_name": "OmniCIO.Core",
       "identity_role": "omni-cio-runtime",
       "activation": "FUTURE_WP_ONLY"
     },
     {
       "id": "web-api",
+      "windows_service_name": "OmniCIO.WebApi",
       "identity_role": "omni-cio-runtime",
       "activation": "FUTURE_WP_ONLY"
     },
     {
       "id": "research-ai",
+      "windows_service_name": "OmniCIO.ResearchAI",
       "identity_role": "omni-cio-runtime",
       "activation": "FUTURE_WP_ONLY"
     },
     {
       "id": "execution",
+      "windows_service_name": "OmniCIO.Execution",
       "identity_role": "omni-cio-execution",
       "activation": "FUTURE_WP_ONLY"
     }
