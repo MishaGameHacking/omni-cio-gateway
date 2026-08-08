@@ -8,10 +8,14 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
-CONTRACT_PATH = ROOT / "docs" / "architecture" / "V10_WP6_IDENTITY_PRIVILEGE_CONTRACT.json"
+CONTRACT_PATH = (
+    ROOT / "docs" / "architecture" / "V10_WP6_IDENTITY_PRIVILEGE_CONTRACT.json"
+)
 WORKFLOW_ROOT = ROOT / ".github" / "workflows"
 SELF_HOSTED_WORKFLOW = WORKFLOW_ROOT / "self-hosted-windows-smoke.yml"
-RELEASE_MANIFEST_SCHEMA = ROOT / "docs" / "architecture" / "V10_RELEASE_MANIFEST.schema.json"
+RELEASE_MANIFEST_SCHEMA = (
+    ROOT / "docs" / "architecture" / "V10_RELEASE_MANIFEST.schema.json"
+)
 RELEASE_WORKFLOW = WORKFLOW_ROOT / "v10-release-provenance.yml"
 
 SECRET_REFERENCE = re.compile(r"\$\{\{\s*secrets\.([A-Za-z0-9_]+)\s*\}\}")
@@ -188,9 +192,7 @@ def validate_general_runtime_broker_boundary(failures: list[str]) -> None:
 def validate_runtime_runner_config_boundary(failures: list[str]) -> None:
     candidates = [ROOT / "app.py"]
     candidates.extend(
-        path
-        for path in (ROOT / "omni_cio").rglob("*.py")
-        if path.is_file()
+        path for path in (ROOT / "omni_cio").rglob("*.py") if path.is_file()
     )
     for path in candidates:
         if not path.is_file():
