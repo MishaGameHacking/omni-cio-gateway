@@ -72,12 +72,14 @@ def validate_shape(profile: dict[str, Any]) -> list[str]:
         "administrator",
         "execution_secret_direct_read_grant",
         "runner_config_direct_write_grant",
+        "runner_root_deny_present",
     }
     execution_keys = {
         "identity_present",
         "identity_enabled",
         "administrator",
         "execution_secret_direct_read_grant",
+        "runner_root_deny_present",
     }
     boundary_keys = {
         "execution_secret_sentinel_present",
@@ -138,12 +140,17 @@ def validate_shape(profile: dict[str, Any]) -> list[str]:
             "runtime.runner_config_direct_write_grant",
             runtime["runner_config_direct_write_grant"],
         ),
+        ("runtime.runner_root_deny_present", runtime["runner_root_deny_present"]),
         ("execution.identity_present", execution["identity_present"]),
         ("execution.identity_enabled", execution["identity_enabled"]),
         ("execution.administrator", execution["administrator"]),
         (
             "execution.execution_secret_direct_read_grant",
             execution["execution_secret_direct_read_grant"],
+        ),
+        (
+            "execution.runner_root_deny_present",
+            execution["runner_root_deny_present"],
         ),
         (
             "boundaries.execution_secret_sentinel_present",
@@ -222,6 +229,8 @@ def assess(profile: dict[str, Any], contract: dict[str, Any]) -> tuple[str, list
         blockers.append("RUNTIME_EXECUTION_SECRET_READ_NOT_DENIED")
     if runtime["runner_config_direct_write_grant"] is not False:
         blockers.append("RUNTIME_RUNNER_CONFIG_WRITE_NOT_DENIED")
+    if runtime["runner_root_deny_present"] is not True:
+        blockers.append("RUNTIME_RUNNER_ROOT_DENY_NOT_PRESENT")
 
     if execution["identity_present"] is not True:
         blockers.append("EXECUTION_IDENTITY_NOT_PRESENT")
@@ -229,6 +238,8 @@ def assess(profile: dict[str, Any], contract: dict[str, Any]) -> tuple[str, list
         blockers.append("EXECUTION_ADMINISTRATOR_NOT_FALSE")
     if execution["execution_secret_direct_read_grant"] is not True:
         blockers.append("EXECUTION_SECRET_READ_GRANT_NOT_PRESENT")
+    if execution["runner_root_deny_present"] is not True:
+        blockers.append("EXECUTION_RUNNER_ROOT_DENY_NOT_PRESENT")
 
     if boundaries["execution_secret_sentinel_present"] is not True:
         blockers.append("EXECUTION_SECRET_SENTINEL_NOT_PRESENT")
