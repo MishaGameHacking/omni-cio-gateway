@@ -7,6 +7,7 @@ on:
       - ".github/workflows/v10-wp6-identity-audit.yml"
       - ".github/workflows/self-hosted-windows-smoke.yml"
       - "docs/architecture/V10_WP6_**"
+      - "docs/operations/V10_WP6_**"
       - "infrastructure/windows/*wp6*"
       - "scripts/*wp6*"
       - "tests/test_v10_wp6_**"
@@ -43,6 +44,13 @@ jobs:
           python scripts\check_v10_wp6_privilege_boundary.py
           if errorlevel 1 exit /b %errorlevel%
 
+      - name: Verify provisioning preflight without mutation
+        shell: cmd
+        run: |
+          @echo off
+          powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File infrastructure\windows\provision_wp6_privilege_boundary.ps1
+          if errorlevel 1 exit /b %errorlevel%
+
       - name: Collect sanitized WP6 identity profile
         shell: cmd
         run: |
@@ -56,8 +64,11 @@ jobs:
         shell: cmd
         run: |
           @echo off
-          python scripts\assess_v10_wp6_identity_profile.py "%WP6_IDENTITY_PROFILE_PATH%" --json
-          if errorlevel 1 exit /b %errorlevel%
+          set "RESULT=%RUNNER_TEMP%\wp6-assessment-%GITHUB_RUN_ID%-%GITHUB_RUN_ATTEMPT%.json"
+          python scripts\assess_v10_wp6_identity_profile.py "%WP6_IDENTITY_PROFILE_PATH%" --json > "%RESULT%"
+          set "RC=%ERRORLEVEL%"
+          type "%RESULT%"
+          if not "%RC%"=="0" exit /b %RC%
 
       - name: Clean sanitized local evidence
         if: always()
@@ -65,5 +76,6 @@ jobs:
         run: |
           @echo off
           if defined WP6_IDENTITY_PROFILE_PATH if exist "%WP6_IDENTITY_PROFILE_PATH%" del /f /q "%WP6_IDENTITY_PROFILE_PATH%"
+          del /f /q "%RUNNER_TEMP%\wp6-assessment-%GITHUB_RUN_ID%-%GITHUB_RUN_ATTEMPT%.json" 2>nul
           git reset --hard HEAD
           git clean -ffdx
