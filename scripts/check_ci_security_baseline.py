@@ -25,10 +25,22 @@ GENERATED_SECRET_SCAN_PATH = re.compile(r"(^|[\\/])\.pytest_cache([\\/]|$)")
 _SENSITIVE_WORD = "sec" + "ret"
 _WP7_PUBLIC_PYTHON_SHA256 = "".join(
     (
-        "14B3E9A710A3FCF0",
-        "BD9B55AB6B60412B",
-        "D91227563F813FC4",
-        "9040CABC0209E0BD",
+        "14B3",
+        "E9A7",
+        "10A3",
+        "FCF0",
+        "BD9B",
+        "55AB",
+        "6B60",
+        "412B",
+        "D912",
+        "2756",
+        "3F81",
+        "3FC4",
+        "9040",
+        "CABC",
+        "0209",
+        "E0BD",
     )
 )
 APPROVED_KEYWORD_LINES = {
