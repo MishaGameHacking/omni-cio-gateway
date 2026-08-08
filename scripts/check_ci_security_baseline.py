@@ -17,7 +17,7 @@ LOCK_PATHS = (
 
 FULL_SHA = re.compile(r"[0-9a-f]{40}")
 SECRET_SCAN_EXCLUDE_PATTERN = (
-    r"(^|[\\/])(\.git|\.venv|\.venv-ci|\.mypy_cache|\.ruff_cache|"
+    r"(^|[\\/])(\.git|\.venv|\.venv-ci|\.mypy_cache|\.pytest_cache|\.ruff_cache|"
     r"__pycache__|requirements(-dev)?\.txt|windows-.*requirements.*\.txt|"
     r"coverage\.xml|pytest-results\.xml)([\\/]|$)"
 )
@@ -55,6 +55,12 @@ APPROVED_KEYWORD_LINES = {
     "docs/architecture/V10_WP7_BOOTSTRAP_CONTRACT.json": frozenset(
         {
             f'"{_SENSITIVE_WORD}_root_owned_by_wp8": "C:\\\\ProgramData\\\\OmniCIO\\\\{_SENSITIVE_WORD}s",'
+        }
+    ),
+    "docs/architecture/V10_WP8_SECRET_STORE_CONTRACT.json": frozenset(
+        {
+            f'"{_SENSITIVE_WORD}_root": "C:\\\\ProgramData\\\\OmniCIO\\\\{_SENSITIVE_WORD}s",',
+            f'"{_SENSITIVE_WORD}_input_mode": "READ_HOST_AS_SECURE_STRING",',
         }
     ),
     "infrastructure/windows/collect_wp6_identity_profile.ps1": frozenset(
