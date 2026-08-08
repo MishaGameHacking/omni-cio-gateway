@@ -212,6 +212,23 @@ def test_machine_visibility_is_part_of_the_exit_gate() -> None:
     assert policy["exit_gate"]["prerequisites_machine_visible"] is True
 
 
+def test_ci_audit_evidence_is_read_only_and_sid_is_not_emitted() -> None:
+    text = BOOTSTRAP.read_text(encoding="utf-8")
+    for required in (
+        "Get-RunnerServiceSid",
+        "Set-AuditEvidenceFileAcl",
+        "$runnerAuditSid = Get-RunnerServiceSid",
+        "-AuditSid $runnerAuditSid",
+        "FileSystemRights]::ReadData",
+        "FileSystemRights]::Write",
+        "WP7 audit evidence file does not grant read authority to CI runner",
+        "WP7 audit evidence file unexpectedly grants write authority to CI runner",
+    ):
+        assert required in text
+    assert "sids_emitted = $false" in text
+    assert "runnerAuditSid =" not in text.split("function Write-Profile", 1)[1]
+
+
 def test_bootstrap_idempotence_is_a_required_runtime_postcondition() -> None:
     text = BOOTSTRAP.read_text(encoding="utf-8")
     assert "firstPassChanges" in text
