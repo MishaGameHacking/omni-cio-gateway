@@ -52,3 +52,14 @@ def test_contract_rejects_arbitrary_pr_deployment_authority() -> None:
     failures = wp6.validate_contract_shape(contract)
 
     assert any("arbitrary PR worktrees" in item for item in failures)
+
+
+def test_contract_requires_runtime_and_execution_runner_root_deny() -> None:
+    contract = copy.deepcopy(wp6.load_contract())
+    contract["roles"]["runtime"]["runner_root_access"] = "ALLOW"
+    contract["roles"]["execution"]["runner_root_access"] = "ALLOW"
+
+    failures = wp6.validate_contract_shape(contract)
+
+    assert any("ordinary runtime must be denied runner-root access" in item for item in failures)
+    assert any("execution identity must be denied runner-root access" in item for item in failures)
