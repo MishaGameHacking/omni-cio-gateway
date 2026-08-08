@@ -88,11 +88,12 @@ function Get-LocalRoleState {
     }
 }
 
-function Test-AclAllow {
+function Test-AclRule {
     param(
         [string]$Path,
         [string]$Sid,
-        [int64]$Mask
+        [int64]$Mask,
+        [System.Security.AccessControl.AccessControlType]$ControlType
     )
 
     if (-not $Sid) {
@@ -101,7 +102,7 @@ function Test-AclAllow {
     try {
         $acl = Get-Acl -LiteralPath $Path -ErrorAction Stop
         foreach ($rule in $acl.Access) {
-            if ($rule.AccessControlType -ne [System.Security.AccessControl.AccessControlType]::Allow) {
+            if ($rule.AccessControlType -ne $ControlType) {
                 continue
             }
             try {
@@ -121,6 +122,34 @@ function Test-AclAllow {
         return $false
     }
     return $false
+}
+
+function Test-AclAllow {
+    param(
+        [string]$Path,
+        [string]$Sid,
+        [int64]$Mask
+    )
+
+    return Test-AclRule `
+        -Path $Path `
+        -Sid $Sid `
+        -Mask $Mask `
+        -ControlType ([System.Security.AccessControl.AccessControlType]::Allow)
+}
+
+function Test-AclDeny {
+    param(
+        [string]$Path,
+        [string]$Sid,
+        [int64]$Mask
+    )
+
+    return Test-AclRule `
+        -Path $Path `
+        -Sid $Sid `
+        -Mask $Mask `
+        -ControlType ([System.Security.AccessControl.AccessControlType]::Deny)
 }
 
 function Test-BroadAclAllow {
@@ -233,6 +262,7 @@ $readMask = [int64][System.Security.AccessControl.FileSystemRights]::Read
 $writeMask = (
     [int64][System.Security.AccessControl.FileSystemRights]::Write -bor
     [int64][System.Security.AccessControl.FileSystemRights]::Modify -bor
+    [int64][System.Security.AccessControl.FileSystemRights]::Delete -bor
     [int64][System.Security.AccessControl.FileSystemRights]::FullControl
 )
 
@@ -246,6 +276,9 @@ if ($sentinelKnownPresent) {
     $executionSecretReadGrant = Test-AclAllow -Path $secretSentinel -Sid $executionSid -Mask $readMask
     $secretBroadReadExposure = Test-BroadAclAllow -Path $secretSentinel -Mask $readMask
 }
+
+$runtimeRunnerRootDeny = Test-AclDeny -Path $runnerRoot -Sid $runtimeSid -Mask $writeMask
+$executionRunnerRootDeny = Test-AclDeny -Path $runnerRoot -Sid $executionSid -Mask $writeMask
 
 $runnerSensitivePaths = @(Get-RunnerSensitivePaths)
 $runtimeRunnerWriteGrant = $false
@@ -281,12 +314,14 @@ $profile = [ordered]@{
         administrator = $runtimeState.administrator
         execution_secret_direct_read_grant = [bool]$runtimeSecretReadGrant
         runner_config_direct_write_grant = [bool]$runtimeRunnerWriteGrant
+        runner_root_deny_present = [bool]$runtimeRunnerRootDeny
     }
     execution = [ordered]@{
         identity_present = [bool]$executionState.present
         identity_enabled = $executionState.enabled
         administrator = $executionState.administrator
         execution_secret_direct_read_grant = [bool]$executionSecretReadGrant
+        runner_root_deny_present = [bool]$executionRunnerRootDeny
     }
     boundaries = [ordered]@{
         execution_secret_sentinel_present = $sentinelKnownPresent
