@@ -1,0 +1,69 @@
+name: V10 WP6 Identity Audit
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - ".github/workflows/v10-wp6-identity-audit.yml"
+      - ".github/workflows/self-hosted-windows-smoke.yml"
+      - "docs/architecture/V10_WP6_**"
+      - "infrastructure/windows/*wp6*"
+      - "scripts/*wp6*"
+      - "tests/test_v10_wp6_**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: v10-wp6-identity-audit-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    name: Lenovo least-privilege identity and ACL audit
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Bootstrap protected Python 3.12.10 runtime
+        shell: cmd
+        run: scripts\bootstrap_windows_ci_python.cmd
+
+      - name: Verify static WP6 privilege contract
+        shell: cmd
+        run: |
+          @echo off
+          python scripts\check_v10_wp6_privilege_boundary.py
+          if errorlevel 1 exit /b %errorlevel%
+
+      - name: Collect sanitized WP6 identity profile
+        shell: cmd
+        run: |
+          @echo off
+          set "PROFILE=%RUNNER_TEMP%\wp6-identity-profile-%GITHUB_RUN_ID%-%GITHUB_RUN_ATTEMPT%.json"
+          powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File infrastructure\windows\collect_wp6_identity_profile.ps1 -OutputPath "%PROFILE%"
+          if errorlevel 1 exit /b %errorlevel%
+          echo WP6_IDENTITY_PROFILE_PATH=%PROFILE%>>"%GITHUB_ENV%"
+
+      - name: Assess fail-closed WP6 Exit Gate evidence
+        shell: cmd
+        run: |
+          @echo off
+          python scripts\assess_v10_wp6_identity_profile.py "%WP6_IDENTITY_PROFILE_PATH%" --json
+          if errorlevel 1 exit /b %errorlevel%
+
+      - name: Clean sanitized local evidence
+        if: always()
+        shell: cmd
+        run: |
+          @echo off
+          if defined WP6_IDENTITY_PROFILE_PATH if exist "%WP6_IDENTITY_PROFILE_PATH%" del /f /q "%WP6_IDENTITY_PROFILE_PATH%"
+          git reset --hard HEAD
+          git clean -ffdx
