@@ -57,14 +57,6 @@ function Get-LocalRoleState {
     try {
         $user = Get-LocalUser -Name $Name -ErrorAction Stop
     }
-    catch [Microsoft.PowerShell.Commands.UserNotFoundException] {
-        return [ordered]@{
-            present = $false
-            enabled = $null
-            administrator = $null
-            sid = $null
-        }
-    }
     catch {
         return [ordered]@{
             present = $false
@@ -77,7 +69,8 @@ function Get-LocalRoleState {
     $sid = $user.SID.Value
     $isAdmin = $false
     try {
-        $adminGroup = Get-LocalGroup -SID "S-1-5-32-544" -ErrorAction Stop
+        $adminSid = [System.Security.Principal.SecurityIdentifier]::new("S-1-5-32-544")
+        $adminGroup = Get-LocalGroup -SID $adminSid -ErrorAction Stop
         $members = @(Get-LocalGroupMember -Group $adminGroup -ErrorAction Stop)
         $isAdmin = [bool]($members | Where-Object { $_.SID.Value -eq $sid })
     }
@@ -153,10 +146,9 @@ if ($runnerServices.Count -ne 1) {
 $runnerService = $runnerServices[0]
 $runnerClass = Get-AccountClass -StartName $runnerService.StartName
 $runnerSid = Get-AccountSidValue -AccountName $runnerService.StartName
-$currentSid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
-$currentPrincipal = [System.Security.Principal.WindowsPrincipal]::new(
-    [System.Security.Principal.WindowsIdentity]::GetCurrent()
-)
+$currentIdentity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+$currentSid = $currentIdentity.User.Value
+$currentPrincipal = [System.Security.Principal.WindowsPrincipal]::new($currentIdentity)
 $currentTokenAdmin = $currentPrincipal.IsInRole(
     [System.Security.Principal.WindowsBuiltInRole]::Administrator
 )
@@ -170,7 +162,8 @@ elseif ($runnerClass -in @("NETWORK_SERVICE", "LOCAL_SERVICE", "VIRTUAL_SERVICE"
 }
 elseif ($runnerSid) {
     try {
-        $adminGroup = Get-LocalGroup -SID "S-1-5-32-544" -ErrorAction Stop
+        $adminSid = [System.Security.Principal.SecurityIdentifier]::new("S-1-5-32-544")
+        $adminGroup = Get-LocalGroup -SID $adminSid -ErrorAction Stop
         $adminMembers = @(Get-LocalGroupMember -Group $adminGroup -ErrorAction Stop)
         $runnerAdmin = [bool]($adminMembers | Where-Object { $_.SID.Value -eq $runnerSid })
     }
@@ -217,10 +210,10 @@ if (Test-Path -LiteralPath $secretSentinel) {
 }
 
 $readMask = [int64][System.Security.AccessControl.FileSystemRights]::Read
-$writeMask = [int64](
-    [System.Security.AccessControl.FileSystemRights]::Write -bor
-    [System.Security.AccessControl.FileSystemRights]::Modify -bor
-    [System.Security.AccessControl.FileSystemRights]::FullControl
+$writeMask = (
+    [int64][System.Security.AccessControl.FileSystemRights]::Write -bor
+    [int64][System.Security.AccessControl.FileSystemRights]::Modify -bor
+    [int64][System.Security.AccessControl.FileSystemRights]::FullControl
 )
 
 $runtimeSid = $runtimeState.sid
@@ -283,9 +276,6 @@ $profile = [ordered]@{
     }
 }
 
-# Remove internal SID helpers before serialization. They are used only in-memory for ACL checks.
-$runtimeState.sid = $null
-$executionState.sid = $null
 $profileJson = $profile | ConvertTo-Json -Depth 8
 
 if ($OutputPath) {
