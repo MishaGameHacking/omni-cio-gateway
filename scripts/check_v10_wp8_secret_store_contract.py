@@ -54,7 +54,7 @@ def validate() -> list[str]:
         acl = _mapping(contract.get("acl"), "acl")
         lifecycle = _mapping(contract.get("lifecycle"), "lifecycle")
         acceptance = _mapping(contract.get("acceptance"), "acceptance")
-        wp6_paths = _mapping(wp6.get("paths"), "WP6 paths")
+        wp6_paths = _mapping(wp6.get("local_paths"), "WP6 local_paths")
         wp6_roles = _mapping(wp6.get("roles"), "WP6 roles")
         wp6_runtime = _mapping(wp6_roles.get("runtime"), "WP6 runtime role")
         wp6_execution = _mapping(wp6_roles.get("execution"), "WP6 execution role")
@@ -81,27 +81,25 @@ def validate() -> list[str]:
     for key, expected in expected_provider.items():
         if provider.get(key) != expected:
             failures.append(f"WP8 provider.{key} must be {expected}")
+    if provider.get("local_machine_scope_is_not_principal_authorization") is not True:
+        failures.append("WP8 must acknowledge LocalMachine DPAPI is not principal authorization")
     for key in (
-        "local_machine_scope_is_not_principal_authorization",
         "plaintext_cli_allowed",
         "plaintext_environment_allowed",
         "plaintext_log_allowed",
         "secret_hash_metadata_allowed",
         "ciphertext_in_github_allowed",
     ):
-        if key == "local_machine_scope_is_not_principal_authorization":
-            if provider.get(key) is not True:
-                failures.append("WP8 must acknowledge LocalMachine DPAPI is not principal authorization")
-        elif provider.get(key) is not False:
+        if provider.get(key) is not False:
             failures.append(f"WP8 provider.{key} must be false")
 
     if paths.get("secret_root") != wp6_paths.get("secret_root"):
         failures.append("WP8 must reuse the accepted WP6 secret root")
-    if paths.get("wp6_execution_sentinel") != wp6_paths.get("execution_secret_sentinel"):
+    if paths.get("wp6_execution_sentinel") != wp6_paths.get("execution_acl_sentinel"):
         failures.append("WP8 must preserve the accepted WP6 execution sentinel")
-    if identities.get("runtime_role") != wp6_runtime.get("account_name"):
+    if identities.get("runtime_role") != wp6_runtime.get("role_name"):
         failures.append("WP8 runtime role must match WP6")
-    if identities.get("execution_role") != wp6_execution.get("account_name"):
+    if identities.get("execution_role") != wp6_execution.get("role_name"):
         failures.append("WP8 execution role must match WP6")
 
     expected_classes = [
@@ -138,17 +136,16 @@ def validate() -> list[str]:
         if actual != expected_classes:
             failures.append("WP8 secret class/consumer matrix differs from reviewed contract")
 
-    if acl.get("inheritance_protected") is not True:
-        failures.append("WP8 secret ACLs must be inheritance protected")
-    if acl.get("ci_runner_read_data_allowed") is not False:
-        failures.append("WP8 CI runner secret data read must be forbidden")
-    if acl.get("ci_runner_write_allowed") is not False:
-        failures.append("WP8 CI runner secret write must be forbidden")
-    if acl.get("broad_read_principals_allowed") is not False:
-        failures.append("WP8 broad secret readers must be forbidden")
+    for key, expected in {
+        "inheritance_protected": True,
+        "ci_runner_read_data_allowed": False,
+        "ci_runner_write_allowed": False,
+        "broad_read_principals_allowed": False,
+    }.items():
+        if acl.get(key) is not expected:
+            failures.append(f"WP8 acl.{key} must be {expected}")
 
-    states = lifecycle.get("states")
-    if states != ["UNPROVISIONED", "ACTIVE", "REVOKED", "COMPROMISED"]:
+    if lifecycle.get("states") != ["UNPROVISIONED", "ACTIVE", "REVOKED", "COMPROMISED"]:
         failures.append("WP8 lifecycle states are not exact")
     forbidden_metadata = set(lifecycle.get("forbidden_metadata_fields", []))
     for field in (
@@ -190,6 +187,10 @@ def validate() -> list[str]:
         "[switch]$Verify",
         "Test-Administrator",
         "Get-RunnerServiceSid",
+        "$wp6Contract.local_paths.secret_root",
+        "$wp6Contract.local_paths.execution_acl_sentinel",
+        "$wp6Contract.roles.runtime.role_name",
+        "$wp6Contract.roles.execution.role_name",
         "SetAccessRuleProtection($true, $false)",
         "FileSystemRights]::ReadPermissions",
         "FileSystemRights]::ReadAttributes",
@@ -199,8 +200,6 @@ def validate() -> list[str]:
         "ProtectedData]::Unprotect",
         "RandomNumberGenerator]::Create",
         "Invoke-RotationRehearsal",
-        "broker_read",
-        "telegram_bot",
         "ACCESS_DENIED",
         "CI_RUNNER_SECRET_DATA_READ_NOT_DENIED",
         "RUNTIME_ROLE_TRADING_SECRET_EXPOSURE",
@@ -214,8 +213,7 @@ def validate() -> list[str]:
     for fragment in required_provisioner:
         if fragment not in provisioner:
             failures.append(f"WP8 provisioner missing required guard: {fragment}")
-
-    forbidden_provisioner = (
+    for fragment in (
         "TINVEST_TOKEN",
         "TINVEST_TRADING_TOKEN",
         "TELEGRAM_BOT_TOKEN",
@@ -224,14 +222,11 @@ def validate() -> list[str]:
         "Start-Service",
         "config.cmd --token",
         "Remove-LocalUser",
-    )
-    for fragment in forbidden_provisioner:
+    ):
         if fragment.lower() in provisioner.lower():
             failures.append(f"WP8 provisioner contains forbidden marker: {fragment}")
 
-    manager_param_match = re.search(
-        r"param\((.*?)\)\s*\n\s*Set-StrictMode", manager, re.S
-    )
+    manager_param_match = re.search(r"param\((.*?)\)\s*\n\s*Set-StrictMode", manager, re.S)
     if not manager_param_match:
         failures.append("WP8 manager param block not found")
     else:
@@ -250,7 +245,7 @@ def validate() -> list[str]:
             if forbidden in param_block:
                 failures.append(f"WP8 manager exposes forbidden plaintext parameter: {forbidden}")
 
-    required_manager = (
+    for fragment in (
         'if ($env:GITHUB_ACTIONS -eq "true")',
         "Read-Host -AsSecureString",
         "SecureStringToBSTR",
@@ -261,8 +256,7 @@ def validate() -> list[str]:
         "Secret value/ciphertext output: NEVER",
         "AcknowledgeContourReady",
         'ValidateSet("Set", "Rotate", "Revoke", "MarkCompromised", "Status")',
-    )
-    for fragment in required_manager:
+    ):
         if fragment not in manager:
             failures.append(f"WP8 manager missing required guard: {fragment}")
     for forbidden in (
@@ -276,7 +270,7 @@ def validate() -> list[str]:
         if forbidden.lower() in manager.lower():
             failures.append(f"WP8 manager contains forbidden secret-output marker: {forbidden}")
 
-    required_rollback = (
+    for fragment in (
         "Test-OwnedDirectory",
         "REAL_SECRET_PROVISIONED:",
         "ACTIVE_SECRET_BLOB_PRESENT:",
@@ -284,8 +278,7 @@ def validate() -> list[str]:
         "WP6 secret root will be removed: NO",
         "WP6 identities/runner boundary will be changed: NO",
         "WP7 prerequisites/directories will be changed: NO",
-    )
-    for fragment in required_rollback:
+    ):
         if fragment not in rollback:
             failures.append(f"WP8 rollback missing required guard: {fragment}")
     for forbidden in (
