@@ -16,11 +16,14 @@ WP6 creates only:
 - disabled local role anchor `omni-cio-runtime`;
 - disabled local role anchor `omni-cio-execution`;
 - `C:\ProgramData\OmniCIO\secrets\execution` as the future execution-only secret boundary;
-- a fixed **non-secret** sentinel file used solely for negative ACL tests.
+- a fixed **non-secret** sentinel file used solely for negative ACL tests;
+- a local owner-only backup of the pre-WP6 ACL descriptors for reviewed sensitive GitHub runner configuration files.
 
 The sentinel contains no account data, broker data, credential or token.
 
 The GitHub runner receives only `ReadPermissions` on the sentinel ACL so CI can inspect ACL metadata; it receives no file-data read grant. The execution role receives read-only data access. The ordinary runtime role receives no execution-secret access.
+
+WP6 also hardens only the existing sensitive runner configuration surfaces that are present under `C:\actions-runner`: `.runner`, `.credentials`, `.credentials_rsaparams`, `.service`. Their original ACL descriptors are backed up locally under the owner-only `C:\ProgramData\OmniCIO\wp6` state directory. The hardened ACL permits only SYSTEM, local Administrators and the actual runner service identity; the runner identity retains `Modify` so the existing service can continue operating. The script does not change the runner registration, service account or work-directory ACL.
 
 ## 3. Preconditions
 
@@ -47,6 +50,7 @@ Expected output contains:
 
 - `WP6 privilege provisioning preflight: PASS`;
 - runner account class only, never its raw account name;
+- count of reviewed sensitive runner config files found;
 - `Real secret values used: NO`;
 - `DRY RUN ONLY`.
 
@@ -66,6 +70,8 @@ The script is fail-closed:
 - it never prints or stores the generated role-account passwords;
 - it disables both role anchors immediately;
 - it removes either role from the local Administrators group if necessary;
+- it backs up original reviewed runner-config ACL descriptors locally before hardening them;
+- it hardens only the reviewed sensitive runner config files and keeps the actual runner identity authorized;
 - it does not change the GitHub runner registration or service account;
 - it creates no real secret.
 
@@ -88,8 +94,8 @@ Required result:
 - runtime has no direct execution-secret read grant;
 - execution role has the intended read grant;
 - no broad Users/Authenticated Users/Everyone read exposure;
-- runtime has no runner-config write grant;
-- no broad runner-config write exposure;
+- runtime has no write grant on any reviewed sensitive runner configuration file;
+- no broad write exposure on any reviewed sensitive runner configuration file;
 - all privacy flags false.
 
 ## 7. Why disabled role anchors are acceptable in WP6
@@ -110,14 +116,16 @@ Dry-run is default. To apply:
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\infrastructure\windows\rollback_wp6_privilege_boundary.ps1 -Apply
 ```
 
-Rollback refuses to remove:
+Rollback:
 
-- an account without the exact WP6 ownership marker;
-- an enabled role account;
-- an unexpected sentinel payload;
-- a directory containing non-WP6 material.
+- validates and restores the exact locally backed-up ACL descriptors for only `.runner`, `.credentials`, `.credentials_rsaparams`, `.service` entries present in the backup;
+- refuses an unexpected runner-config path name or malformed security descriptor;
+- refuses to remove an account without the exact WP6 ownership marker;
+- refuses to remove an enabled role account;
+- refuses an unexpected sentinel payload;
+- refuses a directory containing non-WP6 material.
 
-It never removes/re-registers the GitHub runner.
+It never removes/re-registers the GitHub runner or changes its service account.
 
 ## 9. Incidents / fail-closed behavior
 
@@ -126,6 +134,7 @@ If any WP6 audit or provisioning step fails:
 - do not add real secrets;
 - do not run the workflow elevated as a workaround;
 - do not grant Users/Authenticated Users/Everyone access to the execution-secret boundary;
+- do not broaden runner-config write access;
 - do not change `trading_methods=false`;
 - do not add broker write credentials to GitHub Actions;
 - preserve current V9 production/recovery state and fix the identity/ACL cause first.
