@@ -102,14 +102,12 @@ def validate() -> list[str]:
     )
     _require(
         failures,
-        paths.get("wp6_execution_sentinel")
-        == wp6_paths.get("execution_acl_sentinel"),
+        paths.get("wp6_execution_sentinel") == wp6_paths.get("execution_acl_sentinel"),
         "WP8 must preserve WP6 execution sentinel",
     )
     _require(
         failures,
-        identities.get("runtime_role")
-        == wp6_roles.get("runtime", {}).get("role_name"),
+        identities.get("runtime_role") == wp6_roles.get("runtime", {}).get("role_name"),
         "WP8 runtime role must match WP6",
     )
     _require(
