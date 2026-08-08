@@ -76,7 +76,13 @@ def test_runner_health_probe_is_privacy_safe_and_service_authoritative() -> None
     text = RUNNER_HEALTH.read_text(encoding="utf-8")
     for required in (
         'Test-Path -LiteralPath $runCommand -PathType Leaf',
+        "$env:GITHUB_ACTIONS",
         "$env:RUNNER_NAME",
+        "job_binding_required = $jobBindingRequired",
+        "$jobNameHealthy = (-not $jobBindingRequired) -or $runnerNameMatches",
+        "$jobIdentityHealthy = (-not $jobBindingRequired) -or $processIdentityMatch",
+        "elseif ($jobBindingRequired -and -not $runnerNameMatches)",
+        "elseif ($jobBindingRequired -and -not $processIdentityMatch)",
         "runner_name_matches = $runnerNameMatches",
         "$serviceNamePattern = '^actions\\.runner\\.'",
         "Get-CimInstance Win32_Service",
