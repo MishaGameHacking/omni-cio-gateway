@@ -22,7 +22,7 @@ if ($Apply -and $env:OS -ne "Windows_NT") {
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $contractPath = Join-Path $repoRoot "docs\architecture\V10_WP7_BOOTSTRAP_CONTRACT.json"
 $toolchainPath = Join-Path $repoRoot "docs\architecture\V10_TOOLCHAIN_BASELINE.json"
-$runnerChecker = Join-Path $repoRoot "scripts\check_self_hosted_windows_runner_service.ps1"
+$runnerChecker = Join-Path $repoRoot "scripts\check_v10_wp7_runner_health.ps1"
 $contract = Get-Content -LiteralPath $contractPath -Raw -ErrorAction Stop |
     ConvertFrom-Json -ErrorAction Stop
 $toolchain = Get-Content -LiteralPath $toolchainPath -Raw -ErrorAction Stop |
