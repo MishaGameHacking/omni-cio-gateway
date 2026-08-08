@@ -16,15 +16,25 @@ def test_wp5_owner_launcher_has_no_manual_enter_timing_dependency() -> None:
     assert "Do not press ENTER" in launcher
 
 
-def test_wp5_owner_launcher_validates_file_backed_gpu_evidence() -> None:
+def test_wp5_owner_launcher_uses_inline_file_backed_gpu_evidence() -> None:
     launcher = LAUNCHER.read_text(encoding="utf-8")
 
-    assert "$sampler.WaitForExit()" in launcher
-    assert "$sampler.Refresh()" in launcher
+    assert "Running a 5-second GPU telemetry preflight before AIDA64" in launcher
+    assert "GPU telemetry preflight: PASS" in launcher
+    assert "& $gpuSampler -DurationSeconds $durationSeconds" in launcher
+    assert "$sampler = Start-Process" not in launcher
     assert "Read-ValidatedGpuEvidence" in launcher
     assert "observed_duration_seconds" in launcher
     assert "GPU telemetry sampler did not produce the required evidence file" in launcher
     assert "GPU telemetry evidence violates the WP5 privacy contract" in launcher
+
+
+def test_wp5_owner_launcher_stops_aida64_on_launcher_failure() -> None:
+    launcher = LAUNCHER.read_text(encoding="utf-8")
+
+    assert "Stop-Aida64FailSafe" in launcher
+    assert 'Get-Process -Name "aida64"' in launcher
+    assert "Stop-Process -Force" in launcher
 
 
 def test_wp5_gpu_sampler_records_observed_duration_and_privacy_contract() -> None:
