@@ -76,8 +76,9 @@ def test_runner_health_probe_is_privacy_safe_and_service_authoritative() -> None
     text = RUNNER_HEALTH.read_text(encoding="utf-8")
     for required in (
         'Test-Path -LiteralPath $runCommand -PathType Leaf',
-        '$expectedServiceSuffix = ".$ExpectedRunnerName.service"',
-        "$serviceNamePattern = '^actions\\.runner\\.[A-Za-z0-9._-]{1,480}\\.service$'",
+        "$env:RUNNER_NAME",
+        "runner_name_matches = $runnerNameMatches",
+        "$serviceNamePattern = '^actions\\.runner\\.'",
         "Get-CimInstance Win32_Service",
         "service_query_succeeded = $serviceQuerySucceeded",
         "service_identity_matches = $serviceIdentityMatches",
