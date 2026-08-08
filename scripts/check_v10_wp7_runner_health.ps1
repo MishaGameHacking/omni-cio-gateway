@@ -48,6 +48,7 @@ function Write-Failure {
         error_code = $Code
         root_present = $false
         run_command_present = $false
+        runner_name_matches = $false
         service_query_succeeded = $false
         service_identity_matches = $false
         service_root_bound = $false
@@ -73,25 +74,37 @@ if ($env:OS -ne "Windows_NT") {
 $runnerRootPresent = Test-Path -LiteralPath $RunnerRoot -PathType Container
 $runCommand = Join-Path $RunnerRoot "run.cmd"
 $runCommandPresent = Test-Path -LiteralPath $runCommand -PathType Leaf
+$runnerNameMatches = (
+    -not [string]::IsNullOrWhiteSpace($env:RUNNER_NAME) -and
+    [string]::Equals(
+        $env:RUNNER_NAME,
+        $ExpectedRunnerName,
+        [System.StringComparison]::OrdinalIgnoreCase
+    )
+)
 
 # WP6 deliberately hardens .runner, .credentials, .credentials_rsaparams and
 # .service. WP7 therefore does not read any of those files. GitHub documents
-# Get-Service "actions.runner.*" as the Windows service-health surface. We bind
-# that service to the reviewed runner name, runner root and current CI identity.
+# RUNNER_NAME as an immutable default runner variable and Get-Service
+# "actions.runner.*" as the Windows service-health surface. We bind the current
+# job to the expected runner name, then identify the unique actions.runner
+# service installed from RunnerRoot and require the job process to use that
+# service identity. No service/account/SID value is emitted.
 $runnerPrivateConfigRead = $false
-$expectedServiceSuffix = ".$ExpectedRunnerName.service"
-$serviceNamePattern = '^actions\.runner\.[A-Za-z0-9._-]{1,480}\.service$'
+$serviceNamePattern = '^actions\.runner\.'
 $services = @()
 $serviceQuerySucceeded = $false
 try {
     $services = @(
         Get-CimInstance Win32_Service -ErrorAction Stop |
             Where-Object {
+                $pathName = [string]$_.PathName
                 $_.Name -match $serviceNamePattern -and
-                $_.Name.EndsWith(
-                    $expectedServiceSuffix,
+                -not [string]::IsNullOrWhiteSpace($pathName) -and
+                $pathName.IndexOf(
+                    $RunnerRoot,
                     [System.StringComparison]::OrdinalIgnoreCase
-                )
+                ) -ge 0
             }
     )
     $serviceQuerySucceeded = $true
@@ -110,13 +123,7 @@ $serviceAutomatic = $false
 $serviceNonAdmin = $false
 
 if ($null -ne $service) {
-    $serviceIdentityMatches = (
-        $service.Name -match $serviceNamePattern -and
-        $service.Name.EndsWith(
-            $expectedServiceSuffix,
-            [System.StringComparison]::OrdinalIgnoreCase
-        )
-    )
+    $serviceIdentityMatches = $service.Name -match $serviceNamePattern
     $serviceRunning = $service.State -eq "Running"
     $serviceAutomatic = $service.StartMode -eq "Auto"
 
@@ -175,6 +182,7 @@ if ($null -ne $service) {
 $healthy = (
     $runnerRootPresent -and
     $runCommandPresent -and
+    $runnerNameMatches -and
     $serviceQuerySucceeded -and
     $services.Count -eq 1 -and
     $serviceIdentityMatches -and
@@ -192,6 +200,9 @@ if (-not $runnerRootPresent) {
 }
 elseif (-not $runCommandPresent) {
     $errorCode = "RUNNER_COMMAND_MISSING"
+}
+elseif (-not $runnerNameMatches) {
+    $errorCode = "RUNNER_JOB_NAME_MISMATCH"
 }
 elseif (-not $serviceQuerySucceeded) {
     $errorCode = "RUNNER_SERVICE_QUERY_FAILED"
@@ -223,6 +234,7 @@ Write-Result -Result ([pscustomobject]@{
     error_code = $errorCode
     root_present = $runnerRootPresent
     run_command_present = $runCommandPresent
+    runner_name_matches = $runnerNameMatches
     service_query_succeeded = $serviceQuerySucceeded
     service_identity_matches = $serviceIdentityMatches
     service_root_bound = $serviceRootBound
