@@ -17,7 +17,7 @@ LOCK_PATHS = (
 
 FULL_SHA = re.compile(r"[0-9a-f]{40}")
 SECRET_SCAN_EXCLUDE_PATTERN = (
-    r"(^|[\\/])(\.git|\.venv|\.venv-ci|\.mypy_cache|\.pytest_cache|\.ruff_cache|"
+    r"(^|[\\/])(\.git|\.venv|\.venv-ci|\.mypy_cache|\.ruff_cache|"
     r"__pycache__|requirements(-dev)?\.txt|windows-.*requirements.*\.txt|"
     r"coverage\.xml|pytest-results\.xml)([\\/]|$)"
 )
