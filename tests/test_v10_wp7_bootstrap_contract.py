@@ -226,7 +226,11 @@ def test_ci_audit_evidence_is_read_only_and_sid_is_not_emitted() -> None:
     ):
         assert required in text
     assert "sids_emitted = $false" in text
-    assert "runnerAuditSid =" not in text.split("function Write-Profile", 1)[1]
+    write_profile_body = text.split("function Write-Profile", 1)[1].split(
+        "if (-not $Apply -and -not $Verify)", 1
+    )[0]
+    assert "$runnerAuditSid" not in write_profile_body
+    assert "AuditSid" not in write_profile_body
 
 
 def test_bootstrap_idempotence_is_a_required_runtime_postcondition() -> None:
