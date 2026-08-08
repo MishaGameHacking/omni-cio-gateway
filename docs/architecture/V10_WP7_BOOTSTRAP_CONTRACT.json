@@ -56,7 +56,7 @@
     "required_administrator": false
   },
   "runner": {
-    "checker": "scripts/check_self_hosted_windows_runner_service.ps1",
+    "checker": "scripts/check_v10_wp7_runner_health.ps1",
     "expected_name": "omni-cio-ci",
     "root": "C:\\actions-runner",
     "must_be_healthy": true,
