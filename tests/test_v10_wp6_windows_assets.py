@@ -36,23 +36,29 @@ def test_provisioning_refuses_local_system_and_does_not_reconfigure_runner() -> 
     assert "svc.cmd uninstall" not in text
 
 
-def test_provisioning_hardens_only_reviewed_runner_config_files_with_local_backup() -> None:
+def test_provisioning_hardens_runner_root_and_reviewed_config_with_backup() -> None:
     text = PROVISION.read_text(encoding="utf-8")
     for name in (".runner", ".credentials", ".credentials_rsaparams", ".service"):
         assert f'"{name}"' in text
     assert "runner-config-acl-backup.json" in text
+    assert 'name = "."' in text
     assert "Save-RunnerAclBackup" in text
+    assert "Set-RunnerRootDenyAcl" in text
+    assert "New-DenyRule" in text
     assert "Set-RunnerSensitiveFileAcl" in text
     assert "-Rights Modify" in text
+    assert "explicitly denied access to the entire runner root" in text
     assert "SYSTEM, Administrators and the runner service identity" in text
 
 
-def test_rollback_is_marker_guarded_restores_runner_acl_and_does_not_remove_runner() -> None:
+def test_rollback_is_marker_guarded_restores_root_and_config_acl() -> None:
     text = ROLLBACK.read_text(encoding="utf-8")
     assert "WP6 ownership marker" in text
     assert "Refusing to remove enabled role account" in text
     assert "runner-config-acl-backup.json" in text
+    assert '"."' in text
     assert "Restore-RunnerAclBackup" in text
+    assert "DirectorySecurity" in text
     assert "SetSecurityDescriptorSddlForm" in text
     assert "GitHub runner registration/service account was not modified" in text
     assert "config.cmd remove" not in text
@@ -75,10 +81,13 @@ def test_collector_has_privacy_flags_and_does_not_emit_identity_values() -> None
     assert "currentSid = $profile" not in text
 
 
-def test_collector_audits_all_sensitive_runner_config_surfaces() -> None:
+def test_collector_audits_runner_root_and_sensitive_config_surfaces() -> None:
     text = COLLECTOR.read_text(encoding="utf-8")
     for name in (".runner", ".credentials", ".credentials_rsaparams", ".service"):
         assert f'"{name}"' in text
+    assert "Test-AclDeny" in text
+    assert "runtimeRunnerRootDeny" in text
+    assert "executionRunnerRootDeny" in text
     assert "runnerConfigBroadWriteExposure" in text
     assert "runtimeRunnerWriteGrant" in text
 
