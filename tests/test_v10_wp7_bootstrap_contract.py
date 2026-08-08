@@ -75,13 +75,13 @@ def test_bootstrap_never_reconfigures_runner() -> None:
 def test_runner_health_probe_is_privacy_safe_and_service_authoritative() -> None:
     text = RUNNER_HEALTH.read_text(encoding="utf-8")
     for required in (
-        'Test-Path -LiteralPath $serviceMarker -PathType Leaf',
         'Test-Path -LiteralPath $runCommand -PathType Leaf',
-        '(Get-Item -LiteralPath $serviceMarker -ErrorAction Stop).Length',
-        'Get-Content -LiteralPath $serviceMarker -Raw -ErrorAction Stop',
-        '$expectedSuffix = ".$ExpectedRunnerName.service"',
-        "'^actions\\.runner\\.[A-Za-z0-9._-]{1,480}\\.service$'",
-        '[string]::Equals(',
+        '$expectedServiceSuffix = ".$ExpectedRunnerName.service"',
+        "$serviceNamePattern = '^actions\\.runner\\.[A-Za-z0-9._-]{1,480}\\.service$'",
+        "Get-CimInstance Win32_Service",
+        "service_query_succeeded = $serviceQuerySucceeded",
+        "service_identity_matches = $serviceIdentityMatches",
+        "service_root_bound = $serviceRootBound",
         '$service.State -eq "Running"',
         '$service.StartMode -eq "Auto"',
         "Get-LocalGroupMember",
@@ -89,15 +89,19 @@ def test_runner_health_probe_is_privacy_safe_and_service_authoritative() -> None
         "process_identity_match = $processIdentityMatch",
         "runner_private_config_read = $runnerPrivateConfigRead",
         "$runnerPrivateConfigRead = $false",
-        "service_marker_valid = $serviceMarkerValid",
         "service_non_admin = $serviceNonAdmin",
         "privacy_safe = $true",
     ):
         assert required in text
     for forbidden in (
         'Join-Path $RunnerRoot ".runner"',
+        'Join-Path $RunnerRoot ".credentials"',
+        'Join-Path $RunnerRoot ".credentials_rsaparams"',
+        'Join-Path $RunnerRoot ".service"',
         "Get-Content -LiteralPath $runnerConfig",
         "Get-Item -LiteralPath $runnerConfig",
+        "Get-Content -LiteralPath $serviceMarker",
+        "Get-Item -LiteralPath $serviceMarker",
         "StartName =",
         "service_name =",
         "sid =",
