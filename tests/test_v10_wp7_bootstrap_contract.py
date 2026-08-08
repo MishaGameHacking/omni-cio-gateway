@@ -72,10 +72,8 @@ def test_bootstrap_never_reconfigures_runner() -> None:
 def test_runner_health_probe_is_privacy_safe_and_service_authoritative() -> None:
     text = RUNNER_HEALTH.read_text(encoding="utf-8")
     for required in (
-        'Test-Path -LiteralPath $runnerConfig -PathType Leaf',
         'Test-Path -LiteralPath $serviceMarker -PathType Leaf',
         'Test-Path -LiteralPath $runCommand -PathType Leaf',
-        '(Get-Item -LiteralPath $runnerConfig -ErrorAction Stop).Length',
         '(Get-Item -LiteralPath $serviceMarker -ErrorAction Stop).Length',
         'Get-Content -LiteralPath $serviceMarker -Raw -ErrorAction Stop',
         '$expectedSuffix = ".$ExpectedRunnerName.service"',
@@ -84,13 +82,19 @@ def test_runner_health_probe_is_privacy_safe_and_service_authoritative() -> None
         '$service.State -eq "Running"',
         '$service.StartMode -eq "Auto"',
         "Get-LocalGroupMember",
+        "[System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value",
+        "process_identity_match = $processIdentityMatch",
+        "runner_private_config_read = $runnerPrivateConfigRead",
+        "$runnerPrivateConfigRead = $false",
         "service_marker_valid = $serviceMarkerValid",
         "service_non_admin = $serviceNonAdmin",
         "privacy_safe = $true",
     ):
         assert required in text
     for forbidden in (
+        'Join-Path $RunnerRoot ".runner"',
         "Get-Content -LiteralPath $runnerConfig",
+        "Get-Item -LiteralPath $runnerConfig",
         "StartName =",
         "service_name =",
         "sid =",
