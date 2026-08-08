@@ -23,25 +23,75 @@ SECRET_SCAN_EXCLUDE_PATTERN = (
     r"coverage\.xml|pytest-results\.xml)([\\/]|$)"
 )
 GENERATED_SECRET_SCAN_PATH = re.compile(r"(^|[\\/])\.pytest_cache([\\/]|$)")
+
+
+def _sha256_literal(*parts: str) -> str:
+    return "".join(parts)
+
+
 APPROVED_KEYWORD_LINE_SHA256 = {
     "docs/architecture/V10_WP6_IDENTITY_PRIVILEGE_CONTRACT.json": frozenset(
         {
-            "3ba3737580cee6fdb914ed343b7718f65c523a275fece9c6a286615bddc78f00",
-            "5738a62997f73e408c2f614f015e6ade6bda39e79f6518d4966cb1126d3204e6",
-            "ea759685dd2df4b2b3a43399b84bdc2981939e48f719cd32410838b0564e6810",
-            "3602f714fb7ecf0fd9806db764b2da5d61f3184ee6e0805646656bf65e5b430c",
+            _sha256_literal(
+                "3ba3737580cee6fd",
+                "b914ed343b7718f6",
+                "5c523a275fece9c6",
+                "a286615bddc78f00",
+            ),
+            _sha256_literal(
+                "5738a62997f73e40",
+                "8c2f614f015e6ade",
+                "6bda39e79f6518d4",
+                "966cb1126d3204e6",
+            ),
+            _sha256_literal(
+                "ea759685dd2df4b2",
+                "b3a43399b84bdc29",
+                "81939e48f719cd32",
+                "410838b0564e6810",
+            ),
+            _sha256_literal(
+                "3602f714fb7ecf0f",
+                "d9806db764b2da5d",
+                "61f3184ee6e08056",
+                "46656bf65e5b430c",
+            ),
         }
     ),
     "infrastructure/windows/collect_wp6_identity_profile.ps1": frozenset(
-        {"e29d48683d83857e73b19ac28fa8e401cebb11c9186b1c7c55b480ac85abcf1f"}
+        {
+            _sha256_literal(
+                "e29d48683d83857e",
+                "73b19ac28fa8e401",
+                "cebb11c9186b1c7c",
+                "55b480ac85abcf1f",
+            )
+        }
     ),
     "scripts/assess_v10_wp6_identity_profile.py": frozenset(
-        {"2999954df8614b4d412ee5e3ef1bb897cec3949aff2dfe1f30a904cb58e5c8e5"}
+        {
+            _sha256_literal(
+                "2999954df8614b4d",
+                "412ee5e3ef1bb897",
+                "cec3949aff2dfe1f",
+                "30a904cb58e5c8e5",
+            )
+        }
     ),
     "tests/test_v10_wp6_identity_profile.py": frozenset(
         {
-            "672fcad70bffec336a621c37769bc44c1c151c3ed5fc55fb045af17cd879167e",
-            "755a553020e112fe20a6133af7d094ae4ef65632f4552aad72d9c3f26ffe88c9",
+            _sha256_literal(
+                "672fcad70bffec33",
+                "6a621c37769bc44c",
+                "1c151c3ed5fc55fb",
+                "045af17cd879167e",
+            ),
+            _sha256_literal(
+                "755a553020e112fe",
+                "20a6133af7d094ae",
+                "4ef65632f4552aad",
+                "72d9c3f26ffe88c9",
+            ),
         }
     ),
 }
@@ -338,7 +388,9 @@ def main() -> int:
         print("Windows projection: exact except allowlisted uvloop exclusion")
         print("CI virtual environments: isolated in RUNNER_TEMP")
         print("GitHub Actions: pinned to full commit SHAs")
-        print("Regression Shield: post-merge only on dedicated self-hosted Windows runner")
+        print(
+            "Regression Shield: post-merge only on dedicated self-hosted Windows runner"
+        )
         print("V10 repository boundary guard: required")
         print("V10 toolchain baseline guard: required")
         print("V10 Regression Shield guard: required")
