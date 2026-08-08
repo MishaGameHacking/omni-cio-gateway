@@ -114,6 +114,7 @@
       "MATCH",
       "MISSING",
       "MISMATCH",
+      "NOT_MACHINE_VISIBLE",
       "UNAVAILABLE"
     ],
     "allowed_bootstrap_states": [
@@ -137,6 +138,7 @@
     "owned_directories_ready": true,
     "service_definitions_ready": true,
     "prerequisites_exact": true,
+    "prerequisites_machine_visible": true,
     "repeat_apply_idempotent": true,
     "secret_values_absent": true,
     "future_services_inactive": true
