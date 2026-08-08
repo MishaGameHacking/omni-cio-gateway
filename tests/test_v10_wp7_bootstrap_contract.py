@@ -9,6 +9,7 @@ from scripts import check_v10_wp7_bootstrap_contract as wp7
 ROOT = Path(__file__).resolve().parents[1]
 BOOTSTRAP = ROOT / "infrastructure" / "windows" / "bootstrap-v10.ps1"
 ROLLBACK = ROOT / "infrastructure" / "windows" / "rollback_wp7_bootstrap.ps1"
+RUNNER_HEALTH = ROOT / "scripts" / "check_v10_wp7_runner_health.ps1"
 CONTRACT = ROOT / "docs" / "architecture" / "V10_WP7_BOOTSTRAP_CONTRACT.json"
 EXECUTION_CONTRACT = ROOT / "docs" / "architecture" / "V10_WP7_EXECUTION_CONTRACT.md"
 
@@ -18,7 +19,7 @@ def test_wp7_contract_guard_passes() -> None:
 
 
 def test_wp7_assets_exist() -> None:
-    for path in (BOOTSTRAP, ROLLBACK, CONTRACT, EXECUTION_CONTRACT):
+    for path in (BOOTSTRAP, ROLLBACK, RUNNER_HEALTH, CONTRACT, EXECUTION_CONTRACT):
         assert path.is_file(), path
 
 
@@ -58,11 +59,42 @@ def test_bootstrap_has_no_secret_value_parameters_or_real_authority() -> None:
 
 def test_bootstrap_never_reconfigures_runner() -> None:
     text = BOOTSTRAP.read_text(encoding="utf-8").lower()
-    assert "check_self_hosted_windows_runner_service.ps1" in text
+    assert "check_v10_wp7_runner_health.ps1" in text
+    assert "check_self_hosted_windows_runner_service.ps1" not in text
     assert "config.cmd remove" not in text
     assert "config.cmd --url" not in text
     assert "svc.cmd install" not in text
     assert "svc.cmd uninstall" not in text
+
+
+def test_runner_health_probe_is_privacy_safe_and_service_authoritative() -> None:
+    text = RUNNER_HEALTH.read_text(encoding="utf-8")
+    for required in (
+        'Test-Path -LiteralPath $runnerConfig -PathType Leaf',
+        'Test-Path -LiteralPath $serviceMarker -PathType Leaf',
+        'Test-Path -LiteralPath $runCommand -PathType Leaf',
+        'Where-Object { $_.Name -like "actions.runner.*" }',
+        '$service.State -eq "Running"',
+        '$service.StartMode -eq "Auto"',
+        "Get-LocalGroupMember",
+        "service_non_admin = $serviceNonAdmin",
+        "privacy_safe = $true",
+    ):
+        assert required in text
+    for forbidden in (
+        "Get-Content -LiteralPath $runnerConfig",
+        "Get-Content -LiteralPath $serviceMarker",
+        "StartName =",
+        "service_name =",
+        "sid =",
+        "username =",
+        "hostname =",
+        "Start-Service",
+        "Set-Service",
+        "config.cmd",
+        "--token",
+    ):
+        assert forbidden not in text
 
 
 def test_bootstrap_uses_exact_pinned_winget_resolution() -> None:
