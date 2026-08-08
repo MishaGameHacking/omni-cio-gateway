@@ -191,10 +191,7 @@ def test_detect_secrets_validator_allows_only_exact_approved_wp6_metadata(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     contract_path = (
-        tmp_path
-        / "docs"
-        / "architecture"
-        / "V10_WP6_IDENTITY_PRIVILEGE_CONTRACT.json"
+        tmp_path / "docs" / "architecture" / "V10_WP6_IDENTITY_PRIVILEGE_CONTRACT.json"
     )
     contract_path.parent.mkdir(parents=True)
     sensitive_word = "sec" + "ret"
@@ -232,10 +229,7 @@ def test_detect_secrets_validator_does_not_allowlist_other_finding_types(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     contract_path = (
-        tmp_path
-        / "docs"
-        / "architecture"
-        / "V10_WP6_IDENTITY_PRIVILEGE_CONTRACT.json"
+        tmp_path / "docs" / "architecture" / "V10_WP6_IDENTITY_PRIVILEGE_CONTRACT.json"
     )
     contract_path.parent.mkdir(parents=True)
     sensitive_word = "sec" + "ret"
