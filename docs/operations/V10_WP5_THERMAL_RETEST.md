@@ -21,7 +21,18 @@ A second automated-owner run improved the thermals materially, but still did not
 - CPU utilization average: 99.6%;
 - no crash, BSOD or thermal shutdown.
 
-The second run therefore fails on minimum AIDA64 duration, CPU peak temperature and average throttling. Thresholds must not be relaxed merely to make WP5 pass.
+A third run proved the conservative 90% processor profile provides ample CPU thermal headroom:
+
+- AIDA64 elapsed time: 33m36s;
+- CPU core peak: 77 °C;
+- CPU throttling maximum: 0%;
+- CPU throttling average: 0.0%;
+- CPU utilization average: 99.5%;
+- no crash, BSOD or thermal shutdown.
+
+The third run is not accepted as the final combined-load evidence because the launcher was still waiting at its manual ENTER synchronization prompt, so concurrent sanitized NVIDIA telemetry was not started for that run. The CPU result is therefore useful engineering evidence but is not combined with GPU evidence from a different attempt. WP5 remains fail-closed until one coherent combined run records all required fields.
+
+The thresholds are not relaxed merely to make WP5 pass.
 
 ## Acceptance profile
 
@@ -48,7 +59,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File infrastructure\windows\r
 
 The launcher self-elevates only for the local acceptance run. It does **not** elevate the GitHub Actions runner service.
 
-The launcher performs preflight checks, creates the temporary conservative power scheme, launches AIDA64, collects privacy-safe GPU telemetry, scans relevant system events, restores the previous power scheme, and removes the temporary test scheme.
+The launcher performs preflight checks, creates the temporary conservative power scheme, launches AIDA64, automatically detects when combined CPU+GPU load has actually begun, collects privacy-safe GPU telemetry, scans relevant system events, restores the previous power scheme, and removes the temporary test scheme.
 
 ## AIDA64 workload
 
@@ -61,7 +72,7 @@ Use AIDA64 Extreme System Stability Test with exactly:
 - `Stress local disks` — OFF;
 - `Stress GPU(s)` — ON.
 
-**Synchronization rule:** configure the checkboxes, click `Clear`, then click `Start` in AIDA64 **before** confirming the launcher prompt. Once the AIDA64 elapsed timer is visibly running, return to PowerShell and press ENTER immediately. This guarantees the AIDA64 workload runs for at least the full telemetry interval.
+**Synchronization rule:** configure the checkboxes, click `Clear`, then click `Start` in AIDA64. No PowerShell ENTER timing step is required. The launcher polls only coarse CPU utilization and NVIDIA GPU utilization until it observes combined load for three consecutive samples; only then does it begin the 30-minute evidence window. If combined load is not detected within five minutes, the launcher fails closed and records no acceptance evidence.
 
 Minimum duration is 30 minutes. Stop immediately for a crash, thermal shutdown, visibly sustained thermal runaway, or any lower manufacturer protection limit.
 
