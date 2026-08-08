@@ -52,6 +52,11 @@ while ((Get-Date) -lt $deadline) {
     Start-Sleep -Seconds $SampleIntervalSeconds
 }
 
+$ended = Get-Date
+$observedDurationSeconds = [Math]::Floor(($ended - $started).TotalSeconds)
+if ($observedDurationSeconds -lt $DurationSeconds) {
+    throw "GPU telemetry ended before the requested duration completed."
+}
 if ($temperatures.Count -eq 0 -or $utilizations.Count -eq 0) {
     throw "No valid NVIDIA telemetry samples were collected."
 }
@@ -62,7 +67,10 @@ $powerStats = if ($powers.Count -gt 0) { $powers | Measure-Object -Minimum -Maxi
 
 $result = [ordered]@{
     schema_version = "1"
+    started_utc = $started.ToUniversalTime().ToString("o")
+    ended_utc = $ended.ToUniversalTime().ToString("o")
     duration_seconds = $DurationSeconds
+    observed_duration_seconds = $observedDurationSeconds
     sample_interval_seconds = $SampleIntervalSeconds
     sample_count = $temperatures.Count
     gpu_temperature_c = [ordered]@{
