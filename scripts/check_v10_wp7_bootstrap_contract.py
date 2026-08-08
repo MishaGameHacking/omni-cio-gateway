@@ -7,7 +7,9 @@ import sys
 
 
 ROOT = Path(__file__).resolve().parents[1]
-CONTRACT_PATH = ROOT / "docs" / "architecture" / "V10_WP7_BOOTSTRAP_CONTRACT.json"
+CONTRACT_PATH = (
+    ROOT / "docs" / "architecture" / "V10_WP7_BOOTSTRAP_CONTRACT.json"
+)
 TOOLCHAIN_PATH = ROOT / "docs" / "architecture" / "V10_TOOLCHAIN_BASELINE.json"
 BOOTSTRAP_PATH = ROOT / "infrastructure" / "windows" / "bootstrap-v10.ps1"
 ROLLBACK_PATH = ROOT / "infrastructure" / "windows" / "rollback_wp7_bootstrap.ps1"
@@ -120,7 +122,9 @@ def validate() -> list[str]:
             (*item, "FUTURE_WP_ONLY") for item in expected_services
         ]
         if actual_services != expected_with_activation:
-            failures.append("WP7 future service definitions do not match reviewed identities")
+            failures.append(
+                "WP7 future service definitions do not match reviewed identities"
+            )
 
     if bootstrap.get("default_mode") != "PREVIEW":
         failures.append("WP7 bootstrap must be preview/dry-run by default")
@@ -148,7 +152,9 @@ def validate() -> list[str]:
     except OSError as exc:
         return [f"cannot load WP7 PowerShell asset: {exc}"]
 
-    param_match = re.search(r"param\((.*?)\)\s*\n\s*Set-StrictMode", bootstrap_text, re.S)
+    param_match = re.search(
+        r"param\((.*?)\)\s*\n\s*Set-StrictMode", bootstrap_text, re.S
+    )
     if not param_match:
         failures.append("WP7 bootstrap param block not found")
     else:
@@ -164,7 +170,9 @@ def validate() -> list[str]:
             "connection_string",
         ):
             if forbidden in param_block:
-                failures.append(f"WP7 bootstrap exposes forbidden parameter marker: {forbidden}")
+                failures.append(
+                    f"WP7 bootstrap exposes forbidden parameter marker: {forbidden}"
+                )
 
     required_bootstrap_fragments = (
         "[switch]$Apply",
@@ -207,7 +215,9 @@ def validate() -> list[str]:
     )
     for fragment in forbidden_bootstrap_fragments:
         if fragment.lower() in bootstrap_text.lower():
-            failures.append(f"WP7 bootstrap contains forbidden authority/scope marker: {fragment}")
+            failures.append(
+                f"WP7 bootstrap contains forbidden authority/scope marker: {fragment}"
+            )
 
     if "$secretRoot" not in bootstrap_text:
         failures.append("WP7 bootstrap must explicitly bind the WP8 secret-root boundary")
@@ -240,7 +250,9 @@ def validate() -> list[str]:
         "winget uninstall",
     ):
         if fragment.lower() in rollback_text.lower():
-            failures.append(f"WP7 rollback contains forbidden destructive marker: {fragment}")
+            failures.append(
+                f"WP7 rollback contains forbidden destructive marker: {fragment}"
+            )
 
     return failures
 
