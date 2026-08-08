@@ -26,6 +26,7 @@
       "identity_anchor_may_be_disabled_until_service_bootstrap": true,
       "execution_secret_access": "DENY",
       "runner_configuration_write_access": "DENY",
+      "runner_root_access": "DENY",
       "broker_write_authority": "DENY"
     },
     "execution": {
@@ -33,6 +34,7 @@
       "administrator": false,
       "identity_anchor_may_be_disabled_until_service_bootstrap": true,
       "execution_secret_access": "READ_WHEN_PROVISIONED",
+      "runner_root_access": "DENY",
       "transfer_withdraw_margin_short_authority": "DENY"
     }
   },
@@ -65,6 +67,8 @@
     "runner_cannot_read_execution_secret": true,
     "runtime_cannot_read_execution_secret": true,
     "runtime_cannot_modify_runner_configuration": true,
+    "runtime_cannot_modify_runner_root": true,
+    "execution_cannot_modify_runner_root": true,
     "ai_or_general_runtime_cannot_use_broker_write_secret_or_tool": true
   },
   "privacy": {
