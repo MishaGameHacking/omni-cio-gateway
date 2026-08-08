@@ -43,6 +43,8 @@ def test_general_runtime_cannot_reference_broker_write_secret(
     wp6.validate_general_runtime_broker_boundary(failures)
 
     assert any("broker-write boundary" in item for item in failures)
+    assert any("agent.py" in item for item in failures)
+    assert all(str(tmp_path) not in item for item in failures)
 
 
 def test_contract_rejects_arbitrary_pr_deployment_authority() -> None:
