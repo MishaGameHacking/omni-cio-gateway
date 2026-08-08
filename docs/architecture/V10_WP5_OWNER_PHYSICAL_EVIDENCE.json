@@ -1,6 +1,6 @@
 {
   "schema_version": "1",
-  "attested_at_utc": "2026-08-07T20:17:00+00:00",
+  "attested_at_utc": "2026-08-08T10:05:29+00:00",
   "source_class": "OWNER_UI_AND_PHYSICAL_TEST",
   "full_disk_encryption": {
     "provider": "BITLOCKER",
@@ -18,12 +18,12 @@
     "sustained_cpu_gpu_load": {
       "tool": "AIDA64_EXTREME",
       "tool_version": "8.35.8400",
-      "duration_seconds": 1830,
-      "cpu_peak_c": 96.0,
-      "cpu_throttling_max_percent": 33.0,
-      "cpu_throttling_average_percent": 18.0,
+      "duration_seconds": 1937,
+      "cpu_peak_c": 95.0,
+      "cpu_throttling_max_percent": 31.0,
+      "cpu_throttling_average_percent": 1.2,
       "gpu_load_started": true,
-      "gpu_peak_c": null,
+      "gpu_peak_c": 73.0,
       "system_crash": false,
       "thermal_shutdown": false
     }
