@@ -9,7 +9,12 @@ $runtimeName = "omni-cio-runtime"
 $executionName = "omni-cio-execution"
 $runtimeMarker = "Omni-CIO V10 WP6 runtime role anchor; disabled until owning service bootstrap."
 $executionMarker = "Omni-CIO V10 WP6 execution role anchor; disabled until owning service bootstrap."
-$secretRoot = "C:\ProgramData\OmniCIO\secrets"
+$omniRoot = "C:\ProgramData\OmniCIO"
+$wp6StateRoot = Join-Path $omniRoot "wp6"
+$runnerAclBackupPath = Join-Path $wp6StateRoot "runner-config-acl-backup.json"
+$runnerRoot = "C:\actions-runner"
+$allowedRunnerNames = @(".runner", ".credentials", ".credentials_rsaparams", ".service")
+$secretRoot = Join-Path $omniRoot "secrets"
 $executionRoot = Join-Path $secretRoot "execution"
 $sentinelPath = Join-Path $executionRoot "wp6-ci-deny-sentinel.txt"
 $sentinelText = "OMNI-CIO-WP6-NON-SECRET-ACL-SENTINEL-v1"
@@ -42,8 +47,50 @@ function Get-OwnedRole {
     return $user
 }
 
+function Get-AclBackup {
+    if (-not (Test-Path -LiteralPath $runnerAclBackupPath)) {
+        return $null
+    }
+    try {
+        $backup = Get-Content -LiteralPath $runnerAclBackupPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+    }
+    catch {
+        throw "WP6 runner ACL backup is malformed; refusing rollback."
+    }
+    if ($backup.schema_version -ne "1") {
+        throw "Unexpected WP6 runner ACL backup schema."
+    }
+    foreach ($entry in @($backup.files)) {
+        if ($entry.name -notin $allowedRunnerNames) {
+            throw "Runner ACL backup contains an unexpected path name; refusing rollback."
+        }
+        if (-not $entry.sddl) {
+            throw "Runner ACL backup contains an empty security descriptor."
+        }
+    }
+    return $backup
+}
+
+function Restore-RunnerAclBackup {
+    param($Backup)
+
+    if ($null -eq $Backup) {
+        return
+    }
+    foreach ($entry in @($Backup.files)) {
+        $path = Join-Path $runnerRoot $entry.name
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+            throw "Reviewed runner config file '$($entry.name)' is missing; refusing partial ACL rollback."
+        }
+        $acl = [System.Security.AccessControl.FileSecurity]::new()
+        $acl.SetSecurityDescriptorSddlForm([string]$entry.sddl)
+        Set-Acl -LiteralPath $path -AclObject $acl
+    }
+}
+
 $runtimeRole = Get-OwnedRole -Name $runtimeName -Marker $runtimeMarker
 $executionRole = Get-OwnedRole -Name $executionName -Marker $executionMarker
+$aclBackup = Get-AclBackup
 
 if (Test-Path -LiteralPath $sentinelPath) {
     Assert-Administrator
@@ -54,7 +101,8 @@ if (Test-Path -LiteralPath $sentinelPath) {
 }
 
 Write-Host "WP6 rollback preflight: PASS" -ForegroundColor Green
-Write-Host "Only WP6-owned disabled role anchors and the fixed non-secret sentinel are eligible."
+Write-Host "Only WP6-owned disabled role anchors, fixed non-secret sentinel and locally backed-up runner ACLs are eligible."
+Write-Host "Runner ACL backup present: $($null -ne $aclBackup)"
 
 if (-not $Apply) {
     Write-Host "DRY RUN ONLY. Re-run with -Apply only if rollback is actually required." -ForegroundColor Yellow
@@ -62,6 +110,7 @@ if (-not $Apply) {
 }
 
 Assert-Administrator
+Restore-RunnerAclBackup -Backup $aclBackup
 
 if (Test-Path -LiteralPath $sentinelPath) {
     Remove-Item -LiteralPath $sentinelPath -Force
@@ -89,5 +138,16 @@ if ($null -ne $executionRole) {
     Remove-LocalUser -Name $executionName
 }
 
+if (Test-Path -LiteralPath $runnerAclBackupPath) {
+    Remove-Item -LiteralPath $runnerAclBackupPath -Force
+}
+if (Test-Path -LiteralPath $wp6StateRoot) {
+    $remaining = @(Get-ChildItem -LiteralPath $wp6StateRoot -Force -ErrorAction Stop)
+    if ($remaining.Count -eq 0) {
+        Remove-Item -LiteralPath $wp6StateRoot -Force
+    }
+}
+
 Write-Host "WP6-owned local privilege-boundary test state removed." -ForegroundColor Green
-Write-Host "GitHub runner registration/service was not modified." -ForegroundColor Green
+Write-Host "Original reviewed runner config ACLs restored from local backup when available." -ForegroundColor Green
+Write-Host "GitHub runner registration/service account was not modified." -ForegroundColor Green
