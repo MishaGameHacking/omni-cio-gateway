@@ -181,9 +181,7 @@ def validate_shape(profile: dict[str, Any]) -> list[str]:
     return failures
 
 
-def assess(
-    profile: dict[str, Any], contract: dict[str, Any]
-) -> tuple[str, list[str]]:
+def assess(profile: dict[str, Any], contract: dict[str, Any]) -> tuple[str, list[str]]:
     blockers = validate_shape(profile)
     if blockers:
         return "FAIL", blockers
