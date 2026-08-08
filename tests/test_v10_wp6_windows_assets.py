@@ -102,6 +102,17 @@ def test_identity_audit_has_no_secret_context_and_uses_non_persistent_checkout()
     assert "assess_v10_wp6_identity_profile.py" in text
 
 
+def test_owner_apply_runbook_uses_actions_checkout_handoff_without_network_git() -> None:
+    text = RUNBOOK.read_text(encoding="utf-8")
+    assert "Reviewed checkout hand-off" in text
+    assert "persist-credentials: false" in text
+    assert "git rev-parse HEAD" in text
+    assert "Do **not** run `git fetch` or `git pull`" in text
+    apply_section = text.split("## 5. Apply", 1)[1].split("## 6. Verification", 1)[0]
+    assert "git fetch" not in apply_section
+    assert "git pull" not in apply_section
+
+
 def test_authoritative_workflow_does_not_log_raw_windows_identity() -> None:
     text = SELF_HOSTED.read_text(encoding="utf-8")
     assert "whoami" not in text.lower()
