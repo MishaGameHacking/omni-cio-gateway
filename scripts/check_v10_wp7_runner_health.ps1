@@ -40,18 +40,30 @@ function Get-AccountSidValue {
     }
 }
 
-if ($env:OS -ne "Windows_NT") {
+function Write-Failure {
+    param([string]$Code)
+
     Write-Result -Result ([pscustomobject]@{
         healthy = $false
-        error_code = "RUNNER_SERVICE_WINDOWS_REQUIRED"
+        error_code = $Code
         root_present = $false
         configuration_present = $false
+        service_marker_valid = $false
         service_running = $false
         service_automatic = $false
         service_non_admin = $false
         identity_match = $false
         privacy_safe = $true
     })
+}
+
+if ($ExpectedRunnerName -notmatch '^[A-Za-z0-9._-]{1,64}$') {
+    Write-Failure -Code "EXPECTED_RUNNER_NAME_INVALID"
+    exit 2
+}
+
+if ($env:OS -ne "Windows_NT") {
+    Write-Failure -Code "RUNNER_SERVICE_WINDOWS_REQUIRED"
     exit 2
 }
 
@@ -59,16 +71,68 @@ $runnerRootPresent = Test-Path -LiteralPath $RunnerRoot -PathType Container
 $runnerConfig = Join-Path $RunnerRoot ".runner"
 $serviceMarker = Join-Path $RunnerRoot ".service"
 $runCommand = Join-Path $RunnerRoot "run.cmd"
+$runnerConfigPresent = Test-Path -LiteralPath $runnerConfig -PathType Leaf
+$serviceMarkerPresent = Test-Path -LiteralPath $serviceMarker -PathType Leaf
+$runCommandPresent = Test-Path -LiteralPath $runCommand -PathType Leaf
+
+$runnerConfigBounded = $false
+if ($runnerConfigPresent) {
+    try {
+        $runnerConfigLength = (Get-Item -LiteralPath $runnerConfig -ErrorAction Stop).Length
+        $runnerConfigBounded = $runnerConfigLength -gt 0 -and $runnerConfigLength -le 65536
+    }
+    catch {
+        $runnerConfigBounded = $false
+    }
+}
+
+$declaredServiceName = $null
+$serviceMarkerValid = $false
+if ($serviceMarkerPresent) {
+    try {
+        $markerLength = (Get-Item -LiteralPath $serviceMarker -ErrorAction Stop).Length
+        if ($markerLength -gt 0 -and $markerLength -le 1024) {
+            $candidate = (Get-Content -LiteralPath $serviceMarker -Raw -ErrorAction Stop).Trim()
+            $expectedSuffix = ".$ExpectedRunnerName.service"
+            if (
+                $candidate -match '^actions\.runner\.[A-Za-z0-9._-]{1,480}\.service$' -and
+                $candidate.EndsWith(
+                    $expectedSuffix,
+                    [System.StringComparison]::OrdinalIgnoreCase
+                )
+            ) {
+                $declaredServiceName = $candidate
+                $serviceMarkerValid = $true
+            }
+        }
+    }
+    catch {
+        $declaredServiceName = $null
+        $serviceMarkerValid = $false
+    }
+}
+
 $configurationPresent = (
-    (Test-Path -LiteralPath $runnerConfig -PathType Leaf) -and
-    (Test-Path -LiteralPath $serviceMarker -PathType Leaf) -and
-    (Test-Path -LiteralPath $runCommand -PathType Leaf)
+    $runnerConfigPresent -and
+    $runnerConfigBounded -and
+    $serviceMarkerPresent -and
+    $serviceMarkerValid -and
+    $runCommandPresent
 )
 
-$services = @(
-    Get-CimInstance Win32_Service -ErrorAction Stop |
-        Where-Object { $_.Name -like "actions.runner.*" }
-)
+$services = @()
+if ($serviceMarkerValid) {
+    $services = @(
+        Get-CimInstance Win32_Service -ErrorAction Stop |
+            Where-Object {
+                [string]::Equals(
+                    $_.Name,
+                    $declaredServiceName,
+                    [System.StringComparison]::OrdinalIgnoreCase
+                )
+            }
+    )
+}
 $service = if ($services.Count -eq 1) { $services[0] } else { $null }
 $identityMatch = $false
 $serviceRunning = $false
@@ -76,9 +140,9 @@ $serviceAutomatic = $false
 $serviceNonAdmin = $false
 
 if ($null -ne $service) {
-    $expectedSuffix = ".$ExpectedRunnerName.service"
-    $identityMatch = $service.Name.EndsWith(
-        $expectedSuffix,
+    $identityMatch = [string]::Equals(
+        $service.Name,
+        $declaredServiceName,
         [System.StringComparison]::OrdinalIgnoreCase
     )
     $serviceRunning = $service.State -eq "Running"
@@ -97,9 +161,13 @@ if ($null -ne $service) {
             $runnerSid = Get-AccountSidValue -AccountName $startName
             if ($runnerSid) {
                 try {
-                    $adminSid = [System.Security.Principal.SecurityIdentifier]::new("S-1-5-32-544")
+                    $adminSid = [System.Security.Principal.SecurityIdentifier]::new(
+                        "S-1-5-32-544"
+                    )
                     $adminGroup = Get-LocalGroup -SID $adminSid -ErrorAction Stop
-                    $members = @(Get-LocalGroupMember -Group $adminGroup -ErrorAction Stop)
+                    $members = @(
+                        Get-LocalGroupMember -Group $adminGroup -ErrorAction Stop
+                    )
                     $serviceNonAdmin = -not [bool](
                         $members | Where-Object { $_.SID.Value -eq $runnerSid }
                     )
@@ -115,7 +183,8 @@ if ($null -ne $service) {
 $healthy = (
     $runnerRootPresent -and
     $configurationPresent -and
-    $null -ne $service -and
+    $serviceMarkerValid -and
+    $services.Count -eq 1 -and
     $identityMatch -and
     $serviceRunning -and
     $serviceAutomatic -and
@@ -126,11 +195,20 @@ $errorCode = $null
 if (-not $runnerRootPresent) {
     $errorCode = "RUNNER_ROOT_MISSING"
 }
-elseif (-not $configurationPresent) {
-    $errorCode = "RUNNER_CONFIGURATION_MISSING"
+elseif (-not $runnerConfigPresent -or -not $runnerConfigBounded) {
+    $errorCode = "RUNNER_CONFIGURATION_MISSING_OR_UNBOUNDED"
+}
+elseif (-not $serviceMarkerPresent) {
+    $errorCode = "RUNNER_SERVICE_MARKER_MISSING"
+}
+elseif (-not $serviceMarkerValid) {
+    $errorCode = "RUNNER_SERVICE_MARKER_INVALID"
+}
+elseif (-not $runCommandPresent) {
+    $errorCode = "RUNNER_COMMAND_MISSING"
 }
 elseif ($services.Count -ne 1) {
-    $errorCode = "RUNNER_SERVICE_COUNT_INVALID"
+    $errorCode = "RUNNER_SERVICE_MISSING_OR_AMBIGUOUS"
 }
 elseif (-not $identityMatch) {
     $errorCode = "RUNNER_SERVICE_IDENTITY_MISMATCH"
@@ -150,6 +228,7 @@ Write-Result -Result ([pscustomobject]@{
     error_code = $errorCode
     root_present = $runnerRootPresent
     configuration_present = $configurationPresent
+    service_marker_valid = $serviceMarkerValid
     service_running = $serviceRunning
     service_automatic = $serviceAutomatic
     service_non_admin = $serviceNonAdmin
