@@ -51,6 +51,18 @@ def test_provisioning_hardens_runner_root_and_reviewed_config_with_backup() -> N
     assert "SYSTEM, Administrators and the runner service identity" in text
 
 
+def test_sentinel_acl_repairs_inheritance_and_fails_closed_on_bad_authority() -> None:
+    text = PROVISION.read_text(encoding="utf-8")
+    sentinel_section = text.split("function Set-SentinelAcl", 1)[1].split("$runner = Get-RunnerServiceSafe", 1)[0]
+    assert "Get-Acl -LiteralPath $sentinelPath" in sentinel_section
+    assert "SetAccessRuleProtection($false, $true)" in sentinel_section
+    assert "SetAccessRuleProtection($true, $true)" in sentinel_section
+    assert "-Rights ReadPermissions" in sentinel_section
+    assert "GetAccessRules(" in sentinel_section
+    assert "execution role read grant was not persisted" in sentinel_section
+    assert "runner received sentinel data-read authority" in sentinel_section
+
+
 def test_rollback_is_marker_guarded_restores_root_and_config_acl() -> None:
     text = ROLLBACK.read_text(encoding="utf-8")
     assert "WP6 ownership marker" in text
