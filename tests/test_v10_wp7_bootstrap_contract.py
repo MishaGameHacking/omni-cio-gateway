@@ -11,7 +11,9 @@ BOOTSTRAP = ROOT / "infrastructure" / "windows" / "bootstrap-v10.ps1"
 ROLLBACK = ROOT / "infrastructure" / "windows" / "rollback_wp7_bootstrap.ps1"
 RUNNER_HEALTH = ROOT / "scripts" / "check_v10_wp7_runner_health.ps1"
 CONTRACT = ROOT / "docs" / "architecture" / "V10_WP7_BOOTSTRAP_CONTRACT.json"
-EXECUTION_CONTRACT = ROOT / "docs" / "architecture" / "V10_WP7_EXECUTION_CONTRACT.md"
+EXECUTION_CONTRACT = (
+    ROOT / "docs" / "architecture" / "V10_WP7_EXECUTION_CONTRACT.md"
+)
 
 
 def test_wp7_contract_guard_passes() -> None:
@@ -142,7 +144,9 @@ def test_machine_visibility_is_part_of_the_exit_gate() -> None:
     assert "Test-MachineVisiblePath" in text
     assert 'return "NOT_MACHINE_VISIBLE"' in text
     assert "machine_visible" in text
-    assert "NOT_MACHINE_VISIBLE" in policy["profile"]["allowed_prerequisite_states"]
+    assert (
+        "NOT_MACHINE_VISIBLE" in policy["profile"]["allowed_prerequisite_states"]
+    )
     assert policy["exit_gate"]["prerequisites_machine_visible"] is True
 
 
@@ -172,9 +176,9 @@ def test_bootstrap_only_defines_future_services_and_does_not_activate_them() -> 
         "OmniCIO.ResearchAI",
         "OmniCIO.Execution",
     }
-    assert {item["windows_service_name"] for item in policy["service_definitions"]} == (
-        expected_names
-    )
+    assert {
+        item["windows_service_name"] for item in policy["service_definitions"]
+    } == expected_names
     assert all(
         item["activation"] == "FUTURE_WP_ONLY"
         for item in policy["service_definitions"]
