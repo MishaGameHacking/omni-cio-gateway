@@ -90,29 +90,13 @@ if ($postgresVersion -ne [string]$contract.toolchain.postgresql.runtime_version)
 }
 
 $plannedServices = @(
-    [ordered]@{
-        id = "core-runtime"
-        windows_service_name = "OmniCIO.Core"
-        identity_role = $runtimeName
-        activation = "FUTURE_WP_ONLY"
-    },
-    [ordered]@{
-        id = "web-api"
-        windows_service_name = "OmniCIO.WebApi"
-        identity_role = $runtimeName
-        activation = "FUTURE_WP_ONLY"
-    },
-    [ordered]@{
-        id = "research-ai"
-        windows_service_name = "OmniCIO.ResearchAI"
-        identity_role = $runtimeName
-        activation = "FUTURE_WP_ONLY"
-    },
-    [ordered]@{
-        id = "execution"
-        windows_service_name = "OmniCIO.Execution"
-        identity_role = $executionName
-        activation = "FUTURE_WP_ONLY"
+    foreach ($definition in @($contract.service_definitions)) {
+        [ordered]@{
+            id = [string]$definition.id
+            windows_service_name = [string]$definition.windows_service_name
+            identity_role = [string]$definition.identity_role
+            activation = [string]$definition.activation
+        }
     }
 )
 
@@ -222,115 +206,203 @@ function Invoke-VersionCommand {
     }
 }
 
-function Get-PythonVersion {
-    $value = Invoke-VersionCommand -FilePath "py.exe" -Arguments @(
-        "-3.14",
-        "-c",
-        "import sys; print('.'.join(map(str, sys.version_info[:3])))"
-    )
-    if ($value) {
-        return $value
+function Test-MachineVisiblePath {
+    param([string]$Path)
+
+    if ([string]::IsNullOrWhiteSpace($Path)) {
+        return $false
+    }
+    try {
+        $full = [System.IO.Path]::GetFullPath($Path)
+    }
+    catch {
+        return $false
     }
 
-    $candidate = "C:\Program Files\Python314\python.exe"
-    if (Test-Path -LiteralPath $candidate -PathType Leaf) {
-        return Invoke-VersionCommand -FilePath $candidate -Arguments @(
-            "-c",
-            "import sys; print('.'.join(map(str, sys.version_info[:3])))"
-        )
+    foreach ($privateRoot in @($env:USERPROFILE, $env:LOCALAPPDATA, $env:APPDATA)) {
+        if ([string]::IsNullOrWhiteSpace($privateRoot)) {
+            continue
+        }
+        $normalized = [System.IO.Path]::GetFullPath($privateRoot).TrimEnd('\') + '\'
+        if ($full.StartsWith($normalized, [System.StringComparison]::OrdinalIgnoreCase)) {
+            return $false
+        }
     }
-    return $null
+    return $true
 }
 
-function Get-NodeVersion {
-    $value = Invoke-VersionCommand -FilePath "node.exe" -Arguments @("--version")
-    if (-not $value) {
+function Get-PythonInfo {
+    $version = $null
+    $executable = $null
+
+    try {
+        $payload = & py.exe -3.14 -c `
+            "import json,sys; print(json.dumps({'v':'.'.join(map(str,sys.version_info[:3])),'p':sys.executable}))" `
+            2>$null | Out-String
+        if ($LASTEXITCODE -eq 0 -and $payload.Trim()) {
+            $parsed = $payload.Trim() | ConvertFrom-Json -ErrorAction Stop
+            $version = [string]$parsed.v
+            $executable = [string]$parsed.p
+        }
+    }
+    catch {
+        $version = $null
+        $executable = $null
+    }
+
+    if (-not $version) {
+        $candidate = "C:\Program Files\Python314\python.exe"
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+            $version = Invoke-VersionCommand -FilePath $candidate -Arguments @(
+                "-c",
+                "import sys; print('.'.join(map(str, sys.version_info[:3])))"
+            )
+            $executable = $candidate
+        }
+    }
+
+    return [ordered]@{
+        version = $version
+        machine_visible = Test-MachineVisiblePath -Path $executable
+    }
+}
+
+function Get-NodeInfo {
+    $version = Invoke-VersionCommand -FilePath "node.exe" -Arguments @("--version")
+    $path = $null
+    try {
+        $command = Get-Command node.exe -ErrorAction Stop
+        $path = [string]$command.Source
+    }
+    catch {
+        $path = $null
+    }
+    if (-not $version) {
         $candidate = "C:\Program Files\nodejs\node.exe"
         if (Test-Path -LiteralPath $candidate -PathType Leaf) {
-            $value = Invoke-VersionCommand -FilePath $candidate -Arguments @("--version")
+            $version = Invoke-VersionCommand -FilePath $candidate -Arguments @("--version")
+            $path = $candidate
         }
     }
-    if ($value -and $value.StartsWith("v")) {
-        return $value.Substring(1)
+    if ($version -and $version.StartsWith("v")) {
+        $version = $version.Substring(1)
     }
-    return $value
+    return [ordered]@{
+        version = $version
+        machine_visible = Test-MachineVisiblePath -Path $path
+    }
 }
 
-function Get-NpmVersion {
-    $value = Invoke-VersionCommand -FilePath "npm.cmd" -Arguments @("--version")
-    if (-not $value) {
+function Get-NpmInfo {
+    $version = Invoke-VersionCommand -FilePath "npm.cmd" -Arguments @("--version")
+    $path = $null
+    try {
+        $command = Get-Command npm.cmd -ErrorAction Stop
+        $path = [string]$command.Source
+    }
+    catch {
+        $path = $null
+    }
+    if (-not $version) {
         $candidate = "C:\Program Files\nodejs\npm.cmd"
         if (Test-Path -LiteralPath $candidate -PathType Leaf) {
-            $value = Invoke-VersionCommand -FilePath $candidate -Arguments @("--version")
+            $version = Invoke-VersionCommand -FilePath $candidate -Arguments @("--version")
+            $path = $candidate
         }
     }
-    return $value
+    return [ordered]@{
+        version = $version
+        machine_visible = Test-MachineVisiblePath -Path $path
+    }
 }
 
-function Get-PostgreSqlVersion {
+function Get-PostgreSqlInfo {
+    $version = $null
+    $path = $null
     $candidates = @("psql.exe", "C:\Program Files\PostgreSQL\18\bin\psql.exe")
     foreach ($candidate in $candidates) {
         $value = Invoke-VersionCommand -FilePath $candidate -Arguments @("--version")
         if ($value -and $value -match '([0-9]+\.[0-9]+)') {
-            return $Matches[1]
+            $version = $Matches[1]
+            if ($candidate -eq "psql.exe") {
+                try {
+                    $command = Get-Command psql.exe -ErrorAction Stop
+                    $path = [string]$command.Source
+                }
+                catch {
+                    $path = $null
+                }
+            }
+            else {
+                $path = $candidate
+            }
+            break
         }
     }
-    return $null
+    return [ordered]@{
+        version = $version
+        machine_visible = Test-MachineVisiblePath -Path $path
+    }
 }
 
 function Get-PrerequisiteState {
     param(
         [string]$Expected,
-        [string]$Actual
+        [string]$Actual,
+        [bool]$MachineVisible
     )
 
     if ([string]::IsNullOrWhiteSpace($Actual)) {
         return "MISSING"
     }
-    if ([string]::Equals($Expected, $Actual, [System.StringComparison]::Ordinal)) {
-        return "MATCH"
+    if (-not [string]::Equals($Expected, $Actual, [System.StringComparison]::Ordinal)) {
+        return "MISMATCH"
     }
-    return "MISMATCH"
+    if (-not $MachineVisible) {
+        return "NOT_MACHINE_VISIBLE"
+    }
+    return "MATCH"
 }
 
 function Get-Prerequisites {
-    $actualPython = if ($env:OS -eq "Windows_NT") { Get-PythonVersion } else { $null }
-    $actualNode = if ($env:OS -eq "Windows_NT") { Get-NodeVersion } else { $null }
-    $actualNpm = if ($env:OS -eq "Windows_NT") { Get-NpmVersion } else { $null }
-    $actualPostgres = if ($env:OS -eq "Windows_NT") { Get-PostgreSqlVersion } else { $null }
+    if ($env:OS -ne "Windows_NT") {
+        return [ordered]@{
+            python = [ordered]@{ expected = $pythonVersion; actual = $null; state = "UNAVAILABLE"; machine_visible = $false }
+            node = [ordered]@{ expected = $nodeVersion; actual = $null; state = "UNAVAILABLE"; machine_visible = $false }
+            npm = [ordered]@{ expected = $npmVersion; actual = $null; state = "UNAVAILABLE"; machine_visible = $false }
+            postgresql = [ordered]@{ expected = $postgresVersion; actual = $null; state = "UNAVAILABLE"; machine_visible = $false }
+        }
+    }
+
+    $python = Get-PythonInfo
+    $node = Get-NodeInfo
+    $npm = Get-NpmInfo
+    $postgres = Get-PostgreSqlInfo
 
     return [ordered]@{
         python = [ordered]@{
             expected = $pythonVersion
-            actual = $actualPython
-            state = if ($env:OS -eq "Windows_NT") {
-                Get-PrerequisiteState -Expected $pythonVersion -Actual $actualPython
-            }
-            else { "UNAVAILABLE" }
+            actual = $python.version
+            machine_visible = [bool]$python.machine_visible
+            state = Get-PrerequisiteState -Expected $pythonVersion -Actual $python.version -MachineVisible $python.machine_visible
         }
         node = [ordered]@{
             expected = $nodeVersion
-            actual = $actualNode
-            state = if ($env:OS -eq "Windows_NT") {
-                Get-PrerequisiteState -Expected $nodeVersion -Actual $actualNode
-            }
-            else { "UNAVAILABLE" }
+            actual = $node.version
+            machine_visible = [bool]$node.machine_visible
+            state = Get-PrerequisiteState -Expected $nodeVersion -Actual $node.version -MachineVisible $node.machine_visible
         }
         npm = [ordered]@{
             expected = $npmVersion
-            actual = $actualNpm
-            state = if ($env:OS -eq "Windows_NT") {
-                Get-PrerequisiteState -Expected $npmVersion -Actual $actualNpm
-            }
-            else { "UNAVAILABLE" }
+            actual = $npm.version
+            machine_visible = [bool]$npm.machine_visible
+            state = Get-PrerequisiteState -Expected $npmVersion -Actual $npm.version -MachineVisible $npm.machine_visible
         }
         postgresql = [ordered]@{
             expected = $postgresVersion
-            actual = $actualPostgres
-            state = if ($env:OS -eq "Windows_NT") {
-                Get-PrerequisiteState -Expected $postgresVersion -Actual $actualPostgres
-            }
-            else { "UNAVAILABLE" }
+            actual = $postgres.version
+            machine_visible = [bool]$postgres.machine_visible
+            state = Get-PrerequisiteState -Expected $postgresVersion -Actual $postgres.version -MachineVisible $postgres.machine_visible
         }
     }
 }
@@ -378,11 +450,14 @@ function Install-ExactWingetPackage {
 }
 
 function Install-MissingPrerequisites {
-    param([hashtable]$Before)
+    param([System.Collections.IDictionary]$Before)
 
     foreach ($name in @("python", "node", "npm", "postgresql")) {
         if ($Before[$name].state -eq "MISMATCH") {
             throw "PREREQUISITE_VERSION_MISMATCH:$name"
+        }
+        if ($Before[$name].state -eq "NOT_MACHINE_VISIBLE") {
+            throw "PREREQUISITE_NOT_MACHINE_VISIBLE:$name"
         }
     }
 
@@ -528,6 +603,29 @@ function Ensure-ExactFile {
     return $true
 }
 
+function Get-ExistingInstalledPackages {
+    if (-not (Test-Path -LiteralPath $statePath -PathType Leaf)) {
+        return @()
+    }
+    if (-not (Test-OwnedDirectory -Path $bootstrapRoot)) {
+        throw "WP7 refuses to read bootstrap state from an unowned directory."
+    }
+    try {
+        $state = Get-Content -LiteralPath $statePath -Raw -ErrorAction Stop |
+            ConvertFrom-Json -ErrorAction Stop
+    }
+    catch {
+        throw "Existing WP7 bootstrap state is invalid."
+    }
+    if (
+        [string]$state.schema_version -ne "1" -or
+        [string]$state.ownership -ne $ownershipMarker
+    ) {
+        throw "Existing WP7 bootstrap state ownership/schema mismatch."
+    }
+    return @($state.installed_by_wp7 | ForEach-Object { [string]$_ })
+}
+
 function Get-BootstrapStateJson {
     param([string[]]$InstalledPackages)
 
@@ -607,6 +705,10 @@ function Test-BootstrapStateReady {
         return (
             [string]$state.schema_version -eq "1" -and
             [string]$state.ownership -eq $ownershipMarker -and
+            [string]$state.toolchain.python -eq $pythonVersion -and
+            [string]$state.toolchain.node -eq $nodeVersion -and
+            [string]$state.toolchain.npm -eq $npmVersion -and
+            [string]$state.toolchain.postgresql -eq $postgresVersion -and
             $state.secret_values_present -eq $false -and
             $state.future_services_activated -eq $false
         )
@@ -726,7 +828,7 @@ function Get-Profile {
 }
 
 function Write-Profile {
-    param([hashtable]$Profile)
+    param([System.Collections.IDictionary]$Profile)
 
     if ($AsJson) {
         $Profile | ConvertTo-Json -Depth 10 -Compress
@@ -744,16 +846,6 @@ function Write-Profile {
         Write-Host "Prerequisite $name: $($item.state) (expected $($item.expected))"
     }
     Write-Host "Runner healthy: $($Profile.runner.healthy)"
-    Write-Host "WP6 runtime role valid: $(
-        $Profile.runtime_role.present -and
-        $Profile.runtime_role.enabled -eq $false -and
-        $Profile.runtime_role.administrator -eq $false
-    )"
-    Write-Host "WP6 execution role valid: $(
-        $Profile.execution_role.present -and
-        $Profile.execution_role.enabled -eq $false -and
-        $Profile.execution_role.administrator -eq $false
-    )"
     Write-Host "WP7 directories ready: $($Profile.bootstrap.owned_directories_ready)"
     Write-Host "WP7 service definitions ready: $($Profile.bootstrap.service_definitions_ready)"
     Write-Host "Future services inactive: $($Profile.bootstrap.future_services_inactive)"
@@ -780,6 +872,9 @@ if ($Verify) {
 if (-not (Test-Administrator)) {
     throw "WP7 bootstrap -Apply requires an elevated OWNER-admin PowerShell."
 }
+if (-not (Test-Path -LiteralPath $expectedRoot -PathType Container)) {
+    throw "WP7 requires the accepted WP6 Omni-CIO root before mutation."
+}
 
 $runnerBefore = Get-RunnerHealth
 if (-not $runnerBefore.healthy) {
@@ -802,16 +897,16 @@ foreach ($roleSpec in @(
 }
 
 $prerequisitesBefore = Get-Prerequisites
-$installedByWp7 = @()
+$installedThisRun = @()
 if ($InstallPrerequisites) {
     if ($prerequisitesBefore.python.state -eq "MISSING") {
-        $installedByWp7 += "Python.Python.3.14@$([string]$contract.toolchain.python.winget_version)"
+        $installedThisRun += "Python.Python.3.14@$([string]$contract.toolchain.python.winget_version)"
     }
     if ($prerequisitesBefore.node.state -eq "MISSING") {
-        $installedByWp7 += "OpenJS.NodeJS.LTS@$([string]$contract.toolchain.node.winget_version)"
+        $installedThisRun += "OpenJS.NodeJS.LTS@$([string]$contract.toolchain.node.winget_version)"
     }
     if ($prerequisitesBefore.postgresql.state -eq "MISSING") {
-        $installedByWp7 += "PostgreSQL.PostgreSQL.18@$([string]$contract.toolchain.postgresql.winget_version)"
+        $installedThisRun += "PostgreSQL.PostgreSQL.18@$([string]$contract.toolchain.postgresql.winget_version)"
     }
     Install-MissingPrerequisites -Before $prerequisitesBefore
 }
@@ -824,11 +919,14 @@ $notExact = @(
 )
 if ($notExact.Count -gt 0) {
     Write-Host (
-        "WP7 bootstrap requires exact prerequisites before filesystem mutation: " +
+        "WP7 bootstrap requires exact machine-visible prerequisites before filesystem mutation: " +
         ($notExact -join ", ")
     ) -ForegroundColor Yellow
     exit 3
 }
+
+$existingInstalled = @(Get-ExistingInstalledPackages)
+$installedByWp7 = @($existingInstalled + $installedThisRun | Sort-Object -Unique)
 
 $firstPassChanges = Ensure-Wp7State `
     -RuntimeSid $runtimeBefore.sid `
