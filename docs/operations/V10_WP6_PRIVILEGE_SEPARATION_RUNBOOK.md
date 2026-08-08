@@ -1,0 +1,142 @@
+# Omni-CIO V10 — WP6 Privilege Separation Runbook
+
+Status: **WP6 implementation runbook**  
+Applies only to the dedicated Lenovo Omni-CIO node.
+
+## 1. Goal
+
+Prove that compromise of the ordinary GitHub self-hosted CI identity does not automatically expose a future real-money execution secret or privileged runtime control.
+
+This runbook does not provision any real token or private database material.
+
+## 2. Safety model
+
+WP6 creates only:
+
+- disabled local role anchor `omni-cio-runtime`;
+- disabled local role anchor `omni-cio-execution`;
+- `C:\ProgramData\OmniCIO\secrets\execution` as the future execution-only secret boundary;
+- a fixed **non-secret** sentinel file used solely for negative ACL tests.
+
+The sentinel contains no account data, broker data, credential or token.
+
+The GitHub runner receives only `ReadPermissions` on the sentinel ACL so CI can inspect ACL metadata; it receives no file-data read grant. The execution role receives read-only data access. The ordinary runtime role receives no execution-secret access.
+
+## 3. Preconditions
+
+Before any mutating action:
+
+1. PR #253 exact-head hosted/static checks are green;
+2. the privacy-safe WP6 Identity Audit has run and its blockers are understood;
+3. the GitHub runner service is running and is **not LocalSystem**;
+4. no real secret has been placed under the WP6 secret path;
+5. run the provisioning script first without `-Apply`.
+
+If the runner is LocalSystem, stop. Do not weaken the contract or provision around a privileged CI service identity.
+
+## 4. Dry-run
+
+From an OWNER-admin capable session, but without elevation required for dry-run:
+
+```powershell
+cd C:\actions-runner\_work\omni-cio-gateway\omni-cio-gateway
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\infrastructure\windows\provision_wp6_privilege_boundary.ps1
+```
+
+Expected output contains:
+
+- `WP6 privilege provisioning preflight: PASS`;
+- runner account class only, never its raw account name;
+- `Real secret values used: NO`;
+- `DRY RUN ONLY`.
+
+## 5. Apply
+
+Apply is an OWNER-admin action because it creates local Windows role accounts and protected ACLs:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\infrastructure\windows\provision_wp6_privilege_boundary.ps1 -Apply
+```
+
+The script is fail-closed:
+
+- it refuses LocalSystem runner identity;
+- it refuses unexpected pre-existing accounts with the reserved role names;
+- it refuses a non-empty unexpected secret root;
+- it never prints or stores the generated role-account passwords;
+- it disables both role anchors immediately;
+- it removes either role from the local Administrators group if necessary;
+- it does not change the GitHub runner registration or service account;
+- it creates no real secret.
+
+## 6. Verification
+
+The authoritative verification is the GitHub Actions workflow:
+
+`V10 WP6 Identity Audit`
+
+It runs as the actual `omni-cio-ci` service identity and produces only sanitized role classes/booleans/status values.
+
+Required result:
+
+- runner service running/automatic;
+- runner non-admin and distinct from OWNER;
+- runner process identity matches the configured runner service identity;
+- runtime/execution role anchors present and non-admin;
+- sentinel present;
+- runner data-read attempt returns `ACCESS_DENIED`;
+- runtime has no direct execution-secret read grant;
+- execution role has the intended read grant;
+- no broad Users/Authenticated Users/Everyone read exposure;
+- runtime has no runner-config write grant;
+- no broad runner-config write exposure;
+- all privacy flags false.
+
+## 7. Why disabled role anchors are acceptable in WP6
+
+WP6 establishes identity and ACL separation. It does not yet install the Core/Web/AI/execution Windows services. Enabling/configuring an actual service under the owning runtime identity belongs to later node bootstrap/service WPs. Keeping these anchors disabled prevents interactive/service logon before that owning package exists while preserving stable local SIDs for ACL validation.
+
+## 8. Rollback
+
+Rollback is available only for WP6-owned state:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\infrastructure\windows\rollback_wp6_privilege_boundary.ps1
+```
+
+Dry-run is default. To apply:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\infrastructure\windows\rollback_wp6_privilege_boundary.ps1 -Apply
+```
+
+Rollback refuses to remove:
+
+- an account without the exact WP6 ownership marker;
+- an enabled role account;
+- an unexpected sentinel payload;
+- a directory containing non-WP6 material.
+
+It never removes/re-registers the GitHub runner.
+
+## 9. Incidents / fail-closed behavior
+
+If any WP6 audit or provisioning step fails:
+
+- do not add real secrets;
+- do not run the workflow elevated as a workaround;
+- do not grant Users/Authenticated Users/Everyone access to the execution-secret boundary;
+- do not change `trading_methods=false`;
+- do not add broker write credentials to GitHub Actions;
+- preserve current V9 production/recovery state and fix the identity/ACL cause first.
+
+## 10. Exit Gate evidence
+
+WP6 can be accepted only after:
+
+1. exact-head Fast PR / Toolchain / Self-Hosted CI are green;
+2. exact-head `V10 WP6 Identity Audit` is green on real Lenovo ACLs;
+3. static workflow/AI/runtime negative tests are green;
+4. no unresolved review blocker remains;
+5. squash merge completes;
+6. post-merge Regression Shield succeeds on the exact `main` merge SHA.
