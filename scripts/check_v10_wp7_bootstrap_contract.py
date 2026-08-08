@@ -91,6 +91,37 @@ def validate() -> list[str]:
         if spec.get("winget_version") != package_version:
             failures.append(f"unexpected WP7 pinned winget version for {name}")
 
+    expected_services = [
+        ("core-runtime", "OmniCIO.Core", "omni-cio-runtime"),
+        ("web-api", "OmniCIO.WebApi", "omni-cio-runtime"),
+        ("research-ai", "OmniCIO.ResearchAI", "omni-cio-runtime"),
+        ("execution", "OmniCIO.Execution", "omni-cio-execution"),
+    ]
+    service_definitions = contract.get("service_definitions")
+    if not isinstance(service_definitions, list):
+        failures.append("WP7 service_definitions must be a list")
+    else:
+        actual_services: list[tuple[str, str, str, str]] = []
+        for index, item in enumerate(service_definitions):
+            try:
+                spec = _mapping(item, f"service_definitions[{index}]")
+            except ContractError as exc:
+                failures.append(str(exc))
+                continue
+            actual_services.append(
+                (
+                    str(spec.get("id")),
+                    str(spec.get("windows_service_name")),
+                    str(spec.get("identity_role")),
+                    str(spec.get("activation")),
+                )
+            )
+        expected_with_activation = [
+            (*item, "FUTURE_WP_ONLY") for item in expected_services
+        ]
+        if actual_services != expected_with_activation:
+            failures.append("WP7 future service definitions do not match reviewed identities")
+
     if bootstrap.get("default_mode") != "PREVIEW":
         failures.append("WP7 bootstrap must be preview/dry-run by default")
     if bootstrap.get("requires_owner_administrator_for_apply") is not True:
@@ -101,6 +132,15 @@ def validate() -> list[str]:
         failures.append("WP7 bootstrap must not re-register the runner")
     if bootstrap.get("future_application_service_activation_allowed") is not False:
         failures.append("WP7 bootstrap must not activate future application services")
+
+    profile_contract = _mapping(contract.get("profile"), "profile")
+    states = profile_contract.get("allowed_prerequisite_states")
+    if not isinstance(states, list) or "NOT_MACHINE_VISIBLE" not in states:
+        failures.append("WP7 prerequisite states must include NOT_MACHINE_VISIBLE")
+
+    exit_gate = _mapping(contract.get("exit_gate"), "exit_gate")
+    if exit_gate.get("prerequisites_machine_visible") is not True:
+        failures.append("WP7 Exit Gate must require machine-visible prerequisites")
 
     try:
         bootstrap_text = BOOTSTRAP_PATH.read_text(encoding="utf-8")
@@ -134,11 +174,15 @@ def validate() -> list[str]:
         "Test-Administrator",
         "Get-RunnerHealth",
         "Get-LocalRoleState",
+        "Test-MachineVisiblePath",
+        'return "NOT_MACHINE_VISIBLE"',
         "Install-ExactWingetPackage",
         '"--exact"',
         '"--version"',
         '"--source", "winget"',
         "Ensure-Wp7State",
+        "Get-ExistingInstalledPackages",
+        "$existingInstalled + $installedThisRun",
         "secondPassChanges",
         "WP7 bootstrap second pass was not idempotent",
         "future_services_inactive",
@@ -213,6 +257,7 @@ def main() -> int:
     print("Default mode: PREVIEW")
     print("Apply authority: OWNER administrator only")
     print("Package resolution: exact IDs + pinned versions")
+    print("Prerequisite visibility: machine-wide required")
     print("Runner registration: untouched")
     print("Secret-value inputs: forbidden")
     print("Future application services: definitions only / inactive")
