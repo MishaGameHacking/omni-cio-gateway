@@ -4,7 +4,7 @@ Updated: 2026-08-08
 
 ## Executive state
 
-Omni-CIO V10: **DEVELOPMENT ACTIVE / WP5 COMPLETE / BLOCK C IN PROGRESS / WP6 NEXT**.
+Omni-CIO V10: **DEVELOPMENT ACTIVE / WP6 COMPLETE / BLOCK C IN PROGRESS / WP7 NEXT**.
 
 Accepted implementation progress: **14%**.
 
@@ -16,6 +16,7 @@ Accepted completed work:
 - Block B / WP3 — **COMPLETE**;
 - Block B / WP4 — **COMPLETE (Block B accepted at 9%)**;
 - Block C / WP5 — **COMPLETE**;
+- Block C / WP6 — **COMPLETE**;
 - GitHub Pro hybrid CI / Lenovo continuity hardening — **COMPLETE infrastructure hardening**;
 - V10 release/build provenance, protected `v10.*` tag identity, immutable-release operating contract and fail-closed deployment provenance — **COMPLETE**;
 - concrete AI/local-first planning amendment — **ACCEPTED planning authority, no runtime implementation credited**;
@@ -25,9 +26,9 @@ Accepted completed work:
 
 Current authorized implementation work package is now:
 
-**WP6 — OS identities и privilege separation.**
+**WP7 — One-Time Bootstrap.**
 
-WP6 may establish only the identity/privilege separation defined by the Master Plan: owner-admin, GitHub runner and Omni-CIO runtime identities; least-privilege filesystem/registry/service boundaries; runner denial of trading-secret access; and negative permission tests. It does not authorize Ollama/Qwen/Cortex, Web, Telegram runtime, broker HTML runtime, Guardian/Watchtower V10 runtime, billing/license, updater runtime or any expansion of Real-money authority.
+WP7 may consolidate the reviewed one-time Lenovo bootstrap into a versioned, dry-run/preflight-capable and idempotent procedure for prerequisites, service identities, directories, DB/runner/log/service definitions and safe secret-entry locations. It does not authorize real secret values in GitHub or command history, broker-write runtime, Ollama/Qwen/Cortex, Web/Telegram product runtime, Guardian/Watchtower runtime, or any expansion of Real-money authority.
 
 Owner start command: **`START V10`** received 2026-08-05.
 
@@ -74,9 +75,12 @@ Architecture/protection authorities include:
 - `docs/architecture/V10_REGRESSION_SHIELD.md`;
 - `docs/architecture/V10_WP4_EXECUTION_CONTRACT.md`;
 - `docs/architecture/V10_WP5_EXECUTION_CONTRACT.md`;
+- `docs/architecture/V10_WP6_EXECUTION_CONTRACT.md`;
+- `docs/architecture/V10_WP6_IDENTITY_PRIVILEGE_CONTRACT.json`;
 - `docs/operations/V10_RELEASE_PROVENANCE_RUNBOOK.md`;
 - `docs/operations/V10_NODE_AUDIT_RUNBOOK.md`;
-- `docs/operations/V10_WP5_THERMAL_RETEST.md`.
+- `docs/operations/V10_WP5_THERMAL_RETEST.md`;
+- `docs/operations/V10_WP6_PRIVILEGE_SEPARATION_RUNBOOK.md`.
 
 Protected production/recovery baseline remains:
 
@@ -88,7 +92,7 @@ Protected production/recovery baseline remains:
 |---|---:|---|
 | A. Architecture and V9 protection | 5% | COMPLETE — WP0 |
 | B. GitHub, dependencies and CI/CD | 9% | COMPLETE — WP1 / WP2 / WP3 / WP4 |
-| C. Lenovo Omni-CIO Node / infrastructure | 12% | IN PROGRESS — WP5 COMPLETE / WP6 NEXT |
+| C. Lenovo Omni-CIO Node / infrastructure | 12% | IN PROGRESS — WP5 / WP6 COMPLETE / WP7 NEXT |
 | D. V10 Core and data | 14% | NOT STARTED |
 | E. Omni-CIO Web Platform | 14% | NOT STARTED |
 | F. Telegram | 8% | NOT STARTED — product/interaction contract pre-approved only |
@@ -98,9 +102,9 @@ Protected production/recovery baseline remains:
 | J. Integration / hardening / recovery / release | 5% | NOT STARTED — commercial/license/update/legal-gate planning pre-approved only |
 | **TOTAL** | **100% planned** | **14% ACCEPTED** |
 
-Block B's full 9% weight is accepted only because WP4 and the Block B Exit Gate are complete. Block C's 12% weight is not credited yet: WP5 is accepted, but the remaining Block C work packages and Block C Exit Gate must still complete.
+Block B's full 9% weight is accepted only because WP4 and the Block B Exit Gate are complete. Block C's 12% weight is not credited yet: WP5 and WP6 are accepted, but the remaining Block C work packages and Block C Exit Gate must still complete.
 
-## Accepted WP0–WP5 evidence
+## Accepted WP0–WP6 evidence
 
 - WP0 PR #228 -> `7c5de954eed10dd406e743c38f7bdef6b0634108`;
 - WP1 PR #229 -> `dbd459b280de84d3f571b458b46f1039880312ca`;
@@ -110,13 +114,17 @@ Block B's full 9% weight is accepted only because WP4 and the Block B Exit Gate 
 - WP4 artifact-transport hardening PR #249 -> `6c97df17f0de21a27ec0d12ee9699d2a00fab53f`;
 - post-WP4 merge Regression Shield #1433 / run `31181814984` on `6c97df17f0de21a27ec0d12ee9699d2a00fab53f` -> **SUCCESS**;
 - WP5 PR #251 -> `d0b80f91a434e93e5facb244a92b17b066ccdf2a`;
-- post-WP5 merge Regression Shield #1435 / run `31252745722` on `d0b80f91a434e93e5facb244a92b17b066ccdf2a` -> **SUCCESS**.
+- post-WP5 merge Regression Shield #1435 / run `31252745722` on `d0b80f91a434e93e5facb244a92b17b066ccdf2a` -> **SUCCESS**;
+- WP6 PR #253 -> `c55fb0a32b309628fb86a7abf9182b95af4beca2`;
+- post-WP6 merge Regression Shield #1437 / run `31270545874` on `c55fb0a32b309628fb86a7abf9182b95af4beca2` -> **SUCCESS**.
 
 WP3 established the permanent Regression Shield/anti-bypass contracts, fast hosted PR feedback, compatibility gates, capability-aware future contracts and required protection model for private `main`.
 
 WP4 established deterministic release/build provenance, exact SHA/version/toolchain/dependency-lock/SBOM/CI linkage, fail-closed manifest validation, rollback identity, protected `v10.*` tag policy, immutable-release operating contract, path-aware hosted CI routing and future signed-updater/AI provenance fields without installing their runtimes. The only best-effort CI element is short-lived diagnostic artifact transport; mandatory quality, security and money-authority gates remain fail-closed.
 
 WP5 established the fact-based privacy-safe `OWNER_NODE_PROFILE`, full-disk-encryption/time/firewall/network/disk/power/thermal operational boundaries, owner physical evidence overlay, deterministic fail-closed node assessment and controlled combined CPU/GPU acceptance. The accepted controlled run exceeded 30 minutes, recorded CPU peak 95 °C with average throttling 1.2%, GPU peak 73 °C at sustained 100% telemetry utilization, zero relevant sanitized system events, and no crash or thermal shutdown; the unchanged WP5 thresholds therefore passed.
+
+WP6 established separate least-privilege OWNER/CI/runtime/execution identity boundaries, guarded reversible Windows ACL provisioning, runner-root/config hardening, a non-secret execution-boundary sentinel, privacy-safe local evidence and native DACL verification. Exact-head Lenovo evidence proved the ordinary CI runner cannot read sentinel data, runtime cannot read the execution boundary or write reviewed runner configuration, execution remains non-admin and is the intended non-admin execution-boundary reader, workflows do not inherit real production secrets, and deployment authority remains tied to reviewed release identity.
 
 ## GitHub Pro hybrid CI / Lenovo continuity evidence
 
@@ -223,29 +231,27 @@ The accepted Telegram planning contract pre-defines Block F without starting it:
 
 This contract does not authorize BotFather/token creation, Telegram runtime installation or Block F coding now.
 
-## Current authorized next step — WP6
+## Current authorized next step — WP7
 
-WP6 is now the next implementation package in Block C after accepted WP5 and its successful post-merge Regression Shield.
+WP7 is now the next implementation package in Block C after accepted WP6 and its successful post-merge Regression Shield.
 
-WP6 goal: ensure a compromised ordinary GitHub CI job does not automatically inherit the privileges or secrets of the future real-money runtime.
+WP7 goal: reduce the initial Lenovo setup to a small number of reviewable, repeatable OWNER actions.
 
-WP6 must include at minimum:
+WP7 must include at minimum:
 
-- separate owner-admin, GitHub runner and Omni-CIO runtime identities;
-- least-privilege filesystem/registry/service permissions for each identity;
-- explicit denial of runner read access to the trading secret store;
-- execution-service access limited to only necessary broker/network permissions;
-- negative permission tests proving runner cannot read trading secrets, Web process cannot modify runner configuration and AI process cannot invoke broker write directly;
-- `omni-ci-runner` must not read `TINVEST_TRADING_TOKEN`, Telegram secret or private DB dumps;
-- `omni-cio-runtime` must use minimal local ACLs and must not be Windows administrator without a documented necessity;
-- deployment control must accept only reviewed release identity and must not execute arbitrary PR payload in a trading-secret context;
-- GitHub collaborator authorization and runtime-secret provisioning remain independent procedures.
+- versioned `bootstrap-v10.ps1` with dry-run/preflight mode;
+- checks/provisioning for required runtime prerequisites, service users, directories, DB, runner, logs and service definitions within WP7 ownership boundaries;
+- repeatable/idempotent behavior so a second bootstrap over an installed node does not break it;
+- safe preparation of locations for later secret entry without accepting secret values as command-line arguments or storing them in console history;
+- clean/virtual Windows testing where possible;
+- repeat-bootstrap acceptance testing;
+- documented rollback/cleanup procedure.
 
-WP6 Exit Gate: compromise of an ordinary CI job must **not** imply automatic access to a real-money secret.
+WP7 Exit Gate: the OWNER must not need to manually edit dozens of configuration files to establish the reviewed node baseline.
 
-WP6 must **not** introduce broker trading credentials into GitHub Actions, expand `trading_methods`, enable margin/leverage/uncovered shorts/transfers, or implement later Web/AI/Telegram/broker-write runtime work.
+WP7 must **not** provision real broker/Telegram/private-DB secrets, expand `trading_methods`, enable margin/leverage/uncovered shorts/transfers, or implement later Web/AI/Telegram/broker-write runtime work.
 
-After WP6 passes its Exit Gate, only the next WP explicitly authorized by the Master Plan may begin.
+After WP7 passes its Exit Gate, only the next WP explicitly authorized by the Master Plan may begin.
 
 ## Money/safety rule
 
