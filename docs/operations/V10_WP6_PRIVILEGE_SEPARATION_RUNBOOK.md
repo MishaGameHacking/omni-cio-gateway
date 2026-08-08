@@ -39,16 +39,35 @@ Before any mutating action:
 
 If the runner is LocalSystem, stop. Do not weaken the contract or provision around a privileged CI service identity.
 
+### 3.1 Reviewed checkout hand-off — no OWNER-side network fetch
+
+The OWNER-admin apply step must not depend on an interactive `git fetch`, `git pull`, branch checkout, credential helper, proxy, Schannel/TLS session or other OWNER-side GitHub network operation.
+
+The reviewed source hand-off is the authoritative `V10 WP6 Identity Audit` job itself:
+
+1. run/rerun the audit on the reviewed PR head;
+2. require its `actions/checkout` step to complete successfully on the Lenovo self-hosted runner;
+3. read the PR merge commit SHA from the same audit log / PR metadata;
+4. after that job finishes, use the existing worktree at `C:\actions-runner\_work\omni-cio-gateway\omni-cio-gateway`;
+5. in the elevated OWNER-admin shell, run only `git rev-parse HEAD` locally and require it to equal that reviewed PR merge commit SHA before `-Apply`.
+
+Do **not** run `git fetch` or `git pull` from the OWNER-admin apply session. A failed interactive GitHub network handshake is therefore not a reason to weaken the WP6 gate or to improvise another checkout. Instead, rerun the authoritative audit so Actions refreshes the reviewed worktree through its own short-lived read-only checkout credentials.
+
+This hand-off preserves `persist-credentials: false`: the OWNER session receives no GitHub credential from Actions and needs no repository credential to perform the privileged local ACL mutation.
+
 ## 4. Dry-run
 
 From an OWNER-admin capable session, but without elevation required for dry-run:
 
 ```powershell
 cd C:\actions-runner\_work\omni-cio-gateway\omni-cio-gateway
+git rev-parse HEAD
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\infrastructure\windows\provision_wp6_privilege_boundary.ps1
 ```
 
-Expected output contains:
+The reported `HEAD` must equal the reviewed PR merge commit SHA from the latest completed authoritative audit before continuing.
+
+Expected provisioning output contains:
 
 - `WP6 privilege provisioning preflight: PASS`;
 - runner account class only, never its raw account name;
@@ -58,11 +77,14 @@ Expected output contains:
 
 ## 5. Apply
 
-Apply is an OWNER-admin action because it creates local Windows role accounts and protected ACLs:
+Apply is an OWNER-admin action because it creates local Windows role accounts and protected ACLs. After the reviewed-checkout hand-off above, no network Git command is required:
 
 ```powershell
+git rev-parse HEAD
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\infrastructure\windows\provision_wp6_privilege_boundary.ps1 -Apply
 ```
+
+Stop if `HEAD` is not the merge SHA from the latest reviewed WP6 audit.
 
 The script is fail-closed:
 
