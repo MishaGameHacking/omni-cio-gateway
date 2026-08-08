@@ -98,7 +98,7 @@ function Wait-ForCombinedLoadStart {
             }
 
             if ($consecutiveSamples -ge $ConsecutiveSamplesRequired) {
-                Write-Host "Combined CPU+GPU load detected. Starting the 30-minute evidence window automatically." -ForegroundColor Green
+                Write-Host "Combined CPU+GPU load detected. Starting the evidence window automatically." -ForegroundColor Green
                 return
             }
         } catch {
@@ -189,6 +189,18 @@ function New-TemporaryNodePowerScheme {
     return $schemeGuid
 }
 
+function Stop-Aida64FailSafe {
+    try {
+        $aidaProcesses = @(Get-Process -Name "aida64" -ErrorAction SilentlyContinue)
+        if ($aidaProcesses.Count -gt 0) {
+            $aidaProcesses | Stop-Process -Force -ErrorAction Stop
+            Write-Warning "AIDA64 was closed automatically because the WP5 acceptance launcher failed."
+        }
+    } catch {
+        Write-Warning "Could not close AIDA64 automatically after launcher failure. Stop the stress test manually."
+    }
+}
+
 if (-not (Test-IsAdministrator)) {
     Write-Host "Administrator approval is required only for this local WP5 acceptance launcher."
     Invoke-SelfElevated
@@ -254,6 +266,13 @@ try {
     Write-Host "Ethernet: $($ethernet.LinkSpeed) / Up"
     Write-Host "GitHub HTTPS: PASS"
     if ($powerOnline -eq $true) { Write-Host "AC power: connected" }
+
+    Write-Host "Running a 5-second GPU telemetry preflight before AIDA64..."
+    & $gpuSampler -DurationSeconds 5 -SampleIntervalSeconds 1 -OutputPath $gpuOutput
+    $null = Read-ValidatedGpuEvidence -Path $gpuOutput -ExpectedDurationSeconds 5
+    Remove-Item -LiteralPath $gpuOutput -Force
+    Write-Host "GPU telemetry preflight: PASS" -ForegroundColor Green
+
     Write-Host ""
     Write-Host "Creating a temporary conservative 24/7 node power profile..."
     Write-Host "Maximum processor performance during this test: $MaxProcessorPerformancePercent%"
@@ -278,30 +297,18 @@ try {
 
     $testStart = Get-Date
     $durationSeconds = $DurationMinutes * 60
-    Write-Host "Starting privacy-safe GPU telemetry for $DurationMinutes minutes..."
-    $samplerArgs = @(
-        "-NoProfile",
-        "-ExecutionPolicy", "Bypass",
-        "-File", ('\"{0}\"' -f $gpuSampler),
-        "-DurationSeconds", $durationSeconds,
-        "-SampleIntervalSeconds", 5,
-        "-OutputPath", ('\"{0}\"' -f $gpuOutput)
-    )
-    $sampler = Start-Process -FilePath "powershell.exe" -ArgumentList ($samplerArgs -join " ") -WindowStyle Hidden -PassThru
-
+    Write-Host "Starting privacy-safe inline GPU telemetry for $DurationMinutes minutes..."
     Write-Host ""
     Write-Host "Combined load confirmed. Keep AIDA64 running until the two completion beeps." -ForegroundColor Green
     Write-Host "The telemetry window is now running for $DurationMinutes minutes."
     Write-Host "Stop immediately for a crash, thermal shutdown, or sustained temperature beyond the WP5 guardrails."
     Write-Host ""
 
-    $sampler.WaitForExit()
-    $sampler.Refresh()
-    $samplerExitCode = $sampler.ExitCode
+    # Run the sampler in this PowerShell process. AIDA64 is already a separate GUI
+    # process, so telemetry remains concurrent with the stress workload without a
+    # second powershell.exe command-line/quoting failure mode.
+    & $gpuSampler -DurationSeconds $durationSeconds -SampleIntervalSeconds 5 -OutputPath $gpuOutput
     $gpuEvidence = Read-ValidatedGpuEvidence -Path $gpuOutput -ExpectedDurationSeconds $durationSeconds
-    if ($samplerExitCode -ne 0) {
-        Write-Warning "GPU sampler process reported exit code $samplerExitCode, but the complete file-backed evidence passed fail-closed validation."
-    }
 
     [console]::Beep(1200, 500)
     [console]::Beep(1200, 500)
@@ -347,6 +354,9 @@ try {
     Get-Content -LiteralPath $eventOutput
     Write-Host ""
     Write-Host "Keep AIDA64 Statistics open. We still need only the CPU peak and average throttling values from that window." -ForegroundColor Yellow
+} catch {
+    Stop-Aida64FailSafe
+    throw
 } finally {
     if ($null -ne $previousScheme) {
         try {
