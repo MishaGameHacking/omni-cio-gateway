@@ -14,6 +14,9 @@ CONTRACT = ROOT / "docs" / "architecture" / "V10_WP7_BOOTSTRAP_CONTRACT.json"
 EXECUTION_CONTRACT = (
     ROOT / "docs" / "architecture" / "V10_WP7_EXECUTION_CONTRACT.md"
 )
+PYTHON_INSTALLER_SHA256 = (
+    "14B3E9A710A3FCF0BD9B55AB6B60412BD91227563F813FC49040CABC0209E0BD"
+)
 
 
 def test_wp7_contract_guard_passes() -> None:
@@ -108,14 +111,53 @@ def test_runner_health_probe_is_privacy_safe_and_service_authoritative() -> None
         assert forbidden not in text
 
 
-def test_bootstrap_uses_exact_pinned_winget_resolution() -> None:
+def test_bootstrap_uses_exact_pinned_winget_resolution_for_node_and_postgres() -> None:
     text = BOOTSTRAP.read_text(encoding="utf-8")
     assert '"--id", $Id' in text
     assert '"--exact"' in text
     assert '"--version", $Version' in text
     assert '"--source", "winget"' in text
     assert '"--scope", "machine"' in text
+    assert "contract.toolchain.node.winget_id" in text
+    assert "contract.toolchain.postgresql.winget_id" in text
+    assert "contract.toolchain.python.winget_id" not in text
     assert "latest" not in text.lower()
+
+
+def test_python_machine_install_is_exact_hash_verified_and_official() -> None:
+    text = BOOTSTRAP.read_text(encoding="utf-8")
+    policy = json.loads(CONTRACT.read_text(encoding="utf-8"))
+    python = policy["toolchain"]["python"]
+    version = python["runtime_version"]
+    assert python["installer_url"] == (
+        f"https://www.python.org/ftp/python/{version}/python-{version}-amd64.exe"
+    )
+    assert python["installer_sha256"] == PYTHON_INSTALLER_SHA256
+    assert python["installer_publisher"] == "Python Software Foundation"
+    assert python["install_policy"] == "EXACT_VERSION_OFFICIAL_INSTALLER_SHA256_MACHINE"
+    assert "winget_id" not in python
+    assert "winget_version" not in python
+    assert policy["bootstrap"]["public_download_hash_verification_required"] is True
+    for required in (
+        "Install-ExactPythonPackage",
+        "Invoke-WebRequest -Uri $installerUrl -OutFile $installerPath",
+        "Get-FileHash -LiteralPath $installerPath -Algorithm SHA256",
+        "Get-AuthenticodeSignature -LiteralPath $installerPath",
+        '"InstallAllUsers=1"',
+        '"PrependPath=0"',
+        '"Include_test=0"',
+    ):
+        assert required in text
+
+
+def test_prerequisite_discovery_prefers_machine_paths() -> None:
+    text = BOOTSTRAP.read_text(encoding="utf-8")
+    machine_python = '$machineCandidate = "C:\\Program Files\\Python314\\python.exe"'
+    assert machine_python in text
+    assert text.index(machine_python) < text.index("& py.exe -3.14")
+    assert text.index("Test-Path -LiteralPath $FallbackPath") < text.index(
+        "Invoke-VersionCommand -FilePath $CommandName"
+    )
 
 
 def test_toolchain_contract_matches_selected_baseline() -> None:
