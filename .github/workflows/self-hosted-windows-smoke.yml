@@ -68,6 +68,7 @@ jobs:
       TINVEST_TOKEN: regression-test-tinvest-token # pragma: allowlist secret
       GATEWAY_API_KEY: regression-test-gateway-key # pragma: allowlist secret
       RENDER_EXTERNAL_URL: https://omni-cio-gateway.onrender.com
+      PYTHONDONTWRITEBYTECODE: "1"
 
     steps:
       - name: Check out repository
@@ -88,6 +89,36 @@ jobs:
       - name: Bootstrap protected Python 3.12.10 runtime
         shell: cmd
         run: scripts\bootstrap_windows_ci_python.cmd
+
+      - name: Collect privacy-safe WP5 OWNER node profile
+        if: startsWith(github.head_ref, 'v10/wp5-') || github.event_name == 'workflow_dispatch'
+        shell: cmd
+        run: |
+          @echo off
+          set "PROFILE=%RUNNER_TEMP%\owner-node-profile.json"
+          powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File infrastructure\windows\collect_owner_node_profile.ps1 -OutputPath "%PROFILE%"
+          if errorlevel 1 exit /b %errorlevel%
+          echo WP5_NODE_PROFILE_PATH=%PROFILE%>>"%GITHUB_ENV%"
+
+      - name: Apply sanitized WP5 OWNER physical evidence
+        if: startsWith(github.head_ref, 'v10/wp5-') || github.event_name == 'workflow_dispatch'
+        shell: cmd
+        run: |
+          @echo off
+          python scripts\apply_v10_node_owner_evidence.py "%WP5_NODE_PROFILE_PATH%" docs\architecture\V10_WP5_OWNER_PHYSICAL_EVIDENCE.json --thresholds infrastructure\windows\wp5_node_thresholds.json
+          if errorlevel 1 exit /b %errorlevel%
+
+      - name: Assess and validate WP5 OWNER node profile
+        if: startsWith(github.head_ref, 'v10/wp5-') || github.event_name == 'workflow_dispatch'
+        shell: cmd
+        run: |
+          @echo off
+          python scripts\assess_v10_node_profile.py "%WP5_NODE_PROFILE_PATH%" --thresholds infrastructure\windows\wp5_node_thresholds.json
+          if errorlevel 1 exit /b %errorlevel%
+          python scripts\validate_v10_node_profile.py "%WP5_NODE_PROFILE_PATH%" --thresholds infrastructure\windows\wp5_node_thresholds.json
+          if errorlevel 1 exit /b %errorlevel%
+          python -c "import json, os; p=os.environ['WP5_NODE_PROFILE_PATH']; print('WP5_OWNER_NODE_PROFILE_JSON='+json.dumps(json.load(open(p, encoding='utf-8')), separators=(',', ':'), sort_keys=True))"
+          if errorlevel 1 exit /b %errorlevel%
 
       - name: Create isolated protected-runtime environment
         run: |
