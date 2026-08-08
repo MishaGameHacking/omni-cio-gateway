@@ -5,11 +5,8 @@ from pathlib import Path
 import re
 import sys
 
-
 ROOT = Path(__file__).resolve().parents[1]
-CONTRACT_PATH = (
-    ROOT / "docs" / "architecture" / "V10_WP7_BOOTSTRAP_CONTRACT.json"
-)
+CONTRACT_PATH = ROOT / "docs" / "architecture" / "V10_WP7_BOOTSTRAP_CONTRACT.json"
 TOOLCHAIN_PATH = ROOT / "docs" / "architecture" / "V10_TOOLCHAIN_BASELINE.json"
 BOOTSTRAP_PATH = ROOT / "infrastructure" / "windows" / "bootstrap-v10.ps1"
 ROLLBACK_PATH = ROOT / "infrastructure" / "windows" / "rollback_wp7_bootstrap.ps1"
@@ -178,7 +175,7 @@ def validate() -> list[str]:
         "[switch]$Apply",
         "[switch]$Verify",
         "[switch]$InstallPrerequisites",
-        'if ($Apply -and $Verify)',
+        "if ($Apply -and $Verify)",
         "Test-Administrator",
         "Get-RunnerHealth",
         "Get-LocalRoleState",
@@ -220,7 +217,9 @@ def validate() -> list[str]:
             )
 
     if "$secretRoot" not in bootstrap_text:
-        failures.append("WP7 bootstrap must explicitly bind the WP8 secret-root boundary")
+        failures.append(
+            "WP7 bootstrap must explicitly bind the WP8 secret-root boundary"
+        )
     secret_mutation_patterns = (
         r"New-Item[^\n]*\$secretRoot",
         r"Set-Content[^\n]*\$secretRoot",
