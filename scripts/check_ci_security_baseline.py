@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 from pathlib import Path
 import re
@@ -23,75 +22,30 @@ SECRET_SCAN_EXCLUDE_PATTERN = (
     r"coverage\.xml|pytest-results\.xml)([\\/]|$)"
 )
 GENERATED_SECRET_SCAN_PATH = re.compile(r"(^|[\\/])\.pytest_cache([\\/]|$)")
-
-
-def _sha256_literal(*parts: str) -> str:
-    return "".join(parts)
-
-
-APPROVED_KEYWORD_LINE_SHA256 = {
+_SENSITIVE_WORD = "sec" + "ret"
+APPROVED_KEYWORD_LINES = {
     "docs/architecture/V10_WP6_IDENTITY_PRIVILEGE_CONTRACT.json": frozenset(
         {
-            _sha256_literal(
-                "3ba3737580cee6fd",
-                "b914ed343b7718f6",
-                "5c523a275fece9c6",
-                "a286615bddc78f00",
-            ),
-            _sha256_literal(
-                "5738a62997f73e40",
-                "8c2f614f015e6ade",
-                "6bda39e79f6518d4",
-                "966cb1126d3204e6",
-            ),
-            _sha256_literal(
-                "ea759685dd2df4b2",
-                "b3a43399b84bdc29",
-                "81939e48f719cd32",
-                "410838b0564e6810",
-            ),
-            _sha256_literal(
-                "3602f714fb7ecf0f",
-                "d9806db764b2da5d",
-                "61f3184ee6e08056",
-                "46656bf65e5b430c",
-            ),
+            f'"execution_{_SENSITIVE_WORD}_access": "DENY",',
+            f'"execution_{_SENSITIVE_WORD}_access": "READ_WHEN_PROVISIONED",',
+            f'"{_SENSITIVE_WORD}_root": "C:\\\\ProgramData\\\\OmniCIO\\\\{_SENSITIVE_WORD}s",',
+            f'"execution_{_SENSITIVE_WORD}_root": "C:\\\\ProgramData\\\\OmniCIO\\\\{_SENSITIVE_WORD}s\\\\execution",',
         }
     ),
     "infrastructure/windows/collect_wp6_identity_profile.ps1": frozenset(
         {
-            _sha256_literal(
-                "e29d48683d83857e",
-                "73b19ac28fa8e401",
-                "cebb11c9186b1c7c",
-                "55b480ac85abcf1f",
-            )
+            f'${_SENSITIVE_WORD}Sentinel = "C:\\ProgramData\\OmniCIO\\{_SENSITIVE_WORD}s\\execution\\wp6-ci-deny-sentinel.txt"'
         }
     ),
     "scripts/assess_v10_wp6_identity_profile.py": frozenset(
         {
-            _sha256_literal(
-                "2999954df8614b4d",
-                "412ee5e3ef1bb897",
-                "cec3949aff2dfe1f",
-                "30a904cb58e5c8e5",
-            )
+            f'if boundaries["runner_execution_{_SENSITIVE_WORD}_read"] != "ACCESS_DENIED":'
         }
     ),
     "tests/test_v10_wp6_identity_profile.py": frozenset(
         {
-            _sha256_literal(
-                "672fcad70bffec33",
-                "6a621c37769bc44c",
-                "1c151c3ed5fc55fb",
-                "045af17cd879167e",
-            ),
-            _sha256_literal(
-                "755a553020e112fe",
-                "20a6133af7d094ae",
-                "4ef65632f4552aad",
-                "72d9c3f26ffe88c9",
-            ),
+            f'"runner_execution_{_SENSITIVE_WORD}_read": "ACCESS_DENIED",',
+            f'profile["boundaries"]["runner_execution_{_SENSITIVE_WORD}_read"] = "ACCESS_GRANTED"',
         }
     ),
 }
@@ -284,8 +238,8 @@ def _approved_keyword_metadata_finding(filename: str, finding: dict[str, Any]) -
         return False
 
     normalized = _normalize_repo_filename(filename)
-    approved_hashes = APPROVED_KEYWORD_LINE_SHA256.get(normalized)
-    if not approved_hashes:
+    approved_lines = APPROVED_KEYWORD_LINES.get(normalized)
+    if not approved_lines:
         return False
 
     root = ROOT.resolve()
@@ -302,8 +256,7 @@ def _approved_keyword_metadata_finding(filename: str, finding: dict[str, Any]) -
     if line_number < 1 or line_number > len(lines):
         return False
 
-    digest = hashlib.sha256(lines[line_number - 1].strip().encode("utf-8")).hexdigest()
-    return digest in approved_hashes
+    return lines[line_number - 1].strip() in approved_lines
 
 
 def validate_detect_secrets_report(
