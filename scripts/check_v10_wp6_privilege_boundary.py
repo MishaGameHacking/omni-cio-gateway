@@ -57,6 +57,21 @@ def _expect_mapping(value: Any, label: str) -> dict[str, Any]:
     return value
 
 
+def _safe_path_label(path: Path) -> str:
+    """Return a repository-relative diagnostic path without leaking host paths.
+
+    Negative tests deliberately substitute roots outside the repository.  Those
+    paths must still produce a deterministic boundary failure instead of raising
+    from ``Path.relative_to``.  For out-of-repository paths only the file name is
+    retained, which also avoids exposing runner/user/temp-directory identities.
+    """
+
+    try:
+        return path.relative_to(ROOT).as_posix()
+    except ValueError:
+        return path.name
+
+
 def load_contract() -> dict[str, Any]:
     try:
         raw = json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))
@@ -189,7 +204,7 @@ def validate_general_runtime_broker_boundary(failures: list[str]) -> None:
                 if forbidden in text:
                     failures.append(
                         "general runtime/AI crosses broker-write boundary: "
-                        f"{path.relative_to(ROOT)} ({forbidden})"
+                        f"{_safe_path_label(path)} ({forbidden})"
                     )
 
 
@@ -206,7 +221,7 @@ def validate_runtime_runner_config_boundary(failures: list[str]) -> None:
             if forbidden in text:
                 failures.append(
                     "application runtime references runner configuration surface: "
-                    f"{path.relative_to(ROOT)} ({forbidden})"
+                    f"{_safe_path_label(path)} ({forbidden})"
                 )
 
 
