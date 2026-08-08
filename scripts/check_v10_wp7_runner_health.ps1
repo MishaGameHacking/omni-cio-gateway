@@ -5,7 +5,7 @@ param(
     [switch]$AsJson
 )
 
-Set-StrictMode -Version Latest
+Set-StrictMode -Version 3.0
 $ErrorActionPreference = "Stop"
 
 function Write-Result {
