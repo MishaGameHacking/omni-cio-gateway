@@ -48,12 +48,12 @@ function Write-Failure {
         error_code = $Code
         root_present = $false
         run_command_present = $false
-        service_marker_present = $false
-        service_marker_valid = $false
+        service_query_succeeded = $false
+        service_identity_matches = $false
+        service_root_bound = $false
         service_running = $false
         service_automatic = $false
         service_non_admin = $false
-        identity_match = $false
         process_identity_match = $false
         runner_private_config_read = $false
         privacy_safe = $true
@@ -71,74 +71,62 @@ if ($env:OS -ne "Windows_NT") {
 }
 
 $runnerRootPresent = Test-Path -LiteralPath $RunnerRoot -PathType Container
-$serviceMarker = Join-Path $RunnerRoot ".service"
 $runCommand = Join-Path $RunnerRoot "run.cmd"
-$serviceMarkerPresent = Test-Path -LiteralPath $serviceMarker -PathType Leaf
 $runCommandPresent = Test-Path -LiteralPath $runCommand -PathType Leaf
 
-# WP6 deliberately classifies .runner/.credentials as hardened sensitive runner
-# configuration. WP7 therefore treats the Windows service boundary as its
-# authoritative health source and never reads .runner or credential material.
+# WP6 deliberately hardens .runner, .credentials, .credentials_rsaparams and
+# .service. WP7 therefore does not read any of those files. GitHub documents
+# Get-Service "actions.runner.*" as the Windows service-health surface. We bind
+# that service to the reviewed runner name, runner root and current CI identity.
 $runnerPrivateConfigRead = $false
-$declaredServiceName = $null
-$serviceMarkerValid = $false
-if ($serviceMarkerPresent) {
-    try {
-        $markerLength = (Get-Item -LiteralPath $serviceMarker -ErrorAction Stop).Length
-        if ($markerLength -gt 0 -and $markerLength -le 1024) {
-            $candidate = (Get-Content -LiteralPath $serviceMarker -Raw -ErrorAction Stop).Trim()
-            $expectedSuffix = ".$ExpectedRunnerName.service"
-            if (
-                $candidate -match '^actions\.runner\.[A-Za-z0-9._-]{1,480}\.service$' -and
-                $candidate.EndsWith(
-                    $expectedSuffix,
+$expectedServiceSuffix = ".$ExpectedRunnerName.service"
+$serviceNamePattern = '^actions\.runner\.[A-Za-z0-9._-]{1,480}\.service$'
+$services = @()
+$serviceQuerySucceeded = $false
+try {
+    $services = @(
+        Get-CimInstance Win32_Service -ErrorAction Stop |
+            Where-Object {
+                $_.Name -match $serviceNamePattern -and
+                $_.Name.EndsWith(
+                    $expectedServiceSuffix,
                     [System.StringComparison]::OrdinalIgnoreCase
                 )
-            ) {
-                $declaredServiceName = $candidate
-                $serviceMarkerValid = $true
             }
-        }
-    }
-    catch {
-        $declaredServiceName = $null
-        $serviceMarkerValid = $false
-    }
+    )
+    $serviceQuerySucceeded = $true
+}
+catch {
+    $services = @()
+    $serviceQuerySucceeded = $false
 }
 
-$services = @()
-if ($serviceMarkerValid) {
-    try {
-        $services = @(
-            Get-CimInstance Win32_Service -ErrorAction Stop |
-                Where-Object {
-                    [string]::Equals(
-                        $_.Name,
-                        $declaredServiceName,
-                        [System.StringComparison]::OrdinalIgnoreCase
-                    )
-                }
-        )
-    }
-    catch {
-        $services = @()
-    }
-}
 $service = if ($services.Count -eq 1) { $services[0] } else { $null }
-$identityMatch = $false
+$serviceIdentityMatches = $false
+$serviceRootBound = $false
 $processIdentityMatch = $false
 $serviceRunning = $false
 $serviceAutomatic = $false
 $serviceNonAdmin = $false
 
 if ($null -ne $service) {
-    $identityMatch = [string]::Equals(
-        $service.Name,
-        $declaredServiceName,
-        [System.StringComparison]::OrdinalIgnoreCase
+    $serviceIdentityMatches = (
+        $service.Name -match $serviceNamePattern -and
+        $service.Name.EndsWith(
+            $expectedServiceSuffix,
+            [System.StringComparison]::OrdinalIgnoreCase
+        )
     )
     $serviceRunning = $service.State -eq "Running"
     $serviceAutomatic = $service.StartMode -eq "Auto"
+
+    $pathName = [string]$service.PathName
+    if (-not [string]::IsNullOrWhiteSpace($pathName)) {
+        $serviceRootBound = $pathName.IndexOf(
+            $RunnerRoot,
+            [System.StringComparison]::OrdinalIgnoreCase
+        ) -ge 0
+    }
 
     $startName = [string]$service.StartName
     $normalized = $startName.Trim().ToUpperInvariant()
@@ -187,10 +175,10 @@ if ($null -ne $service) {
 $healthy = (
     $runnerRootPresent -and
     $runCommandPresent -and
-    $serviceMarkerPresent -and
-    $serviceMarkerValid -and
+    $serviceQuerySucceeded -and
     $services.Count -eq 1 -and
-    $identityMatch -and
+    $serviceIdentityMatches -and
+    $serviceRootBound -and
     $processIdentityMatch -and
     $serviceRunning -and
     $serviceAutomatic -and
@@ -205,17 +193,17 @@ if (-not $runnerRootPresent) {
 elseif (-not $runCommandPresent) {
     $errorCode = "RUNNER_COMMAND_MISSING"
 }
-elseif (-not $serviceMarkerPresent) {
-    $errorCode = "RUNNER_SERVICE_MARKER_MISSING"
-}
-elseif (-not $serviceMarkerValid) {
-    $errorCode = "RUNNER_SERVICE_MARKER_INVALID"
+elseif (-not $serviceQuerySucceeded) {
+    $errorCode = "RUNNER_SERVICE_QUERY_FAILED"
 }
 elseif ($services.Count -ne 1) {
     $errorCode = "RUNNER_SERVICE_MISSING_OR_AMBIGUOUS"
 }
-elseif (-not $identityMatch) {
+elseif (-not $serviceIdentityMatches) {
     $errorCode = "RUNNER_SERVICE_IDENTITY_MISMATCH"
+}
+elseif (-not $serviceRootBound) {
+    $errorCode = "RUNNER_SERVICE_ROOT_MISMATCH"
 }
 elseif (-not $processIdentityMatch) {
     $errorCode = "RUNNER_PROCESS_IDENTITY_MISMATCH"
@@ -235,12 +223,12 @@ Write-Result -Result ([pscustomobject]@{
     error_code = $errorCode
     root_present = $runnerRootPresent
     run_command_present = $runCommandPresent
-    service_marker_present = $serviceMarkerPresent
-    service_marker_valid = $serviceMarkerValid
+    service_query_succeeded = $serviceQuerySucceeded
+    service_identity_matches = $serviceIdentityMatches
+    service_root_bound = $serviceRootBound
     service_running = $serviceRunning
     service_automatic = $serviceAutomatic
     service_non_admin = $serviceNonAdmin
-    identity_match = $identityMatch
     process_identity_match = $processIdentityMatch
     runner_private_config_read = $runnerPrivateConfigRead
     privacy_safe = $true
