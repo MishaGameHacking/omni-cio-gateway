@@ -48,6 +48,7 @@ function Write-Failure {
         error_code = $Code
         root_present = $false
         run_command_present = $false
+        job_binding_required = $false
         runner_name_matches = $false
         service_query_succeeded = $false
         service_identity_matches = $false
@@ -74,22 +75,37 @@ if ($env:OS -ne "Windows_NT") {
 $runnerRootPresent = Test-Path -LiteralPath $RunnerRoot -PathType Container
 $runCommand = Join-Path $RunnerRoot "run.cmd"
 $runCommandPresent = Test-Path -LiteralPath $runCommand -PathType Leaf
-$runnerNameMatches = (
-    -not [string]::IsNullOrWhiteSpace($env:RUNNER_NAME) -and
-    [string]::Equals(
-        $env:RUNNER_NAME,
-        $ExpectedRunnerName,
-        [System.StringComparison]::OrdinalIgnoreCase
-    )
+
+# GitHub documents GITHUB_ACTIONS=true for workflow steps and RUNNER_* as
+# GitHub-provided default variables that cannot be overwritten. A workflow
+# verification therefore requires both the expected RUNNER_NAME and a process
+# identity match to the Windows runner service. A local elevated OWNER bootstrap
+# is intentionally outside a runner job, so it validates the persistent service
+# boundary itself without pretending to be the runner service account.
+$jobBindingRequired = [string]::Equals(
+    $env:GITHUB_ACTIONS,
+    "true",
+    [System.StringComparison]::OrdinalIgnoreCase
 )
+$runnerNameMatches = $false
+if ($jobBindingRequired) {
+    $runnerNameMatches = (
+        -not [string]::IsNullOrWhiteSpace($env:RUNNER_NAME) -and
+        [string]::Equals(
+            $env:RUNNER_NAME,
+            $ExpectedRunnerName,
+            [System.StringComparison]::OrdinalIgnoreCase
+        )
+    )
+}
 
 # WP6 deliberately hardens .runner, .credentials, .credentials_rsaparams and
 # .service. WP7 therefore does not read any of those files. GitHub documents
-# RUNNER_NAME as an immutable default runner variable and Get-Service
-# "actions.runner.*" as the Windows service-health surface. We bind the current
-# job to the expected runner name, then identify the unique actions.runner
-# service installed from RunnerRoot and require the job process to use that
-# service identity. No service/account/SID value is emitted.
+# Get-Service "actions.runner.*" as the Windows service-health surface. We
+# identify the unique actions.runner service installed from RunnerRoot, require
+# it to remain running/automatic/non-admin, and additionally bind workflow jobs
+# to the reviewed runner name and service identity. No service/account/SID value
+# is emitted.
 $runnerPrivateConfigRead = $false
 $serviceNamePattern = '^actions\.runner\.'
 $services = @()
@@ -179,15 +195,17 @@ if ($null -ne $service) {
     }
 }
 
+$jobNameHealthy = (-not $jobBindingRequired) -or $runnerNameMatches
+$jobIdentityHealthy = (-not $jobBindingRequired) -or $processIdentityMatch
 $healthy = (
     $runnerRootPresent -and
     $runCommandPresent -and
-    $runnerNameMatches -and
+    $jobNameHealthy -and
     $serviceQuerySucceeded -and
     $services.Count -eq 1 -and
     $serviceIdentityMatches -and
     $serviceRootBound -and
-    $processIdentityMatch -and
+    $jobIdentityHealthy -and
     $serviceRunning -and
     $serviceAutomatic -and
     $serviceNonAdmin -and
@@ -201,7 +219,7 @@ if (-not $runnerRootPresent) {
 elseif (-not $runCommandPresent) {
     $errorCode = "RUNNER_COMMAND_MISSING"
 }
-elseif (-not $runnerNameMatches) {
+elseif ($jobBindingRequired -and -not $runnerNameMatches) {
     $errorCode = "RUNNER_JOB_NAME_MISMATCH"
 }
 elseif (-not $serviceQuerySucceeded) {
@@ -216,7 +234,7 @@ elseif (-not $serviceIdentityMatches) {
 elseif (-not $serviceRootBound) {
     $errorCode = "RUNNER_SERVICE_ROOT_MISMATCH"
 }
-elseif (-not $processIdentityMatch) {
+elseif ($jobBindingRequired -and -not $processIdentityMatch) {
     $errorCode = "RUNNER_PROCESS_IDENTITY_MISMATCH"
 }
 elseif (-not $serviceNonAdmin) {
@@ -234,6 +252,7 @@ Write-Result -Result ([pscustomobject]@{
     error_code = $errorCode
     root_present = $runnerRootPresent
     run_command_present = $runCommandPresent
+    job_binding_required = $jobBindingRequired
     runner_name_matches = $runnerNameMatches
     service_query_succeeded = $serviceQuerySucceeded
     service_identity_matches = $serviceIdentityMatches
