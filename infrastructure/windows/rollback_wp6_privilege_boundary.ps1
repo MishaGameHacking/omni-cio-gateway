@@ -13,7 +13,7 @@ $omniRoot = "C:\ProgramData\OmniCIO"
 $wp6StateRoot = Join-Path $omniRoot "wp6"
 $runnerAclBackupPath = Join-Path $wp6StateRoot "runner-config-acl-backup.json"
 $runnerRoot = "C:\actions-runner"
-$allowedRunnerNames = @(".runner", ".credentials", ".credentials_rsaparams", ".service")
+$allowedRunnerNames = @(".", ".runner", ".credentials", ".credentials_rsaparams", ".service")
 $secretRoot = Join-Path $omniRoot "secrets"
 $executionRoot = Join-Path $secretRoot "execution"
 $sentinelPath = Join-Path $executionRoot "wp6-ci-deny-sentinel.txt"
@@ -52,13 +52,18 @@ function Get-AclBackup {
         return $null
     }
     try {
-        $backup = Get-Content -LiteralPath $runnerAclBackupPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+        $backup = Get-Content -LiteralPath $runnerAclBackupPath -Raw -ErrorAction Stop |
+            ConvertFrom-Json -ErrorAction Stop
     }
     catch {
         throw "WP6 runner ACL backup is malformed; refusing rollback."
     }
     if ($backup.schema_version -ne "1") {
         throw "Unexpected WP6 runner ACL backup schema."
+    }
+    $names = @($backup.files | ForEach-Object { [string]$_.name })
+    if ("." -notin $names) {
+        throw "Runner ACL backup does not contain the runner-root descriptor."
     }
     foreach ($entry in @($backup.files)) {
         if ($entry.name -notin $allowedRunnerNames) {
@@ -77,7 +82,8 @@ function Restore-RunnerAclBackup {
     if ($null -eq $Backup) {
         return
     }
-    foreach ($entry in @($Backup.files)) {
+
+    foreach ($entry in @($Backup.files | Where-Object { $_.name -ne "." })) {
         $path = Join-Path $runnerRoot $entry.name
         if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
             throw "Reviewed runner config file '$($entry.name)' is missing; refusing partial ACL rollback."
@@ -86,6 +92,14 @@ function Restore-RunnerAclBackup {
         $acl.SetSecurityDescriptorSddlForm([string]$entry.sddl)
         Set-Acl -LiteralPath $path -AclObject $acl
     }
+
+    $rootEntry = @($Backup.files | Where-Object { $_.name -eq "." }) | Select-Object -First 1
+    if ($null -eq $rootEntry -or -not (Test-Path -LiteralPath $runnerRoot -PathType Container)) {
+        throw "Runner root is missing; refusing partial ACL rollback."
+    }
+    $rootAcl = [System.Security.AccessControl.DirectorySecurity]::new()
+    $rootAcl.SetSecurityDescriptorSddlForm([string]$rootEntry.sddl)
+    Set-Acl -LiteralPath $runnerRoot -AclObject $rootAcl
 }
 
 $runtimeRole = Get-OwnedRole -Name $runtimeName -Marker $runtimeMarker
@@ -149,5 +163,5 @@ if (Test-Path -LiteralPath $wp6StateRoot) {
 }
 
 Write-Host "WP6-owned local privilege-boundary test state removed." -ForegroundColor Green
-Write-Host "Original reviewed runner config ACLs restored from local backup when available." -ForegroundColor Green
+Write-Host "Original reviewed runner root/config ACLs restored from local backup when available." -ForegroundColor Green
 Write-Host "GitHub runner registration/service account was not modified." -ForegroundColor Green
