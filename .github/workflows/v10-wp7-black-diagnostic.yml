@@ -22,8 +22,14 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.14.6"
-      - name: Show exact Black 26.3.1 diff
+      - name: Print exact Black 26.3.1 formatted checker
         run: |
           python -m pip install --disable-pip-version-check --no-input "black==26.3.1"
           black --version
-          black --diff --color=never scripts/check_v10_wp7_bootstrap_contract.py
+          black scripts/check_v10_wp7_bootstrap_contract.py
+          python - <<'PY'
+          from pathlib import Path
+          print("---BEGIN-FORMATTED---")
+          print(Path("scripts/check_v10_wp7_bootstrap_contract.py").read_text(encoding="utf-8"), end="")
+          print("---END-FORMATTED---")
+          PY
