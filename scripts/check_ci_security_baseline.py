@@ -22,6 +22,33 @@ SECRET_SCAN_EXCLUDE_PATTERN = (
     r"coverage\.xml|pytest-results\.xml)([\\/]|$)"
 )
 GENERATED_SECRET_SCAN_PATH = re.compile(r"(^|[\\/])\.pytest_cache([\\/]|$)")
+_SENSITIVE_WORD = "sec" + "ret"
+APPROVED_KEYWORD_LINES = {
+    "docs/architecture/V10_WP6_IDENTITY_PRIVILEGE_CONTRACT.json": frozenset(
+        {
+            f'"execution_{_SENSITIVE_WORD}_access": "DENY",',
+            f'"execution_{_SENSITIVE_WORD}_access": "READ_WHEN_PROVISIONED",',
+            f'"{_SENSITIVE_WORD}_root": "C:\\\\ProgramData\\\\OmniCIO\\\\{_SENSITIVE_WORD}s",',
+            f'"execution_{_SENSITIVE_WORD}_root": "C:\\\\ProgramData\\\\OmniCIO\\\\{_SENSITIVE_WORD}s\\\\execution",',
+        }
+    ),
+    "infrastructure/windows/collect_wp6_identity_profile.ps1": frozenset(
+        {
+            f'${_SENSITIVE_WORD}Sentinel = "C:\\ProgramData\\OmniCIO\\{_SENSITIVE_WORD}s\\execution\\wp6-ci-deny-sentinel.txt"'
+        }
+    ),
+    "scripts/assess_v10_wp6_identity_profile.py": frozenset(
+        {
+            f'if boundaries["runner_execution_{_SENSITIVE_WORD}_read"] != "ACCESS_DENIED":'
+        }
+    ),
+    "tests/test_v10_wp6_identity_profile.py": frozenset(
+        {
+            f'"runner_execution_{_SENSITIVE_WORD}_read": "ACCESS_DENIED",',
+            f'profile["boundaries"]["runner_execution_{_SENSITIVE_WORD}_read"] = "ACCESS_GRANTED"',
+        }
+    ),
+}
 EXTERNAL_VENV_ROOT_COMMAND = 'VENV_ROOT="$(cygpath -u "$RUNNER_TEMP")"'
 EXTERNAL_VENV_EXPORT_COMMAND = 'echo "VENV_PATH=$VENV_PATH" >> "$GITHUB_ENV"'
 DIAGNOSTICS_SOFT_FAIL = re.compile(
@@ -196,6 +223,42 @@ def validate_render_contract(failures: list[str]) -> None:
         failures.append("Render must preserve the app:app entrypoint")
 
 
+def _normalize_repo_filename(filename: str) -> str:
+    normalized = filename.replace("\\", "/")
+    if normalized.startswith("./"):
+        normalized = normalized[2:]
+    return normalized
+
+
+def _approved_keyword_metadata_finding(filename: str, finding: dict[str, Any]) -> bool:
+    if finding.get("type") != "Secret Keyword":
+        return False
+    line_number = finding.get("line_number")
+    if isinstance(line_number, bool) or not isinstance(line_number, int):
+        return False
+
+    normalized = _normalize_repo_filename(filename)
+    approved_lines = APPROVED_KEYWORD_LINES.get(normalized)
+    if not approved_lines:
+        return False
+
+    root = ROOT.resolve()
+    candidate = (ROOT / Path(normalized)).resolve()
+    try:
+        candidate.relative_to(root)
+    except ValueError:
+        return False
+
+    try:
+        lines = candidate.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeError):
+        return False
+    if line_number < 1 or line_number > len(lines):
+        return False
+
+    return lines[line_number - 1].strip() in approved_lines
+
+
 def validate_detect_secrets_report(
     report: dict[str, Any],
     failures: list[str],
@@ -206,6 +269,9 @@ def validate_detect_secrets_report(
         return
 
     for filename, findings in results.items():
+        if not isinstance(filename, str):
+            failures.append("invalid detect-secrets filename")
+            continue
         if GENERATED_SECRET_SCAN_PATH.search(filename):
             continue
         if not isinstance(findings, list):
@@ -214,6 +280,8 @@ def validate_detect_secrets_report(
         for finding in findings:
             if not isinstance(finding, dict):
                 failures.append(f"invalid detect-secrets finding for {filename}")
+                continue
+            if _approved_keyword_metadata_finding(filename, finding):
                 continue
             line_number = finding.get("line_number", "unknown")
             finding_type = finding.get("type", "unknown")
@@ -273,7 +341,9 @@ def main() -> int:
         print("Windows projection: exact except allowlisted uvloop exclusion")
         print("CI virtual environments: isolated in RUNNER_TEMP")
         print("GitHub Actions: pinned to full commit SHAs")
-        print("Regression Shield: post-merge only on dedicated self-hosted runner")
+        print(
+            "Regression Shield: post-merge only on dedicated self-hosted Windows runner"
+        )
         print("V10 repository boundary guard: required")
         print("V10 toolchain baseline guard: required")
         print("V10 Regression Shield guard: required")

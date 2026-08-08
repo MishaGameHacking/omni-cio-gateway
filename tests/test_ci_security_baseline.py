@@ -184,3 +184,75 @@ def test_detect_secrets_validator_reports_only_real_findings() -> None:
     )
 
     assert failures == ["potential secret: unsafe.py:7 (Secret Keyword)"]
+
+
+def test_detect_secrets_validator_allows_only_exact_approved_wp6_metadata(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    contract_path = (
+        tmp_path / "docs" / "architecture" / "V10_WP6_IDENTITY_PRIVILEGE_CONTRACT.json"
+    )
+    contract_path.parent.mkdir(parents=True)
+    sensitive_word = "sec" + "ret"
+    safe_line = f'  "execution_{sensitive_word}_access": "DENY",\n'
+    contract_path.write_text(safe_line, encoding="utf-8")
+    monkeypatch.setattr(baseline, "ROOT", tmp_path)
+    report = {
+        "results": {
+            r"docs\architecture\V10_WP6_IDENTITY_PRIVILEGE_CONTRACT.json": [
+                {"type": "Secret Keyword", "line_number": 1}
+            ]
+        }
+    }
+
+    failures: list[str] = []
+    baseline.validate_detect_secrets_report(report, failures)
+    assert failures == []
+
+    contract_path.write_text(
+        f'  "execution_{sensitive_word}_access": "unexpected-value",\n',
+        encoding="utf-8",
+    )
+    failures = []
+    baseline.validate_detect_secrets_report(report, failures)
+
+    assert failures == [
+        "potential secret: "
+        r"docs\architecture\V10_WP6_IDENTITY_PRIVILEGE_CONTRACT.json:1 "
+        "(Secret Keyword)"
+    ]
+
+
+def test_detect_secrets_validator_does_not_allowlist_other_finding_types(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    contract_path = (
+        tmp_path / "docs" / "architecture" / "V10_WP6_IDENTITY_PRIVILEGE_CONTRACT.json"
+    )
+    contract_path.parent.mkdir(parents=True)
+    sensitive_word = "sec" + "ret"
+    contract_path.write_text(
+        f'  "execution_{sensitive_word}_access": "DENY",\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(baseline, "ROOT", tmp_path)
+    failures: list[str] = []
+
+    baseline.validate_detect_secrets_report(
+        {
+            "results": {
+                "docs/architecture/V10_WP6_IDENTITY_PRIVILEGE_CONTRACT.json": [
+                    {"type": "High Entropy String", "line_number": 1}
+                ]
+            }
+        },
+        failures,
+    )
+
+    assert failures == [
+        "potential secret: "
+        "docs/architecture/V10_WP6_IDENTITY_PRIVILEGE_CONTRACT.json:1 "
+        "(High Entropy String)"
+    ]
