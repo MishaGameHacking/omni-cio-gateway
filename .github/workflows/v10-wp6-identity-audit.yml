@@ -60,6 +60,13 @@ jobs:
           if errorlevel 1 exit /b %errorlevel%
           echo WP6_IDENTITY_PROFILE_PATH=%PROFILE%>>"%GITHUB_ENV%"
 
+      - name: Verify sentinel DACL with native Windows API
+        shell: cmd
+        run: |
+          @echo off
+          python scripts\augment_v10_wp6_native_acl_evidence.py "%WP6_IDENTITY_PROFILE_PATH%"
+          if errorlevel 1 exit /b %errorlevel%
+
       - name: Assess fail-closed WP6 Exit Gate evidence
         shell: cmd
         run: |
