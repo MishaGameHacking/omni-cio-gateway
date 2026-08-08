@@ -11,7 +11,9 @@ import sys
 from typing import Iterable
 
 
-SENTINEL_PATH = Path(r"C:\ProgramData\OmniCIO\secrets\execution\wp6-ci-deny-sentinel.txt")
+SENTINEL_PATH = Path(
+    r"C:\ProgramData\OmniCIO\secrets\execution\wp6-ci-deny-sentinel.txt"
+)
 SE_FILE_OBJECT = 1
 DACL_SECURITY_INFORMATION = 0x00000004
 ACL_SIZE_INFORMATION_CLASS = 2
@@ -121,7 +123,9 @@ def resolve_identity_sids() -> IdentitySids:
     return identities
 
 
-def _sid_to_string(advapi32: ctypes.WinDLL, kernel32: ctypes.WinDLL, sid_ptr: int) -> str:
+def _sid_to_string(
+    advapi32: ctypes.WinDLL, kernel32: ctypes.WinDLL, sid_ptr: int
+) -> str:
     convert = advapi32.ConvertSidToStringSidW
     convert.argtypes = [ctypes.c_void_p, ctypes.POINTER(wintypes.LPWSTR)]
     convert.restype = wintypes.BOOL
@@ -171,7 +175,11 @@ def read_native_dacl_aces(path: Path) -> list[Ace]:
     get_acl_information.restype = wintypes.BOOL
 
     get_ace = advapi32.GetAce
-    get_ace.argtypes = [ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(ctypes.c_void_p)]
+    get_ace.argtypes = [
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        ctypes.POINTER(ctypes.c_void_p),
+    ]
     get_ace.restype = wintypes.BOOL
 
     local_free = kernel32.LocalFree
@@ -229,7 +237,9 @@ def augment_profile(profile_path: Path, evidence: AclEvidence) -> None:
         runtime = profile["runtime"]
         execution = profile["execution"]
         boundaries = profile["boundaries"]
-        if not all(isinstance(section, dict) for section in (runtime, execution, boundaries)):
+        if not all(
+            isinstance(section, dict) for section in (runtime, execution, boundaries)
+        ):
             raise TypeError
     except (OSError, KeyError, TypeError, json.JSONDecodeError) as exc:
         raise NativeAclError("PROFILE_INVALID") from exc
