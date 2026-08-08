@@ -25,12 +25,14 @@ def passing_profile() -> dict:
             "administrator": False,
             "execution_secret_direct_read_grant": False,
             "runner_config_direct_write_grant": False,
+            "runner_root_deny_present": True,
         },
         "execution": {
             "identity_present": True,
             "identity_enabled": False,
             "administrator": False,
             "execution_secret_direct_read_grant": True,
+            "runner_root_deny_present": True,
         },
         "boundaries": {
             "execution_secret_sentinel_present": True,
@@ -92,6 +94,18 @@ def test_runtime_admin_or_secret_read_fails_closed() -> None:
     assert status == "FAIL"
     assert "RUNTIME_ADMINISTRATOR_NOT_FALSE" in blockers
     assert "RUNTIME_EXECUTION_SECRET_READ_NOT_DENIED" in blockers
+
+
+def test_missing_runner_root_deny_fails_closed() -> None:
+    profile = passing_profile()
+    profile["runtime"]["runner_root_deny_present"] = False
+    profile["execution"]["runner_root_deny_present"] = False
+
+    status, blockers = identity.assess(profile, contract())
+
+    assert status == "FAIL"
+    assert "RUNTIME_RUNNER_ROOT_DENY_NOT_PRESENT" in blockers
+    assert "EXECUTION_RUNNER_ROOT_DENY_NOT_PRESENT" in blockers
 
 
 def test_missing_execution_secret_grant_fails_closed() -> None:
