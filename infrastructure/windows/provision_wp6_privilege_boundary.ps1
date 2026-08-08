@@ -1,0 +1,242 @@
+param(
+    [switch]$Apply
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
+
+$runtimeName = "omni-cio-runtime"
+$executionName = "omni-cio-execution"
+$runtimeMarker = "Omni-CIO V10 WP6 runtime role anchor; disabled until owning service bootstrap."
+$executionMarker = "Omni-CIO V10 WP6 execution role anchor; disabled until owning service bootstrap."
+$omniRoot = "C:\ProgramData\OmniCIO"
+$secretRoot = Join-Path $omniRoot "secrets"
+$executionRoot = Join-Path $secretRoot "execution"
+$sentinelPath = Join-Path $executionRoot "wp6-ci-deny-sentinel.txt"
+$sentinelText = "OMNI-CIO-WP6-NON-SECRET-ACL-SENTINEL-v1"
+$runnerRoot = "C:\actions-runner"
+$runnerConfig = Join-Path $runnerRoot ".runner"
+
+function Assert-Administrator {
+    $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+    $principal = [System.Security.Principal.WindowsPrincipal]::new($identity)
+    if (-not $principal.IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)) {
+        throw "WP6 provisioning requires an elevated OWNER-admin PowerShell."
+    }
+}
+
+function Get-RunnerServiceSafe {
+    $services = @(
+        Get-CimInstance Win32_Service |
+            Where-Object { $_.Name -like "actions.runner.*" }
+    )
+    if ($services.Count -ne 1) {
+        throw "Expected exactly one GitHub Actions runner service; found $($services.Count)."
+    }
+    return $services[0]
+}
+
+function Get-RunnerClass {
+    param([string]$StartName)
+
+    $normalized = $StartName.Trim().ToUpperInvariant()
+    if ($normalized -in @("LOCALSYSTEM", ".\LOCALSYSTEM", "NT AUTHORITY\SYSTEM")) {
+        return "LOCAL_SYSTEM"
+    }
+    if ($normalized -eq "NT AUTHORITY\NETWORKSERVICE") {
+        return "NETWORK_SERVICE"
+    }
+    if ($normalized -eq "NT AUTHORITY\LOCALSERVICE") {
+        return "LOCAL_SERVICE"
+    }
+    if ($normalized.StartsWith("NT SERVICE\")) {
+        return "VIRTUAL_SERVICE"
+    }
+    return "LOCAL_OR_DOMAIN_USER"
+}
+
+function New-RandomSecurePassword {
+    $bytes = New-Object byte[] 48
+    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try {
+        $rng.GetBytes($bytes)
+        $plain = [Convert]::ToBase64String($bytes) + "!aA9"
+        return ConvertTo-SecureString -String $plain -AsPlainText -Force
+    }
+    finally {
+        $rng.Dispose()
+        [Array]::Clear($bytes, 0, $bytes.Length)
+        $plain = $null
+    }
+}
+
+function Get-LocalRole {
+    param([string]$Name)
+    try {
+        return Get-LocalUser -Name $Name -ErrorAction Stop
+    }
+    catch {
+        return $null
+    }
+}
+
+function Assert-RoleOwnership {
+    param(
+        [string]$Name,
+        [string]$Marker
+    )
+
+    $existing = Get-LocalRole -Name $Name
+    if ($null -ne $existing -and $existing.Description -ne $Marker) {
+        throw "Refusing to reuse pre-existing local account '$Name' without the WP6 ownership marker."
+    }
+}
+
+function Ensure-RoleAnchor {
+    param(
+        [string]$Name,
+        [string]$Marker
+    )
+
+    $existing = Get-LocalRole -Name $Name
+    if ($null -eq $existing) {
+        $password = New-RandomSecurePassword
+        try {
+            New-LocalUser `
+                -Name $Name `
+                -Password $password `
+                -AccountNeverExpires `
+                -PasswordNeverExpires `
+                -UserMayNotChangePassword `
+                -Description $Marker | Out-Null
+        }
+        finally {
+            $password = $null
+        }
+    }
+
+    Disable-LocalUser -Name $Name
+
+    $adminSid = [System.Security.Principal.SecurityIdentifier]::new("S-1-5-32-544")
+    $adminGroup = Get-LocalGroup -SID $adminSid -ErrorAction Stop
+    $members = @(Get-LocalGroupMember -Group $adminGroup -ErrorAction Stop)
+    $role = Get-LocalUser -Name $Name -ErrorAction Stop
+    if ($members | Where-Object { $_.SID.Value -eq $role.SID.Value }) {
+        Remove-LocalGroupMember -Group $adminGroup -Member $role -Confirm:$false
+    }
+
+    return $role
+}
+
+function New-Rule {
+    param(
+        [System.Security.Principal.IdentityReference]$Identity,
+        [System.Security.AccessControl.FileSystemRights]$Rights,
+        [System.Security.AccessControl.InheritanceFlags]$Inheritance,
+        [System.Security.AccessControl.PropagationFlags]$Propagation
+    )
+
+    return [System.Security.AccessControl.FileSystemAccessRule]::new(
+        $Identity,
+        $Rights,
+        $Inheritance,
+        $Propagation,
+        [System.Security.AccessControl.AccessControlType]::Allow
+    )
+}
+
+function Set-ExecutionDirectoryAcl {
+    param([System.Security.Principal.SecurityIdentifier]$ExecutionSid)
+
+    $systemSid = [System.Security.Principal.SecurityIdentifier]::new("S-1-5-18")
+    $adminsSid = [System.Security.Principal.SecurityIdentifier]::new("S-1-5-32-544")
+    $inherit = [System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor `
+        [System.Security.AccessControl.InheritanceFlags]::ObjectInherit
+    $none = [System.Security.AccessControl.PropagationFlags]::None
+
+    $acl = [System.Security.AccessControl.DirectorySecurity]::new()
+    $acl.SetAccessRuleProtection($true, $false)
+    $acl.AddAccessRule((New-Rule -Identity $systemSid -Rights FullControl -Inheritance $inherit -Propagation $none))
+    $acl.AddAccessRule((New-Rule -Identity $adminsSid -Rights FullControl -Inheritance $inherit -Propagation $none))
+    $acl.AddAccessRule((New-Rule -Identity $ExecutionSid -Rights ReadAndExecute -Inheritance $inherit -Propagation $none))
+    Set-Acl -LiteralPath $executionRoot -AclObject $acl
+}
+
+function Set-SentinelAcl {
+    param([System.Security.Principal.SecurityIdentifier]$ExecutionSid)
+
+    $systemSid = [System.Security.Principal.SecurityIdentifier]::new("S-1-5-18")
+    $adminsSid = [System.Security.Principal.SecurityIdentifier]::new("S-1-5-32-544")
+    $noneInheritance = [System.Security.AccessControl.InheritanceFlags]::None
+    $nonePropagation = [System.Security.AccessControl.PropagationFlags]::None
+
+    $acl = [System.Security.AccessControl.FileSecurity]::new()
+    $acl.SetAccessRuleProtection($true, $false)
+    $acl.AddAccessRule((New-Rule -Identity $systemSid -Rights FullControl -Inheritance $noneInheritance -Propagation $nonePropagation))
+    $acl.AddAccessRule((New-Rule -Identity $adminsSid -Rights FullControl -Inheritance $noneInheritance -Propagation $nonePropagation))
+    $acl.AddAccessRule((New-Rule -Identity $ExecutionSid -Rights Read -Inheritance $noneInheritance -Propagation $nonePropagation))
+    Set-Acl -LiteralPath $sentinelPath -AclObject $acl
+}
+
+$runner = Get-RunnerServiceSafe
+$runnerClass = Get-RunnerClass -StartName $runner.StartName
+if ($runnerClass -eq "LOCAL_SYSTEM") {
+    throw "Fail-closed: GitHub runner uses LocalSystem. WP6 will not provision around a privileged CI identity."
+}
+if ($runner.State -ne "Running") {
+    throw "Fail-closed: GitHub runner service is not running."
+}
+if (-not (Test-Path -LiteralPath $runnerConfig)) {
+    throw "Fail-closed: GitHub runner configuration is not present at the reviewed runner root."
+}
+
+Assert-RoleOwnership -Name $runtimeName -Marker $runtimeMarker
+Assert-RoleOwnership -Name $executionName -Marker $executionMarker
+
+if (Test-Path -LiteralPath $sentinelPath) {
+    $existingSentinel = Get-Content -LiteralPath $sentinelPath -Raw -ErrorAction Stop
+    if ($existingSentinel.Trim() -ne $sentinelText) {
+        throw "Refusing to replace unexpected content at the WP6 sentinel path."
+    }
+}
+if ((Test-Path -LiteralPath $secretRoot) -and -not (Test-Path -LiteralPath $sentinelPath)) {
+    $unexpected = @(Get-ChildItem -LiteralPath $secretRoot -Force -ErrorAction Stop)
+    if ($unexpected.Count -gt 0) {
+        throw "Refusing to modify a non-empty pre-existing secret root before WP8 owns real secret provisioning."
+    }
+}
+
+Write-Host "WP6 privilege provisioning preflight: PASS" -ForegroundColor Green
+Write-Host "Runner account class: $runnerClass"
+Write-Host "Real secret values used: NO"
+Write-Host "Runtime role anchor: $runtimeName (disabled)"
+Write-Host "Execution role anchor: $executionName (disabled)"
+Write-Host "Sentinel: non-secret ACL test material only"
+
+if (-not $Apply) {
+    Write-Host "DRY RUN ONLY. Re-run with -Apply after reviewed CI is green." -ForegroundColor Yellow
+    exit 0
+}
+
+Assert-Administrator
+
+if (-not (Test-Path -LiteralPath $omniRoot)) {
+    New-Item -ItemType Directory -Path $omniRoot -Force | Out-Null
+}
+if (-not (Test-Path -LiteralPath $secretRoot)) {
+    New-Item -ItemType Directory -Path $secretRoot -Force | Out-Null
+}
+if (-not (Test-Path -LiteralPath $executionRoot)) {
+    New-Item -ItemType Directory -Path $executionRoot -Force | Out-Null
+}
+
+$runtimeRole = Ensure-RoleAnchor -Name $runtimeName -Marker $runtimeMarker
+$executionRole = Ensure-RoleAnchor -Name $executionName -Marker $executionMarker
+
+Set-ExecutionDirectoryAcl -ExecutionSid $executionRole.SID
+Set-Content -LiteralPath $sentinelPath -Value $sentinelText -Encoding ASCII -NoNewline
+Set-SentinelAcl -ExecutionSid $executionRole.SID
+
+Write-Host "WP6 local identity/ACL provisioning applied." -ForegroundColor Green
+Write-Host "Both role accounts are disabled and non-admin; no real secret was created." -ForegroundColor Green
+Write-Host "Run the privacy-safe WP6 identity audit next." -ForegroundColor Cyan
