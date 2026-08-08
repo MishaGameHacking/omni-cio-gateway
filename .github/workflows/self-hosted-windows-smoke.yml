@@ -33,7 +33,7 @@ jobs:
           if not "%RUNNER_ARCH%"=="X64" exit /b 1
           if not exist .git exit /b 1
           git --version
-          whoami
+          echo Runner identity intentionally not logged.
           echo Runner OS verified: %RUNNER_OS%
           echo Runner architecture: %RUNNER_ARCH%
 
@@ -76,7 +76,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Verify OWNER runner identity
+      - name: Verify OWNER runner identity without raw identity disclosure
         shell: cmd
         run: |
           @echo off
@@ -84,7 +84,7 @@ jobs:
           if not "%RUNNER_ARCH%"=="X64" exit /b 1
           if not exist .git exit /b 1
           git --version
-          whoami
+          echo Runner identity intentionally not logged.
 
       - name: Bootstrap protected Python 3.12.10 runtime
         shell: cmd
@@ -170,6 +170,7 @@ jobs:
           python scripts/check_v10_repository_boundaries.py
           python scripts/check_v10_toolchain_baseline.py
           python scripts/check_v10_regression_shield.py
+          python scripts/check_v10_wp6_privilege_boundary.py
 
       - name: Compile protected runtime and Core
         run: >-
