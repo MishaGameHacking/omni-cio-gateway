@@ -111,6 +111,54 @@ function Wait-ForCombinedLoadStart {
     throw "Combined CPU+GPU load was not detected within $TimeoutSeconds seconds. No acceptance evidence was recorded."
 }
 
+function Read-ValidatedGpuEvidence {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+        [Parameter(Mandatory = $true)]
+        [int]$ExpectedDurationSeconds
+    )
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        throw "GPU telemetry sampler did not produce the required evidence file."
+    }
+
+    try {
+        $evidence = Get-Content -LiteralPath $Path -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+    } catch {
+        throw "GPU telemetry evidence is not valid JSON: $($_.Exception.Message)"
+    }
+
+    if ([string]$evidence.schema_version -ne "1") {
+        throw "GPU telemetry evidence schema_version is unsupported."
+    }
+    if ([int]$evidence.duration_seconds -ne $ExpectedDurationSeconds) {
+        throw "GPU telemetry evidence duration does not match the requested acceptance window."
+    }
+    if ([int]$evidence.observed_duration_seconds -lt $ExpectedDurationSeconds) {
+        throw "GPU telemetry evidence did not observe the complete acceptance window."
+    }
+    if ([int]$evidence.sample_count -le 0) {
+        throw "GPU telemetry evidence contains no valid samples."
+    }
+    if ($null -eq $evidence.gpu_temperature_c -or $null -eq $evidence.gpu_temperature_c.maximum) {
+        throw "GPU telemetry evidence is missing the peak GPU temperature."
+    }
+    if ($null -eq $evidence.gpu_utilization_percent -or $null -eq $evidence.gpu_utilization_percent.maximum) {
+        throw "GPU telemetry evidence is missing GPU utilization."
+    }
+    if (
+        [bool]$evidence.privacy.model_or_uuid_collected -or
+        [bool]$evidence.privacy.serial_collected -or
+        [bool]$evidence.privacy.address_collected -or
+        [bool]$evidence.privacy.process_list_collected
+    ) {
+        throw "GPU telemetry evidence violates the WP5 privacy contract."
+    }
+
+    return $evidence
+}
+
 function New-TemporaryNodePowerScheme {
     param(
         [Parameter(Mandatory = $true)]
@@ -247,15 +295,19 @@ try {
     Write-Host "Stop immediately for a crash, thermal shutdown, or sustained temperature beyond the WP5 guardrails."
     Write-Host ""
 
-    Wait-Process -Id $sampler.Id
-    if ($sampler.ExitCode -ne 0) {
-        throw "GPU telemetry sampler failed with exit code $($sampler.ExitCode)."
+    $sampler.WaitForExit()
+    $sampler.Refresh()
+    $samplerExitCode = $sampler.ExitCode
+    $gpuEvidence = Read-ValidatedGpuEvidence -Path $gpuOutput -ExpectedDurationSeconds $durationSeconds
+    if ($samplerExitCode -ne 0) {
+        Write-Warning "GPU sampler process reported exit code $samplerExitCode, but the complete file-backed evidence passed fail-closed validation."
     }
 
     [console]::Beep(1200, 500)
     [console]::Beep(1200, 500)
     Write-Host ""
     Write-Host "Telemetry duration complete. Click Stop in AIDA64 now, then open Statistics." -ForegroundColor Green
+    Write-Host "Validated GPU peak: $($gpuEvidence.gpu_temperature_c.maximum) C; utilization max: $($gpuEvidence.gpu_utilization_percent.maximum)%"
 
     $eventEnd = Get-Date
     $events = @()
