@@ -101,18 +101,16 @@ function Test-AclRule {
     }
     try {
         $acl = Get-Acl -LiteralPath $Path -ErrorAction Stop
-        foreach ($rule in $acl.Access) {
+        $rules = $acl.GetAccessRules(
+            $true,
+            $true,
+            [System.Security.Principal.SecurityIdentifier]
+        )
+        foreach ($rule in $rules) {
             if ($rule.AccessControlType -ne $ControlType) {
                 continue
             }
-            try {
-                $ruleSid = $rule.IdentityReference.Translate(
-                    [System.Security.Principal.SecurityIdentifier]
-                ).Value
-            }
-            catch {
-                continue
-            }
+            $ruleSid = [string]$rule.IdentityReference.Value
             if ($ruleSid -eq $Sid -and (([int64]$rule.FileSystemRights -band $Mask) -ne 0)) {
                 return $true
             }
