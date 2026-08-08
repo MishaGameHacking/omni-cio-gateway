@@ -165,6 +165,23 @@ function New-Rule {
     )
 }
 
+function New-DenyRule {
+    param(
+        [System.Security.Principal.IdentityReference]$Identity,
+        [System.Security.AccessControl.FileSystemRights]$Rights,
+        [System.Security.AccessControl.InheritanceFlags]$Inheritance,
+        [System.Security.AccessControl.PropagationFlags]$Propagation
+    )
+
+    return [System.Security.AccessControl.FileSystemAccessRule]::new(
+        $Identity,
+        $Rights,
+        $Inheritance,
+        $Propagation,
+        [System.Security.AccessControl.AccessControlType]::Deny
+    )
+}
+
 function Set-OwnerStateDirectoryAcl {
     $systemSid = [System.Security.Principal.SecurityIdentifier]::new("S-1-5-18")
     $adminsSid = [System.Security.Principal.SecurityIdentifier]::new("S-1-5-32-544")
@@ -193,9 +210,21 @@ function Save-RunnerAclBackup {
     param([string[]]$Paths)
 
     if (Test-Path -LiteralPath $runnerAclBackupPath) {
+        $existing = Get-Content -LiteralPath $runnerAclBackupPath -Raw -ErrorAction Stop |
+            ConvertFrom-Json -ErrorAction Stop
+        $names = @($existing.files | ForEach-Object { [string]$_.name })
+        if ($existing.schema_version -ne "1" -or "." -notin $names) {
+            throw "Existing WP6 runner ACL backup is incomplete; refusing to overwrite it."
+        }
         return
     }
+
+    $rootAcl = Get-Acl -LiteralPath $runnerRoot -ErrorAction Stop
     $entries = @(
+        [ordered]@{
+            name = "."
+            sddl = $rootAcl.Sddl
+        }
         foreach ($path in $Paths) {
             $acl = Get-Acl -LiteralPath $path -ErrorAction Stop
             [ordered]@{
@@ -209,6 +238,25 @@ function Save-RunnerAclBackup {
         files = $entries
     } | ConvertTo-Json -Depth 5
     Set-Content -LiteralPath $runnerAclBackupPath -Value $payload -Encoding UTF8
+}
+
+function Set-RunnerRootDenyAcl {
+    param(
+        [System.Security.Principal.SecurityIdentifier]$RuntimeSid,
+        [System.Security.Principal.SecurityIdentifier]$ExecutionSid
+    )
+
+    $inherit = [System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor `
+        [System.Security.AccessControl.InheritanceFlags]::ObjectInherit
+    $none = [System.Security.AccessControl.PropagationFlags]::None
+    $acl = Get-Acl -LiteralPath $runnerRoot -ErrorAction Stop
+    $acl.SetAccessRule(
+        (New-DenyRule -Identity $RuntimeSid -Rights FullControl -Inheritance $inherit -Propagation $none)
+    )
+    $acl.SetAccessRule(
+        (New-DenyRule -Identity $ExecutionSid -Rights FullControl -Inheritance $inherit -Propagation $none)
+    )
+    Set-Acl -LiteralPath $runnerRoot -AclObject $acl
 }
 
 function Set-RunnerSensitiveFileAcl {
@@ -329,6 +377,10 @@ if (-not (Test-Path -LiteralPath $wp6StateRoot)) {
 }
 Set-OwnerStateDirectoryAcl
 Save-RunnerAclBackup -Paths $runnerSensitivePaths
+
+$runtimeRole = Ensure-RoleAnchor -Name $runtimeName -Marker $runtimeMarker
+$executionRole = Ensure-RoleAnchor -Name $executionName -Marker $executionMarker
+Set-RunnerRootDenyAcl -RuntimeSid $runtimeRole.SID -ExecutionSid $executionRole.SID
 foreach ($path in $runnerSensitivePaths) {
     Set-RunnerSensitiveFileAcl -Path $path -RunnerSid $runnerSid
 }
@@ -340,16 +392,14 @@ if (-not (Test-Path -LiteralPath $executionRoot)) {
     New-Item -ItemType Directory -Path $executionRoot -Force | Out-Null
 }
 
-$runtimeRole = Ensure-RoleAnchor -Name $runtimeName -Marker $runtimeMarker
-$executionRole = Ensure-RoleAnchor -Name $executionName -Marker $executionMarker
-
 Set-ExecutionDirectoryAcl -ExecutionSid $executionRole.SID -RunnerSid $runnerSid
 Set-Content -LiteralPath $sentinelPath -Value $sentinelText -Encoding ASCII -NoNewline
 Set-SentinelAcl -ExecutionSid $executionRole.SID -RunnerSid $runnerSid
 
 Write-Host "WP6 local identity/ACL provisioning applied." -ForegroundColor Green
 Write-Host "Both role accounts are disabled and non-admin; no real secret was created." -ForegroundColor Green
+Write-Host "Runtime and execution identities are explicitly denied access to the entire runner root." -ForegroundColor Green
 Write-Host "Sensitive runner config ACLs are limited to SYSTEM, Administrators and the runner service identity." -ForegroundColor Green
 Write-Host "Runner can inspect sentinel ACL metadata but has no sentinel data-read grant." -ForegroundColor Green
-Write-Host "Original runner config ACLs were backed up locally for guarded rollback." -ForegroundColor Green
+Write-Host "Original runner-root/config ACLs were backed up locally for guarded rollback." -ForegroundColor Green
 Write-Host "Run the privacy-safe WP6 identity audit next." -ForegroundColor Cyan
