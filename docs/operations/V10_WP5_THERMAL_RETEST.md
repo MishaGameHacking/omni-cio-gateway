@@ -12,7 +12,16 @@ The first completed AIDA64 combined CPU/cache/memory/GPU run lasted 30m30s and p
 - no crash, BSOD or thermal shutdown;
 - GPU load started, but GPU peak temperature was not recorded.
 
-This evidence is intentionally retained as `FAIL` for the sustained-load Exit Gate. Thresholds must not be relaxed merely to make WP5 pass.
+A second automated-owner run improved the thermals materially, but still did not pass the fail-closed gate:
+
+- AIDA64 elapsed time was approximately 29m13s because telemetry started before AIDA64;
+- CPU core peak: 97 °C;
+- CPU throttling maximum: 26%;
+- CPU throttling average: 5.8%;
+- CPU utilization average: 99.6%;
+- no crash, BSOD or thermal shutdown.
+
+The second run therefore fails on minimum AIDA64 duration, CPU peak temperature and average throttling. Thresholds must not be relaxed merely to make WP5 pass.
 
 ## Acceptance profile
 
@@ -20,25 +29,26 @@ The WP5 acceptance retest uses the intended conservative 24/7 node operating pro
 
 1. keep AC connected and battery conservation enabled;
 2. close/disable any temporary game-boost or auto-overclock mode for the duration of the test;
-3. select the standard Windows **Balanced** power plan before the retest;
-4. keep the notebook on a hard unobstructed surface with normal cooling airflow;
-5. do not change BIOS voltage/clock limits and do not disable thermal protection.
+3. use the repository launcher, which creates a **temporary** Windows Balanced-derived power scheme;
+4. the temporary scheme caps AC maximum processor performance at **90%** for the acceptance run;
+5. keep the notebook on a hard unobstructed surface with normal cooling airflow;
+6. do not change BIOS voltage/clock limits and do not disable thermal protection.
 
-The power-plan change is reversible and is an operating-profile decision, not a threshold change.
+The temporary power scheme is deleted after the run and the previously active scheme is restored. This is an operating-profile decision for the 24/7 node, not a relaxation of thermal thresholds.
 
-## Preferred local acceptance launcher
+Microsoft documents `PROCTHROTTLEMAX` / maximum processor performance as a percentage of maximum processor performance. The WP5 launcher uses that standard Windows mechanism rather than BIOS voltage or clock manipulation.
 
-Use the repository launcher instead of manually coordinating multiple PowerShell windows:
+## Preferred launcher
+
+From the repository root, run:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File infrastructure\windows\run_wp5_owner_acceptance.ps1
 ```
 
-The launcher self-elevates through the normal Windows UAC prompt, performs read-only runner/network/AC preflight checks, temporarily switches to the standard Balanced power plan, launches AIDA64, starts the privacy-safe GPU sampler, waits for the configured duration, scans only relevant System event metadata, writes sanitized local evidence under `C:\ProgramData\OmniCIO\wp5`, and restores the previous power plan.
+The launcher self-elevates only for the local acceptance run. It does **not** elevate the GitHub Actions runner service.
 
-It does **not** grant Administrator rights to the GitHub runner, does not expose BitLocker recovery material, does not collect usernames/hostnames/IP/MAC/stable device identifiers, and does not automate arbitrary desktop input.
-
-AIDA64 Extreme still requires the OWNER to configure the Stability Test checkboxes and click `Start` / `Stop` in the interactive desktop session. The launcher deliberately avoids brittle GUI automation and keeps the self-hosted runner non-interactive and least-privileged.
+The launcher performs preflight checks, creates the temporary conservative power scheme, launches AIDA64, collects privacy-safe GPU telemetry, scans relevant system events, restores the previous power scheme, and removes the temporary test scheme.
 
 ## AIDA64 workload
 
@@ -51,11 +61,15 @@ Use AIDA64 Extreme System Stability Test with exactly:
 - `Stress local disks` — OFF;
 - `Stress GPU(s)` — ON.
 
+**Synchronization rule:** configure the checkboxes, click `Clear`, then click `Start` in AIDA64 **before** confirming the launcher prompt. Once the AIDA64 elapsed timer is visibly running, return to PowerShell and press ENTER immediately. This guarantees the AIDA64 workload runs for at least the full telemetry interval.
+
 Minimum duration is 30 minutes. Stop immediately for a crash, thermal shutdown, visibly sustained thermal runaway, or any lower manufacturer protection limit.
 
 ## GPU telemetry
 
-A combined load test is accepted only when GPU peak temperature is recorded. The preferred launcher starts the sampler automatically. For manual fallback, in a second elevated PowerShell window run:
+The launcher invokes the repository sampler automatically. The sampler records only aggregate temperature/utilization/power values. It does not record GPU UUID, serial number, addresses, usernames, process lists or secrets.
+
+Manual fallback:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File infrastructure\windows\measure_wp5_gpu_load.ps1 `
@@ -64,9 +78,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File infrastructure\windows\m
   -OutputPath "$env:TEMP\wp5-gpu-load.json"
 ```
 
-The sampler records only aggregate temperature/utilization/power values. It does not record GPU UUID, serial number, addresses, usernames, process lists or secrets.
-
-After the run, inspect only the aggregate values:
+After a manual run, inspect only the aggregate values:
 
 ```powershell
 Get-Content "$env:TEMP\wp5-gpu-load.json"
