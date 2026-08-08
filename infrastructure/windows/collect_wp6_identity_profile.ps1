@@ -1,0 +1,299 @@
+param(
+    [string]$OutputPath = ""
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
+
+$runtimeRoleName = "omni-cio-runtime"
+$executionRoleName = "omni-cio-execution"
+$secretSentinel = "C:\ProgramData\OmniCIO\secrets\execution\wp6-ci-deny-sentinel.txt"
+$runnerConfig = "C:\actions-runner\.runner"
+
+function Get-AccountClass {
+    param([string]$StartName)
+
+    $normalized = $StartName.Trim().ToUpperInvariant()
+    if ($normalized -in @("LOCALSYSTEM", ".\LOCALSYSTEM", "NT AUTHORITY\SYSTEM")) {
+        return "LOCAL_SYSTEM"
+    }
+    if ($normalized -eq "NT AUTHORITY\NETWORKSERVICE") {
+        return "NETWORK_SERVICE"
+    }
+    if ($normalized -eq "NT AUTHORITY\LOCALSERVICE") {
+        return "LOCAL_SERVICE"
+    }
+    if ($normalized.StartsWith("NT SERVICE\")) {
+        return "VIRTUAL_SERVICE"
+    }
+    return "LOCAL_OR_DOMAIN_USER"
+}
+
+function Get-AccountSidValue {
+    param([string]$AccountName)
+
+    $normalized = $AccountName.Trim().ToUpperInvariant()
+    if ($normalized -in @("LOCALSYSTEM", ".\LOCALSYSTEM", "NT AUTHORITY\SYSTEM")) {
+        return "S-1-5-18"
+    }
+    if ($normalized -eq "NT AUTHORITY\NETWORKSERVICE") {
+        return "S-1-5-20"
+    }
+    if ($normalized -eq "NT AUTHORITY\LOCALSERVICE") {
+        return "S-1-5-19"
+    }
+    try {
+        $account = [System.Security.Principal.NTAccount]::new($AccountName)
+        return $account.Translate([System.Security.Principal.SecurityIdentifier]).Value
+    }
+    catch {
+        return $null
+    }
+}
+
+function Get-LocalRoleState {
+    param([string]$Name)
+
+    try {
+        $user = Get-LocalUser -Name $Name -ErrorAction Stop
+    }
+    catch [Microsoft.PowerShell.Commands.UserNotFoundException] {
+        return [ordered]@{
+            present = $false
+            enabled = $null
+            administrator = $null
+            sid = $null
+        }
+    }
+    catch {
+        return [ordered]@{
+            present = $false
+            enabled = $null
+            administrator = $null
+            sid = $null
+        }
+    }
+
+    $sid = $user.SID.Value
+    $isAdmin = $false
+    try {
+        $adminGroup = Get-LocalGroup -SID "S-1-5-32-544" -ErrorAction Stop
+        $members = @(Get-LocalGroupMember -Group $adminGroup -ErrorAction Stop)
+        $isAdmin = [bool]($members | Where-Object { $_.SID.Value -eq $sid })
+    }
+    catch {
+        $isAdmin = $null
+    }
+
+    return [ordered]@{
+        present = $true
+        enabled = [bool]$user.Enabled
+        administrator = $isAdmin
+        sid = $sid
+    }
+}
+
+function Test-AclAllow {
+    param(
+        [string]$Path,
+        [string]$Sid,
+        [int64]$Mask
+    )
+
+    if (-not $Sid -or -not (Test-Path -LiteralPath $Path)) {
+        return $false
+    }
+    try {
+        $acl = Get-Acl -LiteralPath $Path -ErrorAction Stop
+        foreach ($rule in $acl.Access) {
+            if ($rule.AccessControlType -ne [System.Security.AccessControl.AccessControlType]::Allow) {
+                continue
+            }
+            try {
+                $ruleSid = $rule.IdentityReference.Translate(
+                    [System.Security.Principal.SecurityIdentifier]
+                ).Value
+            }
+            catch {
+                continue
+            }
+            if ($ruleSid -eq $Sid -and (([int64]$rule.FileSystemRights -band $Mask) -ne 0)) {
+                return $true
+            }
+        }
+    }
+    catch {
+        return $false
+    }
+    return $false
+}
+
+function Test-BroadAclAllow {
+    param(
+        [string]$Path,
+        [int64]$Mask
+    )
+
+    $broadSids = @("S-1-1-0", "S-1-5-11", "S-1-5-32-545")
+    foreach ($sid in $broadSids) {
+        if (Test-AclAllow -Path $Path -Sid $sid -Mask $Mask) {
+            return $true
+        }
+    }
+    return $false
+}
+
+$runnerServices = @(
+    Get-CimInstance Win32_Service |
+        Where-Object { $_.Name -like "actions.runner.*" }
+)
+if ($runnerServices.Count -ne 1) {
+    throw "Expected exactly one GitHub Actions runner service; found $($runnerServices.Count)."
+}
+$runnerService = $runnerServices[0]
+$runnerClass = Get-AccountClass -StartName $runnerService.StartName
+$runnerSid = Get-AccountSidValue -AccountName $runnerService.StartName
+$currentSid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+$currentPrincipal = [System.Security.Principal.WindowsPrincipal]::new(
+    [System.Security.Principal.WindowsIdentity]::GetCurrent()
+)
+$currentTokenAdmin = $currentPrincipal.IsInRole(
+    [System.Security.Principal.WindowsBuiltInRole]::Administrator
+)
+
+$runnerAdmin = $null
+if ($runnerClass -eq "LOCAL_SYSTEM") {
+    $runnerAdmin = $true
+}
+elseif ($runnerClass -in @("NETWORK_SERVICE", "LOCAL_SERVICE", "VIRTUAL_SERVICE")) {
+    $runnerAdmin = $false
+}
+elseif ($runnerSid) {
+    try {
+        $adminGroup = Get-LocalGroup -SID "S-1-5-32-544" -ErrorAction Stop
+        $adminMembers = @(Get-LocalGroupMember -Group $adminGroup -ErrorAction Stop)
+        $runnerAdmin = [bool]($adminMembers | Where-Object { $_.SID.Value -eq $runnerSid })
+    }
+    catch {
+        $runnerAdmin = $null
+    }
+}
+
+$interactiveDistinct = $null
+try {
+    $interactiveName = (Get-CimInstance Win32_ComputerSystem).UserName
+    if ($interactiveName) {
+        $interactiveSid = Get-AccountSidValue -AccountName $interactiveName
+        if ($interactiveSid -and $runnerSid) {
+            $interactiveDistinct = ($interactiveSid -ne $runnerSid)
+        }
+    }
+}
+catch {
+    $interactiveDistinct = $null
+}
+
+$runtimeState = Get-LocalRoleState -Name $runtimeRoleName
+$executionState = Get-LocalRoleState -Name $executionRoleName
+
+$sentinelReadResult = "NOT_CONFIGURED"
+if (Test-Path -LiteralPath $secretSentinel) {
+    try {
+        $stream = [System.IO.File]::Open(
+            $secretSentinel,
+            [System.IO.FileMode]::Open,
+            [System.IO.FileAccess]::Read,
+            [System.IO.FileShare]::ReadWrite
+        )
+        $stream.Dispose()
+        $sentinelReadResult = "ACCESS_GRANTED"
+    }
+    catch [System.UnauthorizedAccessException] {
+        $sentinelReadResult = "ACCESS_DENIED"
+    }
+    catch {
+        $sentinelReadResult = "ERROR"
+    }
+}
+
+$readMask = [int64][System.Security.AccessControl.FileSystemRights]::Read
+$writeMask = [int64](
+    [System.Security.AccessControl.FileSystemRights]::Write -bor
+    [System.Security.AccessControl.FileSystemRights]::Modify -bor
+    [System.Security.AccessControl.FileSystemRights]::FullControl
+)
+
+$runtimeSid = $runtimeState.sid
+$executionSid = $executionState.sid
+$runtimeSecretReadGrant = $false
+$executionSecretReadGrant = $false
+$secretBroadReadExposure = $false
+if (Test-Path -LiteralPath $secretSentinel) {
+    $runtimeSecretReadGrant = Test-AclAllow -Path $secretSentinel -Sid $runtimeSid -Mask $readMask
+    $executionSecretReadGrant = Test-AclAllow -Path $secretSentinel -Sid $executionSid -Mask $readMask
+    $secretBroadReadExposure = Test-BroadAclAllow -Path $secretSentinel -Mask $readMask
+}
+
+$runtimeRunnerWriteGrant = $false
+$runnerConfigBroadWriteExposure = $null
+if (Test-Path -LiteralPath $runnerConfig) {
+    $runtimeRunnerWriteGrant = Test-AclAllow -Path $runnerConfig -Sid $runtimeSid -Mask $writeMask
+    $runnerConfigBroadWriteExposure = Test-BroadAclAllow -Path $runnerConfig -Mask $writeMask
+}
+
+$profile = [ordered]@{
+    schema_version = "1"
+    capture_mode = "PASSIVE"
+    runner = [ordered]@{
+        service_running = ($runnerService.State -eq "Running")
+        service_start_mode = [string]$runnerService.StartMode
+        account_class = $runnerClass
+        administrator = $runnerAdmin
+        service_identity_matches_current_process = if ($runnerSid) { $runnerSid -eq $currentSid } else { $null }
+        current_process_administrator = [bool]$currentTokenAdmin
+        distinct_from_interactive_owner = $interactiveDistinct
+    }
+    runtime = [ordered]@{
+        identity_present = [bool]$runtimeState.present
+        identity_enabled = $runtimeState.enabled
+        administrator = $runtimeState.administrator
+        execution_secret_direct_read_grant = [bool]$runtimeSecretReadGrant
+        runner_config_direct_write_grant = [bool]$runtimeRunnerWriteGrant
+    }
+    execution = [ordered]@{
+        identity_present = [bool]$executionState.present
+        identity_enabled = $executionState.enabled
+        administrator = $executionState.administrator
+        execution_secret_direct_read_grant = [bool]$executionSecretReadGrant
+    }
+    boundaries = [ordered]@{
+        execution_secret_sentinel_present = (Test-Path -LiteralPath $secretSentinel)
+        runner_execution_secret_read = $sentinelReadResult
+        execution_secret_broad_read_exposure = [bool]$secretBroadReadExposure
+        runner_config_present = (Test-Path -LiteralPath $runnerConfig)
+        runner_config_broad_write_exposure = $runnerConfigBroadWriteExposure
+    }
+    privacy = [ordered]@{
+        raw_usernames_collected = $false
+        sids_emitted = $false
+        hostnames_collected = $false
+        addresses_collected = $false
+        secret_values_collected = $false
+        process_lists_collected = $false
+    }
+}
+
+# Remove internal SID helpers before serialization. They are used only in-memory for ACL checks.
+$runtimeState.sid = $null
+$executionState.sid = $null
+$profileJson = $profile | ConvertTo-Json -Depth 8
+
+if ($OutputPath) {
+    $parent = Split-Path -Parent $OutputPath
+    if ($parent -and -not (Test-Path -LiteralPath $parent)) {
+        New-Item -ItemType Directory -Path $parent -Force | Out-Null
+    }
+    Set-Content -LiteralPath $OutputPath -Value $profileJson -Encoding UTF8
+}
+
+$profileJson
