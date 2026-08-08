@@ -17,13 +17,15 @@ WP6 creates only:
 - disabled local role anchor `omni-cio-execution`;
 - `C:\ProgramData\OmniCIO\secrets\execution` as the future execution-only secret boundary;
 - a fixed **non-secret** sentinel file used solely for negative ACL tests;
-- a local owner-only backup of the pre-WP6 ACL descriptors for reviewed sensitive GitHub runner configuration files.
+- a local owner-only backup of the pre-WP6 ACL descriptors for the runner root and reviewed sensitive GitHub runner configuration files.
 
 The sentinel contains no account data, broker data, credential or token.
 
 The GitHub runner receives only `ReadPermissions` on the sentinel ACL so CI can inspect ACL metadata; it receives no file-data read grant. The execution role receives read-only data access. The ordinary runtime role receives no execution-secret access.
 
-WP6 also hardens only the existing sensitive runner configuration surfaces that are present under `C:\actions-runner`: `.runner`, `.credentials`, `.credentials_rsaparams`, `.service`. Their original ACL descriptors are backed up locally under the owner-only `C:\ProgramData\OmniCIO\wp6` state directory. The hardened ACL permits only SYSTEM, local Administrators and the actual runner service identity; the runner identity retains `Modify` so the existing service can continue operating. The script does not change the runner registration, service account or work-directory ACL.
+WP6 explicitly denies both future runtime identities (`omni-cio-runtime` and `omni-cio-execution`) access to the entire `C:\actions-runner` tree. This closes the parent-directory delete/rename/replace path rather than protecting only individual configuration files. The deny is identity-specific and does not change the runner service identity or its own permissions.
+
+WP6 additionally hardens only the existing sensitive runner configuration surfaces that are present under `C:\actions-runner`: `.runner`, `.credentials`, `.credentials_rsaparams`, `.service`. Their original ACL descriptors and the original runner-root ACL are backed up locally under the owner-only `C:\ProgramData\OmniCIO\wp6` state directory. The hardened sensitive-file ACL permits only SYSTEM, local Administrators and the actual runner service identity; the runner identity retains `Modify` so the existing service can continue operating. The script does not change the runner registration, service account or normal CI work-directory behavior.
 
 ## 3. Preconditions
 
@@ -70,7 +72,8 @@ The script is fail-closed:
 - it never prints or stores the generated role-account passwords;
 - it disables both role anchors immediately;
 - it removes either role from the local Administrators group if necessary;
-- it backs up original reviewed runner-config ACL descriptors locally before hardening them;
+- it backs up the original runner-root and reviewed runner-config ACL descriptors locally before hardening them;
+- it adds inheritable explicit deny rules for the two future runtime identities on `C:\actions-runner`;
 - it hardens only the reviewed sensitive runner config files and keeps the actual runner identity authorized;
 - it does not change the GitHub runner registration or service account;
 - it creates no real secret.
@@ -89,6 +92,7 @@ Required result:
 - runner non-admin and distinct from OWNER;
 - runner process identity matches the configured runner service identity;
 - runtime/execution role anchors present and non-admin;
+- explicit runner-root deny rule present for runtime and execution identities;
 - sentinel present;
 - runner data-read attempt returns `ACCESS_DENIED`;
 - runtime has no direct execution-secret read grant;
@@ -118,7 +122,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\infrastructure\windows
 
 Rollback:
 
-- validates and restores the exact locally backed-up ACL descriptors for only `.runner`, `.credentials`, `.credentials_rsaparams`, `.service` entries present in the backup;
+- validates and restores the exact locally backed-up ACL descriptor for the runner root;
+- validates and restores exact ACL descriptors for only `.runner`, `.credentials`, `.credentials_rsaparams`, `.service` entries present in the backup;
 - refuses an unexpected runner-config path name or malformed security descriptor;
 - refuses to remove an account without the exact WP6 ownership marker;
 - refuses to remove an enabled role account;
@@ -134,6 +139,7 @@ If any WP6 audit or provisioning step fails:
 - do not add real secrets;
 - do not run the workflow elevated as a workaround;
 - do not grant Users/Authenticated Users/Everyone access to the execution-secret boundary;
+- do not remove the runtime/execution deny from the runner root as a workaround;
 - do not broaden runner-config write access;
 - do not change `trading_methods=false`;
 - do not add broker write credentials to GitHub Actions;
