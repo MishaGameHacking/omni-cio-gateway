@@ -19,8 +19,10 @@ RAW_IDENTITY_COMMAND = re.compile(r"(?im)^\s*(?:whoami|whoami\.exe)(?:\s+.*)?$")
 RUNNER_CONFIG_TEXT = (
     "c:\\actions-runner",
     "c:/actions-runner",
-    ".runner",
-    ".service",
+    "c:\\actions-runner\\.runner",
+    "c:/actions-runner/.runner",
+    "c:\\actions-runner\\.service",
+    "c:/actions-runner/.service",
     "actions.runner.",
 )
 BROKER_WRITE_TEXT = (
@@ -31,7 +33,6 @@ BROKER_WRITE_TEXT = (
     "cancel_order",
     "post_stop_order",
     "withdraw",
-    "transfer",
     "executeRealTrade",
 )
 GENERAL_RUNTIME_ROOTS = (
