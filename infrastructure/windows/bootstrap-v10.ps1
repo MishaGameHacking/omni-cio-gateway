@@ -165,6 +165,35 @@ function Get-RunnerHealth {
     }
 }
 
+function Get-RunnerServiceSid {
+    if ($env:OS -ne "Windows_NT") {
+        throw "RUNNER_SERVICE_IDENTITY_UNAVAILABLE"
+    }
+    $serviceNamePattern = '^actions\.runner\.'
+    $services = @(
+        Get-CimInstance Win32_Service -ErrorAction Stop |
+            Where-Object {
+                $pathName = [string]$_.PathName
+                $_.Name -match $serviceNamePattern -and
+                -not [string]::IsNullOrWhiteSpace($pathName) -and
+                $pathName.IndexOf(
+                    $runnerRoot,
+                    [System.StringComparison]::OrdinalIgnoreCase
+                ) -ge 0
+            }
+    )
+    if ($services.Count -ne 1) {
+        throw "RUNNER_SERVICE_IDENTITY_UNAVAILABLE"
+    }
+    try {
+        $account = [System.Security.Principal.NTAccount]::new([string]$services[0].StartName)
+        return $account.Translate([System.Security.Principal.SecurityIdentifier])
+    }
+    catch {
+        throw "RUNNER_SERVICE_IDENTITY_UNAVAILABLE"
+    }
+}
+
 function Invoke-VersionCommand {
     param([string]$FilePath, [string[]]$Arguments)
 
@@ -488,6 +517,57 @@ function New-AllowRule {
     )
 }
 
+function Set-AuditEvidenceFileAcl {
+    param(
+        [string]$Path,
+        [System.Security.Principal.SecurityIdentifier]$AuditSid
+    )
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        throw "WP7 audit evidence file is missing before ACL application."
+    }
+    $systemSid = [System.Security.Principal.SecurityIdentifier]::new("S-1-5-18")
+    $adminsSid = [System.Security.Principal.SecurityIdentifier]::new("S-1-5-32-544")
+    $none = [System.Security.AccessControl.InheritanceFlags]::None
+    $acl = [System.Security.AccessControl.FileSecurity]::new()
+    $acl.SetAccessRuleProtection($true, $false)
+    $acl.AddAccessRule((New-AllowRule -Identity $systemSid -Rights FullControl -Inheritance $none))
+    $acl.AddAccessRule((New-AllowRule -Identity $adminsSid -Rights FullControl -Inheritance $none))
+    $acl.AddAccessRule((New-AllowRule -Identity $AuditSid -Rights Read -Inheritance $none))
+    Set-Acl -LiteralPath $Path -AclObject $acl
+
+    $effective = Get-Acl -LiteralPath $Path -ErrorAction Stop
+    $rules = @(
+        $effective.GetAccessRules(
+            $true,
+            $true,
+            [System.Security.Principal.SecurityIdentifier]
+        ) | Where-Object { $_.IdentityReference.Value -eq $AuditSid.Value }
+    )
+    $readGranted = [bool](
+        $rules | Where-Object {
+            $_.AccessControlType -eq [System.Security.AccessControl.AccessControlType]::Allow -and
+            ($_.FileSystemRights -band [System.Security.AccessControl.FileSystemRights]::ReadData) -ne 0
+        }
+    )
+    $writeMask = [System.Security.AccessControl.FileSystemRights]::Write -bor `
+        [System.Security.AccessControl.FileSystemRights]::Delete -bor `
+        [System.Security.AccessControl.FileSystemRights]::ChangePermissions -bor `
+        [System.Security.AccessControl.FileSystemRights]::TakeOwnership
+    $writeGranted = [bool](
+        $rules | Where-Object {
+            $_.AccessControlType -eq [System.Security.AccessControl.AccessControlType]::Allow -and
+            ($_.FileSystemRights -band $writeMask) -ne 0
+        }
+    )
+    if (-not $readGranted) {
+        throw "WP7 audit evidence file does not grant read authority to CI runner."
+    }
+    if ($writeGranted) {
+        throw "WP7 audit evidence file unexpectedly grants write authority to CI runner."
+    }
+}
+
 function Set-OwnerOnlyDirectoryAcl {
     param([string]$Path)
 
@@ -523,14 +603,14 @@ function Set-RuntimeDirectoryAcl {
 function Test-OwnedDirectory {
     param([string]$Path)
 
-    if (-not (Test-Path -LiteralPath $Path -PathType Container)) {
-        return $false
-    }
-    $marker = Join-Path $Path $ownershipMarkerName
-    if (-not (Test-Path -LiteralPath $marker -PathType Leaf)) {
-        return $false
-    }
     try {
+        if (-not (Test-Path -LiteralPath $Path -PathType Container)) {
+            return $false
+        }
+        $marker = Join-Path $Path $ownershipMarkerName
+        if (-not (Test-Path -LiteralPath $marker -PathType Leaf)) {
+            return $false
+        }
         return (Get-Content -LiteralPath $marker -Raw -ErrorAction Stop).Trim() -eq $ownershipMarker
     }
     catch {
@@ -543,7 +623,8 @@ function Ensure-OwnedDirectory {
         [string]$Path,
         [ValidateSet("OWNER_ONLY", "RUNTIME")]
         [string]$AclClass,
-        [System.Security.Principal.SecurityIdentifier]$RuntimeSid
+        [System.Security.Principal.SecurityIdentifier]$RuntimeSid,
+        [System.Security.Principal.SecurityIdentifier]$AuditSid
     )
 
     $changed = $false
@@ -567,6 +648,8 @@ function Ensure-OwnedDirectory {
     else {
         Set-RuntimeDirectoryAcl -Path $Path -RuntimeSid $RuntimeSid
     }
+    $marker = Join-Path $Path $ownershipMarkerName
+    Set-AuditEvidenceFileAcl -Path $marker -AuditSid $AuditSid
     return $changed
 }
 
@@ -579,17 +662,25 @@ function Get-ServiceDefinitionsJson {
 }
 
 function Ensure-ExactFile {
-    param([string]$Path, [string]$ExpectedContent)
+    param(
+        [string]$Path,
+        [string]$ExpectedContent,
+        [System.Security.Principal.SecurityIdentifier]$AuditSid
+    )
 
+    $changed = $false
     if (Test-Path -LiteralPath $Path) {
         $existing = Get-Content -LiteralPath $Path -Raw -ErrorAction Stop
         if ($existing.Trim() -ne $ExpectedContent.Trim()) {
             throw "WP7 refuses to overwrite unexpected owned-file content."
         }
-        return $false
     }
-    Set-Content -LiteralPath $Path -Value $ExpectedContent -Encoding UTF8
-    return $true
+    else {
+        Set-Content -LiteralPath $Path -Value $ExpectedContent -Encoding UTF8
+        $changed = $true
+    }
+    Set-AuditEvidenceFileAcl -Path $Path -AuditSid $AuditSid
+    return $changed
 }
 
 function Get-ExistingInstalledPackages {
@@ -636,6 +727,7 @@ function Get-BootstrapStateJson {
 function Ensure-Wp7State {
     param(
         [System.Security.Principal.SecurityIdentifier]$RuntimeSid,
+        [System.Security.Principal.SecurityIdentifier]$AuditSid,
         [string[]]$InstalledPackages
     )
 
@@ -647,16 +739,26 @@ function Ensure-Wp7State {
         @($logsRoot, "RUNTIME"),
         @($servicesRoot, "OWNER_ONLY")
     )) {
-        if (Ensure-OwnedDirectory -Path $spec[0] -AclClass $spec[1] -RuntimeSid $RuntimeSid) {
+        if (Ensure-OwnedDirectory `
+            -Path $spec[0] `
+            -AclClass $spec[1] `
+            -RuntimeSid $RuntimeSid `
+            -AuditSid $AuditSid
+        ) {
             $changes += 1
         }
     }
-    if (Ensure-ExactFile -Path $serviceDefinitionsPath -ExpectedContent (Get-ServiceDefinitionsJson)) {
+    if (Ensure-ExactFile `
+        -Path $serviceDefinitionsPath `
+        -ExpectedContent (Get-ServiceDefinitionsJson) `
+        -AuditSid $AuditSid
+    ) {
         $changes += 1
     }
     if (Ensure-ExactFile `
         -Path $statePath `
-        -ExpectedContent (Get-BootstrapStateJson -InstalledPackages $InstalledPackages)
+        -ExpectedContent (Get-BootstrapStateJson -InstalledPackages $InstalledPackages) `
+        -AuditSid $AuditSid
     ) {
         $changes += 1
     }
@@ -664,13 +766,13 @@ function Ensure-Wp7State {
 }
 
 function Test-ServiceDefinitionsReady {
-    if (-not (Test-OwnedDirectory -Path $servicesRoot)) {
-        return $false
-    }
-    if (-not (Test-Path -LiteralPath $serviceDefinitionsPath -PathType Leaf)) {
-        return $false
-    }
     try {
+        if (-not (Test-OwnedDirectory -Path $servicesRoot)) {
+            return $false
+        }
+        if (-not (Test-Path -LiteralPath $serviceDefinitionsPath -PathType Leaf)) {
+            return $false
+        }
         $expected = Get-ServiceDefinitionsJson
         $actual = Get-Content -LiteralPath $serviceDefinitionsPath -Raw -ErrorAction Stop
         return $actual.Trim() -eq $expected.Trim()
@@ -681,13 +783,13 @@ function Test-ServiceDefinitionsReady {
 }
 
 function Test-BootstrapStateReady {
-    if (-not (Test-OwnedDirectory -Path $bootstrapRoot)) {
-        return $false
-    }
-    if (-not (Test-Path -LiteralPath $statePath -PathType Leaf)) {
-        return $false
-    }
     try {
+        if (-not (Test-OwnedDirectory -Path $bootstrapRoot)) {
+            return $false
+        }
+        if (-not (Test-Path -LiteralPath $statePath -PathType Leaf)) {
+            return $false
+        }
         $state = Get-Content -LiteralPath $statePath -Raw -ErrorAction Stop |
             ConvertFrom-Json -ErrorAction Stop
         return (
@@ -858,6 +960,7 @@ $runnerBefore = Get-RunnerHealth
 if (-not $runnerBefore.healthy) {
     throw "RUNNER_NOT_HEALTHY:$($runnerBefore.error_code)"
 }
+$runnerAuditSid = Get-RunnerServiceSid
 $runtimeBefore = Get-LocalRoleState -Name $runtimeName
 $executionBefore = Get-LocalRoleState -Name $executionName
 foreach ($roleSpec in @(
@@ -907,9 +1010,11 @@ $existingInstalled = @(Get-ExistingInstalledPackages)
 $installedByWp7 = @($existingInstalled + $installedThisRun | Sort-Object -Unique)
 $firstPassChanges = Ensure-Wp7State `
     -RuntimeSid $runtimeBefore.sid `
+    -AuditSid $runnerAuditSid `
     -InstalledPackages $installedByWp7
 $secondPassChanges = Ensure-Wp7State `
     -RuntimeSid $runtimeBefore.sid `
+    -AuditSid $runnerAuditSid `
     -InstalledPackages $installedByWp7
 $idempotenceVerified = ($secondPassChanges -eq 0)
 if (-not $idempotenceVerified) {
