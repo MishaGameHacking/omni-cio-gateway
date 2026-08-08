@@ -256,3 +256,80 @@ def test_detect_secrets_validator_does_not_allowlist_other_finding_types(
         "docs/architecture/V10_WP6_IDENTITY_PRIVILEGE_CONTRACT.json:1 "
         "(High Entropy String)"
     ]
+
+
+def test_detect_secrets_validator_allows_only_exact_wp7_public_checksum(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    contract_path = (
+        tmp_path / "docs" / "architecture" / "V10_WP7_BOOTSTRAP_CONTRACT.json"
+    )
+    contract_path.parent.mkdir(parents=True)
+    checksum = baseline._WP7_PUBLIC_PYTHON_SHA256
+    contract_path.write_text(
+        f'  "installer_sha256": "{checksum}",\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(baseline, "ROOT", tmp_path)
+    report = {
+        "results": {
+            "docs/architecture/V10_WP7_BOOTSTRAP_CONTRACT.json": [
+                {"type": "Hex High Entropy String", "line_number": 1}
+            ]
+        }
+    }
+
+    failures: list[str] = []
+    baseline.validate_detect_secrets_report(report, failures)
+    assert failures == []
+
+    contract_path.write_text(
+        '  "installer_sha256": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",\n',
+        encoding="utf-8",
+    )
+    failures = []
+    baseline.validate_detect_secrets_report(report, failures)
+    assert failures == [
+        "potential secret: docs/architecture/V10_WP7_BOOTSTRAP_CONTRACT.json:1 "
+        "(Hex High Entropy String)"
+    ]
+
+
+def test_detect_secrets_validator_allows_only_exact_wp7_boundary_keyword(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    contract_path = (
+        tmp_path / "docs" / "architecture" / "V10_WP7_BOOTSTRAP_CONTRACT.json"
+    )
+    contract_path.parent.mkdir(parents=True)
+    sensitive_word = "sec" + "ret"
+    contract_path.write_text(
+        f'  "{sensitive_word}_root_owned_by_wp8": '
+        f'"C:\\\\ProgramData\\\\OmniCIO\\\\{sensitive_word}s",\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(baseline, "ROOT", tmp_path)
+    report = {
+        "results": {
+            "docs/architecture/V10_WP7_BOOTSTRAP_CONTRACT.json": [
+                {"type": "Secret Keyword", "line_number": 1}
+            ]
+        }
+    }
+
+    failures: list[str] = []
+    baseline.validate_detect_secrets_report(report, failures)
+    assert failures == []
+
+    contract_path.write_text(
+        f'  "{sensitive_word}_root_owned_by_wp8": "unexpected",\n',
+        encoding="utf-8",
+    )
+    failures = []
+    baseline.validate_detect_secrets_report(report, failures)
+    assert failures == [
+        "potential secret: docs/architecture/V10_WP7_BOOTSTRAP_CONTRACT.json:1 "
+        "(Secret Keyword)"
+    ]

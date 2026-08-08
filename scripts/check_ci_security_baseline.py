@@ -23,6 +23,26 @@ SECRET_SCAN_EXCLUDE_PATTERN = (
 )
 GENERATED_SECRET_SCAN_PATH = re.compile(r"(^|[\\/])\.pytest_cache([\\/]|$)")
 _SENSITIVE_WORD = "sec" + "ret"
+_WP7_PUBLIC_PYTHON_SHA256 = "".join(
+    (
+        "14B3",
+        "E9A7",
+        "10A3",
+        "FCF0",
+        "BD9B",
+        "55AB",
+        "6B60",
+        "412B",
+        "D912",
+        "2756",
+        "3F81",
+        "3FC4",
+        "9040",
+        "CABC",
+        "0209",
+        "E0BD",
+    )
+)
 APPROVED_KEYWORD_LINES = {
     "docs/architecture/V10_WP6_IDENTITY_PRIVILEGE_CONTRACT.json": frozenset(
         {
@@ -30,6 +50,11 @@ APPROVED_KEYWORD_LINES = {
             f'"execution_{_SENSITIVE_WORD}_access": "READ_WHEN_PROVISIONED",',
             f'"{_SENSITIVE_WORD}_root": "C:\\\\ProgramData\\\\OmniCIO\\\\{_SENSITIVE_WORD}s",',
             f'"execution_{_SENSITIVE_WORD}_root": "C:\\\\ProgramData\\\\OmniCIO\\\\{_SENSITIVE_WORD}s\\\\execution",',
+        }
+    ),
+    "docs/architecture/V10_WP7_BOOTSTRAP_CONTRACT.json": frozenset(
+        {
+            f'"{_SENSITIVE_WORD}_root_owned_by_wp8": "C:\\\\ProgramData\\\\OmniCIO\\\\{_SENSITIVE_WORD}s",'
         }
     ),
     "infrastructure/windows/collect_wp6_identity_profile.ps1": frozenset(
@@ -47,6 +72,17 @@ APPROVED_KEYWORD_LINES = {
             f'"runner_execution_{_SENSITIVE_WORD}_read": "ACCESS_DENIED",',
             f'profile["boundaries"]["runner_execution_{_SENSITIVE_WORD}_read"] = "ACCESS_GRANTED"',
         }
+    ),
+}
+APPROVED_PUBLIC_CHECKSUM_LINES = {
+    "docs/architecture/V10_WP7_BOOTSTRAP_CONTRACT.json": frozenset(
+        {f'"installer_sha256": "{_WP7_PUBLIC_PYTHON_SHA256}",'}
+    ),
+    "scripts/check_v10_wp7_bootstrap_contract.py": frozenset(
+        {f'"{_WP7_PUBLIC_PYTHON_SHA256}"'}
+    ),
+    "tests/test_v10_wp7_bootstrap_contract.py": frozenset(
+        {f'"{_WP7_PUBLIC_PYTHON_SHA256}"'}
     ),
 }
 EXTERNAL_VENV_ROOT_COMMAND = 'VENV_ROOT="$(cygpath -u "$RUNNER_TEMP")"'
@@ -230,15 +266,16 @@ def _normalize_repo_filename(filename: str) -> str:
     return normalized
 
 
-def _approved_keyword_metadata_finding(filename: str, finding: dict[str, Any]) -> bool:
-    if finding.get("type") != "Secret Keyword":
-        return False
-    line_number = finding.get("line_number")
+def _approved_exact_line(
+    filename: str,
+    line_number: object,
+    approved_by_path: dict[str, frozenset[str]],
+) -> bool:
     if isinstance(line_number, bool) or not isinstance(line_number, int):
         return False
 
     normalized = _normalize_repo_filename(filename)
-    approved_lines = APPROVED_KEYWORD_LINES.get(normalized)
+    approved_lines = approved_by_path.get(normalized)
     if not approved_lines:
         return False
 
@@ -257,6 +294,26 @@ def _approved_keyword_metadata_finding(filename: str, finding: dict[str, Any]) -
         return False
 
     return lines[line_number - 1].strip() in approved_lines
+
+
+def _approved_keyword_metadata_finding(filename: str, finding: dict[str, Any]) -> bool:
+    if finding.get("type") != "Secret Keyword":
+        return False
+    return _approved_exact_line(
+        filename,
+        finding.get("line_number"),
+        APPROVED_KEYWORD_LINES,
+    )
+
+
+def _approved_public_checksum_finding(filename: str, finding: dict[str, Any]) -> bool:
+    if finding.get("type") != "Hex High Entropy String":
+        return False
+    return _approved_exact_line(
+        filename,
+        finding.get("line_number"),
+        APPROVED_PUBLIC_CHECKSUM_LINES,
+    )
 
 
 def validate_detect_secrets_report(
@@ -282,6 +339,8 @@ def validate_detect_secrets_report(
                 failures.append(f"invalid detect-secrets finding for {filename}")
                 continue
             if _approved_keyword_metadata_finding(filename, finding):
+                continue
+            if _approved_public_checksum_finding(filename, finding):
                 continue
             line_number = finding.get("line_number", "unknown")
             finding_type = finding.get("type", "unknown")
