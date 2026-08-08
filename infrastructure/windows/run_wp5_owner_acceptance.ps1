@@ -28,6 +28,89 @@ function Invoke-SelfElevated {
     Start-Process -FilePath "powershell.exe" -Verb RunAs -ArgumentList ($arguments -join " ")
 }
 
+function Get-NvidiaSmiPath {
+    $command = Get-Command nvidia-smi.exe -ErrorAction SilentlyContinue
+    if ($null -ne $command) {
+        return $command.Source
+    }
+    $candidate = Join-Path $env:ProgramFiles "NVIDIA Corporation\NVSMI\nvidia-smi.exe"
+    if (Test-Path -LiteralPath $candidate) {
+        return $candidate
+    }
+    throw "nvidia-smi.exe is required for WP5 combined-load start detection."
+}
+
+function Get-CpuLoadPercent {
+    $samples = @(Get-CimInstance -ClassName Win32_Processor -ErrorAction Stop | Select-Object -ExpandProperty LoadPercentage)
+    if ($samples.Count -eq 0) {
+        throw "CPU load telemetry is unavailable."
+    }
+    return [double](($samples | Measure-Object -Average).Average)
+}
+
+function Get-NvidiaUtilizationPercent {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$NvidiaSmiPath
+    )
+
+    $line = & $NvidiaSmiPath --query-gpu=utilization.gpu --format=csv,noheader,nounits 2>$null | Select-Object -First 1
+    if ([string]::IsNullOrWhiteSpace([string]$line)) {
+        throw "NVIDIA utilization telemetry is unavailable."
+    }
+
+    $value = 0.0
+    if (-not [double]::TryParse(([string]$line).Trim(), [ref]$value)) {
+        throw "NVIDIA utilization telemetry could not be parsed."
+    }
+    return $value
+}
+
+function Wait-ForCombinedLoadStart {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$NvidiaSmiPath,
+        [ValidateRange(30, 600)]
+        [int]$TimeoutSeconds = 300,
+        [ValidateRange(1, 100)]
+        [int]$MinimumCpuLoadPercent = 80,
+        [ValidateRange(1, 100)]
+        [int]$MinimumGpuLoadPercent = 20,
+        [ValidateRange(1, 10)]
+        [int]$ConsecutiveSamplesRequired = 3
+    )
+
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    $consecutiveSamples = 0
+
+    Write-Host "Waiting for AIDA64 combined CPU+GPU load to start automatically..." -ForegroundColor Yellow
+    Write-Host "No ENTER timing step is required. Start AIDA64 when ready."
+
+    while ((Get-Date) -lt $deadline) {
+        try {
+            $cpuLoad = Get-CpuLoadPercent
+            $gpuLoad = Get-NvidiaUtilizationPercent -NvidiaSmiPath $NvidiaSmiPath
+
+            if ($cpuLoad -ge $MinimumCpuLoadPercent -and $gpuLoad -ge $MinimumGpuLoadPercent) {
+                $consecutiveSamples += 1
+            } else {
+                $consecutiveSamples = 0
+            }
+
+            if ($consecutiveSamples -ge $ConsecutiveSamplesRequired) {
+                Write-Host "Combined CPU+GPU load detected. Starting the 30-minute evidence window automatically." -ForegroundColor Green
+                return
+            }
+        } catch {
+            $consecutiveSamples = 0
+        }
+
+        Start-Sleep -Seconds 2
+    }
+
+    throw "Combined CPU+GPU load was not detected within $TimeoutSeconds seconds. No acceptance evidence was recorded."
+}
+
 function New-TemporaryNodePowerScheme {
     param(
         [Parameter(Mandatory = $true)]
@@ -71,6 +154,7 @@ if (-not (Test-Path -LiteralPath $gpuSampler)) {
 if (-not (Test-Path -LiteralPath $Aida64Path)) {
     throw "AIDA64 Extreme not found at: $Aida64Path"
 }
+$nvidiaSmi = Get-NvidiaSmiPath
 
 $runnerService = Get-Service -ErrorAction SilentlyContinue |
     Where-Object { $_.Name -like "actions.runner*" -or $_.DisplayName -like "*Actions Runner*" } |
@@ -139,9 +223,10 @@ try {
     Write-Host "  Stress local disks   OFF"
     Write-Host "  Stress GPU(s)        ON"
     Write-Host ""
-    Write-Host "Configure the checkboxes and click Clear." -ForegroundColor Yellow
-    Write-Host "Then click Start in AIDA64 FIRST. Once the elapsed timer is visibly running, return here immediately."
-    Read-Host "Press ENTER only AFTER AIDA64 has already started"
+    Write-Host "Configure the checkboxes, click Clear, then click Start in AIDA64." -ForegroundColor Yellow
+    Write-Host "The launcher will detect the combined CPU+GPU load automatically. Do not press ENTER."
+
+    Wait-ForCombinedLoadStart -NvidiaSmiPath $nvidiaSmi
 
     $testStart = Get-Date
     $durationSeconds = $DurationMinutes * 60
@@ -157,7 +242,7 @@ try {
     $sampler = Start-Process -FilePath "powershell.exe" -ArgumentList ($samplerArgs -join " ") -WindowStyle Hidden -PassThru
 
     Write-Host ""
-    Write-Host "AIDA64 should already be running. Keep it running until the two completion beeps." -ForegroundColor Green
+    Write-Host "Combined load confirmed. Keep AIDA64 running until the two completion beeps." -ForegroundColor Green
     Write-Host "The telemetry window is now running for $DurationMinutes minutes."
     Write-Host "Stop immediately for a crash, thermal shutdown, or sustained temperature beyond the WP5 guardrails."
     Write-Host ""
