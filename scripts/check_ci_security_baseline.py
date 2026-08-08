@@ -57,6 +57,12 @@ APPROVED_KEYWORD_LINES = {
             f'"{_SENSITIVE_WORD}_root_owned_by_wp8": "C:\\\\ProgramData\\\\OmniCIO\\\\{_SENSITIVE_WORD}s",'
         }
     ),
+    "docs/architecture/V10_WP8_SECRET_STORE_CONTRACT.json": frozenset(
+        {
+            f'"{_SENSITIVE_WORD}_root": "C:\\\\ProgramData\\\\OmniCIO\\\\{_SENSITIVE_WORD}s",',
+            f'"{_SENSITIVE_WORD}_input_mode": "READ_HOST_AS_SECURE_STRING",',
+        }
+    ),
     "infrastructure/windows/collect_wp6_identity_profile.ps1": frozenset(
         {
             f'${_SENSITIVE_WORD}Sentinel = "C:\\ProgramData\\OmniCIO\\{_SENSITIVE_WORD}s\\execution\\wp6-ci-deny-sentinel.txt"'

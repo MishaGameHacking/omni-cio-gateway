@@ -241,3 +241,68 @@ WP0 requires canonical architecture/security/data-flow/threat/recovery docs, ADR
 ### Supersedes
 
 Supersedes ADR-018 only for *feature-program governance*. ADR-018 remains historical evidence and the V9 runtime remains controlled-maintenance/protected until replaced by accepted V10 boundaries.
+
+## ADR-020 — WP8 local secrets use DPAPI LocalMachine plus protected NTFS DACL authorization
+
+**Status:** proposed in WP8; becomes accepted only with the WP8 merge.  
+**Date:** 2026-08-09  
+**Current V10 WP:** WP8 — Local Secret Store and rotation.
+
+### Context
+
+WP8 must keep future broker/Telegram/local-encryption/external-source secret values outside GitHub and ordinary workflows while allowing future Windows service identities to consume only their reviewed class. OWNER enters values locally; `omni-cio-runtime` and `omni-cio-execution` are separate non-admin role anchors established by WP6. The Lenovo node is protected by the accepted WP5 disk/OS boundary.
+
+Classic DPAPI `CurrentUser` would bind OWNER-provisioned ciphertext to the OWNER profile. Classic DPAPI `LocalMachine` permits service-account consumption but does not itself authorize one local principal over another, so ciphertext access must be restricted by the filesystem. DPAPI-NG supports protection descriptors, but WP8 does not make the Personal Node depend on unproven standalone-local-account behavior before an explicit compatibility/recovery rehearsal exists.
+
+### Decision
+
+- Secret blobs use Windows DPAPI via `System.Security.Cryptography.ProtectedData` with `DataProtectionScope.LocalMachine`.
+- Protected NTFS DACLs are the mandatory same-machine authorization boundary; LocalMachine DPAPI is never described as per-user authorization.
+- `SYSTEM` and built-in `Administrators` retain FullControl as the local OS recovery/administration boundary.
+- `broker_read` grants data read only to `omni-cio-runtime`.
+- `broker_trading` grants data read only to `omni-cio-execution`.
+- Telegram/local-encryption/external-source classes remain sealed to OWNER/SYSTEM until their owning WP binds an explicit consumer.
+- The CI runner receives only enough ACL metadata access to audit the boundary and no secret `ReadData` or write/control rights.
+- Real values are accepted only through an interactive local SecureString prompt; no plaintext value parameter/environment/log/GitHub path is introduced.
+- WP8 acceptance uses generated non-secret sentinels and requires no real credential.
+
+### Alternatives considered
+
+- DPAPI `CurrentUser` — rejected for the shared service-secret store because OWNER provisioning would not naturally transfer to a separate future service identity and impersonation/profile loading adds operational fragility.
+- DPAPI-NG/SID protection — deferred as a possible hardening/migration option; it requires an explicit Lenovo compatibility/recovery rehearsal before becoming a dependency.
+- Windows Credential Manager or a third-party/cloud vault — not selected for WP8 because they add a new credential/service lifecycle without a demonstrated advantage for this single Personal Node.
+- plaintext/env/config-file secrets — rejected.
+
+### Security / money-authority impact
+
+This ADR creates storage/ACL capability only. It grants no broker-write method, no trading confirmation, no transfer/withdrawal capability, no service activation and no GitHub secret access. The future trading credential remains execution-role-only. Administrator/SYSTEM compromise is treated as compromise of the local OS trust boundary, not as a condition WP8 claims to defeat cryptographically.
+
+### Data / migration impact
+
+WP8 stores only binary DPAPI ciphertext under the local secret root plus sanitized lifecycle metadata outside the secret root. No secret value, ciphertext, secret-derived hash/fingerprint, SID, raw username or account identifier is committed to GitHub. A future protector change requires re-encryption and rollback/recovery evidence.
+
+### Operational impact
+
+OWNER provisioning/rotation is local and interactive. Future services will read only the class granted by ACL after their owning WP activates that consumer. Recovery keys/private encryption material remain separate from GitHub and separate from any encrypted backup they protect.
+
+### Failure mode
+
+If DPAPI protect/unprotect, ownership marker, lifecycle metadata or exact ACL verification fails, secret-store apply/rotation fails closed. If a value is suspected compromised, the affected contour stops and issuer-side revoke/rotate is required; local ciphertext deletion is not presented as remote revocation.
+
+### Rollback
+
+WP8 rollback removes only WP8-owned sentinel/evidence/class children and refuses if any active real secret is marked/present. It never removes the WP6 secret root, WP6 execution sentinel, WP6 identities/runner boundary or WP7 prerequisites.
+
+### Verification / Exit Gate evidence
+
+- static contract and PowerShell parse tests;
+- filesystem/Git secret scan;
+- generated broker-read and Telegram rotation rehearsal;
+- authoritative non-admin runner `ACCESS_DENIED` data-read attempts;
+- runtime/execution cross-class negative ACL tests;
+- no broad secret reader/write grants;
+- exact-head CI, OWNER apply/verify and post-merge Regression Shield.
+
+### Supersedes / superseded by
+
+Does not supersede ADR-007; it concretizes ADR-007 for V10 WP8 local Windows storage. No superseding ADR at adoption.
