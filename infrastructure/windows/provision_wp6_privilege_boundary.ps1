@@ -306,18 +306,54 @@ function Set-SentinelAcl {
         [System.Security.Principal.SecurityIdentifier]$RunnerSid
     )
 
-    $systemSid = [System.Security.Principal.SecurityIdentifier]::new("S-1-5-18")
-    $adminsSid = [System.Security.Principal.SecurityIdentifier]::new("S-1-5-32-544")
     $noneInheritance = [System.Security.AccessControl.InheritanceFlags]::None
     $nonePropagation = [System.Security.AccessControl.PropagationFlags]::None
 
-    $acl = [System.Security.AccessControl.FileSecurity]::new()
-    $acl.SetAccessRuleProtection($true, $false)
-    $acl.AddAccessRule((New-Rule -Identity $systemSid -Rights FullControl -Inheritance $noneInheritance -Propagation $nonePropagation))
-    $acl.AddAccessRule((New-Rule -Identity $adminsSid -Rights FullControl -Inheritance $noneInheritance -Propagation $nonePropagation))
-    $acl.AddAccessRule((New-Rule -Identity $ExecutionSid -Rights Read -Inheritance $noneInheritance -Propagation $nonePropagation))
-    $acl.AddAccessRule((New-Rule -Identity $RunnerSid -Rights ReadPermissions -Inheritance $noneInheritance -Propagation $nonePropagation))
+    # The execution directory is the authoritative ACL source. Re-enable inheritance
+    # first so a previously protected/broken sentinel can recover the reviewed
+    # execution ReadAndExecute ACE, then freeze the inherited rules as explicit rules.
+    $acl = Get-Acl -LiteralPath $sentinelPath -ErrorAction Stop
+    $acl.SetAccessRuleProtection($false, $true)
     Set-Acl -LiteralPath $sentinelPath -AclObject $acl
+
+    $acl = Get-Acl -LiteralPath $sentinelPath -ErrorAction Stop
+    $acl.SetAccessRuleProtection($true, $true)
+    $acl.SetAccessRule(
+        (New-Rule -Identity $RunnerSid -Rights ReadPermissions -Inheritance $noneInheritance -Propagation $nonePropagation)
+    )
+    Set-Acl -LiteralPath $sentinelPath -AclObject $acl
+
+    # Fail closed if Windows did not persist the intended execution grant or if
+    # the runner accidentally received file-data read authority.
+    $applied = Get-Acl -LiteralPath $sentinelPath -ErrorAction Stop
+    $rules = $applied.GetAccessRules(
+        $true,
+        $true,
+        [System.Security.Principal.SecurityIdentifier]
+    )
+    $executionReadMask = [int64][System.Security.AccessControl.FileSystemRights]::Read
+    $runnerDataReadMask = [int64][System.Security.AccessControl.FileSystemRights]::ReadData
+    $executionReadPresent = $false
+    $runnerDataReadPresent = $false
+    foreach ($rule in $rules) {
+        if ($rule.AccessControlType -ne [System.Security.AccessControl.AccessControlType]::Allow) {
+            continue
+        }
+        $ruleSid = [string]$rule.IdentityReference.Value
+        $rights = [int64]$rule.FileSystemRights
+        if ($ruleSid -eq $ExecutionSid.Value -and (($rights -band $executionReadMask) -ne 0)) {
+            $executionReadPresent = $true
+        }
+        if ($ruleSid -eq $RunnerSid.Value -and (($rights -band $runnerDataReadMask) -ne 0)) {
+            $runnerDataReadPresent = $true
+        }
+    }
+    if (-not $executionReadPresent) {
+        throw "Fail-closed: execution role read grant was not persisted on the WP6 sentinel."
+    }
+    if ($runnerDataReadPresent) {
+        throw "Fail-closed: runner received sentinel data-read authority."
+    }
 }
 
 $runner = Get-RunnerServiceSafe
