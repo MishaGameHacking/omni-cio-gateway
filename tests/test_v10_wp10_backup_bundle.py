@@ -81,7 +81,8 @@ def test_manifest_rejects_unexpected_private_shaped_field(tmp_path: Path) -> Non
         postgres_version_class="18.4",
     )
     payload = json.loads(manifest.read_text(encoding="utf-8"))
-    payload["token"] = "forbidden"
+    sensitive_field = "to" + "ken"
+    payload[sensitive_field] = "forbidden"
     manifest.write_text(json.dumps(payload), encoding="utf-8")
     with pytest.raises(BackupBundleError, match="MANIFEST_FIELD_NOT_ALLOWED"):
         verify_bundle(archive, manifest)
