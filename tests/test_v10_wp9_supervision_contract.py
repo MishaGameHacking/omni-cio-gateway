@@ -118,6 +118,13 @@ def test_provisioner_has_idempotence_and_guarded_reboot() -> None:
     assert '"OmniCIO.V10.Execution"' not in text
 
 
+def test_sealed_slot_idempotence_tolerates_provider_trigger_metadata() -> None:
+    text = PROVISIONER.read_text(encoding="utf-8")
+    assert "provider-specific serialization detail" in text
+    assert "elseif ($triggers.Count -ne 0)" not in text
+    assert "if ($enabled -ne $ExpectedEnabled)" in text
+
+
 def test_rollback_is_marker_guarded_and_preserves_prior_boundaries() -> None:
     text = ROLLBACK.read_text(encoding="utf-8")
     assert "OMNI-CIO-V10-WP9-OWNED-v1" in text
