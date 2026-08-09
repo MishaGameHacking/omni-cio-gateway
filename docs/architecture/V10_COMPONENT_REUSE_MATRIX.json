@@ -107,9 +107,9 @@
       "id": "COMP-V10-INFRASTRUCTURE-ROOT",
       "current_paths": ["infrastructure/"],
       "role": "reserved V10 node/bootstrap/deployment infrastructure",
-      "decision": "TBD_AT_OWNING_WP",
-      "preferred_choices": ["WRAP_ADAPTER", "EXTRACT_TO_CORE"],
-      "rewrite_default": "NOT_APPLICABLE_FOR_NEW_RESERVED_ROOT",
+      "decision": "REUSE_AS_IS",
+      "reason": "WP5-WP8 established and accepted the Lenovo node, privilege, bootstrap and local-secret infrastructure; WP9 extends those reviewed boundaries narrowly rather than replacing them",
+      "financial_semantics_change_allowed": false,
       "owning_wp": "Block C / WP4 deployment boundary"
     },
     {
