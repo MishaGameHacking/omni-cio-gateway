@@ -73,7 +73,7 @@ def validate_contract(data: dict[str, Any], failures: list[str]) -> None:
             "health_run_level": "Limited",
             "periodic_health_interval_minutes": 1440,
             "component_restart_count": 3,
-            "component_restart_interval_seconds": 15,
+            "component_restart_interval_seconds": 60,
             "component_execution_limit_minutes": 10,
             "multiple_instances": "IgnoreNew",
         }
