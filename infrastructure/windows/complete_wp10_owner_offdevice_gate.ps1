@@ -7,6 +7,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
+$SealedWriter = "NOT_READY_UNTIL_PRODUCT_DB_AND_BACKUP_JOB_BINDING"
 
 function Test-IsAdministrator {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -48,6 +49,7 @@ function Write-Result {
     Write-Output "WP10 OWNER off-device gate: $($Result.status)"
     Write-Output "Target apply: $($Result.target_apply_pass)"
     Write-Output "PostgreSQL off-device restore rehearsal: $($Result.restore_rehearsal_pass)"
+    Write-Output "Production backup writer: SEALED"
     Write-Output "Recovery-key value collected: NO"
     Write-Output "Real secrets/private portfolio data used: NO"
 }
@@ -64,6 +66,9 @@ $result = @{
     offdevice_copy_pass = $false
     offdevice_cleanup_pass = $false
     recovery_key_custody_confirmed = [bool]$RecoveryKeyCustodyConfirmed
+    production_backup_writer_identity = $SealedWriter
+    runtime_payload_access_granted = $false
+    runner_payload_access_granted = $false
     recovery_key_value_collected = $false
     secret_value_collected = $false
     private_portfolio_data_collected = $false
@@ -96,6 +101,8 @@ try {
         $prepared.status -ne "READY" -or
         $prepared.reason_code -ne "TARGET_APPLY_PASS" -or
         -not [bool]$prepared.applied -or
+        [string]$prepared.production_backup_writer_identity -ne $SealedWriter -or
+        [bool]$prepared.runtime_payload_access_granted -or
         [bool]$prepared.runner_payload_access_granted -or
         [bool]$prepared.private_payload_used -or
         [bool]$prepared.secret_value_used -or
