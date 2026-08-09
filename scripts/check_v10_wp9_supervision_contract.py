@@ -80,7 +80,10 @@ def validate_contract(data: dict[str, Any], failures: list[str]) -> None:
         for key, value in expected.items():
             if supervision.get(key) != value:
                 failures.append(f"supervision.{key} mismatch")
-        for key in ("third_party_service_wrapper_allowed", "infinite_restart_loop_allowed"):
+        for key in (
+            "third_party_service_wrapper_allowed",
+            "infinite_restart_loop_allowed",
+        ):
             _require_false(supervision, key, failures)
         if supervision.get("startup_trigger_required") is not True:
             failures.append("startup trigger must be required")
@@ -114,7 +117,9 @@ def validate_contract(data: dict[str, Any], failures: list[str]) -> None:
     tasks = data.get("tasks")
     if not isinstance(tasks, dict) or tasks != EXPECTED_TASKS:
         failures.append("task map mismatch")
-    if isinstance(tasks, dict) and any("Execution" in str(value) for value in tasks.values()):
+    if isinstance(tasks, dict) and any(
+        "Execution" in str(value) for value in tasks.values()
+    ):
         failures.append("WP9 may not define an execution task")
 
     components = data.get("components")
@@ -197,7 +202,9 @@ def validate_contract(data: dict[str, Any], failures: list[str]) -> None:
             if reboot.get(key) is not True:
                 failures.append(f"reboot_rehearsal.{key} must be true")
         if reboot.get("manual_application_terminal_launch_allowed") is not False:
-            failures.append("manual application launch must be forbidden during reboot gate")
+            failures.append(
+                "manual application launch must be forbidden during reboot gate"
+            )
 
     privacy = data.get("privacy")
     if not isinstance(privacy, dict):
@@ -269,7 +276,11 @@ def validate_assets(failures: list[str]) -> None:
         ),
         failures,
     )
-    _require_text(GUARD, ("sealed until its owning V10 work package", "exit 23"), failures)
+    _require_text(
+        GUARD,
+        ("sealed until its owning V10 work package", "exit 23"),
+        failures,
+    )
     _require_text(WORKER, ("BLOCKED", "RECOVERED", "process_id", "exit 42"), failures)
     _require_text(
         COLLECTOR,
@@ -280,7 +291,11 @@ def validate_assets(failures: list[str]) -> None:
         ),
         failures,
     )
-    _require_text(ASSESSOR, ("POST_REBOOT_FRESH_STATUS_NOT_PROVEN", "EXECUTION_TASK_PRESENT"), failures)
+    _require_text(
+        ASSESSOR,
+        ("POST_REBOOT_FRESH_STATUS_NOT_PROVEN", "EXECUTION_TASK_PRESENT"),
+        failures,
+    )
 
 
 def main() -> int:
