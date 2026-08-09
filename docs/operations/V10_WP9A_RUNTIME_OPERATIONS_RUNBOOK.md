@@ -73,6 +73,15 @@ At minimum surface:
 - WP5 thermal limits and manufacturer-lower-limit precedence;
 - whether a pending reboot should block new heavy work.
 
+## OWNER alert policy
+
+WP9A must never silently swallow a critical crash-loop or maintenance-block reason. Until the later OWNER interaction/notification WP exists, the accepted alert surfaces are deliberately local and non-private:
+
+- WP9 health evidence with a stable machine reason code;
+- the WP9A local operations journal with a stable severity/component/state/reason code.
+
+External Telegram/Web/push delivery is explicitly `NOT_READY_UNTIL_OWNING_INTERACTION_WP`; WP9A must not install or activate a later interaction runtime merely to claim alert delivery. Alert evidence must never contain secret values, private portfolio payloads or account identifiers.
+
 ## Logging/privacy
 
 WP9A operations evidence is local-first JSONL. The contract allowlist is authoritative. Logs are bounded to 10 MiB per file, seven files total and 30 days maximum local retention for this WP9A operations class.
@@ -114,6 +123,7 @@ PASS requires:
 - PostgreSQL major 18 state known and compatible;
 - absent Ollama accepted as NOT_READY without installation;
 - WP9 supervision/restart boundary still valid;
+- critical crash-loop/maintenance states have a stable local OWNER-alert reason surface while external delivery remains honestly NOT_READY;
 - bounded log allowlist/rotation/retention/hash-chain tests green;
 - exact-head required CI green;
 - squash merge and post-merge Regression Shield green.
