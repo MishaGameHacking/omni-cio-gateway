@@ -281,25 +281,49 @@ try {
 
     Write-RecoveryPhase -Name "START_TEMP_CLUSTER"
     $port = Get-FreeLoopbackPort
-    # PowerShell 5.1 native-command pipelines can remain open when a spawned
-    # background server inherits redirected handles. Launch postgres itself as
-    # an asynchronous process with dedicated ephemeral log files instead.
-    $postgresProcess = Start-Process -FilePath $postgres -ArgumentList @(
-        "-D", $dataDir,
-        "-h", "127.0.0.1",
-        "-p", "$port"
-    ) -RedirectStandardOutput $serverLog -RedirectStandardError $serverErrorLog `
-        -WindowStyle Hidden -PassThru
-    if ($null -eq $postgresProcess) {
-        throw "POSTGRES_START_PROCESS_MISSING"
+    if ($ownerMode) {
+        # postgres.exe refuses to run directly from an elevated Windows token.
+        # pg_ctl is the PostgreSQL-supported Windows launcher for this case and
+        # drops the dangerous administrative privileges before starting the
+        # server. -l prevents the detached server from inheriting PowerShell's
+        # redirected native-command handles.
+        $clusterStartTriggered = $true
+        try {
+            Invoke-NativeChecked -FilePath $pgCtl -Arguments @(
+                "start",
+                "-D", $dataDir,
+                "-l", $serverLog,
+                "-w",
+                "-t", "$PostgresWaitSeconds",
+                "-o", "-h 127.0.0.1 -p $port"
+            )
+        }
+        catch {
+            throw "POSTGRES_PG_CTL_START_FAILED"
+        }
     }
-    $clusterStartTriggered = $true
+    else {
+        # PowerShell 5.1 native-command pipelines can remain open when a
+        # spawned background server inherits redirected handles. The normal
+        # non-admin CI path therefore launches postgres asynchronously with
+        # dedicated ephemeral log files.
+        $postgresProcess = Start-Process -FilePath $postgres -ArgumentList @(
+            "-D", $dataDir,
+            "-h", "127.0.0.1",
+            "-p", "$port"
+        ) -RedirectStandardOutput $serverLog -RedirectStandardError $serverErrorLog `
+            -WindowStyle Hidden -PassThru
+        if ($null -eq $postgresProcess) {
+            throw "POSTGRES_START_PROCESS_MISSING"
+        }
+        $clusterStartTriggered = $true
+    }
 
     Write-RecoveryPhase -Name "WAIT_TEMP_CLUSTER_READY"
     $deadline = [DateTime]::UtcNow.AddSeconds($PostgresWaitSeconds)
     $ready = $false
     do {
-        if ($postgresProcess.HasExited) {
+        if ($null -ne $postgresProcess -and $postgresProcess.HasExited) {
             throw "POSTGRES_START_PROCESS_EXITED"
         }
         & $pgIsReady --host=127.0.0.1 --port=$port --username=wp10_owner `
