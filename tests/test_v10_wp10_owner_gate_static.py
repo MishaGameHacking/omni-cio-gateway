@@ -41,6 +41,28 @@ def test_owner_target_acl_stays_system_admin_only_before_product_binding() -> No
     assert "EXISTING_UNOWNED_BACKUP_ROOT_REFUSED" in script
 
 
+def test_synthetic_rehearsal_is_bounded_and_phase_observable() -> None:
+    script = _read("rehearse_wp10_recovery.ps1")
+    assert '$PostgresWaitSeconds = 30' in script
+    assert '$env:PGCONNECT_TIMEOUT = "5"' in script
+    assert '"--no-sync"' in script
+    assert '"--no-instructions"' in script
+    assert '"--timeout=$PostgresWaitSeconds"' in script
+    assert '"--no-password"' in script
+    assert "WP10_RECOVERY_PHASE=" in script
+    for phase in (
+        "INITIALIZE_TEMP_CLUSTER",
+        "START_TEMP_CLUSTER",
+        "DUMP_SOURCE_DATABASE",
+        "RESTORE_OFFDEVICE_BUNDLE",
+        "VERIFY_RESTORE_PROBE",
+        "STOP_TEMP_CLUSTER",
+        "CLEAN_TEMP_STATE",
+        "COMPLETE",
+    ):
+        assert phase in script
+
+
 def test_owner_rehearsal_stays_synthetic_and_restores_from_offdevice_copy() -> None:
     script = _read("rehearse_wp10_recovery.ps1")
     assert "OWNER_OFFDEVICE_RECOVERY_REHEARSAL" in script
