@@ -7,6 +7,7 @@ $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
 $EvidencePath = "C:\ProgramData\OmniCIO\wp10\offdevice-target.json"
+$RehearsalEvidencePath = "C:\ProgramData\OmniCIO\wp10\offdevice-rehearsal.json"
 
 function Write-Result {
     param([Parameter(Mandatory = $true)][hashtable]$Result)
@@ -20,6 +21,7 @@ function Write-Result {
     Write-Output "Reason: $($Result.reason_code)"
     Write-Output "BitLocker fully encrypted: $($Result.bitlocker_fully_encrypted)"
     Write-Output "BitLocker protection on: $($Result.bitlocker_protection_on)"
+    Write-Output "OWNER restore rehearsal: $($Result.owner_offdevice_rehearsal_pass)"
     Write-Output "Runner read denied: $($Result.runner_read_denied)"
     Write-Output "Runner write denied: $($Result.runner_write_denied)"
 }
@@ -31,6 +33,8 @@ $result = @{
     status = "FAIL"
     reason_code = "OFFDEVICE_AUDIT_NOT_COMPLETED"
     owner_evidence_present = $false
+    owner_rehearsal_evidence_present = $false
+    owner_offdevice_rehearsal_pass = $false
     target_present = $false
     non_system_volume = $false
     data_volume = $false
@@ -95,6 +99,62 @@ try {
             throw "OWNER_OFFDEVICE_PRIVACY_BOUNDARY_VIOLATION"
         }
     }
+
+    if (-not (Test-Path -LiteralPath $RehearsalEvidencePath -PathType Leaf)) {
+        throw "OWNER_OFFDEVICE_REHEARSAL_EVIDENCE_MISSING"
+    }
+    $result.owner_rehearsal_evidence_present = $true
+    try {
+        $rehearsal = Get-Content -LiteralPath $RehearsalEvidencePath -Raw |
+            ConvertFrom-Json
+    }
+    catch {
+        throw "OWNER_OFFDEVICE_REHEARSAL_EVIDENCE_INVALID"
+    }
+
+    if (
+        $rehearsal.schema_version -ne "1" -or
+        $rehearsal.work_package -ne "WP10" -or
+        $rehearsal.evidence_class -ne "OWNER_OFFDEVICE_RECOVERY_REHEARSAL" -or
+        $rehearsal.target_class -ne $evidence.target_class -or
+        $rehearsal.target_mount_point -ne $evidence.target_mount_point
+    ) {
+        throw "OWNER_OFFDEVICE_REHEARSAL_EVIDENCE_INVALID"
+    }
+    foreach ($field in @(
+        "bundle_integrity_pass",
+        "corruption_rejected",
+        "offdevice_copy_pass",
+        "restore_probe_pass",
+        "offdevice_cleanup_pass",
+        "temporary_state_cleaned"
+    )) {
+        if (-not [bool]$rehearsal.$field) {
+            throw "OWNER_OFFDEVICE_REHEARSAL_INCOMPLETE"
+        }
+    }
+    foreach ($field in @(
+        "real_secret_values_used",
+        "private_portfolio_data_used",
+        "account_identifiers_used",
+        "production_database_accessed",
+        "recovery_key_value_used"
+    )) {
+        if ([bool]$rehearsal.$field) {
+            throw "OWNER_OFFDEVICE_REHEARSAL_PRIVACY_BOUNDARY_VIOLATION"
+        }
+    }
+    try {
+        $appliedAt = [DateTimeOffset]::Parse([string]$evidence.applied_at_utc)
+        $rehearsedAt = [DateTimeOffset]::Parse([string]$rehearsal.rehearsed_at_utc)
+    }
+    catch {
+        throw "OWNER_OFFDEVICE_EVIDENCE_TIMESTAMP_INVALID"
+    }
+    if ($rehearsedAt -lt $appliedAt) {
+        throw "OWNER_REHEARSAL_PREDATES_TARGET_APPLY"
+    }
+    $result.owner_offdevice_rehearsal_pass = $true
 
     $mountPoint = [string]$evidence.target_mount_point
     if ($mountPoint -notmatch "^[A-Z]:$") {
