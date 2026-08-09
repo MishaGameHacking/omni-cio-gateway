@@ -145,13 +145,19 @@ foreach ($id in @("core_api", "web", "telegram", "watchtower", "ai_worker")) {
 
 $executionTaskPresent = $false
 try {
-    $executionTaskPresent = $null -ne (Get-ScheduledTask `
-        -TaskPath $taskPath `
-        -TaskName "OmniCIO.V10.Execution" `
-        -ErrorAction SilentlyContinue)
+    $scheduler = New-Object -ComObject "Schedule.Service"
+    $scheduler.Connect()
+    $folder = $scheduler.GetFolder("\OmniCIO\V10")
+    [void]$folder.GetTask("OmniCIO.V10.Execution")
+    $executionTaskPresent = $true
 }
-catch { $executionTaskPresent = $true }
-if ($executionTaskPresent) { $reasons += "EXECUTION_TASK_PRESENT" }
+catch {
+    $fileNotFoundHresult = -2147024894
+    if ([int]$_.Exception.HResult -ne $fileNotFoundHresult) {
+        $executionTaskPresent = $true
+    }
+}
+if ($executionTaskPresent) { $reasons += "EXECUTION_TASK_PRESENT_OR_UNPROVEN_ABSENCE" }
 
 $runtimeRole = Get-LocalRoleSummary -Name "omni-cio-runtime"
 $executionRole = Get-LocalRoleSummary -Name "omni-cio-execution"
