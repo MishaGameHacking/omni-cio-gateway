@@ -58,7 +58,11 @@ def assess(profile: dict, contract: dict) -> dict:
         blockers.append("SYNTHETIC_OFFDEVICE_MODE_INVALID")
 
     duration = profile.get("duration_ms")
-    if isinstance(duration, bool) or not isinstance(duration, (int, float)) or duration < 0:
+    if (
+        isinstance(duration, bool)
+        or not isinstance(duration, (int, float))
+        or duration < 0
+    ):
         blockers.append("REHEARSAL_DURATION_INVALID")
     else:
         rto_ms = int(contract["recovery_objectives"]["rto_minutes"]) * 60 * 1000
