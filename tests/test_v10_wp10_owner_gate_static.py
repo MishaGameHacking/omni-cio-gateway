@@ -46,11 +46,17 @@ def test_synthetic_rehearsal_is_bounded_and_phase_observable() -> None:
     assert '$PostgresWaitSeconds = 30' in script
     assert '$env:PGCONNECT_TIMEOUT = "5"' in script
     assert '$serverLog = Join-Path $root "postgres-server.log"' in script
+    assert '$serverErrorLog = Join-Path $root "postgres-server-error.log"' in script
+    assert '$postgres = Resolve-PostgresTool -Name "postgres"' in script
     assert '$pgIsReady = Resolve-PostgresTool -Name "pg_isready"' in script
     assert '"--no-sync"' in script
     assert '"--no-instructions"' in script
-    assert '"--log=$serverLog"' in script
-    assert '"--no-wait"' in script
+    assert '$postgresProcess = Start-Process -FilePath $postgres' in script
+    assert '-RedirectStandardOutput $serverLog' in script
+    assert '-RedirectStandardError $serverErrorLog' in script
+    assert '-WindowStyle Hidden -PassThru' in script
+    assert '$postgresProcess.HasExited' in script
+    assert '$postgresProcess.WaitForExit($PostgresWaitSeconds * 1000)' in script
     assert '--timeout=1 --quiet' in script
     assert 'throw "POSTGRES_START_READINESS_TIMEOUT"' in script
     assert '"--no-password"' in script
