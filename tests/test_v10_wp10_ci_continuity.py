@@ -27,7 +27,10 @@ def test_wp10_continuity_workflow_is_self_hosted_and_fail_closed() -> None:
     assert "github.event.pull_request.head.repo.full_name == github.repository" in workflow
     assert "permissions:\n  contents: read" in workflow
     assert "${{ secrets." not in workflow
-    assert "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File {0}" in workflow
+    assert (
+        "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command"
+        in workflow
+    )
     assert "C:\\Program Files\\Python314\\python.exe" in workflow
     assert 'Get-Command "py.exe"' in workflow
     assert "WP10_CONTINUITY_PYTHON_VERSION_MISMATCH" in workflow
