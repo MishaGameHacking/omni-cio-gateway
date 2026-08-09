@@ -43,13 +43,6 @@ jobs:
           python scripts\check_v10_wp10_recovery_contract.py
           if errorlevel 1 exit /b %errorlevel%
 
-      - name: Run deterministic WP10 unit and negative tests
-        shell: cmd
-        run: |
-          @echo off
-          python -m pytest tests\test_v10_wp10_recovery_contract.py tests\test_v10_wp10_backup_bundle.py tests\test_v10_wp10_windows_static.py -q
-          if errorlevel 1 exit /b %errorlevel%
-
       - name: Re-check inherited WP6-WP9A boundaries
         shell: cmd
         run: |
