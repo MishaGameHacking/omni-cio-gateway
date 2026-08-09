@@ -1,10 +1,22 @@
 [CmdletBinding()]
 param(
+    [switch]$UsePreparedOffdeviceTarget,
     [switch]$AsJson
 )
 
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
+
+$TargetEvidencePath = "C:\ProgramData\OmniCIO\wp10\offdevice-target.json"
+$RehearsalEvidencePath = "C:\ProgramData\OmniCIO\wp10\offdevice-rehearsal.json"
+
+function Test-IsAdministrator {
+    $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $principal = New-Object Security.Principal.WindowsPrincipal($identity)
+    return $principal.IsInRole(
+        [Security.Principal.WindowsBuiltInRole]::Administrator
+    )
+}
 
 function Invoke-NativeChecked {
     param(
@@ -66,6 +78,76 @@ function Get-SingleArchive {
     return $archives[0]
 }
 
+function Get-PreparedOffdeviceDirectory {
+    if (-not (Test-IsAdministrator)) {
+        throw "OWNER_ADMIN_REQUIRED"
+    }
+    if (-not (Test-Path -LiteralPath $TargetEvidencePath -PathType Leaf)) {
+        throw "OWNER_OFFDEVICE_EVIDENCE_MISSING"
+    }
+
+    try {
+        $evidence = Get-Content -LiteralPath $TargetEvidencePath -Raw |
+            ConvertFrom-Json
+    }
+    catch {
+        throw "OWNER_OFFDEVICE_EVIDENCE_INVALID"
+    }
+
+    if (
+        $evidence.schema_version -ne "1" -or
+        $evidence.work_package -ne "WP10" -or
+        $evidence.evidence_class -ne "OFFDEVICE_OWNER_APPLY" -or
+        $evidence.target_class -ne "BITLOCKER_OWNER_CONTROLLED_NON_SYSTEM_VOLUME"
+    ) {
+        throw "OWNER_OFFDEVICE_EVIDENCE_INVALID"
+    }
+    foreach ($field in @(
+        "non_system_volume",
+        "data_volume",
+        "bitlocker_fully_encrypted",
+        "bitlocker_protection_on",
+        "recovery_key_custody_confirmed"
+    )) {
+        if (-not [bool]$evidence.$field) {
+            throw "OWNER_OFFDEVICE_EVIDENCE_INCOMPLETE"
+        }
+    }
+    if ([bool]$evidence.runner_payload_access_granted) {
+        throw "OWNER_EVIDENCE_RUNNER_ACCESS_ENABLED"
+    }
+
+    $mountPoint = [string]$evidence.target_mount_point
+    if ($mountPoint -notmatch "^[A-Z]:$") {
+        throw "OWNER_TARGET_MOUNT_POINT_INVALID"
+    }
+    $systemRoot = [System.IO.Path]::GetPathRoot($env:SystemRoot).TrimEnd("\")
+    if ($mountPoint -eq $systemRoot) {
+        throw "SYSTEM_VOLUME_FORBIDDEN"
+    }
+
+    $bitlocker = Get-BitLockerVolume -MountPoint $mountPoint -ErrorAction Stop
+    if ($bitlocker.VolumeType.ToString() -ne "Data") {
+        throw "TARGET_NOT_DATA_VOLUME"
+    }
+    if ($bitlocker.VolumeStatus.ToString() -ne "FullyEncrypted") {
+        throw "TARGET_NOT_FULLY_ENCRYPTED"
+    }
+    if ($bitlocker.ProtectionStatus.ToString() -ne "On") {
+        throw "TARGET_BITLOCKER_PROTECTION_OFF"
+    }
+
+    $backupRoot = Join-Path "$mountPoint\" ([string]$evidence.backup_root_name)
+    if (-not (Test-Path -LiteralPath $backupRoot -PathType Container)) {
+        throw "OWNER_BACKUP_ROOT_MISSING"
+    }
+    return @{
+        path = $backupRoot
+        mount_point = $mountPoint
+        target_class = [string]$evidence.target_class
+    }
+}
+
 function Write-Result {
     param([Parameter(Mandatory = $true)][hashtable]$Result)
 
@@ -78,29 +160,44 @@ function Write-Result {
     Write-Output "PostgreSQL version class: $($Result.postgres_version_class)"
     Write-Output "Bundle integrity: $($Result.bundle_integrity_pass)"
     Write-Output "Corruption rejection: $($Result.corruption_rejected)"
+    Write-Output "Off-device copy: $($Result.offdevice_copy_pass)"
     Write-Output "Restore probe: $($Result.restore_probe_pass)"
+    Write-Output "Off-device cleanup: $($Result.offdevice_cleanup_pass)"
     Write-Output "Real secrets used: NO"
     Write-Output "Private portfolio data used: NO"
 }
 
 $startedAt = [DateTime]::UtcNow
+$ownerMode = [bool]$UsePreparedOffdeviceTarget
 $result = @{
     schema_version = "1"
     work_package = "WP10"
-    mode = "SYNTHETIC_RECOVERY_REHEARSAL"
+    mode = $(
+        if ($ownerMode) {
+            "OWNER_OFFDEVICE_RECOVERY_REHEARSAL"
+        }
+        else {
+            "SYNTHETIC_RECOVERY_REHEARSAL"
+        }
+    )
     status = "FAIL"
     reason_code = "REHEARSAL_NOT_COMPLETED"
     postgres_version_class = "UNKNOWN"
     bundle_integrity_pass = $false
     corruption_rejected = $false
+    offdevice_copy_pass = $false
     restore_probe_pass = $false
+    offdevice_cleanup_pass = $false
     source_restore_separate = $true
     temporary_state_cleaned = $false
+    owner_target_used = $ownerMode
     real_secret_values_used = $false
     private_portfolio_data_used = $false
     account_identifiers_used = $false
     production_database_accessed = $false
-    offdevice_mode = "SYNTHETIC_TEMP_ONLY"
+    offdevice_mode = $(
+        if ($ownerMode) { "OWNER_ENCRYPTED_TARGET" } else { "SYNTHETIC_TEMP_ONLY" }
+    )
     duration_ms = 0
 }
 
@@ -108,6 +205,9 @@ $root = $null
 $dataDir = $null
 $clusterStarted = $false
 $pgCtl = $null
+$destinationArchive = $null
+$destinationManifest = $null
+$ownerTarget = $null
 
 try {
     $initDb = Resolve-PostgresTool -Name "initdb"
@@ -117,7 +217,8 @@ try {
     $pgDump = Resolve-PostgresTool -Name "pg_dump"
     $pgRestore = Resolve-PostgresTool -Name "pg_restore"
 
-    $versionOutput = Invoke-NativeChecked -FilePath $psql -Arguments @("--version") -CaptureOutput
+    $versionOutput = Invoke-NativeChecked -FilePath $psql -Arguments @("--version") `
+        -CaptureOutput
     $versionText = ($versionOutput | Out-String).Trim()
     if ($versionText -notmatch "([0-9]+\.[0-9]+)") {
         throw "POSTGRES_VERSION_UNKNOWN"
@@ -132,12 +233,24 @@ try {
     if ([string]::IsNullOrWhiteSpace($tempBase)) {
         $tempBase = [System.IO.Path]::GetTempPath()
     }
-    $root = Join-Path $tempBase ("wp10-rehearsal-" + [Guid]::NewGuid().ToString("N"))
+    $root = Join-Path $tempBase (
+        "wp10-rehearsal-" + [Guid]::NewGuid().ToString("N")
+    )
     $dataDir = Join-Path $root "pgdata"
     $bundleDir = Join-Path $root "bundle"
     $syntheticOffdevice = Join-Path $root "synthetic-offdevice"
     $corruptDir = Join-Path $root "corrupt"
-    New-Item -ItemType Directory -Path $root, $bundleDir, $syntheticOffdevice, $corruptDir -Force | Out-Null
+    New-Item -ItemType Directory -Path $root, $bundleDir, $corruptDir -Force |
+        Out-Null
+
+    if ($ownerMode) {
+        $ownerTarget = Get-PreparedOffdeviceDirectory
+        $offdeviceDirectory = [string]$ownerTarget.path
+    }
+    else {
+        New-Item -ItemType Directory -Path $syntheticOffdevice -Force | Out-Null
+        $offdeviceDirectory = $syntheticOffdevice
+    }
 
     Invoke-NativeChecked -FilePath $initDb -Arguments @(
         "--pgdata=$dataDir",
@@ -156,7 +269,9 @@ try {
     $clusterStarted = $true
 
     $common = @("--host=127.0.0.1", "--port=$port", "--username=wp10_owner")
-    Invoke-NativeChecked -FilePath $createdb -Arguments ($common + @("wp10_source"))
+    Invoke-NativeChecked -FilePath $createdb -Arguments (
+        $common + @("wp10_source")
+    )
 
     $seedSql = @"
 CREATE TABLE recovery_probe (
@@ -169,7 +284,11 @@ INSERT INTO recovery_probe (id, payload) VALUES
     (3, 'gamma');
 "@
     Invoke-NativeChecked -FilePath $psql -Arguments (
-        $common + @("--dbname=wp10_source", "--set=ON_ERROR_STOP=1", "--command=$seedSql")
+        $common + @(
+            "--dbname=wp10_source",
+            "--set=ON_ERROR_STOP=1",
+            "--command=$seedSql"
+        )
     )
 
     $stagingArchive = Join-Path $root "postgres-staging.dump.partial"
@@ -204,11 +323,16 @@ INSERT INTO recovery_probe (id, payload) VALUES
         "--archive", $archive.FullName,
         "--manifest", $manifestPath
     )
-    Invoke-NativeChecked -FilePath $pgRestore -Arguments @("--list", $archive.FullName)
+    Invoke-NativeChecked -FilePath $pgRestore -Arguments @(
+        "--list",
+        $archive.FullName
+    )
     $result.bundle_integrity_pass = $true
 
     $corruptArchive = Join-Path $corruptDir $archive.Name
-    $corruptManifest = Join-Path $corruptDir ([System.IO.Path]::GetFileName($manifestPath))
+    $corruptManifest = Join-Path $corruptDir (
+        [System.IO.Path]::GetFileName($manifestPath)
+    )
     Copy-Item -LiteralPath $archive.FullName -Destination $corruptArchive
     Copy-Item -LiteralPath $manifestPath -Destination $corruptManifest
     $bytes = [System.IO.File]::ReadAllBytes($corruptArchive)
@@ -231,26 +355,39 @@ INSERT INTO recovery_probe (id, payload) VALUES
         "copy",
         "--archive", $archive.FullName,
         "--manifest", $manifestPath,
-        "--target-dir", $syntheticOffdevice
+        "--target-dir", $offdeviceDirectory
     )
-    $copiedArchive = Get-SingleArchive -Directory $syntheticOffdevice
-    $copiedManifest = "$($copiedArchive.FullName).manifest.json"
+    $destinationArchive = Join-Path $offdeviceDirectory $archive.Name
+    $destinationManifest = "$destinationArchive.manifest.json"
+    if (
+        -not (Test-Path -LiteralPath $destinationArchive -PathType Leaf) -or
+        -not (Test-Path -LiteralPath $destinationManifest -PathType Leaf)
+    ) {
+        throw "OFFDEVICE_BUNDLE_NOT_FOUND"
+    }
+
     Invoke-NativeChecked -FilePath "python" -Arguments @(
         "scripts/v10_wp10_backup_bundle.py",
         "verify",
-        "--archive", $copiedArchive.FullName,
-        "--manifest", $copiedManifest
+        "--archive", $destinationArchive,
+        "--manifest", $destinationManifest
     )
-    Invoke-NativeChecked -FilePath $pgRestore -Arguments @("--list", $copiedArchive.FullName)
+    Invoke-NativeChecked -FilePath $pgRestore -Arguments @(
+        "--list",
+        $destinationArchive
+    )
+    $result.offdevice_copy_pass = $true
 
-    Invoke-NativeChecked -FilePath $createdb -Arguments ($common + @("wp10_restore"))
+    Invoke-NativeChecked -FilePath $createdb -Arguments (
+        $common + @("wp10_restore")
+    )
     Invoke-NativeChecked -FilePath $pgRestore -Arguments (
         $common + @(
             "--dbname=wp10_restore",
             "--exit-on-error",
             "--no-owner",
             "--no-privileges",
-            $copiedArchive.FullName
+            $destinationArchive
         )
     )
 
@@ -263,12 +400,27 @@ INSERT INTO recovery_probe (id, payload) VALUES
             "--command=SELECT id::text || ':' || payload FROM recovery_probe ORDER BY id;"
         )
     ) -CaptureOutput
-    $probeLines = @($probeOutput | ForEach-Object { $_.ToString().Trim() } | Where-Object { $_ -ne "" })
+    $probeLines = @(
+        $probeOutput |
+            ForEach-Object { $_.ToString().Trim() } |
+            Where-Object { $_ -ne "" }
+    )
     $expected = @("1:alpha", "2:beta", "3:gamma")
     if (($probeLines -join "|") -ne ($expected -join "|")) {
         throw "RESTORE_PROBE_MISMATCH"
     }
     $result.restore_probe_pass = $true
+
+    if ($ownerMode) {
+        Remove-Item -LiteralPath $destinationManifest -Force
+        Remove-Item -LiteralPath $destinationArchive -Force
+        $destinationManifest = $null
+        $destinationArchive = $null
+        $result.offdevice_cleanup_pass = $true
+    }
+    else {
+        $result.offdevice_cleanup_pass = $true
+    }
 
     $result.status = "PASS"
     $result.reason_code = "RECOVERY_REHEARSAL_PASS"
@@ -291,6 +443,21 @@ finally {
             $result.reason_code = "TEMP_CLUSTER_CLEANUP_FAILED"
         }
     }
+
+    if ($ownerMode) {
+        foreach ($path in @($destinationManifest, $destinationArchive)) {
+            if ($null -ne $path -and (Test-Path -LiteralPath $path -PathType Leaf)) {
+                try {
+                    Remove-Item -LiteralPath $path -Force
+                }
+                catch {
+                    $result.status = "FAIL"
+                    $result.reason_code = "OFFDEVICE_SYNTHETIC_CLEANUP_FAILED"
+                }
+            }
+        }
+    }
+
     if ($null -ne $root -and (Test-Path -LiteralPath $root)) {
         try {
             Remove-Item -LiteralPath $root -Recurse -Force
@@ -309,6 +476,42 @@ finally {
         ([DateTime]::UtcNow - $startedAt).TotalMilliseconds,
         0
     )
+}
+
+if ($ownerMode -and $result.status -eq "PASS") {
+    try {
+        $evidenceRoot = Split-Path -Parent $RehearsalEvidencePath
+        if (-not (Test-Path -LiteralPath $evidenceRoot)) {
+            New-Item -ItemType Directory -Path $evidenceRoot -Force | Out-Null
+        }
+        $safeEvidence = [ordered]@{
+            schema_version = "1"
+            work_package = "WP10"
+            evidence_class = "OWNER_OFFDEVICE_RECOVERY_REHEARSAL"
+            target_class = [string]$ownerTarget.target_class
+            target_mount_point = [string]$ownerTarget.mount_point
+            rehearsed_at_utc = [DateTime]::UtcNow.ToString("o")
+            postgres_version_class = $result.postgres_version_class
+            bundle_integrity_pass = $result.bundle_integrity_pass
+            corruption_rejected = $result.corruption_rejected
+            offdevice_copy_pass = $result.offdevice_copy_pass
+            restore_probe_pass = $result.restore_probe_pass
+            offdevice_cleanup_pass = $result.offdevice_cleanup_pass
+            temporary_state_cleaned = $result.temporary_state_cleaned
+            real_secret_values_used = $false
+            private_portfolio_data_used = $false
+            account_identifiers_used = $false
+            production_database_accessed = $false
+            recovery_key_value_used = $false
+            duration_ms = $result.duration_ms
+        }
+        $safeEvidence | ConvertTo-Json -Depth 4 |
+            Set-Content -LiteralPath $RehearsalEvidencePath -Encoding UTF8
+    }
+    catch {
+        $result.status = "FAIL"
+        $result.reason_code = "OWNER_REHEARSAL_EVIDENCE_WRITE_FAILED"
+    }
 }
 
 Write-Result -Result $result
