@@ -181,7 +181,9 @@ def validate_contract(contract: dict, wp8: dict, wp9a: dict) -> None:
     metadata = contract["private_metadata"]
     if metadata.get("mode") != "ALLOWLIST_ONLY":
         raise ContractError("PRIVATE_METADATA_MODE_INVALID")
-    if Path(metadata.get("secret_root", "")) != Path(wp8["paths"]["secret_root"]):
+    if Path(metadata.get("protected_store_root", "")) != Path(
+        wp8["paths"]["secret_root"]
+    ):
         raise ContractError("WP8_SECRET_ROOT_MISMATCH")
     for key in (
         "secret_root_backup_forbidden",
