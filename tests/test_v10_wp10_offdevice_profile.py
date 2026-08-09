@@ -4,7 +4,7 @@ import copy
 
 import pytest
 
-from scripts.assess_v10_wp10_offdevice_profile import assess
+from scripts.assess_v10_wp10_offdevice_profile import SEALED_WRITER, assess
 
 
 def _passing_profile() -> dict:
@@ -26,6 +26,8 @@ def _passing_profile() -> dict:
         "recovery_key_custody_confirmed": True,
         "target_marker_expected": True,
         "sentinel_expected": True,
+        "production_backup_writer_identity": SEALED_WRITER,
+        "runtime_payload_access_granted": False,
         "runner_read_denied": True,
         "runner_write_denied": True,
         "runner_payload_access_granted": False,
@@ -40,6 +42,8 @@ def test_offdevice_profile_accepts_canonical_pass() -> None:
     assert result["status"] == "PASS"
     assert result["offdevice_ready"] is True
     assert result["owner_restore_rehearsal_ready"] is True
+    assert result["production_backup_writer_identity"] == SEALED_WRITER
+    assert result["runtime_private_backup_access"] is False
     assert result["runner_private_backup_access"] is False
 
 
@@ -54,6 +58,7 @@ def test_offdevice_profile_accepts_canonical_pass() -> None:
         ("recovery_key_custody_confirmed", False, "RECOVERY_KEY_CUSTODY_UNKNOWN"),
         ("runner_read_denied", False, "RUNNER_READ_NOT_DENIED"),
         ("runner_write_denied", False, "RUNNER_WRITE_NOT_DENIED"),
+        ("runtime_payload_access_granted", True, "RUNTIME_PAYLOAD_ACCESS_ENABLED"),
         ("runner_payload_access_granted", True, "RUNNER_PAYLOAD_ACCESS_ENABLED"),
         ("private_payload_collected", True, "PRIVATE_PAYLOAD_COLLECTED"),
         ("secret_value_collected", True, "SECRET_VALUE_COLLECTED"),
@@ -68,6 +73,14 @@ def test_offdevice_profile_rejects_security_regression(
     result = assess(profile)
     assert result["status"] == "FAIL"
     assert reason in result["blockers"]
+
+
+def test_offdevice_profile_rejects_premature_writer_identity() -> None:
+    profile = _passing_profile()
+    profile["production_backup_writer_identity"] = "omni-cio-runtime"
+    result = assess(profile)
+    assert result["status"] == "FAIL"
+    assert "PRODUCTION_BACKUP_WRITER_SCOPE_LEAK" in result["blockers"]
 
 
 def test_offdevice_profile_rejects_non_pass_reason() -> None:
