@@ -15,6 +15,8 @@ def _passing_profile() -> dict:
         "status": "PASS",
         "reason_code": "OFFDEVICE_AUDIT_PASS",
         "owner_evidence_present": True,
+        "owner_rehearsal_evidence_present": True,
+        "owner_offdevice_rehearsal_pass": True,
         "target_present": True,
         "non_system_volume": True,
         "data_volume": True,
@@ -37,12 +39,15 @@ def test_offdevice_profile_accepts_canonical_pass() -> None:
     result = assess(_passing_profile())
     assert result["status"] == "PASS"
     assert result["offdevice_ready"] is True
+    assert result["owner_restore_rehearsal_ready"] is True
     assert result["runner_private_backup_access"] is False
 
 
 @pytest.mark.parametrize(
     ("field", "value", "reason"),
     [
+        ("owner_rehearsal_evidence_present", False, "OWNER_REHEARSAL_EVIDENCE_MISSING"),
+        ("owner_offdevice_rehearsal_pass", False, "OWNER_OFFDEVICE_REHEARSAL_NOT_PASS"),
         ("non_system_volume", False, "TARGET_IS_SYSTEM_VOLUME"),
         ("bitlocker_fully_encrypted", False, "TARGET_NOT_FULLY_ENCRYPTED"),
         ("bitlocker_protection_on", False, "BITLOCKER_PROTECTION_OFF"),
