@@ -45,8 +45,10 @@ def test_synthetic_rehearsal_is_bounded_and_phase_observable() -> None:
     script = _read("rehearse_wp10_recovery.ps1")
     assert '$PostgresWaitSeconds = 30' in script
     assert '$env:PGCONNECT_TIMEOUT = "5"' in script
+    assert '$serverLog = Join-Path $root "postgres-server.log"' in script
     assert '"--no-sync"' in script
     assert '"--no-instructions"' in script
+    assert '"--log=$serverLog"' in script
     assert '"--timeout=$PostgresWaitSeconds"' in script
     assert '"--no-password"' in script
     assert "WP10_RECOVERY_PHASE=" in script
