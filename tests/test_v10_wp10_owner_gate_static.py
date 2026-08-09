@@ -1,0 +1,74 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+WINDOWS = ROOT / "infrastructure" / "windows"
+
+
+def _read(name: str) -> str:
+    return (WINDOWS / name).read_text(encoding="utf-8")
+
+
+def test_owner_target_preparation_never_manages_recovery_key_material() -> None:
+    script = _read("prepare_wp10_offdevice_target.ps1")
+    assert "[switch]$RecoveryKeyCustodyConfirmed" in script
+    for forbidden in (
+        "Enable-BitLocker",
+        "Add-BitLockerKeyProtector",
+        "Remove-BitLockerKeyProtector",
+        "manage-bde",
+        "Read-Host",
+        "RecoveryPassword",
+        "KeyProtector",
+    ):
+        assert forbidden not in script
+    assert "Get-BitLockerVolume" in script
+    assert "TARGET_NOT_FULLY_ENCRYPTED" in script
+    assert "TARGET_BITLOCKER_PROTECTION_OFF" in script
+
+
+def test_owner_target_acl_grants_runtime_but_not_runner_payload_access() -> None:
+    script = _read("prepare_wp10_offdevice_target.ps1")
+    assert 'Resolve-LocalAccountSid -AccountName "omni-cio-runtime"' in script
+    assert 'Resolve-LocalAccountSid -AccountName "omni-ci-runner"' in script
+    assert '"*${runtimeSid}:(OI)(CI)M"' in script
+    assert '"/remove:g", "*$runnerSid"' in script
+    assert '"/remove:d", "*$runnerSid"' in script
+    assert "EXISTING_UNOWNED_BACKUP_ROOT_REFUSED" in script
+    assert "runner_payload_access_granted = $false" in script
+
+
+def test_owner_rehearsal_stays_synthetic_and_restores_from_offdevice_copy() -> None:
+    script = _read("rehearse_wp10_recovery.ps1")
+    assert "OWNER_OFFDEVICE_RECOVERY_REHEARSAL" in script
+    assert '"--target-dir", $offdeviceDirectory' in script
+    assert '"--dbname=wp10_restore"' in script
+    assert "$destinationArchive" in script
+    assert "production_database_accessed = $false" in script
+    assert "real_secret_values_used = $false" in script
+    assert "private_portfolio_data_used = $false" in script
+    assert "recovery_key_value_used = $false" in script
+    assert "OFFDEVICE_SYNTHETIC_CLEANUP_FAILED" in script
+
+
+def test_one_command_owner_gate_passes_only_boolean_custody_assertion() -> None:
+    script = _read("complete_wp10_owner_offdevice_gate.ps1")
+    assert "[switch]$RecoveryKeyCustodyConfirmed" in script
+    assert '"-RecoveryKeyCustodyConfirmed"' in script
+    assert '"-UsePreparedOffdeviceTarget"' in script
+    assert "recovery_key_value_collected = $false" in script
+    assert "secret_value_collected = $false" in script
+    assert "private_portfolio_data_collected = $false" in script
+
+
+def test_nonadmin_final_audit_requires_owner_restore_proof_and_denies_runner() -> None:
+    script = _read("audit_wp10_offdevice_target.ps1")
+    assert "OWNER_OFFDEVICE_RECOVERY_REHEARSAL" in script
+    assert "OWNER_REHEARSAL_PREDATES_TARGET_APPLY" in script
+    assert "catch [UnauthorizedAccessException]" in script
+    assert "runner_read_denied = $true" in script
+    assert "runner_write_denied = $true" in script
+    assert "private_payload_collected = $false" in script
+    assert "secret_value_collected = $false" in script
+    assert "recovery_key_value_collected = $false" in script
