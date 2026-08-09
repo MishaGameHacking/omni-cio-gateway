@@ -21,7 +21,7 @@
   "source_separation": {
     "engineering_source": "GITHUB_ACCEPTED_MAIN_RELEASE",
     "private_durable_state": "ENCRYPTED_OWNER_CONTROLLED_OFFDEVICE_BACKUP",
-    "runtime_secrets": "SEPARATELY_RESTORED_OWNER_CONTROLLED_SECRET_STORE",
+    "runtime_credential_recovery": "SEPARATELY_RESTORED_OWNER_CONTROLLED_STORE",
     "github_is_private_state_backup": false,
     "github_is_secret_backup": false,
     "ci_artifact_is_private_state_backup": false
