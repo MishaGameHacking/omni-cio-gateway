@@ -89,15 +89,13 @@ def assess(profile: dict, policy: dict, wp5: dict) -> dict:
     if disk_gib is None or disk_pct is None:
         blockers.append("DISK_FREE_STATE_UNKNOWN")
     else:
-        if (
-            float(disk_gib) < float(wp5["storage"]["block_free_gib"])
-            or float(disk_pct) < float(wp5["storage"]["block_free_percent"])
-        ):
+        if float(disk_gib) < float(wp5["storage"]["block_free_gib"]) or float(
+            disk_pct
+        ) < float(wp5["storage"]["block_free_percent"]):
             blockers.append("DISK_FREE_BLOCK")
-        elif (
-            float(disk_gib) < float(wp5["storage"]["warn_free_gib"])
-            or float(disk_pct) < float(wp5["storage"]["warn_free_percent"])
-        ):
+        elif float(disk_gib) < float(wp5["storage"]["warn_free_gib"]) or float(
+            disk_pct
+        ) < float(wp5["storage"]["warn_free_percent"]):
             warnings.append("DISK_FREE_WARNING")
 
     memory = resources.get("memory_used_percent")
