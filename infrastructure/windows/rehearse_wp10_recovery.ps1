@@ -56,6 +56,16 @@ function Get-FreeLoopbackPort {
     }
 }
 
+function Get-SingleArchive {
+    param([Parameter(Mandatory = $true)][string]$Directory)
+
+    $archives = @(Get-ChildItem -LiteralPath $Directory -File -Filter "wp10-*.dump")
+    if ($archives.Count -ne 1) {
+        throw "BUNDLE_ARCHIVE_COUNT_INVALID"
+    }
+    return $archives[0]
+}
+
 function Write-Result {
     param([Parameter(Mandatory = $true)][hashtable]$Result)
 
@@ -182,10 +192,7 @@ INSERT INTO recovery_probe (id, payload) VALUES
         "--postgres-version-class", $versionClass
     )
 
-    $archive = Get-ChildItem -LiteralPath $bundleDir -File -Filter "wp10-*.dump" | Select-Object -Single
-    if ($null -eq $archive) {
-        throw "BUNDLE_ARCHIVE_NOT_FOUND"
-    }
+    $archive = Get-SingleArchive -Directory $bundleDir
     $manifestPath = "$($archive.FullName).manifest.json"
     if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
         throw "BUNDLE_MANIFEST_NOT_FOUND"
@@ -208,7 +215,7 @@ INSERT INTO recovery_probe (id, payload) VALUES
     if ($bytes.Length -lt 1) {
         throw "ARCHIVE_EMPTY"
     }
-    $offset = [Math]::Floor($bytes.Length / 2)
+    $offset = [int][Math]::Floor($bytes.Length / 2)
     $bytes[$offset] = $bytes[$offset] -bxor 0x01
     [System.IO.File]::WriteAllBytes($corruptArchive, $bytes)
 
@@ -226,7 +233,7 @@ INSERT INTO recovery_probe (id, payload) VALUES
         "--manifest", $manifestPath,
         "--target-dir", $syntheticOffdevice
     )
-    $copiedArchive = Get-ChildItem -LiteralPath $syntheticOffdevice -File -Filter "wp10-*.dump" | Select-Object -Single
+    $copiedArchive = Get-SingleArchive -Directory $syntheticOffdevice
     $copiedManifest = "$($copiedArchive.FullName).manifest.json"
     Invoke-NativeChecked -FilePath "python" -Arguments @(
         "scripts/v10_wp10_backup_bundle.py",
