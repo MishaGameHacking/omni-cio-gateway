@@ -214,6 +214,7 @@ $result = @{
 $root = $null
 $dataDir = $null
 $clusterStartTriggered = $false
+$postgresProcess = $null
 $pgCtl = $null
 $destinationArchive = $null
 $destinationManifest = $null
@@ -222,6 +223,7 @@ $ownerTarget = $null
 try {
     Write-RecoveryPhase -Name "RESOLVE_POSTGRES_TOOLS"
     $initDb = Resolve-PostgresTool -Name "initdb"
+    $postgres = Resolve-PostgresTool -Name "postgres"
     $pgCtl = Resolve-PostgresTool -Name "pg_ctl"
     $pgIsReady = Resolve-PostgresTool -Name "pg_isready"
     $psql = Resolve-PostgresTool -Name "psql"
@@ -253,6 +255,7 @@ try {
     $syntheticOffdevice = Join-Path $root "synthetic-offdevice"
     $corruptDir = Join-Path $root "corrupt"
     $serverLog = Join-Path $root "postgres-server.log"
+    $serverErrorLog = Join-Path $root "postgres-server-error.log"
     New-Item -ItemType Directory -Path $root, $bundleDir, $corruptDir -Force |
         Out-Null
 
@@ -278,19 +281,27 @@ try {
 
     Write-RecoveryPhase -Name "START_TEMP_CLUSTER"
     $port = Get-FreeLoopbackPort
-    Invoke-NativeChecked -FilePath $pgCtl -Arguments @(
-        "--pgdata=$dataDir",
-        "--log=$serverLog",
-        "--options=-h 127.0.0.1 -p $port",
-        "--no-wait",
-        "start"
-    )
+    # PowerShell 5.1 native-command pipelines can remain open when a spawned
+    # background server inherits redirected handles. Launch postgres itself as
+    # an asynchronous process with dedicated ephemeral log files instead.
+    $postgresProcess = Start-Process -FilePath $postgres -ArgumentList @(
+        "-D", $dataDir,
+        "-h", "127.0.0.1",
+        "-p", "$port"
+    ) -RedirectStandardOutput $serverLog -RedirectStandardError $serverErrorLog `
+        -WindowStyle Hidden -PassThru
+    if ($null -eq $postgresProcess) {
+        throw "POSTGRES_START_PROCESS_MISSING"
+    }
     $clusterStartTriggered = $true
 
     Write-RecoveryPhase -Name "WAIT_TEMP_CLUSTER_READY"
     $deadline = [DateTime]::UtcNow.AddSeconds($PostgresWaitSeconds)
     $ready = $false
     do {
+        if ($postgresProcess.HasExited) {
+            throw "POSTGRES_START_PROCESS_EXITED"
+        }
         & $pgIsReady --host=127.0.0.1 --port=$port --username=wp10_owner `
             --dbname=postgres --timeout=1 --quiet *> $null
         if ($LASTEXITCODE -eq 0) {
@@ -491,8 +502,24 @@ finally {
                     throw "TEMP_CLUSTER_STOP_FAILED"
                 }
             }
+            if ($null -ne $postgresProcess -and -not $postgresProcess.HasExited) {
+                if (-not $postgresProcess.WaitForExit($PostgresWaitSeconds * 1000)) {
+                    throw "TEMP_CLUSTER_PROCESS_EXIT_TIMEOUT"
+                }
+            }
         }
         catch {
+            if ($null -ne $postgresProcess) {
+                try {
+                    if (-not $postgresProcess.HasExited) {
+                        $postgresProcess.Kill()
+                        $null = $postgresProcess.WaitForExit(5000)
+                    }
+                }
+                catch {
+                    # Result below remains fail-closed even if emergency cleanup fails.
+                }
+            }
             $result.status = "FAIL"
             $result.reason_code = "TEMP_CLUSTER_CLEANUP_FAILED"
         }
