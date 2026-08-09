@@ -115,7 +115,7 @@ jobs:
 
             $action = New-ScheduledTaskAction `
               -Execute "$env:SystemRoot\System32\cmd.exe" `
-              -Argument "/d /c echo WP9_LOCAL_SERVICE_OK>\"$markerPath\""
+              -Argument "/d /c echo WP9_LOCAL_SERVICE_OK>$markerPath"
             $principal = New-ScheduledTaskPrincipal `
               -UserId "NT AUTHORITY\LOCAL SERVICE" `
               -LogonType ServiceAccount `
