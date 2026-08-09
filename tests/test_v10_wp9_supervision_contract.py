@@ -53,7 +53,7 @@ def test_wp9_uses_windows_native_bounded_supervision() -> None:
     assert supervision["startup_trigger_required"] is True
     assert supervision["periodic_health_interval_minutes"] == 1440
     assert supervision["component_restart_count"] == 3
-    assert supervision["component_restart_interval_seconds"] == 15
+    assert supervision["component_restart_interval_seconds"] == 60
     assert supervision["infinite_restart_loop_allowed"] is False
 
 
