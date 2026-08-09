@@ -22,7 +22,7 @@ concurrency:
 
 jobs:
   continuity-windows:
-    name: Lenovo portable-Python WP10 compatibility continuity
+    name: Lenovo embedded-Python WP10 compatibility continuity
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 20
@@ -37,14 +37,14 @@ jobs:
         shell: cmd
         run: scripts\bootstrap_windows_ci_python.cmd
 
-      - name: Acquire isolated CPython 3.14.6 CI package
+      - name: Acquire isolated CPython 3.14.6 embeddable package
         shell: cmd
         run: |
           @echo off
           set "WP10_PORTABLE_ROOT=%RUNNER_TEMP%\wp10-python-%GITHUB_RUN_ID%-%GITHUB_RUN_ATTEMPT%"
           python scripts\fetch_v10_wp10_portable_python.py --version 3.14.6 --output-root "%WP10_PORTABLE_ROOT%"
           if errorlevel 1 exit /b %errorlevel%
-          set "WP10_PYTHON=%WP10_PORTABLE_ROOT%\package\tools\python.exe"
+          set "WP10_PYTHON=%WP10_PORTABLE_ROOT%\python\python.exe"
           "%WP10_PYTHON%" -c "import platform; assert platform.python_version() == '3.14.6'"
           if errorlevel 1 exit /b %errorlevel%
           echo WP10_PORTABLE_ROOT=%WP10_PORTABLE_ROOT%>>"%GITHUB_ENV%"
@@ -79,8 +79,7 @@ jobs:
         shell: cmd
         run: |
           @echo off
-          set "PYTHONPATH=%WP10_PYTEST_TARGET%"
-          "%WP10_PYTHON%" -m pytest -q tests\test_v10_wp10_recovery_contract.py tests\test_v10_wp10_backup_bundle.py tests\test_v10_wp10_recovery_profile.py tests\test_v10_wp10_offdevice_profile.py tests\test_v10_wp10_owner_gate_static.py tests\test_v10_wp10_offdevice_audit_privilege_boundary.py tests\test_v10_wp10_owner_rehearsal_launcher.py tests\test_v10_wp10_ci_continuity.py
+          "%WP10_PYTHON%" scripts\run_v10_wp10_pytest_with_target.py --target "%WP10_PYTEST_TARGET%" tests\test_v10_wp10_recovery_contract.py tests\test_v10_wp10_backup_bundle.py tests\test_v10_wp10_recovery_profile.py tests\test_v10_wp10_offdevice_profile.py tests\test_v10_wp10_owner_gate_static.py tests\test_v10_wp10_offdevice_audit_privilege_boundary.py tests\test_v10_wp10_owner_rehearsal_launcher.py tests\test_v10_wp10_ci_continuity.py
           if errorlevel 1 exit /b %errorlevel%
 
       - name: Remove isolated compatibility state
