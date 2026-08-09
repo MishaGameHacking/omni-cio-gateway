@@ -56,7 +56,10 @@ def validate_contract(contract: dict, wp5: dict) -> None:
         raise ContractError("WP9_BOUNDED_RESTART_POLICY_CHANGED")
     if restart.get("infinite_restart_forbidden") is not True:
         raise ContractError("INFINITE_RESTART_NOT_FORBIDDEN")
-    if restart.get("real_execution_auto_restart_without_reconciliation_forbidden") is not True:
+    if (
+        restart.get("real_execution_auto_restart_without_reconciliation_forbidden")
+        is not True
+    ):
         raise ContractError("REAL_EXECUTION_RESTART_GUARD_MISSING")
 
     runner = contract["github_runner"]
@@ -137,7 +140,9 @@ def validate_contract(contract: dict, wp5: dict) -> None:
     exit_gate = contract["exit_gate"]
     if exit_gate.get("next_wp") != "WP10":
         raise ContractError("WP9A_NEXT_WP_INVALID")
-    required_exit_flags = [key for key in exit_gate if key.endswith("_pass") or key.endswith("_required")]
+    required_exit_flags = [
+        key for key in exit_gate if key.endswith("_pass") or key.endswith("_required")
+    ]
     if any(exit_gate[key] is not True for key in required_exit_flags):
         raise ContractError("WP9A_EXIT_GATE_WEAKENED")
 
