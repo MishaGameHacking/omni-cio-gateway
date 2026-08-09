@@ -31,16 +31,21 @@ def test_wp10_continuity_workflow_is_self_hosted_and_fail_closed() -> None:
         "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command"
         in workflow
     )
-    assert "C:\\Program Files\\Python314\\python.exe" in workflow
-    assert 'Get-Command "py.exe"' in workflow
-    assert "WP10_CONTINUITY_PYTHON_VERSION_MISMATCH" in workflow
-    assert "-m venv" in workflow
+    assert "scripts\\bootstrap_windows_ci_python.cmd" in workflow
+    assert "api.nuget.org/v3-flatcontainer/python/$version/python.$version.nupkg" in workflow
+    assert 'Invoke-WebRequest -UseBasicParsing -Uri "$base.sha512"' in workflow
+    assert "System.Security.Cryptography.SHA512" in workflow
+    assert "WP10_CONTINUITY_NUGET_SHA512_MISMATCH" in workflow
+    assert 'if ($LASTEXITCODE -ne 0 -or $actualVersion.Trim() -ne $version)' in workflow
+    assert 'pytest==9.0.2' in workflow
+    assert "--target" in workflow
+    assert "PYTHONPATH" in workflow
     assert "RUNNER_TEMP" in workflow
     assert "$PSVersionTable.PSVersion.Major -ne 5" in workflow
     assert "System.Management.Automation.Language.Parser" in workflow
     assert "tests/test_v10_wp10_recovery_contract.py" in workflow
     assert "tests/test_v10_wp10_offdevice_audit_privilege_boundary.py" in workflow
-    assert "WP10_CONTINUITY_VENV_CLEANUP_FAILED" in workflow
+    assert "WP10_CONTINUITY_TEMP_CLEANUP_FAILED" in workflow
     assert "shell: cmd" in workflow
     assert "git reset --hard HEAD" in workflow
     assert "git clean -ffdx" in workflow
