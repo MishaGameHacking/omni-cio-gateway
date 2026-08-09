@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from datetime import datetime, timezone
 from decimal import Decimal
 from enum import StrEnum
 import hashlib
-from typing import Annotated, Literal
+from typing import Annotated, Final, Literal, TypeVar
 
 from pydantic import Field, field_validator, model_validator
 
@@ -35,8 +36,8 @@ NonNegativeDecimal = Annotated[
     Field(ge=Decimal("0"), allow_inf_nan=False),
 ]
 
-OWNER_TENANT_ID = "tenant:v1:owner"
-OWNER_USER_ID = "user:v1:owner"
+OWNER_TENANT_ID: Final[Literal["tenant:v1:owner"]] = "tenant:v1:owner"
+OWNER_USER_ID: Final[Literal["user:v1:owner"]] = "user:v1:owner"
 
 
 class TenantMode(StrEnum):
@@ -369,7 +370,7 @@ class IncidentRecordV1(ContractModel):
     def normalize_evidence_ids(cls, value: object) -> object:
         if value is None:
             return ()
-        if isinstance(value, (str, bytes)):
+        if isinstance(value, (str, bytes)) or not isinstance(value, Iterable):
             raise ValueError("evidence_ids must be a collection")
         return tuple(sorted(set(value)))
 
@@ -394,7 +395,7 @@ class DecisionRecordV1(ContractModel):
     @field_validator("evidence_ids", mode="before")
     @classmethod
     def normalize_evidence_ids(cls, value: object) -> object:
-        if isinstance(value, (str, bytes)):
+        if isinstance(value, (str, bytes)) or not isinstance(value, Iterable):
             raise ValueError("evidence_ids must be a collection")
         result = tuple(sorted(set(value)))
         if not result:
@@ -476,6 +477,9 @@ class JournalRecordV1(ContractModel):
         return self
 
 
+TRecord = TypeVar("TRecord", bound=ContractModel)
+
+
 class CanonicalDomainCatalogV1(ContractModel):
     """In-memory relationship validator for WP12 canonical identities.
 
@@ -524,7 +528,7 @@ class CanonicalDomainCatalogV1(ContractModel):
         )
         policies = self._unique_index(self.policies, "policy_id", "policy")
         snapshots = self._unique_index(self.snapshots, "snapshot_id", "snapshot")
-        positions = self._unique_index(self.positions, "position_id", "position")
+        self._unique_index(self.positions, "position_id", "position")
         evidence = self._unique_index(self.evidence, "evidence_id", "evidence")
         incidents = self._unique_index(self.incidents, "incident_id", "incident")
         decisions = self._unique_index(self.decisions, "decision_id", "decision")
@@ -693,28 +697,36 @@ class CanonicalDomainCatalogV1(ContractModel):
                 policies,
                 "journal",
             )
-            for reference, index, label in (
-                (record.decision_id, decisions, "decision"),
-                (record.plan_id, plans, "plan"),
-                (record.execution_id, executions, "execution"),
-                (record.incident_id, incidents, "incident"),
-            ):
-                if reference is None:
-                    continue
-                item = index.get(reference)
-                if item is None:
-                    raise ValueError(f"journal references unknown {label}")
-                self._require_matching_scope(record, item, f"journal {label}")
+            if record.decision_id is not None:
+                decision = decisions.get(record.decision_id)
+                if decision is None:
+                    raise ValueError("journal references unknown decision")
+                self._require_matching_scope(record, decision, "journal decision")
+            if record.plan_id is not None:
+                plan = plans.get(record.plan_id)
+                if plan is None:
+                    raise ValueError("journal references unknown plan")
+                self._require_matching_scope(record, plan, "journal plan")
+            if record.execution_id is not None:
+                execution = executions.get(record.execution_id)
+                if execution is None:
+                    raise ValueError("journal references unknown execution")
+                self._require_matching_scope(record, execution, "journal execution")
+            if record.incident_id is not None:
+                incident = incidents.get(record.incident_id)
+                if incident is None:
+                    raise ValueError("journal references unknown incident")
+                self._require_matching_scope(record, incident, "journal incident")
 
         return self
 
     @staticmethod
     def _unique_index(
-        records: tuple[ContractModel, ...],
+        records: tuple[TRecord, ...],
         field_name: str,
         label: str,
-    ) -> dict[str, ContractModel]:
-        result: dict[str, ContractModel] = {}
+    ) -> dict[str, TRecord]:
+        result: dict[str, TRecord] = {}
         for record in records:
             value = getattr(record, field_name)
             if value in result:
@@ -733,10 +745,10 @@ class CanonicalDomainCatalogV1(ContractModel):
         tenant_id: str,
         portfolio_id: str,
         policy_id: str,
-        portfolios: dict[str, ContractModel],
-        policies: dict[str, ContractModel],
+        portfolios: dict[str, PortfolioV1],
+        policies: dict[str, PolicyRecordV1],
         label: str,
-    ) -> ContractModel:
+    ) -> PortfolioV1:
         cls._require_owner_tenant(tenant_id, label)
         portfolio = portfolios.get(portfolio_id)
         if portfolio is None:
@@ -744,11 +756,11 @@ class CanonicalDomainCatalogV1(ContractModel):
         policy = policies.get(policy_id)
         if policy is None:
             raise ValueError(f"{label} references unknown policy")
-        if getattr(portfolio, "tenant_id") != tenant_id:
+        if portfolio.tenant_id != tenant_id:
             raise ValueError(f"{label} portfolio crosses tenant scope")
-        if getattr(policy, "tenant_id") != tenant_id:
+        if policy.tenant_id != tenant_id:
             raise ValueError(f"{label} policy crosses tenant scope")
-        if getattr(policy, "portfolio_id") != portfolio_id:
+        if policy.portfolio_id != portfolio_id:
             raise ValueError(f"{label} policy crosses portfolio scope")
         return portfolio
 
