@@ -4,9 +4,9 @@ Updated: 2026-08-09
 
 ## Executive state
 
-Omni-CIO V10: **DEVELOPMENT ACTIVE / WP9 COMPLETE / BLOCK C IN PROGRESS / WP9A NEXT**.
+Omni-CIO V10: **DEVELOPMENT ACTIVE / WP9A COMPLETE / BLOCK C IN PROGRESS / WP10 NEXT**.
 
-Accepted implementation progress remains **14%**. Block C is credited only after WP9A, WP10 and the Block C Exit Gate complete.
+Accepted implementation progress remains **14%**. Block C is credited only after WP10 and the Block C Exit Gate complete.
 
 Accepted completed work:
 
@@ -20,17 +20,18 @@ Accepted completed work:
 - Block C / WP7 — **COMPLETE**;
 - Block C / WP8 — **COMPLETE**;
 - Block C / WP9 — **COMPLETE**;
+- Block C / WP9A — **COMPLETE**;
 - GitHub Pro hybrid CI / Lenovo continuity hardening — **COMPLETE infrastructure hardening**;
 - V10 release/build provenance, protected `v10.*` tag identity, immutable-release operating contract and fail-closed deployment provenance — **COMPLETE**;
 - accepted V10 planning amendments remain binding but do not credit later runtime implementation before their owning WPs pass.
 
 Current authorized implementation work package is now:
 
-**WP9A — Runtime patching, time, observability и controlled restart policy.**
+**WP10 — Backup, restore и off-device recovery.**
 
-WP9A may establish the operations contract required before 24/7 operation: controlled Windows/security maintenance and reboot windows, GitHub Runner update health, NVIDIA/PostgreSQL/Ollama update policy, bounded restart/crash-loop/OWNER-alert policy, NTP/time-drift monitoring, CPU/RAM/GPU/VRAM/temperature/disk thresholds, and structured privacy-safe logging/rotation/retention/crash-dump policy. Any update capable of changing calculations, AI behavior, database compatibility or broker execution behavior must first pass the responsible compatibility/security/regression/eval gate and have documented rollback.
+WP10 may define and implement measurable RPO/RTO, automated PostgreSQL backup, integrity hashes, retention/rotation, encrypted owner-controlled off-device copy, private non-secret configuration/model/RAG metadata backup, corrupt-backup detection, and an executed restore/recovery rehearsal. Recovery must preserve separation among GitHub-controlled source, encrypted private durable state and separately restored runtime secrets.
 
-WP9A does **not** authorize installing/activating later Core/Web/Telegram/Cortex/Ollama product runtimes, real secrets in GitHub/CI, broker-write/Real-money execution, service-account privilege expansion, WP10 work, or any change to `app:app` / `trading_methods=false`.
+WP10 does **not** authorize starting WP11/Core extraction, activating later Core/Web/Telegram/Cortex/Ollama product runtimes, placing secret values in GitHub/CI/backups, changing broker/Real-money authority, weakening WP6–WP9A privilege/secret/supervision/operations boundaries, or changing `app:app` / `trading_methods=false`.
 
 Owner start command: **`START V10`** received 2026-08-05.
 
@@ -63,7 +64,7 @@ Protected production/recovery baseline remains **Omni-CIO v9.0.0 — COMPLETE / 
 |---|---:|---|
 | A. Architecture and V9 protection | 5% | COMPLETE — WP0 |
 | B. GitHub, dependencies and CI/CD | 9% | COMPLETE — WP1 / WP2 / WP3 / WP4 |
-| C. Lenovo Omni-CIO Node / infrastructure | 12% | IN PROGRESS — WP5 / WP6 / WP7 / WP8 / WP9 COMPLETE / WP9A NEXT |
+| C. Lenovo Omni-CIO Node / infrastructure | 12% | IN PROGRESS — WP5 / WP6 / WP7 / WP8 / WP9 / WP9A COMPLETE / WP10 NEXT |
 | D. V10 Core and data | 14% | NOT STARTED |
 | E. Omni-CIO Web Platform | 14% | NOT STARTED |
 | F. Telegram | 8% | NOT STARTED — product/interaction contract pre-approved only |
@@ -73,7 +74,7 @@ Protected production/recovery baseline remains **Omni-CIO v9.0.0 — COMPLETE / 
 | J. Integration / hardening / recovery / release | 5% | NOT STARTED — commercial/license/update/legal-gate planning pre-approved only |
 | **TOTAL** | **100% planned** | **14% ACCEPTED** |
 
-Block B's full 9% weight is accepted because WP4 and the Block B Exit Gate are complete. Block C's 12% weight is not credited yet: WP5–WP9 are accepted, while WP9A, WP10 and the Block C Exit Gate remain.
+Block B's full 9% weight is accepted because WP4 and the Block B Exit Gate are complete. Block C's 12% weight is not credited yet: WP5–WP9A are accepted, while WP10 and the Block C Exit Gate remain.
 
 ## Accepted implementation evidence
 
@@ -87,26 +88,26 @@ Block B's full 9% weight is accepted because WP4 and the Block B Exit Gate are c
 - WP6 PR #253 -> `c55fb0a32b309628fb86a7abf9182b95af4beca2`; post-merge Regression Shield run `31270545874` — **SUCCESS**;
 - WP7 PR #255 -> `82225eef984f6c14c254108bada0627c1f0368a4`; exact-head Windows/Lenovo gates passed and post-merge Regression Shield run `31281148813` — **SUCCESS**;
 - WP8 PR #257 -> `422ef68864050eec858e32d980165c995d9e7ecb`; exact-head secret-store/Windows/Lenovo gates passed and post-merge Regression Shield run `31284931677` — **SUCCESS**;
-- WP9 PR #259 -> `b43da57e74e6c5d4735c2b4e96b6839a52b4d1dc`.
+- WP9 PR #259 -> `b43da57e74e6c5d4735c2b4e96b6839a52b4d1dc`; post-merge Regression Shield run `31291892741` — **SUCCESS**;
+- WP9A PR #261 -> `0e5a7ec750ef3d3c20bb3f01c0f53804017cd938`; post-merge Regression Shield #1445 / run `31294998878` — **SUCCESS**.
 
-### WP9 accepted evidence
+### WP9A accepted evidence
 
-WP9 exact head `c5e79b0f4ab1f7c4b4df9e232841e5d91293530d` and reviewed merge checkout `e934236a13e6597748405a8324c06dfb8039d724` passed:
+WP9A exact head `535c9d9e9983efb8f53ee164458272afe96d5281` passed the ready-for-review exact-head gates:
 
-- V10 Fast PR Checks `31291638901`;
-- V10 WP9 Supervision Compatibility `31291638860`;
-- V10 WP9 Recovery Compatibility `31291638903`;
-- V10 Toolchain Compatibility `31291638876`;
-- authoritative Self-Hosted Windows CI `31291638888`;
-- inherited V10 WP8 Secret Store Compatibility `31291638887`;
-- inherited V10 WP8 Secret Store Audit `31291638877`;
-- V10 WP9 Supervision Audit `31291638933` after the reviewed OWNER reboot.
+- V10 Fast PR Checks `31294760903`;
+- V10 WP9A Operations Compatibility `31294760954`;
+- V10 Toolchain Compatibility `31294760901`;
+- authoritative Self-Hosted Windows CI `31294760884`;
+- inherited V10 WP9 Supervision Compatibility `31294760943`;
+- inherited V10 WP9 Supervision Audit `31294760904`;
+- authoritative V10 WP9A Operations Audit `31294760894`.
 
-The reviewed OWNER rehearsal completed bounded synthetic kill/recovery, dependency recovery and a full Windows reboot. The self-hosted runner returned automatically. Fresh post-reboot Lenovo evidence reported `status=PASS`, empty reasons/blockers, `idempotence_verified=true`, `restart_rehearsal_pass=true`, `dependency_rehearsal_pass=true`, `post_reboot_fresh_status=true`, all five future product slots valid but disabled/sealed, no execution task, disabled/non-admin runtime and execution role anchors, no LocalService WP8 protected-payload grant, no real secrets and no Real-money authority change. `health_status=DEGRADED` is truthful and expected because later Core/Web/Telegram/Watchtower/AI product runtimes remain intentionally inactive.
+The accepted Lenovo audit reported no WP9A blockers: Windows Update service remained enabled and Windows Update Agent reported no reboot required; Windows Time was running with measured offset `0 ms`; the self-hosted runner was healthy with default updater enabled; PostgreSQL 18.4 was ready; NVIDIA/resource telemetry remained within inherited WP5 limits; Ollama remained intentionally absent/`NOT_READY`; inherited WP9 health stayed fresh and truthfully `DEGRADED`; privacy flags remained false. Non-blocking diagnostics were limited to legacy pending-file-rename metadata and absence of historical runner self-update diagnostics.
 
-WP9 was squash-merged as `b43da57e74e6c5d4735c2b4e96b6839a52b4d1dc`. Post-WP9 Regression Shield #1443 / run `31291892741` on that exact `main` SHA completed **SUCCESS**, including quality/contracts/coverage, dependency audit, SAST and tracked-content secret scan.
+WP9A established controlled Windows/update/reboot policy, runner/NVIDIA/PostgreSQL/Ollama update boundaries, inherited fail-closed time/resource guards, bounded restart/crash-loop OWNER-alert semantics, and privacy-safe local operations evidence. Its deterministic JSONL operations journal is bounded by field allowlist, file size/count/retention and SHA-256 hash-chain tamper evidence; external OWNER notification remains intentionally deferred to the responsible interaction WP rather than activating later Telegram/Web product runtimes early.
 
-WP9 therefore establishes the accepted Windows Task Scheduler / `LOCAL SERVICE` supervision boundary, bounded crash/recovery rehearsal, dependency-aware health evidence, automatic runner return after reboot, truthful `HEALTHY/DEGRADED` semantics, and sealed later product slots without expanding Real-money authority.
+WP9A was squash-merged as `0e5a7ec750ef3d3c20bb3f01c0f53804017cd938`. Post-WP9A Regression Shield #1445 / run `31294998878` on that exact `main` SHA completed **SUCCESS**, including quality/contracts/coverage, dependency audit, SAST and tracked-content secret scan.
 
 ## Accepted engineering and product locks
 
@@ -124,31 +125,30 @@ The following remain binding while later WPs are implemented:
 - Real READ, Sandbox and Real TRADING credentials remain isolated; transfer/withdrawal, margin/short and autonomous Real execution remain forbidden;
 - `REAL_TRADING_ENABLED=false` remains the master Real rollback until a responsible later package explicitly changes and proves the boundary.
 
-## Current authorized next step — WP9A
+## Current authorized next step — WP10
 
-WP9A is now the only authorized implementation package after accepted WP9 and its successful post-merge Regression Shield.
+WP10 is now the only authorized implementation package after accepted WP9A and its successful post-merge Regression Shield.
 
-WP9A goal: establish a single operations contract required before 24/7 use, without silently changing product or money behavior.
+WP10 goal: prove that private durable state and operational metadata can be backed up, verified and restored after corruption or node loss without relying on GitHub for private data or secrets.
 
-WP9A must cover at minimum:
+WP10 must cover at minimum:
 
-- Windows security updates with a predictable maintenance/reboot window;
-- GitHub Runner update health;
-- NVIDIA driver update policy;
-- PostgreSQL minor/security update policy;
-- Ollama runtime/model update policy without prematurely installing/activating the later AI runtime;
-- bounded service restart/backoff, crash-loop detection and OWNER alert policy building on accepted WP9 supervision;
-- NTP/time-drift monitoring, with dangerous drift fail-closed for future short-lived confirmations, Telegram freshness checks and Real execution;
-- CPU/RAM/GPU/VRAM/temperature/disk operating thresholds using accepted node evidence rather than invented capabilities;
-- structured logging with a private-data allowlist, masking/omission, rotation/retention, crash-dump policy and audit-log integrity requirements;
-- staging/regression/security/eval requirements and documented rollback for any update capable of changing calculations, AI behavior, DB compatibility or broker execution behavior.
+- explicit, measurable RPO and RTO derived from accepted WP5 hardware/storage evidence;
+- automated PostgreSQL backup with integrity hash and bounded retention/rotation;
+- encrypted off-device copy to an OWNER-controlled target;
+- backup of approved private non-secret configuration and model/RAG metadata without raw runtime secrets;
+- corrupt/tampered backup detection before restore;
+- automated or deterministic restore rehearsal to a controlled replacement/recovery database/location;
+- post-restore integrity/migration/reconciliation validation;
+- clear separation of GitHub source recovery, encrypted durable-state recovery and separately restored runtime secrets;
+- recovery runbook for SSD/Lenovo loss that keeps Real execution disabled until its own later recovery/readiness acceptance.
 
-WP9A must preserve all accepted WP6–WP9 privilege, secret, supervision, privacy and reboot boundaries. It must not activate later product slots, install the later AI/Cortex stack merely because an update policy exists, start WP10 early, expose secrets/private payloads, weaken CI, or expand Real-money authority.
+WP10 must preserve all accepted WP6–WP9A privilege, secret, supervision, privacy and operations boundaries. CI/runner identities must not gain access to private production backup payloads. Backup/recovery tooling must not place real secret values, full private portfolio dumps or recovery keys in GitHub, CI logs or artifacts. WP11 remains locked until WP10 Exit Gate and the Block C Exit Gate pass.
 
-Only after WP9A Exit Gate passes may WP10 begin.
+The Master Plan explicitly requires an OWNER-controlled off-device storage location for final WP10 acceptance. Repository design, deterministic tests, local backup/restore rehearsal tooling and all safely automatable gates should be completed before requesting that physical/non-delegable OWNER action.
 
 ## Money/safety rule
 
-GitHub access, AI output, research result, Watchtower alert, Telegram message/button, `START V10`, development approval, update availability or model output is never broker-submit authorization.
+GitHub access, AI output, research result, Watchtower alert, Telegram message/button, `START V10`, development approval, update availability, backup availability or model output is never broker-submit authorization.
 
 Current V9 money-path invariants, `app:app`, `trading_methods=false`, secret separation and kill switches remain binding until an explicitly responsible later V10 work package replaces a boundary and passes its Exit Gate.
