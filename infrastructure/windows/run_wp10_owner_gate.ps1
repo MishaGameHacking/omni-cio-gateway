@@ -13,6 +13,7 @@ $StateRoot = "C:\ProgramData\OmniCIO\wp10"
 $PrepareScript = Join-Path $PSScriptRoot "prepare_wp10_offdevice_target.ps1"
 $RehearsalScript = Join-Path $PSScriptRoot "rehearse_wp10_recovery.ps1"
 $BackupRunner = Join-Path $PSScriptRoot "run_wp10_backup.ps1"
+$OwnerGateScript = $PSCommandPath
 $ContractPath = Join-Path $RepoRoot "docs\architecture\V10_WP10_RECOVERY_CONTRACT.json"
 $BundleTool = Join-Path $RepoRoot "scripts\v10_wp10_backup_bundle.py"
 $OwnerRehearsalPath = Join-Path $StateRoot "owner-rehearsal.sanitized.local.json"
@@ -82,6 +83,7 @@ try {
         $PrepareScript,
         $RehearsalScript,
         $BackupRunner,
+        $OwnerGateScript,
         $ContractPath,
         $BundleTool
     )) {
@@ -163,6 +165,7 @@ try {
         backup_runner_sha256 = Get-Sha256Lower -Path $BackupRunner
         bundle_tool_sha256 = Get-Sha256Lower -Path $BundleTool
         prepare_script_sha256 = Get-Sha256Lower -Path $PrepareScript
+        owner_gate_script_sha256 = Get-Sha256Lower -Path $OwnerGateScript
     }
     $rehearsal | Add-Member `
         -NotePropertyName "implementation_fingerprint" `
