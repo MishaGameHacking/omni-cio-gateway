@@ -2,14 +2,15 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import http.client
 import json
 import os
 from pathlib import Path, PurePosixPath
 import shutil
+import ssl
 import subprocess
 import sys
 from urllib.parse import urlparse
-from urllib.request import Request, urlopen
 import zipfile
 
 
@@ -24,29 +25,43 @@ class ContinuityFetchError(RuntimeError):
     pass
 
 
-def _open(url: str):
-    host = (urlparse(url).hostname or "").lower()
-    if host not in ALLOWED_HOSTS:
-        raise ContinuityFetchError(f"WP10_CONTINUITY_UNTRUSTED_PYTHON_HOST:{host}")
-    response = urlopen(Request(url, headers={"User-Agent": USER_AGENT}), timeout=45)
-    final_host = (urlparse(response.geturl()).hostname or "").lower()
-    if final_host not in ALLOWED_HOSTS:
-        response.close()
-        raise ContinuityFetchError(
-            f"WP10_CONTINUITY_UNTRUSTED_PYTHON_REDIRECT:{final_host}"
-        )
-    return response
-
-
 def _download_and_hash(url: str, destination: Path) -> str:
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower()
+    if parsed.scheme != "https" or host not in ALLOWED_HOSTS:
+        raise ContinuityFetchError(
+            f"WP10_CONTINUITY_UNTRUSTED_PYTHON_URL:{parsed.scheme}:{host}"
+        )
+    if parsed.port not in (None, 443):
+        raise ContinuityFetchError("WP10_CONTINUITY_UNTRUSTED_PYTHON_PORT")
+
+    path = parsed.path or "/"
+    if parsed.query:
+        path = f"{path}?{parsed.query}"
+
     digest = hashlib.sha256()
-    with _open(url) as response, destination.open("wb") as output:
-        while True:
-            chunk = response.read(1024 * 1024)
-            if not chunk:
-                break
-            digest.update(chunk)
-            output.write(chunk)
+    connection = http.client.HTTPSConnection(
+        host,
+        port=443,
+        timeout=45,
+        context=ssl.create_default_context(),
+    )
+    try:
+        connection.request("GET", path, headers={"User-Agent": USER_AGENT})
+        response = connection.getresponse()
+        if response.status != 200:
+            raise ContinuityFetchError(
+                f"WP10_CONTINUITY_PYTHON_DOWNLOAD_HTTP_{response.status}"
+            )
+        with destination.open("wb") as output:
+            while True:
+                chunk = response.read(1024 * 1024)
+                if not chunk:
+                    break
+                digest.update(chunk)
+                output.write(chunk)
+    finally:
+        connection.close()
     return digest.hexdigest()
 
 
