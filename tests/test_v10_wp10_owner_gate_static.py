@@ -122,4 +122,4 @@ def test_nonadmin_final_audit_requires_owner_restore_proof_and_denies_runner() -
     assert "runner_write_denied = $true" in script
     assert "private_payload_collected = $false" in script
     assert "secret_value_collected = $false" in script
-    assert "recovery_key_value_collected = $false"
+    assert "recovery_key_value_collected = $false" in script
