@@ -28,7 +28,7 @@ jobs:
     timeout-minutes: 20
     defaults:
       run:
-        shell: powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File {0}
+        shell: powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "& '{0}'"
 
     steps:
       - name: Check out repository
