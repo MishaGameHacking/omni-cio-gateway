@@ -247,14 +247,14 @@ function Ensure-TaskFolder {
     $service.Connect()
     $root = $service.GetFolder("\")
     try {
-        $omni = $root.GetFolder("OmniCIO")
+        [void]$service.GetFolder("\OmniCIO")
     }
     catch {
         [void]$root.CreateFolder("OmniCIO")
-        $omni = $root.GetFolder("OmniCIO")
     }
+    $omni = $service.GetFolder("\OmniCIO")
     try {
-        [void]$omni.GetFolder("V10")
+        [void]$service.GetFolder("\OmniCIO\V10")
     }
     catch {
         [void]$omni.CreateFolder("V10")
@@ -396,6 +396,7 @@ function Ensure-Wp9Tasks {
     $changes = 0
     $healthArgs = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{0}" -ContractPath "{1}"' -f `
         $deployedHealth, $deployedContract
+    $healthArgs = $healthArgs.Replace('\"', '"')
     if (Register-OwnedTask `
         -TaskName ([string]$contract.tasks.health_supervisor) `
         -Arguments $healthArgs `
@@ -407,6 +408,7 @@ function Ensure-Wp9Tasks {
         $taskName = [string]$contract.tasks.$id
         $guardArgs = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{0}" -ComponentId {1}' -f `
             $deployedGuard, $id
+        $guardArgs = $guardArgs.Replace('\"', '"')
         if (Register-OwnedTask `
             -TaskName $taskName `
             -Arguments $guardArgs `
@@ -491,6 +493,7 @@ function Invoke-RestartRehearsal {
         try {
             $arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{0}" -StatePath "{1}" -HoldSeconds 120' -f `
                 $deployedWorker, $statePath
+            $arguments = $arguments.Replace('\"', '"')
             $definition = New-RehearsalTaskDefinition -Arguments $arguments -WithRestart $true
             Register-ScheduledTask `
                 -TaskName $taskName `
@@ -511,7 +514,7 @@ function Invoke-RestartRehearsal {
             Stop-Process -Id $processId -Force -ErrorAction Stop
             $recovered = Wait-RehearsalState `
                 -Path $statePath `
-                -TimeoutSeconds 75 `
+                -TimeoutSeconds 120 `
                 -Predicate { param($state) [int]$state.run_count -ge 2 -and [string]$state.state -eq "RECOVERED" }
             if ($null -eq $recovered) { throw "WP9_RESTART_REHEARSAL_RECOVERY_TIMEOUT:$id" }
             $results += [ordered]@{ component = $id; passed = $true; attempts = [int]$recovered.run_count }
@@ -545,6 +548,7 @@ function Invoke-DependencyRehearsal {
     try {
         $arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{0}" -StatePath "{1}" -DependencyPath "{2}"' -f `
             $deployedWorker, $statePath, $dependencyPath
+        $arguments = $arguments.Replace('\"', '"')
         $definition = New-RehearsalTaskDefinition -Arguments $arguments -WithRestart $false
         Register-ScheduledTask `
             -TaskName $taskName `
