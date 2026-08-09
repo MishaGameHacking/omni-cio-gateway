@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from datetime import UTC, datetime
 from pathlib import Path
@@ -8,6 +9,10 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT_PATH = ROOT / "docs" / "architecture" / "V10_WP10_RECOVERY_CONTRACT.json"
+REHEARSAL_SCRIPT = ROOT / "infrastructure" / "windows" / "rehearse_wp10_recovery.ps1"
+BACKUP_RUNNER = ROOT / "infrastructure" / "windows" / "run_wp10_backup.ps1"
+PREPARE_SCRIPT = ROOT / "infrastructure" / "windows" / "prepare_wp10_offdevice_target.ps1"
+BUNDLE_TOOL = ROOT / "scripts" / "v10_wp10_backup_bundle.py"
 
 
 class OwnerEvidenceError(RuntimeError):
@@ -22,6 +27,24 @@ def _load(path: Path) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise OwnerEvidenceError("EVIDENCE_NOT_OBJECT")
     return payload
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def expected_implementation_fingerprint() -> dict[str, str]:
+    return {
+        "recovery_contract_sha256": _sha256(CONTRACT_PATH),
+        "rehearsal_script_sha256": _sha256(REHEARSAL_SCRIPT),
+        "backup_runner_sha256": _sha256(BACKUP_RUNNER),
+        "bundle_tool_sha256": _sha256(BUNDLE_TOOL),
+        "prepare_script_sha256": _sha256(PREPARE_SCRIPT),
+    }
 
 
 def _true(payload: dict[str, Any], key: str, reason: str, blockers: list[str]) -> None:
@@ -49,6 +72,18 @@ def assess(
         blockers.append("OWNER_REHEARSAL_NOT_PASS")
     if rehearsal.get("reason_code") != "OWNER_OFFDEVICE_BACKUP_CORRUPTION_RESTORE_PASS":
         blockers.append("OWNER_REHEARSAL_REASON_INVALID")
+
+    fingerprint = rehearsal.get("implementation_fingerprint")
+    expected_fingerprint = expected_implementation_fingerprint()
+    if not isinstance(fingerprint, dict):
+        blockers.append("IMPLEMENTATION_FINGERPRINT_MISSING")
+    elif set(fingerprint) != set(expected_fingerprint):
+        blockers.append("IMPLEMENTATION_FINGERPRINT_FIELDS_INVALID")
+    else:
+        for key, expected in expected_fingerprint.items():
+            actual = fingerprint.get(key)
+            if not isinstance(actual, str) or actual.lower() != expected:
+                blockers.append(f"IMPLEMENTATION_FINGERPRINT_MISMATCH:{key.upper()}")
 
     if rehearsal.get("postgres_major") != 18:
         blockers.append("POSTGRES_MAJOR_MISMATCH")
@@ -119,7 +154,11 @@ def assess(
     blockers = sorted(set(blockers))
     status = "PASS" if not blockers else "FAIL"
     reason_codes = (
-        ["OWNER_OFFDEVICE_RECOVERY_PASS", "RUNNER_PAYLOAD_ACCESS_DENIED"]
+        [
+            "CURRENT_IMPLEMENTATION_FINGERPRINT_MATCH",
+            "OWNER_OFFDEVICE_RECOVERY_PASS",
+            "RUNNER_PAYLOAD_ACCESS_DENIED",
+        ]
         if not blockers
         else blockers
     )
@@ -229,7 +268,7 @@ def _schema_shape_check(payload: dict[str, Any]) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Combine local OWNER rehearsal and non-admin ACL audit into sanitized WP10 evidence"
+        description="Combine current OWNER rehearsal and non-admin ACL audit into sanitized WP10 evidence"
     )
     parser.add_argument("rehearsal", type=Path)
     parser.add_argument("access_audit", type=Path)
