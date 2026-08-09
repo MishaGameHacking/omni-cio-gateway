@@ -58,8 +58,8 @@ def validate_contract(contract: dict[str, Any]) -> None:
         raise ContractError("ENGINEERING_SOURCE_INVALID")
     if separation.get("private_durable_state") != "ENCRYPTED_OWNER_CONTROLLED_OFFDEVICE_BACKUP":
         raise ContractError("PRIVATE_STATE_SOURCE_INVALID")
-    if separation.get("runtime_secrets") != "SEPARATELY_RESTORED_OWNER_CONTROLLED_SECRET_STORE":
-        raise ContractError("SECRET_RECOVERY_PATH_INVALID")
+    if separation.get("runtime_credential_recovery") != "SEPARATELY_RESTORED_OWNER_CONTROLLED_STORE":
+        raise ContractError("CREDENTIAL_RECOVERY_PATH_INVALID")
     for key in ("github_is_private_state_backup", "github_is_secret_backup", "ci_artifact_is_private_state_backup"):
         _require_false(separation, key, f"SOURCE_SEPARATION_VIOLATION:{key}")
 
