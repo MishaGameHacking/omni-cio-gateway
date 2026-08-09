@@ -46,6 +46,16 @@ def test_wp10_backup_runner_has_no_password_or_token_parameter() -> None:
     assert "pgpassfile" in runner
 
 
+def test_wp10_private_state_backup_cannot_succeed_local_only() -> None:
+    runner = _text("run_wp10_backup.ps1")
+    assert "[switch]$UsePreparedOffdeviceTarget" in runner
+    assert "PRIVATE_STATE_BACKUP_REQUIRES_OFFDEVICE_TARGET" in runner
+    assert "OFFDEVICE_COPY_REQUIRED_BUT_NOT_PROVEN" in runner
+    assert '"copy"' in runner
+    assert '"prune"' in runner
+    assert "OFFDEVICE_POST_RETENTION_VERIFY_FAILED" in runner
+
+
 def test_wp10_owner_preparation_requires_existing_encrypted_data_volume() -> None:
     script = _text("prepare_wp10_offdevice_target.ps1")
     assert "Get-BitLockerVolume" in script
@@ -63,15 +73,19 @@ def test_wp10_owner_rehearsal_revalidates_target_and_restores_from_offdevice() -
     assert "Get-BitLockerVolume" in script
     assert 'VolumeStatus -ne "FullyEncrypted"' in script
     assert 'ProtectionStatus -ne "On"' in script
-    assert '"COPY_OWNER_OFFDEVICE"' in script
+    assert "BACKUP_RUNNER_OFFDEVICE_CYCLE_NOT_PASS" in script
+    assert '"VERIFY_OWNER_OFFDEVICE"' in script
     assert "$restoreArchive = Join-Path" in script
     assert '"OWNER_OFFDEVICE_BACKUP_CORRUPTION_RESTORE_PASS"' in script
     assert "Remove-Item -LiteralPath $restoreArchive" not in script
 
 
-def test_wp10_owner_gate_writes_only_sanitized_local_rehearsal() -> None:
+def test_wp10_owner_gate_writes_only_current_sanitized_local_rehearsal() -> None:
     script = _text("run_wp10_owner_gate.ps1")
     assert "owner-rehearsal.sanitized.local.json" in script
+    assert "Remove-Item -LiteralPath $OwnerRehearsalPath" in script
+    assert "implementation_fingerprint" in script
+    assert "owner_gate_script_sha256" in script
     assert "target_identity_emitted = $false" in script
     assert "recovery_key_value_collected = $false" in script
     assert "TargetMountPoint $TargetMountPoint" in script
@@ -97,6 +111,12 @@ def test_wp10_schedule_is_sealed_and_within_rpo() -> None:
     assert schedule["enabled_before_product_binding"] is False
     assert schedule["production_database_binding"] == "NOT_READY_UNTIL_WP13"
     assert schedule["production_task_identity_binding"] == "NOT_READY_UNTIL_WP13_WP14"
+    assert schedule["production_backup_class"] == "POSTGRES_LOGICAL_PRIVATE_STATE"
+    assert schedule["use_prepared_offdevice_target"] is True
+    assert schedule["successful_cycle_requires_offdevice_copy"] is True
+    assert schedule["successful_cycle_requires_retention"] is True
+    assert contract["automation"]["production_cycle_requires_offdevice_copy"] is True
+    assert contract["automation"]["production_cycle_requires_retention"] is True
     assert schedule["credentials_in_task_definition"] is False
     assert schedule["private_payload_in_task_definition"] is False
 
