@@ -285,20 +285,45 @@ try {
         # postgres.exe refuses to run directly from an elevated Windows token.
         # pg_ctl is the PostgreSQL-supported Windows launcher for this case and
         # drops the dangerous administrative privileges before starting the
-        # server. -l prevents the detached server from inheriting PowerShell's
-        # redirected native-command handles.
+        # server. Launch pg_ctl through Start-Process with no PowerShell native
+        # pipeline redirection: a detached postgres child can otherwise keep
+        # inherited redirected handles open and strand Windows PowerShell 5.1.
+        # -W makes pg_ctl only trigger startup; the bounded pg_isready loop below
+        # remains the single source of truth for readiness.
         $clusterStartTriggered = $true
         try {
-            Invoke-NativeChecked -FilePath $pgCtl -Arguments @(
-                "start",
-                "-D", $dataDir,
-                "-l", $serverLog,
-                "-w",
-                "-t", "$PostgresWaitSeconds",
-                "-o", "-h 127.0.0.1 -p $port"
-            )
+            $pgCtlArgumentLine = @(
+                "start"
+                "-D `"$dataDir`""
+                "-l `"$serverLog`""
+                "-W"
+                "-s"
+                "-o `"-h 127.0.0.1 -p $port`""
+            ) -join " "
+            $pgCtlProcess = Start-Process -FilePath $pgCtl `
+                -ArgumentList $pgCtlArgumentLine `
+                -WindowStyle Hidden -PassThru
+            if ($null -eq $pgCtlProcess) {
+                throw "POSTGRES_PG_CTL_PROCESS_MISSING"
+            }
+            if (-not $pgCtlProcess.WaitForExit($PostgresWaitSeconds * 1000)) {
+                try {
+                    $pgCtlProcess.Kill()
+                    $null = $pgCtlProcess.WaitForExit(5000)
+                }
+                catch {
+                    # The fail-closed result below still applies.
+                }
+                throw "POSTGRES_PG_CTL_LAUNCH_TIMEOUT"
+            }
+            if ($pgCtlProcess.ExitCode -ne 0) {
+                throw "POSTGRES_PG_CTL_START_FAILED"
+            }
         }
         catch {
+            if ($_.Exception.Message -match "^POSTGRES_PG_CTL_") {
+                throw
+            }
             throw "POSTGRES_PG_CTL_START_FAILED"
         }
     }
