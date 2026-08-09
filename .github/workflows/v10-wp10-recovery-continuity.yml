@@ -1,0 +1,127 @@
+name: V10 WP10 Recovery Continuity
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - ".github/workflows/v10-wp10-recovery-continuity.yml"
+      - ".github/workflows/v10-wp10-recovery-compat.yml"
+      - "docs/architecture/V10_WP10_**"
+      - "docs/operations/V10_WP10_**"
+      - "infrastructure/windows/*wp10*"
+      - "scripts/*wp10*"
+      - "tests/test_v10_wp10_**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: v10-wp10-recovery-continuity-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  continuity-windows:
+    name: Lenovo exact-toolchain WP10 compatibility continuity
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Resolve exact machine Python 3.14.6
+        shell: powershell
+        run: |
+          $python = "C:\Program Files\Python314\python.exe"
+          if (-not (Test-Path -LiteralPath $python -PathType Leaf)) {
+            throw "WP10_CONTINUITY_PYTHON_3146_NOT_MACHINE_VISIBLE"
+          }
+          $actual = & $python -c "import platform; print(platform.python_version())"
+          if ($LASTEXITCODE -ne 0 -or $actual.Trim() -ne "3.14.6") {
+            throw "WP10_CONTINUITY_PYTHON_VERSION_MISMATCH:$actual"
+          }
+          "WP10_PYTHON=$python" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Create isolated Python 3.14.6 compatibility environment
+        shell: powershell
+        run: |
+          $venv = Join-Path $env:RUNNER_TEMP "wp10-compat-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
+          if (Test-Path -LiteralPath $venv) {
+            Remove-Item -LiteralPath $venv -Recurse -Force
+          }
+          & $env:WP10_PYTHON -m venv $venv
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $venvPython = Join-Path $venv "Scripts\python.exe"
+          $actual = & $venvPython -c "import platform; print(platform.python_version())"
+          if ($LASTEXITCODE -ne 0 -or $actual.Trim() -ne "3.14.6") {
+            throw "WP10_CONTINUITY_VENV_VERSION_MISMATCH:$actual"
+          }
+          "WP10_VENV_ROOT=$venv" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "WP10_VENV_PYTHON=$venvPython" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Verify WP10 recovery contract
+        shell: powershell
+        run: |
+          & $env:WP10_VENV_PYTHON scripts\check_v10_wp10_recovery_contract.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Parse WP10 PowerShell with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          if ($PSVersionTable.PSVersion.Major -ne 5) {
+            throw "WP10_CONTINUITY_WINDOWS_POWERSHELL_51_REQUIRED"
+          }
+          $files = @(
+            "infrastructure\windows\rehearse_wp10_recovery.ps1",
+            "infrastructure\windows\prepare_wp10_offdevice_target.ps1",
+            "infrastructure\windows\audit_wp10_offdevice_target.ps1",
+            "infrastructure\windows\complete_wp10_owner_offdevice_gate.ps1",
+            "infrastructure\windows\run_wp10_owner_rehearsal.ps1"
+          )
+          foreach ($file in $files) {
+            $tokens = $null
+            $errors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path $file),
+              [ref]$tokens,
+              [ref]$errors
+            )
+            if ($errors.Count -gt 0) {
+              $errors | ForEach-Object { Write-Error $_.Message }
+              exit 1
+            }
+          }
+
+      - name: Install isolated deterministic test dependency
+        shell: powershell
+        run: |
+          & $env:WP10_VENV_PYTHON -m pip install --disable-pip-version-check pytest==9.0.2
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Run WP10 deterministic compatibility tests
+        shell: powershell
+        run: |
+          & $env:WP10_VENV_PYTHON -m pytest -q `
+            tests/test_v10_wp10_recovery_contract.py `
+            tests/test_v10_wp10_backup_bundle.py `
+            tests/test_v10_wp10_recovery_profile.py `
+            tests/test_v10_wp10_offdevice_profile.py `
+            tests/test_v10_wp10_owner_gate_static.py `
+            tests/test_v10_wp10_offdevice_audit_privilege_boundary.py `
+            tests/test_v10_wp10_owner_rehearsal_launcher.py `
+            tests/test_v10_wp10_ci_continuity.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Clean isolated compatibility state
+        if: always()
+        shell: powershell
+        run: |
+          if ($env:WP10_VENV_ROOT -and (Test-Path -LiteralPath $env:WP10_VENV_ROOT)) {
+            Remove-Item -LiteralPath $env:WP10_VENV_ROOT -Recurse -Force
+          }
+          git reset --hard HEAD
+          git clean -ffdx
