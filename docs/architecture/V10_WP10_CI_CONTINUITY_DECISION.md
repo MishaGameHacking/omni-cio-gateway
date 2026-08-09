@@ -37,7 +37,7 @@ The continuity lane must:
 - use read-only GitHub contents permission and no repository secrets;
 - bootstrap the existing protected Python 3.12.10 CI runtime for dependency staging only;
 - acquire the official CPython **3.14.6** NuGet package into `RUNNER_TEMP`, because CPython documents the NuGet package specifically for CI/build systems that do not have a system-wide Python install;
-- pin the NuGet package to exact version `3.14.6`, fetch the published `.sha512`, verify the downloaded package before extraction, and independently verify the extracted interpreter version;
+- pin the NuGet package to exact version `3.14.6`, resolve its NuGet registration/catalog metadata, verify the downloaded package against the catalog `SHA512` package hash before extraction, and independently verify the extracted interpreter version;
 - stage exact `pytest==9.0.2` and its pure Python dependencies into a separate temporary target, then execute the WP10 suite with the isolated 3.14.6 interpreter through `PYTHONPATH`;
 - execute workflow-owned PowerShell through an explicit per-process `-ExecutionPolicy Bypass` wrapper, without changing `CurrentUser` or `LocalMachine` policy;
 - parse all WP10 PowerShell acceptance scripts with **Windows PowerShell 5.1**;
