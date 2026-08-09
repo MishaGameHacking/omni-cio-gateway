@@ -213,7 +213,7 @@ $result = @{
 
 $root = $null
 $dataDir = $null
-$clusterStarted = $false
+$clusterStartTriggered = $false
 $pgCtl = $null
 $destinationArchive = $null
 $destinationManifest = $null
@@ -223,6 +223,7 @@ try {
     Write-RecoveryPhase -Name "RESOLVE_POSTGRES_TOOLS"
     $initDb = Resolve-PostgresTool -Name "initdb"
     $pgCtl = Resolve-PostgresTool -Name "pg_ctl"
+    $pgIsReady = Resolve-PostgresTool -Name "pg_isready"
     $psql = Resolve-PostgresTool -Name "psql"
     $createdb = Resolve-PostgresTool -Name "createdb"
     $pgDump = Resolve-PostgresTool -Name "pg_dump"
@@ -281,11 +282,26 @@ try {
         "--pgdata=$dataDir",
         "--log=$serverLog",
         "--options=-h 127.0.0.1 -p $port",
-        "--timeout=$PostgresWaitSeconds",
-        "--wait",
+        "--no-wait",
         "start"
     )
-    $clusterStarted = $true
+    $clusterStartTriggered = $true
+
+    Write-RecoveryPhase -Name "WAIT_TEMP_CLUSTER_READY"
+    $deadline = [DateTime]::UtcNow.AddSeconds($PostgresWaitSeconds)
+    $ready = $false
+    do {
+        & $pgIsReady --host=127.0.0.1 --port=$port --username=wp10_owner `
+            --dbname=postgres --timeout=1 --quiet *> $null
+        if ($LASTEXITCODE -eq 0) {
+            $ready = $true
+            break
+        }
+        Start-Sleep -Milliseconds 250
+    } while ([DateTime]::UtcNow -lt $deadline)
+    if (-not $ready) {
+        throw "POSTGRES_START_READINESS_TIMEOUT"
+    }
 
     $common = @(
         "--host=127.0.0.1",
@@ -464,13 +480,16 @@ catch {
     }
 }
 finally {
-    if ($clusterStarted -and $null -ne $pgCtl -and $null -ne $dataDir) {
+    if ($clusterStartTriggered -and $null -ne $pgCtl -and $null -ne $dataDir) {
         try {
             Write-RecoveryPhase -Name "STOP_TEMP_CLUSTER"
-            & $pgCtl --pgdata=$dataDir --mode=fast `
-                --timeout=$PostgresWaitSeconds --wait stop *> $null
-            if ($LASTEXITCODE -ne 0) {
-                throw "TEMP_CLUSTER_STOP_FAILED"
+            & $pgCtl --pgdata=$dataDir status *> $null
+            if ($LASTEXITCODE -eq 0) {
+                & $pgCtl --pgdata=$dataDir --mode=fast `
+                    --timeout=$PostgresWaitSeconds --wait stop *> $null
+                if ($LASTEXITCODE -ne 0) {
+                    throw "TEMP_CLUSTER_STOP_FAILED"
+                }
             }
         }
         catch {
