@@ -95,11 +95,15 @@ if ($runCount -eq 1) {
         $replacement = Start-SyntheticChild -Seconds 2
         Write-State `
             -RunCount $attempt `
-            -State "RECOVERED" `
+            -State "RECOVERY_ATTEMPT_RUNNING" `
             -ProcessId ([int]$replacement.Id)
         Wait-Process -Id $replacement.Id -ErrorAction Stop
         $replacement.Refresh()
         if ([int]$replacement.ExitCode -eq 0) {
+            Write-State `
+                -RunCount $attempt `
+                -State "RECOVERED" `
+                -ProcessId ([int]$replacement.Id)
             exit 0
         }
     }
