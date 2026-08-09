@@ -11,7 +11,9 @@ ROOT = Path(__file__).resolve().parents[1]
 CONTRACT_PATH = ROOT / "docs" / "architecture" / "V10_WP10_RECOVERY_CONTRACT.json"
 REHEARSAL_SCRIPT = ROOT / "infrastructure" / "windows" / "rehearse_wp10_recovery.ps1"
 BACKUP_RUNNER = ROOT / "infrastructure" / "windows" / "run_wp10_backup.ps1"
-PREPARE_SCRIPT = ROOT / "infrastructure" / "windows" / "prepare_wp10_offdevice_target.ps1"
+PREPARE_SCRIPT = (
+    ROOT / "infrastructure" / "windows" / "prepare_wp10_offdevice_target.ps1"
+)
 OWNER_GATE_SCRIPT = ROOT / "infrastructure" / "windows" / "run_wp10_owner_gate.ps1"
 BUNDLE_TOOL = ROOT / "scripts" / "v10_wp10_backup_bundle.py"
 
@@ -66,7 +68,10 @@ def assess(
 ) -> dict[str, Any]:
     blockers: list[str] = []
 
-    if rehearsal.get("schema_version") != "1" or rehearsal.get("work_package") != "WP10":
+    if (
+        rehearsal.get("schema_version") != "1"
+        or rehearsal.get("work_package") != "WP10"
+    ):
         blockers.append("OWNER_REHEARSAL_IDENTITY_INVALID")
     if rehearsal.get("evidence_class") != "OWNER_OFFDEVICE_RECOVERY_REHEARSAL":
         blockers.append("OWNER_REHEARSAL_CLASS_INVALID")
@@ -120,7 +125,11 @@ def assess(
 
     duration = rehearsal.get("duration_ms")
     rto_ms = int(contract["recovery_objectives"]["rto_minutes"]) * 60 * 1000
-    if isinstance(duration, bool) or not isinstance(duration, (int, float)) or duration < 0:
+    if (
+        isinstance(duration, bool)
+        or not isinstance(duration, (int, float))
+        or duration < 0
+    ):
         blockers.append("REHEARSAL_DURATION_INVALID")
         duration_ms = 0
     else:
@@ -172,14 +181,20 @@ def assess(
         "captured_at_utc": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         "target": {
             "non_system_volume": bool(rehearsal.get("non_system_volume")),
-            "bitlocker_fully_encrypted": bool(rehearsal.get("bitlocker_fully_encrypted")),
+            "bitlocker_fully_encrypted": bool(
+                rehearsal.get("bitlocker_fully_encrypted")
+            ),
             "bitlocker_protection_on": bool(rehearsal.get("bitlocker_protection_on")),
             "recovery_key_custody_confirmed": bool(
                 rehearsal.get("recovery_key_custody_confirmed")
             ),
             "target_marker_present": bool(rehearsal.get("target_marker_present")),
-            "runner_payload_read_denied": bool(access.get("runner_payload_read_denied")),
-            "runner_payload_write_denied": bool(access.get("runner_payload_write_denied")),
+            "runner_payload_read_denied": bool(
+                access.get("runner_payload_read_denied")
+            ),
+            "runner_payload_write_denied": bool(
+                access.get("runner_payload_write_denied")
+            ),
         },
         "rehearsal": {
             "postgres_major": 18,
@@ -189,7 +204,9 @@ def assess(
             "separate_restore_database_used": bool(
                 rehearsal.get("separate_restore_database_used")
             ),
-            "restore_probe_exact_match": bool(rehearsal.get("restore_probe_exact_match")),
+            "restore_probe_exact_match": bool(
+                rehearsal.get("restore_probe_exact_match")
+            ),
             "temporary_state_cleaned": bool(rehearsal.get("temporary_state_cleaned")),
             "duration_ms": duration_ms,
         },
