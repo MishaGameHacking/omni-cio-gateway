@@ -94,9 +94,11 @@ The target must be:
 - `ProtectionStatus=On`;
 - under OWNER control;
 - recoverable using recovery material stored separately from GitHub and separately from the backup volume;
-- protected so the GitHub runner cannot read or write backup payloads.
+- protected so neither the GitHub runner nor the general runtime identity can read or write backup payloads during WP10 acceptance.
 
 WP10 does not auto-enable BitLocker, create/export a recovery password, or print key-protector material. If a target is not already correctly encrypted, OWNER configures it through the normal Windows BitLocker UI/administrative flow and keeps recovery material separately.
+
+The production backup-writer identity is deliberately **sealed** as `NOT_READY_UNTIL_PRODUCT_DB_AND_BACKUP_JOB_BINDING`. WP13/WP14 (or the explicitly responsible later persistence/job package) must bind the actual product database and a least-privilege backup writer through a separate reviewed privilege change. WP10 does not pre-grant `omni-cio-runtime` write/read access to private recovery media before that owner exists.
 
 ## OWNER final gate — preferred one-command path
 
@@ -114,7 +116,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass `
 
 The wrapper performs both reviewed OWNER-only stages:
 
-1. validates that the target is a non-system BitLocker Data volume with `FullyEncrypted` / protection `On`, creates the marker-owned backup root, grants SYSTEM/Administrators and `omni-cio-runtime`, excludes `omni-ci-runner`, and writes sanitized local evidence;
+1. validates that the target is a non-system BitLocker Data volume with `FullyEncrypted` / protection `On`, creates the marker-owned backup root with SYSTEM/Administrators access only, keeps runtime/runner payload access sealed, and writes sanitized local evidence;
 2. creates a fresh synthetic PostgreSQL custom archive, rejects a deliberately corrupted copy, copies the valid archive onto the real encrypted off-device target through the production bundle engine, restores directly from that off-device copy into a separate temporary database, validates exact probe rows, removes the synthetic off-device bundle, and records sanitized rehearsal evidence.
 
 No private database, real token, account identifier, portfolio payload or recovery-key value is used by this gate.
@@ -145,12 +147,12 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass `
 
 ## Off-device ACL boundary
 
-The protected backup root grants:
+At WP10 acceptance, the protected backup root grants only:
 
 - SYSTEM — FullControl;
-- built-in Administrators — FullControl;
-- `omni-cio-runtime` — Modify for the future reviewed production backup path;
-- `omni-ci-runner` — no payload grant.
+- built-in Administrators — FullControl.
+
+It deliberately grants **no** payload access to `omni-cio-runtime` and **no** payload access to `omni-ci-runner`. OWNER/admin executes the physical synthetic copy/restore rehearsal. The future production backup writer is not selected or granted until the actual product DB and durable backup job have owning WPs and can prove their exact privilege requirement.
 
 The final ready-for-review self-hosted gate runs under the ordinary runner identity and must prove both sentinel read and write are denied. It also requires the sanitized OWNER PostgreSQL off-device restore rehearsal evidence. The gate uploads no backup content and does not read the protected target marker.
 
@@ -204,7 +206,7 @@ Never upload or log:
 - private process dumps;
 - raw off-device file listings.
 
-Allowed evidence is limited to sanitized status/reason codes, PostgreSQL version class, RPO/RTO, duration, integrity/corruption/copy/restore/cleanup booleans, BitLocker state booleans and runner access-denied booleans.
+Allowed evidence is limited to sanitized status/reason codes, PostgreSQL version class, RPO/RTO, duration, integrity/corruption/copy/restore/cleanup booleans, BitLocker state booleans, sealed-writer state and runner access-denied booleans.
 
 ## WP10 Exit Gate
 
@@ -216,6 +218,7 @@ WP10 is not COMPLETE until all of these are true:
 - an OWNER-controlled non-system BitLocker target is physically available and passes the OWNER apply;
 - the OWNER rehearsal proves a real off-device synthetic bundle copy and restore from that copy;
 - final non-admin runner audit proves target encryption/protection, OWNER rehearsal evidence and runner read/write denial;
+- runtime and runner private backup-media access remain disabled, with the production backup writer sealed until product DB/job binding;
 - production DB binding remains sealed until WP13;
 - exact-head general V10 gates pass;
 - PR is ready/reviewed with no unresolved threads;
