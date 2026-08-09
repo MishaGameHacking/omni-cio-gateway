@@ -1,8 +1,8 @@
 {
   "matrix": "V10_COMPONENT_REUSE_MATRIX",
-  "version": 1,
-  "status": "OWNER_APPROVED_SEED_MATRIX",
-  "effective_date": "2026-08-07",
+  "version": 2,
+  "status": "WP12_REFINED_MATRIX",
+  "effective_date": "2026-08-09",
   "decision_values": [
     "REUSE_AS_IS",
     "WRAP_ADAPTER",
@@ -55,6 +55,26 @@
       "rewrite_default": "DENY",
       "financial_semantics_change_allowed": "ONLY_WITH_VERSIONED_CONTRACT_AND_PARITY_EVIDENCE",
       "owning_wp": "Block D/H/I owning WPs"
+    },
+    {
+      "id": "COMP-V10-CANONICAL-DOMAIN-IDENTITY",
+      "current_paths": [
+        "omni_cio/contracts/v1/common.py",
+        "omni_cio/contracts/v1/portfolio.py",
+        "omni_cio/contracts/v1/investment_policy.py",
+        "omni_cio/contracts/v1/research_evidence.py",
+        "omni_cio/contracts/v1/portfolio_plan.py",
+        "omni_cio/contracts/v1/plan_execution.py",
+        "omni_cio/contracts/v1/watchtower.py",
+        "omni_cio/contracts/v1/decision_journal.py",
+        "omni_cio/contracts/v1/domain.py"
+      ],
+      "role": "V10 canonical tenant-ready identity/scope envelopes over accepted V9 financial payload contracts",
+      "decision": "WRAP_ADAPTER",
+      "reason": "WP12 adds explicit versioned tenant/portfolio/policy/instrument identities, UTC semantics and cross-scope validation without rewriting accepted V9 financial calculations or persistence",
+      "financial_semantics_change_allowed": false,
+      "owning_wp": "WP12",
+      "retirement_gate": "not applicable; later persistence/adapters consume the canonical identity contracts"
     },
     {
       "id": "COMP-BROKER-RECON",
