@@ -70,7 +70,8 @@ jobs:
               $state = Read-State
               $info = Get-ScheduledTaskInfo -TaskPath $taskPath -TaskName $taskName
               $task = Get-ScheduledTask -TaskPath $taskPath -TaskName $taskName
-              Write-Host ("probe: scheduler_state={0}; last_result={1}; run_count={2}; worker_state={3}" -f [string]$task.State, [int]$info.LastTaskResult, $(if ($null -ne $state) {[int]$state.run_count} else {-1}), $(if ($null -ne $state) {[string]$state.state} else {"NONE"}))
+              $lastResult = [uint32]$info.LastTaskResult
+              Write-Host ("probe: scheduler_state={0}; last_result={1}; run_count={2}; worker_state={3}" -f [string]$task.State, $lastResult, $(if ($null -ne $state) {[int]$state.run_count} else {-1}), $(if ($null -ne $state) {[string]$state.state} else {"NONE"}))
               if ($null -ne $state -and [int]$state.run_count -ge 2 -and [string]$state.state -eq "RECOVERED") { $recovered = $true; break }
               Start-Sleep -Seconds 5
             } while ([datetime]::UtcNow -lt $deadline)
