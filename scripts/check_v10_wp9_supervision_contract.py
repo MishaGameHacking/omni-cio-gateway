@@ -226,7 +226,7 @@ def validate_assets(failures: list[str]) -> None:
             "WP9",
             "app:app",
             "trading_methods=false",
-            "LocalService",
+            "LOCAL SERVICE",
             "WP9A",
             "DEGRADED",
         ),
@@ -252,7 +252,7 @@ def validate_assets(failures: list[str]) -> None:
     _require_text(
         ROLLBACK,
         (
-            "WP9_REFUSES_UNOWNED",
+            "WP9_ROLLBACK_REFUSED",
             "PostgreSQL/runner/WP6/WP7/WP8 preserved: True",
             "Unregister-ScheduledTask",
         ),
