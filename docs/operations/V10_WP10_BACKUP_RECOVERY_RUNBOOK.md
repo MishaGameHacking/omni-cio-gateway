@@ -67,7 +67,7 @@ The policy may be changed later only with reviewed recovery evidence. RPO must n
 
 ## Synthetic Lenovo recovery rehearsal
 
-`infrastructure/windows/rehearse_wp10_recovery.ps1` is designed for the non-private GitHub self-hosted lane. It:
+`infrastructure/windows/rehearse_wp10_recovery.ps1` without OWNER mode is designed for the non-private GitHub self-hosted lane. It:
 
 - starts a temporary isolated PostgreSQL 18 cluster under runner temp;
 - creates deterministic synthetic rows only;
@@ -98,11 +98,30 @@ The target must be:
 
 WP10 does not auto-enable BitLocker, create/export a recovery password, or print key-protector material. If a target is not already correctly encrypted, OWNER configures it through the normal Windows BitLocker UI/administrative flow and keeps recovery material separately.
 
-## OWNER target preparation
+## OWNER final gate — preferred one-command path
 
-Do not run this until the WP10 PR exact head is otherwise ready for the final off-device gate.
+Do not run this until the WP10 PR exact head is otherwise ready for the physical off-device gate.
 
-Preview is non-mutating:
+Attach/unlock the dedicated BitLocker-protected data volume, open **elevated OWNER PowerShell** in the reviewed WP10 checkout, replace `E:` with the dedicated off-device volume, and run:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+  -File .\infrastructure\windows\complete_wp10_owner_offdevice_gate.ps1 `
+  -TargetVolume E: -RecoveryKeyCustodyConfirmed -AsJson
+```
+
+`-RecoveryKeyCustodyConfirmed` is only an OWNER assertion that recoverable BitLocker key material is already stored separately. **Do not paste the recovery password/key into PowerShell, GitHub, ChatGPT, logs or a backup file.**
+
+The wrapper performs both reviewed OWNER-only stages:
+
+1. validates that the target is a non-system BitLocker Data volume with `FullyEncrypted` / protection `On`, creates the marker-owned backup root, grants SYSTEM/Administrators and `omni-cio-runtime`, excludes `omni-ci-runner`, and writes sanitized local evidence;
+2. creates a fresh synthetic PostgreSQL custom archive, rejects a deliberately corrupted copy, copies the valid archive onto the real encrypted off-device target through the production bundle engine, restores directly from that off-device copy into a separate temporary database, validates exact probe rows, removes the synthetic off-device bundle, and records sanitized rehearsal evidence.
+
+No private database, real token, account identifier, portfolio payload or recovery-key value is used by this gate.
+
+### Optional non-mutating preview
+
+Before final apply, the target can be audited without creating the backup root:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass `
@@ -110,17 +129,19 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass `
   -TargetVolume E: -AsJson
 ```
 
-Replace `E:` with the dedicated external/off-device data volume.
+### Separate underlying OWNER stages
 
-Final apply must be run from an elevated OWNER PowerShell only after the OWNER has independently confirmed custody of the BitLocker recovery material:
+For diagnosis only, the wrapper's two stages may be run separately:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass `
   -File .\infrastructure\windows\prepare_wp10_offdevice_target.ps1 `
   -TargetVolume E: -Apply -RecoveryKeyCustodyConfirmed -AsJson
-```
 
-The script never asks for or records the recovery key. It creates only the reviewed WP10 backup root, safe marker/sentinel and sanitized local evidence. It refuses to take over a pre-existing directory that is not already marked as WP10-owned.
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+  -File .\infrastructure\windows\rehearse_wp10_recovery.ps1 `
+  -UsePreparedOffdeviceTarget -AsJson
+```
 
 ## Off-device ACL boundary
 
@@ -131,7 +152,7 @@ The protected backup root grants:
 - `omni-cio-runtime` — Modify for the future reviewed production backup path;
 - `omni-ci-runner` — no payload grant.
 
-The final ready-for-review self-hosted gate runs under the ordinary runner identity and must prove both sentinel read and write are denied. The gate uploads no backup content and does not read the protected target marker.
+The final ready-for-review self-hosted gate runs under the ordinary runner identity and must prove both sentinel read and write are denied. It also requires the sanitized OWNER PostgreSQL off-device restore rehearsal evidence. The gate uploads no backup content and does not read the protected target marker.
 
 ## Corrupt/tampered backup handling
 
@@ -183,7 +204,7 @@ Never upload or log:
 - private process dumps;
 - raw off-device file listings.
 
-Allowed evidence is limited to sanitized status/reason codes, PostgreSQL version class, RPO/RTO, duration, integrity/corruption/restore booleans, BitLocker state booleans and runner access-denied booleans.
+Allowed evidence is limited to sanitized status/reason codes, PostgreSQL version class, RPO/RTO, duration, integrity/corruption/copy/restore/cleanup booleans, BitLocker state booleans and runner access-denied booleans.
 
 ## WP10 Exit Gate
 
@@ -193,7 +214,8 @@ WP10 is not COMPLETE until all of these are true:
 - hosted Windows PowerShell compatibility passes;
 - Lenovo PostgreSQL 18 synthetic dump/corrupt/restore rehearsal passes;
 - an OWNER-controlled non-system BitLocker target is physically available and passes the OWNER apply;
-- final non-admin runner audit proves target encryption/protection and runner read/write denial;
+- the OWNER rehearsal proves a real off-device synthetic bundle copy and restore from that copy;
+- final non-admin runner audit proves target encryption/protection, OWNER rehearsal evidence and runner read/write denial;
 - production DB binding remains sealed until WP13;
 - exact-head general V10 gates pass;
 - PR is ready/reviewed with no unresolved threads;
