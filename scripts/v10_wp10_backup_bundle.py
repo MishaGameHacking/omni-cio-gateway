@@ -74,7 +74,9 @@ def _fsync_directory(path: Path) -> None:
         os.close(descriptor)
 
 
-def _atomic_write_json(path: Path, payload: dict[str, Any], temporary_suffix: str) -> None:
+def _atomic_write_json(
+    path: Path, payload: dict[str, Any], temporary_suffix: str
+) -> None:
     partial = path.with_name(f"{path.name}{temporary_suffix}")
     if partial.exists():
         partial.unlink()
@@ -100,7 +102,9 @@ def validate_manifest(manifest: dict[str, Any], contract: dict[str, Any]) -> Non
             raise BackupBundleError(f"MANIFEST_FIELD_MISSING:{missing[0]}")
         raise BackupBundleError(f"MANIFEST_FIELD_NOT_ALLOWED:{extra[0]}")
 
-    forbidden = {item.lower() for item in contract["bundle"]["manifest_forbidden_fields"]}
+    forbidden = {
+        item.lower() for item in contract["bundle"]["manifest_forbidden_fields"]
+    }
     for key in keys:
         lowered = key.lower()
         if lowered in forbidden or any(token in lowered for token in forbidden):
@@ -129,7 +133,9 @@ def validate_manifest(manifest: dict[str, Any], contract: dict[str, Any]) -> Non
         raise BackupBundleError("MANIFEST_ARCHIVE_PATH_INVALID")
 
     archive_hash = manifest["archive_sha256"]
-    if not isinstance(archive_hash, str) or not re.fullmatch(r"[0-9a-f]{64}", archive_hash):
+    if not isinstance(archive_hash, str) or not re.fullmatch(
+        r"[0-9a-f]{64}", archive_hash
+    ):
         raise BackupBundleError("MANIFEST_SHA256_INVALID")
     size = manifest["archive_size_bytes"]
     if isinstance(size, bool) or not isinstance(size, int) or size <= 0:
@@ -266,7 +272,9 @@ def atomic_copy_bundle(
 
     temporary_suffix = policy["bundle"]["temporary_suffix"]
     partial_archive = final_archive.with_name(f"{final_archive.name}{temporary_suffix}")
-    partial_manifest = final_manifest.with_name(f"{final_manifest.name}{temporary_suffix}")
+    partial_manifest = final_manifest.with_name(
+        f"{final_manifest.name}{temporary_suffix}"
+    )
     for path in (partial_archive, partial_manifest):
         if path.exists():
             path.unlink()
