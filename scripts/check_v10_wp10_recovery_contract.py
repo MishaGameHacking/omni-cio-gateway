@@ -30,7 +30,10 @@ def _require_false(mapping: dict[str, Any], key: str, code: str) -> None:
 
 
 def validate_contract(contract: dict[str, Any]) -> None:
-    if contract.get("schema_version") != "2" or contract.get("work_package") != "WP10":
+    if (
+        contract.get("schema_version") != "2"
+        or contract.get("work_package") != "WP10"
+    ):
         raise ContractError("WP10_CONTRACT_IDENTITY_INVALID")
     if contract.get("status") != "IN_PROGRESS_OWNER_GATE_REQUIRED":
         raise ContractError("WP10_PREMATURE_ACCEPTANCE_STATUS")
@@ -49,24 +52,49 @@ def validate_contract(contract: dict[str, Any]) -> None:
         raise ContractError("RECOVERY_OBJECTIVE_DRIFT")
     if objectives.get("rpo_status_before_product_db_binding") != "NOT_APPLICABLE_YET":
         raise ContractError("PREMATURE_RPO_CLAIM")
-    _require_true(objectives, "rpo_requires_offdevice_copy", "RPO_OFFDEVICE_GUARD_MISSING")
-    _require_true(objectives, "rto_requires_integrity_checks", "RTO_INTEGRITY_GUARD_MISSING")
-    _require_true(objectives, "measured_owner_rehearsal_required", "RTO_MEASUREMENT_GATE_MISSING")
+    _require_true(
+        objectives,
+        "rpo_requires_offdevice_copy",
+        "RPO_OFFDEVICE_GUARD_MISSING",
+    )
+    _require_true(
+        objectives,
+        "rto_requires_integrity_checks",
+        "RTO_INTEGRITY_GUARD_MISSING",
+    )
+    _require_true(
+        objectives,
+        "measured_owner_rehearsal_required",
+        "RTO_MEASUREMENT_GATE_MISSING",
+    )
 
     separation = contract["source_separation"]
     if separation.get("engineering_source") != "GITHUB_ACCEPTED_MAIN_RELEASE":
         raise ContractError("ENGINEERING_SOURCE_INVALID")
-    if separation.get("private_durable_state") != "ENCRYPTED_OWNER_CONTROLLED_OFFDEVICE_BACKUP":
+    if (
+        separation.get("private_durable_state")
+        != "ENCRYPTED_OWNER_CONTROLLED_OFFDEVICE_BACKUP"
+    ):
         raise ContractError("PRIVATE_STATE_SOURCE_INVALID")
-    if separation.get("runtime_credential_recovery") != "SEPARATELY_RESTORED_OWNER_CONTROLLED_STORE":
+    if (
+        separation.get("runtime_credential_recovery")
+        != "SEPARATELY_RESTORED_OWNER_CONTROLLED_STORE"
+    ):
         raise ContractError("CREDENTIAL_RECOVERY_PATH_INVALID")
-    for key in ("github_is_private_state_backup", "github_is_secret_backup", "ci_artifact_is_private_state_backup"):
+    for key in (
+        "github_is_private_state_backup",
+        "github_is_secret_backup",
+        "ci_artifact_is_private_state_backup",
+    ):
         _require_false(separation, key, f"SOURCE_SEPARATION_VIOLATION:{key}")
 
     postgres = contract["postgresql"]
     if int(postgres.get("accepted_major", 0)) != 18:
         raise ContractError("POSTGRES_MAJOR_CHANGED")
-    if postgres.get("backup_tool") != "pg_dump" or postgres.get("restore_tool") != "pg_restore":
+    if (
+        postgres.get("backup_tool") != "pg_dump"
+        or postgres.get("restore_tool") != "pg_restore"
+    ):
         raise ContractError("POSTGRES_TOOLCHAIN_INVALID")
     if postgres.get("archive_format") != "CUSTOM":
         raise ContractError("POSTGRES_ARCHIVE_FORMAT_INVALID")
@@ -147,7 +175,9 @@ def validate_contract(contract: dict[str, Any]) -> None:
         "hostname",
         "ip_address",
     }
-    if not required_forbidden.issubset(set(bundle.get("forbidden_manifest_tokens", []))):
+    if not required_forbidden.issubset(
+        set(bundle.get("forbidden_manifest_tokens", []))
+    ):
         raise ContractError("MANIFEST_PRIVATE_FIELD_GUARDS_INCOMPLETE")
 
     retention = contract["retention"]
@@ -165,14 +195,29 @@ def validate_contract(contract: dict[str, Any]) -> None:
     metadata = contract["private_metadata"]
     if metadata.get("mode") != "EXPLICIT_ALLOWLIST_ONLY":
         raise ContractError("METADATA_ALLOWLIST_NOT_STRICT")
-    _require_true(metadata, "empty_payload_allowed_before_owning_wps", "EMPTY_METADATA_NOT_ALLOWED")
-    _require_true(metadata, "synthetic_allowlist_test_required_now", "METADATA_TEST_GATE_MISSING")
-    forbidden_paths = {str(item).lower() for item in metadata.get("forbidden_path_tokens", [])}
-    if not {"secrets", "token", "password", "private_key", "runner"}.issubset(forbidden_paths):
+    _require_true(
+        metadata,
+        "empty_payload_allowed_before_owning_wps",
+        "EMPTY_METADATA_NOT_ALLOWED",
+    )
+    _require_true(
+        metadata,
+        "synthetic_allowlist_test_required_now",
+        "METADATA_TEST_GATE_MISSING",
+    )
+    forbidden_paths = {
+        str(item).lower() for item in metadata.get("forbidden_path_tokens", [])
+    }
+    if not {"secrets", "token", "password", "private_key", "runner"}.issubset(
+        forbidden_paths
+    ):
         raise ContractError("METADATA_FORBIDDEN_PATHS_INCOMPLETE")
 
     off_device = contract["off_device"]
-    if off_device.get("initial_target_class") != "OWNER_CONTROLLED_NON_SYSTEM_BITLOCKER_VOLUME":
+    if (
+        off_device.get("initial_target_class")
+        != "OWNER_CONTROLLED_NON_SYSTEM_BITLOCKER_VOLUME"
+    ):
         raise ContractError("OFFDEVICE_TARGET_CLASS_INVALID")
     for key in (
         "owner_target_required_for_final_acceptance",
@@ -186,7 +231,12 @@ def validate_contract(contract: dict[str, Any]) -> None:
         "owner_copy_restore_rehearsal_required",
     ):
         _require_true(off_device, key, f"OFFDEVICE_GUARD_MISSING:{key}")
-    for key in ("system_volume_allowed", "runner_payload_read_allowed", "runner_payload_write_allowed", "ci_may_synthesize_owner_evidence"):
+    for key in (
+        "system_volume_allowed",
+        "runner_payload_read_allowed",
+        "runner_payload_write_allowed",
+        "ci_may_synthesize_owner_evidence",
+    ):
         _require_false(off_device, key, f"OFFDEVICE_BOUNDARY_VIOLATION:{key}")
 
     owner = contract["owner_evidence"]
@@ -213,8 +263,16 @@ def validate_contract(contract: dict[str, Any]) -> None:
         "temporary_state_cleanup_required",
     ):
         _require_true(rehearsal, key, f"REHEARSAL_GUARD_MISSING:{key}")
-    _require_false(rehearsal, "private_portfolio_data_used", "PRIVATE_PORTFOLIO_USED_IN_REHEARSAL")
-    _require_false(rehearsal, "real_secret_values_used", "REAL_SECRET_USED_IN_REHEARSAL")
+    _require_false(
+        rehearsal,
+        "private_portfolio_data_used",
+        "PRIVATE_PORTFOLIO_USED_IN_REHEARSAL",
+    )
+    _require_false(
+        rehearsal,
+        "real_secret_values_used",
+        "REAL_SECRET_USED_IN_REHEARSAL",
+    )
 
     acceptance = contract["acceptance"]
     for key in (
