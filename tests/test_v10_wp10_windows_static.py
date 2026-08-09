@@ -1,0 +1,87 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+WINDOWS = ROOT / "infrastructure" / "windows"
+
+
+def _text(name: str) -> str:
+    return (WINDOWS / name).read_text(encoding="utf-8")
+
+
+def test_wp10_offdevice_scripts_never_contain_destructive_disk_commands() -> None:
+    combined = "\n".join(
+        _text(name)
+        for name in (
+            "prepare_wp10_offdevice_target.ps1",
+            "audit_wp10_offdevice_target.ps1",
+            "rehearse_wp10_recovery.ps1",
+            "run_wp10_backup.ps1",
+        )
+    ).lower()
+    forbidden = (
+        "format-volume",
+        "format.com",
+        "clear-disk",
+        "initialize-disk",
+        "new-partition",
+        "remove-partition",
+        "resize-partition",
+        "diskpart",
+    )
+    for token in forbidden:
+        assert token not in combined
+
+
+def test_wp10_backup_runner_has_no_password_or_token_parameter() -> None:
+    runner = _text("run_wp10_backup.ps1").lower()
+    parameter_region = runner.split("set-strictmode", 1)[0]
+    assert "$password" not in parameter_region
+    assert "$token" not in parameter_region
+    assert "$secret" not in parameter_region
+    assert "--no-password" in runner
+    assert "pgpassfile" in runner
+
+
+def test_wp10_owner_preparation_requires_existing_encrypted_data_volume() -> None:
+    script = _text("prepare_wp10_offdevice_target.ps1")
+    assert "Get-BitLockerVolume" in script
+    assert 'VolumeStatus -ne "FullyEncrypted"' in script
+    assert 'ProtectionStatus -ne "On"' in script
+    assert 'VolumeType -ne "Data"' in script
+    assert "SYSTEM_VOLUME_FORBIDDEN" in script
+    assert "RecoveryKeyCustodyConfirmed" in script
+
+
+def test_wp10_nonadmin_audit_does_not_require_live_bitlocker_privilege() -> None:
+    script = _text("audit_wp10_offdevice_target.ps1")
+    assert "Get-BitLockerVolume" not in script
+    assert "NONADMIN_AUDIT_REQUIRED" in script
+    assert "RUNNER_READ_ACCESS_NOT_DENIED" in script
+    assert "RUNNER_WRITE_ACCESS_NOT_DENIED" in script
+
+
+def test_wp10_schedule_is_sealed_and_within_rpo() -> None:
+    schedule = json.loads((WINDOWS / "wp10_backup_schedule.json").read_text(encoding="utf-8"))
+    contract = json.loads(
+        (ROOT / "docs" / "architecture" / "V10_WP10_RECOVERY_CONTRACT.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert schedule["cadence_minutes"] <= contract["recovery_objectives"]["rpo_minutes"]
+    assert schedule["enabled_before_product_binding"] is False
+    assert schedule["production_database_binding"] == "NOT_READY_UNTIL_WP13"
+    assert schedule["production_task_identity_binding"] == "NOT_READY_UNTIL_WP13_WP14"
+    assert schedule["credentials_in_task_definition"] is False
+    assert schedule["private_payload_in_task_definition"] is False
+
+
+def test_wp10_rehearsal_uses_separate_source_and_restore_databases() -> None:
+    script = _text("rehearse_wp10_recovery.ps1")
+    assert '"wp10_source"' in script
+    assert '"wp10_restore"' in script
+    assert "CORRUPT_ARCHIVE_ACCEPTED" in script
+    assert "RESTORE_PROBE_MISMATCH" in script
+    assert "14400000" in script
