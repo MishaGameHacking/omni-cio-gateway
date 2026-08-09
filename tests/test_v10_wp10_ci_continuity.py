@@ -27,19 +27,18 @@ def test_wp10_continuity_workflow_is_self_hosted_and_fail_closed() -> None:
     assert "github.event.pull_request.head.repo.full_name == github.repository" in workflow
     assert "permissions:\n  contents: read" in workflow
     assert "${{ secrets." not in workflow
-    assert "C:\\Program Files\\Python314\\python.exe" in workflow
-    assert 'Get-Command "py.exe"' in workflow
-    assert "sys.executable" in workflow
-    assert "USERPROFILE" in workflow
-    assert "LOCALAPPDATA" in workflow
-    assert "APPDATA" in workflow
-    assert '"3.14.6"' in workflow
+    assert "actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97" in workflow
+    assert 'python-version: "3.14.6"' in workflow
+    assert "WP10_CONTINUITY_PYTHON_VERSION_MISMATCH" in workflow
+    assert "Get-Command python.exe" in workflow
     assert "-m venv" in workflow
     assert "RUNNER_TEMP" in workflow
     assert "$PSVersionTable.PSVersion.Major -ne 5" in workflow
     assert "System.Management.Automation.Language.Parser" in workflow
     assert "tests/test_v10_wp10_recovery_contract.py" in workflow
     assert "tests/test_v10_wp10_offdevice_audit_privilege_boundary.py" in workflow
+    assert "WP10_CONTINUITY_VENV_CLEANUP_FAILED" in workflow
+    assert "shell: cmd" in workflow
     assert "git reset --hard HEAD" in workflow
     assert "git clean -ffdx" in workflow
 
