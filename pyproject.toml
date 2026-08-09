@@ -32,6 +32,7 @@ files = [
   "omni_cio/adapters",
   "omni_cio/quality",
   "omni_cio/analytics",
+  "omni_cio/core",
   "omni_cio/risk",
   "omni_cio/market",
   "omni_cio/news",
