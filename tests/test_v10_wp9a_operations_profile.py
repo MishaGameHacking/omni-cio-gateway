@@ -26,7 +26,10 @@ def safe_profile() -> dict:
         "windows_update": {
             "service_present": True,
             "service_disabled": False,
-            "pending_reboot": False,
+            "reboot_state_known": True,
+            "reboot_required": False,
+            "reboot_source": "WINDOWS_UPDATE_AGENT",
+            "legacy_pending_file_rename_present": False,
         },
         "time": {"service_running": True, "offset_ms": 10.0},
         "runner": {
@@ -88,12 +91,28 @@ def test_time_drift_blocks_sensitive_readiness() -> None:
     assert result["sensitive_operations_ready"] is False
 
 
-def test_pending_reboot_blocks_new_sensitive_state() -> None:
+def test_authoritative_update_reboot_blocks_sensitive_readiness() -> None:
     profile = safe_profile()
-    profile["windows_update"]["pending_reboot"] = True
+    profile["windows_update"]["reboot_required"] = True
     result = assess(profile, POLICY, WP5)
-    assert "PENDING_REBOOT" in result["blockers"]
+    assert "WINDOWS_UPDATE_REBOOT_REQUIRED" in result["blockers"]
     assert result["sensitive_operations_ready"] is False
+
+
+def test_unknown_update_reboot_state_fails_closed() -> None:
+    profile = safe_profile()
+    profile["windows_update"]["reboot_state_known"] = False
+    profile["windows_update"]["reboot_required"] = None
+    result = assess(profile, POLICY, WP5)
+    assert "WINDOWS_UPDATE_REBOOT_STATE_UNKNOWN" in result["blockers"]
+
+
+def test_legacy_pending_file_rename_is_diagnostic_only() -> None:
+    profile = safe_profile()
+    profile["windows_update"]["legacy_pending_file_rename_present"] = True
+    result = assess(profile, POLICY, WP5)
+    assert result["status"] == "PASS"
+    assert "LEGACY_PENDING_FILE_RENAME_PRESENT" in result["warnings"]
 
 
 def test_premature_ollama_install_fails_closed() -> None:
@@ -112,8 +131,12 @@ def test_private_evidence_flag_fails_closed() -> None:
 
 def test_memory_and_disk_use_wp5_block_thresholds() -> None:
     profile = safe_profile()
-    profile["resources"]["system_disk_free_gib"] = float(WP5["storage"]["block_free_gib"]) - 1
-    profile["resources"]["memory_used_percent"] = float(WP5["memory"]["block_new_heavy_work_percent"])
+    profile["resources"]["system_disk_free_gib"] = (
+        float(WP5["storage"]["block_free_gib"]) - 1
+    )
+    profile["resources"]["memory_used_percent"] = float(
+        WP5["memory"]["block_new_heavy_work_percent"]
+    )
     result = assess(profile, POLICY, WP5)
     assert "DISK_FREE_BLOCK" in result["blockers"]
     assert "MEMORY_HEAVY_WORK_BLOCK" in result["blockers"]

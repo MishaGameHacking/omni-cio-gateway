@@ -11,44 +11,89 @@ function Round-Number {
     return [Math]::Round($Value, $Digits)
 }
 
-function Get-W32TimeOffsetMs {
-    try {
-        $output = & w32tm.exe /stripchart /computer:time.windows.com /samples:3 /dataonly 2>$null
-        $values = @()
-        foreach ($line in $output) {
-            foreach ($match in [regex]::Matches([string]$line, '([+-]\d+(?:[\.,]\d+)?)s')) {
-                $normalized = $match.Groups[1].Value.Replace(',', '.')
-                $seconds = 0.0
-                if ([double]::TryParse(
-                    $normalized,
-                    [System.Globalization.NumberStyles]::Float,
-                    [System.Globalization.CultureInfo]::InvariantCulture,
-                    [ref]$seconds
-                )) {
-                    $values += ($seconds * 1000.0)
-                }
-            }
-        }
-        if ($values.Count -eq 0) { return $null }
-        return Round-Number -Value (($values | Measure-Object -Average).Average) -Digits 3
-    }
-    catch { return $null }
+function Convert-SecondsTokenToMs {
+    param([string]$Token)
+    if ([string]::IsNullOrWhiteSpace($Token)) { return $null }
+    $normalized = $Token.Trim().Replace(',', '.')
+    $seconds = 0.0
+    if (-not [double]::TryParse(
+        $normalized,
+        [System.Globalization.NumberStyles]::Float,
+        [System.Globalization.CultureInfo]::InvariantCulture,
+        [ref]$seconds
+    )) { return $null }
+    return ($seconds * 1000.0)
 }
 
-function Test-PendingReboot {
-    $paths = @(
-        'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending',
-        'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired',
-        'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager'
-    )
-    if (Test-Path -LiteralPath $paths[0]) { return $true }
-    if (Test-Path -LiteralPath $paths[1]) { return $true }
+function Get-W32TimeOffsetMs {
+    for ($attempt = 1; $attempt -le 3; $attempt += 1) {
+        try {
+            $output = & w32tm.exe /stripchart /computer:time.windows.com /period:1 /samples:3 /dataonly 2>$null
+            $values = @()
+            foreach ($line in $output) {
+                foreach ($match in [regex]::Matches([string]$line, '([+-]?\d+(?:[\.,]\d+)?)s')) {
+                    $valueMs = Convert-SecondsTokenToMs -Token $match.Groups[1].Value
+                    if ($null -ne $valueMs) { $values += $valueMs }
+                }
+            }
+            if ($values.Count -gt 0) {
+                return Round-Number -Value (($values | Measure-Object -Average).Average) -Digits 3
+            }
+        }
+        catch { }
+        if ($attempt -lt 3) { Start-Sleep -Seconds 1 }
+    }
+
     try {
-        $session = Get-ItemProperty -LiteralPath $paths[2] -Name PendingFileRenameOperations -ErrorAction Stop
-        if ($null -ne $session.PendingFileRenameOperations) { return $true }
+        $status = & w32tm.exe /query /status /verbose 2>$null
+        foreach ($line in $status) {
+            $match = [regex]::Match(
+                [string]$line,
+                '(?i)(?:Phase\s+Offset|Смещение\s+фазы).*?([+-]?\d+(?:[\.,]\d+)?)s'
+            )
+            if ($match.Success) {
+                $valueMs = Convert-SecondsTokenToMs -Token $match.Groups[1].Value
+                if ($null -ne $valueMs) { return Round-Number -Value $valueMs -Digits 3 }
+            }
+        }
     }
     catch { }
-    return $false
+    return $null
+}
+
+function Get-WindowsUpdateRebootFacts {
+    $result = [ordered]@{
+        reboot_state_known = $false
+        reboot_required = $null
+        source = "UNKNOWN"
+        legacy_pending_file_rename_present = $false
+    }
+    try {
+        $systemInfo = New-Object -ComObject "Microsoft.Update.SystemInfo"
+        $result.reboot_state_known = $true
+        $result.reboot_required = [bool]$systemInfo.RebootRequired
+        $result.source = "WINDOWS_UPDATE_AGENT"
+    }
+    catch {
+        $cbsPending = Test-Path -LiteralPath `
+            'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending'
+        $wuPending = Test-Path -LiteralPath `
+            'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired'
+        if ($cbsPending -or $wuPending) {
+            $result.reboot_state_known = $true
+            $result.reboot_required = $true
+            $result.source = "WINDOWS_UPDATE_REGISTRY_FALLBACK"
+        }
+    }
+    try {
+        $session = Get-ItemProperty `
+            -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager' `
+            -Name PendingFileRenameOperations `
+            -ErrorAction Stop
+        $result.legacy_pending_file_rename_present = ($null -ne $session.PendingFileRenameOperations)
+    }
+    catch { }
+    return $result
 }
 
 function Find-RunnerRoot {
@@ -62,9 +107,7 @@ function Find-RunnerRoot {
     }
     $candidates += @('C:\actions-runner')
     foreach ($candidate in ($candidates | Select-Object -Unique)) {
-        if (Test-Path -LiteralPath (Join-Path $candidate '.runner') -PathType Leaf) {
-            return $candidate
-        }
+        if (Test-Path -LiteralPath (Join-Path $candidate '.runner') -PathType Leaf) { return $candidate }
     }
     return $null
 }
@@ -89,10 +132,11 @@ function Get-RunnerUpdateFacts {
 
     $root = Find-RunnerRoot
     if ($null -eq $root) { return $result }
-
     try {
         $settings = Get-Content -LiteralPath (Join-Path $root '.runner') -Raw -ErrorAction Stop | ConvertFrom-Json
-        $property = $settings.PSObject.Properties | Where-Object { $_.Name -match '(?i)^disableupdate$' } | Select-Object -First 1
+        $property = $settings.PSObject.Properties |
+            Where-Object { $_.Name -match '(?i)^disableupdate$' } |
+            Select-Object -First 1
         if ($null -ne $property) { $result.disable_update = [bool]$property.Value }
         else { $result.disable_update = $false }
     }
@@ -112,7 +156,9 @@ function Get-RunnerUpdateFacts {
     try {
         $diag = Join-Path $root '_diag'
         if (Test-Path -LiteralPath $diag -PathType Container) {
-            $result.update_diagnostics_present = (@(Get-ChildItem -LiteralPath $diag -Filter 'SelfUpdate*.log' -File -ErrorAction SilentlyContinue).Count -gt 0)
+            $result.update_diagnostics_present = (
+                @(Get-ChildItem -LiteralPath $diag -Filter 'SelfUpdate*.log' -File -ErrorAction SilentlyContinue).Count -gt 0
+            )
         }
     }
     catch { }
@@ -182,11 +228,7 @@ function Get-PostgresFacts {
 }
 
 function Get-Wp9HealthFacts {
-    $result = [ordered]@{
-        present = $false
-        status = 'UNKNOWN'
-        fresh = $false
-    }
+    $result = [ordered]@{ present = $false; status = 'UNKNOWN'; fresh = $false }
     $path = 'C:\ProgramData\OmniCIO\services\wp9\evidence\health-status.json'
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return $result }
     try {
@@ -204,6 +246,7 @@ $capturedAt = [datetime]::UtcNow.ToString('o')
 $timeServiceRunning = $false
 try { $timeServiceRunning = ([string](Get-Service W32Time -ErrorAction Stop).Status -eq 'Running') } catch { }
 $timeOffset = Get-W32TimeOffsetMs
+$rebootFacts = Get-WindowsUpdateRebootFacts
 
 $systemDrive = $env:SystemDrive.TrimEnd(':')
 $freeGiB = $null
@@ -246,19 +289,16 @@ $profile = [ordered]@{
     windows_update = [ordered]@{
         service_present = [bool]$updateService.present
         service_disabled = [bool]$updateService.disabled
-        pending_reboot = [bool](Test-PendingReboot)
+        reboot_state_known = [bool]$rebootFacts.reboot_state_known
+        reboot_required = $rebootFacts.reboot_required
+        reboot_source = [string]$rebootFacts.source
+        legacy_pending_file_rename_present = [bool]$rebootFacts.legacy_pending_file_rename_present
     }
-    time = [ordered]@{
-        service_running = [bool]$timeServiceRunning
-        offset_ms = $timeOffset
-    }
+    time = [ordered]@{ service_running = [bool]$timeServiceRunning; offset_ms = $timeOffset }
     runner = Get-RunnerUpdateFacts
     postgresql = Get-PostgresFacts
     nvidia = Get-NvidiaFacts
-    ollama = [ordered]@{
-        present = [bool]$ollamaPresent
-        not_ready_allowed = $true
-    }
+    ollama = [ordered]@{ present = [bool]$ollamaPresent; not_ready_allowed = $true }
     resources = [ordered]@{
         system_disk_free_gib = $freeGiB
         system_disk_free_percent = $freePercent

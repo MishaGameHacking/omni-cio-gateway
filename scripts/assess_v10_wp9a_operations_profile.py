@@ -27,8 +27,12 @@ def assess(profile: dict, policy: dict, wp5: dict) -> dict:
     update = profile.get("windows_update", {})
     if not update.get("service_present") or update.get("service_disabled"):
         blockers.append("WINDOWS_UPDATE_SERVICE_UNSAFE")
-    if update.get("pending_reboot"):
-        blockers.append("PENDING_REBOOT")
+    if not update.get("reboot_state_known"):
+        blockers.append("WINDOWS_UPDATE_REBOOT_STATE_UNKNOWN")
+    elif update.get("reboot_required"):
+        blockers.append("WINDOWS_UPDATE_REBOOT_REQUIRED")
+    if update.get("legacy_pending_file_rename_present"):
+        warnings.append("LEGACY_PENDING_FILE_RENAME_PRESENT")
 
     time = profile.get("time", {})
     offset = time.get("offset_ms")
@@ -120,7 +124,8 @@ def assess(profile: dict, policy: dict, wp5: dict) -> dict:
             "WINDOWS_TIME_NOT_RUNNING",
             "TIME_OFFSET_UNKNOWN",
             "TIME_DRIFT_BLOCK",
-            "PENDING_REBOOT",
+            "WINDOWS_UPDATE_REBOOT_STATE_UNKNOWN",
+            "WINDOWS_UPDATE_REBOOT_REQUIRED",
         }
         for item in blockers
     )
