@@ -4,7 +4,10 @@ import copy
 import json
 from pathlib import Path
 
-from scripts.assess_v10_wp10_owner_evidence import assess
+from scripts.assess_v10_wp10_owner_evidence import (
+    assess,
+    expected_implementation_fingerprint,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT_PATH = ROOT / "docs" / "architecture" / "V10_WP10_RECOVERY_CONTRACT.json"
@@ -21,6 +24,7 @@ def _rehearsal() -> dict:
         "evidence_class": "OWNER_OFFDEVICE_RECOVERY_REHEARSAL",
         "status": "PASS",
         "reason_code": "OWNER_OFFDEVICE_BACKUP_CORRUPTION_RESTORE_PASS",
+        "implementation_fingerprint": expected_implementation_fingerprint(),
         "postgres_major": 18,
         "postgres_version_class": "18.4",
         "owner_target_used": True,
@@ -59,12 +63,13 @@ def _access() -> dict:
     }
 
 
-def test_owner_evidence_passes_only_with_physical_and_nonadmin_proofs() -> None:
+def test_owner_evidence_passes_only_with_physical_nonadmin_and_current_code_proofs() -> None:
     result = assess(_rehearsal(), _access(), _contract())
     assert result["status"] == "PASS"
     assert result["target"]["runner_payload_read_denied"] is True
     assert result["target"]["runner_payload_write_denied"] is True
     assert result["rehearsal"]["offdevice_copy_pass"] is True
+    assert "CURRENT_IMPLEMENTATION_FINGERPRINT_MATCH" in result["reason_codes"]
     assert all(value is False for value in result["privacy"].values())
     assert set(result) == {
         "schema_version",
@@ -77,6 +82,23 @@ def test_owner_evidence_passes_only_with_physical_and_nonadmin_proofs() -> None:
         "status",
         "reason_codes",
     }
+
+
+def test_owner_evidence_rejects_missing_or_stale_implementation_fingerprint() -> None:
+    missing = _rehearsal()
+    missing.pop("implementation_fingerprint")
+    result = assess(missing, _access(), _contract())
+    assert result["status"] == "FAIL"
+    assert "IMPLEMENTATION_FINGERPRINT_MISSING" in result["reason_codes"]
+
+    stale = _rehearsal()
+    stale["implementation_fingerprint"]["rehearsal_script_sha256"] = "0" * 64
+    result = assess(stale, _access(), _contract())
+    assert result["status"] == "FAIL"
+    assert any(
+        code.startswith("IMPLEMENTATION_FINGERPRINT_MISMATCH:")
+        for code in result["reason_codes"]
+    )
 
 
 def test_owner_evidence_rejects_missing_encryption_proof() -> None:
