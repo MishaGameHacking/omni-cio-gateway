@@ -30,10 +30,7 @@ def _require_false(mapping: dict[str, Any], key: str, code: str) -> None:
 
 
 def validate_contract(contract: dict[str, Any]) -> None:
-    if (
-        contract.get("schema_version") != "2"
-        or contract.get("work_package") != "WP10"
-    ):
+    if contract.get("schema_version") != "2" or contract.get("work_package") != "WP10":
         raise ContractError("WP10_CONTRACT_IDENTITY_INVALID")
     if contract.get("status") != "IN_PROGRESS_OWNER_GATE_REQUIRED":
         raise ContractError("WP10_PREMATURE_ACCEPTANCE_STATUS")
