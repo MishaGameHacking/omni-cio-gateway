@@ -9,6 +9,8 @@ Set-StrictMode -Version Latest
 
 $TargetEvidencePath = "C:\ProgramData\OmniCIO\wp10\offdevice-target.json"
 $RehearsalEvidencePath = "C:\ProgramData\OmniCIO\wp10\offdevice-rehearsal.json"
+$PostgresWaitSeconds = 30
+$env:PGCONNECT_TIMEOUT = "5"
 
 function Test-IsAdministrator {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -16,6 +18,14 @@ function Test-IsAdministrator {
     return $principal.IsInRole(
         [Security.Principal.WindowsBuiltInRole]::Administrator
     )
+}
+
+function Write-RecoveryPhase {
+    param([Parameter(Mandatory = $true)][string]$Name)
+
+    # Keep stdout reserved for the optional sanitized JSON result. Phase names
+    # contain no paths, identities, secrets or private payload data.
+    [Console]::Error.WriteLine("WP10_RECOVERY_PHASE=$Name")
 }
 
 function Invoke-NativeChecked {
@@ -210,6 +220,7 @@ $destinationManifest = $null
 $ownerTarget = $null
 
 try {
+    Write-RecoveryPhase -Name "RESOLVE_POSTGRES_TOOLS"
     $initDb = Resolve-PostgresTool -Name "initdb"
     $pgCtl = Resolve-PostgresTool -Name "pg_ctl"
     $psql = Resolve-PostgresTool -Name "psql"
@@ -244,6 +255,7 @@ try {
         Out-Null
 
     if ($ownerMode) {
+        Write-RecoveryPhase -Name "VALIDATE_OWNER_OFFDEVICE_TARGET"
         $ownerTarget = Get-PreparedOffdeviceDirectory
         $offdeviceDirectory = [string]$ownerTarget.path
     }
@@ -252,27 +264,38 @@ try {
         $offdeviceDirectory = $syntheticOffdevice
     }
 
+    Write-RecoveryPhase -Name "INITIALIZE_TEMP_CLUSTER"
     Invoke-NativeChecked -FilePath $initDb -Arguments @(
         "--pgdata=$dataDir",
         "--username=wp10_owner",
         "--auth=trust",
-        "--encoding=UTF8"
+        "--encoding=UTF8",
+        "--no-sync",
+        "--no-instructions"
     )
 
+    Write-RecoveryPhase -Name "START_TEMP_CLUSTER"
     $port = Get-FreeLoopbackPort
     Invoke-NativeChecked -FilePath $pgCtl -Arguments @(
         "--pgdata=$dataDir",
         "--options=-h 127.0.0.1 -p $port",
+        "--timeout=$PostgresWaitSeconds",
         "--wait",
         "start"
     )
     $clusterStarted = $true
 
-    $common = @("--host=127.0.0.1", "--port=$port", "--username=wp10_owner")
-    Invoke-NativeChecked -FilePath $createdb -Arguments (
-        $common + @("wp10_source")
+    $common = @(
+        "--host=127.0.0.1",
+        "--port=$port",
+        "--username=wp10_owner",
+        "--no-password"
     )
 
+    Write-RecoveryPhase -Name "CREATE_SOURCE_DATABASE"
+    Invoke-NativeChecked -FilePath $createdb -Arguments ($common + @("wp10_source"))
+
+    Write-RecoveryPhase -Name "SEED_SOURCE_DATABASE"
     $seedSql = @"
 CREATE TABLE recovery_probe (
     id integer PRIMARY KEY,
@@ -291,6 +314,7 @@ INSERT INTO recovery_probe (id, payload) VALUES
         )
     )
 
+    Write-RecoveryPhase -Name "DUMP_SOURCE_DATABASE"
     $stagingArchive = Join-Path $root "postgres-staging.dump.partial"
     Invoke-NativeChecked -FilePath $pgDump -Arguments (
         $common + @(
@@ -302,6 +326,7 @@ INSERT INTO recovery_probe (id, payload) VALUES
         )
     )
 
+    Write-RecoveryPhase -Name "FINALIZE_LOCAL_BUNDLE"
     Invoke-NativeChecked -FilePath "python" -Arguments @(
         "scripts/v10_wp10_backup_bundle.py",
         "create",
@@ -317,6 +342,7 @@ INSERT INTO recovery_probe (id, payload) VALUES
         throw "BUNDLE_MANIFEST_NOT_FOUND"
     }
 
+    Write-RecoveryPhase -Name "VERIFY_LOCAL_BUNDLE"
     Invoke-NativeChecked -FilePath "python" -Arguments @(
         "scripts/v10_wp10_backup_bundle.py",
         "verify",
@@ -329,6 +355,7 @@ INSERT INTO recovery_probe (id, payload) VALUES
     )
     $result.bundle_integrity_pass = $true
 
+    Write-RecoveryPhase -Name "PROVE_CORRUPTION_REJECTION"
     $corruptArchive = Join-Path $corruptDir $archive.Name
     $corruptManifest = Join-Path $corruptDir (
         [System.IO.Path]::GetFileName($manifestPath)
@@ -350,6 +377,7 @@ INSERT INTO recovery_probe (id, payload) VALUES
     }
     $result.corruption_rejected = $true
 
+    Write-RecoveryPhase -Name "COPY_OFFDEVICE_BUNDLE"
     Invoke-NativeChecked -FilePath "python" -Arguments @(
         "scripts/v10_wp10_backup_bundle.py",
         "copy",
@@ -366,6 +394,7 @@ INSERT INTO recovery_probe (id, payload) VALUES
         throw "OFFDEVICE_BUNDLE_NOT_FOUND"
     }
 
+    Write-RecoveryPhase -Name "VERIFY_OFFDEVICE_BUNDLE"
     Invoke-NativeChecked -FilePath "python" -Arguments @(
         "scripts/v10_wp10_backup_bundle.py",
         "verify",
@@ -378,9 +407,10 @@ INSERT INTO recovery_probe (id, payload) VALUES
     )
     $result.offdevice_copy_pass = $true
 
-    Invoke-NativeChecked -FilePath $createdb -Arguments (
-        $common + @("wp10_restore")
-    )
+    Write-RecoveryPhase -Name "CREATE_RESTORE_DATABASE"
+    Invoke-NativeChecked -FilePath $createdb -Arguments ($common + @("wp10_restore"))
+
+    Write-RecoveryPhase -Name "RESTORE_OFFDEVICE_BUNDLE"
     Invoke-NativeChecked -FilePath $pgRestore -Arguments (
         $common + @(
             "--dbname=wp10_restore",
@@ -391,6 +421,7 @@ INSERT INTO recovery_probe (id, payload) VALUES
         )
     )
 
+    Write-RecoveryPhase -Name "VERIFY_RESTORE_PROBE"
     $probeOutput = Invoke-NativeChecked -FilePath $psql -Arguments (
         $common + @(
             "--dbname=wp10_restore",
@@ -412,16 +443,13 @@ INSERT INTO recovery_probe (id, payload) VALUES
     $result.restore_probe_pass = $true
 
     if ($ownerMode) {
+        Write-RecoveryPhase -Name "CLEAN_OFFDEVICE_SYNTHETIC"
         Remove-Item -LiteralPath $destinationManifest -Force
         Remove-Item -LiteralPath $destinationArchive -Force
         $destinationManifest = $null
         $destinationArchive = $null
-        $result.offdevice_cleanup_pass = $true
     }
-    else {
-        $result.offdevice_cleanup_pass = $true
-    }
-
+    $result.offdevice_cleanup_pass = $true
     $result.status = "PASS"
     $result.reason_code = "RECOVERY_REHEARSAL_PASS"
 }
@@ -436,7 +464,12 @@ catch {
 finally {
     if ($clusterStarted -and $null -ne $pgCtl -and $null -ne $dataDir) {
         try {
-            & $pgCtl --pgdata=$dataDir --mode=fast --wait stop *> $null
+            Write-RecoveryPhase -Name "STOP_TEMP_CLUSTER"
+            & $pgCtl --pgdata=$dataDir --mode=fast `
+                --timeout=$PostgresWaitSeconds --wait stop *> $null
+            if ($LASTEXITCODE -ne 0) {
+                throw "TEMP_CLUSTER_STOP_FAILED"
+            }
         }
         catch {
             $result.status = "FAIL"
@@ -460,6 +493,7 @@ finally {
 
     if ($null -ne $root -and (Test-Path -LiteralPath $root)) {
         try {
+            Write-RecoveryPhase -Name "CLEAN_TEMP_STATE"
             Remove-Item -LiteralPath $root -Recurse -Force
             $result.temporary_state_cleaned = $true
         }
@@ -514,6 +548,7 @@ if ($ownerMode -and $result.status -eq "PASS") {
     }
 }
 
+Write-RecoveryPhase -Name "COMPLETE"
 Write-Result -Result $result
 if ($result.status -ne "PASS") {
     exit 1
