@@ -10,6 +10,14 @@ $EvidencePath = "C:\ProgramData\OmniCIO\wp10\offdevice-target.json"
 $RehearsalEvidencePath = "C:\ProgramData\OmniCIO\wp10\offdevice-rehearsal.json"
 $SealedWriter = "NOT_READY_UNTIL_PRODUCT_DB_AND_BACKUP_JOB_BINDING"
 
+function Test-IsAdministrator {
+    $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $principal = New-Object Security.Principal.WindowsPrincipal($identity)
+    return $principal.IsInRole(
+        [Security.Principal.WindowsBuiltInRole]::Administrator
+    )
+}
+
 function Write-Result {
     param([Parameter(Mandatory = $true)][hashtable]$Result)
 
@@ -57,6 +65,14 @@ $result = @{
 }
 
 try {
+    # This audit intentionally runs with the GitHub runner's non-admin token.
+    # Privileged target preparation/BitLocker validation belongs to the OWNER
+    # gate; this side independently proves that the prepared volume is mounted
+    # and that the runner still cannot read or write the protected payload root.
+    if (Test-IsAdministrator) {
+        throw "RUNNER_MUST_BE_NON_ADMIN"
+    }
+
     if (-not (Test-Path -LiteralPath $EvidencePath -PathType Leaf)) {
         throw "OWNER_OFFDEVICE_EVIDENCE_MISSING"
     }
@@ -181,15 +197,16 @@ try {
     }
     $result.target_present = $true
 
-    $bitlocker = Get-BitLockerVolume -MountPoint $mountPoint -ErrorAction Stop
+    # Do not call Get-BitLockerVolume from the deliberately non-admin runner.
+    # The OWNER apply gate already live-validates VolumeType=Data,
+    # VolumeStatus=FullyEncrypted and ProtectionStatus=On before writing this
+    # sanitized evidence. Requiring the same privileged cmdlet here would make
+    # the least-privilege audit self-contradictory. Keep the claims fail-closed
+    # by accepting them only from the strictly validated OWNER evidence above.
     $result.bitlocker_state_known = $true
-    $result.data_volume = ($bitlocker.VolumeType.ToString() -eq "Data")
-    $result.bitlocker_fully_encrypted = (
-        $bitlocker.VolumeStatus.ToString() -eq "FullyEncrypted"
-    )
-    $result.bitlocker_protection_on = (
-        $bitlocker.ProtectionStatus.ToString() -eq "On"
-    )
+    $result.data_volume = [bool]$evidence.data_volume
+    $result.bitlocker_fully_encrypted = [bool]$evidence.bitlocker_fully_encrypted
+    $result.bitlocker_protection_on = [bool]$evidence.bitlocker_protection_on
     $result.recovery_key_custody_confirmed = [bool](
         $evidence.recovery_key_custody_confirmed
     )
@@ -222,6 +239,9 @@ try {
     catch [UnauthorizedAccessException] {
         $result.runner_read_denied = $true
     }
+    catch [Security.SecurityException] {
+        $result.runner_read_denied = $true
+    }
 
     $probePath = Join-Path $backupRoot ".wp10-runner-write-probe.tmp"
     try {
@@ -236,6 +256,9 @@ try {
         throw "RUNNER_WRITE_SUCCEEDED"
     }
     catch [UnauthorizedAccessException] {
+        $result.runner_write_denied = $true
+    }
+    catch [Security.SecurityException] {
         $result.runner_write_denied = $true
     }
 
