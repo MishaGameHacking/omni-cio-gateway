@@ -213,7 +213,7 @@ if ($null -ne $reboot -and $reboot.post_boot_observed -eq $true -and $null -ne $
         } else { [datetime]::MinValue }
         $sameBoot = [math]::Abs(($observedBoot - $bootUtc).TotalSeconds) -le 5
         $afterBoot = $supervisorObserved -gt $bootUtc -and $statusObserved -gt $bootUtc
-        $freshWindow = $supervisorObserved -ge [datetime]::UtcNow.AddMinutes(-[int]$contract.reboot_rehearsal.freshness_minutes)
+        $freshWindow = $supervisorObserved -le $bootUtc.AddMinutes([int]$contract.reboot_rehearsal.freshness_minutes)
         $postBootFresh = ($sameBoot -and $afterBoot -and $freshWindow)
     }
     catch { $postBootFresh = $false }
