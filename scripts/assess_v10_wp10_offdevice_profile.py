@@ -27,6 +27,8 @@ def assess(profile: dict) -> dict:
 
     for key, reason in (
         ("owner_evidence_present", "OWNER_EVIDENCE_MISSING"),
+        ("owner_rehearsal_evidence_present", "OWNER_REHEARSAL_EVIDENCE_MISSING"),
+        ("owner_offdevice_rehearsal_pass", "OWNER_OFFDEVICE_REHEARSAL_NOT_PASS"),
         ("target_present", "TARGET_NOT_PRESENT"),
         ("non_system_volume", "TARGET_IS_SYSTEM_VOLUME"),
         ("data_volume", "TARGET_NOT_DATA_VOLUME"),
@@ -58,6 +60,7 @@ def assess(profile: dict) -> dict:
         "status": "PASS" if not blockers else "FAIL",
         "blockers": blockers,
         "offdevice_ready": not blockers,
+        "owner_restore_rehearsal_ready": not blockers,
         "runner_private_backup_access": False,
         "real_money_authority_changed": False,
         "trading_methods": False,
