@@ -56,7 +56,11 @@ def assess(profile: dict[str, Any], contract: dict[str, Any]) -> dict[str, Any]:
             blockers.append(reason)
 
     duration = profile.get("duration_ms")
-    if isinstance(duration, bool) or not isinstance(duration, (int, float)) or duration < 0:
+    if (
+        isinstance(duration, bool)
+        or not isinstance(duration, (int, float))
+        or duration < 0
+    ):
         blockers.append("REHEARSAL_DURATION_INVALID")
     else:
         rto_ms = int(contract["recovery_objectives"]["rto_minutes"]) * 60 * 1000
@@ -71,7 +75,9 @@ def assess(profile: dict[str, Any], contract: dict[str, Any]) -> dict[str, Any]:
         "blockers": blockers,
         "synthetic_recovery_ready": not blockers,
         "owner_offdevice_final_acceptance": "OWNER_ACTION_REQUIRED",
-        "production_database_binding": contract["postgresql"]["production_database_binding"],
+        "production_database_binding": contract["postgresql"][
+            "production_database_binding"
+        ],
         "production_job_binding": contract["postgresql"]["production_job_binding"],
         "wp11_locked": True,
         "trading_methods": False,
@@ -80,7 +86,9 @@ def assess(profile: dict[str, Any], contract: dict[str, Any]) -> dict[str, Any]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Assess sanitized WP10 synthetic recovery evidence")
+    parser = argparse.ArgumentParser(
+        description="Assess sanitized WP10 synthetic recovery evidence"
+    )
     parser.add_argument("profile", type=Path)
     args = parser.parse_args()
     result = assess(_load(args.profile), _load(CONTRACT_PATH))
