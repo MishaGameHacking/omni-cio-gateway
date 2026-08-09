@@ -45,23 +45,64 @@ jobs:
           $version = "3.14.6"
           $root = Join-Path $env:RUNNER_TEMP "wp10-python-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
           $package = Join-Path $root "python.$version.nupkg"
-          $publishedHash = Join-Path $root "python.$version.nupkg.sha512"
           New-Item -ItemType Directory -Path $root -Force | Out-Null
 
-          $base = "https://api.nuget.org/v3-flatcontainer/python/$version/python.$version.nupkg"
-          Invoke-WebRequest -UseBasicParsing -Uri $base -OutFile $package
-          Invoke-WebRequest -UseBasicParsing -Uri "$base.sha512" -OutFile $publishedHash
+          $indexUrl = "https://api.nuget.org/v3/registration5-gz-semver2/python/index.json"
+          $index = Invoke-RestMethod -UseBasicParsing -Uri $indexUrl
+          $leaf = $null
+          foreach ($page in $index.items) {
+            $items = $page.items
+            if ($null -eq $items) {
+              $pageDoc = Invoke-RestMethod -UseBasicParsing -Uri $page.'@id'
+              $items = $pageDoc.items
+            }
+            foreach ($candidate in $items) {
+              $entry = $candidate.catalogEntry
+              if ($entry -is [string]) {
+                $entry = Invoke-RestMethod -UseBasicParsing -Uri $entry
+              }
+              if ($entry.version -eq $version) {
+                $leaf = $candidate
+                break
+              }
+            }
+            if ($null -ne $leaf) { break }
+          }
+          if ($null -eq $leaf) {
+            throw "WP10_CONTINUITY_NUGET_VERSION_NOT_FOUND"
+          }
 
-          $expected = (Get-Content -LiteralPath $publishedHash -Raw).Trim()
+          $catalogRef = $leaf.catalogEntry
+          if ($catalogRef -is [string]) {
+            $catalogUrl = $catalogRef
+          }
+          else {
+            $catalogUrl = $catalogRef.'@id'
+          }
+          if ([string]::IsNullOrWhiteSpace($catalogUrl)) {
+            throw "WP10_CONTINUITY_NUGET_CATALOG_MISSING"
+          }
+          $catalog = Invoke-RestMethod -UseBasicParsing -Uri $catalogUrl
+          if ($catalog.id -ne "python" -or $catalog.version -ne $version) {
+            throw "WP10_CONTINUITY_NUGET_CATALOG_IDENTITY_MISMATCH"
+          }
+          if ($catalog.packageHashAlgorithm -ne "SHA512" -or [string]::IsNullOrWhiteSpace($catalog.packageHash)) {
+            throw "WP10_CONTINUITY_NUGET_HASH_METADATA_INVALID"
+          }
+          if ([string]::IsNullOrWhiteSpace($leaf.packageContent)) {
+            throw "WP10_CONTINUITY_NUGET_CONTENT_URL_MISSING"
+          }
+
+          Invoke-WebRequest -UseBasicParsing -Uri $leaf.packageContent -OutFile $package
           $sha512 = [System.Security.Cryptography.SHA512]::Create()
           try {
             $bytes = [System.IO.File]::ReadAllBytes($package)
-            $actual = [Convert]::ToBase64String($sha512.ComputeHash($bytes))
+            $actualHash = [Convert]::ToBase64String($sha512.ComputeHash($bytes))
           }
           finally {
             $sha512.Dispose()
           }
-          if ([string]::IsNullOrWhiteSpace($expected) -or $actual -ne $expected) {
+          if ($actualHash -ne $catalog.packageHash) {
             throw "WP10_CONTINUITY_NUGET_SHA512_MISMATCH"
           }
 
