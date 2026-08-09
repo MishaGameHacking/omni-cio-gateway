@@ -46,15 +46,19 @@ def test_synthetic_rehearsal_is_bounded_and_phase_observable() -> None:
     assert '$PostgresWaitSeconds = 30' in script
     assert '$env:PGCONNECT_TIMEOUT = "5"' in script
     assert '$serverLog = Join-Path $root "postgres-server.log"' in script
+    assert '$pgIsReady = Resolve-PostgresTool -Name "pg_isready"' in script
     assert '"--no-sync"' in script
     assert '"--no-instructions"' in script
     assert '"--log=$serverLog"' in script
-    assert '"--timeout=$PostgresWaitSeconds"' in script
+    assert '"--no-wait"' in script
+    assert '--timeout=1 --quiet' in script
+    assert 'throw "POSTGRES_START_READINESS_TIMEOUT"' in script
     assert '"--no-password"' in script
     assert "WP10_RECOVERY_PHASE=" in script
     for phase in (
         "INITIALIZE_TEMP_CLUSTER",
         "START_TEMP_CLUSTER",
+        "WAIT_TEMP_CLUSTER_READY",
         "DUMP_SOURCE_DATABASE",
         "RESTORE_OFFDEVICE_BUNDLE",
         "VERIFY_RESTORE_PROBE",
