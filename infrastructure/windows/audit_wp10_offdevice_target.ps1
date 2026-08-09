@@ -8,6 +8,7 @@ Set-StrictMode -Version Latest
 
 $EvidencePath = "C:\ProgramData\OmniCIO\wp10\offdevice-target.json"
 $RehearsalEvidencePath = "C:\ProgramData\OmniCIO\wp10\offdevice-rehearsal.json"
+$SealedWriter = "NOT_READY_UNTIL_PRODUCT_DB_AND_BACKUP_JOB_BINDING"
 
 function Write-Result {
     param([Parameter(Mandatory = $true)][hashtable]$Result)
@@ -22,6 +23,7 @@ function Write-Result {
     Write-Output "BitLocker fully encrypted: $($Result.bitlocker_fully_encrypted)"
     Write-Output "BitLocker protection on: $($Result.bitlocker_protection_on)"
     Write-Output "OWNER restore rehearsal: $($Result.owner_offdevice_rehearsal_pass)"
+    Write-Output "Runtime payload access granted: NO"
     Write-Output "Runner read denied: $($Result.runner_read_denied)"
     Write-Output "Runner write denied: $($Result.runner_write_denied)"
 }
@@ -44,6 +46,8 @@ $result = @{
     recovery_key_custody_confirmed = $false
     target_marker_expected = $false
     sentinel_expected = $false
+    production_backup_writer_identity = $SealedWriter
+    runtime_payload_access_granted = $false
     runner_read_denied = $false
     runner_write_denied = $false
     runner_payload_access_granted = $false
@@ -79,13 +83,17 @@ try {
         "data_volume",
         "bitlocker_fully_encrypted",
         "bitlocker_protection_on",
-        "recovery_key_custody_confirmed",
-        "runtime_identity_resolved",
-        "runner_identity_resolved"
+        "recovery_key_custody_confirmed"
     )) {
         if (-not [bool]$evidence.$field) {
             throw "OWNER_OFFDEVICE_EVIDENCE_INCOMPLETE"
         }
+    }
+    if ([string]$evidence.production_backup_writer_identity -ne $SealedWriter) {
+        throw "OWNER_EVIDENCE_PRODUCTION_WRITER_SCOPE_LEAK"
+    }
+    if ([bool]$evidence.runtime_payload_access_granted) {
+        throw "OWNER_EVIDENCE_RUNTIME_ACCESS_ENABLED"
     }
     if ([bool]$evidence.runner_payload_access_granted) {
         throw "OWNER_EVIDENCE_RUNNER_ACCESS_ENABLED"
@@ -236,7 +244,7 @@ try {
     }
 
     # The marker itself is intentionally inside the protected payload root.
-    # Do not read it in CI; owner evidence carries only its non-secret schema facts.
+    # Do not read it in CI; OWNER evidence carries only its non-secret schema facts.
     $null = $markerPath
     $result.status = "PASS"
     $result.reason_code = "OFFDEVICE_AUDIT_PASS"
