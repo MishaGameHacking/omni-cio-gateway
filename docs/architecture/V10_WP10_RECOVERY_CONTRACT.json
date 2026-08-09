@@ -6,7 +6,7 @@
   "authority": {
     "master_plan": "docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.md",
     "recovery_contract": "docs/architecture/V10_RECOVERY_CONTRACT.md",
-    "wp8_secret_contract": "docs/architecture/V10_WP8_SECRET_STORE_CONTRACT.json",
+    "wp8_protected_store_contract": "docs/architecture/V10_WP8_SECRET_STORE_CONTRACT.json",
     "wp9a_operations_contract": "docs/architecture/V10_WP9A_OPERATIONS_CONTRACT.json",
     "stable_entrypoint": "app:app",
     "trading_methods": false,
@@ -23,7 +23,7 @@
   "source_separation": {
     "engineering_source": "GITHUB_ACCEPTED_MAIN_RELEASE",
     "private_durable_state": "ENCRYPTED_OWNER_CONTROLLED_BACKUP",
-    "runtime_secrets": "SEPARATELY_RESTORED_LOCAL_SECRET_STORE",
+    "runtime_protected_store_recovery": "SEPARATELY_RESTORED_LOCAL_SECRET_STORE",
     "github_is_private_state_backup": false,
     "github_is_secret_backup": false,
     "ci_artifact_is_private_state_backup": false
@@ -124,7 +124,7 @@
   "private_metadata": {
     "mode": "ALLOWLIST_ONLY",
     "empty_payload_allowed_before_owning_wps": true,
-    "secret_root": "C:\\ProgramData\\OmniCIO\\secrets",
+    "protected_store_root": "C:\\ProgramData\\OmniCIO\\secrets",
     "secret_root_backup_forbidden": true,
     "wp8_ciphertext_backup_forbidden": true,
     "recovery_key_backup_forbidden": true,
