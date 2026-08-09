@@ -81,7 +81,11 @@ def validate_event(event: dict[str, Any], policy: dict[str, Any]) -> None:
 
     if "duration_ms" in event and event["duration_ms"] is not None:
         duration = event["duration_ms"]
-        if isinstance(duration, bool) or not isinstance(duration, (int, float)) or duration < 0:
+        if (
+            isinstance(duration, bool)
+            or not isinstance(duration, (int, float))
+            or duration < 0
+        ):
             raise OperationsLogError("LOG_DURATION_INVALID")
 
     _parse_utc(str(event["observed_at_utc"]))
@@ -134,7 +138,9 @@ def _rotate(log_path: Path, retained_files: int) -> None:
         log_path.unlink()
 
 
-def _delete_expired(log_dir: Path, file_name: str, retention_days: int, now: datetime) -> None:
+def _delete_expired(
+    log_dir: Path, file_name: str, retention_days: int, now: datetime
+) -> None:
     cutoff = now - timedelta(days=retention_days)
     for path in log_dir.glob(f"{file_name}*"):
         if not path.is_file():
@@ -176,7 +182,8 @@ def write_event(
         "event_hash": event_hash,
     }
     encoded = (
-        json.dumps(record, sort_keys=True, separators=(",", ":"), ensure_ascii=True) + "\n"
+        json.dumps(record, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+        + "\n"
     ).encode("utf-8")
 
     if log_path.exists() and log_path.stat().st_size + len(encoded) > max_bytes:
@@ -199,7 +206,9 @@ def write_event(
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Write one sanitized WP9A operations event")
+    parser = argparse.ArgumentParser(
+        description="Write one sanitized WP9A operations event"
+    )
     parser.add_argument("--log-dir", required=True, type=Path)
     parser.add_argument("--event-file", required=True, type=Path)
     args = parser.parse_args()
