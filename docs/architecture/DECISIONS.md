@@ -244,9 +244,9 @@ Supersedes ADR-018 only for *feature-program governance*. ADR-018 remains histor
 
 ## ADR-020 — WP8 local secrets use DPAPI LocalMachine plus protected NTFS DACL authorization
 
-**Status:** proposed in WP8; becomes accepted only with the WP8 merge.  
+**Status:** accepted by WP8 PR #257 / `422ef68864050eec858e32d980165c995d9e7ecb`.  
 **Date:** 2026-08-09  
-**Current V10 WP:** WP8 — Local Secret Store and rotation.
+**Current V10 WP at adoption:** WP8 — Local Secret Store and rotation.
 
 ### Context
 
@@ -306,3 +306,68 @@ WP8 rollback removes only WP8-owned sentinel/evidence/class children and refuses
 ### Supersedes / superseded by
 
 Does not supersede ADR-007; it concretizes ADR-007 for V10 WP8 local Windows storage. No superseding ADR at adoption.
+
+## ADR-021 — WP9 supervision uses Windows Task Scheduler with a least-privilege health principal and sealed future product slots
+
+**Status:** proposed in WP9; becomes accepted only with the WP9 merge and post-reboot Exit Gate evidence.  
+**Date:** 2026-08-09  
+**Current V10 WP:** WP9 — Autostart, supervision and self-healing.
+
+### Context
+
+WP9 must make the Lenovo node recover automatically after Windows Update/reboot while Core/Web/Telegram/Watchtower/Cortex runtimes still belong to later work packages. The node already has a persistent GitHub runner, PostgreSQL 18, WP6 least-privilege role anchors, the WP7 bootstrap/service-slot layout and the WP8 DPAPI/DACL secret boundary. WP9 therefore needs OS-native supervision without pretending that later product runtimes already exist or expanding their authority.
+
+### Decision
+
+- WP9 uses built-in Windows Task Scheduler plus existing Windows services; no NSSM, WinSW or new third-party service wrapper is introduced.
+- The persistent WP9 health supervisor runs as `NT AUTHORITY\LOCAL SERVICE` with `ServiceAccount` logon and `Limited` run level, not Administrator or LocalSystem.
+- PostgreSQL 18 remains an existing service dependency and is readiness-probed locally without credentials; WP9 does not change its authentication, schema or data.
+- Core API, Web, Telegram, Watchtower and AI worker receive versioned Scheduled Task slots but remain disabled and `SEALED_UNTIL_OWNING_WP`; their current truthful state is `NOT_READY`.
+- No execution task is created and `omni-cio-execution` remains disabled/non-admin.
+- Restart attempts are bounded and use a Task Scheduler-compatible minimum one-minute interval. Infinite restart storms are forbidden.
+- Restart/dependency mechanics are accepted with synthetic non-product workers. The dependency rehearsal does not stop production PostgreSQL.
+- The full Exit Gate includes an OWNER-initiated reboot and requires fresh post-boot `HEALTHY` or truthful `DEGRADED` evidence written by the supervisor without manually opening application terminals.
+- Until later product runtimes are activated by their own WPs, `DEGRADED` is an expected safe state and is preferable to a false `HEALTHY` result.
+
+### Alternatives considered
+
+- NSSM/WinSW — rejected for WP9 because built-in Task Scheduler is sufficient for the current supervision/control-plane boundary and avoids another binary/update/recovery dependency.
+- Windows services for fabricated placeholder applications — rejected because later WPs have not implemented those runtimes.
+- LocalSystem supervisor — rejected because it grants substantially more local authority than WP9 needs.
+- stop/restart production PostgreSQL as a dependency test — rejected; WP9 uses a synthetic dependency to prove the state machine without disturbing the accepted database prerequisite.
+- accepting pre-reboot health evidence — rejected because it cannot prove automatic return after a new Windows boot.
+
+### Security / money-authority impact
+
+WP9 grants no broker-write authority, creates no execution task, does not enable `omni-cio-execution`, and requires no real secret. The health principal receives no WP8 secret-payload grant. GitHub evidence is sanitized and excludes secret values/ciphertext/hashes, account IDs, raw identities, private portfolio payload and unrestricted process command lines.
+
+### Data / migration impact
+
+No financial/database migration. WP9 creates only marker-owned supervision scripts/contract/evidence below `C:\ProgramData\OmniCIO\services\wp9` and marker-owned tasks under `\OmniCIO\V10\`.
+
+### Operational impact
+
+OWNER Administrator is required only for guarded registration/removal and the final reviewed reboot. The health task runs automatically at startup and on its reviewed periodic schedule. Future product slot tasks remain disabled until later owning WPs replace their guards with real reviewed runtimes and repeat their own service-level acceptance.
+
+### Failure mode
+
+Invalid/missing task definitions, unsafe principals, broken readiness checks, absent bounded recovery, stale reboot evidence, unexpected WP8 secret access or an execution task cause fail-closed WP9 audit failure. Missing later-WP application runtimes produce truthful `DEGRADED/NOT_READY`, not an error and not a fabricated healthy service.
+
+### Rollback
+
+WP9 rollback removes only marker-owned WP9 tasks/files and preserves PostgreSQL, GitHub runner registration, WP6 identities/ACLs, WP7 bootstrap/prerequisites, WP8 secret-store state and V9 production/recovery.
+
+### Verification / Exit Gate evidence
+
+- static contract/unit tests and PowerShell 5.1 parse checks;
+- disposable hosted-Windows Task Scheduler compatibility exercise;
+- exact Lenovo idempotent OWNER apply;
+- five synthetic kill/restart rehearsals with bounded retry;
+- synthetic dependency failure/recovery rehearsal;
+- non-admin audit of LocalService principal, sealed slots, no execution task and no WP8 payload grant;
+- full reboot with automatic self-hosted runner return and fresh post-boot health evidence;
+- exact-head CI, zero unresolved review threads and post-merge Regression Shield.
+
+### Supersedes / superseded by
+
+Does not supersede ADR-020; it consumes the accepted WP8 boundary without widening it. Future owning service WPs may replace individual sealed task guards only after their own execution contracts and Exit Gates.
