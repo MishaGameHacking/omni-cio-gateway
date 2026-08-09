@@ -190,7 +190,7 @@ try {
         "/grant:r",
         "*S-1-5-18:(OI)(CI)F",
         "*S-1-5-32-544:(OI)(CI)F",
-        "*$runtimeSid:(OI)(CI)M"
+        "*${runtimeSid}:(OI)(CI)M"
     )
     Invoke-IcaclsChecked -Arguments @($backupRoot, "/remove:g", "*$runnerSid")
     Invoke-IcaclsChecked -Arguments @($backupRoot, "/remove:d", "*$runnerSid")
@@ -213,11 +213,13 @@ try {
 
     if (-not (Test-Path -LiteralPath $sentinelPath -PathType Leaf)) {
         $bytes = New-Object byte[] 64
-        [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+        $generator = [Security.Cryptography.RandomNumberGenerator]::Create()
         try {
+            $generator.GetBytes($bytes)
             [IO.File]::WriteAllBytes($sentinelPath, $bytes)
         }
         finally {
+            $generator.Dispose()
             [Array]::Clear($bytes, 0, $bytes.Length)
         }
     }
