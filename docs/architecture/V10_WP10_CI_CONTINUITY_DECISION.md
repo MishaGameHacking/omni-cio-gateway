@@ -35,15 +35,17 @@ The continuity lane must:
 - run only on `[self-hosted, Windows, X64, omni-cio-ci]`;
 - reject fork PR execution through same-repository gating;
 - use read-only GitHub contents permission and no repository secrets;
-- resolve and independently verify the already-provisioned exact Python **3.14.6** runtime, using the reviewed machine path with the Windows Python launcher as a fallback;
-- execute all workflow-owned PowerShell through an explicit per-process `-ExecutionPolicy Bypass` wrapper, without changing `CurrentUser` or `LocalMachine` policy;
-- create a fresh per-run virtual environment under `RUNNER_TEMP` and remove it afterward;
+- bootstrap the existing protected Python 3.12.10 CI runtime for dependency staging only;
+- acquire the official CPython **3.14.6** NuGet package into `RUNNER_TEMP`, because CPython documents the NuGet package specifically for CI/build systems that do not have a system-wide Python install;
+- pin the NuGet package to exact version `3.14.6`, fetch the published `.sha512`, verify the downloaded package before extraction, and independently verify the extracted interpreter version;
+- stage exact `pytest==9.0.2` and its pure Python dependencies into a separate temporary target, then execute the WP10 suite with the isolated 3.14.6 interpreter through `PYTHONPATH`;
+- execute workflow-owned PowerShell through an explicit per-process `-ExecutionPolicy Bypass` wrapper, without changing `CurrentUser` or `LocalMachine` policy;
 - parse all WP10 PowerShell acceptance scripts with **Windows PowerShell 5.1**;
-- run the same deterministic WP10 recovery/manifest/profile/OWNER-boundary tests plus the continuity-contract regression test;
+- run the deterministic WP10 recovery/manifest/profile/OWNER-boundary tests plus the continuity-contract regression test;
 - leave production private database access, private portfolio data, recovery keys, and real secret values unused;
-- clean the worktree and temporary compatibility state even on failure.
+- remove the portable interpreter/dependency state and clean the worktree even on failure.
 
-The early continuity attempts failed closed before compatibility tests ran. Investigation established that the self-hosted runner's default Windows PowerShell execution policy rejected GitHub-generated temporary `.ps1` files, including the `setup.ps1` helper used by `actions/setup-python`. This is the same per-process invocation-policy class already encountered and resolved by the WP10 OWNER rehearsal. The continuity lane therefore does not alter machine/user policy and does not require a new Python installation: it uses the already provisioned 3.14.6 runtime and invokes workflow-owned PowerShell with explicit per-process `-ExecutionPolicy Bypass`.
+The early continuity attempts failed closed before compatibility tests ran. Investigation established two host-local differences from the disposable hosted image: the self-hosted service token could not resolve the OWNER-visible Python 3.14.6 installation, and its default Windows PowerShell execution policy rejected GitHub-generated temporary `.ps1` files (including the helper used by `actions/setup-python`). The continuity lane therefore avoids persistent machine mutation: it uses the official portable CPython NuGet CI distribution under `RUNNER_TEMP` and a per-process PowerShell bypass only for workflow-owned temporary scripts.
 
 This lane deliberately does **not** claim to turn the persistent Lenovo host into a disposable GitHub-hosted VM. The missing disposable-image signal is recorded as degraded acceleration. The safety/correctness evidence is preserved through exact toolchain checks, isolated temporary state, the existing authoritative merge gate, the existing WP10 synthetic recovery audit, the existing off-device access-denial audit, and the OWNER physical recovery rehearsal.
 
@@ -61,7 +63,7 @@ This substitution is valid only while all non-negotiable gates remain intact:
 - WP10 Off-Device Audit PASS remains mandatory;
 - OWNER off-device rehearsal evidence remains mandatory;
 - `app:app`, `trading_methods=false`, and `REAL_TRADING_ENABLED=false` remain unchanged;
-- no direct-main push, ruleset bypass, secret exposure, production DB access, or Real-money authority expansion is permitted.
+- no direct-main push, ruleset bypass, secret exposure, production DB access, or real-money authority expansion is permitted.
 
 Global `V10 Fast PR Checks` and `V10 Toolchain Compatibility` remain hosted acceleration lanes. A billing-blocked red result with zero executed normal steps is retained as incident evidence rather than converted into a false source failure. They resume normally when included hosted capacity/account billing becomes available again.
 
