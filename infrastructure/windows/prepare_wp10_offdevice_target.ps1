@@ -23,22 +23,6 @@ function Test-IsAdministrator {
     )
 }
 
-function Resolve-LocalAccountSid {
-    param([Parameter(Mandatory = $true)][string]$AccountName)
-
-    $account = New-Object Security.Principal.NTAccount(
-        "$env:COMPUTERNAME\$AccountName"
-    )
-    try {
-        return $account.Translate(
-            [Security.Principal.SecurityIdentifier]
-        ).Value
-    }
-    catch {
-        throw "LOCAL_ACCOUNT_NOT_FOUND:$AccountName"
-    }
-}
-
 function Invoke-IcaclsChecked {
     param([Parameter(Mandatory = $true)][string[]]$Arguments)
 
@@ -72,7 +56,7 @@ function Write-OutputResult {
     Write-Output "BitLocker fully encrypted: $($Result.bitlocker_fully_encrypted)"
     Write-Output "BitLocker protection on: $($Result.bitlocker_protection_on)"
     Write-Output "Recovery-key custody confirmed: $($Result.recovery_key_custody_confirmed)"
-    Write-Output "Runner payload access granted: NO"
+    Write-Output "Runner/runtime payload access granted now: NO"
 }
 
 $result = @{
@@ -91,8 +75,8 @@ $result = @{
     bitlocker_fully_encrypted = $false
     bitlocker_protection_on = $false
     recovery_key_custody_confirmed = [bool]$RecoveryKeyCustodyConfirmed
-    runtime_identity_resolved = $false
-    runner_identity_resolved = $false
+    production_backup_writer_identity = "NOT_READY_UNTIL_PRODUCT_DB_AND_BACKUP_JOB_BINDING"
+    runtime_payload_access_granted = $false
     runner_payload_access_granted = $false
     target_marker_present = $false
     sentinel_present = $false
@@ -137,11 +121,6 @@ try {
         throw "TARGET_BITLOCKER_PROTECTION_OFF"
     }
 
-    $runtimeSid = Resolve-LocalAccountSid -AccountName "omni-cio-runtime"
-    $runnerSid = Resolve-LocalAccountSid -AccountName "omni-ci-runner"
-    $result.runtime_identity_resolved = $true
-    $result.runner_identity_resolved = $true
-
     if (-not $Apply) {
         $result.status = "READY"
         $result.reason_code = "TARGET_PREVIEW_PASS"
@@ -175,7 +154,9 @@ try {
         if (
             $existingMarker.schema_version -ne "1" -or
             $existingMarker.work_package -ne "WP10" -or
-            $existingMarker.target_class -ne $result.target_class
+            $existingMarker.target_class -ne $result.target_class -or
+            $existingMarker.production_backup_writer_identity -ne
+                $result.production_backup_writer_identity
         ) {
             throw "TARGET_MARKER_INVALID"
         }
@@ -184,16 +165,16 @@ try {
         New-Item -ItemType Directory -Path $backupRoot | Out-Null
     }
 
+    # Pre-WP13/WP14 target is owner/system controlled only. Do not pre-grant
+    # omni-cio-runtime or the GitHub runner; the future DB/job owner must bind a
+    # dedicated production writer through a separately reviewed privilege change.
     Invoke-IcaclsChecked -Arguments @($backupRoot, "/inheritance:r")
     Invoke-IcaclsChecked -Arguments @(
         $backupRoot,
         "/grant:r",
         "*S-1-5-18:(OI)(CI)F",
-        "*S-1-5-32-544:(OI)(CI)F",
-        "*${runtimeSid}:(OI)(CI)M"
+        "*S-1-5-32-544:(OI)(CI)F"
     )
-    Invoke-IcaclsChecked -Arguments @($backupRoot, "/remove:g", "*$runnerSid")
-    Invoke-IcaclsChecked -Arguments @($backupRoot, "/remove:d", "*$runnerSid")
 
     $marker = [ordered]@{
         schema_version = "1"
@@ -205,7 +186,8 @@ try {
         bitlocker_fully_encrypted = $true
         bitlocker_protection_on = $true
         recovery_key_custody_confirmed = $true
-        runtime_identity_sid_bound = $true
+        production_backup_writer_identity = $result.production_backup_writer_identity
+        runtime_payload_access_granted = $false
         runner_payload_access_granted = $false
     }
     $marker | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $targetMarker `
@@ -245,8 +227,8 @@ try {
         bitlocker_fully_encrypted = $true
         bitlocker_protection_on = $true
         recovery_key_custody_confirmed = $true
-        runtime_identity_resolved = $true
-        runner_identity_resolved = $true
+        production_backup_writer_identity = $result.production_backup_writer_identity
+        runtime_payload_access_granted = $false
         runner_payload_access_granted = $false
         private_payload_used = $false
         secret_value_used = $false
