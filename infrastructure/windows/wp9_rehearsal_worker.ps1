@@ -13,13 +13,14 @@ $ErrorActionPreference = "Stop"
 function Write-State {
     param(
         [int]$RunCount,
-        [string]$State
+        [string]$State,
+        [int]$ProcessId = $PID
     )
 
     $payload = [ordered]@{
         schema_version = "1"
         run_count = $RunCount
-        process_id = $PID
+        process_id = $ProcessId
         state = $State
         observed_at_utc = [datetime]::UtcNow.ToString("o")
     }
@@ -55,9 +56,25 @@ if (-not [string]::IsNullOrWhiteSpace($DependencyPath)) {
 }
 
 if ($runCount -eq 1) {
-    Write-State -RunCount $runCount -State "RUNNING_FIRST_ATTEMPT"
-    Start-Sleep -Seconds $HoldSeconds
-    Write-State -RunCount $runCount -State "FIRST_ATTEMPT_COMPLETED_UNEXPECTEDLY"
+    # Task Scheduler restart-on-failure is driven by the registered action's exit
+    # status. The rehearsal therefore kills a synthetic child process while this
+    # registered wrapper remains alive, observes that child exit, and then exits
+    # non-zero. This proves both the required process-kill scenario and the actual
+    # Scheduler restart policy instead of relying on how Scheduler classifies an
+    # externally terminated registered action.
+    $powershellExe = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
+    $childArguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "Start-Sleep -Seconds {0}"' -f $HoldSeconds
+    $child = Start-Process `
+        -FilePath $powershellExe `
+        -ArgumentList $childArguments `
+        -PassThru `
+        -WindowStyle Hidden
+    Write-State `
+        -RunCount $runCount `
+        -State "RUNNING_FIRST_ATTEMPT" `
+        -ProcessId ([int]$child.Id)
+    Wait-Process -Id $child.Id -ErrorAction Stop
+    Write-State -RunCount $runCount -State "FIRST_ATTEMPT_FAILED_AFTER_CHILD_EXIT"
     exit 41
 }
 
