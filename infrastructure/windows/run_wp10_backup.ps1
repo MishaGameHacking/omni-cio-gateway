@@ -11,6 +11,7 @@ param(
     [string]$PgDumpPath,
     [string]$PsqlPath,
     [string]$PythonPath,
+    [switch]$UsePreparedOffdeviceTarget,
     [switch]$AsJson
 )
 
@@ -21,6 +22,7 @@ $env:PGCONNECT_TIMEOUT = "5"
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $BundleTool = Join-Path $RepoRoot "scripts\v10_wp10_backup_bundle.py"
 $ContractPath = Join-Path $RepoRoot "docs\architecture\V10_WP10_RECOVERY_CONTRACT.json"
+$OwnerDescriptorPath = "C:\ProgramData\OmniCIO\wp10\offdevice-owner-prepare.local.json"
 
 function Resolve-Tool {
     param(
@@ -94,6 +96,64 @@ function Invoke-NativeChecked {
     }
 }
 
+function Resolve-OffdeviceBackupRoot {
+    if (-not (Test-Path -LiteralPath $OwnerDescriptorPath -PathType Leaf)) {
+        throw "OWNER_DESCRIPTOR_MISSING"
+    }
+    try {
+        $descriptor = Get-Content -LiteralPath $OwnerDescriptorPath -Raw |
+            ConvertFrom-Json
+    }
+    catch {
+        throw "OWNER_DESCRIPTOR_INVALID"
+    }
+    if (
+        [string]$descriptor.schema_version -ne "1" -or
+        [string]$descriptor.work_package -ne "WP10" -or
+        -not [bool]$descriptor.local_only -or
+        -not [bool]$descriptor.non_system_volume -or
+        -not [bool]$descriptor.data_volume -or
+        -not [bool]$descriptor.bitlocker_fully_encrypted -or
+        -not [bool]$descriptor.bitlocker_protection_on -or
+        -not [bool]$descriptor.recovery_key_custody_confirmed -or
+        [bool]$descriptor.destructive_disk_operation_performed
+    ) {
+        throw "OWNER_DESCRIPTOR_INVALID"
+    }
+
+    $mountPoint = ([string]$descriptor.target_mount_point).ToUpperInvariant()
+    if ($mountPoint -notmatch '^[A-Z]:$') {
+        throw "OWNER_DESCRIPTOR_TARGET_INVALID"
+    }
+    $systemVolume = [System.IO.Path]::GetPathRoot($env:SystemRoot).TrimEnd("\").ToUpperInvariant()
+    if ($mountPoint -eq $systemVolume) {
+        throw "SYSTEM_VOLUME_FORBIDDEN"
+    }
+
+    # A production/private-state cycle is allowed to report success only when
+    # the physical target is still an encrypted protected Data volume.
+    $bitlocker = Get-BitLockerVolume -MountPoint $mountPoint -ErrorAction Stop
+    if ([string]$bitlocker.VolumeType -ne "Data") {
+        throw "TARGET_NOT_DATA_VOLUME"
+    }
+    if ([string]$bitlocker.VolumeStatus -ne "FullyEncrypted") {
+        throw "TARGET_NOT_FULLY_ENCRYPTED"
+    }
+    if ([string]$bitlocker.ProtectionStatus -ne "On") {
+        throw "TARGET_BITLOCKER_PROTECTION_OFF"
+    }
+
+    $backupRoot = Join-Path "$mountPoint\" ([string]$descriptor.backup_root_name)
+    $markerPath = Join-Path $backupRoot ([string]$descriptor.marker_name)
+    if (-not (Test-Path -LiteralPath $backupRoot -PathType Container)) {
+        throw "OFFDEVICE_BACKUP_ROOT_MISSING"
+    }
+    if (-not (Test-Path -LiteralPath $markerPath -PathType Leaf)) {
+        throw "OFFDEVICE_TARGET_MARKER_MISSING"
+    }
+    return $backupRoot
+}
+
 function Write-Result {
     param([hashtable]$Result)
 
@@ -104,12 +164,20 @@ function Write-Result {
     Write-Output "WP10 backup status: $($Result.status)"
     Write-Output "Reason: $($Result.reason_code)"
     Write-Output "PostgreSQL version class: $($Result.postgres_version_class)"
+    Write-Output "Local bundle verified: $($Result.bundle_created)"
+    Write-Output "Off-device copy required: $($Result.offdevice_copy_required)"
+    Write-Output "Off-device copy verified: $($Result.offdevice_copy_pass)"
+    Write-Output "Retention completed: $($Result.retention_pass)"
     Write-Output "Duration ms: $($Result.duration_ms)"
     Write-Output "Private payload emitted: NO"
     Write-Output "Secret value emitted: NO"
 }
 
 $startedAt = [DateTime]::UtcNow
+$offdeviceRequired = (
+    $BackupClass -eq "POSTGRES_LOGICAL_PRIVATE_STATE" -or
+    [bool]$UsePreparedOffdeviceTarget
+)
 $result = @{
     schema_version = "1"
     work_package = "WP10"
@@ -117,6 +185,9 @@ $result = @{
     reason_code = "BACKUP_NOT_COMPLETED"
     postgres_version_class = "UNKNOWN"
     bundle_created = $false
+    offdevice_copy_required = $offdeviceRequired
+    offdevice_copy_pass = $false
+    retention_pass = $false
     private_payload_emitted = $false
     secret_value_emitted = $false
     duration_ms = 0
@@ -129,6 +200,12 @@ try {
     }
     if (-not (Test-Path -LiteralPath $BundleTool -PathType Leaf)) {
         throw "WP10_BUNDLE_TOOL_MISSING"
+    }
+    if (
+        $BackupClass -eq "POSTGRES_LOGICAL_PRIVATE_STATE" -and
+        -not [bool]$UsePreparedOffdeviceTarget
+    ) {
+        throw "PRIVATE_STATE_BACKUP_REQUIRES_OFFDEVICE_TARGET"
     }
 
     $contract = Get-Content -LiteralPath $ContractPath -Raw | ConvertFrom-Json
@@ -172,6 +249,14 @@ try {
         throw "WORKING_AND_OUTPUT_DIRECTORY_MUST_DIFFER"
     }
 
+    $offdeviceRoot = $null
+    if ([bool]$UsePreparedOffdeviceTarget) {
+        $offdeviceRoot = Resolve-OffdeviceBackupRoot
+        if ([string]::Equals($output, $offdeviceRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw "LOCAL_OUTPUT_AND_OFFDEVICE_TARGET_MUST_DIFFER"
+        }
+    }
+
     $stagingPath = Join-Path $working (
         "wp10-pgdump-" + [Guid]::NewGuid().ToString("N") + ".dump.partial"
     )
@@ -203,14 +288,14 @@ try {
         Get-ChildItem -LiteralPath $output -File -Filter "wp10-*.dump" -ErrorAction Stop |
             ForEach-Object { $_.Name }
     )
-    & $python $BundleTool create `
-        --staging-archive $stagingPath `
-        --output-dir $output `
-        --backup-class $BackupClass `
-        --postgres-version-class $versionClass *> $null
-    if ($LASTEXITCODE -ne 0) {
-        throw "BUNDLE_FINALIZE_FAILED"
-    }
+    Invoke-NativeChecked -FilePath $python -Arguments @(
+        $BundleTool,
+        "create",
+        "--staging-archive", $stagingPath,
+        "--output-dir", $output,
+        "--backup-class", $BackupClass,
+        "--postgres-version-class", $versionClass
+    ) -Reason "BUNDLE_FINALIZE_FAILED"
 
     $after = @(
         Get-ChildItem -LiteralPath $output -File -Filter "wp10-*.dump" -ErrorAction Stop |
@@ -223,14 +308,60 @@ try {
 
     $archivePath = Join-Path $output $created[0]
     $manifestPath = "$archivePath.manifest.json"
-    & $python $BundleTool verify --archive $archivePath --manifest $manifestPath *> $null
-    if ($LASTEXITCODE -ne 0) {
-        throw "BUNDLE_VERIFY_FAILED"
+    Invoke-NativeChecked -FilePath $python -Arguments @(
+        $BundleTool,
+        "verify",
+        "--archive", $archivePath,
+        "--manifest", $manifestPath
+    ) -Reason "BUNDLE_VERIFY_FAILED"
+    $result.bundle_created = $true
+
+    if ([bool]$UsePreparedOffdeviceTarget) {
+        Invoke-NativeChecked -FilePath $python -Arguments @(
+            $BundleTool,
+            "copy",
+            "--archive", $archivePath,
+            "--manifest", $manifestPath,
+            "--target-dir", $offdeviceRoot
+        ) -Reason "OFFDEVICE_COPY_FAILED"
+
+        $offdeviceArchive = Join-Path $offdeviceRoot ([System.IO.Path]::GetFileName($archivePath))
+        $offdeviceManifest = "$offdeviceArchive.manifest.json"
+        Invoke-NativeChecked -FilePath $python -Arguments @(
+            $BundleTool,
+            "verify",
+            "--archive", $offdeviceArchive,
+            "--manifest", $offdeviceManifest
+        ) -Reason "OFFDEVICE_VERIFY_FAILED"
+        $result.offdevice_copy_pass = $true
+
+        Invoke-NativeChecked -FilePath $python -Arguments @(
+            $BundleTool,
+            "prune",
+            "--target-dir", $offdeviceRoot
+        ) -Reason "OFFDEVICE_RETENTION_FAILED"
+        Invoke-NativeChecked -FilePath $python -Arguments @(
+            $BundleTool,
+            "verify",
+            "--archive", $offdeviceArchive,
+            "--manifest", $offdeviceManifest
+        ) -Reason "OFFDEVICE_POST_RETENTION_VERIFY_FAILED"
+        $result.retention_pass = $true
     }
 
-    $result.bundle_created = $true
+    if ($offdeviceRequired -and -not $result.offdevice_copy_pass) {
+        throw "OFFDEVICE_COPY_REQUIRED_BUT_NOT_PROVEN"
+    }
+
     $result.status = "PASS"
-    $result.reason_code = "BACKUP_CREATED_AND_VERIFIED"
+    $result.reason_code = $(
+        if ([bool]$UsePreparedOffdeviceTarget) {
+            "BACKUP_LOCAL_AND_OFFDEVICE_VERIFIED"
+        }
+        else {
+            "RECOVERY_REHEARSAL_LOCAL_BUNDLE_VERIFIED"
+        }
+    )
 }
 catch {
     $message = [string]$_.Exception.Message
