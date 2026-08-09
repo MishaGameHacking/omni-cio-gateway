@@ -32,12 +32,13 @@ def test_wp10_continuity_workflow_is_self_hosted_and_fail_closed() -> None:
         in workflow
     )
     assert "scripts\\bootstrap_windows_ci_python.cmd" in workflow
-    assert "api.nuget.org/v3-flatcontainer/python/$version/python.$version.nupkg" in workflow
-    assert 'Invoke-WebRequest -UseBasicParsing -Uri "$base.sha512"' in workflow
+    assert "api.nuget.org/v3/registration5-gz-semver2/python/index.json" in workflow
+    assert "packageHashAlgorithm -ne \"SHA512\"" in workflow
     assert "System.Security.Cryptography.SHA512" in workflow
     assert "WP10_CONTINUITY_NUGET_SHA512_MISMATCH" in workflow
+    assert "Invoke-WebRequest -UseBasicParsing -Uri $leaf.packageContent" in workflow
     assert 'if ($LASTEXITCODE -ne 0 -or $actualVersion.Trim() -ne $version)' in workflow
-    assert 'pytest==9.0.2' in workflow
+    assert "pytest==9.0.2" in workflow
     assert "--target" in workflow
     assert "PYTHONPATH" in workflow
     assert "RUNNER_TEMP" in workflow
