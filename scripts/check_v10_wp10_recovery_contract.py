@@ -157,6 +157,9 @@ def validate_contract(contract: dict, wp8: dict, wp9a: dict) -> None:
         "recovery_key_custody_separate_required",
         "target_marker_required",
         "owner_physical_action_required_for_final_acceptance",
+        "owner_synthetic_copy_restore_rehearsal_required",
+        "owner_rehearsal_evidence_required",
+        "nonadmin_runner_read_write_denial_required",
     ):
         if off_device.get(key) is not True:
             raise ContractError(f"OFFDEVICE_GUARD_MISSING:{key}")
@@ -228,7 +231,7 @@ def main() -> int:
     print("V10 WP10 recovery contract check passed.")
     print("RPO: 60 minutes; RTO: 240 minutes")
     print("PostgreSQL: major 18 / custom logical archive / synthetic rehearsal")
-    print("Off-device: owner-controlled non-system BitLocker volume")
+    print("Off-device: encrypted target + OWNER copy/restore + runner denial")
     print("GitHub/CI/private-state/secret recovery paths: separated")
     print("WP11: locked until WP10 Exit Gate and Block C acceptance")
     print("Real-money authority: unchanged")
