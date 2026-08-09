@@ -16,7 +16,7 @@ import zipfile
 
 VERSION = "3.14.6"
 PACKAGE_URL = "https://www.python.org/ftp/python/3.14.6/python-3.14.6-embed-amd64.zip"
-PACKAGE_SHA256 = "df901e84a896ff1ee720ad03377e0c8d8c2244fda79808aeeaff6316df1cb75c"
+PACKAGE_SHA256 = "df901e84a896ff1ee720ad03377e0c8d8c2244fda79808aeeaff6316df1cb75c"  # pragma: allowlist secret
 ALLOWED_HOSTS = {"www.python.org"}
 USER_AGENT = "Omni-CIO-V10-WP10-CI-Continuity/1"
 
