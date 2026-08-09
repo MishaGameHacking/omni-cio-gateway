@@ -23,7 +23,7 @@ concurrency:
 
 jobs:
   clean-windows-preview:
-    name: Clean Windows non-mutating WP9 preview
+    name: Clean Windows WP9 compatibility
     runs-on: windows-latest
     timeout-minutes: 15
 
@@ -67,6 +67,64 @@ jobs:
               $errors | ForEach-Object { Write-Error $_.Message }
               exit 1
             }
+          }
+
+      - name: Exercise reviewed Task Scheduler primitives
+        shell: powershell
+        run: |
+          $folderName = "OmniCIO-WP9-Compat-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
+          $folderPath = "\$folderName\"
+          $nestedPath = "\$folderName\V10\"
+          $taskName = "WP9.LocalService.Primitive"
+          $service = New-Object -ComObject "Schedule.Service"
+          $service.Connect()
+          $root = $service.GetFolder("\")
+          try {
+            [void]$root.CreateFolder($folderName)
+            $folder = $service.GetFolder("\$folderName")
+            [void]$folder.CreateFolder("V10")
+            [void]$service.GetFolder("\$folderName\V10")
+
+            $action = New-ScheduledTaskAction -Execute "$env:SystemRoot\System32\cmd.exe" -Argument "/c exit 0"
+            $principal = New-ScheduledTaskPrincipal `
+              -UserId "NT AUTHORITY\LOCAL SERVICE" `
+              -LogonType ServiceAccount `
+              -RunLevel Limited
+            $settings = New-ScheduledTaskSettingsSet `
+              -RestartCount 3 `
+              -RestartInterval (New-TimeSpan -Seconds 15) `
+              -ExecutionTimeLimit (New-TimeSpan -Minutes 10) `
+              -MultipleInstances IgnoreNew `
+              -StartWhenAvailable
+            $definition = New-ScheduledTask `
+              -Action $action `
+              -Principal $principal `
+              -Settings $settings `
+              -Description "OMNI-CIO-V10-WP9-COMPAT"
+            Register-ScheduledTask `
+              -TaskName $taskName `
+              -TaskPath $nestedPath `
+              -InputObject $definition `
+              -Force | Out-Null
+            Disable-ScheduledTask -TaskPath $nestedPath -TaskName $taskName | Out-Null
+            $task = Get-ScheduledTask -TaskPath $nestedPath -TaskName $taskName
+            if ([string]$task.State -ne "Disabled") {
+              Write-Error "Task State did not report Disabled."
+              exit 1
+            }
+            if ([int]$task.Settings.RestartCount -ne 3) {
+              Write-Error "Task restart count did not round-trip."
+              exit 1
+            }
+            if ([string]$task.Settings.MultipleInstances -ne "IgnoreNew") {
+              Write-Error "Task multiple-instance policy did not round-trip."
+              exit 1
+            }
+          }
+          finally {
+            Unregister-ScheduledTask -TaskPath $nestedPath -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
+            try { $service.GetFolder("\$folderName").DeleteFolder("V10", 0) } catch { }
+            try { $root.DeleteFolder($folderName, 0) } catch { }
           }
 
       - name: Prove WP9 preview does not mutate clean hosted node
