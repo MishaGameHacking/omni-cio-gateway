@@ -35,9 +35,12 @@ Backup sequence:
 6. copy bundle to the selected encrypted off-device target through temporary names;
 7. re-hash/re-size at destination before promotion;
 8. apply retention only to verified WP10-owned bundles;
-9. never delete unknown/unowned content and never delete the only verified bundle.
+9. re-verify the new off-device bundle after retention;
+10. never delete unknown/unowned content and never delete the only verified bundle.
 
-The schedule contract is `infrastructure/windows/wp10_backup_schedule.json`: 60-minute cadence, production activation sealed until WP13/WP14 bind the product DB and least-privilege job identity.
+A production/private-state cycle is **not successful** unless its encrypted off-device copy and retention pass are both verified. A local-only private-state run fails closed.
+
+The schedule contract is `infrastructure/windows/wp10_backup_schedule.json`: 60-minute cadence, complete off-device cycle required, production activation sealed until WP13/WP14 bind the product DB and least-privilege job identity.
 
 ## 4. Corruption / database loss
 
@@ -82,7 +85,7 @@ WP10 never formats, repartitions, shrinks, initializes, clears or erases a disk.
 - require `FullyEncrypted` + protection `On`;
 - require OWNER confirmation that recovery-key custody exists separately without disclosing the key;
 - create the dedicated `OmniCIO-WP10-Backups` directory, marker and non-private access sentinel;
-- restrict that directory to SYSTEM/Administrators;
+- restrict that directory to the well-known SYSTEM and local Administrators security principals;
 - write a local-only descriptor under `C:\ProgramData\OmniCIO\wp10` for later local audits.
 
 The local descriptor contains the mount point because local automation needs it. It is **never uploaded to GitHub/CI artifacts** and final repository-safe evidence contains no raw disk identity or mount point.
@@ -113,18 +116,30 @@ A missing/unmounted target is not counted as an ACL denial. Successful read/writ
 
 ## 9. Final OWNER physical rehearsal
 
-Final WP10 acceptance additionally requires a reviewed OWNER procedure on one real encrypted off-device target. It must produce only evidence conforming to `V10_WP10_OWNER_EVIDENCE.schema.json` and prove:
+Final WP10 acceptance additionally requires one reviewed OWNER run on a real encrypted off-device target. The target must already exist as a separate non-system BitLocker `Data` volume with encryption complete and protection enabled. The recovery-key custody must be separate from the backup payload.
+
+From an **Administrator PowerShell** opened in the repository checkout containing the exact WP10 implementation being reviewed, run one command after replacing `<TARGET>:` with the chosen drive letter:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File infrastructure\windows\run_wp10_owner_gate.ps1 -TargetMountPoint <TARGET>: -RecoveryKeyCustodyConfirmed
+```
+
+That wrapper deliberately deletes stale local PASS evidence first, revalidates the selected BitLocker volume, prepares only the dedicated backup directory/ACL, runs the actual complete backup/off-device/retention path, corrupts and rejects a copy, restores the valid **off-device** bundle into a separate synthetic database, checks exact probe parity, and writes only sanitized local evidence. The evidence is fingerprint-bound to the current WP10 recovery contract/scripts so an older developer run cannot satisfy a newer implementation.
+
+The subsequent `V10 WP10 OWNER Physical Audit` runs under the non-admin self-hosted runner and must prove payload read/write denial before it creates the final repository-safe evidence. Final evidence must conform to `V10_WP10_OWNER_EVIDENCE.schema.json` and prove:
 
 - target is non-system, fully encrypted and protected;
 - separate recovery-key custody was confirmed without recording the key;
 - bundle copied to off-device and re-verified;
+- retention completed without invalidating the new bundle;
 - one corrupted copy rejected;
 - valid off-device copy restored to a separate DB and exact probe matched;
 - non-admin runner read/write denial passed;
 - temporary synthetic state cleaned;
-- end-to-end duration <= 240 minutes.
+- end-to-end duration <= 240 minutes;
+- evidence fingerprint matches the current reviewed WP10 implementation.
 
-If no eligible target is available, result is `OWNER_ACTION_REQUIRED`; WP10 stays IN PROGRESS and WP11 stays locked.
+If no eligible target is available, result is `OWNER_ACTION_REQUIRED`; WP10 stays IN PROGRESS and WP11 stays locked. Never weaken this gate and never auto-format a device to make it pass.
 
 ## 10. Retention and cleanup safety
 
@@ -140,4 +155,4 @@ Forbidden: database archive, private rows, account identifiers, tokens/passwords
 
 ## 12. Exit discipline
 
-Passing software CI is not WP10 acceptance. WP10 remains **IN PROGRESS / WP11 LOCKED** until every binary condition in `V10_WP10_EXECUTION_CONTRACT.md` is satisfied, the focused PR is squash-merged, and the mandatory post-merge Regression Shield succeeds.
+Passing software CI is not WP10 acceptance. WP10 remains **IN PROGRESS / WP11 LOCKED** until every binary condition in `V10_WP10_EXECUTION_CONTRACT.md` is satisfied, the focused PR is squash-merged, and the mandatory post-merge Regression Shield succeeds. WP11 is unlocked only by a separate post-WP10 acceptance/status change after those gates, never by the implementation PR itself.
