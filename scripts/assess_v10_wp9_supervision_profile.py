@@ -142,14 +142,24 @@ def assess(profile: dict[str, Any]) -> list[str]:
 
 def main() -> int:
     if len(sys.argv) != 2:
-        print("usage: assess_v10_wp9_supervision_profile.py PROFILE.json", file=sys.stderr)
+        print(
+            "usage: assess_v10_wp9_supervision_profile.py PROFILE.json",
+            file=sys.stderr,
+        )
         return 2
 
     path = Path(sys.argv[1])
     try:
         payload = json.loads(path.read_text(encoding="utf-8-sig"))
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-        print(json.dumps({"status": "FAIL", "blockers": [f"PROFILE_READ_FAILED:{type(exc).__name__}"]}))
+        print(
+            json.dumps(
+                {
+                    "status": "FAIL",
+                    "blockers": [f"PROFILE_READ_FAILED:{type(exc).__name__}"],
+                }
+            )
+        )
         return 1
     if not isinstance(payload, dict):
         print(json.dumps({"status": "FAIL", "blockers": ["PROFILE_ROOT_INVALID"]}))
