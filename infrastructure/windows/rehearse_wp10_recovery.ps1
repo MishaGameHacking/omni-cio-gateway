@@ -439,19 +439,37 @@ try {
     )) -Reason "SOURCE_DB_SEED_FAILED"
 
     $phase = "BACKUP"
-    $backupRaw = & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass `
-        -File $BackupRunner `
-        -DatabaseName "wp10_source" `
-        -DatabaseUser "wp10_owner" `
-        -DatabaseHost "127.0.0.1" `
-        -DatabasePort $port `
-        -WorkingDirectory $workingDir `
-        -OutputDirectory $bundleDir `
-        -BackupClass "POSTGRES_LOGICAL_RECOVERY_REHEARSAL" `
-        -PgDumpPath $pgDump `
-        -PsqlPath $psql `
-        -PythonPath $python `
-        -AsJson 2>$null
+    if ($ownerMode) {
+        $backupRaw = & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass `
+            -File $BackupRunner `
+            -DatabaseName "wp10_source" `
+            -DatabaseUser "wp10_owner" `
+            -DatabaseHost "127.0.0.1" `
+            -DatabasePort $port `
+            -WorkingDirectory $workingDir `
+            -OutputDirectory $bundleDir `
+            -BackupClass "POSTGRES_LOGICAL_RECOVERY_REHEARSAL" `
+            -PgDumpPath $pgDump `
+            -PsqlPath $psql `
+            -PythonPath $python `
+            -UsePreparedOffdeviceTarget `
+            -AsJson 2>$null
+    }
+    else {
+        $backupRaw = & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass `
+            -File $BackupRunner `
+            -DatabaseName "wp10_source" `
+            -DatabaseUser "wp10_owner" `
+            -DatabaseHost "127.0.0.1" `
+            -DatabasePort $port `
+            -WorkingDirectory $workingDir `
+            -OutputDirectory $bundleDir `
+            -BackupClass "POSTGRES_LOGICAL_RECOVERY_REHEARSAL" `
+            -PgDumpPath $pgDump `
+            -PsqlPath $psql `
+            -PythonPath $python `
+            -AsJson 2>$null
+    }
     if ($LASTEXITCODE -ne 0) {
         throw "BACKUP_RUNNER_FAILED"
     }
@@ -463,6 +481,15 @@ try {
     }
     if ([string]$backupResult.status -ne "PASS") {
         throw "BACKUP_RUNNER_DID_NOT_PASS"
+    }
+    if ($ownerMode) {
+        if (
+            -not [bool]$backupResult.offdevice_copy_pass -or
+            -not [bool]$backupResult.retention_pass
+        ) {
+            throw "BACKUP_RUNNER_OFFDEVICE_CYCLE_NOT_PASS"
+        }
+        $result.offdevice_copy_pass = $true
     }
 
     $archives = @(Get-ChildItem -LiteralPath $bundleDir -File -Filter "wp10-*.dump")
@@ -487,15 +514,7 @@ try {
     $restoreArchive = $archive.FullName
     $restoreManifest = $manifest
     if ($ownerMode) {
-        $phase = "COPY_OWNER_OFFDEVICE"
-        Invoke-NativeChecked -FilePath $python -Arguments @(
-            $BundleTool,
-            "copy",
-            "--archive", $archive.FullName,
-            "--manifest", $manifest,
-            "--target-dir", [string]$ownerTarget.backup_root
-        ) -Reason "OFFDEVICE_COPY_FAILED"
-
+        $phase = "VERIFY_OWNER_OFFDEVICE"
         $restoreArchive = Join-Path ([string]$ownerTarget.backup_root) $archive.Name
         $restoreManifest = "$restoreArchive.manifest.json"
         Invoke-NativeChecked -FilePath $python -Arguments @(
@@ -504,7 +523,6 @@ try {
             "--archive", $restoreArchive,
             "--manifest", $restoreManifest
         ) -Reason "OFFDEVICE_VERIFY_FAILED"
-        $result.offdevice_copy_pass = $true
     }
 
     $phase = "PROVE_CORRUPTION_REJECTION"
