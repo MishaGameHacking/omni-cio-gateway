@@ -48,6 +48,7 @@ def test_synthetic_rehearsal_is_bounded_and_phase_observable() -> None:
     assert '$serverLog = Join-Path $root "postgres-server.log"' in script
     assert '$serverErrorLog = Join-Path $root "postgres-server-error.log"' in script
     assert '$postgres = Resolve-PostgresTool -Name "postgres"' in script
+    assert '$pgCtl = Resolve-PostgresTool -Name "pg_ctl"' in script
     assert '$pgIsReady = Resolve-PostgresTool -Name "pg_isready"' in script
     assert '"--no-sync"' in script
     assert '"--no-instructions"' in script
@@ -55,7 +56,7 @@ def test_synthetic_rehearsal_is_bounded_and_phase_observable() -> None:
     assert '-RedirectStandardOutput $serverLog' in script
     assert '-RedirectStandardError $serverErrorLog' in script
     assert '-WindowStyle Hidden -PassThru' in script
-    assert '$postgresProcess.HasExited' in script
+    assert '$null -ne $postgresProcess -and $postgresProcess.HasExited' in script
     assert '$postgresProcess.WaitForExit($PostgresWaitSeconds * 1000)' in script
     assert '--timeout=1 --quiet' in script
     assert 'throw "POSTGRES_START_READINESS_TIMEOUT"' in script
@@ -73,6 +74,20 @@ def test_synthetic_rehearsal_is_bounded_and_phase_observable() -> None:
         "COMPLETE",
     ):
         assert phase in script
+
+
+def test_owner_admin_rehearsal_uses_pg_ctl_windows_launcher() -> None:
+    script = _read("rehearse_wp10_recovery.ps1")
+    assert "postgres.exe refuses to run directly from an elevated Windows token" in script
+    assert "pg_ctl is the PostgreSQL-supported Windows launcher" in script
+    assert "Invoke-NativeChecked -FilePath $pgCtl -Arguments @(" in script
+    assert '"start"' in script
+    assert '"-D", $dataDir' in script
+    assert '"-l", $serverLog' in script
+    assert '"-w"' in script
+    assert '"-t", "$PostgresWaitSeconds"' in script
+    assert '"-o", "-h 127.0.0.1 -p $port"' in script
+    assert 'throw "POSTGRES_PG_CTL_START_FAILED"' in script
 
 
 def test_owner_rehearsal_stays_synthetic_and_restores_from_offdevice_copy() -> None:
@@ -107,4 +122,4 @@ def test_nonadmin_final_audit_requires_owner_restore_proof_and_denies_runner() -
     assert "runner_write_denied = $true" in script
     assert "private_payload_collected = $false" in script
     assert "secret_value_collected = $false" in script
-    assert "recovery_key_value_collected = $false" in script
+    assert "recovery_key_value_collected = $false"
