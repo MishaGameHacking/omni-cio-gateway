@@ -54,7 +54,10 @@ def test_wp10_portable_fetcher_is_python_org_hash_checked_and_temp_scoped() -> N
     assert "https://www.python.org/ftp/python/3.14.6/python-3.14.6-embed-amd64.zip" in fetcher
     assert "df901e84a896ff1ee720ad03377e0c8d8c2244fda79808aeeaff6316df1cb75c" in fetcher
     assert 'ALLOWED_HOSTS = {"www.python.org"}' in fetcher
-    assert "response.geturl()" in fetcher
+    assert 'parsed.scheme != "https"' in fetcher
+    assert "http.client.HTTPSConnection" in fetcher
+    assert "ssl.create_default_context()" in fetcher
+    assert "response.status != 200" in fetcher
     assert "hashlib.sha256()" in fetcher
     assert "WP10_CONTINUITY_PYTHON_SHA256_MISMATCH" in fetcher
     assert 'if version != VERSION' in fetcher
@@ -68,6 +71,7 @@ def test_wp10_embedded_pytest_launcher_injects_only_temp_target() -> None:
 
     assert 'parser.add_argument("--target"' in launcher
     assert "target.is_dir()" in launcher
+    assert "sys.path.insert(0, str(repo_root))" in launcher
     assert "sys.path.insert(0, str(target))" in launcher
     assert "import pytest" in launcher
     assert 'pytest.main(["-q", *args.tests])' in launcher
