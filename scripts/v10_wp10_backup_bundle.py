@@ -56,6 +56,14 @@ def _manifest_path(archive_path: Path, contract: dict[str, Any]) -> Path:
     )
 
 
+def _fsync_file(path: Path) -> None:
+    # Windows maps fsync to MS _commit(), which requires a writable CRT handle.
+    # Re-open copied files read/write before durability flush and promotion.
+    with path.open("rb+") as handle:
+        handle.flush()
+        os.fsync(handle.fileno())
+
+
 def _fsync_directory(path: Path) -> None:
     if os.name == "nt":
         return
@@ -197,8 +205,7 @@ def finalize_archive(
     if partial_archive.exists():
         partial_archive.unlink()
     shutil.copyfile(staging_archive, partial_archive)
-    with partial_archive.open("rb") as handle:
-        os.fsync(handle.fileno())
+    _fsync_file(partial_archive)
     if _sha256(partial_archive) != manifest["archive_sha256"]:
         partial_archive.unlink(missing_ok=True)
         raise BackupBundleError("STAGING_COPY_HASH_MISMATCH")
@@ -266,16 +273,14 @@ def atomic_copy_bundle(
 
     try:
         shutil.copyfile(archive_path, partial_archive)
-        with partial_archive.open("rb") as handle:
-            os.fsync(handle.fileno())
+        _fsync_file(partial_archive)
         if partial_archive.stat().st_size != manifest["archive_size_bytes"]:
             raise BackupBundleError("TARGET_COPY_SIZE_MISMATCH")
         if _sha256(partial_archive) != manifest["archive_sha256"]:
             raise BackupBundleError("TARGET_COPY_HASH_MISMATCH")
 
         shutil.copyfile(manifest_path, partial_manifest)
-        with partial_manifest.open("rb") as handle:
-            os.fsync(handle.fileno())
+        _fsync_file(partial_manifest)
         loaded_partial = load_manifest(partial_manifest, policy)
         if loaded_partial != manifest:
             raise BackupBundleError("TARGET_MANIFEST_MISMATCH")
