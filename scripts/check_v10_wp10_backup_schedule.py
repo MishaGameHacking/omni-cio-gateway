@@ -26,10 +26,7 @@ def validate_schedule(
     schedule: dict[str, Any],
     runner_text: str,
 ) -> None:
-    if (
-        schedule.get("schema_version") != "1"
-        or schedule.get("work_package") != "WP10"
-    ):
+    if schedule.get("schema_version") != "1" or schedule.get("work_package") != "WP10":
         raise ScheduleError("SCHEDULE_IDENTITY_INVALID")
 
     automation = contract["automation"]
@@ -46,10 +43,7 @@ def validate_schedule(
         raise ScheduleError("SCHEDULE_ACTIVATED_BEFORE_PRODUCT_BINDING")
     if schedule.get("production_database_binding") != "NOT_READY_UNTIL_WP13":
         raise ScheduleError("SCHEDULE_DATABASE_BOUND_EARLY")
-    if (
-        schedule.get("production_task_identity_binding")
-        != "NOT_READY_UNTIL_WP13_WP14"
-    ):
+    if schedule.get("production_task_identity_binding") != "NOT_READY_UNTIL_WP13_WP14":
         raise ScheduleError("SCHEDULE_IDENTITY_BOUND_EARLY")
     if schedule.get("runner_script") != "infrastructure/windows/run_wp10_backup.ps1":
         raise ScheduleError("SCHEDULE_RUNNER_INVALID")
@@ -84,7 +78,10 @@ def validate_schedule(
         raise ScheduleError("SCHEDULE_EMBEDS_CREDENTIALS")
     if schedule.get("private_payload_in_task_definition") is not False:
         raise ScheduleError("SCHEDULE_EMBEDS_PRIVATE_PAYLOAD")
-    if automation.get("production_schedule_activation_before_product_binding") is not False:
+    if (
+        automation.get("production_schedule_activation_before_product_binding")
+        is not False
+    ):
         raise ScheduleError("CONTRACT_ALLOWS_EARLY_SCHEDULE_ACTIVATION")
     if automation.get("secret_values_in_task_definition_forbidden") is not True:
         raise ScheduleError("CONTRACT_TASK_SECRET_GUARD_MISSING")
