@@ -28,6 +28,11 @@ def test_wp10_continuity_workflow_is_self_hosted_and_fail_closed() -> None:
     assert "permissions:\n  contents: read" in workflow
     assert "${{ secrets." not in workflow
     assert "C:\\Program Files\\Python314\\python.exe" in workflow
+    assert 'Get-Command "py.exe"' in workflow
+    assert "sys.executable" in workflow
+    assert "USERPROFILE" in workflow
+    assert "LOCALAPPDATA" in workflow
+    assert "APPDATA" in workflow
     assert '"3.14.6"' in workflow
     assert "-m venv" in workflow
     assert "RUNNER_TEMP" in workflow
