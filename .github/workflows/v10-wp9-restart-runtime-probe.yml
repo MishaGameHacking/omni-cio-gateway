@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
         with:
           persist-credentials: false
-      - name: Probe external termination and restart-on-failure
+      - name: Probe triggered process termination and restart-on-failure
         shell: powershell
         run: |
           $ErrorActionPreference = "Stop"
@@ -47,12 +47,12 @@ jobs:
             $action = New-ScheduledTaskAction -Execute $powershellExe -Argument $actionArgs
             $principal = New-ScheduledTaskPrincipal -UserId "NT AUTHORITY\LOCAL SERVICE" -LogonType ServiceAccount -RunLevel Limited
             $settings = New-ScheduledTaskSettingsSet -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit (New-TimeSpan -Minutes 5) -MultipleInstances IgnoreNew -StartWhenAvailable
-            $definition = New-ScheduledTask -Action $action -Principal $principal -Settings $settings -Description "OMNI-CIO-V10-WP9-RESTART-PROBE"
+            $trigger = New-ScheduledTaskTrigger -Once -At ((Get-Date).AddSeconds(10))
+            $definition = New-ScheduledTask -Action $action -Principal $principal -Settings $settings -Trigger $trigger -Description "OMNI-CIO-V10-WP9-RESTART-PROBE"
             Register-ScheduledTask -TaskName $taskName -TaskPath $taskPath -InputObject $definition -Force | Out-Null
-            Start-ScheduledTask -TaskPath $taskPath -TaskName $taskName
 
             $first = $null
-            $deadline = [datetime]::UtcNow.AddSeconds(30)
+            $deadline = [datetime]::UtcNow.AddSeconds(45)
             do {
               $first = Read-State
               if ($null -ne $first -and [int]$first.run_count -eq 1 -and [string]$first.state -eq "RUNNING_FIRST_ATTEMPT") { break }
@@ -62,7 +62,7 @@ jobs:
 
             $pidToKill = [int]$first.process_id
             Stop-Process -Id $pidToKill -Force
-            Write-Host "External termination issued."
+            Write-Host "Synthetic child termination issued after scheduled trigger."
 
             $recovered = $false
             $deadline = [datetime]::UtcNow.AddSeconds(150)
@@ -77,7 +77,7 @@ jobs:
             } while ([datetime]::UtcNow -lt $deadline)
 
             if (-not $recovered) { throw "AUTOMATIC_RESTART_NOT_OBSERVED" }
-            Write-Host "Automatic restart observed."
+            Write-Host "Automatic restart observed after a real scheduled trigger."
           }
           finally {
             Unregister-ScheduledTask -TaskPath $taskPath -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
