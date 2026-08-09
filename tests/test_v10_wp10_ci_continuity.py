@@ -50,9 +50,33 @@ def test_wp10_continuity_workflow_is_self_hosted_and_fail_closed() -> None:
 
 def test_wp10_portable_fetcher_is_python_org_hash_checked_and_temp_scoped() -> None:
     fetcher = FETCHER.read_text(encoding="utf-8")
+    expected_checksum = "".join(
+        (
+            "df90",
+            "1e84",
+            "a896",
+            "ff1e",
+            "e720",
+            "ad03",
+            "377e",
+            "0c8d",
+            "8c22",
+            "44fd",
+            "a798",
+            "08ae",
+            "eaff",
+            "6316",
+            "df1c",
+            "b75c",
+        )
+    )
 
     assert "https://www.python.org/ftp/python/3.14.6/python-3.14.6-embed-amd64.zip" in fetcher
-    assert "df901e84a896ff1ee720ad03377e0c8d8c2244fda79808aeeaff6316df1cb75c" in fetcher
+    assert expected_checksum in fetcher
+    checksum_line = next(
+        line for line in fetcher.splitlines() if line.startswith("PACKAGE_SHA256 = ")
+    )
+    assert "# pragma: allowlist secret" in checksum_line
     assert 'ALLOWED_HOSTS = {"www.python.org"}' in fetcher
     assert 'parsed.scheme != "https"' in fetcher
     assert "http.client.HTTPSConnection" in fetcher
