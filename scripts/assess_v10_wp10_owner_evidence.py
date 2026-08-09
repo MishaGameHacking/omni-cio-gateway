@@ -12,6 +12,7 @@ CONTRACT_PATH = ROOT / "docs" / "architecture" / "V10_WP10_RECOVERY_CONTRACT.jso
 REHEARSAL_SCRIPT = ROOT / "infrastructure" / "windows" / "rehearse_wp10_recovery.ps1"
 BACKUP_RUNNER = ROOT / "infrastructure" / "windows" / "run_wp10_backup.ps1"
 PREPARE_SCRIPT = ROOT / "infrastructure" / "windows" / "prepare_wp10_offdevice_target.ps1"
+OWNER_GATE_SCRIPT = ROOT / "infrastructure" / "windows" / "run_wp10_owner_gate.ps1"
 BUNDLE_TOOL = ROOT / "scripts" / "v10_wp10_backup_bundle.py"
 
 
@@ -44,6 +45,7 @@ def expected_implementation_fingerprint() -> dict[str, str]:
         "backup_runner_sha256": _sha256(BACKUP_RUNNER),
         "bundle_tool_sha256": _sha256(BUNDLE_TOOL),
         "prepare_script_sha256": _sha256(PREPARE_SCRIPT),
+        "owner_gate_script_sha256": _sha256(OWNER_GATE_SCRIPT),
     }
 
 
