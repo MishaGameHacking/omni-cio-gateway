@@ -1,0 +1,183 @@
+{
+  "inventory": "V10_WP11_CORE_INVENTORY",
+  "version": 1,
+  "status": "WP11_BASELINE_IDENTIFIED",
+  "accepted_main_sha": "21e3af40aed4a0e7fcb25783db5f90e22a86a18f",
+  "scope": "accepted V9 WP1-WP14 engines inspected for V10 WP11 Core extraction",
+  "rules": {
+    "financial_semantics_change": "DENY_WITHOUT_VERSIONED_CONTRACT_AND_PARITY_PROOF",
+    "presentation_imports_in_new_core_facade": "FORBIDDEN",
+    "broker_write_imports_in_new_core_facade": "FORBIDDEN",
+    "legacy_direct_engine_imports": "PRESERVED_DURING_PARITY",
+    "default_existing_engine_decision": "REUSE_AS_IS",
+    "new_core_facade_decision": "WRAP_ADAPTER"
+  },
+  "engines": [
+    {
+      "v9_wp": "WP1",
+      "name": "Natural Language CIO Router",
+      "paths": ["omni_cio/router/intent_v1.py"],
+      "role": "deterministic intent classification/routing contract",
+      "presentation_dependency": "NONE_REQUIRED_BY_PACKAGE_INTERFACE",
+      "wp11_action": "REUSE_AS_IS",
+      "parity_scope": "inventory only; not required in the WP11 planning golden path"
+    },
+    {
+      "v9_wp": "WP2",
+      "name": "Investment Policy Statement Engine",
+      "paths": ["omni_cio/policy/ips_v1.py"],
+      "role": "deterministic IPS validation/readiness",
+      "presentation_dependency": "NONE",
+      "wp11_action": "REUSE_AS_IS",
+      "public_entrypoints": ["assess_investment_policy"]
+    },
+    {
+      "v9_wp": "WP3",
+      "name": "Market Universe Engine",
+      "paths": [
+        "omni_cio/universe/engine_v1.py",
+        "omni_cio/universe/service_v1.py",
+        "omni_cio/universe/cache_v1.py",
+        "omni_cio/universe/tinvest_v1.py"
+      ],
+      "role": "universe construction plus existing read-side service/provider adapters",
+      "presentation_dependency": "NONE",
+      "external_dependency_note": "tinvest_v1 is an existing broker read-side adapter and is not pulled into the WP11 planning facade",
+      "wp11_action": "REUSE_AS_IS"
+    },
+    {
+      "v9_wp": "WP4",
+      "name": "Deterministic Candidate Funnel",
+      "paths": ["omni_cio/candidates/funnel_v1.py"],
+      "role": "deterministic candidate screening/ranking",
+      "presentation_dependency": "NONE",
+      "wp11_action": "REUSE_AS_IS"
+    },
+    {
+      "v9_wp": "WP5",
+      "name": "Research and Evidence Engine",
+      "paths": [
+        "omni_cio/research/binding_v1.py",
+        "omni_cio/research/service_v1.py",
+        "research_engine.py"
+      ],
+      "role": "evidence binding/research service and protected legacy compatibility layer",
+      "presentation_dependency": "NONE_REQUIRED_BY_DOMAIN_PACKAGE",
+      "wp11_action": "REUSE_AS_IS",
+      "later_owner": "Block G owns research-provider expansion"
+    },
+    {
+      "v9_wp": "WP6",
+      "name": "Credit, Rating and Default Engine 2.0",
+      "paths": [
+        "omni_cio/credit/engine_v1.py",
+        "omni_cio/credit/service_v1.py"
+      ],
+      "role": "deterministic credit analysis",
+      "presentation_dependency": "NONE",
+      "wp11_action": "REUSE_AS_IS"
+    },
+    {
+      "v9_wp": "WP7",
+      "name": "Fund X-Ray Engine",
+      "paths": ["omni_cio/funds/xray_v1.py"],
+      "role": "deterministic fund decomposition/analysis",
+      "presentation_dependency": "NONE",
+      "wp11_action": "REUSE_AS_IS"
+    },
+    {
+      "v9_wp": "WP8",
+      "name": "Portfolio Risk Engine 2.0",
+      "paths": ["omni_cio/risk/engine_v1.py", "risk_engine.py"],
+      "role": "deterministic portfolio risk and concentration analysis",
+      "presentation_dependency": "NONE_REQUIRED_BY_V1_ENGINE",
+      "wp11_action": "REUSE_AS_IS",
+      "public_entrypoints": ["assess_portfolio_risk"],
+      "wp11_golden_path": true
+    },
+    {
+      "v9_wp": "WP9",
+      "name": "Meta-Strategy Selector",
+      "paths": ["omni_cio/strategy/selector_v1.py", "strategy_router.py"],
+      "role": "deterministic bounded strategy selection",
+      "presentation_dependency": "NONE_REQUIRED_BY_V1_SELECTOR",
+      "wp11_action": "REUSE_AS_IS",
+      "public_entrypoints": ["select_meta_strategy"]
+    },
+    {
+      "v9_wp": "WP10",
+      "name": "Portfolio Optimizer and Capital Scaling",
+      "paths": ["omni_cio/optimizer/engine_v1.py"],
+      "role": "deterministic Decimal/lot/cash-aware optimizer",
+      "presentation_dependency": "NONE",
+      "wp11_action": "REUSE_AS_IS",
+      "public_entrypoints": ["optimize_portfolio"],
+      "wp11_golden_path": true
+    },
+    {
+      "v9_wp": "WP11",
+      "name": "Immutable Portfolio Plan Protocol",
+      "paths": ["omni_cio/plans/protocol_v1.py"],
+      "role": "immutable reviewable portfolio plan identity/lifecycle",
+      "presentation_dependency": "NONE",
+      "wp11_action": "REUSE_AS_IS",
+      "public_entrypoints": ["build_portfolio_plan"],
+      "wp11_golden_path": true
+    },
+    {
+      "v9_wp": "WP12",
+      "name": "Safe Plan Execution Engine",
+      "paths": ["omni_cio/plan_execution/service_v1.py"],
+      "role": "protected execution orchestration over the accepted real-trading primitive",
+      "presentation_dependency": "NONE_REQUIRED_BY_PACKAGE_INTERFACE",
+      "money_authority": "PROTECTED_DO_NOT_IMPORT_IN_WP11_FACADE",
+      "wp11_action": "REUSE_AS_IS",
+      "later_owner": "Block I"
+    },
+    {
+      "v9_wp": "WP13",
+      "name": "Portfolio Watchtower",
+      "paths": ["omni_cio/watchtower/service_v1.py"],
+      "role": "read-only monitoring/event lifecycle",
+      "presentation_dependency": "NONE_REQUIRED_BY_PACKAGE_INTERFACE",
+      "wp11_action": "REUSE_AS_IS",
+      "later_owner": "Block H"
+    },
+    {
+      "v9_wp": "WP14",
+      "name": "Decision Journal, Evaluation and Learning Loop",
+      "paths": ["omni_cio/decision_journal/service_v1.py"],
+      "role": "decision/audit/evaluation domain service",
+      "presentation_dependency": "NONE_REQUIRED_BY_PACKAGE_INTERFACE",
+      "wp11_action": "REUSE_AS_IS",
+      "later_owner": "Block D/G/H as assigned by the Master Plan"
+    }
+  ],
+  "legacy_root_financial_modules_preserved": [
+    "portfolio_market.py",
+    "portfolio_analytics.py",
+    "cash_liquidity.py",
+    "purchase_capacity.py",
+    "purchase_capacity_integrity.py",
+    "operations_analytics.py"
+  ],
+  "wp11_new_component": {
+    "id": "COMP-V10-CORE-FACADE",
+    "path": "omni_cio/core/",
+    "decision": "WRAP_ADAPTER",
+    "role": "stable presentation-independent Python composition interface over accepted V9 deterministic engines",
+    "financial_formula_ownership": "NONE",
+    "allowed_dependencies": [
+      "omni_cio.contracts.v1",
+      "omni_cio.risk",
+      "omni_cio.optimizer",
+      "omni_cio.plans"
+    ],
+    "forbidden_dependency_classes": [
+      "app/FastAPI presentation wrappers",
+      "Custom GPT/OpenAI",
+      "real trading or broker submit",
+      "environment/secret loaders"
+    ]
+  }
+}
