@@ -17,16 +17,23 @@
     {
       "id": "PARITY-PORTFOLIO-CORE",
       "v9_capability": "portfolio state and deterministic portfolio analytics",
-      "v9_source_refs": [],
-      "v9_tests_refs": [],
-      "inventory_required": true,
+      "v9_source_refs": [
+        "portfolio_market.py",
+        "portfolio_analytics.py",
+        "cash_liquidity.py",
+        "purchase_capacity.py",
+        "purchase_capacity_integrity.py",
+        "operations_analytics.py"
+      ],
+      "v9_tests_refs": ["tests/v9_plan_fixture.py"],
+      "inventory_required": false,
       "v10_owner": "Deterministic Core / portfolio contracts",
       "v10_truth_rule": "verified broker HTML report is canonical for broker-period accounting; current-market enrichment is separate",
-      "migration_method": "TBD_BY_REUSE_MATRIX",
+      "migration_method": "REUSE_AS_IS_WITH_WP11_WRAP_ADAPTER",
       "parity_oracle": "same canonical normalized input -> same reviewed Decimal-safe portfolio/accounting result unless an explicitly versioned semantic change is approved",
       "owning_wp": "Block D owning portfolio/data WPs",
       "status": "CONTRACT_DEFINED",
-      "evidence": []
+      "evidence": ["docs/architecture/V10_WP11_CORE_INVENTORY.json"]
     },
     {
       "id": "PARITY-BROKER-REPORT-RECON",
@@ -44,106 +51,122 @@
     {
       "id": "PARITY-RISK",
       "v9_capability": "portfolio risk engine and concentration/risk decomposition",
-      "v9_source_refs": [],
-      "v9_tests_refs": [],
-      "inventory_required": true,
+      "v9_source_refs": ["omni_cio/risk/engine_v1.py", "risk_engine.py"],
+      "v9_tests_refs": [
+        "tests/test_portfolio_risk_engine_v1.py",
+        "tests/test_portfolio_risk_hardening_v1.py",
+        "tests/v9_plan_fixture.py"
+      ],
+      "inventory_required": false,
       "v10_owner": "Deterministic Risk domain",
-      "migration_method": "TBD_BY_REUSE_MATRIX",
+      "migration_method": "REUSE_AS_IS_WITH_WP11_WRAP_ADAPTER",
       "parity_oracle": "same canonical snapshot + same policy/version -> reproducible reviewed risk output",
       "owning_wp": "Risk/analytics owning WP",
       "status": "BASELINE_IDENTIFIED",
-      "evidence": []
+      "evidence": ["docs/architecture/V10_WP11_CORE_INVENTORY.json"]
     },
     {
       "id": "PARITY-CREDIT",
       "v9_capability": "credit/instrument analytical engine",
-      "v9_source_refs": [],
+      "v9_source_refs": [
+        "omni_cio/credit/engine_v1.py",
+        "omni_cio/credit/service_v1.py",
+        "omni_cio/funds/xray_v1.py"
+      ],
       "v9_tests_refs": [],
-      "inventory_required": true,
+      "inventory_required": false,
       "v10_owner": "Deterministic Credit/Research domain",
-      "migration_method": "TBD_BY_REUSE_MATRIX",
+      "migration_method": "REUSE_AS_IS",
       "parity_oracle": "same structured inputs/evidence -> reviewed deterministic analytical result; AI cannot invent canonical rating/facts",
       "owning_wp": "Research/Risk owning WP",
       "status": "BASELINE_IDENTIFIED",
-      "evidence": []
+      "evidence": ["docs/architecture/V10_WP11_CORE_INVENTORY.json"]
     },
     {
       "id": "PARITY-STRATEGY",
       "v9_capability": "strategy decision logic",
-      "v9_source_refs": [],
-      "v9_tests_refs": [],
-      "inventory_required": true,
+      "v9_source_refs": ["omni_cio/strategy/selector_v1.py", "strategy_router.py"],
+      "v9_tests_refs": [
+        "tests/test_meta_strategy_selector_v1.py",
+        "tests/test_meta_strategy_boundary_v1.py",
+        "tests/v9_plan_fixture.py"
+      ],
+      "inventory_required": false,
       "v10_owner": "Deterministic Strategy domain",
-      "migration_method": "TBD_BY_REUSE_MATRIX",
+      "migration_method": "REUSE_AS_IS",
       "parity_oracle": "same versioned inputs/policy -> reproducible reviewed strategy result; AI explanation cannot alter the result",
       "owning_wp": "Strategy/Guardian owning WP",
       "status": "BASELINE_IDENTIFIED",
-      "evidence": []
+      "evidence": ["docs/architecture/V10_WP11_CORE_INVENTORY.json"]
     },
     {
       "id": "PARITY-OPTIMIZER",
       "v9_capability": "optimizer/sizing and plan calculations",
-      "v9_source_refs": [],
-      "v9_tests_refs": [],
-      "inventory_required": true,
+      "v9_source_refs": ["omni_cio/optimizer/engine_v1.py"],
+      "v9_tests_refs": ["tests/test_portfolio_optimizer_v1.py", "tests/v9_plan_fixture.py"],
+      "inventory_required": false,
       "v10_owner": "Deterministic Optimizer / Plan domain",
-      "migration_method": "TBD_BY_REUSE_MATRIX",
+      "migration_method": "REUSE_AS_IS_WITH_WP11_WRAP_ADAPTER",
       "parity_oracle": "same portfolio/constraints/policy -> exact Decimal/lot/cash-safe deterministic output",
       "owning_wp": "Decision/Plan owning WP",
       "status": "BASELINE_IDENTIFIED",
-      "evidence": []
+      "evidence": ["docs/architecture/V10_WP11_CORE_INVENTORY.json"]
     },
     {
       "id": "PARITY-IMMUTABLE-PLAN",
       "v9_capability": "immutable plan identity/lifecycle",
-      "v9_source_refs": [],
-      "v9_tests_refs": [],
-      "inventory_required": true,
+      "v9_source_refs": ["omni_cio/plans/protocol_v1.py"],
+      "v9_tests_refs": [
+        "tests/test_portfolio_plan_v1.py",
+        "tests/test_portfolio_plan_boundary_v1.py",
+        "tests/v9_plan_fixture.py"
+      ],
+      "inventory_required": false,
       "v10_owner": "Plan domain",
-      "migration_method": "TBD_BY_REUSE_MATRIX",
+      "migration_method": "REUSE_AS_IS_WITH_WP11_WRAP_ADAPTER",
       "parity_oracle": "stable plan identity/version/hash/expiry; material mutation invalidates prior approval",
       "owning_wp": "Decision/Plan owning WP",
       "status": "CONTRACT_DEFINED",
-      "evidence": []
+      "evidence": ["docs/architecture/V10_WP11_CORE_INVENTORY.json"]
     },
     {
       "id": "PARITY-WATCHTOWER",
       "v9_capability": "Watchtower monitoring/event lifecycle",
-      "v9_source_refs": [],
+      "v9_source_refs": ["omni_cio/watchtower/service_v1.py"],
       "v9_tests_refs": [],
-      "inventory_required": true,
+      "inventory_required": false,
       "v10_owner": "Durable Watchtower jobs/incidents",
       "migration_method": "TBD_BY_REUSE_MATRIX",
       "parity_oracle": "reboot-safe idempotent trigger/dedup/reopen/materiality lifecycle with durable incident evidence",
       "owning_wp": "Block H owning WPs",
       "status": "CONTRACT_DEFINED",
-      "evidence": []
+      "evidence": ["docs/architecture/V10_WP11_CORE_INVENTORY.json"]
     },
     {
       "id": "PARITY-JOURNAL",
       "v9_capability": "Decision Journal / audit trail",
-      "v9_source_refs": [],
+      "v9_source_refs": ["omni_cio/decision_journal/service_v1.py"],
       "v9_tests_refs": [],
-      "inventory_required": true,
+      "inventory_required": false,
       "v10_owner": "Durable Journal/Audit domain",
-      "migration_method": "TBD_BY_REUSE_MATRIX",
+      "migration_method": "REUSE_AS_IS",
       "parity_oracle": "append/audit-sensitive decisions, plans, approvals and state transitions remain reconstructable without secret leakage",
       "owning_wp": "Core/Journal owning WP",
       "status": "CONTRACT_DEFINED",
-      "evidence": []
+      "evidence": ["docs/architecture/V10_WP11_CORE_INVENTORY.json"]
     },
     {
       "id": "PARITY-GATEWAY-API",
       "v9_capability": "existing Gateway/OpenAPI integration contracts required by accepted V9",
-      "v9_source_refs": [],
+      "v9_source_refs": ["app.py", "app_v371.py", "app_v360.py", "main.py"],
       "v9_tests_refs": [],
-      "inventory_required": true,
+      "inventory_required": false,
       "v10_owner": "V10 Core/Internal API adapters during migration",
-      "migration_method": "TBD_BY_REUSE_MATRIX",
+      "migration_method": "WRAP_ADAPTER",
       "parity_oracle": "required consuming behavior remains available until V10 replacement surface passes its gate; app:app V9 baseline remains protected until replacement acceptance",
       "owning_wp": "API/Web migration WPs",
       "status": "BASELINE_IDENTIFIED",
-      "evidence": []
+      "evidence": ["docs/architecture/V10_WP11_EXECUTION_CONTRACT.md"]
     },
     {
       "id": "PARITY-GPT-POLICY-KNOWLEDGE",
@@ -161,28 +184,32 @@
     {
       "id": "PARITY-RESEARCH-EVIDENCE",
       "v9_capability": "research/evidence gathering and source-based analysis",
-      "v9_source_refs": [],
+      "v9_source_refs": [
+        "omni_cio/research/binding_v1.py",
+        "omni_cio/research/service_v1.py",
+        "research_engine.py"
+      ],
       "v9_tests_refs": [],
-      "inventory_required": true,
+      "inventory_required": false,
       "v10_owner": "Research Collector + Evidence Store + Cortex orchestration",
-      "migration_method": "TBD_BY_REUSE_MATRIX",
+      "migration_method": "REUSE_AS_IS_UNTIL_BLOCK_G_ADAPTER",
       "parity_oracle": "material conclusions bind source identity/freshness/evidence; external text never becomes authority/instructions",
       "owning_wp": "Block G owning WPs",
       "status": "CONTRACT_DEFINED",
-      "evidence": []
+      "evidence": ["docs/architecture/V10_WP11_CORE_INVENTORY.json"]
     },
     {
       "id": "PARITY-REAL-SAFETY",
       "v9_capability": "reviewed real-execution safety/idempotency/reconciliation invariants",
-      "v9_source_refs": [],
-      "v9_tests_refs": [],
-      "inventory_required": true,
+      "v9_source_refs": ["omni_cio/plan_execution/service_v1.py", "omni_cio/real_trading/"],
+      "v9_tests_refs": ["tests/v9_execution_fixture.py"],
+      "inventory_required": false,
       "v10_owner": "isolated Block I execution contour",
       "migration_method": "TBD_BY_REUSE_MATRIX",
       "parity_oracle": "no transfer/margin/short authority; exact immutable plan + OWNER approval + preflight + one idempotent possible submit + ambiguity requires reconciliation; submitted is not filled without broker proof",
       "owning_wp": "Block I",
       "status": "BASELINE_IDENTIFIED",
-      "evidence": []
+      "evidence": ["docs/architecture/V10_WP11_CORE_INVENTORY.json"]
     },
     {
       "id": "PARITY-RECOVERY",
