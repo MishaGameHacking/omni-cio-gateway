@@ -28,15 +28,17 @@ def test_owner_target_preparation_never_manages_recovery_key_material() -> None:
     assert "TARGET_BITLOCKER_PROTECTION_OFF" in script
 
 
-def test_owner_target_acl_grants_runtime_but_not_runner_payload_access() -> None:
+def test_owner_target_acl_stays_system_admin_only_before_product_binding() -> None:
     script = _read("prepare_wp10_offdevice_target.ps1")
-    assert 'Resolve-LocalAccountSid -AccountName "omni-cio-runtime"' in script
-    assert 'Resolve-LocalAccountSid -AccountName "omni-ci-runner"' in script
-    assert '"*${runtimeSid}:(OI)(CI)M"' in script
-    assert '"/remove:g", "*$runnerSid"' in script
-    assert '"/remove:d", "*$runnerSid"' in script
-    assert "EXISTING_UNOWNED_BACKUP_ROOT_REFUSED" in script
+    assert "Resolve-LocalAccountSid" not in script
+    assert "${runtimeSid}" not in script
+    assert '"*S-1-5-18:(OI)(CI)F"' in script
+    assert '"*S-1-5-32-544:(OI)(CI)F"' in script
+    assert "(OI)(CI)M" not in script
+    assert "NOT_READY_UNTIL_PRODUCT_DB_AND_BACKUP_JOB_BINDING" in script
+    assert "runtime_payload_access_granted = $false" in script
     assert "runner_payload_access_granted = $false" in script
+    assert "EXISTING_UNOWNED_BACKUP_ROOT_REFUSED" in script
 
 
 def test_owner_rehearsal_stays_synthetic_and_restores_from_offdevice_copy() -> None:
