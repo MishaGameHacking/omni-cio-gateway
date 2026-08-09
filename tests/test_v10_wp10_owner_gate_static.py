@@ -76,17 +76,20 @@ def test_synthetic_rehearsal_is_bounded_and_phase_observable() -> None:
         assert phase in script
 
 
-def test_owner_admin_rehearsal_uses_pg_ctl_windows_launcher() -> None:
+def test_owner_admin_rehearsal_uses_bounded_detached_pg_ctl_launcher() -> None:
     script = _read("rehearse_wp10_recovery.ps1")
     assert "postgres.exe refuses to run directly from an elevated Windows token" in script
     assert "pg_ctl is the PostgreSQL-supported Windows launcher" in script
-    assert "Invoke-NativeChecked -FilePath $pgCtl -Arguments @(" in script
+    assert "Start-Process -FilePath $pgCtl" in script
+    assert "$pgCtlArgumentLine" in script
     assert '"start"' in script
-    assert '"-D", $dataDir' in script
-    assert '"-l", $serverLog' in script
-    assert '"-w"' in script
-    assert '"-t", "$PostgresWaitSeconds"' in script
-    assert '"-o", "-h 127.0.0.1 -p $port"' in script
+    assert '"-D `"$dataDir`""' in script
+    assert '"-l `"$serverLog`""' in script
+    assert '"-W"' in script
+    assert '"-s"' in script
+    assert '"-o `"-h 127.0.0.1 -p $port`""' in script
+    assert "$pgCtlProcess.WaitForExit($PostgresWaitSeconds * 1000)" in script
+    assert 'throw "POSTGRES_PG_CTL_LAUNCH_TIMEOUT"' in script
     assert 'throw "POSTGRES_PG_CTL_START_FAILED"' in script
 
 
@@ -122,4 +125,4 @@ def test_nonadmin_final_audit_requires_owner_restore_proof_and_denies_runner() -
     assert "runner_write_denied = $true" in script
     assert "private_payload_collected = $false" in script
     assert "secret_value_collected = $false" in script
-    assert "recovery_key_value_collected = $false" in script
+    assert "recovery_key_value_collected = $false"
