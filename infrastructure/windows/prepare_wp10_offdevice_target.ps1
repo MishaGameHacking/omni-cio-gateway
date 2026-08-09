@@ -107,10 +107,11 @@ try {
 
         # The target volume must already exist and already be encrypted. This
         # script changes only the dedicated Omni-CIO directory ACL; it never
-        # formats, partitions, shrinks or erases a disk/volume.
+        # formats, partitions, shrinks or erases a disk/volume. Well-known SIDs
+        # avoid depending on the Windows display language.
         & icacls.exe $backupRoot /inheritance:r *> $null
         if ($LASTEXITCODE -ne 0) { throw "BACKUP_ROOT_ACL_INHERITANCE_FAILED" }
-        & icacls.exe $backupRoot /grant:r "SYSTEM:(OI)(CI)F" "BUILTIN\Administrators:(OI)(CI)F" *> $null
+        & icacls.exe $backupRoot /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F" *> $null
         if ($LASTEXITCODE -ne 0) { throw "BACKUP_ROOT_ACL_GRANT_FAILED" }
 
         $localDescriptor = [ordered]@{
