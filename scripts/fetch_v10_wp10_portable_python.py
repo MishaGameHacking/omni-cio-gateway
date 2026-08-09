@@ -55,7 +55,9 @@ def _safe_extract(package: Path, destination: Path) -> None:
         for member in archive.infolist():
             name = PurePosixPath(member.filename)
             if name.is_absolute() or ".." in name.parts:
-                raise ContinuityFetchError("WP10_CONTINUITY_PYTHON_ARCHIVE_PATH_REJECTED")
+                raise ContinuityFetchError(
+                    "WP10_CONTINUITY_PYTHON_ARCHIVE_PATH_REJECTED"
+                )
         archive.extractall(destination)
 
 
@@ -68,7 +70,9 @@ def _require_temp_root(output_root: Path) -> None:
     try:
         resolved.relative_to(expected_root)
     except ValueError as exc:
-        raise ContinuityFetchError("WP10_CONTINUITY_OUTPUT_NOT_UNDER_RUNNER_TEMP") from exc
+        raise ContinuityFetchError(
+            "WP10_CONTINUITY_OUTPUT_NOT_UNDER_RUNNER_TEMP"
+        ) from exc
 
 
 def acquire(version: str, output_root: Path) -> dict[str, object]:
