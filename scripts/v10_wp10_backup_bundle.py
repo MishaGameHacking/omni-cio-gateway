@@ -372,10 +372,13 @@ def _metadata_path_is_allowed(relative_path: Path, contract: dict[str, Any]) -> 
     if relative_path.is_absolute() or ".." in relative_path.parts:
         return False
     forbidden = {
-        str(item).lower() for item in contract["private_metadata"]["forbidden_path_tokens"]
+        str(item).lower()
+        for item in contract["private_metadata"]["forbidden_path_tokens"]
     }
     components = [part.lower() for part in relative_path.parts]
-    return not any(any(token in component for token in forbidden) for component in components)
+    return not any(
+        any(token in component for token in forbidden) for component in components
+    )
 
 
 def create_metadata_archive(
@@ -455,7 +458,11 @@ def verify_metadata_archive(
                 raise BackupBundleError("METADATA_FILE_LIST_INVALID")
             expected_names = {"metadata-manifest.json"}
             for item in files:
-                if not isinstance(item, dict) or set(item) != {"path", "sha256", "size_bytes"}:
+                if not isinstance(item, dict) or set(item) != {
+                    "path",
+                    "sha256",
+                    "size_bytes",
+                }:
                     raise BackupBundleError("METADATA_ENTRY_INVALID")
                 relative = Path(str(item["path"]))
                 if not _metadata_path_is_allowed(relative, policy):
@@ -512,7 +519,9 @@ def main() -> int:
     create_parser = subparsers.add_parser("create")
     create_parser.add_argument("--staging-archive", required=True, type=Path)
     create_parser.add_argument("--output-dir", required=True, type=Path)
-    create_parser.add_argument("--backup-class", required=True, choices=sorted(SAFE_BACKUP_CLASSES))
+    create_parser.add_argument(
+        "--backup-class", required=True, choices=sorted(SAFE_BACKUP_CLASSES)
+    )
     create_parser.add_argument("--postgres-version-class", required=True)
     create_parser.set_defaults(handler=_command_create)
 
