@@ -35,7 +35,9 @@ def assess(profile: dict, contract: dict) -> dict:
     for key, reason in (
         ("bundle_integrity_pass", "BUNDLE_INTEGRITY_NOT_PROVEN"),
         ("corruption_rejected", "CORRUPTION_REJECTION_NOT_PROVEN"),
+        ("offdevice_copy_pass", "SYNTHETIC_COPY_NOT_PROVEN"),
         ("restore_probe_pass", "RESTORE_PROBE_NOT_PROVEN"),
+        ("offdevice_cleanup_pass", "SYNTHETIC_OFFDEVICE_CLEANUP_NOT_PROVEN"),
         ("source_restore_separate", "SOURCE_RESTORE_NOT_SEPARATE"),
         ("temporary_state_cleaned", "TEMPORARY_STATE_NOT_CLEANED"),
     ):
@@ -43,6 +45,7 @@ def assess(profile: dict, contract: dict) -> dict:
             blockers.append(reason)
 
     for key, reason in (
+        ("owner_target_used", "OWNER_TARGET_USED_IN_CI_REHEARSAL"),
         ("real_secret_values_used", "REAL_SECRET_USED"),
         ("private_portfolio_data_used", "PRIVATE_PORTFOLIO_USED"),
         ("account_identifiers_used", "ACCOUNT_IDENTIFIER_USED"),
@@ -71,6 +74,9 @@ def assess(profile: dict, contract: dict) -> dict:
         "synthetic_recovery_ready": not blockers,
         "production_database_binding": contract["postgresql"][
             "production_database_binding"
+        ],
+        "production_backup_writer_identity": contract["off_device"][
+            "production_backup_writer_identity"
         ],
         "offdevice_final_acceptance": "OWNER_ACTION_REQUIRED",
         "real_money_authority_changed": False,
