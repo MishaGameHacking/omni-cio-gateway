@@ -50,6 +50,9 @@
     "schedule_definition_required_now": true,
     "synthetic_schedule_rehearsal_required_now": true,
     "production_schedule_activation_before_product_binding": false,
+    "production_backup_class": "POSTGRES_LOGICAL_PRIVATE_STATE",
+    "production_cycle_requires_offdevice_copy": true,
+    "production_cycle_requires_retention": true,
     "secret_values_in_task_definition_forbidden": true
   },
   "integrity": {
