@@ -35,12 +35,14 @@ The continuity lane must:
 - run only on `[self-hosted, Windows, X64, omni-cio-ci]`;
 - reject fork PR execution through same-repository gating;
 - use read-only GitHub contents permission and no repository secrets;
-- require machine-visible Python **3.14.6** at `C:\Program Files\Python314\python.exe`;
+- use the pinned `actions/setup-python` action on the **self-hosted** runner to select exact Python **3.14.6**, then independently verify the resulting interpreter version;
 - create a fresh per-run virtual environment under `RUNNER_TEMP` and remove it afterward;
 - parse all WP10 PowerShell acceptance scripts with **Windows PowerShell 5.1**;
 - run the same deterministic WP10 recovery/manifest/profile/OWNER-boundary tests plus the continuity-contract regression test;
 - leave production private database access, private portfolio data, recovery keys, and real secret values unused;
 - clean the worktree and temporary compatibility state even on failure.
+
+The first continuity attempt intentionally failed closed when it assumed the exact Python 3.14.6 installation path would be visible to the non-admin runner service token. The existing OWNER path can resolve the machine installation, but service-token visibility is not identical. The continuity lane therefore uses the same pinned `actions/setup-python` version already reviewed for hosted compatibility, but executes it on the Lenovo self-hosted runner. This preserves exact toolchain selection without purchasing GitHub-hosted compute.
 
 This lane deliberately does **not** claim to turn the persistent Lenovo host into a disposable GitHub-hosted VM. The missing disposable-image signal is recorded as degraded acceleration. The safety/correctness evidence is preserved through exact toolchain checks, isolated temporary state, the existing authoritative merge gate, the existing WP10 synthetic recovery audit, the existing off-device access-denial audit, and the OWNER physical recovery rehearsal.
 
