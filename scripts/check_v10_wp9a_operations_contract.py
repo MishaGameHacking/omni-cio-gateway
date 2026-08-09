@@ -62,6 +62,21 @@ def validate_contract(contract: dict, wp5: dict) -> None:
     ):
         raise ContractError("REAL_EXECUTION_RESTART_GUARD_MISSING")
 
+    owner_alert = contract["owner_alert"]
+    if owner_alert.get("critical_reason_code_required") is not True:
+        raise ContractError("OWNER_ALERT_REASON_CODE_GUARD_MISSING")
+    if owner_alert.get("silent_critical_failure_forbidden") is not True:
+        raise ContractError("SILENT_CRITICAL_FAILURE_NOT_FORBIDDEN")
+    if owner_alert.get("private_payload_in_alert_forbidden") is not True:
+        raise ContractError("OWNER_ALERT_PRIVATE_PAYLOAD_GUARD_MISSING")
+    if owner_alert.get("external_delivery") != "NOT_READY_UNTIL_OWNING_INTERACTION_WP":
+        raise ContractError("OWNER_ALERT_EXTERNAL_DELIVERY_SCOPE_LEAK")
+    if set(owner_alert.get("current_surfaces", [])) != {
+        "WP9_HEALTH_EVIDENCE",
+        "WP9A_LOCAL_OPERATIONS_JOURNAL",
+    }:
+        raise ContractError("OWNER_ALERT_SURFACES_INVALID")
+
     runner = contract["github_runner"]
     if runner.get("policy") != "DEFAULT_AUTO_UPDATE_MONITORED":
         raise ContractError("RUNNER_UPDATE_POLICY_INVALID")
@@ -169,6 +184,7 @@ def main() -> int:
     print("V10 WP9A operations contract check passed.")
     print("WP5 time/resource thresholds: reused without relaxation")
     print("WP9 restart boundary: max 3 / 60-second backoff")
+    print("OWNER alert: local evidence now, external transport deferred")
     print("Operations journal: bounded JSONL + SHA-256 hash chain")
     print("Later product runtimes: not activated by WP9A")
     print("Real-money authority: unchanged")
