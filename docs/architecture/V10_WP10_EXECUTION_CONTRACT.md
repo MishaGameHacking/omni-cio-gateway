@@ -52,7 +52,7 @@ No V9 financial engine is rewritten, moved or retired in WP10. No parity-ledger 
 
 ## 5. Sequencing fact — product database binding is not invented early
 
-WP13 owns the V10 application persistence schema/migrations and explicitly includes backup/restore integration. At WP10 start, PostgreSQL 18.4 exists on the Lenovo but the future V10 private application schema/database is not yet an accepted durable product surface.
+WP13 owns the V10 application persistence schema/migrations and explicitly includes backup/restore integration. WP14 owns durable jobs, including the production backup job. At WP10 start, PostgreSQL 18.4 exists on the Lenovo but the future V10 private application schema/database and its durable backup job are not yet accepted product surfaces.
 
 Therefore WP10 must:
 
@@ -60,7 +60,8 @@ Therefore WP10 must:
 2. prove it end-to-end on an isolated synthetic PostgreSQL 18.4 recovery database with no private user data or real secret;
 3. define the sealed production schedule/binding contract now;
 4. leave actual product-database binding `NOT_READY_UNTIL_WP13` rather than creating a premature private schema or credential;
-5. require WP13 to bind its accepted database to this recovery mechanism rather than inventing a competing backup stack.
+5. leave the production backup-writer identity `NOT_READY_UNTIL_PRODUCT_DB_AND_BACKUP_JOB_BINDING` rather than pre-granting the general runtime identity access to recovery media;
+6. require WP13/WP14 (or their explicitly responsible successor) to bind the accepted database/job to this recovery mechanism through a separately reviewed least-privilege change rather than inventing a competing backup stack.
 
 This is sequence preservation, not an exemption from the WP10 restore proof.
 
@@ -115,7 +116,11 @@ Acceptance requires the selected target to report:
 - BitLocker protection is `On`;
 - a WP10 non-secret target marker is present;
 - recovery-key custody is separately confirmed by OWNER without recording the key;
-- the protected backup payload directory is not readable by the GitHub runner identity.
+- the protected backup payload directory grants only SYSTEM/Administrators during WP10 acceptance;
+- the GitHub runner cannot read or write the backup payload directory;
+- the general `omni-cio-runtime` identity is not pre-authorized to read or write that directory before product DB/job binding.
+
+The production writer remains explicitly sealed as `NOT_READY_UNTIL_PRODUCT_DB_AND_BACKUP_JOB_BINDING`. OWNER/admin executes the WP10 physical synthetic copy/restore rehearsal. The later persistence/job owner must establish a dedicated least-privilege production writer with separate review and proof.
 
 The backup encryption boundary is the encrypted off-device volume. No secret/recovery key is embedded in the archive or manifest. A NAS/other target may be added later only with equivalent proven encryption, OWNER control and recovery semantics; it is not silently assumed compatible.
 
@@ -159,10 +164,11 @@ Before those later metadata families exist, an empty approved metadata payload i
 
 WP10 does not expand broker or OS authority.
 
-- GitHub Actions runner receives no read permission to production private backup archives.
+- GitHub Actions runner receives no read/write permission to production private backup archives.
+- The general runtime identity receives no private recovery-media permission during WP10 acceptance.
 - The runner may execute only synthetic recovery rehearsals containing no private data or real secret.
 - Final off-device target provisioning/recovery-key custody remains an OWNER physical/admin action.
-- Future production backup execution must run under an identity already authorized for the required private DB read path; WP10 does not grant that access to CI.
+- The future production backup writer is chosen only when the product DB and backup job exist and its exact private DB/media access can be reviewed together.
 - Recovery never enables Real execution by itself.
 - Restoring an old database is not permission to replay an old plan/order.
 
@@ -180,6 +186,7 @@ WP10 must prove:
 - restored deterministic probe rows exactly match source rows;
 - no real secret/private portfolio/account payload is required for the rehearsal;
 - absent production V10 database before WP13 is reported as `NOT_READY_ALLOWED`, not fabricated as backed up;
+- runtime/runner production backup-media access remains disabled and the production writer identity remains sealed;
 - protected `app:app`, `trading_methods=false` and no-broker-write boundaries remain green.
 
 ## 13. Negative/failure tests
@@ -197,7 +204,8 @@ WP10 must fail closed for:
 - off-device BitLocker not fully encrypted or protection not on;
 - recovery-key custody unknown;
 - attempt to include WP8 secret root, secret-like paths or forbidden metadata class;
-- runner read access to production backup payload;
+- runner read/write access to production backup payload;
+- premature runtime backup-media permission or production writer binding;
 - retention attempting to delete unowned/invalid files;
 - stale latest off-device backup beyond RPO once production binding is active;
 - any attempt to imply recovered execution/broker truth from a stale local snapshot.
@@ -212,7 +220,7 @@ WP10 health/evidence uses sanitized status only:
 - backup/restore format/version class;
 - off-device encrypted/protected/marker/access booleans;
 - corruption-detection and restore-rehearsal PASS/FAIL;
-- production-binding readiness class;
+- production-binding and production-writer readiness classes;
 - stable reason codes/correlation IDs.
 
 CI must not upload DB archives, private backup manifests containing private identifiers, secret values, recovery keys or raw off-device file listings.
@@ -222,6 +230,7 @@ CI must not upload DB archives, private backup manifests containing private iden
 - Fast hosted checks: contract, manifest, path/retention/privacy negative tests.
 - Hosted Windows clean-room compatibility: **YES** for PowerShell 5.1 parsing, path semantics and non-mutating target audit behavior.
 - Lenovo authoritative checks: **YES** for installed PostgreSQL 18.4 synthetic dump/corruption/restore rehearsal and inherited WP6–WP9A checks.
+- Final OWNER target proof: **YES**, as an elevated physical synthetic copy/restore followed by a non-admin runner access-denial audit.
 - Production private DB backup in CI: **NO**.
 - GPU AI eval: **NO**.
 - Release/recovery matrix: **YES**, WP10 is itself the Block C recovery package.
@@ -245,7 +254,8 @@ WP10 is COMPLETE only when all are true:
 - authoritative Lenovo PostgreSQL 18.4 synthetic backup/corruption/restore rehearsal passes without real secrets/private data;
 - one OWNER-controlled non-system off-device target is proven FullyEncrypted + Protection On and separately recoverable;
 - OWNER off-device rehearsal copies a synthetic bundle to that target and restores/validates it without exposing its payload to CI;
-- runner production-backup payload access remains denied;
+- runner production-backup payload read/write is denied;
+- runtime production-backup payload access remains disabled and production backup writer remains sealed until product DB/job binding;
 - secret-root exclusion and separate secret-recovery contract remain intact;
 - production DB binding remains sealed until WP13 rather than creating schema/credentials early;
 - no later product service is activated;
