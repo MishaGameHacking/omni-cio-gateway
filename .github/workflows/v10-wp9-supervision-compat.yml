@@ -126,10 +126,13 @@ jobs:
               -ExecutionTimeLimit (New-TimeSpan -Minutes 10) `
               -MultipleInstances IgnoreNew `
               -StartWhenAvailable
+            $bootTrigger = New-ScheduledTaskTrigger -AtStartup
+            $dailyTrigger = New-ScheduledTaskTrigger -Daily -At ([datetime]::Today.AddMinutes(5))
             $definition = New-ScheduledTask `
               -Action $action `
               -Principal $principal `
               -Settings $settings `
+              -Trigger @($bootTrigger, $dailyTrigger) `
               -Description "OMNI-CIO-V10-WP9-COMPAT"
             Register-ScheduledTask `
               -TaskName $taskName `
@@ -166,6 +169,13 @@ jobs:
             }
             if ([string]$task.Settings.MultipleInstances -ne "IgnoreNew") {
               Write-Error "Task multiple-instance policy did not round-trip."
+              exit 1
+            }
+            $triggers = @($task.Triggers)
+            $bootCount = @($triggers | Where-Object { $_.CimClass.CimClassName -eq "MSFT_TaskBootTrigger" }).Count
+            $dailyCount = @($triggers | Where-Object { $_.CimClass.CimClassName -eq "MSFT_TaskDailyTrigger" }).Count
+            if ($triggers.Count -ne 2 -or $bootCount -ne 1 -or $dailyCount -ne 1) {
+              Write-Error "Task startup/daily trigger types did not round-trip as expected."
               exit 1
             }
           }
