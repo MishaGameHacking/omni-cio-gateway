@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
     [string]$PythonPath,
+    [switch]$UsePreparedOffdeviceTarget,
     [switch]$AsJson
 )
 
@@ -12,6 +13,18 @@ $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $BackupRunner = Join-Path $PSScriptRoot "run_wp10_backup.ps1"
 $BundleTool = Join-Path $RepoRoot "scripts\v10_wp10_backup_bundle.py"
 $PostgresWaitSeconds = 45
+$OwnerDescriptorPath = "C:\ProgramData\OmniCIO\wp10\offdevice-owner-prepare.local.json"
+
+function Test-Administrator {
+    if ($env:OS -ne "Windows_NT") {
+        return $false
+    }
+    $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $principal = New-Object Security.Principal.WindowsPrincipal($identity)
+    return $principal.IsInRole(
+        [Security.Principal.WindowsBuiltInRole]::Administrator
+    )
+}
 
 function Resolve-PostgresTool {
     param([Parameter(Mandatory = $true)][string]$Name)
@@ -121,6 +134,76 @@ function Invoke-ExpectedFailure {
     return [int]$process.ExitCode
 }
 
+function Get-PreparedOffdeviceTarget {
+    if (-not (Test-Administrator)) {
+        throw "OWNER_ADMIN_REQUIRED"
+    }
+    if (-not (Test-Path -LiteralPath $OwnerDescriptorPath -PathType Leaf)) {
+        throw "OWNER_DESCRIPTOR_MISSING"
+    }
+
+    try {
+        $descriptor = Get-Content -LiteralPath $OwnerDescriptorPath -Raw |
+            ConvertFrom-Json
+    }
+    catch {
+        throw "OWNER_DESCRIPTOR_INVALID"
+    }
+
+    if (
+        [string]$descriptor.schema_version -ne "1" -or
+        [string]$descriptor.work_package -ne "WP10" -or
+        -not [bool]$descriptor.local_only -or
+        -not [bool]$descriptor.non_system_volume -or
+        -not [bool]$descriptor.data_volume -or
+        -not [bool]$descriptor.bitlocker_fully_encrypted -or
+        -not [bool]$descriptor.bitlocker_protection_on -or
+        -not [bool]$descriptor.recovery_key_custody_confirmed -or
+        [bool]$descriptor.destructive_disk_operation_performed
+    ) {
+        throw "OWNER_DESCRIPTOR_INVALID"
+    }
+
+    $mountPoint = ([string]$descriptor.target_mount_point).ToUpperInvariant()
+    if ($mountPoint -notmatch '^[A-Z]:$') {
+        throw "OWNER_DESCRIPTOR_TARGET_INVALID"
+    }
+    $systemVolume = [System.IO.Path]::GetPathRoot($env:SystemRoot).TrimEnd("\").ToUpperInvariant()
+    if ($mountPoint -eq $systemVolume) {
+        throw "SYSTEM_VOLUME_FORBIDDEN"
+    }
+
+    $bitlocker = Get-BitLockerVolume -MountPoint $mountPoint -ErrorAction Stop
+    if ([string]$bitlocker.VolumeType -ne "Data") {
+        throw "TARGET_NOT_DATA_VOLUME"
+    }
+    if ([string]$bitlocker.VolumeStatus -ne "FullyEncrypted") {
+        throw "TARGET_NOT_FULLY_ENCRYPTED"
+    }
+    if ([string]$bitlocker.ProtectionStatus -ne "On") {
+        throw "TARGET_BITLOCKER_PROTECTION_OFF"
+    }
+
+    $backupRoot = Join-Path "$mountPoint\" ([string]$descriptor.backup_root_name)
+    $markerPath = Join-Path $backupRoot ([string]$descriptor.marker_name)
+    if (-not (Test-Path -LiteralPath $backupRoot -PathType Container)) {
+        throw "OWNER_BACKUP_ROOT_MISSING"
+    }
+    if (-not (Test-Path -LiteralPath $markerPath -PathType Leaf)) {
+        throw "OWNER_TARGET_MARKER_MISSING"
+    }
+
+    return @{
+        backup_root = $backupRoot
+        non_system_volume = $true
+        data_volume = $true
+        bitlocker_fully_encrypted = $true
+        bitlocker_protection_on = $true
+        recovery_key_custody_confirmed = $true
+        target_marker_present = $true
+    }
+}
+
 function Start-TemporaryPostgres {
     param(
         [string]$PgCtl,
@@ -202,10 +285,12 @@ function Write-Result {
         return
     }
 
-    Write-Output "WP10 synthetic recovery rehearsal: $($Result.status)"
+    Write-Output "WP10 recovery rehearsal: $($Result.status)"
+    Write-Output "Mode: $($Result.evidence_class)"
     Write-Output "Reason: $($Result.reason_code)"
     Write-Output "Phase: $($Result.phase)"
     Write-Output "Bundle integrity: $($Result.bundle_integrity_pass)"
+    Write-Output "Off-device copy: $($Result.offdevice_copy_pass)"
     Write-Output "Corruption rejected: $($Result.corruption_rejected)"
     Write-Output "Separate restore DB: $($Result.separate_restore_database_used)"
     Write-Output "Restore probe exact match: $($Result.restore_probe_exact_match)"
@@ -216,22 +301,39 @@ function Write-Result {
 
 $startedAt = [DateTime]::UtcNow
 $phase = "INITIALIZE"
+$ownerMode = [bool]$UsePreparedOffdeviceTarget
 $result = @{
     schema_version = "1"
     work_package = "WP10"
-    evidence_class = "LENOVO_SYNTHETIC_RECOVERY_REHEARSAL"
+    evidence_class = $(
+        if ($ownerMode) {
+            "OWNER_OFFDEVICE_RECOVERY_REHEARSAL"
+        }
+        else {
+            "LENOVO_SYNTHETIC_RECOVERY_REHEARSAL"
+        }
+    )
     status = "FAIL"
     reason_code = "REHEARSAL_NOT_COMPLETED"
     phase = $phase
     postgres_major = 18
     postgres_version_class = "UNKNOWN"
     bundle_integrity_pass = $false
+    offdevice_copy_pass = $false
     corruption_rejected = $false
     separate_restore_database_used = $false
     restore_probe_exact_match = $false
     temporary_state_cleaned = $false
+    owner_target_used = $ownerMode
+    non_system_volume = $false
+    data_volume = $false
+    bitlocker_fully_encrypted = $false
+    bitlocker_protection_on = $false
+    recovery_key_custody_confirmed = $false
+    target_marker_present = $false
     real_secret_values_used = $false
     private_portfolio_data_used = $false
+    account_identifiers_used = $false
     production_database_accessed = $false
     duration_ms = 0
 }
@@ -271,6 +373,18 @@ try {
         throw "POSTGRES_MAJOR_MISMATCH"
     }
     $result.postgres_version_class = $versionClass
+
+    $ownerTarget = $null
+    if ($ownerMode) {
+        $phase = "VALIDATE_OWNER_TARGET"
+        $ownerTarget = Get-PreparedOffdeviceTarget
+        $result.non_system_volume = [bool]$ownerTarget.non_system_volume
+        $result.data_volume = [bool]$ownerTarget.data_volume
+        $result.bitlocker_fully_encrypted = [bool]$ownerTarget.bitlocker_fully_encrypted
+        $result.bitlocker_protection_on = [bool]$ownerTarget.bitlocker_protection_on
+        $result.recovery_key_custody_confirmed = [bool]$ownerTarget.recovery_key_custody_confirmed
+        $result.target_marker_present = [bool]$ownerTarget.target_marker_present
+    }
 
     $phase = "CREATE_TEMP_CLUSTER"
     $tempBase = if ([string]::IsNullOrWhiteSpace($env:RUNNER_TEMP)) {
@@ -370,11 +484,34 @@ try {
     ) -Reason "BUNDLE_VERIFY_FAILED"
     $result.bundle_integrity_pass = $true
 
+    $restoreArchive = $archive.FullName
+    $restoreManifest = $manifest
+    if ($ownerMode) {
+        $phase = "COPY_OWNER_OFFDEVICE"
+        Invoke-NativeChecked -FilePath $python -Arguments @(
+            $BundleTool,
+            "copy",
+            "--archive", $archive.FullName,
+            "--manifest", $manifest,
+            "--target-dir", [string]$ownerTarget.backup_root
+        ) -Reason "OFFDEVICE_COPY_FAILED"
+
+        $restoreArchive = Join-Path ([string]$ownerTarget.backup_root) $archive.Name
+        $restoreManifest = "$restoreArchive.manifest.json"
+        Invoke-NativeChecked -FilePath $python -Arguments @(
+            $BundleTool,
+            "verify",
+            "--archive", $restoreArchive,
+            "--manifest", $restoreManifest
+        ) -Reason "OFFDEVICE_VERIFY_FAILED"
+        $result.offdevice_copy_pass = $true
+    }
+
     $phase = "PROVE_CORRUPTION_REJECTION"
     $corruptArchive = Join-Path $corruptDir $archive.Name
-    $corruptManifest = Join-Path $corruptDir ([System.IO.Path]::GetFileName($manifest))
-    Copy-Item -LiteralPath $archive.FullName -Destination $corruptArchive
-    Copy-Item -LiteralPath $manifest -Destination $corruptManifest
+    $corruptManifest = Join-Path $corruptDir ([System.IO.Path]::GetFileName($restoreManifest))
+    Copy-Item -LiteralPath $restoreArchive -Destination $corruptArchive
+    Copy-Item -LiteralPath $restoreManifest -Destination $corruptManifest
     [System.IO.File]::AppendAllText($corruptArchive, "tamper")
 
     $expectedOut = Join-Path $corruptDir "verify.stdout"
@@ -398,7 +535,7 @@ try {
     $phase = "RESTORE_PREFLIGHT"
     Invoke-NativeChecked `
         -FilePath $pgRestore `
-        -Arguments @("--list", $archive.FullName) `
+        -Arguments @("--list", $restoreArchive) `
         -Reason "PG_RESTORE_LIST_FAILED"
 
     $phase = "RESTORE_SEPARATE_DATABASE"
@@ -413,7 +550,7 @@ try {
         "--no-owner",
         "--no-privileges",
         "--exit-on-error",
-        $archive.FullName
+        $restoreArchive
     )) -Reason "PG_RESTORE_FAILED"
 
     $phase = "VERIFY_RESTORE_PROBE"
@@ -437,7 +574,14 @@ try {
 
     $phase = "COMPLETE"
     $result.status = "PASS"
-    $result.reason_code = "SYNTHETIC_BACKUP_CORRUPTION_RESTORE_PASS"
+    $result.reason_code = $(
+        if ($ownerMode) {
+            "OWNER_OFFDEVICE_BACKUP_CORRUPTION_RESTORE_PASS"
+        }
+        else {
+            "SYNTHETIC_BACKUP_CORRUPTION_RESTORE_PASS"
+        }
+    )
 }
 catch {
     $message = [string]$_.Exception.Message
