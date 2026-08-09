@@ -11,7 +11,7 @@
     "health_logon_type": "ServiceAccount",
     "health_run_level": "Limited",
     "startup_trigger_required": true,
-    "periodic_health_interval_minutes": 5,
+    "periodic_health_interval_minutes": 1440,
     "component_restart_count": 3,
     "component_restart_interval_seconds": 15,
     "component_execution_limit_minutes": 10,
