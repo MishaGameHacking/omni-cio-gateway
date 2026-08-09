@@ -109,7 +109,7 @@ def validate_contract(data: dict[str, Any], failures: list[str]) -> None:
             if not isinstance(value, str) or not value.startswith(root + "\\"):
                 failures.append(f"paths.{key} must stay below WP9 root")
 
-    if data.get("task_folder") != r"\OmniCIO\V10\":
+    if data.get("task_folder") != "\\OmniCIO\\V10\\":
         failures.append("task_folder mismatch")
     tasks = data.get("tasks")
     if not isinstance(tasks, dict) or tasks != EXPECTED_TASKS:
