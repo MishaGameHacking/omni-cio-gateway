@@ -76,7 +76,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: v10-wp10-owner-sanitized-evidence
-          path: ${{ env.WP10_OWNER_FINAL }}
+          path: ${{ runner.temp }}\wp10-owner-final-${{ github.run_id }}-${{ github.run_attempt }}.json
           if-no-files-found: error
           retention-days: 3
 
