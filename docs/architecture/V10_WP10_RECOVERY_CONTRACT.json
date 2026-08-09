@@ -113,7 +113,10 @@
     "target_marker_name": ".omni-cio-wp10-target.json",
     "runner_backup_payload_read_allowed": false,
     "backup_root_name": "OmniCIO-WP10-Backups",
-    "owner_physical_action_required_for_final_acceptance": true
+    "owner_physical_action_required_for_final_acceptance": true,
+    "owner_synthetic_copy_restore_rehearsal_required": true,
+    "owner_rehearsal_evidence_required": true,
+    "nonadmin_runner_read_write_denial_required": true
   },
   "private_metadata": {
     "mode": "ALLOWLIST_ONLY",
