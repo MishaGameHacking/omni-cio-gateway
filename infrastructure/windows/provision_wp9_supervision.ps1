@@ -261,6 +261,71 @@ function Ensure-TaskFolder {
     }
 }
 
+function Ensure-SchedulerObjectReadAccess {
+    param(
+        [object]$SchedulerObject,
+        [System.Security.Principal.SecurityIdentifier]$RunnerSid
+    )
+
+    $daclSecurityInformation = 4
+    $fileGenericRead = 0x00120089
+    $sddl = [string]$SchedulerObject.GetSecurityDescriptor($daclSecurityInformation)
+    if ([string]::IsNullOrWhiteSpace($sddl)) {
+        throw "WP9_SCHEDULER_SECURITY_DESCRIPTOR_UNAVAILABLE"
+    }
+    $descriptor = [System.Security.AccessControl.RawSecurityDescriptor]::new($sddl)
+    if ($null -eq $descriptor.DiscretionaryAcl) {
+        throw "WP9_SCHEDULER_DACL_UNAVAILABLE"
+    }
+
+    foreach ($ace in @($descriptor.DiscretionaryAcl)) {
+        if (
+            $ace -is [System.Security.AccessControl.CommonAce] -and
+            $ace.AceQualifier -eq [System.Security.AccessControl.AceQualifier]::AccessAllowed -and
+            $null -ne $ace.SecurityIdentifier -and
+            $ace.SecurityIdentifier.Value -eq $RunnerSid.Value -and
+            (($ace.AccessMask -band $fileGenericRead) -eq $fileGenericRead)
+        ) {
+            return
+        }
+    }
+
+    $readAce = [System.Security.AccessControl.CommonAce]::new(
+        [System.Security.AccessControl.AceFlags]::None,
+        [System.Security.AccessControl.AceQualifier]::AccessAllowed,
+        $fileGenericRead,
+        $RunnerSid,
+        $false,
+        $null
+    )
+    $descriptor.DiscretionaryAcl.InsertAce($descriptor.DiscretionaryAcl.Count, $readAce)
+    $newSddl = $descriptor.GetSddlForm([System.Security.AccessControl.AccessControlSections]::Access)
+    $SchedulerObject.SetSecurityDescriptor($newSddl, 0)
+}
+
+function Ensure-Wp9SchedulerReadBoundary {
+    param([System.Security.Principal.SecurityIdentifier]$RunnerSid)
+
+    $service = New-Object -ComObject "Schedule.Service"
+    $service.Connect()
+    $omniFolder = $service.GetFolder("\OmniCIO")
+    $v10Folder = $service.GetFolder("\OmniCIO\V10")
+    Ensure-SchedulerObjectReadAccess -SchedulerObject $omniFolder -RunnerSid $RunnerSid
+    Ensure-SchedulerObjectReadAccess -SchedulerObject $v10Folder -RunnerSid $RunnerSid
+
+    foreach ($taskName in @(
+        [string]$contract.tasks.health_supervisor,
+        [string]$contract.tasks.core_api,
+        [string]$contract.tasks.web,
+        [string]$contract.tasks.telegram,
+        [string]$contract.tasks.watchtower,
+        [string]$contract.tasks.ai_worker
+    )) {
+        $task = $v10Folder.GetTask($taskName)
+        Ensure-SchedulerObjectReadAccess -SchedulerObject $task -RunnerSid $RunnerSid
+    }
+}
+
 function Convert-PrincipalToSid {
     param([string]$UserId)
     try {
@@ -725,6 +790,7 @@ $firstChanges = 0
 $firstChanges += Ensure-Wp9Layout -RunnerSid $runnerSid
 $firstChanges += Ensure-DeployedPayload
 $firstChanges += Ensure-Wp9Tasks
+Ensure-Wp9SchedulerReadBoundary -RunnerSid $runnerSid
 Set-Wp9DirectoryAcl -Path $wp9Root -Class DEPLOYED -RunnerSid $runnerSid
 Set-Wp9DirectoryAcl -Path $deployedRoot -Class DEPLOYED -RunnerSid $runnerSid
 Set-Wp9DirectoryAcl -Path $evidenceRoot -Class EVIDENCE -RunnerSid $runnerSid
@@ -734,6 +800,7 @@ $secondChanges = 0
 $secondChanges += Ensure-Wp9Layout -RunnerSid $runnerSid
 $secondChanges += Ensure-DeployedPayload
 $secondChanges += Ensure-Wp9Tasks
+Ensure-Wp9SchedulerReadBoundary -RunnerSid $runnerSid
 if ($secondChanges -ne 0) {
     throw "WP9_IDEMPOTENCE_NOT_PROVEN"
 }
