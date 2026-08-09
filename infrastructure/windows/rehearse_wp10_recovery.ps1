@@ -251,6 +251,7 @@ try {
     $bundleDir = Join-Path $root "bundle"
     $syntheticOffdevice = Join-Path $root "synthetic-offdevice"
     $corruptDir = Join-Path $root "corrupt"
+    $serverLog = Join-Path $root "postgres-server.log"
     New-Item -ItemType Directory -Path $root, $bundleDir, $corruptDir -Force |
         Out-Null
 
@@ -278,6 +279,7 @@ try {
     $port = Get-FreeLoopbackPort
     Invoke-NativeChecked -FilePath $pgCtl -Arguments @(
         "--pgdata=$dataDir",
+        "--log=$serverLog",
         "--options=-h 127.0.0.1 -p $port",
         "--timeout=$PostgresWaitSeconds",
         "--wait",
