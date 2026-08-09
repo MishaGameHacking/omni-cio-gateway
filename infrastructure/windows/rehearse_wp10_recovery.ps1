@@ -15,6 +15,7 @@ $PostgresWaitSeconds = 45
 
 function Resolve-PostgresTool {
     param([Parameter(Mandatory = $true)][string]$Name)
+
     $preferred = Join-Path ${env:ProgramFiles} "PostgreSQL\18\bin\$Name.exe"
     if (Test-Path -LiteralPath $preferred -PathType Leaf) {
         return $preferred
@@ -28,26 +29,32 @@ function Resolve-PostgresTool {
 
 function Resolve-Python {
     param([string]$ExplicitPath)
+
     if (-not [string]::IsNullOrWhiteSpace($ExplicitPath)) {
         if (-not (Test-Path -LiteralPath $ExplicitPath -PathType Leaf)) {
             throw "PYTHON_NOT_FOUND"
         }
         return (Resolve-Path -LiteralPath $ExplicitPath).Path
     }
+
     $preferred = "C:\Program Files\Python314\python.exe"
     if (Test-Path -LiteralPath $preferred -PathType Leaf) {
         return $preferred
     }
+
     try {
         $candidate = & py.exe -3.14 -c "import sys; print(sys.executable)" 2>$null |
             Select-Object -First 1
-        if ($LASTEXITCODE -eq 0 -and (Test-Path -LiteralPath $candidate -PathType Leaf)) {
-            return (Resolve-Path -LiteralPath $candidate).Path
+        if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($candidate)) {
+            if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+                return (Resolve-Path -LiteralPath $candidate).Path
+            }
         }
     }
     catch {
-        # Fall through.
+        # Fall through to PATH lookup.
     }
+
     $command = Get-Command python.exe -ErrorAction SilentlyContinue
     if ($null -eq $command) {
         throw "PYTHON_NOT_FOUND"
@@ -56,7 +63,10 @@ function Resolve-Python {
 }
 
 function Get-FreeLoopbackPort {
-    $listener = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Loopback, 0)
+    $listener = New-Object System.Net.Sockets.TcpListener(
+        [System.Net.IPAddress]::Loopback,
+        0
+    )
     try {
         $listener.Start()
         return ([System.Net.IPEndPoint]$listener.LocalEndpoint).Port
@@ -73,13 +83,42 @@ function Invoke-NativeChecked {
         [string]$Reason = "NATIVE_COMMAND_FAILED",
         [switch]$CaptureOutput
     )
+
     if ($CaptureOutput) {
         $output = & $FilePath @Arguments 2>&1
-        if ($LASTEXITCODE -ne 0) { throw $Reason }
+        if ($LASTEXITCODE -ne 0) {
+            throw $Reason
+        }
         return $output
     }
+
     & $FilePath @Arguments *> $null
-    if ($LASTEXITCODE -ne 0) { throw $Reason }
+    if ($LASTEXITCODE -ne 0) {
+        throw $Reason
+    }
+}
+
+function Invoke-ExpectedFailure {
+    param(
+        [Parameter(Mandatory = $true)][string]$FilePath,
+        [Parameter(Mandatory = $true)][string]$ArgumentLine,
+        [Parameter(Mandatory = $true)][string]$OutputPath,
+        [Parameter(Mandatory = $true)][string]$ErrorPath
+    )
+
+    Remove-Item -LiteralPath $OutputPath, $ErrorPath -Force -ErrorAction SilentlyContinue
+    $process = Start-Process `
+        -FilePath $FilePath `
+        -ArgumentList $ArgumentLine `
+        -RedirectStandardOutput $OutputPath `
+        -RedirectStandardError $ErrorPath `
+        -WindowStyle Hidden `
+        -Wait `
+        -PassThru
+    if ($null -eq $process) {
+        throw "EXPECTED_FAILURE_PROCESS_MISSING"
+    }
+    return [int]$process.ExitCode
 }
 
 function Start-TemporaryPostgres {
@@ -99,49 +138,73 @@ function Start-TemporaryPostgres {
         "-s",
         "-o `"-h 127.0.0.1 -p $Port`""
     ) -join " "
-    $launcher = Start-Process -FilePath $PgCtl -ArgumentList $argumentLine -WindowStyle Hidden -PassThru
-    if ($null -eq $launcher) { throw "POSTGRES_PG_CTL_PROCESS_MISSING" }
+
+    $launcher = Start-Process `
+        -FilePath $PgCtl `
+        -ArgumentList $argumentLine `
+        -WindowStyle Hidden `
+        -PassThru
+    if ($null -eq $launcher) {
+        throw "POSTGRES_PG_CTL_PROCESS_MISSING"
+    }
     if (-not $launcher.WaitForExit($PostgresWaitSeconds * 1000)) {
         try { $launcher.Kill() } catch { }
         throw "POSTGRES_PG_CTL_LAUNCH_TIMEOUT"
     }
-    if ($launcher.ExitCode -ne 0) { throw "POSTGRES_PG_CTL_START_FAILED" }
+    if ($launcher.ExitCode -ne 0) {
+        throw "POSTGRES_PG_CTL_START_FAILED"
+    }
 
     $deadline = [DateTime]::UtcNow.AddSeconds($PostgresWaitSeconds)
     do {
         & $PgIsReady --host=127.0.0.1 --port=$Port --username=wp10_owner `
             --dbname=postgres --timeout=1 --quiet *> $null
-        if ($LASTEXITCODE -eq 0) { return }
+        if ($LASTEXITCODE -eq 0) {
+            return
+        }
         Start-Sleep -Milliseconds 250
     } while ([DateTime]::UtcNow -lt $deadline)
+
     throw "POSTGRES_START_READINESS_TIMEOUT"
 }
 
 function Stop-TemporaryPostgres {
     param([string]$PgCtl, [string]$DataDirectory)
-    if ([string]::IsNullOrWhiteSpace($DataDirectory) -or -not (Test-Path -LiteralPath $DataDirectory)) {
+
+    if ([string]::IsNullOrWhiteSpace($DataDirectory)) {
         return
     }
+    if (-not (Test-Path -LiteralPath $DataDirectory -PathType Container)) {
+        return
+    }
+
     try {
         $arguments = "stop -D `"$DataDirectory`" -m fast -w -s"
-        $stopper = Start-Process -FilePath $PgCtl -ArgumentList $arguments -WindowStyle Hidden -PassThru
+        $stopper = Start-Process `
+            -FilePath $PgCtl `
+            -ArgumentList $arguments `
+            -WindowStyle Hidden `
+            -PassThru
         if ($null -ne $stopper) {
             $null = $stopper.WaitForExit(15000)
         }
     }
     catch {
-        # Cleanup remains best effort; the primary result is already fail closed.
+        # Cleanup remains best effort. temporary_state_cleaned will fail closed.
     }
 }
 
 function Write-Result {
     param([hashtable]$Result)
+
     if ($AsJson) {
         $Result | ConvertTo-Json -Compress -Depth 5
         return
     }
+
     Write-Output "WP10 synthetic recovery rehearsal: $($Result.status)"
     Write-Output "Reason: $($Result.reason_code)"
+    Write-Output "Phase: $($Result.phase)"
     Write-Output "Bundle integrity: $($Result.bundle_integrity_pass)"
     Write-Output "Corruption rejected: $($Result.corruption_rejected)"
     Write-Output "Separate restore DB: $($Result.separate_restore_database_used)"
@@ -152,12 +215,14 @@ function Write-Result {
 }
 
 $startedAt = [DateTime]::UtcNow
+$phase = "INITIALIZE"
 $result = @{
     schema_version = "1"
     work_package = "WP10"
     evidence_class = "LENOVO_SYNTHETIC_RECOVERY_REHEARSAL"
     status = "FAIL"
     reason_code = "REHEARSAL_NOT_COMPLETED"
+    phase = $phase
     postgres_major = 18
     postgres_version_class = "UNKNOWN"
     bundle_integrity_pass = $false
@@ -175,8 +240,13 @@ $root = $null
 $dataDir = $null
 $pgCtl = $null
 try {
-    if (-not (Test-Path -LiteralPath $BackupRunner -PathType Leaf)) { throw "BACKUP_RUNNER_MISSING" }
-    if (-not (Test-Path -LiteralPath $BundleTool -PathType Leaf)) { throw "BUNDLE_TOOL_MISSING" }
+    $phase = "RESOLVE_TOOLS"
+    if (-not (Test-Path -LiteralPath $BackupRunner -PathType Leaf)) {
+        throw "BACKUP_RUNNER_MISSING"
+    }
+    if (-not (Test-Path -LiteralPath $BundleTool -PathType Leaf)) {
+        throw "BUNDLE_TOOL_MISSING"
+    }
 
     $python = Resolve-Python -ExplicitPath $PythonPath
     $initDb = Resolve-PostgresTool -Name "initdb"
@@ -187,23 +257,36 @@ try {
     $pgRestore = Resolve-PostgresTool -Name "pg_restore"
     $pgDump = Resolve-PostgresTool -Name "pg_dump"
 
-    $versionOutput = Invoke-NativeChecked -FilePath $psql -Arguments @("--version") -CaptureOutput -Reason "POSTGRES_VERSION_FAILED"
+    $versionOutput = Invoke-NativeChecked `
+        -FilePath $psql `
+        -Arguments @("--version") `
+        -CaptureOutput `
+        -Reason "POSTGRES_VERSION_FAILED"
     $versionText = ($versionOutput | Out-String).Trim()
-    if ($versionText -notmatch "([0-9]+\.[0-9]+)") { throw "POSTGRES_VERSION_UNKNOWN" }
+    if ($versionText -notmatch "([0-9]+\.[0-9]+)") {
+        throw "POSTGRES_VERSION_UNKNOWN"
+    }
     $versionClass = $Matches[1]
-    if (-not $versionClass.StartsWith("18.")) { throw "POSTGRES_MAJOR_MISMATCH" }
+    if (-not $versionClass.StartsWith("18.")) {
+        throw "POSTGRES_MAJOR_MISMATCH"
+    }
     $result.postgres_version_class = $versionClass
 
+    $phase = "CREATE_TEMP_CLUSTER"
     $tempBase = if ([string]::IsNullOrWhiteSpace($env:RUNNER_TEMP)) {
         [System.IO.Path]::GetTempPath()
-    } else { $env:RUNNER_TEMP }
+    }
+    else {
+        $env:RUNNER_TEMP
+    }
     $root = Join-Path $tempBase ("wp10-rehearsal-" + [Guid]::NewGuid().ToString("N"))
     $dataDir = Join-Path $root "pgdata"
     $workingDir = Join-Path $root "working"
     $bundleDir = Join-Path $root "bundle"
     $corruptDir = Join-Path $root "corrupt"
     $serverLog = Join-Path $root "postgres.log"
-    New-Item -ItemType Directory -Path $root, $workingDir, $bundleDir, $corruptDir -Force | Out-Null
+    New-Item -ItemType Directory -Path $root, $workingDir, $bundleDir, $corruptDir -Force |
+        Out-Null
 
     Invoke-NativeChecked -FilePath $initDb -Arguments @(
         "--pgdata=$dataDir",
@@ -215,7 +298,12 @@ try {
     ) -Reason "INITDB_FAILED"
 
     $port = Get-FreeLoopbackPort
-    Start-TemporaryPostgres -PgCtl $pgCtl -PgIsReady $pgIsReady -DataDirectory $dataDir -LogPath $serverLog -Port $port
+    Start-TemporaryPostgres `
+        -PgCtl $pgCtl `
+        -PgIsReady $pgIsReady `
+        -DataDirectory $dataDir `
+        -LogPath $serverLog `
+        -Port $port
 
     $common = @(
         "--host=127.0.0.1",
@@ -223,7 +311,12 @@ try {
         "--username=wp10_owner",
         "--no-password"
     )
-    Invoke-NativeChecked -FilePath $createdb -Arguments ($common + @("wp10_source")) -Reason "SOURCE_DB_CREATE_FAILED"
+
+    $phase = "SEED_SOURCE"
+    Invoke-NativeChecked `
+        -FilePath $createdb `
+        -Arguments ($common + @("wp10_source")) `
+        -Reason "SOURCE_DB_CREATE_FAILED"
     $seedSql = "CREATE TABLE recovery_probe (id integer PRIMARY KEY, payload text NOT NULL); INSERT INTO recovery_probe VALUES (1,'alpha'),(2,'beta'),(3,'gamma');"
     Invoke-NativeChecked -FilePath $psql -Arguments ($common + @(
         "--dbname=wp10_source",
@@ -231,6 +324,7 @@ try {
         "--command=$seedSql"
     )) -Reason "SOURCE_DB_SEED_FAILED"
 
+    $phase = "BACKUP"
     $backupRaw = & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass `
         -File $BackupRunner `
         -DatabaseName "wp10_source" `
@@ -244,32 +338,76 @@ try {
         -PsqlPath $psql `
         -PythonPath $python `
         -AsJson 2>$null
-    if ($LASTEXITCODE -ne 0) { throw "BACKUP_RUNNER_FAILED" }
-    try { $backupResult = ($backupRaw | Out-String) | ConvertFrom-Json } catch { throw "BACKUP_RUNNER_OUTPUT_INVALID" }
-    if ([string]$backupResult.status -ne "PASS") { throw "BACKUP_RUNNER_DID_NOT_PASS" }
+    if ($LASTEXITCODE -ne 0) {
+        throw "BACKUP_RUNNER_FAILED"
+    }
+    try {
+        $backupResult = ($backupRaw | Out-String) | ConvertFrom-Json
+    }
+    catch {
+        throw "BACKUP_RUNNER_OUTPUT_INVALID"
+    }
+    if ([string]$backupResult.status -ne "PASS") {
+        throw "BACKUP_RUNNER_DID_NOT_PASS"
+    }
 
     $archives = @(Get-ChildItem -LiteralPath $bundleDir -File -Filter "wp10-*.dump")
-    if ($archives.Count -ne 1) { throw "BUNDLE_ARCHIVE_COUNT_INVALID" }
+    if ($archives.Count -ne 1) {
+        throw "BUNDLE_ARCHIVE_COUNT_INVALID"
+    }
     $archive = $archives[0]
     $manifest = "$($archive.FullName).manifest.json"
-    if (-not (Test-Path -LiteralPath $manifest -PathType Leaf)) { throw "BUNDLE_MANIFEST_MISSING" }
+    if (-not (Test-Path -LiteralPath $manifest -PathType Leaf)) {
+        throw "BUNDLE_MANIFEST_MISSING"
+    }
 
-    & $python $BundleTool verify --archive $archive.FullName --manifest $manifest *> $null
-    if ($LASTEXITCODE -ne 0) { throw "BUNDLE_VERIFY_FAILED" }
+    $phase = "VERIFY_BUNDLE"
+    Invoke-NativeChecked -FilePath $python -Arguments @(
+        $BundleTool,
+        "verify",
+        "--archive", $archive.FullName,
+        "--manifest", $manifest
+    ) -Reason "BUNDLE_VERIFY_FAILED"
     $result.bundle_integrity_pass = $true
 
+    $phase = "PROVE_CORRUPTION_REJECTION"
     $corruptArchive = Join-Path $corruptDir $archive.Name
     $corruptManifest = Join-Path $corruptDir ([System.IO.Path]::GetFileName($manifest))
     Copy-Item -LiteralPath $archive.FullName -Destination $corruptArchive
     Copy-Item -LiteralPath $manifest -Destination $corruptManifest
     [System.IO.File]::AppendAllText($corruptArchive, "tamper")
-    & $python $BundleTool verify --archive $corruptArchive --manifest $corruptManifest *> $null
-    if ($LASTEXITCODE -eq 0) { throw "CORRUPT_ARCHIVE_ACCEPTED" }
+
+    $expectedOut = Join-Path $corruptDir "verify.stdout"
+    $expectedErr = Join-Path $corruptDir "verify.stderr"
+    $verifyArguments = @(
+        "`"$BundleTool`"",
+        "verify",
+        "--archive", "`"$corruptArchive`"",
+        "--manifest", "`"$corruptManifest`""
+    ) -join " "
+    $corruptExit = Invoke-ExpectedFailure `
+        -FilePath $python `
+        -ArgumentLine $verifyArguments `
+        -OutputPath $expectedOut `
+        -ErrorPath $expectedErr
+    if ($corruptExit -eq 0) {
+        throw "CORRUPT_ARCHIVE_ACCEPTED"
+    }
     $result.corruption_rejected = $true
 
-    Invoke-NativeChecked -FilePath $pgRestore -Arguments @("--list", $archive.FullName) -Reason "PG_RESTORE_LIST_FAILED"
-    Invoke-NativeChecked -FilePath $createdb -Arguments ($common + @("wp10_restore")) -Reason "RESTORE_DB_CREATE_FAILED"
+    $phase = "RESTORE_PREFLIGHT"
+    Invoke-NativeChecked `
+        -FilePath $pgRestore `
+        -Arguments @("--list", $archive.FullName) `
+        -Reason "PG_RESTORE_LIST_FAILED"
+
+    $phase = "RESTORE_SEPARATE_DATABASE"
+    Invoke-NativeChecked `
+        -FilePath $createdb `
+        -Arguments ($common + @("wp10_restore")) `
+        -Reason "RESTORE_DB_CREATE_FAILED"
     $result.separate_restore_database_used = $true
+
     Invoke-NativeChecked -FilePath $pgRestore -Arguments ($common + @(
         "--dbname=wp10_restore",
         "--no-owner",
@@ -278,6 +416,7 @@ try {
         $archive.FullName
     )) -Reason "PG_RESTORE_FAILED"
 
+    $phase = "VERIFY_RESTORE_PROBE"
     $probe = Invoke-NativeChecked -FilePath $psql -Arguments ($common + @(
         "--dbname=wp10_restore",
         "--tuples-only",
@@ -285,34 +424,49 @@ try {
         "--field-separator=|",
         "--command=SELECT id,payload FROM recovery_probe ORDER BY id;"
     )) -CaptureOutput -Reason "RESTORE_PROBE_QUERY_FAILED"
-    $actual = @($probe | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ })
+    $actual = @(
+        $probe |
+            ForEach-Object { ([string]$_).Trim() } |
+            Where-Object { $_ }
+    )
     $expected = @("1|alpha", "2|beta", "3|gamma")
-    if (($actual -join "`n") -ne ($expected -join "`n")) { throw "RESTORE_PROBE_MISMATCH" }
+    if (($actual -join "`n") -ne ($expected -join "`n")) {
+        throw "RESTORE_PROBE_MISMATCH"
+    }
     $result.restore_probe_exact_match = $true
 
+    $phase = "COMPLETE"
     $result.status = "PASS"
     $result.reason_code = "SYNTHETIC_BACKUP_CORRUPTION_RESTORE_PASS"
 }
 catch {
     $message = [string]$_.Exception.Message
-    if ($message -notmatch '^[A-Z0-9_:\-]+$') { $message = "RECOVERY_REHEARSAL_ERROR" }
+    if ($message -notmatch '^[A-Z0-9_:\-]+$') {
+        $message = "RECOVERY_REHEARSAL_ERROR"
+    }
     $result.status = "FAIL"
     $result.reason_code = $message
 }
 finally {
+    $result.phase = $phase
     if ($null -ne $pgCtl -and $null -ne $dataDir) {
         Stop-TemporaryPostgres -PgCtl $pgCtl -DataDirectory $dataDir
     }
     if ($null -ne $root -and (Test-Path -LiteralPath $root)) {
         Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
     }
-    $result.temporary_state_cleaned = ($null -eq $root -or -not (Test-Path -LiteralPath $root))
+    $result.temporary_state_cleaned = (
+        $null -eq $root -or -not (Test-Path -LiteralPath $root)
+    )
     $result.duration_ms = [int64]([DateTime]::UtcNow - $startedAt).TotalMilliseconds
     if ($result.duration_ms -gt 14400000 -and $result.status -eq "PASS") {
         $result.status = "FAIL"
         $result.reason_code = "RTO_OBJECTIVE_EXCEEDED"
+        $result.phase = "RTO_CHECK"
     }
 }
 
 Write-Result -Result $result
-if ($result.status -ne "PASS") { exit 1 }
+if ($result.status -ne "PASS") {
+    exit 1
+}
