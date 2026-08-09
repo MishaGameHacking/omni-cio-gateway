@@ -4,6 +4,8 @@ import argparse
 import json
 from pathlib import Path
 
+SEALED_WRITER = "NOT_READY_UNTIL_PRODUCT_DB_AND_BACKUP_JOB_BINDING"
+
 
 class OffdeviceProfileError(RuntimeError):
     pass
@@ -44,7 +46,11 @@ def assess(profile: dict) -> dict:
         if profile.get(key) is not True:
             blockers.append(reason)
 
+    if profile.get("production_backup_writer_identity") != SEALED_WRITER:
+        blockers.append("PRODUCTION_BACKUP_WRITER_SCOPE_LEAK")
+
     for key, reason in (
+        ("runtime_payload_access_granted", "RUNTIME_PAYLOAD_ACCESS_ENABLED"),
         ("runner_payload_access_granted", "RUNNER_PAYLOAD_ACCESS_ENABLED"),
         ("private_payload_collected", "PRIVATE_PAYLOAD_COLLECTED"),
         ("secret_value_collected", "SECRET_VALUE_COLLECTED"),
@@ -61,6 +67,8 @@ def assess(profile: dict) -> dict:
         "blockers": blockers,
         "offdevice_ready": not blockers,
         "owner_restore_rehearsal_ready": not blockers,
+        "production_backup_writer_identity": SEALED_WRITER,
+        "runtime_private_backup_access": False,
         "runner_private_backup_access": False,
         "real_money_authority_changed": False,
         "trading_methods": False,
