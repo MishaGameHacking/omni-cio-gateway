@@ -145,7 +145,10 @@ def validate_contract(contract: dict, wp8: dict, wp9a: dict) -> None:
         raise ContractError("SYNTHETIC_CI_PRIVATE_DATA_ENABLED")
 
     off_device = contract["off_device"]
-    if off_device.get("initial_target_class") != "BITLOCKER_OWNER_CONTROLLED_NON_SYSTEM_VOLUME":
+    if (
+        off_device.get("initial_target_class")
+        != "BITLOCKER_OWNER_CONTROLLED_NON_SYSTEM_VOLUME"
+    ):
         raise ContractError("OFFDEVICE_TARGET_CLASS_INVALID")
     if off_device.get("system_volume_allowed") is not False:
         raise ContractError("SYSTEM_VOLUME_ACCEPTED_AS_OFFDEVICE")
