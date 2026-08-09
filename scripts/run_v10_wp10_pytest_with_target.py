@@ -15,6 +15,11 @@ def main() -> int:
     if not target.is_dir():
         raise SystemExit("WP10_CONTINUITY_PYTEST_TARGET_MISSING")
 
+    repo_root = Path.cwd().resolve()
+    if not (repo_root / "AGENTS.md").is_file():
+        raise SystemExit("WP10_CONTINUITY_REPO_ROOT_NOT_DETECTED")
+
+    sys.path.insert(0, str(repo_root))
     sys.path.insert(0, str(target))
     import pytest
 
