@@ -26,20 +26,30 @@ def validate_schedule(
     schedule: dict[str, Any],
     runner_text: str,
 ) -> None:
-    if schedule.get("schema_version") != "1" or schedule.get("work_package") != "WP10":
+    if (
+        schedule.get("schema_version") != "1"
+        or schedule.get("work_package") != "WP10"
+    ):
         raise ScheduleError("SCHEDULE_IDENTITY_INVALID")
 
     automation = contract["automation"]
     rpo = int(contract["recovery_objectives"]["rpo_minutes"])
     cadence = int(schedule.get("cadence_minutes", 0))
-    if cadence <= 0 or cadence > rpo or cadence != int(automation["target_cadence_minutes"]):
+    if (
+        cadence <= 0
+        or cadence > rpo
+        or cadence != int(automation["target_cadence_minutes"])
+    ):
         raise ScheduleError("SCHEDULE_CADENCE_INVALID")
 
     if schedule.get("enabled_before_product_binding") is not False:
         raise ScheduleError("SCHEDULE_ACTIVATED_BEFORE_PRODUCT_BINDING")
     if schedule.get("production_database_binding") != "NOT_READY_UNTIL_WP13":
         raise ScheduleError("SCHEDULE_DATABASE_BOUND_EARLY")
-    if schedule.get("production_task_identity_binding") != "NOT_READY_UNTIL_WP13_WP14":
+    if (
+        schedule.get("production_task_identity_binding")
+        != "NOT_READY_UNTIL_WP13_WP14"
+    ):
         raise ScheduleError("SCHEDULE_IDENTITY_BOUND_EARLY")
     if schedule.get("runner_script") != "infrastructure/windows/run_wp10_backup.ps1":
         raise ScheduleError("SCHEDULE_RUNNER_INVALID")
@@ -51,14 +61,20 @@ def validate_schedule(
 
     for key, reason in (
         ("use_prepared_offdevice_target", "SCHEDULE_OFFDEVICE_TARGET_NOT_REQUIRED"),
-        ("successful_cycle_requires_offdevice_copy", "SCHEDULE_OFFDEVICE_COPY_NOT_REQUIRED"),
+        (
+            "successful_cycle_requires_offdevice_copy",
+            "SCHEDULE_OFFDEVICE_COPY_NOT_REQUIRED",
+        ),
         ("successful_cycle_requires_retention", "SCHEDULE_RETENTION_NOT_REQUIRED"),
     ):
         if schedule.get(key) is not True:
             raise ScheduleError(reason)
 
     for key, reason in (
-        ("production_cycle_requires_offdevice_copy", "CONTRACT_OFFDEVICE_COPY_NOT_REQUIRED"),
+        (
+            "production_cycle_requires_offdevice_copy",
+            "CONTRACT_OFFDEVICE_COPY_NOT_REQUIRED",
+        ),
         ("production_cycle_requires_retention", "CONTRACT_RETENTION_NOT_REQUIRED"),
     ):
         if automation.get(key) is not True:
