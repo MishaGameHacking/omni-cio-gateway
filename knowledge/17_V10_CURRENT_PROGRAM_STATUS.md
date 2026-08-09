@@ -4,7 +4,7 @@ Updated: 2026-08-09
 
 ## Executive state
 
-Omni-CIO V10: **DEVELOPMENT ACTIVE / WP7 COMPLETE / BLOCK C IN PROGRESS / WP8 NEXT**.
+Omni-CIO V10: **DEVELOPMENT ACTIVE / WP8 COMPLETE / BLOCK C IN PROGRESS / WP9 NEXT**.
 
 Accepted implementation progress: **14%**.
 
@@ -18,6 +18,7 @@ Accepted completed work:
 - Block C / WP5 — **COMPLETE**;
 - Block C / WP6 — **COMPLETE**;
 - Block C / WP7 — **COMPLETE**;
+- Block C / WP8 — **COMPLETE**;
 - GitHub Pro hybrid CI / Lenovo continuity hardening — **COMPLETE infrastructure hardening**;
 - V10 release/build provenance, protected `v10.*` tag identity, immutable-release operating contract and fail-closed deployment provenance — **COMPLETE**;
 - concrete AI/local-first planning amendment — **ACCEPTED planning authority, no runtime implementation credited**;
@@ -27,9 +28,9 @@ Accepted completed work:
 
 Current authorized implementation work package is now:
 
-**WP8 — Local Secret Store и rotation.**
+**WP9 — Autostart, supervision и self-healing.**
 
-WP8 may implement the reviewed local Windows secret-store and rotation boundary under the accepted WP6 privilege separation and WP7 bootstrap layout. It may establish OS/DPAPI/credential-protected storage, per-secret purpose/scope/version/rotation/revocation metadata without secret values, strict ACL separation and sanitized secret-lifecycle evidence. It does not authorize secret values in GitHub/CI/command history, broker-write runtime, service autostart, Ollama/Qwen/Cortex, Web/Telegram product runtime, Guardian/Watchtower runtime, or any expansion of Real-money authority.
+WP9 may establish the reviewed Windows service/task supervision boundary on top of accepted WP5–WP8 node, identity, bootstrap and local-secret foundations. It may define controlled startup, dependency/readiness ordering, bounded restart/backoff, crash-loop protection and privacy-safe HEALTHY/DEGRADED evidence for the DB/Core API/Web/Telegram/Watchtower/AI-worker/health-supervisor service slots. It must not invent or activate product capability that belongs to later Core/Web/Telegram/AI WPs: unavailable components remain explicitly NOT_READY/DEGRADED placeholders until their owning WP supplies a real runtime. WP9 does not authorize broker-write runtime, real secrets in GitHub/CI, Real-money execution, service-account privilege expansion, or any change to `app:app` / `trading_methods=false`.
 
 Owner start command: **`START V10`** received 2026-08-05.
 
@@ -80,11 +81,14 @@ Architecture/protection authorities include:
 - `docs/architecture/V10_WP6_IDENTITY_PRIVILEGE_CONTRACT.json`;
 - `docs/architecture/V10_WP7_EXECUTION_CONTRACT.md`;
 - `docs/architecture/V10_WP7_BOOTSTRAP_CONTRACT.json`;
+- `docs/architecture/V10_WP8_EXECUTION_CONTRACT.md`;
+- `docs/architecture/V10_WP8_SECRET_STORE_CONTRACT.json`;
 - `docs/operations/V10_RELEASE_PROVENANCE_RUNBOOK.md`;
 - `docs/operations/V10_NODE_AUDIT_RUNBOOK.md`;
 - `docs/operations/V10_WP5_THERMAL_RETEST.md`;
 - `docs/operations/V10_WP6_PRIVILEGE_SEPARATION_RUNBOOK.md`;
-- `docs/operations/V10_WP7_BOOTSTRAP_RUNBOOK.md`.
+- `docs/operations/V10_WP7_BOOTSTRAP_RUNBOOK.md`;
+- `docs/operations/V10_WP8_SECRET_STORE_RUNBOOK.md`.
 
 Protected production/recovery baseline remains:
 
@@ -96,7 +100,7 @@ Protected production/recovery baseline remains:
 |---|---:|---|
 | A. Architecture and V9 protection | 5% | COMPLETE — WP0 |
 | B. GitHub, dependencies and CI/CD | 9% | COMPLETE — WP1 / WP2 / WP3 / WP4 |
-| C. Lenovo Omni-CIO Node / infrastructure | 12% | IN PROGRESS — WP5 / WP6 / WP7 COMPLETE / WP8 NEXT |
+| C. Lenovo Omni-CIO Node / infrastructure | 12% | IN PROGRESS — WP5 / WP6 / WP7 / WP8 COMPLETE / WP9 NEXT |
 | D. V10 Core and data | 14% | NOT STARTED |
 | E. Omni-CIO Web Platform | 14% | NOT STARTED |
 | F. Telegram | 8% | NOT STARTED — product/interaction contract pre-approved only |
@@ -106,9 +110,9 @@ Protected production/recovery baseline remains:
 | J. Integration / hardening / recovery / release | 5% | NOT STARTED — commercial/license/update/legal-gate planning pre-approved only |
 | **TOTAL** | **100% planned** | **14% ACCEPTED** |
 
-Block B's full 9% weight is accepted only because WP4 and the Block B Exit Gate are complete. Block C's 12% weight is not credited yet: WP5, WP6 and WP7 are accepted, but WP8, WP9/WP9A, WP10 and the Block C Exit Gate must still complete.
+Block B's full 9% weight is accepted only because WP4 and the Block B Exit Gate are complete. Block C's 12% weight is not credited yet: WP5, WP6, WP7 and WP8 are accepted, but WP9/WP9A, WP10 and the Block C Exit Gate must still complete.
 
-## Accepted WP0–WP7 evidence
+## Accepted WP0–WP8 evidence
 
 - WP0 PR #228 -> `7c5de954eed10dd406e743c38f7bdef6b0634108`;
 - WP1 PR #229 -> `dbd459b280de84d3f571b458b46f1039880312ca`;
@@ -125,7 +129,12 @@ Block B's full 9% weight is accepted only because WP4 and the Block B Exit Gate 
 - exact-head WP7 Fast PR Checks, Toolchain Compatibility, WP7 Bootstrap Compatibility, authoritative Self-Hosted Windows CI and Lenovo WP7 Bootstrap Audit all passed before merge;
 - OWNER re-applied the reviewed WP7 bootstrap on merge checkout `2a21abad4d6a7560683ce67826baeeca20a7f834`: first-pass changes `0`, second-pass changes `0`, all four prerequisites `MATCH`, runner healthy, WP7 directories/service definitions ready, future services inactive, idempotence verified and real secret values used `NO`;
 - authoritative Lenovo WP7 audit then reported PREVIEW `PASS` and VERIFY `PASS` with empty reason lists and all privacy flags false;
-- post-WP7 merge Regression Shield #1439 / run `31281148813` on `82225eef984f6c14c254108bada0627c1f0368a4` -> **SUCCESS**.
+- post-WP7 merge Regression Shield #1439 / run `31281148813` on `82225eef984f6c14c254108bada0627c1f0368a4` -> **SUCCESS**;
+- WP8 PR #257 -> `422ef68864050eec858e32d980165c995d9e7ecb`;
+- exact-head WP8 Fast PR Checks, Toolchain Compatibility, WP8 Secret Store Compatibility, authoritative Self-Hosted Windows CI and Lenovo WP8 Secret Store Audit all passed before merge;
+- OWNER applied the reviewed WP8 provisioner on merge checkout `27dd5856891773c4f499d932707ef67ba64e05a3`: `WP8 secret-store status: PASS`, broker-read and Telegram rotation rehearsals `True`, all five class directories/sentinels ready, lifecycle `UNPROVISIONED`, no broad/read-write exposure and real secret values used `NO`;
+- authoritative non-admin Lenovo WP8 audit then proved `ACCESS_DENIED` for ordinary-runner data reads on all five protected sentinels, runtime-only broker-read access, execution-only broker-trading access, empty reason/blocker lists and all privacy flags false;
+- post-WP8 merge Regression Shield #1441 / run `31284931677` on `422ef68864050eec858e32d980165c995d9e7ecb` -> **SUCCESS**.
 
 WP3 established the permanent Regression Shield/anti-bypass contracts, fast hosted PR feedback, compatibility gates, capability-aware future contracts and required protection model for private `main`.
 
@@ -136,6 +145,8 @@ WP5 established the fact-based privacy-safe `OWNER_NODE_PROFILE`, full-disk-encr
 WP6 established separate least-privilege OWNER/CI/runtime/execution identity boundaries, guarded reversible Windows ACL provisioning, runner-root/config hardening, a non-secret execution-boundary sentinel, privacy-safe local evidence and native DACL verification. Exact-head Lenovo evidence proved the ordinary CI runner cannot read sentinel data, runtime cannot read the execution boundary or write reviewed runner configuration, execution remains non-admin and is the intended non-admin execution-boundary reader, workflows do not inherit real production secrets, and deployment authority remains tied to reviewed release identity.
 
 WP7 established the versioned dry-run-first Lenovo bootstrap, exact machine-visible Python/Node/npm/PostgreSQL prerequisite contract, reviewed WP6-role reuse, deterministic WP7-owned layout/service-definition metadata, guarded rollback and two-pass structural idempotence. Exact Lenovo evidence proved repeat apply makes zero structural changes, future services remain inactive, no real secret is used, and the ordinary runner can read only the narrow non-secret WP7 audit evidence needed for CI while arbitrary runtime/data/log payloads and the WP8 secret root remain outside that grant.
+
+WP8 established the Windows DPAPI `LocalMachine` + protected-NTFS-DACL local secret-store boundary, separate broker-read/broker-trading/Telegram/encryption/external-source classes, class-specific runtime/execution authorization, sanitized lifecycle/rotation metadata and guarded rollback. Exact Lenovo evidence proved the ordinary CI runner receives `ACCESS_DENIED` for protected sentinel data, unrelated runtime roles do not inherit each other's class access, generated rotation rehearsals succeed, no broad/read-write exposure exists, and no real secret value/ciphertext/hash/private payload enters GitHub evidence.
 
 ## GitHub Pro hybrid CI / Lenovo continuity evidence
 
@@ -154,7 +165,7 @@ The accepted hybrid model is:
 - merge method = squash only;
 - no permanent bypass is part of the accepted protection model.
 
-The Lenovo already being a GitHub self-hosted runner and having the accepted WP7 bootstrap does **not** mean the remaining Block C/application runtimes are implemented. Secret lifecycle, service supervision, backup/recovery, Ollama/Cortex, Core/Web/Telegram/research and later broker contours must follow their owning WPs.
+The Lenovo already being a GitHub self-hosted runner and having the accepted WP7 bootstrap plus WP8 local-secret boundary does **not** mean the remaining Block C/application runtimes are implemented. Service supervision, backup/recovery, Ollama/Cortex, Core/Web/Telegram/research and later broker contours must follow their owning WPs.
 
 ## Accepted concrete V10 planning lock
 
@@ -242,27 +253,28 @@ The accepted Telegram planning contract pre-defines Block F without starting it:
 
 This contract does not authorize BotFather/token creation, Telegram runtime installation or Block F coding now.
 
-## Current authorized next step — WP8
+## Current authorized next step — WP9
 
-WP8 is now the next implementation package in Block C after accepted WP7 and its successful post-merge Regression Shield.
+WP9 is now the next implementation package in Block C after accepted WP8 and its successful post-merge Regression Shield.
 
-WP8 goal: store broker/Telegram/runtime secrets outside GitHub and ordinary workflow access, with explicit lifecycle/rotation and least-privilege local retrieval.
+WP9 goal: after Windows Update/reboot, the node must return automatically to a safe HEALTHY/DEGRADED supervised state without manual application launch.
 
-WP8 must include at minimum:
+WP9 must include at minimum:
 
-- a reviewed local Windows DPAPI/credential-protected or equivalent secret-store design;
-- separate secret classes for production read broker, future trading broker, Telegram, local encryption keys and approved future external-source credentials;
-- explicit owner/purpose/scope/version/rotation/revocation/compromise metadata with **no secret values or secret hashes** in GitHub or sanitized evidence;
-- ACL/protector boundaries proving the ordinary CI runner cannot read secret blobs and each runtime role can receive only its intended secret class;
-- interactive local provisioning/rotation that never passes a secret through command-line arguments, environment variables, console history, logs or GitHub Actions;
-- filesystem/Git-history secret scans, rotation rehearsal using non-secret sentinel material and unauthorized-process access tests;
-- diagnostic/error/crash-evidence rules that never collect raw secret values.
+- controlled service/task definitions for DB, Core API, Web, Telegram, Watchtower, AI worker and health supervisor, while components not yet implemented by their owning later WP remain explicit inactive/NOT_READY placeholders rather than fabricated runtimes;
+- dependency-aware startup order and health/readiness checks;
+- bounded crash-restart policy with backoff and maximum attempts, explicitly preventing an infinite restart storm;
+- degraded-mode semantics where AI/Telegram or another optional contour can be down without making Core/read-only safety state falsely healthy or unsafe;
+- privacy-safe operator/CI evidence that does not expose WP8 secret values, ciphertext, private portfolio data, raw account identifiers or unrestricted local process data;
+- guarded, reversible OWNER provisioning and verification for the Windows service/task boundary, preserving WP6 least-privilege identities and WP8 secret ACL separation.
 
-WP8 Exit Gate: no plain-text secret may exist in the repository, CI/log/diagnostic evidence, crash-dump collection or Web UI; local secret values remain outside GitHub, and the intended runtime consumer can be authorized without granting ordinary CI or unrelated runtime roles the same secret.
+Required WP9 verification includes killing each controlled test process and observing bounded recovery, a service-dependency failure test, and a full reboot test without manually opening application terminals.
 
-WP8 must **not** activate broker write, service autostart/supervision, Web/Telegram product runtime, AI/Cortex or later backup/execution work. Real secret entry is requested from the OWNER only when the corresponding contour is ready; WP8 acceptance tests use generated non-secret sentinel material.
+WP9 Exit Gate: after reboot the OWNER receives a truthful **HEALTHY/DEGRADED** status without manually starting applications.
 
-After WP8 passes its Exit Gate, only the next WP explicitly authorized by the Master Plan may begin.
+WP9 must **not** expand broker-write/Real-money authority, move secrets into GitHub/CI, weaken WP6/WP8 ACLs, activate unsupported later-WP product functionality, or begin WP9A before the WP9 Exit Gate passes.
+
+After WP9 passes its Exit Gate, only WP9A may begin according to the Master Plan.
 
 ## Money/safety rule
 
