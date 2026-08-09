@@ -73,7 +73,6 @@ jobs:
         shell: powershell
         run: |
           $folderName = "OmniCIO-WP9-Compat-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
-          $folderPath = "\$folderName\"
           $nestedPath = "\$folderName\V10\"
           $taskName = "WP9.LocalService.Primitive"
           $service = New-Object -ComObject "Schedule.Service"
@@ -92,7 +91,7 @@ jobs:
               -RunLevel Limited
             $settings = New-ScheduledTaskSettingsSet `
               -RestartCount 3 `
-              -RestartInterval (New-TimeSpan -Seconds 15) `
+              -RestartInterval (New-TimeSpan -Seconds 60) `
               -ExecutionTimeLimit (New-TimeSpan -Minutes 10) `
               -MultipleInstances IgnoreNew `
               -StartWhenAvailable
