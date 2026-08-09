@@ -16,18 +16,24 @@ def test_restart_rehearsal_uses_bounded_child_recovery() -> None:
     assert "Start-SyntheticChild" in text
     assert "Wait-Process -Id $child.Id" in text
     assert 'State "RUNNING_FIRST_ATTEMPT"' in text
+    assert 'State "RECOVERY_ATTEMPT_RUNNING"' in text
     assert 'State "RECOVERED"' in text
     assert 'State "RECOVERY_ATTEMPTS_EXHAUSTED"' in text
     assert "Start-Sleep -Seconds $BackoffSeconds" in text
     assert "for ($attempt = 2; $attempt -le $MaxAttempts; $attempt += 1)" in text
+
+    recovery_running = text.index('State "RECOVERY_ATTEMPT_RUNNING"')
+    wait_replacement = text.index("Wait-Process -Id $replacement.Id")
+    recovered = text.index('State "RECOVERED"', recovery_running)
+    assert recovery_running < wait_replacement < recovered
 
 
 def test_provisioner_kills_only_reported_synthetic_process_and_waits_for_recovery() -> None:
     text = PROVISIONER.read_text(encoding="utf-8")
 
     assert "Stop-Process -Id $processId -Force -ErrorAction Stop" in text
-    assert 'ProcessName -notmatch \'^powershell$\'' in text
+    assert "ProcessName -notmatch '^powershell$'" in text
     assert "[int]$state.run_count -ge 2" in text
     assert '[string]$state.state -eq "RECOVERED"' in text
-    assert '-TimeoutSeconds 120' in text
+    assert "-TimeoutSeconds 120" in text
     assert "WP9_RESTART_REHEARSAL_RECOVERY_TIMEOUT" in text
