@@ -125,6 +125,16 @@ def test_sealed_slot_idempotence_tolerates_provider_trigger_metadata() -> None:
     assert "if ($enabled -ne $ExpectedEnabled)" in text
 
 
+def test_runner_task_scheduler_visibility_is_read_only() -> None:
+    text = PROVISIONER.read_text(encoding="utf-8")
+    assert "Ensure-Wp9SchedulerReadBoundary" in text
+    assert "GetSecurityDescriptor" in text
+    assert "SetSecurityDescriptor" in text
+    assert "$fileGenericRead = 0x00120089" in text
+    assert "AceQualifier]::AccessAllowed" in text
+    assert "Ensure-SchedulerObjectReadAccess" in text
+
+
 def test_rollback_is_marker_guarded_and_preserves_prior_boundaries() -> None:
     text = ROLLBACK.read_text(encoding="utf-8")
     assert "OMNI-CIO-V10-WP9-OWNED-v1" in text
