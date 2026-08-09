@@ -50,7 +50,8 @@ jobs:
           $files = @(
             "infrastructure\windows\rehearse_wp10_recovery.ps1",
             "infrastructure\windows\prepare_wp10_offdevice_target.ps1",
-            "infrastructure\windows\audit_wp10_offdevice_target.ps1"
+            "infrastructure\windows\audit_wp10_offdevice_target.ps1",
+            "infrastructure\windows\complete_wp10_owner_offdevice_gate.ps1"
           )
           foreach ($file in $files) {
             $tokens = $null
