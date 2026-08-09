@@ -49,12 +49,23 @@
     {
       "id": "COMP-DETERMINISTIC-CORE",
       "current_paths": ["omni_cio/", "portfolio_market.py", "portfolio_analytics.py", "cash_liquidity.py", "purchase_capacity.py", "purchase_capacity_integrity.py", "operations_analytics.py"],
-      "role": "deterministic financial/domain engines",
-      "decision": "TBD_AT_OWNING_WP",
-      "preferred_choices": ["REUSE_AS_IS", "WRAP_ADAPTER", "EXTRACT_TO_CORE"],
+      "role": "accepted deterministic financial/domain engines",
+      "decision": "REUSE_AS_IS",
+      "reason": "WP11 source inventory found the V9 domain engines already separated into importable Python packages; rewriting or moving their financial formulas would add migration risk without solving the WP11 presentation-boundary requirement. WP11 therefore preserves those engines and proves parity through a thin Core facade.",
       "rewrite_default": "DENY",
       "financial_semantics_change_allowed": "ONLY_WITH_VERSIONED_CONTRACT_AND_PARITY_EVIDENCE",
-      "owning_wp": "Block D/H/I owning WPs"
+      "owning_wp": "WP11 for Core extraction; later Block D/H/I WPs own their explicitly assigned extensions"
+    },
+    {
+      "id": "COMP-V10-CORE-FACADE",
+      "current_paths": ["omni_cio/core/"],
+      "role": "presentation-independent composition facade over accepted V9 deterministic engines",
+      "decision": "WRAP_ADAPTER",
+      "reason": "WP11 requires a stable no-GPT Python Core interface while retaining direct V9 engine compatibility. A thin wrapper composes existing typed engines without copying financial calculations or changing their public contracts.",
+      "financial_semantics_change_allowed": false,
+      "authority_change_allowed": false,
+      "owning_wp": "WP11",
+      "retirement_gate": "none; this becomes the stable Core composition boundary for later adapters unless a versioned replacement is separately accepted"
     },
     {
       "id": "COMP-BROKER-RECON",
