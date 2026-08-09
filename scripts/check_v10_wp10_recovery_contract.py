@@ -165,6 +165,15 @@ def validate_contract(contract: dict, wp8: dict, wp9a: dict) -> None:
             raise ContractError(f"OFFDEVICE_GUARD_MISSING:{key}")
     if off_device.get("runner_backup_payload_read_allowed") is not False:
         raise ContractError("RUNNER_OFFDEVICE_PAYLOAD_ACCESS_ENABLED")
+    if off_device.get("runtime_backup_payload_read_allowed_now") is not False:
+        raise ContractError("RUNTIME_OFFDEVICE_READ_PREMATURELY_ENABLED")
+    if off_device.get("runtime_backup_payload_write_allowed_now") is not False:
+        raise ContractError("RUNTIME_OFFDEVICE_WRITE_PREMATURELY_ENABLED")
+    if (
+        off_device.get("production_backup_writer_identity")
+        != "NOT_READY_UNTIL_PRODUCT_DB_AND_BACKUP_JOB_BINDING"
+    ):
+        raise ContractError("PRODUCTION_BACKUP_WRITER_SCOPE_LEAK")
 
     metadata = contract["private_metadata"]
     if metadata.get("mode") != "ALLOWLIST_ONLY":
@@ -232,6 +241,7 @@ def main() -> int:
     print("RPO: 60 minutes; RTO: 240 minutes")
     print("PostgreSQL: major 18 / custom logical archive / synthetic rehearsal")
     print("Off-device: encrypted target + OWNER copy/restore + runner denial")
+    print("Production backup writer: sealed until owning DB/job binding")
     print("GitHub/CI/private-state/secret recovery paths: separated")
     print("WP11: locked until WP10 Exit Gate and Block C acceptance")
     print("Real-money authority: unchanged")
