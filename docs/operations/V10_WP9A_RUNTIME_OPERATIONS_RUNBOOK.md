@@ -75,7 +75,9 @@ At minimum surface:
 
 ## Logging/privacy
 
-WP9A operations evidence is local-first JSONL. The contract allowlist is authoritative. Logs are bounded to 10 MiB per file, seven rotated files and 30 days maximum local retention for this WP9A operations class.
+WP9A operations evidence is local-first JSONL. The contract allowlist is authoritative. Logs are bounded to 10 MiB per file, seven files total and 30 days maximum local retention for this WP9A operations class.
+
+`scripts/v10_wp9a_operations_log.py` is the deterministic journal writer. It accepts only the fixed operational field allowlist, rejects unknown/free-form private surfaces, rotates only `wp9a-operations.jsonl*` inside the caller-selected local log directory, fsyncs each append and links records with `previous_hash` / `event_hash` SHA-256 fields. The hash chain is tamper evidence, not a replacement for a future signed or append-only audit store.
 
 Never emit to operations logs/CI:
 
@@ -112,7 +114,7 @@ PASS requires:
 - PostgreSQL major 18 state known and compatible;
 - absent Ollama accepted as NOT_READY without installation;
 - WP9 supervision/restart boundary still valid;
-- logging/privacy checks green;
+- bounded log allowlist/rotation/retention/hash-chain tests green;
 - exact-head required CI green;
 - squash merge and post-merge Regression Shield green.
 
