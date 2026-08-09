@@ -120,7 +120,10 @@ def validate_contract(contract: dict, wp5: dict) -> None:
         raise ContractError("LOG_PRIVATE_FIELD_GUARDS_INCOMPLETE")
     if logging.get("ci_private_payload_upload_forbidden") is not True:
         raise ContractError("CI_PRIVATE_PAYLOAD_UPLOAD_NOT_FORBIDDEN")
-    if logging.get("format") != "JSONL" or logging.get("file_name") != "wp9a-operations.jsonl":
+    if (
+        logging.get("format") != "JSONL"
+        or logging.get("file_name") != "wp9a-operations.jsonl"
+    ):
         raise ContractError("LOG_FORMAT_OR_FILE_INVALID")
     if logging.get("integrity") != "SHA256_HASH_CHAIN":
         raise ContractError("LOG_INTEGRITY_POLICY_MISSING")
