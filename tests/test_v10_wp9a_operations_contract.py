@@ -100,6 +100,22 @@ def test_wp9a_contract_rejects_relaxed_clock_threshold() -> None:
         validate_contract(mutated, wp5)
 
 
+def test_wp9a_owner_alert_cannot_claim_premature_external_delivery() -> None:
+    contract, wp5 = _fixtures()
+    mutated = copy.deepcopy(contract)
+    mutated["owner_alert"]["external_delivery"] = "TELEGRAM_ACTIVE"
+    with pytest.raises(ContractError, match="OWNER_ALERT_EXTERNAL_DELIVERY_SCOPE_LEAK"):
+        validate_contract(mutated, wp5)
+
+
+def test_wp9a_owner_alert_cannot_carry_private_payload() -> None:
+    contract, wp5 = _fixtures()
+    mutated = copy.deepcopy(contract)
+    mutated["owner_alert"]["private_payload_in_alert_forbidden"] = False
+    with pytest.raises(ContractError, match="OWNER_ALERT_PRIVATE_PAYLOAD_GUARD_MISSING"):
+        validate_contract(mutated, wp5)
+
+
 def test_wp9a_logging_allowlist_is_disjoint_from_forbidden_fields() -> None:
     contract, wp5 = _fixtures()
     mutated = copy.deepcopy(contract)
