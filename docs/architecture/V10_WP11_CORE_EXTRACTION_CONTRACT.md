@@ -11,7 +11,7 @@ WP11 separates the accepted V9 deterministic financial engines from the mandator
 
 Inspection of accepted `main` shows that the V9 domain engines are already source-separated under `omni_cio/`; moving or rewriting them would add migration risk without improving the WP11 boundary. WP11 therefore **reuses the reviewed engines as-is and adds one narrow Core orchestration adapter** at `omni_cio/core/service_v1.py`.
 
-WP11 does not introduce the future WP12 canonical domain model, PostgreSQL persistence, Web/Telegram/Cortex product surfaces, broker-write authority, or a replacement application entrypoint.
+WP11 does not introduce the future V10 WP12 canonical domain model, PostgreSQL persistence, Web/Telegram/Cortex product surfaces, broker-write authority, or a replacement application entrypoint.
 
 ## 2. Accepted V9 WP1–WP14 inventory
 
@@ -31,8 +31,8 @@ The following is the exact source-level inventory used for WP11. `app.py`, `app_
 | WP10 | Portfolio Optimizer | `omni_cio/optimizer/engine_v1.py` + `omni_cio/contracts/v1/portfolio_optimizer.py` | WRAP_ADAPTER through Core facade | none |
 | WP11 | Immutable Portfolio Plan | `omni_cio/plans/protocol_v1.py` + `omni_cio/contracts/v1/portfolio_plan.py` | WRAP_ADAPTER through Core facade | none |
 | WP12 | Safe Plan Execution | `omni_cio/plan_execution/` + `omni_cio/contracts/v1/plan_execution.py` | protected; intentionally outside WP11 Core planning facade | execution authority boundary; must remain isolated |
-| WP13 | Watchtower | `omni_cio/watchtower/` + versioned Watchtower contracts | REUSE_AS_IS; later Block H owns V10 durable monitoring | route/scheduler adapters exist separately from domain logic |
-| WP14 | Decision Journal / evaluation | `omni_cio/decision_journal/` + versioned journal contracts | REUSE_AS_IS; later Core/data WPs own persistence migration | none for deterministic journal logic |
+| WP13 | Watchtower | `omni_cio/watchtower/engine_v1.py` + `omni_cio/contracts/v1/watchtower.py`; route/runtime/journal adapters remain under `omni_cio/watchtower/` | REUSE_AS_IS; later Block H owns V10 durable monitoring | `omni_cio/watchtower/routes_v1.py` is an adapter layer; deterministic Watchtower engine remains separate |
+| WP14 | Decision Journal / evaluation | `omni_cio/decision_journal/journal_v1.py`, `recorder_v1.py`, `evaluation_v1.py`, `replay_v1.py` + `omni_cio/contracts/v1/decision_journal.py` | REUSE_AS_IS; later Core/data WPs own persistence migration | persistence adapters are separate from deterministic journal/evaluation logic |
 
 Legacy top-level portfolio/accounting modules including `portfolio_market.py`, `portfolio_analytics.py`, `cash_liquidity.py`, `purchase_capacity.py`, `purchase_capacity_integrity.py`, `operations_analytics.py`, and `broker_report_reconciliation/` remain protected source inputs for their owning later Block D parity work. WP11 does not silently replace those contracts.
 
@@ -66,7 +66,7 @@ The following remain mandatory:
 - plan construction is read-only and grants no submit authority;
 - `trading_methods=false` and `REAL_TRADING_ENABLED=false` remain unchanged;
 - no broker/Telegram/encryption secret or private portfolio payload is added to GitHub, CI logs, or artifacts;
-- WP12 remains locked until WP11 is accepted.
+- V10 WP12 remains locked until WP11 is accepted.
 
 ## 5. Golden parity oracle
 
@@ -108,4 +108,4 @@ WP11 is not COMPLETE merely because the facade exists. Acceptance requires all o
 - protected V9 `app:app`, `trading_methods=false`, `REAL_TRADING_ENABLED=false` and rollback remain intact;
 - post-merge Regression Shield succeeds on the exact resulting `main` SHA before program status is advanced.
 
-Only after that acceptance may WP12 begin.
+Only after that acceptance may V10 WP12 begin.
