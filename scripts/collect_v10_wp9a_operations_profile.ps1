@@ -13,6 +13,7 @@ function Round-Number {
 
 function Convert-SecondsTokenToMs {
     param([string]$Token)
+
     if ([string]::IsNullOrWhiteSpace($Token)) { return $null }
     $normalized = $Token.Trim().Replace(',', '.')
     $seconds = 0.0
@@ -21,11 +22,35 @@ function Convert-SecondsTokenToMs {
         [System.Globalization.NumberStyles]::Float,
         [System.Globalization.CultureInfo]::InvariantCulture,
         [ref]$seconds
-    )) { return $null }
+    )) {
+        return $null
+    }
     return ($seconds * 1000.0)
 }
 
 function Get-W32TimeOffsetMs {
+    # Preferred local oracle: W32Time exposes Computed Time Offset as a
+    # performance counter in microseconds. Discover the class by property name
+    # so the collector does not depend on localized counter/category names.
+    try {
+        $timeClass = Get-CimClass -Namespace root\cimv2 -ClassName 'Win32_PerfFormattedData_*' |
+            Where-Object { $_.CimClassProperties.Name -contains 'ComputedTimeOffset' } |
+            Select-Object -First 1
+        if ($null -ne $timeClass) {
+            $timeCounter = Get-CimInstance -Namespace root\cimv2 -ClassName $timeClass.CimClassName |
+                Select-Object -First 1
+            if ($null -ne $timeCounter -and $null -ne $timeCounter.ComputedTimeOffset) {
+                $microseconds = [double]$timeCounter.ComputedTimeOffset
+                if ($microseconds -ge 0) {
+                    return Round-Number -Value ($microseconds / 1000.0) -Digits 3
+                }
+            }
+        }
+    }
+    catch { }
+
+    # Network cross-check/fallback: measured offset against the fixed WP5 audit target.
+    # Retry because the NTP stripchart uses a separate UDP probe and may transiently fail.
     for ($attempt = 1; $attempt -le 3; $attempt += 1) {
         try {
             $output = & w32tm.exe /stripchart /computer:time.windows.com /period:1 /samples:3 /dataonly 2>$null
@@ -44,6 +69,8 @@ function Get-W32TimeOffsetMs {
         if ($attempt -lt 3) { Start-Sleep -Seconds 1 }
     }
 
+    # Fallback oracle: W32Time exposes the current Phase Offset in verbose status.
+    # Accept the documented English label plus the Russian label used by the OWNER node.
     try {
         $status = & w32tm.exe /query /status /verbose 2>$null
         foreach ($line in $status) {
@@ -53,11 +80,14 @@ function Get-W32TimeOffsetMs {
             )
             if ($match.Success) {
                 $valueMs = Convert-SecondsTokenToMs -Token $match.Groups[1].Value
-                if ($null -ne $valueMs) { return Round-Number -Value $valueMs -Digits 3 }
+                if ($null -ne $valueMs) {
+                    return Round-Number -Value $valueMs -Digits 3
+                }
             }
         }
     }
     catch { }
+
     return $null
 }
 
@@ -68,6 +98,9 @@ function Get-WindowsUpdateRebootFacts {
         source = "UNKNOWN"
         legacy_pending_file_rename_present = $false
     }
+
+    # Microsoft.Update.SystemInfo implements the Windows Update Agent
+    # ISystemInformation::RebootRequired contract. Prefer it over registry heuristics.
     try {
         $systemInfo = New-Object -ComObject "Microsoft.Update.SystemInfo"
         $result.reboot_state_known = $true
@@ -75,6 +108,8 @@ function Get-WindowsUpdateRebootFacts {
         $result.source = "WINDOWS_UPDATE_AGENT"
     }
     catch {
+        # Narrow fallback for older/unavailable WUA COM registrations. Pending file rename
+        # alone is intentionally diagnostic only because unrelated software can leave it set.
         $cbsPending = Test-Path -LiteralPath `
             'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending'
         $wuPending = Test-Path -LiteralPath `
@@ -85,6 +120,7 @@ function Get-WindowsUpdateRebootFacts {
             $result.source = "WINDOWS_UPDATE_REGISTRY_FALLBACK"
         }
     }
+
     try {
         $session = Get-ItemProperty `
             -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager' `
@@ -93,6 +129,7 @@ function Get-WindowsUpdateRebootFacts {
         $result.legacy_pending_file_rename_present = ($null -ne $session.PendingFileRenameOperations)
     }
     catch { }
+
     return $result
 }
 
@@ -107,7 +144,9 @@ function Find-RunnerRoot {
     }
     $candidates += @('C:\actions-runner')
     foreach ($candidate in ($candidates | Select-Object -Unique)) {
-        if (Test-Path -LiteralPath (Join-Path $candidate '.runner') -PathType Leaf) { return $candidate }
+        if (Test-Path -LiteralPath (Join-Path $candidate '.runner') -PathType Leaf) {
+            return $candidate
+        }
     }
     return $null
 }
@@ -132,6 +171,7 @@ function Get-RunnerUpdateFacts {
 
     $root = Find-RunnerRoot
     if ($null -eq $root) { return $result }
+
     try {
         $settings = Get-Content -LiteralPath (Join-Path $root '.runner') -Raw -ErrorAction Stop | ConvertFrom-Json
         $property = $settings.PSObject.Properties |
@@ -176,11 +216,18 @@ function Get-NvidiaFacts {
     $command = Get-Command nvidia-smi.exe -ErrorAction SilentlyContinue
     if ($null -eq $command) {
         $candidate = Join-Path $env:ProgramFiles 'NVIDIA Corporation\NVSMI\nvidia-smi.exe'
-        if (Test-Path -LiteralPath $candidate -PathType Leaf) { $command = [pscustomobject]@{ Source = $candidate } }
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+            $command = [pscustomobject]@{ Source = $candidate }
+        }
     }
     if ($null -eq $command) { return $result }
     try {
-        $line = (& $command.Source --query-gpu=driver_version,temperature.gpu,memory.total,memory.used --format=csv,noheader,nounits 2>$null | Select-Object -First 1)
+        $line = (
+            & $command.Source `
+                --query-gpu=driver_version,temperature.gpu,memory.total,memory.used `
+                --format=csv,noheader,nounits 2>$null |
+                Select-Object -First 1
+        )
         if ([string]::IsNullOrWhiteSpace([string]$line)) { return $result }
         $parts = ([string]$line) -split '\s*,\s*'
         if ($parts.Count -lt 4) { return $result }
@@ -188,10 +235,16 @@ function Get-NvidiaFacts {
         $result.driver_version_known = -not [string]::IsNullOrWhiteSpace($parts[0])
         $result.driver_version = $parts[0].Trim()
         $temperature = 0.0
-        if ([double]::TryParse($parts[1], [ref]$temperature)) { $result.temperature_c = Round-Number $temperature 1 }
+        if ([double]::TryParse($parts[1], [ref]$temperature)) {
+            $result.temperature_c = Round-Number $temperature 1
+        }
         $total = 0.0
         $used = 0.0
-        if ([double]::TryParse($parts[2], [ref]$total) -and [double]::TryParse($parts[3], [ref]$used) -and $total -gt 0) {
+        if (
+            [double]::TryParse($parts[2], [ref]$total) -and
+            [double]::TryParse($parts[3], [ref]$used) -and
+            $total -gt 0
+        ) {
             $result.vram_used_percent = Round-Number (($used / $total) * 100.0) 1
         }
     }
@@ -228,7 +281,11 @@ function Get-PostgresFacts {
 }
 
 function Get-Wp9HealthFacts {
-    $result = [ordered]@{ present = $false; status = 'UNKNOWN'; fresh = $false }
+    $result = [ordered]@{
+        present = $false
+        status = 'UNKNOWN'
+        fresh = $false
+    }
     $path = 'C:\ProgramData\OmniCIO\services\wp9\evidence\health-status.json'
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return $result }
     try {
@@ -244,7 +301,10 @@ function Get-Wp9HealthFacts {
 
 $capturedAt = [datetime]::UtcNow.ToString('o')
 $timeServiceRunning = $false
-try { $timeServiceRunning = ([string](Get-Service W32Time -ErrorAction Stop).Status -eq 'Running') } catch { }
+try {
+    $timeServiceRunning = ([string](Get-Service W32Time -ErrorAction Stop).Status -eq 'Running')
+}
+catch { }
 $timeOffset = Get-W32TimeOffsetMs
 $rebootFacts = Get-WindowsUpdateRebootFacts
 
@@ -254,7 +314,11 @@ $freePercent = $null
 try {
     $volume = Get-Volume -DriveLetter $systemDrive -ErrorAction Stop
     $freeGiB = Round-Number ([double]$volume.SizeRemaining / 1GB) 2
-    if ([double]$volume.Size -gt 0) { $freePercent = Round-Number (([double]$volume.SizeRemaining / [double]$volume.Size) * 100.0) 2 }
+    if ([double]$volume.Size -gt 0) {
+        $freePercent = Round-Number (
+            ([double]$volume.SizeRemaining / [double]$volume.Size) * 100.0
+        ) 2
+    }
 }
 catch { }
 
@@ -263,7 +327,9 @@ try {
     $os = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
     if ([double]$os.TotalVisibleMemorySize -gt 0) {
         $used = [double]$os.TotalVisibleMemorySize - [double]$os.FreePhysicalMemory
-        $memoryUsedPercent = Round-Number (($used / [double]$os.TotalVisibleMemorySize) * 100.0) 1
+        $memoryUsedPercent = Round-Number (
+            ($used / [double]$os.TotalVisibleMemorySize) * 100.0
+        ) 1
     }
 }
 catch { }
@@ -279,7 +345,8 @@ try {
 catch { }
 
 $ollamaPresent = $false
-try { $ollamaPresent = ($null -ne (Get-Command ollama.exe -ErrorAction SilentlyContinue)) } catch { }
+try { $ollamaPresent = ($null -ne (Get-Command ollama.exe -ErrorAction SilentlyContinue)) }
+catch { }
 
 $profile = [ordered]@{
     schema_version = '1'
@@ -294,11 +361,17 @@ $profile = [ordered]@{
         reboot_source = [string]$rebootFacts.source
         legacy_pending_file_rename_present = [bool]$rebootFacts.legacy_pending_file_rename_present
     }
-    time = [ordered]@{ service_running = [bool]$timeServiceRunning; offset_ms = $timeOffset }
+    time = [ordered]@{
+        service_running = [bool]$timeServiceRunning
+        offset_ms = $timeOffset
+    }
     runner = Get-RunnerUpdateFacts
     postgresql = Get-PostgresFacts
     nvidia = Get-NvidiaFacts
-    ollama = [ordered]@{ present = [bool]$ollamaPresent; not_ready_allowed = $true }
+    ollama = [ordered]@{
+        present = [bool]$ollamaPresent
+        not_ready_allowed = $true
+    }
     resources = [ordered]@{
         system_disk_free_gib = $freeGiB
         system_disk_free_percent = $freePercent
