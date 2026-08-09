@@ -114,6 +114,22 @@ def test_wp10_contract_requires_full_bitlocker_protection() -> None:
         validate_contract(mutated, wp8, wp9a)
 
 
+@pytest.mark.parametrize(
+    "field",
+    [
+        "owner_synthetic_copy_restore_rehearsal_required",
+        "owner_rehearsal_evidence_required",
+        "nonadmin_runner_read_write_denial_required",
+    ],
+)
+def test_wp10_contract_requires_real_offdevice_recovery_proof(field: str) -> None:
+    contract, wp8, wp9a = _fixtures()
+    mutated = copy.deepcopy(contract)
+    mutated["off_device"][field] = False
+    with pytest.raises(ContractError, match=f"OFFDEVICE_GUARD_MISSING:{field}"):
+        validate_contract(mutated, wp8, wp9a)
+
+
 def test_wp10_contract_keeps_wp11_locked() -> None:
     contract, wp8, wp9a = _fixtures()
     mutated = copy.deepcopy(contract)
