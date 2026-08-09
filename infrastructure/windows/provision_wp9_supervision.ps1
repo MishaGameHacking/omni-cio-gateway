@@ -310,17 +310,18 @@ function Test-OwnedTaskDefinition {
     if ([string]$task.Settings.MultipleInstances -ne [string]$contract.supervision.multiple_instances) {
         return $false
     }
-    $triggers = @($task.Triggers)
     if ($HealthTask) {
+        $triggers = @($task.Triggers)
         $bootCount = @($triggers | Where-Object { $_.CimClass.CimClassName -eq "MSFT_TaskBootTrigger" }).Count
         $dailyCount = @($triggers | Where-Object { $_.CimClass.CimClassName -eq "MSFT_TaskDailyTrigger" }).Count
         if ($bootCount -ne 1 -or $dailyCount -ne 1 -or $triggers.Count -ne 2) {
             return $false
         }
     }
-    elseif ($triggers.Count -ne 0) {
-        return $false
-    }
+    # For disabled sealed slots, Windows' ScheduledTasks CIM provider may round-trip
+    # inert trigger metadata even when New-ScheduledTask was created without -Trigger.
+    # Disabled state is the safety boundary, so idempotence must not depend on that
+    # provider-specific serialization detail.
     return $true
 }
 
