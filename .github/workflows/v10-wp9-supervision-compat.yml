@@ -1,0 +1,116 @@
+name: V10 WP9 Supervision Compatibility
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - ".github/workflows/v10-wp9-supervision-compat.yml"
+      - ".github/workflows/v10-wp9-supervision-audit.yml"
+      - "docs/architecture/V10_WP9_**"
+      - "docs/architecture/DECISIONS.md"
+      - "docs/operations/V10_WP9_**"
+      - "infrastructure/windows/*wp9*"
+      - "scripts/*wp9*"
+      - "tests/test_v10_wp9_**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: v10-wp9-supervision-compat-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  clean-windows-preview:
+    name: Clean Windows non-mutating WP9 preview
+    runs-on: windows-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up selected Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14.6"
+
+      - name: Verify WP9 static supervision contract
+        shell: pwsh
+        run: |
+          python scripts/check_v10_wp9_supervision_contract.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pytest -q tests/test_v10_wp9_supervision_contract.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Parse WP9 PowerShell with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $files = @(
+            "infrastructure\windows\provision_wp9_supervision.ps1",
+            "infrastructure\windows\rollback_wp9_supervision.ps1",
+            "infrastructure\windows\wp9_health_supervisor.ps1",
+            "infrastructure\windows\wp9_component_guard.ps1",
+            "infrastructure\windows\wp9_rehearsal_worker.ps1",
+            "scripts\collect_v10_wp9_supervision_profile.ps1"
+          )
+          foreach ($file in $files) {
+            $tokens = $null
+            $errors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path $file),
+              [ref]$tokens,
+              [ref]$errors
+            )
+            if ($errors.Count -gt 0) {
+              $errors | ForEach-Object { Write-Error $_.Message }
+              exit 1
+            }
+          }
+
+      - name: Prove WP9 preview does not mutate clean hosted node
+        shell: powershell
+        run: |
+          $root = "C:\ProgramData\OmniCIO\services\wp9"
+          $before = Test-Path -LiteralPath $root
+          $profilePath = Join-Path $env:RUNNER_TEMP "wp9-clean-preview.json"
+          powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass `
+            -File .\infrastructure\windows\provision_wp9_supervision.ps1 -AsJson `
+            > $profilePath
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $profile = Get-Content -LiteralPath $profilePath -Raw | ConvertFrom-Json
+          if ($profile.mode -ne "PREVIEW") { exit 1 }
+          if ($profile.status -ne "OWNER_ACTION_REQUIRED") { exit 1 }
+          if ((Test-Path -LiteralPath $root) -ne $before) {
+            Write-Error "WP9 preview mutated the clean hosted node."
+            exit 1
+          }
+          foreach ($name in @(
+            "OmniCIO.V10.HealthSupervisor",
+            "OmniCIO.V10.CoreApi",
+            "OmniCIO.V10.Web",
+            "OmniCIO.V10.Telegram",
+            "OmniCIO.V10.Watchtower",
+            "OmniCIO.V10.AIWorker"
+          )) {
+            if (Get-ScheduledTask -TaskPath "\OmniCIO\V10\" -TaskName $name -ErrorAction SilentlyContinue) {
+              Write-Error "WP9 preview registered a task."
+              exit 1
+            }
+          }
+          Remove-Item -LiteralPath $profilePath -Force
+
+      - name: Prove WP9 rollback preview is non-mutating
+        shell: powershell
+        run: |
+          $root = "C:\ProgramData\OmniCIO\services\wp9"
+          $before = Test-Path -LiteralPath $root
+          $raw = powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass `
+            -File .\infrastructure\windows\rollback_wp9_supervision.ps1 -AsJson
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $profile = $raw | ConvertFrom-Json
+          if ($profile.mode -ne "PREVIEW" -or $profile.status -ne "PASS") { exit 1 }
+          if ((Test-Path -LiteralPath $root) -ne $before) { exit 1 }
