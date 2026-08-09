@@ -72,6 +72,10 @@ try {
 
     New-Item -ItemType Directory -Path $StateRoot -Force | Out-Null
 
+    # Never allow a previous developer run to satisfy this rebuild's OWNER gate.
+    # A failed/incomplete new run leaves no PASS rehearsal behind.
+    Remove-Item -LiteralPath $OwnerRehearsalPath -Force -ErrorAction SilentlyContinue
+
     $prepareRaw = & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass `
         -File $PrepareScript `
         -TargetMountPoint $TargetMountPoint `
@@ -135,7 +139,7 @@ try {
 
     # The owner rehearsal payload is deliberately sanitized: no mount point,
     # serial/UUID, account ID, secret, token or recovery-key value is present.
-    $rehearsal | ConvertTo-Json -Compress -Depth 5 |
+    $rehearsal | ConvertTo-Json -Compress -Depth 6 |
         Set-Content -LiteralPath $OwnerRehearsalPath -Encoding UTF8
     $result.sanitized_local_evidence_written = $true
     $result.status = "PASS"
