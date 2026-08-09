@@ -19,6 +19,7 @@ def test_wp10_offdevice_scripts_never_contain_destructive_disk_commands() -> Non
             "audit_wp10_offdevice_target.ps1",
             "rehearse_wp10_recovery.ps1",
             "run_wp10_backup.ps1",
+            "run_wp10_owner_gate.ps1",
         )
     ).lower()
     forbidden = (
@@ -53,6 +54,28 @@ def test_wp10_owner_preparation_requires_existing_encrypted_data_volume() -> Non
     assert 'VolumeType -ne "Data"' in script
     assert "SYSTEM_VOLUME_FORBIDDEN" in script
     assert "RecoveryKeyCustodyConfirmed" in script
+
+
+def test_wp10_owner_rehearsal_revalidates_target_and_restores_from_offdevice() -> None:
+    script = _text("rehearse_wp10_recovery.ps1")
+    assert "UsePreparedOffdeviceTarget" in script
+    assert "Get-PreparedOffdeviceTarget" in script
+    assert "Get-BitLockerVolume" in script
+    assert 'VolumeStatus -ne "FullyEncrypted"' in script
+    assert 'ProtectionStatus -ne "On"' in script
+    assert '"COPY_OWNER_OFFDEVICE"' in script
+    assert "$restoreArchive = Join-Path" in script
+    assert '"OWNER_OFFDEVICE_BACKUP_CORRUPTION_RESTORE_PASS"' in script
+    assert "Remove-Item -LiteralPath $restoreArchive" not in script
+
+
+def test_wp10_owner_gate_writes_only_sanitized_local_rehearsal() -> None:
+    script = _text("run_wp10_owner_gate.ps1")
+    assert "owner-rehearsal.sanitized.local.json" in script
+    assert "target_identity_emitted = $false" in script
+    assert "recovery_key_value_collected = $false" in script
+    assert "TargetMountPoint $TargetMountPoint" in script
+    assert "Write-Output $TargetMountPoint" not in script
 
 
 def test_wp10_nonadmin_audit_does_not_require_live_bitlocker_privilege() -> None:
