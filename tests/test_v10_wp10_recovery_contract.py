@@ -78,6 +78,24 @@ def test_wp10_contract_accepts_canonical_policy() -> None:
             True,
             "RUNNER_OFFDEVICE_PAYLOAD_ACCESS_ENABLED",
         ),
+        (
+            "off_device",
+            "runtime_backup_payload_read_allowed_now",
+            True,
+            "RUNTIME_OFFDEVICE_READ_PREMATURELY_ENABLED",
+        ),
+        (
+            "off_device",
+            "runtime_backup_payload_write_allowed_now",
+            True,
+            "RUNTIME_OFFDEVICE_WRITE_PREMATURELY_ENABLED",
+        ),
+        (
+            "off_device",
+            "production_backup_writer_identity",
+            "omni-cio-runtime",
+            "PRODUCTION_BACKUP_WRITER_SCOPE_LEAK",
+        ),
     ],
 )
 def test_wp10_contract_rejects_boundary_regressions(
