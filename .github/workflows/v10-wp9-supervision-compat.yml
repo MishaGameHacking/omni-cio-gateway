@@ -83,6 +83,10 @@ jobs:
             $folder = $service.GetFolder("\$folderName")
             [void]$folder.CreateFolder("V10")
             [void]$service.GetFolder("\$folderName\V10")
+            # The provisioner deliberately operates from an ITaskFolder instance.
+            # Prove the same relative lookup semantics on disposable Windows.
+            [void]$root.GetFolder($folderName)
+            [void]$folder.GetFolder("V10")
 
             $action = New-ScheduledTaskAction -Execute "$env:SystemRoot\System32\cmd.exe" -Argument "/c exit 0"
             $principal = New-ScheduledTaskPrincipal `
@@ -109,6 +113,10 @@ jobs:
             $task = Get-ScheduledTask -TaskPath $nestedPath -TaskName $taskName
             if ([string]$task.State -ne "Disabled") {
               Write-Error "Task State did not report Disabled."
+              exit 1
+            }
+            if ([bool]$task.Settings.Enabled -ne $false) {
+              Write-Error "Task Settings.Enabled did not report False."
               exit 1
             }
             if ([int]$task.Settings.RestartCount -ne 3) {
