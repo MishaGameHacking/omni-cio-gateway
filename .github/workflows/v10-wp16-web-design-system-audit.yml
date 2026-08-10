@@ -20,7 +20,7 @@ jobs:
     timeout-minutes: 20
     defaults:
       run:
-        shell: bash
+        shell: pwsh
         working-directory: apps/web
 
     steps:
@@ -31,11 +31,12 @@ jobs:
 
       - name: Verify selected Node and npm runtime
         run: |
-          test "$(node --version)" = "v24.18.0"
-          test "$(npm --version)" = "11.16.0"
+          if ((node --version).Trim() -ne "v24.18.0") { throw "NODE_VERSION_MISMATCH" }
+          if ((npm --version).Trim() -ne "11.16.0") { throw "NPM_VERSION_MISMATCH" }
+          node --version
+          npm --version
 
       - name: Materialize or verify exact lock candidate
-        shell: pwsh
         run: |
           $hadLock = Test-Path package-lock.json
           if ($hadLock) { Copy-Item package-lock.json package-lock.before.json }
@@ -74,7 +75,9 @@ jobs:
         working-directory: .
         run: |
           python scripts/check_v10_repository_boundaries.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python scripts/check_v10_regression_shield.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Upload lock candidate and visual evidence
         if: always()
@@ -92,4 +95,6 @@ jobs:
         working-directory: .
         run: |
           git reset --hard HEAD
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           git clean -ffdx
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
