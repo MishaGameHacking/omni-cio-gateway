@@ -141,6 +141,7 @@ def _insert_immutable(
             f"{table} canonical identity replay conflicts with immutable content"
         )
 
+
 def _persist_tenant(connection: ConnectionLike, record: TenantV1) -> None:
     _insert_immutable(
         connection,
@@ -370,6 +371,11 @@ def _persist_incident(connection: ConnectionLike, record: IncidentRecordV1) -> N
     )
 
     revision_hash = model_record_sha256(record)
+    connection.execute(
+        "SELECT incident_id FROM omni_cio_v10.incidents "
+        "WHERE incident_id = %s FOR UPDATE",
+        (record.incident_id,),
+    )
     existing = connection.execute(
         "SELECT revision FROM omni_cio_v10.incident_revisions "
         "WHERE incident_id = %s AND record_sha256 = %s",
@@ -378,11 +384,6 @@ def _persist_incident(connection: ConnectionLike, record: IncidentRecordV1) -> N
     if existing is not None:
         revision = int(existing[0])
     else:
-        connection.execute(
-            "SELECT incident_id FROM omni_cio_v10.incidents "
-            "WHERE incident_id = %s FOR UPDATE",
-            (record.incident_id,),
-        )
         row = connection.execute(
             "SELECT COALESCE(MAX(revision), 0) + 1 FROM omni_cio_v10.incident_revisions "
             "WHERE incident_id = %s",
@@ -663,7 +664,7 @@ def _digest_value(value: Any) -> Any:
     if isinstance(value, datetime):
         return _utc(value).isoformat()
     if isinstance(value, Decimal):
-        return format(value, "")
+        return format(value, "f")
     if isinstance(value, bytes):
         return hashlib.sha256(value).hexdigest()
     return value

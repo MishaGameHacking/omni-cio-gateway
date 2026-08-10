@@ -244,6 +244,28 @@ def _migration_race(dsn: str) -> bool:
     return True
 
 
+def _concurrent_catalog_replay(
+    dsn: str,
+    catalog: CanonicalDomainCatalogV1,
+) -> int:
+    barrier = threading.Barrier(2)
+
+    def worker() -> int:
+        with psycopg.connect(dsn) as connection:
+            barrier.wait(timeout=10)
+            return PostgresDomainRepository(connection).persist_catalog(catalog)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [executor.submit(worker) for _ in range(2)]
+        revisions = [future.result(timeout=60) for future in futures]
+
+    if len(set(revisions)) != 1:
+        raise AssertionError(
+            f"concurrent immutable replay produced different revisions: {revisions!r}"
+        )
+    return revisions[0]
+
+
 def _expect_database_failure(connection: psycopg.Connection[Any], sql: str) -> None:
     failed = False
     try:
@@ -258,6 +280,7 @@ def _expect_database_failure(connection: psycopg.Connection[Any], sql: str) -> N
 def _exercise(
     connection: psycopg.Connection[Any],
     *,
+    dsn: str,
     migration_race_pass: bool,
 ) -> dict[str, Any]:
     if apply_migrations(connection) != ():
@@ -273,6 +296,19 @@ def _exercise(
     roundtripped = load_catalog(connection)
     if roundtripped != catalog:
         raise AssertionError("canonical catalog round-trip changed identity or scope")
+
+    acknowledged_incident = catalog.incidents[0].model_copy(
+        update={"status": IncidentStatus.ACKNOWLEDGED}
+    )
+    acknowledged_catalog = CanonicalDomainCatalogV1.model_validate(
+        {
+            **catalog.model_dump(mode="python"),
+            "incidents": (acknowledged_incident,),
+        }
+    )
+    concurrent_revision = _concurrent_catalog_replay(dsn, acknowledged_catalog)
+    if load_catalog(connection) != acknowledged_catalog:
+        raise AssertionError("concurrent incident revision replay changed durable state")
 
     quantity_row = connection.execute(
         "SELECT quantity, blocked_quantity FROM omni_cio_v10.positions"
@@ -389,12 +425,13 @@ def _exercise(
         "migration_race_serialized": migration_race_pass,
         "migration_count": len(migrations),
         "migration_series_sha256": migration_series_digest(),
-        "state_revision": first_revision,
+        "state_revision": concurrent_revision,
         "state_digest_sha256": digest,
         "catalog_roundtrip": True,
         "decimal_roundtrip": True,
         "append_only_rejection": True,
         "conflicting_replay_rejected": True,
+        "concurrent_write_idempotency": True,
         "owner_scope_rejection": True,
         "bounded_cache_retention": True,
         "private_payload_logged": False,
@@ -425,7 +462,11 @@ def main() -> int:
         migration_race_pass = args.command != "exercise" or _migration_race(dsn)
         with psycopg.connect(dsn) as connection:
             result = (
-                _exercise(connection, migration_race_pass=migration_race_pass)
+                _exercise(
+                    connection,
+                    dsn=dsn,
+                    migration_race_pass=migration_race_pass,
+                )
                 if args.command == "exercise"
                 else _digest(connection)
             )
