@@ -115,9 +115,7 @@ class _Users:
 
 class _Operations:
     def __init__(self, pages: dict[str, dict[str, Any]] | None = None) -> None:
-        self._pages = pages or {
-            "": {"items": [], "has_next": False, "next_cursor": ""}
-        }
+        self._pages = pages or {"": {"items": [], "has_next": False, "next_cursor": ""}}
 
     def get_portfolio(self, *, account_id: str) -> dict[str, Any]:
         if account_id != ACCOUNT_ID:
@@ -224,9 +222,7 @@ def _wrong_account_rejected() -> bool:
 
 
 def _cursor_loop_rejected() -> bool:
-    client = _Client(
-        pages={"": {"items": [], "has_next": True, "next_cursor": ""}}
-    )
+    client = _Client(pages={"": {"items": [], "has_next": True, "next_cursor": ""}})
     try:
         _adapter(client).read_operations()
     except CursorProgressError:
