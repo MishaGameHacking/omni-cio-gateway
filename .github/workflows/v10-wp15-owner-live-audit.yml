@@ -44,6 +44,7 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           $path = "C:\ProgramData\OmniCIO\secrets\read-broker\broker-read.dpapi"
+          $readSucceeded = $false
           try {
               $stream = [System.IO.File]::Open(
                   $path,
@@ -52,16 +53,28 @@ jobs:
                   [System.IO.FileShare]::Read
               )
               $stream.Dispose()
+              $readSucceeded = $true
+          }
+          catch {
+              $root = $_.Exception
+              while ($null -ne $root.InnerException) {
+                  $root = $root.InnerException
+              }
+              if ($root -is [System.UnauthorizedAccessException]) {
+                  Write-Host "WP15_BROKER_READ_CIPHERTEXT=ACCESS_DENIED"
+              }
+              elseif (
+                  $root -is [System.IO.FileNotFoundException] -or
+                  $root -is [System.IO.DirectoryNotFoundException]
+              ) {
+                  Write-Host "WP15_BROKER_READ_CIPHERTEXT=NOT_PROVISIONED_OR_NOT_VISIBLE"
+              }
+              else {
+                  throw
+              }
+          }
+          if ($readSucceeded) {
               throw "CI runner unexpectedly read broker-read ciphertext."
-          }
-          catch [System.UnauthorizedAccessException] {
-              Write-Host "WP15_BROKER_READ_CIPHERTEXT=ACCESS_DENIED"
-          }
-          catch [System.IO.FileNotFoundException] {
-              Write-Host "WP15_BROKER_READ_CIPHERTEXT=NOT_PROVISIONED_OR_NOT_VISIBLE"
-          }
-          catch [System.IO.DirectoryNotFoundException] {
-              Write-Host "WP15_BROKER_READ_CIPHERTEXT=NOT_PROVISIONED_OR_NOT_VISIBLE"
           }
 
       - name: Prove CI cannot read private OWNER account binding
@@ -69,6 +82,7 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           $path = "C:\ProgramData\OmniCIO\wp15\private\owner-account-binding.json"
+          $readSucceeded = $false
           try {
               $stream = [System.IO.File]::Open(
                   $path,
@@ -77,16 +91,28 @@ jobs:
                   [System.IO.FileShare]::Read
               )
               $stream.Dispose()
+              $readSucceeded = $true
+          }
+          catch {
+              $root = $_.Exception
+              while ($null -ne $root.InnerException) {
+                  $root = $root.InnerException
+              }
+              if ($root -is [System.UnauthorizedAccessException]) {
+                  Write-Host "WP15_PRIVATE_BINDING=ACCESS_DENIED"
+              }
+              elseif (
+                  $root -is [System.IO.FileNotFoundException] -or
+                  $root -is [System.IO.DirectoryNotFoundException]
+              ) {
+                  Write-Host "WP15_PRIVATE_BINDING=NOT_CREATED_OR_NOT_VISIBLE"
+              }
+              else {
+                  throw
+              }
+          }
+          if ($readSucceeded) {
               throw "CI runner unexpectedly read private OWNER binding."
-          }
-          catch [System.UnauthorizedAccessException] {
-              Write-Host "WP15_PRIVATE_BINDING=ACCESS_DENIED"
-          }
-          catch [System.IO.FileNotFoundException] {
-              Write-Host "WP15_PRIVATE_BINDING=NOT_CREATED_OR_NOT_VISIBLE"
-          }
-          catch [System.IO.DirectoryNotFoundException] {
-              Write-Host "WP15_PRIVATE_BINDING=NOT_CREATED_OR_NOT_VISIBLE"
           }
 
       - name: Validate sanitized OWNER evidence against exact implementation
