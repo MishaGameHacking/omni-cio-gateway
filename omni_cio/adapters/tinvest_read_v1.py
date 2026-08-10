@@ -218,7 +218,7 @@ def _json_safe(value: Any) -> Any:
     enum_name = getattr(value, "name", None)
     if isinstance(enum_name, str) and enum_name:
         return enum_name
-    if is_dataclass(value):
+    if is_dataclass(value) and not isinstance(value, type):
         return _json_safe(asdict(value))
     return str(value)
 
@@ -242,7 +242,7 @@ def _message_to_dict(value: Any) -> dict[str, Any]:
         safe = _json_safe(to_dict())
         if isinstance(safe, dict):
             return safe
-    if is_dataclass(value):
+    if is_dataclass(value) and not isinstance(value, type):
         safe = _json_safe(asdict(value))
         if isinstance(safe, dict):
             return safe
@@ -787,13 +787,13 @@ class TInvestReadAdapter:
         last_error: BaseException | None = None
         for id_type, identifier, field_name in plan:
             try:
+                lookup_id_type = id_type
+                lookup_identifier = identifier
                 response = self._call_read(
                     "GET_INSTRUMENT_BY",
-                    lambda id_type=id_type, identifier=identifier: (
-                        client.instruments.get_instrument_by(
-                            id_type=id_type,
-                            id=identifier,
-                        )
+                    lambda: client.instruments.get_instrument_by(
+                        id_type=lookup_id_type,
+                        id=lookup_identifier,
                     ),
                 )
                 instrument = _instrument_payload(response)
@@ -962,10 +962,11 @@ class TInvestReadAdapter:
                     without_trades=False,
                     without_overnights=True,
                 )
+                operation_request = request
                 response = self._call_read(
                     "GET_OPERATIONS_BY_CURSOR",
-                    lambda request=request: (
-                        client.operations.get_operations_by_cursor(request)
+                    lambda: client.operations.get_operations_by_cursor(
+                        operation_request
                     ),
                 )
                 data = _message_to_dict(response)
