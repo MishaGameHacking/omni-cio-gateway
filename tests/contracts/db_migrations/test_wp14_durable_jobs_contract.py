@@ -8,6 +8,7 @@ from omni_cio.persistence.migration import discover_migrations
 
 ROOT = Path(__file__).resolve().parents[3]
 MIGRATION = ROOT / "omni_cio" / "persistence" / "migrations" / "0002_durable_jobs.sql"
+REPOSITORY = ROOT / "omni_cio" / "jobs" / "repository.py"
 WORKER = ROOT / "omni_cio" / "jobs" / "worker.py"
 
 
@@ -34,10 +35,16 @@ def test_wp14_job_schema_has_required_lifecycle_and_journal() -> None:
         "ADD COLUMN error_class text",
         "ADD COLUMN recovery_policy text",
         "CREATE TABLE omni_cio_v10.job_events",
-        "FOR UPDATE",
     ):
-        if marker != "FOR UPDATE":
-            assert marker in sql
+        assert marker in sql
+
+
+def test_wp14_queue_claim_uses_deterministic_skip_locked_row_lock() -> None:
+    source = REPOSITORY.read_text(encoding="utf-8")
+
+    assert "ORDER BY next_run_at, created_at, job_id" in source
+    assert "FOR UPDATE SKIP LOCKED LIMIT 1" in source
+    assert "with self._connection.transaction():" in source
 
 
 def test_wp14_database_constrains_states_retries_and_lease_shape() -> None:
