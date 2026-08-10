@@ -44,10 +44,6 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           $path = "C:\ProgramData\OmniCIO\secrets\read-broker\broker-read.dpapi"
-          if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
-              Write-Host "WP15_BROKER_READ_CIPHERTEXT=NOT_PROVISIONED_OR_NOT_VISIBLE"
-              exit 0
-          }
           try {
               $stream = [System.IO.File]::Open(
                   $path,
@@ -61,16 +57,18 @@ jobs:
           catch [System.UnauthorizedAccessException] {
               Write-Host "WP15_BROKER_READ_CIPHERTEXT=ACCESS_DENIED"
           }
+          catch [System.IO.FileNotFoundException] {
+              Write-Host "WP15_BROKER_READ_CIPHERTEXT=NOT_PROVISIONED_OR_NOT_VISIBLE"
+          }
+          catch [System.IO.DirectoryNotFoundException] {
+              Write-Host "WP15_BROKER_READ_CIPHERTEXT=NOT_PROVISIONED_OR_NOT_VISIBLE"
+          }
 
       - name: Prove CI cannot read private OWNER account binding
         shell: powershell
         run: |
           $ErrorActionPreference = "Stop"
           $path = "C:\ProgramData\OmniCIO\wp15\private\owner-account-binding.json"
-          if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
-              Write-Host "WP15_PRIVATE_BINDING=NOT_CREATED_OR_NOT_VISIBLE"
-              exit 0
-          }
           try {
               $stream = [System.IO.File]::Open(
                   $path,
@@ -83,6 +81,12 @@ jobs:
           }
           catch [System.UnauthorizedAccessException] {
               Write-Host "WP15_PRIVATE_BINDING=ACCESS_DENIED"
+          }
+          catch [System.IO.FileNotFoundException] {
+              Write-Host "WP15_PRIVATE_BINDING=NOT_CREATED_OR_NOT_VISIBLE"
+          }
+          catch [System.IO.DirectoryNotFoundException] {
+              Write-Host "WP15_PRIVATE_BINDING=NOT_CREATED_OR_NOT_VISIBLE"
           }
 
       - name: Validate sanitized OWNER evidence against exact implementation
