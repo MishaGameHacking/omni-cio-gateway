@@ -414,7 +414,9 @@ def _digest(connection: psycopg.Connection[Any]) -> dict[str, Any]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="WP13 PostgreSQL synthetic acceptance probe")
+    parser = argparse.ArgumentParser(
+        description="WP13 PostgreSQL synthetic acceptance probe"
+    )
     parser.add_argument("command", choices=("exercise", "digest"))
     args = parser.parse_args()
 
