@@ -144,14 +144,27 @@ function Invoke-ProbeJson {
     )
 
     $oldDsn = $env:OMNI_CIO_WP13_DSN
+    $stdoutPath = [System.IO.Path]::GetTempFileName()
+    $stderrPath = [System.IO.Path]::GetTempFileName()
     try {
         $env:OMNI_CIO_WP13_DSN = (
             "host=127.0.0.1 port=$Port user=wp13_owner " +
             "dbname=$DatabaseName connect_timeout=5"
         )
-        $raw = & $Python $Probe $Command 2>$null
-        $probeExit = $LASTEXITCODE
-        $rawText = ($raw | Out-String)
+        $argumentLine = "`"$Probe`" $Command"
+        $probeProcess = Start-Process `
+            -FilePath $Python `
+            -ArgumentList $argumentLine `
+            -RedirectStandardOutput $stdoutPath `
+            -RedirectStandardError $stderrPath `
+            -WindowStyle Hidden `
+            -Wait `
+            -PassThru
+        if ($null -eq $probeProcess) {
+            throw "WP13_PROBE_PROCESS_MISSING"
+        }
+        $probeExit = $probeProcess.ExitCode
+        $rawText = Get-Content -LiteralPath $stdoutPath -Raw -ErrorAction SilentlyContinue
         if ([string]::IsNullOrWhiteSpace($rawText)) {
             if ($probeExit -ne 0) {
                 throw "WP13_PROBE_FAILED:NO_OUTPUT"
@@ -178,6 +191,7 @@ function Invoke-ProbeJson {
     }
     finally {
         $env:OMNI_CIO_WP13_DSN = $oldDsn
+        Remove-Item -LiteralPath $stdoutPath, $stderrPath -Force -ErrorAction SilentlyContinue
     }
 }
 
@@ -396,10 +410,33 @@ try {
     Copy-Item -LiteralPath $archive.FullName -Destination $corruptArchive
     Copy-Item -LiteralPath $manifest -Destination $corruptManifest
     [System.IO.File]::AppendAllText($corruptArchive, "tamper")
-    & $PythonPath $BundleTool verify `
-        --archive $corruptArchive --manifest $corruptManifest *> $null
-    if ($LASTEXITCODE -eq 0) {
-        throw "CORRUPT_ARCHIVE_ACCEPTED"
+    $corruptStdout = [System.IO.Path]::GetTempFileName()
+    $corruptStderr = [System.IO.Path]::GetTempFileName()
+    try {
+        $corruptArguments = (
+            "`"$BundleTool`" verify --archive `"$corruptArchive`" " +
+            "--manifest `"$corruptManifest`""
+        )
+        $corruptCheck = Start-Process `
+            -FilePath $PythonPath `
+            -ArgumentList $corruptArguments `
+            -RedirectStandardOutput $corruptStdout `
+            -RedirectStandardError $corruptStderr `
+            -WindowStyle Hidden `
+            -Wait `
+            -PassThru
+        if ($null -eq $corruptCheck) {
+            throw "CORRUPT_CHECK_PROCESS_MISSING"
+        }
+        if ($corruptCheck.ExitCode -eq 0) {
+            throw "CORRUPT_ARCHIVE_ACCEPTED"
+        }
+    }
+    finally {
+        Remove-Item `
+            -LiteralPath $corruptStdout, $corruptStderr `
+            -Force `
+            -ErrorAction SilentlyContinue
     }
     $result.corruption_rejected = $true
 
