@@ -26,7 +26,7 @@ _OPEN = "ACCOUNT_STATUS_OPEN"
 def _readable_open_accounts(
     response: Any,
 ) -> tuple[tuple[str, BrokerAccountBindingV1], ...]:
-    """Return verified READ-only open accounts without exposing them outside this module."""
+    """Return verified READ-only open accounts without exposing raw provider IDs."""
     bindings: list[tuple[str, BrokerAccountBindingV1]] = []
     seen_raw_ids: set[str] = set()
 
@@ -36,10 +36,12 @@ def _readable_open_accounts(
             _field(account, "access_level"),
             ACCESS_LEVEL_NAMES,
         )
-        if status != _OPEN or access_level == _NO_ACCESS:
+        if access_level == _NO_ACCESS:
             continue
         if access_level != _READ_ONLY:
             raise AccountBindingError("BROKER_READ_CREDENTIAL_NOT_READ_ONLY")
+        if status != _OPEN:
+            continue
 
         raw_account_id, binding = _binding_for_account(account)
         if raw_account_id in seen_raw_ids:
