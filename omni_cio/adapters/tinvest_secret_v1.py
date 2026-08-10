@@ -72,31 +72,32 @@ def _require_read_only_account_scope(response: Any) -> None:
 
 
 class _AllowlistedServiceProxy:
-    __slots__ = ("_delegate", "_allowed")
+    __slots__ = ("_methods",)
 
     def __init__(self, delegate: Any, allowed: frozenset[str]) -> None:
-        self._delegate = delegate
-        self._allowed = allowed
+        self._methods = {name: getattr(delegate, name) for name in allowed}
 
     def __getattr__(self, name: str) -> Any:
-        if name not in self._allowed:
-            raise AttributeError(name)
-        return getattr(self._delegate, name)
+        try:
+            return self._methods[name]
+        except KeyError as exc:
+            raise AttributeError(name) from exc
 
 
 class _ReadOnlyUsersProxy:
-    __slots__ = ("_delegate",)
+    __slots__ = ("_get_accounts", "_get_user_tariff")
 
     def __init__(self, delegate: Any) -> None:
-        self._delegate = delegate
+        self._get_accounts = delegate.get_accounts
+        self._get_user_tariff = delegate.get_user_tariff
 
     def get_accounts(self, *args: Any, **kwargs: Any) -> Any:
-        response = self._delegate.get_accounts(*args, **kwargs)
+        response = self._get_accounts(*args, **kwargs)
         _require_read_only_account_scope(response)
         return response
 
     def get_user_tariff(self, *args: Any, **kwargs: Any) -> Any:
-        return self._delegate.get_user_tariff(*args, **kwargs)
+        return self._get_user_tariff(*args, **kwargs)
 
 
 class _BrokerReadClientProxy:
