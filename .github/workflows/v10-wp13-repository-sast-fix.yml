@@ -28,6 +28,9 @@ jobs:
           ref: v10/wp13-postgresql-persistence
           persist-credentials: true
 
+      - name: Bootstrap protected Python 3.12.10
+        run: scripts\bootstrap_windows_ci_python.cmd
+
       - name: Apply deterministic repository transform
         run: python scripts\_wp13_repository_transform.py
 
