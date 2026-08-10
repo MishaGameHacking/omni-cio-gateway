@@ -16,6 +16,7 @@ from omni_cio.persistence.migration import (
     migration_series_digest,
     require_postgres_18,
 )
+from omni_cio.persistence.reader import PersistenceReadError, load_catalog
 from omni_cio.persistence.repository import (
     ContentHashMismatchError,
     PersistenceConflictError,
@@ -34,6 +35,7 @@ __all__ = [
     "MigrationError",
     "MigrationSeriesError",
     "PersistenceConflictError",
+    "PersistenceReadError",
     "PostgresDomainRepository",
     "UnsupportedPostgresError",
     "apply_migrations",
@@ -41,6 +43,7 @@ __all__ = [
     "connect_postgres",
     "current_migration_state",
     "discover_migrations",
+    "load_catalog",
     "migration_series_digest",
     "model_record_sha256",
     "require_postgres_18",
