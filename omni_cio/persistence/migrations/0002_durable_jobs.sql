@@ -29,7 +29,6 @@ ALTER TABLE omni_cio_v10.jobs
     ALTER COLUMN attempts SET DEFAULT 0,
     ALTER COLUMN max_attempts SET NOT NULL,
     ALTER COLUMN max_attempts SET DEFAULT 3,
-    ALTER COLUMN next_run_at SET NOT NULL,
     ALTER COLUMN recovery_policy SET NOT NULL,
     ALTER COLUMN recovery_policy SET DEFAULT 'RETRY_SAFE';
 
@@ -187,7 +186,7 @@ CREATE TABLE omni_cio_v10.job_events (
 CREATE INDEX job_events_job_time_idx
     ON omni_cio_v10.job_events (job_id, event_id);
 
-CREATE INDEX job_events_correlation_time_idx
+CREATE INDEX job_events_scope_time_idx
     ON omni_cio_v10.job_events (tenant_id, occurred_at DESC, event_id DESC);
 
 CREATE TRIGGER job_events_reject_mutation
