@@ -81,10 +81,12 @@ def portfolio() -> dict[str, Any]:
                 "figi": "BBG004730N88",
                 "instrument_type": "share",
                 "quantity": quotation("10"),
-                "blocked": quotation("1"),
+                "blocked": False,
+                "blocked_lots": quotation("1"),
                 "current_price": money("300", nano=500_000_000),
             }
         ],
+        "virtual_positions": [],
     }
 
 
@@ -99,6 +101,7 @@ def positions() -> dict[str, Any]:
                 "blocked": 1,
             }
         ],
+        "limits_loading_in_progress": False,
     }
 
 
@@ -216,9 +219,13 @@ def operation(
     *,
     date: str,
     payment_units: str,
+    trades_info: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     return {
+        "cursor": "operation-cursor-a",
+        "broker_account_id": ACCOUNT_ID,
         "id": operation_id,
+        "parent_operation_id": "parent-operation-a",
         "date": date,
         "type": "OPERATION_TYPE_BUY",
         "state": "OPERATION_STATE_EXECUTED",
@@ -232,6 +239,7 @@ def operation(
         "quantity_done": 10,
         "name": "Buy",
         "description": "Executed buy",
+        "trades_info": trades_info or {"trades": [{"trade_id": "trade-a"}]},
     }
 
 
@@ -265,6 +273,18 @@ def test_snapshot_normalizes_exact_decimal_identity_and_cash() -> None:
     assert cash.blocked.amount == Decimal("100")
     assert cash.available is not None
     assert cash.available.amount == Decimal("900")
+
+
+def test_depositary_blocked_position_is_conservatively_fully_blocked() -> None:
+    payload = portfolio()
+    payload["positions"][0]["blocked"] = True
+    payload["positions"][0]["blocked_lots"] = quotation("0")
+    result = adapter(
+        FakeClient(operations=FakeOperations(portfolio_payload=payload))
+    ).read_snapshot()
+
+    assert result.snapshot.positions[0].quantity_units == Decimal("10")
+    assert result.snapshot.positions[0].blocked_units == Decimal("10")
 
 
 def test_snapshot_is_deterministic_for_same_payload_and_clock() -> None:
@@ -326,6 +346,54 @@ def test_partial_identity_is_explicit_and_strict_mode_rejects() -> None:
     )
 
 
+def test_limits_loading_is_never_silently_complete() -> None:
+    payload = positions()
+    payload["limits_loading_in_progress"] = True
+    operations = FakeOperations(positions_payload=payload)
+
+    with pytest.raises(BrokerDataError, match="POSITIONS_LIMITS_LOADING_IN_PROGRESS"):
+        adapter(FakeClient(operations=operations)).read_snapshot()
+
+    partial = adapter(
+        FakeClient(operations=FakeOperations(positions_payload=payload))
+    ).read_snapshot(allow_partial=True)
+    assert partial.snapshot.metadata.quality.quality == DataQuality.DEGRADED
+    assert partial.snapshot.metadata.quality.completeness == Completeness.PARTIAL
+    assert any(
+        issue.code == "BROKER_LIMITS_LOADING_IN_PROGRESS"
+        for issue in partial.snapshot.metadata.quality.issues
+    )
+
+
+def test_virtual_positions_are_never_silently_omitted() -> None:
+    payload = portfolio()
+    payload["virtual_positions"] = [
+        {
+            "instrument_uid": "uid-virtual",
+            "position_uid": "position-virtual",
+            "figi": "BBG000VIRTUAL",
+            "quantity": quotation("2"),
+        }
+    ]
+
+    with pytest.raises(BrokerDataError, match="PORTFOLIO_VIRTUAL_POSITIONS_UNSUPPORTED"):
+        adapter(
+            FakeClient(operations=FakeOperations(portfolio_payload=payload))
+        ).read_snapshot()
+
+    partial = adapter(
+        FakeClient(operations=FakeOperations(portfolio_payload=payload))
+    ).read_snapshot(allow_partial=True)
+    assert partial.broker_position_count == 2
+    assert partial.normalized_position_count == 1
+    assert partial.unresolved_position_count == 1
+    assert partial.snapshot.metadata.quality.completeness == Completeness.PARTIAL
+    assert any(
+        issue.code == "BROKER_VIRTUAL_POSITIONS_UNRESOLVED"
+        for issue in partial.snapshot.metadata.quality.issues
+    )
+
+
 def test_freshness_transitions_to_stale_deterministically() -> None:
     policy = TInvestReadPolicyV1(stale_after_seconds=300)
     result = adapter(FakeClient(), policy=policy).read_snapshot(
@@ -342,8 +410,10 @@ def test_cursor_pagination_deduplicates_semantic_repeats_not_operation_id() -> N
         date="2026-08-10T10:00:00+00:00",
         payment_units="-3000",
     )
-    duplicate_with_changed_id = dict(first)
-    duplicate_with_changed_id["id"] = "mutable-id-b"
+    duplicate_with_changed_transport_ids = dict(first)
+    duplicate_with_changed_transport_ids["id"] = "mutable-id-b"
+    duplicate_with_changed_transport_ids["parent_operation_id"] = "parent-operation-b"
+    duplicate_with_changed_transport_ids["cursor"] = "operation-cursor-b"
     second = operation(
         "operation-two",
         date="2026-08-09T10:00:00+00:00",
@@ -357,7 +427,7 @@ def test_cursor_pagination_deduplicates_semantic_repeats_not_operation_id() -> N
                 "next_cursor": "cursor-2",
             },
             "cursor-2": {
-                "items": [duplicate_with_changed_id, second],
+                "items": [duplicate_with_changed_transport_ids, second],
                 "has_next": False,
                 "next_cursor": "",
             },
@@ -378,6 +448,37 @@ def test_cursor_pagination_deduplicates_semantic_repeats_not_operation_id() -> N
         tzinfo=timezone.utc,
     )
     assert "mutable-id" not in result.model_dump_json()
+    assert ACCOUNT_ID not in result.model_dump_json()
+
+
+def test_semantically_distinct_trade_payloads_are_not_deduplicated() -> None:
+    first = operation(
+        "mutable-id-a",
+        date="2026-08-10T10:00:00+00:00",
+        payment_units="-3000",
+        trades_info={"trades": [{"trade_id": "trade-a"}]},
+    )
+    second = operation(
+        "mutable-id-b",
+        date="2026-08-10T10:00:00+00:00",
+        payment_units="-3000",
+        trades_info={"trades": [{"trade_id": "trade-b"}]},
+    )
+    operations = FakeOperations(
+        operation_pages={
+            "": {
+                "items": [first, second],
+                "has_next": False,
+                "next_cursor": "",
+            }
+        }
+    )
+
+    result = adapter(FakeClient(operations=operations)).read_operations()
+
+    assert result.duplicates_removed == 0
+    assert len(result.operations) == 2
+    assert result.operations[0].fingerprint_sha256 != result.operations[1].fingerprint_sha256
 
 
 def test_non_advancing_cursor_fails_closed() -> None:
