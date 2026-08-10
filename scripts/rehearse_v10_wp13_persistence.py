@@ -42,6 +42,7 @@ from omni_cio.persistence import (
     PostgresDomainRepository,
     apply_migrations,
     current_migration_state,
+    discover_migrations,
     load_catalog,
     migration_series_digest,
 )
@@ -229,6 +230,7 @@ def _dsn() -> str:
 
 def _migration_race(dsn: str) -> bool:
     barrier = threading.Barrier(2)
+    expected_versions = tuple(item.version for item in discover_migrations())
 
     def worker() -> tuple[int, ...]:
         with psycopg.connect(dsn) as connection:
@@ -239,7 +241,7 @@ def _migration_race(dsn: str) -> bool:
         futures = [executor.submit(worker) for _ in range(2)]
         results = [future.result(timeout=60) for future in futures]
 
-    if sorted(results, key=len) != [(), (1,)]:
+    if sorted(results, key=len) != [(), expected_versions]:
         raise AssertionError(f"migration race produced unexpected results: {results!r}")
     return True
 
@@ -418,7 +420,7 @@ def _exercise(
         raise AssertionError("state digest is not SHA-256")
 
     migrations = current_migration_state(connection)
-    if len(migrations) != 1:
+    if len(migrations) != len(discover_migrations()):
         raise AssertionError("unexpected applied migration count")
 
     return {
