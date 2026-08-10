@@ -70,6 +70,39 @@ jobs:
           python -m pip install --disable-pip-version-check --require-hashes -r windows-requirements-dev.txt
           python -c "import grpc; import t_tech.invest; print('WP15 broker-read imports OK')"
 
+      - name: Capture authoritative static quality diagnostics
+        shell: cmd
+        run: |
+          @echo off
+          set "STATIC_EXIT=0"
+          "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m ruff check . > "%RUNNER_TEMP%\wp15-ruff-check.txt" 2>&1
+          if errorlevel 1 set "STATIC_EXIT=1"
+          "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m ruff format --check scripts tests\test_ci_security_baseline.py tests\test_v10_repository_boundaries.py tests\test_v10_toolchain_baseline.py tests\test_v10_regression_shield.py > "%RUNNER_TEMP%\wp15-ruff-format.txt" 2>&1
+          if errorlevel 1 set "STATIC_EXIT=1"
+          "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m mypy > "%RUNNER_TEMP%\wp15-mypy.txt" 2>&1
+          if errorlevel 1 set "STATIC_EXIT=1"
+          echo WP15_STATIC_EXIT=%STATIC_EXIT%>> "%GITHUB_ENV%"
+          echo WP15_RUFF_CHECK=%RUNNER_TEMP%\wp15-ruff-check.txt>> "%GITHUB_ENV%"
+          echo WP15_RUFF_FORMAT=%RUNNER_TEMP%\wp15-ruff-format.txt>> "%GITHUB_ENV%"
+          echo WP15_MYPY=%RUNNER_TEMP%\wp15-mypy.txt>> "%GITHUB_ENV%"
+          exit /b 0
+
+      - name: Upload static quality diagnostics
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: wp15-static-quality-diagnostics
+          path: |
+            ${{ env.WP15_RUFF_CHECK }}
+            ${{ env.WP15_RUFF_FORMAT }}
+            ${{ env.WP15_MYPY }}
+          if-no-files-found: error
+          retention-days: 3
+
+      - name: Enforce authoritative static quality result
+        shell: cmd
+        run: |
+          if not "%WP15_STATIC_EXIT%"=="0" exit /b %WP15_STATIC_EXIT%
+
       - name: Run focused WP15 unit and authority tests
         shell: cmd
         run: |
