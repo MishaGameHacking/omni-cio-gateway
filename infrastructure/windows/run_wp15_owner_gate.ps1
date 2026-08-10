@@ -212,7 +212,7 @@ try {
         throw "WP15 OWNER dependency installation failed."
     }
 
-    & $venvPython scripts\rehearse_v10_wp15_owner.py
+    & $venvPython -m scripts.rehearse_v10_wp15_owner
     $gateExit = $LASTEXITCODE
 
     Set-ProtectedFileAcl `
