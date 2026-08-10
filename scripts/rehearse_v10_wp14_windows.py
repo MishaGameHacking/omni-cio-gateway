@@ -365,9 +365,7 @@ def main() -> int:
         if temp_root is not None:
             with suppress(Exception):
                 shutil.rmtree(temp_root)
-        result["temporary_state_cleaned"] = (
-            temp_root is None or not temp_root.exists()
-        )
+        result["temporary_state_cleaned"] = temp_root is None or not temp_root.exists()
         result["duration_ms"] = int((time.monotonic() - started) * 1000)
 
     print(json.dumps(result, separators=(",", ":"), sort_keys=True))
