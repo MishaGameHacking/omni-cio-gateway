@@ -453,7 +453,7 @@ catch {
         if ([string]::IsNullOrWhiteSpace($errorId) -or $errorId -notmatch '^[A-Z0-9_.-]+$') {
             $errorId = "UNKNOWN"
         }
-        $reasonCode = "WP13_AUDIT_ERROR:$exceptionType:$errorId"
+        $reasonCode = "WP13_AUDIT_ERROR:${exceptionType}:${errorId}"
     }
     $result.status = "FAIL"
     $result.reason_code = $reasonCode
