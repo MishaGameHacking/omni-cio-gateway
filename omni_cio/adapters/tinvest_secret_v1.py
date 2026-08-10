@@ -15,6 +15,15 @@ BROKER_READ_BLOB = Path(
 )
 WP8_STATE = Path(r"C:\ProgramData\OmniCIO\wp8\wp8-secret-store-state.json")
 
+_READ_ONLY_ACCESS = "ACCOUNT_ACCESS_LEVEL_READ_ONLY"
+_NO_ACCESS = "ACCOUNT_ACCESS_LEVEL_NO_ACCESS"
+_ACCESS_LEVEL_NAMES = {
+    0: "ACCOUNT_ACCESS_LEVEL_UNSPECIFIED",
+    1: "ACCOUNT_ACCESS_LEVEL_FULL_ACCESS",
+    2: _READ_ONLY_ACCESS,
+    3: _NO_ACCESS,
+}
+
 
 class BrokerReadSecretError(RuntimeError):
     """Fail-closed error for the local WP8 broker-read credential boundary."""
@@ -25,6 +34,94 @@ class _DataBlob(ctypes.Structure):
         ("cbData", wintypes.DWORD),
         ("pbData", ctypes.POINTER(ctypes.c_ubyte)),
     ]
+
+
+def _field(value: Any, name: str, default: Any = None) -> Any:
+    if isinstance(value, dict):
+        return value.get(name, default)
+    return getattr(value, name, default)
+
+
+def _access_level_name(value: Any) -> str:
+    name = getattr(value, "name", None)
+    if isinstance(name, str) and name:
+        return name
+    raw = getattr(value, "value", value)
+    if isinstance(raw, int) and not isinstance(raw, bool):
+        return _ACCESS_LEVEL_NAMES.get(raw, str(raw))
+    text = str(raw).strip()
+    if text.isdigit():
+        return _ACCESS_LEVEL_NAMES.get(int(text), text)
+    return text.rsplit(".", 1)[-1]
+
+
+def _require_read_only_account_scope(response: Any) -> None:
+    accounts = _field(response, "accounts")
+    if accounts is None:
+        raise BrokerReadSecretError("BROKER_READ_ACCOUNT_RESPONSE_INVALID")
+    try:
+        account_rows = list(accounts)
+    except TypeError as exc:
+        raise BrokerReadSecretError("BROKER_READ_ACCOUNT_RESPONSE_INVALID") from exc
+    for account in account_rows:
+        access_level = _access_level_name(_field(account, "access_level"))
+        if access_level == _NO_ACCESS:
+            continue
+        if access_level != _READ_ONLY_ACCESS:
+            raise BrokerReadSecretError("BROKER_READ_AUTHORITY_NOT_READ_ONLY")
+
+
+class _AllowlistedServiceProxy:
+    __slots__ = ("_delegate", "_allowed")
+
+    def __init__(self, delegate: Any, allowed: frozenset[str]) -> None:
+        self._delegate = delegate
+        self._allowed = allowed
+
+    def __getattr__(self, name: str) -> Any:
+        if name not in self._allowed:
+            raise AttributeError(name)
+        return getattr(self._delegate, name)
+
+
+class _ReadOnlyUsersProxy:
+    __slots__ = ("_delegate",)
+
+    def __init__(self, delegate: Any) -> None:
+        self._delegate = delegate
+
+    def get_accounts(self, *args: Any, **kwargs: Any) -> Any:
+        response = self._delegate.get_accounts(*args, **kwargs)
+        _require_read_only_account_scope(response)
+        return response
+
+    def get_user_tariff(self, *args: Any, **kwargs: Any) -> Any:
+        return self._delegate.get_user_tariff(*args, **kwargs)
+
+
+class _BrokerReadClientProxy:
+    __slots__ = ("users", "operations", "instruments", "market_data")
+
+    def __init__(self, delegate: Any) -> None:
+        self.users = _ReadOnlyUsersProxy(delegate.users)
+        self.operations = _AllowlistedServiceProxy(
+            delegate.operations,
+            frozenset(
+                {
+                    "get_portfolio",
+                    "get_positions",
+                    "get_operations_by_cursor",
+                }
+            ),
+        )
+        self.instruments = _AllowlistedServiceProxy(
+            delegate.instruments,
+            frozenset({"get_instrument_by"}),
+        )
+        self.market_data = _AllowlistedServiceProxy(
+            delegate.market_data,
+            frozenset({"get_last_prices"}),
+        )
 
 
 def _windows_unprotect(payload: bytes) -> bytes:
@@ -158,6 +255,6 @@ def broker_read_client() -> Iterator[Any]:
     token = load_broker_read_token()
     try:
         with Client(token) as client:
-            yield client
+            yield _BrokerReadClientProxy(client)
     finally:
         token = ""
