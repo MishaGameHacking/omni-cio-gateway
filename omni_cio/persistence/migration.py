@@ -12,16 +12,26 @@ SCHEMA_NAME = "omni_cio_v10"
 POSTGRES_MAJOR = 18
 MIGRATION_LOCK_KEY = 132013
 _MIGRATION_PATTERN = re.compile(r"^(?P<version>[0-9]{4})_(?P<name>[a-z0-9_]+)\.sql$")
-_MIGRATION_TABLE_SQL = f"""
-CREATE SCHEMA IF NOT EXISTS {SCHEMA_NAME};
-CREATE TABLE IF NOT EXISTS {SCHEMA_NAME}.schema_migrations (
+_MIGRATION_TABLE_SQL = """
+CREATE SCHEMA IF NOT EXISTS omni_cio_v10;
+CREATE TABLE IF NOT EXISTS omni_cio_v10.schema_migrations (
     version integer PRIMARY KEY,
     name text NOT NULL,
     sha256 char(64) NOT NULL,
     applied_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
-    CONSTRAINT schema_migration_sha256 CHECK (sha256 ~ '^[a-f0-9]{{64}}$')
+    CONSTRAINT schema_migration_sha256 CHECK (sha256 ~ '^[a-f0-9]{64}$')
 );
 """
+_SELECT_APPLIED_MIGRATIONS_SQL = (
+    "SELECT version, name, sha256 FROM omni_cio_v10.schema_migrations ORDER BY version"
+)
+_INSERT_MIGRATION_SQL = (
+    "INSERT INTO omni_cio_v10.schema_migrations "
+    "(version, name, sha256) VALUES (%s, %s, %s)"
+)
+_SELECT_MIGRATION_STATE_SQL = (
+    "SELECT version, sha256 FROM omni_cio_v10.schema_migrations ORDER BY version"
+)
 
 
 class CursorLike(Protocol):
@@ -41,7 +51,7 @@ class TransactionContext(Protocol):
 class ConnectionLike(Protocol):
     def execute(
         self,
-        query: str,
+        query: Any,
         params: Sequence[Any] | None = None,
         *,
         prepare: bool | None = None,
@@ -146,10 +156,7 @@ def apply_migrations(
         require_postgres_18(connection)
         connection.execute("SELECT pg_advisory_xact_lock(%s)", (MIGRATION_LOCK_KEY,))
         connection.execute(_MIGRATION_TABLE_SQL, prepare=False)
-        rows = connection.execute(
-            f"SELECT version, name, sha256 FROM {SCHEMA_NAME}.schema_migrations "
-            "ORDER BY version"
-        ).fetchall()
+        rows = connection.execute(_SELECT_APPLIED_MIGRATIONS_SQL).fetchall()
         applied = {int(row[0]): (str(row[1]), str(row[2])) for row in rows}
 
         known_versions = {migration.version for migration in series}
@@ -170,8 +177,7 @@ def apply_migrations(
 
             connection.execute(migration.sql, prepare=False)
             connection.execute(
-                f"INSERT INTO {SCHEMA_NAME}.schema_migrations "
-                "(version, name, sha256) VALUES (%s, %s, %s)",
+                _INSERT_MIGRATION_SQL,
                 (migration.version, migration.name, migration.sha256),
             )
             applied_now.append(migration.version)
@@ -180,9 +186,7 @@ def apply_migrations(
 
 
 def current_migration_state(connection: ConnectionLike) -> tuple[tuple[int, str], ...]:
-    rows = connection.execute(
-        f"SELECT version, sha256 FROM {SCHEMA_NAME}.schema_migrations ORDER BY version"
-    ).fetchall()
+    rows = connection.execute(_SELECT_MIGRATION_STATE_SQL).fetchall()
     return tuple((int(row[0]), str(row[1])) for row in rows)
 
 
