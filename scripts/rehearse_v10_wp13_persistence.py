@@ -308,7 +308,9 @@ def _exercise(
     )
     concurrent_revision = _concurrent_catalog_replay(dsn, acknowledged_catalog)
     if load_catalog(connection) != acknowledged_catalog:
-        raise AssertionError("concurrent incident revision replay changed durable state")
+        raise AssertionError(
+            "concurrent incident revision replay changed durable state"
+        )
 
     quantity_row = connection.execute(
         "SELECT quantity, blocked_quantity FROM omni_cio_v10.positions"
