@@ -26,8 +26,9 @@ MIGRATION = ROOT / "omni_cio" / "persistence" / "migrations" / "0001_initial.sql
 
 def test_wp13_migration_series_is_contiguous_and_checksum_locked() -> None:
     series = discover_migrations()
+    versions = [item.version for item in series]
 
-    assert [item.version for item in series] == [1]
+    assert versions == list(range(1, len(series) + 1))
     assert series[0].name == "initial"
     assert re.fullmatch(r"[a-f0-9]{64}", series[0].sha256)
     assert re.fullmatch(r"[a-f0-9]{64}", migration_series_digest(series))
