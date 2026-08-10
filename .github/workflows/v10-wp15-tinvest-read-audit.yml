@@ -116,7 +116,7 @@ jobs:
         run: |
           @echo off
           setlocal EnableDelayedExpansion
-          "%VENV_WINDOWS_PATH%\Scripts\python.exe" scripts\rehearse_v10_wp15_offline.py > "%RUNNER_TEMP%\wp15-tinvest-read-audit.json" 2> "%RUNNER_TEMP%\wp15-tinvest-read-diagnostic.txt"
+          "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m scripts.rehearse_v10_wp15_offline > "%RUNNER_TEMP%\wp15-tinvest-read-audit.json" 2> "%RUNNER_TEMP%\wp15-tinvest-read-diagnostic.txt"
           set "AUDIT_EXIT=!ERRORLEVEL!"
           if exist "%RUNNER_TEMP%\wp15-tinvest-read-audit.json" type "%RUNNER_TEMP%\wp15-tinvest-read-audit.json"
           if exist "%RUNNER_TEMP%\wp15-tinvest-read-diagnostic.txt" type "%RUNNER_TEMP%\wp15-tinvest-read-diagnostic.txt"
