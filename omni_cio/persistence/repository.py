@@ -25,6 +25,8 @@ from omni_cio.contracts.v1.domain import (
     TenantV1,
     UserV1,
 )
+from psycopg import sql
+
 from omni_cio.persistence.migration import ConnectionLike, SCHEMA_NAME
 
 
@@ -101,23 +103,35 @@ def _insert_immutable(
 ) -> None:
     columns = (*values.keys(), hash_column)
     params = (*values.values(), record_sha256)
-    placeholders = ", ".join("%s" for _ in columns)
-    column_sql = ", ".join(columns)
-    key_sql = ", ".join(key_columns)
-    cursor = connection.execute(
-        f"INSERT INTO {SCHEMA_NAME}.{table} ({column_sql}) "
-        f"VALUES ({placeholders}) ON CONFLICT ({key_sql}) DO NOTHING "
-        f"RETURNING {hash_column}",
-        params,
+    insert_query = sql.SQL(
+        "INSERT INTO {}.{} ({}) VALUES ({}) "
+        "ON CONFLICT ({}) DO NOTHING RETURNING {}"
+    ).format(
+        sql.Identifier(SCHEMA_NAME),
+        sql.Identifier(table),
+        sql.SQL(", ").join(sql.Identifier(column) for column in columns),
+        sql.SQL(", ").join(sql.Placeholder() for _ in columns),
+        sql.SQL(", ").join(sql.Identifier(column) for column in key_columns),
+        sql.Identifier(hash_column),
     )
+    cursor = connection.execute(insert_query, params)
     if cursor.fetchone() is not None:
         return
 
-    predicate = " AND ".join(f"{column} = %s" for column in key_columns)
-    existing = connection.execute(
-        f"SELECT {hash_column} FROM {SCHEMA_NAME}.{table} WHERE {predicate}",
-        key_values,
-    ).fetchone()
+    predicate = sql.SQL(" AND ").join(
+        sql.SQL("{} = {}").format(
+            sql.Identifier(column),
+            sql.Placeholder(),
+        )
+        for column in key_columns
+    )
+    select_query = sql.SQL("SELECT {} FROM {}.{} WHERE {}").format(
+        sql.Identifier(hash_column),
+        sql.Identifier(SCHEMA_NAME),
+        sql.Identifier(table),
+        predicate,
+    )
+    existing = connection.execute(select_query, key_values).fetchone()
     if existing is None:
         raise PersistenceConflictError(
             f"{table} insert conflicted with a secondary uniqueness constraint"
@@ -126,7 +140,6 @@ def _insert_immutable(
         raise PersistenceConflictError(
             f"{table} canonical identity replay conflicts with immutable content"
         )
-
 
 def _persist_tenant(connection: ConnectionLike, record: TenantV1) -> None:
     _insert_immutable(
@@ -358,7 +371,7 @@ def _persist_incident(connection: ConnectionLike, record: IncidentRecordV1) -> N
 
     revision_hash = model_record_sha256(record)
     existing = connection.execute(
-        f"SELECT revision FROM {SCHEMA_NAME}.incident_revisions "
+        "SELECT revision FROM omni_cio_v10.incident_revisions "
         "WHERE incident_id = %s AND record_sha256 = %s",
         (record.incident_id, revision_hash),
     ).fetchone()
@@ -366,12 +379,12 @@ def _persist_incident(connection: ConnectionLike, record: IncidentRecordV1) -> N
         revision = int(existing[0])
     else:
         connection.execute(
-            f"SELECT incident_id FROM {SCHEMA_NAME}.incidents "
+            "SELECT incident_id FROM omni_cio_v10.incidents "
             "WHERE incident_id = %s FOR UPDATE",
             (record.incident_id,),
         )
         row = connection.execute(
-            f"SELECT COALESCE(MAX(revision), 0) + 1 FROM {SCHEMA_NAME}.incident_revisions "
+            "SELECT COALESCE(MAX(revision), 0) + 1 FROM omni_cio_v10.incident_revisions "
             "WHERE incident_id = %s",
             (record.incident_id,),
         ).fetchone()
@@ -379,7 +392,7 @@ def _persist_incident(connection: ConnectionLike, record: IncidentRecordV1) -> N
             raise PersistenceConflictError("cannot allocate incident revision")
         revision = int(row[0])
         connection.execute(
-            f"INSERT INTO {SCHEMA_NAME}.incident_revisions "
+            "INSERT INTO omni_cio_v10.incident_revisions "
             "(incident_id, revision, status, revised_at, record_sha256) "
             "VALUES (%s, %s, %s, %s, %s)",
             (
@@ -393,7 +406,7 @@ def _persist_incident(connection: ConnectionLike, record: IncidentRecordV1) -> N
 
     for evidence_id in record.evidence_ids:
         connection.execute(
-            f"INSERT INTO {SCHEMA_NAME}.incident_evidence "
+            "INSERT INTO omni_cio_v10.incident_evidence "
             "(incident_id, incident_revision, evidence_id, tenant_id, portfolio_id, policy_id) "
             "VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT DO NOTHING",
             (
@@ -428,7 +441,7 @@ def _persist_decision(connection: ConnectionLike, record: DecisionRecordV1) -> N
     )
     for evidence_id in record.evidence_ids:
         connection.execute(
-            f"INSERT INTO {SCHEMA_NAME}.decision_evidence "
+            "INSERT INTO omni_cio_v10.decision_evidence "
             "(decision_id, evidence_id, tenant_id, portfolio_id, policy_id) "
             "VALUES (%s, %s, %s, %s, %s) ON CONFLICT DO NOTHING",
             (
@@ -549,13 +562,13 @@ class PostgresDomainRepository:
                 _persist_journal(self._connection, record)
 
             self._connection.execute(
-                f"INSERT INTO {SCHEMA_NAME}.state_revisions "
+                "INSERT INTO omni_cio_v10.state_revisions "
                 "(tenant_id, catalog_sha256, generated_at) VALUES (%s, %s, %s) "
                 "ON CONFLICT (tenant_id, catalog_sha256) DO NOTHING",
                 (OWNER_TENANT_ID, digest, _utc(catalog.generated_at)),
             )
             row = self._connection.execute(
-                f"SELECT revision FROM {SCHEMA_NAME}.state_revisions "
+                "SELECT revision FROM omni_cio_v10.state_revisions "
                 "WHERE tenant_id = %s AND catalog_sha256 = %s",
                 (OWNER_TENANT_ID, digest),
             ).fetchone()
@@ -578,7 +591,7 @@ class PostgresDomainRepository:
         timestamp = _utc(created_at or datetime.now(timezone.utc))
         with self._connection.transaction():
             cursor = self._connection.execute(
-                f"INSERT INTO {SCHEMA_NAME}.content_blobs "
+                "INSERT INTO omni_cio_v10.content_blobs "
                 "(tenant_id, payload_sha256, media_type, schema_ref, payload, created_at) "
                 "VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT DO NOTHING "
                 "RETURNING payload_sha256",
@@ -593,18 +606,23 @@ class PostgresDomainRepository:
             )
             if cursor.fetchone() is None:
                 row = self._connection.execute(
-                    f"SELECT media_type, schema_ref, payload FROM {SCHEMA_NAME}.content_blobs "
+                    "SELECT media_type, schema_ref, payload FROM omni_cio_v10.content_blobs "
                     "WHERE tenant_id = %s AND payload_sha256 = %s",
                     (OWNER_TENANT_ID, digest),
                 ).fetchone()
-                if row is None or bytes(row[2]) != payload:
+                if (
+                    row is None
+                    or str(row[0]) != media_type
+                    or row[1] != schema_ref
+                    or bytes(row[2]) != payload
+                ):
                     raise PersistenceConflictError("content hash identity conflict")
         return digest
 
     def prune_research_cache(self, *, expired_before: datetime) -> int:
         with self._connection.transaction():
             cursor = self._connection.execute(
-                f"DELETE FROM {SCHEMA_NAME}.research_cache WHERE expires_at <= %s",
+                "DELETE FROM omni_cio_v10.research_cache WHERE expires_at <= %s",
                 (_utc(expired_before),),
             )
             return cursor.rowcount
@@ -612,7 +630,7 @@ class PostgresDomainRepository:
     def prune_system_health(self, *, observed_before: datetime) -> int:
         with self._connection.transaction():
             cursor = self._connection.execute(
-                f"DELETE FROM {SCHEMA_NAME}.system_health WHERE observed_at < %s",
+                "DELETE FROM omni_cio_v10.system_health WHERE observed_at < %s",
                 (_utc(observed_before),),
             )
             return cursor.rowcount
@@ -623,10 +641,15 @@ class PostgresDomainRepository:
             selected = [*key_columns]
             if hash_column is not None and hash_column not in selected:
                 selected.append(hash_column)
-            rows = self._connection.execute(
-                f"SELECT {', '.join(selected)} FROM {SCHEMA_NAME}.{table} "
-                f"ORDER BY {', '.join(key_columns)}"
-            ).fetchall()
+            query = sql.SQL("SELECT {} FROM {}.{} ORDER BY {}").format(
+                sql.SQL(", ").join(sql.Identifier(column) for column in selected),
+                sql.Identifier(SCHEMA_NAME),
+                sql.Identifier(table),
+                sql.SQL(", ").join(
+                    sql.Identifier(column) for column in key_columns
+                ),
+            )
+            rows = self._connection.execute(query).fetchall()
             for row in rows:
                 encoded = _canonical_json(
                     [table, *(_digest_value(value) for value in row)]
@@ -640,16 +663,27 @@ def _digest_value(value: Any) -> Any:
     if isinstance(value, datetime):
         return _utc(value).isoformat()
     if isinstance(value, Decimal):
-        return format(value, "f")
+        return format(value, "")
     if isinstance(value, bytes):
         return hashlib.sha256(value).hexdigest()
     return value
 
 
 def count_rows(connection: ConnectionLike, tables: Iterable[str]) -> dict[str, int]:
+    allowed_tables = {item[0] for item in AUDIT_DIGEST_TABLES} | {
+        "research_cache",
+        "system_health",
+        "state_revisions",
+    }
     result: dict[str, int] = {}
     for table in tables:
-        row = connection.execute(f"SELECT COUNT(*) FROM {SCHEMA_NAME}.{table}").fetchone()
+        if table not in allowed_tables:
+            raise ValueError(f"unsupported persistence table: {table}")
+        query = sql.SQL("SELECT COUNT(*) FROM {}.{}").format(
+            sql.Identifier(SCHEMA_NAME),
+            sql.Identifier(table),
+        )
+        row = connection.execute(query).fetchone()
         if row is None:
             raise RuntimeError(f"row count unavailable for {table}")
         result[table] = int(row[0])
