@@ -43,16 +43,29 @@ def _run(
     capture: bool = False,
     reason: str,
 ) -> subprocess.CompletedProcess[str]:
-    completed = subprocess.run(
-        args,
-        cwd=ROOT,
-        env=env,
-        check=False,
-        capture_output=capture,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-    )
+    if capture:
+        completed = subprocess.run(
+            args,
+            cwd=ROOT,
+            env=env,
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+    else:
+        completed = subprocess.run(
+            args,
+            cwd=ROOT,
+            env=env,
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
     if completed.returncode != 0:
         raise RehearsalError(reason)
     return completed
@@ -358,8 +371,8 @@ def main() -> int:
                     [str(pg_ctl), "stop", "-D", str(data_dir), "-m", "fast", "-w"],
                     cwd=ROOT,
                     check=False,
-                    capture_output=True,
-                    text=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
                     timeout=20,
                 )
         if temp_root is not None:
