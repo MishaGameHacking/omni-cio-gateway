@@ -265,9 +265,7 @@ def main() -> int:
         )
         read_adapter = TInvestReadAdapter(
             client_factory=broker_read_client,
-            expected_account_fingerprint_sha256=(
-                binding.account_fingerprint_sha256
-            ),
+            expected_account_fingerprint_sha256=(binding.account_fingerprint_sha256),
             policy=policy,
         )
         snapshot = read_adapter.read_snapshot()
@@ -285,9 +283,7 @@ def main() -> int:
 
         market_adapter = TInvestMarketReadAdapter(
             client_factory=broker_read_client,
-            expected_account_fingerprint_sha256=(
-                binding.account_fingerprint_sha256
-            ),
+            expected_account_fingerprint_sha256=(binding.account_fingerprint_sha256),
             policy=policy,
         )
         market = market_adapter.read_last_prices(
