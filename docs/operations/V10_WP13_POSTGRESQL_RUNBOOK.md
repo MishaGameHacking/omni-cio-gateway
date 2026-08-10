@@ -67,6 +67,8 @@ WP13 may identify the V10 product PostgreSQL schema/database contract for WP10 r
 
 Any migration, constraint, persistence or restore-digest mismatch is a hard failure. Do not fall back to volatile in-memory state for canonical durable facts and do not weaken constraints/checks to make CI green. Diagnose the exact failing migration/query on synthetic data, fix the root cause on the WP13 branch, then rerun the exact-head authoritative gates.
 
+A Ruff format failure is also a real code-quality failure. Apply the Ruff version exercised by the protected acceptance lane only to the affected WP13 source, keep the formatting check enabled, and rerun the complete exact-head gates rather than treating a formatter-only correction as acceptance evidence.
+
 A workflow run that completes as `action_required` without executing jobs is not acceptance evidence. After any automation-authored correction, obtain fresh exact-head jobs from an accepted repository actor before considering an Exit Gate satisfied.
 
 ## V9 protection
