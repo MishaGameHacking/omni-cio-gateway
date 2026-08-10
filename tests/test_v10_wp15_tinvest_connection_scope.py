@@ -93,7 +93,9 @@ def test_broad_read_token_discovers_multiple_masked_account_bindings() -> None:
     assert ACCOUNT_A not in serialized
     assert ACCOUNT_B not in serialized
     assert ACCOUNT_C not in serialized
-    assert all(binding.access_level == "ACCOUNT_ACCESS_LEVEL_READ_ONLY" for binding in bindings)
+    assert all(
+        binding.access_level == "ACCOUNT_ACCESS_LEVEL_READ_ONLY" for binding in bindings
+    )
     assert {binding.account_fingerprint_sha256 for binding in bindings} == {
         fingerprint(ACCOUNT_A),
         fingerprint(ACCOUNT_B),
@@ -126,7 +128,9 @@ def test_expected_account_absent_from_broad_read_token_fails_closed() -> None:
     client = FakeClient([account(ACCOUNT_A), account(ACCOUNT_B)])
     adapter = connection_adapter(client, expected_account_id=ACCOUNT_C)
 
-    with pytest.raises(AccountBindingError, match="EXPECTED_ACCOUNT_NOT_ACCESSIBLE") as exc:
+    with pytest.raises(
+        AccountBindingError, match="EXPECTED_ACCOUNT_NOT_ACCESSIBLE"
+    ) as exc:
         adapter._bind_account(client)
 
     assert ACCOUNT_A not in str(exc.value)
@@ -138,11 +142,15 @@ def test_duplicate_provider_account_binding_fails_closed() -> None:
     client = FakeClient([account(ACCOUNT_A), account(ACCOUNT_A)])
     adapter = connection_adapter(client, expected_account_id=ACCOUNT_A)
 
-    with pytest.raises(AccountBindingError, match="DUPLICATE_ACCESSIBLE_ACCOUNT_BINDING"):
+    with pytest.raises(
+        AccountBindingError, match="DUPLICATE_ACCESSIBLE_ACCOUNT_BINDING"
+    ):
         adapter._bind_account(client)
 
 
-def test_no_access_account_is_ignored_but_read_only_account_remains_selectable() -> None:
+def test_no_access_account_is_ignored_but_read_only_account_remains_selectable() -> (
+    None
+):
     client = FakeClient(
         [
             account(ACCOUNT_A, access_level="ACCOUNT_ACCESS_LEVEL_NO_ACCESS"),
@@ -173,7 +181,9 @@ def test_broader_or_unknown_access_on_any_open_account_rejects_read_credential(
         ]
     )
 
-    with pytest.raises(AccountBindingError, match="BROKER_READ_CREDENTIAL_NOT_READ_ONLY"):
+    with pytest.raises(
+        AccountBindingError, match="BROKER_READ_CREDENTIAL_NOT_READ_ONLY"
+    ):
         discover_read_account_bindings(lambda: client)
 
 
@@ -189,12 +199,17 @@ def test_closed_broader_account_still_rejects_credential_authority() -> None:
         ]
     )
 
-    with pytest.raises(AccountBindingError, match="BROKER_READ_CREDENTIAL_NOT_READ_ONLY"):
+    with pytest.raises(
+        AccountBindingError, match="BROKER_READ_CREDENTIAL_NOT_READ_ONLY"
+    ):
         discover_read_account_bindings(lambda: client)
 
 
 def test_connection_adapters_expose_no_write_surface() -> None:
     forbidden_attributes = ("orders", "stop_orders", "post_order")
 
-    for adapter_type in (TInvestConnectionReadAdapter, TInvestConnectionMarketReadAdapter):
+    for adapter_type in (
+        TInvestConnectionReadAdapter,
+        TInvestConnectionMarketReadAdapter,
+    ):
         assert not any(hasattr(adapter_type, name) for name in forbidden_attributes)
