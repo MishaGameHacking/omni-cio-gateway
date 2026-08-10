@@ -177,7 +177,7 @@ def test_broader_or_unknown_access_on_any_open_account_rejects_read_credential(
         discover_read_account_bindings(lambda: client)
 
 
-def test_closed_full_access_account_does_not_expand_live_read_authority() -> None:
+def test_closed_broader_account_still_rejects_credential_authority() -> None:
     client = FakeClient(
         [
             account(ACCOUNT_A),
@@ -189,10 +189,8 @@ def test_closed_full_access_account_does_not_expand_live_read_authority() -> Non
         ]
     )
 
-    bindings = discover_read_account_bindings(lambda: client)
-
-    assert len(bindings) == 1
-    assert bindings[0].account_fingerprint_sha256 == fingerprint(ACCOUNT_A)
+    with pytest.raises(AccountBindingError, match="BROKER_READ_CREDENTIAL_NOT_READ_ONLY"):
+        discover_read_account_bindings(lambda: client)
 
 
 def test_connection_adapters_expose_no_write_surface() -> None:
