@@ -6,7 +6,7 @@ on:
       - v10/wp13-postgresql-persistence
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: v10-wp13-lock-candidate
@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   generate:
-    name: Generate psycopg lock candidates
+    name: Generate and commit psycopg locks
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 20
     defaults:
@@ -22,10 +22,11 @@ jobs:
         shell: bash
 
     steps:
-      - name: Check out repository
+      - name: Check out repository branch
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v7.0.1
         with:
-          persist-credentials: false
+          ref: v10/wp13-postgresql-persistence
+          persist-credentials: true
 
       - name: Bootstrap protected Python 3.12.10
         shell: cmd
@@ -45,7 +46,7 @@ jobs:
           python scripts/windows_ci_lock.py project requirements-dev.txt windows-requirements-dev.txt
           python -m pip install --disable-pip-version-check --require-hashes -r windows-requirements-dev.txt
 
-      - name: Generate canonical runtime and development lock candidates
+      - name: Generate canonical minimal locks
         run: |
           printf '\n# WP13 PostgreSQL driver\npsycopg[binary]==3.3.4\n' >> requirements.in
           python -m piptools compile \
@@ -64,20 +65,28 @@ jobs:
             --quiet \
             --output-file=requirements-dev.txt \
             requirements-dev.in
-          cp requirements.txt wp13-requirements.txt
-          cp requirements-dev.txt wp13-requirements-dev.txt
-          grep -n -E '^psycopg(-binary)?==' wp13-requirements.txt
-          grep -n -E '^psycopg(-binary)?==' wp13-requirements-dev.txt
+          grep -n -E '^psycopg(-binary)?==' requirements.txt
+          grep -n -E '^psycopg(-binary)?==' requirements-dev.txt
+          python scripts/windows_ci_lock.py project requirements-dev.txt windows-requirements-dev.txt
+          python -m pip install --disable-pip-version-check --require-hashes -r windows-requirements-dev.txt
+          python -c "import psycopg; print('psycopg lock install OK')"
 
-      - name: Upload non-secret lock candidates
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: wp13-lock-candidates
-          path: |
-            wp13-requirements.txt
-            wp13-requirements-dev.txt
-          if-no-files-found: error
-          retention-days: 1
+      - name: Commit only reviewed dependency source and locks
+        run: |
+          git rm .github/workflows/v10-wp13-lock-candidate.yml
+          git add requirements.in requirements.txt requirements-dev.txt
+          CHANGED="$(git diff --cached --name-only | sort)"
+          EXPECTED="$(printf '%s\n' '.github/workflows/v10-wp13-lock-candidate.yml' 'requirements-dev.txt' 'requirements.in' 'requirements.txt' | sort)"
+          if [ "$CHANGED" != "$EXPECTED" ]; then
+            echo "Unexpected staged files:" >&2
+            printf '%s\n' "$CHANGED" >&2
+            exit 1
+          fi
+          git diff --cached --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "V10 WP13: lock PostgreSQL driver"
+          git push origin HEAD:v10/wp13-postgresql-persistence
 
       - name: Clean workspace
         if: always()
