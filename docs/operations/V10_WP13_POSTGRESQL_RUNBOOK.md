@@ -16,6 +16,7 @@ This runbook covers only the WP13 local PostgreSQL schema/migration boundary and
 - Canonical financial quantities use exact PostgreSQL `numeric`; binary floating-point and PostgreSQL `money` are not canonical financial storage.
 - Persisted instants use `timestamptz` and are returned through timezone-aware contract boundaries.
 - Audit-sensitive canonical records are append-only. A correction is a new domain revision/event, not an in-place history rewrite.
+- Deterministic durable-state digests encode `Decimal` values as fixed-point canonical text, preventing exponent-notation differences from changing recovery hashes for numerically identical exact values.
 
 ## Secret boundary
 
@@ -64,6 +65,8 @@ WP13 may identify the V10 product PostgreSQL schema/database contract for WP10 r
 ## Failure handling
 
 Any migration, constraint, persistence or restore-digest mismatch is a hard failure. Do not fall back to volatile in-memory state for canonical durable facts and do not weaken constraints/checks to make CI green. Diagnose the exact failing migration/query on synthetic data, fix the root cause on the WP13 branch, then rerun the exact-head authoritative gates.
+
+A workflow run that completes as `action_required` without executing jobs is not acceptance evidence. After any automation-authored correction, obtain fresh exact-head jobs from an accepted repository actor before considering an Exit Gate satisfied.
 
 ## V9 protection
 
