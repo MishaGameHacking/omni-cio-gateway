@@ -189,6 +189,7 @@ class TInvestOperationsResultV1(ContractModel):
     pages_loaded: Annotated[int, Field(ge=1)]
     duplicates_removed: Annotated[int, Field(ge=0)]
     truncated: bool
+    next_cursor: Annotated[str | None, Field(max_length=2048)] = None
 
     @field_validator("retrieved_at")
     @classmethod
@@ -945,11 +946,17 @@ class TInvestReadAdapter:
                 unresolved_position_count=unresolved,
             )
 
-    def read_operations(self) -> TInvestOperationsResultV1:
+    def read_operations(
+        self,
+        *,
+        start_cursor: str = "",
+    ) -> TInvestOperationsResultV1:
+        if len(start_cursor) > 2048:
+            raise CursorProgressError("OPERATIONS_START_CURSOR_TOO_LONG")
         with self._client_factory() as client:
             throttle = self._configure_throttle(client)
             raw_account_id, binding = self._bind_account(client)
-            cursor = ""
+            cursor = start_cursor
             pages_loaded = 0
             all_items: list[dict[str, Any]] = []
             has_more = False
@@ -983,6 +990,8 @@ class TInvestReadAdapter:
                 has_more = True
                 if not next_cursor or next_cursor == cursor:
                     raise CursorProgressError("OPERATIONS_CURSOR_DID_NOT_ADVANCE")
+                if len(next_cursor) > 2048:
+                    raise CursorProgressError("OPERATIONS_CURSOR_TOO_LONG")
                 cursor = next_cursor
 
             seen: set[str] = set()
@@ -1010,4 +1019,5 @@ class TInvestReadAdapter:
                 pages_loaded=pages_loaded,
                 duplicates_removed=duplicates,
                 truncated=has_more,
+                next_cursor=cursor if has_more else None,
             )
