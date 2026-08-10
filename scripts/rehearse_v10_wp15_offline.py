@@ -8,6 +8,10 @@ from pathlib import Path
 import sys
 from typing import Any
 
+from omni_cio.adapters.tinvest_connection_v1 import (
+    TInvestConnectionReadAdapter,
+    discover_read_account_bindings,
+)
 from omni_cio.adapters.tinvest_market_v1 import (
     MarketFreshnessState,
     TInvestMarketReadAdapter,
@@ -16,22 +20,18 @@ from omni_cio.adapters.tinvest_read_v1 import (
     AccountBindingError,
     CursorProgressError,
     FreshnessState,
-    TInvestReadAdapter,
     TInvestReadPolicyV1,
 )
 
 
 NOW = datetime(2026, 8, 10, 12, 0, tzinfo=timezone.utc)
 ACCOUNT_ID = "synthetic-owner-account"
+SECOND_ACCOUNT_ID = "synthetic-owner-account-two"
 ACCOUNT_FINGERPRINT = hashlib.sha256(ACCOUNT_ID.encode("utf-8")).hexdigest()
 
 
 def _money(units: str, *, nano: int = 0) -> dict[str, Any]:
-    return {
-        "units": units,
-        "nano": nano,
-        "currency": "RUB",
-    }
+    return {"units": units, "nano": nano, "currency": "RUB"}
 
 
 def _account(account_id: str = ACCOUNT_ID) -> dict[str, Any]:
@@ -110,27 +110,13 @@ class _Users:
         return {"accounts": self._accounts}
 
     def get_user_tariff(self) -> dict[str, Any]:
-        return {
-            "unary_limits": [
-                {
-                    "limit_per_minute": 120,
-                    "methods": [],
-                }
-            ]
-        }
+        return {"unary_limits": [{"limit_per_minute": 120, "methods": []}]}
 
 
 class _Operations:
-    def __init__(
-        self,
-        pages: dict[str, dict[str, Any]] | None = None,
-    ) -> None:
+    def __init__(self, pages: dict[str, dict[str, Any]] | None = None) -> None:
         self._pages = pages or {
-            "": {
-                "items": [],
-                "has_next": False,
-                "next_cursor": "",
-            }
+            "": {"items": [], "has_next": False, "next_cursor": ""}
         }
 
     def get_portfolio(self, *, account_id: str) -> dict[str, Any]:
@@ -156,11 +142,7 @@ class _Operations:
 class _Instruments:
     def get_instrument_by(self, *, id_type: Any, id: str) -> dict[str, Any]:
         del id_type
-        if id not in {
-            "uid-synthetic",
-            "position-synthetic",
-            "BBG000000001",
-        }:
+        if id not in {"uid-synthetic", "position-synthetic", "BBG000000001"}:
             raise AssertionError("unexpected synthetic instrument lookup")
         return _instrument()
 
@@ -188,7 +170,7 @@ class _Client:
         accounts: list[dict[str, Any]] | None = None,
         pages: dict[str, dict[str, Any]] | None = None,
     ) -> None:
-        self.users = _Users(accounts or [_account()])
+        self.users = _Users(accounts or [_account(), _account(SECOND_ACCOUNT_ID)])
         self.operations = _Operations(pages)
         self.instruments = _Instruments()
         self.market_data = _MarketData()
@@ -201,18 +183,15 @@ class _Client:
 
 
 def _policy() -> TInvestReadPolicyV1:
-    return TInvestReadPolicyV1(
-        stale_after_seconds=300,
-        max_operation_pages=2,
-    )
+    return TInvestReadPolicyV1(stale_after_seconds=300, max_operation_pages=2)
 
 
 def _adapter(
     client: _Client,
     *,
     expected_fingerprint: str = ACCOUNT_FINGERPRINT,
-) -> TInvestReadAdapter:
-    return TInvestReadAdapter(
+) -> TInvestConnectionReadAdapter:
+    return TInvestConnectionReadAdapter(
         client_factory=lambda: client,
         expected_account_fingerprint_sha256=expected_fingerprint,
         policy=_policy(),
@@ -238,24 +217,15 @@ def _market_adapter(client: _Client) -> TInvestMarketReadAdapter:
 def _wrong_account_rejected() -> bool:
     wrong = hashlib.sha256(b"wrong-synthetic-account").hexdigest()
     try:
-        _adapter(
-            _Client(),
-            expected_fingerprint=wrong,
-        ).read_snapshot()
+        _adapter(_Client(), expected_fingerprint=wrong)._bind_account(_Client())
     except AccountBindingError as exc:
-        return str(exc) == "OWNER_ACCOUNT_FINGERPRINT_MISMATCH"
+        return str(exc) == "EXPECTED_ACCOUNT_NOT_ACCESSIBLE"
     return False
 
 
 def _cursor_loop_rejected() -> bool:
     client = _Client(
-        pages={
-            "": {
-                "items": [],
-                "has_next": True,
-                "next_cursor": "",
-            }
-        }
+        pages={"": {"items": [], "has_next": True, "next_cursor": ""}}
     )
     try:
         _adapter(client).read_operations()
@@ -270,6 +240,7 @@ def _read_only_source_guard() -> bool:
         (root / "omni_cio" / "adapters" / name).read_text(encoding="utf-8")
         for name in (
             "tinvest_read_v1.py",
+            "tinvest_connection_v1.py",
             "tinvest_market_v1.py",
             "tinvest_secret_v1.py",
         )
@@ -307,15 +278,23 @@ def main() -> int:
         }
     )
 
-    snapshot = _adapter(_Client()).read_snapshot(
+    broad_client = _Client()
+    discovered = discover_read_account_bindings(lambda: broad_client)
+    snapshot = _adapter(broad_client).read_snapshot(
         evaluated_at=NOW + timedelta(seconds=301)
     )
     operations = _adapter(operations_client).read_operations()
-    market = _market_adapter(_Client()).read_last_prices(
+    market = _market_adapter(_Client(accounts=[_account()])).read_last_prices(
         tuple(position.instrument for position in snapshot.snapshot.positions)
     )
 
     checks = {
+        "broad_read_account_discovery": (
+            len(discovered) == 2
+            and ACCOUNT_ID not in "".join(item.model_dump_json() for item in discovered)
+            and SECOND_ACCOUNT_ID
+            not in "".join(item.model_dump_json() for item in discovered)
+        ),
         "expected_account_binding": (
             snapshot.account.account_fingerprint_sha256 == ACCOUNT_FINGERPRINT
         ),
@@ -355,6 +334,7 @@ def main() -> int:
         "private_portfolio_payload_used": False,
         "checks": checks,
         "synthetic_counts": {
+            "discovered_broker_accounts": len(discovered),
             "portfolio_positions": snapshot.normalized_position_count,
             "market_prices": market.returned_instrument_count,
             "operation_pages": operations.pages_loaded,
@@ -363,6 +343,7 @@ def main() -> int:
         "freshness_state": snapshot.freshness.state.value,
         "market_freshness_state": market.prices[0].freshness.value,
         "throttle_source": snapshot.throttle.source,
+        "live_evidence_status": "DEFERRED_TO_WEB_PROVISIONING",
         "authority": {
             "broker_read": True,
             "broker_write": False,
