@@ -42,13 +42,37 @@ class _Users:
     def get_user_tariff(self) -> dict[str, Any]:
         return {"unary_limits": []}
 
+    def pay_in(self) -> None:
+        raise AssertionError("write method must never be exposed")
+
+
+class _Operations:
+    def get_portfolio(self) -> None:
+        return None
+
+    def get_positions(self) -> None:
+        return None
+
+    def get_operations_by_cursor(self) -> None:
+        return None
+
+
+class _Instruments:
+    def get_instrument_by(self) -> None:
+        return None
+
+
+class _MarketData:
+    def get_last_prices(self) -> None:
+        return None
+
 
 class _Delegate:
     def __init__(self, access_level: str) -> None:
         self.users = _Users(access_level)
-        self.operations = object()
-        self.instruments = object()
-        self.market_data = object()
+        self.operations = _Operations()
+        self.instruments = _Instruments()
+        self.market_data = _MarketData()
 
 
 def test_loader_requires_active_wp8_lifecycle(tmp_path: Path) -> None:
@@ -101,6 +125,9 @@ def test_production_client_proxy_requires_read_only_account_authority() -> None:
     assert read_only.users.get_accounts()["accounts"]
     assert not hasattr(read_only, "orders")
     assert not hasattr(read_only, "stop_orders")
+    assert not hasattr(read_only.users, "pay_in")
+    assert not hasattr(read_only.users, "_delegate")
+    assert not hasattr(read_only.operations, "_delegate")
 
     full_access = secret_boundary._BrokerReadClientProxy(
         _Delegate("ACCOUNT_ACCESS_LEVEL_FULL_ACCESS")
