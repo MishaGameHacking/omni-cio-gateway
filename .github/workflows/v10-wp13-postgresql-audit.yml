@@ -63,8 +63,9 @@ jobs:
         shell: cmd
         run: |
           powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File infrastructure\windows\rehearse_wp13_persistence.ps1 -PythonPath "%VENV_WINDOWS_PATH%\Scripts\python.exe" -AsJson > "%RUNNER_TEMP%\wp13-postgresql-audit.json"
-          if errorlevel 1 exit /b %errorlevel%
+          set "AUDIT_EXIT=%ERRORLEVEL%"
           type "%RUNNER_TEMP%\wp13-postgresql-audit.json"
+          if not "%AUDIT_EXIT%"=="0" exit /b %AUDIT_EXIT%
           echo WP13_EVIDENCE=%RUNNER_TEMP%\wp13-postgresql-audit.json>> "%GITHUB_ENV%"
 
       - name: Upload sanitized WP13 evidence
