@@ -19,7 +19,7 @@ def _payload() -> dict[str, Any]:
         "work_package": "WP15",
         "live_evidence_status": "DEFERRED_TO_WEB_PROVISIONING",
         "authority": "OMNI_CIO_V10_IDENTITY_MULTI_TENANT_ACCOUNT_AND_AUTHENTICATION_AMENDMENT",
-        "authority_main_sha": "cbf6a7adba78fa56d23e90ce2cfe2952d21a5e5b",
+        "authority_state": "ACCEPTED_IN_MAIN_POST_MERGE_REGRESSION_GREEN",
         "normal_broker_provisioning_surface": "WP17_AUTHENTICATED_WEB_SETTINGS",
         "broker_read_provisioning_required_now": False,
         "block_d_credit_allowed": False,
@@ -98,17 +98,17 @@ def test_deferred_state_rejects_authority_or_sequence_expansion(
         evidence.validate()
 
 
-def test_deferred_state_rejects_wrong_accepted_amendment_binding(
+def test_deferred_state_rejects_unaccepted_amendment_state(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     payload = _payload()
-    payload["authority_main_sha"] = "c" * 40
+    payload["authority_state"] = "DRAFT"
     _configure(monkeypatch, tmp_path, payload)
 
     with pytest.raises(
         evidence.EvidenceValidationError,
-        match="WP15_DEFERRED_STATE_MISMATCH:authority_main_sha",
+        match="WP15_DEFERRED_STATE_MISMATCH:authority_state",
     ):
         evidence.validate()
 
