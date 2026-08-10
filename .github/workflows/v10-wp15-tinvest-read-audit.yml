@@ -5,9 +5,11 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - "omni_cio/adapters/tinvest_read_v1.py"
+      - "omni_cio/adapters/tinvest_connection_v1.py"
       - "omni_cio/adapters/tinvest_market_v1.py"
       - "omni_cio/adapters/tinvest_secret_v1.py"
       - "tests/test_v10_wp15_tinvest_readonly.py"
+      - "tests/test_v10_wp15_tinvest_connection_scope.py"
       - "tests/test_v10_wp15_tinvest_market.py"
       - "tests/test_v10_wp15_secret_boundary.py"
       - "tests/test_v10_wp15_owner_evidence.py"
@@ -15,10 +17,9 @@ on:
       - "tests/test_v10_wp15_cursor_resume.py"
       - "scripts/check_v10_wp15_ci_isolation.py"
       - "scripts/rehearse_v10_wp15_offline.py"
-      - "scripts/rehearse_v10_wp15_owner.py"
       - "scripts/validate_v10_wp15_owner_evidence.py"
-      - "infrastructure/windows/run_wp15_owner_gate.ps1"
       - "docs/architecture/V10_WP15_TINVEST_READONLY_CONTRACT.md"
+      - "docs/architecture/V10_WP15_LIVE_ACCEPTANCE_STATE.json"
       - "docs/operations/V10_WP15_OWNER_LIVE_READ_RUNBOOK.md"
       - "requirements.in"
       - "requirements.txt"
@@ -37,7 +38,7 @@ concurrency:
 
 jobs:
   audit:
-    name: WP15 deterministic read-only account, freshness and cursor gate
+    name: WP15 deterministic connection, freshness and cursor gate
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 25
@@ -80,7 +81,7 @@ jobs:
           set "STATIC_EXIT=0"
           "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m ruff check . > "%RUNNER_TEMP%\wp15-ruff-check.txt" 2>&1
           if errorlevel 1 set "STATIC_EXIT=1"
-          "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m ruff format --check scripts tests\test_ci_security_baseline.py tests\test_v10_repository_boundaries.py tests\test_v10_toolchain_baseline.py tests\test_v10_regression_shield.py > "%RUNNER_TEMP%\wp15-ruff-format.txt" 2>&1
+          "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m ruff format --check scripts omni_cio\adapters tests\test_v10_wp15_tinvest_readonly.py tests\test_v10_wp15_tinvest_connection_scope.py tests\test_v10_wp15_tinvest_market.py tests\test_v10_wp15_secret_boundary.py tests\test_v10_wp15_owner_evidence.py tests\test_v10_wp15_ci_isolation.py tests\test_v10_wp15_cursor_resume.py > "%RUNNER_TEMP%\wp15-ruff-format.txt" 2>&1
           if errorlevel 1 set "STATIC_EXIT=1"
           "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m mypy > "%RUNNER_TEMP%\wp15-mypy.txt" 2>&1
           if errorlevel 1 set "STATIC_EXIT=1"
@@ -110,7 +111,7 @@ jobs:
       - name: Run focused WP15 unit and authority tests
         shell: cmd
         run: |
-          "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m pytest -q tests\test_v10_wp15_tinvest_readonly.py tests\test_v10_wp15_tinvest_market.py tests\test_v10_wp15_secret_boundary.py tests\test_v10_wp15_owner_evidence.py tests\test_v10_wp15_ci_isolation.py tests\test_v10_wp15_cursor_resume.py
+          "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m pytest -q tests\test_v10_wp15_tinvest_readonly.py tests\test_v10_wp15_tinvest_connection_scope.py tests\test_v10_wp15_tinvest_market.py tests\test_v10_wp15_secret_boundary.py tests\test_v10_wp15_owner_evidence.py tests\test_v10_wp15_ci_isolation.py tests\test_v10_wp15_cursor_resume.py
 
       - name: Run deterministic offline WP15 rehearsal
         shell: cmd
