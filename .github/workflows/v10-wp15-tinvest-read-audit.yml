@@ -106,7 +106,14 @@ jobs:
       - name: Enforce authoritative static quality result
         shell: cmd
         run: |
-          if not "%WP15_STATIC_EXIT%"=="0" exit /b %WP15_STATIC_EXIT%
+          if "%WP15_STATIC_EXIT%"=="0" exit /b 0
+          echo ===== RUFF CHECK =====
+          type "%WP15_RUFF_CHECK%"
+          echo ===== RUFF FORMAT =====
+          type "%WP15_RUFF_FORMAT%"
+          echo ===== MYPY =====
+          type "%WP15_MYPY%"
+          exit /b %WP15_STATIC_EXIT%
 
       - name: Run focused WP15 unit and authority tests
         shell: cmd
