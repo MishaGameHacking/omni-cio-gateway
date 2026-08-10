@@ -46,7 +46,7 @@ jobs:
           python scripts/windows_ci_lock.py project requirements-dev.txt windows-requirements-dev.txt
           python -m pip install --disable-pip-version-check --require-hashes -r windows-requirements-dev.txt
 
-      - name: Generate canonical minimal locks
+      - name: Generate psycopg blocks and preserve canonical Linux lock
         run: |
           printf '\n# WP13 PostgreSQL driver\npsycopg[binary]==3.3.4\n' >> requirements.in
           python -m piptools compile \
@@ -55,7 +55,7 @@ jobs:
             --resolver=backtracking \
             --strip-extras \
             --quiet \
-            --output-file=requirements.txt \
+            --output-file=wp13-runtime-candidate.txt \
             requirements.in
           python -m piptools compile \
             --allow-unsafe \
@@ -63,16 +63,62 @@ jobs:
             --resolver=backtracking \
             --strip-extras \
             --quiet \
-            --output-file=requirements-dev.txt \
+            --output-file=wp13-dev-candidate.txt \
             requirements-dev.in
+          python - <<'PY'
+          from pathlib import Path
+          import sys
+
+          sys.path.insert(0, str(Path('scripts').resolve()))
+          import windows_ci_lock as lock
+
+          wanted = ('psycopg', 'psycopg-binary')
+
+          def merge(base_name: str, candidate_name: str) -> None:
+              base = Path(base_name)
+              prefix, base_blocks = lock._split_lock(base.read_text(encoding='utf-8'))
+              _, candidate_blocks = lock._split_lock(
+                  Path(candidate_name).read_text(encoding='utf-8')
+              )
+              candidates = {
+                  lock._parse_block(block).name: block for block in candidate_blocks
+              }
+              missing = set(wanted) - candidates.keys()
+              if missing:
+                  raise SystemExit(f'missing generated lock blocks: {sorted(missing)}')
+              parsed_names = [lock._parse_block(block).name for block in base_blocks]
+              if set(wanted) & set(parsed_names):
+                  raise SystemExit('psycopg already exists in canonical Linux lock')
+              merged = list(base_blocks)
+              for name in wanted:
+                  insert_at = next(
+                      (
+                          index
+                          for index, block in enumerate(merged)
+                          if lock._parse_block(block).name > name
+                      ),
+                      len(merged),
+                  )
+                  merged.insert(insert_at, candidates[name])
+              base.write_text(
+                  ''.join(prefix) + ''.join(''.join(block) for block in merged),
+                  encoding='utf-8',
+                  newline='\n',
+              )
+
+          merge('requirements.txt', 'wp13-runtime-candidate.txt')
+          merge('requirements-dev.txt', 'wp13-dev-candidate.txt')
+          PY
           grep -n -E '^psycopg(-binary)?==' requirements.txt
           grep -n -E '^psycopg(-binary)?==' requirements-dev.txt
+          grep -n -E '^uvloop==' requirements-dev.txt
           python scripts/windows_ci_lock.py project requirements-dev.txt windows-requirements-dev.txt
           python -m pip install --disable-pip-version-check --require-hashes -r windows-requirements-dev.txt
           python -c "import psycopg; print('psycopg lock install OK')"
 
       - name: Commit only reviewed dependency source and locks
         run: |
+          rm -f wp13-runtime-candidate.txt wp13-dev-candidate.txt windows-requirements-dev.txt
           git rm .github/workflows/v10-wp13-lock-candidate.yml
           git add requirements.in requirements.txt requirements-dev.txt
           CHANGED="$(git diff --cached --name-only | sort)"
