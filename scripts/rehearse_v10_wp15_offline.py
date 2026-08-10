@@ -8,6 +8,10 @@ from pathlib import Path
 import sys
 from typing import Any
 
+from omni_cio.adapters.tinvest_market_v1 import (
+    MarketFreshnessState,
+    TInvestMarketReadAdapter,
+)
 from omni_cio.adapters.tinvest_read_v1 import (
     AccountBindingError,
     CursorProgressError,
@@ -154,6 +158,22 @@ class _Instruments:
         return _instrument()
 
 
+class _MarketData:
+    def get_last_prices(self, *, instrument_id: list[str]) -> dict[str, Any]:
+        if instrument_id != ["uid-synthetic"]:
+            raise AssertionError("unexpected synthetic market lookup")
+        return {
+            "last_prices": [
+                {
+                    "instrument_uid": "uid-synthetic",
+                    "figi": "BBG000000001",
+                    "price": {"units": "301", "nano": 250_000_000},
+                    "time": (NOW - timedelta(seconds=15)).isoformat(),
+                }
+            ]
+        }
+
+
 class _Client:
     def __init__(
         self,
@@ -164,12 +184,20 @@ class _Client:
         self.users = _Users(accounts or [_account()])
         self.operations = _Operations(pages)
         self.instruments = _Instruments()
+        self.market_data = _MarketData()
 
     def __enter__(self) -> _Client:
         return self
 
     def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
         del exc_type, exc, tb
+
+
+def _policy() -> TInvestReadPolicyV1:
+    return TInvestReadPolicyV1(
+        stale_after_seconds=300,
+        max_operation_pages=2,
+    )
 
 
 def _adapter(
@@ -180,10 +208,19 @@ def _adapter(
     return TInvestReadAdapter(
         client_factory=lambda: client,
         expected_account_fingerprint_sha256=expected_fingerprint,
-        policy=TInvestReadPolicyV1(
-            stale_after_seconds=300,
-            max_operation_pages=2,
-        ),
+        policy=_policy(),
+        clock=lambda: NOW,
+        monotonic=lambda: 0.0,
+        sleeper=lambda _: None,
+        random_unit=lambda: 0.0,
+    )
+
+
+def _market_adapter(client: _Client) -> TInvestMarketReadAdapter:
+    return TInvestMarketReadAdapter(
+        client_factory=lambda: client,
+        expected_account_fingerprint_sha256=ACCOUNT_FINGERPRINT,
+        policy=_policy(),
         clock=lambda: NOW,
         monotonic=lambda: 0.0,
         sleeper=lambda _: None,
@@ -221,13 +258,15 @@ def _cursor_loop_rejected() -> bool:
 
 
 def _read_only_source_guard() -> bool:
-    adapter_path = (
-        Path(__file__).resolve().parents[1]
-        / "omni_cio"
-        / "adapters"
-        / "tinvest_read_v1.py"
-    )
-    source = adapter_path.read_text(encoding="utf-8").lower()
+    root = Path(__file__).resolve().parents[1]
+    source = "\n".join(
+        (root / "omni_cio" / "adapters" / name).read_text(encoding="utf-8")
+        for name in (
+            "tinvest_read_v1.py",
+            "tinvest_market_v1.py",
+            "tinvest_secret_v1.py",
+        )
+    ).lower()
     forbidden = (
         "tinvest_trading_token",
         ".orders",
@@ -263,6 +302,9 @@ def main() -> int:
         evaluated_at=NOW + timedelta(seconds=301)
     )
     operations = _adapter(operations_client).read_operations()
+    market = _market_adapter(_Client()).read_last_prices(
+        tuple(position.instrument for position in snapshot.snapshot.positions)
+    )
 
     checks = {
         "expected_account_binding": (
@@ -276,6 +318,12 @@ def main() -> int:
         ),
         "freshness_stale_transition": snapshot.freshness.state
         == FreshnessState.STALE,
+        "market_read": (
+            market.returned_instrument_count == 1
+            and market.missing_instrument_count == 0
+            and market.prices[0].price == Decimal("301.25")
+            and market.prices[0].freshness == MarketFreshnessState.FRESH
+        ),
         "cursor_deduplication": (
             operations.pages_loaded == 2
             and operations.duplicates_removed == 1
@@ -299,10 +347,12 @@ def main() -> int:
         "checks": checks,
         "synthetic_counts": {
             "portfolio_positions": snapshot.normalized_position_count,
+            "market_prices": market.returned_instrument_count,
             "operation_pages": operations.pages_loaded,
             "operation_duplicates_removed": operations.duplicates_removed,
         },
         "freshness_state": snapshot.freshness.state.value,
+        "market_freshness_state": market.prices[0].freshness.value,
         "throttle_source": snapshot.throttle.source,
         "authority": {
             "broker_read": True,
