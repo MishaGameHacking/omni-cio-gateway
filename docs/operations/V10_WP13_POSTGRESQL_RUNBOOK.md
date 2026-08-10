@@ -49,6 +49,7 @@ The rehearsal creates an isolated temporary PostgreSQL 18 cluster and synthetic 
 - exact `Decimal`/`numeric(38,18)` round-trip;
 - append-only update/delete rejection;
 - immutable replay idempotency and conflicting replay rejection;
+- two concurrent identical incident-revision writes serialize on the incident identity and converge on one durable state revision rather than producing a duplicate revision or uniqueness failure;
 - bounded cache expiry;
 - deterministic migration and durable-state digests;
 - WP10 logical `pg_dump` bundle creation/hash verification;
