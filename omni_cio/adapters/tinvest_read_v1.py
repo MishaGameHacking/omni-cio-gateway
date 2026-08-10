@@ -61,6 +61,14 @@ TRANSIENT_GRPC_CODES = {
     "RESOURCE_EXHAUSTED",
     "UNAVAILABLE",
 }
+_OPERATION_UNSTABLE_TOP_LEVEL_FIELDS = frozenset(
+    {
+        "cursor",
+        "broker_account_id",
+        "id",
+        "parent_operation_id",
+    }
+)
 
 
 class TInvestReadAdapterError(RuntimeError):
@@ -552,9 +560,17 @@ def _instrument_identity(
 def _portfolio_positions(response: Any) -> list[dict[str, Any]]:
     data = _message_to_dict(response)
     raw = data.get("positions", [])
-    if not isinstance(raw, list):
+    if not isinstance(raw, list) or any(not isinstance(item, dict) for item in raw):
         raise BrokerDataError("PORTFOLIO_POSITIONS_SHAPE_INVALID")
-    return [item for item in raw if isinstance(item, dict)]
+    return list(raw)
+
+
+def _virtual_positions(response: Any) -> list[dict[str, Any]]:
+    data = _message_to_dict(response)
+    raw = data.get("virtual_positions", [])
+    if not isinstance(raw, list) or any(not isinstance(item, dict) for item in raw):
+        raise BrokerDataError("PORTFOLIO_VIRTUAL_POSITIONS_SHAPE_INVALID")
+    return list(raw)
 
 
 def _position_balances(response: Any) -> dict[str, Any]:
@@ -602,23 +618,9 @@ def _portfolio_total(response: Any) -> Money | None:
 
 def _operation_fingerprint(operation: dict[str, Any]) -> str:
     payload = {
-        key: operation.get(key)
-        for key in (
-            "date",
-            "type",
-            "state",
-            "instrument_uid",
-            "position_uid",
-            "figi",
-            "payment",
-            "price",
-            "commission",
-            "quantity",
-            "quantity_done",
-            "quantity_rest",
-            "name",
-            "description",
-        )
+        str(key): value
+        for key, value in operation.items()
+        if str(key) not in _OPERATION_UNSTABLE_TOP_LEVEL_FIELDS
     }
     return _sha256(_canonical_json(payload))
 
@@ -831,10 +833,37 @@ class TInvestReadAdapter:
             )
             retrieved_at = self._clock().astimezone(timezone.utc)
             raw_positions = _portfolio_positions(portfolio_response)
+            virtual_positions = _virtual_positions(portfolio_response)
             positions_data = _position_balances(positions_response)
 
-            normalized: list[PortfolioPositionV1] = []
             issues: list[DataIssue] = []
+            limits_loading = positions_data.get("limits_loading_in_progress", False)
+            if not isinstance(limits_loading, bool):
+                raise BrokerDataError("POSITIONS_LIMITS_LOADING_FLAG_INVALID")
+            if limits_loading:
+                if not allow_partial:
+                    raise BrokerDataError("POSITIONS_LIMITS_LOADING_IN_PROGRESS")
+                issues.append(
+                    DataIssue(
+                        code="BROKER_LIMITS_LOADING_IN_PROGRESS",
+                        severity=IssueSeverity.ERROR,
+                        message="Broker position limits are still loading.",
+                        component="tinvest_read_v1",
+                    )
+                )
+            if virtual_positions:
+                if not allow_partial:
+                    raise BrokerDataError("PORTFOLIO_VIRTUAL_POSITIONS_UNSUPPORTED")
+                issues.append(
+                    DataIssue(
+                        code="BROKER_VIRTUAL_POSITIONS_UNRESOLVED",
+                        severity=IssueSeverity.ERROR,
+                        message="Broker virtual positions are not silently omitted.",
+                        component="tinvest_read_v1",
+                    )
+                )
+
+            normalized: list[PortfolioPositionV1] = []
             for item in raw_positions:
                 try:
                     instrument_payload = self._lookup_instrument(client, item)
@@ -843,10 +872,14 @@ class TInvestReadAdapter:
                         item.get("quantity"),
                         field_name="POSITION_QUANTITY",
                     )
-                    blocked = _optional_decimal(
-                        item.get("blocked"),
-                        field_name="POSITION_BLOCKED",
+                    blocked_lots = _optional_decimal(
+                        item.get("blocked_lots"),
+                        field_name="POSITION_BLOCKED_LOTS",
                     ) or Decimal("0")
+                    depositary_blocked = item.get("blocked", False)
+                    if not isinstance(depositary_blocked, bool):
+                        raise BrokerDataError("POSITION_BLOCKED_FLAG_INVALID")
+                    blocked = quantity if depositary_blocked else blocked_lots
                     if quantity < 0 or blocked < 0:
                         raise BrokerDataError("POSITION_NEGATIVE_QUANTITY")
                     current_price = _money(
@@ -883,8 +916,8 @@ class TInvestReadAdapter:
                         )
                     )
 
-            unresolved = len(raw_positions) - len(normalized)
-            complete = unresolved == 0
+            unresolved = len(raw_positions) - len(normalized) + len(virtual_positions)
+            complete = unresolved == 0 and not issues
             quality = QualityMetadata(
                 quality=DataQuality.VERIFIED if complete else DataQuality.DEGRADED,
                 completeness=(
@@ -941,7 +974,7 @@ class TInvestReadAdapter:
                 freshness=freshness,
                 throttle=throttle,
                 portfolio_total=_portfolio_total(portfolio_response),
-                broker_position_count=len(raw_positions),
+                broker_position_count=len(raw_positions) + len(virtual_positions),
                 normalized_position_count=len(normalized),
                 unresolved_position_count=unresolved,
             )
@@ -978,9 +1011,11 @@ class TInvestReadAdapter:
                 )
                 data = _message_to_dict(response)
                 raw_items = data.get("items", [])
-                if not isinstance(raw_items, list):
+                if not isinstance(raw_items, list) or any(
+                    not isinstance(item, dict) for item in raw_items
+                ):
                     raise BrokerDataError("OPERATIONS_ITEMS_SHAPE_INVALID")
-                all_items.extend(item for item in raw_items if isinstance(item, dict))
+                all_items.extend(raw_items)
                 pages_loaded += 1
                 has_next = bool(data.get("has_next"))
                 next_cursor = str(data.get("next_cursor", "") or "")
