@@ -21,7 +21,7 @@ from omni_cio.contracts.v1.domain import (
     TenantV1,
     UserV1,
 )
-from omni_cio.persistence.migration import ConnectionLike, SCHEMA_NAME
+from omni_cio.persistence.migration import ConnectionLike
 
 
 class PersistenceReadError(RuntimeError):
@@ -37,7 +37,7 @@ def _latest_incident_revision(
     incident_id: str,
 ) -> tuple[int, str]:
     row = connection.execute(
-        f"SELECT revision, status FROM {SCHEMA_NAME}.incident_revisions "
+        "SELECT revision, status FROM omni_cio_v10.incident_revisions "
         "WHERE incident_id = %s ORDER BY revision DESC LIMIT 1",
         (incident_id,),
     ).fetchone()
@@ -52,7 +52,7 @@ def _incident_evidence_ids(
     revision: int,
 ) -> tuple[str, ...]:
     rows = connection.execute(
-        f"SELECT evidence_id FROM {SCHEMA_NAME}.incident_evidence "
+        "SELECT evidence_id FROM omni_cio_v10.incident_evidence "
         "WHERE incident_id = %s AND incident_revision = %s ORDER BY evidence_id",
         (incident_id, revision),
     ).fetchall()
@@ -64,7 +64,7 @@ def _decision_evidence_ids(
     decision_id: str,
 ) -> tuple[str, ...]:
     rows = connection.execute(
-        f"SELECT evidence_id FROM {SCHEMA_NAME}.decision_evidence "
+        "SELECT evidence_id FROM omni_cio_v10.decision_evidence "
         "WHERE decision_id = %s ORDER BY evidence_id",
         (decision_id,),
     ).fetchall()
@@ -79,7 +79,7 @@ def load_catalog(connection: ConnectionLike) -> CanonicalDomainCatalogV1:
     """
 
     revision = connection.execute(
-        f"SELECT generated_at FROM {SCHEMA_NAME}.state_revisions "
+        "SELECT generated_at FROM omni_cio_v10.state_revisions "
         "WHERE tenant_id = %s ORDER BY revision DESC LIMIT 1",
         (OWNER_TENANT_ID,),
     ).fetchone()
@@ -96,8 +96,8 @@ def load_catalog(connection: ConnectionLike) -> CanonicalDomainCatalogV1:
         )
         for row in _rows(
             connection,
-            f"SELECT tenant_id, schema_version, identity_version, mode, created_at "
-            f"FROM {SCHEMA_NAME}.tenants ORDER BY tenant_id",
+            "SELECT tenant_id, schema_version, identity_version, mode, created_at "
+            "FROM omni_cio_v10.tenants ORDER BY tenant_id",
         )
     )
     users = tuple(
@@ -111,8 +111,8 @@ def load_catalog(connection: ConnectionLike) -> CanonicalDomainCatalogV1:
         )
         for row in _rows(
             connection,
-            f"SELECT user_id, tenant_id, schema_version, identity_version, role, "
-            f"created_at FROM {SCHEMA_NAME}.users ORDER BY user_id",
+            "SELECT user_id, tenant_id, schema_version, identity_version, role, "
+            "created_at FROM omni_cio_v10.users ORDER BY user_id",
         )
     )
     broker_accounts = tuple(
@@ -128,9 +128,9 @@ def load_catalog(connection: ConnectionLike) -> CanonicalDomainCatalogV1:
         )
         for row in _rows(
             connection,
-            f"SELECT broker_account_id, tenant_id, schema_version, identity_version, "
-            f"provider, account_fingerprint_sha256, masked_label, created_at "
-            f"FROM {SCHEMA_NAME}.broker_accounts ORDER BY broker_account_id",
+            "SELECT broker_account_id, tenant_id, schema_version, identity_version, "
+            "provider, account_fingerprint_sha256, masked_label, created_at "
+            "FROM omni_cio_v10.broker_accounts ORDER BY broker_account_id",
         )
     )
     portfolios = tuple(
@@ -146,9 +146,9 @@ def load_catalog(connection: ConnectionLike) -> CanonicalDomainCatalogV1:
         )
         for row in _rows(
             connection,
-            f"SELECT portfolio_id, tenant_id, broker_account_id, schema_version, "
-            f"identity_version, base_currency, created_at, label "
-            f"FROM {SCHEMA_NAME}.portfolios ORDER BY portfolio_id",
+            "SELECT portfolio_id, tenant_id, broker_account_id, schema_version, "
+            "identity_version, base_currency, created_at, label "
+            "FROM omni_cio_v10.portfolios ORDER BY portfolio_id",
         )
     )
     instruments = tuple(
@@ -166,9 +166,9 @@ def load_catalog(connection: ConnectionLike) -> CanonicalDomainCatalogV1:
         )
         for row in _rows(
             connection,
-            f"SELECT instrument_id, schema_version, identity_version, "
-            f"primary_identity_kind, broker_uid, figi, isin, class_code, ticker, name "
-            f"FROM {SCHEMA_NAME}.instruments ORDER BY instrument_id",
+            "SELECT instrument_id, schema_version, identity_version, "
+            "primary_identity_kind, broker_uid, figi, isin, class_code, ticker, name "
+            "FROM omni_cio_v10.instruments ORDER BY instrument_id",
         )
     )
     policies = tuple(
@@ -184,9 +184,9 @@ def load_catalog(connection: ConnectionLike) -> CanonicalDomainCatalogV1:
         )
         for row in _rows(
             connection,
-            f"SELECT policy_id, tenant_id, portfolio_id, schema_version, "
-            f"identity_version, source_policy_id, source_policy_sha256, effective_at "
-            f"FROM {SCHEMA_NAME}.policies ORDER BY policy_id",
+            "SELECT policy_id, tenant_id, portfolio_id, schema_version, "
+            "identity_version, source_policy_id, source_policy_sha256, effective_at "
+            "FROM omni_cio_v10.policies ORDER BY policy_id",
         )
     )
     snapshots = tuple(
@@ -204,9 +204,9 @@ def load_catalog(connection: ConnectionLike) -> CanonicalDomainCatalogV1:
         )
         for row in _rows(
             connection,
-            f"SELECT snapshot_id, tenant_id, portfolio_id, policy_id, broker_account_id, "
-            f"schema_version, identity_version, source_payload_sha256, broker_server_at, "
-            f"local_received_at FROM {SCHEMA_NAME}.portfolio_snapshots ORDER BY snapshot_id",
+            "SELECT snapshot_id, tenant_id, portfolio_id, policy_id, broker_account_id, "
+            "schema_version, identity_version, source_payload_sha256, broker_server_at, "
+            "local_received_at FROM omni_cio_v10.portfolio_snapshots ORDER BY snapshot_id",
         )
     )
     positions = tuple(
@@ -224,9 +224,9 @@ def load_catalog(connection: ConnectionLike) -> CanonicalDomainCatalogV1:
         )
         for row in _rows(
             connection,
-            f"SELECT position_id, tenant_id, portfolio_id, policy_id, snapshot_id, "
-            f"instrument_id, schema_version, identity_version, quantity, blocked_quantity "
-            f"FROM {SCHEMA_NAME}.positions ORDER BY position_id",
+            "SELECT position_id, tenant_id, portfolio_id, policy_id, snapshot_id, "
+            "instrument_id, schema_version, identity_version, quantity, blocked_quantity "
+            "FROM omni_cio_v10.positions ORDER BY position_id",
         )
     )
     evidence = tuple(
@@ -247,18 +247,18 @@ def load_catalog(connection: ConnectionLike) -> CanonicalDomainCatalogV1:
         )
         for row in _rows(
             connection,
-            f"SELECT evidence_id, tenant_id, portfolio_id, policy_id, instrument_id, "
-            f"schema_version, identity_version, source_kind, payload_sha256, published_at, "
-            f"retrieved_at, broker_server_at, local_received_at "
-            f"FROM {SCHEMA_NAME}.evidence ORDER BY evidence_id",
+            "SELECT evidence_id, tenant_id, portfolio_id, policy_id, instrument_id, "
+            "schema_version, identity_version, source_kind, payload_sha256, published_at, "
+            "retrieved_at, broker_server_at, local_received_at "
+            "FROM omni_cio_v10.evidence ORDER BY evidence_id",
         )
     )
 
     incident_records: list[IncidentRecordV1] = []
     for row in _rows(
         connection,
-        f"SELECT incident_id, tenant_id, portfolio_id, policy_id, schema_version, "
-        f"identity_version, opened_at FROM {SCHEMA_NAME}.incidents ORDER BY incident_id",
+        "SELECT incident_id, tenant_id, portfolio_id, policy_id, schema_version, "
+        "identity_version, opened_at FROM omni_cio_v10.incidents ORDER BY incident_id",
     ):
         revision_number, status = _latest_incident_revision(connection, str(row[0]))
         incident_records.append(
@@ -282,9 +282,9 @@ def load_catalog(connection: ConnectionLike) -> CanonicalDomainCatalogV1:
     decision_records: list[DecisionRecordV1] = []
     for row in _rows(
         connection,
-        f"SELECT decision_id, tenant_id, portfolio_id, policy_id, snapshot_id, "
-        f"schema_version, identity_version, payload_sha256, decided_at "
-        f"FROM {SCHEMA_NAME}.decisions ORDER BY decision_id",
+        "SELECT decision_id, tenant_id, portfolio_id, policy_id, snapshot_id, "
+        "schema_version, identity_version, payload_sha256, decided_at "
+        "FROM omni_cio_v10.decisions ORDER BY decision_id",
     ):
         decision_records.append(
             DecisionRecordV1(
@@ -316,9 +316,9 @@ def load_catalog(connection: ConnectionLike) -> CanonicalDomainCatalogV1:
         )
         for row in _rows(
             connection,
-            f"SELECT plan_id, tenant_id, portfolio_id, policy_id, snapshot_id, decision_id, "
-            f"schema_version, identity_version, payload_sha256, created_at "
-            f"FROM {SCHEMA_NAME}.plans ORDER BY plan_id",
+            "SELECT plan_id, tenant_id, portfolio_id, policy_id, snapshot_id, decision_id, "
+            "schema_version, identity_version, payload_sha256, created_at "
+            "FROM omni_cio_v10.plans ORDER BY plan_id",
         )
     )
     executions = tuple(
@@ -336,9 +336,9 @@ def load_catalog(connection: ConnectionLike) -> CanonicalDomainCatalogV1:
         )
         for row in _rows(
             connection,
-            f"SELECT execution_id, tenant_id, portfolio_id, policy_id, snapshot_id, plan_id, "
-            f"schema_version, identity_version, payload_sha256, recorded_at "
-            f"FROM {SCHEMA_NAME}.executions ORDER BY execution_id",
+            "SELECT execution_id, tenant_id, portfolio_id, policy_id, snapshot_id, plan_id, "
+            "schema_version, identity_version, payload_sha256, recorded_at "
+            "FROM omni_cio_v10.executions ORDER BY execution_id",
         )
     )
     journal = tuple(
@@ -358,9 +358,9 @@ def load_catalog(connection: ConnectionLike) -> CanonicalDomainCatalogV1:
         )
         for row in _rows(
             connection,
-            f"SELECT journal_id, tenant_id, portfolio_id, policy_id, decision_id, plan_id, "
-            f"execution_id, incident_id, schema_version, identity_version, payload_sha256, "
-            f"recorded_at FROM {SCHEMA_NAME}.journal ORDER BY journal_id",
+            "SELECT journal_id, tenant_id, portfolio_id, policy_id, decision_id, plan_id, "
+            "execution_id, incident_id, schema_version, identity_version, payload_sha256, "
+            "recorded_at FROM omni_cio_v10.journal ORDER BY journal_id",
         )
     )
 
