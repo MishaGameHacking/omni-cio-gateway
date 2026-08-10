@@ -11,6 +11,7 @@ from typing import Any
 
 import psycopg
 
+from omni_cio.contracts.v1.domain import OWNER_TENANT_ID, TenantV1
 from omni_cio.jobs import (
     DurableJobRepository,
     FailureClass,
@@ -25,6 +26,7 @@ from omni_cio.persistence import (
     apply_migrations,
     current_migration_state,
     migration_series_digest,
+    model_record_sha256,
 )
 
 
@@ -37,6 +39,34 @@ def _dsn() -> str:
     if not dsn:
         raise RuntimeError(f"{DSN_ENV} is required")
     return dsn
+
+
+def _ensure_owner_tenant(connection: psycopg.Connection[Any]) -> None:
+    tenant = TenantV1(created_at=NOW)
+    record_sha256 = model_record_sha256(tenant)
+    with connection.transaction():
+        row = connection.execute(
+            "INSERT INTO omni_cio_v10.tenants "
+            "(tenant_id, schema_version, identity_version, mode, created_at, record_sha256) "
+            "VALUES (%s, %s, %s, %s, %s, %s) "
+            "ON CONFLICT (tenant_id) DO NOTHING RETURNING record_sha256",
+            (
+                tenant.tenant_id,
+                tenant.schema_version,
+                tenant.identity_version,
+                tenant.mode.value,
+                tenant.created_at,
+                record_sha256,
+            ),
+        ).fetchone()
+        if row is not None:
+            return
+        existing = connection.execute(
+            "SELECT record_sha256 FROM omni_cio_v10.tenants WHERE tenant_id = %s",
+            (OWNER_TENANT_ID,),
+        ).fetchone()
+        if existing is None or str(existing[0]) != record_sha256:
+            raise AssertionError("synthetic OWNER tenant identity conflicts with database")
 
 
 def _concurrent_claim(dsn: str, *, now: datetime) -> tuple[str, str]:
@@ -83,6 +113,7 @@ def _expect_journal_mutation_failure(
 
 def _exercise(connection: psycopg.Connection[Any], *, dsn: str) -> dict[str, Any]:
     apply_migrations(connection)
+    _ensure_owner_tenant(connection)
     repository = DurableJobRepository(connection)
 
     first = repository.schedule_job(
