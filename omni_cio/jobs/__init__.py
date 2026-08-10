@@ -1,5 +1,6 @@
 """PostgreSQL-backed durable job runtime for Omni-CIO V10 WP14."""
 
+from omni_cio.jobs.digest import durable_job_state_digest
 from omni_cio.jobs.models import (
     FailureClass,
     JobEvent,
@@ -46,4 +47,5 @@ __all__ = [
     "RetryableJobError",
     "ValidationJobError",
     "canonical_job_id",
+    "durable_job_state_digest",
 ]
