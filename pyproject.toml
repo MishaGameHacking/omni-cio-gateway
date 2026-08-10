@@ -76,6 +76,7 @@ files = [
   "scripts/rehearse_v10_wp13_persistence.py",
   "scripts/rehearse_v10_wp14_jobs.py",
   "scripts/rehearse_v10_wp14_windows.py",
+  "scripts/rehearse_v10_wp15_offline.py",
 ]
 
 [tool.pytest.ini_options]
