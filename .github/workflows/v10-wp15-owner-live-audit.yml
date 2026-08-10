@@ -1,18 +1,19 @@
-name: V10 WP15 OWNER Live Audit
+name: V10 WP15 Deferred Live Audit
 
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - "omni_cio/adapters/tinvest_read_v1.py"
+      - "omni_cio/adapters/tinvest_connection_v1.py"
       - "omni_cio/adapters/tinvest_market_v1.py"
       - "omni_cio/adapters/tinvest_secret_v1.py"
       - "scripts/check_v10_wp15_ci_isolation.py"
-      - "scripts/rehearse_v10_wp15_owner.py"
       - "scripts/validate_v10_wp15_owner_evidence.py"
-      - "infrastructure/windows/run_wp15_owner_gate.ps1"
       - "docs/architecture/V10_WP15_TINVEST_READONLY_CONTRACT.md"
+      - "docs/architecture/V10_WP15_LIVE_ACCEPTANCE_STATE.json"
       - "docs/operations/V10_WP15_OWNER_LIVE_READ_RUNBOOK.md"
+      - "docs/master-plan/OMNI_CIO_V10_IDENTITY_MULTI_TENANT_ACCOUNT_AND_AUTHENTICATION_AMENDMENT.md"
       - ".github/workflows/v10-wp15-owner-live-audit.yml"
   workflow_dispatch:
 
@@ -20,12 +21,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: v10-wp15-owner-live-audit-${{ github.event.pull_request.number || github.ref }}
+  group: v10-wp15-deferred-live-audit-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
   audit:
-    name: WP15 sanitized OWNER live read gate
+    name: WP15 deferred Web live-acceptance gate
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 10
@@ -44,48 +45,36 @@ jobs:
       - name: Classify CI access to private WP15 boundaries
         shell: cmd
         run: |
-          python scripts\check_v10_wp15_ci_isolation.py --output "%RUNNER_TEMP%\wp15-owner-boundary-classification.json"
+          python scripts\check_v10_wp15_ci_isolation.py --output "%RUNNER_TEMP%\wp15-boundary-classification.json"
           if not "%ERRORLEVEL%"=="0" exit /b %ERRORLEVEL%
-          echo WP15_BOUNDARY_DIAGNOSTIC=%RUNNER_TEMP%\wp15-owner-boundary-classification.json>> "%GITHUB_ENV%"
+          echo WP15_BOUNDARY_DIAGNOSTIC=%RUNNER_TEMP%\wp15-boundary-classification.json>> "%GITHUB_ENV%"
 
       - name: Upload sanitized boundary classification
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: wp15-owner-boundary-classification
+          name: wp15-boundary-classification
           path: ${{ env.WP15_BOUNDARY_DIAGNOSTIC }}
           if-no-files-found: error
           retention-days: 3
 
       - name: Enforce CI isolation from private WP15 boundaries
         shell: cmd
-        run: |
-          python scripts\check_v10_wp15_ci_isolation.py --enforce "%WP15_BOUNDARY_DIAGNOSTIC%"
+        run: python scripts\check_v10_wp15_ci_isolation.py --enforce "%WP15_BOUNDARY_DIAGNOSTIC%"
 
-      - name: Validate sanitized OWNER evidence against exact implementation
+      - name: Validate source-controlled deferred live acceptance
         shell: cmd
         run: |
-          python scripts\validate_v10_wp15_owner_evidence.py > "%RUNNER_TEMP%\wp15-owner-evidence-validation.json"
+          python scripts\validate_v10_wp15_owner_evidence.py > "%RUNNER_TEMP%\wp15-deferred-live-validation.json"
           set "AUDIT_EXIT=%ERRORLEVEL%"
-          type "%RUNNER_TEMP%\wp15-owner-evidence-validation.json"
+          type "%RUNNER_TEMP%\wp15-deferred-live-validation.json"
           if not "%AUDIT_EXIT%"=="0" exit /b %AUDIT_EXIT%
+          echo WP15_DEFERRED_EVIDENCE=%RUNNER_TEMP%\wp15-deferred-live-validation.json>> "%GITHUB_ENV%"
 
-      - name: Copy sanitized OWNER evidence for short-lived audit artifact
-        shell: powershell
-        run: |
-          $ErrorActionPreference = "Stop"
-          $source = "C:\ProgramData\OmniCIO\wp15\evidence\wp15-owner-live-evidence.json"
-          if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
-              throw "OWNER_ACTION_REQUIRED"
-          }
-          $destination = Join-Path $env:RUNNER_TEMP "wp15-owner-live-evidence.json"
-          Copy-Item -LiteralPath $source -Destination $destination -Force
-          "WP15_OWNER_EVIDENCE=$destination" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-
-      - name: Upload sanitized OWNER evidence only
+      - name: Upload sanitized deferred-live evidence
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: wp15-owner-live-evidence
-          path: ${{ env.WP15_OWNER_EVIDENCE }}
+          name: wp15-deferred-live-evidence
+          path: ${{ env.WP15_DEFERRED_EVIDENCE }}
           if-no-files-found: error
           retention-days: 3
 
