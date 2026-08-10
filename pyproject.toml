@@ -77,6 +77,8 @@ files = [
   "scripts/rehearse_v10_wp14_jobs.py",
   "scripts/rehearse_v10_wp14_windows.py",
   "scripts/rehearse_v10_wp15_offline.py",
+  "scripts/rehearse_v10_wp15_owner.py",
+  "scripts/validate_v10_wp15_owner_evidence.py",
 ]
 
 [tool.pytest.ini_options]
