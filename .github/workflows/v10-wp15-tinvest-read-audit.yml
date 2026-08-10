@@ -12,6 +12,7 @@ on:
       - "tests/test_v10_wp15_secret_boundary.py"
       - "tests/test_v10_wp15_owner_evidence.py"
       - "tests/test_v10_wp15_ci_isolation.py"
+      - "tests/test_v10_wp15_cursor_resume.py"
       - "scripts/check_v10_wp15_ci_isolation.py"
       - "scripts/rehearse_v10_wp15_offline.py"
       - "scripts/rehearse_v10_wp15_owner.py"
@@ -108,7 +109,7 @@ jobs:
       - name: Run focused WP15 unit and authority tests
         shell: cmd
         run: |
-          "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m pytest -q tests\test_v10_wp15_tinvest_readonly.py tests\test_v10_wp15_tinvest_market.py tests\test_v10_wp15_secret_boundary.py tests\test_v10_wp15_owner_evidence.py tests\test_v10_wp15_ci_isolation.py
+          "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m pytest -q tests\test_v10_wp15_tinvest_readonly.py tests\test_v10_wp15_tinvest_market.py tests\test_v10_wp15_secret_boundary.py tests\test_v10_wp15_owner_evidence.py tests\test_v10_wp15_ci_isolation.py tests\test_v10_wp15_cursor_resume.py
 
       - name: Run deterministic offline WP15 rehearsal
         shell: cmd
