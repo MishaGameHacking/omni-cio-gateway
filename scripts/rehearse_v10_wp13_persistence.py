@@ -42,6 +42,7 @@ from omni_cio.persistence import (
     PostgresDomainRepository,
     apply_migrations,
     current_migration_state,
+    load_catalog,
     migration_series_digest,
 )
 
@@ -254,7 +255,11 @@ def _expect_database_failure(connection: psycopg.Connection[Any], sql: str) -> N
         raise AssertionError("negative database operation unexpectedly succeeded")
 
 
-def _exercise(connection: psycopg.Connection[Any], *, migration_race_pass: bool) -> dict[str, Any]:
+def _exercise(
+    connection: psycopg.Connection[Any],
+    *,
+    migration_race_pass: bool,
+) -> dict[str, Any]:
     if apply_migrations(connection) != ():
         raise AssertionError("migration replay was not idempotent")
 
@@ -264,6 +269,10 @@ def _exercise(connection: psycopg.Connection[Any], *, migration_race_pass: bool)
     second_revision = repository.persist_catalog(catalog)
     if first_revision != second_revision:
         raise AssertionError("catalog replay created a second state revision")
+
+    roundtripped = load_catalog(connection)
+    if roundtripped != catalog:
+        raise AssertionError("canonical catalog round-trip changed identity or scope")
 
     quantity_row = connection.execute(
         "SELECT quantity, blocked_quantity FROM omni_cio_v10.positions"
@@ -382,6 +391,7 @@ def _exercise(connection: psycopg.Connection[Any], *, migration_race_pass: bool)
         "migration_series_sha256": migration_series_digest(),
         "state_revision": first_revision,
         "state_digest_sha256": digest,
+        "catalog_roundtrip": True,
         "decimal_roundtrip": True,
         "append_only_rejection": True,
         "conflicting_replay_rejected": True,
