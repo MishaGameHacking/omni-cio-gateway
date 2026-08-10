@@ -53,10 +53,12 @@ def _portfolio() -> dict[str, Any]:
                 "figi": "BBG000000001",
                 "instrument_type": "share",
                 "quantity": {"units": "10", "nano": 0},
-                "blocked": {"units": "1", "nano": 0},
+                "blocked": False,
+                "blocked_lots": {"units": "1", "nano": 0},
                 "current_price": _money("300", nano=500_000_000),
             }
         ],
+        "virtual_positions": [],
     }
 
 
@@ -79,7 +81,10 @@ def _instrument() -> dict[str, Any]:
 
 def _operation(operation_id: str) -> dict[str, Any]:
     return {
+        "cursor": "synthetic-operation-cursor",
+        "broker_account_id": ACCOUNT_ID,
         "id": operation_id,
+        "parent_operation_id": "synthetic-parent-operation",
         "date": "2026-08-10T10:00:00+00:00",
         "type": "OPERATION_TYPE_BUY",
         "state": "OPERATION_STATE_EXECUTED",
@@ -93,6 +98,7 @@ def _operation(operation_id: str) -> dict[str, Any]:
         "quantity_done": 10,
         "name": "Synthetic buy",
         "description": "Synthetic executed operation",
+        "trades_info": {"trades": [{"trade_id": "synthetic-trade"}]},
     }
 
 
@@ -138,6 +144,7 @@ class _Operations:
         return {
             "money": [_money("1000")],
             "blocked": [_money("100")],
+            "limits_loading_in_progress": False,
         }
 
     def get_operations_by_cursor(self, request: Any) -> dict[str, Any]:
@@ -283,6 +290,8 @@ def main() -> int:
     duplicate_a = _operation("synthetic-operation-a")
     duplicate_b = dict(duplicate_a)
     duplicate_b["id"] = "synthetic-operation-b"
+    duplicate_b["parent_operation_id"] = "synthetic-parent-operation-b"
+    duplicate_b["cursor"] = "synthetic-operation-cursor-b"
     operations_client = _Client(
         pages={
             "": {
@@ -315,6 +324,7 @@ def main() -> int:
             snapshot.normalized_position_count == 1
             and snapshot.unresolved_position_count == 0
             and snapshot.snapshot.positions[0].quantity_units == Decimal("10")
+            and snapshot.snapshot.positions[0].blocked_units == Decimal("1")
         ),
         "freshness_stale_transition": snapshot.freshness.state == FreshnessState.STALE,
         "market_read": (
