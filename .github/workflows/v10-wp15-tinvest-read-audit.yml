@@ -74,6 +74,7 @@ jobs:
         shell: cmd
         run: |
           @echo off
+          setlocal EnableDelayedExpansion
           set "STATIC_EXIT=0"
           "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m ruff check . > "%RUNNER_TEMP%\wp15-ruff-check.txt" 2>&1
           if errorlevel 1 set "STATIC_EXIT=1"
@@ -81,10 +82,11 @@ jobs:
           if errorlevel 1 set "STATIC_EXIT=1"
           "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m mypy > "%RUNNER_TEMP%\wp15-mypy.txt" 2>&1
           if errorlevel 1 set "STATIC_EXIT=1"
-          echo WP15_STATIC_EXIT=%STATIC_EXIT%>> "%GITHUB_ENV%"
+          echo WP15_STATIC_EXIT=!STATIC_EXIT!>> "%GITHUB_ENV%"
           echo WP15_RUFF_CHECK=%RUNNER_TEMP%\wp15-ruff-check.txt>> "%GITHUB_ENV%"
           echo WP15_RUFF_FORMAT=%RUNNER_TEMP%\wp15-ruff-format.txt>> "%GITHUB_ENV%"
           echo WP15_MYPY=%RUNNER_TEMP%\wp15-mypy.txt>> "%GITHUB_ENV%"
+          endlocal
           exit /b 0
 
       - name: Upload static quality diagnostics
@@ -111,13 +113,16 @@ jobs:
       - name: Run deterministic offline WP15 rehearsal
         shell: cmd
         run: |
+          @echo off
+          setlocal EnableDelayedExpansion
           "%VENV_WINDOWS_PATH%\Scripts\python.exe" scripts\rehearse_v10_wp15_offline.py > "%RUNNER_TEMP%\wp15-tinvest-read-audit.json" 2> "%RUNNER_TEMP%\wp15-tinvest-read-diagnostic.txt"
-          set "AUDIT_EXIT=%ERRORLEVEL%"
+          set "AUDIT_EXIT=!ERRORLEVEL!"
           if exist "%RUNNER_TEMP%\wp15-tinvest-read-audit.json" type "%RUNNER_TEMP%\wp15-tinvest-read-audit.json"
           if exist "%RUNNER_TEMP%\wp15-tinvest-read-diagnostic.txt" type "%RUNNER_TEMP%\wp15-tinvest-read-diagnostic.txt"
-          echo WP15_AUDIT_EXIT=%AUDIT_EXIT%>> "%GITHUB_ENV%"
+          echo WP15_AUDIT_EXIT=!AUDIT_EXIT!>> "%GITHUB_ENV%"
           echo WP15_EVIDENCE=%RUNNER_TEMP%\wp15-tinvest-read-audit.json>> "%GITHUB_ENV%"
           echo WP15_DIAGNOSTIC=%RUNNER_TEMP%\wp15-tinvest-read-diagnostic.txt>> "%GITHUB_ENV%"
+          endlocal
           exit /b 0
 
       - name: Upload synthetic WP15 evidence and diagnostics
