@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 import json
 import os
 import sys
+import threading
 from typing import Any
 
 import psycopg
@@ -224,6 +226,23 @@ def _dsn() -> str:
     return dsn
 
 
+def _migration_race(dsn: str) -> bool:
+    barrier = threading.Barrier(2)
+
+    def worker() -> tuple[int, ...]:
+        with psycopg.connect(dsn) as connection:
+            barrier.wait(timeout=10)
+            return apply_migrations(connection)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [executor.submit(worker) for _ in range(2)]
+        results = [future.result(timeout=60) for future in futures]
+
+    if sorted(results, key=len) != [(), (1,)]:
+        raise AssertionError(f"migration race produced unexpected results: {results!r}")
+    return True
+
+
 def _expect_database_failure(connection: psycopg.Connection[Any], sql: str) -> None:
     failed = False
     try:
@@ -235,8 +254,7 @@ def _expect_database_failure(connection: psycopg.Connection[Any], sql: str) -> N
         raise AssertionError("negative database operation unexpectedly succeeded")
 
 
-def _exercise(connection: psycopg.Connection[Any]) -> dict[str, Any]:
-    applied = apply_migrations(connection)
+def _exercise(connection: psycopg.Connection[Any], *, migration_race_pass: bool) -> dict[str, Any]:
     if apply_migrations(connection) != ():
         raise AssertionError("migration replay was not idempotent")
 
@@ -359,7 +377,7 @@ def _exercise(connection: psycopg.Connection[Any]) -> dict[str, Any]:
     return {
         "status": "PASS",
         "postgres_major": 18,
-        "applied_now": list(applied),
+        "migration_race_serialized": migration_race_pass,
         "migration_count": len(migrations),
         "migration_series_sha256": migration_series_digest(),
         "state_revision": first_revision,
@@ -391,9 +409,13 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
-        with psycopg.connect(_dsn()) as connection:
+        dsn = _dsn()
+        migration_race_pass = args.command != "exercise" or _migration_race(dsn)
+        with psycopg.connect(dsn) as connection:
             result = (
-                _exercise(connection) if args.command == "exercise" else _digest(connection)
+                _exercise(connection, migration_race_pass=migration_race_pass)
+                if args.command == "exercise"
+                else _digest(connection)
             )
     except Exception as exc:
         print(
