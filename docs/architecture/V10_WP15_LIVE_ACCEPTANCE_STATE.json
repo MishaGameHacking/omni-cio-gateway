@@ -3,7 +3,7 @@
   "work_package": "WP15",
   "live_evidence_status": "DEFERRED_TO_WEB_PROVISIONING",
   "authority": "OMNI_CIO_V10_IDENTITY_MULTI_TENANT_ACCOUNT_AND_AUTHENTICATION_AMENDMENT",
-  "authority_main_sha": "cbf6a7adba78fa56d23e90ce2cfe2952d21a5e5b",
+  "authority_state": "ACCEPTED_IN_MAIN_POST_MERGE_REGRESSION_GREEN",
   "normal_broker_provisioning_surface": "WP17_AUTHENTICATED_WEB_SETTINGS",
   "broker_read_provisioning_required_now": false,
   "block_d_credit_allowed": false,
