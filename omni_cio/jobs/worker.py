@@ -3,7 +3,13 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from datetime import datetime
 
-from omni_cio.jobs.models import FailureClass, JobRecord, JobType
+from omni_cio.jobs.models import (
+    FailureClass,
+    JobRecord,
+    JobType,
+    require_lease_seconds,
+    require_retry_delay_seconds,
+)
 from omni_cio.jobs.repository import DurableJobRepository
 
 
@@ -50,13 +56,13 @@ class DurableJobWorker:
         worker = worker_id.strip()
         if not worker:
             raise ValueError("worker_id must not be empty")
-        if retry_delay_seconds < 0:
-            raise ValueError("retry_delay_seconds must not be negative")
         self._repository = repository
         self._worker_id = worker
         self._handlers = dict(handlers)
-        self._lease_seconds = lease_seconds
-        self._retry_delay_seconds = retry_delay_seconds
+        self._lease_seconds = require_lease_seconds(lease_seconds)
+        self._retry_delay_seconds = require_retry_delay_seconds(
+            retry_delay_seconds
+        )
 
     def run_once(self, *, now: datetime | None = None) -> JobRecord | None:
         job = self._repository.claim_next_job(
