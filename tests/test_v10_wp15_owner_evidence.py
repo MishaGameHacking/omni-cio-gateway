@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
 from typing import Any
@@ -14,30 +13,21 @@ GIT_SHA = "a" * 40
 IMPLEMENTATION_SHA = "b" * 64
 
 
-def _payload(*, recorded_at: datetime | None = None) -> dict[str, Any]:
+def _payload() -> dict[str, Any]:
     return {
-        "schema_version": "1",
+        "schema_version": "1.0.0",
         "work_package": "WP15",
-        "audit": "owner_live_read_only",
-        "status": "PASS",
-        "reason": "WP15_OWNER_LIVE_READ_ONLY_ACCEPTED",
-        "git_sha": GIT_SHA,
-        "implementation_sha256": IMPLEMENTATION_SHA,
-        "recorded_at": (recorded_at or datetime.now(timezone.utc)).isoformat(),
-        "checks": {key: True for key in evidence.REQUIRED_CHECKS},
-        "counts": {
-            "normalized_positions": 1,
-            "market_prices": 1,
-            "operation_pages": 1,
-            "operations": 0,
-        },
-        "privacy": {key: False for key in evidence.PRIVATE_FLAGS},
-        "authority": {
-            "broker_read": True,
-            "broker_write": False,
-            "trading_methods": False,
-            "real_trading_enabled": False,
-        },
+        "live_evidence_status": "DEFERRED_TO_WEB_PROVISIONING",
+        "authority": "OMNI_CIO_V10_IDENTITY_MULTI_TENANT_ACCOUNT_AND_AUTHENTICATION_AMENDMENT",
+        "authority_main_sha": "cbf6a7adba78fa56d23e90ce2cfe2952d21a5e5b",
+        "normal_broker_provisioning_surface": "WP17_AUTHENTICATED_WEB_SETTINGS",
+        "broker_read_provisioning_required_now": False,
+        "block_d_credit_allowed": False,
+        "wp18_real_data_acceptance_locked": True,
+        "public_multi_user_enabled": False,
+        "broker_write_authority_added": False,
+        "trading_methods": False,
+        "real_trading_enabled": False,
     }
 
 
@@ -46,9 +36,9 @@ def _configure(
     tmp_path: Path,
     payload: dict[str, Any],
 ) -> Path:
-    path = tmp_path / "evidence.json"
+    path = tmp_path / "state.json"
     path.write_text(json.dumps(payload), encoding="utf-8")
-    monkeypatch.setattr(evidence, "EVIDENCE", path)
+    monkeypatch.setattr(evidence, "STATE", path)
     monkeypatch.setattr(evidence, "_git_sha", lambda: GIT_SHA)
     monkeypatch.setattr(
         evidence,
@@ -58,7 +48,7 @@ def _configure(
     return path
 
 
-def test_valid_sanitized_owner_evidence_passes(
+def test_valid_deferred_live_acceptance_state_passes(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -67,99 +57,78 @@ def test_valid_sanitized_owner_evidence_passes(
     result = evidence.validate()
 
     assert result["status"] == "PASS"
-    assert result["privacy_safe"] is True
+    assert result["reason"] == "WP15_LIVE_ACCEPTANCE_DEFERRED_VALID"
+    assert result["live_evidence_status"] == "DEFERRED_TO_WEB_PROVISIONING"
+    assert result["owner_action_required"] is False
+    assert result["real_live_evidence_present"] is False
+    assert result["block_d_credit_allowed"] is False
+    assert result["wp18_real_data_acceptance_locked"] is True
     assert result["broker_write"] is False
     assert result["trading_methods"] is False
     assert result["real_trading_enabled"] is False
 
 
-def test_owner_evidence_rejects_stale_or_wrong_head(
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("live_evidence_status", "PASS"),
+        ("broker_read_provisioning_required_now", True),
+        ("block_d_credit_allowed", True),
+        ("wp18_real_data_acceptance_locked", False),
+        ("public_multi_user_enabled", True),
+        ("broker_write_authority_added", True),
+        ("trading_methods", True),
+        ("real_trading_enabled", True),
+    ],
+)
+def test_deferred_state_rejects_authority_or_sequence_expansion(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    key: str,
+    value: Any,
+) -> None:
+    payload = _payload()
+    payload[key] = value
+    _configure(monkeypatch, tmp_path, payload)
+
+    with pytest.raises(
+        evidence.EvidenceValidationError,
+        match=f"WP15_DEFERRED_STATE_MISMATCH:{key}",
+    ):
+        evidence.validate()
+
+
+def test_deferred_state_rejects_wrong_accepted_amendment_binding(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    stale = _payload(recorded_at=datetime.now(timezone.utc) - timedelta(hours=25))
-    _configure(monkeypatch, tmp_path, stale)
-
-    with pytest.raises(evidence.EvidenceValidationError, match="OWNER_EVIDENCE_STALE"):
-        evidence.validate()
-
-    wrong = _payload()
-    wrong["git_sha"] = "c" * 40
-    _configure(monkeypatch, tmp_path, wrong)
+    payload = _payload()
+    payload["authority_main_sha"] = "c" * 40
+    _configure(monkeypatch, tmp_path, payload)
 
     with pytest.raises(
         evidence.EvidenceValidationError,
-        match="OWNER_EVIDENCE_GIT_SHA_MISMATCH",
+        match="WP15_DEFERRED_STATE_MISMATCH:authority_main_sha",
     ):
         evidence.validate()
 
 
-def test_owner_evidence_rejects_private_or_expanded_authority(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    private = _payload()
-    private["privacy"]["portfolio_values_recorded"] = True
-    _configure(monkeypatch, tmp_path, private)
-
-    with pytest.raises(
-        evidence.EvidenceValidationError,
-        match="OWNER_EVIDENCE_PRIVATE_FIELD:portfolio_values_recorded",
-    ):
-        evidence.validate()
-
-    expanded = _payload()
-    expanded["authority"]["broker_write"] = True
-    _configure(monkeypatch, tmp_path, expanded)
-
-    with pytest.raises(
-        evidence.EvidenceValidationError,
-        match="OWNER_EVIDENCE_AUTHORITY_EXPANDED:broker_write",
-    ):
-        evidence.validate()
-
-
-def test_owner_evidence_rejects_failed_confirmation_or_empty_live_data(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    failed = _payload()
-    failed["checks"]["freshness_confirmed"] = False
-    _configure(monkeypatch, tmp_path, failed)
-
-    with pytest.raises(
-        evidence.EvidenceValidationError,
-        match="OWNER_EVIDENCE_CHECK_FAILED:freshness_confirmed",
-    ):
-        evidence.validate()
-
-    empty = _payload()
-    empty["counts"]["market_prices"] = 0
-    _configure(monkeypatch, tmp_path, empty)
-
-    with pytest.raises(
-        evidence.EvidenceValidationError,
-        match="OWNER_EVIDENCE_LIVE_DATA_EMPTY",
-    ):
-        evidence.validate()
-
-
-def test_owner_wrapper_is_interactive_only_and_has_no_secret_argument() -> None:
+def test_runbook_forbids_normal_powershell_token_provisioning() -> None:
     root = Path(__file__).resolve().parents[1]
-    wrapper = (
-        root / "infrastructure" / "windows" / "run_wp15_owner_gate.ps1"
-    ).read_text(encoding="utf-8").lower()
-    owner_script = (root / "scripts" / "rehearse_v10_wp15_owner.py").read_text(
-        encoding="utf-8"
-    ).lower()
+    runbook = (
+        root / "docs" / "operations" / "V10_WP15_OWNER_LIVE_READ_RUNBOOK.md"
+    ).read_text(encoding="utf-8")
+    state = json.loads(
+        (
+            root
+            / "docs"
+            / "architecture"
+            / "V10_WP15_LIVE_ACCEPTANCE_STATE.json"
+        ).read_text(encoding="utf-8")
+    )
 
-    assert "$env:github_actions" in wrapper
-    assert "manage_wp8_secret.ps1" not in wrapper
-    for marker in (
-        "tinvest_token",
-        "tinvest_trading_token",
-        "--token",
-        "-token ",
-    ):
-        assert marker not in wrapper
-        assert marker not in owner_script
+    assert "DEFERRED_TO_WEB_PROVISIONING" in runbook
+    assert "do not provision a real T-Invest READ token" in runbook
+    assert state["broker_read_provisioning_required_now"] is False
+    assert state["block_d_credit_allowed"] is False
+    assert state["wp18_real_data_acceptance_locked"] is True
