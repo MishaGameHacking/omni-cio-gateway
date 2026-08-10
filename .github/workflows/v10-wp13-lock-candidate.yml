@@ -45,34 +45,29 @@ jobs:
           python scripts/windows_ci_lock.py project requirements-dev.txt windows-requirements-dev.txt
           python -m pip install --disable-pip-version-check --require-hashes -r windows-requirements-dev.txt
 
-      - name: Generate runtime and development lock candidates
+      - name: Generate canonical runtime and development lock candidates
         run: |
-          CANDIDATE_ROOT="$(cygpath -u "$RUNNER_TEMP")/wp13-lock-candidate-${GITHUB_RUN_ID}"
-          rm -rf "$CANDIDATE_ROOT"
-          mkdir -p "$CANDIDATE_ROOT"
-          cp requirements.in "$CANDIDATE_ROOT/requirements.in"
-          cp requirements-dev.in "$CANDIDATE_ROOT/requirements-dev.in"
-          printf '\n# WP13 PostgreSQL driver\npsycopg[binary]==3.3.4\n' >> "$CANDIDATE_ROOT/requirements.in"
+          printf '\n# WP13 PostgreSQL driver\npsycopg[binary]==3.3.4\n' >> requirements.in
           python -m piptools compile \
             --allow-unsafe \
             --generate-hashes \
             --resolver=backtracking \
             --strip-extras \
             --quiet \
-            --constraint=requirements.txt \
-            --output-file=wp13-requirements.txt \
-            "$CANDIDATE_ROOT/requirements.in"
-          (cd "$CANDIDATE_ROOT" && python -m piptools compile \
+            --output-file=requirements.txt \
+            requirements.in
+          python -m piptools compile \
             --allow-unsafe \
             --generate-hashes \
             --resolver=backtracking \
             --strip-extras \
             --quiet \
-            --constraint="$GITHUB_WORKSPACE/requirements-dev.txt" \
-            --output-file="$GITHUB_WORKSPACE/wp13-requirements-dev.txt" \
-            requirements-dev.in)
-          python scripts/windows_ci_lock.py verify requirements.txt wp13-requirements.txt || true
-          python scripts/windows_ci_lock.py verify requirements-dev.txt wp13-requirements-dev.txt || true
+            --output-file=requirements-dev.txt \
+            requirements-dev.in
+          cp requirements.txt wp13-requirements.txt
+          cp requirements-dev.txt wp13-requirements-dev.txt
+          grep -n -E '^psycopg(-binary)?==' wp13-requirements.txt
+          grep -n -E '^psycopg(-binary)?==' wp13-requirements-dev.txt
 
       - name: Upload non-secret lock candidates
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
