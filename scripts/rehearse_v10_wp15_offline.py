@@ -316,8 +316,7 @@ def main() -> int:
             and snapshot.unresolved_position_count == 0
             and snapshot.snapshot.positions[0].quantity_units == Decimal("10")
         ),
-        "freshness_stale_transition": snapshot.freshness.state
-        == FreshnessState.STALE,
+        "freshness_stale_transition": snapshot.freshness.state == FreshnessState.STALE,
         "market_read": (
             market.returned_instrument_count == 1
             and market.missing_instrument_count == 0
