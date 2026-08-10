@@ -33,6 +33,7 @@ files = [
   "omni_cio/quality",
   "omni_cio/analytics",
   "omni_cio/core",
+  "omni_cio/persistence",
   "omni_cio/risk",
   "omni_cio/market",
   "omni_cio/news",
@@ -71,6 +72,7 @@ files = [
   "scripts/check_watchtower_boundary.py",
   "scripts/check_decision_journal_boundary.py",
   "scripts/reconcile_watchtower_schedule.py",
+  "scripts/rehearse_v10_wp13_persistence.py",
 ]
 
 [tool.pytest.ini_options]
