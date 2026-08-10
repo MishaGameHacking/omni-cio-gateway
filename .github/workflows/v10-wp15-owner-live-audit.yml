@@ -1,0 +1,121 @@
+name: V10 WP15 OWNER Live Audit
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - "omni_cio/adapters/tinvest_read_v1.py"
+      - "omni_cio/adapters/tinvest_market_v1.py"
+      - "omni_cio/adapters/tinvest_secret_v1.py"
+      - "scripts/rehearse_v10_wp15_owner.py"
+      - "scripts/validate_v10_wp15_owner_evidence.py"
+      - "infrastructure/windows/run_wp15_owner_gate.ps1"
+      - "docs/architecture/V10_WP15_TINVEST_READONLY_CONTRACT.md"
+      - "docs/operations/V10_WP15_OWNER_LIVE_READ_RUNBOOK.md"
+      - ".github/workflows/v10-wp15-owner-live-audit.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: v10-wp15-owner-live-audit-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    name: WP15 sanitized OWNER live read gate
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Bootstrap protected Python 3.12.10
+        shell: cmd
+        run: scripts\bootstrap_windows_ci_python.cmd
+
+      - name: Prove CI cannot read broker-read ciphertext
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $path = "C:\ProgramData\OmniCIO\secrets\read-broker\broker-read.dpapi"
+          if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+              Write-Host "WP15_BROKER_READ_CIPHERTEXT=NOT_PROVISIONED_OR_NOT_VISIBLE"
+              exit 0
+          }
+          try {
+              $stream = [System.IO.File]::Open(
+                  $path,
+                  [System.IO.FileMode]::Open,
+                  [System.IO.FileAccess]::Read,
+                  [System.IO.FileShare]::Read
+              )
+              $stream.Dispose()
+              throw "CI runner unexpectedly read broker-read ciphertext."
+          }
+          catch [System.UnauthorizedAccessException] {
+              Write-Host "WP15_BROKER_READ_CIPHERTEXT=ACCESS_DENIED"
+          }
+
+      - name: Prove CI cannot read private OWNER account binding
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $path = "C:\ProgramData\OmniCIO\wp15\private\owner-account-binding.json"
+          if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+              Write-Host "WP15_PRIVATE_BINDING=NOT_CREATED_OR_NOT_VISIBLE"
+              exit 0
+          }
+          try {
+              $stream = [System.IO.File]::Open(
+                  $path,
+                  [System.IO.FileMode]::Open,
+                  [System.IO.FileAccess]::Read,
+                  [System.IO.FileShare]::Read
+              )
+              $stream.Dispose()
+              throw "CI runner unexpectedly read private OWNER binding."
+          }
+          catch [System.UnauthorizedAccessException] {
+              Write-Host "WP15_PRIVATE_BINDING=ACCESS_DENIED"
+          }
+
+      - name: Validate sanitized OWNER evidence against exact implementation
+        shell: cmd
+        run: |
+          python scripts\validate_v10_wp15_owner_evidence.py > "%RUNNER_TEMP%\wp15-owner-evidence-validation.json"
+          set "AUDIT_EXIT=%ERRORLEVEL%"
+          type "%RUNNER_TEMP%\wp15-owner-evidence-validation.json"
+          if not "%AUDIT_EXIT%"=="0" exit /b %AUDIT_EXIT%
+
+      - name: Copy sanitized OWNER evidence for short-lived audit artifact
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $source = "C:\ProgramData\OmniCIO\wp15\evidence\wp15-owner-live-evidence.json"
+          if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
+              throw "OWNER_ACTION_REQUIRED"
+          }
+          $destination = Join-Path $env:RUNNER_TEMP "wp15-owner-live-evidence.json"
+          Copy-Item -LiteralPath $source -Destination $destination -Force
+          "WP15_OWNER_EVIDENCE=$destination" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Upload sanitized OWNER evidence only
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: wp15-owner-live-evidence
+          path: ${{ env.WP15_OWNER_EVIDENCE }}
+          if-no-files-found: error
+          retention-days: 3
+
+      - name: Clean self-hosted workspace
+        if: always()
+        shell: bash
+        run: |
+          git reset --hard HEAD
+          git clean -ffdx
