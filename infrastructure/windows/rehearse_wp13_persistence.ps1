@@ -150,15 +150,21 @@ function Invoke-ProbeJson {
             "dbname=$DatabaseName connect_timeout=5"
         )
         $raw = & $Python $Probe $Command 2>$null
-        if ($LASTEXITCODE -ne 0) {
-            throw "WP13_PROBE_FAILED"
-        }
+        $probeExit = $LASTEXITCODE
         try {
-            return (($raw | Out-String) | ConvertFrom-Json)
+            $parsed = (($raw | Out-String) | ConvertFrom-Json)
         }
         catch {
             throw "WP13_PROBE_OUTPUT_INVALID"
         }
+        if ($probeExit -ne 0) {
+            $probeReason = ([string]$parsed.reason).ToUpperInvariant()
+            if ($probeReason -notmatch '^[A-Z0-9_.-]+$') {
+                $probeReason = "UNKNOWN"
+            }
+            throw "WP13_PROBE_FAILED:$probeReason"
+        }
+        return $parsed
     }
     finally {
         $env:OMNI_CIO_WP13_DSN = $oldDsn
@@ -177,6 +183,7 @@ function Write-Result {
     Write-Output "Migration race serialized: $($Result.migration_race_serialized)"
     Write-Output "Decimal round-trip: $($Result.decimal_roundtrip)"
     Write-Output "Append-only rejection: $($Result.append_only_rejection)"
+    Write-Output "Concurrent write idempotency: $($Result.concurrent_write_idempotency)"
     Write-Output "Backup integrity: $($Result.backup_integrity_pass)"
     Write-Output "Corruption rejected: $($Result.corruption_rejected)"
     Write-Output "Separate restore DB: $($Result.separate_restore_database_used)"
@@ -203,6 +210,7 @@ $result = @{
     decimal_roundtrip = $false
     append_only_rejection = $false
     conflicting_replay_rejected = $false
+    concurrent_write_idempotency = $false
     owner_scope_rejection = $false
     bounded_cache_retention = $false
     backup_integrity_pass = $false
@@ -318,6 +326,7 @@ try {
     $result.decimal_roundtrip = [bool]$source.decimal_roundtrip
     $result.append_only_rejection = [bool]$source.append_only_rejection
     $result.conflicting_replay_rejected = [bool]$source.conflicting_replay_rejected
+    $result.concurrent_write_idempotency = [bool]$source.concurrent_write_idempotency
     $result.owner_scope_rejection = [bool]$source.owner_scope_rejection
     $result.bounded_cache_retention = [bool]$source.bounded_cache_retention
 
@@ -326,6 +335,7 @@ try {
         -not $result.decimal_roundtrip -or
         -not $result.append_only_rejection -or
         -not $result.conflicting_replay_rejected -or
+        -not $result.concurrent_write_idempotency -or
         -not $result.owner_scope_rejection -or
         -not $result.bounded_cache_retention
     ) {
