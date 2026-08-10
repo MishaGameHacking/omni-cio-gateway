@@ -5,6 +5,8 @@ import hashlib
 import json
 from typing import Any
 
+from psycopg import sql
+
 from omni_cio.contracts.v1.domain import OWNER_TENANT_ID
 from omni_cio.jobs.models import (
     FailureClass,
@@ -23,17 +25,102 @@ from omni_cio.jobs.models import (
 from omni_cio.persistence.migration import ConnectionLike
 
 
-_JOB_COLUMNS = (
-    "job_id, tenant_id, job_type, idempotency_key, payload_sha256, state, "
-    "correlation_id, lease_owner, lease_expires_at, heartbeat_at, attempts, "
-    "max_attempts, next_run_at, started_at, completed_at, error_class, "
-    "recovery_policy, created_at"
+_JOB_COLUMN_NAMES = (
+    "job_id",
+    "tenant_id",
+    "job_type",
+    "idempotency_key",
+    "payload_sha256",
+    "state",
+    "correlation_id",
+    "lease_owner",
+    "lease_expires_at",
+    "heartbeat_at",
+    "attempts",
+    "max_attempts",
+    "next_run_at",
+    "started_at",
+    "completed_at",
+    "error_class",
+    "recovery_policy",
+    "created_at",
 )
+_JOB_COLUMNS = sql.SQL(", ").join(sql.Identifier(name) for name in _JOB_COLUMN_NAMES)
+_EVENT_COLUMN_NAMES = (
+    "event_id",
+    "job_id",
+    "tenant_id",
+    "event_type",
+    "from_state",
+    "to_state",
+    "attempt",
+    "worker_id",
+    "error_class",
+    "occurred_at",
+    "record_sha256",
+)
+_EVENT_COLUMNS = sql.SQL(", ").join(sql.Identifier(name) for name in _EVENT_COLUMN_NAMES)
 
-_EVENT_COLUMNS = (
-    "event_id, job_id, tenant_id, event_type, from_state, to_state, attempt, "
-    "worker_id, error_class, occurred_at, record_sha256"
-)
+_SCHEDULE_INSERT = sql.SQL(
+    "INSERT INTO omni_cio_v10.jobs "
+    "(job_id, tenant_id, job_type, idempotency_key, payload_sha256, "
+    "created_at, state, correlation_id, attempts, max_attempts, "
+    "next_run_at, recovery_policy) "
+    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
+    "ON CONFLICT (tenant_id, job_type, idempotency_key) DO NOTHING RETURNING {}"
+).format(_JOB_COLUMNS)
+_SELECT_IDEMPOTENT = sql.SQL(
+    "SELECT {} FROM omni_cio_v10.jobs "
+    "WHERE tenant_id = %s AND job_type = %s AND idempotency_key = %s"
+).format(_JOB_COLUMNS)
+_CLAIM_SELECT = sql.SQL(
+    "SELECT {} FROM omni_cio_v10.jobs "
+    "WHERE tenant_id = %s AND state IN (%s, %s) AND next_run_at <= %s "
+    "AND attempts < max_attempts "
+    "ORDER BY next_run_at, created_at, job_id "
+    "FOR UPDATE SKIP LOCKED LIMIT 1"
+).format(_JOB_COLUMNS)
+_CLAIM_UPDATE = sql.SQL(
+    "UPDATE omni_cio_v10.jobs SET "
+    "state = %s, lease_owner = %s, lease_expires_at = %s, heartbeat_at = %s, "
+    "attempts = attempts + 1, next_run_at = NULL, "
+    "started_at = COALESCE(started_at, %s), completed_at = NULL, error_class = NULL "
+    "WHERE job_id = %s RETURNING {}"
+).format(_JOB_COLUMNS)
+_HEARTBEAT_UPDATE = sql.SQL(
+    "UPDATE omni_cio_v10.jobs SET heartbeat_at = %s, lease_expires_at = %s "
+    "WHERE job_id = %s AND tenant_id = %s AND state = %s "
+    "AND lease_owner = %s AND lease_expires_at > %s RETURNING {}"
+).format(_JOB_COLUMNS)
+_COMPLETE_UPDATE = sql.SQL(
+    "UPDATE omni_cio_v10.jobs SET "
+    "state = %s, lease_owner = NULL, lease_expires_at = NULL, heartbeat_at = NULL, "
+    "next_run_at = NULL, completed_at = %s, error_class = NULL "
+    "WHERE job_id = %s AND tenant_id = %s AND state = %s "
+    "AND lease_owner = %s AND lease_expires_at > %s RETURNING {}"
+).format(_JOB_COLUMNS)
+_SELECT_JOB_FOR_UPDATE = sql.SQL(
+    "SELECT {} FROM omni_cio_v10.jobs "
+    "WHERE job_id = %s AND tenant_id = %s FOR UPDATE"
+).format(_JOB_COLUMNS)
+_FAILURE_UPDATE = sql.SQL(
+    "UPDATE omni_cio_v10.jobs SET "
+    "state = %s, lease_owner = NULL, lease_expires_at = NULL, heartbeat_at = NULL, "
+    "next_run_at = %s, completed_at = %s, error_class = %s "
+    "WHERE job_id = %s RETURNING {}"
+).format(_JOB_COLUMNS)
+_RECOVER_SELECT = sql.SQL(
+    "SELECT {} FROM omni_cio_v10.jobs "
+    "WHERE tenant_id = %s AND state = %s AND lease_expires_at <= %s "
+    "ORDER BY lease_expires_at, job_id FOR UPDATE SKIP LOCKED LIMIT %s"
+).format(_JOB_COLUMNS)
+_SELECT_JOB = sql.SQL(
+    "SELECT {} FROM omni_cio_v10.jobs WHERE job_id = %s AND tenant_id = %s"
+).format(_JOB_COLUMNS)
+_SELECT_EVENTS = sql.SQL(
+    "SELECT {} FROM omni_cio_v10.job_events "
+    "WHERE job_id = %s AND tenant_id = %s ORDER BY event_id"
+).format(_EVENT_COLUMNS)
 
 
 class JobPersistenceError(RuntimeError):
@@ -205,14 +292,8 @@ class DurableJobRepository:
             raise ValueError("correlation_id must not be empty")
 
         with self._connection.transaction():
-            cursor = self._connection.execute(
-                "INSERT INTO omni_cio_v10.jobs "
-                "(job_id, tenant_id, job_type, idempotency_key, payload_sha256, "
-                "created_at, state, correlation_id, attempts, max_attempts, "
-                "next_run_at, recovery_policy) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
-                "ON CONFLICT (tenant_id, job_type, idempotency_key) DO NOTHING "
-                f"RETURNING {_JOB_COLUMNS}",
+            row = self._connection.execute(
+                _SCHEDULE_INSERT,
                 (
                     job_id,
                     OWNER_TENANT_ID,
@@ -227,13 +308,11 @@ class DurableJobRepository:
                     due_at,
                     recovery_policy.value,
                 ),
-            )
-            row = cursor.fetchone()
+            ).fetchone()
             inserted = row is not None
             if row is None:
                 row = self._connection.execute(
-                    f"SELECT {_JOB_COLUMNS} FROM omni_cio_v10.jobs "
-                    "WHERE tenant_id = %s AND job_type = %s AND idempotency_key = %s",
+                    _SELECT_IDEMPOTENT,
                     (OWNER_TENANT_ID, job_type.value, normalized_key),
                 ).fetchone()
             if row is None:
@@ -246,7 +325,6 @@ class DurableJobRepository:
                 or job.correlation_id != correlation
                 or job.max_attempts != attempts_limit
                 or job.recovery_policy is not recovery_policy
-                or job.next_run_at != due_at
             ):
                 raise JobConflictError(
                     "job idempotency identity replay conflicts with durable semantics"
@@ -282,13 +360,7 @@ class DurableJobRepository:
 
         with self._connection.transaction():
             row = self._connection.execute(
-                f"SELECT {_JOB_COLUMNS} FROM omni_cio_v10.jobs "
-                "WHERE tenant_id = %s "
-                "AND state IN (%s, %s) "
-                "AND next_run_at <= %s "
-                "AND attempts < max_attempts "
-                "ORDER BY next_run_at, created_at, job_id "
-                "FOR UPDATE SKIP LOCKED LIMIT 1",
+                _CLAIM_SELECT,
                 (
                     OWNER_TENANT_ID,
                     JobState.QUEUED.value,
@@ -301,13 +373,7 @@ class DurableJobRepository:
 
             current = _job_from_row(row)
             updated = self._connection.execute(
-                "UPDATE omni_cio_v10.jobs SET "
-                "state = %s, lease_owner = %s, lease_expires_at = %s, "
-                "heartbeat_at = %s, attempts = attempts + 1, "
-                "next_run_at = NULL, started_at = COALESCE(started_at, %s), "
-                "completed_at = NULL, error_class = NULL "
-                "WHERE job_id = %s "
-                f"RETURNING {_JOB_COLUMNS}",
+                _CLAIM_UPDATE,
                 (
                     JobState.RUNNING.value,
                     worker,
@@ -350,11 +416,7 @@ class DurableJobRepository:
 
         with self._connection.transaction():
             row = self._connection.execute(
-                "UPDATE omni_cio_v10.jobs SET "
-                "heartbeat_at = %s, lease_expires_at = %s "
-                "WHERE job_id = %s AND tenant_id = %s AND state = %s "
-                "AND lease_owner = %s AND lease_expires_at > %s "
-                f"RETURNING {_JOB_COLUMNS}",
+                _HEARTBEAT_UPDATE,
                 (
                     timestamp,
                     lease_expires_at,
@@ -395,13 +457,7 @@ class DurableJobRepository:
 
         with self._connection.transaction():
             row = self._connection.execute(
-                "UPDATE omni_cio_v10.jobs SET "
-                "state = %s, lease_owner = NULL, lease_expires_at = NULL, "
-                "heartbeat_at = NULL, next_run_at = NULL, completed_at = %s, "
-                "error_class = NULL "
-                "WHERE job_id = %s AND tenant_id = %s AND state = %s "
-                "AND lease_owner = %s AND lease_expires_at > %s "
-                f"RETURNING {_JOB_COLUMNS}",
+                _COMPLETE_UPDATE,
                 (
                     JobState.SUCCEEDED.value,
                     timestamp,
@@ -445,8 +501,7 @@ class DurableJobRepository:
 
         with self._connection.transaction():
             row = self._connection.execute(
-                f"SELECT {_JOB_COLUMNS} FROM omni_cio_v10.jobs "
-                "WHERE job_id = %s AND tenant_id = %s FOR UPDATE",
+                _SELECT_JOB_FOR_UPDATE,
                 (job_id, OWNER_TENANT_ID),
             ).fetchone()
             if row is None:
@@ -486,12 +541,7 @@ class DurableJobRepository:
                 completed_at = None
 
             updated = self._connection.execute(
-                "UPDATE omni_cio_v10.jobs SET "
-                "state = %s, lease_owner = NULL, lease_expires_at = NULL, "
-                "heartbeat_at = NULL, next_run_at = %s, completed_at = %s, "
-                "error_class = %s "
-                "WHERE job_id = %s "
-                f"RETURNING {_JOB_COLUMNS}",
+                _FAILURE_UPDATE,
                 (
                     state.value,
                     next_run_at,
@@ -529,11 +579,7 @@ class DurableJobRepository:
 
         with self._connection.transaction():
             rows = self._connection.execute(
-                f"SELECT {_JOB_COLUMNS} FROM omni_cio_v10.jobs "
-                "WHERE tenant_id = %s AND state = %s "
-                "AND lease_expires_at <= %s "
-                "ORDER BY lease_expires_at, job_id "
-                "FOR UPDATE SKIP LOCKED LIMIT %s",
+                _RECOVER_SELECT,
                 (
                     OWNER_TENANT_ID,
                     JobState.RUNNING.value,
@@ -565,12 +611,7 @@ class DurableJobRepository:
                     completed_at = None
 
                 updated = self._connection.execute(
-                    "UPDATE omni_cio_v10.jobs SET "
-                    "state = %s, lease_owner = NULL, lease_expires_at = NULL, "
-                    "heartbeat_at = NULL, next_run_at = %s, completed_at = %s, "
-                    "error_class = %s "
-                    "WHERE job_id = %s "
-                    f"RETURNING {_JOB_COLUMNS}",
+                    _FAILURE_UPDATE,
                     (
                         state.value,
                         next_run_at,
@@ -599,8 +640,7 @@ class DurableJobRepository:
 
     def get_job(self, job_id: str) -> JobRecord:
         row = self._connection.execute(
-            f"SELECT {_JOB_COLUMNS} FROM omni_cio_v10.jobs "
-            "WHERE job_id = %s AND tenant_id = %s",
+            _SELECT_JOB,
             (job_id, OWNER_TENANT_ID),
         ).fetchone()
         if row is None:
@@ -609,8 +649,7 @@ class DurableJobRepository:
 
     def list_events(self, job_id: str) -> tuple[JobEvent, ...]:
         rows = self._connection.execute(
-            f"SELECT {_EVENT_COLUMNS} FROM omni_cio_v10.job_events "
-            "WHERE job_id = %s AND tenant_id = %s ORDER BY event_id",
+            _SELECT_EVENTS,
             (job_id, OWNER_TENANT_ID),
         ).fetchall()
         return tuple(_event_from_row(row) for row in rows)
