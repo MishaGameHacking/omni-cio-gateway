@@ -66,7 +66,9 @@ def _ensure_owner_tenant(connection: psycopg.Connection[Any]) -> None:
             (OWNER_TENANT_ID,),
         ).fetchone()
         if existing is None or str(existing[0]) != record_sha256:
-            raise AssertionError("synthetic OWNER tenant identity conflicts with database")
+            raise AssertionError(
+                "synthetic OWNER tenant identity conflicts with database"
+            )
 
 
 def _concurrent_claim(dsn: str, *, now: datetime) -> tuple[str, str]:
