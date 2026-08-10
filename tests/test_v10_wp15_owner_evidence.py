@@ -120,10 +120,7 @@ def test_runbook_forbids_normal_powershell_token_provisioning() -> None:
     ).read_text(encoding="utf-8")
     state = json.loads(
         (
-            root
-            / "docs"
-            / "architecture"
-            / "V10_WP15_LIVE_ACCEPTANCE_STATE.json"
+            root / "docs" / "architecture" / "V10_WP15_LIVE_ACCEPTANCE_STATE.json"
         ).read_text(encoding="utf-8")
     )
 
