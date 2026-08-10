@@ -4,6 +4,7 @@ from collections.abc import Callable
 import hmac
 from typing import Any
 
+from omni_cio.adapters.tinvest_market_v1 import TInvestMarketReadAdapter
 from omni_cio.adapters.tinvest_read_v1 import (
     ACCESS_LEVEL_NAMES,
     ACCOUNT_STATUS_NAMES,
@@ -94,3 +95,10 @@ class TInvestConnectionReadAdapter(TInvestReadAdapter):
         if len(matches) != 1:
             raise AccountBindingError("DUPLICATE_EXPECTED_ACCOUNT_BINDING")
         return matches[0]
+
+
+class TInvestConnectionMarketReadAdapter(
+    TInvestMarketReadAdapter,
+    TInvestConnectionReadAdapter,
+):
+    """Market companion using the same exact connection-scoped account binding."""
