@@ -40,7 +40,7 @@ WP17 will own the authenticated account/session and `Settings -> Broker Connecti
 1. resolve `user_id` and `tenant_id` from the server-side authenticated session;
 2. accept the READ credential over the reviewed secure Web transport;
 3. query T-Invest account discovery without returning the raw credential to the client;
-4. reject the credential if any accessible OPEN account has broader/unknown authority instead of READ_ONLY;
+4. reject the credential if any broker account with access other than `NO_ACCESS` reports broader/unknown authority instead of `READ_ONLY`, including a closed account;
 5. present only masked broker-account identities to the user;
 6. allow the user to bind one or more accounts discovered by a broad READ token;
 7. persist only tenant-scoped BrokerConnection metadata plus a protected secret reference;
