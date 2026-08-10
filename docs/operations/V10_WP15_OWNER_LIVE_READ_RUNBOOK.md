@@ -2,13 +2,15 @@
 
 Status: **WP15 OWNER-local gate / no broker-write authority**
 
-This runbook is used only after the WP15 implementation head has passed deterministic offline review/CI and the PR explicitly names the exact reviewed SHA. It never asks the OWNER to paste a broker token, full account ID, portfolio payload or screenshot into GitHub/ChatGPT.
+This runbook is used only after the WP15 implementation head has passed deterministic offline review/CI and the PR explicitly names the exact reviewed SHA. It never asks the OWNER to paste a broker token, full account ID, account fingerprint, portfolio payload or screenshot into GitHub/ChatGPT.
 
 ## 1. Safety invariants
 
-- Use only a T-Invest **read-only** production token for the intended OWNER account.
+- Use only a T-Invest **production READ_ONLY** token for the intended OWNER account.
 - Prefer a token restricted by T-Invest to the single intended account.
-- Never use a trading token as a fallback for WP15.
+- Never use a trading/full-access token as a fallback for WP15.
+- The WP15 production credential boundary independently verifies token-derived account `access_level`; any accessible account that is not reported as `ACCOUNT_ACCESS_LEVEL_READ_ONLY` fails closed before portfolio/market/operations acceptance.
+- The production client proxy exposes only the approved Users/Operations/Instruments/MarketData read methods and does not expose orders, stop orders, Users write methods or an underlying service delegate.
 - Never paste the token into a command line, environment variable, GitHub issue/PR, ChatGPT message, screenshot or log.
 - The token is entered only through the accepted WP8 local secure prompt and stored as the `broker_read` DPAPI blob.
 - `C:\ProgramData\OmniCIO\wp15\private` is private durable local state and must not be uploaded.
@@ -32,9 +34,9 @@ Then verify the checkout is clean:
 git status --porcelain
 ```
 
-No output is expected.
+No output is expected. The focused and OWNER evidence workflows validate against this exact PR-head SHA, not a GitHub synthetic merge ref.
 
-## 3. Provision the read-only token locally
+## 3. Provision or verify the read-only token locally
 
 First inspect the sanitized lifecycle state:
 
@@ -54,9 +56,11 @@ If it is already `ACTIVE` but the credential must be replaced, run:
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\infrastructure\windows\manage_wp8_secret.ps1 -Operation Rotate -SecretClass broker_read -AcknowledgeContourReady
 ```
 
-PowerShell will prompt with `Read-Host -AsSecureString`. Type the token only into that local masked prompt.
+PowerShell prompts with `Read-Host -AsSecureString`. Type the credential only into that local masked prompt. Do not send it back to the developer/chat.
 
-If the external token was ever exposed, revoke it at T-Invest first; local `Revoke`/`Rotate` does not replace issuer-side revocation.
+If the external credential was ever exposed, revoke it at T-Invest first; local `Revoke`/`Rotate` does not replace issuer-side revocation.
+
+Important: a manually asserted read-only label is not enough. During the live gate, T-Invest `GetAccounts` must report the accessible OWNER account at `ACCOUNT_ACCESS_LEVEL_READ_ONLY`; broader or unknown access fails closed.
 
 ## 4. Run the reviewed OWNER gate
 
@@ -73,8 +77,12 @@ The wrapper:
 - uses the protected Python 3.12.10 toolchain and hash-locked dependencies;
 - protects the private WP15 account-binding directory from the CI runner;
 - reads the broker credential only through the WP8 DPAPI/ACL boundary;
+- creates only the structurally allowlisted read-only production client surface;
+- verifies token-derived READ_ONLY account authority and rejects broader/unknown authority;
 - discovers the single accessible open account and shows only its masked label before confirmation;
-- reads portfolio/positions, instrument metadata, last market prices and bounded cursor operations through the WP15 read-only allowlist;
+- reads portfolio/positions, instrument metadata, last market prices and bounded cursor operations;
+- refuses a strict live snapshot if broker position limits are still loading, if required identity is unresolved, or if unsupported virtual positions would otherwise be silently omitted;
+- interprets broker `blocked_lots` as numeric blocked quantity and the separate `blocked` boolean conservatively;
 - asks the OWNER to compare the locally displayed portfolio summary and one sample position against the broker view;
 - asks the OWNER to accept or reject displayed data ages;
 - writes only sanitized implementation-bound evidence for CI.
@@ -85,13 +93,15 @@ Every prompt is fail-closed. Type exactly `YES` only when true.
 
 You will confirm:
 
-1. the locally provisioned T-Invest credential is read-only;
+1. the locally provisioned T-Invest credential is intended to be read-only;
 2. the masked account is the intended OWNER account;
 3. the portfolio summary matches the same broker account;
-4. the sample position quantity and displayed current price/value are plausible/equal to the broker view on the same basis;
+4. the sample position quantity and displayed current price/value match the broker view on the same basis;
 5. the displayed snapshot/market data ages are acceptable.
 
-A `NO`, wrong account, missing instrument identity, partial snapshot, stale snapshot, missing market price, read failure or implementation mismatch fails the gate.
+The first confirmation is not a substitute for technical enforcement: the gate also verifies the broker-reported token access level.
+
+A `NO`, broader/unknown token authority, wrong account, missing instrument identity, partial/loading snapshot, unsupported virtual positions, stale snapshot, missing market price, read failure or implementation mismatch fails the gate.
 
 ## 6. What is safe to send back
 
@@ -116,16 +126,16 @@ Do **not** send:
 - full account ID or account fingerprint;
 - the private comparison block;
 - portfolio total;
-- position names/quantities/prices unless a later OWNER-approved diagnostic procedure explicitly requires it;
+- position names/quantities/prices;
 - `owner-account-binding.json`;
 - screenshots containing private broker data.
 
 ## 7. CI evidence hand-off
 
-After an OWNER PASS, the focused `V10 WP15 OWNER Live Audit` runs as the non-admin self-hosted CI identity. It must prove that:
+After an OWNER PASS, the `V10 WP15 OWNER Live Audit` runs as the non-admin self-hosted CI identity against the exact PR head. It must prove that:
 
-- the broker-read ciphertext is unreadable by CI;
-- the private account-binding file is unreadable by CI;
+- the broker-read ciphertext is unreadable/not visible to CI;
+- the private account-binding file is unreadable/not visible to CI;
 - the sanitized evidence is readable;
 - the evidence exact Git SHA and implementation SHA-256 match the reviewed head;
 - every required OWNER confirmation is true;
@@ -143,6 +153,6 @@ OWNER PASS is necessary but not sufficient for WP15 completion. The development 
 - full diff review;
 - squash merge;
 - post-merge Regression Shield on the exact new `main` SHA;
-- separate status synchronization that marks Block D COMPLETE.
+- separate status synchronization that marks WP15/Block D accepted.
 
 Only after those gates may WP16 — Web Design System — be unlocked.
