@@ -1,0 +1,95 @@
+name: V10 WP16 Web Design System Audit
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: v10-wp16-web-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web-design-system:
+    name: WP16 deterministic Web design-system gate
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+        working-directory: apps/web
+
+    steps:
+      - name: Check out exact PR head
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Verify selected Node and npm runtime
+        run: |
+          test "$(node --version)" = "v24.18.0"
+          test "$(npm --version)" = "11.16.0"
+
+      - name: Materialize or verify exact lock candidate
+        shell: pwsh
+        run: |
+          $hadLock = Test-Path package-lock.json
+          if ($hadLock) { Copy-Item package-lock.json package-lock.before.json }
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($hadLock) {
+            node -e "const fs=require('node:fs'); const assert=require('node:assert/strict'); const before=JSON.parse(fs.readFileSync('package-lock.before.json','utf8')); const after=JSON.parse(fs.readFileSync('package-lock.json','utf8')); assert.deepStrictEqual(after,before);"
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            Remove-Item package-lock.before.json
+          }
+
+      - name: Reproduce dependencies from materialized lock
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Type-check Web design system
+        run: npm run typecheck
+
+      - name: Lint Web design system
+        run: npm run lint
+
+      - name: Run Web unit contracts
+        run: npm test
+
+      - name: Build Web design-system gallery
+        run: npm run build
+
+      - name: Run browser accessibility responsive and screenshot evidence
+        env:
+          OMNI_WEB_BROWSER_CHANNEL: msedge
+        run: npm run e2e
+
+      - name: Audit Web dependencies
+        run: npm audit --audit-level=high
+
+      - name: Verify repository contracts after Web introduction
+        working-directory: .
+        run: |
+          python scripts/check_v10_repository_boundaries.py
+          python scripts/check_v10_regression_shield.py
+
+      - name: Upload lock candidate and visual evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: wp16-web-design-system-evidence
+          path: |
+            apps/web/package-lock.json
+            apps/web/test-results/
+          if-no-files-found: warn
+          retention-days: 3
+
+      - name: Clean self-hosted workspace
+        if: always()
+        working-directory: .
+        run: |
+          git reset --hard HEAD
+          git clean -ffdx

@@ -1,0 +1,41 @@
+import { expect, test } from "@playwright/test";
+import fs from "node:fs";
+import path from "node:path";
+
+const matrix = [360, 768, 1440] as const;
+
+test("design-system gallery is keyboard and label accessible", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByRole("heading", { level: 1, name: "Omni-CIO Design System" })).toBeVisible();
+  await expect(page.getByLabel("Подпись поля")).toBeVisible();
+  await page.keyboard.press("Tab");
+  const tag = await page.evaluate(() => document.activeElement?.tagName ?? "");
+  expect(["BUTTON", "INPUT"]).toContain(tag);
+  await expect(page.locator('[role="alert"]')).toContainText("Действие заблокировано");
+});
+
+for (const width of matrix) {
+  test(`responsive visual evidence ${width}px`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.goto("/");
+    const grid = page.locator(".ds-grid");
+    await expect(grid).toBeVisible();
+    const columns = await grid.evaluate((node) => getComputedStyle(node).gridTemplateColumns.split(" ").filter(Boolean).length);
+    expect(columns).toBe(width === 360 ? 1 : width === 768 ? 2 : 3);
+    const screenshot = await page.screenshot({ fullPage: true, animations: "disabled" });
+    const output = testInfo.outputPath(`design-system-${width}.png`);
+    fs.writeFileSync(output, screenshot);
+    await testInfo.attach(`design-system-${width}`, { path: output, contentType: "image/png" });
+  });
+}
+
+test("reduced motion suppresses continuous skeleton animation", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/");
+  const duration = await page.locator(".ds-skeleton span").first().evaluate((node) => getComputedStyle(node).animationDuration);
+  expect(duration).toBe("0.001ms");
+});
+
+test("visual evidence output path is isolated from source tree", async ({}, testInfo) => {
+  expect(path.normalize(testInfo.outputDir)).toContain(path.normalize("test-results"));
+});
