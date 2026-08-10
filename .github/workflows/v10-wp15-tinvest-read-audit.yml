@@ -1,0 +1,90 @@
+name: V10 WP15 T-Invest Read Audit
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - "omni_cio/adapters/tinvest_read_v1.py"
+      - "tests/test_v10_wp15_tinvest_readonly.py"
+      - "scripts/rehearse_v10_wp15_offline.py"
+      - "docs/architecture/V10_WP15_TINVEST_READONLY_CONTRACT.md"
+      - "requirements.in"
+      - "requirements.txt"
+      - "requirements-dev.in"
+      - "requirements-dev.txt"
+      - "pyproject.toml"
+      - ".github/workflows/v10-wp15-tinvest-read-audit.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: v10-wp15-tinvest-read-audit-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    name: WP15 deterministic read-only account, freshness and cursor gate
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 25
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Bootstrap protected Python 3.12.10
+        shell: cmd
+        run: scripts\bootstrap_windows_ci_python.cmd
+
+      - name: Create isolated WP15 environment
+        shell: bash
+        run: |
+          VENV_ROOT="$(cygpath -u "$RUNNER_TEMP")"
+          VENV_PATH="$VENV_ROOT/omni-cio-wp15-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          VENV_WINDOWS_PATH="$(cygpath -w "$VENV_PATH")"
+          rm -rf "$VENV_PATH"
+          python -m venv "$VENV_PATH"
+          echo "VENV_PATH=$VENV_PATH" >> "$GITHUB_ENV"
+          echo "VENV_WINDOWS_PATH=$VENV_WINDOWS_PATH" >> "$GITHUB_ENV"
+          echo "$VENV_WINDOWS_PATH\\Scripts" >> "$GITHUB_PATH"
+
+      - name: Install hash-locked WP15 dependencies
+        shell: bash
+        run: |
+          python scripts/windows_ci_lock.py project requirements-dev.txt windows-requirements-dev.txt
+          python -m pip install --disable-pip-version-check --require-hashes -r windows-requirements-dev.txt
+          python -c "import grpc; import t_tech.invest; print('WP15 broker-read imports OK')"
+
+      - name: Run focused WP15 unit and authority tests
+        shell: cmd
+        run: |
+          "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m pytest -q tests\test_v10_wp15_tinvest_readonly.py
+
+      - name: Run deterministic offline WP15 rehearsal
+        shell: cmd
+        run: |
+          "%VENV_WINDOWS_PATH%\Scripts\python.exe" scripts\rehearse_v10_wp15_offline.py > "%RUNNER_TEMP%\wp15-tinvest-read-audit.json"
+          set "AUDIT_EXIT=%ERRORLEVEL%"
+          type "%RUNNER_TEMP%\wp15-tinvest-read-audit.json"
+          if not "%AUDIT_EXIT%"=="0" exit /b %AUDIT_EXIT%
+          echo WP15_EVIDENCE=%RUNNER_TEMP%\wp15-tinvest-read-audit.json>> "%GITHUB_ENV%"
+
+      - name: Upload sanitized synthetic WP15 evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: wp15-tinvest-read-audit-evidence
+          path: ${{ env.WP15_EVIDENCE }}
+          if-no-files-found: error
+          retention-days: 3
+
+      - name: Clean self-hosted workspace
+        if: always()
+        shell: bash
+        run: |
+          if [ -n "${VENV_PATH:-}" ]; then rm -rf "$VENV_PATH"; fi
+          git reset --hard HEAD
+          git clean -ffdx
