@@ -7,6 +7,7 @@ on:
       - "omni_cio/adapters/tinvest_read_v1.py"
       - "omni_cio/adapters/tinvest_market_v1.py"
       - "omni_cio/adapters/tinvest_secret_v1.py"
+      - "scripts/check_v10_wp15_ci_isolation.py"
       - "scripts/rehearse_v10_wp15_owner.py"
       - "scripts/validate_v10_wp15_owner_evidence.py"
       - "infrastructure/windows/run_wp15_owner_gate.ps1"
@@ -40,57 +41,11 @@ jobs:
         run: scripts\bootstrap_windows_ci_python.cmd
 
       - name: Classify CI access to private WP15 boundaries
-        shell: powershell
+        shell: cmd
         run: |
-          $ErrorActionPreference = "Stop"
-
-          function Get-ReadClassification {
-              param([Parameter(Mandatory = $true)][string]$Path)
-              try {
-                  $stream = [System.IO.File]::Open(
-                      $Path,
-                      [System.IO.FileMode]::Open,
-                      [System.IO.FileAccess]::Read,
-                      [System.IO.FileShare]::Read
-                  )
-                  $stream.Dispose()
-                  return "READABLE"
-              }
-              catch {
-                  $root = $_.Exception
-                  while ($null -ne $root.InnerException) {
-                      $root = $root.InnerException
-                  }
-                  if ($root -is [System.UnauthorizedAccessException]) {
-                      return "ACCESS_DENIED"
-                  }
-                  if (
-                      $root -is [System.IO.FileNotFoundException] -or
-                      $root -is [System.IO.DirectoryNotFoundException]
-                  ) {
-                      return "NOT_VISIBLE"
-                  }
-                  return "ERROR_TYPE:" + $root.GetType().FullName
-              }
-          }
-
-          $brokerClass = Get-ReadClassification -Path "C:\ProgramData\OmniCIO\secrets\read-broker\broker-read.dpapi"
-          $bindingClass = Get-ReadClassification -Path "C:\ProgramData\OmniCIO\wp15\private\owner-account-binding.json"
-          $diagnostic = [ordered]@{
-              schema_version = "1"
-              work_package = "WP15"
-              broker_read_ciphertext = $brokerClass
-              private_owner_binding = $bindingClass
-              secret_value_read = $false
-              private_payload_read = $false
-          }
-          $diagnosticPath = Join-Path $env:RUNNER_TEMP "wp15-owner-boundary-classification.json"
-          $diagnostic | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $diagnosticPath -Encoding UTF8
-          Write-Host "WP15_BROKER_READ_BOUNDARY=$brokerClass"
-          Write-Host "WP15_PRIVATE_BINDING_BOUNDARY=$bindingClass"
-          "WP15_BROKER_READ_BOUNDARY=$brokerClass" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "WP15_PRIVATE_BINDING_BOUNDARY=$bindingClass" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "WP15_BOUNDARY_DIAGNOSTIC=$diagnosticPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          python scripts\check_v10_wp15_ci_isolation.py --output "%RUNNER_TEMP%\wp15-owner-boundary-classification.json"
+          if not "%ERRORLEVEL%"=="0" exit /b %ERRORLEVEL%
+          echo WP15_BOUNDARY_DIAGNOSTIC=%RUNNER_TEMP%\wp15-owner-boundary-classification.json>> "%GITHUB_ENV%"
 
       - name: Upload sanitized boundary classification
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -100,19 +55,10 @@ jobs:
           if-no-files-found: error
           retention-days: 3
 
-      - name: Enforce CI isolation from broker-read ciphertext
+      - name: Enforce CI isolation from private WP15 boundaries
         shell: cmd
         run: |
-          if "%WP15_BROKER_READ_BOUNDARY%"=="READABLE" exit /b 1
-          echo %WP15_BROKER_READ_BOUNDARY% | findstr /B /C:"ERROR_TYPE:" >nul && exit /b 1
-          exit /b 0
-
-      - name: Enforce CI isolation from private OWNER binding
-        shell: cmd
-        run: |
-          if "%WP15_PRIVATE_BINDING_BOUNDARY%"=="READABLE" exit /b 1
-          echo %WP15_PRIVATE_BINDING_BOUNDARY% | findstr /B /C:"ERROR_TYPE:" >nul && exit /b 1
-          exit /b 0
+          python scripts\check_v10_wp15_ci_isolation.py --enforce "%WP15_BOUNDARY_DIAGNOSTIC%"
 
       - name: Validate sanitized OWNER evidence against exact implementation
         shell: cmd
