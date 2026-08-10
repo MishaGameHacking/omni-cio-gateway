@@ -75,6 +75,7 @@ files = [
   "scripts/reconcile_watchtower_schedule.py",
   "scripts/rehearse_v10_wp13_persistence.py",
   "scripts/rehearse_v10_wp14_jobs.py",
+  "scripts/rehearse_v10_wp14_windows.py",
 ]
 
 [tool.pytest.ini_options]
