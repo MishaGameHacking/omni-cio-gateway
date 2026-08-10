@@ -196,7 +196,9 @@ def _exercise(connection: psycopg.Connection[Any], *, dsn: str) -> dict[str, Any
             now=NOW + timedelta(minutes=2, seconds=3)
         )
         if len(recovered) != 1 or recovered[0].state is not JobState.RETRY_WAIT:
-            raise AssertionError("expired RETRY_SAFE lease did not recover to RETRY_WAIT")
+            raise AssertionError(
+                "expired RETRY_SAFE lease did not recover to RETRY_WAIT"
+            )
 
         stale_worker_rejected = False
         try:
@@ -319,7 +321,9 @@ def _exercise(connection: psycopg.Connection[Any], *, dsn: str) -> dict[str, Any
         "SELECT COUNT(*) FROM omni_cio_v10.job_events"
     ).fetchone()
     if event_count_row is None or int(event_count_row[0]) < 12:
-        raise AssertionError("job journal did not capture required lifecycle transitions")
+        raise AssertionError(
+            "job journal did not capture required lifecycle transitions"
+        )
 
     digest = durable_job_state_digest(connection)
     if len(digest) != 64:
@@ -362,14 +366,20 @@ def _digest(connection: psycopg.Connection[Any]) -> dict[str, Any]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="WP14 durable jobs synthetic acceptance probe")
+    parser = argparse.ArgumentParser(
+        description="WP14 durable jobs synthetic acceptance probe"
+    )
     parser.add_argument("command", choices=("exercise", "digest"))
     args = parser.parse_args()
 
     try:
         dsn = _dsn()
         with psycopg.connect(dsn) as connection:
-            result = _exercise(connection, dsn=dsn) if args.command == "exercise" else _digest(connection)
+            result = (
+                _exercise(connection, dsn=dsn)
+                if args.command == "exercise"
+                else _digest(connection)
+            )
     except Exception as exc:
         print(
             json.dumps(
