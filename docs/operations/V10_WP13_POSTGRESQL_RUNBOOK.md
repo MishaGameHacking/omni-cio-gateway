@@ -57,7 +57,7 @@ The rehearsal creates an isolated temporary PostgreSQL 18 cluster and synthetic 
 - restore to a separate database;
 - exact migration-series/state-digest parity after restore.
 
-Only sanitized hashes, booleans, migration count/revision and duration may become CI evidence. The focused audit also emits only a sanitized exception class when the synthetic Python probe fails, so a red gate can be diagnosed without exposing DSNs, paths carrying secrets, or payload content. The temporary cluster is deleted after the rehearsal.
+Only sanitized hashes, booleans, migration count/revision and duration may become CI evidence. The focused audit emits only sanitized probe exception classes, explicit empty-output classifications, and sanitized PowerShell exception/error identifiers when a synthetic rehearsal fails. It never needs raw DSNs, secret-bearing paths or payload content for diagnosis. The temporary cluster is deleted after the rehearsal.
 
 ## Production binding rule
 
