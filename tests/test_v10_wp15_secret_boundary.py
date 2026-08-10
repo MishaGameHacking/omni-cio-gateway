@@ -18,7 +18,7 @@ def _write_state(path: Path, *, active: bool) -> None:
                 "schema_version": "1",
                 "classes": [
                     {
-                        "secret_class": "broker_read",
+                        "secret_class": "broker_read",  # pragma: allowlist secret
                         "state": "ACTIVE" if active else "UNPROVISIONED",
                         "provisioned": active,
                         "compromised": False,
