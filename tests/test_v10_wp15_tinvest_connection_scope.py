@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 
 from omni_cio.adapters.tinvest_connection_v1 import (
+    TInvestConnectionMarketReadAdapter,
     TInvestConnectionReadAdapter,
     discover_read_account_bindings,
 )
@@ -68,6 +69,20 @@ def connection_adapter(
     )
 
 
+def market_connection_adapter(
+    client: FakeClient,
+    *,
+    expected_account_id: str,
+) -> TInvestConnectionMarketReadAdapter:
+    return TInvestConnectionMarketReadAdapter(
+        client_factory=lambda: client,
+        expected_account_fingerprint_sha256=fingerprint(expected_account_id),
+        monotonic=lambda: 0.0,
+        sleeper=lambda _: None,
+        random_unit=lambda: 0.0,
+    )
+
+
 def test_broad_read_token_discovers_multiple_masked_account_bindings() -> None:
     client = FakeClient([account(ACCOUNT_A), account(ACCOUNT_B), account(ACCOUNT_C)])
 
@@ -95,6 +110,16 @@ def test_broad_read_token_selects_exact_expected_account() -> None:
     assert raw_account_id == ACCOUNT_B
     assert binding.account_fingerprint_sha256 == fingerprint(ACCOUNT_B)
     assert binding.masked_label.endswith("0002")
+
+
+def test_market_companion_uses_same_exact_broad_token_account_binding() -> None:
+    client = FakeClient([account(ACCOUNT_A), account(ACCOUNT_B), account(ACCOUNT_C)])
+    adapter = market_connection_adapter(client, expected_account_id=ACCOUNT_C)
+
+    raw_account_id, binding = adapter._bind_account(client)
+
+    assert raw_account_id == ACCOUNT_C
+    assert binding.account_fingerprint_sha256 == fingerprint(ACCOUNT_C)
 
 
 def test_expected_account_absent_from_broad_read_token_fails_closed() -> None:
@@ -170,7 +195,8 @@ def test_closed_full_access_account_does_not_expand_live_read_authority() -> Non
     assert bindings[0].account_fingerprint_sha256 == fingerprint(ACCOUNT_A)
 
 
-def test_connection_adapter_source_contains_no_write_surface() -> None:
+def test_connection_adapters_expose_no_write_surface() -> None:
     forbidden_attributes = ("orders", "stop_orders", "post_order")
 
-    assert not any(hasattr(TInvestConnectionReadAdapter, name) for name in forbidden_attributes)
+    for adapter_type in (TInvestConnectionReadAdapter, TInvestConnectionMarketReadAdapter):
+        assert not any(hasattr(adapter_type, name) for name in forbidden_attributes)
