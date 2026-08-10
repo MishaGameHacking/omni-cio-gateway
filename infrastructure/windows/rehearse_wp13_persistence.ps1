@@ -151,14 +151,24 @@ function Invoke-ProbeJson {
         )
         $raw = & $Python $Probe $Command 2>$null
         $probeExit = $LASTEXITCODE
+        $rawText = ($raw | Out-String)
+        if ([string]::IsNullOrWhiteSpace($rawText)) {
+            if ($probeExit -ne 0) {
+                throw "WP13_PROBE_FAILED:NO_OUTPUT"
+            }
+            throw "WP13_PROBE_OUTPUT_EMPTY"
+        }
         try {
-            $parsed = (($raw | Out-String) | ConvertFrom-Json)
+            $parsed = ($rawText | ConvertFrom-Json)
         }
         catch {
             throw "WP13_PROBE_OUTPUT_INVALID"
         }
         if ($probeExit -ne 0) {
             $probeReason = ([string]$parsed.reason).ToUpperInvariant()
+            if ([string]::IsNullOrWhiteSpace($probeReason)) {
+                $probeReason = "UNKNOWN"
+            }
             if ($probeReason -notmatch '^[A-Z0-9_.-]+$') {
                 $probeReason = "UNKNOWN"
             }
@@ -431,11 +441,22 @@ try {
 }
 catch {
     $message = [string]$_.Exception.Message
-    if ($message -notmatch '^[A-Z0-9_:\-]+$') {
-        $message = "WP13_AUDIT_ERROR"
+    if ($message -match '^[A-Z0-9_:\-]+$') {
+        $reasonCode = $message
+    }
+    else {
+        $exceptionType = ([string]$_.Exception.GetType().Name).ToUpperInvariant()
+        if ($exceptionType -notmatch '^[A-Z0-9_.-]+$') {
+            $exceptionType = "UNKNOWN"
+        }
+        $errorId = ([string]$_.FullyQualifiedErrorId).ToUpperInvariant()
+        if ([string]::IsNullOrWhiteSpace($errorId) -or $errorId -notmatch '^[A-Z0-9_.-]+$') {
+            $errorId = "UNKNOWN"
+        }
+        $reasonCode = "WP13_AUDIT_ERROR:$exceptionType:$errorId"
     }
     $result.status = "FAIL"
-    $result.reason_code = $message
+    $result.reason_code = $reasonCode
 }
 finally {
     $result.phase = $phase
