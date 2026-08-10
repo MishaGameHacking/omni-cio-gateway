@@ -90,7 +90,7 @@ Locks the OWNER-approved product behavior for Block F before implementation:
 - degraded modes preserve deterministic commands where Core remains available;
 - no recurring paid Telegram/bot middleware/SaaS is required for V10 Definition of Done.
 
-This amendment is planning authority only and does not start Block F or change the current WP4-next implementation sequence.
+This amendment is planning authority only and does not start Block F or change the current implementation sequence by itself.
 
 ### 5. Autonomous Portfolio Governance / Zero-Custody / Commercial Model
 
@@ -121,11 +121,39 @@ This amendment locks the OWNER-approved product definition across the existing A
 
 The amendment also narrows the AI contract: the **system** is the primary 24/7 autonomous actor, not an endlessly-running LLM.
 
-This is planning authority only. It does not start billing, updater, Portfolio Guardian, Real execution or any later block. Current implementation order remains WP4 next.
+This is planning authority only. It does not start billing, updater, Portfolio Guardian, Real execution or any later block.
+
+### 6. Identity / Multi-Tenant Account / Authentication
+
+`OMNI_CIO_V10_IDENTITY_MULTI_TENANT_ACCOUNT_AND_AUTHENTICATION_AMENDMENT.md`
+
+Architecture / machine-readable companions:
+
+- `../architecture/ADR-0010-identity-multitenant-authentication.md`;
+- `../architecture/V10_IDENTITY_AUTHENTICATION_CONTRACT.json`;
+- `../operations/V10_IDENTITY_AND_BROKER_CONNECTION_SECURITY_NOTES.md`.
+
+Locks the OWNER-approved 2026-08-10 identity/account direction while preserving existing safety/legal gates:
+
+- an internal Omni-CIO user account is authoritative; Telegram and VK ID are authentication providers, not business/account IDs;
+- ordinary login methods are Telegram Login and VK ID; no Omni-CIO password database or Google login is required for the ordinary path;
+- one user account owns one isolated tenant in the baseline model and may link both Telegram and VK identities after proof of both;
+- server-side revocable sessions provide remembered login without making a phone/browser authoritative state;
+- provider display names/profile data are never sufficient for automatic account merge;
+- public multi-user readiness requires API plus database-enforced tenant isolation and cross-scope tests across jobs/cache/AI/backups;
+- broker credentials belong to tenant-owned `BrokerConnection` objects and normal provisioning occurs only through authenticated Web settings;
+- T-Invest READ and optional TRADE credentials remain separate; execution is allowed only for the exact broker-account intersection independently verified through both credentials;
+- a broad token may bind multiple broker accounts, while an account-specific token binds only the account exposed by the broker;
+- transfer/withdrawal authority remains outside V10;
+- the central Identity/Commercial plane is minimal and is not authorized to become a centralized portfolio/broker-secret/private-history database;
+- public multi-user activation remains disabled until external-Web security, cross-tenant isolation, broker-terms, personal-data, investment-advisory, capacity and commercial legal gates are accepted;
+- WP15 live credential evidence is moved from ordinary PowerShell UX to the reviewed authenticated Web broker-provisioning flow; WP18 real-data acceptance remains blocked until that deferred evidence passes.
+
+This amendment changes product/account interpretation and selected acceptance sequencing only where explicitly stated. It does not start Block E implementation before the amended WP15 code/security acceptance is formally accepted.
 
 ## Draft/superseded planning material
 
-Open or historical PR descriptions must not be treated as active plan authority merely because they contain V10 ideas. In particular, any older unmerged planning PR that conflicts with the accepted Concrete Execution Plan must be closed/superseded rather than merged as a competing roadmap.
+Open or historical PR descriptions must not be treated as active plan authority merely because they contain V10 ideas. In particular, any older unmerged planning PR that conflicts with an accepted amendment must be closed/superseded rather than merged as a competing roadmap.
 
 ## Required reading order for new V10 engineering sessions
 
