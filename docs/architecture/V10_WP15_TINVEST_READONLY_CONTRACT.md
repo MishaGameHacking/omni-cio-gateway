@@ -34,7 +34,7 @@ A READ credential may expose one or many T-Invest accounts. WP15 therefore disti
 - credential-level discovery: all accessible OPEN accounts reported with READ_ONLY authority;
 - account-level ingestion: exactly one expected canonical account fingerprint selected from that discovered set.
 
-A broad READ token is valid when every accessible OPEN account is READ_ONLY. A narrow token is the same model with one discovered account.
+A broad READ token is valid only when every broker account with access other than `NO_ACCESS` reports `READ_ONLY` authority; only OPEN accounts are returned as selectable bindings. A narrow token is the same model with one discovered account.
 
 ## 4. Account discovery and binding
 
@@ -45,7 +45,7 @@ Rules:
 - raw broker account IDs exist only transiently inside the adapter boundary;
 - outward discovery returns only canonical broker-account identity, SHA-256 fingerprint and masked label;
 - `NO_ACCESS` accounts are ignored;
-- accessible OPEN `FULL_ACCESS`, unspecified or unknown authority rejects the READ credential entirely;
+- any account with authority other than `READ_ONLY` or `NO_ACCESS` — including a closed account — rejects the READ credential entirely;
 - duplicate provider account identity rejects the credential;
 - account ingestion requires one preselected expected fingerprint;
 - expected account absent from the credential set fails `EXPECTED_ACCOUNT_NOT_ACCESSIBLE`;
@@ -131,7 +131,7 @@ At minimum prove:
 - expected account absent fails closed without raw IDs in errors;
 - duplicate account binding fails closed;
 - `NO_ACCESS` is not selectable;
-- any accessible OPEN broader/unknown authority rejects the READ credential;
+- any account with authority other than `READ_ONLY` or `NO_ACCESS`, including a closed account, rejects the READ credential;
 - full account IDs never appear in outward account discovery;
 - wrong-account, partial identity, loading limits, virtual positions, stale data, cursor loops, retry bounds and semantic dedupe failure paths remain protected;
 - production read proxies expose no broker-write surface or raw delegate escape.
