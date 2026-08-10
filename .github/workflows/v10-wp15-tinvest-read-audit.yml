@@ -81,7 +81,7 @@ jobs:
           set "STATIC_EXIT=0"
           "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m ruff check . > "%RUNNER_TEMP%\wp15-ruff-check.txt" 2>&1
           if errorlevel 1 set "STATIC_EXIT=1"
-          "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m ruff format --check scripts omni_cio\adapters tests\test_v10_wp15_tinvest_readonly.py tests\test_v10_wp15_tinvest_connection_scope.py tests\test_v10_wp15_tinvest_market.py tests\test_v10_wp15_secret_boundary.py tests\test_v10_wp15_owner_evidence.py tests\test_v10_wp15_ci_isolation.py tests\test_v10_wp15_cursor_resume.py > "%RUNNER_TEMP%\wp15-ruff-format.txt" 2>&1
+          "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m ruff format --check omni_cio\adapters\tinvest_connection_v1.py scripts\rehearse_v10_wp15_offline.py scripts\rehearse_v10_wp15_owner.py scripts\validate_v10_wp15_owner_evidence.py tests\test_v10_wp15_tinvest_connection_scope.py tests\test_v10_wp15_owner_evidence.py > "%RUNNER_TEMP%\wp15-ruff-format.txt" 2>&1
           if errorlevel 1 set "STATIC_EXIT=1"
           "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m mypy > "%RUNNER_TEMP%\wp15-mypy.txt" 2>&1
           if errorlevel 1 set "STATIC_EXIT=1"
