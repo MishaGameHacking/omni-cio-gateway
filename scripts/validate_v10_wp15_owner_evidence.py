@@ -10,9 +10,7 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
-EVIDENCE = Path(
-    r"C:\ProgramData\OmniCIO\wp15\evidence\wp15-owner-live-evidence.json"
-)
+EVIDENCE = Path(r"C:\ProgramData\OmniCIO\wp15\evidence\wp15-owner-live-evidence.json")
 IMPLEMENTATION_FILES = (
     "omni_cio/adapters/tinvest_read_v1.py",
     "omni_cio/adapters/tinvest_market_v1.py",
