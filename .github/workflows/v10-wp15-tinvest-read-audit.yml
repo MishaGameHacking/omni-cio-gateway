@@ -76,19 +76,30 @@ jobs:
       - name: Run deterministic offline WP15 rehearsal
         shell: cmd
         run: |
-          "%VENV_WINDOWS_PATH%\Scripts\python.exe" scripts\rehearse_v10_wp15_offline.py > "%RUNNER_TEMP%\wp15-tinvest-read-audit.json"
+          "%VENV_WINDOWS_PATH%\Scripts\python.exe" scripts\rehearse_v10_wp15_offline.py > "%RUNNER_TEMP%\wp15-tinvest-read-audit.json" 2> "%RUNNER_TEMP%\wp15-tinvest-read-diagnostic.txt"
           set "AUDIT_EXIT=%ERRORLEVEL%"
-          type "%RUNNER_TEMP%\wp15-tinvest-read-audit.json"
-          if not "%AUDIT_EXIT%"=="0" exit /b %AUDIT_EXIT%
+          if exist "%RUNNER_TEMP%\wp15-tinvest-read-audit.json" type "%RUNNER_TEMP%\wp15-tinvest-read-audit.json"
+          if exist "%RUNNER_TEMP%\wp15-tinvest-read-diagnostic.txt" type "%RUNNER_TEMP%\wp15-tinvest-read-diagnostic.txt"
+          echo WP15_AUDIT_EXIT=%AUDIT_EXIT%>> "%GITHUB_ENV%"
           echo WP15_EVIDENCE=%RUNNER_TEMP%\wp15-tinvest-read-audit.json>> "%GITHUB_ENV%"
+          echo WP15_DIAGNOSTIC=%RUNNER_TEMP%\wp15-tinvest-read-diagnostic.txt>> "%GITHUB_ENV%"
+          exit /b 0
 
-      - name: Upload sanitized synthetic WP15 evidence
+      - name: Upload synthetic WP15 evidence and diagnostics
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: wp15-tinvest-read-audit-evidence
-          path: ${{ env.WP15_EVIDENCE }}
-          if-no-files-found: error
+          path: |
+            ${{ env.WP15_EVIDENCE }}
+            ${{ env.WP15_DIAGNOSTIC }}
+          if-no-files-found: warn
           retention-days: 3
+
+      - name: Enforce deterministic rehearsal result
+        shell: cmd
+        run: |
+          if not "%WP15_AUDIT_EXIT%"=="0" exit /b %WP15_AUDIT_EXIT%
 
       - name: Clean self-hosted workspace
         if: always()
