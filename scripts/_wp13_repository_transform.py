@@ -1,0 +1,138 @@
+from __future__ import annotations
+
+from pathlib import Path
+import re
+
+
+path = Path("omni_cio/persistence/repository.py")
+text = path.read_text(encoding="utf-8")
+text = text.replace(
+    "from omni_cio.persistence.migration import ConnectionLike, SCHEMA_NAME",
+    "from psycopg import sql\n\n"
+    "from omni_cio.persistence.migration import ConnectionLike, SCHEMA_NAME",
+)
+text = text.replace("{SCHEMA_NAME}", "omni_cio_v10")
+
+insert_start = text.index("def _insert_immutable(")
+insert_end = text.index("\ndef _persist_tenant", insert_start)
+insert_helper = '''def _insert_immutable(
+    connection: ConnectionLike,
+    *,
+    table: str,
+    key_columns: tuple[str, ...],
+    key_values: tuple[Any, ...],
+    values: dict[str, Any],
+    record_sha256: str,
+    hash_column: str = "record_sha256",
+) -> None:
+    columns = (*values.keys(), hash_column)
+    params = (*values.values(), record_sha256)
+    insert_query = sql.SQL(
+        "INSERT INTO {}.{} ({}) VALUES ({}) "
+        "ON CONFLICT ({}) DO NOTHING RETURNING {}"
+    ).format(
+        sql.Identifier(SCHEMA_NAME),
+        sql.Identifier(table),
+        sql.SQL(", ").join(sql.Identifier(column) for column in columns),
+        sql.SQL(", ").join(sql.Placeholder() for _ in columns),
+        sql.SQL(", ").join(sql.Identifier(column) for column in key_columns),
+        sql.Identifier(hash_column),
+    )
+    cursor = connection.execute(insert_query, params)
+    if cursor.fetchone() is not None:
+        return
+
+    predicate = sql.SQL(" AND ").join(
+        sql.SQL("{} = {}").format(
+            sql.Identifier(column),
+            sql.Placeholder(),
+        )
+        for column in key_columns
+    )
+    select_query = sql.SQL("SELECT {} FROM {}.{} WHERE {}").format(
+        sql.Identifier(hash_column),
+        sql.Identifier(SCHEMA_NAME),
+        sql.Identifier(table),
+        predicate,
+    )
+    existing = connection.execute(select_query, key_values).fetchone()
+    if existing is None:
+        raise PersistenceConflictError(
+            f"{table} insert conflicted with a secondary uniqueness constraint"
+        )
+    if str(existing[0]) != record_sha256:
+        raise PersistenceConflictError(
+            f"{table} canonical identity replay conflicts with immutable content"
+        )
+'''
+text = text[:insert_start] + insert_helper + text[insert_end:]
+
+digest_old = '''            rows = self._connection.execute(
+                f"SELECT {', '.join(selected)} FROM omni_cio_v10.{table} "
+                f"ORDER BY {', '.join(key_columns)}"
+            ).fetchall()'''
+digest_new = '''            query = sql.SQL("SELECT {} FROM {}.{} ORDER BY {}").format(
+                sql.SQL(", ").join(sql.Identifier(column) for column in selected),
+                sql.Identifier(SCHEMA_NAME),
+                sql.Identifier(table),
+                sql.SQL(", ").join(
+                    sql.Identifier(column) for column in key_columns
+                ),
+            )
+            rows = self._connection.execute(query).fetchall()'''
+if digest_old not in text:
+    raise SystemExit("state_digest query block not found")
+text = text.replace(digest_old, digest_new, 1)
+
+count_start = text.index("def count_rows(")
+count_helper = '''def count_rows(connection: ConnectionLike, tables: Iterable[str]) -> dict[str, int]:
+    allowed_tables = {item[0] for item in AUDIT_DIGEST_TABLES} | {
+        "research_cache",
+        "system_health",
+        "state_revisions",
+    }
+    result: dict[str, int] = {}
+    for table in tables:
+        if table not in allowed_tables:
+            raise ValueError(f"unsupported persistence table: {table}")
+        query = sql.SQL("SELECT COUNT(*) FROM {}.{}").format(
+            sql.Identifier(SCHEMA_NAME),
+            sql.Identifier(table),
+        )
+        row = connection.execute(query).fetchone()
+        if row is None:
+            raise RuntimeError(f"row count unavailable for {table}")
+        result[table] = int(row[0])
+    return result
+'''
+text = text[:count_start] + count_helper
+
+lines: list[str] = []
+for line in text.splitlines(keepends=True):
+    if 'f"' in line and "{" not in line:
+        line = line.replace('f"', '"')
+    lines.append(line)
+text = "".join(lines)
+
+blob_conflict_old = '''                if row is None or bytes(row[2]) != payload:
+                    raise PersistenceConflictError("content hash identity conflict")'''
+blob_conflict_new = '''                if (
+                    row is None
+                    or str(row[0]) != media_type
+                    or row[1] != schema_ref
+                    or bytes(row[2]) != payload
+                ):
+                    raise PersistenceConflictError("content hash identity conflict")'''
+if blob_conflict_old not in text:
+    raise SystemExit("content blob replay block not found")
+text = text.replace(blob_conflict_old, blob_conflict_new, 1)
+
+remaining = re.findall(
+    r'''f["']\s*(?:SELECT|INSERT|UPDATE|DELETE|WITH)''',
+    text,
+    flags=re.IGNORECASE,
+)
+if remaining:
+    raise SystemExit(f"dynamic SQL f-string remains: {remaining}")
+
+path.write_text(text, encoding="utf-8", newline="\n")
