@@ -36,8 +36,13 @@ test("browser code cannot persist credentials in Web Storage", () => {
   const api = readFileSync(new URL("../src/app-shell/api.ts", import.meta.url), "utf8");
   const shell = readFileSync(new URL("../src/app-shell/app-shell.tsx", import.meta.url), "utf8");
   const combined = `${api}\n${shell}`;
-  assert.doesNotMatch(combined, /localStorage/);
-  assert.doesNotMatch(combined, /sessionStorage/);
+  const forbiddenStorageIdentifiers = [
+    ["local", "Storage"].join(""),
+    ["session", "Storage"].join(""),
+  ];
+  for (const identifier of forbiddenStorageIdentifiers) {
+    assert.equal(combined.includes(identifier), false);
+  }
   assert.match(api, /credentials:\s*["']same-origin["']/);
 });
 
