@@ -9,7 +9,10 @@ from omni_cio.adapters.tinvest_read_v1 import BrokerAccountBindingV1
 from omni_cio.contracts.v1.domain import OWNER_TENANT_ID
 from omni_cio.web.api_v1 import WebApiServicesV1, create_web_api
 from omni_cio.web.persistence_v1 import BrokerConnectionRecordV1
-from omni_cio.web.provisioning_v1 import BrokerProvisioningPreviewV1
+from omni_cio.web.provisioning_v1 import (
+    BrokerProvisioningAccountV1,
+    BrokerProvisioningPreviewV1,
+)
 from omni_cio.web.session_v1 import SessionRegistryV1
 
 
@@ -37,7 +40,9 @@ class FakeBrokerRepository:
             accounts=(BINDING,),
         )
 
-    def list_read_connections(self, *, tenant_id: str) -> tuple[BrokerConnectionRecordV1, ...]:
+    def list_read_connections(
+        self, *, tenant_id: str
+    ) -> tuple[BrokerConnectionRecordV1, ...]:
         self.tenant_requests.append(tenant_id)
         return (self.record,) if tenant_id == OWNER_TENANT_ID else ()
 
@@ -49,30 +54,49 @@ class FakeProvisioning:
         self.commit_tenants: list[str] = []
         self.revoked_tenants: list[str] = []
 
-    def preview(self, *, user_id: str, tenant_id: str, token: str, now: datetime) -> BrokerProvisioningPreviewV1:
+    def preview(
+        self, *, user_id: str, tenant_id: str, token: str, now: datetime
+    ) -> BrokerProvisioningPreviewV1:
         del user_id, tenant_id
         self.preview_tokens.append(token)
         return BrokerProvisioningPreviewV1(
             challenge_id="challenge-opaque-001",
             expires_at=now + timedelta(minutes=5),
-            accounts=(BINDING,),
+            accounts=(
+                BrokerProvisioningAccountV1(
+                    selection_id="selection-opaque-001",
+                    masked_label=BINDING.masked_label,
+                ),
+            ),
         )
 
-    def commit_new(self, *, user_id: str, tenant_id: str, challenge_id: str, selected_fingerprints: tuple[str, ...], now: datetime) -> BrokerConnectionRecordV1:
-        del user_id, challenge_id, selected_fingerprints, now
+    def commit_new(
+        self,
+        *,
+        user_id: str,
+        tenant_id: str,
+        challenge_id: str,
+        selected_accounts: tuple[str, ...],
+        now: datetime,
+    ) -> BrokerConnectionRecordV1:
+        del user_id, challenge_id, selected_accounts, now
         self.commit_tenants.append(tenant_id)
         return self.repository.record
 
     def replace_read_credential(self, **kwargs: Any) -> None:
         self.commit_tenants.append(str(kwargs["tenant_id"]))
 
-    def revoke_read_connection(self, *, tenant_id: str, connection_id: str, now: datetime) -> bool:
+    def revoke_read_connection(
+        self, *, tenant_id: str, connection_id: str, now: datetime
+    ) -> bool:
         del connection_id, now
         self.revoked_tenants.append(tenant_id)
         return True
 
 
-def make_client(*, private_test_identity_enabled: bool = True) -> tuple[TestClient, FakeBrokerRepository, FakeProvisioning]:
+def make_client(
+    *, private_test_identity_enabled: bool = True
+) -> tuple[TestClient, FakeBrokerRepository, FakeProvisioning]:
     repository = FakeBrokerRepository()
     provisioning = FakeProvisioning(repository)
     sessions = SessionRegistryV1()
@@ -112,7 +136,9 @@ def test_private_login_sets_httponly_strict_cookie_and_session_is_server_side() 
     assert "tenant:v1:owner" not in session.text
 
 
-def test_provider_surface_is_exactly_telegram_and_vk_without_password_or_google() -> None:
+def test_provider_surface_is_exactly_telegram_and_vk_without_password_or_google() -> (
+    None
+):
     client, _, _ = make_client()
     response = client.get("/api/v10/web/auth/providers")
     assert response.status_code == 200
@@ -121,9 +147,16 @@ def test_provider_surface_is_exactly_telegram_and_vk_without_password_or_google(
     assert "password" not in response.text.lower()
 
 
-def test_private_data_routes_require_session_and_ignore_client_tenant_authority() -> None:
+def test_private_data_routes_require_session_and_ignore_client_tenant_authority() -> (
+    None
+):
     client, repository, _ = make_client()
-    assert client.get("/api/v10/web/broker-connections?tenant_id=tenant:v1:other").status_code == 401
+    assert (
+        client.get(
+            "/api/v10/web/broker-connections?tenant_id=tenant:v1:other"
+        ).status_code
+        == 401
+    )
     login(client)
     response = client.get("/api/v10/web/broker-connections?tenant_id=tenant:v1:other")
     assert response.status_code == 200
@@ -134,7 +167,9 @@ def test_private_data_routes_require_session_and_ignore_client_tenant_authority(
     assert response.json()[0]["accounts"][0]["masked_label"] == "****0017"
 
 
-def test_broker_preview_never_returns_raw_token_and_commit_uses_session_tenant() -> None:
+def test_broker_preview_never_returns_raw_token_and_commit_uses_session_tenant() -> (
+    None
+):
     client, _, provisioning = make_client()
     login(client)
     raw_token = "synthetic-read-credential-value"
