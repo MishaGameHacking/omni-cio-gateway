@@ -132,13 +132,15 @@ jobs:
           powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $paths=@('infrastructure\windows\provision_wp15_live_web_acceptance.ps1','infrastructure\windows\run_wp15_live_web_runtime.ps1','infrastructure\windows\finalize_wp15_live_web_evidence.ps1','infrastructure\windows\audit_wp15_live_web_runner.ps1'); foreach ($path in $paths) { $tokens=$null; $errors=$null; [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path), [ref]$tokens, [ref]$errors); if ($errors.Count -ne 0) { $errors | ForEach-Object { Write-Error $_.Message }; exit 40 } }; Write-Host 'WP15 live PowerShell parse contract passed.'"
           if errorlevel 1 exit /b 40
 
-      - name: Verify runtime SID translation semantics
+      - name: Verify runtime identity translation and ownership semantics
         shell: cmd
         run: |
           findstr /L /C:"$runtimeAccount = $runtimeSid.Translate([System.Security.Principal.NTAccount]).Value" infrastructure\windows\provision_wp15_live_web_acceptance.ps1 >nul
           if errorlevel 1 exit /b 41
-          powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $user=Get-LocalUser -Name 'omni-cio-runtime' -ErrorAction Stop; $account=$user.SID.Translate([System.Security.Principal.NTAccount]).Value; if ([string]::IsNullOrWhiteSpace($account) -or $account.IndexOf('\') -lt 1) { exit 42 }; Write-Host 'WP15 runtime SID translation contract passed.'"
+          findstr /L /C:"$runtimeOwnershipMarker = \"Omni-CIO V10 WP6 runtime role anchor\"" infrastructure\windows\provision_wp15_live_web_acceptance.ps1 >nul
           if errorlevel 1 exit /b 42
+          powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $user=Get-LocalUser -Name 'omni-cio-runtime' -ErrorAction Stop; if ([string]$user.Description -ne 'Omni-CIO V10 WP6 runtime role anchor') { exit 43 }; $account=$user.SID.Translate([System.Security.Principal.NTAccount]).Value; if ([string]::IsNullOrWhiteSpace($account) -or $account.IndexOf('\') -lt 1) { exit 44 }; Write-Host 'WP15 runtime identity ownership contract passed.'"
+          if errorlevel 1 exit /b 44
 
       - name: Reproduce production Python 3.14 runtime dependencies
         shell: cmd
