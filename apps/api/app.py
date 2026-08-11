@@ -7,6 +7,7 @@ import re
 from typing import Any, Iterator
 
 from fastapi import FastAPI
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from t_tech.invest import Client
@@ -37,6 +38,7 @@ from omni_cio.web.provisioning_v1 import (
 WEB_ROOT = Path(__file__).resolve().parents[1] / "web"
 WEB_DIST = WEB_ROOT / "dist"
 _GIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+_LOCAL_TRUSTED_HOSTS = ("127.0.0.1", "localhost")
 
 
 def _private_acceptance_enabled() -> bool:
@@ -66,6 +68,14 @@ def _verify_live_database(connection: Any) -> None:
     expected = tuple((item.version, item.sha256) for item in discover_migrations())
     if current_migration_state(connection) != expected:
         raise RuntimeError("WP15_LIVE_DATABASE_MIGRATION_STATE_INVALID")
+
+
+def _protect_local_hosts(app: FastAPI) -> None:
+    app.add_middleware(
+        TrustedHostMiddleware,
+        allowed_hosts=list(_LOCAL_TRUSTED_HOSTS),
+        www_redirect=False,
+    )
 
 
 def _client_factory_builder(token: str):
@@ -123,6 +133,7 @@ def create_local_private_app() -> FastAPI:
             secure_cookie=False,
         )
     )
+    _protect_local_hosts(app)
 
     if not WEB_DIST.is_dir() or not (WEB_DIST / "index.html").is_file():
         raise RuntimeError("WP17_WEB_BUILD_MISSING")
