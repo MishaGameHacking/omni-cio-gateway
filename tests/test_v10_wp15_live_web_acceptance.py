@@ -3,7 +3,6 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
 
 import pytest
 
@@ -60,7 +59,7 @@ class FakeVault:
         self.value = value
         self.loads: list[str] = []
 
-    def load(self, secret_ref: str) -> str:
+    def load(self, *, secret_ref: str) -> str:
         self.loads.append(secret_ref)
         return self.value
 
@@ -172,7 +171,7 @@ def _snapshot_result(
 
 def _writer(tmp_path: Path) -> PendingLiveAcceptanceEvidenceWriterV1:
     root = tmp_path / "pending"
-    root.mkdir()
+    root.mkdir(parents=True)
     (root / ".omni-cio-wp15-live-pending").write_text(
         "OMNI-CIO-V10-WP15-LIVE-PENDING-v1",
         encoding="ascii",
