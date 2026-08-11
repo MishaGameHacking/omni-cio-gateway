@@ -122,7 +122,12 @@ export function ApplicationShell() {
       </aside>
       <main className="shell-content" id="main-content">
         {healthUnavailable ? <div className="shell-degraded" role="status">Downstream API недоступен — shell работает в DEGRADED режиме.</div> : null}
-        <RoutePage path={path} healthState={healthState} freshness={health?.freshness ?? "UNKNOWN"} />
+        <RoutePage
+          path={path}
+          healthState={healthState}
+          freshness={health?.freshness ?? "UNKNOWN"}
+          onSessionsRevoked={() => setSession({ authenticated: false })}
+        />
       </main>
     </div>
   );
