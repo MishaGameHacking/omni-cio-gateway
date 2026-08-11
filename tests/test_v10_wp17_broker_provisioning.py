@@ -64,7 +64,15 @@ class FakeRepository:
     def __init__(self) -> None:
         self.records: dict[str, BrokerConnectionRecordV1] = {}
 
-    def create_read_connection(self, *, tenant_id: str, connection_id: str, secret_ref: str, bindings: tuple[Any, ...], now: datetime) -> None:
+    def create_read_connection(
+        self,
+        *,
+        tenant_id: str,
+        connection_id: str,
+        secret_ref: str,
+        bindings: tuple[Any, ...],
+        now: datetime,
+    ) -> None:
         self.records[connection_id] = BrokerConnectionRecordV1(
             connection_id=connection_id,
             tenant_id=tenant_id,
@@ -77,10 +85,21 @@ class FakeRepository:
             accounts=bindings,
         )
 
-    def list_read_connections(self, *, tenant_id: str) -> tuple[BrokerConnectionRecordV1, ...]:
-        return tuple(record for record in self.records.values() if record.tenant_id == tenant_id)
+    def list_read_connections(
+        self, *, tenant_id: str
+    ) -> tuple[BrokerConnectionRecordV1, ...]:
+        return tuple(
+            record for record in self.records.values() if record.tenant_id == tenant_id
+        )
 
-    def replace_secret_ref(self, *, tenant_id: str, connection_id: str, new_secret_ref: str, now: datetime) -> str:
+    def replace_secret_ref(
+        self,
+        *,
+        tenant_id: str,
+        connection_id: str,
+        new_secret_ref: str,
+        now: datetime,
+    ) -> str:
         record = self.records[connection_id]
         assert record.tenant_id == tenant_id
         previous = record.secret_ref
@@ -97,7 +116,9 @@ class FakeRepository:
         )
         return previous
 
-    def revoke_read_connection(self, *, tenant_id: str, connection_id: str, now: datetime) -> str | None:
+    def revoke_read_connection(
+        self, *, tenant_id: str, connection_id: str, now: datetime
+    ) -> str | None:
         del now
         record = self.records.get(connection_id)
         if record is None or record.tenant_id != tenant_id:
@@ -120,7 +141,14 @@ def builder(accounts: list[dict[str, Any]]):
     return lambda token: (lambda: FakeClient(accounts))
 
 
-def service(accounts: list[dict[str, Any]]) -> tuple[BrokerProvisioningServiceV1, BrokerProvisioningRegistryV1, FakeRepository, FakeVault]:
+def service(
+    accounts: list[dict[str, Any]],
+) -> tuple[
+    BrokerProvisioningServiceV1,
+    BrokerProvisioningRegistryV1,
+    FakeRepository,
+    FakeVault,
+]:
     registry = BrokerProvisioningRegistryV1()
     repository = FakeRepository()
     vault = FakeVault()
@@ -133,7 +161,7 @@ def service(accounts: list[dict[str, Any]]) -> tuple[BrokerProvisioningServiceV1
     return instance, registry, repository, vault
 
 
-def test_preview_returns_only_masked_bindings_and_commit_scopes_secret() -> None:
+def test_preview_returns_only_ephemeral_selection_handles_and_masked_labels() -> None:
     instance, registry, repository, vault = service(
         [account("owner-account-a-0001"), account("owner-account-b-0002")]
     )
@@ -147,14 +175,16 @@ def test_preview_returns_only_masked_bindings_and_commit_scopes_secret() -> None
     assert "synthetic-read-token" not in serialized
     assert "owner-account-a-0001" not in serialized
     assert "owner-account-b-0002" not in serialized
+    assert "account_fingerprint_sha256" not in serialized
     assert len(preview.accounts) == 2
+    assert preview.accounts[0].selection_id != preview.accounts[1].selection_id
 
-    selected = (preview.accounts[1].account_fingerprint_sha256,)
+    selected = (preview.accounts[1].selection_id,)
     connection = instance.commit_new(
         user_id=OWNER_USER_ID,
         tenant_id=OWNER_TENANT_ID,
         challenge_id=preview.challenge_id,
-        selected_fingerprints=selected,
+        selected_accounts=selected,
         now=NOW + timedelta(seconds=2),
     )
     assert connection.tenant_id == OWNER_TENANT_ID
@@ -177,14 +207,45 @@ def test_challenge_cannot_cross_tenant_or_user_scope() -> None:
             user_id="user:v1:other",
             tenant_id="tenant:v1:other",
             challenge_id=preview.challenge_id,
-            selected_fingerprints=(preview.accounts[0].account_fingerprint_sha256,),
+            selected_accounts=(preview.accounts[0].selection_id,),
             now=NOW + timedelta(seconds=1),
+        )
+
+
+def test_selection_handle_cannot_be_reused_or_forged() -> None:
+    instance, _, _, _ = service([account("owner-account-a-0001")])
+    preview = instance.preview(
+        user_id=OWNER_USER_ID,
+        tenant_id=OWNER_TENANT_ID,
+        token="synthetic-read-token",
+        now=NOW,
+    )
+    with pytest.raises(BrokerProvisioningError, match="SELECTION_INVALID"):
+        instance.commit_new(
+            user_id=OWNER_USER_ID,
+            tenant_id=OWNER_TENANT_ID,
+            challenge_id=preview.challenge_id,
+            selected_accounts=("forged-selection",),
+            now=NOW + timedelta(seconds=1),
+        )
+    with pytest.raises(BrokerProvisioningError, match="CHALLENGE_INVALID"):
+        instance.commit_new(
+            user_id=OWNER_USER_ID,
+            tenant_id=OWNER_TENANT_ID,
+            challenge_id=preview.challenge_id,
+            selected_accounts=(preview.accounts[0].selection_id,),
+            now=NOW + timedelta(seconds=2),
         )
 
 
 def test_full_access_credential_is_rejected_before_challenge_or_vault_write() -> None:
     instance, registry, _, vault = service(
-        [account("owner-account-a-0001", access_level="ACCOUNT_ACCESS_LEVEL_FULL_ACCESS")]
+        [
+            account(
+                "owner-account-a-0001",
+                access_level="ACCOUNT_ACCESS_LEVEL_FULL_ACCESS",
+            )
+        ]
     )
     with pytest.raises(Exception, match="BROKER_READ_CREDENTIAL_NOT_READ_ONLY"):
         instance.preview(
@@ -209,7 +270,7 @@ def test_replace_requires_same_verified_account_set() -> None:
         user_id=OWNER_USER_ID,
         tenant_id=OWNER_TENANT_ID,
         challenge_id=first.challenge_id,
-        selected_fingerprints=(first.accounts[0].account_fingerprint_sha256,),
+        selected_accounts=(first.accounts[0].selection_id,),
         now=NOW + timedelta(seconds=1),
     )
     old_secret = connection.secret_ref
@@ -225,7 +286,7 @@ def test_replace_requires_same_verified_account_set() -> None:
         tenant_id=OWNER_TENANT_ID,
         connection_id=connection.connection_id,
         challenge_id=second.challenge_id,
-        selected_fingerprints=(second.accounts[0].account_fingerprint_sha256,),
+        selected_accounts=(second.accounts[0].selection_id,),
         now=NOW + timedelta(seconds=3),
     )
     current = repository.records[connection.connection_id]
