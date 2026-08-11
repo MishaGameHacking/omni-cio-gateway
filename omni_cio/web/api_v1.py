@@ -11,6 +11,10 @@ from fastapi.responses import JSONResponse
 
 from omni_cio.contracts.v1.domain import OWNER_TENANT_ID, OWNER_USER_ID
 from omni_cio.web.identity_v1 import ProviderDescriptorV1, default_provider_descriptors
+from omni_cio.web.live_acceptance_v1 import (
+    BrokerLiveAcceptanceError,
+    BrokerLiveAcceptanceServiceV1,
+)
 from omni_cio.web.persistence_v1 import (
     BrokerConnectionRecordV1,
     PostgresBrokerConnectionRepositoryV1,
@@ -52,6 +56,7 @@ class WebApiServicesV1:
     sessions: SessionRegistryLike
     broker_repository: PostgresBrokerConnectionRepositoryV1
     provisioning: BrokerProvisioningServiceV1
+    live_acceptance: BrokerLiveAcceptanceServiceV1 | None = None
     providers: tuple[ProviderDescriptorV1, ...] = default_provider_descriptors()
     health_provider: Callable[[], WebHealthV1] = WebHealthV1
     now: Callable[[], datetime] = lambda: datetime.now(timezone.utc)
@@ -88,6 +93,16 @@ def _is_loopback_request(request: Request) -> bool:
         return ipaddress.ip_address(client.host).is_loopback
     except ValueError:
         return False
+
+
+def _require_live_acceptance(
+    request: Request,
+    services: WebApiServicesV1,
+) -> BrokerLiveAcceptanceServiceV1:
+    service = services.live_acceptance
+    if service is None or not _is_loopback_request(request):
+        raise HTTPException(status_code=404, detail="NOT_FOUND")
+    return service
 
 
 def _safe_connection(record: BrokerConnectionRecordV1) -> dict[str, Any]:
@@ -128,6 +143,20 @@ def _string(value: Any, *, reason: str, maximum: int) -> str:
     return normalized
 
 
+def _integer(value: Any, *, reason: str, minimum: int, maximum: int) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise HTTPException(status_code=400, detail=reason)
+    if value < minimum or value > maximum:
+        raise HTTPException(status_code=400, detail=reason)
+    return value
+
+
+def _boolean(value: Any, *, reason: str) -> bool:
+    if not isinstance(value, bool):
+        raise HTTPException(status_code=400, detail=reason)
+    return value
+
+
 def create_web_api(services: WebApiServicesV1) -> FastAPI:
     app = FastAPI(
         title="Omni-CIO V10 local Web API",
@@ -162,6 +191,13 @@ def create_web_api(services: WebApiServicesV1) -> FastAPI:
                 row["reason"] = "PRIVATE_ACCEPTANCE_ONLY"
             result.append(row)
         return result
+
+    @app.get("/api/v10/web/private-test-login/status")
+    def private_test_login_status(request: Request) -> dict[str, bool]:
+        return {
+            "enabled": services.private_test_identity_enabled
+            and _is_loopback_request(request)
+        }
 
     @app.get("/api/v10/web/auth/{provider}/start")
     def provider_start(provider: str) -> Response:
@@ -344,5 +380,126 @@ def create_web_api(services: WebApiServicesV1) -> FastAPI:
         if not revoked:
             raise HTTPException(status_code=404, detail="BROKER_CONNECTION_NOT_FOUND")
         return {"ok": True}
+
+    @app.get("/api/v10/web/wp15-live-acceptance/status")
+    def wp15_live_status(request: Request) -> dict[str, bool]:
+        _require_session(request, services)
+        return {
+            "enabled": services.live_acceptance is not None
+            and _is_loopback_request(request)
+        }
+
+    @app.post("/api/v10/web/wp15-live-acceptance/start")
+    async def wp15_live_start(request: Request) -> JSONResponse:
+        scope = _require_session(request, services)
+        service = _require_live_acceptance(request, services)
+        body = await _json_object(request)
+        connection_id = _string(
+            body.get("connection_id"),
+            reason="WP15_LIVE_CONNECTION_INVALID",
+            maximum=256,
+        )
+        account_index = _integer(
+            body.get("account_index"),
+            reason="WP15_LIVE_ACCOUNT_SELECTION_INVALID",
+            minimum=0,
+            maximum=255,
+        )
+        try:
+            view = service.start(
+                user_id=scope.user_id,
+                tenant_id=scope.tenant_id,
+                connection_id=connection_id,
+                account_index=account_index,
+            )
+        except BrokerLiveAcceptanceError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="WP15_LIVE_ACCEPTANCE_UNAVAILABLE",
+            ) from exc
+        return JSONResponse(
+            {
+                "challenge_id": view.challenge_id,
+                "expires_at": view.expires_at.isoformat(),
+                "masked_account": view.masked_account,
+                "access_level": view.access_level,
+                "portfolio_total": view.portfolio_total,
+                "portfolio_currency": view.portfolio_currency,
+                "sample": {
+                    "label": view.sample.label,
+                    "quantity": view.sample.quantity,
+                    "unit_price": view.sample.unit_price,
+                    "market_value": view.sample.market_value,
+                    "currency": view.sample.currency,
+                },
+                "freshness_state": view.freshness_state,
+                "retrieved_at": view.retrieved_at.isoformat(),
+                "evaluated_at": view.evaluated_at.isoformat(),
+                "age_seconds": view.age_seconds,
+                "normalized_position_count": view.normalized_position_count,
+            },
+            headers={"Cache-Control": "no-store"},
+        )
+
+    @app.post("/api/v10/web/wp15-live-acceptance/confirm")
+    async def wp15_live_confirm(request: Request) -> JSONResponse:
+        scope = _require_session(request, services)
+        service = _require_live_acceptance(request, services)
+        body = await _json_object(request)
+        challenge_id = _string(
+            body.get("challenge_id"),
+            reason="WP15_LIVE_CHALLENGE_INVALID",
+            maximum=256,
+        )
+        try:
+            service.confirm(
+                user_id=scope.user_id,
+                tenant_id=scope.tenant_id,
+                challenge_id=challenge_id,
+                intended_account_confirmed=_boolean(
+                    body.get("intended_account_confirmed"),
+                    reason="WP15_LIVE_CONFIRMATION_INVALID",
+                ),
+                portfolio_summary_parity=_boolean(
+                    body.get("portfolio_summary_parity"),
+                    reason="WP15_LIVE_CONFIRMATION_INVALID",
+                ),
+                sample_position_quantity_value_parity=_boolean(
+                    body.get("sample_position_quantity_value_parity"),
+                    reason="WP15_LIVE_CONFIRMATION_INVALID",
+                ),
+                freshness_confirmed=_boolean(
+                    body.get("freshness_confirmed"),
+                    reason="WP15_LIVE_CONFIRMATION_INVALID",
+                ),
+            )
+        except BrokerLiveAcceptanceError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return JSONResponse(
+            {"accepted": True, "pending_owner_finalization": True},
+            headers={"Cache-Control": "no-store"},
+        )
+
+    @app.post("/api/v10/web/wp15-live-acceptance/cancel")
+    async def wp15_live_cancel(request: Request) -> dict[str, bool]:
+        scope = _require_session(request, services)
+        service = _require_live_acceptance(request, services)
+        body = await _json_object(request)
+        challenge_id = _string(
+            body.get("challenge_id"),
+            reason="WP15_LIVE_CHALLENGE_INVALID",
+            maximum=256,
+        )
+        try:
+            cancelled = service.cancel(
+                user_id=scope.user_id,
+                tenant_id=scope.tenant_id,
+                challenge_id=challenge_id,
+            )
+        except BrokerLiveAcceptanceError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return {"cancelled": cancelled}
 
     return app
