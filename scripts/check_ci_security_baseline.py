@@ -63,6 +63,13 @@ APPROVED_KEYWORD_LINES = {
             f'"{_SENSITIVE_WORD}_input_mode": "READ_HOST_AS_SECURE_STRING",',
         }
     ),
+    "docs/architecture/V10_WP17_APPLICATION_SHELL_CONTRACT.json": frozenset(
+        {
+            f'"{_SENSITIVE_WORD}_store": "WP8_WINDOWS_DPAPI_LOCAL_MACHINE",',
+            f'"{_SENSITIVE_WORD}_subtree": "C:\\\\ProgramData\\\\OmniCIO\\\\{_SENSITIVE_WORD}s\\\\read-broker\\\\connections",',
+            f'"ci_{_SENSITIVE_WORD}_data_access": false,',
+        }
+    ),
     "infrastructure/windows/collect_wp6_identity_profile.ps1": frozenset(
         {
             f'${_SENSITIVE_WORD}Sentinel = "C:\\ProgramData\\OmniCIO\\{_SENSITIVE_WORD}s\\execution\\wp6-ci-deny-sentinel.txt"'
@@ -158,12 +165,10 @@ def validate_lock_file(path: Path, failures: list[str]) -> None:
     if not path.is_file():
         failures.append(f"missing lock file: {display_path(path)}")
         return
-
     blocks = requirement_blocks(path.read_text(encoding="utf-8"))
     if not blocks:
         failures.append(f"lock file has no pinned packages: {display_path(path)}")
         return
-
     for block in blocks:
         requirement = block.split("\\", maxsplit=1)[0].strip()
         if "==" not in requirement:
@@ -213,7 +218,6 @@ def validate_workflow(failures: list[str]) -> None:
     if not WORKFLOW_PATH.is_file():
         failures.append("missing .github/workflows/regression-shield.yml")
         return
-
     text = WORKFLOW_PATH.read_text(encoding="utf-8")
     validate_action_pins(text, failures)
     validate_soft_fail_policy(text, failures)
@@ -257,7 +261,6 @@ def validate_render_contract(failures: list[str]) -> None:
     if not path.is_file():
         failures.append("missing render.yaml")
         return
-
     text = path.read_text(encoding="utf-8")
     if "pip install --require-hashes -r requirements.txt" not in text:
         failures.append("Render must install the hash-locked runtime dependencies")
@@ -279,26 +282,22 @@ def _approved_exact_line(
 ) -> bool:
     if isinstance(line_number, bool) or not isinstance(line_number, int):
         return False
-
     normalized = _normalize_repo_filename(filename)
     approved_lines = approved_by_path.get(normalized)
     if not approved_lines:
         return False
-
     root = ROOT.resolve()
     candidate = (ROOT / Path(normalized)).resolve()
     try:
         candidate.relative_to(root)
     except ValueError:
         return False
-
     try:
         lines = candidate.read_text(encoding="utf-8").splitlines()
     except (OSError, UnicodeError):
         return False
     if line_number < 1 or line_number > len(lines):
         return False
-
     return lines[line_number - 1].strip() in approved_lines
 
 
@@ -330,7 +329,6 @@ def validate_detect_secrets_report(
     if not isinstance(results, dict):
         failures.append("detect-secrets output does not contain a results object")
         return
-
     for filename, findings in results.items():
         if not isinstance(filename, str):
             failures.append("invalid detect-secrets filename")
@@ -357,12 +355,10 @@ def validate_detect_secrets_report(
 
 def validate_repository_baseline() -> list[str]:
     failures: list[str] = []
-
     for path in LOCK_PATHS:
         validate_lock_file(path, failures)
     validate_workflow(failures)
     validate_render_contract(failures)
-
     bootstrap = ROOT / ".github" / "workflows" / "pr03-bootstrap.yml"
     if bootstrap.exists():
         failures.append("temporary PR-03 bootstrap workflow must not be committed")
@@ -391,13 +387,11 @@ def main() -> int:
         validate_detect_secrets_report(report, failures)
     else:
         failures = validate_repository_baseline()
-
     if failures:
         print("CI/security baseline check failed:", file=sys.stderr)
         for failure in failures:
             print(f"- {failure}", file=sys.stderr)
         return 1
-
     if args.detect_secrets_report:
         print("Secret scan passed: no potential secrets detected.")
     else:
