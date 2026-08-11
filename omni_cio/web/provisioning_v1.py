@@ -6,8 +6,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import hmac
 import secrets
-from threading import RLock
-from typing import Any
+from threading import RLock, Timer
+from typing import Any, Protocol
 
 from omni_cio.adapters.tinvest_connection_v1 import discover_read_account_bindings
 from omni_cio.adapters.tinvest_read_v1 import BrokerAccountBindingV1
@@ -21,6 +21,13 @@ from omni_cio.web.persistence_v1 import (
 
 class BrokerProvisioningError(RuntimeError):
     """Fail-closed Web broker provisioning error without credential disclosure."""
+
+
+class _ExpiryHandle(Protocol):
+    def cancel(self) -> None: ...
+
+
+ExpiryScheduler = Callable[[float, Callable[[], None]], _ExpiryHandle]
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,6 +52,7 @@ class _ChallengeV1:
     token_bytes: bytearray
     selections: dict[str, BrokerAccountBindingV1]
     expires_at: datetime
+    expiry_handle: _ExpiryHandle | None = None
 
 
 def _utc(value: datetime) -> datetime:
@@ -58,13 +66,31 @@ def _zero(buffer: bytearray) -> None:
         buffer[index] = 0
 
 
-class BrokerProvisioningRegistryV1:
-    """Short-lived memory-only bridge between token preview and account selection."""
+def _schedule_expiry(delay_seconds: float, callback: Callable[[], None]) -> Timer:
+    timer = Timer(delay_seconds, callback)
+    timer.daemon = True
+    timer.start()
+    return timer
 
-    def __init__(self, *, lifetime: timedelta = timedelta(minutes=5)) -> None:
+
+class BrokerProvisioningRegistryV1:
+    """Short-lived memory-only bridge between token preview and account selection.
+
+    A daemon expiry timer removes and zeroes every challenge at its wall-clock TTL,
+    even when the browser abandons the provisioning flow and no later registry call
+    occurs. Deterministic timestamp checks remain authoritative during consume.
+    """
+
+    def __init__(
+        self,
+        *,
+        lifetime: timedelta = timedelta(minutes=5),
+        expiry_scheduler: ExpiryScheduler = _schedule_expiry,
+    ) -> None:
         if lifetime <= timedelta(0) or lifetime > timedelta(minutes=15):
             raise ValueError("provisioning lifetime must be in (0, 15 minutes]")
         self._lifetime = lifetime
+        self._expiry_scheduler = expiry_scheduler
         self._challenges: dict[str, _ChallengeV1] = {}
         self._lock = RLock()
 
@@ -108,6 +134,23 @@ class BrokerProvisioningRegistryV1:
         with self._lock:
             self._purge_locked(current)
             self._challenges[challenge_id] = record
+        try:
+            handle = self._expiry_scheduler(
+                self._lifetime.total_seconds(),
+                lambda: self._expire_challenge(challenge_id),
+            )
+        except Exception:
+            with self._lock:
+                current_record = self._challenges.pop(challenge_id, None)
+            if current_record is not None:
+                self._destroy(current_record, cancel_expiry=False)
+            raise BrokerProvisioningError("BROKER_PROVISIONING_EXPIRY_UNAVAILABLE") from None
+        with self._lock:
+            current_record = self._challenges.get(challenge_id)
+            if current_record is record:
+                record.expiry_handle = handle
+            else:
+                handle.cancel()
         return BrokerProvisioningPreviewV1(
             challenge_id=challenge_id,
             expires_at=record.expires_at,
@@ -149,8 +192,7 @@ class BrokerProvisioningRegistryV1:
                 raise BrokerProvisioningError("BROKER_READ_TOKEN_INVALID") from exc
             yield token, bindings
         finally:
-            _zero(record.token_bytes)
-            record.selections.clear()
+            self._destroy(record)
 
     def cancel(
         self,
@@ -166,8 +208,7 @@ class BrokerProvisioningRegistryV1:
             if record.user_id != user_id or record.tenant_id != tenant_id:
                 raise BrokerProvisioningError("BROKER_PROVISIONING_SCOPE_MISMATCH")
             self._challenges.pop(challenge_id, None)
-        _zero(record.token_bytes)
-        record.selections.clear()
+        self._destroy(record)
         return True
 
     def active_count(self, *, now: datetime) -> int:
@@ -175,6 +216,21 @@ class BrokerProvisioningRegistryV1:
         with self._lock:
             self._purge_locked(current)
             return len(self._challenges)
+
+    def _expire_challenge(self, challenge_id: str) -> None:
+        with self._lock:
+            record = self._challenges.pop(challenge_id, None)
+        if record is not None:
+            self._destroy(record, cancel_expiry=False)
+
+    @staticmethod
+    def _destroy(record: _ChallengeV1, *, cancel_expiry: bool = True) -> None:
+        handle = record.expiry_handle
+        record.expiry_handle = None
+        if cancel_expiry and handle is not None:
+            handle.cancel()
+        _zero(record.token_bytes)
+        record.selections.clear()
 
     def _purge_locked(self, now: datetime) -> None:
         expired = [
@@ -184,8 +240,7 @@ class BrokerProvisioningRegistryV1:
         ]
         for challenge_id in expired:
             record = self._challenges.pop(challenge_id)
-            _zero(record.token_bytes)
-            record.selections.clear()
+            self._destroy(record)
 
 
 class BrokerProvisioningServiceV1:
