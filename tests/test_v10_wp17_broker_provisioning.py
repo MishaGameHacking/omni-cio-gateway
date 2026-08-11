@@ -220,9 +220,7 @@ def test_preview_returns_only_ephemeral_selection_handles_and_masked_labels() ->
     assert tuple(repository.records) == (connection.connection_id,)
 
 
-def test_wall_clock_expiry_destroys_abandoned_challenge_without_followup_request() -> (
-    None
-):
+def test_wall_clock_expiry_destroys_abandoned_challenge() -> None:
     scheduler = FakeExpiryScheduler()
     registry = BrokerProvisioningRegistryV1(expiry_scheduler=scheduler)
     repository = FakeRepository()
