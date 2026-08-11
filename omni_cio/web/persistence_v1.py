@@ -218,7 +218,9 @@ class PostgresBrokerConnectionRepositoryV1:
                     ),
                 )
 
-    def list_read_connections(self, *, tenant_id: str) -> tuple[BrokerConnectionRecordV1, ...]:
+    def list_read_connections(
+        self, *, tenant_id: str
+    ) -> tuple[BrokerConnectionRecordV1, ...]:
         rows = self._connection.execute(
             "SELECT c.connection_id, c.tenant_id, c.provider, c.credential_role, c.state, "
             "c.secret_ref, c.created_at, c.last_verified_at, a.broker_account_id, "
