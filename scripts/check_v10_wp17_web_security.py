@@ -18,10 +18,7 @@ MIGRATION = (
     / "0003_web_identity_connections.sql"
 )
 OWNER_EVIDENCE_FINALIZER = (
-    ROOT
-    / "infrastructure"
-    / "windows"
-    / "finalize_wp17_web_read_vault_evidence.ps1"
+    ROOT / "infrastructure" / "windows" / "finalize_wp17_web_read_vault_evidence.ps1"
 )
 RUNNER_READ_VAULT_AUDITOR = (
     ROOT / "infrastructure" / "windows" / "audit_wp17_read_vault_runner.ps1"
