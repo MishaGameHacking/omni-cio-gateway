@@ -153,18 +153,21 @@ jobs:
           "C:\Program Files\Python314\python.exe" -m venv "%PROD_VENV%"
           if errorlevel 1 exit /b 47
           echo PROD_VENV_WINDOWS_PATH=%PROD_VENV%>> "%GITHUB_ENV%"
-          "%PROD_VENV%\Scripts\python.exe" -m pip install --disable-pip-version-check --require-hashes -r requirements.txt
+          set "PROD_LOCK=%PROD_VENV%\requirements.windows.txt"
+          "C:\Program Files\Python314\python.exe" scripts\windows_ci_lock.py project requirements.txt "%PROD_LOCK%"
           if errorlevel 1 exit /b 48
-          "%PROD_VENV%\Scripts\python.exe" -c "import fastapi; import psycopg; import t_tech.invest; import uvicorn; print('WP15 live Python 3.14 production runtime OK')"
+          "%PROD_VENV%\Scripts\python.exe" -m pip install --disable-pip-version-check --require-hashes -r "%PROD_LOCK%"
           if errorlevel 1 exit /b 49
+          "%PROD_VENV%\Scripts\python.exe" -c "import fastapi; import psycopg; import t_tech.invest; import uvicorn; print('WP15 live Python 3.14 Windows runtime OK')"
+          if errorlevel 1 exit /b 50
 
       - name: Verify Node and npm identity
         shell: cmd
         run: |
           "C:\Program Files\nodejs\node.exe" -e "if (process.version !== 'v24.18.0') process.exit(1); console.log(process.version)"
-          if errorlevel 1 exit /b 50
-          powershell.exe -NoProfile -NonInteractive -Command "$v = (& 'C:\Program Files\nodejs\npm.cmd' --version | Out-String).Trim(); Write-Host ('npm ' + $v); if ($v -ne '11.16.0') { exit 51 }"
           if errorlevel 1 exit /b 51
+          powershell.exe -NoProfile -NonInteractive -Command "$v = (& 'C:\Program Files\nodejs\npm.cmd' --version | Out-String).Trim(); Write-Host ('npm ' + $v); if ($v -ne '11.16.0') { exit 52 }"
+          if errorlevel 1 exit /b 52
 
       - name: Reproduce and validate Web build
         working-directory: apps/web
