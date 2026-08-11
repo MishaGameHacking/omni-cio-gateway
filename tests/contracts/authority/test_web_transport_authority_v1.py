@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 
 
@@ -8,6 +9,18 @@ ROOT = Path(__file__).resolve().parents[3]
 
 def _source(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
+
+
+def _has_module_level_app_assignment(source: str) -> bool:
+    module = ast.parse(source)
+    for node in module.body:
+        if isinstance(node, ast.Assign):
+            if any(isinstance(target, ast.Name) and target.id == "app" for target in node.targets):
+                return True
+        elif isinstance(node, ast.AnnAssign):
+            if isinstance(node.target, ast.Name) and node.target.id == "app":
+                return True
+    return False
 
 
 def test_wp17_transport_cannot_import_real_execution_or_trade_secret_authority() -> None:
@@ -39,8 +52,8 @@ def test_wp17_api_is_not_the_protected_gateway_entrypoint() -> None:
     protected = _source("app.py")
 
     assert "def create_local_private_app" in app_source
-    assert "app =" not in app_source
-    assert "app =" in protected
+    assert not _has_module_level_app_assignment(app_source)
+    assert _has_module_level_app_assignment(protected)
     assert "apps.api.app" not in protected
 
 
