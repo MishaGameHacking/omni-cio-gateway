@@ -1,14 +1,27 @@
 # Omni-CIO V10 — WP15 Deferred Live Read-Only Acceptance Runbook
 
-Status: **WEB SUPPORT PATH UNDER REVIEW — OWNER ACTION FORBIDDEN UNTIL SUPPORT PR MERGE + POST-MERGE GREEN**
+Status: **SUPPORT PATH ACCEPTED — REAL OWNER LIVE ACTION REQUIRED / WP18 LOCKED**
 
 Current canonical live-evidence marker remains:
 
 `LIVE_EVIDENCE_STATUS=DEFERRED_TO_WEB_PROVISIONING`
 
-This marker remains authoritative until real OWNER Web parity evidence and the independent non-admin runner audit are both accepted. While the support path is still under review, **do not provision a real T-Invest READ token**.
+This marker remains authoritative until real OWNER Web parity evidence and the independent non-admin runner audit are both accepted. The support path is accepted, but the real T-Invest READ evidence is still absent.
 
 Authority: `docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.md`, the accepted Identity/Multi-Tenant amendment, `docs/architecture/V10_WP15_TINVEST_READONLY_CONTRACT.md`, and `docs/architecture/V10_WP15_LIVE_WEB_ACCEPTANCE_CONTRACT.json`.
+
+Accepted support baseline as of 2026-08-12:
+
+- PR #284 — deferred live Web support path;
+- PR #285 — Windows-native OWNER-audit cleanup hardening;
+- PR #286 — locale-independent Administrators SID validation;
+- PR #287 — Windows PowerShell 5.1 native npm stderr handling;
+- exact accepted `main`: `bc8c4c528473d17cb49ad3a59bfae8474a254367`;
+- post-merge Regression Shield #1470 — SUCCESS;
+- WP15 Live Web Support Audit #50 — SUCCESS;
+- WP16 Audit #147 — SUCCESS;
+- WP17 Audit #118 — SUCCESS;
+- WP15 OWNER Audit #4 — expected `OWNER_ACTION_REQUIRED` / exit 61 because real sanitized OWNER evidence does not exist yet; its independent audit/upload/cleanup steps succeed.
 
 ## 1. Purpose
 
@@ -30,7 +43,9 @@ Do **not** perform the live procedure until all of the following are true:
 4. the reviewed support workflow is GREEN on the accepted implementation;
 5. OWNER is given that exact implementation SHA for the local procedure.
 
-Until then, `broker_read` may remain unprovisioned and no real T-Invest token is required.
+Those prerequisites are satisfied for the accepted support baseline listed above. If `main` changes again before OWNER execution, re-confirm the exact accepted implementation and required post-merge gates instead of reusing a stale SHA.
+
+Until the real procedure is finalized, `broker_read` may remain unprovisioned and no real T-Invest token is required outside the local/private Web form.
 
 WP18 remains locked until the final sanitized OWNER evidence and independent non-admin runner audit both pass.
 
@@ -66,9 +81,21 @@ The SHA must exactly equal the implementation SHA provided for the gate and `git
 
 Do not `git pull` or switch revisions inside the privileged live procedure unless separately instructed and reviewed.
 
+### 4.1 Retry after a partial failed provisioning attempt
+
+If a prior `-Apply` attempt failed after creating any owned WP15 live runtime state, do not rerun `-Apply` blindly. From the same elevated, clean exact checkout, run the marker-guarded cleanup first as **one complete PowerShell command on one physical line**:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\infrastructure\windows\provision_wp15_live_web_acceptance.ps1" -ExpectedImplementationSha "<EXACT_MAIN_SHA>" -Cleanup -AsJson
+```
+
+Require successful cleanup before continuing. Cleanup is ownership-marker guarded and must not be replaced by manual deletion, ACL weakening or PostgreSQL edits.
+
+For OWNER copy/paste commands in this runbook, prefer a complete single-line invocation rather than PowerShell backtick line continuation. Microsoft documents that backtick continuation is fragile: an extra trailing space breaks continuation and can make a visually similar pasted command execute only partially.
+
 ## 5. Start the temporary acceptance runtime
 
-From the same elevated, clean exact checkout:
+From the same elevated, clean exact checkout, run this as **one complete PowerShell command on one physical line**:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\infrastructure\windows\provision_wp15_live_web_acceptance.ps1" -ExpectedImplementationSha "<EXACT_MAIN_SHA>" -Apply -AsJson
@@ -213,4 +240,8 @@ Windows Task Scheduler password/S4U logon semantics:
 
 - `https://learn.microsoft.com/windows/win32/taskschd/taskfolder-registertaskdefinition`
 
-These references justify the transport/runtime mechanics only; V10 authority and Exit Gate ordering remain defined by the source-controlled Master Plan and amendments.
+PowerShell line-continuation guidance:
+
+- `https://learn.microsoft.com/powershell/module/microsoft.powershell.core/about/about_parsing`
+
+These references justify the transport/runtime/command mechanics only; V10 authority and Exit Gate ordering remain defined by the source-controlled Master Plan and amendments.
