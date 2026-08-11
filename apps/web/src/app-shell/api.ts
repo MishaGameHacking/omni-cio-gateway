@@ -1,5 +1,6 @@
 import type {
   BrokerConnectionView,
+  BrokerProvisioningPreviewView,
   HealthView,
   ProviderView,
   WebSessionView,
@@ -33,6 +34,36 @@ export function readHealth(): Promise<HealthView> {
 
 export function readBrokerConnections(): Promise<BrokerConnectionView[]> {
   return requestJson<BrokerConnectionView[]>("/api/v10/web/broker-connections");
+}
+
+export function previewBrokerReadConnection(token: string): Promise<BrokerProvisioningPreviewView> {
+  return requestJson<BrokerProvisioningPreviewView>("/api/v10/web/broker-connections/preview", {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ token }),
+  });
+}
+
+export function commitBrokerReadConnection(challengeId: string, selectedAccounts: string[]): Promise<BrokerConnectionView> {
+  return requestJson<BrokerConnectionView>("/api/v10/web/broker-connections/commit", {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ challenge_id: challengeId, selected_accounts: selectedAccounts }),
+  });
+}
+
+export async function replaceBrokerReadCredential(connectionId: string, challengeId: string, selectedAccounts: string[]): Promise<void> {
+  await requestJson<{ ok: true }>(`/api/v10/web/broker-connections/${encodeURIComponent(connectionId)}/replace`, {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ challenge_id: challengeId, selected_accounts: selectedAccounts }),
+  });
+}
+
+export async function revokeBrokerReadConnection(connectionId: string): Promise<void> {
+  await requestJson<{ ok: true }>(`/api/v10/web/broker-connections/${encodeURIComponent(connectionId)}`, {
+    method: "DELETE",
+  });
 }
 
 export async function logoutCurrentSession(): Promise<void> {
