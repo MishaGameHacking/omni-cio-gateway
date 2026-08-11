@@ -161,4 +161,7 @@ def test_owner_acl_evidence_is_exact_head_bound_and_runner_verified() -> None:
     assert "audit_wp17_read_vault_runner.ps1" in workflow
     assert "-ExpectedImplementationSha" in workflow
     assert "github.event.pull_request.head.sha || github.sha" in workflow
-    assert "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a" in workflow
+    assert (
+        "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"
+        in workflow
+    )
