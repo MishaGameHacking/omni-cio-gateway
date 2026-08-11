@@ -6,11 +6,19 @@ import sys
 
 
 ROOT = Path(__file__).resolve().parents[1]
-CONTRACT = ROOT / "docs" / "architecture" / "V10_WP17_APPLICATION_SHELL_CONTRACT.json"
+CONTRACT = (
+    ROOT / "docs" / "architecture" / "V10_WP17_APPLICATION_SHELL_CONTRACT.json"
+)
 WEB_SHELL = ROOT / "apps" / "web" / "src" / "app-shell"
 API_ROOT = ROOT / "apps" / "api"
 WEB_BACKEND = ROOT / "omni_cio" / "web"
-MIGRATION = ROOT / "omni_cio" / "persistence" / "migrations" / "0003_web_identity_connections.sql"
+MIGRATION = (
+    ROOT
+    / "omni_cio"
+    / "persistence"
+    / "migrations"
+    / "0003_web_identity_connections.sql"
+)
 
 
 def _text_tree(root: Path) -> str:
@@ -34,7 +42,10 @@ def main() -> int:
         failures.append("ordinary login providers drifted")
     if contract.get("local_password_allowed") is not False:
         failures.append("local password must remain disabled")
-    if contract.get("public_activation", {}).get("public_internet_ingress") is not False:
+    if (
+        contract.get("public_activation", {}).get("public_internet_ingress")
+        is not False
+    ):
         failures.append("public ingress must remain disabled in WP17")
     invariants = contract.get("invariants", {})
     if invariants.get("gateway_entrypoint") != "app:app":
@@ -52,7 +63,7 @@ def main() -> int:
     for marker in forbidden_web:
         if marker in web_text:
             failures.append(f"forbidden browser persistence/render primitive: {marker}")
-    if "Google" in web_text or "google" in web_text.lower():
+    if "google" in web_text.lower():
         failures.append("Google login marker present in WP17 shell")
     if "type=\"password\"" not in web_text:
         failures.append("masked broker credential input is missing")
@@ -68,8 +79,15 @@ def main() -> int:
     lowered_backend = backend_text.lower()
     for marker in forbidden_backend:
         if marker in lowered_backend:
-            failures.append(f"broker write/transfer marker present in WP17 backend: {marker}")
-    for marker in ("0.0.0.0", "cloudflared", "cloudflare tunnel", "tailscale funnel"):
+            failures.append(
+                f"broker write/transfer marker present in WP17 backend: {marker}"
+            )
+    for marker in (
+        "0.0.0.0",
+        "cloudflared",
+        "cloudflare tunnel",
+        "tailscale funnel",
+    ):
         if marker in lowered_backend:
             failures.append(f"public/external bind marker present before WP22A: {marker}")
 
@@ -78,12 +96,16 @@ def main() -> int:
         failures.append("private test identity must default disabled")
     if "_is_loopback_request" not in api_text:
         failures.append("private test identity must require loopback")
-    safe_connection_block = api_text.split("def _safe_connection", 1)[-1].split("async def _json_object", 1)[0]
+    safe_connection_block = api_text.split("def _safe_connection", 1)[-1].split(
+        "async def _json_object", 1
+    )[0]
     if "secret_ref" in safe_connection_block or "tenant_id" in safe_connection_block:
-        failures.append("browser connection response exposes secret or tenant scope internals")
+        failures.append(
+            "browser connection response exposes secret or tenant scope internals"
+        )
 
     vault_text = (WEB_BACKEND / "broker_vault_v1.py").read_text(encoding="utf-8")
-    if r"secrets\\read-broker\\connections" not in vault_text:
+    if r"secrets\read-broker\connections" not in vault_text:
         failures.append("connection vault is not under accepted read-broker root")
     if "_CRYPTPROTECT_LOCAL_MACHINE = 0x4" not in vault_text:
         failures.append("connection vault must use DPAPI LocalMachine protection")
@@ -93,7 +115,10 @@ def main() -> int:
         failures.append("WP17 persistence migration is incomplete")
     for marker in (" raw_token", " token text", "ciphertext bytea", "broker_token"):
         if marker in migration_text:
-            failures.append(f"PostgreSQL migration contains forbidden secret storage field: {marker.strip()}")
+            failures.append(
+                "PostgreSQL migration contains forbidden secret storage field: "
+                f"{marker.strip()}"
+            )
 
     if failures:
         print("V10 WP17 Web/security boundary check failed:", file=sys.stderr)
