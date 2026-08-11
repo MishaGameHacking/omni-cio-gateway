@@ -42,6 +42,13 @@ class SnapshotAdapterLike(Protocol):
     ) -> TInvestSnapshotResultV1: ...
 
 
+class _ExpiryHandle(Protocol):
+    def cancel(self) -> None: ...
+
+
+ExpiryScheduler = Callable[[float, Callable[[], None]], _ExpiryHandle]
+
+
 @dataclass(frozen=True, slots=True)
 class LiveAcceptanceSampleV1:
     label: str
@@ -67,12 +74,13 @@ class LiveAcceptanceViewV1:
     normalized_position_count: int
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class _LiveChallengeV1:
     user_id: str
     tenant_id: str
     expires_at: datetime
     view: LiveAcceptanceViewV1
+    expiry_handle: _ExpiryHandle | None = None
 
 
 class PendingLiveAcceptanceEvidenceWriterV1:
@@ -140,6 +148,13 @@ def _default_adapter_factory(
     )
 
 
+def _schedule_expiry(delay_seconds: float, callback: Callable[[], None]) -> threading.Timer:
+    timer = threading.Timer(delay_seconds, callback)
+    timer.daemon = True
+    timer.start()
+    return timer
+
+
 class BrokerLiveAcceptanceServiceV1:
     """Acceptance-only local bridge from a verified Web connection to one live snapshot.
 
@@ -161,6 +176,7 @@ class BrokerLiveAcceptanceServiceV1:
         ] = _default_adapter_factory,
         ttl: timedelta = timedelta(minutes=10),
         now: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
+        expiry_scheduler: ExpiryScheduler = _schedule_expiry,
     ) -> None:
         candidate_sha = implementation_sha.strip().lower()
         if _GIT_SHA_RE.fullmatch(candidate_sha) is None:
@@ -175,11 +191,19 @@ class BrokerLiveAcceptanceServiceV1:
         self._adapter_factory = adapter_factory
         self._ttl = ttl
         self._now = now
-        self._lock = threading.Lock()
+        self._expiry_scheduler = expiry_scheduler
+        self._lock = threading.RLock()
         self._challenges: dict[str, _LiveChallengeV1] = {}
 
     def _current(self) -> datetime:
         return _aware_utc(self._now())
+
+    @staticmethod
+    def _destroy(challenge: _LiveChallengeV1, *, cancel_expiry: bool = True) -> None:
+        handle = challenge.expiry_handle
+        challenge.expiry_handle = None
+        if cancel_expiry and handle is not None:
+            handle.cancel()
 
     def _purge_expired(self, current: datetime) -> None:
         expired = [
@@ -188,7 +212,14 @@ class BrokerLiveAcceptanceServiceV1:
             if current >= challenge.expires_at
         ]
         for challenge_id in expired:
-            self._challenges.pop(challenge_id, None)
+            challenge = self._challenges.pop(challenge_id)
+            self._destroy(challenge)
+
+    def _expire_challenge(self, challenge_id: str) -> None:
+        with self._lock:
+            challenge = self._challenges.pop(challenge_id, None)
+            if challenge is not None:
+                self._destroy(challenge, cancel_expiry=False)
 
     def _connection(
         self,
@@ -313,14 +344,34 @@ class BrokerLiveAcceptanceServiceV1:
             age_seconds=_decimal_text(result.freshness.age_seconds),
             normalized_position_count=result.normalized_position_count,
         )
+        challenge = _LiveChallengeV1(
+            user_id=user_id,
+            tenant_id=tenant_id,
+            expires_at=expires_at,
+            view=view,
+        )
         with self._lock:
             self._purge_expired(current)
-            self._challenges[challenge_id] = _LiveChallengeV1(
-                user_id=user_id,
-                tenant_id=tenant_id,
-                expires_at=expires_at,
-                view=view,
+            self._challenges[challenge_id] = challenge
+        try:
+            handle = self._expiry_scheduler(
+                self._ttl.total_seconds(),
+                lambda: self._expire_challenge(challenge_id),
             )
+        except Exception:
+            with self._lock:
+                current_challenge = self._challenges.pop(challenge_id, None)
+                if current_challenge is not None:
+                    self._destroy(current_challenge, cancel_expiry=False)
+            raise BrokerLiveAcceptanceError(
+                "WP15_LIVE_CHALLENGE_EXPIRY_UNAVAILABLE"
+            ) from None
+        with self._lock:
+            current_challenge = self._challenges.get(challenge_id)
+            if current_challenge is challenge:
+                challenge.expiry_handle = handle
+            else:
+                handle.cancel()
         return view
 
     def confirm(
@@ -342,6 +393,8 @@ class BrokerLiveAcceptanceServiceV1:
                 raise BrokerLiveAcceptanceError("WP15_LIVE_CHALLENGE_INVALID")
             if challenge.user_id != user_id or challenge.tenant_id != tenant_id:
                 raise BrokerLiveAcceptanceError("WP15_LIVE_CHALLENGE_SCOPE_MISMATCH")
+            self._challenges.pop(challenge_id, None)
+            self._destroy(challenge)
 
         if not all(
             (
@@ -382,8 +435,6 @@ class BrokerLiveAcceptanceServiceV1:
             "ready_for_owner_finalization": True,
         }
         self._evidence_writer.write(payload)
-        with self._lock:
-            self._challenges.pop(challenge_id, None)
         return payload
 
     def cancel(self, *, user_id: str, tenant_id: str, challenge_id: str) -> bool:
@@ -396,4 +447,5 @@ class BrokerLiveAcceptanceServiceV1:
             if challenge.user_id != user_id or challenge.tenant_id != tenant_id:
                 raise BrokerLiveAcceptanceError("WP15_LIVE_CHALLENGE_SCOPE_MISMATCH")
             self._challenges.pop(challenge_id, None)
+            self._destroy(challenge)
             return True
