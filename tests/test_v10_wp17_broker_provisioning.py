@@ -151,7 +151,11 @@ class FakeExpiryScheduler:
         self.callbacks: list[Callable[[], None]] = []
         self.handles: list[FakeExpiryHandle] = []
 
-    def __call__(self, delay_seconds: float, callback: Callable[[], None]) -> FakeExpiryHandle:
+    def __call__(
+        self,
+        delay_seconds: float,
+        callback: Callable[[], None],
+    ) -> FakeExpiryHandle:
         assert delay_seconds > 0
         handle = FakeExpiryHandle()
         self.callbacks.append(callback)
@@ -216,7 +220,9 @@ def test_preview_returns_only_ephemeral_selection_handles_and_masked_labels() ->
     assert tuple(repository.records) == (connection.connection_id,)
 
 
-def test_wall_clock_expiry_destroys_abandoned_challenge_without_followup_request() -> None:
+def test_wall_clock_expiry_destroys_abandoned_challenge_without_followup_request() -> (
+    None
+):
     scheduler = FakeExpiryScheduler()
     registry = BrokerProvisioningRegistryV1(expiry_scheduler=scheduler)
     repository = FakeRepository()
