@@ -20,7 +20,7 @@ jobs:
     timeout-minutes: 20
     defaults:
       run:
-        shell: pwsh
+        shell: cmd
         working-directory: apps/web
 
     steps:
@@ -28,56 +28,91 @@ jobs:
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Bootstrap protected runner tools
+        working-directory: .
+        run: |
+          call scripts\bootstrap_windows_ci_python.cmd
+          if errorlevel 1 exit /b 10
+          if not exist "C:\Program Files\nodejs\node.exe" exit /b 11
+          if not exist "C:\Program Files\nodejs\npm.cmd" exit /b 12
+          >>"%GITHUB_PATH%" echo C:\Program Files\nodejs
+
+      - name: Verify exact checked-out head
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        working-directory: .
+        run: |
+          for /f %%S in ('git rev-parse HEAD') do set "ACTUAL_HEAD=%%S"
+          if /I not "%ACTUAL_HEAD%"=="%EXPECTED_HEAD%" exit /b 13
+          echo WP16 exact head: %ACTUAL_HEAD%
 
       - name: Verify selected Node and npm runtime
         run: |
-          if ((node --version).Trim() -ne "v24.18.0") { throw "NODE_VERSION_MISMATCH" }
-          if ((npm --version).Trim() -ne "11.16.0") { throw "NPM_VERSION_MISMATCH" }
-          node --version
-          npm --version
+          "C:\Program Files\nodejs\node.exe" -e "if (process.version !== 'v24.18.0') process.exit(1); console.log(process.version)"
+          if errorlevel 1 exit /b 20
+          call "C:\Program Files\nodejs\npm.cmd" --version > "%RUNNER_TEMP%\wp16-npm-version.txt"
+          if errorlevel 1 exit /b 21
+          findstr /x /c:"11.16.0" "%RUNNER_TEMP%\wp16-npm-version.txt" >nul
+          if errorlevel 1 exit /b 22
+          type "%RUNNER_TEMP%\wp16-npm-version.txt"
 
       - name: Materialize or verify exact lock candidate
         run: |
-          $hadLock = Test-Path package-lock.json
-          if ($hadLock) { Copy-Item package-lock.json package-lock.before.json }
-          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          if ($hadLock) {
-            node -e "const fs=require('node:fs'); const assert=require('node:assert/strict'); const before=JSON.parse(fs.readFileSync('package-lock.before.json','utf8')); const after=JSON.parse(fs.readFileSync('package-lock.json','utf8')); assert.deepStrictEqual(after,before);"
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-            Remove-Item package-lock.before.json
-          }
+          if exist package-lock.json copy /y package-lock.json package-lock.before.json >nul
+          call "C:\Program Files\nodejs\npm.cmd" install --package-lock-only --ignore-scripts --no-audit --no-fund
+          if errorlevel 1 exit /b 30
+          if exist package-lock.before.json (
+            "C:\Program Files\nodejs\node.exe" -e "const fs=require('node:fs'); const assert=require('node:assert/strict'); const before=JSON.parse(fs.readFileSync('package-lock.before.json','utf8')); const after=JSON.parse(fs.readFileSync('package-lock.json','utf8')); assert.deepStrictEqual(after,before);"
+            if errorlevel 1 exit /b 31
+            del /q package-lock.before.json
+          )
 
       - name: Reproduce dependencies from materialized lock
-        run: npm ci --ignore-scripts --no-audit --no-fund
+        run: |
+          call "C:\Program Files\nodejs\npm.cmd" ci --ignore-scripts --no-audit --no-fund
+          if errorlevel 1 exit /b 40
 
       - name: Type-check Web design system
-        run: npm run typecheck
+        run: |
+          call "C:\Program Files\nodejs\npm.cmd" run typecheck
+          if errorlevel 1 exit /b 41
 
       - name: Lint Web design system
-        run: npm run lint
+        run: |
+          call "C:\Program Files\nodejs\npm.cmd" run lint
+          if errorlevel 1 exit /b 42
 
       - name: Run Web unit contracts
-        run: npm test
+        run: |
+          call "C:\Program Files\nodejs\npm.cmd" test
+          if errorlevel 1 exit /b 43
 
       - name: Build Web design-system gallery
-        run: npm run build
+        run: |
+          call "C:\Program Files\nodejs\npm.cmd" run build
+          if errorlevel 1 exit /b 44
 
       - name: Run browser accessibility responsive and screenshot evidence
         env:
           OMNI_WEB_BROWSER_CHANNEL: msedge
-        run: npm run e2e
+        run: |
+          call "C:\Program Files\nodejs\npm.cmd" run e2e
+          if errorlevel 1 exit /b 45
 
       - name: Audit Web dependencies
-        run: npm audit --audit-level=high
+        run: |
+          call "C:\Program Files\nodejs\npm.cmd" audit --audit-level=high
+          if errorlevel 1 exit /b 46
 
       - name: Verify repository contracts after Web introduction
         working-directory: .
         run: |
-          python scripts/check_v10_repository_boundaries.py
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python scripts/check_v10_regression_shield.py
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python scripts\check_v10_repository_boundaries.py
+          if errorlevel 1 exit /b 50
+          python scripts\check_v10_regression_shield.py
+          if errorlevel 1 exit /b 51
 
       - name: Upload lock candidate and visual evidence
         if: always()
@@ -95,6 +130,6 @@ jobs:
         working-directory: .
         run: |
           git reset --hard HEAD
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if errorlevel 1 exit /b 60
           git clean -ffdx
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if errorlevel 1 exit /b 61
