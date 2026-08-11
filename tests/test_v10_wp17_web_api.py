@@ -109,7 +109,15 @@ def make_client(
             private_test_identity_enabled=private_test_identity_enabled,
         )
     )
-    return TestClient(app, base_url="http://127.0.0.1"), repository, provisioning
+    return (
+        TestClient(
+            app,
+            base_url="http://127.0.0.1",
+            client=("127.0.0.1", 50000),
+        ),
+        repository,
+        provisioning,
+    )
 
 
 def login(client: TestClient) -> None:
