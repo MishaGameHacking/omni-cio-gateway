@@ -82,6 +82,7 @@ files = [
   "scripts/rehearse_v10_wp15_offline.py",
   "scripts/rehearse_v10_wp15_owner.py",
   "scripts/validate_v10_wp15_owner_evidence.py",
+  "scripts/check_v10_wp17_web_security.py",
 ]
 
 [tool.pytest.ini_options]
