@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
@@ -72,6 +73,33 @@ class FakeAdapter:
     def read_snapshot(self, *, allow_partial: bool = False) -> TInvestSnapshotResultV1:
         self.allow_partial_values.append(allow_partial)
         return self.result
+
+
+class FakeExpiryHandle:
+    def __init__(self, callback: Callable[[], None]) -> None:
+        self.callback = callback
+        self.cancelled = False
+
+    def cancel(self) -> None:
+        self.cancelled = True
+
+    def fire(self) -> None:
+        if not self.cancelled:
+            self.callback()
+
+
+class FakeExpiryScheduler:
+    def __init__(self) -> None:
+        self.delays: list[float] = []
+        self.handles: list[FakeExpiryHandle] = []
+
+    def __call__(
+        self, delay_seconds: float, callback: Callable[[], None]
+    ) -> FakeExpiryHandle:
+        self.delays.append(delay_seconds)
+        handle = FakeExpiryHandle(callback)
+        self.handles.append(handle)
+        return handle
 
 
 def _binding(
@@ -186,9 +214,11 @@ def _service(
     *,
     result: TInvestSnapshotResultV1 | None = None,
     records: tuple[BrokerConnectionRecordV1, ...] | None = None,
+    expiry_scheduler: FakeExpiryScheduler | None = None,
 ) -> tuple[BrokerLiveAcceptanceServiceV1, FakeVault, FakeAdapter]:
     adapter = FakeAdapter(result or _snapshot_result())
     vault = FakeVault()
+    scheduler = expiry_scheduler or FakeExpiryScheduler()
     service = BrokerLiveAcceptanceServiceV1(
         repository=FakeRepository(records or (_record(),)),
         vault=vault,
@@ -197,6 +227,7 @@ def _service(
         implementation_sha=IMPLEMENTATION_SHA,
         adapter_factory=lambda client_factory, fingerprint: adapter,
         now=lambda: NOW,
+        expiry_scheduler=scheduler,
     )
     return service, vault, adapter
 
@@ -204,7 +235,8 @@ def _service(
 def test_live_acceptance_keeps_private_values_out_of_durable_evidence(
     tmp_path: Path,
 ) -> None:
-    service, vault, adapter = _service(tmp_path)
+    scheduler = FakeExpiryScheduler()
+    service, vault, adapter = _service(tmp_path, expiry_scheduler=scheduler)
     record = _record()
 
     view = service.start(
@@ -224,6 +256,8 @@ def test_live_acceptance_keeps_private_values_out_of_durable_evidence(
     assert view.freshness_state == "FRESH"
     assert vault.loads == [record.secret_ref]
     assert adapter.allow_partial_values == [False]
+    assert scheduler.delays == [600.0]
+    assert len(scheduler.handles) == 1
 
     evidence = service.confirm(
         user_id="user:owner:v1",
@@ -235,6 +269,7 @@ def test_live_acceptance_keeps_private_values_out_of_durable_evidence(
         freshness_confirmed=True,
     )
 
+    assert scheduler.handles[0].cancelled is True
     assert evidence["implementation_sha"] == IMPLEMENTATION_SHA
     assert evidence["broker_authority"] == "READ_ONLY"
     assert evidence["portfolio_summary_parity"] is True
@@ -250,6 +285,7 @@ def test_live_acceptance_keeps_private_values_out_of_durable_evidence(
         "secret",
         "account_id",
         "account_fingerprint",
+        "masked_account",
         "portfolio_total",
         "sample",
         "quantity",
@@ -259,6 +295,57 @@ def test_live_acceptance_keeps_private_values_out_of_durable_evidence(
     }
     assert forbidden_keys.isdisjoint(persisted)
     assert persisted == evidence
+
+
+def test_live_acceptance_wall_clock_expiry_removes_private_challenge(
+    tmp_path: Path,
+) -> None:
+    scheduler = FakeExpiryScheduler()
+    service, _, _ = _service(tmp_path, expiry_scheduler=scheduler)
+    record = _record()
+    view = service.start(
+        user_id="user:owner:v1",
+        tenant_id=record.tenant_id,
+        connection_id=record.connection_id,
+        account_index=0,
+    )
+
+    scheduler.handles[0].fire()
+
+    with pytest.raises(BrokerLiveAcceptanceError, match="CHALLENGE_INVALID"):
+        service.confirm(
+            user_id="user:owner:v1",
+            tenant_id=record.tenant_id,
+            challenge_id=view.challenge_id,
+            intended_account_confirmed=True,
+            portfolio_summary_parity=True,
+            sample_position_quantity_value_parity=True,
+            freshness_confirmed=True,
+        )
+    assert not (tmp_path / "pending" / "owner-confirmation.json").exists()
+
+
+def test_live_acceptance_scheduler_failure_is_fail_closed(tmp_path: Path) -> None:
+    record = _record()
+    adapter = FakeAdapter(_snapshot_result())
+    service = BrokerLiveAcceptanceServiceV1(
+        repository=FakeRepository((record,)),
+        vault=FakeVault(),
+        client_factory_builder=lambda token: lambda: token,
+        evidence_writer=_writer(tmp_path),
+        implementation_sha=IMPLEMENTATION_SHA,
+        adapter_factory=lambda client_factory, fingerprint: adapter,
+        now=lambda: NOW,
+        expiry_scheduler=lambda delay, callback: (_ for _ in ()).throw(RuntimeError()),
+    )
+
+    with pytest.raises(BrokerLiveAcceptanceError, match="CHALLENGE_EXPIRY_UNAVAILABLE"):
+        service.start(
+            user_id="user:owner:v1",
+            tenant_id=record.tenant_id,
+            connection_id=record.connection_id,
+            account_index=0,
+        )
 
 
 def test_live_acceptance_rejects_non_read_binding(tmp_path: Path) -> None:
