@@ -43,7 +43,9 @@ def _require_exact_direct_version(
         failures.append(f"Web direct dependency has invalid version: {package_name}")
         return
     lowered = version.lower()
-    if lowered == "latest" or version.startswith(FORBIDDEN_DIRECT_VERSION_PREFIXES[:-1]):
+    if lowered == "latest" or version.startswith(
+        FORBIDDEN_DIRECT_VERSION_PREFIXES[:-1]
+    ):
         failures.append(
             f"Web direct dependency must use exact version: {package_name}={version}"
         )
@@ -92,7 +94,9 @@ def validate_web(root: Path, baseline: dict[str, Any], failures: list[str]) -> N
     }
     for (group, package_name), baseline_name in expected.items():
         group_value = package.get(group)
-        actual = group_value.get(package_name) if isinstance(group_value, dict) else None
+        actual = (
+            group_value.get(package_name) if isinstance(group_value, dict) else None
+        )
         baseline_value = frontend.get(baseline_name)
         if actual != baseline_value:
             failures.append(
@@ -135,11 +139,15 @@ def validate_web(root: Path, baseline: dict[str, Any], failures: list[str]) -> N
 
     allowed_registry = baseline.get("registry_policy", {}).get("npm")
     licenses = baseline.get("allowed_frontend_licenses")
-    if not isinstance(allowed_registry, str) or not allowed_registry.startswith("https://"):
+    if not isinstance(allowed_registry, str) or not allowed_registry.startswith(
+        "https://"
+    ):
         failures.append("V10 npm registry policy must be an HTTPS URL")
         allowed_registry = ""
     allowed_licenses = set(licenses) if isinstance(licenses, list) else set()
-    if not allowed_licenses or not all(isinstance(item, str) for item in allowed_licenses):
+    if not allowed_licenses or not all(
+        isinstance(item, str) for item in allowed_licenses
+    ):
         failures.append("allowed_frontend_licenses must be a non-empty string array")
         allowed_licenses = set()
 
@@ -150,8 +158,10 @@ def validate_web(root: Path, baseline: dict[str, Any], failures: list[str]) -> N
             failures.append(f"invalid apps/web lock metadata for {path}")
             continue
         resolved = metadata.get("resolved")
-        if isinstance(resolved, str) and allowed_registry and not resolved.startswith(
-            allowed_registry
+        if (
+            isinstance(resolved, str)
+            and allowed_registry
+            and not resolved.startswith(allowed_registry)
         ):
             failures.append(f"unapproved Web npm source for {path}: {resolved}")
         license_name = metadata.get("license")
