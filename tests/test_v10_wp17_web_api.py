@@ -128,6 +128,9 @@ def login(client: TestClient) -> None:
 
 def test_private_identity_is_disabled_by_default_and_loopback_only() -> None:
     client, _, _ = make_client(private_test_identity_enabled=False)
+    status = client.get("/api/v10/web/private-test-login/status")
+    assert status.status_code == 200
+    assert status.json() == {"enabled": False}
     response = client.post("/api/v10/web/private-test-login")
     assert response.status_code == 404
 

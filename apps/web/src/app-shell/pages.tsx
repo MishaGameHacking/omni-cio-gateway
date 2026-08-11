@@ -2,17 +2,23 @@ import { useCallback, useEffect, useState } from "react";
 import { Button, Card, StatePanel, StatusBadge } from "../design-system/components";
 import type { OperationalState } from "../design-system/contracts";
 import {
+  cancelWp15LiveAcceptance,
   commitBrokerReadConnection,
+  confirmWp15LiveAcceptance,
   previewBrokerReadConnection,
   readBrokerConnections,
+  readWp15LiveAcceptanceStatus,
   replaceBrokerReadCredential,
   revokeAllSessions,
   revokeBrokerReadConnection,
+  startWp15LiveAcceptance,
 } from "./api";
 import type {
   AppRoutePath,
   BrokerConnectionView,
   BrokerProvisioningPreviewView,
+  Wp15LiveAcceptanceView,
+  Wp15LiveConfirmation,
 } from "./contracts";
 
 const routeTitles: Record<AppRoutePath, string> = {
@@ -28,6 +34,13 @@ const routeTitles: Record<AppRoutePath, string> = {
   "/journal": "Журнал",
   "/system": "Система",
   "/settings": "Настройки",
+};
+
+const emptyLiveConfirmation: Wp15LiveConfirmation = {
+  intended_account_confirmed: false,
+  portfolio_summary_parity: false,
+  sample_position_quantity_value_parity: false,
+  freshness_confirmed: false,
 };
 
 function PlaceholderPage({ path }: { path: AppRoutePath }) {
@@ -80,6 +93,11 @@ function BrokerConnectionsCard() {
   const [replaceTarget, setReplaceTarget] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [liveEnabled, setLiveEnabled] = useState(false);
+  const [liveWorking, setLiveWorking] = useState(false);
+  const [liveView, setLiveView] = useState<Wp15LiveAcceptanceView | null>(null);
+  const [liveConfirmation, setLiveConfirmation] = useState<Wp15LiveConfirmation>(emptyLiveConfirmation);
+  const [liveMessage, setLiveMessage] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -93,6 +111,9 @@ function BrokerConnectionsCard() {
 
   useEffect(() => {
     void refresh();
+    void readWp15LiveAcceptanceStatus()
+      .then((value) => setLiveEnabled(value.enabled))
+      .catch(() => setLiveEnabled(false));
   }, [refresh]);
 
   const resetProvisioning = useCallback(() => {
@@ -101,6 +122,22 @@ function BrokerConnectionsCard() {
     setSelected([]);
     setReplaceTarget(null);
   }, []);
+
+  const resetLive = useCallback(() => {
+    setLiveView(null);
+    setLiveConfirmation(emptyLiveConfirmation);
+  }, []);
+
+  useEffect(() => {
+    if (!liveView) return;
+    const expiresAt = Date.parse(liveView.expires_at);
+    const delay = Number.isFinite(expiresAt) ? Math.max(0, expiresAt - Date.now()) : 0;
+    const timeoutId = window.setTimeout(() => {
+      resetLive();
+      setLiveMessage("Live challenge истёк. Приватные значения удалены из браузера.");
+    }, delay);
+    return () => window.clearTimeout(timeoutId);
+  }, [liveView, resetLive]);
 
   const validateToken = useCallback(async () => {
     const candidate = token.trim();
@@ -144,6 +181,51 @@ function BrokerConnectionsCard() {
     }
   }, [preview, refresh, replaceTarget, resetProvisioning, selected, working]);
 
+  const startLive = useCallback(async (connectionId: string, accountIndex: number) => {
+    if (liveWorking) return;
+    setLiveWorking(true);
+    setLiveMessage(null);
+    resetLive();
+    try {
+      const value = await startWp15LiveAcceptance(connectionId, accountIndex);
+      setLiveView(value);
+      setLiveConfirmation(emptyLiveConfirmation);
+      setLiveMessage("Live READ snapshot получен. Сверь значения с T-Invest и отметь только фактически проверенные пункты.");
+    } catch {
+      setLiveMessage("Live acceptance не прошёл: authority/account/freshness/completeness проверка закрылась fail-closed.");
+    } finally {
+      setLiveWorking(false);
+    }
+  }, [liveWorking, resetLive]);
+
+  const confirmLive = useCallback(async () => {
+    if (!liveView || liveWorking) return;
+    const allConfirmed = Object.values(liveConfirmation).every(Boolean);
+    if (!allConfirmed) return;
+    setLiveWorking(true);
+    setLiveMessage(null);
+    try {
+      await confirmWp15LiveAcceptance(liveView.challenge_id, liveConfirmation);
+      resetLive();
+      setLiveMessage("OWNER parity подтверждена. Создана только sanitized pending evidence; приватные суммы/позиции в неё не записаны.");
+    } catch {
+      setLiveMessage("Sanitized acceptance evidence не создана. Повтори live snapshot и сверку.");
+    } finally {
+      setLiveWorking(false);
+    }
+  }, [liveConfirmation, liveView, liveWorking, resetLive]);
+
+  const cancelLive = useCallback(async () => {
+    const challengeId = liveView?.challenge_id;
+    resetLive();
+    if (!challengeId) return;
+    try {
+      await cancelWp15LiveAcceptance(challengeId);
+    } catch {
+      setLiveMessage("Live challenge уже истёк или был удалён.");
+    }
+  }, [liveView?.challenge_id, resetLive]);
+
   return (
     <Card title="Broker Connections">
       {connectionError ? (
@@ -163,18 +245,54 @@ function BrokerConnectionsCard() {
               <div><strong>T-Invest</strong><span>READ ONLY</span></div>
               <StatusBadge state={connection.state === "ACTIVE" ? "READY" : "DEGRADED"} />
               <ul>
-                {connection.accounts.map((account) => (
-                  <li key={account.masked_label}>{account.masked_label}</li>
+                {connection.accounts.map((account, accountIndex) => (
+                  <li key={`${account.masked_label}-${accountIndex}`}>
+                    <span>{account.masked_label}</span>
+                    {liveEnabled && connection.state === "ACTIVE" ? (
+                      <Button variant="secondary" disabled={liveWorking || liveView !== null} onClick={() => void startLive(connection.connection_id, accountIndex)}>
+                        Live READ acceptance
+                      </Button>
+                    ) : null}
+                  </li>
                 ))}
               </ul>
               <div className="shell-connection__actions">
-                <Button variant="secondary" disabled={working} onClick={() => { resetProvisioning(); setReplaceTarget(connection.connection_id); setMessage("Введи новый READ-token для тех же брокерских счетов."); }}>Заменить token</Button>
-                <Button variant="danger" disabled={working || connection.state !== "ACTIVE"} onClick={() => { setWorking(true); void revokeBrokerReadConnection(connection.connection_id).then(refresh).then(() => setMessage("Подключение отозвано.")).catch(() => setMessage("Не удалось отозвать подключение.")).finally(() => setWorking(false)); }}>Отключить</Button>
+                <Button variant="secondary" disabled={working || liveWorking || liveView !== null} onClick={() => { resetProvisioning(); setReplaceTarget(connection.connection_id); setMessage("Введи новый READ-token для тех же брокерских счетов."); }}>Заменить token</Button>
+                <Button variant="danger" disabled={working || liveWorking || liveView !== null || connection.state !== "ACTIVE"} onClick={() => { setWorking(true); void revokeBrokerReadConnection(connection.connection_id).then(refresh).then(() => setMessage("Подключение отозвано.")).catch(() => setMessage("Не удалось отозвать подключение.")).finally(() => setWorking(false)); }}>Отключить</Button>
               </div>
             </article>
           ))}
         </div>
       )}
+
+      {liveEnabled ? (
+        <div className="shell-provisioning" aria-label="WP15 live READ acceptance">
+          <strong>WP15 deferred live acceptance</strong>
+          <p className="shell-caption">Acceptance-only loopback surface. Это не Portfolio Dashboard: приватные значения живут только в текущем browser challenge и не попадают в durable evidence.</p>
+          {liveView ? (
+            <div className="shell-account-selection">
+              <dl className="shell-definition-list">
+                <div><dt>Счёт</dt><dd>{liveView.masked_account} · {liveView.access_level}</dd></div>
+                <div><dt>Portfolio total</dt><dd>{liveView.portfolio_total} {liveView.portfolio_currency}</dd></div>
+                <div><dt>Sample</dt><dd>{liveView.sample.label}</dd></div>
+                <div><dt>Quantity</dt><dd>{liveView.sample.quantity}</dd></div>
+                <div><dt>Unit price</dt><dd>{liveView.sample.unit_price} {liveView.sample.currency}</dd></div>
+                <div><dt>Sample value</dt><dd>{liveView.sample.market_value} {liveView.sample.currency}</dd></div>
+                <div><dt>Freshness</dt><dd>{liveView.freshness_state} · age {liveView.age_seconds}s · {liveView.retrieved_at}</dd></div>
+              </dl>
+              <label className="shell-checkbox"><input type="checkbox" checked={liveConfirmation.intended_account_confirmed} onChange={(event) => setLiveConfirmation((value) => ({ ...value, intended_account_confirmed: event.target.checked }))} /><span>Masked account — именно тот счёт, который я выбрал в T-Invest.</span></label>
+              <label className="shell-checkbox"><input type="checkbox" checked={liveConfirmation.portfolio_summary_parity} onChange={(event) => setLiveConfirmation((value) => ({ ...value, portfolio_summary_parity: event.target.checked }))} /><span>Portfolio total/currency совпадает с T-Invest.</span></label>
+              <label className="shell-checkbox"><input type="checkbox" checked={liveConfirmation.sample_position_quantity_value_parity} onChange={(event) => setLiveConfirmation((value) => ({ ...value, sample_position_quantity_value_parity: event.target.checked }))} /><span>Sample position quantity/value совпадает с T-Invest.</span></label>
+              <label className="shell-checkbox"><input type="checkbox" checked={liveConfirmation.freshness_confirmed} onChange={(event) => setLiveConfirmation((value) => ({ ...value, freshness_confirmed: event.target.checked }))} /><span>Snapshot свежий на момент сравнения.</span></label>
+              <div className="shell-stack">
+                <Button disabled={liveWorking || !Object.values(liveConfirmation).every(Boolean)} onClick={() => void confirmLive()}>Подтвердить live acceptance</Button>
+                <Button variant="secondary" disabled={liveWorking} onClick={() => void cancelLive()}>Отмена</Button>
+              </div>
+            </div>
+          ) : null}
+          {liveMessage ? <p role="status">{liveMessage}</p> : null}
+        </div>
+      ) : null}
 
       <div className="shell-provisioning" aria-label="T-Invest READ provisioning">
         <label className="ds-field" htmlFor="tinvest-read-token">
@@ -187,11 +305,11 @@ function BrokerConnectionsCard() {
             spellCheck={false}
             value={token}
             onChange={(event) => setToken(event.target.value)}
-            disabled={working || preview !== null}
+            disabled={working || preview !== null || liveWorking || liveView !== null}
           />
         </label>
         {!preview ? (
-          <Button variant="secondary" disabled={working || token.trim().length === 0} onClick={() => void validateToken()}>
+          <Button variant="secondary" disabled={working || liveWorking || liveView !== null || token.trim().length === 0} onClick={() => void validateToken()}>
             Проверить READ-token
           </Button>
         ) : (
@@ -213,7 +331,7 @@ function BrokerConnectionsCard() {
             </div>
           </div>
         )}
-        <p className="shell-caption">Token не сохраняется в browser storage и после проверки очищается из формы. TRADE credential в WP17 не принимается.</p>
+        <p className="shell-caption">Token не сохраняется в browser storage и после проверки очищается из формы. TRADE credential не принимается.</p>
         {message ? <p role="status">{message}</p> : null}
       </div>
     </Card>
