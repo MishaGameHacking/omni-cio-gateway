@@ -32,7 +32,9 @@ def ready_root(tmp_path: Path) -> Path:
     return root
 
 
-def test_vault_round_trip_rotate_and_revoke_are_secret_ref_scoped(tmp_path: Path) -> None:
+def test_vault_round_trip_rotate_and_revoke_are_secret_ref_scoped(
+    tmp_path: Path,
+) -> None:
     root = ready_root(tmp_path)
     vault = ReadBrokerConnectionVaultV1(
         root=root,
