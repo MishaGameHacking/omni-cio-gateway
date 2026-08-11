@@ -8,7 +8,8 @@
     "master_plan": "docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.md",
     "identity_amendment": "docs/master-plan/OMNI_CIO_V10_IDENTITY_MULTI_TENANT_ACCOUNT_AND_AUTHENTICATION_AMENDMENT.md",
     "wp15_contract": "docs/architecture/V10_WP15_TINVEST_READONLY_CONTRACT.md",
-    "wp17_contract": "docs/architecture/V10_WP17_APPLICATION_SHELL_CONTRACT.json"
+    "wp17_contract": "docs/architecture/V10_WP17_APPLICATION_SHELL_CONTRACT.json",
+    "operations_runbook": "docs/operations/V10_WP15_OWNER_LIVE_READ_RUNBOOK.md"
   },
   "scope": {
     "normal_surface": "Settings -> Broker Connections",
@@ -101,9 +102,22 @@
     "authentication": "SSPI",
     "hba_scope": "EXACT_DATABASE_EXACT_ROLE_LOOPBACK_ONLY",
     "username_mapping": true,
+    "sspi_include_realm": true,
+    "sspi_compat_realm": true,
+    "sspi_upn_username": false,
+    "principal_mapping_form": "SAM_USERNAME@SAM_REALM",
+    "owner_admin_mapping_temporary": true,
+    "runtime_mapping_only_after_bootstrap": true,
+    "runtime_ddl_authority": false,
     "trust_allowed": false,
     "database_password_persisted": false,
     "postgres_admin_password_in_cli_or_logs_allowed": false
+  },
+  "ci": {
+    "support_workflow": ".github/workflows/v10-wp15-live-web-support-audit.yml",
+    "owner_audit_workflow": ".github/workflows/v10-wp15-live-web-owner-audit.yml",
+    "owner_audit_trigger": "workflow_dispatch_after_owner_finalization",
+    "real_secret_in_ci": false
   },
   "exit_gate": {
     "code_security_ci_before_owner_action": true,

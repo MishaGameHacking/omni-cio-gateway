@@ -1,0 +1,189 @@
+name: V10 WP15 Live Web Support Audit
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - "apps/api/app.py"
+      - "apps/web/src/app-shell/**"
+      - "omni_cio/web/api_v1.py"
+      - "omni_cio/web/live_acceptance_v1.py"
+      - "tests/test_v10_wp15_live_web_acceptance.py"
+      - "tests/test_v10_wp15_live_web_api.py"
+      - "scripts/check_v10_wp15_live_web_acceptance.py"
+      - "docs/architecture/V10_WP15_LIVE_WEB_ACCEPTANCE_CONTRACT.json"
+      - "docs/operations/V10_WP15_OWNER_LIVE_READ_RUNBOOK.md"
+      - "infrastructure/windows/provision_wp15_live_web_acceptance.ps1"
+      - "infrastructure/windows/run_wp15_live_web_runtime.ps1"
+      - "infrastructure/windows/bootstrap_wp15_live_database.py"
+      - "infrastructure/windows/finalize_wp15_live_web_evidence.ps1"
+      - "infrastructure/windows/audit_wp15_live_web_runner.ps1"
+      - ".github/workflows/v10-wp15-live-web-support-audit.yml"
+      - ".github/workflows/v10-wp15-live-web-owner-audit.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "apps/api/app.py"
+      - "apps/web/src/app-shell/**"
+      - "omni_cio/web/api_v1.py"
+      - "omni_cio/web/live_acceptance_v1.py"
+      - "tests/test_v10_wp15_live_web_acceptance.py"
+      - "tests/test_v10_wp15_live_web_api.py"
+      - "scripts/check_v10_wp15_live_web_acceptance.py"
+      - "docs/architecture/V10_WP15_LIVE_WEB_ACCEPTANCE_CONTRACT.json"
+      - "docs/operations/V10_WP15_OWNER_LIVE_READ_RUNBOOK.md"
+      - "infrastructure/windows/provision_wp15_live_web_acceptance.ps1"
+      - "infrastructure/windows/run_wp15_live_web_runtime.ps1"
+      - "infrastructure/windows/bootstrap_wp15_live_database.py"
+      - "infrastructure/windows/finalize_wp15_live_web_evidence.ps1"
+      - "infrastructure/windows/audit_wp15_live_web_runner.ps1"
+      - ".github/workflows/v10-wp15-live-web-support-audit.yml"
+      - ".github/workflows/v10-wp15-live-web-owner-audit.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: v10-wp15-live-web-support-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  support-audit:
+    name: WP15 live Web deterministic support gate
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 35
+
+    steps:
+      - name: Check out exact reviewed head
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Bootstrap protected runner tools
+        shell: cmd
+        run: |
+          call scripts\bootstrap_windows_ci_python.cmd
+          if errorlevel 1 exit /b 10
+          if not exist "C:\Program Files\nodejs\node.exe" exit /b 11
+          if not exist "C:\Program Files\nodejs\npm.cmd" exit /b 12
+          >>"%GITHUB_PATH%" echo C:\Program Files\nodejs
+
+      - name: Create isolated WP15 live environment
+        shell: bash
+        run: |
+          VENV_ROOT="$(cygpath -u "$RUNNER_TEMP")"
+          VENV_PATH="$VENV_ROOT/omni-cio-wp15-live-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          VENV_WINDOWS_PATH="$(cygpath -w "$VENV_PATH")"
+          rm -rf "$VENV_PATH"
+          python -m venv "$VENV_PATH"
+          echo "VENV_PATH=$VENV_PATH" >> "$GITHUB_ENV"
+          echo "VENV_WINDOWS_PATH=$VENV_WINDOWS_PATH" >> "$GITHUB_ENV"
+          echo "$VENV_WINDOWS_PATH\\Scripts" >> "$GITHUB_PATH"
+
+      - name: Install hash-locked Python dependencies
+        shell: bash
+        run: |
+          python scripts/windows_ci_lock.py project requirements-dev.txt windows-requirements-dev.txt
+          python -m pip install --disable-pip-version-check --require-hashes -r windows-requirements-dev.txt
+          python -c "import fastapi; import psycopg; import t_tech.invest; print('WP15 live support imports OK')"
+
+      - name: Verify exact checked-out head
+        shell: cmd
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          for /f %%S in ('git rev-parse HEAD') do set "ACTUAL_HEAD=%%S"
+          if /I not "%ACTUAL_HEAD%"=="%EXPECTED_HEAD%" exit /b 13
+          echo WP15 live exact head: %ACTUAL_HEAD%
+
+      - name: Run static quality and type safety
+        shell: cmd
+        run: |
+          "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m ruff check omni_cio\web\live_acceptance_v1.py omni_cio\web\api_v1.py apps\api\app.py infrastructure\windows\bootstrap_wp15_live_database.py scripts\check_v10_wp15_live_web_acceptance.py tests\test_v10_wp15_live_web_acceptance.py tests\test_v10_wp15_live_web_api.py
+          if errorlevel 1 exit /b 20
+          "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m ruff format --check omni_cio\web\live_acceptance_v1.py omni_cio\web\api_v1.py apps\api\app.py infrastructure\windows\bootstrap_wp15_live_database.py scripts\check_v10_wp15_live_web_acceptance.py tests\test_v10_wp15_live_web_acceptance.py tests\test_v10_wp15_live_web_api.py
+          if errorlevel 1 exit /b 21
+          "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m mypy
+          if errorlevel 1 exit /b 22
+
+      - name: Run focused live acceptance and Web API tests
+        shell: cmd
+        run: |
+          "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m pytest -q tests\test_v10_wp15_live_web_acceptance.py tests\test_v10_wp15_live_web_api.py tests\test_v10_wp17_web_api.py tests\test_v10_wp17_broker_provisioning.py tests\test_v10_wp17_read_connection_vault.py tests\test_v10_wp15_tinvest_connection_scope.py
+          if errorlevel 1 exit /b 30
+
+      - name: Enforce live support architecture boundary
+        shell: cmd
+        run: |
+          "%VENV_WINDOWS_PATH%\Scripts\python.exe" scripts\check_v10_wp15_live_web_acceptance.py
+          if errorlevel 1 exit /b 31
+          "%VENV_WINDOWS_PATH%\Scripts\python.exe" scripts\check_v10_wp17_web_security.py
+          if errorlevel 1 exit /b 32
+
+      - name: Verify PowerShell 5.1 scripts parse without applying
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $paths = @(
+            'infrastructure\windows\provision_wp15_live_web_acceptance.ps1',
+            'infrastructure\windows\run_wp15_live_web_runtime.ps1',
+            'infrastructure\windows\finalize_wp15_live_web_evidence.ps1',
+            'infrastructure\windows\audit_wp15_live_web_runner.ps1'
+          )
+          foreach ($path in $paths) {
+            $tokens = $null
+            $errors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path), [ref]$tokens, [ref]$errors)
+            if ($errors.Count -ne 0) {
+              $errors | ForEach-Object { Write-Error $_.Message }
+              exit 40
+            }
+          }
+          Write-Host 'WP15 live PowerShell parse contract passed.'
+
+      - name: Verify Node and npm identity
+        shell: cmd
+        run: |
+          "C:\Program Files\nodejs\node.exe" -e "if (process.version !== 'v24.18.0') process.exit(1); console.log(process.version)"
+          if errorlevel 1 exit /b 50
+          powershell.exe -NoProfile -NonInteractive -Command "$v = (& 'C:\Program Files\nodejs\npm.cmd' --version | Out-String).Trim(); Write-Host ('npm ' + $v); if ($v -ne '11.16.0') { exit 51 }"
+          if errorlevel 1 exit /b 51
+
+      - name: Reproduce and validate Web build
+        working-directory: apps/web
+        shell: cmd
+        run: |
+          call "C:\Program Files\nodejs\npm.cmd" ci --ignore-scripts --no-audit --no-fund
+          if errorlevel 1 exit /b 60
+          call "C:\Program Files\nodejs\npm.cmd" run typecheck
+          if errorlevel 1 exit /b 61
+          call "C:\Program Files\nodejs\npm.cmd" run lint
+          if errorlevel 1 exit /b 62
+          call "C:\Program Files\nodejs\npm.cmd" test
+          if errorlevel 1 exit /b 63
+          call "C:\Program Files\nodejs\npm.cmd" run build
+          if errorlevel 1 exit /b 64
+          call "C:\Program Files\nodejs\npm.cmd" audit --audit-level=high
+          if errorlevel 1 exit /b 65
+
+      - name: Verify permanent repository guards
+        shell: cmd
+        run: |
+          "%VENV_WINDOWS_PATH%\Scripts\python.exe" scripts\check_v10_web_baseline.py
+          if errorlevel 1 exit /b 70
+          "%VENV_WINDOWS_PATH%\Scripts\python.exe" scripts\check_v10_repository_boundaries.py
+          if errorlevel 1 exit /b 71
+          "%VENV_WINDOWS_PATH%\Scripts\python.exe" scripts\check_v10_regression_shield.py
+          if errorlevel 1 exit /b 72
+
+      - name: Clean self-hosted workspace
+        if: always()
+        shell: bash
+        run: |
+          if [ -n "${VENV_PATH:-}" ]; then rm -rf "$VENV_PATH"; fi
+          git reset --hard HEAD
+          git clean -ffdx
