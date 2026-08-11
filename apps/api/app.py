@@ -11,7 +11,13 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from t_tech.invest import Client
 
-from omni_cio.persistence.migration import apply_migrations, connect_postgres
+from omni_cio.persistence.migration import (
+    apply_migrations,
+    connect_postgres,
+    current_migration_state,
+    discover_migrations,
+    require_postgres_18,
+)
 from omni_cio.web.api_v1 import WebApiServicesV1, create_web_api
 from omni_cio.web.broker_vault_v1 import ReadBrokerConnectionVaultV1
 from omni_cio.web.live_acceptance_v1 import (
@@ -55,6 +61,13 @@ def _wp15_live_pending_evidence_path() -> Path:
     return Path(value)
 
 
+def _verify_live_database(connection: Any) -> None:
+    require_postgres_18(connection)
+    expected = tuple((item.version, item.sha256) for item in discover_migrations())
+    if current_migration_state(connection) != expected:
+        raise RuntimeError("WP15_LIVE_DATABASE_MIGRATION_STATE_INVALID")
+
+
 def _client_factory_builder(token: str):
     @contextmanager
     def client_factory() -> Iterator[Any]:
@@ -76,7 +89,10 @@ def create_local_private_app() -> FastAPI:
         raise RuntimeError("WP15_LIVE_REQUIRES_PRIVATE_ACCEPTANCE")
 
     connection = connect_postgres("")
-    apply_migrations(connection)
+    if live_acceptance_enabled:
+        _verify_live_database(connection)
+    else:
+        apply_migrations(connection)
     sessions = PostgresWebSessionRegistryV1(connection)
     broker_repository = PostgresBrokerConnectionRepositoryV1(connection)
     vault = ReadBrokerConnectionVaultV1()
