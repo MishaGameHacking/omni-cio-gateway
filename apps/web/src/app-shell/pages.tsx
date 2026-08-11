@@ -128,6 +128,17 @@ function BrokerConnectionsCard() {
     setLiveConfirmation(emptyLiveConfirmation);
   }, []);
 
+  useEffect(() => {
+    if (!liveView) return;
+    const expiresAt = Date.parse(liveView.expires_at);
+    const delay = Number.isFinite(expiresAt) ? Math.max(0, expiresAt - Date.now()) : 0;
+    const timeoutId = window.setTimeout(() => {
+      resetLive();
+      setLiveMessage("Live challenge истёк. Приватные значения удалены из браузера.");
+    }, delay);
+    return () => window.clearTimeout(timeoutId);
+  }, [liveView, resetLive]);
+
   const validateToken = useCallback(async () => {
     const candidate = token.trim();
     if (!candidate || working) return;
