@@ -6,9 +6,7 @@ import sys
 
 
 ROOT = Path(__file__).resolve().parents[1]
-CONTRACT = (
-    ROOT / "docs" / "architecture" / "V10_WP17_APPLICATION_SHELL_CONTRACT.json"
-)
+CONTRACT = ROOT / "docs" / "architecture" / "V10_WP17_APPLICATION_SHELL_CONTRACT.json"
 WEB_SHELL = ROOT / "apps" / "web" / "src" / "app-shell"
 API_ROOT = ROOT / "apps" / "api"
 WEB_BACKEND = ROOT / "omni_cio" / "web"
@@ -65,7 +63,7 @@ def main() -> int:
             failures.append(f"forbidden browser persistence/render primitive: {marker}")
     if "google" in web_text.lower():
         failures.append("Google login marker present in WP17 shell")
-    if "type=\"password\"" not in web_text:
+    if 'type="password"' not in web_text:
         failures.append("masked broker credential input is missing")
 
     forbidden_backend = (
@@ -89,7 +87,9 @@ def main() -> int:
         "tailscale funnel",
     ):
         if marker in lowered_backend:
-            failures.append(f"public/external bind marker present before WP22A: {marker}")
+            failures.append(
+                f"public/external bind marker present before WP22A: {marker}"
+            )
 
     api_text = (WEB_BACKEND / "api_v1.py").read_text(encoding="utf-8")
     if "private_test_identity_enabled: bool = False" not in api_text:
@@ -111,7 +111,10 @@ def main() -> int:
         failures.append("connection vault must use DPAPI LocalMachine protection")
 
     migration_text = MIGRATION.read_text(encoding="utf-8").lower()
-    if "web_sessions" not in migration_text or "broker_connections" not in migration_text:
+    if (
+        "web_sessions" not in migration_text
+        or "broker_connections" not in migration_text
+    ):
         failures.append("WP17 persistence migration is incomplete")
     for marker in (" raw_token", " token text", "ciphertext bytea", "broker_token"):
         if marker in migration_text:
