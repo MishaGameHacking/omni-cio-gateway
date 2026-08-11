@@ -9,9 +9,7 @@ import re
 import secrets
 
 
-READ_CONNECTION_ROOT = Path(
-    r"C:\ProgramData\OmniCIO\secrets\read-broker\connections"
-)
+READ_CONNECTION_ROOT = Path(r"C:\ProgramData\OmniCIO\secrets\read-broker\connections")
 READ_CONNECTION_MARKER = ".omni-cio-wp17-read-vault-owned"
 READ_CONNECTION_MARKER_VALUE = "OMNI-CIO-V10-WP17-READ-CONNECTION-VAULT-v1"
 _SECRET_REF_RE = re.compile(r"^read-connection:v1:(?P<digest>[a-f0-9]{64})$")
@@ -172,7 +170,9 @@ class ReadBrokerConnectionVaultV1:
         try:
             value = marker.read_text(encoding="ascii")
         except OSError as exc:
-            raise ReadConnectionVaultError("READ_CONNECTION_VAULT_MARKER_MISSING") from exc
+            raise ReadConnectionVaultError(
+                "READ_CONNECTION_VAULT_MARKER_MISSING"
+            ) from exc
         if value != READ_CONNECTION_MARKER_VALUE:
             raise ReadConnectionVaultError("READ_CONNECTION_VAULT_MARKER_INVALID")
 
@@ -199,7 +199,9 @@ class ReadBrokerConnectionVaultV1:
                 os.fsync(handle.fileno())
             os.replace(temporary, destination)
         except OSError as exc:
-            raise ReadConnectionVaultError("READ_CONNECTION_SECRET_WRITE_FAILED") from exc
+            raise ReadConnectionVaultError(
+                "READ_CONNECTION_SECRET_WRITE_FAILED"
+            ) from exc
         finally:
             _zero(plaintext)
             _zero(protected)
@@ -214,7 +216,9 @@ class ReadBrokerConnectionVaultV1:
         try:
             protected = path.read_bytes()
         except OSError as exc:
-            raise ReadConnectionVaultError("READ_CONNECTION_SECRET_UNAVAILABLE") from exc
+            raise ReadConnectionVaultError(
+                "READ_CONNECTION_SECRET_UNAVAILABLE"
+            ) from exc
         plaintext = bytearray()
         try:
             plaintext.extend(self._unprotect(protected))
@@ -238,5 +242,7 @@ class ReadBrokerConnectionVaultV1:
         except FileNotFoundError:
             return False
         except OSError as exc:
-            raise ReadConnectionVaultError("READ_CONNECTION_SECRET_DELETE_FAILED") from exc
+            raise ReadConnectionVaultError(
+                "READ_CONNECTION_SECRET_DELETE_FAILED"
+            ) from exc
         return True
