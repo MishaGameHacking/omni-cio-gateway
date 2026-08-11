@@ -19,7 +19,7 @@ from omni_cio.web.persistence_v1 import BrokerConnectionRecordV1
 
 _PENDING_MARKER = "OMNI-CIO-V10-WP15-LIVE-PENDING-v1"
 _PENDING_MARKER_NAME = ".omni-cio-wp15-live-pending"
-_SHA256_RE = re.compile(r"^[0-9a-f]{40}$")
+_GIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 
 
 class BrokerLiveAcceptanceError(RuntimeError):
@@ -37,7 +37,9 @@ class ReadConnectionVaultLike(Protocol):
 
 
 class SnapshotAdapterLike(Protocol):
-    def read_snapshot(self, *, allow_partial: bool = False) -> TInvestSnapshotResultV1: ...
+    def read_snapshot(
+        self, *, allow_partial: bool = False
+    ) -> TInvestSnapshotResultV1: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -161,7 +163,7 @@ class BrokerLiveAcceptanceServiceV1:
         now: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
     ) -> None:
         candidate_sha = implementation_sha.strip().lower()
-        if _SHA256_RE.fullmatch(candidate_sha) is None:
+        if _GIT_SHA_RE.fullmatch(candidate_sha) is None:
             raise ValueError("implementation_sha must be an exact 40-character Git SHA")
         if ttl <= timedelta(0) or ttl > timedelta(minutes=30):
             raise ValueError("live acceptance challenge TTL is out of bounds")
@@ -278,7 +280,10 @@ class BrokerLiveAcceptanceServiceV1:
         finally:
             token = ""
 
-        if result.account.account_fingerprint_sha256 != selected.account_fingerprint_sha256:
+        if (
+            result.account.account_fingerprint_sha256
+            != selected.account_fingerprint_sha256
+        ):
             raise BrokerLiveAcceptanceError("WP15_LIVE_ACCOUNT_BINDING_MISMATCH")
         if result.account.masked_label != selected.masked_label:
             raise BrokerLiveAcceptanceError("WP15_LIVE_MASKED_ACCOUNT_MISMATCH")
