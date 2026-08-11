@@ -2,8 +2,12 @@ import type {
   BrokerConnectionView,
   BrokerProvisioningPreviewView,
   HealthView,
+  PrivateAcceptanceStatusView,
   ProviderView,
   WebSessionView,
+  Wp15LiveAcceptanceStatusView,
+  Wp15LiveAcceptanceView,
+  Wp15LiveConfirmation,
 } from "./contracts";
 
 const JSON_HEADERS = { "Content-Type": "application/json" } as const;
@@ -26,6 +30,18 @@ export function readSession(): Promise<WebSessionView> {
 
 export function readProviders(): Promise<ProviderView[]> {
   return requestJson<ProviderView[]>("/api/v10/web/auth/providers");
+}
+
+export function readPrivateAcceptanceStatus(): Promise<PrivateAcceptanceStatusView> {
+  return requestJson<PrivateAcceptanceStatusView>("/api/v10/web/private-test-login/status");
+}
+
+export async function privateTestLogin(): Promise<void> {
+  await requestJson<{ ok: true }>("/api/v10/web/private-test-login", {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: "{}",
+  });
 }
 
 export function readHealth(): Promise<HealthView> {
@@ -63,6 +79,34 @@ export async function replaceBrokerReadCredential(connectionId: string, challeng
 export async function revokeBrokerReadConnection(connectionId: string): Promise<void> {
   await requestJson<{ ok: true }>(`/api/v10/web/broker-connections/${encodeURIComponent(connectionId)}`, {
     method: "DELETE",
+  });
+}
+
+export function readWp15LiveAcceptanceStatus(): Promise<Wp15LiveAcceptanceStatusView> {
+  return requestJson<Wp15LiveAcceptanceStatusView>("/api/v10/web/wp15-live-acceptance/status");
+}
+
+export function startWp15LiveAcceptance(connectionId: string, accountIndex: number): Promise<Wp15LiveAcceptanceView> {
+  return requestJson<Wp15LiveAcceptanceView>("/api/v10/web/wp15-live-acceptance/start", {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ connection_id: connectionId, account_index: accountIndex }),
+  });
+}
+
+export async function confirmWp15LiveAcceptance(challengeId: string, confirmation: Wp15LiveConfirmation): Promise<void> {
+  await requestJson<{ accepted: true; pending_owner_finalization: true }>("/api/v10/web/wp15-live-acceptance/confirm", {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ challenge_id: challengeId, ...confirmation }),
+  });
+}
+
+export async function cancelWp15LiveAcceptance(challengeId: string): Promise<void> {
+  await requestJson<{ cancelled: boolean }>("/api/v10/web/wp15-live-acceptance/cancel", {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ challenge_id: challengeId }),
   });
 }
 

@@ -1,7 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button, StatusBadge } from "../design-system/components";
 import type { OperationalState } from "../design-system/contracts";
-import { logoutCurrentSession, providerLoginUrl, readHealth, readProviders, readSession } from "./api";
+import {
+  logoutCurrentSession,
+  privateTestLogin,
+  providerLoginUrl,
+  readHealth,
+  readPrivateAcceptanceStatus,
+  readProviders,
+  readSession,
+} from "./api";
 import { appRoutes, isKnownRoute, type AppRoutePath, type HealthView, type ProviderView, type WebSessionView } from "./contracts";
 import { RoutePage } from "./pages";
 
@@ -15,7 +23,17 @@ function healthToOperational(value: HealthView["state"]): OperationalState {
   return "DEGRADED";
 }
 
-function LoginScreen({ providers, apiUnavailable }: { providers: ProviderView[]; apiUnavailable: boolean }) {
+function LoginScreen({
+  providers,
+  apiUnavailable,
+  privateAcceptanceEnabled,
+  onPrivateAcceptance,
+}: {
+  providers: ProviderView[];
+  apiUnavailable: boolean;
+  privateAcceptanceEnabled: boolean;
+  onPrivateAcceptance: () => void;
+}) {
   const provider = (name: "telegram" | "vk_id") => providers.find((item) => item.provider === name);
   const telegram = provider("telegram");
   const vk = provider("vk_id");
@@ -29,8 +47,12 @@ function LoginScreen({ providers, apiUnavailable }: { providers: ProviderView[];
         <div className="login-actions">
           <a className="ds-button ds-button--primary" aria-disabled={!telegram?.enabled} href={telegram?.enabled ? providerLoginUrl("telegram") : undefined}>Продолжить через Telegram</a>
           <a className="ds-button ds-button--secondary" aria-disabled={!vk?.enabled} href={vk?.enabled ? providerLoginUrl("vk_id") : undefined}>Продолжить через VK ID</a>
+          {privateAcceptanceEnabled ? (
+            <Button variant="secondary" onClick={onPrivateAcceptance}>Локальный OWNER acceptance</Button>
+          ) : null}
         </div>
         <p className="shell-caption">Provider buttons остаются fail-closed до reviewed local/private provider configuration.</p>
+        {privateAcceptanceEnabled ? <p className="shell-caption">Локальный OWNER acceptance виден только на loopback и не является третьим login provider.</p> : null}
       </section>
     </main>
   );
@@ -39,6 +61,7 @@ function LoginScreen({ providers, apiUnavailable }: { providers: ProviderView[];
 export function ApplicationShell() {
   const [session, setSession] = useState<WebSessionView | null>(null);
   const [providers, setProviders] = useState<ProviderView[]>([]);
+  const [privateAcceptanceEnabled, setPrivateAcceptanceEnabled] = useState(false);
   const [sessionUnavailable, setSessionUnavailable] = useState(false);
   const [path, setPath] = useState<AppRoutePath>(currentPath);
   const [health, setHealth] = useState<HealthView | null>(null);
@@ -59,6 +82,9 @@ export function ApplicationShell() {
   useEffect(() => {
     void refreshSession();
     void readProviders().then(setProviders).catch(() => setProviders([]));
+    void readPrivateAcceptanceStatus()
+      .then((value) => setPrivateAcceptanceEnabled(value.enabled))
+      .catch(() => setPrivateAcceptanceEnabled(false));
   }, [refreshSession]);
 
   useEffect(() => {
@@ -95,7 +121,20 @@ export function ApplicationShell() {
   if (session === null) {
     return <main className="shell-loading" role="main"><span role="status">Проверка server-side session…</span></main>;
   }
-  if (!session.authenticated) return <LoginScreen providers={providers} apiUnavailable={sessionUnavailable} />;
+  if (!session.authenticated) {
+    return (
+      <LoginScreen
+        providers={providers}
+        apiUnavailable={sessionUnavailable}
+        privateAcceptanceEnabled={privateAcceptanceEnabled}
+        onPrivateAcceptance={() => {
+          void privateTestLogin()
+            .then(refreshSession)
+            .catch(() => setSessionUnavailable(true));
+        }}
+      />
+    );
+  }
 
   return (
     <div className="app-shell">
