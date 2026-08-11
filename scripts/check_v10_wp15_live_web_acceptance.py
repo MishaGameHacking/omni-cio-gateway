@@ -236,10 +236,12 @@ def main() -> int:
             "ciphertext",
             "broker_account_id",
             "account_fingerprint",
+            "masked_account",
             "portfolio_total",
             "quantity",
             "unit_price",
             "market_value",
+            "position_payload",
             "private_portfolio_payload",
         }.issubset(forbidden),
         "final evidence forbidden-field set was weakened",
@@ -284,6 +286,22 @@ def main() -> int:
         ),
     ):
         _require_value(postgres, key, expected, message, failures)
+
+    ci = contract.get("ci", {})
+    _require_value(
+        ci,
+        "owner_audit_trigger",
+        "push_main_then_rerun_exact_sha_after_owner_finalization",
+        "OWNER audit trigger model drifted from exact-main rerun gate",
+        failures,
+    )
+    _require_value(
+        ci,
+        "real_secret_in_ci",
+        False,
+        "real broker secret must remain outside CI",
+        failures,
+    )
 
     exit_gate = contract.get("exit_gate", {})
     for key in (
@@ -350,6 +368,18 @@ def main() -> int:
             "ACCOUNT_ACCESS_LEVEL_READ_ONLY",
             "live service must enforce broker READ_ONLY authority",
         ),
+        (
+            "self._expiry_scheduler",
+            "private live challenge must have an active expiry scheduler",
+        ),
+        (
+            "def _expire_challenge",
+            "private live challenge must be actively removed at wall-clock expiry",
+        ),
+        (
+            "WP15_LIVE_CHALLENGE_EXPIRY_UNAVAILABLE",
+            "challenge creation must fail closed when expiry scheduling is unavailable",
+        ),
     ):
         _require(marker in service_text, message, failures)
 
@@ -412,6 +442,15 @@ def main() -> int:
         "acceptance-only UI marker missing",
         failures,
     )
+    for marker, message in (
+        (
+            "Date.parse(liveView.expires_at)",
+            "browser must bind private live values to server challenge expiry",
+        ),
+        ("window.setTimeout", "browser live challenge expiry timer missing"),
+        ("window.clearTimeout", "browser live challenge expiry cleanup missing"),
+    ):
+        _require(marker in web_text, message, failures)
 
     provisioner_text = _read(PROVISIONER)
     normalized_provisioner = provisioner_text.lower().replace("-", "")
@@ -461,6 +500,16 @@ def main() -> int:
     _require(
         "Test-Administrator" in launcher_text,
         "runtime must reject administrator identity",
+        failures,
+    )
+
+    owner_workflow_text = _read(OWNER_WORKFLOW)
+    _require(
+        "push:" in owner_workflow_text
+        and "branches:" in owner_workflow_text
+        and "- main" in owner_workflow_text
+        and "workflow_dispatch:" in owner_workflow_text,
+        "OWNER audit workflow must create an exact-main job and remain manually dispatchable",
         failures,
     )
 
