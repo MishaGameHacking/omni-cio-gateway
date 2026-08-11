@@ -127,7 +127,7 @@ jobs:
 
       - name: Rehearse PostgreSQL migration and recovery compatibility
         run: |
-          powershell.exe -NoProfile -ExecutionPolicy Bypass -File infrastructure\windows\rehearse_wp13_persistence.ps1
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File infrastructure\windows\rehearse_wp13_persistence.ps1 -PythonPath "%VENV_WINDOWS_PATH%\Scripts\python.exe"
           if errorlevel 1 exit /b 50
 
       - name: Verify permanent repository and Web guards
