@@ -1,22 +1,24 @@
 # 17 — V10 CURRENT PROGRAM STATUS
 
-Updated: 2026-08-10
+Updated: 2026-08-11
 
 ## Executive state
 
-Omni-CIO V10: **DEVELOPMENT ACTIVE / BLOCK C COMPLETE / WP15 CODE+SECURITY ACCEPTED / BLOCK D LIVE ACCEPTANCE DEFERRED / WP16 NEXT**.
+Omni-CIO V10: **DEVELOPMENT ACTIVE / BLOCK C COMPLETE / WP15 CODE+SECURITY ACCEPTED / BLOCK D LIVE ACCEPTANCE DEFERRED / WP16 COMPLETE / WP17 NEXT**.
 
 Accepted implementation progress remains **26%**.
 
 Block C's full 12% weight is accepted. Block D is deliberately **not credited** yet: WP11–WP14 are complete and WP15 implementation/code/security is accepted, but the OWNER-approved Identity / Multi-Tenant Account / Authentication Amendment defers the real T-Invest live acceptance to the authenticated Web broker-provisioning flow owned by WP17. WP18 real-data acceptance remains locked until that deferred evidence passes.
 
+WP16 is now accepted through its implementation merge and exact-main post-merge Regression Shield. Block E remains in progress and is not credited piecemeal before its own Block Exit Gate.
+
 The next authorized implementation work package is:
 
-**WP16 — Web Design System.**
+**WP17 — Application Shell and navigation.**
 
-WP16 may start the single source-controlled Omni-CIO Web App design-system foundation in the existing repository. It does not authorize application-shell business flows, broker credential provisioning, authentication-provider runtime integration, public multi-user activation, public ingress, Telegram product implementation, Cortex/AI, broker write, transfer/withdrawal authority or Real execution.
+WP17 owns the stable authenticated account shell, navigation, Telegram/VK identity-provider abstraction, server-side session semantics, route guards, API error boundary, global health/freshness indicator and the authenticated `Settings -> Broker Connections` product flow required by the accepted Identity / Multi-Tenant Account / Authentication Amendment.
 
-WP17 will own the authenticated Application Shell and `Settings -> Broker Connections` product flow. Only there may normal users provision/replace/revoke tenant-owned broker credentials and complete the deferred WP15 live evidence. Until that evidence passes, Block D remains uncredited and WP18 may not claim real broker-data acceptance.
+WP17 may exercise OWNER/test identities before public launch, but public registration and public multi-user activation remain disabled until their later external-ingress, isolation, security, legal and commercial gates pass. Public Internet ingress remains OFF. Starting WP17 does not itself credit Block D or unlock WP18 real broker-data acceptance.
 
 Owner action required now: **none**.
 
@@ -43,8 +45,9 @@ Starting or advancing V10 never expands broker/Real-money authority by itself.
 - Block D / WP13 — **COMPLETE**;
 - Block D / WP14 — **COMPLETE**;
 - Block D / WP15 — **IMPLEMENTATION / CODE / SECURITY ACCEPTED; LIVE BROKER EVIDENCE DEFERRED TO WP17**;
-- Block E / WP16 — **NEXT / AUTHORIZED**;
-- Block E / WP17+ — **LOCKED behind WP16 Exit Gate**;
+- Block E / WP16 — **COMPLETE**;
+- Block E / WP17 — **NEXT / AUTHORIZED after this status transition is itself merged and regression-verified**;
+- Block E / WP18+ — **LOCKED behind WP17 Exit Gate and owning dependencies**;
 - WP18 real-data acceptance — **LOCKED behind deferred WP15 live evidence**;
 - public multi-user activation — **OFF / LOCKED**;
 - public Internet ingress — **OFF / LOCKED until its owning security gate**;
@@ -63,14 +66,15 @@ Accepted planning amendments are indexed by:
 
 - `docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md`.
 
-The current WP15/WP16 sequencing is additionally governed by the accepted OWNER amendment:
+The current WP15/WP16/WP17 sequencing is additionally governed by the accepted OWNER amendment:
 
 - `docs/master-plan/OMNI_CIO_V10_IDENTITY_MULTI_TENANT_ACCOUNT_AND_AUTHENTICATION_AMENDMENT.md`;
 - `docs/architecture/ADR-0010-identity-multitenant-authentication.md`;
 - `docs/architecture/V10_IDENTITY_AUTHENTICATION_CONTRACT.json`;
 - `docs/operations/V10_IDENTITY_AND_BROKER_CONNECTION_SECURITY_NOTES.md`;
 - `docs/architecture/V10_WP15_TINVEST_READONLY_CONTRACT.md`;
-- `docs/architecture/V10_WP15_LIVE_ACCEPTANCE_STATE.json`.
+- `docs/architecture/V10_WP15_LIVE_ACCEPTANCE_STATE.json`;
+- `docs/architecture/V10_WP16_WEB_DESIGN_SYSTEM_CONTRACT.md`.
 
 Binding execution/navigation sources also include:
 
@@ -92,7 +96,7 @@ GitHub remains engineering source of truth. The protected production/recovery ba
 | B. GitHub, dependencies and CI/CD | 9% | COMPLETE — WP1 / WP2 / WP3 / WP4 |
 | C. Lenovo Omni-CIO Node / infrastructure | 12% | COMPLETE — WP5 / WP6 / WP7 / WP8 / WP9 / WP9A / WP10 |
 | D. V10 Core and data | 14% | IMPLEMENTATION ACCEPTED THROUGH WP15 CODE+SECURITY; LIVE BROKER EVIDENCE DEFERRED / BLOCK CREDIT WITHHELD |
-| E. Omni-CIO Web Platform | 14% | IN PROGRESS — WP16 NEXT |
+| E. Omni-CIO Web Platform | 14% | IN PROGRESS — WP16 COMPLETE / WP17 NEXT |
 | F. Telegram | 8% | NOT STARTED — product/interaction contract pre-approved only |
 | G. AI Copilot / Research / GPT Migration | 18% | NOT STARTED |
 | H. Guardian / Watchtower Loop | 8% | NOT STARTED — autonomous portfolio-governance role pre-approved only |
@@ -100,7 +104,7 @@ GitHub remains engineering source of truth. The protected production/recovery ba
 | J. Integration / hardening / recovery / release | 5% | NOT STARTED — commercial/license/update/legal-gate planning pre-approved only |
 | **TOTAL** | **100% planned** | **26% ACCEPTED** |
 
-The 26% accepted total is intentional. Starting Block E does not retroactively credit Block D. Block D receives its planned weight only after the deferred WP15 live broker evidence and the amended Block D acceptance requirements are actually satisfied.
+The 26% accepted total is intentional. WP16 acceptance advances Block E implementation but does not credit Block E piecemeal. Block D receives its planned weight only after the deferred WP15 live broker evidence and the amended Block D acceptance requirements are actually satisfied.
 
 ## Accepted implementation evidence index
 
@@ -122,7 +126,8 @@ The 26% accepted total is intentional. Starting Block E does not retroactively c
 - WP13 PR #273 -> `d74b0177c730cad0a8e3a69d1504e226bedbac27`; post-merge Regression Shield #1456 / run `31370195951` — **SUCCESS**;
 - WP14 PR #275 -> `ff9bb37b6538fe9665ea0a652a0623354f0195da`; post-merge Regression Shield #1458 / run `31379587986` — **SUCCESS**;
 - Identity / Multi-Tenant Account / Authentication planning PR #278 -> `cbf6a7adba78fa56d23e90ce2cfe2952d21a5e5b`; post-merge Regression Shield #1460 — **SUCCESS**;
-- WP15 PR #277 -> `f8862d1af88400189d3c0780d2029a87cb5427ca`; post-merge Regression Shield #1461 / run `31419650823` — **SUCCESS**.
+- WP15 PR #277 -> `f8862d1af88400189d3c0780d2029a87cb5427ca`; post-merge Regression Shield #1461 / run `31419650823` — **SUCCESS**;
+- WP16 PR #280 -> `03f3ff2f389b1b683e60e1ccc706cd7f62a9ba35`; post-merge Regression Shield #1463 / run `31468739530` — **SUCCESS**.
 
 ## WP15 accepted implementation evidence
 
@@ -189,15 +194,67 @@ No real T-Invest token, full broker account ID, private portfolio payload or rea
 
 The deferred live gate must later be completed through the reviewed WP17 authenticated Web flow. For the authenticated tenant/BrokerConnection it must prove READ_ONLY authority, intended broker-account selection, portfolio-summary parity, one sample-position quantity/value parity, acceptable freshness and sanitized evidence bound to the reviewed implementation. Until then Block D stays uncredited and WP18 cannot claim real broker data accepted.
 
-## WP16 authorization and scope guard
+## WP16 accepted implementation evidence
 
-WP16 — **Web Design System** — is now the only authorized feature work package.
+WP16 final reviewed PR head was:
 
-WP16 must create the visual/component foundation for the one source-controlled Web App in this repository, following the Master Plan. It may implement design tokens, typography, spacing, layout primitives, cards, tables, badges, buttons, forms, feedback/loading/error/empty/stale states, chart primitives and responsive/mobile behavior together with the required tests and build contracts.
+`b4adef760696343382ca7319f7f7ac7e95db671a`
 
-WP16 must **not** implement WP17 business/application-shell flows early. In particular it must not provision broker credentials, implement Telegram/VK login runtime, activate public users, expose public ingress, perform live broker acceptance, build the WP18 real portfolio dashboard early, or expand any execution authority.
+The mandatory fresh `ready_for_review` exact-head cycle passed:
 
-WP17 remains locked until the WP16 Exit Gate is complete.
+- authoritative Self-Hosted Windows CI #698 / run `31468182852` — **SUCCESS**;
+- V10 WP16 Web Design System Audit #26 / run `31468182877` — **SUCCESS**;
+- synthetic visual/lock evidence artifact `9092305754`, digest `sha256:f367dc9613d3a9cbd9a11cbc52aa28b70c2ee14af38aacc1fe3e2a2e422772a1`;
+- review submissions — **zero**;
+- blocking inline review threads — **zero**;
+- PR conversation comments — **zero**;
+- `main...head` was `behind_by=0` with exactly 23 expected WP16 files.
+
+The focused Web gate proved exact-head checkout, exact Node 24.18.0/npm 11.16.0 identity, committed package-lock v3 reproducibility, `npm ci`, strict TypeScript typecheck, Web lint contract, deterministic unit contracts, Vite production build, Playwright browser accessibility/keyboard/reduced-motion checks, 360/768/1440 responsive screenshot evidence, npm dependency audit, permanent Web/repository contracts and clean Lenovo workspace.
+
+The authoritative final gate passed lock verification, repository/security policy, compile, Ruff, formatting, mypy, stable `app:app`, read-only release contract, full Regression Shield with coverage, dependency audit, SAST and tracked-content secret scan. WP5-only physical-evidence steps were unrelated/skipped and were not counted as WP16 PASS evidence. Failure-diagnostic upload was skipped because there was no failure and was not counted as PASS evidence.
+
+GitHub-hosted Fast PR Checks #606 / run `31468182864` and Toolchain Compatibility #641 / run `31468182801` did not start because GitHub reported account payment/spending-limit startup failure. They remain recorded as external hosted-infrastructure/billing failures, **not PASS and not code failures**.
+
+PR #280 was squash-merged with an exact-head guard as:
+
+`03f3ff2f389b1b683e60e1ccc706cd7f62a9ba35`
+
+Post-WP16 Regression Shield #1463 / run `31468739530` ran on that exact `main` SHA and completed **SUCCESS**. Its independent security job passed dependency audit, medium/high-confidence SAST and tracked-content secret scan. Its quality/contracts/coverage job passed lock/policy/repository/toolchain contracts, compile, Ruff, formatting, mypy, stable `app:app`, read-only release contract and the full protected Regression Shield with coverage.
+
+### WP16 functional/security acceptance
+
+Accepted WP16 provides the single source-controlled Web foundation at `apps/web/` with:
+
+- exact-pinned React/Vite/TypeScript/Node/npm baseline and reproducible package-lock v3;
+- semantic typography/spacing/surface/focus/operational-state/risk tokens for light and dark themes;
+- reusable cards, buttons, badges, fields, tables, chart wrapper, dialog/drawer, toast, skeleton and feedback-state primitives;
+- canonical operational/risk vocabulary instead of Web-specific financial meanings;
+- mobile-first 360/768/1440 responsive layout evidence;
+- keyboard/focus/accessibility-label smoke and reduced-motion handling;
+- browser and dependency/security guards that fail closed on unsupported drift;
+- synthetic visual evidence only; no broker credential or private portfolio data.
+
+WP16 did **not** introduce WP17 navigation/auth/session/broker-provisioning flows, public multi-user activation, public ingress, WP18 real portfolio UI, Cortex/Telegram runtime, broker write, transfer/withdrawal or Real authority.
+
+## WP17 authorization and scope guard
+
+WP17 — **Application Shell and navigation** — becomes the only authorized feature work package after this status-only transition is merged and its post-status Regression Shield succeeds.
+
+WP17 must build on the accepted WP16 design system rather than invent local visual patterns. It owns:
+
+- stable application navigation and route structure from the Master Plan;
+- authenticated Omni-CIO account shell;
+- Telegram and VK ID provider abstraction under the accepted identity amendment;
+- revocable server-side session semantics, logout/switch/revoke controls and route guards;
+- API error boundary and global health/freshness indication;
+- system-page non-secret Web build version/Git SHA;
+- authenticated `Settings -> Broker Connections` normal provisioning/replacement/revocation flow for tenant-owned broker credentials;
+- the reviewed path that will later obtain the deferred WP15 live READ evidence without returning/storing raw credentials in browser storage.
+
+WP17 must **not** activate public multi-user registration, expose public Internet ingress, centralize private portfolio/broker secrets, implement WP18 real portfolio UI early, add a second Web/Core/persistence stack, expand broker write authority or enable Real execution.
+
+The deferred WP15 live broker evidence remains a separate real-data acceptance condition. Until it passes, Block D remains uncredited and WP18 cannot claim real broker-data acceptance.
 
 ## Permanent safety / rollback invariants
 
@@ -216,4 +273,4 @@ The following remain mandatory while V10 develops:
 
 ## Current next action
 
-Complete this status-only acceptance through PR/CI/post-merge Regression Shield. Only after that exact status merge is GREEN may the WP16 feature branch be opened.
+Complete this WP16 status-only acceptance through PR/CI/post-merge Regression Shield. Only after that exact status merge is GREEN may the WP17 feature branch be opened.
