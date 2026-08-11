@@ -54,7 +54,7 @@ jobs:
     name: WP15 live Web deterministic support gate
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
-    timeout-minutes: 35
+    timeout-minutes: 40
 
     steps:
       - name: Check out exact reviewed head
@@ -145,6 +145,22 @@ jobs:
           }
           Write-Host 'WP15 live PowerShell parse contract passed.'
 
+      - name: Reproduce production Python 3.14 runtime dependencies
+        shell: cmd
+        run: |
+          if not exist "C:\Program Files\Python314\python.exe" exit /b 45
+          for /f %%V in ('"C:\Program Files\Python314\python.exe" -c "import platform; print(platform.python_version())"') do set "PY314_VERSION=%%V"
+          if not "%PY314_VERSION%"=="3.14.6" exit /b 46
+          set "PROD_VENV=%RUNNER_TEMP%\omni-cio-wp15-prod-%GITHUB_RUN_ID%-%GITHUB_RUN_ATTEMPT%"
+          if exist "%PROD_VENV%" rmdir /s /q "%PROD_VENV%"
+          "C:\Program Files\Python314\python.exe" -m venv "%PROD_VENV%"
+          if errorlevel 1 exit /b 47
+          echo PROD_VENV_WINDOWS_PATH=%PROD_VENV%>> "%GITHUB_ENV%"
+          "%PROD_VENV%\Scripts\python.exe" -m pip install --disable-pip-version-check --require-hashes -r requirements.txt
+          if errorlevel 1 exit /b 48
+          "%PROD_VENV%\Scripts\python.exe" -c "import fastapi; import psycopg; import t_tech.invest; import uvicorn; print('WP15 live Python 3.14 production runtime OK')"
+          if errorlevel 1 exit /b 49
+
       - name: Verify Node and npm identity
         shell: cmd
         run: |
@@ -185,5 +201,6 @@ jobs:
         shell: bash
         run: |
           if [ -n "${VENV_PATH:-}" ]; then rm -rf "$VENV_PATH"; fi
+          if [ -n "${PROD_VENV_WINDOWS_PATH:-}" ]; then rm -rf "$(cygpath -u "$PROD_VENV_WINDOWS_PATH")"; fi
           git reset --hard HEAD
           git clean -ffdx
