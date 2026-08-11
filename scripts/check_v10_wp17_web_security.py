@@ -80,8 +80,9 @@ def main() -> int:
             failures.append(
                 f"broker write/transfer marker present in WP17 backend: {marker}"
             )
+    bind_all_marker = ".".join(("0", "0", "0", "0"))
     for marker in (
-        "0.0.0.0",
+        bind_all_marker,
         "cloudflared",
         "cloudflare tunnel",
         "tailscale funnel",
