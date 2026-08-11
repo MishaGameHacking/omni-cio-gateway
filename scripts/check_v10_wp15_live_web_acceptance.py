@@ -483,7 +483,8 @@ def main() -> int:
         failures,
     )
     _require(
-        "[System.Security.Principal.NTAccount]::new($runtimeSid)" not in provisioner_text,
+        "[System.Security.Principal.NTAccount]::new($runtimeSid)"
+        not in provisioner_text,
         "runtime SID must not be passed to an invalid NTAccount constructor",
         failures,
     )
