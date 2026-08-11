@@ -56,7 +56,7 @@ test("degraded downstream API leaves authenticated shell available", async ({ pa
   await page.goto("/system");
   await expect(page.getByText("OMNI-CIO", { exact: true })).toBeVisible();
   await expect(page.getByText(/shell работает в DEGRADED режиме/)).toBeVisible();
-  await expect(page.getByText("DEGRADED", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Глобальное состояние").getByText("DEGRADED", { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Система" })).toBeVisible();
 });
 
