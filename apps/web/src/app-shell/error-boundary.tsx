@@ -26,11 +26,9 @@ export class AppErrorBoundary extends Component<Props, State> {
     if (this.state.failed) {
       return (
         <main className="shell-fatal" role="main">
-          <StatePanel
-            tone="error"
-            title="Интерфейс временно недоступен"
-            description="Ошибка локализована в Web-слое. Финансовые действия не выполнялись."
-          />
+          <StatePanel kind="error" title="Интерфейс временно недоступен">
+            Ошибка локализована в Web-слое. Финансовые действия не выполнялись.
+          </StatePanel>
         </main>
       );
     }
