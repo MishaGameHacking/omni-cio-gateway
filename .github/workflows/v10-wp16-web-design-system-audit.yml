@@ -3,6 +3,9 @@ name: V10 WP16 Web Design System Audit
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -24,7 +27,7 @@ jobs:
         working-directory: apps/web
 
     steps:
-      - name: Check out exact PR head
+      - name: Check out exact reviewed head
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v7.0.1
         with:
           persist-credentials: false
@@ -55,18 +58,17 @@ jobs:
           powershell.exe -NoProfile -NonInteractive -Command "$v = (& 'C:\Program Files\nodejs\npm.cmd' --version | Out-String).Trim(); Write-Host ('npm ' + $v); if ($v -ne '11.16.0') { exit 22 }"
           if errorlevel 1 exit /b 22
 
-      - name: Materialize or verify exact lock candidate
+      - name: Verify committed lock is exact and current
         run: |
-          if exist package-lock.json copy /y package-lock.json package-lock.before.json >nul
+          if not exist package-lock.json exit /b 29
+          copy /y package-lock.json package-lock.before.json >nul
           call "C:\Program Files\nodejs\npm.cmd" install --package-lock-only --ignore-scripts --no-audit --no-fund
           if errorlevel 1 exit /b 30
-          if exist package-lock.before.json (
-            "C:\Program Files\nodejs\node.exe" -e "const fs=require('node:fs'); const assert=require('node:assert/strict'); const before=JSON.parse(fs.readFileSync('package-lock.before.json','utf8')); const after=JSON.parse(fs.readFileSync('package-lock.json','utf8')); assert.deepStrictEqual(after,before);"
-            if errorlevel 1 exit /b 31
-            del /q package-lock.before.json
-          )
+          "C:\Program Files\nodejs\node.exe" -e "const fs=require('node:fs'); const assert=require('node:assert/strict'); const before=JSON.parse(fs.readFileSync('package-lock.before.json','utf8')); const after=JSON.parse(fs.readFileSync('package-lock.json','utf8')); assert.deepStrictEqual(after,before);"
+          if errorlevel 1 exit /b 31
+          del /q package-lock.before.json
 
-      - name: Reproduce dependencies from materialized lock
+      - name: Reproduce dependencies from committed lock
         run: |
           call "C:\Program Files\nodejs\npm.cmd" ci --ignore-scripts --no-audit --no-fund
           if errorlevel 1 exit /b 40
@@ -103,15 +105,19 @@ jobs:
           call "C:\Program Files\nodejs\npm.cmd" audit --audit-level=high
           if errorlevel 1 exit /b 46
 
-      - name: Verify repository contracts after Web introduction
+      - name: Verify permanent Web and repository contracts
         working-directory: .
         run: |
+          python scripts\check_v10_web_baseline.py
+          if errorlevel 1 exit /b 49
           python scripts\check_v10_repository_boundaries.py
           if errorlevel 1 exit /b 50
           python scripts\check_v10_regression_shield.py
           if errorlevel 1 exit /b 51
+          python -m unittest tests.test_v10_web_baseline
+          if errorlevel 1 exit /b 52
 
-      - name: Upload lock candidate and visual evidence
+      - name: Upload lock and visual evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
