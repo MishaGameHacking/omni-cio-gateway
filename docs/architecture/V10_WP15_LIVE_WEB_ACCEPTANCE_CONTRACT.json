@@ -3,7 +3,6 @@
   "work_package": "WP15",
   "name": "Deferred live READ acceptance through authenticated Web",
   "status": "SUPPORT_PATH_ONLY_UNTIL_OWNER_LIVE_EVIDENCE",
-  "accepted_base_sha": "1daa5efc7e71ba9452fa8316da1cfb48b7b87205",
   "authority": {
     "master_plan": "docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.md",
     "identity_amendment": "docs/master-plan/OMNI_CIO_V10_IDENTITY_MULTI_TENANT_ACCOUNT_AND_AUTHENTICATION_AMENDMENT.md",
