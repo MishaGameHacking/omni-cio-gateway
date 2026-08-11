@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
-import { isOperationalState, operationalStates, viewportMatrix } from "../src/design-system/contracts";
+import { isOperationalState, operationalStates, viewportMatrix } from "../src/design-system/contracts.ts";
 
 test("canonical operational vocabulary is represented exactly", () => {
   assert.deepEqual(operationalStates, ["READY", "PARTIAL", "STALE", "DEGRADED", "BLOCKED", "ERROR", "OFFLINE", "RECOVERING", "OWNER_ACTION_REQUIRED"]);
