@@ -51,6 +51,15 @@ test("authenticated shell navigates without exposing build identity globally", a
   await expect(page.getByText("Git SHA", { exact: true })).toBeVisible();
 });
 
+test("revoke-all immediately closes the current authenticated shell", async ({ page }) => {
+  await mockAuthenticatedApi(page);
+  await page.goto("/settings");
+  await expect(page.getByRole("heading", { name: "Настройки" })).toBeVisible();
+  await page.getByRole("button", { name: "Выйти на всех устройствах" }).click();
+  await expect(page.getByRole("heading", { name: "Вход в личный аккаунт" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Настройки" })).toHaveCount(0);
+});
+
 test("degraded downstream API leaves authenticated shell available", async ({ page }) => {
   await mockAuthenticatedApi(page, { healthOffline: true });
   await page.goto("/system");
