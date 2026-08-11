@@ -46,6 +46,14 @@ test("browser code cannot persist credentials in Web Storage", () => {
   assert.match(api, /credentials:\s*["']same-origin["']/);
 });
 
+test("WP15 private live values are cleared when the browser challenge expires", () => {
+  const pages = readFileSync(new URL("../src/app-shell/pages.tsx", import.meta.url), "utf8");
+  assert.match(pages, /Date\.parse\(liveView\.expires_at\)/);
+  assert.match(pages, /window\.setTimeout/);
+  assert.match(pages, /window\.clearTimeout/);
+  assert.match(pages, /Приватные значения удалены из браузера/);
+});
+
 test("build identity is rendered only through System route code", () => {
   const pages = readFileSync(new URL("../src/app-shell/pages.tsx", import.meta.url), "utf8");
   const shell = readFileSync(new URL("../src/app-shell/app-shell.tsx", import.meta.url), "utf8");
