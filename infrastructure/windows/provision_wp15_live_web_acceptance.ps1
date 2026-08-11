@@ -431,8 +431,16 @@ if ($Apply) {
     & $pythonMachine -m venv $venvRoot *> $null
     if ($LASTEXITCODE -ne 0) { throw "WP15_LIVE_VENV_CREATE_FAILED" }
     $venvPython = Join-Path $venvRoot "Scripts\python.exe"
-    & $venvPython -m pip install --disable-pip-version-check --require-hashes -r (Join-Path $appRoot "requirements.txt") *> $null
-    if ($LASTEXITCODE -ne 0) { throw "WP15_LIVE_DEPENDENCY_INSTALL_FAILED" }
+    $windowsRuntimeLock = Join-Path $runtimeRoot "requirements.windows.txt"
+    try {
+        & $pythonMachine (Join-Path $appRoot "scripts\windows_ci_lock.py") project (Join-Path $appRoot "requirements.txt") $windowsRuntimeLock *> $null
+        if ($LASTEXITCODE -ne 0) { throw "WP15_LIVE_WINDOWS_LOCK_PROJECTION_FAILED" }
+        & $venvPython -m pip install --disable-pip-version-check --require-hashes -r $windowsRuntimeLock *> $null
+        if ($LASTEXITCODE -ne 0) { throw "WP15_LIVE_DEPENDENCY_INSTALL_FAILED" }
+    }
+    finally {
+        Remove-Item -LiteralPath $windowsRuntimeLock -Force -ErrorAction SilentlyContinue
+    }
 
     New-Item -ItemType Directory -Path $pendingRoot -Force | Out-Null
     Set-Content -LiteralPath $pendingMarker -Value $pendingMarkerValue -Encoding ASCII -NoNewline
