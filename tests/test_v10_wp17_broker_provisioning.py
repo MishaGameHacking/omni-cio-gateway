@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -137,6 +138,27 @@ class FakeRepository:
         return record.secret_ref
 
 
+class FakeExpiryHandle:
+    def __init__(self) -> None:
+        self.cancelled = False
+
+    def cancel(self) -> None:
+        self.cancelled = True
+
+
+class FakeExpiryScheduler:
+    def __init__(self) -> None:
+        self.callbacks: list[Callable[[], None]] = []
+        self.handles: list[FakeExpiryHandle] = []
+
+    def __call__(self, delay_seconds: float, callback: Callable[[], None]) -> FakeExpiryHandle:
+        assert delay_seconds > 0
+        handle = FakeExpiryHandle()
+        self.callbacks.append(callback)
+        self.handles.append(handle)
+        return handle
+
+
 def builder(accounts: list[dict[str, Any]]):
     return lambda token: (lambda: FakeClient(accounts))
 
@@ -192,6 +214,39 @@ def test_preview_returns_only_ephemeral_selection_handles_and_masked_labels() ->
     assert connection.secret_ref in vault.values
     assert registry.active_count(now=NOW + timedelta(seconds=3)) == 0
     assert tuple(repository.records) == (connection.connection_id,)
+
+
+def test_wall_clock_expiry_destroys_abandoned_challenge_without_followup_request() -> None:
+    scheduler = FakeExpiryScheduler()
+    registry = BrokerProvisioningRegistryV1(expiry_scheduler=scheduler)
+    repository = FakeRepository()
+    vault = FakeVault()
+    instance = BrokerProvisioningServiceV1(
+        registry=registry,
+        repository=repository,  # type: ignore[arg-type]
+        vault=vault,  # type: ignore[arg-type]
+        client_factory_builder=builder([account("owner-account-a-0001")]),
+    )
+    preview = instance.preview(
+        user_id=OWNER_USER_ID,
+        tenant_id=OWNER_TENANT_ID,
+        token="synthetic-abandoned-read-token",
+        now=NOW,
+    )
+    assert registry.active_count(now=NOW) == 1
+    assert len(scheduler.callbacks) == 1
+
+    scheduler.callbacks[0]()
+
+    assert registry.active_count(now=NOW) == 0
+    with pytest.raises(BrokerProvisioningError, match="CHALLENGE_INVALID"):
+        instance.commit_new(
+            user_id=OWNER_USER_ID,
+            tenant_id=OWNER_TENANT_ID,
+            challenge_id=preview.challenge_id,
+            selected_accounts=(preview.accounts[0].selection_id,),
+            now=NOW + timedelta(seconds=1),
+        )
 
 
 def test_challenge_cannot_cross_tenant_or_user_scope() -> None:
