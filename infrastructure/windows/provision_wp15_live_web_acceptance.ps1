@@ -437,7 +437,7 @@ if ($Apply) {
     Set-ProtectedDirectoryAcl -Path $venvRoot -RuntimeSid $runtimeSid -RuntimeRights ([System.Security.AccessControl.FileSystemRights]::ReadAndExecute) -IncludeRuntime
 
     $ownerIdentity = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
-    $runtimeAccount = [System.Security.Principal.NTAccount]::new($runtimeSid).Translate([System.Security.Principal.NTAccount]).Value
+    $runtimeAccount = $runtimeSid.Translate([System.Security.Principal.NTAccount]).Value
     $ownerPrincipal = Convert-NtAccountToSspiPrincipal -Value $ownerIdentity
     $runtimePrincipal = Convert-NtAccountToSspiPrincipal -Value $runtimeAccount
     $ownerField = Quote-PgField -Value $ownerPrincipal
