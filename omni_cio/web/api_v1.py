@@ -237,7 +237,11 @@ def create_web_api(services: WebApiServicesV1) -> FastAPI:
     async def broker_preview(request: Request) -> JSONResponse:
         scope = _require_session(request, services)
         body = await _json_object(request)
-        token = _string(body.get("token"), reason="BROKER_READ_TOKEN_INVALID", maximum=16384)
+        token = _string(
+            body.get("token"),
+            reason="BROKER_READ_TOKEN_INVALID",
+            maximum=16384,
+        )
         try:
             preview = services.provisioning.preview(
                 user_id=scope.user_id,
@@ -246,7 +250,10 @@ def create_web_api(services: WebApiServicesV1) -> FastAPI:
                 now=_now(services),
             )
         except Exception as exc:
-            raise HTTPException(status_code=400, detail="BROKER_READ_VALIDATION_FAILED") from exc
+            raise HTTPException(
+                status_code=400,
+                detail="BROKER_READ_VALIDATION_FAILED",
+            ) from exc
         finally:
             token = ""
         return JSONResponse(
@@ -255,9 +262,9 @@ def create_web_api(services: WebApiServicesV1) -> FastAPI:
                 "expires_at": preview.expires_at.isoformat(),
                 "accounts": [
                     {
-                        "selection_id": item.account_fingerprint_sha256,
+                        "selection_id": item.selection_id,
                         "masked_label": item.masked_label,
-                        "access_level": "READ_ONLY",
+                        "access_level": item.access_level,
                     }
                     for item in preview.accounts
                 ],
@@ -275,14 +282,19 @@ def create_web_api(services: WebApiServicesV1) -> FastAPI:
             maximum=256,
         )
         selected = body.get("selected_accounts")
-        if not isinstance(selected, list) or not all(isinstance(item, str) for item in selected):
-            raise HTTPException(status_code=400, detail="BROKER_ACCOUNT_SELECTION_INVALID")
+        if not isinstance(selected, list) or not all(
+            isinstance(item, str) for item in selected
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="BROKER_ACCOUNT_SELECTION_INVALID",
+            )
         try:
             record = services.provisioning.commit_new(
                 user_id=scope.user_id,
                 tenant_id=scope.tenant_id,
                 challenge_id=challenge_id,
-                selected_fingerprints=tuple(selected),
+                selected_accounts=tuple(selected),
                 now=_now(services),
             )
         except BrokerProvisioningError as exc:
@@ -299,15 +311,20 @@ def create_web_api(services: WebApiServicesV1) -> FastAPI:
             maximum=256,
         )
         selected = body.get("selected_accounts")
-        if not isinstance(selected, list) or not all(isinstance(item, str) for item in selected):
-            raise HTTPException(status_code=400, detail="BROKER_ACCOUNT_SELECTION_INVALID")
+        if not isinstance(selected, list) or not all(
+            isinstance(item, str) for item in selected
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="BROKER_ACCOUNT_SELECTION_INVALID",
+            )
         try:
             services.provisioning.replace_read_credential(
                 user_id=scope.user_id,
                 tenant_id=scope.tenant_id,
                 connection_id=connection_id,
                 challenge_id=challenge_id,
-                selected_fingerprints=tuple(selected),
+                selected_accounts=tuple(selected),
                 now=_now(services),
             )
         except BrokerProvisioningError as exc:
