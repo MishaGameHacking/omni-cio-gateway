@@ -1,0 +1,131 @@
+# Omni-CIO V10 WP17 — Application Shell / local broker provisioning runbook
+
+Status: **WP17 implementation candidate / no public ingress authority**
+
+## Scope
+
+WP17 creates the authenticated local/private Web shell and the normal `Settings -> Broker Connections` READ-token flow. It does not expose Omni-CIO to the public Internet, enable public registration, accept TRADE credentials or authorize Real execution.
+
+The protected production gateway remains `app:app`. The Web adapter is separate source-controlled code under `apps/web` + `apps/api` and is local/private until the owning external-ingress gate.
+
+## Ordinary account UX
+
+Normal user-facing login providers are exactly:
+
+- Telegram;
+- VK ID.
+
+No Omni-CIO local password and no Google login are introduced. Live provider credentials/redirect registration are intentionally not required for private WP17 code acceptance; the accepted identity amendment allows OWNER/test identities before public launch. Provider buttons remain fail-closed when provider runtime configuration is absent.
+
+## Local/private test identity
+
+`POST /api/v10/web/private-test-login` exists only for private acceptance. It is:
+
+- disabled by default;
+- enabled only when `OMNI_V10_WEB_PRIVATE_ACCEPTANCE=1` is present in the local process environment;
+- accepted only from a loopback client address;
+- not presented as an ordinary login provider;
+- not public-launch authority.
+
+It issues the same opaque server-side session shape used by the shell. Browser cookies are HttpOnly + SameSite=Strict; public `Secure`/TLS enforcement is owned by WP22A.
+
+## Web build / local launch
+
+The frontend uses the exact accepted WP16 Node/npm lock.
+
+From repository root on the Lenovo node, after WP17 code acceptance:
+
+```powershell
+Set-Location .\apps\web
+& 'C:\Program Files\nodejs\npm.cmd' ci --ignore-scripts --no-audit --no-fund
+& 'C:\Program Files\nodejs\npm.cmd' run build
+Set-Location ..\..
+```
+
+The local API factory is:
+
+`apps.api.app:create_local_private_app`
+
+It must bind only to loopback during WP17 acceptance. A reviewed service/launcher must use `127.0.0.1`; `0.0.0.0`, router port forwarding, public tunnels and public hostnames are prohibited before WP22A.
+
+Database authentication remains the accepted WP13 libpq/local runtime boundary. Do not place database passwords in source, workflow YAML, CLI arguments or evidence.
+
+## Connection-scoped READ secret boundary
+
+WP17 reuses WP8 DPAPI LocalMachine under:
+
+`C:\ProgramData\OmniCIO\secrets\read-broker\connections`
+
+The child does not exist as an accepted runtime write boundary until OWNER applies the reviewed ACL script:
+
+`infrastructure/windows/provision_wp17_web_read_vault.ps1`
+
+That OWNER step is intentionally deferred until all code/CI/security gates that do not need it are GREEN.
+
+The script must:
+
+- refuse to adopt an unmarked directory;
+- require the existing WP8 read-broker ownership marker;
+- grant `omni-cio-runtime` Modify only on the READ-connections child;
+- preserve SYSTEM/Administrators recovery authority;
+- deny the CI runner secret `ReadData`, write/delete and ACL-control capability;
+- leave `broker_trading` ACL unchanged;
+- use only synthetic/non-secret sentinel evidence.
+
+No real T-Invest token is entered into PowerShell. The actual READ token is later entered only through the authenticated Web settings flow.
+
+## Web provisioning protocol
+
+1. Authenticated user opens `Settings -> Broker Connections`.
+2. Candidate T-Invest READ token is POSTed once over same-origin API.
+3. Server invokes accepted WP15 account discovery.
+4. Any FULL/unknown authority rejects the credential before storage.
+5. Server creates a short-lived memory-only challenge and returns only masked accounts plus opaque selection identity.
+6. Browser clears the token field and selects one or more verified accounts.
+7. Commit revalidates the token/account set.
+8. Token is DPAPI-protected in the connection-scoped READ vault.
+9. PostgreSQL stores only opaque connection metadata and canonical/masked account bindings.
+10. Server zeroes short-lived provisioning bytes.
+
+Replacement uses the same preview/commit flow and must prove exactly the same existing account set. Revocation removes the connection READ secret and marks the connection revoked. TRADE/transfer/withdrawal credentials are not accepted by WP17.
+
+## Deferred WP15 live evidence
+
+After the Web shell, migration and READ-vault boundary are accepted, OWNER will use this Web flow to enter a real T-Invest READ token. The reviewed live acceptance must then prove, for the authenticated tenant/BrokerConnection:
+
+- READ_ONLY authority;
+- intended masked broker account selection;
+- portfolio summary parity;
+- one sample-position quantity/value parity;
+- acceptable freshness;
+- sanitized evidence bound to the reviewed implementation.
+
+Until that real evidence passes, Block D remains uncredited and WP18 cannot claim real broker-data acceptance.
+
+## Evidence rules
+
+Allowed CI/acceptance evidence:
+
+- exact Git SHA/build version;
+- booleans/status codes;
+- masked account labels only where OWNER-local review requires them;
+- counts;
+- sanitized synthetic screenshots;
+- migration/security hashes.
+
+Forbidden:
+
+- real T-Invest token or DPAPI ciphertext;
+- provider login secrets;
+- full broker account IDs;
+- private portfolio payload;
+- secret-root archives;
+- Windows SID/username/hostname disclosure in durable artifacts.
+
+## Rollback / failure
+
+If Web/API downstream is degraded, the shell must remain readable and show explicit DEGRADED/OFFLINE state; it must not invent financial freshness.
+
+If the READ-vault ACL cannot be proven, provisioning remains blocked. Do not fall back to PowerShell token entry, environment tokens, PostgreSQL token columns, TRADE credentials or elevated Web execution.
+
+WP18 remains locked until WP17 Exit Gate and the deferred real broker evidence are both satisfied.
