@@ -220,8 +220,8 @@ function BrokerConnectionsCard() {
   );
 }
 
-export function SettingsPage() {
-  const [revoked, setRevoked] = useState(false);
+export function SettingsPage({ onSessionsRevoked }: { onSessionsRevoked: () => void }) {
+  const [revokingSessions, setRevokingSessions] = useState(false);
   return (
     <section className="shell-page" aria-labelledby="page-title">
       <div className="shell-page__heading">
@@ -234,21 +234,24 @@ export function SettingsPage() {
           <p className="shell-muted">Можно отозвать все server-side sessions этого аккаунта.</p>
           <Button
             variant="secondary"
+            disabled={revokingSessions}
             onClick={() => {
-              void revokeAllSessions().then(() => setRevoked(true));
+              setRevokingSessions(true);
+              void revokeAllSessions()
+                .then(onSessionsRevoked)
+                .catch(() => setRevokingSessions(false));
             }}
           >
             Выйти на всех устройствах
           </Button>
-          {revoked ? <p role="status">Все сессии отозваны.</p> : null}
         </Card>
       </div>
     </section>
   );
 }
 
-export function RoutePage({ path, healthState, freshness }: { path: AppRoutePath; healthState: OperationalState; freshness: string }) {
+export function RoutePage({ path, healthState, freshness, onSessionsRevoked }: { path: AppRoutePath; healthState: OperationalState; freshness: string; onSessionsRevoked: () => void }) {
   if (path === "/system") return <SystemPage healthState={healthState} freshness={freshness} />;
-  if (path === "/settings") return <SettingsPage />;
+  if (path === "/settings") return <SettingsPage onSessionsRevoked={onSessionsRevoked} />;
   return <PlaceholderPage path={path} />;
 }
