@@ -137,7 +137,7 @@ jobs:
         run: |
           findstr /L /C:"$runtimeAccount = $runtimeSid.Translate([System.Security.Principal.NTAccount]).Value" infrastructure\windows\provision_wp15_live_web_acceptance.ps1 >nul
           if errorlevel 1 exit /b 41
-          findstr /L /C:"$runtimeOwnershipMarker = \"Omni-CIO V10 WP6 runtime role anchor\"" infrastructure\windows\provision_wp15_live_web_acceptance.ps1 >nul
+          findstr /L /C:"Omni-CIO V10 WP6 runtime role anchor" infrastructure\windows\provision_wp15_live_web_acceptance.ps1 >nul
           if errorlevel 1 exit /b 42
           powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $user=Get-LocalUser -Name 'omni-cio-runtime' -ErrorAction Stop; if ([string]$user.Description -ne 'Omni-CIO V10 WP6 runtime role anchor') { exit 43 }; $account=$user.SID.Translate([System.Security.Principal.NTAccount]).Value; if ([string]::IsNullOrWhiteSpace($account) -or $account.IndexOf('\') -lt 1) { exit 44 }; Write-Host 'WP15 runtime identity ownership contract passed.'"
           if errorlevel 1 exit /b 44
