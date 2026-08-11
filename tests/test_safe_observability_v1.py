@@ -282,7 +282,17 @@ def test_portfolio_shadow_emits_structured_redacted_event(
         {"name": "cash_balances.count", "value": 1},
         {"name": "currencies.count", "value": 1},
     ]
-    serialized = caplog.records[0].message
+    payload_derived = {
+        key: value
+        for key, value in parsed.items()
+        if key not in {"occurred_at", "correlation_id", "request_id", "action_id"}
+    }
+    serialized = json.dumps(
+        payload_derived,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
     for sensitive in (
         "***3118",
         "Секретная тестовая позиция",

@@ -27,6 +27,7 @@ files = [
   "purchase_capacity_integrity.py",
   "operations_analytics.py",
   "sdk_order_compat.py",
+  "apps/api",
   "omni_cio/tbank_tls.py",
   "omni_cio/contracts",
   "omni_cio/adapters",
@@ -60,6 +61,7 @@ files = [
   "omni_cio/release",
   "omni_cio/sandbox",
   "omni_cio/real_trading",
+  "omni_cio/web",
   "scripts/check_ci_security_baseline.py",
   "scripts/check_live_gateway_authority.py",
   "scripts/check_read_only_release_contract.py",
@@ -80,6 +82,7 @@ files = [
   "scripts/rehearse_v10_wp15_offline.py",
   "scripts/rehearse_v10_wp15_owner.py",
   "scripts/validate_v10_wp15_owner_evidence.py",
+  "scripts/check_v10_wp17_web_security.py",
 ]
 
 [tool.pytest.ini_options]

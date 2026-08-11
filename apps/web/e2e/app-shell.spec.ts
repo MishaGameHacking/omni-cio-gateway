@@ -1,0 +1,90 @@
+import { expect, test } from "@playwright/test";
+import fs from "node:fs";
+
+async function mockAuthenticatedApi(page: import("@playwright/test").Page, options?: { healthOffline?: boolean }) {
+  await page.route("**/api/v10/web/session", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ authenticated: true, user_label: "OWNER", tenant_label: "Personal" }) });
+  });
+  await page.route("**/api/v10/web/auth/providers", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([{ provider: "telegram", enabled: false, reason: "NOT_CONFIGURED" }, { provider: "vk_id", enabled: false, reason: "NOT_CONFIGURED" }]) });
+  });
+  await page.route("**/api/v10/web/health", async (route) => {
+    if (options?.healthOffline) {
+      await route.abort("connectionrefused");
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ state: "READY", freshness: "FRESH", checked_at: "2026-08-11T07:00:00Z" }) });
+  });
+  await page.route("**/api/v10/web/broker-connections", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: "[]" });
+  });
+  await page.route("**/api/v10/web/session/revoke-all", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: '{"ok":true}' });
+  });
+}
+
+test("unauthenticated route is guarded and exposes only Telegram/VK login", async ({ page }) => {
+  await page.route("**/api/v10/web/session", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: '{"authenticated":false}' });
+  });
+  await page.route("**/api/v10/web/auth/providers", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([{ provider: "telegram", enabled: false, reason: "NOT_CONFIGURED" }, { provider: "vk_id", enabled: false, reason: "NOT_CONFIGURED" }]) });
+  });
+  await page.goto("/portfolio");
+  await expect(page.getByRole("heading", { name: "Вход в личный аккаунт" })).toBeVisible();
+  await expect(page.getByText("Продолжить через Telegram")).toBeVisible();
+  await expect(page.getByText("Продолжить через VK ID")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Портфель" })).toHaveCount(0);
+});
+
+test("authenticated shell navigates without exposing build identity globally", async ({ page }) => {
+  await mockAuthenticatedApi(page);
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto("/");
+  await expect(page.getByText("OMNI-CIO", { exact: true })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Основная навигация" })).toBeVisible();
+  await expect(page.getByText("READY", { exact: true })).toBeVisible();
+  await expect(page.getByText("Git SHA", { exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Система" }).click();
+  await expect(page).toHaveURL(/\/system$/);
+  await expect(page.getByRole("heading", { name: "Система" })).toBeVisible();
+  await expect(page.getByText("Git SHA", { exact: true })).toBeVisible();
+});
+
+test("revoke-all immediately closes the current authenticated shell", async ({ page }) => {
+  await mockAuthenticatedApi(page);
+  await page.goto("/settings");
+  await expect(page.getByRole("heading", { name: "Настройки" })).toBeVisible();
+  await page.getByRole("button", { name: "Выйти на всех устройствах" }).click();
+  await expect(page.getByRole("heading", { name: "Вход в личный аккаунт" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Настройки" })).toHaveCount(0);
+});
+
+test("degraded downstream API leaves authenticated shell available", async ({ page }) => {
+  await mockAuthenticatedApi(page, { healthOffline: true });
+  await page.goto("/system");
+  await expect(page.getByText("OMNI-CIO", { exact: true })).toBeVisible();
+  await expect(page.getByText(/shell работает в DEGRADED режиме/)).toBeVisible();
+  await expect(page.getByLabel("Глобальное состояние").getByText("DEGRADED", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Система" })).toBeVisible();
+});
+
+for (const width of [360, 768, 1440] as const) {
+  test(`application shell responsive evidence ${width}px`, async ({ page }, testInfo) => {
+    await mockAuthenticatedApi(page);
+    await page.setViewportSize({ width, height: 1000 });
+    await page.goto("/");
+    await expect(page.getByText("OMNI-CIO", { exact: true })).toBeVisible();
+    if (width === 360) {
+      await expect(page.getByRole("button", { name: "Меню" })).toBeVisible();
+      await page.getByRole("button", { name: "Меню" }).click();
+      await expect(page.getByRole("navigation", { name: "Основная навигация" })).toBeVisible();
+    }
+    const overflow = await page.evaluate(() => ({ clientWidth: document.documentElement.clientWidth, scrollWidth: document.documentElement.scrollWidth }));
+    expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.clientWidth);
+    const screenshot = await page.screenshot({ fullPage: true, animations: "disabled" });
+    const output = testInfo.outputPath(`app-shell-${width}.png`);
+    fs.writeFileSync(output, screenshot);
+    await testInfo.attach(`app-shell-${width}`, { path: output, contentType: "image/png" });
+  });
+}

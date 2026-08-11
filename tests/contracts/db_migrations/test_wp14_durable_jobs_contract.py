@@ -17,8 +17,9 @@ def test_wp14_extends_immutable_migration_series_forward() -> None:
 
     assert [item.version for item in series] == list(range(1, len(series) + 1))
     assert series[0].name == "initial"
-    assert series[-1].version >= 2
-    assert series[-1].name == "durable_jobs"
+    assert len(series) >= 2
+    assert series[1].version == 2
+    assert series[1].name == "durable_jobs"
 
 
 def test_wp14_job_schema_has_required_lifecycle_and_journal() -> None:

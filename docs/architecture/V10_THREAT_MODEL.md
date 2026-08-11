@@ -1,6 +1,6 @@
 # Omni-CIO V10 — Threat Model
 
-Status: **WP0 architecture freeze**  
+Status: **WP17 threat-model update**  
 Scope: Personal V10 platform, current V9 coexistence, future Lenovo/Web/Telegram/AI/Real contours.
 
 ## 1. Security objective
@@ -40,6 +40,7 @@ Highest priority assets:
 8. Execution service <-> T-Invest Real API.
 9. Runtime DB <-> backup/off-device recovery.
 10. Current V9 runtime <-> future V10 replacement boundaries.
+11. Authenticated Web provisioning <-> connection-scoped read-broker secret child.
 
 ## 4. Threat catalogue
 
@@ -308,6 +309,27 @@ Controls:
 - current `app:app` contract retained;
 - package-specific staged acceptance;
 - explicit rollback.
+
+### T21 — Web broker READ credential provisioning abuse
+
+**Scenario:** a stolen Web session, malicious client request, broad T-Invest credential, path traversal or compromised CI attempts to store/read/replace a broker credential outside the authenticated tenant READ boundary.
+
+WP17 controls:
+
+- normal broker credential entry exists only under an authenticated same-origin Web session;
+- client-supplied tenant/account ownership claims are ignored; tenant scope comes only from the server-side session;
+- candidate token is sent in a request body, never URL/CLI/Web Storage, and is not returned in API responses;
+- preview material is memory-only, short-lived, scoped to user+tenant and zeroed on consume/cancel/expiry;
+- accepted WP15 `GetAccounts` validation must prove READ-only authority before durable storage; FULL/unknown authority fails closed;
+- broad READ token may expose several accounts but the user binds only verified masked accounts from that exact challenge;
+- replacement must preserve the same verified account set rather than silently rebinding a connection;
+- durable secret bytes use the existing WP8 DPAPI LocalMachine mechanism under `read-broker/connections`, never PostgreSQL;
+- runtime write authority is limited to that READ child; `broker_trading` and execution credentials remain unreachable;
+- opaque random secret references prevent broker account IDs from becoming filesystem paths;
+- runner has no secret `ReadData`/write/delete authority and cannot upload the secret subtree as evidence;
+- public registration and Internet ingress remain disabled; external hardening is still owned by WP22A.
+
+Fail-safe: missing/invalid vault marker or ACL, stale/invalid challenge, tenant mismatch, broker authority mismatch, database persistence failure or credential-store failure rejects the provisioning action and never falls back to TRADE/write credentials.
 
 ## 5. Severity
 
