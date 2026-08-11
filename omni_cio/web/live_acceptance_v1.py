@@ -33,7 +33,7 @@ class BrokerRepositoryLike(Protocol):
 
 
 class ReadConnectionVaultLike(Protocol):
-    def load(self, secret_ref: str) -> str: ...
+    def load(self, *, secret_ref: str) -> str: ...
 
 
 class SnapshotAdapterLike(Protocol):
@@ -265,7 +265,7 @@ class BrokerLiveAcceptanceServiceV1:
 
         token = ""
         try:
-            token = self._vault.load(record.secret_ref)
+            token = self._vault.load(secret_ref=record.secret_ref)
             if not token:
                 raise BrokerLiveAcceptanceError("WP15_LIVE_READ_CREDENTIAL_UNAVAILABLE")
             adapter = self._adapter_factory(
