@@ -148,7 +148,9 @@ def _default_adapter_factory(
     )
 
 
-def _schedule_expiry(delay_seconds: float, callback: Callable[[], None]) -> threading.Timer:
+def _schedule_expiry(
+    delay_seconds: float, callback: Callable[[], None]
+) -> threading.Timer:
     timer = threading.Timer(delay_seconds, callback)
     timer.daemon = True
     timer.start()
