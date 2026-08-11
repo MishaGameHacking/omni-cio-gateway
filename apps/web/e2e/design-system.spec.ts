@@ -24,10 +24,16 @@ for (const width of matrix) {
   test(`responsive visual evidence ${width}px`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 1000 });
     await page.goto("/");
+    expect(page.viewportSize()?.width).toBe(width);
     const grid = page.locator(".ds-grid");
     await expect(grid).toBeVisible();
     const columns = await grid.evaluate((node) => getComputedStyle(node).gridTemplateColumns.split(" ").filter(Boolean).length);
     expect(columns).toBe(width === 360 ? 1 : width === 768 ? 2 : 3);
+    const overflow = await page.evaluate(() => ({
+      clientWidth: document.documentElement.clientWidth,
+      scrollWidth: document.documentElement.scrollWidth,
+    }));
+    expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.clientWidth);
     const screenshot = await page.screenshot({ fullPage: true, animations: "disabled" });
     const output = testInfo.outputPath(`design-system-${width}.png`);
     fs.writeFileSync(output, screenshot);
