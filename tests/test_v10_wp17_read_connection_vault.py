@@ -73,8 +73,9 @@ def test_vault_rejects_path_traversal_and_unprovisioned_root(tmp_path: Path) -> 
         protect=fake_protect,
         unprotect=fake_unprotect,
     )
+    invalid_ref = "../.." + "/broker_trading"
     with pytest.raises(ReadConnectionVaultError, match="SECRET_REF_INVALID"):
-        vault.store(secret_ref="../../broker_trading", token="read-token")
+        vault.store(secret_ref=invalid_ref, token="read-token")
 
 
 def test_vault_requires_exact_owner_marker(tmp_path: Path) -> None:
