@@ -17,6 +17,10 @@
     "public_ingress": false,
     "public_multi_user": false,
     "loopback_bind": "127.0.0.1",
+    "trusted_hosts": [
+      "127.0.0.1",
+      "localhost"
+    ],
     "private_test_identity_is_not_a_login_provider": true
   },
   "broker": {
@@ -45,7 +49,7 @@
   },
   "owner_confirmation": {
     "required": [
-      "intended_account_confirmed",
+      "intended_masked_account_confirmed",
       "portfolio_summary_parity",
       "sample_position_quantity_value_parity",
       "freshness_confirmed"
