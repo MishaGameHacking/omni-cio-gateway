@@ -11,6 +11,10 @@ export default defineConfig({
   reporter: "line",
   globalTimeout: 90_000,
   timeout: 15_000,
+  captureGitInfo: {
+    commit: false,
+    diff: false,
+  },
   expect: {
     timeout: 5_000,
   },
