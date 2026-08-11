@@ -20,6 +20,19 @@ function Test-Administrator {
     return $principal.IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)
 }
 
+function Get-EvidenceValue {
+    param(
+        [AllowNull()][object]$Object,
+        [Parameter(Mandatory = $true)][string]$Name,
+        [AllowNull()][object]$Default
+    )
+
+    if ($null -eq $Object) { return $Default }
+    $property = $Object.PSObject.Properties[$Name]
+    if ($null -eq $property) { return $Default }
+    return $property.Value
+}
+
 function Test-ReadDataDenied {
     param([Parameter(Mandatory = $true)][string]$Path)
 
@@ -52,6 +65,7 @@ function Test-CreateDenied {
 
     $probe = Join-Path $Directory ("wp17-runner-write-probe-" + [guid]::NewGuid().ToString("N") + ".tmp")
     $stream = $null
+    $created = $false
     try {
         $stream = [System.IO.File]::Open(
             $probe,
@@ -59,6 +73,7 @@ function Test-CreateDenied {
             [System.IO.FileAccess]::Write,
             [System.IO.FileShare]::None
         )
+        $created = $true
         return $false
     }
     catch [System.UnauthorizedAccessException] {
@@ -72,7 +87,7 @@ function Test-CreateDenied {
     }
     finally {
         if ($null -ne $stream) { $stream.Dispose() }
-        if (Test-Path -LiteralPath $probe -PathType Leaf) {
+        if ($created) {
             try { Remove-Item -LiteralPath $probe -Force -ErrorAction Stop } catch { }
         }
     }
@@ -81,18 +96,21 @@ function Test-CreateDenied {
 $expectedSha = $ExpectedImplementationSha.Trim().ToLowerInvariant()
 $expectedShaValid = $expectedSha -match '^[0-9a-f]{40}$'
 $runnerIsAdmin = Test-Administrator
-$evidencePresent = Test-Path -LiteralPath $evidencePath -PathType Leaf
+$evidencePresent = $false
 $evidence = $null
 $evidenceReadable = $false
 
-if ($evidencePresent) {
-    try {
+try {
+    $evidencePresent = Test-Path -LiteralPath $evidencePath -PathType Leaf -ErrorAction Stop
+    if ($evidencePresent) {
         $evidence = Get-Content -LiteralPath $evidencePath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
         $evidenceReadable = $true
     }
-    catch {
-        $evidence = $null
-    }
+}
+catch {
+    $evidencePresent = $false
+    $evidence = $null
+    $evidenceReadable = $false
 }
 
 $provisionerHash = if (Test-Path -LiteralPath $provisionerPath -PathType Leaf) {
@@ -111,27 +129,30 @@ $secretWriteDenied = $false
 $evidenceWriteDenied = $false
 
 if ($expectedShaValid -and $evidenceReadable -and $null -ne $evidence) {
-    $implementationBound = ([string]$evidence.implementation_sha).ToLowerInvariant() -eq $expectedSha
+    $evidenceImplementation = [string](Get-EvidenceValue -Object $evidence -Name "implementation_sha" -Default "")
+    $evidenceProvisionerHash = [string](Get-EvidenceValue -Object $evidence -Name "provisioner_sha256" -Default "")
+    $evidenceFinalizerHash = [string](Get-EvidenceValue -Object $evidence -Name "evidence_finalizer_sha256" -Default "")
+    $implementationBound = $evidenceImplementation.ToLowerInvariant() -eq $expectedSha
     $scriptHashesBound = (
-        ([string]$evidence.provisioner_sha256).ToLowerInvariant() -eq $provisionerHash -and
-        ([string]$evidence.evidence_finalizer_sha256).ToLowerInvariant() -eq $finalizerHash
+        $evidenceProvisionerHash.ToLowerInvariant() -eq $provisionerHash -and
+        $evidenceFinalizerHash.ToLowerInvariant() -eq $finalizerHash
     )
     $ownerEvidenceReady = (
-        [bool]$evidence.ready -and
-        [bool]$evidence.owner_verify_ready -and
-        [bool]$evidence.read_connection_vault_present -and
-        [bool]$evidence.ownership_marker_ok -and
-        [bool]$evidence.runtime_modify_read_child -and
-        (-not [bool]$evidence.runner_read_data_allowed) -and
-        (-not [bool]$evidence.runner_write_allowed) -and
-        (-not [bool]$evidence.broad_read_principal_present) -and
-        [bool]$evidence.broker_trading_acl_unchanged -and
-        [bool]$evidence.evidence_acl_protected -and
-        (-not [bool]$evidence.runner_evidence_write_allowed) -and
-        (-not [bool]$evidence.real_secret_values_used) -and
-        (-not [bool]$evidence.broker_write_authority_added) -and
-        (-not [bool]$evidence.trading_methods) -and
-        ([string]$evidence.gateway_entrypoint -eq "app:app")
+        [bool](Get-EvidenceValue -Object $evidence -Name "ready" -Default $false) -and
+        [bool](Get-EvidenceValue -Object $evidence -Name "owner_verify_ready" -Default $false) -and
+        [bool](Get-EvidenceValue -Object $evidence -Name "read_connection_vault_present" -Default $false) -and
+        [bool](Get-EvidenceValue -Object $evidence -Name "ownership_marker_ok" -Default $false) -and
+        [bool](Get-EvidenceValue -Object $evidence -Name "runtime_modify_read_child" -Default $false) -and
+        (-not [bool](Get-EvidenceValue -Object $evidence -Name "runner_read_data_allowed" -Default $true)) -and
+        (-not [bool](Get-EvidenceValue -Object $evidence -Name "runner_write_allowed" -Default $true)) -and
+        (-not [bool](Get-EvidenceValue -Object $evidence -Name "broad_read_principal_present" -Default $true)) -and
+        [bool](Get-EvidenceValue -Object $evidence -Name "broker_trading_acl_unchanged" -Default $false) -and
+        [bool](Get-EvidenceValue -Object $evidence -Name "evidence_acl_protected" -Default $false) -and
+        (-not [bool](Get-EvidenceValue -Object $evidence -Name "runner_evidence_write_allowed" -Default $true)) -and
+        (-not [bool](Get-EvidenceValue -Object $evidence -Name "real_secret_values_used" -Default $true)) -and
+        (-not [bool](Get-EvidenceValue -Object $evidence -Name "broker_write_authority_added" -Default $true)) -and
+        (-not [bool](Get-EvidenceValue -Object $evidence -Name "trading_methods" -Default $true)) -and
+        ([string](Get-EvidenceValue -Object $evidence -Name "gateway_entrypoint" -Default "") -eq "app:app")
     )
 }
 
@@ -142,13 +163,9 @@ if ($ownerEvidenceReady -and $implementationBound -and $scriptHashesBound -and (
         if ($readSpec.Count -eq 1) {
             $connectionsRoot = Join-Path ([string]$readSpec[0].directory) "connections"
             $sentinelPath = Join-Path $connectionsRoot "wp17-ci-deny-sentinel.dpapi"
-            if ((Test-Path -LiteralPath $connectionsRoot -PathType Container) -and (Test-Path -LiteralPath $sentinelPath -PathType Leaf)) {
-                $secretReadDenied = Test-ReadDataDenied -Path $sentinelPath
-                $secretWriteDenied = Test-CreateDenied -Directory $connectionsRoot
-            }
-            if (Test-Path -LiteralPath $evidenceRoot -PathType Container) {
-                $evidenceWriteDenied = Test-CreateDenied -Directory $evidenceRoot
-            }
+            $secretReadDenied = Test-ReadDataDenied -Path $sentinelPath
+            $secretWriteDenied = Test-CreateDenied -Directory $connectionsRoot
+            $evidenceWriteDenied = Test-CreateDenied -Directory $evidenceRoot
         }
     }
     catch {
