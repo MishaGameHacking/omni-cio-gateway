@@ -2,6 +2,12 @@
 
 Status: **WEB SUPPORT PATH UNDER REVIEW — OWNER ACTION FORBIDDEN UNTIL SUPPORT PR MERGE + POST-MERGE GREEN**
 
+Current canonical live-evidence marker remains:
+
+`LIVE_EVIDENCE_STATUS=DEFERRED_TO_WEB_PROVISIONING`
+
+This marker remains authoritative until real OWNER Web parity evidence and the independent non-admin runner audit are both accepted. While the support path is still under review, **do not provision a real T-Invest READ token**.
+
 Authority: `docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.md`, the accepted Identity/Multi-Tenant amendment, `docs/architecture/V10_WP15_TINVEST_READONLY_CONTRACT.md`, and `docs/architecture/V10_WP15_LIVE_WEB_ACCEPTANCE_CONTRACT.json`.
 
 ## 1. Purpose
