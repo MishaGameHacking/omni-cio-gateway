@@ -144,7 +144,9 @@ class BrokerProvisioningRegistryV1:
                 current_record = self._challenges.pop(challenge_id, None)
             if current_record is not None:
                 self._destroy(current_record, cancel_expiry=False)
-            raise BrokerProvisioningError("BROKER_PROVISIONING_EXPIRY_UNAVAILABLE") from None
+            raise BrokerProvisioningError(
+                "BROKER_PROVISIONING_EXPIRY_UNAVAILABLE"
+            ) from None
         with self._lock:
             current_record = self._challenges.get(challenge_id)
             if current_record is record:
