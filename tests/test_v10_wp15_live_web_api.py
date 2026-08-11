@@ -44,7 +44,7 @@ from omni_cio.web.session_v1 import SessionRegistryV1
 NOW = datetime(2026, 8, 11, 15, 30, tzinfo=timezone.utc)
 FINGERPRINT = "a" * 64
 CONNECTION_ID = "broker-connection:v1:" + ("b" * 64)
-SECRET_REF = "read-connection:v1:" + ("c" * 64)
+OPAQUE_CONNECTION_REF = "read-connection:v1:" + ("c" * 64)
 IMPLEMENTATION_SHA = "d" * 40
 
 
@@ -60,7 +60,7 @@ class FakeRepository:
 
 class FakeVault:
     def load(self, *, secret_ref: str) -> str:
-        assert secret_ref == SECRET_REF
+        assert secret_ref == OPAQUE_CONNECTION_REF
         return "synthetic-local-read-token"
 
 
@@ -89,7 +89,7 @@ def _record() -> BrokerConnectionRecordV1:
         provider="t_invest",
         credential_role="read",
         state="ACTIVE",
-        secret_ref=SECRET_REF,
+        secret_ref=OPAQUE_CONNECTION_REF,
         created_at=NOW - timedelta(days=1),
         last_verified_at=NOW - timedelta(minutes=1),
         accounts=(_binding(),),
@@ -227,7 +227,7 @@ def test_live_web_api_is_authenticated_loopback_only_and_no_store(
     assert body["access_level"] == "READ_ONLY"
     assert body["freshness_state"] == "FRESH"
     assert FINGERPRINT not in started.text
-    assert SECRET_REF not in started.text
+    assert OPAQUE_CONNECTION_REF not in started.text
     assert "synthetic-local-read-token" not in started.text
 
     confirmed = client.post(
@@ -252,7 +252,7 @@ def test_live_web_api_is_authenticated_loopback_only_and_no_store(
     )
     for marker in (
         "synthetic-local-read-token",
-        SECRET_REF,
+        OPAQUE_CONNECTION_REF,
         FINGERPRINT,
         '"portfolio_total"',
         '"quantity"',
