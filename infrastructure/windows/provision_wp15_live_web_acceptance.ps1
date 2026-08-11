@@ -23,6 +23,7 @@ $launcherRelative = "infrastructure\windows\run_wp15_live_web_runtime.ps1"
 $bootstrapDbRelative = "infrastructure\windows\bootstrap_wp15_live_database.py"
 $wp17VaultProvisioner = Join-Path $repoRoot "infrastructure\windows\provision_wp17_web_read_vault.ps1"
 $runtimeName = "omni-cio-runtime"
+$runtimeOwnershipMarker = "Omni-CIO V10 WP6 runtime role anchor"
 $taskName = "OmniCIO.V10.WP15LiveAcceptance"
 $runtimeRoot = "C:\ProgramData\OmniCIO\runtime\wp15-live"
 $runtimeMarker = Join-Path $runtimeRoot ".omni-cio-wp15-live-owned"
@@ -84,6 +85,9 @@ function Get-RunnerSid {
 
 function Get-RuntimeUser {
     $user = Get-LocalUser -Name $runtimeName -ErrorAction Stop
+    if ([string]$user.Description -ne $runtimeOwnershipMarker) {
+        throw "WP15_LIVE_RUNTIME_ROLE_OWNERSHIP_INVALID"
+    }
     $admins = @(
         Get-LocalGroupMember -Group "Administrators" -ErrorAction Stop |
             ForEach-Object {
