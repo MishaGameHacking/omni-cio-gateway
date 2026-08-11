@@ -76,6 +76,9 @@ jobs:
       - name: Verify V10 toolchain baseline
         run: python scripts/check_v10_toolchain_baseline.py
 
+      - name: Verify product Web package and lock baseline
+        run: python scripts/check_v10_web_baseline.py
+
       - name: Verify V10 Regression Shield and WP4 release contract
         run: python scripts/check_v10_regression_shield.py
 
@@ -89,13 +92,14 @@ jobs:
           python -m unittest
           tests.test_v10_regression_shield
           tests.test_v10_release_provenance
+          tests.test_v10_web_baseline
 
   frontend-contracts:
     name: Fast frontend type lint unit build
     needs: route
     if: needs.route.outputs.fast_frontend == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 12
     defaults:
       run:
         working-directory: tests/toolchain/frontend
@@ -111,7 +115,9 @@ jobs:
         with:
           node-version: "24.18.0"
           cache: "npm"
-          cache-dependency-path: tests/toolchain/frontend/package-lock.json
+          cache-dependency-path: |
+            tests/toolchain/frontend/package-lock.json
+            apps/web/package-lock.json
 
       - name: Verify exact Node.js and npm versions
         shell: bash
@@ -119,17 +125,41 @@ jobs:
           test "$(node --version)" = "v24.18.0"
           test "$(npm --version)" = "11.16.0"
 
-      - name: Reproduce dependency tree from committed lock
+      - name: Reproduce WP2 frontend fixture
         run: npm ci --ignore-scripts --no-audit --no-fund
 
-      - name: Type-check frontend baseline
+      - name: Type-check WP2 frontend fixture
         run: npm run typecheck
 
-      - name: Lint frontend baseline
+      - name: Lint WP2 frontend fixture
         run: npm run lint
 
-      - name: Run frontend unit tests
+      - name: Run WP2 frontend fixture unit tests
         run: npm test
 
-      - name: Build frontend baseline
+      - name: Build WP2 frontend fixture
         run: npm run build
+
+      - name: Reproduce product Web from committed lock
+        working-directory: apps/web
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Type-check product Web
+        working-directory: apps/web
+        run: npm run typecheck
+
+      - name: Lint product Web
+        working-directory: apps/web
+        run: npm run lint
+
+      - name: Run product Web unit tests
+        working-directory: apps/web
+        run: npm test
+
+      - name: Build product Web
+        working-directory: apps/web
+        run: npm run build
+
+      - name: Audit product Web dependencies
+        working-directory: apps/web
+        run: npm audit --audit-level=high
