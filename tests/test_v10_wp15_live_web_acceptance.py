@@ -42,6 +42,7 @@ from omni_cio.web.persistence_v1 import BrokerConnectionRecordV1
 NOW = datetime(2026, 8, 11, 15, 0, tzinfo=timezone.utc)
 FINGERPRINT = "a" * 64
 BROKER_ACCOUNT_ID = "broker-account:v1:" + ("b" * 64)
+OPAQUE_CONNECTION_REF = "read-connection:v1:" + ("e" * 64)
 IMPLEMENTATION_SHA = "c" * 40
 
 
@@ -121,7 +122,7 @@ def _record(*, tenant_id: str = "tenant:owner:v1") -> BrokerConnectionRecordV1:
         provider="t_invest",
         credential_role="read",
         state="ACTIVE",
-        secret_ref="read-connection:v1:" + ("e" * 64),
+        secret_ref=OPAQUE_CONNECTION_REF,
         created_at=NOW - timedelta(days=1),
         last_verified_at=NOW - timedelta(minutes=1),
         accounts=(_binding(),),
