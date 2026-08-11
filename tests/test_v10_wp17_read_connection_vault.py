@@ -13,6 +13,14 @@ from omni_cio.web.broker_vault_v1 import (
 )
 
 
+ACL_PROVISIONER = (
+    Path(__file__).resolve().parents[1]
+    / "infrastructure"
+    / "windows"
+    / "provision_wp17_web_read_vault.ps1"
+)
+
+
 def fake_protect(payload: bytes) -> bytes:
     return b"P:" + payload[::-1]
 
@@ -92,3 +100,19 @@ def test_vault_requires_exact_owner_marker(tmp_path: Path) -> None:
     (root / READ_CONNECTION_MARKER).write_text("wrong", encoding="ascii")
     with pytest.raises(ReadConnectionVaultError, match="MARKER_INVALID"):
         vault.store(secret_ref=new_read_connection_secret_ref(), token="read-token")
+
+
+def test_acl_verifier_normalizes_identity_references_to_sid() -> None:
+    source = ACL_PROVISIONER.read_text(encoding="utf-8")
+
+    assert "function Resolve-IdentitySid" in source
+    assert (
+        "$IdentityReference.Translate([System.Security.Principal.SecurityIdentifier])"
+        in source
+    )
+    assert "$ruleSid.Value -eq $RuntimeSid.Value" in source
+    assert "$ruleSid.Value -eq $RunnerSid.Value" in source
+    assert "IdentityReference -eq $RuntimeSid" not in source
+    assert "IdentityReference -eq $RunnerSid" not in source
+    for broad_sid in ("S-1-1-0", "S-1-5-11", "S-1-5-32-545"):
+        assert broad_sid in source
