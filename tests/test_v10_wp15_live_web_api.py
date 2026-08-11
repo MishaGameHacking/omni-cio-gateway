@@ -156,7 +156,9 @@ def _snapshot() -> TInvestSnapshotResultV1:
     )
 
 
-def _live_service(tmp_path: Path, repository: FakeRepository) -> BrokerLiveAcceptanceServiceV1:
+def _live_service(
+    tmp_path: Path, repository: FakeRepository
+) -> BrokerLiveAcceptanceServiceV1:
     pending = tmp_path / "pending"
     pending.mkdir()
     (pending / ".omni-cio-wp15-live-pending").write_text(
@@ -193,7 +195,9 @@ def _app(tmp_path: Path) -> tuple[Any, SessionRegistryV1]:
     return app, sessions
 
 
-def test_live_web_api_is_authenticated_loopback_only_and_no_store(tmp_path: Path) -> None:
+def test_live_web_api_is_authenticated_loopback_only_and_no_store(
+    tmp_path: Path,
+) -> None:
     app, sessions = _app(tmp_path)
     client = TestClient(
         app,
