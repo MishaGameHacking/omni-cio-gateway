@@ -164,7 +164,7 @@ class FakeExpiryScheduler:
 
 
 def builder(accounts: list[dict[str, Any]]):
-    return lambda token: (lambda: FakeClient(accounts))
+    return lambda token: lambda: FakeClient(accounts)
 
 
 def service(
