@@ -19,6 +19,7 @@
     "types_node": "24.13.3",
     "types_react": "19.2.17",
     "types_react_dom": "19.2.3",
+    "playwright_test": "1.61.1",
     "lockfile_version": 3
   },
   "database": {
