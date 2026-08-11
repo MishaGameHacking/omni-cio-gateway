@@ -7,9 +7,7 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
-CONTRACT = (
-    ROOT / "docs" / "architecture" / "V10_WP15_LIVE_WEB_ACCEPTANCE_CONTRACT.json"
-)
+CONTRACT = ROOT / "docs" / "architecture" / "V10_WP15_LIVE_WEB_ACCEPTANCE_CONTRACT.json"
 RUNBOOK = ROOT / "docs" / "operations" / "V10_WP15_OWNER_LIVE_READ_RUNBOOK.md"
 SERVICE = ROOT / "omni_cio" / "web" / "live_acceptance_v1.py"
 API = ROOT / "omni_cio" / "web" / "api_v1.py"
@@ -19,21 +17,13 @@ PROVISIONER = (
     ROOT / "infrastructure" / "windows" / "provision_wp15_live_web_acceptance.ps1"
 )
 LAUNCHER = ROOT / "infrastructure" / "windows" / "run_wp15_live_web_runtime.ps1"
-DB_BOOTSTRAP = (
-    ROOT / "infrastructure" / "windows" / "bootstrap_wp15_live_database.py"
-)
-FINALIZER = (
-    ROOT / "infrastructure" / "windows" / "finalize_wp15_live_web_evidence.ps1"
-)
-AUDITOR = (
-    ROOT / "infrastructure" / "windows" / "audit_wp15_live_web_runner.ps1"
-)
+DB_BOOTSTRAP = ROOT / "infrastructure" / "windows" / "bootstrap_wp15_live_database.py"
+FINALIZER = ROOT / "infrastructure" / "windows" / "finalize_wp15_live_web_evidence.ps1"
+AUDITOR = ROOT / "infrastructure" / "windows" / "audit_wp15_live_web_runner.ps1"
 SUPPORT_WORKFLOW = (
     ROOT / ".github" / "workflows" / "v10-wp15-live-web-support-audit.yml"
 )
-OWNER_WORKFLOW = (
-    ROOT / ".github" / "workflows" / "v10-wp15-live-web-owner-audit.yml"
-)
+OWNER_WORKFLOW = ROOT / ".github" / "workflows" / "v10-wp15-live-web-owner-audit.yml"
 
 
 def _read(path: Path) -> str:
@@ -238,33 +228,27 @@ def main() -> int:
         "final evidence must bind script hashes",
         failures,
     )
-    required_forbidden = {
-        "token",
-        "secret",
-        "ciphertext",
-        "broker_account_id",
-        "account_fingerprint",
-        "portfolio_total",
-        "quantity",
-        "unit_price",
-        "market_value",
-        "private_portfolio_payload",
-    }
+    forbidden = set(final.get("forbidden_fields", []))
     _require(
-        required_forbidden.issubset(set(final.get("forbidden_fields", []))),
+        {
+            "token",
+            "secret",
+            "ciphertext",
+            "broker_account_id",
+            "account_fingerprint",
+            "portfolio_total",
+            "quantity",
+            "unit_price",
+            "market_value",
+            "private_portfolio_payload",
+        }.issubset(forbidden),
         "final evidence forbidden-field set was weakened",
         failures,
     )
 
     windows_runtime = contract.get("windows_runtime", {})
-    _require_value(
-        windows_runtime,
-        "principal",
-        "omni-cio-runtime",
-        "runtime principal drifted",
-        failures,
-    )
     for key, expected, message in (
+        ("principal", "omni-cio-runtime", "runtime principal drifted"),
         ("administrator_allowed", False, "runtime administrator authority forbidden"),
         ("task_logon", "PASSWORD", "temporary task logon contract drifted"),
         ("s4u_allowed", False, "S4U must remain disabled"),
@@ -277,7 +261,7 @@ def main() -> int:
         _require_value(windows_runtime, key, expected, message, failures)
 
     postgres = contract.get("postgresql", {})
-    postgres_expectations = (
+    for key, expected, message in (
         ("major", 18, "PostgreSQL major drifted"),
         ("database", "omni_cio_v10", "PostgreSQL database drifted"),
         ("role", "omni_cio_runtime", "PostgreSQL runtime role drifted"),
@@ -298,8 +282,7 @@ def main() -> int:
             "SAM_USERNAME@SAM_REALM",
             "SSPI principal mapping form drifted",
         ),
-    )
-    for key, expected, message in postgres_expectations:
+    ):
         _require_value(postgres, key, expected, message, failures)
 
     exit_gate = contract.get("exit_gate", {})
@@ -332,7 +315,7 @@ def main() -> int:
     )
 
     invariants = contract.get("invariants", {})
-    invariant_expectations = (
+    for key, expected, message in (
         ("gateway_entrypoint", "app:app", "gateway entrypoint drifted"),
         ("trading_methods", False, "trading_methods must remain false"),
         ("real_trading_enabled", False, "REAL_TRADING_ENABLED must remain false"),
@@ -342,50 +325,49 @@ def main() -> int:
             "broker write authority must remain false",
         ),
         ("protected_v9_rollback", True, "protected V9 rollback must remain true"),
-    )
-    for key, expected, message in invariant_expectations:
+    ):
         _require_value(invariants, key, expected, message, failures)
 
     service_text = _read(SERVICE)
-    _require(
-        "TInvestConnectionReadAdapter" in service_text,
-        "live service must reuse connection-scoped WP15 adapter",
-        failures,
-    )
-    _require(
-        "def load(self, *, secret_ref: str) -> str" in service_text,
-        "live vault protocol must match keyword-only accepted vault API",
-        failures,
-    )
-    _require(
-        "self._vault.load(secret_ref=record.secret_ref)" in service_text,
-        "live service must load only selected BrokerConnection secret ref",
-        failures,
-    )
-    _require(
-        "read_snapshot(allow_partial=False)" in service_text,
-        "live snapshot must fail closed on partial data",
-        failures,
-    )
-    _require(
-        "ACCOUNT_ACCESS_LEVEL_READ_ONLY" in service_text,
-        "live service must enforce broker READ_ONLY authority",
-        failures,
-    )
+    for marker, message in (
+        (
+            "TInvestConnectionReadAdapter",
+            "live service must reuse connection-scoped WP15 adapter",
+        ),
+        (
+            "def load(self, *, secret_ref: str) -> str",
+            "live vault protocol must match keyword-only accepted vault API",
+        ),
+        (
+            "self._vault.load(secret_ref=record.secret_ref)",
+            "live service must load only selected BrokerConnection secret ref",
+        ),
+        (
+            "read_snapshot(allow_partial=False)",
+            "live snapshot must fail closed on partial data",
+        ),
+        (
+            "ACCOUNT_ACCESS_LEVEL_READ_ONLY",
+            "live service must enforce broker READ_ONLY authority",
+        ),
+    ):
+        _require(marker in service_text, message, failures)
+
     payload = service_text.split("payload: dict[str, Any] = {", 1)[-1].split(
         "self._evidence_writer.write(payload)", 1
     )[0]
-    for key in (
+    for marker in (
         'portfolio_total"',
         'quantity"',
         'unit_price"',
         'market_value"',
         'masked_account"',
     ):
-        if key in payload:
-            failures.append(
-                f"durable pending evidence contains private-value field: {key[:-1]}"
-            )
+        _require(
+            marker not in payload,
+            f"durable pending evidence contains private-value field: {marker[:-1]}",
+            failures,
+        )
 
     api_text = _read(API)
     _require(
@@ -415,8 +397,11 @@ def main() -> int:
 
     web_text = "\n".join(_read(path) for path in sorted(WEB_SHELL.rglob("*.ts*")))
     for marker in ("localStorage", "sessionStorage", "dangerouslySetInnerHTML"):
-        if marker in web_text:
-            failures.append(f"forbidden browser primitive present: {marker}")
+        _require(
+            marker not in web_text,
+            f"forbidden browser primitive present: {marker}",
+            failures,
+        )
     _require(
         'type="password"' in web_text,
         "broker token input must remain masked",
@@ -487,10 +472,11 @@ def main() -> int:
         "currency_transfer",
         "pay_in",
     ):
-        if marker in combined_runtime:
-            failures.append(
-                f"broker write/transfer surface present in live runtime: {marker}"
-            )
+        _require(
+            marker not in combined_runtime,
+            f"broker write/transfer surface present in live runtime: {marker}",
+            failures,
+        )
 
     if failures:
         print("V10 WP15 live Web acceptance boundary check failed:", file=sys.stderr)
