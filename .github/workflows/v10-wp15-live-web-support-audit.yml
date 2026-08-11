@@ -125,25 +125,10 @@ jobs:
           if errorlevel 1 exit /b 32
 
       - name: Verify PowerShell 5.1 scripts parse without applying
-        shell: powershell
+        shell: cmd
         run: |
-          $ErrorActionPreference = 'Stop'
-          $paths = @(
-            'infrastructure\windows\provision_wp15_live_web_acceptance.ps1',
-            'infrastructure\windows\run_wp15_live_web_runtime.ps1',
-            'infrastructure\windows\finalize_wp15_live_web_evidence.ps1',
-            'infrastructure\windows\audit_wp15_live_web_runner.ps1'
-          )
-          foreach ($path in $paths) {
-            $tokens = $null
-            $errors = $null
-            [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path), [ref]$tokens, [ref]$errors)
-            if ($errors.Count -ne 0) {
-              $errors | ForEach-Object { Write-Error $_.Message }
-              exit 40
-            }
-          }
-          Write-Host 'WP15 live PowerShell parse contract passed.'
+          powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $paths=@('infrastructure\windows\provision_wp15_live_web_acceptance.ps1','infrastructure\windows\run_wp15_live_web_runtime.ps1','infrastructure\windows\finalize_wp15_live_web_evidence.ps1','infrastructure\windows\audit_wp15_live_web_runner.ps1'); foreach ($path in $paths) { $tokens=$null; $errors=$null; [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path), [ref]$tokens, [ref]$errors); if ($errors.Count -ne 0) { $errors | ForEach-Object { Write-Error $_.Message }; exit 40 } }; Write-Host 'WP15 live PowerShell parse contract passed.'"
+          if errorlevel 1 exit /b 40
 
       - name: Reproduce production Python 3.14 runtime dependencies
         shell: cmd
