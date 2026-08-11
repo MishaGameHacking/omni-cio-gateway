@@ -33,6 +33,9 @@ pytest-results.xml
 artifacts/
 dist/
 build/
+node_modules/
+test-results/
+playwright-report/
 *.egg-info/
 
 # Ephemeral CI dependency projections — generated at runtime, never commit
