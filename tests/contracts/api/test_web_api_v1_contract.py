@@ -38,6 +38,7 @@ def test_web_api_schema_surface_is_exact_and_private_by_default() -> None:
         ("/api/v10/web/session", ("GET",)),
         ("/api/v10/web/auth/providers", ("GET",)),
         ("/api/v10/web/auth/{provider}/start", ("GET",)),
+        ("/api/v10/web/private-test-login/status", ("GET",)),
         ("/api/v10/web/private-test-login", ("POST",)),
         ("/api/v10/web/session/logout", ("POST",)),
         ("/api/v10/web/session/revoke-all", ("POST",)),
@@ -47,6 +48,10 @@ def test_web_api_schema_surface_is_exact_and_private_by_default() -> None:
         ("/api/v10/web/broker-connections/commit", ("POST",)),
         ("/api/v10/web/broker-connections/{connection_id}/replace", ("POST",)),
         ("/api/v10/web/broker-connections/{connection_id}", ("DELETE",)),
+        ("/api/v10/web/wp15-live-acceptance/status", ("GET",)),
+        ("/api/v10/web/wp15-live-acceptance/start", ("POST",)),
+        ("/api/v10/web/wp15-live-acceptance/confirm", ("POST",)),
+        ("/api/v10/web/wp15-live-acceptance/cancel", ("POST",)),
     }
     assert app.docs_url is None
     assert app.redoc_url is None
