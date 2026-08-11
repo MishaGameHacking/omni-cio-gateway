@@ -1,6 +1,22 @@
 name: V10 WP15 Live Web OWNER Audit
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - "apps/api/app.py"
+      - "apps/web/src/app-shell/**"
+      - "omni_cio/web/api_v1.py"
+      - "omni_cio/web/live_acceptance_v1.py"
+      - "docs/architecture/V10_WP15_LIVE_WEB_ACCEPTANCE_CONTRACT.json"
+      - "docs/operations/V10_WP15_OWNER_LIVE_READ_RUNBOOK.md"
+      - "infrastructure/windows/provision_wp15_live_web_acceptance.ps1"
+      - "infrastructure/windows/run_wp15_live_web_runtime.ps1"
+      - "infrastructure/windows/bootstrap_wp15_live_database.py"
+      - "infrastructure/windows/finalize_wp15_live_web_evidence.ps1"
+      - "infrastructure/windows/audit_wp15_live_web_runner.ps1"
+      - ".github/workflows/v10-wp15-live-web-owner-audit.yml"
   workflow_dispatch:
 
 permissions:
@@ -17,7 +33,7 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - name: Check out exact dispatched implementation
+      - name: Check out exact accepted implementation
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v7.0.1
         with:
           persist-credentials: false
