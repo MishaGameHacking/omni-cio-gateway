@@ -74,6 +74,31 @@ The script must:
 
 No real T-Invest token is entered into PowerShell. The actual READ token is later entered only through the authenticated Web settings flow.
 
+## OWNER READ-vault acceptance evidence
+
+ACL application and acceptance are deliberately separate. A successful Administrator `-Apply` or `-Verify` is necessary but is not sufficient evidence for the WP17 Exit Gate.
+
+After the exact reviewed WP17 head is otherwise GREEN, OWNER runs the reviewed evidence finalizer from a clean checkout of that exact head:
+
+`infrastructure/windows/finalize_wp17_web_read_vault_evidence.ps1`
+
+The finalizer must:
+
+- refuse a dirty checkout or invalid Git HEAD;
+- invoke the current READ-vault verifier without entering any real credential;
+- bind sanitized evidence to the exact 40-character implementation Git SHA;
+- bind evidence to SHA-256 hashes of the reviewed provisioner and evidence-finalizer scripts;
+- protect `C:\ProgramData\OmniCIO\wp17` so SYSTEM/Administrators retain recovery authority and the ordinary CI runner receives read-only evidence access, not write/delete/ACL-control authority;
+- record only booleans, source hashes and the reviewed implementation SHA; never SIDs, usernames, hostnames, raw ACLs, broker secrets or private portfolio data.
+
+The dedicated `V10 WP17 OWNER Read Vault Audit` then runs under the ordinary non-admin Lenovo CI identity. It must fail closed unless the evidence is bound to its exact checked-out head and current script hashes. It also performs direct negative permission probes proving that the runner:
+
+- cannot read the synthetic DPAPI sentinel payload in the READ-connections child;
+- cannot create/write a file in the READ-connections child;
+- cannot modify the OWNER evidence directory.
+
+Only a GREEN OWNER read-vault audit may satisfy the runner-isolation portion of this boundary. A missing evidence file is `OWNER_ACTION_REQUIRED`, not a synthetic PASS. Do not weaken ACLs, make the runner Administrator or grant it secret `ReadData` merely to make the audit pass.
+
 ## Web provisioning protocol
 
 1. Authenticated user opens `Settings -> Broker Connections`.
