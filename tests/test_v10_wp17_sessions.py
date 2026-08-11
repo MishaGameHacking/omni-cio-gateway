@@ -63,6 +63,8 @@ def test_revoke_all_sessions_is_user_scoped() -> None:
         now=NOW + timedelta(seconds=1),
     )
 
-    assert registry.revoke_all_for_user(OWNER_USER_ID, now=NOW + timedelta(minutes=1)) == 2
+    assert (
+        registry.revoke_all_for_user(OWNER_USER_ID, now=NOW + timedelta(minutes=1)) == 2
+    )
     assert registry.resolve(first, now=NOW + timedelta(minutes=2)) is None
     assert registry.resolve(second, now=NOW + timedelta(minutes=2)) is None
