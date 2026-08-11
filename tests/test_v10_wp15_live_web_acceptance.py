@@ -74,7 +74,9 @@ class FakeAdapter:
         return self.result
 
 
-def _binding(*, access_level: str = "ACCOUNT_ACCESS_LEVEL_READ_ONLY") -> BrokerAccountBindingV1:
+def _binding(
+    *, access_level: str = "ACCOUNT_ACCESS_LEVEL_READ_ONLY"
+) -> BrokerAccountBindingV1:
     return BrokerAccountBindingV1(
         broker_account_id=BROKER_ACCOUNT_ID,
         account_fingerprint_sha256=FINGERPRINT,
@@ -310,7 +312,9 @@ def test_live_acceptance_rejects_stale_or_incomplete_snapshot(tmp_path: Path) ->
         )
 
 
-def test_live_acceptance_requires_sample_position_and_owner_parity(tmp_path: Path) -> None:
+def test_live_acceptance_requires_sample_position_and_owner_parity(
+    tmp_path: Path,
+) -> None:
     record = _record()
     empty_service, _, _ = _service(
         tmp_path / "empty",
