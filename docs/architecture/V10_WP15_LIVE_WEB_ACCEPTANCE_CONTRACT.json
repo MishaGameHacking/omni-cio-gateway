@@ -45,7 +45,7 @@
   },
   "owner_confirmation": {
     "required": [
-      "intended_masked_account_confirmed",
+      "intended_account_confirmed",
       "portfolio_summary_parity",
       "sample_position_quantity_value_parity",
       "freshness_confirmed"
@@ -75,6 +75,7 @@
       "ciphertext",
       "broker_account_id",
       "account_fingerprint",
+      "masked_account",
       "portfolio_total",
       "quantity",
       "unit_price",
@@ -115,7 +116,7 @@
   "ci": {
     "support_workflow": ".github/workflows/v10-wp15-live-web-support-audit.yml",
     "owner_audit_workflow": ".github/workflows/v10-wp15-live-web-owner-audit.yml",
-    "owner_audit_trigger": "workflow_dispatch_after_owner_finalization",
+    "owner_audit_trigger": "push_main_then_rerun_exact_sha_after_owner_finalization",
     "real_secret_in_ci": false
   },
   "exit_gate": {
