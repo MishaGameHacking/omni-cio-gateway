@@ -4,6 +4,12 @@ import path from "node:path";
 
 const matrix = [360, 768, 1440] as const;
 
+function durationToMilliseconds(value: string): number {
+  if (value.endsWith("ms")) return Number.parseFloat(value);
+  if (value.endsWith("s")) return Number.parseFloat(value) * 1000;
+  return Number.NaN;
+}
+
 test("design-system gallery is keyboard and label accessible", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { level: 1, name: "Omni-CIO Design System" })).toBeVisible();
@@ -33,7 +39,9 @@ test("reduced motion suppresses continuous skeleton animation", async ({ page })
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/");
   const duration = await page.locator(".ds-skeleton span").first().evaluate((node) => getComputedStyle(node).animationDuration);
-  expect(duration).toBe("0.001ms");
+  const milliseconds = durationToMilliseconds(duration);
+  expect(Number.isFinite(milliseconds)).toBe(true);
+  expect(milliseconds).toBeLessThanOrEqual(0.01);
 });
 
 test("visual evidence output path is isolated from source tree", async ({}, testInfo) => {
