@@ -23,6 +23,7 @@ BINDING = BrokerAccountBindingV1(
     masked_label="****0017",
     access_level="ACCOUNT_ACCESS_LEVEL_READ_ONLY",
 )
+OPAQUE_CONNECTION_REF = "read-connection:v1:" + "d" * 64
 
 
 class FakeBrokerRepository:
@@ -34,7 +35,7 @@ class FakeBrokerRepository:
             provider="t_invest",
             credential_role="read",
             state="ACTIVE",
-            secret_ref="read-connection:v1:" + "d" * 64,
+            secret_ref=OPAQUE_CONNECTION_REF,
             created_at=NOW,
             last_verified_at=NOW,
             accounts=(BINDING,),
