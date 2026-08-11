@@ -24,10 +24,17 @@ class BrokerProvisioningError(RuntimeError):
 
 
 @dataclass(frozen=True, slots=True)
+class BrokerProvisioningAccountV1:
+    selection_id: str
+    masked_label: str
+    access_level: str = "READ_ONLY"
+
+
+@dataclass(frozen=True, slots=True)
 class BrokerProvisioningPreviewV1:
     challenge_id: str
     expires_at: datetime
-    accounts: tuple[BrokerAccountBindingV1, ...]
+    accounts: tuple[BrokerProvisioningAccountV1, ...]
 
 
 @dataclass(slots=True)
@@ -36,7 +43,7 @@ class _ChallengeV1:
     user_id: str
     tenant_id: str
     token_bytes: bytearray
-    bindings: tuple[BrokerAccountBindingV1, ...]
+    selections: dict[str, BrokerAccountBindingV1]
     expires_at: datetime
 
 
@@ -77,12 +84,25 @@ class BrokerProvisioningRegistryV1:
         if not bindings:
             raise BrokerProvisioningError("BROKER_READ_NO_ACCOUNTS")
         challenge_id = secrets.token_urlsafe(24)
+        selections: dict[str, BrokerAccountBindingV1] = {}
+        preview_accounts: list[BrokerProvisioningAccountV1] = []
+        for binding in bindings:
+            selection_id = secrets.token_urlsafe(18)
+            while selection_id in selections:
+                selection_id = secrets.token_urlsafe(18)
+            selections[selection_id] = binding
+            preview_accounts.append(
+                BrokerProvisioningAccountV1(
+                    selection_id=selection_id,
+                    masked_label=binding.masked_label,
+                )
+            )
         record = _ChallengeV1(
             challenge_id=challenge_id,
             user_id=user_id,
             tenant_id=tenant_id,
             token_bytes=bytearray(normalized.encode("utf-8")),
-            bindings=bindings,
+            selections=selections,
             expires_at=current + self._lifetime,
         )
         with self._lock:
@@ -91,7 +111,7 @@ class BrokerProvisioningRegistryV1:
         return BrokerProvisioningPreviewV1(
             challenge_id=challenge_id,
             expires_at=record.expires_at,
-            accounts=bindings,
+            accounts=tuple(preview_accounts),
         )
 
     @contextmanager
@@ -101,7 +121,7 @@ class BrokerProvisioningRegistryV1:
         challenge_id: str,
         user_id: str,
         tenant_id: str,
-        selected_fingerprints: tuple[str, ...],
+        selected_accounts: tuple[str, ...],
         now: datetime,
     ) -> Iterator[tuple[str, tuple[BrokerAccountBindingV1, ...]]]:
         current = _utc(now)
@@ -115,16 +135,13 @@ class BrokerProvisioningRegistryV1:
                 raise BrokerProvisioningError("BROKER_PROVISIONING_SCOPE_MISMATCH")
             if current >= record.expires_at:
                 raise BrokerProvisioningError("BROKER_PROVISIONING_CHALLENGE_EXPIRED")
-            selected = set(selected_fingerprints)
-            if not selected or len(selected) != len(selected_fingerprints):
+            selected = set(selected_accounts)
+            if not selected or len(selected) != len(selected_accounts):
                 raise BrokerProvisioningError("BROKER_ACCOUNT_SELECTION_INVALID")
-            available = {
-                item.account_fingerprint_sha256: item for item in record.bindings
-            }
-            if not selected.issubset(available):
+            if not selected.issubset(record.selections):
                 raise BrokerProvisioningError("BROKER_ACCOUNT_SELECTION_INVALID")
             bindings = tuple(
-                available[fingerprint] for fingerprint in sorted(selected)
+                record.selections[selection_id] for selection_id in sorted(selected)
             )
             try:
                 token = record.token_bytes.decode("utf-8")
@@ -133,6 +150,7 @@ class BrokerProvisioningRegistryV1:
             yield token, bindings
         finally:
             _zero(record.token_bytes)
+            record.selections.clear()
 
     def cancel(
         self,
@@ -149,6 +167,7 @@ class BrokerProvisioningRegistryV1:
                 raise BrokerProvisioningError("BROKER_PROVISIONING_SCOPE_MISMATCH")
             self._challenges.pop(challenge_id, None)
         _zero(record.token_bytes)
+        record.selections.clear()
         return True
 
     def active_count(self, *, now: datetime) -> int:
@@ -166,6 +185,7 @@ class BrokerProvisioningRegistryV1:
         for challenge_id in expired:
             record = self._challenges.pop(challenge_id)
             _zero(record.token_bytes)
+            record.selections.clear()
 
 
 class BrokerProvisioningServiceV1:
@@ -205,7 +225,7 @@ class BrokerProvisioningServiceV1:
         user_id: str,
         tenant_id: str,
         challenge_id: str,
-        selected_fingerprints: tuple[str, ...],
+        selected_accounts: tuple[str, ...],
         now: datetime,
     ) -> BrokerConnectionRecordV1:
         current = _utc(now)
@@ -213,7 +233,7 @@ class BrokerProvisioningServiceV1:
             challenge_id=challenge_id,
             user_id=user_id,
             tenant_id=tenant_id,
-            selected_fingerprints=selected_fingerprints,
+            selected_accounts=selected_accounts,
             now=current,
         ) as (token, preview_bindings):
             live_bindings = discover_read_account_bindings(
@@ -247,7 +267,7 @@ class BrokerProvisioningServiceV1:
         tenant_id: str,
         connection_id: str,
         challenge_id: str,
-        selected_fingerprints: tuple[str, ...],
+        selected_accounts: tuple[str, ...],
         now: datetime,
     ) -> None:
         current = _utc(now)
@@ -267,7 +287,7 @@ class BrokerProvisioningServiceV1:
             challenge_id=challenge_id,
             user_id=user_id,
             tenant_id=tenant_id,
-            selected_fingerprints=selected_fingerprints,
+            selected_accounts=selected_accounts,
             now=current,
         ) as (token, preview_bindings):
             live_bindings = discover_read_account_bindings(
@@ -318,11 +338,15 @@ class BrokerProvisioningServiceV1:
         for candidate in preview:
             live_candidate = live_map.get(candidate.account_fingerprint_sha256)
             if live_candidate is None:
-                raise BrokerProvisioningError("BROKER_ACCOUNT_CHANGED_DURING_PROVISIONING")
+                raise BrokerProvisioningError(
+                    "BROKER_ACCOUNT_CHANGED_DURING_PROVISIONING"
+                )
             if (
                 live_candidate.broker_account_id != candidate.broker_account_id
                 or live_candidate.masked_label != candidate.masked_label
             ):
-                raise BrokerProvisioningError("BROKER_ACCOUNT_CHANGED_DURING_PROVISIONING")
+                raise BrokerProvisioningError(
+                    "BROKER_ACCOUNT_CHANGED_DURING_PROVISIONING"
+                )
             rebound.append(live_candidate)
         return tuple(rebound)
