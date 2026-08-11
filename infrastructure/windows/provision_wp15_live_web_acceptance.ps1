@@ -212,6 +212,20 @@ function Quote-PgField {
     return '"' + $Value.Replace('"', '""') + '"'
 }
 
+function Convert-NtAccountToSspiPrincipal {
+    param([Parameter(Mandatory = $true)][string]$Value)
+    $separator = $Value.IndexOf('\')
+    if ($separator -lt 1 -or $separator -ge ($Value.Length - 1)) {
+        throw "WP15_LIVE_SSPI_ACCOUNT_NAME_INVALID"
+    }
+    $realm = $Value.Substring(0, $separator).Trim()
+    $user = $Value.Substring($separator + 1).Trim()
+    if ([string]::IsNullOrWhiteSpace($realm) -or [string]::IsNullOrWhiteSpace($user)) {
+        throw "WP15_LIVE_SSPI_ACCOUNT_NAME_INVALID"
+    }
+    return $user + "@" + $realm
+}
+
 function Remove-ManagedBlock {
     param([Parameter(Mandatory = $true)][string]$Text)
     $pattern = '(?ms)^' + [regex]::Escape($managedBegin) + '.*?^' + [regex]::Escape($managedEnd) + '\r?\n?'
@@ -424,11 +438,14 @@ if ($Apply) {
 
     $ownerIdentity = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
     $runtimeAccount = [System.Security.Principal.NTAccount]::new($runtimeSid).Translate([System.Security.Principal.NTAccount]).Value
-    $ownerField = Quote-PgField -Value $ownerIdentity
-    $runtimeField = Quote-PgField -Value $runtimeAccount
+    $ownerPrincipal = Convert-NtAccountToSspiPrincipal -Value $ownerIdentity
+    $runtimePrincipal = Convert-NtAccountToSspiPrincipal -Value $runtimeAccount
+    $ownerField = Quote-PgField -Value $ownerPrincipal
+    $runtimeField = Quote-PgField -Value $runtimePrincipal
+    $sspiOptions = "include_realm=1 compat_realm=1 upn_username=0"
     Set-ManagedConfigBlock -Path $hbaPath -Lines @(
-        "host all postgres 127.0.0.1/32 sspi map=omni_cio_owner_admin_map",
-        "host omni_cio_v10 omni_cio_runtime 127.0.0.1/32 sspi map=omni_cio_runtime_map"
+        "host all postgres 127.0.0.1/32 sspi $sspiOptions map=omni_cio_owner_admin_map",
+        "host omni_cio_v10 omni_cio_runtime 127.0.0.1/32 sspi $sspiOptions map=omni_cio_runtime_map"
     )
     Set-ManagedConfigBlock -Path $identPath -Lines @(
         "omni_cio_owner_admin_map $ownerField postgres",
@@ -483,7 +500,7 @@ $omni$;
     }
 
     Set-ManagedConfigBlock -Path $hbaPath -Lines @(
-        "host omni_cio_v10 omni_cio_runtime 127.0.0.1/32 sspi map=omni_cio_runtime_map"
+        "host omni_cio_v10 omni_cio_runtime 127.0.0.1/32 sspi $sspiOptions map=omni_cio_runtime_map"
     )
     Set-ManagedConfigBlock -Path $identPath -Lines @(
         "omni_cio_runtime_map $runtimeField omni_cio_runtime"
