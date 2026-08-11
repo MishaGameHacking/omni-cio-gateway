@@ -5,8 +5,10 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from apps.api.app import _protect_local_hosts
 from omni_cio.adapters.tinvest_read_v1 import (
     BrokerAccountBindingV1,
     FreshnessMetadataV1,
@@ -193,6 +195,23 @@ def _app(tmp_path: Path) -> tuple[Any, SessionRegistryV1]:
         )
     )
     return app, sessions
+
+
+def test_local_private_host_guard_rejects_untrusted_host() -> None:
+    app = FastAPI()
+
+    @app.get("/probe")
+    def probe() -> dict[str, bool]:
+        return {"ok": True}
+
+    _protect_local_hosts(app)
+
+    loopback = TestClient(app, base_url="http://127.0.0.1")
+    assert loopback.get("/probe").status_code == 200
+    localhost = TestClient(app, base_url="http://localhost")
+    assert localhost.get("/probe").status_code == 200
+    hostile = TestClient(app, base_url="http://attacker.example")
+    assert hostile.get("/probe").status_code == 400
 
 
 def test_live_web_api_is_authenticated_loopback_only_and_no_store(
