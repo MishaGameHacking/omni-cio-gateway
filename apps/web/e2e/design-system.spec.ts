@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 const matrix = [360, 768, 1440] as const;
+const galleryUrl = "/?wp16-gallery=1";
 
 function durationToMilliseconds(value: string): number {
   if (value.endsWith("ms")) return Number.parseFloat(value);
@@ -11,7 +12,7 @@ function durationToMilliseconds(value: string): number {
 }
 
 test("design-system gallery is keyboard and label accessible", async ({ page }) => {
-  await page.goto("/");
+  await page.goto(galleryUrl);
   await expect(page.getByRole("heading", { level: 1, name: "Omni-CIO Design System" })).toBeVisible();
   await expect(page.getByLabel("Подпись поля")).toBeVisible();
   await page.keyboard.press("Tab");
@@ -23,7 +24,7 @@ test("design-system gallery is keyboard and label accessible", async ({ page }) 
 for (const width of matrix) {
   test(`responsive visual evidence ${width}px`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 1000 });
-    await page.goto("/");
+    await page.goto(galleryUrl);
     expect(page.viewportSize()?.width).toBe(width);
     const grid = page.locator(".ds-grid");
     await expect(grid).toBeVisible();
@@ -43,7 +44,7 @@ for (const width of matrix) {
 
 test("reduced motion suppresses continuous skeleton animation", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
-  await page.goto("/");
+  await page.goto(galleryUrl);
   const duration = await page.locator(".ds-skeleton span").first().evaluate((node) => getComputedStyle(node).animationDuration);
   const milliseconds = durationToMilliseconds(duration);
   expect(Number.isFinite(milliseconds)).toBe(true);
