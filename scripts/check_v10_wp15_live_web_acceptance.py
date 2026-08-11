@@ -116,6 +116,13 @@ def main() -> int:
         "live runtime must bind exact loopback",
         failures,
     )
+    _require_value(
+        scope,
+        "trusted_hosts",
+        ["127.0.0.1", "localhost"],
+        "local acceptance Host allowlist drifted",
+        failures,
+    )
 
     broker = contract.get("broker", {})
     _require_value(
@@ -424,6 +431,16 @@ def main() -> int:
         "runtime must verify migrations without DDL authority",
         failures,
     )
+    for marker, message in (
+        ("TrustedHostMiddleware", "local acceptance must enforce trusted Host values"),
+        (
+            '_LOCAL_TRUSTED_HOSTS = ("127.0.0.1", "localhost")',
+            "local acceptance trusted Host allowlist drifted",
+        ),
+        ("www_redirect=False", "local acceptance Host guard must not redirect"),
+        ("_protect_local_hosts(app)", "local acceptance Host guard is not installed"),
+    ):
+        _require(marker in app_text, message, failures)
 
     web_text = "\n".join(_read(path) for path in sorted(WEB_SHELL.rglob("*.ts*")))
     for marker in ("localStorage", "sessionStorage", "dangerouslySetInnerHTML"):
@@ -457,6 +474,17 @@ def main() -> int:
     _require(
         "convertntaccounttosspiprincipal" in normalized_provisioner,
         "SSPI principal conversion helper missing",
+        failures,
+    )
+    _require(
+        "$runtimeSid.Translate([System.Security.Principal.NTAccount]).Value"
+        in provisioner_text,
+        "runtime SID must be translated directly to NTAccount",
+        failures,
+    )
+    _require(
+        "[System.Security.Principal.NTAccount]::new($runtimeSid)" not in provisioner_text,
+        "runtime SID must not be passed to an invalid NTAccount constructor",
         failures,
     )
     for marker in (
@@ -534,7 +562,7 @@ def main() -> int:
         return 1
 
     print("V10 WP15 live Web acceptance boundary check passed.")
-    print("Scope: acceptance-only / loopback / WP18 locked")
+    print("Scope: acceptance-only / loopback / trusted Host allowlist / WP18 locked")
     print(
         "Broker: T-Invest READ_ONLY / exact BrokerConnection binding / no write authority"
     )
