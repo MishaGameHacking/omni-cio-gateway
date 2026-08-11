@@ -122,6 +122,22 @@ function Ensure-Sentinel {
     }
 }
 
+function Resolve-IdentitySid {
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.Security.Principal.IdentityReference]$IdentityReference
+    )
+    if ($IdentityReference -is [System.Security.Principal.SecurityIdentifier]) {
+        return [System.Security.Principal.SecurityIdentifier]$IdentityReference
+    }
+    try {
+        return $IdentityReference.Translate([System.Security.Principal.SecurityIdentifier])
+    }
+    catch [System.Security.Principal.IdentityNotMappedException] {
+        return $null
+    }
+}
+
 function Get-AclAssessment {
     param(
         [Parameter(Mandatory = $true)][System.Security.Principal.SecurityIdentifier]$RuntimeSid,
@@ -129,10 +145,23 @@ function Get-AclAssessment {
     )
     $acl = Get-Acl -LiteralPath $connectionsRoot -ErrorAction Stop
     $rules = @($acl.Access)
-    $runtimeRules = @($rules | Where-Object { $_.IdentityReference -eq $RuntimeSid -and $_.AccessControlType -eq 'Allow' })
-    $runnerRules = @($rules | Where-Object { $_.IdentityReference -eq $RunnerSid -and $_.AccessControlType -eq 'Allow' })
+    $runtimeRules = @($rules | Where-Object {
+        $ruleSid = Resolve-IdentitySid -IdentityReference $_.IdentityReference
+        $null -ne $ruleSid -and
+        $ruleSid.Value -eq $RuntimeSid.Value -and
+        $_.AccessControlType -eq 'Allow'
+    })
+    $runnerRules = @($rules | Where-Object {
+        $ruleSid = Resolve-IdentitySid -IdentityReference $_.IdentityReference
+        $null -ne $ruleSid -and
+        $ruleSid.Value -eq $RunnerSid.Value -and
+        $_.AccessControlType -eq 'Allow'
+    })
+    $broadSidValues = @("S-1-1-0", "S-1-5-11", "S-1-5-32-545")
     $broad = @($rules | Where-Object {
+        $ruleSid = Resolve-IdentitySid -IdentityReference $_.IdentityReference
         $name = [string]$_.IdentityReference
+        ($null -ne $ruleSid -and $broadSidValues -contains $ruleSid.Value) -or
         $name -match '(?i)Everyone|Authenticated Users|\\Users$'
     })
     $runtimeModify = [bool]($runtimeRules | Where-Object { ($_.FileSystemRights -band [System.Security.AccessControl.FileSystemRights]::Modify) -eq [System.Security.AccessControl.FileSystemRights]::Modify })
