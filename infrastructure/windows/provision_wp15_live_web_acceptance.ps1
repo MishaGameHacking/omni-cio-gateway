@@ -88,8 +88,9 @@ function Get-RuntimeUser {
     if ([string]$user.Description -ne $runtimeOwnershipMarker) {
         throw "WP15_LIVE_RUNTIME_ROLE_OWNERSHIP_INVALID"
     }
+    $administratorsSid = [System.Security.Principal.SecurityIdentifier]::new("S-1-5-32-544")
     $admins = @(
-        Get-LocalGroupMember -Group "Administrators" -ErrorAction Stop |
+        Get-LocalGroupMember -SID $administratorsSid -ErrorAction Stop |
             ForEach-Object {
                 try { Resolve-IdentitySid -IdentityReference $_.SID } catch { $null }
             } |
