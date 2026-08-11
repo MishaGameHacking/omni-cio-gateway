@@ -166,22 +166,24 @@ def create_web_api(services: WebApiServicesV1) -> FastAPI:
     @app.get("/api/v10/web/auth/{provider}/start")
     def provider_start(provider: str) -> Response:
         descriptor = next(
-            (
-                item
-                for item in services.providers
-                if item.provider.value == provider
-            ),
+            (item for item in services.providers if item.provider.value == provider),
             None,
         )
         if descriptor is None:
             raise HTTPException(status_code=404, detail="IDENTITY_PROVIDER_UNKNOWN")
         if not descriptor.enabled:
-            raise HTTPException(status_code=503, detail="IDENTITY_PROVIDER_NOT_CONFIGURED")
-        raise HTTPException(status_code=503, detail="IDENTITY_PROVIDER_RUNTIME_NOT_BOUND")
+            raise HTTPException(
+                status_code=503, detail="IDENTITY_PROVIDER_NOT_CONFIGURED"
+            )
+        raise HTTPException(
+            status_code=503, detail="IDENTITY_PROVIDER_RUNTIME_NOT_BOUND"
+        )
 
     @app.post("/api/v10/web/private-test-login")
     def private_test_login(request: Request, response: Response) -> dict[str, Any]:
-        if not services.private_test_identity_enabled or not _is_loopback_request(request):
+        if not services.private_test_identity_enabled or not _is_loopback_request(
+            request
+        ):
             raise HTTPException(status_code=404, detail="NOT_FOUND")
         token, scope = services.sessions.create(
             user_id=OWNER_USER_ID,
