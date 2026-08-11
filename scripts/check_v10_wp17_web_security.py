@@ -17,6 +17,18 @@ MIGRATION = (
     / "migrations"
     / "0003_web_identity_connections.sql"
 )
+OWNER_EVIDENCE_FINALIZER = (
+    ROOT
+    / "infrastructure"
+    / "windows"
+    / "finalize_wp17_web_read_vault_evidence.ps1"
+)
+RUNNER_READ_VAULT_AUDITOR = (
+    ROOT / "infrastructure" / "windows" / "audit_wp17_read_vault_runner.ps1"
+)
+OWNER_READ_VAULT_WORKFLOW = (
+    ROOT / ".github" / "workflows" / "v10-wp17-owner-read-vault-audit.yml"
+)
 
 
 def _text_tree(root: Path) -> str:
@@ -45,6 +57,31 @@ def main() -> int:
         is not False
     ):
         failures.append("public ingress must remain disabled in WP17")
+
+    read_vault_acceptance = contract.get("read_vault_acceptance", {})
+    for key in (
+        "owner_admin_verify_required",
+        "exact_head_binding_required",
+        "script_hash_binding_required",
+        "non_admin_runner_negative_probe_required",
+    ):
+        if read_vault_acceptance.get(key) is not True:
+            failures.append(f"READ-vault acceptance requirement disabled: {key}")
+    for key in (
+        "runner_payload_read_allowed",
+        "runner_payload_write_allowed",
+        "runner_evidence_write_allowed",
+    ):
+        if read_vault_acceptance.get(key) is not False:
+            failures.append(f"READ-vault runner authority must remain denied: {key}")
+    for path in (
+        OWNER_EVIDENCE_FINALIZER,
+        RUNNER_READ_VAULT_AUDITOR,
+        OWNER_READ_VAULT_WORKFLOW,
+    ):
+        if not path.is_file():
+            failures.append(f"READ-vault acceptance component missing: {path.name}")
+
     invariants = contract.get("invariants", {})
     if invariants.get("gateway_entrypoint") != "app:app":
         failures.append("gateway entrypoint drifted")
@@ -133,6 +170,7 @@ def main() -> int:
     print("Ordinary auth: Telegram + VK ID only; local password absent")
     print("Sessions: server-side / private test identity disabled by default")
     print("Broker provisioning: WP8 read-broker connection child / no TRADE authority")
+    print("READ-vault acceptance: exact-head OWNER evidence + non-admin runner probe")
     print("Public ingress: OFF / WP22A gated")
     return 0
 
