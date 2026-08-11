@@ -36,7 +36,6 @@ export interface HealthView {
 }
 
 export interface BrokerAccountBindingView {
-  account_fingerprint_sha256: string;
   masked_label: string;
   access_level: "READ_ONLY";
 }
@@ -48,6 +47,18 @@ export interface BrokerConnectionView {
   state: "ACTIVE" | "REVOKED" | "ERROR";
   accounts: BrokerAccountBindingView[];
   last_verified_at?: string;
+}
+
+export interface BrokerProvisioningAccountView {
+  selection_id: string;
+  masked_label: string;
+  access_level: "READ_ONLY";
+}
+
+export interface BrokerProvisioningPreviewView {
+  challenge_id: string;
+  expires_at: string;
+  accounts: BrokerProvisioningAccountView[];
 }
 
 export function isKnownRoute(pathname: string): pathname is AppRoutePath {
