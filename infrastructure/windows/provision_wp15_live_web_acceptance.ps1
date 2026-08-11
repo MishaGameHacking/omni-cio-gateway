@@ -416,12 +416,22 @@ if ($Apply) {
     $previousGitSha = $env:GITHUB_SHA
     $env:GITHUB_SHA = $implementationSha
     try {
-        & $npmCmd ci --ignore-scripts --no-audit --no-fund *> $null
-        if ($LASTEXITCODE -ne 0) { throw "WP15_LIVE_WEB_NPM_CI_FAILED" }
-        & $npmCmd run typecheck *> $null
-        if ($LASTEXITCODE -ne 0) { throw "WP15_LIVE_WEB_TYPECHECK_FAILED" }
-        & $npmCmd run build *> $null
-        if ($LASTEXITCODE -ne 0) { throw "WP15_LIVE_WEB_BUILD_FAILED" }
+        # Windows PowerShell 5.1 maps native stderr into its Error stream. npm can emit
+        # non-fatal notices on stderr with exit code 0, so temporarily allow that stream
+        # and keep the native process exit code as the acceptance authority.
+        $previousNativeErrorActionPreference = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
+        try {
+            & $npmCmd ci --ignore-scripts --no-audit --no-fund *> $null
+            if ($LASTEXITCODE -ne 0) { throw "WP15_LIVE_WEB_NPM_CI_FAILED" }
+            & $npmCmd run typecheck *> $null
+            if ($LASTEXITCODE -ne 0) { throw "WP15_LIVE_WEB_TYPECHECK_FAILED" }
+            & $npmCmd run build *> $null
+            if ($LASTEXITCODE -ne 0) { throw "WP15_LIVE_WEB_BUILD_FAILED" }
+        }
+        finally {
+            $ErrorActionPreference = $previousNativeErrorActionPreference
+        }
     }
     finally {
         $env:GITHUB_SHA = $previousGitSha
