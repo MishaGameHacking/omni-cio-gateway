@@ -18,10 +18,7 @@ ACL_PROVISIONER = (
     ROOT / "infrastructure" / "windows" / "provision_wp17_web_read_vault.ps1"
 )
 OWNER_EVIDENCE_FINALIZER = (
-    ROOT
-    / "infrastructure"
-    / "windows"
-    / "finalize_wp17_web_read_vault_evidence.ps1"
+    ROOT / "infrastructure" / "windows" / "finalize_wp17_web_read_vault_evidence.ps1"
 )
 RUNNER_AUDITOR = (
     ROOT / "infrastructure" / "windows" / "audit_wp17_read_vault_runner.ps1"
@@ -162,6 +159,5 @@ def test_owner_acl_evidence_is_exact_head_bound_and_runner_verified() -> None:
     assert "-ExpectedImplementationSha" in workflow
     assert "github.event.pull_request.head.sha || github.sha" in workflow
     assert (
-        "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"
-        in workflow
+        "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a" in workflow
     )
