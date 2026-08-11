@@ -8,6 +8,7 @@ on:
       - "apps/web/src/app-shell/**"
       - "omni_cio/web/api_v1.py"
       - "omni_cio/web/live_acceptance_v1.py"
+      - "tests/contracts/api/test_web_api_v1_contract.py"
       - "tests/test_v10_wp15_live_web_acceptance.py"
       - "tests/test_v10_wp15_live_web_api.py"
       - "scripts/check_v10_wp15_live_web_acceptance.py"
@@ -28,6 +29,7 @@ on:
       - "apps/web/src/app-shell/**"
       - "omni_cio/web/api_v1.py"
       - "omni_cio/web/live_acceptance_v1.py"
+      - "tests/contracts/api/test_web_api_v1_contract.py"
       - "tests/test_v10_wp15_live_web_acceptance.py"
       - "tests/test_v10_wp15_live_web_api.py"
       - "scripts/check_v10_wp15_live_web_acceptance.py"
@@ -103,9 +105,9 @@ jobs:
       - name: Run static quality and type safety
         shell: cmd
         run: |
-          "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m ruff check omni_cio\web\live_acceptance_v1.py omni_cio\web\api_v1.py apps\api\app.py infrastructure\windows\bootstrap_wp15_live_database.py scripts\check_v10_wp15_live_web_acceptance.py tests\test_v10_wp15_live_web_acceptance.py tests\test_v10_wp15_live_web_api.py
+          "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m ruff check omni_cio\web\live_acceptance_v1.py omni_cio\web\api_v1.py apps\api\app.py infrastructure\windows\bootstrap_wp15_live_database.py scripts\check_v10_wp15_live_web_acceptance.py tests\contracts\api\test_web_api_v1_contract.py tests\test_v10_wp15_live_web_acceptance.py tests\test_v10_wp15_live_web_api.py
           if errorlevel 1 exit /b 20
-          "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m ruff format --check omni_cio\web\live_acceptance_v1.py omni_cio\web\api_v1.py apps\api\app.py infrastructure\windows\bootstrap_wp15_live_database.py scripts\check_v10_wp15_live_web_acceptance.py tests\test_v10_wp15_live_web_acceptance.py tests\test_v10_wp15_live_web_api.py
+          "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m ruff format --check omni_cio\web\live_acceptance_v1.py omni_cio\web\api_v1.py apps\api\app.py infrastructure\windows\bootstrap_wp15_live_database.py scripts\check_v10_wp15_live_web_acceptance.py tests\contracts\api\test_web_api_v1_contract.py tests\test_v10_wp15_live_web_acceptance.py tests\test_v10_wp15_live_web_api.py
           if errorlevel 1 exit /b 21
           "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m mypy
           if errorlevel 1 exit /b 22
@@ -113,7 +115,7 @@ jobs:
       - name: Run focused live acceptance and Web API tests
         shell: cmd
         run: |
-          "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m pytest -q tests\test_v10_wp15_live_web_acceptance.py tests\test_v10_wp15_live_web_api.py tests\test_v10_wp17_web_api.py tests\test_v10_wp17_broker_provisioning.py tests\test_v10_wp17_read_connection_vault.py tests\test_v10_wp15_tinvest_connection_scope.py
+          "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m pytest -q tests\contracts\api\test_web_api_v1_contract.py tests\test_v10_wp15_live_web_acceptance.py tests\test_v10_wp15_live_web_api.py tests\test_v10_wp17_web_api.py tests\test_v10_wp17_broker_provisioning.py tests\test_v10_wp17_read_connection_vault.py tests\test_v10_wp15_tinvest_connection_scope.py
           if errorlevel 1 exit /b 30
 
       - name: Enforce live support architecture boundary
@@ -134,8 +136,8 @@ jobs:
         shell: cmd
         run: |
           if not exist "C:\Program Files\Python314\python.exe" exit /b 45
-          for /f %%V in ('"C:\Program Files\Python314\python.exe" -c "import platform; print(platform.python_version())"') do set "PY314_VERSION=%%V"
-          if not "%PY314_VERSION%"=="3.14.6" exit /b 46
+          "C:\Program Files\Python314\python.exe" -c "import platform,sys; v=platform.python_version(); print(v); sys.exit(0 if v == '3.14.6' else 46)"
+          if errorlevel 1 exit /b 46
           set "PROD_VENV=%RUNNER_TEMP%\omni-cio-wp15-prod-%GITHUB_RUN_ID%-%GITHUB_RUN_ATTEMPT%"
           if exist "%PROD_VENV%" rmdir /s /q "%PROD_VENV%"
           "C:\Program Files\Python314\python.exe" -m venv "%PROD_VENV%"
