@@ -91,9 +91,9 @@ def test_local_private_app_uses_explicit_postgres_transactions() -> None:
     assert api_source.index('connection = connect_postgres("")') < api_source.index(
         "_configure_long_lived_web_connection(connection)"
     )
-    assert api_source.index("_configure_long_lived_web_connection(connection)") < api_source.index(
-        "_verify_live_database(connection)"
-    )
+    assert api_source.index(
+        "_configure_long_lived_web_connection(connection)"
+    ) < api_source.index("_verify_live_database(connection)")
 
 
 def test_wp15_live_bootstrap_seeds_owner_identity_before_runtime() -> None:
@@ -117,6 +117,11 @@ def test_wp15_live_bootstrap_seeds_owner_identity_before_runtime() -> None:
     assert "PostgresDomainRepository" in bootstrap
     assert "WP15_LIVE_OWNER_TENANT_INTEGRITY_INVALID" in bootstrap
     assert "WP15_LIVE_OWNER_USER_INTEGRITY_INVALID" in bootstrap
+    assert "WP15_LIVE_OWNER_BOOTSTRAP_AUTOCOMMIT_REQUIRED" in bootstrap
+    assert "connection.autocommit = True" in bootstrap
+    assert bootstrap.index("_configure_bootstrap_connection(connection)") < bootstrap.index(
+        "apply_migrations(connection)"
+    )
     assert bootstrap.index("apply_migrations(connection)") < bootstrap.index(
         "_ensure_owner_identity(connection)"
     )
@@ -124,6 +129,7 @@ def test_wp15_live_bootstrap_seeds_owner_identity_before_runtime() -> None:
     postgres = contract["postgresql"]
     assert postgres["owner_identity_seed_before_runtime"] is True
     assert postgres["owner_identity_seed_authority"] == "TEMPORARY_OWNER_ADMIN_ONLY"
+    assert postgres["owner_bootstrap_connection_autocommit"] is True
     assert postgres["runtime_owner_identity_write_authority"] is False
     assert "omni_cio_v10.tenants" not in provisioner
     assert "omni_cio_v10.users" not in provisioner
