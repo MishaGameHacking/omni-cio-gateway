@@ -6,6 +6,7 @@ $ErrorActionPreference = "Stop"
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $provisionerPath = Join-Path $PSScriptRoot "provision_wp15_live_web_acceptance.ps1"
+$starterPath = Join-Path $PSScriptRoot "start_wp15_live_web_acceptance.ps1"
 $launcherPath = Join-Path $PSScriptRoot "run_wp15_live_web_runtime.ps1"
 $bootstrapDbPath = Join-Path $PSScriptRoot "bootstrap_wp15_live_database.py"
 $auditorPath = Join-Path $PSScriptRoot "audit_wp15_live_web_runner.ps1"
@@ -125,10 +126,11 @@ $confirmedAt = [DateTimeOffset]::Parse([string]$pending.confirmed_at).ToUniversa
 $now = [DateTimeOffset]::UtcNow
 if ($observedAt -gt $confirmedAt -or $confirmedAt -gt $now.AddMinutes(5) -or $confirmedAt -lt $now.AddHours(-2)) { throw "WP15_LIVE_PENDING_TIME_INVALID" }
 
-foreach ($path in @($provisionerPath, $launcherPath, $bootstrapDbPath, $auditorPath, $PSCommandPath)) {
+foreach ($path in @($provisionerPath, $starterPath, $launcherPath, $bootstrapDbPath, $auditorPath, $PSCommandPath)) {
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "WP15_LIVE_EVIDENCE_SCRIPT_MISSING" }
 }
 $provisionerHash = (Get-FileHash -LiteralPath $provisionerPath -Algorithm SHA256).Hash.ToLowerInvariant()
+$starterHash = (Get-FileHash -LiteralPath $starterPath -Algorithm SHA256).Hash.ToLowerInvariant()
 $launcherHash = (Get-FileHash -LiteralPath $launcherPath -Algorithm SHA256).Hash.ToLowerInvariant()
 $bootstrapHash = (Get-FileHash -LiteralPath $bootstrapDbPath -Algorithm SHA256).Hash.ToLowerInvariant()
 $finalizerHash = (Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -152,6 +154,7 @@ $result = [ordered]@{
     reason = "WP15_LIVE_WEB_READ_VERIFIED"
     implementation_sha = $implementationSha
     provisioner_sha256 = $provisionerHash
+    acceptance_starter_sha256 = $starterHash
     runtime_launcher_sha256 = $launcherHash
     database_bootstrap_sha256 = $bootstrapHash
     evidence_finalizer_sha256 = $finalizerHash
