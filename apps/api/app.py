@@ -43,7 +43,7 @@ _LOCAL_TRUSTED_HOSTS = ("127.0.0.1", "localhost")
 
 
 class _SerializedCursor:
-    def __init__(self, cursor: Any, lock: threading.RLock) -> None:
+    def __init__(self, cursor: Any, lock: Any) -> None:
         self._cursor = cursor
         self._lock = lock
 
@@ -62,7 +62,7 @@ class _SerializedCursor:
 
 
 class _SerializedTransaction:
-    def __init__(self, connection: Any, lock: threading.RLock) -> None:
+    def __init__(self, connection: Any, lock: Any) -> None:
         self._connection = connection
         self._lock = lock
         self._transaction: Any | None = None
@@ -80,7 +80,6 @@ class _SerializedTransaction:
     def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> bool | None:
         transaction = self._transaction
         if transaction is None:
-            self._lock.release()
             raise RuntimeError("WEB_RUNTIME_POSTGRES_TRANSACTION_UNAVAILABLE")
         try:
             return transaction.__exit__(exc_type, exc, traceback)
