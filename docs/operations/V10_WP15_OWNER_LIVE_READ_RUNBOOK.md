@@ -26,7 +26,7 @@ Accepted support history as of 2026-08-12:
 - PR #298 — immutable broker-account record reuse for the same verified READ account reconnect;
 - PR #299 — fail-safe self-hosted Windows runner diagnostic/recovery with exact service executable binding and privacy-safe actual-node verification.
 
-Current exact accepted `main` is `6bd4e2c683386269ee573f25f50cbc8780ac9ff5`.
+Latest accepted runtime/operational implementation baseline before this documentation synchronization is `6bd4e2c683386269ee573f25f50cbc8780ac9ff5`. The OWNER physical procedure must use the exact accepted `main` SHA supplied after this documentation/status transition itself is merged and its required post-merge gates are GREEN; do not substitute the older implementation-baseline SHA merely because runtime code is unchanged.
 
 Product/live Web support was last post-merge exercised on immediately preceding `bc5842e019ffa5c612b1a0b6cffe00e9c5d2718a`: Regression Shield #1481 / run `31620202000`, WP15 Live Web Support Audit #106 / run `31620202006`, WP16 Audit #205 / run `31620202052`, and WP17 Audit #176 / run `31620202030` are SUCCESS. WP15 OWNER Audit #14 / run `31620201999` is expected `OWNER_ACTION_REQUIRED` because real sanitized OWNER evidence does not exist yet.
 
@@ -49,12 +49,12 @@ The raw broker token is never an OWNER PowerShell argument, GitHub secret, envir
 Do **not** perform the live procedure until all of the following are true:
 
 1. every current WP15 live Web support/hardening PR required for the attempt is squash-merged;
-2. the exact accepted implementation SHA is confirmed as current `main`;
+2. the exact accepted checkout SHA for the physical gate is confirmed as current `main` after all prerequisite documentation/status transitions;
 3. mandatory post-merge Regression Shield is GREEN on that exact SHA;
 4. the most recent applicable reviewed WP15 live support workflow is GREEN, and any later accepted operational-only change has passed its own exact-head and post-merge owning gates;
-5. OWNER is given that exact implementation SHA for the local procedure.
+5. OWNER is given that exact checkout SHA for the local procedure.
 
-If `main` changes again before OWNER execution, re-confirm the exact accepted implementation and required post-merge gates instead of reusing a stale SHA.
+If `main` changes again before OWNER execution, re-confirm the exact accepted checkout and required post-merge gates instead of reusing a stale SHA.
 
 Until the real procedure is finalized, `broker_read` may remain unprovisioned and no real T-Invest token is required outside the local/private Web form.
 
@@ -98,7 +98,7 @@ git rev-parse HEAD
 git status --porcelain
 ```
 
-The SHA must exactly equal the implementation SHA provided for the gate and `git status --porcelain` must be empty.
+The SHA must exactly equal the checkout SHA provided for the gate and `git status --porcelain` must be empty.
 
 Do not `git pull` or switch revisions inside the privileged live procedure unless separately instructed and reviewed. If the checkout is clean but behind the accepted `main`, stop before provisioning and use a separately reviewed fast-forward-only synchronization procedure; never merge/rebase arbitrary local work as part of the live gate.
 
