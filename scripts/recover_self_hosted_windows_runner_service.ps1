@@ -42,7 +42,7 @@ function Get-PropertyValueOrdinalIgnoreCase {
         [string]$Name
     )
 
-    $matches = @(
+    $propertyMatches = @(
         $InputObject.PSObject.Properties |
             Where-Object {
                 [string]::Equals(
@@ -52,104 +52,24 @@ function Get-PropertyValueOrdinalIgnoreCase {
                 )
             }
     )
-    if ($matches.Count -ne 1) {
+    if ($propertyMatches.Count -ne 1) {
         return $null
     }
-    return $matches[0].Value
-}
-
-function Invoke-RunnerDiagnostic {
-    $diagnosticScript = Join-Path -Path $PSScriptRoot -ChildPath "check_self_hosted_windows_runner_service.ps1"
-    if (-not (Test-Path -LiteralPath $diagnosticScript -PathType Leaf)) {
-        return [pscustomobject]@{
-            valid = $false
-            exit_code = $null
-            payload = $null
-        }
-    }
-
-    $output = @(
-        & powershell.exe `
-            -NoLogo `
-            -NoProfile `
-            -NonInteractive `
-            -ExecutionPolicy Bypass `
-            -File $diagnosticScript `
-            -RunnerRoot $RunnerRoot `
-            -ExpectedRunnerName $ExpectedRunnerName `
-            -AsJson 2>$null
-    )
-    $diagnosticExit = $LASTEXITCODE
-    $text = ($output -join [Environment]::NewLine).Trim()
-    if ([string]::IsNullOrWhiteSpace($text)) {
-        return [pscustomobject]@{
-            valid = $false
-            exit_code = $diagnosticExit
-            payload = $null
-        }
-    }
-
-    try {
-        $payload = $text | ConvertFrom-Json -ErrorAction Stop
-    }
-    catch {
-        return [pscustomobject]@{
-            valid = $false
-            exit_code = $diagnosticExit
-            payload = $null
-        }
-    }
-
-    return [pscustomobject]@{
-        valid = $true
-        exit_code = $diagnosticExit
-        payload = $payload
-    }
-}
-
-function Test-OwnerAdministrator {
-    $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
-    $principal = New-Object System.Security.Principal.WindowsPrincipal($identity)
-    return $principal.IsInRole(
-        [System.Security.Principal.WindowsBuiltInRole]::Administrator
-    )
+    return $propertyMatches[0].Value
 }
 
 function New-Result {
     param(
         [Parameter(Mandatory = $true)]
         [bool]$Healthy,
-
-        [Parameter()]
-        [AllowNull()]
-        [object]$ErrorCode,
-
-        [Parameter()]
-        [AllowNull()]
-        [object]$DiagnosticErrorCode,
-
-        [Parameter()]
-        [AllowNull()]
-        [object]$RunnerConfigurationErrorDetail,
-
-        [Parameter()]
-        [AllowNull()]
-        [object]$RecoveryAction,
-
-        [Parameter(Mandatory = $true)]
-        [bool]$MutationsAttempted,
-
-        [Parameter()]
-        [AllowNull()]
-        [object]$MutationStage,
-
-        [Parameter()]
-        [AllowNull()]
-        [object]$ServiceState,
-
-        [Parameter()]
-        [AllowNull()]
-        [object]$ServiceStartMode
+        [Parameter()][AllowNull()][object]$ErrorCode,
+        [Parameter()][AllowNull()][object]$DiagnosticErrorCode,
+        [Parameter()][AllowNull()][object]$RunnerConfigurationErrorDetail,
+        [Parameter()][AllowNull()][object]$RecoveryAction,
+        [Parameter(Mandatory = $true)][bool]$MutationsAttempted,
+        [Parameter()][AllowNull()][object]$MutationStage,
+        [Parameter()][AllowNull()][object]$ServiceState,
+        [Parameter()][AllowNull()][object]$ServiceStartMode
     )
 
     return [pscustomobject]@{
@@ -168,50 +88,212 @@ function New-Result {
     }
 }
 
-if ($env:OS -ne "Windows_NT") {
+function Write-FailureAndExit {
+    param(
+        [Parameter(Mandatory = $true)][string]$ErrorCode,
+        [Parameter()][AllowNull()][object]$DiagnosticErrorCode = $null,
+        [Parameter()][AllowNull()][object]$RunnerConfigurationErrorDetail = $null,
+        [Parameter()][AllowNull()][object]$RecoveryAction = $null,
+        [Parameter()][bool]$MutationsAttempted = $false,
+        [Parameter()][AllowNull()][object]$MutationStage = $null,
+        [Parameter()][AllowNull()][object]$ServiceState = $null,
+        [Parameter()][AllowNull()][object]$ServiceStartMode = $null
+    )
+
     Write-Result -Result (New-Result `
         -Healthy $false `
-        -ErrorCode "RUNNER_SERVICE_WINDOWS_REQUIRED" `
-        -DiagnosticErrorCode $null `
-        -RunnerConfigurationErrorDetail $null `
-        -RecoveryAction $null `
-        -MutationsAttempted $false `
-        -MutationStage $null `
-        -ServiceState $null `
-        -ServiceStartMode $null)
+        -ErrorCode $ErrorCode `
+        -DiagnosticErrorCode $DiagnosticErrorCode `
+        -RunnerConfigurationErrorDetail $RunnerConfigurationErrorDetail `
+        -RecoveryAction $RecoveryAction `
+        -MutationsAttempted $MutationsAttempted `
+        -MutationStage $MutationStage `
+        -ServiceState $ServiceState `
+        -ServiceStartMode $ServiceStartMode)
     exit 2
+}
+
+function Invoke-RunnerDiagnostic {
+    $diagnosticScript = Join-Path `
+        -Path $PSScriptRoot `
+        -ChildPath "check_self_hosted_windows_runner_service.ps1"
+    if (-not (Test-Path -LiteralPath $diagnosticScript -PathType Leaf)) {
+        return [pscustomobject]@{ valid = $false; exit_code = $null; payload = $null }
+    }
+
+    $output = @(
+        & powershell.exe `
+            -NoLogo `
+            -NoProfile `
+            -NonInteractive `
+            -ExecutionPolicy Bypass `
+            -File $diagnosticScript `
+            -RunnerRoot $RunnerRoot `
+            -ExpectedRunnerName $ExpectedRunnerName `
+            -AsJson 2>$null
+    )
+    $diagnosticExit = $LASTEXITCODE
+    $text = ($output -join [Environment]::NewLine).Trim()
+    if ([string]::IsNullOrWhiteSpace($text)) {
+        return [pscustomobject]@{ valid = $false; exit_code = $diagnosticExit; payload = $null }
+    }
+
+    try {
+        $payload = $text | ConvertFrom-Json -ErrorAction Stop
+    }
+    catch {
+        return [pscustomobject]@{ valid = $false; exit_code = $diagnosticExit; payload = $null }
+    }
+
+    return [pscustomobject]@{
+        valid = ($null -ne $payload)
+        exit_code = $diagnosticExit
+        payload = $payload
+    }
+}
+
+function Test-DiagnosticContract {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$Diagnostic
+    )
+
+    if (-not $Diagnostic.valid -or $null -eq $Diagnostic.payload) {
+        return $false
+    }
+
+    $requiredNames = @(
+        "healthy",
+        "error_code",
+        "runner_root_exists",
+        "expected_runner_name",
+        "runner_configuration_present",
+        "runner_configuration_valid",
+        "runner_configuration_error_detail",
+        "runner_configuration_identity_matches",
+        "runner_ephemeral",
+        "run_command_present",
+        "service_marker_present",
+        "service_marker_valid",
+        "service_marker_identity_matches",
+        "service_query_succeeded",
+        "service_identity_matches",
+        "service_state",
+        "service_start_mode"
+    )
+
+    foreach ($name in $requiredNames) {
+        $propertyMatches = @(
+            $Diagnostic.payload.PSObject.Properties |
+                Where-Object {
+                    [string]::Equals(
+                        $_.Name,
+                        $name,
+                        [System.StringComparison]::OrdinalIgnoreCase
+                    )
+                }
+        )
+        if ($propertyMatches.Count -ne 1) {
+            return $false
+        }
+    }
+
+    $reportedName = Get-PropertyValueOrdinalIgnoreCase `
+        -InputObject $Diagnostic.payload `
+        -Name "expected_runner_name"
+    if (
+        $reportedName -isnot [string] -or
+        -not [string]::Equals(
+            $reportedName,
+            $ExpectedRunnerName,
+            [System.StringComparison]::OrdinalIgnoreCase
+        )
+    ) {
+        return $false
+    }
+
+    return $true
+}
+
+function Test-RecoverableDiagnosticState {
+    param(
+        [Parameter(Mandatory = $true)][object]$Diagnostic,
+        [Parameter(Mandatory = $true)][string]$DiagnosticErrorCode
+    )
+
+    if ($Diagnostic.exit_code -ne 2) {
+        return $false
+    }
+
+    $payload = $Diagnostic.payload
+    $healthy = Get-PropertyValueOrdinalIgnoreCase -InputObject $payload -Name "healthy"
+    $rootExists = Get-PropertyValueOrdinalIgnoreCase -InputObject $payload -Name "runner_root_exists"
+    $configPresent = Get-PropertyValueOrdinalIgnoreCase -InputObject $payload -Name "runner_configuration_present"
+    $configValid = Get-PropertyValueOrdinalIgnoreCase -InputObject $payload -Name "runner_configuration_valid"
+    $configDetail = Get-PropertyValueOrdinalIgnoreCase -InputObject $payload -Name "runner_configuration_error_detail"
+    $identityMatches = Get-PropertyValueOrdinalIgnoreCase -InputObject $payload -Name "runner_configuration_identity_matches"
+    $ephemeral = Get-PropertyValueOrdinalIgnoreCase -InputObject $payload -Name "runner_ephemeral"
+    $runCommandPresent = Get-PropertyValueOrdinalIgnoreCase -InputObject $payload -Name "run_command_present"
+    $markerPresent = Get-PropertyValueOrdinalIgnoreCase -InputObject $payload -Name "service_marker_present"
+    $markerValid = Get-PropertyValueOrdinalIgnoreCase -InputObject $payload -Name "service_marker_valid"
+    $markerIdentityMatches = Get-PropertyValueOrdinalIgnoreCase -InputObject $payload -Name "service_marker_identity_matches"
+    $serviceQuerySucceeded = Get-PropertyValueOrdinalIgnoreCase -InputObject $payload -Name "service_query_succeeded"
+    $serviceIdentityMatches = Get-PropertyValueOrdinalIgnoreCase -InputObject $payload -Name "service_identity_matches"
+    $serviceState = Get-PropertyValueOrdinalIgnoreCase -InputObject $payload -Name "service_state"
+    $serviceStartMode = Get-PropertyValueOrdinalIgnoreCase -InputObject $payload -Name "service_start_mode"
+
+    $baseValid = (
+        $healthy -eq $false -and
+        $rootExists -eq $true -and
+        $configPresent -eq $true -and
+        $configValid -eq $true -and
+        $null -eq $configDetail -and
+        $identityMatches -eq $true -and
+        $ephemeral -eq $false -and
+        $runCommandPresent -eq $true -and
+        $markerPresent -eq $true -and
+        $markerValid -eq $true -and
+        $markerIdentityMatches -eq $true -and
+        $serviceQuerySucceeded -eq $true -and
+        $serviceIdentityMatches -eq $true -and
+        $serviceState -is [string] -and
+        $serviceStartMode -is [string]
+    )
+    if (-not $baseValid) {
+        return $false
+    }
+
+    if ($DiagnosticErrorCode -eq "RUNNER_SERVICE_NOT_AUTOMATIC") {
+        return $serviceStartMode -ne "Auto"
+    }
+    if ($DiagnosticErrorCode -eq "RUNNER_SERVICE_NOT_RUNNING") {
+        return ($serviceStartMode -eq "Auto" -and $serviceState -ne "Running")
+    }
+    return $false
+}
+
+function Test-OwnerAdministrator {
+    $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+    $principal = New-Object System.Security.Principal.WindowsPrincipal($identity)
+    return $principal.IsInRole(
+        [System.Security.Principal.WindowsBuiltInRole]::Administrator
+    )
+}
+
+if ($env:OS -ne "Windows_NT") {
+    Write-FailureAndExit -ErrorCode "RUNNER_SERVICE_WINDOWS_REQUIRED"
 }
 
 $diagnostic = Invoke-RunnerDiagnostic
-if (-not $diagnostic.valid -or $null -eq $diagnostic.payload) {
-    Write-Result -Result (New-Result `
-        -Healthy $false `
-        -ErrorCode "RUNNER_RECOVERY_DIAGNOSTIC_INVALID" `
-        -DiagnosticErrorCode $null `
-        -RunnerConfigurationErrorDetail $null `
-        -RecoveryAction $null `
-        -MutationsAttempted $false `
-        -MutationStage $null `
-        -ServiceState $null `
-        -ServiceStartMode $null)
-    exit 2
+if (-not (Test-DiagnosticContract -Diagnostic $diagnostic)) {
+    Write-FailureAndExit -ErrorCode "RUNNER_RECOVERY_DIAGNOSTIC_INVALID"
 }
 
-$diagnosticHealthy = Get-PropertyValueOrdinalIgnoreCase `
-    -InputObject $diagnostic.payload `
-    -Name "healthy"
-$diagnosticErrorCode = Get-PropertyValueOrdinalIgnoreCase `
-    -InputObject $diagnostic.payload `
-    -Name "error_code"
-$runnerConfigurationErrorDetail = Get-PropertyValueOrdinalIgnoreCase `
-    -InputObject $diagnostic.payload `
-    -Name "runner_configuration_error_detail"
-$diagnosticServiceState = Get-PropertyValueOrdinalIgnoreCase `
-    -InputObject $diagnostic.payload `
-    -Name "service_state"
-$diagnosticServiceStartMode = Get-PropertyValueOrdinalIgnoreCase `
-    -InputObject $diagnostic.payload `
-    -Name "service_start_mode"
+$diagnosticHealthy = Get-PropertyValueOrdinalIgnoreCase -InputObject $diagnostic.payload -Name "healthy"
+$diagnosticErrorCode = Get-PropertyValueOrdinalIgnoreCase -InputObject $diagnostic.payload -Name "error_code"
+$runnerConfigurationErrorDetail = Get-PropertyValueOrdinalIgnoreCase -InputObject $diagnostic.payload -Name "runner_configuration_error_detail"
+$diagnosticServiceState = Get-PropertyValueOrdinalIgnoreCase -InputObject $diagnostic.payload -Name "service_state"
+$diagnosticServiceStartMode = Get-PropertyValueOrdinalIgnoreCase -InputObject $diagnostic.payload -Name "service_start_mode"
 
 if ($diagnostic.exit_code -eq 0 -and $diagnosticHealthy -eq $true) {
     Write-Result -Result (New-Result `
@@ -222,8 +304,8 @@ if ($diagnostic.exit_code -eq 0 -and $diagnosticHealthy -eq $true) {
         -RecoveryAction "NONE" `
         -MutationsAttempted $false `
         -MutationStage $null `
-        -ServiceState ([string]$diagnosticServiceState) `
-        -ServiceStartMode ([string]$diagnosticServiceStartMode))
+        -ServiceState $diagnosticServiceState `
+        -ServiceStartMode $diagnosticServiceStartMode)
     exit 0
 }
 
@@ -232,17 +314,26 @@ $recoverableDiagnosticCodes = @(
     "RUNNER_SERVICE_NOT_RUNNING"
 )
 if ($diagnosticErrorCode -notin $recoverableDiagnosticCodes) {
-    Write-Result -Result (New-Result `
-        -Healthy $false `
+    Write-FailureAndExit `
         -ErrorCode "RUNNER_RECOVERY_BLOCKED_BY_DIAGNOSTIC" `
-        -DiagnosticErrorCode ([string]$diagnosticErrorCode) `
-        -RunnerConfigurationErrorDetail ([string]$runnerConfigurationErrorDetail) `
-        -RecoveryAction $null `
-        -MutationsAttempted $false `
-        -MutationStage $null `
-        -ServiceState ([string]$diagnosticServiceState) `
-        -ServiceStartMode ([string]$diagnosticServiceStartMode))
-    exit 2
+        -DiagnosticErrorCode $diagnosticErrorCode `
+        -RunnerConfigurationErrorDetail $runnerConfigurationErrorDetail `
+        -ServiceState $diagnosticServiceState `
+        -ServiceStartMode $diagnosticServiceStartMode
+}
+
+if (
+    $diagnosticErrorCode -isnot [string] -or
+    -not (Test-RecoverableDiagnosticState `
+        -Diagnostic $diagnostic `
+        -DiagnosticErrorCode $diagnosticErrorCode)
+) {
+    Write-FailureAndExit `
+        -ErrorCode "RUNNER_RECOVERY_DIAGNOSTIC_INVALID" `
+        -DiagnosticErrorCode $diagnosticErrorCode `
+        -RunnerConfigurationErrorDetail $runnerConfigurationErrorDetail `
+        -ServiceState $diagnosticServiceState `
+        -ServiceStartMode $diagnosticServiceStartMode
 }
 
 $serviceFilePath = Join-Path -Path $RunnerRoot -ChildPath ".service"
@@ -250,40 +341,26 @@ $expectedServiceSuffix = ".$ExpectedRunnerName.service"
 $serviceNamePattern = '^actions\.runner\.[A-Za-z0-9._-]{1,480}\.service$'
 
 if (-not (Test-Path -LiteralPath $serviceFilePath -PathType Leaf)) {
-    Write-Result -Result (New-Result `
-        -Healthy $false `
+    Write-FailureAndExit `
         -ErrorCode "RUNNER_RECOVERY_SERVICE_MARKER_CHANGED" `
-        -DiagnosticErrorCode ([string]$diagnosticErrorCode) `
-        -RunnerConfigurationErrorDetail ([string]$runnerConfigurationErrorDetail) `
-        -RecoveryAction $null `
-        -MutationsAttempted $false `
-        -MutationStage $null `
-        -ServiceState $null `
-        -ServiceStartMode $null)
-    exit 2
+        -DiagnosticErrorCode $diagnosticErrorCode
 }
 
 try {
-    $serviceMarkerInfo = Get-Item -LiteralPath $serviceFilePath -ErrorAction Stop
+    $serviceMarkerInfo = [System.IO.FileInfo]::new($serviceFilePath)
+    $serviceMarkerInfo.Refresh()
     if ($serviceMarkerInfo.Length -le 0 -or $serviceMarkerInfo.Length -gt 1024) {
         throw "bounded service marker required"
     }
-    $declaredServiceName = (
-        Get-Content -LiteralPath $serviceFilePath -Raw -ErrorAction Stop
+    $declaredServiceName = [System.IO.File]::ReadAllText(
+        $serviceFilePath,
+        [System.Text.Encoding]::UTF8
     ).Trim()
 }
 catch {
-    Write-Result -Result (New-Result `
-        -Healthy $false `
+    Write-FailureAndExit `
         -ErrorCode "RUNNER_RECOVERY_SERVICE_MARKER_CHANGED" `
-        -DiagnosticErrorCode ([string]$diagnosticErrorCode) `
-        -RunnerConfigurationErrorDetail ([string]$runnerConfigurationErrorDetail) `
-        -RecoveryAction $null `
-        -MutationsAttempted $false `
-        -MutationStage $null `
-        -ServiceState $null `
-        -ServiceStartMode $null)
-    exit 2
+        -DiagnosticErrorCode $diagnosticErrorCode
 }
 
 $serviceMarkerValid = (
@@ -294,17 +371,9 @@ $serviceMarkerValid = (
     )
 )
 if (-not $serviceMarkerValid) {
-    Write-Result -Result (New-Result `
-        -Healthy $false `
+    Write-FailureAndExit `
         -ErrorCode "RUNNER_RECOVERY_SERVICE_MARKER_CHANGED" `
-        -DiagnosticErrorCode ([string]$diagnosticErrorCode) `
-        -RunnerConfigurationErrorDetail ([string]$runnerConfigurationErrorDetail) `
-        -RecoveryAction $null `
-        -MutationsAttempted $false `
-        -MutationStage $null `
-        -ServiceState $null `
-        -ServiceStartMode $null)
-    exit 2
+        -DiagnosticErrorCode $diagnosticErrorCode
 }
 
 try {
@@ -330,31 +399,15 @@ try {
     )
 }
 catch {
-    Write-Result -Result (New-Result `
-        -Healthy $false `
+    Write-FailureAndExit `
         -ErrorCode "RUNNER_RECOVERY_SERVICE_QUERY_FAILED" `
-        -DiagnosticErrorCode ([string]$diagnosticErrorCode) `
-        -RunnerConfigurationErrorDetail ([string]$runnerConfigurationErrorDetail) `
-        -RecoveryAction $null `
-        -MutationsAttempted $false `
-        -MutationStage $null `
-        -ServiceState $null `
-        -ServiceStartMode $null)
-    exit 2
+        -DiagnosticErrorCode $diagnosticErrorCode
 }
 
 if ($matchingServices.Count -ne 1 -or $matchingServiceDetails.Count -ne 1) {
-    Write-Result -Result (New-Result `
-        -Healthy $false `
+    Write-FailureAndExit `
         -ErrorCode "RUNNER_RECOVERY_SERVICE_IDENTITY_AMBIGUOUS" `
-        -DiagnosticErrorCode ([string]$diagnosticErrorCode) `
-        -RunnerConfigurationErrorDetail ([string]$runnerConfigurationErrorDetail) `
-        -RecoveryAction $null `
-        -MutationsAttempted $false `
-        -MutationStage $null `
-        -ServiceState $null `
-        -ServiceStartMode $null)
-    exit 2
+        -DiagnosticErrorCode $diagnosticErrorCode
 }
 
 $service = $matchingServices[0]
@@ -372,17 +425,9 @@ $serviceIdentityValid = (
     )
 )
 if (-not $serviceIdentityValid) {
-    Write-Result -Result (New-Result `
-        -Healthy $false `
+    Write-FailureAndExit `
         -ErrorCode "RUNNER_RECOVERY_SERVICE_IDENTITY_AMBIGUOUS" `
-        -DiagnosticErrorCode ([string]$diagnosticErrorCode) `
-        -RunnerConfigurationErrorDetail ([string]$runnerConfigurationErrorDetail) `
-        -RecoveryAction $null `
-        -MutationsAttempted $false `
-        -MutationStage $null `
-        -ServiceState $null `
-        -ServiceStartMode $null)
-    exit 2
+        -DiagnosticErrorCode $diagnosticErrorCode
 }
 
 $serviceState = [string]$serviceDetails.State
@@ -405,16 +450,13 @@ else {
 
 if (-not $needsAutomatic -and -not $needsStart) {
     $postDiagnostic = Invoke-RunnerDiagnostic
-    $postHealthy = if ($postDiagnostic.valid -and $null -ne $postDiagnostic.payload) {
-        Get-PropertyValueOrdinalIgnoreCase `
+    if (
+        (Test-DiagnosticContract -Diagnostic $postDiagnostic) -and
+        $postDiagnostic.exit_code -eq 0 -and
+        (Get-PropertyValueOrdinalIgnoreCase `
             -InputObject $postDiagnostic.payload `
-            -Name "healthy"
-    }
-    else {
-        $false
-    }
-
-    if ($postDiagnostic.exit_code -eq 0 -and $postHealthy -eq $true) {
+            -Name "healthy") -eq $true
+    ) {
         Write-Result -Result (New-Result `
             -Healthy $true `
             -ErrorCode $null `
@@ -428,45 +470,30 @@ if (-not $needsAutomatic -and -not $needsStart) {
         exit 0
     }
 
-    Write-Result -Result (New-Result `
-        -Healthy $false `
+    Write-FailureAndExit `
         -ErrorCode "RUNNER_RECOVERY_STATE_CHANGED" `
-        -DiagnosticErrorCode ([string]$diagnosticErrorCode) `
-        -RunnerConfigurationErrorDetail ([string]$runnerConfigurationErrorDetail) `
+        -DiagnosticErrorCode $diagnosticErrorCode `
         -RecoveryAction "VERIFY_HEALTHY" `
-        -MutationsAttempted $false `
-        -MutationStage $null `
         -ServiceState $serviceState `
-        -ServiceStartMode $serviceStartMode)
-    exit 2
+        -ServiceStartMode $serviceStartMode
 }
 
 if (-not $Apply) {
-    Write-Result -Result (New-Result `
-        -Healthy $false `
+    Write-FailureAndExit `
         -ErrorCode "RUNNER_SERVICE_RECOVERY_PREVIEW" `
-        -DiagnosticErrorCode ([string]$diagnosticErrorCode) `
-        -RunnerConfigurationErrorDetail ([string]$runnerConfigurationErrorDetail) `
+        -DiagnosticErrorCode $diagnosticErrorCode `
         -RecoveryAction $recoveryAction `
-        -MutationsAttempted $false `
-        -MutationStage $null `
         -ServiceState $serviceState `
-        -ServiceStartMode $serviceStartMode)
-    exit 2
+        -ServiceStartMode $serviceStartMode
 }
 
 if (-not (Test-OwnerAdministrator)) {
-    Write-Result -Result (New-Result `
-        -Healthy $false `
+    Write-FailureAndExit `
         -ErrorCode "RUNNER_SERVICE_RECOVERY_ADMIN_REQUIRED" `
-        -DiagnosticErrorCode ([string]$diagnosticErrorCode) `
-        -RunnerConfigurationErrorDetail ([string]$runnerConfigurationErrorDetail) `
+        -DiagnosticErrorCode $diagnosticErrorCode `
         -RecoveryAction $recoveryAction `
-        -MutationsAttempted $false `
-        -MutationStage $null `
         -ServiceState $serviceState `
-        -ServiceStartMode $serviceStartMode)
-    exit 2
+        -ServiceStartMode $serviceStartMode
 }
 
 $mutationsAttempted = $false
@@ -475,7 +502,10 @@ try {
     if ($needsAutomatic) {
         $mutationStage = "SET_AUTOMATIC"
         $mutationsAttempted = $true
-        Set-Service -Name $declaredServiceName -StartupType Automatic -ErrorAction Stop
+        Set-Service `
+            -Name $declaredServiceName `
+            -StartupType Automatic `
+            -ErrorAction Stop
     }
     if ($needsStart) {
         $mutationStage = "START"
@@ -484,62 +514,41 @@ try {
     }
 }
 catch {
-    Write-Result -Result (New-Result `
-        -Healthy $false `
+    Write-FailureAndExit `
         -ErrorCode "RUNNER_SERVICE_RECOVERY_MUTATION_FAILED" `
-        -DiagnosticErrorCode ([string]$diagnosticErrorCode) `
-        -RunnerConfigurationErrorDetail ([string]$runnerConfigurationErrorDetail) `
+        -DiagnosticErrorCode $diagnosticErrorCode `
         -RecoveryAction $recoveryAction `
         -MutationsAttempted $mutationsAttempted `
         -MutationStage $mutationStage `
         -ServiceState $serviceState `
-        -ServiceStartMode $serviceStartMode)
-    exit 2
+        -ServiceStartMode $serviceStartMode
 }
 
 $postDiagnostic = Invoke-RunnerDiagnostic
-if (-not $postDiagnostic.valid -or $null -eq $postDiagnostic.payload) {
-    Write-Result -Result (New-Result `
-        -Healthy $false `
+if (-not (Test-DiagnosticContract -Diagnostic $postDiagnostic)) {
+    Write-FailureAndExit `
         -ErrorCode "RUNNER_SERVICE_RECOVERY_POSTCONDITION_FAILED" `
-        -DiagnosticErrorCode $null `
-        -RunnerConfigurationErrorDetail $null `
         -RecoveryAction $recoveryAction `
         -MutationsAttempted $mutationsAttempted `
-        -MutationStage $mutationStage `
-        -ServiceState $null `
-        -ServiceStartMode $null)
-    exit 2
+        -MutationStage $mutationStage
 }
 
-$postHealthy = Get-PropertyValueOrdinalIgnoreCase `
-    -InputObject $postDiagnostic.payload `
-    -Name "healthy"
-$postErrorCode = Get-PropertyValueOrdinalIgnoreCase `
-    -InputObject $postDiagnostic.payload `
-    -Name "error_code"
-$postConfigurationDetail = Get-PropertyValueOrdinalIgnoreCase `
-    -InputObject $postDiagnostic.payload `
-    -Name "runner_configuration_error_detail"
-$postServiceState = Get-PropertyValueOrdinalIgnoreCase `
-    -InputObject $postDiagnostic.payload `
-    -Name "service_state"
-$postServiceStartMode = Get-PropertyValueOrdinalIgnoreCase `
-    -InputObject $postDiagnostic.payload `
-    -Name "service_start_mode"
+$postHealthy = Get-PropertyValueOrdinalIgnoreCase -InputObject $postDiagnostic.payload -Name "healthy"
+$postErrorCode = Get-PropertyValueOrdinalIgnoreCase -InputObject $postDiagnostic.payload -Name "error_code"
+$postConfigurationDetail = Get-PropertyValueOrdinalIgnoreCase -InputObject $postDiagnostic.payload -Name "runner_configuration_error_detail"
+$postServiceState = Get-PropertyValueOrdinalIgnoreCase -InputObject $postDiagnostic.payload -Name "service_state"
+$postServiceStartMode = Get-PropertyValueOrdinalIgnoreCase -InputObject $postDiagnostic.payload -Name "service_start_mode"
 
 if ($postDiagnostic.exit_code -ne 0 -or $postHealthy -ne $true) {
-    Write-Result -Result (New-Result `
-        -Healthy $false `
+    Write-FailureAndExit `
         -ErrorCode "RUNNER_SERVICE_RECOVERY_POSTCONDITION_FAILED" `
-        -DiagnosticErrorCode ([string]$postErrorCode) `
-        -RunnerConfigurationErrorDetail ([string]$postConfigurationDetail) `
+        -DiagnosticErrorCode $postErrorCode `
+        -RunnerConfigurationErrorDetail $postConfigurationDetail `
         -RecoveryAction $recoveryAction `
         -MutationsAttempted $mutationsAttempted `
         -MutationStage $mutationStage `
-        -ServiceState ([string]$postServiceState) `
-        -ServiceStartMode ([string]$postServiceStartMode))
-    exit 2
+        -ServiceState $postServiceState `
+        -ServiceStartMode $postServiceStartMode
 }
 
 Write-Result -Result (New-Result `
@@ -550,6 +559,6 @@ Write-Result -Result (New-Result `
     -RecoveryAction $recoveryAction `
     -MutationsAttempted $mutationsAttempted `
     -MutationStage $mutationStage `
-    -ServiceState ([string]$postServiceState) `
-    -ServiceStartMode ([string]$postServiceStartMode))
+    -ServiceState $postServiceState `
+    -ServiceStartMode $postServiceStartMode)
 exit 0
