@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)][string]$ExpectedImplementationSha,
+    [switch]$Inspect,
     [switch]$AsJson,
     [ValidateRange(1024, 65535)][int]$Port = 8765
 )
@@ -18,7 +19,7 @@ function Test-Administrator {
     return $principal.IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)
 }
 
-if (-not (Test-Administrator)) {
+if (-not $Inspect -and -not (Test-Administrator)) {
     throw "WP15 live acceptance launcher requires OWNER administrator."
 }
 
@@ -60,9 +61,6 @@ $administratorsSid = [System.Security.Principal.SecurityIdentifier]::new("S-1-5-
 $admins = @(Get-LocalGroupMember -SID $administratorsSid -ErrorAction Stop)
 if ($admins.SID.Value -contains $runtimeUser.SID.Value) {
     throw "WP15_LIVE_RUNTIME_IS_ADMINISTRATOR"
-}
-if ([bool]$runtimeUser.Enabled) {
-    throw "WP15_LIVE_RUNTIME_ROLE_MUST_START_DISABLED"
 }
 
 if (-not ("OmniCioV10.NativeAccountRights" -as [type])) {
@@ -138,7 +136,7 @@ namespace OmniCioV10
         [DllImport("advapi32.dll")]
         private static extern uint LsaFreeMemory(IntPtr Buffer);
 
-        private static IntPtr OpenPolicy()
+        private static IntPtr OpenPolicy(uint desiredAccess)
         {
             var attributes = new LSA_OBJECT_ATTRIBUTES();
             attributes.Length = (uint)Marshal.SizeOf(typeof(LSA_OBJECT_ATTRIBUTES));
@@ -146,7 +144,7 @@ namespace OmniCioV10
             uint status = LsaOpenPolicy(
                 IntPtr.Zero,
                 ref attributes,
-                POLICY_CREATE_ACCOUNT | POLICY_LOOKUP_NAMES,
+                desiredAccess,
                 out handle);
             ThrowForStatus(status, "LsaOpenPolicy");
             return handle;
@@ -199,7 +197,7 @@ namespace OmniCioV10
             IntPtr rights = IntPtr.Zero;
             try
             {
-                policy = OpenPolicy();
+                policy = OpenPolicy(POLICY_LOOKUP_NAMES);
                 sid = AllocSid(sidText);
                 uint count;
                 uint status = LsaEnumerateAccountRights(policy, sid, out rights, out count);
@@ -252,7 +250,8 @@ namespace OmniCioV10
             LSA_UNICODE_STRING nativeRight = default(LSA_UNICODE_STRING);
             try
             {
-                policy = OpenPolicy();
+                uint access = POLICY_LOOKUP_NAMES | (add ? POLICY_CREATE_ACCOUNT : 0);
+                policy = OpenPolicy(access);
                 sid = AllocSid(sidText);
                 nativeRight = MakeString(right);
                 var rights = new[] { nativeRight };
@@ -275,16 +274,51 @@ namespace OmniCioV10
 
 $runtimeSid = $runtimeUser.SID.Value
 $rightsBefore = @([OmniCioV10.NativeAccountRights]::GetRights($runtimeSid))
-if ($rightsBefore -contains $denyBatchRight) {
+$batchRightPresent = $rightsBefore -contains $batchRight
+$denyBatchRightPresent = $rightsBefore -contains $denyBatchRight
+
+if ($Inspect) {
+    $inspectReady = (-not [bool]$runtimeUser.Enabled) -and (-not $denyBatchRightPresent)
+    $result = [ordered]@{
+        schema_version = "1"
+        work_package = "WP15"
+        evidence_type = "LIVE_RUNTIME_BATCH_LOGON_PREFLIGHT"
+        implementation_sha = $actual
+        runtime_role_enabled = [bool]$runtimeUser.Enabled
+        runtime_is_administrator = $false
+        batch_logon_right_present = [bool]$batchRightPresent
+        deny_batch_logon_right_present = [bool]$denyBatchRightPresent
+        mutation_performed = $false
+        real_secret_values_used = $false
+        broker_write_authority_added = $false
+        trading_methods = $false
+        gateway_entrypoint = "app:app"
+        ready = [bool]$inspectReady
+    }
+    if ($AsJson) {
+        $result | ConvertTo-Json -Depth 4
+    }
+    else {
+        $result.GetEnumerator() | ForEach-Object { "{0}: {1}" -f $_.Key, $_.Value }
+    }
+    if (-not $inspectReady) { exit 73 }
+    exit 0
+}
+
+if ([bool]$runtimeUser.Enabled) {
+    throw "WP15_LIVE_RUNTIME_ROLE_MUST_START_DISABLED"
+}
+if ($denyBatchRightPresent) {
     throw "WP15_LIVE_RUNTIME_DENY_BATCH_LOGON_RIGHT_PRESENT"
 }
+
 $batchRightAdded = $false
 $childExit = $null
 $executionFailure = $null
 $restoreFailure = $null
 
 try {
-    if ($rightsBefore -notcontains $batchRight) {
+    if (-not $batchRightPresent) {
         [OmniCioV10.NativeAccountRights]::AddRight($runtimeSid, $batchRight)
         $batchRightAdded = $true
     }
