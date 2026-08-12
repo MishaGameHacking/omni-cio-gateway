@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+import json
 from pathlib import Path
 import threading
 import time
@@ -10,6 +11,7 @@ from apps.api.app import _SerializedWebConnection
 
 
 ROOT = Path(__file__).resolve().parents[1]
+CONTRACT = ROOT / "docs" / "architecture" / "V10_WP15_LIVE_WEB_ACCEPTANCE_CONTRACT.json"
 
 
 class _Cursor:
@@ -85,6 +87,7 @@ def test_shared_web_connection_serializes_parallel_request_transactions() -> Non
 
 def test_local_private_app_wraps_connection_before_request_repositories() -> None:
     source = (ROOT / "apps" / "api" / "app.py").read_text(encoding="utf-8")
+    contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
 
     raw_open = source.index('raw_connection = connect_postgres("")')
     configure = source.index("_configure_long_lived_web_connection(raw_connection)")
@@ -95,3 +98,8 @@ def test_local_private_app_wraps_connection_before_request_repositories() -> Non
     assert raw_open < configure < serialize < sessions < brokers
     assert "threading.RLock()" in source
     assert "WEB_RUNTIME_POSTGRES_TRANSACTION_UNAVAILABLE" in source
+    assert contract["postgresql"]["shared_connection_request_serialization"] is True
+    assert contract["invariants"]["gateway_entrypoint"] == "app:app"
+    assert contract["invariants"]["trading_methods"] is False
+    assert contract["invariants"]["real_trading_enabled"] is False
+    assert contract["invariants"]["broker_write_authority_added"] is False
