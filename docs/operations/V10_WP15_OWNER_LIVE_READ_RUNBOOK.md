@@ -10,19 +10,21 @@ This marker remains authoritative until real OWNER Web parity evidence and the i
 
 Authority: `docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.md`, the accepted Identity/Multi-Tenant amendment, `docs/architecture/V10_WP15_TINVEST_READONLY_CONTRACT.md`, and `docs/architecture/V10_WP15_LIVE_WEB_ACCEPTANCE_CONTRACT.json`.
 
-Accepted support baseline as of 2026-08-12:
+Previously accepted support baseline as of 2026-08-12:
 
 - PR #284 — deferred live Web support path;
 - PR #285 — Windows-native OWNER-audit cleanup hardening;
 - PR #286 — locale-independent Administrators SID validation;
 - PR #287 — Windows PowerShell 5.1 native npm stderr handling;
 - PR #290 — battery-safe temporary Task Scheduler settings plus sanitized `task_state` / numeric `LastTaskResult` startup diagnostics;
-- exact accepted support implementation: `bbacbb6ffda591b0aa53f371d435f7f56537b567`;
+- exact accepted support implementation before the batch-logon startup correction: `bbacbb6ffda591b0aa53f371d435f7f56537b567`;
 - post-merge Regression Shield #1473 / run `31555409157` — SUCCESS;
 - WP15 Live Web Support Audit #58 / run `31555409103` — SUCCESS;
 - WP16 Audit #157 / run `31555409117` — SUCCESS;
 - WP17 Audit #128 / run `31555409163` — SUCCESS;
 - WP15 OWNER Audit #6 / run `31555409161` — expected `OWNER_ACTION_REQUIRED` / exit 61 because real sanitized OWNER evidence does not exist yet; its independent audit/upload/cleanup steps succeed.
+
+The subsequent real OWNER startup rehearsal exposed Task Scheduler state `Ready` with numeric `LastTaskResult=267011` (`0x00041303`, task has not yet run). The correction in this runbook introduces an acceptance-only starter that can grant only the exact non-admin runtime role the temporary `SeBatchLogonRight` required for password-logon scheduled-task startup. This correction must not be used from an unmerged PR: exact accepted `main` plus post-merge gates remain mandatory.
 
 ## 1. Purpose
 
@@ -38,13 +40,13 @@ The raw broker token is never an OWNER PowerShell argument, GitHub secret, envir
 
 Do **not** perform the live procedure until all of the following are true:
 
-1. the WP15 live Web support PR is squash-merged;
+1. the current WP15 live Web support/hardening PR is squash-merged;
 2. the exact merge SHA is confirmed as `main`;
 3. mandatory post-merge Regression Shield is GREEN on that exact SHA;
 4. the reviewed support workflow is GREEN on the accepted implementation;
 5. OWNER is given that exact implementation SHA for the local procedure.
 
-Those prerequisites are satisfied for the accepted support baseline listed above. If `main` changes again before OWNER execution, re-confirm the exact accepted implementation and required post-merge gates instead of reusing a stale SHA.
+If `main` changes again before OWNER execution, re-confirm the exact accepted implementation and required post-merge gates instead of reusing a stale SHA.
 
 Until the real procedure is finalized, `broker_read` may remain unprovisioned and no real T-Invest token is required outside the local/private Web form.
 
@@ -67,6 +69,16 @@ The acceptance runtime is temporary and loopback-only:
 
 The temporary scheduled task uses password logon because the acceptance runtime must have both network access to T-Invest and access to the DPAPI-protected READ vault. S4U is explicitly not used because Windows documents that S4U scheduled tasks have no network or encrypted-file access. The temporary task is explicitly allowed to start on battery and is not stopped by an AC-to-battery transition; these settings affect only the acceptance task and do not change permanent WP9 runtime policy.
 
+Password-logon scheduled-task startup also requires batch-logon capability for the task principal. The reviewed acceptance starter therefore manages `SeBatchLogonRight` narrowly:
+
+- it resolves and validates only the exact WP6-owned `omni-cio-runtime` SID;
+- the account must remain non-admin and must start disabled;
+- a direct `SeDenyBatchLogonRight` causes fail-closed rejection and is never removed or bypassed;
+- a pre-existing `SeBatchLogonRight` is preserved unchanged;
+- if the right is absent, the starter adds only `SeBatchLogonRight`, invokes the existing reviewed provisioner, and removes that temporary right in `finally` before the starter exits;
+- no `SeServiceLogonRight`, interactive-logon right, Administrator membership or broker authority is added;
+- the runtime account password remains generated only inside the child provisioner and is never logged/exported.
+
 ## 4. OWNER preparation after support acceptance
 
 Only after the prerequisites in section 2 are satisfied, use the exact accepted `main` checkout on the Lenovo node.
@@ -84,7 +96,7 @@ Do not `git pull` or switch revisions inside the privileged live procedure unles
 
 ### 4.1 Retry after a partial failed provisioning attempt
 
-If a prior `-Apply` attempt failed after creating any owned WP15 live runtime state, do not rerun `-Apply` blindly. From the same elevated, clean exact checkout, run the marker-guarded cleanup first as **one complete PowerShell command on one physical line**:
+If a prior startup attempt failed after creating any owned WP15 live runtime state, do not rerun startup blindly. From the same elevated, clean exact checkout, run the marker-guarded cleanup first as **one complete PowerShell command on one physical line**:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\infrastructure\windows\provision_wp15_live_web_acceptance.ps1" -ExpectedImplementationSha "<EXACT_MAIN_SHA>" -Cleanup -AsJson
@@ -96,13 +108,15 @@ For OWNER copy/paste commands in this runbook, prefer a complete single-line inv
 
 ## 5. Start the temporary acceptance runtime
 
-From the same elevated, clean exact checkout, run this as **one complete PowerShell command on one physical line**:
+From the same elevated, clean exact checkout, run the reviewed starter as **one complete PowerShell command on one physical line**:
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\infrastructure\windows\provision_wp15_live_web_acceptance.ps1" -ExpectedImplementationSha "<EXACT_MAIN_SHA>" -Apply -AsJson
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\infrastructure\windows\start_wp15_live_web_acceptance.ps1" -ExpectedImplementationSha "<EXACT_MAIN_SHA>" -AsJson
 ```
 
-Expected safe result includes:
+Do not call the underlying provisioner's `-Apply` mode directly for normal OWNER startup. The starter performs exact-head/worktree/runtime-role checks, temporarily supplies only the scheduled-task batch-logon capability when required, invokes the existing provisioner, and restores the pre-start account-right state before returning.
+
+Expected safe result from the child provisioner includes:
 
 ```text
 runtime_root_owned: true
@@ -122,7 +136,7 @@ ready: true
 
 This command does **not** ask for the T-Invest token.
 
-If `ready` is false or the command fails, do not bypass a check and do not edit PostgreSQL/ACL/task state manually. Use the reviewed cleanup procedure in section 9 and report only the fixed reason/error code. A loopback-start timeout may additionally report sanitized `task_state` and numeric `last_task_result`; those two diagnostic fields are safe to return to engineering and replace raw task/Event Log collection.
+If `ready` is false or the command fails, do not bypass a check and do not edit PostgreSQL/ACL/task/account-right state manually. Use the reviewed cleanup procedure in section 9 and report only the fixed reason/error code. A loopback-start timeout may additionally report sanitized `task_state` and numeric `last_task_result`; those two diagnostic fields are safe to return to engineering and replace raw task/Event Log collection.
 
 ## 6. Provision READ credential through Web
 
@@ -179,7 +193,7 @@ The finalizer:
 1. validates the exact pending schema and exact implementation SHA;
 2. requires every real OWNER parity boolean;
 3. rejects stale/implausible timestamps and forbidden private fields;
-4. binds hashes of the provisioner/runtime/database/finalizer/auditor scripts;
+4. binds hashes of the reviewed acceptance security scripts;
 5. removes the temporary task;
 6. disables the runtime role anchor again;
 7. restores the pre-acceptance `pg_hba.conf` and `pg_ident.conf`;
@@ -197,6 +211,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\infrastructure\window
 ```
 
 Cleanup is ownership-marker guarded. It removes only the temporary WP15 live runtime/task, disables the runtime role anchor and restores the saved PostgreSQL authentication files when they were changed.
+
+The acceptance starter restores any `SeBatchLogonRight` that it itself added before it exits. Cleanup therefore must not manually edit local security policy or account rights.
 
 Do not manually delete `C:\ProgramData\OmniCIO\runtime\wp15-live`, edit PostgreSQL authentication files, alter the runner identity, or weaken ACLs as a shortcut.
 
@@ -241,8 +257,14 @@ Windows Task Scheduler password/S4U logon semantics:
 
 - `https://learn.microsoft.com/windows/win32/taskschd/taskfolder-registertaskdefinition`
 
+Windows account-right management used by the acceptance-only starter:
+
+- `https://learn.microsoft.com/windows/win32/api/ntsecapi/nf-ntsecapi-lsaaddaccountrights`
+- `https://learn.microsoft.com/windows/win32/api/ntsecapi/nf-ntsecapi-lsaremoveaccountrights`
+- `https://learn.microsoft.com/windows/win32/api/ntsecapi/nf-ntsecapi-lsaenumerateaccountrights`
+
 PowerShell line-continuation guidance:
 
 - `https://learn.microsoft.com/powershell/module/microsoft.powershell.core/about/about_parsing`
 
-These references justify the transport/runtime/command mechanics only; V10 authority and Exit Gate ordering remain defined by the source-controlled Master Plan and amendments.
+These references justify the transport/runtime/command/account-right mechanics only; V10 authority and Exit Gate ordering remain defined by the source-controlled Master Plan and amendments.

@@ -9,6 +9,7 @@ $ErrorActionPreference = "Stop"
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $provisionerPath = Join-Path $PSScriptRoot "provision_wp15_live_web_acceptance.ps1"
+$starterPath = Join-Path $PSScriptRoot "start_wp15_live_web_acceptance.ps1"
 $launcherPath = Join-Path $PSScriptRoot "run_wp15_live_web_runtime.ps1"
 $bootstrapDbPath = Join-Path $PSScriptRoot "bootstrap_wp15_live_database.py"
 $finalizerPath = Join-Path $PSScriptRoot "finalize_wp15_live_web_evidence.ps1"
@@ -93,6 +94,7 @@ catch {
 
 $hashes = [ordered]@{
     provisioner_sha256 = if (Test-Path -LiteralPath $provisionerPath -PathType Leaf) { (Get-FileHash -LiteralPath $provisionerPath -Algorithm SHA256).Hash.ToLowerInvariant() } else { "" }
+    acceptance_starter_sha256 = if (Test-Path -LiteralPath $starterPath -PathType Leaf) { (Get-FileHash -LiteralPath $starterPath -Algorithm SHA256).Hash.ToLowerInvariant() } else { "" }
     runtime_launcher_sha256 = if (Test-Path -LiteralPath $launcherPath -PathType Leaf) { (Get-FileHash -LiteralPath $launcherPath -Algorithm SHA256).Hash.ToLowerInvariant() } else { "" }
     database_bootstrap_sha256 = if (Test-Path -LiteralPath $bootstrapDbPath -PathType Leaf) { (Get-FileHash -LiteralPath $bootstrapDbPath -Algorithm SHA256).Hash.ToLowerInvariant() } else { "" }
     evidence_finalizer_sha256 = if (Test-Path -LiteralPath $finalizerPath -PathType Leaf) { (Get-FileHash -LiteralPath $finalizerPath -Algorithm SHA256).Hash.ToLowerInvariant() } else { "" }
