@@ -15,9 +15,9 @@ def _provisioner_text() -> str:
 
 def test_live_acceptance_task_can_start_and_continue_on_battery() -> None:
     text = _provisioner_text()
-    settings_block = text.split(
-        "$settings = New-ScheduledTaskSettingsSet", 1
-    )[1].split("Register-ScheduledTask", 1)[0]
+    settings_block = text.split("$settings = New-ScheduledTaskSettingsSet", 1)[1].split(
+        "Register-ScheduledTask", 1
+    )[0]
 
     assert "-AllowStartIfOnBatteries" in settings_block
     assert "-DontStopIfGoingOnBatteries" in settings_block
@@ -31,8 +31,7 @@ def test_live_acceptance_timeout_reports_sanitized_task_scheduler_state() -> Non
     assert "$failedTask.State" in failure_block
     assert "$failedTaskInfo.LastTaskResult" in failure_block
     assert (
-        "WP15_LIVE_LOOPBACK_RUNTIME_NOT_READY; task_state={0}; "
-        "last_task_result={1}"
+        "WP15_LIVE_LOOPBACK_RUNTIME_NOT_READY; task_state={0}; last_task_result={1}"
     ) in failure_block
     assert "Get-WinEvent" not in failure_block
     assert "Get-Content" not in failure_block
