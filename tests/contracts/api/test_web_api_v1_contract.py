@@ -1,10 +1,19 @@
 from __future__ import annotations
 
+from contextlib import nullcontext
+from datetime import datetime, timezone
 import json
 from pathlib import Path
 from typing import Any
 
-from omni_cio.contracts.v1.domain import OWNER_TENANT_ID
+from omni_cio.adapters.tinvest_read_v1 import BrokerAccountBindingV1
+from omni_cio.contracts.v1.domain import (
+    OWNER_TENANT_ID,
+    BrokerAccountV1,
+    BrokerProvider,
+    canonical_broker_account_id,
+)
+from omni_cio.persistence.repository import model_record_sha256
 from omni_cio.web.api_v1 import create_web_api
 from omni_cio.web.persistence_v1 import PostgresBrokerConnectionRepositoryV1
 from omni_cio.web.session_v1 import SessionRegistryV1
@@ -34,8 +43,20 @@ class _Services:
 class _RowsCursor:
     rowcount = 0
 
+    def __init__(
+        self,
+        *,
+        row: tuple[Any, ...] | None = None,
+        rows: list[tuple[Any, ...]] | None = None,
+    ) -> None:
+        self._row = row
+        self._rows = rows or []
+
+    def fetchone(self) -> tuple[Any, ...] | None:
+        return self._row
+
     def fetchall(self) -> list[tuple[Any, ...]]:
-        return []
+        return list(self._rows)
 
 
 class _CaptureConnection:
@@ -53,6 +74,40 @@ class _CaptureConnection:
         del prepare
         self.query = str(query)
         self.params = params
+        return _RowsCursor()
+
+
+class _ReconnectConnection:
+    def __init__(self, existing_account: BrokerAccountV1) -> None:
+        self.existing_account = existing_account
+        self.queries: list[str] = []
+
+    def transaction(self) -> Any:
+        return nullcontext()
+
+    def execute(
+        self,
+        query: Any,
+        params: tuple[Any, ...] | None = None,
+        *,
+        prepare: bool | None = None,
+    ) -> _RowsCursor:
+        del params, prepare
+        text = str(query)
+        self.queries.append(text)
+        if "INSERT INTO omni_cio_v10.broker_accounts" in text:
+            return _RowsCursor(row=None)
+        if "SELECT provider, account_fingerprint_sha256" in text:
+            account = self.existing_account
+            return _RowsCursor(
+                row=(
+                    account.provider.value,
+                    account.account_fingerprint_sha256,
+                    account.masked_label,
+                    account.created_at,
+                    model_record_sha256(account),
+                )
+            )
         return _RowsCursor()
 
 
@@ -189,3 +244,57 @@ def test_settings_listing_excludes_revoked_broker_connections() -> None:
         ).read_text(encoding="utf-8")
     )
     assert contract["broker"]["revoked_connections_exposed_to_active_settings"] is False
+
+
+def test_reconnect_reuses_existing_immutable_broker_account_record() -> None:
+    fingerprint = "a" * 64
+    broker_account_id = canonical_broker_account_id(
+        BrokerProvider.T_INVEST,
+        fingerprint,
+    )
+    existing_account = BrokerAccountV1(
+        broker_account_id=broker_account_id,
+        tenant_id=OWNER_TENANT_ID,
+        provider=BrokerProvider.T_INVEST,
+        account_fingerprint_sha256=fingerprint,
+        masked_label="***3118",
+        created_at=datetime(2026, 8, 11, 8, 0, tzinfo=timezone.utc),
+    )
+    connection = _ReconnectConnection(existing_account)
+    repository = PostgresBrokerConnectionRepositoryV1(
+        connection  # type: ignore[arg-type]
+    )
+    binding = BrokerAccountBindingV1(
+        broker_account_id=broker_account_id,
+        account_fingerprint_sha256=fingerprint,
+        masked_label="***3118",
+        access_level="ACCOUNT_ACCESS_LEVEL_READ_ONLY",
+    )
+
+    repository.create_read_connection(
+        tenant_id=OWNER_TENANT_ID,
+        connection_id="broker-connection:v1:" + "b" * 64,
+        secret_ref="broker-secret:v1:" + "c" * 64,
+        bindings=(binding,),
+        now=datetime(2026, 8, 12, 8, 0, tzinfo=timezone.utc),
+    )
+
+    assert any(
+        "SELECT provider, account_fingerprint_sha256" in query
+        for query in connection.queries
+    )
+    assert any(
+        "INSERT INTO omni_cio_v10.broker_connections" in query
+        for query in connection.queries
+    )
+
+    root = Path(__file__).resolve().parents[3]
+    contract = json.loads(
+        (
+            root
+            / "docs"
+            / "architecture"
+            / "V10_WP15_LIVE_WEB_ACCEPTANCE_CONTRACT.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert contract["broker"]["reconnect_reuses_existing_immutable_broker_account"] is True
