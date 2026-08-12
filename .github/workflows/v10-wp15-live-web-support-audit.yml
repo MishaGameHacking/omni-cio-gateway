@@ -150,12 +150,12 @@ jobs:
           powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $user=Get-LocalUser -Name 'omni-cio-runtime' -ErrorAction Stop; if ([string]$user.Description -ne 'Omni-CIO V10 WP6 runtime role anchor') { exit 45 }; $adminSid=[System.Security.Principal.SecurityIdentifier]::new('S-1-5-32-544'); $members=@(Get-LocalGroupMember -SID $adminSid -ErrorAction Stop); if ($members.SID.Value -contains $user.SID.Value) { exit 46 }; $account=$user.SID.Translate([System.Security.Principal.NTAccount]).Value; if ([string]::IsNullOrWhiteSpace($account) -or $account.IndexOf('\') -lt 1) { exit 47 }; Write-Host 'WP15 localized runtime identity ownership contract passed.'"
           if errorlevel 1 exit /b 47
 
-      - name: Inspect non-mutating runtime batch-logon readiness
+      - name: Compile and validate batch-logon helper without mutation
         shell: cmd
         env:
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File infrastructure\windows\start_wp15_live_web_acceptance.ps1 -ExpectedImplementationSha "%EXPECTED_HEAD%" -Inspect -AsJson
+          powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File infrastructure\windows\start_wp15_live_web_acceptance.ps1 -ExpectedImplementationSha "%EXPECTED_HEAD%" -ValidateOnly -AsJson
           if errorlevel 1 exit /b 48
 
       - name: Reproduce production Python 3.14 runtime dependencies
