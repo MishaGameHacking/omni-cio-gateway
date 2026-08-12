@@ -39,7 +39,7 @@ function Get-JsonPropertyOrdinalIgnoreCase {
         [string]$Name
     )
 
-    $matches = @(
+    $propertyMatches = @(
         $InputObject.PSObject.Properties |
             Where-Object {
                 [string]::Equals(
@@ -50,10 +50,10 @@ function Get-JsonPropertyOrdinalIgnoreCase {
             }
     )
 
-    if ($matches.Count -ne 1) {
+    if ($propertyMatches.Count -ne 1) {
         return $null
     }
-    return $matches[0]
+    return $propertyMatches[0]
 }
 
 if ($env:OS -ne "Windows_NT") {
@@ -94,18 +94,30 @@ $runnerConfigurationIdentityMatches = $false
 $runnerEphemeral = $null
 
 if ($runnerConfigurationPresent) {
+    $runnerConfigInfo = $null
     try {
-        $runnerConfigInfo = Get-Item -LiteralPath $runnerConfigPath -ErrorAction Stop
-        if ($runnerConfigInfo.Length -le 0 -or $runnerConfigInfo.Length -gt 65536) {
+        $runnerConfigInfo = [System.IO.FileInfo]::new($runnerConfigPath)
+        $runnerConfigInfo.Refresh()
+        $runnerConfigLength = $runnerConfigInfo.Length
+    }
+    catch {
+        $runnerConfigurationErrorDetail = "READ_FAILED"
+    }
+
+    if ($null -ne $runnerConfigInfo -and $null -eq $runnerConfigurationErrorDetail) {
+        if ($runnerConfigLength -le 0 -or $runnerConfigLength -gt 65536) {
             $runnerConfigurationErrorDetail = "SIZE_INVALID"
         }
         else {
             $runnerConfigText = $null
             try {
-                $runnerConfigText = Get-Content `
-                    -LiteralPath $runnerConfigPath `
-                    -Raw `
-                    -ErrorAction Stop
+                # Match the official actions/runner ConfigurationStore read path.
+                # Direct .NET file I/O avoids PowerShell provider semantics for the
+                # runner's hidden configuration files without bypassing Windows ACLs.
+                $runnerConfigText = [System.IO.File]::ReadAllText(
+                    $runnerConfigPath,
+                    [System.Text.Encoding]::UTF8
+                )
             }
             catch {
                 $runnerConfigurationErrorDetail = "READ_FAILED"
@@ -116,62 +128,69 @@ if ($runnerConfigurationPresent) {
                 try {
                     $runnerSettings = $runnerConfigText |
                         ConvertFrom-Json -ErrorAction Stop
-                    if ($null -eq $runnerSettings) {
-                        $runnerConfigurationErrorDetail = "AGENT_NAME_INVALID"
-                    }
                 }
                 catch {
                     $runnerConfigurationErrorDetail = "JSON_INVALID"
                 }
+
+                if (
+                    $null -eq $runnerSettings -and
+                    $runnerConfigurationErrorDetail -ne "JSON_INVALID"
+                ) {
+                    $runnerConfigurationErrorDetail = "AGENT_NAME_INVALID"
+                }
             }
 
             if ($null -ne $runnerSettings) {
-                $agentNameProperty = Get-JsonPropertyOrdinalIgnoreCase `
-                    -InputObject $runnerSettings `
-                    -Name "agentName"
-                $ephemeralProperty = Get-JsonPropertyOrdinalIgnoreCase `
-                    -InputObject $runnerSettings `
-                    -Name "ephemeral"
-
-                $agentNameValid = (
-                    $null -ne $agentNameProperty -and
-                    $agentNameProperty.Value -is [string] -and
-                    -not [string]::IsNullOrWhiteSpace($agentNameProperty.Value)
-                )
-                $ephemeralValid = (
-                    $null -eq $ephemeralProperty -or
-                    $ephemeralProperty.Value -is [bool]
-                )
-
-                if (-not $agentNameValid) {
+                $agentNameProperty = $null
+                $ephemeralProperty = $null
+                try {
+                    $agentNameProperty = Get-JsonPropertyOrdinalIgnoreCase `
+                        -InputObject $runnerSettings `
+                        -Name "AgentName"
+                    $ephemeralProperty = Get-JsonPropertyOrdinalIgnoreCase `
+                        -InputObject $runnerSettings `
+                        -Name "Ephemeral"
+                }
+                catch {
                     $runnerConfigurationErrorDetail = "AGENT_NAME_INVALID"
                 }
-                elseif (-not $ephemeralValid) {
-                    $runnerConfigurationErrorDetail = "EPHEMERAL_INVALID"
-                }
-                else {
-                    $runnerConfigurationValid = $true
-                    $runnerConfigurationErrorDetail = $null
-                    $runnerConfigurationIdentityMatches = [string]::Equals(
-                        [string]$agentNameProperty.Value,
-                        $ExpectedRunnerName,
-                        [System.StringComparison]::OrdinalIgnoreCase
+
+                if ($runnerConfigurationErrorDetail -notin @("JSON_INVALID", "READ_FAILED")) {
+                    $agentNameValid = (
+                        $null -ne $agentNameProperty -and
+                        $agentNameProperty.Value -is [string] -and
+                        -not [string]::IsNullOrWhiteSpace($agentNameProperty.Value)
                     )
-                    $runnerEphemeral = if ($null -eq $ephemeralProperty) {
-                        $false
+                    $ephemeralValid = (
+                        $null -eq $ephemeralProperty -or
+                        $ephemeralProperty.Value -is [bool]
+                    )
+
+                    if (-not $agentNameValid) {
+                        $runnerConfigurationErrorDetail = "AGENT_NAME_INVALID"
+                    }
+                    elseif (-not $ephemeralValid) {
+                        $runnerConfigurationErrorDetail = "EPHEMERAL_INVALID"
                     }
                     else {
-                        [bool]$ephemeralProperty.Value
+                        $runnerConfigurationValid = $true
+                        $runnerConfigurationErrorDetail = $null
+                        $runnerConfigurationIdentityMatches = [string]::Equals(
+                            [string]$agentNameProperty.Value,
+                            $ExpectedRunnerName,
+                            [System.StringComparison]::OrdinalIgnoreCase
+                        )
+                        $runnerEphemeral = if ($null -eq $ephemeralProperty) {
+                            $false
+                        }
+                        else {
+                            [bool]$ephemeralProperty.Value
+                        }
                     }
                 }
             }
         }
-    }
-    catch {
-        $runnerConfigurationValid = $false
-        $runnerConfigurationErrorDetail = "READ_FAILED"
-        $runnerConfigurationIdentityMatches = $false
-        $runnerEphemeral = $null
     }
 }
 
@@ -183,10 +202,12 @@ $declaredServiceName = $null
 
 if ($serviceMarkerPresent) {
     try {
-        $serviceMarkerInfo = Get-Item -LiteralPath $serviceFilePath -ErrorAction Stop
+        $serviceMarkerInfo = [System.IO.FileInfo]::new($serviceFilePath)
+        $serviceMarkerInfo.Refresh()
         if ($serviceMarkerInfo.Length -gt 0 -and $serviceMarkerInfo.Length -le 1024) {
-            $serviceNameCandidate = (
-                Get-Content -LiteralPath $serviceFilePath -Raw -ErrorAction Stop
+            $serviceNameCandidate = [System.IO.File]::ReadAllText(
+                $serviceFilePath,
+                [System.Text.Encoding]::UTF8
             ).Trim()
             if ($serviceNameCandidate -match $serviceNamePattern) {
                 $serviceMarkerValid = $true
