@@ -270,11 +270,12 @@ def test_reconnect_reuses_existing_immutable_broker_account_record() -> None:
         masked_label="***3118",
         access_level="ACCOUNT_ACCESS_LEVEL_READ_ONLY",
     )
+    connection_ref = "broker-ref:v1:" + "c" * 64
 
     repository.create_read_connection(
         tenant_id=OWNER_TENANT_ID,
         connection_id="broker-connection:v1:" + "b" * 64,
-        secret_ref="broker-secret:v1:" + "c" * 64,
+        secret_ref=connection_ref,
         bindings=(binding,),
         now=datetime(2026, 8, 12, 8, 0, tzinfo=timezone.utc),
     )
