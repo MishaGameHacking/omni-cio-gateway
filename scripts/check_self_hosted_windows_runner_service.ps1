@@ -29,6 +29,33 @@ function Write-Result {
     }
 }
 
+function Get-JsonPropertyOrdinalIgnoreCase {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$InputObject,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$Name
+    )
+
+    $matches = @(
+        $InputObject.PSObject.Properties |
+            Where-Object {
+                [string]::Equals(
+                    $_.Name,
+                    $Name,
+                    [System.StringComparison]::OrdinalIgnoreCase
+                )
+            }
+    )
+
+    if ($matches.Count -ne 1) {
+        return $null
+    }
+    return $matches[0]
+}
+
 if ($env:OS -ne "Windows_NT") {
     $result = [pscustomobject]@{
         healthy = $false
@@ -37,6 +64,7 @@ if ($env:OS -ne "Windows_NT") {
         expected_runner_name = $ExpectedRunnerName
         runner_configuration_present = $false
         runner_configuration_valid = $false
+        runner_configuration_error_detail = $null
         runner_configuration_identity_matches = $false
         runner_ephemeral = $null
         run_command_present = $false
@@ -61,46 +89,71 @@ $serviceNamePattern = '^actions\.runner\.[A-Za-z0-9._-]{1,480}\.service$'
 
 $runnerConfigurationPresent = Test-Path -LiteralPath $runnerConfigPath -PathType Leaf
 $runnerConfigurationValid = $false
+$runnerConfigurationErrorDetail = $null
 $runnerConfigurationIdentityMatches = $false
 $runnerEphemeral = $null
 
 if ($runnerConfigurationPresent) {
     try {
         $runnerConfigInfo = Get-Item -LiteralPath $runnerConfigPath -ErrorAction Stop
-        if ($runnerConfigInfo.Length -le 65536) {
-            $runnerSettings = Get-Content -LiteralPath $runnerConfigPath -Raw -ErrorAction Stop |
-                ConvertFrom-Json -ErrorAction Stop
-            $agentNameProperty = $runnerSettings.PSObject.Properties["AgentName"]
-            $ephemeralProperty = $runnerSettings.PSObject.Properties["Ephemeral"]
+        if ($runnerConfigInfo.Length -le 0 -or $runnerConfigInfo.Length -gt 65536) {
+            $runnerConfigurationErrorDetail = "SIZE_INVALID"
+        }
+        else {
+            $runnerSettings = $null
+            try {
+                $runnerSettings = Get-Content -LiteralPath $runnerConfigPath -Raw -ErrorAction Stop |
+                    ConvertFrom-Json -ErrorAction Stop
+            }
+            catch {
+                $runnerConfigurationErrorDetail = "JSON_INVALID"
+            }
 
-            $agentNameValid = (
-                $null -ne $agentNameProperty -and
-                $agentNameProperty.Value -is [string] -and
-                -not [string]::IsNullOrWhiteSpace($agentNameProperty.Value)
-            )
-            $ephemeralValid = (
-                $null -eq $ephemeralProperty -or
-                $ephemeralProperty.Value -is [bool]
-            )
+            if ($null -ne $runnerSettings) {
+                $agentNameProperty = Get-JsonPropertyOrdinalIgnoreCase `
+                    -InputObject $runnerSettings `
+                    -Name "agentName"
+                $ephemeralProperty = Get-JsonPropertyOrdinalIgnoreCase `
+                    -InputObject $runnerSettings `
+                    -Name "ephemeral"
 
-            if ($agentNameValid -and $ephemeralValid) {
-                $runnerConfigurationValid = $true
-                $runnerConfigurationIdentityMatches = [string]::Equals(
-                    [string]$agentNameProperty.Value,
-                    $ExpectedRunnerName,
-                    [System.StringComparison]::OrdinalIgnoreCase
+                $agentNameValid = (
+                    $null -ne $agentNameProperty -and
+                    $agentNameProperty.Value -is [string] -and
+                    -not [string]::IsNullOrWhiteSpace($agentNameProperty.Value)
                 )
-                $runnerEphemeral = if ($null -eq $ephemeralProperty) {
-                    $false
+                $ephemeralValid = (
+                    $null -eq $ephemeralProperty -or
+                    $ephemeralProperty.Value -is [bool]
+                )
+
+                if (-not $agentNameValid) {
+                    $runnerConfigurationErrorDetail = "AGENT_NAME_INVALID"
+                }
+                elseif (-not $ephemeralValid) {
+                    $runnerConfigurationErrorDetail = "EPHEMERAL_INVALID"
                 }
                 else {
-                    [bool]$ephemeralProperty.Value
+                    $runnerConfigurationValid = $true
+                    $runnerConfigurationErrorDetail = $null
+                    $runnerConfigurationIdentityMatches = [string]::Equals(
+                        [string]$agentNameProperty.Value,
+                        $ExpectedRunnerName,
+                        [System.StringComparison]::OrdinalIgnoreCase
+                    )
+                    $runnerEphemeral = if ($null -eq $ephemeralProperty) {
+                        $false
+                    }
+                    else {
+                        [bool]$ephemeralProperty.Value
+                    }
                 }
             }
         }
     }
     catch {
         $runnerConfigurationValid = $false
+        $runnerConfigurationErrorDetail = "READ_FAILED"
         $runnerConfigurationIdentityMatches = $false
         $runnerEphemeral = $null
     }
@@ -285,6 +338,7 @@ $result = [pscustomobject]@{
     expected_runner_name = $ExpectedRunnerName
     runner_configuration_present = $runnerConfigurationPresent
     runner_configuration_valid = $runnerConfigurationValid
+    runner_configuration_error_detail = $runnerConfigurationErrorDetail
     runner_configuration_identity_matches = $runnerConfigurationIdentityMatches
     runner_ephemeral = $runnerEphemeral
     run_command_present = $runCommandPresent
