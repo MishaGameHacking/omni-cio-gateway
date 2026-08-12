@@ -538,7 +538,7 @@ $omni$;
         $launcher = Join-Path $appRoot $launcherRelative
         $arguments = "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$launcher`" -AppRoot `"$appRoot`" -ImplementationSha $implementationSha -PendingEvidencePath `"$pendingEvidencePath`" -Port $Port"
         $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument $arguments
-        $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Hours 2) -MultipleInstances IgnoreNew -RestartCount 0
+        $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Hours 2) -MultipleInstances IgnoreNew -RestartCount 0 -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
         Register-ScheduledTask -TaskName $taskName -Action $action -Settings $settings -User $runtimeAccount -Password $runtimePassword -RunLevel Limited -Force | Out-Null
         Start-ScheduledTask -TaskName $taskName -ErrorAction Stop
     }
@@ -557,9 +557,13 @@ $omni$;
         catch { }
     }
     if (-not $readyHttp) {
+        $failedTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+        $failedTaskState = if ($null -ne $failedTask) { [string]$failedTask.State } else { "Missing" }
+        $failedTaskInfo = Get-ScheduledTaskInfo -TaskName $taskName -ErrorAction SilentlyContinue
+        $failedTaskResult = if ($null -ne $failedTaskInfo) { [int64]$failedTaskInfo.LastTaskResult } else { -1 }
         Stop-And-RemoveTask
         Disable-LocalUser -Name $runtimeName -ErrorAction SilentlyContinue
-        throw "WP15_LIVE_LOOPBACK_RUNTIME_NOT_READY"
+        throw ("WP15_LIVE_LOOPBACK_RUNTIME_NOT_READY; task_state={0}; last_task_result={1}" -f $failedTaskState, $failedTaskResult)
     }
 }
 
