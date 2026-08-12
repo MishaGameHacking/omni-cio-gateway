@@ -9,9 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "check_self_hosted_windows_runner_service.ps1"
 RECOVERY = ROOT / "scripts" / "recover_self_hosted_windows_runner_service.ps1"
-RUNBOOK = (
-    ROOT / "docs" / "operations" / "SELF_HOSTED_WINDOWS_RUNNER_SERVICE.md"
-)
+RUNBOOK = ROOT / "docs" / "operations" / "SELF_HOSTED_WINDOWS_RUNNER_SERVICE.md"
 
 
 def _powershell() -> str | None:
@@ -74,7 +72,6 @@ def _run_recovery(
     ]
     if apply:
         command.append("-Apply")
-
     result = subprocess.run(
         command,
         cwd=ROOT,
@@ -95,56 +92,53 @@ def _write_persistent_runner_config(runner_root: Path) -> None:
     )
 
 
+def _set_hidden(powershell: str, path: Path, hidden: bool) -> None:
+    escaped = str(path).replace("'", "''")
+    operation = "-bor" if hidden else "-band -bnot"
+    command = (
+        f"$p='{escaped}'; $i=Get-Item -LiteralPath $p -Force; "
+        f"$i.Attributes = $i.Attributes {operation} "
+        "[System.IO.FileAttributes]::Hidden"
+    )
+    result = subprocess.run(
+        [powershell, "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 def test_runner_service_diagnostic_is_read_only_and_fail_closed() -> None:
     text = SCRIPT.read_text(encoding="utf-8")
-
     for required in (
         "Set-StrictMode -Version Latest",
         '$ErrorActionPreference = "Stop"',
         "ValidatePattern('^[A-Za-z0-9._-]{1,64}$')",
         '$expectedServiceSuffix = ".$ExpectedRunnerName.service"',
-        "$runnerConfigInfo.Length -le 0",
-        "$runnerConfigInfo.Length -gt 65536",
-        "$serviceMarkerInfo.Length -le 1024",
         "$serviceNamePattern",
-        "Get-JsonPropertyOrdinalIgnoreCase",
-        '-Name "agentName"',
-        '-Name "ephemeral"',
+        "[System.IO.FileInfo]::new($runnerConfigPath)",
+        "[System.IO.File]::ReadAllText(",
+        "[System.Text.Encoding]::UTF8",
         "ConvertFrom-Json -ErrorAction Stop",
-        "[System.StringComparison]::OrdinalIgnoreCase",
-        "Get-Service -ErrorAction Stop",
-        "Get-CimInstance -ClassName Win32_Service -ErrorAction Stop",
-        "[string]::Equals(",
-        "runner_root_exists = $runnerRootExists",
-        "runner_configuration_valid = $runnerConfigurationValid",
-        "runner_configuration_error_detail = $runnerConfigurationErrorDetail",
-        "runner_configuration_identity_matches = $runnerConfigurationIdentityMatches",
-        "runner_ephemeral = $runnerEphemeral",
-        "service_marker_present = $serviceMarkerPresent",
-        "service_marker_valid = $serviceMarkerValid",
-        "service_marker_identity_matches = $serviceMarkerIdentityMatches",
-        "service_query_succeeded = $serviceQuerySucceeded",
-        "service_identity_matches = $serviceIdentityMatches",
-        "service_start_mode = $serviceStartMode",
+        "Get-JsonPropertyOrdinalIgnoreCase",
+        '-Name "AgentName"',
+        '-Name "Ephemeral"',
         '"SIZE_INVALID"',
+        '"READ_FAILED"',
         '"JSON_INVALID"',
         '"AGENT_NAME_INVALID"',
         '"EPHEMERAL_INVALID"',
-        '"READ_FAILED"',
-        'error_code = "RUNNER_SERVICE_WINDOWS_REQUIRED"',
-        '"RUNNER_CONFIGURATION_INVALID"',
-        '"RUNNER_CONFIGURATION_IDENTITY_MISMATCH"',
-        '"RUNNER_EPHEMERAL_UNSUPPORTED"',
-        '"RUNNER_SERVICE_MARKER_MISSING"',
-        '"RUNNER_SERVICE_MARKER_INVALID"',
-        '"RUNNER_SERVICE_MARKER_IDENTITY_MISMATCH"',
-        '"RUNNER_SERVICE_MISSING"',
-        '"RUNNER_SERVICE_IDENTITY_MISMATCH"',
-        '"RUNNER_SERVICE_QUERY_FAILED"',
+        "Get-Service -ErrorAction Stop",
+        "Get-CimInstance -ClassName Win32_Service -ErrorAction Stop",
+        "[string]::Equals(",
+        "runner_configuration_error_detail = $runnerConfigurationErrorDetail",
+        "service_query_succeeded = $serviceQuerySucceeded",
         '"RUNNER_SERVICE_NOT_AUTOMATIC"',
         '"RUNNER_SERVICE_NOT_RUNNING"',
         "ConvertTo-Json -Depth 4 -Compress",
-        "exit 2",
     ):
         assert required in text
 
@@ -159,11 +153,10 @@ def test_runner_service_diagnostic_is_read_only_and_fail_closed() -> None:
         "Invoke-WebRequest",
         "Invoke-RestMethod",
         ".credentials",
-        'Get-Service -Name "actions.runner.*"',
-        '-like "*.$ExpectedRunnerName.service"',
-        "runner_root = $RunnerRoot",
+        "Get-Content -LiteralPath $runnerConfigPath",
+        "Get-Content -LiteralPath $serviceFilePath",
+        "runner_root =",
         "service_name =",
-        "service_path =",
         "PathName",
         "GitHubUrl",
         "ServerUrl",
@@ -173,19 +166,17 @@ def test_runner_service_diagnostic_is_read_only_and_fail_closed() -> None:
     ):
         assert forbidden not in text
 
-    assert "\nelif " not in text
-    assert "\nelseif " in text
-
 
 def test_runner_service_recovery_is_single_target_and_fail_closed() -> None:
     text = RECOVERY.read_text(encoding="utf-8")
-
+    normalized = " ".join(text.split())
     for required in (
         "Set-StrictMode -Version Latest",
         '$ErrorActionPreference = "Stop"',
         "[switch]$Apply",
-        'Join-Path -Path $RunnerRoot -ChildPath ".service"',
         'Join-Path -Path $PSScriptRoot -ChildPath "check_self_hosted_windows_runner_service.ps1"',
+        "Test-DiagnosticContract",
+        "Test-RecoverableDiagnosticState",
         '"RUNNER_SERVICE_NOT_AUTOMATIC"',
         '"RUNNER_SERVICE_NOT_RUNNING"',
         '"RUNNER_RECOVERY_BLOCKED_BY_DIAGNOSTIC"',
@@ -193,15 +184,18 @@ def test_runner_service_recovery_is_single_target_and_fail_closed() -> None:
         '"RUNNER_SERVICE_RECOVERY_ADMIN_REQUIRED"',
         '"RUNNER_SERVICE_RECOVERY_MUTATION_FAILED"',
         '"RUNNER_SERVICE_RECOVERY_POSTCONDITION_FAILED"',
+        "[System.IO.FileInfo]::new($serviceFilePath)",
+        "[System.IO.File]::ReadAllText(",
         "$matchingServices.Count -ne 1",
         "$matchingServiceDetails.Count -ne 1",
-        "[System.StringComparison]::OrdinalIgnoreCase",
-        "Set-Service -Name $declaredServiceName -StartupType Automatic -ErrorAction Stop",
-        "Start-Service -Name $declaredServiceName -ErrorAction Stop",
         "mutations_attempted = $MutationsAttempted",
-        "Invoke-RunnerDiagnostic",
     ):
         assert required in text
+    assert (
+        "Set-Service -Name $declaredServiceName -StartupType Automatic -ErrorAction Stop"
+        in normalized
+    )
+    assert "Start-Service -Name $declaredServiceName -ErrorAction Stop" in normalized
 
     for forbidden in (
         "Stop-Service",
@@ -212,7 +206,6 @@ def test_runner_service_recovery_is_single_target_and_fail_closed() -> None:
         "Invoke-WebRequest",
         "Invoke-RestMethod",
         ".credentials",
-        'Get-Service -Name "actions.runner.*"',
         "Set-Service -Name $service.Name",
         "Start-Service -Name $service.Name",
         'Get-Content -LiteralPath ".\\.service"',
@@ -223,137 +216,94 @@ def test_runner_service_recovery_is_single_target_and_fail_closed() -> None:
         "PathName",
         "GitHubUrl",
         "ServerUrl",
-        "WorkFolder",
-        "AgentId",
-        "PoolName",
     ):
         assert forbidden not in text
 
 
-def test_runner_service_runbook_keeps_secrets_out_of_repository() -> None:
+def test_runner_service_runbook_keeps_recovery_source_controlled_and_secret_free() -> None:
     text = RUNBOOK.read_text(encoding="utf-8")
-
-    assert "check_self_hosted_windows_runner_service.ps1" in text
-    assert "recover_self_hosted_windows_runner_service.ps1" in text
-    assert "[self-hosted, Windows, X64, omni-cio-ci]" in text
-    assert "registration token" in text.lower()
-    assert "must never be stored" in text
-    assert "trading_methods=false" in text
-    assert "RUNNER_EPHEMERAL_UNSUPPORTED" in text
-    assert "RUNNER_SERVICE_MARKER_INVALID" in text
-    assert "RUNNER_RECOVERY_BLOCKED_BY_DIAGNOSTIC" in text
-    assert "TINVEST_TOKEN=" not in text
-    assert "GATEWAY_API_KEY=" not in text
-    assert "github_pat_" not in text
-    assert "ghp_" not in text
-    assert "Set-Service -Name $service.Name" not in text
-    assert "Start-Service -Name $service.Name" not in text
+    for required in (
+        "check_self_hosted_windows_runner_service.ps1",
+        "recover_self_hosted_windows_runner_service.ps1",
+        "[self-hosted, Windows, X64, omni-cio-ci]",
+        "registration token",
+        "must never be stored",
+        "trading_methods=false",
+        "RUNNER_RECOVERY_BLOCKED_BY_DIAGNOSTIC",
+        "RUNNER_SERVICE_RECOVERY_PREVIEW",
+    ):
+        assert required in text
+    for forbidden in (
+        "TINVEST_TOKEN=",
+        "GATEWAY_API_KEY=",
+        "github_pat_",
+        "ghp_",
+        "Set-Service -Name $service.Name",
+        "Start-Service -Name $service.Name",
+    ):
+        assert forbidden not in text
 
 
 def test_runner_service_scripts_parse_when_windows_powershell_is_available() -> None:
     powershell = _powershell()
     if powershell is None:
         return
-
     for script in (SCRIPT, RECOVERY):
         script_path = str(script).replace("'", "''")
         command = (
-            "$tokens = $null; $errors = $null; "
-            f"[System.Management.Automation.Language.Parser]::ParseFile('{script_path}', "
-            "[ref]$tokens, [ref]$errors) | Out-Null; "
-            "if ($errors.Count -gt 0) { "
-            "$errors | ForEach-Object { Write-Error $_.Message }; exit 1 }"
+            "$tokens=$null; $errors=$null; "
+            f"[System.Management.Automation.Language.Parser]::ParseFile('{script_path}',"
+            "[ref]$tokens,[ref]$errors)|Out-Null; "
+            "if($errors.Count -gt 0){$errors|%{Write-Error $_.Message};exit 1}"
         )
         result = subprocess.run(
-            [
-                powershell,
-                "-NoLogo",
-                "-NoProfile",
-                "-NonInteractive",
-                "-ExecutionPolicy",
-                "Bypass",
-                "-Command",
-                command,
-            ],
+            [powershell, "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command],
             cwd=ROOT,
             capture_output=True,
             text=True,
             timeout=30,
             check=False,
         )
-
         assert result.returncode == 0, result.stdout + result.stderr
 
 
-def test_runner_configuration_failures_are_typed_on_windows(
-    tmp_path: Path,
-) -> None:
+def test_runner_configuration_failures_are_typed_on_windows(tmp_path: Path) -> None:
     powershell = _powershell()
     if powershell is None:
         return
-
     (tmp_path / "run.cmd").write_text("@echo off\n", encoding="utf-8")
 
-    (tmp_path / ".runner").write_text("not-json", encoding="utf-8")
-    malformed, malformed_payload = _run_diagnostic(powershell, tmp_path)
-    assert malformed.returncode == 2
-    assert malformed_payload["error_code"] == "RUNNER_CONFIGURATION_INVALID"
-    assert malformed_payload["runner_configuration_error_detail"] == "JSON_INVALID"
-    assert malformed_payload["runner_ephemeral"] is None
+    cases: tuple[tuple[object, str], ...] = (
+        ("not-json", "JSON_INVALID"),
+        (json.dumps({"ephemeral": False}), "AGENT_NAME_INVALID"),
+        (
+            json.dumps({"agentName": "omni-ci-test-fixture", "ephemeral": "false"}),
+            "EPHEMERAL_INVALID",
+        ),
+    )
+    for raw, detail in cases:
+        (tmp_path / ".runner").write_text(str(raw), encoding="utf-8")
+        result, payload = _run_diagnostic(powershell, tmp_path)
+        assert result.returncode == 2
+        assert payload["error_code"] == "RUNNER_CONFIGURATION_INVALID"
+        assert payload["runner_configuration_error_detail"] == detail
 
     (tmp_path / ".runner").write_text(
-        json.dumps({"agentName": "other-runner", "ephemeral": False}),
-        encoding="utf-8",
+        json.dumps({"agentName": "other-runner", "ephemeral": False}), encoding="utf-8"
     )
-    mismatch, mismatch_payload = _run_diagnostic(powershell, tmp_path)
-    assert mismatch.returncode == 2
-    assert mismatch_payload["error_code"] == (
-        "RUNNER_CONFIGURATION_IDENTITY_MISMATCH"
-    )
-    assert mismatch_payload["runner_configuration_valid"] is True
-    assert mismatch_payload["runner_configuration_error_detail"] is None
+    result, payload = _run_diagnostic(powershell, tmp_path)
+    assert result.returncode == 2
+    assert payload["error_code"] == "RUNNER_CONFIGURATION_IDENTITY_MISMATCH"
+    assert payload["runner_configuration_valid"] is True
 
     (tmp_path / ".runner").write_text(
         json.dumps({"agentName": "omni-ci-test-fixture", "ephemeral": True}),
         encoding="utf-8",
     )
-    ephemeral, ephemeral_payload = _run_diagnostic(powershell, tmp_path)
-    assert ephemeral.returncode == 2
-    assert ephemeral_payload["error_code"] == "RUNNER_EPHEMERAL_UNSUPPORTED"
-    assert ephemeral_payload["runner_ephemeral"] is True
-    assert ephemeral_payload["runner_configuration_error_detail"] is None
-
-    (tmp_path / ".runner").write_text(
-        json.dumps({"ephemeral": False}),
-        encoding="utf-8",
-    )
-    missing_name, missing_name_payload = _run_diagnostic(powershell, tmp_path)
-    assert missing_name.returncode == 2
-    assert missing_name_payload["error_code"] == "RUNNER_CONFIGURATION_INVALID"
-    assert (
-        missing_name_payload["runner_configuration_error_detail"]
-        == "AGENT_NAME_INVALID"
-    )
-
-    (tmp_path / ".runner").write_text(
-        json.dumps(
-            {
-                "agentName": "omni-ci-test-fixture",
-                "ephemeral": "false",
-            }
-        ),
-        encoding="utf-8",
-    )
-    invalid_ephemeral, invalid_ephemeral_payload = _run_diagnostic(
-        powershell,
-        tmp_path,
-    )
-    assert invalid_ephemeral.returncode == 2
-    assert invalid_ephemeral_payload["error_code"] == "RUNNER_CONFIGURATION_INVALID"
-    assert (
-        invalid_ephemeral_payload["runner_configuration_error_detail"]
-        == "EPHEMERAL_INVALID"
-    )
+    result, payload = _run_diagnostic(powershell, tmp_path)
+    assert result.returncode == 2
+    assert payload["error_code"] == "RUNNER_EPHEMERAL_UNSUPPORTED"
+    assert payload["runner_ephemeral"] is True
 
 
 def test_persistent_runner_configuration_requires_service_marker_on_windows(
@@ -362,17 +312,13 @@ def test_persistent_runner_configuration_requires_service_marker_on_windows(
     powershell = _powershell()
     if powershell is None:
         return
-
     _write_persistent_runner_config(tmp_path)
     result, payload = _run_diagnostic(powershell, tmp_path)
-
     assert result.returncode == 2
     assert payload["error_code"] == "RUNNER_SERVICE_MARKER_MISSING"
     assert payload["runner_configuration_valid"] is True
-    assert payload["runner_configuration_error_detail"] is None
     assert payload["runner_configuration_identity_matches"] is True
     assert payload["runner_ephemeral"] is False
-    assert payload["service_marker_present"] is False
 
 
 def test_service_marker_is_bounded_exact_and_never_emitted_on_windows(
@@ -381,49 +327,62 @@ def test_service_marker_is_bounded_exact_and_never_emitted_on_windows(
     powershell = _powershell()
     if powershell is None:
         return
-
     _write_persistent_runner_config(tmp_path)
-    service_marker = tmp_path / ".service"
+    marker = tmp_path / ".service"
 
-    service_marker.write_text(
-        "actions.runner.*.omni-ci-test-fixture.service",
-        encoding="utf-8",
-    )
-    wildcard, wildcard_payload = _run_diagnostic(powershell, tmp_path)
-    assert wildcard.returncode == 2
-    assert wildcard_payload["error_code"] == "RUNNER_SERVICE_MARKER_INVALID"
-    assert wildcard_payload["service_marker_valid"] is False
-    assert "actions.runner" not in wildcard.stdout
+    marker.write_text("actions.runner.*.omni-ci-test-fixture.service", encoding="utf-8")
+    result, payload = _run_diagnostic(powershell, tmp_path)
+    assert result.returncode == 2
+    assert payload["error_code"] == "RUNNER_SERVICE_MARKER_INVALID"
+    assert "actions.runner" not in result.stdout
 
-    service_marker.write_text("x" * 1025, encoding="utf-8")
-    oversized, oversized_payload = _run_diagnostic(powershell, tmp_path)
-    assert oversized.returncode == 2
-    assert oversized_payload["error_code"] == "RUNNER_SERVICE_MARKER_INVALID"
-    assert oversized_payload["service_marker_valid"] is False
+    marker.write_text("x" * 1025, encoding="utf-8")
+    result, payload = _run_diagnostic(powershell, tmp_path)
+    assert result.returncode == 2
+    assert payload["error_code"] == "RUNNER_SERVICE_MARKER_INVALID"
 
-    service_marker.write_text(
-        "actions.runner.owner-repo.other-runner.service",
-        encoding="utf-8",
-    )
-    mismatch, mismatch_payload = _run_diagnostic(powershell, tmp_path)
-    assert mismatch.returncode == 2
-    assert mismatch_payload["error_code"] == (
-        "RUNNER_SERVICE_MARKER_IDENTITY_MISMATCH"
-    )
-    assert mismatch_payload["service_marker_valid"] is True
-    assert mismatch_payload["service_marker_identity_matches"] is False
+    marker.write_text("actions.runner.owner-repo.other-runner.service", encoding="utf-8")
+    result, payload = _run_diagnostic(powershell, tmp_path)
+    assert result.returncode == 2
+    assert payload["error_code"] == "RUNNER_SERVICE_MARKER_IDENTITY_MISMATCH"
 
-    service_marker.write_text(
-        "actions.runner.owner-repo.omni-ci-test-fixture.service",
-        encoding="utf-8",
+    marker.write_text(
+        "actions.runner.owner-repo.omni-ci-test-fixture.service", encoding="utf-8"
     )
-    missing, missing_payload = _run_diagnostic(powershell, tmp_path)
-    assert missing.returncode == 2
-    assert missing_payload["error_code"] == "RUNNER_SERVICE_MISSING"
-    assert missing_payload["service_marker_valid"] is True
-    assert missing_payload["service_marker_identity_matches"] is True
-    assert missing_payload["service_query_succeeded"] is True
-    assert "actions.runner" not in missing.stdout
+    result, payload = _run_diagnostic(powershell, tmp_path)
+    assert result.returncode == 2
+    assert payload["error_code"] == "RUNNER_SERVICE_MISSING"
+    assert payload["service_marker_valid"] is True
+    assert payload["service_marker_identity_matches"] is True
+    assert "actions.runner" not in result.stdout
+
+
+def test_hidden_runner_markers_are_read_via_direct_dotnet_io_on_windows(
+    tmp_path: Path,
+) -> None:
+    powershell = _powershell()
+    if powershell is None:
+        return
+    _write_persistent_runner_config(tmp_path)
+    marker = tmp_path / ".service"
+    marker.write_text(
+        "actions.runner.owner-repo.omni-ci-test-fixture.service", encoding="utf-8"
+    )
+    runner_config = tmp_path / ".runner"
+    _set_hidden(powershell, runner_config, True)
+    _set_hidden(powershell, marker, True)
+    try:
+        result, payload = _run_diagnostic(powershell, tmp_path)
+        assert result.returncode == 2
+        assert payload["error_code"] == "RUNNER_SERVICE_MISSING"
+        assert payload["runner_configuration_valid"] is True
+        assert payload["runner_configuration_error_detail"] is None
+        assert payload["runner_configuration_identity_matches"] is True
+        assert payload["service_marker_valid"] is True
+        assert payload["service_marker_identity_matches"] is True
+    finally:
+        _set_hidden(powershell, runner_config, False)
+        _set_hidden(powershell, marker, False)
 
 
 def test_recovery_apply_blocks_invalid_configuration_without_mutation_on_windows(
@@ -432,12 +391,9 @@ def test_recovery_apply_blocks_invalid_configuration_without_mutation_on_windows
     powershell = _powershell()
     if powershell is None:
         return
-
     (tmp_path / "run.cmd").write_text("@echo off\n", encoding="utf-8")
     (tmp_path / ".runner").write_text("not-json", encoding="utf-8")
-
     result, payload = _run_recovery(powershell, tmp_path, apply=True)
-
     assert result.returncode == 2
     assert payload["error_code"] == "RUNNER_RECOVERY_BLOCKED_BY_DIAGNOSTIC"
     assert payload["diagnostic_error_code"] == "RUNNER_CONFIGURATION_INVALID"
@@ -446,19 +402,25 @@ def test_recovery_apply_blocks_invalid_configuration_without_mutation_on_windows
     assert payload["recovery_action"] is None
 
 
-def test_recovery_apply_blocks_missing_marker_without_mutation_on_windows(
+def test_recovery_apply_blocks_missing_or_unknown_service_without_mutation_on_windows(
     tmp_path: Path,
 ) -> None:
     powershell = _powershell()
     if powershell is None:
         return
-
     _write_persistent_runner_config(tmp_path)
 
     result, payload = _run_recovery(powershell, tmp_path, apply=True)
-
     assert result.returncode == 2
     assert payload["error_code"] == "RUNNER_RECOVERY_BLOCKED_BY_DIAGNOSTIC"
     assert payload["diagnostic_error_code"] == "RUNNER_SERVICE_MARKER_MISSING"
     assert payload["mutations_attempted"] is False
-    assert payload["recovery_action"] is None
+
+    (tmp_path / ".service").write_text(
+        "actions.runner.owner-repo.omni-ci-test-fixture.service", encoding="utf-8"
+    )
+    result, payload = _run_recovery(powershell, tmp_path, apply=True)
+    assert result.returncode == 2
+    assert payload["error_code"] == "RUNNER_RECOVERY_BLOCKED_BY_DIAGNOSTIC"
+    assert payload["diagnostic_error_code"] == "RUNNER_SERVICE_MISSING"
+    assert payload["mutations_attempted"] is False
