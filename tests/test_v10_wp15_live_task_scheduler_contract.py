@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
+import subprocess
+import sys
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -70,8 +73,41 @@ def test_live_runtime_probes_postgres_session_path_before_uvicorn() -> None:
     assert "registry.resolve(" in probe
     assert "registry.revoke(" in probe
     assert "DELETE FROM omni_cio_v10.web_sessions WHERE token_sha256 = %s" in probe
+    assert "EXIT_BOOTSTRAP = 76" in probe
+    assert probe.index("_bind_source_root()") < probe.index(
+        "from omni_cio.contracts.v1.domain import OWNER_TENANT_ID, OWNER_USER_ID"
+    )
     assert "print(token" not in probe
     assert "print(digest" not in probe
+
+
+def test_live_session_probe_imports_archived_source_from_arbitrary_cwd(
+    tmp_path: Path,
+) -> None:
+    env = os.environ.copy()
+    env.pop("PYTHONPATH", None)
+    env.update(
+        {
+            "PGHOST": "127.0.0.1",
+            "PGPORT": "1",
+            "PGDATABASE": "omni_cio_v10_probe_import_only",
+            "PGUSER": "omni_cio_runtime",
+            "PGCONNECT_TIMEOUT": "1",
+        }
+    )
+    completed = subprocess.run(
+        [sys.executable, str(SESSION_PROBE)],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=False,
+    )
+
+    assert completed.returncode == 71
+    assert "ModuleNotFoundError" not in completed.stderr
+    assert "No module named 'omni_cio'" not in completed.stderr
 
 
 def test_live_acceptance_starter_uses_temporary_batch_logon_right_only() -> None:
