@@ -31,6 +31,7 @@
     "adapter": "TInvestConnectionReadAdapter",
     "full_access_fallback": false,
     "revoked_connections_exposed_to_active_settings": false,
+    "reconnect_reuses_existing_immutable_broker_account": true,
     "trade_credential_allowed": false,
     "write_authority_added": false,
     "transfer_withdrawal_authority": false
