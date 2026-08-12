@@ -10,21 +10,29 @@ This marker remains authoritative until real OWNER Web parity evidence and the i
 
 Authority: `docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.md`, the accepted Identity/Multi-Tenant amendment, `docs/architecture/V10_WP15_TINVEST_READONLY_CONTRACT.md`, and `docs/architecture/V10_WP15_LIVE_WEB_ACCEPTANCE_CONTRACT.json`.
 
-Previously accepted support baseline as of 2026-08-12:
+Accepted support history as of 2026-08-12:
 
 - PR #284 — deferred live Web support path;
 - PR #285 — Windows-native OWNER-audit cleanup hardening;
 - PR #286 — locale-independent Administrators SID validation;
 - PR #287 — Windows PowerShell 5.1 native npm stderr handling;
 - PR #290 — battery-safe temporary Task Scheduler settings plus sanitized `task_state` / numeric `LastTaskResult` startup diagnostics;
-- exact accepted support implementation before the batch-logon startup correction: `bbacbb6ffda591b0aa53f371d435f7f56537b567`;
-- post-merge Regression Shield #1473 / run `31555409157` — SUCCESS;
-- WP15 Live Web Support Audit #58 / run `31555409103` — SUCCESS;
-- WP16 Audit #157 / run `31555409117` — SUCCESS;
-- WP17 Audit #128 / run `31555409163` — SUCCESS;
-- WP15 OWNER Audit #6 / run `31555409161` — expected `OWNER_ACTION_REQUIRED` / exit 61 because real sanitized OWNER evidence does not exist yet; its independent audit/upload/cleanup steps succeed.
+- PR #292 — acceptance-only temporary `SeBatchLogonRight` starter with exact restore semantics;
+- PR #293 — canonical OWNER tenant/user bootstrap before local session creation;
+- PR #294 — explicit OWNER session persistence/readiness under PostgreSQL transaction boundaries;
+- PR #295 — archived runtime session-probe source binding;
+- PR #296 — serialized authenticated Web request transaction contexts on the acceptance-only Psycopg connection;
+- PR #297 — revoked READ connections retained durably but hidden from active Settings/live-acceptance listing;
+- PR #298 — immutable broker-account record reuse for the same verified READ account reconnect;
+- PR #299 — fail-safe self-hosted Windows runner diagnostic/recovery with exact service executable binding and privacy-safe actual-node verification.
 
-The subsequent real OWNER startup rehearsal exposed Task Scheduler state `Ready` with numeric `LastTaskResult=267011` (`0x00041303`, task has not yet run). The correction in this runbook introduces an acceptance-only starter that can grant only the exact non-admin runtime role the temporary `SeBatchLogonRight` required for password-logon scheduled-task startup. This correction must not be used from an unmerged PR: exact accepted `main` plus post-merge gates remain mandatory.
+Current exact accepted `main` is `6bd4e2c683386269ee573f25f50cbc8780ac9ff5`.
+
+Product/live Web support was last post-merge exercised on immediately preceding `bc5842e019ffa5c612b1a0b6cffe00e9c5d2718a`: Regression Shield #1481 / run `31620202000`, WP15 Live Web Support Audit #106 / run `31620202006`, WP16 Audit #205 / run `31620202052`, and WP17 Audit #176 / run `31620202030` are SUCCESS. WP15 OWNER Audit #14 / run `31620201999` is expected `OWNER_ACTION_REQUIRED` because real sanitized OWNER evidence does not exist yet.
+
+PR #299 changed only runner operational support. Its exact reviewed head passed Self-Hosted Windows CI #874 / run `31627886479` (including protected Regression Shield, dependency audit, SAST, tracked-content secret scan and Windows runner smoke), WP16 #221 / run `31627886484`, and WP17 #192 / run `31627886513`. Hosted Fast PR Checks #782 and Toolchain Compatibility #817 did not start because of the existing GitHub account billing/spending-limit condition; they remain infrastructure failures, not PASS. After squash merge, exact-main Regression Shield #1482 / run `31629149440`, WP16 #222 / run `31629149358`, and WP17 #193 / run `31629149359` are SUCCESS.
+
+The earlier real OWNER startup rehearsal exposed Task Scheduler state `Ready` with numeric `LastTaskResult=267011` (`0x00041303`, task has not yet run). The accepted correction introduced an acceptance-only starter that can grant only the exact non-admin runtime role the temporary `SeBatchLogonRight` required for password-logon scheduled-task startup. Later focused corrections through PR #298 closed local identity/session/request/reconnect defects exposed by deterministic acceptance testing, and PR #299 made the non-admin GitHub runner recovery path fail-safe before the next physical attempt.
 
 ## 1. Purpose
 
@@ -40,10 +48,10 @@ The raw broker token is never an OWNER PowerShell argument, GitHub secret, envir
 
 Do **not** perform the live procedure until all of the following are true:
 
-1. the current WP15 live Web support/hardening PR is squash-merged;
-2. the exact merge SHA is confirmed as `main`;
+1. every current WP15 live Web support/hardening PR required for the attempt is squash-merged;
+2. the exact accepted implementation SHA is confirmed as current `main`;
 3. mandatory post-merge Regression Shield is GREEN on that exact SHA;
-4. the reviewed support workflow is GREEN on the accepted implementation;
+4. the most recent applicable reviewed WP15 live support workflow is GREEN, and any later accepted operational-only change has passed its own exact-head and post-merge owning gates;
 5. OWNER is given that exact implementation SHA for the local procedure.
 
 If `main` changes again before OWNER execution, re-confirm the exact accepted implementation and required post-merge gates instead of reusing a stale SHA.
@@ -92,7 +100,7 @@ git status --porcelain
 
 The SHA must exactly equal the implementation SHA provided for the gate and `git status --porcelain` must be empty.
 
-Do not `git pull` or switch revisions inside the privileged live procedure unless separately instructed and reviewed.
+Do not `git pull` or switch revisions inside the privileged live procedure unless separately instructed and reviewed. If the checkout is clean but behind the accepted `main`, stop before provisioning and use a separately reviewed fast-forward-only synchronization procedure; never merge/rebase arbitrary local work as part of the live gate.
 
 ### 4.1 Retry after a partial failed provisioning attempt
 
