@@ -59,7 +59,7 @@ def test_live_runtime_probes_postgres_session_path_before_uvicorn() -> None:
     assert contract["windows_runtime"]["session_probe_residue"] is False
     assert contract["postgresql"]["long_lived_web_connection_autocommit"] is True
     assert contract["postgresql"]["request_transaction_boundaries_explicit"] is True
-    assert '"probe_wp15_live_session_runtime.py"' in runtime
+    assert "probe_wp15_live_session_runtime.py" in runtime
     assert "WP15_LIVE_SESSION_PROBE_MISSING" in runtime
     assert runtime.index("& $python $sessionProbe") < runtime.index(
         "& $python -m uvicorn"
