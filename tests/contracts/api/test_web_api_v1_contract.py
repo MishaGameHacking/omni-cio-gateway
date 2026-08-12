@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from omni_cio.web.api_v1 import create_web_api
@@ -79,3 +80,36 @@ def test_api_transport_has_no_public_bind_or_broker_write_surface() -> None:
 
     assert "create_local_private_app" in api_source
     assert "app = create_local_private_app" not in api_source
+
+
+def test_wp15_live_bootstrap_seeds_owner_identity_before_runtime() -> None:
+    root = Path(__file__).resolve().parents[3]
+    bootstrap = (
+        root / "infrastructure" / "windows" / "bootstrap_wp15_live_database.py"
+    ).read_text(encoding="utf-8")
+    provisioner = (
+        root / "infrastructure" / "windows" / "provision_wp15_live_web_acceptance.ps1"
+    ).read_text(encoding="utf-8")
+    contract = json.loads(
+        (
+            root
+            / "docs"
+            / "architecture"
+            / "V10_WP15_LIVE_WEB_ACCEPTANCE_CONTRACT.json"
+        ).read_text(encoding="utf-8")
+    )
+
+    assert "CanonicalDomainCatalogV1" in bootstrap
+    assert "PostgresDomainRepository" in bootstrap
+    assert "WP15_LIVE_OWNER_TENANT_INTEGRITY_INVALID" in bootstrap
+    assert "WP15_LIVE_OWNER_USER_INTEGRITY_INVALID" in bootstrap
+    assert bootstrap.index("apply_migrations(connection)") < bootstrap.index(
+        "_ensure_owner_identity(connection)"
+    )
+
+    postgres = contract["postgresql"]
+    assert postgres["owner_identity_seed_before_runtime"] is True
+    assert postgres["owner_identity_seed_authority"] == "TEMPORARY_OWNER_ADMIN_ONLY"
+    assert postgres["runtime_owner_identity_write_authority"] is False
+    assert "omni_cio_v10.tenants" not in provisioner
+    assert "omni_cio_v10.users" not in provisioner
