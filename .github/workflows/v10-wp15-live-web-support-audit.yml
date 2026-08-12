@@ -19,6 +19,7 @@ on:
       - "infrastructure/windows/start_wp15_live_web_acceptance.ps1"
       - "infrastructure/windows/run_wp15_live_web_runtime.ps1"
       - "infrastructure/windows/bootstrap_wp15_live_database.py"
+      - "infrastructure/windows/probe_wp15_live_session_runtime.py"
       - "infrastructure/windows/finalize_wp15_live_web_evidence.ps1"
       - "infrastructure/windows/audit_wp15_live_web_runner.ps1"
       - ".github/workflows/v10-wp15-live-web-support-audit.yml"
@@ -42,6 +43,7 @@ on:
       - "infrastructure/windows/start_wp15_live_web_acceptance.ps1"
       - "infrastructure/windows/run_wp15_live_web_runtime.ps1"
       - "infrastructure/windows/bootstrap_wp15_live_database.py"
+      - "infrastructure/windows/probe_wp15_live_session_runtime.py"
       - "infrastructure/windows/finalize_wp15_live_web_evidence.ps1"
       - "infrastructure/windows/audit_wp15_live_web_runner.ps1"
       - ".github/workflows/v10-wp15-live-web-support-audit.yml"
@@ -109,9 +111,9 @@ jobs:
       - name: Run static quality and type safety
         shell: cmd
         run: |
-          "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m ruff check omni_cio\web\live_acceptance_v1.py omni_cio\web\api_v1.py apps\api\app.py infrastructure\windows\bootstrap_wp15_live_database.py scripts\check_v10_wp15_live_web_acceptance.py tests\contracts\api\test_web_api_v1_contract.py tests\test_v10_wp15_live_web_acceptance.py tests\test_v10_wp15_live_web_api.py tests\test_v10_wp15_live_task_scheduler_contract.py
+          "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m ruff check omni_cio\web\live_acceptance_v1.py omni_cio\web\api_v1.py apps\api\app.py infrastructure\windows\bootstrap_wp15_live_database.py infrastructure\windows\probe_wp15_live_session_runtime.py scripts\check_v10_wp15_live_web_acceptance.py tests\contracts\api\test_web_api_v1_contract.py tests\test_v10_wp15_live_web_acceptance.py tests\test_v10_wp15_live_web_api.py tests\test_v10_wp15_live_task_scheduler_contract.py
           if errorlevel 1 exit /b 20
-          "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m ruff format --check omni_cio\web\live_acceptance_v1.py omni_cio\web\api_v1.py apps\api\app.py infrastructure\windows\bootstrap_wp15_live_database.py scripts\check_v10_wp15_live_web_acceptance.py tests\contracts\api\test_web_api_v1_contract.py tests\test_v10_wp15_live_web_acceptance.py tests\test_v10_wp15_live_web_api.py tests\test_v10_wp15_live_task_scheduler_contract.py
+          "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m ruff format --check omni_cio\web\live_acceptance_v1.py omni_cio\web\api_v1.py apps\api\app.py infrastructure\windows\bootstrap_wp15_live_database.py infrastructure\windows\probe_wp15_live_session_runtime.py scripts\check_v10_wp15_live_web_acceptance.py tests\contracts\api\test_web_api_v1_contract.py tests\test_v10_wp15_live_web_acceptance.py tests\test_v10_wp15_live_web_api.py tests\test_v10_wp15_live_task_scheduler_contract.py
           if errorlevel 1 exit /b 21
           "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m mypy
           if errorlevel 1 exit /b 22
