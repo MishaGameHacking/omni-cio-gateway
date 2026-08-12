@@ -88,12 +88,17 @@ def test_local_private_app_uses_explicit_postgres_transactions() -> None:
 
     assert "WEB_RUNTIME_POSTGRES_AUTOCOMMIT_REQUIRED" in api_source
     assert "connection.autocommit = True" in api_source
-    assert api_source.index('connection = connect_postgres("")') < api_source.index(
-        "_configure_long_lived_web_connection(connection)"
-    )
-    assert api_source.index(
-        "_configure_long_lived_web_connection(connection)"
-    ) < api_source.index("_verify_live_database(connection)")
+
+    raw_open = api_source.index('raw_connection = connect_postgres("")')
+    configure = api_source.index("_configure_long_lived_web_connection(raw_connection)")
+    verify = api_source.index("_verify_live_database(raw_connection)")
+    serialize = api_source.index("_SerializedWebConnection(raw_connection)")
+    sessions = api_source.index("PostgresWebSessionRegistryV1(connection)")
+    brokers = api_source.index("PostgresBrokerConnectionRepositoryV1(connection)")
+
+    assert raw_open < configure < verify < serialize < sessions < brokers
+    assert "threading.RLock()" in api_source
+    assert "WEB_RUNTIME_POSTGRES_TRANSACTION_UNAVAILABLE" in api_source
 
 
 def test_wp15_live_bootstrap_seeds_owner_identity_before_runtime() -> None:
@@ -131,5 +136,6 @@ def test_wp15_live_bootstrap_seeds_owner_identity_before_runtime() -> None:
     assert postgres["owner_identity_seed_authority"] == "TEMPORARY_OWNER_ADMIN_ONLY"
     assert postgres["owner_bootstrap_connection_autocommit"] is True
     assert postgres["runtime_owner_identity_write_authority"] is False
+    assert postgres["shared_connection_request_serialization"] is True
     assert "omni_cio_v10.tenants" not in provisioner
     assert "omni_cio_v10.users" not in provisioner
