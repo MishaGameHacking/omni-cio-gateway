@@ -120,6 +120,7 @@
     "owner_admin_mapping_temporary": true,
     "owner_identity_seed_before_runtime": true,
     "owner_identity_seed_authority": "TEMPORARY_OWNER_ADMIN_ONLY",
+    "owner_bootstrap_connection_autocommit": true,
     "runtime_owner_identity_write_authority": false,
     "runtime_mapping_only_after_bootstrap": true,
     "long_lived_web_connection_autocommit": true,
