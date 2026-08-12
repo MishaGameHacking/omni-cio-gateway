@@ -46,6 +46,7 @@
     "full_or_unknown_broker_authority_allowed": false,
     "multiple_read_accounts_per_credential_allowed": true,
     "replace_requires_same_verified_account_set": true,
+    "revoked_connections_exposed_to_settings": false,
     "trade_credential_allowed": false,
     "transfer_or_withdrawal_allowed": false
   },
