@@ -99,6 +99,14 @@
     "preexisting_batch_logon_right_preserved": true,
     "temporary_batch_logon_right_removed_before_starter_exit": true,
     "runtime_session_probe_before_http": true,
+    "runtime_session_probe_exit_codes": {
+      "connection": 71,
+      "create": 72,
+      "resolve": 73,
+      "revoke": 74,
+      "cleanup": 75,
+      "bootstrap": 76
+    },
     "session_probe_residue": false,
     "s4u_allowed": false,
     "generated_runtime_password_logged_or_exported": false,
