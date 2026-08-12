@@ -185,10 +185,7 @@ def test_settings_listing_excludes_revoked_broker_connections() -> None:
             root
             / "docs"
             / "architecture"
-            / "V10_WP17_APPLICATION_SHELL_CONTRACT.json"
+            / "V10_WP15_LIVE_WEB_ACCEPTANCE_CONTRACT.json"
         ).read_text(encoding="utf-8")
     )
-    assert (
-        contract["broker_connections"]["revoked_connections_exposed_to_settings"]
-        is False
-    )
+    assert contract["broker"]["revoked_connections_exposed_to_active_settings"] is False
