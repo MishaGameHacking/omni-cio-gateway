@@ -171,7 +171,9 @@ def test_wp15_live_bootstrap_seeds_owner_identity_before_runtime() -> None:
 
 def test_settings_listing_excludes_revoked_broker_connections() -> None:
     connection = _CaptureConnection()
-    repository = PostgresBrokerConnectionRepositoryV1(connection)  # type: ignore[arg-type]
+    repository = PostgresBrokerConnectionRepositoryV1(
+        connection  # type: ignore[arg-type]
+    )
 
     assert repository.list_read_connections(tenant_id=OWNER_TENANT_ID) == ()
     assert "c.state <> 'REVOKED'" in connection.query
@@ -186,4 +188,7 @@ def test_settings_listing_excludes_revoked_broker_connections() -> None:
             / "V10_WP17_APPLICATION_SHELL_CONTRACT.json"
         ).read_text(encoding="utf-8")
     )
-    assert contract["broker_connections"]["revoked_connections_exposed_to_settings"] is False
+    assert (
+        contract["broker_connections"]["revoked_connections_exposed_to_settings"]
+        is False
+    )
