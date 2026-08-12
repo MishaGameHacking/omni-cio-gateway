@@ -64,12 +64,17 @@ def main() -> int:
                     or resolved.tenant_id != scope.tenant_id
                 ):
                     result = EXIT_RESOLVE
-                elif not registry.revoke(token, now=now):
-                    result = EXIT_REVOKE
                 else:
                     result = 0
             except Exception:
                 result = EXIT_RESOLVE
+
+            if result == 0:
+                try:
+                    if not registry.revoke(token, now=now):
+                        result = EXIT_REVOKE
+                except Exception:
+                    result = EXIT_REVOKE
 
         if not _cleanup_probe_session(connection, digest):
             result = EXIT_CLEANUP
