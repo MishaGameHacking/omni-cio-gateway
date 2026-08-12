@@ -283,7 +283,9 @@ def test_local_private_shared_db_connection_serializes_parallel_transactions() -
     connection = _SerializedWebConnection(raw)
 
     with ThreadPoolExecutor(max_workers=8) as executor:
-        results = list(executor.map(lambda _: _request_transaction(connection), range(16)))
+        results = list(
+            executor.map(lambda _: _request_transaction(connection), range(16))
+        )
 
     assert results == [(1,)] * 16
     assert raw.max_active_transactions == 1
