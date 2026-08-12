@@ -5,9 +5,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-CONTRACT = (
-    ROOT / "docs" / "architecture" / "V10_WP15_LIVE_WEB_ACCEPTANCE_CONTRACT.json"
-)
+CONTRACT = ROOT / "docs" / "architecture" / "V10_WP15_LIVE_WEB_ACCEPTANCE_CONTRACT.json"
 PROVISIONER = (
     ROOT / "infrastructure" / "windows" / "provision_wp15_live_web_acceptance.ps1"
 )
@@ -63,7 +61,9 @@ def test_live_runtime_probes_postgres_session_path_before_uvicorn() -> None:
     assert contract["postgresql"]["request_transaction_boundaries_explicit"] is True
     assert '"probe_wp15_live_session_runtime.py"' in runtime
     assert "WP15_LIVE_SESSION_PROBE_MISSING" in runtime
-    assert runtime.index("& $python $sessionProbe") < runtime.index("& $python -m uvicorn")
+    assert runtime.index("& $python $sessionProbe") < runtime.index(
+        "& $python -m uvicorn"
+    )
     assert "PostgresWebSessionRegistryV1" in probe
     assert "connection.autocommit = True" in probe
     assert "registry.create(" in probe
