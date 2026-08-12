@@ -346,12 +346,13 @@ def test_reconnect_rejects_immutable_broker_account_version_drift(
     repository = PostgresBrokerConnectionRepositoryV1(
         connection  # type: ignore[arg-type]
     )
+    connection_ref = "broker-ref:v1:" + "e" * 64
 
     with pytest.raises(ValueError, match="BROKER_ACCOUNT_IMMUTABLE_CONFLICT"):
         repository.create_read_connection(
             tenant_id=OWNER_TENANT_ID,
             connection_id="broker-connection:v1:" + "d" * 64,
-            secret_ref="broker-ref:v1:" + "e" * 64,
+            secret_ref=connection_ref,
             bindings=(_reconnect_binding(existing_account),),
             now=datetime(2026, 8, 12, 8, 0, tzinfo=timezone.utc),
         )
