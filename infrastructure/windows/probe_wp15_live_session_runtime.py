@@ -2,11 +2,9 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import hashlib
+from pathlib import Path
+import sys
 from typing import Any
-
-from omni_cio.contracts.v1.domain import OWNER_TENANT_ID, OWNER_USER_ID
-from omni_cio.persistence.migration import connect_postgres
-from omni_cio.web.persistence_v1 import PostgresWebSessionRegistryV1
 
 
 EXIT_CONNECTION = 71
@@ -14,6 +12,14 @@ EXIT_CREATE = 72
 EXIT_RESOLVE = 73
 EXIT_REVOKE = 74
 EXIT_CLEANUP = 75
+EXIT_BOOTSTRAP = 76
+
+
+def _bind_source_root() -> None:
+    root = Path(__file__).resolve().parents[2]
+    root_text = str(root)
+    if root_text not in sys.path:
+        sys.path.insert(0, root_text)
 
 
 def _cleanup_probe_session(connection: Any, digest: str) -> bool:
@@ -31,6 +37,14 @@ def _cleanup_probe_session(connection: Any, digest: str) -> bool:
 
 
 def main() -> int:
+    try:
+        _bind_source_root()
+        from omni_cio.contracts.v1.domain import OWNER_TENANT_ID, OWNER_USER_ID
+        from omni_cio.persistence.migration import connect_postgres
+        from omni_cio.web.persistence_v1 import PostgresWebSessionRegistryV1
+    except Exception:
+        return EXIT_BOOTSTRAP
+
     connection = None
     token = ""
     digest = ""
