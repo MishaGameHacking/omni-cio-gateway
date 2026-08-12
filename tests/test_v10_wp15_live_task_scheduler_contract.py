@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+CONTRACT = (
+    ROOT / "docs" / "architecture" / "V10_WP15_LIVE_WEB_ACCEPTANCE_CONTRACT.json"
+)
 PROVISIONER = (
     ROOT / "infrastructure" / "windows" / "provision_wp15_live_web_acceptance.ps1"
 )
@@ -51,7 +55,12 @@ def test_live_acceptance_timeout_reports_sanitized_task_scheduler_state() -> Non
 def test_live_runtime_probes_postgres_session_path_before_uvicorn() -> None:
     runtime = RUNTIME.read_text(encoding="utf-8")
     probe = SESSION_PROBE.read_text(encoding="utf-8")
+    contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
 
+    assert contract["windows_runtime"]["runtime_session_probe_before_http"] is True
+    assert contract["windows_runtime"]["session_probe_residue"] is False
+    assert contract["postgresql"]["long_lived_web_connection_autocommit"] is True
+    assert contract["postgresql"]["request_transaction_boundaries_explicit"] is True
     assert '"probe_wp15_live_session_runtime.py"' in runtime
     assert "WP15_LIVE_SESSION_PROBE_MISSING" in runtime
     assert runtime.index("& $python $sessionProbe") < runtime.index("& $python -m uvicorn")
