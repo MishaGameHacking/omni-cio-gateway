@@ -64,6 +64,9 @@ def test_configured_runner_service_is_healthy_on_authoritative_runner() -> None:
         "service_start_mode",
     }
     assert set(payload) == allowed_keys
+    assert "actions.runner" not in result.stdout.lower()
+    assert "actions-runner" not in result.stdout.lower()
+    assert "github.com" not in result.stdout.lower()
     assert result.returncode == 0, payload
     assert payload["healthy"] is True
     assert payload["error_code"] is None
