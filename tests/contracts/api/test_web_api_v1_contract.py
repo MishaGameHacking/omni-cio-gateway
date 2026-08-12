@@ -298,4 +298,6 @@ def test_reconnect_reuses_existing_immutable_broker_account_record() -> None:
             / "V10_WP15_LIVE_WEB_ACCEPTANCE_CONTRACT.json"
         ).read_text(encoding="utf-8")
     )
-    assert contract["broker"]["reconnect_reuses_existing_immutable_broker_account"] is True
+    assert (
+        contract["broker"]["reconnect_reuses_existing_immutable_broker_account"] is True
+    )
