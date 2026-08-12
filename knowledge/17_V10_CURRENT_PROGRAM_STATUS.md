@@ -1,18 +1,20 @@
 # 17 — V10 CURRENT PROGRAM STATUS
 
-Updated: 2026-08-11
+Updated: 2026-08-12
 
 ## Executive state
 
-Omni-CIO V10: **DEVELOPMENT ACTIVE / BLOCK C COMPLETE / WP15 CODE+SECURITY ACCEPTED / WP17 COMPLETE / BLOCK D LIVE ACCEPTANCE REQUIRED NEXT / WP18 LOCKED**.
+Omni-CIO V10: **DEVELOPMENT ACTIVE / BLOCK C COMPLETE / WP15 CODE+SECURITY+LIVE SUPPORT ACCEPTED / WP17 COMPLETE / OWNER LIVE ACCEPTANCE REQUIRED NEXT / WP18 LOCKED**.
 
 Accepted implementation progress remains **26%**.
 
-Block C's full 12% weight is accepted. Block D is deliberately **not credited** yet: WP11–WP14 are complete and WP15 implementation/code/security is accepted, but the OWNER-approved Identity / Multi-Tenant Account / Authentication Amendment requires the deferred real T-Invest READ acceptance to be completed through the reviewed authenticated Web broker-provisioning flow delivered by WP17.
+Block C's full 12% weight is accepted. Block D is deliberately **not credited** yet: WP11–WP14 are complete, WP15 implementation/code/security is accepted, and the dedicated deferred-live Web support path has now also been repository-accepted. The OWNER-approved Identity / Multi-Tenant Account / Authentication Amendment still requires the real T-Invest READ acceptance to be completed through the reviewed authenticated Web broker-provisioning flow delivered by WP17.
 
 WP16 and WP17 are repository-accepted through exact-head PR review, required Lenovo CI, squash merge and exact-main post-merge Regression Shield. Block E remains in progress and is not credited piecemeal before its own Block Exit Gate.
 
-The next authorized dependency gate is **the deferred WP15 live broker READ acceptance through the accepted WP17 `Settings -> Broker Connections` flow**. WP18 implementation is not authorized until that dependency is handled according to the amendment and Master Plan; WP18 real-data acceptance remains explicitly locked until the live evidence passes.
+The dedicated deferred-WP15 live support implementation from PR #284 and the narrow hardening fixes in PRs #285–#287 are accepted on exact `main` `bc8c4c528473d17cb49ad3a59bfae8474a254367`. Post-merge Regression Shield #1470, WP15 Live Web Support Audit #50, WP16 Web Design System Audit #147 and WP17 Application Shell Audit #118 are GREEN on that exact SHA. The independent WP15 OWNER audit intentionally remains `OWNER_ACTION_REQUIRED` with exit code 61 until real OWNER live evidence exists; this is not a code PASS and not a code failure.
+
+The next authorized dependency gate is **the real deferred WP15 live broker READ acceptance through the accepted local/private WP17 `Settings -> Broker Connections` flow**. WP18 implementation remains unauthorized until that evidence and the independent non-admin runner audit pass according to the amendment and Master Plan; WP18 real-data acceptance remains explicitly locked.
 
 The live gate must prove, for the authenticated tenant/BrokerConnection:
 
@@ -25,7 +27,7 @@ The live gate must prove, for the authenticated tenant/BrokerConnection:
 
 No real T-Invest token, full account ID or private portfolio payload may be placed in GitHub, CI, chat, logs or artifacts. The normal credential entry point is the authenticated Web UI, not PowerShell.
 
-Owner action required now: **none while this status-only transition is being reviewed and regression-verified**. After the dedicated live-acceptance path is prepared and rehearsed without secrets, the OWNER will be asked only for the physical browser action that cannot be delegated: enter the existing READ token into the accepted local/private Web Settings flow and verify the requested masked/parity evidence.
+Owner action required now: **YES — only the non-delegable local/private live-acceptance procedure remains.** Engineering has accepted the support path and its post-merge code/security gates. The OWNER must start the temporary acceptance runtime from the exact accepted `main`, enter the existing READ token only inside the loopback Web `Settings -> Broker Connections` flow, verify the masked/parity/freshness facts locally, finalize sanitized evidence, and then allow the independent non-admin OWNER audit to be rerun on the same implementation. If the local procedure exposes another implementation defect, engineering must fix that defect through a focused PR before any retry.
 
 Owner start command: **`START V10`** received 2026-08-05.
 
@@ -49,11 +51,11 @@ Starting or advancing V10 never expands broker/Real-money authority by itself.
 - Block D / WP12 — **COMPLETE**;
 - Block D / WP13 — **COMPLETE**;
 - Block D / WP14 — **COMPLETE**;
-- Block D / WP15 — **IMPLEMENTATION / CODE / SECURITY ACCEPTED; LIVE BROKER EVIDENCE REQUIRED THROUGH ACCEPTED WP17 WEB FLOW**;
+- Block D / WP15 — **IMPLEMENTATION / CODE / SECURITY / LIVE SUPPORT ACCEPTED; REAL OWNER BROKER EVIDENCE STILL REQUIRED**;
 - Block E / WP16 — **COMPLETE**;
 - Block E / WP17 — **COMPLETE**;
 - Block E / WP18+ — **LOCKED behind owning dependencies and Master Plan sequence**;
-- WP18 real-data acceptance — **LOCKED behind deferred WP15 live evidence**;
+- WP18 real-data acceptance — **LOCKED behind deferred WP15 real live evidence**;
 - public multi-user activation — **OFF / LOCKED**;
 - public Internet ingress — **OFF / LOCKED until its owning security gate**;
 - broker write / Real execution — **UNCHANGED / NOT AUTHORIZED by this status transition**.
@@ -79,6 +81,8 @@ The current WP15/WP17/WP18 sequencing is additionally governed by the accepted O
 - `docs/operations/V10_IDENTITY_AND_BROKER_CONNECTION_SECURITY_NOTES.md`;
 - `docs/architecture/V10_WP15_TINVEST_READONLY_CONTRACT.md`;
 - `docs/architecture/V10_WP15_LIVE_ACCEPTANCE_STATE.json`;
+- `docs/architecture/V10_WP15_LIVE_WEB_ACCEPTANCE_CONTRACT.json`;
+- `docs/operations/V10_WP15_OWNER_LIVE_READ_RUNBOOK.md`;
 - `docs/architecture/V10_WP16_WEB_DESIGN_SYSTEM_CONTRACT.md`;
 - `docs/architecture/ADR-0011-web-read-credential-provisioning.md`;
 - `docs/architecture/V10_WP17_APPLICATION_SHELL_CONTRACT.json`;
@@ -103,7 +107,7 @@ GitHub remains engineering source of truth. The protected production/recovery ba
 | A. Architecture and V9 protection | 5% | COMPLETE — WP0 |
 | B. GitHub, dependencies and CI/CD | 9% | COMPLETE — WP1 / WP2 / WP3 / WP4 |
 | C. Lenovo Omni-CIO Node / infrastructure | 12% | COMPLETE — WP5 / WP6 / WP7 / WP8 / WP9 / WP9A / WP10 |
-| D. V10 Core and data | 14% | IMPLEMENTATION ACCEPTED THROUGH WP15 CODE+SECURITY; LIVE BROKER EVIDENCE REQUIRED / BLOCK CREDIT WITHHELD |
+| D. V10 Core and data | 14% | IMPLEMENTATION + LIVE SUPPORT ACCEPTED THROUGH WP15; REAL OWNER LIVE EVIDENCE REQUIRED / BLOCK CREDIT WITHHELD |
 | E. Omni-CIO Web Platform | 14% | IN PROGRESS — WP16 COMPLETE / WP17 COMPLETE / WP18 LOCKED |
 | F. Telegram | 8% | NOT STARTED — product/interaction contract pre-approved only |
 | G. AI Copilot / Research / GPT Migration | 18% | NOT STARTED |
@@ -112,7 +116,7 @@ GitHub remains engineering source of truth. The protected production/recovery ba
 | J. Integration / hardening / recovery / release | 5% | NOT STARTED — commercial/license/update/legal-gate planning pre-approved only |
 | **TOTAL** | **100% planned** | **26% ACCEPTED** |
 
-The 26% accepted total is intentional. WP16/WP17 acceptance advances Block E implementation but does not credit Block E piecemeal. Block D receives its planned weight only after the deferred WP15 live broker evidence and the amended Block D acceptance requirements are actually satisfied.
+The 26% accepted total is intentional. WP16/WP17 acceptance advances Block E implementation but does not credit Block E piecemeal. Block D receives its planned weight only after the deferred WP15 real live broker evidence and the amended Block D acceptance requirements are actually satisfied.
 
 ## Accepted implementation evidence index
 
@@ -136,7 +140,11 @@ The 26% accepted total is intentional. WP16/WP17 acceptance advances Block E imp
 - Identity / Multi-Tenant Account / Authentication planning PR #278 -> `cbf6a7adba78fa56d23e90ce2cfe2952d21a5e5b`; post-merge Regression Shield #1460 — **SUCCESS**;
 - WP15 PR #277 -> `f8862d1af88400189d3c0780d2029a87cb5427ca`; post-merge Regression Shield #1461 / run `31419650823` — **SUCCESS**;
 - WP16 PR #280 -> `03f3ff2f389b1b683e60e1ccc706cd7f62a9ba35`; post-merge Regression Shield #1463 / run `31468739530` — **SUCCESS**;
-- WP17 PR #282 -> `5b6b12f144c9bfa71307dcb28548a97527456b5b`; post-merge WP17 Audit #59 / run `31499348099` — **SUCCESS**; post-merge Regression Shield #1465 / run `31499348098` — **SUCCESS**.
+- WP17 PR #282 -> `5b6b12f144c9bfa71307dcb28548a97527456b5b`; post-merge WP17 Audit #59 / run `31499348099` — **SUCCESS**; post-merge Regression Shield #1465 / run `31499348098` — **SUCCESS**;
+- deferred WP15 live Web support PR #284 -> `791c138429fded8e223f7721e992b5965dd335fd`;
+- WP15 OWNER-audit cleanup hardening PR #285 -> `898a85c3550bde871dfdb386ce1240b151ea1573`;
+- WP15 localized-Windows Administrators SID hardening PR #286 -> `019e4f0eb4419aa7b935c17e84e401f13ee7bf5c`;
+- WP15 PowerShell 5.1 native npm stderr hardening PR #287 -> `bc8c4c528473d17cb49ad3a59bfae8474a254367`; post-merge Regression Shield #1470 / run `31546341698` — **SUCCESS**; WP15 Live Web Support Audit #50 / run `31546341687` — **SUCCESS**; WP16 Audit #147 / run `31546341697` — **SUCCESS**; WP17 Audit #118 / run `31546341658` — **SUCCESS**; WP15 OWNER Audit #4 / run `31546341667` — **OWNER_ACTION_REQUIRED / exit 61**, with independent audit/upload/cleanup succeeding and only the evidence-enforcement step failing as designed.
 
 ## WP15 accepted implementation and deferred live evidence
 
@@ -146,7 +154,22 @@ Accepted WP15 code provides the narrow connection-scoped T-Invest READ layer wit
 
 The accepted Identity / Multi-Tenant Account / Authentication Amendment intentionally supersedes the old normal PowerShell OWNER token workflow. The source-controlled marker remains `LIVE_EVIDENCE_STATUS=DEFERRED_TO_WEB_PROVISIONING` until a dedicated reviewed live-acceptance transition records real evidence safely.
 
-The deferred live gate must be completed through the accepted WP17 authenticated Web flow. For the authenticated tenant/BrokerConnection it must prove READ_ONLY authority, intended broker-account selection, portfolio-summary parity, one sample-position quantity/value parity, acceptable freshness and sanitized evidence bound to the reviewed implementation. Until that succeeds, Block D stays uncredited and WP18 cannot claim real broker data accepted.
+The dedicated live support path is now repository-accepted. It provides the temporary loopback-only acceptance runtime, authenticated Web READ-token provisioning, short-lived private parity challenge, sanitized OWNER finalization, guarded cleanup and independent non-admin runner audit. The raw token still enters only through the accepted Web flow and no synthetic evidence may substitute for the real OWNER comparison.
+
+The deferred live gate is still incomplete because the real OWNER evidence does not yet exist. Until that evidence and the independent rerun audit succeed, Block D stays uncredited and WP18 cannot claim real broker data accepted.
+
+## WP15 deferred live support acceptance evidence
+
+The dedicated support implementation was delivered in PR #284 and then hardened only for defects observed during acceptance rehearsal/OWNER execution:
+
+- PR #284 established the acceptance-only loopback Web runtime, temporary Windows runtime/task, PostgreSQL SSPI boundary, short-lived private parity challenge, sanitized pending/final evidence, guarded cleanup and independent runner audit;
+- PR #285 corrected the OWNER-audit cleanup shell to a Windows-native path without changing evidence semantics;
+- PR #286 replaced localized `Administrators` name lookup with the well-known built-in Administrators SID `S-1-5-32-544` while preserving the non-admin runtime check;
+- PR #287 made the three reviewed npm build calls PowerShell-5.1-safe against non-fatal native stderr while keeping `$LASTEXITCODE` authoritative and restoring fail-closed PowerShell error handling immediately afterward.
+
+Exact accepted support baseline is `bc8c4c528473d17cb49ad3a59bfae8474a254367`. On that exact `main`, Regression Shield #1470, WP15 Live Web Support Audit #50, WP16 Audit #147 and WP17 Audit #118 are **SUCCESS**. The OWNER audit reaches the independent evidence-enforcement boundary and returns exit 61 because no real sanitized OWNER live evidence exists yet; its audit, artifact upload and cleanup steps themselves succeed.
+
+This accepted support baseline does not change `app:app`, `trading_methods=false`, `REAL_TRADING_ENABLED=false`, public ingress, public multi-user activation, broker write/TRADE authority or protected V9 rollback.
 
 ## WP16 accepted implementation evidence
 
@@ -201,17 +224,24 @@ Accepted WP17 provides:
 
 WP17 did not add a T-Invest TRADE credential, order/withdrawal API, broker write authority, WP18 real portfolio UI or Real execution activation. Protected `app:app`, `trading_methods=false`, `REAL_TRADING_ENABLED=false` and V9 rollback remain unchanged.
 
-## Next required gate — deferred WP15 live broker READ acceptance
+## Next required gate — deferred WP15 real live broker READ acceptance
 
 The accepted amendment states that WP18 Portfolio Dashboard may consume real broker data only after Web READ-token provisioning completes the deferred WP15 live evidence for the corresponding tenant/broker account.
 
-Therefore the next permitted engineering activity after this status-only transition is accepted is to prepare and verify the **smallest dedicated live-acceptance support path** needed to collect sanitized, implementation-bound evidence from the already accepted WP17 Web flow. This is dependency-gate completion, not WP18 feature work.
+The smallest dedicated live-acceptance support path has now been implemented, hardened and accepted. No further WP18 feature work is authorized before the real evidence gate.
 
-Engineering must autonomously complete everything possible before asking the OWNER: source-controlled evidence contract/validator if needed, exact implementation binding, local launch/rehearsal path, synthetic negative tests, secret-redaction checks and CI. No synthetic evidence may be substituted for the required real OWNER broker observation.
+The remaining sequence is deliberately physical and evidence-bound:
 
-Only at the final non-delegable point may the OWNER be asked to enter the real READ token in the authenticated local/private Web UI and verify the required masked/parity/freshness facts. The token itself must never be sent in chat, PowerShell command history, GitHub, CI logs or artifacts.
+1. OWNER starts the temporary acceptance runtime from the exact accepted implementation using the reviewed runbook; if a previous attempt partially provisioned the owned runtime, run the marker-guarded cleanup first;
+2. OWNER enters the real T-Invest READ-only token only through the loopback authenticated Web `Settings -> Broker Connections` flow;
+3. OWNER locally verifies intended masked account, portfolio-summary parity, one deterministic sample-position quantity/value parity and freshness, then confirms only true booleans;
+4. OWNER runs the reviewed finalizer, which writes only sanitized evidence and automatically removes the temporary acceptance runtime;
+5. engineering reruns the independent non-admin `V10 WP15 Live Web OWNER Audit` on the same exact implementation SHA;
+6. only after that audit is GREEN may a separate acceptance/status transition credit Block D and evaluate WP18 unlock.
 
-Until the live evidence passes and its own acceptance/status transition is merged and post-merge regression-verified:
+No synthetic evidence may replace step 3. The real token itself must never be sent in chat, PowerShell command history, GitHub, CI logs or artifacts.
+
+Until the real live evidence passes and its own acceptance/status transition is merged and post-merge regression-verified:
 
 - Block D credit remains withheld;
 - WP18 real-data acceptance remains locked;
@@ -237,4 +267,4 @@ The following remain mandatory while V10 develops:
 
 ## Current next action
 
-Complete this WP17 status-only acceptance through PR, exact-head required CI, squash merge and post-merge Regression Shield. Only after that exact status merge is GREEN may the dedicated deferred-WP15 live-acceptance support package be opened. WP18 remains locked.
+Complete this status/operations synchronization through a focused PR, exact-head required CI, squash merge and post-merge Regression Shield. After that transition is GREEN, the next action is the non-delegable OWNER local/private deferred-WP15 live acceptance on the exact accepted `main`. WP18 remains locked until real sanitized evidence and the independent non-admin OWNER audit are both GREEN.
