@@ -15,6 +15,9 @@ from fastapi.staticfiles import StaticFiles
 from t_tech.invest import Client
 
 from omni_cio.persistence.migration import (
+    ConnectionLike,
+    CursorLike,
+    TransactionContext,
     apply_migrations,
     connect_postgres,
     current_migration_state,
@@ -47,11 +50,7 @@ class _SerializedCursor:
     def __init__(self, cursor: Any, lock: Any) -> None:
         self._cursor = cursor
         self._lock = lock
-
-    @property
-    def rowcount(self) -> int:
-        with self._lock:
-            return int(self._cursor.rowcount)
+        self.rowcount = int(cursor.rowcount)
 
     def fetchone(self) -> Sequence[Any] | None:
         with self._lock:
@@ -102,12 +101,12 @@ class _SerializedWebConnection:
         params: Sequence[Any] | None = None,
         *,
         prepare: bool | None = None,
-    ) -> _SerializedCursor:
+    ) -> CursorLike:
         with self._lock:
             cursor = self._connection.execute(query, params, prepare=prepare)
             return _SerializedCursor(cursor, self._lock)
 
-    def transaction(self) -> _SerializedTransaction:
+    def transaction(self) -> TransactionContext:
         return _SerializedTransaction(self._connection, self._lock)
 
 
@@ -184,7 +183,7 @@ def create_local_private_app() -> FastAPI:
         _verify_live_database(raw_connection)
     else:
         apply_migrations(raw_connection)
-    connection = _SerializedWebConnection(raw_connection)
+    connection: ConnectionLike = _SerializedWebConnection(raw_connection)
     sessions = PostgresWebSessionRegistryV1(connection)
     broker_repository = PostgresBrokerConnectionRepositoryV1(connection)
     vault = ReadBrokerConnectionVaultV1()
