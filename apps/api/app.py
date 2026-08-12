@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from contextlib import contextmanager
 import os
 from pathlib import Path
@@ -52,11 +53,11 @@ class _SerializedCursor:
         with self._lock:
             return int(self._cursor.rowcount)
 
-    def fetchone(self) -> Any:
+    def fetchone(self) -> Sequence[Any] | None:
         with self._lock:
             return self._cursor.fetchone()
 
-    def fetchall(self) -> list[Any]:
+    def fetchall(self) -> list[Sequence[Any]]:
         with self._lock:
             return list(self._cursor.fetchall())
 
@@ -98,7 +99,7 @@ class _SerializedWebConnection:
     def execute(
         self,
         query: Any,
-        params: Any = None,
+        params: Sequence[Any] | None = None,
         *,
         prepare: bool | None = None,
     ) -> _SerializedCursor:
