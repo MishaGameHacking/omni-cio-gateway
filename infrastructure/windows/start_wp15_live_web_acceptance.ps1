@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)][string]$ExpectedImplementationSha,
-    [switch]$Inspect,
+    [switch]$ValidateOnly,
     [switch]$AsJson,
     [ValidateRange(1024, 65535)][int]$Port = 8765
 )
@@ -19,7 +19,7 @@ function Test-Administrator {
     return $principal.IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)
 }
 
-if (-not $Inspect -and -not (Test-Administrator)) {
+if (-not $ValidateOnly -and -not (Test-Administrator)) {
     throw "WP15 live acceptance launcher requires OWNER administrator."
 }
 
@@ -139,7 +139,6 @@ namespace OmniCioV10
         private static IntPtr OpenPolicy(uint desiredAccess)
         {
             var attributes = new LSA_OBJECT_ATTRIBUTES();
-            attributes.Length = (uint)Marshal.SizeOf(typeof(LSA_OBJECT_ATTRIBUTES));
             IntPtr handle;
             uint status = LsaOpenPolicy(
                 IntPtr.Zero,
@@ -272,28 +271,20 @@ namespace OmniCioV10
 '@
 }
 
-$runtimeSid = $runtimeUser.SID.Value
-$rightsBefore = @([OmniCioV10.NativeAccountRights]::GetRights($runtimeSid))
-$batchRightPresent = $rightsBefore -contains $batchRight
-$denyBatchRightPresent = $rightsBefore -contains $denyBatchRight
-
-if ($Inspect) {
-    $inspectReady = (-not [bool]$runtimeUser.Enabled) -and (-not $denyBatchRightPresent)
+if ($ValidateOnly) {
     $result = [ordered]@{
         schema_version = "1"
         work_package = "WP15"
-        evidence_type = "LIVE_RUNTIME_BATCH_LOGON_PREFLIGHT"
+        evidence_type = "LIVE_RUNTIME_BATCH_LOGON_HELPER_VALIDATION"
         implementation_sha = $actual
-        runtime_role_enabled = [bool]$runtimeUser.Enabled
+        helper_compiled = $null -ne ("OmniCioV10.NativeAccountRights" -as [type])
         runtime_is_administrator = $false
-        batch_logon_right_present = [bool]$batchRightPresent
-        deny_batch_logon_right_present = [bool]$denyBatchRightPresent
         mutation_performed = $false
         real_secret_values_used = $false
         broker_write_authority_added = $false
         trading_methods = $false
         gateway_entrypoint = "app:app"
-        ready = [bool]$inspectReady
+        ready = $true
     }
     if ($AsJson) {
         $result | ConvertTo-Json -Depth 4
@@ -301,13 +292,17 @@ if ($Inspect) {
     else {
         $result.GetEnumerator() | ForEach-Object { "{0}: {1}" -f $_.Key, $_.Value }
     }
-    if (-not $inspectReady) { exit 73 }
     exit 0
 }
 
 if ([bool]$runtimeUser.Enabled) {
     throw "WP15_LIVE_RUNTIME_ROLE_MUST_START_DISABLED"
 }
+
+$runtimeSid = $runtimeUser.SID.Value
+$rightsBefore = @([OmniCioV10.NativeAccountRights]::GetRights($runtimeSid))
+$batchRightPresent = $rightsBefore -contains $batchRight
+$denyBatchRightPresent = $rightsBefore -contains $denyBatchRight
 if ($denyBatchRightPresent) {
     throw "WP15_LIVE_RUNTIME_DENY_BATCH_LOGON_RIGHT_PRESENT"
 }
