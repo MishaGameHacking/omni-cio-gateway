@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
+from omni_cio.contracts.v1.domain import OWNER_TENANT_ID
 from omni_cio.web.api_v1 import create_web_api
+from omni_cio.web.persistence_v1 import PostgresBrokerConnectionRepositoryV1
 from omni_cio.web.session_v1 import SessionRegistryV1
 
 
@@ -26,6 +29,31 @@ class _Services:
     now = staticmethod(__import__("datetime").datetime.now)
     private_test_identity_enabled = False
     secure_cookie = False
+
+
+class _RowsCursor:
+    rowcount = 0
+
+    def fetchall(self) -> list[tuple[Any, ...]]:
+        return []
+
+
+class _CaptureConnection:
+    def __init__(self) -> None:
+        self.query = ""
+        self.params: tuple[Any, ...] | None = None
+
+    def execute(
+        self,
+        query: Any,
+        params: tuple[Any, ...] | None = None,
+        *,
+        prepare: bool | None = None,
+    ) -> _RowsCursor:
+        del prepare
+        self.query = str(query)
+        self.params = params
+        return _RowsCursor()
 
 
 def test_web_api_schema_surface_is_exact_and_private_by_default() -> None:
@@ -139,3 +167,25 @@ def test_wp15_live_bootstrap_seeds_owner_identity_before_runtime() -> None:
     assert postgres["shared_connection_request_serialization"] is True
     assert "omni_cio_v10.tenants" not in provisioner
     assert "omni_cio_v10.users" not in provisioner
+
+
+def test_settings_listing_excludes_revoked_broker_connections() -> None:
+    connection = _CaptureConnection()
+    repository = PostgresBrokerConnectionRepositoryV1(
+        connection  # type: ignore[arg-type]
+    )
+
+    assert repository.list_read_connections(tenant_id=OWNER_TENANT_ID) == ()
+    assert "c.state <> 'REVOKED'" in connection.query
+    assert connection.params == (OWNER_TENANT_ID,)
+
+    root = Path(__file__).resolve().parents[3]
+    contract = json.loads(
+        (
+            root
+            / "docs"
+            / "architecture"
+            / "V10_WP15_LIVE_WEB_ACCEPTANCE_CONTRACT.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert contract["broker"]["revoked_connections_exposed_to_active_settings"] is False

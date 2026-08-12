@@ -30,6 +30,7 @@
     "selected_account_binding": "PREVIOUSLY_VERIFIED_BROKER_CONNECTION_ACCOUNT_FINGERPRINT",
     "adapter": "TInvestConnectionReadAdapter",
     "full_access_fallback": false,
+    "revoked_connections_exposed_to_active_settings": false,
     "trade_credential_allowed": false,
     "write_authority_added": false,
     "transfer_withdrawal_authority": false

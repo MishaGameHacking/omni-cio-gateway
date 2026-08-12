@@ -230,7 +230,8 @@ class PostgresBrokerConnectionRepositoryV1:
             "ON ca.connection_id = c.connection_id AND ca.tenant_id = c.tenant_id "
             "LEFT JOIN omni_cio_v10.broker_accounts a "
             "ON a.broker_account_id = ca.broker_account_id AND a.tenant_id = ca.tenant_id "
-            "WHERE c.tenant_id = %s ORDER BY c.created_at, c.connection_id, a.broker_account_id",
+            "WHERE c.tenant_id = %s AND c.state <> 'REVOKED' "
+            "ORDER BY c.created_at, c.connection_id, a.broker_account_id",
             (tenant_id,),
         ).fetchall()
         grouped: dict[str, tuple[list[Any], list[BrokerAccountBindingV1]]] = {}
