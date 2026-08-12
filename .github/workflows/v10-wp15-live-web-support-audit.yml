@@ -16,6 +16,7 @@ on:
       - "docs/architecture/V10_WP15_LIVE_WEB_ACCEPTANCE_CONTRACT.json"
       - "docs/operations/V10_WP15_OWNER_LIVE_READ_RUNBOOK.md"
       - "infrastructure/windows/provision_wp15_live_web_acceptance.ps1"
+      - "infrastructure/windows/start_wp15_live_web_acceptance.ps1"
       - "infrastructure/windows/run_wp15_live_web_runtime.ps1"
       - "infrastructure/windows/bootstrap_wp15_live_database.py"
       - "infrastructure/windows/finalize_wp15_live_web_evidence.ps1"
@@ -38,6 +39,7 @@ on:
       - "docs/architecture/V10_WP15_LIVE_WEB_ACCEPTANCE_CONTRACT.json"
       - "docs/operations/V10_WP15_OWNER_LIVE_READ_RUNBOOK.md"
       - "infrastructure/windows/provision_wp15_live_web_acceptance.ps1"
+      - "infrastructure/windows/start_wp15_live_web_acceptance.ps1"
       - "infrastructure/windows/run_wp15_live_web_runtime.ps1"
       - "infrastructure/windows/bootstrap_wp15_live_database.py"
       - "infrastructure/windows/finalize_wp15_live_web_evidence.ps1"
@@ -131,7 +133,7 @@ jobs:
       - name: Verify PowerShell 5.1 scripts parse without applying
         shell: cmd
         run: |
-          powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $paths=@('infrastructure\windows\provision_wp15_live_web_acceptance.ps1','infrastructure\windows\run_wp15_live_web_runtime.ps1','infrastructure\windows\finalize_wp15_live_web_evidence.ps1','infrastructure\windows\audit_wp15_live_web_runner.ps1'); foreach ($path in $paths) { $tokens=$null; $errors=$null; [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path), [ref]$tokens, [ref]$errors); if ($errors.Count -ne 0) { $errors | ForEach-Object { Write-Error $_.Message }; exit 40 } }; Write-Host 'WP15 live PowerShell parse contract passed.'"
+          powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $paths=@('infrastructure\windows\provision_wp15_live_web_acceptance.ps1','infrastructure\windows\start_wp15_live_web_acceptance.ps1','infrastructure\windows\run_wp15_live_web_runtime.ps1','infrastructure\windows\finalize_wp15_live_web_evidence.ps1','infrastructure\windows\audit_wp15_live_web_runner.ps1'); foreach ($path in $paths) { $tokens=$null; $errors=$null; [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path), [ref]$tokens, [ref]$errors); if ($errors.Count -ne 0) { $errors | ForEach-Object { Write-Error $_.Message }; exit 40 } }; Write-Host 'WP15 live PowerShell parse contract passed.'"
           if errorlevel 1 exit /b 40
 
       - name: Verify runtime identity translation and ownership semantics
