@@ -119,9 +119,9 @@ def test_wp15_live_bootstrap_seeds_owner_identity_before_runtime() -> None:
     assert "WP15_LIVE_OWNER_USER_INTEGRITY_INVALID" in bootstrap
     assert "WP15_LIVE_OWNER_BOOTSTRAP_AUTOCOMMIT_REQUIRED" in bootstrap
     assert "connection.autocommit = True" in bootstrap
-    assert bootstrap.index("_configure_bootstrap_connection(connection)") < bootstrap.index(
-        "apply_migrations(connection)"
-    )
+    assert bootstrap.index(
+        "_configure_bootstrap_connection(connection)"
+    ) < bootstrap.index("apply_migrations(connection)")
     assert bootstrap.index("apply_migrations(connection)") < bootstrap.index(
         "_ensure_owner_identity(connection)"
     )
