@@ -16,12 +16,13 @@ Accepted support baseline as of 2026-08-12:
 - PR #285 — Windows-native OWNER-audit cleanup hardening;
 - PR #286 — locale-independent Administrators SID validation;
 - PR #287 — Windows PowerShell 5.1 native npm stderr handling;
-- exact accepted `main`: `bc8c4c528473d17cb49ad3a59bfae8474a254367`;
-- post-merge Regression Shield #1470 — SUCCESS;
-- WP15 Live Web Support Audit #50 — SUCCESS;
-- WP16 Audit #147 — SUCCESS;
-- WP17 Audit #118 — SUCCESS;
-- WP15 OWNER Audit #4 — expected `OWNER_ACTION_REQUIRED` / exit 61 because real sanitized OWNER evidence does not exist yet; its independent audit/upload/cleanup steps succeed.
+- PR #290 — battery-safe temporary Task Scheduler settings plus sanitized `task_state` / numeric `LastTaskResult` startup diagnostics;
+- exact accepted support implementation: `bbacbb6ffda591b0aa53f371d435f7f56537b567`;
+- post-merge Regression Shield #1473 / run `31555409157` — SUCCESS;
+- WP15 Live Web Support Audit #58 / run `31555409103` — SUCCESS;
+- WP16 Audit #157 / run `31555409117` — SUCCESS;
+- WP17 Audit #128 / run `31555409163` — SUCCESS;
+- WP15 OWNER Audit #6 / run `31555409161` — expected `OWNER_ACTION_REQUIRED` / exit 61 because real sanitized OWNER evidence does not exist yet; its independent audit/upload/cleanup steps succeed.
 
 ## 1. Purpose
 
@@ -64,7 +65,7 @@ The acceptance runtime is temporary and loopback-only:
 - `trust` authentication and persisted database passwords are forbidden;
 - OWNER-only PostgreSQL migration/bootstrap authority is removed from the runtime before the Web task starts.
 
-The temporary scheduled task uses password logon because the acceptance runtime must have both network access to T-Invest and access to the DPAPI-protected READ vault. S4U is explicitly not used because Windows documents that S4U scheduled tasks have no network or encrypted-file access.
+The temporary scheduled task uses password logon because the acceptance runtime must have both network access to T-Invest and access to the DPAPI-protected READ vault. S4U is explicitly not used because Windows documents that S4U scheduled tasks have no network or encrypted-file access. The temporary task is explicitly allowed to start on battery and is not stopped by an AC-to-battery transition; these settings affect only the acceptance task and do not change permanent WP9 runtime policy.
 
 ## 4. OWNER preparation after support acceptance
 
@@ -121,7 +122,7 @@ ready: true
 
 This command does **not** ask for the T-Invest token.
 
-If `ready` is false or the command fails, do not bypass a check and do not edit PostgreSQL/ACL/task state manually. Use the reviewed cleanup procedure in section 9 and report only the fixed reason/error code.
+If `ready` is false or the command fails, do not bypass a check and do not edit PostgreSQL/ACL/task state manually. Use the reviewed cleanup procedure in section 9 and report only the fixed reason/error code. A loopback-start timeout may additionally report sanitized `task_state` and numeric `last_task_result`; those two diagnostic fields are safe to return to engineering and replace raw task/Event Log collection.
 
 ## 6. Provision READ credential through Web
 
