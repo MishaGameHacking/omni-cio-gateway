@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
+import threading
+import time
 from typing import Any
 
 from fastapi.testclient import TestClient
 
+from apps.api.app import _SerializedWebConnection
 from omni_cio.adapters.tinvest_read_v1 import BrokerAccountBindingV1
 from omni_cio.contracts.v1.domain import OWNER_TENANT_ID
 from omni_cio.web.api_v1 import WebApiServicesV1, create_web_api
@@ -212,3 +216,77 @@ def test_logout_and_revoke_all_invalidate_server_side_session() -> None:
     login(client)
     assert client.post("/api/v10/web/session/revoke-all").status_code == 200
     assert client.get("/api/v10/web/session").json() == {"authenticated": False}
+
+
+class _ConcurrencyCursor:
+    rowcount = 1
+
+    def fetchone(self) -> tuple[int]:
+        return (1,)
+
+    def fetchall(self) -> list[tuple[int]]:
+        return [(1,)]
+
+
+class _ConcurrencyTransaction:
+    def __init__(self, connection: "_ConcurrencyConnection") -> None:
+        self._connection = connection
+
+    def __enter__(self) -> "_ConcurrencyTransaction":
+        with self._connection.state_lock:
+            self._connection.active_transactions += 1
+            self._connection.max_active_transactions = max(
+                self._connection.max_active_transactions,
+                self._connection.active_transactions,
+            )
+            if self._connection.active_transactions > 1:
+                self._connection.active_transactions -= 1
+                raise RuntimeError("OVERLAPPING_TRANSACTION_CONTEXTS")
+        return self
+
+    def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> None:
+        del exc_type, exc, traceback
+        with self._connection.state_lock:
+            self._connection.active_transactions -= 1
+
+
+class _ConcurrencyConnection:
+    def __init__(self) -> None:
+        self.state_lock = threading.Lock()
+        self.active_transactions = 0
+        self.max_active_transactions = 0
+
+    def transaction(self) -> _ConcurrencyTransaction:
+        return _ConcurrencyTransaction(self)
+
+    def execute(
+        self,
+        query: Any,
+        params: Any = None,
+        *,
+        prepare: bool | None = None,
+    ) -> _ConcurrencyCursor:
+        del query, params, prepare
+        time.sleep(0.003)
+        return _ConcurrencyCursor()
+
+
+def _request_transaction(connection: _SerializedWebConnection) -> tuple[int]:
+    with connection.transaction():
+        row = connection.execute("SELECT 1").fetchone()
+        time.sleep(0.005)
+        return row
+
+
+def test_local_private_shared_db_connection_serializes_parallel_transactions() -> None:
+    raw = _ConcurrencyConnection()
+    connection = _SerializedWebConnection(raw)
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        results = list(
+            executor.map(lambda _: _request_transaction(connection), range(16))
+        )
+
+    assert results == [(1,)] * 16
+    assert raw.max_active_transactions == 1
+    assert raw.active_transactions == 0

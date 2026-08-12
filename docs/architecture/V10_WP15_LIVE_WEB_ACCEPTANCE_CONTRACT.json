@@ -133,6 +133,7 @@
     "runtime_mapping_only_after_bootstrap": true,
     "long_lived_web_connection_autocommit": true,
     "request_transaction_boundaries_explicit": true,
+    "shared_connection_request_serialization": true,
     "runtime_ddl_authority": false,
     "trust_allowed": false,
     "database_password_persisted": false,
