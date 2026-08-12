@@ -117,7 +117,6 @@ GitHub remains engineering source of truth. The protected production/recovery ba
 | **TOTAL** | **100% planned** | **26% ACCEPTED** |
 
 The 26% accepted total is intentional. WP16/WP17 acceptance advances Block E implementation but does not credit Block E piecemeal. Block D receives its planned weight only after the deferred WP15 real live broker evidence and the amended Block D acceptance requirements are actually satisfied.
-
 ## Accepted implementation evidence index
 
 - WP0 PR #228 -> `7c5de954eed10dd406e743c38f7bdef6b0634108`;
@@ -267,4 +266,4 @@ The following remain mandatory while V10 develops:
 
 ## Current next action
 
-Complete this status/operations synchronization through a focused PR, exact-head required CI, squash merge and post-merge Regression Shield. After that transition is GREEN, the next action is the non-delegable OWNER local/private deferred-WP15 live acceptance on the exact accepted `main`. WP18 remains locked until real sanitized evidence and the independent non-admin OWNER audit are both GREEN.
+Perform the non-delegable OWNER local/private deferred-WP15 live acceptance on the exact accepted `main` using `docs/operations/V10_WP15_OWNER_LIVE_READ_RUNBOOK.md`. If a previous attempt created any partial owned WP15 runtime state, run the reviewed marker-guarded `-Cleanup` path first. Enter the real T-Invest READ token only in the loopback authenticated Web `Settings -> Broker Connections` form; never in PowerShell, chat, GitHub, CI logs or artifacts. After sanitized OWNER finalization, rerun the independent non-admin `V10 WP15 Live Web OWNER Audit` on the same exact implementation SHA. WP18 remains locked until that audit is GREEN.
