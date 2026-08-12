@@ -89,7 +89,9 @@ def test_live_acceptance_lsa_policy_attributes_follow_windows_contract() -> None
     assert "POLICY_CREATE_ACCOUNT" in text
 
 
-def test_live_acceptance_starter_preserves_exact_head_and_existing_provisioner() -> None:
+def test_live_acceptance_starter_preserves_exact_head_and_existing_provisioner() -> (
+    None
+):
     text = _starter_text()
 
     assert "WP15_LIVE_GIT_HEAD_MISMATCH" in text
@@ -116,6 +118,5 @@ def test_live_acceptance_final_evidence_binds_privilege_starter() -> None:
         in auditor
     )
     assert (
-        "acceptance_starter_sha256 = if (Test-Path -LiteralPath $starterPath"
-        in auditor
+        "acceptance_starter_sha256 = if (Test-Path -LiteralPath $starterPath" in auditor
     )
