@@ -1,13 +1,19 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+CONTRACT = ROOT / "docs" / "architecture" / "V10_WP15_LIVE_WEB_ACCEPTANCE_CONTRACT.json"
 PROVISIONER = (
     ROOT / "infrastructure" / "windows" / "provision_wp15_live_web_acceptance.ps1"
 )
 STARTER = ROOT / "infrastructure" / "windows" / "start_wp15_live_web_acceptance.ps1"
+RUNTIME = ROOT / "infrastructure" / "windows" / "run_wp15_live_web_runtime.ps1"
+SESSION_PROBE = (
+    ROOT / "infrastructure" / "windows" / "probe_wp15_live_session_runtime.py"
+)
 FINALIZER = ROOT / "infrastructure" / "windows" / "finalize_wp15_live_web_evidence.ps1"
 AUDITOR = ROOT / "infrastructure" / "windows" / "audit_wp15_live_web_runner.ps1"
 
@@ -42,6 +48,30 @@ def test_live_acceptance_timeout_reports_sanitized_task_scheduler_state() -> Non
     ) in failure_block
     assert "Get-WinEvent" not in failure_block
     assert "Get-Content" not in failure_block
+
+
+def test_live_runtime_probes_postgres_session_path_before_uvicorn() -> None:
+    runtime = RUNTIME.read_text(encoding="utf-8")
+    probe = SESSION_PROBE.read_text(encoding="utf-8")
+    contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+
+    assert contract["windows_runtime"]["runtime_session_probe_before_http"] is True
+    assert contract["windows_runtime"]["session_probe_residue"] is False
+    assert contract["postgresql"]["long_lived_web_connection_autocommit"] is True
+    assert contract["postgresql"]["request_transaction_boundaries_explicit"] is True
+    assert "probe_wp15_live_session_runtime.py" in runtime
+    assert "WP15_LIVE_SESSION_PROBE_MISSING" in runtime
+    assert runtime.index("& $python $sessionProbe") < runtime.index(
+        "& $python -m uvicorn"
+    )
+    assert "PostgresWebSessionRegistryV1" in probe
+    assert "connection.autocommit = True" in probe
+    assert "registry.create(" in probe
+    assert "registry.resolve(" in probe
+    assert "registry.revoke(" in probe
+    assert "DELETE FROM omni_cio_v10.web_sessions WHERE token_sha256 = %s" in probe
+    assert "print(token" not in probe
+    assert "print(digest" not in probe
 
 
 def test_live_acceptance_starter_uses_temporary_batch_logon_right_only() -> None:

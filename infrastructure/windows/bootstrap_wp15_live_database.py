@@ -13,6 +13,15 @@ def _bind_source_root() -> None:
         sys.path.insert(0, root_text)
 
 
+def _configure_bootstrap_connection(connection: Any) -> None:
+    try:
+        connection.autocommit = True
+    except Exception as exc:
+        raise RuntimeError("WP15_LIVE_OWNER_BOOTSTRAP_AUTOCOMMIT_REQUIRED") from exc
+    if getattr(connection, "autocommit", None) is not True:
+        raise RuntimeError("WP15_LIVE_OWNER_BOOTSTRAP_AUTOCOMMIT_REQUIRED")
+
+
 def _read_owner_identity(connection: Any) -> tuple[Any | None, Any | None]:
     from omni_cio.contracts.v1.domain import (
         OWNER_TENANT_ID,
@@ -113,6 +122,7 @@ def main() -> int:
 
     connection = connect_postgres("")
     try:
+        _configure_bootstrap_connection(connection)
         apply_migrations(connection)
         _ensure_owner_identity(connection)
     finally:
