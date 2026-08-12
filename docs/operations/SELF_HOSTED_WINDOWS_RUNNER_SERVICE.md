@@ -18,15 +18,11 @@ runner credential file, broker token or Gateway key.
 
 ## Read-only health check
 
-Open PowerShell on the runner machine and run:
+From the repository root on the runner machine, run this as one complete
+PowerShell command on one physical line:
 
 ```powershell
-powershell.exe -NoLogo -NoProfile -NonInteractive `
-  -ExecutionPolicy Bypass `
-  -File .\scripts\check_self_hosted_windows_runner_service.ps1 `
-  -RunnerRoot C:\actions-runner `
-  -ExpectedRunnerName omni-cio-ci `
-  -AsJson
+powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ".\scripts\check_self_hosted_windows_runner_service.ps1" -RunnerRoot "C:\actions-runner" -ExpectedRunnerName "omni-cio-ci" -AsJson
 ```
 
 `ExpectedRunnerName` accepts only letters, digits, `.`, `_` and `-`, with a
@@ -37,10 +33,11 @@ as a PowerShell wildcard pattern.
 Healthy output requires all of the following:
 
 - runner root exists;
-- `.runner` configuration marker exists and is no larger than 64 KiB;
-- `.runner` is valid JSON with a non-empty `AgentName`;
-- configured `AgentName` exactly matches `omni-cio-ci`;
-- `Ephemeral` is `false` or omitted from `.runner`;
+- `.runner` configuration marker exists, is non-empty and is no larger than
+  64 KiB;
+- `.runner` is valid JSON with a non-empty runner `agentName`;
+- configured runner identity exactly matches `omni-cio-ci`;
+- `ephemeral` is `false` or omitted from `.runner`;
 - `run.cmd` exists;
 - `.service` exists, is between 1 byte and 1 KiB, and contains one bounded
   official-style Windows service name;
@@ -52,11 +49,21 @@ Healthy output requires all of the following:
 - service start mode is `Auto`.
 
 The official `actions/runner` implementation persists `AgentName` and
-`Ephemeral` in the `.runner` `RunnerSettings` structure. GitHub documents that
-an ephemeral runner automatically de-registers after processing one job. That
-mode is therefore incompatible with this repository's two-job Regression Shield
-unless an external autoscaler creates a fresh replacement runner, which this
-repository does not use.
+`Ephemeral` in its `RunnerSettings` model and serializes the settings through
+the runner's JSON formatter. The diagnostic resolves the resulting JSON
+property names explicitly with ordinal case-insensitive comparison so Windows
+PowerShell 5.1 behavior does not depend on property-collection indexing details.
+
+When `.runner` is present but structurally invalid, sanitized
+`runner_configuration_error_detail` may report only one of these bounded
+classifications: `SIZE_INVALID`, `JSON_INVALID`, `AGENT_NAME_INVALID`,
+`EPHEMERAL_INVALID`, or `READ_FAILED`. It never reports the raw `.runner`
+content or any URL, ID, path, credential, token, or service name.
+
+GitHub documents that an ephemeral runner automatically de-registers after
+processing one job. That mode is therefore incompatible with this repository's
+two-job Regression Shield unless an external autoscaler creates a fresh
+replacement runner, which this repository does not use.
 
 The diagnostic script is read-only. It does not start, stop, install, remove or
 reconfigure the runner service. Automatic output contains only bounded booleans,
@@ -65,6 +72,8 @@ runner root, declared service name, executable path and raw `.runner` or
 `.service` values.
 
 ## Native Windows inspection
+
+The following commands are for local human inspection only:
 
 ```powershell
 Get-Service "actions.runner.*"
@@ -82,38 +91,75 @@ Do not print or copy `.credentials`, `.credentials_rsaparams`, registration
 tokens, GitHub App credentials, workflow secrets or machine-local paths into
 issues, Pull Requests, logs or repository files.
 
-## Recovery when the persistent service exists
+The wildcard inspection commands above are never a recovery authority. Never
+feed their multi-service output into `Set-Service`, `Start-Service`,
+`Stop-Service`, or another mutating command.
 
-Use this recovery path only when the diagnostic reports
-`RUNNER_SERVICE_NOT_AUTOMATIC` or `RUNNER_SERVICE_NOT_RUNNING`. Open PowerShell
-as Administrator in the runner installation directory:
+## Fail-safe recovery when the persistent service exists
+
+The only repository-supported in-place service recovery is the source-controlled
+helper:
+
+`scripts/recover_self_hosted_windows_runner_service.ps1`.
+
+It mechanically runs the read-only diagnostic first and refuses to mutate
+anything unless the diagnostic code is exactly one of:
+
+- `RUNNER_SERVICE_NOT_AUTOMATIC`;
+- `RUNNER_SERVICE_NOT_RUNNING`.
+
+Configuration, identity, ephemeral, marker, missing-service and service-query
+failures are non-recoverable through this helper. They return
+`RUNNER_RECOVERY_BLOCKED_BY_DIAGNOSTIC` with `mutations_attempted=false`.
+
+The helper also re-reads the `.service` marker using the absolute
+`RunnerRoot`, revalidates its bounded official-style identity, requires exactly
+one exact Windows service and exactly one matching `Win32_Service` record, and
+uses only that validated immutable service-name string for any mutation. It
+never uses a service array or `$service.Name` as mutation authority.
+
+### Preview
+
+From the repository root, run one complete command:
 
 ```powershell
-$serviceName = (Get-Content -LiteralPath .\.service -Raw -ErrorAction Stop).Trim()
-$expectedSuffix = ".omni-cio-ci.service"
-
-if ($serviceName -notmatch '^actions\.runner\.[A-Za-z0-9._-]{1,480}\.service$') {
-    throw "Invalid runner service marker"
-}
-if (-not $serviceName.EndsWith(
-    $expectedSuffix,
-    [System.StringComparison]::OrdinalIgnoreCase
-)) {
-    throw "Runner service identity mismatch"
-}
-
-$service = Get-Service -Name $serviceName -ErrorAction Stop
-Set-Service -Name $service.Name -StartupType Automatic
-Start-Service -Name $service.Name
-Get-Service -Name $service.Name
+powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ".\scripts\recover_self_hosted_windows_runner_service.ps1" -RunnerRoot "C:\actions-runner" -ExpectedRunnerName "omni-cio-ci" -AsJson
 ```
 
-Then run the read-only health check again. The queued Regression Shield job
-should be picked up by GitHub after the persistent service reconnects.
+Default mode is read-only preview. If recovery is actually needed, the only
+expected preview result is:
 
-Do not use this recovery path for configuration, identity, marker or query
-failures. Those states require inspection or runner reconfiguration, not a blind
-service restart.
+- `error_code=RUNNER_SERVICE_RECOVERY_PREVIEW`;
+- `diagnostic_error_code` equals one of the two recoverable codes above;
+- `recovery_action` is `SET_AUTOMATIC`, `START`, or
+  `SET_AUTOMATIC_AND_START`;
+- `mutations_attempted=false`.
+
+Any other non-healthy result means stop. Do not continue with hand-written
+service commands.
+
+### Apply
+
+Only after an accepted preview, open PowerShell **as Administrator** and run one
+complete command from the repository root:
+
+```powershell
+powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ".\scripts\recover_self_hosted_windows_runner_service.ps1" -RunnerRoot "C:\actions-runner" -ExpectedRunnerName "omni-cio-ci" -Apply -AsJson
+```
+
+`-Apply` does not bypass validation. It can only set `StartupType=Automatic`
+and/or start the one exact validated runner service. After mutation it reruns
+the read-only diagnostic and requires the final postcondition
+`healthy=true`, `service_state=Running`, and `service_start_mode=Auto`.
+
+The helper never stops, removes, installs or re-registers a service. It never
+edits `.runner`, `.service`, `.credentials`, or runner registration state.
+
+Do not copy internal `Set-Service` or `Start-Service` implementation lines from
+the helper into an interactive shell. Do not continue a partially failed
+manual sequence using variables left over in the current PowerShell session.
+Each supported recovery attempt is a fresh invocation of the source-controlled
+helper.
 
 ## Recovery when registration must be rebuilt
 
@@ -153,9 +199,9 @@ messages or documentation.
 |---|---|---|
 | `RUNNER_ROOT_MISSING` | Expected installation directory is absent | Locate or reinstall the official runner application |
 | `RUNNER_CONFIGURATION_MISSING` | `.runner` marker is absent | Reconfigure the runner through GitHub |
-| `RUNNER_CONFIGURATION_INVALID` | `.runner` is oversized, unreadable, invalid JSON, or has an invalid `AgentName`/`Ephemeral` type | Reconfigure from the official runner package; do not repair secrets/config manually |
+| `RUNNER_CONFIGURATION_INVALID` | `.runner` is empty/oversized, unreadable, invalid JSON, or has an invalid runner-name/ephemeral type | Use sanitized `runner_configuration_error_detail`; do not repair private runner config manually |
 | `RUNNER_CONFIGURATION_IDENTITY_MISMATCH` | `.runner` belongs to another runner name | Remove the stale/mismatched registration and configure exact `omni-cio-ci` identity |
-| `RUNNER_EPHEMERAL_UNSUPPORTED` | `.runner` has `Ephemeral=true` | Re-register as a persistent Windows-service runner without `--ephemeral` |
+| `RUNNER_EPHEMERAL_UNSUPPORTED` | `.runner` has `ephemeral=true` | Re-register as a persistent Windows-service runner without `--ephemeral` |
 | `RUNNER_COMMAND_MISSING` | `run.cmd` is absent | Restore the official runner application package |
 | `RUNNER_SERVICE_MARKER_MISSING` | `.service` marker is absent | Reconfigure the runner in Windows service mode |
 | `RUNNER_SERVICE_MARKER_INVALID` | `.service` is empty, oversized, unreadable or contains an unsafe/non-standard service name | Reconfigure through the official runner package; do not pass the marker to service commands |
@@ -163,8 +209,18 @@ messages or documentation.
 | `RUNNER_SERVICE_MISSING` | The exact service declared by `.service` is not installed | Reconfigure the runner in service mode |
 | `RUNNER_SERVICE_IDENTITY_MISMATCH` | The installed service does not match the exact validated marker and runner suffix | Stop and inspect the registration; do not treat it as `omni-cio-ci` |
 | `RUNNER_SERVICE_QUERY_FAILED` | Windows service inventory or metadata could not be read unambiguously | Check Windows service/WMI health and permissions; do not guess a service by wildcard |
-| `RUNNER_SERVICE_NOT_AUTOMATIC` | Service will not reliably survive reboot | Set startup type to Automatic using the exact validated service name |
-| `RUNNER_SERVICE_NOT_RUNNING` | Registered service is stopped | Start the exact validated service and inspect Windows event/service logs |
+| `RUNNER_SERVICE_NOT_AUTOMATIC` | Exact validated service will not reliably survive reboot | Use the source-controlled recovery helper |
+| `RUNNER_SERVICE_NOT_RUNNING` | Exact validated service is stopped | Use the source-controlled recovery helper |
+
+Recovery-specific results are deliberately narrower:
+
+| Recovery code | Meaning |
+|---|---|
+| `RUNNER_RECOVERY_BLOCKED_BY_DIAGNOSTIC` | Diagnostic state is not one of the two safe in-place recovery states; zero mutations are attempted |
+| `RUNNER_SERVICE_RECOVERY_PREVIEW` | Validation passed and a bounded exact-service recovery action is available, but `-Apply` was not supplied |
+| `RUNNER_SERVICE_RECOVERY_ADMIN_REQUIRED` | `-Apply` was requested for a valid recovery action, but the shell is not elevated; zero mutations are attempted |
+| `RUNNER_SERVICE_RECOVERY_MUTATION_FAILED` | The single-target mutation failed; inspect the sanitized `mutation_stage`, do not execute manual fallback commands |
+| `RUNNER_SERVICE_RECOVERY_POSTCONDITION_FAILED` | A mutation ran but final read-only health verification did not become healthy; stop and inspect before any further action |
 
 ## Security boundaries
 
@@ -174,8 +230,13 @@ messages or documentation.
 - the runner host must not contain production broker credentials for CI;
 - CI uses only regression placeholders;
 - workspace and temporary virtual environments are cleaned after every job;
-- raw `.runner` and `.service` content is never emitted by the diagnostic;
+- raw `.runner` and `.service` content is never emitted by the diagnostic or
+  recovery helper;
 - service discovery is exact after bounded marker validation, not wildcard-first;
+- recovery is preview-by-default, `-Apply` requires elevation, and mutation is
+  limited to one exact validated service;
+- configuration/identity/marker/query failures cannot fall through into service
+  mutation;
 - `app:app`, the 14 GET Actions and `trading_methods=false` are unchanged.
 
 ## Official references
