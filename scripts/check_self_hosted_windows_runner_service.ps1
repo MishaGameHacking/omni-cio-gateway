@@ -116,6 +116,9 @@ if ($runnerConfigurationPresent) {
                 try {
                     $runnerSettings = $runnerConfigText |
                         ConvertFrom-Json -ErrorAction Stop
+                    if ($null -eq $runnerSettings) {
+                        $runnerConfigurationErrorDetail = "AGENT_NAME_INVALID"
+                    }
                 }
                 catch {
                     $runnerConfigurationErrorDetail = "JSON_INVALID"
