@@ -1,10 +1,21 @@
 from __future__ import annotations
 
+from contextlib import nullcontext
+from datetime import datetime, timezone
 import json
 from pathlib import Path
 from typing import Any
 
-from omni_cio.contracts.v1.domain import OWNER_TENANT_ID
+import pytest
+
+from omni_cio.adapters.tinvest_read_v1 import BrokerAccountBindingV1
+from omni_cio.contracts.v1.domain import (
+    OWNER_TENANT_ID,
+    BrokerAccountV1,
+    BrokerProvider,
+    canonical_broker_account_id,
+)
+from omni_cio.persistence.repository import model_record_sha256
 from omni_cio.web.api_v1 import create_web_api
 from omni_cio.web.persistence_v1 import PostgresBrokerConnectionRepositoryV1
 from omni_cio.web.session_v1 import SessionRegistryV1
@@ -34,8 +45,20 @@ class _Services:
 class _RowsCursor:
     rowcount = 0
 
+    def __init__(
+        self,
+        *,
+        row: tuple[Any, ...] | None = None,
+        rows: list[tuple[Any, ...]] | None = None,
+    ) -> None:
+        self._row = row
+        self._rows = rows or []
+
+    def fetchone(self) -> tuple[Any, ...] | None:
+        return self._row
+
     def fetchall(self) -> list[tuple[Any, ...]]:
-        return []
+        return list(self._rows)
 
 
 class _CaptureConnection:
@@ -53,6 +76,58 @@ class _CaptureConnection:
         del prepare
         self.query = str(query)
         self.params = params
+        return _RowsCursor()
+
+
+class _ReconnectConnection:
+    def __init__(
+        self,
+        existing_account: BrokerAccountV1,
+        *,
+        schema_version: str | None = None,
+        identity_version: int | None = None,
+    ) -> None:
+        self.existing_account = existing_account
+        self.schema_version = (
+            existing_account.schema_version
+            if schema_version is None
+            else schema_version
+        )
+        self.identity_version = (
+            existing_account.identity_version
+            if identity_version is None
+            else identity_version
+        )
+        self.queries: list[str] = []
+
+    def transaction(self) -> Any:
+        return nullcontext()
+
+    def execute(
+        self,
+        query: Any,
+        params: tuple[Any, ...] | None = None,
+        *,
+        prepare: bool | None = None,
+    ) -> _RowsCursor:
+        del params, prepare
+        text = str(query)
+        self.queries.append(text)
+        if "INSERT INTO omni_cio_v10.broker_accounts" in text:
+            return _RowsCursor(row=None)
+        if "SELECT schema_version, identity_version" in text:
+            account = self.existing_account
+            return _RowsCursor(
+                row=(
+                    self.schema_version,
+                    self.identity_version,
+                    account.provider.value,
+                    account.account_fingerprint_sha256,
+                    account.masked_label,
+                    account.created_at,
+                    model_record_sha256(account),
+                )
+            )
         return _RowsCursor()
 
 
@@ -189,3 +264,100 @@ def test_settings_listing_excludes_revoked_broker_connections() -> None:
         ).read_text(encoding="utf-8")
     )
     assert contract["broker"]["revoked_connections_exposed_to_active_settings"] is False
+
+
+def _existing_broker_account() -> BrokerAccountV1:
+    fingerprint = "a" * 64
+    return BrokerAccountV1(
+        broker_account_id=canonical_broker_account_id(
+            BrokerProvider.T_INVEST,
+            fingerprint,
+        ),
+        tenant_id=OWNER_TENANT_ID,
+        provider=BrokerProvider.T_INVEST,
+        account_fingerprint_sha256=fingerprint,
+        masked_label="***3118",
+        created_at=datetime(2026, 8, 11, 8, 0, tzinfo=timezone.utc),
+    )
+
+
+def _reconnect_binding(account: BrokerAccountV1) -> BrokerAccountBindingV1:
+    return BrokerAccountBindingV1(
+        broker_account_id=account.broker_account_id,
+        account_fingerprint_sha256=account.account_fingerprint_sha256,
+        masked_label=account.masked_label,
+        access_level="ACCOUNT_ACCESS_LEVEL_READ_ONLY",
+    )
+
+
+def test_reconnect_reuses_existing_immutable_broker_account_record() -> None:
+    existing_account = _existing_broker_account()
+    connection = _ReconnectConnection(existing_account)
+    repository = PostgresBrokerConnectionRepositoryV1(
+        connection  # type: ignore[arg-type]
+    )
+    connection_ref = "broker-ref:v1:" + "c" * 64
+
+    repository.create_read_connection(
+        tenant_id=OWNER_TENANT_ID,
+        connection_id="broker-connection:v1:" + "b" * 64,
+        secret_ref=connection_ref,
+        bindings=(_reconnect_binding(existing_account),),
+        now=datetime(2026, 8, 12, 8, 0, tzinfo=timezone.utc),
+    )
+
+    assert any(
+        "SELECT schema_version, identity_version" in query
+        for query in connection.queries
+    )
+    assert any(
+        "INSERT INTO omni_cio_v10.broker_connections" in query
+        for query in connection.queries
+    )
+
+    root = Path(__file__).resolve().parents[3]
+    contract = json.loads(
+        (
+            root
+            / "docs"
+            / "architecture"
+            / "V10_WP15_LIVE_WEB_ACCEPTANCE_CONTRACT.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert (
+        contract["broker"]["reconnect_reuses_existing_immutable_broker_account"] is True
+    )
+
+
+@pytest.mark.parametrize(
+    ("schema_version", "identity_version"),
+    (("9.9", 1), ("1.0", 2)),
+)
+def test_reconnect_rejects_immutable_broker_account_version_drift(
+    schema_version: str,
+    identity_version: int,
+) -> None:
+    existing_account = _existing_broker_account()
+    connection = _ReconnectConnection(
+        existing_account,
+        schema_version=schema_version,
+        identity_version=identity_version,
+    )
+    repository = PostgresBrokerConnectionRepositoryV1(
+        connection  # type: ignore[arg-type]
+    )
+    connection_ref = "broker-ref:v1:" + "e" * 64
+
+    with pytest.raises(ValueError, match="BROKER_ACCOUNT_IMMUTABLE_CONFLICT"):
+        repository.create_read_connection(
+            tenant_id=OWNER_TENANT_ID,
+            connection_id="broker-connection:v1:" + "d" * 64,
+            secret_ref=connection_ref,
+            bindings=(_reconnect_binding(existing_account),),
+            now=datetime(2026, 8, 12, 8, 0, tzinfo=timezone.utc),
+        )
+
+    assert not any(
+        "INSERT INTO omni_cio_v10.broker_connections" in query
+        for query in connection.queries
+    )

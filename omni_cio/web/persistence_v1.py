@@ -192,11 +192,33 @@ class PostgresBrokerConnectionRepositoryV1:
                 )
                 if cursor.fetchone() is None:
                     existing = self._connection.execute(
-                        "SELECT record_sha256 FROM omni_cio_v10.broker_accounts "
+                        "SELECT schema_version, identity_version, provider, "
+                        "account_fingerprint_sha256, masked_label, created_at, record_sha256 "
+                        "FROM omni_cio_v10.broker_accounts "
                         "WHERE broker_account_id = %s AND tenant_id = %s",
                         (account.broker_account_id, tenant_id),
                     ).fetchone()
-                    if existing is None or str(existing[0]) != digest:
+                    if (
+                        existing is None
+                        or str(existing[0]) != account.schema_version
+                        or int(existing[1]) != account.identity_version
+                    ):
+                        raise ValueError("BROKER_ACCOUNT_IMMUTABLE_CONFLICT")
+                    existing_account = BrokerAccountV1(
+                        broker_account_id=account.broker_account_id,
+                        tenant_id=tenant_id,
+                        provider=BrokerProvider(str(existing[2])),
+                        account_fingerprint_sha256=str(existing[3]),
+                        masked_label=str(existing[4]),
+                        created_at=_utc(existing[5]),
+                    )
+                    if (
+                        existing_account.provider != account.provider
+                        or existing_account.account_fingerprint_sha256
+                        != account.account_fingerprint_sha256
+                        or existing_account.masked_label != account.masked_label
+                        or model_record_sha256(existing_account) != str(existing[6])
+                    ):
                         raise ValueError("BROKER_ACCOUNT_IMMUTABLE_CONFLICT")
 
             self._connection.execute(
