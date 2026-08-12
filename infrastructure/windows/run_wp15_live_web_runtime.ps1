@@ -36,6 +36,8 @@ if ((Get-Content -LiteralPath $marker -Raw -ErrorAction Stop).Trim().ToLowerInva
 $runtimeRoot = Split-Path -Parent $app
 $python = Join-Path $runtimeRoot "venv\Scripts\python.exe"
 if (-not (Test-Path -LiteralPath $python -PathType Leaf)) { throw "WP15_LIVE_RUNTIME_PYTHON_MISSING" }
+$sessionProbe = Join-Path $app "infrastructure\windows\probe_wp15_live_session_runtime.py"
+if (-not (Test-Path -LiteralPath $sessionProbe -PathType Leaf)) { throw "WP15_LIVE_SESSION_PROBE_MISSING" }
 
 $env:OMNI_V10_WEB_PRIVATE_ACCEPTANCE = "1"
 $env:OMNI_V10_WP15_LIVE_ACCEPTANCE = "1"
@@ -51,5 +53,7 @@ $env:PYTHONUTF8 = "1"
 $env:PYTHONIOENCODING = "utf-8"
 
 Set-Location -LiteralPath $app
+& $python $sessionProbe
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $python -m uvicorn apps.api.app:create_local_private_app --factory --host 127.0.0.1 --port $Port --log-level warning --no-access-log
 exit $LASTEXITCODE
