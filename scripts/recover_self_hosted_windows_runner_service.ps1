@@ -122,34 +122,34 @@ function New-Result {
 
         [Parameter()]
         [AllowNull()]
-        [string]$ErrorCode,
+        [object]$ErrorCode,
 
         [Parameter()]
         [AllowNull()]
-        [string]$DiagnosticErrorCode,
+        [object]$DiagnosticErrorCode,
 
         [Parameter()]
         [AllowNull()]
-        [string]$RunnerConfigurationErrorDetail,
+        [object]$RunnerConfigurationErrorDetail,
 
         [Parameter()]
         [AllowNull()]
-        [string]$RecoveryAction,
+        [object]$RecoveryAction,
 
         [Parameter(Mandatory = $true)]
         [bool]$MutationsAttempted,
 
         [Parameter()]
         [AllowNull()]
-        [string]$MutationStage,
+        [object]$MutationStage,
 
         [Parameter()]
         [AllowNull()]
-        [string]$ServiceState,
+        [object]$ServiceState,
 
         [Parameter()]
         [AllowNull()]
-        [string]$ServiceStartMode
+        [object]$ServiceStartMode
     )
 
     return [pscustomobject]@{
