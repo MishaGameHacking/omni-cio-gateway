@@ -63,6 +63,16 @@ def _wp15_live_pending_evidence_path() -> Path:
     return Path(value)
 
 
+def _configure_long_lived_web_connection(connection: Any) -> None:
+    """Keep request transactions explicit instead of nesting under startup SELECTs."""
+    try:
+        connection.autocommit = True
+    except Exception as exc:
+        raise RuntimeError("WEB_RUNTIME_POSTGRES_AUTOCOMMIT_REQUIRED") from exc
+    if getattr(connection, "autocommit", None) is not True:
+        raise RuntimeError("WEB_RUNTIME_POSTGRES_AUTOCOMMIT_REQUIRED")
+
+
 def _verify_live_database(connection: Any) -> None:
     require_postgres_18(connection)
     expected = tuple((item.version, item.sha256) for item in discover_migrations())
@@ -99,6 +109,7 @@ def create_local_private_app() -> FastAPI:
         raise RuntimeError("WP15_LIVE_REQUIRES_PRIVATE_ACCEPTANCE")
 
     connection = connect_postgres("")
+    _configure_long_lived_web_connection(connection)
     if live_acceptance_enabled:
         _verify_live_database(connection)
     else:
