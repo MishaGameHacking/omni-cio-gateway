@@ -61,16 +61,32 @@ def test_live_acceptance_starter_uses_temporary_batch_logon_right_only() -> None
     assert "SeInteractiveLogonRight" not in text
 
 
-def test_live_acceptance_starter_has_non_mutating_preflight() -> None:
+def test_live_acceptance_starter_has_non_mutating_helper_validation() -> None:
     text = _starter_text()
 
-    assert "[switch]$Inspect" in text
-    assert 'evidence_type = "LIVE_RUNTIME_BATCH_LOGON_PREFLIGHT"' in text
-    assert "batch_logon_right_present" in text
-    assert "deny_batch_logon_right_present" in text
+    assert "[switch]$ValidateOnly" in text
+    assert 'evidence_type = "LIVE_RUNTIME_BATCH_LOGON_HELPER_VALIDATION"' in text
+    assert "helper_compiled" in text
     assert "mutation_performed = $false" in text
     assert "real_secret_values_used = $false" in text
-    assert "if (-not $inspectReady) { exit 73 }" in text
+    validation_block = text.split("if ($ValidateOnly) {", 1)[1].split(
+        "if ([bool]$runtimeUser.Enabled)", 1
+    )[0]
+    assert "GetRights(" not in validation_block
+    assert "AddRight(" not in validation_block
+    assert "RemoveRight(" not in validation_block
+
+
+def test_live_acceptance_lsa_policy_attributes_follow_windows_contract() -> None:
+    text = _starter_text()
+    open_policy_block = text.split("private static IntPtr OpenPolicy", 1)[1].split(
+        "private static IntPtr AllocSid", 1
+    )[0]
+
+    assert "var attributes = new LSA_OBJECT_ATTRIBUTES();" in open_policy_block
+    assert "attributes.Length" not in open_policy_block
+    assert "POLICY_LOOKUP_NAMES" in text
+    assert "POLICY_CREATE_ACCOUNT" in text
 
 
 def test_live_acceptance_starter_preserves_exact_head_and_existing_provisioner() -> None:
@@ -90,7 +106,16 @@ def test_live_acceptance_final_evidence_binds_privilege_starter() -> None:
     finalizer = FINALIZER.read_text(encoding="utf-8")
     auditor = AUDITOR.read_text(encoding="utf-8")
 
-    assert '$starterPath = Join-Path $PSScriptRoot "start_wp15_live_web_acceptance.ps1"' in finalizer
+    assert (
+        '$starterPath = Join-Path $PSScriptRoot "start_wp15_live_web_acceptance.ps1"'
+        in finalizer
+    )
     assert "acceptance_starter_sha256 = $starterHash" in finalizer
-    assert '$starterPath = Join-Path $PSScriptRoot "start_wp15_live_web_acceptance.ps1"' in auditor
-    assert "acceptance_starter_sha256 = if (Test-Path -LiteralPath $starterPath" in auditor
+    assert (
+        '$starterPath = Join-Path $PSScriptRoot "start_wp15_live_web_acceptance.ps1"'
+        in auditor
+    )
+    assert (
+        "acceptance_starter_sha256 = if (Test-Path -LiteralPath $starterPath"
+        in auditor
+    )
