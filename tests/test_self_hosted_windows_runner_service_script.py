@@ -93,6 +93,9 @@ def test_diagnostic_is_read_only_and_matches_upstream_windows_service_format() -
         "[System.IO.FileInfo]::new(",
         "ConvertFrom-Json -ErrorAction Stop",
         "Get-JsonPropertyOrdinalIgnoreCase",
+        "Test-ServiceExecutablePathMatches",
+        'Join-Path $RunnerRoot "bin\\RunnerService.exe"',
+        "$serviceDetails.PathName",
         '$expectedServiceSuffix = ".$ExpectedRunnerName"',
         "actions/runner WindowsServiceControlManager writes actions.runner.{repo-or-org}.{runner-name}",
         "$candidate.Length -le 80",
@@ -117,7 +120,7 @@ def test_diagnostic_is_read_only_and_matches_upstream_windows_service_format() -
         'expectedServiceSuffix = ".$ExpectedRunnerName.service"',
         "runner_root =",
         "service_name =",
-        "PathName",
+        "service_path =",
         "GitHubUrl",
         "ServerUrl",
     ):
@@ -130,9 +133,13 @@ def test_recovery_is_preview_first_single_target_and_upstream_aligned() -> None:
     for required in (
         "Test-DiagnosticContract",
         "Test-RecoverableDiagnosticState",
+        "Test-ServiceExecutablePathMatches",
+        'Join-Path $RunnerRoot "bin\\RunnerService.exe"',
+        "$serviceDetails.PathName",
         '"RUNNER_SERVICE_NOT_AUTOMATIC"',
         '"RUNNER_SERVICE_NOT_RUNNING"',
         '"RUNNER_RECOVERY_BLOCKED_BY_DIAGNOSTIC"',
+        '"RUNNER_RECOVERY_SERVICE_IDENTITY_MISMATCH"',
         '"RUNNER_SERVICE_RECOVERY_PREVIEW"',
         '"RUNNER_SERVICE_RECOVERY_ADMIN_REQUIRED"',
         '"RUNNER_SERVICE_RECOVERY_MUTATION_FAILED"',
@@ -172,7 +179,9 @@ def test_runbook_keeps_recovery_source_controlled_and_secret_free() -> None:
         "registration token",
         "must never be stored",
         "trading_methods=false",
+        "RunnerService.exe",
         "RUNNER_RECOVERY_BLOCKED_BY_DIAGNOSTIC",
+        "RUNNER_RECOVERY_SERVICE_IDENTITY_MISMATCH",
         "RUNNER_SERVICE_RECOVERY_PREVIEW",
     ):
         assert required in text

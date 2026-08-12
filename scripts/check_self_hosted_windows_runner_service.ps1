@@ -28,6 +28,33 @@ function Get-JsonPropertyOrdinalIgnoreCase {
     return $propertyMatches[0]
 }
 
+function Test-ServiceExecutablePathMatches {
+    param(
+        [AllowNull()][object]$PathName,
+        [Parameter(Mandatory = $true)][ValidateNotNullOrEmpty()][string]$ExpectedPath
+    )
+    if ($null -eq $PathName) { return $false }
+    $candidate = ([string]$PathName).Trim()
+    if ([string]::IsNullOrWhiteSpace($candidate)) { return $false }
+    if (
+        $candidate.Length -ge 2 -and
+        $candidate[0] -eq [char]34 -and
+        $candidate[$candidate.Length - 1] -eq [char]34
+    ) {
+        $candidate = $candidate.Substring(1, $candidate.Length - 2)
+    }
+    try {
+        $normalizedCandidate = [System.IO.Path]::GetFullPath($candidate)
+        $normalizedExpected = [System.IO.Path]::GetFullPath($ExpectedPath)
+    }
+    catch { return $false }
+    return [string]::Equals(
+        $normalizedCandidate,
+        $normalizedExpected,
+        [System.StringComparison]::OrdinalIgnoreCase
+    )
+}
+
 function New-Result {
     param(
         [bool]$Healthy,
@@ -81,6 +108,13 @@ $expectedServiceSuffix = ".$ExpectedRunnerName"
 # actions/runner WindowsServiceControlManager writes actions.runner.{repo-or-org}.{runner-name}.
 # Windows limits the service name to 80 chars; the allowed source characters are [0-9A-Za-z._-].
 $serviceNamePattern = '^actions\.runner\.[A-Za-z0-9._-]{1,65}$'
+$expectedServiceExecutablePath = $null
+try {
+    $expectedServiceExecutablePath = [System.IO.Path]::GetFullPath(
+        (Join-Path $RunnerRoot "bin\RunnerService.exe")
+    )
+}
+catch { $expectedServiceExecutablePath = $null }
 
 $runnerConfigurationPresent = Test-Path -LiteralPath $runnerConfigPath -PathType Leaf
 $runnerConfigurationValid = $false
@@ -194,10 +228,17 @@ if ($null -ne $service -and -not $serviceQueryFailed) {
     catch { $serviceQueryFailed = $true; $serviceQuerySucceeded = $false }
 }
 
+$serviceExecutablePathMatches = $false
+if ($null -ne $serviceDetails -and $null -ne $expectedServiceExecutablePath) {
+    $serviceExecutablePathMatches = Test-ServiceExecutablePathMatches `
+        -PathName $serviceDetails.PathName `
+        -ExpectedPath $expectedServiceExecutablePath
+}
 $serviceIdentityMatches = (
     $null -ne $service -and $null -ne $declaredServiceName -and
     [string]::Equals($service.Name, $declaredServiceName, [System.StringComparison]::OrdinalIgnoreCase) -and
-    $service.Name.EndsWith($expectedServiceSuffix, [System.StringComparison]::OrdinalIgnoreCase)
+    $service.Name.EndsWith($expectedServiceSuffix, [System.StringComparison]::OrdinalIgnoreCase) -and
+    $serviceExecutablePathMatches
 )
 $serviceState = if ($null -ne $serviceDetails) { [string]$serviceDetails.State } else { $null }
 $serviceStartMode = if ($null -ne $serviceDetails) { [string]$serviceDetails.StartMode } else { $null }

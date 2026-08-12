@@ -39,6 +39,9 @@ Healthy output requires:
 - the declared Windows service identity is the expected `omni-cio-ci` runner;
 - exactly one installed Windows service and one `Win32_Service` record match the
   exact declared name;
+- the service executable is exactly `<RunnerRoot>\bin\RunnerService.exe` after
+  Windows path normalization; extra command-line arguments or another runner
+  installation root are rejected;
 - service state is `Running` and start mode is `Auto`.
 
 The filename `.service` must not be confused with its content. Official
@@ -47,6 +50,12 @@ The filename `.service` must not be confused with its content. Official
 the Windows service name**. The official implementation constrains the Windows
 service name to at most 80 characters and writes the `.service` marker as a
 hidden UTF-8 file.
+
+The official `NativeWindowsServiceHelper` installs the service executable from
+the runner's own `bin\RunnerService.exe`. The repository diagnostic therefore
+binds the exact service name to the exact configured `RunnerRoot` executable
+before treating service identity as valid. `PathName` is used only internally
+for this comparison and is never emitted in diagnostic or recovery JSON.
 
 Likewise, `.runner` is a hidden runner configuration file. The diagnostic reads
 both hidden markers through direct .NET file I/O, matching the class of I/O used
@@ -98,9 +107,15 @@ failures return `RUNNER_RECOVERY_BLOCKED_BY_DIAGNOSTIC` with
 Before any mutation the helper independently re-reads the absolute `.service`
 marker through direct .NET I/O, validates the official bounded
 `actions.runner.{repo-or-org}.{runner-name}` shape and exact runner-name suffix,
-and requires exactly one matching Windows service plus one matching
-`Win32_Service` record. Only the immutable validated service-name string can
-become mutation authority; an array or `$service.Name` never can.
+requires exactly one matching Windows service plus one matching
+`Win32_Service` record, and independently requires that service's executable to
+be exactly `<RunnerRoot>\bin\RunnerService.exe`. A stale marker that names a
+service from another runner installation therefore cannot become mutation
+authority.
+
+Only the immutable validated service-name string can become mutation authority;
+an array or `$service.Name` never can. Neither the exact service name nor its
+executable path is emitted by the helper.
 
 ### Preview
 
@@ -142,9 +157,10 @@ never edits `.runner`, `.service`, `.credentials`, or registration state.
 ## Re-registration boundary
 
 If the runner configuration/identity/marker is missing or invalid, if the
-runner is ephemeral, or if the exact declared service is absent, do not use the
-in-place helper. Re-registration is a separate OWNER/admin operation through
-the official GitHub runner configuration flow.
+runner is ephemeral, if the exact declared service is absent, or if its
+executable is not the exact `RunnerService.exe` under the configured runner
+root, do not use the in-place helper. Re-registration is a separate OWNER/admin
+operation through the official GitHub runner configuration flow.
 
 On Windows, service installation is selected during runner configuration. If a
 runner was configured only for interactive execution, GitHub documents that it
@@ -182,7 +198,7 @@ screenshots, chat or documentation.
 | `RUNNER_SERVICE_MARKER_INVALID` | Marker is unreadable/oversized or not an official bounded service-name shape | Reconfigure; never guess by wildcard |
 | `RUNNER_SERVICE_MARKER_IDENTITY_MISMATCH` | Marker is valid-shaped but not the expected runner identity | Inspect/reconfigure exact identity |
 | `RUNNER_SERVICE_MISSING` | Exact declared Windows service is absent | Reconfigure service mode |
-| `RUNNER_SERVICE_IDENTITY_MISMATCH` | Installed service identity does not match exact marker | Stop and inspect registration |
+| `RUNNER_SERVICE_IDENTITY_MISMATCH` | Installed service name or executable is not the exact validated marker plus `<RunnerRoot>\bin\RunnerService.exe` identity | Stop and inspect/reconfigure registration; do not mutate it |
 | `RUNNER_SERVICE_QUERY_FAILED` | Exact service metadata could not be read unambiguously | Inspect Windows service/WMI health |
 | `RUNNER_SERVICE_NOT_AUTOMATIC` | Exact service is not automatic | Use source-controlled recovery helper |
 | `RUNNER_SERVICE_NOT_RUNNING` | Exact service is stopped | Use source-controlled recovery helper |
@@ -192,6 +208,7 @@ Recovery-specific results:
 | Recovery code | Meaning |
 |---|---|
 | `RUNNER_RECOVERY_BLOCKED_BY_DIAGNOSTIC` | State is not one of the two safe recovery states; zero mutations |
+| `RUNNER_RECOVERY_SERVICE_IDENTITY_MISMATCH` | Revalidation found a service-name or executable-path identity mismatch; zero mutations |
 | `RUNNER_SERVICE_RECOVERY_PREVIEW` | Exact bounded repair is available; preview made zero mutations |
 | `RUNNER_SERVICE_RECOVERY_ADMIN_REQUIRED` | Valid `-Apply` requested without elevation; zero mutations |
 | `RUNNER_SERVICE_RECOVERY_MUTATION_FAILED` | Single-target mutation failed; do not hand-enter fallback commands |
@@ -206,8 +223,9 @@ Recovery-specific results:
 - CI uses regression placeholders only;
 - workspace and temporary environments are cleaned after jobs;
 - raw `.runner`/`.service` content is never emitted by diagnostic or recovery;
+- exact `Win32_Service.PathName` is used only internally and is never emitted;
 - recovery is preview-by-default and `-Apply` requires elevation;
-- mutations are limited to one exact validated service;
+- mutations are limited to one exact service whose name and executable path are independently validated;
 - configuration/identity/marker/query failures cannot fall through to mutation;
 - `app:app`, the 14 GET Actions and `trading_methods=false` remain unchanged.
 
@@ -218,4 +236,5 @@ Recovery-specific results:
 - GitHub Docs: self-hosted runners reference (`--ephemeral` behavior);
 - GitHub Docs: monitoring/troubleshooting self-hosted runners;
 - official `actions/runner` source: `ConfigurationStore.cs`,
-  `WindowsServiceControlManager.cs`, and `ServiceControlManager.cs`.
+  `WindowsServiceControlManager.cs`, `ServiceControlManager.cs`, and
+  `NativeWindowsServiceHelper.cs`.

@@ -27,6 +27,33 @@ function Get-PropertyValueOrdinalIgnoreCase {
     return $propertyMatches[0].Value
 }
 
+function Test-ServiceExecutablePathMatches {
+    param(
+        [AllowNull()][object]$PathName,
+        [Parameter(Mandatory = $true)][ValidateNotNullOrEmpty()][string]$ExpectedPath
+    )
+    if ($null -eq $PathName) { return $false }
+    $candidate = ([string]$PathName).Trim()
+    if ([string]::IsNullOrWhiteSpace($candidate)) { return $false }
+    if (
+        $candidate.Length -ge 2 -and
+        $candidate[0] -eq [char]34 -and
+        $candidate[$candidate.Length - 1] -eq [char]34
+    ) {
+        $candidate = $candidate.Substring(1, $candidate.Length - 2)
+    }
+    try {
+        $normalizedCandidate = [System.IO.Path]::GetFullPath($candidate)
+        $normalizedExpected = [System.IO.Path]::GetFullPath($ExpectedPath)
+    }
+    catch { return $false }
+    return [string]::Equals(
+        $normalizedCandidate,
+        $normalizedExpected,
+        [System.StringComparison]::OrdinalIgnoreCase
+    )
+}
+
 function New-Result {
     param(
         [Parameter(Mandatory = $true)][bool]$Healthy,
@@ -179,6 +206,14 @@ if ($diagnosticErrorCode -isnot [string] -or -not (Test-RecoverableDiagnosticSta
 $serviceFilePath = Join-Path $RunnerRoot ".service"
 $expectedServiceSuffix = ".$ExpectedRunnerName"
 $serviceNamePattern = '^actions\.runner\.[A-Za-z0-9._-]{1,65}$'
+try {
+    $expectedServiceExecutablePath = [System.IO.Path]::GetFullPath(
+        (Join-Path $RunnerRoot "bin\RunnerService.exe")
+    )
+}
+catch {
+    Write-FailureAndExit "RUNNER_RECOVERY_SERVICE_IDENTITY_MISMATCH" $diagnosticErrorCode
+}
 if (-not (Test-Path -LiteralPath $serviceFilePath -PathType Leaf)) {
     Write-FailureAndExit "RUNNER_RECOVERY_SERVICE_MARKER_CHANGED" $diagnosticErrorCode
 }
@@ -213,8 +248,9 @@ $service = $matchingServices[0]
 $serviceDetails = $matchingServiceDetails[0]
 if (-not (
     [string]::Equals($service.Name, $declaredServiceName, [System.StringComparison]::OrdinalIgnoreCase) -and
-    [string]::Equals($serviceDetails.Name, $declaredServiceName, [System.StringComparison]::OrdinalIgnoreCase)
-)) { Write-FailureAndExit "RUNNER_RECOVERY_SERVICE_IDENTITY_AMBIGUOUS" $diagnosticErrorCode }
+    [string]::Equals($serviceDetails.Name, $declaredServiceName, [System.StringComparison]::OrdinalIgnoreCase) -and
+    (Test-ServiceExecutablePathMatches -PathName $serviceDetails.PathName -ExpectedPath $expectedServiceExecutablePath)
+)) { Write-FailureAndExit "RUNNER_RECOVERY_SERVICE_IDENTITY_MISMATCH" $diagnosticErrorCode }
 
 $serviceState = [string]$serviceDetails.State
 $serviceStartMode = [string]$serviceDetails.StartMode
