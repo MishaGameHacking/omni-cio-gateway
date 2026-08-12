@@ -100,13 +100,26 @@ if ($runnerConfigurationPresent) {
             $runnerConfigurationErrorDetail = "SIZE_INVALID"
         }
         else {
-            $runnerSettings = $null
+            $runnerConfigText = $null
             try {
-                $runnerSettings = Get-Content -LiteralPath $runnerConfigPath -Raw -ErrorAction Stop |
-                    ConvertFrom-Json -ErrorAction Stop
+                $runnerConfigText = Get-Content `
+                    -LiteralPath $runnerConfigPath `
+                    -Raw `
+                    -ErrorAction Stop
             }
             catch {
-                $runnerConfigurationErrorDetail = "JSON_INVALID"
+                $runnerConfigurationErrorDetail = "READ_FAILED"
+            }
+
+            $runnerSettings = $null
+            if ($null -ne $runnerConfigText) {
+                try {
+                    $runnerSettings = $runnerConfigText |
+                        ConvertFrom-Json -ErrorAction Stop
+                }
+                catch {
+                    $runnerConfigurationErrorDetail = "JSON_INVALID"
+                }
             }
 
             if ($null -ne $runnerSettings) {
