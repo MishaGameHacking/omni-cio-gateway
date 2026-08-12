@@ -82,6 +82,20 @@ def test_api_transport_has_no_public_bind_or_broker_write_surface() -> None:
     assert "app = create_local_private_app" not in api_source
 
 
+def test_local_private_app_uses_explicit_postgres_transactions() -> None:
+    root = Path(__file__).resolve().parents[3]
+    api_source = (root / "apps" / "api" / "app.py").read_text(encoding="utf-8")
+
+    assert "WEB_RUNTIME_POSTGRES_AUTOCOMMIT_REQUIRED" in api_source
+    assert "connection.autocommit = True" in api_source
+    assert api_source.index('connection = connect_postgres("")') < api_source.index(
+        "_configure_long_lived_web_connection(connection)"
+    )
+    assert api_source.index("_configure_long_lived_web_connection(connection)") < api_source.index(
+        "_verify_live_database(connection)"
+    )
+
+
 def test_wp15_live_bootstrap_seeds_owner_identity_before_runtime() -> None:
     root = Path(__file__).resolve().parents[3]
     bootstrap = (
