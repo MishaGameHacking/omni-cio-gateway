@@ -16,6 +16,13 @@ interface GoldenDashboard {
       quantity_units: string;
       blocked_units: string;
       broker_value: { amount: string; currency: string; source: string; as_of: string } | null;
+      current_market_last_price: {
+        amount: string;
+        quotation_unit: string;
+        quotation_semantics: string;
+        source: string;
+        as_of: string;
+      } | null;
       current_market_value: { amount: string; currency: string; source: string; as_of: string } | null;
       market_conversion_state: string;
       weight_within_position_currency_pct: string | null;
@@ -44,6 +51,13 @@ test("WP18 golden normal fixture preserves Decimal strings and provenance", () =
   assert.ok(position);
   assert.equal(position.quantity_units, "3");
   assert.equal(position.broker_value?.amount, "30.00");
+  assert.equal(position.current_market_last_price?.amount, "10.50");
+  assert.equal(position.current_market_last_price?.quotation_unit, "RUB");
+  assert.equal(
+    position.current_market_last_price?.quotation_semantics,
+    "SETTLEMENT_CURRENCY_PER_INSTRUMENT",
+  );
+  assert.match(position.current_market_last_price?.source ?? "", /raw quotation/);
   assert.equal(position.current_market_value?.amount, "31.50");
   assert.equal(position.weight_within_position_currency_pct, "100");
   assert.equal(position.market_conversion_state, "DIRECT_SHARE_OR_ETF");
