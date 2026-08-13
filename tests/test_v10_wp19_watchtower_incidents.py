@@ -67,6 +67,7 @@ class _FixtureConnection:
         self.alert_payload = alert_payload
         self.additional_alert_payload = additional_alert_payload
         self.seen_tenants: list[str] = []
+        self.query_count = 0
 
     def execute(
         self,
@@ -76,6 +77,7 @@ class _FixtureConnection:
         prepare: bool | None = None,
     ) -> _Cursor:
         del prepare
+        self.query_count += 1
         text = str(query)
         values = tuple(params or ())
         for value in values:
@@ -91,11 +93,8 @@ class _FixtureConnection:
                     (3, "open", NOW + timedelta(minutes=8)),
                 )
             )
-        if (
-            "FROM omni_cio_v10.incident_evidence" in text
-            and "incident_revision" in text
-        ):
-            return _Cursor(((EVIDENCE,),))
+        if "SELECT incident_revision, evidence_id" in text:
+            return _Cursor(((1, EVIDENCE), (2, EVIDENCE), (3, EVIDENCE)))
         if "SELECT DISTINCT e.evidence_id" in text:
             rows: list[Sequence[Any]] = [
                 (
@@ -243,6 +242,7 @@ def test_wp19_read_model_explains_reopened_critical_incident() -> None:
     assert incident["links"] == {"decisions": [DECISION], "plans": [PLAN]}
     assert incident["evidence"][0]["watchtower_alert_verified"] is True
     assert "payload" not in incident["evidence"][0]
+    assert connection.query_count == 5
     assert set(connection.seen_tenants) == {OWNER_TENANT_ID}
 
 
