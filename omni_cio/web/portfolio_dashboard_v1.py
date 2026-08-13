@@ -142,6 +142,20 @@ def _broker_error_code(exc: BrokerDataError) -> str:
     return str(exc).split(":", 1)[0]
 
 
+def _market_quote_freshness(
+    price_time: datetime,
+    *,
+    evaluated_at: datetime,
+    stale_after_seconds: int,
+) -> tuple[Decimal, str]:
+    age = max(
+        Decimal("0"),
+        Decimal(str((_utc(evaluated_at) - _utc(price_time)).total_seconds())),
+    )
+    state = "stale" if age > Decimal(stale_after_seconds) else "fresh"
+    return age, state
+
+
 class PortfolioDashboardServiceV1:
     """WP18 read-only product service over accepted WP15/WP17 boundaries.
 
@@ -210,12 +224,27 @@ class PortfolioDashboardServiceV1:
         finally:
             token = ""
 
+        account_evaluated_at = _utc(self._clock())
+        stale_after_seconds = snapshot_result.freshness.stale_after_seconds
         account_freshness = evaluate_freshness(
             snapshot_result.snapshot.metadata.retrieved_at,
-            evaluated_at=_utc(self._clock()),
-            stale_after_seconds=snapshot_result.freshness.stale_after_seconds,
+            evaluated_at=account_evaluated_at,
+            stale_after_seconds=stale_after_seconds,
         )
         prices = _market_by_uid(market_result)
+        market_freshness: dict[str, tuple[Decimal, str]] = {}
+        if market_result is not None:
+            market_freshness = {
+                row.instrument_uid: _market_quote_freshness(
+                    row.price_time,
+                    evaluated_at=account_evaluated_at,
+                    stale_after_seconds=stale_after_seconds,
+                )
+                for row in market_result.prices
+            }
+        market_stale_count = sum(
+            1 for _, state in market_freshness.values() if state == "stale"
+        )
         classifications = _classification_by_uid(classification_rows)
         broker_totals: dict[str, Decimal] = {}
         position_rows: list[dict[str, Any]] = []
@@ -244,6 +273,10 @@ class PortfolioDashboardServiceV1:
 
             uid = position.instrument.uid or ""
             market = prices.get(uid)
+            quote_age, quote_freshness = market_freshness.get(
+                uid,
+                (Decimal("0"), "fresh"),
+            )
             classification = classifications.get(uid)
             current_market_value: dict[str, str] | None = None
             market_conversion_state = "NO_LAST_PRICE"
@@ -316,8 +349,8 @@ class PortfolioDashboardServiceV1:
                         "quotation_semantics": quotation_semantics,
                         "source": "T-Invest GetLastPrices raw quotation",
                         "as_of": _utc(market.price_time).isoformat(),
-                        "freshness": market.freshness.value,
-                        "age_seconds": _decimal(market.age_seconds),
+                        "freshness": quote_freshness,
+                        "age_seconds": _decimal(quote_age),
                     }
                     if market is not None
                     else None
@@ -410,12 +443,12 @@ class PortfolioDashboardServiceV1:
                         "message": f"{market_result.missing_instrument_count} normalized instruments have no returned last price.",
                     }
                 )
-            if market_result.stale_instrument_count:
+            if market_stale_count:
                 warnings.append(
                     {
                         "code": "CURRENT_MARKET_QUOTES_STALE",
                         "severity": "warning",
-                        "message": f"{market_result.stale_instrument_count} returned last prices are stale.",
+                        "message": f"{market_stale_count} returned last prices are stale at the account evaluation time.",
                     }
                 )
         if classification_error:
@@ -505,11 +538,7 @@ class PortfolioDashboardServiceV1:
                     if market_error
                     else 0
                 ),
-                "stale_instrument_count": (
-                    market_result.stale_instrument_count
-                    if market_result is not None
-                    else 0
-                ),
+                "stale_instrument_count": market_stale_count,
             },
         }
 
