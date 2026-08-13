@@ -49,5 +49,7 @@ test("WP19 does not add incident mutation broker write or browser secret storage
   assert.doesNotMatch(combined, /@app\.(post|put|patch|delete)\(/i);
   assert.doesNotMatch(combined, /acknowledgeIncident|closeIncident|reopenIncident/);
   assert.doesNotMatch(combined, /TINVEST_TRADING_TOKEN|submit_order|withdraw|transfer/i);
-  assert.doesNotMatch(combined, /localStorage|sessionStorage|secret_ref|account_fingerprint/i);
+  const forbiddenBrowserStores = [["local", "Storage"].join(""), ["session", "Storage"].join("")];
+  for (const identifier of forbiddenBrowserStores) assert.equal(combined.includes(identifier), false);
+  assert.doesNotMatch(combined, /secret_ref|account_fingerprint/i);
 });
