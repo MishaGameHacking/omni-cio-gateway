@@ -2,13 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button, Card, Skeleton, StatePanel, StatusBadge } from "../design-system/components";
 import { readPortfolioDashboard } from "./api";
 import type { PortfolioAccountView, PortfolioDashboardView, PortfolioPositionView } from "./contracts";
-
-function formatDecimal(value: string | null | undefined, maximumFractionDigits = 2): string {
-  if (value === null || value === undefined || value === "") return "—";
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) return value;
-  return new Intl.NumberFormat("ru-RU", { maximumFractionDigits }).format(numeric);
-}
+import { formatDecimal } from "./decimal-format";
 
 function money(value: { amount: string; currency: string } | null): string {
   return value ? `${formatDecimal(value.amount)} ${value.currency}` : "—";
