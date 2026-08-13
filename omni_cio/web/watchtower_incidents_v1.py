@@ -16,10 +16,14 @@ from omni_cio.web.session_v1 import SessionScopeV1
 
 _MAX_INCIDENTS = 500
 _MAX_REVISIONS_PER_INCIDENT = 512
+_MAX_REVISION_ROWS_TOTAL = 50_000
 _MAX_EVIDENCE_IDS_PER_REVISION = 1024
 _MAX_EVIDENCE_LINK_ROWS_PER_INCIDENT = 4096
+_MAX_EVIDENCE_LINK_ROWS_TOTAL = 50_000
 _MAX_EVIDENCE_ROWS_PER_INCIDENT = 1024
+_MAX_EVIDENCE_ROWS_TOTAL = 20_000
 _MAX_JOURNAL_LINK_ROWS_PER_INCIDENT = 1024
+_MAX_JOURNAL_LINK_ROWS_TOTAL = 20_000
 _MAX_WATCHTOWER_ALERT_BLOB_BYTES = 64 * 1024
 _SEVERITY_ORDER = {"unknown": -1, "info": 0, "warning": 1, "error": 2}
 
@@ -122,66 +126,86 @@ class WatchtowerIncidentReadServiceV1:
         self._connection = connection
         self._clock = clock or (lambda: datetime.now(timezone.utc))
 
-    def _revision_rows(
+    def _revision_rows_by_incident(
         self,
         *,
         tenant_id: str,
-        incident_id: str,
-    ) -> list[Sequence[Any]]:
+        incident_ids: tuple[str, ...],
+    ) -> dict[str, list[Sequence[Any]]]:
+        if not incident_ids:
+            return {}
         rows = self._connection.execute(
-            "SELECT r.revision, r.status, r.revised_at "
+            "SELECT r.incident_id, r.revision, r.status, r.revised_at "
             "FROM omni_cio_v10.incident_revisions r "
             "JOIN omni_cio_v10.incidents i ON i.incident_id = r.incident_id "
-            "WHERE i.tenant_id = %s AND r.incident_id = %s "
-            "ORDER BY r.revision LIMIT %s",
-            (tenant_id, incident_id, _MAX_REVISIONS_PER_INCIDENT + 1),
-        ).fetchall()
-        return _bounded_rows(
-            rows,
-            maximum=_MAX_REVISIONS_PER_INCIDENT,
-            reason="WP19 incident revision limit exceeded",
-        )
-
-    def _revision_evidence_by_revision(
-        self,
-        *,
-        tenant_id: str,
-        incident_id: str,
-    ) -> dict[int, tuple[str, ...]]:
-        rows = self._connection.execute(
-            "SELECT incident_revision, evidence_id "
-            "FROM omni_cio_v10.incident_evidence "
-            "WHERE tenant_id = %s AND incident_id = %s "
-            "ORDER BY incident_revision, evidence_id LIMIT %s",
-            (
-                tenant_id,
-                incident_id,
-                _MAX_EVIDENCE_LINK_ROWS_PER_INCIDENT + 1,
-            ),
+            "WHERE i.tenant_id = %s AND r.incident_id = ANY(%s) "
+            "ORDER BY r.incident_id, r.revision LIMIT %s",
+            (tenant_id, list(incident_ids), _MAX_REVISION_ROWS_TOTAL + 1),
         ).fetchall()
         bounded = _bounded_rows(
             rows,
-            maximum=_MAX_EVIDENCE_LINK_ROWS_PER_INCIDENT,
-            reason="WP19 incident evidence link limit exceeded",
+            maximum=_MAX_REVISION_ROWS_TOTAL,
+            reason="WP19 incident revision total limit exceeded",
         )
-        grouped: dict[int, list[str]] = {}
+        grouped: dict[str, list[Sequence[Any]]] = {}
         for row in bounded:
-            revision = int(row[0])
-            values = grouped.setdefault(revision, [])
-            values.append(str(row[1]))
-            if len(values) > _MAX_EVIDENCE_IDS_PER_REVISION:
-                raise ValueError("WP19 incident revision evidence limit exceeded")
-        return {revision: tuple(values) for revision, values in grouped.items()}
+            incident_id = str(row[0])
+            values = grouped.setdefault(incident_id, [])
+            values.append((row[1], row[2], row[3]))
+            if len(values) > _MAX_REVISIONS_PER_INCIDENT:
+                raise ValueError("WP19 incident revision limit exceeded")
+        return grouped
 
-    def _evidence_rows(
+    def _revision_evidence_by_incident(
         self,
         *,
         tenant_id: str,
-        incident_id: str,
-    ) -> list[Sequence[Any]]:
+        incident_ids: tuple[str, ...],
+    ) -> dict[str, dict[int, tuple[str, ...]]]:
+        if not incident_ids:
+            return {}
         rows = self._connection.execute(
-            "SELECT DISTINCT e.evidence_id, e.source_kind, e.published_at, "
-            "e.retrieved_at, e.local_received_at, e.payload_sha256, "
+            "SELECT incident_id, incident_revision, evidence_id "
+            "FROM omni_cio_v10.incident_evidence "
+            "WHERE tenant_id = %s AND incident_id = ANY(%s) "
+            "ORDER BY incident_id, incident_revision, evidence_id LIMIT %s",
+            (tenant_id, list(incident_ids), _MAX_EVIDENCE_LINK_ROWS_TOTAL + 1),
+        ).fetchall()
+        bounded = _bounded_rows(
+            rows,
+            maximum=_MAX_EVIDENCE_LINK_ROWS_TOTAL,
+            reason="WP19 incident evidence link total limit exceeded",
+        )
+        grouped: dict[str, dict[int, list[str]]] = {}
+        incident_counts: dict[str, int] = {}
+        for row in bounded:
+            incident_id = str(row[0])
+            revision = int(row[1])
+            incident_counts[incident_id] = incident_counts.get(incident_id, 0) + 1
+            if incident_counts[incident_id] > _MAX_EVIDENCE_LINK_ROWS_PER_INCIDENT:
+                raise ValueError("WP19 incident evidence link limit exceeded")
+            values = grouped.setdefault(incident_id, {}).setdefault(revision, [])
+            values.append(str(row[2]))
+            if len(values) > _MAX_EVIDENCE_IDS_PER_REVISION:
+                raise ValueError("WP19 incident revision evidence limit exceeded")
+        return {
+            incident_id: {
+                revision: tuple(values) for revision, values in by_revision.items()
+            }
+            for incident_id, by_revision in grouped.items()
+        }
+
+    def _evidence_rows_by_incident(
+        self,
+        *,
+        tenant_id: str,
+        incident_ids: tuple[str, ...],
+    ) -> dict[str, list[Sequence[Any]]]:
+        if not incident_ids:
+            return {}
+        rows = self._connection.execute(
+            "SELECT DISTINCT ie.incident_id, e.evidence_id, e.source_kind, "
+            "e.published_at, e.retrieved_at, e.local_received_at, e.payload_sha256, "
             "e.instrument_id, ins.ticker, ins.name, cb.payload IS NOT NULL, "
             "CASE WHEN octet_length(cb.payload) <= %s THEN cb.payload ELSE NULL END "
             "FROM omni_cio_v10.incident_evidence ie "
@@ -189,49 +213,83 @@ class WatchtowerIncidentReadServiceV1:
             "LEFT JOIN omni_cio_v10.instruments ins ON ins.instrument_id = e.instrument_id "
             "LEFT JOIN omni_cio_v10.content_blobs cb "
             "ON cb.tenant_id = e.tenant_id AND cb.payload_sha256 = e.payload_sha256 "
-            "WHERE ie.tenant_id = %s AND ie.incident_id = %s "
-            "ORDER BY e.evidence_id LIMIT %s",
+            "WHERE ie.tenant_id = %s AND ie.incident_id = ANY(%s) "
+            "ORDER BY ie.incident_id, e.evidence_id LIMIT %s",
             (
                 _MAX_WATCHTOWER_ALERT_BLOB_BYTES,
                 tenant_id,
-                incident_id,
-                _MAX_EVIDENCE_ROWS_PER_INCIDENT + 1,
+                list(incident_ids),
+                _MAX_EVIDENCE_ROWS_TOTAL + 1,
             ),
-        ).fetchall()
-        return _bounded_rows(
-            rows,
-            maximum=_MAX_EVIDENCE_ROWS_PER_INCIDENT,
-            reason="WP19 incident evidence limit exceeded",
-        )
-
-    def _links(self, *, tenant_id: str, incident_id: str) -> dict[str, list[str]]:
-        rows = self._connection.execute(
-            "SELECT decision_id, plan_id FROM omni_cio_v10.journal "
-            "WHERE tenant_id = %s AND incident_id = %s "
-            "ORDER BY recorded_at, journal_id LIMIT %s",
-            (tenant_id, incident_id, _MAX_JOURNAL_LINK_ROWS_PER_INCIDENT + 1),
         ).fetchall()
         bounded = _bounded_rows(
             rows,
-            maximum=_MAX_JOURNAL_LINK_ROWS_PER_INCIDENT,
-            reason="WP19 incident journal link limit exceeded",
+            maximum=_MAX_EVIDENCE_ROWS_TOTAL,
+            reason="WP19 incident evidence total limit exceeded",
         )
-        decisions = sorted({str(row[0]) for row in bounded if row[0] is not None})
-        plans = sorted({str(row[1]) for row in bounded if row[1] is not None})
-        return {"decisions": decisions, "plans": plans}
+        grouped: dict[str, list[Sequence[Any]]] = {}
+        for row in bounded:
+            incident_id = str(row[0])
+            values = grouped.setdefault(incident_id, [])
+            values.append(tuple(row[1:]))
+            if len(values) > _MAX_EVIDENCE_ROWS_PER_INCIDENT:
+                raise ValueError("WP19 incident evidence limit exceeded")
+        return grouped
 
-    def _incident(self, *, tenant_id: str, row: Sequence[Any]) -> dict[str, Any]:
-        incident_id = str(row[0])
-        revision_rows = self._revision_rows(
-            tenant_id=tenant_id,
-            incident_id=incident_id,
+    def _links_by_incident(
+        self,
+        *,
+        tenant_id: str,
+        incident_ids: tuple[str, ...],
+    ) -> dict[str, dict[str, list[str]]]:
+        if not incident_ids:
+            return {}
+        rows = self._connection.execute(
+            "SELECT incident_id, decision_id, plan_id FROM omni_cio_v10.journal "
+            "WHERE tenant_id = %s AND incident_id = ANY(%s) "
+            "ORDER BY incident_id, recorded_at, journal_id LIMIT %s",
+            (tenant_id, list(incident_ids), _MAX_JOURNAL_LINK_ROWS_TOTAL + 1),
+        ).fetchall()
+        bounded = _bounded_rows(
+            rows,
+            maximum=_MAX_JOURNAL_LINK_ROWS_TOTAL,
+            reason="WP19 incident journal link total limit exceeded",
         )
+        grouped: dict[str, dict[str, set[str]]] = {}
+        counts: dict[str, int] = {}
+        for row in bounded:
+            incident_id = str(row[0])
+            counts[incident_id] = counts.get(incident_id, 0) + 1
+            if counts[incident_id] > _MAX_JOURNAL_LINK_ROWS_PER_INCIDENT:
+                raise ValueError("WP19 incident journal link limit exceeded")
+            values = grouped.setdefault(
+                incident_id,
+                {"decisions": set(), "plans": set()},
+            )
+            if row[1] is not None:
+                values["decisions"].add(str(row[1]))
+            if row[2] is not None:
+                values["plans"].add(str(row[2]))
+        return {
+            incident_id: {
+                "decisions": sorted(values["decisions"]),
+                "plans": sorted(values["plans"]),
+            }
+            for incident_id, values in grouped.items()
+        }
+
+    def _incident(
+        self,
+        *,
+        row: Sequence[Any],
+        revision_rows: Sequence[Sequence[Any]],
+        evidence_by_revision: dict[int, tuple[str, ...]],
+        evidence_rows: Sequence[Sequence[Any]],
+        links: dict[str, list[str]],
+    ) -> dict[str, Any]:
+        incident_id = str(row[0])
         if not revision_rows:
             raise ValueError("WP19 incident has no durable lifecycle revision")
-        evidence_by_revision = self._revision_evidence_by_revision(
-            tenant_id=tenant_id,
-            incident_id=incident_id,
-        )
 
         timeline: list[dict[str, Any]] = []
         statuses: list[str] = []
@@ -250,10 +308,7 @@ class WatchtowerIncidentReadServiceV1:
 
         evidence_views: list[dict[str, Any]] = []
         alerts: list[WatchtowerAlertV1] = []
-        for evidence_row in self._evidence_rows(
-            tenant_id=tenant_id,
-            incident_id=incident_id,
-        ):
+        for evidence_row in evidence_rows:
             alert = _watchtower_alert(evidence_row[10])
             if alert is not None:
                 alerts.append(alert)
@@ -337,7 +392,7 @@ class WatchtowerIncidentReadServiceV1:
             },
             "timeline": timeline,
             "evidence": evidence_views,
-            "links": self._links(tenant_id=tenant_id, incident_id=incident_id),
+            "links": links,
         }
 
     def read(self, *, tenant_id: str) -> dict[str, Any]:
@@ -350,9 +405,33 @@ class WatchtowerIncidentReadServiceV1:
             ).fetchall()
         )
         truncated = len(rows) > _MAX_INCIDENTS
+        represented_rows = rows[:_MAX_INCIDENTS]
+        incident_ids = tuple(str(row[0]) for row in represented_rows)
+        revisions = self._revision_rows_by_incident(
+            tenant_id=tenant_id,
+            incident_ids=incident_ids,
+        )
+        evidence_links = self._revision_evidence_by_incident(
+            tenant_id=tenant_id,
+            incident_ids=incident_ids,
+        )
+        evidence_rows = self._evidence_rows_by_incident(
+            tenant_id=tenant_id,
+            incident_ids=incident_ids,
+        )
+        links = self._links_by_incident(
+            tenant_id=tenant_id,
+            incident_ids=incident_ids,
+        )
         incidents = [
-            self._incident(tenant_id=tenant_id, row=row)
-            for row in rows[:_MAX_INCIDENTS]
+            self._incident(
+                row=row,
+                revision_rows=revisions.get(str(row[0]), ()),
+                evidence_by_revision=evidence_links.get(str(row[0]), {}),
+                evidence_rows=evidence_rows.get(str(row[0]), ()),
+                links=links.get(str(row[0]), {"decisions": [], "plans": []}),
+            )
+            for row in represented_rows
         ]
         incidents.sort(
             key=lambda item: (
