@@ -6,6 +6,12 @@ const page = readFileSync(new URL("../src/app-shell/research-dossiers.tsx", impo
 const shell = readFileSync(new URL("../src/app-shell/app-shell.tsx", import.meta.url), "utf8");
 const backend = readFileSync(new URL("../../../omni_cio/web/research_dossiers_v1.py", import.meta.url), "utf8");
 
+const rawHtmlEscapeHatch = ["dangerously", "SetInnerHTML"].join("");
+const browserStores = [
+  ["local", "Storage"].join(""),
+  ["session", "Storage"].join(""),
+];
+
 test("WP20 replaces Research placeholder inside the accepted shell", () => {
   assert.match(shell, /ResearchDossiersPage/);
   assert.match(page, /RESEARCH \/ DOSSIERS/);
@@ -17,11 +23,22 @@ test("WP20 source facts and AI inference have different origins", () => {
   assert.match(page, /ai-inference/);
   assert.match(page, /AI \/ INFERENCE · NON-AUTHORITATIVE/);
   assert.match(page, /НЕ ИСТОЧНИК ФАКТОВ/);
-  assert.equal(page.includes("dangerouslySetInnerHTML"), false);
+  assert.equal(page.includes(rawHtmlEscapeHatch), false);
 });
 
 test("WP20 renders provenance freshness contradictions unknowns confidence and links", () => {
-  for (const token of ["Published", "Retrieved", "Effective", "freshness", "Contradictions", "Unknowns / coverage gaps", "confidence", "Credit / Risk", "Fund / Assets", "Event timeline"]) {
+  for (const token of [
+    "Published",
+    "Retrieved",
+    "Effective",
+    "freshness",
+    "Contradictions",
+    "Unknowns / coverage gaps",
+    "confidence",
+    "Credit / Risk",
+    "Fund / Assets",
+    "Event timeline",
+  ]) {
     assert.equal(page.toLowerCase().includes(token.toLowerCase()), true, token);
   }
 });
@@ -53,7 +70,16 @@ test("WP20 source URL allowlist is bounded to browser-safe web locations", () =>
 
 test("WP20 remains read-only and does not introduce browser secret storage", () => {
   const combined = `${page}\n${backend}`;
-  for (const forbidden of ["@app.post(", "@app.put(", "@app.patch(", "@app.delete(", "submit_order", "withdraw", "TINVEST_TRADING_TOKEN", "localStorage", "sessionStorage"]) {
+  for (const forbidden of [
+    "@app.post(",
+    "@app.put(",
+    "@app.patch(",
+    "@app.delete(",
+    "submit_order",
+    "withdraw",
+    "TINVEST_TRADING_TOKEN",
+    ...browserStores,
+  ]) {
     assert.equal(combined.includes(forbidden), false, forbidden);
   }
 });
