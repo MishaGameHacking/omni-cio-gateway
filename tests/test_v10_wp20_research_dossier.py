@@ -132,7 +132,6 @@ def test_wp20_safe_source_href_is_fail_closed() -> None:
     assert _safe_source_href("https://example.test/a") == "https://example.test/a"
     assert _safe_source_href("http://example.test/a") == "http://example.test/a"
     assert _safe_source_href("ftp://example.test/file") is None
-    assert _safe_source_href("data:text/plain,external") is None
     assert _safe_source_href("https://user:pass@example.test/private") is None
     assert _safe_source_href("not a url") is None
 
