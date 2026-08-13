@@ -15,7 +15,7 @@
         "quantity_units":"3","blocked_units":"0",
         "broker_unit_price":{"amount":"10.00","currency":"RUB","source":"T-Invest GetPortfolio current_price","as_of":"2026-08-13T08:30:00+00:00"},
         "broker_value":{"amount":"30.00","currency":"RUB","source":"T-Invest GetPortfolio: current_price × quantity","as_of":"2026-08-13T08:30:00+00:00"},
-        "current_market_last_price":{"amount":"10.50","currency":"RUB","source":"T-Invest GetLastPrices","as_of":"2026-08-13T08:29:59+00:00","freshness":"fresh","age_seconds":"1"},
+        "current_market_last_price":{"amount":"10.50","quotation_unit":"RUB","quotation_semantics":"SETTLEMENT_CURRENCY_PER_INSTRUMENT","source":"T-Invest GetLastPrices raw quotation","as_of":"2026-08-13T08:29:59+00:00","freshness":"fresh","age_seconds":"1"},
         "current_market_value":{"amount":"31.50","currency":"RUB","source":"T-Invest GetLastPrices: last_price × quantity","as_of":"2026-08-13T08:29:59+00:00"},
         "market_conversion_state":"DIRECT_SHARE_OR_ETF","weight_within_position_currency_pct":"100"
       }],
