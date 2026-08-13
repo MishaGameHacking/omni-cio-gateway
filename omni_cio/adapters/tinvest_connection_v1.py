@@ -173,6 +173,7 @@ class TInvestConnectionMarketReadAdapter(
         retrieved_at = self._clock().astimezone(timezone.utc)
         rows: list[TInvestInstrumentClassificationV1] = []
         detail_cache: dict[str, dict[str, Any]] = {}
+        source = "T-Invest GetInstrumentBy.asset_uid → GetAssetBy.brand"
 
         with self._client_factory() as client:
             self._configure_throttle(client)
@@ -184,10 +185,38 @@ class TInvestConnectionMarketReadAdapter(
                         client,
                         instrument_uid,
                     )
-                    asset_uid = str(instrument.get("asset_uid") or "").strip()
-                    if not asset_uid:
-                        raise BrokerDataError("INSTRUMENT_ASSET_UID_MISSING")
+                except Exception:
+                    if not allow_partial:
+                        raise
+                    rows.append(
+                        TInvestInstrumentClassificationV1(
+                            instrument_uid=instrument_uid,
+                            issuer=None,
+                            sector=None,
+                            source=source,
+                            retrieved_at=retrieved_at,
+                            state="UNAVAILABLE_LOOKUP",
+                        )
+                    )
+                    continue
 
+                asset_uid = str(instrument.get("asset_uid") or "").strip()
+                if not asset_uid:
+                    if not allow_partial:
+                        raise BrokerDataError("INSTRUMENT_ASSET_UID_MISSING")
+                    rows.append(
+                        TInvestInstrumentClassificationV1(
+                            instrument_uid=instrument_uid,
+                            issuer=None,
+                            sector=None,
+                            source=source,
+                            retrieved_at=retrieved_at,
+                            state="UNAVAILABLE_MAPPING",
+                        )
+                    )
+                    continue
+
+                try:
                     detail = detail_cache.get(asset_uid)
                     if detail is None:
                         asset_response = self._call_read(
@@ -221,10 +250,7 @@ class TInvestConnectionMarketReadAdapter(
                             instrument_uid=instrument_uid,
                             issuer=issuer,
                             sector=sector,
-                            source=(
-                                "T-Invest GetInstrumentBy.asset_uid → "
-                                "GetAssetBy.brand"
-                            ),
+                            source=source,
                             retrieved_at=retrieved_at,
                             state=state,
                         )
@@ -237,10 +263,7 @@ class TInvestConnectionMarketReadAdapter(
                             instrument_uid=instrument_uid,
                             issuer=None,
                             sector=None,
-                            source=(
-                                "T-Invest GetInstrumentBy.asset_uid → "
-                                "GetAssetBy.brand"
-                            ),
+                            source=source,
                             retrieved_at=retrieved_at,
                             state="UNAVAILABLE_LOOKUP",
                         )
