@@ -4,23 +4,25 @@ Updated: 2026-08-13
 
 ## Executive state
 
-Omni-CIO V10: **DEVELOPMENT ACTIVE / BLOCK D COMPLETE / WP16 COMPLETE / WP17 COMPLETE / WP18 COMPLETE / WP19 COMPLETE / WP20 AUTHORIZED NEXT**.
+Omni-CIO V10: **DEVELOPMENT ACTIVE / BLOCK D COMPLETE / WP16 COMPLETE / WP17 COMPLETE / WP18 COMPLETE / WP19 COMPLETE / WP20 COMPLETE / WP21 AUTHORIZED NEXT**.
 
 Accepted implementation progress is **40%**.
 
-Block A (5%), Block B (9%), Block C (12%) and Block D (14%) have passed their owning Exit Gates. Block E is in progress: WP16, WP17, WP18 and WP19 are complete; WP20 — Research Dossier UI — is the next authorized implementation package. Block E receives no percentage credit until its own Block Exit Gate.
+Block A (5%), Block B (9%), Block C (12%) and Block D (14%) have passed their owning Exit Gates. Block E is in progress: WP16, WP17, WP18, WP19 and WP20 are complete; WP21 — Decision, Risk and Plan UI — is the next authorized implementation package. Block E receives no percentage credit until its own Block Exit Gate.
 
-WP19 was implemented on final reviewed head `8f6c60805341c34726e22eefb676220d7ae66dcb` and squash-merged through PR #308 to exact `main` `058e53a76e6f6aeabe32eb6711cb5168417d5093`.
+WP20 was implemented on final reviewed head `21fec9d2682d3731759bb520f25cb1026295013a` and squash-merged through PR #310 to exact `main` `b83e2bcc729ed0863f861a258dc951a57ec6b65e`.
 
-On the final reviewed WP19 head, the fresh final-review cycle completed SUCCESS for the dedicated WP19 audit #25, WP15 Live Web Support #226, WP16 Web Design System #353, WP17 Application Shell #324, WP18 Portfolio Dashboard #111 and authoritative Self-Hosted Windows CI #1000. The authoritative gate included Regression Shield coverage, dependency audit, SAST, tracked-content secret scan and Windows smoke. Hosted Fast PR Checks #908 and Toolchain Compatibility #943 did not start their substantive hosted jobs because of the GitHub account billing/spending-limit condition; they remain infrastructure failures, not PASS and not code failures.
+On the final reviewed WP20 head, the fresh final-review cycle completed SUCCESS for WP15 Live Web Support #238, WP16 Web Design System #367, WP17 Application Shell #338, WP18 Portfolio Dashboard #125, WP19 Watchtower Incident #39, dedicated WP20 Research Dossier #11 and authoritative Self-Hosted Windows CI #1012. The authoritative gate included protected Regression Shield coverage, dependency audit, SAST, tracked-content secret scan, stable `app:app` and read-only GPT Actions checks. Hosted Fast PR Checks and Toolchain Compatibility did not start their substantive hosted jobs because of the GitHub account billing/spending-limit condition; they remain infrastructure failures, not PASS and not code failures.
 
-After squash merge, post-merge Regression Shield #1488 / run `31728413708` completed **SUCCESS** on exact `main` `058e53a76e6f6aeabe32eb6711cb5168417d5093`. Both independent jobs passed: quality/contracts/coverage and dependency/code/secret security. The post-merge WP19 Watchtower Incident Audit #26 / run `31728413735` also completed **SUCCESS** on the same exact main. Triggered WP15/WP16/WP17/WP18 Web regressions on the merged WP19 main also completed SUCCESS.
+After squash merge, post-merge Regression Shield #1490 / run `31745729866` completed **SUCCESS** on exact `main` `b83e2bcc729ed0863f861a258dc951a57ec6b65e`. Both independent jobs passed: quality/contracts/coverage and dependency/code/secret security. The post-merge WP20 Research Dossier Audit #12 / run `31745729883` also completed **SUCCESS** on the same exact main. Triggered WP16/WP17/WP18/WP19 Web regressions observed during closeout completed SUCCESS.
 
-The accepted WP19 product surface remains local/private and READ-only. It presents durable incident lifecycle, canonical Watchtower severity/subject/evidence context, dedup/reopen state and existing Decision/Plan linkage without inventing materiality, returning raw evidence payloads or adding mutation/broker-write authority. Missing or conflicting evidence remains explicit and fail-closed. Incident read amplification is bounded with constant-shape tenant-scoped detail reads.
+The post-merge WP15 Live Web OWNER Audit #19 / run `31745729843` remains **FAILURE**, not PASS. Its accepted immutable OWNER evidence is still bound to WP15 implementation `a7ecad5f7e84e756d19fca2969a71c62fca744a2`, so the later WP20 main correctly reports `implementation_bound=false`. The auditor short-circuits runtime isolation/ACL subchecks when that binding fails, therefore their fail-closed default values are not evidence of a new Lenovo isolation regression. The same stale-binding condition already occurred after the accepted WP19 main. This red historical OWNER-evidence check does not alter the accepted WP15 state and does not require new OWNER physical/secret action.
+
+The accepted WP20 product surface remains local/private and READ-only. It projects only validated canonical `ResearchDossierV1` facts and provenance from accepted durable state, keeps stale/contradictory/unknown evidence explicit, rejects unsafe source locations, renders untrusted markup as text and keeps AI/inference visibly and semantically non-authoritative. Raw research blobs are not returned to the browser, and no new research store, Block G runtime, public ingress, broker-write authority or Real execution surface was introduced.
 
 The deferred/accepted WP15 real T-Invest READ path remains unchanged. Broker provisioning remains connection-scoped through the authenticated local/private Web flow; raw broker credentials, full provider account IDs and private portfolio payloads remain outside GitHub/CI evidence.
 
-OWNER action required now: **NO**. Engineering may proceed autonomously to the WP20 dependency/contract check after this status-only transition itself is accepted. No public ingress, public multi-user activation, Telegram delivery, AI authority expansion, broker write or Real execution is authorized by this transition.
+OWNER action required now: **NO**. Engineering may proceed autonomously to the WP21 dependency/contract check after this status-only transition itself is accepted. No public ingress, public multi-user activation, Telegram delivery, AI authority expansion, broker write or Real execution is authorized by this transition.
 
 Owner start command: **`START V10`** received 2026-08-05.
 
@@ -49,33 +51,31 @@ Starting or advancing V10 never expands broker/Real-money authority by itself.
 - Block E / WP17 — **COMPLETE**;
 - Block E / WP18 — **COMPLETE**;
 - Block E / WP19 — **COMPLETE**;
-- Block E / WP20 — **AUTHORIZED NEXT / NOT STARTED**;
-- Block E / WP21+ — **LOCKED behind owning dependencies and Master Plan sequence**;
+- Block E / WP20 — **COMPLETE**;
+- Block E / WP21 — **AUTHORIZED NEXT / NOT STARTED**;
+- Block E / WP22+ — **LOCKED behind owning dependencies and Master Plan sequence**;
 - public multi-user activation — **OFF / LOCKED**;
 - public Internet ingress — **OFF / LOCKED until WP22A or later owning security gate**;
 - broker write / Real execution — **UNCHANGED / NOT AUTHORIZED**.
 
-## Current next package — WP20 Research Dossier UI
+## Current next package — WP21 Decision, Risk and Plan UI
 
-Master Plan objective: make provenance and uncertainty visible to the OWNER.
+Master Plan objective: show one primary decision and the exact before/after mathematics.
 
-Required WP20 deliverables remain exactly the Master Plan scope:
+Required WP21 deliverables remain exactly the Master Plan scope:
 
-- facts with source links/labels, published/retrieved time, freshness, contradictions, unknowns and confidence;
-- event timeline plus issuer/security identity and Credit/Fund links;
-- AI-generated summary visually and semantically separated from canonical structured facts.
+- `MAIN_DECISION`: `NO_ACTION` / `HOLD` / `REDUCE` / `EXIT` / `REALLOCATE`;
+- risk before/after, target weights, lots, costs, cash, constraints, blockers and evidence;
+- immutable plan hash/version/expiry;
+- alternatives available for explanation without forcing the OWNER to guess the correct allocation.
 
-Required WP20 tests:
+Required WP21 test:
 
-- long-text and long-source-list rendering;
-- stale and contradictory research states;
-- malicious-markup sanitization.
+- deterministic rendering from the Plan DTO; an altered plan invalidates the approval UI.
 
-WP20 Exit Gate: **a fact from a source must never be visually confusable with AI/inference**.
+WP21 Exit Gate: **the OWNER sees the exact subject of future confirmation before any real execution**.
 
-Master Plan dependencies are **WP19 and Block G contracts**. Therefore the first WP20 engineering action after this status transition is accepted is an explicit dependency/interface check against the accepted Research/AI contracts and V9 reuse/parity authorities. If the required Block G contract is not already accepted and sufficient, WP20 must stop at that dependency boundary; this status transition does not authorize out-of-order Block G implementation.
-
-WP20 must extend the single source-controlled Web App and preserve the existing WP16 design system, WP17 session boundary, WP18/WP19 read-only presentation safety and canonical evidence/provenance semantics. It does not authorize Telegram delivery, public ingress, broker write or Real execution.
+Master Plan dependency is **WP20**. WP21 must extend the same source-controlled local/private Web App and preserve canonical Decision/Risk/Plan meaning from the deterministic Core. It may present the future confirmation subject but does not authorize broker submission, public approval ingress or Real execution.
 
 ## Canonical authority
 
@@ -110,7 +110,9 @@ Identity, broker provisioning and Web work are additionally governed by:
 - `docs/architecture/V10_WP18_EXECUTION_CONTRACT.md`;
 - `docs/architecture/V10_WP18_PORTFOLIO_DASHBOARD_CONTRACT.md`;
 - `docs/architecture/V10_WP19_EXECUTION_CONTRACT.md`;
-- `docs/architecture/V10_WP19_WATCHTOWER_INCIDENT_UI_CONTRACT.md`.
+- `docs/architecture/V10_WP19_WATCHTOWER_INCIDENT_UI_CONTRACT.md`;
+- `docs/architecture/V10_WP20_EXECUTION_CONTRACT.md`;
+- `docs/architecture/V10_WP20_RESEARCH_DOSSIER_UI_CONTRACT.md`.
 
 GitHub remains engineering source of truth. Protected production/recovery baseline remains **Omni-CIO v9.0.0 — COMPLETE / owner-accepted / controlled maintenance** until the responsible later V10 parity/decommission gate.
 
@@ -122,7 +124,7 @@ GitHub remains engineering source of truth. Protected production/recovery baseli
 | B. GitHub, dependencies and CI/CD | 9% | COMPLETE — WP1 / WP2 / WP3 / WP4 |
 | C. Lenovo Omni-CIO Node / infrastructure | 12% | COMPLETE — WP5 / WP6 / WP7 / WP8 / WP9 / WP9A / WP10 |
 | D. V10 Core and data | 14% | COMPLETE — WP11 / WP12 / WP13 / WP14 / WP15 incl. real READ evidence |
-| E. Omni-CIO Web Platform | 14% | IN PROGRESS — WP16 / WP17 / WP18 / WP19 COMPLETE; WP20 NEXT |
+| E. Omni-CIO Web Platform | 14% | IN PROGRESS — WP16 / WP17 / WP18 / WP19 / WP20 COMPLETE; WP21 NEXT |
 | F. Telegram | 8% | NOT STARTED — product/interaction contract pre-approved only |
 | G. AI Copilot / Research / GPT Migration | 18% | NOT STARTED |
 | H. Guardian / Watchtower Loop | 8% | NOT STARTED |
@@ -155,28 +157,34 @@ The 40% total is intentional: Block E is not credited piecemeal.
 - WP19 final PR #308 reviewed head `8f6c60805341c34726e22eefb676220d7ae66dcb`: WP19 #25, WP15 Live Web Support #226, WP16 #353, WP17 #324, WP18 #111 and Self-Hosted Windows CI #1000 — **SUCCESS**;
 - WP19 PR #308 squash merge -> exact `main` `058e53a76e6f6aeabe32eb6711cb5168417d5093`;
 - post-WP19 Regression Shield #1488 / run `31728413708` on exact `main` `058e53a76e6f6aeabe32eb6711cb5168417d5093` — **SUCCESS**, including coverage, dependency audit, SAST and tracked-secret scan;
-- post-WP19 Watchtower Incident Audit #26 / run `31728413735` — **SUCCESS** on the same exact main.
+- post-WP19 Watchtower Incident Audit #26 / run `31728413735` — **SUCCESS** on the same exact main;
+- WP20 final PR #310 reviewed head `21fec9d2682d3731759bb520f25cb1026295013a`: WP15 Live Web Support #238, WP16 #367, WP17 #338, WP18 #125, WP19 #39, WP20 #11 and Self-Hosted Windows CI #1012 — **SUCCESS**;
+- WP20 PR #310 squash merge -> exact `main` `b83e2bcc729ed0863f861a258dc951a57ec6b65e`;
+- post-WP20 Regression Shield #1490 / run `31745729866` on exact `main` `b83e2bcc729ed0863f861a258dc951a57ec6b65e` — **SUCCESS**, including coverage, dependency audit, SAST and tracked-secret scan;
+- post-WP20 Research Dossier Audit #12 / run `31745729883` — **SUCCESS** on the same exact main;
+- post-WP20 WP15 Live Web OWNER Audit #19 / run `31745729843` — **FAILURE** due immutable accepted WP15 evidence SHA not matching the later Web main; this remains red and is not treated as PASS or as proof of a new isolation regression.
 
 Hosted Fast PR Checks / Toolchain Compatibility runs that GitHub did not start because of the account billing/spending-limit condition remain infrastructure failures, not PASS and not code failures.
 
-## WP19 closeout evidence
+## WP20 closeout evidence
 
-WP19 satisfies its Master Plan Exit Gate:
+WP20 satisfies its Master Plan Exit Gate:
 
-- every represented incident exposes durable lifecycle state and timeline rather than transient-only presentation;
-- canonical Watchtower metadata is projected only after `WatchtowerAlertV1` validation and raw content blobs are never returned to the browser;
-- severity, subject, message/action context and canonical OWNER-attention semantics are separated from independently invented materiality claims;
-- missing/invalid evidence remains visible as degraded/unknown rather than fabricated data;
-- conflicting semantic fingerprints fail to an explicit conflict/degraded state; exact duplicate/replay metadata does not create duplicate browser incidents;
-- closed-then-open lifecycle is visibly represented as reopened;
-- evidence rows expose bounded safe metadata and preserve tenant/portfolio/policy scope;
-- incident detail reads use bounded constant-shape bulk queries rather than per-revision/per-incident unbounded amplification;
-- existing Decision/Plan links are read-only and no incident mutation control, broker-write route or browser secret storage was added;
-- active/resolved/critical filters and accessibility state are covered by deterministic Web/browser contracts;
-- review state before merge had zero blocking threads/comments and the full 14-file WP19 diff was reviewed;
-- squash merge, exact-main Regression Shield and exact-main focused WP19 audit all completed successfully.
+- the Web route is authenticated and tenant-scoped and remains strictly READ-only;
+- durable research content contributes canonical facts only after accepted schema binding and full `ResearchDossierV1` validation;
+- canonical facts expose source provider/class/authority, safe source location, retrieved/published/effective timestamps, freshness, confidence and record identity;
+- stale cache/evidence, contradictions, unknowns/coverage gaps, invalid dossiers and truncation remain explicit rather than silently becoming clean data;
+- unsafe source locations are rejected and malicious markup remains inert text in the browser;
+- raw research content blobs never leave the server projection;
+- event timeline, issuer/security identity and existing Credit/Fund navigation remain bounded and source-backed;
+- the AI/inference zone is visibly and semantically distinct from canonical facts and permanently marked non-authoritative; production AI summary remains unavailable until its owning Block G runtime exists;
+- long text/source-list, stale/contradictory and malicious-markup browser cases are covered by deterministic evidence;
+- the synthetic browser artifact was inspected and canonical source facts cannot be visually confused with the distinct AI/inference zone;
+- no second research store, Block G runtime, public ingress, broker-write route, browser secret storage or Real execution authority was introduced;
+- review state before merge had zero blocking threads/comments and the complete 12-file WP20 diff was reviewed;
+- squash merge, exact-main Regression Shield and exact-main focused WP20 audit all completed successfully.
 
-This acceptance does not authorize WP20 to fabricate research facts or treat AI summaries as canonical evidence. WP20 must preserve provenance, uncertainty and source/inference separation.
+This acceptance does not authorize WP21 to mutate plans or submit orders. WP21 must deterministically render the accepted Decision/Risk/Plan contract and make the exact future approval subject visible before any Real execution.
 
 ## Permanent safety / rollback invariants
 
@@ -192,4 +200,4 @@ This acceptance does not authorize WP20 to fabricate research facts or treat AI 
 
 ## Current next action
 
-Start **WP20 — Research Dossier UI** only after this status-only transition itself passes exact-head required gates, is squash-merged, and the resulting exact `main` passes the required post-merge Regression Shield. Before writing WP20 feature code, re-read the accepted `main`, WP execution template, Master Plan WP20 section, V9 Research/Evidence authorities, reuse/parity records and accepted Block G interface contracts; explicitly resolve the Master Plan dependency `WP19, Block G contracts` without beginning Block G feature implementation out of sequence. WP20 must remain inside the single source-controlled Web App and leave public Internet ingress, public multi-user activation, broker write and Real execution locked.
+Start **WP21 — Decision, Risk and Plan UI** only after this status-only transition itself passes exact-head required gates, is squash-merged, and the resulting exact `main` passes the required post-merge Regression Shield. Before writing WP21 feature code, re-read the accepted `main`, WP execution template, Master Plan WP21 section and the accepted Decision/Risk/Plan DTO, immutable-plan and V9 parity/reuse authorities. WP21 must remain deterministic and local/private, render the exact future confirmation subject, and leave public Internet ingress, broker write and Real execution locked.
