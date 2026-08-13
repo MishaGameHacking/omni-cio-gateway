@@ -9,7 +9,7 @@ from typing import Any
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from omni_cio.adapters.tinvest_read_v1 import BrokerDataError
+from omni_cio.adapters.tinvest_read_v1 import BrokerDataError, TInvestReadAdapterError
 from omni_cio.contracts.v1.portfolio import InstrumentType
 from omni_cio.web.portfolio_dashboard_v1 import (
     PortfolioDashboardServiceV1,
@@ -47,14 +47,18 @@ class FakeAdapter:
         market: Any = None,
         *,
         market_error: bool = False,
+        market_integrity_error: bool = False,
         classification_error: bool = False,
+        classification_integrity_error: bool = False,
         classification_programming_error: bool = False,
         classification_state: str = "VERIFIED",
     ) -> None:
         self.snapshot = snapshot
         self.market = market
         self.market_error = market_error
+        self.market_integrity_error = market_integrity_error
         self.classification_error = classification_error
+        self.classification_integrity_error = classification_integrity_error
         self.classification_programming_error = classification_programming_error
         self.classification_state = classification_state
 
@@ -76,8 +80,10 @@ class FakeAdapter:
     ) -> Any:
         assert allow_partial is True
         assert instruments
+        if self.market_integrity_error:
+            raise BrokerDataError("MARKET_DUPLICATE_UID_CONFLICT")
         if self.market_error:
-            raise BrokerDataError("MARKET_PROVIDER_UNAVAILABLE")
+            raise TInvestReadAdapterError("MARKET_PROVIDER_UNAVAILABLE")
         return self.market
 
     def read_instrument_classifications(
@@ -90,8 +96,10 @@ class FakeAdapter:
         assert instruments
         if self.classification_programming_error:
             raise AttributeError("synthetic programming defect")
+        if self.classification_integrity_error:
+            raise BrokerDataError("INSTRUMENT_IDENTITY_CONFLICT")
         if self.classification_error:
-            raise BrokerDataError("CLASSIFICATION_PROVIDER_UNAVAILABLE")
+            raise TInvestReadAdapterError("CLASSIFICATION_PROVIDER_UNAVAILABLE")
         return tuple(
             SimpleNamespace(
                 instrument_uid=instrument.uid,
@@ -242,7 +250,9 @@ def _service(
     snapshot: Any,
     market: Any = None,
     market_error: bool = False,
+    market_integrity_error: bool = False,
     classification_error: bool = False,
+    classification_integrity_error: bool = False,
     classification_programming_error: bool = False,
     classification_state: str = "VERIFIED",
 ) -> tuple[PortfolioDashboardServiceV1, FakeRepository, FakeVault]:
@@ -252,7 +262,9 @@ def _service(
         snapshot,
         market,
         market_error=market_error,
+        market_integrity_error=market_integrity_error,
         classification_error=classification_error,
+        classification_integrity_error=classification_integrity_error,
         classification_programming_error=classification_programming_error,
         classification_state=classification_state,
     )
@@ -425,6 +437,22 @@ def test_classification_failure_is_visible_and_never_inferred() -> None:
     )
 
 
+def test_classification_integrity_error_fails_entire_account_closed() -> None:
+    service, _, _ = _service(
+        snapshot=_snapshot(position=_position()),
+        market=_market(),
+        classification_integrity_error=True,
+    )
+
+    result = service.read(tenant_id="tenant-owner")
+
+    assert result["state"] == "UNAVAILABLE"
+    assert result["accounts"] == []
+    assert any(
+        row["code"] == "BROKER_ACCOUNT_READ_UNAVAILABLE" for row in result["warnings"]
+    )
+
+
 def test_unexpected_classification_defect_fails_entire_account_closed() -> None:
     service, _, _ = _service(
         snapshot=_snapshot(position=_position()),
@@ -474,6 +502,21 @@ def test_market_failure_keeps_broker_data_visible_with_explicit_warning() -> Non
     assert account["current_market"]["state"] == "UNAVAILABLE"
     assert any(
         row["code"] == "CURRENT_MARKET_DATA_UNAVAILABLE" for row in account["warnings"]
+    )
+
+
+def test_market_integrity_error_fails_entire_account_closed() -> None:
+    service, _, _ = _service(
+        snapshot=_snapshot(position=_position()),
+        market_integrity_error=True,
+    )
+
+    result = service.read(tenant_id="tenant-owner")
+
+    assert result["state"] == "UNAVAILABLE"
+    assert result["accounts"] == []
+    assert any(
+        row["code"] == "BROKER_ACCOUNT_READ_UNAVAILABLE" for row in result["warnings"]
     )
 
 
