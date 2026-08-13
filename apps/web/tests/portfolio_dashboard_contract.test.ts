@@ -47,6 +47,15 @@ test("WP18 per-account summary surfaces stale and partial market state", () => {
   assert.match(dashboard, /currentMarketDisplayState/);
 });
 
+test("WP18 surfaces broker connection state even when account snapshots are unavailable", () => {
+  assert.match(dashboard, /dashboard\?\.state === "UNAVAILABLE"/);
+  assert.match(dashboard, /Broker snapshot недоступен/);
+  assert.match(dashboard, /Broker Connections/);
+  assert.match(dashboard, /dashboard\.connections\.map/);
+  assert.match(dashboard, /connection\.state/);
+  assert.match(dashboard, /connection\.last_verified_at/);
+});
+
 test("WP18 multi-account rendering does not assume masked labels are unique", () => {
   assert.match(dashboard, /accounts\.map\(\(account, accountIndex\)/);
   assert.match(dashboard, /key=\{`\$\{account\.masked_account\}-\$\{accountIndex\}`\}/);
