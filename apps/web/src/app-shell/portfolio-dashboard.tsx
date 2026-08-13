@@ -218,7 +218,7 @@ export function PortfolioDashboardPage({ assetsMode = false }: { assetsMode?: bo
     if (!dashboard) return "RECOVERING" as const;
     if (dashboard.state === "READY") return "READY" as const;
     if (dashboard.state === "PARTIAL") return "PARTIAL" as const;
-    if (dashboard.state === "UNAVAILABLE") return "DEGRADED" as const;
+    if (dashboard.state === "UNAVAILABLE" || dashboard.state === "EMPTY") return "DEGRADED" as const;
     return "RECOVERING" as const;
   }, [dashboard]);
 
