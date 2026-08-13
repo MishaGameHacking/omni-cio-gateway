@@ -13,6 +13,7 @@ import {
 import { appRoutes, isKnownRoute, type AppRoutePath, type HealthView, type ProviderView, type WebSessionView } from "./contracts";
 import { RoutePage } from "./pages";
 import { PortfolioDashboardPage } from "./portfolio-dashboard";
+import { ResearchDossierPage } from "./research-dossier";
 import { WatchtowerIncidentsPage } from "./watchtower-incidents";
 
 function currentPath(): AppRoutePath {
@@ -167,6 +168,8 @@ export function ApplicationShell() {
           <PortfolioDashboardPage assetsMode={path === "/assets"} />
         ) : path === "/watchtower" ? (
           <WatchtowerIncidentsPage />
+        ) : path === "/research" ? (
+          <ResearchDossierPage />
         ) : (
           <RoutePage
             path={path}
