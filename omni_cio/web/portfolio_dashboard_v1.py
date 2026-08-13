@@ -15,6 +15,7 @@ from omni_cio.adapters.tinvest_read_v1 import (
     BrokerDataError,
     TInvestReadAdapterError,
     TInvestSnapshotResultV1,
+    evaluate_freshness,
 )
 from omni_cio.contracts.v1.portfolio import (
     InstrumentIdentity,
@@ -168,7 +169,6 @@ class PortfolioDashboardServiceV1:
         *,
         connection: BrokerConnectionRecordV1,
         account_index: int,
-        evaluated_at: datetime,
     ) -> dict[str, Any]:
         account = connection.accounts[account_index]
         token = self._vault.load(secret_ref=connection.secret_ref)
@@ -177,10 +177,7 @@ class PortfolioDashboardServiceV1:
                 token,
                 account.account_fingerprint_sha256,
             )
-            snapshot_result = adapter.read_snapshot(
-                allow_partial=True,
-                evaluated_at=evaluated_at,
-            )
+            snapshot_result = adapter.read_snapshot(allow_partial=True)
             positions = snapshot_result.snapshot.positions
             instruments = tuple(position.instrument for position in positions)
             market_result: TInvestMarketResultV1 | None = None
@@ -213,6 +210,11 @@ class PortfolioDashboardServiceV1:
         finally:
             token = ""
 
+        account_freshness = evaluate_freshness(
+            snapshot_result.snapshot.metadata.retrieved_at,
+            evaluated_at=_utc(self._clock()),
+            stale_after_seconds=snapshot_result.freshness.stale_after_seconds,
+        )
         prices = _market_by_uid(market_result)
         classifications = _classification_by_uid(classification_rows)
         broker_totals: dict[str, Decimal] = {}
@@ -383,7 +385,7 @@ class PortfolioDashboardServiceV1:
                     "message": f"{snapshot_result.unresolved_position_count} broker positions are not represented as normalized rows.",
                 }
             )
-        if snapshot_result.freshness.state.value == "stale":
+        if account_freshness.state.value == "stale":
             warnings.append(
                 {
                     "code": "BROKER_SNAPSHOT_STALE",
@@ -440,9 +442,9 @@ class PortfolioDashboardServiceV1:
             "connection_state": connection.state,
             "retrieved_at": snapshot_result.snapshot.metadata.retrieved_at.isoformat(),
             "freshness": {
-                "state": snapshot_result.freshness.state.value,
-                "age_seconds": _decimal(snapshot_result.freshness.age_seconds),
-                "evaluated_at": snapshot_result.freshness.evaluated_at.isoformat(),
+                "state": account_freshness.state.value,
+                "age_seconds": _decimal(account_freshness.age_seconds),
+                "evaluated_at": account_freshness.evaluated_at.isoformat(),
             },
             "completeness": quality.completeness.value,
             "broker_position_count": snapshot_result.broker_position_count,
@@ -512,7 +514,6 @@ class PortfolioDashboardServiceV1:
         }
 
     def read(self, *, tenant_id: str) -> dict[str, Any]:
-        evaluated_at = _utc(self._clock())
         connections = self._repository.list_read_connections(tenant_id=tenant_id)
         accounts: list[dict[str, Any]] = []
         connection_views: list[dict[str, Any]] = []
@@ -541,7 +542,6 @@ class PortfolioDashboardServiceV1:
                         self._read_account(
                             connection=connection,
                             account_index=account_index,
-                            evaluated_at=evaluated_at,
                         )
                     )
                 except Exception:
@@ -553,9 +553,10 @@ class PortfolioDashboardServiceV1:
                         }
                     )
 
+        generated_at = _utc(self._clock())
         return {
             "schema_version": "1.0.0",
-            "generated_at": evaluated_at.isoformat(),
+            "generated_at": generated_at.isoformat(),
             "state": (
                 "EMPTY"
                 if not connections
