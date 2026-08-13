@@ -40,7 +40,7 @@ The dashboard exposes:
 - broker current unit price and explicitly calculated `current_price × quantity_units` position value when both operands are available;
 - same-currency position weights and Top-1/Top-5 concentration over the normalized broker-value subset;
 - stable instrument identity, instrument type and class code;
-- reviewed issuer/sector classification where T-Invest asset/brand metadata supports it;
+- reviewed issuer/sector classification where exact T-Invest instrument/asset metadata supports it;
 - snapshot freshness/completeness and unresolved position counts;
 - current-market last quote metadata;
 - current-market value only when conversion is semantically direct with the available metadata.
@@ -68,17 +68,21 @@ Broker-reported valuation and current-market quotation/value are separate fields
 
 WP18 does not infer issuer or sector from ticker, display name or class code.
 
-For a normalized position with a stable instrument UID, the connection-scoped READ adapter uses the reviewed T-Invest identity chain:
+For a normalized position with a stable instrument UID, the connection-scoped READ adapter uses the canonical instrument type to select exactly one T-Invest point method:
 
-1. WP15 normalization already performs `GetInstrumentBy` and retains the returned instrument metadata in the adapter cache;
-2. WP18 reuses that metadata's `asset_uid`; if the cache is absent it performs a single point `GetInstrumentBy` by exact instrument UID;
-3. `GetAssetBy(asset_uid)` returns detailed `AssetFull` metadata;
-4. only `AssetFull.brand.company` is accepted as issuer and `AssetFull.brand.sector` as sector;
-5. the browser receives the resulting value plus explicit classification state, source and retrieval timestamp, never broker credential material.
+- share → `ShareBy`;
+- bond → `BondBy`;
+- ETF → `EtfBy`;
+- currency → `CurrencyBy`;
+- future → `FutureBy`;
+- option → `OptionBy`;
+- structured product → `StructuredNoteBy`.
 
-No broad `GetAssets` list scan is used. A missing `asset_uid` is `UNAVAILABLE_MAPPING`; point lookup or asset-detail failures are `UNAVAILABLE_LOOKUP`; incomplete brand metadata is `PARTIAL`. WP18 never substitutes guessed issuer/sector values. This also avoids assuming that derivative instruments are unclassifiable solely because the separate `GetAssets` list method excludes futures/options: classification succeeds only when the exact instrument metadata actually supplies a usable asset UID.
+The request uses the exact instrument UID and the returned UID must match. Where the type-specific response supplies `asset_uid`, WP18 may call `GetAssetBy(asset_uid)` and use `AssetFull.brand.company` as issuer plus `AssetFull.brand.sector` as the preferred sector. The type-specific instrument `sector` field is retained as an authoritative sector fallback.
 
-The enrichment method repeats the existing exact READ-account binding before any remote metadata call.
+Futures/options are handled truthfully when no asset UID is exposed by the exact instrument response: the authoritative direct sector may be displayed, issuer remains unavailable, and the classification state is `PARTIAL`. Unsupported canonical classes are `UNAVAILABLE_ASSET_CLASS`. Missing mappings and point-read failures stay explicit rather than being replaced with guessed values.
+
+No broad `GetAssets` list scan is used. No generic `GetInstrumentBy -> asset_uid` assumption is used. Ticker/name/display matching is forbidden. The enrichment method repeats the existing exact READ-account binding before any remote metadata call.
 
 ## Position detail and downstream links
 
@@ -112,7 +116,7 @@ Both routes render inside the existing WP17 authenticated `ApplicationShell` and
 Before WP18 can be accepted:
 
 - Python tests cover empty, normal, partial, stale/unavailable, optional-unknown cash and secret-boundary behavior;
-- dedicated adapter tests prove exact instrument-to-asset classification, snapshot-cache reuse, missing asset mapping and instrument/asset identity-conflict rejection;
+- dedicated adapter tests prove exact type-specific UID classification, point asset lookup, partial derivative sector behavior, unsupported-class handling, instrument/asset identity-conflict rejection and same-UID/type-conflict rejection;
 - golden frontend fixtures cover normal, empty, partial and stale states without private values;
 - Decimal and same-currency weighting calculations are deterministic;
 - bond/other asset market quotes are not naively converted to monetary value;
