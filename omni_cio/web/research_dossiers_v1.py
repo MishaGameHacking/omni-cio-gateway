@@ -95,9 +95,8 @@ def _matches_requirement(
 ) -> bool:
     if record.fact_type is not requirement.fact_type:
         return False
-    if (
-        requirement.fact_key_prefix is not None
-        and not record.fact_key.startswith(requirement.fact_key_prefix)
+    if requirement.fact_key_prefix is not None and not record.fact_key.startswith(
+        requirement.fact_key_prefix
     ):
         return False
     return record.source.source_class in requirement.source_classes
@@ -382,8 +381,10 @@ class ResearchDossierReadServiceV1:
             state = "PARTIAL" if invalid_count or truncated else "EMPTY"
         elif any(item["state"] == "STALE" for item in dossiers):
             state = "STALE"
-        elif invalid_count or truncated or any(
-            item["state"] == "PARTIAL" for item in dossiers
+        elif (
+            invalid_count
+            or truncated
+            or any(item["state"] == "PARTIAL" for item in dossiers)
         ):
             state = "PARTIAL"
         else:
