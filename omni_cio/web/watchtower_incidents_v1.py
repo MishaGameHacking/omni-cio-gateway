@@ -17,6 +17,7 @@ from omni_cio.web.session_v1 import SessionScopeV1
 _MAX_INCIDENTS = 500
 _MAX_REVISIONS_PER_INCIDENT = 512
 _MAX_EVIDENCE_IDS_PER_REVISION = 1024
+_MAX_EVIDENCE_LINK_ROWS_PER_INCIDENT = 4096
 _MAX_EVIDENCE_ROWS_PER_INCIDENT = 1024
 _MAX_JOURNAL_LINK_ROWS_PER_INCIDENT = 1024
 _MAX_WATCHTOWER_ALERT_BLOB_BYTES = 64 * 1024
@@ -142,30 +143,36 @@ class WatchtowerIncidentReadServiceV1:
             reason="WP19 incident revision limit exceeded",
         )
 
-    def _revision_evidence_ids(
+    def _revision_evidence_by_revision(
         self,
         *,
         tenant_id: str,
         incident_id: str,
-        revision: int,
-    ) -> tuple[str, ...]:
+    ) -> dict[int, tuple[str, ...]]:
         rows = self._connection.execute(
-            "SELECT evidence_id FROM omni_cio_v10.incident_evidence "
-            "WHERE tenant_id = %s AND incident_id = %s AND incident_revision = %s "
-            "ORDER BY evidence_id LIMIT %s",
+            "SELECT incident_revision, evidence_id "
+            "FROM omni_cio_v10.incident_evidence "
+            "WHERE tenant_id = %s AND incident_id = %s "
+            "ORDER BY incident_revision, evidence_id LIMIT %s",
             (
                 tenant_id,
                 incident_id,
-                revision,
-                _MAX_EVIDENCE_IDS_PER_REVISION + 1,
+                _MAX_EVIDENCE_LINK_ROWS_PER_INCIDENT + 1,
             ),
         ).fetchall()
         bounded = _bounded_rows(
             rows,
-            maximum=_MAX_EVIDENCE_IDS_PER_REVISION,
-            reason="WP19 incident revision evidence limit exceeded",
+            maximum=_MAX_EVIDENCE_LINK_ROWS_PER_INCIDENT,
+            reason="WP19 incident evidence link limit exceeded",
         )
-        return tuple(str(row[0]) for row in bounded)
+        grouped: dict[int, list[str]] = {}
+        for row in bounded:
+            revision = int(row[0])
+            values = grouped.setdefault(revision, [])
+            values.append(str(row[1]))
+            if len(values) > _MAX_EVIDENCE_IDS_PER_REVISION:
+                raise ValueError("WP19 incident revision evidence limit exceeded")
+        return {revision: tuple(values) for revision, values in grouped.items()}
 
     def _evidence_rows(
         self,
@@ -222,6 +229,10 @@ class WatchtowerIncidentReadServiceV1:
         )
         if not revision_rows:
             raise ValueError("WP19 incident has no durable lifecycle revision")
+        evidence_by_revision = self._revision_evidence_by_revision(
+            tenant_id=tenant_id,
+            incident_id=incident_id,
+        )
 
         timeline: list[dict[str, Any]] = []
         statuses: list[str] = []
@@ -234,13 +245,7 @@ class WatchtowerIncidentReadServiceV1:
                     "revision": revision,
                     "state": status,
                     "at": _timestamp(revision_row[2]),
-                    "evidence_ids": list(
-                        self._revision_evidence_ids(
-                            tenant_id=tenant_id,
-                            incident_id=incident_id,
-                            revision=revision,
-                        )
-                    ),
+                    "evidence_ids": list(evidence_by_revision.get(revision, ())),
                 }
             )
 
