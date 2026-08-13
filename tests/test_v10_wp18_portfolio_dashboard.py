@@ -341,11 +341,48 @@ def test_generated_at_and_freshness_are_evaluated_after_reads() -> None:
     )
 
     result = service.read(tenant_id="tenant-owner")
-    freshness = result["accounts"][0]["freshness"]
+    account = result["accounts"][0]
+    freshness = account["freshness"]
+    quote = account["positions"][0]["current_market_last_price"]
 
     assert freshness["age_seconds"] == "10.0"
     assert freshness["evaluated_at"] == (NOW + timedelta(seconds=10)).isoformat()
+    assert quote["age_seconds"] == "11.0"
+    assert quote["freshness"] == "fresh"
     assert result["generated_at"] == (NOW + timedelta(seconds=20)).isoformat()
+
+
+def test_market_freshness_is_reevaluated_after_enrichment() -> None:
+    repository = FakeRepository([_connection()])
+    vault = FakeVault()
+    adapter = FakeAdapter(
+        _snapshot(position=_position()),
+        _market(stale=False),
+    )
+    ticks = iter(
+        (
+            NOW + timedelta(seconds=301),
+            NOW + timedelta(seconds=302),
+        )
+    )
+    service = PortfolioDashboardServiceV1(
+        repository=repository,  # type: ignore[arg-type]
+        vault=vault,
+        adapter_builder=lambda token, fingerprint: adapter,
+        clock=lambda: next(ticks),
+    )
+
+    result = service.read(tenant_id="tenant-owner")
+    account = result["accounts"][0]
+    quote = account["positions"][0]["current_market_last_price"]
+
+    assert result["state"] == "PARTIAL"
+    assert quote["freshness"] == "stale"
+    assert quote["age_seconds"] == "302.0"
+    assert account["current_market"]["stale_instrument_count"] == 1
+    assert any(
+        row["code"] == "CURRENT_MARKET_QUOTES_STALE" for row in account["warnings"]
+    )
 
 
 def test_share_dashboard_preserves_decimal_sources_and_current_market_value() -> None:
