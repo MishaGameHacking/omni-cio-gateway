@@ -11,7 +11,7 @@
       "portfolio_total":{"amount":"1000.25","currency":"RUB","source":"T-Invest GetPortfolio total_amount_portfolio","as_of":"2026-08-13T08:30:00+00:00"},
       "cash":[{"currency":"RUB","reported":"125.50","available":"120.50","blocked":"5.00","source":"T-Invest GetPositions","as_of":"2026-08-13T08:30:00+00:00"}],
       "positions":[{
-        "instrument":{"name":"Synthetic Share","ticker":"SYN","type":"share","currency":"RUB","class_code":"TQBR","isin":"RU0000000001","figi":"BBG000000001","uid":"instrument-uid-1","position_uid":"position-uid-1","issuer":"Synthetic Issuer","sector":"Technology","classification_state":"VERIFIED","classification_source":"T-Invest GetInstrumentBy.asset_uid → GetAssetBy.brand","classification_as_of":"2026-08-13T08:30:00+00:00"},
+        "instrument":{"name":"Synthetic Share","ticker":"SYN","type":"share","currency":"RUB","class_code":"TQBR","isin":"RU0000000001","figi":"BBG000000001","uid":"instrument-uid-1","position_uid":"position-uid-1","issuer":"Synthetic Issuer","sector":"Technology","classification_state":"VERIFIED","classification_source":"T-Invest ShareBy.asset_uid → GetAssetBy.brand; ShareBy.sector fallback","classification_as_of":"2026-08-13T08:30:00+00:00"},
         "quantity_units":"3","blocked_units":"0",
         "broker_unit_price":{"amount":"10.00","currency":"RUB","source":"T-Invest GetPortfolio current_price","as_of":"2026-08-13T08:30:00+00:00"},
         "broker_value":{"amount":"30.00","currency":"RUB","source":"T-Invest GetPortfolio: current_price × quantity","as_of":"2026-08-13T08:30:00+00:00"},
