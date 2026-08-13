@@ -96,7 +96,9 @@ class FakeAdapter:
             SimpleNamespace(
                 instrument_uid=instrument.uid,
                 issuer=(
-                    "Example Issuer" if self.classification_state == "VERIFIED" else None
+                    "Example Issuer"
+                    if self.classification_state == "VERIFIED"
+                    else None
                 ),
                 sector=(
                     "Technology" if self.classification_state == "VERIFIED" else None
@@ -330,10 +332,7 @@ def test_bond_market_quote_is_not_naively_converted_to_currency_value() -> None:
     assert quote["quotation_semantics"] == "PERCENT_OF_NOMINAL"
     assert "currency" not in quote
     assert position["current_market_value"] is None
-    assert (
-        position["market_conversion_state"]
-        == "ASSET_SPECIFIC_CONVERSION_REQUIRED"
-    )
+    assert position["market_conversion_state"] == "ASSET_SPECIFIC_CONVERSION_REQUIRED"
 
 
 def test_future_market_quote_is_price_points_not_money() -> None:
@@ -351,10 +350,7 @@ def test_future_market_quote_is_price_points_not_money() -> None:
     assert quote["quotation_semantics"] == "FUTURES_PRICE_POINTS"
     assert "currency" not in quote
     assert position["current_market_value"] is None
-    assert (
-        position["market_conversion_state"]
-        == "ASSET_SPECIFIC_CONVERSION_REQUIRED"
-    )
+    assert position["market_conversion_state"] == "ASSET_SPECIFIC_CONVERSION_REQUIRED"
 
 
 def test_currency_market_quote_requires_nominal_conversion() -> None:
@@ -370,14 +366,10 @@ def test_currency_market_quote_requires_nominal_conversion() -> None:
     assert quote["amount"] == "10.50"
     assert quote["quotation_unit"] == "RUB"
     assert (
-        quote["quotation_semantics"]
-        == "SETTLEMENT_CURRENCY_QUOTATION_REQUIRES_NOMINAL"
+        quote["quotation_semantics"] == "SETTLEMENT_CURRENCY_QUOTATION_REQUIRES_NOMINAL"
     )
     assert position["current_market_value"] is None
-    assert (
-        position["market_conversion_state"]
-        == "ASSET_SPECIFIC_CONVERSION_REQUIRED"
-    )
+    assert position["market_conversion_state"] == "ASSET_SPECIFIC_CONVERSION_REQUIRED"
 
 
 def test_partial_snapshot_is_visible_and_never_replaced_with_zero() -> None:
@@ -395,8 +387,7 @@ def test_partial_snapshot_is_visible_and_never_replaced_with_zero() -> None:
     assert account["normalized_position_count"] == 1
     assert account["unresolved_position_count"] == 1
     assert any(
-        row["code"] == "UNRESOLVED_BROKER_POSITIONS"
-        for row in account["warnings"]
+        row["code"] == "UNRESOLVED_BROKER_POSITIONS" for row in account["warnings"]
     )
 
 
@@ -446,8 +437,7 @@ def test_unexpected_classification_defect_fails_entire_account_closed() -> None:
     assert result["state"] == "UNAVAILABLE"
     assert result["accounts"] == []
     assert any(
-        row["code"] == "BROKER_ACCOUNT_READ_UNAVAILABLE"
-        for row in result["warnings"]
+        row["code"] == "BROKER_ACCOUNT_READ_UNAVAILABLE" for row in result["warnings"]
     )
 
 
@@ -483,8 +473,7 @@ def test_market_failure_keeps_broker_data_visible_with_explicit_warning() -> Non
     assert account["portfolio_total"]["amount"] == "1000.25"
     assert account["current_market"]["state"] == "UNAVAILABLE"
     assert any(
-        row["code"] == "CURRENT_MARKET_DATA_UNAVAILABLE"
-        for row in account["warnings"]
+        row["code"] == "CURRENT_MARKET_DATA_UNAVAILABLE" for row in account["warnings"]
     )
 
 
