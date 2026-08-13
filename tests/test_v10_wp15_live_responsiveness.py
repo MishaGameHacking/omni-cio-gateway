@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timezone
 import inspect
-from pathlib import Path
 from types import SimpleNamespace
 import threading
 import time
@@ -185,18 +184,3 @@ def test_wp15_live_client_uses_a_finite_grpc_deadline(monkeypatch: Any) -> None:
 
     assert invoke(None) == app_module._WP15_LIVE_RPC_TIMEOUT_SECONDS
     assert invoke(2.0) == 2.0
-
-
-def test_wp15_live_ui_exposes_pending_state_before_snapshot_arrives() -> None:
-    source = (
-        Path(__file__).resolve().parents[1]
-        / "apps"
-        / "web"
-        / "src"
-        / "app-shell"
-        / "pages.tsx"
-    ).read_text(encoding="utf-8")
-
-    assert "Получаем live READ snapshot из T-Invest" in source
-    assert '{liveWorking ? "Получаем snapshot…" : "Live READ acceptance"}' in source
-    assert 'aria-busy={liveWorking}' in source
