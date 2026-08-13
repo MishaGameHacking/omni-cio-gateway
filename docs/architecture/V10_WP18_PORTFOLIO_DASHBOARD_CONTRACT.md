@@ -30,7 +30,7 @@ Global invariants remain:
 
 ## Data semantics
 
-Every displayed financial or derived value must carry or visibly inherit a source and UTC `as_of`/retrieval/evaluation timestamp. Decimal quantities and money amounts are transported as decimal strings, never binary floats.
+Every displayed financial or derived value must carry or visibly inherit a source and UTC `as_of`/retrieval/evaluation timestamp. Decimal quantities, money amounts and raw market quotations are transported as decimal strings, never binary floats.
 
 The dashboard exposes:
 
@@ -42,8 +42,8 @@ The dashboard exposes:
 - stable instrument identity, instrument type and class code;
 - reviewed issuer/sector classification where exact T-Invest instrument/asset metadata supports it;
 - snapshot freshness/completeness and unresolved position counts;
-- current-market last quote metadata;
-- current-market value only when conversion is semantically direct with the available metadata.
+- raw current-market last quote with explicit quotation unit/semantics;
+- current-market money value only when conversion is semantically direct with the available metadata.
 
 Cross-currency aggregation is forbidden unless an explicit reviewed FX conversion contract is later introduced.
 
@@ -60,9 +60,17 @@ This preserves broker rate-limit safety and keeps currentness explainable.
 
 ### Current-market conversion policy
 
-T-Invest market quotations are not universally money values. Bonds, currencies and futures require asset-specific conversion metadata/formulas. WP18 therefore calculates current-market value directly only for shares and ETFs. For other asset classes it displays the last quote, timestamp and a visible `ASSET_SPECIFIC_CONVERSION_REQUIRED` state instead of inventing a monetary value.
+T-Invest `GetLastPrices` returns a raw `Quotation`; it is not a universal money value. T-Invest documents different conversion semantics by instrument class. WP18 therefore transports raw quote amount separately from money and adds explicit `quotation_unit` plus `quotation_semantics`.
 
-Broker-reported valuation and current-market quotation/value are separate fields and must never silently replace one another.
+WP18 v1 rules:
+
+- shares/ETFs: raw quote is settlement-currency price per instrument; `current_market_value = last_price × quantity_units` is allowed;
+- bonds: raw quote is `price_points`, where points represent percent of nominal; no money value is calculated without nominal/conversion metadata;
+- futures: raw quote is `price_points`; no money value is calculated without `min_price_increment` / `min_price_increment_amount` conversion metadata;
+- currencies: raw quote retains its settlement-currency unit but is marked conversion-required because nominal may differ from one;
+- other/unreviewed asset classes: raw quote is `provider_quotation`; no money value is invented.
+
+Thus a bond/future quote must never be rendered as, for example, `10.5 RUB` merely because the instrument settlement currency is RUB. Broker-reported valuation and raw market quotation/value remain separate fields and must never silently replace one another.
 
 ## Issuer / sector enrichment
 
@@ -119,9 +127,10 @@ Before WP18 can be accepted:
 - dedicated adapter tests prove exact type-specific UID classification, point asset lookup, partial derivative sector behavior, unsupported-class handling, instrument/asset identity-conflict rejection and same-UID/type-conflict rejection;
 - golden frontend fixtures cover normal, empty, partial and stale states without private values;
 - Decimal and same-currency weighting calculations are deterministic;
-- bond/other asset market quotes are not naively converted to monetary value;
+- share quote semantics preserve a currency-per-instrument raw quotation;
+- bond/future raw quotes are represented as price points and are not naively converted or labeled as money;
 - API tests prove authentication and session-derived tenant scope;
-- Web contract tests prove Portfolio/Assets replace placeholders, source/timestamp/freshness/completeness are visible, and browser code contains no credential persistence surface;
+- Web contract tests prove Portfolio/Assets replace placeholders, source/timestamp/freshness/completeness and quotation semantics are visible, and browser code contains no credential persistence surface;
 - frontend typecheck/lint/test/build are GREEN;
 - full authoritative Windows merge gate is GREEN on the exact PR head;
 - WP15/WP16/WP17 regression gates remain GREEN;
