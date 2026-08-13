@@ -282,7 +282,9 @@ def test_wp19_route_requires_session_and_uses_tenant_scope() -> None:
         service=service,
         now=lambda: NOW,
     )
-    assert TestClient(denied).get("/api/v10/web/watchtower-incidents").status_code == 401
+    assert (
+        TestClient(denied).get("/api/v10/web/watchtower-incidents").status_code == 401
+    )
 
     connection = _FixtureConnection(_alert())
     allowed = FastAPI()
