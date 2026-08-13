@@ -19,6 +19,7 @@ from omni_cio.web.api_v1 import SESSION_COOKIE
 from omni_cio.web.session_v1 import SessionScopeV1
 from omni_cio.web.watchtower_incidents_v1 import (
     WatchtowerIncidentReadServiceV1,
+    _bounded_rows,
     _lifecycle_reopened,
     _watchtower_alert,
     install_watchtower_incident_routes,
@@ -27,6 +28,7 @@ from omni_cio.web.watchtower_incidents_v1 import (
 NOW = datetime(2026, 8, 13, 14, 0, tzinfo=timezone.utc)
 INCIDENT = "incident:v1:" + "1" * 64
 EVIDENCE = "evidence:v1:" + "2" * 64
+EVIDENCE_ALT = "evidence:v1:" + "9" * 64
 DECISION = "decision:v1:" + "3" * 64
 PLAN = "plan:v1:" + "4" * 64
 
@@ -44,8 +46,14 @@ class _Cursor:
 
 
 class _FixtureConnection:
-    def __init__(self, alert_payload: bytes | None) -> None:
+    def __init__(
+        self,
+        alert_payload: bytes | None,
+        *,
+        additional_alert_payload: bytes | None = None,
+    ) -> None:
         self.alert_payload = alert_payload
+        self.additional_alert_payload = additional_alert_payload
         self.seen_tenants: list[str] = []
 
     def execute(
@@ -76,24 +84,40 @@ class _FixtureConnection:
         ):
             return _Cursor(((EVIDENCE,),))
         if "SELECT DISTINCT e.evidence_id" in text:
-            return _Cursor(
+            rows: list[Sequence[Any]] = [
                 (
-                    (
-                        EVIDENCE,
-                        "system",
-                        NOW - timedelta(minutes=1),
-                        NOW,
-                        NOW,
-                        "5" * 64,
-                        None,
-                        None,
-                        None,
-                        "application/json" if self.alert_payload else None,
-                        "WatchtowerAlertV1" if self.alert_payload else None,
-                        self.alert_payload,
-                    ),
+                    EVIDENCE,
+                    "system",
+                    NOW - timedelta(minutes=1),
+                    NOW,
+                    NOW,
+                    "5" * 64,
+                    None,
+                    None,
+                    None,
+                    "application/json" if self.alert_payload else None,
+                    "WatchtowerAlertV1" if self.alert_payload else None,
+                    self.alert_payload,
                 )
-            )
+            ]
+            if self.additional_alert_payload is not None:
+                rows.append(
+                    (
+                        EVIDENCE_ALT,
+                        "system",
+                        NOW - timedelta(seconds=30),
+                        NOW,
+                        NOW,
+                        "a" * 64,
+                        None,
+                        None,
+                        None,
+                        "application/json",
+                        "WatchtowerAlertV1",
+                        self.additional_alert_payload,
+                    )
+                )
+            return _Cursor(rows)
         if "SELECT decision_id, plan_id FROM omni_cio_v10.journal" in text:
             return _Cursor(((DECISION, PLAN),))
         raise AssertionError(f"unexpected query: {text}")
@@ -160,6 +184,17 @@ def test_wp19_only_fully_valid_watchtower_payload_projects_alert_metadata() -> N
     assert _watchtower_alert(b"not-json") is None
 
 
+def test_wp19_nested_read_bound_rejects_overflow() -> None:
+    rows: list[Sequence[Any]] = [(1,), (2,), (3,)]
+    assert _bounded_rows(rows[:2], maximum=2, reason="bounded") == rows[:2]
+    try:
+        _bounded_rows(rows, maximum=2, reason="bounded")
+    except ValueError as exc:
+        assert str(exc) == "bounded"
+    else:
+        raise AssertionError("WP19 accepted an over-limit nested read")
+
+
 def test_wp19_read_model_explains_reopened_critical_incident_and_downstream_links() -> None:
     connection = _FixtureConnection(_alert_payload())
     payload = WatchtowerIncidentReadServiceV1(
@@ -195,6 +230,43 @@ def test_wp19_read_model_explains_reopened_critical_incident_and_downstream_link
     assert incident["evidence"][0]["watchtower_alert_verified"] is True
     assert "payload" not in incident["evidence"][0]
     assert set(connection.seen_tenants) == {OWNER_TENANT_ID}
+
+
+def test_wp19_duplicate_same_fingerprint_stays_one_verified_incident() -> None:
+    payload = _alert_payload(fingerprint="7" * 64)
+    result = WatchtowerIncidentReadServiceV1(
+        _FixtureConnection(payload, additional_alert_payload=payload),
+        clock=lambda: NOW,
+    ).read(tenant_id=OWNER_TENANT_ID)
+
+    assert result["state"] == "READY"
+    assert result["counts"]["total"] == 1
+    incident = result["incidents"][0]
+    assert incident["dedup"]["state"] == "VERIFIED"
+    assert incident["dedup"]["fingerprint_sha256"] == "7" * 64
+
+
+def test_wp19_conflicting_fingerprints_fail_closed() -> None:
+    result = WatchtowerIncidentReadServiceV1(
+        _FixtureConnection(
+            _alert_payload(fingerprint="7" * 64),
+            additional_alert_payload=_alert_payload(fingerprint="8" * 64),
+        ),
+        clock=lambda: NOW,
+    ).read(tenant_id=OWNER_TENANT_ID)
+
+    assert result["state"] == "PARTIAL"
+    assert result["counts"]["critical"] == 0
+    assert result["counts"]["missing_alert_metadata"] == 1
+    incident = result["incidents"][0]
+    assert incident["alert_metadata_state"] == "CONFLICT"
+    assert incident["dedup"]["state"] == "CONFLICT"
+    assert incident["dedup"]["fingerprint_sha256"] is None
+    assert incident["severity"] == "unknown"
+    assert incident["risk_impact"] == "UNKNOWN"
+    assert incident["subject"] is None
+    assert incident["message_code"] is None
+    assert incident["requested_action"] is None
 
 
 def test_wp19_missing_alert_content_is_partial_and_never_fabricates_reason() -> None:
