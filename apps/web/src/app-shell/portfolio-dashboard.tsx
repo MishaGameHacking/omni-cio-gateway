@@ -21,6 +21,10 @@ function warningState(account: PortfolioAccountView): "READY" | "PARTIAL" | "STA
   return "READY";
 }
 
+function IdentityValue({ value }: { value: string | null }) {
+  return value ? <code>{value}</code> : <span>unavailable</span>;
+}
+
 function PositionTable({ positions, assetsMode, snapshotAsOf }: { positions: PortfolioPositionView[]; assetsMode: boolean; snapshotAsOf: string }) {
   if (positions.length === 0) {
     return <StatePanel kind="empty" title="Нормализованных позиций нет">Если broker snapshot частичный, причина остаётся видимой в предупреждениях ниже.</StatePanel>;
@@ -31,7 +35,7 @@ function PositionTable({ positions, assetsMode, snapshotAsOf }: { positions: Por
         <thead>
           <tr>
             <th>Инструмент</th>
-            <th>Класс</th>
+            <th>Issuer / sector / class</th>
             <th>Количество</th>
             <th>Broker value</th>
             <th>Вес*</th>
@@ -41,14 +45,30 @@ function PositionTable({ positions, assetsMode, snapshotAsOf }: { positions: Por
         </thead>
         <tbody>
           {positions.map((position, index) => (
-            <tr key={`${position.instrument.ticker ?? position.instrument.name}-${index}`}>
+            <tr key={`${position.instrument.uid ?? position.instrument.ticker ?? position.instrument.name}-${index}`}>
               <td>
                 <strong>{position.instrument.ticker ?? position.instrument.name}</strong>
                 <span className="wp18-subline">{position.instrument.name}</span>
+                <details className="wp18-position-detail">
+                  <summary>Position detail</summary>
+                  <dl className="shell-definition-list">
+                    <div><dt>Type</dt><dd>{position.instrument.type}</dd></div>
+                    <div><dt>Currency</dt><dd>{position.instrument.currency}</dd></div>
+                    <div><dt>Class</dt><dd>{position.instrument.class_code ?? "unavailable"}</dd></div>
+                    <div><dt>UID</dt><dd><IdentityValue value={position.instrument.uid} /></dd></div>
+                    <div><dt>Position UID</dt><dd><IdentityValue value={position.instrument.position_uid} /></dd></div>
+                    <div><dt>FIGI</dt><dd><IdentityValue value={position.instrument.figi} /></dd></div>
+                    <div><dt>ISIN</dt><dd><IdentityValue value={position.instrument.isin} /></dd></div>
+                    <div><dt>Research</dt><dd>link unavailable — no deterministic current-state WP18 binding</dd></div>
+                    <div><dt>Incidents</dt><dd>link unavailable — no accepted instrument incident index in WP18</dd></div>
+                  </dl>
+                </details>
               </td>
               <td>
-                {position.instrument.type}
-                <span className="wp18-subline">{position.instrument.class_code ?? "class n/a"} · sector n/a</span>
+                <strong>{position.instrument.issuer ?? "issuer unavailable"}</strong>
+                <span className="wp18-subline">{position.instrument.sector ?? "sector unavailable"} · {position.instrument.class_code ?? "class unavailable"}</span>
+                <span className="wp18-subline">{position.instrument.classification_state}</span>
+                <span className="wp18-subline">{position.instrument.classification_source} · {position.instrument.classification_as_of}</span>
               </td>
               <td>
                 {formatDecimal(position.quantity_units, 8)}
