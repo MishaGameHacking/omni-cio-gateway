@@ -40,9 +40,9 @@ Give the authenticated OWNER a transparent, current-on-demand read-only view of 
 - `omni_cio/web/session_v1.py`: reuse server-side session/tenant boundary.
 - `omni_cio/web/persistence_v1.py`: reuse BrokerConnection/account bindings.
 - `omni_cio/web/broker_vault_v1.py`: reuse protected READ credential storage.
-- `omni_cio/adapters/tinvest_read_v1.py`: reuse normalized portfolio/cash/freshness/quality semantics and its bounded exact-instrument metadata cache.
+- `omni_cio/adapters/tinvest_read_v1.py`: reuse normalized portfolio/cash/freshness/quality semantics and canonical instrument type/UID identity.
 - `omni_cio/adapters/tinvest_market_v1.py`: reuse bounded last-price READ path.
-- `omni_cio/adapters/tinvest_connection_v1.py`: reuse exact account binding and extend it additively with WP18 issuer/sector classification through exact instrument `asset_uid` and `GetAssetBy`; no WRITE surface is introduced.
+- `omni_cio/adapters/tinvest_connection_v1.py`: reuse exact account binding and extend it additively with WP18 issuer/sector classification through exact type-specific instrument metadata reads plus point `GetAssetBy` where a verified `asset_uid` exists; no WRITE surface is introduced.
 - `omni_cio/contracts/v1/portfolio.py`: reuse canonical money/position identity semantics.
 - `omni_cio/contracts/v1/analytics.py` and `risk.py`: reuse explicit missing issuer/sector semantics rather than invent classifications.
 
@@ -97,7 +97,11 @@ Broker-reported portfolio/position data is separate from `GetLastPrices`. Curren
 
 ### Issuer/sector metadata
 
-WP18 reuses the exact `GetInstrumentBy` metadata generated during snapshot normalization. The instrument `asset_uid` binds a point `GetAssetBy` request; `AssetFull.brand.company` and `AssetFull.brand.sector` are the only accepted issuer/sector values. Cache misses may make one exact `GetInstrumentBy` call by instrument UID. A missing asset UID, lookup failure or incomplete brand stays explicitly unavailable/partial; no broad asset-list scan or ticker/name inference is allowed.
+WP18 binds classification to the canonical instrument type plus exact stable instrument UID. It calls only the corresponding point InstrumentsService method: `ShareBy`, `BondBy`, `EtfBy`, `CurrencyBy`, `FutureBy`, `OptionBy` or `StructuredNoteBy`. Returned instrument UID must match the requested UID.
+
+For instrument responses that expose `asset_uid`, a point `GetAssetBy(asset_uid)` may provide `AssetFull.brand.company` as issuer and `AssetFull.brand.sector` as the preferred sector. The exact type-specific instrument `sector` field is an authoritative fallback. Current T-Invest contracts do not expose an `asset_uid` on every derivative response; futures/options therefore remain explicitly partial when only the exact instrument sector is available and issuer mapping cannot be established. Unsupported canonical types are explicitly unavailable.
+
+No broad `GetAssets` scan, generic `GetInstrumentBy -> asset_uid` assumption, ticker/name inference or display-name matching is allowed.
 
 ## 9. Data/persistence effects
 
@@ -113,7 +117,7 @@ WP18 changes no security authority boundary:
 
 - secret access: unchanged; server reads existing READ vault only;
 - broker authority: READ_ONLY unchanged;
-- new broker metadata methods: InstrumentsService READ only (`GetInstrumentBy`, `GetAssetBy`), after existing exact account binding;
+- new broker metadata methods: InstrumentsService READ only (`ShareBy`, `BondBy`, `EtfBy`, `CurrencyBy`, `FutureBy`, `OptionBy`, `StructuredNoteBy`, `GetAssetBy`) after existing exact account binding;
 - OS/runtime privileges: unchanged;
 - GitHub permissions: unchanged;
 - Web ingress: local/private unchanged;
@@ -131,7 +135,8 @@ Required deterministic coverage:
 - broker total/cash/positions rendering contract;
 - same-currency weights and concentration;
 - source/timestamp visibility;
-- verified issuer/sector classification and snapshot instrument-cache reuse;
+- verified issuer/sector classification from exact type-specific UID reads and point asset metadata;
+- explicit partial derivative classification when only authoritative sector is available;
 - broker/current-market distinction;
 - authenticated session-derived tenant scope;
 - Portfolio and Assets routes inside accepted WP17 shell.
@@ -145,7 +150,8 @@ Required coverage:
 - stale broker snapshot;
 - missing/stale/unavailable market quotes;
 - optional/unknown data stays null, not zero;
-- missing asset UID and instrument/asset identity conflicts fail closed;
+- missing asset UID, unsupported canonical class and instrument/asset identity conflicts fail closed or remain explicitly partial as defined above;
+- conflicting canonical types for the same instrument UID are rejected;
 - unsupported asset-specific market conversion remains unavailable;
 - unauthenticated API request returns 401;
 - token/secret reference/fingerprint are absent from browser payload;
@@ -194,7 +200,7 @@ PASS only if all are true on one exact PR head:
 - WP16/WP17 regression SUCCESS on same head;
 - authoritative merge gate SUCCESS on same head;
 - deterministic golden/Decimal/empty/partial/stale test results;
-- deterministic issuer/sector identity/cache/negative test results;
+- deterministic typed issuer/sector identity/mapping/negative test results;
 - final reviewed diff and zero blocking threads;
 - squash merge SHA;
 - post-merge Regression Shield SUCCESS on that exact main.
