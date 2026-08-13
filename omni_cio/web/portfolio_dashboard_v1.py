@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 from omni_cio.adapters.tinvest_connection_v1 import TInvestInstrumentClassificationV1
 from omni_cio.adapters.tinvest_market_v1 import TInvestMarketResultV1
 from omni_cio.adapters.tinvest_read_v1 import (
+    BrokerDataError,
     TInvestReadAdapterError,
     TInvestSnapshotResultV1,
 )
@@ -194,6 +195,8 @@ class PortfolioDashboardServiceV1:
                         instruments,
                         allow_partial=True,
                     )
+                except BrokerDataError:
+                    raise
                 except TInvestReadAdapterError:
                     classification_error = True
         finally:
