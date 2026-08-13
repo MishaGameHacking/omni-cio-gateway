@@ -13,10 +13,22 @@ function marketQuote(value: PortfolioPositionView["current_market_last_price"]):
 }
 
 function warningState(account: PortfolioAccountView): "READY" | "PARTIAL" | "STALE" | "DEGRADED" {
-  if (account.freshness.state === "stale") return "STALE";
-  if (account.unresolved_position_count > 0 || account.completeness !== "complete") return "PARTIAL";
+  if (account.freshness.state === "stale" || account.current_market.stale_instrument_count > 0) return "STALE";
+  if (
+    account.unresolved_position_count > 0 ||
+    account.completeness !== "complete" ||
+    account.current_market.state === "PARTIAL" ||
+    account.current_market.missing_instrument_count > 0
+  ) return "PARTIAL";
   if (account.current_market.state === "UNAVAILABLE") return "DEGRADED";
   return "READY";
+}
+
+function currentMarketDisplayState(account: PortfolioAccountView): string {
+  if (account.current_market.state === "UNAVAILABLE") return "UNAVAILABLE";
+  if (account.current_market.stale_instrument_count > 0) return "STALE";
+  if (account.current_market.state === "PARTIAL" || account.current_market.missing_instrument_count > 0) return "PARTIAL";
+  return account.current_market.state;
 }
 
 function IdentityValue({ value }: { value: string | null }) {
@@ -129,7 +141,7 @@ function AccountPanel({ account, assetsMode }: { account: PortfolioAccountView; 
           <span className="wp18-subline">T-Invest GetPortfolio normalization · {account.retrieved_at}</span>
         </Card>
         <Card title="Current market">
-          <strong className="wp18-kpi">{account.current_market.state}</strong>
+          <strong className="wp18-kpi">{currentMarketDisplayState(account)}</strong>
           <span className="wp18-subline">missing {account.current_market.missing_instrument_count} · stale {account.current_market.stale_instrument_count}</span>
           <span className="wp18-subline">T-Invest GetLastPrices · {marketAsOf}</span>
         </Card>
