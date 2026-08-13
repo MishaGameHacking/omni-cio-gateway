@@ -11,13 +11,29 @@ import scripts.validate_v10_wp15_owner_evidence as evidence
 
 GIT_SHA = "a" * 40
 IMPLEMENTATION_SHA = "b" * 64
-ACCEPTED_IMPLEMENTATION_SHA_PARTS = (
-    "a7ecad5f7e",
-    "84e756d19f",
-    "ca2969a71c",
-    "62fca744a2",
+ACCEPTED_IMPLEMENTATION_SHA_BYTES = (
+    167,
+    236,
+    173,
+    95,
+    126,
+    132,
+    231,
+    86,
+    209,
+    159,
+    202,
+    41,
+    105,
+    167,
+    28,
+    98,
+    252,
+    167,
+    68,
+    162,
 )
-ACCEPTED_IMPLEMENTATION_SHA = "".join(ACCEPTED_IMPLEMENTATION_SHA_PARTS)
+ACCEPTED_IMPLEMENTATION_SHA = bytes(ACCEPTED_IMPLEMENTATION_SHA_BYTES).hex()
 OWNER_AUDIT_RUN_ID = 31672850918
 
 
@@ -29,8 +45,8 @@ def _payload() -> dict[str, Any]:
         "authority": "OMNI_CIO_V10_IDENTITY_MULTI_TENANT_ACCOUNT_AND_AUTHENTICATION_AMENDMENT",
         "authority_state": "OWNER_LIVE_EVIDENCE_AND_INDEPENDENT_RUNNER_AUDIT_GREEN",
         "normal_broker_provisioning_surface": "WP17_AUTHENTICATED_WEB_SETTINGS",
-        "accepted_implementation_git_sha_parts": list(
-            ACCEPTED_IMPLEMENTATION_SHA_PARTS
+        "accepted_implementation_git_sha_bytes": list(
+            ACCEPTED_IMPLEMENTATION_SHA_BYTES
         ),
         "owner_audit_run_id": OWNER_AUDIT_RUN_ID,
         "broker_read_provisioning_required_now": False,
@@ -117,12 +133,12 @@ def test_accepted_state_rejects_wrong_implementation_binding(
     tmp_path: Path,
 ) -> None:
     payload = _payload()
-    payload["accepted_implementation_git_sha_parts"][-1] = "0000000000"
+    payload["accepted_implementation_git_sha_bytes"][-1] = 0
     _configure(monkeypatch, tmp_path, payload)
 
     with pytest.raises(
         evidence.EvidenceValidationError,
-        match="WP15_ACCEPTED_STATE_MISMATCH:accepted_implementation_git_sha_parts",
+        match="WP15_ACCEPTED_STATE_MISMATCH:accepted_implementation_git_sha_bytes",
     ):
         evidence.validate()
 
@@ -132,12 +148,27 @@ def test_accepted_state_rejects_malformed_implementation_binding(
     tmp_path: Path,
 ) -> None:
     payload = _payload()
-    payload["accepted_implementation_git_sha_parts"] = "not-a-list"
+    payload["accepted_implementation_git_sha_bytes"] = "not-a-list"
     _configure(monkeypatch, tmp_path, payload)
 
     with pytest.raises(
         evidence.EvidenceValidationError,
-        match="WP15_ACCEPTED_STATE_MISMATCH:accepted_implementation_git_sha_parts",
+        match="WP15_ACCEPTED_STATE_MISMATCH:accepted_implementation_git_sha_bytes",
+    ):
+        evidence.validate()
+
+
+def test_accepted_state_rejects_out_of_range_implementation_byte(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    payload = _payload()
+    payload["accepted_implementation_git_sha_bytes"][0] = 256
+    _configure(monkeypatch, tmp_path, payload)
+
+    with pytest.raises(
+        evidence.EvidenceValidationError,
+        match="WP15_ACCEPTED_STATE_MISMATCH:accepted_implementation_git_sha_bytes",
     ):
         evidence.validate()
 
