@@ -6,113 +6,51 @@ WP19 extends the accepted local/private V10 Web App with a read-only incident pr
 
 ## Canonical sources
 
-WP19 consumes only accepted state:
-
-- `omni_cio_v10.incidents` — immutable incident identity and `opened_at`;
-- `omni_cio_v10.incident_revisions` — append-only lifecycle revisions and `revised_at`;
-- `omni_cio_v10.incident_evidence` + `evidence` — revision-scoped evidence references and source/time metadata;
-- `omni_cio_v10.content_blobs` — server-side content lookup by exact evidence SHA-256;
-- `omni_cio_v10.journal` — already-existing Decision/Plan links;
-- accepted `WatchtowerAlertV1` — deterministic alert identity, semantic fingerprint, severity, subject, effective time, safe message code and requested non-execution action.
-
-The V9 Watchtower reducer remains the owner of signal semantics. WP19 does not recalculate risk, credit, materiality, dedup fingerprints or proposed actions.
+WP19 consumes accepted `incidents`, append-only `incident_revisions`, revision-scoped `incident_evidence`/`evidence`, tenant-bound `content_blobs`, existing `journal` links, and accepted `WatchtowerAlertV1` semantics. The Watchtower reducer remains the owner of signal semantics; WP19 does not recalculate risk, credit, materiality, semantic fingerprints or requested action.
 
 ## API
 
-Authenticated local/private endpoint:
+Authenticated local/private endpoint: `GET /api/v10/web/watchtower-incidents`.
 
-`GET /api/v10/web/watchtower-incidents`
+Tenant scope is resolved only from the existing server-side Web session. There is no tenant/user/account selector in the request. Response schema version is `1.0.0`.
 
-The tenant is resolved only from the existing server-side Web session. There is no tenant/user/account selector in the request.
+Top-level fields are `generated_at`, `state = EMPTY | PARTIAL | READY`, bounded-read `truncated`, aggregate counts and `incidents[]`.
 
-Response schema version: `1.0.0`.
-
-Top-level fields:
-
-- `generated_at` — UTC presentation generation time;
-- `state` — `EMPTY | PARTIAL | READY`;
-- `truncated` — explicit bounded-read indicator;
-- `counts.total | active | resolved | critical | reopened | missing_alert_metadata`;
-- `incidents[]` — bounded incident presentation rows.
-
-Each incident row exposes:
-
-- canonical `incident_id`;
-- `opened_at`;
-- current durable lifecycle state and `ACTIVE | RESOLVED` presentation classification;
-- verified Watchtower severity or `unknown`;
-- explicit risk-impact presentation `CRITICAL | MATERIAL | INFORMATIONAL | UNKNOWN` derived only from the accepted severity taxonomy;
-- verified subject/message-code/requested-action/effective-time when canonical alert metadata is available;
-- `alert_metadata_state = VERIFIED | MISSING | CONFLICT`;
-- dedup status and semantic fingerprint only when exactly one verified fingerprint is present;
-- `reopened=true` only when the durable lifecycle contains `closed` followed by a later `open` revision;
-- complete durable timeline of revision/status/time and revision-scoped evidence IDs;
-- bounded evidence metadata without raw content;
-- already-existing Decision/Plan IDs linked by the accepted journal.
+Each incident row exposes canonical incident identity, durable lifecycle/current state, verified Watchtower severity/subject/message/action/time when available, explicit risk-impact presentation, dedup/reopen state, lifecycle timeline, safe evidence metadata and already-existing Decision/Plan journal links.
 
 ## Verified Watchtower metadata
 
-Evidence payload bytes never leave the backend. WP19 may project alert metadata only when the content blob:
+Evidence payload bytes never leave the backend. A content blob may project alert metadata only after JSON decoding and full `WatchtowerAlertV1` validation, including canonical alert identity and hard-disabled execution/trading fields. Invalid/missing content stays explicit and is not inferred.
 
-1. is found by exact tenant + evidence `payload_sha256`;
-2. decodes as JSON;
-3. fully validates as accepted `WatchtowerAlertV1`, including canonical `alert_id` validation and hard-disabled execution/trading fields.
+Exactly one semantic fingerprint yields `VERIFIED`. No verified fingerprint yields `MISSING`. Multiple verified fingerprints yield `CONFLICT`; WP19 does not silently merge them.
 
-If validation fails, the payload is ignored as alert metadata and the browser receives only an explicit missing/invalid presentation state. Raw invalid content is never returned.
+A reopened incident is one whose durable revision history contains `closed` followed by a later `open` revision.
 
-If multiple valid alert payloads linked to one incident contain different semantic fingerprints, dedup state is `CONFLICT`; WP19 does not silently choose or merge the conflicting condition identity.
+## UI filters
 
-## Lifecycle and filters
+Presentation-only filters:
 
-UI filters are presentation-only:
+- all;
+- active — current state is not `closed`;
+- resolved — current state is `closed`;
+- critical — verified severity is `error`.
 
-- **Все** — all bounded incidents;
-- **Активные** — current state is not `closed`;
-- **Решённые** — current state is `closed`;
-- **Критические** — verified severity is `error`.
+WP19 provides no acknowledge/close/reopen mutation control.
 
-A reopened incident remains active and carries `reopened=true`.
+## Evidence boundary
 
-WP19 provides no acknowledge/close/reopen button. Lifecycle mutation belongs to its owning future system workflow and is outside this Web WP.
+The browser may receive canonical evidence ID, source kind, publication/retrieval/local-receipt timestamps, SHA-256 content identity, safe instrument display label and booleans describing content/Watchtower validation state.
 
-## Evidence semantics
-
-The Web view may expose:
-
-- canonical evidence ID;
-- evidence source kind;
-- publication/retrieval/local-receipt timestamps when available;
-- SHA-256 content identity;
-- safe instrument display label (ticker/name) only if already present in canonical instrument metadata;
-- booleans indicating whether content exists and whether it validated as `WatchtowerAlertV1`.
-
-It never exposes:
-
-- raw content blob;
-- broker token, secret reference or encryption material;
-- provider account ID/fingerprint;
-- private portfolio payload/holdings;
-- scheduler/QStash/Upstash secrets;
-- broker-write or trade surface.
+The browser never receives raw content blobs, broker credentials, secret references, provider account IDs/fingerprints, private portfolio payloads, scheduler secrets or broker-write surface.
 
 ## Failure semantics
 
-- unauthenticated request: HTTP 401;
-- no incidents: `EMPTY`, never fake zero incidents after a database failure;
-- missing alert content/metadata: `PARTIAL` with explicit `MISSING`;
-- semantic fingerprint conflict: `PARTIAL` with explicit `CONFLICT`;
-- bounded read overflow: `PARTIAL` and `truncated=true`;
-- API/database failure: request fails and Web shows an explicit unavailable state.
+- unauthenticated request → 401;
+- no incidents → `EMPTY`;
+- missing alert metadata or bounded truncation → `PARTIAL`;
+- conflicting fingerprints → explicit `CONFLICT`/`PARTIAL`;
+- database/API failure → request failure and explicit unavailable UI, never empty-success substitution.
 
 ## Safety invariants
 
-WP19 preserves:
-
-- `app:app` protected Gateway entrypoint;
-- local/private Web ingress only;
-- server-side tenant/session scope;
-- `trading_methods=false`;
-- `REAL_TRADING_ENABLED=false`;
-- no broker write authority;
-- no public multi-user activation;
-- protected V9 rollback.
+`app:app`, local/private ingress, server-side session/tenant scope, `trading_methods=false`, `REAL_TRADING_ENABLED=false`, no broker write authority, public multi-user activation locked and protected V9 rollback remain unchanged.
