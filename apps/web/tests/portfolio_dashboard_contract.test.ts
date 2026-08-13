@@ -16,7 +16,7 @@ test("WP18 replaces Portfolio and Assets placeholders inside the accepted shell"
 
 test("WP18 currentness is explicit manual refresh without silent polling", () => {
   assert.match(dashboard, /silent polling отсутствует/);
-  assert.match(dashboard, />Обновить</);
+  assert.match(dashboard, /"Обновить"/);
   assert.match(dashboard, /manual pull-to-refresh; no silent polling/);
   assert.doesNotMatch(dashboard, /setInterval\s*\(/);
 });
