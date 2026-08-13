@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from contextlib import contextmanager
 from datetime import datetime, timezone
 import hashlib
@@ -135,7 +136,11 @@ def _instrument(
     )
 
 
-def _adapter(instruments: FakeInstruments) -> TInvestConnectionMarketReadAdapter:
+def _adapter(
+    instruments: FakeInstruments,
+    *,
+    clock: Callable[[], datetime] | None = None,
+) -> TInvestConnectionMarketReadAdapter:
     client = FakeClient(instruments)
 
     @contextmanager
@@ -145,7 +150,7 @@ def _adapter(instruments: FakeInstruments) -> TInvestConnectionMarketReadAdapter
     return TInvestConnectionMarketReadAdapter(
         client_factory=factory,
         expected_account_fingerprint_sha256=FINGERPRINT,
-        clock=lambda: NOW,
+        clock=clock or (lambda: NOW),
         monotonic=lambda: 1000.0,
         sleeper=lambda seconds: None,
         random_unit=lambda: 0.0,
@@ -171,6 +176,21 @@ def test_share_classification_uses_exact_typed_read_and_asset_brand() -> None:
     assert row.retrieved_at == NOW
     assert instruments.typed_calls == [("ShareBy", "instrument-uid-1")]
     assert instruments.get_asset_by_calls == ["asset-uid-1"]
+
+
+def test_classification_timestamp_is_captured_after_metadata_reads() -> None:
+    instruments = FakeInstruments()
+
+    def clock() -> datetime:
+        assert instruments.typed_calls == [("ShareBy", "instrument-uid-1")]
+        assert instruments.get_asset_by_calls == ["asset-uid-1"]
+        return NOW
+
+    adapter = _adapter(instruments, clock=clock)
+
+    rows = adapter.read_instrument_classifications((_instrument(),))
+
+    assert rows[0].retrieved_at == NOW
 
 
 def test_future_without_asset_mapping_preserves_authoritative_sector() -> None:
