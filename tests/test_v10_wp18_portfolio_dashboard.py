@@ -40,22 +40,69 @@ class FakeVault:
 
 
 class FakeAdapter:
-    def __init__(self, snapshot: Any, market: Any = None, *, market_error: bool = False) -> None:
+    def __init__(
+        self,
+        snapshot: Any,
+        market: Any = None,
+        *,
+        market_error: bool = False,
+        classification_error: bool = False,
+        classification_state: str = "VERIFIED",
+    ) -> None:
         self.snapshot = snapshot
         self.market = market
         self.market_error = market_error
+        self.classification_error = classification_error
+        self.classification_state = classification_state
 
-    def read_snapshot(self, *, allow_partial: bool = False, evaluated_at: datetime | None = None) -> Any:
+    def read_snapshot(
+        self,
+        *,
+        allow_partial: bool = False,
+        evaluated_at: datetime | None = None,
+    ) -> Any:
         assert allow_partial is True
         assert evaluated_at == NOW
         return self.snapshot
 
-    def read_last_prices(self, instruments: tuple[Any, ...], *, allow_partial: bool = False) -> Any:
+    def read_last_prices(
+        self,
+        instruments: tuple[Any, ...],
+        *,
+        allow_partial: bool = False,
+    ) -> Any:
         assert allow_partial is True
         assert instruments
         if self.market_error:
             raise RuntimeError("provider unavailable")
         return self.market
+
+    def read_instrument_classifications(
+        self,
+        instruments: tuple[Any, ...],
+        *,
+        allow_partial: bool = False,
+    ) -> tuple[Any, ...]:
+        assert allow_partial is True
+        assert instruments
+        if self.classification_error:
+            raise RuntimeError("classification unavailable")
+        return tuple(
+            SimpleNamespace(
+                instrument_uid=instrument.uid,
+                issuer=(
+                    "Example Issuer" if self.classification_state == "VERIFIED" else None
+                ),
+                sector=(
+                    "Technology" if self.classification_state == "VERIFIED" else None
+                ),
+                source="T-Invest GetAssets → GetAssetBy.brand",
+                retrieved_at=NOW,
+                state=self.classification_state,
+            )
+            for instrument in instruments
+            if instrument.uid
+        )
 
 
 def _state(value: str) -> Any:
@@ -88,7 +135,10 @@ def _position(*, kind: InstrumentType = InstrumentType.SHARE) -> Any:
         instrument_type=kind,
         currency="RUB",
         class_code="TQBR",
+        isin="RU0000000001",
+        figi="BBG000000001",
         uid="instrument-uid-1",
+        position_uid="position-uid-1",
     )
     valuation = SimpleNamespace(
         unit_price=Decimal("10.00"),
@@ -103,7 +153,12 @@ def _position(*, kind: InstrumentType = InstrumentType.SHARE) -> Any:
     )
 
 
-def _snapshot(*, position: Any | None = None, partial: bool = False) -> Any:
+def _snapshot(
+    *,
+    position: Any | None = None,
+    partial: bool = False,
+    optional_cash_unknown: bool = False,
+) -> Any:
     positions = () if position is None else (position,)
     quality = SimpleNamespace(
         completeness=_state("partial" if partial else "complete"),
@@ -123,8 +178,16 @@ def _snapshot(*, position: Any | None = None, partial: bool = False) -> Any:
         cash_balances=(
             SimpleNamespace(
                 reported=SimpleNamespace(amount=Decimal("125.50"), currency="RUB"),
-                available=SimpleNamespace(amount=Decimal("120.50"), currency="RUB"),
-                blocked=SimpleNamespace(amount=Decimal("5.00"), currency="RUB"),
+                available=(
+                    None
+                    if optional_cash_unknown
+                    else SimpleNamespace(amount=Decimal("120.50"), currency="RUB")
+                ),
+                blocked=(
+                    None
+                    if optional_cash_unknown
+                    else SimpleNamespace(amount=Decimal("5.00"), currency="RUB")
+                ),
                 as_of=NOW,
             ),
         ),
@@ -136,7 +199,10 @@ def _snapshot(*, position: Any | None = None, partial: bool = False) -> Any:
             age_seconds=Decimal("0"),
             evaluated_at=NOW,
         ),
-        portfolio_total=SimpleNamespace(amount=Decimal("1000.25"), currency="RUB"),
+        portfolio_total=SimpleNamespace(
+            amount=Decimal("1000.25"),
+            currency="RUB",
+        ),
         broker_position_count=2 if partial else len(positions),
         normalized_position_count=len(positions),
         unresolved_position_count=1 if partial else 0,
@@ -160,10 +226,23 @@ def _market(*, stale: bool = False) -> Any:
     )
 
 
-def _service(*, snapshot: Any, market: Any = None, market_error: bool = False) -> tuple[PortfolioDashboardServiceV1, FakeRepository, FakeVault]:
+def _service(
+    *,
+    snapshot: Any,
+    market: Any = None,
+    market_error: bool = False,
+    classification_error: bool = False,
+    classification_state: str = "VERIFIED",
+) -> tuple[PortfolioDashboardServiceV1, FakeRepository, FakeVault]:
     repository = FakeRepository([_connection()])
     vault = FakeVault()
-    adapter = FakeAdapter(snapshot, market, market_error=market_error)
+    adapter = FakeAdapter(
+        snapshot,
+        market,
+        market_error=market_error,
+        classification_error=classification_error,
+        classification_state=classification_state,
+    )
     service = PortfolioDashboardServiceV1(
         repository=repository,  # type: ignore[arg-type]
         vault=vault,
@@ -179,7 +258,9 @@ def test_empty_dashboard_does_not_read_secret() -> None:
     service = PortfolioDashboardServiceV1(
         repository=repository,  # type: ignore[arg-type]
         vault=vault,
-        adapter_builder=lambda token, fingerprint: (_ for _ in ()).throw(AssertionError()),
+        adapter_builder=lambda token, fingerprint: (_ for _ in ()).throw(
+            AssertionError()
+        ),
         clock=lambda: NOW,
     )
 
@@ -192,7 +273,10 @@ def test_empty_dashboard_does_not_read_secret() -> None:
 
 
 def test_share_dashboard_preserves_decimal_sources_and_current_market_value() -> None:
-    service, _, _ = _service(snapshot=_snapshot(position=_position()), market=_market())
+    service, _, _ = _service(
+        snapshot=_snapshot(position=_position()),
+        market=_market(),
+    )
 
     result = service.read(tenant_id="tenant-owner")
 
@@ -202,11 +286,18 @@ def test_share_dashboard_preserves_decimal_sources_and_current_market_value() ->
     assert account["portfolio_total"]["amount"] == "1000.25"
     assert account["cash"][0]["reported"] == "125.50"
     assert position["broker_value"]["amount"] == "30.00"
-    assert position["broker_value"]["source"] == "T-Invest GetPortfolio: current_price × quantity"
+    assert (
+        position["broker_value"]["source"]
+        == "T-Invest GetPortfolio: current_price × quantity"
+    )
     assert position["current_market_value"]["amount"] == "31.50"
     assert position["market_conversion_state"] == "DIRECT_SHARE_OR_ETF"
     assert Decimal(position["weight_within_position_currency_pct"]) == Decimal("100")
     assert account["concentration"][0]["top_1_weight_pct"] == "100"
+    assert position["instrument"]["issuer"] == "Example Issuer"
+    assert position["instrument"]["sector"] == "Technology"
+    assert position["instrument"]["classification_state"] == "VERIFIED"
+    assert position["instrument"]["uid"] == "instrument-uid-1"
 
 
 def test_bond_market_quote_is_not_naively_converted_to_currency_value() -> None:
@@ -220,7 +311,10 @@ def test_bond_market_quote_is_not_naively_converted_to_currency_value() -> None:
 
     assert position["current_market_last_price"]["amount"] == "10.50"
     assert position["current_market_value"] is None
-    assert position["market_conversion_state"] == "ASSET_SPECIFIC_CONVERSION_REQUIRED"
+    assert (
+        position["market_conversion_state"]
+        == "ASSET_SPECIFIC_CONVERSION_REQUIRED"
+    )
 
 
 def test_partial_snapshot_is_visible_and_never_replaced_with_zero() -> None:
@@ -237,11 +331,51 @@ def test_partial_snapshot_is_visible_and_never_replaced_with_zero() -> None:
     assert account["broker_position_count"] == 2
     assert account["normalized_position_count"] == 1
     assert account["unresolved_position_count"] == 1
-    assert any(row["code"] == "UNRESOLVED_BROKER_POSITIONS" for row in account["warnings"])
+    assert any(
+        row["code"] == "UNRESOLVED_BROKER_POSITIONS"
+        for row in account["warnings"]
+    )
+
+
+def test_optional_cash_components_remain_unknown_instead_of_zero() -> None:
+    service, _, _ = _service(
+        snapshot=_snapshot(optional_cash_unknown=True),
+    )
+
+    result = service.read(tenant_id="tenant-owner")
+    cash = result["accounts"][0]["cash"][0]
+
+    assert cash["reported"] == "125.50"
+    assert cash["available"] is None
+    assert cash["blocked"] is None
+
+
+def test_classification_failure_is_visible_and_never_inferred() -> None:
+    service, _, _ = _service(
+        snapshot=_snapshot(position=_position()),
+        market=_market(),
+        classification_error=True,
+    )
+
+    result = service.read(tenant_id="tenant-owner")
+    account = result["accounts"][0]
+    instrument = account["positions"][0]["instrument"]
+
+    assert result["state"] == "PARTIAL"
+    assert instrument["issuer"] is None
+    assert instrument["sector"] is None
+    assert instrument["classification_state"] == "UNAVAILABLE"
+    assert any(
+        row["code"] == "INSTRUMENT_CLASSIFICATION_UNAVAILABLE"
+        for row in account["warnings"]
+    )
 
 
 def test_dashboard_payload_never_exposes_token_secret_ref_or_fingerprint() -> None:
-    service, _, vault = _service(snapshot=_snapshot(position=_position()), market=_market())
+    service, _, vault = _service(
+        snapshot=_snapshot(position=_position()),
+        market=_market(),
+    )
 
     result = service.read(tenant_id="tenant-owner")
     encoded = json.dumps(result, ensure_ascii=False, sort_keys=True)
@@ -249,7 +383,10 @@ def test_dashboard_payload_never_exposes_token_secret_ref_or_fingerprint() -> No
     assert vault.loaded_refs == ["private-secret-ref"]
     assert "super-private-token" not in encoded
     assert "private-secret-ref" not in encoded
-    assert "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff" not in encoded
+    assert (
+        "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        not in encoded
+    )
     assert "***1234" in encoded
 
 
@@ -265,7 +402,10 @@ def test_market_failure_keeps_broker_data_visible_with_explicit_warning() -> Non
     assert result["state"] == "PARTIAL"
     assert account["portfolio_total"]["amount"] == "1000.25"
     assert account["current_market"]["state"] == "UNAVAILABLE"
-    assert any(row["code"] == "CURRENT_MARKET_DATA_UNAVAILABLE" for row in account["warnings"])
+    assert any(
+        row["code"] == "CURRENT_MARKET_DATA_UNAVAILABLE"
+        for row in account["warnings"]
+    )
 
 
 class FakeSessions:
