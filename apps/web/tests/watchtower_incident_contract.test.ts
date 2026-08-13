@@ -44,6 +44,12 @@ test("WP19 missing or conflicting alert evidence is explicit", () => {
   assert.match(backend, /watchtower_alert_verified/);
 });
 
+test("WP19 attention impact comes from canonical alert without materiality inference", () => {
+  assert.match(backend, /requires_owner_attention/);
+  assert.match(backend, /OWNER_ATTENTION_REQUIRED/);
+  assert.doesNotMatch(backend, /MATERIAL/);
+});
+
 test("WP19 does not add incident mutation broker write or browser secret storage", () => {
   const combined = `${page}\n${backend}`;
   assert.doesNotMatch(combined, /@app\.(post|put|patch|delete)\(/i);
