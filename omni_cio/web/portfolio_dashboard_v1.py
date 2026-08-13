@@ -8,12 +8,10 @@ from typing import Any, Protocol
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
-from omni_cio.adapters.tinvest_market_v1 import (
-    MarketFreshnessState,
-    TInvestMarketResultV1,
-)
+from omni_cio.adapters.tinvest_connection_v1 import TInvestInstrumentClassificationV1
+from omni_cio.adapters.tinvest_market_v1 import TInvestMarketResultV1
 from omni_cio.adapters.tinvest_read_v1 import TInvestSnapshotResultV1
-from omni_cio.contracts.v1.portfolio import InstrumentType, PortfolioPositionV1
+from omni_cio.contracts.v1.portfolio import InstrumentIdentity, InstrumentType, PortfolioPositionV1
 from omni_cio.web.api_v1 import SESSION_COOKIE, SessionRegistryLike
 from omni_cio.web.persistence_v1 import (
     BrokerConnectionRecordV1,
@@ -36,10 +34,17 @@ class DashboardAdapterLike(Protocol):
 
     def read_last_prices(
         self,
-        instruments: tuple[Any, ...],
+        instruments: tuple[InstrumentIdentity, ...],
         *,
         allow_partial: bool = False,
     ) -> TInvestMarketResultV1: ...
+
+    def read_instrument_classifications(
+        self,
+        instruments: tuple[InstrumentIdentity, ...],
+        *,
+        allow_partial: bool = False,
+    ) -> tuple[TInvestInstrumentClassificationV1, ...]: ...
 
 
 DashboardAdapterBuilder = Callable[[str, str], DashboardAdapterLike]
@@ -55,7 +60,13 @@ def _decimal(value: Decimal) -> str:
     return format(value, "f")
 
 
-def _money(amount: Decimal, currency: str, *, source: str, as_of: datetime) -> dict[str, str]:
+def _money(
+    amount: Decimal,
+    currency: str,
+    *,
+    source: str,
+    as_of: datetime,
+) -> dict[str, str]:
     return {
         "amount": _decimal(amount),
         "currency": currency,
@@ -70,7 +81,10 @@ def _instrument_type(position: PortfolioPositionV1) -> str:
 
 
 def _market_value_allowed(position: PortfolioPositionV1) -> bool:
-    return position.instrument.instrument_type in (InstrumentType.SHARE, InstrumentType.ETF)
+    return position.instrument.instrument_type in (
+        InstrumentType.SHARE,
+        InstrumentType.ETF,
+    )
 
 
 def _market_by_uid(result: TInvestMarketResultV1 | None) -> dict[str, Any]:
@@ -79,10 +93,18 @@ def _market_by_uid(result: TInvestMarketResultV1 | None) -> dict[str, Any]:
     return {row.instrument_uid: row for row in result.prices}
 
 
+def _classification_by_uid(
+    rows: tuple[TInvestInstrumentClassificationV1, ...],
+) -> dict[str, TInvestInstrumentClassificationV1]:
+    return {row.instrument_uid: row for row in rows}
+
+
 def _safe_issue(issue: Any) -> dict[str, str]:
     return {
         "code": str(issue.code),
-        "severity": str(issue.severity.value if hasattr(issue.severity, "value") else issue.severity),
+        "severity": str(
+            issue.severity.value if hasattr(issue.severity, "value") else issue.severity
+        ),
         "message": str(issue.message),
     }
 
@@ -119,41 +141,59 @@ class PortfolioDashboardServiceV1:
         account = connection.accounts[account_index]
         token = self._vault.load(secret_ref=connection.secret_ref)
         try:
-            adapter = self._adapter_builder(token, account.account_fingerprint_sha256)
+            adapter = self._adapter_builder(
+                token,
+                account.account_fingerprint_sha256,
+            )
             snapshot_result = adapter.read_snapshot(
                 allow_partial=True,
                 evaluated_at=evaluated_at,
             )
             positions = snapshot_result.snapshot.positions
+            instruments = tuple(position.instrument for position in positions)
             market_result: TInvestMarketResultV1 | None = None
             market_error = False
+            classification_rows: tuple[TInvestInstrumentClassificationV1, ...] = ()
+            classification_error = False
             if positions:
                 try:
                     market_result = adapter.read_last_prices(
-                        tuple(position.instrument for position in positions),
+                        instruments,
                         allow_partial=True,
                     )
                 except Exception:
                     market_error = True
+                try:
+                    classification_rows = adapter.read_instrument_classifications(
+                        instruments,
+                        allow_partial=True,
+                    )
+                except Exception:
+                    classification_error = True
         finally:
             token = ""
 
         prices = _market_by_uid(market_result)
+        classifications = _classification_by_uid(classification_rows)
         broker_totals: dict[str, Decimal] = {}
         position_rows: list[dict[str, Any]] = []
         pending_weights: list[tuple[int, str, Decimal]] = []
 
         for position in positions:
             valuation = position.valuation
+            valuation_as_of: datetime | None = None
             broker_value: dict[str, str] | None = None
             broker_value_amount: Decimal | None = None
             if valuation is not None and valuation.unit_price is not None:
+                if valuation.as_of is None:
+                    raise ValueError("POSITION_VALUATION_AS_OF_REQUIRED")
+                valuation_as_of = valuation.as_of
                 broker_value_amount = valuation.unit_price * position.quantity_units
                 broker_value = _money(
                     broker_value_amount,
                     valuation.currency,
                     source="T-Invest GetPortfolio: current_price × quantity",
-                    as_of=valuation.as_of,
+                    as_of=valuation_as_of,
                 )
                 broker_totals[valuation.currency] = (
                     broker_totals.get(valuation.currency, Decimal("0"))
@@ -162,6 +202,7 @@ class PortfolioDashboardServiceV1:
 
             uid = position.instrument.uid or ""
             market = prices.get(uid)
+            classification = classifications.get(uid)
             current_market_value: dict[str, str] | None = None
             market_conversion_state = "NO_LAST_PRICE"
             if market is not None:
@@ -176,6 +217,19 @@ class PortfolioDashboardServiceV1:
                 else:
                     market_conversion_state = "ASSET_SPECIFIC_CONVERSION_REQUIRED"
 
+            classification_state = (
+                classification.state if classification is not None else "UNAVAILABLE"
+            )
+            classification_source = (
+                classification.source
+                if classification is not None
+                else "T-Invest asset metadata unavailable"
+            )
+            classification_as_of = (
+                classification.retrieved_at.isoformat()
+                if classification is not None
+                else snapshot_result.snapshot.metadata.retrieved_at.isoformat()
+            )
             row: dict[str, Any] = {
                 "instrument": {
                     "name": position.instrument.name,
@@ -183,8 +237,19 @@ class PortfolioDashboardServiceV1:
                     "type": _instrument_type(position),
                     "currency": position.instrument.currency,
                     "class_code": position.instrument.class_code,
-                    "sector": None,
-                    "sector_state": "UNAVAILABLE_FROM_WP15_CANONICAL_IDENTITY",
+                    "isin": position.instrument.isin,
+                    "figi": position.instrument.figi,
+                    "uid": position.instrument.uid,
+                    "position_uid": position.instrument.position_uid,
+                    "issuer": (
+                        classification.issuer if classification is not None else None
+                    ),
+                    "sector": (
+                        classification.sector if classification is not None else None
+                    ),
+                    "classification_state": classification_state,
+                    "classification_source": classification_source,
+                    "classification_as_of": classification_as_of,
                 },
                 "quantity_units": _decimal(position.quantity_units),
                 "blocked_units": _decimal(position.blocked_units),
@@ -193,9 +258,11 @@ class PortfolioDashboardServiceV1:
                         valuation.unit_price,
                         valuation.currency,
                         source="T-Invest GetPortfolio current_price",
-                        as_of=valuation.as_of,
+                        as_of=valuation_as_of,
                     )
-                    if valuation is not None and valuation.unit_price is not None
+                    if valuation is not None
+                    and valuation.unit_price is not None
+                    and valuation_as_of is not None
                     else None
                 ),
                 "broker_value": broker_value,
@@ -231,7 +298,9 @@ class PortfolioDashboardServiceV1:
         position_rows.sort(
             key=lambda row: (
                 row["broker_value"] is not None,
-                Decimal(row["broker_value"]["amount"]) if row["broker_value"] else Decimal("0"),
+                Decimal(row["broker_value"]["amount"])
+                if row["broker_value"]
+                else Decimal("0"),
                 row["instrument"]["name"],
             ),
             reverse=True,
@@ -254,8 +323,12 @@ class PortfolioDashboardServiceV1:
                 {
                     "currency": currency,
                     "normalized_position_value": _decimal(total),
-                    "top_1_weight_pct": _decimal(values[0] / total * Decimal("100")),
-                    "top_5_weight_pct": _decimal(sum(values[:5], Decimal("0")) / total * Decimal("100")),
+                    "top_1_weight_pct": _decimal(
+                        values[0] / total * Decimal("100")
+                    ),
+                    "top_5_weight_pct": _decimal(
+                        sum(values[:5], Decimal("0")) / total * Decimal("100")
+                    ),
                     "basis": "normalized broker current_price × quantity; same-currency positions only",
                 }
             )
@@ -303,6 +376,22 @@ class PortfolioDashboardServiceV1:
                         "message": f"{market_result.stale_instrument_count} returned last prices are stale.",
                     }
                 )
+        if classification_error:
+            warnings.append(
+                {
+                    "code": "INSTRUMENT_CLASSIFICATION_UNAVAILABLE",
+                    "severity": "warning",
+                    "message": "Issuer/sector metadata could not be read; no inferred classification was emitted.",
+                }
+            )
+        elif any(row.state != "VERIFIED" for row in classification_rows):
+            warnings.append(
+                {
+                    "code": "INSTRUMENT_CLASSIFICATION_PARTIAL",
+                    "severity": "warning",
+                    "message": "Some positions have no verified issuer/sector metadata; unavailable values remain explicit.",
+                }
+            )
 
         portfolio_total = snapshot_result.portfolio_total
         return {
@@ -333,8 +422,16 @@ class PortfolioDashboardServiceV1:
                 {
                     "currency": cash.reported.currency,
                     "reported": _decimal(cash.reported.amount),
-                    "available": _decimal(cash.available.amount),
-                    "blocked": _decimal(cash.blocked.amount),
+                    "available": (
+                        _decimal(cash.available.amount)
+                        if cash.available is not None
+                        else None
+                    ),
+                    "blocked": (
+                        _decimal(cash.blocked.amount)
+                        if cash.blocked is not None
+                        else None
+                    ),
                     "source": "T-Invest GetPositions",
                     "as_of": cash.as_of.isoformat(),
                 }
@@ -362,7 +459,9 @@ class PortfolioDashboardServiceV1:
                 "missing_instrument_count": (
                     market_result.missing_instrument_count
                     if market_result is not None
-                    else len(positions) if market_error else 0
+                    else len(positions)
+                    if market_error
+                    else 0
                 ),
                 "stale_instrument_count": (
                     market_result.stale_instrument_count
@@ -410,7 +509,7 @@ class PortfolioDashboardServiceV1:
                         {
                             "code": "BROKER_ACCOUNT_READ_UNAVAILABLE",
                             "severity": "error",
-                            "message": f"Live read failed for masked account {connection.accounts[account_index].masked_label}; no zero-value substitute was emitted.",
+                            "message": f"Current-on-demand read failed for masked account {connection.accounts[account_index].masked_label}; no zero-value substitute was emitted.",
                         }
                     )
 
