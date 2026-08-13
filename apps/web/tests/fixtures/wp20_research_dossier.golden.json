@@ -1,0 +1,168 @@
+{
+  "ready": {
+    "schema_version": "1.0.0",
+    "generated_at": "2026-08-13T18:00:00+00:00",
+    "state": "READY",
+    "counts": { "dossiers": 1, "partial": 0 },
+    "dossiers": [
+      {
+        "dossier_sha256": "dossier:fixture-ready",
+        "state": "READY",
+        "assessed_at": "2026-08-13T18:00:00+00:00",
+        "decision_ready": true,
+        "strong_recommendation_allowed": true,
+        "identity": {
+          "candidate_id": "uid:wp20-fixture-bond",
+          "instrument_uid": "wp20-fixture-bond",
+          "instrument_type": "bond",
+          "issuer_identity_state": "SOURCE_BOUND"
+        },
+        "facts": [
+          {
+            "record_sha256": "record:fixture-revenue",
+            "fact_type": "report",
+            "fact_key": "report.revenue",
+            "value": { "type": "text", "canonical": "<strong>External text stays data</strong>", "currency": null },
+            "material": true,
+            "evidence_use": "decision_grade",
+            "freshness": "FRESH",
+            "confidence_state": "SUPPORTED",
+            "event_at": "2026-08-13T17:55:00+00:00",
+            "source": {
+              "provider": "fixture_issuer",
+              "source_class": "issuer",
+              "authority": "official",
+              "source_id": "fixture-report",
+              "location_text": "https://issuer.example.test/report/20",
+              "href": "https://issuer.example.test/report/20",
+              "retrieved_at": "2026-08-13T17:55:00+00:00",
+              "published_at": "2026-08-13T17:55:00+00:00",
+              "effective_at": "2026-08-13T17:55:00+00:00"
+            }
+          }
+        ],
+        "timeline": [
+          {
+            "event_at": "2026-08-13T17:55:00+00:00",
+            "record_sha256": "record:fixture-revenue",
+            "fact_key": "report.revenue",
+            "value": { "type": "text", "canonical": "<strong>External text stays data</strong>", "currency": null },
+            "source_class": "issuer"
+          }
+        ],
+        "contradictions": [],
+        "unknowns": [],
+        "related_links": [
+          { "kind": "credit", "label": "Credit analysis", "path": "/risks?instrument=wp20" }
+        ],
+        "ai_summary": {
+          "state": "AVAILABLE",
+          "kind": "AI_GENERATED_NON_AUTHORITATIVE",
+          "authoritative": false,
+          "dossier_sha256": "dossier:fixture-ready",
+          "generated_at": "2026-08-13T18:00:00+00:00",
+          "text": "AI interpretation is separate from the canonical source fact."
+        },
+        "counts": {
+          "facts": 1,
+          "rejected_records_hidden": 0,
+          "contradictions": 0,
+          "unknowns": 0,
+          "stale_facts": 0,
+          "unknown_freshness_facts": 0
+        }
+      }
+    ]
+  },
+  "partial": {
+    "schema_version": "1.0.0",
+    "generated_at": "2026-08-13T18:00:00+00:00",
+    "state": "PARTIAL",
+    "counts": { "dossiers": 1, "partial": 1 },
+    "dossiers": [
+      {
+        "dossier_sha256": "dossier:fixture-partial",
+        "state": "PARTIAL",
+        "assessed_at": "2026-08-13T18:00:00+00:00",
+        "decision_ready": false,
+        "strong_recommendation_allowed": false,
+        "identity": {
+          "candidate_id": "uid:wp20-fixture-bond",
+          "instrument_uid": "wp20-fixture-bond",
+          "instrument_type": "bond",
+          "issuer_identity_state": "UNKNOWN"
+        },
+        "facts": [
+          {
+            "record_sha256": "record:fixture-stale-a",
+            "fact_type": "report",
+            "fact_key": "report.revenue",
+            "value": { "type": "text", "canonical": "100", "currency": null },
+            "material": true,
+            "evidence_use": "decision_grade",
+            "freshness": "STALE",
+            "confidence_state": "CONTRADICTED",
+            "event_at": "2026-08-13T12:00:00+00:00",
+            "source": {
+              "provider": "fixture_a",
+              "source_class": "issuer",
+              "authority": "official",
+              "source_id": "fixture-a",
+              "location_text": "ftp://example.test/document",
+              "href": null,
+              "retrieved_at": "2026-08-13T12:00:00+00:00",
+              "published_at": "2026-08-13T12:00:00+00:00",
+              "effective_at": "2026-08-13T12:00:00+00:00"
+            }
+          },
+          {
+            "record_sha256": "record:fixture-stale-b",
+            "fact_type": "report",
+            "fact_key": "report.revenue",
+            "value": { "type": "text", "canonical": "120", "currency": null },
+            "material": true,
+            "evidence_use": "decision_grade",
+            "freshness": "STALE",
+            "confidence_state": "CONTRADICTED",
+            "event_at": "2026-08-13T12:00:00+00:00",
+            "source": {
+              "provider": "fixture_b",
+              "source_class": "issuer",
+              "authority": "official",
+              "source_id": "fixture-b",
+              "location_text": null,
+              "href": null,
+              "retrieved_at": "2026-08-13T12:00:00+00:00",
+              "published_at": "2026-08-13T12:00:00+00:00",
+              "effective_at": "2026-08-13T12:00:00+00:00"
+            }
+          }
+        ],
+        "timeline": [],
+        "contradictions": [
+          {
+            "fact_key": "report.revenue",
+            "comparison_period": "2026-08-13T12:00:00+00:00",
+            "severity": "material",
+            "record_sha256s": ["record:fixture-stale-a", "record:fixture-stale-b"],
+            "distinct_values": ["text:100:", "text:120:"],
+            "unresolved": true
+          }
+        ],
+        "unknowns": [
+          { "requirement_id": "req_fixture", "fact_type": "report", "importance": "material", "reason": "stale_record" }
+        ],
+        "related_links": [],
+        "ai_summary": { "state": "UNAVAILABLE" },
+        "counts": {
+          "facts": 2,
+          "rejected_records_hidden": 0,
+          "contradictions": 1,
+          "unknowns": 1,
+          "stale_facts": 2,
+          "unknown_freshness_facts": 0
+        }
+      }
+    ]
+  }
+}
