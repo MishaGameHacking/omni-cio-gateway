@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 from omni_cio.adapters.tinvest_connection_v1 import TInvestInstrumentClassificationV1
 from omni_cio.adapters.tinvest_market_v1 import TInvestMarketResultV1
 from omni_cio.adapters.tinvest_read_v1 import (
+    AccountBindingError,
     BrokerDataError,
     TInvestReadAdapterError,
     TInvestSnapshotResultV1,
@@ -136,6 +137,10 @@ def _safe_issue(issue: Any) -> dict[str, str]:
     }
 
 
+def _broker_error_code(exc: BrokerDataError) -> str:
+    return str(exc).split(":", 1)[0]
+
+
 class PortfolioDashboardServiceV1:
     """WP18 read-only product service over accepted WP15/WP17 boundaries.
 
@@ -188,7 +193,11 @@ class PortfolioDashboardServiceV1:
                         instruments,
                         allow_partial=True,
                     )
-                except BrokerDataError:
+                except BrokerDataError as exc:
+                    if _broker_error_code(exc) != "MARKET_INSTRUMENT_UID_REQUIRED":
+                        raise
+                    market_error = True
+                except AccountBindingError:
                     raise
                 except TInvestReadAdapterError:
                     market_error = True
@@ -197,7 +206,7 @@ class PortfolioDashboardServiceV1:
                         instruments,
                         allow_partial=True,
                     )
-                except BrokerDataError:
+                except (BrokerDataError, AccountBindingError):
                     raise
                 except TInvestReadAdapterError:
                     classification_error = True
