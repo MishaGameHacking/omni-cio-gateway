@@ -356,6 +356,29 @@ def test_future_market_quote_is_price_points_not_money() -> None:
     )
 
 
+def test_currency_market_quote_requires_nominal_conversion() -> None:
+    service, _, _ = _service(
+        snapshot=_snapshot(position=_position(kind=InstrumentType.CURRENCY)),
+        market=_market(),
+    )
+
+    result = service.read(tenant_id="tenant-owner")
+    position = result["accounts"][0]["positions"][0]
+    quote = position["current_market_last_price"]
+
+    assert quote["amount"] == "10.50"
+    assert quote["quotation_unit"] == "RUB"
+    assert (
+        quote["quotation_semantics"]
+        == "SETTLEMENT_CURRENCY_QUOTATION_REQUIRES_NOMINAL"
+    )
+    assert position["current_market_value"] is None
+    assert (
+        position["market_conversion_state"]
+        == "ASSET_SPECIFIC_CONVERSION_REQUIRED"
+    )
+
+
 def test_partial_snapshot_is_visible_and_never_replaced_with_zero() -> None:
     service, _, _ = _service(
         snapshot=_snapshot(position=_position(), partial=True),
