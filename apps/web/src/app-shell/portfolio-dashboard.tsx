@@ -8,6 +8,10 @@ function money(value: { amount: string; currency: string } | null): string {
   return value ? `${formatDecimal(value.amount)} ${value.currency}` : "—";
 }
 
+function marketQuote(value: PortfolioPositionView["current_market_last_price"]): string {
+  return value ? `${formatDecimal(value.amount)} ${value.quotation_unit}` : "—";
+}
+
 function warningState(account: PortfolioAccountView): "READY" | "PARTIAL" | "STALE" | "DEGRADED" {
   if (account.freshness.state === "stale") return "STALE";
   if (account.unresolved_position_count > 0 || account.completeness !== "complete") return "PARTIAL";
@@ -78,8 +82,9 @@ function PositionTable({ positions, assetsMode, snapshotAsOf }: { positions: Por
                 <span className="wp18-subline">derived same-currency broker values · {snapshotAsOf}</span>
               </td>
               <td>
-                {position.current_market_value ? money(position.current_market_value) : position.current_market_last_price ? `${formatDecimal(position.current_market_last_price.amount)} ${position.current_market_last_price.currency}` : "—"}
+                {position.current_market_value ? money(position.current_market_value) : marketQuote(position.current_market_last_price)}
                 <span className="wp18-subline">{position.market_conversion_state}</span>
+                {position.current_market_last_price ? <span className="wp18-subline">raw quote: {marketQuote(position.current_market_last_price)} · {position.current_market_last_price.quotation_semantics}</span> : null}
                 <span className="wp18-subline">{position.current_market_last_price ? `${position.current_market_last_price.source} · ${position.current_market_last_price.as_of}` : `quote unavailable · snapshot ${snapshotAsOf}`}</span>
               </td>
               <td>
