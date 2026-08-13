@@ -26,6 +26,13 @@ test("WP19 exposes active resolved critical filters and reopened semantics", () 
   assert.match(page, /"active" \| "resolved" \| "critical"/);
   assert.match(page, /REOPENED/);
   assert.match(page, /CLOSED → OPEN/);
+  assert.match(page, /aria-pressed=/);
+});
+
+test("WP19 severity presentation is distinct from freshness state", () => {
+  assert.doesNotMatch(page, /StatusBadge/);
+  assert.doesNotMatch(page, /"STALE"/);
+  assert.match(page, /incident\.severity\.toUpperCase/);
 });
 
 test("WP19 same-origin API is authenticated by server session and no-store", () => {
