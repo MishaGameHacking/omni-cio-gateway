@@ -16,6 +16,7 @@ from omni_cio.adapters.tinvest_read_v1 import (
     BrokerAccountBindingV1,
     BrokerDataError,
     TInvestReadAdapter,
+    TInvestReadAdapterError,
     _accounts,
     _binding_for_account,
     _enum_name,
@@ -185,7 +186,7 @@ class TInvestConnectionMarketReadAdapter(
                         client,
                         instrument_uid,
                     )
-                except Exception:
+                except TInvestReadAdapterError:
                     if not allow_partial:
                         raise
                     rows.append(
@@ -255,7 +256,7 @@ class TInvestConnectionMarketReadAdapter(
                             state=state,
                         )
                     )
-                except Exception:
+                except TInvestReadAdapterError:
                     if not allow_partial:
                         raise
                     rows.append(
