@@ -278,7 +278,9 @@ def test_wp20_projects_canonical_facts_conflict_timeline_and_no_ai_claim() -> No
     assert dossier["strong_recommendation_allowed"] is False
     assert len(dossier["contradictions"]) == 1
     assert dossier["contradictions"][0]["severity"] == "critical"
-    event = next(row for row in dossier["facts"] if row["fact_type"] == "material_event")
+    event = next(
+        row for row in dossier["facts"] if row["fact_type"] == "material_event"
+    )
     assert event["value"]["canonical"].startswith("<em>")
     assert event["source"]["provider"] == "<b>Issuer</b>"
     assert event["source"]["location"] is None
@@ -298,7 +300,9 @@ def test_wp20_stale_and_unknown_states_remain_explicit() -> None:
     assert dossier["facts"][0]["freshness"] == "STALE"
 
 
-def test_wp20_invalid_schema_wrong_instrument_and_duplicate_are_not_silently_used() -> None:
+def test_wp20_invalid_schema_wrong_instrument_and_duplicate_are_not_silently_used() -> (
+    None
+):
     valid = _contradictory_payload()
     invalid = _read(
         (
