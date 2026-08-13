@@ -292,6 +292,7 @@ def test_share_dashboard_preserves_decimal_sources_and_current_market_value() ->
 
     account = result["accounts"][0]
     position = account["positions"][0]
+    quote = position["current_market_last_price"]
     assert result["state"] == "READY"
     assert account["portfolio_total"]["amount"] == "1000.25"
     assert account["cash"][0]["reported"] == "125.50"
@@ -302,6 +303,9 @@ def test_share_dashboard_preserves_decimal_sources_and_current_market_value() ->
     )
     assert position["current_market_value"]["amount"] == "31.50"
     assert position["market_conversion_state"] == "DIRECT_SHARE_OR_ETF"
+    assert quote["quotation_unit"] == "RUB"
+    assert quote["quotation_semantics"] == "SETTLEMENT_CURRENCY_PER_INSTRUMENT"
+    assert quote["source"] == "T-Invest GetLastPrices raw quotation"
     assert Decimal(position["weight_within_position_currency_pct"]) == Decimal("100")
     assert account["concentration"][0]["top_1_weight_pct"] == "100"
     assert position["instrument"]["issuer"] == "Example Issuer"
@@ -318,8 +322,33 @@ def test_bond_market_quote_is_not_naively_converted_to_currency_value() -> None:
 
     result = service.read(tenant_id="tenant-owner")
     position = result["accounts"][0]["positions"][0]
+    quote = position["current_market_last_price"]
 
-    assert position["current_market_last_price"]["amount"] == "10.50"
+    assert quote["amount"] == "10.50"
+    assert quote["quotation_unit"] == "price_points"
+    assert quote["quotation_semantics"] == "PERCENT_OF_NOMINAL"
+    assert "currency" not in quote
+    assert position["current_market_value"] is None
+    assert (
+        position["market_conversion_state"]
+        == "ASSET_SPECIFIC_CONVERSION_REQUIRED"
+    )
+
+
+def test_future_market_quote_is_price_points_not_money() -> None:
+    service, _, _ = _service(
+        snapshot=_snapshot(position=_position(kind=InstrumentType.FUTURE)),
+        market=_market(),
+    )
+
+    result = service.read(tenant_id="tenant-owner")
+    position = result["accounts"][0]["positions"][0]
+    quote = position["current_market_last_price"]
+
+    assert quote["amount"] == "10.50"
+    assert quote["quotation_unit"] == "price_points"
+    assert quote["quotation_semantics"] == "FUTURES_PRICE_POINTS"
+    assert "currency" not in quote
     assert position["current_market_value"] is None
     assert (
         position["market_conversion_state"]
