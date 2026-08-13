@@ -47,6 +47,11 @@ test("WP18 per-account summary surfaces stale and partial market state", () => {
   assert.match(dashboard, /currentMarketDisplayState/);
 });
 
+test("WP18 multi-account rendering does not assume masked labels are unique", () => {
+  assert.match(dashboard, /accounts\.map\(\(account, accountIndex\)/);
+  assert.match(dashboard, /key=\{`\$\{account\.masked_account\}-\$\{accountIndex\}`\}/);
+});
+
 test("WP18 market quote is not modeled as universal money", () => {
   assert.match(contracts, /interface PortfolioMarketQuoteView/);
   assert.match(contracts, /quotation_unit:\s*string/);
