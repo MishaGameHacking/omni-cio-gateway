@@ -8,6 +8,7 @@ import "./design-system/base.css";
 import "./app-shell/app-shell.css";
 import "./app-shell/portfolio-dashboard.css";
 import "./app-shell/watchtower-incidents.css";
+import "./app-shell/research-dossier.css";
 
 const root = document.getElementById("root");
 if (!root) throw new Error("WEB_ROOT_MISSING");
