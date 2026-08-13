@@ -23,7 +23,7 @@ type WatchtowerIncidentView = {
   lifecycle_state: "ACTIVE" | "RESOLVED";
   severity: IncidentSeverity;
   critical: boolean;
-  risk_impact: "CRITICAL" | "MATERIAL" | "INFORMATIONAL" | "UNKNOWN";
+  risk_impact: "OWNER_ATTENTION_REQUIRED" | "INFORMATIONAL" | "UNKNOWN";
   subject: string | null;
   message_code: string | null;
   requested_action: string | null;
