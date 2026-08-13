@@ -106,6 +106,16 @@ export interface PortfolioMoneyView {
   as_of: string;
 }
 
+export interface PortfolioMarketQuoteView {
+  amount: string;
+  quotation_unit: string;
+  quotation_semantics: string;
+  source: string;
+  as_of: string;
+  freshness: "fresh" | "stale";
+  age_seconds: string;
+}
+
 export interface PortfolioPositionView {
   instrument: {
     name: string;
@@ -127,7 +137,7 @@ export interface PortfolioPositionView {
   blocked_units: string;
   broker_unit_price: PortfolioMoneyView | null;
   broker_value: PortfolioMoneyView | null;
-  current_market_last_price: (PortfolioMoneyView & { freshness: "fresh" | "stale"; age_seconds: string }) | null;
+  current_market_last_price: PortfolioMarketQuoteView | null;
   current_market_value: PortfolioMoneyView | null;
   market_conversion_state: string;
   weight_within_position_currency_pct: string | null;
