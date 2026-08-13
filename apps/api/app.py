@@ -17,6 +17,7 @@ from fastapi.staticfiles import StaticFiles
 import grpc
 from t_tech.invest import Client
 
+from omni_cio.adapters.tinvest_connection_v1 import TInvestConnectionMarketReadAdapter
 from omni_cio.persistence.migration import (
     ConnectionLike,
     CursorLike,
@@ -37,6 +38,10 @@ from omni_cio.web.persistence_v1 import (
     PostgresBrokerConnectionRepositoryV1,
     PostgresWebSessionRegistryV1,
 )
+from omni_cio.web.portfolio_dashboard_v1 import (
+    PortfolioDashboardServiceV1,
+    install_portfolio_dashboard_routes,
+)
 from omni_cio.web.provisioning_v1 import (
     BrokerProvisioningRegistryV1,
     BrokerProvisioningServiceV1,
@@ -48,6 +53,7 @@ WEB_DIST = WEB_ROOT / "dist"
 _GIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 _LOCAL_TRUSTED_HOSTS = ("127.0.0.1", "localhost")
 _WP15_LIVE_RPC_TIMEOUT_SECONDS = 15.0
+_WP18_READ_RPC_TIMEOUT_SECONDS = 15.0
 
 
 class _ClientCallDetails(
@@ -244,6 +250,19 @@ def _live_client_factory_builder(token: str):
     )
 
 
+def _dashboard_adapter_builder(
+    token: str,
+    expected_account_fingerprint_sha256: str,
+) -> TInvestConnectionMarketReadAdapter:
+    return TInvestConnectionMarketReadAdapter(
+        client_factory=_client_factory_builder(
+            token,
+            rpc_timeout_seconds=_WP18_READ_RPC_TIMEOUT_SECONDS,
+        ),
+        expected_account_fingerprint_sha256=expected_account_fingerprint_sha256,
+    )
+
+
 def create_local_private_app() -> FastAPI:
     """Create the local/private Web app without changing the protected app:app gateway."""
     private_acceptance = _private_acceptance_enabled()
@@ -287,6 +306,15 @@ def create_local_private_app() -> FastAPI:
             private_test_identity_enabled=private_acceptance,
             secure_cookie=False,
         )
+    )
+    install_portfolio_dashboard_routes(
+        app,
+        sessions=sessions,
+        service=PortfolioDashboardServiceV1(
+            repository=broker_repository,
+            vault=vault,
+            adapter_builder=_dashboard_adapter_builder,
+        ),
     )
     _protect_local_hosts(app)
 
