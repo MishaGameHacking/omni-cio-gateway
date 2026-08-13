@@ -21,11 +21,27 @@ IMPLEMENTATION_FILES = (
     "docs/operations/V10_WP15_OWNER_LIVE_READ_RUNBOOK.md",
     "docs/master-plan/OMNI_CIO_V10_IDENTITY_MULTI_TENANT_ACCOUNT_AND_AUTHENTICATION_AMENDMENT.md",
 )
-_ACCEPTED_IMPLEMENTATION_SHA_PARTS = (
-    "a7ecad5f7e",
-    "84e756d19f",
-    "ca2969a71c",
-    "62fca744a2",
+_ACCEPTED_IMPLEMENTATION_SHA_BYTES = (
+    167,
+    236,
+    173,
+    95,
+    126,
+    132,
+    231,
+    86,
+    209,
+    159,
+    202,
+    41,
+    105,
+    167,
+    28,
+    98,
+    252,
+    167,
+    68,
+    162,
 )
 _GIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 
@@ -78,16 +94,23 @@ def _expect(payload: dict[str, Any], key: str, expected: Any) -> None:
 
 
 def _accepted_implementation_sha(payload: dict[str, Any]) -> str:
-    parts = payload.get("accepted_implementation_git_sha_parts")
-    if not isinstance(parts, list) or not all(isinstance(part, str) for part in parts):
-        raise EvidenceValidationError(
-            "WP15_ACCEPTED_STATE_MISMATCH:accepted_implementation_git_sha_parts"
+    values = payload.get("accepted_implementation_git_sha_bytes")
+    if (
+        not isinstance(values, list)
+        or len(values) != 20
+        or not all(
+            isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= 255
+            for value in values
         )
-    value = "".join(parts)
-    expected = "".join(_ACCEPTED_IMPLEMENTATION_SHA_PARTS)
+    ):
+        raise EvidenceValidationError(
+            "WP15_ACCEPTED_STATE_MISMATCH:accepted_implementation_git_sha_bytes"
+        )
+    value = bytes(values).hex()
+    expected = bytes(_ACCEPTED_IMPLEMENTATION_SHA_BYTES).hex()
     if _GIT_SHA_RE.fullmatch(value) is None or value != expected:
         raise EvidenceValidationError(
-            "WP15_ACCEPTED_STATE_MISMATCH:accepted_implementation_git_sha_parts"
+            "WP15_ACCEPTED_STATE_MISMATCH:accepted_implementation_git_sha_bytes"
         )
     return value
 
@@ -101,8 +124,8 @@ def validate() -> dict[str, Any]:
         "authority": "OMNI_CIO_V10_IDENTITY_MULTI_TENANT_ACCOUNT_AND_AUTHENTICATION_AMENDMENT",
         "authority_state": "OWNER_LIVE_EVIDENCE_AND_INDEPENDENT_RUNNER_AUDIT_GREEN",
         "normal_broker_provisioning_surface": "WP17_AUTHENTICATED_WEB_SETTINGS",
-        "accepted_implementation_git_sha_parts": list(
-            _ACCEPTED_IMPLEMENTATION_SHA_PARTS
+        "accepted_implementation_git_sha_bytes": list(
+            _ACCEPTED_IMPLEMENTATION_SHA_BYTES
         ),
         "owner_audit_run_id": 31672850918,
         "broker_read_provisioning_required_now": False,
@@ -113,8 +136,8 @@ def validate() -> dict[str, Any]:
         "trading_methods": False,
         "real_trading_enabled": False,
     }
-    for key, value in expected.items():
-        _expect(payload, key, value)
+    for key, expected_value in expected.items():
+        _expect(payload, key, expected_value)
 
     accepted_implementation_sha = _accepted_implementation_sha(payload)
     current_sha = _git_sha()
