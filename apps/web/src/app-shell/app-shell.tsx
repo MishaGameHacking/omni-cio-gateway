@@ -104,7 +104,7 @@ export function ApplicationShell() {
   }, [session?.authenticated]);
 
   useEffect(() => {
-    const onPopState = () => setPath(currentPath);
+    const onPopState = () => setPath(currentPath());
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
