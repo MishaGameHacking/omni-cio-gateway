@@ -113,8 +113,15 @@ export interface PortfolioPositionView {
     type: string;
     currency: string;
     class_code: string | null;
+    isin: string | null;
+    figi: string | null;
+    uid: string | null;
+    position_uid: string | null;
+    issuer: string | null;
     sector: string | null;
-    sector_state: string;
+    classification_state: string;
+    classification_source: string;
+    classification_as_of: string;
   };
   quantity_units: string;
   blocked_units: string;
@@ -137,7 +144,7 @@ export interface PortfolioAccountView {
   normalized_position_count: number;
   unresolved_position_count: number;
   portfolio_total: PortfolioMoneyView | null;
-  cash: Array<{ currency: string; reported: string; available: string; blocked: string; source: string; as_of: string }>;
+  cash: Array<{ currency: string; reported: string; available: string | null; blocked: string | null; source: string; as_of: string }>;
   positions: PortfolioPositionView[];
   concentration: Array<{ currency: string; normalized_position_value: string; top_1_weight_pct: string; top_5_weight_pct: string; basis: string }>;
   warnings: Array<{ code: string; severity: string; message: string }>;
