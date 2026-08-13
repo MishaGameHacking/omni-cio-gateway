@@ -4,19 +4,21 @@ Updated: 2026-08-13
 
 ## Executive state
 
-Omni-CIO V10: **DEVELOPMENT ACTIVE / BLOCK D COMPLETE / WP16 COMPLETE / WP17 COMPLETE / WP18 AUTHORIZED NEXT**.
+Omni-CIO V10: **DEVELOPMENT ACTIVE / BLOCK D COMPLETE / WP16 COMPLETE / WP17 COMPLETE / WP18 COMPLETE / WP19 AUTHORIZED NEXT**.
 
 Accepted implementation progress is **40%**.
 
-Block A (5%), Block B (9%), Block C (12%) and Block D (14%) have passed their owning Exit Gates. Block E is in progress: WP16 and WP17 are complete; WP18 — Portfolio Dashboard and Assets — is the next authorized implementation package. Block E receives no percentage credit until its own Block Exit Gate.
+Block A (5%), Block B (9%), Block C (12%) and Block D (14%) have passed their owning Exit Gates. Block E is in progress: WP16, WP17 and WP18 are complete; WP19 — Watchtower / Incident UI — is the next authorized implementation package. Block E receives no percentage credit until its own Block Exit Gate.
 
-The deferred WP15 real T-Invest READ acceptance is now complete. OWNER performed the real local/private Web comparison on exact implementation `a7ecad5f7e84e756d19fca2969a71c62fca744a2`; the source-controlled finalizer produced sanitized `WP15_LIVE_WEB_READ_VERIFIED` evidence with all required parity/freshness confirmations true, READ_ONLY authority, no recorded secret/full account/private portfolio values, guarded runtime cleanup, `app:app`, `trading_methods=false` and `ready=true`.
+WP18 was implemented in PR #303 and squash-merged to exact `main` `90c8b52c864db034d31d6184346b2ff62707c121`. The final reviewed PR head was `18ce03a3557b51255499fa22c2e1f5ac4be92cc2`. On that exact head the fresh `ready_for_review` cycle completed SUCCESS for the dedicated WP18 audit, WP15 Read/Live/Deferred regressions, WP16, WP17 and the authoritative Self-Hosted Windows merge gate. The authoritative gate included the protected Regression Shield, dependency audit, SAST, tracked-content secret scan and Windows smoke.
 
-Engineering then reran the independent non-admin `V10 WP15 Live Web OWNER Audit` on the same exact implementation. Run `31672850918`, latest attempt, completed **SUCCESS**. The independent audit reported `WP15_LIVE_WEB_READ_ACCEPTED`, `evidence_present=true`, implementation/script binding valid, forbidden private fields absent, runner non-admin, runtime role disabled, temporary task absent, runner secret/evidence write denied, real broker READ observation true, no secret/private portfolio values recorded, no broker write authority, `trading_methods=false`, `gateway_entrypoint=app:app`, `ready=true`. Sanitized artifact `wp15-live-owner-sanitized-audit` was uploaded with short retention.
+After squash merge, post-merge Regression Shield #1486 / run `31705088464` completed **SUCCESS** on exact `main` `90c8b52c864db034d31d6184346b2ff62707c121`. Both independent jobs passed: quality/contracts/coverage and dependency/code/secret security. The post-merge WP18 Portfolio Dashboard Audit #83 also completed SUCCESS on the same exact main.
 
-The machine-readable transition is `docs/architecture/V10_WP15_LIVE_ACCEPTANCE_STATE.json`: Block D credit is allowed and the WP18 real-data lock is removed. This transition does **not** enable public multi-user access, public Internet ingress, broker write/TRADE authority or Real execution.
+The WP18 product surface is local/private and READ-only. It exposes source/timestamp/freshness/completeness for displayed portfolio data, keeps broker-reported valuation distinct from raw current-market quotations, preserves explicit incomplete/stale/unavailable states, uses exact instrument identity for reviewed issuer/sector enrichment, and does not add broker write/TRADE authority. Public Internet ingress and public multi-user activation remain locked.
 
-OWNER action required now: **NO**. Engineering can proceed autonomously into WP18 until a later explicit OWNER/secret/physical gate is reached.
+The deferred WP15 real T-Invest READ acceptance remains accepted and unchanged. Broker provisioning remains connection-scoped through the authenticated local/private Web flow; raw broker credentials, full provider account IDs and private portfolio payloads remain outside GitHub/CI evidence.
+
+OWNER action required now: **NO**. Engineering can proceed autonomously into WP19 until a later explicit OWNER/secret/physical gate is reached.
 
 Owner start command: **`START V10`** received 2026-08-05.
 
@@ -43,34 +45,32 @@ Starting or advancing V10 never expands broker/Real-money authority by itself.
 - Block D / WP15 — **COMPLETE (Block D accepted at 14%)**;
 - Block E / WP16 — **COMPLETE**;
 - Block E / WP17 — **COMPLETE**;
-- Block E / WP18 — **AUTHORIZED NEXT / NOT STARTED**;
-- Block E / WP19+ — **LOCKED behind owning dependencies and Master Plan sequence**;
+- Block E / WP18 — **COMPLETE**;
+- Block E / WP19 — **AUTHORIZED NEXT / NOT STARTED**;
+- Block E / WP20+ — **LOCKED behind owning dependencies and Master Plan sequence**;
 - public multi-user activation — **OFF / LOCKED**;
 - public Internet ingress — **OFF / LOCKED until WP22A or later owning security gate**;
 - broker write / Real execution — **UNCHANGED / NOT AUTHORIZED**.
 
-## Current next package — WP18 Portfolio Dashboard and Assets
+## Current next package — WP19 Watchtower / Incident UI
 
-Master Plan objective: give the OWNER a transparent current view of capital without relying on GPT.
+Master Plan objective: make every alert a verifiable incident object instead of a transient message.
 
-Required WP18 deliverables remain exactly the Master Plan scope:
+Required WP19 deliverables remain exactly the Master Plan scope:
 
-- portfolio value, cash, positions, weights, currencies, issuers, sectors/classes and data timestamp;
-- concentration/top positions, stale-data warnings and broker-connection state;
-- position detail with instrument identity and linked incidents/research where those owning contracts already exist;
-- explainable calculations and explicit broker/current-market distinction where applicable.
+- incident timeline, severity, subject, evidence references, current state, risk impact and dedup/reopen status;
+- visible lifecycle transitions and links to Decision/Plan where those owning contracts exist;
+- filters for active/resolved/critical incidents.
 
-Required WP18 tests:
+Required WP19 tests:
 
-- golden portfolio UI fixtures;
-- Decimal/currency correctness;
-- empty portfolio;
-- partial data;
-- stale data.
+- incident-state E2E coverage;
+- duplicate/reopened scenario;
+- missing-evidence display.
 
-WP18 Exit Gate: **every displayed number has a source/timestamp and the UI must not hide incomplete data**.
+WP19 Exit Gate: **for every alert the OWNER can understand what happened, why, when, and what the system did after detection**.
 
-The OWNER-observed acceptance screen in WP15 is intentionally a short-lived one-shot parity challenge, not the production Portfolio Dashboard. It is therefore not expected to continuously update after the snapshot is rendered. For WP18, however, “current” valuation must be truthful: the implementation contract must define bounded refresh/current-market behavior and visible `as_of`/stale semantics so a changing portfolio value is never presented as silently live when it is actually an old snapshot. T-Invest streaming/polling integration may be used only after the WP18 architecture review selects the smallest safe approach; no broker-write authority is needed.
+WP19 depends on accepted WP18 and must reuse the existing source-controlled Web App, WP16 design system, WP17 application shell/session boundary and accepted Watchtower/Core incident contracts. WP19 does not authorize Telegram delivery, AI research, public ingress, broker write or Real execution.
 
 ## Canonical authority
 
@@ -88,7 +88,7 @@ Base program:
 - `docs/master-plan/OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md`;
 - `docs/master-plan/OMNI_CIO_V10_CONCRETE_EXECUTION_PLAN_AMENDMENT.md`.
 
-The WP15/WP17 identity and broker-provisioning sequence is additionally governed by:
+Identity, broker provisioning and Web work are additionally governed by:
 
 - `docs/master-plan/OMNI_CIO_V10_IDENTITY_MULTI_TENANT_ACCOUNT_AND_AUTHENTICATION_AMENDMENT.md`;
 - `docs/architecture/ADR-0010-identity-multitenant-authentication.md`;
@@ -101,7 +101,9 @@ The WP15/WP17 identity and broker-provisioning sequence is additionally governed
 - `docs/architecture/V10_WP16_WEB_DESIGN_SYSTEM_CONTRACT.md`;
 - `docs/architecture/ADR-0011-web-read-credential-provisioning.md`;
 - `docs/architecture/V10_WP17_APPLICATION_SHELL_CONTRACT.json`;
-- `docs/operations/V10_WP17_APPLICATION_SHELL_RUNBOOK.md`.
+- `docs/operations/V10_WP17_APPLICATION_SHELL_RUNBOOK.md`;
+- `docs/architecture/V10_WP18_EXECUTION_CONTRACT.md`;
+- `docs/architecture/V10_WP18_PORTFOLIO_DASHBOARD_CONTRACT.md`.
 
 GitHub remains engineering source of truth. Protected production/recovery baseline remains **Omni-CIO v9.0.0 — COMPLETE / owner-accepted / controlled maintenance** until the responsible later V10 parity/decommission gate.
 
@@ -113,7 +115,7 @@ GitHub remains engineering source of truth. Protected production/recovery baseli
 | B. GitHub, dependencies and CI/CD | 9% | COMPLETE — WP1 / WP2 / WP3 / WP4 |
 | C. Lenovo Omni-CIO Node / infrastructure | 12% | COMPLETE — WP5 / WP6 / WP7 / WP8 / WP9 / WP9A / WP10 |
 | D. V10 Core and data | 14% | COMPLETE — WP11 / WP12 / WP13 / WP14 / WP15 incl. real READ evidence |
-| E. Omni-CIO Web Platform | 14% | IN PROGRESS — WP16 COMPLETE / WP17 COMPLETE / WP18 NEXT |
+| E. Omni-CIO Web Platform | 14% | IN PROGRESS — WP16 / WP17 / WP18 COMPLETE; WP19 NEXT |
 | F. Telegram | 8% | NOT STARTED — product/interaction contract pre-approved only |
 | G. AI Copilot / Research / GPT Migration | 18% | NOT STARTED |
 | H. Guardian / Watchtower Loop | 8% | NOT STARTED |
@@ -138,22 +140,31 @@ The 40% total is intentional: Block E is not credited piecemeal.
 - WP17 PR #282 -> `5b6b12f144c9bfa71307dcb28548a97527456b5b`;
 - deferred WP15 live support PR #284 and acceptance hardening PRs #285/#286/#287/#290/#292/#293/#294/#295/#296/#297/#298/#299;
 - V10 status/runbook sync PR #300 -> `0825e6c4625944d7b8e7dd796150fb1ae6707e6d`;
-- WP15 live responsiveness/deadline correction PR #301 -> exact `main` `a7ecad5f7e84e756d19fca2969a71c62fca744a2`;
-- post-merge Regression Shield #1484 / run `31672850860` — **SUCCESS**;
-- post-merge WP15 Live Web Support Audit #114 / run `31672850933` — **SUCCESS**;
-- post-merge WP16 Web Design System Audit #230 / run `31672850921` — **SUCCESS**;
-- post-merge WP17 Application Shell Audit #201 / run `31672850866` — first attempt failed only at synthetic artifact transport after all test/recovery checks; same exact-main rerun completed **SUCCESS** without code changes;
-- WP15 Live Web OWNER Audit #16 / run `31672850918` — initial attempt correctly reported OWNER action required before evidence; after real OWNER finalization, failed jobs were rerun on the same exact SHA and the complete independent audit finished **SUCCESS**, with sanitized artifact digest recorded by GitHub Actions.
+- WP15 live responsiveness/deadline correction PR #301 -> exact accepted implementation `a7ecad5f7e84e756d19fca2969a71c62fca744a2`;
+- WP15 live acceptance/status transition PR #302 -> accepted pre-WP18 `main` `8b6780dc2d0c6cb3f70577e6f24a5e8ca11def07`;
+- WP18 PR #303 -> squash merge `90c8b52c864db034d31d6184346b2ff62707c121`;
+- WP18 final reviewed head `18ce03a3557b51255499fa22c2e1f5ac4be92cc2`: fresh `ready_for_review` runs WP18 #82, WP15 Read #272, WP15 Live #200, WP15 Deferred #204, WP16 #324, WP17 #295 and Self-Hosted Windows CI #973 — **SUCCESS**;
+- post-WP18 Regression Shield #1486 / run `31705088464` on exact `main` `90c8b52c864db034d31d6184346b2ff62707c121` — **SUCCESS**, including coverage, dependency audit, SAST and tracked-secret scan;
+- post-WP18 dedicated Portfolio Dashboard Audit #83 — **SUCCESS** on the same exact main.
 
 Hosted Fast PR Checks / Toolchain Compatibility runs that GitHub did not start because of the account billing/spending-limit condition remain infrastructure failures, not PASS and not code failures.
 
-## WP15 closeout evidence
+## WP18 closeout evidence
 
-WP15 READ implementation remains connection-scoped and fail-closed: `Tenant -> BrokerConnection -> READ credential -> verified broker-account bindings`, exact Decimal/UTC normalization, masked outward identity, market enrichment and bounded/resumable operations reads. No trading-token fallback, transfer/withdrawal, broker write or Real authority was added.
+WP18 satisfies its Master Plan Exit Gate:
 
-The real acceptance path used the accepted local/private WP17 `Settings -> Broker Connections` flow. Raw broker credential and raw portfolio/account identifiers never became GitHub evidence. OWNER finalization wrote only sanitized booleans/status/hash metadata, removed the temporary task/runtime, disabled the temporary runtime role and restored PostgreSQL authentication configuration. The subsequent independent non-admin runner audit proved that the runner could read the final sanitized evidence but could not mutate it or access the protected secret/private boundaries.
+- displayed portfolio/cash/position/weight/concentration/current-market values expose or visibly inherit source and relevant timestamps;
+- Decimal values are transported as strings and cross-currency aggregation is forbidden without an explicit reviewed conversion;
+- broker-reported values remain distinct from raw market quotations and unsupported asset-specific conversion is not fabricated;
+- empty, partial, stale and unavailable states remain explicit and are never silently converted to zero;
+- broker connection state remains visible even when a safe account snapshot is unavailable;
+- instrument classification is bound to exact stable UID/type-specific point reads, with identity conflicts failing closed and provenance timestamps captured after the corresponding metadata read/attempt;
+- post-enrichment snapshot and market freshness are reevaluated before presentation;
+- browser payload/source contains no broker token, secret reference, raw provider account ID or account fingerprint;
+- review state before merge was clean and the full 19-file WP18 diff was reviewed;
+- squash merge and exact-main post-merge Regression Shield both completed successfully.
 
-This satisfies the amended Block D acceptance requirement and removes the WP18 real-data dependency lock.
+This acceptance does not claim continuously streaming prices. WP18 v1 intentionally uses a bounded current-on-demand/manual refresh model with explicit timestamps and stale semantics.
 
 ## Permanent safety / rollback invariants
 
@@ -169,4 +180,4 @@ This satisfies the amended Block D acceptance requirement and removes the WP18 r
 
 ## Current next action
 
-Start **WP18 — Portfolio Dashboard and Assets** only after this closeout/status transition itself passes exact-head required gates, is squash-merged, and the resulting exact `main` passes required post-merge Regression Shield. WP18 must begin from that accepted main, use the mandatory WP execution template, preserve all safety boundaries above, and remain local/private; public Internet ingress and public multi-user activation stay locked for their owning later gates.
+Start **WP19 — Watchtower / Incident UI** only after this status-only transition itself passes exact-head required gates, is squash-merged, and the resulting exact `main` passes the required post-merge Regression Shield. WP19 must begin from that accepted main, use the mandatory WP execution template, preserve all safety boundaries above, remain inside the single source-controlled Web App, and leave public Internet ingress, public multi-user activation and broker write/Real execution locked for their owning later gates.
