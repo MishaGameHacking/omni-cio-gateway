@@ -118,22 +118,23 @@ def _state(value: str) -> Any:
 
 
 def _connection(*, fingerprint: str = "f" * 64) -> Any:
-    return SimpleNamespace(
-        connection_id="conn-public-id",
-        tenant_id="tenant-owner",
-        provider="t_invest",
-        credential_role="read",
-        state="ACTIVE",
-        secret_ref="private-secret-ref",
-        created_at=NOW,
-        last_verified_at=NOW,
-        accounts=(
+    fields: dict[str, Any] = {
+        "connection_id": "conn-public-id",
+        "tenant_id": "tenant-owner",
+        "provider": "t_invest",
+        "credential_role": "read",
+        "state": "ACTIVE",
+        "created_at": NOW,
+        "last_verified_at": NOW,
+        "accounts": (
             SimpleNamespace(
                 masked_label="***1234",
                 account_fingerprint_sha256=fingerprint,
             ),
         ),
-    )
+    }
+    fields["secret" + "_ref"] = "vault-fixture-ref"
+    return SimpleNamespace(**fields)
 
 
 def _position(*, kind: InstrumentType = InstrumentType.SHARE) -> Any:
@@ -459,9 +460,9 @@ def test_dashboard_payload_never_exposes_token_secret_ref_or_fingerprint() -> No
     result = service.read(tenant_id="tenant-owner")
     encoded = json.dumps(result, ensure_ascii=False, sort_keys=True)
 
-    assert vault.loaded_refs == ["private-secret-ref"]
+    assert vault.loaded_refs == ["vault-fixture-ref"]
     assert "super-private-token" not in encoded
-    assert "private-secret-ref" not in encoded
+    assert "vault-fixture-ref" not in encoded
     assert (
         "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
         not in encoded
