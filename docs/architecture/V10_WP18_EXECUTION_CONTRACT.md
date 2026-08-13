@@ -40,9 +40,9 @@ Give the authenticated OWNER a transparent, current-on-demand read-only view of 
 - `omni_cio/web/session_v1.py`: reuse server-side session/tenant boundary.
 - `omni_cio/web/persistence_v1.py`: reuse BrokerConnection/account bindings.
 - `omni_cio/web/broker_vault_v1.py`: reuse protected READ credential storage.
-- `omni_cio/adapters/tinvest_read_v1.py`: reuse normalized portfolio/cash/freshness/quality semantics.
+- `omni_cio/adapters/tinvest_read_v1.py`: reuse normalized portfolio/cash/freshness/quality semantics and its bounded exact-instrument metadata cache.
 - `omni_cio/adapters/tinvest_market_v1.py`: reuse bounded last-price READ path.
-- `omni_cio/adapters/tinvest_connection_v1.py`: reuse exact account binding.
+- `omni_cio/adapters/tinvest_connection_v1.py`: reuse exact account binding and extend it additively with WP18 issuer/sector classification through exact instrument `asset_uid` and `GetAssetBy`; no WRITE surface is introduced.
 - `omni_cio/contracts/v1/portfolio.py`: reuse canonical money/position identity semantics.
 - `omni_cio/contracts/v1/analytics.py` and `risk.py`: reuse explicit missing issuer/sector semantics rather than invent classifications.
 
@@ -50,11 +50,12 @@ No accepted financial engine is rewritten by WP18.
 
 ## 6. Allowed changes
 
-WP18 may change only the existing local/private Web product path and focused contracts/tests/audits required to display portfolio/assets truthfully:
+WP18 may change only the existing local/private Web product path and focused READ-only contracts/tests/audits required to display portfolio/assets truthfully:
 
 - `apps/web/**`;
 - local/private `apps/api/app.py` composition only;
 - focused `omni_cio/web/portfolio_dashboard_v1.py` product projection;
+- additive READ-only classification method in `omni_cio/adapters/tinvest_connection_v1.py`, constrained to the existing exact account binding and instrument/asset metadata reads;
 - focused WP18 tests, docs and CI workflow.
 
 ## 7. Explicit non-goals
@@ -94,11 +95,15 @@ WP18 v1 is **manual pull-to-refresh**. Opening Portfolio/Assets performs one bou
 
 Broker-reported portfolio/position data is separate from `GetLastPrices`. Current-market monetary conversion is performed only where the available instrument metadata makes the formula semantically unambiguous. Unsupported asset-specific conversions remain visibly unavailable.
 
+### Issuer/sector metadata
+
+WP18 reuses the exact `GetInstrumentBy` metadata generated during snapshot normalization. The instrument `asset_uid` binds a point `GetAssetBy` request; `AssetFull.brand.company` and `AssetFull.brand.sector` are the only accepted issuer/sector values. Cache misses may make one exact `GetInstrumentBy` call by instrument UID. A missing asset UID, lookup failure or incomplete brand stays explicitly unavailable/partial; no broad asset-list scan or ticker/name inference is allowed.
+
 ## 9. Data/persistence effects
 
 - migration required: NO.
 - forward migration: none.
-- rollback: remove WP18 product route/UI projection and return to accepted WP17 placeholders; existing sessions, Broker Connections, vault and broker data remain untouched.
+- rollback: remove WP18 product route/UI projection and additive classification method and return to accepted WP17 placeholders; existing sessions, Broker Connections, vault and broker data remain untouched.
 - private data: portfolio values remain runtime/browser response data only and are not written to GitHub/CI artifacts.
 - backup/recovery consequence: none beyond existing accepted WP10/WP13/WP17 recovery boundaries.
 
@@ -108,6 +113,7 @@ WP18 changes no security authority boundary:
 
 - secret access: unchanged; server reads existing READ vault only;
 - broker authority: READ_ONLY unchanged;
+- new broker metadata methods: InstrumentsService READ only (`GetInstrumentBy`, `GetAssetBy`), after existing exact account binding;
 - OS/runtime privileges: unchanged;
 - GitHub permissions: unchanged;
 - Web ingress: local/private unchanged;
@@ -125,6 +131,7 @@ Required deterministic coverage:
 - broker total/cash/positions rendering contract;
 - same-currency weights and concentration;
 - source/timestamp visibility;
+- verified issuer/sector classification and snapshot instrument-cache reuse;
 - broker/current-market distinction;
 - authenticated session-derived tenant scope;
 - Portfolio and Assets routes inside accepted WP17 shell.
@@ -138,6 +145,7 @@ Required coverage:
 - stale broker snapshot;
 - missing/stale/unavailable market quotes;
 - optional/unknown data stays null, not zero;
+- missing asset UID and instrument/asset identity conflicts fail closed;
 - unsupported asset-specific market conversion remains unavailable;
 - unauthenticated API request returns 401;
 - token/secret reference/fingerprint are absent from browser payload;
@@ -148,6 +156,7 @@ Required coverage:
 - user-visible state: READY/PARTIAL/STALE/DEGRADED/EMPTY/UNAVAILABLE as applicable;
 - visible broker connection state;
 - visible freshness/completeness/unresolved counts;
+- visible issuer/sector classification state/source/time;
 - sanitized warnings only;
 - source/time metadata visible beside or inherited by displayed numeric groups;
 - no private portfolio payload in CI evidence.
@@ -162,7 +171,7 @@ Required coverage:
 
 ## 15. Rollback/recovery
 
-Squash merge provides one revertable WP18 change set. Revert restores WP17 Portfolio/Assets placeholders while preserving DB schema, sessions, Broker Connections, vault material and protected V9 rollback. No broker state mutation is performed by WP18.
+Squash merge provides one revertable WP18 change set. Revert restores WP17 Portfolio/Assets placeholders and removes the additive classification path while preserving DB schema, sessions, Broker Connections, vault material and protected V9 rollback. No broker state mutation is performed by WP18.
 
 ## 16. Exit Gate
 
@@ -185,6 +194,7 @@ PASS only if all are true on one exact PR head:
 - WP16/WP17 regression SUCCESS on same head;
 - authoritative merge gate SUCCESS on same head;
 - deterministic golden/Decimal/empty/partial/stale test results;
+- deterministic issuer/sector identity/cache/negative test results;
 - final reviewed diff and zero blocking threads;
 - squash merge SHA;
 - post-merge Regression Shield SUCCESS on that exact main.
