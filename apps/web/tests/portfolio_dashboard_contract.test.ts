@@ -11,7 +11,14 @@ test("WP18 replaces Portfolio and Assets placeholders inside the accepted shell"
   assert.match(shell, /path === ["']\/portfolio["']/);
   assert.match(shell, /path === ["']\/assets["']/);
   assert.match(shell, /PortfolioDashboardPage/);
-  assert.match(dashboard, /Live READ data/);
+  assert.match(dashboard, /Current-on-demand READ snapshot/);
+});
+
+test("WP18 currentness is explicit manual refresh without silent polling", () => {
+  assert.match(dashboard, /silent polling отсутствует/);
+  assert.match(dashboard, />Обновить</);
+  assert.match(dashboard, /manual pull-to-refresh; no silent polling/);
+  assert.doesNotMatch(dashboard, /setInterval\s*\(/);
 });
 
 test("WP18 product API remains same-origin authenticated and no-store", () => {
@@ -29,6 +36,27 @@ test("WP18 UI visibly carries source timestamp freshness and completeness", () =
   assert.match(dashboard, /As-of \/ источник/);
   assert.match(dashboard, /Completeness/);
   assert.match(dashboard, /Freshness/);
+  assert.match(dashboard, /T-Invest GetPortfolio\/GetPositions/);
+  assert.match(dashboard, /T-Invest GetLastPrices/);
+});
+
+test("WP18 position detail exposes identity and reviewed classification provenance", () => {
+  assert.match(dashboard, /Position detail/);
+  assert.match(dashboard, /Position UID/);
+  assert.match(dashboard, /FIGI/);
+  assert.match(dashboard, /ISIN/);
+  assert.match(dashboard, /Issuer \/ sector \/ class/);
+  assert.match(dashboard, /classification_source/);
+  assert.match(dashboard, /classification_as_of/);
+  assert.match(contracts, /issuer:\s*string \| null/);
+  assert.match(contracts, /sector:\s*string \| null/);
+});
+
+test("WP18 does not fabricate research or incident links before their owning indexes", () => {
+  assert.match(dashboard, /Research/);
+  assert.match(dashboard, /no deterministic current-state WP18 binding/);
+  assert.match(dashboard, /Incidents/);
+  assert.match(dashboard, /no accepted instrument incident index in WP18/);
 });
 
 test("WP18 never implies unsafe cross-currency or universal market conversion", () => {
@@ -44,6 +72,8 @@ test("WP18 exposes empty unavailable partial and stale states instead of silent 
   assert.match(dashboard, /Broker connection не подключён/);
   assert.match(dashboard, /unresolved/);
   assert.match(dashboard, /STALE/);
+  assert.match(contracts, /available:\s*string \| null/);
+  assert.match(contracts, /blocked:\s*string \| null/);
 });
 
 test("WP18 browser source contains no broker token storage surface", () => {
