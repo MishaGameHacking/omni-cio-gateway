@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Button, Card, StatePanel, StatusBadge } from "../design-system/components";
-import type { OperationalState } from "../design-system/contracts";
+import { Button, Card, StatePanel } from "../design-system/components";
 
 type IncidentFilter = "all" | "active" | "resolved" | "critical";
 type IncidentSeverity = "info" | "warning" | "error" | "unknown";
@@ -49,13 +48,6 @@ async function readWatchtowerIncidents(): Promise<WatchtowerIncidentPayload> {
   return (await response.json()) as WatchtowerIncidentPayload;
 }
 
-function operationalState(severity: IncidentSeverity): OperationalState {
-  if (severity === "error") return "DEGRADED";
-  if (severity === "warning") return "STALE";
-  if (severity === "info") return "READY";
-  return "PARTIAL";
-}
-
 function timestamp(value: string | null): string {
   if (!value) return "не указано";
   const parsed = new Date(value);
@@ -64,6 +56,12 @@ function timestamp(value: string | null): string {
 
 function shortIdentity(value: string): string {
   return value.length <= 24 ? value : `${value.slice(0, 14)}…${value.slice(-8)}`;
+}
+
+function riskImpactLabel(value: WatchtowerIncidentView["risk_impact"]): string {
+  if (value === "OWNER_ATTENTION_REQUIRED") return "Требуется внимание OWNER";
+  if (value === "INFORMATIONAL") return "Информационный";
+  return "Не определено";
 }
 
 function visible(incident: WatchtowerIncidentView, filter: IncidentFilter): boolean {
@@ -80,11 +78,11 @@ function IncidentCard({ incident }: { incident: WatchtowerIncidentView }) {
     <article className="watchtower-incident" data-severity={incident.severity}>
       <header className="watchtower-incident__header">
         <div><p className="shell-eyebrow">INCIDENT · {shortIdentity(incident.incident_id)}</p><h2>{incident.subject ?? "Субъект не верифицирован"}</h2></div>
-        <div className="watchtower-incident__badges"><StatusBadge state={operationalState(incident.severity)} /><span className="watchtower-chip">{incident.current_state.toUpperCase()}</span>{incident.dedup.reopened ? <span className="watchtower-chip">REOPENED</span> : null}</div>
+        <div className="watchtower-incident__badges"><span className="watchtower-chip">{incident.severity.toUpperCase()}</span><span className="watchtower-chip">{incident.current_state.toUpperCase()}</span>{incident.dedup.reopened ? <span className="watchtower-chip">REOPENED</span> : null}</div>
       </header>
       <div className="watchtower-explain-grid">
         <div><span>Что произошло</span><strong>{incident.message_code ?? "Alert metadata отсутствует"}</strong></div>
-        <div><span>Почему важно</span><strong>{incident.risk_impact} · {incident.severity.toUpperCase()}</strong></div>
+        <div><span>Почему важно</span><strong>{riskImpactLabel(incident.risk_impact)} · {incident.severity.toUpperCase()}</strong></div>
         <div><span>Когда</span><strong>{timestamp(incident.alert_effective_at ?? incident.opened_at)}</strong></div>
         <div><span>Что сделала система</span><strong>{incident.requested_action ?? "Нет верифицированного действия"}</strong></div>
       </div>
@@ -113,7 +111,7 @@ export function WatchtowerIncidentsPage() {
       {unavailable ? <StatePanel kind="error" title="Incident API недоступен">Пустой список не подставлен. Canonical incident state остаётся неизвестным до успешного read.</StatePanel> : loading && payload === null ? <p role="status" className="shell-muted">Загрузка canonical incident state…</p> : payload?.state === "EMPTY" ? <StatePanel kind="empty" title="Инцидентов нет">Canonical persistence не содержит incident records для текущего tenant.</StatePanel> : payload ? <>
         <div className="watchtower-metrics" aria-label="Сводка инцидентов"><Card title="Активные"><strong>{payload.counts.active}</strong></Card><Card title="Критические"><strong>{payload.counts.critical}</strong></Card><Card title="Решённые"><strong>{payload.counts.resolved}</strong></Card><Card title="Reopened"><strong>{payload.counts.reopened}</strong></Card></div>
         {payload.state === "PARTIAL" ? <StatePanel kind="warning" title="Incident view PARTIAL">{payload.truncated ? "Read limit достигнут. " : ""}{payload.counts.missing_alert_metadata} incident(s) не имеют единственного verified Watchtower alert metadata.</StatePanel> : null}
-        <div className="watchtower-filters" role="group" aria-label="Фильтр инцидентов">{(["all", "active", "resolved", "critical"] as const).map((value) => <button className="watchtower-filter" data-active={filter === value} type="button" key={value} onClick={() => setFilter(value)}>{{ all: "Все", active: "Активные", resolved: "Решённые", critical: "Критические" }[value]}</button>)}</div>
+        <div className="watchtower-filters" role="group" aria-label="Фильтр инцидентов">{(["all", "active", "resolved", "critical"] as const).map((value) => <button className="watchtower-filter" aria-pressed={filter === value} data-active={filter === value} type="button" key={value} onClick={() => setFilter(value)}>{{ all: "Все", active: "Активные", resolved: "Решённые", critical: "Критические" }[value]}</button>)}</div>
         <p className="shell-caption">Generated: {timestamp(payload.generated_at)} · bounded read: {payload.counts.total}{payload.truncated ? "+" : ""}. Фильтры не меняют incident lifecycle.</p>
         {incidents.length ? <div className="watchtower-list">{incidents.map((incident) => <IncidentCard key={incident.incident_id} incident={incident} />)}</div> : <StatePanel kind="empty" title="Нет инцидентов в выбранном фильтре">Canonical records не изменялись.</StatePanel>}
       </> : null}
