@@ -2,6 +2,7 @@ import type {
   BrokerConnectionView,
   BrokerProvisioningPreviewView,
   HealthView,
+  PortfolioDashboardView,
   PrivateAcceptanceStatusView,
   ProviderView,
   WebSessionView,
@@ -50,6 +51,10 @@ export function readHealth(): Promise<HealthView> {
 
 export function readBrokerConnections(): Promise<BrokerConnectionView[]> {
   return requestJson<BrokerConnectionView[]>("/api/v10/web/broker-connections");
+}
+
+export function readPortfolioDashboard(): Promise<PortfolioDashboardView> {
+  return requestJson<PortfolioDashboardView>("/api/v10/web/portfolio-dashboard");
 }
 
 export function previewBrokerReadConnection(token: string): Promise<BrokerProvisioningPreviewView> {
