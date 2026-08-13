@@ -85,11 +85,19 @@ jobs:
           call "C:\Program Files\nodejs\npm.cmd" run build
           if errorlevel 1 exit /b 34
 
+      - name: Run incident lifecycle browser evidence
+        working-directory: apps/web
+        env:
+          OMNI_WEB_BROWSER_CHANNEL: msedge
+        run: |
+          call "C:\Program Files\nodejs\npm.cmd" run e2e
+          if errorlevel 1 exit /b 35
+
       - name: Audit Web dependencies
         working-directory: apps/web
         run: |
           call "C:\Program Files\nodejs\npm.cmd" audit --audit-level=high
-          if errorlevel 1 exit /b 35
+          if errorlevel 1 exit /b 36
 
       - name: Run WP19 Python static type and unit contracts
         run: |
@@ -110,6 +118,16 @@ jobs:
           if errorlevel 1 exit /b 51
           "%VENV_WINDOWS_PATH%\Scripts\python.exe" scripts\check_v10_regression_shield.py
           if errorlevel 1 exit /b 52
+
+      - name: Upload synthetic WP19 browser evidence only
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0 # v7.0.1
+        with:
+          name: wp19-watchtower-incident-evidence
+          path: |
+            apps/web/test-results/
+          if-no-files-found: warn
+          retention-days: 3
 
       - name: Clean self-hosted workspace
         if: always()
