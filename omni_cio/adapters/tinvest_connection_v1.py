@@ -251,6 +251,8 @@ class TInvestConnectionMarketReadAdapter(
                         client,
                         instrument,
                     )
+                except BrokerDataError:
+                    raise
                 except TInvestReadAdapterError:
                     if not allow_partial:
                         raise
@@ -309,6 +311,8 @@ class TInvestConnectionMarketReadAdapter(
                         asset_uid,
                         asset_cache,
                     )
+                except BrokerDataError:
+                    raise
                 except TInvestReadAdapterError:
                     if not allow_partial:
                         raise
