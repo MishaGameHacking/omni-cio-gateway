@@ -79,7 +79,7 @@ class FakeAdapter:
         evaluated_at: datetime | None = None,
     ) -> Any:
         assert allow_partial is True
-        assert evaluated_at == NOW
+        assert evaluated_at is None
         return self.snapshot
 
     def read_last_prices(
@@ -233,6 +233,7 @@ def _snapshot(
             state=_state("fresh"),
             age_seconds=Decimal("0"),
             evaluated_at=NOW,
+            stale_after_seconds=300,
         ),
         portfolio_total=SimpleNamespace(
             amount=Decimal("1000.25"),
@@ -317,6 +318,34 @@ def test_empty_dashboard_does_not_read_secret() -> None:
     assert result["accounts"] == []
     assert vault.loaded_refs == []
     assert repository.seen_tenants == ["tenant-owner"]
+
+
+def test_generated_at_and_freshness_are_evaluated_after_reads() -> None:
+    repository = FakeRepository([_connection()])
+    vault = FakeVault()
+    adapter = FakeAdapter(
+        _snapshot(position=_position()),
+        _market(),
+    )
+    ticks = iter(
+        (
+            NOW + timedelta(seconds=10),
+            NOW + timedelta(seconds=20),
+        )
+    )
+    service = PortfolioDashboardServiceV1(
+        repository=repository,  # type: ignore[arg-type]
+        vault=vault,
+        adapter_builder=lambda token, fingerprint: adapter,
+        clock=lambda: next(ticks),
+    )
+
+    result = service.read(tenant_id="tenant-owner")
+    freshness = result["accounts"][0]["freshness"]
+
+    assert freshness["age_seconds"] == "10.0"
+    assert freshness["evaluated_at"] == (NOW + timedelta(seconds=10)).isoformat()
+    assert result["generated_at"] == (NOW + timedelta(seconds=20)).isoformat()
 
 
 def test_share_dashboard_preserves_decimal_sources_and_current_market_value() -> None:
