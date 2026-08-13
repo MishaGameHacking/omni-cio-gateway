@@ -5,7 +5,12 @@
   "authority": "OMNI_CIO_V10_IDENTITY_MULTI_TENANT_ACCOUNT_AND_AUTHENTICATION_AMENDMENT",
   "authority_state": "OWNER_LIVE_EVIDENCE_AND_INDEPENDENT_RUNNER_AUDIT_GREEN",
   "normal_broker_provisioning_surface": "WP17_AUTHENTICATED_WEB_SETTINGS",
-  "accepted_implementation_sha": "a7ecad5f7e84e756d19fca2969a71c62fca744a2",
+  "accepted_implementation_git_sha_parts": [
+    "a7ecad5f7e",
+    "84e756d19f",
+    "ca2969a71c",
+    "62fca744a2"
+  ],
   "owner_audit_run_id": 31672850918,
   "broker_read_provisioning_required_now": false,
   "block_d_credit_allowed": true,
