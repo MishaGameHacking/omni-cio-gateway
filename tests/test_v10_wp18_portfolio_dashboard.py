@@ -101,7 +101,10 @@ class FakeAdapter:
                 sector=(
                     "Technology" if self.classification_state == "VERIFIED" else None
                 ),
-                source="T-Invest GetInstrumentBy.asset_uid → GetAssetBy.brand",
+                source=(
+                    "T-Invest ShareBy.asset_uid → GetAssetBy.brand; "
+                    "ShareBy.sector fallback"
+                ),
                 retrieved_at=NOW,
                 state=self.classification_state,
             )
