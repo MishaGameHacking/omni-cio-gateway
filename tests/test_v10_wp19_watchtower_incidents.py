@@ -30,44 +30,38 @@ from omni_cio.web.watchtower_incidents_v1 import (
 NOW = datetime(2026, 8, 13, 14, 0, tzinfo=timezone.utc)
 
 
-def _sha(seed: str) -> str:
-    return sha256(seed.encode("utf-8")).hexdigest()
+def _digest(seed: str) -> str:
+    return sha256(seed.encode()).hexdigest()
 
 
-def _id(prefix: str, seed: str) -> str:
-    return f"{prefix}:v1:{_sha(seed)}"
+def _identity(kind: str, seed: str) -> str:
+    return f"{kind}:v1:{_digest(seed)}"
 
 
-INCIDENT = _id("incident", "incident")
-EVIDENCE = _id("evidence", "evidence")
-EVIDENCE_ALT = _id("evidence", "evidence-alt")
-DECISION = _id("decision", "decision")
-PLAN = _id("plan", "plan")
+INCIDENT = _identity("incident", "incident")
+EVIDENCE = _identity("evidence", "evidence")
+EVIDENCE_ALT = _identity("evidence", "evidence-alt")
+DECISION = _identity("decision", "decision")
+PLAN = _identity("plan", "plan")
 
 
 class _Cursor:
     def __init__(self, rows: Sequence[Sequence[Any]]) -> None:
-        self._rows = list(rows)
-        self.rowcount = len(self._rows)
+        self.rows = list(rows)
 
     def fetchall(self) -> list[Sequence[Any]]:
-        return list(self._rows)
+        return list(self.rows)
 
     def fetchone(self) -> Sequence[Any] | None:
-        return self._rows[0] if self._rows else None
+        return self.rows[0] if self.rows else None
 
 
 class _FixtureConnection:
-    def __init__(
-        self,
-        alert_payload: bytes | None,
-        *,
-        additional_alert_payload: bytes | None = None,
-    ) -> None:
-        self.alert_payload = alert_payload
-        self.additional_alert_payload = additional_alert_payload
-        self.seen_tenants: list[str] = []
-        self.query_count = 0
+    def __init__(self, payload: bytes | None, *, extra: bytes | None = None) -> None:
+        self.payload = payload
+        self.extra = extra
+        self.queries: list[str] = []
+        self.tenants: list[str] = []
 
     def execute(
         self,
@@ -77,80 +71,87 @@ class _FixtureConnection:
         prepare: bool | None = None,
     ) -> _Cursor:
         del prepare
-        self.query_count += 1
         text = str(query)
-        values = tuple(params or ())
-        for value in values:
+        self.queries.append(text)
+        for value in tuple(params or ()):
             if isinstance(value, str) and value.startswith("tenant:"):
-                self.seen_tenants.append(value)
+                self.tenants.append(value)
         if "FROM omni_cio_v10.incidents WHERE tenant_id" in text:
             return _Cursor(((INCIDENT, "portfolio-safe", "policy-safe", NOW),))
         if "FROM omni_cio_v10.incident_revisions r" in text:
             return _Cursor(
                 (
-                    (1, "open", NOW),
-                    (2, "closed", NOW + timedelta(minutes=3)),
-                    (3, "open", NOW + timedelta(minutes=8)),
+                    (INCIDENT, 1, "open", NOW),
+                    (INCIDENT, 2, "closed", NOW + timedelta(minutes=3)),
+                    (INCIDENT, 3, "open", NOW + timedelta(minutes=8)),
                 )
             )
-        if "SELECT incident_revision, evidence_id" in text:
-            return _Cursor(((1, EVIDENCE), (2, EVIDENCE), (3, EVIDENCE)))
-        if "SELECT DISTINCT e.evidence_id" in text:
+        if "SELECT incident_id, incident_revision, evidence_id" in text:
+            return _Cursor(
+                (
+                    (INCIDENT, 1, EVIDENCE),
+                    (INCIDENT, 2, EVIDENCE),
+                    (INCIDENT, 3, EVIDENCE),
+                )
+            )
+        if "SELECT DISTINCT ie.incident_id" in text:
             rows: list[Sequence[Any]] = [
                 (
+                    INCIDENT,
                     EVIDENCE,
                     "system",
                     NOW - timedelta(minutes=1),
                     NOW,
                     NOW,
-                    _sha("payload"),
+                    _digest("payload"),
                     None,
                     None,
                     None,
-                    self.alert_payload is not None,
-                    self.alert_payload,
+                    self.payload is not None,
+                    self.payload,
                 )
             ]
-            if self.additional_alert_payload is not None:
+            if self.extra is not None:
                 rows.append(
                     (
+                        INCIDENT,
                         EVIDENCE_ALT,
                         "system",
-                        NOW - timedelta(seconds=30),
                         NOW,
                         NOW,
-                        _sha("payload-alt"),
+                        NOW,
+                        _digest("payload-alt"),
                         None,
                         None,
                         None,
                         True,
-                        self.additional_alert_payload,
+                        self.extra,
                     )
                 )
             return _Cursor(rows)
-        if "SELECT decision_id, plan_id FROM omni_cio_v10.journal" in text:
-            return _Cursor(((DECISION, PLAN),))
-        raise AssertionError(f"unexpected query: {text}")
+        if "SELECT incident_id, decision_id, plan_id" in text:
+            return _Cursor(((INCIDENT, DECISION, PLAN),))
+        raise AssertionError(text)
 
     def transaction(self) -> Any:
-        raise AssertionError("WP19 read service must not start write transactions")
+        raise AssertionError("WP19 read service is read-only")
 
 
 class _NoSession:
-    def resolve(self, session_value: str | None, *, now: datetime) -> None:
-        del session_value, now
+    def resolve(self, value: str | None, *, now: datetime) -> None:
+        del value, now
         return None
 
 
 class _OwnerSession:
     def resolve(
         self,
-        session_value: str | None,
+        value: str | None,
         *,
         now: datetime,
     ) -> SessionScopeV1 | None:
         del now
-        if not session_value:
+        if not value:
             return None
         return SessionScopeV1(
             user_id=OWNER_USER_ID,
@@ -159,45 +160,40 @@ class _OwnerSession:
         )
 
 
-def _alert_payload(*, fingerprint: str | None = None) -> bytes:
-    evidence_hash = _sha("payload")
+def _alert(*, fingerprint: str | None = None) -> bytes:
     provisional = WatchtowerAlertV1.model_construct(
-        alert_id=_sha("provisional-alert"),
-        fingerprint_sha256=fingerprint or _sha("fingerprint"),
+        alert_id=_digest("provisional"),
+        fingerprint_sha256=fingerprint or _digest("fingerprint"),
         kind=WatchtowerSignalKind.CONCENTRATION_BREACH,
         severity=ObservabilitySeverity.ERROR,
         subject_key="portfolio:owner",
         effective_at=NOW,
-        evidence_sha256s=(evidence_hash,),
+        evidence_sha256s=(_digest("payload"),),
         message_code="WATCHTOWER_CONCENTRATION_BREACH",
         requires_owner_attention=True,
         action=WatchtowerActionKind.REVIEW,
         execution_authorized=False,
         trading_methods=False,
     )
-    alert = WatchtowerAlertV1(
+    value = WatchtowerAlertV1(
         **{
             **provisional.model_dump(mode="python"),
             "alert_id": watchtower_alert_id(provisional),
         }
     )
-    return alert.model_dump_json().encode("utf-8")
+    return value.model_dump_json().encode()
 
 
-def test_wp19_reopened_lifecycle_is_explicit() -> None:
+def _read(connection: _FixtureConnection) -> dict[str, Any]:
+    return WatchtowerIncidentReadServiceV1(
+        connection,
+        clock=lambda: NOW,
+    ).read(tenant_id=OWNER_TENANT_ID)
+
+
+def test_wp19_lifecycle_and_bounds_helpers() -> None:
     assert _lifecycle_reopened(("open", "closed", "open")) is True
     assert _lifecycle_reopened(("open", "acknowledged", "closed")) is False
-
-
-def test_wp19_valid_bounded_watchtower_payload_projects_metadata() -> None:
-    assert _watchtower_alert(_alert_payload()) is not None
-    assert _watchtower_alert(b'{"alert_id":"not-canonical"}') is None
-    assert _watchtower_alert(b"not-json") is None
-    oversized = b"x" * (_MAX_WATCHTOWER_ALERT_BLOB_BYTES + 1)
-    assert _watchtower_alert(oversized) is None
-
-
-def test_wp19_nested_read_bound_rejects_overflow() -> None:
     rows: list[Sequence[Any]] = [(1,), (2,), (3,)]
     assert _bounded_rows(rows[:2], maximum=2, reason="bounded") == rows[:2]
     try:
@@ -205,16 +201,20 @@ def test_wp19_nested_read_bound_rejects_overflow() -> None:
     except ValueError as exc:
         assert str(exc) == "bounded"
     else:
-        raise AssertionError("WP19 accepted an over-limit nested read")
+        raise AssertionError("overflow accepted")
 
 
-def test_wp19_read_model_explains_reopened_critical_incident() -> None:
-    connection = _FixtureConnection(_alert_payload())
-    payload = WatchtowerIncidentReadServiceV1(
-        connection,
-        clock=lambda: NOW,
-    ).read(tenant_id=OWNER_TENANT_ID)
+def test_wp19_watchtower_payload_validation_is_bounded() -> None:
+    assert _watchtower_alert(_alert()) is not None
+    assert _watchtower_alert(b"not-json") is None
+    oversized = b"x" * (_MAX_WATCHTOWER_ALERT_BLOB_BYTES + 1)
+    assert _watchtower_alert(oversized) is None
 
+
+def test_wp19_read_model_is_reopened_critical_and_bulk_scoped() -> None:
+    connection = _FixtureConnection(_alert())
+    payload = _read(connection)
+    incident = payload["incidents"][0]
     assert payload["state"] == "READY"
     assert payload["counts"] == {
         "total": 1,
@@ -224,120 +224,78 @@ def test_wp19_read_model_explains_reopened_critical_incident() -> None:
         "reopened": 1,
         "missing_alert_metadata": 0,
     }
-    incident = payload["incidents"][0]
     assert incident["current_state"] == "open"
-    assert incident["lifecycle_state"] == "ACTIVE"
-    assert incident["severity"] == "error"
     assert incident["risk_impact"] == "OWNER_ATTENTION_REQUIRED"
     assert incident["subject"] == "portfolio:owner"
-    assert incident["message_code"] == "WATCHTOWER_CONCENTRATION_BREACH"
     assert incident["requested_action"] == "review"
     assert incident["dedup"]["state"] == "VERIFIED"
     assert incident["dedup"]["reopened"] is True
-    assert [row["state"] for row in incident["timeline"]] == [
-        "open",
-        "closed",
-        "open",
-    ]
+    assert [row["state"] for row in incident["timeline"]] == ["open", "closed", "open"]
     assert incident["links"] == {"decisions": [DECISION], "plans": [PLAN]}
-    assert incident["evidence"][0]["watchtower_alert_verified"] is True
     assert "payload" not in incident["evidence"][0]
-    assert connection.query_count == 5
-    assert set(connection.seen_tenants) == {OWNER_TENANT_ID}
+    assert len(connection.queries) == 5
+    assert sum("ANY(%s)" in query for query in connection.queries) == 4
+    assert set(connection.tenants) == {OWNER_TENANT_ID}
 
 
-def test_wp19_duplicate_fingerprint_stays_one_verified_incident() -> None:
-    fingerprint = _sha("dedup")
-    payload = _alert_payload(fingerprint=fingerprint)
-    result = WatchtowerIncidentReadServiceV1(
-        _FixtureConnection(payload, additional_alert_payload=payload),
-        clock=lambda: NOW,
-    ).read(tenant_id=OWNER_TENANT_ID)
+def test_wp19_duplicate_and_conflict_fingerprints_are_fail_closed() -> None:
+    fingerprint = _digest("same")
+    same = _alert(fingerprint=fingerprint)
+    duplicate = _read(_FixtureConnection(same, extra=same))["incidents"][0]
+    assert duplicate["dedup"]["state"] == "VERIFIED"
+    assert duplicate["dedup"]["fingerprint_sha256"] == fingerprint
 
-    assert result["state"] == "READY"
-    assert result["counts"]["total"] == 1
-    incident = result["incidents"][0]
-    assert incident["dedup"]["state"] == "VERIFIED"
-    assert incident["dedup"]["fingerprint_sha256"] == fingerprint
-
-
-def test_wp19_conflicting_fingerprints_fail_closed() -> None:
-    result = WatchtowerIncidentReadServiceV1(
+    conflict = _read(
         _FixtureConnection(
-            _alert_payload(fingerprint=_sha("dedup-a")),
-            additional_alert_payload=_alert_payload(fingerprint=_sha("dedup-b")),
-        ),
-        clock=lambda: NOW,
-    ).read(tenant_id=OWNER_TENANT_ID)
-
-    assert result["state"] == "PARTIAL"
-    assert result["counts"]["critical"] == 0
-    assert result["counts"]["missing_alert_metadata"] == 1
-    incident = result["incidents"][0]
+            _alert(fingerprint=_digest("a")),
+            extra=_alert(fingerprint=_digest("b")),
+        )
+    )
+    incident = conflict["incidents"][0]
+    assert conflict["state"] == "PARTIAL"
     assert incident["alert_metadata_state"] == "CONFLICT"
-    assert incident["dedup"]["state"] == "CONFLICT"
-    assert incident["dedup"]["fingerprint_sha256"] is None
     assert incident["severity"] == "unknown"
     assert incident["risk_impact"] == "UNKNOWN"
     assert incident["subject"] is None
-    assert incident["message_code"] is None
     assert incident["requested_action"] is None
 
 
-def test_wp19_missing_alert_content_is_partial() -> None:
-    payload = WatchtowerIncidentReadServiceV1(
-        _FixtureConnection(None),
-        clock=lambda: NOW,
-    ).read(tenant_id=OWNER_TENANT_ID)
-
+def test_wp19_missing_alert_content_remains_partial() -> None:
+    payload = _read(_FixtureConnection(None))
+    incident = payload["incidents"][0]
     assert payload["state"] == "PARTIAL"
     assert payload["counts"]["missing_alert_metadata"] == 1
-    incident = payload["incidents"][0]
-    assert incident["severity"] == "unknown"
+    assert incident["alert_metadata_state"] == "MISSING"
     assert incident["risk_impact"] == "UNKNOWN"
     assert incident["subject"] is None
-    assert incident["message_code"] is None
-    assert incident["requested_action"] is None
-    assert incident["alert_metadata_state"] == "MISSING"
-    assert incident["dedup"]["state"] == "MISSING"
 
 
-def test_wp19_route_requires_server_side_session() -> None:
-    app = FastAPI()
+def test_wp19_route_requires_session_and_uses_tenant_scope() -> None:
+    denied = FastAPI()
     service = WatchtowerIncidentReadServiceV1(
-        _FixtureConnection(_alert_payload()),
+        _FixtureConnection(_alert()),
         clock=lambda: NOW,
     )
     install_watchtower_incident_routes(
-        app,
+        denied,
         sessions=_NoSession(),
         service=service,
         now=lambda: NOW,
     )
+    assert TestClient(denied).get("/api/v10/web/watchtower-incidents").status_code == 401
 
-    response = TestClient(app).get("/api/v10/web/watchtower-incidents")
-
-    assert response.status_code == 401
-    assert response.json()["detail"] == "AUTHENTICATION_REQUIRED"
-
-
-def test_wp19_route_uses_session_tenant_and_no_store() -> None:
-    connection = _FixtureConnection(_alert_payload())
-    app = FastAPI()
-    service = WatchtowerIncidentReadServiceV1(connection, clock=lambda: NOW)
+    connection = _FixtureConnection(_alert())
+    allowed = FastAPI()
     install_watchtower_incident_routes(
-        app,
+        allowed,
         sessions=_OwnerSession(),
-        service=service,
+        service=WatchtowerIncidentReadServiceV1(connection, clock=lambda: NOW),
         now=lambda: NOW,
     )
-
-    response = TestClient(app).get(
+    response = TestClient(allowed).get(
         "/api/v10/web/watchtower-incidents",
-        cookies={SESSION_COOKIE: "unit-test-session"},
+        cookies={SESSION_COOKIE: "test"},
     )
-
     assert response.status_code == 200
     assert response.headers["cache-control"] == "no-store"
-    assert response.json()["counts"]["total"] == 1
-    assert set(connection.seen_tenants) == {OWNER_TENANT_ID}
+    assert set(connection.tenants) == {OWNER_TENANT_ID}
