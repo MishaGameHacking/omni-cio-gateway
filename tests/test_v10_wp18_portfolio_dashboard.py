@@ -9,6 +9,7 @@ from typing import Any
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from omni_cio.adapters.tinvest_read_v1 import BrokerDataError
 from omni_cio.contracts.v1.portfolio import InstrumentType
 from omni_cio.web.portfolio_dashboard_v1 import (
     PortfolioDashboardServiceV1,
@@ -47,12 +48,14 @@ class FakeAdapter:
         *,
         market_error: bool = False,
         classification_error: bool = False,
+        classification_programming_error: bool = False,
         classification_state: str = "VERIFIED",
     ) -> None:
         self.snapshot = snapshot
         self.market = market
         self.market_error = market_error
         self.classification_error = classification_error
+        self.classification_programming_error = classification_programming_error
         self.classification_state = classification_state
 
     def read_snapshot(
@@ -74,7 +77,7 @@ class FakeAdapter:
         assert allow_partial is True
         assert instruments
         if self.market_error:
-            raise RuntimeError("provider unavailable")
+            raise BrokerDataError("MARKET_PROVIDER_UNAVAILABLE")
         return self.market
 
     def read_instrument_classifications(
@@ -85,8 +88,10 @@ class FakeAdapter:
     ) -> tuple[Any, ...]:
         assert allow_partial is True
         assert instruments
+        if self.classification_programming_error:
+            raise AttributeError("synthetic programming defect")
         if self.classification_error:
-            raise RuntimeError("classification unavailable")
+            raise BrokerDataError("CLASSIFICATION_PROVIDER_UNAVAILABLE")
         return tuple(
             SimpleNamespace(
                 instrument_uid=instrument.uid,
@@ -96,7 +101,7 @@ class FakeAdapter:
                 sector=(
                     "Technology" if self.classification_state == "VERIFIED" else None
                 ),
-                source="T-Invest GetAssets → GetAssetBy.brand",
+                source="T-Invest GetInstrumentBy.asset_uid → GetAssetBy.brand",
                 retrieved_at=NOW,
                 state=self.classification_state,
             )
@@ -232,6 +237,7 @@ def _service(
     market: Any = None,
     market_error: bool = False,
     classification_error: bool = False,
+    classification_programming_error: bool = False,
     classification_state: str = "VERIFIED",
 ) -> tuple[PortfolioDashboardServiceV1, FakeRepository, FakeVault]:
     repository = FakeRepository([_connection()])
@@ -241,6 +247,7 @@ def _service(
         market,
         market_error=market_error,
         classification_error=classification_error,
+        classification_programming_error=classification_programming_error,
         classification_state=classification_state,
     )
     service = PortfolioDashboardServiceV1(
@@ -368,6 +375,23 @@ def test_classification_failure_is_visible_and_never_inferred() -> None:
     assert any(
         row["code"] == "INSTRUMENT_CLASSIFICATION_UNAVAILABLE"
         for row in account["warnings"]
+    )
+
+
+def test_unexpected_classification_defect_fails_entire_account_closed() -> None:
+    service, _, _ = _service(
+        snapshot=_snapshot(position=_position()),
+        market=_market(),
+        classification_programming_error=True,
+    )
+
+    result = service.read(tenant_id="tenant-owner")
+
+    assert result["state"] == "UNAVAILABLE"
+    assert result["accounts"] == []
+    assert any(
+        row["code"] == "BROKER_ACCOUNT_READ_UNAVAILABLE"
+        for row in result["warnings"]
     )
 
 
