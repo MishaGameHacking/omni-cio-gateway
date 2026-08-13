@@ -13,6 +13,7 @@ import {
 import { appRoutes, isKnownRoute, type AppRoutePath, type HealthView, type ProviderView, type WebSessionView } from "./contracts";
 import { RoutePage } from "./pages";
 import { PortfolioDashboardPage } from "./portfolio-dashboard";
+import { ResearchDossiersPage } from "./research-dossiers";
 import { WatchtowerIncidentsPage } from "./watchtower-incidents";
 
 function currentPath(): AppRoutePath {
@@ -103,7 +104,7 @@ export function ApplicationShell() {
   }, [session?.authenticated]);
 
   useEffect(() => {
-    const onPopState = () => setPath(currentPath());
+    const onPopState = () => setPath(currentPath);
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
@@ -167,6 +168,8 @@ export function ApplicationShell() {
           <PortfolioDashboardPage assetsMode={path === "/assets"} />
         ) : path === "/watchtower" ? (
           <WatchtowerIncidentsPage />
+        ) : path === "/research" ? (
+          <ResearchDossiersPage />
         ) : (
           <RoutePage
             path={path}
