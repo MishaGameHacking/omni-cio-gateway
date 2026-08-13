@@ -16,13 +16,15 @@ Tenant scope is resolved only from the existing server-side Web session. There i
 
 Top-level fields are `generated_at`, `state = EMPTY | PARTIAL | READY`, bounded-read `truncated`, aggregate counts and `incidents[]`.
 
-Each incident row exposes canonical incident identity, durable lifecycle/current state, verified Watchtower severity/subject/message/action/time when available, explicit risk-impact presentation, dedup/reopen state, lifecycle timeline, safe evidence metadata and already-existing Decision/Plan journal links.
+Each incident row exposes canonical incident identity, durable lifecycle/current state, verified Watchtower severity/subject/message/action/time when available, explicit owner-attention impact, dedup/reopen state, lifecycle timeline, safe evidence metadata and already-existing Decision/Plan journal links.
 
 ## Verified Watchtower metadata
 
 Evidence payload bytes never leave the backend. A content blob may project alert metadata only after JSON decoding and full `WatchtowerAlertV1` validation, including canonical alert identity and hard-disabled execution/trading fields. Invalid/missing content stays explicit and is not inferred.
 
 Exactly one semantic fingerprint yields `VERIFIED`. No verified fingerprint yields `MISSING`. Multiple verified fingerprints yield `CONFLICT`; WP19 does not silently merge them.
+
+`risk_impact` is presentation-only and is derived solely from canonical `WatchtowerAlertV1.requires_owner_attention`: `OWNER_ATTENTION_REQUIRED` when true, `INFORMATIONAL` when false, and `UNKNOWN` when no single verified alert exists. WP19 does not infer materiality or map severity to an invented risk grade.
 
 A reopened incident is one whose durable revision history contains `closed` followed by a later `open` revision.
 
@@ -42,6 +44,8 @@ WP19 provides no acknowledge/close/reopen mutation control.
 The browser may receive canonical evidence ID, source kind, publication/retrieval/local-receipt timestamps, SHA-256 content identity, safe instrument display label and booleans describing content/Watchtower validation state.
 
 The browser never receives raw content blobs, broker credentials, secret references, provider account IDs/fingerprints, private portfolio payloads, scheduler secrets or broker-write surface.
+
+Nested revision/evidence reads are hard-bounded. Revision-to-evidence links are loaded once per represented incident rather than once per revision, so lifecycle depth cannot multiply database round-trips.
 
 ## Failure semantics
 
