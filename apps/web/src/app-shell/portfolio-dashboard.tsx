@@ -244,7 +244,24 @@ export function PortfolioDashboardPage({ assetsMode = false }: { assetsMode?: bo
         </Card>
       ) : null}
       {dashboard?.state === "EMPTY" ? <StatePanel kind="empty" title="Broker connection не подключён">Добавь T-Invest READ connection в Настройки → Broker Connections.</StatePanel> : null}
+      {dashboard?.state === "UNAVAILABLE" ? <StatePanel kind="error" title="Broker snapshot недоступен">Подключение существует, но безопасный account snapshot сейчас не прочитан. Нулевые значения не подставлены; фактические состояния Broker Connections показаны ниже.</StatePanel> : null}
       {dashboard?.warnings.map((warning, index) => <StatePanel key={`${warning.code}-${index}`} kind="warning" title={warning.code}>{warning.message}</StatePanel>)}
+
+      {dashboard && dashboard.connections.length > 0 ? (
+        <Card title="Broker Connections">
+          <div className="wp18-cash">
+            {dashboard.connections.map((connection) => (
+              <div key={connection.connection_id}>
+                <strong>{connection.provider} · {connection.role.toUpperCase()}</strong>
+                <span>state {connection.state}</span>
+                <span>accounts {connection.account_count}</span>
+                <small>last verified {connection.last_verified_at ?? "unavailable"}</small>
+              </div>
+            ))}
+          </div>
+        </Card>
+      ) : null}
+
       {dashboard?.accounts.map((account, accountIndex) => (
         <AccountPanel
           key={`${account.masked_account}-${accountIndex}`}
