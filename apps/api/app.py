@@ -46,6 +46,10 @@ from omni_cio.web.provisioning_v1 import (
     BrokerProvisioningRegistryV1,
     BrokerProvisioningServiceV1,
 )
+from omni_cio.web.watchtower_incidents_v1 import (
+    WatchtowerIncidentReadServiceV1,
+    install_watchtower_incident_routes,
+)
 
 
 WEB_ROOT = Path(__file__).resolve().parents[1] / "web"
@@ -315,6 +319,11 @@ def create_local_private_app() -> FastAPI:
             vault=vault,
             adapter_builder=_dashboard_adapter_builder,
         ),
+    )
+    install_watchtower_incident_routes(
+        app,
+        sessions=sessions,
+        service=WatchtowerIncidentReadServiceV1(connection),
     )
     _protect_local_hosts(app)
 
