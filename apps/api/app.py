@@ -46,6 +46,11 @@ from omni_cio.web.provisioning_v1 import (
     BrokerProvisioningRegistryV1,
     BrokerProvisioningServiceV1,
 )
+from omni_cio.web.research_dossier_v1 import (
+    ResearchDossierReadServiceV1,
+    empty_research_dossier_provider,
+    install_research_dossier_routes,
+)
 from omni_cio.web.watchtower_incidents_v1 import (
     WatchtowerIncidentReadServiceV1,
     install_watchtower_incident_routes,
@@ -324,6 +329,11 @@ def create_local_private_app() -> FastAPI:
         app,
         sessions=sessions,
         service=WatchtowerIncidentReadServiceV1(connection),
+    )
+    install_research_dossier_routes(
+        app,
+        sessions=sessions,
+        service=ResearchDossierReadServiceV1(empty_research_dossier_provider),
     )
     _protect_local_hosts(app)
 
