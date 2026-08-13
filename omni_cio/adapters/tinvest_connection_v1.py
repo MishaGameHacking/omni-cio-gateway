@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import datetime, timezone
 import hmac
 from typing import Any
 
@@ -10,17 +12,30 @@ from omni_cio.adapters.tinvest_read_v1 import (
     ACCOUNT_STATUS_NAMES,
     AccountBindingError,
     BrokerAccountBindingV1,
+    BrokerDataError,
     TInvestReadAdapter,
     _accounts,
     _binding_for_account,
     _enum_name,
     _field,
+    _message_to_dict,
 )
+from omni_cio.contracts.v1.portfolio import InstrumentIdentity, InstrumentType
 
 
 _READ_ONLY = "ACCOUNT_ACCESS_LEVEL_READ_ONLY"
 _NO_ACCESS = "ACCOUNT_ACCESS_LEVEL_NO_ACCESS"
 _OPEN = "ACCOUNT_STATUS_OPEN"
+
+
+@dataclass(frozen=True, slots=True)
+class TInvestInstrumentClassificationV1:
+    instrument_uid: str
+    issuer: str | None
+    sector: str | None
+    source: str
+    retrieved_at: datetime
+    state: str
 
 
 def _readable_open_accounts(
@@ -104,3 +119,136 @@ class TInvestConnectionMarketReadAdapter(
     TInvestConnectionReadAdapter,
 ):
     """Market companion using the same exact connection-scoped account binding."""
+
+    def read_instrument_classifications(
+        self,
+        instruments: tuple[InstrumentIdentity, ...],
+        *,
+        allow_partial: bool = False,
+    ) -> tuple[TInvestInstrumentClassificationV1, ...]:
+        """Resolve issuer/sector only from T-Invest asset/brand metadata.
+
+        GetAssets does not cover futures/options. Those classes remain explicitly
+        unavailable instead of being inferred from ticker/name/basic-asset text.
+        """
+        requested: dict[str, InstrumentIdentity] = {}
+        for instrument in instruments:
+            uid = str(instrument.uid or "").strip()
+            if uid:
+                requested.setdefault(uid, instrument)
+        if not requested:
+            return ()
+
+        with self._client_factory() as client:
+            self._configure_throttle(client)
+            self._bind_account(client)
+            assets_response = self._call_read(
+                "GET_ASSETS",
+                client.instruments.get_assets,
+            )
+            assets_payload = _message_to_dict(assets_response)
+            raw_assets = assets_payload.get("assets", [])
+            if not isinstance(raw_assets, list):
+                raise BrokerDataError("ASSET_METADATA_SHAPE_INVALID")
+
+            asset_uid_by_instrument: dict[str, str] = {}
+            for raw_asset in raw_assets:
+                if not isinstance(raw_asset, dict):
+                    continue
+                asset_uid = str(raw_asset.get("uid") or "").strip()
+                raw_instruments = raw_asset.get("instruments", [])
+                if not asset_uid or not isinstance(raw_instruments, list):
+                    continue
+                for raw_instrument in raw_instruments:
+                    if not isinstance(raw_instrument, dict):
+                        continue
+                    instrument_uid = str(raw_instrument.get("uid") or "").strip()
+                    if instrument_uid not in requested:
+                        continue
+                    previous = asset_uid_by_instrument.get(instrument_uid)
+                    if previous is not None and previous != asset_uid:
+                        raise BrokerDataError("INSTRUMENT_ASSET_IDENTITY_CONFLICT")
+                    asset_uid_by_instrument[instrument_uid] = asset_uid
+
+            retrieved_at = self._clock().astimezone(timezone.utc)
+            detail_cache: dict[str, dict[str, Any]] = {}
+            rows: list[TInvestInstrumentClassificationV1] = []
+            for instrument_uid, instrument in sorted(requested.items()):
+                if instrument.instrument_type in (
+                    InstrumentType.FUTURE,
+                    InstrumentType.OPTION,
+                ):
+                    rows.append(
+                        TInvestInstrumentClassificationV1(
+                            instrument_uid=instrument_uid,
+                            issuer=None,
+                            sector=None,
+                            source="T-Invest GetAssets unsupported for futures/options",
+                            retrieved_at=retrieved_at,
+                            state="UNAVAILABLE_ASSET_CLASS",
+                        )
+                    )
+                    continue
+
+                asset_uid = asset_uid_by_instrument.get(instrument_uid)
+                if not asset_uid:
+                    if not allow_partial:
+                        raise BrokerDataError("INSTRUMENT_ASSET_MAPPING_MISSING")
+                    rows.append(
+                        TInvestInstrumentClassificationV1(
+                            instrument_uid=instrument_uid,
+                            issuer=None,
+                            sector=None,
+                            source="T-Invest GetAssets",
+                            retrieved_at=retrieved_at,
+                            state="UNAVAILABLE_MAPPING",
+                        )
+                    )
+                    continue
+
+                try:
+                    detail = detail_cache.get(asset_uid)
+                    if detail is None:
+                        asset_response = self._call_read(
+                            "GET_ASSET_BY",
+                            lambda asset_uid=asset_uid: client.instruments.get_asset_by(
+                                id=asset_uid
+                            ),
+                        )
+                        payload = _message_to_dict(asset_response)
+                        raw_detail = payload.get("asset")
+                        if not isinstance(raw_detail, dict):
+                            raise BrokerDataError("ASSET_DETAIL_SHAPE_INVALID")
+                        detail = raw_detail
+                        detail_cache[asset_uid] = detail
+                    brand = detail.get("brand")
+                    if not isinstance(brand, dict):
+                        brand = {}
+                    issuer = str(brand.get("company") or "").strip() or None
+                    sector = str(brand.get("sector") or "").strip() or None
+                    state = "VERIFIED" if issuer is not None and sector is not None else "PARTIAL"
+                    rows.append(
+                        TInvestInstrumentClassificationV1(
+                            instrument_uid=instrument_uid,
+                            issuer=issuer,
+                            sector=sector,
+                            source="T-Invest GetAssets → GetAssetBy.brand",
+                            retrieved_at=retrieved_at,
+                            state=state,
+                        )
+                    )
+                except Exception:
+                    if not allow_partial:
+                        raise
+                    rows.append(
+                        TInvestInstrumentClassificationV1(
+                            instrument_uid=instrument_uid,
+                            issuer=None,
+                            sector=None,
+                            source="T-Invest GetAssets → GetAssetBy.brand",
+                            retrieved_at=retrieved_at,
+                            state="UNAVAILABLE_LOOKUP",
+                        )
+                    )
+
+            return tuple(rows)
