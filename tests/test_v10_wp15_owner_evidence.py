@@ -11,19 +11,23 @@ import scripts.validate_v10_wp15_owner_evidence as evidence
 
 GIT_SHA = "a" * 40
 IMPLEMENTATION_SHA = "b" * 64
+ACCEPTED_IMPLEMENTATION_SHA = "a7ecad5f7e84e756d19fca2969a71c62fca744a2"
+OWNER_AUDIT_RUN_ID = 31672850918
 
 
 def _payload() -> dict[str, Any]:
     return {
         "schema_version": "1.0.0",
         "work_package": "WP15",
-        "live_evidence_status": "DEFERRED_TO_WEB_PROVISIONING",
+        "live_evidence_status": "OWNER_LIVE_READ_ACCEPTED",
         "authority": "OMNI_CIO_V10_IDENTITY_MULTI_TENANT_ACCOUNT_AND_AUTHENTICATION_AMENDMENT",
-        "authority_state": "ACCEPTED_IN_MAIN_POST_MERGE_REGRESSION_GREEN",
+        "authority_state": "OWNER_LIVE_EVIDENCE_AND_INDEPENDENT_RUNNER_AUDIT_GREEN",
         "normal_broker_provisioning_surface": "WP17_AUTHENTICATED_WEB_SETTINGS",
+        "accepted_implementation_sha": ACCEPTED_IMPLEMENTATION_SHA,
+        "owner_audit_run_id": OWNER_AUDIT_RUN_ID,
         "broker_read_provisioning_required_now": False,
-        "block_d_credit_allowed": False,
-        "wp18_real_data_acceptance_locked": True,
+        "block_d_credit_allowed": True,
+        "wp18_real_data_acceptance_locked": False,
         "public_multi_user_enabled": False,
         "broker_write_authority_added": False,
         "trading_methods": False,
@@ -48,7 +52,7 @@ def _configure(
     return path
 
 
-def test_valid_deferred_live_acceptance_state_passes(
+def test_valid_accepted_live_acceptance_state_passes(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -57,12 +61,14 @@ def test_valid_deferred_live_acceptance_state_passes(
     result = evidence.validate()
 
     assert result["status"] == "PASS"
-    assert result["reason"] == "WP15_LIVE_ACCEPTANCE_DEFERRED_VALID"
-    assert result["live_evidence_status"] == "DEFERRED_TO_WEB_PROVISIONING"
+    assert result["reason"] == "WP15_LIVE_ACCEPTANCE_ACCEPTED_VALID"
+    assert result["live_evidence_status"] == "OWNER_LIVE_READ_ACCEPTED"
+    assert result["accepted_implementation_sha"] == ACCEPTED_IMPLEMENTATION_SHA
+    assert result["owner_audit_run_id"] == OWNER_AUDIT_RUN_ID
     assert result["owner_action_required"] is False
-    assert result["real_live_evidence_present"] is False
-    assert result["block_d_credit_allowed"] is False
-    assert result["wp18_real_data_acceptance_locked"] is True
+    assert result["real_live_evidence_present"] is True
+    assert result["block_d_credit_allowed"] is True
+    assert result["wp18_real_data_acceptance_locked"] is False
     assert result["broker_write"] is False
     assert result["trading_methods"] is False
     assert result["real_trading_enabled"] is False
@@ -71,17 +77,17 @@ def test_valid_deferred_live_acceptance_state_passes(
 @pytest.mark.parametrize(
     ("key", "value"),
     [
-        ("live_evidence_status", "PASS"),
+        ("live_evidence_status", "DEFERRED_TO_WEB_PROVISIONING"),
         ("broker_read_provisioning_required_now", True),
-        ("block_d_credit_allowed", True),
-        ("wp18_real_data_acceptance_locked", False),
+        ("block_d_credit_allowed", False),
+        ("wp18_real_data_acceptance_locked", True),
         ("public_multi_user_enabled", True),
         ("broker_write_authority_added", True),
         ("trading_methods", True),
         ("real_trading_enabled", True),
     ],
 )
-def test_deferred_state_rejects_authority_or_sequence_expansion(
+def test_accepted_state_rejects_authority_or_sequence_regression(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     key: str,
@@ -93,12 +99,27 @@ def test_deferred_state_rejects_authority_or_sequence_expansion(
 
     with pytest.raises(
         evidence.EvidenceValidationError,
-        match=f"WP15_DEFERRED_STATE_MISMATCH:{key}",
+        match=f"WP15_ACCEPTED_STATE_MISMATCH:{key}",
     ):
         evidence.validate()
 
 
-def test_deferred_state_rejects_unaccepted_amendment_state(
+def test_accepted_state_rejects_wrong_implementation_binding(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    payload = _payload()
+    payload["accepted_implementation_sha"] = "c" * 40
+    _configure(monkeypatch, tmp_path, payload)
+
+    with pytest.raises(
+        evidence.EvidenceValidationError,
+        match="WP15_ACCEPTED_STATE_MISMATCH:accepted_implementation_sha",
+    ):
+        evidence.validate()
+
+
+def test_accepted_state_rejects_unaccepted_authority_state(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -108,12 +129,12 @@ def test_deferred_state_rejects_unaccepted_amendment_state(
 
     with pytest.raises(
         evidence.EvidenceValidationError,
-        match="WP15_DEFERRED_STATE_MISMATCH:authority_state",
+        match="WP15_ACCEPTED_STATE_MISMATCH:authority_state",
     ):
         evidence.validate()
 
 
-def test_runbook_forbids_normal_powershell_token_provisioning() -> None:
+def test_runbook_keeps_real_token_out_of_powershell() -> None:
     root = Path(__file__).resolve().parents[1]
     runbook = (
         root / "docs" / "operations" / "V10_WP15_OWNER_LIVE_READ_RUNBOOK.md"
@@ -124,8 +145,7 @@ def test_runbook_forbids_normal_powershell_token_provisioning() -> None:
         ).read_text(encoding="utf-8")
     )
 
-    assert "DEFERRED_TO_WEB_PROVISIONING" in runbook
-    assert "do not provision a real T-Invest READ token" in runbook
+    assert "Do not paste the token into PowerShell" in runbook
     assert state["broker_read_provisioning_required_now"] is False
-    assert state["block_d_credit_allowed"] is False
-    assert state["wp18_real_data_acceptance_locked"] is True
+    assert state["block_d_credit_allowed"] is True
+    assert state["wp18_real_data_acceptance_locked"] is False
