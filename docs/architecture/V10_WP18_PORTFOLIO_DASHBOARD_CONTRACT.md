@@ -30,21 +30,33 @@ Global invariants remain:
 
 ## Data semantics
 
-Every displayed financial value must carry or inherit a visible source and UTC `as_of`/retrieval timestamp. Decimal quantities and money amounts are transported as decimal strings, never binary floats.
+Every displayed financial or derived value must carry or visibly inherit a source and UTC `as_of`/retrieval/evaluation timestamp. Decimal quantities and money amounts are transported as decimal strings, never binary floats.
 
 The dashboard exposes:
 
 - broker-reported portfolio total;
-- cash by currency with reported/available/blocked values;
+- cash by currency with reported/available/blocked values; optional canonical cash components remain `null` when unknown rather than being converted to zero;
 - normalized positions and quantities;
 - broker current unit price and explicitly calculated `current_price × quantity_units` position value when both operands are available;
 - same-currency position weights and Top-1/Top-5 concentration over the normalized broker-value subset;
-- instrument type and class code;
+- stable instrument identity, instrument type and class code;
+- reviewed issuer/sector classification where T-Invest asset/brand metadata supports it;
 - snapshot freshness/completeness and unresolved position counts;
 - current-market last quote metadata;
 - current-market value only when conversion is semantically direct with the available metadata.
 
 Cross-currency aggregation is forbidden unless an explicit reviewed FX conversion contract is later introduced.
+
+### Current-on-demand refresh semantics
+
+WP18 v1 is a bounded pull model, not a silent streaming/polling model:
+
+1. opening `/portfolio` or `/assets` performs one current-on-demand READ snapshot;
+2. the explicit **Обновить** action performs another snapshot;
+3. there is no silent polling timer;
+4. `generated_at`, broker `retrieved_at`, market quote `as_of` and freshness/stale state remain visible so an old snapshot is never described as continuously live.
+
+This preserves broker rate-limit safety and keeps currentness explainable.
 
 ### Current-market conversion policy
 
@@ -52,18 +64,40 @@ T-Invest market quotations are not universally money values. Bonds, currencies a
 
 Broker-reported valuation and current-market quotation/value are separate fields and must never silently replace one another.
 
+## Issuer / sector enrichment
+
+WP18 does not infer issuer or sector from ticker, display name or class code.
+
+For non-derivative instruments with a stable instrument UID, the connection-scoped READ adapter uses the reviewed T-Invest InstrumentsService chain:
+
+1. `GetAssets` maps `AssetInstrument.uid` to an asset UID;
+2. `GetAssetBy(asset_uid)` returns detailed `AssetFull` metadata;
+3. only `AssetFull.brand.company` is accepted as issuer and `AssetFull.brand.sector` as sector;
+4. the browser receives the resulting value plus explicit classification state, source and retrieval timestamp, never the asset/broker credential material.
+
+`GetAssets` does not cover futures/options. Those positions therefore receive `UNAVAILABLE_ASSET_CLASS`. Missing mappings, incomplete brand metadata or lookup errors remain `PARTIAL`/`UNAVAILABLE_*`; WP18 never substitutes guessed issuer/sector values.
+
+The enrichment method repeats the existing exact READ-account binding before making supported remote metadata calls. If a portfolio contains only unsupported derivative classes, no broad asset-list call is made.
+
+## Position detail and downstream links
+
+Each normalized row has an expandable **Position detail** containing stable identity fields available from the accepted portfolio contract (`uid`, `position_uid`, FIGI, ISIN, class, type, currency).
+
+WP18 does not synthesize research or incident links. The existing research binding contract only creates a target for an exact decision-ready shortlist candidate; WP18 has no accepted current-state research/incident index that can deterministically resolve arbitrary portfolio positions. The UI therefore marks these links unavailable rather than crossing into WP19/WP20 or fabricating associations.
+
 ## Incomplete and stale data
 
-The product service uses the accepted WP15 adapter in partial mode so unresolved broker positions, broker loading state, stale snapshots, missing quotes and stale quotes remain visible.
+The product service uses the accepted WP15 adapter in partial mode so unresolved broker positions, broker loading state, stale snapshots, missing quotes, stale quotes and missing classification remain visible.
 
 Rules:
 
 1. Missing/unavailable data is never represented as zero.
 2. An account read failure emits an explicit unavailable warning and no fabricated account values.
 3. A market-data failure does not hide otherwise valid broker-reported values.
-4. Any unresolved positions make the account/dashboard partial.
-5. Empty broker configuration is a distinct `EMPTY` state.
-6. Stale data remains displayed only with an explicit stale state and timestamp.
+4. A classification failure does not hide the position and emits no inferred issuer/sector.
+5. Any unresolved positions make the account/dashboard partial.
+6. Empty broker configuration is a distinct `EMPTY` state.
+7. Stale data remains displayed only with an explicit stale state and timestamp.
 
 ## UI routes
 
@@ -72,24 +106,20 @@ Rules:
 
 Both routes render inside the existing WP17 authenticated `ApplicationShell` and reuse WP16 design-system primitives.
 
-## Sector metadata
-
-The accepted WP15 canonical `InstrumentIdentity` currently carries instrument type and `class_code` but not sector. WP18 must not infer a sector from ticker/name/class code. Until a reviewed canonical sector enrichment source is added, the UI exposes `sector = null` with `sector_state = UNAVAILABLE_FROM_WP15_CANONICAL_IDENTITY` rather than fabricating classification.
-
-This is an explicit completeness limitation, not a hidden omission. WP18 acceptance must either retain this visible limitation or introduce reviewed sector enrichment before claiming sector coverage.
-
 ## Required tests and evidence
 
 Before WP18 can be accepted:
 
-- Python tests cover empty, normal, partial, stale/unavailable and secret-boundary behavior;
+- Python tests cover empty, normal, partial, stale/unavailable, optional-unknown cash and secret-boundary behavior;
+- dedicated adapter tests prove authoritative asset/brand classification, derivative fail-closed behavior, missing mapping and conflicting identity rejection;
+- golden frontend fixtures cover normal, empty, partial and stale states without private values;
 - Decimal and same-currency weighting calculations are deterministic;
 - bond/other asset market quotes are not naively converted to monetary value;
 - API tests prove authentication and session-derived tenant scope;
 - Web contract tests prove Portfolio/Assets replace placeholders, source/timestamp/freshness/completeness are visible, and browser code contains no credential persistence surface;
 - frontend typecheck/lint/test/build are GREEN;
 - full authoritative Windows merge gate is GREEN on the exact PR head;
-- WP16/WP17 regression gates remain GREEN;
+- WP15/WP16/WP17 regression gates remain GREEN;
 - review threads are zero;
 - full diff is reviewed;
 - squash merge is followed by exact-main post-merge Regression Shield SUCCESS.
