@@ -12,6 +12,7 @@ import {
 } from "./api";
 import { appRoutes, isKnownRoute, type AppRoutePath, type HealthView, type ProviderView, type WebSessionView } from "./contracts";
 import { RoutePage } from "./pages";
+import { PortfolioDashboardPage } from "./portfolio-dashboard";
 
 function currentPath(): AppRoutePath {
   const path = window.location.pathname;
@@ -161,12 +162,16 @@ export function ApplicationShell() {
       </aside>
       <main className="shell-content" id="main-content">
         {healthUnavailable ? <div className="shell-degraded" role="status">Downstream API недоступен — shell работает в DEGRADED режиме.</div> : null}
-        <RoutePage
-          path={path}
-          healthState={healthState}
-          freshness={health?.freshness ?? "UNKNOWN"}
-          onSessionsRevoked={() => setSession({ authenticated: false })}
-        />
+        {path === "/portfolio" || path === "/assets" ? (
+          <PortfolioDashboardPage assetsMode={path === "/assets"} />
+        ) : (
+          <RoutePage
+            path={path}
+            healthState={healthState}
+            freshness={health?.freshness ?? "UNKNOWN"}
+            onSessionsRevoked={() => setSession({ authenticated: false })}
+          />
+        )}
       </main>
     </div>
   );
