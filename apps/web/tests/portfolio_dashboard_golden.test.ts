@@ -35,6 +35,7 @@ test("WP18 golden normal fixture preserves Decimal strings and provenance", () =
   const account = normal.accounts[0];
   assert.ok(account);
   assert.equal(account.completeness, "complete");
+  assert.equal(account.normalized_position_count, account.positions.length);
   assert.equal(account.portfolio_total?.amount, "1000.25");
   assert.equal(account.portfolio_total?.currency, "RUB");
   assert.match(account.portfolio_total?.source ?? "", /T-Invest GetPortfolio/);
@@ -58,9 +59,14 @@ test("WP18 golden partial fixture keeps unresolved data explicit", () => {
   assert.ok(account);
   assert.equal(fixtures.partial.state, "PARTIAL");
   assert.equal(account.completeness, "partial");
-  assert.equal(account.broker_position_count, 2);
-  assert.equal(account.normalized_position_count, 1);
+  assert.equal(account.broker_position_count, 1);
+  assert.equal(account.normalized_position_count, 0);
+  assert.equal(account.normalized_position_count, account.positions.length);
   assert.equal(account.unresolved_position_count, 1);
+  assert.equal(
+    account.broker_position_count,
+    account.normalized_position_count + account.unresolved_position_count,
+  );
   assert.equal(account.portfolio_total, null);
   assert.ok(account.warnings.some((warning) => warning.code === "UNRESOLVED_BROKER_POSITIONS"));
 });
