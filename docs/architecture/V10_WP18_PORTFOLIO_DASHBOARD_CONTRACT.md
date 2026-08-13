@@ -82,7 +82,7 @@ The request uses the exact instrument UID and the returned UID must match. Where
 
 Futures/options are handled truthfully when no asset UID is exposed by the exact instrument response: the authoritative direct sector may be displayed, issuer remains unavailable, and the classification state is `PARTIAL`. Unsupported canonical classes are `UNAVAILABLE_ASSET_CLASS`. Missing mappings and point-read failures stay explicit rather than being replaced with guessed values.
 
-No broad `GetAssets` list scan is used. No generic `GetInstrumentBy -> asset_uid` assumption is used. Ticker/name/display matching is forbidden. The enrichment method repeats the existing exact READ-account binding before any remote metadata call.
+T-Invest documents `GetAssets` as a broad asset-list method that does not cover futures/options; WP18 therefore does not use that list scan for per-position enrichment. It also does not assume the generic `GetInstrumentBy` response carries the type-specific asset mapping required here. Ticker/name/display matching is forbidden. The enrichment method repeats the existing exact READ-account binding before any remote metadata call.
 
 ## Position detail and downstream links
 
