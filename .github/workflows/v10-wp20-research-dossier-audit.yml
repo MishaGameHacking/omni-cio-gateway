@@ -1,0 +1,138 @@
+name: V10 WP20 Research Dossier Audit
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: v10-wp20-research-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  research-dossier:
+    name: WP20 deterministic research UI gate
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 35
+    defaults:
+      run:
+        shell: cmd
+
+    steps:
+      - name: Check out exact reviewed head
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Bootstrap protected runner tools
+        run: |
+          call scripts\bootstrap_windows_ci_python.cmd
+          if errorlevel 1 exit /b 10
+          if not exist "C:\Program Files\nodejs\node.exe" exit /b 11
+          if not exist "C:\Program Files\nodejs\npm.cmd" exit /b 12
+          >>"%GITHUB_PATH%" echo C:\Program Files\nodejs
+
+      - name: Create isolated WP20 Python environment
+        shell: bash
+        run: |
+          VENV_ROOT="$(cygpath -u "$RUNNER_TEMP")"
+          VENV_PATH="$VENV_ROOT/omni-cio-wp20-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          VENV_WINDOWS_PATH="$(cygpath -w "$VENV_PATH")"
+          rm -rf "$VENV_PATH"
+          python -m venv "$VENV_PATH"
+          echo "VENV_PATH=$VENV_PATH" >> "$GITHUB_ENV"
+          echo "VENV_WINDOWS_PATH=$VENV_WINDOWS_PATH" >> "$GITHUB_ENV"
+          echo "$VENV_WINDOWS_PATH\\Scripts" >> "$GITHUB_PATH"
+
+      - name: Install hash-locked WP20 Python dependencies
+        shell: bash
+        run: |
+          python scripts/windows_ci_lock.py project requirements-dev.txt windows-requirements-dev.txt
+          python -m pip install --disable-pip-version-check --require-hashes -r windows-requirements-dev.txt
+          python -c "import fastapi; import psycopg; import ruff; print('WP20 Python toolchain imports OK')"
+
+      - name: Verify exact checked-out head
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          for /f %%S in ('git rev-parse HEAD') do set "ACTUAL_HEAD=%%S"
+          if /I not "%ACTUAL_HEAD%"=="%EXPECTED_HEAD%" exit /b 13
+          echo WP20 exact head: %ACTUAL_HEAD%
+
+      - name: Reproduce Web dependencies from committed lock
+        working-directory: apps/web
+        run: |
+          call "C:\Program Files\nodejs\npm.cmd" ci --ignore-scripts --no-audit --no-fund
+          if errorlevel 1 exit /b 30
+
+      - name: Type-check lint test and build Research Dossier UI
+        working-directory: apps/web
+        run: |
+          call "C:\Program Files\nodejs\npm.cmd" run typecheck
+          if errorlevel 1 exit /b 31
+          call "C:\Program Files\nodejs\npm.cmd" run lint
+          if errorlevel 1 exit /b 32
+          call "C:\Program Files\nodejs\npm.cmd" test
+          if errorlevel 1 exit /b 33
+          call "C:\Program Files\nodejs\npm.cmd" run build
+          if errorlevel 1 exit /b 34
+
+      - name: Run Research Dossier browser evidence
+        working-directory: apps/web
+        env:
+          OMNI_WEB_BROWSER_CHANNEL: msedge
+        run: |
+          call "C:\Program Files\nodejs\npm.cmd" run e2e
+          if errorlevel 1 exit /b 35
+
+      - name: Audit Web dependencies
+        working-directory: apps/web
+        run: |
+          call "C:\Program Files\nodejs\npm.cmd" audit --audit-level=high
+          if errorlevel 1 exit /b 36
+
+      - name: Run WP20 Python static type and unit contracts
+        run: |
+          "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m ruff check omni_cio\web\research_dossiers_v1.py apps\api\app.py tests\test_v10_wp20_research_dossiers.py
+          if errorlevel 1 exit /b 40
+          "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m ruff format --check omni_cio\web\research_dossiers_v1.py apps\api\app.py tests\test_v10_wp20_research_dossiers.py
+          if errorlevel 1 exit /b 41
+          "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m mypy
+          if errorlevel 1 exit /b 42
+          "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m pytest -q tests\test_v10_wp20_research_dossiers.py
+          if errorlevel 1 exit /b 43
+
+      - name: Verify accepted Web and repository guards
+        run: |
+          "%VENV_WINDOWS_PATH%\Scripts\python.exe" scripts\check_v10_web_baseline.py
+          if errorlevel 1 exit /b 50
+          "%VENV_WINDOWS_PATH%\Scripts\python.exe" scripts\check_v10_repository_boundaries.py
+          if errorlevel 1 exit /b 51
+          "%VENV_WINDOWS_PATH%\Scripts\python.exe" scripts\check_v10_regression_shield.py
+          if errorlevel 1 exit /b 52
+
+      - name: Upload synthetic WP20 browser evidence only
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: wp20-research-dossier-evidence
+          path: |
+            apps/web/test-results/
+          if-no-files-found: warn
+          retention-days: 3
+
+      - name: Clean self-hosted workspace
+        if: always()
+        shell: bash
+        run: |
+          if [ -n "${VENV_PATH:-}" ]; then rm -rf "$VENV_PATH"; fi
+          git reset --hard HEAD
+          git clean -ffdx
