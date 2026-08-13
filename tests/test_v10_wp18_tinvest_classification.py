@@ -242,7 +242,9 @@ def test_conflicting_types_for_same_uid_are_rejected_before_lookup() -> None:
     instruments = FakeInstruments()
     adapter = _adapter(instruments)
 
-    with pytest.raises(BrokerDataError, match="INSTRUMENT_CLASSIFICATION_TYPE_CONFLICT"):
+    with pytest.raises(
+        BrokerDataError, match="INSTRUMENT_CLASSIFICATION_TYPE_CONFLICT"
+    ):
         adapter.read_instrument_classifications(
             (
                 _instrument(kind=InstrumentType.SHARE),
