@@ -109,6 +109,7 @@ function AccountPanel({ account, assetsMode }: { account: PortfolioAccountView; 
         <div>
           <p className="shell-eyebrow">T-INVEST · READ ONLY</p>
           <h2>{account.masked_account}</h2>
+          <p className="shell-caption">Connection state: <strong>{account.connection_state}</strong> · WP17 BrokerConnection</p>
           <p className="shell-caption">Broker snapshot: T-Invest GetPortfolio/GetPositions · {account.retrieved_at}</p>
         </div>
         <StatusBadge state={warningState(account)} />
@@ -151,7 +152,7 @@ function AccountPanel({ account, assetsMode }: { account: PortfolioAccountView; 
         </Card>
       ) : null}
 
-      <Card title={assetsMode ? "Assets" : "Positions"}>
+      <Card title={assetsMode ? "Assets · sorted by broker value" : "Positions · top by broker value"}>
         <PositionTable positions={account.positions} assetsMode={assetsMode} snapshotAsOf={account.retrieved_at} />
       </Card>
 
