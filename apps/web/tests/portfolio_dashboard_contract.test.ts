@@ -40,6 +40,17 @@ test("WP18 UI visibly carries source timestamp freshness and completeness", () =
   assert.match(dashboard, /T-Invest GetLastPrices/);
 });
 
+test("WP18 market quote is not modeled as universal money", () => {
+  assert.match(contracts, /interface PortfolioMarketQuoteView/);
+  assert.match(contracts, /quotation_unit:\s*string/);
+  assert.match(contracts, /quotation_semantics:\s*string/);
+  assert.match(contracts, /current_market_last_price:\s*PortfolioMarketQuoteView \| null/);
+  assert.match(dashboard, /marketQuote/);
+  assert.match(dashboard, /raw quote:/);
+  assert.match(dashboard, /quotation_semantics/);
+  assert.doesNotMatch(contracts, /current_market_last_price:\s*\(PortfolioMoneyView/);
+});
+
 test("WP18 position detail exposes identity and reviewed classification provenance", () => {
   assert.match(dashboard, /Position detail/);
   assert.match(dashboard, /Position UID/);
