@@ -40,6 +40,13 @@ test("WP18 UI visibly carries source timestamp freshness and completeness", () =
   assert.match(dashboard, /T-Invest GetLastPrices/);
 });
 
+test("WP18 per-account summary surfaces stale and partial market state", () => {
+  assert.match(dashboard, /current_market\.stale_instrument_count > 0/);
+  assert.match(dashboard, /current_market\.missing_instrument_count > 0/);
+  assert.match(dashboard, /current_market\.state === "PARTIAL"/);
+  assert.match(dashboard, /currentMarketDisplayState/);
+});
+
 test("WP18 market quote is not modeled as universal money", () => {
   assert.match(contracts, /interface PortfolioMarketQuoteView/);
   assert.match(contracts, /quotation_unit:\s*string/);
