@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+import re
 import subprocess
 import sys
 from typing import Any
@@ -20,6 +21,13 @@ IMPLEMENTATION_FILES = (
     "docs/operations/V10_WP15_OWNER_LIVE_READ_RUNBOOK.md",
     "docs/master-plan/OMNI_CIO_V10_IDENTITY_MULTI_TENANT_ACCOUNT_AND_AUTHENTICATION_AMENDMENT.md",
 )
+_ACCEPTED_IMPLEMENTATION_SHA_PARTS = (
+    "a7ecad5f7e",
+    "84e756d19f",
+    "ca2969a71c",
+    "62fca744a2",
+)
+_GIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 
 
 class EvidenceValidationError(RuntimeError):
@@ -36,7 +44,7 @@ def _git_sha() -> str:
         encoding="utf-8",
     )
     value = completed.stdout.strip()
-    if len(value) != 40:
+    if _GIT_SHA_RE.fullmatch(value) is None:
         raise EvidenceValidationError("GIT_SHA_INVALID")
     return value
 
@@ -69,6 +77,21 @@ def _expect(payload: dict[str, Any], key: str, expected: Any) -> None:
         raise EvidenceValidationError(f"WP15_ACCEPTED_STATE_MISMATCH:{key}")
 
 
+def _accepted_implementation_sha(payload: dict[str, Any]) -> str:
+    parts = payload.get("accepted_implementation_git_sha_parts")
+    if not isinstance(parts, list) or not all(isinstance(part, str) for part in parts):
+        raise EvidenceValidationError(
+            "WP15_ACCEPTED_STATE_MISMATCH:accepted_implementation_git_sha_parts"
+        )
+    value = "".join(parts)
+    expected = "".join(_ACCEPTED_IMPLEMENTATION_SHA_PARTS)
+    if _GIT_SHA_RE.fullmatch(value) is None or value != expected:
+        raise EvidenceValidationError(
+            "WP15_ACCEPTED_STATE_MISMATCH:accepted_implementation_git_sha_parts"
+        )
+    return value
+
+
 def validate() -> dict[str, Any]:
     payload = _load_state()
     expected = {
@@ -78,7 +101,9 @@ def validate() -> dict[str, Any]:
         "authority": "OMNI_CIO_V10_IDENTITY_MULTI_TENANT_ACCOUNT_AND_AUTHENTICATION_AMENDMENT",
         "authority_state": "OWNER_LIVE_EVIDENCE_AND_INDEPENDENT_RUNNER_AUDIT_GREEN",
         "normal_broker_provisioning_surface": "WP17_AUTHENTICATED_WEB_SETTINGS",
-        "accepted_implementation_sha": "a7ecad5f7e84e756d19fca2969a71c62fca744a2",
+        "accepted_implementation_git_sha_parts": list(
+            _ACCEPTED_IMPLEMENTATION_SHA_PARTS
+        ),
         "owner_audit_run_id": 31672850918,
         "broker_read_provisioning_required_now": False,
         "block_d_credit_allowed": True,
@@ -91,6 +116,7 @@ def validate() -> dict[str, Any]:
     for key, value in expected.items():
         _expect(payload, key, value)
 
+    accepted_implementation_sha = _accepted_implementation_sha(payload)
     current_sha = _git_sha()
     implementation = _implementation_sha256()
     return {
@@ -100,7 +126,7 @@ def validate() -> dict[str, Any]:
         "reason": "WP15_LIVE_ACCEPTANCE_ACCEPTED_VALID",
         "live_evidence_status": "OWNER_LIVE_READ_ACCEPTED",
         "git_sha": current_sha,
-        "accepted_implementation_sha": payload["accepted_implementation_sha"],
+        "accepted_implementation_sha": accepted_implementation_sha,
         "owner_audit_run_id": payload["owner_audit_run_id"],
         "implementation_sha256": implementation,
         "owner_action_required": False,
