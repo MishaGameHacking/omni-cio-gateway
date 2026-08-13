@@ -47,6 +47,12 @@ test("WP18 per-account summary surfaces stale and partial market state", () => {
   assert.match(dashboard, /currentMarketDisplayState/);
 });
 
+test("WP18 empty broker configuration is stable degraded state, not recovery", () => {
+  assert.match(dashboard, /dashboard\.state === "UNAVAILABLE" \|\| dashboard\.state === "EMPTY"/);
+  assert.match(dashboard, /return "DEGRADED" as const/);
+  assert.match(dashboard, /Broker connection не подключён/);
+});
+
 test("WP18 surfaces broker connection state even when account snapshots are unavailable", () => {
   assert.match(dashboard, /dashboard\?\.state === "UNAVAILABLE"/);
   assert.match(dashboard, /Broker snapshot недоступен/);
