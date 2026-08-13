@@ -139,6 +139,30 @@ class TInvestConnectionMarketReadAdapter(
         if not requested:
             return ()
 
+        retrieved_at = self._clock().astimezone(timezone.utc)
+        rows: list[TInvestInstrumentClassificationV1] = []
+        supported: dict[str, InstrumentIdentity] = {}
+        for instrument_uid, instrument in sorted(requested.items()):
+            if instrument.instrument_type in (
+                InstrumentType.FUTURE,
+                InstrumentType.OPTION,
+            ):
+                rows.append(
+                    TInvestInstrumentClassificationV1(
+                        instrument_uid=instrument_uid,
+                        issuer=None,
+                        sector=None,
+                        source="T-Invest GetAssets unsupported for futures/options",
+                        retrieved_at=retrieved_at,
+                        state="UNAVAILABLE_ASSET_CLASS",
+                    )
+                )
+            else:
+                supported[instrument_uid] = instrument
+
+        if not supported:
+            return tuple(rows)
+
         with self._client_factory() as client:
             self._configure_throttle(client)
             self._bind_account(client)
@@ -163,33 +187,15 @@ class TInvestConnectionMarketReadAdapter(
                     if not isinstance(raw_instrument, dict):
                         continue
                     instrument_uid = str(raw_instrument.get("uid") or "").strip()
-                    if instrument_uid not in requested:
+                    if instrument_uid not in supported:
                         continue
                     previous = asset_uid_by_instrument.get(instrument_uid)
                     if previous is not None and previous != asset_uid:
                         raise BrokerDataError("INSTRUMENT_ASSET_IDENTITY_CONFLICT")
                     asset_uid_by_instrument[instrument_uid] = asset_uid
 
-            retrieved_at = self._clock().astimezone(timezone.utc)
             detail_cache: dict[str, dict[str, Any]] = {}
-            rows: list[TInvestInstrumentClassificationV1] = []
-            for instrument_uid, instrument in sorted(requested.items()):
-                if instrument.instrument_type in (
-                    InstrumentType.FUTURE,
-                    InstrumentType.OPTION,
-                ):
-                    rows.append(
-                        TInvestInstrumentClassificationV1(
-                            instrument_uid=instrument_uid,
-                            issuer=None,
-                            sector=None,
-                            source="T-Invest GetAssets unsupported for futures/options",
-                            retrieved_at=retrieved_at,
-                            state="UNAVAILABLE_ASSET_CLASS",
-                        )
-                    )
-                    continue
-
+            for instrument_uid in sorted(supported):
                 asset_uid = asset_uid_by_instrument.get(instrument_uid)
                 if not asset_uid:
                     if not allow_partial:
@@ -226,7 +232,11 @@ class TInvestConnectionMarketReadAdapter(
                         brand = {}
                     issuer = str(brand.get("company") or "").strip() or None
                     sector = str(brand.get("sector") or "").strip() or None
-                    state = "VERIFIED" if issuer is not None and sector is not None else "PARTIAL"
+                    state = (
+                        "VERIFIED"
+                        if issuer is not None and sector is not None
+                        else "PARTIAL"
+                    )
                     rows.append(
                         TInvestInstrumentClassificationV1(
                             instrument_uid=instrument_uid,
@@ -251,4 +261,5 @@ class TInvestConnectionMarketReadAdapter(
                         )
                     )
 
-            return tuple(rows)
+        rows.sort(key=lambda row: row.instrument_uid)
+        return tuple(rows)
