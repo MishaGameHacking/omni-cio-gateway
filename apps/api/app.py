@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from collections import namedtuple
 from collections.abc import Sequence
 from contextlib import contextmanager
+import math
 import os
 from pathlib import Path
 import re
@@ -12,6 +14,7 @@ from fastapi import FastAPI
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+import grpc
 from t_tech.invest import Client
 
 from omni_cio.persistence.migration import (
@@ -44,6 +47,56 @@ WEB_ROOT = Path(__file__).resolve().parents[1] / "web"
 WEB_DIST = WEB_ROOT / "dist"
 _GIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 _LOCAL_TRUSTED_HOSTS = ("127.0.0.1", "localhost")
+_WP15_LIVE_RPC_TIMEOUT_SECONDS = 15.0
+
+
+class _ClientCallDetails(
+    namedtuple(
+        "_ClientCallDetailsBase",
+        (
+            "method",
+            "timeout",
+            "metadata",
+            "credentials",
+            "wait_for_ready",
+            "compression",
+        ),
+    ),
+    grpc.ClientCallDetails,
+):
+    __slots__ = ()
+
+
+class _UnaryUnaryDeadlineInterceptor(grpc.UnaryUnaryClientInterceptor):
+    """Apply a finite upper bound without widening an existing shorter RPC deadline."""
+
+    def __init__(self, timeout_seconds: float) -> None:
+        value = float(timeout_seconds)
+        if not math.isfinite(value) or value <= 0:
+            raise ValueError("RPC timeout must be finite and positive")
+        self._timeout_seconds = value
+
+    def intercept_unary_unary(
+        self,
+        continuation: Any,
+        client_call_details: grpc.ClientCallDetails,
+        request: Any,
+    ) -> Any:
+        existing_timeout = client_call_details.timeout
+        effective_timeout = (
+            self._timeout_seconds
+            if existing_timeout is None
+            else min(float(existing_timeout), self._timeout_seconds)
+        )
+        bounded_details = _ClientCallDetails(
+            method=client_call_details.method,
+            timeout=effective_timeout,
+            metadata=client_call_details.metadata,
+            credentials=client_call_details.credentials,
+            wait_for_ready=getattr(client_call_details, "wait_for_ready", None),
+            compression=getattr(client_call_details, "compression", None),
+        )
+        return continuation(bounded_details, request)
 
 
 class _SerializedCursor:
@@ -157,17 +210,38 @@ def _protect_local_hosts(app: FastAPI) -> None:
     )
 
 
-def _client_factory_builder(token: str):
+def _client_factory_builder(
+    token: str,
+    *,
+    rpc_timeout_seconds: float | None = None,
+):
+    interceptors = (
+        [_UnaryUnaryDeadlineInterceptor(rpc_timeout_seconds)]
+        if rpc_timeout_seconds is not None
+        else None
+    )
+
     @contextmanager
     def client_factory() -> Iterator[Any]:
         candidate = token
         try:
-            with Client(candidate) as client:
+            if interceptors is None:
+                context = Client(candidate)
+            else:
+                context = Client(candidate, interceptors=interceptors)
+            with context as client:
                 yield client
         finally:
             candidate = ""
 
     return client_factory
+
+
+def _live_client_factory_builder(token: str):
+    return _client_factory_builder(
+        token,
+        rpc_timeout_seconds=_WP15_LIVE_RPC_TIMEOUT_SECONDS,
+    )
 
 
 def create_local_private_app() -> FastAPI:
@@ -198,7 +272,7 @@ def create_local_private_app() -> FastAPI:
         live_acceptance = BrokerLiveAcceptanceServiceV1(
             repository=broker_repository,
             vault=vault,
-            client_factory_builder=_client_factory_builder,
+            client_factory_builder=_live_client_factory_builder,
             evidence_writer=PendingLiveAcceptanceEvidenceWriterV1(
                 _wp15_live_pending_evidence_path()
             ),

@@ -54,6 +54,13 @@ test("WP15 private live values are cleared when the browser challenge expires", 
   assert.match(pages, /Приватные значения удалены из браузера/);
 });
 
+test("WP15 live snapshot shows an immediate accessible pending state", () => {
+  const pages = readFileSync(new URL("../src/app-shell/pages.tsx", import.meta.url), "utf8");
+  assert.match(pages, /Получаем live READ snapshot из T-Invest/);
+  assert.match(pages, /Получаем snapshot…/);
+  assert.match(pages, /aria-busy=\{liveWorking\}/);
+});
+
 test("build identity is rendered only through System route code", () => {
   const pages = readFileSync(new URL("../src/app-shell/pages.tsx", import.meta.url), "utf8");
   const shell = readFileSync(new URL("../src/app-shell/app-shell.tsx", import.meta.url), "utf8");

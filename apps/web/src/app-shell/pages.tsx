@@ -184,7 +184,7 @@ function BrokerConnectionsCard() {
   const startLive = useCallback(async (connectionId: string, accountIndex: number) => {
     if (liveWorking) return;
     setLiveWorking(true);
-    setLiveMessage(null);
+    setLiveMessage("Получаем live READ snapshot из T-Invest. Для большого портфеля нормализация может занять несколько минут; страницу не закрывай.");
     resetLive();
     try {
       const value = await startWp15LiveAcceptance(connectionId, accountIndex);
@@ -250,7 +250,7 @@ function BrokerConnectionsCard() {
                     <span>{account.masked_label}</span>
                     {liveEnabled && connection.state === "ACTIVE" ? (
                       <Button variant="secondary" disabled={liveWorking || liveView !== null} onClick={() => void startLive(connection.connection_id, accountIndex)}>
-                        Live READ acceptance
+                        {liveWorking ? "Получаем snapshot…" : "Live READ acceptance"}
                       </Button>
                     ) : null}
                   </li>
@@ -266,7 +266,7 @@ function BrokerConnectionsCard() {
       )}
 
       {liveEnabled ? (
-        <div className="shell-provisioning" aria-label="WP15 live READ acceptance">
+        <div className="shell-provisioning" aria-label="WP15 live READ acceptance" aria-busy={liveWorking}>
           <strong>WP15 deferred live acceptance</strong>
           <p className="shell-caption">Acceptance-only loopback surface. Это не Portfolio Dashboard: приватные значения живут только в текущем browser challenge и не попадают в durable evidence.</p>
           {liveView ? (

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -406,7 +407,8 @@ def create_web_api(services: WebApiServicesV1) -> FastAPI:
             maximum=255,
         )
         try:
-            view = service.start(
+            view = await asyncio.to_thread(
+                service.start,
                 user_id=scope.user_id,
                 tenant_id=scope.tenant_id,
                 connection_id=connection_id,
