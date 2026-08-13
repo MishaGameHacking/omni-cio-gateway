@@ -90,6 +90,25 @@ def _market_value_allowed(position: PortfolioPositionV1) -> bool:
     )
 
 
+def _market_quote_semantics(position: PortfolioPositionV1) -> tuple[str, str]:
+    instrument_type = position.instrument.instrument_type
+    if instrument_type in (InstrumentType.SHARE, InstrumentType.ETF):
+        return (
+            position.instrument.currency,
+            "SETTLEMENT_CURRENCY_PER_INSTRUMENT",
+        )
+    if instrument_type == InstrumentType.CURRENCY:
+        return (
+            position.instrument.currency,
+            "SETTLEMENT_CURRENCY_QUOTATION_REQUIRES_NOMINAL",
+        )
+    if instrument_type == InstrumentType.BOND:
+        return ("price_points", "PERCENT_OF_NOMINAL")
+    if instrument_type == InstrumentType.FUTURE:
+        return ("price_points", "FUTURES_PRICE_POINTS")
+    return ("provider_quotation", "UNREVIEWED_PROVIDER_QUOTATION")
+
+
 def _market_by_uid(result: TInvestMarketResultV1 | None) -> dict[str, Any]:
     if result is None:
         return {}
@@ -208,6 +227,7 @@ class PortfolioDashboardServiceV1:
             classification = classifications.get(uid)
             current_market_value: dict[str, str] | None = None
             market_conversion_state = "NO_LAST_PRICE"
+            quotation_unit, quotation_semantics = _market_quote_semantics(position)
             if market is not None:
                 if _market_value_allowed(position):
                     current_market_value = _money(
@@ -272,8 +292,9 @@ class PortfolioDashboardServiceV1:
                 "current_market_last_price": (
                     {
                         "amount": _decimal(market.price),
-                        "currency": position.instrument.currency,
-                        "source": "T-Invest GetLastPrices",
+                        "quotation_unit": quotation_unit,
+                        "quotation_semantics": quotation_semantics,
+                        "source": "T-Invest GetLastPrices raw quotation",
                         "as_of": _utc(market.price_time).isoformat(),
                         "freshness": market.freshness.value,
                         "age_seconds": _decimal(market.age_seconds),
