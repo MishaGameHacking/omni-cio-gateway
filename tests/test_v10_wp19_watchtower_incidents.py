@@ -18,6 +18,7 @@ from omni_cio.contracts.v1.watchtower import (
 from omni_cio.web.api_v1 import SESSION_COOKIE
 from omni_cio.web.session_v1 import SessionScopeV1
 from omni_cio.web.watchtower_incidents_v1 import (
+    _MAX_WATCHTOWER_ALERT_BLOB_BYTES,
     WatchtowerIncidentReadServiceV1,
     _bounded_rows,
     _lifecycle_reopened,
@@ -66,8 +67,9 @@ class _FixtureConnection:
         del prepare
         text = str(query)
         values = tuple(params or ())
-        if values and isinstance(values[0], str) and values[0].startswith("tenant:"):
-            self.seen_tenants.append(values[0])
+        for value in values:
+            if isinstance(value, str) and value.startswith("tenant:"):
+                self.seen_tenants.append(value)
         if "FROM omni_cio_v10.incidents WHERE tenant_id" in text:
             return _Cursor(((INCIDENT, "portfolio-safe", "policy-safe", NOW),))
         if "FROM omni_cio_v10.incident_revisions r" in text:
@@ -95,8 +97,7 @@ class _FixtureConnection:
                     None,
                     None,
                     None,
-                    "application/json" if self.alert_payload else None,
-                    "WatchtowerAlertV1" if self.alert_payload else None,
+                    self.alert_payload is not None,
                     self.alert_payload,
                 )
             ]
@@ -112,8 +113,7 @@ class _FixtureConnection:
                         None,
                         None,
                         None,
-                        "application/json",
-                        "WatchtowerAlertV1",
+                        True,
                         self.additional_alert_payload,
                     )
                 )
@@ -178,10 +178,11 @@ def test_wp19_reopened_lifecycle_is_explicit() -> None:
     assert _lifecycle_reopened(("open", "acknowledged", "closed")) is False
 
 
-def test_wp19_only_fully_valid_watchtower_payload_projects_alert_metadata() -> None:
+def test_wp19_only_fully_valid_bounded_watchtower_payload_projects_metadata() -> None:
     assert _watchtower_alert(_alert_payload()) is not None
     assert _watchtower_alert(b'{"alert_id":"not-canonical"}') is None
     assert _watchtower_alert(b"not-json") is None
+    assert _watchtower_alert(b"x" * (_MAX_WATCHTOWER_ALERT_BLOB_BYTES + 1)) is None
 
 
 def test_wp19_nested_read_bound_rejects_overflow() -> None:
