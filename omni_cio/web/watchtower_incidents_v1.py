@@ -86,13 +86,12 @@ def _severity(alerts: Sequence[WatchtowerAlertV1]) -> str:
     )
 
 
-def _risk_impact(severity: str) -> str:
-    return {
-        "error": "CRITICAL",
-        "warning": "MATERIAL",
-        "info": "INFORMATIONAL",
-        "unknown": "UNKNOWN",
-    }[severity]
+def _risk_impact(alert: WatchtowerAlertV1 | None) -> str:
+    if alert is None:
+        return "UNKNOWN"
+    if alert.requires_owner_attention:
+        return "OWNER_ATTENTION_REQUIRED"
+    return "INFORMATIONAL"
 
 
 def _lifecycle_reopened(statuses: Sequence[str]) -> bool:
@@ -307,7 +306,7 @@ class WatchtowerIncidentReadServiceV1:
             "lifecycle_state": ("RESOLVED" if current_state == "closed" else "ACTIVE"),
             "severity": severity,
             "critical": severity == "error",
-            "risk_impact": _risk_impact(severity),
+            "risk_impact": _risk_impact(selected_alert),
             "subject": (
                 selected_alert.subject_key if selected_alert is not None else None
             ),
