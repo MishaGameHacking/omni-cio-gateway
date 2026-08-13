@@ -3,7 +3,6 @@ from __future__ import annotations
 from contextlib import contextmanager
 from datetime import datetime, timezone
 import hashlib
-from types import SimpleNamespace
 from typing import Any, Iterator
 
 import pytest
@@ -36,33 +35,34 @@ class FakeUsers:
 
 
 class FakeInstruments:
-    def __init__(self, *, duplicate_mapping: bool = False) -> None:
-        self.duplicate_mapping = duplicate_mapping
-        self.get_assets_calls = 0
+    def __init__(
+        self,
+        *,
+        asset_uid: str | None = "asset-uid-1",
+        returned_instrument_uid: str | None = None,
+        returned_asset_uid: str | None = None,
+    ) -> None:
+        self.asset_uid = asset_uid
+        self.returned_instrument_uid = returned_instrument_uid
+        self.returned_asset_uid = returned_asset_uid
+        self.get_instrument_by_calls: list[str] = []
         self.get_asset_by_calls: list[str] = []
 
-    def get_assets(self) -> dict[str, Any]:
-        self.get_assets_calls += 1
-        assets = [
-            {
-                "uid": "asset-uid-1",
-                "instruments": [{"uid": "instrument-uid-1"}],
+    def get_instrument_by(self, *, id_type: Any, id: str) -> dict[str, Any]:
+        del id_type
+        self.get_instrument_by_calls.append(id)
+        return {
+            "instrument": {
+                "uid": self.returned_instrument_uid or id,
+                "asset_uid": self.asset_uid,
             }
-        ]
-        if self.duplicate_mapping:
-            assets.append(
-                {
-                    "uid": "asset-uid-conflict",
-                    "instruments": [{"uid": "instrument-uid-1"}],
-                }
-            )
-        return {"assets": assets}
+        }
 
     def get_asset_by(self, *, id: str) -> dict[str, Any]:
         self.get_asset_by_calls.append(id)
         return {
             "asset": {
-                "uid": id,
+                "uid": self.returned_asset_uid or id,
                 "brand": {
                     "company": "Example Issuer",
                     "sector": "Technology",
@@ -112,7 +112,7 @@ def _adapter(instruments: FakeInstruments) -> TInvestConnectionMarketReadAdapter
     )
 
 
-def test_classification_uses_asset_brand_company_and_sector() -> None:
+def test_classification_uses_point_instrument_asset_uid_and_asset_brand() -> None:
     instruments = FakeInstruments()
     adapter = _adapter(instruments)
 
@@ -124,14 +124,29 @@ def test_classification_uses_asset_brand_company_and_sector() -> None:
     assert row.issuer == "Example Issuer"
     assert row.sector == "Technology"
     assert row.state == "VERIFIED"
-    assert row.source == "T-Invest GetAssets → GetAssetBy.brand"
+    assert row.source == "T-Invest GetInstrumentBy.asset_uid → GetAssetBy.brand"
     assert row.retrieved_at == NOW
-    assert instruments.get_assets_calls == 1
+    assert instruments.get_instrument_by_calls == ["instrument-uid-1"]
     assert instruments.get_asset_by_calls == ["asset-uid-1"]
 
 
-def test_future_classification_fails_closed_without_asset_lookup() -> None:
+def test_classification_reuses_snapshot_instrument_cache() -> None:
     instruments = FakeInstruments()
+    adapter = _adapter(instruments)
+    adapter._instrument_cache["instrument_uid:instrument-uid-1"] = {
+        "uid": "instrument-uid-1",
+        "asset_uid": "asset-uid-1",
+    }
+
+    rows = adapter.read_instrument_classifications((_instrument(),))
+
+    assert rows[0].state == "VERIFIED"
+    assert instruments.get_instrument_by_calls == []
+    assert instruments.get_asset_by_calls == ["asset-uid-1"]
+
+
+def test_missing_asset_uid_is_explicit_in_partial_mode() -> None:
+    instruments = FakeInstruments(asset_uid=None)
     adapter = _adapter(instruments)
 
     rows = adapter.read_instrument_classifications(
@@ -142,30 +157,22 @@ def test_future_classification_fails_closed_without_asset_lookup() -> None:
     assert len(rows) == 1
     assert rows[0].issuer is None
     assert rows[0].sector is None
-    assert rows[0].state == "UNAVAILABLE_ASSET_CLASS"
-    assert instruments.get_assets_calls == 0
-    assert instruments.get_asset_by_calls == []
-
-
-def test_missing_asset_mapping_is_explicit_in_partial_mode() -> None:
-    instruments = FakeInstruments()
-    adapter = _adapter(instruments)
-
-    rows = adapter.read_instrument_classifications(
-        (_instrument(uid="instrument-not-in-assets"),),
-        allow_partial=True,
-    )
-
-    assert len(rows) == 1
     assert rows[0].state == "UNAVAILABLE_MAPPING"
-    assert rows[0].issuer is None
-    assert rows[0].sector is None
+    assert instruments.get_instrument_by_calls == ["instrument-uid-1"]
     assert instruments.get_asset_by_calls == []
 
 
-def test_conflicting_asset_mapping_is_rejected() -> None:
-    instruments = FakeInstruments(duplicate_mapping=True)
+def test_instrument_identity_conflict_is_rejected() -> None:
+    instruments = FakeInstruments(returned_instrument_uid="different-instrument")
     adapter = _adapter(instruments)
 
-    with pytest.raises(BrokerDataError, match="INSTRUMENT_ASSET_IDENTITY_CONFLICT"):
-        adapter.read_instrument_classifications((_instrument(),), allow_partial=True)
+    with pytest.raises(BrokerDataError, match="INSTRUMENT_IDENTITY_CONFLICT"):
+        adapter.read_instrument_classifications((_instrument(),))
+
+
+def test_asset_identity_conflict_is_rejected() -> None:
+    instruments = FakeInstruments(returned_asset_uid="different-asset")
+    adapter = _adapter(instruments)
+
+    with pytest.raises(BrokerDataError, match="ASSET_IDENTITY_CONFLICT"):
+        adapter.read_instrument_classifications((_instrument(),))
