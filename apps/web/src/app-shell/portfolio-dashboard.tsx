@@ -245,7 +245,13 @@ export function PortfolioDashboardPage({ assetsMode = false }: { assetsMode?: bo
       ) : null}
       {dashboard?.state === "EMPTY" ? <StatePanel kind="empty" title="Broker connection не подключён">Добавь T-Invest READ connection в Настройки → Broker Connections.</StatePanel> : null}
       {dashboard?.warnings.map((warning, index) => <StatePanel key={`${warning.code}-${index}`} kind="warning" title={warning.code}>{warning.message}</StatePanel>)}
-      {dashboard?.accounts.map((account) => <AccountPanel key={account.masked_account} account={account} assetsMode={assetsMode} />)}
+      {dashboard?.accounts.map((account, accountIndex) => (
+        <AccountPanel
+          key={`${account.masked_account}-${accountIndex}`}
+          account={account}
+          assetsMode={assetsMode}
+        />
+      ))}
 
       {dashboard ? (
         <Card title="Calculation policy">
