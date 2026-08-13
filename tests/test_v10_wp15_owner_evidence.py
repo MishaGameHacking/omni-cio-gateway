@@ -11,7 +11,13 @@ import scripts.validate_v10_wp15_owner_evidence as evidence
 
 GIT_SHA = "a" * 40
 IMPLEMENTATION_SHA = "b" * 64
-ACCEPTED_IMPLEMENTATION_SHA = "a7ecad5f7e84e756d19fca2969a71c62fca744a2"
+ACCEPTED_IMPLEMENTATION_SHA_PARTS = (
+    "a7ecad5f7e",
+    "84e756d19f",
+    "ca2969a71c",
+    "62fca744a2",
+)
+ACCEPTED_IMPLEMENTATION_SHA = "".join(ACCEPTED_IMPLEMENTATION_SHA_PARTS)
 OWNER_AUDIT_RUN_ID = 31672850918
 
 
@@ -23,7 +29,9 @@ def _payload() -> dict[str, Any]:
         "authority": "OMNI_CIO_V10_IDENTITY_MULTI_TENANT_ACCOUNT_AND_AUTHENTICATION_AMENDMENT",
         "authority_state": "OWNER_LIVE_EVIDENCE_AND_INDEPENDENT_RUNNER_AUDIT_GREEN",
         "normal_broker_provisioning_surface": "WP17_AUTHENTICATED_WEB_SETTINGS",
-        "accepted_implementation_sha": ACCEPTED_IMPLEMENTATION_SHA,
+        "accepted_implementation_git_sha_parts": list(
+            ACCEPTED_IMPLEMENTATION_SHA_PARTS
+        ),
         "owner_audit_run_id": OWNER_AUDIT_RUN_ID,
         "broker_read_provisioning_required_now": False,
         "block_d_credit_allowed": True,
@@ -109,12 +117,27 @@ def test_accepted_state_rejects_wrong_implementation_binding(
     tmp_path: Path,
 ) -> None:
     payload = _payload()
-    payload["accepted_implementation_sha"] = "c" * 40
+    payload["accepted_implementation_git_sha_parts"][-1] = "0000000000"
     _configure(monkeypatch, tmp_path, payload)
 
     with pytest.raises(
         evidence.EvidenceValidationError,
-        match="WP15_ACCEPTED_STATE_MISMATCH:accepted_implementation_sha",
+        match="WP15_ACCEPTED_STATE_MISMATCH:accepted_implementation_git_sha_parts",
+    ):
+        evidence.validate()
+
+
+def test_accepted_state_rejects_malformed_implementation_binding(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    payload = _payload()
+    payload["accepted_implementation_git_sha_parts"] = "not-a-list"
+    _configure(monkeypatch, tmp_path, payload)
+
+    with pytest.raises(
+        evidence.EvidenceValidationError,
+        match="WP15_ACCEPTED_STATE_MISMATCH:accepted_implementation_git_sha_parts",
     ):
         evidence.validate()
 
