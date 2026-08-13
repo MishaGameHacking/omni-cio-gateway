@@ -15,6 +15,10 @@ from omni_cio.web.session_v1 import SessionScopeV1
 
 
 _MAX_INCIDENTS = 500
+_MAX_REVISIONS_PER_INCIDENT = 512
+_MAX_EVIDENCE_IDS_PER_REVISION = 1024
+_MAX_EVIDENCE_ROWS_PER_INCIDENT = 1024
+_MAX_JOURNAL_LINK_ROWS_PER_INCIDENT = 1024
 _SEVERITY_ORDER = {"unknown": -1, "info": 0, "warning": 1, "error": 2}
 
 
@@ -57,6 +61,18 @@ def _watchtower_alert(value: object | None) -> WatchtowerAlertV1 | None:
         return WatchtowerAlertV1.model_validate(decoded)
     except (UnicodeDecodeError, json.JSONDecodeError, ValueError, TypeError):
         return None
+
+
+def _bounded_rows(
+    rows: Sequence[Sequence[Any]],
+    *,
+    maximum: int,
+    reason: str,
+) -> list[Sequence[Any]]:
+    materialized = list(rows)
+    if len(materialized) > maximum:
+        raise ValueError(reason)
+    return materialized
 
 
 def _severity(alerts: Sequence[WatchtowerAlertV1]) -> str:
@@ -105,16 +121,24 @@ class WatchtowerIncidentReadServiceV1:
         self._connection = connection
         self._clock = clock or (lambda: datetime.now(timezone.utc))
 
-    def _revision_rows(self, *, tenant_id: str, incident_id: str) -> list[Sequence[Any]]:
-        return list(
-            self._connection.execute(
-                "SELECT r.revision, r.status, r.revised_at "
-                "FROM omni_cio_v10.incident_revisions r "
-                "JOIN omni_cio_v10.incidents i ON i.incident_id = r.incident_id "
-                "WHERE i.tenant_id = %s AND r.incident_id = %s "
-                "ORDER BY r.revision",
-                (tenant_id, incident_id),
-            ).fetchall()
+    def _revision_rows(
+        self,
+        *,
+        tenant_id: str,
+        incident_id: str,
+    ) -> list[Sequence[Any]]:
+        rows = self._connection.execute(
+            "SELECT r.revision, r.status, r.revised_at "
+            "FROM omni_cio_v10.incident_revisions r "
+            "JOIN omni_cio_v10.incidents i ON i.incident_id = r.incident_id "
+            "WHERE i.tenant_id = %s AND r.incident_id = %s "
+            "ORDER BY r.revision LIMIT %s",
+            (tenant_id, incident_id, _MAX_REVISIONS_PER_INCIDENT + 1),
+        ).fetchall()
+        return _bounded_rows(
+            rows,
+            maximum=_MAX_REVISIONS_PER_INCIDENT,
+            reason="WP19 incident revision limit exceeded",
         )
 
     def _revision_evidence_ids(
@@ -127,10 +151,20 @@ class WatchtowerIncidentReadServiceV1:
         rows = self._connection.execute(
             "SELECT evidence_id FROM omni_cio_v10.incident_evidence "
             "WHERE tenant_id = %s AND incident_id = %s AND incident_revision = %s "
-            "ORDER BY evidence_id",
-            (tenant_id, incident_id, revision),
+            "ORDER BY evidence_id LIMIT %s",
+            (
+                tenant_id,
+                incident_id,
+                revision,
+                _MAX_EVIDENCE_IDS_PER_REVISION + 1,
+            ),
         ).fetchall()
-        return tuple(str(row[0]) for row in rows)
+        bounded = _bounded_rows(
+            rows,
+            maximum=_MAX_EVIDENCE_IDS_PER_REVISION,
+            reason="WP19 incident revision evidence limit exceeded",
+        )
+        return tuple(str(row[0]) for row in bounded)
 
     def _evidence_rows(
         self,
@@ -138,36 +172,47 @@ class WatchtowerIncidentReadServiceV1:
         tenant_id: str,
         incident_id: str,
     ) -> list[Sequence[Any]]:
-        return list(
-            self._connection.execute(
-                "SELECT DISTINCT e.evidence_id, e.source_kind, e.published_at, "
-                "e.retrieved_at, e.local_received_at, e.payload_sha256, "
-                "e.instrument_id, ins.ticker, ins.name, cb.media_type, cb.schema_ref, cb.payload "
-                "FROM omni_cio_v10.incident_evidence ie "
-                "JOIN omni_cio_v10.evidence e ON e.evidence_id = ie.evidence_id "
-                "LEFT JOIN omni_cio_v10.instruments ins ON ins.instrument_id = e.instrument_id "
-                "LEFT JOIN omni_cio_v10.content_blobs cb "
-                "ON cb.tenant_id = e.tenant_id AND cb.payload_sha256 = e.payload_sha256 "
-                "WHERE ie.tenant_id = %s AND ie.incident_id = %s "
-                "ORDER BY e.evidence_id",
-                (tenant_id, incident_id),
-            ).fetchall()
+        rows = self._connection.execute(
+            "SELECT DISTINCT e.evidence_id, e.source_kind, e.published_at, "
+            "e.retrieved_at, e.local_received_at, e.payload_sha256, "
+            "e.instrument_id, ins.ticker, ins.name, cb.media_type, cb.schema_ref, cb.payload "
+            "FROM omni_cio_v10.incident_evidence ie "
+            "JOIN omni_cio_v10.evidence e ON e.evidence_id = ie.evidence_id "
+            "LEFT JOIN omni_cio_v10.instruments ins ON ins.instrument_id = e.instrument_id "
+            "LEFT JOIN omni_cio_v10.content_blobs cb "
+            "ON cb.tenant_id = e.tenant_id AND cb.payload_sha256 = e.payload_sha256 "
+            "WHERE ie.tenant_id = %s AND ie.incident_id = %s "
+            "ORDER BY e.evidence_id LIMIT %s",
+            (tenant_id, incident_id, _MAX_EVIDENCE_ROWS_PER_INCIDENT + 1),
+        ).fetchall()
+        return _bounded_rows(
+            rows,
+            maximum=_MAX_EVIDENCE_ROWS_PER_INCIDENT,
+            reason="WP19 incident evidence limit exceeded",
         )
 
     def _links(self, *, tenant_id: str, incident_id: str) -> dict[str, list[str]]:
         rows = self._connection.execute(
             "SELECT decision_id, plan_id FROM omni_cio_v10.journal "
             "WHERE tenant_id = %s AND incident_id = %s "
-            "ORDER BY recorded_at, journal_id",
-            (tenant_id, incident_id),
+            "ORDER BY recorded_at, journal_id LIMIT %s",
+            (tenant_id, incident_id, _MAX_JOURNAL_LINK_ROWS_PER_INCIDENT + 1),
         ).fetchall()
-        decisions = sorted({str(row[0]) for row in rows if row[0] is not None})
-        plans = sorted({str(row[1]) for row in rows if row[1] is not None})
+        bounded = _bounded_rows(
+            rows,
+            maximum=_MAX_JOURNAL_LINK_ROWS_PER_INCIDENT,
+            reason="WP19 incident journal link limit exceeded",
+        )
+        decisions = sorted({str(row[0]) for row in bounded if row[0] is not None})
+        plans = sorted({str(row[1]) for row in bounded if row[1] is not None})
         return {"decisions": decisions, "plans": plans}
 
     def _incident(self, *, tenant_id: str, row: Sequence[Any]) -> dict[str, Any]:
         incident_id = str(row[0])
-        revision_rows = self._revision_rows(tenant_id=tenant_id, incident_id=incident_id)
+        revision_rows = self._revision_rows(
+            tenant_id=tenant_id,
+            incident_id=incident_id,
+        )
         if not revision_rows:
             raise ValueError("WP19 incident has no durable lifecycle revision")
 
@@ -194,7 +239,10 @@ class WatchtowerIncidentReadServiceV1:
 
         evidence_views: list[dict[str, Any]] = []
         alerts: list[WatchtowerAlertV1] = []
-        for evidence_row in self._evidence_rows(tenant_id=tenant_id, incident_id=incident_id):
+        for evidence_row in self._evidence_rows(
+            tenant_id=tenant_id,
+            incident_id=incident_id,
+        ):
             alert = _watchtower_alert(evidence_row[11])
             if alert is not None:
                 alerts.append(alert)
@@ -233,13 +281,10 @@ class WatchtowerIncidentReadServiceV1:
                 alerts,
                 key=lambda alert: (_utc(alert.effective_at), alert.alert_id),
             )
-            if alerts and dedup_state != "CONFLICT"
+            if alerts and dedup_state == "VERIFIED"
             else None
         )
-        severity = _severity(alerts)
-        subjects = sorted({alert.subject_key for alert in alerts})
-        message_codes = sorted({alert.message_code for alert in alerts})
-        actions = sorted({alert.action.value for alert in alerts})
+        severity = _severity(alerts) if selected_alert is not None else "unknown"
         reopened = _lifecycle_reopened(statuses)
         current_state = statuses[-1]
 
@@ -251,26 +296,12 @@ class WatchtowerIncidentReadServiceV1:
             "severity": severity,
             "critical": severity == "error",
             "risk_impact": _risk_impact(severity),
-            "subject": (
-                selected_alert.subject_key
-                if selected_alert is not None
-                else subjects[0]
-                if len(subjects) == 1
-                else None
-            ),
+            "subject": selected_alert.subject_key if selected_alert is not None else None,
             "message_code": (
-                selected_alert.message_code
-                if selected_alert is not None
-                else message_codes[0]
-                if len(message_codes) == 1
-                else None
+                selected_alert.message_code if selected_alert is not None else None
             ),
             "requested_action": (
-                selected_alert.action.value
-                if selected_alert is not None
-                else actions[0]
-                if len(actions) == 1
-                else None
+                selected_alert.action.value if selected_alert is not None else None
             ),
             "alert_effective_at": (
                 _utc(selected_alert.effective_at).isoformat()
