@@ -8,7 +8,7 @@ from typing import Any, Iterator
 import pytest
 
 from omni_cio.adapters.tinvest_connection_v1 import TInvestConnectionMarketReadAdapter
-from omni_cio.adapters.tinvest_read_v1 import BrokerDataError
+from omni_cio.adapters.tinvest_read_v1 import BrokerDataError, TInvestReadAdapterError
 from omni_cio.contracts.v1.portfolio import InstrumentIdentity, InstrumentType
 
 
@@ -99,7 +99,7 @@ class FakeInstruments:
     def get_asset_by(self, *, id: str) -> dict[str, Any]:
         self.get_asset_by_calls.append(id)
         if self.asset_error:
-            raise BrokerDataError("ASSET_PROVIDER_UNAVAILABLE")
+            raise TInvestReadAdapterError("ASSET_PROVIDER_UNAVAILABLE")
         return {
             "asset": {
                 "uid": self.returned_asset_uid or id,
