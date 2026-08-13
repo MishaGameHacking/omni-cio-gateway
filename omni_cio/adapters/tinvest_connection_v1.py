@@ -236,7 +236,9 @@ class TInvestConnectionMarketReadAdapter(
         if not requested:
             return ()
 
-        retrieved_at = self._clock().astimezone(timezone.utc)
+        def observed_at() -> datetime:
+            return self._clock().astimezone(timezone.utc)
+
         rows: list[TInvestInstrumentClassificationV1] = []
         asset_cache: dict[str, dict[str, Any]] = {}
 
@@ -262,7 +264,7 @@ class TInvestConnectionMarketReadAdapter(
                             issuer=None,
                             sector=None,
                             source="T-Invest exact type-specific instrument metadata",
-                            retrieved_at=retrieved_at,
+                            retrieved_at=observed_at(),
                             state="UNAVAILABLE_LOOKUP",
                         )
                     )
@@ -275,7 +277,7 @@ class TInvestConnectionMarketReadAdapter(
                             issuer=None,
                             sector=None,
                             source="T-Invest classification unsupported for canonical type",
-                            retrieved_at=retrieved_at,
+                            retrieved_at=observed_at(),
                             state="UNAVAILABLE_ASSET_CLASS",
                         )
                     )
@@ -295,7 +297,7 @@ class TInvestConnectionMarketReadAdapter(
                             issuer=None,
                             sector=direct_sector,
                             source=f"{source}.sector; asset mapping unavailable",
-                            retrieved_at=retrieved_at,
+                            retrieved_at=observed_at(),
                             state=(
                                 "PARTIAL"
                                 if direct_sector is not None
@@ -322,7 +324,7 @@ class TInvestConnectionMarketReadAdapter(
                             issuer=None,
                             sector=direct_sector,
                             source=f"{source}.sector; GetAssetBy unavailable",
-                            retrieved_at=retrieved_at,
+                            retrieved_at=observed_at(),
                             state=(
                                 "PARTIAL"
                                 if direct_sector is not None
@@ -352,7 +354,7 @@ class TInvestConnectionMarketReadAdapter(
                             f"{source}.asset_uid → GetAssetBy.brand"
                             f"; {source_method}.sector fallback"
                         ),
-                        retrieved_at=retrieved_at,
+                        retrieved_at=observed_at(),
                         state=state,
                     )
                 )
