@@ -68,16 +68,17 @@ Broker-reported valuation and current-market quotation/value are separate fields
 
 WP18 does not infer issuer or sector from ticker, display name or class code.
 
-For non-derivative instruments with a stable instrument UID, the connection-scoped READ adapter uses the reviewed T-Invest InstrumentsService chain:
+For a normalized position with a stable instrument UID, the connection-scoped READ adapter uses the reviewed T-Invest identity chain:
 
-1. `GetAssets` maps `AssetInstrument.uid` to an asset UID;
-2. `GetAssetBy(asset_uid)` returns detailed `AssetFull` metadata;
-3. only `AssetFull.brand.company` is accepted as issuer and `AssetFull.brand.sector` as sector;
-4. the browser receives the resulting value plus explicit classification state, source and retrieval timestamp, never the asset/broker credential material.
+1. WP15 normalization already performs `GetInstrumentBy` and retains the returned instrument metadata in the adapter cache;
+2. WP18 reuses that metadata's `asset_uid`; if the cache is absent it performs a single point `GetInstrumentBy` by exact instrument UID;
+3. `GetAssetBy(asset_uid)` returns detailed `AssetFull` metadata;
+4. only `AssetFull.brand.company` is accepted as issuer and `AssetFull.brand.sector` as sector;
+5. the browser receives the resulting value plus explicit classification state, source and retrieval timestamp, never broker credential material.
 
-`GetAssets` does not cover futures/options. Those positions therefore receive `UNAVAILABLE_ASSET_CLASS`. Missing mappings, incomplete brand metadata or lookup errors remain `PARTIAL`/`UNAVAILABLE_*`; WP18 never substitutes guessed issuer/sector values.
+No broad `GetAssets` list scan is used. A missing `asset_uid` is `UNAVAILABLE_MAPPING`; point lookup or asset-detail failures are `UNAVAILABLE_LOOKUP`; incomplete brand metadata is `PARTIAL`. WP18 never substitutes guessed issuer/sector values. This also avoids assuming that derivative instruments are unclassifiable solely because the separate `GetAssets` list method excludes futures/options: classification succeeds only when the exact instrument metadata actually supplies a usable asset UID.
 
-The enrichment method repeats the existing exact READ-account binding before making supported remote metadata calls. If a portfolio contains only unsupported derivative classes, no broad asset-list call is made.
+The enrichment method repeats the existing exact READ-account binding before any remote metadata call.
 
 ## Position detail and downstream links
 
@@ -111,7 +112,7 @@ Both routes render inside the existing WP17 authenticated `ApplicationShell` and
 Before WP18 can be accepted:
 
 - Python tests cover empty, normal, partial, stale/unavailable, optional-unknown cash and secret-boundary behavior;
-- dedicated adapter tests prove authoritative asset/brand classification, derivative fail-closed behavior, missing mapping and conflicting identity rejection;
+- dedicated adapter tests prove exact instrument-to-asset classification, snapshot-cache reuse, missing asset mapping and instrument/asset identity-conflict rejection;
 - golden frontend fixtures cover normal, empty, partial and stale states without private values;
 - Decimal and same-currency weighting calculations are deterministic;
 - bond/other asset market quotes are not naively converted to monetary value;
