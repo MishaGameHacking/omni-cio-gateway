@@ -10,7 +10,10 @@ from fastapi.responses import JSONResponse
 
 from omni_cio.adapters.tinvest_connection_v1 import TInvestInstrumentClassificationV1
 from omni_cio.adapters.tinvest_market_v1 import TInvestMarketResultV1
-from omni_cio.adapters.tinvest_read_v1 import TInvestSnapshotResultV1
+from omni_cio.adapters.tinvest_read_v1 import (
+    TInvestReadAdapterError,
+    TInvestSnapshotResultV1,
+)
 from omni_cio.contracts.v1.portfolio import InstrumentIdentity, InstrumentType, PortfolioPositionV1
 from omni_cio.web.api_v1 import SESSION_COOKIE, SessionRegistryLike
 from omni_cio.web.persistence_v1 import (
@@ -161,14 +164,14 @@ class PortfolioDashboardServiceV1:
                         instruments,
                         allow_partial=True,
                     )
-                except Exception:
+                except TInvestReadAdapterError:
                     market_error = True
                 try:
                     classification_rows = adapter.read_instrument_classifications(
                         instruments,
                         allow_partial=True,
                     )
-                except Exception:
+                except TInvestReadAdapterError:
                     classification_error = True
         finally:
             token = ""
