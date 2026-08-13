@@ -188,6 +188,8 @@ class PortfolioDashboardServiceV1:
                         instruments,
                         allow_partial=True,
                     )
+                except BrokerDataError:
+                    raise
                 except TInvestReadAdapterError:
                     market_error = True
                 try:
