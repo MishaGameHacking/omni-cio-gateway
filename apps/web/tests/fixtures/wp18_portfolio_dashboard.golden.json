@@ -59,7 +59,7 @@
               "issuer": "Synthetic Issuer",
               "sector": "Technology",
               "classification_state": "VERIFIED",
-              "classification_source": "T-Invest GetAssets → GetAssetBy.brand",
+              "classification_source": "T-Invest GetInstrumentBy.asset_uid → GetAssetBy.brand",
               "classification_as_of": "2026-08-13T08:30:00+00:00"
             },
             "quantity_units": "3",
