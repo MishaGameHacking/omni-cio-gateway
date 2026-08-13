@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import datetime, timedelta, timezone
+from hashlib import sha256
 from typing import Any
 
 from fastapi import FastAPI
@@ -27,11 +28,21 @@ from omni_cio.web.watchtower_incidents_v1 import (
 )
 
 NOW = datetime(2026, 8, 13, 14, 0, tzinfo=timezone.utc)
-INCIDENT = "incident:v1:" + "1" * 64
-EVIDENCE = "evidence:v1:" + "2" * 64
-EVIDENCE_ALT = "evidence:v1:" + "9" * 64
-DECISION = "decision:v1:" + "3" * 64
-PLAN = "plan:v1:" + "4" * 64
+
+
+def _sha(seed: str) -> str:
+    return sha256(seed.encode("utf-8")).hexdigest()
+
+
+def _id(prefix: str, seed: str) -> str:
+    return f"{prefix}:v1:{_sha(seed)}"
+
+
+INCIDENT = _id("incident", "incident")
+EVIDENCE = _id("evidence", "evidence")
+EVIDENCE_ALT = _id("evidence", "evidence-alt")
+DECISION = _id("decision", "decision")
+PLAN = _id("plan", "plan")
 
 
 class _Cursor:
@@ -93,7 +104,7 @@ class _FixtureConnection:
                     NOW - timedelta(minutes=1),
                     NOW,
                     NOW,
-                    "5" * 64,
+                    _sha("payload"),
                     None,
                     None,
                     None,
@@ -109,7 +120,7 @@ class _FixtureConnection:
                         NOW - timedelta(seconds=30),
                         NOW,
                         NOW,
-                        "a" * 64,
+                        _sha("payload-alt"),
                         None,
                         None,
                         None,
@@ -127,20 +138,20 @@ class _FixtureConnection:
 
 
 class _NoSession:
-    def resolve(self, token: str | None, *, now: datetime) -> None:
-        del token, now
+    def resolve(self, session_value: str | None, *, now: datetime) -> None:
+        del session_value, now
         return None
 
 
 class _OwnerSession:
     def resolve(
         self,
-        token: str | None,
+        session_value: str | None,
         *,
         now: datetime,
     ) -> SessionScopeV1 | None:
         del now
-        if not token:
+        if not session_value:
             return None
         return SessionScopeV1(
             user_id=OWNER_USER_ID,
@@ -149,15 +160,16 @@ class _OwnerSession:
         )
 
 
-def _alert_payload(*, fingerprint: str = "6" * 64) -> bytes:
+def _alert_payload(*, fingerprint: str | None = None) -> bytes:
+    evidence_hash = _sha("payload")
     provisional = WatchtowerAlertV1.model_construct(
-        alert_id="0" * 64,
-        fingerprint_sha256=fingerprint,
+        alert_id=_sha("provisional-alert"),
+        fingerprint_sha256=fingerprint or _sha("fingerprint"),
         kind=WatchtowerSignalKind.CONCENTRATION_BREACH,
         severity=ObservabilitySeverity.ERROR,
         subject_key="portfolio:owner",
         effective_at=NOW,
-        evidence_sha256s=("5" * 64,),
+        evidence_sha256s=(evidence_hash,),
         message_code="WATCHTOWER_CONCENTRATION_BREACH",
         requires_owner_attention=True,
         action=WatchtowerActionKind.REVIEW,
@@ -178,11 +190,12 @@ def test_wp19_reopened_lifecycle_is_explicit() -> None:
     assert _lifecycle_reopened(("open", "acknowledged", "closed")) is False
 
 
-def test_wp19_only_fully_valid_bounded_watchtower_payload_projects_metadata() -> None:
+def test_wp19_valid_bounded_watchtower_payload_projects_metadata() -> None:
     assert _watchtower_alert(_alert_payload()) is not None
     assert _watchtower_alert(b'{"alert_id":"not-canonical"}') is None
     assert _watchtower_alert(b"not-json") is None
-    assert _watchtower_alert(b"x" * (_MAX_WATCHTOWER_ALERT_BLOB_BYTES + 1)) is None
+    oversized = b"x" * (_MAX_WATCHTOWER_ALERT_BLOB_BYTES + 1)
+    assert _watchtower_alert(oversized) is None
 
 
 def test_wp19_nested_read_bound_rejects_overflow() -> None:
@@ -196,7 +209,7 @@ def test_wp19_nested_read_bound_rejects_overflow() -> None:
         raise AssertionError("WP19 accepted an over-limit nested read")
 
 
-def test_wp19_read_model_explains_reopened_critical_incident_and_downstream_links() -> None:
+def test_wp19_read_model_explains_reopened_critical_incident() -> None:
     connection = _FixtureConnection(_alert_payload())
     payload = WatchtowerIncidentReadServiceV1(
         connection,
@@ -233,8 +246,9 @@ def test_wp19_read_model_explains_reopened_critical_incident_and_downstream_link
     assert set(connection.seen_tenants) == {OWNER_TENANT_ID}
 
 
-def test_wp19_duplicate_same_fingerprint_stays_one_verified_incident() -> None:
-    payload = _alert_payload(fingerprint="7" * 64)
+def test_wp19_duplicate_fingerprint_stays_one_verified_incident() -> None:
+    fingerprint = _sha("dedup")
+    payload = _alert_payload(fingerprint=fingerprint)
     result = WatchtowerIncidentReadServiceV1(
         _FixtureConnection(payload, additional_alert_payload=payload),
         clock=lambda: NOW,
@@ -244,14 +258,14 @@ def test_wp19_duplicate_same_fingerprint_stays_one_verified_incident() -> None:
     assert result["counts"]["total"] == 1
     incident = result["incidents"][0]
     assert incident["dedup"]["state"] == "VERIFIED"
-    assert incident["dedup"]["fingerprint_sha256"] == "7" * 64
+    assert incident["dedup"]["fingerprint_sha256"] == fingerprint
 
 
 def test_wp19_conflicting_fingerprints_fail_closed() -> None:
     result = WatchtowerIncidentReadServiceV1(
         _FixtureConnection(
-            _alert_payload(fingerprint="7" * 64),
-            additional_alert_payload=_alert_payload(fingerprint="8" * 64),
+            _alert_payload(fingerprint=_sha("dedup-a")),
+            additional_alert_payload=_alert_payload(fingerprint=_sha("dedup-b")),
         ),
         clock=lambda: NOW,
     ).read(tenant_id=OWNER_TENANT_ID)
@@ -270,7 +284,7 @@ def test_wp19_conflicting_fingerprints_fail_closed() -> None:
     assert incident["requested_action"] is None
 
 
-def test_wp19_missing_alert_content_is_partial_and_never_fabricates_reason() -> None:
+def test_wp19_missing_alert_content_is_partial() -> None:
     payload = WatchtowerIncidentReadServiceV1(
         _FixtureConnection(None),
         clock=lambda: NOW,
@@ -307,7 +321,7 @@ def test_wp19_route_requires_server_side_session() -> None:
     assert response.json()["detail"] == "AUTHENTICATION_REQUIRED"
 
 
-def test_wp19_route_uses_session_tenant_and_returns_no_store() -> None:
+def test_wp19_route_uses_session_tenant_and_no_store() -> None:
     connection = _FixtureConnection(_alert_payload())
     app = FastAPI()
     service = WatchtowerIncidentReadServiceV1(connection, clock=lambda: NOW)
@@ -320,7 +334,7 @@ def test_wp19_route_uses_session_tenant_and_returns_no_store() -> None:
 
     response = TestClient(app).get(
         "/api/v10/web/watchtower-incidents",
-        cookies={SESSION_COOKIE: "synthetic-session"},
+        cookies={SESSION_COOKIE: "unit-test-session"},
     )
 
     assert response.status_code == 200
