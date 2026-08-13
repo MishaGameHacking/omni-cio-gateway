@@ -153,8 +153,8 @@
           "evaluated_at": "2026-08-13T08:30:00+00:00"
         },
         "completeness": "partial",
-        "broker_position_count": 2,
-        "normalized_position_count": 1,
+        "broker_position_count": 1,
+        "normalized_position_count": 0,
         "unresolved_position_count": 1,
         "portfolio_total": null,
         "cash": [],
