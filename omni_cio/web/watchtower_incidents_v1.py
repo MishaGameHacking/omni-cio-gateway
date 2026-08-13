@@ -19,6 +19,7 @@ _MAX_REVISIONS_PER_INCIDENT = 512
 _MAX_EVIDENCE_IDS_PER_REVISION = 1024
 _MAX_EVIDENCE_ROWS_PER_INCIDENT = 1024
 _MAX_JOURNAL_LINK_ROWS_PER_INCIDENT = 1024
+_MAX_WATCHTOWER_ALERT_BLOB_BYTES = 64 * 1024
 _SEVERITY_ORDER = {"unknown": -1, "info": 0, "warning": 1, "error": 2}
 
 
@@ -54,7 +55,7 @@ def _safe_payload_bytes(value: object | None) -> bytes | None:
 
 def _watchtower_alert(value: object | None) -> WatchtowerAlertV1 | None:
     payload = _safe_payload_bytes(value)
-    if payload is None:
+    if payload is None or len(payload) > _MAX_WATCHTOWER_ALERT_BLOB_BYTES:
         return None
     try:
         decoded = json.loads(payload.decode("utf-8"))
@@ -175,7 +176,8 @@ class WatchtowerIncidentReadServiceV1:
         rows = self._connection.execute(
             "SELECT DISTINCT e.evidence_id, e.source_kind, e.published_at, "
             "e.retrieved_at, e.local_received_at, e.payload_sha256, "
-            "e.instrument_id, ins.ticker, ins.name, cb.media_type, cb.schema_ref, cb.payload "
+            "e.instrument_id, ins.ticker, ins.name, cb.payload IS NOT NULL, "
+            "CASE WHEN octet_length(cb.payload) <= %s THEN cb.payload ELSE NULL END "
             "FROM omni_cio_v10.incident_evidence ie "
             "JOIN omni_cio_v10.evidence e ON e.evidence_id = ie.evidence_id "
             "LEFT JOIN omni_cio_v10.instruments ins ON ins.instrument_id = e.instrument_id "
@@ -183,7 +185,12 @@ class WatchtowerIncidentReadServiceV1:
             "ON cb.tenant_id = e.tenant_id AND cb.payload_sha256 = e.payload_sha256 "
             "WHERE ie.tenant_id = %s AND ie.incident_id = %s "
             "ORDER BY e.evidence_id LIMIT %s",
-            (tenant_id, incident_id, _MAX_EVIDENCE_ROWS_PER_INCIDENT + 1),
+            (
+                _MAX_WATCHTOWER_ALERT_BLOB_BYTES,
+                tenant_id,
+                incident_id,
+                _MAX_EVIDENCE_ROWS_PER_INCIDENT + 1,
+            ),
         ).fetchall()
         return _bounded_rows(
             rows,
@@ -245,7 +252,7 @@ class WatchtowerIncidentReadServiceV1:
             tenant_id=tenant_id,
             incident_id=incident_id,
         ):
-            alert = _watchtower_alert(evidence_row[11])
+            alert = _watchtower_alert(evidence_row[10])
             if alert is not None:
                 alerts.append(alert)
             evidence_views.append(
@@ -264,7 +271,7 @@ class WatchtowerIncidentReadServiceV1:
                         if evidence_row[6] is not None
                         else None
                     ),
-                    "content_available": evidence_row[11] is not None,
+                    "content_available": bool(evidence_row[9]),
                     "watchtower_alert_verified": alert is not None,
                 }
             )
