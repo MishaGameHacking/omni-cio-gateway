@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Button, Card, StatePanel, StatusBadge } from "../design-system/components";
+import { Button, Card, Skeleton, StatePanel, StatusBadge } from "../design-system/components";
 import { readPortfolioDashboard } from "./api";
 import type { PortfolioAccountView, PortfolioDashboardView, PortfolioPositionView } from "./contracts";
 
@@ -192,7 +192,12 @@ export function PortfolioDashboardPage({ assetsMode = false }: { assetsMode?: bo
       </div>
 
       {failed ? <StatePanel kind="error" title="Portfolio API недоступен">Нулевые значения не подставлены. Проверь broker connection/runtime state и повтори чтение.</StatePanel> : null}
-      {!failed && loading && dashboard === null ? <StatePanel kind="loading" title="Читаем broker snapshot">READ-only запрос может включать instrument enrichment и current-market quotes.</StatePanel> : null}
+      {!failed && loading && dashboard === null ? (
+        <Card title="Читаем broker snapshot">
+          <Skeleton label="Читаем broker snapshot" />
+          <p className="shell-caption">READ-only запрос может включать instrument enrichment и current-market quotes.</p>
+        </Card>
+      ) : null}
       {dashboard?.state === "EMPTY" ? <StatePanel kind="empty" title="Broker connection не подключён">Добавь T-Invest READ connection в Настройки → Broker Connections.</StatePanel> : null}
       {dashboard?.warnings.map((warning, index) => <StatePanel key={`${warning.code}-${index}`} kind="warning" title={warning.code}>{warning.message}</StatePanel>)}
       {dashboard?.accounts.map((account) => <AccountPanel key={account.masked_account} account={account} assetsMode={assetsMode} />)}
