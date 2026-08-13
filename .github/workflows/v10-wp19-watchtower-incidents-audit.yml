@@ -110,6 +110,22 @@ jobs:
           "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m pytest -q tests\test_v10_wp19_watchtower_incidents.py
           if errorlevel 1 exit /b 43
 
+      - name: Capture Ruff formatter diff on failure
+        if: failure()
+        run: |
+          "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m ruff format omni_cio\web\watchtower_incidents_v1.py apps\api\app.py tests\test_v10_wp19_watchtower_incidents.py
+          git diff -- omni_cio\web\watchtower_incidents_v1.py apps\api\app.py tests\test_v10_wp19_watchtower_incidents.py > "%RUNNER_TEMP%\wp19-ruff-format.diff"
+          if not exist "%RUNNER_TEMP%\wp19-ruff-format.diff" exit /b 60
+
+      - name: Upload Ruff formatter diagnostic only
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: wp19-ruff-format-diagnostic
+          path: ${{ runner.temp }}\wp19-ruff-format.diff
+          if-no-files-found: error
+          retention-days: 1
+
       - name: Verify accepted Web and repository guards
         run: |
           "%VENV_WINDOWS_PATH%\Scripts\python.exe" scripts\check_v10_web_baseline.py
