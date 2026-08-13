@@ -228,7 +228,7 @@ def test_wp19_read_model_explains_reopened_critical_incident() -> None:
     assert incident["current_state"] == "open"
     assert incident["lifecycle_state"] == "ACTIVE"
     assert incident["severity"] == "error"
-    assert incident["risk_impact"] == "CRITICAL"
+    assert incident["risk_impact"] == "OWNER_ATTENTION_REQUIRED"
     assert incident["subject"] == "portfolio:owner"
     assert incident["message_code"] == "WATCHTOWER_CONCENTRATION_BREACH"
     assert incident["requested_action"] == "review"
