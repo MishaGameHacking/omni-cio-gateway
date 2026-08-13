@@ -14,7 +14,11 @@ from omni_cio.adapters.tinvest_read_v1 import (
     TInvestReadAdapterError,
     TInvestSnapshotResultV1,
 )
-from omni_cio.contracts.v1.portfolio import InstrumentIdentity, InstrumentType, PortfolioPositionV1
+from omni_cio.contracts.v1.portfolio import (
+    InstrumentIdentity,
+    InstrumentType,
+    PortfolioPositionV1,
+)
 from omni_cio.web.api_v1 import SESSION_COOKIE, SessionRegistryLike
 from omni_cio.web.persistence_v1 import (
     BrokerConnectionRecordV1,
@@ -347,9 +351,7 @@ class PortfolioDashboardServiceV1:
                 {
                     "currency": currency,
                     "normalized_position_value": _decimal(total),
-                    "top_1_weight_pct": _decimal(
-                        values[0] / total * Decimal("100")
-                    ),
+                    "top_1_weight_pct": _decimal(values[0] / total * Decimal("100")),
                     "top_5_weight_pct": _decimal(
                         sum(values[:5], Decimal("0")) / total * Decimal("100")
                     ),
