@@ -220,11 +220,10 @@ class TInvestConnectionMarketReadAdapter(
                 try:
                     detail = detail_cache.get(asset_uid)
                     if detail is None:
+                        lookup_asset_uid = asset_uid
                         asset_response = self._call_read(
                             "GET_ASSET_BY",
-                            lambda asset_uid=asset_uid: client.instruments.get_asset_by(
-                                id=asset_uid
-                            ),
+                            lambda: client.instruments.get_asset_by(id=lookup_asset_uid),
                         )
                         payload = _message_to_dict(asset_response)
                         raw_detail = payload.get("asset")
