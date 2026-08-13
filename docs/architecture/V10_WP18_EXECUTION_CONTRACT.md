@@ -41,7 +41,7 @@ Give the authenticated OWNER a transparent, current-on-demand read-only view of 
 - `omni_cio/web/persistence_v1.py`: reuse BrokerConnection/account bindings.
 - `omni_cio/web/broker_vault_v1.py`: reuse protected READ credential storage.
 - `omni_cio/adapters/tinvest_read_v1.py`: reuse normalized portfolio/cash/freshness/quality semantics and canonical instrument type/UID identity.
-- `omni_cio/adapters/tinvest_market_v1.py`: reuse bounded last-price READ path.
+- `omni_cio/adapters/tinvest_market_v1.py`: reuse bounded raw last-price READ path.
 - `omni_cio/adapters/tinvest_connection_v1.py`: reuse exact account binding and extend it additively with WP18 issuer/sector classification through exact type-specific instrument metadata reads plus point `GetAssetBy` where a verified `asset_uid` exists; no WRITE surface is introduced.
 - `omni_cio/contracts/v1/portfolio.py`: reuse canonical money/position identity semantics.
 - `omni_cio/contracts/v1/analytics.py` and `risk.py`: reuse explicit missing issuer/sector semantics rather than invent classifications.
@@ -82,10 +82,10 @@ WP18 does not implement:
 - auth scope: tenant comes only from accepted server-side session;
 - cache: `no-store`;
 - compatibility: additive WP18 v1 product projection; browser receives no raw provider account ID, account fingerprint, token or `secret_ref`;
-- Decimal: money/quantity/weights transported as decimal strings;
+- Decimal: money, quantity, weights and raw quotations are transported as decimal strings;
 - unknown/null: absence stays null/unavailable and is never silently converted to zero;
 - stale/partial: explicit freshness/completeness/warnings with timestamps;
-- source/time: displayed financial values must carry or visibly inherit source plus `as_of`/retrieved/evaluated time.
+- source/time: displayed financial values and raw market quotations must carry or visibly inherit source plus `as_of`/retrieved/evaluated time.
 
 ### Refresh/current semantics
 
@@ -93,7 +93,17 @@ WP18 v1 is **manual pull-to-refresh**. Opening Portfolio/Assets performs one bou
 
 ### Broker versus market value
 
-Broker-reported portfolio/position data is separate from `GetLastPrices`. Current-market monetary conversion is performed only where the available instrument metadata makes the formula semantically unambiguous. Unsupported asset-specific conversions remain visibly unavailable.
+Broker-reported portfolio/position data is separate from `GetLastPrices`. The `GetLastPrices` result is carried as a raw quotation with explicit `quotation_unit` and `quotation_semantics`; it is not universally modeled as money.
+
+WP18 uses these fail-closed semantics:
+
+- share/ETF raw quote: settlement-currency price per instrument; a direct money value may be calculated as `last_price × quantity_units`;
+- bond raw quote: `price_points` / percent of nominal; no money value is calculated without nominal/conversion metadata;
+- future raw quote: `price_points`; no money value is calculated without price-step conversion metadata;
+- currency raw quote: carries its settlement-currency quotation but remains conversion-required because nominal may differ from one;
+- other/unreviewed classes: `provider_quotation` and no money value.
+
+Unsupported asset-specific conversions remain visibly unavailable. A raw market quotation must never be mislabeled with a currency merely because the instrument has a settlement currency.
 
 ### Issuer/sector metadata
 
@@ -135,6 +145,7 @@ Required deterministic coverage:
 - broker total/cash/positions rendering contract;
 - same-currency weights and concentration;
 - source/timestamp visibility;
+- raw market quotation unit/semantics separate from money values;
 - verified issuer/sector classification from exact type-specific UID reads and point asset metadata;
 - explicit partial derivative classification when only authoritative sector is available;
 - broker/current-market distinction;
@@ -149,6 +160,8 @@ Required coverage:
 - partial/unresolved broker positions;
 - stale broker snapshot;
 - missing/stale/unavailable market quotes;
+- bond/future raw quotations are represented as `price_points`, never as currency money;
+- currency/unreviewed classes do not receive a fabricated direct market money value;
 - optional/unknown data stays null, not zero;
 - missing asset UID, unsupported canonical class and instrument/asset identity conflicts fail closed or remain explicitly partial as defined above;
 - conflicting canonical types for the same instrument UID are rejected;
@@ -162,6 +175,7 @@ Required coverage:
 - user-visible state: READY/PARTIAL/STALE/DEGRADED/EMPTY/UNAVAILABLE as applicable;
 - visible broker connection state;
 - visible freshness/completeness/unresolved counts;
+- visible raw quote unit/semantics/source/time;
 - visible issuer/sector classification state/source/time;
 - sanitized warnings only;
 - source/time metadata visible beside or inherited by displayed numeric groups;
@@ -188,7 +202,7 @@ PASS only if all are true on one exact PR head:
 3. Golden, Decimal/currency, empty, partial and stale tests pass.
 4. Issuer/sector/class coverage is either obtained from reviewed authoritative metadata or explicitly represented as unavailable without guessing; no required field is silently omitted.
 5. Position identity/detail is visible and links to already-owned incident/research contracts only where deterministic linkage exists.
-6. Broker/current-market semantics are explicit and unsupported conversion fails closed.
+6. Broker/current-market semantics are explicit; raw quotation units are truthful; unsupported conversion fails closed.
 7. WP16/WP17 regression gates, dedicated WP18 gate and authoritative merge gate are GREEN on the exact head.
 8. Zero unresolved blocking review threads; full diff reviewed.
 9. Squash merge is followed by exact-main Regression Shield SUCCESS before WP18 is declared COMPLETE.
@@ -200,6 +214,7 @@ PASS only if all are true on one exact PR head:
 - WP16/WP17 regression SUCCESS on same head;
 - authoritative merge gate SUCCESS on same head;
 - deterministic golden/Decimal/empty/partial/stale test results;
+- deterministic raw-quote semantic tests for share/bond/future;
 - deterministic typed issuer/sector identity/mapping/negative test results;
 - final reviewed diff and zero blocking threads;
 - squash merge SHA;
