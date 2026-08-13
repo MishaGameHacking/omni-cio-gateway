@@ -230,12 +230,28 @@ def test_instrument_identity_conflict_is_rejected() -> None:
         adapter.read_instrument_classifications((_instrument(),))
 
 
+def test_instrument_identity_conflict_is_rejected_in_partial_mode() -> None:
+    instruments = FakeInstruments(returned_instrument_uid="different-instrument")
+    adapter = _adapter(instruments)
+
+    with pytest.raises(BrokerDataError, match="INSTRUMENT_IDENTITY_CONFLICT"):
+        adapter.read_instrument_classifications((_instrument(),), allow_partial=True)
+
+
 def test_asset_identity_conflict_is_rejected() -> None:
     instruments = FakeInstruments(returned_asset_uid="different-asset")
     adapter = _adapter(instruments)
 
     with pytest.raises(BrokerDataError, match="ASSET_IDENTITY_CONFLICT"):
         adapter.read_instrument_classifications((_instrument(),))
+
+
+def test_asset_identity_conflict_is_rejected_in_partial_mode() -> None:
+    instruments = FakeInstruments(returned_asset_uid="different-asset")
+    adapter = _adapter(instruments)
+
+    with pytest.raises(BrokerDataError, match="ASSET_IDENTITY_CONFLICT"):
+        adapter.read_instrument_classifications((_instrument(),), allow_partial=True)
 
 
 def test_conflicting_types_for_same_uid_are_rejected_before_lookup() -> None:
