@@ -210,9 +210,7 @@ class WatchtowerIncidentReadServiceV1:
             maximum=_MAX_JOURNAL_LINK_ROWS_PER_INCIDENT,
             reason="WP19 incident journal link limit exceeded",
         )
-        decisions = sorted(
-            {str(row[0]) for row in bounded if row[0] is not None}
-        )
+        decisions = sorted({str(row[0]) for row in bounded if row[0] is not None})
         plans = sorted({str(row[1]) for row in bounded if row[1] is not None})
         return {"decisions": decisions, "plans": plans}
 
@@ -301,9 +299,7 @@ class WatchtowerIncidentReadServiceV1:
             "incident_id": incident_id,
             "opened_at": _timestamp(row[3]),
             "current_state": current_state,
-            "lifecycle_state": (
-                "RESOLVED" if current_state == "closed" else "ACTIVE"
-            ),
+            "lifecycle_state": ("RESOLVED" if current_state == "closed" else "ACTIVE"),
             "severity": severity,
             "critical": severity == "error",
             "risk_impact": _risk_impact(severity),
