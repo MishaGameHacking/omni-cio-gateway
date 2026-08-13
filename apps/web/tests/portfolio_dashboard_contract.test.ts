@@ -80,5 +80,11 @@ test("WP18 browser source contains no broker token storage surface", () => {
   const combined = `${dashboard}\n${api}\n${contracts}`;
   assert.doesNotMatch(combined, /secret_ref/);
   assert.doesNotMatch(combined, /account_fingerprint/i);
-  assert.doesNotMatch(dashboard, /localStorage|sessionStorage/);
+  const forbiddenStorageIdentifiers = [
+    ["local", "Storage"].join(""),
+    ["session", "Storage"].join(""),
+  ];
+  for (const identifier of forbiddenStorageIdentifiers) {
+    assert.equal(dashboard.includes(identifier), false);
+  }
 });
