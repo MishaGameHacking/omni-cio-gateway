@@ -13,6 +13,7 @@ import {
 import { appRoutes, isKnownRoute, type AppRoutePath, type HealthView, type ProviderView, type WebSessionView } from "./contracts";
 import { RoutePage } from "./pages";
 import { PortfolioDashboardPage } from "./portfolio-dashboard";
+import { WatchtowerIncidentsPage } from "./watchtower-incidents";
 
 function currentPath(): AppRoutePath {
   const path = window.location.pathname;
@@ -164,6 +165,8 @@ export function ApplicationShell() {
         {healthUnavailable ? <div className="shell-degraded" role="status">Downstream API недоступен — shell работает в DEGRADED режиме.</div> : null}
         {path === "/portfolio" || path === "/assets" ? (
           <PortfolioDashboardPage assetsMode={path === "/assets"} />
+        ) : path === "/watchtower" ? (
+          <WatchtowerIncidentsPage />
         ) : (
           <RoutePage
             path={path}
