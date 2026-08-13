@@ -21,7 +21,7 @@ function warningState(account: PortfolioAccountView): "READY" | "PARTIAL" | "STA
   return "READY";
 }
 
-function PositionTable({ positions, assetsMode }: { positions: PortfolioPositionView[]; assetsMode: boolean }) {
+function PositionTable({ positions, assetsMode, snapshotAsOf }: { positions: PortfolioPositionView[]; assetsMode: boolean; snapshotAsOf: string }) {
   if (positions.length === 0) {
     return <StatePanel kind="empty" title="Нормализованных позиций нет">Если broker snapshot частичный, причина остаётся видимой в предупреждениях ниже.</StatePanel>;
   }
@@ -53,16 +53,24 @@ function PositionTable({ positions, assetsMode }: { positions: PortfolioPosition
               <td>
                 {formatDecimal(position.quantity_units, 8)}
                 {position.blocked_units !== "0" ? <span className="wp18-subline">blocked {formatDecimal(position.blocked_units, 8)}</span> : null}
+                <span className="wp18-subline">T-Invest GetPortfolio · {snapshotAsOf}</span>
               </td>
-              <td>{money(position.broker_value)}</td>
-              <td>{position.weight_within_position_currency_pct ? `${formatDecimal(position.weight_within_position_currency_pct)}%` : "—"}</td>
+              <td>
+                {money(position.broker_value)}
+                <span className="wp18-subline">{position.broker_value ? `${position.broker_value.source} · ${position.broker_value.as_of}` : `unavailable · ${snapshotAsOf}`}</span>
+              </td>
+              <td>
+                {position.weight_within_position_currency_pct ? `${formatDecimal(position.weight_within_position_currency_pct)}%` : "—"}
+                <span className="wp18-subline">derived same-currency broker values · {snapshotAsOf}</span>
+              </td>
               <td>
                 {position.current_market_value ? money(position.current_market_value) : position.current_market_last_price ? `${formatDecimal(position.current_market_last_price.amount)} ${position.current_market_last_price.currency}` : "—"}
                 <span className="wp18-subline">{position.market_conversion_state}</span>
+                <span className="wp18-subline">{position.current_market_last_price ? `${position.current_market_last_price.source} · ${position.current_market_last_price.as_of}` : `quote unavailable · snapshot ${snapshotAsOf}`}</span>
               </td>
               <td>
-                {position.broker_value?.as_of ?? position.broker_unit_price?.as_of ?? "—"}
-                <span className="wp18-subline">{position.broker_value?.source ?? position.broker_unit_price?.source ?? "source unavailable"}</span>
+                {position.broker_unit_price?.as_of ?? snapshotAsOf}
+                <span className="wp18-subline">{position.broker_unit_price?.source ?? "T-Invest GetPortfolio"}</span>
               </td>
             </tr>
           ))}
@@ -74,31 +82,36 @@ function PositionTable({ positions, assetsMode }: { positions: PortfolioPosition
 }
 
 function AccountPanel({ account, assetsMode }: { account: PortfolioAccountView; assetsMode: boolean }) {
+  const marketAsOf = account.current_market.retrieved_at ?? account.retrieved_at;
   return (
     <section className="wp18-account" aria-label={`Broker account ${account.masked_account}`}>
       <div className="wp18-account__heading">
         <div>
           <p className="shell-eyebrow">T-INVEST · READ ONLY</p>
           <h2>{account.masked_account}</h2>
+          <p className="shell-caption">Broker snapshot: T-Invest GetPortfolio/GetPositions · {account.retrieved_at}</p>
         </div>
         <StatusBadge state={warningState(account)} />
       </div>
       <div className="wp18-kpis">
         <Card title="Broker portfolio total">
           <strong className="wp18-kpi">{money(account.portfolio_total)}</strong>
-          <span className="wp18-subline">{account.portfolio_total?.source ?? "Broker total unavailable"}</span>
+          <span className="wp18-subline">{account.portfolio_total ? `${account.portfolio_total.source} · ${account.portfolio_total.as_of}` : `unavailable · snapshot ${account.retrieved_at}`}</span>
         </Card>
         <Card title="Freshness">
           <strong className="wp18-kpi">{account.freshness.state.toUpperCase()}</strong>
-          <span className="wp18-subline">age {formatDecimal(account.freshness.age_seconds)}s · {account.retrieved_at}</span>
+          <span className="wp18-subline">age {formatDecimal(account.freshness.age_seconds)}s · evaluated {account.freshness.evaluated_at}</span>
+          <span className="wp18-subline">source snapshot · {account.retrieved_at}</span>
         </Card>
         <Card title="Completeness">
           <strong className="wp18-kpi">{account.normalized_position_count}/{account.broker_position_count}</strong>
           <span className="wp18-subline">unresolved {account.unresolved_position_count}</span>
+          <span className="wp18-subline">T-Invest GetPortfolio normalization · {account.retrieved_at}</span>
         </Card>
         <Card title="Current market">
           <strong className="wp18-kpi">{account.current_market.state}</strong>
           <span className="wp18-subline">missing {account.current_market.missing_instrument_count} · stale {account.current_market.stale_instrument_count}</span>
+          <span className="wp18-subline">T-Invest GetLastPrices · {marketAsOf}</span>
         </Card>
       </div>
 
@@ -111,7 +124,7 @@ function AccountPanel({ account, assetsMode }: { account: PortfolioAccountView; 
                 <span>reported {formatDecimal(row.reported)}</span>
                 <span>available {formatDecimal(row.available)}</span>
                 <span>blocked {formatDecimal(row.blocked)}</span>
-                <small>{row.as_of} · {row.source}</small>
+                <small>{row.source} · {row.as_of}</small>
               </div>
             ))}
           </div>
@@ -119,7 +132,7 @@ function AccountPanel({ account, assetsMode }: { account: PortfolioAccountView; 
       ) : null}
 
       <Card title={assetsMode ? "Assets" : "Positions"}>
-        <PositionTable positions={account.positions} assetsMode={assetsMode} />
+        <PositionTable positions={account.positions} assetsMode={assetsMode} snapshotAsOf={account.retrieved_at} />
       </Card>
 
       {account.concentration.length > 0 ? (
@@ -130,7 +143,7 @@ function AccountPanel({ account, assetsMode }: { account: PortfolioAccountView; 
                 <strong>{row.currency}</strong>
                 <span>Top 1: {formatDecimal(row.top_1_weight_pct)}%</span>
                 <span>Top 5: {formatDecimal(row.top_5_weight_pct)}%</span>
-                <small>{row.basis}</small>
+                <small>{row.basis} · {account.retrieved_at}</small>
               </div>
             ))}
           </div>
@@ -183,7 +196,7 @@ export function PortfolioDashboardPage({ assetsMode = false }: { assetsMode?: bo
         <div>
           <p className="shell-eyebrow">WP18 · PORTFOLIO DATA</p>
           <h1 id="page-title">{assetsMode ? "Активы" : "Портфель"}</h1>
-          <p className="shell-muted">Live READ data. Каждый денежный показатель несёт источник и timestamp; incomplete/stale данные не скрываются.</p>
+          <p className="shell-muted">Current-on-demand READ snapshot. Страница читает данные при открытии и по явному Refresh; silent polling отсутствует. Partial/stale данные не скрываются.</p>
         </div>
         <div className="wp18-page-actions">
           <StatusBadge state={globalState} />
@@ -210,6 +223,7 @@ export function PortfolioDashboardPage({ assetsMode = false }: { assetsMode?: bo
             <div><dt>Broker position value</dt><dd>{dashboard.calculation_policy.broker_position_value}</dd></div>
             <div><dt>Current market</dt><dd>{dashboard.calculation_policy.current_market_value}</dd></div>
             <div><dt>Generated</dt><dd>{dashboard.generated_at}</dd></div>
+            <div><dt>Refresh</dt><dd>manual pull-to-refresh; no silent polling</dd></div>
           </dl>
         </Card>
       ) : null}
