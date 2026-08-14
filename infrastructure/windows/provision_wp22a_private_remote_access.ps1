@@ -155,6 +155,15 @@ function Invoke-BaseProvisioner {
     }
 }
 
+function Restore-LocalWebTask {
+    & $tailscale serve off *> $null
+    Stop-ScheduledTask -TaskName $remoteTaskName -ErrorAction SilentlyContinue
+    Unregister-ScheduledTask -TaskName $remoteTaskName -Confirm:$false -ErrorAction SilentlyContinue
+    if ($null -ne (Get-ScheduledTask -TaskName $baseTaskName -ErrorAction SilentlyContinue)) {
+        Start-ScheduledTask -TaskName $baseTaskName -ErrorAction SilentlyContinue
+    }
+}
+
 function Install-RemoteTask {
     param(
         [Parameter(Mandatory = $true)][string]$Sha,
@@ -267,12 +276,7 @@ $identity = Get-TailscaleIdentity -Exe $tailscale
 
 if ($Cleanup) {
     if (-not (Test-Administrator)) { throw "WP22A_CLEANUP_REQUIRES_ADMINISTRATOR" }
-    & $tailscale serve off *> $null
-    Stop-ScheduledTask -TaskName $remoteTaskName -ErrorAction SilentlyContinue
-    Unregister-ScheduledTask -TaskName $remoteTaskName -Confirm:$false -ErrorAction SilentlyContinue
-    if ($null -ne (Get-ScheduledTask -TaskName $baseTaskName -ErrorAction SilentlyContinue)) {
-        Start-ScheduledTask -TaskName $baseTaskName -ErrorAction SilentlyContinue
-    }
+    Restore-LocalWebTask
     Write-Result -Result ([ordered]@{
         status = "PASS"; reason = "WP22A_PRIVATE_REMOTE_DISABLED"; public_ingress = $false
     })
@@ -286,14 +290,20 @@ if ($Apply -and $serveBefore.any -and -not $serveBefore.expected) {
 }
 
 if ($Apply) {
-    Install-RemoteTask -Sha $sha -HostName $identity.host -OwnerFingerprint $identity.owner_login_sha256
-    if (-not (Wait-LocalRemoteStatus -HostName $identity.host)) {
-        throw "WP22A_REMOTE_BACKEND_NOT_READY"
+    try {
+        Install-RemoteTask -Sha $sha -HostName $identity.host -OwnerFingerprint $identity.owner_login_sha256
+        if (-not (Wait-LocalRemoteStatus -HostName $identity.host)) {
+            throw "WP22A_REMOTE_BACKEND_NOT_READY"
+        }
+        if (-not (Test-BackendLoopback)) { throw "WP22A_BACKEND_NOT_LOOPBACK_ONLY" }
+        if (-not $serveBefore.expected) {
+            & $tailscale serve --bg "http://127.0.0.1:$Port"
+            if ($LASTEXITCODE -ne 0) { throw "WP22A_TAILSCALE_SERVE_ENABLE_FAILED" }
+        }
     }
-    if (-not (Test-BackendLoopback)) { throw "WP22A_BACKEND_NOT_LOOPBACK_ONLY" }
-    if (-not $serveBefore.expected) {
-        & $tailscale serve --bg "http://127.0.0.1:$Port"
-        if ($LASTEXITCODE -ne 0) { throw "WP22A_TAILSCALE_SERVE_ENABLE_FAILED" }
+    catch {
+        Restore-LocalWebTask
+        throw
     }
 }
 
