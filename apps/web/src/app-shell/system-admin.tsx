@@ -147,7 +147,7 @@ export function SystemAdminPage({
         <Card title="Safety / kill switches">
           <dl className="shell-definition-list">
             <div><dt>Mode</dt><dd><Value value={status?.safety.mode} /></dd></div>
-            <div><dt>Real trading</dt><dd>{status ? <BoolState value={status.safety.real_trading_enabled} /> : "UNAVAILABLE"}</dd></div>
+            <div><dt>Real trading</dt><dd>{status ? <BoolState value={status.safety.real_execution_enabled} /> : "UNAVAILABLE"}</dd></div>
             <div><dt>Trading methods</dt><dd>{status ? <BoolState value={status.safety.trading_methods} /> : "UNAVAILABLE"}</dd></div>
             <div><dt>Broker write authority</dt><dd>{status ? <BoolState value={status.safety.broker_write_authority} /> : "UNAVAILABLE"}</dd></div>
             <div><dt>Public ingress</dt><dd>{status ? <BoolState value={status.safety.public_ingress} /> : "UNAVAILABLE"}</dd></div>
