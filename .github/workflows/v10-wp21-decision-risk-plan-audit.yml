@@ -103,7 +103,7 @@ jobs:
         run: |
           "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m ruff check omni_cio\web\decision_plan_v1.py apps\api\app.py tests\test_v10_wp21_decision_plan.py
           if errorlevel 1 exit /b 40
-          "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m ruff format --check omni_cio\web\decision_plan_v1.py apps\api\app.py tests\test_v10_wp21_decision_plan.py
+          "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m ruff format --diff omni_cio\web\decision_plan_v1.py apps\api\app.py tests\test_v10_wp21_decision_plan.py
           if errorlevel 1 exit /b 41
           "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m mypy
           if errorlevel 1 exit /b 42
