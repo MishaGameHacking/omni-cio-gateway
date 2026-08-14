@@ -367,9 +367,7 @@ def _plan_view(plan: PortfolioPlanV1, *, now: datetime) -> dict[str, Any]:
                             row.optimizer_leg.staged_execution_required
                         ),
                         "partial_fill_aware": row.optimizer_leg.partial_fill_aware,
-                        "market_source_sha256": (
-                            row.optimizer_leg.market_source_sha256
-                        ),
+                        "market_source_sha256": row.optimizer_leg.market_source_sha256,
                         "friction_source_sha256s": list(
                             row.optimizer_leg.friction_source_sha256s
                         ),
@@ -401,6 +399,25 @@ def _no_change_action(decision: DecisionSetV1) -> bool:
     }
 
 
+def _invalid_payload(
+    *,
+    now: datetime,
+    reason: str,
+    decision: DecisionSetV1 | None = None,
+) -> dict[str, Any]:
+    return {
+        "schema_version": "1.0.0",
+        "generated_at": now.isoformat(),
+        "state": "INVALID",
+        "reason": reason,
+        "main_decision": None,
+        "decision": None if decision is None else _decision_view(decision),
+        "plan": None,
+        "execution_authorized": False,
+        "trading_methods": False,
+    }
+
+
 class DecisionPlanReadServiceV1:
     """Tenant-scoped WP21 projection over accepted decision and immutable-plan DTOs."""
 
@@ -422,8 +439,12 @@ class DecisionPlanReadServiceV1:
             "CASE WHEN octet_length(db.payload) <= %s THEN db.payload ELSE NULL END, "
             "p.plan_id, p.schema_version, p.identity_version, p.payload_sha256, "
             "p.created_at, pb.schema_ref, "
-            "CASE WHEN octet_length(pb.payload) <= %s THEN pb.payload ELSE NULL END "
+            "CASE WHEN octet_length(pb.payload) <= %s THEN pb.payload ELSE NULL END, "
+            "s.record_sha256 "
             "FROM omni_cio_v10.decisions d "
+            "JOIN omni_cio_v10.portfolio_snapshots s "
+            "ON s.tenant_id = d.tenant_id AND s.portfolio_id = d.portfolio_id "
+            "AND s.policy_id = d.policy_id AND s.snapshot_id = d.snapshot_id "
             "LEFT JOIN omni_cio_v10.content_blobs db "
             "ON db.tenant_id = d.tenant_id AND db.payload_sha256 = d.payload_sha256 "
             "LEFT JOIN LATERAL ("
@@ -461,17 +482,17 @@ class DecisionPlanReadServiceV1:
             schema_ref=None if row[8] is None else str(row[8]),
         )
         if decision is None:
-            return {
-                "schema_version": "1.0.0",
-                "generated_at": now.isoformat(),
-                "state": "INVALID",
-                "reason": "DECISION_PAYLOAD_INVALID",
-                "main_decision": None,
-                "decision": None,
-                "plan": None,
-                "execution_authorized": False,
-                "trading_methods": False,
-            }
+            return _invalid_payload(now=now, reason="DECISION_PAYLOAD_INVALID")
+
+        decided_at = row[7]
+        if not isinstance(decided_at, datetime):
+            raise ValueError("WP21 decisions.decided_at must be datetime")
+        if _utc(decided_at) != decision.metadata.retrieved_at:
+            return _invalid_payload(
+                now=now,
+                reason="DECISION_RECORD_BINDING_INVALID",
+                decision=decision,
+            )
 
         plan_id = None if row[10] is None else str(row[10])
         plan: PortfolioPlanV1 | None = None
@@ -483,19 +504,30 @@ class DecisionPlanReadServiceV1:
                 schema_ref=None if row[15] is None else str(row[15]),
             )
             if plan is None:
-                return {
-                    "schema_version": "1.0.0",
-                    "generated_at": now.isoformat(),
-                    "state": "INVALID",
-                    "reason": "PLAN_PAYLOAD_INVALID",
-                    "main_decision": None,
-                    "decision": _decision_view(decision),
-                    "plan": None,
-                    "execution_authorized": False,
-                    "trading_methods": False,
-                }
+                return _invalid_payload(
+                    now=now,
+                    reason="PLAN_PAYLOAD_INVALID",
+                    decision=decision,
+                )
+            plan_created_at = row[14]
+            if not isinstance(plan_created_at, datetime):
+                raise ValueError("WP21 plans.created_at must be datetime")
+            if (
+                _utc(plan_created_at) != plan.created_at
+                or plan.policy_reference.policy_id != str(row[2])
+                or plan.portfolio_snapshot_sha256 != str(row[17])
+            ):
+                return _invalid_payload(
+                    now=now,
+                    reason="PLAN_RECORD_BINDING_INVALID",
+                    decision=decision,
+                )
 
-        if _change_action_requires_plan(decision) and plan is None:
+        preferred_action = _preferred_option(decision).action
+        if preferred_action is DecisionAction.WAIT_FOR_DATA:
+            state = "PARTIAL"
+            reason = "DECISION_ABSTAINS_WAIT_FOR_DATA"
+        elif _change_action_requires_plan(decision) and plan is None:
             state = "PARTIAL"
             reason = "ACTIONABLE_DECISION_PLAN_MISSING"
         elif _no_change_action(decision) and plan is not None:
@@ -510,9 +542,6 @@ class DecisionPlanReadServiceV1:
             state = "INVALID"
             reason = "MAIN_DECISION_PROJECTION_UNAVAILABLE"
 
-        decided_at = row[7]
-        if not isinstance(decided_at, datetime):
-            raise ValueError("WP21 decisions.decided_at must be datetime")
         return {
             "schema_version": "1.0.0",
             "generated_at": now.isoformat(),
@@ -524,6 +553,7 @@ class DecisionPlanReadServiceV1:
                 "portfolio_id": str(row[1]),
                 "policy_id": str(row[2]),
                 "snapshot_id": str(row[3]),
+                "snapshot_record_sha256": str(row[17]),
                 "decision_schema_version": str(row[4]),
                 "decision_identity_version": int(row[5]),
                 "decision_payload_sha256": decision_payload_sha,
