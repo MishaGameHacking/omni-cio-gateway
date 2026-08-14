@@ -207,7 +207,9 @@ def main() -> int:
     owner_workflow = _source(
         ".github/workflows/v10-wp22a-owner-private-remote-audit.yml"
     )
-    assert "WP22A_OWNER_PRIVATE_REMOTE_GATE=OWNER_ACTION_REQUIRED" in owner_workflow
+    assert (
+        "WP22A_OWNER_PRIVATE_REMOTE_GATE=OWNER_ACTION_REQUIRED" in owner_workflow
+    )
     assert "assess_v10_wp22a_owner_evidence.py" in owner_workflow
     assert "audit_wp22a_private_remote_runner.ps1" in owner_workflow
     assert "retention-days: 3" in owner_workflow
@@ -221,7 +223,10 @@ def main() -> int:
 
     threat_model = _source("docs/architecture/V10_THREAT_MODEL.md")
     assert "WP22A threat-model update" in threat_model
-    assert "T22 — Private remote access spoofing or accidental public exposure" in threat_model
+    assert (
+        "T22 — Private remote access spoofing or accidental public exposure"
+        in threat_model
+    )
     assert (
         "OWNER tailnet HTTPS/Tailscale Serve <-> loopback-only private Web runtime"
         in threat_model
