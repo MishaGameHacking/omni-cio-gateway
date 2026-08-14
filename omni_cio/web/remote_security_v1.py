@@ -48,7 +48,9 @@ class RemoteSessionRegistryLike(Protocol):
         now: datetime,
     ) -> tuple[str, SessionScopeV1]: ...
 
-    def resolve(self, token: str | None, *, now: datetime) -> SessionScopeV1 | None: ...
+    def resolve(
+        self, token: str | None, *, now: datetime
+    ) -> SessionScopeV1 | None: ...
 
     def revoke(self, token: str | None, *, now: datetime) -> bool: ...
 
@@ -231,7 +233,10 @@ def install_private_remote_session_routes(
         token = request.cookies.get(session_cookie_name)
         current = _utc_now(now)
         if token is None or sessions.resolve(token, now=current) is None:
-            raise HTTPException(status_code=401, detail="AUTHENTICATION_REQUIRED")
+            raise HTTPException(
+                status_code=401,
+                detail="AUTHENTICATION_REQUIRED",
+            )
         return JSONResponse(
             {"csrf_token": csrf_token_for_session(token)},
             headers={"Cache-Control": "no-store"},
@@ -323,10 +328,14 @@ class PrivateRemoteSecurityMiddlewareV1:
                 session_token = _cookie_value(
                     headers.get("cookie", ""), self._session_cookie_name
                 )
-                if session_token is None or self._sessions.resolve(
-                    session_token,
-                    now=_utc_now(self._now),
-                ) is None:
+                if (
+                    session_token is None
+                    or self._sessions.resolve(
+                        session_token,
+                        now=_utc_now(self._now),
+                    )
+                    is None
+                ):
                     await self._reject(send, 401, "AUTHENTICATION_REQUIRED")
                     return
                 supplied_csrf = headers.get(CSRF_HEADER_NAME, "")
@@ -346,9 +355,7 @@ class PrivateRemoteSecurityMiddlewareV1:
 
         async def send_with_security_headers(message: Message) -> None:
             if message["type"] == "http.response.start":
-                existing = {
-                    name.lower() for name, _ in message.get("headers", [])
-                }
+                existing = {name.lower() for name, _ in message.get("headers", [])}
                 response_headers = list(message.get("headers", []))
                 for name, value in _REMOTE_RESPONSE_HEADERS:
                     if name not in existing:
