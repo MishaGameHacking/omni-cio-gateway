@@ -1,0 +1,97 @@
+name: V10 WP22A OWNER Private Remote Audit
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: v10-wp22a-owner-private-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  owner-private-remote:
+    name: WP22A OWNER private remote evidence gate
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.draft == false)
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: cmd
+
+    steps:
+      - name: Check out exact reviewed head
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Bootstrap protected runner Python
+        run: |
+          call scripts\bootstrap_windows_ci_python.cmd
+          if errorlevel 1 exit /b 10
+
+      - name: Verify exact checked-out head
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          for /f %%S in ('git rev-parse HEAD') do set "ACTUAL_HEAD=%%S"
+          if /I not "%ACTUAL_HEAD%"=="%EXPECTED_HEAD%" exit /b 11
+          echo WP22A OWNER exact head: %ACTUAL_HEAD%
+
+      - name: Require sanitized OWNER evidence
+        shell: powershell
+        run: |
+          $evidence = 'C:\ProgramData\OmniCIO\wp22a-evidence\owner-private-remote.sanitized.local.json'
+          if (-not (Test-Path -LiteralPath $evidence -PathType Leaf)) {
+            Write-Host 'WP22A_OWNER_PRIVATE_REMOTE_GATE=OWNER_ACTION_REQUIRED'
+            exit 40
+          }
+          Write-Host 'WP22A sanitized OWNER evidence is present.'
+
+      - name: Prove runner isolation from private remote config
+        shell: powershell
+        run: |
+          $probe = Join-Path $env:RUNNER_TEMP 'wp22a-owner-runner-probe.json'
+          $raw = & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File '.\infrastructure\windows\audit_wp22a_private_remote_runner.ps1' -AsJson | Out-String
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          [System.IO.File]::WriteAllText($probe, $raw.Trim(), [System.Text.UTF8Encoding]::new($false))
+          "WP22A_RUNNER_PROBE=$probe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Validate exact implementation-bound sanitized evidence
+        shell: powershell
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python scripts\assess_v10_wp22a_owner_evidence.py --evidence 'C:\ProgramData\OmniCIO\wp22a-evidence\owner-private-remote.sanitized.local.json' --runner-probe "$env:WP22A_RUNNER_PROBE" --expected-sha "$env:EXPECTED_HEAD"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload sanitized WP22A OWNER evidence only
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: wp22a-owner-private-remote-sanitized
+          path: |
+            C:\ProgramData\OmniCIO\wp22a-evidence\owner-private-remote.sanitized.local.json
+            ${{ env.WP22A_RUNNER_PROBE }}
+          if-no-files-found: error
+          retention-days: 3
+
+      - name: Clean runner-local probe
+        if: always()
+        shell: powershell
+        run: |
+          if ($env:WP22A_RUNNER_PROBE) {
+            Remove-Item -LiteralPath $env:WP22A_RUNNER_PROBE -Force -ErrorAction SilentlyContinue
+          }
+
+      - name: Clean self-hosted workspace
+        if: always()
+        shell: bash
+        run: |
+          git reset --hard HEAD
+          git clean -ffdx
