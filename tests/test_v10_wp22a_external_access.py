@@ -147,7 +147,9 @@ def test_fixed_window_limiter_is_bounded_and_recovers_after_window() -> None:
     assert limiter.admit("login", limit=2, window_seconds=10, now_monotonic=111.1)
 
 
-def test_tailnet_status_crosses_existing_local_trusted_host_only_after_outer_verification() -> None:
+def test_tailnet_status_crosses_existing_local_trusted_host_only_after_outer_verification() -> (
+    None
+):
     client = remote_client(make_app())
     response = client.get("/api/v10/web/private-tailnet-login/status")
     assert response.status_code == 200
@@ -171,7 +173,9 @@ def test_web_source_has_no_inline_style_attributes_blocked_by_remote_csp() -> No
     assert offenders == []
 
 
-def test_owner_login_uses_host_bound_secure_server_side_session_and_csrf_cookie() -> None:
+def test_owner_login_uses_host_bound_secure_server_side_session_and_csrf_cookie() -> (
+    None
+):
     client = remote_client(make_app())
     response = client.post(
         "/api/v10/web/private-tailnet-login",
