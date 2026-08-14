@@ -154,24 +154,43 @@ $sourceHashes = [ordered]@{
     execution_contract_sha256 = (Get-FileHash -LiteralPath $executionContract -Algorithm SHA256).Hash.ToLowerInvariant()
 }
 
-$tailscale = (Get-Command tailscale.exe -ErrorAction Stop).Source
-& $tailscale serve --https=443 off 2>&1 | Out-Null
-if ($LASTEXITCODE -ne 0) { throw "WP22A_EVIDENCE_SERVE_DISABLE_FAILED" }
-& $tailscale funnel --https=443 off 2>&1 | Out-Null
-if ($LASTEXITCODE -ne 0) { throw "WP22A_EVIDENCE_FUNNEL_DISABLE_FAILED" }
-$serveAfter = (& $tailscale serve status --json 2>&1 | Out-String).Trim()
-if ($LASTEXITCODE -ne 0) { throw "WP22A_EVIDENCE_SERVE_STATUS_FAILED" }
-$serveDisabled = @("", "{}", "[]", "null") -contains ($serveAfter -replace '\s', '')
-if (-not $serveDisabled) { throw "WP22A_EVIDENCE_SERVE_STILL_ACTIVE" }
-$funnelAfter = (& $tailscale funnel status --json 2>&1 | Out-String).Trim()
-if ($LASTEXITCODE -ne 0) { throw "WP22A_EVIDENCE_FUNNEL_STATUS_FAILED" }
-$funnelDisabledAfter = @("", "{}", "[]", "null") -contains ($funnelAfter -replace '\s', '')
-if (-not $funnelDisabledAfter) { throw "WP22A_EVIDENCE_FUNNEL_STILL_ACTIVE" }
+$cleanupState = $null
+$cleanupFailure = $false
+try {
+    $cleanupRaw = & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $provisioner -ExpectedImplementationSha $implementationSha -Cleanup -Port $Port -ConfigPath $ConfigPath -AsJson 2>$null | Out-String
+    if ($LASTEXITCODE -ne 0) { throw "WP22A_EVIDENCE_RUNTIME_CLEANUP_COMMAND_FAILED" }
+    $cleanupState = $cleanupRaw.Trim() | ConvertFrom-Json -ErrorAction Stop
+    if (-not [bool]$cleanupState.ready) { throw "WP22A_EVIDENCE_RUNTIME_CLEANUP_NOT_READY" }
+}
+catch {
+    $cleanupFailure = $true
+}
 
-$cleanupRaw = & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $provisioner -ExpectedImplementationSha $implementationSha -Cleanup -Port $Port -ConfigPath $ConfigPath -AsJson 2>$null | Out-String
-if ($LASTEXITCODE -ne 0) { throw "WP22A_EVIDENCE_RUNTIME_CLEANUP_FAILED" }
-$cleanupState = $cleanupRaw.Trim() | ConvertFrom-Json -ErrorAction Stop
-if (-not [bool]$cleanupState.ready) { throw "WP22A_EVIDENCE_RUNTIME_CLEANUP_NOT_READY" }
+$serveDisabled = $false
+$funnelDisabledAfter = $false
+$transportFailure = $false
+try {
+    $tailscale = (Get-Command tailscale.exe -ErrorAction Stop).Source
+    & $tailscale serve --https=443 off 2>&1 | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "WP22A_EVIDENCE_SERVE_DISABLE_FAILED" }
+    & $tailscale funnel --https=443 off 2>&1 | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "WP22A_EVIDENCE_FUNNEL_DISABLE_FAILED" }
+    $serveAfter = (& $tailscale serve status --json 2>&1 | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0) { throw "WP22A_EVIDENCE_SERVE_STATUS_FAILED" }
+    $serveDisabled = @("", "{}", "[]", "null") -contains ($serveAfter -replace '\s', '')
+    if (-not $serveDisabled) { throw "WP22A_EVIDENCE_SERVE_STILL_ACTIVE" }
+    $funnelAfter = (& $tailscale funnel status --json 2>&1 | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0) { throw "WP22A_EVIDENCE_FUNNEL_STATUS_FAILED" }
+    $funnelDisabledAfter = @("", "{}", "[]", "null") -contains ($funnelAfter -replace '\s', '')
+    if (-not $funnelDisabledAfter) { throw "WP22A_EVIDENCE_FUNNEL_STILL_ACTIVE" }
+}
+catch {
+    $transportFailure = $true
+}
+
+if ($cleanupFailure) { throw "WP22A_EVIDENCE_RUNTIME_CLEANUP_FAILED" }
+if ($transportFailure) { throw "WP22A_EVIDENCE_TRANSPORT_CLEANUP_FAILED" }
+if ($null -eq $cleanupState) { throw "WP22A_EVIDENCE_RUNTIME_CLEANUP_STATE_MISSING" }
 
 if (-not (Test-Path -LiteralPath $evidenceRoot -PathType Container)) {
     New-Item -ItemType Directory -Path $evidenceRoot -Force | Out-Null

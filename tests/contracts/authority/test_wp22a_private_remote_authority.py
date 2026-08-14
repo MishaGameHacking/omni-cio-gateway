@@ -71,6 +71,23 @@ def test_wp22a_runtime_is_loopback_only_and_funnel_is_off_only() -> None:
     assert "tailscale funnel --bg" not in configure
 
 
+def test_wp22a_finalizer_attempts_both_runtime_and_transport_teardown() -> None:
+    finalizer = _source(
+        "infrastructure/windows/finalize_wp22a_private_remote_evidence.ps1"
+    )
+    cleanup_try = finalizer.index("$cleanupFailure = $false")
+    transport_try = finalizer.index("$transportFailure = $false")
+    cleanup_fail_closed = finalizer.index(
+        'if ($cleanupFailure) { throw "WP22A_EVIDENCE_RUNTIME_CLEANUP_FAILED" }'
+    )
+    transport_fail_closed = finalizer.index(
+        'if ($transportFailure) { throw "WP22A_EVIDENCE_TRANSPORT_CLEANUP_FAILED" }'
+    )
+    evidence_write = finalizer.index("$evidence | ConvertTo-Json")
+    assert cleanup_try < transport_try < cleanup_fail_closed
+    assert transport_try < transport_fail_closed < evidence_write
+
+
 def test_wp22a_does_not_add_tailscale_as_product_identity_provider() -> None:
     contract = json.loads(
         _source("docs/architecture/V10_WP22A_PRIVATE_REMOTE_SECURITY_CONTRACT.json")
