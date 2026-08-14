@@ -46,6 +46,14 @@ The phone or other OWNER browser device must join the same authorized tailnet be
 
 Never send Tailscale authentication keys, provider credentials, OWNER login, broker credentials or private portfolio values to GitHub/CI/chat.
 
+### HTTPS certificate privacy / OWNER consent
+
+Tailscale Serve HTTPS requires HTTPS certificates to be enabled for the tailnet. If that capability has never been enabled, the `tailscale serve` CLI may present a Tailscale web-consent URL instead of completing immediately.
+
+Enabling Tailscale HTTPS has a privacy consequence that requires OWNER awareness: the device name and tailnet DNS suffix used in the certificate become visible through the public Certificate Transparency ecosystem even though network access to Serve remains restricted to the tailnet. Before enabling HTTPS, the OWNER must therefore verify that the Lenovo Tailscale machine name itself contains no sensitive/private information.
+
+This is a real external-account/privacy consent boundary. Engineering does not silently accept it on the OWNER's behalf and does not replace it with public Funnel exposure. If HTTPS is already enabled and the node name is acceptable, no additional certificate-file provisioning is required for the Serve path; Tailscale manages the Serve certificate lifecycle.
+
 ## Source-controlled deployment boundary
 
 WP22A adds two reviewed Windows scripts:
@@ -119,6 +127,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\infrastructure\window
 
 The script returns the private HTTPS URL locally. Do not paste the raw Tailscale login or any credentials into the command.
 
+If Tailscale prints a consent URL because tailnet HTTPS has not been enabled, stop at that external consent step. Review the displayed Tailscale node name first; enable HTTPS only if its publication in certificate transparency is acceptable. Then rerun the same exact-head `-Apply` command.
+
 A non-mutating verification after apply is:
 
 ```powershell
@@ -140,7 +150,7 @@ From an authorized OWNER device inside the intended tailnet:
 1. Open the exact HTTPS tailnet URL printed locally by the provisioning gate.
 2. The application shows `OWNER private access` only when the request reached the backend through the reviewed private remote path.
 3. Select the private access action. The backend binds the Tailscale identity to the configured OWNER fingerprint.
-4. A successful authentication creates a server-side session and Secure/HttpOnly/SameSite cookie.
+4. A successful authentication creates a server-side session and host-bound Secure/HttpOnly/SameSite session cookie.
 5. Navigate through Portfolio, Watchtower, Research, Decisions/Risk/Plans and System to prove the existing single Web App is reachable remotely.
 6. Logout, reopen the URL and verify the server-side session state changes as expected.
 
