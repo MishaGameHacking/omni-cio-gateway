@@ -60,8 +60,9 @@ test("WP21 validates canonical blobs and exact persisted bindings", () => {
   assert.match(backend, /_DECISION_SCHEMA_REF/);
   assert.match(backend, /_PLAN_SCHEMA_REF/);
   assert.match(backend, /JOIN omni_cio_v10\.portfolio_snapshots s/);
+  assert.match(backend, /JOIN omni_cio_v10\.policies pol/);
   assert.match(backend, /s\.source_payload_sha256/);
-  assert.match(backend, /DECISION_RECORD_BINDING_INVALID/);
+  assert.match(backend, /pol\.source_policy_id/);
   assert.match(backend, /PLAN_RECORD_BINDING_INVALID/);
   assert.match(backend, /PLAN_PAYLOAD_INVALID/);
   assert.match(backend, /DECISION_ABSTAINS_WAIT_FOR_DATA/);
