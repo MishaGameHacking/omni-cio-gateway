@@ -8,6 +8,9 @@ async function mockAuthenticatedApi(page: import("@playwright/test").Page, optio
   await page.route("**/api/v10/web/auth/providers", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([{ provider: "telegram", enabled: false, reason: "NOT_CONFIGURED" }, { provider: "vk_id", enabled: false, reason: "NOT_CONFIGURED" }]) });
   });
+  await page.route("**/api/v10/web/session/csrf", async (route) => {
+    await route.fulfill({ status: 404, contentType: "application/json", body: '{"detail":"NOT_FOUND"}' });
+  });
   await page.route("**/api/v10/web/health", async (route) => {
     if (options?.healthOffline) {
       await route.abort("connectionrefused");
