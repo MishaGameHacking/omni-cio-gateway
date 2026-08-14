@@ -138,6 +138,31 @@ function Convert-TailscaleServeStatusJson {
     }
 }
 
+function Test-Wp22aFunnelDisabled {
+    param([Parameter(Mandatory = $true)][string]$Text)
+    $state = Convert-TailscaleServeStatusJson -Text $Text
+    if ($null -eq $state) { return $true }
+
+    $allow = $state.PSObject.Properties['AllowFunnel']
+    if ($null -ne $allow -and $null -ne $allow.Value) {
+        foreach ($entry in @($allow.Value.PSObject.Properties)) {
+            if ([bool]$entry.Value) { return $false }
+        }
+    }
+
+    $foreground = $state.PSObject.Properties['Foreground']
+    if ($null -ne $foreground -and $null -ne $foreground.Value) {
+        foreach ($session in @($foreground.Value.PSObject.Properties)) {
+            $sessionAllow = $session.Value.PSObject.Properties['AllowFunnel']
+            if ($null -eq $sessionAllow -or $null -eq $sessionAllow.Value) { continue }
+            foreach ($entry in @($sessionAllow.Value.PSObject.Properties)) {
+                if ([bool]$entry.Value) { return $false }
+            }
+        }
+    }
+    return $true
+}
+
 function Test-Wp22aServeMapping {
     param(
         [Parameter(Mandatory = $true)][string]$Text,
@@ -149,6 +174,8 @@ function Test-Wp22aServeMapping {
 
     $tcp = $state.PSObject.Properties['TCP']
     if ($null -eq $tcp -or $null -eq $tcp.Value) { return $false }
+    $tcpEntries = @($tcp.Value.PSObject.Properties)
+    if ($tcpEntries.Count -ne 1) { return $false }
     $https443 = $tcp.Value.PSObject.Properties['443']
     if ($null -eq $https443) { return $false }
     $httpsProperty = $https443.Value.PSObject.Properties['HTTPS']
@@ -162,6 +189,8 @@ function Test-Wp22aServeMapping {
 
     $web = $state.PSObject.Properties['Web']
     if ($null -eq $web -or $null -eq $web.Value) { return $false }
+    $webEntries = @($web.Value.PSObject.Properties)
+    if ($webEntries.Count -ne 1) { return $false }
     $hostPort = $HostName + ':443'
     $site = $web.Value.PSObject.Properties[$hostPort]
     if ($null -eq $site) { return $false }
@@ -173,7 +202,17 @@ function Test-Wp22aServeMapping {
     if ($null -eq $root) { return $false }
     $proxyProperty = $root.Value.PSObject.Properties['Proxy']
     if ($null -eq $proxyProperty) { return $false }
-    return [string]$proxyProperty.Value -ceq "http://127.0.0.1:$Port"
+    if (-not ([string]$proxyProperty.Value -ceq "http://127.0.0.1:$Port")) { return $false }
+
+    $services = $state.PSObject.Properties['Services']
+    if ($null -ne $services -and $null -ne $services.Value -and @($services.Value.PSObject.Properties).Count -gt 0) {
+        return $false
+    }
+    $foreground = $state.PSObject.Properties['Foreground']
+    if ($null -ne $foreground -and $null -ne $foreground.Value -and @($foreground.Value.PSObject.Properties).Count -gt 0) {
+        return $false
+    }
+    return $true
 }
 
 if ($SelfTestStatusParser) {
@@ -190,12 +229,29 @@ if ($SelfTestStatusParser) {
     $extraHandler = @'
 {"TCP":{"443":{"HTTPS":true}},"Web":{"omni-owner.synthetic-tailnet.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8765"},"/other":{"Proxy":"http://127.0.0.1:9999"}}}}}
 '@
+    $extraPort = @'
+{"TCP":{"443":{"HTTPS":true},"8443":{"HTTPS":true}},"Web":{"omni-owner.synthetic-tailnet.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8765"}}},"omni-owner.synthetic-tailnet.ts.net:8443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:9999"}}}}}
+'@
+    $funnelOn = @'
+{"TCP":{"443":{"HTTPS":true}},"Web":{"omni-owner.synthetic-tailnet.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8765"}}}},"AllowFunnel":{"omni-owner.synthetic-tailnet.ts.net:443":true}}
+'@
+    $foregroundFunnelOn = @'
+{"TCP":{"443":{"HTTPS":true}},"Web":{"omni-owner.synthetic-tailnet.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8765"}}}},"Foreground":{"session-1":{"AllowFunnel":{"omni-owner.synthetic-tailnet.ts.net:443":true}}}}
+'@
+    $funnelFalse = @'
+{"TCP":{"443":{"HTTPS":true}},"Web":{"omni-owner.synthetic-tailnet.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8765"}}}},"AllowFunnel":{"omni-owner.synthetic-tailnet.ts.net:443":false}}
+'@
     $ready = (
         (Test-Wp22aServeMapping -Text $valid -HostName $testHost -Port 8765) -and
         -not (Test-Wp22aServeMapping -Text $wrongTarget -HostName $testHost -Port 8765) -and
         -not (Test-Wp22aServeMapping -Text $wrongPort -HostName $testHost -Port 8765) -and
         -not (Test-Wp22aServeMapping -Text $extraHandler -HostName $testHost -Port 8765) -and
-        -not (Test-Wp22aServeMapping -Text '{}' -HostName $testHost -Port 8765)
+        -not (Test-Wp22aServeMapping -Text $extraPort -HostName $testHost -Port 8765) -and
+        -not (Test-Wp22aServeMapping -Text '{}' -HostName $testHost -Port 8765) -and
+        (Test-Wp22aFunnelDisabled -Text $valid) -and
+        (Test-Wp22aFunnelDisabled -Text $funnelFalse) -and
+        -not (Test-Wp22aFunnelDisabled -Text $funnelOn) -and
+        -not (Test-Wp22aFunnelDisabled -Text $foregroundFunnelOn)
     )
     $result = [ordered]@{
         schema_version = "1"
@@ -205,7 +261,12 @@ if ($SelfTestStatusParser) {
         wrong_target_rejected = [bool](-not (Test-Wp22aServeMapping -Text $wrongTarget -HostName $testHost -Port 8765))
         wrong_port_rejected = [bool](-not (Test-Wp22aServeMapping -Text $wrongPort -HostName $testHost -Port 8765))
         extra_handler_rejected = [bool](-not (Test-Wp22aServeMapping -Text $extraHandler -HostName $testHost -Port 8765))
+        extra_port_rejected = [bool](-not (Test-Wp22aServeMapping -Text $extraPort -HostName $testHost -Port 8765))
         empty_status_rejected = [bool](-not (Test-Wp22aServeMapping -Text '{}' -HostName $testHost -Port 8765))
+        funnel_absent_is_disabled = [bool](Test-Wp22aFunnelDisabled -Text $valid)
+        funnel_false_is_disabled = [bool](Test-Wp22aFunnelDisabled -Text $funnelFalse)
+        top_level_funnel_rejected = [bool](-not (Test-Wp22aFunnelDisabled -Text $funnelOn))
+        foreground_funnel_rejected = [bool](-not (Test-Wp22aFunnelDisabled -Text $foregroundFunnelOn))
         mutation_performed = $false
         ready = [bool]$ready
     }
@@ -237,9 +298,7 @@ if ($Apply) {
     ) {
         throw "WP22A_REFUSES_EXISTING_SERVE_CONFIGURATION"
     }
-    $existingFunnelRaw = (& $tailscale funnel status --json 2>&1 | Out-String)
-    if ($LASTEXITCODE -ne 0) { throw "WP22A_TAILSCALE_FUNNEL_STATUS_FAILED" }
-    if (-not (Test-EmptyTailscaleStatusJson -Text $existingFunnelRaw)) {
+    if (-not (Test-Wp22aFunnelDisabled -Text $existingServeRaw)) {
         throw "WP22A_REFUSES_EXISTING_FUNNEL_CONFIGURATION"
     }
 
@@ -270,8 +329,6 @@ if ($Apply) {
     }
     $config | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $ConfigPath -Encoding UTF8
 
-    & $tailscale funnel --https=443 off 2>&1 | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw "WP22A_FUNNEL_DISABLE_FAILED" }
     & $tailscale serve --bg --https=443 "http://127.0.0.1:$BackendPort" 2>&1 | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "WP22A_TAILSCALE_SERVE_APPLY_FAILED" }
 }
@@ -295,9 +352,7 @@ $aclOk = Test-PrivateConfigAcl -Root $configRoot
 $serveRaw = (& $tailscale serve status --json 2>&1 | Out-String)
 if ($LASTEXITCODE -ne 0) { throw "WP22A_TAILSCALE_SERVE_STATUS_FAILED" }
 $serveOk = Test-Wp22aServeMapping -Text $serveRaw -HostName $hostName -Port $BackendPort
-$funnelRaw = (& $tailscale funnel status --json 2>&1 | Out-String)
-if ($LASTEXITCODE -ne 0) { throw "WP22A_TAILSCALE_FUNNEL_STATUS_FAILED" }
-$funnelDisabled = Test-EmptyTailscaleStatusJson -Text $funnelRaw
+$funnelDisabled = Test-Wp22aFunnelDisabled -Text $serveRaw
 
 $ready = $configOk -and $aclOk -and $serveOk -and $funnelDisabled
 $result = [ordered]@{
