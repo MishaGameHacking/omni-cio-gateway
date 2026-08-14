@@ -34,6 +34,22 @@ function Get-Sha256Hex {
     }
 }
 
+function Resolve-IdentitySid {
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.Security.Principal.IdentityReference]$IdentityReference
+    )
+    if ($IdentityReference -is [System.Security.Principal.SecurityIdentifier]) {
+        return [System.Security.Principal.SecurityIdentifier]$IdentityReference
+    }
+    try {
+        return $IdentityReference.Translate([System.Security.Principal.SecurityIdentifier])
+    }
+    catch [System.Security.Principal.IdentityNotMappedException] {
+        return $null
+    }
+}
+
 function New-Rule {
     param(
         [Parameter(Mandatory = $true)][System.Security.Principal.SecurityIdentifier]$Sid,
@@ -66,13 +82,40 @@ function Set-PrivateConfigAcl {
 
 function Test-PrivateConfigAcl {
     param([Parameter(Mandatory = $true)][string]$Root)
+    $runtimeSid = (Get-LocalUser -Name "omni-cio-runtime" -ErrorAction Stop).SID
+    $allowedSidValues = @(
+        "S-1-5-18",
+        "S-1-5-32-544",
+        $runtimeSid.Value
+    )
     $acl = Get-Acl -LiteralPath $Root -ErrorAction Stop
     if (-not $acl.AreAccessRulesProtected) { return $false }
-    $broad = @($acl.Access | Where-Object {
-        $name = [string]$_.IdentityReference
-        $name -match '(?i)Everyone|Authenticated Users|\\Users$'
-    })
-    return ($broad.Count -eq 0)
+
+    $runtimeReadExecute = $false
+    foreach ($rule in @($acl.Access)) {
+        if ($rule.AccessControlType -ne [System.Security.AccessControl.AccessControlType]::Allow) {
+            continue
+        }
+        $sid = Resolve-IdentitySid -IdentityReference $rule.IdentityReference
+        if ($null -eq $sid -or $allowedSidValues -notcontains $sid.Value) {
+            return $false
+        }
+        if ($sid.Value -eq $runtimeSid.Value) {
+            $rights = $rule.FileSystemRights
+            $readExecute = [System.Security.AccessControl.FileSystemRights]::ReadAndExecute
+            if (($rights -band $readExecute) -eq $readExecute) {
+                $runtimeReadExecute = $true
+            }
+            $forbidden = (
+                [System.Security.AccessControl.FileSystemRights]::Write -bor
+                [System.Security.AccessControl.FileSystemRights]::Delete -bor
+                [System.Security.AccessControl.FileSystemRights]::ChangePermissions -bor
+                [System.Security.AccessControl.FileSystemRights]::TakeOwnership
+            )
+            if (($rights -band $forbidden) -ne 0) { return $false }
+        }
+    }
+    return $runtimeReadExecute
 }
 
 function Test-EmptyTailscaleStatusJson {
@@ -95,9 +138,9 @@ if ($hostName -notmatch '^[a-z0-9][a-z0-9.-]*\.ts\.net$' -or $hostName.Contains(
 
 $configRoot = Split-Path -Parent $ConfigPath
 if ($Apply) {
-    $normalizedLogin = $OwnerLogin.Trim().ToLowerInvariant()
+    $normalizedLogin = $OwnerLogin.Trim()
     if ([string]::IsNullOrWhiteSpace($normalizedLogin)) {
-        $normalizedLogin = (Read-Host "Tailscale OWNER login; the raw value will only be hashed locally").Trim().ToLowerInvariant()
+        $normalizedLogin = (Read-Host "Exact decoded Tailscale OWNER login; the raw value will only be hashed locally").Trim()
     }
     if ([string]::IsNullOrWhiteSpace($normalizedLogin) -or $normalizedLogin.Length -gt 320) {
         throw "WP22A_OWNER_LOGIN_INVALID"
