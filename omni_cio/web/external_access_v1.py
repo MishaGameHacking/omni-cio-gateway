@@ -27,6 +27,7 @@ TAILSCALE_LOGIN_HEADER = "Tailscale-User-Login"
 _UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 _LOCAL_HOSTS = frozenset({"127.0.0.1", "localhost"})
 _REMOTE_VERIFIED_STATE = "wp22a_private_remote_verified"
+_REMOTE_STATUS_PATH = "/api/v10/web/private-tailnet-login/status"
 
 
 class SessionRegistryLike(Protocol):
@@ -170,6 +171,13 @@ def _remote_request_verified(request: Request) -> bool:
     return bool(getattr(request.state, _REMOTE_VERIFIED_STATE, False))
 
 
+def _harden_remote_response(response: Response) -> Response:
+    response.headers["Strict-Transport-Security"] = "max-age=31536000"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "same-origin"
+    return response
+
+
 class ExternalAccessSecurityMiddlewareV1(BaseHTTPMiddleware):
     def __init__(
         self,
@@ -189,6 +197,8 @@ class ExternalAccessSecurityMiddlewareV1(BaseHTTPMiddleware):
         if not remote_request:
             if host not in _LOCAL_HOSTS:
                 return JSONResponse({"detail": "INVALID_HOST"}, status_code=400)
+            if request.method == "GET" and request.url.path == _REMOTE_STATUS_PATH:
+                return JSONResponse({"enabled": False})
             return await call_next(request)
 
         if not _is_loopback(request):
@@ -218,13 +228,13 @@ class ExternalAccessSecurityMiddlewareV1(BaseHTTPMiddleware):
                 ):
                     return JSONResponse({"detail": "RATE_LIMITED"}, status_code=429)
 
+        if request.method == "GET" and request.url.path == _REMOTE_STATUS_PATH:
+            return _harden_remote_response(JSONResponse({"enabled": True}))
+
         setattr(request.state, _REMOTE_VERIFIED_STATE, True)
         _rewrite_host_to_loopback(request)
         response = await call_next(request)
-        response.headers["Strict-Transport-Security"] = "max-age=31536000"
-        response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["Referrer-Policy"] = "same-origin"
-        return response
+        return _harden_remote_response(response)
 
 
 def install_private_remote_access_v1(
@@ -240,10 +250,6 @@ def install_private_remote_access_v1(
         policy=policy,
         limiter=limiter,
     )
-
-    @app.get("/api/v10/web/private-tailnet-login/status")
-    def private_tailnet_status(request: Request) -> dict[str, bool]:
-        return {"enabled": _remote_request_verified(request)}
 
     @app.post("/api/v10/web/private-tailnet-login")
     def private_tailnet_login(request: Request, response: Response) -> dict[str, bool]:
