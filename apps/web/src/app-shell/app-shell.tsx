@@ -3,10 +3,12 @@ import { Button, StatusBadge } from "../design-system/components";
 import type { OperationalState } from "../design-system/contracts";
 import {
   logoutCurrentSession,
+  privateRemoteLogin,
   privateTestLogin,
   providerLoginUrl,
   readHealth,
   readPrivateAcceptanceStatus,
+  readPrivateRemoteAcceptanceStatus,
   readProviders,
   readSession,
 } from "./api";
@@ -32,12 +34,16 @@ function LoginScreen({
   providers,
   apiUnavailable,
   privateAcceptanceEnabled,
+  privateRemoteAcceptanceEnabled,
   onPrivateAcceptance,
+  onPrivateRemoteAcceptance,
 }: {
   providers: ProviderView[];
   apiUnavailable: boolean;
   privateAcceptanceEnabled: boolean;
+  privateRemoteAcceptanceEnabled: boolean;
   onPrivateAcceptance: () => void;
+  onPrivateRemoteAcceptance: () => void;
 }) {
   const provider = (name: "telegram" | "vk_id") => providers.find((item) => item.provider === name);
   const telegram = provider("telegram");
@@ -55,9 +61,13 @@ function LoginScreen({
           {privateAcceptanceEnabled ? (
             <Button variant="secondary" onClick={onPrivateAcceptance}>Локальный OWNER acceptance</Button>
           ) : null}
+          {privateRemoteAcceptanceEnabled ? (
+            <Button variant="secondary" onClick={onPrivateRemoteAcceptance}>Приватный OWNER доступ</Button>
+          ) : null}
         </div>
         <p className="shell-caption">Provider buttons остаются fail-closed до reviewed local/private provider configuration.</p>
         {privateAcceptanceEnabled ? <p className="shell-caption">Локальный OWNER acceptance виден только на loopback и не является третьим login provider.</p> : null}
+        {privateRemoteAcceptanceEnabled ? <p className="shell-caption">Приватный OWNER доступ разрешён только через reviewed tailnet transport и также не является третьим product login provider.</p> : null}
       </section>
     </main>
   );
@@ -67,6 +77,7 @@ export function ApplicationShell() {
   const [session, setSession] = useState<WebSessionView | null>(null);
   const [providers, setProviders] = useState<ProviderView[]>([]);
   const [privateAcceptanceEnabled, setPrivateAcceptanceEnabled] = useState(false);
+  const [privateRemoteAcceptanceEnabled, setPrivateRemoteAcceptanceEnabled] = useState(false);
   const [sessionUnavailable, setSessionUnavailable] = useState(false);
   const [path, setPath] = useState<AppRoutePath>(currentPath);
   const [health, setHealth] = useState<HealthView | null>(null);
@@ -90,6 +101,9 @@ export function ApplicationShell() {
     void readPrivateAcceptanceStatus()
       .then((value) => setPrivateAcceptanceEnabled(value.enabled))
       .catch(() => setPrivateAcceptanceEnabled(false));
+    void readPrivateRemoteAcceptanceStatus()
+      .then((value) => setPrivateRemoteAcceptanceEnabled(value.enabled))
+      .catch(() => setPrivateRemoteAcceptanceEnabled(false));
   }, [refreshSession]);
 
   useEffect(() => {
@@ -132,8 +146,14 @@ export function ApplicationShell() {
         providers={providers}
         apiUnavailable={sessionUnavailable}
         privateAcceptanceEnabled={privateAcceptanceEnabled}
+        privateRemoteAcceptanceEnabled={privateRemoteAcceptanceEnabled}
         onPrivateAcceptance={() => {
           void privateTestLogin()
+            .then(refreshSession)
+            .catch(() => setSessionUnavailable(true));
+        }}
+        onPrivateRemoteAcceptance={() => {
+          void privateRemoteLogin()
             .then(refreshSession)
             .catch(() => setSessionUnavailable(true));
         }}
