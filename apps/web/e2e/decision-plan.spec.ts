@@ -32,7 +32,7 @@ const readyPayload = {
   },
   decision: {
     decision_set_sha256: "c".repeat(64),
-    decided_at: "2026-08-14T04:25:00+00:00",
+    retrieved_at: "2026-08-14T04:25:00+00:00",
     abstain: false,
     recommendation_ready: true,
     confidence: "high",
