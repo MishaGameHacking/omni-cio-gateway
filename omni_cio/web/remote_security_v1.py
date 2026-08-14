@@ -277,7 +277,9 @@ class PrivateRemoteSecurityMiddlewareV1:
             return
 
         headers = _headers(scope)
-        if not _host_header_allowed(headers.get("host", ""), self._policy.expected_host):
+        if not _host_header_allowed(
+            headers.get("host", ""), self._policy.expected_host
+        ):
             await self._reject(send, 400, "HOST_NOT_ALLOWED")
             return
 
