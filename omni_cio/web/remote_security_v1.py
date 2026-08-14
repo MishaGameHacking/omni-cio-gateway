@@ -141,11 +141,11 @@ def _headers(scope: Scope) -> dict[str, str]:
     return result
 
 
-def _host_without_port(value: str) -> str:
-    raw = value.strip().lower().rstrip(".")
-    if raw.startswith("["):
-        return raw
-    return raw.split(":", 1)[0].rstrip(".")
+def _host_header_allowed(value: str, expected_host: str) -> bool:
+    raw = value.strip().lower()
+    return hmac.compare_digest(raw, expected_host) or hmac.compare_digest(
+        raw, f"{expected_host}:443"
+    )
 
 
 def _cookie_value(cookie_header: str, name: str) -> str | None:
@@ -277,8 +277,7 @@ class PrivateRemoteSecurityMiddlewareV1:
             return
 
         headers = _headers(scope)
-        host = _host_without_port(headers.get("host", ""))
-        if not hmac.compare_digest(host, self._policy.expected_host):
+        if not _host_header_allowed(headers.get("host", ""), self._policy.expected_host):
             await self._reject(send, 400, "HOST_NOT_ALLOWED")
             return
 
