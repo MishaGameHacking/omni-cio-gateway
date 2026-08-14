@@ -7,9 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PROVISIONER = (
     ROOT / "infrastructure" / "windows" / "provision_wp22a_private_remote_access.ps1"
 )
-RUNNER_AUDITOR = (
-    ROOT / "infrastructure" / "windows" / "audit_wp22a_runner_loopback.ps1"
-)
+RUNNER_AUDITOR = ROOT / "infrastructure" / "windows" / "audit_wp22a_runner_loopback.ps1"
 OWNER_FINALIZER = (
     ROOT / "infrastructure" / "windows" / "finalize_wp22a_owner_evidence.ps1"
 )
@@ -32,7 +30,10 @@ def test_provisioner_blocks_runner_loopback_and_rebuilds_local_runtime_on_rollba
     assert "-LocalUser $runnerSddl" in source
     assert "Get-NetFirewallSecurityFilter" in source
     assert "WP22A_RUNNER_LOOPBACK_FIREWALL_NOT_BOUND" in source
-    assert '$status = Invoke-TailscaleText -Exe $Exe -Arguments @("funnel", "status")' in source
+    assert (
+        '$status = Invoke-TailscaleText -Exe $Exe -Arguments @("funnel", "status")'
+        in source
+    )
     assert (
         '$status = Invoke-TailscaleText -Exe $Exe -Arguments @("funnel", "status") -AllowFailure'
         not in source
