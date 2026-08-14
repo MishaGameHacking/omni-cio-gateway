@@ -42,6 +42,8 @@ This decision does not activate a public registration service. Telegram Login an
 Remote OWNER access requires all of the following:
 
 - existing server-side opaque session state;
+- a WP22A remote-specific session policy of **2 hours idle / 24 hours absolute**; this shortens only the private remote contour and does not silently change the accepted local Web session baseline;
+- every successful private OWNER authentication rotates the remote session identifier: if the browser presents an existing remote session token, that token is revoked server-side before a fresh high-entropy token is created;
 - a host-bound `__Host-...` session cookie with `Secure`, `HttpOnly`, `SameSite=Strict` and `Path=/`;
 - a separate host-bound `__Host-...` CSRF cookie containing a high-entropy token delivered only after successful private OWNER authentication;
 - every remote request other than the non-sensitive readiness/status probe must still carry the current Tailscale Serve identity that matches the configured OWNER fingerprint; a copied session cookie or copied session+CSRF pair presented through a wrong or missing tailnet identity fails before the request reaches the inner application;
@@ -55,9 +57,7 @@ Remote OWNER access requires all of the following:
 - login attempts and authenticated mutations use bounded rate limits;
 - remote logout/revoke-all deletes the host-bound remote cookies while the existing server-side revoke semantics invalidate the opaque session record.
 
-The browser never stores the session identifier in Web Storage and never receives a broker credential back from the backend.
-
-The accepted session policy remains bounded: 12-hour idle lifetime and 30-day absolute lifetime unless a later reviewed security package changes it. Remembered login is therefore a revocable server-side session, not permanent device trust.
+The browser never stores the session identifier in Web Storage and never receives a broker credential back from the backend. Session rotation and expiry remain server-authoritative; remembered access is never permanent device trust.
 
 ## 4. Relevant OWASP ASVS 5.0 mapping
 
@@ -74,8 +74,8 @@ WP22A uses the following ASVS 5.0 requirements as explicit design/test reference
 | V3.5.1 / V3.5.2 / V3.5.3 | Unsafe functionality uses non-safe methods and requires exact HTTPS Origin plus an anti-forgery header/token; GET is not used for mutations. |
 | V6.1.1 | Login anti-automation is documented and bounded; monitoring GET paths are not locked out by the mutation limiter. |
 | V6.1.3 | Telegram/VK remain documented ordinary product authentication paths; private tailnet OWNER identity is explicitly a separate Personal-node access gate rather than an implicit provider merge. |
-| V7.1.1 | Idle and absolute session lifetimes are documented. |
-| V7.4.1 | Logout/revoke semantics invalidate server-side sessions and clear remote cookies. |
+| V7.1.1 | Remote idle and absolute lifetimes are explicitly 2 hours / 24 hours. |
+| V7.4.1 | Logout/revoke semantics invalidate server-side sessions and clear remote cookies; re-authentication revokes the previously presented remote token before issuing a replacement. |
 | V13.2.2 | The Web runtime remains under the existing least-privilege `omni-cio-runtime` account and PostgreSQL SSPI role. |
 
 `Cross-Origin-Opener-Policy` is retained as additional defense-in-depth for the remote Web surface. It is not used here to claim satisfaction of a lower ASVS level than the applicable ASVS requirement actually defines.
@@ -134,6 +134,8 @@ Before OWNER deployment evidence, CI must prove at minimum:
 - malformed OWNER identity binding rejected;
 - wrong Tailscale identity rejected;
 - a valid copied remote session cookie, including a copied session+CSRF pair, is rejected when replayed through a wrong or missing Tailscale OWNER identity;
+- repeated successful private authentication rotates the remote session token and the previously issued token becomes unusable;
+- the remote-specific session policy remains exactly 2 hours idle / 24 hours absolute and the emitted session cookie is bounded by the current idle expiry;
 - direct/non-loopback identity-header spoof path rejected;
 - hostile Host rejected;
 - hostile/missing Origin rejected for unsafe remote requests;
