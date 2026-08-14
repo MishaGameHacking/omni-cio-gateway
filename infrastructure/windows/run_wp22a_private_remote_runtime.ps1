@@ -27,7 +27,7 @@ if ($null -eq $currentSid -or $currentSid.Value -ne $expectedUser.SID.Value) {
 $sha = $ImplementationSha.Trim().ToLowerInvariant()
 if ($sha -notmatch '^[0-9a-f]{40}$') { throw "WP22A_IMPLEMENTATION_SHA_INVALID" }
 $app = (Resolve-Path -LiteralPath $AppRoot -ErrorAction Stop).Path
-$marker = Join-Path $app ".omni-cio-wp22a-private-remote-deployment"
+$marker = Join-Path $app ".omni-cio-wp22a-private-deployment"
 if (-not (Test-Path -LiteralPath $marker -PathType Leaf)) { throw "WP22A_DEPLOYMENT_MARKER_MISSING" }
 if ((Get-Content -LiteralPath $marker -Raw -ErrorAction Stop).Trim().ToLowerInvariant() -ne $sha) {
     throw "WP22A_DEPLOYMENT_SHA_MISMATCH"

@@ -126,6 +126,9 @@ def main() -> int:
     assert "apps.api.private_remote:create_private_remote_app" in launcher
     assert '$env:real_trading_enabled = "0"' in launcher
     assert '$env:public_multi_user_enabled = "0"' in launcher
+    deployment_marker = ".omni-cio-wp22a-private-deployment"
+    assert deployment_marker in launcher
+    assert ".omni-cio-wp22a-private-remote-deployment" not in launcher
 
     tailscale_source = _source(
         "infrastructure/windows/configure_wp22a_tailscale_serve.ps1"
@@ -154,6 +157,7 @@ def main() -> int:
     assert "-Password $runtimePassword" in provisioner
     assert "-RunLevel Limited" in provisioner
     assert "-LogonType S4U" not in provisioner
+    assert deployment_marker in provisioner
     assert "GRANT SELECT ON ALL TABLES IN SCHEMA omni_cio_v10" in provisioner
     assert "postgres_trust_used = $false" in provisioner
     assert "database_password_persisted = $false" in provisioner
