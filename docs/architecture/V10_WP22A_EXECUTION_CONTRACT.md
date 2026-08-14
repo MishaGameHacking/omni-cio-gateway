@@ -29,6 +29,7 @@ Security consequences:
 - Tailscale Funnel/public exposure is outside this implementation and remains prohibited;
 - a canonical `*.ts.net` host is allowlisted exactly at runtime;
 - Tailscale Serve identity headers are accepted only when the backend request itself arrives through the local loopback proxy path;
+- tagged Lenovo nodes are rejected for this OWNER gate because Tailscale Serve does not populate the required user identity headers for tagged devices;
 - the expected OWNER login is represented to the application by a SHA-256 fingerprint supplied as runtime-only configuration; the raw login value is not committed;
 - the existing internal local-only TrustedHost boundary is retained. After the outer WP22A middleware validates the canonical remote Host, the request forwarded into the accepted local Web application is normalized back to loopback Host rather than widening the older allowlist globally.
 
@@ -46,7 +47,7 @@ Remote OWNER access requires all of the following:
 - requests for the remote host that do not reach the backend through loopback fail closed;
 - the remote boundary strips the accepted local-only legacy session-cookie name from remote requests and injects an inner local session cookie only from the validated host-bound remote session cookie;
 - CORS remains deny-by-default because no permissive CORS middleware is introduced;
-- remote responses emit HSTS, strict CSP with `default-src 'self'`, `object-src 'none'` and `frame-ancestors 'none'`, `X-Content-Type-Options: nosniff`, a restrictive referrer policy and `Cache-Control: no-store`;
+- remote responses emit HSTS, strict CSP with `default-src 'self'`, `object-src 'none'` and `frame-ancestors 'none'`, `Cross-Origin-Opener-Policy: same-origin-allow-popups`, `X-Content-Type-Options: nosniff`, a restrictive referrer policy and `Cache-Control: no-store`;
 - the Web source contains no React inline `style={{...}}` attributes that would require weakening the remote CSP with `unsafe-inline`;
 - login attempts and authenticated mutations use bounded rate limits;
 - remote logout/revoke-all deletes the host-bound remote cookies while the existing server-side revoke semantics invalidate the opaque session record.
@@ -73,6 +74,8 @@ WP22A uses the following ASVS 5.0 requirements as explicit design/test reference
 | V7.1.1 | Idle and absolute session lifetimes are documented. |
 | V7.4.1 | Logout/revoke semantics invalidate server-side sessions and clear remote cookies. |
 | V13.2.2 | The Web runtime remains under the existing least-privilege `omni-cio-runtime` account and PostgreSQL SSPI role. |
+
+`Cross-Origin-Opener-Policy` is retained as additional defense-in-depth for the remote Web surface. It is not used here to claim satisfaction of a lower ASVS level than the applicable ASVS requirement actually defines.
 
 Relevant controls that belong to future Telegram/public activation remain locked to their owning work packages and are not marked satisfied merely because WP22A exists.
 
@@ -104,6 +107,8 @@ The actual OWNER login, broker credentials, Tailscale authentication material, c
 
 The source-controlled OWNER gate derives the tailnet host and OWNER login fingerprint locally, refuses active Funnel/public ingress and starts the remote Web only as the accepted non-admin runtime identity. The raw login and Tailscale authentication material are not emitted as acceptance evidence.
 
+The remote runtime also explicitly disables the earlier loopback-only WP17/WP15 OWNER acceptance modes before activating the WP22A factory. A Tailscale Serve request reaching the backend through loopback must never inherit those older test/acceptance authorities.
+
 ## 7. Required deterministic checks
 
 Before OWNER deployment evidence, CI must prove at minimum:
@@ -126,8 +131,9 @@ Before OWNER deployment evidence, CI must prove at minimum:
 - strict CSP is emitted without `unsafe-inline`/`unsafe-eval`, and frontend source does not require React inline style attributes;
 - the existing local-only TrustedHost middleware still composes correctly behind the outer remote-access guard;
 - frontend Web API sends the CSRF header only when the CSRF cookie exists;
-- Windows provisioning/launcher scripts parse under Windows PowerShell 5.1 without applying changes in CI;
+- Windows provisioning, runtime-launcher and OWNER-evidence scripts parse under Windows PowerShell 5.1 without applying changes in CI;
 - the source-controlled runtime launcher binds Uvicorn only to loopback and runs as the existing non-admin runtime account during OWNER apply;
+- the source-controlled OWNER evidence validator passes static formatting/quality checks;
 - full repository quality/security/Regression Shield remains green.
 
 ## 8. OWNER evidence boundary
@@ -136,6 +142,8 @@ CI cannot prove a real Lenovo is joined to the intended OWNER tailnet, that Tail
 
 After code, static checks, focused tests and authoritative CI are GREEN, WP22A requires one reviewed OWNER-local/private rehearsal for the selected private remote candidate. The source-controlled gate must first prove exact implementation binding, loopback-only backend, private Serve state, no Funnel, OWNER identity binding and a real HTTPS server-side login/logout cycle. The OWNER then proves the exact link from a separate authorized phone/browser device.
 
-The rehearsal returns only sanitized PASS/FAIL evidence and must not expose Tailscale credentials, raw OWNER login, broker credentials, full account IDs or private portfolio values.
+After that physical observation, `finalize_wp22a_owner_evidence.ps1` re-runs the live non-mutating verification and writes one sanitized local evidence file under `C:\ProgramData\OmniCIO\wp22a`. The file contains exact implementation SHA/fingerprints and booleans only. It contains no raw OWNER login, private tailnet URL, Tailscale authentication material, broker secret, full account identifier or private portfolio payload.
+
+The dedicated OWNER audit **must not synthesize** phone or local-runtime evidence. Before the local evidence exists it reports `OWNER_ACTION_REQUIRED`; after it exists, CI only validates exact SHA/fingerprints, privacy fields and required safety/phone booleans, then may upload a short-lived sanitized derivative.
 
 Until that evidence and the WP22A Exit Gate are accepted, the current accepted Web remains local/private and Block F stays locked.
