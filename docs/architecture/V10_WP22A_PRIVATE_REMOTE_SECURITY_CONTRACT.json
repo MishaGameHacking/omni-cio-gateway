@@ -18,6 +18,8 @@
     "private_owner_acceptance_bootstrap": "TAILSCALE_USER_LOGIN_FINGERPRINT",
     "raw_tailscale_owner_login_in_repository": false,
     "server_side_session_required": true,
+    "session_idle_lifetime_minutes": 120,
+    "session_absolute_lifetime_hours": 24,
     "session_rotation_on_private_remote_login": true,
     "session_revoke_logout_required": true,
     "cookie_secure": true,
@@ -25,23 +27,32 @@
     "cookie_same_site": "strict"
   },
   "request_security": {
+    "backend_peer_loopback_required": true,
     "exact_tsnet_host_required": true,
     "exact_https_origin_required_for_unsafe_methods": true,
     "foreign_origin_rejected": true,
     "cors": "DENY_BY_DEFAULT",
     "csrf": "SESSION_BOUND_SHA256_DOMAIN_SEPARATED",
     "csrf_header": "X-Omni-CSRF",
+    "live_server_session_required_for_unsafe_methods": true,
     "login_rate_limit_per_minute": 6,
     "mutation_rate_limit_per_minute": 60,
     "monitoring_gets_subject_to_mutation_lockout": false,
     "direct_unsafe_api_without_origin_or_csrf": "REJECT",
-    "telegram_init_data_authority_before_wp24": "REJECT"
+    "telegram_init_data_authority_before_wp24": "REJECT",
+    "hsts_max_age_seconds": 31536000,
+    "private_response_cache_control": "no-store",
+    "x_content_type_options": "nosniff",
+    "frame_embedding": "DENY",
+    "referrer_policy": "no-referrer"
   },
   "tailscale_boundary": {
     "serve_only": true,
     "funnel": false,
     "identity_header": "Tailscale-User-Login",
+    "identity_header_rfc2047_decode_required": true,
     "backend_must_remain_loopback": true,
+    "runtime_config_acl": "SYSTEM_ADMINS_RUNTIME_READ_ONLY_ONLY",
     "tailnet_policy": "DENY_BY_DEFAULT_OWNER_TO_NODE_443_ONLY",
     "tailnet_policy_preferred_primitive": "grants"
   },
