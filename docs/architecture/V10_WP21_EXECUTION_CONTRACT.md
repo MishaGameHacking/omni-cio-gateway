@@ -38,7 +38,7 @@ The dependency audit was completed against accepted `main` before implementation
 | portfolio risk state | `PortfolioRiskStateV1` | **REUSE_AS_IS** |
 | optimizer targets and exact trade legs | `OptimizerTargetPositionV1`, `OptimizerRebalanceLegV1` | **REUSE_AS_IS** |
 | immutable plan identity and approval subject | `PortfolioPlanV1`, `portfolio_plan_sha256()`, `owner_approval_phrase()` | **REUSE_AS_IS** |
-| durable decision/plan metadata and content hashes | WP13 `decisions`, `plans`, `content_blobs` | **WRAP_ADAPTER** |
+| durable decision/plan metadata and content hashes | WP13 `decisions`, `plans`, `content_blobs`, `portfolio_snapshots` | **WRAP_ADAPTER** |
 | production decision-to-risk/plan binding semantics | `decision_journal/recorder_v1.py` | **REUSE_REFERENCE** |
 | V9 final-decision review adapter | intent/capacity review surface | **DO_NOT_REUSE_FOR_PLAN_UI** |
 
@@ -60,7 +60,7 @@ The UI consumes their accepted deterministic outputs. It does not change their s
 The Master Plan display vocabulary is a presentation classification over canonical `DecisionSetV1` plus, where required, the exact validated `PortfolioPlanV1`:
 
 - preferred `HOLD` → `HOLD`;
-- preferred `WAIT_FOR_DATA` → `NO_ACTION`;
+- preferred `WAIT_FOR_DATA` → `NO_ACTION`, but the overall Web state remains `PARTIAL` because the canonical decision abstains;
 - preferred `REVIEW_STRATEGIC_REBALANCE` → `REALLOCATE`;
 - preferred `REVIEW_LIMITED_CHANGE` + sell-only exact plan whose affected targets all reach zero → `EXIT`;
 - preferred `REVIEW_LIMITED_CHANGE` + sell-only exact plan with any non-zero affected target → `REDUCE`;
@@ -76,13 +76,17 @@ The read service:
 
 1. resolves server-side session and tenant;
 2. selects the latest tenant decision and latest exact scoped plan;
-3. joins content only by the same tenant and recorded payload SHA-256;
-4. bounds content size;
-5. re-hashes raw bytes and rejects hash mismatch;
-6. accepts only exact source-controlled schema references;
-7. Pydantic-validates `DecisionSetV1` and `PortfolioPlanV1`;
-8. relies on `PortfolioPlanV1` to recompute and validate its internal canonical `plan_sha256` and approval phrase;
-9. returns no raw content blob and no broker credential.
+3. requires the decision to join the exact tenant/portfolio/policy/snapshot record;
+4. binds the plan's `portfolio_snapshot_sha256` to that durable snapshot's `source_payload_sha256`;
+5. binds the plan policy reference to the persisted decision policy and the plan timestamp to the persisted plan timestamp;
+6. binds the persisted decision timestamp to `DecisionSetV1.metadata.retrieved_at`;
+7. joins content only by the same tenant and recorded payload SHA-256;
+8. bounds content size;
+9. re-hashes raw bytes and rejects hash mismatch;
+10. accepts only exact source-controlled schema references;
+11. Pydantic-validates `DecisionSetV1` and `PortfolioPlanV1`;
+12. relies on `PortfolioPlanV1` to recompute and validate its internal canonical `plan_sha256` and approval phrase;
+13. returns no raw content blob and no broker credential.
 
 The response uses `Cache-Control: no-store` and `Pragma: no-cache`.
 
@@ -111,6 +115,8 @@ WP21 tests must prove at least:
 - tenant predicate is always present;
 - blob SHA mismatch / wrong schema / invalid canonical plan fail closed;
 - material plan mutation with a newly valid outer blob hash but stale internal `plan_sha256` is rejected;
+- decision timestamp or snapshot source-hash binding mismatch fails closed;
+- preferred `WAIT_FOR_DATA` is `NO_ACTION` presentation but never `READY`;
 - actionable decision without plan is `PARTIAL`;
 - no-change decision does not silently bind an actionable plan;
 - expiry hides the approval phrase;
