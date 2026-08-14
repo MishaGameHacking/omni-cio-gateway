@@ -31,6 +31,7 @@ def valid_payload() -> dict[str, object]:
         },
         "exact_implementation_binding": True,
         "backend_loopback_only": True,
+        "runner_loopback_firewall_bound": True,
         "tailscale_serve_private": True,
         "funnel_public_ingress": False,
         "owner_identity_binding": True,
@@ -59,6 +60,7 @@ def test_validator_accepts_only_exact_sanitized_shape_and_current_fingerprints()
     assert result["implementation_sha"] == EXPECTED_SHA
     assert result["private_remote"] == {
         "backend_loopback_only": True,
+        "runner_loopback_firewall_bound": True,
         "tailscale_serve_private": True,
         "funnel_public_ingress": False,
         "owner_identity_binding": True,
@@ -75,6 +77,16 @@ def test_validator_rejects_stale_implementation_sha() -> None:
         match="WP22A_OWNER_EVIDENCE_IMPLEMENTATION_SHA_MISMATCH",
     ):
         validate(valid_payload(), expected_sha="b" * 40)
+
+
+def test_validator_rejects_missing_runner_loopback_firewall_evidence() -> None:
+    payload = valid_payload()
+    payload["runner_loopback_firewall_bound"] = False
+    with pytest.raises(
+        EvidenceError,
+        match="WP22A_OWNER_EVIDENCE_TRUE_REQUIRED:RUNNER_LOOPBACK_FIREWALL_BOUND",
+    ):
+        validate(payload, expected_sha=EXPECTED_SHA)
 
 
 def test_validator_rejects_any_sensitive_private_url_collection() -> None:
