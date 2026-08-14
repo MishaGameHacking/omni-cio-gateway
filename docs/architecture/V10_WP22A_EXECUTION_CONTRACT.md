@@ -45,6 +45,7 @@ The selected transport does not change the accepted Omni-CIO identity model. Tel
 - raw OWNER login is not committed to GitHub/CI evidence;
 - private remote bootstrap rotates the prior browser session and creates a revocable server-side Omni-CIO session;
 - remote session idle lifetime is exactly 120 minutes and absolute lifetime is exactly 24 hours;
+- any resolved session used on the private OWNER path must be scoped to the canonical OWNER user and OWNER tenant; a valid foreign-user/foreign-tenant session fails closed;
 - unsafe remote requests must resolve to a live server-side session before CSRF acceptance;
 - browser receives only an opaque session cookie;
 - cookie is `Secure`, `HttpOnly`, `SameSite=Strict`;
@@ -93,7 +94,7 @@ Expected WP22A-owned files include:
 - `scripts/assess_v10_wp22a_owner_evidence.py`;
 - this execution contract, ADR-0012, machine-readable security contract and runbook;
 - the WP22A threat-model/security-boundary update;
-- deterministic WP22A unit/authority/evidence checks;
+- deterministic WP22A unit/authority/evidence checks, including the OWNER-path tenant-isolation regression;
 - dedicated WP22A self-hosted security and OWNER-evidence audit workflows.
 
 The existing local app factory remains accepted and must continue to pass inherited WP16-WP22 regression gates.
@@ -108,6 +109,7 @@ Before OWNER action is requested, CI must prove on the exact reviewed head:
 - RFC 2047 encoded Tailscale identity normalizes to the same exact decoded fingerprint;
 - private remote session bootstrap rotates sessions and sets secure cookie attributes;
 - remote session lifetime is bounded to 120-minute idle / 24-hour absolute;
+- a valid foreign-user/foreign-tenant Omni-CIO session is rejected on the private OWNER path and can only be replaced by a fresh verified OWNER bootstrap;
 - stolen session without matching outer OWNER identity rejected;
 - forged and expired sessions rejected before unsafe API execution;
 - foreign Origin/preflight rejected;
