@@ -39,18 +39,41 @@ This decision does not activate a public registration service. Telegram Login an
 Remote OWNER access requires all of the following:
 
 - existing server-side opaque session state;
-- a `Secure`, `HttpOnly`, `SameSite=Strict`, path-scoped session cookie;
-- a separate high-entropy CSRF token delivered only after successful private OWNER authentication;
+- a host-bound `__Host-...` session cookie with `Secure`, `HttpOnly`, `SameSite=Strict` and `Path=/`;
+- a separate host-bound `__Host-...` CSRF cookie containing a high-entropy token delivered only after successful private OWNER authentication;
 - unsafe remote requests require an exact same-origin HTTPS `Origin` and matching CSRF cookie/header token;
 - Host values outside exact loopback or the configured canonical tailnet host fail closed;
 - requests for the remote host that do not reach the backend through loopback fail closed;
 - CORS remains deny-by-default because no permissive CORS middleware is introduced;
-- successful remote responses emit HSTS, `X-Content-Type-Options: nosniff`, and a restrictive referrer policy;
-- login attempts and authenticated mutations use bounded rate limits.
+- successful remote responses emit HSTS, `X-Content-Type-Options: nosniff`, a restrictive referrer policy and `Cache-Control: no-store`;
+- login attempts and authenticated mutations use bounded rate limits;
+- remote logout/revoke-all deletes the host-bound remote cookies while the existing server-side revoke semantics invalidate the opaque session record.
 
 The browser never stores the session identifier in Web Storage and never receives a broker credential back from the backend.
 
-## 4. Authority boundaries
+The accepted session policy remains bounded: 12-hour idle lifetime and 30-day absolute lifetime unless a later reviewed security package changes it. Remembered login is therefore a revocable server-side session, not permanent device trust.
+
+## 4. Relevant OWASP ASVS 5.0 mapping
+
+WP22A uses the following ASVS 5.0 requirements as explicit design/test references. This mapping is a focused WP22A control map, **not** a claim of whole-product ASVS certification.
+
+| ASVS 5.0 control | WP22A evidence |
+|---|---|
+| V3.3.1 / V3.3.3 | Remote cookies use `__Host-` names, `Secure`, no Domain attribute and `Path=/`; the session cookie is also HttpOnly. |
+| V3.3.2 | Remote session and CSRF cookies use explicit `SameSite=Strict`. |
+| V3.4.1 | Remote responses include HSTS. |
+| V3.4.2 | No permissive CORS policy is introduced; cross-origin allow headers are absent by default. |
+| V3.4.4 / V3.4.5 | Remote responses include `nosniff` and a restrictive referrer policy. |
+| V3.5.1 / V3.5.2 / V3.5.3 | Unsafe functionality uses non-safe methods and requires exact HTTPS Origin plus an anti-forgery header/token; GET is not used for mutations. |
+| V6.1.1 | Login anti-automation is documented and bounded; monitoring GET paths are not locked out by the mutation limiter. |
+| V6.1.3 | Telegram/VK remain documented ordinary product authentication paths; private tailnet OWNER identity is explicitly a separate Personal-node access gate rather than an implicit provider merge. |
+| V7.1.1 | Idle and absolute session lifetimes are documented. |
+| V7.4.1 | Logout/revoke semantics invalidate server-side sessions and clear remote cookies. |
+| V13.2.2 | The Web runtime remains under the existing least-privilege `omni-cio-runtime` account and PostgreSQL SSPI role. |
+
+Relevant controls that belong to future Telegram/public activation remain locked to their owning work packages and are not marked satisfied merely because WP22A exists.
+
+## 5. Authority boundaries
 
 WP22A must preserve:
 
@@ -66,7 +89,7 @@ WP22A must preserve:
 
 `OMNI_V10_WEB_PRIVATE_REMOTE=1` enables only the reviewed private remote Web factory. It is not evidence that public ingress or public multi-user mode is enabled.
 
-## 5. Runtime-only configuration
+## 6. Runtime-only configuration
 
 Required runtime inputs for the private remote candidate are:
 
@@ -76,7 +99,9 @@ Required runtime inputs for the private remote candidate are:
 
 The actual OWNER login, broker credentials, Tailscale authentication material, certificate private keys, private portfolio data and full broker account identifiers must not be stored in GitHub or CI artifacts.
 
-## 6. Required deterministic checks
+The source-controlled OWNER gate derives the tailnet host and OWNER login fingerprint locally, refuses active Funnel/public ingress and starts the remote Web only as the accepted non-admin runtime identity. The raw login and Tailscale authentication material are not emitted as acceptance evidence.
+
+## 7. Required deterministic checks
 
 Before OWNER deployment evidence, CI must prove at minimum:
 
@@ -89,17 +114,23 @@ Before OWNER deployment evidence, CI must prove at minimum:
 - missing/mismatched CSRF rejected;
 - valid same-origin CSRF accepted;
 - login rate limit enforced;
-- session cookie is Secure/HttpOnly/SameSite=Strict;
+- remote session cookie is host-bound, Secure/HttpOnly/SameSite=Strict;
+- remote CSRF cookie is host-bound, Secure/SameSite=Strict and not HttpOnly so same-origin frontend code can echo the token header;
+- remote logout clears host-bound cookies and revokes the server-side session;
 - server-side session expiry remains effective;
 - cross-origin responses do not gain permissive CORS;
 - the existing local-only TrustedHost middleware still composes correctly behind the outer remote-access guard;
 - frontend Web API sends the CSRF header only when the CSRF cookie exists;
+- Windows provisioning/launcher scripts parse under Windows PowerShell 5.1 without applying changes in CI;
+- the source-controlled runtime launcher binds Uvicorn only to loopback and runs as the existing non-admin runtime account during OWNER apply;
 - full repository quality/security/Regression Shield remains green.
 
-## 7. OWNER evidence boundary
+## 8. OWNER evidence boundary
 
 CI cannot prove a real Lenovo is joined to the intended OWNER tailnet, that Tailscale Serve is configured privately rather than Funnel, or that a separate authorized OWNER device can reach the exact Web URL.
 
-After code, static checks, focused tests and authoritative CI are GREEN, WP22A may require a single reviewed OWNER-local/private rehearsal. Any such rehearsal must return only sanitized PASS/FAIL evidence and must not expose Tailscale credentials, raw OWNER login, broker credentials, full account IDs or private portfolio values.
+After code, static checks, focused tests and authoritative CI are GREEN, WP22A requires one reviewed OWNER-local/private rehearsal for the selected private remote candidate. The source-controlled gate must first prove exact implementation binding, loopback-only backend, private Serve state, no Funnel, OWNER identity binding and a real HTTPS server-side login/logout cycle. The OWNER then proves the exact link from a separate authorized phone/browser device.
+
+The rehearsal returns only sanitized PASS/FAIL evidence and must not expose Tailscale credentials, raw OWNER login, broker credentials, full account IDs or private portfolio values.
 
 Until that evidence and the WP22A Exit Gate are accepted, the current accepted Web remains local/private and Block F stays locked.
