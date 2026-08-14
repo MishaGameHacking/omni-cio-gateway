@@ -440,7 +440,7 @@ class DecisionPlanReadServiceV1:
             "p.plan_id, p.schema_version, p.identity_version, p.payload_sha256, "
             "p.created_at, pb.schema_ref, "
             "CASE WHEN octet_length(pb.payload) <= %s THEN pb.payload ELSE NULL END, "
-            "s.record_sha256 "
+            "s.source_payload_sha256 "
             "FROM omni_cio_v10.decisions d "
             "JOIN omni_cio_v10.portfolio_snapshots s "
             "ON s.tenant_id = d.tenant_id AND s.portfolio_id = d.portfolio_id "
@@ -553,7 +553,7 @@ class DecisionPlanReadServiceV1:
                 "portfolio_id": str(row[1]),
                 "policy_id": str(row[2]),
                 "snapshot_id": str(row[3]),
-                "snapshot_record_sha256": str(row[17]),
+                "snapshot_source_payload_sha256": str(row[17]),
                 "decision_schema_version": str(row[4]),
                 "decision_identity_version": int(row[5]),
                 "decision_payload_sha256": decision_payload_sha,
