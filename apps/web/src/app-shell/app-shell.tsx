@@ -3,10 +3,12 @@ import { Button, StatusBadge } from "../design-system/components";
 import type { OperationalState } from "../design-system/contracts";
 import {
   logoutCurrentSession,
+  privateTailnetLogin,
   privateTestLogin,
   providerLoginUrl,
   readHealth,
   readPrivateAcceptanceStatus,
+  readPrivateTailnetStatus,
   readProviders,
   readSession,
 } from "./api";
@@ -32,12 +34,16 @@ function LoginScreen({
   providers,
   apiUnavailable,
   privateAcceptanceEnabled,
+  privateTailnetEnabled,
   onPrivateAcceptance,
+  onPrivateTailnet,
 }: {
   providers: ProviderView[];
   apiUnavailable: boolean;
   privateAcceptanceEnabled: boolean;
+  privateTailnetEnabled: boolean;
   onPrivateAcceptance: () => void;
+  onPrivateTailnet: () => void;
 }) {
   const provider = (name: "telegram" | "vk_id") => providers.find((item) => item.provider === name);
   const telegram = provider("telegram");
@@ -52,11 +58,15 @@ function LoginScreen({
         <div className="login-actions">
           <a className="ds-button ds-button--primary" aria-disabled={!telegram?.enabled} href={telegram?.enabled ? providerLoginUrl("telegram") : undefined}>Продолжить через Telegram</a>
           <a className="ds-button ds-button--secondary" aria-disabled={!vk?.enabled} href={vk?.enabled ? providerLoginUrl("vk_id") : undefined}>Продолжить через VK ID</a>
+          {privateTailnetEnabled ? (
+            <Button variant="secondary" onClick={onPrivateTailnet}>OWNER private access</Button>
+          ) : null}
           {privateAcceptanceEnabled ? (
             <Button variant="secondary" onClick={onPrivateAcceptance}>Локальный OWNER acceptance</Button>
           ) : null}
         </div>
-        <p className="shell-caption">Provider buttons остаются fail-closed до reviewed local/private provider configuration.</p>
+        <p className="shell-caption">Provider buttons остаются fail-closed до reviewed provider configuration.</p>
+        {privateTailnetEnabled ? <p className="shell-caption">Private access использует уже аутентифицированную tailnet identity и не является публичным login provider.</p> : null}
         {privateAcceptanceEnabled ? <p className="shell-caption">Локальный OWNER acceptance виден только на loopback и не является третьим login provider.</p> : null}
       </section>
     </main>
@@ -67,6 +77,7 @@ export function ApplicationShell() {
   const [session, setSession] = useState<WebSessionView | null>(null);
   const [providers, setProviders] = useState<ProviderView[]>([]);
   const [privateAcceptanceEnabled, setPrivateAcceptanceEnabled] = useState(false);
+  const [privateTailnetEnabled, setPrivateTailnetEnabled] = useState(false);
   const [sessionUnavailable, setSessionUnavailable] = useState(false);
   const [path, setPath] = useState<AppRoutePath>(currentPath);
   const [health, setHealth] = useState<HealthView | null>(null);
@@ -90,6 +101,9 @@ export function ApplicationShell() {
     void readPrivateAcceptanceStatus()
       .then((value) => setPrivateAcceptanceEnabled(value.enabled))
       .catch(() => setPrivateAcceptanceEnabled(false));
+    void readPrivateTailnetStatus()
+      .then((value) => setPrivateTailnetEnabled(value.enabled))
+      .catch(() => setPrivateTailnetEnabled(false));
   }, [refreshSession]);
 
   useEffect(() => {
@@ -132,6 +146,12 @@ export function ApplicationShell() {
         providers={providers}
         apiUnavailable={sessionUnavailable}
         privateAcceptanceEnabled={privateAcceptanceEnabled}
+        privateTailnetEnabled={privateTailnetEnabled}
+        onPrivateTailnet={() => {
+          void privateTailnetLogin()
+            .then(refreshSession)
+            .catch(() => setSessionUnavailable(true));
+        }}
         onPrivateAcceptance={() => {
           void privateTestLogin()
             .then(refreshSession)
