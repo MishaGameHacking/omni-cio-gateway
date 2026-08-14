@@ -15,6 +15,7 @@ import { DecisionPlanPage } from "./decision-plan";
 import { RoutePage } from "./pages";
 import { PortfolioDashboardPage } from "./portfolio-dashboard";
 import { ResearchDossiersPage } from "./research-dossiers";
+import { SystemAdminPage } from "./system-admin";
 import { WatchtowerIncidentsPage } from "./watchtower-incidents";
 
 function currentPath(): AppRoutePath {
@@ -173,6 +174,8 @@ export function ApplicationShell() {
           <ResearchDossiersPage />
         ) : path === "/risks" || path === "/decisions" || path === "/plans" ? (
           <DecisionPlanPage focus={path === "/risks" ? "risks" : path === "/decisions" ? "decisions" : "plans"} />
+        ) : path === "/system" ? (
+          <SystemAdminPage healthState={healthState} freshness={health?.freshness ?? "UNKNOWN"} />
         ) : (
           <RoutePage
             path={path}
