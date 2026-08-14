@@ -128,6 +128,8 @@ OMNI_V10_TAILSCALE_OWNER_LOGIN_SHA256=<sha256 fingerprint>
 
 The fingerprint is derived locally from the normalized OWNER Tailscale login. The raw login is not a repository setting or output field. The private remote middleware rechecks this OWNER fingerprint on every remote request except the non-sensitive readiness/status probe, so possession of a copied Web session cookie or copied session+CSRF pair is not sufficient when the request arrives with a wrong or missing Tailscale user identity.
 
+WP22A uses a remote-only server-session lifetime of **2 hours idle / 24 hours absolute**. A successful private OWNER authentication revokes any previously presented remote session token before creating the replacement token, so re-authentication rotates the session identifier instead of extending an old bearer indefinitely. The accepted local Web session baseline is not changed by this remote policy.
+
 The application factory is:
 
 ```text
@@ -187,11 +189,11 @@ From an authorized OWNER device inside the intended tailnet:
 1. Open the exact HTTPS tailnet URL printed locally by the provisioning gate.
 2. The application shows `OWNER private access` only when the request reached the backend through the reviewed private remote path.
 3. Select the private access action. The backend binds the Tailscale identity to the configured OWNER fingerprint.
-4. A successful authentication creates a server-side session and host-bound Secure/HttpOnly/SameSite session cookie; subsequent remote data/API requests continue to require the matching Tailscale OWNER identity in addition to the session.
+4. A successful authentication creates a rotated server-side session and host-bound Secure/HttpOnly/SameSite session cookie bounded by the 2-hour idle / 24-hour absolute remote policy; subsequent remote data/API requests continue to require the matching Tailscale OWNER identity in addition to the session.
 5. Navigate through Portfolio, Watchtower, Research, Decisions/Risk/Plans and System to prove the existing single Web App is reachable remotely.
 6. Logout, reopen the URL and verify the server-side session state changes as expected.
 
-A wrong tailnet identity, a copied session or session+CSRF replayed under a wrong/missing tailnet identity, direct non-loopback request, hostile Host/Origin, missing CSRF token or excessive login attempts must fail closed. Those negative browser paths are deterministic CI obligations. The runner-local spoof path is separately proven by the source-controlled runner auditor; the OWNER is not asked to imitate it manually.
+A wrong tailnet identity, a copied session or session+CSRF replayed under a wrong/missing tailnet identity, a previously rotated-away session token, direct non-loopback request, hostile Host/Origin, missing CSRF token or excessive login attempts must fail closed. Those negative browser paths are deterministic CI obligations. The runner-local spoof path is separately proven by the source-controlled runner auditor; the OWNER is not asked to imitate it manually.
 
 Only after steps 1–6 have genuinely passed, finalize the local sanitized evidence:
 
