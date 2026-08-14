@@ -17,8 +17,9 @@ from apps.api.app import (
 )
 from omni_cio.persistence.migration import (
     ConnectionLike,
-    apply_migrations,
     connect_postgres,
+    discover_migrations,
+    require_postgres_18,
 )
 from omni_cio.web.api_v1 import SESSION_COOKIE, WebApiServicesV1, create_web_api
 from omni_cio.web.broker_vault_v1 import ReadBrokerConnectionVaultV1
@@ -77,6 +78,23 @@ def _forbid_enabled_environment(name: str) -> None:
         raise RuntimeError(f"{name}_MUST_REMAIN_DISABLED")
 
 
+def _require_read_only_migration_state(connection: ConnectionLike) -> None:
+    """Verify the provisioned schema without granting runtime DDL authority."""
+
+    require_postgres_18(connection)
+    expected = tuple(
+        (migration.version, migration.name, migration.sha256)
+        for migration in discover_migrations()
+    )
+    rows = connection.execute(
+        "SELECT version, name, sha256 "
+        "FROM omni_cio_v10.schema_migrations ORDER BY version"
+    ).fetchall()
+    actual = tuple((int(row[0]), str(row[1]), str(row[2])) for row in rows)
+    if actual != expected:
+        raise RuntimeError("WP22A_DATABASE_MIGRATION_STATE_INVALID")
+
+
 def create_private_remote_app() -> FastAPI:
     """Create the WP22A Tailscale-Serve-only Personal Web composition.
 
@@ -101,7 +119,7 @@ def create_private_remote_app() -> FastAPI:
 
     raw_connection = connect_postgres("")
     _configure_long_lived_web_connection(raw_connection)
-    apply_migrations(raw_connection)
+    _require_read_only_migration_state(raw_connection)
     connection: ConnectionLike = _SerializedWebConnection(raw_connection)
     sessions = PostgresWebSessionRegistryV1(
         connection,

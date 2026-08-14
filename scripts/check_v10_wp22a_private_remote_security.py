@@ -96,6 +96,10 @@ def main() -> int:
     assert "idle_lifetime=timedelta(hours=2)" in remote_app
     assert "absolute_lifetime=timedelta(hours=24)" in remote_app
     assert "sessions=sessions" in remote_app
+    assert "apply_migrations" not in remote_app
+    assert "_require_read_only_migration_state" in remote_app
+    assert "select version, name, sha256" in remote_app
+    assert "discover_migrations" in remote_app
 
     security = _source("omni_cio/web/remote_security_v1.py").lower()
     for required in (
