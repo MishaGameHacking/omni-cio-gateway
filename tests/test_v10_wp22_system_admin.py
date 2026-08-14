@@ -52,8 +52,15 @@ class _Connection:
             return _Cursor([(NOW,)])
         if "job_type = %s" in sql:
             return _Cursor([("SUCCEEDED", None, NOW)])
+        if "error_class IS NOT NULL" in sql:
+            rows = [
+                (row[0], row[1], row[4], row[5])
+                for row in self.jobs
+                if row[4] is not None
+            ]
+            return _Cursor(rows[: int(values[1])])
         if "FROM omni_cio_v10.jobs WHERE tenant_id" in sql:
-            return _Cursor(self.jobs)
+            return _Cursor(self.jobs[: int(values[1])])
         raise AssertionError(f"unexpected query: {sql}")
 
     def transaction(self) -> Any:
@@ -92,6 +99,7 @@ def _service(
 ) -> SystemAdminReadServiceV1:
     monkeypatch.delenv("REAL_TRADING_ENABLED", raising=False)
     monkeypatch.delenv("WATCHTOWER_ENABLED", raising=False)
+    monkeypatch.delenv("OMNI_V10_LAST_DEPLOY_AT", raising=False)
     web_dist = tmp_path / "apps" / "web" / "dist"
     web_dist.mkdir(parents=True)
     index = web_dist / "index.html"
@@ -99,12 +107,12 @@ def _service(
     monkeypatch.setattr(
         system_admin_v1,
         "discover_migrations",
-        lambda: (SimpleNamespace(version="0003", sha256="f" * 64),),
+        lambda: (SimpleNamespace(version=3, sha256="f" * 64),),
     )
     monkeypatch.setattr(
         system_admin_v1,
         "current_migration_state",
-        lambda connection: (("0003", "f" * 64),),
+        lambda connection: ((3, "f" * 64),),
     )
     monkeypatch.setattr(system_admin_v1.shutil, "which", lambda name: None)
     gib = 1024**3
@@ -151,8 +159,12 @@ def test_wp22_status_is_bounded_tenant_scoped_and_secret_free(
 
     assert payload["schema_version"] == "1.0.0"
     assert payload["database"]["exact_migration_state"] is True
+    assert payload["database"]["current_migration"] == "0003"
     assert payload["backup"]["rpo_minutes"] == 60
     assert payload["backup"]["rto_minutes"] == 240
+    assert payload["release"]["last_deploy_at"] is None
+    assert payload["release"]["last_deploy_source"] == "unavailable"
+    assert payload["release"]["web_artifact_at"] is not None
     assert payload["safety"] == {
         "mode": "READ_ONLY_DIAGNOSTIC",
         "real_execution_enabled": False,
@@ -179,6 +191,24 @@ def test_wp22_status_is_bounded_tenant_scoped_and_secret_free(
     assert "broker-account" not in serialized
 
 
+def test_wp22_deploy_time_requires_explicit_trusted_observation(
+    monkeypatch: Any,
+    tmp_path: Path,
+) -> None:
+    service = _service(
+        monkeypatch,
+        tmp_path,
+        connection=_Connection(),
+        broker_repository=_BrokerRepository(),
+    )
+    monkeypatch.setenv("OMNI_V10_LAST_DEPLOY_AT", "2026-08-14T09:20:00Z")
+
+    payload = service.read(tenant_id=OWNER_TENANT_ID)
+
+    assert payload["release"]["last_deploy_at"] == "2026-08-14T09:20:00+00:00"
+    assert payload["release"]["last_deploy_source"] == "omni_v10_last_deploy_at"
+
+
 def test_wp22_degraded_state_masks_internal_failures_and_blocks_low_disk(
     monkeypatch: Any,
     tmp_path: Path,
@@ -195,7 +225,7 @@ def test_wp22_degraded_state_masks_internal_failures_and_blocks_low_disk(
     monkeypatch.setattr(
         system_admin_v1,
         "current_migration_state",
-        lambda connection: (("0002", "e" * 64),),
+        lambda connection: ((2, "e" * 64),),
     )
 
     payload = service.read(tenant_id=OWNER_TENANT_ID)
