@@ -50,6 +50,29 @@ def main() -> int:
     assert boundary["backend_must_remain_loopback"] is True
     assert boundary["runtime_config_acl"] == "SYSTEM_ADMINS_RUNTIME_READ_ONLY_ONLY"
 
+    acceptance_runtime = contract["acceptance_runtime"]
+    assert acceptance_runtime["principal"] == "omni-cio-runtime"
+    assert acceptance_runtime["principal_must_be_non_admin"] is True
+    assert acceptance_runtime["scheduled_task_logon"] == "PASSWORD_EPHEMERAL_LOCAL_ONLY"
+    assert acceptance_runtime["scheduled_task_s4u_allowed"] is False
+    assert acceptance_runtime["postgres_authentication"] == "SSPI"
+    assert acceptance_runtime["postgres_trust_allowed"] is False
+    assert acceptance_runtime["database_password_persisted"] is False
+    assert acceptance_runtime["cleanup_after_rehearsal_required"] is True
+
+    owner_evidence = contract["owner_evidence"]
+    assert owner_evidence["physical_rehearsal_required"] is True
+    assert owner_evidence["tailnet_policy_owner_only_confirmation_required"] is True
+    assert owner_evidence["owner_remote_https_confirmation_required"] is True
+    assert owner_evidence["non_owner_denial_deterministic_required"] is True
+    assert owner_evidence["physical_non_owner_identity_required"] is False
+    assert owner_evidence["local_fallback_confirmation_required"] is True
+    assert owner_evidence["private_config_runner_read_allowed"] is False
+    assert owner_evidence["sanitized_evidence_runner_read_allowed"] is True
+    assert owner_evidence["sanitized_evidence_runner_write_allowed"] is False
+    assert owner_evidence["exact_head_binding_required"] is True
+    assert owner_evidence["source_hash_binding_required"] is True
+
     authority = contract["authority"]
     assert authority["gateway_entrypoint"] == "app:app"
     assert authority["trading_methods"] is False
@@ -146,8 +169,8 @@ def main() -> int:
     for required in (
         "TailnetPolicyNarrowConfirmed",
         "OwnerRemoteCabinetConfirmed",
-        "NonOwnerDeniedConfirmed",
         "LocalFallbackConfirmed",
+        "non_owner_identity_denial_deterministic = $true",
         "serve_disabled_after_rehearsal",
         "temporary_runtime_cleaned",
         "raw_owner_identity_recorded = $false",
@@ -155,6 +178,7 @@ def main() -> int:
         "broker_secret_recorded = $false",
     ):
         assert required in finalizer
+    assert "NonOwnerDeniedConfirmed" not in finalizer
     assert "owner_login" not in finalizer.lower()
     assert "portfolio_total" not in finalizer.lower()
 
@@ -170,7 +194,15 @@ def main() -> int:
     assert "OWNER_PRIVATE_REMOTE_SANITIZED" in assessor
     assert "source hash mismatch" in assessor
     assert "runner_private_config_read_allowed" in assessor
+    assert "non_owner_identity_denial_deterministic" in assessor
     assert "public_ingress" in assessor
+
+    validator = _source(
+        "infrastructure/windows/validate_wp22a_private_runtime_helper.ps1"
+    )
+    assert "Wp22aAccountRights" in validator
+    assert "helper_compiled = $true" in validator
+    assert "mutation_performed = $false" in validator
 
     owner_workflow = _source(
         ".github/workflows/v10-wp22a-owner-private-remote-audit.yml"
