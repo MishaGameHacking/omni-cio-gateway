@@ -1,7 +1,7 @@
 # Omni-CIO V10 — Security Boundaries
 
-Status: **WP0 architecture freeze**  
-Runtime effect: **none until later Exit Gates**
+Status: **WP22A boundary update pending acceptance**  
+Runtime effect: **WP22A private-remote path remains gated until its Exit Gate**
 
 ## 1. Objective
 
@@ -119,17 +119,27 @@ Untrusted documents/news are data, never instructions.
 
 ### Zone H — External Web/Telegram ingress
 
-Before WP22A security gate, V10 Web remains local/private.
+Before the WP22A Exit Gate, V10 Web remains local/private and public Internet ingress remains disabled.
 
-External access later requires:
+The WP22A Personal implementation decision, pending acceptance, selects this private path:
 
-- reviewed TLS/certificate lifecycle;
-- OWNER authentication independent of a deep-link URL;
-- server-side session controls;
-- CSRF/Origin/Host/CORS controls;
-- rate limiting/abuse handling;
-- replay/staleness validation for Telegram Mini App identity;
-- recent/step-up auth for Real plan approval.
+`OWNER tailnet device -> Tailscale HTTPS/Serve -> loopback-only Omni-CIO Web runtime`
+
+The corresponding boundary requires:
+
+- Tailscale Serve only for the Personal baseline; Funnel/public routing is forbidden;
+- backend launcher bound to `127.0.0.1` plus an independent application-level loopback-peer check;
+- exact `*.ts.net` Host and exact locally fingerprinted Serve OWNER identity;
+- local private configuration ACL limited to SYSTEM/Administrators plus read-only runtime access;
+- server-side sessions with bounded 120-minute idle / 24-hour absolute lifetime, rotation and revocation;
+- `Secure`/`HttpOnly`/`SameSite=Strict` cookie;
+- exact Origin, Host and CORS-deny controls plus live-session validation and CSRF for unsafe requests;
+- rate limiting/abuse handling without locking ordinary monitoring GETs;
+- HSTS/no-store/nosniff/anti-frame/referrer response hardening;
+- replay/staleness validation remains mandatory before any future Telegram Mini App identity can become authoritative;
+- recent/step-up auth remains mandatory before any future Real plan approval surface can be published.
+
+The selected private transport is not a third Omni-CIO product identity provider and does not enable public multi-user mode, broker-write authority or Real execution.
 
 ## 3. Data classifications
 
@@ -180,6 +190,8 @@ Possible broker submit   != safe retry permission
 Submitted order          != filled order
 AI research text         != canonical evidence
 Lenovo possession        != plaintext secret disclosure
+Private remote reach     != public Internet exposure
+Tailscale identity       != broker/Real approval authority
 ```
 
 ## 5. Kill-switch hierarchy
