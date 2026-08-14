@@ -11,6 +11,7 @@ import {
   readSession,
 } from "./api";
 import { appRoutes, isKnownRoute, type AppRoutePath, type HealthView, type ProviderView, type WebSessionView } from "./contracts";
+import { DecisionPlanPage } from "./decision-plan";
 import { RoutePage } from "./pages";
 import { PortfolioDashboardPage } from "./portfolio-dashboard";
 import { ResearchDossiersPage } from "./research-dossiers";
@@ -170,6 +171,8 @@ export function ApplicationShell() {
           <WatchtowerIncidentsPage />
         ) : path === "/research" ? (
           <ResearchDossiersPage />
+        ) : path === "/risks" || path === "/decisions" || path === "/plans" ? (
+          <DecisionPlanPage focus={path === "/risks" ? "risks" : path === "/decisions" ? "decisions" : "plans"} />
         ) : (
           <RoutePage
             path={path}
