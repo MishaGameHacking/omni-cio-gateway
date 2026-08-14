@@ -29,6 +29,8 @@ apps.api.wp22a_remote:create_private_remote_app
 
 The backend must not listen on a LAN/Tailscale/public interface when Tailscale identity headers are used for the private OWNER gate.
 
+Because a second local process could otherwise attempt to forge proxy identity headers against the same loopback listener, WP22A also installs an OWNER-admin Windows Firewall outbound block for the exact GitHub Actions runner service identity to the WP22A loopback backend port. This is an extension of the accepted WP6 runner/runtime privilege separation, not a new authentication provider.
+
 ## Pre-application requirements
 
 Do not perform the OWNER-local step until the reviewed WP22A PR has passed its code/static/security gates.
@@ -37,6 +39,7 @@ The Lenovo must have:
 
 - the reviewed exact WP22A Git head;
 - the accepted PostgreSQL/Web runtime baseline;
+- the accepted non-admin GitHub self-hosted runner identity from WP6;
 - Tailscale installed and already joined to the intended OWNER-controlled tailnet;
 - HTTPS/Serve support available in the installed Tailscale version;
 - no active Funnel/public configuration on the Personal node;
@@ -45,7 +48,7 @@ The Lenovo must have:
 
 The phone or other OWNER browser device must join the same authorized tailnet before the separate-device rehearsal.
 
-Never send Tailscale authentication keys, provider credentials, OWNER login, broker credentials or private portfolio values to GitHub/CI/chat.
+Never send Tailscale authentication keys, provider credentials, OWNER login, runner identity/SID, broker credentials or private portfolio values to GitHub/CI/chat.
 
 ### HTTPS certificate privacy / OWNER consent
 
@@ -57,11 +60,12 @@ This is a real external-account/privacy consent boundary. Engineering does not s
 
 ## Source-controlled deployment and evidence boundary
 
-WP22A adds three reviewed Windows scripts:
+WP22A adds four reviewed Windows scripts:
 
 ```text
 infrastructure/windows/run_wp22a_private_remote_runtime.ps1
 infrastructure/windows/provision_wp22a_private_remote_access.ps1
+infrastructure/windows/audit_wp22a_runner_loopback.ps1
 infrastructure/windows/finalize_wp22a_owner_evidence.ps1
 ```
 
@@ -80,21 +84,32 @@ The provisioning gate:
 - reuses the accepted WP15/WP17 Web deployment and broker READ-vault boundary instead of creating a second Web stack;
 - derives the local `*.ts.net` DNS name and OWNER Tailscale login fingerprint from local Tailscale status without writing the raw login to GitHub;
 - rejects tagged nodes, active Funnel/public ingress and unrelated existing Serve configuration;
-- installs a limited scheduled task with restart-on-failure and startup trigger;
+- discovers the exact GitHub Actions runner service identity locally and rejects a LocalSystem runner;
+- installs an outbound Windows Firewall block for that exact runner SID to `127.0.0.1:<web-port>` and verifies the rule's user/address/port binding;
+- installs a limited remote scheduled task with restart-on-failure and startup trigger;
 - verifies that the Web listener is loopback-only;
 - configures Tailscale Serve in background mode to the loopback Web port;
 - performs a real HTTPS OWNER identity/session/login/logout probe through Serve;
 - still leaves a separate phone/browser reachability rehearsal as OWNER evidence.
 
+The runner auditor:
+
+- is intended to execute later as the actual non-admin self-hosted GitHub runner identity;
+- requires the remote WP22A task and loopback listener to be live;
+- verifies the runner-bound firewall rule without emitting the raw runner identity or SID;
+- makes a real TCP connection attempt from the runner to `127.0.0.1:<web-port>` and requires that connection to be denied;
+- fails WP22A if the ordinary CI runner can reach the backend directly.
+
 The finalizer:
 
 - can run only after the OWNER has physically opened the HTTPS link from a separate authorized phone/browser and confirmed logout/session revocation;
 - re-runs the non-mutating live `-Verify` gate on the exact clean reviewed head;
+- requires the runner-loopback firewall binding to remain present;
 - writes only `C:\ProgramData\OmniCIO\wp22a\owner-rehearsal.sanitized.local.json`;
-- binds the evidence to the exact Git SHA and SHA-256 fingerprints of the reviewed security/runtime/evidence implementation;
-- stores no raw OWNER login, private `*.ts.net` URL, Tailscale authentication material, broker secret, full account ID or private portfolio payload.
+- binds the evidence to the exact Git SHA and SHA-256 fingerprints of the reviewed security/runtime/runner-audit/evidence implementation;
+- stores no raw OWNER login, runner identity/SID, private `*.ts.net` URL, Tailscale authentication material, broker secret, full account ID or private portfolio payload.
 
-CI cannot synthesize this OWNER evidence. The dedicated OWNER audit only validates the local file and uploads a short-lived sanitized derivative.
+CI cannot synthesize this OWNER evidence. The dedicated OWNER audit first requires the real local file, then independently proves runner loopback denial, then validates and uploads only a short-lived sanitized derivative.
 
 ## Private runtime configuration
 
@@ -116,9 +131,9 @@ apps.api.wp22a_remote:create_private_remote_app
 
 The Web process remains bound to `127.0.0.1` only.
 
-## Tailscale Serve boundary
+## Tailscale Serve and local-process boundary
 
-The reviewed target is Tailscale **Serve**, not Funnel. Serve proxies the local loopback Web service into the private tailnet HTTPS endpoint. Current Tailscale CLI documentation defines `tailscale serve --bg <target>` for background sharing and `tailscale serve status` for verification; the installed client remains the runtime source of truth if CLI syntax changes again.
+The reviewed target is Tailscale **Serve**, not Funnel. Serve proxies the local loopback Web service into the private tailnet HTTPS endpoint. The installed Tailscale client remains the runtime source of truth for exact CLI behavior.
 
 The provisioning gate fails closed rather than enabling Funnel. Before acceptance it verifies all of the following locally:
 
@@ -127,9 +142,12 @@ The provisioning gate fails closed rather than enabling Funnel. Before acceptanc
 - the Serve route is present only after the backend is ready;
 - dedicated Funnel status does not report public exposure;
 - the application Web process itself is not listening on a non-loopback address;
+- the ordinary GitHub runner has an exact outbound user-scoped deny rule to the backend port;
 - a real HTTPS request through Serve receives the expected OWNER identity and can create/revoke a server-side session.
 
-## OWNER-local commands — only after exact-head CI GREEN
+The later self-hosted OWNER audit provides the second half of this boundary: while the WP22A runtime is still live, the actual runner identity must fail a direct TCP connection attempt to the loopback backend. A configured firewall rule without a successful negative runner probe is not Exit-Gate evidence.
+
+## OWNER-local commands — only after exact-head non-OWNER CI GREEN
 
 From an elevated PowerShell in the exact clean reviewed checkout, the reviewed apply command is:
 
@@ -153,7 +171,9 @@ Rollback is:
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\infrastructure\windows\provision_wp22a_private_remote_access.ps1" -ExpectedImplementationSha "<EXACT_REVIEWED_HEAD>" -Cleanup -AsJson
 ```
 
-Cleanup disables the WP22A Serve route and remote task and attempts to restart the accepted local Web task. It does not enable Funnel as a fallback.
+Cleanup does **not** merely restart the pre-cutover WP15 scheduled task, because WP22A rotates the runtime-account password when registering its own task and the older task credential may therefore be stale. Cleanup instead disables Serve, removes the WP22A task and runner firewall rule, invokes the accepted WP15 Cleanup path, and recreates/starts the accepted local Web runtime through WP15 Apply with a fresh runtime credential and its own readiness checks. It never enables Funnel as a fallback.
+
+The same reconstruction is attempted automatically if `-Apply` fails after cutover. If the remote apply and the local-runtime reconstruction both fail, the provisioner reports a dedicated rollback failure and WP22A remains blocked.
 
 ## Expected phone/browser behavior
 
@@ -166,7 +186,7 @@ From an authorized OWNER device inside the intended tailnet:
 5. Navigate through Portfolio, Watchtower, Research, Decisions/Risk/Plans and System to prove the existing single Web App is reachable remotely.
 6. Logout, reopen the URL and verify the server-side session state changes as expected.
 
-A wrong tailnet identity, direct backend request, hostile Host/Origin, missing CSRF token or excessive login attempts must fail closed. These negative paths are deterministic CI obligations; the OWNER is not asked to perform hostile tests manually on the phone.
+A wrong tailnet identity, direct non-loopback request, hostile Host/Origin, missing CSRF token or excessive login attempts must fail closed. Those negative browser paths are deterministic CI obligations. The runner-local spoof path is separately proven by the source-controlled runner auditor; the OWNER is not asked to imitate it manually.
 
 Only after steps 1–6 have genuinely passed, finalize the local sanitized evidence:
 
@@ -176,6 +196,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\infrastructure\window
 
 The confirmation switches are OWNER assertions about physical observations and must never be used unless the separate-device rehearsal was actually performed.
 
+After the finalizer succeeds, the dedicated GitHub OWNER audit must be run on that exact implementation head while the remote runtime remains live. That workflow independently proves that the actual CI runner cannot connect directly to the loopback backend before it validates the OWNER file.
+
 ## Sanitized acceptance evidence
 
 Return only facts similar to:
@@ -184,6 +206,7 @@ Return only facts similar to:
 WP22A OWNER private remote gate: PASS
 Exact implementation binding: True
 Backend loopback-only: True
+CI runner loopback firewall: True
 Tailscale Serve private: True
 Funnel/public ingress: False
 OWNER identity binding: True
@@ -192,14 +215,15 @@ Phone HTTPS reachability: True
 Logout/session revoke: True
 ```
 
-Do not include the actual tailnet login, authentication keys, broker token, full account ID, portfolio totals or private position details. The private `*.ts.net` URL does not need to be sent back to engineering if the sanitized booleans are sufficient.
+Do not include the actual tailnet login, runner name/SID, authentication keys, broker token, full account ID, portfolio totals or private position details. The private `*.ts.net` URL does not need to be sent back to engineering if the sanitized booleans are sufficient.
 
 ## Rollback
 
 If the private remote path is unsafe or unavailable:
 
 - run the reviewed `-Cleanup` mode;
-- keep the existing local/private Web path intact;
+- require the accepted WP15 local Web reconstruction to pass instead of assuming a stale task is usable;
 - keep `REAL_TRADING_ENABLED=false`;
+- keep `trading_methods=false`;
 - do not substitute Funnel/public exposure as a workaround;
-- preserve the last accepted V9 rollback and current main until WP22A is accepted.
+- preserve the protected V9 rollback and current accepted `main` until WP22A is accepted.
