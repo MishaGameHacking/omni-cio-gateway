@@ -30,32 +30,39 @@ The selected transport does not change the accepted Omni-CIO identity model. Tel
 ### Transport
 
 - backend bind remains `127.0.0.1`;
+- the application also rejects a non-loopback backend peer as defense in depth;
 - HTTPS terminates at Tailscale Serve on the node's exact `*.ts.net` hostname;
 - Tailscale Funnel is disabled/not permitted for the Omni-CIO service;
 - no inbound router/firewall port opening is introduced;
 - no Cloudflare/public reverse proxy is required for the Personal baseline;
-- exact host configuration is local runtime state and is not guessed by the application.
+- exact host configuration is local runtime state and is not guessed by the application;
+- runtime private-remote configuration is ACL-restricted to SYSTEM/Administrators and read-only runtime access; arbitrary principals/CI runner access are rejected by verification.
 
 ### Identity and session
 
 - every private-remote request requires the exact configured Tailscale OWNER login fingerprint;
+- the `Tailscale-User-Login` value is RFC 2047 decoded when necessary before exact fingerprint comparison;
 - raw OWNER login is not committed to GitHub/CI evidence;
 - private remote bootstrap rotates the prior browser session and creates a revocable server-side Omni-CIO session;
+- remote session idle lifetime is exactly 120 minutes and absolute lifetime is exactly 24 hours;
+- unsafe remote requests must resolve to a live server-side session before CSRF acceptance;
 - browser receives only an opaque session cookie;
 - cookie is `Secure`, `HttpOnly`, `SameSite=Strict`;
 - logout/revoke-all semantics continue to use accepted session authority;
 - Tailscale is not returned from `/auth/providers` and is not an ordinary third product login provider.
 
-### Request security
+### Request/response security
 
 - exact `Host` allowlist;
 - CORS deny-by-default;
-- unsafe methods require exact HTTPS `Origin`;
+- unsafe methods require exact HTTPS `Origin` with no permissive suffix/trailing-slash normalization;
 - unsafe authenticated methods require a session-bound CSRF token delivered by a no-store same-origin endpoint;
 - unsafe requests without UI-origin proof fail closed;
+- forged or expired session cookies remain rejected even when the caller can derive the public CSRF transform from the cookie value;
 - private login and mutation APIs have bounded per-minute rates;
 - ordinary monitoring GETs are not blocked by mutation lockout;
-- Telegram Mini App `initData` cannot grant OWNER scope before the Telegram owning WP implements freshness/replay validation.
+- Telegram Mini App `initData` cannot grant OWNER scope before the Telegram owning WP implements freshness/replay validation;
+- private remote responses add `Strict-Transport-Security: max-age=31536000`, `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` and `Referrer-Policy: no-referrer` unless an owning response already sets the relevant header.
 
 ### Authority boundaries
 
@@ -80,6 +87,7 @@ Expected WP22A-owned files include:
 - `infrastructure/windows/run_wp22a_private_remote_runtime.ps1`;
 - `infrastructure/windows/configure_wp22a_tailscale_serve.ps1`;
 - this execution contract, ADR-0012, machine-readable security contract and runbook;
+- the WP22A threat-model/security-boundary update;
 - deterministic WP22A unit/authority checks;
 - dedicated WP22A self-hosted audit workflow.
 
@@ -89,19 +97,24 @@ The existing local app factory remains accepted and must continue to pass inheri
 
 Before OWNER action is requested, CI must prove on the exact reviewed head:
 
+- non-loopback backend peer rejected even with otherwise valid identity headers;
 - invalid host rejected;
 - missing/wrong Tailscale OWNER identity rejected;
+- RFC 2047 encoded Tailscale identity normalizes to the same exact decoded fingerprint;
 - private remote session bootstrap rotates sessions and sets secure cookie attributes;
+- remote session lifetime is bounded to 120-minute idle / 24-hour absolute;
 - stolen session without matching outer OWNER identity rejected;
-- expired session rejected;
+- forged and expired sessions rejected before unsafe API execution;
 - foreign Origin/preflight rejected;
 - unsafe direct API call without Origin rejected;
 - missing/invalid CSRF rejected;
-- valid session-bound CSRF accepted for synthetic mutation;
+- valid live session-bound CSRF accepted for synthetic mutation;
+- private remote security response headers are present;
 - login and mutation rate limits enforced;
 - monitoring GET path is not self-DoS rate-limited;
 - Telegram `initData` replay/staleness authority unavailable before its owning WP;
 - runtime launcher binds only `127.0.0.1`;
+- runtime private-config ACL verification rejects non-approved principals;
 - Funnel/public-ingress markers are absent from the allowed implementation path;
 - no broker-write / Real authority imports or flags are added;
 - Ruff/format/mypy, Web typecheck/lint/tests/build, dependency audit, repository guards and authoritative Regression Shield remain GREEN.
@@ -115,7 +128,8 @@ CI cannot prove the OWNER's real tailnet/device identity or remote browser path.
 - tailnet policy is deny-by-default/narrow and grants only the OWNER access to the Lenovo HTTPS service;
 - Tailscale Serve maps HTTPS 443 to `http://127.0.0.1:8765`;
 - Funnel is not active for the node/service;
-- local config contains only host plus OWNER login fingerprint, not raw credentials;
+- local config contains only host plus exact OWNER-login fingerprint, not raw credentials;
+- private config ACL matches the reviewed SYSTEM/Administrators/runtime-read-only boundary;
 - private remote runtime runs as `omni-cio-runtime`, non-admin;
 - a separate OWNER device can open the cabinet over tailnet HTTPS;
 - wrong/non-OWNER tailnet identity does not gain the private session;
