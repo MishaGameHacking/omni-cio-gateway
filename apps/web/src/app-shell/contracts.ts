@@ -33,6 +33,10 @@ export interface PrivateAcceptanceStatusView {
   enabled: boolean;
 }
 
+export interface PrivateRemoteAcceptanceStatusView {
+  enabled: boolean;
+}
+
 export interface HealthView {
   state: "READY" | "PARTIAL" | "STALE" | "DEGRADED" | "OFFLINE";
   freshness: "FRESH" | "STALE" | "UNKNOWN";
