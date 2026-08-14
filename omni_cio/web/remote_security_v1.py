@@ -244,7 +244,8 @@ class PrivateRemoteSecurityMiddlewareV1:
     The dedicated backend remains loopback-only. Tailscale Serve terminates TLS,
     strips spoofed Tailscale identity headers, and adds the authenticated tailnet
     user identity before forwarding to this process. This middleware adds exact
-    Host/origin/OWNER checks, session-bound CSRF and bounded mutation/login rates.
+    Host/origin/OWNER checks, live server-session validation, session-bound CSRF,
+    and bounded mutation/login rates.
     """
 
     def __init__(
@@ -253,10 +254,14 @@ class PrivateRemoteSecurityMiddlewareV1:
         *,
         policy: PrivateRemoteSecurityPolicyV1,
         session_cookie_name: str,
+        sessions: RemoteSessionRegistryLike,
+        now: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
     ) -> None:
         self._app = app
         self._policy = policy
         self._session_cookie_name = session_cookie_name
+        self._sessions = sessions
+        self._now = now
         self._limiter = _FixedWindowLimiter()
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
@@ -305,12 +310,12 @@ class PrivateRemoteSecurityMiddlewareV1:
                 await self._reject(send, 403, "ORIGIN_REQUIRED")
                 return
 
-            now = time.monotonic()
+            monotonic_now = time.monotonic()
             if path == _LOGIN_PATH:
                 if not self._limiter.admit(
                     "owner-login",
                     maximum=self._policy.login_attempts_per_minute,
-                    now=now,
+                    now=monotonic_now,
                 ):
                     await self._reject(send, 429, "LOGIN_RATE_LIMITED")
                     return
@@ -318,10 +323,13 @@ class PrivateRemoteSecurityMiddlewareV1:
                 session_token = _cookie_value(
                     headers.get("cookie", ""), self._session_cookie_name
                 )
-                supplied_csrf = headers.get(CSRF_HEADER_NAME, "")
-                if session_token is None:
+                if session_token is None or self._sessions.resolve(
+                    session_token,
+                    now=_utc_now(self._now),
+                ) is None:
                     await self._reject(send, 401, "AUTHENTICATION_REQUIRED")
                     return
+                supplied_csrf = headers.get(CSRF_HEADER_NAME, "")
                 expected_csrf = csrf_token_for_session(session_token)
                 if not supplied_csrf or not hmac.compare_digest(
                     supplied_csrf, expected_csrf
@@ -331,7 +339,7 @@ class PrivateRemoteSecurityMiddlewareV1:
                 if not self._limiter.admit(
                     "owner-mutation",
                     maximum=self._policy.mutations_per_minute,
-                    now=now,
+                    now=monotonic_now,
                 ):
                     await self._reject(send, 429, "API_MUTATION_RATE_LIMITED")
                     return
