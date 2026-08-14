@@ -1,28 +1,28 @@
 # 17 — V10 CURRENT PROGRAM STATUS
 
-Updated: 2026-08-13
+Updated: 2026-08-14
 
 ## Executive state
 
-Omni-CIO V10: **DEVELOPMENT ACTIVE / BLOCK D COMPLETE / WP16 COMPLETE / WP17 COMPLETE / WP18 COMPLETE / WP19 COMPLETE / WP20 COMPLETE / WP21 AUTHORIZED NEXT**.
+Omni-CIO V10: **DEVELOPMENT ACTIVE / BLOCK D COMPLETE / WP16 COMPLETE / WP17 COMPLETE / WP18 COMPLETE / WP19 COMPLETE / WP20 COMPLETE / WP21 COMPLETE / WP22 AUTHORIZED NEXT**.
 
 Accepted implementation progress is **40%**.
 
-Block A (5%), Block B (9%), Block C (12%) and Block D (14%) have passed their owning Exit Gates. Block E is in progress: WP16, WP17, WP18, WP19 and WP20 are complete; WP21 — Decision, Risk and Plan UI — is the next authorized implementation package. Block E receives no percentage credit until its own Block Exit Gate.
+Block A (5%), Block B (9%), Block C (12%) and Block D (14%) have passed their owning Exit Gates. Block E is in progress: WP16, WP17, WP18, WP19, WP20 and WP21 are complete; WP22 — System/Admin UI — is the next authorized implementation package. Block E receives no percentage credit until its own Block Exit Gate.
 
-WP20 was implemented on final reviewed head `21fec9d2682d3731759bb520f25cb1026295013a` and squash-merged through PR #310 to exact `main` `b83e2bcc729ed0863f861a258dc951a57ec6b65e`.
+WP21 was implemented on final reviewed head `87953ba8a082dc81cb14b56525da3e5da65361ef` and squash-merged through PR #312 to exact `main` `933e05ead311f0016372cab1d38eb9746bc62a19`.
 
-On the final reviewed WP20 head, the fresh final-review cycle completed SUCCESS for WP15 Live Web Support #238, WP16 Web Design System #367, WP17 Application Shell #338, WP18 Portfolio Dashboard #125, WP19 Watchtower Incident #39, dedicated WP20 Research Dossier #11 and authoritative Self-Hosted Windows CI #1012. The authoritative gate included protected Regression Shield coverage, dependency audit, SAST, tracked-content secret scan, stable `app:app` and read-only GPT Actions checks. Hosted Fast PR Checks and Toolchain Compatibility did not start their substantive hosted jobs because of the GitHub account billing/spending-limit condition; they remain infrastructure failures, not PASS and not code failures.
+On the final reviewed WP21 head, the fresh `ready_for_review` cycle completed **SUCCESS** for WP15 Live Web Support #267, WP16 Web Design System #398, WP17 Application Shell #369, WP18 Portfolio Dashboard #156, WP19 Watchtower Incident #70, WP20 Research Dossier #42, dedicated WP21 Decision/Risk/Plan #28 and authoritative Self-Hosted Windows CI #1041. The authoritative gate included Regression Shield coverage, dependency audit, SAST, tracked-content secret scan, stable `app:app` and read-only GPT Actions checks. Hosted Fast PR Checks #949 and Toolchain Compatibility #984 did not start their substantive GitHub-hosted jobs because of the account billing/spending-limit condition; they remain infrastructure failures, not PASS and not code failures.
 
-After squash merge, post-merge Regression Shield #1490 / run `31745729866` completed **SUCCESS** on exact `main` `b83e2bcc729ed0863f861a258dc951a57ec6b65e`. Both independent jobs passed: quality/contracts/coverage and dependency/code/secret security. The post-merge WP20 Research Dossier Audit #12 / run `31745729883` also completed **SUCCESS** on the same exact main. Triggered WP16/WP17/WP18/WP19 Web regressions observed during closeout completed SUCCESS.
+After squash merge, post-merge Regression Shield #1492 / run `31783003407` completed **SUCCESS** on exact `main` `933e05ead311f0016372cab1d38eb9746bc62a19`. Both independent jobs passed: dependency/code/secret security and quality/contracts/coverage. The post-merge WP21 Decision/Risk/Plan Audit #29 / run `31783003337` also completed **SUCCESS** on the same exact main. Triggered inherited Web regressions observed during closeout completed SUCCESS for WP18 #157, WP17 #370, WP16 #399 and WP19 #71.
 
-The post-merge WP15 Live Web OWNER Audit #19 / run `31745729843` remains **FAILURE**, not PASS. Its accepted immutable OWNER evidence is still bound to WP15 implementation `a7ecad5f7e84e756d19fca2969a71c62fca744a2`, so the later WP20 main correctly reports `implementation_bound=false`. The auditor short-circuits runtime isolation/ACL subchecks when that binding fails, therefore their fail-closed default values are not evidence of a new Lenovo isolation regression. The same stale-binding condition already occurred after the accepted WP19 main. This red historical OWNER-evidence check does not alter the accepted WP15 state and does not require new OWNER physical/secret action.
+The post-merge WP15 Live Web OWNER Audit #20 / run `31783003403` remains **FAILURE**, not PASS. Its accepted immutable OWNER evidence is bound to the accepted WP15 implementation rather than the later WP21 main, and the exact-main audit reported `implementation_bound=false`. The same audit still reported real broker READ observation present, locally used READ credential evidence present, no secret value recorded, no private portfolio values recorded, no broker-write authority added, `trading_methods=false` and gateway `app:app`. The fail-closed isolation result therefore remains the known stale immutable-binding condition, not evidence of a new Lenovo regression and not a reason to synthesize new OWNER evidence.
 
-The accepted WP20 product surface remains local/private and READ-only. It projects only validated canonical `ResearchDossierV1` facts and provenance from accepted durable state, keeps stale/contradictory/unknown evidence explicit, rejects unsafe source locations, renders untrusted markup as text and keeps AI/inference visibly and semantically non-authoritative. Raw research blobs are not returned to the browser, and no new research store, Block G runtime, public ingress, broker-write authority or Real execution surface was introduced.
+The accepted WP21 product surface remains local/private and READ-only. It projects validated canonical deterministic Decision/Risk/Plan state, exact before/after mathematics, immutable plan identity/version/expiry and the exact future OWNER confirmation subject as display-only `PREVIEW_ONLY`. Material plan mutation, invalid binding or expiry fails closed and exposes no approval subject; `can_approve=false` and `execution_authorized=false` remain explicit. No browser financial recomputation, plan mutation, approval submission, broker-write route, public approval ingress or Real execution surface was introduced.
 
 The deferred/accepted WP15 real T-Invest READ path remains unchanged. Broker provisioning remains connection-scoped through the authenticated local/private Web flow; raw broker credentials, full provider account IDs and private portfolio payloads remain outside GitHub/CI evidence.
 
-OWNER action required now: **NO**. Engineering may proceed autonomously to the WP21 dependency/contract check after this status-only transition itself is accepted. No public ingress, public multi-user activation, Telegram delivery, AI authority expansion, broker write or Real execution is authorized by this transition.
+OWNER action required now: **NO**. Engineering may proceed autonomously to the WP22 dependency/contract check only after this status-only transition itself is accepted. No public ingress, public multi-user activation, Telegram delivery, AI authority expansion, broker write or Real execution is authorized by this transition.
 
 Owner start command: **`START V10`** received 2026-08-05.
 
@@ -52,30 +52,31 @@ Starting or advancing V10 never expands broker/Real-money authority by itself.
 - Block E / WP18 — **COMPLETE**;
 - Block E / WP19 — **COMPLETE**;
 - Block E / WP20 — **COMPLETE**;
-- Block E / WP21 — **AUTHORIZED NEXT / NOT STARTED**;
-- Block E / WP22+ — **LOCKED behind owning dependencies and Master Plan sequence**;
+- Block E / WP21 — **COMPLETE**;
+- Block E / WP22 — **AUTHORIZED NEXT / NOT STARTED**;
+- Block E / WP22A+ — **LOCKED behind owning dependencies and Master Plan sequence**;
 - public multi-user activation — **OFF / LOCKED**;
 - public Internet ingress — **OFF / LOCKED until WP22A or later owning security gate**;
 - broker write / Real execution — **UNCHANGED / NOT AUTHORIZED**.
 
-## Current next package — WP21 Decision, Risk and Plan UI
+## Current next package — WP22 System/Admin UI
 
-Master Plan objective: show one primary decision and the exact before/after mathematics.
+Master Plan objective: give the OWNER one operational place to understand and operate the ordinary system state without the command line.
 
-Required WP21 deliverables remain exactly the Master Plan scope:
+Required WP22 deliverables remain exactly the Master Plan scope:
 
-- `MAIN_DECISION`: `NO_ACTION` / `HOLD` / `REDUCE` / `EXIT` / `REALLOCATE`;
-- risk before/after, target weights, lots, costs, cash, constraints, blockers and evidence;
-- immutable plan hash/version/expiry;
-- alternatives available for explanation without forcing the OWNER to guess the correct allocation.
+- service health, Git SHA/release, last deploy, DB/migrations, last backup, T-Invest, Telegram, Watchtower, AI and resource/temperature/free-disk state;
+- kill-switch state displayed read-only or through a controlled admin flow;
+- recent errors/jobs without secret leakage.
 
-Required WP21 test:
+Required WP22 checks:
 
-- deterministic rendering from the Plan DTO; an altered plan invalidates the approval UI.
+- degraded-service scenarios;
+- masked error output.
 
-WP21 Exit Gate: **the OWNER sees the exact subject of future confirmation before any real execution**.
+WP22 Exit Gate: **the OWNER can understand the state of the whole system without GitHub/PowerShell for ordinary diagnostics**.
 
-Master Plan dependency is **WP20**. WP21 must extend the same source-controlled local/private Web App and preserve canonical Decision/Risk/Plan meaning from the deterministic Core. It may present the future confirmation subject but does not authorize broker submission, public approval ingress or Real execution.
+Master Plan dependency is **WP21**. WP22 must extend the same source-controlled local/private Web App and reuse accepted operational, health, deployment, recovery and security authorities rather than inventing a second control plane. It does not authorize public Internet ingress, broker write, Telegram/AI authority expansion or Real execution.
 
 ## Canonical authority
 
@@ -112,7 +113,9 @@ Identity, broker provisioning and Web work are additionally governed by:
 - `docs/architecture/V10_WP19_EXECUTION_CONTRACT.md`;
 - `docs/architecture/V10_WP19_WATCHTOWER_INCIDENT_UI_CONTRACT.md`;
 - `docs/architecture/V10_WP20_EXECUTION_CONTRACT.md`;
-- `docs/architecture/V10_WP20_RESEARCH_DOSSIER_UI_CONTRACT.md`.
+- `docs/architecture/V10_WP20_RESEARCH_DOSSIER_UI_CONTRACT.md`;
+- `docs/architecture/V10_WP21_EXECUTION_CONTRACT.md`;
+- `docs/architecture/V10_WP21_DECISION_RISK_PLAN_UI_CONTRACT.md`.
 
 GitHub remains engineering source of truth. Protected production/recovery baseline remains **Omni-CIO v9.0.0 — COMPLETE / owner-accepted / controlled maintenance** until the responsible later V10 parity/decommission gate.
 
@@ -124,7 +127,7 @@ GitHub remains engineering source of truth. Protected production/recovery baseli
 | B. GitHub, dependencies and CI/CD | 9% | COMPLETE — WP1 / WP2 / WP3 / WP4 |
 | C. Lenovo Omni-CIO Node / infrastructure | 12% | COMPLETE — WP5 / WP6 / WP7 / WP8 / WP9 / WP9A / WP10 |
 | D. V10 Core and data | 14% | COMPLETE — WP11 / WP12 / WP13 / WP14 / WP15 incl. real READ evidence |
-| E. Omni-CIO Web Platform | 14% | IN PROGRESS — WP16 / WP17 / WP18 / WP19 / WP20 COMPLETE; WP21 NEXT |
+| E. Omni-CIO Web Platform | 14% | IN PROGRESS — WP16 / WP17 / WP18 / WP19 / WP20 / WP21 COMPLETE; WP22 NEXT |
 | F. Telegram | 8% | NOT STARTED — product/interaction contract pre-approved only |
 | G. AI Copilot / Research / GPT Migration | 18% | NOT STARTED |
 | H. Guardian / Watchtower Loop | 8% | NOT STARTED |
@@ -156,35 +159,40 @@ The 40% total is intentional: Block E is not credited piecemeal.
 - post-WP18 Regression Shield #1486 / run `31705088464` on exact `main` `90c8b52c864db034d31d6184346b2ff62707c121` — **SUCCESS**;
 - WP19 final PR #308 reviewed head `8f6c60805341c34726e22eefb676220d7ae66dcb`: WP19 #25, WP15 Live Web Support #226, WP16 #353, WP17 #324, WP18 #111 and Self-Hosted Windows CI #1000 — **SUCCESS**;
 - WP19 PR #308 squash merge -> exact `main` `058e53a76e6f6aeabe32eb6711cb5168417d5093`;
-- post-WP19 Regression Shield #1488 / run `31728413708` on exact `main` `058e53a76e6f6aeabe32eb6711cb5168417d5093` — **SUCCESS**, including coverage, dependency audit, SAST and tracked-secret scan;
+- post-WP19 Regression Shield #1488 / run `31728413708` on exact `main` `058e53a76e6f6ae32eb6711cb5168417d5093` — **SUCCESS**, including coverage, dependency audit, SAST and tracked-secret scan;
 - post-WP19 Watchtower Incident Audit #26 / run `31728413735` — **SUCCESS** on the same exact main;
 - WP20 final PR #310 reviewed head `21fec9d2682d3731759bb520f25cb1026295013a`: WP15 Live Web Support #238, WP16 #367, WP17 #338, WP18 #125, WP19 #39, WP20 #11 and Self-Hosted Windows CI #1012 — **SUCCESS**;
 - WP20 PR #310 squash merge -> exact `main` `b83e2bcc729ed0863f861a258dc951a57ec6b65e`;
 - post-WP20 Regression Shield #1490 / run `31745729866` on exact `main` `b83e2bcc729ed0863f861a258dc951a57ec6b65e` — **SUCCESS**, including coverage, dependency audit, SAST and tracked-secret scan;
 - post-WP20 Research Dossier Audit #12 / run `31745729883` — **SUCCESS** on the same exact main;
-- post-WP20 WP15 Live Web OWNER Audit #19 / run `31745729843` — **FAILURE** due immutable accepted WP15 evidence SHA not matching the later Web main; this remains red and is not treated as PASS or as proof of a new isolation regression.
+- post-WP20 WP15 Live Web OWNER Audit #19 / run `31745729843` — **FAILURE** due immutable accepted WP15 evidence SHA not matching the later Web main; this remains red and is not treated as PASS or as proof of a new isolation regression;
+- WP21 final PR #312 reviewed head `87953ba8a082dc81cb14b56525da3e5da65361ef`: WP15 Live Web Support #267, WP16 #398, WP17 #369, WP18 #156, WP19 #70, WP20 #42, WP21 #28 and Self-Hosted Windows CI #1041 — **SUCCESS**;
+- WP21 PR #312 squash merge -> exact `main` `933e05ead311f0016372cab1d38eb9746bc62a19`;
+- post-WP21 Regression Shield #1492 / run `31783003407` on exact `main` `933e05ead311f0016372cab1d38eb9746bc62a19` — **SUCCESS**, including quality/contracts/coverage, dependency audit, SAST and tracked-secret scan;
+- post-WP21 Decision/Risk/Plan Audit #29 / run `31783003337` — **SUCCESS** on the same exact main;
+- post-WP21 inherited WP18 #157, WP17 #370, WP16 #399 and WP19 #71 — **SUCCESS** on the same exact main;
+- post-WP21 WP15 Live Web OWNER Audit #20 / run `31783003403` — **FAILURE** because immutable accepted WP15 evidence is not bound to the later WP21 main; the audit remains fail-closed and is not treated as PASS or as proof of a new isolation regression.
 
 Hosted Fast PR Checks / Toolchain Compatibility runs that GitHub did not start because of the account billing/spending-limit condition remain infrastructure failures, not PASS and not code failures.
 
-## WP20 closeout evidence
+## WP21 closeout evidence
 
-WP20 satisfies its Master Plan Exit Gate:
+WP21 satisfies its Master Plan Exit Gate:
 
-- the Web route is authenticated and tenant-scoped and remains strictly READ-only;
-- durable research content contributes canonical facts only after accepted schema binding and full `ResearchDossierV1` validation;
-- canonical facts expose source provider/class/authority, safe source location, retrieved/published/effective timestamps, freshness, confidence and record identity;
-- stale cache/evidence, contradictions, unknowns/coverage gaps, invalid dossiers and truncation remain explicit rather than silently becoming clean data;
-- unsafe source locations are rejected and malicious markup remains inert text in the browser;
-- raw research content blobs never leave the server projection;
-- event timeline, issuer/security identity and existing Credit/Fund navigation remain bounded and source-backed;
-- the AI/inference zone is visibly and semantically distinct from canonical facts and permanently marked non-authoritative; production AI summary remains unavailable until its owning Block G runtime exists;
-- long text/source-list, stale/contradictory and malicious-markup browser cases are covered by deterministic evidence;
-- the synthetic browser artifact was inspected and canonical source facts cannot be visually confused with the distinct AI/inference zone;
-- no second research store, Block G runtime, public ingress, broker-write route, browser secret storage or Real execution authority was introduced;
-- review state before merge had zero blocking threads/comments and the complete 12-file WP20 diff was reviewed;
-- squash merge, exact-main Regression Shield and exact-main focused WP20 audit all completed successfully.
+- the Web route is authenticated, tenant-scoped and strictly READ-only;
+- the browser renders only validated canonical deterministic Decision/Risk/Plan projection and does not calculate a second financial decision or allocation;
+- `MAIN_DECISION` maps deterministically to `NO_ACTION`, `HOLD`, `REDUCE`, `EXIT` or `REALLOCATE`, while incomplete inputs remain explicitly partial rather than guessed;
+- risk before/after, target weights, lots, costs, cash/staging, constraints, blockers and evidence remain source-backed by the accepted Core objects;
+- immutable plan hash/version/expiry and the exact future OWNER confirmation subject are visible before any execution authority exists;
+- material mutation, invalid schema/binding/hash or expiry invalidates the approval preview and exposes no actionable approval subject;
+- future OWNER confirmation is permanently marked `PREVIEW_ONLY` in WP21 with `can_approve=false` and `execution_authorized=false`;
+- no POST/PUT/PATCH/DELETE plan route, browser credential storage, broker-write authority or public approval ingress was added;
+- deterministic alternatives remain explanatory and do not force the OWNER or browser to invent the correct allocation;
+- deterministic Web/Python/browser evidence covers mutation invalidation, missing-plan fail-closed behavior, expiry, `WAIT_FOR_DATA` partial state, exact decision mapping and exact math/alternatives rendering;
+- review state before merge had zero blocking threads/comments and the complete 12-file WP21 diff was reviewed;
+- squash merge, exact-main Regression Shield and exact-main focused WP21 audit all completed successfully.
 
-This acceptance does not authorize WP21 to mutate plans or submit orders. WP21 must deterministically render the accepted Decision/Risk/Plan contract and make the exact future approval subject visible before any Real execution.
+This acceptance does not authorize WP22 to create a second operational control plane, expose secrets, open public ingress, add broker write or enable Real execution. WP22 is limited to the Master Plan System/Admin UI scope and must reuse accepted operational/security authorities.
 
 ## Permanent safety / rollback invariants
 
@@ -200,4 +208,4 @@ This acceptance does not authorize WP21 to mutate plans or submit orders. WP21 m
 
 ## Current next action
 
-Start **WP21 — Decision, Risk and Plan UI** only after this status-only transition itself passes exact-head required gates, is squash-merged, and the resulting exact `main` passes the required post-merge Regression Shield. Before writing WP21 feature code, re-read the accepted `main`, WP execution template, Master Plan WP21 section and the accepted Decision/Risk/Plan DTO, immutable-plan and V9 parity/reuse authorities. WP21 must remain deterministic and local/private, render the exact future confirmation subject, and leave public Internet ingress, broker write and Real execution locked.
+Start **WP22 — System/Admin UI** only after this status-only transition itself passes exact-head required gates, is squash-merged, and the resulting exact `main` passes the required post-merge Regression Shield. Before writing WP22 feature code, re-read the accepted `main`, WP execution template, Master Plan WP22 section and the accepted architecture/operations/security authorities for health, deployment, DB/migrations, backup/recovery, broker READ, Watchtower, Telegram/AI status and local node resources. WP22 must remain local/private, mask secret-bearing diagnostics, reuse existing control/health surfaces rather than create a second control plane, and leave public Internet ingress, broker write and Real execution locked.
