@@ -119,6 +119,57 @@ function Test-EvidenceAcl {
     return $runnerRead
 }
 
+function Convert-TailscaleServeStatusJson {
+    param([Parameter(Mandatory = $true)][string]$Text)
+    $compact = ($Text -replace '\s', '')
+    if (@('', '{}', '[]', 'null') -contains $compact) { return $null }
+    try {
+        return $Text | ConvertFrom-Json -ErrorAction Stop
+    }
+    catch {
+        throw "WP22A_EVIDENCE_SERVE_STATUS_INVALID"
+    }
+}
+
+function Test-FunnelDisabledFromServeConfig {
+    param([Parameter(Mandatory = $true)][string]$Text)
+    $state = Convert-TailscaleServeStatusJson -Text $Text
+    if ($null -eq $state) { return $true }
+
+    $allow = $state.PSObject.Properties['AllowFunnel']
+    if ($null -ne $allow -and $null -ne $allow.Value) {
+        foreach ($entry in @($allow.Value.PSObject.Properties)) {
+            if ([bool]$entry.Value) { return $false }
+        }
+    }
+
+    $foreground = $state.PSObject.Properties['Foreground']
+    if ($null -ne $foreground -and $null -ne $foreground.Value) {
+        foreach ($session in @($foreground.Value.PSObject.Properties)) {
+            $sessionAllow = $session.Value.PSObject.Properties['AllowFunnel']
+            if ($null -eq $sessionAllow -or $null -eq $sessionAllow.Value) { continue }
+            foreach ($entry in @($sessionAllow.Value.PSObject.Properties)) {
+                if ([bool]$entry.Value) { return $false }
+            }
+        }
+    }
+    return $true
+}
+
+function Test-ServeTransportRemoved {
+    param([Parameter(Mandatory = $true)][string]$Text)
+    $state = Convert-TailscaleServeStatusJson -Text $Text
+    if ($null -eq $state) { return $true }
+
+    foreach ($propertyName in @('TCP', 'Web', 'Services', 'Foreground')) {
+        $property = $state.PSObject.Properties[$propertyName]
+        if ($null -ne $property -and $null -ne $property.Value -and @($property.Value.PSObject.Properties).Count -gt 0) {
+            return $false
+        }
+    }
+    return Test-FunnelDisabledFromServeConfig -Text $Text
+}
+
 if (-not (Test-Administrator)) { throw "WP22A OWNER evidence finalizer requires administrator." }
 $implementationSha = Get-ReviewedHead
 $runnerSid = Get-RunnerSid
@@ -173,15 +224,11 @@ try {
     $tailscale = (Get-Command tailscale.exe -ErrorAction Stop).Source
     & $tailscale serve --https=443 off 2>&1 | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "WP22A_EVIDENCE_SERVE_DISABLE_FAILED" }
-    & $tailscale funnel --https=443 off 2>&1 | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw "WP22A_EVIDENCE_FUNNEL_DISABLE_FAILED" }
     $serveAfter = (& $tailscale serve status --json 2>&1 | Out-String).Trim()
     if ($LASTEXITCODE -ne 0) { throw "WP22A_EVIDENCE_SERVE_STATUS_FAILED" }
-    $serveDisabled = @("", "{}", "[]", "null") -contains ($serveAfter -replace '\s', '')
+    $serveDisabled = Test-ServeTransportRemoved -Text $serveAfter
     if (-not $serveDisabled) { throw "WP22A_EVIDENCE_SERVE_STILL_ACTIVE" }
-    $funnelAfter = (& $tailscale funnel status --json 2>&1 | Out-String).Trim()
-    if ($LASTEXITCODE -ne 0) { throw "WP22A_EVIDENCE_FUNNEL_STATUS_FAILED" }
-    $funnelDisabledAfter = @("", "{}", "[]", "null") -contains ($funnelAfter -replace '\s', '')
+    $funnelDisabledAfter = Test-FunnelDisabledFromServeConfig -Text $serveAfter
     if (-not $funnelDisabledAfter) { throw "WP22A_EVIDENCE_FUNNEL_STILL_ACTIVE" }
 }
 catch {
