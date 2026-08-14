@@ -284,6 +284,18 @@ class ExternalAccessSecurityMiddlewareV1(BaseHTTPMiddleware):
                 path=request.url.path,
             )
 
+        is_status = request.method == "GET" and request.url.path == _REMOTE_STATUS_PATH
+        identity = request.headers.get(TAILSCALE_LOGIN_HEADER, "")
+        fingerprint = _login_fingerprint(identity)
+        if not is_status and not secrets.compare_digest(
+            fingerprint, self._policy.owner_login_sha256
+        ):
+            return _remote_error(
+                "OWNER_IDENTITY_REQUIRED",
+                403,
+                path=request.url.path,
+            )
+
         if request.method in _UNSAFE_METHODS:
             origin = request.headers.get("origin", "")
             if _origin_host(origin) != self._policy.canonical_host:
@@ -299,8 +311,7 @@ class ExternalAccessSecurityMiddlewareV1(BaseHTTPMiddleware):
                     or not secrets.compare_digest(csrf_cookie, csrf_header)
                 ):
                     return _remote_error("CSRF_REJECTED", 403, path=request.url.path)
-                identity = request.headers.get(TAILSCALE_LOGIN_HEADER, "")
-                key = "mutation:" + _login_fingerprint(identity or "anonymous")
+                key = "mutation:" + fingerprint
                 if not self._limiter.admit(
                     key,
                     limit=self._policy.mutation_attempts,
@@ -308,7 +319,7 @@ class ExternalAccessSecurityMiddlewareV1(BaseHTTPMiddleware):
                 ):
                     return _remote_error("RATE_LIMITED", 429, path=request.url.path)
 
-        if request.method == "GET" and request.url.path == _REMOTE_STATUS_PATH:
+        if is_status:
             return _harden_remote_response(
                 JSONResponse({"enabled": True}),
                 path=request.url.path,
