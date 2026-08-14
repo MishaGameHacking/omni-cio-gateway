@@ -136,7 +136,9 @@ def test_policy_requires_exact_tsnet_host_and_owner_fingerprint() -> None:
 
 def test_rfc2047_tailscale_identity_decodes_before_fingerprint() -> None:
     encoded = "=?utf-8?q?Ferris_B=C3=BCller?="
-    assert tailscale_login_sha256(encoded) == tailscale_login_sha256("Ferris Büller")
+    assert tailscale_login_sha256(encoded) == tailscale_login_sha256(
+        "Ferris Büller"
+    )
 
 
 def test_backend_peer_must_be_loopback_even_with_valid_identity_headers() -> None:
