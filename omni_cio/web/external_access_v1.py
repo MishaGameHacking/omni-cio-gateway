@@ -21,13 +21,20 @@ from omni_cio.web.api_v1 import SESSION_COOKIE
 from omni_cio.web.session_v1 import SessionScopeV1
 
 
-CSRF_COOKIE = "omni_v10_csrf"
+REMOTE_SESSION_COOKIE = "__Host-omni_v10_session"
+CSRF_COOKIE = "__Host-omni_v10_csrf"
 CSRF_HEADER = "X-Omni-CSRF"
 TAILSCALE_LOGIN_HEADER = "Tailscale-User-Login"
 _UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 _LOCAL_HOSTS = frozenset({"127.0.0.1", "localhost"})
 _REMOTE_VERIFIED_STATE = "wp22a_private_remote_verified"
 _REMOTE_STATUS_PATH = "/api/v10/web/private-tailnet-login/status"
+_SESSION_TERMINATION_PATHS = frozenset(
+    {
+        "/api/v10/web/session/logout",
+        "/api/v10/web/session/revoke-all",
+    }
+)
 
 
 class SessionRegistryLike(Protocol):
@@ -161,28 +168,67 @@ def _origin_host(value: str) -> str | None:
     return parsed.hostname.lower().rstrip(".")
 
 
-def _rewrite_host_to_loopback(request: Request) -> None:
+def _replace_scope_header(request: Request, target: bytes, value: bytes) -> None:
     headers: list[tuple[bytes, bytes]] = []
-    host_replaced = False
-    for name, value in request.scope.get("headers", []):
-        if name.lower() == b"host":
-            headers.append((b"host", b"127.0.0.1"))
-            host_replaced = True
+    replaced = False
+    for name, current in request.scope.get("headers", []):
+        if name.lower() == target:
+            if not replaced:
+                headers.append((target, value))
+                replaced = True
         else:
-            headers.append((name, value))
-    if not host_replaced:
-        headers.append((b"host", b"127.0.0.1"))
+            headers.append((name, current))
+    if not replaced:
+        headers.append((target, value))
     request.scope["headers"] = headers
+
+
+def _rewrite_host_to_loopback(request: Request) -> None:
+    _replace_scope_header(request, b"host", b"127.0.0.1")
+
+
+def _rewrite_remote_session_for_inner_app(request: Request) -> None:
+    token = request.cookies.get(REMOTE_SESSION_COOKIE)
+    if not token:
+        return
+    raw_cookie = request.headers.get("cookie", "")
+    pairs: list[str] = []
+    for item in raw_cookie.split(";"):
+        candidate = item.strip()
+        if not candidate:
+            continue
+        name = candidate.split("=", 1)[0].strip()
+        if name == SESSION_COOKIE:
+            continue
+        pairs.append(candidate)
+    pairs.append(f"{SESSION_COOKIE}={token}")
+    _replace_scope_header(request, b"cookie", "; ".join(pairs).encode("latin-1"))
 
 
 def _remote_request_verified(request: Request) -> bool:
     return bool(getattr(request.state, _REMOTE_VERIFIED_STATE, False))
 
 
-def _harden_remote_response(response: Response) -> Response:
+def _harden_remote_response(response: Response, *, path: str) -> Response:
     response.headers["Strict-Transport-Security"] = "max-age=31536000"
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "same-origin"
+    response.headers["Cache-Control"] = "no-store"
+    if path in _SESSION_TERMINATION_PATHS:
+        response.delete_cookie(
+            REMOTE_SESSION_COOKIE,
+            path="/",
+            secure=True,
+            httponly=True,
+            samesite="strict",
+        )
+        response.delete_cookie(
+            CSRF_COOKIE,
+            path="/",
+            secure=True,
+            httponly=False,
+            samesite="strict",
+        )
     return response
 
 
@@ -239,12 +285,16 @@ class ExternalAccessSecurityMiddlewareV1(BaseHTTPMiddleware):
                     return JSONResponse({"detail": "RATE_LIMITED"}, status_code=429)
 
         if request.method == "GET" and request.url.path == _REMOTE_STATUS_PATH:
-            return _harden_remote_response(JSONResponse({"enabled": True}))
+            return _harden_remote_response(
+                JSONResponse({"enabled": True}),
+                path=request.url.path,
+            )
 
         setattr(request.state, _REMOTE_VERIFIED_STATE, True)
+        _rewrite_remote_session_for_inner_app(request)
         _rewrite_host_to_loopback(request)
         response = await call_next(request)
-        return _harden_remote_response(response)
+        return _harden_remote_response(response, path=request.url.path)
 
 
 def install_private_remote_access_v1(
@@ -288,7 +338,7 @@ def install_private_remote_access_v1(
         csrf = secrets.token_urlsafe(32)
         max_age = max(1, int((scope.expires_at - issued).total_seconds()))
         response.set_cookie(
-            SESSION_COOKIE,
+            REMOTE_SESSION_COOKIE,
             token,
             httponly=True,
             secure=True,
