@@ -16,20 +16,11 @@ Authority expansion: **none**
 
 WP21 replaces the accepted Web placeholders for `/risks`, `/decisions` and `/plans` with one read-only projection of already accepted deterministic Core objects.
 
-The screen must show:
-
-- one deterministic `MAIN_DECISION` presentation;
-- exact risk before/after mathematics when an immutable plan is bound;
-- exact targets, lots, reference values, costs, cash effects and staging;
-- blockers and source evidence;
-- immutable plan hash/version/expiry and the exact future OWNER confirmation subject;
-- deterministic alternatives without requiring OWNER to invent allocation manually.
+The screen must show one deterministic `MAIN_DECISION`, exact risk before/after, exact targets/lots/costs/cash/staging, blockers/evidence, immutable plan identity/expiry, the exact future OWNER confirmation subject, and deterministic alternatives.
 
 WP21 does **not** calculate a new financial decision, mutate a plan, approve a plan, submit an order or expose public ingress.
 
 ## 3. Preconditions and reuse audit
-
-The dependency audit was completed against accepted `main` before implementation.
 
 | Capability | Accepted authority | WP21 decision |
 |---|---|---|
@@ -38,103 +29,71 @@ The dependency audit was completed against accepted `main` before implementation
 | portfolio risk state | `PortfolioRiskStateV1` | **REUSE_AS_IS** |
 | optimizer targets and exact trade legs | `OptimizerTargetPositionV1`, `OptimizerRebalanceLegV1` | **REUSE_AS_IS** |
 | immutable plan identity and approval subject | `PortfolioPlanV1`, `portfolio_plan_sha256()`, `owner_approval_phrase()` | **REUSE_AS_IS** |
-| durable decision/plan metadata and content hashes | WP13 `decisions`, `plans`, `content_blobs`, `portfolio_snapshots` | **WRAP_ADAPTER** |
-| production decision-to-risk/plan binding semantics | `decision_journal/recorder_v1.py` | **REUSE_REFERENCE** |
+| durable metadata/content identity | WP13 `decisions`, `plans`, `content_blobs`, `portfolio_snapshots`, `policies` | **WRAP_ADAPTER** |
+| production decision-to-plan semantics | `decision_journal/recorder_v1.py` | **REUSE_REFERENCE** |
 | V9 final-decision review adapter | intent/capacity review surface | **DO_NOT_REUSE_FOR_PLAN_UI** |
 
 No second decision engine, risk engine, optimizer, plan DTO, hash authority, database or queue is introduced.
 
 ## 4. Parity obligations
 
-WP21 advances but does not by itself close these seed-ledger capabilities:
-
-- `PARITY-RISK`;
-- `PARITY-STRATEGY`;
-- `PARITY-OPTIMIZER`;
-- `PARITY-IMMUTABLE-PLAN`.
-
-The UI consumes their accepted deterministic outputs. It does not change their semantics or mark ledger parity complete merely because they are rendered.
+WP21 advances but does not by itself close `PARITY-RISK`, `PARITY-STRATEGY`, `PARITY-OPTIMIZER` or `PARITY-IMMUTABLE-PLAN`. Rendering accepted outputs is not parity acceptance.
 
 ## 5. Deterministic MAIN_DECISION projection
 
-The Master Plan display vocabulary is a presentation classification over canonical `DecisionSetV1` plus, where required, the exact validated `PortfolioPlanV1`:
+The display vocabulary is a presentation classification over canonical `DecisionSetV1` plus, where required, the exact validated `PortfolioPlanV1`:
 
-- preferred `HOLD` → `HOLD`;
-- preferred `WAIT_FOR_DATA` → `NO_ACTION`, but the overall Web state remains `PARTIAL` because the canonical decision abstains;
-- preferred `REVIEW_STRATEGIC_REBALANCE` → `REALLOCATE`;
-- preferred `REVIEW_LIMITED_CHANGE` + sell-only exact plan whose affected targets all reach zero → `EXIT`;
-- preferred `REVIEW_LIMITED_CHANGE` + sell-only exact plan with any non-zero affected target → `REDUCE`;
-- preferred `REVIEW_LIMITED_CHANGE` + any buy/mixed exact plan → `REALLOCATE`.
+- `HOLD` → `HOLD`;
+- `WAIT_FOR_DATA` → `NO_ACTION`, while overall state remains `PARTIAL`;
+- `REVIEW_STRATEGIC_REBALANCE` → `REALLOCATE`;
+- `REVIEW_LIMITED_CHANGE` + sell-only plan whose affected targets all reach zero → `EXIT`;
+- `REVIEW_LIMITED_CHANGE` + sell-only plan with any non-zero affected target → `REDUCE`;
+- `REVIEW_LIMITED_CHANGE` + buy/mixed plan → `REALLOCATE`.
 
-An actionable decision without a valid exact plan is `PARTIAL`; the UI does not guess the missing classification.
+An actionable decision without a valid exact plan is `PARTIAL`; the UI does not guess.
 
 ## 6. Durable read boundary
 
-`GET /api/v10/web/decision-plan` is installed only in the accepted local/private Web app.
+`GET /api/v10/web/decision-plan` exists only in the accepted local/private Web app.
 
 The read service:
 
 1. resolves server-side session and tenant;
 2. selects the latest tenant decision and latest exact scoped plan;
-3. requires the decision to join the exact tenant/portfolio/policy/snapshot record;
-4. binds the plan's `portfolio_snapshot_sha256` to that durable snapshot's `source_payload_sha256`;
-5. binds the plan policy reference to the persisted decision policy and the plan timestamp to the persisted plan timestamp;
-6. binds the persisted decision timestamp to `DecisionSetV1.metadata.retrieved_at`;
-7. joins content only by the same tenant and recorded payload SHA-256;
-8. bounds content size;
-9. re-hashes raw bytes and rejects hash mismatch;
-10. accepts only exact source-controlled schema references;
-11. Pydantic-validates `DecisionSetV1` and `PortfolioPlanV1`;
-12. relies on `PortfolioPlanV1` to recompute and validate its internal canonical `plan_sha256` and approval phrase;
-13. returns no raw content blob and no broker credential.
+3. requires the decision to join the exact tenant/portfolio/canonical-policy/snapshot records;
+4. binds plan `portfolio_snapshot_sha256` to durable snapshot `source_payload_sha256`;
+5. binds `plan.policy_reference.policy_id` to durable policy `source_policy_id` rather than incorrectly equating it with the canonical V10 `policy_id`;
+6. binds plan `created_at` to persisted plan `created_at`;
+7. joins content only by same tenant and recorded payload SHA-256;
+8. bounds content size and re-hashes raw bytes;
+9. accepts only exact source-controlled schema references;
+10. validates `DecisionSetV1` and `PortfolioPlanV1`;
+11. relies on `PortfolioPlanV1` to recompute canonical `plan_sha256` and approval phrase;
+12. returns no raw content blob and no broker credential.
+
+`DecisionRecord.decided_at` is retained as durable audit time and is **not** falsely equated with `DecisionSet.metadata.retrieved_at`, because the accepted production journal permits a distinct `recorded_at`.
 
 The response uses `Cache-Control: no-store` and `Pragma: no-cache`.
 
 ## 7. Approval and execution boundary
 
-WP21 may display the future OWNER confirmation subject only as `PREVIEW_ONLY`.
-
-Hard rules:
+The future OWNER confirmation subject is display-only `PREVIEW_ONLY`:
 
 - `can_approve=false`;
 - no POST/PUT/PATCH/DELETE plan route;
-- expired plans do not expose an approval phrase;
+- expired plans expose no approval phrase;
 - invalid/mutated plans expose no approval subject;
 - `execution_authorized=false`;
 - `trading_methods=false`;
-- `REAL_TRADING_ENABLED=false` remains unchanged;
-- broker write authority is not added.
-
-The later Real execution contour remains locked behind its own Master Plan WPs and OWNER approval gates.
+- `REAL_TRADING_ENABLED=false` unchanged;
+- no broker write authority.
 
 ## 8. Required negative evidence
 
-WP21 tests must prove at least:
-
-- no session → 401;
-- tenant predicate is always present;
-- blob SHA mismatch / wrong schema / invalid canonical plan fail closed;
-- material plan mutation with a newly valid outer blob hash but stale internal `plan_sha256` is rejected;
-- decision timestamp or snapshot source-hash binding mismatch fails closed;
-- preferred `WAIT_FOR_DATA` is `NO_ACTION` presentation but never `READY`;
-- actionable decision without plan is `PARTIAL`;
-- no-change decision does not silently bind an actionable plan;
-- expiry hides the approval phrase;
-- `REDUCE` and `EXIT` are deterministic plan classifications;
-- Web contains no approval mutation and no browser credential storage;
-- exact targets/lots/costs/risk and alternatives render in browser evidence.
+Tests must prove session denial, tenant predicate, blob/schema/canonical-plan rejection, stale internal `plan_sha256` rejection after material mutation, snapshot source-hash/source-policy mismatch rejection, `WAIT_FOR_DATA` remaining `PARTIAL`, actionable decision without plan remaining `PARTIAL`, no-change decision not binding a plan, expiry hiding approval phrase, deterministic `REDUCE`/`EXIT`, no browser approval mutation/credential storage, and exact math/alternatives browser evidence.
 
 ## 9. CI and Exit Gate
 
-WP21 is merge-eligible only when:
+WP21 is merge-eligible only when dedicated exact-head WP21 audit, authoritative Self-Hosted Windows CI and inherited accepted Web gates are GREEN; blocking review threads are zero; full diff remains WP21-only; hosted startup/billing failures are classified separately; squash merge uses the exact reviewed head; and the exact new `main` passes post-merge Regression Shield.
 
-1. dedicated exact-head `V10 WP21 Decision Risk Plan Audit` is GREEN;
-2. authoritative Self-Hosted Windows CI is GREEN;
-3. inherited accepted Web gates remain GREEN;
-4. review threads/comments contain no unresolved blocker;
-5. full diff remains within WP21 scope;
-6. hosted startup/billing failures, if any, are classified separately and never called PASS;
-7. squash merge uses the exact reviewed head;
-8. exact new `main` passes post-merge Regression Shield.
-
-Only after that post-merge gate may the official program status transition to the next Master Plan WP.
+Only then may official status transition to the next Master Plan WP.
