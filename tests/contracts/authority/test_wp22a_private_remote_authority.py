@@ -16,7 +16,10 @@ def _has_module_level_app_assignment(source: str) -> bool:
     module = ast.parse(source)
     for node in module.body:
         if isinstance(node, ast.Assign):
-            if any(isinstance(target, ast.Name) and target.id == "app" for target in node.targets):
+            if any(
+                isinstance(target, ast.Name) and target.id == "app"
+                for target in node.targets
+            ):
                 return True
         elif isinstance(node, ast.AnnAssign):
             if isinstance(node.target, ast.Name) and node.target.id == "app":
@@ -54,11 +57,15 @@ def test_wp22a_remote_transport_cannot_import_real_or_trade_authority() -> None:
 
 
 def test_wp22a_runtime_is_loopback_only_and_funnel_is_off_only() -> None:
-    launcher = _source("infrastructure/windows/run_wp22a_private_remote_runtime.ps1").lower()
+    launcher = _source(
+        "infrastructure/windows/run_wp22a_private_remote_runtime.ps1"
+    ).lower()
     assert "--host 127.0.0.1" in launcher
     assert "--host 0.0.0.0" not in launcher
 
-    configure = _source("infrastructure/windows/configure_wp22a_tailscale_serve.ps1").lower()
+    configure = _source(
+        "infrastructure/windows/configure_wp22a_tailscale_serve.ps1"
+    ).lower()
     assert "tailscale serve" in configure
     assert "--https=443 off" in configure
     assert "tailscale funnel --bg" not in configure

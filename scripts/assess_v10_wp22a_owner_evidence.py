@@ -146,11 +146,10 @@ def _assert_no_forbidden_keys(value: Any, *, path: tuple[str, ...] = ()) -> None
 def assess(evidence: dict[str, Any], runner: dict[str, Any], expected_sha: str) -> None:
     expected = expected_sha.strip().lower()
     if _SHA40.fullmatch(expected) is None:
-        raise ValueError("expected implementation SHA must be 40 lowercase hex characters")
-    if (
-        evidence.get("schema_version") != "1"
-        or evidence.get("work_package") != "WP22A"
-    ):
+        raise ValueError(
+            "expected implementation SHA must be 40 lowercase hex characters"
+        )
+    if evidence.get("schema_version") != "1" or evidence.get("work_package") != "WP22A":
         raise ValueError("unsupported WP22A OWNER evidence schema")
     if evidence.get("evidence_type") != "OWNER_PRIVATE_REMOTE_SANITIZED":
         raise ValueError("wrong OWNER evidence type")
@@ -182,10 +181,7 @@ def assess(evidence: dict[str, Any], runner: dict[str, Any], expected_sha: str) 
         if recorded != _sha256(source):
             raise ValueError(f"source hash mismatch: {key}")
 
-    if (
-        runner.get("schema_version") != "1"
-        or runner.get("work_package") != "WP22A"
-    ):
+    if runner.get("schema_version") != "1" or runner.get("work_package") != "WP22A":
         raise ValueError("unsupported WP22A runner probe schema")
     if runner.get("evidence_type") != "RUNNER_PRIVATE_REMOTE_ISOLATION":
         raise ValueError("wrong runner evidence type")

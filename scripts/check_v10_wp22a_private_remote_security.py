@@ -6,10 +6,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT = (
-    ROOT
-    / "docs"
-    / "architecture"
-    / "V10_WP22A_PRIVATE_REMOTE_SECURITY_CONTRACT.json"
+    ROOT / "docs" / "architecture" / "V10_WP22A_PRIVATE_REMOTE_SECURITY_CONTRACT.json"
 )
 
 
@@ -207,9 +204,7 @@ def main() -> int:
     owner_workflow = _source(
         ".github/workflows/v10-wp22a-owner-private-remote-audit.yml"
     )
-    assert (
-        "WP22A_OWNER_PRIVATE_REMOTE_GATE=OWNER_ACTION_REQUIRED" in owner_workflow
-    )
+    assert "WP22A_OWNER_PRIVATE_REMOTE_GATE=OWNER_ACTION_REQUIRED" in owner_workflow
     assert "assess_v10_wp22a_owner_evidence.py" in owner_workflow
     assert "audit_wp22a_private_remote_runner.ps1" in owner_workflow
     assert "retention-days: 3" in owner_workflow

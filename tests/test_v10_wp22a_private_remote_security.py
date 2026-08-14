@@ -136,9 +136,7 @@ def test_policy_requires_exact_tsnet_host_and_owner_fingerprint() -> None:
 
 def test_rfc2047_tailscale_identity_decodes_before_fingerprint() -> None:
     encoded = "=?utf-8?q?Ferris_B=C3=BCller?="
-    assert tailscale_login_sha256(encoded) == tailscale_login_sha256(
-        "Ferris Büller"
-    )
+    assert tailscale_login_sha256(encoded) == tailscale_login_sha256("Ferris Büller")
 
 
 def test_backend_peer_must_be_loopback_even_with_valid_identity_headers() -> None:
@@ -278,7 +276,9 @@ def test_unsafe_request_requires_exact_origin_session_and_session_bound_csrf() -
     assert accepted.status_code == 200
 
 
-def test_foreign_cors_preflight_is_denied_and_monitoring_get_is_not_rate_limited() -> None:
+def test_foreign_cors_preflight_is_denied_and_monitoring_get_is_not_rate_limited() -> (
+    None
+):
     client, _, _ = make_client(mutation_limit=1)
     preflight = client.options(
         "/mutate",
