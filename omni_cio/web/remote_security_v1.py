@@ -322,7 +322,9 @@ class PrivateRemoteSecurityMiddlewareV1:
                     session_scope.user_id != OWNER_USER_ID
                     or session_scope.tenant_id != OWNER_TENANT_ID
                 ):
-                    await self._reject(send, 403, "PRIVATE_REMOTE_OWNER_SESSION_REQUIRED")
+                    await self._reject(
+                        send, 403, "PRIVATE_REMOTE_OWNER_SESSION_REQUIRED"
+                    )
                     return
 
         if method not in _SAFE_METHODS:
