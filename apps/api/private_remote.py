@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import timedelta
 import os
 from pathlib import Path
 
@@ -42,6 +43,7 @@ from omni_cio.web.research_dossiers_v1 import (
     ResearchDossierReadServiceV1,
     install_research_dossier_routes,
 )
+from omni_cio.web.session_v1 import SessionPolicyV1
 from omni_cio.web.system_admin_v1 import (
     SystemAdminReadServiceV1,
     install_system_admin_routes,
@@ -49,6 +51,12 @@ from omni_cio.web.system_admin_v1 import (
 from omni_cio.web.watchtower_incidents_v1 import (
     WatchtowerIncidentReadServiceV1,
     install_watchtower_incident_routes,
+)
+
+
+_PRIVATE_REMOTE_SESSION_POLICY = SessionPolicyV1(
+    idle_lifetime=timedelta(hours=2),
+    absolute_lifetime=timedelta(hours=24),
 )
 
 
@@ -91,7 +99,10 @@ def create_private_remote_app() -> FastAPI:
     _configure_long_lived_web_connection(raw_connection)
     apply_migrations(raw_connection)
     connection: ConnectionLike = _SerializedWebConnection(raw_connection)
-    sessions = PostgresWebSessionRegistryV1(connection)
+    sessions = PostgresWebSessionRegistryV1(
+        connection,
+        policy=_PRIVATE_REMOTE_SESSION_POLICY,
+    )
     broker_repository = PostgresBrokerConnectionRepositoryV1(connection)
     vault = ReadBrokerConnectionVaultV1()
     provisioning = BrokerProvisioningServiceV1(
