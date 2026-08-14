@@ -27,7 +27,6 @@ TAILSCALE_LOGIN_HEADER = "Tailscale-User-Login"
 _UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 _LOCAL_HOSTS = frozenset({"127.0.0.1", "localhost"})
 _REMOTE_VERIFIED_STATE = "wp22a_private_remote_verified"
-_REMOTE_HOST_STATE = "wp22a_private_remote_host"
 
 
 class SessionRegistryLike(Protocol):
@@ -123,12 +122,30 @@ def _host_without_port(value: str) -> str:
     return candidate.split(":", 1)[0]
 
 
+def _remote_host_matches(value: str, canonical_host: str) -> bool:
+    candidate = value.strip().lower().rstrip(".")
+    try:
+        parsed = urlsplit(f"//{candidate}")
+        port = parsed.port
+    except ValueError:
+        return False
+    return (
+        parsed.username is None
+        and parsed.password is None
+        and parsed.hostname == canonical_host
+        and port in {None, 443}
+    )
+
+
 def _origin_host(value: str) -> str | None:
     try:
         parsed = urlsplit(value)
+        port = parsed.port
     except ValueError:
         return None
     if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
+        return None
+    if port not in {None, 443}:
         return None
     if parsed.path not in {"", "/"} or parsed.query or parsed.fragment:
         return None
@@ -166,8 +183,9 @@ class ExternalAccessSecurityMiddlewareV1(BaseHTTPMiddleware):
         self._limiter = limiter
 
     async def dispatch(self, request: Request, call_next: Callable[..., Any]) -> Response:
-        host = _host_without_port(request.headers.get("host", ""))
-        remote_request = host == self._policy.canonical_host
+        raw_host = request.headers.get("host", "")
+        host = _host_without_port(raw_host)
+        remote_request = _remote_host_matches(raw_host, self._policy.canonical_host)
         if not remote_request:
             if host not in _LOCAL_HOSTS:
                 return JSONResponse({"detail": "INVALID_HOST"}, status_code=400)
@@ -201,7 +219,6 @@ class ExternalAccessSecurityMiddlewareV1(BaseHTTPMiddleware):
                     return JSONResponse({"detail": "RATE_LIMITED"}, status_code=429)
 
         setattr(request.state, _REMOTE_VERIFIED_STATE, True)
-        setattr(request.state, _REMOTE_HOST_STATE, host)
         _rewrite_host_to_loopback(request)
         response = await call_next(request)
         response.headers["Strict-Transport-Security"] = "max-age=31536000"
