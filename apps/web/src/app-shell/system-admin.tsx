@@ -91,6 +91,10 @@ export function SystemAdminPage({
               <dt>Last deploy</dt>
               <dd><Value value={status?.release.last_deploy_at} /></dd>
             </div>
+            <div>
+              <dt>Web artifact mtime</dt>
+              <dd><Value value={status?.release.web_artifact_at} /></dd>
+            </div>
           </dl>
         </Card>
       </div>
