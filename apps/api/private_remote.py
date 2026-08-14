@@ -15,7 +15,11 @@ from apps.api.app import (
     _configure_long_lived_web_connection,
     _dashboard_adapter_builder,
 )
-from omni_cio.persistence.migration import ConnectionLike, apply_migrations, connect_postgres
+from omni_cio.persistence.migration import (
+    ConnectionLike,
+    apply_migrations,
+    connect_postgres,
+)
 from omni_cio.web.api_v1 import SESSION_COOKIE, WebApiServicesV1, create_web_api
 from omni_cio.web.broker_vault_v1 import ReadBrokerConnectionVaultV1
 from omni_cio.web.decision_plan_v1 import (
