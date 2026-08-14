@@ -165,6 +165,16 @@ function Get-ServeState {
     return [ordered]@{ expected = [bool]$matches; any = [bool]$anyServe }
 }
 
+function Disable-ServeChecked {
+    param([Parameter(Mandatory = $true)][string]$Exe)
+
+    [void](Invoke-TailscaleText -Exe $Exe -Arguments @("serve", "off") -AllowFailure)
+    $status = Invoke-TailscaleText -Exe $Exe -Arguments @("serve", "status")
+    if ($status.text -match '(?i)https://[^\s]+\.ts\.net') {
+        throw "WP22A_TAILSCALE_SERVE_DISABLE_FAILED"
+    }
+}
+
 function New-RandomRuntimePassword {
     $bytes = New-Object byte[] 48
     $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
@@ -237,7 +247,10 @@ function Restore-LocalWebTask {
         [Parameter(Mandatory = $true)][string]$TailscaleExe
     )
 
-    & $TailscaleExe serve off *> $null
+    Disable-ServeChecked -Exe $TailscaleExe
+    if (-not (Test-NoFunnel -Exe $TailscaleExe)) {
+        throw "WP22A_FUNNEL_PUBLIC_INGRESS_ACTIVE"
+    }
     Stop-ScheduledTask -TaskName $remoteTaskName -ErrorAction SilentlyContinue
     Unregister-ScheduledTask -TaskName $remoteTaskName -Confirm:$false -ErrorAction SilentlyContinue
     Remove-RunnerLoopbackFirewall
