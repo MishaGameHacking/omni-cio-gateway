@@ -1,6 +1,6 @@
 # Omni-CIO V10 — Threat Model
 
-Status: **WP17 threat-model update**  
+Status: **WP22A threat-model update**  
 Scope: Personal V10 platform, current V9 coexistence, future Lenovo/Web/Telegram/AI/Real contours.
 
 ## 1. Security objective
@@ -41,6 +41,7 @@ Highest priority assets:
 9. Runtime DB <-> backup/off-device recovery.
 10. Current V9 runtime <-> future V10 replacement boundaries.
 11. Authenticated Web provisioning <-> connection-scoped read-broker secret child.
+12. OWNER tailnet HTTPS/Tailscale Serve <-> loopback-only private Web runtime.
 
 ## 4. Threat catalogue
 
@@ -330,6 +331,28 @@ WP17 controls:
 - public registration and Internet ingress remain disabled; external hardening is still owned by WP22A.
 
 Fail-safe: missing/invalid vault marker or ACL, stale/invalid challenge, tenant mismatch, broker authority mismatch, database persistence failure or credential-store failure rejects the provisioning action and never falls back to TRADE/write credentials.
+
+### T22 — Private remote access spoofing or accidental public exposure
+
+**Scenario:** an attacker forges Tailscale identity headers, a future deployment accidentally binds the private Web runtime beyond loopback, Funnel/public routing is enabled, a stolen/forged session is replayed, or a broad tailnet policy exposes the Personal cabinet to a non-OWNER identity.
+
+WP22A controls:
+
+- Personal baseline selects Tailscale **Serve**, not Funnel/public ingress;
+- Uvicorn launcher binds only `127.0.0.1`, and the application independently rejects non-loopback backend peers;
+- exact configured `*.ts.net` Host is required;
+- Serve-provided `Tailscale-User-Login` is RFC 2047 decoded when necessary and compared to an exact locally stored OWNER fingerprint;
+- raw OWNER login is not stored in GitHub/CI evidence;
+- tailnet access policy is deny-by-default/narrow OWNER -> Lenovo HTTPS only and is physically rehearsed before acceptance;
+- server-side private-remote sessions are limited to 120-minute idle and 24-hour absolute lifetime, rotate on bootstrap and remain revocable;
+- unsafe requests require a live server-side session, exact HTTPS Origin and session-bound CSRF;
+- CORS is deny-by-default, Host/Origin misuse fails closed and login/mutation rates are bounded without rate-limiting ordinary monitoring GETs;
+- private-remote responses carry HSTS/no-store/nosniff/anti-frame/referrer hardening;
+- local runtime config is ACL-restricted to SYSTEM/Administrators plus read-only `omni-cio-runtime`; arbitrary/runner principals fail verification;
+- Telegram Mini App identity remains non-authoritative until its owning replay/freshness WP;
+- public multi-user activation and Real approval publication remain OFF; broker-write/transfer authority is unchanged.
+
+Fail-safe: any missing identity/header binding, non-loopback peer, invalid Host/Origin/session/CSRF, unsafe config ACL, active Funnel, or failed physical private-remote rehearsal blocks WP22A acceptance and leaves the Web local/private.
 
 ## 5. Severity
 
