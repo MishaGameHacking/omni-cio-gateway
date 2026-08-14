@@ -16,6 +16,7 @@ OWNER_FINALIZER = (
 OWNER_WORKFLOW = (
     ROOT / ".github" / "workflows" / "v10-wp22a-owner-private-remote-audit.yml"
 )
+REMOTE_FACTORY = ROOT / "apps" / "api" / "wp22a_remote.py"
 
 
 def test_provisioner_blocks_runner_loopback_and_rebuilds_local_runtime_on_rollback() -> (
@@ -34,6 +35,12 @@ def test_provisioner_blocks_runner_loopback_and_rebuilds_local_runtime_on_rollba
     assert "Invoke-BaseProvisioner -Sha $Sha -Mode Cleanup" in source
     assert "Invoke-BaseProvisioner -Sha $Sha -Mode Apply" in source
     assert "Start-ScheduledTask -TaskName $baseTaskName" not in source
+
+
+def test_remote_factory_uses_wp22a_short_session_policy() -> None:
+    source = REMOTE_FACTORY.read_text(encoding="utf-8")
+    assert "REMOTE_SESSION_POLICY" in source
+    assert "policy=REMOTE_SESSION_POLICY" in source
 
 
 def test_owner_finalizer_protects_evidence_with_runner_read_only_acl() -> None:
