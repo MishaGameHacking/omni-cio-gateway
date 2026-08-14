@@ -59,7 +59,7 @@ export interface SystemStatusView {
   };
   safety: {
     mode: "READ_ONLY_DIAGNOSTIC";
-    real_trading_enabled: false;
+    real_trading_enabled: boolean;
     trading_methods: false;
     broker_write_authority: false;
     public_ingress: false;
