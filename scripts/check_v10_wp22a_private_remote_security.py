@@ -28,7 +28,10 @@ def main() -> int:
     assert identity["ordinary_product_login_providers"] == ["telegram", "vk_id"]
     assert identity["tailscale_is_product_login_provider"] is False
     assert identity["server_side_session_required"] is True
-    assert identity["private_owner_session_scope"] == "CANONICAL_OWNER_USER_AND_TENANT_ONLY"
+    assert (
+        identity["private_owner_session_scope"]
+        == "CANONICAL_OWNER_USER_AND_TENANT_ONLY"
+    )
     assert identity["foreign_user_or_tenant_session"] == "REJECT"
     assert identity["session_idle_lifetime_minutes"] == 120
     assert identity["session_absolute_lifetime_hours"] == 24
@@ -64,7 +67,9 @@ def main() -> int:
     assert owner_evidence["tailnet_policy_owner_only_confirmation_required"] is True
     assert owner_evidence["owner_remote_https_confirmation_required"] is True
     assert owner_evidence["non_owner_denial_deterministic_required"] is True
-    assert owner_evidence["foreign_tenant_session_denial_deterministic_required"] is True
+    assert (
+        owner_evidence["foreign_tenant_session_denial_deterministic_required"] is True
+    )
     assert owner_evidence["physical_non_owner_identity_required"] is False
     assert owner_evidence["local_fallback_confirmation_required"] is True
     assert owner_evidence["private_config_runner_read_allowed"] is False
