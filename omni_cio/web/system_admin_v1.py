@@ -157,9 +157,8 @@ class SystemAdminReadServiceV1:
                     timeout=2,
                 )
                 candidate = str(getattr(result, "stdout", "")).strip().lower()
-                if (
-                    int(getattr(result, "returncode", 1)) == 0
-                    and _GIT_SHA_RE.fullmatch(candidate)
+                if int(getattr(result, "returncode", 1)) == 0 and _GIT_SHA_RE.fullmatch(
+                    candidate
                 ):
                     sha = candidate
                     source = "git"
@@ -192,7 +191,9 @@ class SystemAdminReadServiceV1:
 
     def _database(self) -> tuple[dict[str, Any], OperationalState]:
         try:
-            expected = tuple((item.version, item.sha256) for item in discover_migrations())
+            expected = tuple(
+                (item.version, item.sha256) for item in discover_migrations()
+            )
             current = current_migration_state(self._connection)
             exact = current == expected
             current_version = f"{int(current[-1][0]):04d}" if current else None
@@ -530,9 +531,11 @@ class SystemAdminReadServiceV1:
             or disk["state"] == "BLOCKED"
             or real_trading_enabled
         )
-        degraded = any(
-            item["state"] in {"DEGRADED", "ERROR"} for item in current_services
-        ) or disk["state"] == "DEGRADED" or temperature["state"] == "DEGRADED"
+        degraded = (
+            any(item["state"] in {"DEGRADED", "ERROR"} for item in current_services)
+            or disk["state"] == "DEGRADED"
+            or temperature["state"] == "DEGRADED"
+        )
         partial = (
             backup["availability"] != "AVAILABLE"
             or temperature["availability"] != "AVAILABLE"
