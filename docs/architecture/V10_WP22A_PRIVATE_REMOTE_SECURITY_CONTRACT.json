@@ -56,6 +56,43 @@
     "tailnet_policy": "DENY_BY_DEFAULT_OWNER_TO_NODE_443_ONLY",
     "tailnet_policy_preferred_primitive": "grants"
   },
+  "acceptance_runtime": {
+    "principal": "omni-cio-runtime",
+    "principal_must_be_non_admin": true,
+    "temporary_task": "OmniCIO.V10.WP22APrivateRemoteAcceptance",
+    "scheduled_task_logon": "PASSWORD_EPHEMERAL_LOCAL_ONLY",
+    "scheduled_task_s4u_allowed": false,
+    "temporary_batch_logon_right": "SeBatchLogonRight",
+    "deny_batch_logon_right_must_abort": true,
+    "runtime_password_logged_or_exported": false,
+    "postgres_authentication": "SSPI",
+    "postgres_trust_allowed": false,
+    "database_password_persisted": false,
+    "exact_git_archive_deployment_required": true,
+    "cleanup_after_rehearsal_required": true
+  },
+  "owner_evidence": {
+    "physical_rehearsal_required": true,
+    "tailnet_policy_owner_only_confirmation_required": true,
+    "owner_remote_https_confirmation_required": true,
+    "non_owner_denial_confirmation_required": true,
+    "local_fallback_confirmation_required": true,
+    "sanitized_evidence_path": "C:\\ProgramData\\OmniCIO\\wp22a-evidence\\owner-private-remote.sanitized.local.json",
+    "private_config_runner_read_allowed": false,
+    "private_config_runner_write_allowed": false,
+    "sanitized_evidence_runner_read_allowed": true,
+    "sanitized_evidence_runner_write_allowed": false,
+    "exact_head_binding_required": true,
+    "source_hash_binding_required": true,
+    "serve_disabled_after_rehearsal": true,
+    "temporary_runtime_removed_after_rehearsal": true,
+    "raw_owner_identity_allowed": false,
+    "raw_tailnet_hostname_allowed": false,
+    "tailscale_auth_key_allowed": false,
+    "session_cookie_allowed": false,
+    "broker_secret_allowed": false,
+    "private_portfolio_payload_allowed": false
+  },
   "authority": {
     "gateway_entrypoint": "app:app",
     "trading_methods": false,
@@ -68,6 +105,7 @@
   "exit_gate": {
     "web_remains_local_private_until_green": true,
     "owner_private_remote_rehearsal_required": true,
+    "owner_runner_isolation_audit_required": true,
     "public_internet_reachability_required": false,
     "real_approval_surface_publication_required": false
   }
