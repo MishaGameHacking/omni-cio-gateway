@@ -52,6 +52,8 @@ The raw OWNER login is not written by the reviewed configurator. Tailscale authe
 
 The configuration directory ACL is protected and accepted only when its allow-principals are exactly the reviewed local authorities: SYSTEM, Administrators and `omni-cio-runtime`. Runtime receives read/execute only; arbitrary additional principals, including the CI runner identity, cause verification to fail closed.
 
+The configurator treats Tailscale's node-level Serve configuration as an external OWNER-controlled resource. Before applying WP22A it structurally verifies that any existing configuration is either empty or already exactly the reviewed HTTPS 443 -> `http://127.0.0.1:8765` mapping, with no extra handlers, ports, services or foreground Serve sessions. It separately verifies `AllowFunnel` is not enabled at either the top level or in a foreground session. An unrelated/conflicting Serve or active Funnel configuration is **not overwritten**; the script fails closed and requires engineering review instead of resetting Tailscale state.
+
 ## Tailnet policy requirement
 
 WP22A acceptance requires a narrow deny-by-default Tailscale policy. New policy work uses Tailscale grants. Only the OWNER identity/device set required for the Personal cabinet may reach the Lenovo Omni-CIO HTTPS service on port 443.
@@ -103,6 +105,8 @@ if (git status --porcelain) { throw 'STOP: working tree is not clean' }
 
 Configure and verify Tailscale Serve/private config. `-Apply` prompts locally for the **exact decoded Tailscale OWNER login** when it is not supplied. Do not change its case or send it anywhere. The script hashes it before writing local configuration.
 
+If `-Apply` returns `WP22A_REFUSES_EXISTING_SERVE_CONFIGURATION` or `WP22A_REFUSES_EXISTING_FUNNEL_CONFIGURATION`, **stop**. Do not run `tailscale serve reset`, do not disable another service, and do not alter the existing Tailscale configuration manually; report only the sanitized error name to engineering.
+
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\infrastructure\windows\configure_wp22a_tailscale_serve.ps1" -Apply -AsJson
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\infrastructure\windows\configure_wp22a_tailscale_serve.ps1" -Verify -AsJson
@@ -132,7 +136,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\infrastructure\window
 The finalizer then automatically:
 
 - disables the temporary Serve mapping on HTTPS 443;
-- explicitly keeps Funnel disabled;
+- verifies structurally from the remaining ServeConfig that Funnel stays disabled;
 - removes the temporary scheduled task/runtime deployment;
 - disables the temporary runtime role again;
 - restores the temporary PostgreSQL authentication configuration;
@@ -147,7 +151,7 @@ If private remote access is degraded before finalization:
 1. keep the accepted local loopback Web path available;
 2. do **not** enable Funnel as a workaround;
 3. use the reviewed provisioner `-Cleanup` path to stop/remove the owned temporary runtime and restore PostgreSQL config;
-4. disable the Serve HTTPS mapping;
+4. disable only the reviewed WP22A Serve HTTPS mapping; do not reset unrelated Tailscale configuration;
 5. diagnose Tailscale/node policy independently of broker/read data;
 6. preserve V9 rollback.
 
