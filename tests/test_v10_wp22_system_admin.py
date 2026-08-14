@@ -90,6 +90,8 @@ def _service(
     broker_repository: _BrokerRepository,
     free_gib: int = 80,
 ) -> SystemAdminReadServiceV1:
+    monkeypatch.delenv("REAL_TRADING_ENABLED", raising=False)
+    monkeypatch.delenv("WATCHTOWER_ENABLED", raising=False)
     web_dist = tmp_path / "apps" / "web" / "dist"
     web_dist.mkdir(parents=True)
     index = web_dist / "index.html"
@@ -168,6 +170,7 @@ def test_wp22_status_is_bounded_tenant_scoped_and_secret_free(
     assert services["telegram"]["availability"] == "LOCKED_FUTURE_WP"
     assert services["ai"]["availability"] == "LOCKED_FUTURE_WP"
     assert services["t_invest"]["state"] == "READY"
+    assert payload["state"] == "PARTIAL"
 
     serialized = repr(payload).lower()
     assert "token" not in serialized
@@ -203,6 +206,26 @@ def test_wp22_degraded_state_masks_internal_failures_and_blocks_low_disk(
     tinvest = next(item for item in payload["services"] if item["id"] == "t_invest")
     assert tinvest["availability"] == "NOT_AVAILABLE"
     assert "SHOULD_NEVER_LEAK" not in repr(payload)
+
+
+def test_wp22_real_trading_runtime_violation_is_visible_and_blocking(
+    monkeypatch: Any,
+    tmp_path: Path,
+) -> None:
+    connection = _Connection()
+    broker = _BrokerRepository()
+    service = _service(
+        monkeypatch,
+        tmp_path,
+        connection=connection,
+        broker_repository=broker,
+    )
+    monkeypatch.setenv("REAL_TRADING_ENABLED", "true")
+
+    payload = service.read(tenant_id=OWNER_TENANT_ID)
+
+    assert payload["safety"]["real_trading_enabled"] is True
+    assert payload["state"] == "BLOCKED"
 
 
 class _Sessions:
