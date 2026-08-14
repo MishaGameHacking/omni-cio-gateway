@@ -11,7 +11,7 @@ Until the WP22A deterministic CI gates are GREEN and engineering explicitly reac
 - do **not** open router/firewall ports;
 - do **not** enable Tailscale Funnel;
 - do **not** create a public DNS record/tunnel;
-- do **not** paste Tailscale auth keys, broker tokens, Telegram/VK credentials, recovery keys, private portfolio data, or raw account IDs into chat/GitHub.
+- do **not** paste Tailscale auth keys, broker tokens, Telegram/VK credentials, recovery keys, private portfolio data, raw account IDs, raw Tailscale OWNER login, raw tailnet hostname, or session cookies into chat/GitHub.
 
 The accepted local/private Web remains the fallback.
 
@@ -50,45 +50,17 @@ It contains only:
 
 The raw OWNER login is not written by the reviewed configurator. Tailscale authentication material is owned by Tailscale and must not be copied into Omni-CIO files.
 
-The configuration directory ACL is protected and accepted only when its allow-principals are exactly the reviewed local authorities: SYSTEM, Administrators and `omni-cio-runtime`. Runtime receives read/execute only; arbitrary additional principals, including a CI runner identity, cause verification to fail closed.
-
-## Reviewed configuration command
-
-The owning script is:
-
-`infrastructure\windows\configure_wp22a_tailscale_serve.ps1`
-
-When OWNER acceptance is explicitly authorized, run PowerShell as Administrator from the exact reviewed checkout. `-Apply` prompts locally for the **exact decoded Tailscale OWNER login** when it is not supplied; do not change case or otherwise normalize it manually. Tailscale Serve can encode non-ASCII identity header values using RFC 2047; the Python boundary decodes such a header before exact fingerprint comparison. The script hashes the locally entered decoded login before writing configuration.
-
-The script turns Funnel off on HTTPS 443 and configures Tailscale Serve HTTPS 443 to the loopback backend.
-
-The safe final evidence emitted by `-AsJson` contains only booleans plus a hostname hash. Do not share the local config file itself.
-
-## Runtime launcher
-
-The backend launcher is:
-
-`infrastructure\windows\run_wp22a_private_remote_runtime.ps1`
-
-It must run as the existing non-admin `omni-cio-runtime` identity and refuses elevation. It verifies the exact deployment SHA marker and local private configuration, forces:
-
-- `OMNI_V10_WEB_PRIVATE_ACCEPTANCE=0`;
-- `OMNI_V10_WP15_LIVE_ACCEPTANCE=0`;
-- `OMNI_V10_WP22A_PUBLIC_INGRESS=0`;
-- `PUBLIC_MULTI_USER_ENABLED=0`;
-- `REAL_TRADING_ENABLED=0`;
-
-and launches Uvicorn only on `127.0.0.1`.
+The configuration directory ACL is protected and accepted only when its allow-principals are exactly the reviewed local authorities: SYSTEM, Administrators and `omni-cio-runtime`. Runtime receives read/execute only; arbitrary additional principals, including the CI runner identity, cause verification to fail closed.
 
 ## Tailnet policy requirement
 
-WP22A acceptance requires a narrow deny-by-default Tailscale policy. New policy work should use Tailscale grants. Only the OWNER identity/device set required for the Personal cabinet should be able to reach the Lenovo Omni-CIO HTTPS service.
+WP22A acceptance requires a narrow deny-by-default Tailscale policy. New policy work uses Tailscale grants. Only the OWNER identity/device set required for the Personal cabinet may reach the Lenovo Omni-CIO HTTPS service on port 443.
 
-A default allow-all tailnet policy is **not accepted evidence** for the WP22A Exit Gate.
+A default allow-all tailnet policy is **not accepted evidence** for the WP22A Exit Gate. The exact tailnet policy is OWNER-controlled external configuration and is not modified by CI.
 
-The exact tailnet policy is OWNER-controlled external configuration and is not modified by CI.
+The wrong/non-OWNER identity case is already a deterministic code/security negative test. The OWNER is **not** required to create a second foreign Tailscale account solely to repeat that test physically.
 
-## Browser/session behavior
+## Private-remote session behavior
 
 Remote requests must arrive through the loopback Tailscale Serve proxy path with Serve identity headers. The backend RFC-2047-decodes `Tailscale-User-Login` when necessary and compares only its SHA-256 fingerprint with the locally configured exact OWNER fingerprint.
 
@@ -103,14 +75,79 @@ Bootstrap rotates the current browser session. The remote session cookie is `Sec
 
 Remote responses are hardened with HSTS (`max-age=31536000`), `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` and `Referrer-Policy: no-referrer` unless the owning response already sets the relevant header.
 
+## Temporary OWNER acceptance runtime
+
+Physical acceptance does not install a new permanent stack. It temporarily deploys the exact reviewed Git tree under:
+
+`C:\ProgramData\OmniCIO\runtime\wp22a-private`
+
+The owning provisioner is:
+
+`infrastructure\windows\provision_wp22a_private_remote_runtime.ps1`
+
+It reuses the accepted `omni-cio-runtime` non-admin role, creates a random local runtime password only in process memory, temporarily grants `SeBatchLogonRight`, registers a password-logon limited scheduled task, starts the runtime, and removes the temporary batch-logon right. S4U is intentionally not used because this runtime needs network access and the existing DPAPI-protected READ boundary. PostgreSQL runtime authentication remains SSPI; no PostgreSQL `trust` rule or stored DB password is introduced.
+
+The exact source deployment, task principal/action, ACLs, loopback runtime readiness and Tailscale config are all verified before evidence can be finalized.
+
+## OWNER rehearsal commands — use only after engineering explicitly authorizes the gate
+
+Run these from an **Administrator PowerShell** opened in the exact clean reviewed checkout. Engineering will provide the exact accepted PR head when this stage is reached.
+
+First bind the reviewed SHA locally:
+
+```powershell
+$expected = (git rev-parse HEAD).Trim().ToLowerInvariant()
+if ($expected -notmatch '^[0-9a-f]{40}$') { throw 'STOP: invalid reviewed SHA' }
+if (git status --porcelain) { throw 'STOP: working tree is not clean' }
+```
+
+Configure and verify Tailscale Serve/private config. `-Apply` prompts locally for the **exact decoded Tailscale OWNER login** when it is not supplied. Do not change its case or send it anywhere. The script hashes it before writing local configuration.
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\infrastructure\windows\configure_wp22a_tailscale_serve.ps1" -Apply -AsJson
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\infrastructure\windows\configure_wp22a_tailscale_serve.ps1" -Verify -AsJson
+```
+
+Provision and verify the temporary exact-head runtime:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\infrastructure\windows\provision_wp22a_private_remote_runtime.ps1" -ExpectedImplementationSha $expected -Apply -AsJson
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\infrastructure\windows\provision_wp22a_private_remote_runtime.ps1" -ExpectedImplementationSha $expected -Verify -AsJson
+```
+
+At this point the OWNER performs only the physical observations that CI cannot synthesize:
+
+1. From a **separate OWNER device already admitted to the reviewed narrow tailnet policy**, open the private `https://<node>.ts.net` cabinet and confirm that the Omni-CIO Web shell opens through Tailscale Serve.
+2. On Lenovo, confirm the accepted local loopback Web fallback remains usable.
+3. Confirm the tailnet policy is narrow/deny-by-default and grants only the intended OWNER identity/device set access to Lenovo HTTPS 443.
+
+Do not send screenshots containing the hostname, OWNER identity, portfolio, positions, broker data or browser cookies. The final evidence script records only booleans and source hashes.
+
+Finalize the physical evidence only if all three observations are genuinely true:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\infrastructure\windows\finalize_wp22a_private_remote_evidence.ps1" -ExpectedImplementationSha $expected -TailnetPolicyNarrowConfirmed -OwnerRemoteCabinetConfirmed -LocalFallbackConfirmed -AsJson
+```
+
+The finalizer then automatically:
+
+- disables the temporary Serve mapping on HTTPS 443;
+- explicitly keeps Funnel disabled;
+- removes the temporary scheduled task/runtime deployment;
+- disables the temporary runtime role again;
+- restores the temporary PostgreSQL authentication configuration;
+- writes only exact-head/source-hash-bound sanitized evidence under `C:\ProgramData\OmniCIO\wp22a-evidence`.
+
+The CI runner is allowed to read that sanitized evidence but remains unable to modify it or read/write `private-remote.json`.
+
 ## Recovery / rollback
 
-If private remote access is degraded:
+If private remote access is degraded before finalization:
 
 1. keep the accepted local loopback Web path available;
-2. stop the private-remote runtime;
-3. disable the Serve HTTPS mapping with the matching `tailscale serve ... off` command or reset the reviewed Serve configuration if explicitly required;
-4. do not enable Funnel as a workaround;
+2. do **not** enable Funnel as a workaround;
+3. use the reviewed provisioner `-Cleanup` path to stop/remove the owned temporary runtime and restore PostgreSQL config;
+4. disable the Serve HTTPS mapping;
 5. diagnose Tailscale/node policy independently of broker/read data;
 6. preserve V9 rollback.
 
@@ -118,16 +155,19 @@ No broker credential rotation is required merely because the remote transport is
 
 ## OWNER acceptance evidence
 
-The eventual OWNER rehearsal must prove only sanitized facts:
+The eventual OWNER rehearsal proves only sanitized facts:
 
-- exact reviewed implementation SHA;
-- Tailscale Running;
-- private Serve mapping present;
-- Funnel absent for the Omni-CIO service;
-- backend loopback only;
-- config ACL/private state valid;
-- OWNER remote browser reaches the cabinet;
-- a non-OWNER identity cannot bootstrap the session;
-- local fallback remains usable.
+- exact reviewed implementation SHA and exact source hashes;
+- Tailscale private Serve mapping was present;
+- Funnel was absent;
+- backend was loopback-only;
+- private config ACL/state was valid;
+- exact temporary runtime ran as non-admin `omni-cio-runtime`;
+- narrow OWNER-only tailnet policy was physically confirmed;
+- OWNER remote browser reached the cabinet from a separate device;
+- local fallback remained usable;
+- deterministic wrong-identity denial tests were green;
+- Serve/runtime temporary acceptance surface was removed after rehearsal;
+- runner can read only sanitized evidence and cannot read/write private Tailscale config.
 
 Raw tailnet identity/login, raw hostname, auth keys, cookies, broker credentials, portfolio values, account IDs, or screenshots containing private investment data are not accepted evidence artifacts.
