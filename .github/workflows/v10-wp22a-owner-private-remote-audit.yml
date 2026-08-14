@@ -1,0 +1,90 @@
+name: V10 WP22A OWNER Private Remote Audit
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - ".github/workflows/v10-wp22a-owner-private-remote-audit.yml"
+      - "docs/architecture/V10_WP22A_**"
+      - "docs/operations/V10_WP22A_**"
+      - "infrastructure/windows/*wp22a*"
+      - "omni_cio/web/external_access_v1.py"
+      - "apps/api/wp22a_remote.py"
+      - "scripts/*wp22a*"
+      - "tests/test_v10_wp22a_**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: v10-wp22a-owner-private-remote-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  owner-private-remote:
+    name: OWNER phone HTTPS and private Serve evidence
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 5
+    defaults:
+      run:
+        shell: cmd
+
+    steps:
+      - name: Check out exact reviewed head
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Bootstrap protected Python runtime
+        run: scripts\bootstrap_windows_ci_python.cmd
+
+      - name: Verify exact checked-out head
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          for /f %%S in ('git rev-parse HEAD') do set "ACTUAL_HEAD=%%S"
+          if /I not "%ACTUAL_HEAD%"=="%EXPECTED_HEAD%" exit /b 13
+          echo WP22A OWNER exact head: %ACTUAL_HEAD%
+
+      - name: Require real local OWNER phone rehearsal evidence
+        run: |
+          @echo off
+          set "OWNER_REHEARSAL=C:\ProgramData\OmniCIO\wp22a\owner-rehearsal.sanitized.local.json"
+          if not exist "%OWNER_REHEARSAL%" (
+            echo WP22A_OWNER_PRIVATE_REMOTE_GATE=OWNER_ACTION_REQUIRED
+            echo The OWNER must run the reviewed private Serve gate and verify the exact HTTPS link from a separate authorized phone or browser device.
+            exit /b 1
+          )
+          echo WP22A_OWNER_REHEARSAL=%OWNER_REHEARSAL%>>"%GITHUB_ENV%"
+          echo WP22A_OWNER_LOCAL_REHEARSAL=PRESENT
+
+      - name: Validate current implementation-bound OWNER evidence
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          @echo off
+          set "FINAL=%RUNNER_TEMP%\wp22a-owner-final-%GITHUB_RUN_ID%-%GITHUB_RUN_ATTEMPT%.json"
+          python scripts\validate_v10_wp22a_owner_evidence.py "%WP22A_OWNER_REHEARSAL%" --expected-sha "%EXPECTED_HEAD%" --output "%FINAL%"
+          if errorlevel 1 exit /b %errorlevel%
+          type "%FINAL%"
+          echo WP22A_OWNER_FINAL=%FINAL%>>"%GITHUB_ENV%"
+
+      - name: Upload sanitized evidence only
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: v10-wp22a-owner-private-remote-sanitized-evidence
+          path: ${{ runner.temp }}\wp22a-owner-final-${{ github.run_id }}-${{ github.run_attempt }}.json
+          if-no-files-found: error
+          retention-days: 3
+
+      - name: Clean runner-temporary sanitized evidence
+        if: always()
+        shell: cmd
+        run: |
+          @echo off
+          if defined WP22A_OWNER_FINAL if exist "%WP22A_OWNER_FINAL%" del /f /q "%WP22A_OWNER_FINAL%"
+          git reset --hard HEAD
+          git clean -ffdx
