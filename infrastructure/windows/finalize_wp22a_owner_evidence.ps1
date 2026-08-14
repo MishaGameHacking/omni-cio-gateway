@@ -14,6 +14,7 @@ $stateRoot = "C:\ProgramData\OmniCIO\wp22a"
 $evidencePath = Join-Path $stateRoot "owner-rehearsal.sanitized.local.json"
 $provisioner = Join-Path $repoRoot "infrastructure\windows\provision_wp22a_private_remote_access.ps1"
 $runtimeLauncher = Join-Path $repoRoot "infrastructure\windows\run_wp22a_private_remote_runtime.ps1"
+$runnerAuditor = Join-Path $repoRoot "infrastructure\windows\audit_wp22a_runner_loopback.ps1"
 $ownerFinalizer = $PSCommandPath
 $executionContract = Join-Path $repoRoot "docs\architecture\V10_WP22A_EXECUTION_CONTRACT.md"
 $externalAccess = Join-Path $repoRoot "omni_cio\web\external_access_v1.py"
@@ -56,6 +57,7 @@ function Write-Summary {
     Write-Output "Reason: $($Result.reason_code)"
     Write-Output "Exact implementation binding: $($Result.exact_implementation_binding)"
     Write-Output "Backend loopback-only: $($Result.backend_loopback_only)"
+    Write-Output "CI runner loopback firewall: $($Result.runner_loopback_firewall_bound)"
     Write-Output "Tailscale Serve private: $($Result.tailscale_serve_private)"
     Write-Output "Funnel/public ingress: $($Result.funnel_public_ingress)"
     Write-Output "OWNER identity binding: $($Result.owner_identity_binding)"
@@ -70,6 +72,7 @@ $result = [ordered]@{
     reason_code = "WP22A_OWNER_EVIDENCE_NOT_COMPLETED"
     exact_implementation_binding = $false
     backend_loopback_only = $false
+    runner_loopback_firewall_bound = $false
     tailscale_serve_private = $false
     funnel_public_ingress = $false
     owner_identity_binding = $false
@@ -92,6 +95,7 @@ try {
     foreach ($path in @(
         $provisioner,
         $runtimeLauncher,
+        $runnerAuditor,
         $ownerFinalizer,
         $executionContract,
         $externalAccess,
@@ -117,6 +121,7 @@ try {
         [string]$verify.status -ne "PASS" -or
         -not [bool]$verify.exact_implementation_binding -or
         -not [bool]$verify.backend_loopback_only -or
+        -not [bool]$verify.runner_loopback_firewall_bound -or
         -not [bool]$verify.tailscale_serve_private -or
         [bool]$verify.funnel_public_ingress -or
         -not [bool]$verify.owner_identity_binding -or
@@ -132,6 +137,7 @@ try {
         remote_factory_sha256 = Get-Sha256Lower -Path $remoteFactory
         provisioner_sha256 = Get-Sha256Lower -Path $provisioner
         runtime_launcher_sha256 = Get-Sha256Lower -Path $runtimeLauncher
+        runner_auditor_sha256 = Get-Sha256Lower -Path $runnerAuditor
         owner_finalizer_sha256 = Get-Sha256Lower -Path $ownerFinalizer
     }
 
@@ -144,6 +150,7 @@ try {
         implementation_fingerprint = $fingerprint
         exact_implementation_binding = $true
         backend_loopback_only = $true
+        runner_loopback_firewall_bound = $true
         tailscale_serve_private = $true
         funnel_public_ingress = $false
         owner_identity_binding = $true
@@ -172,6 +179,7 @@ try {
     $result.reason_code = "WP22A_OWNER_PRIVATE_REMOTE_PHONE_ACCEPTED"
     $result.exact_implementation_binding = $true
     $result.backend_loopback_only = $true
+    $result.runner_loopback_firewall_bound = $true
     $result.tailscale_serve_private = $true
     $result.funnel_public_ingress = $false
     $result.owner_identity_binding = $true
