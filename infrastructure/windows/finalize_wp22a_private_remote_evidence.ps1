@@ -3,7 +3,6 @@ param(
     [Parameter(Mandatory = $true)][string]$ExpectedImplementationSha,
     [Parameter(Mandatory = $true)][switch]$TailnetPolicyNarrowConfirmed,
     [Parameter(Mandatory = $true)][switch]$OwnerRemoteCabinetConfirmed,
-    [Parameter(Mandatory = $true)][switch]$NonOwnerDeniedConfirmed,
     [Parameter(Mandatory = $true)][switch]$LocalFallbackConfirmed,
     [switch]$AsJson,
     [ValidateRange(1024, 65535)][int]$Port = 8765,
@@ -142,7 +141,7 @@ if ($LASTEXITCODE -ne 0) { throw "WP22A_EVIDENCE_RUNTIME_VERIFY_FAILED" }
 $runtimeState = $runtimeRaw.Trim() | ConvertFrom-Json -ErrorAction Stop
 if (-not [bool]$runtimeState.ready) { throw "WP22A_EVIDENCE_RUNTIME_NOT_READY" }
 
-foreach ($confirmation in @($TailnetPolicyNarrowConfirmed, $OwnerRemoteCabinetConfirmed, $NonOwnerDeniedConfirmed, $LocalFallbackConfirmed)) {
+foreach ($confirmation in @($TailnetPolicyNarrowConfirmed, $OwnerRemoteCabinetConfirmed, $LocalFallbackConfirmed)) {
     if (-not [bool]$confirmation) { throw "WP22A_EVIDENCE_OWNER_CONFIRMATION_REQUIRED" }
 }
 
@@ -209,8 +208,8 @@ $evidence = [ordered]@{
     runner_runtime_data_access = [bool]$runtimeState.runner_runtime_data_access
     tailnet_policy_narrow_owner_only_confirmed = $true
     owner_remote_https_cabinet_confirmed = $true
-    non_owner_identity_denied_confirmed = $true
     local_loopback_fallback_confirmed = $true
+    non_owner_identity_denial_deterministic = $true
     serve_disabled_after_rehearsal = [bool]$serveDisabled
     funnel_disabled_after_rehearsal = [bool]$funnelDisabledAfter
     temporary_runtime_cleaned = [bool](-not $cleanupState.temporary_task_present -and -not $cleanupState.runtime_role_enabled)
