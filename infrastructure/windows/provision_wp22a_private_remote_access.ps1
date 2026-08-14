@@ -11,7 +11,7 @@ param(
 Set-StrictMode -Version 3.0
 $ErrorActionPreference = "Stop"
 
-$modeCount = @($Apply, $Verify, $Cleanup | Where-Object { $_ }).Count
+$modeCount = @(@($Apply, $Verify, $Cleanup) | Where-Object { $_ }).Count
 if ($modeCount -ne 1) { throw "Choose exactly one of -Apply, -Verify, or -Cleanup." }
 if ($env:OS -ne "Windows_NT") { throw "WP22A private remote provisioning requires Windows." }
 
@@ -131,7 +131,9 @@ function Get-ServeState {
 
 function New-RandomRuntimePassword {
     $bytes = New-Object byte[] 48
-    [System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try { $rng.GetBytes($bytes) }
+    finally { $rng.Dispose() }
     return [Convert]::ToBase64String($bytes) + "!aA7"
 }
 
@@ -163,7 +165,8 @@ function Install-RemoteTask {
     Unregister-ScheduledTask -TaskName $remoteTaskName -Confirm:$false -ErrorAction SilentlyContinue
 
     $runtimeUser = Get-LocalUser -Name $runtimeName -ErrorAction Stop
-    $admins = @(Get-LocalGroupMember -Group "Administrators" -ErrorAction Stop)
+    $administratorsSid = [System.Security.Principal.SecurityIdentifier]::new("S-1-5-32-544")
+    $admins = @(Get-LocalGroupMember -SID $administratorsSid -ErrorAction Stop)
     if ($admins.SID.Value -contains $runtimeUser.SID.Value) {
         throw "WP22A_REMOTE_RUNTIME_IS_ADMINISTRATOR"
     }
@@ -233,7 +236,7 @@ function Test-RemoteOwnerSession {
 }
 
 function Write-Result {
-    param([Parameter(Mandatory = $true)][hashtable]$Result)
+    param([Parameter(Mandatory = $true)][System.Collections.IDictionary]$Result)
     if ($AsJson) { $Result | ConvertTo-Json -Depth 4 -Compress; return }
     foreach ($key in $Result.Keys) { Write-Output ("{0}: {1}" -f $key, $Result[$key]) }
 }
@@ -247,6 +250,9 @@ if ($Cleanup) {
     & $tailscale serve off *> $null
     Stop-ScheduledTask -TaskName $remoteTaskName -ErrorAction SilentlyContinue
     Unregister-ScheduledTask -TaskName $remoteTaskName -Confirm:$false -ErrorAction SilentlyContinue
+    if ($null -ne (Get-ScheduledTask -TaskName $baseTaskName -ErrorAction SilentlyContinue)) {
+        Start-ScheduledTask -TaskName $baseTaskName -ErrorAction SilentlyContinue
+    }
     Write-Result -Result ([ordered]@{
         status = "PASS"; reason = "WP22A_PRIVATE_REMOTE_DISABLED"; public_ingress = $false
     })
