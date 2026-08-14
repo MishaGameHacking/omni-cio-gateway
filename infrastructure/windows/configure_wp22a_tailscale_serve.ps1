@@ -1,0 +1,176 @@
+[CmdletBinding()]
+param(
+    [switch]$Apply,
+    [switch]$Verify,
+    [string]$OwnerLogin,
+    [ValidateRange(1024, 65535)][int]$BackendPort = 8765,
+    [string]$ConfigPath = "C:\ProgramData\OmniCIO\wp22a\private-remote.json",
+    [switch]$AsJson
+)
+
+Set-StrictMode -Version 3.0
+$ErrorActionPreference = "Stop"
+
+if ($Apply -and $Verify) { throw "Choose -Apply or -Verify, not both." }
+if (-not $Apply -and -not $Verify) { throw "Choose -Apply or -Verify." }
+if ($env:OS -ne "Windows_NT") { throw "WP22A Tailscale configuration requires Windows." }
+
+function Test-Administrator {
+    $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+    $principal = [System.Security.Principal.WindowsPrincipal]::new($identity)
+    return $principal.IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+function Get-Sha256Hex {
+    param([Parameter(Mandatory = $true)][string]$Value)
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($Value)
+        $digest = $sha.ComputeHash($bytes)
+        return ([System.BitConverter]::ToString($digest)).Replace('-', '').ToLowerInvariant()
+    }
+    finally {
+        $sha.Dispose()
+    }
+}
+
+function New-Rule {
+    param(
+        [Parameter(Mandatory = $true)][System.Security.Principal.SecurityIdentifier]$Sid,
+        [Parameter(Mandatory = $true)][System.Security.AccessControl.FileSystemRights]$Rights,
+        [System.Security.AccessControl.InheritanceFlags]$Inheritance = [System.Security.AccessControl.InheritanceFlags]::None
+    )
+    return [System.Security.AccessControl.FileSystemAccessRule]::new(
+        $Sid,
+        $Rights,
+        $Inheritance,
+        [System.Security.AccessControl.PropagationFlags]::None,
+        [System.Security.AccessControl.AccessControlType]::Allow
+    )
+}
+
+function Set-PrivateConfigAcl {
+    param([Parameter(Mandatory = $true)][string]$Root)
+    $runtime = Get-LocalUser -Name "omni-cio-runtime" -ErrorAction Stop
+    $runtimeSid = $runtime.SID
+    $systemSid = [System.Security.Principal.SecurityIdentifier]::new("S-1-5-18")
+    $adminsSid = [System.Security.Principal.SecurityIdentifier]::new("S-1-5-32-544")
+    $inherit = [System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [System.Security.AccessControl.InheritanceFlags]::ObjectInherit
+    $acl = [System.Security.AccessControl.DirectorySecurity]::new()
+    $acl.SetAccessRuleProtection($true, $false)
+    $acl.AddAccessRule((New-Rule -Sid $systemSid -Rights ([System.Security.AccessControl.FileSystemRights]::FullControl) -Inheritance $inherit))
+    $acl.AddAccessRule((New-Rule -Sid $adminsSid -Rights ([System.Security.AccessControl.FileSystemRights]::FullControl) -Inheritance $inherit))
+    $acl.AddAccessRule((New-Rule -Sid $runtimeSid -Rights ([System.Security.AccessControl.FileSystemRights]::ReadAndExecute) -Inheritance $inherit))
+    Set-Acl -LiteralPath $Root -AclObject $acl -ErrorAction Stop
+}
+
+function Test-PrivateConfigAcl {
+    param([Parameter(Mandatory = $true)][string]$Root)
+    $acl = Get-Acl -LiteralPath $Root -ErrorAction Stop
+    if (-not $acl.AreAccessRulesProtected) { return $false }
+    $broad = @($acl.Access | Where-Object {
+        $name = [string]$_.IdentityReference
+        $name -match '(?i)Everyone|Authenticated Users|\\Users$'
+    })
+    return ($broad.Count -eq 0)
+}
+
+function Test-EmptyTailscaleStatusJson {
+    param([Parameter(Mandatory = $true)][string]$Text)
+    $compact = ($Text -replace '\s', '')
+    return @('', '{}', '[]', 'null') -contains $compact
+}
+
+if (-not (Test-Administrator)) { throw "WP22A Tailscale apply/verify requires OWNER administrator." }
+$tailscaleCommand = Get-Command tailscale.exe -ErrorAction Stop
+$tailscale = $tailscaleCommand.Source
+$statusRaw = (& $tailscale status --json 2>&1 | Out-String)
+if ($LASTEXITCODE -ne 0) { throw "WP22A_TAILSCALE_STATUS_FAILED" }
+$status = $statusRaw | ConvertFrom-Json
+if ([string]$status.BackendState -ne "Running") { throw "WP22A_TAILSCALE_NOT_RUNNING" }
+$hostName = ([string]$status.Self.DNSName).Trim().ToLowerInvariant().TrimEnd('.')
+if ($hostName -notmatch '^[a-z0-9][a-z0-9.-]*\.ts\.net$' -or $hostName.Contains('..')) {
+    throw "WP22A_TAILSCALE_DNS_NAME_INVALID"
+}
+
+$configRoot = Split-Path -Parent $ConfigPath
+if ($Apply) {
+    $normalizedLogin = $OwnerLogin.Trim().ToLowerInvariant()
+    if ([string]::IsNullOrWhiteSpace($normalizedLogin)) {
+        $normalizedLogin = (Read-Host "Tailscale OWNER login; the raw value will only be hashed locally").Trim().ToLowerInvariant()
+    }
+    if ([string]::IsNullOrWhiteSpace($normalizedLogin) -or $normalizedLogin.Length -gt 320) {
+        throw "WP22A_OWNER_LOGIN_INVALID"
+    }
+    $ownerFingerprint = Get-Sha256Hex -Value $normalizedLogin
+
+    if (-not (Test-Path -LiteralPath $configRoot -PathType Container)) {
+        New-Item -ItemType Directory -Path $configRoot -Force | Out-Null
+    }
+    Set-PrivateConfigAcl -Root $configRoot
+    $config = [ordered]@{
+        schema_version = "1"
+        transport = "TAILSCALE_SERVE_PRIVATE"
+        host = $hostName
+        owner_login_sha256 = $ownerFingerprint
+        backend_host = "127.0.0.1"
+        backend_port = $BackendPort
+        public_ingress = $false
+        tailscale_funnel_allowed = $false
+        public_multi_user_enabled = $false
+        real_trading_enabled = $false
+    }
+    $config | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $ConfigPath -Encoding UTF8
+
+    & $tailscale funnel --https=443 off 2>&1 | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "WP22A_FUNNEL_DISABLE_FAILED" }
+    & $tailscale serve --bg --https=443 "http://127.0.0.1:$BackendPort" 2>&1 | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "WP22A_TAILSCALE_SERVE_APPLY_FAILED" }
+}
+
+if (-not (Test-Path -LiteralPath $ConfigPath -PathType Leaf)) { throw "WP22A_PRIVATE_REMOTE_CONFIG_MISSING" }
+$configCurrent = Get-Content -LiteralPath $ConfigPath -Raw -ErrorAction Stop | ConvertFrom-Json
+$configHost = ([string]$configCurrent.host).Trim().ToLowerInvariant().TrimEnd('.')
+$ownerHash = ([string]$configCurrent.owner_login_sha256).Trim().ToLowerInvariant()
+$configOk = (
+    [string]$configCurrent.transport -eq "TAILSCALE_SERVE_PRIVATE" -and
+    $configHost -eq $hostName -and
+    $ownerHash -match '^[0-9a-f]{64}$' -and
+    [string]$configCurrent.backend_host -eq "127.0.0.1" -and
+    [int]$configCurrent.backend_port -eq $BackendPort -and
+    -not [bool]$configCurrent.public_ingress -and
+    -not [bool]$configCurrent.tailscale_funnel_allowed -and
+    -not [bool]$configCurrent.public_multi_user_enabled -and
+    -not [bool]$configCurrent.real_trading_enabled
+)
+$aclOk = Test-PrivateConfigAcl -Root $configRoot
+$serveRaw = (& $tailscale serve status --json 2>&1 | Out-String)
+if ($LASTEXITCODE -ne 0) { throw "WP22A_TAILSCALE_SERVE_STATUS_FAILED" }
+$targetNeedle = "127.0.0.1:$BackendPort"
+$serveOk = (-not (Test-EmptyTailscaleStatusJson -Text $serveRaw)) -and $serveRaw.Contains($targetNeedle)
+$funnelRaw = (& $tailscale funnel status --json 2>&1 | Out-String)
+if ($LASTEXITCODE -ne 0) { throw "WP22A_TAILSCALE_FUNNEL_STATUS_FAILED" }
+$funnelDisabled = Test-EmptyTailscaleStatusJson -Text $funnelRaw
+
+$ready = $configOk -and $aclOk -and $serveOk -and $funnelDisabled
+$result = [ordered]@{
+    schema_version = "1"
+    work_package = "WP22A"
+    transport = "TAILSCALE_SERVE_PRIVATE"
+    host_sha256 = Get-Sha256Hex -Value $hostName
+    backend_loopback_only = ([string]$configCurrent.backend_host -eq "127.0.0.1")
+    serve_configured = [bool]$serveOk
+    funnel_disabled = [bool]$funnelDisabled
+    private_config_acl_ok = [bool]$aclOk
+    owner_identity_fingerprint_present = [bool]($ownerHash -match '^[0-9a-f]{64}$')
+    public_ingress = $false
+    public_multi_user_enabled = $false
+    broker_write_authority_added = $false
+    trading_methods = $false
+    real_trading_enabled = $false
+    gateway_entrypoint = "app:app"
+    ready = [bool]$ready
+}
+
+if ($AsJson) { $result | ConvertTo-Json -Depth 4 } else { $result.GetEnumerator() | ForEach-Object { "{0}: {1}" -f $_.Key, $_.Value } }
+if (-not $ready) { exit 41 }
