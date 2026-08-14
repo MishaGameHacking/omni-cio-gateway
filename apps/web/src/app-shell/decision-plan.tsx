@@ -125,7 +125,7 @@ type DecisionPlanPayload = {
   };
   decision: null | {
     decision_set_sha256: string;
-    decided_at: string;
+    retrieved_at: string;
     abstain: boolean;
     recommendation_ready: boolean;
     confidence: string;
