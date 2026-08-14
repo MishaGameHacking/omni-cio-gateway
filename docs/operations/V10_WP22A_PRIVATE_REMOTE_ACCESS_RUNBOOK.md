@@ -98,18 +98,23 @@ The runner auditor:
 - requires the remote WP22A task and loopback listener to be live;
 - verifies the runner-bound firewall rule without emitting the raw runner identity or SID;
 - makes a real TCP connection attempt from the runner to `127.0.0.1:<web-port>` and requires that connection to be denied;
-- fails WP22A if the ordinary CI runner can reach the backend directly.
+- requires the sanitized OWNER evidence to be readable for validation but not writable by the runner;
+- attempts to open the evidence file for write and to create a new file in the evidence directory, and requires both operations to be denied;
+- fails WP22A if the ordinary CI runner can reach the backend directly or manufacture/replace OWNER evidence.
 
 The finalizer:
 
 - can run only after the OWNER has physically opened the HTTPS link from a separate authorized phone/browser and confirmed logout/session revocation;
 - re-runs the non-mutating live `-Verify` gate on the exact clean reviewed head;
 - requires the runner-loopback firewall binding to remain present;
+- rejects a reparse-point evidence root;
+- protects `C:\ProgramData\OmniCIO\wp22a` with inheritance disabled: SYSTEM and Administrators retain FullControl, the exact GitHub runner SID receives ReadAndExecute only, and broad Everyone/Authenticated Users/Users allows are absent;
 - writes only `C:\ProgramData\OmniCIO\wp22a\owner-rehearsal.sanitized.local.json`;
 - binds the evidence to the exact Git SHA and SHA-256 fingerprints of the reviewed security/runtime/runner-audit/evidence implementation;
+- records the protected/read-only evidence state as booleans;
 - stores no raw OWNER login, runner identity/SID, private `*.ts.net` URL, Tailscale authentication material, broker secret, full account ID or private portfolio payload.
 
-CI cannot synthesize this OWNER evidence. The dedicated OWNER audit first requires the real local file, then independently proves runner loopback denial, then validates and uploads only a short-lived sanitized derivative.
+CI cannot synthesize this OWNER evidence. The dedicated OWNER audit first requires the real local file, then independently proves both runner loopback denial and runner evidence-write denial, then validates and uploads only a short-lived sanitized derivative.
 
 ## Private runtime configuration
 
@@ -196,7 +201,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\infrastructure\window
 
 The confirmation switches are OWNER assertions about physical observations and must never be used unless the separate-device rehearsal was actually performed.
 
-After the finalizer succeeds, the dedicated GitHub OWNER audit must be run on that exact implementation head while the remote runtime remains live. That workflow independently proves that the actual CI runner cannot connect directly to the loopback backend before it validates the OWNER file.
+After the finalizer succeeds, the dedicated GitHub OWNER audit must be run on that exact implementation head while the remote runtime remains live. That workflow independently proves that the actual CI runner cannot connect directly to the loopback backend, cannot open the OWNER evidence for write and cannot create a replacement file in the protected evidence directory before it validates the OWNER file.
 
 ## Sanitized acceptance evidence
 
@@ -207,6 +212,8 @@ WP22A OWNER private remote gate: PASS
 Exact implementation binding: True
 Backend loopback-only: True
 CI runner loopback firewall: True
+OWNER evidence ACL protected: True
+CI runner evidence write allowed: False
 Tailscale Serve private: True
 Funnel/public ingress: False
 OWNER identity binding: True
