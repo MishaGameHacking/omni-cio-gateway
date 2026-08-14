@@ -103,7 +103,7 @@ jobs:
         run: |
           "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m ruff check omni_cio\web\decision_plan_v1.py apps\api\app.py tests\test_v10_wp21_decision_plan.py
           if errorlevel 1 exit /b 40
-          "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m ruff format omni_cio\web\decision_plan_v1.py apps\api\app.py tests\test_v10_wp21_decision_plan.py
+          "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m ruff format --check omni_cio\web\decision_plan_v1.py apps\api\app.py tests\test_v10_wp21_decision_plan.py
           if errorlevel 1 exit /b 41
           "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m mypy
           if errorlevel 1 exit /b 42
@@ -119,17 +119,13 @@ jobs:
           "%VENV_WINDOWS_PATH%\Scripts\python.exe" scripts\check_v10_regression_shield.py
           if errorlevel 1 exit /b 52
 
-      - name: Upload diagnostic WP21 evidence and exact sources
+      - name: Upload synthetic WP21 browser evidence only
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: wp21-decision-risk-plan-evidence
           path: |
             apps/web/test-results/
-            apps/web/src/app-shell/decision-plan.tsx
-            apps/web/e2e/decision-plan.spec.ts
-            omni_cio/web/decision_plan_v1.py
-            tests/test_v10_wp21_decision_plan.py
           if-no-files-found: warn
           retention-days: 3
 
