@@ -26,7 +26,7 @@ jobs:
     name: OWNER phone HTTPS and private Serve evidence
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
-    timeout-minutes: 5
+    timeout-minutes: 7
     defaults:
       run:
         shell: cmd
@@ -60,6 +60,18 @@ jobs:
           )
           echo WP22A_OWNER_REHEARSAL=%OWNER_REHEARSAL%>>"%GITHUB_ENV%"
           echo WP22A_OWNER_LOCAL_REHEARSAL=PRESENT
+
+      - name: Prove CI runner cannot spoof the loopback Tailscale identity path
+        shell: powershell
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass `
+            -File .\infrastructure\windows\audit_wp22a_runner_loopback.ps1 `
+            -ExpectedImplementationSha $env:EXPECTED_HEAD `
+            -AsJson
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Validate current implementation-bound OWNER evidence
         env:
