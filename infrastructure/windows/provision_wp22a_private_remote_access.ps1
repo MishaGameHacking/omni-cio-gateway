@@ -143,8 +143,7 @@ function Get-TailscaleIdentity {
 
 function Test-NoFunnel {
     param([Parameter(Mandatory = $true)][string]$Exe)
-    $status = Invoke-TailscaleText -Exe $Exe -Arguments @("funnel", "status") -AllowFailure
-    if ($status.exit_code -ne 0 -and [string]::IsNullOrWhiteSpace($status.text)) { return $true }
+    $status = Invoke-TailscaleText -Exe $Exe -Arguments @("funnel", "status")
     return -not (
         $status.text -match '(?i)Available on the internet:' -or
         $status.text -match '(?i)\(Funnel on\)'
