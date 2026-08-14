@@ -144,21 +144,6 @@ jobs:
           "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m ruff format --check tests\contracts\authority\test_wp22a_private_remote_authority.py
           if errorlevel 1 exit /b 41
 
-      - name: Generate Ruff-formatted authority diagnostic
-        if: failure()
-        run: |
-          "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m ruff format tests\contracts\authority\test_wp22a_private_remote_authority.py
-          if errorlevel 1 exit /b 42
-
-      - name: Upload Ruff-formatted authority diagnostic
-        if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: wp22a-ruff-authority-diagnostic
-          path: tests/contracts/authority/test_wp22a_private_remote_authority.py
-          if-no-files-found: error
-          retention-days: 3
-
       - name: Mypy-check WP22A Python surface
         run: |
           "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m mypy
