@@ -106,10 +106,10 @@ function Get-TailscaleIdentity {
 
 function Test-NoFunnel {
     param([Parameter(Mandatory = $true)][string]$Exe)
-    $status = Invoke-TailscaleText -Exe $Exe -Arguments @("serve", "status") -AllowFailure
+    $status = Invoke-TailscaleText -Exe $Exe -Arguments @("funnel", "status") -AllowFailure
     if ($status.exit_code -ne 0 -and [string]::IsNullOrWhiteSpace($status.text)) { return $true }
     return -not (
-        $status.text -match '(?im)^# Funnel on:' -or
+        $status.text -match '(?i)Available on the internet:' -or
         $status.text -match '(?i)\(Funnel on\)'
     )
 }
@@ -136,6 +136,19 @@ function New-RandomRuntimePassword {
     return [Convert]::ToBase64String($bytes) + "!aA7"
 }
 
+function Invoke-BaseProvisioner {
+    param(
+        [Parameter(Mandatory = $true)][string]$Sha,
+        [Parameter(Mandatory = $true)][ValidateSet("Apply", "Cleanup")][string]$Mode
+    )
+    $switchName = "-$Mode"
+    & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $baseProvisioner `
+        -ExpectedImplementationSha $Sha $switchName -Port $Port *> $null
+    if ($LASTEXITCODE -ne 0) {
+        throw ("WP22A_BASE_WEB_{0}_FAILED" -f $Mode.ToUpperInvariant())
+    }
+}
+
 function Install-RemoteTask {
     param(
         [Parameter(Mandatory = $true)][string]$Sha,
@@ -144,9 +157,13 @@ function Install-RemoteTask {
     )
     if (-not (Test-Administrator)) { throw "WP22A_APPLY_REQUIRES_ADMINISTRATOR" }
 
-    & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $baseProvisioner `
-        -ExpectedImplementationSha $Sha -Apply -Port $Port *> $null
-    if ($LASTEXITCODE -ne 0) { throw "WP22A_BASE_WEB_DEPLOYMENT_FAILED" }
+    Stop-ScheduledTask -TaskName $remoteTaskName -ErrorAction SilentlyContinue
+    Unregister-ScheduledTask -TaskName $remoteTaskName -Confirm:$false -ErrorAction SilentlyContinue
+    $baseTaskPresent = $null -ne (Get-ScheduledTask -TaskName $baseTaskName -ErrorAction SilentlyContinue)
+    if ((Test-Path -LiteralPath $runtimeRoot) -or $baseTaskPresent) {
+        Invoke-BaseProvisioner -Sha $Sha -Mode Cleanup
+    }
+    Invoke-BaseProvisioner -Sha $Sha -Mode Apply
 
     $launcher = Join-Path $appRoot $launcherRelative
     if (-not (Test-Path -LiteralPath $launcher -PathType Leaf)) {
@@ -160,8 +177,6 @@ function Install-RemoteTask {
     }
 
     Stop-ScheduledTask -TaskName $baseTaskName -ErrorAction SilentlyContinue
-    Stop-ScheduledTask -TaskName $remoteTaskName -ErrorAction SilentlyContinue
-    Unregister-ScheduledTask -TaskName $remoteTaskName -Confirm:$false -ErrorAction SilentlyContinue
 
     $runtimeUser = Get-LocalUser -Name $runtimeName -ErrorAction Stop
     $administratorsSid = [System.Security.Principal.SecurityIdentifier]::new("S-1-5-32-544")
