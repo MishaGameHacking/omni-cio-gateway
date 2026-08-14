@@ -150,8 +150,13 @@ function Test-Wp22aServeMapping {
     $tcp = $state.PSObject.Properties['TCP']
     if ($null -eq $tcp -or $null -eq $tcp.Value) { return $false }
     $https443 = $tcp.Value.PSObject.Properties['443']
-    if ($null -eq $https443 -or -not [bool]$https443.Value.HTTPS) { return $false }
-    if ([bool]$https443.Value.HTTP -or -not [string]::IsNullOrWhiteSpace([string]$https443.Value.TCPForward)) {
+    if ($null -eq $https443) { return $false }
+    $httpsProperty = $https443.Value.PSObject.Properties['HTTPS']
+    if ($null -eq $httpsProperty -or -not [bool]$httpsProperty.Value) { return $false }
+    $httpProperty = $https443.Value.PSObject.Properties['HTTP']
+    if ($null -ne $httpProperty -and [bool]$httpProperty.Value) { return $false }
+    $forwardProperty = $https443.Value.PSObject.Properties['TCPForward']
+    if ($null -ne $forwardProperty -and -not [string]::IsNullOrWhiteSpace([string]$forwardProperty.Value)) {
         return $false
     }
 
@@ -159,12 +164,16 @@ function Test-Wp22aServeMapping {
     if ($null -eq $web -or $null -eq $web.Value) { return $false }
     $hostPort = $HostName + ':443'
     $site = $web.Value.PSObject.Properties[$hostPort]
-    if ($null -eq $site -or $null -eq $site.Value.Handlers) { return $false }
-    $handlers = @($site.Value.Handlers.PSObject.Properties)
+    if ($null -eq $site) { return $false }
+    $handlersProperty = $site.Value.PSObject.Properties['Handlers']
+    if ($null -eq $handlersProperty -or $null -eq $handlersProperty.Value) { return $false }
+    $handlers = @($handlersProperty.Value.PSObject.Properties)
     if ($handlers.Count -ne 1) { return $false }
-    $root = $site.Value.Handlers.PSObject.Properties['/']
+    $root = $handlersProperty.Value.PSObject.Properties['/']
     if ($null -eq $root) { return $false }
-    return [string]$root.Value.Proxy -ceq "http://127.0.0.1:$Port"
+    $proxyProperty = $root.Value.PSObject.Properties['Proxy']
+    if ($null -eq $proxyProperty) { return $false }
+    return [string]$proxyProperty.Value -ceq "http://127.0.0.1:$Port"
 }
 
 if ($SelfTestStatusParser) {
