@@ -14,6 +14,7 @@ from omni_cio.web.external_access_v1 import (
     CSRF_COOKIE,
     CSRF_HEADER,
     REMOTE_SESSION_COOKIE,
+    REMOTE_SESSION_POLICY,
     TAILSCALE_LOGIN_HEADER,
     ExternalAccessPolicyV1,
     FixedWindowLimiterV1,
@@ -36,7 +37,7 @@ def make_app(
     session_policy: SessionPolicyV1 | None = None,
     current_time: list[datetime] | None = None,
 ) -> FastAPI:
-    sessions = SessionRegistryV1(session_policy)
+    sessions = SessionRegistryV1(session_policy or REMOTE_SESSION_POLICY)
     app = FastAPI()
     app.add_middleware(
         TrustedHostMiddleware,
@@ -139,6 +140,11 @@ def test_policy_rejects_non_tailnet_host_and_invalid_owner_fingerprint() -> None
         raise AssertionError("invalid identity binding must fail closed")
 
 
+def test_remote_session_policy_is_short_and_bounded() -> None:
+    assert REMOTE_SESSION_POLICY.idle_lifetime == timedelta(hours=2)
+    assert REMOTE_SESSION_POLICY.absolute_lifetime == timedelta(hours=24)
+
+
 def test_fixed_window_limiter_is_bounded_and_recovers_after_window() -> None:
     limiter = FixedWindowLimiterV1()
     assert limiter.admit("login", limit=2, window_seconds=10, now_monotonic=100.0)
@@ -196,7 +202,33 @@ def test_owner_login_uses_host_bound_secure_server_side_session_and_csrf_cookie(
     assert "SameSite=strict" in session_cookie
     assert "Secure" in csrf_cookie
     assert "HttpOnly" not in csrf_cookie
+    assert "Max-Age=7200" in session_cookie
     assert client.get("/protected").json() == {"authenticated": True}
+
+
+def test_reauthentication_rotates_session_and_revokes_previous_token() -> None:
+    app = make_app()
+    owner = remote_client(app)
+    login(owner)
+    first = owner.cookies.get(REMOTE_SESSION_COOKIE)
+    assert first
+
+    login(owner)
+    second = owner.cookies.get(REMOTE_SESSION_COOKIE)
+    assert second
+    assert second != first
+    assert owner.get("/protected").json() == {"authenticated": True}
+
+    replay = TestClient(
+        app,
+        base_url=ORIGIN,
+        client=("127.0.0.1", 51013),
+        headers={
+            TAILSCALE_LOGIN_HEADER: OWNER_LOGIN,
+            "Cookie": f"{REMOTE_SESSION_COOKIE}={first}",
+        },
+    )
+    assert replay.get("/protected").json() == {"authenticated": False}
 
 
 def test_stolen_remote_session_is_rejected_for_different_tailnet_identity() -> None:
@@ -214,9 +246,7 @@ def test_stolen_remote_session_is_rejected_for_different_tailnet_identity() -> N
         client=("127.0.0.1", 51012),
         headers={
             TAILSCALE_LOGIN_HEADER: "other@example.test",
-            "Cookie": (
-                f"{REMOTE_SESSION_COOKIE}={session}; " f"{CSRF_COOKIE}={csrf}"
-            ),
+            "Cookie": f"{REMOTE_SESSION_COOKIE}={session}; {CSRF_COOKIE}={csrf}",
         },
     )
     response = attacker.get("/protected")
