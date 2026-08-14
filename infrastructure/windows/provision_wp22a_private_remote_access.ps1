@@ -106,13 +106,12 @@ function Get-TailscaleIdentity {
 
 function Test-NoFunnel {
     param([Parameter(Mandatory = $true)][string]$Exe)
-    $status = Invoke-TailscaleText -Exe $Exe -Arguments @("funnel", "status") -AllowFailure
+    $status = Invoke-TailscaleText -Exe $Exe -Arguments @("serve", "status") -AllowFailure
     if ($status.exit_code -ne 0 -and [string]::IsNullOrWhiteSpace($status.text)) { return $true }
-    $text = $status.text
-    if ($text -match '(?i)Available on the internet:' -or $text -match '(?i)https://[^\s]+\.ts\.net') {
-        return $false
-    }
-    return $true
+    return -not (
+        $status.text -match '(?im)^# Funnel on:' -or
+        $status.text -match '(?i)\(Funnel on\)'
+    )
 }
 
 function Get-ServeState {
@@ -227,7 +226,7 @@ function Test-RemoteOwnerSession {
         if ($view.StatusCode -ne 200) { return $false }
         $payload = $view.Content | ConvertFrom-Json -ErrorAction Stop
         if (-not [bool]$payload.authenticated) { return $false }
-        $csrf = $session.Cookies.GetCookies([Uri]$origin)["omni_v10_csrf"]
+        $csrf = $session.Cookies.GetCookies([Uri]$origin)["__Host-omni_v10_csrf"]
         if ($null -eq $csrf -or [string]::IsNullOrWhiteSpace($csrf.Value)) { return $false }
         $logout = Invoke-WebRequest -UseBasicParsing -Method Post -Uri "$origin/api/v10/web/session/logout" -Headers @{ Origin = $origin; "X-Omni-CSRF" = $csrf.Value } -WebSession $session -ContentType "application/json" -Body "{}" -TimeoutSec 10
         return $logout.StatusCode -eq 200
