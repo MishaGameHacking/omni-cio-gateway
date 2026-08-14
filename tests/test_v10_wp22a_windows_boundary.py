@@ -32,6 +32,9 @@ def test_provisioner_blocks_runner_loopback_and_rebuilds_local_runtime_on_rollba
     assert "-LocalUser $runnerSddl" in source
     assert "Get-NetFirewallSecurityFilter" in source
     assert "WP22A_RUNNER_LOOPBACK_FIREWALL_NOT_BOUND" in source
+    assert "Disable-ServeChecked -Exe $TailscaleExe" in source
+    assert 'Invoke-TailscaleText -Exe $Exe -Arguments @("serve", "status")' in source
+    assert "WP22A_TAILSCALE_SERVE_DISABLE_FAILED" in source
     assert "Invoke-BaseProvisioner -Sha $Sha -Mode Cleanup" in source
     assert "Invoke-BaseProvisioner -Sha $Sha -Mode Apply" in source
     assert "Start-ScheduledTask -TaskName $baseTaskName" not in source
