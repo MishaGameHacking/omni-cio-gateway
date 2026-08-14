@@ -155,7 +155,7 @@ def test_wp22_status_is_bounded_tenant_scoped_and_secret_free(
     assert payload["backup"]["rto_minutes"] == 240
     assert payload["safety"] == {
         "mode": "READ_ONLY_DIAGNOSTIC",
-        "real_trading_enabled": False,
+        "real_execution_enabled": False,
         "trading_methods": False,
         "broker_write_authority": False,
         "public_ingress": False,
@@ -224,7 +224,7 @@ def test_wp22_real_trading_runtime_violation_is_visible_and_blocking(
 
     payload = service.read(tenant_id=OWNER_TENANT_ID)
 
-    assert payload["safety"]["real_trading_enabled"] is True
+    assert payload["safety"]["real_execution_enabled"] is True
     assert payload["state"] == "BLOCKED"
 
 
