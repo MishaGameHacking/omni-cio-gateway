@@ -199,6 +199,38 @@ def test_owner_login_uses_host_bound_secure_server_side_session_and_csrf_cookie(
     assert client.get("/protected").json() == {"authenticated": True}
 
 
+def test_stolen_remote_session_is_rejected_for_different_tailnet_identity() -> None:
+    app = make_app()
+    owner = remote_client(app)
+    login(owner)
+    session = owner.cookies.get(REMOTE_SESSION_COOKIE)
+    csrf = owner.cookies.get(CSRF_COOKIE)
+    assert session
+    assert csrf
+
+    attacker = TestClient(
+        app,
+        base_url=ORIGIN,
+        client=("127.0.0.1", 51012),
+        headers={
+            TAILSCALE_LOGIN_HEADER: "other@example.test",
+            "Cookie": (
+                f"{REMOTE_SESSION_COOKIE}={session}; " f"{CSRF_COOKIE}={csrf}"
+            ),
+        },
+    )
+    response = attacker.get("/protected")
+    assert response.status_code == 403
+    assert response.json()["detail"] == "OWNER_IDENTITY_REQUIRED"
+
+    response = attacker.post(
+        "/mutate",
+        headers={"Origin": ORIGIN, CSRF_HEADER: csrf},
+    )
+    assert response.status_code == 403
+    assert response.json()["detail"] == "OWNER_IDENTITY_REQUIRED"
+
+
 def test_remote_host_rejects_valid_legacy_local_session_cookie() -> None:
     app = make_app()
     local = TestClient(
