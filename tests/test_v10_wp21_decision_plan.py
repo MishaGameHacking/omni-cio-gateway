@@ -247,26 +247,27 @@ def _row(
     plan_schema_ref: str = _PLAN_SCHEMA_REF,
     plan_payload_override: bytes | None = None,
     snapshot_source_payload_sha256: str | None = None,
-    decided_at: datetime | None = None,
+    policy_source_id: str | None = None,
 ) -> tuple[Any, ...]:
     decision_sha, decision_payload = _blob(decision)
-    decision_policy_id = (
-        plan.policy_reference.policy_id if plan is not None else "policy:v1:test"
-    )
     snapshot_sha = (
         snapshot_source_payload_sha256
         or (plan.portfolio_snapshot_sha256 if plan is not None else "e" * 64)
     )
+    source_policy_id = policy_source_id or (
+        plan.policy_reference.policy_id if plan is not None else "ips_test_policy"
+    )
+    canonical_policy_id = "policy:v1:canonical"
     if plan is None:
         return (
             "decision:v1:test",
             "portfolio:v1:test",
-            decision_policy_id,
+            canonical_policy_id,
             "snapshot:v1:test",
             "1.0",
             1,
             decision_sha,
-            decided_at or decision.metadata.retrieved_at,
+            NOW,
             decision_schema_ref,
             decision_payload,
             None,
@@ -277,6 +278,7 @@ def _row(
             None,
             None,
             snapshot_sha,
+            source_policy_id,
         )
     plan_sha, plan_payload = _blob(plan)
     if plan_payload_override is not None:
@@ -285,12 +287,12 @@ def _row(
     return (
         "decision:v1:test",
         "portfolio:v1:test",
-        decision_policy_id,
+        canonical_policy_id,
         "snapshot:v1:test",
         "1.0",
         1,
         decision_sha,
-        decided_at or decision.metadata.retrieved_at,
+        NOW,
         decision_schema_ref,
         decision_payload,
         "plan:v1:test",
@@ -301,6 +303,7 @@ def _row(
         plan_schema_ref,
         plan_payload,
         snapshot_sha,
+        source_policy_id,
     )
 
 
@@ -319,6 +322,7 @@ def test_wp21_actionable_projection_is_exact_read_only_and_tenant_scoped() -> No
     assert set(connection.tenants) == {OWNER_TENANT_ID}
     assert len(connection.queries) == 1
     assert "JOIN omni_cio_v10.portfolio_snapshots s" in connection.queries[0]
+    assert "JOIN omni_cio_v10.policies pol" in connection.queries[0]
 
     plan = payload["plan"]
     assert plan["plan_sha256"] == fixture.plan.plan_sha256
@@ -388,7 +392,7 @@ def test_wp21_wait_for_data_is_no_action_but_never_ready() -> None:
     assert payload["execution_authorized"] is False
 
 
-def test_wp21_persisted_decision_and_snapshot_bindings_fail_closed() -> None:
+def test_wp21_persisted_snapshot_and_source_policy_bindings_fail_closed() -> None:
     fixture = build_fixture()
     decision = _decision(change=True)
 
@@ -407,20 +411,20 @@ def test_wp21_persisted_decision_and_snapshot_bindings_fail_closed() -> None:
     assert wrong_snapshot["state"] == "INVALID"
     assert wrong_snapshot["reason"] == "PLAN_RECORD_BINDING_INVALID"
 
-    wrong_time = DecisionPlanReadServiceV1(
+    wrong_policy = DecisionPlanReadServiceV1(
         _FixtureConnection(
             (
                 _row(
                     decision,
                     fixture.plan,
-                    decided_at=NOW + timedelta(seconds=1),
+                    policy_source_id="ips_wrong_policy",
                 ),
             )
         ),
         clock=lambda: NOW,
     ).read(tenant_id=OWNER_TENANT_ID)
-    assert wrong_time["state"] == "INVALID"
-    assert wrong_time["reason"] == "DECISION_RECORD_BINDING_INVALID"
+    assert wrong_policy["state"] == "INVALID"
+    assert wrong_policy["reason"] == "PLAN_RECORD_BINDING_INVALID"
 
 
 def test_wp21_limited_sell_projection_distinguishes_reduce_and_exit() -> None:
