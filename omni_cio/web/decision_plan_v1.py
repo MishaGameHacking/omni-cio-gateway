@@ -106,7 +106,9 @@ def _model_sha256(value: DecisionSetV1) -> str:
 
 def _preferred_option(decision: DecisionSetV1):
     return next(
-        item for item in decision.options if item.option_id == decision.preferred_option_id
+        item
+        for item in decision.options
+        if item.option_id == decision.preferred_option_id
     )
 
 
@@ -148,7 +150,9 @@ def _decision_view(decision: DecisionSetV1) -> dict[str, Any]:
             "observed_value": (
                 None if row.observed_value is None else _decimal(row.observed_value)
             ),
-            "limit_value": None if row.limit_value is None else _decimal(row.limit_value),
+            "limit_value": None
+            if row.limit_value is None
+            else _decimal(row.limit_value),
             "currency": row.currency,
             "instrument_key": row.instrument_key,
         }
@@ -156,7 +160,7 @@ def _decision_view(decision: DecisionSetV1) -> dict[str, Any]:
     }
     return {
         "decision_set_sha256": _model_sha256(decision),
-        "decided_at": _timestamp(decision.metadata.retrieved_at),
+        "retrieved_at": _timestamp(decision.metadata.retrieved_at),
         "abstain": decision.abstain,
         "recommendation_ready": decision.recommendation_ready,
         "confidence": decision.confidence.value,
@@ -239,7 +243,9 @@ def _risk_state_view(state: Any) -> dict[str, Any]:
                 "stable_key": row.stable_key,
                 "position_weight": _decimal(row.position_weight),
                 "exit_days": None if row.exit_days is None else _decimal(row.exit_days),
-                "spread_bps": None if row.spread_bps is None else _decimal(row.spread_bps),
+                "spread_bps": None
+                if row.spread_bps is None
+                else _decimal(row.spread_bps),
                 "stale": row.stale,
                 "unknown": row.unknown,
             }
@@ -306,7 +312,9 @@ def _plan_view(plan: PortfolioPlanV1, *, now: datetime) -> dict[str, Any]:
             "target_cash_base": _decimal(plan.target_cash_base),
             "total_clean_turnover_base": _decimal(plan.total_clean_turnover_base),
             "total_accrued_interest_base": _decimal(plan.total_accrued_interest_base),
-            "total_settlement_turnover_base": _decimal(plan.total_settlement_turnover_base),
+            "total_settlement_turnover_base": _decimal(
+                plan.total_settlement_turnover_base
+            ),
             "total_commission_base": _decimal(plan.total_commission_base),
             "total_estimated_tax_base": _decimal(plan.total_estimated_tax_base),
         },
@@ -518,23 +526,31 @@ class DecisionPlanReadServiceV1:
                 )
 
         preferred_action = _preferred_option(decision).action
+        if _no_change_action(decision) and plan is not None:
+            return _invalid_payload(
+                now=now,
+                reason="NO_CHANGE_DECISION_CANNOT_BIND_PLAN",
+                decision=decision,
+            )
         if preferred_action is DecisionAction.WAIT_FOR_DATA:
             state = "PARTIAL"
             reason = "DECISION_ABSTAINS_WAIT_FOR_DATA"
         elif _change_action_requires_plan(decision) and plan is None:
             state = "PARTIAL"
             reason = "ACTIONABLE_DECISION_PLAN_MISSING"
-        elif _no_change_action(decision) and plan is not None:
-            state = "INVALID"
-            reason = "NO_CHANGE_DECISION_CANNOT_BIND_PLAN"
         else:
             reason = None
-            state = "EXPIRED" if plan is not None and plan.expires_at <= now else "READY"
+            state = (
+                "EXPIRED" if plan is not None and plan.expires_at <= now else "READY"
+            )
 
         main_decision = _main_decision(decision, plan)
         if state == "READY" and main_decision is None:
-            state = "INVALID"
-            reason = "MAIN_DECISION_PROJECTION_UNAVAILABLE"
+            return _invalid_payload(
+                now=now,
+                reason="MAIN_DECISION_PROJECTION_UNAVAILABLE",
+                decision=decision,
+            )
 
         return {
             "schema_version": "1.0.0",
