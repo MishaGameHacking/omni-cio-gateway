@@ -122,6 +122,64 @@ def main() -> int:
     assert "$allowedSidValues" in tailscale_source
     assert "ReadAndExecute" in tailscale_source
 
+    provisioner = _source(
+        "infrastructure/windows/provision_wp22a_private_remote_runtime.ps1"
+    )
+    provisioner_lower = provisioner.lower()
+    assert "omni-cio-runtime" in provisioner
+    assert "OmniCIO.V10.WP22APrivateRemoteAcceptance" in provisioner
+    assert "SeBatchLogonRight" in provisioner
+    assert "SeDenyBatchLogonRight" in provisioner
+    assert "Register-ScheduledTask" in provisioner
+    assert "-Password $runtimePassword" in provisioner
+    assert "-RunLevel Limited" in provisioner
+    assert "-LogonType S4U" not in provisioner
+    assert "GRANT SELECT ON ALL TABLES IN SCHEMA omni_cio_v10" in provisioner
+    assert "postgres_trust_used = $false" in provisioner
+    assert "database_password_persisted = $false" in provisioner
+    assert "runtime_password_logged_or_exported = $false" in provisioner
+    assert "broker_trading" not in provisioner_lower
+
+    finalizer = _source(
+        "infrastructure/windows/finalize_wp22a_private_remote_evidence.ps1"
+    )
+    for required in (
+        "TailnetPolicyNarrowConfirmed",
+        "OwnerRemoteCabinetConfirmed",
+        "NonOwnerDeniedConfirmed",
+        "LocalFallbackConfirmed",
+        "serve_disabled_after_rehearsal",
+        "temporary_runtime_cleaned",
+        "raw_owner_identity_recorded = $false",
+        "raw_tailnet_hostname_recorded = $false",
+        "broker_secret_recorded = $false",
+    ):
+        assert required in finalizer
+    assert "owner_login" not in finalizer.lower()
+    assert "portfolio_total" not in finalizer.lower()
+
+    runner_probe = _source(
+        "infrastructure/windows/audit_wp22a_private_remote_runner.ps1"
+    )
+    assert "runner_private_config_read_allowed" in runner_probe
+    assert "runner_private_config_write_allowed" in runner_probe
+    assert "runner_evidence_write_allowed" in runner_probe
+    assert "ready = [bool]$ready" in runner_probe
+
+    assessor = _source("scripts/assess_v10_wp22a_owner_evidence.py")
+    assert "OWNER_PRIVATE_REMOTE_SANITIZED" in assessor
+    assert "source hash mismatch" in assessor
+    assert "runner_private_config_read_allowed" in assessor
+    assert "public_ingress" in assessor
+
+    owner_workflow = _source(
+        ".github/workflows/v10-wp22a-owner-private-remote-audit.yml"
+    )
+    assert "WP22A_OWNER_PRIVATE_REMOTE_GATE=OWNER_ACTION_REQUIRED" in owner_workflow
+    assert "assess_v10_wp22a_owner_evidence.py" in owner_workflow
+    assert "audit_wp22a_private_remote_runner.ps1" in owner_workflow
+    assert "retention-days: 3" in owner_workflow
+
     frontend = _source("apps/web/src/app-shell/api.ts").lower()
     assert '"x-omni-csrf"' in frontend
     assert "/api/v10/web/session/csrf" in frontend
@@ -132,7 +190,10 @@ def main() -> int:
     threat_model = _source("docs/architecture/V10_THREAT_MODEL.md")
     assert "WP22A threat-model update" in threat_model
     assert "T22 — Private remote access spoofing or accidental public exposure" in threat_model
-    assert "OWNER tailnet HTTPS/Tailscale Serve <-> loopback-only private Web runtime" in threat_model
+    assert (
+        "OWNER tailnet HTTPS/Tailscale Serve <-> loopback-only private Web runtime"
+        in threat_model
+    )
 
     print("WP22A private remote security guard: PASS")
     return 0
