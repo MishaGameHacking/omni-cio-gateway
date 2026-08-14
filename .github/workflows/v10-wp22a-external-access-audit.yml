@@ -111,29 +111,10 @@ jobs:
           if errorlevel 1 exit /b 43
 
       - name: Parse WP22A Windows owner gates without applying
-        shell: powershell
+        shell: cmd
         run: |
-          $ErrorActionPreference = 'Stop'
-          $paths = @(
-            'infrastructure\windows\run_wp22a_private_remote_runtime.ps1',
-            'infrastructure\windows\provision_wp22a_private_remote_access.ps1',
-            'infrastructure\windows\finalize_wp22a_owner_evidence.ps1',
-            'infrastructure\windows\audit_wp22a_runner_loopback.ps1'
-          )
-          foreach ($path in $paths) {
-            $tokens = $null
-            $parseErrors = $null
-            [void][System.Management.Automation.Language.Parser]::ParseFile(
-              (Resolve-Path $path),
-              [ref]$tokens,
-              [ref]$parseErrors
-            )
-            if ($parseErrors.Count -ne 0) {
-              $parseErrors | ForEach-Object { Write-Error $_.Message }
-              exit 44
-            }
-          }
-          Write-Output 'WP22A PowerShell parse OK'
+          powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $paths=@('infrastructure\windows\run_wp22a_private_remote_runtime.ps1','infrastructure\windows\provision_wp22a_private_remote_access.ps1','infrastructure\windows\finalize_wp22a_owner_evidence.ps1','infrastructure\windows\audit_wp22a_runner_loopback.ps1'); foreach ($path in $paths) { $tokens=$null; $errors=$null; [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path), [ref]$tokens, [ref]$errors); if ($errors.Count -ne 0) { $errors | ForEach-Object { Write-Error $_.Message }; exit 44 } }; Write-Host 'WP22A PowerShell parse contract passed.'"
+          if errorlevel 1 exit /b 44
 
       - name: Verify accepted Web and repository guards
         run: |
