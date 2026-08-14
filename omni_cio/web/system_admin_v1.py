@@ -64,6 +64,17 @@ def _timestamp(value: object | None) -> str | None:
     return _utc(value).isoformat()
 
 
+def _env_timestamp(name: str) -> str | None:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return None
+    candidate = raw[:-1] + "+00:00" if raw.endswith("Z") else raw
+    try:
+        return _utc(datetime.fromisoformat(candidate)).isoformat()
+    except ValueError:
+        return None
+
+
 def _env_enabled(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in _TRUE_VALUES
 
@@ -155,22 +166,28 @@ class SystemAdminReadServiceV1:
             except (OSError, subprocess.SubprocessError, ValueError):
                 pass
 
-        deploy_at = None
-        index_path = self._web_dist / "index.html"
+        web_artifact_at = None
         try:
-            deploy_at = datetime.fromtimestamp(
-                index_path.stat().st_mtime,
+            web_artifact_at = datetime.fromtimestamp(
+                (self._web_dist / "index.html").stat().st_mtime,
                 tz=timezone.utc,
             ).isoformat()
         except OSError:
             pass
 
+        deploy_at = _env_timestamp("OMNI_V10_LAST_DEPLOY_AT")
         return {
             "release": "V10_UNRELEASED",
             "git_sha": sha or None,
             "git_sha_source": source,
             "last_deploy_at": deploy_at,
-            "last_deploy_source": "web_dist_mtime" if deploy_at else "unavailable",
+            "last_deploy_source": (
+                "omni_v10_last_deploy_at" if deploy_at is not None else "unavailable"
+            ),
+            "web_artifact_at": web_artifact_at,
+            "web_artifact_source": (
+                "web_dist_mtime" if web_artifact_at is not None else "unavailable"
+            ),
         }
 
     def _database(self) -> tuple[dict[str, Any], OperationalState]:
@@ -178,8 +195,8 @@ class SystemAdminReadServiceV1:
             expected = tuple((item.version, item.sha256) for item in discover_migrations())
             current = current_migration_state(self._connection)
             exact = current == expected
-            current_version = str(current[-1][0]) if current else None
-            expected_version = str(expected[-1][0]) if expected else None
+            current_version = f"{int(current[-1][0]):04d}" if current else None
+            expected_version = f"{int(expected[-1][0]):04d}" if expected else None
             state: OperationalState = "READY" if exact else "BLOCKED"
             return (
                 {
@@ -205,11 +222,7 @@ class SystemAdminReadServiceV1:
                 "DEGRADED",
             )
 
-    def _recent_jobs(
-        self,
-        *,
-        tenant_id: str,
-    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    def _recent_jobs(self, *, tenant_id: str) -> list[dict[str, Any]]:
         try:
             rows = list(
                 self._connection.execute(
@@ -218,40 +231,53 @@ class SystemAdminReadServiceV1:
                     "FROM omni_cio_v10.jobs WHERE tenant_id = %s "
                     "ORDER BY COALESCE(completed_at, started_at, next_run_at, created_at) "
                     "DESC, job_id DESC LIMIT %s",
-                    (tenant_id, _MAX_RECENT_JOBS + 1),
+                    (tenant_id, _MAX_RECENT_JOBS),
                 ).fetchall()
             )
         except Exception:
-            return [], []
+            return []
 
-        represented = rows[:_MAX_RECENT_JOBS]
         jobs: list[dict[str, Any]] = []
-        errors: list[dict[str, Any]] = []
-        for row in represented:
-            job_type = str(row[0])
-            state = str(row[1])
-            error_class = None if row[4] is None else str(row[4])
-            observed_at = _timestamp(row[5])
+        for row in rows:
             jobs.append(
                 {
-                    "job_type": job_type,
-                    "state": state,
+                    "job_type": str(row[0]),
+                    "state": str(row[1]),
                     "attempts": int(row[2]),
                     "max_attempts": int(row[3]),
-                    "error_class": error_class,
-                    "observed_at": observed_at,
+                    "error_class": None if row[4] is None else str(row[4]),
+                    "observed_at": _timestamp(row[5]),
                 }
             )
-            if error_class is not None and len(errors) < _MAX_RECENT_ERRORS:
-                errors.append(
-                    {
-                        "job_type": job_type,
-                        "state": state,
-                        "error_class": error_class,
-                        "observed_at": observed_at,
-                    }
-                )
-        return jobs, errors
+        return jobs
+
+    def _recent_errors(self, *, tenant_id: str) -> list[dict[str, Any]]:
+        try:
+            rows = list(
+                self._connection.execute(
+                    "SELECT job_type, state, error_class, "
+                    "COALESCE(completed_at, started_at, next_run_at, created_at) "
+                    "FROM omni_cio_v10.jobs "
+                    "WHERE tenant_id = %s AND error_class IS NOT NULL "
+                    "ORDER BY COALESCE(completed_at, started_at, next_run_at, created_at) "
+                    "DESC, job_id DESC LIMIT %s",
+                    (tenant_id, _MAX_RECENT_ERRORS),
+                ).fetchall()
+            )
+        except Exception:
+            return []
+
+        errors: list[dict[str, Any]] = []
+        for row in rows:
+            errors.append(
+                {
+                    "job_type": str(row[0]),
+                    "state": str(row[1]),
+                    "error_class": str(row[2]),
+                    "observed_at": _timestamp(row[3]),
+                }
+            )
+        return errors
 
     def _latest_job(
         self,
@@ -442,7 +468,8 @@ class SystemAdminReadServiceV1:
     def read(self, *, tenant_id: str) -> dict[str, Any]:
         now = _utc(self._clock())
         database, database_state = self._database()
-        jobs, errors = self._recent_jobs(tenant_id=tenant_id)
+        jobs = self._recent_jobs(tenant_id=tenant_id)
+        errors = self._recent_errors(tenant_id=tenant_id)
         backup = self._backup(tenant_id=tenant_id)
         disk = self._disk()
         temperature = self._temperature()
