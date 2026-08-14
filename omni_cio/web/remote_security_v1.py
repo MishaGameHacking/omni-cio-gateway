@@ -1,17 +1,25 @@
 from __future__ import annotations
 
 from collections import defaultdict, deque
+from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime, timezone
+from email.header import decode_header
 import hashlib
 import hmac
 from http.cookies import SimpleCookie
+import ipaddress
 import re
 from threading import RLock
 import time
-from typing import Final
+from typing import Final, Protocol
 
-from starlette.responses import JSONResponse
+from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
+
+from omni_cio.contracts.v1.domain import OWNER_TENANT_ID, OWNER_USER_ID
+from omni_cio.web.session_v1 import SessionScopeV1
 
 
 CSRF_HEADER_NAME: Final[str] = "x-omni-csrf"
@@ -24,8 +32,35 @@ _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _CSRF_DOMAIN = b"omni-cio-v10-csrf-v1\x00"
 
 
+class RemoteSessionRegistryLike(Protocol):
+    def create(
+        self,
+        *,
+        user_id: str,
+        tenant_id: str,
+        now: datetime,
+    ) -> tuple[str, SessionScopeV1]: ...
+
+    def resolve(self, token: str | None, *, now: datetime) -> SessionScopeV1 | None: ...
+
+    def revoke(self, token: str | None, *, now: datetime) -> bool: ...
+
+
+def _decode_rfc2047(value: str) -> str:
+    result: list[str] = []
+    try:
+        for item, charset in decode_header(value):
+            if isinstance(item, bytes):
+                result.append(item.decode(charset or "ascii", errors="strict"))
+            else:
+                result.append(item)
+    except (LookupError, UnicodeError) as exc:
+        raise ValueError("TAILSCALE_OWNER_LOGIN_INVALID") from exc
+    return "".join(result)
+
+
 def normalize_tailscale_login(value: str) -> str:
-    normalized = value.strip().casefold()
+    normalized = _decode_rfc2047(value).strip().casefold()
     if not normalized or len(normalized) > 320 or "\x00" in normalized:
         raise ValueError("TAILSCALE_OWNER_LOGIN_INVALID")
     return normalized
@@ -51,7 +86,12 @@ class PrivateRemoteSecurityPolicyV1:
     def __post_init__(self) -> None:
         host = self.expected_host.strip().lower().rstrip(".")
         owner = self.owner_login_sha256.strip().lower()
-        if _HOST_RE.fullmatch(host) is None:
+        if (
+            _HOST_RE.fullmatch(host) is None
+            or ".." in host
+            or host.startswith(".")
+            or host.endswith(".")
+        ):
             raise ValueError("WP22A_TAILSCALE_HOST_INVALID")
         if _SHA256_RE.fullmatch(owner) is None:
             raise ValueError("WP22A_OWNER_LOGIN_FINGERPRINT_INVALID")
@@ -81,8 +121,6 @@ class _FixedWindowLimiter:
             if len(events) >= maximum:
                 return False
             events.append(now)
-            if not events:
-                self._events.pop(key, None)
             return True
 
 
@@ -113,14 +151,84 @@ def _cookie_value(cookie_header: str, name: str) -> str | None:
     return morsel.value if morsel is not None else None
 
 
+def _is_loopback_request(request: Request) -> bool:
+    client = request.client
+    if client is None:
+        return False
+    try:
+        return ipaddress.ip_address(client.host).is_loopback
+    except ValueError:
+        return False
+
+
+def _utc_now(now: Callable[[], datetime]) -> datetime:
+    value = now()
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise RuntimeError("WP22A_REMOTE_CLOCK_NOT_UTC_AWARE")
+    return value.astimezone(timezone.utc)
+
+
+def install_private_remote_session_routes(
+    app: FastAPI,
+    *,
+    sessions: RemoteSessionRegistryLike,
+    session_cookie_name: str,
+    now: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
+) -> None:
+    """Install Personal-owner private acceptance session bootstrap routes.
+
+    Tailscale is deliberately not registered as an ordinary product identity
+    provider. The enclosing WP22A middleware proves the outer private-network
+    OWNER identity before these routes are reachable; this installer only
+    creates a revocable Omni-CIO server-side browser session.
+    """
+
+    @app.get("/api/v10/web/private-remote-login/status")
+    def private_remote_login_status(request: Request) -> dict[str, bool]:
+        return {"enabled": _is_loopback_request(request)}
+
+    @app.post("/api/v10/web/private-remote-login")
+    def private_remote_login(request: Request, response: Response) -> dict[str, bool]:
+        if not _is_loopback_request(request):
+            raise HTTPException(status_code=404, detail="NOT_FOUND")
+        current = _utc_now(now)
+        sessions.revoke(request.cookies.get(session_cookie_name), now=current)
+        token, scope = sessions.create(
+            user_id=OWNER_USER_ID,
+            tenant_id=OWNER_TENANT_ID,
+            now=current,
+        )
+        response.set_cookie(
+            session_cookie_name,
+            token,
+            httponly=True,
+            secure=True,
+            samesite="strict",
+            path="/",
+            max_age=max(1, int((scope.expires_at - current).total_seconds())),
+        )
+        response.headers["Cache-Control"] = "no-store"
+        return {"ok": True}
+
+    @app.get("/api/v10/web/session/csrf")
+    def session_csrf(request: Request) -> JSONResponse:
+        token = request.cookies.get(session_cookie_name)
+        current = _utc_now(now)
+        if token is None or sessions.resolve(token, now=current) is None:
+            raise HTTPException(status_code=401, detail="AUTHENTICATION_REQUIRED")
+        return JSONResponse(
+            {"csrf_token": csrf_token_for_session(token)},
+            headers={"Cache-Control": "no-store"},
+        )
+
+
 class PrivateRemoteSecurityMiddlewareV1:
     """Fail-closed WP22A boundary for Tailscale Serve private remote access.
 
-    This middleware is intentionally only for the dedicated private-remote app
-    factory. The backend remains bound to loopback and Tailscale Serve is the
-    TLS/network identity boundary. Tailscale identity is an outer Personal-node
-    acceptance factor; it does not become an ordinary Omni-CIO product identity
-    provider and cannot enable public multi-user mode.
+    The dedicated backend remains loopback-only. Tailscale Serve terminates TLS,
+    strips spoofed Tailscale identity headers, and adds the authenticated tailnet
+    user identity before forwarding to this process. This middleware adds exact
+    Host/origin/OWNER checks, session-bound CSRF and bounded mutation/login rates.
     """
 
     def __init__(
@@ -157,7 +265,7 @@ class PrivateRemoteSecurityMiddlewareV1:
             return
 
         query = scope.get("query_string", b"").decode("latin-1", errors="ignore")
-        if _TELEGRAM_INIT_DATA_HEADER in headers or "tgWebAppData=" in query:
+        if _TELEGRAM_INIT_DATA_HEADER in headers or "tgwebappdata=" in query.lower():
             await self._reject(send, 403, "TELEGRAM_MINI_APP_AUTH_NOT_ACTIVE")
             return
 
@@ -212,13 +320,16 @@ class PrivateRemoteSecurityMiddlewareV1:
 
     @staticmethod
     async def _reject(send: Send, status_code: int, detail: str) -> None:
-        response = JSONResponse(
-            {"detail": detail},
-            status_code=status_code,
-            headers={"Cache-Control": "no-store"},
+        body = (f'{{"detail":"{detail}"}}').encode("utf-8")
+        await send(
+            {
+                "type": "http.response.start",
+                "status": status_code,
+                "headers": [
+                    (b"content-type", b"application/json"),
+                    (b"cache-control", b"no-store"),
+                    (b"content-length", str(len(body)).encode("ascii")),
+                ],
+            }
         )
-        await response({"type": "http"}, _empty_receive, send)
-
-
-async def _empty_receive() -> dict[str, object]:
-    return {"type": "http.request", "body": b"", "more_body": False}
+        await send({"type": "http.response.body", "body": body})
