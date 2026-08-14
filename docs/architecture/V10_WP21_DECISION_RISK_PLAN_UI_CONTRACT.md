@@ -26,10 +26,10 @@ It is session-scoped, tenant-scoped and no-store.
 ## States
 
 - `EMPTY`: no canonical decision is stored;
-- `PARTIAL`: canonical decision exists but an actionable decision has no valid exact plan;
-- `READY`: canonical binding is valid and unexpired;
+- `PARTIAL`: the canonical decision abstains with `WAIT_FOR_DATA`, or an actionable decision exists without a valid exact plan;
+- `READY`: canonical binding is valid, recommendation-ready and unexpired;
 - `EXPIRED`: exact immutable plan is retained for audit but its approval subject is no longer valid;
-- `INVALID`: hash/schema/model/binding semantics fail closed.
+- `INVALID`: hash/schema/model/persisted-binding semantics fail closed.
 
 The UI never converts `PARTIAL`, `EXPIRED` or `INVALID` into optimistic success.
 
@@ -37,7 +37,9 @@ The UI never converts `PARTIAL`, `EXPIRED` or `INVALID` into optimistic success.
 
 The large `MAIN_DECISION` label is a deterministic presentation projection documented in `V10_WP21_EXECUTION_CONTRACT.md`. It is not a replacement for `DecisionAction`, Strategy or Optimizer logic.
 
-If the projection cannot be derived without guessing, it is `UNAVAILABLE` and the response is not `READY`.
+`WAIT_FOR_DATA` is displayed as `NO_ACTION` but the state remains `PARTIAL`; it is never promoted to a ready recommendation.
+
+If any other projection cannot be derived without guessing, it is `UNAVAILABLE` and the response is not `READY`.
 
 ## Exact mathematics
 
@@ -56,6 +58,19 @@ When a valid immutable plan is available, the screen renders source values witho
 
 The UI must not present these values as model forecasts.
 
+## Durable identity binding
+
+Before an immutable plan is rendered as current, the backend verifies:
+
+- same tenant / portfolio / policy / snapshot record as the persisted decision;
+- exact plan `portfolio_snapshot_sha256` equals the durable snapshot `source_payload_sha256`;
+- exact plan policy reference equals the persisted decision policy;
+- plan and decision timestamps bind their persisted records;
+- outer content SHA, schema and Pydantic contracts validate;
+- the plan's internal canonical SHA and approval phrase recompute correctly.
+
+A mismatch is `INVALID`, never a degraded-but-approvable plan.
+
 ## Alternatives and evidence
 
 Alternatives come from the non-preferred canonical `DecisionOptionV1` objects. Their canonical title, rationale, action, confidence, blockers and review conditions are displayed as supplied.
@@ -67,6 +82,7 @@ Evidence comes from canonical `DecisionEvidenceV1` records. React text rendering
 The UI may reveal the existing `owner_approval_phrase` only when:
 
 - the exact `PortfolioPlanV1` validates including its canonical internal SHA;
+- its durable persisted bindings validate;
 - the plan requires approval;
 - the plan has not expired.
 
