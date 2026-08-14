@@ -189,8 +189,6 @@ def _rewrite_host_to_loopback(request: Request) -> None:
 
 def _rewrite_remote_session_for_inner_app(request: Request) -> None:
     token = request.cookies.get(REMOTE_SESSION_COOKIE)
-    if not token:
-        return
     raw_cookie = request.headers.get("cookie", "")
     pairs: list[str] = []
     for item in raw_cookie.split(";"):
@@ -201,7 +199,8 @@ def _rewrite_remote_session_for_inner_app(request: Request) -> None:
         if name == SESSION_COOKIE:
             continue
         pairs.append(candidate)
-    pairs.append(f"{SESSION_COOKIE}={token}")
+    if token:
+        pairs.append(f"{SESSION_COOKIE}={token}")
     _replace_scope_header(request, b"cookie", "; ".join(pairs).encode("latin-1"))
 
 
