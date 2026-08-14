@@ -33,7 +33,7 @@ apps.api.private_remote:create_private_remote_app
         +-- same tenant/session/broker-read boundaries
 ```
 
-Tailscale Funnel/public ingress is not part of the selected WP22A path.
+Tailscale Funnel/public ingress is not part of the selected WP22A path. The Uvicorn launcher binds only loopback, and the application independently rejects a non-loopback backend peer even if otherwise valid-looking proxy identity headers are supplied.
 
 ## Runtime configuration
 
@@ -44,11 +44,13 @@ Local non-secret/private configuration is stored at:
 It contains only:
 
 - exact node `*.ts.net` hostname;
-- SHA-256 fingerprint of the OWNER Tailscale login;
+- SHA-256 fingerprint of the exact decoded OWNER Tailscale login;
 - backend loopback host/port;
 - explicit false public/Real flags.
 
 The raw OWNER login is not written by the reviewed configurator. Tailscale authentication material is owned by Tailscale and must not be copied into Omni-CIO files.
+
+The configuration directory ACL is protected and accepted only when its allow-principals are exactly the reviewed local authorities: SYSTEM, Administrators and `omni-cio-runtime`. Runtime receives read/execute only; arbitrary additional principals, including a CI runner identity, cause verification to fail closed.
 
 ## Reviewed configuration command
 
@@ -56,7 +58,9 @@ The owning script is:
 
 `infrastructure\windows\configure_wp22a_tailscale_serve.ps1`
 
-When OWNER acceptance is explicitly authorized, run PowerShell as Administrator from the exact reviewed checkout. `-Apply` prompts locally for the OWNER Tailscale login when it is not supplied; the script hashes it before writing configuration. It then turns Funnel off on HTTPS 443 and configures Tailscale Serve HTTPS 443 to the loopback backend.
+When OWNER acceptance is explicitly authorized, run PowerShell as Administrator from the exact reviewed checkout. `-Apply` prompts locally for the **exact decoded Tailscale OWNER login** when it is not supplied; do not change case or otherwise normalize it manually. Tailscale Serve can encode non-ASCII identity header values using RFC 2047; the Python boundary decodes such a header before exact fingerprint comparison. The script hashes the locally entered decoded login before writing configuration.
+
+The script turns Funnel off on HTTPS 443 and configures Tailscale Serve HTTPS 443 to the loopback backend.
 
 The safe final evidence emitted by `-AsJson` contains only booleans plus a hostname hash. Do not share the local config file itself.
 
@@ -86,11 +90,18 @@ The exact tailnet policy is OWNER-controlled external configuration and is not m
 
 ## Browser/session behavior
 
-Remote requests must arrive with Tailscale Serve identity headers. The backend compares only a fingerprint of `Tailscale-User-Login` with the locally configured OWNER fingerprint.
+Remote requests must arrive through the loopback Tailscale Serve proxy path with Serve identity headers. The backend RFC-2047-decodes `Tailscale-User-Login` when necessary and compares only its SHA-256 fingerprint with the locally configured exact OWNER fingerprint.
 
 On the login screen, `Приватный OWNER доступ` is an acceptance-only bootstrap. It is not returned as an ordinary identity provider and does not alter the canonical Telegram/VK account model.
 
-The remote session cookie is `Secure`, `HttpOnly`, `SameSite=Strict`. Any unsafe authenticated API call additionally requires exact same-origin proof and a session-bound CSRF token obtained from a no-store same-origin endpoint. Session logout/revoke-all remains server-side.
+The private-remote session is deliberately shorter than the earlier local acceptance default:
+
+- idle lifetime: **120 minutes**;
+- absolute lifetime: **24 hours**.
+
+Bootstrap rotates the current browser session. The remote session cookie is `Secure`, `HttpOnly`, `SameSite=Strict`. Any unsafe authenticated API call must first resolve a live server-side session, then prove exact same-origin and present a session-bound CSRF token obtained from a no-store same-origin endpoint. A forged/expired cookie is rejected even if the caller can calculate the public CSRF transform from that cookie value. Session logout/revoke-all remains server-side.
+
+Remote responses are hardened with HSTS (`max-age=31536000`), `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` and `Referrer-Policy: no-referrer` unless the owning response already sets the relevant header.
 
 ## Recovery / rollback
 
