@@ -40,7 +40,8 @@ The Lenovo must have:
 - Tailscale installed and already joined to the intended OWNER-controlled tailnet;
 - HTTPS/Serve support available in the installed Tailscale version;
 - no active Funnel/public configuration on the Personal node;
-- no unrelated existing Serve configuration that would be overwritten by the Omni-CIO root route.
+- no unrelated existing Serve configuration that would be overwritten by the Omni-CIO root route;
+- an untagged Tailscale node identity for this Personal OWNER gate. Tailscale Serve does not populate user identity headers for tagged devices, so the reviewed provisioner rejects a tagged Lenovo rather than weakening OWNER authentication.
 
 The phone or other OWNER browser device must join the same authorized tailnet before the separate-device rehearsal.
 
@@ -54,13 +55,14 @@ Enabling Tailscale HTTPS has a privacy consequence that requires OWNER awareness
 
 This is a real external-account/privacy consent boundary. Engineering does not silently accept it on the OWNER's behalf and does not replace it with public Funnel exposure. If HTTPS is already enabled and the node name is acceptable, no additional certificate-file provisioning is required for the Serve path; Tailscale manages the Serve certificate lifecycle.
 
-## Source-controlled deployment boundary
+## Source-controlled deployment and evidence boundary
 
-WP22A adds two reviewed Windows scripts:
+WP22A adds three reviewed Windows scripts:
 
 ```text
 infrastructure/windows/run_wp22a_private_remote_runtime.ps1
 infrastructure/windows/provision_wp22a_private_remote_access.ps1
+infrastructure/windows/finalize_wp22a_owner_evidence.ps1
 ```
 
 The runtime launcher:
@@ -69,6 +71,7 @@ The runtime launcher:
 - requires an exact source-controlled deployment SHA marker;
 - binds Uvicorn only to `127.0.0.1`;
 - uses PostgreSQL SSPI under the existing runtime role;
+- explicitly disables inherited WP17/WP15 loopback-only acceptance modes before enabling the WP22A remote factory;
 - activates only `apps.api.wp22a_remote:create_private_remote_app`.
 
 The provisioning gate:
@@ -76,13 +79,22 @@ The provisioning gate:
 - requires an exact clean reviewed Git head;
 - reuses the accepted WP15/WP17 Web deployment and broker READ-vault boundary instead of creating a second Web stack;
 - derives the local `*.ts.net` DNS name and OWNER Tailscale login fingerprint from local Tailscale status without writing the raw login to GitHub;
-- rejects active Funnel/public ingress;
-- refuses to overwrite an unrelated existing Serve configuration;
+- rejects tagged nodes, active Funnel/public ingress and unrelated existing Serve configuration;
 - installs a limited scheduled task with restart-on-failure and startup trigger;
 - verifies that the Web listener is loopback-only;
 - configures Tailscale Serve in background mode to the loopback Web port;
 - performs a real HTTPS OWNER identity/session/login/logout probe through Serve;
 - still leaves a separate phone/browser reachability rehearsal as OWNER evidence.
+
+The finalizer:
+
+- can run only after the OWNER has physically opened the HTTPS link from a separate authorized phone/browser and confirmed logout/session revocation;
+- re-runs the non-mutating live `-Verify` gate on the exact clean reviewed head;
+- writes only `C:\ProgramData\OmniCIO\wp22a\owner-rehearsal.sanitized.local.json`;
+- binds the evidence to the exact Git SHA and SHA-256 fingerprints of the reviewed security/runtime/evidence implementation;
+- stores no raw OWNER login, private `*.ts.net` URL, Tailscale authentication material, broker secret, full account ID or private portfolio payload.
+
+CI cannot synthesize this OWNER evidence. The dedicated OWNER audit only validates the local file and uploads a short-lived sanitized derivative.
 
 ## Private runtime configuration
 
@@ -106,14 +118,14 @@ The Web process remains bound to `127.0.0.1` only.
 
 ## Tailscale Serve boundary
 
-The reviewed target is Tailscale **Serve**, not Funnel. Serve proxies the local loopback Web service into the private tailnet HTTPS endpoint. Current Tailscale CLI documentation defines `tailscale serve --bg <target>` for background sharing and `tailscale serve status` / `status --json` for verification; the installed client remains the runtime source of truth if CLI syntax changes again.
+The reviewed target is Tailscale **Serve**, not Funnel. Serve proxies the local loopback Web service into the private tailnet HTTPS endpoint. Current Tailscale CLI documentation defines `tailscale serve --bg <target>` for background sharing and `tailscale serve status` for verification; the installed client remains the runtime source of truth if CLI syntax changes again.
 
 The provisioning gate fails closed rather than enabling Funnel. Before acceptance it verifies all of the following locally:
 
 - the service target is the loopback Web port;
 - the reported URL is the intended `https://<node>.<tailnet>.ts.net` host;
 - the Serve route is present only after the backend is ready;
-- Funnel/public exposure is absent;
+- dedicated Funnel status does not report public exposure;
 - the application Web process itself is not listening on a non-loopback address;
 - a real HTTPS request through Serve receives the expected OWNER identity and can create/revoke a server-side session.
 
@@ -156,12 +168,20 @@ From an authorized OWNER device inside the intended tailnet:
 
 A wrong tailnet identity, direct backend request, hostile Host/Origin, missing CSRF token or excessive login attempts must fail closed. These negative paths are deterministic CI obligations; the OWNER is not asked to perform hostile tests manually on the phone.
 
+Only after steps 1–6 have genuinely passed, finalize the local sanitized evidence:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\infrastructure\windows\finalize_wp22a_owner_evidence.ps1" -ExpectedImplementationSha "<EXACT_REVIEWED_HEAD>" -PhoneHttpsReachabilityConfirmed -LogoutSessionRevocationConfirmed
+```
+
+The confirmation switches are OWNER assertions about physical observations and must never be used unless the separate-device rehearsal was actually performed.
+
 ## Sanitized acceptance evidence
 
-If/when OWNER action becomes necessary, return only facts similar to:
+Return only facts similar to:
 
 ```text
-WP22A private remote gate: PASS
+WP22A OWNER private remote gate: PASS
 Exact implementation binding: True
 Backend loopback-only: True
 Tailscale Serve private: True
