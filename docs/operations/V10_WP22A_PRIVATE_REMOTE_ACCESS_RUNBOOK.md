@@ -99,7 +99,7 @@ The runner auditor:
 - verifies the runner-bound firewall rule without emitting the raw runner identity or SID;
 - makes a real TCP connection attempt from the runner to `127.0.0.1:<web-port>` and requires that connection to be denied;
 - requires the sanitized OWNER evidence to be readable for validation but not writable by the runner;
-- attempts to open the evidence file for write and to create a new file in the evidence directory, and requires both operations to be denied;
+- attempts to open the evidence file for write, create a new file in the evidence directory and rename the OWNER evidence, and requires every mutation attempt to be denied;
 - fails WP22A if the ordinary CI runner can reach the backend directly or manufacture/replace OWNER evidence.
 
 The finalizer:
@@ -114,7 +114,7 @@ The finalizer:
 - records the protected/read-only evidence state as booleans;
 - stores no raw OWNER login, runner identity/SID, private `*.ts.net` URL, Tailscale authentication material, broker secret, full account ID or private portfolio payload.
 
-CI cannot synthesize this OWNER evidence. The dedicated OWNER audit first requires the real local file, then independently proves both runner loopback denial and runner evidence-write denial, then validates and uploads only a short-lived sanitized derivative.
+CI cannot synthesize this OWNER evidence. The dedicated OWNER audit first requires the real local file, then independently proves both runner loopback denial and runner evidence-mutation denial, then validates and uploads only a short-lived sanitized derivative.
 
 ## Private runtime configuration
 
@@ -126,7 +126,7 @@ OMNI_V10_WEB_EXTERNAL_HOST=<exact *.ts.net node hostname>
 OMNI_V10_TAILSCALE_OWNER_LOGIN_SHA256=<sha256 fingerprint>
 ```
 
-The fingerprint is derived locally from the normalized OWNER Tailscale login. The raw login is not a repository setting or output field.
+The fingerprint is derived locally from the normalized OWNER Tailscale login. The raw login is not a repository setting or output field. The private remote middleware rechecks this OWNER fingerprint on every remote request except the non-sensitive readiness/status probe, so possession of a copied Web session cookie or copied session+CSRF pair is not sufficient when the request arrives with a wrong or missing Tailscale user identity.
 
 The application factory is:
 
@@ -187,11 +187,11 @@ From an authorized OWNER device inside the intended tailnet:
 1. Open the exact HTTPS tailnet URL printed locally by the provisioning gate.
 2. The application shows `OWNER private access` only when the request reached the backend through the reviewed private remote path.
 3. Select the private access action. The backend binds the Tailscale identity to the configured OWNER fingerprint.
-4. A successful authentication creates a server-side session and host-bound Secure/HttpOnly/SameSite session cookie.
+4. A successful authentication creates a server-side session and host-bound Secure/HttpOnly/SameSite session cookie; subsequent remote data/API requests continue to require the matching Tailscale OWNER identity in addition to the session.
 5. Navigate through Portfolio, Watchtower, Research, Decisions/Risk/Plans and System to prove the existing single Web App is reachable remotely.
 6. Logout, reopen the URL and verify the server-side session state changes as expected.
 
-A wrong tailnet identity, direct non-loopback request, hostile Host/Origin, missing CSRF token or excessive login attempts must fail closed. Those negative browser paths are deterministic CI obligations. The runner-local spoof path is separately proven by the source-controlled runner auditor; the OWNER is not asked to imitate it manually.
+A wrong tailnet identity, a copied session or session+CSRF replayed under a wrong/missing tailnet identity, direct non-loopback request, hostile Host/Origin, missing CSRF token or excessive login attempts must fail closed. Those negative browser paths are deterministic CI obligations. The runner-local spoof path is separately proven by the source-controlled runner auditor; the OWNER is not asked to imitate it manually.
 
 Only after steps 1–6 have genuinely passed, finalize the local sanitized evidence:
 
@@ -201,7 +201,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\infrastructure\window
 
 The confirmation switches are OWNER assertions about physical observations and must never be used unless the separate-device rehearsal was actually performed.
 
-After the finalizer succeeds, the dedicated GitHub OWNER audit must be run on that exact implementation head while the remote runtime remains live. That workflow independently proves that the actual CI runner cannot connect directly to the loopback backend, cannot open the OWNER evidence for write and cannot create a replacement file in the protected evidence directory before it validates the OWNER file.
+After the finalizer succeeds, the dedicated GitHub OWNER audit must be run on that exact implementation head while the remote runtime remains live. That workflow independently proves that the actual CI runner cannot connect directly to the loopback backend, cannot open the OWNER evidence for write, cannot create a replacement file and cannot rename the OWNER evidence before it validates the OWNER file.
 
 ## Sanitized acceptance evidence
 
