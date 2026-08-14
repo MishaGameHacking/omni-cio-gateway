@@ -166,6 +166,28 @@ def test_host_and_tailscale_owner_identity_fail_closed() -> None:
     assert wrong_host.json()["detail"] == "HOST_NOT_ALLOWED"
 
 
+def test_host_header_accepts_only_exact_hostname_and_default_https_port() -> None:
+    client, _, _ = make_client()
+    accepted = client.get(
+        "/monitor",
+        headers={**owner_headers(), "Host": f"{HOST}:443"},
+    )
+    assert accepted.status_code == 200
+
+    for hostile_host in (
+        f"{HOST}:444",
+        f"{HOST}:evil",
+        f"{HOST}.",
+        f"{HOST}.evil.example",
+    ):
+        rejected = client.get(
+            "/monitor",
+            headers={**owner_headers(), "Host": hostile_host},
+        )
+        assert rejected.status_code == 400
+        assert rejected.json()["detail"] == "HOST_NOT_ALLOWED"
+
+
 def test_private_remote_responses_have_security_headers() -> None:
     client, _, _ = make_client()
     response = client.get("/monitor", headers=owner_headers())
