@@ -54,6 +54,10 @@ from omni_cio.web.research_dossiers_v1 import (
     ResearchDossierReadServiceV1,
     install_research_dossier_routes,
 )
+from omni_cio.web.system_admin_v1 import (
+    SystemAdminReadServiceV1,
+    install_system_admin_routes,
+)
 from omni_cio.web.watchtower_incidents_v1 import (
     WatchtowerIncidentReadServiceV1,
     install_watchtower_incident_routes,
@@ -342,6 +346,16 @@ def create_local_private_app() -> FastAPI:
         app,
         sessions=sessions,
         service=DecisionPlanReadServiceV1(connection),
+    )
+    install_system_admin_routes(
+        app,
+        sessions=sessions,
+        service=SystemAdminReadServiceV1(
+            connection,
+            broker_repository=broker_repository,
+            repo_root=Path(__file__).resolve().parents[2],
+            web_dist=WEB_DIST,
+        ),
     )
     _protect_local_hosts(app)
 
