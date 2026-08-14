@@ -55,10 +55,12 @@ def test_runner_auditor_requires_live_denials_for_backend_and_owner_evidence() -
     assert "[System.Net.Sockets.TcpClient]::new()" in source
     assert "Test-FileWriteDenied" in source
     assert "Test-CreateDenied" in source
-    assert '"WP22A_RUNNER_LOOPBACK_AND_EVIDENCE_WRITE_DENIED"' in source
+    assert "Test-RenameDenied" in source
+    assert '"WP22A_RUNNER_LOOPBACK_AND_EVIDENCE_MUTATION_DENIED"' in source
     assert "runner_loopback_connection_denied" in source
     assert "runner_owner_evidence_file_write_denied" in source
     assert "runner_owner_evidence_create_denied" in source
+    assert "runner_owner_evidence_rename_denied" in source
     assert "raw_runner_identity_emitted = $false" in source
     assert "raw_runner_sid_emitted = $false" in source
 
