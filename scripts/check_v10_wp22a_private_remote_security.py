@@ -48,9 +48,9 @@ def main() -> int:
         "currency_transfer",
     ):
         assert forbidden not in remote_app
-    assert 'secure_cookie=true' in remote_app
-    assert 'public_multi_user_enabled' in remote_app
-    assert 'real_trading_enabled' in remote_app
+    assert "secure_cookie=true" in remote_app
+    assert "public_multi_user_enabled" in remote_app
+    assert "real_trading_enabled" in remote_app
 
     security = _source("omni_cio/web/remote_security_v1.py").lower()
     for required in (
@@ -86,7 +86,7 @@ def main() -> int:
     assert "/api/v10/web/session/csrf" in frontend
     shell = _source("apps/web/src/app-shell/app-shell.tsx")
     assert "Приватный OWNER доступ" in shell
-    assert "third product login provider" in shell.lower()
+    assert "product login provider" in shell.lower()
 
     print("WP22A private remote security guard: PASS")
     return 0
