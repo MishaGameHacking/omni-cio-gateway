@@ -26,6 +26,8 @@ CSRF_HEADER = "X-Omni-CSRF"
 TAILSCALE_LOGIN_HEADER = "Tailscale-User-Login"
 _UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 _LOCAL_HOSTS = frozenset({"127.0.0.1", "localhost"})
+_REMOTE_VERIFIED_STATE = "wp22a_private_remote_verified"
+_REMOTE_HOST_STATE = "wp22a_private_remote_host"
 
 
 class SessionRegistryLike(Protocol):
@@ -133,6 +135,24 @@ def _origin_host(value: str) -> str | None:
     return parsed.hostname.lower().rstrip(".")
 
 
+def _rewrite_host_to_loopback(request: Request) -> None:
+    headers: list[tuple[bytes, bytes]] = []
+    host_replaced = False
+    for name, value in request.scope.get("headers", []):
+        if name.lower() == b"host":
+            headers.append((b"host", b"127.0.0.1"))
+            host_replaced = True
+        else:
+            headers.append((name, value))
+    if not host_replaced:
+        headers.append((b"host", b"127.0.0.1"))
+    request.scope["headers"] = headers
+
+
+def _remote_request_verified(request: Request) -> bool:
+    return bool(getattr(request.state, _REMOTE_VERIFIED_STATE, False))
+
+
 class ExternalAccessSecurityMiddlewareV1(BaseHTTPMiddleware):
     def __init__(
         self,
@@ -180,6 +200,9 @@ class ExternalAccessSecurityMiddlewareV1(BaseHTTPMiddleware):
                 ):
                     return JSONResponse({"detail": "RATE_LIMITED"}, status_code=429)
 
+        setattr(request.state, _REMOTE_VERIFIED_STATE, True)
+        setattr(request.state, _REMOTE_HOST_STATE, host)
+        _rewrite_host_to_loopback(request)
         response = await call_next(request)
         response.headers["Strict-Transport-Security"] = "max-age=31536000"
         response.headers["X-Content-Type-Options"] = "nosniff"
@@ -203,13 +226,11 @@ def install_private_remote_access_v1(
 
     @app.get("/api/v10/web/private-tailnet-login/status")
     def private_tailnet_status(request: Request) -> dict[str, bool]:
-        host = _host_without_port(request.headers.get("host", ""))
-        return {"enabled": host == policy.canonical_host and _is_loopback(request)}
+        return {"enabled": _remote_request_verified(request)}
 
     @app.post("/api/v10/web/private-tailnet-login")
     def private_tailnet_login(request: Request, response: Response) -> dict[str, bool]:
-        host = _host_without_port(request.headers.get("host", ""))
-        if host != policy.canonical_host or not _is_loopback(request):
+        if not _remote_request_verified(request):
             raise HTTPException(status_code=404, detail="NOT_FOUND")
         login = request.headers.get(TAILSCALE_LOGIN_HEADER, "")
         fingerprint = _login_fingerprint(login)
