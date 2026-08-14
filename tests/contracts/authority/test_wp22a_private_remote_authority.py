@@ -63,9 +63,7 @@ def test_wp22a_runtime_is_loopback_only_and_funnel_is_structurally_off() -> None
     assert "--host 127.0.0.1" in launcher
     assert "--host 0.0.0.0" not in launcher
 
-    configure = _source(
-        "infrastructure/windows/configure_wp22a_tailscale_serve.ps1"
-    )
+    configure = _source("infrastructure/windows/configure_wp22a_tailscale_serve.ps1")
     configure_lower = configure.lower()
     assert "tailscale serve" in configure_lower
     assert "--bg --https=443" in configure_lower
