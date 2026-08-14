@@ -125,7 +125,9 @@ def validate(payload: dict[str, Any], *, expected_sha: str) -> dict[str, Any]:
         if not path.is_file():
             raise EvidenceError(f"WP22A_IMPLEMENTATION_FILE_MISSING:{key.upper()}")
         if str(fingerprint.get(key, "")).lower() != _sha256(path):
-            raise EvidenceError(f"WP22A_OWNER_EVIDENCE_FINGERPRINT_MISMATCH:{key.upper()}")
+            raise EvidenceError(
+                f"WP22A_OWNER_EVIDENCE_FINGERPRINT_MISMATCH:{key.upper()}"
+            )
 
     for key in (
         "exact_implementation_binding",
