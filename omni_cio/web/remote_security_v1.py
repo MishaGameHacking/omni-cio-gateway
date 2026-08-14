@@ -307,6 +307,24 @@ class PrivateRemoteSecurityMiddlewareV1:
 
         method = str(scope.get("method", "GET")).upper()
         path = str(scope.get("path", ""))
+        session_token: str | None = None
+        session_scope: SessionScopeV1 | None = None
+        if path != _LOGIN_PATH:
+            session_token = _cookie_value(
+                headers.get("cookie", ""), self._session_cookie_name
+            )
+            if session_token is not None:
+                session_scope = self._sessions.resolve(
+                    session_token,
+                    now=_utc_now(self._now),
+                )
+                if session_scope is not None and (
+                    session_scope.user_id != OWNER_USER_ID
+                    or session_scope.tenant_id != OWNER_TENANT_ID
+                ):
+                    await self._reject(send, 403, "PRIVATE_REMOTE_OWNER_SESSION_REQUIRED")
+                    return
+
         if method not in _SAFE_METHODS:
             if origin is None or not hmac.compare_digest(
                 origin, self._policy.expected_origin
@@ -324,17 +342,7 @@ class PrivateRemoteSecurityMiddlewareV1:
                     await self._reject(send, 429, "LOGIN_RATE_LIMITED")
                     return
             else:
-                session_token = _cookie_value(
-                    headers.get("cookie", ""), self._session_cookie_name
-                )
-                if (
-                    session_token is None
-                    or self._sessions.resolve(
-                        session_token,
-                        now=_utc_now(self._now),
-                    )
-                    is None
-                ):
+                if session_token is None or session_scope is None:
                     await self._reject(send, 401, "AUTHENTICATION_REQUIRED")
                     return
                 supplied_csrf = headers.get(CSRF_HEADER_NAME, "")
