@@ -118,6 +118,8 @@ jobs:
           if errorlevel 1 exit /b 45
           powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File infrastructure\windows\validate_wp22a_private_runtime_helper.ps1 -AsJson
           if errorlevel 1 exit /b 46
+          powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File infrastructure\windows\configure_wp22a_tailscale_serve.ps1 -SelfTestStatusParser -AsJson
+          if errorlevel 1 exit /b 47
 
       - name: Verify accepted Web and repository guards
         run: |
