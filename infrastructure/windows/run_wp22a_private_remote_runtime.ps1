@@ -51,6 +51,11 @@ if (-not (Test-Path -LiteralPath $python -PathType Leaf)) {
     throw "WP22A_REMOTE_RUNTIME_PYTHON_MISSING"
 }
 
+# Remote access must never inherit the older loopback-only OWNER acceptance modes.
+# Tailscale Serve itself reaches the backend from loopback, so leaving either flag
+# enabled would collapse the intended WP22A identity boundary.
+$env:OMNI_V10_WEB_PRIVATE_ACCEPTANCE = "0"
+$env:OMNI_V10_WP15_LIVE_ACCEPTANCE = "0"
 $env:OMNI_V10_WEB_PRIVATE_REMOTE = "1"
 $env:OMNI_V10_WEB_EXTERNAL_HOST = $hostName
 $env:OMNI_V10_TAILSCALE_OWNER_LOGIN_SHA256 = $ownerFingerprint
