@@ -159,7 +159,7 @@ The 40% total is intentional: Block E is not credited piecemeal.
 - post-WP18 Regression Shield #1486 / run `31705088464` on exact `main` `90c8b52c864db034d31d6184346b2ff62707c121` — **SUCCESS**;
 - WP19 final PR #308 reviewed head `8f6c60805341c34726e22eefb676220d7ae66dcb`: WP19 #25, WP15 Live Web Support #226, WP16 #353, WP17 #324, WP18 #111 and Self-Hosted Windows CI #1000 — **SUCCESS**;
 - WP19 PR #308 squash merge -> exact `main` `058e53a76e6f6aeabe32eb6711cb5168417d5093`;
-- post-WP19 Regression Shield #1488 / run `31728413708` on exact `main` `058e53a76e6f6ae32eb6711cb5168417d5093` — **SUCCESS**, including coverage, dependency audit, SAST and tracked-secret scan;
+- post-WP19 Regression Shield #1488 / run `31728413708` on exact `main` `058e53a76e6f6aeabe32eb6711cb5168417d5093` — **SUCCESS**, including coverage, dependency audit, SAST and tracked-secret scan;
 - post-WP19 Watchtower Incident Audit #26 / run `31728413735` — **SUCCESS** on the same exact main;
 - WP20 final PR #310 reviewed head `21fec9d2682d3731759bb520f25cb1026295013a`: WP15 Live Web Support #238, WP16 #367, WP17 #338, WP18 #125, WP19 #39, WP20 #11 and Self-Hosted Windows CI #1012 — **SUCCESS**;
 - WP20 PR #310 squash merge -> exact `main` `b83e2bcc729ed0863f861a258dc951a57ec6b65e`;
