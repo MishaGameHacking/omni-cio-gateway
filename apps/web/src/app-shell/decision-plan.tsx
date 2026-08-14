@@ -270,11 +270,13 @@ function ApprovalSubject({ plan }: { plan: PlanView }) {
       {plan.approval_subject.phrase ? <code>{plan.approval_subject.phrase}</code> : <span>Approval phrase скрыта или не требуется.</span>}
       <p>Этот экран ничего не подтверждает и не отправляет брокеру. Любая существенная мутация плана меняет immutable hash и аннулирует этот subject.</p>
       <dl className="decision-dl">
-        <div><dt>Plan hash</dt><dd><code>{shortHash(plan.plan_sha256)}</code></dd></div>
-        <div><dt>Created</dt><dd>{timestamp(plan.created_at)}</dd></div>
-        <div><dt>Expires</dt><dd>{timestamp(plan.expires_at)}</dd></div>
+        <div><dt>Plan hash</dt><dd><code>{plan.plan_sha256}</code></dd></div>
+        <div><dt>Version</dt><dd>{plan.schema_version}</dd></div>
+        <div><dt>Created</dt><dd><code>{plan.created_at}</code></dd></div>
+        <div><dt>Expires</dt><dd><code>{plan.expires_at}</code></dd></div>
         <div><dt>Can approve here</dt><dd>NO</dd></div>
       </dl>
+      <p className="shell-caption">Cancellation constraints: {plan.cancellation_conditions.map((row) => `${row.code}${row.hard_cancel ? " · HARD" : ""}`).join("; ") || "none"}</p>
     </section>
   );
 }
