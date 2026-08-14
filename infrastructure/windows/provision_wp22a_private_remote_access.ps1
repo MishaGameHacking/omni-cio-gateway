@@ -81,6 +81,12 @@ function Get-TailscaleIdentity {
     if ($null -eq $status.Self -or -not [bool]$status.Self.Online) {
         throw "WP22A_TAILSCALE_SELF_OFFLINE"
     }
+    $tagsProperty = @($status.Self.PSObject.Properties | Where-Object { $_.Name -eq "Tags" }) | Select-Object -First 1
+    $tags = if ($null -ne $tagsProperty) { @($tagsProperty.Value) } else { @() }
+    $activeTags = @($tags | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
+    if ($activeTags.Count -ne 0) {
+        throw "WP22A_TAILSCALE_TAGGED_NODE_UNSUPPORTED"
+    }
     $hostName = ([string]$status.Self.DNSName).Trim().ToLowerInvariant().TrimEnd('.')
     if ($hostName -notmatch '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*\.ts\.net$') {
         throw "WP22A_TAILSCALE_DNS_NAME_INVALID"
