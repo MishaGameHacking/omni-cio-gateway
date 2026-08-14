@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import datetime, timezone
+from decimal import Decimal
 import hashlib
 import json
 from typing import Any
@@ -31,7 +32,7 @@ def _timestamp(value: datetime | None) -> str | None:
     return _utc(value).isoformat() if value is not None else None
 
 
-def _decimal(value: object) -> str:
+def _decimal(value: Decimal) -> str:
     return format(value, "f")
 
 
@@ -360,12 +361,8 @@ def _plan_view(plan: PortfolioPlanV1, *, now: datetime) -> dict[str, Any]:
                             row.optimizer_leg.estimated_tax_base
                         ),
                         "cash_delta_base": _decimal(row.optimizer_leg.cash_delta_base),
-                        "required_execution_days": (
-                            row.optimizer_leg.required_execution_days
-                        ),
-                        "staged_execution_required": (
-                            row.optimizer_leg.staged_execution_required
-                        ),
+                        "required_execution_days": row.optimizer_leg.required_execution_days,
+                        "staged_execution_required": row.optimizer_leg.staged_execution_required,
                         "partial_fill_aware": row.optimizer_leg.partial_fill_aware,
                         "market_source_sha256": row.optimizer_leg.market_source_sha256,
                         "friction_source_sha256s": list(
@@ -440,11 +437,14 @@ class DecisionPlanReadServiceV1:
             "p.plan_id, p.schema_version, p.identity_version, p.payload_sha256, "
             "p.created_at, pb.schema_ref, "
             "CASE WHEN octet_length(pb.payload) <= %s THEN pb.payload ELSE NULL END, "
-            "s.source_payload_sha256 "
+            "s.source_payload_sha256, pol.source_policy_id "
             "FROM omni_cio_v10.decisions d "
             "JOIN omni_cio_v10.portfolio_snapshots s "
             "ON s.tenant_id = d.tenant_id AND s.portfolio_id = d.portfolio_id "
             "AND s.policy_id = d.policy_id AND s.snapshot_id = d.snapshot_id "
+            "JOIN omni_cio_v10.policies pol "
+            "ON pol.tenant_id = d.tenant_id AND pol.portfolio_id = d.portfolio_id "
+            "AND pol.policy_id = d.policy_id "
             "LEFT JOIN omni_cio_v10.content_blobs db "
             "ON db.tenant_id = d.tenant_id AND db.payload_sha256 = d.payload_sha256 "
             "LEFT JOIN LATERAL ("
@@ -487,12 +487,6 @@ class DecisionPlanReadServiceV1:
         decided_at = row[7]
         if not isinstance(decided_at, datetime):
             raise ValueError("WP21 decisions.decided_at must be datetime")
-        if _utc(decided_at) != decision.metadata.retrieved_at:
-            return _invalid_payload(
-                now=now,
-                reason="DECISION_RECORD_BINDING_INVALID",
-                decision=decision,
-            )
 
         plan_id = None if row[10] is None else str(row[10])
         plan: PortfolioPlanV1 | None = None
@@ -514,7 +508,7 @@ class DecisionPlanReadServiceV1:
                 raise ValueError("WP21 plans.created_at must be datetime")
             if (
                 _utc(plan_created_at) != plan.created_at
-                or plan.policy_reference.policy_id != str(row[2])
+                or plan.policy_reference.policy_id != str(row[18])
                 or plan.portfolio_snapshot_sha256 != str(row[17])
             ):
                 return _invalid_payload(
@@ -552,6 +546,7 @@ class DecisionPlanReadServiceV1:
                 "decision_id": str(row[0]),
                 "portfolio_id": str(row[1]),
                 "policy_id": str(row[2]),
+                "policy_source_id": str(row[18]),
                 "snapshot_id": str(row[3]),
                 "snapshot_source_payload_sha256": str(row[17]),
                 "decision_schema_version": str(row[4]),
