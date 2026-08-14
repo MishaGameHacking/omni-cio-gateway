@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 import hashlib
+from pathlib import Path
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
@@ -26,6 +27,7 @@ OWNER_LOGIN = "owner@example.test"
 HOST = "omni-owner.example-tailnet.ts.net"
 ORIGIN = f"https://{HOST}"
 OWNER_SHA256 = hashlib.sha256(OWNER_LOGIN.casefold().encode("utf-8")).hexdigest()
+WEB_SOURCE = Path(__file__).resolve().parents[1] / "apps" / "web" / "src"
 
 
 def make_app(
@@ -152,6 +154,21 @@ def test_tailnet_status_crosses_existing_local_trusted_host_only_after_outer_ver
     assert response.json() == {"enabled": True}
     assert response.headers["strict-transport-security"] == "max-age=31536000"
     assert response.headers["cache-control"] == "no-store"
+    csp = response.headers["content-security-policy"]
+    assert "default-src 'self'" in csp
+    assert "frame-ancestors 'none'" in csp
+    assert "object-src 'none'" in csp
+    assert "connect-src 'self'" in csp
+    assert "'unsafe-inline'" not in csp
+    assert "'unsafe-eval'" not in csp
+
+
+def test_web_source_has_no_inline_style_attributes_blocked_by_remote_csp() -> None:
+    offenders = []
+    for path in WEB_SOURCE.rglob("*.tsx"):
+        if "style={{" in path.read_text(encoding="utf-8"):
+            offenders.append(path.relative_to(WEB_SOURCE).as_posix())
+    assert offenders == []
 
 
 def test_owner_login_uses_host_bound_secure_server_side_session_and_csrf_cookie() -> None:
