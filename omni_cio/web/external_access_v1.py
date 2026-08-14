@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import defaultdict, deque
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import hashlib
 import ipaddress
 import secrets
@@ -18,13 +18,17 @@ from starlette.responses import JSONResponse
 
 from omni_cio.contracts.v1.domain import OWNER_TENANT_ID, OWNER_USER_ID
 from omni_cio.web.api_v1 import SESSION_COOKIE
-from omni_cio.web.session_v1 import SessionScopeV1
+from omni_cio.web.session_v1 import SessionPolicyV1, SessionScopeV1
 
 
 REMOTE_SESSION_COOKIE = "__Host-omni_v10_session"
 CSRF_COOKIE = "__Host-omni_v10_csrf"
 CSRF_HEADER = "X-Omni-CSRF"
 TAILSCALE_LOGIN_HEADER = "Tailscale-User-Login"
+REMOTE_SESSION_POLICY = SessionPolicyV1(
+    idle_lifetime=timedelta(hours=2),
+    absolute_lifetime=timedelta(hours=24),
+)
 _UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 _LOCAL_HOSTS = frozenset({"127.0.0.1", "localhost"})
 _REMOTE_VERIFIED_STATE = "wp22a_private_remote_verified"
@@ -57,6 +61,8 @@ class SessionRegistryLike(Protocol):
         tenant_id: str,
         now: datetime,
     ) -> tuple[str, SessionScopeV1]: ...
+
+    def revoke(self, token: str | None, *, now: datetime) -> bool: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -365,6 +371,7 @@ def install_private_remote_access_v1(
         if issued.tzinfo is None or issued.utcoffset() is None:
             raise RuntimeError("WP22A_CLOCK_NOT_UTC_AWARE")
         issued = issued.astimezone(timezone.utc)
+        sessions.revoke(request.cookies.get(REMOTE_SESSION_COOKIE), now=issued)
         token, scope = sessions.create(
             user_id=OWNER_USER_ID,
             tenant_id=OWNER_TENANT_ID,
