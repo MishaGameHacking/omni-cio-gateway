@@ -4,25 +4,25 @@ Updated: 2026-08-14
 
 ## Executive state
 
-Omni-CIO V10: **DEVELOPMENT ACTIVE / BLOCK D COMPLETE / WP16 COMPLETE / WP17 COMPLETE / WP18 COMPLETE / WP19 COMPLETE / WP20 COMPLETE / WP21 COMPLETE / WP22 AUTHORIZED NEXT**.
+Omni-CIO V10: **DEVELOPMENT ACTIVE / BLOCK D COMPLETE / WP16 COMPLETE / WP17 COMPLETE / WP18 COMPLETE / WP19 COMPLETE / WP20 COMPLETE / WP21 COMPLETE / WP22 COMPLETE / WP22A AUTHORIZED NEXT**.
 
 Accepted implementation progress is **40%**.
 
-Block A (5%), Block B (9%), Block C (12%) and Block D (14%) have passed their owning Exit Gates. Block E is in progress: WP16, WP17, WP18, WP19, WP20 and WP21 are complete; WP22 — System/Admin UI — is the next authorized implementation package. Block E receives no percentage credit until its own Block Exit Gate.
+Block A (5%), Block B (9%), Block C (12%) and Block D (14%) have passed their owning Exit Gates. Block E is still in progress: WP16, WP17, WP18, WP19, WP20, WP21 and WP22 are complete; WP22A — External Web Access / OWNER Authentication Security Gate — is the next authorized implementation package. Block E receives no percentage credit until its own Block Exit Gate, which includes WP22A.
 
-WP21 was implemented on final reviewed head `87953ba8a082dc81cb14b56525da3e5da65361ef` and squash-merged through PR #312 to exact `main` `933e05ead311f0016372cab1d38eb9746bc62a19`.
+WP22 was implemented on final reviewed head `cbe521c2cafad1a7d8df81119344ffca35098e12` and squash-merged through PR #314 to exact `main` `872976cd2bb34d304c8666a332e466fc6cd9b0d4`.
 
-On the final reviewed WP21 head, the fresh `ready_for_review` cycle completed **SUCCESS** for WP15 Live Web Support #267, WP16 Web Design System #398, WP17 Application Shell #369, WP18 Portfolio Dashboard #156, WP19 Watchtower Incident #70, WP20 Research Dossier #42, dedicated WP21 Decision/Risk/Plan #28 and authoritative Self-Hosted Windows CI #1041. The authoritative gate included Regression Shield coverage, dependency audit, SAST, tracked-content secret scan, stable `app:app` and read-only GPT Actions checks. Hosted Fast PR Checks #949 and Toolchain Compatibility #984 did not start their substantive GitHub-hosted jobs because of the account billing/spending-limit condition; they remain infrastructure failures, not PASS and not code failures.
+On the final reviewed WP22 head, the fresh `ready_for_review` cycle completed **SUCCESS** for the dedicated WP22 System Admin Audit, inherited WP15 Live Web Support, WP16 Web Design System, WP17 Application Shell, WP18 Portfolio Dashboard, WP19 Watchtower Incident, WP20 Research Dossier, WP21 Decision/Risk/Plan and authoritative Self-Hosted Windows CI. The authoritative gate included Regression Shield coverage, dependency audit, SAST, tracked-content secret scan, stable `app:app` and read-only GPT Actions checks. Hosted Fast PR Checks / Toolchain Compatibility did not start substantive GitHub-hosted jobs because of the account billing/spending-limit condition; they remain infrastructure failures, not PASS and not code failures.
 
-After squash merge, post-merge Regression Shield #1492 / run `31783003407` completed **SUCCESS** on exact `main` `933e05ead311f0016372cab1d38eb9746bc62a19`. Both independent jobs passed: dependency/code/secret security and quality/contracts/coverage. The post-merge WP21 Decision/Risk/Plan Audit #29 / run `31783003337` also completed **SUCCESS** on the same exact main. Triggered inherited Web regressions observed during closeout completed SUCCESS for WP18 #157, WP17 #370, WP16 #399 and WP19 #71.
+After squash merge, post-merge Regression Shield #1494 / run `31796896704` completed **SUCCESS** on exact `main` `872976cd2bb34d304c8666a332e466fc6cd9b0d4`. Both independent jobs passed: quality/contracts/coverage and dependency/code/secret security. The post-merge WP22 System Admin Audit #15 / run `31796896578` also completed **SUCCESS** on the same exact main.
 
-The post-merge WP15 Live Web OWNER Audit #20 / run `31783003403` remains **FAILURE**, not PASS. Its accepted immutable OWNER evidence is bound to the accepted WP15 implementation rather than the later WP21 main, and the exact-main audit reported `implementation_bound=false`. The same audit still reported real broker READ observation present, locally used READ credential evidence present, no secret value recorded, no private portfolio values recorded, no broker-write authority added, `trading_methods=false` and gateway `app:app`. The fail-closed isolation result therefore remains the known stale immutable-binding condition, not evidence of a new Lenovo regression and not a reason to synthesize new OWNER evidence.
+The post-merge WP15 Live Web OWNER Audit #21 / run `31796896713` remains **FAILURE**, not PASS. Its accepted immutable OWNER evidence is bound to the accepted WP15 implementation rather than the later WP22 main, so the audit reports `implementation_bound=false` and `WP15_LIVE_RUNNER_ISOLATION_NOT_PROVEN`. The auditor intentionally performs the live secret/evidence ACL probes only after implementation/evidence/hash binding succeeds; because that precondition is false on later Web main SHAs, the emitted runner-access booleans remain fail-closed defaults and are not evidence that a new runner secret-access regression occurred. The same sanitized audit still records real broker READ observation present, locally used READ credential evidence present, no secret value recorded, no private portfolio values recorded, no broker-write authority added, `trading_methods=false` and gateway `app:app`. No new OWNER evidence is synthesized merely to rebind historical WP15 acceptance to a later Web commit.
 
-The accepted WP21 product surface remains local/private and READ-only. It projects validated canonical deterministic Decision/Risk/Plan state, exact before/after mathematics, immutable plan identity/version/expiry and the exact future OWNER confirmation subject as display-only `PREVIEW_ONLY`. Material plan mutation, invalid binding or expiry fails closed and exposes no approval subject; `can_approve=false` and `execution_authorized=false` remain explicit. No browser financial recomputation, plan mutation, approval submission, broker-write route, public approval ingress or Real execution surface was introduced.
+The accepted WP22 product surface remains local/private, OWNER/session-scoped and READ-only. `/system` now projects sanitized service health, release/deploy identity, PostgreSQL/migration state, accepted backup RPO/RTO plus durable backup observation, T-Invest READ/Watchtower state, explicit future-locked Telegram/AI state, bounded resource telemetry, required safety invariants and bounded recent jobs/errors. Unknown/degraded telemetry remains explicit instead of being fabricated as READY. No browser mutation control, public ingress, broker-write route, Telegram/AI activation or Real execution authority was introduced.
 
 The deferred/accepted WP15 real T-Invest READ path remains unchanged. Broker provisioning remains connection-scoped through the authenticated local/private Web flow; raw broker credentials, full provider account IDs and private portfolio payloads remain outside GitHub/CI evidence.
 
-OWNER action required now: **NO**. Engineering may proceed autonomously to the WP22 dependency/contract check only after this status-only transition itself is accepted. No public ingress, public multi-user activation, Telegram delivery, AI authority expansion, broker write or Real execution is authorized by this transition.
+OWNER action required now: **NO**. Engineering may proceed autonomously to the WP22A dependency/contract check only after this status-only transition itself passes exact-head required gates, is squash-merged, and the resulting exact `main` passes the required post-status Regression Shield. This transition does not itself open public ingress or enable public multi-user activation.
 
 Owner start command: **`START V10`** received 2026-08-05.
 
@@ -53,30 +53,33 @@ Starting or advancing V10 never expands broker/Real-money authority by itself.
 - Block E / WP19 — **COMPLETE**;
 - Block E / WP20 — **COMPLETE**;
 - Block E / WP21 — **COMPLETE**;
-- Block E / WP22 — **AUTHORIZED NEXT / NOT STARTED**;
-- Block E / WP22A+ — **LOCKED behind owning dependencies and Master Plan sequence**;
+- Block E / WP22 — **COMPLETE**;
+- Block E / WP22A — **AUTHORIZED NEXT / NOT STARTED**;
+- Block F / WP23+ — **LOCKED behind WP22A and Master Plan sequence**;
 - public multi-user activation — **OFF / LOCKED**;
-- public Internet ingress — **OFF / LOCKED until WP22A or later owning security gate**;
+- public Internet ingress — **OFF / LOCKED until WP22A Exit Gate**;
 - broker write / Real execution — **UNCHANGED / NOT AUTHORIZED**.
 
-## Current next package — WP22 System/Admin UI
+## Current next package — WP22A External Web Access / OWNER Authentication Security Gate
 
-Master Plan objective: give the OWNER one operational place to understand and operate the ordinary system state without the command line.
+Master Plan objective: prevent the local Personal cabinet from becoming a public attack surface before external-access security design and evidence are complete.
 
-Required WP22 deliverables remain exactly the Master Plan scope:
+Required WP22A deliverables:
 
-- service health, Git SHA/release, last deploy, DB/migrations, last backup, T-Invest, Telegram, Watchtower, AI and resource/temperature/free-disk state;
-- kill-switch state displayed read-only or through a controlled admin flow;
-- recent errors/jobs without secret leakage.
+- decide whether public ingress is needed at all; safe private remote access is evaluated first;
+- if external ingress is needed, define reviewed TLS termination, certificate issuance/renewal, HSTS/host allowlist and trusted reverse-proxy chain;
+- preserve a separate ordinary-browser authentication path; Telegram/Mini App identity is not the only login authority;
+- server-side sessions with defined lifetime, rotation, explicit revoke/logout and secure/HttpOnly/SameSite cookies or equivalent reviewed controls;
+- CSRF protection plus Origin/Referer/Host validation where applicable and CORS deny-by-default;
+- login/API rate limiting and abuse policy without self-DoS of critical monitoring;
+- any future Real-plan approval endpoint requires step-up/recent OWNER authentication and never trusts only a deep-link URL;
+- external ingress configuration remains repository-controlled while secret keys/certificate private material remain runtime-only.
 
-Required WP22 checks:
+Required WP22A checks include relevant ASVS 5.0.0 controls, invalid/stolen/expired sessions, CSRF, host-header/origin abuse, brute-force/rate-limit behavior, direct API calls without UI and Telegram `initData` replay/staleness where applicable.
 
-- degraded-service scenarios;
-- masked error output.
+WP22A Exit Gate: **until this gate is GREEN, Web remains local/private and the Real approval surface is not published externally**.
 
-WP22 Exit Gate: **the OWNER can understand the state of the whole system without GitHub/PowerShell for ordinary diagnostics**.
-
-Master Plan dependency is **WP21**. WP22 must extend the same source-controlled local/private Web App and reuse accepted operational, health, deployment, recovery and security authorities rather than inventing a second control plane. It does not authorize public Internet ingress, broker write, Telegram/AI authority expansion or Real execution.
+WP22A must reuse the accepted single Web App, server-side session/identity model, tenant isolation and operational diagnostics. It must not create a second website/control plane, grant broker-write authority, enable Real execution, or treat external reachability as equivalent to public multi-user activation.
 
 ## Canonical authority
 
@@ -115,7 +118,11 @@ Identity, broker provisioning and Web work are additionally governed by:
 - `docs/architecture/V10_WP20_EXECUTION_CONTRACT.md`;
 - `docs/architecture/V10_WP20_RESEARCH_DOSSIER_UI_CONTRACT.md`;
 - `docs/architecture/V10_WP21_EXECUTION_CONTRACT.md`;
-- `docs/architecture/V10_WP21_DECISION_RISK_PLAN_UI_CONTRACT.md`.
+- `docs/architecture/V10_WP21_DECISION_RISK_PLAN_UI_CONTRACT.md`;
+- `docs/architecture/V10_WP22_EXECUTION_CONTRACT.md`;
+- `docs/architecture/V10_WP22_SYSTEM_ADMIN_UI_CONTRACT.md`;
+- `docs/architecture/V10_SECURITY_BOUNDARIES.md`;
+- `docs/architecture/V10_THREAT_MODEL.md`.
 
 GitHub remains engineering source of truth. Protected production/recovery baseline remains **Omni-CIO v9.0.0 — COMPLETE / owner-accepted / controlled maintenance** until the responsible later V10 parity/decommission gate.
 
@@ -127,7 +134,7 @@ GitHub remains engineering source of truth. Protected production/recovery baseli
 | B. GitHub, dependencies and CI/CD | 9% | COMPLETE — WP1 / WP2 / WP3 / WP4 |
 | C. Lenovo Omni-CIO Node / infrastructure | 12% | COMPLETE — WP5 / WP6 / WP7 / WP8 / WP9 / WP9A / WP10 |
 | D. V10 Core and data | 14% | COMPLETE — WP11 / WP12 / WP13 / WP14 / WP15 incl. real READ evidence |
-| E. Omni-CIO Web Platform | 14% | IN PROGRESS — WP16 / WP17 / WP18 / WP19 / WP20 / WP21 COMPLETE; WP22 NEXT |
+| E. Omni-CIO Web Platform | 14% | IN PROGRESS — WP16 / WP17 / WP18 / WP19 / WP20 / WP21 / WP22 COMPLETE; WP22A NEXT |
 | F. Telegram | 8% | NOT STARTED — product/interaction contract pre-approved only |
 | G. AI Copilot / Research / GPT Migration | 18% | NOT STARTED |
 | H. Guardian / Watchtower Loop | 8% | NOT STARTED |
@@ -135,7 +142,7 @@ GitHub remains engineering source of truth. Protected production/recovery baseli
 | J. Integration / hardening / recovery / release | 5% | NOT STARTED |
 | **TOTAL** | **100% planned** | **40% ACCEPTED** |
 
-The 40% total is intentional: Block E is not credited piecemeal.
+The 40% total is intentional: Block E is not credited piecemeal and WP22A has not passed its Exit Gate.
 
 ## Accepted implementation evidence index
 
@@ -171,28 +178,33 @@ The 40% total is intentional: Block E is not credited piecemeal.
 - post-WP21 Regression Shield #1492 / run `31783003407` on exact `main` `933e05ead311f0016372cab1d38eb9746bc62a19` — **SUCCESS**, including quality/contracts/coverage, dependency audit, SAST and tracked-secret scan;
 - post-WP21 Decision/Risk/Plan Audit #29 / run `31783003337` — **SUCCESS** on the same exact main;
 - post-WP21 inherited WP18 #157, WP17 #370, WP16 #399 and WP19 #71 — **SUCCESS** on the same exact main;
-- post-WP21 WP15 Live Web OWNER Audit #20 / run `31783003403` — **FAILURE** because immutable accepted WP15 evidence is not bound to the later WP21 main; the audit remains fail-closed and is not treated as PASS or as proof of a new isolation regression.
+- post-WP21 WP15 Live Web OWNER Audit #20 / run `31783003403` — **FAILURE** because immutable accepted WP15 evidence is not bound to the later WP21 main; the audit remains fail-closed and is not treated as PASS or as proof of a new isolation regression;
+- WP21 status transition PR #313 -> `4bb18b7cddc33b8d79d168103c747852b8624b23`;
+- WP22 final reviewed head `cbe521c2cafad1a7d8df81119344ffca35098e12`: dedicated WP22 audit, inherited Web regressions and authoritative Self-Hosted Windows CI — **SUCCESS**;
+- WP22 PR #314 squash merge -> exact `main` `872976cd2bb34d304c8666a332e466fc6cd9b0d4`;
+- post-WP22 Regression Shield #1494 / run `31796896704` on exact `main` `872976cd2bb34d304c8666a332e466fc6cd9b0d4` — **SUCCESS**, including quality/contracts/coverage, dependency audit, SAST and tracked-secret scan;
+- post-WP22 System Admin Audit #15 / run `31796896578` — **SUCCESS** on the same exact main;
+- post-WP22 WP15 Live Web OWNER Audit #21 / run `31796896713` — **FAILURE** because immutable accepted WP15 evidence is not bound to the later WP22 main; the audit short-circuits before live ACL probes when binding is false and therefore is not treated as PASS or as proof of a new isolation regression.
 
 Hosted Fast PR Checks / Toolchain Compatibility runs that GitHub did not start because of the account billing/spending-limit condition remain infrastructure failures, not PASS and not code failures.
 
-## WP21 closeout evidence
+## WP22 closeout evidence
 
-WP21 satisfies its Master Plan Exit Gate:
+WP22 satisfies its Master Plan Exit Gate:
 
-- the Web route is authenticated, tenant-scoped and strictly READ-only;
-- the browser renders only validated canonical deterministic Decision/Risk/Plan projection and does not calculate a second financial decision or allocation;
-- `MAIN_DECISION` maps deterministically to `NO_ACTION`, `HOLD`, `REDUCE`, `EXIT` or `REALLOCATE`, while incomplete inputs remain explicitly partial rather than guessed;
-- risk before/after, target weights, lots, costs, cash/staging, constraints, blockers and evidence remain source-backed by the accepted Core objects;
-- immutable plan hash/version/expiry and the exact future OWNER confirmation subject are visible before any execution authority exists;
-- material mutation, invalid schema/binding/hash or expiry invalidates the approval preview and exposes no actionable approval subject;
-- future OWNER confirmation is permanently marked `PREVIEW_ONLY` in WP21 with `can_approve=false` and `execution_authorized=false`;
-- no POST/PUT/PATCH/DELETE plan route, browser credential storage, broker-write authority or public approval ingress was added;
-- deterministic alternatives remain explanatory and do not force the OWNER or browser to invent the correct allocation;
-- deterministic Web/Python/browser evidence covers mutation invalidation, missing-plan fail-closed behavior, expiry, `WAIT_FOR_DATA` partial state, exact decision mapping and exact math/alternatives rendering;
-- review state before merge had zero blocking threads/comments and the complete 12-file WP21 diff was reviewed;
-- squash merge, exact-main Regression Shield and exact-main focused WP21 audit all completed successfully.
+- the `/system` route is authenticated, session/tenant-scoped and strictly READ-only;
+- service health, release/deploy identity, PostgreSQL/migration status, backup RPO/RTO, T-Invest READ, Watchtower, resource/disk/temperature availability, safety state and bounded recent jobs/errors are visible from one ordinary operating surface;
+- unavailable, degraded and future-locked states are explicit and never fabricated as READY;
+- Telegram and AI remain explicitly future-locked rather than being reported as current runtime failures;
+- safety/kill-switch information is diagnostic only; contradictory required safety state fails closed;
+- diagnostics omit raw exceptions, secret references, credentials, backup/recovery material, full broker account identifiers and private portfolio payloads;
+- no POST/PUT/PATCH/DELETE companion route or browser mutation control was added;
+- no public ingress, broker-write authority, Telegram/AI activation or Real execution was introduced;
+- deterministic Web/Python/browser evidence covers degraded-service, migration mismatch, low disk, masked errors, missing telemetry and authenticated/unauthenticated behavior;
+- review state before merge had zero blocking threads/comments and the complete 12-file WP22 diff was reviewed;
+- squash merge, exact-main Regression Shield and exact-main focused WP22 audit all completed successfully.
 
-This acceptance does not authorize WP22 to create a second operational control plane, expose secrets, open public ingress, add broker write or enable Real execution. WP22 is limited to the Master Plan System/Admin UI scope and must reuse accepted operational/security authorities.
+This acceptance authorizes only the separate WP22A external-access security package after this status transition itself is accepted. It does not authorize opening the cabinet to the public Internet before WP22A passes its own Exit Gate.
 
 ## Permanent safety / rollback invariants
 
@@ -208,4 +220,4 @@ This acceptance does not authorize WP22 to create a second operational control p
 
 ## Current next action
 
-Start **WP22 — System/Admin UI** only after this status-only transition itself passes exact-head required gates, is squash-merged, and the resulting exact `main` passes the required post-merge Regression Shield. Before writing WP22 feature code, re-read the accepted `main`, WP execution template, Master Plan WP22 section and the accepted architecture/operations/security authorities for health, deployment, DB/migrations, backup/recovery, broker READ, Watchtower, Telegram/AI status and local node resources. WP22 must remain local/private, mask secret-bearing diagnostics, reuse existing control/health surfaces rather than create a second control plane, and leave public Internet ingress, broker write and Real execution locked.
+Start **WP22A — External Web Access / OWNER Authentication Security Gate** only after this status-only transition itself passes exact-head required gates, is squash-merged, and the resulting exact `main` passes the required post-status Regression Shield. Before writing WP22A feature/configuration code, re-read the accepted `main`, WP execution template, Master Plan WP22A section, identity/session contracts, `V10_SECURITY_BOUNDARIES.md`, `V10_THREAT_MODEL.md` and relevant Windows/Web deployment authorities. The first design decision is whether public ingress is needed at all; a secure private remote-access option must be evaluated first. Until WP22A is GREEN, the Web remains local/private and broker-write / Real execution authority remains unchanged.
