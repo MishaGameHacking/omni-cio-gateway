@@ -23,6 +23,10 @@ FILES = {
     / "infrastructure"
     / "windows"
     / "run_wp22a_private_remote_runtime.ps1",
+    "runner_auditor_sha256": ROOT
+    / "infrastructure"
+    / "windows"
+    / "audit_wp22a_runner_loopback.ps1",
     "owner_finalizer_sha256": ROOT
     / "infrastructure"
     / "windows"
@@ -72,6 +76,7 @@ def validate(payload: dict[str, Any], *, expected_sha: str) -> dict[str, Any]:
         "implementation_fingerprint",
         "exact_implementation_binding",
         "backend_loopback_only",
+        "runner_loopback_firewall_bound",
         "tailscale_serve_private",
         "funnel_public_ingress",
         "owner_identity_binding",
@@ -132,6 +137,7 @@ def validate(payload: dict[str, Any], *, expected_sha: str) -> dict[str, Any]:
     for key in (
         "exact_implementation_binding",
         "backend_loopback_only",
+        "runner_loopback_firewall_bound",
         "tailscale_serve_private",
         "owner_identity_binding",
         "secure_server_session",
@@ -160,6 +166,7 @@ def validate(payload: dict[str, Any], *, expected_sha: str) -> dict[str, Any]:
         "implementation_sha": normalized_expected,
         "private_remote": {
             "backend_loopback_only": True,
+            "runner_loopback_firewall_bound": True,
             "tailscale_serve_private": True,
             "funnel_public_ingress": False,
             "owner_identity_binding": True,
@@ -184,6 +191,7 @@ def validate(payload: dict[str, Any], *, expected_sha: str) -> dict[str, Any]:
         "reason_codes": [
             "CURRENT_IMPLEMENTATION_FINGERPRINT_MATCH",
             "PRIVATE_SERVE_NO_FUNNEL_PASS",
+            "RUNNER_LOOPBACK_FIREWALL_BOUND",
             "OWNER_IDENTITY_SESSION_PASS",
             "OWNER_PHONE_REHEARSAL_PASS",
         ],
