@@ -39,13 +39,46 @@ The Lenovo must have:
 - the accepted PostgreSQL/Web runtime baseline;
 - Tailscale installed and already joined to the intended OWNER-controlled tailnet;
 - HTTPS/Serve support available in the installed Tailscale version;
-- no conflicting public Funnel configuration for the Omni-CIO Web port.
+- no active Funnel/public configuration on the Personal node;
+- no unrelated existing Serve configuration that would be overwritten by the Omni-CIO root route.
+
+The phone or other OWNER browser device must join the same authorized tailnet before the separate-device rehearsal.
 
 Never send Tailscale authentication keys, provider credentials, OWNER login, broker credentials or private portfolio values to GitHub/CI/chat.
 
+## Source-controlled deployment boundary
+
+WP22A adds two reviewed Windows scripts:
+
+```text
+infrastructure/windows/run_wp22a_private_remote_runtime.ps1
+infrastructure/windows/provision_wp22a_private_remote_access.ps1
+```
+
+The runtime launcher:
+
+- runs only as the existing non-admin `omni-cio-runtime` identity;
+- requires an exact source-controlled deployment SHA marker;
+- binds Uvicorn only to `127.0.0.1`;
+- uses PostgreSQL SSPI under the existing runtime role;
+- activates only `apps.api.wp22a_remote:create_private_remote_app`.
+
+The provisioning gate:
+
+- requires an exact clean reviewed Git head;
+- reuses the accepted WP15/WP17 Web deployment and broker READ-vault boundary instead of creating a second Web stack;
+- derives the local `*.ts.net` DNS name and OWNER Tailscale login fingerprint from local Tailscale status without writing the raw login to GitHub;
+- rejects active Funnel/public ingress;
+- refuses to overwrite an unrelated existing Serve configuration;
+- installs a limited scheduled task with restart-on-failure and startup trigger;
+- verifies that the Web listener is loopback-only;
+- configures Tailscale Serve in background mode to the loopback Web port;
+- performs a real HTTPS OWNER identity/session/login/logout probe through Serve;
+- still leaves a separate phone/browser reachability rehearsal as OWNER evidence.
+
 ## Private runtime configuration
 
-The runtime needs three non-source-controlled values:
+The runtime receives three non-source-controlled values through the local scheduled-task boundary:
 
 ```text
 OMNI_V10_WEB_PRIVATE_REMOTE=1
@@ -53,7 +86,7 @@ OMNI_V10_WEB_EXTERNAL_HOST=<exact *.ts.net node hostname>
 OMNI_V10_TAILSCALE_OWNER_LOGIN_SHA256=<sha256 fingerprint>
 ```
 
-The fingerprint is derived locally from the normalized OWNER Tailscale login. The raw login is not a repository setting.
+The fingerprint is derived locally from the normalized OWNER Tailscale login. The raw login is not a repository setting or output field.
 
 The application factory is:
 
@@ -65,32 +98,57 @@ The Web process remains bound to `127.0.0.1` only.
 
 ## Tailscale Serve boundary
 
-The reviewed target is Tailscale **Serve**, not Funnel. Serve proxies the local loopback Web service into the private tailnet HTTPS endpoint. The exact CLI syntax must be checked against the installed Tailscale version before the OWNER-local rehearsal because the Tailscale CLI has changed across releases.
+The reviewed target is Tailscale **Serve**, not Funnel. Serve proxies the local loopback Web service into the private tailnet HTTPS endpoint. Current Tailscale CLI documentation defines `tailscale serve --bg <target>` for background sharing and `tailscale serve status` / `status --json` for verification; the installed client remains the runtime source of truth if CLI syntax changes again.
 
-Before acceptance, verify all of the following locally:
+The provisioning gate fails closed rather than enabling Funnel. Before acceptance it verifies all of the following locally:
 
 - the service target is the loopback Web port;
 - the reported URL is the intended `https://<node>.<tailnet>.ts.net` host;
-- access is described as available within the tailnet;
-- Funnel/public exposure is not enabled for that service;
-- the application Web process itself is not listening on a non-loopback address.
+- the Serve route is present only after the backend is ready;
+- Funnel/public exposure is absent;
+- the application Web process itself is not listening on a non-loopback address;
+- a real HTTPS request through Serve receives the expected OWNER identity and can create/revoke a server-side session.
 
-## Expected browser behavior
+## OWNER-local commands — only after exact-head CI GREEN
+
+From an elevated PowerShell in the exact clean reviewed checkout, the reviewed apply command is:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\infrastructure\windows\provision_wp22a_private_remote_access.ps1" -ExpectedImplementationSha "<EXACT_REVIEWED_HEAD>" -Apply -AsJson
+```
+
+The script returns the private HTTPS URL locally. Do not paste the raw Tailscale login or any credentials into the command.
+
+A non-mutating verification after apply is:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\infrastructure\windows\provision_wp22a_private_remote_access.ps1" -ExpectedImplementationSha "<EXACT_REVIEWED_HEAD>" -Verify -AsJson
+```
+
+Rollback is:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\infrastructure\windows\provision_wp22a_private_remote_access.ps1" -ExpectedImplementationSha "<EXACT_REVIEWED_HEAD>" -Cleanup -AsJson
+```
+
+Cleanup disables the WP22A Serve route and remote task and attempts to restart the accepted local Web task. It does not enable Funnel as a fallback.
+
+## Expected phone/browser behavior
 
 From an authorized OWNER device inside the intended tailnet:
 
-1. Open the exact HTTPS tailnet URL.
+1. Open the exact HTTPS tailnet URL printed locally by the provisioning gate.
 2. The application shows `OWNER private access` only when the request reached the backend through the reviewed private remote path.
-3. The private access action binds the Tailscale identity to the configured OWNER fingerprint.
+3. Select the private access action. The backend binds the Tailscale identity to the configured OWNER fingerprint.
 4. A successful authentication creates a server-side session and Secure/HttpOnly/SameSite cookie.
-5. Unsafe browser requests require the same HTTPS Origin and the per-session CSRF token.
-6. Logout and revoke-all continue to invalidate server-side sessions.
+5. Navigate through Portfolio, Watchtower, Research, Decisions/Risk/Plans and System to prove the existing single Web App is reachable remotely.
+6. Logout, reopen the URL and verify the server-side session state changes as expected.
 
-A wrong tailnet identity, direct backend request, hostile Host/Origin, missing CSRF token or excessive login attempts must fail closed.
+A wrong tailnet identity, direct backend request, hostile Host/Origin, missing CSRF token or excessive login attempts must fail closed. These negative paths are deterministic CI obligations; the OWNER is not asked to perform hostile tests manually on the phone.
 
 ## Sanitized acceptance evidence
 
-If/when OWNER action becomes necessary, the reviewed rehearsal must emit only facts similar to:
+If/when OWNER action becomes necessary, return only facts similar to:
 
 ```text
 WP22A private remote gate: PASS
@@ -100,18 +158,18 @@ Tailscale Serve private: True
 Funnel/public ingress: False
 OWNER identity binding: True
 Secure session: True
-CSRF/origin/host enforcement: True
-Unauthorized device/path rejection: True
+Phone HTTPS reachability: True
+Logout/session revoke: True
 ```
 
-Do not include the actual tailnet login, authentication keys, broker token, full account ID, portfolio totals or private position details.
+Do not include the actual tailnet login, authentication keys, broker token, full account ID, portfolio totals or private position details. The private `*.ts.net` URL does not need to be sent back to engineering if the sanitized booleans are sufficient.
 
 ## Rollback
 
 If the private remote path is unsafe or unavailable:
 
-- disable the WP22A private remote runtime activation;
-- disable/reset only the Omni-CIO Tailscale Serve configuration;
+- run the reviewed `-Cleanup` mode;
 - keep the existing local/private Web path intact;
 - keep `REAL_TRADING_ENABLED=false`;
-- do not substitute Funnel/public exposure as a workaround.
+- do not substitute Funnel/public exposure as a workaround;
+- preserve the last accepted V9 rollback and current main until WP22A is accepted.
