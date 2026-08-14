@@ -534,7 +534,7 @@ class SystemAdminReadServiceV1:
             },
             "safety": {
                 "mode": "READ_ONLY_DIAGNOSTIC",
-                "real_trading_enabled": real_trading_enabled,
+                "real_execution_enabled": real_trading_enabled,
                 "trading_methods": False,
                 "broker_write_authority": False,
                 "public_ingress": False,
