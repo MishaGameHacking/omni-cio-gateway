@@ -32,6 +32,9 @@ def valid_payload() -> dict[str, object]:
         "exact_implementation_binding": True,
         "backend_loopback_only": True,
         "runner_loopback_firewall_bound": True,
+        "evidence_acl_protected": True,
+        "runner_evidence_read_allowed": True,
+        "runner_evidence_write_allowed": False,
         "tailscale_serve_private": True,
         "funnel_public_ingress": False,
         "owner_identity_binding": True,
@@ -43,6 +46,8 @@ def valid_payload() -> dict[str, object]:
         "trading_methods": False,
         "real_trading_enabled": False,
         "raw_owner_login_collected": False,
+        "raw_runner_identity_collected": False,
+        "raw_runner_sid_collected": False,
         "tailscale_auth_material_collected": False,
         "private_url_collected": False,
         "broker_secret_collected": False,
@@ -68,7 +73,13 @@ def test_validator_accepts_only_exact_sanitized_shape_and_current_fingerprints()
         "phone_https_reachability_confirmed": True,
         "logout_session_revocation_confirmed": True,
     }
+    assert result["evidence_protection"] == {
+        "evidence_acl_protected": True,
+        "runner_evidence_read_allowed": True,
+        "runner_evidence_write_allowed": False,
+    }
     assert result["privacy"]["private_url_collected"] is False
+    assert result["privacy"]["raw_runner_sid_collected"] is False
 
 
 def test_validator_rejects_stale_implementation_sha() -> None:
@@ -85,6 +96,24 @@ def test_validator_rejects_missing_runner_loopback_firewall_evidence() -> None:
     with pytest.raises(
         EvidenceError,
         match="WP22A_OWNER_EVIDENCE_TRUE_REQUIRED:RUNNER_LOOPBACK_FIREWALL_BOUND",
+    ):
+        validate(payload, expected_sha=EXPECTED_SHA)
+
+
+def test_validator_rejects_unprotected_or_runner_writable_owner_evidence() -> None:
+    payload = valid_payload()
+    payload["evidence_acl_protected"] = False
+    with pytest.raises(
+        EvidenceError,
+        match="WP22A_OWNER_EVIDENCE_TRUE_REQUIRED:EVIDENCE_ACL_PROTECTED",
+    ):
+        validate(payload, expected_sha=EXPECTED_SHA)
+
+    payload = valid_payload()
+    payload["runner_evidence_write_allowed"] = True
+    with pytest.raises(
+        EvidenceError,
+        match="WP22A_OWNER_EVIDENCE_FALSE_REQUIRED:RUNNER_EVIDENCE_WRITE_ALLOWED",
     ):
         validate(payload, expected_sha=EXPECTED_SHA)
 
