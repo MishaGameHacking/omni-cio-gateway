@@ -117,7 +117,8 @@ jobs:
           $paths = @(
             'infrastructure\windows\run_wp22a_private_remote_runtime.ps1',
             'infrastructure\windows\provision_wp22a_private_remote_access.ps1',
-            'infrastructure\windows\finalize_wp22a_owner_evidence.ps1'
+            'infrastructure\windows\finalize_wp22a_owner_evidence.ps1',
+            'infrastructure\windows\audit_wp22a_runner_loopback.ps1'
           )
           foreach ($path in $paths) {
             $tokens = $null
