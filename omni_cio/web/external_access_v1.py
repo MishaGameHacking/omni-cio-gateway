@@ -35,6 +35,18 @@ _SESSION_TERMINATION_PATHS = frozenset(
         "/api/v10/web/session/revoke-all",
     }
 )
+_CONTENT_SECURITY_POLICY = (
+    "default-src 'self'; "
+    "base-uri 'none'; "
+    "object-src 'none'; "
+    "frame-ancestors 'none'; "
+    "form-action 'self'; "
+    "script-src 'self'; "
+    "style-src 'self'; "
+    "img-src 'self' data:; "
+    "font-src 'self'; "
+    "connect-src 'self'"
+)
 
 
 class SessionRegistryLike(Protocol):
@@ -210,6 +222,7 @@ def _remote_request_verified(request: Request) -> bool:
 
 def _harden_remote_response(response: Response, *, path: str) -> Response:
     response.headers["Strict-Transport-Security"] = "max-age=31536000"
+    response.headers["Content-Security-Policy"] = _CONTENT_SECURITY_POLICY
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "same-origin"
     response.headers["Cache-Control"] = "no-store"
