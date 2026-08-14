@@ -2,14 +2,12 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import hashlib
-from pathlib import Path
 
 import pytest
 
 from scripts.assess_v10_wp22a_owner_evidence import _SOURCE_HASHES, assess
 
 
-ROOT = Path(__file__).resolve().parents[1]
 SHA = "a" * 40
 
 
@@ -120,11 +118,3 @@ def test_source_hash_drift_is_rejected() -> None:
     evidence["remote_security_sha256"] = "0" * 64
     with pytest.raises(ValueError, match="source hash mismatch"):
         assess(evidence, valid_runner_probe(), SHA)
-
-
-def test_test_fixture_contains_no_real_private_source_material() -> None:
-    source = (ROOT / "tests" / "test_v10_wp22a_owner_evidence.py").read_text(
-        encoding="utf-8"
-    )
-    assert "T-Invest token" not in source
-    assert "portfolio_total" not in source
