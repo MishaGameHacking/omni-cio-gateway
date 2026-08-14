@@ -141,9 +141,14 @@ def main() -> int:
     assert "tailscale serve" in tailscale
     assert "--bg --https=443" in tailscale
     assert "http://127.0.0.1:$backendport" in tailscale
-    assert "tailscale funnel" in tailscale
-    assert "--https=443 off" in tailscale
-    assert "tailscale funnel --bg" not in tailscale
+    assert "Test-Wp22aServeMapping" in tailscale_source
+    assert "Test-Wp22aFunnelDisabled" in tailscale_source
+    assert "AllowFunnel" in tailscale_source
+    assert "WP22A_REFUSES_EXISTING_SERVE_CONFIGURATION" in tailscale_source
+    assert "WP22A_REFUSES_EXISTING_FUNNEL_CONFIGURATION" in tailscale_source
+    assert "SelfTestStatusParser" in tailscale_source
+    assert "$tailscale funnel" not in tailscale
+    assert "funnel status --json" not in tailscale
     assert "$OwnerLogin.Trim().ToLowerInvariant()" not in tailscale_source
     assert "Resolve-IdentitySid" in tailscale_source
     assert "$allowedSidValues" in tailscale_source
@@ -181,9 +186,13 @@ def main() -> int:
         "raw_owner_identity_recorded = $false",
         "raw_tailnet_hostname_recorded = $false",
         "broker_secret_recorded = $false",
+        "Test-FunnelDisabledFromServeConfig",
+        "Test-ServeTransportRemoved",
     ):
         assert required in finalizer
     assert "NonOwnerDeniedConfirmed" not in finalizer
+    assert "$tailscale funnel" not in finalizer.lower()
+    assert "funnel status --json" not in finalizer.lower()
     assert "owner_login" not in finalizer.lower()
     assert "portfolio_total" not in finalizer.lower()
 
