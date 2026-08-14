@@ -44,6 +44,7 @@ Remote OWNER access requires all of the following:
 - existing server-side opaque session state;
 - a host-bound `__Host-...` session cookie with `Secure`, `HttpOnly`, `SameSite=Strict` and `Path=/`;
 - a separate host-bound `__Host-...` CSRF cookie containing a high-entropy token delivered only after successful private OWNER authentication;
+- every remote request other than the non-sensitive readiness/status probe must still carry the current Tailscale Serve identity that matches the configured OWNER fingerprint; a copied session cookie or copied session+CSRF pair presented through a wrong or missing tailnet identity fails before the request reaches the inner application;
 - unsafe remote requests require an exact same-origin HTTPS `Origin` and matching CSRF cookie/header token;
 - Host values outside exact loopback or the configured canonical tailnet host fail closed;
 - requests for the remote host that do not reach the backend through loopback fail closed;
@@ -132,6 +133,7 @@ Before OWNER deployment evidence, CI must prove at minimum:
 - invalid/non-tailnet host configuration rejected;
 - malformed OWNER identity binding rejected;
 - wrong Tailscale identity rejected;
+- a valid copied remote session cookie, including a copied session+CSRF pair, is rejected when replayed through a wrong or missing Tailscale OWNER identity;
 - direct/non-loopback identity-header spoof path rejected;
 - hostile Host rejected;
 - hostile/missing Origin rejected for unsafe remote requests;
