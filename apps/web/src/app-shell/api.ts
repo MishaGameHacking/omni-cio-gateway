@@ -4,6 +4,7 @@ import type {
   HealthView,
   PortfolioDashboardView,
   PrivateAcceptanceStatusView,
+  PrivateRemoteAcceptanceStatusView,
   ProviderView,
   WebSessionView,
   Wp15LiveAcceptanceStatusView,
@@ -12,13 +13,53 @@ import type {
 } from "./contracts";
 
 const JSON_HEADERS = { "Content-Type": "application/json" } as const;
+const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+const CSRF_EXEMPT_PATHS = new Set([
+  "/api/v10/web/private-test-login",
+  "/api/v10/web/private-remote-login",
+]);
+let csrfToken: string | null = null;
+let csrfEndpointUnavailable = false;
+
+async function loadCsrfToken(): Promise<string | null> {
+  if (csrfToken) return csrfToken;
+  if (csrfEndpointUnavailable) return null;
+  const response = await fetch("/api/v10/web/session/csrf", {
+    credentials: "same-origin",
+    cache: "no-store",
+  });
+  if (response.status === 404) {
+    csrfEndpointUnavailable = true;
+    return null;
+  }
+  if (!response.ok) throw new Error(`WEB_API_${response.status}`);
+  const value = (await response.json()) as { csrf_token?: unknown };
+  if (typeof value.csrf_token !== "string" || !/^[0-9a-f]{64}$/.test(value.csrf_token)) {
+    throw new Error("WEB_API_CSRF_CONTRACT_INVALID");
+  }
+  csrfToken = value.csrf_token;
+  return csrfToken;
+}
+
+function resetCsrfState(): void {
+  csrfToken = null;
+  csrfEndpointUnavailable = false;
+}
 
 async function requestJson<T>(input: string, init?: RequestInit): Promise<T> {
+  const method = (init?.method ?? "GET").toUpperCase();
+  const headers = new Headers(init?.headers);
+  if (UNSAFE_METHODS.has(method) && !CSRF_EXEMPT_PATHS.has(input)) {
+    const token = await loadCsrfToken();
+    if (token) headers.set("X-Omni-CSRF", token);
+  }
   const response = await fetch(input, {
     credentials: "same-origin",
     cache: "no-store",
     ...init,
+    headers,
   });
+  if (response.status === 401) csrfToken = null;
   if (!response.ok) {
     throw new Error(`WEB_API_${response.status}`);
   }
@@ -37,12 +78,26 @@ export function readPrivateAcceptanceStatus(): Promise<PrivateAcceptanceStatusVi
   return requestJson<PrivateAcceptanceStatusView>("/api/v10/web/private-test-login/status");
 }
 
+export function readPrivateRemoteAcceptanceStatus(): Promise<PrivateRemoteAcceptanceStatusView> {
+  return requestJson<PrivateRemoteAcceptanceStatusView>("/api/v10/web/private-remote-login/status");
+}
+
 export async function privateTestLogin(): Promise<void> {
   await requestJson<{ ok: true }>("/api/v10/web/private-test-login", {
     method: "POST",
     headers: JSON_HEADERS,
     body: "{}",
   });
+  resetCsrfState();
+}
+
+export async function privateRemoteLogin(): Promise<void> {
+  await requestJson<{ ok: true }>("/api/v10/web/private-remote-login", {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: "{}",
+  });
+  resetCsrfState();
 }
 
 export function readHealth(): Promise<HealthView> {
@@ -116,19 +171,27 @@ export async function cancelWp15LiveAcceptance(challengeId: string): Promise<voi
 }
 
 export async function logoutCurrentSession(): Promise<void> {
-  await requestJson<{ ok: true }>("/api/v10/web/session/logout", {
-    method: "POST",
-    headers: JSON_HEADERS,
-    body: "{}",
-  });
+  try {
+    await requestJson<{ ok: true }>("/api/v10/web/session/logout", {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: "{}",
+    });
+  } finally {
+    resetCsrfState();
+  }
 }
 
 export async function revokeAllSessions(): Promise<void> {
-  await requestJson<{ ok: true }>("/api/v10/web/session/revoke-all", {
-    method: "POST",
-    headers: JSON_HEADERS,
-    body: "{}",
-  });
+  try {
+    await requestJson<{ ok: true }>("/api/v10/web/session/revoke-all", {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: "{}",
+    });
+  } finally {
+    resetCsrfState();
+  }
 }
 
 export function providerLoginUrl(provider: "telegram" | "vk_id"): string {
