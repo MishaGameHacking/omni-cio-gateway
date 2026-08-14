@@ -177,5 +177,6 @@ def create_private_remote_app() -> FastAPI:
         PrivateRemoteSecurityMiddlewareV1,
         policy=policy,
         session_cookie_name=SESSION_COOKIE,
+        sessions=sessions,
     )
     return app
