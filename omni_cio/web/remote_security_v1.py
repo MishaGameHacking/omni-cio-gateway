@@ -16,7 +16,7 @@ from typing import Final, Protocol
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
-from starlette.types import ASGIApp, Receive, Scope, Send
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from omni_cio.contracts.v1.domain import OWNER_TENANT_ID, OWNER_USER_ID
 from omni_cio.web.session_v1 import SessionScopeV1
@@ -30,6 +30,13 @@ _LOGIN_PATH: Final[str] = "/api/v10/web/private-remote-login"
 _HOST_RE = re.compile(r"^[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?\.ts\.net$")
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _CSRF_DOMAIN = b"omni-cio-v10-csrf-v1\x00"
+_REMOTE_RESPONSE_HEADERS: Final[tuple[tuple[bytes, bytes], ...]] = (
+    (b"cache-control", b"no-store"),
+    (b"strict-transport-security", b"max-age=31536000"),
+    (b"x-content-type-options", b"nosniff"),
+    (b"x-frame-options", b"DENY"),
+    (b"referrer-policy", b"no-referrer"),
+)
 
 
 class RemoteSessionRegistryLike(Protocol):
@@ -60,7 +67,7 @@ def _decode_rfc2047(value: str) -> str:
 
 
 def normalize_tailscale_login(value: str) -> str:
-    normalized = _decode_rfc2047(value).strip().casefold()
+    normalized = _decode_rfc2047(value).strip()
     if not normalized or len(normalized) > 320 or "\x00" in normalized:
         raise ValueError("TAILSCALE_OWNER_LOGIN_INVALID")
     return normalized
@@ -151,14 +158,23 @@ def _cookie_value(cookie_header: str, name: str) -> str | None:
     return morsel.value if morsel is not None else None
 
 
-def _is_loopback_request(request: Request) -> bool:
-    client = request.client
-    if client is None:
-        return False
+def _is_loopback_host(value: str) -> bool:
     try:
-        return ipaddress.ip_address(client.host).is_loopback
+        return ipaddress.ip_address(value).is_loopback
     except ValueError:
         return False
+
+
+def _is_loopback_request(request: Request) -> bool:
+    client = request.client
+    return client is not None and _is_loopback_host(client.host)
+
+
+def _scope_client_is_loopback(scope: Scope) -> bool:
+    client = scope.get("client")
+    if client is None:
+        return False
+    return _is_loopback_host(str(client[0]))
 
 
 def _utc_now(now: Callable[[], datetime]) -> datetime:
@@ -248,6 +264,10 @@ class PrivateRemoteSecurityMiddlewareV1:
             await self._app(scope, receive, send)
             return
 
+        if not _scope_client_is_loopback(scope):
+            await self._reject(send, 403, "BACKEND_PEER_NOT_LOOPBACK")
+            return
+
         headers = _headers(scope)
         host = _host_without_port(headers.get("host", ""))
         if not hmac.compare_digest(host, self._policy.expected_host):
@@ -271,7 +291,7 @@ class PrivateRemoteSecurityMiddlewareV1:
 
         origin = headers.get("origin")
         if origin is not None and not hmac.compare_digest(
-            origin.rstrip("/"), self._policy.expected_origin
+            origin, self._policy.expected_origin
         ):
             await self._reject(send, 403, "ORIGIN_NOT_ALLOWED")
             return
@@ -280,7 +300,7 @@ class PrivateRemoteSecurityMiddlewareV1:
         path = str(scope.get("path", ""))
         if method not in _SAFE_METHODS:
             if origin is None or not hmac.compare_digest(
-                origin.rstrip("/"), self._policy.expected_origin
+                origin, self._policy.expected_origin
             ):
                 await self._reject(send, 403, "ORIGIN_REQUIRED")
                 return
@@ -316,20 +336,33 @@ class PrivateRemoteSecurityMiddlewareV1:
                     await self._reject(send, 429, "API_MUTATION_RATE_LIMITED")
                     return
 
-        await self._app(scope, receive, send)
+        async def send_with_security_headers(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                existing = {
+                    name.lower() for name, _ in message.get("headers", [])
+                }
+                response_headers = list(message.get("headers", []))
+                for name, value in _REMOTE_RESPONSE_HEADERS:
+                    if name not in existing:
+                        response_headers.append((name, value))
+                message = {**message, "headers": response_headers}
+            await send(message)
+
+        await self._app(scope, receive, send_with_security_headers)
 
     @staticmethod
     async def _reject(send: Send, status_code: int, detail: str) -> None:
         body = (f'{{"detail":"{detail}"}}').encode("utf-8")
+        headers = [
+            (b"content-type", b"application/json"),
+            (b"content-length", str(len(body)).encode("ascii")),
+            *_REMOTE_RESPONSE_HEADERS,
+        ]
         await send(
             {
                 "type": "http.response.start",
                 "status": status_code,
-                "headers": [
-                    (b"content-type", b"application/json"),
-                    (b"cache-control", b"no-store"),
-                    (b"content-length", str(len(body)).encode("ascii")),
-                ],
+                "headers": headers,
             }
         )
         await send({"type": "http.response.body", "body": body})
