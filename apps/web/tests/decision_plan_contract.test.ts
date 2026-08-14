@@ -23,6 +23,8 @@ test("WP21 exposes deterministic main decision and exact immutable plan math", (
     "Exact target positions",
     "Exact immutable plan legs",
     "Constraints, blockers, evidence",
+    "Cancellation constraints",
+    "Version",
     "Alternatives",
   ]) {
     assert.equal(page.includes(token), true, token);
@@ -34,6 +36,10 @@ test("WP21 exposes deterministic main decision and exact immutable plan math", (
   assert.equal(page.includes("* 100"), false, "WP21 does not recompute source weights in the browser");
   assert.match(page, /row\.target_weight/);
   assert.match(page, /state\.concentration\.top_1_weight/);
+  assert.match(page, /plan\.plan_sha256/);
+  assert.match(page, /plan\.schema_version/);
+  assert.match(page, /plan\.expires_at/);
+  assert.match(page, /plan\.cancellation_conditions/);
 });
 
 test("WP21 approval subject is preview-only and has no Web mutation authority", () => {
