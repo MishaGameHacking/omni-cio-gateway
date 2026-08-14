@@ -7,6 +7,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.testclient import TestClient
 
+from omni_cio.contracts.v1.domain import OWNER_TENANT_ID, OWNER_USER_ID
 from omni_cio.web.api_v1 import SESSION_COOKIE
 from omni_cio.web.external_access_v1 import (
     CSRF_COOKIE,
@@ -58,6 +59,16 @@ def make_app(
             now=(current_time or [NOW])[0],
         )
         return {"authenticated": scope is not None}
+
+    @app.post("/issue-legacy-session")
+    def issue_legacy_session(response: Response) -> dict[str, bool]:
+        token, scope = sessions.create(
+            user_id=OWNER_USER_ID,
+            tenant_id=OWNER_TENANT_ID,
+            now=(current_time or [NOW])[0],
+        )
+        response.set_cookie(SESSION_COOKIE, token, path="/")
+        return {"issued": scope.expires_at > (current_time or [NOW])[0]}
 
     @app.post("/api/v10/web/session/logout")
     def logout(request: Request, response: Response) -> dict[str, bool]:
@@ -165,6 +176,30 @@ def test_owner_login_uses_host_bound_secure_server_side_session_and_csrf_cookie(
     assert "Secure" in csrf_cookie
     assert "HttpOnly" not in csrf_cookie
     assert client.get("/protected").json() == {"authenticated": True}
+
+
+def test_remote_host_rejects_valid_legacy_local_session_cookie() -> None:
+    app = make_app()
+    local = TestClient(
+        app,
+        base_url="http://127.0.0.1",
+        client=("127.0.0.1", 51010),
+    )
+    issued = local.post("/issue-legacy-session")
+    assert issued.status_code == 200
+    legacy = local.cookies.get(SESSION_COOKIE)
+    assert legacy
+
+    remote = TestClient(
+        app,
+        base_url=ORIGIN,
+        client=("127.0.0.1", 51011),
+        headers={
+            TAILSCALE_LOGIN_HEADER: OWNER_LOGIN,
+            "Cookie": f"{SESSION_COOKIE}={legacy}",
+        },
+    )
+    assert remote.get("/protected").json() == {"authenticated": False}
 
 
 def test_remote_logout_revokes_session_and_clears_host_bound_cookies() -> None:
