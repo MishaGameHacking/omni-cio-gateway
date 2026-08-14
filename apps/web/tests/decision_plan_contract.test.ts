@@ -30,6 +30,10 @@ test("WP21 exposes deterministic main decision and exact immutable plan math", (
   for (const value of ["NO_ACTION", "HOLD", "REDUCE", "EXIT", "REALLOCATE"]) {
     assert.equal(backend.includes(`\"${value}\"`), true, value);
   }
+  assert.equal(page.includes("Number("), false, "WP21 does not convert Decimal strings through binary float");
+  assert.equal(page.includes("* 100"), false, "WP21 does not recompute source weights in the browser");
+  assert.match(page, /row\.target_weight/);
+  assert.match(page, /state\.concentration\.top_1_weight/);
 });
 
 test("WP21 approval subject is preview-only and has no Web mutation authority", () => {
