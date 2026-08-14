@@ -48,7 +48,9 @@ function statusPayload() {
       git_sha: "a".repeat(40),
       git_sha_source: "git",
       last_deploy_at: "2026-08-14T09:20:00+00:00",
-      last_deploy_source: "web_dist_mtime",
+      last_deploy_source: "omni_v10_last_deploy_at",
+      web_artifact_at: "2026-08-14T09:18:00+00:00",
+      web_artifact_source: "web_dist_mtime",
     },
     database: {
       state: "READY",
@@ -127,6 +129,8 @@ test("WP22 system view explains ordinary operational state without mutation cont
   await expect(page.getByText("53 °C")).toBeVisible();
   await expect(page.getByText("60 min")).toBeVisible();
   await expect(page.getByText("240 min")).toBeVisible();
+  await expect(page.getByText("2026-08-14T09:20:00+00:00")).toBeVisible();
+  await expect(page.getByText("2026-08-14T09:18:00+00:00")).toBeVisible();
 
   await expect(page.getByRole("button", { name: /enable|disable|kill|trading/i })).toHaveCount(0);
   await expect(page.getByText(/broker-account|authorization bearer|secret-token/i)).toHaveCount(0);
