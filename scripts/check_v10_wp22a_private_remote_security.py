@@ -5,7 +5,12 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-CONTRACT = ROOT / "docs" / "architecture" / "V10_WP22A_PRIVATE_REMOTE_SECURITY_CONTRACT.json"
+CONTRACT = (
+    ROOT
+    / "docs"
+    / "architecture"
+    / "V10_WP22A_PRIVATE_REMOTE_SECURITY_CONTRACT.json"
+)
 
 
 def _source(path: str) -> str:
@@ -26,14 +31,31 @@ def main() -> int:
     assert identity["ordinary_product_login_providers"] == ["telegram", "vk_id"]
     assert identity["tailscale_is_product_login_provider"] is False
     assert identity["server_side_session_required"] is True
+    assert identity["session_idle_lifetime_minutes"] == 120
+    assert identity["session_absolute_lifetime_hours"] == 24
+    assert identity["session_rotation_on_private_remote_login"] is True
     assert identity["cookie_secure"] is True
     assert identity["cookie_http_only"] is True
+    assert identity["cookie_same_site"] == "strict"
+
+    request_security = contract["request_security"]
+    assert request_security["backend_peer_loopback_required"] is True
+    assert request_security["live_server_session_required_for_unsafe_methods"] is True
+    assert request_security["hsts_max_age_seconds"] == 31536000
+    assert request_security["private_response_cache_control"] == "no-store"
+    assert request_security["frame_embedding"] == "DENY"
+
+    boundary = contract["tailscale_boundary"]
+    assert boundary["identity_header_rfc2047_decode_required"] is True
+    assert boundary["backend_must_remain_loopback"] is True
+    assert boundary["runtime_config_acl"] == "SYSTEM_ADMINS_RUNTIME_READ_ONLY_ONLY"
 
     authority = contract["authority"]
     assert authority["gateway_entrypoint"] == "app:app"
     assert authority["trading_methods"] is False
     assert authority["real_trading_enabled"] is False
     assert authority["broker_write_authority_added"] is False
+    assert authority["transfer_withdrawal_authority_added"] is False
     assert authority["real_plan_approval_surface_published"] is False
 
     remote_app = _source("apps/api/private_remote.py").lower()
@@ -51,35 +73,54 @@ def main() -> int:
     assert "secure_cookie=true" in remote_app
     assert "public_multi_user_enabled" in remote_app
     assert "real_trading_enabled" in remote_app
+    assert "idle_lifetime=timedelta(hours=2)" in remote_app
+    assert "absolute_lifetime=timedelta(hours=24)" in remote_app
+    assert "sessions=sessions" in remote_app
 
     security = _source("omni_cio/web/remote_security_v1.py").lower()
     for required in (
         "tailscale-user-login",
+        "decode_header",
         "x-omni-csrf",
+        "backend_peer_not_loopback",
         "origin_required",
         "origin_not_allowed",
         "host_not_allowed",
+        "authentication_required",
         "csrf_validation_failed",
         "login_rate_limited",
         "api_mutation_rate_limited",
         "telegram_mini_app_auth_not_active",
+        "strict-transport-security",
+        "x-content-type-options",
+        "x-frame-options",
+        "referrer-policy",
     ):
         assert required in security
 
-    launcher = _source("infrastructure/windows/run_wp22a_private_remote_runtime.ps1").lower()
+    launcher = _source(
+        "infrastructure/windows/run_wp22a_private_remote_runtime.ps1"
+    ).lower()
     assert "--host 127.0.0.1" in launcher
     assert "--host 0.0.0.0" not in launcher
     assert "apps.api.private_remote:create_private_remote_app" in launcher
     assert '$env:real_trading_enabled = "0"' in launcher
     assert '$env:public_multi_user_enabled = "0"' in launcher
 
-    tailscale = _source("infrastructure/windows/configure_wp22a_tailscale_serve.ps1").lower()
+    tailscale_source = _source(
+        "infrastructure/windows/configure_wp22a_tailscale_serve.ps1"
+    )
+    tailscale = tailscale_source.lower()
     assert "tailscale serve" in tailscale
     assert "--bg --https=443" in tailscale
     assert "http://127.0.0.1:$backendport" in tailscale
     assert "tailscale funnel" in tailscale
     assert "--https=443 off" in tailscale
     assert "tailscale funnel --bg" not in tailscale
+    assert "$OwnerLogin.Trim().ToLowerInvariant()" not in tailscale_source
+    assert "Resolve-IdentitySid" in tailscale_source
+    assert "$allowedSidValues" in tailscale_source
+    assert "ReadAndExecute" in tailscale_source
 
     frontend = _source("apps/web/src/app-shell/api.ts").lower()
     assert '"x-omni-csrf"' in frontend
@@ -87,6 +128,11 @@ def main() -> int:
     shell = _source("apps/web/src/app-shell/app-shell.tsx")
     assert "Приватный OWNER доступ" in shell
     assert "product login provider" in shell.lower()
+
+    threat_model = _source("docs/architecture/V10_THREAT_MODEL.md")
+    assert "WP22A threat-model update" in threat_model
+    assert "T22 — Private remote access spoofing or accidental public exposure" in threat_model
+    assert "OWNER tailnet HTTPS/Tailscale Serve <-> loopback-only private Web runtime" in threat_model
 
     print("WP22A private remote security guard: PASS")
     return 0
