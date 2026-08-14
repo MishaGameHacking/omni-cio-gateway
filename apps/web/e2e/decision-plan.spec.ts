@@ -150,6 +150,11 @@ test("WP21 shows exact decision risk plan and preview-only approval subject", as
   await expect(page.getByText("Risk before / after", { exact: true })).toBeVisible();
   await expect(page.getByText("Targets, lots, costs, cash", { exact: true })).toBeVisible();
   await expect(page.getByText("ПОДТВЕРЖДАЮ ПЛАН DDDDDDDDDDDD", { exact: true })).toBeVisible();
+  const approval = page.locator('[data-origin="immutable-plan-approval-subject"]');
+  await expect(approval).toContainText("d".repeat(64));
+  await expect(approval).toContainText("Version");
+  await expect(approval).toContainText("1.0");
+  await expect(approval).toContainText("plan_expired · HARD");
   await expect(page.getByText("Can approve here", { exact: true })).toBeVisible();
   await expect(page.getByText("NO", { exact: true })).toBeVisible();
   await expect(page.getByText("4 → 6", { exact: true })).toHaveCount(0);
