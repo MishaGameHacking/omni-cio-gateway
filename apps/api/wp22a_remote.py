@@ -11,6 +11,7 @@ from apps.api.app import (
 )
 from omni_cio.persistence.migration import connect_postgres
 from omni_cio.web.external_access_v1 import (
+    REMOTE_SESSION_POLICY,
     ExternalAccessPolicyV1,
     install_private_remote_access_v1,
 )
@@ -41,6 +42,9 @@ def create_private_remote_app() -> FastAPI:
 
     raw_connection = connect_postgres("")
     _configure_long_lived_web_connection(raw_connection)
-    sessions = PostgresWebSessionRegistryV1(_SerializedWebConnection(raw_connection))
+    sessions = PostgresWebSessionRegistryV1(
+        _SerializedWebConnection(raw_connection),
+        policy=REMOTE_SESSION_POLICY,
+    )
     install_private_remote_access_v1(app, sessions=sessions, policy=policy)
     return app
