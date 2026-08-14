@@ -156,6 +156,27 @@ function Test-CreateDenied {
     }
 }
 
+function Test-RenameDenied {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $directory = Split-Path -Parent $Path
+    $target = Join-Path $directory ("wp22a-owner-evidence-rename-probe-" + [guid]::NewGuid().ToString("N") + ".json")
+    $renamed = $false
+    try {
+        [System.IO.File]::Move($Path, $target)
+        $renamed = $true
+        return $false
+    }
+    catch [System.UnauthorizedAccessException] { return $true }
+    catch [System.Security.SecurityException] { return $true }
+    catch { return $false }
+    finally {
+        if ($renamed -and (Test-Path -LiteralPath $target -PathType Leaf)) {
+            try { [System.IO.File]::Move($target, $Path) } catch { }
+        }
+    }
+}
+
 function Write-Result {
     param([Parameter(Mandatory = $true)][System.Collections.IDictionary]$Result)
     if ($AsJson) { $Result | ConvertTo-Json -Depth 4 -Compress; return }
@@ -176,6 +197,7 @@ $evidencePresent = Test-Path -LiteralPath $evidencePath -PathType Leaf
 $evidenceReadable = $false
 $evidenceFileWriteDenied = $false
 $evidenceCreateDenied = $false
+$evidenceRenameDenied = $false
 if ($runnerIdentityMatchesService -and -not $runnerIsAdministrator -and $evidencePresent) {
     try {
         [void](Get-Content -LiteralPath $evidencePath -Raw -ErrorAction Stop)
@@ -184,6 +206,7 @@ if ($runnerIdentityMatchesService -and -not $runnerIsAdministrator -and $evidenc
     catch { $evidenceReadable = $false }
     $evidenceFileWriteDenied = Test-FileWriteDenied -Path $evidencePath
     $evidenceCreateDenied = Test-CreateDenied -Directory $evidenceRoot
+    $evidenceRenameDenied = Test-RenameDenied -Path $evidencePath
 }
 
 $connectionDenied = $false
@@ -207,10 +230,11 @@ $ready = (
     $evidencePresent -and
     $evidenceReadable -and
     $evidenceFileWriteDenied -and
-    $evidenceCreateDenied
+    $evidenceCreateDenied -and
+    $evidenceRenameDenied
 )
 $reason = if ($ready) {
-    "WP22A_RUNNER_LOOPBACK_AND_EVIDENCE_WRITE_DENIED"
+    "WP22A_RUNNER_LOOPBACK_AND_EVIDENCE_MUTATION_DENIED"
 }
 elseif (-not $runnerIdentityMatchesService) {
     "WP22A_RUNNER_IDENTITY_MISMATCH"
@@ -221,8 +245,8 @@ elseif ($runnerIsAdministrator) {
 elseif (-not $evidencePresent -or -not $evidenceReadable) {
     "WP22A_OWNER_EVIDENCE_NOT_RUNNER_READABLE"
 }
-elseif (-not $evidenceFileWriteDenied -or -not $evidenceCreateDenied) {
-    "WP22A_OWNER_EVIDENCE_RUNNER_WRITE_ALLOWED"
+elseif (-not $evidenceFileWriteDenied -or -not $evidenceCreateDenied -or -not $evidenceRenameDenied) {
+    "WP22A_OWNER_EVIDENCE_RUNNER_MUTATION_ALLOWED"
 }
 elseif (-not $remoteTaskRunning -or -not $loopbackListenerPresent) {
     "WP22A_REMOTE_RUNTIME_NOT_LIVE_FOR_RUNNER_AUDIT"
@@ -249,6 +273,7 @@ $result = [ordered]@{
     owner_evidence_readable = [bool]$evidenceReadable
     runner_owner_evidence_file_write_denied = [bool]$evidenceFileWriteDenied
     runner_owner_evidence_create_denied = [bool]$evidenceCreateDenied
+    runner_owner_evidence_rename_denied = [bool]$evidenceRenameDenied
     raw_runner_identity_emitted = $false
     raw_runner_sid_emitted = $false
     private_url_emitted = $false
