@@ -76,7 +76,7 @@ export function SystemAdminPage({
               <dd>{version}</dd>
             </div>
             <div>
-              <dt>Web Git SHA</dt>
+              <dt>Git SHA</dt>
               <dd><code>{gitSha}</code></dd>
             </div>
             <div>
