@@ -1,0 +1,63 @@
+{
+  "schema_version": "1.0.0",
+  "work_package": "WP22A",
+  "status": "IMPLEMENTATION_IN_PROGRESS",
+  "decision": {
+    "public_ingress_required": false,
+    "selected_transport": "TAILSCALE_SERVE_PRIVATE",
+    "tailscale_funnel_allowed": false,
+    "backend_bind": "127.0.0.1",
+    "external_https_port": 443,
+    "tls_termination": "TAILSCALE_SERVE",
+    "certificate_material_in_repository": false,
+    "public_multi_user_enabled": false
+  },
+  "identity": {
+    "ordinary_product_login_providers": ["telegram", "vk_id"],
+    "tailscale_is_product_login_provider": false,
+    "private_owner_acceptance_bootstrap": "TAILSCALE_USER_LOGIN_FINGERPRINT",
+    "raw_tailscale_owner_login_in_repository": false,
+    "server_side_session_required": true,
+    "session_rotation_on_private_remote_login": true,
+    "session_revoke_logout_required": true,
+    "cookie_secure": true,
+    "cookie_http_only": true,
+    "cookie_same_site": "strict"
+  },
+  "request_security": {
+    "exact_tsnet_host_required": true,
+    "exact_https_origin_required_for_unsafe_methods": true,
+    "foreign_origin_rejected": true,
+    "cors": "DENY_BY_DEFAULT",
+    "csrf": "SESSION_BOUND_SHA256_DOMAIN_SEPARATED",
+    "csrf_header": "X-Omni-CSRF",
+    "login_rate_limit_per_minute": 6,
+    "mutation_rate_limit_per_minute": 60,
+    "monitoring_gets_subject_to_mutation_lockout": false,
+    "direct_unsafe_api_without_origin_or_csrf": "REJECT",
+    "telegram_init_data_authority_before_wp24": "REJECT"
+  },
+  "tailscale_boundary": {
+    "serve_only": true,
+    "funnel": false,
+    "identity_header": "Tailscale-User-Login",
+    "backend_must_remain_loopback": true,
+    "tailnet_policy": "DENY_BY_DEFAULT_OWNER_TO_NODE_443_ONLY",
+    "tailnet_policy_preferred_primitive": "grants"
+  },
+  "authority": {
+    "gateway_entrypoint": "app:app",
+    "trading_methods": false,
+    "real_trading_enabled": false,
+    "broker_write_authority_added": false,
+    "transfer_withdrawal_authority_added": false,
+    "real_plan_approval_surface_published": false,
+    "v9_rollback_preserved": true
+  },
+  "exit_gate": {
+    "web_remains_local_private_until_green": true,
+    "owner_private_remote_rehearsal_required": true,
+    "public_internet_reachability_required": false,
+    "real_approval_surface_publication_required": false
+  }
+}
