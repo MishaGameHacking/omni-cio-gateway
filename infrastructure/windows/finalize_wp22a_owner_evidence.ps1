@@ -47,6 +47,123 @@ function Get-ReviewedHead {
     return $actual
 }
 
+function Get-AccountSid {
+    param([Parameter(Mandatory = $true)][string]$AccountName)
+
+    $normalized = $AccountName.Trim().ToUpperInvariant()
+    if ($normalized -in @("LOCALSYSTEM", ".\LOCALSYSTEM", "NT AUTHORITY\SYSTEM")) {
+        return [System.Security.Principal.SecurityIdentifier]::new("S-1-5-18")
+    }
+    if ($normalized -eq "NT AUTHORITY\NETWORKSERVICE") {
+        return [System.Security.Principal.SecurityIdentifier]::new("S-1-5-20")
+    }
+    if ($normalized -eq "NT AUTHORITY\LOCALSERVICE") {
+        return [System.Security.Principal.SecurityIdentifier]::new("S-1-5-19")
+    }
+    try {
+        $account = [System.Security.Principal.NTAccount]::new($AccountName)
+        return $account.Translate([System.Security.Principal.SecurityIdentifier])
+    }
+    catch { throw "WP22A_RUNNER_IDENTITY_SID_UNAVAILABLE" }
+}
+
+function Get-RunnerSid {
+    $services = @(
+        Get-CimInstance Win32_Service -ErrorAction Stop |
+            Where-Object { $_.Name -like "actions.runner.*" }
+    )
+    if ($services.Count -ne 1) { throw "WP22A_RUNNER_SERVICE_IDENTITY_AMBIGUOUS" }
+    $startName = ([string]$services[0].StartName).Trim()
+    if ($startName.ToUpperInvariant() -in @("LOCALSYSTEM", ".\LOCALSYSTEM", "NT AUTHORITY\SYSTEM")) {
+        throw "WP22A_RUNNER_LOCAL_SYSTEM_FORBIDDEN"
+    }
+    return Get-AccountSid -AccountName $startName
+}
+
+function New-AllowRule {
+    param(
+        [Parameter(Mandatory = $true)][System.Security.Principal.SecurityIdentifier]$Sid,
+        [Parameter(Mandatory = $true)][System.Security.AccessControl.FileSystemRights]$Rights,
+        [Parameter(Mandatory = $true)][System.Security.AccessControl.InheritanceFlags]$Inheritance
+    )
+    return [System.Security.AccessControl.FileSystemAccessRule]::new(
+        $Sid,
+        $Rights,
+        $Inheritance,
+        [System.Security.AccessControl.PropagationFlags]::None,
+        [System.Security.AccessControl.AccessControlType]::Allow
+    )
+}
+
+function Set-ProtectedEvidenceAcl {
+    param([Parameter(Mandatory = $true)][System.Security.Principal.SecurityIdentifier]$RunnerSid)
+
+    New-Item -ItemType Directory -Path $stateRoot -Force | Out-Null
+    $item = Get-Item -LiteralPath $stateRoot -Force -ErrorAction Stop
+    if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+        throw "WP22A_EVIDENCE_ROOT_REPARSE_POINT_FORBIDDEN"
+    }
+
+    $systemSid = [System.Security.Principal.SecurityIdentifier]::new("S-1-5-18")
+    $adminsSid = [System.Security.Principal.SecurityIdentifier]::new("S-1-5-32-544")
+    $inherit = [System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [System.Security.AccessControl.InheritanceFlags]::ObjectInherit
+    $acl = [System.Security.AccessControl.DirectorySecurity]::new()
+    $acl.SetAccessRuleProtection($true, $false)
+    $acl.AddAccessRule((New-AllowRule -Sid $systemSid -Rights ([System.Security.AccessControl.FileSystemRights]::FullControl) -Inheritance $inherit))
+    $acl.AddAccessRule((New-AllowRule -Sid $adminsSid -Rights ([System.Security.AccessControl.FileSystemRights]::FullControl) -Inheritance $inherit))
+    $acl.AddAccessRule((New-AllowRule -Sid $RunnerSid -Rights ([System.Security.AccessControl.FileSystemRights]::ReadAndExecute) -Inheritance $inherit))
+    Set-Acl -LiteralPath $stateRoot -AclObject $acl -ErrorAction Stop
+}
+
+function Get-EvidenceAclState {
+    param([Parameter(Mandatory = $true)][System.Security.Principal.SecurityIdentifier]$RunnerSid)
+
+    $systemSid = "S-1-5-18"
+    $adminsSid = "S-1-5-32-544"
+    $broadSids = @("S-1-1-0", "S-1-5-11", "S-1-5-32-545")
+    $writeMask = (
+        [System.Security.AccessControl.FileSystemRights]::WriteData -bor
+        [System.Security.AccessControl.FileSystemRights]::AppendData -bor
+        [System.Security.AccessControl.FileSystemRights]::Delete -bor
+        [System.Security.AccessControl.FileSystemRights]::DeleteSubdirectoriesAndFiles -bor
+        [System.Security.AccessControl.FileSystemRights]::ChangePermissions -bor
+        [System.Security.AccessControl.FileSystemRights]::TakeOwnership
+    )
+    $acl = Get-Acl -LiteralPath $stateRoot -ErrorAction Stop
+    $rules = @(
+        $acl.GetAccessRules(
+            $true,
+            $false,
+            [System.Security.Principal.SecurityIdentifier]
+        )
+    )
+    $allows = @($rules | Where-Object { $_.AccessControlType -eq "Allow" })
+    $runnerRules = @($allows | Where-Object { $_.IdentityReference.Value -eq $RunnerSid.Value })
+    $runnerRead = [bool]($runnerRules | Where-Object {
+        ($_.FileSystemRights -band [System.Security.AccessControl.FileSystemRights]::ReadData) -ne 0
+    })
+    $runnerWrite = [bool]($runnerRules | Where-Object {
+        ($_.FileSystemRights -band $writeMask) -ne 0
+    })
+    $systemFull = [bool]($allows | Where-Object {
+        $_.IdentityReference.Value -eq $systemSid -and
+        ($_.FileSystemRights -band [System.Security.AccessControl.FileSystemRights]::FullControl) -eq [System.Security.AccessControl.FileSystemRights]::FullControl
+    })
+    $adminsFull = [bool]($allows | Where-Object {
+        $_.IdentityReference.Value -eq $adminsSid -and
+        ($_.FileSystemRights -band [System.Security.AccessControl.FileSystemRights]::FullControl) -eq [System.Security.AccessControl.FileSystemRights]::FullControl
+    })
+    $broadAllow = [bool]($allows | Where-Object { $broadSids -contains $_.IdentityReference.Value })
+    return [ordered]@{
+        protected = [bool]$acl.AreAccessRulesProtected
+        runner_read = [bool]$runnerRead
+        runner_write = [bool]$runnerWrite
+        system_full = [bool]$systemFull
+        admins_full = [bool]$adminsFull
+        broad_allow = [bool]$broadAllow
+    }
+}
+
 function Write-Summary {
     param([Parameter(Mandatory = $true)][System.Collections.IDictionary]$Result)
     if ($AsJson) {
@@ -58,6 +175,8 @@ function Write-Summary {
     Write-Output "Exact implementation binding: $($Result.exact_implementation_binding)"
     Write-Output "Backend loopback-only: $($Result.backend_loopback_only)"
     Write-Output "CI runner loopback firewall: $($Result.runner_loopback_firewall_bound)"
+    Write-Output "OWNER evidence ACL protected: $($Result.evidence_acl_protected)"
+    Write-Output "CI runner evidence write allowed: $($Result.runner_evidence_write_allowed)"
     Write-Output "Tailscale Serve private: $($Result.tailscale_serve_private)"
     Write-Output "Funnel/public ingress: $($Result.funnel_public_ingress)"
     Write-Output "OWNER identity binding: $($Result.owner_identity_binding)"
@@ -73,6 +192,9 @@ $result = [ordered]@{
     exact_implementation_binding = $false
     backend_loopback_only = $false
     runner_loopback_firewall_bound = $false
+    evidence_acl_protected = $false
+    runner_evidence_read_allowed = $false
+    runner_evidence_write_allowed = $true
     tailscale_serve_private = $false
     funnel_public_ingress = $false
     owner_identity_binding = $false
@@ -131,6 +253,21 @@ try {
         throw "WP22A_PRIVATE_REMOTE_VERIFY_NOT_PASS"
     }
 
+    $runnerSid = Get-RunnerSid
+    Remove-Item -LiteralPath $evidencePath -Force -ErrorAction SilentlyContinue
+    Set-ProtectedEvidenceAcl -RunnerSid $runnerSid
+    $aclState = Get-EvidenceAclState -RunnerSid $runnerSid
+    if (
+        -not [bool]$aclState.protected -or
+        -not [bool]$aclState.runner_read -or
+        [bool]$aclState.runner_write -or
+        -not [bool]$aclState.system_full -or
+        -not [bool]$aclState.admins_full -or
+        [bool]$aclState.broad_allow
+    ) {
+        throw "WP22A_OWNER_EVIDENCE_ACL_INVALID"
+    }
+
     $fingerprint = [ordered]@{
         execution_contract_sha256 = Get-Sha256Lower -Path $executionContract
         external_access_sha256 = Get-Sha256Lower -Path $externalAccess
@@ -151,6 +288,9 @@ try {
         exact_implementation_binding = $true
         backend_loopback_only = $true
         runner_loopback_firewall_bound = $true
+        evidence_acl_protected = $true
+        runner_evidence_read_allowed = $true
+        runner_evidence_write_allowed = $false
         tailscale_serve_private = $true
         funnel_public_ingress = $false
         owner_identity_binding = $true
@@ -162,6 +302,8 @@ try {
         trading_methods = $false
         real_trading_enabled = $false
         raw_owner_login_collected = $false
+        raw_runner_identity_collected = $false
+        raw_runner_sid_collected = $false
         tailscale_auth_material_collected = $false
         private_url_collected = $false
         broker_secret_collected = $false
@@ -170,16 +312,22 @@ try {
         reason_code = "WP22A_OWNER_PRIVATE_REMOTE_PHONE_ACCEPTED"
     }
 
-    New-Item -ItemType Directory -Path $stateRoot -Force | Out-Null
-    Remove-Item -LiteralPath $evidencePath -Force -ErrorAction SilentlyContinue
     $evidence | ConvertTo-Json -Depth 6 -Compress |
         Set-Content -LiteralPath $evidencePath -Encoding UTF8
+
+    $fileAcl = Get-Acl -LiteralPath $evidencePath -ErrorAction Stop
+    if (-not [bool]$fileAcl.AreAccessRulesProtected -and -not [bool]$aclState.protected) {
+        throw "WP22A_OWNER_EVIDENCE_FILE_ACL_INVALID"
+    }
 
     $result.status = "PASS"
     $result.reason_code = "WP22A_OWNER_PRIVATE_REMOTE_PHONE_ACCEPTED"
     $result.exact_implementation_binding = $true
     $result.backend_loopback_only = $true
     $result.runner_loopback_firewall_bound = $true
+    $result.evidence_acl_protected = $true
+    $result.runner_evidence_read_allowed = $true
+    $result.runner_evidence_write_allowed = $false
     $result.tailscale_serve_private = $true
     $result.funnel_public_ingress = $false
     $result.owner_identity_binding = $true
