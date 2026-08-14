@@ -56,12 +56,15 @@ class ExternalAccessPolicyV1:
             raise ValueError("WP22A_CANONICAL_HOST_INVALID")
         if len(digest) != 64 or any(ch not in "0123456789abcdef" for ch in digest):
             raise ValueError("WP22A_OWNER_LOGIN_FINGERPRINT_INVALID")
-        if min(
-            self.login_attempts,
-            self.login_window_seconds,
-            self.mutation_attempts,
-            self.mutation_window_seconds,
-        ) <= 0:
+        if (
+            min(
+                self.login_attempts,
+                self.login_window_seconds,
+                self.mutation_attempts,
+                self.mutation_window_seconds,
+            )
+            <= 0
+        ):
             raise ValueError("WP22A_RATE_LIMIT_INVALID")
         object.__setattr__(self, "canonical_host", host)
         object.__setattr__(self, "owner_login_sha256", digest)
@@ -144,7 +147,12 @@ def _origin_host(value: str) -> str | None:
         port = parsed.port
     except ValueError:
         return None
-    if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
+    if (
+        parsed.scheme != "https"
+        or not parsed.hostname
+        or parsed.username
+        or parsed.password
+    ):
         return None
     if port not in {None, 443}:
         return None
@@ -190,7 +198,9 @@ class ExternalAccessSecurityMiddlewareV1(BaseHTTPMiddleware):
         self._policy = policy
         self._limiter = limiter
 
-    async def dispatch(self, request: Request, call_next: Callable[..., Any]) -> Response:
+    async def dispatch(
+        self, request: Request, call_next: Callable[..., Any]
+    ) -> Response:
         raw_host = request.headers.get("host", "")
         host = _host_without_port(raw_host)
         remote_request = _remote_host_matches(raw_host, self._policy.canonical_host)
