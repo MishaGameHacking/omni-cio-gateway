@@ -138,7 +138,9 @@ def _decision(*, change: bool) -> DecisionSetV1:
     no_action = DecisionOptionV1(
         option_id="option.no_action",
         kind=DecisionOptionKind.NO_ACTION,
-        status=(DecisionOptionStatus.AVAILABLE if change else DecisionOptionStatus.PREFERRED),
+        status=(
+            DecisionOptionStatus.AVAILABLE if change else DecisionOptionStatus.PREFERRED
+        ),
         action=DecisionAction.HOLD,
         title="Hold",
         rationale="No portfolio change is required.",
@@ -148,7 +150,9 @@ def _decision(*, change: bool) -> DecisionSetV1:
     limited = DecisionOptionV1(
         option_id="option.limited_change",
         kind=DecisionOptionKind.LIMITED_CHANGE,
-        status=(DecisionOptionStatus.PREFERRED if change else DecisionOptionStatus.AVAILABLE),
+        status=(
+            DecisionOptionStatus.PREFERRED if change else DecisionOptionStatus.AVAILABLE
+        ),
         action=DecisionAction.REVIEW_LIMITED_CHANGE,
         title="Review limited change",
         rationale="A bounded exact plan is available for review.",
@@ -250,9 +254,8 @@ def _row(
     policy_source_id: str | None = None,
 ) -> tuple[Any, ...]:
     decision_sha, decision_payload = _blob(decision)
-    snapshot_sha = (
-        snapshot_source_payload_sha256
-        or (plan.portfolio_snapshot_sha256 if plan is not None else "e" * 64)
+    snapshot_sha = snapshot_source_payload_sha256 or (
+        plan.portfolio_snapshot_sha256 if plan is not None else "e" * 64
     )
     source_policy_id = policy_source_id or (
         plan.policy_reference.policy_id if plan is not None else "ips_test_policy"
@@ -319,6 +322,9 @@ def test_wp21_actionable_projection_is_exact_read_only_and_tenant_scoped() -> No
     assert payload["main_decision"] == "REALLOCATE"
     assert payload["execution_authorized"] is False
     assert payload["trading_methods"] is False
+    assert payload["decision"]["retrieved_at"] == NOW.isoformat()
+    assert "decided_at" not in payload["decision"]
+    assert payload["record"]["decided_at"] == NOW.isoformat()
     assert set(connection.tenants) == {OWNER_TENANT_ID}
     assert len(connection.queries) == 1
     assert "JOIN omni_cio_v10.portfolio_snapshots s" in connection.queries[0]
@@ -337,7 +343,9 @@ def test_wp21_actionable_projection_is_exact_read_only_and_tenant_scoped() -> No
         fixture.plan.risk_after.cash_weight, "f"
     )
     trade = next(row["trade"] for row in plan["legs"] if row["trade"] is not None)
-    exact_leg = next(row.optimizer_leg for row in fixture.plan.legs if row.optimizer_leg)
+    exact_leg = next(
+        row.optimizer_leg for row in fixture.plan.legs if row.optimizer_leg
+    )
     assert trade["quantity_lots"] == exact_leg.quantity_lots
     assert trade["commission_base"] == format(exact_leg.commission_base, "f")
 
@@ -349,7 +357,13 @@ def test_wp21_material_plan_mutation_invalidates_approval_ui() -> None:
     mutated_payload = json.dumps(raw, ensure_ascii=False).encode("utf-8")
     payload = DecisionPlanReadServiceV1(
         _FixtureConnection(
-            (_row(_decision(change=True), fixture.plan, plan_payload_override=mutated_payload),)
+            (
+                _row(
+                    _decision(change=True),
+                    fixture.plan,
+                    plan_payload_override=mutated_payload,
+                ),
+            )
         ),
         clock=lambda: NOW,
     ).read(tenant_id=OWNER_TENANT_ID)
@@ -361,7 +375,9 @@ def test_wp21_material_plan_mutation_invalidates_approval_ui() -> None:
     assert payload["execution_authorized"] is False
 
 
-def test_wp21_hold_needs_no_plan_and_actionable_decision_fails_partial_without_one() -> None:
+def test_wp21_hold_needs_no_plan_and_actionable_decision_fails_partial_without_one() -> (
+    None
+):
     hold = DecisionPlanReadServiceV1(
         _FixtureConnection((_row(_decision(change=False), None),)),
         clock=lambda: NOW,
@@ -377,6 +393,30 @@ def test_wp21_hold_needs_no_plan_and_actionable_decision_fails_partial_without_o
     assert partial["state"] == "PARTIAL"
     assert partial["reason"] == "ACTIONABLE_DECISION_PLAN_MISSING"
     assert partial["main_decision"] is None
+
+
+def test_wp21_no_change_decisions_cannot_expose_a_bound_plan() -> None:
+    fixture = build_fixture()
+
+    hold_with_plan = DecisionPlanReadServiceV1(
+        _FixtureConnection((_row(_decision(change=False), fixture.plan),)),
+        clock=lambda: NOW,
+    ).read(tenant_id=OWNER_TENANT_ID)
+    assert hold_with_plan["state"] == "INVALID"
+    assert hold_with_plan["reason"] == "NO_CHANGE_DECISION_CANNOT_BIND_PLAN"
+    assert hold_with_plan["main_decision"] is None
+    assert hold_with_plan["plan"] is None
+    assert hold_with_plan["execution_authorized"] is False
+
+    wait_with_plan = DecisionPlanReadServiceV1(
+        _FixtureConnection((_row(_waiting_decision(), fixture.plan),)),
+        clock=lambda: NOW,
+    ).read(tenant_id=OWNER_TENANT_ID)
+    assert wait_with_plan["state"] == "INVALID"
+    assert wait_with_plan["reason"] == "NO_CHANGE_DECISION_CANNOT_BIND_PLAN"
+    assert wait_with_plan["main_decision"] is None
+    assert wait_with_plan["plan"] is None
+    assert wait_with_plan["execution_authorized"] is False
 
 
 def test_wp21_wait_for_data_is_no_action_but_never_ready() -> None:
