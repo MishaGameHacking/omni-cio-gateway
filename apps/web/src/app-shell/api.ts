@@ -12,12 +12,34 @@ import type {
 } from "./contracts";
 
 const JSON_HEADERS = { "Content-Type": "application/json" } as const;
+const CSRF_COOKIE = "omni_v10_csrf";
+const CSRF_HEADER = "X-Omni-CSRF";
+
+function readCookie(name: string): string | null {
+  const prefix = `${encodeURIComponent(name)}=`;
+  for (const item of document.cookie.split(";")) {
+    const candidate = item.trim();
+    if (candidate.startsWith(prefix)) return decodeURIComponent(candidate.slice(prefix.length));
+  }
+  return null;
+}
+
+function requestHeaders(init?: RequestInit): Headers {
+  const headers = new Headers(init?.headers);
+  const method = (init?.method ?? "GET").toUpperCase();
+  if (!["GET", "HEAD", "OPTIONS"].includes(method)) {
+    const csrf = readCookie(CSRF_COOKIE);
+    if (csrf) headers.set(CSRF_HEADER, csrf);
+  }
+  return headers;
+}
 
 async function requestJson<T>(input: string, init?: RequestInit): Promise<T> {
   const response = await fetch(input, {
     credentials: "same-origin",
     cache: "no-store",
     ...init,
+    headers: requestHeaders(init),
   });
   if (!response.ok) {
     throw new Error(`WEB_API_${response.status}`);
@@ -37,8 +59,20 @@ export function readPrivateAcceptanceStatus(): Promise<PrivateAcceptanceStatusVi
   return requestJson<PrivateAcceptanceStatusView>("/api/v10/web/private-test-login/status");
 }
 
+export function readPrivateTailnetStatus(): Promise<PrivateAcceptanceStatusView> {
+  return requestJson<PrivateAcceptanceStatusView>("/api/v10/web/private-tailnet-login/status");
+}
+
 export async function privateTestLogin(): Promise<void> {
   await requestJson<{ ok: true }>("/api/v10/web/private-test-login", {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: "{}",
+  });
+}
+
+export async function privateTailnetLogin(): Promise<void> {
+  await requestJson<{ ok: true }>("/api/v10/web/private-tailnet-login", {
     method: "POST",
     headers: JSON_HEADERS,
     body: "{}",
