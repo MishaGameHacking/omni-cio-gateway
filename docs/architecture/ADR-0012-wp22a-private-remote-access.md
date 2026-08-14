@@ -16,20 +16,25 @@ For Personal V10, **public ingress is not required**. The selected remote transp
 
 The application process remains bound to `127.0.0.1`. Tailscale Serve terminates HTTPS for the node's exact `*.ts.net` name and reverse-proxies only to the loopback backend. Tailscale Funnel is not permitted for the Omni-CIO service. The runtime configuration is source-controlled by scripts/contracts while the actual tailnet identity, hostname, and OWNER identity fingerprint remain local runtime state.
 
-The private remote backend validates all of the following before the application receives a request:
+The private remote backend validates all of the following before an unsafe application request executes:
 
+- ASGI backend peer is loopback, in addition to the loopback-only Uvicorn launcher;
 - exact configured `*.ts.net` Host;
-- Tailscale `Tailscale-User-Login` identity fingerprint equal to the configured OWNER fingerprint;
+- RFC-2047-decoded Tailscale `Tailscale-User-Login` identity fingerprint equal to the exact configured OWNER fingerprint;
 - foreign Origin rejection and exact HTTPS Origin on every unsafe request;
-- session-bound CSRF for unsafe authenticated requests;
+- a live server-side session, then session-bound CSRF for unsafe authenticated requests;
 - bounded private-login and mutation rates, while monitoring GETs are not placed behind mutation lockout;
 - explicit rejection of Telegram Mini App `initData` authority before its owning WP implements replay/freshness verification.
 
-The private OWNER bootstrap creates a normal revocable Omni-CIO server-side browser session and rotates any existing session token. It is an **outer Personal-node private acceptance factor**, not a third ordinary Omni-CIO product login provider. The ordinary product identity providers remain exactly Telegram and VK ID under the accepted identity amendment.
+Private-remote sessions are intentionally bounded to a **120-minute idle lifetime and 24-hour absolute lifetime**, rotate on bootstrap, and retain explicit server-side revoke/logout behavior. Responses add HSTS/no-store/nosniff/anti-frame/referrer hardening for the private HTTPS surface.
+
+The local private-remote config ACL is accepted only for SYSTEM, Administrators and read-only `omni-cio-runtime`; arbitrary additional principals fail verification.
+
+The private OWNER bootstrap creates a normal revocable Omni-CIO server-side browser session. It is an **outer Personal-node private acceptance factor**, not a third ordinary Omni-CIO product login provider. The ordinary product identity providers remain exactly Telegram and VK ID under the accepted identity amendment.
 
 ## Why Tailscale Serve
 
-Current Tailscale documentation distinguishes Serve from Funnel: Serve is reachable only within the tailnet, access controls apply, HTTPS is terminated by Tailscale, and identity headers are added for tailnet requests while spoofed incoming identity headers are stripped. Tailscale also recommends keeping a backend on localhost when identity headers are used. This matches the accepted V10 least-privilege boundary.
+Current Tailscale documentation distinguishes Serve from Funnel: Serve is reachable only within the tailnet, access controls apply, HTTPS is terminated by Tailscale, and identity headers are added for tailnet requests while spoofed incoming identity headers are stripped. Tailscale also recommends keeping a backend on localhost when identity headers are used and documents that non-ASCII identity values can be RFC 2047 encoded. This matches the accepted V10 least-privilege boundary.
 
 Tailscale grants are the preferred policy primitive for new access policies and support deny-by-default, least-privilege source-to-destination rules. The WP22A OWNER acceptance therefore requires a narrow OWNER-to-Lenovo HTTPS grant rather than a default allow-all tailnet policy.
 
@@ -57,7 +62,8 @@ Rejected. The Lenovo node must not be converted into a directly Internet-address
 ## Consequences
 
 - Remote OWNER browser access can be rehearsed without public Internet ingress.
-- Backend Host/identity headers are trusted only because the backend remains loopback-only and Tailscale Serve is the sole remote proxy path.
+- Backend Host/identity headers are trusted only because the backend is both launched on loopback and independently rejects non-loopback peers, while Tailscale Serve is the sole remote proxy path.
+- A stolen/forged session cannot satisfy an unsafe request merely by presenting a matching derived CSRF token; the server session must still be live.
 - Tailscale installation/sign-in, tailnet grant approval, and final remote browser rehearsal are OWNER-controlled physical/account actions and cannot be synthesized by CI.
 - The Web remains local/private until those checks and the full WP22A Exit Gate pass.
 - Public multi-user activation remains OFF.
