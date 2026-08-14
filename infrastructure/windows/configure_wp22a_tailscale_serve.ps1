@@ -2,6 +2,7 @@
 param(
     [switch]$Apply,
     [switch]$Verify,
+    [switch]$SelfTestStatusParser,
     [string]$OwnerLogin,
     [ValidateRange(1024, 65535)][int]$BackendPort = 8765,
     [string]$ConfigPath = "C:\ProgramData\OmniCIO\wp22a\private-remote.json",
@@ -11,9 +12,11 @@ param(
 Set-StrictMode -Version 3.0
 $ErrorActionPreference = "Stop"
 
-if ($Apply -and $Verify) { throw "Choose -Apply or -Verify, not both." }
-if (-not $Apply -and -not $Verify) { throw "Choose -Apply or -Verify." }
-if ($env:OS -ne "Windows_NT") { throw "WP22A Tailscale configuration requires Windows." }
+$modeCount = 0
+foreach ($mode in @($Apply, $Verify, $SelfTestStatusParser)) {
+    if ($mode) { $modeCount++ }
+}
+if ($modeCount -ne 1) { throw "Choose exactly one of -Apply, -Verify, or -SelfTestStatusParser." }
 
 function Test-Administrator {
     $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
@@ -124,6 +127,85 @@ function Test-EmptyTailscaleStatusJson {
     return @('', '{}', '[]', 'null') -contains $compact
 }
 
+function Convert-TailscaleServeStatusJson {
+    param([Parameter(Mandatory = $true)][string]$Text)
+    if (Test-EmptyTailscaleStatusJson -Text $Text) { return $null }
+    try {
+        return $Text | ConvertFrom-Json -ErrorAction Stop
+    }
+    catch {
+        throw "WP22A_TAILSCALE_SERVE_STATUS_INVALID"
+    }
+}
+
+function Test-Wp22aServeMapping {
+    param(
+        [Parameter(Mandatory = $true)][string]$Text,
+        [Parameter(Mandatory = $true)][string]$HostName,
+        [Parameter(Mandatory = $true)][int]$Port
+    )
+    $state = Convert-TailscaleServeStatusJson -Text $Text
+    if ($null -eq $state) { return $false }
+
+    $tcp = $state.PSObject.Properties['TCP']
+    if ($null -eq $tcp -or $null -eq $tcp.Value) { return $false }
+    $https443 = $tcp.Value.PSObject.Properties['443']
+    if ($null -eq $https443 -or -not [bool]$https443.Value.HTTPS) { return $false }
+    if ([bool]$https443.Value.HTTP -or -not [string]::IsNullOrWhiteSpace([string]$https443.Value.TCPForward)) {
+        return $false
+    }
+
+    $web = $state.PSObject.Properties['Web']
+    if ($null -eq $web -or $null -eq $web.Value) { return $false }
+    $hostPort = $HostName + ':443'
+    $site = $web.Value.PSObject.Properties[$hostPort]
+    if ($null -eq $site -or $null -eq $site.Value.Handlers) { return $false }
+    $handlers = @($site.Value.Handlers.PSObject.Properties)
+    if ($handlers.Count -ne 1) { return $false }
+    $root = $site.Value.Handlers.PSObject.Properties['/']
+    if ($null -eq $root) { return $false }
+    return [string]$root.Value.Proxy -ceq "http://127.0.0.1:$Port"
+}
+
+if ($SelfTestStatusParser) {
+    $testHost = 'omni-owner.synthetic-tailnet.ts.net'
+    $valid = @'
+{"TCP":{"443":{"HTTPS":true}},"Web":{"omni-owner.synthetic-tailnet.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8765"}}}}}
+'@
+    $wrongTarget = @'
+{"TCP":{"443":{"HTTPS":true}},"Web":{"omni-owner.synthetic-tailnet.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:9999"}}}}}
+'@
+    $wrongPort = @'
+{"TCP":{"8443":{"HTTPS":true}},"Web":{"omni-owner.synthetic-tailnet.ts.net:8443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8765"}}}}}
+'@
+    $extraHandler = @'
+{"TCP":{"443":{"HTTPS":true}},"Web":{"omni-owner.synthetic-tailnet.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:8765"},"/other":{"Proxy":"http://127.0.0.1:9999"}}}}}
+'@
+    $ready = (
+        (Test-Wp22aServeMapping -Text $valid -HostName $testHost -Port 8765) -and
+        -not (Test-Wp22aServeMapping -Text $wrongTarget -HostName $testHost -Port 8765) -and
+        -not (Test-Wp22aServeMapping -Text $wrongPort -HostName $testHost -Port 8765) -and
+        -not (Test-Wp22aServeMapping -Text $extraHandler -HostName $testHost -Port 8765) -and
+        -not (Test-Wp22aServeMapping -Text '{}' -HostName $testHost -Port 8765)
+    )
+    $result = [ordered]@{
+        schema_version = "1"
+        work_package = "WP22A"
+        evidence_type = "TAILSCALE_SERVE_STATUS_PARSER_SELF_TEST"
+        exact_https_443_mapping_accepted = [bool](Test-Wp22aServeMapping -Text $valid -HostName $testHost -Port 8765)
+        wrong_target_rejected = [bool](-not (Test-Wp22aServeMapping -Text $wrongTarget -HostName $testHost -Port 8765))
+        wrong_port_rejected = [bool](-not (Test-Wp22aServeMapping -Text $wrongPort -HostName $testHost -Port 8765))
+        extra_handler_rejected = [bool](-not (Test-Wp22aServeMapping -Text $extraHandler -HostName $testHost -Port 8765))
+        empty_status_rejected = [bool](-not (Test-Wp22aServeMapping -Text '{}' -HostName $testHost -Port 8765))
+        mutation_performed = $false
+        ready = [bool]$ready
+    }
+    if ($AsJson) { $result | ConvertTo-Json -Depth 4 } else { $result.GetEnumerator() | ForEach-Object { "{0}: {1}" -f $_.Key, $_.Value } }
+    if (-not $ready) { exit 42 }
+    exit 0
+}
+
+if ($env:OS -ne "Windows_NT") { throw "WP22A Tailscale configuration requires Windows." }
 if (-not (Test-Administrator)) { throw "WP22A Tailscale apply/verify requires OWNER administrator." }
 $tailscaleCommand = Get-Command tailscale.exe -ErrorAction Stop
 $tailscale = $tailscaleCommand.Source
@@ -138,6 +220,20 @@ if ($hostName -notmatch '^[a-z0-9][a-z0-9.-]*\.ts\.net$' -or $hostName.Contains(
 
 $configRoot = Split-Path -Parent $ConfigPath
 if ($Apply) {
+    $existingServeRaw = (& $tailscale serve status --json 2>&1 | Out-String)
+    if ($LASTEXITCODE -ne 0) { throw "WP22A_TAILSCALE_SERVE_STATUS_FAILED" }
+    if (
+        -not (Test-EmptyTailscaleStatusJson -Text $existingServeRaw) -and
+        -not (Test-Wp22aServeMapping -Text $existingServeRaw -HostName $hostName -Port $BackendPort)
+    ) {
+        throw "WP22A_REFUSES_EXISTING_SERVE_CONFIGURATION"
+    }
+    $existingFunnelRaw = (& $tailscale funnel status --json 2>&1 | Out-String)
+    if ($LASTEXITCODE -ne 0) { throw "WP22A_TAILSCALE_FUNNEL_STATUS_FAILED" }
+    if (-not (Test-EmptyTailscaleStatusJson -Text $existingFunnelRaw)) {
+        throw "WP22A_REFUSES_EXISTING_FUNNEL_CONFIGURATION"
+    }
+
     $normalizedLogin = $OwnerLogin.Trim()
     if ([string]::IsNullOrWhiteSpace($normalizedLogin)) {
         $normalizedLogin = (Read-Host "Exact decoded Tailscale OWNER login; the raw value will only be hashed locally").Trim()
@@ -189,8 +285,7 @@ $configOk = (
 $aclOk = Test-PrivateConfigAcl -Root $configRoot
 $serveRaw = (& $tailscale serve status --json 2>&1 | Out-String)
 if ($LASTEXITCODE -ne 0) { throw "WP22A_TAILSCALE_SERVE_STATUS_FAILED" }
-$targetNeedle = "127.0.0.1:$BackendPort"
-$serveOk = (-not (Test-EmptyTailscaleStatusJson -Text $serveRaw)) -and $serveRaw.Contains($targetNeedle)
+$serveOk = Test-Wp22aServeMapping -Text $serveRaw -HostName $hostName -Port $BackendPort
 $funnelRaw = (& $tailscale funnel status --json 2>&1 | Out-String)
 if ($LASTEXITCODE -ne 0) { throw "WP22A_TAILSCALE_FUNNEL_STATUS_FAILED" }
 $funnelDisabled = Test-EmptyTailscaleStatusJson -Text $funnelRaw
