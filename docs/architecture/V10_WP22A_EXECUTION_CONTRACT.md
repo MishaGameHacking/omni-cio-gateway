@@ -33,6 +33,8 @@ Security consequences:
 - the expected OWNER login is represented to the application by a SHA-256 fingerprint supplied as runtime-only configuration; the raw login value is not committed;
 - the existing internal local-only TrustedHost boundary is retained. After the outer WP22A middleware validates the canonical remote Host, the request forwarded into the accepted local Web application is normalized back to loopback Host rather than widening the older allowlist globally.
 
+Loopback-only binding by itself does not prove that a second process on the Lenovo cannot forge the same HTTP identity headers. This matters because the accepted WP6 threat model treats the ordinary GitHub self-hosted runner as a potentially dangerous identity distinct from the runtime. WP22A therefore adds a Windows identity-scoped outbound firewall rule that blocks the exact GitHub runner service SID from connecting to the WP22A loopback Web port. The rule is OWNER-admin provisioned, repository-defined, removed on rollback and verified both structurally and by a live negative TCP probe executed as the actual runner identity after OWNER deployment. A runner that can connect directly to the live loopback backend is a WP22A Exit-Gate failure even if Tailscale Serve itself works.
+
 This decision does not activate a public registration service. Telegram Login and VK ID remain the ordinary product authentication providers defined by the accepted identity amendment. Tailnet OWNER identity is a private network access gate for the Personal-node deployment and must not be represented as a third public authentication provider.
 
 ## 3. Session and browser security
@@ -109,7 +111,21 @@ The source-controlled OWNER gate derives the tailnet host and OWNER login finger
 
 The remote runtime also explicitly disables the earlier loopback-only WP17/WP15 OWNER acceptance modes before activating the WP22A factory. A Tailscale Serve request reaching the backend through loopback must never inherit those older test/acceptance authorities.
 
-## 7. Required deterministic checks
+## 7. Windows runtime, runner and rollback boundary
+
+The WP22A apply path reuses the accepted WP15 deployment root and runtime identity. It may rotate the runtime account password when registering the remote scheduled task, so rollback must never assume that a previously registered WP15 task still holds a valid stored credential.
+
+The reviewed rollback path therefore:
+
+1. disables the WP22A Serve route;
+2. removes the WP22A remote scheduled task;
+3. removes the WP22A runner-loopback firewall rule;
+4. tears down any current WP15/WP22A deployment through the accepted WP15 `Cleanup` mode;
+5. recreates and starts the accepted local Web deployment through the accepted WP15 `Apply` mode, which generates a fresh runtime credential and validates loopback readiness.
+
+A rollback that merely starts a stale pre-cutover task is forbidden.
+
+## 8. Required deterministic checks
 
 Before OWNER deployment evidence, CI must prove at minimum:
 
@@ -131,19 +147,21 @@ Before OWNER deployment evidence, CI must prove at minimum:
 - strict CSP is emitted without `unsafe-inline`/`unsafe-eval`, and frontend source does not require React inline style attributes;
 - the existing local-only TrustedHost middleware still composes correctly behind the outer remote-access guard;
 - frontend Web API sends the CSRF header only when the CSRF cookie exists;
-- Windows provisioning, runtime-launcher and OWNER-evidence scripts parse under Windows PowerShell 5.1 without applying changes in CI;
+- Windows provisioning, runtime-launcher, runner-auditor and OWNER-evidence scripts parse under Windows PowerShell 5.1 without applying changes in CI;
 - the source-controlled runtime launcher binds Uvicorn only to loopback and runs as the existing non-admin runtime account during OWNER apply;
+- the provisioner creates an outbound Windows Firewall block bound to the exact non-LocalSystem GitHub runner service SID and WP22A backend port;
+- rollback reconstructs the accepted local runtime through WP15 Cleanup/Apply instead of starting a task with a potentially stale stored password;
 - the source-controlled OWNER evidence validator passes static formatting/quality checks;
 - full repository quality/security/Regression Shield remains green.
 
-## 8. OWNER evidence boundary
+## 9. OWNER and runner evidence boundary
 
 CI cannot prove a real Lenovo is joined to the intended OWNER tailnet, that Tailscale Serve is configured privately rather than Funnel, or that a separate authorized OWNER device can reach the exact Web URL.
 
-After code, static checks, focused tests and authoritative CI are GREEN, WP22A requires one reviewed OWNER-local/private rehearsal for the selected private remote candidate. The source-controlled gate must first prove exact implementation binding, loopback-only backend, private Serve state, no Funnel, OWNER identity binding and a real HTTPS server-side login/logout cycle. The OWNER then proves the exact link from a separate authorized phone/browser device.
+After code, static checks, focused tests and authoritative CI are GREEN, WP22A requires one reviewed OWNER-local/private rehearsal for the selected private remote candidate. The source-controlled gate must first prove exact implementation binding, loopback-only backend, runner-specific loopback firewall binding, private Serve state, no Funnel, OWNER identity binding and a real HTTPS server-side login/logout cycle. The OWNER then proves the exact link from a separate authorized phone/browser device.
 
-After that physical observation, `finalize_wp22a_owner_evidence.ps1` re-runs the live non-mutating verification and writes one sanitized local evidence file under `C:\ProgramData\OmniCIO\wp22a`. The file contains exact implementation SHA/fingerprints and booleans only. It contains no raw OWNER login, private tailnet URL, Tailscale authentication material, broker secret, full account identifier or private portfolio payload.
+After that physical observation, `finalize_wp22a_owner_evidence.ps1` re-runs the live non-mutating verification and writes one sanitized local evidence file under `C:\ProgramData\OmniCIO\wp22a`. The file contains exact implementation SHA/fingerprints and booleans only, including the runner-loopback firewall binding. It contains no raw OWNER login, runner identity/SID, private tailnet URL, Tailscale authentication material, broker secret, full account identifier or private portfolio payload.
 
-The dedicated OWNER audit **must not synthesize** phone or local-runtime evidence. Before the local evidence exists it reports `OWNER_ACTION_REQUIRED`; after it exists, CI only validates exact SHA/fingerprints, privacy fields and required safety/phone booleans, then may upload a short-lived sanitized derivative.
+The dedicated OWNER audit **must not synthesize** phone or local-runtime evidence. Before the local evidence exists it reports `OWNER_ACTION_REQUIRED`. After it exists, the authoritative workflow runs a second negative test as the actual self-hosted runner identity: the WP22A remote task and loopback listener must be live, the runner-bound firewall rule must match the runner SID, and a TCP connection from the runner to the backend port must be denied. Only after that negative probe may CI validate the exact SHA/fingerprints and upload a short-lived sanitized derivative.
 
 Until that evidence and the WP22A Exit Gate are accepted, the current accepted Web remains local/private and Block F stays locked.
