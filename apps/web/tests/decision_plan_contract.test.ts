@@ -8,7 +8,7 @@ const backend = readFileSync(new URL("../../../omni_cio/web/decision_plan_v1.py"
 
 const browserStores = [["local", "Storage"].join(""), ["session", "Storage"].join("")];
 
- test("WP21 replaces Risk Decision Plan placeholders in one accepted shell", () => {
+test("WP21 replaces Risk Decision Plan placeholders in one accepted shell", () => {
   assert.match(shell, /DecisionPlanPage/);
   assert.match(shell, /path === "\/risks"/);
   assert.match(shell, /path === "\/decisions"/);
@@ -53,13 +53,18 @@ test("WP21 read route is session tenant scoped bounded and no-store", () => {
   assert.match(backend, /WHERE d\.tenant_id = %s/);
 });
 
-test("WP21 validates blob identity canonical schemas and immutable plan hash", () => {
+test("WP21 validates canonical blobs and exact persisted bindings", () => {
   assert.match(backend, /hashlib\.sha256\(payload\)\.hexdigest\(\) == expected_sha256/);
   assert.match(backend, /DecisionSetV1\.model_validate/);
   assert.match(backend, /PortfolioPlanV1\.model_validate/);
   assert.match(backend, /_DECISION_SCHEMA_REF/);
   assert.match(backend, /_PLAN_SCHEMA_REF/);
+  assert.match(backend, /JOIN omni_cio_v10\.portfolio_snapshots s/);
+  assert.match(backend, /s\.source_payload_sha256/);
+  assert.match(backend, /DECISION_RECORD_BINDING_INVALID/);
+  assert.match(backend, /PLAN_RECORD_BINDING_INVALID/);
   assert.match(backend, /PLAN_PAYLOAD_INVALID/);
+  assert.match(backend, /DECISION_ABSTAINS_WAIT_FOR_DATA/);
 });
 
 test("WP21 remains read-only and stores no browser credentials", () => {
