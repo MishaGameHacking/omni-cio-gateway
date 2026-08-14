@@ -160,11 +160,6 @@ function shortHash(value: string | null | undefined): string {
   return value.length <= 28 ? value : `${value.slice(0, 14)}…${value.slice(-10)}`;
 }
 
-function percent(value: string): string {
-  const numeric = Number(value);
-  return Number.isFinite(numeric) ? `${(numeric * 100).toFixed(2)}%` : value;
-}
-
 function MainDecision({ payload }: { payload: DecisionPlanPayload }) {
   return (
     <section className="decision-main" data-origin="deterministic-main-decision">
@@ -186,10 +181,10 @@ function RiskColumn({ title, state }: { title: string; state: RiskStateView }) {
     <Card title={title}>
       <dl className="decision-dl">
         <div><dt>Portfolio value</dt><dd>{state.total_value_base}</dd></div>
-        <div><dt>Cash</dt><dd>{state.cash_base} · {percent(state.cash_weight)}</dd></div>
-        <div><dt>Top 1</dt><dd>{percent(state.concentration.top_1_weight)}</dd></div>
-        <div><dt>Top 3</dt><dd>{percent(state.concentration.top_3_weight)}</dd></div>
-        <div><dt>Top 5</dt><dd>{percent(state.concentration.top_5_weight)}</dd></div>
+        <div><dt>Cash</dt><dd>{state.cash_base} · weight {state.cash_weight}</dd></div>
+        <div><dt>Top 1</dt><dd>{state.concentration.top_1_weight}</dd></div>
+        <div><dt>Top 3</dt><dd>{state.concentration.top_3_weight}</dd></div>
+        <div><dt>Top 5</dt><dd>{state.concentration.top_5_weight}</dd></div>
         <div><dt>Policy</dt><dd>{state.policy_compliant ? "COMPLIANT" : "BREACH"}</dd></div>
       </dl>
       {state.blockers.length ? <p className="shell-caption">Blockers: {state.blockers.join(", ")}</p> : null}
@@ -227,7 +222,7 @@ function PlanMath({ plan }: { plan: PlanView }) {
     row.component,
     `${row.current_lots} → ${row.target_lots}`,
     String(row.lot_size),
-    percent(row.target_weight),
+    row.target_weight,
     row.target_value_base,
   ]);
   const legs = plan.legs.map((row) => [
