@@ -44,8 +44,10 @@ Remote OWNER access requires all of the following:
 - unsafe remote requests require an exact same-origin HTTPS `Origin` and matching CSRF cookie/header token;
 - Host values outside exact loopback or the configured canonical tailnet host fail closed;
 - requests for the remote host that do not reach the backend through loopback fail closed;
+- the remote boundary strips the accepted local-only legacy session-cookie name from remote requests and injects an inner local session cookie only from the validated host-bound remote session cookie;
 - CORS remains deny-by-default because no permissive CORS middleware is introduced;
-- successful remote responses emit HSTS, `X-Content-Type-Options: nosniff`, a restrictive referrer policy and `Cache-Control: no-store`;
+- remote responses emit HSTS, strict CSP with `default-src 'self'`, `object-src 'none'` and `frame-ancestors 'none'`, `X-Content-Type-Options: nosniff`, a restrictive referrer policy and `Cache-Control: no-store`;
+- the Web source contains no React inline `style={{...}}` attributes that would require weakening the remote CSP with `unsafe-inline`;
 - login attempts and authenticated mutations use bounded rate limits;
 - remote logout/revoke-all deletes the host-bound remote cookies while the existing server-side revoke semantics invalidate the opaque session record.
 
@@ -63,6 +65,7 @@ WP22A uses the following ASVS 5.0 requirements as explicit design/test reference
 | V3.3.2 | Remote session and CSRF cookies use explicit `SameSite=Strict`. |
 | V3.4.1 | Remote responses include HSTS. |
 | V3.4.2 | No permissive CORS policy is introduced; cross-origin allow headers are absent by default. |
+| V3.4.3 / V3.4.6 | Remote responses include an enforced CSP without `unsafe-inline`/`unsafe-eval`; framing is blocked with `frame-ancestors 'none'`. |
 | V3.4.4 / V3.4.5 | Remote responses include `nosniff` and a restrictive referrer policy. |
 | V3.5.1 / V3.5.2 / V3.5.3 | Unsafe functionality uses non-safe methods and requires exact HTTPS Origin plus an anti-forgery header/token; GET is not used for mutations. |
 | V6.1.1 | Login anti-automation is documented and bounded; monitoring GET paths are not locked out by the mutation limiter. |
@@ -116,9 +119,11 @@ Before OWNER deployment evidence, CI must prove at minimum:
 - login rate limit enforced;
 - remote session cookie is host-bound, Secure/HttpOnly/SameSite=Strict;
 - remote CSRF cookie is host-bound, Secure/SameSite=Strict and not HttpOnly so same-origin frontend code can echo the token header;
+- a valid legacy local session cookie presented to the remote host is ignored;
 - remote logout clears host-bound cookies and revokes the server-side session;
 - server-side session expiry remains effective;
 - cross-origin responses do not gain permissive CORS;
+- strict CSP is emitted without `unsafe-inline`/`unsafe-eval`, and frontend source does not require React inline style attributes;
 - the existing local-only TrustedHost middleware still composes correctly behind the outer remote-access guard;
 - frontend Web API sends the CSRF header only when the CSRF cookie exists;
 - Windows provisioning/launcher scripts parse under Windows PowerShell 5.1 without applying changes in CI;
