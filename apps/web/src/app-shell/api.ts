@@ -12,7 +12,7 @@ import type {
 } from "./contracts";
 
 const JSON_HEADERS = { "Content-Type": "application/json" } as const;
-const CSRF_COOKIE = "omni_v10_csrf";
+const CSRF_COOKIE = "__Host-omni_v10_csrf";
 const CSRF_HEADER = "X-Omni-CSRF";
 
 function readCookie(name: string): string | null {
