@@ -11,6 +11,8 @@ $ErrorActionPreference = "Stop"
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $remoteTaskName = "OmniCIO.V10.WP22APrivateRemote"
 $runnerFirewallRuleName = "OmniCIO.V10.WP22A.BlockRunnerLoopback"
+$evidenceRoot = "C:\ProgramData\OmniCIO\wp22a"
+$evidencePath = Join-Path $evidenceRoot "owner-rehearsal.sanitized.local.json"
 
 function Test-Administrator {
     $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
@@ -110,6 +112,50 @@ function Test-RunnerConnectionDenied {
     finally { $client.Dispose() }
 }
 
+function Test-FileWriteDenied {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $stream = $null
+    try {
+        $stream = [System.IO.File]::Open(
+            $Path,
+            [System.IO.FileMode]::Open,
+            [System.IO.FileAccess]::Write,
+            [System.IO.FileShare]::Read
+        )
+        return $false
+    }
+    catch [System.UnauthorizedAccessException] { return $true }
+    catch [System.Security.SecurityException] { return $true }
+    catch { return $false }
+    finally { if ($null -ne $stream) { $stream.Dispose() } }
+}
+
+function Test-CreateDenied {
+    param([Parameter(Mandatory = $true)][string]$Directory)
+
+    $probe = Join-Path $Directory ("wp22a-runner-write-probe-" + [guid]::NewGuid().ToString("N") + ".tmp")
+    $stream = $null
+    $created = $false
+    try {
+        $stream = [System.IO.File]::Open(
+            $probe,
+            [System.IO.FileMode]::CreateNew,
+            [System.IO.FileAccess]::Write,
+            [System.IO.FileShare]::None
+        )
+        $created = $true
+        return $false
+    }
+    catch [System.UnauthorizedAccessException] { return $true }
+    catch [System.Security.SecurityException] { return $true }
+    catch { return $false }
+    finally {
+        if ($null -ne $stream) { $stream.Dispose() }
+        if ($created) { Remove-Item -LiteralPath $probe -Force -ErrorAction SilentlyContinue }
+    }
+}
+
 function Write-Result {
     param([Parameter(Mandatory = $true)][System.Collections.IDictionary]$Result)
     if ($AsJson) { $Result | ConvertTo-Json -Depth 4 -Compress; return }
@@ -126,6 +172,20 @@ $remoteTask = Get-ScheduledTask -TaskName $remoteTaskName -ErrorAction SilentlyC
 $remoteTaskRunning = $null -ne $remoteTask -and [string]$remoteTask.State -eq "Running"
 $loopbackListenerPresent = Test-LoopbackListenerPresent
 $firewallBound = Test-RunnerFirewallBinding -RunnerSid $runnerSid
+$evidencePresent = Test-Path -LiteralPath $evidencePath -PathType Leaf
+$evidenceReadable = $false
+$evidenceFileWriteDenied = $false
+$evidenceCreateDenied = $false
+if ($runnerIdentityMatchesService -and -not $runnerIsAdministrator -and $evidencePresent) {
+    try {
+        [void](Get-Content -LiteralPath $evidencePath -Raw -ErrorAction Stop)
+        $evidenceReadable = $true
+    }
+    catch { $evidenceReadable = $false }
+    $evidenceFileWriteDenied = Test-FileWriteDenied -Path $evidencePath
+    $evidenceCreateDenied = Test-CreateDenied -Directory $evidenceRoot
+}
+
 $connectionDenied = $false
 if (
     $runnerIdentityMatchesService -and
@@ -143,16 +203,26 @@ $ready = (
     $remoteTaskRunning -and
     $loopbackListenerPresent -and
     $firewallBound -and
-    $connectionDenied
+    $connectionDenied -and
+    $evidencePresent -and
+    $evidenceReadable -and
+    $evidenceFileWriteDenied -and
+    $evidenceCreateDenied
 )
 $reason = if ($ready) {
-    "WP22A_RUNNER_LOOPBACK_SPOOF_DENIED"
+    "WP22A_RUNNER_LOOPBACK_AND_EVIDENCE_WRITE_DENIED"
 }
 elseif (-not $runnerIdentityMatchesService) {
     "WP22A_RUNNER_IDENTITY_MISMATCH"
 }
 elseif ($runnerIsAdministrator) {
     "WP22A_RUNNER_ADMINISTRATOR_FORBIDDEN"
+}
+elseif (-not $evidencePresent -or -not $evidenceReadable) {
+    "WP22A_OWNER_EVIDENCE_NOT_RUNNER_READABLE"
+}
+elseif (-not $evidenceFileWriteDenied -or -not $evidenceCreateDenied) {
+    "WP22A_OWNER_EVIDENCE_RUNNER_WRITE_ALLOWED"
 }
 elseif (-not $remoteTaskRunning -or -not $loopbackListenerPresent) {
     "WP22A_REMOTE_RUNTIME_NOT_LIVE_FOR_RUNNER_AUDIT"
@@ -167,7 +237,7 @@ else {
 $result = [ordered]@{
     schema_version = "1"
     work_package = "WP22A"
-    evidence_class = "RUNNER_LOOPBACK_SPOOF_AUDIT"
+    evidence_class = "RUNNER_LOOPBACK_AND_OWNER_EVIDENCE_AUDIT"
     implementation_sha = $sha
     runner_identity_matches_service = [bool]$runnerIdentityMatchesService
     runner_is_administrator = [bool]$runnerIsAdministrator
@@ -175,6 +245,10 @@ $result = [ordered]@{
     loopback_listener_present = [bool]$loopbackListenerPresent
     runner_loopback_firewall_bound = [bool]$firewallBound
     runner_loopback_connection_denied = [bool]$connectionDenied
+    owner_evidence_present = [bool]$evidencePresent
+    owner_evidence_readable = [bool]$evidenceReadable
+    runner_owner_evidence_file_write_denied = [bool]$evidenceFileWriteDenied
+    runner_owner_evidence_create_denied = [bool]$evidenceCreateDenied
     raw_runner_identity_emitted = $false
     raw_runner_sid_emitted = $false
     private_url_emitted = $false
