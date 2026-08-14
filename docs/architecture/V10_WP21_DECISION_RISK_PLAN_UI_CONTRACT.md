@@ -15,19 +15,13 @@ The browser is never a financial calculator or approval authority.
 
 ## Route behavior
 
-`/risks`, `/decisions` and `/plans` use the same canonical payload and differ only in page focus. This avoids three competing versions of the same decision state.
-
-The local API is:
-
-`GET /api/v10/web/decision-plan`
-
-It is session-scoped, tenant-scoped and no-store.
+`/risks`, `/decisions` and `/plans` use the same canonical payload and differ only in page focus. The local API is `GET /api/v10/web/decision-plan`; it is session-scoped, tenant-scoped and no-store.
 
 ## States
 
 - `EMPTY`: no canonical decision is stored;
-- `PARTIAL`: the canonical decision abstains with `WAIT_FOR_DATA`, or an actionable decision exists without a valid exact plan;
-- `READY`: canonical binding is valid, recommendation-ready and unexpired;
+- `PARTIAL`: canonical decision abstains with `WAIT_FOR_DATA`, or an actionable decision has no valid exact plan;
+- `READY`: canonical binding is valid and unexpired;
 - `EXPIRED`: exact immutable plan is retained for audit but its approval subject is no longer valid;
 - `INVALID`: hash/schema/model/persisted-binding semantics fail closed.
 
@@ -35,85 +29,43 @@ The UI never converts `PARTIAL`, `EXPIRED` or `INVALID` into optimistic success.
 
 ## MAIN_DECISION
 
-The large `MAIN_DECISION` label is a deterministic presentation projection documented in `V10_WP21_EXECUTION_CONTRACT.md`. It is not a replacement for `DecisionAction`, Strategy or Optimizer logic.
+The large `MAIN_DECISION` label is a deterministic presentation projection documented in `V10_WP21_EXECUTION_CONTRACT.md`; it does not replace `DecisionAction`, Strategy or Optimizer logic.
 
-`WAIT_FOR_DATA` is displayed as `NO_ACTION` but the state remains `PARTIAL`; it is never promoted to a ready recommendation.
-
-If any other projection cannot be derived without guessing, it is `UNAVAILABLE` and the response is not `READY`.
+`WAIT_FOR_DATA` is displayed as `NO_ACTION` but remains `PARTIAL`. Any projection that would require guessing is `UNAVAILABLE` and cannot be `READY`.
 
 ## Exact mathematics
 
-When a valid immutable plan is available, the screen renders source values without recomputation:
-
-- portfolio/cash before and after;
-- concentration before and after;
-- policy compliance and risk vectors;
-- target lots and target weights;
-- exact plan legs;
-- reference clean unit values;
-- gross/settlement turnover;
-- accrued interest;
-- commission and estimated sell tax;
-- cash delta and staging days.
-
-The UI must not present these values as model forecasts.
+When a valid immutable plan exists, the screen renders accepted source values without recomputation: portfolio/cash before and after, concentration/policy/risk vectors, target lots/weights, exact legs, reference values, turnover, accrued interest, commission/tax, cash delta and staging days. These are not presented as model forecasts.
 
 ## Durable identity binding
 
-Before an immutable plan is rendered as current, the backend verifies:
+Before a plan is rendered as current, backend verifies:
 
-- same tenant / portfolio / policy / snapshot record as the persisted decision;
-- exact plan `portfolio_snapshot_sha256` equals the durable snapshot `source_payload_sha256`;
-- exact plan policy reference equals the persisted decision policy;
-- plan and decision timestamps bind their persisted records;
-- outer content SHA, schema and Pydantic contracts validate;
-- the plan's internal canonical SHA and approval phrase recompute correctly.
+- exact tenant / portfolio / canonical-policy / snapshot scope from durable relations;
+- plan `portfolio_snapshot_sha256` equals snapshot `source_payload_sha256`;
+- plan source policy id equals durable policy `source_policy_id`;
+- plan `created_at` equals persisted plan `created_at`;
+- outer content SHA/schema and Pydantic contracts validate;
+- internal canonical plan SHA and approval phrase recompute correctly.
+
+The durable decision `decided_at` is shown as audit metadata and is not incorrectly required to equal the DecisionSet source-retrieval timestamp.
 
 A mismatch is `INVALID`, never a degraded-but-approvable plan.
 
 ## Alternatives and evidence
 
-Alternatives come from the non-preferred canonical `DecisionOptionV1` objects. Their canonical title, rationale, action, confidence, blockers and review conditions are displayed as supplied.
-
-Evidence comes from canonical `DecisionEvidenceV1` records. React text rendering remains the only presentation path; external/source text is never executed as markup or instruction.
+Alternatives come from non-preferred canonical `DecisionOptionV1` objects; evidence comes from canonical `DecisionEvidenceV1`. React text rendering is the presentation path, so source text never becomes executable markup or instruction.
 
 ## Immutable approval subject
 
-The UI may reveal the existing `owner_approval_phrase` only when:
+The UI may reveal `owner_approval_phrase` only when the exact `PortfolioPlanV1` and its durable bindings validate, approval is required, and the plan is not expired.
 
-- the exact `PortfolioPlanV1` validates including its canonical internal SHA;
-- its durable persisted bindings validate;
-- the plan requires approval;
-- the plan has not expired.
-
-The zone is permanently labeled:
-
-`FUTURE OWNER CONFIRMATION SUBJECT · PREVIEW ONLY`
-
-It contains no active confirmation button and returns `can_approve=false`.
-
-A materially altered plan cannot keep the old approval subject because `PortfolioPlanV1` validates its canonical payload hash and exact phrase binding.
+The zone is permanently labeled `FUTURE OWNER CONFIRMATION SUBJECT · PREVIEW ONLY`, contains no confirmation action and returns `can_approve=false`. A material mutation cannot retain the old approval subject because canonical plan hash/phrase validation fails.
 
 ## Security and privacy
 
-- no full broker account identifier is needed or returned;
-- no broker token enters this surface;
-- no browser Web Storage is used;
-- no raw PostgreSQL content blob is returned;
-- no public ingress is added;
-- no order/trade/transfer endpoint is added;
-- `execution_authorized=false` and `trading_methods=false` remain explicit.
+No full broker account identifier or broker token is required; no browser Web Storage/raw PostgreSQL blob/public ingress/order/trade/transfer endpoint is added; `execution_authorized=false` and `trading_methods=false` stay explicit.
 
 ## Browser evidence
 
-Synthetic Playwright evidence must show a long-form decision page containing:
-
-- deterministic `MAIN_DECISION`;
-- before/after risk;
-- exact target lots;
-- exact cost/cash values;
-- alternatives;
-- preview-only immutable approval subject;
-- no approval action.
-
-A separate browser test must show that an invalid plan has no approval-subject zone.
+Synthetic Playwright evidence must show deterministic `MAIN_DECISION`, before/after risk, exact target lots/cost/cash values, alternatives, preview-only immutable approval subject, and no approval action. A separate invalid-plan browser case must have no approval-subject zone.
