@@ -20,6 +20,7 @@ $baseProvisioner = Join-Path $repoRoot "infrastructure\windows\provision_wp15_li
 $runtimeName = "omni-cio-runtime"
 $baseTaskName = "OmniCIO.V10.WP15LiveAcceptance"
 $remoteTaskName = "OmniCIO.V10.WP22APrivateRemote"
+$runnerFirewallRuleName = "OmniCIO.V10.WP22A.BlockRunnerLoopback"
 $runtimeRoot = "C:\ProgramData\OmniCIO\runtime\wp15-live"
 $appRoot = Join-Path $runtimeRoot "app"
 $launcherRelative = "infrastructure\windows\run_wp22a_private_remote_runtime.ps1"
@@ -42,6 +43,36 @@ function Get-ReviewedHead {
     if ($LASTEXITCODE -ne 0) { throw "WP22A_GIT_STATUS_UNAVAILABLE" }
     if ($dirty.Count -ne 0) { throw "WP22A_WORKTREE_NOT_CLEAN" }
     return $actual
+}
+
+function Get-AccountSidValue {
+    param([Parameter(Mandatory = $true)][string]$AccountName)
+
+    $normalized = $AccountName.Trim().ToUpperInvariant()
+    if ($normalized -in @("LOCALSYSTEM", ".\LOCALSYSTEM", "NT AUTHORITY\SYSTEM")) {
+        return "S-1-5-18"
+    }
+    if ($normalized -eq "NT AUTHORITY\NETWORKSERVICE") { return "S-1-5-20" }
+    if ($normalized -eq "NT AUTHORITY\LOCALSERVICE") { return "S-1-5-19" }
+    try {
+        $account = [System.Security.Principal.NTAccount]::new($AccountName)
+        return $account.Translate([System.Security.Principal.SecurityIdentifier]).Value
+    }
+    catch { throw "WP22A_RUNNER_IDENTITY_SID_UNAVAILABLE" }
+}
+
+function Get-RunnerSidValue {
+    $services = @(
+        Get-CimInstance Win32_Service -ErrorAction Stop |
+            Where-Object { $_.Name -like "actions.runner.*" }
+    )
+    if ($services.Count -ne 1) { throw "WP22A_RUNNER_SERVICE_IDENTITY_AMBIGUOUS" }
+    $startName = ([string]$services[0].StartName).Trim()
+    $normalized = $startName.ToUpperInvariant()
+    if ($normalized -in @("LOCALSYSTEM", ".\LOCALSYSTEM", "NT AUTHORITY\SYSTEM")) {
+        throw "WP22A_RUNNER_LOCAL_SYSTEM_FORBIDDEN"
+    }
+    return Get-AccountSidValue -AccountName $startName
 }
 
 function Resolve-TailscaleExe {
@@ -155,13 +186,67 @@ function Invoke-BaseProvisioner {
     }
 }
 
+function Remove-RunnerLoopbackFirewall {
+    Remove-NetFirewallRule -Name $runnerFirewallRuleName -ErrorAction SilentlyContinue
+}
+
+function Install-RunnerLoopbackFirewall {
+    if (-not (Test-Administrator)) { throw "WP22A_FIREWALL_REQUIRES_ADMINISTRATOR" }
+    $runnerSid = Get-RunnerSidValue
+    $runnerSddl = "D:(A;;CC;;;$runnerSid)"
+    Remove-RunnerLoopbackFirewall
+    New-NetFirewallRule `
+        -Name $runnerFirewallRuleName `
+        -DisplayName "Omni-CIO V10 WP22A block CI runner loopback Web" `
+        -Description "Blocks the ordinary GitHub runner identity from connecting directly to the WP22A loopback backend and spoofing Tailscale identity headers." `
+        -Direction Outbound `
+        -Action Block `
+        -Enabled True `
+        -Profile Any `
+        -Protocol TCP `
+        -RemoteAddress 127.0.0.1 `
+        -RemotePort $Port `
+        -LocalUser $runnerSddl `
+        -ErrorAction Stop | Out-Null
+}
+
+function Test-RunnerLoopbackFirewall {
+    $runnerSid = Get-RunnerSidValue
+    $rule = Get-NetFirewallRule -Name $runnerFirewallRuleName -ErrorAction SilentlyContinue
+    if ($null -eq $rule) { return $false }
+    if ([string]$rule.Enabled -ne "True" -or [string]$rule.Direction -ne "Outbound" -or [string]$rule.Action -ne "Block") {
+        return $false
+    }
+    $portFilter = $rule | Get-NetFirewallPortFilter -ErrorAction Stop
+    $addressFilter = $rule | Get-NetFirewallAddressFilter -ErrorAction Stop
+    $securityFilter = $rule | Get-NetFirewallSecurityFilter -ErrorAction Stop
+    $remotePorts = @($portFilter.RemotePort | ForEach-Object { [string]$_ })
+    $remoteAddresses = @($addressFilter.RemoteAddress | ForEach-Object { [string]$_ })
+    $localUser = [string]$securityFilter.LocalUser
+    return (
+        [string]$portFilter.Protocol -eq "TCP" -and
+        $remotePorts -contains [string]$Port -and
+        $remoteAddresses -contains "127.0.0.1" -and
+        $localUser.IndexOf($runnerSid, [System.StringComparison]::OrdinalIgnoreCase) -ge 0
+    )
+}
+
 function Restore-LocalWebTask {
-    & $tailscale serve off *> $null
+    param(
+        [Parameter(Mandatory = $true)][string]$Sha,
+        [Parameter(Mandatory = $true)][string]$TailscaleExe
+    )
+
+    & $TailscaleExe serve off *> $null
     Stop-ScheduledTask -TaskName $remoteTaskName -ErrorAction SilentlyContinue
     Unregister-ScheduledTask -TaskName $remoteTaskName -Confirm:$false -ErrorAction SilentlyContinue
-    if ($null -ne (Get-ScheduledTask -TaskName $baseTaskName -ErrorAction SilentlyContinue)) {
-        Start-ScheduledTask -TaskName $baseTaskName -ErrorAction SilentlyContinue
+    Remove-RunnerLoopbackFirewall
+
+    $baseTaskPresent = $null -ne (Get-ScheduledTask -TaskName $baseTaskName -ErrorAction SilentlyContinue)
+    if ((Test-Path -LiteralPath $runtimeRoot) -or $baseTaskPresent) {
+        Invoke-BaseProvisioner -Sha $Sha -Mode Cleanup
     }
+    Invoke-BaseProvisioner -Sha $Sha -Mode Apply
 }
 
 function Install-RemoteTask {
@@ -198,6 +283,11 @@ function Install-RemoteTask {
     $admins = @(Get-LocalGroupMember -SID $administratorsSid -ErrorAction Stop)
     if ($admins.SID.Value -contains $runtimeUser.SID.Value) {
         throw "WP22A_REMOTE_RUNTIME_IS_ADMINISTRATOR"
+    }
+
+    Install-RunnerLoopbackFirewall
+    if (-not (Test-RunnerLoopbackFirewall)) {
+        throw "WP22A_RUNNER_LOOPBACK_FIREWALL_NOT_BOUND"
     }
 
     $runtimePassword = New-RandomRuntimePassword
@@ -276,7 +366,7 @@ $identity = Get-TailscaleIdentity -Exe $tailscale
 
 if ($Cleanup) {
     if (-not (Test-Administrator)) { throw "WP22A_CLEANUP_REQUIRES_ADMINISTRATOR" }
-    Restore-LocalWebTask
+    Restore-LocalWebTask -Sha $sha -TailscaleExe $tailscale
     Write-Result -Result ([ordered]@{
         status = "PASS"; reason = "WP22A_PRIVATE_REMOTE_DISABLED"; public_ingress = $false
     })
@@ -296,30 +386,40 @@ if ($Apply) {
             throw "WP22A_REMOTE_BACKEND_NOT_READY"
         }
         if (-not (Test-BackendLoopback)) { throw "WP22A_BACKEND_NOT_LOOPBACK_ONLY" }
+        if (-not (Test-RunnerLoopbackFirewall)) {
+            throw "WP22A_RUNNER_LOOPBACK_FIREWALL_NOT_BOUND"
+        }
         if (-not $serveBefore.expected) {
             & $tailscale serve --bg "http://127.0.0.1:$Port"
             if ($LASTEXITCODE -ne 0) { throw "WP22A_TAILSCALE_SERVE_ENABLE_FAILED" }
         }
     }
     catch {
-        Restore-LocalWebTask
+        try {
+            Restore-LocalWebTask -Sha $sha -TailscaleExe $tailscale
+        }
+        catch {
+            throw "WP22A_APPLY_FAILED_AND_LOCAL_ROLLBACK_FAILED"
+        }
         throw
     }
 }
 
 $serve = Get-ServeState -Exe $tailscale -HostName $identity.host
 $loopbackOnly = Test-BackendLoopback
+$runnerFirewallBound = Test-RunnerLoopbackFirewall
 $remoteOwnerSession = $false
-if ($serve.expected -and $loopbackOnly) {
+if ($serve.expected -and $loopbackOnly -and $runnerFirewallBound) {
     $remoteOwnerSession = Test-RemoteOwnerSession -HostName $identity.host
 }
 
-$ok = $serve.expected -and $loopbackOnly -and $remoteOwnerSession -and (Test-NoFunnel -Exe $tailscale)
+$ok = $serve.expected -and $loopbackOnly -and $runnerFirewallBound -and $remoteOwnerSession -and (Test-NoFunnel -Exe $tailscale)
 $result = [ordered]@{
     status = $(if ($ok) { "PASS" } else { "FAIL" })
     reason = $(if ($ok) { "WP22A_PRIVATE_REMOTE_RUNTIME_ACCEPTED" } else { "WP22A_PRIVATE_REMOTE_RUNTIME_NOT_READY" })
     exact_implementation_binding = $true
     backend_loopback_only = [bool]$loopbackOnly
+    runner_loopback_firewall_bound = [bool]$runnerFirewallBound
     tailscale_serve_private = [bool]$serve.expected
     funnel_public_ingress = $false
     owner_identity_binding = [bool]$remoteOwnerSession
