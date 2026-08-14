@@ -56,7 +56,7 @@ def test_wp22a_remote_transport_cannot_import_real_or_trade_authority() -> None:
         assert forbidden not in source
 
 
-def test_wp22a_runtime_is_loopback_only_and_funnel_is_off_only() -> None:
+def test_wp22a_runtime_is_loopback_only_and_funnel_is_structurally_off() -> None:
     launcher = _source(
         "infrastructure/windows/run_wp22a_private_remote_runtime.ps1"
     ).lower()
@@ -65,10 +65,15 @@ def test_wp22a_runtime_is_loopback_only_and_funnel_is_off_only() -> None:
 
     configure = _source(
         "infrastructure/windows/configure_wp22a_tailscale_serve.ps1"
-    ).lower()
-    assert "tailscale serve" in configure
-    assert "--https=443 off" in configure
-    assert "tailscale funnel --bg" not in configure
+    )
+    configure_lower = configure.lower()
+    assert "tailscale serve" in configure_lower
+    assert "--bg --https=443" in configure_lower
+    assert "Test-Wp22aFunnelDisabled" in configure
+    assert "AllowFunnel" in configure
+    assert "WP22A_REFUSES_EXISTING_FUNNEL_CONFIGURATION" in configure
+    assert "$tailscale funnel" not in configure_lower
+    assert "funnel status --json" not in configure_lower
 
 
 def test_wp22a_finalizer_attempts_both_runtime_and_transport_teardown() -> None:
@@ -86,6 +91,8 @@ def test_wp22a_finalizer_attempts_both_runtime_and_transport_teardown() -> None:
     evidence_write = finalizer.index("$evidence | ConvertTo-Json")
     assert cleanup_try < transport_try < cleanup_fail_closed
     assert transport_try < transport_fail_closed < evidence_write
+    assert "Test-FunnelDisabledFromServeConfig" in finalizer
+    assert "$tailscale funnel" not in finalizer.lower()
 
 
 def test_wp22a_does_not_add_tailscale_as_product_identity_provider() -> None:
