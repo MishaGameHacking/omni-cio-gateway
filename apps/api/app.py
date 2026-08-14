@@ -30,6 +30,10 @@ from omni_cio.persistence.migration import (
 )
 from omni_cio.web.api_v1 import WebApiServicesV1, create_web_api
 from omni_cio.web.broker_vault_v1 import ReadBrokerConnectionVaultV1
+from omni_cio.web.decision_plan_v1 import (
+    DecisionPlanReadServiceV1,
+    install_decision_plan_routes,
+)
 from omni_cio.web.live_acceptance_v1 import (
     BrokerLiveAcceptanceServiceV1,
     PendingLiveAcceptanceEvidenceWriterV1,
@@ -333,6 +337,11 @@ def create_local_private_app() -> FastAPI:
         app,
         sessions=sessions,
         service=ResearchDossierReadServiceV1(connection),
+    )
+    install_decision_plan_routes(
+        app,
+        sessions=sessions,
+        service=DecisionPlanReadServiceV1(connection),
     )
     _protect_local_hosts(app)
 
