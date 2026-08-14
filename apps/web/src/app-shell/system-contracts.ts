@@ -25,6 +25,8 @@ export interface SystemStatusView {
     git_sha_source: string;
     last_deploy_at: string | null;
     last_deploy_source: string;
+    web_artifact_at: string | null;
+    web_artifact_source: string;
   };
   database: {
     state: OperationalState;
