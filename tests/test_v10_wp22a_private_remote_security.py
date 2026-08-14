@@ -7,11 +7,13 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 import pytest
 
+from apps.api.private_remote import _PRIVATE_REMOTE_SESSION_POLICY
 from omni_cio.web.remote_security_v1 import (
     CSRF_HEADER_NAME,
     TAILSCALE_LOGIN_HEADER,
     PrivateRemoteSecurityMiddlewareV1,
     PrivateRemoteSecurityPolicyV1,
+    csrf_token_for_session,
     install_private_remote_session_routes,
     tailscale_login_sha256,
 )
@@ -45,6 +47,7 @@ def make_client(
     login_limit: int = 6,
     mutation_limit: int = 60,
     session_policy: SessionPolicyV1 | None = None,
+    client_host: str = "127.0.0.1",
 ) -> tuple[TestClient, SessionRegistryV1, Clock]:
     clock = Clock()
     sessions = SessionRegistryV1(session_policy)
@@ -73,11 +76,13 @@ def make_client(
             mutations_per_minute=mutation_limit,
         ),
         session_cookie_name=COOKIE,
+        sessions=sessions,
+        now=clock,
     )
     client = TestClient(
         app,
         base_url=ORIGIN,
-        client=("127.0.0.1", 50000),
+        client=(client_host, 50000),
     )
     return client, sessions, clock
 
@@ -106,6 +111,11 @@ def csrf(client: TestClient) -> str:
     return value
 
 
+def test_remote_session_policy_is_short_and_defined() -> None:
+    assert _PRIVATE_REMOTE_SESSION_POLICY.idle_lifetime == timedelta(hours=2)
+    assert _PRIVATE_REMOTE_SESSION_POLICY.absolute_lifetime == timedelta(hours=24)
+
+
 def test_policy_requires_exact_tsnet_host_and_owner_fingerprint() -> None:
     with pytest.raises(ValueError, match="WP22A_TAILSCALE_HOST_INVALID"):
         PrivateRemoteSecurityPolicyV1(
@@ -122,6 +132,18 @@ def test_policy_requires_exact_tsnet_host_and_owner_fingerprint() -> None:
             expected_host=HOST,
             owner_login_sha256="not-a-hash",
         )
+
+
+def test_rfc2047_tailscale_identity_decodes_before_fingerprint() -> None:
+    encoded = "=?utf-8?q?Ferris_B=C3=BCller?="
+    assert tailscale_login_sha256(encoded) == tailscale_login_sha256("Ferris Büller")
+
+
+def test_backend_peer_must_be_loopback_even_with_valid_identity_headers() -> None:
+    client, _, _ = make_client(client_host="100.64.0.10")
+    response = client.get("/monitor", headers=owner_headers())
+    assert response.status_code == 403
+    assert response.json()["detail"] == "BACKEND_PEER_NOT_LOOPBACK"
 
 
 def test_host_and_tailscale_owner_identity_fail_closed() -> None:
@@ -142,6 +164,17 @@ def test_host_and_tailscale_owner_identity_fail_closed() -> None:
     )
     assert wrong_host.status_code == 400
     assert wrong_host.json()["detail"] == "HOST_NOT_ALLOWED"
+
+
+def test_private_remote_responses_have_security_headers() -> None:
+    client, _, _ = make_client()
+    response = client.get("/monitor", headers=owner_headers())
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["strict-transport-security"] == "max-age=31536000"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-frame-options"] == "DENY"
+    assert response.headers["referrer-policy"] == "no-referrer"
 
 
 def test_private_remote_login_sets_secure_cookie_and_rotates_session() -> None:
@@ -171,6 +204,22 @@ def test_stolen_session_without_matching_tailnet_identity_is_rejected() -> None:
     assert response.json()["detail"] == "PRIVATE_REMOTE_OWNER_REQUIRED"
 
 
+def test_forged_session_with_matching_derived_csrf_is_rejected() -> None:
+    client, _, _ = make_client()
+    forged = "synthetic-forged-session"
+    client.cookies.set(COOKIE, forged)
+    response = client.post(
+        "/mutate",
+        headers={
+            **owner_headers(origin=True),
+            CSRF_HEADER_NAME: csrf_token_for_session(forged),
+        },
+        json={},
+    )
+    assert response.status_code == 401
+    assert response.json()["detail"] == "AUTHENTICATION_REQUIRED"
+
+
 def test_unsafe_request_requires_exact_origin_session_and_session_bound_csrf() -> None:
     client, _, _ = make_client()
     remote_login(client)
@@ -195,6 +244,18 @@ def test_unsafe_request_requires_exact_origin_session_and_session_bound_csrf() -
     )
     assert wrong_origin.status_code == 403
     assert wrong_origin.json()["detail"] == "ORIGIN_NOT_ALLOWED"
+
+    trailing_slash_origin = client.post(
+        "/mutate",
+        headers={
+            TAILSCALE_LOGIN_HEADER: OWNER_LOGIN,
+            "Origin": f"{ORIGIN}/",
+            CSRF_HEADER_NAME: csrf_token,
+        },
+        json={},
+    )
+    assert trailing_slash_origin.status_code == 403
+    assert trailing_slash_origin.json()["detail"] == "ORIGIN_NOT_ALLOWED"
 
     missing_csrf = client.post(
         "/mutate",
@@ -267,7 +328,8 @@ def test_expired_session_cannot_obtain_csrf_or_mutate() -> None:
         absolute_lifetime=timedelta(seconds=2),
     )
     client, _, clock = make_client(session_policy=policy)
-    remote_login(client)
+    token = remote_login(client)
+    csrf_token = csrf(client)
     clock.value += timedelta(seconds=2)
 
     expired = client.get(
@@ -275,6 +337,15 @@ def test_expired_session_cannot_obtain_csrf_or_mutate() -> None:
         headers=owner_headers(),
     )
     assert expired.status_code == 401
+
+    client.cookies.set(COOKIE, token)
+    mutation = client.post(
+        "/mutate",
+        headers={**owner_headers(origin=True), CSRF_HEADER_NAME: csrf_token},
+        json={},
+    )
+    assert mutation.status_code == 401
+    assert mutation.json()["detail"] == "AUTHENTICATION_REQUIRED"
 
 
 def test_telegram_initdata_cannot_bootstrap_wp22a_owner_authority() -> None:
