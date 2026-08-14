@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 import hashlib
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.testclient import TestClient
 
@@ -11,6 +11,7 @@ from omni_cio.web.api_v1 import SESSION_COOKIE
 from omni_cio.web.external_access_v1 import (
     CSRF_COOKIE,
     CSRF_HEADER,
+    REMOTE_SESSION_COOKIE,
     TAILSCALE_LOGIN_HEADER,
     ExternalAccessPolicyV1,
     FixedWindowLimiterV1,
@@ -42,15 +43,30 @@ def make_app(
 
     @app.get("/protected")
     def protected(request: Request) -> dict[str, bool]:
-        scope = sessions.resolve(request.cookies.get(SESSION_COOKIE), now=(current_time or [NOW])[0])
+        scope = sessions.resolve(
+            request.cookies.get(SESSION_COOKIE),
+            now=(current_time or [NOW])[0],
+        )
         if scope is None:
             return {"authenticated": False}
         return {"authenticated": True}
 
     @app.post("/mutate")
     def mutate(request: Request) -> dict[str, bool]:
-        scope = sessions.resolve(request.cookies.get(SESSION_COOKIE), now=(current_time or [NOW])[0])
+        scope = sessions.resolve(
+            request.cookies.get(SESSION_COOKIE),
+            now=(current_time or [NOW])[0],
+        )
         return {"authenticated": scope is not None}
+
+    @app.post("/api/v10/web/session/logout")
+    def logout(request: Request, response: Response) -> dict[str, bool]:
+        sessions.revoke(
+            request.cookies.get(SESSION_COOKIE),
+            now=(current_time or [NOW])[0],
+        )
+        response.delete_cookie(SESSION_COOKIE, path="/")
+        return {"ok": True}
 
     install_private_remote_access_v1(
         app,
@@ -124,9 +140,10 @@ def test_tailnet_status_crosses_existing_local_trusted_host_only_after_outer_ver
     assert response.status_code == 200
     assert response.json() == {"enabled": True}
     assert response.headers["strict-transport-security"] == "max-age=31536000"
+    assert response.headers["cache-control"] == "no-store"
 
 
-def test_owner_login_uses_secure_server_side_session_and_csrf_cookie() -> None:
+def test_owner_login_uses_host_bound_secure_server_side_session_and_csrf_cookie() -> None:
     client = remote_client(make_app())
     response = client.post(
         "/api/v10/web/private-tailnet-login",
@@ -134,14 +151,35 @@ def test_owner_login_uses_secure_server_side_session_and_csrf_cookie() -> None:
     )
     assert response.status_code == 200
     cookie_headers = response.headers.get_list("set-cookie")
-    session_cookie = next(item for item in cookie_headers if item.startswith(SESSION_COOKIE + "="))
-    csrf_cookie = next(item for item in cookie_headers if item.startswith(CSRF_COOKIE + "="))
+    session_cookie = next(
+        item for item in cookie_headers if item.startswith(REMOTE_SESSION_COOKIE + "=")
+    )
+    csrf_cookie = next(
+        item for item in cookie_headers if item.startswith(CSRF_COOKIE + "=")
+    )
+    assert REMOTE_SESSION_COOKIE.startswith("__Host-")
+    assert CSRF_COOKIE.startswith("__Host-")
     assert "HttpOnly" in session_cookie
     assert "Secure" in session_cookie
     assert "SameSite=strict" in session_cookie
     assert "Secure" in csrf_cookie
     assert "HttpOnly" not in csrf_cookie
     assert client.get("/protected").json() == {"authenticated": True}
+
+
+def test_remote_logout_revokes_session_and_clears_host_bound_cookies() -> None:
+    client = remote_client(make_app())
+    login(client)
+    token = csrf_token(client)
+    response = client.post(
+        "/api/v10/web/session/logout",
+        headers={"Origin": ORIGIN, CSRF_HEADER: token},
+    )
+    assert response.status_code == 200
+    set_cookies = response.headers.get_list("set-cookie")
+    assert any(item.startswith(REMOTE_SESSION_COOKIE + "=") for item in set_cookies)
+    assert any(item.startswith(CSRF_COOKIE + "=") for item in set_cookies)
+    assert client.get("/protected").json() == {"authenticated": False}
 
 
 def test_wrong_tailnet_identity_and_non_loopback_proxy_path_fail_closed() -> None:
@@ -223,8 +261,14 @@ def test_login_rate_limit_is_enforced() -> None:
     )
     client = remote_client(make_app(policy=policy))
     headers = {"Origin": ORIGIN}
-    assert client.post("/api/v10/web/private-tailnet-login", headers=headers).status_code == 200
-    assert client.post("/api/v10/web/private-tailnet-login", headers=headers).status_code == 200
+    assert (
+        client.post("/api/v10/web/private-tailnet-login", headers=headers).status_code
+        == 200
+    )
+    assert (
+        client.post("/api/v10/web/private-tailnet-login", headers=headers).status_code
+        == 200
+    )
     response = client.post("/api/v10/web/private-tailnet-login", headers=headers)
     assert response.status_code == 429
     assert response.json()["detail"] == "RATE_LIMITED"
