@@ -86,10 +86,15 @@ Expected WP22A-owned files include:
 - `apps/web/src/app-shell/api.ts` and the minimal shell login integration;
 - `infrastructure/windows/run_wp22a_private_remote_runtime.ps1`;
 - `infrastructure/windows/configure_wp22a_tailscale_serve.ps1`;
+- `infrastructure/windows/provision_wp22a_private_remote_runtime.ps1`;
+- `infrastructure/windows/finalize_wp22a_private_remote_evidence.ps1`;
+- `infrastructure/windows/audit_wp22a_private_remote_runner.ps1`;
+- `infrastructure/windows/validate_wp22a_private_runtime_helper.ps1`;
+- `scripts/assess_v10_wp22a_owner_evidence.py`;
 - this execution contract, ADR-0012, machine-readable security contract and runbook;
 - the WP22A threat-model/security-boundary update;
-- deterministic WP22A unit/authority checks;
-- dedicated WP22A self-hosted audit workflow.
+- deterministic WP22A unit/authority/evidence checks;
+- dedicated WP22A self-hosted security and OWNER-evidence audit workflows.
 
 The existing local app factory remains accepted and must continue to pass inherited WP16-WP22 regression gates.
 
@@ -115,31 +120,37 @@ Before OWNER action is requested, CI must prove on the exact reviewed head:
 - Telegram `initData` replay/staleness authority unavailable before its owning WP;
 - runtime launcher binds only `127.0.0.1`;
 - runtime private-config ACL verification rejects non-approved principals;
+- Windows runtime account-rights helper compiles without changing account rights;
+- temporary OWNER acceptance runtime is exact-head, non-admin, password-logon only, SSPI-backed and contains no PostgreSQL trust/password fallback;
+- runner can read only finalized sanitized OWNER evidence and cannot read/write the private Tailscale config or write OWNER evidence;
 - Funnel/public-ingress markers are absent from the allowed implementation path;
 - no broker-write / Real authority imports or flags are added;
 - Ruff/format/mypy, Web typecheck/lint/tests/build, dependency audit, repository guards and authoritative Regression Shield remain GREEN.
 
+The wrong/non-OWNER Tailscale identity case is a mandatory deterministic negative test. WP22A does **not** require the OWNER to create or operate a second foreign Tailscale account merely to duplicate that already deterministic security proof.
+
 ## 6. OWNER physical acceptance
 
-CI cannot prove the OWNER's real tailnet/device identity or remote browser path. After all deterministic code/security gates are GREEN, and only then, OWNER acceptance must verify on the Lenovo node:
+CI cannot prove the OWNER's real tailnet/device identity, the externally administered tailnet policy, or an actual second-device browser path. After all deterministic code/security gates are GREEN, and only then, OWNER acceptance must verify on the Lenovo node and one separate OWNER device:
 
 - Tailscale is installed, authenticated and Running;
 - node has its expected private `*.ts.net` identity;
-- tailnet policy is deny-by-default/narrow and grants only the OWNER access to the Lenovo HTTPS service;
+- tailnet policy is deny-by-default/narrow and grants only the OWNER identity/device set needed to reach Lenovo HTTPS 443;
 - Tailscale Serve maps HTTPS 443 to `http://127.0.0.1:8765`;
 - Funnel is not active for the node/service;
 - local config contains only host plus exact OWNER-login fingerprint, not raw credentials;
 - private config ACL matches the reviewed SYSTEM/Administrators/runtime-read-only boundary;
-- private remote runtime runs as `omni-cio-runtime`, non-admin;
+- temporary private remote runtime runs as `omni-cio-runtime`, non-admin, from the exact reviewed implementation;
 - a separate OWNER device can open the cabinet over tailnet HTTPS;
-- wrong/non-OWNER tailnet identity does not gain the private session;
-- local loopback fallback remains recoverable.
+- the accepted local loopback fallback remains recoverable.
 
-No Tailscale auth key, password, raw OWNER identity, broker token, portfolio payload or recovery key may be posted to GitHub/chat/CI evidence.
+The physical rehearsal is finalized into exact-head/source-hash-bound sanitized evidence, then the reviewed finalizer disables the temporary Serve mapping, removes the temporary runtime/task, disables the runtime role again and restores temporary PostgreSQL authentication configuration. The self-hosted runner must subsequently prove that it can read only the sanitized evidence while remaining unable to read/write the private Tailscale config.
+
+No Tailscale auth key, password, raw OWNER identity, raw tailnet hostname, session cookie, broker token, portfolio payload or recovery key may be posted to GitHub/chat/CI evidence.
 
 ## 7. Exit Gate
 
-WP22A is complete only when code, deterministic tests, exact-head CI, OWNER private-remote rehearsal, review, squash merge, exact-main post-merge Regression Shield and the separate status acceptance are complete.
+WP22A is complete only when code, deterministic tests, exact-head CI, OWNER private-remote rehearsal, runner-isolation audit, review, squash merge, exact-main post-merge Regression Shield and the separate status acceptance are complete.
 
 Until then:
 
