@@ -223,6 +223,7 @@ def _remote_request_verified(request: Request) -> bool:
 def _harden_remote_response(response: Response, *, path: str) -> Response:
     response.headers["Strict-Transport-Security"] = "max-age=31536000"
     response.headers["Content-Security-Policy"] = _CONTENT_SECURITY_POLICY
+    response.headers["Cross-Origin-Opener-Policy"] = "same-origin-allow-popups"
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "same-origin"
     response.headers["Cache-Control"] = "no-store"
@@ -242,6 +243,13 @@ def _harden_remote_response(response: Response, *, path: str) -> Response:
             samesite="strict",
         )
     return response
+
+
+def _remote_error(detail: str, status_code: int, *, path: str) -> Response:
+    return _harden_remote_response(
+        JSONResponse({"detail": detail}, status_code=status_code),
+        path=path,
+    )
 
 
 class ExternalAccessSecurityMiddlewareV1(BaseHTTPMiddleware):
@@ -270,12 +278,16 @@ class ExternalAccessSecurityMiddlewareV1(BaseHTTPMiddleware):
             return await call_next(request)
 
         if not _is_loopback(request):
-            return JSONResponse({"detail": "UNTRUSTED_PROXY_PATH"}, status_code=403)
+            return _remote_error(
+                "UNTRUSTED_PROXY_PATH",
+                403,
+                path=request.url.path,
+            )
 
         if request.method in _UNSAFE_METHODS:
             origin = request.headers.get("origin", "")
             if _origin_host(origin) != self._policy.canonical_host:
-                return JSONResponse({"detail": "ORIGIN_REQUIRED"}, status_code=403)
+                return _remote_error("ORIGIN_REQUIRED", 403, path=request.url.path)
 
             is_login = request.url.path == "/api/v10/web/private-tailnet-login"
             if not is_login:
@@ -286,7 +298,7 @@ class ExternalAccessSecurityMiddlewareV1(BaseHTTPMiddleware):
                     or not csrf_header
                     or not secrets.compare_digest(csrf_cookie, csrf_header)
                 ):
-                    return JSONResponse({"detail": "CSRF_REJECTED"}, status_code=403)
+                    return _remote_error("CSRF_REJECTED", 403, path=request.url.path)
                 identity = request.headers.get(TAILSCALE_LOGIN_HEADER, "")
                 key = "mutation:" + _login_fingerprint(identity or "anonymous")
                 if not self._limiter.admit(
@@ -294,7 +306,7 @@ class ExternalAccessSecurityMiddlewareV1(BaseHTTPMiddleware):
                     limit=self._policy.mutation_attempts,
                     window_seconds=self._policy.mutation_window_seconds,
                 ):
-                    return JSONResponse({"detail": "RATE_LIMITED"}, status_code=429)
+                    return _remote_error("RATE_LIMITED", 429, path=request.url.path)
 
         if request.method == "GET" and request.url.path == _REMOTE_STATUS_PATH:
             return _harden_remote_response(
