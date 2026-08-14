@@ -151,7 +151,9 @@ Before OWNER deployment evidence, CI must prove at minimum:
 - the source-controlled runtime launcher binds Uvicorn only to loopback and runs as the existing non-admin runtime account during OWNER apply;
 - the provisioner creates an outbound Windows Firewall block bound to the exact non-LocalSystem GitHub runner service SID and WP22A backend port;
 - rollback reconstructs the accepted local runtime through WP15 Cleanup/Apply instead of starting a task with a potentially stale stored password;
-- the source-controlled OWNER evidence validator passes static formatting/quality checks;
+- the OWNER finalizer creates a protected, non-reparse evidence directory with SYSTEM/Administrators write authority, exact runner read-only authority, no runner write/delete authority and no broad Everyone/Authenticated Users/Users allow rule;
+- the source-controlled OWNER evidence validator requires the ACL/read-only booleans and rejects any evidence claiming runner write access;
+- the source-controlled Windows boundary tests bind the firewall, rollback, evidence ACL and runner-negative-audit implementation into the focused WP22A gate;
 - full repository quality/security/Regression Shield remains green.
 
 ## 9. OWNER and runner evidence boundary
@@ -160,8 +162,10 @@ CI cannot prove a real Lenovo is joined to the intended OWNER tailnet, that Tail
 
 After code, static checks, focused tests and authoritative CI are GREEN, WP22A requires one reviewed OWNER-local/private rehearsal for the selected private remote candidate. The source-controlled gate must first prove exact implementation binding, loopback-only backend, runner-specific loopback firewall binding, private Serve state, no Funnel, OWNER identity binding and a real HTTPS server-side login/logout cycle. The OWNER then proves the exact link from a separate authorized phone/browser device.
 
-After that physical observation, `finalize_wp22a_owner_evidence.ps1` re-runs the live non-mutating verification and writes one sanitized local evidence file under `C:\ProgramData\OmniCIO\wp22a`. The file contains exact implementation SHA/fingerprints and booleans only, including the runner-loopback firewall binding. It contains no raw OWNER login, runner identity/SID, private tailnet URL, Tailscale authentication material, broker secret, full account identifier or private portfolio payload.
+After that physical observation, `finalize_wp22a_owner_evidence.ps1` re-runs the live non-mutating verification, protects `C:\ProgramData\OmniCIO\wp22a` with an explicit ACL and writes one sanitized local evidence file. The directory is owned as an OWNER/system boundary: SYSTEM and Administrators retain FullControl, the exact non-admin GitHub runner service SID receives ReadAndExecute only, broad identities receive no allow rule, and a reparse-point evidence root is rejected. The evidence records these safety facts as booleans but contains no raw OWNER login, runner identity/SID, private tailnet URL, Tailscale authentication material, broker secret, full account identifier or private portfolio payload.
 
-The dedicated OWNER audit **must not synthesize** phone or local-runtime evidence. Before the local evidence exists it reports `OWNER_ACTION_REQUIRED`. After it exists, the authoritative workflow runs a second negative test as the actual self-hosted runner identity: the WP22A remote task and loopback listener must be live, the runner-bound firewall rule must match the runner SID, and a TCP connection from the runner to the backend port must be denied. Only after that negative probe may CI validate the exact SHA/fingerprints and upload a short-lived sanitized derivative.
+The dedicated OWNER audit **must not synthesize** phone or local-runtime evidence. Before the local evidence exists it reports `OWNER_ACTION_REQUIRED`. After it exists, the authoritative workflow runs a second negative test as the actual self-hosted runner identity. The WP22A remote task and loopback listener must be live; the runner-bound firewall rule must match the runner SID; a TCP connection from the runner to the backend port must be denied; the OWNER evidence must remain readable to the validator; opening that evidence file for write and creating any new file in the evidence directory must both be denied. Only after those negative probes may CI validate exact SHA/fingerprints and upload a short-lived sanitized derivative.
+
+A repository job that can manufacture, modify, replace or delete the OWNER evidence is an Exit-Gate failure even when every JSON field and implementation hash is otherwise correct. OWNER physical evidence is never synthesized in CI.
 
 Until that evidence and the WP22A Exit Gate are accepted, the current accepted Web remains local/private and Block F stays locked.
