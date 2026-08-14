@@ -30,6 +30,7 @@ _DISK_WARN_GIB = 50.0
 _DISK_BLOCK_PERCENT = 10.0
 _DISK_BLOCK_GIB = 20.0
 _GPU_TEMP_LIMIT_C = 87.0
+_TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
 OperationalState = Literal[
     "READY",
     "PARTIAL",
@@ -61,6 +62,10 @@ def _timestamp(value: object | None) -> str | None:
     if not isinstance(value, datetime):
         raise ValueError("WP22 persisted timestamp must be datetime")
     return _utc(value).isoformat()
+
+
+def _env_enabled(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in _TRUE_VALUES
 
 
 def _service(
@@ -441,6 +446,8 @@ class SystemAdminReadServiceV1:
         backup = self._backup(tenant_id=tenant_id)
         disk = self._disk()
         temperature = self._temperature()
+        real_trading_enabled = _env_enabled("REAL_TRADING_ENABLED")
+        watchtower_enabled = _env_enabled("WATCHTOWER_ENABLED")
 
         services = [
             _service(
@@ -488,14 +495,30 @@ class SystemAdminReadServiceV1:
             ),
         ]
 
-        blocking = database_state == "BLOCKED" or disk["state"] == "BLOCKED"
+        current_services = [
+            item for item in services if item["availability"] != "LOCKED_FUTURE_WP"
+        ]
+        blocking = (
+            database_state == "BLOCKED"
+            or disk["state"] == "BLOCKED"
+            or real_trading_enabled
+        )
         degraded = any(
-            item["state"] in {"DEGRADED", "ERROR"}
-            and item["availability"] != "LOCKED_FUTURE_WP"
-            for item in services
+            item["state"] in {"DEGRADED", "ERROR"} for item in current_services
         ) or disk["state"] == "DEGRADED" or temperature["state"] == "DEGRADED"
+        partial = (
+            backup["availability"] != "AVAILABLE"
+            or temperature["availability"] != "AVAILABLE"
+            or any(item["availability"] != "AVAILABLE" for item in current_services)
+        )
         overall: OperationalState = (
-            "BLOCKED" if blocking else "DEGRADED" if degraded else "READY"
+            "BLOCKED"
+            if blocking
+            else "DEGRADED"
+            if degraded
+            else "PARTIAL"
+            if partial
+            else "READY"
         )
 
         return {
@@ -511,14 +534,11 @@ class SystemAdminReadServiceV1:
             },
             "safety": {
                 "mode": "READ_ONLY_DIAGNOSTIC",
-                "real_trading_enabled": False,
+                "real_trading_enabled": real_trading_enabled,
                 "trading_methods": False,
                 "broker_write_authority": False,
                 "public_ingress": False,
-                "watchtower_enabled": (
-                    os.environ.get("WATCHTOWER_ENABLED", "").strip().lower()
-                    in {"1", "true", "yes", "on"}
-                ),
+                "watchtower_enabled": watchtower_enabled,
             },
             "services": services,
             "recent_jobs": jobs,
