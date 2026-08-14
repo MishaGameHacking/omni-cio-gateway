@@ -213,7 +213,7 @@ WP22 merge eligibility requires:
 - zero unresolved blocking review threads;
 - full diff review.
 
-Hosted startup/billing failures remain infrastructure failures and are never called PASS. GitHub documents that ordinary `pull_request` uses a merge ref by default; the dedicated audit therefore explicitly checks out `github.event.pull_request.head.sha` to preserve the project exact-head rule. citeturn475435search0
+Hosted startup/billing failures remain infrastructure failures and are never called PASS. The dedicated audit explicitly checks out `github.event.pull_request.head.sha` rather than relying on the default pull-request merge ref, preserving the project exact-head rule.
 
 ## 18. Rollback/recovery
 
@@ -241,3 +241,7 @@ Only then may the separate official status transition authorize **WP22A**.
 ## 20. OWNER action
 
 No OWNER physical action, secret input or irreversible operation is required for WP22 software implementation. Hardware/runtime telemetry that cannot be safely observed remains explicit `NOT_AVAILABLE`; it is not a reason to fabricate evidence or weaken the gate.
+
+## Reviewed technical references
+
+- GitHub Actions event semantics: `https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows`.
