@@ -52,19 +52,20 @@ Never send Tailscale authentication keys, provider credentials, OWNER login, run
 
 ### HTTPS certificate privacy / OWNER consent
 
-Tailscale Serve HTTPS requires HTTPS certificates to be enabled for the tailnet. If that capability has never been enabled, the `tailscale serve` CLI may present a Tailscale web-consent URL instead of completing immediately.
+Tailscale Serve HTTPS requires HTTPS certificates to be enabled for the tailnet. If that capability has never been enabled, the `tailscale serve` CLI may require an interactive Tailscale web-consent step instead of completing immediately.
 
 Enabling Tailscale HTTPS has a privacy consequence that requires OWNER awareness: the device name and tailnet DNS suffix used in the certificate become visible through the public Certificate Transparency ecosystem even though network access to Serve remains restricted to the tailnet. Before enabling HTTPS, the OWNER must therefore verify that the Lenovo Tailscale machine name itself contains no sensitive/private information.
 
 This is a real external-account/privacy consent boundary. Engineering does not silently accept it on the OWNER's behalf and does not replace it with public Funnel exposure. If HTTPS is already enabled and the node name is acceptable, no additional certificate-file provisioning is required for the Serve path; Tailscale manages the Serve certificate lifecycle.
 
-## Source-controlled deployment and evidence boundary
+## Source-controlled deployment, recovery and evidence boundary
 
-WP22A adds four reviewed Windows scripts:
+WP22A adds five reviewed Windows scripts:
 
 ```text
 infrastructure/windows/run_wp22a_private_remote_runtime.ps1
 infrastructure/windows/provision_wp22a_private_remote_access.ps1
+infrastructure/windows/diagnose_wp22a_local_state.ps1
 infrastructure/windows/audit_wp22a_runner_loopback.ps1
 infrastructure/windows/finalize_wp22a_owner_evidence.ps1
 ```
@@ -92,6 +93,17 @@ The provisioning gate:
 - performs a real HTTPS OWNER identity/session/login/logout probe through Serve;
 - still leaves a separate phone/browser reachability rehearsal as OWNER evidence.
 
+The recovery behavior is deliberately fail-closed and idempotent:
+
+- Tailscale Serve cleanup uses `tailscale serve reset`, then verifies that no Serve `*.ts.net` route remains;
+- cleanup never enables Funnel as a fallback;
+- before both remote cutover and local-runtime reconstruction, the accepted WP15 Cleanup then WP15 Apply path is executed unconditionally. WP15 Cleanup is the authority that removes a stale task/runtime deployment and disables `omni-cio-runtime`, including partial states where the task/root are already absent but the runtime identity remained enabled;
+- local reconstruction must end with the accepted WP15 task actually `Running`; merely finding a task object is not recovery evidence;
+- a failed apply preserves a sanitized primary reason code and separately reports whether local rollback passed or the sanitized rollback reason. Raw nested command output, credentials, identities and private URLs are not promoted into the reason code;
+- a failed apply with a failed rollback leaves WP22A blocked. It must not be retried blindly on the same implementation head.
+
+The sanitized local-state diagnostic is non-mutating. It is designed for self-hosted CI to report only task states and safety booleans needed to classify a partial deployment: runtime root/marker presence, runtime identity enabled state, loopback listener state, runner firewall presence, Serve/Funnel status availability and whether Serve points at the expected backend port. It does not emit the tailnet hostname, OWNER login, runner identity/SID or secret values.
+
 The runner auditor:
 
 - is intended to execute later as the actual non-admin self-hosted GitHub runner identity;
@@ -114,7 +126,7 @@ The finalizer:
 - records the protected/read-only evidence state as booleans;
 - stores no raw OWNER login, runner identity/SID, private `*.ts.net` URL, Tailscale authentication material, broker secret, full account ID or private portfolio payload.
 
-CI cannot synthesize this OWNER evidence. The dedicated OWNER audit first requires the real local file, then independently proves both runner loopback denial and runner evidence-mutation denial, then validates and uploads only a short-lived sanitized derivative.
+CI cannot synthesize this OWNER evidence. The dedicated OWNER audit first reports the sanitized local deployment state, then requires the real local OWNER evidence. Only after the local evidence exists does it independently prove runner loopback denial and runner evidence-mutation denial, validate the exact implementation binding and upload a short-lived sanitized derivative.
 
 ## Private runtime configuration
 
@@ -154,17 +166,25 @@ The provisioning gate fails closed rather than enabling Funnel. Before acceptanc
 
 The later self-hosted OWNER audit provides the second half of this boundary: while the WP22A runtime is still live, the actual runner identity must fail a direct TCP connection attempt to the loopback backend. A configured firewall rule without a successful negative runner probe is not Exit-Gate evidence.
 
+## Recovery after a failed OWNER apply
+
+A previous reviewed implementation may have changed local deployment state before returning a failure. Do not infer from the absence of a task or runtime directory that the machine is already clean, and do not manually delete Omni-CIO runtime state.
+
+Engineering must first review the sanitized diagnostic from the exact replacement head. After the replacement head has passed all non-OWNER CI, recovery is performed with that exact reviewed head using `-Cleanup`. The corrected Cleanup path resets Serve, removes the remote task/firewall, unconditionally normalizes the accepted WP15 local Web state through Cleanup → Apply and verifies that the reconstructed local Web task is running.
+
+Only after the corrected Cleanup returns PASS may a new `-Apply` be attempted. If Cleanup fails, stop and preserve its sanitized reason code; do not continue to Apply or finalization.
+
 ## OWNER-local commands — only after exact-head non-OWNER CI GREEN
 
-From an elevated PowerShell in the exact clean reviewed checkout, the reviewed apply command is:
+From an elevated PowerShell in the exact clean reviewed checkout, the normal reviewed apply command is:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\infrastructure\windows\provision_wp22a_private_remote_access.ps1" -ExpectedImplementationSha "<EXACT_REVIEWED_HEAD>" -Apply -AsJson
 ```
 
-The script returns the private HTTPS URL locally. Do not paste the raw Tailscale login or any credentials into the command.
+The script returns the private HTTPS URL locally after a successful remote deployment. Do not paste the raw Tailscale login, private URL or credentials into GitHub/chat.
 
-If Tailscale prints a consent URL because tailnet HTTPS has not been enabled, stop at that external consent step. Review the displayed Tailscale node name first; enable HTTPS only if its publication in certificate transparency is acceptable. Then rerun the same exact-head `-Apply` command.
+If Tailscale requires external HTTPS consent, stop at that OWNER decision boundary. Review the Tailscale machine name first; enable HTTPS only if its publication in certificate transparency is acceptable. Then rerun the same exact-head `-Apply` command.
 
 A non-mutating verification after apply is:
 
@@ -172,15 +192,22 @@ A non-mutating verification after apply is:
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\infrastructure\windows\provision_wp22a_private_remote_access.ps1" -ExpectedImplementationSha "<EXACT_REVIEWED_HEAD>" -Verify -AsJson
 ```
 
-Rollback is:
+Rollback/recovery is:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\infrastructure\windows\provision_wp22a_private_remote_access.ps1" -ExpectedImplementationSha "<EXACT_REVIEWED_HEAD>" -Cleanup -AsJson
 ```
 
-Cleanup does **not** merely restart the pre-cutover WP15 scheduled task, because WP22A rotates the runtime-account password when registering its own task and the older task credential may therefore be stale. Cleanup instead disables Serve, removes the WP22A task and runner firewall rule, invokes the accepted WP15 Cleanup path, and recreates/starts the accepted local Web runtime through WP15 Apply with a fresh runtime credential and its own readiness checks. It never enables Funnel as a fallback.
+Cleanup does **not** merely restart the pre-cutover WP15 scheduled task, because WP22A rotates the runtime-account password when registering its own task and the older task credential may therefore be stale. Cleanup resets Serve, removes the WP22A task and runner firewall rule, invokes accepted WP15 Cleanup unconditionally, then recreates/starts the accepted local Web runtime through WP15 Apply with a fresh runtime credential and readiness checks. It never enables Funnel as a fallback.
 
-The same reconstruction is attempted automatically if `-Apply` fails after cutover. If the remote apply and the local-runtime reconstruction both fail, the provisioner reports a dedicated rollback failure and WP22A remains blocked.
+The same reconstruction is attempted automatically if `-Apply` fails after cutover. Expected sanitized failure shapes distinguish the two outcomes:
+
+```text
+WP22A_APPLY_FAILED:<PRIMARY_REASON>;LOCAL_ROLLBACK_PASS
+WP22A_APPLY_FAILED:<PRIMARY_REASON>;LOCAL_ROLLBACK_FAILED:<ROLLBACK_REASON>
+```
+
+Both are failures. `LOCAL_ROLLBACK_PASS` only means the accepted local Web was reconstructed after the failed remote attempt; it does not satisfy WP22A.
 
 ## Expected phone/browser behavior
 
@@ -230,7 +257,7 @@ Do not include the actual tailnet login, runner name/SID, authentication keys, b
 
 If the private remote path is unsafe or unavailable:
 
-- run the reviewed `-Cleanup` mode;
+- run the reviewed exact-head `-Cleanup` mode;
 - require the accepted WP15 local Web reconstruction to pass instead of assuming a stale task is usable;
 - keep `REAL_TRADING_ENABLED=false`;
 - keep `trading_methods=false`;
