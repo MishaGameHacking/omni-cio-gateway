@@ -15,6 +15,7 @@ OWNER_FINALIZER = (
 OWNER_WORKFLOW = (
     ROOT / ".github" / "workflows" / "v10-wp22a-owner-private-remote-audit.yml"
 )
+LOCAL_APP_FACTORY = ROOT / "apps" / "api" / "app.py"
 REMOTE_FACTORY = ROOT / "apps" / "api" / "wp22a_remote.py"
 
 
@@ -30,6 +31,7 @@ def test_provisioner_blocks_runner_loopback_and_rebuilds_local_runtime_on_rollba
     assert "-RemoteAddress 127.0.0.1" in source
     assert "-LocalUser $runnerSddl" in source
     assert "Get-NetFirewallSecurityFilter" in source
+    assert '$expectedRunnerSddl = "D:(A;;CC;;;$runnerSid)"' in source
     assert "WP22A_RUNNER_LOOPBACK_FIREWALL_NOT_BOUND" in source
     assert 'Arguments @("funnel", "status") -AllowFailure' in source
     assert "WP22A_TAILSCALE_FUNNEL_STATUS_UNAVAILABLE" in source
@@ -44,6 +46,7 @@ def test_provisioner_blocks_runner_loopback_and_rebuilds_local_runtime_on_rollba
     assert "$baseTaskPresent =" not in source
     assert "WP22A_LOCAL_WEB_ROLLBACK_NOT_RUNNING" in source
     assert "Start-ScheduledTask -TaskName $baseTaskName" not in source
+    assert '"::1"' not in source
 
 
 def test_provisioner_preserves_sanitized_primary_and_rollback_failure_reasons() -> None:
@@ -88,6 +91,7 @@ def test_sanitized_local_diagnostic_treats_protected_paths_as_state_not_failure(
     assert "raw_owner_login_emitted = $false" in source
     assert "raw_runner_identity_emitted = $false" in source
     assert "secret_value_emitted = $false" in source
+    assert '"::1"' not in source
 
 
 def test_sanitized_local_diagnostic_keeps_scheduler_result_without_message_or_identity() -> (
@@ -110,10 +114,21 @@ def test_sanitized_local_diagnostic_keeps_scheduler_result_without_message_or_id
     assert "UserContext" not in source
 
 
-def test_remote_factory_uses_wp22a_short_session_policy() -> None:
-    source = REMOTE_FACTORY.read_text(encoding="utf-8")
-    assert "REMOTE_SESSION_POLICY" in source
-    assert "policy=REMOTE_SESSION_POLICY" in source
+def test_remote_factory_uses_wp22a_short_session_policy_for_create_and_resolve() -> (
+    None
+):
+    remote_source = REMOTE_FACTORY.read_text(encoding="utf-8")
+    local_source = LOCAL_APP_FACTORY.read_text(encoding="utf-8")
+    assert (
+        "create_local_private_app(session_policy=REMOTE_SESSION_POLICY)"
+        in remote_source
+    )
+    assert "policy=REMOTE_SESSION_POLICY" in remote_source
+    assert "session_policy: SessionPolicyV1 | None = None" in local_source
+    assert (
+        "PostgresWebSessionRegistryV1(connection, policy=session_policy)"
+        in local_source
+    )
 
 
 def test_owner_finalizer_protects_evidence_with_runner_read_only_acl() -> None:
@@ -126,6 +141,7 @@ def test_owner_finalizer_protects_evidence_with_runner_read_only_acl() -> None:
     assert "runner_evidence_write_allowed = $false" in source
     assert "raw_runner_identity_collected = $false" in source
     assert "raw_runner_sid_collected = $false" in source
+    assert "local_app_factory_sha256" in source
 
 
 def test_runner_auditor_requires_live_denials_for_backend_and_owner_evidence() -> None:
@@ -137,21 +153,33 @@ def test_runner_auditor_requires_live_denials_for_backend_and_owner_evidence() -
     ]
     assert "Get-NetTCPConnection -State Listen" in source
     assert "Get-NetFirewallSecurityFilter" in source
+    assert '$expectedRunnerSddl = "D:(A;;CC;;;$RunnerSid)"' in source
     assert "[System.Net.Sockets.TcpClient]::new()" in source
-    assert "catch [System.Net.Sockets.SocketException] { return $true }" in connection_probe
+    assert "function Get-TailscaleSelfIdentity" in source
+    assert "function Test-RemoteTaskIdentityBinding" in source
+    assert "function Test-RunnerPrivateServeSpoofDenied" in source
+    assert "$handler.UseProxy = $false" in source
+    assert '"Tailscale-User-Login"' in source
+    assert (
+        "catch [System.Net.Sockets.SocketException] { return $true }"
+        in connection_probe
+    )
     assert "catch { return $false }" in connection_probe
     assert "remote_task_running_after_probe" in source
     assert "loopback_listener_present_after_probe" in source
     assert "Test-FileWriteDenied" in source
     assert "Test-CreateDenied" in source
     assert "Test-RenameDenied" in source
-    assert '"WP22A_RUNNER_LOOPBACK_AND_EVIDENCE_MUTATION_DENIED"' in source
+    assert '"WP22A_RUNNER_NETWORK_AND_EVIDENCE_MUTATION_DENIED"' in source
     assert "runner_loopback_connection_denied" in source
+    assert "remote_task_identity_binding_current" in source
+    assert "runner_private_serve_identity_spoof_denied" in source
     assert "runner_owner_evidence_file_write_denied" in source
     assert "runner_owner_evidence_create_denied" in source
     assert "runner_owner_evidence_rename_denied" in source
     assert "raw_runner_identity_emitted = $false" in source
     assert "raw_runner_sid_emitted = $false" in source
+    assert '"::1"' not in source
 
 
 def test_owner_audit_reports_sanitized_state_before_requiring_owner_evidence() -> None:

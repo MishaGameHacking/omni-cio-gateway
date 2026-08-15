@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import hashlib
 import ipaddress
+import re
 import secrets
 from threading import RLock
 import time
@@ -29,8 +30,12 @@ REMOTE_SESSION_POLICY = SessionPolicyV1(
     idle_lifetime=timedelta(hours=2),
     absolute_lifetime=timedelta(hours=24),
 )
-_UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+_SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 _LOCAL_HOSTS = frozenset({"127.0.0.1", "localhost"})
+_TAILNET_HOST_PATTERN = re.compile(
+    r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
+    r"(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*\.ts\.net"
+)
 _REMOTE_VERIFIED_STATE = "wp22a_private_remote_verified"
 _REMOTE_STATUS_PATH = "/api/v10/web/private-tailnet-login/status"
 _SESSION_TERMINATION_PATHS = frozenset(
@@ -77,7 +82,7 @@ class ExternalAccessPolicyV1:
     def __post_init__(self) -> None:
         host = self.canonical_host.strip().lower().rstrip(".")
         digest = self.owner_login_sha256.strip().lower()
-        if not host or ":" in host or "/" in host or not host.endswith(".ts.net"):
+        if len(host) > 253 or _TAILNET_HOST_PATTERN.fullmatch(host) is None:
             raise ValueError("WP22A_CANONICAL_HOST_INVALID")
         if len(digest) != 64 or any(ch not in "0123456789abcdef" for ch in digest):
             raise ValueError("WP22A_OWNER_LOGIN_FINGERPRINT_INVALID")
@@ -144,26 +149,33 @@ def _is_loopback(request: Request) -> bool:
         return False
 
 
-def _host_without_port(value: str) -> str:
+def _local_host_matches(value: str) -> bool:
     candidate = value.strip().lower().rstrip(".")
-    if candidate.startswith("["):
-        return candidate
-    return candidate.split(":", 1)[0]
-
-
-def _remote_host_matches(value: str, canonical_host: str) -> bool:
-    candidate = value.strip().lower().rstrip(".")
+    if candidate.endswith(":"):
+        return False
     try:
         parsed = urlsplit(f"//{candidate}")
-        port = parsed.port
+        _ = parsed.port
     except ValueError:
         return False
     return (
         parsed.username is None
         and parsed.password is None
-        and parsed.hostname == canonical_host
-        and port in {None, 443}
+        and parsed.hostname in _LOCAL_HOSTS
+        and parsed.path == ""
+        and not parsed.query
+        and not parsed.fragment
     )
+
+
+def _remote_host_matches(value: str, canonical_host: str) -> bool:
+    candidate = value.strip().lower()
+    return candidate in {
+        canonical_host,
+        f"{canonical_host}.",
+        f"{canonical_host}:443",
+        f"{canonical_host}.:443",
+    }
 
 
 def _origin_host(value: str) -> str | None:
@@ -274,10 +286,9 @@ class ExternalAccessSecurityMiddlewareV1(BaseHTTPMiddleware):
         self, request: Request, call_next: Callable[..., Any]
     ) -> Response:
         raw_host = request.headers.get("host", "")
-        host = _host_without_port(raw_host)
         remote_request = _remote_host_matches(raw_host, self._policy.canonical_host)
         if not remote_request:
-            if host not in _LOCAL_HOSTS:
+            if not _local_host_matches(raw_host):
                 return JSONResponse({"detail": "INVALID_HOST"}, status_code=400)
             if request.method == "GET" and request.url.path == _REMOTE_STATUS_PATH:
                 return JSONResponse({"enabled": False})
@@ -302,7 +313,7 @@ class ExternalAccessSecurityMiddlewareV1(BaseHTTPMiddleware):
                 path=request.url.path,
             )
 
-        if request.method in _UNSAFE_METHODS:
+        if request.method not in _SAFE_METHODS:
             origin = request.headers.get("origin", "")
             if _origin_host(origin) != self._policy.canonical_host:
                 return _remote_error("ORIGIN_REQUIRED", 403, path=request.url.path)

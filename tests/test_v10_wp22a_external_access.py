@@ -131,6 +131,16 @@ def test_policy_rejects_non_tailnet_host_and_invalid_owner_fingerprint() -> None
 
     try:
         ExternalAccessPolicyV1(
+            canonical_host="owner..example-tailnet.ts.net",
+            owner_login_sha256=OWNER_SHA256,
+        )
+    except ValueError as exc:
+        assert str(exc) == "WP22A_CANONICAL_HOST_INVALID"
+    else:
+        raise AssertionError("malformed tailnet host must fail closed")
+
+    try:
+        ExternalAccessPolicyV1(
             canonical_host=HOST,
             owner_login_sha256="not-a-digest",
         )
@@ -160,6 +170,11 @@ def test_tailnet_status_crosses_existing_local_trusted_host_only_after_outer_ver
     response = client.get("/api/v10/web/private-tailnet-login/status")
     assert response.status_code == 200
     assert response.json() == {"enabled": True}
+    with_default_https_port = client.get(
+        "/api/v10/web/private-tailnet-login/status",
+        headers={"Host": f"{HOST}:443"},
+    )
+    assert with_default_https_port.status_code == 200
     assert response.headers["strict-transport-security"] == "max-age=31536000"
     assert response.headers["cache-control"] == "no-store"
     csp = response.headers["content-security-policy"]
@@ -338,6 +353,27 @@ def test_host_origin_and_csrf_abuse_are_rejected() -> None:
     assert response.status_code == 400
     assert response.json()["detail"] == "INVALID_HOST"
 
+    owner = remote_client(app)
+    for malformed_host in (f"{HOST}/path", f"{HOST}?query", f"{HOST}#fragment"):
+        response = owner.get(
+            "/api/v10/web/private-tailnet-login/status",
+            headers={"Host": malformed_host},
+        )
+        assert response.status_code == 400
+        assert response.json()["detail"] == "INVALID_HOST"
+
+    local = TestClient(
+        app,
+        base_url="http://127.0.0.1",
+        client=("127.0.0.1", 51004),
+    )
+    response = local.get(
+        "/api/v10/web/private-tailnet-login/status",
+        headers={"Host": "127.0.0.1/path"},
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "INVALID_HOST"
+
     client = remote_client(app)
     response = client.post(
         "/api/v10/web/private-tailnet-login",
@@ -358,6 +394,21 @@ def test_host_origin_and_csrf_abuse_are_rejected() -> None:
     )
     assert response.status_code == 200
     assert response.json() == {"authenticated": True}
+
+
+def test_nonstandard_unsafe_method_requires_origin_and_csrf() -> None:
+    client = remote_client(make_app())
+    response = client.request("PROPFIND", "/protected")
+    assert response.status_code == 403
+    assert response.json()["detail"] == "ORIGIN_REQUIRED"
+
+    response = client.request(
+        "PROPFIND",
+        "/protected",
+        headers={"Origin": ORIGIN},
+    )
+    assert response.status_code == 403
+    assert response.json()["detail"] == "CSRF_REJECTED"
 
 
 def test_cross_origin_cors_is_not_enabled() -> None:

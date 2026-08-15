@@ -14,6 +14,7 @@ FILES = {
     / "architecture"
     / "V10_WP22A_EXECUTION_CONTRACT.md",
     "external_access_sha256": ROOT / "omni_cio" / "web" / "external_access_v1.py",
+    "local_app_factory_sha256": ROOT / "apps" / "api" / "app.py",
     "remote_factory_sha256": ROOT / "apps" / "api" / "wp22a_remote.py",
     "provisioner_sha256": ROOT
     / "infrastructure"

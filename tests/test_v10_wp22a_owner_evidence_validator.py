@@ -60,6 +60,7 @@ def valid_payload() -> dict[str, object]:
 def test_validator_accepts_only_exact_sanitized_shape_and_current_fingerprints() -> (
     None
 ):
+    assert "local_app_factory_sha256" in FILES
     result = validate(valid_payload(), expected_sha=EXPECTED_SHA)
     assert result["status"] == "PASS"
     assert result["implementation_sha"] == EXPECTED_SHA

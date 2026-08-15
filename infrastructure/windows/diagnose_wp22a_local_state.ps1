@@ -149,7 +149,7 @@ function Get-ListenerState {
         }
         $loopbackOnly = $true
         foreach ($listener in $listeners) {
-            if ([string]$listener.LocalAddress -notin @("127.0.0.1", "::1")) {
+            if ([string]$listener.LocalAddress -ne "127.0.0.1") {
                 $loopbackOnly = $false
             }
         }

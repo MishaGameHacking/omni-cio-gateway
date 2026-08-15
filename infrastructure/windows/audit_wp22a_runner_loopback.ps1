@@ -50,6 +50,102 @@ function Get-RunnerSidValue {
     return Get-AccountSidValue -AccountName $startName
 }
 
+function Resolve-TailscaleExe {
+    $candidate = Get-Command tailscale.exe -ErrorAction SilentlyContinue
+    if ($null -ne $candidate) { return $candidate.Source }
+    $paths = @(
+        (Join-Path $env:ProgramFiles "Tailscale\tailscale.exe"),
+        (Join-Path ${env:ProgramFiles(x86)} "Tailscale\tailscale.exe")
+    ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+    foreach ($path in $paths) {
+        if (Test-Path -LiteralPath $path -PathType Leaf) { return $path }
+    }
+    throw "WP22A_TAILSCALE_CLI_NOT_INSTALLED"
+}
+
+function Get-TailscaleSelfIdentity {
+    $tailscale = Resolve-TailscaleExe
+    $previousErrorActionPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        $output = @(& $tailscale status --json 2>&1)
+        $exitCode = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+    if ($exitCode -ne 0) { throw "WP22A_TAILSCALE_STATUS_UNAVAILABLE" }
+    try {
+        $status = (($output | ForEach-Object { [string]$_ }) -join "`n") |
+            ConvertFrom-Json -ErrorAction Stop
+    }
+    catch { throw "WP22A_TAILSCALE_STATUS_INVALID" }
+    if ([string]$status.BackendState -ne "Running") {
+        throw "WP22A_TAILSCALE_NOT_RUNNING"
+    }
+    if ($null -eq $status.Self -or -not [bool]$status.Self.Online) {
+        throw "WP22A_TAILSCALE_SELF_OFFLINE"
+    }
+    $tagsProperty = @(
+        $status.Self.PSObject.Properties |
+            Where-Object { $_.Name -eq "Tags" }
+    ) | Select-Object -First 1
+    $tags = if ($null -ne $tagsProperty) { @($tagsProperty.Value) } else { @() }
+    if (@($tags | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }).Count -ne 0) {
+        throw "WP22A_TAILSCALE_TAGGED_NODE_UNSUPPORTED"
+    }
+
+    $hostName = ([string]$status.Self.DNSName).Trim().ToLowerInvariant().TrimEnd('.')
+    if ($hostName -notmatch '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*\.ts\.net$') {
+        throw "WP22A_TAILSCALE_DNS_NAME_INVALID"
+    }
+    $userId = [string]$status.Self.UserID
+    $property = @(
+        $status.User.PSObject.Properties |
+            Where-Object { $_.Name -eq $userId }
+    ) | Select-Object -First 1
+    if ($null -eq $property) { throw "WP22A_TAILSCALE_OWNER_IDENTITY_UNAVAILABLE" }
+    $login = ([string]$property.Value.LoginName).Trim()
+    if ([string]::IsNullOrWhiteSpace($login)) {
+        throw "WP22A_TAILSCALE_OWNER_LOGIN_EMPTY"
+    }
+    if ($login.ToCharArray() | Where-Object { [int]$_ -gt 127 }) {
+        throw "WP22A_TAILSCALE_OWNER_LOGIN_NON_ASCII_UNSUPPORTED"
+    }
+
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($login.ToLowerInvariant())
+        $digest = $sha.ComputeHash($bytes)
+        $fingerprint = -join ($digest | ForEach-Object { $_.ToString("x2") })
+    }
+    finally { $sha.Dispose() }
+    return [ordered]@{
+        host = $hostName
+        owner_login = $login
+        owner_login_sha256 = $fingerprint
+    }
+}
+
+function Test-RemoteTaskIdentityBinding {
+    param(
+        [Parameter(Mandatory = $true)]$Task,
+        [Parameter(Mandatory = $true)][System.Collections.IDictionary]$Identity
+    )
+
+    $actions = @($Task.Actions)
+    if ($actions.Count -ne 1) { return $false }
+    $arguments = [string]$actions[0].Arguments
+    $hostPattern = '(?i)(?:^|\s)-ExternalHost\s+' +
+        [regex]::Escape([string]$Identity.host) + '(?:\s|$)'
+    $fingerprintPattern = '(?i)(?:^|\s)-OwnerLoginSha256\s+' +
+        [regex]::Escape([string]$Identity.owner_login_sha256) + '(?:\s|$)'
+    return (
+        [regex]::IsMatch($arguments, $hostPattern) -and
+        [regex]::IsMatch($arguments, $fingerprintPattern)
+    )
+}
+
 function Get-ReviewedHead {
     $expected = $ExpectedImplementationSha.Trim().ToLowerInvariant()
     if ($expected -notmatch '^[0-9a-f]{40}$') { throw "WP22A_EXPECTED_SHA_INVALID" }
@@ -77,11 +173,15 @@ function Test-RunnerFirewallBinding {
     $remotePorts = @($portFilter.RemotePort | ForEach-Object { [string]$_ })
     $remoteAddresses = @($addressFilter.RemoteAddress | ForEach-Object { [string]$_ })
     $localUser = [string]$securityFilter.LocalUser
+    $expectedRunnerSddl = "D:(A;;CC;;;$RunnerSid)"
     return (
         [string]$portFilter.Protocol -eq "TCP" -and
         $remotePorts -contains [string]$Port -and
         $remoteAddresses -contains "127.0.0.1" -and
-        $localUser.IndexOf($RunnerSid, [System.StringComparison]::OrdinalIgnoreCase) -ge 0
+        $localUser.Equals(
+            $expectedRunnerSddl,
+            [System.StringComparison]::OrdinalIgnoreCase
+        )
     )
 }
 
@@ -89,7 +189,7 @@ function Test-LoopbackListenerPresent {
     $listeners = @(Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue)
     if ($listeners.Count -eq 0) { return $false }
     foreach ($listener in $listeners) {
-        if ([string]$listener.LocalAddress -notin @("127.0.0.1", "::1")) { return $false }
+        if ([string]$listener.LocalAddress -ne "127.0.0.1") { return $false }
     }
     return $true
 }
@@ -110,6 +210,47 @@ function Test-RunnerConnectionDenied {
         finally { $async.AsyncWaitHandle.Close() }
     }
     finally { $client.Dispose() }
+}
+
+function Test-RunnerPrivateServeSpoofDenied {
+    param(
+        [Parameter(Mandatory = $true)][string]$HostName,
+        [Parameter(Mandatory = $true)][string]$OwnerLogin
+    )
+
+    Add-Type -AssemblyName System.Net.Http -ErrorAction SilentlyContinue
+    $handler = $null
+    $client = $null
+    $request = $null
+    $response = $null
+    try {
+        $handler = [System.Net.Http.HttpClientHandler]::new()
+        $handler.UseProxy = $false
+        $handler.AllowAutoRedirect = $false
+        $client = [System.Net.Http.HttpClient]::new($handler)
+        $client.Timeout = [TimeSpan]::FromSeconds(10)
+        $request = [System.Net.Http.HttpRequestMessage]::new(
+            [System.Net.Http.HttpMethod]::Get,
+            "https://$HostName/api/v10/web/session"
+        )
+        [void]$request.Headers.TryAddWithoutValidation(
+            "Tailscale-User-Login",
+            $OwnerLogin
+        )
+        $response = $client.SendAsync($request).GetAwaiter().GetResult()
+        return [int]$response.StatusCode -eq 403
+    }
+    catch { return $false }
+    finally {
+        if ($null -ne $response) { $response.Dispose() }
+        if ($null -ne $request) { $request.Dispose() }
+        if ($null -ne $client) {
+            $client.Dispose()
+        }
+        elseif ($null -ne $handler) {
+            $handler.Dispose()
+        }
+    }
 }
 
 function Test-FileWriteDenied {
@@ -191,6 +332,11 @@ $runnerIdentityMatchesService = -not [string]::IsNullOrWhiteSpace($currentSid) -
 $runnerIsAdministrator = Test-Administrator
 $remoteTask = Get-ScheduledTask -TaskName $remoteTaskName -ErrorAction SilentlyContinue
 $remoteTaskRunning = $null -ne $remoteTask -and [string]$remoteTask.State -eq "Running"
+$tailnetIdentity = Get-TailscaleSelfIdentity
+$remoteTaskIdentityBinding = (
+    $null -ne $remoteTask -and
+    (Test-RemoteTaskIdentityBinding -Task $remoteTask -Identity $tailnetIdentity)
+)
 $loopbackListenerPresent = Test-LoopbackListenerPresent
 $firewallBound = Test-RunnerFirewallBinding -RunnerSid $runnerSid
 $evidencePresent = Test-Path -LiteralPath $evidencePath -PathType Leaf
@@ -219,6 +365,20 @@ if (
 ) {
     $connectionDenied = Test-RunnerConnectionDenied
 }
+$privateServeSpoofDenied = $false
+if (
+    $runnerIdentityMatchesService -and
+    -not $runnerIsAdministrator -and
+    $remoteTaskRunning -and
+    $remoteTaskIdentityBinding -and
+    $loopbackListenerPresent -and
+    $firewallBound -and
+    $connectionDenied
+) {
+    $privateServeSpoofDenied = Test-RunnerPrivateServeSpoofDenied `
+        -HostName $tailnetIdentity.host `
+        -OwnerLogin $tailnetIdentity.owner_login
+}
 $remoteTaskAfterProbe = Get-ScheduledTask -TaskName $remoteTaskName -ErrorAction SilentlyContinue
 $remoteTaskRunningAfterProbe = (
     $null -ne $remoteTaskAfterProbe -and
@@ -230,11 +390,13 @@ $ready = (
     $runnerIdentityMatchesService -and
     -not $runnerIsAdministrator -and
     $remoteTaskRunning -and
+    $remoteTaskIdentityBinding -and
     $loopbackListenerPresent -and
     $remoteTaskRunningAfterProbe -and
     $loopbackListenerPresentAfterProbe -and
     $firewallBound -and
     $connectionDenied -and
+    $privateServeSpoofDenied -and
     $evidencePresent -and
     $evidenceReadable -and
     $evidenceFileWriteDenied -and
@@ -242,7 +404,7 @@ $ready = (
     $evidenceRenameDenied
 )
 $reason = if ($ready) {
-    "WP22A_RUNNER_LOOPBACK_AND_EVIDENCE_MUTATION_DENIED"
+    "WP22A_RUNNER_NETWORK_AND_EVIDENCE_MUTATION_DENIED"
 }
 elseif (-not $runnerIdentityMatchesService) {
     "WP22A_RUNNER_IDENTITY_MISMATCH"
@@ -267,23 +429,31 @@ elseif (
 elseif (-not $firewallBound) {
     "WP22A_RUNNER_LOOPBACK_FIREWALL_NOT_BOUND"
 }
-else {
+elseif (-not $remoteTaskIdentityBinding) {
+    "WP22A_REMOTE_TASK_IDENTITY_BINDING_INVALID"
+}
+elseif (-not $connectionDenied) {
     "WP22A_RUNNER_LOOPBACK_CONNECT_ALLOWED"
+}
+else {
+    "WP22A_RUNNER_PRIVATE_SERVE_IDENTITY_SPOOF_ALLOWED"
 }
 
 $result = [ordered]@{
     schema_version = "1"
     work_package = "WP22A"
-    evidence_class = "RUNNER_LOOPBACK_AND_OWNER_EVIDENCE_AUDIT"
+    evidence_class = "RUNNER_NETWORK_AND_OWNER_EVIDENCE_AUDIT"
     implementation_sha = $sha
     runner_identity_matches_service = [bool]$runnerIdentityMatchesService
     runner_is_administrator = [bool]$runnerIsAdministrator
     remote_task_running = [bool]$remoteTaskRunning
+    remote_task_identity_binding_current = [bool]$remoteTaskIdentityBinding
     loopback_listener_present = [bool]$loopbackListenerPresent
     remote_task_running_after_probe = [bool]$remoteTaskRunningAfterProbe
     loopback_listener_present_after_probe = [bool]$loopbackListenerPresentAfterProbe
     runner_loopback_firewall_bound = [bool]$firewallBound
     runner_loopback_connection_denied = [bool]$connectionDenied
+    runner_private_serve_identity_spoof_denied = [bool]$privateServeSpoofDenied
     owner_evidence_present = [bool]$evidencePresent
     owner_evidence_readable = [bool]$evidenceReadable
     runner_owner_evidence_file_write_denied = [bool]$evidenceFileWriteDenied

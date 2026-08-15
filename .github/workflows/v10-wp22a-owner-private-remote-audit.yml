@@ -9,6 +9,7 @@ on:
       - "docs/operations/V10_WP22A_**"
       - "infrastructure/windows/*wp22a*"
       - "omni_cio/web/external_access_v1.py"
+      - "apps/api/app.py"
       - "apps/api/wp22a_remote.py"
       - "apps/web/**"
       - "scripts/*wp22a*"

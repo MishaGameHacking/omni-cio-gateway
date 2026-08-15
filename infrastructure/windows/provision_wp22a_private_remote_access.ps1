@@ -294,11 +294,15 @@ function Test-RunnerLoopbackFirewall {
     $remotePorts = @($portFilter.RemotePort | ForEach-Object { [string]$_ })
     $remoteAddresses = @($addressFilter.RemoteAddress | ForEach-Object { [string]$_ })
     $localUser = [string]$securityFilter.LocalUser
+    $expectedRunnerSddl = "D:(A;;CC;;;$runnerSid)"
     return (
         [string]$portFilter.Protocol -eq "TCP" -and
         $remotePorts -contains [string]$Port -and
         $remoteAddresses -contains "127.0.0.1" -and
-        $localUser.IndexOf($runnerSid, [System.StringComparison]::OrdinalIgnoreCase) -ge 0
+        $localUser.Equals(
+            $expectedRunnerSddl,
+            [System.StringComparison]::OrdinalIgnoreCase
+        )
     )
 }
 
@@ -386,7 +390,7 @@ function Test-BackendLoopback {
     $listeners = @(Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue)
     if ($listeners.Count -eq 0) { return $false }
     foreach ($listener in $listeners) {
-        if ([string]$listener.LocalAddress -notin @("127.0.0.1", "::1")) { return $false }
+        if ([string]$listener.LocalAddress -ne "127.0.0.1") { return $false }
     }
     return $true
 }

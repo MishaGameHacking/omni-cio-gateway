@@ -38,7 +38,7 @@ def create_private_remote_app() -> FastAPI:
         canonical_host=_required_env("OMNI_V10_WEB_EXTERNAL_HOST"),
         owner_login_sha256=_required_env("OMNI_V10_TAILSCALE_OWNER_LOGIN_SHA256"),
     )
-    app = create_local_private_app()
+    app = create_local_private_app(session_policy=REMOTE_SESSION_POLICY)
 
     raw_connection = connect_postgres("")
     _configure_long_lived_web_connection(raw_connection)

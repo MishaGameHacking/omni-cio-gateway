@@ -18,6 +18,7 @@ $runnerAuditor = Join-Path $repoRoot "infrastructure\windows\audit_wp22a_runner_
 $ownerFinalizer = $PSCommandPath
 $executionContract = Join-Path $repoRoot "docs\architecture\V10_WP22A_EXECUTION_CONTRACT.md"
 $externalAccess = Join-Path $repoRoot "omni_cio\web\external_access_v1.py"
+$localAppFactory = Join-Path $repoRoot "apps\api\app.py"
 $remoteFactory = Join-Path $repoRoot "apps\api\wp22a_remote.py"
 
 function Test-Administrator {
@@ -221,6 +222,7 @@ try {
         $ownerFinalizer,
         $executionContract,
         $externalAccess,
+        $localAppFactory,
         $remoteFactory
     )) {
         if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
@@ -271,6 +273,7 @@ try {
     $fingerprint = [ordered]@{
         execution_contract_sha256 = Get-Sha256Lower -Path $executionContract
         external_access_sha256 = Get-Sha256Lower -Path $externalAccess
+        local_app_factory_sha256 = Get-Sha256Lower -Path $localAppFactory
         remote_factory_sha256 = Get-Sha256Lower -Path $remoteFactory
         provisioner_sha256 = Get-Sha256Lower -Path $provisioner
         runtime_launcher_sha256 = Get-Sha256Lower -Path $runtimeLauncher

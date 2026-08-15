@@ -110,9 +110,11 @@ The runner auditor:
 - requires the remote WP22A task and loopback listener to be live;
 - verifies the runner-bound firewall rule without emitting the raw runner identity or SID;
 - makes a real TCP connection attempt from the runner to `127.0.0.1:<web-port>` and requires that connection to be denied;
+- derives the current local tailnet host/OWNER identity only in memory, verifies the running task's exact host/fingerprint binding, and emits neither value;
+- sends a no-proxy HTTPS request through the node's own Serve endpoint with a forged incoming OWNER identity header and requires the protected session endpoint to return HTTP 403, proving that the self-Serve hairpin cannot authenticate the runner;
 - requires the sanitized OWNER evidence to be readable for validation but not writable by the runner;
 - attempts to open the evidence file for write, create a new file in the evidence directory and rename the OWNER evidence, and requires every mutation attempt to be denied;
-- fails WP22A if the ordinary CI runner can reach the backend directly or manufacture/replace OWNER evidence.
+- fails WP22A if the ordinary CI runner can reach the backend directly, authenticate through its own Serve endpoint, or manufacture/replace OWNER evidence.
 
 The finalizer:
 
