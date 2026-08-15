@@ -45,6 +45,21 @@ function Get-ReviewedHead {
     return $actual
 }
 
+function Get-SafeReasonCode {
+    param(
+        [AllowNull()][string]$Text,
+        [Parameter(Mandatory = $true)][string]$Fallback
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace($Text)) {
+        $matches = [regex]::Matches($Text, '(?<![A-Z0-9_])(?:WP15|WP17|WP22A)_[A-Z0-9_]+')
+        if ($matches.Count -gt 0) {
+            return [string]$matches[$matches.Count - 1].Value
+        }
+    }
+    return $Fallback
+}
+
 function Get-AccountSidValue {
     param([Parameter(Mandatory = $true)][string]$AccountName)
 
@@ -92,20 +107,30 @@ function Invoke-TailscaleText {
     param(
         [Parameter(Mandatory = $true)][string]$Exe,
         [Parameter(Mandatory = $true)][string[]]$Arguments,
-        [switch]$AllowFailure
+        [switch]$AllowFailure,
+        [string]$FailureCode = "WP22A_TAILSCALE_COMMAND_FAILED"
     )
-    $output = @(& $Exe @Arguments 2>&1)
-    $exitCode = $LASTEXITCODE
+
+    $previousErrorActionPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        $output = @(& $Exe @Arguments 2>&1)
+        $exitCode = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
     $text = ($output | ForEach-Object { [string]$_ }) -join "`n"
     if (-not $AllowFailure -and $exitCode -ne 0) {
-        throw "WP22A_TAILSCALE_COMMAND_FAILED"
+        throw $FailureCode
     }
-    return [ordered]@{ exit_code = $exitCode; text = $text }
+    return [ordered]@{ exit_code = [int]$exitCode; text = $text }
 }
 
 function Get-TailscaleIdentity {
     param([Parameter(Mandatory = $true)][string]$Exe)
-    $raw = Invoke-TailscaleText -Exe $Exe -Arguments @("status", "--json")
+
+    $raw = Invoke-TailscaleText -Exe $Exe -Arguments @("status", "--json") -FailureCode "WP22A_TAILSCALE_STATUS_UNAVAILABLE"
     try { $status = $raw.text | ConvertFrom-Json -ErrorAction Stop }
     catch { throw "WP22A_TAILSCALE_STATUS_INVALID" }
     if ([string]$status.BackendState -ne "Running") { throw "WP22A_TAILSCALE_NOT_RUNNING" }
@@ -115,9 +140,8 @@ function Get-TailscaleIdentity {
     $tagsProperty = @($status.Self.PSObject.Properties | Where-Object { $_.Name -eq "Tags" }) | Select-Object -First 1
     $tags = if ($null -ne $tagsProperty) { @($tagsProperty.Value) } else { @() }
     $activeTags = @($tags | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
-    if ($activeTags.Count -ne 0) {
-        throw "WP22A_TAILSCALE_TAGGED_NODE_UNSUPPORTED"
-    }
+    if ($activeTags.Count -ne 0) { throw "WP22A_TAILSCALE_TAGGED_NODE_UNSUPPORTED" }
+
     $hostName = ([string]$status.Self.DNSName).Trim().ToLowerInvariant().TrimEnd('.')
     if ($hostName -notmatch '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*\.ts\.net$') {
         throw "WP22A_TAILSCALE_DNS_NAME_INVALID"
@@ -130,6 +154,7 @@ function Get-TailscaleIdentity {
     if ($login.ToCharArray() | Where-Object { [int]$_ -gt 127 }) {
         throw "WP22A_TAILSCALE_OWNER_LOGIN_NON_ASCII_UNSUPPORTED"
     }
+
     $normalized = $login.ToLowerInvariant()
     $sha = [System.Security.Cryptography.SHA256]::Create()
     try {
@@ -143,7 +168,9 @@ function Get-TailscaleIdentity {
 
 function Test-NoFunnel {
     param([Parameter(Mandatory = $true)][string]$Exe)
-    $status = Invoke-TailscaleText -Exe $Exe -Arguments @("funnel", "status")
+
+    $status = Invoke-TailscaleText -Exe $Exe -Arguments @("funnel", "status") -AllowFailure
+    if ($status.exit_code -ne 0) { throw "WP22A_TAILSCALE_FUNNEL_STATUS_UNAVAILABLE" }
     return -not (
         $status.text -match '(?i)Available on the internet:' -or
         $status.text -match '(?i)\(Funnel on\)'
@@ -155,20 +182,26 @@ function Get-ServeState {
         [Parameter(Mandatory = $true)][string]$Exe,
         [Parameter(Mandatory = $true)][string]$HostName
     )
+
     $status = Invoke-TailscaleText -Exe $Exe -Arguments @("serve", "status") -AllowFailure
+    if ($status.exit_code -ne 0) { throw "WP22A_TAILSCALE_SERVE_STATUS_UNAVAILABLE" }
     $target = "127.0.0.1:$Port"
-    $matches = $status.exit_code -eq 0 -and
-        $status.text.IndexOf($HostName, [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -and
+    $matches = $status.text.IndexOf($HostName, [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -and
         $status.text.IndexOf($target, [System.StringComparison]::OrdinalIgnoreCase) -ge 0
-    $anyServe = $status.exit_code -eq 0 -and $status.text -match '(?i)https://[^\s]+\.ts\.net'
+    $anyServe = $status.text -match '(?i)https://[^\s]+\.ts\.net'
     return [ordered]@{ expected = [bool]$matches; any = [bool]$anyServe }
 }
 
 function Disable-ServeChecked {
     param([Parameter(Mandatory = $true)][string]$Exe)
 
-    [void](Invoke-TailscaleText -Exe $Exe -Arguments @("serve", "off") -AllowFailure)
-    $status = Invoke-TailscaleText -Exe $Exe -Arguments @("serve", "status")
+    # Current Tailscale CLI exposes `serve reset` as the supported way to clear
+    # the Serve configuration. The previous bare `serve off` invocation is not a
+    # documented current command and could leave a partially configured route.
+    $reset = Invoke-TailscaleText -Exe $Exe -Arguments @("serve", "reset") -AllowFailure
+    if ($reset.exit_code -ne 0) { throw "WP22A_TAILSCALE_SERVE_RESET_FAILED" }
+    $status = Invoke-TailscaleText -Exe $Exe -Arguments @("serve", "status") -AllowFailure
+    if ($status.exit_code -ne 0) { throw "WP22A_TAILSCALE_SERVE_STATUS_UNAVAILABLE" }
     if ($status.text -match '(?i)https://[^\s]+\.ts\.net') {
         throw "WP22A_TAILSCALE_SERVE_DISABLE_FAILED"
     }
@@ -178,7 +211,10 @@ function New-RandomRuntimePassword {
     $bytes = New-Object byte[] 48
     $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
     try { $rng.GetBytes($bytes) }
-    finally { $rng.Dispose() }
+    finally {
+        $rng.Dispose()
+        [Array]::Clear($bytes, 0, $bytes.Length)
+    }
     return [Convert]::ToBase64String($bytes) + "!aA7"
 }
 
@@ -187,11 +223,33 @@ function Invoke-BaseProvisioner {
         [Parameter(Mandatory = $true)][string]$Sha,
         [Parameter(Mandatory = $true)][ValidateSet("Apply", "Cleanup")][string]$Mode
     )
-    $switchName = "-$Mode"
-    & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $baseProvisioner `
-        -ExpectedImplementationSha $Sha $switchName -Port $Port *> $null
-    if ($LASTEXITCODE -ne 0) {
-        throw ("WP22A_BASE_WEB_{0}_FAILED" -f $Mode.ToUpperInvariant())
+
+    $modeArgument = if ($Mode -eq "Apply") { "-Apply" } else { "-Cleanup" }
+    $arguments = @(
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy", "Bypass",
+        "-File", $baseProvisioner,
+        "-ExpectedImplementationSha", $Sha,
+        $modeArgument,
+        "-Port", [string]$Port,
+        "-AsJson"
+    )
+
+    $previousErrorActionPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        $output = @(& powershell.exe @arguments 2>&1)
+        $exitCode = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+    if ($exitCode -ne 0) {
+        $text = ($output | ForEach-Object { [string]$_ }) -join "`n"
+        $fallback = "WP22A_BASE_WEB_{0}_FAILED" -f $Mode.ToUpperInvariant()
+        $reason = Get-SafeReasonCode -Text $text -Fallback $fallback
+        throw $reason
     }
 }
 
@@ -247,9 +305,8 @@ function Restore-LocalWebTask {
     )
 
     Disable-ServeChecked -Exe $TailscaleExe
-    if (-not (Test-NoFunnel -Exe $TailscaleExe)) {
-        throw "WP22A_FUNNEL_PUBLIC_INGRESS_ACTIVE"
-    }
+    if (-not (Test-NoFunnel -Exe $TailscaleExe)) { throw "WP22A_FUNNEL_PUBLIC_INGRESS_ACTIVE" }
+
     Stop-ScheduledTask -TaskName $remoteTaskName -ErrorAction SilentlyContinue
     Unregister-ScheduledTask -TaskName $remoteTaskName -Confirm:$false -ErrorAction SilentlyContinue
     Remove-RunnerLoopbackFirewall
@@ -259,6 +316,11 @@ function Restore-LocalWebTask {
         Invoke-BaseProvisioner -Sha $Sha -Mode Cleanup
     }
     Invoke-BaseProvisioner -Sha $Sha -Mode Apply
+
+    $baseTask = Get-ScheduledTask -TaskName $baseTaskName -ErrorAction SilentlyContinue
+    if ($null -eq $baseTask -or [string]$baseTask.State -ne "Running") {
+        throw "WP22A_LOCAL_WEB_ROLLBACK_NOT_RUNNING"
+    }
 }
 
 function Install-RemoteTask {
@@ -278,12 +340,8 @@ function Install-RemoteTask {
     Invoke-BaseProvisioner -Sha $Sha -Mode Apply
 
     $launcher = Join-Path $appRoot $launcherRelative
-    if (-not (Test-Path -LiteralPath $launcher -PathType Leaf)) {
-        throw "WP22A_REMOTE_LAUNCHER_MISSING"
-    }
-    if (-not (Test-Path -LiteralPath $deploymentMarker -PathType Leaf)) {
-        throw "WP22A_DEPLOYMENT_MARKER_MISSING"
-    }
+    if (-not (Test-Path -LiteralPath $launcher -PathType Leaf)) { throw "WP22A_REMOTE_LAUNCHER_MISSING" }
+    if (-not (Test-Path -LiteralPath $deploymentMarker -PathType Leaf)) { throw "WP22A_DEPLOYMENT_MARKER_MISSING" }
     if ((Get-Content -LiteralPath $deploymentMarker -Raw).Trim().ToLowerInvariant() -ne $Sha) {
         throw "WP22A_DEPLOYMENT_MARKER_MISMATCH"
     }
@@ -293,16 +351,13 @@ function Install-RemoteTask {
     $runtimeUser = Get-LocalUser -Name $runtimeName -ErrorAction Stop
     $administratorsSid = [System.Security.Principal.SecurityIdentifier]::new("S-1-5-32-544")
     $admins = @(Get-LocalGroupMember -SID $administratorsSid -ErrorAction Stop)
-    if ($admins.SID.Value -contains $runtimeUser.SID.Value) {
-        throw "WP22A_REMOTE_RUNTIME_IS_ADMINISTRATOR"
-    }
+    if ($admins.SID.Value -contains $runtimeUser.SID.Value) { throw "WP22A_REMOTE_RUNTIME_IS_ADMINISTRATOR" }
 
     Install-RunnerLoopbackFirewall
-    if (-not (Test-RunnerLoopbackFirewall)) {
-        throw "WP22A_RUNNER_LOOPBACK_FIREWALL_NOT_BOUND"
-    }
+    if (-not (Test-RunnerLoopbackFirewall)) { throw "WP22A_RUNNER_LOOPBACK_FIREWALL_NOT_BOUND" }
 
     $runtimePassword = New-RandomRuntimePassword
+    $securePassword = $null
     try {
         $securePassword = ConvertTo-SecureString -String $runtimePassword -AsPlainText -Force
         Set-LocalUser -Name $runtimeName -Password $securePassword -ErrorAction Stop
@@ -325,14 +380,14 @@ function Test-BackendLoopback {
     $listeners = @(Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue)
     if ($listeners.Count -eq 0) { return $false }
     foreach ($listener in $listeners) {
-        $address = [string]$listener.LocalAddress
-        if ($address -notin @("127.0.0.1", "::1")) { return $false }
+        if ([string]$listener.LocalAddress -notin @("127.0.0.1", "::1")) { return $false }
     }
     return $true
 }
 
 function Wait-LocalRemoteStatus {
     param([Parameter(Mandatory = $true)][string]$HostName)
+
     for ($attempt = 0; $attempt -lt 30; $attempt++) {
         try {
             $response = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$Port/api/v10/web/private-tailnet-login/status" -Headers @{ Host = $HostName } -TimeoutSec 2
@@ -349,6 +404,7 @@ function Wait-LocalRemoteStatus {
 
 function Test-RemoteOwnerSession {
     param([Parameter(Mandatory = $true)][string]$HostName)
+
     $origin = "https://$HostName"
     $session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
     try {
@@ -366,6 +422,17 @@ function Test-RemoteOwnerSession {
     catch { return $false }
 }
 
+function Enable-ServeChecked {
+    param([Parameter(Mandatory = $true)][string]$Exe)
+
+    $enable = Invoke-TailscaleText -Exe $Exe -Arguments @("serve", "--bg", "http://127.0.0.1:$Port") -AllowFailure
+    if ($enable.exit_code -eq 0) { return }
+    if ($enable.text -match '(?i)https://[^\s]*tailscale[^\s]*') {
+        throw "WP22A_TAILSCALE_HTTPS_CONSENT_REQUIRED"
+    }
+    throw "WP22A_TAILSCALE_SERVE_ENABLE_FAILED"
+}
+
 function Write-Result {
     param([Parameter(Mandatory = $true)][System.Collections.IDictionary]$Result)
     if ($AsJson) { $Result | ConvertTo-Json -Depth 4 -Compress; return }
@@ -374,17 +441,20 @@ function Write-Result {
 
 $sha = Get-ReviewedHead
 $tailscale = Resolve-TailscaleExe
-$identity = Get-TailscaleIdentity -Exe $tailscale
 
 if ($Cleanup) {
     if (-not (Test-Administrator)) { throw "WP22A_CLEANUP_REQUIRES_ADMINISTRATOR" }
     Restore-LocalWebTask -Sha $sha -TailscaleExe $tailscale
     Write-Result -Result ([ordered]@{
-        status = "PASS"; reason = "WP22A_PRIVATE_REMOTE_DISABLED"; public_ingress = $false
+        status = "PASS"
+        reason = "WP22A_PRIVATE_REMOTE_DISABLED_LOCAL_WEB_RESTORED"
+        public_ingress = $false
+        local_web_restored = $true
     })
     exit 0
 }
 
+$identity = Get-TailscaleIdentity -Exe $tailscale
 if (-not (Test-NoFunnel -Exe $tailscale)) { throw "WP22A_FUNNEL_PUBLIC_INGRESS_ACTIVE" }
 $serveBefore = Get-ServeState -Exe $tailscale -HostName $identity.host
 if ($Apply -and $serveBefore.any -and -not $serveBefore.expected) {
@@ -394,26 +464,21 @@ if ($Apply -and $serveBefore.any -and -not $serveBefore.expected) {
 if ($Apply) {
     try {
         Install-RemoteTask -Sha $sha -HostName $identity.host -OwnerFingerprint $identity.owner_login_sha256
-        if (-not (Wait-LocalRemoteStatus -HostName $identity.host)) {
-            throw "WP22A_REMOTE_BACKEND_NOT_READY"
-        }
+        if (-not (Wait-LocalRemoteStatus -HostName $identity.host)) { throw "WP22A_REMOTE_BACKEND_NOT_READY" }
         if (-not (Test-BackendLoopback)) { throw "WP22A_BACKEND_NOT_LOOPBACK_ONLY" }
-        if (-not (Test-RunnerLoopbackFirewall)) {
-            throw "WP22A_RUNNER_LOOPBACK_FIREWALL_NOT_BOUND"
-        }
-        if (-not $serveBefore.expected) {
-            & $tailscale serve --bg "http://127.0.0.1:$Port"
-            if ($LASTEXITCODE -ne 0) { throw "WP22A_TAILSCALE_SERVE_ENABLE_FAILED" }
-        }
+        if (-not (Test-RunnerLoopbackFirewall)) { throw "WP22A_RUNNER_LOOPBACK_FIREWALL_NOT_BOUND" }
+        if (-not $serveBefore.expected) { Enable-ServeChecked -Exe $tailscale }
     }
     catch {
+        $primaryReason = Get-SafeReasonCode -Text ([string]$_.Exception.Message) -Fallback "WP22A_APPLY_FAILED"
         try {
             Restore-LocalWebTask -Sha $sha -TailscaleExe $tailscale
         }
         catch {
-            throw "WP22A_APPLY_FAILED_AND_LOCAL_ROLLBACK_FAILED"
+            $rollbackReason = Get-SafeReasonCode -Text ([string]$_.Exception.Message) -Fallback "WP22A_LOCAL_ROLLBACK_FAILED"
+            throw ("WP22A_APPLY_FAILED:{0};LOCAL_ROLLBACK_FAILED:{1}" -f $primaryReason, $rollbackReason)
         }
-        throw
+        throw ("WP22A_APPLY_FAILED:{0};LOCAL_ROLLBACK_PASS" -f $primaryReason)
     }
 }
 
@@ -425,7 +490,8 @@ if ($serve.expected -and $loopbackOnly -and $runnerFirewallBound) {
     $remoteOwnerSession = Test-RemoteOwnerSession -HostName $identity.host
 }
 
-$ok = $serve.expected -and $loopbackOnly -and $runnerFirewallBound -and $remoteOwnerSession -and (Test-NoFunnel -Exe $tailscale)
+$noFunnel = Test-NoFunnel -Exe $tailscale
+$ok = $serve.expected -and $loopbackOnly -and $runnerFirewallBound -and $remoteOwnerSession -and $noFunnel
 $result = [ordered]@{
     status = $(if ($ok) { "PASS" } else { "FAIL" })
     reason = $(if ($ok) { "WP22A_PRIVATE_REMOTE_RUNTIME_ACCEPTED" } else { "WP22A_PRIVATE_REMOTE_RUNTIME_NOT_READY" })
@@ -433,7 +499,7 @@ $result = [ordered]@{
     backend_loopback_only = [bool]$loopbackOnly
     runner_loopback_firewall_bound = [bool]$runnerFirewallBound
     tailscale_serve_private = [bool]$serve.expected
-    funnel_public_ingress = $false
+    funnel_public_ingress = [bool](-not $noFunnel)
     owner_identity_binding = [bool]$remoteOwnerSession
     secure_server_session = [bool]$remoteOwnerSession
     external_url = "https://$($identity.host)"
