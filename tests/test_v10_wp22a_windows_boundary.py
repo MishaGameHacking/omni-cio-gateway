@@ -79,6 +79,24 @@ def test_sanitized_local_diagnostic_treats_protected_paths_as_state_not_failure(
     assert "secret_value_emitted = $false" in source
 
 
+def test_sanitized_local_diagnostic_keeps_scheduler_result_without_message_or_identity() -> (
+    None
+):
+    source = DIAGNOSTIC.read_text(encoding="utf-8")
+    assert "function Get-TaskSchedulerHistorySafe" in source
+    assert 'LogName = "Microsoft-Windows-TaskScheduler/Operational"' in source
+    assert "task_scheduler_history_query_available" in source
+    assert "wp15_task_history_found" in source
+    assert "wp15_latest_scheduler_event_id" in source
+    assert "wp15_latest_scheduler_event_level" in source
+    assert "wp15_latest_scheduler_result_code" in source
+    assert "wp15_latest_scheduler_event_at_utc" in source
+    assert "task_scheduler_message_emitted = $false" in source
+    assert ".Message" not in source
+    assert "ActionName" not in source
+    assert "UserContext" not in source
+
+
 def test_remote_factory_uses_wp22a_short_session_policy() -> None:
     source = REMOTE_FACTORY.read_text(encoding="utf-8")
     assert "REMOTE_SESSION_POLICY" in source
