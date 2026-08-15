@@ -511,7 +511,6 @@ namespace OmniCioV10
 '@
 }
 
-
 function Test-RemoteTaskOwnsBatchRight {
     $task = Get-ScheduledTask -TaskName $remoteTaskName -ErrorAction SilentlyContinue
     if ($null -eq $task) { return $false }
@@ -549,6 +548,57 @@ function Test-RemoteRuntimeBatchRight {
             $rights -contains $batchRight -and
             $rights -notcontains $denyBatchRight
         )
+    }
+    catch { return $false }
+}
+
+function Test-RemoteTaskExactBinding {
+    param(
+        [Parameter(Mandatory = $true)][string]$Sha,
+        [Parameter(Mandatory = $true)][string]$HostName,
+        [Parameter(Mandatory = $true)][string]$OwnerFingerprint
+    )
+
+    try {
+        $task = Get-ScheduledTask -TaskName $remoteTaskName -ErrorAction Stop
+        if ([string]$task.State -ne "Running") { return $false }
+        $actions = @($task.Actions)
+        if ($actions.Count -ne 1) { return $false }
+        $execute = ([string]$actions[0].Execute).Trim()
+        if (-not $execute.EndsWith("powershell.exe", [System.StringComparison]::OrdinalIgnoreCase)) {
+            return $false
+        }
+
+        $runtimeUser = Get-LocalUser -Name $runtimeName -ErrorAction Stop
+        $taskAccount = [System.Security.Principal.NTAccount]::new(
+            ([string]$task.Principal.UserId).Trim()
+        )
+        $taskSid = $taskAccount.Translate(
+            [System.Security.Principal.SecurityIdentifier]
+        ).Value
+        if ($taskSid -ne $runtimeUser.SID.Value) { return $false }
+
+        $launcher = Join-Path $appRoot $launcherRelative
+        $arguments = [string]$actions[0].Arguments
+        if ($arguments.IndexOf($launcher, [System.StringComparison]::OrdinalIgnoreCase) -lt 0) {
+            return $false
+        }
+        $patterns = @(
+            '(?i)(?:^|\s)-ImplementationSha\s+' + [regex]::Escape($Sha) + '(?:\s|$)',
+            '(?i)(?:^|\s)-ExternalHost\s+' + [regex]::Escape($HostName) + '(?:\s|$)',
+            '(?i)(?:^|\s)-OwnerLoginSha256\s+' + [regex]::Escape($OwnerFingerprint) + '(?:\s|$)',
+            '(?i)(?:^|\s)-Port\s+' + [regex]::Escape([string]$Port) + '(?:\s|$)'
+        )
+        foreach ($pattern in $patterns) {
+            if (-not [regex]::IsMatch($arguments, $pattern)) { return $false }
+        }
+
+        if (-not (Test-Path -LiteralPath $deploymentMarker -PathType Leaf)) {
+            return $false
+        }
+        $markerSha = (Get-Content -LiteralPath $deploymentMarker -Raw -ErrorAction Stop).Trim().ToLowerInvariant()
+        if ($markerSha -ne $Sha) { return $false }
+        return $true
     }
     catch { return $false }
 }
@@ -956,17 +1006,24 @@ function Enable-ServeChecked {
 function Get-RemoteAcceptanceState {
     param(
         [Parameter(Mandatory = $true)][string]$Exe,
+        [Parameter(Mandatory = $true)][string]$Sha,
         [Parameter(Mandatory = $true)][string]$HostName,
-        [Parameter(Mandatory = $true)][string]$OwnerLogin
+        [Parameter(Mandatory = $true)][string]$OwnerLogin,
+        [Parameter(Mandatory = $true)][string]$OwnerFingerprint
     )
 
     $serve = Get-ServeState -Exe $Exe -HostName $HostName
+    $remoteTaskExactBinding = Test-RemoteTaskExactBinding `
+        -Sha $Sha `
+        -HostName $HostName `
+        -OwnerFingerprint $OwnerFingerprint
     $loopbackOnly = Test-BackendLoopback
     $runnerFirewallBound = Test-RunnerLoopbackFirewall
     $remoteRuntimeBatchLogonBound = Test-RemoteRuntimeBatchRight
     $localServeIdentitySpoofDenied = $false
     if (
         $serve.expected -and
+        $remoteTaskExactBinding -and
         $loopbackOnly -and
         $runnerFirewallBound -and
         $remoteRuntimeBatchLogonBound
@@ -978,6 +1035,7 @@ function Get-RemoteAcceptanceState {
     $noFunnel = Test-NoFunnel -Exe $Exe
     $ok = (
         $serve.expected -and
+        $remoteTaskExactBinding -and
         $loopbackOnly -and
         $runnerFirewallBound -and
         $remoteRuntimeBatchLogonBound -and
@@ -987,6 +1045,7 @@ function Get-RemoteAcceptanceState {
     return [ordered]@{
         ok = [bool]$ok
         tailscale_serve_private = [bool]$serve.expected
+        remote_task_exact_binding = [bool]$remoteTaskExactBinding
         backend_loopback_only = [bool]$loopbackOnly
         runner_loopback_firewall_bound = [bool]$runnerFirewallBound
         remote_runtime_batch_logon_bound = [bool]$remoteRuntimeBatchLogonBound
@@ -1000,6 +1059,9 @@ function Get-RemoteAcceptanceFailureReason {
 
     if (-not [bool]$State.tailscale_serve_private) {
         return "WP22A_TAILSCALE_SERVE_NOT_READY"
+    }
+    if (-not [bool]$State.remote_task_exact_binding) {
+        return "WP22A_REMOTE_TASK_BINDING_MISMATCH"
     }
     if (-not [bool]$State.backend_loopback_only) {
         return "WP22A_BACKEND_NOT_LOOPBACK_ONLY"
@@ -1060,13 +1122,15 @@ if ($Apply) {
         if (-not $serveBefore.expected) { Enable-ServeChecked -Exe $tailscale }
 
         # Everything after remote cutover remains inside the same recovery
-        # boundary. A late Serve/no-Funnel/loopback/firewall/batch-logon or local
-        # identity-spoof failure must restore the accepted local Web rather than
-        # return a plain FAIL while leaving remote mode partially active.
+        # boundary. A late Serve/no-Funnel/loopback/firewall/batch-logon, exact
+        # task-binding or local identity-spoof failure must restore the accepted
+        # local Web instead of returning a plain FAIL with remote mode active.
         $acceptance = Get-RemoteAcceptanceState `
             -Exe $tailscale `
+            -Sha $sha `
             -HostName $identity.host `
-            -OwnerLogin $identity.owner_login
+            -OwnerLogin $identity.owner_login `
+            -OwnerFingerprint $identity.owner_login_sha256
         if (-not [bool]$acceptance.ok) {
             throw (Get-RemoteAcceptanceFailureReason -State $acceptance)
         }
@@ -1087,8 +1151,10 @@ if ($Apply) {
 if ($null -eq $acceptance) {
     $acceptance = Get-RemoteAcceptanceState `
         -Exe $tailscale `
+        -Sha $sha `
         -HostName $identity.host `
-        -OwnerLogin $identity.owner_login
+        -OwnerLogin $identity.owner_login `
+        -OwnerFingerprint $identity.owner_login_sha256
 }
 $ok = [bool]$acceptance.ok
 $reason = if ($ok) {
@@ -1100,7 +1166,7 @@ else {
 $result = [ordered]@{
     status = $(if ($ok) { "PASS" } else { "FAIL" })
     reason = $reason
-    exact_implementation_binding = $true
+    exact_implementation_binding = [bool]$acceptance.remote_task_exact_binding
     backend_loopback_only = [bool]$acceptance.backend_loopback_only
     runner_loopback_firewall_bound = [bool]$acceptance.runner_loopback_firewall_bound
     remote_runtime_batch_logon_bound = [bool]$acceptance.remote_runtime_batch_logon_bound
