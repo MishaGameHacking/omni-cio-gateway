@@ -116,12 +116,14 @@ def test_remote_task_persists_only_its_owned_batch_logon_right() -> None:
 def test_tailscale_serve_enable_is_bounded_and_never_auto_accepts() -> None:
     source = PROVISIONER.read_text(encoding="utf-8")
     bounded = source[
-        source.index("function Invoke-TailscaleServeEnableBounded") :
-        source.index("function Get-TailscaleIdentity")
+        source.index("function Invoke-TailscaleServeEnableBounded") : source.index(
+            "function Get-TailscaleIdentity"
+        )
     ]
     enable = source[
-        source.index("function Enable-ServeChecked") :
-        source.index("function Write-Result")
+        source.index("function Enable-ServeChecked") : source.index(
+            "function Write-Result"
+        )
     ]
 
     assert "System.Diagnostics.ProcessStartInfo" in bounded
@@ -139,10 +141,7 @@ def test_tailscale_serve_enable_is_bounded_and_never_auto_accepts() -> None:
     assert "WP22A_TAILSCALE_HTTPS_CONSENT_REQUIRED" in enable
     assert "WP22A_TAILSCALE_SERVE_ENABLE_TIMEOUT" in enable
     assert '"--yes"' not in source
-    assert (
-        'Invoke-TailscaleText -Exe $Exe -Arguments @("serve", "--bg"'
-        not in enable
-    )
+    assert 'Invoke-TailscaleText -Exe $Exe -Arguments @("serve", "--bg"' not in enable
 
 
 def test_provisioner_preserves_sanitized_primary_and_rollback_failure_reasons() -> None:
