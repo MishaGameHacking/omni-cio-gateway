@@ -156,6 +156,7 @@ $result = [ordered]@{
     remote_runtime_batch_logon_bound = $null
     tailscale_serve_private = $null
     funnel_public_ingress = $null
+    local_serve_identity_spoof_denied = $null
     owner_identity_binding = $null
     secure_server_session = $null
     private_external_url_present = $null
@@ -251,15 +252,16 @@ try {
         if (
             $null -eq $payload -or
             [string]$payload.status -ne "PASS" -or
-            [string]$payload.reason -ne "WP22A_PRIVATE_REMOTE_RUNTIME_ACCEPTED" -or
+            [string]$payload.reason -ne "WP22A_PRIVATE_REMOTE_INFRASTRUCTURE_ACCEPTED" -or
             -not [bool]$payload.exact_implementation_binding -or
             -not [bool]$payload.backend_loopback_only -or
             -not [bool]$payload.runner_loopback_firewall_bound -or
             -not [bool]$payload.remote_runtime_batch_logon_bound -or
             -not [bool]$payload.tailscale_serve_private -or
             [bool]$payload.funnel_public_ingress -or
-            -not [bool]$payload.owner_identity_binding -or
-            -not [bool]$payload.secure_server_session -or
+            -not [bool]$payload.local_serve_identity_spoof_denied -or
+            $null -ne $payload.owner_identity_binding -or
+            $null -ne $payload.secure_server_session -or
             [string]::IsNullOrWhiteSpace([string]$payload.external_url) -or
             -not [bool]$payload.phone_rehearsal_required
         ) {
@@ -273,8 +275,9 @@ try {
         $result.remote_runtime_batch_logon_bound = [bool]$payload.remote_runtime_batch_logon_bound
         $result.tailscale_serve_private = [bool]$payload.tailscale_serve_private
         $result.funnel_public_ingress = [bool]$payload.funnel_public_ingress
-        $result.owner_identity_binding = [bool]$payload.owner_identity_binding
-        $result.secure_server_session = [bool]$payload.secure_server_session
+        $result.local_serve_identity_spoof_denied = [bool]$payload.local_serve_identity_spoof_denied
+        $result.owner_identity_binding = $null
+        $result.secure_server_session = $null
         $result.private_external_url_present = -not [string]::IsNullOrWhiteSpace([string]$payload.external_url)
         $result.phone_rehearsal_required = [bool]$payload.phone_rehearsal_required
         $exitCode = 0
