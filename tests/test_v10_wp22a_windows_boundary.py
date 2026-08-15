@@ -30,20 +30,27 @@ def test_provisioner_blocks_runner_loopback_and_rebuilds_local_runtime_on_rollba
     assert "-LocalUser $runnerSddl" in source
     assert "Get-NetFirewallSecurityFilter" in source
     assert "WP22A_RUNNER_LOOPBACK_FIREWALL_NOT_BOUND" in source
-    assert (
-        '$status = Invoke-TailscaleText -Exe $Exe -Arguments @("funnel", "status")'
-        in source
-    )
-    assert (
-        '$status = Invoke-TailscaleText -Exe $Exe -Arguments @("funnel", "status") -AllowFailure'
-        not in source
-    )
+    assert 'Arguments @("funnel", "status") -AllowFailure' in source
+    assert "WP22A_TAILSCALE_FUNNEL_STATUS_UNAVAILABLE" in source
     assert "Disable-ServeChecked -Exe $TailscaleExe" in source
-    assert 'Invoke-TailscaleText -Exe $Exe -Arguments @("serve", "status")' in source
+    assert 'Arguments @("serve", "reset") -AllowFailure' in source
+    assert "WP22A_TAILSCALE_SERVE_RESET_FAILED" in source
+    assert 'Arguments @("serve", "off")' not in source
+    assert 'Arguments @("serve", "status") -AllowFailure' in source
     assert "WP22A_TAILSCALE_SERVE_DISABLE_FAILED" in source
     assert "Invoke-BaseProvisioner -Sha $Sha -Mode Cleanup" in source
     assert "Invoke-BaseProvisioner -Sha $Sha -Mode Apply" in source
     assert "Start-ScheduledTask -TaskName $baseTaskName" not in source
+
+
+def test_provisioner_preserves_sanitized_primary_and_rollback_failure_reasons() -> None:
+    source = PROVISIONER.read_text(encoding="utf-8")
+    assert "function Get-SafeReasonCode" in source
+    assert '"-AsJson"' in source
+    assert "*> $null" not in source
+    assert "WP22A_APPLY_FAILED:{0};LOCAL_ROLLBACK_FAILED:{1}" in source
+    assert "WP22A_APPLY_FAILED:{0};LOCAL_ROLLBACK_PASS" in source
+    assert "WP22A_TAILSCALE_HTTPS_CONSENT_REQUIRED" in source
 
 
 def test_remote_factory_uses_wp22a_short_session_policy() -> None:
