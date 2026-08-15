@@ -182,17 +182,18 @@ def test_sanitized_local_diagnostic_keeps_scheduler_result_without_message_or_id
     assert "UserContext" not in source
 
 
-def test_remote_factory_uses_wp22a_short_session_policy_for_create_and_resolve() -> (
+def test_remote_factory_uses_wp22a_short_session_policy_and_verified_database() -> (
     None
 ):
     remote_source = REMOTE_FACTORY.read_text(encoding="utf-8")
     local_source = LOCAL_APP_FACTORY.read_text(encoding="utf-8")
-    assert (
-        "create_local_private_app(session_policy=REMOTE_SESSION_POLICY)"
-        in remote_source
-    )
+    assert "create_local_private_app(" in remote_source
+    assert "session_policy=REMOTE_SESSION_POLICY" in remote_source
+    assert "verify_existing_database=True" in remote_source
     assert "policy=REMOTE_SESSION_POLICY" in remote_source
     assert "session_policy: SessionPolicyV1 | None = None" in local_source
+    assert "verify_existing_database: bool = False" in local_source
+    assert "if live_acceptance_enabled or verify_existing_database:" in local_source
     assert "if session_policy is None:" in local_source
     assert "PostgresWebSessionRegistryV1(connection)" in local_source
     assert "policy=session_policy" in local_source
