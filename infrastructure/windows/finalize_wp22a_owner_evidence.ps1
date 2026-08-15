@@ -2,6 +2,7 @@
 param(
     [Parameter(Mandatory = $true)][string]$ExpectedImplementationSha,
     [Parameter(Mandatory = $true)][switch]$PhoneHttpsReachabilityConfirmed,
+    [Parameter(Mandatory = $true)][switch]$OwnerPrivateLoginConfirmed,
     [Parameter(Mandatory = $true)][switch]$LogoutSessionRevocationConfirmed,
     [switch]$AsJson
 )
@@ -10,7 +11,8 @@ Set-StrictMode -Version 3.0
 $ErrorActionPreference = "Stop"
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
-$stateRoot = "C:\ProgramData\OmniCIO\wp22a"
+$omniStateRoot = "C:\ProgramData\OmniCIO"
+$stateRoot = Join-Path $omniStateRoot "wp22a"
 $evidencePath = Join-Path $stateRoot "owner-rehearsal.sanitized.local.json"
 $provisioner = Join-Path $repoRoot "infrastructure\windows\provision_wp22a_private_remote_access.ps1"
 $runtimeLauncher = Join-Path $repoRoot "infrastructure\windows\run_wp22a_private_remote_runtime.ps1"
@@ -96,14 +98,35 @@ function New-AllowRule {
     )
 }
 
+function Assert-DirectoryNotReparsePoint {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$FailureCode
+    )
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Container)) { return }
+    $item = Get-Item -LiteralPath $Path -Force -ErrorAction Stop
+    if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+        throw $FailureCode
+    }
+}
+
 function Set-ProtectedEvidenceAcl {
     param([Parameter(Mandatory = $true)][System.Security.Principal.SecurityIdentifier]$RunnerSid)
 
+    # Reject a redirected parent or evidence root before touching any descendant
+    # evidence file. This keeps cleanup/finalization from following an attacker-
+    # controlled junction or symlink under ProgramData.
+    Assert-DirectoryNotReparsePoint `
+        -Path $omniStateRoot `
+        -FailureCode "WP22A_EVIDENCE_PARENT_REPARSE_POINT_FORBIDDEN"
+    Assert-DirectoryNotReparsePoint `
+        -Path $stateRoot `
+        -FailureCode "WP22A_EVIDENCE_ROOT_REPARSE_POINT_FORBIDDEN"
     New-Item -ItemType Directory -Path $stateRoot -Force | Out-Null
-    $item = Get-Item -LiteralPath $stateRoot -Force -ErrorAction Stop
-    if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
-        throw "WP22A_EVIDENCE_ROOT_REPARSE_POINT_FORBIDDEN"
-    }
+    Assert-DirectoryNotReparsePoint `
+        -Path $stateRoot `
+        -FailureCode "WP22A_EVIDENCE_ROOT_REPARSE_POINT_FORBIDDEN"
 
     $systemSid = [System.Security.Principal.SecurityIdentifier]::new("S-1-5-18")
     $adminsSid = [System.Security.Principal.SecurityIdentifier]::new("S-1-5-32-544")
@@ -180,6 +203,7 @@ function Write-Summary {
     Write-Output "CI runner evidence write allowed: $($Result.runner_evidence_write_allowed)"
     Write-Output "Tailscale Serve private: $($Result.tailscale_serve_private)"
     Write-Output "Funnel/public ingress: $($Result.funnel_public_ingress)"
+    Write-Output "OWNER private login confirmed: $($Result.owner_private_login_confirmed)"
     Write-Output "OWNER identity binding: $($Result.owner_identity_binding)"
     Write-Output "Secure session: $($Result.secure_server_session)"
     Write-Output "Phone HTTPS reachability: $($Result.phone_https_reachability_confirmed)"
@@ -198,6 +222,7 @@ $result = [ordered]@{
     runner_evidence_write_allowed = $true
     tailscale_serve_private = $false
     funnel_public_ingress = $false
+    owner_private_login_confirmed = $false
     owner_identity_binding = $false
     secure_server_session = $false
     phone_https_reachability_confirmed = $false
@@ -209,6 +234,9 @@ try {
     if (-not (Test-Administrator)) { throw "WP22A_OWNER_ADMIN_REQUIRED" }
     if (-not [bool]$PhoneHttpsReachabilityConfirmed) {
         throw "WP22A_PHONE_HTTPS_CONFIRMATION_REQUIRED"
+    }
+    if (-not [bool]$OwnerPrivateLoginConfirmed) {
+        throw "WP22A_OWNER_PRIVATE_LOGIN_CONFIRMATION_REQUIRED"
     }
     if (-not [bool]$LogoutSessionRevocationConfirmed) {
         throw "WP22A_LOGOUT_CONFIRMATION_REQUIRED"
@@ -243,20 +271,22 @@ try {
 
     if (
         [string]$verify.status -ne "PASS" -or
+        [string]$verify.reason -ne "WP22A_PRIVATE_REMOTE_INFRASTRUCTURE_ACCEPTED" -or
         -not [bool]$verify.exact_implementation_binding -or
         -not [bool]$verify.backend_loopback_only -or
         -not [bool]$verify.runner_loopback_firewall_bound -or
+        -not [bool]$verify.remote_runtime_batch_logon_bound -or
         -not [bool]$verify.tailscale_serve_private -or
         [bool]$verify.funnel_public_ingress -or
-        -not [bool]$verify.owner_identity_binding -or
-        -not [bool]$verify.secure_server_session -or
+        -not [bool]$verify.local_serve_identity_spoof_denied -or
+        $null -ne $verify.owner_identity_binding -or
+        $null -ne $verify.secure_server_session -or
         -not [bool]$verify.phone_rehearsal_required
     ) {
         throw "WP22A_PRIVATE_REMOTE_VERIFY_NOT_PASS"
     }
 
     $runnerSid = Get-RunnerSid
-    Remove-Item -LiteralPath $evidencePath -Force -ErrorAction SilentlyContinue
     Set-ProtectedEvidenceAcl -RunnerSid $runnerSid
     $aclState = Get-EvidenceAclState -RunnerSid $runnerSid
     if (
@@ -269,6 +299,7 @@ try {
     ) {
         throw "WP22A_OWNER_EVIDENCE_ACL_INVALID"
     }
+    Remove-Item -LiteralPath $evidencePath -Force -ErrorAction SilentlyContinue
 
     $fingerprint = [ordered]@{
         execution_contract_sha256 = Get-Sha256Lower -Path $executionContract
@@ -281,6 +312,9 @@ try {
         owner_finalizer_sha256 = Get-Sha256Lower -Path $ownerFinalizer
     }
 
+    # Positive OWNER identity/session evidence is explicitly tied to the separate
+    # authorized device rehearsal. The local machine is expected to be denied by
+    # Serve identity injection and therefore cannot synthesize these booleans.
     $evidence = [ordered]@{
         schema_version = "1"
         work_package = "WP22A"
@@ -333,13 +367,24 @@ try {
     $result.runner_evidence_write_allowed = $false
     $result.tailscale_serve_private = $true
     $result.funnel_public_ingress = $false
+    $result.owner_private_login_confirmed = $true
     $result.owner_identity_binding = $true
     $result.secure_server_session = $true
     $result.phone_https_reachability_confirmed = $true
     $result.logout_session_revocation_confirmed = $true
 }
 catch {
-    Remove-Item -LiteralPath $evidencePath -Force -ErrorAction SilentlyContinue
+    # Set-ProtectedEvidenceAcl runs before the first evidence-file mutation, so
+    # this removal never follows an unreviewed reparse root.
+    if (Test-Path -LiteralPath $stateRoot -PathType Container) {
+        try {
+            Assert-DirectoryNotReparsePoint `
+                -Path $stateRoot `
+                -FailureCode "WP22A_EVIDENCE_ROOT_REPARSE_POINT_FORBIDDEN"
+            Remove-Item -LiteralPath $evidencePath -Force -ErrorAction SilentlyContinue
+        }
+        catch { }
+    }
     $reason = [string]$_.Exception.Message
     if ($reason -notmatch '^[A-Z0-9_:\-]+$') { $reason = "WP22A_OWNER_EVIDENCE_ERROR" }
     $result.status = "FAIL"
