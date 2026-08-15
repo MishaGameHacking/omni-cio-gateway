@@ -26,6 +26,11 @@ $runtimeRoot = "C:\ProgramData\OmniCIO\runtime\wp15-live"
 $appRoot = Join-Path $runtimeRoot "app"
 $launcherRelative = "infrastructure\windows\run_wp22a_private_remote_runtime.ps1"
 $deploymentMarker = Join-Path $appRoot ".omni-cio-wp15-live-deployment"
+$batchRight = "SeBatchLogonRight"
+$denyBatchRight = "SeDenyBatchLogonRight"
+$remoteTaskDescription = "Omni-CIO V10 WP22A private remote runtime"
+$remoteTaskOwnedBatchRightDescription = "$remoteTaskDescription; BatchRightOwned=true"
+$remoteTaskPreservedBatchRightDescription = "$remoteTaskDescription; BatchRightOwned=false"
 
 function Test-Administrator {
     $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
@@ -223,6 +228,275 @@ function New-RandomRuntimePassword {
     return $password
 }
 
+if (-not ("OmniCioV10.NativeAccountRights" -as [type])) {
+    Add-Type -TypeDefinition @'
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+using System.Security.Principal;
+
+namespace OmniCioV10
+{
+    public static class NativeAccountRights
+    {
+        private const uint POLICY_CREATE_ACCOUNT = 0x00000010;
+        private const uint POLICY_LOOKUP_NAMES = 0x00000800;
+        private const uint STATUS_SUCCESS = 0x00000000;
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct LSA_OBJECT_ATTRIBUTES
+        {
+            public uint Length;
+            public IntPtr RootDirectory;
+            public IntPtr ObjectName;
+            public uint Attributes;
+            public IntPtr SecurityDescriptor;
+            public IntPtr SecurityQualityOfService;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct LSA_UNICODE_STRING
+        {
+            public ushort Length;
+            public ushort MaximumLength;
+            public IntPtr Buffer;
+        }
+
+        [DllImport("advapi32.dll", SetLastError = true, PreserveSig = true)]
+        private static extern uint LsaOpenPolicy(
+            IntPtr SystemName,
+            ref LSA_OBJECT_ATTRIBUTES ObjectAttributes,
+            uint DesiredAccess,
+            out IntPtr PolicyHandle);
+
+        [DllImport("advapi32.dll", SetLastError = true, PreserveSig = true)]
+        private static extern uint LsaEnumerateAccountRights(
+            IntPtr PolicyHandle,
+            IntPtr AccountSid,
+            out IntPtr UserRights,
+            out uint CountOfRights);
+
+        [DllImport("advapi32.dll", SetLastError = true, PreserveSig = true)]
+        private static extern uint LsaAddAccountRights(
+            IntPtr PolicyHandle,
+            IntPtr AccountSid,
+            [In] LSA_UNICODE_STRING[] UserRights,
+            uint CountOfRights);
+
+        [DllImport("advapi32.dll", SetLastError = true, PreserveSig = true)]
+        private static extern uint LsaRemoveAccountRights(
+            IntPtr PolicyHandle,
+            IntPtr AccountSid,
+            [MarshalAs(UnmanagedType.U1)] bool AllRights,
+            [In] LSA_UNICODE_STRING[] UserRights,
+            uint CountOfRights);
+
+        [DllImport("advapi32.dll")]
+        private static extern uint LsaNtStatusToWinError(uint Status);
+
+        [DllImport("advapi32.dll")]
+        private static extern uint LsaClose(IntPtr PolicyHandle);
+
+        [DllImport("advapi32.dll")]
+        private static extern uint LsaFreeMemory(IntPtr Buffer);
+
+        private static IntPtr OpenPolicy(uint desiredAccess)
+        {
+            var attributes = new LSA_OBJECT_ATTRIBUTES();
+            IntPtr handle;
+            uint status = LsaOpenPolicy(
+                IntPtr.Zero,
+                ref attributes,
+                desiredAccess,
+                out handle);
+            ThrowForStatus(status, "LsaOpenPolicy");
+            return handle;
+        }
+
+        private static IntPtr AllocSid(string sidText)
+        {
+            var sid = new SecurityIdentifier(sidText);
+            var bytes = new byte[sid.BinaryLength];
+            sid.GetBinaryForm(bytes, 0);
+            IntPtr ptr = Marshal.AllocHGlobal(bytes.Length);
+            Marshal.Copy(bytes, 0, ptr, bytes.Length);
+            Array.Clear(bytes, 0, bytes.Length);
+            return ptr;
+        }
+
+        private static LSA_UNICODE_STRING MakeString(string value)
+        {
+            IntPtr buffer = Marshal.StringToHGlobalUni(value);
+            return new LSA_UNICODE_STRING
+            {
+                Buffer = buffer,
+                Length = checked((ushort)(value.Length * 2)),
+                MaximumLength = checked((ushort)((value.Length + 1) * 2))
+            };
+        }
+
+        private static void FreeString(LSA_UNICODE_STRING value)
+        {
+            if (value.Buffer != IntPtr.Zero)
+            {
+                Marshal.FreeHGlobal(value.Buffer);
+            }
+        }
+
+        private static void ThrowForStatus(uint status, string operation)
+        {
+            if (status == STATUS_SUCCESS)
+            {
+                return;
+            }
+            uint error = LsaNtStatusToWinError(status);
+            throw new Win32Exception(unchecked((int)error), operation + " failed");
+        }
+
+        public static string[] GetRights(string sidText)
+        {
+            IntPtr policy = IntPtr.Zero;
+            IntPtr sid = IntPtr.Zero;
+            IntPtr rights = IntPtr.Zero;
+            try
+            {
+                policy = OpenPolicy(POLICY_LOOKUP_NAMES);
+                sid = AllocSid(sidText);
+                uint count;
+                uint status = LsaEnumerateAccountRights(policy, sid, out rights, out count);
+                if (status != STATUS_SUCCESS)
+                {
+                    uint error = LsaNtStatusToWinError(status);
+                    if (error == 2)
+                    {
+                        return new string[0];
+                    }
+                    throw new Win32Exception(unchecked((int)error), "LsaEnumerateAccountRights failed");
+                }
+
+                var result = new List<string>();
+                int size = Marshal.SizeOf(typeof(LSA_UNICODE_STRING));
+                for (uint index = 0; index < count; index++)
+                {
+                    IntPtr current = IntPtr.Add(rights, checked((int)(index * (uint)size)));
+                    var item = (LSA_UNICODE_STRING)Marshal.PtrToStructure(current, typeof(LSA_UNICODE_STRING));
+                    string value = Marshal.PtrToStringUni(item.Buffer, item.Length / 2);
+                    if (!String.IsNullOrWhiteSpace(value))
+                    {
+                        result.Add(value);
+                    }
+                }
+                return result.ToArray();
+            }
+            finally
+            {
+                if (rights != IntPtr.Zero) { LsaFreeMemory(rights); }
+                if (sid != IntPtr.Zero) { Marshal.FreeHGlobal(sid); }
+                if (policy != IntPtr.Zero) { LsaClose(policy); }
+            }
+        }
+
+        public static void AddRight(string sidText, string right)
+        {
+            ChangeRight(sidText, right, true);
+        }
+
+        public static void RemoveRight(string sidText, string right)
+        {
+            ChangeRight(sidText, right, false);
+        }
+
+        private static void ChangeRight(string sidText, string right, bool add)
+        {
+            IntPtr policy = IntPtr.Zero;
+            IntPtr sid = IntPtr.Zero;
+            LSA_UNICODE_STRING nativeRight = default(LSA_UNICODE_STRING);
+            try
+            {
+                uint access = POLICY_LOOKUP_NAMES | (add ? POLICY_CREATE_ACCOUNT : 0);
+                policy = OpenPolicy(access);
+                sid = AllocSid(sidText);
+                nativeRight = MakeString(right);
+                var rights = new[] { nativeRight };
+                uint status = add
+                    ? LsaAddAccountRights(policy, sid, rights, 1)
+                    : LsaRemoveAccountRights(policy, sid, false, rights, 1);
+                ThrowForStatus(status, add ? "LsaAddAccountRights" : "LsaRemoveAccountRights");
+            }
+            finally
+            {
+                FreeString(nativeRight);
+                if (sid != IntPtr.Zero) { Marshal.FreeHGlobal(sid); }
+                if (policy != IntPtr.Zero) { LsaClose(policy); }
+            }
+        }
+    }
+}
+'@
+}
+
+
+function Test-RemoteTaskOwnsBatchRight {
+    $task = Get-ScheduledTask -TaskName $remoteTaskName -ErrorAction SilentlyContinue
+    if ($null -eq $task) { return $false }
+    return ([string]$task.Description).Equals(
+        $remoteTaskOwnedBatchRightDescription,
+        [System.StringComparison]::Ordinal
+    )
+}
+
+function Get-RuntimeAccountRights {
+    $runtimeUser = Get-LocalUser -Name $runtimeName -ErrorAction Stop
+    return @([OmniCioV10.NativeAccountRights]::GetRights($runtimeUser.SID.Value))
+}
+
+function Remove-RemoteBatchRightIfOwned {
+    param([Parameter(Mandatory = $true)][bool]$Owned)
+
+    if (-not $Owned) { return }
+    $runtimeUser = Get-LocalUser -Name $runtimeName -ErrorAction Stop
+    $runtimeSid = $runtimeUser.SID.Value
+    $rights = @([OmniCioV10.NativeAccountRights]::GetRights($runtimeSid))
+    if ($rights -contains $batchRight) {
+        [OmniCioV10.NativeAccountRights]::RemoveRight($runtimeSid, $batchRight)
+    }
+    $rightsAfter = @([OmniCioV10.NativeAccountRights]::GetRights($runtimeSid))
+    if ($rightsAfter -contains $batchRight) {
+        throw "WP22A_REMOTE_RUNTIME_BATCH_LOGON_RIGHT_CLEANUP_FAILED"
+    }
+}
+
+function Test-RemoteRuntimeBatchRight {
+    try {
+        $rights = @(Get-RuntimeAccountRights)
+        return (
+            $rights -contains $batchRight -and
+            $rights -notcontains $denyBatchRight
+        )
+    }
+    catch { return $false }
+}
+
+function Get-RemoteTaskFailureReason {
+    $task = Get-ScheduledTask -TaskName $remoteTaskName -ErrorAction SilentlyContinue
+    if ($null -eq $task) { return "WP22A_REMOTE_TASK_MISSING" }
+
+    $state = ([string]$task.State).ToUpperInvariant()
+    $taskInfo = Get-ScheduledTaskInfo -TaskName $remoteTaskName -ErrorAction SilentlyContinue
+    $lastResult = if ($null -ne $taskInfo) { [int64]$taskInfo.LastTaskResult } else { -1 }
+
+    if ($lastResult -in @(2147943785, -2147023511)) {
+        return "WP22A_REMOTE_TASK_BATCH_LOGON_DENIED"
+    }
+    if ($state -eq "READY" -and $lastResult -eq 267011) {
+        return "WP22A_REMOTE_TASK_HAS_NOT_RUN"
+    }
+    if ($state -eq "RUNNING") { return "WP22A_REMOTE_BACKEND_NOT_READY" }
+    if ($state -eq "DISABLED") { return "WP22A_REMOTE_TASK_DISABLED" }
+    return "WP22A_REMOTE_TASK_EXITED_BEFORE_READY"
+}
+
 function Invoke-BaseProvisioner {
     param(
         [Parameter(Mandatory = $true)][string]$Sha,
@@ -324,8 +598,17 @@ function Restore-LocalWebTask {
     Disable-ServeChecked -Exe $TailscaleExe
     if (-not (Test-NoFunnel -Exe $TailscaleExe)) { throw "WP22A_FUNNEL_PUBLIC_INGRESS_ACTIVE" }
 
+    $remoteTaskOwnedBatchRight = Test-RemoteTaskOwnsBatchRight
     Stop-ScheduledTask -TaskName $remoteTaskName -ErrorAction SilentlyContinue
     Unregister-ScheduledTask -TaskName $remoteTaskName -Confirm:$false -ErrorAction SilentlyContinue
+
+    $batchRightCleanupFailure = $null
+    try {
+        Remove-RemoteBatchRightIfOwned -Owned $remoteTaskOwnedBatchRight
+    }
+    catch {
+        $batchRightCleanupFailure = $_
+    }
     Remove-RunnerLoopbackFirewall
 
     # The accepted WP15 cleanup is intentionally safe when its task/runtime root
@@ -339,6 +622,9 @@ function Restore-LocalWebTask {
     if ($null -eq $baseTask -or [string]$baseTask.State -ne "Running") {
         throw "WP22A_LOCAL_WEB_ROLLBACK_NOT_RUNNING"
     }
+    if ($null -ne $batchRightCleanupFailure) {
+        throw "WP22A_REMOTE_RUNTIME_BATCH_LOGON_RIGHT_CLEANUP_FAILED"
+    }
 }
 
 function Install-RemoteTask {
@@ -349,8 +635,11 @@ function Install-RemoteTask {
     )
     if (-not (Test-Administrator)) { throw "WP22A_APPLY_REQUIRES_ADMINISTRATOR" }
 
+    $existingTaskOwnedBatchRight = Test-RemoteTaskOwnsBatchRight
+    # Keep an existing task definition registered until the replacement is
+    # committed with -Force. Its sanitized description is the crash-safe record
+    # of whether WP22A owns the runtime account's batch-logon assignment.
     Stop-ScheduledTask -TaskName $remoteTaskName -ErrorAction SilentlyContinue
-    Unregister-ScheduledTask -TaskName $remoteTaskName -Confirm:$false -ErrorAction SilentlyContinue
 
     # Normalize every prior local/partial deployment through the accepted WP15
     # Cleanup -> Apply path before remote cutover. This is idempotent and avoids
@@ -372,6 +661,20 @@ function Install-RemoteTask {
     $admins = @(Get-LocalGroupMember -SID $administratorsSid -ErrorAction Stop)
     if ($admins.SID.Value -contains $runtimeUser.SID.Value) { throw "WP22A_REMOTE_RUNTIME_IS_ADMINISTRATOR" }
 
+    $runtimeSid = $runtimeUser.SID.Value
+    $rightsBefore = @([OmniCioV10.NativeAccountRights]::GetRights($runtimeSid))
+    if ($rightsBefore -contains $denyBatchRight) {
+        throw "WP22A_REMOTE_RUNTIME_DENY_BATCH_LOGON_RIGHT_PRESENT"
+    }
+    $batchRightPresent = $rightsBefore -contains $batchRight
+    $batchRightOwned = [bool]($existingTaskOwnedBatchRight -or -not $batchRightPresent)
+    $taskDescription = if ($batchRightOwned) {
+        $remoteTaskOwnedBatchRightDescription
+    }
+    else {
+        $remoteTaskPreservedBatchRightDescription
+    }
+
     Install-RunnerLoopbackFirewall
     if (-not (Test-RunnerLoopbackFirewall)) { throw "WP22A_RUNNER_LOOPBACK_FIREWALL_NOT_BOUND" }
 
@@ -386,7 +689,20 @@ function Install-RemoteTask {
         $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument $arguments
         $trigger = New-ScheduledTaskTrigger -AtStartup
         $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
-        Register-ScheduledTask -TaskName $remoteTaskName -Action $action -Trigger $trigger -Settings $settings -User $runtimeAccount -Password $runtimePassword -RunLevel Limited -Force | Out-Null
+        Register-ScheduledTask -TaskName $remoteTaskName -Action $action -Trigger $trigger -Settings $settings -User $runtimeAccount -Password $runtimePassword -RunLevel Limited -Description $taskDescription -Force | Out-Null
+
+        $rightsAfterRegistration = @([OmniCioV10.NativeAccountRights]::GetRights($runtimeSid))
+        if ($rightsAfterRegistration -notcontains $batchRight) {
+            [OmniCioV10.NativeAccountRights]::AddRight($runtimeSid, $batchRight)
+        }
+        $rightsBeforeStart = @([OmniCioV10.NativeAccountRights]::GetRights($runtimeSid))
+        if ($rightsBeforeStart -notcontains $batchRight) {
+            throw "WP22A_REMOTE_RUNTIME_BATCH_LOGON_RIGHT_UNAVAILABLE"
+        }
+        if ($rightsBeforeStart -contains $denyBatchRight) {
+            throw "WP22A_REMOTE_RUNTIME_DENY_BATCH_LOGON_RIGHT_PRESENT"
+        }
+
         Start-ScheduledTask -TaskName $remoteTaskName -ErrorAction Stop
     }
     finally {
@@ -469,6 +785,7 @@ if ($Cleanup) {
         reason = "WP22A_PRIVATE_REMOTE_DISABLED_LOCAL_WEB_RESTORED"
         public_ingress = $false
         local_web_restored = $true
+        remote_runtime_batch_logon_restored = $true
     })
     exit 0
 }
@@ -483,7 +800,9 @@ if ($Apply -and $serveBefore.any -and -not $serveBefore.expected) {
 if ($Apply) {
     try {
         Install-RemoteTask -Sha $sha -HostName $identity.host -OwnerFingerprint $identity.owner_login_sha256
-        if (-not (Wait-LocalRemoteStatus -HostName $identity.host)) { throw "WP22A_REMOTE_BACKEND_NOT_READY" }
+        if (-not (Wait-LocalRemoteStatus -HostName $identity.host)) {
+            throw (Get-RemoteTaskFailureReason)
+        }
         if (-not (Test-BackendLoopback)) { throw "WP22A_BACKEND_NOT_LOOPBACK_ONLY" }
         if (-not (Test-RunnerLoopbackFirewall)) { throw "WP22A_RUNNER_LOOPBACK_FIREWALL_NOT_BOUND" }
         if (-not $serveBefore.expected) { Enable-ServeChecked -Exe $tailscale }
@@ -504,19 +823,21 @@ if ($Apply) {
 $serve = Get-ServeState -Exe $tailscale -HostName $identity.host
 $loopbackOnly = Test-BackendLoopback
 $runnerFirewallBound = Test-RunnerLoopbackFirewall
+$remoteRuntimeBatchLogonBound = Test-RemoteRuntimeBatchRight
 $remoteOwnerSession = $false
-if ($serve.expected -and $loopbackOnly -and $runnerFirewallBound) {
+if ($serve.expected -and $loopbackOnly -and $runnerFirewallBound -and $remoteRuntimeBatchLogonBound) {
     $remoteOwnerSession = Test-RemoteOwnerSession -HostName $identity.host
 }
 
 $noFunnel = Test-NoFunnel -Exe $tailscale
-$ok = $serve.expected -and $loopbackOnly -and $runnerFirewallBound -and $remoteOwnerSession -and $noFunnel
+$ok = $serve.expected -and $loopbackOnly -and $runnerFirewallBound -and $remoteRuntimeBatchLogonBound -and $remoteOwnerSession -and $noFunnel
 $result = [ordered]@{
     status = $(if ($ok) { "PASS" } else { "FAIL" })
     reason = $(if ($ok) { "WP22A_PRIVATE_REMOTE_RUNTIME_ACCEPTED" } else { "WP22A_PRIVATE_REMOTE_RUNTIME_NOT_READY" })
     exact_implementation_binding = $true
     backend_loopback_only = [bool]$loopbackOnly
     runner_loopback_firewall_bound = [bool]$runnerFirewallBound
+    remote_runtime_batch_logon_bound = [bool]$remoteRuntimeBatchLogonBound
     tailscale_serve_private = [bool]$serve.expected
     funnel_public_ingress = [bool](-not $noFunnel)
     owner_identity_binding = [bool]$remoteOwnerSession
