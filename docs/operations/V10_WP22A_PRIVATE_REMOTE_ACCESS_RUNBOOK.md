@@ -89,6 +89,7 @@ The provisioning gate:
 - discovers the exact GitHub Actions runner service identity locally and rejects a LocalSystem runner;
 - installs an outbound Windows Firewall block for that exact runner SID to `127.0.0.1:<web-port>` and verifies the rule's user/address/port binding;
 - installs a limited remote scheduled task with restart-on-failure and startup trigger;
+- binds the dedicated non-admin runtime account to `SeBatchLogonRight` for the lifetime of the WP22A remote task, because each unattended restart and startup is a new batch logon; records only a boolean ownership marker in the task description, rejects `SeDenyBatchLogonRight`, and restores the original account-right state during Cleanup or rollback;
 - verifies that the Web listener is loopback-only;
 - configures Tailscale Serve in background mode to the loopback Web port;
 - performs a real HTTPS OWNER identity/session/login/logout probe through Serve;
@@ -100,6 +101,7 @@ The recovery behavior is deliberately fail-closed and idempotent:
 - cleanup never enables Funnel as a fallback;
 - before both remote cutover and local-runtime reconstruction, the accepted WP15 Cleanup then WP15 Apply path is executed unconditionally. Cleanup calls the low-level WP15 provisioner directly; Apply enters through the accepted WP15 OWNER starter so `SeBatchLogonRight` exists only for task registration/start and is restored afterward. WP15 Cleanup remains the authority that removes a stale task/runtime deployment and disables `omni-cio-runtime`, including partial states where the task/root are already absent but the runtime identity remained enabled;
 - local reconstruction must end with the accepted WP15 task actually `Running`; merely finding a task object is not recovery evidence;
+- a WP22A-owned batch-logon assignment is retained only while the persistent remote startup/restart task exists; the task description preserves whether WP22A added that right so Cleanup/rollback never removes a pre-existing OWNER assignment and never leaves a WP22A-added assignment behind;
 - a failed apply preserves a sanitized primary reason code and separately reports whether local rollback passed or the sanitized rollback reason. Raw nested command output, credentials, identities and private URLs are not promoted into the reason code;
 - a failed apply with a failed rollback leaves WP22A blocked. It must not be retried blindly on the same implementation head.
 
