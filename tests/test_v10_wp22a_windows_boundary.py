@@ -89,8 +89,10 @@ def test_sanitized_local_diagnostic_keeps_scheduler_result_without_message_or_id
     assert "wp15_task_history_found" in source
     assert "wp15_latest_scheduler_event_id" in source
     assert "wp15_latest_scheduler_event_level" in source
-    assert "wp15_latest_scheduler_result_code" in source
     assert "wp15_latest_scheduler_event_at_utc" in source
+    assert "wp15_latest_scheduler_result_event_id" in source
+    assert "wp15_latest_scheduler_result_code" in source
+    assert "wp15_latest_scheduler_result_event_at_utc" in source
     assert "task_scheduler_message_emitted = $false" in source
     assert ".Message" not in source
     assert "ActionName" not in source
