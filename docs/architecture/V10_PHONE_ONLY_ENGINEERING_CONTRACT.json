@@ -1,0 +1,52 @@
+{
+  "schema_version": "1",
+  "status": "OWNER_APPROVED_DRAFT_REQUIRES_PR_ACCEPTANCE",
+  "owner_primary_engineering_surface": "PHONE",
+  "engineering_control_plane": "GITHUB_PRO",
+  "primary_phone_surfaces": [
+    "CHATGPT_MOBILE",
+    "GITHUB_MOBILE",
+    "GITHUB_WEB",
+    "GITHUB_CODESPACES_BROWSER"
+  ],
+  "personal_node_mode": "HEADLESS_WINDOWS_REPLACEABLE",
+  "routine_local_console_required": false,
+  "codespaces": {
+    "role": "ENGINEERING_CLEAN_ROOM_AND_FALLBACK",
+    "production_secret_storage_allowed": false,
+    "private_portfolio_payload_allowed": false,
+    "real_money_authority_allowed": false,
+    "windows_gate_replacement_allowed": false
+  },
+  "web_operations": {
+    "typed_allowlisted_operations_required": true,
+    "arbitrary_powershell_allowed": false,
+    "arbitrary_sql_allowed": false,
+    "secret_export_allowed": false,
+    "github_bypass_allowed": false,
+    "broker_write_authority_added": false
+  },
+  "service_cost_priority": [
+    "ALREADY_PAID_GITHUB_PRO",
+    "FREE_OPEN_SOURCE_SELF_HOSTED",
+    "FREE_TIER_WHEN_REQUIREMENTS_ARE_MET",
+    "PAID_ONLY_AFTER_DOCUMENTED_INSUFFICIENCY_AND_OWNER_APPROVAL"
+  ],
+  "render": {
+    "v9_app_app_baseline_preserved": true,
+    "v10_private_state_migration_authorized": false,
+    "v10_broker_secret_custody_authorized": false
+  },
+  "wp22a": {
+    "sequence_bypassed": false,
+    "single_web_app_preserved": true,
+    "phone_private_remote_access_is_target": true,
+    "public_funnel_authorized": false
+  },
+  "invariants": {
+    "app_app_preserved": true,
+    "trading_methods": false,
+    "REAL_TRADING_ENABLED": false,
+    "transfer_withdrawal_authority": false
+  }
+}
