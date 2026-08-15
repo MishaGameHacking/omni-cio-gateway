@@ -58,6 +58,10 @@ Enabling Tailscale HTTPS has a privacy consequence that requires OWNER awareness
 
 This is a real external-account/privacy consent boundary. Engineering does not silently accept it on the OWNER's behalf and does not replace it with public Funnel exposure. If HTTPS is already enabled and the node name is acceptable, no additional certificate-file provisioning is required for the Serve path; Tailscale manages the Serve certificate lifecycle.
 
+The provisioner must never pass `--yes` to `tailscale serve`, because that would turn this OWNER privacy decision into an unattended engineering action. Serve activation runs through a bounded 30-second child process with stdout/stderr retained only in memory. If the CLI presents a Tailscale consent URL or fails to return within the bound, the process is terminated, the remote cutover is rolled back to the accepted local Web, and only a sanitized symbolic reason is returned. A consent URL itself is never printed, persisted or accepted as GitHub/chat evidence.
+
+After a sanitized `WP22A_TAILSCALE_HTTPS_CONSENT_REQUIRED`, the OWNER may review the machine name and enable HTTPS in the Tailscale admin console. After `WP22A_TAILSCALE_SERVE_ENABLE_TIMEOUT`, engineering must review the state before another attempt; timeout alone is not permission to accept HTTPS, enable Funnel or rerun Apply.
+
 ## Source-controlled deployment, recovery and evidence boundary
 
 WP22A adds six reviewed Windows scripts:
@@ -106,6 +110,8 @@ The recovery behavior is deliberately fail-closed and idempotent:
 - a failed apply with a failed rollback leaves WP22A blocked. It must not be retried blindly on the same implementation head.
 
 The sanitized local-state diagnostic is non-mutating. It is designed for self-hosted CI to report only task states and safety booleans needed to classify a partial deployment: runtime root/marker presence, runtime identity enabled state, loopback listener state, runner firewall presence, Serve/Funnel status availability and whether Serve points at the expected backend port. It does not emit the tailnet hostname, OWNER login, runner identity/SID or secret values.
+
+A state with the remote task `RUNNING`, a loopback-only listener and runner firewall present, but Serve absent, is classified as `WP22A_REMOTE_RUNTIME_SERVE_PENDING` with `apply_in_progress_or_blocked=true`. This is a partial Apply state, not PASS and not permission to run Apply, Verify or the OWNER finalizer again. It requires engineering review and, after a replacement exact-head GREEN cycle, the reviewed Cleanup boundary before a new Apply.
 
 The runner auditor:
 

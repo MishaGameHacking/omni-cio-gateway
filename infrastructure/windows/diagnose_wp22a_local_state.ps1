@@ -214,12 +214,60 @@ $deploymentMarkerState = Get-PathStateSafe -Path $deploymentMarker -PathType Lea
 $listener = Get-ListenerState
 $wp15History = Get-TaskSchedulerHistorySafe -TaskName $baseTaskName
 $remoteHistory = Get-TaskSchedulerHistorySafe -TaskName $remoteTaskName
+$baseTaskState = Get-TaskStateSafe -Name $baseTaskName
+$remoteTaskState = Get-TaskStateSafe -Name $remoteTaskName
+
+$deploymentStateClass = "WP22A_LOCAL_STATE_UNCLASSIFIED"
+$applyInProgressOrBlocked = $false
+if ($funnelPublic) {
+    $deploymentStateClass = "WP22A_PUBLIC_INGRESS_FORBIDDEN"
+}
+elseif (
+    $remoteTaskState -eq "RUNNING" -and
+    [bool]$listener.present -and
+    [bool]$listener.loopback_only -and
+    $firewallPresent -and
+    -not $serveConfigured
+) {
+    $deploymentStateClass = "WP22A_REMOTE_RUNTIME_SERVE_PENDING"
+    $applyInProgressOrBlocked = $true
+}
+elseif (
+    $remoteTaskState -eq "RUNNING" -and
+    [bool]$listener.present -and
+    [bool]$listener.loopback_only -and
+    $firewallPresent -and
+    $serveConfigured -and
+    $serveTargetsBackendPort
+) {
+    $deploymentStateClass = "WP22A_PRIVATE_REMOTE_RUNTIME_PRESENT"
+}
+elseif (
+    $remoteTaskState -eq "MISSING" -and
+    [bool]$listener.present -and
+    [bool]$listener.loopback_only -and
+    -not $firewallPresent -and
+    -not $serveConfigured
+) {
+    $deploymentStateClass = "WP22A_LOCAL_WEB_ONLY"
+}
+elseif (
+    $remoteTaskState -eq "MISSING" -and
+    -not [bool]$listener.present -and
+    -not $firewallPresent -and
+    -not $serveConfigured
+) {
+    $deploymentStateClass = "WP22A_DISABLED_NO_WEB_LISTENER"
+}
+
 $result = [ordered]@{
     schema_version = "1"
     work_package = "WP22A"
     evidence_class = "SANITIZED_LOCAL_DEPLOYMENT_DIAGNOSTIC"
-    base_task_state = Get-TaskStateSafe -Name $baseTaskName
-    remote_task_state = Get-TaskStateSafe -Name $remoteTaskName
+    deployment_state_class = $deploymentStateClass
+    apply_in_progress_or_blocked = [bool]$applyInProgressOrBlocked
+    base_task_state = $baseTaskState
+    remote_task_state = $remoteTaskState
     task_scheduler_history_query_available = [bool]$wp15History.query_available
     wp15_task_history_found = [bool]$wp15History.history_found
     wp15_latest_scheduler_event_id = [int]$wp15History.latest_event_id

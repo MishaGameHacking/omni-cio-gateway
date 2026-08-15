@@ -133,6 +133,74 @@ function Invoke-TailscaleText {
     return [ordered]@{ exit_code = [int]$exitCode; text = $text }
 }
 
+function Invoke-TailscaleServeEnableBounded {
+    param(
+        [Parameter(Mandatory = $true)][string]$Exe,
+        [ValidateRange(5000, 120000)][int]$TimeoutMilliseconds = 30000
+    )
+
+    # Serve can require an external HTTPS privacy-consent page. Do not use
+    # --yes and do not let an interactive CLI wait leave remote mode partial.
+    # Capture output in memory only so any consent URL can be reduced to a
+    # symbolic reason without being printed or persisted.
+    $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+    $startInfo.FileName = $Exe
+    $startInfo.Arguments = "serve --bg http://127.0.0.1:$Port"
+    $startInfo.UseShellExecute = $false
+    $startInfo.CreateNoWindow = $true
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+
+    $process = [System.Diagnostics.Process]::new()
+    $process.StartInfo = $startInfo
+    try {
+        $started = $false
+        try {
+            $started = $process.Start()
+        }
+        catch {
+            throw "WP22A_TAILSCALE_SERVE_PROCESS_START_FAILED"
+        }
+        if (-not $started) {
+            throw "WP22A_TAILSCALE_SERVE_PROCESS_START_FAILED"
+        }
+
+        $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+        $stderrTask = $process.StandardError.ReadToEndAsync()
+        $completed = [bool]$process.WaitForExit($TimeoutMilliseconds)
+        if (-not $completed) {
+            try {
+                $process.Kill()
+            }
+            catch {
+                throw "WP22A_TAILSCALE_SERVE_PROCESS_TERMINATION_FAILED"
+            }
+            if (-not $process.WaitForExit(5000)) {
+                throw "WP22A_TAILSCALE_SERVE_PROCESS_TERMINATION_FAILED"
+            }
+        }
+
+        $stdoutAwaiter = $stdoutTask.GetAwaiter()
+        $stderrAwaiter = $stderrTask.GetAwaiter()
+        $stdout = [string]$stdoutAwaiter.GetResult()
+        $stderr = [string]$stderrAwaiter.GetResult()
+        $textParts = @(
+            $stdout,
+            $stderr
+        ) | Where-Object {
+            -not [string]::IsNullOrWhiteSpace([string]$_)
+        }
+        return [ordered]@{
+            timed_out = [bool](-not $completed)
+            exit_code = [int]$process.ExitCode
+            text = [string]($textParts -join [Environment]::NewLine)
+        }
+    }
+    finally {
+        $process.Dispose()
+    }
+}
+
 function Get-TailscaleIdentity {
     param([Parameter(Mandatory = $true)][string]$Exe)
 
@@ -836,9 +904,18 @@ function Test-RemoteOwnerSession {
 function Enable-ServeChecked {
     param([Parameter(Mandatory = $true)][string]$Exe)
 
-    $enable = Invoke-TailscaleText -Exe $Exe -Arguments @("serve", "--bg", "http://127.0.0.1:$Port") -AllowFailure
+    $enable = Invoke-TailscaleServeEnableBounded -Exe $Exe
+    $consentLinkPresent = [bool](
+        $enable.text -match '(?i)https://[^\s]*tailscale[^\s]*'
+    )
+    if ([bool]$enable.timed_out) {
+        if ($consentLinkPresent) {
+            throw "WP22A_TAILSCALE_HTTPS_CONSENT_REQUIRED"
+        }
+        throw "WP22A_TAILSCALE_SERVE_ENABLE_TIMEOUT"
+    }
     if ($enable.exit_code -eq 0) { return }
-    if ($enable.text -match '(?i)https://[^\s]*tailscale[^\s]*') {
+    if ($consentLinkPresent) {
         throw "WP22A_TAILSCALE_HTTPS_CONSENT_REQUIRED"
     }
     throw "WP22A_TAILSCALE_SERVE_ENABLE_FAILED"

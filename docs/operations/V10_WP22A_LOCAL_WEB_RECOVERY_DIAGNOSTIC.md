@@ -48,6 +48,20 @@ Known Task Scheduler status values are also classified without expanding them in
 
 Any other result remains `WP15_RUNTIME_RESULT_OTHER` until engineering reviews it. The helper must not invent a more specific cause.
 
+## Sanitized partial remote-state classification
+
+The separate non-mutating `diagnose_wp22a_local_state.ps1` helper also classifies remote-cutover state without emitting the tailnet hostname, OWNER login, runner identity/SID, consent URL or secrets.
+
+The specific combination below is authoritative evidence of a partial remote Apply boundary:
+
+- remote task `RUNNING`;
+- backend listener present and loopback-only;
+- runner loopback firewall present;
+- Tailscale Serve absent/not targeting the backend;
+- Funnel/public ingress false.
+
+It is reported as `deployment_state_class=WP22A_REMOTE_RUNTIME_SERVE_PENDING` and `apply_in_progress_or_blocked=true`. It is not an accepted remote runtime. The OWNER must not repeat Apply, run Verify/finalizer, enable Funnel or manually delete tasks/firewall/runtime state. Engineering first repairs or confirms the bounded Serve-consent path, obtains exact-head GREEN, and then authorizes replacement-head Cleanup.
+
 ## OWNER boundary
 
 Do not ask the OWNER to run this diagnostic until the exact implementation containing the helper has passed focused WP22A checks and the authoritative self-hosted Windows gates. After execution, only its sanitized JSON output is acceptable as chat/GitHub diagnostic evidence.

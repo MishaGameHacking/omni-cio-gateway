@@ -113,6 +113,38 @@ def test_remote_task_persists_only_its_owned_batch_logon_right() -> None:
     assert "SeInteractiveLogonRight" not in source
 
 
+def test_tailscale_serve_enable_is_bounded_and_never_auto_accepts() -> None:
+    source = PROVISIONER.read_text(encoding="utf-8")
+    bounded = source[
+        source.index("function Invoke-TailscaleServeEnableBounded") :
+        source.index("function Get-TailscaleIdentity")
+    ]
+    enable = source[
+        source.index("function Enable-ServeChecked") :
+        source.index("function Write-Result")
+    ]
+
+    assert "System.Diagnostics.ProcessStartInfo" in bounded
+    assert "RedirectStandardOutput = $true" in bounded
+    assert "RedirectStandardError = $true" in bounded
+    assert "ReadToEndAsync()" in bounded
+    assert "WaitForExit($TimeoutMilliseconds)" in bounded
+    assert "WaitForExit(5000)" in bounded
+    assert "$process.Kill()" in bounded
+    assert "WP22A_TAILSCALE_SERVE_PROCESS_START_FAILED" in bounded
+    assert "WP22A_TAILSCALE_SERVE_PROCESS_TERMINATION_FAILED" in bounded
+    assert "timed_out" in bounded
+    assert "Write-Output" not in bounded
+    assert "Invoke-TailscaleServeEnableBounded -Exe $Exe" in enable
+    assert "WP22A_TAILSCALE_HTTPS_CONSENT_REQUIRED" in enable
+    assert "WP22A_TAILSCALE_SERVE_ENABLE_TIMEOUT" in enable
+    assert '"--yes"' not in source
+    assert (
+        'Invoke-TailscaleText -Exe $Exe -Arguments @("serve", "--bg"'
+        not in enable
+    )
+
+
 def test_provisioner_preserves_sanitized_primary_and_rollback_failure_reasons() -> None:
     source = PROVISIONER.read_text(encoding="utf-8")
     assert "function Get-SafeReasonCode" in source
@@ -151,6 +183,11 @@ def test_sanitized_local_diagnostic_treats_protected_paths_as_state_not_failure(
     assert "tailscale_serve_configured" in source
     assert "tailscale_serve_targets_backend_port" in source
     assert "funnel_public_ingress" in source
+    assert "deployment_state_class" in source
+    assert "apply_in_progress_or_blocked" in source
+    assert "WP22A_REMOTE_RUNTIME_SERVE_PENDING" in source
+    assert "WP22A_PRIVATE_REMOTE_RUNTIME_PRESENT" in source
+    assert "WP22A_PUBLIC_INGRESS_FORBIDDEN" in source
     assert "raw_tailnet_hostname_emitted = $false" in source
     assert "raw_owner_login_emitted = $false" in source
     assert "raw_runner_identity_emitted = $false" in source
