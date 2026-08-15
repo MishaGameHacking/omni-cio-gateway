@@ -62,7 +62,6 @@ def test_provisioner_blocks_runner_loopback_and_rebuilds_local_runtime_on_rollba
     assert '"::1"' not in source
 
 
-
 def test_remote_task_persists_only_its_owned_batch_logon_right() -> None:
     source = PROVISIONER.read_text(encoding="utf-8")
 
