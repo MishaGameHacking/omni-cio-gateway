@@ -68,6 +68,11 @@ $env:PYTHONDONTWRITEBYTECODE = "1"
 $env:PYTHONUTF8 = "1"
 $env:PYTHONIOENCODING = "utf-8"
 
+# Tailscale Serve supplies X-Forwarded-For with the original tailnet peer. Uvicorn
+# trusts loopback proxy peers by default and would otherwise rewrite ASGI
+# request.client away from 127.0.0.1. WP22A intentionally authenticates Serve via
+# the actual loopback TCP peer plus Tailscale-User-* identity headers, so forwarded
+# address rewriting must remain disabled rather than weakening the loopback guard.
 Set-Location -LiteralPath $app
-& $python -m uvicorn apps.api.wp22a_remote:create_private_remote_app --factory --host 127.0.0.1 --port $Port --log-level warning --no-access-log
+& $python -m uvicorn apps.api.wp22a_remote:create_private_remote_app --factory --host 127.0.0.1 --port $Port --log-level warning --no-access-log --no-proxy-headers
 exit $LASTEXITCODE
