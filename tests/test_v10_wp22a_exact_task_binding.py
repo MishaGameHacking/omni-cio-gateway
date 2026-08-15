@@ -7,6 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PROVISIONER = (
     ROOT / "infrastructure" / "windows" / "provision_wp22a_private_remote_access.ps1"
 )
+FINALIZER = ROOT / "infrastructure" / "windows" / "finalize_wp22a_owner_evidence.ps1"
 
 
 def test_remote_acceptance_requires_exact_live_task_binding() -> None:
@@ -41,3 +42,19 @@ def test_remote_acceptance_requires_exact_live_task_binding() -> None:
         in result
     )
     assert "exact_implementation_binding = $true" not in result
+
+
+def test_owner_finalizer_preserves_primary_failure_and_rechecks_parent_boundary() -> None:
+    source = FINALIZER.read_text(encoding="utf-8")
+    acl = source[
+        source.index("function Set-ProtectedEvidenceAcl") : source.index(
+            "function Get-EvidenceAclState"
+        )
+    ]
+    failure = source[source.rindex("catch {") :]
+
+    assert acl.count("WP22A_EVIDENCE_PARENT_REPARSE_POINT_FORBIDDEN") == 2
+    assert acl.count("WP22A_EVIDENCE_ROOT_REPARSE_POINT_FORBIDDEN") == 2
+    assert "$failure = $_" in failure
+    assert "$reason = [string]$failure.Exception.Message" in failure
+    assert "$reason = [string]$_.Exception.Message" not in failure
