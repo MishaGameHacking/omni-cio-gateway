@@ -296,7 +296,13 @@ def create_local_private_app(
     else:
         apply_migrations(raw_connection)
     connection: ConnectionLike = _SerializedWebConnection(raw_connection)
-    sessions = PostgresWebSessionRegistryV1(connection, policy=session_policy)
+    if session_policy is None:
+        sessions = PostgresWebSessionRegistryV1(connection)
+    else:
+        sessions = PostgresWebSessionRegistryV1(
+            connection,
+            policy=session_policy,
+        )
     broker_repository = PostgresBrokerConnectionRepositoryV1(connection)
     vault = ReadBrokerConnectionVaultV1()
     provisioning = BrokerProvisioningServiceV1(

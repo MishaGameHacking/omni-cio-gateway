@@ -125,10 +125,9 @@ def test_remote_factory_uses_wp22a_short_session_policy_for_create_and_resolve()
     )
     assert "policy=REMOTE_SESSION_POLICY" in remote_source
     assert "session_policy: SessionPolicyV1 | None = None" in local_source
-    assert (
-        "PostgresWebSessionRegistryV1(connection, policy=session_policy)"
-        in local_source
-    )
+    assert "if session_policy is None:" in local_source
+    assert "PostgresWebSessionRegistryV1(connection)" in local_source
+    assert "policy=session_policy" in local_source
 
 
 def test_owner_finalizer_protects_evidence_with_runner_read_only_acl() -> None:
