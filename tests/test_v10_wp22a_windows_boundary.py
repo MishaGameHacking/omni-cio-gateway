@@ -77,7 +77,7 @@ def test_remote_cutover_reuses_only_an_accepted_exact_head_base_runtime() -> Non
 
     assert "function Test-BaseLocalWebReady" in base_boundary
     assert "function Ensure-BaseLocalWebReady" in base_boundary
-    assert 'Invoke-BaseProvisioner -Sha $Sha -Mode Verify' in base_boundary
+    assert "Invoke-BaseProvisioner -Sha $Sha -Mode Verify" in base_boundary
     assert 'if ($Mode -eq "Verify") { $arguments += "-Verify" }' in base_boundary
     assert "Get-BaseWebFailureReason -Text $text -Mode $Mode" in base_boundary
     assert "ConvertFrom-Json -ErrorAction Stop" in base_boundary
@@ -269,4 +269,3 @@ def test_owner_audit_uses_cmd_wrapper_for_bypass_powershell_child_processes() ->
         'audit_wp22a_runner_loopback.ps1" -ExpectedImplementationSha '
         '"%EXPECTED_HEAD%" -AsJson'
     ) in source
-
