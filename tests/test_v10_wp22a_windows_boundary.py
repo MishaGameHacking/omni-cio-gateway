@@ -176,18 +176,35 @@ def test_local_self_serve_is_a_negative_identity_probe_not_positive_owner_proof(
     None
 ):
     source = PROVISIONER.read_text(encoding="utf-8")
+    identity = source[
+        source.index("function Get-TailscaleIdentity") : source.index(
+            "function Test-NoFunnel"
+        )
+    ]
     probe = source[
         source.index("function Test-LocalServeIdentitySpoofDenied") : source.index(
             "function Enable-ServeChecked"
         )
     ]
+    acceptance = source[
+        source.index("function Get-RemoteAcceptanceState") : source.index(
+            "function Get-RemoteAcceptanceFailureReason"
+        )
+    ]
+    result = source[source.rindex("$result = [ordered]@{") :]
 
+    assert "owner_login = $login" in identity
     assert "$handler.UseProxy = $false" in probe
+    assert '[Parameter(Mandatory = $true)][string]$OwnerLogin' in probe
     assert '"Tailscale-User-Login"' in probe
-    assert '"wp22a-local-spoof.invalid"' in probe
+    assert "$OwnerLogin" in probe
+    assert '"wp22a-local-spoof.invalid"' not in probe
     assert "return [int]$response.StatusCode -eq 403" in probe
-    assert "Positive OWNER identity/session proof belongs to the" in probe
+    assert "forged real OWNER header" in probe
     assert "private-tailnet-login" not in probe
+    assert "-OwnerLogin $OwnerLogin" in acceptance
+    assert "-OwnerLogin $identity.owner_login" in source
+    assert "owner_login" not in result
 
 
 def test_provisioner_preserves_sanitized_primary_and_rollback_failure_reasons() -> None:
