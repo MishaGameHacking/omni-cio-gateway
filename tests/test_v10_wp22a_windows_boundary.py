@@ -122,7 +122,7 @@ def test_tailscale_serve_enable_is_bounded_and_never_auto_accepts() -> None:
     ]
     enable = source[
         source.index("function Enable-ServeChecked") : source.index(
-            "function Write-Result"
+            "function Get-RemoteAcceptanceState"
         )
     ]
 
@@ -142,6 +142,50 @@ def test_tailscale_serve_enable_is_bounded_and_never_auto_accepts() -> None:
     assert "WP22A_TAILSCALE_SERVE_ENABLE_TIMEOUT" in enable
     assert '"--yes"' not in source
     assert 'Invoke-TailscaleText -Exe $Exe -Arguments @("serve", "--bg"' not in enable
+
+
+def test_apply_post_cutover_acceptance_stays_inside_rollback_boundary() -> None:
+    source = PROVISIONER.read_text(encoding="utf-8")
+    apply_start = source.rindex("if ($Apply) {")
+    verify_start = source.index("if ($null -eq $acceptance)", apply_start)
+    apply_block = source[apply_start:verify_start]
+    acceptance = source[
+        source.index("function Get-RemoteAcceptanceState") : source.index(
+            "function Get-RemoteAcceptanceFailureReason"
+        )
+    ]
+
+    assert "Get-RemoteAcceptanceState -Exe $tailscale" in apply_block
+    assert "Get-RemoteAcceptanceFailureReason -State $acceptance" in apply_block
+    assert "Restore-LocalWebTask -Sha $sha -TailscaleExe $tailscale" in apply_block
+    assert apply_block.index("Get-RemoteAcceptanceState -Exe $tailscale") < apply_block.index(
+        "catch {"
+    )
+    assert "Test-NoFunnel -Exe $Exe" in acceptance
+    assert "Test-LocalServeIdentitySpoofDenied" in acceptance
+    assert "local_serve_identity_spoof_denied" in acceptance
+    assert "Test-RemoteOwnerSession" not in source
+    assert "WP22A_LOCAL_SERVE_IDENTITY_SPOOF_NOT_DENIED" in source
+    assert 'reason = "WP22A_PRIVATE_REMOTE_INFRASTRUCTURE_ACCEPTED"' not in source
+    assert '"WP22A_PRIVATE_REMOTE_INFRASTRUCTURE_ACCEPTED"' in source
+    assert "owner_identity_binding = $null" in source
+    assert "secure_server_session = $null" in source
+
+
+def test_local_self_serve_is_a_negative_identity_probe_not_positive_owner_proof() -> None:
+    source = PROVISIONER.read_text(encoding="utf-8")
+    probe = source[
+        source.index("function Test-LocalServeIdentitySpoofDenied") : source.index(
+            "function Enable-ServeChecked"
+        )
+    ]
+
+    assert "$handler.UseProxy = $false" in probe
+    assert '"Tailscale-User-Login"' in probe
+    assert '"wp22a-local-spoof.invalid"' in probe
+    assert "return [int]$response.StatusCode -eq 403" in probe
+    assert "Positive OWNER identity/session proof belongs to the" in probe
+    assert "private-tailnet-login" not in probe
 
 
 def test_provisioner_preserves_sanitized_primary_and_rollback_failure_reasons() -> None:
@@ -235,6 +279,9 @@ def test_remote_factory_uses_wp22a_short_session_policy_and_verified_database() 
 
 def test_owner_finalizer_protects_evidence_with_runner_read_only_acl() -> None:
     source = OWNER_FINALIZER.read_text(encoding="utf-8")
+    protect = source.index("Set-ProtectedEvidenceAcl -RunnerSid $runnerSid")
+    remove = source.index("Remove-Item -LiteralPath $evidencePath", protect)
+
     assert "SetAccessRuleProtection($true, $false)" in source
     assert "ReadAndExecute" in source
     assert "WP22A_OWNER_EVIDENCE_ACL_INVALID" in source
@@ -244,6 +291,13 @@ def test_owner_finalizer_protects_evidence_with_runner_read_only_acl() -> None:
     assert "raw_runner_identity_collected = $false" in source
     assert "raw_runner_sid_collected = $false" in source
     assert "local_app_factory_sha256" in source
+    assert "OwnerPrivateLoginConfirmed" in source
+    assert "WP22A_OWNER_PRIVATE_LOGIN_CONFIRMATION_REQUIRED" in source
+    assert "WP22A_PRIVATE_REMOTE_INFRASTRUCTURE_ACCEPTED" in source
+    assert "local_serve_identity_spoof_denied" in source
+    assert "WP22A_EVIDENCE_PARENT_REPARSE_POINT_FORBIDDEN" in source
+    assert "WP22A_EVIDENCE_ROOT_REPARSE_POINT_FORBIDDEN" in source
+    assert protect < remove
 
 
 def test_runner_auditor_requires_live_denials_for_backend_and_owner_evidence() -> None:
@@ -331,6 +385,10 @@ def test_owner_apply_wrapper_persists_only_sanitized_result() -> None:
     assert "System.IO.File]::Replace" in source
     assert "WP22A_SAFE_RESULT_PERSIST_FAILED" in source
     assert "OWNER_APPLY_SANITIZED_LOCAL_RESULT" in source
+    assert "WP22A_PRIVATE_REMOTE_INFRASTRUCTURE_ACCEPTED" in source
+    assert "local_serve_identity_spoof_denied" in source
+    assert "$null -ne $payload.owner_identity_binding" in source
+    assert "$null -ne $payload.secure_server_session" in source
     assert "raw_child_output_persisted = $false" in source
     assert "raw_child_output_emitted = $false" in source
     assert "private_url_persisted = $false" in source
