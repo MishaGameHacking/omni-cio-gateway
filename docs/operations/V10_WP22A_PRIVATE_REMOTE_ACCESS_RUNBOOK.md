@@ -64,11 +64,12 @@ After a sanitized `WP22A_TAILSCALE_HTTPS_CONSENT_REQUIRED`, the OWNER may review
 
 ## Source-controlled deployment, recovery and evidence boundary
 
-WP22A adds six reviewed Windows scripts:
+WP22A adds seven reviewed Windows scripts:
 
 ```text
 infrastructure/windows/run_wp22a_private_remote_runtime.ps1
 infrastructure/windows/provision_wp22a_private_remote_access.ps1
+infrastructure/windows/invoke_wp22a_owner_apply_safe.ps1
 infrastructure/windows/diagnose_wp22a_local_state.ps1
 infrastructure/windows/recover_wp22a_local_web_diagnostic.ps1
 infrastructure/windows/audit_wp22a_runner_loopback.ps1
@@ -108,6 +109,8 @@ The recovery behavior is deliberately fail-closed and idempotent:
 - a WP22A-owned batch-logon assignment is retained only while the persistent remote startup/restart task exists; the task description preserves whether WP22A added that right so Cleanup/rollback never removes a pre-existing OWNER assignment and never leaves a WP22A-added assignment behind;
 - a failed apply preserves a sanitized primary reason code and separately reports whether local rollback passed or the sanitized rollback reason. If WP15 returns structured readiness JSON with a nonzero exit, WP22A maps the first failed boolean boundary to a symbolic reason instead of collapsing it into a generic base-Web failure. Raw nested command output, credentials, identities and private URLs are not promoted into the reason code;
 - a failed apply with a failed rollback leaves WP22A blocked. It must not be retried blindly on the same implementation head.
+
+The reviewed OWNER apply wrapper writes an ACL-protected sanitized `RUNNING` marker before starting the mutating provisioner and atomically replaces it with the final sanitized result. The durable file is `C:\ProgramData\OmniCIO\diagnostics\wp22a-owner-apply.sanitized.local.json`. It contains only exact-head identity, symbolic result codes, booleans and counts; raw child output, private URL, Tailscale identity and secrets remain memory-only and are neither emitted nor persisted. This file is recovery/diagnostic state only and is never accepted as phone-rehearsal or WP22A Exit-Gate evidence.
 
 The sanitized local-state diagnostic is non-mutating. It is designed for self-hosted CI to report only task states and safety booleans needed to classify a partial deployment: runtime root/marker presence, runtime identity enabled state, loopback listener state, runner firewall presence, Serve/Funnel status availability and whether Serve points at the expected backend port. It does not emit the tailnet hostname, OWNER login, runner identity/SID or secret values.
 
@@ -190,12 +193,12 @@ Only after the corrected Cleanup returns PASS may a new `-Apply` be attempted. I
 From an elevated PowerShell in the exact clean reviewed checkout, the normal reviewed apply command is:
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\infrastructure\windows\provision_wp22a_private_remote_access.ps1" -ExpectedImplementationSha "<EXACT_REVIEWED_HEAD>" -Apply -AsJson
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\infrastructure\windows\invoke_wp22a_owner_apply_safe.ps1" -ExpectedImplementationSha "<EXACT_REVIEWED_HEAD>" -AsJson
 ```
 
-The script returns the private HTTPS URL locally after a successful remote deployment. Do not paste the raw Tailscale login, private URL or credentials into GitHub/chat.
+The wrapper prints and persists only the sanitized result. From any later elevated PowerShell session, read it with `Get-Content -LiteralPath 'C:\ProgramData\OmniCIO\diagnostics\wp22a-owner-apply.sanitized.local.json' -Raw`. After a PASS, obtain the private HTTPS URL locally with `tailscale serve status`; do not paste the raw Tailscale login, private URL or credentials into GitHub/chat.
 
-If Tailscale requires external HTTPS consent, stop at that OWNER decision boundary. Review the Tailscale machine name first; enable HTTPS only if its publication in certificate transparency is acceptable. Then rerun the same exact-head `-Apply` command.
+If Tailscale requires external HTTPS consent, stop at that OWNER decision boundary. Review the Tailscale machine name first; enable HTTPS only if its publication in certificate transparency is acceptable. Then rerun the same exact-head OWNER apply-wrapper command.
 
 A non-mutating verification after apply is:
 

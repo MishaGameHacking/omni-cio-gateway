@@ -134,6 +134,8 @@ Before a new remote cutover, WP22A first executes the accepted WP15 `Verify` gat
 
 A failed remote apply must retain a sanitized primary reason code and separately report either local rollback PASS or a sanitized rollback reason. Generic replacement of both failures with one opaque reason is forbidden. Raw nested process output, private URLs, Tailscale identities, runner identities/SIDs and secrets must not be exposed as diagnostic evidence.
 
+The source-controlled `invoke_wp22a_owner_apply_safe.ps1` must establish a protected, non-reparse local result root and atomically persist a sanitized in-progress marker before starting Apply. It must replace that marker with a final allowlisted JSON result without persisting or emitting raw child output, private URL, Tailscale identity or secrets. The durable apply result is operational recovery evidence only; it cannot satisfy the separate OWNER phone-rehearsal Exit Gate.
+
 The source-controlled `diagnose_wp22a_local_state.ps1` is non-mutating and reports only sanitized state needed to classify a partial deployment: base/remote task states, runtime root and deployment-marker presence, runtime identity enabled state, loopback listener state, runner firewall presence, Serve/Funnel status availability and whether Serve points to the expected backend port. It must not emit the tailnet hostname, OWNER login, runner identity/SID or secrets.
 
 ## 8. Required deterministic checks
@@ -162,7 +164,7 @@ Before OWNER deployment evidence, CI must prove at minimum:
 - strict CSP is emitted without `unsafe-inline`/`unsafe-eval`, and frontend source does not require React inline style attributes;
 - the existing local-only TrustedHost middleware still composes correctly behind the outer remote-access guard;
 - frontend Web API sends the CSRF header only when the CSRF cookie exists;
-- Windows provisioning, runtime-launcher, sanitized diagnostic, runner-auditor and OWNER-evidence scripts parse under Windows PowerShell 5.1 without applying changes in CI;
+- Windows provisioning, runtime-launcher, sanitized apply-result wrapper, sanitized diagnostic, runner-auditor and OWNER-evidence scripts parse under Windows PowerShell 5.1 without applying changes in CI;
 - the source-controlled runtime launcher binds Uvicorn only to loopback and runs as the existing non-admin runtime account during OWNER apply;
 - the provisioner creates an outbound Windows Firewall block bound to the exact non-LocalSystem GitHub runner service SID and WP22A backend port;
 - the persistent WP22A startup/restart task holds `SeBatchLogonRight` only on the dedicated non-admin runtime identity while remote mode is active, rejects the deny right, records whether WP22A owns the assignment, and restores only a WP22A-owned assignment during Cleanup/rollback;
@@ -173,6 +175,7 @@ Before OWNER deployment evidence, CI must prove at minimum:
 - rollback executes accepted WP15 Cleanup → Apply unconditionally; pre-cutover reuse is allowed only after accepted exact-head WP15 Verify, and every failed verification is normalized through Cleanup → Apply so partial task/root absence cannot bypass runtime-identity normalization;
 - a reconstructed local runtime must be running before rollback is accepted;
 - apply failures preserve sanitized primary and rollback reason classes without publishing raw subprocess output; a structured nonzero WP15 readiness result is reduced to its first failed boolean boundary before the generic base-Web fallback is allowed;
+- the OWNER apply wrapper persists a protected attempt marker before mutation and atomically replaces it with the final sanitized result, so closing the initiating shell cannot erase the only available failure classification;
 - the OWNER workflow reports the non-mutating sanitized local deployment state before it requires physical phone evidence;
 - the OWNER finalizer creates a protected, non-reparse evidence directory with SYSTEM/Administrators write authority, exact runner read-only authority, no runner write/delete authority and no broad Everyone/Authenticated Users/Users allow rule;
 - the source-controlled OWNER evidence validator requires the ACL/read-only booleans and rejects any evidence claiming runner write access;

@@ -304,3 +304,52 @@ def test_owner_audit_uses_cmd_wrapper_for_bypass_powershell_child_processes() ->
         'audit_wp22a_runner_loopback.ps1" -ExpectedImplementationSha '
         '"%EXPECTED_HEAD%" -AsJson'
     ) in source
+
+
+def test_owner_apply_wrapper_persists_only_sanitized_result() -> None:
+    wrapper = (
+        ROOT
+        / "infrastructure"
+        / "windows"
+        / "invoke_wp22a_owner_apply_safe.ps1"
+    )
+    runbook = (
+        ROOT
+        / "docs"
+        / "operations"
+        / "V10_WP22A_PRIVATE_REMOTE_ACCESS_RUNBOOK.md"
+    ).read_text(encoding="utf-8")
+    source = wrapper.read_text(encoding="utf-8")
+    workflow = OWNER_WORKFLOW.read_text(encoding="utf-8")
+
+    marker = source.index('reason = "WP22A_OWNER_APPLY_IN_PROGRESS"')
+    child = source.index("& powershell.exe")
+    assert marker < child
+    assert source.count("Save-SanitizedResult -Result $result") == 2
+    assert "provision_wp22a_private_remote_access.ps1" in source
+    assert "-ExpectedImplementationSha $recordedImplementationSha" in source
+    assert "-Apply" in source
+    assert "-AsJson 2>&1" in source
+    assert "wp22a-owner-apply.sanitized.local.json" in source
+    assert "SetAccessRuleProtection($true, $false)" in source
+    assert "S-1-5-18" in source
+    assert "S-1-5-32-544" in source
+    assert "ReparsePoint" in source
+    assert "System.IO.File]::WriteAllText" in source
+    assert "System.IO.File]::Replace" in source
+    assert "WP22A_SAFE_RESULT_PERSIST_FAILED" in source
+    assert "OWNER_APPLY_SANITIZED_LOCAL_RESULT" in source
+    assert "raw_child_output_persisted = $false" in source
+    assert "raw_child_output_emitted = $false" in source
+    assert "private_url_persisted = $false" in source
+    assert "private_url_emitted = $false" in source
+    assert "private_identity_persisted = $false" in source
+    assert "secret_value_persisted = $false" in source
+    assert "$captured | Set-Content" not in source
+    assert "$capturedText | Set-Content" not in source
+    assert "Write-Output $captured" not in source
+    assert "Write-Output $capturedText" not in source
+    assert '"--yes"' not in source
+    assert "invoke_wp22a_owner_apply_safe.ps1" in runbook
+    assert "invoke_wp22a_owner_apply_safe.ps1" in workflow
+
