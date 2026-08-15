@@ -50,13 +50,9 @@ jobs:
           echo WP22A OWNER exact head: %ACTUAL_HEAD%
 
       - name: Report sanitized local WP22A deployment state
-        shell: powershell
         run: |
-          $ErrorActionPreference = 'Stop'
-          & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass `
-            -File .\infrastructure\windows\diagnose_wp22a_local_state.ps1 `
-            -AsJson
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ".\infrastructure\windows\diagnose_wp22a_local_state.ps1" -AsJson
+          if errorlevel 1 exit /b 14
 
       - name: Require real local OWNER phone rehearsal evidence
         run: |
@@ -71,16 +67,11 @@ jobs:
           echo WP22A_OWNER_LOCAL_REHEARSAL=PRESENT
 
       - name: Prove CI runner cannot spoof the loopback Tailscale identity path
-        shell: powershell
         env:
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          $ErrorActionPreference = 'Stop'
-          & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass `
-            -File .\infrastructure\windows\audit_wp22a_runner_loopback.ps1 `
-            -ExpectedImplementationSha $env:EXPECTED_HEAD `
-            -AsJson
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ".\infrastructure\windows\audit_wp22a_runner_loopback.ps1" -ExpectedImplementationSha "%EXPECTED_HEAD%" -AsJson
+          if errorlevel 1 exit /b 15
 
       - name: Validate current implementation-bound OWNER evidence
         env:
@@ -103,7 +94,6 @@ jobs:
 
       - name: Clean runner-temporary sanitized evidence
         if: always()
-        shell: cmd
         run: |
           @echo off
           if defined WP22A_OWNER_FINAL if exist "%WP22A_OWNER_FINAL%" del /f /q "%WP22A_OWNER_FINAL%"
