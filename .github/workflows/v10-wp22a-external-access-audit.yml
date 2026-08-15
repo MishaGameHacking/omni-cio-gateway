@@ -101,19 +101,19 @@ jobs:
 
       - name: Run WP22A Python static and security contracts
         run: |
-          "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m ruff check omni_cio\web\external_access_v1.py apps\api\wp22a_remote.py scripts\validate_v10_wp22a_owner_evidence.py tests\test_v10_wp22a_external_access.py tests\test_v10_wp22a_owner_evidence_validator.py tests\test_v10_wp22a_windows_boundary.py
+          "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m ruff check omni_cio\web\external_access_v1.py apps\api\wp22a_remote.py scripts\validate_v10_wp22a_owner_evidence.py tests\test_v10_wp22a_external_access.py tests\test_v10_wp22a_owner_evidence_validator.py tests\test_v10_wp22a_windows_boundary.py tests\test_v10_wp22a_recovery_diagnostic.py
           if errorlevel 1 exit /b 40
-          "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m ruff format --check omni_cio\web\external_access_v1.py apps\api\wp22a_remote.py scripts\validate_v10_wp22a_owner_evidence.py tests\test_v10_wp22a_external_access.py tests\test_v10_wp22a_owner_evidence_validator.py tests\test_v10_wp22a_windows_boundary.py
+          "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m ruff format --check omni_cio\web\external_access_v1.py apps\api\wp22a_remote.py scripts\validate_v10_wp22a_owner_evidence.py tests\test_v10_wp22a_external_access.py tests\test_v10_wp22a_owner_evidence_validator.py tests\test_v10_wp22a_windows_boundary.py tests\test_v10_wp22a_recovery_diagnostic.py
           if errorlevel 1 exit /b 41
           "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m mypy
           if errorlevel 1 exit /b 42
-          "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m pytest -q tests\test_v10_wp22a_external_access.py tests\test_v10_wp22a_owner_evidence_validator.py tests\test_v10_wp22a_windows_boundary.py tests\test_v10_wp17_web_api.py
+          "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m pytest -q tests\test_v10_wp22a_external_access.py tests\test_v10_wp22a_owner_evidence_validator.py tests\test_v10_wp22a_windows_boundary.py tests\test_v10_wp22a_recovery_diagnostic.py tests\test_v10_wp17_web_api.py
           if errorlevel 1 exit /b 43
 
       - name: Parse WP22A Windows owner gates without applying
         shell: cmd
         run: |
-          powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $paths=@('infrastructure\windows\run_wp22a_private_remote_runtime.ps1','infrastructure\windows\provision_wp22a_private_remote_access.ps1','infrastructure\windows\diagnose_wp22a_local_state.ps1','infrastructure\windows\finalize_wp22a_owner_evidence.ps1','infrastructure\windows\audit_wp22a_runner_loopback.ps1'); foreach ($path in $paths) { $tokens=$null; $errors=$null; [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path), [ref]$tokens, [ref]$errors); if ($errors.Count -ne 0) { $errors | ForEach-Object { Write-Error $_.Message }; exit 44 } }; Write-Host 'WP22A PowerShell parse contract passed.'"
+          powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $paths=@('infrastructure\windows\run_wp22a_private_remote_runtime.ps1','infrastructure\windows\provision_wp22a_private_remote_access.ps1','infrastructure\windows\diagnose_wp22a_local_state.ps1','infrastructure\windows\recover_wp22a_local_web_diagnostic.ps1','infrastructure\windows\finalize_wp22a_owner_evidence.ps1','infrastructure\windows\audit_wp22a_runner_loopback.ps1'); foreach ($path in $paths) { $tokens=$null; $errors=$null; [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path), [ref]$tokens, [ref]$errors); if ($errors.Count -ne 0) { $errors | ForEach-Object { Write-Error $_.Message }; exit 44 } }; Write-Host 'WP22A PowerShell parse contract passed.'"
           if errorlevel 1 exit /b 44
 
       - name: Verify accepted Web and repository guards
