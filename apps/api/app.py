@@ -281,7 +281,9 @@ def _dashboard_adapter_builder(
 
 
 def create_local_private_app(
-    *, session_policy: SessionPolicyV1 | None = None
+    *,
+    session_policy: SessionPolicyV1 | None = None,
+    verify_existing_database: bool = False,
 ) -> FastAPI:
     """Create the local/private Web app without changing the protected app:app gateway."""
     private_acceptance = _private_acceptance_enabled()
@@ -291,7 +293,7 @@ def create_local_private_app(
 
     raw_connection = connect_postgres("")
     _configure_long_lived_web_connection(raw_connection)
-    if live_acceptance_enabled:
+    if live_acceptance_enabled or verify_existing_database:
         _verify_live_database(raw_connection)
     else:
         apply_migrations(raw_connection)
