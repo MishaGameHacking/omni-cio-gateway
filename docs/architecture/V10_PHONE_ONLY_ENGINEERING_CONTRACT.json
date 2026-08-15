@@ -11,6 +11,18 @@
     "OMNI_CIO_WEB"
   ],
   "native_mobile_apps_required": false,
+  "owner_instruction_standard": {
+    "direct_official_link_when_stable": true,
+    "exact_click_path_when_verified": true,
+    "one_bounded_action_at_a_time": true,
+    "expected_result_required": true,
+    "stop_condition_required": true,
+    "do_not_do_warnings_required": true,
+    "minimum_safe_return_required": true,
+    "routine_log_or_ci_troubleshooting_delegated_to_owner": false,
+    "verify_current_provider_ui_or_docs_before_click_instructions_when_changeable": true,
+    "paid_action_cost_boundary_must_be_stated_before_confirmation": true
+  },
   "external_service_account_policy": {
     "github_social_login_preferred_when_supported": true,
     "separate_routine_password_identity_preferred": false,
@@ -31,6 +43,35 @@
     "BOUNDED_DEPLOY_HOOK_OR_TOKEN",
     "MANUAL_DASHBOARD_ONLY_IF_NO_SAFE_MACHINE_INTERFACE"
   ],
+  "service_selection_gate": {
+    "material_service_choice_requires_comparison": true,
+    "criteria_order": [
+      "REQUIREMENT_FIT",
+      "SECURITY",
+      "GITHUB_AUTOMATION",
+      "BROWSER_ONLY_OWNER_UX_WHEN_REQUIRED",
+      "RELIABILITY_AVAILABILITY",
+      "DURABILITY_RECOVERY",
+      "PRIVACY_DATA_CUSTODY",
+      "COST",
+      "LOCK_IN_EXIT",
+      "OPERATIONAL_BURDEN",
+      "LEGAL_BROKER_COMMERCIAL_CONSTRAINTS",
+      "PERFORMANCE_CAPACITY"
+    ],
+    "already_paid_github_pro_preferred_when_sufficient": true,
+    "free_or_oss_preferred_when_requirements_met": true,
+    "free_tier_may_not_be_called_production_equivalent_if_contract_limits_fail": true,
+    "paid_service_allowed_when_materially_better_for_requirements": true,
+    "owner_facing_recommendation_fields": [
+      "RECOMMENDED_SERVICE_AND_TIER",
+      "DECISIVE_REQUIREMENT_BASED_REASONS",
+      "COST_NOW",
+      "MAIN_LIMITATION",
+      "FALLBACK",
+      "OWNER_ACTION_IF_ACTUALLY_REQUIRED"
+    ]
+  },
   "personal_node_mode": "HEADLESS_WINDOWS_REPLACEABLE",
   "routine_local_console_required": false,
   "codespaces": {
