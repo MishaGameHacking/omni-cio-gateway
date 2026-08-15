@@ -130,9 +130,18 @@ def test_owner_finalizer_protects_evidence_with_runner_read_only_acl() -> None:
 
 def test_runner_auditor_requires_live_denials_for_backend_and_owner_evidence() -> None:
     source = RUNNER_AUDITOR.read_text(encoding="utf-8")
+    connection_probe = source[
+        source.index("function Test-RunnerConnectionDenied") : source.index(
+            "function Test-FileWriteDenied"
+        )
+    ]
     assert "Get-NetTCPConnection -State Listen" in source
     assert "Get-NetFirewallSecurityFilter" in source
     assert "[System.Net.Sockets.TcpClient]::new()" in source
+    assert "catch [System.Net.Sockets.SocketException] { return $true }" in connection_probe
+    assert "catch { return $false }" in connection_probe
+    assert "remote_task_running_after_probe" in source
+    assert "loopback_listener_present_after_probe" in source
     assert "Test-FileWriteDenied" in source
     assert "Test-CreateDenied" in source
     assert "Test-RenameDenied" in source
@@ -147,6 +156,7 @@ def test_runner_auditor_requires_live_denials_for_backend_and_owner_evidence() -
 
 def test_owner_audit_reports_sanitized_state_before_requiring_owner_evidence() -> None:
     source = OWNER_WORKFLOW.read_text(encoding="utf-8")
+    assert '- "apps/web/**"' in source
     diagnostic = source.index("diagnose_wp22a_local_state.ps1")
     require_evidence = source.index("Require real local OWNER phone rehearsal evidence")
     probe = source.index("audit_wp22a_runner_loopback.ps1")

@@ -10,6 +10,7 @@ on:
       - "infrastructure/windows/*wp22a*"
       - "omni_cio/web/external_access_v1.py"
       - "apps/api/wp22a_remote.py"
+      - "apps/web/**"
       - "scripts/*wp22a*"
       - "tests/test_v10_wp22a_**"
   workflow_dispatch:

@@ -105,7 +105,7 @@ function Test-RunnerConnectionDenied {
                 return $false
             }
             catch [System.Net.Sockets.SocketException] { return $true }
-            catch { return $true }
+            catch { return $false }
         }
         finally { $async.AsyncWaitHandle.Close() }
     }
@@ -219,12 +219,20 @@ if (
 ) {
     $connectionDenied = Test-RunnerConnectionDenied
 }
+$remoteTaskAfterProbe = Get-ScheduledTask -TaskName $remoteTaskName -ErrorAction SilentlyContinue
+$remoteTaskRunningAfterProbe = (
+    $null -ne $remoteTaskAfterProbe -and
+    [string]$remoteTaskAfterProbe.State -eq "Running"
+)
+$loopbackListenerPresentAfterProbe = Test-LoopbackListenerPresent
 
 $ready = (
     $runnerIdentityMatchesService -and
     -not $runnerIsAdministrator -and
     $remoteTaskRunning -and
     $loopbackListenerPresent -and
+    $remoteTaskRunningAfterProbe -and
+    $loopbackListenerPresentAfterProbe -and
     $firewallBound -and
     $connectionDenied -and
     $evidencePresent -and
@@ -248,7 +256,12 @@ elseif (-not $evidencePresent -or -not $evidenceReadable) {
 elseif (-not $evidenceFileWriteDenied -or -not $evidenceCreateDenied -or -not $evidenceRenameDenied) {
     "WP22A_OWNER_EVIDENCE_RUNNER_MUTATION_ALLOWED"
 }
-elseif (-not $remoteTaskRunning -or -not $loopbackListenerPresent) {
+elseif (
+    -not $remoteTaskRunning -or
+    -not $loopbackListenerPresent -or
+    -not $remoteTaskRunningAfterProbe -or
+    -not $loopbackListenerPresentAfterProbe
+) {
     "WP22A_REMOTE_RUNTIME_NOT_LIVE_FOR_RUNNER_AUDIT"
 }
 elseif (-not $firewallBound) {
@@ -267,6 +280,8 @@ $result = [ordered]@{
     runner_is_administrator = [bool]$runnerIsAdministrator
     remote_task_running = [bool]$remoteTaskRunning
     loopback_listener_present = [bool]$loopbackListenerPresent
+    remote_task_running_after_probe = [bool]$remoteTaskRunningAfterProbe
+    loopback_listener_present_after_probe = [bool]$loopbackListenerPresentAfterProbe
     runner_loopback_firewall_bound = [bool]$firewallBound
     runner_loopback_connection_denied = [bool]$connectionDenied
     owner_evidence_present = [bool]$evidencePresent
