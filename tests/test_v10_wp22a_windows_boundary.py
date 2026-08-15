@@ -62,6 +62,31 @@ def test_provisioner_blocks_runner_loopback_and_rebuilds_local_runtime_on_rollba
     assert '"::1"' not in source
 
 
+
+def test_remote_task_persists_only_its_owned_batch_logon_right() -> None:
+    source = PROVISIONER.read_text(encoding="utf-8")
+
+    assert '"SeBatchLogonRight"' in source
+    assert '"SeDenyBatchLogonRight"' in source
+    assert "LsaEnumerateAccountRights" in source
+    assert "LsaAddAccountRights" in source
+    assert "LsaRemoveAccountRights" in source
+    assert "BatchRightOwned=true" in source
+    assert "BatchRightOwned=false" in source
+    assert "Test-RemoteTaskOwnsBatchRight" in source
+    assert "Remove-RemoteBatchRightIfOwned" in source
+    assert "WP22A_REMOTE_RUNTIME_DENY_BATCH_LOGON_RIGHT_PRESENT" in source
+    assert "WP22A_REMOTE_RUNTIME_BATCH_LOGON_RIGHT_UNAVAILABLE" in source
+    assert "WP22A_REMOTE_RUNTIME_BATCH_LOGON_RIGHT_CLEANUP_FAILED" in source
+    assert "-Description $taskDescription -Force" in source
+    assert "remote_runtime_batch_logon_bound" in source
+    assert "remote_runtime_batch_logon_restored" in source
+    assert "WP22A_REMOTE_TASK_BATCH_LOGON_DENIED" in source
+    assert "WP22A_REMOTE_TASK_HAS_NOT_RUN" in source
+    assert "SeServiceLogonRight" not in source
+    assert "SeInteractiveLogonRight" not in source
+
+
 def test_provisioner_preserves_sanitized_primary_and_rollback_failure_reasons() -> None:
     source = PROVISIONER.read_text(encoding="utf-8")
     assert "function Get-SafeReasonCode" in source
@@ -121,6 +146,10 @@ def test_sanitized_local_diagnostic_keeps_scheduler_result_without_message_or_id
     assert "wp15_latest_scheduler_result_event_id" in source
     assert "wp15_latest_scheduler_result_code" in source
     assert "wp15_latest_scheduler_result_event_at_utc" in source
+    assert "wp22a_remote_task_history_found" in source
+    assert "wp22a_remote_latest_scheduler_event_id" in source
+    assert "wp22a_remote_latest_scheduler_result_code" in source
+    assert "wp22a_remote_latest_scheduler_result_event_at_utc" in source
     assert "task_scheduler_message_emitted = $false" in source
     assert ".Message" not in source
     assert "ActionName" not in source
