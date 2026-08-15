@@ -48,6 +48,17 @@ function Set-ProtectedResultRoot {
         throw "WP22A_PROGRAMDATA_UNAVAILABLE"
     }
 
+    # Reject any pre-existing redirected parent/root before creating the
+    # diagnostics descendant. Re-check after creation before applying ACLs so
+    # the safe-result path never follows an unreviewed junction or symlink.
+    foreach ($path in @($omniStateRoot, $resultRoot)) {
+        if (-not (Test-Path -LiteralPath $path)) { continue }
+        $item = Get-Item -LiteralPath $path -Force -ErrorAction Stop
+        if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw "WP22A_SAFE_RESULT_ROOT_REPARSE_POINT_FORBIDDEN"
+        }
+    }
+
     New-Item -ItemType Directory -Path $resultRoot -Force | Out-Null
     foreach ($path in @($omniStateRoot, $resultRoot)) {
         $item = Get-Item -LiteralPath $path -Force -ErrorAction Stop
