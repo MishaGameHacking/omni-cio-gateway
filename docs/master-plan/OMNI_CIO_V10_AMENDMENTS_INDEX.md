@@ -151,6 +151,34 @@ Locks the OWNER-approved 2026-08-10 identity/account direction while preserving 
 
 This amendment changes product/account interpretation and selected acceptance sequencing only where explicitly stated. It does not start Block E implementation before the amended WP15 code/security acceptance is formally accepted.
 
+
+### 7. Cloud Personal Node / Phone-First Migration
+
+`OMNI_CIO_V10_CLOUD_PERSONAL_NODE_MIGRATION_AMENDMENT.md`
+
+Planning checklist:
+
+`OMNI_CIO_V10_CLOUD_PERSONAL_NODE_MIGRATION_CHECKLIST.md`
+
+Machine-readable companion:
+
+`../architecture/V10_CLOUD_PERSONAL_NODE_MIGRATION_CONTRACT.json`
+
+Locks the OWNER-directed 2026-08-15 transition from a laptop-dependent runtime to a private cloud Personal Node without changing block weights or claiming implementation credit:
+
+- WP22B is a zero-weight transition gate after accepted WP22A and before WP23;
+- the initial replaceable baseline is one Timeweb Cloud Moscow Ubuntu LTS node at 2 vCPU / 4 GB / 50 GB, billed hourly/month-to-month;
+- normal recurring spend targets about 1,309 RUB/month and no more than 1,400 RUB/month, with a 1,800 RUB/month hard cap including transient migration compute/snapshots and excluding the already-owned GitHub Pro subscription;
+- no annual prepayment, domain, managed database, Kubernetes, GPU, paid AI/search, paid bot middleware or public application ingress is required;
+- the private entry path is Tailscale Serve with Funnel off; Telegram later uses long polling and `/app` opens the same Web/Mini App with server-side `initData` validation;
+- the production Personal Node is never a general CI runner; Linux releases are manifest/digest verified and CI uses a separate ephemeral runner;
+- Windows DPAPI blobs are not migrated; secrets are re-provisioned into the Linux secret boundary and never enter GitHub/chat/artifacts;
+- encrypted off-node backups, a clean restore, reboot/crash/release/database rollback drills, single-writer/scheduler/poller proof and a 72-hour soak are mandatory;
+- Lenovo becomes a cold rollback node for a bounded retention window and is not destructively decommissioned without a later OWNER gate;
+- the financial safety posture remains read-only with `trading_methods=false`, `REAL_TRADING_ENABLED=false` and no broker write/withdrawal/transfer authority.
+
+This is planning authority only. It does not alter the currently active WP22A PR, start cloud implementation, change the current accepted completion percentage or unlock WP23 by itself.
+
 ## Draft/superseded planning material
 
 Open or historical PR descriptions must not be treated as active plan authority merely because they contain V10 ideas. In particular, any older unmerged planning PR that conflicts with an accepted amendment must be closed/superseded rather than merged as a competing roadmap.
