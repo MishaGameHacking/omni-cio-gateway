@@ -58,6 +58,58 @@ function Get-TaskStateSafe {
     catch { return "UNAVAILABLE" }
 }
 
+function Get-TaskSchedulerHistorySafe {
+    param([Parameter(Mandatory = $true)][string]$TaskName)
+
+    $result = [ordered]@{
+        query_available = $false
+        history_found = $false
+        latest_event_id = 0
+        latest_event_level = 0
+        latest_result_code = ""
+        latest_event_at_utc = ""
+    }
+    try {
+        $events = @(
+            Get-WinEvent -FilterHashtable @{
+                LogName = "Microsoft-Windows-TaskScheduler/Operational"
+                StartTime = (Get-Date).AddHours(-24)
+            } -MaxEvents 500 -ErrorAction Stop
+        )
+        $result.query_available = $true
+        foreach ($event in $events) {
+            try {
+                [xml]$xml = $event.ToXml()
+                $fields = @{}
+                foreach ($node in @($xml.Event.EventData.Data)) {
+                    $name = [string]$node.Name
+                    if (-not [string]::IsNullOrWhiteSpace($name)) {
+                        $fields[$name] = [string]$node.'#text'
+                    }
+                }
+                $eventTask = [string]$fields["TaskName"]
+                if ($eventTask.TrimStart('\') -ne $TaskName) { continue }
+
+                $result.history_found = $true
+                $result.latest_event_id = [int]$event.Id
+                $result.latest_event_level = [int]$event.Level
+                $result.latest_event_at_utc = $event.TimeCreated.ToUniversalTime().ToString("o")
+                foreach ($key in @("ResultCode", "ErrorCode", "ReturnCode", "Result")) {
+                    $candidate = [string]$fields[$key]
+                    if ($candidate -match '^(?:0x[0-9A-Fa-f]+|-?[0-9]+)$') {
+                        $result.latest_result_code = $candidate
+                        break
+                    }
+                }
+                break
+            }
+            catch { }
+        }
+    }
+    catch { }
+    return $result
+}
+
 function Get-PathStateSafe {
     param(
         [Parameter(Mandatory = $true)][string]$Path,
@@ -152,12 +204,19 @@ catch {
 $runtimeRootState = Get-PathStateSafe -Path $runtimeRoot -PathType Container
 $deploymentMarkerState = Get-PathStateSafe -Path $deploymentMarker -PathType Leaf
 $listener = Get-ListenerState
+$wp15History = Get-TaskSchedulerHistorySafe -TaskName $baseTaskName
 $result = [ordered]@{
     schema_version = "1"
     work_package = "WP22A"
     evidence_class = "SANITIZED_LOCAL_DEPLOYMENT_DIAGNOSTIC"
     base_task_state = Get-TaskStateSafe -Name $baseTaskName
     remote_task_state = Get-TaskStateSafe -Name $remoteTaskName
+    task_scheduler_history_query_available = [bool]$wp15History.query_available
+    wp15_task_history_found = [bool]$wp15History.history_found
+    wp15_latest_scheduler_event_id = [int]$wp15History.latest_event_id
+    wp15_latest_scheduler_event_level = [int]$wp15History.latest_event_level
+    wp15_latest_scheduler_result_code = [string]$wp15History.latest_result_code
+    wp15_latest_scheduler_event_at_utc = [string]$wp15History.latest_event_at_utc
     runtime_root_state = $runtimeRootState
     deployment_marker_state = $deploymentMarkerState
     runtime_root_present = [bool]($runtimeRootState -eq "PRESENT")
@@ -179,6 +238,7 @@ $result = [ordered]@{
     tailscale_serve_targets_backend_port = [bool]$serveTargetsBackendPort
     tailscale_funnel_status_available = [bool]$funnelStatusAvailable
     funnel_public_ingress = [bool]$funnelPublic
+    task_scheduler_message_emitted = $false
     raw_tailnet_hostname_emitted = $false
     raw_owner_login_emitted = $false
     raw_runner_identity_emitted = $false
