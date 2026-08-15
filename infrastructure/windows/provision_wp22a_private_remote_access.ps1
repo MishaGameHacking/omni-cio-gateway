@@ -497,15 +497,70 @@ function Get-RemoteTaskFailureReason {
     return "WP22A_REMOTE_TASK_EXITED_BEFORE_READY"
 }
 
+function Get-BaseWebFailureReason {
+    param(
+        [AllowNull()][string]$Text,
+        [Parameter(Mandatory = $true)][ValidateSet("Apply", "Cleanup", "Verify")][string]$Mode
+    )
+
+    $fallback = "WP22A_BASE_WEB_{0}_FAILED" -f $Mode.ToUpperInvariant()
+    $symbolic = Get-SafeReasonCode -Text $Text -Fallback $fallback
+    if ($symbolic -ne $fallback) { return $symbolic }
+    if ($Mode -ne "Apply" -or [string]::IsNullOrWhiteSpace($Text)) { return $fallback }
+
+    try {
+        $payload = $Text | ConvertFrom-Json -ErrorAction Stop
+    }
+    catch { return $fallback }
+
+    if (
+        [string]$payload.work_package -ne "WP15" -or
+        [string]$payload.evidence_type -ne "LIVE_WEB_RUNTIME_PROVISIONING"
+    ) {
+        return $fallback
+    }
+
+    $checks = @(
+        [ordered]@{ name = "runtime_root_owned"; expected = $true; code = "WP15_LIVE_RUNTIME_ROOT_NOT_OWNED" },
+        [ordered]@{ name = "deployment_bound"; expected = $true; code = "WP15_LIVE_DEPLOYMENT_NOT_BOUND" },
+        [ordered]@{ name = "pending_boundary_ready"; expected = $true; code = "WP15_LIVE_PENDING_BOUNDARY_NOT_READY" },
+        [ordered]@{ name = "temporary_task_present"; expected = $true; code = "WP15_LIVE_TASK_MISSING" },
+        [ordered]@{ name = "temporary_task_running"; expected = $true; code = "WP15_LIVE_TASK_NOT_RUNNING" },
+        [ordered]@{ name = "runtime_role_enabled"; expected = $true; code = "WP15_LIVE_RUNTIME_ROLE_DISABLED" },
+        [ordered]@{ name = "loopback_runtime_ready"; expected = $true; code = "WP15_LIVE_LOOPBACK_RUNTIME_NOT_READY" },
+        [ordered]@{ name = "app_runtime_read"; expected = $true; code = "WP15_LIVE_APP_RUNTIME_READ_DENIED" },
+        [ordered]@{ name = "app_runtime_write"; expected = $false; code = "WP15_LIVE_APP_RUNTIME_WRITE_EXPOSED" },
+        [ordered]@{ name = "pending_runtime_write"; expected = $true; code = "WP15_LIVE_PENDING_RUNTIME_WRITE_DENIED" },
+        [ordered]@{ name = "runner_private_runtime_read"; expected = $false; code = "WP15_LIVE_RUNNER_PRIVATE_READ_EXPOSED" },
+        [ordered]@{ name = "runner_private_runtime_write"; expected = $false; code = "WP15_LIVE_RUNNER_PRIVATE_WRITE_EXPOSED" }
+    )
+    foreach ($check in $checks) {
+        $name = [string]$check["name"]
+        $expected = [bool]$check["expected"]
+        $property = @(
+            $payload.PSObject.Properties |
+                Where-Object { $_.Name -eq $name }
+        ) | Select-Object -First 1
+        if (
+            $null -ne $property -and
+            [bool]$property.Value -ne $expected
+        ) {
+            return [string]$check["code"]
+        }
+    }
+    return $fallback
+}
+
 function Invoke-BaseProvisioner {
     param(
         [Parameter(Mandatory = $true)][string]$Sha,
-        [Parameter(Mandatory = $true)][ValidateSet("Apply", "Cleanup")][string]$Mode
+        [Parameter(Mandatory = $true)][ValidateSet("Apply", "Cleanup", "Verify")][string]$Mode
     )
 
     # WP15 Apply must enter through the accepted OWNER starter. That boundary
     # grants SeBatchLogonRight only for task registration/start and restores the
-    # original account rights afterward. Cleanup remains a direct provisioner call.
+    # original account rights afterward. Cleanup and Verify remain direct,
+    # accepted provisioner calls.
     $entrypoint = if ($Mode -eq "Apply") { $baseStarter } else { $baseProvisioner }
     if (-not (Test-Path -LiteralPath $entrypoint -PathType Leaf)) {
         throw "WP22A_BASE_WEB_ENTRYPOINT_MISSING"
@@ -518,6 +573,7 @@ function Invoke-BaseProvisioner {
         "-ExpectedImplementationSha", $Sha
     )
     if ($Mode -eq "Cleanup") { $arguments += "-Cleanup" }
+    if ($Mode -eq "Verify") { $arguments += "-Verify" }
     $arguments += @(
         "-Port", [string]$Port,
         "-AsJson"
@@ -534,9 +590,29 @@ function Invoke-BaseProvisioner {
     }
     if ($exitCode -ne 0) {
         $text = ($output | ForEach-Object { [string]$_ }) -join "`n"
-        $fallback = "WP22A_BASE_WEB_{0}_FAILED" -f $Mode.ToUpperInvariant()
-        $reason = Get-SafeReasonCode -Text $text -Fallback $fallback
+        $reason = Get-BaseWebFailureReason -Text $text -Mode $Mode
         throw $reason
+    }
+}
+
+function Test-BaseLocalWebReady {
+    param([Parameter(Mandatory = $true)][string]$Sha)
+
+    try {
+        Invoke-BaseProvisioner -Sha $Sha -Mode Verify
+        return $true
+    }
+    catch { return $false }
+}
+
+function Ensure-BaseLocalWebReady {
+    param([Parameter(Mandatory = $true)][string]$Sha)
+
+    if (Test-BaseLocalWebReady -Sha $Sha) { return }
+    Invoke-BaseProvisioner -Sha $Sha -Mode Cleanup
+    Invoke-BaseProvisioner -Sha $Sha -Mode Apply
+    if (-not (Test-BaseLocalWebReady -Sha $Sha)) {
+        throw "WP15_LIVE_VERIFY_AFTER_APPLY_FAILED"
     }
 }
 
@@ -641,11 +717,11 @@ function Install-RemoteTask {
     # of whether WP22A owns the runtime account's batch-logon assignment.
     Stop-ScheduledTask -TaskName $remoteTaskName -ErrorAction SilentlyContinue
 
-    # Normalize every prior local/partial deployment through the accepted WP15
-    # Cleanup -> Apply path before remote cutover. This is idempotent and avoids
-    # depending on a stale scheduled-task credential or enabled runtime account.
-    Invoke-BaseProvisioner -Sha $Sha -Mode Cleanup
-    Invoke-BaseProvisioner -Sha $Sha -Mode Apply
+    # Reuse an already accepted exact-head WP15 runtime instead of rebuilding it
+    # a second time immediately after a successful OWNER Cleanup. Any stale or
+    # partial state fails the accepted WP15 Verify gate and is normalized through
+    # Cleanup -> Apply before remote cutover.
+    Ensure-BaseLocalWebReady -Sha $Sha
 
     $launcher = Join-Path $appRoot $launcherRelative
     if (-not (Test-Path -LiteralPath $launcher -PathType Leaf)) { throw "WP22A_REMOTE_LAUNCHER_MISSING" }
