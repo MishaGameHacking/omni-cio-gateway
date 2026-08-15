@@ -195,7 +195,7 @@ def test_local_self_serve_is_a_negative_identity_probe_not_positive_owner_proof(
 
     assert "owner_login = $login" in identity
     assert "$handler.UseProxy = $false" in probe
-    assert '[Parameter(Mandatory = $true)][string]$OwnerLogin' in probe
+    assert "[Parameter(Mandatory = $true)][string]$OwnerLogin" in probe
     assert '"Tailscale-User-Login"' in probe
     assert "$OwnerLogin" in probe
     assert '"wp22a-local-spoof.invalid"' not in probe
