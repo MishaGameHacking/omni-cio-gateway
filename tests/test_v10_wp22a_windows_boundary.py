@@ -112,3 +112,12 @@ def test_owner_audit_reports_sanitized_state_before_requiring_owner_evidence() -
     probe = source.index("audit_wp22a_runner_loopback.ps1")
     validate = source.index("validate_v10_wp22a_owner_evidence.py")
     assert diagnostic < require_evidence < probe < validate
+
+
+def test_owner_audit_uses_cmd_wrapper_for_bypass_powershell_child_processes() -> None:
+    source = OWNER_WORKFLOW.read_text(encoding="utf-8")
+    assert "shell: powershell" not in source
+    bypass = "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File"
+    assert source.count(bypass) >= 2
+    assert 'diagnose_wp22a_local_state.ps1" -AsJson' in source
+    assert 'audit_wp22a_runner_loopback.ps1" -ExpectedImplementationSha "%EXPECTED_HEAD%" -AsJson' in source
