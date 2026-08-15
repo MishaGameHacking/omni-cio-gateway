@@ -53,10 +53,11 @@ def test_owner_finalizer_preserves_primary_failure_and_rechecks_parent_boundary(
             "function Get-EvidenceAclState"
         )
     ]
-    failure = source[source.rindex("catch {") :]
+    failure_start = source.index("catch {\n    $failure = $_")
+    failure = source[failure_start:]
 
     assert acl.count("WP22A_EVIDENCE_PARENT_REPARSE_POINT_FORBIDDEN") == 2
     assert acl.count("WP22A_EVIDENCE_ROOT_REPARSE_POINT_FORBIDDEN") == 2
-    assert "$failure = $_" in failure
+    assert failure.startswith("catch {\n    $failure = $_")
     assert "$reason = [string]$failure.Exception.Message" in failure
     assert "$reason = [string]$_.Exception.Message" not in failure
