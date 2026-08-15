@@ -56,7 +56,9 @@ def test_provisioner_preserves_sanitized_primary_and_rollback_failure_reasons() 
     assert "WP22A_TAILSCALE_HTTPS_CONSENT_REQUIRED" in source
 
 
-def test_sanitized_local_diagnostic_treats_protected_paths_as_state_not_failure() -> None:
+def test_sanitized_local_diagnostic_treats_protected_paths_as_state_not_failure() -> (
+    None
+):
     source = DIAGNOSTIC.read_text(encoding="utf-8")
     assert 'evidence_class = "SANITIZED_LOCAL_DEPLOYMENT_DIAGNOSTIC"' in source
     assert "function Get-PathStateSafe" in source
