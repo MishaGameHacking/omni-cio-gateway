@@ -154,13 +154,18 @@ def test_apply_post_cutover_acceptance_stays_inside_rollback_boundary() -> None:
             "function Get-RemoteAcceptanceFailureReason"
         )
     ]
+    call_start = apply_block.index("$acceptance = Get-RemoteAcceptanceState")
+    call_end = apply_block.index("if (-not [bool]$acceptance.ok)", call_start)
+    apply_call = apply_block[call_start:call_end]
 
-    assert "Get-RemoteAcceptanceState -Exe $tailscale" in apply_block
+    assert "-Exe $tailscale" in apply_call
+    assert "-Sha $sha" in apply_call
+    assert "-HostName $identity.host" in apply_call
+    assert "-OwnerLogin $identity.owner_login" in apply_call
+    assert "-OwnerFingerprint $identity.owner_login_sha256" in apply_call
     assert "Get-RemoteAcceptanceFailureReason -State $acceptance" in apply_block
     assert "Restore-LocalWebTask -Sha $sha -TailscaleExe $tailscale" in apply_block
-    assert apply_block.index(
-        "Get-RemoteAcceptanceState -Exe $tailscale"
-    ) < apply_block.index("catch {")
+    assert call_start < apply_block.index("catch {")
     assert "Test-NoFunnel -Exe $Exe" in acceptance
     assert "Test-LocalServeIdentitySpoofDenied" in acceptance
     assert "local_serve_identity_spoof_denied" in acceptance
