@@ -4,12 +4,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-RECOVERY = (
-    ROOT
-    / "infrastructure"
-    / "windows"
-    / "recover_wp22a_local_web_diagnostic.ps1"
-)
+RECOVERY = ROOT / "infrastructure" / "windows" / "recover_wp22a_local_web_diagnostic.ps1"
 
 
 def test_recovery_diagnostic_preserves_numeric_wp15_runtime_result_only() -> None:
