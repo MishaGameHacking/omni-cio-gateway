@@ -182,9 +182,7 @@ def test_sanitized_local_diagnostic_keeps_scheduler_result_without_message_or_id
     assert "UserContext" not in source
 
 
-def test_remote_factory_uses_wp22a_short_session_policy_and_verified_database() -> (
-    None
-):
+def test_remote_factory_uses_wp22a_short_session_policy_and_verified_database() -> None:
     remote_source = REMOTE_FACTORY.read_text(encoding="utf-8")
     local_source = LOCAL_APP_FACTORY.read_text(encoding="utf-8")
     assert "create_local_private_app(" in remote_source
