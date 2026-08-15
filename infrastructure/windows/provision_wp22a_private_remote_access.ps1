@@ -311,10 +311,11 @@ function Restore-LocalWebTask {
     Unregister-ScheduledTask -TaskName $remoteTaskName -Confirm:$false -ErrorAction SilentlyContinue
     Remove-RunnerLoopbackFirewall
 
-    $baseTaskPresent = $null -ne (Get-ScheduledTask -TaskName $baseTaskName -ErrorAction SilentlyContinue)
-    if ((Test-Path -LiteralPath $runtimeRoot) -or $baseTaskPresent) {
-        Invoke-BaseProvisioner -Sha $Sha -Mode Cleanup
-    }
+    # The accepted WP15 cleanup is intentionally safe when its task/runtime root
+    # are already absent. It also disables the runtime identity. Run it
+    # unconditionally so recovery works from partial cutover states where the
+    # root/task disappeared but omni-cio-runtime remained enabled.
+    Invoke-BaseProvisioner -Sha $Sha -Mode Cleanup
     Invoke-BaseProvisioner -Sha $Sha -Mode Apply
 
     $baseTask = Get-ScheduledTask -TaskName $baseTaskName -ErrorAction SilentlyContinue
@@ -333,10 +334,11 @@ function Install-RemoteTask {
 
     Stop-ScheduledTask -TaskName $remoteTaskName -ErrorAction SilentlyContinue
     Unregister-ScheduledTask -TaskName $remoteTaskName -Confirm:$false -ErrorAction SilentlyContinue
-    $baseTaskPresent = $null -ne (Get-ScheduledTask -TaskName $baseTaskName -ErrorAction SilentlyContinue)
-    if ((Test-Path -LiteralPath $runtimeRoot) -or $baseTaskPresent) {
-        Invoke-BaseProvisioner -Sha $Sha -Mode Cleanup
-    }
+
+    # Normalize every prior local/partial deployment through the accepted WP15
+    # Cleanup -> Apply path before remote cutover. This is idempotent and avoids
+    # depending on a stale scheduled-task credential or enabled runtime account.
+    Invoke-BaseProvisioner -Sha $Sha -Mode Cleanup
     Invoke-BaseProvisioner -Sha $Sha -Mode Apply
 
     $launcher = Join-Path $appRoot $launcherRelative
