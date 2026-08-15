@@ -346,4 +346,4 @@ def test_owner_apply_wrapper_persists_only_sanitized_result() -> None:
     assert "Write-Output $capturedText" not in source
     assert '"--yes"' not in source
     assert "invoke_wp22a_owner_apply_safe.ps1" in runbook
-    assert "invoke_wp22a_owner_apply_safe.ps1" in workflow
+    assert 'infrastructure/windows/*wp22a*' in workflow
