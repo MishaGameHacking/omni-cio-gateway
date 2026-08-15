@@ -1,0 +1,181 @@
+{
+  "schema_version": "1",
+  "contract_id": "V10_CLOUD_PERSONAL_NODE_MIGRATION_CONTRACT",
+  "status": "OWNER_DIRECTED_PLANNING_AMENDMENT_DRAFT_UNTIL_MERGED",
+  "owner_direction_date": "2026-08-15",
+  "program": "Omni-CIO V10",
+  "transition_gate": {
+    "id": "WP22B",
+    "name": "Cloud Personal Node Migration",
+    "requires_accepted": [
+      "WP22A"
+    ],
+    "unlocks_on_acceptance": [
+      "WP23"
+    ],
+    "progress_weight_percent": 0,
+    "may_mix_with_wp22a_pr": false,
+    "implementation_may_start_before_wp22a_acceptance": false
+  },
+  "operating_model": {
+    "runtime": "private_cloud_personal_node",
+    "normal_control_surface": "owner_phone",
+    "future_primary_entry": "telegram_bot_app_to_same_v10_web_mini_app",
+    "ordinary_private_browser_recovery_required": true,
+    "lenovo_after_acceptance": "cold_rollback_node",
+    "lenovo_permanent_24x7_required": false
+  },
+  "provider_baseline": {
+    "provider": "Timeweb Cloud",
+    "region": "Moscow",
+    "service_class": "MSK 50 Premium baseline",
+    "vcpu": 2,
+    "ram_gib": 4,
+    "nvme_gib": 50,
+    "os_preference": "Ubuntu 24.04 LTS or current supported Ubuntu LTS",
+    "billing": "hourly_month_to_month",
+    "annual_prepayment_initially_allowed": false,
+    "provider_is_replaceable": true,
+    "price_recheck_required_before_purchase": true
+  },
+  "budget_rub_per_month": {
+    "checked_on": "2026-08-15",
+    "server_undiscounted_reserve": 1200,
+    "private_s3_10_gib": 79,
+    "provider_ping_monitoring": 30,
+    "normal_baseline": 1309,
+    "normal_target_max": 1400,
+    "hard_cap_including_transient_compute_and_snapshots": 1800,
+    "existing_github_pro_included_in_cap": false,
+    "paid_actions_overage_allowed": false,
+    "recurring_total_over_cap_requires_owner_amendment": true
+  },
+  "network": {
+    "application_ingress": "tailscale_serve_private_https_only",
+    "tailscale_funnel_enabled": false,
+    "public_application_ports_allowed": false,
+    "public_ssh_allowed": false,
+    "public_database_allowed": false,
+    "domain_required": false,
+    "provider_firewall_default_deny": true,
+    "host_firewall_default_deny": true,
+    "optional_monitoring": "icmp_only_from_revalidated_timeweb_monitor_addresses",
+    "neutral_hostname_required": true
+  },
+  "runtime": {
+    "canonical_asgi_target": "app:app",
+    "service_user": "app",
+    "service_group": "app",
+    "production_is_github_actions_runner": false,
+    "ci_runner": "separate_ephemeral_on_demand_linux_self_hosted_runner",
+    "database": "self_hosted_postgresql_loopback_or_private_container_network",
+    "database_application_role_least_privilege": true,
+    "release_activation": "pull_verified_manifest_and_digest",
+    "previous_verified_release_rollback_required": true
+  },
+  "telegram": {
+    "block_f_transport": "long_polling",
+    "public_webhook_required": false,
+    "mini_app_reuses_same_web_frontend": true,
+    "server_validates_init_data": true,
+    "ordinary_browser_fallback_required": true,
+    "wp22b_implements_telegram_front_door": false,
+    "telegram_front_door_work_packages": [
+      "WP23",
+      "WP24",
+      "WP25",
+      "WP26"
+    ]
+  },
+  "secrets": {
+    "windows_dpapi_blob_may_be_copied_to_linux": false,
+    "owner_reprovision_required": true,
+    "allowed_boundary": "root_owned_or_systemd_credentials_on_personal_node",
+    "github_allowed": false,
+    "chat_allowed": false,
+    "ci_artifact_or_log_allowed": false,
+    "backup_includes_secrets": false,
+    "broker_authority_during_wp22b": "READ_ONLY",
+    "trade_token_provisioned_during_wp22b": false
+  },
+  "financial_safety": {
+    "trading_methods": false,
+    "real_trading_enabled": false,
+    "broker_write_allowed": false,
+    "withdrawal_or_transfer_allowed": false,
+    "deterministic_core_is_source_of_truth": true
+  },
+  "backup_and_recovery": {
+    "private_s3_required": true,
+    "client_side_encryption_required": true,
+    "postgres_logical_backup_max_interval_hours": 6,
+    "daily_app_config_backup_required": true,
+    "separate_from_server_disk_required": true,
+    "clean_node_restore_drill_required": true,
+    "rpo_hours_max": 6,
+    "rto_hours_max": 4,
+    "provider_snapshot_is_only_copy_allowed": false
+  },
+  "cutover": {
+    "parallel_mode": "bounded_read_only_comparison_only",
+    "maximum_active_schedulers": 1,
+    "maximum_active_writers": 1,
+    "maximum_active_telegram_pollers": 1,
+    "soak_hours_min": 72,
+    "lenovo_cold_rollback_retention_days_min": 14,
+    "lenovo_deletion_requires_explicit_owner_gate": true
+  },
+  "excluded": [
+    "public_website",
+    "tailscale_funnel",
+    "public_telegram_webhook",
+    "domain_purchase",
+    "commercial_or_multi_tenant_activation",
+    "kubernetes",
+    "managed_postgresql",
+    "gpu_or_local_llm_hosting",
+    "paid_ai_or_search_api",
+    "paid_bot_middleware",
+    "permanent_production_ci_runner",
+    "real_trading",
+    "lenovo_decommission"
+  ],
+  "capacity_upgrade": {
+    "evidence_required": true,
+    "seven_day_p95_memory_percent_trigger": 75,
+    "oom_or_repeated_memory_restart_trigger": true,
+    "seven_day_p95_cpu_percent_with_slo_breach_trigger": 70,
+    "disk_percent_after_safe_cleanup_trigger": 70,
+    "upgrade_above_budget_requires_owner_amendment": true,
+    "gpu_decision_deferred_to_block_g_benchmark": true
+  },
+  "acceptance_requires": [
+    "exact_head_reproducible_ubuntu_deployment",
+    "linux_parity_and_negative_tests",
+    "postgres_role_and_network_isolation",
+    "no_public_application_ingress",
+    "tailscale_phone_access_and_browser_recovery",
+    "encrypted_off_node_backup",
+    "clean_restore_within_rpo_rto",
+    "reboot_crash_release_database_and_lenovo_rollback_drills",
+    "single_scheduler_writer_and_poller_proof",
+    "72_hour_soak",
+    "actual_forecast_within_hard_cap",
+    "owner_acceptance_and_program_status_update"
+  ],
+  "official_sources_checked_2026_08_15": [
+    "https://timeweb.cloud/services/cloud-servers",
+    "https://timeweb.cloud/docs/service-payments/balance-top-up",
+    "https://timeweb.cloud/services/s3-storage",
+    "https://timeweb.cloud/docs/cloud-servers/manage-servers/backup",
+    "https://timeweb.cloud/docs/monitoring",
+    "https://timeweb.cloud/docs/monitoring/types",
+    "https://timeweb.cloud/docs/monitoring/monitoring-server-addresses",
+    "https://tailscale.com/pricing",
+    "https://tailscale.com/docs/features/tailscale-serve",
+    "https://core.telegram.org/bots/api",
+    "https://core.telegram.org/bots/webapps",
+    "https://docs.github.com/en/actions/concepts/billing-and-usage",
+    "https://docs.github.com/get-started/learning-about-github/githubs-products"
+  ]
+}
