@@ -41,6 +41,60 @@ Never paste provider secrets into chat. If a provider credential is genuinely ne
 8. OWNER receives only concise PASS/FAIL/blocker status and is contacted only for a true OWNER-only action.
 9. Merge occurs only after exact-head/threads/squash discipline is satisfied.
 
+## OWNER instruction standard
+
+Whenever OWNER action is genuinely required, engineering must provide instructions that are difficult to misinterpret on a phone browser.
+
+Required format:
+
+1. **Purpose** — one sentence explaining why the action is needed.
+2. **Open** — exact website/service name and a direct HTTPS link when a stable official URL exists.
+3. **Click path** — exact menu/button sequence using the current UI labels when verified.
+4. **Do** — one bounded action at a time; do not mix optional and required actions.
+5. **Expected result** — exact success state, text, status, or screen the OWNER should see.
+6. **Stop condition** — what unexpected state means stop and send a screenshot/text instead of guessing.
+7. **Do not do** — explicit warnings for destructive, paid, public-ingress, secret-disclosure, or authority-expanding actions.
+8. **Return only** — the minimum safe result engineering needs back.
+
+Additional rules:
+
+- Prefer direct official links over "find this page yourself".
+- Do not ask the OWNER to inspect ordinary logs, compare code, or troubleshoot routine CI.
+- Do not ask the OWNER to perform multiple unrelated provider actions in one hand-off.
+- If UI labels or provider behavior may have changed, verify current official documentation before giving click-by-click instructions.
+- If a paid action is optional, label it optional and do not present it as required.
+- If an action may incur charges, state the expected pricing model/cost boundary before the OWNER confirms it.
+
+## Service-selection gate
+
+Engineering must not select a service merely because it is popular, free, or already familiar. For every material external service, compare viable candidates against the actual Omni-CIO V10 requirements and document the reason for the chosen service.
+
+Decision order:
+
+1. **Requirement fit** — does it satisfy the owning WP/architecture contract without weakening safety or recovery?
+2. **Security** — least privilege, strong identity, MFA/SSO, secret isolation, auditability, secure defaults, no unnecessary public ingress.
+3. **GitHub automation** — GitHub login where appropriate; GitHub Actions/API/CLI/Terraform or equivalent machine interface; OIDC/federated identity preferred over long-lived credentials.
+4. **Browser-only OWNER UX** — routine use must work from the phone browser without a required native app when this is part of the product requirement.
+5. **Reliability/availability** — sleep/idle behavior, quotas, SLA/support, restart/recovery characteristics, regional/service dependencies.
+6. **Durability/recovery** — backup/export/restore path, portability, provider-failure recovery, no hidden single point of failure.
+7. **Privacy/data custody** — whether private portfolio, broker credentials, identity data, logs, or telemetry leave the Personal Node and whether that is actually authorized.
+8. **Cost** — prefer already-paid GitHub Pro, OSS/self-hosted, and genuinely sufficient free tiers; move to paid only when measured requirements justify it.
+9. **Lock-in/exit** — configuration portability, standard protocols, IaC support, exportability, replacement path.
+10. **Operational burden** — ongoing OWNER clicks, manual renewals, credential rotation, dashboard dependence, maintenance load.
+11. **Legal/broker/commercial constraints** — applicable data-processing, broker-terms, geographic, sanctions, licensing, or commercial restrictions.
+12. **Performance/capacity** — latency, throughput, concurrency, storage and compute limits against expected V10 load.
+
+A free tier is rejected for production use if its sleeping, durability, security, quota, recovery, or support limitations violate the owning V10 contract. A paid service may be recommended when it is materially safer, more reliable, more automatable, or operationally cheaper after total-cost analysis.
+
+For a material choice, the OWNER-facing recommendation should contain only:
+
+- **Recommended:** service/tier;
+- **Why:** 3–5 decisive requirement-based reasons;
+- **Cost now:** free/already-paid/estimated recurring cost;
+- **Main limitation:** the most important tradeoff;
+- **Fallback:** the next-best compatible alternative;
+- **OWNER action:** only if one-time signup/consent/payment is actually required.
+
 ## Browser-only external access
 
 A phone-browser-only workflow means the final Omni-CIO access path must not require installing a VPN/device client on the phone.
