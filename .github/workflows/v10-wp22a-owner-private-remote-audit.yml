@@ -49,6 +49,15 @@ jobs:
           if /I not "%ACTUAL_HEAD%"=="%EXPECTED_HEAD%" exit /b 13
           echo WP22A OWNER exact head: %ACTUAL_HEAD%
 
+      - name: Report sanitized local WP22A deployment state
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass `
+            -File .\infrastructure\windows\diagnose_wp22a_local_state.ps1 `
+            -AsJson
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Require real local OWNER phone rehearsal evidence
         run: |
           @echo off
