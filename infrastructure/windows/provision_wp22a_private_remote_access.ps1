@@ -210,12 +210,16 @@ function Disable-ServeChecked {
 function New-RandomRuntimePassword {
     $bytes = New-Object byte[] 48
     $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
-    try { $rng.GetBytes($bytes) }
+    $password = $null
+    try {
+        $rng.GetBytes($bytes)
+        $password = [Convert]::ToBase64String($bytes) + "!aA7"
+    }
     finally {
         $rng.Dispose()
         [Array]::Clear($bytes, 0, $bytes.Length)
     }
-    return [Convert]::ToBase64String($bytes) + "!aA7"
+    return $password
 }
 
 function Invoke-BaseProvisioner {

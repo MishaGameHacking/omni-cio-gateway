@@ -56,6 +56,17 @@ def test_provisioner_preserves_sanitized_primary_and_rollback_failure_reasons() 
     assert "WP22A_TAILSCALE_HTTPS_CONSENT_REQUIRED" in source
 
 
+def test_provisioner_encodes_runtime_password_before_clearing_entropy() -> None:
+    source = PROVISIONER.read_text(encoding="utf-8")
+    generator = source[source.index("function New-RandomRuntimePassword") :]
+    generator = generator[: generator.index("function Invoke-BaseProvisioner")]
+    encode = generator.index("$password = [Convert]::ToBase64String($bytes)")
+    clear = generator.index("[Array]::Clear($bytes, 0, $bytes.Length)")
+    returned = generator.index("return $password")
+    assert encode < clear < returned
+    assert "return [Convert]::ToBase64String($bytes)" not in generator
+
+
 def test_sanitized_local_diagnostic_treats_protected_paths_as_state_not_failure() -> (
     None
 ):
