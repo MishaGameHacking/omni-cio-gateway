@@ -1,78 +1,86 @@
-# Omni-CIO V10 — Phone Engineering Runbook
+# Omni-CIO V10 — Browser-Only Phone Engineering Runbook
 
 Status: **DRAFT with phone-only engineering amendment**
 
 ## Goal
 
-The OWNER can direct development, inspect summarized PR/CI state and perform ordinary repository control from a phone while the Windows Personal Node runs headless. Local node PowerShell and provider dashboards are reserved for initial setup, genuine physical/admin recovery or another explicit OWNER-only boundary.
+The OWNER directs development and uses Omni-CIO from a phone **through websites in the browser only** while the Windows Personal Node runs headless. Local node PowerShell and provider dashboards are reserved for initial setup, genuine physical/admin recovery or another explicit OWNER-only boundary.
 
-The normal engineering loop is **ChatGPT -> GitHub -> source-controlled Actions/provider APIs -> CI/deployment/runtime verification**. Repeated OWNER clicking is not part of the target operating model.
+The normal engineering loop is:
 
-## Phone toolset
+`ChatGPT Web -> GitHub Web -> source-controlled Actions/provider APIs -> CI/deployment/runtime verification`.
 
-### Required
+Repeated OWNER clicking is not part of the target operating model.
 
-- ChatGPT mobile — engineering direction/orchestration.
-- GitHub Mobile — notifications, PR/issues/reviews and quick repository control.
-- Mobile browser signed in to GitHub — full repository/Actions/Codespaces access.
+## Required phone websites
 
-### Recommended fallback full IDE
+- ChatGPT website — engineering direction/orchestration.
+- GitHub website — repository, PR, Actions, review and account control.
+- GitHub Codespaces website — fallback browser IDE/terminal only when direct interactive work is genuinely useful.
+- Omni-CIO Web — ordinary product/operations UI after the responsible external-access gate is accepted.
 
-GitHub Codespaces opened in the mobile browser. It provides browser VS Code, terminal, Git and application run/debug capability. Treat it as a disposable engineering environment; never provision production secrets into it.
+No native mobile application is required for normal OWNER operation.
 
-### Product/private access
+## External-service account rule
 
-Tailscale mobile becomes the private transport for the WP22A phone rehearsal and, after acceptance, ordinary private phone access to the single Omni-CIO Web App. Tailscale configuration is not part of this amendment's acceptance and must still pass WP22A.
+When a new service supports **Sign in with GitHub**, use it. Prefer not to create another routine password identity.
+
+After the one-time website authorization/bootstrap, normal provider operations should return to GitHub Actions/API/IaC rather than requiring recurring OWNER dashboard work.
+
+Never paste provider secrets into chat. If a provider credential is genuinely needed, create the narrowest credential and store it once in the reviewed GitHub Actions/Environment secret boundary.
 
 ## Autonomous daily development flow
 
-1. OWNER states the goal in ChatGPT mobile.
+1. OWNER states the goal in ChatGPT Web.
 2. Engineering restores GitHub source of truth and works only in the current authorized branch/WP.
-3. Engineering changes repository files directly through GitHub-connected tooling; OWNER does not copy/paste source files between systems.
-4. Changes go to a focused GitHub branch/PR, never directly to `main`.
+3. Engineering changes repository files directly through GitHub-connected tooling; OWNER does not move source files between services.
+4. Changes go to a focused branch/PR, never directly to `main`.
 5. GitHub Actions runs source-controlled tests/security/deployment orchestration. Windows/self-hosted exact-head gates run on the headless Personal Node where required.
 6. Engineering reads ordinary CI logs and fixes ordinary code/test/CI failures autonomously.
-7. Connected providers are controlled through their reviewed GitHub integration/API/CLI whenever available; recurring manual dashboard deploy/configuration is not the default.
-8. OWNER receives a concise PASS/FAIL/blocker summary on the phone and is contacted only when the contract requires a true OWNER action.
-9. Merge occurs only after the existing exact-head/threads/squash discipline is satisfied.
-10. Render behavior remains governed by the existing V9 deployment contract until a responsible V10 cutover replaces it.
+7. Connected providers are controlled through reviewed GitHub integrations/APIs/CLI/Terraform whenever available.
+8. OWNER receives only concise PASS/FAIL/blocker status and is contacted only for a true OWNER-only action.
+9. Merge occurs only after exact-head/threads/squash discipline is satisfied.
 
-## One-time service bootstrap pattern
+## Browser-only external access
 
-For a new external service, engineering first determines whether GitHub can authenticate with a short-lived/federated identity. If not, use the narrowest supported service credential. OWNER interaction may be required once to create/authorize that identity/credential and place it into the reviewed GitHub Actions/Environment secret boundary.
+A phone-browser-only workflow means the final Omni-CIO access path must not require installing a VPN/device client on the phone.
 
-After bootstrap, normal operation must be machine-driven from GitHub whenever the service offers a safe API/Git integration. Secrets are never committed, printed in Actions logs, copied to Codespaces or sent through ChatGPT.
+Tailscale supports GitHub identity and remains useful for some machine/CI cases, but normal tailnet access from a user phone requires a Tailscale client. Therefore it is no longer the required OWNER phone transport.
 
-Preferred order:
+The initial WP22A clientless candidate is **Cloudflare Access + Cloudflare Tunnel** because official Cloudflare capabilities support:
 
-1. workload/federated identity;
-2. narrowly scoped GitHub Actions/Environment credential;
-3. bounded provider deploy hook/token;
-4. manual provider UI only when no reviewed automation interface exists.
+- Cloudflare account sign-in through GitHub social login;
+- GitHub as an Access identity provider;
+- browser access to self-hosted/private Web apps without a VPN/client application;
+- outbound-only tunnel from the Personal Node, with no public inbound origin port;
+- API/Terraform management for GitHub-driven infrastructure-as-code;
+- a Free Zero Trust plan suitable for initial small deployments, subject to exact acceptance review.
 
-## External-service examples
+Do not treat this runbook as WP22A acceptance. The existing Tailscale-specific PR #317 must be reconciled/reworked only after this amendment is accepted.
+
+## Provider examples
 
 ### Render
 
-Keep the accepted V9 `app:app` deployment boundary. Where the owning deployment contract permits it, use Render's GitHub integration or protected API/deploy-hook automation rather than recurring OWNER deploy clicks. A Render API key/deploy-hook URL is a secret.
+Use Render's GitHub login/integration and reviewed GitHub-driven deployment where the existing V9 deployment contract permits it. Avoid recurring manual deploy buttons. API keys/deploy hooks are secrets.
 
-### Tailscale
+### Cloudflare candidate
 
-WP22A remains the authority. If GitHub-to-tailnet automation is accepted there, prefer Tailscale's supported GitHub integration using federated/workload identity or narrow OAuth scope instead of a long-lived reusable auth key. This does not authorize Funnel/public ingress.
+Initial OWNER account bootstrap should use Cloudflare website **Sign in with GitHub**. Do not create Tunnel/Access/API credentials until engineering has source-controlled the exact WP22A design and minimum permissions.
+
+Once accepted, manage repeatable Cloudflare resources through reviewed Terraform/API from GitHub; dashboard work becomes setup/recovery only.
 
 ### Headless Windows node
 
-The self-hosted runner is an authoritative Windows execution surface only within its reviewed least-privilege workflows. It is not an unrestricted remote Administrator shell. Routine tests/verification/repository-controlled operations may run there; admin/physical/secret actions remain separately gated.
+The self-hosted runner is an authoritative Windows execution surface only within reviewed least-privilege workflows. It is not an unrestricted remote Administrator shell.
 
-## Codespaces resource discipline
+## Codespaces boundary
 
-Use the smallest practical machine. Stop the codespace when not actively using it. Prefer repository-controlled devcontainer/setup so a codespace can be recreated rather than treated as durable state.
-
-Do not store in Codespaces secrets:
+Codespaces is optional engineering clean-room/fallback. It must not contain:
 
 - broker READ/TRADE tokens;
 - Telegram/VK production credentials;
-- Tailscale runtime/recovery secrets;
+- Cloudflare/Tailscale runtime secrets unless an owning contract explicitly establishes an isolated ephemeral CI credential path;
 - BitLocker keys;
 - DPAPI/runtime secret-store material;
 - private portfolio/report payloads;
@@ -80,29 +88,17 @@ Do not store in Codespaces secrets:
 
 ## When engineering may interrupt the OWNER
 
-Routine code, formatting, tests, CI debugging, PR housekeeping, dependency updates and supported provider automation are engineering work, not OWNER work.
+Routine code, formatting, tests, CI debugging, PR housekeeping, dependency updates and supported provider automation are engineering work.
 
 OWNER involvement is reserved for:
 
-- initial external-account consent/credential bootstrap that no safe API can perform;
-- entering a secret into an approved protected boundary;
+- initial external-account website consent/credential bootstrap that no safe API can perform;
+- entering a secret once into an approved protected boundary;
 - physical hardware/BitLocker/UEFI action;
-- Windows Administrator action that cannot safely be delegated to a reviewed automation boundary;
-- an irreversible/materially risky product decision explicitly reserved to OWNER;
+- Windows Administrator action that cannot safely be delegated;
+- an irreversible/materially risky decision reserved to OWNER;
 - required security/Real-money confirmation.
 
-## Phone-only does not weaken safety
+## Safety invariants
 
-A mobile workflow never authorizes bypassing:
-
-- exact-head CI;
-- protected `main` PR discipline;
-- OWNER physical evidence where genuinely required;
-- Windows-specific acceptance;
-- `app:app` protected rollback;
-- `trading_methods=false` / `REAL_TRADING_ENABLED=false`;
-- broker-write and transfer/withdrawal prohibitions.
-
-## Physical exception
-
-If the node is physically dead, BitLocker/UEFI intervention is required, Windows trust/bootstrap is lost, or another reviewed admin action cannot be safely exposed remotely, the system reports `OWNER_ACTION_REQUIRED`. That is a physical recovery exception, not ordinary product/engineering UX.
+Browser-only operation never authorizes bypassing exact-head CI, protected `main`, Windows-specific acceptance, OWNER physical evidence, V9 `app:app` rollback, `trading_methods=false`, `REAL_TRADING_ENABLED=false`, or broker/transfer/withdrawal prohibitions.
