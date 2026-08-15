@@ -115,8 +115,8 @@ function Set-ProtectedEvidenceAcl {
     param([Parameter(Mandatory = $true)][System.Security.Principal.SecurityIdentifier]$RunnerSid)
 
     # Reject a redirected parent or evidence root before touching any descendant
-    # evidence file. This keeps cleanup/finalization from following an attacker-
-    # controlled junction or symlink under ProgramData.
+    # evidence file. Recheck both after root creation to close a path-replacement
+    # window before ACL application.
     Assert-DirectoryNotReparsePoint `
         -Path $omniStateRoot `
         -FailureCode "WP22A_EVIDENCE_PARENT_REPARSE_POINT_FORBIDDEN"
@@ -124,6 +124,9 @@ function Set-ProtectedEvidenceAcl {
         -Path $stateRoot `
         -FailureCode "WP22A_EVIDENCE_ROOT_REPARSE_POINT_FORBIDDEN"
     New-Item -ItemType Directory -Path $stateRoot -Force | Out-Null
+    Assert-DirectoryNotReparsePoint `
+        -Path $omniStateRoot `
+        -FailureCode "WP22A_EVIDENCE_PARENT_REPARSE_POINT_FORBIDDEN"
     Assert-DirectoryNotReparsePoint `
         -Path $stateRoot `
         -FailureCode "WP22A_EVIDENCE_ROOT_REPARSE_POINT_FORBIDDEN"
@@ -374,6 +377,7 @@ try {
     $result.logout_session_revocation_confirmed = $true
 }
 catch {
+    $failure = $_
     # Set-ProtectedEvidenceAcl runs before the first evidence-file mutation, so
     # this removal never follows an unreviewed reparse root.
     if (Test-Path -LiteralPath $stateRoot -PathType Container) {
@@ -385,7 +389,7 @@ catch {
         }
         catch { }
     }
-    $reason = [string]$_.Exception.Message
+    $reason = [string]$failure.Exception.Message
     if ($reason -notmatch '^[A-Z0-9_:\-]+$') { $reason = "WP22A_OWNER_EVIDENCE_ERROR" }
     $result.status = "FAIL"
     $result.reason_code = $reason
