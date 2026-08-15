@@ -24,7 +24,7 @@ def test_remote_acceptance_requires_exact_live_task_binding() -> None:
     ]
     result = source[source.rindex("$result = [ordered]@{") :]
 
-    assert 'Get-ScheduledTask -TaskName $remoteTaskName -ErrorAction Stop' in binding
+    assert "Get-ScheduledTask -TaskName $remoteTaskName -ErrorAction Stop" in binding
     assert '[string]$task.State -ne "Running"' in binding
     assert "task.Principal.UserId" in binding
     assert "Get-LocalUser -Name $runtimeName" in binding
@@ -44,7 +44,9 @@ def test_remote_acceptance_requires_exact_live_task_binding() -> None:
     assert "exact_implementation_binding = $true" not in result
 
 
-def test_owner_finalizer_preserves_primary_failure_and_rechecks_parent_boundary() -> None:
+def test_owner_finalizer_preserves_primary_failure_and_rechecks_parent_boundary() -> (
+    None
+):
     source = FINALIZER.read_text(encoding="utf-8")
     acl = source[
         source.index("function Set-ProtectedEvidenceAcl") : source.index(
