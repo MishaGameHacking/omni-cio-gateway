@@ -56,9 +56,16 @@ def test_provisioner_preserves_sanitized_primary_and_rollback_failure_reasons() 
     assert "WP22A_TAILSCALE_HTTPS_CONSENT_REQUIRED" in source
 
 
-def test_sanitized_local_diagnostic_emits_only_state_booleans_and_task_states() -> None:
+def test_sanitized_local_diagnostic_treats_protected_paths_as_state_not_failure() -> None:
     source = DIAGNOSTIC.read_text(encoding="utf-8")
     assert 'evidence_class = "SANITIZED_LOCAL_DEPLOYMENT_DIAGNOSTIC"' in source
+    assert "function Get-PathStateSafe" in source
+    assert 'return "ACCESS_DENIED"' in source
+    assert "runtime_root_state" in source
+    assert "deployment_marker_state" in source
+    assert "protected_runtime_path_access_denied" in source
+    assert "backend_listener_query_available" in source
+    assert "runner_loopback_firewall_query_available" in source
     assert "base_task_state" in source
     assert "remote_task_state" in source
     assert "tailscale_serve_configured" in source
@@ -120,4 +127,7 @@ def test_owner_audit_uses_cmd_wrapper_for_bypass_powershell_child_processes() ->
     bypass = "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File"
     assert source.count(bypass) >= 2
     assert 'diagnose_wp22a_local_state.ps1" -AsJson' in source
-    assert 'audit_wp22a_runner_loopback.ps1" -ExpectedImplementationSha "%EXPECTED_HEAD%" -AsJson' in source
+    assert (
+        'audit_wp22a_runner_loopback.ps1" -ExpectedImplementationSha '
+        '"%EXPECTED_HEAD%" -AsJson'
+    ) in source
