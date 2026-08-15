@@ -97,8 +97,8 @@ The provisioning gate:
 - binds the dedicated non-admin runtime account to `SeBatchLogonRight` for the lifetime of the WP22A remote task, because each unattended restart and startup is a new batch logon; records only a boolean ownership marker in the task description, rejects `SeDenyBatchLogonRight`, and restores the original account-right state during Cleanup or rollback;
 - verifies that the Web listener is loopback-only;
 - configures Tailscale Serve in background mode to the loopback Web port;
-- performs a real HTTPS OWNER identity/session/login/logout probe through Serve;
-- still leaves a separate phone/browser reachability rehearsal as OWNER evidence.
+- sends a local no-proxy self-Serve request with a forged `Tailscale-User-Login` and requires HTTP 403. Tailscale Serve strips incoming identity headers and does not assign a remote user identity to traffic originating from the Serve machine itself, so this is deliberately a **negative anti-spoof probe**, not positive OWNER authentication evidence;
+- leaves positive OWNER identity, private login, server-side session and logout/revocation proof to the separate authorized phone/browser rehearsal.
 
 The recovery behavior is deliberately fail-closed and idempotent:
 
@@ -107,10 +107,11 @@ The recovery behavior is deliberately fail-closed and idempotent:
 - before remote cutover, accepted exact-head WP15 Verify is executed first. A currently accepted and running local runtime is reused, which avoids a redundant second rebuild immediately after a successful OWNER Cleanup. Any failed Verify is normalized through WP15 Cleanup then WP15 Apply. Local-runtime reconstruction during Cleanup/rollback always executes that Cleanup → Apply sequence. Cleanup calls the low-level WP15 provisioner directly; Apply enters through the accepted WP15 OWNER starter so `SeBatchLogonRight` exists only for task registration/start and is restored afterward. WP15 Cleanup remains the authority that removes a stale task/runtime deployment and disables `omni-cio-runtime`, including partial states where the task/root are already absent but the runtime identity remained enabled;
 - local reconstruction must end with the accepted WP15 task actually `Running`; merely finding a task object is not recovery evidence;
 - a WP22A-owned batch-logon assignment is retained only while the persistent remote startup/restart task exists; the task description preserves whether WP22A added that right so Cleanup/rollback never removes a pre-existing OWNER assignment and never leaves a WP22A-added assignment behind;
+- the Apply transaction includes all post-cutover acceptance checks: Serve state, loopback-only backend, runner firewall, runtime batch-logon binding, local self-Serve 403 and repeated no-Funnel verification. A late failure or exception in any of these checks passes through the same rollback handler. Returning a plain FAIL while leaving the remote task/Serve active is forbidden;
 - a failed apply preserves a sanitized primary reason code and separately reports whether local rollback passed or the sanitized rollback reason. If WP15 returns structured readiness JSON with a nonzero exit, WP22A maps the first failed boolean boundary to a symbolic reason instead of collapsing it into a generic base-Web failure. Raw nested command output, credentials, identities and private URLs are not promoted into the reason code;
 - a failed apply with a failed rollback leaves WP22A blocked. It must not be retried blindly on the same implementation head.
 
-The reviewed OWNER apply wrapper writes an ACL-protected sanitized `RUNNING` marker before starting the mutating provisioner and atomically replaces it with the final sanitized result. The durable file is `C:\ProgramData\OmniCIO\diagnostics\wp22a-owner-apply.sanitized.local.json`. It contains only exact-head identity, symbolic result codes, booleans and counts; raw child output, private URL, Tailscale identity and secrets remain memory-only and are neither emitted nor persisted. This file is recovery/diagnostic state only and is never accepted as phone-rehearsal or WP22A Exit-Gate evidence.
+The reviewed OWNER apply wrapper writes an ACL-protected sanitized `RUNNING` marker before starting the mutating provisioner and atomically replaces it with the final sanitized result. The durable file is `C:\ProgramData\OmniCIO\diagnostics\wp22a-owner-apply.sanitized.local.json`. It contains only exact-head identity, symbolic result codes, booleans and counts; raw child output, private URL, Tailscale identity and secrets remain memory-only and are neither emitted nor persisted. A successful wrapper result is `WP22A_PRIVATE_REMOTE_INFRASTRUCTURE_ACCEPTED`: it proves the infrastructure contour and local negative anti-spoof result only. `owner_identity_binding` and `secure_server_session` remain unproven until the separate-device rehearsal. This file is recovery/diagnostic state only and is never accepted as phone-rehearsal or WP22A Exit-Gate evidence.
 
 The sanitized local-state diagnostic is non-mutating. It is designed for self-hosted CI to report only task states and safety booleans needed to classify a partial deployment: runtime root/marker presence, runtime identity enabled state, loopback listener state, runner firewall presence, Serve/Funnel status availability and whether Serve points at the expected backend port. It does not emit the tailnet hostname, OWNER login, runner identity/SID or secret values.
 
@@ -130,10 +131,11 @@ The runner auditor:
 
 The finalizer:
 
-- can run only after the OWNER has physically opened the HTTPS link from a separate authorized phone/browser and confirmed logout/session revocation;
-- re-runs the non-mutating live `-Verify` gate on the exact clean reviewed head;
+- can run only after the OWNER has physically opened the HTTPS link from a separate authorized phone/browser, successfully used `OWNER private access`, and confirmed logout/session revocation;
+- requires three explicit physical confirmation switches: HTTPS reachability, successful private OWNER login, and logout/session revocation;
+- re-runs the non-mutating live `-Verify` gate on the exact clean reviewed head. Verify proves infrastructure plus the local negative self-Serve 403; it does not synthesize positive OWNER identity/session evidence;
 - requires the runner-loopback firewall binding to remain present;
-- rejects a reparse-point evidence root;
+- rejects a reparse `C:\ProgramData\OmniCIO` parent or `C:\ProgramData\OmniCIO\wp22a` evidence root **before** deleting/replacing any evidence descendant;
 - protects `C:\ProgramData\OmniCIO\wp22a` with inheritance disabled: SYSTEM and Administrators retain FullControl, the exact GitHub runner SID receives ReadAndExecute only, and broad Everyone/Authenticated Users/Users allows are absent;
 - writes only `C:\ProgramData\OmniCIO\wp22a\owner-rehearsal.sanitized.local.json`;
 - binds the evidence to the exact Git SHA and SHA-256 fingerprints of the reviewed security/runtime/runner-audit/evidence implementation;
@@ -168,7 +170,7 @@ The Web process remains bound to `127.0.0.1` only.
 
 The reviewed target is Tailscale **Serve**, not Funnel. Serve proxies the local loopback Web service into the private tailnet HTTPS endpoint. The installed Tailscale client remains the runtime source of truth for exact CLI behavior.
 
-The provisioning gate fails closed rather than enabling Funnel. Before acceptance it verifies all of the following locally:
+The provisioning gate fails closed rather than enabling Funnel. Before infrastructure acceptance it verifies all of the following locally:
 
 - the service target is the loopback Web port;
 - the reported URL is the intended `https://<node>.<tailnet>.ts.net` host;
@@ -176,9 +178,12 @@ The provisioning gate fails closed rather than enabling Funnel. Before acceptanc
 - dedicated Funnel status does not report public exposure;
 - the application Web process itself is not listening on a non-loopback address;
 - the ordinary GitHub runner has an exact outbound user-scoped deny rule to the backend port;
-- a real HTTPS request through Serve receives the expected OWNER identity and can create/revoke a server-side session.
+- the dedicated runtime retains the required batch-logon boundary while the persistent remote task is active;
+- a no-proxy request from the Lenovo through its own Serve URL, even with a forged incoming OWNER identity header, is denied with HTTP 403.
 
-The later self-hosted OWNER audit provides the second half of this boundary: while the WP22A runtime is still live, the actual runner identity must fail a direct TCP connection attempt to the loopback backend. A configured firewall rule without a successful negative runner probe is not Exit-Gate evidence.
+That last check is intentionally **negative**. Tailscale Serve removes incoming identity headers and local-machine traffic does not receive a remote user identity. Therefore a local successful `OWNER private access` probe would be a security defect, not acceptance evidence.
+
+The later physical rehearsal provides the positive half: a separate authorized OWNER device must receive the expected Tailscale identity path, authenticate through `OWNER private access`, obtain a server-side session, use the protected Web and prove logout/revocation. The later self-hosted OWNER audit provides the second negative half: while the WP22A runtime is still live, the actual runner identity must fail a direct TCP connection attempt to the loopback backend and must also fail its own forged-header self-Serve attempt. A configured firewall rule without these live negative probes is not Exit-Gate evidence.
 
 ## Recovery after a failed OWNER apply
 
@@ -198,6 +203,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\infrastructure\window
 
 The wrapper prints and persists only the sanitized result. From any later elevated PowerShell session, read it with `Get-Content -LiteralPath 'C:\ProgramData\OmniCIO\diagnostics\wp22a-owner-apply.sanitized.local.json' -Raw`. After a PASS, obtain the private HTTPS URL locally with `tailscale serve status`; do not paste the raw Tailscale login, private URL or credentials into GitHub/chat.
 
+An Apply PASS at this stage means **private remote infrastructure accepted**, not OWNER authentication accepted. The sanitized result must show `local_serve_identity_spoof_denied=true`; positive OWNER identity/session fields remain unset until the separate-device rehearsal.
+
 If Tailscale requires external HTTPS consent, stop at that OWNER decision boundary. Review the Tailscale machine name first; enable HTTPS only if its publication in certificate transparency is acceptable. Then rerun the same exact-head OWNER apply-wrapper command.
 
 A non-mutating verification after apply is:
@@ -214,7 +221,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\infrastructure\window
 
 Cleanup does **not** merely restart the pre-cutover WP15 scheduled task, because WP22A rotates the runtime-account password when registering its own task and the older task credential may therefore be stale. Cleanup resets Serve, removes the WP22A task and runner firewall rule, invokes accepted WP15 Cleanup unconditionally, then recreates/starts the accepted local Web runtime through WP15 Apply with a fresh runtime credential and readiness checks. It never enables Funnel as a fallback.
 
-The same reconstruction is attempted automatically if `-Apply` fails after cutover. Expected sanitized failure shapes distinguish the two outcomes:
+The same reconstruction is attempted automatically if `-Apply` fails after cutover, including failures discovered by the late infrastructure/no-Funnel/local-self-Serve acceptance checks. Expected sanitized failure shapes distinguish the two outcomes:
 
 ```text
 WP22A_APPLY_FAILED:<PRIMARY_REASON>;LOCAL_ROLLBACK_PASS
@@ -227,9 +234,9 @@ Both are failures. `LOCAL_ROLLBACK_PASS` only means the accepted local Web was r
 
 From an authorized OWNER device inside the intended tailnet:
 
-1. Open the exact HTTPS tailnet URL printed locally by the provisioning gate.
+1. Open the exact HTTPS tailnet URL obtained locally after infrastructure Apply PASS.
 2. The application shows `OWNER private access` only when the request reached the backend through the reviewed private remote path.
-3. Select the private access action. The backend binds the Tailscale identity to the configured OWNER fingerprint.
+3. Select the private access action and confirm that it authenticates successfully. This separate-device observation is the positive evidence that Tailscale supplied the expected OWNER identity and the backend matched its runtime fingerprint.
 4. A successful authentication creates a rotated server-side session and host-bound Secure/HttpOnly/SameSite session cookie bounded by the 2-hour idle / 24-hour absolute remote policy; subsequent remote data/API requests continue to require the matching Tailscale OWNER identity in addition to the session.
 5. Navigate through Portfolio, Watchtower, Research, Decisions/Risk/Plans and System to prove the existing single Web App is reachable remotely.
 6. Logout, reopen the URL and verify the server-side session state changes as expected.
@@ -239,12 +246,12 @@ A wrong tailnet identity, a copied session or session+CSRF replayed under a wron
 Only after steps 1–6 have genuinely passed, finalize the local sanitized evidence:
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\infrastructure\windows\finalize_wp22a_owner_evidence.ps1" -ExpectedImplementationSha "<EXACT_REVIEWED_HEAD>" -PhoneHttpsReachabilityConfirmed -LogoutSessionRevocationConfirmed
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\infrastructure\windows\finalize_wp22a_owner_evidence.ps1" -ExpectedImplementationSha "<EXACT_REVIEWED_HEAD>" -PhoneHttpsReachabilityConfirmed -OwnerPrivateLoginConfirmed -LogoutSessionRevocationConfirmed
 ```
 
-The confirmation switches are OWNER assertions about physical observations and must never be used unless the separate-device rehearsal was actually performed.
+The three confirmation switches are OWNER assertions about physical observations and must never be used unless the separate-device rehearsal was actually performed. In particular, `-OwnerPrivateLoginConfirmed` is the positive identity/session boundary that local CI and the Lenovo self-Serve probe are forbidden to synthesize.
 
-After the finalizer succeeds, the dedicated GitHub OWNER audit must be run on that exact implementation head while the remote runtime remains live. That workflow independently proves that the actual CI runner cannot connect directly to the loopback backend, cannot open the OWNER evidence for write, cannot create a replacement file and cannot rename the OWNER evidence before it validates the OWNER file.
+After the finalizer succeeds, the dedicated GitHub OWNER audit must be run on that exact implementation head while the remote runtime remains live. That workflow independently proves that the actual CI runner cannot connect directly to the loopback backend, cannot authenticate by forging the OWNER identity through the local self-Serve hairpin, cannot open the OWNER evidence for write, cannot create a replacement file and cannot rename the OWNER evidence before it validates the OWNER file.
 
 ## Sanitized acceptance evidence
 
@@ -259,6 +266,7 @@ OWNER evidence ACL protected: True
 CI runner evidence write allowed: False
 Tailscale Serve private: True
 Funnel/public ingress: False
+OWNER private login confirmed: True
 OWNER identity binding: True
 Secure session: True
 Phone HTTPS reachability: True
