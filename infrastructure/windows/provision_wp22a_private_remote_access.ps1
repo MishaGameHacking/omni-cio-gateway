@@ -881,24 +881,47 @@ function Wait-LocalRemoteStatus {
     return $false
 }
 
-function Test-RemoteOwnerSession {
+function Test-LocalServeIdentitySpoofDenied {
     param([Parameter(Mandatory = $true)][string]$HostName)
 
-    $origin = "https://$HostName"
-    $session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+    # Tailscale Serve strips incoming identity headers and does not inject a user
+    # identity for traffic originating from the Serve machine itself. A local
+    # self-Serve request therefore must remain unauthenticated even if it tries to
+    # forge the OWNER header. Positive OWNER identity/session proof belongs to the
+    # separate authorized phone/browser rehearsal, never to this local probe.
+    Add-Type -AssemblyName System.Net.Http -ErrorAction SilentlyContinue
+    $handler = $null
+    $client = $null
+    $request = $null
+    $response = $null
     try {
-        $login = Invoke-WebRequest -UseBasicParsing -Method Post -Uri "$origin/api/v10/web/private-tailnet-login" -Headers @{ Origin = $origin } -WebSession $session -ContentType "application/json" -Body "{}" -TimeoutSec 10
-        if ($login.StatusCode -ne 200) { return $false }
-        $view = Invoke-WebRequest -UseBasicParsing -Uri "$origin/api/v10/web/session" -WebSession $session -TimeoutSec 10
-        if ($view.StatusCode -ne 200) { return $false }
-        $payload = $view.Content | ConvertFrom-Json -ErrorAction Stop
-        if (-not [bool]$payload.authenticated) { return $false }
-        $csrf = $session.Cookies.GetCookies([Uri]$origin)["__Host-omni_v10_csrf"]
-        if ($null -eq $csrf -or [string]::IsNullOrWhiteSpace($csrf.Value)) { return $false }
-        $logout = Invoke-WebRequest -UseBasicParsing -Method Post -Uri "$origin/api/v10/web/session/logout" -Headers @{ Origin = $origin; "X-Omni-CSRF" = $csrf.Value } -WebSession $session -ContentType "application/json" -Body "{}" -TimeoutSec 10
-        return $logout.StatusCode -eq 200
+        $handler = [System.Net.Http.HttpClientHandler]::new()
+        $handler.UseProxy = $false
+        $handler.AllowAutoRedirect = $false
+        $client = [System.Net.Http.HttpClient]::new($handler)
+        $client.Timeout = [TimeSpan]::FromSeconds(10)
+        $request = [System.Net.Http.HttpRequestMessage]::new(
+            [System.Net.Http.HttpMethod]::Get,
+            "https://$HostName/api/v10/web/session"
+        )
+        [void]$request.Headers.TryAddWithoutValidation(
+            "Tailscale-User-Login",
+            "wp22a-local-spoof.invalid"
+        )
+        $response = $client.SendAsync($request).GetAwaiter().GetResult()
+        return [int]$response.StatusCode -eq 403
     }
     catch { return $false }
+    finally {
+        if ($null -ne $response) { $response.Dispose() }
+        if ($null -ne $request) { $request.Dispose() }
+        if ($null -ne $client) {
+            $client.Dispose()
+        }
+        elseif ($null -ne $handler) {
+            $handler.Dispose()
+        }
+    }
 }
 
 function Enable-ServeChecked {
@@ -919,6 +942,70 @@ function Enable-ServeChecked {
         throw "WP22A_TAILSCALE_HTTPS_CONSENT_REQUIRED"
     }
     throw "WP22A_TAILSCALE_SERVE_ENABLE_FAILED"
+}
+
+function Get-RemoteAcceptanceState {
+    param(
+        [Parameter(Mandatory = $true)][string]$Exe,
+        [Parameter(Mandatory = $true)][string]$HostName
+    )
+
+    $serve = Get-ServeState -Exe $Exe -HostName $HostName
+    $loopbackOnly = Test-BackendLoopback
+    $runnerFirewallBound = Test-RunnerLoopbackFirewall
+    $remoteRuntimeBatchLogonBound = Test-RemoteRuntimeBatchRight
+    $localServeIdentitySpoofDenied = $false
+    if (
+        $serve.expected -and
+        $loopbackOnly -and
+        $runnerFirewallBound -and
+        $remoteRuntimeBatchLogonBound
+    ) {
+        $localServeIdentitySpoofDenied = Test-LocalServeIdentitySpoofDenied `
+            -HostName $HostName
+    }
+    $noFunnel = Test-NoFunnel -Exe $Exe
+    $ok = (
+        $serve.expected -and
+        $loopbackOnly -and
+        $runnerFirewallBound -and
+        $remoteRuntimeBatchLogonBound -and
+        $localServeIdentitySpoofDenied -and
+        $noFunnel
+    )
+    return [ordered]@{
+        ok = [bool]$ok
+        tailscale_serve_private = [bool]$serve.expected
+        backend_loopback_only = [bool]$loopbackOnly
+        runner_loopback_firewall_bound = [bool]$runnerFirewallBound
+        remote_runtime_batch_logon_bound = [bool]$remoteRuntimeBatchLogonBound
+        local_serve_identity_spoof_denied = [bool]$localServeIdentitySpoofDenied
+        no_funnel = [bool]$noFunnel
+    }
+}
+
+function Get-RemoteAcceptanceFailureReason {
+    param([Parameter(Mandatory = $true)][System.Collections.IDictionary]$State)
+
+    if (-not [bool]$State.tailscale_serve_private) {
+        return "WP22A_TAILSCALE_SERVE_NOT_READY"
+    }
+    if (-not [bool]$State.backend_loopback_only) {
+        return "WP22A_BACKEND_NOT_LOOPBACK_ONLY"
+    }
+    if (-not [bool]$State.runner_loopback_firewall_bound) {
+        return "WP22A_RUNNER_LOOPBACK_FIREWALL_NOT_BOUND"
+    }
+    if (-not [bool]$State.remote_runtime_batch_logon_bound) {
+        return "WP22A_REMOTE_RUNTIME_BATCH_LOGON_RIGHT_UNAVAILABLE"
+    }
+    if (-not [bool]$State.local_serve_identity_spoof_denied) {
+        return "WP22A_LOCAL_SERVE_IDENTITY_SPOOF_NOT_DENIED"
+    }
+    if (-not [bool]$State.no_funnel) {
+        return "WP22A_FUNNEL_PUBLIC_INGRESS_ACTIVE"
+    }
+    return "WP22A_PRIVATE_REMOTE_INFRASTRUCTURE_NOT_READY"
 }
 
 function Write-Result {
@@ -950,6 +1037,7 @@ if ($Apply -and $serveBefore.any -and -not $serveBefore.expected) {
     throw "WP22A_EXISTING_SERVE_CONFIGURATION_REQUIRES_OWNER_REVIEW"
 }
 
+$acceptance = $null
 if ($Apply) {
     try {
         Install-RemoteTask -Sha $sha -HostName $identity.host -OwnerFingerprint $identity.owner_login_sha256
@@ -959,6 +1047,15 @@ if ($Apply) {
         if (-not (Test-BackendLoopback)) { throw "WP22A_BACKEND_NOT_LOOPBACK_ONLY" }
         if (-not (Test-RunnerLoopbackFirewall)) { throw "WP22A_RUNNER_LOOPBACK_FIREWALL_NOT_BOUND" }
         if (-not $serveBefore.expected) { Enable-ServeChecked -Exe $tailscale }
+
+        # Everything after remote cutover remains inside the same recovery
+        # boundary. A late Serve/no-Funnel/loopback/firewall/batch-logon or local
+        # identity-spoof failure must restore the accepted local Web rather than
+        # return a plain FAIL while leaving remote mode partially active.
+        $acceptance = Get-RemoteAcceptanceState -Exe $tailscale -HostName $identity.host
+        if (-not [bool]$acceptance.ok) {
+            throw (Get-RemoteAcceptanceFailureReason -State $acceptance)
+        }
     }
     catch {
         $primaryReason = Get-SafeReasonCode -Text ([string]$_.Exception.Message) -Fallback "WP22A_APPLY_FAILED"
@@ -973,28 +1070,28 @@ if ($Apply) {
     }
 }
 
-$serve = Get-ServeState -Exe $tailscale -HostName $identity.host
-$loopbackOnly = Test-BackendLoopback
-$runnerFirewallBound = Test-RunnerLoopbackFirewall
-$remoteRuntimeBatchLogonBound = Test-RemoteRuntimeBatchRight
-$remoteOwnerSession = $false
-if ($serve.expected -and $loopbackOnly -and $runnerFirewallBound -and $remoteRuntimeBatchLogonBound) {
-    $remoteOwnerSession = Test-RemoteOwnerSession -HostName $identity.host
+if ($null -eq $acceptance) {
+    $acceptance = Get-RemoteAcceptanceState -Exe $tailscale -HostName $identity.host
 }
-
-$noFunnel = Test-NoFunnel -Exe $tailscale
-$ok = $serve.expected -and $loopbackOnly -and $runnerFirewallBound -and $remoteRuntimeBatchLogonBound -and $remoteOwnerSession -and $noFunnel
+$ok = [bool]$acceptance.ok
+$reason = if ($ok) {
+    "WP22A_PRIVATE_REMOTE_INFRASTRUCTURE_ACCEPTED"
+}
+else {
+    Get-RemoteAcceptanceFailureReason -State $acceptance
+}
 $result = [ordered]@{
     status = $(if ($ok) { "PASS" } else { "FAIL" })
-    reason = $(if ($ok) { "WP22A_PRIVATE_REMOTE_RUNTIME_ACCEPTED" } else { "WP22A_PRIVATE_REMOTE_RUNTIME_NOT_READY" })
+    reason = $reason
     exact_implementation_binding = $true
-    backend_loopback_only = [bool]$loopbackOnly
-    runner_loopback_firewall_bound = [bool]$runnerFirewallBound
-    remote_runtime_batch_logon_bound = [bool]$remoteRuntimeBatchLogonBound
-    tailscale_serve_private = [bool]$serve.expected
-    funnel_public_ingress = [bool](-not $noFunnel)
-    owner_identity_binding = [bool]$remoteOwnerSession
-    secure_server_session = [bool]$remoteOwnerSession
+    backend_loopback_only = [bool]$acceptance.backend_loopback_only
+    runner_loopback_firewall_bound = [bool]$acceptance.runner_loopback_firewall_bound
+    remote_runtime_batch_logon_bound = [bool]$acceptance.remote_runtime_batch_logon_bound
+    tailscale_serve_private = [bool]$acceptance.tailscale_serve_private
+    funnel_public_ingress = [bool](-not [bool]$acceptance.no_funnel)
+    local_serve_identity_spoof_denied = [bool]$acceptance.local_serve_identity_spoof_denied
+    owner_identity_binding = $null
+    secure_server_session = $null
     external_url = "https://$($identity.host)"
     phone_rehearsal_required = $true
 }
