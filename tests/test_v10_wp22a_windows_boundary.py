@@ -7,6 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PROVISIONER = (
     ROOT / "infrastructure" / "windows" / "provision_wp22a_private_remote_access.ps1"
 )
+DIAGNOSTIC = ROOT / "infrastructure" / "windows" / "diagnose_wp22a_local_state.ps1"
 RUNNER_AUDITOR = ROOT / "infrastructure" / "windows" / "audit_wp22a_runner_loopback.ps1"
 OWNER_FINALIZER = (
     ROOT / "infrastructure" / "windows" / "finalize_wp22a_owner_evidence.ps1"
@@ -53,6 +54,20 @@ def test_provisioner_preserves_sanitized_primary_and_rollback_failure_reasons() 
     assert "WP22A_TAILSCALE_HTTPS_CONSENT_REQUIRED" in source
 
 
+def test_sanitized_local_diagnostic_emits_only_state_booleans_and_task_states() -> None:
+    source = DIAGNOSTIC.read_text(encoding="utf-8")
+    assert 'evidence_class = "SANITIZED_LOCAL_DEPLOYMENT_DIAGNOSTIC"' in source
+    assert "base_task_state" in source
+    assert "remote_task_state" in source
+    assert "tailscale_serve_configured" in source
+    assert "tailscale_serve_targets_backend_port" in source
+    assert "funnel_public_ingress" in source
+    assert "raw_tailnet_hostname_emitted = $false" in source
+    assert "raw_owner_login_emitted = $false" in source
+    assert "raw_runner_identity_emitted = $false" in source
+    assert "secret_value_emitted = $false" in source
+
+
 def test_remote_factory_uses_wp22a_short_session_policy() -> None:
     source = REMOTE_FACTORY.read_text(encoding="utf-8")
     assert "REMOTE_SESSION_POLICY" in source
@@ -88,8 +103,10 @@ def test_runner_auditor_requires_live_denials_for_backend_and_owner_evidence() -
     assert "raw_runner_sid_emitted = $false" in source
 
 
-def test_owner_audit_runs_runner_spoof_probe_before_accepting_evidence() -> None:
+def test_owner_audit_reports_sanitized_state_before_requiring_owner_evidence() -> None:
     source = OWNER_WORKFLOW.read_text(encoding="utf-8")
+    diagnostic = source.index("diagnose_wp22a_local_state.ps1")
+    require_evidence = source.index("Require real local OWNER phone rehearsal evidence")
     probe = source.index("audit_wp22a_runner_loopback.ps1")
     validate = source.index("validate_v10_wp22a_owner_evidence.py")
-    assert probe < validate
+    assert diagnostic < require_evidence < probe < validate
