@@ -309,10 +309,7 @@ def test_owner_audit_uses_cmd_wrapper_for_bypass_powershell_child_processes() ->
 def test_owner_apply_wrapper_persists_only_sanitized_result() -> None:
     wrapper = ROOT / "infrastructure" / "windows" / "invoke_wp22a_owner_apply_safe.ps1"
     runbook = (
-        ROOT
-        / "docs"
-        / "operations"
-        / "V10_WP22A_PRIVATE_REMOTE_ACCESS_RUNBOOK.md"
+        ROOT / "docs" / "operations" / "V10_WP22A_PRIVATE_REMOTE_ACCESS_RUNBOOK.md"
     ).read_text(encoding="utf-8")
     source = wrapper.read_text(encoding="utf-8")
     workflow = OWNER_WORKFLOW.read_text(encoding="utf-8")
