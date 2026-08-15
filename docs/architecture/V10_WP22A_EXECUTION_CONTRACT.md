@@ -128,7 +128,7 @@ The reviewed rollback/reconstruction path therefore:
 6. invokes accepted WP15 `Apply` through `start_wp15_live_web_acceptance.ps1`, preserving its temporary `SeBatchLogonRight` grant/restore boundary for the non-admin runtime identity instead of calling the low-level Apply provisioner directly;
 7. requires the reconstructed accepted WP15 task to be `Running`.
 
-The same WP15 Cleanup → Apply normalization is executed before a new remote cutover. A rollback that merely starts a stale pre-cutover task is forbidden.
+Before a new remote cutover, WP22A first executes the accepted WP15 `Verify` gate on the exact reviewed head. An already accepted, running exact-head local runtime may be reused instead of being destroyed and rebuilt a second time immediately after successful OWNER Cleanup. Any stale, partial or non-ready state fails Verify and is normalized through accepted WP15 Cleanup → Apply before cutover. Rollback still reconstructs through Cleanup → Apply and must never merely start a stale pre-cutover task.
 
 A failed remote apply must retain a sanitized primary reason code and separately report either local rollback PASS or a sanitized rollback reason. Generic replacement of both failures with one opaque reason is forbidden. Raw nested process output, private URLs, Tailscale identities, runner identities/SIDs and secrets must not be exposed as diagnostic evidence.
 
@@ -167,9 +167,9 @@ Before OWNER deployment evidence, CI must prove at minimum:
 - the runner audit proves both reviewed impersonation paths fail live: direct TCP access to the loopback backend is denied, and an OWNER-header spoof sent through the node's own no-proxy Serve endpoint returns HTTP 403;
 - the running WP22A task remains bound to the current tailnet host and OWNER-login fingerprint before the runner audit can pass;
 - Serve cleanup uses the reviewed reset primitive and verifies that no Serve route remains;
-- rollback and pre-cutover normalization execute accepted WP15 Cleanup → Apply unconditionally, so partial task/root absence cannot bypass runtime-identity normalization;
+- rollback executes accepted WP15 Cleanup → Apply unconditionally; pre-cutover reuse is allowed only after accepted exact-head WP15 Verify, and every failed verification is normalized through Cleanup → Apply so partial task/root absence cannot bypass runtime-identity normalization;
 - a reconstructed local runtime must be running before rollback is accepted;
-- apply failures preserve sanitized primary and rollback reason classes without publishing raw subprocess output;
+- apply failures preserve sanitized primary and rollback reason classes without publishing raw subprocess output; a structured nonzero WP15 readiness result is reduced to its first failed boolean boundary before the generic base-Web fallback is allowed;
 - the OWNER workflow reports the non-mutating sanitized local deployment state before it requires physical phone evidence;
 - the OWNER finalizer creates a protected, non-reparse evidence directory with SYSTEM/Administrators write authority, exact runner read-only authority, no runner write/delete authority and no broad Everyone/Authenticated Users/Users allow rule;
 - the source-controlled OWNER evidence validator requires the ACL/read-only booleans and rejects any evidence claiming runner write access;
