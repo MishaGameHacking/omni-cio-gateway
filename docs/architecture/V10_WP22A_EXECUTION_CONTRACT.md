@@ -116,15 +116,21 @@ The remote runtime also explicitly disables the earlier loopback-only WP17/WP15 
 
 The WP22A apply path reuses the accepted WP15 deployment root and runtime identity. It may rotate the runtime account password when registering the remote scheduled task, so rollback must never assume that a previously registered WP15 task still holds a valid stored credential.
 
-The reviewed rollback path therefore:
+The reviewed rollback/reconstruction path therefore:
 
-1. disables the WP22A Serve route;
-2. removes the WP22A remote scheduled task;
-3. removes the WP22A runner-loopback firewall rule;
-4. tears down any current WP15/WP22A deployment through the accepted WP15 `Cleanup` mode;
-5. recreates and starts the accepted local Web deployment through the accepted WP15 `Apply` mode, which generates a fresh runtime credential and validates loopback readiness.
+1. resets the WP22A Tailscale Serve configuration using the current Serve reset operation and verifies that no Serve `*.ts.net` route remains;
+2. confirms Funnel/public ingress is not active;
+3. removes the WP22A remote scheduled task;
+4. removes the WP22A runner-loopback firewall rule;
+5. invokes accepted WP15 `Cleanup` **unconditionally**, even when the WP15 task/runtime root are already absent, so a partially completed cutover cannot leave `omni-cio-runtime` enabled or another accepted WP15 cleanup obligation pending;
+6. invokes accepted WP15 `Apply` to reconstruct the local Web with a fresh runtime credential;
+7. requires the reconstructed accepted WP15 task to be `Running`.
 
-A rollback that merely starts a stale pre-cutover task is forbidden.
+The same WP15 Cleanup → Apply normalization is executed before a new remote cutover. A rollback that merely starts a stale pre-cutover task is forbidden.
+
+A failed remote apply must retain a sanitized primary reason code and separately report either local rollback PASS or a sanitized rollback reason. Generic replacement of both failures with one opaque reason is forbidden. Raw nested process output, private URLs, Tailscale identities, runner identities/SIDs and secrets must not be exposed as diagnostic evidence.
+
+The source-controlled `diagnose_wp22a_local_state.ps1` is non-mutating and reports only sanitized state needed to classify a partial deployment: base/remote task states, runtime root and deployment-marker presence, runtime identity enabled state, loopback listener state, runner firewall presence, Serve/Funnel status availability and whether Serve points to the expected backend port. It must not emit the tailnet hostname, OWNER login, runner identity/SID or secrets.
 
 ## 8. Required deterministic checks
 
@@ -151,24 +157,30 @@ Before OWNER deployment evidence, CI must prove at minimum:
 - strict CSP is emitted without `unsafe-inline`/`unsafe-eval`, and frontend source does not require React inline style attributes;
 - the existing local-only TrustedHost middleware still composes correctly behind the outer remote-access guard;
 - frontend Web API sends the CSRF header only when the CSRF cookie exists;
-- Windows provisioning, runtime-launcher, runner-auditor and OWNER-evidence scripts parse under Windows PowerShell 5.1 without applying changes in CI;
+- Windows provisioning, runtime-launcher, sanitized diagnostic, runner-auditor and OWNER-evidence scripts parse under Windows PowerShell 5.1 without applying changes in CI;
 - the source-controlled runtime launcher binds Uvicorn only to loopback and runs as the existing non-admin runtime account during OWNER apply;
 - the provisioner creates an outbound Windows Firewall block bound to the exact non-LocalSystem GitHub runner service SID and WP22A backend port;
-- rollback reconstructs the accepted local runtime through WP15 Cleanup/Apply instead of starting a task with a potentially stale stored password;
+- Serve cleanup uses the reviewed reset primitive and verifies that no Serve route remains;
+- rollback and pre-cutover normalization execute accepted WP15 Cleanup → Apply unconditionally, so partial task/root absence cannot bypass runtime-identity normalization;
+- a reconstructed local runtime must be running before rollback is accepted;
+- apply failures preserve sanitized primary and rollback reason classes without publishing raw subprocess output;
+- the OWNER workflow reports the non-mutating sanitized local deployment state before it requires physical phone evidence;
 - the OWNER finalizer creates a protected, non-reparse evidence directory with SYSTEM/Administrators write authority, exact runner read-only authority, no runner write/delete authority and no broad Everyone/Authenticated Users/Users allow rule;
 - the source-controlled OWNER evidence validator requires the ACL/read-only booleans and rejects any evidence claiming runner write access;
-- the source-controlled Windows boundary tests bind the firewall, rollback, evidence ACL and runner-negative-audit implementation into the focused WP22A gate;
+- the source-controlled Windows boundary tests bind the firewall, recovery, diagnostic, evidence ACL and runner-negative-audit implementation into the focused WP22A gate;
 - full repository quality/security/Regression Shield remains green.
 
 ## 9. OWNER and runner evidence boundary
 
 CI cannot prove a real Lenovo is joined to the intended OWNER tailnet, that Tailscale Serve is configured privately rather than Funnel, or that a separate authorized OWNER device can reach the exact Web URL.
 
+Before another OWNER attempt after any failed deployment, the exact replacement implementation must first pass non-OWNER CI and its self-hosted OWNER workflow must report the sanitized Lenovo deployment state. Engineering must use that state to decide whether the next physical action is recovery (`-Cleanup`) or normal apply; the OWNER must not be told to retry a failed implementation blindly.
+
 After code, static checks, focused tests and authoritative CI are GREEN, WP22A requires one reviewed OWNER-local/private rehearsal for the selected private remote candidate. The source-controlled gate must first prove exact implementation binding, loopback-only backend, runner-specific loopback firewall binding, private Serve state, no Funnel, OWNER identity binding and a real HTTPS server-side login/logout cycle. The OWNER then proves the exact link from a separate authorized phone/browser device.
 
 After that physical observation, `finalize_wp22a_owner_evidence.ps1` re-runs the live non-mutating verification, protects `C:\ProgramData\OmniCIO\wp22a` with an explicit ACL and writes one sanitized local evidence file. The directory is owned as an OWNER/system boundary: SYSTEM and Administrators retain FullControl, the exact non-admin GitHub runner service SID receives ReadAndExecute only, broad identities receive no allow rule, and a reparse-point evidence root is rejected. The evidence records these safety facts as booleans but contains no raw OWNER login, runner identity/SID, private tailnet URL, Tailscale authentication material, broker secret, full account identifier or private portfolio payload.
 
-The dedicated OWNER audit **must not synthesize** phone or local-runtime evidence. Before the local evidence exists it reports `OWNER_ACTION_REQUIRED`. After it exists, the authoritative workflow runs a second negative test as the actual self-hosted runner identity. The WP22A remote task and loopback listener must be live; the runner-bound firewall rule must match the runner SID; a TCP connection from the runner to the backend port must be denied; the OWNER evidence must remain readable to the validator; opening that evidence file for write and creating any new file in the evidence directory must both be denied. Only after those negative probes may CI validate exact SHA/fingerprints and upload a short-lived sanitized derivative.
+The dedicated OWNER audit **must not synthesize** phone or local-runtime evidence. Before the local evidence exists it first reports the sanitized local deployment state and then reports `OWNER_ACTION_REQUIRED`. After the real OWNER evidence exists, the authoritative workflow runs a second negative test as the actual self-hosted runner identity. The WP22A remote task and loopback listener must be live; the runner-bound firewall rule must match the runner SID; a TCP connection from the runner to the backend port must be denied; the OWNER evidence must remain readable to the validator; opening that evidence file for write and creating any new file in the evidence directory must both be denied. Only after those negative probes may CI validate exact SHA/fingerprints and upload a short-lived sanitized derivative.
 
 A repository job that can manufacture, modify, replace or delete the OWNER evidence is an Exit-Gate failure even when every JSON field and implementation hash is otherwise correct. OWNER physical evidence is never synthesized in CI.
 
