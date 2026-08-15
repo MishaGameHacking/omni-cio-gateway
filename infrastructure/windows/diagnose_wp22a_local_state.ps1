@@ -58,11 +58,34 @@ function Get-TaskStateSafe {
     catch { return "UNAVAILABLE" }
 }
 
+function Get-PathStateSafe {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][ValidateSet("Container", "Leaf")][string]$PathType
+    )
+
+    try {
+        if (Test-Path -LiteralPath $Path -PathType $PathType -ErrorAction Stop) {
+            return "PRESENT"
+        }
+        return "ABSENT"
+    }
+    catch [System.UnauthorizedAccessException] {
+        return "ACCESS_DENIED"
+    }
+    catch {
+        if ([string]$_.FullyQualifiedErrorId -match '(?i)UnauthorizedAccess') {
+            return "ACCESS_DENIED"
+        }
+        return "ERROR"
+    }
+}
+
 function Get-ListenerState {
     try {
         $listeners = @(Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue)
         if ($listeners.Count -eq 0) {
-            return [ordered]@{ present = $false; loopback_only = $false }
+            return [ordered]@{ present = $false; loopback_only = $false; query_available = $true }
         }
         $loopbackOnly = $true
         foreach ($listener in $listeners) {
@@ -70,10 +93,14 @@ function Get-ListenerState {
                 $loopbackOnly = $false
             }
         }
-        return [ordered]@{ present = $true; loopback_only = [bool]$loopbackOnly }
+        return [ordered]@{
+            present = $true
+            loopback_only = [bool]$loopbackOnly
+            query_available = $true
+        }
     }
     catch {
-        return [ordered]@{ present = $false; loopback_only = $false }
+        return [ordered]@{ present = $false; loopback_only = $false; query_available = $false }
     }
 }
 
@@ -88,7 +115,9 @@ if ($null -ne $tailscale) {
     $serveStatusAvailable = [bool]$serve.ok
     if ($serve.ok) {
         $serveConfigured = [bool]($serve.text -match '(?i)https://[^\s]+\.ts\.net')
-        $serveTargetsBackendPort = [bool]($serve.text -match ("127\.0\.0\.1:{0}(?:\s|$)" -f $Port))
+        $serveTargetsBackendPort = [bool](
+            $serve.text -match ("127\.0\.0\.1:{0}(?:\s|$)" -f $Port)
+        )
     }
     $funnel = Invoke-TailscaleStatusText -Exe $tailscale -Mode funnel
     $funnelStatusAvailable = [bool]$funnel.ok
@@ -110,13 +139,18 @@ try {
 catch { }
 
 $firewallPresent = $false
+$firewallQueryAvailable = $true
 try {
     $firewallPresent = $null -ne (
         Get-NetFirewallRule -Name $runnerFirewallRuleName -ErrorAction SilentlyContinue
     )
 }
-catch { }
+catch {
+    $firewallQueryAvailable = $false
+}
 
+$runtimeRootState = Get-PathStateSafe -Path $runtimeRoot -PathType Container
+$deploymentMarkerState = Get-PathStateSafe -Path $deploymentMarker -PathType Leaf
 $listener = Get-ListenerState
 $result = [ordered]@{
     schema_version = "1"
@@ -124,12 +158,20 @@ $result = [ordered]@{
     evidence_class = "SANITIZED_LOCAL_DEPLOYMENT_DIAGNOSTIC"
     base_task_state = Get-TaskStateSafe -Name $baseTaskName
     remote_task_state = Get-TaskStateSafe -Name $remoteTaskName
-    runtime_root_present = [bool](Test-Path -LiteralPath $runtimeRoot -PathType Container)
-    deployment_marker_present = [bool](Test-Path -LiteralPath $deploymentMarker -PathType Leaf)
+    runtime_root_state = $runtimeRootState
+    deployment_marker_state = $deploymentMarkerState
+    runtime_root_present = [bool]($runtimeRootState -eq "PRESENT")
+    deployment_marker_present = [bool]($deploymentMarkerState -eq "PRESENT")
+    protected_runtime_path_access_denied = [bool](
+        $runtimeRootState -eq "ACCESS_DENIED" -or
+        $deploymentMarkerState -eq "ACCESS_DENIED"
+    )
     runtime_user_available = [bool]$runtimeUserAvailable
     runtime_user_enabled = [bool]$runtimeUserEnabled
+    backend_listener_query_available = [bool]$listener.query_available
     backend_listener_present = [bool]$listener.present
     backend_listener_loopback_only = [bool]$listener.loopback_only
+    runner_loopback_firewall_query_available = [bool]$firewallQueryAvailable
     runner_loopback_firewall_present = [bool]$firewallPresent
     tailscale_cli_present = [bool]($null -ne $tailscale)
     tailscale_serve_status_available = [bool]$serveStatusAvailable
