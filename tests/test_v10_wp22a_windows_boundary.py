@@ -62,6 +62,33 @@ def test_provisioner_blocks_runner_loopback_and_rebuilds_local_runtime_on_rollba
     assert '"::1"' not in source
 
 
+def test_remote_cutover_reuses_only_an_accepted_exact_head_base_runtime() -> None:
+    source = PROVISIONER.read_text(encoding="utf-8")
+    base_boundary = source[
+        source.index("function Get-BaseWebFailureReason") : source.index(
+            "function Remove-RunnerLoopbackFirewall"
+        )
+    ]
+    cutover = source[
+        source.index("function Install-RemoteTask") : source.index(
+            "function Test-BackendLoopback"
+        )
+    ]
+
+    assert "function Test-BaseLocalWebReady" in base_boundary
+    assert "function Ensure-BaseLocalWebReady" in base_boundary
+    assert 'Invoke-BaseProvisioner -Sha $Sha -Mode Verify' in base_boundary
+    assert 'if ($Mode -eq "Verify") { $arguments += "-Verify" }' in base_boundary
+    assert "Get-BaseWebFailureReason -Text $text -Mode $Mode" in base_boundary
+    assert "ConvertFrom-Json -ErrorAction Stop" in base_boundary
+    assert "WP15_LIVE_LOOPBACK_RUNTIME_NOT_READY" in base_boundary
+    assert "WP15_LIVE_TASK_NOT_RUNNING" in base_boundary
+    assert "WP15_LIVE_RUNNER_PRIVATE_WRITE_EXPOSED" in base_boundary
+    assert "Ensure-BaseLocalWebReady -Sha $Sha" in cutover
+    assert "Invoke-BaseProvisioner -Sha $Sha -Mode Cleanup" not in cutover
+    assert "Invoke-BaseProvisioner -Sha $Sha -Mode Apply" not in cutover
+
+
 def test_remote_task_persists_only_its_owned_batch_logon_right() -> None:
     source = PROVISIONER.read_text(encoding="utf-8")
 
@@ -242,3 +269,4 @@ def test_owner_audit_uses_cmd_wrapper_for_bypass_powershell_child_processes() ->
         'audit_wp22a_runner_loopback.ps1" -ExpectedImplementationSha '
         '"%EXPECTED_HEAD%" -AsJson'
     ) in source
+
