@@ -163,6 +163,7 @@ Before OWNER deployment evidence, CI must prove at minimum:
 - Windows provisioning, runtime-launcher, sanitized diagnostic, runner-auditor and OWNER-evidence scripts parse under Windows PowerShell 5.1 without applying changes in CI;
 - the source-controlled runtime launcher binds Uvicorn only to loopback and runs as the existing non-admin runtime account during OWNER apply;
 - the provisioner creates an outbound Windows Firewall block bound to the exact non-LocalSystem GitHub runner service SID and WP22A backend port;
+- the persistent WP22A startup/restart task holds `SeBatchLogonRight` only on the dedicated non-admin runtime identity while remote mode is active, rejects the deny right, records whether WP22A owns the assignment, and restores only a WP22A-owned assignment during Cleanup/rollback;
 - the runner audit proves both reviewed impersonation paths fail live: direct TCP access to the loopback backend is denied, and an OWNER-header spoof sent through the node's own no-proxy Serve endpoint returns HTTP 403;
 - the running WP22A task remains bound to the current tailnet host and OWNER-login fingerprint before the runner audit can pass;
 - Serve cleanup uses the reviewed reset primitive and verifies that no Serve route remains;
