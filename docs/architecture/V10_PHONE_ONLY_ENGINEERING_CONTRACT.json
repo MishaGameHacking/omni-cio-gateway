@@ -1,15 +1,21 @@
 {
   "schema_version": "1",
   "status": "OWNER_APPROVED_DRAFT_REQUIRES_PR_ACCEPTANCE",
-  "owner_primary_engineering_surface": "PHONE",
+  "owner_primary_engineering_surface": "PHONE_BROWSER_ONLY",
   "engineering_control_plane": "GITHUB_PRO",
   "automation_hub": "GITHUB_ACTIONS_AND_PROVIDER_APIS",
   "primary_phone_surfaces": [
-    "CHATGPT_MOBILE",
-    "GITHUB_MOBILE",
+    "CHATGPT_WEB",
     "GITHUB_WEB",
-    "GITHUB_CODESPACES_BROWSER"
+    "GITHUB_CODESPACES_BROWSER",
+    "OMNI_CIO_WEB"
   ],
+  "native_mobile_apps_required": false,
+  "external_service_account_policy": {
+    "github_social_login_preferred_when_supported": true,
+    "separate_routine_password_identity_preferred": false,
+    "provider_without_github_login_requires_justification": true
+  },
   "autonomous_engineering": {
     "github_direct_branch_file_pr_ci_operations_expected": true,
     "ordinary_ci_failure_debugging_owner_required": false,
@@ -44,15 +50,27 @@
   },
   "external_services": {
     "render": {
+      "github_login_supported": true,
       "github_driven_deploy_preferred_when_accepted": true,
       "manual_recurring_deploy_clicks_preferred": false,
       "deploy_hook_or_api_key_is_secret": true
     },
     "tailscale": {
-      "github_integration_allowed_only_under_wp22a_contract": true,
-      "federated_or_workload_identity_preferred": true,
-      "long_lived_reusable_auth_key_preferred": false,
+      "github_login_supported": true,
+      "github_integration_allowed_for_machine_or_ci_use_when_reviewed": true,
+      "owner_phone_browser_only_path_sufficient": false,
+      "reason": "NORMAL_USER_DEVICE_TAILNET_ACCESS_REQUIRES_DEVICE_CLIENT",
       "public_funnel_authorized": false
+    },
+    "cloudflare": {
+      "status": "WP22A_CLIENTLESS_ACCESS_CANDIDATE",
+      "github_social_login_supported": true,
+      "github_identity_provider_supported_for_access": true,
+      "browser_without_device_client_supported": true,
+      "outbound_tunnel_no_public_origin_port": true,
+      "terraform_api_automation_supported": true,
+      "free_plan_candidate": true,
+      "accepted_for_wp22a": false
     }
   },
   "web_operations": {
@@ -69,16 +87,12 @@
     "FREE_TIER_WHEN_REQUIREMENTS_ARE_MET",
     "PAID_ONLY_AFTER_DOCUMENTED_INSUFFICIENCY_AND_OWNER_APPROVAL"
   ],
-  "render": {
-    "v9_app_app_baseline_preserved": true,
-    "v10_private_state_migration_authorized": false,
-    "v10_broker_secret_custody_authorized": false
-  },
   "wp22a": {
     "sequence_bypassed": false,
     "single_web_app_preserved": true,
-    "phone_private_remote_access_is_target": true,
-    "public_funnel_authorized": false
+    "phone_browser_clientless_access_required": true,
+    "tailscale_serve_owner_phone_path_superseded_if_amendment_accepted": true,
+    "public_unauthenticated_ingress_authorized": false
   },
   "invariants": {
     "app_app_preserved": true,
