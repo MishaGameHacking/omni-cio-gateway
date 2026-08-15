@@ -66,8 +66,10 @@ function Get-TaskSchedulerHistorySafe {
         history_found = $false
         latest_event_id = 0
         latest_event_level = 0
-        latest_result_code = ""
         latest_event_at_utc = ""
+        latest_result_event_id = 0
+        latest_result_code = ""
+        latest_result_event_at_utc = ""
     }
     try {
         $events = @(
@@ -90,18 +92,24 @@ function Get-TaskSchedulerHistorySafe {
                 $eventTask = [string]$fields["TaskName"]
                 if ($eventTask.TrimStart('\') -ne $TaskName) { continue }
 
-                $result.history_found = $true
-                $result.latest_event_id = [int]$event.Id
-                $result.latest_event_level = [int]$event.Level
-                $result.latest_event_at_utc = $event.TimeCreated.ToUniversalTime().ToString("o")
-                foreach ($key in @("ResultCode", "ErrorCode", "ReturnCode", "Result")) {
-                    $candidate = [string]$fields[$key]
-                    if ($candidate -match '^(?:0x[0-9A-Fa-f]+|-?[0-9]+)$') {
-                        $result.latest_result_code = $candidate
-                        break
+                if (-not [bool]$result.history_found) {
+                    $result.history_found = $true
+                    $result.latest_event_id = [int]$event.Id
+                    $result.latest_event_level = [int]$event.Level
+                    $result.latest_event_at_utc = $event.TimeCreated.ToUniversalTime().ToString("o")
+                }
+
+                if ([string]::IsNullOrWhiteSpace([string]$result.latest_result_code)) {
+                    foreach ($key in @("ResultCode", "ErrorCode", "ReturnCode", "Result")) {
+                        $candidate = [string]$fields[$key]
+                        if ($candidate -match '^(?:0x[0-9A-Fa-f]+|-?[0-9]+)$') {
+                            $result.latest_result_event_id = [int]$event.Id
+                            $result.latest_result_code = $candidate
+                            $result.latest_result_event_at_utc = $event.TimeCreated.ToUniversalTime().ToString("o")
+                            break
+                        }
                     }
                 }
-                break
             }
             catch { }
         }
@@ -215,8 +223,10 @@ $result = [ordered]@{
     wp15_task_history_found = [bool]$wp15History.history_found
     wp15_latest_scheduler_event_id = [int]$wp15History.latest_event_id
     wp15_latest_scheduler_event_level = [int]$wp15History.latest_event_level
-    wp15_latest_scheduler_result_code = [string]$wp15History.latest_result_code
     wp15_latest_scheduler_event_at_utc = [string]$wp15History.latest_event_at_utc
+    wp15_latest_scheduler_result_event_id = [int]$wp15History.latest_result_event_id
+    wp15_latest_scheduler_result_code = [string]$wp15History.latest_result_code
+    wp15_latest_scheduler_result_event_at_utc = [string]$wp15History.latest_result_event_at_utc
     runtime_root_state = $runtimeRootState
     deployment_marker_state = $deploymentMarkerState
     runtime_root_present = [bool]($runtimeRootState -eq "PRESENT")
