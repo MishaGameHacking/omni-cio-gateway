@@ -158,9 +158,9 @@ def test_apply_post_cutover_acceptance_stays_inside_rollback_boundary() -> None:
     assert "Get-RemoteAcceptanceState -Exe $tailscale" in apply_block
     assert "Get-RemoteAcceptanceFailureReason -State $acceptance" in apply_block
     assert "Restore-LocalWebTask -Sha $sha -TailscaleExe $tailscale" in apply_block
-    assert apply_block.index("Get-RemoteAcceptanceState -Exe $tailscale") < apply_block.index(
-        "catch {"
-    )
+    assert apply_block.index(
+        "Get-RemoteAcceptanceState -Exe $tailscale"
+    ) < apply_block.index("catch {")
     assert "Test-NoFunnel -Exe $Exe" in acceptance
     assert "Test-LocalServeIdentitySpoofDenied" in acceptance
     assert "local_serve_identity_spoof_denied" in acceptance
@@ -172,7 +172,9 @@ def test_apply_post_cutover_acceptance_stays_inside_rollback_boundary() -> None:
     assert "secure_server_session = $null" in source
 
 
-def test_local_self_serve_is_a_negative_identity_probe_not_positive_owner_proof() -> None:
+def test_local_self_serve_is_a_negative_identity_probe_not_positive_owner_proof() -> (
+    None
+):
     source = PROVISIONER.read_text(encoding="utf-8")
     probe = source[
         source.index("function Test-LocalServeIdentitySpoofDenied") : source.index(
