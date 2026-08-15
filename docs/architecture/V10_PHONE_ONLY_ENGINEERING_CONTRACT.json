@@ -3,11 +3,27 @@
   "status": "OWNER_APPROVED_DRAFT_REQUIRES_PR_ACCEPTANCE",
   "owner_primary_engineering_surface": "PHONE",
   "engineering_control_plane": "GITHUB_PRO",
+  "automation_hub": "GITHUB_ACTIONS_AND_PROVIDER_APIS",
   "primary_phone_surfaces": [
     "CHATGPT_MOBILE",
     "GITHUB_MOBILE",
     "GITHUB_WEB",
     "GITHUB_CODESPACES_BROWSER"
+  ],
+  "autonomous_engineering": {
+    "github_direct_branch_file_pr_ci_operations_expected": true,
+    "ordinary_ci_failure_debugging_owner_required": false,
+    "ordinary_code_changes_owner_required": false,
+    "ordinary_provider_dashboard_clicking_allowed_as_default": false,
+    "source_controlled_provider_automation_preferred": true,
+    "one_time_provider_bootstrap_allowed": true,
+    "owner_required_only_for_physical_secret_consent_or_explicit_plan_decision": true
+  },
+  "provider_authentication_preference": [
+    "WORKLOAD_OR_FEDERATED_IDENTITY",
+    "NARROWLY_SCOPED_GITHUB_SECRET_OR_ENVIRONMENT_CREDENTIAL",
+    "BOUNDED_DEPLOY_HOOK_OR_TOKEN",
+    "MANUAL_DASHBOARD_ONLY_IF_NO_SAFE_MACHINE_INTERFACE"
   ],
   "personal_node_mode": "HEADLESS_WINDOWS_REPLACEABLE",
   "routine_local_console_required": false,
@@ -17,6 +33,27 @@
     "private_portfolio_payload_allowed": false,
     "real_money_authority_allowed": false,
     "windows_gate_replacement_allowed": false
+  },
+  "github_actions": {
+    "role": "AUTOMATION_BUS_WITHIN_OWNING_CONTRACTS",
+    "arbitrary_windows_admin_shell_allowed": false,
+    "arbitrary_secret_export_allowed": false,
+    "broker_write_authority_implied": false,
+    "external_service_automation_allowed_when_reviewed": true,
+    "self_hosted_runner_remains_least_privilege": true
+  },
+  "external_services": {
+    "render": {
+      "github_driven_deploy_preferred_when_accepted": true,
+      "manual_recurring_deploy_clicks_preferred": false,
+      "deploy_hook_or_api_key_is_secret": true
+    },
+    "tailscale": {
+      "github_integration_allowed_only_under_wp22a_contract": true,
+      "federated_or_workload_identity_preferred": true,
+      "long_lived_reusable_auth_key_preferred": false,
+      "public_funnel_authorized": false
+    }
   },
   "web_operations": {
     "typed_allowlisted_operations_required": true,
