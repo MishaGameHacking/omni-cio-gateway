@@ -200,7 +200,7 @@ def test_local_self_serve_is_a_negative_identity_probe_not_positive_owner_proof(
     assert "$OwnerLogin" in probe
     assert '"wp22a-local-spoof.invalid"' not in probe
     assert "return [int]$response.StatusCode -eq 403" in probe
-    assert "forged real OWNER header" in probe
+    assert "Use the real OWNER login only in memory." in probe
     assert "private-tailnet-login" not in probe
     assert "-OwnerLogin $OwnerLogin" in acceptance
     assert "-OwnerLogin $identity.owner_login" in source
