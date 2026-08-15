@@ -85,6 +85,61 @@ function Set-ProtectedResultRoot {
     }
 }
 
+function Set-ProtectedResultFileAcl {
+    $item = Get-Item -LiteralPath $resultPath -Force -ErrorAction SilentlyContinue
+    if ($null -eq $item) { return }
+    if (
+        [bool]$item.PSIsContainer -or
+        ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0
+    ) {
+        throw "WP22A_SAFE_RESULT_FILE_BOUNDARY_INVALID"
+    }
+
+    # File.Replace preserves the DACL of the destination file on Windows. A
+    # pre-created permissive result file must therefore be hardened before the
+    # atomic replace, then verified again after replace/move.
+    $systemSid = [System.Security.Principal.SecurityIdentifier]::new("S-1-5-18")
+    $adminsSid = [System.Security.Principal.SecurityIdentifier]::new("S-1-5-32-544")
+    $none = [System.Security.AccessControl.InheritanceFlags]::None
+    $acl = [System.Security.AccessControl.FileSecurity]::new()
+    $acl.SetAccessRuleProtection($true, $false)
+    $acl.AddAccessRule((New-AllowRule -Sid $systemSid -Rights ([System.Security.AccessControl.FileSystemRights]::FullControl) -Inheritance $none))
+    $acl.AddAccessRule((New-AllowRule -Sid $adminsSid -Rights ([System.Security.AccessControl.FileSystemRights]::FullControl) -Inheritance $none))
+    Set-Acl -LiteralPath $resultPath -AclObject $acl -ErrorAction Stop
+
+    $applied = Get-Acl -LiteralPath $resultPath -ErrorAction Stop
+    $rules = @(
+        $applied.GetAccessRules(
+            $true,
+            $false,
+            [System.Security.Principal.SecurityIdentifier]
+        )
+    )
+    $allowedSids = @($systemSid.Value, $adminsSid.Value)
+    $unexpected = @(
+        $rules | Where-Object {
+            $_.AccessControlType -ne "Allow" -or
+            $allowedSids -notcontains $_.IdentityReference.Value
+        }
+    )
+    $systemFull = [bool]($rules | Where-Object {
+        $_.IdentityReference.Value -eq $systemSid.Value -and
+        ($_.FileSystemRights -band [System.Security.AccessControl.FileSystemRights]::FullControl) -eq [System.Security.AccessControl.FileSystemRights]::FullControl
+    })
+    $adminsFull = [bool]($rules | Where-Object {
+        $_.IdentityReference.Value -eq $adminsSid.Value -and
+        ($_.FileSystemRights -band [System.Security.AccessControl.FileSystemRights]::FullControl) -eq [System.Security.AccessControl.FileSystemRights]::FullControl
+    })
+    if (
+        -not [bool]$applied.AreAccessRulesProtected -or
+        $unexpected.Count -ne 0 -or
+        -not $systemFull -or
+        -not $adminsFull
+    ) {
+        throw "WP22A_SAFE_RESULT_FILE_ACL_INVALID"
+    }
+}
+
 function Get-SafeReasonCode {
     param(
         [AllowNull()][string]$Text,
@@ -113,6 +168,7 @@ function Save-SanitizedResult {
     param([Parameter(Mandatory = $true)][System.Collections.IDictionary]$Result)
 
     Set-ProtectedResultRoot
+    Set-ProtectedResultFileAcl
     $temporaryPath = Join-Path $resultRoot (".{0}.tmp" -f [Guid]::NewGuid().ToString("N"))
     try {
         $json = $Result | ConvertTo-Json -Depth 5 -Compress
@@ -128,6 +184,7 @@ function Save-SanitizedResult {
         else {
             [System.IO.File]::Move($temporaryPath, $resultPath)
         }
+        Set-ProtectedResultFileAcl
     }
     finally {
         Remove-Item -LiteralPath $temporaryPath -Force -ErrorAction SilentlyContinue
