@@ -237,7 +237,14 @@ function Get-TailscaleIdentity {
         $fingerprint = -join ($digest | ForEach-Object { $_.ToString("x2") })
     }
     finally { $sha.Dispose() }
-    return [ordered]@{ host = $hostName; owner_login_sha256 = $fingerprint }
+    # The raw login stays memory-only. It is needed solely to make the local
+    # self-Serve spoof probe equivalent to a forged real OWNER header; it is
+    # never written to task arguments, result objects, files, logs or CI output.
+    return [ordered]@{
+        host = $hostName
+        owner_login = $login
+        owner_login_sha256 = $fingerprint
+    }
 }
 
 function Test-NoFunnel {
@@ -882,13 +889,15 @@ function Wait-LocalRemoteStatus {
 }
 
 function Test-LocalServeIdentitySpoofDenied {
-    param([Parameter(Mandatory = $true)][string]$HostName)
+    param(
+        [Parameter(Mandatory = $true)][string]$HostName,
+        [Parameter(Mandatory = $true)][string]$OwnerLogin
+    )
 
-    # Tailscale Serve strips incoming identity headers and does not inject a user
-    # identity for traffic originating from the Serve machine itself. A local
-    # self-Serve request therefore must remain unauthenticated even if it tries to
-    # forge the OWNER header. Positive OWNER identity/session proof belongs to the
-    # separate authorized phone/browser rehearsal, never to this local probe.
+    # Use the real OWNER login only in memory. If Serve ever forwards the forged
+    # incoming identity header instead of stripping it, this exact spoof would
+    # match the configured OWNER fingerprint and the probe would expose the flaw.
+    # Current Serve must strip it and local-machine traffic must stay unauthenticated.
     Add-Type -AssemblyName System.Net.Http -ErrorAction SilentlyContinue
     $handler = $null
     $client = $null
@@ -906,7 +915,7 @@ function Test-LocalServeIdentitySpoofDenied {
         )
         [void]$request.Headers.TryAddWithoutValidation(
             "Tailscale-User-Login",
-            "wp22a-local-spoof.invalid"
+            $OwnerLogin
         )
         $response = $client.SendAsync($request).GetAwaiter().GetResult()
         return [int]$response.StatusCode -eq 403
@@ -947,7 +956,8 @@ function Enable-ServeChecked {
 function Get-RemoteAcceptanceState {
     param(
         [Parameter(Mandatory = $true)][string]$Exe,
-        [Parameter(Mandatory = $true)][string]$HostName
+        [Parameter(Mandatory = $true)][string]$HostName,
+        [Parameter(Mandatory = $true)][string]$OwnerLogin
     )
 
     $serve = Get-ServeState -Exe $Exe -HostName $HostName
@@ -962,7 +972,8 @@ function Get-RemoteAcceptanceState {
         $remoteRuntimeBatchLogonBound
     ) {
         $localServeIdentitySpoofDenied = Test-LocalServeIdentitySpoofDenied `
-            -HostName $HostName
+            -HostName $HostName `
+            -OwnerLogin $OwnerLogin
     }
     $noFunnel = Test-NoFunnel -Exe $Exe
     $ok = (
@@ -1052,7 +1063,10 @@ if ($Apply) {
         # boundary. A late Serve/no-Funnel/loopback/firewall/batch-logon or local
         # identity-spoof failure must restore the accepted local Web rather than
         # return a plain FAIL while leaving remote mode partially active.
-        $acceptance = Get-RemoteAcceptanceState -Exe $tailscale -HostName $identity.host
+        $acceptance = Get-RemoteAcceptanceState `
+            -Exe $tailscale `
+            -HostName $identity.host `
+            -OwnerLogin $identity.owner_login
         if (-not [bool]$acceptance.ok) {
             throw (Get-RemoteAcceptanceFailureReason -State $acceptance)
         }
@@ -1071,7 +1085,10 @@ if ($Apply) {
 }
 
 if ($null -eq $acceptance) {
-    $acceptance = Get-RemoteAcceptanceState -Exe $tailscale -HostName $identity.host
+    $acceptance = Get-RemoteAcceptanceState `
+        -Exe $tailscale `
+        -HostName $identity.host `
+        -OwnerLogin $identity.owner_login
 }
 $ok = [bool]$acceptance.ok
 $reason = if ($ok) {
