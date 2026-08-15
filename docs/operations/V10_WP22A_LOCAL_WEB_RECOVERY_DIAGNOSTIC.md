@@ -23,10 +23,10 @@ The helper requires:
 - the existing accepted WP15 provisioner;
 - the existing protected `omni-cio-runtime` identity and PostgreSQL boundary.
 
-The diagnostic performs one bounded recovery rehearsal:
+The diagnostic performs one bounded recovery rehearsal. WP15 Apply deliberately enters through the accepted `start_wp15_live_web_acceptance.ps1` OWNER boundary rather than calling the low-level provisioner directly. That starter temporarily grants `SeBatchLogonRight` to the non-admin runtime identity only while the task is registered and started, then restores the original account-right state.
 
 1. accepted WP15 `Cleanup` to normalize any partial local state;
-2. accepted WP15 `Apply` to reconstruct the loopback Web runtime;
+2. accepted WP15 starter → `Apply` to reconstruct the loopback Web runtime;
 3. if Apply succeeds, leave the accepted local Web runtime running and report PASS;
 4. if Apply fails, extract only the accepted WP15 reason token plus, when available, the already-computed scheduled-task state and numeric `LastTaskResult` from `WP15_LIVE_LOOPBACK_RUNTIME_NOT_READY`;
 5. after a failed Apply, execute accepted WP15 `Cleanup` again so the runtime identity/task/root are returned to the accepted fail-closed cleanup state.

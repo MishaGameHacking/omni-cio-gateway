@@ -10,6 +10,7 @@ $ErrorActionPreference = "Stop"
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $baseProvisioner = Join-Path $repoRoot "infrastructure\windows\provision_wp15_live_web_acceptance.ps1"
+$baseStarter = Join-Path $repoRoot "infrastructure\windows\start_wp15_live_web_acceptance.ps1"
 
 function Test-Administrator {
     $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
@@ -46,14 +47,25 @@ function Get-SafeReasonCode {
 function Invoke-BaseProvisionerCaptured {
     param([Parameter(Mandatory = $true)][ValidateSet("Apply", "Cleanup")][string]$Mode)
 
-    $modeArgument = if ($Mode -eq "Apply") { "-Apply" } else { "-Cleanup" }
+    # The accepted WP15 Apply boundary is the OWNER starter because it grants
+    # SeBatchLogonRight only while the runtime task is registered and started,
+    # then restores the original account-right state. Cleanup needs no such right.
+    $entrypoint = if ($Mode -eq "Apply") { $baseStarter } else { $baseProvisioner }
+    if (-not (Test-Path -LiteralPath $entrypoint -PathType Leaf)) {
+        return [ordered]@{
+            exit_code = 1
+            text = "WP22A_BASE_WEB_ENTRYPOINT_MISSING"
+        }
+    }
     $arguments = @(
         "-NoProfile",
         "-NonInteractive",
         "-ExecutionPolicy", "Bypass",
-        "-File", $baseProvisioner,
-        "-ExpectedImplementationSha", $ExpectedImplementationSha,
-        $modeArgument,
+        "-File", $entrypoint,
+        "-ExpectedImplementationSha", $ExpectedImplementationSha
+    )
+    if ($Mode -eq "Cleanup") { $arguments += "-Cleanup" }
+    $arguments += @(
         "-Port", [string]$Port,
         "-AsJson"
     )
@@ -132,6 +144,9 @@ if (-not (Test-Administrator)) { throw "WP22A_OWNER_ADMIN_REQUIRED" }
 $sha = Get-ReviewedHead
 if (-not (Test-Path -LiteralPath $baseProvisioner -PathType Leaf)) {
     throw "WP22A_BASE_WEB_PROVISIONER_MISSING"
+}
+if (-not (Test-Path -LiteralPath $baseStarter -PathType Leaf)) {
+    throw "WP22A_BASE_WEB_STARTER_MISSING"
 }
 
 $result = [ordered]@{

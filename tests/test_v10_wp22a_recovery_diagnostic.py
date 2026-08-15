@@ -37,3 +37,22 @@ def test_recovery_diagnostic_normalizes_before_apply_and_cleans_after_failure() 
     assert 'reason_code = "WP22A_LOCAL_RECOVERY_DIAGNOSTIC_CLEANUP_FAILED"' in source
     assert "local_web_restored = $true" in source
     assert "final_safe_state = $true" in source
+
+
+def test_recovery_apply_uses_accepted_wp15_batch_logon_starter() -> None:
+    source = RECOVERY.read_text(encoding="utf-8")
+    invocation = source[
+        source.index("function Invoke-BaseProvisionerCaptured") : source.index(
+            "function Get-NotReadyDetails"
+        )
+    ]
+
+    assert "start_wp15_live_web_acceptance.ps1" in source
+    assert (
+        '$entrypoint = if ($Mode -eq "Apply") { $baseStarter } else { $baseProvisioner }'
+        in invocation
+    )
+    assert '"-File", $entrypoint' in invocation
+    assert 'if ($Mode -eq "Cleanup") { $arguments += "-Cleanup" }' in invocation
+    assert '"-Apply"' not in invocation
+    assert "WP22A_BASE_WEB_STARTER_MISSING" in source

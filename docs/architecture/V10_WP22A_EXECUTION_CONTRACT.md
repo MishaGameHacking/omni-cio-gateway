@@ -125,7 +125,7 @@ The reviewed rollback/reconstruction path therefore:
 3. removes the WP22A remote scheduled task;
 4. removes the WP22A runner-loopback firewall rule;
 5. invokes accepted WP15 `Cleanup` **unconditionally**, even when the WP15 task/runtime root are already absent, so a partially completed cutover cannot leave `omni-cio-runtime` enabled or another accepted WP15 cleanup obligation pending;
-6. invokes accepted WP15 `Apply` to reconstruct the local Web with a fresh runtime credential;
+6. invokes accepted WP15 `Apply` through `start_wp15_live_web_acceptance.ps1`, preserving its temporary `SeBatchLogonRight` grant/restore boundary for the non-admin runtime identity instead of calling the low-level Apply provisioner directly;
 7. requires the reconstructed accepted WP15 task to be `Running`.
 
 The same WP15 Cleanup → Apply normalization is executed before a new remote cutover. A rollback that merely starts a stale pre-cutover task is forbidden.

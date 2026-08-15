@@ -23,6 +23,19 @@ def test_provisioner_blocks_runner_loopback_and_rebuilds_local_runtime_on_rollba
     None
 ):
     source = PROVISIONER.read_text(encoding="utf-8")
+    base_entrypoint = source[
+        source.index("function Invoke-BaseProvisioner") : source.index(
+            "function Remove-RunnerLoopbackFirewall"
+        )
+    ]
+    assert "start_wp15_live_web_acceptance.ps1" in source
+    assert (
+        '$entrypoint = if ($Mode -eq "Apply") { $baseStarter } else { $baseProvisioner }'
+        in base_entrypoint
+    )
+    assert '"-File", $entrypoint' in base_entrypoint
+    assert 'if ($Mode -eq "Cleanup") { $arguments += "-Cleanup" }' in base_entrypoint
+    assert '"-Apply"' not in base_entrypoint
     assert '"actions.runner.*"' in source
     assert '"OmniCIO.V10.WP22A.BlockRunnerLoopback"' in source
     assert "New-NetFirewallRule" in source

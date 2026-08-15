@@ -60,12 +60,13 @@ This is a real external-account/privacy consent boundary. Engineering does not s
 
 ## Source-controlled deployment, recovery and evidence boundary
 
-WP22A adds five reviewed Windows scripts:
+WP22A adds six reviewed Windows scripts:
 
 ```text
 infrastructure/windows/run_wp22a_private_remote_runtime.ps1
 infrastructure/windows/provision_wp22a_private_remote_access.ps1
 infrastructure/windows/diagnose_wp22a_local_state.ps1
+infrastructure/windows/recover_wp22a_local_web_diagnostic.ps1
 infrastructure/windows/audit_wp22a_runner_loopback.ps1
 infrastructure/windows/finalize_wp22a_owner_evidence.ps1
 ```
@@ -97,7 +98,7 @@ The recovery behavior is deliberately fail-closed and idempotent:
 
 - Tailscale Serve cleanup uses `tailscale serve reset`, then verifies that no Serve `*.ts.net` route remains;
 - cleanup never enables Funnel as a fallback;
-- before both remote cutover and local-runtime reconstruction, the accepted WP15 Cleanup then WP15 Apply path is executed unconditionally. WP15 Cleanup is the authority that removes a stale task/runtime deployment and disables `omni-cio-runtime`, including partial states where the task/root are already absent but the runtime identity remained enabled;
+- before both remote cutover and local-runtime reconstruction, the accepted WP15 Cleanup then WP15 Apply path is executed unconditionally. Cleanup calls the low-level WP15 provisioner directly; Apply enters through the accepted WP15 OWNER starter so `SeBatchLogonRight` exists only for task registration/start and is restored afterward. WP15 Cleanup remains the authority that removes a stale task/runtime deployment and disables `omni-cio-runtime`, including partial states where the task/root are already absent but the runtime identity remained enabled;
 - local reconstruction must end with the accepted WP15 task actually `Running`; merely finding a task object is not recovery evidence;
 - a failed apply preserves a sanitized primary reason code and separately reports whether local rollback passed or the sanitized rollback reason. Raw nested command output, credentials, identities and private URLs are not promoted into the reason code;
 - a failed apply with a failed rollback leaves WP22A blocked. It must not be retried blindly on the same implementation head.

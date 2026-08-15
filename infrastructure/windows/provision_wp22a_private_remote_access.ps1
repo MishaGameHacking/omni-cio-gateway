@@ -17,6 +17,7 @@ if ($env:OS -ne "Windows_NT") { throw "WP22A private remote provisioning require
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $baseProvisioner = Join-Path $repoRoot "infrastructure\windows\provision_wp15_live_web_acceptance.ps1"
+$baseStarter = Join-Path $repoRoot "infrastructure\windows\start_wp15_live_web_acceptance.ps1"
 $runtimeName = "omni-cio-runtime"
 $baseTaskName = "OmniCIO.V10.WP15LiveAcceptance"
 $remoteTaskName = "OmniCIO.V10.WP22APrivateRemote"
@@ -228,14 +229,22 @@ function Invoke-BaseProvisioner {
         [Parameter(Mandatory = $true)][ValidateSet("Apply", "Cleanup")][string]$Mode
     )
 
-    $modeArgument = if ($Mode -eq "Apply") { "-Apply" } else { "-Cleanup" }
+    # WP15 Apply must enter through the accepted OWNER starter. That boundary
+    # grants SeBatchLogonRight only for task registration/start and restores the
+    # original account rights afterward. Cleanup remains a direct provisioner call.
+    $entrypoint = if ($Mode -eq "Apply") { $baseStarter } else { $baseProvisioner }
+    if (-not (Test-Path -LiteralPath $entrypoint -PathType Leaf)) {
+        throw "WP22A_BASE_WEB_ENTRYPOINT_MISSING"
+    }
     $arguments = @(
         "-NoProfile",
         "-NonInteractive",
         "-ExecutionPolicy", "Bypass",
-        "-File", $baseProvisioner,
-        "-ExpectedImplementationSha", $Sha,
-        $modeArgument,
+        "-File", $entrypoint,
+        "-ExpectedImplementationSha", $Sha
+    )
+    if ($Mode -eq "Cleanup") { $arguments += "-Cleanup" }
+    $arguments += @(
         "-Port", [string]$Port,
         "-AsJson"
     )
