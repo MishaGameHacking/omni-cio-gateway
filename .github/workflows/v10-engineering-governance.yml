@@ -47,8 +47,11 @@ jobs:
       - name: Verify engineering governance contract
         run: python scripts/check_v10_engineering_governance.py
 
-      - name: Compile governance guard
-        run: python -m py_compile scripts\check_v10_engineering_governance.py
+      - name: Verify CI cost-control contract
+        run: python scripts/check_v10_ci_cost_control.py
+
+      - name: Compile governance guards
+        run: python -m py_compile scripts\check_v10_engineering_governance.py scripts\check_v10_ci_cost_control.py
 
       - name: Clean self-hosted workspace
         if: always()
