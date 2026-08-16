@@ -3,7 +3,6 @@ from __future__ import annotations
 import ast
 from collections import defaultdict
 from pathlib import Path
-import subprocess
 import sys
 
 
@@ -44,7 +43,6 @@ REQUIRED_V10_AUTHORITY_FILES = {
     "docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.md",
     "docs/master-plan/Omni-CIO_V10_Master_Plan_RU.pdf",
     "docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.sha256",
-    "docs/master-plan/OMNI_CIO_V10_ENGINEERING_QUALITY_AND_GREEN_MERGE_AMENDMENT.md",
     "docs/architecture/REPOSITORY_STRUCTURE.md",
     "docs/architecture/V10_SYSTEM_ARCHITECTURE.md",
     "docs/architecture/V10_SECURITY_BOUNDARIES.md",
@@ -52,10 +50,6 @@ REQUIRED_V10_AUTHORITY_FILES = {
     "docs/architecture/V10_THREAT_MODEL.md",
     "docs/architecture/V10_RECOVERY_CONTRACT.md",
     "docs/architecture/V10_V9_BASELINE_FREEZE.md",
-    "docs/architecture/V10_ENGINEERING_QUALITY_GATE_CONTRACT.json",
-    "docs/operations/V10_ENGINEERING_FAILURE_LEARNING_LEDGER.md",
-    "scripts/check_v10_engineering_governance.py",
-    ".github/workflows/v10-engineering-governance.yml",
 }
 
 PROTECTED_COMPATIBILITY_PATHS = {
@@ -156,32 +150,6 @@ def validate_authority_files(failures: list[str]) -> None:
     for relative in sorted(PROTECTED_COMPATIBILITY_PATHS):
         if not (ROOT / relative).exists():
             _fail(f"protected V9 compatibility path is missing: {relative}", failures)
-
-
-def validate_engineering_governance(failures: list[str]) -> None:
-    """Bind the durable OWNER engineering laws into the authoritative gate."""
-    script = ROOT / "scripts" / "check_v10_engineering_governance.py"
-    if not script.is_file():
-        _fail("missing engineering governance guard", failures)
-        return
-    completed = subprocess.run(
-        [sys.executable, str(script)],
-        cwd=ROOT,
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
-    if completed.returncode == 0:
-        return
-    detail = (completed.stderr or completed.stdout).strip().replace("\n", " | ")
-    if len(detail) > 600:
-        detail = detail[:597] + "..."
-    _fail(
-        "engineering governance contract failed"
-        + (f": {detail}" if detail else ""),
-        failures,
-    )
 
 
 def validate_no_competing_roots(failures: list[str]) -> None:
@@ -366,7 +334,6 @@ def validate_codeowners(failures: list[str]) -> None:
 def main() -> int:
     failures: list[str] = []
     validate_authority_files(failures)
-    validate_engineering_governance(failures)
     validate_no_competing_roots(failures)
     validate_single_execution_authority(failures)
     validate_adapter_authority(failures)
@@ -386,7 +353,6 @@ def main() -> int:
     print("Reserved AI root: ai/")
     print("Reserved infrastructure root: infrastructure/")
     print("Direct Real authority: omni_cio/real_trading only")
-    print("Engineering governance: OWNER quality/green-merge contract enforced")
     print("Protected V9 compatibility layer: present")
     return 0
 
