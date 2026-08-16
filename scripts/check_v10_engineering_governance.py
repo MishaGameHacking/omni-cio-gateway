@@ -16,9 +16,7 @@ INDEX = ROOT / "docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md"
 CONTRACT = ROOT / "docs/architecture/V10_ENGINEERING_QUALITY_GATE_CONTRACT.json"
 LEDGER = ROOT / "docs/operations/V10_ENGINEERING_FAILURE_LEARNING_LEDGER.md"
 OWNER_STANDARD = ROOT / "docs/operations/V10_OWNER_ACTION_HANDOFF_STANDARD.md"
-COPILOT_POLICY = (
-    ROOT / ".github/instructions/owner-handoff-and-runtime.instructions.md"
-)
+COPILOT_POLICY = ROOT / ".github/instructions/owner-handoff-and-runtime.instructions.md"
 PR_TEMPLATE = ROOT / ".github/pull_request_template.md"
 COPILOT = ROOT / ".github/copilot-instructions.md"
 WP_TEMPLATE = ROOT / "docs/master-plan/OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md"
@@ -294,7 +292,9 @@ def validate_contract(failures: list[str]) -> None:
         runtime_hosting.get("external_access_provider_role")
         != "ACCESS_SECURITY_TRANSPORT_TO_PERSONAL_NODE"
     ):
-        failures.append("external access provider must remain transport to Personal Node")
+        failures.append(
+            "external access provider must remain transport to Personal Node"
+        )
     _expect_bool(
         runtime_hosting,
         "external_access_provider_may_become_private_state_host",
