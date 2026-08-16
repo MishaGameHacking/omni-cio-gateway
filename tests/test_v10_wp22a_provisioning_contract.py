@@ -56,7 +56,10 @@ def test_opentofu_bootstrap_is_version_hash_and_distribution_pinned() -> None:
     ):
         assert f'"{part}"' in text
     assert ') -join ""' in text
-    assert "https://github.com/opentofu/opentofu/releases/download/v$version/$archiveName" in text
+    assert (
+        "https://github.com/opentofu/opentofu/releases/download/v$version/$archiveName"
+        in text
+    )
     assert 'Join-Path $installRoot "tofu.exe"' in text
     assert "Get-FileHash -Algorithm SHA256" in text
     assert "WP22A_OPENTOFU_ARCHIVE_HASH_MISMATCH" in text
