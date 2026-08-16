@@ -8,7 +8,9 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT = ROOT / "docs" / "architecture" / "V10_ENGINEERING_QUALITY_GATE_CONTRACT.json"
 STANDARD = ROOT / "docs" / "operations" / "V10_CI_COST_CONTROL_STANDARD.md"
-COPILOT_POLICY = ROOT / ".github" / "instructions" / "owner-handoff-and-runtime.instructions.md"
+COPILOT_POLICY = (
+    ROOT / ".github" / "instructions" / "owner-handoff-and-runtime.instructions.md"
+)
 LEDGER = ROOT / "docs" / "operations" / "V10_ENGINEERING_FAILURE_LEARNING_LEDGER.md"
 FAST_WORKFLOW = ROOT / ".github" / "workflows" / "v10-pr-fast-checks.yml"
 TOOLCHAIN_WORKFLOW = ROOT / ".github" / "workflows" / "v10-toolchain-compat.yml"
@@ -65,7 +67,9 @@ def main() -> int:
             cost.get("if_paid_hosted_execution_is_required")
             != "EXPLICIT_OWNER_DECISION_WITH_COST_AND_REASON_BEFORE_MUTATION"
         ):
-            failures.append("paid hosted execution must require explicit OWNER cost decision")
+            failures.append(
+                "paid hosted execution must require explicit OWNER cost decision"
+            )
         if (
             cost.get("current_hosted_capacity_state")
             != "BLOCKED_OWNER_ZERO_BUDGET_HARD_STOP"
@@ -88,10 +92,9 @@ def main() -> int:
         or merge.get("billing_failure_blocks_merge") is not True
     ):
         failures.append("billing RED must remain merge-blocking")
-    if (
-        not isinstance(merge, dict)
-        or merge.get("accepted_check_conclusions") != ["success"]
-    ):
+    if not isinstance(merge, dict) or merge.get("accepted_check_conclusions") != [
+        "success"
+    ]:
         failures.append("applicable merge checks must remain SUCCESS-only")
 
     for path, markers in (
