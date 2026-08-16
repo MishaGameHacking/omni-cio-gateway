@@ -9,6 +9,7 @@ CONTRACT_PATH = ROOT / "docs" / "architecture" / "V10_ENGINEERING_QUALITY_GATE_C
 STANDARD_PATH = ROOT / "docs" / "operations" / "V10_CI_COST_CONTROL_STANDARD.md"
 FAST_WORKFLOW_PATH = ROOT / ".github" / "workflows" / "v10-pr-fast-checks.yml"
 TOOLCHAIN_WORKFLOW_PATH = ROOT / ".github" / "workflows" / "v10-toolchain-compat.yml"
+LIVE_WORKFLOW_PATH = ROOT / ".github" / "workflows" / "live-gateway-authority.yml"
 
 
 def test_ci_cost_control_requires_explicit_owner_spend_approval() -> None:
@@ -42,7 +43,11 @@ def test_zero_cost_routing_cannot_silently_remove_clean_room_semantics() -> None
     assert cost["zero_cost_routing_preferred_when_semantically_equivalent"] is True
     assert cost["self_hosted_lenovo_preferred_for_heavy_repeatable_validation"] is True
     assert cost["hosted_clean_room_semantics_may_not_be_silently_dropped"] is True
-    assert cost["known_budget_blocked_hosted_job_must_not_be_triggered_as_applicable_gate"] is True
+    assert (
+        cost["known_budget_blocked_hosted_job_must_not_be_triggered_as_applicable_gate"]
+        is True
+    )
+    assert cost["scheduled_hosted_jobs_while_blocked_forbidden"] is True
     assert cost["hosted_compatibility_absence_blocks_pr_merge"] is False
     assert cost["hosted_compatibility_absence_blocks_stable_release_evidence"] is True
 
@@ -66,6 +71,19 @@ def test_capacity_deferred_jobs_execute_without_fabricating_clean_room_pass() ->
     assert "does NOT claim Python 3.14.6 clean-room compatibility PASS" in toolchain
     assert "does NOT claim disposable hosted Node compatibility PASS" in toolchain
     assert "runs-on: windows-latest" not in toolchain
+
+
+def test_scheduled_live_authority_does_not_burn_blocked_hosted_capacity() -> None:
+    contract = json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))
+    cost = contract["ci_cost_control"]
+    workflow = LIVE_WORKFLOW_PATH.read_text(encoding="utf-8")
+
+    assert cost["scheduled_hosted_jobs_while_blocked_forbidden"] is True
+    assert "schedule:" in workflow
+    assert "runs-on: [self-hosted, Windows, X64, omni-cio-ci]" in workflow
+    assert "runs-on: ubuntu-latest" not in workflow
+    assert "persist-credentials: false" in workflow
+    assert "Bootstrap protected runner Python 3.12.10" in workflow
 
 
 def test_budget_state_is_explicitly_mutable_external_state() -> None:
