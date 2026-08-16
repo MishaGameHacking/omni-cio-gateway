@@ -28,7 +28,7 @@ V10 is the **exclusive active feature program**. OWNER issued `START V10` on 202
 
 The exact current state is always read from `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`; this file must not be treated as a competing progress ledger.
 
-At the accepted `main` baseline from which the 2026-08-16 engineering-governance amendment is prepared:
+Current accepted snapshot:
 
 - V10 WP0–WP22 are accepted COMPLETE according to the current-status file;
 - accepted V10 progress is **40%** because Block E is not credited piecemeal;
@@ -37,7 +37,9 @@ At the accepted `main` baseline from which the 2026-08-16 engineering-governance
 - public Internet ingress remains OFF/LOCKED until WP22A acceptance;
 - broker-write / Real execution authority remains unchanged and not authorized by this status.
 
-The engineering-governance amendment does not advance product progress or unlock another WP. It changes development/verification discipline only, and becomes authority only after its own exact-head GREEN merge plus required post-merge verification.
+The OWNER-approved Engineering Quality / Pre-CI / Green-Merge governance package is accepted and active on `main` at `1c05390d9cf31b8cc68a90a5d7cbd6428ffe7791`; post-merge Regression Shield #1498 / run `31959959791` completed SUCCESS on that exact main. Governance changes development/verification discipline only and does not advance V10 product progress or unlock another WP.
+
+Documentation lifecycle and the distinction between current authority and historical WP records are defined in `docs/DOCUMENTATION_AUTHORITY_AND_LIFECYCLE.md`.
 
 ## 3. Mandatory V10 authority order
 
@@ -53,20 +55,20 @@ Before any change, read in this order:
 8. every active amendment listed there, especially:
    - `docs/master-plan/OMNI_CIO_V10_CONCRETE_EXECUTION_PLAN_AMENDMENT.md`;
    - `docs/master-plan/OMNI_CIO_V10_GITHUB_PRO_AND_MIGRATION_IMPLEMENTATION_AMENDMENT.md`;
-   - `docs/master-plan/OMNI_CIO_V10_ENGINEERING_QUALITY_AND_GREEN_MERGE_AMENDMENT.md` after its acceptance;
+   - `docs/master-plan/OMNI_CIO_V10_ENGINEERING_QUALITY_AND_GREEN_MERGE_AMENDMENT.md`;
 9. machine-readable contracts relevant to the work, especially:
    - `docs/architecture/V10_AI_CORTEX_CONTRACT.json`;
    - `docs/architecture/V10_GITHUB_PRO_UTILIZATION_CONTRACT.json`;
    - `docs/architecture/V10_V9_TO_V10_PARITY_LEDGER.json`;
    - `docs/architecture/V10_COMPONENT_REUSE_MATRIX.json`;
    - `docs/architecture/V10_RELEASE_MANIFEST.schema.json`;
-   - `docs/architecture/V10_ENGINEERING_QUALITY_GATE_CONTRACT.json` after its acceptance;
+   - `docs/architecture/V10_ENGINEERING_QUALITY_GATE_CONTRACT.json`;
 10. `docs/master-plan/OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md` before starting any implementation WP;
 11. `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`;
 12. accepted V10 architecture, ADR, recovery and current-WP files;
 13. actual `main`, open PR/issues and GitHub Actions.
 
-Old chat, screenshot, stale PR description or unmerged planning draft is never source of truth when it conflicts with accepted `main` plus the authority chain above.
+Old chat, screenshot, stale PR description, package-local historical status heading or unmerged planning draft is never source of truth when it conflicts with accepted `main` plus the authority chain above.
 
 ## 4. Sequential delivery and engineering-quality discipline
 
@@ -150,7 +152,7 @@ Canonical current details are in:
 
 - `docs/architecture/V10_REGRESSION_SHIELD.md`;
 - `docs/V10_GITHUB_PRO_HYBRID_CI.md`;
-- `docs/operations/V10_CI_COST_CONTROL_STANDARD.md` after its acceptance.
+- `docs/operations/V10_CI_COST_CONTROL_STANDARD.md`.
 
 Never weaken protection because GitHub Actions is degraded. Incident handling must be explicit, bounded, evidence-backed and restore the reviewed normal/available-capacity mode through source control.
 
@@ -283,7 +285,7 @@ Before an implementation PR is merged and its required post-merge Regression Shi
 
 Pre-merge OWNER participation is allowed only for a genuinely non-delegable prerequisite: external account/consent bootstrap, domain/payment decision, narrowly scoped credential bootstrap, UAC/admin/firmware/BitLocker/physical action, or an explicit Master Plan OWNER decision.
 
-When OWNER action is genuinely needed, follow `docs/operations/V10_OWNER_ACTION_HANDOFF_STANDARD.md` after its acceptance:
+When OWNER action is genuinely needed, follow `docs/operations/V10_OWNER_ACTION_HANDOFF_STANDARD.md`:
 
 - give a direct official HTTPS link to the exact stable target page when such a stable link exists;
 - if no stable deep link can be verified, say so and give the closest verified official start URL plus exact click path;
@@ -400,9 +402,9 @@ Preserve exact-decimal and provenance discipline:
 
 Accepted repository architecture is defined by `docs/architecture/REPOSITORY_STRUCTURE.md` and guarded by permanent tests.
 
-Current physical V9 runtime remains until later migration packages explicitly replace it. Reserved roots `apps/`, `ai/`, `infrastructure/` are created/filled only by their owning V10 work packages.
+Accepted/active V10 adapter roots currently include `apps/api/` and `apps/web/`; accepted Personal-Node infrastructure lives under `infrastructure/`. `apps/telegram/` and `ai/` remain later lifecycle-gated roots until their owning Work Packages are authorized. The protected V9 root wrappers remain until a responsible migration explicitly replaces them.
 
-Do not create duplicate setup/audit/inventory documents when an accepted source of truth should be updated instead.
+Do not create duplicate setup/audit/inventory documents when an accepted source of truth should be updated instead. Follow `docs/DOCUMENTATION_AUTHORITY_AND_LIFECYCLE.md` so historical records remain evidence without becoming competing current-state ledgers.
 
 V10 should form bounded failure domains rather than one fragile monolith. Where applicable use explicit contracts, timeouts/deadlines, bounded retries with idempotency, backpressure/circuit breakers, durable queues/checkpoints, health/readiness/freshness states, restart/recovery behavior and least-privilege process/service boundaries. Failure of optional AI/Research/Telegram/external ingress should not unnecessarily take down deterministic Core when safe degradation is possible. Money/security/identity/secret/broker authority always fails closed.
 
@@ -413,7 +415,7 @@ Regression Shield/authoritative merge gate remains strict. At minimum protect:
 - lock reproducibility;
 - CI/security policy;
 - repository boundaries;
-- engineering-governance and CI cost-control contracts after acceptance;
+- engineering-governance, documentation-consistency and CI cost-control contracts;
 - compile/Ruff/format/mypy;
 - `app:app` compatibility until intentionally retired;
 - current GPT/recovery contracts while applied;
@@ -424,14 +426,20 @@ Regression Shield/authoritative merge gate remains strict. At minimum protect:
 - protected money-path replay/idempotency;
 - future capability-aware DB/API/Web/Telegram/AI contracts when those roots appear.
 
+Permanent guards include:
+
+- `python scripts/check_v10_repository_boundaries.py`;
+- `python scripts/check_v10_engineering_governance.py`;
+- `python scripts/check_v10_documentation_consistency.py`.
+
+Do not bypass or weaken these guards to land a change.
+
 When AI implementation begins, CI must additionally fail closed on policy/tool/evidence/eval invariants, including zero broker-write authority leakage and zero invented exact financial facts in critical deterministic fixtures.
 
 ## 18. Current next action
 
-Current functional authorization is read only from `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`. At the accepted baseline for this governance amendment, **WP22A** is the only authorized functional package and WP23+ remains locked.
+Current functional authorization is read only from `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`. At the accepted current baseline, **WP22A** is the only authorized functional package and WP23+ remains locked.
 
-Before resuming material WP22A implementation, the OWNER-approved Engineering Quality / Pre-CI / Green-Merge governance package must finish its own lifecycle:
+The Engineering Quality / Pre-CI / Green-Merge governance prerequisite has already completed its lifecycle and is active. WP22A may therefore continue under those laws through its own focused PR(s), exact-head applicable GREEN gates, required post-merge verification and only then any OWNER product acceptance required by the WP22A Exit Gate.
 
-`focused governance branch → preflight/root-cause/full-diff review → exact-head all-applicable checks SUCCESS → zero unresolved blockers → squash merge → exact new main → post-merge V10 Engineering Governance + Regression Shield GREEN`.
-
-Only after that acceptance should WP22A continue under the new laws. The governance package itself must not open public ingress, mutate Cloudflare/provider state, request OWNER phone acceptance, add broker-write authority, enable Real trading, or unlock WP23.
+Do not interpret documentation cleanup, an in-flight WP22A PR, source-controlled Cloudflare intent or external reachability as WP22A completion. No documentation change may open public ingress, mutate provider state, add broker-write authority, enable Real trading or unlock WP23.
