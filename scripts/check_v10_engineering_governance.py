@@ -7,6 +7,7 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
+AGENTS = ROOT / "AGENTS.md"
 AMENDMENT = (
     ROOT
     / "docs/master-plan/OMNI_CIO_V10_ENGINEERING_QUALITY_AND_GREEN_MERGE_AMENDMENT.md"
@@ -343,6 +344,7 @@ def validate_contract(failures: list[str]) -> None:
 def main() -> int:
     failures: list[str] = []
 
+    agents = _load_text(AGENTS, failures)
     amendment = _load_text(AMENDMENT, failures)
     index = _load_text(INDEX, failures)
     ledger = _load_text(LEDGER, failures)
@@ -353,6 +355,18 @@ def main() -> int:
     wp_template = _load_text(WP_TEMPLATE, failures)
     workflow = _load_text(WORKFLOW, failures)
 
+    _require_markers(
+        AGENTS,
+        agents,
+        (
+            "CI is an independent verifier",
+            "every **applicable** exact-head V10 check must actually execute and conclude `success`",
+            "OWNER participation / handoff law",
+            "bounded failure domains rather than one fragile monolith",
+            "WP22A",
+        ),
+        failures,
+    )
     _require_markers(
         AMENDMENT,
         amendment,
@@ -383,6 +397,7 @@ def main() -> int:
             "FL-001",
             "FL-004",
             "FL-005",
+            "FL-006",
             "Why preflight missed it",
             "Permanent regression/guard",
             "Future prevention rule",
@@ -410,6 +425,7 @@ def main() -> int:
             "direct official HTTPS link",
             "V10 Web runs on the Personal Node",
             "Do not treat Render.com as the V10 hosting target",
+            "OWNER billing / CI cost control",
         ),
         failures,
     )
@@ -452,6 +468,8 @@ def main() -> int:
         (
             "name: V10 Engineering Governance",
             "python scripts/check_v10_engineering_governance.py",
+            "python scripts/check_v10_ci_cost_control.py",
+            "python scripts/check_v10_regression_shield.py",
             "persist-credentials: false",
         ),
         failures,
@@ -466,6 +484,7 @@ def main() -> int:
         return 1
 
     print("V10 engineering governance check passed.")
+    print("AGENTS engineering law: present")
     print("Pre-CI root-cause and blast-radius discipline: enforced")
     print("Exact-head applicable checks: SUCCESS-only project policy")
     print("OWNER product acceptance: post-merge/post-Regression-Shield")
