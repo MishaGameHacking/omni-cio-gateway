@@ -15,6 +15,7 @@ LEDGER = ROOT / "docs" / "operations" / "V10_ENGINEERING_FAILURE_LEARNING_LEDGER
 FAST_WORKFLOW = ROOT / ".github" / "workflows" / "v10-pr-fast-checks.yml"
 TOOLCHAIN_WORKFLOW = ROOT / ".github" / "workflows" / "v10-toolchain-compat.yml"
 LIVE_WORKFLOW = ROOT / ".github" / "workflows" / "live-gateway-authority.yml"
+WARM_LIVE_SCRIPT = ROOT / "scripts" / "warm_live_gateway.ps1"
 
 
 def main() -> int:
@@ -157,11 +158,22 @@ def main() -> int:
                 "python scripts\\windows_ci_lock.py project requirements.txt windows-requirements.txt",
                 "--require-hashes -r windows-requirements.txt",
                 "Warm protected V9 gateway across bounded Render cold start",
-                "[DateTimeOffset]::UtcNow.AddSeconds(150)",
-                "Invoke-WebRequest -Uri $healthUrl",
-                "-TimeoutSec 75",
+                "powershell.exe -NoProfile -ExecutionPolicy Bypass",
+                "-File scripts\\warm_live_gateway.ps1",
                 "Verify deployed v9 Action authority without broker mutation",
                 "persist-credentials: false",
+            ),
+        ),
+        (
+            WARM_LIVE_SCRIPT,
+            (
+                '$baseUri.Scheme -ne "https"',
+                '$baseUri.Host -ne "omni-cio-gateway.onrender.com"',
+                "AddSeconds($DeadlineSeconds)",
+                "Invoke-WebRequest",
+                "-TimeoutSec $RequestTimeoutSeconds",
+                "Start-Sleep -Seconds $RetryDelaySeconds",
+                "exit 41",
             ),
         ),
     ):
