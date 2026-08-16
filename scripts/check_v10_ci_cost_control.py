@@ -12,6 +12,7 @@ COPILOT_POLICY = ROOT / ".github" / "instructions" / "owner-handoff-and-runtime.
 LEDGER = ROOT / "docs" / "operations" / "V10_ENGINEERING_FAILURE_LEARNING_LEDGER.md"
 FAST_WORKFLOW = ROOT / ".github" / "workflows" / "v10-pr-fast-checks.yml"
 TOOLCHAIN_WORKFLOW = ROOT / ".github" / "workflows" / "v10-toolchain-compat.yml"
+LIVE_WORKFLOW = ROOT / ".github" / "workflows" / "live-gateway-authority.yml"
 
 
 def main() -> int:
@@ -20,7 +21,10 @@ def main() -> int:
     try:
         contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-        print(f"V10 CI cost-control guard failed: cannot load contract: {exc}", file=sys.stderr)
+        print(
+            f"V10 CI cost-control guard failed: cannot load contract: {exc}",
+            file=sys.stderr,
+        )
         return 1
 
     cost = contract.get("ci_cost_control")
@@ -30,6 +34,7 @@ def main() -> int:
         expected_true = (
             "owner_budget_or_payment_mutation_requires_explicit_approval",
             "known_budget_blocked_hosted_job_must_not_be_triggered_as_applicable_gate",
+            "scheduled_hosted_jobs_while_blocked_forbidden",
             "zero_cost_routing_preferred_when_semantically_equivalent",
             "self_hosted_lenovo_preferred_for_heavy_repeatable_validation",
             "hosted_clean_room_semantics_may_not_be_silently_dropped",
@@ -61,18 +66,32 @@ def main() -> int:
             != "EXPLICIT_OWNER_DECISION_WITH_COST_AND_REASON_BEFORE_MUTATION"
         ):
             failures.append("paid hosted execution must require explicit OWNER cost decision")
-        if cost.get("current_hosted_capacity_state") != "BLOCKED_OWNER_ZERO_BUDGET_HARD_STOP":
-            failures.append("current hosted capacity state must match the OWNER-observed hard stop")
+        if (
+            cost.get("current_hosted_capacity_state")
+            != "BLOCKED_OWNER_ZERO_BUDGET_HARD_STOP"
+        ):
+            failures.append(
+                "current hosted capacity state must match the OWNER-observed hard stop"
+            )
         if (
             cost.get("hosted_compatibility_check_mode_when_blocked")
             != "EXECUTED_CAPACITY_ROUTING_NO_CLEAN_ROOM_PASS"
         ):
-            failures.append("blocked hosted compatibility must use executed routing without claiming clean-room PASS")
+            failures.append(
+                "blocked hosted compatibility must use executed routing without "
+                "claiming clean-room PASS"
+            )
 
     merge = contract.get("merge_gate")
-    if not isinstance(merge, dict) or merge.get("billing_failure_blocks_merge") is not True:
+    if (
+        not isinstance(merge, dict)
+        or merge.get("billing_failure_blocks_merge") is not True
+    ):
         failures.append("billing RED must remain merge-blocking")
-    if not isinstance(merge, dict) or merge.get("accepted_check_conclusions") != ["success"]:
+    if (
+        not isinstance(merge, dict)
+        or merge.get("accepted_check_conclusions") != ["success"]
+    ):
         failures.append("applicable merge checks must remain SUCCESS-only")
 
     for path, markers in (
@@ -125,6 +144,16 @@ def main() -> int:
                 "Stable release provenance must not fabricate",
             ),
         ),
+        (
+            LIVE_WORKFLOW,
+            (
+                "schedule:",
+                "runs-on: [self-hosted, Windows, X64, omni-cio-ci]",
+                "Bootstrap protected runner Python 3.12.10",
+                "Verify deployed v9 Action authority without broker mutation",
+                "persist-credentials: false",
+            ),
+        ),
     ):
         try:
             text = path.read_text(encoding="utf-8")
@@ -145,6 +174,7 @@ def main() -> int:
     print("OWNER billing mutation: explicit approval only")
     print("Hosted capacity state: BLOCKED_OWNER_ZERO_BUDGET_HARD_STOP")
     print("Fast deterministic checks: zero-cost Lenovo continuity mode")
+    print("Scheduled live-authority probe: zero-cost Lenovo continuity mode")
     print("Hosted compatibility: executed routing check; no clean-room PASS fabricated")
     print("Stable release compatibility evidence: still required")
     return 0
