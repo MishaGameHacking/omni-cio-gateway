@@ -45,10 +45,13 @@ jobs:
       - name: Bootstrap protected runner Python 3.12.10
         run: scripts\bootstrap_windows_ci_python.cmd
 
-      - name: Install hash-locked runtime dependencies
+      - name: Build strict Windows runtime dependency projection
+        run: python scripts\windows_ci_lock.py project requirements.txt windows-requirements.txt
+
+      - name: Install hash-locked Windows runtime dependencies
         run: >-
           python -m pip install --disable-pip-version-check
-          --require-hashes -r requirements.txt
+          --require-hashes -r windows-requirements.txt
 
       - name: Verify deployed v9 Action authority without broker mutation
         run: python scripts\check_live_gateway_authority.py
