@@ -1,4 +1,4 @@
-# This file is maintained by Terraform dependency locking.
+# This lock file is consumed by the pinned OpenTofu CLI.
 # Provider version and official release package hashes are reviewed in source control.
 
 provider "registry.terraform.io/cloudflare/cloudflare" {
