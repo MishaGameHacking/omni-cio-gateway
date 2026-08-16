@@ -84,6 +84,13 @@ def test_scheduled_live_authority_does_not_burn_blocked_hosted_capacity() -> Non
     assert "runs-on: ubuntu-latest" not in workflow
     assert "persist-credentials: false" in workflow
     assert "Bootstrap protected runner Python 3.12.10" in workflow
+    assert "Build strict Windows runtime dependency projection" in workflow
+    assert (
+        "python scripts\\windows_ci_lock.py project requirements.txt windows-requirements.txt"
+        in workflow
+    )
+    assert "--require-hashes -r windows-requirements.txt" in workflow
+    assert "--require-hashes -r requirements.txt" not in workflow
 
 
 def test_budget_state_is_explicitly_mutable_external_state() -> None:
