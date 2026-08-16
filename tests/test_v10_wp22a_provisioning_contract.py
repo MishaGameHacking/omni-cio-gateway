@@ -202,6 +202,9 @@ def test_ci_uses_committed_provider_lock_without_rewriting_it() -> None:
     assert 'Join-Path $sourceRoot ".terraform.lock.hcl"' in validator
     assert "-Destination $validateRoot -Force" in validator
     assert "-lockfile=readonly" in validator
+    assert '$chdirArg = "-chdir=$validateRoot"' in validator
+    assert "& $tofuExe $chdirArg fmt" in validator
+    assert "& $tofuExe -chdir=$validateRoot" not in validator
 
 
 def test_terraform_runtime_state_and_variable_values_are_git_ignored() -> None:

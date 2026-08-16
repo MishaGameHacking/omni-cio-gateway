@@ -30,18 +30,19 @@ Remove-Item -LiteralPath $validateRoot -Recurse -Force -ErrorAction SilentlyCont
 New-Item -ItemType Directory -Path $validateRoot -Force | Out-Null
 Copy-Item -Path (Join-Path $sourceRoot "*.tf") -Destination $validateRoot -Force
 Copy-Item -LiteralPath (Join-Path $sourceRoot ".terraform.lock.hcl") -Destination $validateRoot -Force
+$chdirArg = "-chdir=$validateRoot"
 
 try {
-    & $tofuExe -chdir=$validateRoot fmt -check -diff
+    & $tofuExe $chdirArg fmt -check -diff
     if ($LASTEXITCODE -ne 0) { throw "WP22A_OPENTOFU_FMT_FAILED" }
 
-    & $tofuExe -chdir=$validateRoot init -backend=false -input=false -no-color -lockfile=readonly
+    & $tofuExe $chdirArg init -backend=false -input=false -no-color -lockfile=readonly
     if ($LASTEXITCODE -ne 0) { throw "WP22A_OPENTOFU_INIT_FAILED" }
 
-    & $tofuExe -chdir=$validateRoot validate -no-color
+    & $tofuExe $chdirArg validate -no-color
     if ($LASTEXITCODE -ne 0) { throw "WP22A_OPENTOFU_VALIDATE_FAILED" }
 
-    $providers = @(& $tofuExe -chdir=$validateRoot providers 2>&1) -join "`n"
+    $providers = @(& $tofuExe $chdirArg providers 2>&1) -join "`n"
     if ($LASTEXITCODE -ne 0 -or $providers -notmatch 'registry\.terraform\.io/cloudflare/cloudflare') {
         throw "WP22A_OPENTOFU_PROVIDER_LOCK_INVALID"
     }
