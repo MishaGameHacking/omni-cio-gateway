@@ -1,6 +1,13 @@
 {
   "schema_version": "1",
-  "status": "OWNER_APPROVED_DRAFT_REQUIRES_PR_ACCEPTANCE",
+  "status": "ACCEPTED",
+  "acceptance": {
+    "pr": 319,
+    "exact_main_commit_bound_in_human_acceptance_record": true,
+    "post_merge_regression_shield_run": 1496,
+    "post_merge_regression_shield_run_id": 31926903444,
+    "post_merge_regression_shield_success": true
+  },
   "owner_primary_engineering_surface": "PHONE_BROWSER_ONLY",
   "engineering_control_plane": "GITHUB_PRO",
   "automation_hub": "GITHUB_ACTIONS_AND_PROVIDER_APIS",
