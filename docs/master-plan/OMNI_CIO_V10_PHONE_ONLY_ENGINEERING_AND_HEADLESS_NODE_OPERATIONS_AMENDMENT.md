@@ -1,6 +1,6 @@
 # Omni-CIO V10 — Browser-Only Phone Engineering / Headless Personal Node Operations Amendment
 
-Status: **OWNER-APPROVED DRAFT — requires PR/CI/merge before becoming accepted authority**
+Status: **ACCEPTED** — PR #319 squash-merged as `9ad0eeb8d22895c3790fc5c7c78e9faf72a670e2`; post-merge Regression Shield #1496 completed SUCCESS on that exact `main`.
 
 Date: 2026-08-15
 
@@ -145,4 +145,4 @@ This amendment does not change:
 
 ## 14. Acceptance
 
-This amendment becomes active only after its focused PR passes required checks, is squash-merged to `main`, and any required post-merge Regression Shield is GREEN.
+Accepted through PR #319 after exact-head authoritative Lenovo CI and inherited Web gates were GREEN. PR #319 was squash-merged to exact `main` `9ad0eeb8d22895c3790fc5c7c78e9faf72a670e2`, and mandatory post-merge Regression Shield #1496 / run `31926903444` completed SUCCESS on that exact SHA.
