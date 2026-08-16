@@ -44,6 +44,23 @@ Define what must be proven **before** an expensive full CI cycle is considered j
 
 Known preflight failures must be fixed before triggering the full exact-head gate.
 
+### 4.2 OWNER-only prerequisite / handoff contract
+
+If OWNER participation can be required, define it before implementation using `docs/operations/V10_OWNER_ACTION_HANDOFF_STANDARD.md`:
+
+- why the action is genuinely non-delegable;
+- exact account/repository/workspace/service/device scope;
+- direct official HTTPS link to the exact stable page when available;
+- when no stable deep link exists: closest verified official start URL + exact current click path;
+- one bounded action only;
+- exact expected result;
+- explicit STOP conditions;
+- adjacent actions that must not be taken;
+- exact cost/authority effect before any payment/public-ingress/credential-scope/irreversible confirmation;
+- minimum safe non-secret result to return.
+
+The OWNER must not be required to discover the destination page. Routine engineering/CI/debugging/provider automation is not an OWNER prerequisite.
+
 ## 5. Existing implementation to reuse
 
 For each material component:
@@ -96,6 +113,18 @@ State whether this WP changes:
 - Real execution path.
 
 If any boundary changes, reference the threat review/ADR.
+
+### 10.1 Runtime/hosting and external-provider boundary
+
+For any Web/runtime/provider work state explicitly:
+
+- primary application/runtime host;
+- whether V10 Web/API remains on the approved Lenovo/replacement Personal Node;
+- whether any provider is access/security transport versus application/private-state hosting;
+- whether any recurring paid cloud hosting is proposed and, if so, the OWNER-approved amendment that authorizes it;
+- how the protected V9 Render.com `app:app` baseline remains untouched until its owning parity/decommission gate.
+
+Default V10 rule: Personal Node hosts/builds/renders/serves V10; Render.com is not the V10 runtime target; an external-access provider must not silently become a second application/private-state host.
 
 ## 11. Normal-path acceptance tests
 
@@ -203,6 +232,8 @@ List exact evidence such as:
 - owner approval if specifically required.
 
 OWNER product acceptance is normally **post-merge and post-Regression-Shield**. Before merge, OWNER action is allowed only for a genuinely non-delegable prerequisite needed to make engineering verifiable (account/consent/domain/payment/narrow credential/UAC-admin/physical action/Master Plan decision).
+
+If OWNER action is required, acceptance evidence must also state that the handoff used the verified direct-link/expected-result/STOP/do-not-do/minimum-return contract and did not expose secrets or private runtime URLs.
 
 ## 18. Documentation/status updates in the same PR
 
