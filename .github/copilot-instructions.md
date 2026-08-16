@@ -22,16 +22,17 @@ V9 remains owner-accepted/protected in **controlled maintenance** while V10 is b
 4. `knowledge/16_CURRENT_PROGRAM_STATUS.md` — accepted V9 runtime baseline;
 5. `docs/master-plan/OMNI_CIO_V10_PROGRAM_LOCK.md`;
 6. `docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.md`;
-7. `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`;
-8. `docs/architecture/V10_SYSTEM_ARCHITECTURE.md`;
-9. `docs/architecture/V10_SECURITY_BOUNDARIES.md`;
-10. `docs/architecture/V10_DATA_FLOW.md`;
-11. `docs/architecture/V10_THREAT_MODEL.md`;
-12. `docs/architecture/V10_RECOVERY_CONTRACT.md`;
-13. `docs/architecture/V10_ADR_PROCESS.md` + `docs/architecture/DECISIONS.md`;
-14. `docs/architecture/REPOSITORY_STRUCTURE.md`;
-15. профильный current-WP architecture/runbook;
-16. actual `main`, open PR/issues and latest GitHub Actions.
+7. `docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md` и все active amendments;
+8. `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`;
+9. `docs/architecture/V10_SYSTEM_ARCHITECTURE.md`;
+10. `docs/architecture/V10_SECURITY_BOUNDARIES.md`;
+11. `docs/architecture/V10_DATA_FLOW.md`;
+12. `docs/architecture/V10_THREAT_MODEL.md`;
+13. `docs/architecture/V10_RECOVERY_CONTRACT.md`;
+14. `docs/architecture/V10_ADR_PROCESS.md` + `docs/architecture/DECISIONS.md`;
+15. `docs/architecture/REPOSITORY_STRUCTURE.md`;
+16. профильный current-WP architecture/runbook;
+17. actual `main`, open PR/issues and latest GitHub Actions.
 
 Current V10 progress/next WP is determined only by `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md` from accepted `main`.
 
@@ -48,6 +49,62 @@ Do not skip to a later block because its implementation looks easy.
 Do not start V11, public/multi-user, billing, alternate frontend, second Telegram stack, second AI stack, second Gateway or second execution stack before V10 final acceptance.
 
 The one-time Lenovo setup is intentionally Block C after WP1–WP4 establish repository architecture, toolchain, CI and release/deployment contracts.
+
+## Pre-CI Engineering Gate
+
+Before starting a long or expensive full CI cycle, treat CI as the **independent verifier**, not the primary debugger.
+
+For every material change or RED result:
+
+1. establish the root cause before changing code;
+2. inspect the complete branch diff plus directly coupled producers/consumers;
+3. search the repository for analogous uses of the same pattern/dependency/API/assumption;
+4. determine the blast radius and inspect adjacent failure modes;
+5. fix the defect class, not merely the first failing line;
+6. add/update a permanent regression test or guard when the defect class is reusable;
+7. run all applicable cheap/focused checks first: format, lint, typecheck, compile, focused tests, negative tests, schema/config/IaC/PowerShell validation, dependency/lock validation, secret/private-data guards and rollback/recovery review;
+8. review current official documentation/security/support status when a materially changed external dependency/API can have changed over time;
+9. review the full diff again before triggering full exact-head CI.
+
+Do not intentionally launch a long CI cycle while known preflight failures remain. Do not claim 100% certainty that software contains no bugs; require evidence-backed readiness before CI and independent evidence after CI.
+
+If an unexpected RED appears after the branch was considered preflight-ready, perform a confidence postmortem: why did preflight miss it, where else can the same class exist, and what permanent guard prevents recurrence? Record reusable lessons in the **Failure Learning Ledger**: `docs/operations/V10_ENGINEERING_FAILURE_LEARNING_LEDGER.md`.
+
+## Green merge / OWNER acceptance law
+
+**All applicable exact-head checks must be SUCCESS** before merge. Omni-CIO policy is stricter than generic GitHub status semantics: `failure`, `cancelled`, `queued`, `pending`, `in_progress`, `timed_out`, `action_required`, `stale`, `neutral` and `skipped` are not GREEN evidence for an applicable V10 gate.
+
+Infrastructure/billing/provider startup failures must be diagnosed accurately, but a red applicable check still blocks merge. Restore the check, use an accepted fallback, or correct workflow applicability. Never merge around red evidence.
+
+If a workflow is genuinely irrelevant to the current branch/WP, correct its trigger/routing so it does not appear as a misleading skipped/cancelled check.
+
+Any new commit invalidates the previous final GREEN cycle. Re-run the required checks on the new exact head.
+
+Normal closure is `all applicable exact-head checks GREEN → full diff/review → squash merge → PR closed by merge`. An unmerged PR may be closed only as explicitly superseded/abandoned historical work and is never accepted implementation.
+
+**OWNER product acceptance only after merge** and after the required post-merge Regression Shield is GREEN. Before that point, do not ask the OWNER for phone/browser walkthroughs, UX acceptance, login/logout acceptance, portfolio comparison or ordinary product tests.
+
+Pre-merge OWNER involvement is allowed only for a genuinely non-delegable prerequisite needed to make engineering verifiable: account/consent bootstrap, domain/payment decision, narrow credential bootstrap, UAC/admin/firmware/BitLocker/physical action, or an explicit Master Plan OWNER decision. Ask only for the prerequisite, not premature product acceptance.
+
+If post-merge OWNER acceptance finds a defect, create a new focused fix branch/PR and repeat the GREEN cycle; never patch `main` directly.
+
+## Fault-isolation / spider rule
+
+Build bounded failure domains. An optional component failure should not unnecessarily take down deterministic Core truth.
+
+Use explicit contracts and, where applicable, timeouts/deadlines, bounded retries, idempotency, backpressure/circuit-breaker semantics, durable queues/checkpoints, health/readiness/freshness states, restart/recovery and least-privilege process/service boundaries.
+
+Examples:
+
+- AI outage → Core remains usable, AI explicit DEGRADED/OFFLINE;
+- Research outage → Core/portfolio remain usable, research freshness explicit;
+- Telegram outage → Web/Core remain usable;
+- external ingress outage → local Personal Node/recovery remain usable;
+- broker READ outage → only last verified state may remain visible and must be marked STALE/OFFLINE.
+
+Money/security authority always fails closed. Graceful degradation never weakens identity, secret, broker or Real-execution controls.
+
+New programming languages are permitted only for a concrete component-level correctness/security/isolation/performance/systems-integration reason with toolchain/recovery/maintenance impact reviewed. Do not create polyglot sprawl or rewrite accepted components merely because another language is newer.
 
 ## Repository architecture
 
@@ -69,7 +126,11 @@ Permanent repository boundary guard:
 
 `python scripts/check_v10_repository_boundaries.py`.
 
-Do not bypass or weaken it to land a change.
+Permanent engineering-governance guard after acceptance:
+
+`python scripts/check_v10_engineering_governance.py`.
+
+Do not bypass or weaken these guards to land a change.
 
 ## Product / runtime rules
 
@@ -162,7 +223,7 @@ For `getBrokerReportReconciliation` preserve:
 
 Every significant V9 maintenance or V10 package:
 
-`branch → focused change → deterministic tests/guards → exact-head Regression Shield/security → zero unresolved review threads → squash merge`.
+`branch → root-cause/blast-radius preflight → deterministic focused tests/guards → full-diff review → exact-head applicable CI all SUCCESS → zero unresolved review threads → squash merge → post-merge verification → OWNER product acceptance if required`.
 
 Do not weaken CI/security, repository boundaries or broker authority to make a change pass.
 

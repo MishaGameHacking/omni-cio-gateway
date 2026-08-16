@@ -13,8 +13,12 @@ FULL_WORKFLOW = WORKFLOWS / "regression-shield.yml"
 TOOLCHAIN_WORKFLOW = WORKFLOWS / "v10-toolchain-compat.yml"
 AUTHORITATIVE_WORKFLOW = WORKFLOWS / "self-hosted-windows-smoke.yml"
 FRONTEND_FIXTURE = ROOT / "tests" / "toolchain" / "frontend"
+QUALITY_CONTRACT = (
+    ROOT / "docs" / "architecture" / "V10_ENGINEERING_QUALITY_GATE_CONTRACT.json"
+)
 FULL_SHA = re.compile(r"[0-9a-f]{40}")
 PATH_FILTER = re.compile(r"(?m)^\s+paths(?:-ignore)?:\s*$")
+JOB_LEVEL_ROUTE_IF = re.compile(r"(?m)^    if:\s+needs\.route\.outputs\.")
 DIAGNOSTICS_SOFT_FAIL = re.compile(
     r"(?ms)^\s*- name: Upload test diagnostics\s*$"
     r".*?^\s+id: diagnostics_upload\s*$"
@@ -39,6 +43,58 @@ def require_tokens(
     for token in tokens:
         if token not in text:
             failures.append(f"{label} is missing required contract: {token}")
+
+
+def _load_quality_contract(failures: list[str]) -> dict[str, object]:
+    if not QUALITY_CONTRACT.is_file():
+        # Before the governance amendment is accepted, the historical hosted
+        # baseline remains the contract. This keeps old accepted main valid.
+        return {}
+    try:
+        data = json.loads(QUALITY_CONTRACT.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        failures.append(f"invalid engineering quality contract: {exc}")
+        return {}
+    if not isinstance(data, dict):
+        failures.append("engineering quality contract root must be an object")
+        return {}
+    return data
+
+
+def _hosted_capacity_blocked(failures: list[str]) -> bool:
+    data = _load_quality_contract(failures)
+    if not data:
+        return False
+    section = data.get("ci_cost_control")
+    if not isinstance(section, dict):
+        failures.append("engineering quality contract has no ci_cost_control object")
+        return False
+    state = section.get("current_hosted_capacity_state")
+    if state == "BLOCKED_OWNER_ZERO_BUDGET_HARD_STOP":
+        if section.get("hosted_compatibility_check_mode_when_blocked") != (
+            "EXECUTED_CAPACITY_ROUTING_NO_CLEAN_ROOM_PASS"
+        ):
+            failures.append(
+                "blocked hosted capacity requires explicit no-clean-room-pass mode"
+            )
+        if (
+            section.get("hosted_compatibility_absence_blocks_stable_release_evidence")
+            is not True
+        ):
+            failures.append(
+                "blocked hosted capacity must preserve stable-release clean-room evidence requirement"
+            )
+        if (
+            section.get(
+                "non_applicable_or_capacity_deferred_job_must_execute_and_report"
+            )
+            is not True
+        ):
+            failures.append(
+                "capacity-deferred jobs must execute and report rather than skip"
+            )
+        return True
+    return False
 
 
 def validate_action_pins(path: Path, text: str, failures: list[str]) -> None:
@@ -98,33 +154,71 @@ def validate_fast_workflow(failures: list[str]) -> None:
         failures.append("Fast PR Checks must run for pull_request events")
     if PATH_FILTER.search(text):
         failures.append("Fast PR Checks may not use path filters")
-    if "self-hosted" in text:
-        failures.append("Fast PR Checks must not use a self-hosted runner")
     if "secrets." in text or "${{ secrets" in text:
         failures.append(
             "Fast PR Checks must not consume repository/environment secrets"
         )
-    require_tokens(
-        text,
-        (
-            "name: V10 Fast PR Checks",
-            "runs-on: ubuntu-latest",
-            "cancel-in-progress: true",
-            "python scripts/check_ci_security_baseline.py",
-            "python scripts/check_repository_layout.py",
-            "python scripts/check_v10_repository_boundaries.py",
-            "python scripts/check_v10_toolchain_baseline.py",
-            "python scripts/check_v10_regression_shield.py",
-            'cache: "npm"',
-            "npm ci --ignore-scripts --no-audit --no-fund",
-            "npm run typecheck",
-            "npm run lint",
-            "npm test",
-            "npm run build",
-        ),
-        "Fast PR Checks",
-        failures,
-    )
+
+    blocked = _hosted_capacity_blocked(failures)
+    if blocked:
+        if JOB_LEVEL_ROUTE_IF.search(text):
+            failures.append(
+                "Fast PR applicability jobs must execute; job-level route skipping is forbidden"
+            )
+        require_tokens(
+            text,
+            (
+                "name: V10 Fast PR Checks",
+                "runs-on: [self-hosted, Windows, X64, omni-cio-ci]",
+                "cancel-in-progress: true",
+                "scripts\\bootstrap_windows_ci_python.cmd",
+                "python scripts\\check_ci_security_baseline.py",
+                "python scripts\\check_repository_layout.py",
+                "python scripts\\check_v10_repository_boundaries.py",
+                "python scripts\\check_v10_toolchain_baseline.py",
+                "python scripts\\check_v10_regression_shield.py",
+                "Fast frontend substantive checks NOT_APPLICABLE",
+                "process.version !== 'v24.18.0'",
+                "11.16.0",
+                'npm.cmd" ci --ignore-scripts --no-audit --no-fund',
+                'npm.cmd" run typecheck',
+                'npm.cmd" run lint',
+                'npm.cmd" test',
+                'npm.cmd" run build',
+            ),
+            "Fast PR Checks capacity-degraded mode",
+            failures,
+        )
+        if "actions/setup-python@" in text or "actions/setup-node@" in text:
+            failures.append(
+                "capacity-degraded Fast PR checks must not invoke blocked GitHub-hosted tool setup actions"
+            )
+    else:
+        if "self-hosted" in text:
+            failures.append(
+                "Fast PR Checks must not use a self-hosted runner when hosted acceleration is available"
+            )
+        require_tokens(
+            text,
+            (
+                "name: V10 Fast PR Checks",
+                "runs-on: ubuntu-latest",
+                "cancel-in-progress: true",
+                "python scripts/check_ci_security_baseline.py",
+                "python scripts/check_repository_layout.py",
+                "python scripts/check_v10_repository_boundaries.py",
+                "python scripts/check_v10_toolchain_baseline.py",
+                "python scripts/check_v10_regression_shield.py",
+                'cache: "npm"',
+                "npm ci --ignore-scripts --no-audit --no-fund",
+                "npm run typecheck",
+                "npm run lint",
+                "npm test",
+                "npm run build",
+            ),
+            "Fast PR Checks",
+            failures,
+        )
 
 
 def validate_full_workflow(failures: list[str]) -> None:
@@ -173,33 +267,69 @@ def validate_toolchain_workflow(failures: list[str]) -> None:
         return
     if PATH_FILTER.search(text):
         failures.append("V10 Toolchain Compatibility may not use PR path filters")
-    if "self-hosted" in text:
-        failures.append("V10 Toolchain Compatibility must remain GitHub-hosted")
-    require_tokens(
-        text,
-        (
-            "name: V10 Toolchain Compatibility",
-            "runs-on: windows-latest",
-            'python-version: "3.14.6"',
-            'node-version: "24.18.0"',
-            "cache: pip",
-            'cache: "npm"',
-            "python -m ruff check .",
-            "python -m ruff format --check",
-            "python -m mypy",
-            "python -m pytest -q",
-            "python -m pip_audit",
-            "npm run typecheck",
-            "npm run lint",
-            "npm test",
-            "npm run build",
-            "npm audit --audit-level=high",
-            "python-sbom.cdx.json",
-            "frontend-sbom.cdx.json",
-        ),
-        "V10 Toolchain Compatibility",
-        failures,
-    )
+
+    blocked = _hosted_capacity_blocked(failures)
+    if blocked:
+        if JOB_LEVEL_ROUTE_IF.search(text):
+            failures.append(
+                "Toolchain applicability jobs must execute; job-level route skipping is forbidden"
+            )
+        require_tokens(
+            text,
+            (
+                "name: V10 Toolchain Compatibility",
+                "runs-on: [self-hosted, Windows, X64, omni-cio-ci]",
+                "Verify current zero-budget capacity contract",
+                "Python 3.14.6 clean-room applicability contract",
+                "Node 24.18.0 clean-room applicability contract",
+                "NOT_APPLICABLE by source-controlled path router",
+                "REQUIRED_BY_PATH but CURRENTLY_CAPACITY_BLOCKED",
+                "does NOT claim Python 3.14.6 clean-room compatibility PASS",
+                "does NOT claim disposable hosted Node compatibility PASS",
+                "Stable release provenance must not fabricate missing hosted compatibility evidence",
+                "python scripts\\check_v10_ci_cost_control.py",
+            ),
+            "V10 Toolchain Compatibility capacity-degraded mode",
+            failures,
+        )
+        if "runs-on: windows-latest" in text:
+            failures.append(
+                "capacity-degraded Toolchain workflow must not start blocked GitHub-hosted Windows jobs"
+            )
+        if "actions/setup-python@" in text or "actions/setup-node@" in text:
+            failures.append(
+                "capacity-degraded Toolchain workflow must not invoke blocked hosted tool setup actions"
+            )
+    else:
+        if "self-hosted" in text:
+            failures.append(
+                "V10 Toolchain Compatibility must remain GitHub-hosted when capacity is available"
+            )
+        require_tokens(
+            text,
+            (
+                "name: V10 Toolchain Compatibility",
+                "runs-on: windows-latest",
+                'python-version: "3.14.6"',
+                'node-version: "24.18.0"',
+                "cache: pip",
+                'cache: "npm"',
+                "python -m ruff check .",
+                "python -m ruff format --check",
+                "python -m mypy",
+                "python -m pytest -q",
+                "python -m pip_audit",
+                "npm run typecheck",
+                "npm run lint",
+                "npm test",
+                "npm run build",
+                "npm audit --audit-level=high",
+                "python-sbom.cdx.json",
+                "frontend-sbom.cdx.json",
+            ),
+            "V10 Toolchain Compatibility",
+            failures,
+        )
 
 
 def validate_authoritative_workflow(failures: list[str]) -> None:
@@ -217,7 +347,7 @@ def validate_authoritative_workflow(failures: list[str]) -> None:
     if "actions/setup-python@" in text or "actions/setup-node@" in text:
         failures.append(
             "Authoritative Lenovo gate must not install toolchains at job runtime; "
-            "clean V10 toolchain compatibility belongs to GitHub-hosted runners"
+            "clean V10 toolchain compatibility remains a separate evidence lane"
         )
     require_tokens(
         text,
@@ -397,11 +527,28 @@ def main() -> int:
         for failure in failures:
             print(f"- {failure}", file=sys.stderr)
         return 1
+    blocked: list[str] = []
+    capacity_blocked = _hosted_capacity_blocked(blocked)
+    if blocked:
+        for failure in blocked:
+            print(f"- {failure}", file=sys.stderr)
+        return 1
     print("V10 Regression Shield contract passed.")
-    print("Fast PR lane: GitHub-hosted Linux acceleration, cached, no secrets")
-    print(
-        "Hosted toolchain lane: clean GitHub-hosted Windows Python/Node compatibility"
-    )
+    if capacity_blocked:
+        print(
+            "Fast PR lane: zero-cost Lenovo continuity mode; deterministic checks remain active"
+        )
+        print(
+            "Hosted toolchain lane: capacity-deferred; routing checks execute, no clean-room PASS claimed"
+        )
+        print(
+            "Stable release clean-room evidence: still required before such a release claim"
+        )
+    else:
+        print("Fast PR lane: GitHub-hosted Linux acceleration, cached, no secrets")
+        print(
+            "Hosted toolchain lane: clean GitHub-hosted Windows Python/Node compatibility"
+        )
     print(
         "Authoritative PR lane: self-hosted Windows full protected-runtime regression/security"
     )

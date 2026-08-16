@@ -1,0 +1,67 @@
+name: V10 Live Gateway Authority Contract
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/live-gateway-authority.yml"
+      - ".github/workflows/v10-live-gateway-authority-contract.yml"
+      - "docs/operations/LIVE_GATEWAY_AUTHORITY_ACCEPTANCE.md"
+      - "docs/architecture/V10_ENGINEERING_QUALITY_GATE_CONTRACT.json"
+      - "omni_cio/release/live_authority_v1.py"
+      - "scripts/check_live_gateway_authority.py"
+      - "scripts/check_v10_ci_cost_control.py"
+      - "tests/test_live_gateway_authority_v1.py"
+      - "tests/test_live_acceptance_repository_assets.py"
+      - "tests/test_v10_ci_cost_control_governance.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: v10-live-authority-contract-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify-contract:
+    name: Verify live authority evidence routing contract
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 8
+    defaults:
+      run:
+        shell: cmd
+
+    steps:
+      - name: Check out exact reviewed head
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Bootstrap protected runner Python
+        run: scripts\bootstrap_windows_ci_python.cmd
+
+      - name: Verify exact checked-out head
+        if: github.event_name == 'pull_request'
+        run: >-
+          python -c "import os,subprocess; expected=os.environ['EXPECTED_HEAD']; actual=subprocess.check_output(['git','rev-parse','HEAD'], text=True).strip(); assert actual == expected, (actual, expected); print(actual)"
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+
+      - name: Verify CI cost-control and live evidence routing
+        run: python scripts\check_v10_ci_cost_control.py
+
+      - name: Verify tracked live-authority assets
+        run: python tests\test_live_acceptance_repository_assets.py
+
+      - name: Report current live-evidence applicability
+        run: >-
+          echo ACTUAL_V9_LIVE_AUTHORITY_EVIDENCE=DEFERRED_NO_TRUSTED_ZERO_COST_ROUTE;
+          PR_CONTRACT_VALIDATION=SUCCESS_DOES_NOT_CLAIM_DEPLOYED_LIVE_PASS;
+          MANUAL_HOSTED_ACCEPTANCE_REMAINS_REQUIRED_FOR_V9_RUNTIME_AUTHORITY_RELEASE
+
+      - name: Clean contract workspace
+        if: always()
+        run: |
+          git reset --hard HEAD
+          git clean -ffdx

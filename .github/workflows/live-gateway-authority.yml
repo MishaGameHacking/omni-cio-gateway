@@ -1,17 +1,13 @@
 name: Live Gateway Authority Acceptance
 
+# Actual deployed V9 authority evidence requires a network path independent of
+# the Personal Node. While OWNER-observed GitHub-hosted capacity is blocked and
+# the Lenovo route cannot establish TCP/443 to the protected Render endpoint,
+# automatic execution is intentionally suspended rather than fabricated.
+# Re-enable schedule/PR live execution only through a reviewed capacity-routing
+# change after a trusted route is reverified.
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "23 4 * * *"
-  pull_request:
-    paths:
-      - ".github/workflows/live-gateway-authority.yml"
-      - "docs/operations/LIVE_GATEWAY_AUTHORITY_ACCEPTANCE.md"
-      - "omni_cio/release/live_authority_v1.py"
-      - "scripts/check_live_gateway_authority.py"
-      - "tests/test_live_gateway_authority_v1.py"
-      - "tests/test_live_acceptance_repository_assets.py"
 
 permissions:
   contents: read
@@ -29,8 +25,10 @@ jobs:
       OMNI_LIVE_BASE_URL: https://omni-cio-gateway.onrender.com
 
     steps:
-      - name: Check out repository
+      - name: Check out exact source
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Set up Python 3.12
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0

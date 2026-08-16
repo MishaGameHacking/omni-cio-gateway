@@ -12,29 +12,47 @@ concurrency:
   group: v10-toolchain-compat-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
+# GitHub-hosted Windows is a disposable compatibility/acceleration lane, not the
+# authoritative merge gate. OWNER-observed hosted capacity is currently blocked
+# by the account-level zero-budget hard stop. While that state is source-controlled
+# as blocked, this workflow executes the applicability/capacity contract on the
+# Lenovo runner and deliberately does NOT claim a hosted clean-room PASS.
+# Stable release provenance must not fabricate missing hosted compatibility.
 jobs:
   route:
-    name: Classify Windows compatibility paths
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
+    name: Classify Windows compatibility paths and capacity
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 8
     outputs:
       python: ${{ steps.route.outputs.hosted_windows_python }}
       frontend: ${{ steps.route.outputs.hosted_windows_frontend }}
       categories: ${{ steps.route.outputs.categories }}
 
     steps:
-      - name: Check out repository with comparison history
+      - name: Check out exact reviewed head with comparison history
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Bootstrap protected runner Python
+        shell: cmd
+        run: scripts\bootstrap_windows_ci_python.cmd
+
+      - name: Verify current zero-budget capacity contract
+        shell: cmd
+        run: |
+          if not exist scripts\check_v10_ci_cost_control.py exit /b 20
+          python scripts\check_v10_ci_cost_control.py
+          if errorlevel 1 exit /b %errorlevel%
 
       - name: Classify changed paths
         id: route
         shell: bash
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             git diff --name-only "$BASE_SHA" "$HEAD_SHA" > "$RUNNER_TEMP/v10-changed-paths.txt"
@@ -45,191 +63,89 @@ jobs:
             --paths-file "$RUNNER_TEMP/v10-changed-paths.txt" \
             --github-output "$GITHUB_OUTPUT"
 
-  python-baseline:
-    name: Python 3.14.6 V10 baseline
-    needs: route
-    if: needs.route.outputs.python == 'true'
-    runs-on: windows-latest
-    timeout-minutes: 25
-
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Set up selected Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.14.6"
-          cache: pip
-          cache-dependency-path: requirements-dev.txt
-
-      - name: Verify exact interpreter
-        shell: pwsh
-        run: |
-          if ((python -c "import platform; print(platform.python_version())") -ne "3.14.6") { exit 1 }
-          python -c "import platform; print(platform.python_version())"
-
-      - name: Build strict Windows dependency projection
-        run: >-
-          python scripts/windows_ci_lock.py project
-          requirements-dev.txt windows-requirements-dev.txt
-
-      - name: Install hash-locked Windows dependencies
-        run: >-
-          python -m pip install --disable-pip-version-check
-          --require-hashes -r windows-requirements-dev.txt
-
-      - name: Verify selected toolchain and dependency policy
-        run: python scripts/check_v10_toolchain_baseline.py
-
-      - name: Verify V10 Regression Shield contract
-        run: python scripts/check_v10_regression_shield.py
-
-      - name: Verify repository structure before compilation
-        run: python scripts/check_repository_layout.py
-
-      - name: Verify V10 repository boundaries before compilation
-        run: python scripts/check_v10_repository_boundaries.py
-
-      - name: Compile protected runtime and Core
-        run: >-
-          python -m compileall -q app.py app_v371.py app_v360.py main.py
-          portfolio_market.py portfolio_analytics.py cash_liquidity.py
-          purchase_capacity.py purchase_capacity_integrity.py
-          operations_analytics.py broker_report_reconciliation omni_cio tests scripts
-
-      - name: Run hosted Ruff lint
-        run: python -m ruff check .
-
-      - name: Run hosted formatting guard
-        run: >-
-          python -m ruff format --check
-          scripts tests/test_ci_security_baseline.py
-          tests/test_v10_repository_boundaries.py
-          tests/test_v10_toolchain_baseline.py
-          tests/test_v10_regression_shield.py
-          tests/test_v10_release_provenance.py
-
-      - name: Run hosted mypy baseline
-        run: python -m mypy
-
-      - name: Verify stable app entrypoint
-        shell: pwsh
-        run: |
-          @'
-          import app
-          from fastapi.testclient import TestClient
-
-          assert app.ENTRYPOINT == "app:app"
-          assert app.app is app.base.app
-          health = TestClient(app.app).get("/health")
-          assert health.status_code == 200
-          payload = health.json()
-          assert payload["trading_methods"] is False
-          print("app:app compatibility OK", payload["version"])
-          '@ | python -
-
-      - name: Run full deterministic test suite
-        run: python -m pytest -q
-
-      - name: Audit Python dependency lock
-        run: >-
-          python -m pip_audit --require-hashes --disable-pip --strict
-          --vulnerability-service osv --progress-spinner off
-          -r windows-requirements-dev.txt
-
-      - name: Generate CycloneDX Python SBOM
-        run: >-
-          python -m pip_audit --require-hashes --disable-pip
-          --vulnerability-service osv --progress-spinner off
-          -f cyclonedx-json -o python-sbom.cdx.json
-          -r windows-requirements-dev.txt
-
-      - name: Upload Python SBOM
+      - name: Clean routing workspace
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: v10-python-toolchain-sbom
-          path: python-sbom.cdx.json
-          if-no-files-found: warn
-          retention-days: 3
+        shell: bash
+        run: |
+          git reset --hard HEAD
+          git clean -ffdx
 
-  frontend-baseline:
-    name: Node 24.18.0 / React-Vite-TypeScript baseline
+  python-baseline:
+    name: Python 3.14.6 clean-room applicability contract
     needs: route
-    if: needs.route.outputs.frontend == 'true'
-    runs-on: windows-latest
-    timeout-minutes: 15
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 8
     defaults:
       run:
-        working-directory: tests/toolchain/frontend
+        shell: cmd
 
     steps:
-      - name: Check out repository
+      - name: Check out exact reviewed head
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
-      - name: Set up selected Node.js LTS with npm cache
-        uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
-        with:
-          node-version: "24.18.0"
-          cache: "npm"
-          cache-dependency-path: tests/toolchain/frontend/package-lock.json
+      - name: Bootstrap protected runner Python
+        run: scripts\bootstrap_windows_ci_python.cmd
 
-      - name: Verify exact Node.js and npm versions
-        shell: pwsh
+      - name: Verify capacity contract
+        run: python scripts\check_v10_ci_cost_control.py
+
+      - name: Report non-applicable Python clean-room lane
+        if: needs.route.outputs.python != 'true'
+        run: echo Hosted Python 3.14.6 clean-room lane NOT_APPLICABLE by source-controlled path router; routing check executed successfully.
+
+      - name: Report capacity-deferred Python clean-room lane
+        if: needs.route.outputs.python == 'true'
         run: |
-          if ((node --version) -ne "v24.18.0") { exit 1 }
-          if ((npm --version) -ne "11.16.0") { exit 1 }
-          node --version
-          npm --version
+          echo Hosted Python 3.14.6 clean-room evidence is REQUIRED_BY_PATH but CURRENTLY_CAPACITY_BLOCKED by the OWNER-observed zero-budget hard stop.
+          echo This successful job validates routing/capacity only; it does NOT claim Python 3.14.6 clean-room compatibility PASS.
+          echo The self-hosted V10 authoritative merge gate remains mandatory. Stable release provenance must not fabricate missing hosted compatibility evidence.
 
-      - name: Verify selected toolchain and dependency policy
-        working-directory: .
-        run: python scripts/check_v10_toolchain_baseline.py
-
-      - name: Verify V10 Regression Shield contract
-        working-directory: .
-        run: python scripts/check_v10_regression_shield.py
-
-      - name: Reproduce dependency tree from committed lock
-        run: npm ci --ignore-scripts --no-audit --no-fund
-
-      - name: Verify committed lock is semantically current
-        shell: pwsh
-        run: |
-          Copy-Item package-lock.json package-lock.before.json
-          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
-          node -e "const fs=require('node:fs'); const assert=require('node:assert/strict'); const before=JSON.parse(fs.readFileSync('package-lock.before.json','utf8')); const after=JSON.parse(fs.readFileSync('package-lock.json','utf8')); assert.deepStrictEqual(after,before);"
-          Remove-Item package-lock.before.json
-
-      - name: Type-check frontend toolchain
-        run: npm run typecheck
-
-      - name: Lint frontend toolchain
-        run: npm run lint
-
-      - name: Run frontend unit tests
-        run: npm test
-
-      - name: Build non-product frontend smoke fixture
-        run: npm run build
-
-      - name: Audit frontend dependencies
-        run: npm audit --audit-level=high
-
-      - name: Generate CycloneDX frontend SBOM
-        shell: pwsh
-        run: npm sbom --package-lock-only --sbom-format cyclonedx --sbom-type application | Out-File -Encoding utf8 frontend-sbom.cdx.json
-
-      - name: Upload frontend SBOM
+      - name: Clean Python applicability workspace
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        shell: bash
+        run: |
+          git reset --hard HEAD
+          git clean -ffdx
+
+  frontend-baseline:
+    name: Node 24.18.0 clean-room applicability contract
+    needs: route
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 8
+    defaults:
+      run:
+        shell: cmd
+
+    steps:
+      - name: Check out exact reviewed head
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v7.0.1
         with:
-          name: v10-frontend-toolchain-sbom
-          path: tests/toolchain/frontend/frontend-sbom.cdx.json
-          if-no-files-found: warn
-          retention-days: 3
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Bootstrap protected runner Python
+        run: scripts\bootstrap_windows_ci_python.cmd
+
+      - name: Verify capacity contract
+        run: python scripts\check_v10_ci_cost_control.py
+
+      - name: Report non-applicable frontend clean-room lane
+        if: needs.route.outputs.frontend != 'true'
+        run: echo Hosted Node 24.18.0 clean-room lane NOT_APPLICABLE by source-controlled path router; routing check executed successfully.
+
+      - name: Report capacity-deferred frontend clean-room lane
+        if: needs.route.outputs.frontend == 'true'
+        run: |
+          echo Hosted Node 24.18.0 clean-room evidence is REQUIRED_BY_PATH but CURRENTLY_CAPACITY_BLOCKED by the OWNER-observed zero-budget hard stop.
+          echo This successful job validates routing/capacity only; it does NOT claim disposable hosted Node compatibility PASS.
+          echo Applicable frontend correctness remains exercised by self-hosted Web/fast gates. Stable release provenance must not fabricate missing hosted compatibility evidence.
+
+      - name: Clean frontend applicability workspace
+        if: always()
+        shell: bash
+        run: |
+          git reset --hard HEAD
+          git clean -ffdx
