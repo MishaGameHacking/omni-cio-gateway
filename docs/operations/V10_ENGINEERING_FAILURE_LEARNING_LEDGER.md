@@ -162,6 +162,28 @@ A short SHA may be used for navigation when useful. Full random-looking secret m
 
 ---
 
+## FL-007 — Formatting preflight must cover the exact authoritative scope
+
+**Date:** 2026-08-16  
+**Reference:** governance PR #322  
+**Symptom / failing gate:** the first authoritative Lenovo cycle reached `Run protected runtime static quality`; Ruff lint passed, but `ruff format --check` rejected three newly changed governance guard files before mypy/tests/security stages could execute.
+
+**Root cause:** the branch was treated as ready for expensive exact-head validation after source/logic review without first reproducing the authoritative formatter scope over every changed Python guard file.
+
+**Blast radius searched:** all Python files introduced or modified by the governance PR, plus the authoritative formatter command and focused governance workflow. The failure was formatting-only; no lint defect or protected-runtime semantic failure was reported by the failed cycle.
+
+**Why preflight missed it:** pre-CI review checked logic, action pins, workflow routing and syntax but did not execute the exact `ruff format --check` surface used by the authoritative gate. That violated the preflight discipline the amendment itself is intended to enforce.
+
+**Corrective change:** apply Ruff-compatible formatting to all three files identified by the authoritative log; do not weaken, narrow or skip the formatter gate. Any new commit invalidates the old failed/green evidence and requires a fresh exact-head cycle.
+
+**Permanent regression/guard:** the authoritative static-quality stage already fail-closes on repository formatter drift, while the new PR/WP governance templates require format/lint preflight before expensive CI. This ledger entry makes the failure mode explicit for future agents.
+
+**Future prevention rule:** before opening or refreshing a final CI cycle, run the exact authoritative formatter scope (or a provably equivalent superset) over all changed Python sources. A known formatter mismatch blocks the expensive cycle until fixed.
+
+**Dependency/tooling knowledge change:** Ruff formatting is part of the deterministic CI contract, not cosmetic post-processing; formatter version/scope must match the repository lock and authoritative workflow.
+
+---
+
 ## Entry template
 
 ```text
