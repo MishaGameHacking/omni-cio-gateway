@@ -15,7 +15,10 @@ LEDGER = ROOT / "docs" / "operations" / "V10_ENGINEERING_FAILURE_LEARNING_LEDGER
 FAST_WORKFLOW = ROOT / ".github" / "workflows" / "v10-pr-fast-checks.yml"
 TOOLCHAIN_WORKFLOW = ROOT / ".github" / "workflows" / "v10-toolchain-compat.yml"
 LIVE_WORKFLOW = ROOT / ".github" / "workflows" / "live-gateway-authority.yml"
-WARM_LIVE_SCRIPT = ROOT / "scripts" / "warm_live_gateway.ps1"
+LIVE_CONTRACT_WORKFLOW = (
+    ROOT / ".github" / "workflows" / "v10-live-gateway-authority-contract.yml"
+)
+LIVE_STANDARD = ROOT / "docs" / "operations" / "LIVE_GATEWAY_AUTHORITY_ACCEPTANCE.md"
 
 
 def main() -> int:
@@ -47,6 +50,12 @@ def main() -> int:
             "hosted_compatibility_absence_blocks_stable_release_evidence",
             "non_applicable_or_capacity_deferred_job_must_execute_and_report",
             "restore_hosted_lanes_requires_state_reverification",
+            "live_v9_authority_actual_probe_must_not_run_on_personal_node",
+            "live_v9_authority_automatic_schedule_while_deferred_forbidden",
+            "live_v9_authority_manual_hosted_workflow_preserved",
+            "live_v9_authority_pr_contract_workflow_required",
+            "live_v9_authority_missing_blocks_v9_runtime_or_authority_release",
+            "restore_live_v9_automation_requires_trusted_route_reverification",
         )
         for key in expected_true:
             if cost.get(key) is not True:
@@ -57,6 +66,8 @@ def main() -> int:
             "disable_stop_usage_without_owner_approval_allowed",
             "hosted_compatibility_absence_blocks_pr_merge",
             "job_level_skipped_is_green_evidence",
+            "live_v9_authority_lenovo_route_semantically_equivalent",
+            "live_v9_authority_missing_blocks_governance_only_pr_merge",
         )
         for key in expected_false:
             if cost.get(key) is not False:
@@ -86,6 +97,11 @@ def main() -> int:
                 "blocked hosted compatibility must use executed routing without "
                 "claiming clean-room PASS"
             )
+        if (
+            cost.get("live_v9_authority_current_evidence_state")
+            != "DEFERRED_NO_TRUSTED_ZERO_COST_ROUTE_NOT_PASS"
+        ):
+            failures.append("live V9 authority evidence must remain explicitly deferred")
 
     merge = contract.get("merge_gate")
     if (
@@ -111,6 +127,9 @@ def main() -> int:
                 "REQUIRED_BY_PATH_BUT_CAPACITY_BLOCKED",
                 "must not claim",
                 "job-level GitHub `skipped` result is not accepted",
+                "Live V9 authority evidence while capacity is blocked",
+                "DEFERRED_NO_TRUSTED_ZERO_COST_ROUTE_NOT_PASS",
+                "V9 runtime/deployment/Action-authority release",
                 "STABLE release",
             ),
         ),
@@ -127,12 +146,10 @@ def main() -> int:
             (
                 "FL-006",
                 "Zero-budget hard stop is a CI-routing constraint, not a merge bypass",
-                "FL-009",
-                "Self-hosted PowerShell steps must respect the node execution policy",
                 "FL-010",
                 "Windows cleanup must not depend on implicit Bash PATH",
-                "FL-011",
-                "PowerShell failure reporting must preserve intended exit codes",
+                "FL-012",
+                "External live evidence cannot be moved to a non-equivalent network path",
             ),
         ),
         (
@@ -157,36 +174,38 @@ def main() -> int:
         (
             LIVE_WORKFLOW,
             (
-                "schedule:",
-                "runs-on: [self-hosted, Windows, X64, omni-cio-ci]",
-                "Bootstrap protected runner Python 3.12.10",
-                "Build strict Windows runtime dependency projection",
-                "python scripts\\windows_ci_lock.py project requirements.txt windows-requirements.txt",
-                "--require-hashes -r windows-requirements.txt",
-                "Warm protected V9 gateway across bounded Render cold start",
-                "powershell.exe -NoProfile -ExecutionPolicy Bypass",
-                "-File scripts\\warm_live_gateway.ps1",
+                "workflow_dispatch:",
+                "runs-on: ubuntu-latest",
+                "Set up Python 3.12",
+                "--require-hashes -r requirements.txt",
                 "Verify deployed v9 Action authority without broker mutation",
+                "persist-credentials: false",
+                "automatic execution is intentionally suspended rather than fabricated",
+            ),
+        ),
+        (
+            LIVE_CONTRACT_WORKFLOW,
+            (
+                "name: V10 Live Gateway Authority Contract",
+                "pull_request:",
+                "runs-on: [self-hosted, Windows, X64, omni-cio-ci]",
+                "Verify CI cost-control and live evidence routing",
+                "python scripts\\check_v10_ci_cost_control.py",
+                "python -m unittest tests.test_live_acceptance_repository_assets",
+                "ACTUAL_V9_LIVE_AUTHORITY_EVIDENCE=DEFERRED_NO_TRUSTED_ZERO_COST_ROUTE",
+                "SUCCESS_DOES_NOT_CLAIM_DEPLOYED_LIVE_PASS",
+                "MANUAL_HOSTED_ACCEPTANCE_REMAINS_REQUIRED_FOR_V9_RUNTIME_AUTHORITY_RELEASE",
                 "persist-credentials: false",
             ),
         ),
         (
-            WARM_LIVE_SCRIPT,
+            LIVE_STANDARD,
             (
-                "function Stop-WithCode",
-                "[Console]::Error.WriteLine($Message)",
-                '$baseUri.Scheme -ne "https"',
-                '$baseUri.Host -ne "omni-cio-gateway.onrender.com"',
-                "[System.Net.Dns]::GetHostAddresses",
-                "System.Net.Sockets.TcpClient",
-                "AddSeconds($DeadlineSeconds)",
-                "Invoke-WebRequest",
-                "-TimeoutSec $RequestTimeoutSeconds",
-                'catch [System.Net.WebException]',
-                '"WEB_$($webException.Status)"',
-                "Start-Sleep -Seconds $RetryDelaySeconds",
-                '"LIVE_WAKE_FAILED dns=$dnsState tcp443=$tcpState http=$lastHttpState attempts=$attempt"',
-                "-Code 41",
+                "DEFERRED_NO_TRUSTED_ZERO_COST_ROUTE_NOT_PASS",
+                "V10 Live Gateway Authority Contract",
+                "manual hosted acceptance",
+                "governance-only",
+                "must not be treated as live PASS",
             ),
         ),
     ):
@@ -224,19 +243,13 @@ def main() -> int:
     except (OSError, UnicodeError) as exc:
         failures.append(f"cannot read {LIVE_WORKFLOW.relative_to(ROOT)}: {exc}")
     else:
-        if "--require-hashes -r requirements.txt" in live_workflow:
+        if "schedule:" in live_workflow or "pull_request:" in live_workflow:
             failures.append(
-                "Windows live-authority workflow must not install the POSIX runtime lock directly"
+                "actual live V9 authority workflow must remain manual-only while no trusted route exists"
             )
-
-    try:
-        warm_script = WARM_LIVE_SCRIPT.read_text(encoding="utf-8")
-    except (OSError, UnicodeError) as exc:
-        failures.append(f"cannot read {WARM_LIVE_SCRIPT.relative_to(ROOT)}: {exc}")
-    else:
-        if "Write-Error" in warm_script:
+        if "self-hosted" in live_workflow:
             failures.append(
-                "bounded live wake probe must preserve explicit exit codes instead of terminating through Write-Error"
+                "actual live V9 authority evidence must not run on the non-equivalent Personal Node route"
             )
 
     if failures:
@@ -250,9 +263,9 @@ def main() -> int:
     print("Hosted capacity state: BLOCKED_OWNER_ZERO_BUDGET_HARD_STOP")
     print("Fast deterministic checks: zero-cost Lenovo continuity mode")
     print("Windows fast cleanup: native cmd; no cross-job Bash PATH dependency")
-    print("Scheduled live-authority probe: zero-cost Lenovo continuity mode")
-    print("Windows live probe dependencies: projected from the canonical runtime lock")
-    print("Render cold-start wake window: bounded and safely classified before strict verification")
+    print("Live V9 authority evidence: DEFERRED_NO_TRUSTED_ZERO_COST_ROUTE_NOT_PASS")
+    print("Live V9 PR validation: deterministic routing contract only")
+    print("Actual live V9 acceptance: manual hosted probe preserved; not auto-triggered")
     print("Hosted compatibility: executed routing check; no clean-room PASS fabricated")
     print("Stable release compatibility evidence: still required")
     return 0
