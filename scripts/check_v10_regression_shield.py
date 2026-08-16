@@ -13,7 +13,9 @@ FULL_WORKFLOW = WORKFLOWS / "regression-shield.yml"
 TOOLCHAIN_WORKFLOW = WORKFLOWS / "v10-toolchain-compat.yml"
 AUTHORITATIVE_WORKFLOW = WORKFLOWS / "self-hosted-windows-smoke.yml"
 FRONTEND_FIXTURE = ROOT / "tests" / "toolchain" / "frontend"
-QUALITY_CONTRACT = ROOT / "docs" / "architecture" / "V10_ENGINEERING_QUALITY_GATE_CONTRACT.json"
+QUALITY_CONTRACT = (
+    ROOT / "docs" / "architecture" / "V10_ENGINEERING_QUALITY_GATE_CONTRACT.json"
+)
 FULL_SHA = re.compile(r"[0-9a-f]{40}")
 PATH_FILTER = re.compile(r"(?m)^\s+paths(?:-ignore)?:\s*$")
 JOB_LEVEL_ROUTE_IF = re.compile(r"(?m)^    if:\s+needs\.route\.outputs\.")
@@ -72,11 +74,25 @@ def _hosted_capacity_blocked(failures: list[str]) -> bool:
         if section.get("hosted_compatibility_check_mode_when_blocked") != (
             "EXECUTED_CAPACITY_ROUTING_NO_CLEAN_ROOM_PASS"
         ):
-            failures.append("blocked hosted capacity requires explicit no-clean-room-pass mode")
-        if section.get("hosted_compatibility_absence_blocks_stable_release_evidence") is not True:
-            failures.append("blocked hosted capacity must preserve stable-release clean-room evidence requirement")
-        if section.get("non_applicable_or_capacity_deferred_job_must_execute_and_report") is not True:
-            failures.append("capacity-deferred jobs must execute and report rather than skip")
+            failures.append(
+                "blocked hosted capacity requires explicit no-clean-room-pass mode"
+            )
+        if (
+            section.get("hosted_compatibility_absence_blocks_stable_release_evidence")
+            is not True
+        ):
+            failures.append(
+                "blocked hosted capacity must preserve stable-release clean-room evidence requirement"
+            )
+        if (
+            section.get(
+                "non_applicable_or_capacity_deferred_job_must_execute_and_report"
+            )
+            is not True
+        ):
+            failures.append(
+                "capacity-deferred jobs must execute and report rather than skip"
+            )
         return True
     return False
 
@@ -139,12 +155,16 @@ def validate_fast_workflow(failures: list[str]) -> None:
     if PATH_FILTER.search(text):
         failures.append("Fast PR Checks may not use path filters")
     if "secrets." in text or "${{ secrets" in text:
-        failures.append("Fast PR Checks must not consume repository/environment secrets")
+        failures.append(
+            "Fast PR Checks must not consume repository/environment secrets"
+        )
 
     blocked = _hosted_capacity_blocked(failures)
     if blocked:
         if JOB_LEVEL_ROUTE_IF.search(text):
-            failures.append("Fast PR applicability jobs must execute; job-level route skipping is forbidden")
+            failures.append(
+                "Fast PR applicability jobs must execute; job-level route skipping is forbidden"
+            )
         require_tokens(
             text,
             (
@@ -160,20 +180,24 @@ def validate_fast_workflow(failures: list[str]) -> None:
                 "Fast frontend substantive checks NOT_APPLICABLE",
                 "process.version !== 'v24.18.0'",
                 "11.16.0",
-                "npm.cmd\" ci --ignore-scripts --no-audit --no-fund",
-                "npm.cmd\" run typecheck",
-                "npm.cmd\" run lint",
-                "npm.cmd\" test",
-                "npm.cmd\" run build",
+                'npm.cmd" ci --ignore-scripts --no-audit --no-fund',
+                'npm.cmd" run typecheck',
+                'npm.cmd" run lint',
+                'npm.cmd" test',
+                'npm.cmd" run build',
             ),
             "Fast PR Checks capacity-degraded mode",
             failures,
         )
         if "actions/setup-python@" in text or "actions/setup-node@" in text:
-            failures.append("capacity-degraded Fast PR checks must not invoke blocked GitHub-hosted tool setup actions")
+            failures.append(
+                "capacity-degraded Fast PR checks must not invoke blocked GitHub-hosted tool setup actions"
+            )
     else:
         if "self-hosted" in text:
-            failures.append("Fast PR Checks must not use a self-hosted runner when hosted acceleration is available")
+            failures.append(
+                "Fast PR Checks must not use a self-hosted runner when hosted acceleration is available"
+            )
         require_tokens(
             text,
             (
@@ -204,7 +228,9 @@ def validate_full_workflow(failures: list[str]) -> None:
     if PATH_FILTER.search(text):
         failures.append("Regression Shield may not use path filters")
     if "\n  pull_request:" in text:
-        failures.append("Regression Shield is post-merge only; PR authority belongs to Lenovo gate")
+        failures.append(
+            "Regression Shield is post-merge only; PR authority belongs to Lenovo gate"
+        )
     require_tokens(
         text,
         (
@@ -245,7 +271,9 @@ def validate_toolchain_workflow(failures: list[str]) -> None:
     blocked = _hosted_capacity_blocked(failures)
     if blocked:
         if JOB_LEVEL_ROUTE_IF.search(text):
-            failures.append("Toolchain applicability jobs must execute; job-level route skipping is forbidden")
+            failures.append(
+                "Toolchain applicability jobs must execute; job-level route skipping is forbidden"
+            )
         require_tokens(
             text,
             (
@@ -265,12 +293,18 @@ def validate_toolchain_workflow(failures: list[str]) -> None:
             failures,
         )
         if "runs-on: windows-latest" in text:
-            failures.append("capacity-degraded Toolchain workflow must not start blocked GitHub-hosted Windows jobs")
+            failures.append(
+                "capacity-degraded Toolchain workflow must not start blocked GitHub-hosted Windows jobs"
+            )
         if "actions/setup-python@" in text or "actions/setup-node@" in text:
-            failures.append("capacity-degraded Toolchain workflow must not invoke blocked hosted tool setup actions")
+            failures.append(
+                "capacity-degraded Toolchain workflow must not invoke blocked hosted tool setup actions"
+            )
     else:
         if "self-hosted" in text:
-            failures.append("V10 Toolchain Compatibility must remain GitHub-hosted when capacity is available")
+            failures.append(
+                "V10 Toolchain Compatibility must remain GitHub-hosted when capacity is available"
+            )
         require_tokens(
             text,
             (
@@ -361,7 +395,9 @@ def validate_frontend_fixture(failures: list[str]) -> None:
     for name in ("typecheck", "lint", "test", "build"):
         value = scripts.get(name)
         if not isinstance(value, str) or not value.strip():
-            failures.append(f"frontend baseline is missing deterministic `{name}` script")
+            failures.append(
+                f"frontend baseline is missing deterministic `{name}` script"
+            )
     for path in (
         FRONTEND_FIXTURE / "scripts" / "lint.mjs",
         FRONTEND_FIXTURE / "tests" / "smoke_contract.test.ts",
@@ -396,9 +432,15 @@ def validate_future_web_contract(failures: list[str]) -> None:
             failures.append(f"apps/web requires `{name}` script when Web is introduced")
     if not any(
         (web / name).is_file()
-        for name in ("playwright.config.ts", "playwright.config.js", "playwright.config.mjs")
+        for name in (
+            "playwright.config.ts",
+            "playwright.config.js",
+            "playwright.config.mjs",
+        )
     ):
-        failures.append("apps/web requires Playwright configuration when Web is introduced")
+        failures.append(
+            "apps/web requires Playwright configuration when Web is introduced"
+        )
     if not list(web.rglob("*.spec.ts")) and not list(web.rglob("*.spec.tsx")):
         failures.append("apps/web requires at least one Playwright *.spec.ts[x] test")
 
@@ -407,9 +449,17 @@ def validate_capability_contracts(failures: list[str]) -> None:
     contracts = ROOT / "tests" / "contracts"
     capabilities = (
         (ROOT / "apps" / "api", contracts / "api", "API schema/contract"),
-        (ROOT / "apps" / "telegram", contracts / "telegram", "Telegram signature/freshness"),
+        (
+            ROOT / "apps" / "telegram",
+            contracts / "telegram",
+            "Telegram signature/freshness",
+        ),
         (ROOT / "ai", contracts / "ai", "AI schema/authority"),
-        (ROOT / "infrastructure" / "backup", contracts / "backup_restore", "backup/restore"),
+        (
+            ROOT / "infrastructure" / "backup",
+            contracts / "backup_restore",
+            "backup/restore",
+        ),
     )
     for capability, tests, label in capabilities:
         if capability.exists() and not has_python_contract(tests):
@@ -426,11 +476,17 @@ def validate_capability_contracts(failures: list[str]) -> None:
         and ".venv" not in path.parts
     ]
     if migration_dirs and not has_python_contract(contracts / "db_migrations"):
-        failures.append("database migrations exist without tests/contracts/db_migrations/test_*.py")
+        failures.append(
+            "database migrations exist without tests/contracts/db_migrations/test_*.py"
+        )
 
     authority_roots = (ROOT / "apps" / "api", ROOT / "apps" / "telegram", ROOT / "ai")
-    if any(path.exists() for path in authority_roots) and not has_python_contract(contracts / "authority"):
-        failures.append("new transport/AI capability exists without tests/contracts/authority/test_*.py")
+    if any(path.exists() for path in authority_roots) and not has_python_contract(
+        contracts / "authority"
+    ):
+        failures.append(
+            "new transport/AI capability exists without tests/contracts/authority/test_*.py"
+        )
 
     validate_future_web_contract(failures)
 
@@ -447,7 +503,9 @@ def validate_money_path_protection(failures: list[str]) -> None:
     test_names = [path.name for path in (ROOT / "tests").glob("test_*.py")]
     for fragment in ("real_trading", "plan_execution", "sandbox"):
         if not any(fragment in name for name in test_names):
-            failures.append(f"protected money-path test family `{fragment}` is missing from tests/")
+            failures.append(
+                f"protected money-path test family `{fragment}` is missing from tests/"
+            )
 
 
 def validate_repository() -> list[str]:
@@ -477,13 +535,23 @@ def main() -> int:
         return 1
     print("V10 Regression Shield contract passed.")
     if capacity_blocked:
-        print("Fast PR lane: zero-cost Lenovo continuity mode; deterministic checks remain active")
-        print("Hosted toolchain lane: capacity-deferred; routing checks execute, no clean-room PASS claimed")
-        print("Stable release clean-room evidence: still required before such a release claim")
+        print(
+            "Fast PR lane: zero-cost Lenovo continuity mode; deterministic checks remain active"
+        )
+        print(
+            "Hosted toolchain lane: capacity-deferred; routing checks execute, no clean-room PASS claimed"
+        )
+        print(
+            "Stable release clean-room evidence: still required before such a release claim"
+        )
     else:
         print("Fast PR lane: GitHub-hosted Linux acceleration, cached, no secrets")
-        print("Hosted toolchain lane: clean GitHub-hosted Windows Python/Node compatibility")
-    print("Authoritative PR lane: self-hosted Windows full protected-runtime regression/security")
+        print(
+            "Hosted toolchain lane: clean GitHub-hosted Windows Python/Node compatibility"
+        )
+    print(
+        "Authoritative PR lane: self-hosted Windows full protected-runtime regression/security"
+    )
     print("Post-merge lane: self-hosted Regression Shield sentinel on main")
     print("Toolchain installation is intentionally excluded from the Lenovo merge gate")
     print("Frontend baseline: typecheck + lint + unit + build")
