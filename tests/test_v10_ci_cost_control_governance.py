@@ -122,7 +122,10 @@ def test_live_v9_authority_is_deferred_not_fabricated_on_lenovo() -> None:
     assert "runs-on: [self-hosted, Windows, X64, omni-cio-ci]" in routing
     assert "ACTUAL_V9_LIVE_AUTHORITY_EVIDENCE=DEFERRED_NO_TRUSTED_ZERO_COST_ROUTE" in routing
     assert "SUCCESS_DOES_NOT_CLAIM_DEPLOYED_LIVE_PASS" in routing
-    assert "check_live_gateway_authority.py" not in routing
+    # The probe source belongs in pull_request.paths so changes retrigger this
+    # contract. What must remain absent is an execution command on Lenovo.
+    assert "python scripts/check_live_gateway_authority.py" not in routing
+    assert "python scripts\\check_live_gateway_authority.py" not in routing
 
 
 def test_budget_state_is_explicitly_mutable_external_state() -> None:
