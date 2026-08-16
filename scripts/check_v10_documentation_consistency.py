@@ -25,11 +25,13 @@ LIVE_GUIDANCE = (
     ROOT / "README.md",
     ROOT / "AGENTS.md",
     ROOT / "CONTRIBUTING.md",
+    ROOT / "CHANGELOG.md",
     ROOT / "docs/README.md",
     ROOT / "docs/master-plan/README.md",
     PROGRAM_LOCK,
     ROOT / "knowledge/00_PROJECT_MASTER_CONTEXT.md",
     ROOT / "gpt/PROJECT_INSTRUCTIONS.md",
+    ROOT / "gpt/NEW_CHAT_PROMPT.md",
     ROOT / ".github/copilot-instructions.md",
 )
 
@@ -40,6 +42,8 @@ STALE_LIVE_MARKERS = (
     "Overall accepted V10 progress remains **5%**",
     "Current accepted V10 implementation progress remains **5%**",
     "accepted V10 progress remains 5%",
+    "accepted progress = 5%",
+    "WP4 — следующий work package",
     "WP4 is NEXT until",
     "WP2 will freeze",
     "Until WP2 acceptance",
