@@ -47,6 +47,9 @@ jobs:
       - name: Verify engineering governance contract
         run: python scripts/check_v10_engineering_governance.py
 
+      - name: Verify documentation authority and lifecycle consistency
+        run: python scripts/check_v10_documentation_consistency.py
+
       - name: Verify CI cost-control contract
         run: python scripts/check_v10_ci_cost_control.py
 
@@ -57,6 +60,7 @@ jobs:
         run: >-
           python -m py_compile
           scripts/check_v10_engineering_governance.py
+          scripts/check_v10_documentation_consistency.py
           scripts/check_v10_ci_cost_control.py
           scripts/check_v10_regression_shield.py
           scripts/v10_ci_router.py

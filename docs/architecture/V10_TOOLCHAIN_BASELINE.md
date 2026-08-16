@@ -1,13 +1,15 @@
 # Omni-CIO V10 — Toolchain and Dependency Baseline
 
-Status: **WP2 SELECTED BASELINE / FINAL EXIT GATE PENDING**  
-Runtime effect: **none until later runtime migration packages**  
-Protected production baseline: **V9 `app:app` remains unchanged on its accepted runtime while V10 tooling is prepared**  
-Machine-readable authority: `docs/architecture/V10_TOOLCHAIN_BASELINE.json`
+Status: **WP2 ACCEPTED BASELINE / ACTIVE UNTIL SUPERSEDED BY REVIEWED CHANGE**  
+Lifecycle: **accepted WP2 technical contract; not current-WP authority**  
+Runtime effect at selection time: **none until later owning runtime migration packages**  
+Protected production baseline: **V9 `app:app` remains protected until an accepted V10 migration retires that boundary**  
+Machine-readable authority: `docs/architecture/V10_TOOLCHAIN_BASELINE.json`  
+Current V10 state: `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`
 
 ## 1. Purpose
 
-WP2 freezes one reproducible development/toolchain baseline before Lenovo bootstrap and before Web/Telegram/AI product implementation.
+WP2 froze one reproducible development/toolchain baseline before Lenovo bootstrap and before Web/Telegram/AI product implementation. WP2 has since passed its Exit Gate; this document remains the accepted technical baseline until a later reviewed dependency/toolchain change supersedes a pin.
 
 Selection rule:
 
@@ -48,7 +50,7 @@ The accepted WP2 frontend fixture lives under `tests/toolchain/frontend/`. It pr
 - PostgreSQL major: **18**;
 - reviewed/tested patch baseline: **18.4**.
 
-WP2 freezes the supported version policy only. PostgreSQL runtime installation/configuration remains Block C and schemas/data services remain later V10 work packages.
+WP2 froze the supported version policy only. PostgreSQL runtime installation/configuration and schemas/data services were/are owned by their later V10 work packages.
 
 ## 3. Why Python 3.14.6 was selected
 
@@ -77,9 +79,9 @@ For each candidate the workflow proved:
 - stable `app:app` import and `/health` contract;
 - the full deterministic pytest suite.
 
-Because `3.14.6` passed the same protected project gates and is the newer supported maintenance line, WP2 selects **Python 3.14.6 for future V10 development/toolchain work**.
+Because `3.14.6` passed the same protected project gates and is the newer supported maintenance line, WP2 selected **Python 3.14.6 for V10 development/toolchain work**.
 
-This does **not** upgrade the current Render/V9 production runtime in WP2. Runtime migration happens only in the work package that owns that deployment boundary.
+This selection did **not** upgrade the protected Render/V9 production runtime in WP2. Runtime migration occurs only in the work package that owns that deployment boundary.
 
 ## 4. Concurrency portability defect found during evaluation
 
@@ -219,39 +221,39 @@ This JSON is intentionally paired with this explanatory document so CI can valid
 
 ## 9. PostgreSQL policy
 
-Official reviewed source:
+Official reviewed source at WP2 selection:
 
 `https://www.postgresql.org/docs/release/18.4/`
 
-V10 selects PostgreSQL 18 as its stable major baseline with patch `18.4` as the reviewed WP2 reference. Future security/maintenance patch updates remain controlled dependency/runtime changes and require compatibility/recovery evidence; PostgreSQL 19 development/beta is not the Personal V10 baseline.
+V10 selected PostgreSQL 18 as its stable major baseline with patch `18.4` as the reviewed WP2 reference. Future security/maintenance patch updates remain controlled dependency/runtime changes and require compatibility/recovery evidence; a later development/beta major is not selected automatically.
 
 ## 10. Dependency maintenance
 
 Dependabot remains proposal-only:
 
 - Python ecosystem at repository root;
-- npm ecosystem at `/tests/toolchain/frontend` for the selected V10 frontend toolchain;
+- npm ecosystem at `/tests/toolchain/frontend` and later accepted npm roots as configured;
 - GitHub Actions at repository root.
 
-No Dependabot proposal is automatic merge authorization. Current-main exact-head compatibility/security evidence remains required.
+No Dependabot proposal is automatic merge authorization. Current exact-head compatibility/security evidence remains required.
 
 ## 11. CI design after candidate selection
 
-Exploratory Python matrix evidence is retained in the WP2 PR/run history, but accepted workflow configuration keeps only the selected baseline:
+Exploratory Python matrix evidence is retained in the WP2 PR/run history. The accepted baseline established:
 
-- clean GitHub-hosted Windows + Python `3.14.6`;
-- clean GitHub-hosted Windows + Node `24.18.0` / npm `11.16.0`;
+- clean Windows + Python `3.14.6` compatibility evidence;
+- clean Windows + Node `24.18.0` / npm `11.16.0` compatibility evidence;
 - machine-readable toolchain/dependency policy check;
 - committed-lock `npm ci` / lock reproducibility;
 - frontend typecheck/build/audit/SBOM;
 - Python full test/audit/SBOM;
-- existing self-hosted Regression Shield/security on the same PR head.
+- protected V9 `app:app` compatibility evidence.
 
-The GitHub-hosted toolchain gate supplements the protected V9 Regression Shield; it does not replace or weaken it.
+Later CI routing is governed by the accepted Regression Shield/GitHub Pro/cost-control contracts and may route equivalent checks differently when hosted capacity changes. Historical WP2 clean-room evidence is not fabricated for a later commit.
 
-## 12. Non-goals
+## 12. Non-goals of WP2
 
-WP2 does not:
+WP2 did not:
 
 - deploy or configure Lenovo;
 - install production PostgreSQL;
@@ -262,16 +264,18 @@ WP2 does not:
 - expand broker-write/Real authority;
 - retire the current Custom GPT.
 
-## 13. Exit Gate
+Later accepted packages may have implemented their own scoped responsibilities; this list remains historical WP2 scope, not a statement that those capabilities are still absent.
 
-WP2 becomes COMPLETE only after the final PR head proves:
+## 13. Historical WP2 Exit Gate — satisfied
+
+WP2 acceptance required the final PR head to prove:
 
 - selected baseline JSON and explanatory document agree;
 - exact Python and npm locks are reproducible;
-- clean GitHub-hosted Windows selected-baseline jobs are green;
+- clean selected-baseline Windows jobs are green;
 - dependency/audit/SBOM/license policy is green;
-- current V9 `app:app` Regression Shield/security remains green;
+- protected V9 `app:app` Regression Shield/security remains green;
 - zero unresolved review blockers remain;
 - focused WP2 PR is squash-merged to `main`.
 
-After acceptance, WP3 becomes the next authorized work package. Accepted V10 progress remains 5% until all of Block B is complete.
+Those conditions were satisfied when WP2 was accepted. The statement that WP3 became next after WP2 is historical sequencing evidence only; current authorization/progress is always read from `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.

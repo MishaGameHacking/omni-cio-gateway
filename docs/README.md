@@ -10,25 +10,27 @@ Active feature program: **Omni-CIO V10**, started by owner command `START V10` o
 ## Быстрый вход
 
 1. `../AGENTS.md` — обязательные правила разработки и current-WP sequence.
-2. `../README.md` — продукт, current runtime и V10 navigation.
-3. `../knowledge/00_PROJECT_MASTER_CONTEXT.md` — долговременный контекст.
-4. `../knowledge/16_CURRENT_PROGRAM_STATUS.md` — текущий V9 applied/runtime baseline.
-5. `../knowledge/17_V10_CURRENT_PROGRAM_STATUS.md` — текущий V10 progress/current/next WP.
-6. `master-plan/OMNI_CIO_V10_PROGRAM_LOCK.md` — V10 scope/precedence/exclusivity.
-7. `master-plan/OMNI_CIO_V10_MASTER_PLAN.md` — canonical V10 program.
-8. `architecture/V10_SYSTEM_ARCHITECTURE.md` — target V10 architecture.
-9. `architecture/REPOSITORY_STRUCTURE.md` — canonical repository ownership/boundaries.
-10. `architecture/V10_SECURITY_BOUNDARIES.md` — V10 authority zones.
-11. `architecture/V10_DATA_FLOW.md` — canonical V10 data flows.
-12. `architecture/V10_THREAT_MODEL.md` — threat catalogue.
-13. `architecture/V10_RECOVERY_CONTRACT.md` — recovery/portability contract.
-14. `architecture/V10_ADR_PROCESS.md` + `architecture/DECISIONS.md` — architecture governance.
-15. `../gpt/SETUP_INDEX.md` — current GPT setup/recovery.
-16. `operations/RELEASE_CHECKLIST.md` — current V9 release/acceptance checklist until replaced by later V10 work.
+2. `../README.md` — продукт, repository front door и concise current snapshot.
+3. `DOCUMENTATION_AUTHORITY_AND_LIFECYCLE.md` — какие документы являются current authority, stable contract или historical evidence.
+4. `../knowledge/00_PROJECT_MASTER_CONTEXT.md` — долговременный контекст без competing progress ledger.
+5. `../knowledge/16_CURRENT_PROGRAM_STATUS.md` — текущий V9 applied/runtime baseline.
+6. `../knowledge/17_V10_CURRENT_PROGRAM_STATUS.md` — **единственный current V10 progress/current-next WP ledger**.
+7. `master-plan/OMNI_CIO_V10_PROGRAM_LOCK.md` — V10 scope/precedence/exclusivity.
+8. `master-plan/OMNI_CIO_V10_MASTER_PLAN.md` — canonical V10 program.
+9. `master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md` — accepted active amendments.
+10. `architecture/V10_SYSTEM_ARCHITECTURE.md` — target/accepted V10 architecture.
+11. `architecture/REPOSITORY_STRUCTURE.md` — canonical repository ownership/boundaries.
+12. `architecture/V10_SECURITY_BOUNDARIES.md` — V10 authority zones.
+13. `architecture/V10_DATA_FLOW.md` — canonical V10 data flows.
+14. `architecture/V10_THREAT_MODEL.md` — threat catalogue.
+15. `architecture/V10_RECOVERY_CONTRACT.md` — recovery/portability contract.
+16. `architecture/V10_ADR_PROCESS.md` + `architecture/DECISIONS.md` — architecture governance.
+17. `../gpt/SETUP_INDEX.md` — current GPT setup/recovery.
+18. `operations/RELEASE_CHECKLIST.md` — protected V9 release/acceptance checklist until its owning migration retires it.
 
 ## Master programs
 
-`master-plan/` stores owner-approved programs, program locks and audit trail.
+`master-plan/` stores owner-approved programs, program locks, amendments and audit trail.
 
 ### V10 — active feature program
 
@@ -38,8 +40,9 @@ Canonical artifacts:
 - `master-plan/Omni-CIO_V10_Master_Plan_RU.pdf`;
 - `master-plan/OMNI_CIO_V10_MASTER_PLAN.sha256`;
 - `master-plan/OMNI_CIO_V10_PROGRAM_LOCK.md`;
-- `master-plan/OMNI_CIO_V10_PLAN_READINESS_AUDIT.md`;
-- `master-plan/OMNI_CIO_V10_START_RECORD.md`.
+- `master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md`;
+- `master-plan/OMNI_CIO_V10_PLAN_READINESS_AUDIT.md` — historical readiness snapshot;
+- `master-plan/OMNI_CIO_V10_START_RECORD.md` — historical start snapshot.
 
 Exact accepted progress and next WP: `../knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
 
@@ -53,7 +56,7 @@ V9 remains the production/recovery baseline in **controlled maintenance** while 
 
 ## Architecture
 
-V10 authorities:
+V10 authorities include:
 
 - `architecture/V10_SYSTEM_ARCHITECTURE.md`;
 - `architecture/REPOSITORY_STRUCTURE.md`;
@@ -63,23 +66,37 @@ V10 authorities:
 - `architecture/V10_RECOVERY_CONTRACT.md`;
 - `architecture/V10_ADR_PROCESS.md`;
 - `architecture/V10_V9_BASELINE_FREEZE.md`;
+- `architecture/V10_TOOLCHAIN_BASELINE.md` + machine-readable companion;
+- `architecture/V10_ENGINEERING_QUALITY_GATE_CONTRACT.json`;
 - `architecture/DECISIONS.md`.
 
 Current V9 runtime architecture remains documented by `architecture/SYSTEM_OVERVIEW.md` and `architecture/V9_*` files until later V10 migration packages explicitly replace those boundaries.
 
 ## Repository boundaries
 
-WP1 defines one deterministic Core under `../omni_cio/` and reserves future V10 roots `../apps/`, `../ai/` and `../infrastructure/` for their owning work packages.
+`../omni_cio/` is the one deterministic Core root.
 
-Permanent guard:
+Current accepted physical V10 roots include:
+
+- `../apps/api/` — accepted V10 API/application adapter;
+- `../apps/web/` — accepted single V10 Web App developed through the accepted Block E packages;
+- `../infrastructure/windows/` — accepted Personal-Node/Windows infrastructure from its owning packages.
+
+Later roots remain lifecycle-gated: `../apps/telegram/` and `../ai/` are not authorized merely because the architecture reserves their ownership locations.
+
+The protected V9 root wrappers and `gpt/` recovery/configuration remain until their responsible V10 parity/decommission gates.
+
+Permanent structural guard:
 
 `../scripts/check_v10_repository_boundaries.py`
 
-It prevents competing application/execution roots, keeps direct Real/plan-execution authority unique, checks critical Core cycles and protects future Web/Telegram/AI from direct Real authority imports.
+It prevents competing application/execution roots, keeps direct Real/plan-execution authority unique, checks critical Core cycles and protects presentation/AI layers from direct Real authority imports.
 
 ## Operations
 
-Current V9 runbooks remain authoritative until replaced:
+Protected V9 runbooks remain authoritative for their still-applied V9 boundaries until explicitly replaced. V10 package runbooks remain package-scoped operational/acceptance records under the lifecycle rule.
+
+Key operations sources include:
 
 - `operations/DEPLOYMENT_RUNBOOK.md`;
 - `operations/RELEASE_CHECKLIST.md`;
@@ -87,8 +104,11 @@ Current V9 runbooks remain authoritative until replaced:
 - `operations/REAL_TRADING_RELEASE_RUNBOOK.md`;
 - `operations/V9_WATCHTOWER_RUNBOOK.md`;
 - `operations/LIVE_GATEWAY_AUTHORITY_ACCEPTANCE.md`;
-- `operations/DEPENDENCY_MAINTENANCE.md` when accepted;
-- `operations/SELF_HOSTED_WINDOWS_RUNNER_SERVICE.md` while Regression Shield uses that runner.
+- `operations/DEPENDENCY_MAINTENANCE.md`;
+- `operations/SELF_HOSTED_WINDOWS_RUNNER_SERVICE.md`;
+- `operations/V10_CI_COST_CONTROL_STANDARD.md`;
+- `operations/V10_OWNER_ACTION_HANDOFF_STANDARD.md`;
+- `operations/V10_ENGINEERING_FAILURE_LEARNING_LEDGER.md`.
 
 ## Current Custom GPT
 
@@ -112,17 +132,22 @@ Current V9 Real execution remains exact-owner-confirmed, immutable, idempotent a
 
 ## CI/security
 
-- `.github/workflows/regression-shield.yml` — mandatory exact-head merge gate;
-- `.github/workflows/live-gateway-authority.yml` — current public live V9 Action-authority gate;
+- `.github/workflows/regression-shield.yml` — mandatory authoritative regression/security verification where applicable;
+- `.github/workflows/v10-engineering-governance.yml` — engineering-quality, cost-control and documentation-consistency governance;
+- `.github/workflows/live-gateway-authority.yml` — protected public live V9 Action-authority gate when its trusted route is available/applicable;
 - `../scripts/check_repository_layout.py` — existing V9 structure/runtime guard;
 - `../scripts/check_v10_repository_boundaries.py` — permanent V10 repository/authority guard;
+- `../scripts/check_v10_engineering_governance.py` — permanent engineering-governance guard;
+- `../scripts/check_v10_documentation_consistency.py` — permanent current-vs-historical documentation guard;
 - `../scripts/check_ci_security_baseline.py` — CI/dependency/security policy;
 - `../scripts/check_gpt_recovery_consistency.py` — current GPT/recovery consistency;
 - `../SECURITY.md` — security boundary.
 
+Applicable exact-head checks must conclude SUCCESS before merge. Infrastructure/billing/provider failures are diagnosed separately from code failures but are never re-labeled as PASS.
+
 ## Dependencies and development reproducibility
 
-Canonical Python dependency sources remain in root because current Render/CI consume them directly:
+Canonical Python dependency sources remain in root because current CI/protected V9 runtime consume them directly:
 
 - `../requirements.in` — runtime direct constraints;
 - `../requirements.txt` — generated/hash-locked runtime set;
@@ -131,7 +156,7 @@ Canonical Python dependency sources remain in root because current Render/CI con
 
 Safe local configuration starts from `../.env.example`; secret values are never committed.
 
-WP2 selects/fixes the exact V10 Python/Node/frontend/PostgreSQL/package-manager baseline. Until WP2 acceptance, do not invent or silently add those future runtime/toolchain dependencies.
+WP2 **already selected and accepted** the exact V10 Python/Node/frontend/PostgreSQL/package-manager baseline. Canonical technical versions/evidence are in `architecture/V10_TOOLCHAIN_BASELINE.md` and its machine-readable companion. Later upgrades must follow the accepted dependency/reproducibility/rollback rules; “latest” is not automatically selected.
 
 ## Не хранить в GitHub
 
@@ -146,4 +171,6 @@ WP2 selects/fixes the exact V10 Python/Node/frontend/PostgreSQL/package-manager 
 
 ## Правило документации
 
-Не создавать competing setup/audit/inventory/source-of-truth file, если информацию можно обновить в существующем canonical document. Historical records may remain for traceability but cannot override accepted `main`, Program Lock or current status files.
+Не создавать competing setup/audit/inventory/source-of-truth file, если информацию можно обновить в существующем canonical document. Historical records remain for traceability but cannot override accepted `main`, Program Lock, accepted amendments or current status files.
+
+For document lifecycle, use `DOCUMENTATION_AUTHORITY_AND_LIFECYCLE.md`. A package-local `PENDING`/`CURRENT` status is interpreted at that package's recorded time unless the file is explicitly in the live current-authority layer.

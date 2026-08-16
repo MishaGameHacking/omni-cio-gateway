@@ -468,6 +468,7 @@ def main() -> int:
         (
             "name: V10 Engineering Governance",
             "python scripts/check_v10_engineering_governance.py",
+            "python scripts/check_v10_documentation_consistency.py",
             "python scripts/check_v10_ci_cost_control.py",
             "python scripts/check_v10_regression_shield.py",
             "persist-credentials: false",

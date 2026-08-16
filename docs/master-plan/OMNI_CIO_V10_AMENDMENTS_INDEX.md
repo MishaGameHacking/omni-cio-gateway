@@ -4,6 +4,8 @@ Status: **ACTIVE PROGRAM INDEX**
 
 This index exists so future engineering/AI sessions can restore OWNER-approved V10 clarifications from GitHub instead of depending on chat memory.
 
+Documentation lifecycle: `../DOCUMENTATION_AUTHORITY_AND_LIFECYCLE.md`.
+
 ## Authority rule
 
 The synchronized V10 Master Plan remains the canonical base program:
@@ -14,7 +16,7 @@ The synchronized V10 Master Plan remains the canonical base program:
 
 Accepted amendments supplement/narrow the base plan without silently renumbering blocks or changing block weights. When an accepted amendment intentionally resolves an ambiguity, the amendment governs that implementation choice until a later OWNER-approved consolidation or superseding amendment.
 
-Unmerged/closed draft PR text is not an accepted amendment.
+Unmerged/closed draft PR text is not an accepted amendment. Current progress/current-next WP is read only from `../../knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
 
 ## Active amendments
 
@@ -147,9 +149,9 @@ Locks the OWNER-approved 2026-08-10 identity/account direction while preserving 
 - transfer/withdrawal authority remains outside V10;
 - the central Identity/Commercial plane is minimal and is not authorized to become a centralized portfolio/broker-secret/private-history database;
 - public multi-user activation remains disabled until external-Web security, cross-tenant isolation, broker-terms, personal-data, investment-advisory, capacity and commercial legal gates are accepted;
-- WP15 live credential evidence is moved from ordinary PowerShell UX to the reviewed authenticated Web broker-provisioning flow; WP18 real-data acceptance remains blocked until that deferred evidence passes.
+- WP15 live credential evidence was moved from ordinary PowerShell UX to the reviewed authenticated Web broker-provisioning flow.
 
-This amendment changes product/account interpretation and selected acceptance sequencing only where explicitly stated. It does not start Block E implementation before the amended WP15 code/security acceptance is formally accepted.
+This amendment changed product/account interpretation and selected acceptance sequencing only where explicitly stated. Historical references to then-future Block E work are interpreted at the amendment's acceptance time; current implementation state comes from the canonical status file.
 
 ### 7. Browser-Only Phone Engineering / Headless Personal Node Operations
 
@@ -208,7 +210,7 @@ Locks the OWNER-approved 2026-08-16 engineering discipline for all remaining V10
 - OWNER-controlled GitHub Actions budget/payment state is never silently changed; current zero-budget hard stop is handled by truthful zero-cost routing without fake clean-room PASS;
 - unexpected material RED after declared preflight readiness requires a confidence postmortem and reusable learning is persisted in the Failure Learning Ledger.
 
-This amendment does not change WP numbering, progress weights or current WP authorization. It becomes active only when its own governance PR satisfies the same GREEN exact-head discipline, is squash-merged and passes required post-merge verification.
+**Acceptance evidence:** governance PR #322 was accepted into exact `main` `1c05390d9cf31b8cc68a90a5d7cbd6428ffe7791`; post-merge Regression Shield #1498 / run `31959959791` completed **SUCCESS** on that exact main. The amendment is therefore **ACTIVE**. Its acceptance did not change WP numbering/progress, complete WP22A, open public ingress, add broker-write authority or unlock WP23.
 
 ## Draft/superseded planning material
 
@@ -217,11 +219,13 @@ Open or historical PR descriptions must not be treated as active plan authority 
 ## Required reading order for new V10 engineering sessions
 
 1. `../../AGENTS.md`;
-2. `../../knowledge/00_PROJECT_MASTER_CONTEXT.md`;
-3. `OMNI_CIO_V10_PROGRAM_LOCK.md`;
-4. `OMNI_CIO_V10_MASTER_PLAN.md`;
-5. this Amendments Index;
-6. all active amendments listed here;
-7. `../../knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`;
-8. current-WP architecture/runbook;
-9. current `main`, open PR/issues and GitHub Actions.
+2. `../../README.md`;
+3. `../DOCUMENTATION_AUTHORITY_AND_LIFECYCLE.md`;
+4. `../../knowledge/00_PROJECT_MASTER_CONTEXT.md`;
+5. `OMNI_CIO_V10_PROGRAM_LOCK.md`;
+6. `OMNI_CIO_V10_MASTER_PLAN.md`;
+7. this Amendments Index;
+8. all active amendments listed here;
+9. `../../knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`;
+10. current-WP architecture/runbook;
+11. current `main`, open PR/issues and GitHub Actions.

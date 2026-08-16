@@ -1,6 +1,6 @@
 # Omni-CIO V10 — Program Lock
 
-Status: **OWNER-APPROVED PROGRAM / DEVELOPMENT STARTED / WP3 COMPLETE / WP4 NEXT**  
+Status: **OWNER-APPROVED PROGRAM / ACTIVE / SCOPE-SEQUENCE LOCK**  
 Baseline: **Omni-CIO v9.0.0 — COMPLETE / PROTECTED / controlled maintenance**  
 Searchable canonical plan: `docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.md`  
 Owner-readable PDF: `docs/master-plan/Omni-CIO_V10_Master_Plan_RU.pdf`  
@@ -9,6 +9,9 @@ Amendments index: `docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md`
 Concrete execution amendment: `docs/master-plan/OMNI_CIO_V10_CONCRETE_EXECUTION_PLAN_AMENDMENT.md`  
 GitHub Pro / migration implementation amendment: `docs/master-plan/OMNI_CIO_V10_GITHUB_PRO_AND_MIGRATION_IMPLEMENTATION_AMENDMENT.md`  
 Autonomous governance/commercial amendment: `docs/master-plan/OMNI_CIO_V10_AUTONOMOUS_PORTFOLIO_GOVERNANCE_AND_COMMERCIAL_MODEL_AMENDMENT.md`  
+Identity/authentication amendment: `docs/master-plan/OMNI_CIO_V10_IDENTITY_MULTI_TENANT_ACCOUNT_AND_AUTHENTICATION_AMENDMENT.md`  
+Phone/headless-node amendment: `docs/master-plan/OMNI_CIO_V10_PHONE_ONLY_ENGINEERING_AND_HEADLESS_NODE_OPERATIONS_AMENDMENT.md`  
+Engineering-quality amendment: `docs/master-plan/OMNI_CIO_V10_ENGINEERING_QUALITY_AND_GREEN_MERGE_AMENDMENT.md`  
 Mandatory WP template: `docs/master-plan/OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md`  
 Machine-readable AI contract: `docs/architecture/V10_AI_CORTEX_CONTRACT.json`  
 Machine-readable portfolio-governance contract: `docs/architecture/V10_AUTONOMOUS_PORTFOLIO_GOVERNANCE_CONTRACT.json`  
@@ -20,6 +23,8 @@ V9->V10 parity ledger: `docs/architecture/V10_V9_TO_V10_PARITY_LEDGER.json`
 Component reuse matrix: `docs/architecture/V10_COMPONENT_REUSE_MATRIX.json`  
 Release manifest schema: `docs/architecture/V10_RELEASE_MANIFEST.schema.json`  
 Current progress authority: `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`
+
+**Dynamic current WP/progress is intentionally not duplicated here.** This file locks scope, sequence and precedence. The exact accepted percentage, current/next WP and transition evidence are read only from `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md` on accepted `main`.
 
 ## 1. Authority
 
@@ -35,9 +40,11 @@ The synchronized pair is not edited piecemeal. OWNER-approved implementation cla
 
 If the synchronized pair, manifest, Program Lock and accepted amendments conflict materially, feature implementation stops until an OWNER-reviewed correction establishes one consistent authority set.
 
-## 2. Accepted program state and sequence
+## 2. Program sequence and historical early acceptance evidence
 
-Accepted evidence:
+The Master Plan block/WP order remains mandatory. This Program Lock deliberately does not maintain a second moving `NEXT` field.
+
+Historical early evidence establishing the program and control plane includes:
 
 - planning accepted by PR #227;
 - WP0 accepted by PR #228 as `7c5de954eed10dd406e743c38f7bdef6b0634108`;
@@ -50,11 +57,9 @@ Accepted evidence:
 - Telegram product planning accepted by PR #245;
 - pre-WP4 repository hygiene accepted by PR #246.
 
-**WP4 — Release, build provenance and deployment contract is the next authorized implementation package.**
+Later accepted implementation is indexed by `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md` and its evidence section. Historical wording in early package records does not roll the program back to an earlier WP.
 
-Block B is still **IN PROGRESS** and its 9% weight is not credited until WP4 and its Block Exit Gate are accepted. Overall accepted V10 progress remains **5%**.
-
-The full V10 Lenovo runtime remains Block C after WP4. The already-operational GitHub self-hosted runner does not count as implementation of the V10 application/AI/database node.
+The physical presence of later V10 code, infrastructure or a provider configuration never authorizes a Work Package on its own. Authorization and completion come only from the canonical sequence plus the current-status/Exit-Gate evidence chain.
 
 ## 3. Frozen architecture and repository authority
 
@@ -73,6 +78,8 @@ Architecture sources established by accepted work include:
 - `.github/CODEOWNERS` and permanent repository/CI guards.
 
 Accepted planning amendments additionally freeze ambiguous implementation choices without changing the canonical block order/weights.
+
+Documentation authority/lifecycle is defined by `docs/DOCUMENTATION_AUTHORITY_AND_LIFECYCLE.md`; dated WP records remain evidence, not competing current-state ledgers.
 
 ## 4. Concrete V10 implementation lock
 
@@ -164,8 +171,8 @@ GitHub Pro is the default engineering subscription and must be used before propo
 
 Approved V10 compute model:
 
-- GitHub-hosted Ubuntu = fast PR lane;
-- GitHub-hosted Windows = disposable path-aware clean-room compatibility lane;
+- GitHub-hosted Ubuntu = fast PR lane when capacity is available;
+- GitHub-hosted Windows = disposable path-aware clean-room compatibility lane when capacity is available;
 - Lenovo `omni-cio-ci` = authoritative heavy/self-hosted lane and later local AI/GPU eval lane.
 
 The project must use hosted minutes as a finite acceleration budget, preserve heavy validation on Lenovo where safe, use caches/artifacts deliberately, and keep release provenance/recovery source-controlled.
@@ -173,6 +180,8 @@ The project must use hosted minutes as a finite acceleration budget, preserve he
 V10 Definition of Done must not depend on GitHub Enterprise-only/private-repository features, GitHub Advanced Security products, paid AI/search APIs or another paid CI/security SaaS.
 
 Plan-gated capabilities are replaced only where necessary by repository-controlled/open-source checks; lack of a premium feature is never a reason to weaken the safety requirement.
+
+Current mutable hosted-capacity/cost state is governed by `docs/operations/V10_CI_COST_CONTROL_STANDARD.md` and must not be treated as permanent architecture.
 
 ### 4.10 Unified WP execution discipline
 
@@ -251,7 +260,7 @@ Until V10 reaches full Definition of Done and OWNER acceptance:
 
 Mandatory default process:
 
-`restore context -> identify exactly one current WP -> focused branch -> implementation + tests -> security/boundary review -> exact-head required gates -> resolve review threads -> squash merge -> post-merge verification where required -> update V10 status -> next WP`.
+`restore authority -> identify exactly one current WP/defect -> focused branch -> root-cause/blast-radius review -> implementation + tests -> cheap/focused preflight -> full-diff review -> all applicable exact-head gates SUCCESS -> zero blocking review threads -> squash merge -> exact-main post-merge verification -> OWNER acceptance only if required -> update current status -> next WP`.
 
 A WP is not complete because files/UI exist. Completion requires its Exit Gate and required integration/recovery evidence.
 
@@ -266,9 +275,9 @@ Private `main` is protected by the accepted `Protect main` ruleset. The accepted
 - no routine bypass actor;
 - no direct weakening of CI/ruleset to make a PR green.
 
-GitHub-hosted lanes provide fast/clean-room acceleration. Lenovo `omni-cio-ci` remains the authoritative heavy Windows/continuity lane. Infrastructure outages are handled by documented incident procedures, not permanent weakening of protection.
+GitHub-hosted lanes provide fast/clean-room acceleration when current capacity exists. Lenovo `omni-cio-ci` remains the authoritative heavy Windows/continuity lane. Infrastructure outages are handled by documented incident procedures and accepted routing contracts, not permanent weakening of protection or fabricated PASS evidence.
 
-Release/tag/deployment protections added in later WPs must use the strongest safe controls available on the current GitHub Pro plan without pretending Enterprise-only controls exist.
+Release/tag/deployment protections added by accepted WPs use the strongest safe controls available on the current GitHub Pro plan without pretending Enterprise-only controls exist.
 
 ## 9. Money and safety boundary
 
@@ -294,10 +303,11 @@ Master Real rollback remains `REAL_TRADING_ENABLED=false`.
 3. this Program Lock;
 4. synchronized V10 Master Plan Markdown/PDF + integrity manifest;
 5. `OMNI_CIO_V10_AMENDMENTS_INDEX.md` and accepted active amendments;
-6. `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md` for current WP/progress;
-7. accepted current V10 architecture/ADR/runbook/machine-readable contracts;
-8. current PR/CI/runtime acceptance evidence;
-9. historical PR/issues/amendments only as trace evidence.
+6. machine-readable contracts;
+7. `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md` for current WP/progress;
+8. accepted current V10 architecture/ADR/runbook/contracts;
+9. current PR/CI/runtime acceptance evidence;
+10. historical WP records/PRs/issues only as trace evidence.
 
 When canonical authorities conflict materially, feature work stops until an OWNER-reviewed correction resolves the conflict.
 

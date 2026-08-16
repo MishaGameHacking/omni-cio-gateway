@@ -1,9 +1,11 @@
 # Omni-CIO V10 — GitHub Pro Utilization Implementation Checklist
 
-**Status:** PLANNING-ONLY CHECKLIST  
-**Implementation starts:** only when the owning WP is authorized by `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
+**Lifecycle:** HISTORICAL PLANNING CHECKLIST — NOT CURRENT COMPLETION STATUS  
+**Original rule:** implementation of each item begins only when its owning WP is authorized by `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.  
+**Current state authority:** `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`  
+**Documentation lifecycle:** `docs/DOCUMENTATION_AUTHORITY_AND_LIFECYCLE.md`
 
-This checklist translates the approved GitHub Pro utilization policy into concrete future work without prematurely changing runtime behavior.
+This checklist translated the approved GitHub Pro utilization policy into concrete planned work. The checkbox state below is intentionally preserved as the **original planning checklist**; it is not maintained as a second completion ledger after the owning WPs are accepted. Do not interpret an unchecked historical box as proof that accepted implementation is missing. Verify current implementation/acceptance through the canonical status/evidence chain and the owning accepted contracts/PRs.
 
 ## WP4 — release / provenance / CI utilization
 
@@ -87,4 +89,4 @@ Before introducing any new recurring paid service:
 - [ ] document data/privacy/vendor-lock consequences;
 - [ ] obtain OWNER-approved amendment.
 
-No unchecked item in this section may be bypassed merely for development convenience.
+No unchecked item in this historical section may be used as current authorization or completion evidence. The current accepted implementation and any remaining obligation are determined only by the owning Work Package contracts plus `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.

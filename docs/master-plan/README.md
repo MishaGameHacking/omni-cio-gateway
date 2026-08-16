@@ -1,6 +1,8 @@
 # Master plan Omni-CIO
 
-Эта папка хранит **owner-approved master programs, Program Locks, active amendments и audit trail** развития Omni-CIO. Завершённые программы не являются очередью задач; активная программа определяется Program Lock + Current Status + accepted active amendments.
+Эта папка хранит **owner-approved master programs, Program Locks, active amendments и audit trail** развития Omni-CIO. Завершённые программы и исторические WP-записи не являются очередью задач; активная программа определяется Program Lock + Current Status + accepted active amendments.
+
+Documentation lifecycle: `../DOCUMENTATION_AUTHORITY_AND_LIFECYCLE.md`.
 
 ## Omni-CIO V10 Personal Autonomous Investment Platform — active feature program
 
@@ -11,41 +13,41 @@ Canonical base artifacts:
 - `OMNI_CIO_V10_MASTER_PLAN.md` — searchable base program for developers/AI/code review;
 - `Omni-CIO_V10_Master_Plan_RU.pdf` — owner-readable synchronized copy;
 - `OMNI_CIO_V10_MASTER_PLAN.sha256` — integrity manifest;
-- `OMNI_CIO_V10_PROGRAM_LOCK.md` — scope/precedence/exclusivity/current protection lock;
-- `OMNI_CIO_V10_PLAN_READINESS_AUDIT.md` — pre-development readiness audit;
-- `OMNI_CIO_V10_START_RECORD.md` — explicit owner start/WP0 evidence.
+- `OMNI_CIO_V10_PROGRAM_LOCK.md` — scope/precedence/exclusivity lock; it intentionally does not maintain a second moving progress ledger;
+- `OMNI_CIO_V10_PLAN_READINESS_AUDIT.md` — historical pre-development readiness audit;
+- `OMNI_CIO_V10_START_RECORD.md` — historical explicit OWNER start/WP0 evidence.
 
 Accepted amendment discovery:
 
 - `OMNI_CIO_V10_AMENDMENTS_INDEX.md` — mandatory index of active/superseded amendments;
 - `OMNI_CIO_V10_CONCRETE_EXECUTION_PLAN_AMENDMENT.md` — binding concrete data/AI/autonomy/Lenovo/subscription implementation decisions;
-- `../architecture/V10_AI_CORTEX_CONTRACT.json` — machine-readable companion contract;
+- `OMNI_CIO_V10_GITHUB_PRO_AND_MIGRATION_IMPLEMENTATION_AMENDMENT.md` — GitHub Pro, migration/parity and WP implementation discipline;
+- `OMNI_CIO_V10_AUTONOMOUS_PORTFOLIO_GOVERNANCE_AND_COMMERCIAL_MODEL_AMENDMENT.md` — portfolio-governance/commercial/legal direction;
+- `OMNI_CIO_V10_IDENTITY_MULTI_TENANT_ACCOUNT_AND_AUTHENTICATION_AMENDMENT.md` — identity/tenant/authentication direction;
+- `OMNI_CIO_V10_PHONE_ONLY_ENGINEERING_AND_HEADLESS_NODE_OPERATIONS_AMENDMENT.md` — browser-only OWNER/headless Personal-Node operating model;
+- `OMNI_CIO_V10_ENGINEERING_QUALITY_AND_GREEN_MERGE_AMENDMENT.md` — accepted Pre-CI/all-green/failure-learning/OWNER-handoff discipline;
+- `../architecture/V10_AI_CORTEX_CONTRACT.json` and other machine-readable companions — executable/validated policy where defined;
 - `OMNI_CIO_V10_ACCOUNT_INDEPENDENCE_AMENDMENT.md` — historical owner-approved amendment already consolidated into the base plan and retained for provenance.
 
 Current V10 progress authority:
 
 `../../knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
 
-Do **not** hard-code the current WP/progress from historical PR text or this index. The status file on accepted `main` is the current-state authority.
+Do **not** hard-code or infer the current WP/progress from historical PR text, a dated amendment, a package execution contract or this index. The status file on accepted `main` is the current-state authority.
 
 The synchronized Master Plan Markdown/PDF pair must not be edited independently. New OWNER-approved implementation detail may be recorded by focused amendment; a later intentional consolidation must regenerate/review the synchronized pair and its integrity manifest together.
 
-## Current V10 delivery chain
+## V10 delivery sequence and lifecycle
 
-Canonical sequence remains defined by the Master Plan. Current accepted early sequence is:
+The canonical sequence remains defined by `OMNI_CIO_V10_MASTER_PLAN.md`. Each implementation package uses `OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md` and advances only after its Exit Gate.
 
-- WP0 — Program Lock / Architecture Freeze — accepted;
-- WP1 — Repository Architecture / boundaries — accepted;
-- WP2 — Toolchain / Dependency Baseline — accepted;
-- WP3 — Regression Shield / repository protection — accepted;
-- **WP4 — Release / build provenance / deployment contract — next**;
-- only after WP4 / Block B Exit Gate may the full Block C Lenovo V10 runtime setup begin.
+Historical package files may correctly say that an earlier WP was `CURRENT`, `PENDING` or `NEXT` at the time they were written. That wording is package evidence, not a live queue. Current authorization is always read from `../../knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
 
-The already-operational Lenovo GitHub self-hosted runner is accepted CI infrastructure; it is not proof that Block C application/AI/database runtime is implemented.
+The presence of accepted `apps/api/`, `apps/web/` and Personal-Node infrastructure in the repository reflects already accepted owning WPs; it does not unlock Telegram, AI, public multi-user, billing or Real-execution WPs early.
 
 ## Concrete V10 product lock
 
-The accepted concrete amendment clarifies the intended implementation without changing block weights/order:
+The accepted concrete amendments clarify implementation without changing block weights/order:
 
 - Deterministic Core owns financial/accounting truth;
 - V10 accounting target uses verified broker HTML reports; no photo/screenshot/OCR portfolio workflow;
@@ -56,9 +58,11 @@ The accepted concrete amendment clarifies the intended implementation without ch
 - 24/7 autonomy is event-driven/checkpointed;
 - SearXNG-first research + bounded HTTP/Playwright retrieval + Evidence Store;
 - AI has no direct broker-write/admin/GitHub-bypass/Real-money authority;
-- OWNER local participation is minimized to non-delegable actions, preferably one reviewed PowerShell block.
+- OWNER local participation is minimized to genuinely non-delegable actions;
+- CI is verifier rather than primary debugger, and every applicable exact-head merge gate must conclude SUCCESS;
+- current V10 Web/API runtime remains on the approved Personal Node; external access providers are access/security transport rather than private-state application hosts.
 
-Read the amendment itself for exact requirements and block-by-block elaboration.
+Read the accepted amendments themselves for exact requirements and block-by-block elaboration.
 
 ## Omni-CIO v9 Portfolio Autopilot — completed protected runtime program
 
@@ -85,11 +89,11 @@ For current V10 development:
 3. `OMNI_CIO_V10_PROGRAM_LOCK.md`;
 4. synchronized `OMNI_CIO_V10_MASTER_PLAN.md` + PDF + SHA manifest;
 5. `OMNI_CIO_V10_AMENDMENTS_INDEX.md` + accepted active amendments;
-6. `../../knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`;
-7. accepted V10 architecture/ADR/current-WP contracts;
-8. exact-head PR/CI/runtime evidence.
-
-Historical issue/PR text may describe an older state correctly at that time. It is not current authority after later acceptance.
+6. machine-readable contracts;
+7. `../../knowledge/17_V10_CURRENT_PROGRAM_STATUS.md` for dynamic progress/current-next WP;
+8. accepted V10 architecture/ADR/current-WP contracts;
+9. exact-head PR/CI/runtime evidence;
+10. historical records as historical evidence only.
 
 ## Permanent safety boundaries
 
@@ -105,4 +109,4 @@ V10 development does not silently remove V9 safety boundaries:
 
 ## Further-change rule
 
-V10 work proceeds one current WP at a time through focused branch/PR, exact-head required CI/security and squash merge. New material scope is accepted only through the amendment process. V11/competing programs remain prohibited until V10 final acceptance.
+V10 work proceeds one current WP at a time through focused branch/PR, root-cause/blast-radius preflight, all applicable exact-head SUCCESS gates, zero blocking review threads, squash merge and required post-merge verification. New material scope is accepted only through the amendment process. V11/competing programs remain prohibited until V10 final acceptance.

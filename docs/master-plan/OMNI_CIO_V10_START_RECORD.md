@@ -1,9 +1,13 @@
 # Omni-CIO V10 — Start / WP0 Architecture Freeze Record
 
+Record type: **HISTORICAL SNAPSHOT — NOT CURRENT-STATE AUTHORITY**  
+Current program state: `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`  
+Historical-state note: any `current`, percentage or `next` wording below describes the recorded 2026-08-05 WP0 lifecycle point and does not override the canonical current-status file.
+
 Owner start command: **`START V10`**  
 Start date: **2026-08-05**  
 Program: **Omni-CIO V10 — Personal Autonomous Investment Platform**  
-Current work package: **WP0 — V10 Program Lock / Architecture Freeze verification**
+Work package at record creation: **WP0 — V10 Program Lock / Architecture Freeze verification**
 
 ## 1. What this record authorizes
 

@@ -1,9 +1,11 @@
 # Omni-CIO V10 — Planning Acceptance Record: GitHub Pro + Migration Implementation Contract
 
-**Status:** planning acceptance evidence template  
-**Runtime effect:** none
+**Lifecycle:** HISTORICAL PLANNING ACCEPTANCE RECORD — NOT CURRENT-WP AUTHORITY  
+**Runtime effect at acceptance:** none  
+**Current program state:** `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`  
+**Documentation lifecycle:** `docs/DOCUMENTATION_AUTHORITY_AND_LIFECYCLE.md`
 
-The OWNER has approved the planning decisions represented by:
+The OWNER approved the planning decisions represented by:
 
 - `OMNI_CIO_V10_GITHUB_PRO_AND_MIGRATION_IMPLEMENTATION_AMENDMENT.md`;
 - `../architecture/V10_GITHUB_PRO_UTILIZATION_CONTRACT.json`;
@@ -13,6 +15,6 @@ The OWNER has approved the planning decisions represented by:
 - `OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md`;
 - `OMNI_CIO_V10_GITHUB_PRO_IMPLEMENTATION_CHECKLIST.md`.
 
-The approval means future V10 development must maximize the already-paid GitHub Pro subscription and existing Lenovo compute before introducing another recurring paid dependency, while keeping V10 a controlled migration/productization of the accepted system rather than a greenfield rewrite.
+The approval means later V10 development must maximize the already-paid GitHub Pro subscription and existing Lenovo compute before introducing another recurring paid dependency, while keeping V10 a controlled migration/productization of the accepted system rather than a greenfield rewrite.
 
-This approval does **not** start WP4 or any V10 implementation package. Current program status remains the only authority for which WP may be implemented next.
+At the time of this planning acceptance, the approval itself did **not** start WP4 or any implementation package. That statement is historical sequencing evidence, not a claim that WP4 is still pending today. The current-status file remains the only authority for which WP may be implemented now and which past WPs are accepted.
