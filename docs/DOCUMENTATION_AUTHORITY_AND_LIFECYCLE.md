@@ -18,14 +18,15 @@ These files are expected to remain readable and non-contradictory for a develope
 - `README.md` — repository front door and concise current snapshot;
 - `AGENTS.md` — mandatory engineering/safety rules;
 - `CONTRIBUTING.md` — contributor workflow;
+- `CHANGELOG.md` — milestone history whose `Unreleased` section must not maintain a competing current-WP ledger;
 - `docs/README.md` — documentation navigation;
 - `docs/master-plan/README.md` — master-plan navigation;
 - `docs/master-plan/OMNI_CIO_V10_PROGRAM_LOCK.md` — scope, exclusivity and precedence lock;
 - `docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md` — accepted amendment discovery;
 - `knowledge/00_PROJECT_MASTER_CONTEXT.md` — long-lived product context without a competing progress ledger;
-- `knowledge/16_CURRENT_PROGRAM_STATUS.md` — protected V9 applied/runtime state;
+- `knowledge/16_CURRENT_PROGRAM_STATUS.md` — protected V9 applied/runtime state only;
 - `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md` — **only current V10 progress/current-next-WP ledger**;
-- `gpt/PROJECT_INSTRUCTIONS.md` and `.github/copilot-instructions.md` — agent entry guidance that must delegate dynamic state to the V10 status file.
+- `gpt/PROJECT_INSTRUCTIONS.md`, `gpt/NEW_CHAT_PROMPT.md` and `.github/copilot-instructions.md` — agent/chat entry guidance that must delegate dynamic state to the V10 status file.
 
 Live guidance must not hard-code an obsolete `NEXT`, obsolete implementation percentage, or an already-passed prerequisite as though it were still pending.
 
@@ -55,16 +56,19 @@ Examples include:
 - `docs/master-plan/OMNI_CIO_V10_START_RECORD.md`;
 - `docs/master-plan/OMNI_CIO_V10_PLAN_READINESS_AUDIT.md`;
 - completed acceptance records;
+- original planning checklists whose checkbox state is frozen as planning evidence;
 - V9 completed program documents;
 - merged PR descriptions, closed issues and old comments.
 
-These are immutable-in-meaning historical evidence. A prominent lifecycle note should be added when a heading such as `Current work package` or `0% / NOT STARTED` could otherwise be mistaken for present state.
+These are immutable-in-meaning historical evidence. A prominent lifecycle note should be added when a heading such as `Current work package`, `0% / NOT STARTED` or an unchecked old planning list could otherwise be mistaken for present state.
 
 ## 5. Applied V9 recovery/configuration records
 
 `gpt/`, current V9 architecture/runbooks and `knowledge/16_CURRENT_PROGRAM_STATUS.md` remain protected production/recovery material until the responsible V10 parity/decommission gate explicitly retires them.
 
 V9 documentation is not stale merely because V10 exists. It becomes obsolete only when the responsible V10 cutover is accepted and the recovery contract says it may be retired.
+
+`knowledge/16_CURRENT_PROGRAM_STATUS.md` is intentionally scoped to **V9 runtime**, not the entire repository program. The active V10 feature state lives separately in `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
 
 ## 6. Precedence when two files look inconsistent
 
@@ -87,12 +91,17 @@ The root `README.md` is the OWNER/developer front door. It must show a concise c
 
 `docs/README.md` and `docs/master-plan/README.md` are navigation pages. They should describe document classes and current ownership, not maintain their own independent WP queue.
 
+`CHANGELOG.md` may record release/program milestones, but its `Unreleased` section must delegate exact V10 current-next/progress to the canonical status file.
+
+`gpt/PROJECT_INSTRUCTIONS.md` and `gpt/NEW_CHAT_PROMPT.md` are handoff helpers, not program-state databases. They must instruct a new session to re-read accepted `main` rather than embedding an old `NEXT`.
+
 ## 8. Historical wording rule
 
 Do not erase historical evidence merely because the program advanced. Instead:
 
 - change misleading labels such as `Current work package` to `Work package at record creation` when safe;
 - add `HISTORICAL SNAPSHOT — NOT CURRENT-STATE AUTHORITY` to dated start/readiness records that can be opened out of context;
+- label old implementation checklists as historical planning records if unchecked boxes can be mistaken for missing current work;
 - preserve exact old evidence, hashes, run IDs, findings and acceptance meaning;
 - link back to `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md` for present state.
 
