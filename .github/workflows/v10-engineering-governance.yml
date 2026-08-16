@@ -20,7 +20,7 @@ jobs:
     name: Engineering quality and green-merge contract
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
-    timeout-minutes: 10
+    timeout-minutes: 15
     defaults:
       run:
         shell: cmd
@@ -45,13 +45,27 @@ jobs:
           echo Governance exact head: %ACTUAL_HEAD%
 
       - name: Verify engineering governance contract
-        run: python scripts/check_v10_engineering_governance.py
+        run: python scripts\check_v10_engineering_governance.py
 
       - name: Verify CI cost-control contract
-        run: python scripts/check_v10_ci_cost_control.py
+        run: python scripts\check_v10_ci_cost_control.py
 
-      - name: Compile governance guards
-        run: python -m py_compile scripts\check_v10_engineering_governance.py scripts\check_v10_ci_cost_control.py
+      - name: Verify Regression Shield capacity routing contract
+        run: python scripts\check_v10_regression_shield.py
+
+      - name: Compile governance and CI guards
+        run: >-
+          python -m py_compile
+          scripts\check_v10_engineering_governance.py
+          scripts\check_v10_ci_cost_control.py
+          scripts\check_v10_regression_shield.py
+          scripts\v10_ci_router.py
+
+      - name: Run stdlib CI contract regression tests
+        run: >-
+          python -m unittest
+          tests.test_v10_regression_shield
+          tests.test_v10_release_provenance
 
       - name: Clean self-hosted workspace
         if: always()
