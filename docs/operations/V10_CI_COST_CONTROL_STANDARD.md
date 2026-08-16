@@ -79,6 +79,28 @@ A job-level GitHub `skipped` result is not accepted as V10 GREEN evidence under 
 
 This mode does not remove the required `V10 authoritative merge gate` on Lenovo. It also does not authorize a STABLE release to fabricate clean-room evidence: release provenance that requires hosted compatibility remains blocked until actual compatible evidence exists or a later OWNER-approved equivalent clean-room mechanism is accepted.
 
+### 5.2 Live V9 authority evidence while capacity is blocked
+
+The protected V9 deployed-authority probe is different from deterministic CI. It is intended to observe the public deployed Render endpoint from an independent network path, not merely to validate source code.
+
+During governance PR #322, a bounded self-hosted diagnostic established that the Lenovo route is **not** semantically equivalent for this purpose: DNS resolution succeeded, but TCP/443 to the protected Render endpoint timed out and HTTP failed at connect time. Extending retries cannot turn that network path into independent deployed evidence.
+
+Therefore the current machine state is:
+
+`DEFERRED_NO_TRUSTED_ZERO_COST_ROUTE_NOT_PASS`
+
+This means:
+
+- actual deployed V9 authority evidence is **not PASS** and must never be presented as PASS;
+- automatic daily/PR live execution is suspended while the trusted hosted route is budget-blocked and the Personal Node route is non-equivalent;
+- the real `Live Gateway Authority Acceptance` workflow remains source-controlled as a manual GitHub-hosted probe with the original public `/health` + `/openapi.json` semantics;
+- PRs that change the live-evidence boundary run the separate `V10 Live Gateway Authority Contract` on Lenovo, which verifies routing, safety and non-fabrication but explicitly does **not** claim deployed live evidence;
+- a governance-only PR that does not alter the deployed V9 runtime, deployment or Action authority may merge when all of its applicable exact-head code/governance checks are GREEN even though the unrelated live evidence is deferred;
+- any V9 runtime/deployment/Action-authority release that requires production acceptance remains blocked until real manual hosted acceptance succeeds on the exact accepted source/deployment state;
+- restoring automatic live probing requires re-verifying a trusted independent network route and current OWNER-controlled hosted capacity, then landing the routing restoration through its own GREEN PR.
+
+This is degradation by truthful evidence classification, not a bypass. The protected V9 source/rollback remains preserved while deployed-live freshness is explicitly unknown/deferred.
+
 ## 6. CI design consequence
 
 Future V10 WPs must not make correctness depend unnecessarily on metered hosted capacity when the accepted Lenovo/self-hosted architecture can provide equivalent deterministic evidence.
