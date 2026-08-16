@@ -228,6 +228,28 @@ A short SHA may be used for navigation when useful. Full random-looking secret m
 
 ---
 
+## FL-010 — Windows cleanup must not depend on implicit Bash PATH
+
+**Date:** 2026-08-16  
+**Reference:** governance PR #322  
+**Symptom / failing gate:** the Fast frontend applicability job completed its Node/npm version checks, fixture typecheck/lint/tests/build, product Web typecheck/lint/tests/build and dependency audit successfully, then failed only in its always-run cleanup because `shell: bash` could not resolve `bash` on that self-hosted Windows job.
+
+**Root cause:** the route and policy jobs explicitly bootstrap Git for Windows into `GITHUB_PATH`, but the frontend job does not run that bootstrap. The cleanup step therefore depended on PATH state established in other jobs, even though GitHub Actions jobs do not share job-local environment mutations.
+
+**Blast radius searched:** all cleanup-only Bash uses in the self-hosted Fast PR workflow and other newly re-routed Windows jobs. Cleanup commands here are plain Git commands and require no Bash semantics.
+
+**Why preflight missed it:** substantive frontend commands were validated, while the `if: always()` epilogue was treated as incidental boilerplate instead of part of the job-local toolchain contract.
+
+**Corrective change:** run the routing, policy and frontend workspace cleanup steps under native `cmd` on Windows. Keep Bash only where the same job has explicitly bootstrapped it and Bash semantics are required.
+
+**Permanent regression/guard:** `check_v10_ci_cost_control.py` and its deterministic governance tests require the three Fast PR cleanup steps to use `shell: cmd`.
+
+**Future prevention rule:** every Actions job must be self-sufficient. Never rely on PATH/tool initialization from another job; validate `always()` cleanup and failure epilogues under the exact shell/tool state of the job that owns them.
+
+**Dependency/tooling knowledge change:** Git for Windows may be installed while `bash.exe` is not yet addressable through a given job's PATH. Job-local `GITHUB_PATH` mutations do not cross job boundaries.
+
+---
+
 ## Entry template
 
 ```text

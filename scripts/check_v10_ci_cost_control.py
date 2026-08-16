@@ -127,6 +127,10 @@ def main() -> int:
             (
                 "FL-006",
                 "Zero-budget hard stop is a CI-routing constraint, not a merge bypass",
+                "FL-009",
+                "Self-hosted PowerShell steps must respect the node execution policy",
+                "FL-010",
+                "Windows cleanup must not depend on implicit Bash PATH",
             ),
         ),
         (
@@ -187,6 +191,26 @@ def main() -> int:
                 failures.append(f"{path.relative_to(ROOT)} missing marker: {marker}")
 
     try:
+        fast_workflow = FAST_WORKFLOW.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        failures.append(f"cannot read {FAST_WORKFLOW.relative_to(ROOT)}: {exc}")
+    else:
+        for cleanup_name in (
+            "Clean routing workspace",
+            "Clean policy workspace",
+            "Clean frontend workspace",
+        ):
+            cleanup_contract = (
+                f"- name: {cleanup_name}\n"
+                "        if: always()\n"
+                "        shell: cmd"
+            )
+            if cleanup_contract not in fast_workflow:
+                failures.append(
+                    f"{FAST_WORKFLOW.relative_to(ROOT)} must use native cmd cleanup for {cleanup_name}"
+                )
+
+    try:
         live_workflow = LIVE_WORKFLOW.read_text(encoding="utf-8")
     except (OSError, UnicodeError) as exc:
         failures.append(f"cannot read {LIVE_WORKFLOW.relative_to(ROOT)}: {exc}")
@@ -206,6 +230,7 @@ def main() -> int:
     print("OWNER billing mutation: explicit approval only")
     print("Hosted capacity state: BLOCKED_OWNER_ZERO_BUDGET_HARD_STOP")
     print("Fast deterministic checks: zero-cost Lenovo continuity mode")
+    print("Windows fast cleanup: native cmd; no cross-job Bash PATH dependency")
     print("Scheduled live-authority probe: zero-cost Lenovo continuity mode")
     print("Windows live probe dependencies: projected from the canonical runtime lock")
     print("Render cold-start wake window: bounded before strict live authority verification")

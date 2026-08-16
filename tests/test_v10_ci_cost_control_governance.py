@@ -74,6 +74,22 @@ def test_capacity_deferred_jobs_execute_without_fabricating_clean_room_pass() ->
     assert "runs-on: windows-latest" not in toolchain
 
 
+def test_windows_fast_cleanup_uses_job_local_native_shell() -> None:
+    fast = FAST_WORKFLOW_PATH.read_text(encoding="utf-8")
+
+    for cleanup_name in (
+        "Clean routing workspace",
+        "Clean policy workspace",
+        "Clean frontend workspace",
+    ):
+        assert (
+            f"- name: {cleanup_name}\n"
+            "        if: always()\n"
+            "        shell: cmd"
+            in fast
+        )
+
+
 def test_scheduled_live_authority_does_not_burn_blocked_hosted_capacity() -> None:
     contract = json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))
     cost = contract["ci_cost_control"]
