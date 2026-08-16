@@ -218,9 +218,9 @@ A short SHA may be used for navigation when useful. Full random-looking secret m
 
 **Why preflight missed it:** the first warm-up change was reviewed for network scope, endpoint allowlisting, time bounds and secret safety, but it was not tested against the exact execution-policy posture of the Lenovo runner before the workflow cycle.
 
-**Corrective change:** move the warm-up logic into source-controlled `scripts/warm_live_gateway.ps1`, hard-bind it to HTTPS and the protected V9 host, and invoke it from the workflow's existing `cmd` shell with explicit `-NoProfile -ExecutionPolicy Bypass -File`. The strict Python authority validator remains mandatory afterward; the warm-up cannot produce acceptance by itself.
+**Corrective change:** move the warm-up logic into a source-controlled reviewed PowerShell entrypoint and invoke it through the repository's established explicit execution-policy boundary while diagnosing the route. This made the diagnostic trustworthy enough to classify the deeper network-path failure; the temporary warm-up implementation was subsequently removed once the route proved non-equivalent.
 
-**Permanent regression/guard:** the CI cost-control validator and deterministic governance tests now require both the reviewed warm-up script and its explicit-bypass invocation, including bounded timing, approved-host validation and fail-closed exit code 41.
+**Permanent regression/guard:** the failure class remains recorded here and self-hosted workflow review must treat PowerShell execution policy as part of the runner contract.
 
 **Future prevention rule:** on protected self-hosted Windows nodes, do not assume GitHub's temporary PowerShell shell scripts are executable. Prefer a source-controlled reviewed `.ps1` entrypoint invoked through the repository's established explicit-bypass boundary, and test that shell path before the expensive exact-head cycle.
 
@@ -262,13 +262,35 @@ A short SHA may be used for navigation when useful. Full random-looking secret m
 
 **Why preflight missed it:** the script was reviewed for fail-closed behavior but the exact error-stream interaction with `$ErrorActionPreference = "Stop"` was not exercised before the live run.
 
-**Corrective change:** centralize failure termination in `Stop-WithCode`, write only a sanitized classification through `[Console]::Error.WriteLine`, then execute the intended numeric `exit`. Add bounded DNS/TCP/HTTP state classification without logging raw provider exceptions or private data.
+**Corrective change:** centralize failure termination in a helper that writes only a sanitized classification through the process error stream and then executes the intended numeric `exit`. This allowed the next diagnostic cycle to report the real network-path state without leaking provider/private details.
 
-**Permanent regression/guard:** the CI cost-control validator and focused tests require the explicit failure helper, reject `Write-Error` in the warm-up script, require safe DNS/TCP/HTTP classification markers, and retain code `41` as the bounded live-readiness failure.
+**Permanent regression/guard:** preserve the lesson here for any PowerShell script that owns an explicit process-code contract; the temporary live warm-up script was removed after the non-equivalent route was classified.
 
 **Future prevention rule:** when a PowerShell script owns an explicit process exit-code contract, do not place a potentially terminating PowerShell error cmdlet before the `exit`; test the actual process code under the same error-action policy used in CI.
 
 **Dependency/tooling knowledge change:** PowerShell error-stream semantics can preempt explicit exit-code semantics. Process-status contracts must be tested as process behavior, not inferred from source order.
+
+---
+
+## FL-012 — External live evidence cannot be moved to a non-equivalent network path
+
+**Date:** 2026-08-16  
+**Reference:** governance PR #322  
+**Symptom / failing gate:** after the live V9 authority probe was made executable on Lenovo and its Windows/platform defects were corrected, a bounded exact-head diagnostic still failed. The sanitized result was `dns=OK`, `tcp443=TIMEOUT`, `http=WEB_ConnectFailure`: the Personal Node could resolve the protected Render host but could not establish the public HTTPS path required by the live probe.
+
+**Root cause:** the zero-budget routing change assumed that a self-hosted Personal Node was semantically equivalent to the former independent GitHub-hosted network observer. It is not. Deterministic source checks can move to Lenovo, but deployed external-authority evidence depends on an independent reachable network path.
+
+**Blast radius searched:** scheduled/public runtime probes, provider health/availability checks, future external-access acceptance, all CI routing changes that replace a hosted observer with the Personal Node, and V9 production acceptance requirements.
+
+**Why preflight missed it:** the initial cost-control review classified runner cost and operating-system/tooling differences but did not make external network-observer independence an explicit routing dimension.
+
+**Corrective change:** remove the non-equivalent Lenovo live probe. Preserve real `Live Gateway Authority Acceptance` as a manual GitHub-hosted workflow, suspend automatic live execution while the trusted hosted route is budget-blocked, and add a separate self-hosted `V10 Live Gateway Authority Contract` that validates routing/non-fabrication without claiming deployed live PASS. Record current evidence as `DEFERRED_NO_TRUSTED_ZERO_COST_ROUTE_NOT_PASS`.
+
+**Permanent regression/guard:** the machine quality contract, CI cost-control guard, live acceptance runbook and focused tests now require the actual live probe to remain hosted/manual while deferred, forbid the Personal Node from masquerading as equivalent live evidence, and require missing live evidence to block any V9 runtime/deployment/Action-authority release that owns production acceptance.
+
+**Future prevention rule:** before moving any external acceptance job between runners, identify whether the runner's network location/identity is part of the evidence semantics. If it is, a cheaper runner is acceptable only after equivalence is proven; otherwise classify the evidence as unavailable/deferred rather than fabricate success.
+
+**Dependency/tooling knowledge change:** network vantage point is part of some acceptance contracts. DNS success does not imply HTTPS reachability, and increasing cold-start retries cannot repair a TCP path that is not available from the chosen observer.
 
 ---
 
