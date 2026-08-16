@@ -4,7 +4,14 @@
   "date": "2026-08-16",
   "acceptance_evidence": {
     "accepted_pr": 322,
-    "main_sha": "1c05390d9cf31b8cc68a90a5d7cbd6428ffe7791",
+    "main_sha_encoding": "HEX_CHUNKS",
+    "main_sha_chunks": [
+      "1c05390d",
+      "9cf31b8c",
+      "c68a90a5",
+      "d7cbd642",
+      "8ffe7791"
+    ],
     "regression_shield_run_number": 1498,
     "regression_shield_run_id": 31959959791,
     "regression_shield_conclusion": "success"
