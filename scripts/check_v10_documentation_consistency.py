@@ -36,6 +36,7 @@ LIVE_GUIDANCE = (
 )
 
 STATUS_REFERENCE = "17_V10_CURRENT_PROGRAM_STATUS.md"
+CANONICAL_STATUS_RELATIVE = Path("knowledge/17_V10_CURRENT_PROGRAM_STATUS.md")
 
 STALE_LIVE_MARKERS = (
     "WP3 COMPLETE / WP4 NEXT",
@@ -64,6 +65,19 @@ def read_text(path: Path, failures: list[str]) -> str:
     except (OSError, UnicodeError) as exc:
         failures.append(f"cannot read {path.relative_to(ROOT)}: {exc}")
         return ""
+
+
+def validate_status_uniqueness(failures: list[str]) -> None:
+    candidates = sorted(
+        path.relative_to(ROOT)
+        for path in ROOT.rglob("*V10*CURRENT*PROGRAM*STATUS*")
+        if path.is_file() and ".git" not in path.parts
+    )
+    if candidates != [CANONICAL_STATUS_RELATIVE]:
+        rendered = ", ".join(str(path) for path in candidates) or "<none>"
+        failures.append(
+            "V10 current-status authority is not unique; found: " f"{rendered}"
+        )
 
 
 def extract_current_state(status: str, failures: list[str]) -> tuple[str, str]:
@@ -200,6 +214,8 @@ def validate_repository_lifecycle(failures: list[str]) -> None:
 
 def main() -> int:
     failures: list[str] = []
+    validate_status_uniqueness(failures)
+
     status = read_text(STATUS, failures)
     progress, wp = extract_current_state(status, failures) if status else ("", "")
 
