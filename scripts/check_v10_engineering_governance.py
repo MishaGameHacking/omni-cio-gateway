@@ -14,6 +14,7 @@ AMENDMENT = (
 INDEX = ROOT / "docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md"
 CONTRACT = ROOT / "docs/architecture/V10_ENGINEERING_QUALITY_GATE_CONTRACT.json"
 LEDGER = ROOT / "docs/operations/V10_ENGINEERING_FAILURE_LEARNING_LEDGER.md"
+OWNER_STANDARD = ROOT / "docs/operations/V10_OWNER_ACTION_HANDOFF_STANDARD.md"
 PR_TEMPLATE = ROOT / ".github/pull_request_template.md"
 COPILOT = ROOT / ".github/copilot-instructions.md"
 WP_TEMPLATE = ROOT / "docs/master-plan/OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md"
@@ -67,12 +68,14 @@ def validate_contract(failures: list[str]) -> None:
         failures.append(f"invalid engineering quality contract JSON: {exc}")
         return
 
-    if data.get("schema") != "omni-cio.v10.engineering-quality-gate.v1":
+    if data.get("schema") != "omni-cio.v10.engineering-quality-gate.v2":
         failures.append("engineering quality contract schema mismatch")
 
     pre_ci = data.get("pre_ci")
     merge_gate = data.get("merge_gate")
     owner = data.get("owner_participation")
+    owner_handoff = data.get("owner_handoff")
+    runtime_hosting = data.get("runtime_hosting")
     learning = data.get("failure_learning")
     isolation = data.get("fault_isolation")
     protected = data.get("protected_invariants")
@@ -81,6 +84,8 @@ def validate_contract(failures: list[str]) -> None:
         ("pre_ci", pre_ci),
         ("merge_gate", merge_gate),
         ("owner_participation", owner),
+        ("owner_handoff", owner_handoff),
+        ("runtime_hosting", runtime_hosting),
         ("failure_learning", learning),
         ("fault_isolation", isolation),
         ("protected_invariants", protected),
@@ -94,6 +99,8 @@ def validate_contract(failures: list[str]) -> None:
     assert isinstance(pre_ci, dict)
     assert isinstance(merge_gate, dict)
     assert isinstance(owner, dict)
+    assert isinstance(owner_handoff, dict)
+    assert isinstance(runtime_hosting, dict)
     assert isinstance(learning, dict)
     assert isinstance(isolation, dict)
     assert isinstance(protected, dict)
@@ -156,6 +163,142 @@ def validate_contract(failures: list[str]) -> None:
     if owner.get("pre_merge_exception") != "GENUINELY_NON_DELEGABLE_PREREQUISITE_ONLY":
         failures.append("OWNER pre-merge exception is wider than prerequisite-only")
 
+    if (
+        owner_handoff.get("standard")
+        != "docs/operations/V10_OWNER_ACTION_HANDOFF_STANDARD.md"
+    ):
+        failures.append("OWNER handoff standard path mismatch")
+    _expect_bool(
+        owner_handoff,
+        "direct_official_link_required_when_stable",
+        True,
+        "owner_handoff",
+        failures,
+    )
+    _expect_bool(
+        owner_handoff,
+        "generic_navigation_without_link_sufficient",
+        False,
+        "owner_handoff",
+        failures,
+    )
+    _expect_bool(
+        owner_handoff,
+        "current_official_ui_or_docs_verification_required_when_changeable",
+        True,
+        "owner_handoff",
+        failures,
+    )
+    _expect_bool(
+        owner_handoff,
+        "expected_result_required",
+        True,
+        "owner_handoff",
+        failures,
+    )
+    _expect_bool(
+        owner_handoff,
+        "stop_conditions_required",
+        True,
+        "owner_handoff",
+        failures,
+    )
+    _expect_bool(
+        owner_handoff,
+        "do_not_do_warnings_required",
+        True,
+        "owner_handoff",
+        failures,
+    )
+    _expect_bool(
+        owner_handoff,
+        "minimum_safe_return_required",
+        True,
+        "owner_handoff",
+        failures,
+    )
+    _expect_bool(
+        owner_handoff,
+        "one_bounded_owner_action_at_a_time",
+        True,
+        "owner_handoff",
+        failures,
+    )
+    _expect_bool(
+        owner_handoff,
+        "owner_must_not_be_required_to_discover_target_page",
+        True,
+        "owner_handoff",
+        failures,
+    )
+    _expect_bool(
+        owner_handoff,
+        "secret_bearing_or_shortened_links_forbidden",
+        True,
+        "owner_handoff",
+        failures,
+    )
+
+    if (
+        runtime_hosting.get("v10_primary_host")
+        != "APPROVED_LENOVO_OR_REPLACEMENT_PERSONAL_NODE"
+    ):
+        failures.append("V10 primary host must remain the approved Personal Node")
+    _expect_bool(
+        runtime_hosting,
+        "v10_web_built_and_served_on_personal_node",
+        True,
+        "runtime_hosting",
+        failures,
+    )
+    _expect_bool(
+        runtime_hosting,
+        "separate_paid_cloud_web_host_required_for_v10",
+        False,
+        "runtime_hosting",
+        failures,
+    )
+    _expect_bool(
+        runtime_hosting,
+        "render_com_v10_runtime_target",
+        False,
+        "runtime_hosting",
+        failures,
+    )
+    _expect_bool(
+        runtime_hosting,
+        "render_com_new_workspace_authoritative",
+        False,
+        "runtime_hosting",
+        failures,
+    )
+    _expect_bool(
+        runtime_hosting,
+        "render_com_new_v10_service_without_owner_amendment_allowed",
+        False,
+        "runtime_hosting",
+        failures,
+    )
+    _expect_bool(
+        runtime_hosting,
+        "protected_v9_render_app_app_baseline_preserved",
+        True,
+        "runtime_hosting",
+        failures,
+    )
+    if (
+        runtime_hosting.get("external_access_provider_role")
+        != "ACCESS_SECURITY_TRANSPORT_TO_PERSONAL_NODE"
+    ):
+        failures.append("external access provider must remain transport to Personal Node")
+    _expect_bool(
+        runtime_hosting,
+        "external_access_provider_may_become_private_state_host",
+        False,
+        "runtime_hosting",
+        failures,
+    )
+
     _expect_bool(
         learning,
         "confidence_postmortem_after_unexpected_red",
@@ -200,6 +343,7 @@ def main() -> int:
     amendment = _load_text(AMENDMENT, failures)
     index = _load_text(INDEX, failures)
     ledger = _load_text(LEDGER, failures)
+    owner_standard = _load_text(OWNER_STANDARD, failures)
     pr_template = _load_text(PR_TEMPLATE, failures)
     copilot = _load_text(COPILOT, failures)
     wp_template = _load_text(WP_TEMPLATE, failures)
@@ -236,6 +380,18 @@ def main() -> int:
             "Why preflight missed it",
             "Permanent regression/guard",
             "Future prevention rule",
+        ),
+        failures,
+    )
+    _require_markers(
+        OWNER_STANDARD,
+        owner_standard,
+        (
+            "Direct-link-first law",
+            "Mandatory OWNER handoff format",
+            "V10 local runtime / rendering law",
+            "Render.com boundary",
+            "owner_must_not_be_required_to_discover_target_page",
         ),
         failures,
     )
@@ -295,6 +451,8 @@ def main() -> int:
     print("Pre-CI root-cause and blast-radius discipline: enforced")
     print("Exact-head applicable checks: SUCCESS-only project policy")
     print("OWNER product acceptance: post-merge/post-Regression-Shield")
+    print("OWNER handoff: direct official link + bounded action contract enforced")
+    print("V10 runtime: Personal Node primary; Render.com not V10 hosting target")
     print("Failure-learning ledger: present")
     print("Fault-isolation contract: present")
     return 0
