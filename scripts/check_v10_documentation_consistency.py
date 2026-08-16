@@ -78,7 +78,9 @@ def validate_status_uniqueness(failures: list[str]) -> None:
     )
     if candidates != [CANONICAL_STATUS_RELATIVE]:
         rendered = ", ".join(str(path) for path in candidates) or "<none>"
-        failures.append(f"V10 current-status authority is not unique; found: {rendered}")
+        failures.append(
+            f"V10 current-status authority is not unique; found: {rendered}"
+        )
 
 
 def extract_current_state(status: str, failures: list[str]) -> tuple[str, str]:
