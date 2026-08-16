@@ -3,10 +3,12 @@ import { Button, StatusBadge } from "../design-system/components";
 import type { OperationalState } from "../design-system/contracts";
 import {
   logoutCurrentSession,
+  privateRemoteAccessLogin,
   privateTestLogin,
   providerLoginUrl,
   readHealth,
   readPrivateAcceptanceStatus,
+  readPrivateRemoteAccessStatus,
   readProviders,
   readSession,
 } from "./api";
@@ -32,12 +34,16 @@ function LoginScreen({
   providers,
   apiUnavailable,
   privateAcceptanceEnabled,
+  privateRemoteAccessEnabled,
   onPrivateAcceptance,
+  onPrivateRemoteAccess,
 }: {
   providers: ProviderView[];
   apiUnavailable: boolean;
   privateAcceptanceEnabled: boolean;
+  privateRemoteAccessEnabled: boolean;
   onPrivateAcceptance: () => void;
+  onPrivateRemoteAccess: () => void;
 }) {
   const provider = (name: "telegram" | "vk_id") => providers.find((item) => item.provider === name);
   const telegram = provider("telegram");
@@ -50,6 +56,9 @@ function LoginScreen({
         <p className="shell-muted">Обычный вход — только через Telegram или VK ID. Локального пароля Omni-CIO нет.</p>
         {apiUnavailable ? <div className="login-warning" role="alert">Authentication API недоступен. Доступ к приватным разделам закрыт.</div> : null}
         <div className="login-actions">
+          {privateRemoteAccessEnabled ? (
+            <Button variant="primary" onClick={onPrivateRemoteAccess}>OWNER private access</Button>
+          ) : null}
           <a className="ds-button ds-button--primary" aria-disabled={!telegram?.enabled} href={telegram?.enabled ? providerLoginUrl("telegram") : undefined}>Продолжить через Telegram</a>
           <a className="ds-button ds-button--secondary" aria-disabled={!vk?.enabled} href={vk?.enabled ? providerLoginUrl("vk_id") : undefined}>Продолжить через VK ID</a>
           {privateAcceptanceEnabled ? (
@@ -57,6 +66,7 @@ function LoginScreen({
           ) : null}
         </div>
         <p className="shell-caption">Provider buttons остаются fail-closed до reviewed local/private provider configuration.</p>
+        {privateRemoteAccessEnabled ? <p className="shell-caption">OWNER private access доступен только после внешней Cloudflare Access проверки и не включает публичную multi-user регистрацию.</p> : null}
         {privateAcceptanceEnabled ? <p className="shell-caption">Локальный OWNER acceptance виден только на loopback и не является третьим login provider.</p> : null}
       </section>
     </main>
@@ -67,6 +77,7 @@ export function ApplicationShell() {
   const [session, setSession] = useState<WebSessionView | null>(null);
   const [providers, setProviders] = useState<ProviderView[]>([]);
   const [privateAcceptanceEnabled, setPrivateAcceptanceEnabled] = useState(false);
+  const [privateRemoteAccessEnabled, setPrivateRemoteAccessEnabled] = useState(false);
   const [sessionUnavailable, setSessionUnavailable] = useState(false);
   const [path, setPath] = useState<AppRoutePath>(currentPath);
   const [health, setHealth] = useState<HealthView | null>(null);
@@ -90,6 +101,9 @@ export function ApplicationShell() {
     void readPrivateAcceptanceStatus()
       .then((value) => setPrivateAcceptanceEnabled(value.enabled))
       .catch(() => setPrivateAcceptanceEnabled(false));
+    void readPrivateRemoteAccessStatus()
+      .then((value) => setPrivateRemoteAccessEnabled(value.enabled))
+      .catch(() => setPrivateRemoteAccessEnabled(false));
   }, [refreshSession]);
 
   useEffect(() => {
@@ -132,8 +146,14 @@ export function ApplicationShell() {
         providers={providers}
         apiUnavailable={sessionUnavailable}
         privateAcceptanceEnabled={privateAcceptanceEnabled}
+        privateRemoteAccessEnabled={privateRemoteAccessEnabled}
         onPrivateAcceptance={() => {
           void privateTestLogin()
+            .then(refreshSession)
+            .catch(() => setSessionUnavailable(true));
+        }}
+        onPrivateRemoteAccess={() => {
+          void privateRemoteAccessLogin()
             .then(refreshSession)
             .catch(() => setSessionUnavailable(true));
         }}
