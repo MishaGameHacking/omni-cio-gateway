@@ -11,8 +11,13 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT_PATH = ROOT / "scripts" / "check_v10_engineering_governance.py"
-CONTRACT_PATH = ROOT / "docs" / "architecture" / "V10_ENGINEERING_QUALITY_GATE_CONTRACT.json"
-SPEC = importlib.util.spec_from_file_location("check_v10_engineering_governance", SCRIPT_PATH)
+CONTRACT_PATH = (
+    ROOT / "docs" / "architecture" / "V10_ENGINEERING_QUALITY_GATE_CONTRACT.json"
+)
+SPEC = importlib.util.spec_from_file_location(
+    "check_v10_engineering_governance",
+    SCRIPT_PATH,
+)
 assert SPEC is not None and SPEC.loader is not None
 governance = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(governance)
@@ -29,8 +34,14 @@ def test_current_repository_satisfies_engineering_governance() -> None:
     )
 
     assert completed.returncode == 0, completed.stderr or completed.stdout
-    assert "Exact-head applicable checks: SUCCESS-only project policy" in completed.stdout
-    assert "OWNER product acceptance: post-merge/post-Regression-Shield" in completed.stdout
+    assert (
+        "Exact-head applicable checks: SUCCESS-only project policy"
+        in completed.stdout
+    )
+    assert (
+        "OWNER product acceptance: post-merge/post-Regression-Shield"
+        in completed.stdout
+    )
 
 
 def test_contract_accepts_only_success_for_applicable_merge_checks() -> None:
