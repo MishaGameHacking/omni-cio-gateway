@@ -64,13 +64,37 @@ The V10 GREEN-merge law remains unchanged:
 
 Classification answers **why** a check failed; classification never grants merge authority.
 
+### 5.1 Capacity-deferred compatibility mode
+
+While the source-controlled capacity state is `BLOCKED_OWNER_ZERO_BUDGET_HARD_STOP`, GitHub-hosted compatibility is treated as an **acceleration/clean-room evidence lane that is unavailable**, not as the authoritative merge gate.
+
+The workflow must still execute a real check on the Lenovo runner and must report one of two truthful outcomes:
+
+- `NOT_APPLICABLE` — the source-controlled path router says that compatibility family is not required for the changed surface; or
+- `REQUIRED_BY_PATH_BUT_CAPACITY_BLOCKED` — the path normally merits disposable hosted compatibility, but current OWNER-controlled capacity prevents that hosted run.
+
+The successful routing/capacity job means only that the routing policy was evaluated correctly. It **must not claim** that Python 3.14.6 or hosted Node clean-room compatibility passed when the hosted VM did not run.
+
+A job-level GitHub `skipped` result is not accepted as V10 GREEN evidence under this policy. Non-applicable/capacity-deferred lanes therefore execute a small deterministic routing/capacity job and finish successfully instead of being represented as skipped.
+
+This mode does not remove the required `V10 authoritative merge gate` on Lenovo. It also does not authorize a STABLE release to fabricate clean-room evidence: release provenance that requires hosted compatibility remains blocked until actual compatible evidence exists or a later OWNER-approved equivalent clean-room mechanism is accepted.
+
 ## 6. CI design consequence
 
 Future V10 WPs must not make correctness depend unnecessarily on metered hosted capacity when the accepted Lenovo/self-hosted architecture can provide equivalent deterministic evidence.
 
 Hosted capacity remains useful for fast feedback and disposable compatibility where the accepted contract requires it, but it is not the sole source of truth. Heavy repeatable validation remains preferentially placed on the Lenovo runner when safe and semantically correct.
 
+During the current zero-budget state:
+
+- fast policy/source checks are allowed to run on Lenovo because their semantics are deterministic and do not require a disposable VM;
+- frontend fast validation may run on the already accepted exact Node/npm installation on Lenovo;
+- the dedicated hosted toolchain workflow becomes an explicit capacity/applicability contract and does not pretend that a disposable clean-room VM executed;
+- the existing release-provenance contract continues to require truthful compatibility evidence for release claims.
+
 Before opening or moving a PR to final review, engineering should inspect whether any known budget-blocked hosted workflow will become an applicable check. Known unavoidable RED must be resolved at routing/capacity/prerequisite level before the final GREEN cycle.
+
+When hosted capacity is restored, engineering must re-verify the external account state and use a focused GREEN governance/CI PR to restore the hosted acceleration lanes. Do not infer recovery merely from the passage of time.
 
 ## 7. OWNER handoff rule for paid CI
 
