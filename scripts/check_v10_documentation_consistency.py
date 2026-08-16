@@ -196,19 +196,14 @@ def validate_high_risk_headers(failures: list[str]) -> None:
     for marker in START_RECORD_EVIDENCE_MARKERS:
         if marker not in start_record:
             failures.append(
-                "historical WP0 start evidence was removed or rewritten: "
-                f"{marker}"
+                f"historical WP0 start evidence was removed or rewritten: {marker}"
             )
 
     amendment = read_text(ENGINEERING_AMENDMENT, failures)
     if "ACCEPTED ON `main` / ACTIVE" not in amendment:
-        failures.append(
-            "engineering-quality amendment must be labeled accepted/active"
-        )
+        failures.append("engineering-quality amendment must be labeled accepted/active")
     if "EFFECTIVE ONLY AFTER MERGE" in amendment:
-        failures.append(
-            "engineering-quality amendment still claims future activation"
-        )
+        failures.append("engineering-quality amendment still claims future activation")
 
     contract_text = read_text(ENGINEERING_CONTRACT, failures)
     if not contract_text:
@@ -232,9 +227,7 @@ def validate_high_risk_headers(failures: list[str]) -> None:
     if acceptance.get("main_sha") != expected_main:
         failures.append("engineering-quality contract accepted main SHA mismatch")
     if acceptance.get("regression_shield_conclusion") != "success":
-        failures.append(
-            "engineering-quality contract lacks GREEN post-merge evidence"
-        )
+        failures.append("engineering-quality contract lacks GREEN post-merge evidence")
 
 
 def validate_repository_lifecycle(failures: list[str]) -> None:
