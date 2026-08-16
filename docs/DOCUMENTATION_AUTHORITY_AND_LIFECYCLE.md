@@ -110,7 +110,7 @@ Do not erase historical evidence merely because the program advanced. Instead:
 `scripts/check_v10_documentation_consistency.py` verifies the live-guidance layer and high-risk historical headers. The guard checks, among other things:
 
 - one canonical V10 current-status file;
-- the root README current snapshot agrees with the canonical status percentage and current WP;
+- readable current snapshots in the root README, `AGENTS.md` and `knowledge/00_PROJECT_MASTER_CONTEXT.md` agree with the canonical status percentage/current WP;
 - live guidance delegates dynamic state to `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`;
 - known stale WP4/5%/pre-WP2 wording is absent from live guidance;
 - Program Lock does not maintain a competing progress ledger;
