@@ -1,5 +1,5 @@
 {
-  "schema": "omni-cio.v10.engineering-quality-gate.v1",
+  "schema": "omni-cio.v10.engineering-quality-gate.v2",
   "status": "OWNER_APPROVED_EFFECTIVE_ON_MAIN_MERGE",
   "date": "2026-08-16",
   "scope": [
@@ -8,7 +8,9 @@
     "RECOVERY",
     "DEPENDENCIES",
     "CI",
-    "STATUS_TRANSITIONS"
+    "STATUS_TRANSITIONS",
+    "OWNER_HANDOFF",
+    "RUNTIME_HOSTING_SELECTION"
   ],
   "pre_ci": {
     "required": true,
@@ -83,6 +85,34 @@
       "MASTER_PLAN_OWNER_DECISION"
     ],
     "post_merge_acceptance_defect_rule": "NEW_FOCUSED_FIX_BRANCH_AND_GREEN_PR"
+  },
+  "owner_handoff": {
+    "standard": "docs/operations/V10_OWNER_ACTION_HANDOFF_STANDARD.md",
+    "direct_official_link_required_when_stable": true,
+    "generic_navigation_without_link_sufficient": false,
+    "current_official_ui_or_docs_verification_required_when_changeable": true,
+    "exact_scope_required": true,
+    "expected_result_required": true,
+    "stop_conditions_required": true,
+    "do_not_do_warnings_required": true,
+    "minimum_safe_return_required": true,
+    "one_bounded_owner_action_at_a_time": true,
+    "owner_must_not_be_required_to_discover_target_page": true,
+    "unstable_deep_link_fallback": "VERIFIED_OFFICIAL_START_URL_PLUS_EXACT_CLICK_PATH_AND_STOP_IF_UI_DIFFERS",
+    "secret_bearing_or_shortened_links_forbidden": true,
+    "cost_or_authority_consequence_before_confirmation": true
+  },
+  "runtime_hosting": {
+    "v10_primary_host": "APPROVED_LENOVO_OR_REPLACEMENT_PERSONAL_NODE",
+    "v10_web_built_and_served_on_personal_node": true,
+    "separate_paid_cloud_web_host_required_for_v10": false,
+    "render_com_v10_runtime_target": false,
+    "render_com_new_workspace_authoritative": false,
+    "render_com_new_v10_service_without_owner_amendment_allowed": false,
+    "protected_v9_render_app_app_baseline_preserved": true,
+    "external_access_provider_role": "ACCESS_SECURITY_TRANSPORT_TO_PERSONAL_NODE",
+    "external_access_provider_may_become_private_state_host": false,
+    "cloudflare_candidate_does_not_imply_cloud_app_hosting": true
   },
   "failure_learning": {
     "confidence_postmortem_after_unexpected_red": true,
