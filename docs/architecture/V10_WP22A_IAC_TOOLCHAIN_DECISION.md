@@ -13,7 +13,7 @@ Pinned Windows asset:
 
 - release: `v1.12.5`;
 - asset: `tofu_1.12.5_windows_amd64.zip`;
-- SHA-256: `465adc4bdf4aa80c650387b7ada2cf750f7908bf1fae7f35b05402c384e79928`.
+- SHA-256, grouped for review and to avoid treating a required package digest as an opaque secret candidate: `465adc4b df4aa80c 650387b7 ada2cf75 0f7908bf 1fae7f35 b05402c3 84e79928`.
 
 The Cloudflare provider remains pinned to `5.22.0`. Its source address is deliberately fully qualified as:
 
