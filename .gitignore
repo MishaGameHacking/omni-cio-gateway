@@ -22,6 +22,14 @@ env/
 *.p12
 *.pfx
 
+# Terraform local/provider state — never commit runtime state or input values
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+.terraform.tfstate.lock.info
+
 # IDE and OS
 .vscode/
 .idea/

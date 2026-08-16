@@ -10,7 +10,7 @@ export function DesignSystemGallery() {
       <Card title="Risk severity"><div className="ds-row ds-row--wrap">{riskSeverities.map((risk) => <RiskBadge key={risk} severity={risk} />)}</div></Card>
       <Card title="Forms"><Field id="design-token-example" label="Подпись поля" placeholder="Без секретов" /><p className="ds-hint">Browser storage для credentials запрещён.</p></Card>
       <Card title="Table"><DataTable caption="Синтетический пример" headers={["Объект", "Состояние", "Значение"]} rows={[["Строка A", "READY", "100,00"], ["Строка B", "STALE", "—"]]} /></Card>
-      <Card title="Chart wrapper"><ChartFrame title="Синтетический ряд"><div className="ds-bars" aria-hidden="true"><span style={{height: "42%"}} /><span style={{height: "72%"}} /><span style={{height: "58%"}} /><span style={{height: "84%"}} /></div></ChartFrame></Card>
+      <Card title="Chart wrapper"><ChartFrame title="Синтетический ряд"><div className="ds-bars" aria-hidden="true"><span className="ds-bar--42" /><span className="ds-bar--72" /><span className="ds-bar--58" /><span className="ds-bar--84" /></div></ChartFrame></Card>
       <Card title="Feedback states"><div className="ds-stack"><StatePanel kind="warning" title="STALE">Данные требуют обновления.</StatePanel><StatePanel kind="error" title="ERROR">Действие заблокировано.</StatePanel><StatePanel kind="empty" title="EMPTY">Данных пока нет.</StatePanel><Toast>Неблокирующее системное сообщение.</Toast></div></Card>
       <Card title="Loading"><Skeleton /><Skeleton label="Загрузка таблицы" /></Card>
       <Card title="Dialog & drawer"><div className="ds-stack"><DialogExample /><DrawerExample /></div></Card>
