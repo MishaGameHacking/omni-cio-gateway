@@ -96,6 +96,50 @@ A short SHA may be used for navigation when useful. Full random-looking secret m
 
 ---
 
+## FL-004 — OWNER instructions must not require page discovery
+
+**Date:** 2026-08-16  
+**Scope:** V10-wide OWNER handoff policy  
+**Symptom:** an OWNER prerequisite was described as a navigation path such as opening GitHub settings/billing without first giving a direct official page link and without making the exact target/result sufficiently explicit.
+
+**Root cause:** the engineering handoff format optimized for the engineer's mental model of the provider UI instead of the OWNER's need for a deterministic, non-ambiguous action path.
+
+**Blast radius searched:** all future GitHub, Cloudflare, broker, domain, billing, consent, account, provider and browser-only OWNER handoffs.
+
+**Why preflight missed it:** OWNER instruction quality was documented informally but was not yet a machine-checked engineering-governance contract.
+
+**Corrective change:** add `V10_OWNER_ACTION_HANDOFF_STANDARD.md` and require direct official links when stable, exact scope, expected result, STOP conditions, do-not-do warnings and minimum safe return.
+
+**Permanent regression/guard:** engineering quality contract v2 + governance validator + tests reject removal of the direct-link requirement or acceptance of generic navigation as sufficient.
+
+**Future prevention rule:** the OWNER must never be asked to discover the destination page; engineering verifies the current official UI/docs first and supplies the safest exact starting link.
+
+**Dependency/tooling knowledge change:** provider UI/navigation is temporally unstable and is treated as a current-source dependency before click instructions are issued.
+
+---
+
+## FL-005 — Local V10 rendering is not Render.com hosting
+
+**Date:** 2026-08-16  
+**Scope:** V10 runtime/hosting boundary  
+**Symptom:** discussion of an empty/new Render.com workspace risked implying that V10 should be hosted or configured there, while the OWNER's intended V10 model is the free self-hosted Lenovo/replacement Personal Node.
+
+**Root cause:** the word `Render` was allowed to blur two distinct concepts: rendering/building/serving the V10 Web locally versus the commercial Render.com hosting service retained for the protected V9 baseline.
+
+**Blast radius searched:** V10 Web deployment, WP22A access transport, service-selection recommendations, recurring-cost decisions, private-state custody and V9 rollback.
+
+**Why preflight missed it:** the accepted browser-only amendment preserved the V9 Render.com boundary but did not state strongly enough that a new Render.com workspace is not a V10 hosting target.
+
+**Corrective change:** formally bind V10 Web/API runtime to the approved Personal Node and classify external-access providers as access/security transport rather than application/private-state hosting.
+
+**Permanent regression/guard:** engineering quality contract v2 rejects Render.com as the V10 runtime target and requires the protected V9 `app:app` Render baseline to remain intact until its owning parity/decommission gate.
+
+**Future prevention rule:** do not create, pay for, configure or recommend a new Render.com V10 service without a later OWNER-approved amendment proving that the Personal-Node model cannot satisfy the owning requirement.
+
+**Dependency/tooling knowledge change:** hosted deployment convenience is not sufficient justification to move V10 runtime or private state off the Personal Node.
+
+---
+
 ## Entry template
 
 ```text
