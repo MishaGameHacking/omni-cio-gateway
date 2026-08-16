@@ -3,7 +3,7 @@
   "status": "ACCEPTED",
   "acceptance": {
     "pr": 319,
-    "main_sha": "9ad0eeb8d22895c3790fc5c7c78e9faf72a670e2",
+    "exact_main_commit_bound_in_human_acceptance_record": true,
     "post_merge_regression_shield_run": 1496,
     "post_merge_regression_shield_run_id": 31926903444,
     "post_merge_regression_shield_success": true
