@@ -206,6 +206,28 @@ A short SHA may be used for navigation when useful. Full random-looking secret m
 
 ---
 
+## FL-009 — Self-hosted PowerShell steps must respect the node execution policy
+
+**Date:** 2026-08-16  
+**Reference:** governance PR #322  
+**Symptom / failing gate:** while diagnosing repeated `LIVE_HTTP_RETRY_EXHAUSTED` results from the newly self-hosted live V9 authority lane, a bounded provider wake-up step failed before making any HTTP request. GitHub generated a temporary `.ps1` for `shell: powershell`, and the Lenovo node rejected that temporary script because script execution is disabled by its Windows PowerShell execution policy.
+
+**Root cause:** the workflow used GitHub's implicit PowerShell script-file shell on a protected self-hosted node whose established repository convention is to invoke reviewed `.ps1` files explicitly with `powershell.exe -NoProfile -ExecutionPolicy Bypass -File ...`. The new diagnostic/warm-up path did not reuse that established execution boundary.
+
+**Blast radius searched:** all self-hosted Windows workflow steps that select `shell: powershell`, all reviewed infrastructure/operations PowerShell entrypoints, and the live-authority workflow's newly added provider-readiness stage. Existing accepted Windows automation predominantly uses explicit reviewed script entrypoints where policy bypass is deliberate and bounded.
+
+**Why preflight missed it:** the first warm-up change was reviewed for network scope, endpoint allowlisting, time bounds and secret safety, but it was not tested against the exact execution-policy posture of the Lenovo runner before the workflow cycle.
+
+**Corrective change:** move the warm-up logic into source-controlled `scripts/warm_live_gateway.ps1`, hard-bind it to HTTPS and the protected V9 host, and invoke it from the workflow's existing `cmd` shell with explicit `-NoProfile -ExecutionPolicy Bypass -File`. The strict Python authority validator remains mandatory afterward; the warm-up cannot produce acceptance by itself.
+
+**Permanent regression/guard:** the CI cost-control validator and deterministic governance tests now require both the reviewed warm-up script and its explicit-bypass invocation, including bounded timing, approved-host validation and fail-closed exit code 41.
+
+**Future prevention rule:** on protected self-hosted Windows nodes, do not assume GitHub's temporary PowerShell shell scripts are executable. Prefer a source-controlled reviewed `.ps1` entrypoint invoked through the repository's established explicit-bypass boundary, and test that shell path before the expensive exact-head cycle.
+
+**Dependency/tooling knowledge change:** Windows PowerShell execution policy is part of the self-hosted runner contract. A change from hosted runners or `cmd` to implicit `shell: powershell` is a platform-boundary change that requires explicit preflight.
+
+---
+
 ## Entry template
 
 ```text
