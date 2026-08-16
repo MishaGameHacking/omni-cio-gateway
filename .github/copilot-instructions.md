@@ -18,37 +18,36 @@ V9 remains owner-accepted/protected in **controlled maintenance** while V10 is b
 
 1. `AGENTS.md`;
 2. `README.md`;
-3. `knowledge/00_PROJECT_MASTER_CONTEXT.md`;
-4. `knowledge/16_CURRENT_PROGRAM_STATUS.md` — accepted V9 runtime baseline;
-5. `docs/master-plan/OMNI_CIO_V10_PROGRAM_LOCK.md`;
-6. `docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.md`;
-7. `docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md` и все active amendments;
-8. `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`;
-9. `docs/architecture/V10_SYSTEM_ARCHITECTURE.md`;
-10. `docs/architecture/V10_SECURITY_BOUNDARIES.md`;
-11. `docs/architecture/V10_DATA_FLOW.md`;
-12. `docs/architecture/V10_THREAT_MODEL.md`;
-13. `docs/architecture/V10_RECOVERY_CONTRACT.md`;
-14. `docs/architecture/V10_ADR_PROCESS.md` + `docs/architecture/DECISIONS.md`;
-15. `docs/architecture/REPOSITORY_STRUCTURE.md`;
-16. профильный current-WP architecture/runbook;
-17. actual `main`, open PR/issues and latest GitHub Actions.
+3. `docs/DOCUMENTATION_AUTHORITY_AND_LIFECYCLE.md`;
+4. `knowledge/00_PROJECT_MASTER_CONTEXT.md`;
+5. `knowledge/16_CURRENT_PROGRAM_STATUS.md` — accepted V9 runtime baseline;
+6. `docs/master-plan/OMNI_CIO_V10_PROGRAM_LOCK.md`;
+7. `docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.md`;
+8. `docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md` и все active amendments;
+9. `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`;
+10. `docs/architecture/V10_SYSTEM_ARCHITECTURE.md`;
+11. `docs/architecture/V10_SECURITY_BOUNDARIES.md`;
+12. `docs/architecture/V10_DATA_FLOW.md`;
+13. `docs/architecture/V10_THREAT_MODEL.md`;
+14. `docs/architecture/V10_RECOVERY_CONTRACT.md`;
+15. `docs/architecture/V10_ADR_PROCESS.md` + `docs/architecture/DECISIONS.md`;
+16. `docs/architecture/REPOSITORY_STRUCTURE.md`;
+17. профильный current-WP architecture/runbook;
+18. actual `main`, open PR/issues and latest GitHub Actions.
 
 Current V10 progress/next WP is determined only by `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md` from accepted `main`.
 
-Old chat/screenshot/closed issue is historical evidence, not current authority when it conflicts with accepted `main`.
+Old chat/screenshot/closed issue/package-local historical status heading is historical evidence, not current authority when it conflicts with accepted `main`.
 
 ## V10 sequence rule
 
 Do exactly one current Work Package at a time.
 
-`restore context → current WP → focused branch → implementation/tests → security/boundary review → exact-head Regression Shield → zero unresolved review blockers → squash merge → update current status → next WP`.
+`restore authority → current WP/defect → focused branch → root-cause/blast-radius review → implementation/tests → cheap/focused preflight → full-diff review → exact-head applicable gates all SUCCESS → zero unresolved review blockers → squash merge → exact-main post-merge verification → OWNER product acceptance only if required → update current status → next WP`.
 
 Do not skip to a later block because its implementation looks easy.
 
 Do not start V11, public/multi-user, billing, alternate frontend, second Telegram stack, second AI stack, second Gateway or second execution stack before V10 final acceptance.
-
-The one-time Lenovo setup is intentionally Block C after WP1–WP4 establish repository architecture, toolchain, CI and release/deployment contracts.
 
 ## Pre-CI Engineering Gate
 
@@ -116,9 +115,9 @@ Rules:
 
 - one deterministic Core root: `omni_cio/`;
 - current V9 root wrappers remain protected dependencies until a later migration proves replacement;
-- reserved V10 adapters: future `apps/api/`, `apps/web/`, `apps/telegram/`;
-- reserved V10 AI root: future `ai/`;
-- reserved replaceable-node infrastructure root: future `infrastructure/`;
+- accepted V10 adapter roots currently include `apps/api/` and `apps/web/`;
+- accepted replaceable-node infrastructure lives under `infrastructure/`, currently including `infrastructure/windows/`;
+- later lifecycle-gated adapter roots remain `apps/telegram/` and `ai/` until their owning WPs are authorized;
 - current GPT migration/recovery source remains `gpt/` until parity/decommission gate;
 - no competing top-level `frontend/`, `website/`, `telegram_bot/`, `backend/`, `server/`, `omni_cio_v10/` or second execution stack.
 
@@ -126,9 +125,13 @@ Permanent repository boundary guard:
 
 `python scripts/check_v10_repository_boundaries.py`.
 
-Permanent engineering-governance guard after acceptance:
+Permanent engineering-governance guard:
 
 `python scripts/check_v10_engineering_governance.py`.
+
+Permanent documentation current-vs-historical guard:
+
+`python scripts/check_v10_documentation_consistency.py`.
 
 Do not bypass or weaken these guards to land a change.
 
@@ -227,6 +230,6 @@ Every significant V9 maintenance or V10 package:
 
 Do not weaken CI/security, repository boundaries or broker authority to make a change pass.
 
-Current Regression Shield includes repository/security policy, V10 repository-boundary guard, GPT recovery consistency, Ruff, mypy, compile, pytest/coverage, dependency audit, SAST and secret scanning.
+Current Regression Shield includes repository/security policy, V10 repository-boundary guard, GPT recovery consistency, Ruff, mypy, compile, pytest/coverage, dependency audit, SAST and secret scanning. Engineering governance additionally protects quality/cost/documentation contracts.
 
-Не создавай дублирующие setup/configuration/audit документы, если можно обновить существующий canonical source.
+Не создавай дублирующие setup/configuration/audit/current-status документы, если можно обновить существующий canonical source. Historical records are classified by `docs/DOCUMENTATION_AUTHORITY_AND_LIFECYCLE.md`.
