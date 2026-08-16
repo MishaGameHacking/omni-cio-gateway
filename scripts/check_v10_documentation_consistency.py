@@ -75,9 +75,7 @@ def validate_status_uniqueness(failures: list[str]) -> None:
     )
     if candidates != [CANONICAL_STATUS_RELATIVE]:
         rendered = ", ".join(str(path) for path in candidates) or "<none>"
-        failures.append(
-            "V10 current-status authority is not unique; found: " f"{rendered}"
-        )
+        failures.append(f"V10 current-status authority is not unique; found: {rendered}")
 
 
 def extract_current_state(status: str, failures: list[str]) -> tuple[str, str]:
@@ -91,7 +89,9 @@ def extract_current_state(status: str, failures: list[str]) -> tuple[str, str]:
         re.MULTILINE,
     )
     if progress_match is None:
-        failures.append("current status is missing accepted implementation progress marker")
+        failures.append(
+            "current status is missing accepted implementation progress marker"
+        )
     if wp_match is None:
         failures.append("current status is missing current-next-package heading")
     return (
@@ -144,7 +144,9 @@ def validate_high_risk_headers(failures: list[str]) -> None:
     if "WP2 ACCEPTED BASELINE" not in toolchain:
         failures.append("WP2 toolchain baseline must be labeled accepted")
     if "FINAL EXIT GATE PENDING" in toolchain:
-        failures.append("accepted WP2 toolchain baseline still claims pending exit gate")
+        failures.append(
+            "accepted WP2 toolchain baseline still claims pending exit gate"
+        )
 
     for path in (START_RECORD, READINESS_AUDIT):
         text = read_text(path, failures)
@@ -156,9 +158,13 @@ def validate_high_risk_headers(failures: list[str]) -> None:
 
     amendment = read_text(ENGINEERING_AMENDMENT, failures)
     if "ACCEPTED ON `main` / ACTIVE" not in amendment:
-        failures.append("engineering-quality amendment must be labeled accepted/active")
+        failures.append(
+            "engineering-quality amendment must be labeled accepted/active"
+        )
     if "EFFECTIVE ONLY AFTER MERGE" in amendment:
-        failures.append("engineering-quality amendment still claims future activation")
+        failures.append(
+            "engineering-quality amendment still claims future activation"
+        )
 
     contract_text = read_text(ENGINEERING_CONTRACT, failures)
     if not contract_text:
@@ -182,7 +188,9 @@ def validate_high_risk_headers(failures: list[str]) -> None:
     if acceptance.get("main_sha") != expected_main:
         failures.append("engineering-quality contract accepted main SHA mismatch")
     if acceptance.get("regression_shield_conclusion") != "success":
-        failures.append("engineering-quality contract lacks GREEN post-merge evidence")
+        failures.append(
+            "engineering-quality contract lacks GREEN post-merge evidence"
+        )
 
 
 def validate_repository_lifecycle(failures: list[str]) -> None:
