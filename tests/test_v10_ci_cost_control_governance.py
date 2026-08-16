@@ -10,7 +10,9 @@ STANDARD_PATH = ROOT / "docs" / "operations" / "V10_CI_COST_CONTROL_STANDARD.md"
 FAST_WORKFLOW_PATH = ROOT / ".github" / "workflows" / "v10-pr-fast-checks.yml"
 TOOLCHAIN_WORKFLOW_PATH = ROOT / ".github" / "workflows" / "v10-toolchain-compat.yml"
 LIVE_WORKFLOW_PATH = ROOT / ".github" / "workflows" / "live-gateway-authority.yml"
-WARM_LIVE_SCRIPT_PATH = ROOT / "scripts" / "warm_live_gateway.ps1"
+LIVE_CONTRACT_WORKFLOW_PATH = (
+    ROOT / ".github" / "workflows" / "v10-live-gateway-authority-contract.yml"
+)
 
 
 def test_ci_cost_control_requires_explicit_owner_spend_approval() -> None:
@@ -90,52 +92,37 @@ def test_windows_fast_cleanup_uses_job_local_native_shell() -> None:
         )
 
 
-def test_scheduled_live_authority_does_not_burn_blocked_hosted_capacity() -> None:
+def test_live_v9_authority_is_deferred_not_fabricated_on_lenovo() -> None:
     contract = json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))
     cost = contract["ci_cost_control"]
-    workflow = LIVE_WORKFLOW_PATH.read_text(encoding="utf-8")
+    live = LIVE_WORKFLOW_PATH.read_text(encoding="utf-8")
+    routing = LIVE_CONTRACT_WORKFLOW_PATH.read_text(encoding="utf-8")
 
-    assert cost["scheduled_hosted_jobs_while_blocked_forbidden"] is True
-    assert "schedule:" in workflow
-    assert "runs-on: [self-hosted, Windows, X64, omni-cio-ci]" in workflow
-    assert "runs-on: ubuntu-latest" not in workflow
-    assert "persist-credentials: false" in workflow
-    assert "Bootstrap protected runner Python 3.12.10" in workflow
-    assert "Build strict Windows runtime dependency projection" in workflow
     assert (
-        "python scripts\\windows_ci_lock.py project requirements.txt windows-requirements.txt"
-        in workflow
+        cost["live_v9_authority_current_evidence_state"]
+        == "DEFERRED_NO_TRUSTED_ZERO_COST_ROUTE_NOT_PASS"
     )
-    assert "--require-hashes -r windows-requirements.txt" in workflow
-    assert "--require-hashes -r requirements.txt" not in workflow
+    assert cost["live_v9_authority_lenovo_route_semantically_equivalent"] is False
+    assert cost["live_v9_authority_actual_probe_must_not_run_on_personal_node"] is True
+    assert cost["live_v9_authority_automatic_schedule_while_deferred_forbidden"] is True
+    assert cost["live_v9_authority_manual_hosted_workflow_preserved"] is True
+    assert cost["live_v9_authority_pr_contract_workflow_required"] is True
+    assert cost["live_v9_authority_missing_blocks_v9_runtime_or_authority_release"] is True
+    assert cost["live_v9_authority_missing_blocks_governance_only_pr_merge"] is False
+    assert cost["restore_live_v9_automation_requires_trusted_route_reverification"] is True
 
+    assert "workflow_dispatch:" in live
+    assert "schedule:" not in live
+    assert "pull_request:" not in live
+    assert "runs-on: ubuntu-latest" in live
+    assert "self-hosted" not in live
+    assert "python scripts/check_live_gateway_authority.py" in live
 
-def test_windows_live_authority_allows_bounded_provider_cold_start() -> None:
-    workflow = LIVE_WORKFLOW_PATH.read_text(encoding="utf-8")
-    script = WARM_LIVE_SCRIPT_PATH.read_text(encoding="utf-8")
-
-    assert "Warm protected V9 gateway across bounded Render cold start" in workflow
-    assert "powershell.exe -NoProfile -ExecutionPolicy Bypass" in workflow
-    assert "-File scripts\\warm_live_gateway.ps1" in workflow
-    assert "[int]$DeadlineSeconds = 150" in script
-    assert "[int]$RequestTimeoutSeconds = 75" in script
-    assert '$baseUri.Scheme -ne "https"' in script
-    assert '$baseUri.Host -ne "omni-cio-gateway.onrender.com"' in script
-    assert "[System.Net.Dns]::GetHostAddresses" in script
-    assert "System.Net.Sockets.TcpClient" in script
-    assert "Invoke-WebRequest" in script
-    assert 'catch [System.Net.WebException]' in script
-    assert '"WEB_$($webException.Status)"' in script
-    assert "Start-Sleep -Seconds $RetryDelaySeconds" in script
-    assert "function Stop-WithCode" in script
-    assert "[Console]::Error.WriteLine($Message)" in script
-    assert "Write-Error" not in script
-    assert (
-        '"LIVE_WAKE_FAILED dns=$dnsState tcp443=$tcpState http=$lastHttpState attempts=$attempt"'
-        in script
-    )
-    assert "-Code 41" in script
-    assert "Verify deployed v9 Action authority without broker mutation" in workflow
+    assert "pull_request:" in routing
+    assert "runs-on: [self-hosted, Windows, X64, omni-cio-ci]" in routing
+    assert "ACTUAL_V9_LIVE_AUTHORITY_EVIDENCE=DEFERRED_NO_TRUSTED_ZERO_COST_ROUTE" in routing
+    assert "SUCCESS_DOES_NOT_CLAIM_DEPLOYED_LIVE_PASS" in routing
+    assert "check_live_gateway_authority.py" not in routing
 
 
 def test_budget_state_is_explicitly_mutable_external_state() -> None:
@@ -151,7 +138,7 @@ def test_budget_state_is_explicitly_mutable_external_state() -> None:
     assert "not an immutable architecture constant" in standard
 
 
-def test_standard_forbids_predictable_hosted_red_and_implicit_spend() -> None:
+def test_standard_forbids_predictable_red_and_false_live_evidence() -> None:
     standard = STANDARD_PATH.read_text(encoding="utf-8")
 
     assert "do not silently increase the budget" in standard
@@ -161,4 +148,8 @@ def test_standard_forbids_predictable_hosted_red_and_implicit_spend() -> None:
     assert "explicit OWNER decision" in standard
     assert "Capacity-deferred compatibility mode" in standard
     assert "job-level GitHub `skipped` result is not accepted" in standard
+    assert "Live V9 authority evidence while capacity is blocked" in standard
+    assert "DEFERRED_NO_TRUSTED_ZERO_COST_ROUTE_NOT_PASS" in standard
+    assert "must never be presented as PASS" in standard
+    assert "V9 runtime/deployment/Action-authority release" in standard
     assert "STABLE release" in standard
