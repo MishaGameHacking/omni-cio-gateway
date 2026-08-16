@@ -125,7 +125,15 @@
     "billing_red_may_not_be_merged_around": true,
     "disable_stop_usage_without_owner_approval_allowed": false,
     "if_paid_hosted_execution_is_required": "EXPLICIT_OWNER_DECISION_WITH_COST_AND_REASON_BEFORE_MUTATION",
-    "mutable_external_budget_state_must_be_reverified": true
+    "mutable_external_budget_state_must_be_reverified": true,
+    "current_hosted_capacity_state": "BLOCKED_OWNER_ZERO_BUDGET_HARD_STOP",
+    "fast_policy_self_hosted_fallback_allowed_when_blocked": true,
+    "hosted_compatibility_check_mode_when_blocked": "EXECUTED_CAPACITY_ROUTING_NO_CLEAN_ROOM_PASS",
+    "hosted_compatibility_absence_blocks_pr_merge": false,
+    "hosted_compatibility_absence_blocks_stable_release_evidence": true,
+    "non_applicable_or_capacity_deferred_job_must_execute_and_report": true,
+    "job_level_skipped_is_green_evidence": false,
+    "restore_hosted_lanes_requires_state_reverification": true
   },
   "failure_learning": {
     "confidence_postmortem_after_unexpected_red": true,
