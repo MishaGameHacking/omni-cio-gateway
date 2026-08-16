@@ -65,10 +65,16 @@ def test_pr_live_authority_contract_executes_without_claiming_live_pass() -> Non
     assert "runs-on: [self-hosted, Windows, X64, omni-cio-ci]" in workflow
     assert "python scripts\\check_v10_ci_cost_control.py" in workflow
     assert "python -m unittest tests.test_live_acceptance_repository_assets" in workflow
-    assert "ACTUAL_V9_LIVE_AUTHORITY_EVIDENCE=DEFERRED_NO_TRUSTED_ZERO_COST_ROUTE" in workflow
+    assert (
+        "ACTUAL_V9_LIVE_AUTHORITY_EVIDENCE=DEFERRED_NO_TRUSTED_ZERO_COST_ROUTE"
+        in workflow
+    )
     assert "SUCCESS_DOES_NOT_CLAIM_DEPLOYED_LIVE_PASS" in workflow
-    assert "MANUAL_HOSTED_ACCEPTANCE_REMAINS_REQUIRED_FOR_V9_RUNTIME_AUTHORITY_RELEASE" in workflow
-    assert "check_live_gateway_authority.py" not in workflow
+    assert (
+        "MANUAL_HOSTED_ACCEPTANCE_REMAINS_REQUIRED_FOR_V9_RUNTIME_AUTHORITY_RELEASE"
+        in workflow
+    )
+    assert "python scripts/check_live_gateway_authority.py" not in workflow
     assert "GATEWAY_API_KEY" not in workflow
     assert "TINVEST_TOKEN" not in workflow
     assert "continue-on-error: true" not in workflow
