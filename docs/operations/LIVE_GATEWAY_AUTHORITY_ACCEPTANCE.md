@@ -11,6 +11,28 @@ The checker performs only two public GET requests:
 
 It never calls portfolio/account endpoints, never sends the Gateway API key and never invokes Sandbox or Real mutations.
 
+## Current evidence-routing state — 2026-08-16
+
+The current live-evidence state is:
+
+`DEFERRED_NO_TRUSTED_ZERO_COST_ROUTE_NOT_PASS`
+
+This is an explicit degraded evidence state. It **must not be treated as live PASS**.
+
+The OWNER-observed GitHub-hosted Actions budget is currently blocked by the zero-budget hard stop. A governance diagnostic also proved that the Lenovo Personal Node is not a semantically equivalent external observation point for this check: DNS resolution of the protected Render host succeeds, but the node cannot establish the required TCP/443 path and HTTP fails at connect time.
+
+Consequently:
+
+- the real `Live Gateway Authority Acceptance` remains a **manual hosted acceptance** workflow;
+- automatic daily execution is suspended while there is no trusted runnable independent route;
+- pull requests that change this evidence boundary run `V10 Live Gateway Authority Contract` on Lenovo instead;
+- that PR contract validates source/routing/non-fabrication and explicitly does not claim that the deployed V9 endpoint was observed successfully;
+- a governance-only change that does not modify V9 runtime/deployment/Action authority does not require unrelated deployed-live evidence to become PASS before merge;
+- any V9 runtime/deployment/Action-authority release that owns production acceptance remains blocked until actual hosted live acceptance succeeds;
+- restoring schedule or automatic live PR probing requires a reviewed GREEN routing change after trusted-route and hosted-capacity re-verification.
+
+This preserves the protected V9 rollback while accurately distinguishing source correctness from the freshness of external deployed evidence.
+
 ## Health gates
 
 Acceptance requires:
@@ -46,23 +68,35 @@ This does **not** authorize a trade. It verifies only what operations the GPT co
 
 The production authority source is the effective `/openapi.json`, bounded by `gpt/ACTIONS_CATALOG.md` and the server-side confirmation/idempotency contracts.
 
-## Workflow
+## Workflows
 
-`.github/workflows/live-gateway-authority.yml` runs:
+### Actual deployed acceptance
 
-- manually with `workflow_dispatch`;
-- once per day;
-- on pull requests that modify this acceptance boundary.
+`.github/workflows/live-gateway-authority.yml` preserves the real network acceptance and currently runs only with `workflow_dispatch`.
 
-It uses read-only repository permissions, pinned GitHub Actions and hash-locked runtime dependencies. No repository secret is required.
+The actual live job uses a GitHub-hosted runner because the evidence is intentionally independent of the Personal Node. While the zero-budget hard stop remains current, engineering must not dispatch it merely to create a known billing RED. It becomes required when its owning V9 runtime/deployment/Action-authority acceptance is actually needed and trusted hosted capacity has been restored or explicitly approved.
 
 Command:
 
 `python scripts/check_live_gateway_authority.py`
 
+### Pull-request evidence-routing contract
+
+`.github/workflows/v10-live-gateway-authority-contract.yml` runs on pull requests that change this acceptance/routing boundary. It executes on the Lenovo continuity lane and validates:
+
+- the source-controlled capacity state;
+- that real live acceptance remains hosted and manual while deferred;
+- that automatic scheduled live execution is absent during the known blocked state;
+- that the PR check reports the live evidence as deferred rather than PASS;
+- that the tracked read-only live authority assets remain intact.
+
+A successful `V10 Live Gateway Authority Contract` is a successful **contract/routing** check only. It is not deployed-live acceptance.
+
 ## Failure handling
 
-A failure means the deployed OpenAPI authority no longer matches the reviewed v9 contract or the deployment version/configuration is inconsistent. Do not weaken the allowlist and do not submit a broker operation to diagnose it. Compare the failed error code with current `main`, Render deployment state and `gpt/ACTIONS_CATALOG.md`.
+A real hosted acceptance failure means the deployed OpenAPI authority no longer matches the reviewed v9 contract, the deployment version/configuration is inconsistent, or the trusted hosted path cannot obtain the required public evidence. Do not weaken the allowlist and do not submit a broker operation to diagnose it.
+
+A routing-contract failure means the source-controlled evidence policy is inconsistent or could fabricate/drop required evidence. Fix the routing/contract rather than relabeling the failure as PASS.
 
 ## Safety invariants
 
