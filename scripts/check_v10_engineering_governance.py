@@ -7,7 +7,10 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
-AMENDMENT = ROOT / "docs/master-plan/OMNI_CIO_V10_ENGINEERING_QUALITY_AND_GREEN_MERGE_AMENDMENT.md"
+AMENDMENT = (
+    ROOT
+    / "docs/master-plan/OMNI_CIO_V10_ENGINEERING_QUALITY_AND_GREEN_MERGE_AMENDMENT.md"
+)
 INDEX = ROOT / "docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md"
 CONTRACT = ROOT / "docs/architecture/V10_ENGINEERING_QUALITY_GATE_CONTRACT.json"
 LEDGER = ROOT / "docs/operations/V10_ENGINEERING_FAILURE_LEARNING_LEDGER.md"
@@ -19,7 +22,9 @@ WORKFLOW = ROOT / ".github/workflows/v10-engineering-governance.yml"
 
 def _load_text(path: Path, failures: list[str]) -> str:
     if not path.is_file():
-        failures.append(f"missing engineering governance file: {path.relative_to(ROOT)}")
+        failures.append(
+            f"missing engineering governance file: {path.relative_to(ROOT)}"
+        )
         return ""
     try:
         return path.read_text(encoding="utf-8")
@@ -81,7 +86,9 @@ def validate_contract(failures: list[str]) -> None:
         ("protected_invariants", protected),
     ):
         if not isinstance(section, dict):
-            failures.append(f"engineering quality contract section must be object: {name}")
+            failures.append(
+                f"engineering quality contract section must be object: {name}"
+            )
             return
 
     assert isinstance(pre_ci, dict)
@@ -156,7 +163,10 @@ def validate_contract(failures: list[str]) -> None:
         "failure_learning",
         failures,
     )
-    if learning.get("ledger") != "docs/operations/V10_ENGINEERING_FAILURE_LEARNING_LEDGER.md":
+    if (
+        learning.get("ledger")
+        != "docs/operations/V10_ENGINEERING_FAILURE_LEARNING_LEDGER.md"
+    ):
         failures.append("failure-learning ledger path mismatch")
 
     _expect_bool(
