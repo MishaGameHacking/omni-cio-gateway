@@ -14,7 +14,9 @@ TERRAFORM_ROOT = ROOT / "infrastructure" / "cloudflare" / "wp22a"
 TERRAFORM = TERRAFORM_ROOT / "main.tf"
 TERRAFORM_LOCK = TERRAFORM_ROOT / ".terraform.lock.hcl"
 TERRAFORM_BOOTSTRAP = ROOT / "scripts" / "bootstrap_wp22a_terraform.ps1"
-CLOUDFLARE_PROVIDER_BOOTSTRAP = ROOT / "scripts" / "bootstrap_wp22a_cloudflare_provider.ps1"
+CLOUDFLARE_PROVIDER_BOOTSTRAP = (
+    ROOT / "scripts" / "bootstrap_wp22a_cloudflare_provider.ps1"
+)
 TERRAFORM_VALIDATE = ROOT / "scripts" / "validate_wp22a_terraform.ps1"
 WORKFLOW = ROOT / ".github" / "workflows" / "v10-wp22a-clientless-access-audit.yml"
 GITIGNORE = ROOT / ".gitignore"
@@ -67,7 +69,9 @@ def test_opentofu_bootstrap_is_version_hash_and_distribution_pinned() -> None:
     assert "releases.hashicorp.com" not in text
 
 
-def test_cloudflare_provider_bootstrap_is_version_hash_and_distribution_pinned() -> None:
+def test_cloudflare_provider_bootstrap_is_version_hash_and_distribution_pinned() -> (
+    None
+):
     text = CLOUDFLARE_PROVIDER_BOOTSTRAP.read_text(encoding="utf-8")
     assert '$version = "5.22.0"' in text
     assert (
@@ -227,7 +231,9 @@ def test_ci_uses_committed_provider_lock_without_rewriting_it() -> None:
     validator = TERRAFORM_VALIDATE.read_text(encoding="utf-8")
     assert "scripts\\validate_wp22a_terraform.ps1" in workflow
     assert "scripts\\bootstrap_wp22a_cloudflare_provider.ps1" in workflow
-    assert "Validate Cloudflare IaC with pinned OpenTofu and provider mirror" in workflow
+    assert (
+        "Validate Cloudflare IaC with pinned OpenTofu and provider mirror" in workflow
+    )
     assert 'Join-Path $sourceRoot ".terraform.lock.hcl"' in validator
     assert "-Destination $validateRoot -Force" in validator
     assert "-lockfile=readonly" in validator
