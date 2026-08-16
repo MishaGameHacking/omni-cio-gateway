@@ -1,18 +1,13 @@
 name: Live Gateway Authority Acceptance
 
+# Actual deployed V9 authority evidence requires a network path independent of
+# the Personal Node. While OWNER-observed GitHub-hosted capacity is blocked and
+# the Lenovo route cannot establish TCP/443 to the protected Render endpoint,
+# automatic execution is intentionally suspended rather than fabricated.
+# Re-enable schedule/PR live execution only through a reviewed capacity-routing
+# change after a trusted route is reverified.
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "23 4 * * *"
-  pull_request:
-    paths:
-      - ".github/workflows/live-gateway-authority.yml"
-      - "docs/operations/LIVE_GATEWAY_AUTHORITY_ACCEPTANCE.md"
-      - "omni_cio/release/live_authority_v1.py"
-      - "scripts/check_live_gateway_authority.py"
-      - "scripts/warm_live_gateway.ps1"
-      - "tests/test_live_gateway_authority_v1.py"
-      - "tests/test_live_acceptance_repository_assets.py"
 
 permissions:
   contents: read
@@ -21,18 +16,11 @@ concurrency:
   group: live-gateway-authority-${{ github.ref }}
   cancel-in-progress: true
 
-# This is a live read-only authority probe, not disposable clean-room evidence.
-# During the OWNER-observed GitHub Actions zero-budget hard stop it runs on the
-# accepted Lenovo continuity lane so the daily schedule does not create a
-# predictable hosted billing RED. It consumes no broker/application secrets.
 jobs:
   verify-live-authority:
     name: Verify deployed health and reviewed OpenAPI authority
-    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
-    defaults:
-      run:
-        shell: cmd
     env:
       OMNI_LIVE_BASE_URL: https://omni-cio-gateway.onrender.com
 
@@ -41,30 +29,18 @@ jobs:
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v7.0.1
         with:
           persist-credentials: false
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
-      - name: Bootstrap protected runner Python 3.12.10
-        run: scripts\bootstrap_windows_ci_python.cmd
+      - name: Set up Python 3.12
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
 
-      - name: Build strict Windows runtime dependency projection
-        run: python scripts\windows_ci_lock.py project requirements.txt windows-requirements.txt
-
-      - name: Install hash-locked Windows runtime dependencies
+      - name: Install hash-locked runtime dependencies
         run: >-
           python -m pip install --disable-pip-version-check
-          --require-hashes -r windows-requirements.txt
-
-      - name: Warm protected V9 gateway across bounded Render cold start
-        run: >-
-          powershell.exe -NoProfile -ExecutionPolicy Bypass
-          -File scripts\warm_live_gateway.ps1
+          --require-hashes -r requirements.txt
 
       - name: Verify deployed v9 Action authority without broker mutation
-        run: python scripts\check_live_gateway_authority.py
-
-      - name: Clean live-authority workspace
-        if: always()
-        shell: bash
-        run: |
-          git reset --hard HEAD
-          git clean -ffdx
+        run: python scripts/check_live_gateway_authority.py
