@@ -1,18 +1,27 @@
 # Changelog
 
-Краткая история заметных изменений Omni-CIO. Подробная инженерная последовательность остаётся в Git commits, issues и PR; этот файл фиксирует release/program milestones и текущий maintenance state без дублирования архитектурных документов.
+Краткая история заметных изменений Omni-CIO. Подробная инженерная последовательность остаётся в Git commits, issues и PR; этот файл фиксирует release/program milestones без создания второго current-state ledger.
 
-> **Правило чтения истории.** Закрытые issues, merged PR и старые комментарии являются историческими снимками состояния на момент работы. Они не определяют текущий applied state. Для текущего состояния использовать `README.md`, `knowledge/16_CURRENT_PROGRAM_STATUS.md`, `gpt/CONFIGURATION.md` и accepted `main`.
+> **Правило чтения истории.** Закрытые issues, merged PR, package-local records и старые комментарии являются историческими снимками состояния на момент работы. Они не определяют текущий V10 WP/progress. Для текущего состояния использовать accepted `main`, `README.md`, `knowledge/16_CURRENT_PROGRAM_STATUS.md` для protected V9 runtime и `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md` для active V10 program. Lifecycle: `docs/DOCUMENTATION_AUTHORITY_AND_LIFECYCLE.md`.
 
 ## [Unreleased]
 
-### Controlled maintenance
+### Active V10 development + protected V9 maintenance
 
-- Omni-CIO v9.0.0 уже полностью реализован, merged и owner-accepted на **существующем** Custom GPT.
-- Текущий режим репозитория: **controlled maintenance** — dependency/security updates, compatibility fixes, documentation/recovery hygiene и owner-approved future programs.
-- Maintenance changes проходят `branch → focused change/tests → exact-head Regression Shield/security → zero unresolved review threads → squash merge`.
-- Изменения applied GPT configuration или reviewed Action contract дополнительно требуют owner Preview/`Update` на том же GPT; обычная backend/doc maintenance не означает автоматическое изменение GPT Editor.
-- Protected rollback v8.6.1 сохраняется только как проверенный recovery baseline и не является текущей applied-версией.
+- Omni-CIO v9.0.0 полностью реализован, merged и owner-accepted на **существующем** Custom GPT; V9 remains **controlled maintenance / recovery baseline**.
+- Omni-CIO V10 является **активной feature-development program** после OWNER command `START V10` 2026-08-05. Точный accepted progress/current-next WP намеренно не дублируется в changelog и читается только из `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
+- V10 work идёт через current authorized Work Package, focused branch/PR, root-cause/blast-radius preflight, all applicable exact-head checks SUCCESS, squash merge и required post-merge verification.
+- V9 maintenance остаётся ограниченной dependency/security updates, compatibility fixes, documentation/recovery hygiene и другими owner-approved maintenance изменениями; она не расширяет broker authority.
+- Изменения applied GPT configuration или reviewed Action contract дополнительно требуют owner Preview/`Update` на том же GPT; обычная backend/doc/V10 repository work не означает автоматическое изменение GPT Editor.
+- Protected rollback v8.6.1 сохраняется как проверенный recovery baseline и не является текущей applied-версией.
+- `app:app`, `trading_methods=false` и `REAL_TRADING_ENABLED=false` остаются защищёнными текущими safety invariants, пока owning accepted gate явно не меняет соответствующую authority.
+
+## [2026-08-16] Engineering Quality / Pre-CI / Green-Merge governance — accepted
+
+- OWNER-approved governance was accepted into exact `main` `1c05390d9cf31b8cc68a90a5d7cbd6428ffe7791` through PR #322.
+- Post-merge Regression Shield #1498 / run `31959959791` completed **SUCCESS** on that exact main.
+- The accepted law makes CI an independent verifier, requires root-cause/blast-radius analysis and cheap/focused preflight, accepts only `success` for applicable exact-head gates, delays OWNER product acceptance until merge + required post-merge GREEN, and records reusable failures in the Failure Learning Ledger.
+- This governance acceptance did not increase V10 product progress, complete WP22A, open public ingress, add broker-write authority or unlock WP23.
 
 ## [2026-08-05] Omni-CIO v9.0.0 — fully implemented and owner-accepted
 
@@ -116,4 +125,4 @@ This section is **historical release evidence**, not the current applied GPT con
 
 ## Historical note
 
-Full engineering history is available in Git commits/issues/PRs. Historical descriptions may intentionally mention the then-current version or an unfinished WP. Do not use those historical statements as current instructions. Current authority is accepted `main` plus `README.md`, `knowledge/16_CURRENT_PROGRAM_STATUS.md`, `gpt/CONFIGURATION.md` and the effective production OpenAPI where runtime Action authority is relevant.
+Full engineering history is available in Git commits/issues/PRs. Historical descriptions may intentionally mention the then-current version or an unfinished WP. Do not use those historical statements as current instructions. Current authority is accepted `main` plus `README.md`, `knowledge/16_CURRENT_PROGRAM_STATUS.md` for V9 runtime, `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md` for V10 development, accepted V10 authority chain and the effective production OpenAPI where runtime Action authority is relevant.
