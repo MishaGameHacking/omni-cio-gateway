@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 STATUS = ROOT / "knowledge/17_V10_CURRENT_PROGRAM_STATUS.md"
 LIFECYCLE = ROOT / "docs/DOCUMENTATION_AUTHORITY_AND_LIFECYCLE.md"
 PROGRAM_LOCK = ROOT / "docs/master-plan/OMNI_CIO_V10_PROGRAM_LOCK.md"
+AMENDMENTS_INDEX = ROOT / "docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md"
 TOOLCHAIN = ROOT / "docs/architecture/V10_TOOLCHAIN_BASELINE.md"
 START_RECORD = ROOT / "docs/master-plan/OMNI_CIO_V10_START_RECORD.md"
 READINESS_AUDIT = ROOT / "docs/master-plan/OMNI_CIO_V10_PLAN_READINESS_AUDIT.md"
@@ -29,7 +30,9 @@ LIVE_GUIDANCE = (
     ROOT / "docs/README.md",
     ROOT / "docs/master-plan/README.md",
     PROGRAM_LOCK,
+    AMENDMENTS_INDEX,
     ROOT / "knowledge/00_PROJECT_MASTER_CONTEXT.md",
+    ROOT / "knowledge/16_CURRENT_PROGRAM_STATUS.md",
     ROOT / "gpt/PROJECT_INSTRUCTIONS.md",
     ROOT / "gpt/NEW_CHAT_PROMPT.md",
     ROOT / ".github/copilot-instructions.md",
