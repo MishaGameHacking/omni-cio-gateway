@@ -134,7 +134,16 @@
     "hosted_compatibility_absence_blocks_stable_release_evidence": true,
     "non_applicable_or_capacity_deferred_job_must_execute_and_report": true,
     "job_level_skipped_is_green_evidence": false,
-    "restore_hosted_lanes_requires_state_reverification": true
+    "restore_hosted_lanes_requires_state_reverification": true,
+    "live_v9_authority_current_evidence_state": "DEFERRED_NO_TRUSTED_ZERO_COST_ROUTE_NOT_PASS",
+    "live_v9_authority_lenovo_route_semantically_equivalent": false,
+    "live_v9_authority_actual_probe_must_not_run_on_personal_node": true,
+    "live_v9_authority_automatic_schedule_while_deferred_forbidden": true,
+    "live_v9_authority_manual_hosted_workflow_preserved": true,
+    "live_v9_authority_pr_contract_workflow_required": true,
+    "live_v9_authority_missing_blocks_v9_runtime_or_authority_release": true,
+    "live_v9_authority_missing_blocks_governance_only_pr_merge": false,
+    "restore_live_v9_automation_requires_trusted_route_reverification": true
   },
   "failure_learning": {
     "confidence_postmortem_after_unexpected_red": true,
