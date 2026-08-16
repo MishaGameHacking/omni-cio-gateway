@@ -180,10 +180,14 @@ This amendment changes the operational/access design constraint only. WP22A rema
 
 `OMNI_CIO_V10_ENGINEERING_QUALITY_AND_GREEN_MERGE_AMENDMENT.md`
 
-Machine-readable / engineering-memory companions:
+Machine-readable / operations / engineering-memory companions:
 
 - `../architecture/V10_ENGINEERING_QUALITY_GATE_CONTRACT.json`;
-- `../operations/V10_ENGINEERING_FAILURE_LEARNING_LEDGER.md`.
+- `../operations/V10_OWNER_ACTION_HANDOFF_STANDARD.md`;
+- `../operations/V10_CI_COST_CONTROL_STANDARD.md`;
+- `../operations/V10_ENGINEERING_FAILURE_LEARNING_LEDGER.md`;
+- `../../.github/instructions/owner-handoff-and-runtime.instructions.md`;
+- `../../.github/workflows/v10-engineering-governance.yml`.
 
 Locks the OWNER-approved 2026-08-16 engineering discipline for all remaining V10 work:
 
@@ -199,6 +203,9 @@ Locks the OWNER-approved 2026-08-16 engineering discipline for all remaining V10
 - normal PR closure is GREEN -> full review -> squash merge; unmerged/superseded work is never accepted implementation;
 - OWNER product acceptance (phone/browser/UX/login/logout/portfolio comparison) occurs only after implementation merge and required post-merge Regression Shield GREEN;
 - pre-merge OWNER involvement is limited to genuinely non-delegable prerequisites such as external consent/account bootstrap, domain/payment decision, narrow credential bootstrap or physical/admin action;
+- OWNER-only handoffs require a verified direct official target link when stable, exact scope/action/result/STOP contract and no vague page discovery;
+- V10 Web/API runtime remains on the approved Personal Node; a new Render.com V10 host is not authorized by convenience;
+- OWNER-controlled GitHub Actions budget/payment state is never silently changed; current zero-budget hard stop is handled by truthful zero-cost routing without fake clean-room PASS;
 - unexpected material RED after declared preflight readiness requires a confidence postmortem and reusable learning is persisted in the Failure Learning Ledger.
 
 This amendment does not change WP numbering, progress weights or current WP authorization. It becomes active only when its own governance PR satisfies the same GREEN exact-head discipline, is squash-merged and passes required post-merge verification.
