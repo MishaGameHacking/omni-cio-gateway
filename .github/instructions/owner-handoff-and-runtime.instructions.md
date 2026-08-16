@@ -24,6 +24,23 @@ Before asking the OWNER to act:
 
 Never use shortened, third-party redirect, secret-bearing or private runtime links in OWNER instructions.
 
+## OWNER billing / CI cost control
+
+Never silently increase a GitHub/provider budget, disable a spending hard stop, add/replace payment information, buy a plan or authorize metered spend.
+
+The 2026-08-16 OWNER screenshot confirms that the personal GitHub Actions budget is currently USD 0 with stop-usage enabled. Treat that as a mutable external-state observation that must be reverified before future billing decisions, not as permission to change it.
+
+If a GitHub-hosted job is blocked by budget/billing:
+
+- classify the startup block accurately as external infrastructure/cost state rather than a code defect;
+- do not merge around the RED applicable check;
+- do not repeatedly trigger a hosted job already known to be unable to start;
+- first seek semantically equivalent zero-cost/already-paid validation, especially the accepted Lenovo self-hosted runner where appropriate;
+- never silently remove a required hosted clean-room semantic;
+- request OWNER spend only if the required verification cannot be reproduced safely without it, and state exact reason, cost exposure, alternative and rollback before the OWNER acts.
+
+Canonical cost-control standard: `docs/operations/V10_CI_COST_CONTROL_STANDARD.md`.
+
 ## V10 Web runs on the Personal Node
 
 For V10, the approved Lenovo/replacement Personal Node is the primary Web/API/runtime host. Build/render/serve the source-controlled V10 Web there according to the owning deployment contract.
