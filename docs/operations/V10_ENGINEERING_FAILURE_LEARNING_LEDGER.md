@@ -140,6 +140,28 @@ A short SHA may be used for navigation when useful. Full random-looking secret m
 
 ---
 
+## FL-006 — Zero-budget hard stop is a CI-routing constraint, not a merge bypass
+
+**Date:** 2026-08-16  
+**Scope:** V10 GitHub Actions cost control / hosted CI routing  
+**Symptom:** GitHub-hosted Fast/Toolchain jobs repeatedly failed before any substantive step, while GitHub reported a payment/spending-limit blocker. The OWNER then supplied a direct browser screenshot of `Billing & licensing → Budgets and alerts` showing the personal GitHub Actions product budget at **USD 0** and **Stop usage = Yes**.
+
+**Root cause:** the current external GitHub account state contains a hard zero-dollar Actions budget. GitHub's budget semantics can block metered hosted usage when the configured hard budget is exhausted/reached. The earlier CI process knew the annotation was infrastructure/billing-related but had not yet bound the concrete account budget state into the engineering cost-control model.
+
+**Blast radius searched:** all future GitHub-hosted Ubuntu/Windows V10 jobs, fast feedback, disposable clean-room checks, dependency/maintenance PRs, governance PRs and any workflow whose applicability would create a guaranteed hosted RED while the hard-stop state remains.
+
+**Why preflight missed it:** CI logic treated hosted capacity availability as an environmental assumption and only observed the generic GitHub startup annotation. The exact OWNER-controlled budget state had not yet been verified directly.
+
+**Corrective change:** create `docs/operations/V10_CI_COST_CONTROL_STANDARD.md`; record the zero-budget state as a mutable external observation; require engineering to prefer already-paid/zero-cost/self-hosted equivalent validation before requesting paid capacity; forbid silently increasing budget or disabling the hard stop; keep RED applicable checks merge-blocking.
+
+**Permanent regression/guard:** engineering quality contract now contains an explicit `ci_cost_control` boundary; repository agent instructions prohibit implicit spend/budget mutation; deterministic tests verify the cost-control contract and standard.
+
+**Future prevention rule:** before a final PR cycle, detect whether a known budget-blocked hosted workflow will be applicable. Do not intentionally generate predictable RED. Either preserve the required verification semantics through an accepted zero-cost/self-hosted route, correct genuinely non-applicable workflow routing, or stop at an explicit OWNER cost decision if paid hosted clean-room execution is truly indispensable.
+
+**Dependency/tooling knowledge change:** GitHub billing/budget state is a mutable external dependency. It must be reverified when relevant; it is neither code evidence nor permanent architecture authority.
+
+---
+
 ## Entry template
 
 ```text
