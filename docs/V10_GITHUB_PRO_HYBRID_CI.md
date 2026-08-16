@@ -36,7 +36,9 @@ While that state remains current:
 - the mandatory `V10 authoritative merge gate` remains unchanged and must still pass on exact head;
 - STABLE release provenance may not invent missing hosted compatibility evidence.
 
-This is a controlled capacity mode, not a permanent deletion of the hosted clean-room architecture. Before restoring hosted jobs, engineering must re-verify current OWNER-controlled billing/budget state and land the routing change through a normal all-GREEN PR.
+There is one important non-equivalent case: the protected V9 deployed-authority probe is external evidence, not deterministic source validation. A bounded diagnostic established that the Lenovo Personal Node can resolve the protected Render hostname but cannot establish the required TCP/443 path, so Lenovo is not an equivalent observer for that evidence. The actual `Live Gateway Authority Acceptance` therefore remains a manual GitHub-hosted workflow and its current evidence state is `DEFERRED_NO_TRUSTED_ZERO_COST_ROUTE_NOT_PASS`. A separate self-hosted PR contract validates that this evidence is not fabricated or silently dropped. Any V9 runtime/deployment/Action-authority release that owns production acceptance remains blocked until real hosted live acceptance is available and succeeds.
+
+This is a controlled capacity mode, not a permanent deletion of the hosted clean-room or independent-live-evidence architecture. Before restoring hosted jobs or automatic live probing, engineering must re-verify current OWNER-controlled billing/budget state and the required trusted network route, then land the routing change through a normal all-GREEN PR.
 
 ### Lenovo authoritative continuity
 
@@ -61,15 +63,16 @@ The required `V10 authoritative merge gate` runs the protected production-runtim
 
 The Lenovo authoritative gate deliberately does **not** install Python 3.14 during a PR job. Runtime installation inside a self-hosted Windows service account introduced unnecessary MSI/administrator coupling and made merge authority less deterministic. The currently installed Node.js toolchain is separately pinned and exercised by accepted Web gates; it is not represented as a disposable clean-room VM.
 
-The architectural separation remains: Lenovo proves the protected production runtime and security invariants; actual GitHub-hosted clean-room runs, when available, provide independent modern-toolchain compatibility evidence.
+The architectural separation remains: Lenovo proves the protected production runtime and security invariants; actual GitHub-hosted clean-room runs, when available, provide independent modern-toolchain compatibility evidence. External deployed-authority evidence likewise stays bound to a genuinely independent reachable observer rather than being silently moved to the Personal Node.
 
 ## Why this split is faster and safer
 
 - Heavy deterministic regression/security work stays on the always-available Lenovo runner and does not require hosted minutes.
 - No workflow repeatedly starts a hosted job already known to be blocked by OWNER budget state.
 - Exact Python 3.14.6 / Node 24.18.0 clean-room claims are made only when a disposable compatibility environment actually ran.
+- External live authority is claimed only when an independent trusted observer actually reached and validated the deployment.
 - The authoritative Lenovo gate never depends on MSI installation, administrator escalation, or a mutable machine-wide Python toolchain during a PR run.
-- Missing hosted acceleration is classified truthfully rather than converted into either a code failure or a fake PASS.
+- Missing hosted acceleration/live evidence is classified truthfully rather than converted into either a code failure or a fake PASS.
 
 ## Security invariants
 
@@ -88,10 +91,10 @@ The architectural separation remains: Lenovo proves the protected production run
 
 ## Capacity / outage behavior
 
-A provider outage, exhausted quota, or OWNER hard budget stop is an infrastructure/capacity condition, not permission to weaken code/security gates.
+A provider outage, exhausted quota, OWNER hard budget stop or unavailable network path is an infrastructure/capacity condition, not permission to weaken code/security gates or mislabel missing evidence as PASS.
 
 The accepted response is:
 
-`classify capacity -> avoid guaranteed hosted RED -> execute zero-cost deterministic/authoritative lanes -> report missing clean-room evidence explicitly -> merge only if every applicable exact-head check is success -> preserve clean-room evidence requirement for any later release claim that needs it`.
+`classify capacity/network semantics -> avoid guaranteed RED -> execute only semantically equivalent zero-cost deterministic/authoritative lanes -> report missing clean-room/live evidence explicitly -> merge only if every applicable exact-head check is success -> preserve missing evidence as a blocker for any later release claim that owns it`.
 
-When hosted capacity recovers, it must be re-verified rather than assumed. A focused CI/governance PR then restores the hosted acceleration lanes and must itself satisfy the same GREEN merge law.
+When hosted capacity or a trusted live-observer route recovers, it must be re-verified rather than assumed. A focused CI/governance PR then restores the corresponding lanes and must itself satisfy the same GREEN merge law.
