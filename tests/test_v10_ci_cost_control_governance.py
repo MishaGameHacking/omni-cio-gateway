@@ -10,6 +10,7 @@ STANDARD_PATH = ROOT / "docs" / "operations" / "V10_CI_COST_CONTROL_STANDARD.md"
 FAST_WORKFLOW_PATH = ROOT / ".github" / "workflows" / "v10-pr-fast-checks.yml"
 TOOLCHAIN_WORKFLOW_PATH = ROOT / ".github" / "workflows" / "v10-toolchain-compat.yml"
 LIVE_WORKFLOW_PATH = ROOT / ".github" / "workflows" / "live-gateway-authority.yml"
+WARM_LIVE_SCRIPT_PATH = ROOT / "scripts" / "warm_live_gateway.ps1"
 
 
 def test_ci_cost_control_requires_explicit_owner_spend_approval() -> None:
@@ -95,13 +96,18 @@ def test_scheduled_live_authority_does_not_burn_blocked_hosted_capacity() -> Non
 
 def test_windows_live_authority_allows_bounded_provider_cold_start() -> None:
     workflow = LIVE_WORKFLOW_PATH.read_text(encoding="utf-8")
+    script = WARM_LIVE_SCRIPT_PATH.read_text(encoding="utf-8")
 
     assert "Warm protected V9 gateway across bounded Render cold start" in workflow
-    assert "[DateTimeOffset]::UtcNow.AddSeconds(150)" in workflow
-    assert "Invoke-WebRequest -Uri $healthUrl" in workflow
-    assert "-TimeoutSec 75" in workflow
-    assert "Start-Sleep -Seconds 5" in workflow
-    assert "exit 41" in workflow
+    assert "powershell.exe -NoProfile -ExecutionPolicy Bypass" in workflow
+    assert "-File scripts\\warm_live_gateway.ps1" in workflow
+    assert "[int]$DeadlineSeconds = 150" in script
+    assert "[int]$RequestTimeoutSeconds = 75" in script
+    assert '$baseUri.Scheme -ne "https"' in script
+    assert '$baseUri.Host -ne "omni-cio-gateway.onrender.com"' in script
+    assert "Invoke-WebRequest" in script
+    assert "Start-Sleep -Seconds $RetryDelaySeconds" in script
+    assert "exit 41" in script
     assert "Verify deployed v9 Action authority without broker mutation" in workflow
 
 
