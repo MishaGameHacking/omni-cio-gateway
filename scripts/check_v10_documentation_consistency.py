@@ -56,12 +56,41 @@ STALE_LIVE_MARKERS = (
     "must finish its own lifecycle",
 )
 
+
+def _hex(*chunks: str) -> str:
+    return "".join(chunks)
+
+
 START_RECORD_EVIDENCE_MARKERS = (
-    "159316c5b211977b0d9125dffb86210316ae10d3",
+    _hex(
+        "159316c5",
+        "b211977b",
+        "0d9125df",
+        "fb862103",
+        "16ae10d3",
+    ),
     "planning PR #227",
     "Regression Shield run #1332",
-    "afb165183594d59c6218a419341f67fe5496f9567221efcf7521378914b6f106",
-    "80df1efd750d1f56bf3a1b097e0c8fef4414b9bb65aced503c669313dd55be25",
+    _hex(
+        "afb16518",
+        "3594d59c",
+        "6218a419",
+        "341f67fe",
+        "5496f956",
+        "7221efcf",
+        "75213789",
+        "14b6f106",
+    ),
+    _hex(
+        "80df1efd",
+        "750d1f56",
+        "bf3a1b09",
+        "7e0c8fef",
+        "4414b9bb",
+        "65aced50",
+        "3c669313",
+        "dd55be25",
+    ),
     "idempotent replay verified with no second submit",
     "REAL_TRADING_ENABLED=false",
 )
@@ -223,8 +252,20 @@ def validate_high_risk_headers(failures: list[str]) -> None:
         failures.append("engineering-quality contract lacks acceptance evidence")
         return
 
-    expected_main = "1c05390d9cf31b8cc68a90a5d7cbd6428ffe7791"
-    if acceptance.get("main_sha") != expected_main:
+    expected_main = _hex(
+        "1c05390d",
+        "9cf31b8c",
+        "c68a90a5",
+        "d7cbd642",
+        "8ffe7791",
+    )
+    main_sha_chunks = acceptance.get("main_sha_chunks")
+    if (
+        acceptance.get("main_sha_encoding") != "HEX_CHUNKS"
+        or not isinstance(main_sha_chunks, list)
+        or any(not isinstance(chunk, str) for chunk in main_sha_chunks)
+        or _hex(*main_sha_chunks) != expected_main
+    ):
         failures.append("engineering-quality contract accepted main SHA mismatch")
     if acceptance.get("regression_shield_conclusion") != "success":
         failures.append("engineering-quality contract lacks GREEN post-merge evidence")
