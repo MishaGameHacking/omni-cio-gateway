@@ -119,6 +119,7 @@
     "owner_budget_or_payment_mutation_requires_explicit_approval": true,
     "known_zero_budget_hard_stop_is_code_failure": false,
     "known_budget_blocked_hosted_job_must_not_be_triggered_as_applicable_gate": true,
+    "scheduled_hosted_jobs_while_blocked_forbidden": true,
     "zero_cost_routing_preferred_when_semantically_equivalent": true,
     "self_hosted_lenovo_preferred_for_heavy_repeatable_validation": true,
     "hosted_clean_room_semantics_may_not_be_silently_dropped": true,
