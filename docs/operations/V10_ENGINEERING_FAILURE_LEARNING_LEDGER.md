@@ -232,7 +232,7 @@ A short SHA may be used for navigation when useful. Full random-looking secret m
 
 **Date:** 2026-08-16  
 **Reference:** governance PR #322  
-**Symptom / failing gate:** the Fast frontend applicability job completed its Node/npm version checks, fixture typecheck/lint/tests/build, product Web typecheck/lint/tests/build and dependency audit successfully, then failed only in its always-run cleanup because `shell: bash` could not resolve `bash` on that self-hosted Windows job.
+**Symptom / failing gate:** the Fast frontend applicability job completed its Node/npm version checks, fixture typecheck/lint/tests/build and product Web typecheck/lint/tests/build and dependency audit successfully, then failed only in its always-run cleanup because `shell: bash` could not resolve `bash` on that self-hosted Windows job.
 
 **Root cause:** the route and policy jobs explicitly bootstrap Git for Windows into `GITHUB_PATH`, but the frontend job does not run that bootstrap. The cleanup step therefore depended on PATH state established in other jobs, even though GitHub Actions jobs do not share job-local environment mutations.
 
@@ -313,6 +313,28 @@ A short SHA may be used for navigation when useful. Full random-looking secret m
 **Future prevention rule:** whenever a focused CI lane uses a lightweight test runner, preflight the exact command and require positive discovery/execution evidence; do not infer runner compatibility from file names or function names alone.
 
 **Dependency/tooling knowledge change:** pytest function discovery and `unittest` class discovery are different execution contracts. Test-runner selection is part of CI harness semantics, not interchangeable syntax.
+
+---
+
+## FL-014 — Workflow policy tests must distinguish references from execution
+
+**Date:** 2026-08-16  
+**Reference:** governance PR #322  
+**Symptom / failing gate:** the authoritative protected Regression Shield reached the full pytest suite and reported one failure after 2,099 passing tests. The failing governance assertion rejected the string `check_live_gateway_authority.py` anywhere in the self-hosted routing workflow, even though the only occurrence was a legitimate `pull_request.paths` source reference used to retrigger the routing contract when the real hosted probe changes.
+
+**Root cause:** a negative whole-file substring assertion conflated workflow metadata/source references with executable commands. The safety requirement is that Lenovo must not execute the deployed-live probe, not that the filename can never appear in the workflow document.
+
+**Blast radius searched:** governance and workflow-policy tests that use broad negative substring assertions over complete YAML/text files, especially where the same file/function name can legitimately appear in `paths`, comments, documentation or test metadata without being executed.
+
+**Why preflight missed it:** the dedicated live-routing workflow had already validated the intended non-fabrication contract, but the exact full-suite assertion semantics were not independently challenged with the legitimate path-filter case before the expensive authoritative cycle.
+
+**Corrective change:** preserve the `pull_request.paths` dependency and narrow the negative test to executable command forms (`python scripts/check_live_gateway_authority.py` and the Windows path equivalent). No workflow safety boundary or routing behavior was weakened.
+
+**Permanent regression/guard:** the focused test now documents the distinction explicitly and fails only if the real hosted probe is actually invoked from the Lenovo routing workflow. Future policy tests should prefer parsed/anchored execution semantics over naive whole-document token absence when metadata can contain the same identifier.
+
+**Future prevention rule:** when a safety contract says “must not execute X,” test execution syntax/AST/YAML structure rather than banning every textual reference to X. Broad substring bans are acceptable only when the contract truly forbids the identifier everywhere.
+
+**Dependency/tooling knowledge change:** GitHub Actions `pull_request.paths` entries are trigger metadata, not job execution. Source-coupling in a path filter may be required precisely so policy contracts rerun when the guarded implementation changes.
 
 ---
 
