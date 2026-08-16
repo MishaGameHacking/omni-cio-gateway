@@ -184,6 +184,28 @@ A short SHA may be used for navigation when useful. Full random-looking secret m
 
 ---
 
+## FL-008 — Windows CI must use the canonical Windows dependency projection
+
+**Date:** 2026-08-16  
+**Reference:** governance PR #322  
+**Symptom / failing gate:** after the scheduled live V9 authority probe was correctly moved to the Lenovo Windows runner, its dependency-install step failed before the read-only live probe could run. The runtime lock attempted to build `uvloop` on Windows and failed because that dependency is not supported on Windows.
+
+**Root cause:** the runner OS was changed from GitHub-hosted Linux to self-hosted Windows, but the dependency install command was not changed with it: the workflow installed the canonical POSIX `requirements.txt` directly instead of generating and installing the repository's established Windows projection.
+
+**Blast radius searched:** every workflow moved between runner operating systems, especially self-hosted Windows jobs that install runtime or development locks; the canonical `windows_ci_lock.py` projection and existing accepted Windows workflows were reviewed as the established solution.
+
+**Why preflight missed it:** the zero-budget routing review focused on applicability, runner choice, secrets and merge semantics but did not include an OS-transition audit of every platform-sensitive dependency/toolchain command.
+
+**Corrective change:** make `live-gateway-authority.yml` build `windows-requirements.txt` with `scripts/windows_ci_lock.py project requirements.txt windows-requirements.txt` and install that hash-locked Windows projection. Do not remove `uvloop` from the canonical POSIX lock and do not soften the failure.
+
+**Permanent regression/guard:** the CI cost-control validator and focused governance tests now require the Windows projection in the scheduled live-authority workflow and reject direct installation of the POSIX runtime lock on that Windows lane.
+
+**Future prevention rule:** any runner-OS change requires an explicit audit of dependency locks, shell syntax, tool bootstrap, path semantics and platform-only packages before the expensive exact-head cycle.
+
+**Dependency/tooling knowledge change:** the repository already owns the platform compatibility boundary: `windows_ci_lock.py` excludes non-Windows runtime packages such as `uvloop` while preserving the canonical lock as source authority.
+
+---
+
 ## Entry template
 
 ```text
