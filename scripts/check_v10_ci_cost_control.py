@@ -131,6 +131,8 @@ def main() -> int:
                 "Self-hosted PowerShell steps must respect the node execution policy",
                 "FL-010",
                 "Windows cleanup must not depend on implicit Bash PATH",
+                "FL-011",
+                "PowerShell failure reporting must preserve intended exit codes",
             ),
         ),
         (
@@ -171,13 +173,20 @@ def main() -> int:
         (
             WARM_LIVE_SCRIPT,
             (
+                "function Stop-WithCode",
+                "[Console]::Error.WriteLine($Message)",
                 '$baseUri.Scheme -ne "https"',
                 '$baseUri.Host -ne "omni-cio-gateway.onrender.com"',
+                "[System.Net.Dns]::GetHostAddresses",
+                "System.Net.Sockets.TcpClient",
                 "AddSeconds($DeadlineSeconds)",
                 "Invoke-WebRequest",
                 "-TimeoutSec $RequestTimeoutSeconds",
+                'catch [System.Net.WebException]',
+                '"WEB_$($webException.Status)"',
                 "Start-Sleep -Seconds $RetryDelaySeconds",
-                "exit 41",
+                '"LIVE_WAKE_FAILED dns=$dnsState tcp443=$tcpState http=$lastHttpState attempts=$attempt"',
+                "-Code 41",
             ),
         ),
     ):
@@ -220,6 +229,16 @@ def main() -> int:
                 "Windows live-authority workflow must not install the POSIX runtime lock directly"
             )
 
+    try:
+        warm_script = WARM_LIVE_SCRIPT.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        failures.append(f"cannot read {WARM_LIVE_SCRIPT.relative_to(ROOT)}: {exc}")
+    else:
+        if "Write-Error" in warm_script:
+            failures.append(
+                "bounded live wake probe must preserve explicit exit codes instead of terminating through Write-Error"
+            )
+
     if failures:
         print("V10 CI cost-control guard failed:", file=sys.stderr)
         for failure in failures:
@@ -233,7 +252,7 @@ def main() -> int:
     print("Windows fast cleanup: native cmd; no cross-job Bash PATH dependency")
     print("Scheduled live-authority probe: zero-cost Lenovo continuity mode")
     print("Windows live probe dependencies: projected from the canonical runtime lock")
-    print("Render cold-start wake window: bounded before strict live authority verification")
+    print("Render cold-start wake window: bounded and safely classified before strict verification")
     print("Hosted compatibility: executed routing check; no clean-room PASS fabricated")
     print("Stable release compatibility evidence: still required")
     return 0
