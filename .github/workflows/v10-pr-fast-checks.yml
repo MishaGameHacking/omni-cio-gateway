@@ -12,28 +12,37 @@ concurrency:
   group: v10-fast-pr-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
+# Current OWNER-observed GitHub-hosted capacity is blocked by the account-level
+# zero-budget hard stop. Fast deterministic checks therefore use the accepted
+# Lenovo continuity lane. This does not claim disposable hosted clean-room
+# evidence; V10 Toolchain Compatibility reports that evidence separately.
 jobs:
   route:
-    name: Classify hosted CI paths
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
+    name: Classify V10 CI paths
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 8
     outputs:
       fast_frontend: ${{ steps.route.outputs.fast_frontend }}
       categories: ${{ steps.route.outputs.categories }}
 
     steps:
-      - name: Check out repository with comparison history
+      - name: Check out exact reviewed head with comparison history
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Bootstrap protected runner Python
+        shell: cmd
+        run: scripts\bootstrap_windows_ci_python.cmd
 
       - name: Classify changed paths
         id: route
         shell: bash
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             git diff --name-only "$BASE_SHA" "$HEAD_SHA" > "$RUNNER_TEMP/v10-changed-paths.txt"
@@ -44,48 +53,63 @@ jobs:
             --paths-file "$RUNNER_TEMP/v10-changed-paths.txt" \
             --github-output "$GITHUB_OUTPUT"
 
+      - name: Clean routing workspace
+        if: always()
+        shell: bash
+        run: |
+          git reset --hard HEAD
+          git clean -ffdx
+
   policy-and-source:
     name: Fast policy and source contracts
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: cmd
 
     steps:
-      - name: Check out repository
+      - name: Check out exact reviewed head
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
-      - name: Set up selected Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.14.6"
+      - name: Bootstrap protected runner Python 3.12.10
+        run: scripts\bootstrap_windows_ci_python.cmd
 
-      - name: Verify exact interpreter
-        shell: bash
-        run: test "$(python -c 'import platform; print(platform.python_version())')" = "3.14.6"
+      - name: Verify protected interpreter identity
+        run: python -c "import platform; assert platform.python_version() == '3.12.10'; print(platform.python_version())"
 
       - name: Verify CI and security baseline
-        run: python scripts/check_ci_security_baseline.py
+        run: python scripts\check_ci_security_baseline.py
 
       - name: Verify repository structure
-        run: python scripts/check_repository_layout.py
+        run: python scripts\check_repository_layout.py
 
       - name: Verify V10 repository boundaries
-        run: python scripts/check_v10_repository_boundaries.py
+        run: python scripts\check_v10_repository_boundaries.py
+
+      - name: Verify V10 engineering governance when present
+        run: |
+          if exist scripts\check_v10_engineering_governance.py python scripts\check_v10_engineering_governance.py
+          if errorlevel 1 exit /b %errorlevel%
+          if exist scripts\check_v10_ci_cost_control.py python scripts\check_v10_ci_cost_control.py
+          if errorlevel 1 exit /b %errorlevel%
 
       - name: Verify V10 toolchain baseline
-        run: python scripts/check_v10_toolchain_baseline.py
+        run: python scripts\check_v10_toolchain_baseline.py
 
       - name: Verify product Web package and lock baseline
-        run: python scripts/check_v10_web_baseline.py
+        run: python scripts\check_v10_web_baseline.py
 
       - name: Verify V10 Regression Shield and WP4 release contract
-        run: python scripts/check_v10_regression_shield.py
+        run: python scripts\check_v10_regression_shield.py
 
-      - name: Compile policy, release, and boundary sources
+      - name: Compile policy release and boundary sources
         run: >-
-          python -m compileall -q scripts omni_cio/contracts
-          omni_cio/plan_execution omni_cio/sandbox omni_cio/real_trading
+          python -m compileall -q scripts omni_cio\contracts
+          omni_cio\plan_execution omni_cio\sandbox omni_cio\real_trading
 
       - name: Run CI and release guard unit tests
         run: >-
@@ -94,72 +118,102 @@ jobs:
           tests.test_v10_release_provenance
           tests.test_v10_web_baseline
 
+      - name: Clean policy workspace
+        if: always()
+        shell: bash
+        run: |
+          git reset --hard HEAD
+          git clean -ffdx
+
   frontend-contracts:
-    name: Fast frontend type lint unit build
+    name: Fast frontend applicability and contracts
     needs: route
-    if: needs.route.outputs.fast_frontend == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 12
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 18
     defaults:
       run:
-        working-directory: tests/toolchain/frontend
+        shell: cmd
 
     steps:
-      - name: Check out repository
+      - name: Check out exact reviewed head
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
-      - name: Set up selected Node.js LTS with npm cache
-        uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
-        with:
-          node-version: "24.18.0"
-          cache: "npm"
-          cache-dependency-path: |
-            tests/toolchain/frontend/package-lock.json
-            apps/web/package-lock.json
+      - name: Report non-applicable frontend lane
+        if: needs.route.outputs.fast_frontend != 'true'
+        run: echo Fast frontend substantive checks NOT_APPLICABLE by source-controlled path router; routing check executed successfully.
 
-      - name: Verify exact Node.js and npm versions
-        shell: bash
+      - name: Verify exact installed Node.js and npm
+        if: needs.route.outputs.fast_frontend == 'true'
         run: |
-          test "$(node --version)" = "v24.18.0"
-          test "$(npm --version)" = "11.16.0"
+          if not exist "C:\Program Files\nodejs\node.exe" exit /b 20
+          if not exist "C:\Program Files\nodejs\npm.cmd" exit /b 21
+          "C:\Program Files\nodejs\node.exe" -e "if (process.version !== 'v24.18.0') process.exit(1); console.log(process.version)"
+          if errorlevel 1 exit /b 22
+          powershell.exe -NoProfile -NonInteractive -Command "$v = (& 'C:\Program Files\nodejs\npm.cmd' --version | Out-String).Trim(); Write-Host ('npm ' + $v); if ($v -ne '11.16.0') { exit 23 }"
+          if errorlevel 1 exit /b 23
+          >>"%GITHUB_PATH%" echo C:\Program Files\nodejs
 
       - name: Reproduce WP2 frontend fixture
-        run: npm ci --ignore-scripts --no-audit --no-fund
+        if: needs.route.outputs.fast_frontend == 'true'
+        working-directory: tests/toolchain/frontend
+        run: call "C:\Program Files\nodejs\npm.cmd" ci --ignore-scripts --no-audit --no-fund
 
       - name: Type-check WP2 frontend fixture
-        run: npm run typecheck
+        if: needs.route.outputs.fast_frontend == 'true'
+        working-directory: tests/toolchain/frontend
+        run: call "C:\Program Files\nodejs\npm.cmd" run typecheck
 
       - name: Lint WP2 frontend fixture
-        run: npm run lint
+        if: needs.route.outputs.fast_frontend == 'true'
+        working-directory: tests/toolchain/frontend
+        run: call "C:\Program Files\nodejs\npm.cmd" run lint
 
       - name: Run WP2 frontend fixture unit tests
-        run: npm test
+        if: needs.route.outputs.fast_frontend == 'true'
+        working-directory: tests/toolchain/frontend
+        run: call "C:\Program Files\nodejs\npm.cmd" test
 
       - name: Build WP2 frontend fixture
-        run: npm run build
+        if: needs.route.outputs.fast_frontend == 'true'
+        working-directory: tests/toolchain/frontend
+        run: call "C:\Program Files\nodejs\npm.cmd" run build
 
       - name: Reproduce product Web from committed lock
+        if: needs.route.outputs.fast_frontend == 'true'
         working-directory: apps/web
-        run: npm ci --ignore-scripts --no-audit --no-fund
+        run: call "C:\Program Files\nodejs\npm.cmd" ci --ignore-scripts --no-audit --no-fund
 
       - name: Type-check product Web
+        if: needs.route.outputs.fast_frontend == 'true'
         working-directory: apps/web
-        run: npm run typecheck
+        run: call "C:\Program Files\nodejs\npm.cmd" run typecheck
 
       - name: Lint product Web
+        if: needs.route.outputs.fast_frontend == 'true'
         working-directory: apps/web
-        run: npm run lint
+        run: call "C:\Program Files\nodejs\npm.cmd" run lint
 
       - name: Run product Web unit tests
+        if: needs.route.outputs.fast_frontend == 'true'
         working-directory: apps/web
-        run: npm test
+        run: call "C:\Program Files\nodejs\npm.cmd" test
 
       - name: Build product Web
+        if: needs.route.outputs.fast_frontend == 'true'
         working-directory: apps/web
-        run: npm run build
+        run: call "C:\Program Files\nodejs\npm.cmd" run build
 
       - name: Audit product Web dependencies
+        if: needs.route.outputs.fast_frontend == 'true'
         working-directory: apps/web
-        run: npm audit --audit-level=high
+        run: call "C:\Program Files\nodejs\npm.cmd" audit --audit-level=high
+
+      - name: Clean frontend workspace
+        if: always()
+        shell: bash
+        run: |
+          git reset --hard HEAD
+          git clean -ffdx
