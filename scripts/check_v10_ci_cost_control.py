@@ -150,6 +150,8 @@ def main() -> int:
                 "Windows cleanup must not depend on implicit Bash PATH",
                 "FL-012",
                 "External live evidence cannot be moved to a non-equivalent network path",
+                "FL-013",
+                "Test runner must match the test discovery model",
             ),
         ),
         (
@@ -191,7 +193,7 @@ def main() -> int:
                 "runs-on: [self-hosted, Windows, X64, omni-cio-ci]",
                 "Verify CI cost-control and live evidence routing",
                 "python scripts\\check_v10_ci_cost_control.py",
-                "python -m unittest tests.test_live_acceptance_repository_assets",
+                "python tests\\test_live_acceptance_repository_assets.py",
                 "ACTUAL_V9_LIVE_AUTHORITY_EVIDENCE=DEFERRED_NO_TRUSTED_ZERO_COST_ROUTE",
                 "SUCCESS_DOES_NOT_CLAIM_DEPLOYED_LIVE_PASS",
                 "MANUAL_HOSTED_ACCEPTANCE_REMAINS_REQUIRED_FOR_V9_RUNTIME_AUTHORITY_RELEASE",

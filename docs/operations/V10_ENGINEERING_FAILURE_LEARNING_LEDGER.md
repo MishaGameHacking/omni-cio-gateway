@@ -188,17 +188,17 @@ A short SHA may be used for navigation when useful. Full random-looking secret m
 
 **Date:** 2026-08-16  
 **Reference:** governance PR #322  
-**Symptom / failing gate:** after the scheduled live V9 authority probe was correctly moved to the Lenovo Windows runner, its dependency-install step failed before the read-only live probe could run. The runtime lock attempted to build `uvloop` on Windows and failed because that dependency is not supported on Windows.
+**Symptom / failing gate:** during an intermediate attempt to evaluate Lenovo as the live V9 authority route, the Windows dependency-install step failed before the read-only live probe could run. The canonical POSIX runtime lock attempted to build `uvloop`, which is unsupported on Windows. The later FL-012 finding supersedes the assumption that this Lenovo route was evidence-equivalent for deployed-live acceptance.
 
-**Root cause:** the runner OS was changed from GitHub-hosted Linux to self-hosted Windows, but the dependency install command was not changed with it: the workflow installed the canonical POSIX `requirements.txt` directly instead of generating and installing the repository's established Windows projection.
+**Root cause:** the runner OS was changed from GitHub-hosted Linux to self-hosted Windows without changing the dependency-install projection at the same time.
 
 **Blast radius searched:** every workflow moved between runner operating systems, especially self-hosted Windows jobs that install runtime or development locks; the canonical `windows_ci_lock.py` projection and existing accepted Windows workflows were reviewed as the established solution.
 
 **Why preflight missed it:** the zero-budget routing review focused on applicability, runner choice, secrets and merge semantics but did not include an OS-transition audit of every platform-sensitive dependency/toolchain command.
 
-**Corrective change:** make `live-gateway-authority.yml` build `windows-requirements.txt` with `scripts/windows_ci_lock.py project requirements.txt windows-requirements.txt` and install that hash-locked Windows projection. Do not remove `uvloop` from the canonical POSIX lock and do not soften the failure.
+**Corrective change:** use `scripts/windows_ci_lock.py` whenever an accepted Windows workflow legitimately projects the canonical POSIX runtime lock to Windows. For the live V9 deployed-authority probe specifically, this intermediate Windows route was later removed after FL-012 proved the network vantage point non-equivalent.
 
-**Permanent regression/guard:** the CI cost-control validator and focused governance tests now require the Windows projection in the scheduled live-authority workflow and reject direct installation of the POSIX runtime lock on that Windows lane.
+**Permanent regression/guard:** preserve the general platform-transition rule: a Windows runner must use the reviewed Windows dependency projection where required. FL-012 is authoritative for the separate live-evidence routing decision and forbids treating the Personal Node as equivalent deployed-live evidence.
 
 **Future prevention rule:** any runner-OS change requires an explicit audit of dependency locks, shell syntax, tool bootstrap, path semantics and platform-only packages before the expensive exact-head cycle.
 
@@ -291,6 +291,28 @@ A short SHA may be used for navigation when useful. Full random-looking secret m
 **Future prevention rule:** before moving any external acceptance job between runners, identify whether the runner's network location/identity is part of the evidence semantics. If it is, a cheaper runner is acceptable only after equivalence is proven; otherwise classify the evidence as unavailable/deferred rather than fabricate success.
 
 **Dependency/tooling knowledge change:** network vantage point is part of some acceptance contracts. DNS success does not imply HTTPS reachability, and increasing cold-start retries cannot repair a TCP path that is not available from the chosen observer.
+
+---
+
+## FL-013 — Test runner must match the test discovery model
+
+**Date:** 2026-08-16  
+**Reference:** governance PR #322  
+**Symptom / failing gate:** `V10 Live Gateway Authority Contract` passed its routing/cost guard and then failed in `Verify tracked live-authority assets` because `python -m unittest tests.test_live_acceptance_repository_assets` discovered **zero tests** and exited non-zero. The module contains pytest-style top-level `test_*` functions, not `unittest.TestCase` methods.
+
+**Root cause:** the workflow command and the test module's discovery model were inconsistent. Static review verified that the expected command string existed, but did not prove that the exact command could discover and execute a positive number of checks.
+
+**Blast radius searched:** focused governance workflows, lightweight source-contract checks, and other places where `unittest` may be invoked against pytest-style function modules or where a CI step asserts a test command without executing the same discovery path during preflight.
+
+**Why preflight missed it:** the test assertions were reviewed and run under broader pytest surfaces, while the exact lightweight workflow command was not reproduced independently before the final exact-head cycle.
+
+**Corrective change:** make the repository-asset module executable with a dependency-free `main()` that explicitly invokes all three contract checks, and run that file directly from the lightweight workflow. Pytest can still collect the same `test_*` functions in broader suites.
+
+**Permanent regression/guard:** `check_v10_ci_cost_control.py` requires the exact standalone command, and the module's direct execution reports the number of checks actually run. The self-test also asserts that the workflow uses this executable contract path.
+
+**Future prevention rule:** whenever a focused CI lane uses a lightweight test runner, preflight the exact command and require positive discovery/execution evidence; do not infer runner compatibility from file names or function names alone.
+
+**Dependency/tooling knowledge change:** pytest function discovery and `unittest` class discovery are different execution contracts. Test-runner selection is part of CI harness semantics, not interchangeable syntax.
 
 ---
 

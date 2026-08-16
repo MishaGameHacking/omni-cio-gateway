@@ -64,7 +64,7 @@ def test_pr_live_authority_contract_executes_without_claiming_live_pass() -> Non
     assert "pull_request:" in workflow
     assert "runs-on: [self-hosted, Windows, X64, omni-cio-ci]" in workflow
     assert "python scripts\\check_v10_ci_cost_control.py" in workflow
-    assert "python -m unittest tests.test_live_acceptance_repository_assets" in workflow
+    assert "python tests\\test_live_acceptance_repository_assets.py" in workflow
     assert (
         "ACTUAL_V9_LIVE_AUTHORITY_EVIDENCE=DEFERRED_NO_TRUSTED_ZERO_COST_ROUTE"
         in workflow
@@ -80,3 +80,19 @@ def test_pr_live_authority_contract_executes_without_claiming_live_pass() -> Non
     assert "continue-on-error: true" not in workflow
     assert "persist-credentials: false" in workflow
     _assert_external_actions_are_pinned(workflow)
+
+
+def main() -> int:
+    checks = (
+        test_live_authority_assets_are_tracked,
+        test_actual_live_authority_workflow_is_manual_hosted_read_only_and_pinned,
+        test_pr_live_authority_contract_executes_without_claiming_live_pass,
+    )
+    for check in checks:
+        check()
+    print(f"Live authority repository asset checks passed: {len(checks)}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
