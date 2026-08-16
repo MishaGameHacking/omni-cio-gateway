@@ -39,24 +39,28 @@ def test_cloudflared_binary_is_version_and_hash_pinned() -> None:
     assert "--no-autoupdate" in text
 
 
-def test_terraform_bootstrap_is_version_and_hash_pinned() -> None:
+def test_opentofu_bootstrap_is_version_hash_and_distribution_pinned() -> None:
     text = TERRAFORM_BOOTSTRAP.read_text(encoding="utf-8")
-    assert '$version = "1.15.6"' in text
+    assert '$version = "1.12.5"' in text
+    assert '$archiveName = "tofu_${version}_windows_amd64.zip"' in text
     assert "$expectedSha256 = @(" in text
     for part in (
-        "56b4d3a1",
-        "57e346f8",
-        "fc1e9425",
-        "4d0a944e",
-        "6fec81f5",
-        "8ddd43eb",
-        "274b8e0e",
-        "bb56e334",
+        "465adc4b",
+        "df4aa80c",
+        "650387b7",
+        "ada2cf75",
+        "0f7908bf",
+        "1fae7f35",
+        "b05402c3",
+        "84e79928",
     ):
         assert f'"{part}"' in text
     assert ') -join ""' in text
+    assert "https://github.com/opentofu/opentofu/releases/download/v$version/$archiveName" in text
+    assert 'Join-Path $installRoot "tofu.exe"' in text
     assert "Get-FileHash -Algorithm SHA256" in text
-    assert "WP22A_TERRAFORM_ARCHIVE_HASH_MISMATCH" in text
+    assert "WP22A_OPENTOFU_ARCHIVE_HASH_MISMATCH" in text
+    assert "releases.hashicorp.com" not in text
 
 
 def test_tunnel_token_is_never_put_in_task_arguments_or_json_config() -> None:
@@ -140,6 +144,8 @@ def test_fail_closed_apply_restores_local_web_after_cutover_started() -> None:
 
 def test_cloudflare_intent_consumes_existing_hardened_org_and_default_idp() -> None:
     text = TERRAFORM.read_text(encoding="utf-8")
+    assert 'required_version = "1.12.5"' in text
+    assert 'source  = "registry.terraform.io/cloudflare/cloudflare"' in text
     assert 'version = "5.22.0"' in text
     assert 'data "cloudflare_zero_trust_organization" "existing"' in text
     assert 'data "cloudflare_zero_trust_access_identity_providers" "existing"' in text
