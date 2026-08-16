@@ -156,6 +156,10 @@ def main() -> int:
                 "Build strict Windows runtime dependency projection",
                 "python scripts\\windows_ci_lock.py project requirements.txt windows-requirements.txt",
                 "--require-hashes -r windows-requirements.txt",
+                "Warm protected V9 gateway across bounded Render cold start",
+                "[DateTimeOffset]::UtcNow.AddSeconds(150)",
+                "Invoke-WebRequest -Uri $healthUrl",
+                "-TimeoutSec 75",
                 "Verify deployed v9 Action authority without broker mutation",
                 "persist-credentials: false",
             ),
@@ -192,6 +196,7 @@ def main() -> int:
     print("Fast deterministic checks: zero-cost Lenovo continuity mode")
     print("Scheduled live-authority probe: zero-cost Lenovo continuity mode")
     print("Windows live probe dependencies: projected from the canonical runtime lock")
+    print("Render cold-start wake window: bounded before strict live authority verification")
     print("Hosted compatibility: executed routing check; no clean-room PASS fabricated")
     print("Stable release compatibility evidence: still required")
     return 0
