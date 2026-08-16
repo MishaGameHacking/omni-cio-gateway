@@ -12,12 +12,31 @@ import type {
 } from "./contracts";
 
 const JSON_HEADERS = { "Content-Type": "application/json" } as const;
+const REMOTE_CSRF_COOKIE = "__Host-omni_v10_csrf";
+const REMOTE_CSRF_HEADER = "X-Omni-CSRF";
+const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+
+function cookieValue(name: string): string | null {
+  const prefix = `${name}=`;
+  for (const part of document.cookie.split(";")) {
+    const candidate = part.trim();
+    if (candidate.startsWith(prefix)) return candidate.slice(prefix.length);
+  }
+  return null;
+}
 
 async function requestJson<T>(input: string, init?: RequestInit): Promise<T> {
+  const method = (init?.method ?? "GET").toUpperCase();
+  const headers = new Headers(init?.headers);
+  if (!SAFE_METHODS.has(method)) {
+    const csrf = cookieValue(REMOTE_CSRF_COOKIE);
+    if (csrf) headers.set(REMOTE_CSRF_HEADER, csrf);
+  }
   const response = await fetch(input, {
     credentials: "same-origin",
     cache: "no-store",
     ...init,
+    headers,
   });
   if (!response.ok) {
     throw new Error(`WEB_API_${response.status}`);
@@ -39,6 +58,18 @@ export function readPrivateAcceptanceStatus(): Promise<PrivateAcceptanceStatusVi
 
 export async function privateTestLogin(): Promise<void> {
   await requestJson<{ ok: true }>("/api/v10/web/private-test-login", {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: "{}",
+  });
+}
+
+export function readPrivateRemoteAccessStatus(): Promise<PrivateAcceptanceStatusView> {
+  return requestJson<PrivateAcceptanceStatusView>("/api/v10/web/private-access-login/status");
+}
+
+export async function privateRemoteAccessLogin(): Promise<void> {
+  await requestJson<{ ok: true }>("/api/v10/web/private-access-login", {
     method: "POST",
     headers: JSON_HEADERS,
     body: "{}",
