@@ -28,6 +28,22 @@ State the one concrete outcome of this WP.
 
 List exact prerequisite contracts, files, data fixtures, runtime capabilities and CI gates.
 
+### 4.1 Pre-CI readiness
+
+Define what must be proven **before** an expensive full CI cycle is considered justified:
+
+- cheap deterministic checks;
+- focused positive/negative tests;
+- static/type/format/compile checks;
+- schema/migration/IaC/PowerShell/config validation where applicable;
+- dependency/lock validation;
+- official current dependency/API review where materially changing an external component;
+- secret/private-data guard;
+- rollback/recovery review;
+- full branch diff review.
+
+Known preflight failures must be fixed before triggering the full exact-head gate.
+
 ## 5. Existing implementation to reuse
 
 For each material component:
@@ -100,6 +116,19 @@ At minimum cover applicable cases:
 - secret/private-data leak prevention;
 - fail-closed money/authority behavior.
 
+### 12.1 Root-cause / blast-radius plan
+
+For any material defect discovered during this WP, define the review method before retrying full CI:
+
+- root cause;
+- repository-wide analogous pattern search;
+- directly coupled producers/consumers/config/workflows;
+- reasonable adjacent failure modes;
+- permanent regression/guard;
+- why prior preflight did not catch the failure.
+
+Do not assume a one-line failing location means a one-line defect class.
+
 ## 13. Observability
 
 Define:
@@ -111,13 +140,38 @@ Define:
 - user-visible degraded state;
 - evidence retained for acceptance.
 
+### 13.1 Fault isolation / degraded-mode contract
+
+State how the component fails without causing unnecessary system collapse.
+
+Consider where applicable:
+
+- timeout/deadline;
+- bounded retry/idempotency;
+- backpressure/circuit breaker;
+- durable queue/checkpoint;
+- restart/recovery;
+- health/readiness/freshness;
+- process/service privilege boundary;
+- what remains trustworthy when this component is DEGRADED/OFFLINE.
+
+Optional component failure should preserve deterministic Core when safe. Money/security/identity/secret/broker authority always fails closed.
+
 ## 14. CI routing
 
+- Cheap/focused preflight commands:
 - Fast hosted checks:
 - Hosted clean-room compatibility required: YES/NO + reason
 - Lenovo authoritative checks:
 - GPU AI eval required: YES/NO + reason
 - Release/recovery matrix required: YES/NO + reason
+- Full exact-head CI may start only after pre-CI readiness: PASS/FAIL
+
+Project GREEN definition for an applicable gate is `success` only. `skipped`, `neutral`, `cancelled`, pending/in-progress states and infrastructure/billing failures do not count as GREEN merge evidence.
+
+If a workflow is not applicable, route/trigger it so it does not appear as a misleading skipped/cancelled gate.
+
+Any commit after final GREEN invalidates prior final evidence and requires the applicable exact-head cycle again.
 
 ## 15. Rollback/recovery
 
@@ -126,6 +180,15 @@ State exactly how to return to the accepted prior state without losing broker/re
 ## 16. Exit Gate
 
 Define a binary PASS/FAIL gate. “Looks good”, “page opens”, or “tests mostly pass” is not sufficient.
+
+Merge/normal PR closure requires:
+
+- current exact head;
+- all applicable checks actually ran and concluded `success`;
+- full diff review;
+- zero unresolved blocking review threads;
+- no unresolved P0/P1 blocker;
+- required security/recovery evidence.
 
 ## 17. Required acceptance evidence
 
@@ -139,13 +202,29 @@ List exact evidence such as:
 - parity ledger status change;
 - owner approval if specifically required.
 
+OWNER product acceptance is normally **post-merge and post-Regression-Shield**. Before merge, OWNER action is allowed only for a genuinely non-delegable prerequisite needed to make engineering verifiable (account/consent/domain/payment/narrow credential/UAC-admin/physical action/Master Plan decision).
+
 ## 18. Documentation/status updates in the same PR
 
 State which files must change with the implementation so GitHub remains the engineering memory.
 
+### 18.1 Failure-learning update
+
+If an unexpected material RED occurred after the branch had been considered preflight-ready, answer:
+
+- Why was the branch believed ready?
+- What evidence/assumption was missing?
+- What other locations were searched for the same failure class?
+- What permanent guard was added?
+- Does `docs/operations/V10_ENGINEERING_FAILURE_LEARNING_LEDGER.md` need a reusable entry?
+
+Do not store secrets/private payloads in the ledger.
+
 ## 19. Next WP unlock
 
 Name the next authorized WP and the exact evidence that unlocks it.
+
+The next WP remains locked until implementation merge, required post-merge Regression Shield, any required OWNER acceptance and status transition are all complete.
 
 ## 20. Scope-discovery rule
 
