@@ -15,6 +15,9 @@ INDEX = ROOT / "docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md"
 CONTRACT = ROOT / "docs/architecture/V10_ENGINEERING_QUALITY_GATE_CONTRACT.json"
 LEDGER = ROOT / "docs/operations/V10_ENGINEERING_FAILURE_LEARNING_LEDGER.md"
 OWNER_STANDARD = ROOT / "docs/operations/V10_OWNER_ACTION_HANDOFF_STANDARD.md"
+COPILOT_POLICY = (
+    ROOT / ".github/instructions/owner-handoff-and-runtime.instructions.md"
+)
 PR_TEMPLATE = ROOT / ".github/pull_request_template.md"
 COPILOT = ROOT / ".github/copilot-instructions.md"
 WP_TEMPLATE = ROOT / "docs/master-plan/OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md"
@@ -344,6 +347,7 @@ def main() -> int:
     index = _load_text(INDEX, failures)
     ledger = _load_text(LEDGER, failures)
     owner_standard = _load_text(OWNER_STANDARD, failures)
+    copilot_policy = _load_text(COPILOT_POLICY, failures)
     pr_template = _load_text(PR_TEMPLATE, failures)
     copilot = _load_text(COPILOT, failures)
     wp_template = _load_text(WP_TEMPLATE, failures)
@@ -377,6 +381,8 @@ def main() -> int:
         ledger,
         (
             "FL-001",
+            "FL-004",
+            "FL-005",
             "Why preflight missed it",
             "Permanent regression/guard",
             "Future prevention rule",
@@ -392,6 +398,18 @@ def main() -> int:
             "V10 local runtime / rendering law",
             "Render.com boundary",
             "owner_must_not_be_required_to_discover_target_page",
+        ),
+        failures,
+    )
+    _require_markers(
+        COPILOT_POLICY,
+        copilot_policy,
+        (
+            'applyTo: "**"',
+            "OWNER help must be deterministic",
+            "direct official HTTPS link",
+            "V10 Web runs on the Personal Node",
+            "Do not treat Render.com as the V10 hosting target",
         ),
         failures,
     )
