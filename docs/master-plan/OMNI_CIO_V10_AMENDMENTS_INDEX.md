@@ -151,6 +151,31 @@ Locks the OWNER-approved 2026-08-10 identity/account direction while preserving 
 
 This amendment changes product/account interpretation and selected acceptance sequencing only where explicitly stated. It does not start Block E implementation before the amended WP15 code/security acceptance is formally accepted.
 
+### 7. Browser-Only Phone Engineering / Headless Personal Node Operations
+
+`OMNI_CIO_V10_PHONE_ONLY_ENGINEERING_AND_HEADLESS_NODE_OPERATIONS_AMENDMENT.md`
+
+Machine-readable / operations companions:
+
+- `../architecture/V10_PHONE_ONLY_ENGINEERING_CONTRACT.json`;
+- `../operations/V10_PHONE_ENGINEERING_RUNBOOK.md`.
+
+Locks the OWNER-approved 2026-08-15 operating model without renumbering WPs or bypassing WP22A:
+
+- the OWNER's normal engineering and product-control surface is the phone browser only;
+- GitHub remains engineering source of truth and the primary automation hub; routine code, PR, CI, deployment and supported provider operations are performed directly through GitHub/Actions/APIs rather than recurring OWNER dashboard work;
+- native phone applications are not required for normal OWNER operation;
+- external-service signup/login should use GitHub social login when the provider supports it, while runtime/workload automation prefers federated or narrowly scoped machine credentials;
+- Lenovo/the replacement Personal Node operates headlessly; local PowerShell is a physical/admin recovery exception, not routine OWNER UX;
+- significant external services require a documented service-selection gate covering security, WP fit, GitHub automation, browser-only UX, reliability/recovery, privacy/data custody, price, lock-in, operational burden, legal/broker constraints and performance;
+- free/already-paid options are preferred only when they satisfy the owning V10 security/reliability requirements; paid service remains allowed after documented insufficiency and OWNER approval;
+- Cloudflare Access + Tunnel is an **initial WP22A clientless candidate**, not accepted WP22A implementation merely because the amendment exists;
+- Tailscale may remain useful for machine/CI/private infrastructure, but a phone path that requires a native device client does not satisfy the OWNER browser-only requirement;
+- no second Web App/control plane, public unauthenticated ingress, broker-write authority, Real execution authority, GitHub bypass or arbitrary remote PowerShell is created by this amendment;
+- `app:app`, `trading_methods=false`, `REAL_TRADING_ENABLED=false`, zero-custody boundaries and protected V9 rollback remain unchanged.
+
+This amendment changes the operational/access design constraint only. WP22A remains the current functional package and must separately pass its full security/recovery/OWNER evidence Exit Gate before WP23 can start.
+
 ## Draft/superseded planning material
 
 Open or historical PR descriptions must not be treated as active plan authority merely because they contain V10 ideas. In particular, any older unmerged planning PR that conflicts with an accepted amendment must be closed/superseded rather than merged as a competing roadmap.
