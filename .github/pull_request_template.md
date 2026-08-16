@@ -72,6 +72,33 @@ commands / focused results / reviewed official dependency state
 - [ ] Partial/stale/truncated/contradictory data не выдаются за complete/current.
 - [ ] Protected V9 rollback сохранён.
 
+## OWNER handoff / external-service action
+
+Canonical standard: `docs/operations/V10_OWNER_ACTION_HANDOFF_STANDARD.md`.
+
+- [ ] OWNER не требуется самостоятельно искать нужную страницу/настройку.
+- [ ] Для OWNER browser action дана direct official HTTPS link на exact stable page, если такой URL существует.
+- [ ] Если exact deep link нестабилен/непроверяем, дан closest verified official start URL + exact current click path + STOP при отличии UI.
+- [ ] Указаны exact account/repository/workspace/service/device scope, expected result, STOP conditions, do-not-do warnings и minimum safe return.
+- [ ] Любая стоимость, paid-plan, credential-scope, public-ingress или irreversible authority consequence описана **до** OWNER confirmation.
+- [ ] OWNER получает один bounded non-delegable action, а не перенос routine engineering/CI/debugging work.
+- [ ] Secret-bearing, shortened, third-party redirect или private-runtime URLs не выдаются как OWNER handoff links.
+
+OWNER handoff evidence, если применимо:
+
+```text
+NONE / verified official starting URL + exact bounded action + expected non-secret result
+```
+
+## V10 runtime / hosting boundary
+
+- [ ] V10 Web/API/application runtime остаётся на approved Lenovo/replacement Personal Node, если owning OWNER-approved amendment не меняет это явно.
+- [ ] `apps/web`/V10 Web строится/rendered/served на Personal Node по owning deployment contract.
+- [ ] Новый Render.com Web Service/worker/Postgres/deployment/paid plan не создаётся как V10 runtime.
+- [ ] Empty/new Render.com workspace не считается Omni-CIO authority.
+- [ ] Existing Render.com `app:app` сохранён только как protected V9 production/recovery baseline до owning parity/decommission gate.
+- [ ] WP22A/access provider используется как access/security transport к Personal-Node origin, а не как second application/private-state host.
+
 ## Exact-head GREEN merge gate
 
 **All applicable exact-head checks = SUCCESS.**
