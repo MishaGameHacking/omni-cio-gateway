@@ -121,9 +121,20 @@ def test_windows_live_authority_allows_bounded_provider_cold_start() -> None:
     assert "[int]$RequestTimeoutSeconds = 75" in script
     assert '$baseUri.Scheme -ne "https"' in script
     assert '$baseUri.Host -ne "omni-cio-gateway.onrender.com"' in script
+    assert "[System.Net.Dns]::GetHostAddresses" in script
+    assert "System.Net.Sockets.TcpClient" in script
     assert "Invoke-WebRequest" in script
+    assert 'catch [System.Net.WebException]' in script
+    assert '"WEB_$($webException.Status)"' in script
     assert "Start-Sleep -Seconds $RetryDelaySeconds" in script
-    assert "exit 41" in script
+    assert "function Stop-WithCode" in script
+    assert "[Console]::Error.WriteLine($Message)" in script
+    assert "Write-Error" not in script
+    assert (
+        '"LIVE_WAKE_FAILED dns=$dnsState tcp443=$tcpState http=$lastHttpState attempts=$attempt"'
+        in script
+    )
+    assert "-Code 41" in script
     assert "Verify deployed v9 Action authority without broker mutation" in workflow
 
 
