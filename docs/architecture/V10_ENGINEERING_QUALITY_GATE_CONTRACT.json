@@ -114,6 +114,19 @@
     "external_access_provider_may_become_private_state_host": false,
     "cloudflare_candidate_does_not_imply_cloud_app_hosting": true
   },
+  "ci_cost_control": {
+    "standard": "docs/operations/V10_CI_COST_CONTROL_STANDARD.md",
+    "owner_budget_or_payment_mutation_requires_explicit_approval": true,
+    "known_zero_budget_hard_stop_is_code_failure": false,
+    "known_budget_blocked_hosted_job_must_not_be_triggered_as_applicable_gate": true,
+    "zero_cost_routing_preferred_when_semantically_equivalent": true,
+    "self_hosted_lenovo_preferred_for_heavy_repeatable_validation": true,
+    "hosted_clean_room_semantics_may_not_be_silently_dropped": true,
+    "billing_red_may_not_be_merged_around": true,
+    "disable_stop_usage_without_owner_approval_allowed": false,
+    "if_paid_hosted_execution_is_required": "EXPLICIT_OWNER_DECISION_WITH_COST_AND_REASON_BEFORE_MUTATION",
+    "mutable_external_budget_state_must_be_reverified": true
+  },
   "failure_learning": {
     "confidence_postmortem_after_unexpected_red": true,
     "ledger": "docs/operations/V10_ENGINEERING_FAILURE_LEARNING_LEDGER.md",
