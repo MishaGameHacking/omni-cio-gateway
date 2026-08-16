@@ -250,6 +250,28 @@ A short SHA may be used for navigation when useful. Full random-looking secret m
 
 ---
 
+## FL-011 — PowerShell failure reporting must preserve intended exit codes
+
+**Date:** 2026-08-16  
+**Reference:** governance PR #322  
+**Symptom / failing gate:** the bounded live V9 wake-up stage correctly failed after the protected endpoint did not become healthy inside the reviewed window, but the job reported process exit code `1` instead of the intended classified exit code `41`.
+
+**Root cause:** the script set `$ErrorActionPreference = "Stop"` and then called `Write-Error` immediately before `exit 41`. Under that policy `Write-Error` is terminating, so control never reached the explicit `exit` statement.
+
+**Blast radius searched:** all newly added PowerShell fail paths in the live-authority warm-up and the repository pattern for scripts that intentionally return bounded numeric status codes. No secret-bearing diagnostic output is required for this failure class.
+
+**Why preflight missed it:** the script was reviewed for fail-closed behavior but the exact error-stream interaction with `$ErrorActionPreference = "Stop"` was not exercised before the live run.
+
+**Corrective change:** centralize failure termination in `Stop-WithCode`, write only a sanitized classification through `[Console]::Error.WriteLine`, then execute the intended numeric `exit`. Add bounded DNS/TCP/HTTP state classification without logging raw provider exceptions or private data.
+
+**Permanent regression/guard:** the CI cost-control validator and focused tests require the explicit failure helper, reject `Write-Error` in the warm-up script, require safe DNS/TCP/HTTP classification markers, and retain code `41` as the bounded live-readiness failure.
+
+**Future prevention rule:** when a PowerShell script owns an explicit process exit-code contract, do not place a potentially terminating PowerShell error cmdlet before the `exit`; test the actual process code under the same error-action policy used in CI.
+
+**Dependency/tooling knowledge change:** PowerShell error-stream semantics can preempt explicit exit-code semantics. Process-status contracts must be tested as process behavior, not inferred from source order.
+
+---
+
 ## Entry template
 
 ```text
