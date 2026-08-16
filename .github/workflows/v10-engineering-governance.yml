@@ -1,0 +1,58 @@
+name: V10 Engineering Governance
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: v10-engineering-governance-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  governance:
+    name: Engineering quality and green-merge contract
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: cmd
+
+    steps:
+      - name: Check out exact reviewed head
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Bootstrap protected runner Python
+        run: scripts\bootstrap_windows_ci_python.cmd
+
+      - name: Verify exact checked-out head
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          @echo off
+          for /f %%S in ('git rev-parse HEAD') do set "ACTUAL_HEAD=%%S"
+          if /I not "%ACTUAL_HEAD%"=="%EXPECTED_HEAD%" exit /b 10
+          echo Governance exact head: %ACTUAL_HEAD%
+
+      - name: Verify engineering governance contract
+        run: python scripts/check_v10_engineering_governance.py
+
+      - name: Compile governance guard
+        run: python -m py_compile scripts\check_v10_engineering_governance.py
+
+      - name: Clean self-hosted workspace
+        if: always()
+        shell: bash
+        run: |
+          git reset --hard HEAD
+          git clean -ffdx
