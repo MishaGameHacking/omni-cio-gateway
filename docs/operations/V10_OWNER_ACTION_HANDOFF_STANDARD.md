@@ -111,3 +111,5 @@ This standard does not change:
 ## 10. Enforcement
 
 This standard is a required governance source after acceptance. The engineering-governance validator and regression tests must fail if the direct-link-first OWNER handoff or local-runtime/Render boundary is removed or weakened.
+
+Machine-readable invariant: `owner_must_not_be_required_to_discover_target_page=true`.
