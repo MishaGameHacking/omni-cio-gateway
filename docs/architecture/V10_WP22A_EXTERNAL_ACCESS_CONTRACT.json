@@ -1,0 +1,103 @@
+{
+  "schema_version": "1",
+  "work_package": "WP22A",
+  "status": "IMPLEMENTATION_IN_PROGRESS",
+  "objective": "CLIENTLESS_OWNER_PRIVATE_WEB_ACCESS_WITHOUT_PUBLIC_UNAUTHENTICATED_ORIGIN",
+  "selected_candidate": {
+    "provider": "CLOUDFLARE",
+    "services": [
+      "ACCESS",
+      "TUNNEL"
+    ],
+    "tier": "ZERO_TRUST_FREE_INITIAL_CANDIDATE",
+    "accepted_for_production": false,
+    "named_tunnel_required": true,
+    "quick_tunnel_allowed_for_acceptance": false
+  },
+  "data_path": [
+    "OWNER_PHONE_BROWSER",
+    "CLOUDFLARE_ACCESS",
+    "CLOUDFLARE_TUNNEL",
+    "CLOUDFLARED_WINDOWS_SERVICE",
+    "HTTP_127_0_0_1_8765",
+    "SINGLE_OMNI_CIO_WEB_APP"
+  ],
+  "origin": {
+    "loopback_only": true,
+    "public_inbound_port_allowed": false,
+    "cloudflared_access_validation_required": true,
+    "cloudflared_access_team_name_required": true,
+    "cloudflared_access_audience_required": true,
+    "cloudflare_access_jwt_required_at_app_boundary": true,
+    "exact_external_host_allowlist_required": true
+  },
+  "authentication": {
+    "outer_access_policy": "OWNER_ONLY",
+    "outer_access_is_not_public_multi_user_activation": true,
+    "private_owner_session_route": "/api/v10/web/private-access-login",
+    "server_side_sessions": true,
+    "session_cookie": "__Host-omni_v10_session",
+    "csrf_cookie": "__Host-omni_v10_csrf",
+    "secure_cookie": true,
+    "http_only_session_cookie": true,
+    "same_site": "strict",
+    "logout_revocation_required": true,
+    "revoke_all_supported": true,
+    "telegram_vk_product_identity_preserved": true
+  },
+  "request_security": {
+    "csrf_double_submit_required_for_unsafe_methods": true,
+    "https_origin_required_for_unsafe_methods": true,
+    "cors_default_deny": true,
+    "login_rate_limit": {
+      "attempts": 5,
+      "window_seconds": 60
+    },
+    "mutation_rate_limit": {
+      "attempts": 120,
+      "window_seconds": 60
+    },
+    "hsts_seconds": 31536000,
+    "content_security_policy_required": true,
+    "no_store_required": true
+  },
+  "automation": {
+    "github_source_of_truth": true,
+    "terraform_or_cloudflare_api_preferred_after_bootstrap": true,
+    "recurring_dashboard_clicking_preferred": false,
+    "minimum_cloudflare_permissions_target": [
+      "ACCOUNT_CLOUDFLARE_TUNNEL_EDIT",
+      "ACCOUNT_ACCESS_APPS_AND_POLICIES_EDIT",
+      "ZONE_DNS_EDIT"
+    ]
+  },
+  "secrets": {
+    "cloudflare_api_token_in_repository": false,
+    "tunnel_token_in_repository": false,
+    "tunnel_token_in_logs": false,
+    "tunnel_token_file_runtime_only": true,
+    "broker_tokens_unchanged": true
+  },
+  "owner_evidence": {
+    "required_before_acceptance": true,
+    "phone_https_reachability_required": true,
+    "access_denial_without_auth_required": true,
+    "logout_session_revocation_required": true,
+    "replacement_recovery_or_reprovision_path_required": true,
+    "status": "NOT_YET_COLLECTED"
+  },
+  "locks": {
+    "wp23": true,
+    "public_multi_user_activation": true,
+    "public_unauthenticated_ingress": true,
+    "broker_write_authority": true,
+    "real_trading": true
+  },
+  "invariants": {
+    "app": "app:app",
+    "trading_methods": false,
+    "REAL_TRADING_ENABLED": false,
+    "transfer_withdrawal_authority": false,
+    "protected_v9_rollback_preserved": true
+  }
+}
