@@ -15,7 +15,9 @@ def test_wp22a_derives_content_hash_only_in_isolated_lock_copy() -> None:
     assert "providers lock" in validator
     assert '$fsMirrorArg = "-fs-mirror=$mirrorConfigPath"' in validator
     assert '$platformArg = "-platform=windows_amd64"' in validator
-    assert '$providerAddress = "registry.terraform.io/cloudflare/cloudflare"' in validator
+    assert (
+        '$providerAddress = "registry.terraform.io/cloudflare/cloudflare"' in validator
+    )
     assert "WP22A_OPENTOFU_PROVIDER_LOCK_DERIVATION_FAILED" in validator
     assert "WP22A_SOURCE_PROVIDER_LOCK_MUTATED" in validator
     assert "WP22A_PROVIDER_CONTENT_LOCK_MISSING" in validator
