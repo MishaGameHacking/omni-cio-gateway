@@ -14,6 +14,7 @@ TERRAFORM_ROOT = ROOT / "infrastructure" / "cloudflare" / "wp22a"
 TERRAFORM = TERRAFORM_ROOT / "main.tf"
 TERRAFORM_LOCK = TERRAFORM_ROOT / ".terraform.lock.hcl"
 TERRAFORM_BOOTSTRAP = ROOT / "scripts" / "bootstrap_wp22a_terraform.ps1"
+CLOUDFLARE_PROVIDER_BOOTSTRAP = ROOT / "scripts" / "bootstrap_wp22a_cloudflare_provider.ps1"
 TERRAFORM_VALIDATE = ROOT / "scripts" / "validate_wp22a_terraform.ps1"
 WORKFLOW = ROOT / ".github" / "workflows" / "v10-wp22a-clientless-access-audit.yml"
 GITIGNORE = ROOT / ".gitignore"
@@ -64,6 +65,32 @@ def test_opentofu_bootstrap_is_version_hash_and_distribution_pinned() -> None:
     assert "Get-FileHash -Algorithm SHA256" in text
     assert "WP22A_OPENTOFU_ARCHIVE_HASH_MISMATCH" in text
     assert "releases.hashicorp.com" not in text
+
+
+def test_cloudflare_provider_bootstrap_is_version_hash_and_distribution_pinned() -> None:
+    text = CLOUDFLARE_PROVIDER_BOOTSTRAP.read_text(encoding="utf-8")
+    assert '$version = "5.22.0"' in text
+    assert (
+        '$archiveName = "terraform-provider-cloudflare_${version}_windows_amd64.zip"'
+        in text
+    )
+    for part in (
+        "ca4bf167",
+        "42a7e593",
+        "19a482f0",
+        "03d32f6f",
+        "6abbc5fb",
+        "f862916c",
+        "e1a13627",
+        "8e6d420d",
+    ):
+        assert f'"{part}"' in text
+    assert (
+        "https://github.com/cloudflare/terraform-provider-cloudflare/releases/download/v$version/$archiveName"
+        in text
+    )
+    assert "Get-FileHash -Algorithm SHA256" in text
+    assert "WP22A_CLOUDFLARE_PROVIDER_ARCHIVE_HASH_MISMATCH" in text
 
 
 def test_tunnel_token_is_never_put_in_task_arguments_or_json_config() -> None:
@@ -199,12 +226,24 @@ def test_ci_uses_committed_provider_lock_without_rewriting_it() -> None:
     workflow = WORKFLOW.read_text(encoding="utf-8")
     validator = TERRAFORM_VALIDATE.read_text(encoding="utf-8")
     assert "scripts\\validate_wp22a_terraform.ps1" in workflow
+    assert "scripts\\bootstrap_wp22a_cloudflare_provider.ps1" in workflow
+    assert "Validate Cloudflare IaC with pinned OpenTofu and provider mirror" in workflow
     assert 'Join-Path $sourceRoot ".terraform.lock.hcl"' in validator
     assert "-Destination $validateRoot -Force" in validator
     assert "-lockfile=readonly" in validator
     assert '$chdirArg = "-chdir=$validateRoot"' in validator
     assert "& $tofuExe $chdirArg fmt" in validator
     assert "& $tofuExe -chdir=$validateRoot" not in validator
+
+
+def test_opentofu_uses_exact_local_provider_mirror_and_no_origin_registry() -> None:
+    validator = TERRAFORM_VALIDATE.read_text(encoding="utf-8")
+    assert '"registry.terraform.io\\cloudflare\\cloudflare"' in validator
+    assert 'include = ["registry.terraform.io/cloudflare/cloudflare"]' in validator
+    assert 'exclude = ["registry.terraform.io/cloudflare/cloudflare"]' in validator
+    assert "filesystem_mirror" in validator
+    assert "$env:TF_CLI_CONFIG_FILE = $cliConfigPath" in validator
+    assert "WP22A_CLOUDFLARE_PROVIDER_BOOTSTRAP_FAILED" in validator
 
 
 def test_terraform_runtime_state_and_variable_values_are_git_ignored() -> None:

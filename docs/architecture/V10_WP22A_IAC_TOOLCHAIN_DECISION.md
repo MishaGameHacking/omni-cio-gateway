@@ -9,36 +9,48 @@ WP22A validates and later executes its Cloudflare HCL with **OpenTofu 1.12.5**, 
 
 The historical repository filenames `scripts/bootstrap_wp22a_terraform.ps1` and `scripts/validate_wp22a_terraform.ps1` are retained only to avoid an unnecessary contract-path migration. They now return/use `tofu.exe`; they must not download or execute a HashiCorp Terraform binary.
 
-Pinned Windows asset:
+Pinned OpenTofu Windows asset:
 
 - release: `v1.12.5`;
 - asset: `tofu_1.12.5_windows_amd64.zip`;
 - SHA-256, grouped for review and to avoid treating a required package digest as an opaque secret candidate: `465adc4b df4aa80c 650387b7 ada2cf75 0f7908bf 1fae7f35 b05402c3 84e79928`.
 
-The Cloudflare provider remains pinned to `5.22.0`. Its source address is deliberately fully qualified as:
+The Cloudflare provider remains pinned to upstream **5.22.0** with source identity `registry.terraform.io/cloudflare/cloudflare`. The protected Lenovo execution region does not rely on that origin registry at validation time. Instead, `scripts/bootstrap_wp22a_cloudflare_provider.ps1` downloads the official upstream Windows package from the `cloudflare/terraform-provider-cloudflare` GitHub Release, verifies its exact SHA-256, and `scripts/validate_wp22a_terraform.ps1` presents that package to OpenTofu through an explicit `filesystem_mirror`. The direct installation method excludes this exact provider identity, so OpenTofu cannot silently fall back to an origin-registry request.
 
-`registry.terraform.io/cloudflare/cloudflare`
+Pinned Cloudflare provider Windows asset:
 
-This prevents OpenTofu's shorthand provider-source default from silently changing the provider origin. The committed `.terraform.lock.hcl` remains authoritative and CI uses `init -lockfile=readonly` so validation cannot rewrite dependency selections.
+- release: `v5.22.0`;
+- asset: `terraform-provider-cloudflare_5.22.0_windows_amd64.zip`;
+- SHA-256, grouped for review: `ca4bf167 42a7e593 19a482f0 03d32f6f 6abbc5fb f862916c e1a13627 8e6d420d`.
 
-## Root cause being corrected
+The committed `.terraform.lock.hcl` remains authoritative and CI uses `init -lockfile=readonly`, so validation cannot rewrite dependency selections.
 
-The prior exact-head WP22A audit reached the IaC validation step only after Web build/tests, Python static/unit checks and PowerShell parsing had passed. The validator then failed before HCL validation because the protected Lenovo runner could not download the pinned Terraform archive from `releases.hashicorp.com`; the response was a regional trade-controls block.
+## Root causes being corrected
 
-This was a tool-distribution failure, not a reason to weaken validation or call the lane GREEN. Retrying the same URL, suppressing the failure, skipping provider validation, or moving the authoritative lane to a paid hosted runner would violate the accepted V10 engineering-quality/cost-control contracts.
+Two environment/toolchain failures were observed only after earlier Web build/tests, Python static/unit checks and PowerShell parsing had already passed:
+
+1. the protected Lenovo runner could not download the pinned HashiCorp Terraform archive from `releases.hashicorp.com`; the response was a regional trade-controls block;
+2. after switching the CLI to OpenTofu, explicitly using `registry.terraform.io/cloudflare/cloudflare` as an origin registry failed because that host does not expose an OpenTofu provider-registry service.
+
+A separate PowerShell/native invocation defect was also found and fixed: writing `-chdir=$validateRoot` directly in the native command passed a literal `$validateRoot`. The validator now constructs the fully expanded `-chdir=...` argument before invoking OpenTofu, and a focused regression test forbids the faulty form.
+
+These failures are not reasons to weaken validation or call the lane GREEN. Retrying blocked origins, suppressing failures, skipping provider validation, or moving the authoritative lane to a paid hosted runner would violate accepted V10 engineering-quality/cost-control contracts.
 
 ## Blast radius and prevention
 
-The failure class affects both Phase-A schema validation and any later Phase-B code path that would depend on the same Terraform bootstrap. Therefore the fix is at the shared bootstrap boundary rather than in a single workflow step.
+The failure class affects both Phase-A schema validation and any later Phase-B code path that depends on the same IaC toolchain. Therefore the correction is at the shared bootstrap/validation boundary rather than in one workflow step.
 
 Permanent guards:
 
 - exact OpenTofu version and official GitHub release asset hash are source-controlled;
-- the bootstrap rejects hash/version mismatch;
+- exact upstream Cloudflare provider version and official GitHub release package hash are source-controlled;
+- both bootstraps reject hash mismatch;
 - the old HashiCorp release URL is forbidden by focused tests;
-- the Cloudflare provider origin/version and Windows package hash remain source-controlled;
-- `init -lockfile=readonly`, `validate`, and provider-address verification remain mandatory;
-- exact-head Lenovo CI is the authority for proving the real execution region can obtain and execute the pinned tool/provider path;
+- OpenTofu receives the upstream Cloudflare package only through the explicit local filesystem mirror for this provider identity;
+- direct origin-registry installation is excluded for that identity;
+- the committed provider lock remains read-only;
+- `fmt`, `init -lockfile=readonly`, `validate`, and provider-address verification remain mandatory;
+- exact-head Lenovo CI is the authority for proving the real execution region can obtain and execute the pinned CLI/provider path;
 - no real Cloudflare credential is exposed to PR validation.
 
 ## Safety invariants
