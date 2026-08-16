@@ -101,7 +101,9 @@ def main() -> int:
             cost.get("live_v9_authority_current_evidence_state")
             != "DEFERRED_NO_TRUSTED_ZERO_COST_ROUTE_NOT_PASS"
         ):
-            failures.append("live V9 authority evidence must remain explicitly deferred")
+            failures.append(
+                "live V9 authority evidence must remain explicitly deferred"
+            )
 
     merge = contract.get("merge_gate")
     if (
@@ -231,9 +233,7 @@ def main() -> int:
             "Clean frontend workspace",
         ):
             cleanup_contract = (
-                f"- name: {cleanup_name}\n"
-                "        if: always()\n"
-                "        shell: cmd"
+                f"- name: {cleanup_name}\n        if: always()\n        shell: cmd"
             )
             if cleanup_contract not in fast_workflow:
                 failures.append(
@@ -267,7 +267,9 @@ def main() -> int:
     print("Windows fast cleanup: native cmd; no cross-job Bash PATH dependency")
     print("Live V9 authority evidence: DEFERRED_NO_TRUSTED_ZERO_COST_ROUTE_NOT_PASS")
     print("Live V9 PR validation: deterministic routing contract only")
-    print("Actual live V9 acceptance: manual hosted probe preserved; not auto-triggered")
+    print(
+        "Actual live V9 acceptance: manual hosted probe preserved; not auto-triggered"
+    )
     print("Hosted compatibility: executed routing check; no clean-room PASS fabricated")
     print("Stable release compatibility evidence: still required")
     return 0
