@@ -56,6 +56,16 @@ STALE_LIVE_MARKERS = (
     "must finish its own lifecycle",
 )
 
+START_RECORD_EVIDENCE_MARKERS = (
+    "159316c5b211977b0d9125dffb86210316ae10d3",
+    "planning PR #227",
+    "Regression Shield run #1332",
+    "afb165183594d59c6218a419341f67fe5496f9567221efcf7521378914b6f106",
+    "80df1efd750d1f56bf3a1b097e0c8fef4414b9bb65aced503c669313dd55be25",
+    "idempotent replay verified with no second submit",
+    "REAL_TRADING_ENABLED=false",
+)
+
 
 def read_text(path: Path, failures: list[str]) -> str:
     if not path.is_file():
@@ -180,6 +190,14 @@ def validate_high_risk_headers(failures: list[str]) -> None:
             failures.append(
                 "high-risk historical record lacks lifecycle banner: "
                 f"{path.relative_to(ROOT)}"
+            )
+
+    start_record = read_text(START_RECORD, failures)
+    for marker in START_RECORD_EVIDENCE_MARKERS:
+        if marker not in start_record:
+            failures.append(
+                "historical WP0 start evidence was removed or rewritten: "
+                f"{marker}"
             )
 
     amendment = read_text(ENGINEERING_AMENDMENT, failures)
