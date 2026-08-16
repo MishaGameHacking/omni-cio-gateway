@@ -1,0 +1,113 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+import sys
+
+
+ROOT = Path(__file__).resolve().parents[1]
+CONTRACT = ROOT / "docs" / "architecture" / "V10_ENGINEERING_QUALITY_GATE_CONTRACT.json"
+STANDARD = ROOT / "docs" / "operations" / "V10_CI_COST_CONTROL_STANDARD.md"
+COPILOT_POLICY = ROOT / ".github" / "instructions" / "owner-handoff-and-runtime.instructions.md"
+LEDGER = ROOT / "docs" / "operations" / "V10_ENGINEERING_FAILURE_LEARNING_LEDGER.md"
+
+
+def main() -> int:
+    failures: list[str] = []
+
+    try:
+        contract = json.loads(CONTRACT.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        print(f"V10 CI cost-control guard failed: cannot load contract: {exc}", file=sys.stderr)
+        return 1
+
+    cost = contract.get("ci_cost_control")
+    if not isinstance(cost, dict):
+        failures.append("ci_cost_control contract section is missing")
+    else:
+        expected_true = (
+            "owner_budget_or_payment_mutation_requires_explicit_approval",
+            "known_budget_blocked_hosted_job_must_not_be_triggered_as_applicable_gate",
+            "zero_cost_routing_preferred_when_semantically_equivalent",
+            "self_hosted_lenovo_preferred_for_heavy_repeatable_validation",
+            "hosted_clean_room_semantics_may_not_be_silently_dropped",
+            "billing_red_may_not_be_merged_around",
+            "mutable_external_budget_state_must_be_reverified",
+        )
+        for key in expected_true:
+            if cost.get(key) is not True:
+                failures.append(f"ci_cost_control.{key} must be True")
+
+        if cost.get("known_zero_budget_hard_stop_is_code_failure") is not False:
+            failures.append(
+                "ci_cost_control.known_zero_budget_hard_stop_is_code_failure must be False"
+            )
+        if cost.get("disable_stop_usage_without_owner_approval_allowed") is not False:
+            failures.append(
+                "ci_cost_control.disable_stop_usage_without_owner_approval_allowed must be False"
+            )
+        if cost.get("standard") != "docs/operations/V10_CI_COST_CONTROL_STANDARD.md":
+            failures.append("ci_cost_control standard path mismatch")
+        if (
+            cost.get("if_paid_hosted_execution_is_required")
+            != "EXPLICIT_OWNER_DECISION_WITH_COST_AND_REASON_BEFORE_MUTATION"
+        ):
+            failures.append("paid hosted execution must require explicit OWNER cost decision")
+
+    merge = contract.get("merge_gate")
+    if not isinstance(merge, dict) or merge.get("billing_failure_blocks_merge") is not True:
+        failures.append("billing RED must remain merge-blocking")
+    if not isinstance(merge, dict) or merge.get("accepted_check_conclusions") != ["success"]:
+        failures.append("applicable merge checks must remain SUCCESS-only")
+
+    for path, markers in (
+        (
+            STANDARD,
+            (
+                "Zero-budget law",
+                "do not silently increase the budget",
+                "do not repeatedly trigger a hosted workflow",
+                "do not merge around the RED check",
+                "explicit OWNER decision",
+            ),
+        ),
+        (
+            COPILOT_POLICY,
+            (
+                "OWNER billing / CI cost control",
+                "Never silently increase a GitHub/provider budget",
+                "do not merge around the RED applicable check",
+            ),
+        ),
+        (
+            LEDGER,
+            (
+                "FL-006",
+                "Zero-budget hard stop is a CI-routing constraint, not a merge bypass",
+            ),
+        ),
+    ):
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            failures.append(f"cannot read {path.relative_to(ROOT)}: {exc}")
+            continue
+        for marker in markers:
+            if marker not in text:
+                failures.append(f"{path.relative_to(ROOT)} missing marker: {marker}")
+
+    if failures:
+        print("V10 CI cost-control guard failed:", file=sys.stderr)
+        for failure in failures:
+            print(f"- {failure}", file=sys.stderr)
+        return 1
+
+    print("V10 CI cost-control guard passed.")
+    print("OWNER billing mutation: explicit approval only")
+    print("Known budget-blocked hosted RED: no repeated trigger / no merge bypass")
+    print("Zero-cost equivalent validation: preferred before paid hosted capacity")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
