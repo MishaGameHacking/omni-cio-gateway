@@ -176,6 +176,33 @@ Locks the OWNER-approved 2026-08-15 operating model without renumbering WPs or b
 
 This amendment changes the operational/access design constraint only. WP22A remains the current functional package and must separately pass its full security/recovery/OWNER evidence Exit Gate before WP23 can start.
 
+### 8. Engineering Quality / Pre-CI / Green Merge
+
+`OMNI_CIO_V10_ENGINEERING_QUALITY_AND_GREEN_MERGE_AMENDMENT.md`
+
+Machine-readable / engineering-memory companions:
+
+- `../architecture/V10_ENGINEERING_QUALITY_GATE_CONTRACT.json`;
+- `../operations/V10_ENGINEERING_FAILURE_LEARNING_LEDGER.md`.
+
+Locks the OWNER-approved 2026-08-16 engineering discipline for all remaining V10 work:
+
+- CI is the independent verifier, not the normal interactive debugger;
+- every material RED requires root-cause analysis, repository-wide analogous-pattern/blast-radius review and a permanent regression/guard where reusable;
+- expensive full CI starts only after applicable cheap/focused preflight and full-diff review are clean;
+- material dependency/API changes require current official support/security/compatibility review; `latest` is not automatically best and accepted code is not rewritten merely for novelty;
+- new programming languages are allowed only for concrete component-level correctness/security/isolation/performance/systems-integration reasons; polyglot sprawl is forbidden;
+- Omni-CIO components should form bounded failure domains with explicit degraded states while money/security authority remains fail-closed;
+- every **applicable** exact-head check must actually run and conclude `success` before merge; skipped/neutral/cancelled/pending/infrastructure-red checks are not GREEN project evidence;
+- irrelevant workflows must be fixed at routing/trigger level rather than left as misleading skipped/cancelled PR checks;
+- any commit after final GREEN invalidates the old final evidence and requires a fresh exact-head cycle;
+- normal PR closure is GREEN -> full review -> squash merge; unmerged/superseded work is never accepted implementation;
+- OWNER product acceptance (phone/browser/UX/login/logout/portfolio comparison) occurs only after implementation merge and required post-merge Regression Shield GREEN;
+- pre-merge OWNER involvement is limited to genuinely non-delegable prerequisites such as external consent/account bootstrap, domain/payment decision, narrow credential bootstrap or physical/admin action;
+- unexpected material RED after declared preflight readiness requires a confidence postmortem and reusable learning is persisted in the Failure Learning Ledger.
+
+This amendment does not change WP numbering, progress weights or current WP authorization. It becomes active only when its own governance PR satisfies the same GREEN exact-head discipline, is squash-merged and passes required post-merge verification.
+
 ## Draft/superseded planning material
 
 Open or historical PR descriptions must not be treated as active plan authority merely because they contain V10 ideas. In particular, any older unmerged planning PR that conflicts with an accepted amendment must be closed/superseded rather than merged as a competing roadmap.
