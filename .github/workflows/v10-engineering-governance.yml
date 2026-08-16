@@ -45,21 +45,21 @@ jobs:
           echo Governance exact head: %ACTUAL_HEAD%
 
       - name: Verify engineering governance contract
-        run: python scripts\check_v10_engineering_governance.py
+        run: python scripts/check_v10_engineering_governance.py
 
       - name: Verify CI cost-control contract
-        run: python scripts\check_v10_ci_cost_control.py
+        run: python scripts/check_v10_ci_cost_control.py
 
       - name: Verify Regression Shield capacity routing contract
-        run: python scripts\check_v10_regression_shield.py
+        run: python scripts/check_v10_regression_shield.py
 
       - name: Compile governance and CI guards
         run: >-
           python -m py_compile
-          scripts\check_v10_engineering_governance.py
-          scripts\check_v10_ci_cost_control.py
-          scripts\check_v10_regression_shield.py
-          scripts\v10_ci_router.py
+          scripts/check_v10_engineering_governance.py
+          scripts/check_v10_ci_cost_control.py
+          scripts/check_v10_regression_shield.py
+          scripts/v10_ci_router.py
 
       - name: Run stdlib CI contract regression tests
         run: >-
