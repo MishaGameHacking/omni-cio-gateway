@@ -10,6 +10,8 @@ CONTRACT = ROOT / "docs" / "architecture" / "V10_ENGINEERING_QUALITY_GATE_CONTRA
 STANDARD = ROOT / "docs" / "operations" / "V10_CI_COST_CONTROL_STANDARD.md"
 COPILOT_POLICY = ROOT / ".github" / "instructions" / "owner-handoff-and-runtime.instructions.md"
 LEDGER = ROOT / "docs" / "operations" / "V10_ENGINEERING_FAILURE_LEARNING_LEDGER.md"
+FAST_WORKFLOW = ROOT / ".github" / "workflows" / "v10-pr-fast-checks.yml"
+TOOLCHAIN_WORKFLOW = ROOT / ".github" / "workflows" / "v10-toolchain-compat.yml"
 
 
 def main() -> int:
@@ -33,19 +35,25 @@ def main() -> int:
             "hosted_clean_room_semantics_may_not_be_silently_dropped",
             "billing_red_may_not_be_merged_around",
             "mutable_external_budget_state_must_be_reverified",
+            "fast_policy_self_hosted_fallback_allowed_when_blocked",
+            "hosted_compatibility_absence_blocks_stable_release_evidence",
+            "non_applicable_or_capacity_deferred_job_must_execute_and_report",
+            "restore_hosted_lanes_requires_state_reverification",
         )
         for key in expected_true:
             if cost.get(key) is not True:
                 failures.append(f"ci_cost_control.{key} must be True")
 
-        if cost.get("known_zero_budget_hard_stop_is_code_failure") is not False:
-            failures.append(
-                "ci_cost_control.known_zero_budget_hard_stop_is_code_failure must be False"
-            )
-        if cost.get("disable_stop_usage_without_owner_approval_allowed") is not False:
-            failures.append(
-                "ci_cost_control.disable_stop_usage_without_owner_approval_allowed must be False"
-            )
+        expected_false = (
+            "known_zero_budget_hard_stop_is_code_failure",
+            "disable_stop_usage_without_owner_approval_allowed",
+            "hosted_compatibility_absence_blocks_pr_merge",
+            "job_level_skipped_is_green_evidence",
+        )
+        for key in expected_false:
+            if cost.get(key) is not False:
+                failures.append(f"ci_cost_control.{key} must be False")
+
         if cost.get("standard") != "docs/operations/V10_CI_COST_CONTROL_STANDARD.md":
             failures.append("ci_cost_control standard path mismatch")
         if (
@@ -53,6 +61,13 @@ def main() -> int:
             != "EXPLICIT_OWNER_DECISION_WITH_COST_AND_REASON_BEFORE_MUTATION"
         ):
             failures.append("paid hosted execution must require explicit OWNER cost decision")
+        if cost.get("current_hosted_capacity_state") != "BLOCKED_OWNER_ZERO_BUDGET_HARD_STOP":
+            failures.append("current hosted capacity state must match the OWNER-observed hard stop")
+        if (
+            cost.get("hosted_compatibility_check_mode_when_blocked")
+            != "EXECUTED_CAPACITY_ROUTING_NO_CLEAN_ROOM_PASS"
+        ):
+            failures.append("blocked hosted compatibility must use executed routing without claiming clean-room PASS")
 
     merge = contract.get("merge_gate")
     if not isinstance(merge, dict) or merge.get("billing_failure_blocks_merge") is not True:
@@ -69,6 +84,11 @@ def main() -> int:
                 "do not repeatedly trigger a hosted workflow",
                 "do not merge around the RED check",
                 "explicit OWNER decision",
+                "Capacity-deferred compatibility mode",
+                "REQUIRED_BY_PATH_BUT_CAPACITY_BLOCKED",
+                "must not claim",
+                "job-level GitHub `skipped` result is not accepted",
+                "STABLE release",
             ),
         ),
         (
@@ -84,6 +104,25 @@ def main() -> int:
             (
                 "FL-006",
                 "Zero-budget hard stop is a CI-routing constraint, not a merge bypass",
+            ),
+        ),
+        (
+            FAST_WORKFLOW,
+            (
+                "runs-on: [self-hosted, Windows, X64, omni-cio-ci]",
+                "Fast frontend substantive checks NOT_APPLICABLE",
+                "process.version !== 'v24.18.0'",
+                "11.16.0",
+            ),
+        ),
+        (
+            TOOLCHAIN_WORKFLOW,
+            (
+                "Python 3.14.6 clean-room applicability contract",
+                "Node 24.18.0 clean-room applicability contract",
+                "CURRENTLY_CAPACITY_BLOCKED",
+                "does NOT claim",
+                "Stable release provenance must not fabricate",
             ),
         ),
     ):
@@ -104,8 +143,10 @@ def main() -> int:
 
     print("V10 CI cost-control guard passed.")
     print("OWNER billing mutation: explicit approval only")
-    print("Known budget-blocked hosted RED: no repeated trigger / no merge bypass")
-    print("Zero-cost equivalent validation: preferred before paid hosted capacity")
+    print("Hosted capacity state: BLOCKED_OWNER_ZERO_BUDGET_HARD_STOP")
+    print("Fast deterministic checks: zero-cost Lenovo continuity mode")
+    print("Hosted compatibility: executed routing check; no clean-room PASS fabricated")
+    print("Stable release compatibility evidence: still required")
     return 0
 
 
