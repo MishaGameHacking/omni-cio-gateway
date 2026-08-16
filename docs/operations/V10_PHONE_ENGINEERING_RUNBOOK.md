@@ -1,6 +1,6 @@
 # Omni-CIO V10 — Browser-Only Phone Engineering Runbook
 
-Status: **DRAFT with phone-only engineering amendment**
+Status: **ACCEPTED** — browser-only/headless operating model accepted through PR #319; post-merge Regression Shield #1496 completed SUCCESS on exact `main` `9ad0eeb8d22895c3790fc5c7c78e9faf72a670e2`.
 
 ## Goal
 
