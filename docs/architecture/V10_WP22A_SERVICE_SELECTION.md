@@ -2,13 +2,14 @@
 
 Status: **SELECTED FOR IMPLEMENTATION / NOT YET ACCEPTED**  
 Owning package: **WP22A — External Web Access / OWNER Authentication Security Gate**  
-Accepted baseline: `7b3d83482f52041ef845681caabcd1baceb19d1b`
+Accepted browser-only functional baseline: `7b3d83482f52041ef845681caabcd1baceb19d1b`  
+Current accepted governance base for this PR: `1c05390d9cf31b8cc68a90a5d7cbd6428ffe7791`
 
 ## 1. Required outcome
 
 Select one clientless external-access transport for the existing source-controlled Omni-CIO Web App. The selected design must let the OWNER use an ordinary phone browser without installing a VPN/device client, keep the Lenovo origin non-public, remain automatable from GitHub after bounded bootstrap, preserve server-side sessions and OWNER identity, and add no broker-write/public-multi-user authority.
 
-The browser-only/headless amendment is controlling authority. The closed Tailscale-specific PR #317 is not accepted WP22A authority.
+The browser-only/headless amendment is controlling authority. The closed Tailscale-specific PR #317 is not accepted WP22A authority. The later accepted engineering-governance base is also controlling for pre-CI, all-GREEN merge, OWNER handoff, live-evidence and failure-learning discipline.
 
 ## 2. Hard requirements
 
