@@ -1,7 +1,14 @@
 {
   "schema": "omni-cio.v10.engineering-quality-gate.v2",
-  "status": "OWNER_APPROVED_EFFECTIVE_ON_MAIN_MERGE",
+  "status": "ACTIVE_ACCEPTED_ON_MAIN",
   "date": "2026-08-16",
+  "acceptance_evidence": {
+    "accepted_pr": 322,
+    "main_sha": "1c05390d9cf31b8cc68a90a5d7cbd6428ffe7791",
+    "regression_shield_run_number": 1498,
+    "regression_shield_run_id": 31959959791,
+    "regression_shield_conclusion": "success"
+  },
   "scope": [
     "V10_IMPLEMENTATION",
     "V10_MAINTENANCE",
