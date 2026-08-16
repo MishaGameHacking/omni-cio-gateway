@@ -13,6 +13,9 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $bootstrap = Join-Path $repoRoot "scripts\bootstrap_wp22a_terraform.ps1"
 $providerBootstrap = Join-Path $repoRoot "scripts\bootstrap_wp22a_cloudflare_provider.ps1"
 $sourceRoot = Join-Path $repoRoot "infrastructure\cloudflare\wp22a"
+$sourceLockPath = Join-Path $sourceRoot ".terraform.lock.hcl"
+$trustedProviderZipHash = "ca4bf16742a7e59319a482f003d32f6f6abbc5fbf862916ce1a136278e6d420d"
+$providerAddress = "registry.terraform.io/cloudflare/cloudflare"
 $toolRoot = Join-Path $env:RUNNER_TEMP "omni-cio-wp22a-tools"
 $runSuffix = "$($env:GITHUB_RUN_ID)-$($env:GITHUB_RUN_ATTEMPT)".Trim("-")
 if ([string]::IsNullOrWhiteSpace($runSuffix)) { $runSuffix = [guid]::NewGuid().ToString("N") }
@@ -38,12 +41,19 @@ if (-not (Test-Path -LiteralPath $providerArchive -PathType Leaf)) {
     throw "WP22A_CLOUDFLARE_PROVIDER_ARCHIVE_UNAVAILABLE"
 }
 
+$sourceLockText = Get-Content -LiteralPath $sourceLockPath -Raw -ErrorAction Stop
+if ($sourceLockText -notmatch [regex]::Escape("zh:$trustedProviderZipHash")) {
+    throw "WP22A_TRUSTED_PROVIDER_ZIP_LOCK_MISSING"
+}
+$sourceLockShaBefore = (Get-FileHash -Algorithm SHA256 -LiteralPath $sourceLockPath -ErrorAction Stop).Hash
+
 Remove-Item -LiteralPath $validateRoot -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item -LiteralPath $mirrorRoot -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item -LiteralPath $cliConfigPath -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Path $validateRoot -Force | Out-Null
 Copy-Item -Path (Join-Path $sourceRoot "*.tf") -Destination $validateRoot -Force
-Copy-Item -LiteralPath (Join-Path $sourceRoot ".terraform.lock.hcl") -Destination $validateRoot -Force
+Copy-Item -LiteralPath $sourceLockPath -Destination $validateRoot -Force
+$validateLockPath = Join-Path $validateRoot ".terraform.lock.hcl"
 
 $providerMirrorDir = Join-Path $mirrorRoot "registry.terraform.io\cloudflare\cloudflare"
 New-Item -ItemType Directory -Path $providerMirrorDir -Force | Out-Null
@@ -63,12 +73,30 @@ provider_installation {
 Set-Content -LiteralPath $cliConfigPath -Value $cliConfig -Encoding Ascii
 
 $chdirArg = "-chdir=$validateRoot"
+$fsMirrorArg = "-fs-mirror=$mirrorConfigPath"
+$platformArg = "-platform=windows_amd64"
 $previousCliConfig = $env:TF_CLI_CONFIG_FILE
 $env:TF_CLI_CONFIG_FILE = $cliConfigPath
 
 try {
     & $tofuExe $chdirArg fmt -check -diff
     if ($LASTEXITCODE -ne 0) { throw "WP22A_OPENTOFU_FMT_FAILED" }
+
+    # OpenTofu 1.12 prefers h1 content hashes for installed/unpacked provider packages.
+    # The committed lock remains the reviewed publisher-ZIP trust anchor (zh), while
+    # this isolated lock copy derives the matching h1 from the already SHA-256-verified
+    # Windows package in our exact filesystem mirror. No registry fallback is allowed.
+    & $tofuExe $chdirArg providers lock $fsMirrorArg $platformArg $providerAddress
+    if ($LASTEXITCODE -ne 0) { throw "WP22A_OPENTOFU_PROVIDER_LOCK_DERIVATION_FAILED" }
+
+    $sourceLockShaAfter = (Get-FileHash -Algorithm SHA256 -LiteralPath $sourceLockPath -ErrorAction Stop).Hash
+    if ($sourceLockShaAfter -ne $sourceLockShaBefore) {
+        throw "WP22A_SOURCE_PROVIDER_LOCK_MUTATED"
+    }
+    $derivedLockText = Get-Content -LiteralPath $validateLockPath -Raw -ErrorAction Stop
+    if ($derivedLockText -notmatch '"h1:[A-Za-z0-9+/]+={0,2}"') {
+        throw "WP22A_PROVIDER_CONTENT_LOCK_MISSING"
+    }
 
     & $tofuExe $chdirArg init -backend=false -input=false -no-color -lockfile=readonly
     if ($LASTEXITCODE -ne 0) { throw "WP22A_OPENTOFU_INIT_FAILED" }
