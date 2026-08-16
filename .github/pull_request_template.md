@@ -1,67 +1,130 @@
 ## Что изменено
 
-Опишите одну логическую цель и затронутые файлы.
+Опишите одну логическую цель, current WP/maintenance defect и затронутые поверхности.
 
 ## Причина / source of truth
 
-Какую проблему Omni-CIO решает изменение, почему оно нужно сейчас и каким current source of truth подтверждён defect/scope?
+- Current accepted `main` SHA:
+- Current WP / defect:
+- Master Plan / amendment / ADR / contract:
+- Почему изменение требуется сейчас:
 
 ## Scope
 
-- [ ] Изменение относится непосредственно к существующему Omni-CIO GPT/Gateway, данным, безопасности, тестам, эксплуатации или документации.
-- [ ] Не создаётся duplicate bot/Gateway/frontend/scheduler/broker stack или parallel setup/configuration source.
-- [ ] Учтено, что WP0–WP15 завершены; feature work вне maintenance требует отдельной owner-approved программы.
+- [ ] Изменение относится к одному текущему V10 WP/maintenance defect/governance amendment.
+- [ ] Не смешан следующий WP или несвязанный feature work.
+- [ ] Не создаётся duplicate Gateway/Web/Telegram/AI/scheduler/database/broker/execution stack.
+- [ ] Если scope materially изменился, существует OWNER-approved amendment, а не chat-only решение.
+
+## Pre-CI engineering gate
+
+### Root cause / blast radius
+
+Если PR исправляет defect/RED, опишите:
+
+- root cause:
+- какие аналогичные места/паттерны найдены поиском по repository:
+- blast radius:
+- почему предыдущий preflight не поймал проблему:
+- permanent regression/guard:
+
+- [ ] Исправлен класс проблемы, а не только первая упавшая строка, либо доказано, что дефект действительно локальный.
+- [ ] Проверены directly coupled producers/consumers/config/workflows.
+- [ ] Проверены разумные adjacent failure modes: invalid/missing/stale/duplicate/timeout/restart/auth/recovery по применимости.
+- [ ] Для material unexpected RED обновлён `docs/operations/V10_ENGINEERING_FAILURE_LEARNING_LEDGER.md`, если урок переносим на будущие WP.
+
+### Cheap/focused checks before expensive CI
+
+- [ ] Full branch diff против accepted `main` просмотрен **до** запуска финального CI.
+- [ ] Format/lint/type/compile preflight пройден по применимому scope.
+- [ ] Focused positive + negative tests пройдены.
+- [ ] Schema/migration/Terraform/PowerShell/config validation пройдена, если применимо.
+- [ ] Dependencies/manifest/lock согласованы; generated locks не правились вручную.
+- [ ] Material external dependency/API проверен по актуальной official documentation/support/security информации.
+- [ ] External GitHub Actions pinned на full immutable commit SHA.
+- [ ] Secret/private-data leakage проверена.
+- [ ] Rollback/recovery consequence проверен.
+- [ ] Нет известного preflight failure, который намеренно оставлен для обнаружения длинным CI.
+
+Краткое preflight evidence:
+
+```text
+commands / focused results / reviewed official dependency state
+```
+
+## Fault isolation / degraded behavior
+
+- [ ] Изменение не создаёт ненужный single point of failure для deterministic Core.
+- [ ] Для внешних/optional dependencies определены timeout/deadline и bounded retry/idempotency semantics, если применимо.
+- [ ] User/system health показывает явный READY/PARTIAL/STALE/DEGRADED/BLOCKED/ERROR/OFFLINE/RECOVERING state вместо ложного успеха.
+- [ ] Отказ AI/Research/Telegram/external ingress/другого optional component не валит Core, если безопасная деградация возможна.
+- [ ] Money/security/identity/secret/broker authority остаётся fail-closed.
+- [ ] Новый язык/runtime/framework добавлен только с concrete component-level justification и reviewed toolchain/recovery/maintenance cost.
 
 ## Authority / безопасность
 
-- [ ] Stable Render entrypoint `app:app` сохранён либо приложен отдельный approved migration plan.
-- [ ] Production read-only credential не используется как fallback для Sandbox/Real execution.
-- [ ] Sandbox остаётся virtual/isolated.
-- [ ] Если затронут Real contour, сохранены reviewed prepare → new-turn exact owner confirmation → execute → broker reconciliation, one-submit idempotency и fail-closed semantics.
-- [ ] Не добавлены transfer/withdrawal, margin/short, MARKET/BESTPRICE, stop/replace/async, token-management или autonomous recurring real-money authority без отдельной approved program/threat model.
-- [ ] Internal engine не объявляется GPT Action без operationId в effective production OpenAPI.
-- [ ] Account IDs остаются masked.
-- [ ] В diff нет token/key values, Authorization headers, full account IDs или private broker payloads.
-- [ ] Валюты не агрегируются без verified FX + timestamp.
+- [ ] Stable protected `app:app` сохранён, если owning accepted migration не заменяет его явно.
+- [ ] `trading_methods=false` сохранён для текущего non-execution surface.
+- [ ] `REAL_TRADING_ENABLED=false` сохранён, если текущий later execution WP явно не авторизован Master Plan.
+- [ ] Production READ / Sandbox / TRADE credentials не смешаны.
+- [ ] Не добавлены transfer/withdrawal, margin/short или новый broker-write bypass.
+- [ ] В diff/log/artifact нет real token/key, Authorization header, full account ID, private portfolio payload, recovery/encryption key или raw OWNER identity.
 - [ ] Partial/stale/truncated/contradictory data не выдаются за complete/current.
+- [ ] Protected V9 rollback сохранён.
 
-## OpenAPI / GPT
+## Exact-head GREEN merge gate
 
-- [ ] OpenAPI/operationId не изменены, **или** изменение явно описано и reviewed.
-- [ ] Если меняется applied GPT configuration/Knowledge/Action contract, указано, что после merge требуется owner Preview + `Update` на **том же** GPT.
-- [ ] Если GPT-visible state не меняется, это явно отмечено как backend/doc-only maintenance.
+**All applicable exact-head checks = SUCCESS.**
 
-## Тесты / guards
+Project policy is stricter than generic GitHub semantics: applicable `skipped`, `neutral`, `cancelled`, `pending`, `queued`, `in_progress` or infrastructure/billing `failure` are **not GREEN**.
 
-- [ ] `python scripts/check_repository_layout.py`
-- [ ] `python scripts/check_ci_security_baseline.py`
-- [ ] `python scripts/check_gpt_recovery_consistency.py` (если применимо/входит в текущий gate)
-- [ ] Ruff / formatting / mypy
-- [ ] compileall
-- [ ] pytest + required branch coverage
-- [ ] dependency audit / SAST / secret scan
-- [ ] exact-head Regression Shield
-- [ ] unresolved review threads = 0
+- [ ] Проверен exact current PR head SHA.
+- [ ] Все применимые V10 workflows реально запустились.
+- [ ] Все применимые checks завершились `success`.
+- [ ] Неприменимые workflows не висят misleading skipped/cancelled checks; routing/trigger исправлен по необходимости.
+- [ ] Старые GREEN runs предыдущего SHA не используются как final evidence.
+- [ ] Full diff reviewed after final code change.
+- [ ] Unresolved blocking review threads = 0.
+- [ ] P0/P1 blockers = 0.
 
-Результаты:
+Final exact-head evidence:
 
 ```text
-вставьте краткий результат / ссылки на exact-head runs
+HEAD SHA:
+workflow/run IDs:
+all applicable conclusions: success
+review threads: 0
 ```
 
-## Контракты и документация
+## OWNER participation
 
-- [ ] Обновлены только затронутые canonical docs; не создан competing source of truth.
-- [ ] `knowledge/16_CURRENT_PROGRAM_STATUS.md` обновлён, если изменился accepted/applied status.
-- [ ] `gpt/` обновлён только если менялись Custom GPT configuration/behavior/Actions/recovery.
-- [ ] `CHANGELOG.md` обновлён, если это release/program/maintenance milestone.
-- [ ] Если менялись dependencies, `.in` constraints и generated hash locks согласованы.
-- [ ] External GitHub Actions pinned full SHA.
-- [ ] Historical issue/PR statements не используются как current state вместо accepted `main`.
+- [ ] OWNER product acceptance is post-merge: телефон/browser/UX/login/logout/portfolio comparison не запрашивались для незамерженного implementation PR.
+- [ ] Если OWNER участвовал до merge, это был только genuinely non-delegable prerequisite (account/consent/domain/payment/narrow credential/UAC-admin/physical/Master-Plan decision), и scope действия описан ниже.
+- [ ] OWNER не использовался как transport layer для обычного CI/debugging/log inspection.
 
-## После merge
+Pre-merge OWNER prerequisite, если был:
 
-- [ ] Для backend change проверен deployed Render commit и соответствующий safe smoke (`/health`, `/openapi.json` или профильный runbook).
-- [ ] Для OpenAPI/GPT-visible change выполнена отдельная owner Preview/`Update` acceptance на existing GPT.
-- [ ] Для doc-only change подтверждено, что external GPT update не требуется.
-- [ ] Известен rollback path (`REAL_TRADING_ENABLED=false`, `WATCHTOWER_ENABLED=false`, protected v8.6.1 GPT rollback или профильный rollback — по scope).
+```text
+NONE / exact prerequisite only; no secrets
+```
+
+## Контракты / документация / learning
+
+- [ ] Обновлены canonical docs/contracts; competing source of truth не создан.
+- [ ] WP execution contract/template отражает pre-CI, negative tests, rollback и Exit Gate.
+- [ ] Failure Learning Ledger обновлён, если неожиданный RED выявил reusable process/technical lesson.
+- [ ] Current status изменяется только из accepted evidence, не из draft intent.
+- [ ] Исторические PR/issues не выдаются за current authority.
+
+## Merge / после merge
+
+- [ ] Normal closure: PR будет закрыт squash merge только после полного GREEN exact-head gate.
+- [ ] Exact new `main` SHA будет проверен после merge.
+- [ ] Required post-merge Regression Shield должен быть GREEN до OWNER product acceptance/следующего WP.
+- [ ] OWNER product acceptance, если нужен, выполняется только после merge + post-merge GREEN.
+- [ ] Если OWNER acceptance найдёт defect: новая focused fix branch/PR; direct patch в `main` запрещён.
+- [ ] Известен rollback/recovery path.
+
+## Следующий WP
+
+- [ ] Следующий WP остаётся LOCKED до полного Exit Gate текущего WP/status transition.
