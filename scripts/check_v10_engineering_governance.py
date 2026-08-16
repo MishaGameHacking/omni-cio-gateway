@@ -204,7 +204,6 @@ def main() -> int:
             "OWNER participation boundary",
             "Failure-learning law",
             'Fault-isolation / "spider" law',
-            "accepted_check_conclusions",
         ),
         failures,
     )
