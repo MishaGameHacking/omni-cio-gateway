@@ -53,6 +53,38 @@ jobs:
           python -m pip install --disable-pip-version-check
           --require-hashes -r windows-requirements.txt
 
+      - name: Warm protected V9 gateway across bounded Render cold start
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $ProgressPreference = "SilentlyContinue"
+          $healthUrl = "$env:OMNI_LIVE_BASE_URL/health"
+          $deadline = [DateTimeOffset]::UtcNow.AddSeconds(150)
+          $attempt = 0
+
+          while ([DateTimeOffset]::UtcNow -lt $deadline) {
+            $attempt += 1
+            try {
+              $response = Invoke-WebRequest -Uri $healthUrl -Method Get -UseBasicParsing -TimeoutSec 75
+              $contentType = [string]$response.Headers["Content-Type"]
+              if ($response.StatusCode -eq 200 -and $contentType -match "^application/json") {
+                $payload = $response.Content | ConvertFrom-Json
+                if ($payload.status -eq "ok") {
+                  Write-Host "Protected V9 gateway wake probe ready after $attempt attempt(s)."
+                  exit 0
+                }
+              }
+            }
+            catch {
+              # The strict validator below owns final authority. This bounded warm-up
+              # intentionally suppresses provider/network exception details from logs.
+            }
+            Start-Sleep -Seconds 5
+          }
+
+          Write-Error "Protected V9 gateway did not reach JSON health within bounded cold-start window."
+          exit 41
+
       - name: Verify deployed v9 Action authority without broker mutation
         run: python scripts\check_live_gateway_authority.py
 
