@@ -338,6 +338,28 @@ A short SHA may be used for navigation when useful. Full random-looking secret m
 
 ---
 
+## FL-015 — Provider ZIP lock and installed-content lock are different checksums
+
+**Date:** 2026-08-16  
+**WP / PR / reference:** WP22A / PR #321 / focused Clientless Access Audit #67  
+**Symptom / failing gate:** the exact Cloudflare provider 5.22.0 Windows ZIP was found in the reviewed filesystem mirror and OpenTofu installed it, but `init -lockfile=readonly` warned that the dependency lock wanted augmentation and the subsequent `validate` rejected the unpacked cached provider as not matching the lock.
+
+**Root cause:** the committed provider lock contained the reviewed `zh:` checksum of the original publisher ZIP but no matching `h1:` content checksum for the installed/unpacked package representation used by OpenTofu 1.12. The provider version, Windows ZIP SHA-256 and mirror layout were correct; the lock representation was incomplete for readonly offline validation.
+
+**Blast radius searched:** the shared WP22A OpenTofu bootstrap/validation boundary, Phase-A schema validation, later Phase-B provider execution using the same pinned provider identity, registry fallback behavior, source-lock mutation risk and Windows package/platform selection.
+
+**Why preflight missed it:** source review and tests proved the exact release asset hash, mirror layout and provider address, but did not reproduce OpenTofu 1.12's installed-package checksum semantics on the protected Windows runner before the expensive exact-head cycle.
+
+**Corrective change:** keep the committed `zh:` value as the reviewed publisher-ZIP trust anchor. In an isolated temporary copy only, derive the matching `h1:` with `tofu providers lock -fs-mirror=... -platform=windows_amd64`, then run `init -lockfile=readonly` and `validate`. Verify the source lock SHA before/after and fail if it changes.
+
+**Permanent regression/guard:** focused WP22A tests require the exact filesystem-mirror lock derivation, Windows platform binding, derived `h1:` presence, source-lock immutability check, readonly init, exact trusted `zh:` anchor and explicit direct-registry exclusion. The IaC toolchain decision records the failure class and remedy.
+
+**Future prevention rule:** when validating a provider from an offline/explicit mirror, test both the publisher archive trust anchor and the installed-content checksum model under the exact IaC CLI version/platform. Do not fix checksum-model mismatches by disabling readonly locks, deleting checksums or allowing registry fallback.
+
+**Dependency/tooling knowledge change:** `zh:` authenticates an original provider ZIP while `h1:` authenticates package contents and is the portable form used for installed/unpacked provider verification. OpenTofu 1.12 may need the corresponding `h1:` even when the exact trusted ZIP is already pinned.
+
+---
+
 ## Entry template
 
 ```text
