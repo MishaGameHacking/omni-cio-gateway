@@ -9,8 +9,9 @@ Owning package: **WP22A — External Web Access / OWNER Authentication Security 
 - WP: WP22A.
 - Title: External Web Access / OWNER Authentication Security Gate.
 - Authorized by current program status: YES.
-- Accepted baseline: `7b3d83482f52041ef845681caabcd1baceb19d1b`.
-- Prior acceptance: WP22 COMPLETE; browser-only/headless amendment accepted through PR #319/#320 and Regression Shield #1497.
+- Accepted browser-only functional baseline: `7b3d83482f52041ef845681caabcd1baceb19d1b`.
+- Current accepted governance base for this PR: `1c05390d9cf31b8cc68a90a5d7cbd6428ffe7791`.
+- Prior acceptance: WP22 COMPLETE; browser-only/headless amendment accepted through PR #319/#320 and Regression Shield #1497; engineering-quality governance accepted afterward and is part of the current base.
 - WP23 remains LOCKED.
 
 ## 2. Purpose
@@ -153,7 +154,7 @@ WP22A must retain a live OS-level denial for the exact runner service identity t
 
 The runner must also be unable to create, replace, rename or write OWNER physical evidence. A repository job cannot manufacture acceptance evidence.
 
-The selected Cloudflare design does not rely on unverified plaintext identity headers from arbitrary local clients. Only the reviewed loopback proxy path plus the configured Access-protected tunnel can establish the external identity gate; direct runner access must fail before application authentication.
+The selected Cloudflare design does not treat a bare Internet- or runner-supplied identity header as trustworthy. External identity is established through the reviewed Access-protected tunnel, where `cloudflared` validates the exact team/application assertion before proxying the request, and the runner is blocked from the loopback origin before application authentication. An already compromised OWNER/admin Windows process is classified as a local node compromise rather than something Cloudflare Access can defend against; that boundary is recorded explicitly in `V10_THREAT_MODEL.md` T22.
 
 ## 11. Provider configuration and secrets
 
@@ -276,7 +277,7 @@ Mandatory negatives include:
 
 ## 16. CI/deployment routing
 
-- hosted Fast/Toolchain: supplementary; payment/spending-limit startup failures remain infrastructure failures and are not PASS;
+- hosted Fast/Toolchain: supplementary and subject to the accepted capacity-routing contract; known zero-budget hosted capacity is never treated as evidence that hosted execution occurred;
 - focused WP22A Lenovo audit: mandatory for Phase A;
 - authoritative self-hosted Windows merge gate: mandatory for Phase A;
 - inherited WP16–WP22 Web gates: mandatory for Phase A;
