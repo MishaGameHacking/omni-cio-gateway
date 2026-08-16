@@ -1,0 +1,102 @@
+# Omni-CIO V10 — CI Cost Control / Zero-Budget Hosted Runner Standard
+
+Status: **OWNER-APPROVED POLICY / EFFECTIVE ONLY AFTER GOVERNANCE MERGE TO `main`**  
+Date: 2026-08-16  
+Scope: GitHub Actions budgets, hosted-runner use, CI routing, paid CI prerequisites and OWNER billing handoffs.
+
+## 1. Purpose
+
+This standard separates three different facts that must never be conflated:
+
+1. whether the source code is correct;
+2. whether a GitHub Actions workflow is applicable and correctly routed;
+3. whether the external GitHub billing/budget state currently permits a GitHub-hosted job to start.
+
+A billing/budget block is not a code defect, but a RED applicable check still blocks merge under the V10 GREEN-merge policy.
+
+## 2. Confirmed external-state observation — 2026-08-16
+
+The OWNER supplied a browser screenshot of the personal GitHub account `MishaGameHacking` → **Billing & licensing → Budgets and alerts**.
+
+The screenshot shows the account-level GitHub Actions budget at **USD 0** with **Stop usage = Yes**. Other shown metered-product budgets are also zero with stop-usage enabled.
+
+This observation explains the GitHub-hosted Actions annotation seen on current V10 PR runs: the jobs do not start and GitHub reports a payment/spending-limit blocker.
+
+This is a time-bounded external-state observation, **not an immutable architecture constant**. Future engineering must re-verify current GitHub billing/budget state before assuming it is unchanged.
+
+No card data, billing identifiers or private payment details are recorded in GitHub.
+
+## 3. Zero-budget law
+
+When an OWNER-controlled budget is zero or a hard stop is enabled:
+
+- do not silently increase the budget;
+- do not disable `Stop usage when budget limit is reached`;
+- do not add/replace a payment method;
+- do not ask the OWNER to authorize spend merely to avoid doing engineering work;
+- do not classify the resulting hosted-runner startup failure as a code failure;
+- do not merge around the RED check;
+- do not repeatedly trigger a hosted workflow that is already known to be unable to start.
+
+Any budget/payment mutation requires a separate explicit OWNER decision after engineering states the exact reason, expected cost exposure, alternative zero-cost path and rollback.
+
+## 4. Preferred engineering response
+
+Before requesting paid hosted execution, engineering must first determine whether the owning verification semantics can be preserved with already-paid or zero-cost capacity:
+
+1. repository-local deterministic preflight;
+2. Lenovo self-hosted authoritative Windows runner;
+3. source-controlled equivalent validation on another already-authorized zero-cost/self-hosted runner;
+4. only then, if a required clean-room/hosted semantic cannot be reproduced safely, request an explicit OWNER decision about paid GitHub-hosted execution.
+
+The cost-control rule must not be used to weaken validation. Moving a job from GitHub-hosted to Lenovo is acceptable only when the required semantic is preserved or the owning contract explicitly permits the replacement.
+
+A disposable hosted clean-room requirement may not be silently deleted merely because hosted usage is blocked.
+
+## 5. GREEN-status interaction
+
+The V10 GREEN-merge law remains unchanged:
+
+- every **applicable** exact-head check must conclude `success`;
+- a budget-blocked applicable hosted check remains RED and blocks merge;
+- if a hosted workflow is genuinely non-applicable under the accepted CI routing contract, fix its trigger/routing so it does not appear as a misleading failed/skipped PR check;
+- if it remains required, restore an accepted execution path rather than bypassing it.
+
+Classification answers **why** a check failed; classification never grants merge authority.
+
+## 6. CI design consequence
+
+Future V10 WPs must not make correctness depend unnecessarily on metered hosted capacity when the accepted Lenovo/self-hosted architecture can provide equivalent deterministic evidence.
+
+Hosted capacity remains useful for fast feedback and disposable compatibility where the accepted contract requires it, but it is not the sole source of truth. Heavy repeatable validation remains preferentially placed on the Lenovo runner when safe and semantically correct.
+
+Before opening or moving a PR to final review, engineering should inspect whether any known budget-blocked hosted workflow will become an applicable check. Known unavoidable RED must be resolved at routing/capacity/prerequisite level before the final GREEN cycle.
+
+## 7. OWNER handoff rule for paid CI
+
+If paid hosted capacity is genuinely required, the OWNER instruction must follow `V10_OWNER_ACTION_HANDOFF_STANDARD.md` and include:
+
+- the direct official GitHub billing/budget URL;
+- the exact product/scope being changed;
+- the minimum proposed budget or permission change;
+- whether `Stop usage` changes;
+- the maximum reasonably expected cost exposure for the requested validation;
+- why self-hosted/zero-cost alternatives are insufficient;
+- the expected result;
+- STOP conditions;
+- explicit warning not to change unrelated product budgets.
+
+No billing mutation is implied by `START V10`, a PR, a failed hosted job or an AI recommendation.
+
+## 8. Protected invariants
+
+This standard does not change:
+
+- `app:app` protected V9 compatibility;
+- `trading_methods=false`;
+- `REAL_TRADING_ENABLED=false`;
+- no broker-write authority expansion;
+- no transfer/withdrawal authority;
+- protected V9 rollback;
+- Master Plan WP ordering;
+- all-applicable-checks GREEN requirement.
