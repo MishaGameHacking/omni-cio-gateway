@@ -140,10 +140,19 @@ def validate_live_guidance(progress: str, wp: str, failures: list[str]) -> None:
     if wp and f"**{wp} —" not in agents:
         failures.append("AGENTS current snapshot does not match current WP")
 
-    master_context = read_text(ROOT / "knowledge/00_PROJECT_MASTER_CONTEXT.md", failures)
+    master_context = read_text(
+        ROOT / "knowledge/00_PROJECT_MASTER_CONTEXT.md",
+        failures,
+    )
     if progress and f"**{progress} accepted implementation**" not in master_context:
-        failures.append("Master Context convenience snapshot does not match status progress")
-    if wp and f"**{wp}** as the current authorized functional package" not in master_context:
+        failures.append(
+            "Master Context convenience snapshot does not match status progress"
+        )
+    if (
+        wp
+        and f"**{wp}** as the current authorized functional package"
+        not in master_context
+    ):
         failures.append("Master Context convenience snapshot does not match current WP")
 
 
