@@ -23,6 +23,7 @@ def test_current_repository_satisfies_v10_boundary_contract() -> None:
     failures: list[str] = []
 
     boundaries.validate_authority_files(failures)
+    boundaries.validate_engineering_governance(failures)
     boundaries.validate_no_competing_roots(failures)
     boundaries.validate_single_execution_authority(failures)
     boundaries.validate_adapter_authority(failures)
@@ -130,3 +131,19 @@ def test_codeowners_requires_explicit_v10_roots(
         "CODEOWNERS is missing explicit V10 ownership patterns" in item
         for item in failures
     )
+
+
+def test_engineering_governance_failure_blocks_repository_boundary(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    script = tmp_path / "scripts" / "check_v10_engineering_governance.py"
+    script.parent.mkdir(parents=True)
+    script.write_text("raise SystemExit(9)\n", encoding="utf-8")
+    monkeypatch.setattr(boundaries, "ROOT", tmp_path)
+    failures: list[str] = []
+
+    boundaries.validate_engineering_governance(failures)
+
+    assert failures
+    assert failures[0].startswith("engineering governance contract failed")
