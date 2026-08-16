@@ -2,7 +2,7 @@
 
 Status: **OWNER-APPROVED POLICY / EFFECTIVE ONLY AFTER MERGE TO `main`**  
 Date: 2026-08-16  
-Scope: all remaining V10 implementation, maintenance, recovery, dependency, CI and status work.
+Scope: all remaining V10 implementation, maintenance, recovery, dependency, CI, status, OWNER-handoff and runtime-hosting-selection work.
 
 ## 1. Purpose
 
@@ -158,6 +158,37 @@ OWNER product acceptance happens only after:
 
 If post-merge OWNER acceptance finds a defect, create a new focused fix branch/PR. Do not patch `main` directly.
 
+### 9.1 Direct-link-first OWNER handoff law
+
+Whenever OWNER participation is genuinely required, engineering must make the handoff deterministic. The canonical handoff standard is `docs/operations/V10_OWNER_ACTION_HANDOFF_STANDARD.md`.
+
+Before asking the OWNER to click or change anything in GitHub, Cloudflare, a broker/provider, billing, domain/account, consent or another browser surface:
+
+- verify current official provider UI/docs when navigation can change;
+- provide a direct official HTTPS link to the exact stable page when such a stable link exists;
+- do not make the OWNER discover the target page from vague instructions such as “open Settings” or “find Billing”;
+- if an exact deep link cannot be verified, state that fact and provide the closest verified official start URL plus the exact click path;
+- identify the exact account/repository/workspace/service/device scope;
+- give one bounded action at a time;
+- state the expected result, explicit STOP conditions, adjacent actions that must not be taken and the minimum safe non-secret result to return;
+- state cost/authority consequences before any payment, paid plan, public exposure, credential scope or irreversible change is confirmed.
+
+Secret-bearing, shortened, third-party redirect or private-runtime links are forbidden in OWNER handoffs.
+
+### 9.2 Personal-Node runtime / Render boundary law
+
+For V10, the approved Lenovo/replacement Personal Node remains the primary Web/API/application runtime host. Source-controlled V10 Web assets are built/rendered/served there according to the owning deployment contract.
+
+A separate paid general-purpose cloud application host is not required for normal V10 operation. In particular:
+
+- Render.com is **not** the V10 runtime target;
+- an empty/new Render.com workspace is not Omni-CIO authority;
+- do not create a new Render.com V10 Web Service, worker, database, deployment target or paid plan without a later explicit OWNER-approved amendment;
+- the existing Render.com `app:app` service remains the protected V9 production/recovery baseline until the responsible V10 parity/decommission gate;
+- an external-access provider selected by WP22A is access/security transport to the Personal-Node origin, not a second application/private-state host.
+
+The local V10 rendering/serving model must not be confused with the commercial Render.com service.
+
 ## 10. Failure-learning law
 
 A material RED result that occurs after the branch was considered preflight-ready requires a short engineering confidence postmortem before the next expensive retry.
@@ -207,14 +238,17 @@ This policy must be reflected in GitHub through multiple independent surfaces ra
 
 - Amendments Index;
 - `AGENTS.md`/agent instructions;
+- `.github/copilot-instructions.md` plus repository modular instructions;
 - PR template;
 - mandatory WP execution template;
 - machine-readable quality contract;
+- OWNER Action Handoff & Local Runtime Standard;
 - failure-learning ledger;
 - repository/CI governance guard;
+- deterministic regression tests;
 - exact-head CI and post-merge Regression Shield.
 
-Repository automation may enforce only facts it can actually observe. Human/agent review remains required for root-cause quality, full-diff reasoning and whether an OWNER action is truly non-delegable.
+Repository automation may enforce only facts it can actually observe. Human/agent review remains required for root-cause quality, full-diff reasoning, current provider UI verification and whether an OWNER action is truly non-delegable.
 
 ## 14. Protected invariants
 
