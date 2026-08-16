@@ -153,6 +153,9 @@ def main() -> int:
                 "schedule:",
                 "runs-on: [self-hosted, Windows, X64, omni-cio-ci]",
                 "Bootstrap protected runner Python 3.12.10",
+                "Build strict Windows runtime dependency projection",
+                "python scripts\\windows_ci_lock.py project requirements.txt windows-requirements.txt",
+                "--require-hashes -r windows-requirements.txt",
                 "Verify deployed v9 Action authority without broker mutation",
                 "persist-credentials: false",
             ),
@@ -167,6 +170,16 @@ def main() -> int:
             if marker not in text:
                 failures.append(f"{path.relative_to(ROOT)} missing marker: {marker}")
 
+    try:
+        live_workflow = LIVE_WORKFLOW.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        failures.append(f"cannot read {LIVE_WORKFLOW.relative_to(ROOT)}: {exc}")
+    else:
+        if "--require-hashes -r requirements.txt" in live_workflow:
+            failures.append(
+                "Windows live-authority workflow must not install the POSIX runtime lock directly"
+            )
+
     if failures:
         print("V10 CI cost-control guard failed:", file=sys.stderr)
         for failure in failures:
@@ -178,6 +191,7 @@ def main() -> int:
     print("Hosted capacity state: BLOCKED_OWNER_ZERO_BUDGET_HARD_STOP")
     print("Fast deterministic checks: zero-cost Lenovo continuity mode")
     print("Scheduled live-authority probe: zero-cost Lenovo continuity mode")
+    print("Windows live probe dependencies: projected from the canonical runtime lock")
     print("Hosted compatibility: executed routing check; no clean-room PASS fabricated")
     print("Stable release compatibility evidence: still required")
     return 0
