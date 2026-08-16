@@ -1,0 +1,134 @@
+{
+  "schema": "omni-cio.v10.engineering-quality-gate.v1",
+  "status": "OWNER_APPROVED_EFFECTIVE_ON_MAIN_MERGE",
+  "date": "2026-08-16",
+  "scope": [
+    "V10_IMPLEMENTATION",
+    "V10_MAINTENANCE",
+    "RECOVERY",
+    "DEPENDENCIES",
+    "CI",
+    "STATUS_TRANSITIONS"
+  ],
+  "pre_ci": {
+    "required": true,
+    "ci_is_primary_debugger": false,
+    "full_diff_review_before_expensive_ci": true,
+    "root_cause_before_fix": true,
+    "blast_radius_search": true,
+    "analogous_pattern_search": true,
+    "regression_guard_required_for_material_defect": true,
+    "known_preflight_failure_blocks_full_ci": true,
+    "applicable_checks": [
+      "format",
+      "lint",
+      "typecheck",
+      "compile",
+      "focused_tests",
+      "negative_tests",
+      "schema_and_config_validation",
+      "dependency_lock_validation",
+      "secret_private_data_guard",
+      "rollback_recovery_review"
+    ]
+  },
+  "dependency_policy": {
+    "latest_is_automatically_best": false,
+    "old_is_automatically_wrong": false,
+    "official_current_documentation_review_when_material": true,
+    "security_and_support_review": true,
+    "license_review": true,
+    "platform_compatibility_review": true,
+    "reproducible_lock_required": true,
+    "rollback_or_fallback_required": true,
+    "external_actions_full_commit_sha": true,
+    "new_language_requires_concrete_component_justification": true,
+    "polyglot_sprawl_forbidden": true
+  },
+  "merge_gate": {
+    "exact_head_only": true,
+    "all_applicable_checks_must_run": true,
+    "accepted_check_conclusions": [
+      "success"
+    ],
+    "rejected_as_green": [
+      "failure",
+      "cancelled",
+      "queued",
+      "pending",
+      "in_progress",
+      "timed_out",
+      "action_required",
+      "stale",
+      "neutral",
+      "skipped"
+    ],
+    "infrastructure_failure_blocks_merge": true,
+    "billing_failure_blocks_merge": true,
+    "irrelevant_workflow_should_not_trigger": true,
+    "new_commit_invalidates_final_green_evidence": true,
+    "zero_unresolved_blocking_review_threads": true,
+    "full_diff_review_required": true,
+    "normal_close_is_merge_after_green": true
+  },
+  "owner_participation": {
+    "product_acceptance_before_implementation_merge": false,
+    "product_acceptance_before_post_merge_green": false,
+    "pre_merge_exception": "GENUINELY_NON_DELEGABLE_PREREQUISITE_ONLY",
+    "allowed_prerequisite_examples": [
+      "EXTERNAL_ACCOUNT_OR_CONSENT",
+      "DOMAIN_OR_PAYMENT_DECISION",
+      "NARROW_CREDENTIAL_BOOTSTRAP",
+      "UAC_ADMIN_FIRMWARE_BITLOCKER_PHYSICAL_ACTION",
+      "MASTER_PLAN_OWNER_DECISION"
+    ],
+    "post_merge_acceptance_defect_rule": "NEW_FOCUSED_FIX_BRANCH_AND_GREEN_PR"
+  },
+  "failure_learning": {
+    "confidence_postmortem_after_unexpected_red": true,
+    "ledger": "docs/operations/V10_ENGINEERING_FAILURE_LEARNING_LEDGER.md",
+    "required_fields": [
+      "symptom",
+      "root_cause",
+      "blast_radius",
+      "why_preflight_missed",
+      "corrective_change",
+      "permanent_guard",
+      "future_prevention_rule"
+    ],
+    "secrets_or_private_payloads_forbidden": true
+  },
+  "fault_isolation": {
+    "bounded_failure_domains": true,
+    "optional_dependency_failure_should_preserve_core_when_safe": true,
+    "explicit_degraded_state_required": true,
+    "money_and_security_authority_fail_closed": true,
+    "patterns_to_consider": [
+      "TIMEOUTS_DEADLINES",
+      "BOUNDED_RETRIES",
+      "IDEMPOTENCY",
+      "CIRCUIT_BREAKER_BACKPRESSURE",
+      "DURABLE_QUEUE_CHECKPOINT",
+      "HEALTH_READINESS_FRESHNESS",
+      "RESTART_RECOVERY",
+      "LEAST_PRIVILEGE_PROCESS_BOUNDARY"
+    ]
+  },
+  "validation_funnel": [
+    "CHEAP_DETERMINISTIC_CHECKS",
+    "FOCUSED_CHANGED_SURFACE_TESTS",
+    "BROADER_LOCAL_OR_SELF_HOSTED_PREFLIGHT",
+    "FULL_EXACT_HEAD_PR_GATES",
+    "POST_MERGE_REGRESSION_SHIELD",
+    "OWNER_PRODUCT_ACCEPTANCE_IF_REQUIRED"
+  ],
+  "protected_invariants": {
+    "gateway_entrypoint": "app:app",
+    "trading_methods": false,
+    "REAL_TRADING_ENABLED": false,
+    "broker_write_authority_added": false,
+    "transfer_withdrawal_authority": false,
+    "v9_rollback_protected": true,
+    "master_plan_sequence_preserved": true
+  }
+}
