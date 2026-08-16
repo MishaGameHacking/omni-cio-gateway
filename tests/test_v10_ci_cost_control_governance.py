@@ -93,6 +93,18 @@ def test_scheduled_live_authority_does_not_burn_blocked_hosted_capacity() -> Non
     assert "--require-hashes -r requirements.txt" not in workflow
 
 
+def test_windows_live_authority_allows_bounded_provider_cold_start() -> None:
+    workflow = LIVE_WORKFLOW_PATH.read_text(encoding="utf-8")
+
+    assert "Warm protected V9 gateway across bounded Render cold start" in workflow
+    assert "[DateTimeOffset]::UtcNow.AddSeconds(150)" in workflow
+    assert "Invoke-WebRequest -Uri $healthUrl" in workflow
+    assert "-TimeoutSec 75" in workflow
+    assert "Start-Sleep -Seconds 5" in workflow
+    assert "exit 41" in workflow
+    assert "Verify deployed v9 Action authority without broker mutation" in workflow
+
+
 def test_budget_state_is_explicitly_mutable_external_state() -> None:
     contract = json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))
     cost = contract["ci_cost_control"]
