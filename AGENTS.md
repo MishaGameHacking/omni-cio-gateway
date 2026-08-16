@@ -26,18 +26,18 @@ V9 WP0–WP15 repository delivery and owner external acceptance are **COMPLETE**
 
 V10 is the **exclusive active feature program**. OWNER issued `START V10` on 2026-08-05.
 
-Current accepted state after GitHub hardening and planning clarification:
+The exact current state is always read from `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`; this file must not be treated as a competing progress ledger.
 
-- WP0 — COMPLETE;
-- WP1 — COMPLETE;
-- WP2 — COMPLETE;
-- WP3 — COMPLETE;
-- accepted V10 progress remains **5%** because Block B is not credited piecemeal;
-- **WP4 — Release, build provenance and deployment contract is NEXT**.
+At the accepted `main` baseline from which the 2026-08-16 engineering-governance amendment is prepared:
 
-GitHub/Lenovo CI hardening in PR #242 is accepted infrastructure and does not count as Block C V10 runtime implementation. Planning PR #244 adds implementation instructions/contracts only and does not start WP4.
+- V10 WP0–WP22 are accepted COMPLETE according to the current-status file;
+- accepted V10 progress is **40%** because Block E is not credited piecemeal;
+- **WP22A — External Web Access / OWNER Authentication Security Gate is the only authorized current functional package**;
+- WP23+ remains LOCKED behind the WP22A Exit Gate;
+- public Internet ingress remains OFF/LOCKED until WP22A acceptance;
+- broker-write / Real execution authority remains unchanged and not authorized by this status.
 
-The exact current state is always read from `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
+The engineering-governance amendment does not advance product progress or unlock another WP. It changes development/verification discipline only, and becomes authority only after its own exact-head GREEN merge plus required post-merge verification.
 
 ## 3. Mandatory V10 authority order
 
@@ -53,12 +53,14 @@ Before any change, read in this order:
 8. every active amendment listed there, especially:
    - `docs/master-plan/OMNI_CIO_V10_CONCRETE_EXECUTION_PLAN_AMENDMENT.md`;
    - `docs/master-plan/OMNI_CIO_V10_GITHUB_PRO_AND_MIGRATION_IMPLEMENTATION_AMENDMENT.md`;
+   - `docs/master-plan/OMNI_CIO_V10_ENGINEERING_QUALITY_AND_GREEN_MERGE_AMENDMENT.md` after its acceptance;
 9. machine-readable contracts relevant to the work, especially:
    - `docs/architecture/V10_AI_CORTEX_CONTRACT.json`;
    - `docs/architecture/V10_GITHUB_PRO_UTILIZATION_CONTRACT.json`;
    - `docs/architecture/V10_V9_TO_V10_PARITY_LEDGER.json`;
    - `docs/architecture/V10_COMPONENT_REUSE_MATRIX.json`;
    - `docs/architecture/V10_RELEASE_MANIFEST.schema.json`;
+   - `docs/architecture/V10_ENGINEERING_QUALITY_GATE_CONTRACT.json` after its acceptance;
 10. `docs/master-plan/OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md` before starting any implementation WP;
 11. `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`;
 12. accepted V10 architecture, ADR, recovery and current-WP files;
@@ -66,13 +68,13 @@ Before any change, read in this order:
 
 Old chat, screenshot, stale PR description or unmerged planning draft is never source of truth when it conflicts with accepted `main` plus the authority chain above.
 
-## 4. Sequential delivery discipline
+## 4. Sequential delivery and engineering-quality discipline
 
 Every significant V10/maintenance package follows:
 
-`restore context → identify exactly one current WP/defect → focused branch → code/docs/tests → security/boundary review → exact-head required gates → resolve review threads → squash merge → post-merge verification where required → update V10 status → next WP`.
+`restore context → identify exactly one current WP/defect → focused branch → root-cause/blast-radius reasoning → implementation/tests → cheap/focused preflight → full-diff review → exact-head applicable gates → all applicable checks SUCCESS → resolve review threads → squash merge → exact new main → post-merge verification → OWNER product acceptance only if required → update V10 status → next WP`.
 
-Rules:
+Binding rules:
 
 - do not implement later WPs early because hardware or an API is available;
 - do not mix unrelated WPs in one PR;
@@ -81,7 +83,15 @@ Rules:
 - new material scope requires OWNER-approved amendment, not chat improvisation;
 - no V11 or competing roadmap before V10 reaches 100% and owner acceptance;
 - any implementation WP must fill/use `OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md`;
-- if discovered work is not required for the current Exit Gate, classify it as current blocker/defect, future-WP work or amendment proposal instead of silently implementing it.
+- if discovered work is not required for the current Exit Gate, classify it as current blocker/defect, future-WP work or amendment proposal instead of silently implementing it;
+- CI is an independent verifier, not the normal interactive debugger;
+- before an expensive full cycle, establish root cause, inspect the complete changed surface and directly coupled consumers/producers, search analogous repository patterns, inspect adjacent failure modes, add a permanent regression guard when the defect class is reusable, and run available cheap/focused checks;
+- a one-line patch is acceptable only when evidence proves the defect class is genuinely local;
+- an unexpected material RED after declared preflight readiness requires a confidence postmortem and reusable lesson in `docs/operations/V10_ENGINEERING_FAILURE_LEARNING_LEDGER.md`;
+- every **applicable** exact-head V10 check must actually execute and conclude `success`; `failure`, `cancelled`, `queued`, `pending`, `in_progress`, `timed_out`, `action_required`, `stale`, `neutral` and `skipped` are not V10 GREEN evidence for an applicable gate;
+- infrastructure/billing/provider failures must be classified truthfully, but a RED applicable check still blocks merge;
+- any new commit invalidates the previous final GREEN evidence;
+- normal PR closure is GREEN exact head → final diff/review → squash merge; an unmerged superseded PR is historical work, never accepted implementation.
 
 ## 5. V10 migration/productization discipline — binding
 
@@ -120,12 +130,29 @@ Private `main` is protected. Accepted merge discipline requires:
 
 Hybrid CI model:
 
-- GitHub-hosted Ubuntu = fast feedback lane;
-- GitHub-hosted Windows = disposable clean-room compatibility lane, run path-aware and at release gates;
-- Lenovo `omni-cio-ci` = authoritative heavy Windows gate, continuity lane and later local AI/GPU eval lane;
-- post-merge Regression Shield protects accepted `main` where required.
+- GitHub-hosted runners are acceleration/disposable compatibility evidence when OWNER-controlled hosted capacity is actually available;
+- Lenovo `omni-cio-ci` is the authoritative heavy Windows gate and continuity lane;
+- post-merge Regression Shield protects accepted `main` where required;
+- no green capacity/routing check may be described as hosted clean-room PASS unless the hosted clean-room workload actually executed.
 
-Never permanently weaken protection because GitHub Actions is degraded. Incident handling must be explicit, bounded, evidence-backed and restore normal protection immediately.
+Current 2026-08-16 OWNER-observed GitHub Actions account state is a time-bounded external condition: Actions budget USD 0 with stop-usage enabled. While the accepted machine-readable quality contract records `BLOCKED_OWNER_ZERO_BUDGET_HARD_STOP`:
+
+- do not silently increase budget, alter payment settings or disable the hard stop;
+- do not repeatedly trigger hosted jobs already known to be unable to start;
+- use Lenovo for deterministic checks where semantics are equivalent;
+- keep `V10 authoritative merge gate` mandatory;
+- capacity-deferred compatibility jobs must execute a real routing/capacity contract and report truthfully instead of becoming job-level `skipped` GREEN evidence;
+- absence of disposable hosted compatibility does not fabricate compatibility PASS;
+- STABLE release provenance may not claim clean-room evidence that was not produced;
+- when hosted capacity changes, re-verify current external state and restore hosted lanes only through a focused GREEN CI/governance PR.
+
+Canonical current details are in:
+
+- `docs/architecture/V10_REGRESSION_SHIELD.md`;
+- `docs/V10_GITHUB_PRO_HYBRID_CI.md`;
+- `docs/operations/V10_CI_COST_CONTROL_STANDARD.md` after its acceptance.
+
+Never weaken protection because GitHub Actions is degraded. Incident handling must be explicit, bounded, evidence-backed and restore the reviewed normal/available-capacity mode through source control.
 
 ### 6.1 GitHub Pro maximum-utilization rule
 
@@ -139,7 +166,7 @@ Use GitHub Pro deliberately:
 - cache accelerates reproducible dependencies/tools only;
 - short-lived artifacts hold sanitized CI evidence only;
 - Codespaces, if/when implemented, is optional clean-room development/handoff, never production/Real/secret-bearing runtime;
-- GitHub Releases and protected `v10.*` release identity become WP4 provenance controls;
+- GitHub Releases and protected `v10.*` release identity remain provenance controls;
 - GitHub Environments are deployment identity/history/scoping, not broker-secret custody;
 - Dependabot remains enabled for actual ecosystems and should group safe minor/patch noise when appropriate;
 - Enterprise/GHAS-only private-repository features are not V10 prerequisites;
@@ -248,15 +275,28 @@ Required semantics across owning WPs:
 
 AI text similarity is never the acceptance oracle for deterministic Core migration.
 
-## 9. OWNER local-machine participation
+## 9. OWNER participation / handoff law
 
 Do everything possible through GitHub/code/CI without OWNER involvement.
+
+Before an implementation PR is merged and its required post-merge Regression Shield is GREEN, do **not** ask the OWNER for ordinary product acceptance such as phone/browser walkthrough, UX/login/logout test, portfolio comparison or manual runtime checks that engineering/CI can perform.
+
+Pre-merge OWNER participation is allowed only for a genuinely non-delegable prerequisite: external account/consent bootstrap, domain/payment decision, narrowly scoped credential bootstrap, UAC/admin/firmware/BitLocker/physical action, or an explicit Master Plan OWNER decision.
+
+When OWNER action is genuinely needed, follow `docs/operations/V10_OWNER_ACTION_HANDOFF_STANDARD.md` after its acceptance:
+
+- give a direct official HTTPS link to the exact stable target page when such a stable link exists;
+- if no stable deep link can be verified, say so and give the closest verified official start URL plus exact click path;
+- identify exact account/repository/workspace/service/device scope;
+- request one bounded action at a time;
+- state exact expected result, STOP conditions, adjacent actions that must not be taken, and minimum safe non-secret return;
+- disclose cost/authority consequence before any paid/public/credential/irreversible action;
+- never require the OWNER to discover the target page from vague navigation instructions;
+- never request secret-bearing screenshots/links or raw secrets in chat.
 
 Only when a local Windows action is genuinely non-delegable, use the preferred format:
 
 `OWNER opens PowerShell → Administrator only if necessary → pastes one reviewed idempotent block → returns PASS/FAIL output`.
-
-Do not ask the OWNER to click through many GUI screens when a safe console automation is possible.
 
 The permanent AI/runtime process must use least privilege; Administrator is for installation/service/system configuration only.
 
@@ -264,7 +304,7 @@ The Lenovo is the first V10 Personal node, not architectural ownership of the sy
 
 ## 10. Lenovo resource arbitration
 
-The same Lenovo is both GitHub self-hosted CI and the future local V10/AI node. Later infrastructure must explicitly prevent resource contention:
+The same Lenovo is both GitHub self-hosted CI and the local V10/AI node. Infrastructure must explicitly prevent resource contention:
 
 - detect authoritative CI activity;
 - pause/deprioritize heavy background AI/research/training during critical CI;
@@ -272,7 +312,7 @@ The same Lenovo is both GitHub self-hosted CI and the future local V10/AI node. 
 - expose CPU/RAM/GPU/VRAM/availability health;
 - AI failure must not take down deterministic Core or GitHub runner.
 
-The GitHub runner being installed today does not authorize installing the whole Block C application/AI runtime before WP4 is accepted.
+The V10 Web/API/application runtime remains on the approved Lenovo/replacement Personal Node unless a later explicit OWNER-approved architecture amendment changes that. A reviewed external-access provider is access/security transport, not a second authoritative private-state/app host. A new Render.com V10 service is not authorized merely for convenience; the existing Render.com `app:app` remains the protected V9 production/recovery baseline until its owning parity/decommission gate.
 
 ## 11. Broker execution boundary
 
@@ -334,7 +374,9 @@ Canonical Python lock sources remain `requirements.in` / `requirements-dev.in`; 
 
 Known incompatible tooling is held narrowly/documented; do not disable verification to force an update.
 
-Until a responsible V10 WP replaces it, current production remains:
+Before introducing or materially upgrading a language/runtime/framework/package/provider/Action, verify current official support, security, license, Windows compatibility where relevant, reproducible lock/install, fallback/rollback and measurable benefit. `latest` is not automatically `best`; accepted code is not rewritten merely for novelty. New languages require a concrete component-level correctness/security/isolation/performance/systems-integration reason and may not create polyglot sprawl.
+
+Until a responsible V10 WP replaces it, current protected V9 compatibility remains:
 
 - service `omni-cio-gateway`;
 - stable entrypoint `app:app`;
@@ -354,13 +396,15 @@ Preserve exact-decimal and provenance discipline:
 - missing data should produce an explicit insufficient-data state, not fabricated precision;
 - bond clean price and accrued interest remain distinct.
 
-## 16. Repository ownership
+## 16. Repository ownership / fault isolation
 
 Accepted repository architecture is defined by `docs/architecture/REPOSITORY_STRUCTURE.md` and guarded by permanent tests.
 
 Current physical V9 runtime remains until later migration packages explicitly replace it. Reserved roots `apps/`, `ai/`, `infrastructure/` are created/filled only by their owning V10 work packages.
 
 Do not create duplicate setup/audit/inventory documents when an accepted source of truth should be updated instead.
+
+V10 should form bounded failure domains rather than one fragile monolith. Where applicable use explicit contracts, timeouts/deadlines, bounded retries with idempotency, backpressure/circuit breakers, durable queues/checkpoints, health/readiness/freshness states, restart/recovery behavior and least-privilege process/service boundaries. Failure of optional AI/Research/Telegram/external ingress should not unnecessarily take down deterministic Core when safe degradation is possible. Money/security/identity/secret/broker authority always fails closed.
 
 ## 17. Required verification
 
@@ -369,6 +413,7 @@ Regression Shield/authoritative merge gate remains strict. At minimum protect:
 - lock reproducibility;
 - CI/security policy;
 - repository boundaries;
+- engineering-governance and CI cost-control contracts after acceptance;
 - compile/Ruff/format/mypy;
 - `app:app` compatibility until intentionally retired;
 - current GPT/recovery contracts while applied;
@@ -383,8 +428,10 @@ When AI implementation begins, CI must additionally fail closed on policy/tool/e
 
 ## 18. Current next action
 
-After the planning amendments are accepted, **WP4** is the only authorized next implementation package.
+Current functional authorization is read only from `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`. At the accepted baseline for this governance amendment, **WP22A** is the only authorized functional package and WP23+ remains locked.
 
-WP4 must finish release/build provenance/deployment contracts, establish release-manifest/tag/CI-budget/path-aware routing rules and make future AI artifact provenance representable, but it must not implement the later AI runtime itself.
+Before resuming material WP22A implementation, the OWNER-approved Engineering Quality / Pre-CI / Green-Merge governance package must finish its own lifecycle:
 
-Only after WP4 / Block B Exit Gate may Block C full Lenovo V10 node provisioning begin.
+`focused governance branch → preflight/root-cause/full-diff review → exact-head all-applicable checks SUCCESS → zero unresolved blockers → squash merge → exact new main → post-merge V10 Engineering Governance + Regression Shield GREEN`.
+
+Only after that acceptance should WP22A continue under the new laws. The governance package itself must not open public ingress, mutate Cloudflare/provider state, request OWNER phone acceptance, add broker-write authority, enable Real trading, or unlock WP23.
