@@ -83,9 +83,9 @@ jobs:
 
       - name: Clean routing workspace
         if: always()
-        shell: bash
+        shell: cmd
         run: |
-          git config --local --unset-all credential.helper 2>/dev/null || true
+          git config --local --unset-all credential.helper >nul 2>nul
           git reset --hard HEAD
           git clean -ffdx
 
@@ -175,9 +175,9 @@ jobs:
 
       - name: Clean policy workspace
         if: always()
-        shell: bash
+        shell: cmd
         run: |
-          git config --local --unset-all credential.helper 2>/dev/null || true
+          git config --local --unset-all credential.helper >nul 2>nul
           git reset --hard HEAD
           git clean -ffdx
 
@@ -295,8 +295,8 @@ jobs:
 
       - name: Clean frontend workspace
         if: always()
-        shell: bash
+        shell: cmd
         run: |
-          git config --local --unset-all credential.helper 2>/dev/null || true
+          git config --local --unset-all credential.helper >nul 2>nul
           git reset --hard HEAD
           git clean -ffdx
