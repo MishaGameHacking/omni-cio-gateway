@@ -24,6 +24,7 @@ $replayRoot = Join-Path $protectedRoot "replay"
 $requestRoot = "C:\ProgramData\OmniCIO\runtime\wp22a-provider-requests"
 $resultRoot = "C:\ProgramData\OmniCIO\runtime\wp22a-provider-results"
 $taskName = "OmniCIO.V10.WP22A.ProviderController"
+$runnerRoot = "C:\actions-runner"
 $expectedRepository = "MishaGameHacking/omni-cio-gateway"
 $expectedRepositoryId = "1312247309"
 
@@ -70,7 +71,12 @@ function Resolve-AccountSid {
 function Get-RunnerSidValue {
     $services = @(
         Get-CimInstance Win32_Service -ErrorAction Stop |
-            Where-Object { $_.Name -like "actions.runner.*" }
+            Where-Object {
+                $pathName = [string]$_.PathName
+                $_.Name -like "actions.runner.*" -and
+                -not [string]::IsNullOrWhiteSpace($pathName) -and
+                $pathName.IndexOf($runnerRoot, [System.StringComparison]::OrdinalIgnoreCase) -ge 0
+            }
     )
     if ($services.Count -ne 1) { throw "WP22A_PROVIDER_RUNNER_SERVICE_AMBIGUOUS" }
     $startName = ([string]$services[0].StartName).Trim()
@@ -78,6 +84,15 @@ function Get-RunnerSidValue {
         throw "WP22A_PROVIDER_RUNNER_LOCAL_SYSTEM_FORBIDDEN"
     }
     return Resolve-AccountSid -AccountName $startName
+}
+
+function Assert-RunnerNotAdministrator {
+    param([Parameter(Mandatory = $true)][string]$SidValue)
+    $administratorsSid = [System.Security.Principal.SecurityIdentifier]::new("S-1-5-32-544")
+    $members = @(Get-LocalGroupMember -SID $administratorsSid -ErrorAction Stop)
+    if ($members | Where-Object { $null -ne $_.SID -and $_.SID.Value -eq $SidValue }) {
+        throw "WP22A_PROVIDER_RUNNER_ADMINISTRATOR_FORBIDDEN"
+    }
 }
 
 function New-AclRule {
@@ -219,6 +234,7 @@ if ($Cleanup) {
 }
 
 $runnerSid = Get-RunnerSidValue
+Assert-RunnerNotAdministrator -SidValue $runnerSid
 if ($PSCmdlet.ShouldProcess($protectedRoot, "Install WP22A Phase-B1 provider request controller")) {
     New-Item -ItemType Directory -Path $protectedRoot, $replayRoot, $requestRoot, $resultRoot -Force | Out-Null
     Set-DirectoryAcl -Path $protectedRoot -AdditionalGrants @{}
