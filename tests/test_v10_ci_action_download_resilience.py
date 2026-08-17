@@ -13,6 +13,7 @@ CURRENT_SELF_HOSTED_AUTHORITY_WORKFLOWS = (
     "v10-engineering-governance.yml",
     "v10-pr-fast-checks.yml",
     "v10-toolchain-compat.yml",
+    "v10-live-gateway-authority-contract.yml",
     "v10-wp6-identity-audit.yml",
     "v10-wp15-live-web-support-audit.yml",
     "v10-wp16-web-design-system-audit.yml",
