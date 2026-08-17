@@ -30,7 +30,9 @@ REMOTE_HEADERS = {
 }
 
 
-def test_authenticated_mutation_rate_limit_fails_closed_without_blocking_status() -> None:
+def test_authenticated_mutation_rate_limit_fails_closed_without_blocking_status() -> (
+    None
+):
     sessions = SessionRegistryV1()
     app = FastAPI()
 
