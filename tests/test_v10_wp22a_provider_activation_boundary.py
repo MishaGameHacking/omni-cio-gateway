@@ -99,6 +99,19 @@ def test_controller_validates_signed_github_identity_and_replay() -> None:
     assert 'mutation_performed = $false' in controller
 
 
+def test_result_exchange_is_read_only_to_runner_and_controller_retained() -> None:
+    workflow = ACTIVATION.read_text(encoding="utf-8")
+    controller = CONTROLLER.read_text(encoding="utf-8")
+    installer = INSTALLER.read_text(encoding="utf-8")
+
+    assert "$resultRetentionHours = 24" in controller
+    assert "function Remove-StaleResultFiles" in controller
+    assert "Remove-StaleResultFiles" in controller
+    assert "^[0-9a-f]{32}\\.(json|tmp)$" in controller
+    assert "$runnerSid = [System.Security.AccessControl.FileSystemRights]::ReadAndExecute" in installer
+    assert "Remove-Item -LiteralPath $resultPath" not in workflow
+
+
 def test_installer_protects_controller_and_separates_exchange_roots() -> None:
     installer = INSTALLER.read_text(encoding="utf-8")
 
@@ -116,6 +129,11 @@ def test_installer_protects_controller_and_separates_exchange_roots() -> None:
     assert "New-ScheduledTaskPrincipal" in installer
     assert 'UserId "NT AUTHORITY\\SYSTEM"' in installer
     assert "-ValidateOnly" in installer
+    assert "WP22A_PROVIDER_OIDC_OWNER_ACTOR_MISMATCH" in installer
+    assert "WP22A_PROVIDER_OWNER_ACTOR_REQUIRED" in installer
+    assert "WP22A_PROVIDER_RERUN_BY_DIFFERENT_ACTOR_FORBIDDEN" in installer
+    assert "resultRetentionHours = 24" in installer
+    assert "Remove-StaleResultFiles" in installer
 
     assert "Read-Host" not in installer
     assert "Cloudflare API token" not in installer
