@@ -1,0 +1,146 @@
+# Omni-CIO V10 — WP22A Provider Activation Boundary
+
+Status: **PHASE B SOURCE-ONLY / PROVIDER MUTATION DISABLED**  
+Owning package: **WP22A — External Web Access / OWNER Authentication Security Gate**
+
+This document extends `V10_WP22A_EXECUTION_CONTRACT.md`. It does not mark WP22A complete and does not unlock WP23.
+
+## 1. Purpose
+
+Phase B needs a way to request reviewed provider work from accepted `main` without disclosing Cloudflare provider credentials, private provider state, tunnel credentials, or OWNER physical evidence to the ordinary persistent GitHub Actions runner.
+
+The accepted trust split is:
+
+`accepted main workflow -> short-lived GitHub OIDC request -> local protected controller -> later Cloudflare provider apply`
+
+The ordinary `omni-cio-ci` runner may submit a signed request and read a sanitized result. It may not read or replace the protected controller, provider credential, private OpenTofu state, runtime tunnel token, or OWNER physical evidence.
+
+## 2. Why the provider token is not a normal Actions secret
+
+The ordinary runner is a persistent self-hosted Windows execution surface and is treated as potentially compromised by the WP22A threat model. An Actions environment/secret controls when a value is injected, but it does not create a second OS trust boundary on the same runner.
+
+Therefore:
+
+- no Cloudflare API token is stored in a repository or workflow secret for this contour;
+- no Cloudflare provider credential is injected into `omni-cio-ci`;
+- no provider credential is accepted as `workflow_dispatch` input;
+- no provider credential is written to Actions logs, artifacts, workspace, request queue, or result queue;
+- later provider mutation executes only inside the protected local controller contour after a separate accepted source-only implementation adds the provider apply path.
+
+## 3. Phase-B1 scope and hard stop
+
+This source-only Phase-B1 increment implements only the authenticated request/controller boundary.
+
+It MUST NOT:
+
+- call Cloudflare APIs;
+- run OpenTofu `plan`, `apply`, `destroy`, or state mutation;
+- publish DNS;
+- start Cloudflare Tunnel;
+- retrieve or store a tunnel token;
+- request a Cloudflare provider token from the OWNER;
+- generate or attest OWNER physical evidence.
+
+A successfully validated request returns the reason `WP22A_PROVIDER_BOUNDARY_READY_NO_MUTATION` and `mutation_performed=false`. Any other interpretation is a failure.
+
+Provider apply/preflight/tunnel-token/rollback logic is a later source-only WP22A Phase-B increment and remains blocked until this boundary itself is accepted through PR CI, squash merge, exact `main` verification, and post-merge Regression Shield.
+
+## 4. GitHub request workflow
+
+`.github/workflows/v10-wp22a-provider-activation.yml` is deliberately:
+
+- `workflow_dispatch` only;
+- `main` only at runtime;
+- exact checked-out `GITHUB_SHA` only;
+- clean-worktree only;
+- `contents: read` plus `id-token: write` only;
+- free of `secrets.*` and provider configuration inputs;
+- bound to the fixed OIDC audience `omni-cio-wp22a-provider-controller`.
+
+The workflow obtains a short-lived GitHub OIDC JWT using the runner-provided OIDC request variables, writes it only to a one-time local activation-request file, waits a bounded time for a sanitized controller result, then deletes its request/result files.
+
+The JWT is never printed.
+
+## 5. Protected local controller
+
+`install_wp22a_provider_controller.ps1` installs only from an exact, clean accepted `main` checkout and copies reviewed controller source into a protected ProgramData root. The installed controller never executes the mutable GitHub workspace.
+
+Protected root:
+
+`C:\ProgramData\OmniCIO\private\wp22a-provider-controller`
+
+The root contains only controller/config/replay data in Phase-B1. SYSTEM and local Administrators have full control. The ordinary runner SID receives no allow ACE on that protected root.
+
+Exchange roots are separate:
+
+- request queue: `C:\ProgramData\OmniCIO\runtime\wp22a-provider-requests`;
+- sanitized result queue: `C:\ProgramData\OmniCIO\runtime\wp22a-provider-results`.
+
+The request queue is untrusted input. Tampering cannot authorize provider work because authorization comes from the signed OIDC token and exact claims. The result queue is written by SYSTEM/controller and readable by the ordinary runner; it never contains credentials, private state, OWNER identity, or physical evidence.
+
+## 6. OIDC validation contract
+
+The controller validates all of the following before acknowledging a request:
+
+- JWT `alg` is exactly `RS256`;
+- signature validates against the current JWKS URI discovered from `https://token.actions.githubusercontent.com/.well-known/openid-configuration`;
+- issuer is exactly `https://token.actions.githubusercontent.com`;
+- audience contains exactly the reviewed controller audience for this request;
+- `repository` is exactly `MishaGameHacking/omni-cio-gateway`;
+- `repository_id` is exactly `1312247309`;
+- `ref` is exactly `refs/heads/main`;
+- `event_name` is exactly `workflow_dispatch`;
+- `workflow_ref` is exactly `MishaGameHacking/omni-cio-gateway/.github/workflows/v10-wp22a-provider-activation.yml@refs/heads/main`;
+- `workflow_sha` equals the locally installed accepted implementation SHA;
+- `runner_environment` is exactly `self-hosted`;
+- JWT `run_id` equals request `run_id`;
+- request `implementation_sha` equals the locally installed accepted SHA;
+- `exp`, `nbf`, and `iat` are inside the bounded clock-skew/age window;
+- `jti` is non-empty and has not already been consumed.
+
+A consumed `jti` is retained in the protected replay cache for a bounded period. Replay fails closed.
+
+## 7. Future protected provider state
+
+The later provider-apply increment must keep these paths inside the same protected trust contour, never the repository or Actions artifacts:
+
+- DPAPI LocalMachine-encrypted Cloudflare API credential;
+- private OpenTofu state and plan material;
+- non-public account/zone/hostname/team configuration;
+- provider verification details that are unsafe to expose to the runner.
+
+When the later apply path exists, the Cloudflare API token must be decrypted only inside the controller process and passed transiently to a child provider process without command-line/log exposure.
+
+The Cloudflare Tunnel run token must be fetched only after the reviewed tunnel exists, using the provider API token, and written directly into the protected Lenovo runtime token file. It must not enter OpenTofu state, GitHub, Actions logs/artifacts, or an interactive runner prompt.
+
+## 8. Recovery and failure semantics
+
+Phase-B1 performs no provider/runtime mutation, so its recovery action is removal of the local controller/request/result contour only.
+
+Future provider mutation must preserve the WP22A execution contract:
+
+1. reconstruct/verify accepted local Web first;
+2. preflight zone/full-DNS/hostname/Universal SSL/Zero Trust/IdP before publication;
+3. apply Access/Tunnel/ingress/proxied DNS from accepted source;
+4. retrieve tunnel runtime token separately;
+5. install/verify runner loopback denial and pinned cloudflared;
+6. start external connector only after Access/certificate/catch-all deny are proven;
+7. on any late failure, remove/disable external reachability and connector first, then restore accepted local Web.
+
+There is no unauthenticated fallback.
+
+## 9. Evidence boundary
+
+Controller results are machine-generated operational evidence only. They may state request validation reason codes, exact implementation SHA, run ID, and `mutation_performed`.
+
+They cannot state that the OWNER used a phone, saw a certificate, completed authentication, or successfully rehearsed logout/session rejection. Those facts require the separate physical OWNER evidence step defined by the WP22A execution contract.
+
+## 10. Safety invariants
+
+This boundary does not change:
+
+- `app:app`;
+- `trading_methods=false`;
+- `REAL_TRADING_ENABLED=false`;
+- broker write authority;
+- V9 rollback protection.
