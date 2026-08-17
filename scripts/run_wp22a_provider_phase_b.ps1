@@ -103,7 +103,10 @@ try {
     $env:TF_VAR_hostname = $env:WP22A_EXTERNAL_HOST
     $env:TF_VAR_team_name = $env:WP22A_CLOUDFLARE_TEAM_NAME
 
-    Invoke-SanitizedPython -Script $liveGuard -Arguments @("preflight")
+    $isDestroyOperation = $Operation -in @("destroy-plan", "destroy")
+    if (-not $isDestroyOperation) {
+        Invoke-SanitizedPython -Script $liveGuard -Arguments @("preflight")
+    }
     if ($Operation -eq "preflight") {
         Write-Output '{"status":"PASS","reason":"WP22A_PROVIDER_PHASE_B_PREFLIGHT_COMPLETE"}'
         exit 0
@@ -142,7 +145,6 @@ try {
     New-Item -ItemType Directory -Path $stateRoot -Force | Out-Null
     Remove-Item -LiteralPath $planPath, $planJson, $tofuLog -Force -ErrorAction SilentlyContinue
 
-    $isDestroy = $Operation -in @("destroy-plan", "destroy")
     $planArguments = @(
         $script:chdirArg,
         "plan",
@@ -152,7 +154,7 @@ try {
         "-state=$statePath",
         "-out=$planPath"
     )
-    if ($isDestroy) { $planArguments += "-destroy" }
+    if ($isDestroyOperation) { $planArguments += "-destroy" }
     Invoke-TofuQuiet -Arguments $planArguments
 
     & $script:tofuExe $script:chdirArg show "-plan=$planPath" "-json-into=$planJson" *> $tofuLog
@@ -160,7 +162,7 @@ try {
         throw "WP22A_PROVIDER_PLAN_EXPORT_FAILED"
     }
     $guardArguments = @("plan", $planJson)
-    if ($isDestroy) { $guardArguments += "--destroy" }
+    if ($isDestroyOperation) { $guardArguments += "--destroy" }
     Invoke-SanitizedPython -Script $stateGuard -Arguments $guardArguments
 
     if ($Operation -in @("plan", "destroy-plan")) {
