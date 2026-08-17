@@ -26,6 +26,7 @@ SERVICE_SELECTION = (
 EXECUTION_CONTRACT = (
     ROOT / "docs" / "architecture" / "V10_WP22A_EXECUTION_CONTRACT.md"
 )
+WP17_SECURITY_GUARD = ROOT / "scripts" / "check_v10_wp17_web_security.py"
 
 
 def test_cloudflared_binary_is_version_and_hash_pinned() -> None:
@@ -242,6 +243,16 @@ def test_external_tls_and_certificate_lifecycle_are_fail_closed() -> None:
         "must not silently enable a paid certificate product",
     ):
         assert marker in contract
+
+
+def test_inherited_wp17_guard_recognizes_reviewed_wp22a_source_only() -> None:
+    text = WP17_SECURITY_GUARD.read_text(encoding="utf-8")
+    assert "WP22A_EXECUTION_CONTRACT" in text
+    assert "wp22a_source_gate" in text
+    assert "live public ingress has been activated" in text
+    assert "if bind_all_marker in lowered_backend" in text
+    assert 'if "tailscale funnel" in lowered_backend' in text
+    assert "if marker in lowered_backend and not wp22a_source_gate" in text
 
 
 def test_cloudflare_provider_version_and_windows_package_hash_are_locked() -> None:
