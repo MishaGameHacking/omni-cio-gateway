@@ -27,6 +27,7 @@ CSRF_COOKIE = "__Host-omni_v10_csrf"
 CSRF_HEADER = "X-Omni-CSRF"
 CF_ACCESS_IDENTITY_HEADER = "Cf-Access-Authenticated-User-Email"
 CF_ACCESS_JWT_HEADER = "Cf-Access-Jwt-Assertion"
+FORWARDED_PROTO_HEADER = "X-Forwarded-Proto"
 REMOTE_SESSION_POLICY = SessionPolicyV1(
     idle_lifetime=timedelta(hours=2),
     absolute_lifetime=timedelta(hours=24),
@@ -307,25 +308,31 @@ class ExternalAccessSecurityMiddlewareV1(BaseHTTPMiddleware):
                 path=request.url.path,
             )
 
+        # Uvicorn intentionally ignores proxy headers for peer identity. The external
+        # client protocol is therefore checked separately from Cloudflare's overwritten
+        # X-Forwarded-Proto only after the reviewed loopback/cloudflared boundary.
+        forwarded_proto = request.headers.get(FORWARDED_PROTO_HEADER, "")
+        if forwarded_proto.strip().casefold() != "https":
+            return _remote_error("HTTPS_REQUIRED", 403, path=request.url.path)
+
         is_status = request.method == "GET" and request.url.path == _REMOTE_STATUS_PATH
         identity = request.headers.get(CF_ACCESS_IDENTITY_HEADER, "")
         jwt_assertion = request.headers.get(CF_ACCESS_JWT_HEADER, "")
         fingerprint = identity_fingerprint_sha256(identity)
-        if not is_status:
-            if not jwt_assertion:
-                return _remote_error(
-                    "ACCESS_ASSERTION_REQUIRED",
-                    403,
-                    path=request.url.path,
-                )
-            if not secrets.compare_digest(
-                fingerprint, self._policy.owner_identity_sha256
-            ):
-                return _remote_error(
-                    "OWNER_IDENTITY_REQUIRED",
-                    403,
-                    path=request.url.path,
-                )
+        if not jwt_assertion:
+            return _remote_error(
+                "ACCESS_ASSERTION_REQUIRED",
+                403,
+                path=request.url.path,
+            )
+        if not secrets.compare_digest(
+            fingerprint, self._policy.owner_identity_sha256
+        ):
+            return _remote_error(
+                "OWNER_IDENTITY_REQUIRED",
+                403,
+                path=request.url.path,
+            )
 
         if request.method not in _SAFE_METHODS:
             origin = request.headers.get("origin", "")

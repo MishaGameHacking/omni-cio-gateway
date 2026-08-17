@@ -20,6 +20,12 @@ CLOUDFLARE_PROVIDER_BOOTSTRAP = (
 TERRAFORM_VALIDATE = ROOT / "scripts" / "validate_wp22a_terraform.ps1"
 WORKFLOW = ROOT / ".github" / "workflows" / "v10-wp22a-clientless-access-audit.yml"
 GITIGNORE = ROOT / ".gitignore"
+SERVICE_SELECTION = (
+    ROOT / "docs" / "architecture" / "V10_WP22A_SERVICE_SELECTION.md"
+)
+EXECUTION_CONTRACT = (
+    ROOT / "docs" / "architecture" / "V10_WP22A_EXECUTION_CONTRACT.md"
+)
 
 
 def test_cloudflared_binary_is_version_and_hash_pinned() -> None:
@@ -214,6 +220,28 @@ def test_dns_publication_waits_for_access_protected_tunnel_ingress() -> None:
     assert "depends_on" in dns
     assert "cloudflare_zero_trust_access_application.omni_cio" in dns
     assert "cloudflare_zero_trust_tunnel_cloudflared_config.omni_cio" in dns
+    assert "proxied = true" in dns
+
+
+def test_external_tls_and_certificate_lifecycle_are_fail_closed() -> None:
+    selection = SERVICE_SELECTION.read_text(encoding="utf-8")
+    contract = EXECUTION_CONTRACT.read_text(encoding="utf-8")
+    for marker in (
+        "Universal SSL",
+        "active Cloudflare full-DNS zone",
+        "first-level subdomain",
+        "Cloudflare owns edge-certificate issuance, renewal and deployment",
+        "X-Forwarded-Proto",
+    ):
+        assert marker in selection
+    for marker in (
+        "publicly trusted provider-managed certificate",
+        "Universal SSL",
+        "provider-managed renewal",
+        "X-Forwarded-Proto: https",
+        "must not silently enable a paid certificate product",
+    ):
+        assert marker in contract
 
 
 def test_cloudflare_provider_version_and_windows_package_hash_are_locked() -> None:

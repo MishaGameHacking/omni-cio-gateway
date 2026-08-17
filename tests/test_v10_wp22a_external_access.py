@@ -15,6 +15,7 @@ from omni_cio.web.external_access_v1 import (
     CF_ACCESS_JWT_HEADER,
     CSRF_COOKIE,
     CSRF_HEADER,
+    FORWARDED_PROTO_HEADER,
     REMOTE_SESSION_COOKIE,
     REMOTE_SESSION_POLICY,
     ExternalAccessPolicyV1,
@@ -31,6 +32,11 @@ ORIGIN = f"https://{HOST}"
 OWNER_SHA256 = hashlib.sha256(OWNER_IDENTITY.casefold().encode("utf-8")).hexdigest()
 FAKE_ACCESS_JWT = "header.payload.signature"
 WEB_SOURCE = Path(__file__).resolve().parents[1] / "apps" / "web" / "src"
+REMOTE_HEADERS = {
+    CF_ACCESS_IDENTITY_HEADER: OWNER_IDENTITY,
+    CF_ACCESS_JWT_HEADER: FAKE_ACCESS_JWT,
+    FORWARDED_PROTO_HEADER: "https",
+}
 
 
 def make_app(
@@ -100,10 +106,7 @@ def remote_client(app: FastAPI) -> TestClient:
         app,
         base_url=ORIGIN,
         client=("127.0.0.1", 51000),
-        headers={
-            CF_ACCESS_IDENTITY_HEADER: OWNER_IDENTITY,
-            CF_ACCESS_JWT_HEADER: FAKE_ACCESS_JWT,
-        },
+        headers=REMOTE_HEADERS,
     )
 
 
@@ -186,6 +189,56 @@ def test_remote_status_crosses_existing_local_trusted_host_boundary() -> None:
     assert "'unsafe-eval'" not in csp
 
 
+def test_remote_scheme_header_is_required_and_must_be_https() -> None:
+    app = make_app()
+    for value in (None, "http", "https, http"):
+        headers = {
+            CF_ACCESS_IDENTITY_HEADER: OWNER_IDENTITY,
+            CF_ACCESS_JWT_HEADER: FAKE_ACCESS_JWT,
+        }
+        if value is not None:
+            headers[FORWARDED_PROTO_HEADER] = value
+        client = TestClient(
+            app,
+            base_url=ORIGIN,
+            client=("127.0.0.1", 51020),
+            headers=headers,
+        )
+        response = client.get("/api/v10/web/private-external-login/status")
+        assert response.status_code == 403
+        assert response.json()["detail"] == "HTTPS_REQUIRED"
+
+
+def test_remote_status_requires_outer_access_assertion_and_owner_identity() -> None:
+    app = make_app()
+    missing_assertion = TestClient(
+        app,
+        base_url=ORIGIN,
+        client=("127.0.0.1", 51021),
+        headers={
+            CF_ACCESS_IDENTITY_HEADER: OWNER_IDENTITY,
+            FORWARDED_PROTO_HEADER: "https",
+        },
+    )
+    response = missing_assertion.get("/api/v10/web/private-external-login/status")
+    assert response.status_code == 403
+    assert response.json()["detail"] == "ACCESS_ASSERTION_REQUIRED"
+
+    wrong_owner = TestClient(
+        app,
+        base_url=ORIGIN,
+        client=("127.0.0.1", 51022),
+        headers={
+            CF_ACCESS_IDENTITY_HEADER: "other@example.test",
+            CF_ACCESS_JWT_HEADER: FAKE_ACCESS_JWT,
+            FORWARDED_PROTO_HEADER: "https",
+        },
+    )
+    response = wrong_owner.get("/api/v10/web/private-external-login/status")
+    assert response.status_code == 403
+    assert response.json()["detail"] == "OWNER_IDENTITY_REQUIRED"
+
+
 def test_web_source_has_no_inline_style_attributes_blocked_by_remote_csp() -> None:
     offenders = []
     for path in WEB_SOURCE.rglob("*.tsx"):
@@ -225,7 +278,10 @@ def test_access_assertion_is_required_before_owner_identity_is_trusted() -> None
         make_app(),
         base_url=ORIGIN,
         client=("127.0.0.1", 51001),
-        headers={CF_ACCESS_IDENTITY_HEADER: OWNER_IDENTITY},
+        headers={
+            CF_ACCESS_IDENTITY_HEADER: OWNER_IDENTITY,
+            FORWARDED_PROTO_HEADER: "https",
+        },
     )
     response = client.post(
         "/api/v10/web/private-external-login",
@@ -252,8 +308,7 @@ def test_reauthentication_rotates_session_and_revokes_previous_token() -> None:
         base_url=ORIGIN,
         client=("127.0.0.1", 51013),
         headers={
-            CF_ACCESS_IDENTITY_HEADER: OWNER_IDENTITY,
-            CF_ACCESS_JWT_HEADER: FAKE_ACCESS_JWT,
+            **REMOTE_HEADERS,
             "Cookie": f"{REMOTE_SESSION_COOKIE}={first}",
         },
     )
@@ -274,8 +329,8 @@ def test_stolen_remote_session_is_rejected_for_different_access_identity() -> No
         base_url=ORIGIN,
         client=("127.0.0.1", 51012),
         headers={
+            **REMOTE_HEADERS,
             CF_ACCESS_IDENTITY_HEADER: "other@example.test",
-            CF_ACCESS_JWT_HEADER: FAKE_ACCESS_JWT,
             "Cookie": f"{REMOTE_SESSION_COOKIE}={session}; {CSRF_COOKIE}={csrf}",
         },
     )
@@ -301,8 +356,7 @@ def test_remote_host_ignores_legacy_local_session_cookie() -> None:
         base_url=ORIGIN,
         client=("127.0.0.1", 51011),
         headers={
-            CF_ACCESS_IDENTITY_HEADER: OWNER_IDENTITY,
-            CF_ACCESS_JWT_HEADER: FAKE_ACCESS_JWT,
+            **REMOTE_HEADERS,
             "Cookie": f"{SESSION_COOKIE}={legacy}",
         },
     )
@@ -331,8 +385,8 @@ def test_wrong_identity_and_non_loopback_proxy_path_fail_closed() -> None:
         base_url=ORIGIN,
         client=("127.0.0.1", 51002),
         headers={
+            **REMOTE_HEADERS,
             CF_ACCESS_IDENTITY_HEADER: "other@example.test",
-            CF_ACCESS_JWT_HEADER: FAKE_ACCESS_JWT,
         },
     )
     response = wrong.post(
@@ -346,10 +400,7 @@ def test_wrong_identity_and_non_loopback_proxy_path_fail_closed() -> None:
         app,
         base_url=ORIGIN,
         client=("192.0.2.10", 51003),
-        headers={
-            CF_ACCESS_IDENTITY_HEADER: OWNER_IDENTITY,
-            CF_ACCESS_JWT_HEADER: FAKE_ACCESS_JWT,
-        },
+        headers=REMOTE_HEADERS,
     )
     response = direct.get("/api/v10/web/private-external-login/status")
     assert response.status_code == 403
@@ -362,10 +413,7 @@ def test_host_origin_and_csrf_abuse_are_rejected() -> None:
         app,
         base_url="https://attacker.example.com",
         client=("127.0.0.1", 51004),
-        headers={
-            CF_ACCESS_IDENTITY_HEADER: OWNER_IDENTITY,
-            CF_ACCESS_JWT_HEADER: FAKE_ACCESS_JWT,
-        },
+        headers=REMOTE_HEADERS,
     )
     response = hostile_host.get("/api/v10/web/private-external-login/status")
     assert response.status_code == 400

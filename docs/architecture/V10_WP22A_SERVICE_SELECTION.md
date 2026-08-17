@@ -48,6 +48,15 @@ Security design consequence:
 - the GitHub self-hosted runner remains denied direct access to the loopback backend port;
 - no direct origin port is exposed.
 
+TLS and certificate lifecycle for the selected zero-cost Personal path:
+
+- visitor TLS terminates at the Cloudflare edge on a publicly trusted, Cloudflare-managed Universal SSL certificate; the local `cloudflared -> 127.0.0.1:8765` hop remains loopback-only HTTP and does not require an externally trusted origin certificate;
+- the selected Phase-B path requires an **active Cloudflare full-DNS zone** and uses exactly one **first-level subdomain** of that zone so Universal SSL coverage is deterministic without a paid certificate add-on;
+- the WP22A DNS record remains `Proxied`; Cloudflare owns edge-certificate issuance, renewal and deployment, so no edge private key or certificate bundle is copied to GitHub or Lenovo;
+- before the hostname is treated as usable, the protected Phase-B verifier must prove that an active certificate covers the exact hostname and that provider-managed renewal remains enabled;
+- `X-Forwarded-Proto` must equal exactly `https` at the loopback application boundary; missing, `http`, or ambiguous values fail closed and may not reach an Omni-CIO remote session;
+- if the live OWNER zone is partial/CNAME-only, the desired hostname is deeper than one subdomain level, Universal SSL is inactive, or exact coverage cannot be proven, Phase B stops before cutover. Engineering must not silently buy/enable Advanced Certificate Manager, Total TLS, a custom certificate, or another paid product.
+
 Cost now: **Cloudflare Zero Trust Free is the selected Personal-contour target**, subject to the exact live account/feature checks performed before Phase B. Free service is not treated as having a paid-plan SLA.
 
 Main limitation: an active domain/zone under Cloudflare is required for the normal published-hostname path, and one-time OWNER account/domain/API-credential bootstrap remains unavoidable.
@@ -105,6 +114,7 @@ The clean rebuild keeps the following design ideas but reimplements them against
 - host-bound Secure/HttpOnly/SameSite session cookie and host-bound CSRF cookie;
 - session rotation on successful outer OWNER authentication;
 - exact Host and HTTPS Origin validation;
+- fail-closed external protocol binding through exact `X-Forwarded-Proto: https`;
 - CSRF cookie/header equality on unsafe methods;
 - bounded login/mutation rate limiting;
 - HSTS, strict CSP, `nosniff`, restrictive referrer policy, `no-store`;

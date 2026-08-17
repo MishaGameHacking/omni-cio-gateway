@@ -334,11 +334,14 @@ Fail-safe: missing/invalid vault marker or ACL, stale/invalid challenge, tenant 
 
 ### T22 — Clientless external Web boundary bypass or misconfiguration
 
-**Scenario:** a forged Cloudflare identity header, unprotected tunnel route, hostile Host/Origin, stolen remote session, compromised CI runner, provider drift or failed rollback bypasses the intended OWNER-only external Web gate or leaves the Lenovo origin exposed.
+**Scenario:** a forged Cloudflare identity header, unprotected tunnel route, hostile Host/Origin, stolen remote session, compromised CI runner, provider drift, invalid edge-certificate state or failed rollback bypasses the intended OWNER-only external Web gate or leaves the Lenovo origin exposed.
 
 WP22A controls:
 
 - the Lenovo Web origin binds only to `127.0.0.1`; no inbound public Lenovo port is introduced;
+- visitor TLS terminates at Cloudflare on a provider-managed publicly trusted certificate; the zero-cost selected path requires an active full-DNS zone, a first-level WP22A hostname, proxied DNS, valid Universal SSL coverage and provider-managed renewal before cutover is accepted;
+- external application requests require exact `X-Forwarded-Proto: https`; missing/plain-HTTP/ambiguous protocol markers fail closed without enabling general proxy-header peer trust;
+- edge certificate private keys remain provider-managed and are never copied into GitHub, Lenovo runtime state or CI artifacts;
 - Cloudflare Tunnel uses a single reviewed hostname plus catch-all `http_status:404`;
 - Cloudflare Access is deny-by-default and the selected Access application/policy is created before DNS publication is considered usable;
 - `cloudflared` is configured to validate `Cf-Access-Jwt-Assertion` for the exact team/application audience before proxying the protected hostname;
@@ -353,7 +356,7 @@ WP22A controls:
 
 Local-trust note: Cloudflare Access is not treated as a defense against an already-compromised OWNER/admin Windows account. Such local code execution is a node compromise governed by T3/T13 and the disk/runtime controls. The explicitly less-trusted CI runner is isolated from the loopback origin and WP22A secret/config subtrees.
 
-Fail-safe: missing Access validation, wrong OWNER identity, wrong Host/Origin/CSRF, non-loopback origin path, missing runner denial, provider-state mismatch or rollback uncertainty blocks WP22A acceptance and keeps WP23 LOCKED.
+Fail-safe: missing/invalid TLS certificate coverage or renewal state, non-HTTPS external protocol, missing Access validation, wrong OWNER identity, wrong Host/Origin/CSRF, non-loopback origin path, missing runner denial, provider-state mismatch or rollback uncertainty blocks WP22A acceptance and keeps WP23 LOCKED.
 
 ## 5. Severity
 

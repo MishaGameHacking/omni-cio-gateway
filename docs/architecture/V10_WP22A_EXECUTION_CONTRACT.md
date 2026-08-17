@@ -88,9 +88,13 @@ The reviewed network path is:
 Required properties:
 
 - no public Lenovo IP/port is required;
+- browser TLS terminates at the Cloudflare edge on a publicly trusted provider-managed certificate for the exact WP22A hostname;
+- the selected zero-cost Phase-B path uses an active Cloudflare full-DNS zone and one first-level subdomain covered by Universal SSL; a deeper hostname or different zone mode requires a reviewed certificate/service decision before cutover;
+- the WP22A DNS record is proxied, and certificate issuance/renewal/deployment remain Cloudflare-managed rather than moving private edge-key material onto Lenovo or into GitHub;
+- the loopback application requires exact `X-Forwarded-Proto: https`; missing, plaintext-HTTP or ambiguous protocol values fail closed even though Uvicorn deliberately ignores proxy headers for peer-address trust;
 - Uvicorn binds only to `127.0.0.1`;
 - `cloudflared` is the reviewed external reverse-proxy process;
-- the tunnel route targets only the exact local Web port;
+- the tunnel route targets only the exact local Web port; the `cloudflared -> 127.0.0.1:8765` hop is local HTTP and is never an Internet-facing origin connection;
 - catch-all tunnel ingress rejects unmatched routes;
 - Cloudflare Access application/policy exists before the public hostname route is considered usable;
 - `cloudflared` Access protection is configured as required for the exact team/application audience;
@@ -128,6 +132,7 @@ External-host requests require:
 
 - exact canonical Host;
 - loopback proxy peer;
+- exact external protocol marker `X-Forwarded-Proto: https` supplied through the reviewed Cloudflare path;
 - Access-authenticated OWNER identity;
 - non-empty Access assertion that has already been validated by the reviewed `cloudflared` ingress binding;
 - valid Omni-CIO session for protected data routes;
@@ -174,6 +179,8 @@ The existing Cloudflare Zero Trust organization is a bootstrap prerequisite. Ter
 
 A bounded source-controlled Cloudflare API bootstrap may create/update the Zero Trust organization prerequisite when needed, but it cannot publish the Omni-CIO hostname by itself. After that prerequisite is correct, Terraform owns the WP22A Tunnel, Access policy/application, tunnel ingress and DNS record.
 
+The selected certificate model is Cloudflare-managed Universal SSL on an active full-DNS zone with an exact first-level WP22A hostname and proxied DNS. Edge-certificate issuance, renewal and deployment stay with Cloudflare; no edge private key is a Lenovo/GitHub runtime secret. Before provider publication is treated as usable, Phase B must verify the certificate is active, publicly trusted, covers the exact hostname and remains under provider-managed renewal. Failure to prove coverage or renewal blocks cutover; engineering must not silently enable a paid certificate product.
+
 Provider API credentials used by GitHub must be narrowly scoped and unavailable to arbitrary PR code. Real provider mutation is allowed only from an explicitly reviewed protected `main` workflow/environment after the dormant implementation is merged and its post-merge Regression Shield is GREEN.
 
 The real provider token is never provided to pull-request workflows. This is a deliberate security boundary: provider credentials cannot be exposed to code that has not yet become accepted `main`.
@@ -190,6 +197,7 @@ The application launcher must:
 - explicitly disable older local OWNER acceptance flags;
 - bind Uvicorn to `127.0.0.1` only;
 - disable forwarded-client rewriting when application trust decisions depend on the actual loopback peer;
+- validate the externally observed protocol separately as exact `X-Forwarded-Proto: https` rather than enabling general proxy-header trust;
 - use PostgreSQL SSPI/runtime role already accepted;
 - keep `app:app` unchanged.
 
@@ -225,13 +233,13 @@ Fail-closed apply order:
 
 1. verify accepted `main` SHA and reviewed provider workflow;
 2. verify accepted local Web can be reconstructed;
-3. bootstrap/verify the existing Zero Trust organization and restricted default Cloudflare IdP without publishing Omni-CIO;
-4. plan/apply Access policy/application, Tunnel ingress and DNS from source-controlled provider intent;
+3. verify the OWNER zone is active/full-DNS, the planned hostname is first-level, an active Universal SSL certificate covers that exact hostname, provider-managed renewal is enabled, and the existing Zero Trust organization/restricted default Cloudflare IdP match the reviewed contract without publishing Omni-CIO;
+4. plan/apply Access policy/application, Tunnel ingress and proxied DNS from source-controlled provider intent;
 5. retrieve the tunnel run token separately from Terraform state and write it directly into the protected Lenovo runtime store;
 6. install/verify pinned `cloudflared` runtime and exact runner loopback firewall denial;
 7. start remote-specific Omni-CIO Web on loopback;
-8. start the tunnel only after Access protection and catch-all deny exist;
-9. independently verify provider and Lenovo state;
+8. start the tunnel only after Access protection, certificate coverage and catch-all deny exist;
+9. independently verify provider and Lenovo state, including exact-host TLS and rejection of non-HTTPS protocol markers;
 10. require separate OWNER phone rehearsal before final acceptance.
 
 On any failure after external reachability could exist, rollback first removes/disables the external route/tunnel/local connector contour and then reconstructs the previously accepted local Web. Failure may never leave an unauthenticated published hostname as a convenience fallback.
@@ -240,7 +248,7 @@ On any failure after external reachability could exist, rollback first removes/d
 
 Before dormant merge, CI must prove at minimum:
 
-- valid external Host + loopback proxy + expected Access identity/assertion can enter remote login;
+- valid external Host + loopback proxy + exact HTTPS protocol marker + expected Access identity/assertion can enter remote login;
 - successful remote login creates server-side OWNER scope and rotates prior session;
 - protected API works only after both external identity and Omni-CIO session exist;
 - same-origin CSRF succeeds;
@@ -255,6 +263,7 @@ Mandatory negatives include:
 
 - malformed/external host rejected;
 - non-loopback external-host request rejected;
+- missing/plain-HTTP/ambiguous `X-Forwarded-Proto` rejected;
 - missing/empty Access identity rejected;
 - missing Access assertion rejected;
 - wrong OWNER identity rejected;
@@ -269,6 +278,7 @@ Mandatory negatives include:
 - CSP does not require inline style/script weakening;
 - tunnel config requires Access protection and catch-all deny;
 - Terraform refuses an unhardened/mismatched Zero Trust organization or missing/unrestricted Cloudflare IdP;
+- Phase B blocks publication/cutover when the zone mode, hostname depth, certificate coverage or provider-managed renewal cannot be proven;
 - provider config contains no secrets;
 - PR workflows cannot access real provider credentials;
 - direct runner loopback access is denied in live OWNER gate;
@@ -293,7 +303,7 @@ OWNER physical evidence cannot be synthesized.
 
 After Phase A is accepted and the reviewed Phase B provider/runtime apply is ready, the OWNER must use a separate ordinary phone browser (no device VPN/client) to prove:
 
-- the reviewed HTTPS hostname is reachable;
+- the reviewed HTTPS hostname is reachable with a valid publicly trusted certificate and no certificate warning;
 - unauthenticated access is blocked by Cloudflare Access;
 - the OWNER can authenticate through the selected outer identity path;
 - Omni-CIO remote OWNER login/session succeeds;
@@ -313,6 +323,7 @@ WP22A PASS requires all of:
 - dormant feature PR squash-merged;
 - exact implementation `main` verified and post-feature-merge Regression Shield GREEN;
 - reviewed provider configuration/applied state matches source-controlled intent;
+- exact OWNER hostname has a valid publicly trusted certificate with verified provider-managed renewal, and non-HTTPS external protocol markers fail closed;
 - loopback-only origin and actual runner denial proven;
 - Cloudflare Access is deny-by-default and exact OWNER authorization is proven;
 - separate OWNER phone HTTPS/login/logout evidence PASS;
