@@ -93,19 +93,19 @@ jobs:
 
       - name: Run WP22A static and unit contracts
         run: |
-          "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m ruff check omni_cio\web\external_access_v1.py apps\api\app.py apps\api\wp22a_remote.py tests\test_v10_wp22a_external_access.py tests\test_v10_wp22a_mutation_rate_limit.py tests\test_v10_wp22a_provisioning_contract.py tests\test_v10_wp22a_provider_lock_regression.py
+          "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m ruff check omni_cio\web\external_access_v1.py apps\api\app.py apps\api\wp22a_remote.py scripts\wp22a_cloudflare_live.py scripts\wp22a_provider_state_guard.py scripts\check_wp22a_provider_state_binding.py scripts\check_wp22a_deployment_environment.py tests\test_v10_wp22a_external_access.py tests\test_v10_wp22a_mutation_rate_limit.py tests\test_v10_wp22a_provisioning_contract.py tests\test_v10_wp22a_provider_lock_regression.py tests\test_v10_wp22a_phase_b_provider.py tests\test_v10_wp22a_phase_b_workflow.py
           if errorlevel 1 exit /b 30
-          "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m ruff format --check omni_cio\web\external_access_v1.py apps\api\app.py apps\api\wp22a_remote.py tests\test_v10_wp22a_external_access.py tests\test_v10_wp22a_mutation_rate_limit.py tests\test_v10_wp22a_provisioning_contract.py tests\test_v10_wp22a_provider_lock_regression.py
+          "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m ruff format --check omni_cio\web\external_access_v1.py apps\api\app.py apps\api\wp22a_remote.py scripts\wp22a_cloudflare_live.py scripts\wp22a_provider_state_guard.py scripts\check_wp22a_provider_state_binding.py scripts\check_wp22a_deployment_environment.py tests\test_v10_wp22a_external_access.py tests\test_v10_wp22a_mutation_rate_limit.py tests\test_v10_wp22a_provisioning_contract.py tests\test_v10_wp22a_provider_lock_regression.py tests\test_v10_wp22a_phase_b_provider.py tests\test_v10_wp22a_phase_b_workflow.py
           if errorlevel 1 exit /b 31
           "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m mypy
           if errorlevel 1 exit /b 32
-          "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m pytest -q tests\test_v10_wp22a_external_access.py tests\test_v10_wp22a_mutation_rate_limit.py tests\test_v10_wp22a_provisioning_contract.py tests\test_v10_wp22a_provider_lock_regression.py
+          "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m pytest -q tests\test_v10_wp22a_external_access.py tests\test_v10_wp22a_mutation_rate_limit.py tests\test_v10_wp22a_provisioning_contract.py tests\test_v10_wp22a_provider_lock_regression.py tests\test_v10_wp22a_phase_b_provider.py tests\test_v10_wp22a_phase_b_workflow.py
           if errorlevel 1 exit /b 33
 
       - name: Parse WP22A PowerShell without mutation
         shell: cmd
         run: |
-          powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $paths=@('scripts\bootstrap_wp22a_terraform.ps1','scripts\bootstrap_wp22a_cloudflare_provider.ps1','scripts\validate_wp22a_terraform.ps1','infrastructure\windows\run_wp22a_clientless_remote_runtime.ps1','infrastructure\windows\provision_wp22a_clientless_remote_access.ps1'); foreach ($path in $paths) { $tokens=$null; $errors=$null; [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path), [ref]$tokens, [ref]$errors); if ($errors.Count -ne 0) { $errors | ForEach-Object { Write-Error $_.Message }; exit 34 } }; Write-Host 'WP22A PowerShell parse contract passed.'"
+          powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $paths=@('scripts\bootstrap_wp22a_terraform.ps1','scripts\bootstrap_wp22a_cloudflare_provider.ps1','scripts\validate_wp22a_terraform.ps1','scripts\prepare_wp22a_provider_workdir.ps1','scripts\run_wp22a_provider_phase_b.ps1','infrastructure\windows\run_wp22a_clientless_remote_runtime.ps1','infrastructure\windows\provision_wp22a_clientless_remote_access.ps1'); foreach ($path in $paths) { $tokens=$null; $errors=$null; [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path), [ref]$tokens, [ref]$errors); if ($errors.Count -ne 0) { $errors | ForEach-Object { Write-Error $_.Message }; exit 34 } }; Write-Host 'WP22A PowerShell parse contract passed.'"
           if errorlevel 1 exit /b 34
 
       - name: Validate Cloudflare IaC with pinned OpenTofu and provider mirror
@@ -129,6 +129,10 @@ jobs:
           terraform = Path('infrastructure/cloudflare/wp22a/main.tf').read_text(encoding='utf-8')
           terraform_lock = Path('infrastructure/cloudflare/wp22a/.terraform.lock.hcl').read_text(encoding='utf-8')
           api = Path('apps/web/src/app-shell/api.ts').read_text(encoding='utf-8')
+          provider_workflow = Path('.github/workflows/v10-wp22a-provider-phase-b.yml').read_text(encoding='utf-8')
+          provider_orchestrator = Path('scripts/run_wp22a_provider_phase_b.ps1').read_text(encoding='utf-8')
+          environment_guard = Path('scripts/check_wp22a_deployment_environment.py').read_text(encoding='utf-8')
+          state_guard = Path('scripts/wp22a_provider_state_guard.py').read_text(encoding='utf-8')
 
           required = ['Cloudflare Access + Tunnel', '127.0.0.1:8765', 'WP23 remains LOCKED', 'trading_methods=false', 'REAL_TRADING_ENABLED=false']
           for marker in required:
@@ -156,6 +160,22 @@ jobs:
               raise SystemExit('WP22A frontend session/CSRF contract invalid')
           if 'Tailscale-User-' in middleware or '.ts.net' in middleware:
               raise SystemExit('WP22A clean rebuild contains Tailscale identity coupling')
+
+          trigger = provider_workflow.split('permissions:', 1)[0]
+          if 'workflow_dispatch:' not in trigger or 'pull_request:' in trigger or 'push:' in trigger:
+              raise SystemExit('WP22A provider mutation workflow must be manual-only')
+          for marker in ('environment: wp22a-provider-production', 'refs/heads/main', 'check_wp22a_deployment_environment.py', 'secrets.WP22A_CLOUDFLARE_API_TOKEN'):
+              if marker not in provider_workflow:
+                  raise SystemExit(f'WP22A provider workflow marker missing: {marker}')
+          if provider_workflow.index('check_wp22a_deployment_environment.py') > provider_workflow.index('secrets.WP22A_CLOUDFLARE_API_TOKEN'):
+              raise SystemExit('WP22A provider secret is bound before main/environment guard')
+          for marker in ('APPLY_WP22A_PROVIDER', 'DESTROY_WP22A_PROVIDER', 'wp22a_provider_state_guard.py', 'check_wp22a_provider_state_binding.py', '$env:LOCALAPPDATA'):
+              if marker not in provider_orchestrator:
+                  raise SystemExit(f'WP22A provider orchestrator marker missing: {marker}')
+          if 'custom_branch_policies' not in environment_guard or 'WP22A_DEPLOYMENT_POLICY_MUST_BE_EXACT_MAIN' not in environment_guard:
+              raise SystemExit('WP22A deployment environment is not exact-main fail-closed')
+          if 'WP22A_PROVIDER_PLAN_UNKNOWN_RESOURCE' not in state_guard or 'WP22A_PROVIDER_STATE_SECRET_LIKE_VALUE_PRESENT' not in state_guard:
+              raise SystemExit('WP22A provider state/plan guard is incomplete')
           print('WP22A clientless source contract OK')
           PY
 
