@@ -6,7 +6,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 ACTIVATION = ROOT / ".github" / "workflows" / "v10-wp22a-provider-activation.yml"
 CONTROLLER = ROOT / "infrastructure" / "windows" / "run_wp22a_provider_controller.ps1"
-INSTALLER = ROOT / "infrastructure" / "windows" / "install_wp22a_provider_controller.ps1"
+INSTALLER = (
+    ROOT / "infrastructure" / "windows" / "install_wp22a_provider_controller.ps1"
+)
 BOUNDARY = ROOT / "docs" / "architecture" / "V10_WP22A_PROVIDER_ACTIVATION_BOUNDARY.md"
 RUNBOOK = ROOT / "docs" / "operations" / "V10_WP22A_PROVIDER_ACTIVATION_RUNBOOK.md"
 DORMANT_PROVISIONER = (
@@ -100,7 +102,7 @@ def test_controller_validates_signed_github_identity_and_replay() -> None:
     assert "tofu apply" not in controller.lower()
     assert "terraform apply" not in controller.lower()
     assert "cloudflared tunnel run" not in controller.lower()
-    assert 'mutation_performed = $false' in controller
+    assert "mutation_performed = $false" in controller
 
 
 def test_result_exchange_is_read_only_to_runner_and_controller_retained() -> None:
@@ -112,7 +114,10 @@ def test_result_exchange_is_read_only_to_runner_and_controller_retained() -> Non
     assert "function Remove-StaleResultFiles" in controller
     assert "Remove-StaleResultFiles" in controller
     assert "^[0-9a-f]{32}\\.(json|tmp)$" in controller
-    assert "$runnerSid = [System.Security.AccessControl.FileSystemRights]::ReadAndExecute" in installer
+    assert (
+        "$runnerSid = [System.Security.AccessControl.FileSystemRights]::ReadAndExecute"
+        in installer
+    )
     assert "Remove-Item -LiteralPath $resultPath" not in workflow
 
 
