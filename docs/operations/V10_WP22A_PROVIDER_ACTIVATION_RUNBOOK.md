@@ -27,8 +27,8 @@ It installs:
 - a protected controller configuration bound to one accepted implementation SHA and repository ID;
 - a protected replay cache;
 - an untrusted request queue;
-- a sanitized result queue;
-- a LocalSystem scheduled task that validates queued requests.
+- a sanitized result queue that is read-only to the ordinary runner and retention-managed by SYSTEM;
+- a LocalSystem scheduled task that validates queued requests and removes correctly named stale result/temp files after 24 hours.
 
 It does not request, store, or use a Cloudflare token. It does not run OpenTofu. It does not start `cloudflared` or publish DNS.
 
@@ -85,7 +85,7 @@ The job requests a GitHub OIDC token for audience:
 
 `omni-cio-wp22a-provider-controller`
 
-It writes a one-time request into the local request queue and waits for a result bearing the same random request ID.
+It writes a one-time request into the local request queue and waits for a result bearing the same random request ID. The runner removes only its request material. It does not receive result-delete authority; sanitized result retention is controlled by the LocalSystem controller and bounded to 24 hours.
 
 Expected successful Phase-B1 result:
 
@@ -117,6 +117,8 @@ The controller rejects and sanitizes failures. Examples include:
 No failure path falls back to unsigned request fields.
 
 ## 7. Queue and controller recovery
+
+The request queue is untrusted input. The sanitized result queue is not an authority source and contains only bounded machine-generated status fields. The ordinary runner may read results but cannot rewrite or delete them; SYSTEM owns result cleanup. Correctly named `.json`/`.tmp` result files older than 24 hours are removed by the controller so the exchange state is bounded.
 
 If the Phase-B1 local boundary must be removed, use the installer cleanup mode only from the exact accepted source that owns the installation:
 
