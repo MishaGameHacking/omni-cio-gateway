@@ -60,9 +60,9 @@ def _expect_mapping(value: Any, label: str) -> dict[str, Any]:
 def _safe_path_label(path: Path) -> str:
     """Return a repository-relative diagnostic path without leaking host paths.
 
-    Negative tests deliberately substitute roots outside the repository.  Those
+    Negative tests deliberately substitute roots outside the repository. Those
     paths must still produce a deterministic boundary failure instead of raising
-    from ``Path.relative_to``.  For out-of-repository paths only the file name is
+    from ``Path.relative_to``. For out-of-repository paths only the file name is
     retained, which also avoids exposing runner/user/temp-directory identities.
     """
 
@@ -173,12 +173,44 @@ def validate_self_hosted_workflow(failures: list[str]) -> None:
         failures.append("missing self-hosted Windows workflow")
         return
     text = SELF_HOSTED_WORKFLOW.read_text(encoding="utf-8")
-    if "contents: read" not in text:
-        failures.append("self-hosted workflow must retain contents: read")
-    if "[self-hosted, Windows, X64, omni-cio-ci]" not in text:
-        failures.append("self-hosted workflow must target omni-cio-ci")
-    if "persist-credentials: false" not in text:
-        failures.append("self-hosted checkout must not persist credentials")
+    required_markers = {
+        "contents: read": "self-hosted workflow must retain contents: read",
+        "[self-hosted, Windows, X64, omni-cio-ci]": (
+            "self-hosted workflow must target omni-cio-ci"
+        ),
+        "GITHUB_TOKEN: ${{ github.token }}": (
+            "self-hosted bootstrap must use only the job-scoped GitHub token"
+        ),
+        'GIT_TERMINAL_PROMPT: "0"': (
+            "self-hosted bootstrap must disable interactive Git prompts"
+        ),
+        'GCM_INTERACTIVE: "0"': (
+            "self-hosted bootstrap must disable interactive Git Credential Manager"
+        ),
+        'git config --local credential.helper ""': (
+            "self-hosted bootstrap must reset inherited credential helpers"
+        ),
+        "git config --local --add credential.helper": (
+            "self-hosted bootstrap must install a temporary job-token helper"
+        ),
+        "git config --local --unset-all credential.helper": (
+            "self-hosted bootstrap must remove temporary credentials after fetch"
+        ),
+        'git checkout --detach "$EXPECTED_HEAD"': (
+            "self-hosted bootstrap must detach at the reviewed exact head"
+        ),
+        'test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"': (
+            "self-hosted bootstrap must verify the reviewed exact head"
+        ),
+        'test -z "$(git config --local --get-all credential.helper || true)"': (
+            "self-hosted bootstrap must verify no local credential helper remains"
+        ),
+    }
+    for marker, message in required_markers.items():
+        if marker not in text:
+            failures.append(message)
+    if "uses: actions/checkout@" in text:
+        failures.append("self-hosted authority workflow must not depend on actions/checkout")
     if RAW_IDENTITY_COMMAND.search(text):
         failures.append("self-hosted workflow must not print raw Windows identity")
 
