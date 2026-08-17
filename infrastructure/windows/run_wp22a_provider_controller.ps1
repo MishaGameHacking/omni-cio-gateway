@@ -149,6 +149,7 @@ function Test-OidcSignatureAndClaims {
     Test-ExactStringClaim -Payload $payload -Name "workflow_sha" -Expected $ImplementationSha -Reason "WP22A_PROVIDER_OIDC_WORKFLOW_SHA_MISMATCH"
     Test-ExactStringClaim -Payload $payload -Name "runner_environment" -Expected "self-hosted" -Reason "WP22A_PROVIDER_OIDC_RUNNER_ENVIRONMENT_MISMATCH"
     Test-ExactStringClaim -Payload $payload -Name "run_id" -Expected $RunId -Reason "WP22A_PROVIDER_OIDC_RUN_ID_MISMATCH"
+    Test-ExactStringClaim -Payload $payload -Name "run_attempt" -Expected "1" -Reason "WP22A_PROVIDER_OIDC_RERUN_FORBIDDEN"
     Test-OidcTimeClaims -Payload $payload
 
     $jti = [string]$payload.jti
