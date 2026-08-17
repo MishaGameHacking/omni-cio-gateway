@@ -1,0 +1,71 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+WORKFLOWS = ROOT / ".github" / "workflows"
+
+CURRENT_SELF_HOSTED_AUTHORITY_WORKFLOWS = (
+    "regression-shield.yml",
+    "self-hosted-windows-smoke.yml",
+    "v10-engineering-governance.yml",
+    "v10-pr-fast-checks.yml",
+    "v10-toolchain-compat.yml",
+    "v10-wp15-live-web-support-audit.yml",
+    "v10-wp16-web-design-system-audit.yml",
+    "v10-wp17-application-shell-audit.yml",
+    "v10-wp18-portfolio-dashboard-audit.yml",
+    "v10-wp19-watchtower-incidents-audit.yml",
+    "v10-wp20-research-dossier-audit.yml",
+    "v10-wp21-decision-risk-plan-audit.yml",
+    "v10-wp22-system-admin-audit.yml",
+    "v10-wp22a-clientless-access-audit.yml",
+)
+
+
+def test_current_self_hosted_authority_plane_has_no_codeload_actions() -> None:
+    failures: list[str] = []
+    for name in CURRENT_SELF_HOSTED_AUTHORITY_WORKFLOWS:
+        path = WORKFLOWS / name
+        if not path.is_file():
+            failures.append(f"missing workflow: {name}")
+            continue
+        text = path.read_text(encoding="utf-8")
+        for forbidden in (
+            "uses: actions/checkout@",
+            "uses: actions/upload-artifact@",
+        ):
+            if forbidden in text:
+                failures.append(f"{name} still depends on {forbidden}")
+    assert not failures, "\n".join(failures)
+
+
+def test_current_self_hosted_authority_plane_uses_exact_sha_read_only_bootstrap() -> None:
+    failures: list[str] = []
+    required = (
+        "contents: read",
+        "runs-on: [self-hosted, Windows, X64, omni-cio-ci]",
+        "GITHUB_TOKEN: ${{ github.token }}",
+        "find . -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +",
+        "git init .",
+        'git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"',
+        "git config --local --unset-all credential.helper",
+        "git checkout --detach",
+        'test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"',
+        'test -z "$(git config --local --get-all credential.helper || true)"',
+    )
+    for name in CURRENT_SELF_HOSTED_AUTHORITY_WORKFLOWS:
+        path = WORKFLOWS / name
+        if not path.is_file():
+            failures.append(f"missing workflow: {name}")
+            continue
+        text = path.read_text(encoding="utf-8")
+        for token in required:
+            if token not in text:
+                failures.append(f"{name} missing bootstrap contract: {token}")
+        if "${{ secrets" in text or "secrets." in text:
+            failures.append(f"{name} must not consume repository/environment secrets")
+        if "continue-on-error: true" in text:
+            failures.append(f"{name} must not soften an authority job")
+    assert not failures, "\n".join(failures)
