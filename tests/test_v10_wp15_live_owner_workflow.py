@@ -4,9 +4,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-OWNER_WORKFLOW = (
-    ROOT / ".github" / "workflows" / "v10-wp15-live-web-owner-audit.yml"
-)
+OWNER_WORKFLOW = ROOT / ".github" / "workflows" / "v10-wp15-live-web-owner-audit.yml"
 SUPPORT_WORKFLOW = (
     ROOT / ".github" / "workflows" / "v10-wp15-live-web-support-audit.yml"
 )
@@ -62,4 +60,4 @@ def test_owner_audit_push_scope_only_tracks_physical_wp15_evidence_surfaces() ->
         assert f'- "{path}"' in owner_push
 
     assert "  workflow_dispatch:\n" in owner_workflow
-    assert "-ExpectedImplementationSha \"%GITHUB_SHA%\"" in owner_workflow
+    assert '-ExpectedImplementationSha "%GITHUB_SHA%"' in owner_workflow
