@@ -38,16 +38,16 @@ function Get-ReviewedHead {
     param([switch]$RequireMain)
     $expected = $ExpectedImplementationSha.Trim().ToLowerInvariant()
     if ($expected -notmatch '^[0-9a-f]{40}$') { throw "WP22A_PROVIDER_EXPECTED_SHA_INVALID" }
-    $head = @(& git -C $repoRoot rev-parse HEAD 2>$null)
+    $head = @(& git --no-replace-objects -c core.fsmonitor=false -C $repoRoot rev-parse HEAD 2>$null)
     if ($LASTEXITCODE -ne 0 -or $head.Count -ne 1) { throw "WP22A_PROVIDER_GIT_HEAD_UNAVAILABLE" }
     $actual = ([string]$head[0]).Trim().ToLowerInvariant()
     if ($actual -ne $expected) { throw "WP22A_PROVIDER_GIT_HEAD_MISMATCH" }
     if ($RequireMain) {
-        $branch = @(& git -C $repoRoot branch --show-current 2>$null)
+        $branch = @(& git --no-replace-objects -c core.fsmonitor=false -C $repoRoot branch --show-current 2>$null)
         if ($LASTEXITCODE -ne 0 -or $branch.Count -ne 1 -or ([string]$branch[0]).Trim() -cne "main") {
             throw "WP22A_PROVIDER_MAIN_BRANCH_REQUIRED"
         }
-        $dirty = @(& git -C $repoRoot status --porcelain 2>$null)
+        $dirty = @(& git --no-replace-objects -c core.fsmonitor=false -C $repoRoot status --porcelain 2>$null)
         if ($LASTEXITCODE -ne 0) { throw "WP22A_PROVIDER_GIT_STATUS_UNAVAILABLE" }
         if ($dirty.Count -ne 0) { throw "WP22A_PROVIDER_WORKTREE_NOT_CLEAN" }
     }
@@ -64,7 +64,7 @@ function Get-ReviewedBlobText {
         throw "WP22A_PROVIDER_REVIEWED_BLOB_PATH_INVALID"
     }
     $objectSpec = $ImplementationSha + ":" + $RelativePath
-    $lines = @(& git -C $repoRoot cat-file blob $objectSpec 2>$null)
+    $lines = @(& git --no-replace-objects -c core.fsmonitor=false -C $repoRoot cat-file blob $objectSpec 2>$null)
     if ($LASTEXITCODE -ne 0 -or $lines.Count -eq 0) { throw "WP22A_PROVIDER_REVIEWED_BLOB_UNAVAILABLE" }
     return (($lines | ForEach-Object { [string]$_ }) -join "`n") + "`n"
 }
