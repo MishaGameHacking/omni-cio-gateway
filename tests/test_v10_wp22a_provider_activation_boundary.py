@@ -35,8 +35,10 @@ def test_activation_workflow_is_manual_main_oidc_only() -> None:
 
     assert 'EXPECTED_OWNER_ACTOR_ID: "201947041"' in workflow
     assert "github.actor_id" in workflow
+    assert "github.run_attempt" in workflow
     assert "github.triggering_actor" in workflow
     assert "WP22A_PROVIDER_OWNER_ACTOR_REQUIRED" in workflow
+    assert "WP22A_PROVIDER_RERUN_FORBIDDEN" in workflow
     assert "WP22A_PROVIDER_RERUN_BY_DIFFERENT_ACTOR_FORBIDDEN" in workflow
 
     assert "secrets." not in workflow.lower()
@@ -82,6 +84,8 @@ def test_controller_validates_signed_github_identity_and_replay() -> None:
         '"runner_environment"',
         '"self-hosted"',
         '"run_id"',
+        '"run_attempt"',
+        "WP22A_PROVIDER_OIDC_RERUN_FORBIDDEN",
         '"exp"',
         '"nbf"',
         '"iat"',
@@ -130,7 +134,9 @@ def test_installer_protects_controller_and_separates_exchange_roots() -> None:
     assert 'UserId "NT AUTHORITY\\SYSTEM"' in installer
     assert "-ValidateOnly" in installer
     assert "WP22A_PROVIDER_OIDC_OWNER_ACTOR_MISMATCH" in installer
+    assert "WP22A_PROVIDER_OIDC_RERUN_FORBIDDEN" in installer
     assert "WP22A_PROVIDER_OWNER_ACTOR_REQUIRED" in installer
+    assert "WP22A_PROVIDER_RERUN_FORBIDDEN" in installer
     assert "WP22A_PROVIDER_RERUN_BY_DIFFERENT_ACTOR_FORBIDDEN" in installer
     assert "resultRetentionHours = 24" in installer
     assert "Remove-StaleResultFiles" in installer
