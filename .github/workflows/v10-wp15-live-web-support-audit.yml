@@ -67,6 +67,12 @@ jobs:
     timeout-minutes: 40
 
     steps:
+      - name: Expose installed Git Bash before repository bootstrap
+        shell: cmd
+        run: |
+          powershell.exe -NoProfile -NonInteractive -Command "$git=(Get-Command git.exe -ErrorAction Stop).Source; $root=Split-Path -Parent (Split-Path -Parent $git); $bin=Join-Path $root 'bin'; if (-not (Test-Path (Join-Path $bin 'bash.exe'))) { exit 12 }; $bin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append"
+          if errorlevel 1 exit /b 12
+
       - name: Bootstrap exact reviewed repository without external Actions
         shell: bash
         env:
