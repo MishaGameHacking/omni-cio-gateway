@@ -137,8 +137,12 @@ function Test-SourceBoundary {
         "omni-cio-wp22a-provider-controller",
         "https://token.actions.githubusercontent.com",
         "1312247309",
+        "actor_id",
+        "WP22A_PROVIDER_OIDC_OWNER_ACTOR_MISMATCH",
         "workflow_sha",
         "workflow_ref",
+        "resultRetentionHours = 24",
+        "Remove-StaleResultFiles",
         "WP22A_PROVIDER_BOUNDARY_READY_NO_MUTATION",
         "mutation_performed = `$false"
     )) {
@@ -151,7 +155,16 @@ function Test-SourceBoundary {
             throw "WP22A_PROVIDER_PHASE_B1_MUTATION_SURFACE_FORBIDDEN"
         }
     }
-    foreach ($marker in @("workflow_dispatch:", "id-token: write", "refs/heads/main", "ACTIONS_ID_TOKEN_REQUEST_URL")) {
+    foreach ($marker in @(
+        "workflow_dispatch:",
+        "id-token: write",
+        "refs/heads/main",
+        "github.actor_id",
+        "github.triggering_actor",
+        "WP22A_PROVIDER_OWNER_ACTOR_REQUIRED",
+        "WP22A_PROVIDER_RERUN_BY_DIFFERENT_ACTOR_FORBIDDEN",
+        "ACTIONS_ID_TOKEN_REQUEST_URL"
+    )) {
         if ($workflow.IndexOf($marker, [System.StringComparison]::Ordinal) -lt 0) {
             throw "WP22A_PROVIDER_WORKFLOW_CONTRACT_INCOMPLETE"
         }
