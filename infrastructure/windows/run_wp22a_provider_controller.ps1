@@ -27,6 +27,7 @@ $oidcConfigurationUri = "https://token.actions.githubusercontent.com/.well-known
 $clockSkewSeconds = 120
 $maxTokenAgeSeconds = 900
 $replayRetentionHours = 24
+$resultRetentionHours = 24
 
 function ConvertFrom-Base64Url {
     param([Parameter(Mandatory = $true)][string]$Value)
@@ -183,6 +184,16 @@ function Test-ReplayAndConsume {
     [System.IO.File]::WriteAllText($replayPath, [DateTimeOffset]::UtcNow.ToString("o"), [System.Text.UTF8Encoding]::new($false))
 }
 
+function Remove-StaleResultFiles {
+    if (-not (Test-Path -LiteralPath $resultRoot -PathType Container)) { return }
+    $cutoff = [DateTime]::UtcNow.AddHours(-1 * $resultRetentionHours)
+    Get-ChildItem -LiteralPath $resultRoot -File -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.Name -match '^[0-9a-f]{32}\.(json|tmp)$' -and $_.LastWriteTimeUtc -lt $cutoff
+        } |
+        Remove-Item -Force -ErrorAction SilentlyContinue
+}
+
 function Write-SanitizedResult {
     param(
         [Parameter(Mandatory = $true)][string]$RequestId,
@@ -270,6 +281,7 @@ $config = Get-ControllerConfig
 if (-not (Test-Path -LiteralPath $requestRoot -PathType Container)) { throw "WP22A_PROVIDER_REQUEST_ROOT_MISSING" }
 if (-not (Test-Path -LiteralPath $resultRoot -PathType Container)) { throw "WP22A_PROVIDER_RESULT_ROOT_MISSING" }
 
+Remove-StaleResultFiles
 Get-ChildItem -LiteralPath $requestRoot -Filter "*.json" -File -ErrorAction Stop |
     Sort-Object Name |
     ForEach-Object { Invoke-RequestFile -Path $_.FullName -ImplementationSha ([string]$config.implementation_sha) }
