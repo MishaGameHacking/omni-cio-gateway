@@ -90,6 +90,7 @@ jobs:
         run: >-
           python -m unittest
           tests.test_v10_regression_shield
+          tests.test_v10_ci_action_download_resilience
           tests.test_v10_release_provenance
 
       - name: Clean self-hosted workspace
