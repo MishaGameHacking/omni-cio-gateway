@@ -79,7 +79,10 @@ class V10RegressionShieldGuardTests(unittest.TestCase):
                 failures,
             )
             self.assertTrue(
-                any("Get-Command git.exe -ErrorAction Stop" in failure for failure in failures),
+                any(
+                    "Get-Command git.exe -ErrorAction Stop" in failure
+                    for failure in failures
+                ),
                 failures,
             )
 
