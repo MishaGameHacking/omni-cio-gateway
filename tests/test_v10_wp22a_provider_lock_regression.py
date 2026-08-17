@@ -49,6 +49,7 @@ def test_unrelated_wp5_evidence_probe_does_not_route_all_windows_changes() -> No
     workflow = WP5_EVIDENCE_WORKFLOW.read_text(encoding="utf-8")
 
     assert "'infrastructure/windows/**'" not in workflow
+    assert "'.github/workflows/v10-wp5-local-evidence.yml'" not in workflow
     for path in (
         "infrastructure/windows/collect_owner_node_profile.ps1",
         "infrastructure/windows/measure_wp5_gpu_load.ps1",
