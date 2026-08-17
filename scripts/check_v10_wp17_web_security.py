@@ -58,7 +58,9 @@ def _wp22a_source_gate_active(failures: list[str]) -> bool:
     )
     if all(marker in text for marker in required_markers):
         return True
-    failures.append("WP22A execution contract present but source-gate markers are incomplete")
+    failures.append(
+        "WP22A execution contract present but source-gate markers are incomplete"
+    )
     return False
 
 
@@ -147,7 +149,9 @@ def main() -> int:
     # present; this does not imply that live public ingress has been activated.
     bind_all_marker = ".".join(("0", "0", "0", "0"))
     if bind_all_marker in lowered_backend:
-        failures.append(f"public bind marker forbidden by Web boundary: {bind_all_marker}")
+        failures.append(
+            f"public bind marker forbidden by Web boundary: {bind_all_marker}"
+        )
     if "tailscale funnel" in lowered_backend:
         failures.append("superseded Tailscale Funnel marker present in Web backend")
     for marker in ("cloudflared", "cloudflare tunnel"):
@@ -199,7 +203,9 @@ def main() -> int:
     print("Broker provisioning: WP8 read-broker connection child / no TRADE authority")
     print("READ-vault acceptance: exact-head OWNER evidence + non-admin runner probe")
     if wp22a_source_gate:
-        print("External access: WP22A source gate present / live activation not implied")
+        print(
+            "External access: WP22A source gate present / live activation not implied"
+        )
     else:
         print("Public ingress: OFF / WP22A gated")
     return 0
