@@ -9,8 +9,8 @@ Owning package: **WP22A — External Web Access / OWNER Authentication Security 
 - WP: WP22A.
 - Title: External Web Access / OWNER Authentication Security Gate.
 - Authorized by current program status: YES.
-- Accepted browser-only functional baseline: `7b3d83482f52041ef845681caabcd1baceb19d1b`.
-- Current accepted governance base for this PR: `1c05390d9cf31b8cc68a90a5d7cbd6428ffe7791`.
+- Accepted browser-only functional baseline: `7b3d83482f52`.
+- Current accepted governance/documentation base for this PR: `49842aebefd3` (PR #323).
 - Prior acceptance: WP22 COMPLETE; browser-only/headless amendment accepted through PR #319/#320 and Regression Shield #1497; engineering-quality governance accepted afterward and is part of the current base.
 - WP23 remains LOCKED.
 
