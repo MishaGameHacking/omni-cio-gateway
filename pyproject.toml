@@ -83,6 +83,10 @@ files = [
   "scripts/rehearse_v10_wp15_owner.py",
   "scripts/validate_v10_wp15_owner_evidence.py",
   "scripts/check_v10_wp17_web_security.py",
+  "scripts/wp22a_cloudflare_live.py",
+  "scripts/wp22a_provider_state_guard.py",
+  "scripts/check_wp22a_provider_state_binding.py",
+  "scripts/check_wp22a_deployment_environment.py",
 ]
 
 [tool.pytest.ini_options]
