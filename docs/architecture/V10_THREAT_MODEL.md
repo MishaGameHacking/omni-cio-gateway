@@ -1,6 +1,6 @@
 # Omni-CIO V10 — Threat Model
 
-Status: **WP17 threat-model update**  
+Status: **WP22A clientless external-access threat-model update**  
 Scope: Personal V10 platform, current V9 coexistence, future Lenovo/Web/Telegram/AI/Real contours.
 
 ## 1. Security objective
@@ -41,6 +41,7 @@ Highest priority assets:
 9. Runtime DB <-> backup/off-device recovery.
 10. Current V9 runtime <-> future V10 replacement boundaries.
 11. Authenticated Web provisioning <-> connection-scoped read-broker secret child.
+12. OWNER browser <-> Cloudflare Access/edge <-> Cloudflare Tunnel/cloudflared <-> loopback-only Web origin.
 
 ## 4. Threat catalogue
 
@@ -330,6 +331,32 @@ WP17 controls:
 - public registration and Internet ingress remain disabled; external hardening is still owned by WP22A.
 
 Fail-safe: missing/invalid vault marker or ACL, stale/invalid challenge, tenant mismatch, broker authority mismatch, database persistence failure or credential-store failure rejects the provisioning action and never falls back to TRADE/write credentials.
+
+### T22 — Clientless external Web boundary bypass or misconfiguration
+
+**Scenario:** a forged Cloudflare identity header, unprotected tunnel route, hostile Host/Origin, stolen remote session, compromised CI runner, provider drift, invalid edge-certificate state or failed rollback bypasses the intended OWNER-only external Web gate or leaves the Lenovo origin exposed.
+
+WP22A controls:
+
+- the Lenovo Web origin binds only to `127.0.0.1`; no inbound public Lenovo port is introduced;
+- visitor TLS terminates at Cloudflare on a provider-managed publicly trusted certificate; the zero-cost selected path requires an active full-DNS zone, a first-level WP22A hostname, proxied DNS, valid Universal SSL coverage and provider-managed renewal before cutover is accepted;
+- external application requests require exact `X-Forwarded-Proto: https`; missing/plain-HTTP/ambiguous protocol markers fail closed without enabling general proxy-header peer trust;
+- edge certificate private keys remain provider-managed and are never copied into GitHub, Lenovo runtime state or CI artifacts;
+- Cloudflare Tunnel uses a single reviewed hostname plus catch-all `http_status:404`;
+- Cloudflare Access is deny-by-default and the selected Access application/policy is created before DNS publication is considered usable;
+- `cloudflared` is configured to validate `Cf-Access-Jwt-Assertion` for the exact team/application audience before proxying the protected hostname;
+- the application additionally requires the expected Access identity fingerprint, non-empty assertion, exact external Host, loopback peer, server-side Omni-CIO session, exact HTTPS Origin for unsafe requests and matching CSRF cookie/header;
+- external sessions use bounded idle/absolute lifetimes, rotation/revocation, Secure/HttpOnly/SameSite session cookies and no Web Storage credentials;
+- login and mutation rates are bounded and external responses use HSTS/CSP/frame/object/referrer/cache hardening;
+- the self-hosted GitHub runner is denied direct loopback TCP access and denied runtime config/tunnel-token access by OS controls;
+- provider credentials are unavailable to arbitrary PR code; real provider mutation is allowed only from reviewed accepted `main` through the protected Phase B contour;
+- tunnel token, raw OWNER identity, broker secrets and private portfolio data remain outside GitHub/CI artifacts;
+- Phase B apply is ordered fail-closed; after a late failure rollback removes/disables external reachability first and reconstructs the previously accepted local Web;
+- separate ordinary-phone browser evidence is mandatory and cannot be synthesized by CI.
+
+Local-trust note: Cloudflare Access is not treated as a defense against an already-compromised OWNER/admin Windows account. Such local code execution is a node compromise governed by T3/T13 and the disk/runtime controls. The explicitly less-trusted CI runner is isolated from the loopback origin and WP22A secret/config subtrees.
+
+Fail-safe: missing/invalid TLS certificate coverage or renewal state, non-HTTPS external protocol, missing Access validation, wrong OWNER identity, wrong Host/Origin/CSRF, non-loopback origin path, missing runner denial, provider-state mismatch or rollback uncertainty blocks WP22A acceptance and keeps WP23 LOCKED.
 
 ## 5. Severity
 

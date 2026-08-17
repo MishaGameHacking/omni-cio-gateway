@@ -54,6 +54,7 @@ from omni_cio.web.research_dossiers_v1 import (
     ResearchDossierReadServiceV1,
     install_research_dossier_routes,
 )
+from omni_cio.web.session_v1 import SessionPolicyV1
 from omni_cio.web.system_admin_v1 import (
     SystemAdminReadServiceV1,
     install_system_admin_routes,
@@ -279,7 +280,11 @@ def _dashboard_adapter_builder(
     )
 
 
-def create_local_private_app() -> FastAPI:
+def create_local_private_app(
+    *,
+    session_policy: SessionPolicyV1 | None = None,
+    verify_existing_database: bool = False,
+) -> FastAPI:
     """Create the local/private Web app without changing the protected app:app gateway."""
     private_acceptance = _private_acceptance_enabled()
     live_acceptance_enabled = _wp15_live_acceptance_enabled()
@@ -288,12 +293,18 @@ def create_local_private_app() -> FastAPI:
 
     raw_connection = connect_postgres("")
     _configure_long_lived_web_connection(raw_connection)
-    if live_acceptance_enabled:
+    if live_acceptance_enabled or verify_existing_database:
         _verify_live_database(raw_connection)
     else:
         apply_migrations(raw_connection)
     connection: ConnectionLike = _SerializedWebConnection(raw_connection)
-    sessions = PostgresWebSessionRegistryV1(connection)
+    if session_policy is None:
+        sessions = PostgresWebSessionRegistryV1(connection)
+    else:
+        sessions = PostgresWebSessionRegistryV1(
+            connection,
+            policy=session_policy,
+        )
     broker_repository = PostgresBrokerConnectionRepositoryV1(connection)
     vault = ReadBrokerConnectionVaultV1()
     provisioning = BrokerProvisioningServiceV1(

@@ -1,0 +1,177 @@
+name: V10 WP22A Clientless Access Audit
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: v10-wp22a-clientless-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  wp22a-clientless:
+    name: WP22A clientless external-access gate
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: cmd
+
+    steps:
+      - name: Check out exact reviewed head
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Bootstrap protected runner tools
+        run: |
+          call scripts\bootstrap_windows_ci_python.cmd
+          if errorlevel 1 exit /b 10
+          if not exist "C:\Program Files\nodejs\node.exe" exit /b 11
+          if not exist "C:\Program Files\nodejs\npm.cmd" exit /b 12
+          >>"%GITHUB_PATH%" echo C:\Program Files\nodejs
+
+      - name: Create isolated WP22A Python environment
+        shell: bash
+        run: |
+          VENV_ROOT="$(cygpath -u "$RUNNER_TEMP")"
+          VENV_PATH="$VENV_ROOT/omni-cio-wp22a-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          VENV_WINDOWS_PATH="$(cygpath -w "$VENV_PATH")"
+          rm -rf "$VENV_PATH"
+          python -m venv "$VENV_PATH"
+          echo "VENV_PATH=$VENV_PATH" >> "$GITHUB_ENV"
+          echo "VENV_WINDOWS_PATH=$VENV_WINDOWS_PATH" >> "$GITHUB_ENV"
+          echo "$VENV_WINDOWS_PATH\\Scripts" >> "$GITHUB_PATH"
+
+      - name: Install hash-locked WP22A dependencies
+        shell: bash
+        run: |
+          python scripts/windows_ci_lock.py project requirements-dev.txt windows-requirements-dev.txt
+          python -m pip install --disable-pip-version-check --require-hashes -r windows-requirements-dev.txt
+          python -c "import fastapi; import psycopg; import ruff; print('WP22A Python toolchain imports OK')"
+
+      - name: Verify exact checked-out head
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          for /f %%S in ('git rev-parse HEAD') do set "ACTUAL_HEAD=%%S"
+          if /I not "%ACTUAL_HEAD%"=="%EXPECTED_HEAD%" exit /b 13
+          echo WP22A exact head: %ACTUAL_HEAD%
+
+      - name: Reproduce Web dependencies from committed lock
+        working-directory: apps/web
+        run: |
+          call "C:\Program Files\nodejs\npm.cmd" ci --ignore-scripts --no-audit --no-fund
+          if errorlevel 1 exit /b 20
+
+      - name: Type-check lint test and build Web
+        working-directory: apps/web
+        run: |
+          call "C:\Program Files\nodejs\npm.cmd" run typecheck
+          if errorlevel 1 exit /b 21
+          call "C:\Program Files\nodejs\npm.cmd" run lint
+          if errorlevel 1 exit /b 22
+          call "C:\Program Files\nodejs\npm.cmd" test
+          if errorlevel 1 exit /b 23
+          call "C:\Program Files\nodejs\npm.cmd" run build
+          if errorlevel 1 exit /b 24
+
+      - name: Audit Web dependencies
+        working-directory: apps/web
+        run: |
+          call "C:\Program Files\nodejs\npm.cmd" audit --audit-level=high
+          if errorlevel 1 exit /b 25
+
+      - name: Run WP22A static and unit contracts
+        run: |
+          "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m ruff check omni_cio\web\external_access_v1.py apps\api\app.py apps\api\wp22a_remote.py tests\test_v10_wp22a_external_access.py tests\test_v10_wp22a_mutation_rate_limit.py tests\test_v10_wp22a_provisioning_contract.py tests\test_v10_wp22a_provider_lock_regression.py
+          if errorlevel 1 exit /b 30
+          "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m ruff format --check omni_cio\web\external_access_v1.py apps\api\app.py apps\api\wp22a_remote.py tests\test_v10_wp22a_external_access.py tests\test_v10_wp22a_mutation_rate_limit.py tests\test_v10_wp22a_provisioning_contract.py tests\test_v10_wp22a_provider_lock_regression.py
+          if errorlevel 1 exit /b 31
+          "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m mypy
+          if errorlevel 1 exit /b 32
+          "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m pytest -q tests\test_v10_wp22a_external_access.py tests\test_v10_wp22a_mutation_rate_limit.py tests\test_v10_wp22a_provisioning_contract.py tests\test_v10_wp22a_provider_lock_regression.py
+          if errorlevel 1 exit /b 33
+
+      - name: Parse WP22A PowerShell without mutation
+        shell: cmd
+        run: |
+          powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $paths=@('scripts\bootstrap_wp22a_terraform.ps1','scripts\bootstrap_wp22a_cloudflare_provider.ps1','scripts\validate_wp22a_terraform.ps1','infrastructure\windows\run_wp22a_clientless_remote_runtime.ps1','infrastructure\windows\provision_wp22a_clientless_remote_access.ps1'); foreach ($path in $paths) { $tokens=$null; $errors=$null; [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path), [ref]$tokens, [ref]$errors); if ($errors.Count -ne 0) { $errors | ForEach-Object { Write-Error $_.Message }; exit 34 } }; Write-Host 'WP22A PowerShell parse contract passed.'"
+          if errorlevel 1 exit /b 34
+
+      - name: Validate Cloudflare IaC with pinned OpenTofu and provider mirror
+        shell: cmd
+        run: |
+          powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts\validate_wp22a_terraform.ps1
+          if errorlevel 1 exit /b 35
+
+      - name: Verify clientless source contract
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          contract = Path('docs/architecture/V10_WP22A_EXECUTION_CONTRACT.md').read_text(encoding='utf-8')
+          selection = Path('docs/architecture/V10_WP22A_SERVICE_SELECTION.md').read_text(encoding='utf-8')
+          middleware = Path('omni_cio/web/external_access_v1.py').read_text(encoding='utf-8')
+          factory = Path('apps/api/wp22a_remote.py').read_text(encoding='utf-8')
+          launcher = Path('infrastructure/windows/run_wp22a_clientless_remote_runtime.ps1').read_text(encoding='utf-8')
+          provisioner = Path('infrastructure/windows/provision_wp22a_clientless_remote_access.ps1').read_text(encoding='utf-8')
+          terraform = Path('infrastructure/cloudflare/wp22a/main.tf').read_text(encoding='utf-8')
+          terraform_lock = Path('infrastructure/cloudflare/wp22a/.terraform.lock.hcl').read_text(encoding='utf-8')
+          api = Path('apps/web/src/app-shell/api.ts').read_text(encoding='utf-8')
+
+          required = ['Cloudflare Access + Tunnel', '127.0.0.1:8765', 'WP23 remains LOCKED', 'trading_methods=false', 'REAL_TRADING_ENABLED=false']
+          for marker in required:
+              if marker not in contract and marker not in selection:
+                  raise SystemExit(f'WP22A contract marker missing: {marker}')
+          for marker in ('Cf-Access-Authenticated-User-Email', 'Cf-Access-Jwt-Assertion', '__Host-omni_v10_session', '__Host-omni_v10_csrf'):
+              if marker not in middleware:
+                  raise SystemExit(f'WP22A middleware marker missing: {marker}')
+          if 'OMNI_V10_WEB_EXTERNAL_PROVIDER' not in factory or 'cloudflare' not in factory:
+              raise SystemExit('WP22A remote factory is not Cloudflare-bound')
+          if '--host 127.0.0.1' not in launcher or '--no-proxy-headers' not in launcher:
+              raise SystemExit('WP22A runtime is not loopback/no-proxy-header bound')
+          for marker in ('--token-file', 'Get-FileHash -Algorithm SHA256', 'BlockRunnerLoopback', 'Read-Host "Cloudflare Tunnel token'):
+              if marker not in provisioner:
+                  raise SystemExit(f'WP22A Lenovo provisioner missing: {marker}')
+          for marker in ('data "cloudflare_zero_trust_organization"', 'data "cloudflare_zero_trust_access_identity_providers"', 'idp.config.restrict_to_account_members', 'cloudflare_zero_trust_access_application', 'cloudflare_account_member', 'required  = true', 'http_status:404', 'http://127.0.0.1:8765', 'deny_unmatched_requests == true'):
+              if marker not in terraform:
+                  raise SystemExit(f'WP22A Cloudflare intent missing: {marker}')
+          if 'resource "cloudflare_zero_trust_organization"' in terraform or 'resource "cloudflare_zero_trust_access_identity_provider"' in terraform:
+              raise SystemExit('WP22A must consume the existing Zero Trust organization/default Cloudflare IdP instead of creating duplicates')
+          for marker in ('registry.terraform.io/cloudflare/cloudflare', 'version     = "5.22.0"', 'zh:ca4bf16742a7e59319a482f003d32f6f6abbc5fbf862916ce1a136278e6d420d'):
+              if marker not in terraform_lock:
+                  raise SystemExit(f'WP22A Terraform lock marker missing: {marker}')
+          if 'X-Omni-CSRF' not in api or 'localStorage' in api or 'sessionStorage' in api:
+              raise SystemExit('WP22A frontend session/CSRF contract invalid')
+          if 'Tailscale-User-' in middleware or '.ts.net' in middleware:
+              raise SystemExit('WP22A clean rebuild contains Tailscale identity coupling')
+          print('WP22A clientless source contract OK')
+          PY
+
+      - name: Verify accepted Web and repository guards
+        run: |
+          "%VENV_WINDOWS_PATH%\Scripts\python.exe" scripts\check_v10_web_baseline.py
+          if errorlevel 1 exit /b 40
+          "%VENV_WINDOWS_PATH%\Scripts\python.exe" scripts\check_v10_repository_boundaries.py
+          if errorlevel 1 exit /b 41
+          "%VENV_WINDOWS_PATH%\Scripts\python.exe" scripts\check_v10_regression_shield.py
+          if errorlevel 1 exit /b 42
+
+      - name: Clean self-hosted workspace
+        if: always()
+        shell: bash
+        run: |
+          if [ -n "${VENV_PATH:-}" ]; then rm -rf "$VENV_PATH"; fi
+          git reset --hard HEAD
+          git clean -ffdx

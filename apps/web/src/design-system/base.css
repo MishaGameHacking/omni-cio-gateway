@@ -49,6 +49,10 @@ h1 { margin: 0; font-size: clamp(2rem, 6vw, 4rem); line-height: 1; letter-spacin
 .ds-chart__plot { height: 9rem; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: var(--space-3); }
 .ds-bars { height: 100%; display: flex; align-items: end; gap: 8%; }
 .ds-bars span { width: 17%; background: var(--accent); border-radius: 0.25rem 0.25rem 0 0; }
+.ds-bar--42 { height: 42%; }
+.ds-bar--58 { height: 58%; }
+.ds-bar--72 { height: 72%; }
+.ds-bar--84 { height: 84%; }
 .ds-theme-samples { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); }
 .ds-theme-sample { min-width: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); padding: var(--space-4); }
 @keyframes ds-shimmer { from { transform: translateX(-100%); } to { transform: translateX(300%); } }

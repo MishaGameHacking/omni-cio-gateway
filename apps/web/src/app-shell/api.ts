@@ -12,12 +12,35 @@ import type {
 } from "./contracts";
 
 const JSON_HEADERS = { "Content-Type": "application/json" } as const;
+const REMOTE_CSRF_COOKIE = "__Host-omni_v10_csrf";
+const REMOTE_CSRF_HEADER = "X-Omni-CSRF";
+const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+
+function readCookie(name: string): string | null {
+  const prefix = `${name}=`;
+  for (const item of document.cookie.split(";")) {
+    const candidate = item.trim();
+    if (candidate.startsWith(prefix)) return candidate.slice(prefix.length);
+  }
+  return null;
+}
+
+function requestHeaders(init?: RequestInit): Headers {
+  const headers = new Headers(init?.headers);
+  const method = (init?.method ?? "GET").toUpperCase();
+  if (!SAFE_METHODS.has(method)) {
+    const csrf = readCookie(REMOTE_CSRF_COOKIE);
+    if (csrf) headers.set(REMOTE_CSRF_HEADER, csrf);
+  }
+  return headers;
+}
 
 async function requestJson<T>(input: string, init?: RequestInit): Promise<T> {
   const response = await fetch(input, {
     credentials: "same-origin",
     cache: "no-store",
     ...init,
+    headers: requestHeaders(init),
   });
   if (!response.ok) {
     throw new Error(`WEB_API_${response.status}`);
@@ -35,6 +58,18 @@ export function readProviders(): Promise<ProviderView[]> {
 
 export function readPrivateAcceptanceStatus(): Promise<PrivateAcceptanceStatusView> {
   return requestJson<PrivateAcceptanceStatusView>("/api/v10/web/private-test-login/status");
+}
+
+export function readPrivateRemoteStatus(): Promise<{ enabled: boolean }> {
+  return requestJson<{ enabled: boolean }>("/api/v10/web/private-external-login/status");
+}
+
+export async function privateRemoteLogin(): Promise<void> {
+  await requestJson<{ ok: true }>("/api/v10/web/private-external-login", {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: "{}",
+  });
 }
 
 export async function privateTestLogin(): Promise<void> {

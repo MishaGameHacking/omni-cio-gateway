@@ -7,6 +7,9 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT = ROOT / "docs" / "architecture" / "V10_WP17_APPLICATION_SHELL_CONTRACT.json"
+WP22A_EXECUTION_CONTRACT = (
+    ROOT / "docs" / "architecture" / "V10_WP22A_EXECUTION_CONTRACT.md"
+)
 WEB_SHELL = ROOT / "apps" / "web" / "src" / "app-shell"
 API_ROOT = ROOT / "apps" / "api"
 WEB_BACKEND = ROOT / "omni_cio" / "web"
@@ -37,6 +40,30 @@ def _text_tree(root: Path) -> str:
     return "\n".join(parts)
 
 
+def _wp22a_source_gate_active(failures: list[str]) -> bool:
+    if not WP22A_EXECUTION_CONTRACT.is_file():
+        return False
+    try:
+        text = WP22A_EXECUTION_CONTRACT.read_text(encoding="utf-8")
+    except OSError as exc:
+        failures.append(f"WP22A execution contract unreadable: {type(exc).__name__}")
+        return False
+
+    required_markers = (
+        "Status: **IMPLEMENTATION IN PROGRESS / CLIENTLESS REBUILD**",
+        "Owning package: **WP22A — External Web Access / OWNER Authentication Security Gate**",
+        "WP23 remains LOCKED",
+        "public registration/multi-user remains OFF",
+        "Uvicorn binds only to `127.0.0.1`",
+    )
+    if all(marker in text for marker in required_markers):
+        return True
+    failures.append(
+        "WP22A execution contract present but source-gate markers are incomplete"
+    )
+    return False
+
+
 def main() -> int:
     failures: list[str] = []
     try:
@@ -44,6 +71,8 @@ def main() -> int:
     except (OSError, json.JSONDecodeError) as exc:
         print(f"WP17 contract unavailable: {type(exc).__name__}", file=sys.stderr)
         return 1
+
+    wp22a_source_gate = _wp22a_source_gate_active(failures)
 
     if contract.get("ordinary_login_providers") != ["telegram", "vk_id"]:
         failures.append("ordinary login providers drifted")
@@ -114,16 +143,21 @@ def main() -> int:
             failures.append(
                 f"broker write/transfer marker present in WP17 backend: {marker}"
             )
+
+    # A bind-all listener and Tailscale Funnel remain forbidden even after WP22A starts.
+    # Cloudflare source markers become valid only when the reviewed WP22A source gate is
+    # present; this does not imply that live public ingress has been activated.
     bind_all_marker = ".".join(("0", "0", "0", "0"))
-    for marker in (
-        bind_all_marker,
-        "cloudflared",
-        "cloudflare tunnel",
-        "tailscale funnel",
-    ):
-        if marker in lowered_backend:
+    if bind_all_marker in lowered_backend:
+        failures.append(
+            f"public bind marker forbidden by Web boundary: {bind_all_marker}"
+        )
+    if "tailscale funnel" in lowered_backend:
+        failures.append("superseded Tailscale Funnel marker present in Web backend")
+    for marker in ("cloudflared", "cloudflare tunnel"):
+        if marker in lowered_backend and not wp22a_source_gate:
             failures.append(
-                f"public/external bind marker present before WP22A: {marker}"
+                f"external-access marker present without reviewed WP22A source gate: {marker}"
             )
 
     api_text = (WEB_BACKEND / "api_v1.py").read_text(encoding="utf-8")
@@ -168,7 +202,12 @@ def main() -> int:
     print("Sessions: server-side / private test identity disabled by default")
     print("Broker provisioning: WP8 read-broker connection child / no TRADE authority")
     print("READ-vault acceptance: exact-head OWNER evidence + non-admin runner probe")
-    print("Public ingress: OFF / WP22A gated")
+    if wp22a_source_gate:
+        print(
+            "External access: WP22A source gate present / live activation not implied"
+        )
+    else:
+        print("Public ingress: OFF / WP22A gated")
     return 0
 
 
