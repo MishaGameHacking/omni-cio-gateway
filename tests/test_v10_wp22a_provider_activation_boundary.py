@@ -150,6 +150,13 @@ def test_installer_protects_controller_and_separates_exchange_roots() -> None:
     assert "resultRetentionHours = 24" in installer
     assert "Remove-StaleResultFiles" in installer
 
+    assert "Get-ReviewedBlobText" in installer
+    assert "git --no-replace-objects" in installer
+    assert "cat-file blob" in installer
+    assert "WP22A_PROVIDER_REVIEWED_BLOB_UNAVAILABLE" in installer
+    assert "WP22A_PROVIDER_CONTROLLER_REVIEWED_BLOB_COPY_MISMATCH" in installer
+    assert "Copy-Item -LiteralPath $sourceController" not in installer
+
     assert "Read-Host" not in installer
     assert "Cloudflare API token" not in installer
     assert "WP22A_PROVIDER_WORKFLOW_SECRET_REFERENCE_FORBIDDEN" in installer
