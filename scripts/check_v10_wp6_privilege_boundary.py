@@ -210,7 +210,9 @@ def validate_self_hosted_workflow(failures: list[str]) -> None:
         if marker not in text:
             failures.append(message)
     if "uses: actions/checkout@" in text:
-        failures.append("self-hosted authority workflow must not depend on actions/checkout")
+        failures.append(
+            "self-hosted authority workflow must not depend on actions/checkout"
+        )
     if RAW_IDENTITY_COMMAND.search(text):
         failures.append("self-hosted workflow must not print raw Windows identity")
 
