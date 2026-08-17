@@ -26,6 +26,7 @@ Accepted amendment discovery:
 - `OMNI_CIO_V10_IDENTITY_MULTI_TENANT_ACCOUNT_AND_AUTHENTICATION_AMENDMENT.md` — identity/tenant/authentication direction;
 - `OMNI_CIO_V10_PHONE_ONLY_ENGINEERING_AND_HEADLESS_NODE_OPERATIONS_AMENDMENT.md` — browser-only OWNER/headless Personal-Node operating model;
 - `OMNI_CIO_V10_ENGINEERING_QUALITY_AND_GREEN_MERGE_AMENDMENT.md` — accepted Pre-CI/all-green/failure-learning/OWNER-handoff discipline;
+- `OMNI_CIO_V10_PRODUCT_USER_AND_ENGINEERING_AUTHORITY_BOUNDARY_AMENDMENT.md` — OWNER-approved separation of ordinary Omni-CIO USER identity from PROJECT OWNER engineering/business authority; effective after acceptance on protected `main`;
 - `../architecture/V10_AI_CORTEX_CONTRACT.json` and other machine-readable companions — executable/validated policy where defined;
 - `OMNI_CIO_V10_ACCOUNT_INDEPENDENCE_AMENDMENT.md` — historical owner-approved amendment already consolidated into the base plan and retained for provenance.
 
@@ -59,6 +60,7 @@ The accepted concrete amendments clarify implementation without changing block w
 - SearXNG-first research + bounded HTTP/Playwright retrieval + Evidence Store;
 - AI has no direct broker-write/admin/GitHub-bypass/Real-money authority;
 - OWNER local participation is minimized to genuinely non-delegable actions;
+- **PROJECT OWNER is not a special Omni-CIO product role: when using the product, the PROJECT OWNER is an ordinary USER on the same account/tenant/session path as supported users; GitHub/provider/Windows authority stays outside product identity;**
 - CI is verifier rather than primary debugger, and every applicable exact-head merge gate must conclude SUCCESS;
 - current V10 Web/API runtime remains on the approved Personal Node; external access providers are access/security transport rather than private-state application hosts.
 
