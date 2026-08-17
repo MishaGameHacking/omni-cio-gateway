@@ -72,11 +72,13 @@ The JWT is never printed.
 
 `install_wp22a_provider_controller.ps1` installs only from an exact, clean accepted `main` checkout and copies reviewed controller source into a protected ProgramData root. The installed controller never executes the mutable GitHub workspace.
 
+Before it creates the protected contour, the installer resolves exactly one Actions runner service whose executable path belongs to the accepted `C:\actions-runner` root. It fails closed if that runner uses LocalSystem or is a direct member of the local Administrators group. This prevents privilege drift from silently turning the ordinary CI identity into an identity that inherits the Administrators full-control grant on the protected controller root.
+
 Protected root:
 
 `C:\ProgramData\OmniCIO\private\wp22a-provider-controller`
 
-The root contains only controller/config/replay data in Phase-B1. SYSTEM and local Administrators have full control. The ordinary runner SID receives no allow ACE on that protected root.
+The root contains only controller/config/replay data in Phase-B1. SYSTEM and local Administrators have full control. The ordinary runner SID receives no allow ACE on that protected root and must remain non-administrator.
 
 Exchange roots are separate:
 
