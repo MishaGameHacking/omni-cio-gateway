@@ -62,7 +62,7 @@ Provider apply/preflight/tunnel-token/rollback logic is a later source-only WP22
 - free of `secrets.*` and provider configuration inputs;
 - bound to the fixed OIDC audience `omni-cio-wp22a-provider-controller`.
 
-The controller independently validates the signed OIDC `run_attempt=1` claim. This is the authoritative no-rerun boundary: GitHub re-runs may retain the privileges and signed identity of the original actor, so a privileged provider request must be started as a fresh OWNER dispatch rather than by re-running an older workflow run.
+The controller independently validates the signed OIDC `run_attempt=1` claim. This is the authoritative no-rerun boundary: a privileged provider request must be started as a fresh OWNER dispatch rather than by re-running an older workflow run.
 
 The workflow obtains a short-lived GitHub OIDC JWT using the runner-provided OIDC request variables, writes it only to a one-time local activation-request file, waits a bounded time for a sanitized controller result, then removes the request material. The ordinary runner does not receive delete authority on the sanitized result queue; result cleanup remains controller/SYSTEM-owned and is bounded to 24 hours.
 
@@ -71,6 +71,8 @@ The JWT is never printed.
 ## 5. Protected local controller
 
 `install_wp22a_provider_controller.ps1` is invoked only from an exact, clean accepted `main` checkout. It does not copy the controller from the mutable worktree after validation. Instead, it reads the controller and activation-workflow text from the exact accepted Git commit object via `git --no-replace-objects ... cat-file blob`, with Git filesystem monitoring disabled for the handoff commands. Replacement refs therefore cannot substitute another object for the reviewed implementation SHA. The controller text is held in the elevated installer process, written into protected ProgramData, and read back for an exact copy comparison before the scheduled task is created.
+
+Before it creates or removes the contour, the installer rejects reparse points across the reviewed Omni-CIO ProgramData path chain, controller/config/replay paths, and request/result roots. The installed controller repeats reparse checks at runtime and rejects reparse-point request files before reading them as LocalSystem. This prevents the runner-writable exchange path from being used as an indirection into another filesystem object.
 
 Before it creates the protected contour, the installer resolves exactly one Actions runner service whose executable path belongs to the accepted `C:\actions-runner` root. It fails closed if that runner uses LocalSystem or is a direct member of the local Administrators group. This prevents privilege drift from silently turning the ordinary CI identity into an identity that inherits the Administrators full-control grant on the protected controller root.
 
@@ -85,14 +87,17 @@ Exchange roots are separate:
 - request queue: `C:\ProgramData\OmniCIO\runtime\wp22a-provider-requests`;
 - sanitized result queue: `C:\ProgramData\OmniCIO\runtime\wp22a-provider-results`.
 
-The request queue is untrusted input. Tampering cannot authorize provider work because authorization comes from the signed OIDC token and exact claims. The result queue is written and retention-managed by SYSTEM/controller and is read-only to the ordinary runner. It never contains credentials, private state, OWNER identity, or physical evidence. Controller cleanup removes only correctly named stale result/temp files older than 24 hours, so the exchange contour cannot grow without bound while the runner remains unable to rewrite or delete controller results.
+The request queue is untrusted input. Tampering cannot authorize provider work because authorization comes from the signed OIDC token and exact claims. The result queue is written and retention-managed by SYSTEM/controller and is read-only to the ordinary runner. It never contains credentials, private state, OWNER identity, or physical evidence. Controller cleanup removes only correctly named, non-reparse stale result/temp files older than 24 hours, so the exchange contour cannot grow without bound while the runner remains unable to rewrite or delete controller results.
 
 ## 6. OIDC validation contract
 
 The controller validates all of the following before acknowledging a request:
 
-- JWT `alg` is exactly `RS256`;
-- signature validates against the current JWKS URI discovered from `https://token.actions.githubusercontent.com/.well-known/openid-configuration`;
+- JWT `alg` is exactly `RS256` and `typ` is exactly `JWT`;
+- OpenID metadata issuer is exactly `https://token.actions.githubusercontent.com`;
+- metadata `jwks_uri` is exactly `https://token.actions.githubusercontent.com/.well-known/jwks`;
+- the selected JWK is unique by `kid`, `kty=RSA`, `alg=RS256`, and `use=sig`;
+- signature validates against that selected GitHub JWK;
 - issuer is exactly `https://token.actions.githubusercontent.com`;
 - audience contains exactly the reviewed controller audience for this request;
 - `repository` is exactly `MishaGameHacking/omni-cio-gateway`;
