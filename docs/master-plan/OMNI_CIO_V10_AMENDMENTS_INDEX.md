@@ -212,6 +212,28 @@ Locks the OWNER-approved 2026-08-16 engineering discipline for all remaining V10
 
 **Acceptance evidence:** governance PR #322 was accepted into exact `main` `1c05390d9cf31b8cc68a90a5d7cbd6428ffe7791`; post-merge Regression Shield #1498 / run `31959959791` completed **SUCCESS** on that exact main. The amendment is therefore **ACTIVE**. Its acceptance did not change WP numbering/progress, complete WP22A, open public ingress, add broker-write authority or unlock WP23.
 
+### 9. Product User / Engineering Authority Boundary
+
+`OMNI_CIO_V10_PRODUCT_USER_AND_ENGINEERING_AUTHORITY_BOUNDARY_AMENDMENT.md`
+
+OWNER-approved 2026-08-17 clarification that prevents the repository/business owner from becoming a special Omni-CIO product user.
+
+It establishes the terminology and precedence rule:
+
+- `USER` is an ordinary authenticated `OmniCIOUserAccount -> Tenant` product user;
+- the PROJECT OWNER uses the same USER account/session/product path as supported customers;
+- PROJECT OWNER GitHub/provider/Windows/business authority is an engineering/operations authority outside normal product identity;
+- GitHub ownership, Cloudflare membership or Windows/CI identity never grants an Omni-CIO product session or cross-tenant product authority;
+- WP22 `System/Admin` means user-facing System/Diagnostics, not a special PROJECT-OWNER account/admin cabinet;
+- WP22A is interpreted product-facing as **External Web Access / Product Authentication Security Gate** without renumbering the base plan;
+- an OWNER-only edge identity may contain a pre-production environment but cannot become the canonical product login or tenant authority;
+- Telegram/Block F is user-scoped in the final product; the PROJECT OWNER is only the first controlled acceptance user, not a globally privileged Telegram product identity;
+- product-domain historical `OWNER approval/authentication/dialogue` wording means the authenticated USER acting for that USER's own tenant unless the context explicitly concerns project/business/infrastructure authority;
+- public multi-user activation remains OFF until its existing security/legal/capacity gates pass;
+- current WP22A implementation must be re-reviewed against this separation before Exit Gate; WP23+ remains locked.
+
+After this amendment is merged, it supersedes conflicting OWNER-specific **product-role** interpretations in earlier V10 planning/current-WP wording while preserving genuine PROJECT OWNER engineering/business authority and historical evidence.
+
 ## Draft/superseded planning material
 
 Open or historical PR descriptions must not be treated as active plan authority merely because they contain V10 ideas. In particular, any older unmerged planning PR that conflicts with an accepted amendment must be closed/superseded rather than merged as a competing roadmap.
