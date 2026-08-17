@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from wp22a_cloudflare_live import (
-    ACCESS_APP_NAME,
     ACCESS_POLICY_NAME,
     TUNNEL_NAME,
     CloudflareClient,
@@ -76,9 +75,13 @@ def validate_exact_binding(
     dns_record: Mapping[str, Any],
 ) -> None:
     expected = {
-        "cloudflare_zero_trust_tunnel_cloudflared.omni_cio": str(tunnel.get("id", "")),
+        "cloudflare_zero_trust_tunnel_cloudflared.omni_cio": str(
+            tunnel.get("id", "")
+        ),
         "cloudflare_zero_trust_access_policy.owner": str(policy.get("id", "")),
-        "cloudflare_zero_trust_access_application.omni_cio": str(application.get("id", "")),
+        "cloudflare_zero_trust_access_application.omni_cio": str(
+            application.get("id", "")
+        ),
         "cloudflare_dns_record.omni_cio": str(dns_record.get("id", "")),
     }
     if not all(expected.values()):
@@ -86,6 +89,61 @@ def validate_exact_binding(
     for address, live_id in expected.items():
         if state_ids.get(address) != live_id:
             raise ProviderStateBindingError("WP22A_PROVIDER_STATE_LIVE_ID_MISMATCH")
+
+
+def validate_access_binding(
+    *,
+    inputs: Inputs,
+    application: Mapping[str, Any],
+    policies: Any,
+    identity_providers: Any,
+) -> Mapping[str, Any]:
+    if not isinstance(identity_providers, list):
+        raise ProviderStateBindingError("WP22A_IDENTITY_PROVIDER_LIST_INVALID")
+    restricted = [
+        provider
+        for provider in identity_providers
+        if isinstance(provider, dict)
+        and _lower(provider.get("type")) == "cloudflare"
+        and isinstance(provider.get("config"), dict)
+        and provider["config"].get("restrict_to_account_members") is True
+    ]
+    if len(restricted) != 1 or not str(restricted[0].get("id", "")):
+        raise ProviderStateBindingError("WP22A_RESTRICTED_IDP_BINDING_INVALID")
+    idp_id = str(restricted[0]["id"])
+
+    allowed_idps = application.get("allowed_idps")
+    if not isinstance(allowed_idps, list) or [str(item) for item in allowed_idps] != [
+        idp_id
+    ]:
+        raise ProviderStateBindingError("WP22A_ACCESS_APP_IDP_BINDING_INVALID")
+    if application.get("auto_redirect_to_identity") is not True:
+        raise ProviderStateBindingError("WP22A_ACCESS_APP_AUTO_REDIRECT_REQUIRED")
+
+    if not isinstance(policies, list) or len(policies) != 1:
+        raise ProviderStateBindingError("WP22A_ACCESS_POLICY_COUNT_INVALID")
+    policy = policies[0]
+    if not isinstance(policy, dict) or _lower(policy.get("name")) != ACCESS_POLICY_NAME.lower():
+        raise ProviderStateBindingError("WP22A_ACCESS_POLICY_BINDING_INVALID")
+    if _lower(policy.get("decision")) != "allow" or _lower(
+        policy.get("session_duration")
+    ) != "24h":
+        raise ProviderStateBindingError("WP22A_ACCESS_POLICY_SECURITY_INVALID")
+
+    include = policy.get("include")
+    if not isinstance(include, list) or len(include) != 1:
+        raise ProviderStateBindingError("WP22A_ACCESS_POLICY_INCLUDE_INVALID")
+    account_rule = include[0].get("cloudflare_account_member") if isinstance(include[0], dict) else None
+    if not isinstance(account_rule, dict) or str(account_rule.get("account_id", "")) != inputs.account_id:
+        raise ProviderStateBindingError("WP22A_ACCESS_POLICY_ACCOUNT_MEMBER_INVALID")
+
+    require = policy.get("require")
+    if not isinstance(require, list) or len(require) != 1:
+        raise ProviderStateBindingError("WP22A_ACCESS_POLICY_REQUIRE_INVALID")
+    login_rule = require[0].get("login_method") if isinstance(require[0], dict) else None
+    if not isinstance(login_rule, dict) or str(login_rule.get("id", "")) != idp_id:
+        raise ProviderStateBindingError("WP22A_ACCESS_POLICY_LOGIN_METHOD_INVALID")
+    return policy
 
 
 def run(state_json_path: str) -> Mapping[str, Any]:
@@ -115,20 +173,15 @@ def run(state_json_path: str) -> Mapping[str, Any]:
     policies = client.get(
         f"accounts/{inputs.account_id}/access/apps/{app_id}/policies"
     )
-    if not isinstance(policies, list):
-        raise ProviderStateBindingError("WP22A_ACCESS_POLICY_LIST_INVALID")
-    policy_matches = [
-        policy
-        for policy in policies
-        if isinstance(policy, dict) and _lower(policy.get("name")) == ACCESS_POLICY_NAME.lower()
-    ]
-    if len(policy_matches) != 1:
-        raise ProviderStateBindingError("WP22A_ACCESS_POLICY_COUNT_INVALID")
-    policy = policy_matches[0]
-    if _lower(policy.get("decision")) != "allow" or _lower(
-        policy.get("session_duration")
-    ) != "24h":
-        raise ProviderStateBindingError("WP22A_ACCESS_POLICY_SECURITY_INVALID")
+    identity_providers = client.get(
+        f"accounts/{inputs.account_id}/access/identity_providers"
+    )
+    policy = validate_access_binding(
+        inputs=inputs,
+        application=application,
+        policies=policies,
+        identity_providers=identity_providers,
+    )
 
     tunnel_id = str(tunnel.get("id", ""))
     tunnel_config = client.get(
