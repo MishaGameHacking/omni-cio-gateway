@@ -1,0 +1,112 @@
+name: V10 WP22A Provider Activation Boundary
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: v10-wp22a-provider-activation-main
+  cancel-in-progress: false
+
+jobs:
+  request-provider-controller:
+    name: WP22A accepted-main provider boundary request
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 10
+
+    steps:
+      - name: Reject anything except accepted main dispatch
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ('${{ github.event_name }}' -ne 'workflow_dispatch') { throw 'WP22A_PROVIDER_EVENT_FORBIDDEN' }
+          if ('${{ github.ref }}' -ne 'refs/heads/main') { throw 'WP22A_PROVIDER_REF_FORBIDDEN' }
+          if ('${{ github.repository }}' -ne 'MishaGameHacking/omni-cio-gateway') { throw 'WP22A_PROVIDER_REPOSITORY_MISMATCH' }
+
+      - name: Check out exact accepted main
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+
+      - name: Verify exact clean accepted head
+        shell: pwsh
+        env:
+          EXPECTED_HEAD: ${{ github.sha }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $actual = (& git rev-parse HEAD).Trim().ToLowerInvariant()
+          if ($LASTEXITCODE -ne 0 -or $actual -ne $env:EXPECTED_HEAD.ToLowerInvariant()) {
+            throw 'WP22A_PROVIDER_HEAD_MISMATCH'
+          }
+          $dirty = @(& git status --porcelain)
+          if ($LASTEXITCODE -ne 0 -or $dirty.Count -ne 0) { throw 'WP22A_PROVIDER_WORKTREE_NOT_CLEAN' }
+          Write-Host "WP22A provider boundary exact head: $actual"
+
+      - name: Submit signed OIDC request and require no-mutation boundary result
+        shell: pwsh
+        env:
+          EXPECTED_HEAD: ${{ github.sha }}
+          EXPECTED_RUN_ID: ${{ github.run_id }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $audience = 'omni-cio-wp22a-provider-controller'
+          $requestRoot = 'C:\ProgramData\OmniCIO\runtime\wp22a-provider-requests'
+          $resultRoot = 'C:\ProgramData\OmniCIO\runtime\wp22a-provider-results'
+          if (-not (Test-Path -LiteralPath $requestRoot -PathType Container)) { throw 'WP22A_PROVIDER_REQUEST_ROOT_NOT_INSTALLED' }
+          if (-not (Test-Path -LiteralPath $resultRoot -PathType Container)) { throw 'WP22A_PROVIDER_RESULT_ROOT_NOT_INSTALLED' }
+          if ([string]::IsNullOrWhiteSpace($env:ACTIONS_ID_TOKEN_REQUEST_URL)) { throw 'WP22A_GITHUB_OIDC_URL_MISSING' }
+          if ([string]::IsNullOrWhiteSpace($env:ACTIONS_ID_TOKEN_REQUEST_TOKEN)) { throw 'WP22A_GITHUB_OIDC_REQUEST_TOKEN_MISSING' }
+
+          $separator = if ($env:ACTIONS_ID_TOKEN_REQUEST_URL.Contains('?')) { '&' } else { '?' }
+          $oidcUrl = $env:ACTIONS_ID_TOKEN_REQUEST_URL + $separator + 'audience=' + [uri]::EscapeDataString($audience)
+          $headers = @{ Authorization = 'Bearer ' + $env:ACTIONS_ID_TOKEN_REQUEST_TOKEN }
+          $oidcResponse = Invoke-RestMethod -Method Get -Uri $oidcUrl -Headers $headers -UseBasicParsing
+          $jwt = [string]$oidcResponse.value
+          if ([string]::IsNullOrWhiteSpace($jwt) -or $jwt.Split('.').Count -ne 3) { throw 'WP22A_GITHUB_OIDC_TOKEN_INVALID' }
+
+          $requestId = [guid]::NewGuid().ToString('N')
+          $requestPath = Join-Path $requestRoot ($requestId + '.json')
+          $tempPath = Join-Path $requestRoot ($requestId + '.tmp')
+          $resultPath = Join-Path $resultRoot ($requestId + '.json')
+          try {
+            $request = [ordered]@{
+              schema_version = 1
+              request_id = $requestId
+              implementation_sha = $env:EXPECTED_HEAD.ToLowerInvariant()
+              run_id = [string]$env:EXPECTED_RUN_ID
+              oidc_token = $jwt
+            }
+            [System.IO.File]::WriteAllText(
+              $tempPath,
+              ($request | ConvertTo-Json -Compress),
+              [System.Text.UTF8Encoding]::new($false)
+            )
+            Move-Item -LiteralPath $tempPath -Destination $requestPath -Force
+            $jwt = $null
+            $oidcResponse = $null
+
+            $deadline = [DateTimeOffset]::UtcNow.AddMinutes(5)
+            while ([DateTimeOffset]::UtcNow -lt $deadline -and -not (Test-Path -LiteralPath $resultPath -PathType Leaf)) {
+              Start-Sleep -Seconds 2
+            }
+            if (-not (Test-Path -LiteralPath $resultPath -PathType Leaf)) { throw 'WP22A_PROVIDER_CONTROLLER_TIMEOUT' }
+
+            $result = Get-Content -LiteralPath $resultPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+            if ([string]$result.request_id -ne $requestId) { throw 'WP22A_PROVIDER_RESULT_REQUEST_ID_MISMATCH' }
+            if ([string]$result.implementation_sha -ne $env:EXPECTED_HEAD.ToLowerInvariant()) { throw 'WP22A_PROVIDER_RESULT_SHA_MISMATCH' }
+            if ([string]$result.run_id -ne [string]$env:EXPECTED_RUN_ID) { throw 'WP22A_PROVIDER_RESULT_RUN_ID_MISMATCH' }
+            if (-not [bool]$result.accepted) { throw ('WP22A_PROVIDER_REQUEST_REJECTED:' + [string]$result.reason) }
+            if ([bool]$result.mutation_performed) { throw 'WP22A_PROVIDER_PHASE_B1_MUTATION_FORBIDDEN' }
+            if ([string]$result.reason -ne 'WP22A_PROVIDER_BOUNDARY_READY_NO_MUTATION') { throw 'WP22A_PROVIDER_PHASE_B1_REASON_INVALID' }
+            Write-Host 'WP22A provider OIDC boundary accepted; provider mutation remains disabled.'
+          }
+          finally {
+            $jwt = $null
+            Remove-Item -LiteralPath $tempPath -Force -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath $requestPath -Force -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath $resultPath -Force -ErrorAction SilentlyContinue
+          }
