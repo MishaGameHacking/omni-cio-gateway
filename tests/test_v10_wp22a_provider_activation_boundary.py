@@ -72,6 +72,10 @@ def test_controller_validates_signed_github_identity_and_replay() -> None:
         '"RS256"',
         "VerifyData(",
         "https://token.actions.githubusercontent.com/.well-known/openid-configuration",
+        '$expectedJwksUri = "https://token.actions.githubusercontent.com/.well-known/jwks"',
+        "WP22A_PROVIDER_OIDC_TYPE_INVALID",
+        "WP22A_PROVIDER_OIDC_JWK_ALG_INVALID",
+        "WP22A_PROVIDER_OIDC_JWK_USE_INVALID",
         '"https://token.actions.githubusercontent.com"',
         '"omni-cio-wp22a-provider-controller"',
         '"MishaGameHacking/omni-cio-gateway"',
@@ -94,6 +98,10 @@ def test_controller_validates_signed_github_identity_and_replay() -> None:
         "$payload.jti",
         "WP22A_PROVIDER_OIDC_JTI_INVALID",
         "WP22A_PROVIDER_OIDC_REPLAY_REJECTED",
+        "Assert-PathNotReparsePoint",
+        "WP22A_PROVIDER_REQUEST_REPARSE_FORBIDDEN",
+        "WP22A_PROVIDER_REQUEST_ROOT_REPARSE_FORBIDDEN",
+        "WP22A_PROVIDER_RESULT_ROOT_REPARSE_FORBIDDEN",
     )
     for marker in required:
         assert marker in controller
@@ -133,6 +141,8 @@ def test_installer_protects_controller_and_separates_exchange_roots() -> None:
     assert "Assert-RunnerNotAdministrator" in installer
     assert "Get-LocalGroupMember -SID" in installer
     assert "WP22A_PROVIDER_RUNNER_ADMINISTRATOR_FORBIDDEN" in installer
+    assert "Assert-ProgramDataContourNoReparsePoint" in installer
+    assert "WP22A_PROVIDER_PROGRAMDATA_REPARSE_FORBIDDEN" in installer
     assert "S-1-5-18" in installer
     assert "S-1-5-32-544" in installer
     assert "Test-PathAclExcludesSid" in installer
@@ -144,6 +154,10 @@ def test_installer_protects_controller_and_separates_exchange_roots() -> None:
     assert "-ValidateOnly" in installer
     assert "WP22A_PROVIDER_OIDC_OWNER_ACTOR_MISMATCH" in installer
     assert "WP22A_PROVIDER_OIDC_RERUN_FORBIDDEN" in installer
+    assert "WP22A_PROVIDER_OIDC_TYPE_INVALID" in installer
+    assert "WP22A_PROVIDER_OIDC_JWK_ALG_INVALID" in installer
+    assert "WP22A_PROVIDER_OIDC_JWK_USE_INVALID" in installer
+    assert "WP22A_PROVIDER_REQUEST_REPARSE_FORBIDDEN" in installer
     assert "WP22A_PROVIDER_OWNER_ACTOR_REQUIRED" in installer
     assert "WP22A_PROVIDER_RERUN_FORBIDDEN" in installer
     assert "WP22A_PROVIDER_RERUN_BY_DIFFERENT_ACTOR_FORBIDDEN" in installer
