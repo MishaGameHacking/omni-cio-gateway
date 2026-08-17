@@ -139,6 +139,8 @@ function Test-SourceBoundary {
         "1312247309",
         "actor_id",
         "WP22A_PROVIDER_OIDC_OWNER_ACTOR_MISMATCH",
+        "run_attempt",
+        "WP22A_PROVIDER_OIDC_RERUN_FORBIDDEN",
         "workflow_sha",
         "workflow_ref",
         "resultRetentionHours = 24",
@@ -160,8 +162,10 @@ function Test-SourceBoundary {
         "id-token: write",
         "refs/heads/main",
         "github.actor_id",
+        "github.run_attempt",
         "github.triggering_actor",
         "WP22A_PROVIDER_OWNER_ACTOR_REQUIRED",
+        "WP22A_PROVIDER_RERUN_FORBIDDEN",
         "WP22A_PROVIDER_RERUN_BY_DIFFERENT_ACTOR_FORBIDDEN",
         "ACTIONS_ID_TOKEN_REQUEST_URL"
     )) {
