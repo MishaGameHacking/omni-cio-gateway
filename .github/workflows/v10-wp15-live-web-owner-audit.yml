@@ -5,18 +5,21 @@ on:
     branches:
       - main
     paths:
-      - "apps/api/app.py"
-      - "apps/web/src/app-shell/**"
-      - "omni_cio/web/api_v1.py"
+      # This job consumes immutable physical OWNER evidence that is bound to the
+      # accepted WP15 implementation SHA. Later Web/WP changes use the
+      # deterministic support audit and must not rebind historical evidence.
+      # Automatic OWNER-audit reruns are therefore limited to WP15 physical
+      # acceptance/runtime surfaces whose change genuinely invalidates that
+      # evidence. The workflow itself is validated by the support audit.
       - "omni_cio/web/live_acceptance_v1.py"
       - "docs/architecture/V10_WP15_LIVE_WEB_ACCEPTANCE_CONTRACT.json"
-      - "docs/operations/V10_WP15_OWNER_LIVE_READ_RUNBOOK.md"
       - "infrastructure/windows/provision_wp15_live_web_acceptance.ps1"
+      - "infrastructure/windows/start_wp15_live_web_acceptance.ps1"
       - "infrastructure/windows/run_wp15_live_web_runtime.ps1"
       - "infrastructure/windows/bootstrap_wp15_live_database.py"
+      - "infrastructure/windows/probe_wp15_live_session_runtime.py"
       - "infrastructure/windows/finalize_wp15_live_web_evidence.ps1"
       - "infrastructure/windows/audit_wp15_live_web_runner.ps1"
-      - ".github/workflows/v10-wp15-live-web-owner-audit.yml"
   workflow_dispatch:
 
 permissions:
