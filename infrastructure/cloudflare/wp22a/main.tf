@@ -136,9 +136,11 @@ resource "cloudflare_dns_record" "omni_cio" {
 }
 
 output "access_application_aud" {
-  value = cloudflare_zero_trust_access_application.omni_cio.aud
+  value     = cloudflare_zero_trust_access_application.omni_cio.aud
+  sensitive = true
 }
 
 output "tunnel_id" {
-  value = cloudflare_zero_trust_tunnel_cloudflared.omni_cio.id
+  value     = cloudflare_zero_trust_tunnel_cloudflared.omni_cio.id
+  sensitive = true
 }
