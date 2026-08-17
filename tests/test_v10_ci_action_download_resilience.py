@@ -46,6 +46,12 @@ def test_current_self_hosted_authority_plane_uses_exact_sha_read_only_bootstrap(
     required = (
         "contents: read",
         "runs-on: [self-hosted, Windows, X64, omni-cio-ci]",
+        "Expose installed Git Bash before repository bootstrap",
+        "Get-Command git.exe -ErrorAction Stop",
+        "Join-Path $root 'bin'",
+        "Join-Path $bin 'bash.exe'",
+        "$env:GITHUB_PATH",
+        "-Encoding utf8 -Append",
         "GITHUB_TOKEN: ${{ github.token }}",
         "find . -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +",
         "git init .",
