@@ -137,6 +137,12 @@ def validate_self_hosted_repository_bootstrap(
     require_tokens(
         text,
         (
+            "Expose installed Git Bash before repository bootstrap",
+            "Get-Command git.exe -ErrorAction Stop",
+            "Join-Path $root 'bin'",
+            "Join-Path $bin 'bash.exe'",
+            "$env:GITHUB_PATH",
+            "-Encoding utf8 -Append",
             "GITHUB_TOKEN: ${{ github.token }}",
             "find . -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +",
             "git init .",
