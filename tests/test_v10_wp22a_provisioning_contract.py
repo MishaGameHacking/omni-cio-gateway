@@ -20,12 +20,8 @@ CLOUDFLARE_PROVIDER_BOOTSTRAP = (
 TERRAFORM_VALIDATE = ROOT / "scripts" / "validate_wp22a_terraform.ps1"
 WORKFLOW = ROOT / ".github" / "workflows" / "v10-wp22a-clientless-access-audit.yml"
 GITIGNORE = ROOT / ".gitignore"
-SERVICE_SELECTION = (
-    ROOT / "docs" / "architecture" / "V10_WP22A_SERVICE_SELECTION.md"
-)
-EXECUTION_CONTRACT = (
-    ROOT / "docs" / "architecture" / "V10_WP22A_EXECUTION_CONTRACT.md"
-)
+SERVICE_SELECTION = ROOT / "docs" / "architecture" / "V10_WP22A_SERVICE_SELECTION.md"
+EXECUTION_CONTRACT = ROOT / "docs" / "architecture" / "V10_WP22A_EXECUTION_CONTRACT.md"
 WP17_SECURITY_GUARD = ROOT / "scripts" / "check_v10_wp17_web_security.py"
 
 
