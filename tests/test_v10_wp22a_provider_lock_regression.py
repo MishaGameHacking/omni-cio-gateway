@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -24,12 +25,15 @@ def test_wp22a_derives_content_hash_only_in_isolated_lock_copy() -> None:
     assert '"h1:[A-Za-z0-9+/]+={0,2}"' in validator
     assert "-lockfile=readonly" in validator
 
-    # The committed source lock remains the reviewed exact ZIP trust anchor.
+    # The committed source lock remains the reviewed exact ZIP trust anchor, while the
+    # validator derives the comparison from the archive authenticated by the bootstrap.
     assert (
         "zh:ca4bf16742a7e59319a482f003d32f6f6abbc5fbf862916ce1a136278e6d420d"
         in source_lock
     )
-    assert "Get-FileHash -Algorithm SHA256" in validator
+    assert "$providerArchiveSha256 = (Get-FileHash -Algorithm SHA256" in validator
+    assert '[regex]::Escape("zh:$providerArchiveSha256")' in validator
+    assert re.search(r'"[0-9a-fA-F]{64}"', validator) is None
 
 
 def test_wp22a_provider_installation_keeps_registry_fallback_excluded() -> None:
