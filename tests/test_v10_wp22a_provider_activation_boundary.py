@@ -76,7 +76,8 @@ def test_controller_validates_signed_github_identity_and_replay() -> None:
         '"exp"',
         '"nbf"',
         '"iat"',
-        '"jti"',
+        "$payload.jti",
+        "WP22A_PROVIDER_OIDC_JTI_INVALID",
         "WP22A_PROVIDER_OIDC_REPLAY_REJECTED",
     )
     for marker in required:
@@ -109,7 +110,8 @@ def test_installer_protects_controller_and_separates_exchange_roots() -> None:
 
     assert "Read-Host" not in installer
     assert "Cloudflare API token" not in installer
-    assert "secrets." not in installer.lower()
+    assert "WP22A_PROVIDER_WORKFLOW_SECRET_REFERENCE_FORBIDDEN" in installer
+    assert '.IndexOf("secrets.",' in installer
 
 
 def test_phase_b1_contract_keeps_provider_and_physical_mutation_blocked() -> None:
@@ -121,11 +123,11 @@ def test_phase_b1_contract_keeps_provider_and_physical_mutation_blocked() -> Non
         "PHASE B SOURCE-ONLY / PROVIDER MUTATION DISABLED",
         "WP22A_PROVIDER_BOUNDARY_READY_NO_MUTATION",
         "mutation_performed=false",
-        "WP23 remains locked",
         "trading_methods=false",
         "REAL_TRADING_ENABLED=false",
     ):
         assert marker in boundary
+    assert "wp23 remains locked" in boundary.lower()
 
     assert "OWNER action is **NOT REQUIRED**" in runbook
     assert "Provider apply is intentionally still blocked" in runbook
