@@ -1,10 +1,12 @@
-# 16 — CURRENT PROGRAM STATUS
+# 16 — CURRENT PROGRAM STATUS — PROTECTED V9 RUNTIME
 
-Дата актуализации: 2026-08-05
+Дата актуализации V9 applied baseline: 2026-08-05
+
+**Scope:** this file is the current **V9 production/recovery runtime authority only**. It does not define the active V10 Work Package or V10 progress. For V10 development state use `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`. Documentation lifecycle: `docs/DOCUMENTATION_AUTHORITY_AND_LIFECYCLE.md`.
 
 ## Executive state
 
-Omni-CIO remains **one Custom GPT + one production Render Gateway**.
+The protected V9 baseline remains **one Custom GPT + one production Render Gateway** while V10 is developed separately in the same repository.
 
 - Applied external GPT: **v9.0.0**, owner-accepted in place on 2026-08-05.
 - UI: `Omni-CIO API | Управляющий и аналитик v9.0.0`.
@@ -13,7 +15,7 @@ Omni-CIO remains **one Custom GPT + one production Render Gateway**.
 - Stable Gateway entrypoint: `app:app`.
 - Production Gateway: `https://omni-cio-gateway.onrender.com`.
 - Production OpenAPI: `https://omni-cio-gateway.onrender.com/openapi.json`.
-- Canonical roadmap: `docs/master-plan/OMNI_CIO_V9_PORTFOLIO_AUTOPILOT_PROGRAM.md`.
+- Canonical completed V9 program: `docs/master-plan/OMNI_CIO_V9_PORTFOLIO_AUTOPILOT_PROGRAM.md`.
 - Completed tracking epic: #176.
 - WP15 acceptance: #216.
 
@@ -21,7 +23,7 @@ The protected v8.6.1 rollback release remains available in GitHub. Its real BUY/
 
 Canonical recovery invariant remains: **idempotent replay verified with no second submit**.
 
-## Program completion
+## V9 program completion
 
 | WP | State | Evidence |
 |---|---|---|
@@ -65,7 +67,7 @@ Issues #176 and #216 are closed completed.
 
 Always preserve:
 
-- one GPT and one production Gateway;
+- one applied V9 GPT and one protected V9 production Gateway;
 - stable `app:app` entrypoint;
 - production read-only broker credential never used as real-execution fallback;
 - Sandbox remains virtual and isolated;
@@ -83,7 +85,7 @@ Watchtower rollback: `WATCHTOWER_ENABLED=false`.
 
 ## Applied v9 Actions state
 
-The effective production `/openapi.json` is the runtime authority.
+The effective production `/openapi.json` is the V9 runtime Action authority.
 
 Baseline read-only portfolio routing remains:
 
@@ -109,13 +111,15 @@ Internal v9 router/policy/universe/research/credit/fund/risk/strategy/optimizer/
 - full Preview/rollback procedure: `gpt/MY_GPT_SETUP_RUNBOOK.md`;
 - protected rollback Instructions: `gpt/CUSTOM_GPT_INSTRUCTIONS_V8_6_1_COMPACT.txt`.
 
-## Maintenance mode
+## V9 maintenance mode
 
-The v9 feature program is complete. Current work is controlled maintenance only:
+The V9 feature program is complete. **V9-specific** current work is controlled maintenance only:
 
 - dependency updates remain proposals until exact-head Regression Shield/security passes;
 - incompatible toolchain updates are held narrowly and documented rather than forcing CI green;
 - stale generated/bootstrap artifacts are removed only through reviewed cleanup PRs;
 - no maintenance change may broaden GPT or broker authority implicitly.
 
-**Current state: Omni-CIO v9.0.0 is fully implemented, merged, externally applied to the existing GPT and owner-accepted. The repository is in controlled maintenance mode.**
+This does not mean the whole repository is maintenance-only: the V10 feature program is active and its exact state is maintained separately in `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
+
+**V9 state: Omni-CIO v9.0.0 is fully implemented, merged, externally applied to the existing GPT and owner-accepted; it remains the protected production/recovery baseline while V10 advances through its own accepted Work Packages.**

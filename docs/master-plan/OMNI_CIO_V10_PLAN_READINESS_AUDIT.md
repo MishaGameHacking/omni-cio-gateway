@@ -1,19 +1,23 @@
 # Omni-CIO V10 — Plan Readiness Audit
 
+Record type: **HISTORICAL SNAPSHOT — NOT CURRENT-STATE AUTHORITY**  
 Audit date: **2026-08-05**  
 Audited branch: **`v10/program-lock`**  
-Program state: **0% / DEVELOPMENT NOT STARTED**  
-Readiness verdict: **PLAN CONTENT COMPLETE — FINAL EXACT-HEAD CI + MERGE TO MAIN REQUIRED**
+Program state at audit time: **0% / DEVELOPMENT NOT STARTED**  
+Readiness verdict at audit time: **PLAN CONTENT COMPLETE — FINAL EXACT-HEAD CI + MERGE TO MAIN REQUIRED**  
+Current program state: `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`
+
+This file preserves the pre-development readiness audit exactly in its 2026-08-05 lifecycle context. Procedural gates described as pending below were later resolved through their accepted PR/CI/start sequence; they are not current blockers unless the canonical current-status file says so.
 
 ## 1. Purpose
 
-This is the pre-development release-readiness audit of the V10 plan itself. It does not start V10 implementation and does not change V9 runtime authority.
+This is the pre-development release-readiness audit of the V10 plan itself. It did not start V10 implementation and did not change V9 runtime authority.
 
-The objective is to prevent contradictory requirements, hidden account dependencies and safety omissions from being discovered only after Web/Telegram/AI/real-money implementation starts.
+The objective was to prevent contradictory requirements, hidden account dependencies and safety omissions from being discovered only after Web/Telegram/AI/real-money implementation started.
 
 ## 2. Architecture accepted by the audit
 
-The canonical V10 program now explicitly requires:
+The canonical V10 program explicitly required:
 
 - V9 retained as protected reference/rollback until V10 final acceptance;
 - private GitHub repository as engineering Control Plane/source of truth;
@@ -40,13 +44,13 @@ The canonical V10 program now explicitly requires:
 - source retrieval/terms/retention governance;
 - clean-room Account Independence / Deployment Portability rehearsal;
 - final evidence matrix mapping each released capability to implementation/tests/security/runtime/recovery evidence;
-- public multi-user, billing and public Real execution intentionally excluded from V10 Personal.
+- public multi-user, billing and public Real execution intentionally excluded from V10 Personal at this base-plan stage.
 
 ## 3. Findings from the first audit and closure status
 
 ### B1 — Account Independence amendment not consolidated
 
-**CLOSED.** The mandatory Account Independence / Deployment Portability requirements are now embedded directly in `OMNI_CIO_V10_MASTER_PLAN.md` and its regenerated PDF. The standalone amendment remains only as historical owner-approved audit evidence.
+**CLOSED.** The mandatory Account Independence / Deployment Portability requirements were embedded directly in `OMNI_CIO_V10_MASTER_PLAN.md` and its regenerated PDF. The standalone amendment remains only as historical owner-approved audit evidence.
 
 ### B2 — Progress weights inconsistent
 
@@ -66,7 +70,7 @@ The canonical V10 program now explicitly requires:
 | J | 5% |
 | **TOTAL** | **100%** |
 
-Block headings, progress table and status template are normalized to the same allocation.
+Block headings, progress table and status template were normalized to the same allocation.
 
 ### B3 — Current-status filename inconsistent
 
@@ -76,27 +80,29 @@ Block headings, progress table and status template are normalized to the same al
 
 ### B4 — Plan status wording inconsistent
 
-**CLOSED.** Canonical plan status is:
+**CLOSED AT AUDIT TIME.** Canonical plan status at the pre-development gate was:
 
 `OWNER-APPROVED / PROGRAM LOCKED / DEVELOPMENT NOT STARTED`
 
+This is historical wording from before the OWNER later issued `START V10`.
+
 ### B5 — Program not yet accepted into `main`
 
-**PROCEDURAL GATE.** PR #227 must be squash-merged after final exact-head CI/security is green and zero review blockers remain. The merge records the plan as accepted-main authority; it does not start implementation.
+**HISTORICAL PROCEDURAL GATE — SUBSEQUENTLY SATISFIED.** At audit time, PR #227 still had to be squash-merged after final exact-head CI/security and zero review blockers. The later accepted merge made the plan main authority; it did not itself start implementation.
 
 ### B6 — Exact-head Regression Shield
 
-**PROCEDURAL GATE.** Final branch head after cleanup must pass the existing Regression Shield/security checks before merge.
+**HISTORICAL PROCEDURAL GATE — SUBSEQUENTLY SATISFIED.** The final plan branch head was required to pass the existing Regression Shield/security checks before merge.
 
 ## 4. Safety findings and closure status
 
 ### S1 — Data at rest / physical loss
 
-**INCORPORATED.** V10 now requires full-disk encryption (BitLocker where supported or owner-approved equivalent), separate recovery-key custody and physical disk-loss coverage for secrets/private DB/Journal state.
+**INCORPORATED.** V10 requires full-disk encryption (BitLocker where supported or owner-approved equivalent), separate recovery-key custody and physical disk-loss coverage for secrets/private DB/Journal state.
 
 ### S2 — RPO / RTO
 
-**INCORPORATED.** WP10/WP49 must define measurable Recovery Point Objective and Recovery Time Objective, derive backup frequency/retention from them and prove restoration against those targets.
+**INCORPORATED.** WP10/WP49 require measurable Recovery Point Objective and Recovery Time Objective, backup frequency/retention derived from them and restoration evidence against those targets.
 
 ### S3 — External Web ingress / TLS / OWNER auth
 
@@ -116,9 +122,11 @@ Block headings, progress table and status template are normalized to the same al
 
 ## 5. Technical-baseline verification
 
-At the audit date, official documentation was rechecked for the main V10 assumptions. The canonical plan records these as planning references only; exact versions and behavior must be rechecked at the implementation gate rather than assumed forever.
+At the audit date, official documentation was rechecked for the main V10 assumptions. The canonical plan recorded these as planning references only; exact versions and behavior must be rechecked at the implementation gate rather than assumed forever.
 
-The verification confirmed the continued viability of the selected architecture: GitHub self-hosted runners; Telegram Mini Apps server-side identity validation; Ollama tool calling/structured JSON; T-Invest read-only credential separation; OWASP ASVS/AISVS verification baselines; current stable React/Vite/PostgreSQL lines.
+The verification confirmed the continued viability of the selected architecture at that time: GitHub self-hosted runners; Telegram Mini Apps server-side identity validation; Ollama tool calling/structured JSON; T-Invest read-only credential separation; OWASP ASVS/AISVS verification baselines; and then-current stable React/Vite/PostgreSQL lines.
+
+Later accepted toolchain/current-service decisions supersede any time-sensitive version assumption in this audit.
 
 ## 6. Canonical artifacts after consolidation
 
@@ -128,20 +136,23 @@ The plan is controlled by:
 - `docs/master-plan/Omni-CIO_V10_Master_Plan_RU.pdf` — synchronized owner-readable copy;
 - `docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.sha256` — integrity manifest;
 - `docs/master-plan/OMNI_CIO_V10_PROGRAM_LOCK.md` — precedence/exclusivity/safety lock;
-- `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md` — progress authority;
-- this readiness audit — acceptance evidence;
+- `docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md` — accepted amendment discovery;
+- `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md` — dynamic progress authority;
+- this readiness audit — historical acceptance evidence;
 - `OMNI_CIO_V10_ACCOUNT_INDEPENDENCE_AMENDMENT.md` — historical audit trail, not a competing canonical source.
 
-## 7. Final readiness gate
+## 7. Historical final readiness gate — satisfied
 
-The substantive content of the V10 plan is complete. The plan becomes formally **READY — WAITING FOR OWNER `START V10` COMMAND** only when all of the following are true on accepted `main`:
+At audit time, the substantive content of the V10 plan would become formally **READY — WAITING FOR OWNER `START V10` COMMAND** only when all of the following were true on accepted `main`:
 
-1. canonical Markdown/PDF pair and manifest are present;
-2. their content/integrity checks pass;
-3. temporary plan-generation tooling is removed;
-4. exact-head Regression Shield/security is green;
-5. no unresolved PR review thread/blocker remains;
-6. PR #227 is squash-merged to `main`;
-7. V10 progress still reads **0% / DEVELOPMENT NOT STARTED**.
+1. canonical Markdown/PDF pair and manifest were present;
+2. their content/integrity checks passed;
+3. temporary plan-generation tooling was removed;
+4. exact-head Regression Shield/security was green;
+5. no unresolved PR review thread/blocker remained;
+6. PR #227 was squash-merged to `main`;
+7. V10 progress still read **0% / DEVELOPMENT NOT STARTED** at that pre-start moment.
 
-The merge of the plan is documentation/governance acceptance only. **It does not authorize Web/Telegram/AI/runtime feature implementation and does not expand Real-money authority.** A separate explicit owner command is still required to start WP0.
+Those readiness conditions were subsequently satisfied and the OWNER later issued `START V10` on 2026-08-05. The original plan merge was documentation/governance acceptance only and did not by itself authorize later Web/Telegram/AI/runtime work or expand Real-money authority.
+
+For everything that happened after this historical gate, use `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md` and accepted main evidence.

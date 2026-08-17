@@ -1,7 +1,9 @@
 # Omni-CIO V10 — Engineering Quality / Pre-CI / Green-Merge Amendment
 
-Status: **OWNER-APPROVED POLICY / EFFECTIVE ONLY AFTER MERGE TO `main`**  
+Status: **OWNER-APPROVED / ACCEPTED ON `main` / ACTIVE**  
 Date: 2026-08-16  
+Accepted main: `1c05390d9cf31b8cc68a90a5d7cbd6428ffe7791`  
+Post-merge verification: Regression Shield #1498 / run `31959959791` — **SUCCESS**  
 Scope: all remaining V10 implementation, maintenance, recovery, dependency, CI, status, OWNER-handoff and runtime-hosting-selection work.
 
 ## 1. Purpose
@@ -234,7 +236,7 @@ Do not reduce test coverage, disable security checks, suppress real failures, we
 
 ## 13. GitHub enforcement surfaces
 
-This policy must be reflected in GitHub through multiple independent surfaces rather than one prose file:
+This policy is reflected in GitHub through multiple independent surfaces rather than one prose file:
 
 - Amendments Index;
 - `AGENTS.md`/agent instructions;
@@ -245,6 +247,7 @@ This policy must be reflected in GitHub through multiple independent surfaces ra
 - OWNER Action Handoff & Local Runtime Standard;
 - failure-learning ledger;
 - repository/CI governance guard;
+- documentation authority/lifecycle guard;
 - deterministic regression tests;
 - exact-head CI and post-merge Regression Shield.
 
@@ -263,8 +266,8 @@ This policy never permits weakening:
 - protected V9 rollback;
 - current Master Plan WP ordering.
 
-## 15. Acceptance
+## 15. Acceptance — completed
 
-This amendment becomes active authority only after its focused governance PR itself obeys the rule it introduces: exact-head applicable checks must be GREEN, review must be clean, it must be squash-merged to `main`, and required post-merge verification must succeed.
+This amendment's focused governance lifecycle completed on 2026-08-16. The accepted main commit is `1c05390d9cf31b8cc68a90a5d7cbd6428ffe7791`; required post-merge Regression Shield #1498 / run `31959959791` completed **SUCCESS** on that exact main.
 
-Until then, existing accepted `main` remains authority and the current WP22A implementation PR remains unaccepted.
+The amendment is therefore active authority for subsequent V10 implementation, maintenance, recovery, dependency, CI, status, OWNER-handoff and runtime-hosting-selection work. Its acceptance did not itself advance product progress, complete WP22A, open public ingress, add broker-write authority, enable Real trading or unlock WP23.
