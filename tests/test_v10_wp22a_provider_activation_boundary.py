@@ -190,7 +190,10 @@ def test_phase_b1_contract_keeps_provider_and_physical_mutation_blocked() -> Non
         "REAL_TRADING_ENABLED=false",
     ):
         assert marker in boundary
-    assert "wp23 remains locked" in boundary.lower()
+
+    boundary_lower = boundary.lower()
+    assert "does not mark wp22a complete" in boundary_lower
+    assert "does not unlock wp23" in boundary_lower
 
     assert "OWNER action is **NOT REQUIRED**" in runbook
     assert "Provider apply is intentionally still blocked" in runbook
