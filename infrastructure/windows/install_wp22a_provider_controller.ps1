@@ -15,8 +15,8 @@ if ($modeCount -ne 1) { throw "Choose exactly one of -Install, -Cleanup, or -Val
 if ($env:OS -ne "Windows_NT") { throw "WP22A_PROVIDER_CONTROLLER_WINDOWS_REQUIRED" }
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
-$sourceController = Join-Path $repoRoot "infrastructure\windows\run_wp22a_provider_controller.ps1"
-$activationWorkflow = Join-Path $repoRoot ".github\workflows\v10-wp22a-provider-activation.yml"
+$controllerRelative = "infrastructure/windows/run_wp22a_provider_controller.ps1"
+$activationWorkflowRelative = ".github/workflows/v10-wp22a-provider-activation.yml"
 $protectedRoot = "C:\ProgramData\OmniCIO\private\wp22a-provider-controller"
 $installedController = Join-Path $protectedRoot "run_wp22a_provider_controller.ps1"
 $configPath = Join-Path $protectedRoot "controller.json"
@@ -52,6 +52,21 @@ function Get-ReviewedHead {
         if ($dirty.Count -ne 0) { throw "WP22A_PROVIDER_WORKTREE_NOT_CLEAN" }
     }
     return $actual
+}
+
+function Get-ReviewedBlobText {
+    param(
+        [Parameter(Mandatory = $true)][string]$ImplementationSha,
+        [Parameter(Mandatory = $true)][string]$RelativePath
+    )
+    if ($ImplementationSha -notmatch '^[0-9a-f]{40}$') { throw "WP22A_PROVIDER_REVIEWED_BLOB_SHA_INVALID" }
+    if ($RelativePath -notmatch '^[A-Za-z0-9_./-]+$' -or $RelativePath.Contains("..")) {
+        throw "WP22A_PROVIDER_REVIEWED_BLOB_PATH_INVALID"
+    }
+    $objectSpec = $ImplementationSha + ":" + $RelativePath
+    $lines = @(& git -C $repoRoot cat-file blob $objectSpec 2>$null)
+    if ($LASTEXITCODE -ne 0 -or $lines.Count -eq 0) { throw "WP22A_PROVIDER_REVIEWED_BLOB_UNAVAILABLE" }
+    return (($lines | ForEach-Object { [string]$_ }) -join "`n") + "`n"
 }
 
 function Resolve-AccountSid {
@@ -143,10 +158,9 @@ function Test-PathAclExcludesSid {
 }
 
 function Test-SourceBoundary {
-    if (-not (Test-Path -LiteralPath $sourceController -PathType Leaf)) { throw "WP22A_PROVIDER_CONTROLLER_SOURCE_MISSING" }
-    if (-not (Test-Path -LiteralPath $activationWorkflow -PathType Leaf)) { throw "WP22A_PROVIDER_ACTIVATION_WORKFLOW_MISSING" }
-    $controller = Get-Content -LiteralPath $sourceController -Raw -ErrorAction Stop
-    $workflow = Get-Content -LiteralPath $activationWorkflow -Raw -ErrorAction Stop
+    param([Parameter(Mandatory = $true)][string]$ImplementationSha)
+    $controller = Get-ReviewedBlobText -ImplementationSha $ImplementationSha -RelativePath $controllerRelative
+    $workflow = Get-ReviewedBlobText -ImplementationSha $ImplementationSha -RelativePath $activationWorkflowRelative
 
     foreach ($marker in @(
         "omni-cio-wp22a-provider-controller",
@@ -191,6 +205,7 @@ function Test-SourceBoundary {
     if ($workflow.IndexOf("secrets.", [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
         throw "WP22A_PROVIDER_WORKFLOW_SECRET_REFERENCE_FORBIDDEN"
     }
+    return [ordered]@{ controller = $controller; workflow = $workflow }
 }
 
 function Remove-ControllerBoundary {
@@ -202,7 +217,7 @@ function Remove-ControllerBoundary {
 }
 
 $reviewedHead = Get-ReviewedHead -RequireMain:($Install -or $Cleanup)
-Test-SourceBoundary
+$sourceBoundary = Test-SourceBoundary -ImplementationSha $reviewedHead
 
 if ($ValidateOnly) {
     $result = [ordered]@{
@@ -246,7 +261,15 @@ if ($PSCmdlet.ShouldProcess($protectedRoot, "Install WP22A Phase-B1 provider req
         $runnerSid = [System.Security.AccessControl.FileSystemRights]::ReadAndExecute
     }
 
-    Copy-Item -LiteralPath $sourceController -Destination $installedController -Force
+    [System.IO.File]::WriteAllText(
+        $installedController,
+        [string]$sourceBoundary.controller,
+        [System.Text.UTF8Encoding]::new($false)
+    )
+    $installedText = Get-Content -LiteralPath $installedController -Raw -ErrorAction Stop
+    if ($installedText -cne [string]$sourceBoundary.controller) {
+        throw "WP22A_PROVIDER_CONTROLLER_REVIEWED_BLOB_COPY_MISMATCH"
+    }
     $config = [ordered]@{
         schema_version = 1
         implementation_sha = $reviewedHead
