@@ -65,7 +65,11 @@ The installer requires:
 - repository checkout on branch `main`;
 - exact `HEAD == ExpectedImplementationSha`;
 - clean worktree;
-- exactly one ordinary GitHub Actions runner service with a non-LocalSystem identity.
+- exactly one ordinary GitHub Actions runner service whose executable path belongs to `C:\actions-runner`;
+- runner identity is not LocalSystem;
+- runner identity is not a direct member of the local Administrators group.
+
+If runner privilege drift violates either identity condition, installation fails closed. Do not weaken the ACL/controller design to work around a privileged CI service identity.
 
 No Cloudflare credential is entered during Phase-B1 installation.
 
