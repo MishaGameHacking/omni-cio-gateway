@@ -360,6 +360,28 @@ A short SHA may be used for navigation when useful. Full random-looking secret m
 
 ---
 
+## FL-016 — Public provider checksums must not be duplicated as secret-shaped literals
+
+**Date:** 2026-08-17  
+**WP / PR / reference:** WP22A / PR #321 / authoritative Self-Hosted Windows CI #1425  
+**Symptom / failing gate:** all authoritative compile/static/type/tests/dependency/SAST stages passed, but the final tracked-content secret scan rejected `scripts/validate_wp22a_terraform.ps1` because a duplicated 64-hex provider checksum was classified as `Hex High Entropy String`.
+
+**Root cause:** the validator copied the same public provider ZIP SHA-256 already owned and verified by the provider bootstrap into a second standalone literal. The literal was not a secret, but its representation was intentionally indistinguishable from secret-shaped high-entropy material to the repository scanner.
+
+**Blast radius searched:** WP22A provider bootstrap, Terraform/OpenTofu validator, committed provider lock, focused provider-lock regression tests, detect-secrets policy and unrelated workflow routing that appeared as skipped on the same PR.
+
+**Why preflight missed it:** provider integrity review concentrated on cryptographic trust continuity and offline lock semantics. The changed PowerShell surface was not independently run through the exact tracked-content secret scan before the expensive authoritative cycle.
+
+**Corrective change:** retain the reviewed provider SHA-256 only in the bootstrap trust boundary, where the downloaded archive is authenticated. The validator now hashes that already-authenticated archive and compares the committed `zh:` lock against the derived value, removing the duplicate standalone high-entropy literal without adding a scanner exception or weakening integrity. The unrelated WP5 evidence workflow is also narrowed to WP5-owned Windows paths so WP22A changes no longer create a misleading skipped check.
+
+**Permanent regression/guard:** focused WP22A regression coverage rejects any standalone quoted 64-hex checksum in the validator, requires the archive-derived lock comparison and verifies that the WP5 evidence workflow no longer routes the entire Windows infrastructure tree.
+
+**Future prevention rule:** before final authoritative CI, run the exact secret-scan policy over all changed tracked text. Public checksums may remain as reviewed trust anchors, but do not duplicate them into additional secret-shaped literals when a verified artifact can carry the trust value forward.
+
+**Dependency/tooling knowledge change:** secret scanners classify representation, not business meaning. A public checksum can be a legitimate false positive; the preferred repair is to remove redundant secret-shaped representation rather than broadly allowlist or disable the detector when trust semantics can stay equally strong.
+
+---
+
 ## Entry template
 
 ```text
