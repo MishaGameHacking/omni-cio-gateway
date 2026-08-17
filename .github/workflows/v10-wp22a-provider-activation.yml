@@ -115,5 +115,4 @@ jobs:
             $jwt = $null
             Remove-Item -LiteralPath $tempPath -Force -ErrorAction SilentlyContinue
             Remove-Item -LiteralPath $requestPath -Force -ErrorAction SilentlyContinue
-            Remove-Item -LiteralPath $resultPath -Force -ErrorAction SilentlyContinue
           }
