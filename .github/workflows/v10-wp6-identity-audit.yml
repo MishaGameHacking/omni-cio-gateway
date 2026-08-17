@@ -28,10 +28,37 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - name: Check out repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v7.0.1
-        with:
-          persist-credentials: false
+      - name: Expose installed Git Bash before repository bootstrap
+        shell: cmd
+        run: |
+          powershell.exe -NoProfile -NonInteractive -Command "$git=(Get-Command git.exe -ErrorAction Stop).Source; $root=Split-Path -Parent (Split-Path -Parent $git); $bin=Join-Path $root 'bin'; if (-not (Test-Path (Join-Path $bin 'bash.exe'))) { exit 12 }; $bin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append"
+          if errorlevel 1 exit /b 12
+
+      - name: Bootstrap exact reviewed repository without external Actions
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GITHUB_TOKEN: ${{ github.token }}
+          GIT_TERMINAL_PROMPT: "0"
+          GCM_INTERACTIVE: "0"
+        run: |
+          set -euo pipefail
+          find . -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+          git init .
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          git config --local gc.auto 0
+          git config --local credential.helper ""
+          git config --local --add credential.helper '!f() { echo username=x-access-token; echo password=$GITHUB_TOKEN; }; f'
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            git fetch --no-tags --prune --depth=1 origin "+refs/pull/${PR_NUMBER}/head:refs/remotes/pull/head"
+          else
+            git fetch --no-tags --prune --depth=1 origin "+${GITHUB_REF}:refs/remotes/origin/event"
+          fi
+          git checkout --detach "$EXPECTED_HEAD"
+          git config --local --unset-all credential.helper
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          test -z "$(git config --local --get-all credential.helper || true)"
 
       - name: Bootstrap protected Python 3.12.10 runtime
         shell: cmd
@@ -79,10 +106,10 @@ jobs:
 
       - name: Clean sanitized local evidence
         if: always()
-        shell: cmd
+        shell: bash
         run: |
-          @echo off
-          if defined WP6_IDENTITY_PROFILE_PATH if exist "%WP6_IDENTITY_PROFILE_PATH%" del /f /q "%WP6_IDENTITY_PROFILE_PATH%"
-          del /f /q "%RUNNER_TEMP%\wp6-assessment-%GITHUB_RUN_ID%-%GITHUB_RUN_ATTEMPT%.json" 2>nul
+          if [ -n "${WP6_IDENTITY_PROFILE_PATH:-}" ]; then rm -f "$(cygpath -u "$WP6_IDENTITY_PROFILE_PATH")"; fi
+          rm -f "$(cygpath -u "$RUNNER_TEMP")/wp6-assessment-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.json"
+          git config --local --unset-all credential.helper 2>/dev/null || true
           git reset --hard HEAD
           git clean -ffdx

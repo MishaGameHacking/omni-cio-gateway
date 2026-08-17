@@ -129,6 +129,19 @@ REQUIRED_WORKFLOW_COMMANDS = {
 }
 
 SELF_HOSTED_RUNNER_LABELS = "[self-hosted, Windows, X64, omni-cio-ci]"
+HEADLESS_REPOSITORY_BOOTSTRAP_MARKERS = {
+    "job-scoped GitHub token": "GITHUB_TOKEN: ${{ github.token }}",
+    "non-interactive Git": 'GIT_TERMINAL_PROMPT: "0"',
+    "non-interactive credential manager": 'GCM_INTERACTIVE: "0"',
+    "inherited credential-helper reset": 'git config --local credential.helper ""',
+    "temporary job-token helper": "git config --local --add credential.helper",
+    "detached exact-head checkout": 'git checkout --detach "$EXPECTED_HEAD"',
+    "credential-helper removal": "git config --local --unset-all credential.helper",
+    "exact-head verification": 'test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"',
+    "post-bootstrap credential cleanup": (
+        'test -z "$(git config --local --get-all credential.helper || true)"'
+    ),
+}
 
 
 def display_path(path: Path) -> str:
@@ -214,6 +227,23 @@ def validate_soft_fail_policy(workflow_text: str, failures: list[str]) -> None:
         )
 
 
+def validate_headless_repository_bootstrap(
+    workflow_text: str,
+    failures: list[str],
+) -> None:
+    if "actions/checkout@" in workflow_text:
+        failures.append(
+            "self-hosted Regression Shield must not depend on actions/checkout; "
+            "use the reviewed headless exact-SHA bootstrap"
+        )
+    for label, marker in HEADLESS_REPOSITORY_BOOTSTRAP_MARKERS.items():
+        if workflow_text.count(marker) < 2:
+            failures.append(
+                "headless repository bootstrap must prevent persisted credentials "
+                f"for every self-hosted job; missing {label}: {marker}"
+            )
+
+
 def validate_workflow(failures: list[str]) -> None:
     if not WORKFLOW_PATH.is_file():
         failures.append("missing .github/workflows/regression-shield.yml")
@@ -234,8 +264,7 @@ def validate_workflow(failures: list[str]) -> None:
         failures.append(
             "Regression Shield must target the dedicated self-hosted Windows runner"
         )
-    if text.count("persist-credentials: false") < 2:
-        failures.append("every checkout must disable persisted credentials")
+    validate_headless_repository_bootstrap(text, failures)
     if "scripts\\bootstrap_windows_ci_python.cmd" not in text:
         failures.append("Regression Shield must bootstrap the verified Python runtime")
     if "python -m venv .venv-ci" in text:
