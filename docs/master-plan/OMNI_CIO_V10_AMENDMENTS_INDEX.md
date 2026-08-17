@@ -76,13 +76,13 @@ Machine-readable companions:
 - `../architecture/V10_TELEGRAM_PRODUCT_CONTRACT.json`;
 - `../architecture/V10_TELEGRAM_MESSAGE_REGISTRY.json`.
 
-Locks the OWNER-approved product behavior for Block F before implementation:
+Locks the OWNER-approved product behavior for Block F before implementation, as corrected by Amendment 9 below:
 
-- Telegram is an OWNER-only private companion interface, not a second Core/Web/AI product;
+- Telegram is a private **USER-scoped** companion interface to the same Omni-CIO account/tenant model, not a second Core/Web/AI product; the PROJECT OWNER is only the first controlled acceptance USER;
 - long polling is the initial transport; public webhook ingress is not required;
 - the compact command surface is `/start`, `/help`, `/status`, `/portfolio`, `/alerts`, `/system`, `/app`;
 - Telegram consumes canonical Core DTOs and never owns financial calculations or broker-write logic;
-- BotFather/manual OWNER work is minimized to creating/confirming the bot and locally storing/rotating its token;
+- BotFather/manual PROJECT OWNER work is minimized to project-wide bot bootstrap and locally storing/rotating its token; this infrastructure authority is not product-user authority;
 - Mini App identity requires server-side validation of Telegram `initData`, freshness/replay controls and a short-lived V10 session;
 - message families, privacy levels and buttons are versioned in a registry;
 - alert delivery is durable, idempotent, deduplicated and edits an existing incident message when practical;
@@ -105,17 +105,17 @@ Machine-readable / legal companions:
 - `../architecture/V10_ZERO_CUSTODY_LICENSE_UPDATE_CONTRACT.json`;
 - `../legal/V10_RU_COMMERCIAL_LEGAL_GATES.md`.
 
-This amendment locks the OWNER-approved product definition across the existing A-J program without renumbering blocks or crediting implementation progress:
+This amendment locks the OWNER-approved product definition across the existing A-J program without renumbering blocks or crediting implementation progress. Product-domain OWNER wording is interpreted through Amendment 9 as authenticated USER authority for that USER's own tenant:
 
 - the central product is autonomous portfolio governance, not a dashboard/chat/trading robot;
-- the deterministic system operates 24/7; Cortex is an on-demand bounded research/interpretation/negotiation specialist that the system or OWNER may invoke;
+- the deterministic system operates 24/7; Cortex is an on-demand bounded research/interpretation/negotiation specialist that the system or USER may invoke;
 - every held asset receives explicit health/freshness/trend state and monitoring intensity is risk/materiality based;
 - the system dynamically screens the supported broker universe through a Russian-market-only policy, sanctions/custody hard gates, eligibility, liquidity/data-quality and asset-class rules;
 - sanctions `BLOCKED` assets cannot be new BUY candidates; naive name-only screening is insufficient;
 - diversification is multi-dimensional and optimizer output may be `NO_CHANGE`, one-to-one replacement, one-to-many split or multi-position rebalance;
 - the normal user output is one ranked concrete primary proposal rather than an unordered idea catalogue;
-- proposal rejection/revision creates a bounded OWNER dialogue and versioned soft preference/constraint update; hard safety policy cannot be overridden by chat;
-- Real execution remains cash-only BUY/SELL after immutable OWNER approval and fresh preflight; no margin/leverage/uncovered short/transfers/withdrawals;
+- proposal rejection/revision creates a bounded USER dialogue and versioned soft preference/constraint update; hard safety policy cannot be overridden by chat;
+- Real execution remains cash-only BUY/SELL after immutable authenticated USER approval for that USER's own tenant and fresh preflight; no margin/leverage/uncovered short/transfers/withdrawals;
 - private investment state and broker secrets remain Personal Node zero-custody by default;
 - commercial access uses a full 7-day trial then fixed 1/3/6/12 month manual prepaid periods; no auto-renewal/recurring charge;
 - supported Personal Nodes automatically converge to approved STABLE releases through a signed/verified/rollback-safe updater;
@@ -151,7 +151,7 @@ Locks the OWNER-approved 2026-08-10 identity/account direction while preserving 
 - public multi-user activation remains disabled until external-Web security, cross-tenant isolation, broker-terms, personal-data, investment-advisory, capacity and commercial legal gates are accepted;
 - WP15 live credential evidence was moved from ordinary PowerShell UX to the reviewed authenticated Web broker-provisioning flow.
 
-This amendment changed product/account interpretation and selected acceptance sequencing only where explicitly stated. Historical references to then-future Block E work are interpreted at the amendment's acceptance time; current implementation state comes from the canonical status file.
+This amendment changed product/account interpretation and selected acceptance sequencing only where explicitly stated. Historical references to then-future Block E work are interpreted at the amendment's acceptance time; current implementation state comes from the canonical status file. Amendment 9 makes explicit that the PROJECT OWNER is an ordinary USER in this product identity model and has no special application role merely because of repository/infrastructure ownership.
 
 ### 7. Browser-Only Phone Engineering / Headless Personal Node Operations
 
@@ -162,21 +162,21 @@ Machine-readable / operations companions:
 - `../architecture/V10_PHONE_ONLY_ENGINEERING_CONTRACT.json`;
 - `../operations/V10_PHONE_ENGINEERING_RUNBOOK.md`.
 
-Locks the OWNER-approved 2026-08-15 operating model without renumbering WPs or bypassing WP22A:
+Locks the OWNER-approved 2026-08-15 operating model without renumbering WPs or bypassing WP22A, as clarified by Amendment 9:
 
-- the OWNER's normal engineering and product-control surface is the phone browser only;
-- GitHub remains engineering source of truth and the primary automation hub; routine code, PR, CI, deployment and supported provider operations are performed directly through GitHub/Actions/APIs rather than recurring OWNER dashboard work;
-- native phone applications are not required for normal OWNER operation;
-- external-service signup/login should use GitHub social login when the provider supports it, while runtime/workload automation prefers federated or narrowly scoped machine credentials;
-- Lenovo/the replacement Personal Node operates headlessly; local PowerShell is a physical/admin recovery exception, not routine OWNER UX;
+- the PROJECT OWNER's normal **engineering** control surface is the phone browser only; when using Omni-CIO as a product, the PROJECT OWNER uses the same ordinary USER product path as supported users;
+- GitHub remains engineering source of truth and the primary automation hub; routine code, PR, CI, deployment and supported provider operations are performed directly through GitHub/Actions/APIs rather than recurring PROJECT OWNER dashboard work;
+- native phone applications are not required for normal PROJECT OWNER engineering operation or ordinary browser product use;
+- external-service signup/login for engineering providers should use GitHub social login when the provider supports it, while runtime/workload automation prefers federated or narrowly scoped machine credentials; such provider identity is not Omni-CIO USER identity;
+- Lenovo/the replacement Personal Node operates headlessly; local PowerShell is a physical/admin recovery exception, not routine product UX;
 - significant external services require a documented service-selection gate covering security, WP fit, GitHub automation, browser-only UX, reliability/recovery, privacy/data custody, price, lock-in, operational burden, legal/broker constraints and performance;
-- free/already-paid options are preferred only when they satisfy the owning V10 security/reliability requirements; paid service remains allowed after documented insufficiency and OWNER approval;
-- Cloudflare Access + Tunnel is an **initial WP22A clientless candidate**, not accepted WP22A implementation merely because the amendment exists;
-- Tailscale may remain useful for machine/CI/private infrastructure, but a phone path that requires a native device client does not satisfy the OWNER browser-only requirement;
+- free/already-paid options are preferred only when they satisfy the owning V10 security/reliability requirements; paid service remains allowed after documented insufficiency and PROJECT OWNER approval;
+- Cloudflare Access + Tunnel is an **initial WP22A clientless candidate**, not accepted product authentication merely because the amendment exists;
+- Tailscale may remain useful for machine/CI/private infrastructure, but a phone path that requires a native device client does not satisfy the browser-only product requirement;
 - no second Web App/control plane, public unauthenticated ingress, broker-write authority, Real execution authority, GitHub bypass or arbitrary remote PowerShell is created by this amendment;
 - `app:app`, `trading_methods=false`, `REAL_TRADING_ENABLED=false`, zero-custody boundaries and protected V9 rollback remain unchanged.
 
-This amendment changes the operational/access design constraint only. WP22A remains the current functional package and must separately pass its full security/recovery/OWNER evidence Exit Gate before WP23 can start.
+This amendment changes the operational/access design constraint only. WP22A remains the current functional package and must separately pass its full security/recovery/product-auth/acceptance Exit Gate before WP23 can start.
 
 ### 8. Engineering Quality / Pre-CI / Green Merge
 
@@ -203,11 +203,11 @@ Locks the OWNER-approved 2026-08-16 engineering discipline for all remaining V10
 - irrelevant workflows must be fixed at routing/trigger level rather than left as misleading skipped/cancelled PR checks;
 - any commit after final GREEN invalidates the old final evidence and requires a fresh exact-head cycle;
 - normal PR closure is GREEN -> full review -> squash merge; unmerged/superseded work is never accepted implementation;
-- OWNER product acceptance (phone/browser/UX/login/logout/portfolio comparison) occurs only after implementation merge and required post-merge Regression Shield GREEN;
-- pre-merge OWNER involvement is limited to genuinely non-delegable prerequisites such as external consent/account bootstrap, domain/payment decision, narrow credential bootstrap or physical/admin action;
-- OWNER-only handoffs require a verified direct official target link when stable, exact scope/action/result/STOP contract and no vague page discovery;
+- PROJECT OWNER product acceptance (phone/browser/UX/login/logout/portfolio comparison) occurs only after implementation merge and required post-merge Regression Shield GREEN and must exercise the same USER product path intended for supported users;
+- pre-merge PROJECT OWNER involvement is limited to genuinely non-delegable prerequisites such as external consent/account bootstrap, domain/payment decision, narrow credential bootstrap or physical/admin action;
+- PROJECT-OWNER-only engineering handoffs require a verified direct official target link when stable, exact scope/action/result/STOP contract and no vague page discovery;
 - V10 Web/API runtime remains on the approved Personal Node; a new Render.com V10 host is not authorized by convenience;
-- OWNER-controlled GitHub Actions budget/payment state is never silently changed; current zero-budget hard stop is handled by truthful zero-cost routing without fake clean-room PASS;
+- PROJECT-OWNER-controlled GitHub Actions budget/payment state is never silently changed; current zero-budget hard stop is handled by truthful zero-cost routing without fake clean-room PASS;
 - unexpected material RED after declared preflight readiness requires a confidence postmortem and reusable learning is persisted in the Failure Learning Ledger.
 
 **Acceptance evidence:** governance PR #322 was accepted into exact `main` `1c05390d9cf31b8cc68a90a5d7cbd6428ffe7791`; post-merge Regression Shield #1498 / run `31959959791` completed **SUCCESS** on that exact main. The amendment is therefore **ACTIVE**. Its acceptance did not change WP numbering/progress, complete WP22A, open public ingress, add broker-write authority or unlock WP23.
