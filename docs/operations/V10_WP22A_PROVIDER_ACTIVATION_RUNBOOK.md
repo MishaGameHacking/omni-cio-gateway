@@ -77,7 +77,10 @@ The source-controlled workflow is manual-dispatch only. It must reject execution
 - the checked-out `HEAD` equals `github.sha`;
 - the worktree is clean;
 - `github.actor_id` equals the reviewed stable OWNER GitHub account ID;
-- `github.triggering_actor == github.actor`, so a different account cannot authorize a rerun of an OWNER-originated privileged workflow run.
+- `github.run_attempt == 1`;
+- `github.triggering_actor == github.actor` as an additional workflow-side guard.
+
+A privileged provider-boundary run is never re-run. If a run fails, investigate the failure and start a new OWNER `workflow_dispatch` only after the cause is understood. The protected controller independently requires signed OIDC `run_attempt=1`, so a runner-side bypass of the workflow guard cannot turn an older OWNER run into fresh provider authority. This matters because GitHub re-runs retain the original run actor's privileges.
 
 The stable numeric OWNER account ID is identity metadata, not a provider secret. If the OWNER GitHub identity changes, engineering must update the reviewed source and repeat the exact-head/merge/post-merge acceptance cycle before this contour can be used again.
 
@@ -105,6 +108,7 @@ The controller rejects and sanitizes failures. Examples include:
 - wrong issuer/audience;
 - wrong repository or repository ID;
 - wrong OWNER `actor_id`;
+- signed `run_attempt` other than `1`;
 - non-main ref;
 - non-`workflow_dispatch` event;
 - wrong workflow ref;
