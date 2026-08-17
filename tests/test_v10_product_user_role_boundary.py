@@ -22,7 +22,10 @@ def test_product_owner_is_not_a_special_product_role() -> None:
 
     assert "PROJECT OWNER using Omni-CIO == ordinary USER using Omni-CIO" in text
     assert "`PROJECT OWNER` is **not** an Omni-CIO product RBAC role." in text
-    assert "engineering authority to publish/operate the service != product authority to read/use a tenant" in text
+    assert (
+        "engineering authority to publish/operate the service != product authority to read/use a tenant"
+        in text
+    )
     assert "WP22A — External Web Access / Product Authentication Security Gate" in text
     assert "Block F must implement a **USER-scoped Telegram companion**" in text
 
@@ -32,7 +35,10 @@ def test_active_amendment_index_uses_user_scoped_product_language() -> None:
 
     assert "### 9. Product User / Engineering Authority Boundary" in text
     assert "Telegram is a private **USER-scoped** companion interface" in text
-    assert "Real execution remains cash-only BUY/SELL after immutable authenticated USER approval" in text
+    assert (
+        "Real execution remains cash-only BUY/SELL after immutable authenticated USER approval"
+        in text
+    )
     assert "Telegram is an OWNER-only private companion interface" not in text
     assert "proposal rejection/revision creates a bounded OWNER dialogue" not in text
 
@@ -40,7 +46,10 @@ def test_active_amendment_index_uses_user_scoped_product_language() -> None:
 def test_master_plan_navigation_surfaces_role_separation() -> None:
     text = _read(MASTER_PLAN_README)
 
-    assert "OMNI_CIO_V10_PRODUCT_USER_AND_ENGINEERING_AUTHORITY_BOUNDARY_AMENDMENT.md" in text
+    assert (
+        "OMNI_CIO_V10_PRODUCT_USER_AND_ENGINEERING_AUTHORITY_BOUNDARY_AMENDMENT.md"
+        in text
+    )
     assert "PROJECT OWNER is not a special Omni-CIO product role" in text
     assert "GitHub/provider/Windows authority stays outside product identity" in text
 
