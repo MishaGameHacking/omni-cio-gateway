@@ -56,10 +56,13 @@ Provider apply/preflight/tunnel-token/rollback logic is a later source-only WP22
 - exact checked-out `GITHUB_SHA` only;
 - clean-worktree only;
 - exact OWNER `github.actor_id` only;
-- fail-closed when `github.triggering_actor` differs from the original `github.actor`, so another account cannot authorize a rerun of an OWNER-originated privileged run;
+- fresh-dispatch only: `github.run_attempt` must be exactly `1`;
+- fail-closed when `github.triggering_actor` differs from the original `github.actor` as defense in depth;
 - `contents: read` plus `id-token: write` only;
 - free of `secrets.*` and provider configuration inputs;
 - bound to the fixed OIDC audience `omni-cio-wp22a-provider-controller`.
+
+The controller independently validates the signed OIDC `run_attempt=1` claim. This is the authoritative no-rerun boundary: GitHub re-runs may retain the privileges and signed identity of the original actor, so a privileged provider request must be started as a fresh OWNER dispatch rather than by re-running an older workflow run.
 
 The workflow obtains a short-lived GitHub OIDC JWT using the runner-provided OIDC request variables, writes it only to a one-time local activation-request file, waits a bounded time for a sanitized controller result, then removes the request material. The ordinary runner does not receive delete authority on the sanitized result queue; result cleanup remains controller/SYSTEM-owned and is bounded to 24 hours.
 
@@ -99,6 +102,7 @@ The controller validates all of the following before acknowledging a request:
 - `workflow_sha` equals the locally installed accepted implementation SHA;
 - `runner_environment` is exactly `self-hosted`;
 - JWT `run_id` equals request `run_id`;
+- signed `run_attempt` is exactly `1`;
 - request `implementation_sha` equals the locally installed accepted SHA;
 - `exp`, `nbf`, and `iat` are inside the bounded clock-skew/age window;
 - `jti` is non-empty and has not already been consumed.
