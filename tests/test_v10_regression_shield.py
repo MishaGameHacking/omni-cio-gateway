@@ -52,6 +52,37 @@ class V10RegressionShieldGuardTests(unittest.TestCase):
                 failures,
             )
 
+    def test_self_hosted_bootstrap_requires_native_git_bash_exposure(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "workflow.yml"
+            failures: list[str] = []
+            shield.validate_self_hosted_repository_bootstrap(
+                path,
+                "runs-on: [self-hosted, Windows, X64, omni-cio-ci]\n"
+                "GITHUB_TOKEN: ${{ github.token }}\n"
+                "find . -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +\n"
+                "git init .\n"
+                'git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"\n'
+                "git config --local credential.helper '!f() { echo username=x-access-token; echo password=$GITHUB_TOKEN; }; f'\n"
+                "git fetch --no-tags --prune origin HEAD\n"
+                "git checkout --detach $EXPECTED_HEAD\n"
+                "git config --local --unset-all credential.helper\n"
+                'test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"\n'
+                'test -z "$(git config --local --get-all credential.helper || true)"\n',
+                failures,
+            )
+            self.assertTrue(
+                any(
+                    "Expose installed Git Bash before repository bootstrap" in failure
+                    for failure in failures
+                ),
+                failures,
+            )
+            self.assertTrue(
+                any("Get-Command git.exe -ErrorAction Stop" in failure for failure in failures),
+                failures,
+            )
+
     def test_self_hosted_bootstrap_requires_credential_cleanup(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "workflow.yml"
@@ -59,6 +90,12 @@ class V10RegressionShieldGuardTests(unittest.TestCase):
             shield.validate_self_hosted_repository_bootstrap(
                 path,
                 "runs-on: [self-hosted, Windows, X64, omni-cio-ci]\n"
+                "Expose installed Git Bash before repository bootstrap\n"
+                "Get-Command git.exe -ErrorAction Stop\n"
+                "Join-Path $root 'bin'\n"
+                "Join-Path $bin 'bash.exe'\n"
+                "$env:GITHUB_PATH\n"
+                "-Encoding utf8 -Append\n"
                 "GITHUB_TOKEN: ${{ github.token }}\n"
                 "find . -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +\n"
                 "git init .\n"
@@ -92,6 +129,12 @@ class V10RegressionShieldGuardTests(unittest.TestCase):
                     "pull_request:\n"
                     "runs-on: [self-hosted, Windows, X64, omni-cio-ci]\n"
                     "github.event.pull_request.head.repo.full_name == github.repository\n"
+                    "Expose installed Git Bash before repository bootstrap\n"
+                    "Get-Command git.exe -ErrorAction Stop\n"
+                    "Join-Path $root 'bin'\n"
+                    "Join-Path $bin 'bash.exe'\n"
+                    "$env:GITHUB_PATH\n"
+                    "-Encoding utf8 -Append\n"
                     "GITHUB_TOKEN: ${{ github.token }}\n"
                     "find . -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +\n"
                     "git init .\n"
