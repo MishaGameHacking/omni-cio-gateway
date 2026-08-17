@@ -26,11 +26,28 @@ jobs:
         shell: cmd
 
     steps:
-      - name: Check out exact reviewed head
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v7.0.1
-        with:
-          persist-credentials: false
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Bootstrap exact reviewed repository without external Actions
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          find . -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+          git init .
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          git config --local gc.auto 0
+          git config --local credential.helper '!f() { echo username=x-access-token; echo password=$GITHUB_TOKEN; }; f'
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            git fetch --no-tags --prune --depth=1 origin "+refs/pull/${PR_NUMBER}/head:refs/remotes/pull/head"
+          else
+            git fetch --no-tags --prune --depth=1 origin "+${GITHUB_REF}:refs/remotes/origin/event"
+          fi
+          git checkout --detach "$EXPECTED_HEAD"
+          git config --local --unset-all credential.helper
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          test -z "$(git config --local --get-all credential.helper || true)"
 
       - name: Bootstrap protected runner tools
         run: |
@@ -119,20 +136,24 @@ jobs:
           "%VENV_WINDOWS_PATH%\Scripts\python.exe" scripts\check_v10_regression_shield.py
           if errorlevel 1 exit /b 52
 
-      - name: Upload synthetic WP19 browser evidence only
+      - name: Summarize synthetic WP19 browser evidence without external Actions
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: wp19-watchtower-incident-evidence
-          path: |
-            apps/web/test-results/
-          if-no-files-found: warn
-          retention-days: 3
+        shell: bash
+        run: |
+          {
+            echo "### WP19 synthetic browser evidence"
+            if [ -d apps/web/test-results ]; then
+              echo "- browser test-results produced; details remain in the job log/workspace until cleanup"
+            else
+              echo "- browser test-results not produced"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Clean self-hosted workspace
         if: always()
         shell: bash
         run: |
           if [ -n "${VENV_PATH:-}" ]; then rm -rf "$VENV_PATH"; fi
+          git config --local --unset-all credential.helper 2>/dev/null || true
           git reset --hard HEAD
           git clean -ffdx
