@@ -1,0 +1,89 @@
+name: V10 WP22A Provider Phase B
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: "Guarded provider operation"
+        required: true
+        type: choice
+        options:
+          - preflight
+          - plan
+          - apply
+          - verify
+          - verify-live
+          - destroy-plan
+          - destroy
+      expected_main_sha:
+        description: "Exact accepted main SHA authorized for this operation"
+        required: true
+        type: string
+      confirmation:
+        description: "NONE, APPLY_WP22A_PROVIDER, or DESTROY_WP22A_PROVIDER"
+        required: true
+        default: "NONE"
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: v10-wp22a-provider-production
+  cancel-in-progress: false
+
+jobs:
+  provider-phase-b:
+    name: Protected main-only Cloudflare provider operation
+    environment: wp22a-provider-production
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: cmd
+
+    steps:
+      - name: Check out exact dispatch SHA
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+
+      - name: Bootstrap protected Python runtime
+        run: |
+          call scripts\bootstrap_windows_ci_python.cmd
+          if errorlevel 1 exit /b 10
+
+      - name: Verify current main and deployment environment before provider secrets
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          WP22A_EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+        run: |
+          if /I not "%GITHUB_REF%"=="refs/heads/main" exit /b 11
+          python scripts\check_wp22a_deployment_environment.py
+          if errorlevel 1 exit /b 12
+          for /f %%S in ('git rev-parse HEAD') do set "ACTUAL_HEAD=%%S"
+          if /I not "%ACTUAL_HEAD%"=="${{ inputs.expected_main_sha }}" exit /b 13
+          git diff --quiet HEAD --
+          if errorlevel 1 exit /b 14
+
+      - name: Run guarded Cloudflare provider operation
+        shell: powershell
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.WP22A_CLOUDFLARE_API_TOKEN }}
+          WP22A_CLOUDFLARE_ACCOUNT_ID: ${{ secrets.WP22A_CLOUDFLARE_ACCOUNT_ID }}
+          WP22A_CLOUDFLARE_ZONE_ID: ${{ secrets.WP22A_CLOUDFLARE_ZONE_ID }}
+          WP22A_EXTERNAL_HOST: ${{ secrets.WP22A_EXTERNAL_HOST }}
+          WP22A_CLOUDFLARE_TEAM_NAME: ${{ secrets.WP22A_CLOUDFLARE_TEAM_NAME }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & .\scripts\run_wp22a_provider_phase_b.ps1 -Operation '${{ inputs.operation }}' -ExpectedMainSha '${{ inputs.expected_main_sha }}' -Confirmation '${{ inputs.confirmation }}'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Clean self-hosted repository workspace
+        if: always()
+        shell: cmd
+        run: |
+          git reset --hard HEAD
+          git clean -ffdx
