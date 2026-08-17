@@ -61,7 +61,7 @@ Provider apply/preflight/tunnel-token/rollback logic is a later source-only WP22
 - free of `secrets.*` and provider configuration inputs;
 - bound to the fixed OIDC audience `omni-cio-wp22a-provider-controller`.
 
-The workflow obtains a short-lived GitHub OIDC JWT using the runner-provided OIDC request variables, writes it only to a one-time local activation-request file, waits a bounded time for a sanitized controller result, then deletes its request/result files.
+The workflow obtains a short-lived GitHub OIDC JWT using the runner-provided OIDC request variables, writes it only to a one-time local activation-request file, waits a bounded time for a sanitized controller result, then removes the request material. The ordinary runner does not receive delete authority on the sanitized result queue; result cleanup remains controller/SYSTEM-owned and is bounded to 24 hours.
 
 The JWT is never printed.
 
@@ -80,7 +80,7 @@ Exchange roots are separate:
 - request queue: `C:\ProgramData\OmniCIO\runtime\wp22a-provider-requests`;
 - sanitized result queue: `C:\ProgramData\OmniCIO\runtime\wp22a-provider-results`.
 
-The request queue is untrusted input. Tampering cannot authorize provider work because authorization comes from the signed OIDC token and exact claims. The result queue is written by SYSTEM/controller and readable by the ordinary runner; it never contains credentials, private state, OWNER identity, or physical evidence.
+The request queue is untrusted input. Tampering cannot authorize provider work because authorization comes from the signed OIDC token and exact claims. The result queue is written and retention-managed by SYSTEM/controller and is read-only to the ordinary runner. It never contains credentials, private state, OWNER identity, or physical evidence. Controller cleanup removes only correctly named stale result/temp files older than 24 hours, so the exchange contour cannot grow without bound while the runner remains unable to rewrite or delete controller results.
 
 ## 6. OIDC validation contract
 
