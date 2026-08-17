@@ -70,7 +70,7 @@ The JWT is never printed.
 
 ## 5. Protected local controller
 
-`install_wp22a_provider_controller.ps1` installs only from an exact, clean accepted `main` checkout and copies reviewed controller source into a protected ProgramData root. The installed controller never executes the mutable GitHub workspace.
+`install_wp22a_provider_controller.ps1` is invoked only from an exact, clean accepted `main` checkout. It does not copy the controller from the mutable worktree after validation. Instead, it reads the controller and activation-workflow text from the exact accepted Git commit object via `git --no-replace-objects ... cat-file blob`, with Git filesystem monitoring disabled for the handoff commands. Replacement refs therefore cannot substitute another object for the reviewed implementation SHA. The controller text is held in the elevated installer process, written into protected ProgramData, and read back for an exact copy comparison before the scheduled task is created.
 
 Before it creates the protected contour, the installer resolves exactly one Actions runner service whose executable path belongs to the accepted `C:\actions-runner` root. It fails closed if that runner uses LocalSystem or is a direct member of the local Administrators group. This prevents privilege drift from silently turning the ordinary CI identity into an identity that inherits the Administrators full-control grant on the protected controller root.
 
