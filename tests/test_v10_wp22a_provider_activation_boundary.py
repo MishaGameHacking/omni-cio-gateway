@@ -33,6 +33,12 @@ def test_activation_workflow_is_manual_main_oidc_only() -> None:
     assert "git status --porcelain" in workflow
     assert "persist-credentials: false" in workflow
 
+    assert 'EXPECTED_OWNER_ACTOR_ID: "201947041"' in workflow
+    assert "github.actor_id" in workflow
+    assert "github.triggering_actor" in workflow
+    assert "WP22A_PROVIDER_OWNER_ACTOR_REQUIRED" in workflow
+    assert "WP22A_PROVIDER_RERUN_BY_DIFFERENT_ACTOR_FORBIDDEN" in workflow
+
     assert "secrets." not in workflow.lower()
     assert "cloudflare_api" not in workflow.lower()
     assert "api_token" not in workflow.lower()
@@ -66,6 +72,9 @@ def test_controller_validates_signed_github_identity_and_replay() -> None:
         '"omni-cio-wp22a-provider-controller"',
         '"MishaGameHacking/omni-cio-gateway"',
         '"1312247309"',
+        '$expectedOwnerActorId = "201947041"',
+        '"actor_id"',
+        "WP22A_PROVIDER_OIDC_OWNER_ACTOR_MISMATCH",
         '"refs/heads/main"',
         '"workflow_dispatch"',
         '"workflow_ref"',
