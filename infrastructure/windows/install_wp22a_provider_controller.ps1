@@ -17,12 +17,15 @@ if ($env:OS -ne "Windows_NT") { throw "WP22A_PROVIDER_CONTROLLER_WINDOWS_REQUIRE
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $controllerRelative = "infrastructure/windows/run_wp22a_provider_controller.ps1"
 $activationWorkflowRelative = ".github/workflows/v10-wp22a-provider-activation.yml"
-$protectedRoot = "C:\ProgramData\OmniCIO\private\wp22a-provider-controller"
+$omniRoot = "C:\ProgramData\OmniCIO"
+$privateRoot = Join-Path $omniRoot "private"
+$runtimeRoot = Join-Path $omniRoot "runtime"
+$protectedRoot = Join-Path $privateRoot "wp22a-provider-controller"
 $installedController = Join-Path $protectedRoot "run_wp22a_provider_controller.ps1"
 $configPath = Join-Path $protectedRoot "controller.json"
 $replayRoot = Join-Path $protectedRoot "replay"
-$requestRoot = "C:\ProgramData\OmniCIO\runtime\wp22a-provider-requests"
-$resultRoot = "C:\ProgramData\OmniCIO\runtime\wp22a-provider-results"
+$requestRoot = Join-Path $runtimeRoot "wp22a-provider-requests"
+$resultRoot = Join-Path $runtimeRoot "wp22a-provider-results"
 $taskName = "OmniCIO.V10.WP22A.ProviderController"
 $runnerRoot = "C:\actions-runner"
 $expectedRepository = "MishaGameHacking/omni-cio-gateway"
@@ -67,6 +70,32 @@ function Get-ReviewedBlobText {
     $lines = @(& git --no-replace-objects -c core.fsmonitor=false -C $repoRoot cat-file blob $objectSpec 2>$null)
     if ($LASTEXITCODE -ne 0 -or $lines.Count -eq 0) { throw "WP22A_PROVIDER_REVIEWED_BLOB_UNAVAILABLE" }
     return (($lines | ForEach-Object { [string]$_ }) -join "`n") + "`n"
+}
+
+function Assert-PathNotReparsePoint {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$Reason
+    )
+    if (-not (Test-Path -LiteralPath $Path)) { return }
+    $item = Get-Item -LiteralPath $Path -Force -ErrorAction Stop
+    if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { throw $Reason }
+}
+
+function Assert-ProgramDataContourNoReparsePoint {
+    foreach ($path in @(
+        $omniRoot,
+        $privateRoot,
+        $runtimeRoot,
+        $protectedRoot,
+        $installedController,
+        $configPath,
+        $replayRoot,
+        $requestRoot,
+        $resultRoot
+    )) {
+        Assert-PathNotReparsePoint -Path $path -Reason "WP22A_PROVIDER_PROGRAMDATA_REPARSE_FORBIDDEN"
+    }
 }
 
 function Resolve-AccountSid {
@@ -165,6 +194,11 @@ function Test-SourceBoundary {
     foreach ($marker in @(
         "omni-cio-wp22a-provider-controller",
         "https://token.actions.githubusercontent.com",
+        "expectedJwksUri",
+        "WP22A_PROVIDER_OIDC_TYPE_INVALID",
+        "WP22A_PROVIDER_OIDC_JWK_ALG_INVALID",
+        "WP22A_PROVIDER_OIDC_JWK_USE_INVALID",
+        "WP22A_PROVIDER_REQUEST_REPARSE_FORBIDDEN",
         "1312247309",
         "actor_id",
         "WP22A_PROVIDER_OIDC_OWNER_ACTOR_MISMATCH",
@@ -232,6 +266,7 @@ if ($ValidateOnly) {
 }
 
 if (-not (Test-Administrator)) { throw "WP22A_PROVIDER_ADMINISTRATOR_REQUIRED" }
+Assert-ProgramDataContourNoReparsePoint
 
 if ($Cleanup) {
     if ($PSCmdlet.ShouldProcess($protectedRoot, "Remove WP22A Phase-B1 provider controller boundary")) {
@@ -252,6 +287,7 @@ $runnerSid = Get-RunnerSidValue
 Assert-RunnerNotAdministrator -SidValue $runnerSid
 if ($PSCmdlet.ShouldProcess($protectedRoot, "Install WP22A Phase-B1 provider request controller")) {
     New-Item -ItemType Directory -Path $protectedRoot, $replayRoot, $requestRoot, $resultRoot -Force | Out-Null
+    Assert-ProgramDataContourNoReparsePoint
     Set-DirectoryAcl -Path $protectedRoot -AdditionalGrants @{}
     Set-DirectoryAcl -Path $replayRoot -AdditionalGrants @{}
     Set-DirectoryAcl -Path $requestRoot -AdditionalGrants @{
@@ -292,6 +328,7 @@ if ($PSCmdlet.ShouldProcess($protectedRoot, "Install WP22A Phase-B1 provider req
     Start-ScheduledTask -TaskName $taskName
 }
 
+Assert-ProgramDataContourNoReparsePoint
 $task = Get-ScheduledTask -TaskName $taskName -ErrorAction Stop
 $actionText = [string](@($task.Actions | Select-Object -First 1).Arguments)
 $ready = [string]$task.Principal.UserId -eq "SYSTEM" -or [string]$task.Principal.UserId -eq "NT AUTHORITY\SYSTEM"
