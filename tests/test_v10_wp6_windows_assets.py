@@ -53,7 +53,9 @@ def test_provisioning_hardens_runner_root_and_reviewed_config_with_backup() -> N
 
 def test_sentinel_acl_repairs_inheritance_and_fails_closed_on_bad_authority() -> None:
     text = PROVISION.read_text(encoding="utf-8")
-    sentinel_section = text.split("function Set-SentinelAcl", 1)[1].split("$runner = Get-RunnerServiceSafe", 1)[0]
+    sentinel_section = text.split("function Set-SentinelAcl", 1)[1].split(
+        "$runner = Get-RunnerServiceSafe", 1
+    )[0]
     assert "Get-Acl -LiteralPath $sentinelPath" in sentinel_section
     assert "SetAccessRuleProtection($false, $true)" in sentinel_section
     assert "SetAccessRuleProtection($true, $true)" in sentinel_section
@@ -104,10 +106,22 @@ def test_collector_audits_runner_root_and_sensitive_config_surfaces() -> None:
     assert "runtimeRunnerWriteGrant" in text
 
 
-def test_identity_audit_has_no_secret_context_and_uses_non_persistent_checkout() -> None:
+def test_identity_audit_has_no_secret_context_and_uses_headless_exact_sha_bootstrap() -> None:
     text = AUDIT_WORKFLOW.read_text(encoding="utf-8")
     assert "permissions:\n  contents: read" in text
-    assert "persist-credentials: false" in text
+    assert "uses: actions/checkout@" not in text
+    for marker in (
+        "GITHUB_TOKEN: ${{ github.token }}",
+        'GIT_TERMINAL_PROMPT: "0"',
+        'GCM_INTERACTIVE: "0"',
+        'git config --local credential.helper ""',
+        "git config --local --add credential.helper",
+        "git config --local --unset-all credential.helper",
+        'git checkout --detach "$EXPECTED_HEAD"',
+        'test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"',
+        'test -z "$(git config --local --get-all credential.helper || true)"',
+    ):
+        assert marker in text
     assert "secrets." not in text
     assert "provision_wp6_privilege_boundary.ps1" in text
     assert "collect_wp6_identity_profile.ps1" in text
