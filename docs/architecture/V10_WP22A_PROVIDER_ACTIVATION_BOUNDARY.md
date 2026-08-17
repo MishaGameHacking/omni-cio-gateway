@@ -15,6 +15,8 @@ The accepted trust split is:
 
 The ordinary `omni-cio-ci` runner may submit a signed request and read a sanitized result. It may not read or replace the protected controller, provider credential, private OpenTofu state, runtime tunnel token, or OWNER physical evidence.
 
+GitHub engineering access is not provider-mutation authority. The privileged request contour is additionally bound to the stable GitHub account ID of the OWNER who owns the repository. A different collaborator may continue normal engineering through branches/PR/CI but cannot authorize this provider contour merely by having repository write access.
+
 ## 2. Why the provider token is not a normal Actions secret
 
 The ordinary runner is a persistent self-hosted Windows execution surface and is treated as potentially compromised by the WP22A threat model. An Actions environment/secret controls when a value is injected, but it does not create a second OS trust boundary on the same runner.
@@ -53,6 +55,8 @@ Provider apply/preflight/tunnel-token/rollback logic is a later source-only WP22
 - `main` only at runtime;
 - exact checked-out `GITHUB_SHA` only;
 - clean-worktree only;
+- exact OWNER `github.actor_id` only;
+- fail-closed when `github.triggering_actor` differs from the original `github.actor`, so another account cannot authorize a rerun of an OWNER-originated privileged run;
 - `contents: read` plus `id-token: write` only;
 - free of `secrets.*` and provider configuration inputs;
 - bound to the fixed OIDC audience `omni-cio-wp22a-provider-controller`.
@@ -88,6 +92,7 @@ The controller validates all of the following before acknowledging a request:
 - audience contains exactly the reviewed controller audience for this request;
 - `repository` is exactly `MishaGameHacking/omni-cio-gateway`;
 - `repository_id` is exactly `1312247309`;
+- `actor_id` is exactly the reviewed stable OWNER GitHub account ID;
 - `ref` is exactly `refs/heads/main`;
 - `event_name` is exactly `workflow_dispatch`;
 - `workflow_ref` is exactly `MishaGameHacking/omni-cio-gateway/.github/workflows/v10-wp22a-provider-activation.yml@refs/heads/main`;
@@ -99,6 +104,8 @@ The controller validates all of the following before acknowledging a request:
 - `jti` is non-empty and has not already been consumed.
 
 A consumed `jti` is retained in the protected replay cache for a bounded period. Replay fails closed.
+
+The stable numeric OWNER actor ID is identity metadata, not a secret or provider credential. Changing the OWNER GitHub identity requires a reviewed source change and a new accepted-main/post-merge evidence cycle before this privileged contour can be used again.
 
 ## 7. Future protected provider state
 
