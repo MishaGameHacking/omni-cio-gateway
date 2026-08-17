@@ -24,6 +24,7 @@ $expectedAudience = "omni-cio-wp22a-provider-controller"
 $expectedIssuer = "https://token.actions.githubusercontent.com"
 $expectedWorkflowRef = "MishaGameHacking/omni-cio-gateway/.github/workflows/v10-wp22a-provider-activation.yml@refs/heads/main"
 $oidcConfigurationUri = "https://token.actions.githubusercontent.com/.well-known/openid-configuration"
+$expectedJwksUri = "https://token.actions.githubusercontent.com/.well-known/jwks"
 $clockSkewSeconds = 120
 $maxTokenAgeSeconds = 900
 $replayRetentionHours = 24
@@ -60,6 +61,16 @@ function Get-Sha256Hex {
         return -join ($digest | ForEach-Object { $_.ToString("x2") })
     }
     finally { $sha.Dispose() }
+}
+
+function Assert-PathNotReparsePoint {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$Reason
+    )
+    if (-not (Test-Path -LiteralPath $Path)) { return }
+    $item = Get-Item -LiteralPath $Path -Force -ErrorAction Stop
+    if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { throw $Reason }
 }
 
 function Test-ExactStringClaim {
@@ -105,19 +116,20 @@ function Test-OidcSignatureAndClaims {
     $header = ConvertFrom-JwtJsonPart -Value $parts[0]
     $payload = ConvertFrom-JwtJsonPart -Value $parts[1]
     if ([string]$header.alg -cne "RS256") { throw "WP22A_PROVIDER_OIDC_ALG_FORBIDDEN" }
+    if ([string]$header.typ -cne "JWT") { throw "WP22A_PROVIDER_OIDC_TYPE_INVALID" }
     if ([string]::IsNullOrWhiteSpace([string]$header.kid)) { throw "WP22A_PROVIDER_OIDC_KID_MISSING" }
 
     $metadata = Invoke-RestMethod -Method Get -Uri $oidcConfigurationUri -UseBasicParsing
     if ([string]$metadata.issuer -cne $expectedIssuer) { throw "WP22A_PROVIDER_OIDC_METADATA_ISSUER_MISMATCH" }
     $jwksUri = [string]$metadata.jwks_uri
-    if ([string]::IsNullOrWhiteSpace($jwksUri) -or -not $jwksUri.StartsWith("https://", [System.StringComparison]::Ordinal)) {
-        throw "WP22A_PROVIDER_OIDC_JWKS_URI_INVALID"
-    }
-    $jwks = Invoke-RestMethod -Method Get -Uri $jwksUri -UseBasicParsing
+    if ($jwksUri -cne $expectedJwksUri) { throw "WP22A_PROVIDER_OIDC_JWKS_URI_INVALID" }
+    $jwks = Invoke-RestMethod -Method Get -Uri $expectedJwksUri -UseBasicParsing
     $keys = @($jwks.keys | Where-Object { [string]$_.kid -ceq [string]$header.kid })
     if ($keys.Count -ne 1) { throw "WP22A_PROVIDER_OIDC_JWK_NOT_UNIQUE" }
     $key = $keys[0]
     if ([string]$key.kty -cne "RSA") { throw "WP22A_PROVIDER_OIDC_JWK_TYPE_INVALID" }
+    if ([string]$key.alg -cne "RS256") { throw "WP22A_PROVIDER_OIDC_JWK_ALG_INVALID" }
+    if ([string]$key.use -cne "sig") { throw "WP22A_PROVIDER_OIDC_JWK_USE_INVALID" }
 
     $rsaParameters = [System.Security.Cryptography.RSAParameters]::new()
     $rsaParameters.Modulus = ConvertFrom-Base64Url -Value ([string]$key.n)
@@ -162,6 +174,7 @@ function Test-OidcSignatureAndClaims {
 }
 
 function Get-ControllerConfig {
+    Assert-PathNotReparsePoint -Path $configPath -Reason "WP22A_PROVIDER_CONTROLLER_CONFIG_REPARSE_FORBIDDEN"
     if (-not (Test-Path -LiteralPath $configPath -PathType Leaf)) { throw "WP22A_PROVIDER_CONTROLLER_CONFIG_MISSING" }
     try { $config = Get-Content -LiteralPath $configPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop }
     catch { throw "WP22A_PROVIDER_CONTROLLER_CONFIG_INVALID" }
@@ -174,6 +187,7 @@ function Get-ControllerConfig {
 
 function Test-ReplayAndConsume {
     param([Parameter(Mandatory = $true)][string]$Jti)
+    Assert-PathNotReparsePoint -Path $replayRoot -Reason "WP22A_PROVIDER_REPLAY_ROOT_REPARSE_FORBIDDEN"
     New-Item -ItemType Directory -Path $replayRoot -Force | Out-Null
     $cutoff = [DateTime]::UtcNow.AddHours(-1 * $replayRetentionHours)
     Get-ChildItem -LiteralPath $replayRoot -Filter "*.used" -File -ErrorAction SilentlyContinue |
@@ -190,7 +204,9 @@ function Remove-StaleResultFiles {
     $cutoff = [DateTime]::UtcNow.AddHours(-1 * $resultRetentionHours)
     Get-ChildItem -LiteralPath $resultRoot -File -ErrorAction SilentlyContinue |
         Where-Object {
-            $_.Name -match '^[0-9a-f]{32}\.(json|tmp)$' -and $_.LastWriteTimeUtc -lt $cutoff
+            $_.Name -match '^[0-9a-f]{32}\.(json|tmp)$' -and
+            ($_.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -eq 0 -and
+            $_.LastWriteTimeUtc -lt $cutoff
         } |
         Remove-Item -Force -ErrorAction SilentlyContinue
 }
@@ -227,6 +243,7 @@ function Invoke-RequestFile {
     $requestSha = ""
     $runId = ""
     try {
+        Assert-PathNotReparsePoint -Path $Path -Reason "WP22A_PROVIDER_REQUEST_REPARSE_FORBIDDEN"
         $request = Get-Content -LiteralPath $Path -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
         $requestId = [string]$request.request_id
         $requestSha = ([string]$request.implementation_sha).Trim().ToLowerInvariant()
@@ -278,6 +295,10 @@ if (-not $currentPath.StartsWith($expectedPrefix, [System.StringComparison]::Ord
 }
 $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
 if ($identity.User.Value -ne "S-1-5-18") { throw "WP22A_PROVIDER_CONTROLLER_SYSTEM_REQUIRED" }
+Assert-PathNotReparsePoint -Path $protectedRoot -Reason "WP22A_PROVIDER_PROTECTED_ROOT_REPARSE_FORBIDDEN"
+Assert-PathNotReparsePoint -Path $replayRoot -Reason "WP22A_PROVIDER_REPLAY_ROOT_REPARSE_FORBIDDEN"
+Assert-PathNotReparsePoint -Path $requestRoot -Reason "WP22A_PROVIDER_REQUEST_ROOT_REPARSE_FORBIDDEN"
+Assert-PathNotReparsePoint -Path $resultRoot -Reason "WP22A_PROVIDER_RESULT_ROOT_REPARSE_FORBIDDEN"
 $config = Get-ControllerConfig
 if (-not (Test-Path -LiteralPath $requestRoot -PathType Container)) { throw "WP22A_PROVIDER_REQUEST_ROOT_MISSING" }
 if (-not (Test-Path -LiteralPath $resultRoot -PathType Container)) { throw "WP22A_PROVIDER_RESULT_ROOT_MISSING" }
