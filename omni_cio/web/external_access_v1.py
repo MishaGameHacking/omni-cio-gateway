@@ -325,9 +325,7 @@ class ExternalAccessSecurityMiddlewareV1(BaseHTTPMiddleware):
                 403,
                 path=request.url.path,
             )
-        if not secrets.compare_digest(
-            fingerprint, self._policy.owner_identity_sha256
-        ):
+        if not secrets.compare_digest(fingerprint, self._policy.owner_identity_sha256):
             return _remote_error(
                 "OWNER_IDENTITY_REQUIRED",
                 403,
