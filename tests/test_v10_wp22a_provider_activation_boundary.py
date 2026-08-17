@@ -127,8 +127,12 @@ def test_installer_protects_controller_and_separates_exchange_roots() -> None:
     assert "SupportsShouldProcess" in installer
     assert "WP22A_PROVIDER_MAIN_BRANCH_REQUIRED" in installer
     assert "WP22A_PROVIDER_WORKTREE_NOT_CLEAN" in installer
+    assert 'runnerRoot = "C:\\actions-runner"' in installer
     assert "actions.runner.*" in installer
     assert "WP22A_PROVIDER_RUNNER_LOCAL_SYSTEM_FORBIDDEN" in installer
+    assert "Assert-RunnerNotAdministrator" in installer
+    assert "Get-LocalGroupMember -SID" in installer
+    assert "WP22A_PROVIDER_RUNNER_ADMINISTRATOR_FORBIDDEN" in installer
     assert "S-1-5-18" in installer
     assert "S-1-5-32-544" in installer
     assert "Test-PathAclExcludesSid" in installer
