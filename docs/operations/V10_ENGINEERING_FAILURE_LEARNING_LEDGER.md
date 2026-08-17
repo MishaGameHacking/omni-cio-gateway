@@ -382,6 +382,28 @@ A short SHA may be used for navigation when useful. Full random-looking secret m
 
 ---
 
+## FL-017 — Security source-contract tests must assert semantics, not invented literals
+
+**Date:** 2026-08-17  
+**WP / PR / reference:** WP22A / PR #325 / authoritative Self-Hosted Windows CI on pre-correction head `850e7825`  
+**Symptom / failing gate:** the authoritative protected Regression Shield reached the full pytest suite and reported three failures after 2,145 passing tests. The failing new provider-boundary tests expected an invented literal `"jti"`, globally banned the string `secrets.` even though the installer intentionally searches workflow source for forbidden secret references, and compared the WP23 lock sentence with casing that was not part of the contract.
+
+**Root cause:** the source-contract test mixed brittle textual implementation assumptions with the actual security semantics. The reviewed controller already validated `$payload.jti`, rejected malformed/replayed JTI values, the installer intentionally contained a detector for forbidden `secrets.` references, and the WP23 lock remained semantically present.
+
+**Blast radius searched:** the complete new provider-boundary test file, OIDC controller claims/replay checks, workflow-secret detector, WP23 lock documentation, the focused provider-boundary workflow and authoritative Regression Shield. No runtime/OIDC/ACL/provider-mutation safety defect was identified by the failed assertions.
+
+**Why preflight missed it:** the broader WP22A clientless audit did not own the new provider-boundary test file, and the specialized provider-boundary lane had not completed on the single Lenovo runner before the expensive authoritative lane reached the full suite.
+
+**Corrective change:** keep the security implementation unchanged and repair only the assertions: require `$payload.jti` plus the concrete malformed/replay rejection markers, test that the installer contains and uses the forbidden-secret detector instead of banning its search literal, and make the WP23 documentation assertion case-insensitive because casing carries no authority.
+
+**Permanent regression/guard:** `tests/test_v10_wp22a_provider_activation_boundary.py` remains in the dedicated `V10 WP22A Provider Boundary Audit` and the full Regression Shield. PR #325 was returned to DRAFT after the material RED; every new commit invalidates the old CI evidence.
+
+**Future prevention rule:** when the contract says “validate/reject X,” assert the behavioral/security mechanism or a parsed/anchored source structure. Do not invent an exact literal or ban the guard's own search token unless that textual representation itself is the security boundary. New specialized focused tests must complete a cheapest executable preflight before final authoritative readiness is declared.
+
+**Dependency/tooling knowledge change:** GitHub OIDC exposes claims including `jti`, `run_id`, `runner_environment`, `workflow_ref` and `workflow_sha`; claim validation semantics are the contract, while PowerShell member-access spelling or documentation casing are not.
+
+---
+
 ## Entry template
 
 ```text
