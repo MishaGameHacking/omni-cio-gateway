@@ -146,7 +146,7 @@ def validate_self_hosted_repository_bootstrap(
             "GITHUB_TOKEN: ${{ github.token }}",
             "find . -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +",
             "git init .",
-            "git remote add origin \"https://github.com/${GITHUB_REPOSITORY}.git\"",
+            'git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"',
             "credential.helper '!f() { echo username=x-access-token; echo password=$GITHUB_TOKEN; }; f'",
             "git fetch --no-tags --prune",
             "git checkout --detach",
@@ -584,7 +584,9 @@ def main() -> int:
     print("Frontend baseline: typecheck + lint + unit + build")
     print("Future capability test contracts: fail-closed when roots appear")
     print("Money-path test families: protected")
-    print("Self-hosted diagnostics: GitHub job log/summary, no codeload Action dependency")
+    print(
+        "Self-hosted diagnostics: GitHub job log/summary, no codeload Action dependency"
+    )
     return 0
 
 
