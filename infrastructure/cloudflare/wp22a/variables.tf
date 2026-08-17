@@ -11,8 +11,9 @@ variable "cloudflare_zone_id" {
 }
 
 variable "hostname" {
-  description = "Reviewed OWNER Web hostname, for example omni.example.com."
+  description = "Reviewed OWNER Web hostname supplied only at protected apply time."
   type        = string
+  sensitive   = true
 
   validation {
     condition     = can(regex("^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$", var.hostname))
@@ -21,8 +22,9 @@ variable "hostname" {
 }
 
 variable "team_name" {
-  description = "Cloudflare Zero Trust organization/team name without .cloudflareaccess.com."
+  description = "Cloudflare Zero Trust organization/team name supplied only at protected apply time."
   type        = string
+  sensitive   = true
 
   validation {
     condition     = can(regex("^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$", var.team_name))
