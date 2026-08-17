@@ -30,7 +30,7 @@ It installs:
 - a sanitized result queue that is read-only to the ordinary runner and retention-managed by SYSTEM;
 - a LocalSystem scheduled task that validates queued requests and removes correctly named stale result/temp files after 24 hours.
 
-The Git handoff uses replacement refs disabled and filesystem monitoring disabled. The installed controller is read back and compared with the reviewed in-memory commit-object text before task registration.
+The Git handoff uses replacement refs disabled and filesystem monitoring disabled. The installed controller is read back and compared with the reviewed in-memory commit-object text before task registration. The installer rejects reparse points across the Omni-CIO ProgramData contour before install/cleanup and rechecks the contour after creation.
 
 It does not request, store, or use a Cloudflare token. It does not run OpenTofu. It does not start `cloudflared` or publish DNS.
 
@@ -68,11 +68,12 @@ The installer requires:
 - exact `HEAD == ExpectedImplementationSha`;
 - clean worktree;
 - reviewed controller/workflow blobs available from that exact commit with Git replacement refs disabled;
+- no reparse point anywhere in the reviewed Omni-CIO ProgramData controller/request/result path contour;
 - exactly one ordinary GitHub Actions runner service whose executable path belongs to `C:\actions-runner`;
 - runner identity is not LocalSystem;
 - runner identity is not a direct member of the local Administrators group.
 
-If source provenance or runner privilege drift violates any condition, installation fails closed. Do not weaken the Git handoff, ACL/controller design, or runner identity to work around the failure.
+If source provenance, filesystem indirection, or runner privilege drift violates any condition, installation fails closed. Do not weaken the Git handoff, ACL/controller design, or runner identity to work around the failure.
 
 No Cloudflare credential is entered during Phase-B1 installation.
 
@@ -87,7 +88,7 @@ The source-controlled workflow is manual-dispatch only. It must reject execution
 - `github.run_attempt == 1`;
 - `github.triggering_actor == github.actor` as an additional workflow-side guard.
 
-A privileged provider-boundary run is never re-run. If a run fails, investigate the failure and start a new OWNER `workflow_dispatch` only after the cause is understood. The protected controller independently requires signed OIDC `run_attempt=1`, so a runner-side bypass of the workflow guard cannot turn an older OWNER run into fresh provider authority. This matters because GitHub re-runs retain the original run actor's privileges.
+A privileged provider-boundary run is never re-run. If a run fails, investigate the failure and start a new OWNER `workflow_dispatch` only after the cause is understood. The protected controller independently requires signed OIDC `run_attempt=1`, so a runner-side bypass of the workflow guard cannot turn an older OWNER run into fresh provider authority.
 
 The stable numeric OWNER account ID is identity metadata, not a provider secret. If the OWNER GitHub identity changes, engineering must update the reviewed source and repeat the exact-head/merge/post-merge acceptance cycle before this contour can be used again.
 
@@ -109,9 +110,16 @@ Anything else is a failure.
 
 ## 6. OIDC failure handling
 
-The controller rejects and sanitizes failures. Examples include:
+The controller accepts only the reviewed GitHub OIDC contour:
 
-- signature/JWKS failure;
+- JWT header `alg=RS256`, `typ=JWT`;
+- metadata issuer exactly `https://token.actions.githubusercontent.com`;
+- metadata JWKS URI exactly `https://token.actions.githubusercontent.com/.well-known/jwks`;
+- selected key unique by `kid` and exactly `kty=RSA`, `alg=RS256`, `use=sig`;
+- signature valid against that key.
+
+It then rejects and sanitizes claim/request failures including:
+
 - wrong issuer/audience;
 - wrong repository or repository ID;
 - wrong OWNER `actor_id`;
@@ -123,13 +131,14 @@ The controller rejects and sanitizes failures. Examples include:
 - non-self-hosted runner claim;
 - expired/not-yet-valid/too-old token;
 - request/token run-ID mismatch;
-- repeated `jti`.
+- repeated `jti`;
+- request files or controller/request/result/replay paths that are reparse points.
 
 No failure path falls back to unsigned request fields.
 
 ## 7. Queue and controller recovery
 
-The request queue is untrusted input. The sanitized result queue is not an authority source and contains only bounded machine-generated status fields. The ordinary runner may read results but cannot rewrite or delete them; SYSTEM owns result cleanup. Correctly named `.json`/`.tmp` result files older than 24 hours are removed by the controller so the exchange state is bounded.
+The request queue is untrusted input. The sanitized result queue is not an authority source and contains only bounded machine-generated status fields. The ordinary runner may read results but cannot rewrite or delete them; SYSTEM owns result cleanup. Correctly named non-reparse `.json`/`.tmp` result files older than 24 hours are removed by the controller so the exchange state is bounded.
 
 If the Phase-B1 local boundary must be removed, use the installer cleanup mode only from the exact accepted source that owns the installation:
 
@@ -140,7 +149,7 @@ powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass `
   -Cleanup -AsJson
 ```
 
-Cleanup removes the LocalSystem task and the Phase-B1 controller/request/result roots. It does not touch accepted WP15 local Web, broker secrets, PostgreSQL durable state, or V9 rollback.
+Cleanup first rejects a reparse-point contour, then removes the LocalSystem task and the Phase-B1 controller/request/result roots. It does not touch accepted WP15 local Web, broker secrets, PostgreSQL durable state, or V9 rollback.
 
 ## 8. Provider apply is intentionally still blocked
 
