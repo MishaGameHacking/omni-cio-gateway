@@ -32,6 +32,48 @@ class V10RegressionShieldGuardTests(unittest.TestCase):
             )
             self.assertEqual(failures, [])
 
+    def test_self_hosted_bootstrap_rejects_codeload_actions(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "workflow.yml"
+            failures: list[str] = []
+            shield.validate_self_hosted_repository_bootstrap(
+                path,
+                "runs-on: [self-hosted, Windows, X64, omni-cio-ci]\n"
+                "steps:\n"
+                "  - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10\n"
+                "  - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a\n",
+                failures,
+            )
+            self.assertTrue(
+                any("actions/checkout" in failure for failure in failures), failures
+            )
+            self.assertTrue(
+                any("actions/upload-artifact" in failure for failure in failures),
+                failures,
+            )
+
+    def test_self_hosted_bootstrap_requires_credential_cleanup(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "workflow.yml"
+            failures: list[str] = []
+            shield.validate_self_hosted_repository_bootstrap(
+                path,
+                "runs-on: [self-hosted, Windows, X64, omni-cio-ci]\n"
+                "GITHUB_TOKEN: ${{ github.token }}\n"
+                "find . -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +\n"
+                "git init .\n"
+                'git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"\n'
+                "git config --local credential.helper '!f() { echo username=x-access-token; echo password=$GITHUB_TOKEN; }; f'\n"
+                "git fetch --no-tags --prune origin HEAD\n"
+                "git checkout --detach $EXPECTED_HEAD\n"
+                'test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"\n',
+                failures,
+            )
+            self.assertTrue(
+                any("unset-all credential.helper" in failure for failure in failures),
+                failures,
+            )
+
     def test_python_contract_requires_test_file(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -48,9 +90,19 @@ class V10RegressionShieldGuardTests(unittest.TestCase):
                 path.write_text(
                     "permissions:\n  contents: read\n"
                     "pull_request:\n"
+                    "runs-on: [self-hosted, Windows, X64, omni-cio-ci]\n"
+                    "github.event.pull_request.head.repo.full_name == github.repository\n"
+                    "GITHUB_TOKEN: ${{ github.token }}\n"
+                    "find . -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +\n"
+                    "git init .\n"
+                    'git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"\n'
+                    "git config --local credential.helper '!f() { echo username=x-access-token; echo password=$GITHUB_TOKEN; }; f'\n"
+                    "git fetch --no-tags --prune origin HEAD\n"
+                    "git checkout --detach $EXPECTED_HEAD\n"
+                    "git config --local --unset-all credential.helper\n"
+                    'test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"\n'
+                    'test -z "$(git config --local --get-all credential.helper || true)"\n'
                     "steps:\n"
-                    "  - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10\n"
-                    "    with:\n      persist-credentials: false\n"
                     "  - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97\n",
                     encoding="utf-8",
                 )
@@ -74,22 +126,21 @@ class V10RegressionShieldGuardTests(unittest.TestCase):
             failures,
         )
         self.assertEqual(len(failures), 1)
-        self.assertIn("only the post-merge diagnostics artifact", failures[0])
+        self.assertIn("may not soften mandatory authority jobs", failures[0])
 
-    def test_soft_fail_policy_allows_only_diagnostics_transport(self) -> None:
+    def test_soft_fail_policy_rejects_diagnostics_transport(self) -> None:
         failures: list[str] = []
         shield.validate_soft_fail_policy(
             shield.FULL_WORKFLOW,
             "steps:\n"
             "  - name: Upload test diagnostics\n"
-            "    id: diagnostics_upload\n"
-            "    if: always()\n"
             "    continue-on-error: true\n"
             "    uses: actions/upload-artifact@"
             "043fb46d1a93c77aae656e7c1c64a875d1fc6a0a\n",
             failures,
         )
-        self.assertEqual(failures, [])
+        self.assertEqual(len(failures), 1)
+        self.assertIn("logs/job summaries", failures[0])
 
     def test_current_repository_satisfies_wp3_guard(self) -> None:
         self.assertEqual(shield.validate_repository(), [])
