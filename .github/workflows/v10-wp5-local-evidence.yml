@@ -5,7 +5,10 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - '.github/workflows/v10-wp5-local-evidence.yml'
-      - 'infrastructure/windows/**'
+      - 'infrastructure/windows/collect_owner_node_profile.ps1'
+      - 'infrastructure/windows/measure_wp5_gpu_load.ps1'
+      - 'infrastructure/windows/run_wp5_owner_acceptance.ps1'
+      - 'infrastructure/windows/wp5_node_thresholds.json'
       - 'docs/architecture/V10_WP5_OWNER_PHYSICAL_EVIDENCE.json'
       - 'docs/operations/V10_WP5_THERMAL_RETEST.md'
   workflow_dispatch:
