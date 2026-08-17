@@ -75,7 +75,11 @@ The source-controlled workflow is manual-dispatch only. It must reject execution
 
 - `github.ref == refs/heads/main`;
 - the checked-out `HEAD` equals `github.sha`;
-- the worktree is clean.
+- the worktree is clean;
+- `github.actor_id` equals the reviewed stable OWNER GitHub account ID;
+- `github.triggering_actor == github.actor`, so a different account cannot authorize a rerun of an OWNER-originated privileged workflow run.
+
+The stable numeric OWNER account ID is identity metadata, not a provider secret. If the OWNER GitHub identity changes, engineering must update the reviewed source and repeat the exact-head/merge/post-merge acceptance cycle before this contour can be used again.
 
 The job requests a GitHub OIDC token for audience:
 
@@ -100,6 +104,7 @@ The controller rejects and sanitizes failures. Examples include:
 - signature/JWKS failure;
 - wrong issuer/audience;
 - wrong repository or repository ID;
+- wrong OWNER `actor_id`;
 - non-main ref;
 - non-`workflow_dispatch` event;
 - wrong workflow ref;
