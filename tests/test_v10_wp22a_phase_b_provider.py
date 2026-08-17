@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import sys
 from pathlib import Path
 from types import ModuleType
 
@@ -17,6 +18,7 @@ def _load(name: str, path: Path) -> ModuleType:
     spec = importlib.util.spec_from_file_location(name, path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
     spec.loader.exec_module(module)
     return module
 
@@ -233,9 +235,9 @@ def test_provider_plan_rejects_destroy_replace_during_apply() -> None:
 
 
 def test_provider_helpers_do_not_contain_tunnel_token_data_source() -> None:
-    terraform = (ROOT / "infrastructure" / "cloudflare" / "wp22a" / "main.tf").read_text(
-        encoding="utf-8"
-    )
+    terraform = (
+        ROOT / "infrastructure" / "cloudflare" / "wp22a" / "main.tf"
+    ).read_text(encoding="utf-8")
     assert "cloudflare_zero_trust_tunnel_cloudflared_token" not in terraform
     assert "tunnel_secret" not in terraform
     assert "CLOUDFLARE_API_TOKEN" not in terraform
