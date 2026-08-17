@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from pathlib import Path
 import re
+from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
 VALIDATOR = ROOT / "scripts" / "validate_wp22a_terraform.ps1"
 LOCK = ROOT / "infrastructure" / "cloudflare" / "wp22a" / ".terraform.lock.hcl"
+WP5_EVIDENCE_WORKFLOW = ROOT / ".github" / "workflows" / "v10-wp5-local-evidence.yml"
 
 
 def test_wp22a_derives_content_hash_only_in_isolated_lock_copy() -> None:
@@ -42,3 +43,17 @@ def test_wp22a_provider_installation_keeps_registry_fallback_excluded() -> None:
     assert 'include = ["registry.terraform.io/cloudflare/cloudflare"]' in validator
     assert 'exclude = ["registry.terraform.io/cloudflare/cloudflare"]' in validator
     assert "filesystem_mirror" in validator
+
+
+def test_unrelated_wp5_evidence_probe_does_not_route_all_windows_changes() -> None:
+    workflow = WP5_EVIDENCE_WORKFLOW.read_text(encoding="utf-8")
+
+    assert "'infrastructure/windows/**'" not in workflow
+    for path in (
+        "infrastructure/windows/collect_owner_node_profile.ps1",
+        "infrastructure/windows/measure_wp5_gpu_load.ps1",
+        "infrastructure/windows/run_wp5_owner_acceptance.ps1",
+        "infrastructure/windows/wp5_node_thresholds.json",
+    ):
+        assert f"'{path}'" in workflow
+    assert "startsWith(github.head_ref, 'v10/wp5-')" in workflow
