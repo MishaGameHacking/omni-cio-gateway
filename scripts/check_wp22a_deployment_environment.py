@@ -47,6 +47,17 @@ def validate_environment_snapshot(
         raise DeploymentEnvironmentError("WP22A_DEPLOYMENT_POLICY_MUST_TARGET_BRANCH")
 
 
+def validate_main_snapshot(
+    branch: Mapping[str, Any], *, event_sha: str, expected_sha: str
+) -> None:
+    commit = branch.get("commit")
+    main_sha = str(commit.get("sha", "")) if isinstance(commit, dict) else ""
+    if not event_sha or not expected_sha or event_sha != expected_sha:
+        raise DeploymentEnvironmentError("WP22A_EXPECTED_MAIN_SHA_MISMATCH")
+    if main_sha != expected_sha:
+        raise DeploymentEnvironmentError("WP22A_CURRENT_MAIN_MOVED")
+
+
 def _get_json(url: str, token: str) -> Mapping[str, Any]:
     request = urllib.request.Request(
         url,
@@ -71,22 +82,33 @@ def _get_json(url: str, token: str) -> Mapping[str, Any]:
 def run() -> Mapping[str, Any]:
     repository = os.environ.get("GITHUB_REPOSITORY", "").strip()
     token = os.environ.get("GITHUB_TOKEN", "").strip()
+    event_sha = os.environ.get("GITHUB_SHA", "").strip()
+    expected_sha = os.environ.get("WP22A_EXPECTED_MAIN_SHA", "").strip()
     if not repository or "/" not in repository:
         raise DeploymentEnvironmentError("WP22A_GITHUB_REPOSITORY_INVALID")
     if not token:
         raise DeploymentEnvironmentError("WP22A_GITHUB_TOKEN_MISSING")
 
     owner, repo = repository.split("/", 1)
+    repo_base = f"https://api.github.com/repos/{owner}/{repo}"
+    main_branch = _get_json(f"{repo_base}/branches/main", token)
+    validate_main_snapshot(
+        main_branch, event_sha=event_sha, expected_sha=expected_sha
+    )
+
     encoded_environment = urllib.parse.quote(ENVIRONMENT_NAME, safe="")
-    base = f"https://api.github.com/repos/{owner}/{repo}/environments/{encoded_environment}"
-    environment = _get_json(base, token)
-    branch_policies = _get_json(f"{base}/deployment-branch-policies?per_page=100", token)
+    environment_base = f"{repo_base}/environments/{encoded_environment}"
+    environment = _get_json(environment_base, token)
+    branch_policies = _get_json(
+        f"{environment_base}/deployment-branch-policies?per_page=100", token
+    )
     validate_environment_snapshot(environment, branch_policies)
     return {
         "status": "PASS",
         "reason": "WP22A_DEPLOYMENT_ENVIRONMENT_MAIN_ONLY",
         "custom_branch_policy": True,
         "exact_main_only": True,
+        "current_main_exact": True,
     }
 
 
