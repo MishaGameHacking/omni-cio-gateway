@@ -19,12 +19,7 @@ QUALITY_CONTRACT = (
 FULL_SHA = re.compile(r"[0-9a-f]{40}")
 PATH_FILTER = re.compile(r"(?m)^\s+paths(?:-ignore)?:\s*$")
 JOB_LEVEL_ROUTE_IF = re.compile(r"(?m)^    if:\s+needs\.route\.outputs\.")
-DIAGNOSTICS_SOFT_FAIL = re.compile(
-    r"(?ms)^\s*- name: Upload test diagnostics\s*$"
-    r".*?^\s+id: diagnostics_upload\s*$"
-    r".*?^\s+continue-on-error: true\s*$"
-    r".*?^\s+uses: actions/upload-artifact@[0-9a-f]{40}.*?$"
-)
+SELF_HOSTED_RUNNER = "runs-on: [self-hosted, Windows, X64, omni-cio-ci]"
 
 
 def display(path: Path) -> str:
@@ -118,18 +113,44 @@ def validate_action_pins(path: Path, text: str, failures: list[str]) -> None:
 
 
 def validate_soft_fail_policy(path: Path, text: str, failures: list[str]) -> None:
-    count = text.count("continue-on-error: true")
-    if count == 0:
-        return
-    if (
-        path != FULL_WORKFLOW
-        or count != 1
-        or DIAGNOSTICS_SOFT_FAIL.search(text) is None
-    ):
+    if "continue-on-error: true" in text:
         failures.append(
-            f"{display(path)} may not soften mandatory jobs; only the post-merge "
-            "diagnostics artifact transport may be best-effort"
+            f"{display(path)} may not soften mandatory authority jobs; diagnostics "
+            "must use logs/job summaries rather than a soft-failed external transport"
         )
+
+
+def validate_self_hosted_repository_bootstrap(
+    path: Path, text: str, failures: list[str]
+) -> None:
+    if SELF_HOSTED_RUNNER not in text:
+        return
+    for forbidden in (
+        "uses: actions/checkout@",
+        "uses: actions/upload-artifact@",
+    ):
+        if forbidden in text:
+            failures.append(
+                f"{display(path)} self-hosted authority plane must not depend on "
+                f"codeload external Action preparation: {forbidden}"
+            )
+    require_tokens(
+        text,
+        (
+            "GITHUB_TOKEN: ${{ github.token }}",
+            "find . -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +",
+            "git init .",
+            "git remote add origin \"https://github.com/${GITHUB_REPOSITORY}.git\"",
+            "credential.helper '!f() { echo username=x-access-token; echo password=$GITHUB_TOKEN; }; f'",
+            "git fetch --no-tags --prune",
+            "git checkout --detach",
+            "git config --local --unset-all credential.helper",
+            'test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"',
+            'test -z "$(git config --local --get-all credential.helper || true)"',
+        ),
+        f"{display(path)} self-hosted repository bootstrap",
+        failures,
+    )
 
 
 def validate_common_workflow(path: Path, failures: list[str]) -> str:
@@ -139,10 +160,9 @@ def validate_common_workflow(path: Path, failures: list[str]) -> str:
     text = path.read_text(encoding="utf-8")
     validate_action_pins(path, text, failures)
     validate_soft_fail_policy(path, text, failures)
+    validate_self_hosted_repository_bootstrap(path, text, failures)
     if "contents: read" not in text:
         failures.append(f"{display(path)} must retain least-privilege contents: read")
-    if "persist-credentials: false" not in text:
-        failures.append(f"{display(path)} checkout must not persist credentials")
     return text
 
 
@@ -169,7 +189,7 @@ def validate_fast_workflow(failures: list[str]) -> None:
             text,
             (
                 "name: V10 Fast PR Checks",
-                "runs-on: [self-hosted, Windows, X64, omni-cio-ci]",
+                SELF_HOSTED_RUNNER,
                 "cancel-in-progress: true",
                 "scripts\\bootstrap_windows_ci_python.cmd",
                 "python scripts\\check_ci_security_baseline.py",
@@ -238,7 +258,7 @@ def validate_full_workflow(failures: list[str]) -> None:
             "push:",
             "branches:",
             "- main",
-            "runs-on: [self-hosted, Windows, X64, omni-cio-ci]",
+            SELF_HOSTED_RUNNER,
             "python scripts/check_ci_security_baseline.py",
             "python scripts/check_v10_repository_boundaries.py",
             "python scripts/check_v10_toolchain_baseline.py",
@@ -251,10 +271,9 @@ def validate_full_workflow(failures: list[str]) -> None:
             "python -m pip_audit",
             "python -m bandit",
             "python -m detect_secrets",
-            "id: diagnostics_upload",
-            "continue-on-error: true",
-            "Report diagnostics upload degradation",
-            "steps.diagnostics_upload.outcome != 'success'",
+            "Summarize regression diagnostics without external Actions",
+            "GITHUB_STEP_SUMMARY",
+            "sha256sum",
         ),
         "Regression Shield",
         failures,
@@ -278,7 +297,7 @@ def validate_toolchain_workflow(failures: list[str]) -> None:
             text,
             (
                 "name: V10 Toolchain Compatibility",
-                "runs-on: [self-hosted, Windows, X64, omni-cio-ci]",
+                SELF_HOSTED_RUNNER,
                 "Verify current zero-budget capacity contract",
                 "Python 3.14.6 clean-room applicability contract",
                 "Node 24.18.0 clean-room applicability contract",
@@ -355,7 +374,7 @@ def validate_authoritative_workflow(failures: list[str]) -> None:
             "name: Self-Hosted Windows CI",
             "name: Windows runner smoke test",
             "name: V10 authoritative merge gate",
-            "runs-on: [self-hosted, Windows, X64, omni-cio-ci]",
+            SELF_HOSTED_RUNNER,
             "cancel-in-progress: true",
             "scripts\\bootstrap_windows_ci_python.cmd",
             "python scripts/check_ci_security_baseline.py",
@@ -371,6 +390,8 @@ def validate_authoritative_workflow(failures: list[str]) -> None:
             "python -m pip_audit",
             "python -m bandit",
             "python -m detect_secrets",
+            "Summarize failure diagnostics without external Actions",
+            "GITHUB_STEP_SUMMARY",
             "git clean -ffdx",
         ),
         "V10 Authoritative Merge Gate",
@@ -557,7 +578,7 @@ def main() -> int:
     print("Frontend baseline: typecheck + lint + unit + build")
     print("Future capability test contracts: fail-closed when roots appear")
     print("Money-path test families: protected")
-    print("Post-merge diagnostic artifact transport: best-effort, non-authoritative")
+    print("Self-hosted diagnostics: GitHub job log/summary, no codeload Action dependency")
     return 0
 
 
