@@ -18,19 +18,21 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - name: Reject anything except OWNER accepted-main dispatch
+      - name: Reject anything except fresh OWNER accepted-main dispatch
         shell: pwsh
         env:
           EXPECTED_OWNER_ACTOR_ID: "201947041"
           ACTOR_ID: ${{ github.actor_id }}
           ACTOR_NAME: ${{ github.actor }}
           TRIGGERING_ACTOR_NAME: ${{ github.triggering_actor }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
         run: |
           $ErrorActionPreference = 'Stop'
           if ('${{ github.event_name }}' -ne 'workflow_dispatch') { throw 'WP22A_PROVIDER_EVENT_FORBIDDEN' }
           if ('${{ github.ref }}' -ne 'refs/heads/main') { throw 'WP22A_PROVIDER_REF_FORBIDDEN' }
           if ('${{ github.repository }}' -ne 'MishaGameHacking/omni-cio-gateway') { throw 'WP22A_PROVIDER_REPOSITORY_MISMATCH' }
           if ([string]$env:ACTOR_ID -cne [string]$env:EXPECTED_OWNER_ACTOR_ID) { throw 'WP22A_PROVIDER_OWNER_ACTOR_REQUIRED' }
+          if ([string]$env:RUN_ATTEMPT -cne '1') { throw 'WP22A_PROVIDER_RERUN_FORBIDDEN' }
           if ([string]$env:TRIGGERING_ACTOR_NAME -cne [string]$env:ACTOR_NAME) { throw 'WP22A_PROVIDER_RERUN_BY_DIFFERENT_ACTOR_FORBIDDEN' }
 
       - name: Check out exact accepted main
