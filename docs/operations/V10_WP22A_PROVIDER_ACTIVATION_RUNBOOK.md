@@ -23,12 +23,14 @@ The installer creates a protected local request validator, not a Cloudflare depl
 
 It installs:
 
-- a reviewed copy of `run_wp22a_provider_controller.ps1` under protected ProgramData;
+- a reviewed controller body read from the exact accepted Git commit object rather than copied from mutable worktree bytes;
 - a protected controller configuration bound to one accepted implementation SHA and repository ID;
 - a protected replay cache;
 - an untrusted request queue;
 - a sanitized result queue that is read-only to the ordinary runner and retention-managed by SYSTEM;
 - a LocalSystem scheduled task that validates queued requests and removes correctly named stale result/temp files after 24 hours.
+
+The Git handoff uses replacement refs disabled and filesystem monitoring disabled. The installed controller is read back and compared with the reviewed in-memory commit-object text before task registration.
 
 It does not request, store, or use a Cloudflare token. It does not run OpenTofu. It does not start `cloudflared` or publish DNS.
 
@@ -43,7 +45,7 @@ powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass `
   -ValidateOnly -AsJson
 ```
 
-`-ValidateOnly` must not require Administrator rights and must not modify ProgramData, Scheduled Tasks, Cloudflare, DNS, or runtime state.
+`-ValidateOnly` must not require Administrator rights and must not modify ProgramData, Scheduled Tasks, Cloudflare, DNS, or runtime state. It validates the controller/workflow source from the exact reviewed commit object for the supplied SHA.
 
 The controller also exposes a source validation mode:
 
@@ -65,11 +67,12 @@ The installer requires:
 - repository checkout on branch `main`;
 - exact `HEAD == ExpectedImplementationSha`;
 - clean worktree;
+- reviewed controller/workflow blobs available from that exact commit with Git replacement refs disabled;
 - exactly one ordinary GitHub Actions runner service whose executable path belongs to `C:\actions-runner`;
 - runner identity is not LocalSystem;
 - runner identity is not a direct member of the local Administrators group.
 
-If runner privilege drift violates either identity condition, installation fails closed. Do not weaken the ACL/controller design to work around a privileged CI service identity.
+If source provenance or runner privilege drift violates any condition, installation fails closed. Do not weaken the Git handoff, ACL/controller design, or runner identity to work around the failure.
 
 No Cloudflare credential is entered during Phase-B1 installation.
 
