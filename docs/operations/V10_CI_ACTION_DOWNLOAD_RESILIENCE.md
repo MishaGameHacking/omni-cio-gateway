@@ -10,6 +10,10 @@ Mandatory self-hosted V10 jobs can fail before repository code executes when the
 
 The mandatory PR and post-merge authority plane must not depend on downloading non-authoritative helper Actions before project checks can execute. Repository bootstrap must remain exact-SHA, fail closed, use only job-scoped repository read authority, and remove temporary Git credentials immediately after fetch. Diagnostic transport must not become merge authority.
 
+## Acceptance evidence boundary
+
+A codeload transport failure is infrastructure RED, never PASS. The maintenance package itself still requires exact-head applicable CI to execute successfully after the dependency is removed; no prior red or partial run is reusable as acceptance evidence.
+
 ## Invariants
 
 - no weakening of tests, Regression Shield, dependency audit, SAST, secret scanning, or exact-head verification;
