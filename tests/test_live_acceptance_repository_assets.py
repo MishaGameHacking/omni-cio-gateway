@@ -21,6 +21,24 @@ def _assert_external_actions_are_pinned(workflow: str) -> None:
         assert FULL_SHA.fullmatch(reference), value
 
 
+def _assert_headless_exact_sha_bootstrap(workflow: str) -> None:
+    required = (
+        "contents: read",
+        "GITHUB_TOKEN: ${{ github.token }}",
+        'GIT_TERMINAL_PROMPT: "0"',
+        'GCM_INTERACTIVE: "0"',
+        'git config --local credential.helper ""',
+        "git config --local --add credential.helper",
+        'git checkout --detach "$EXPECTED_HEAD"',
+        "git config --local --unset-all credential.helper",
+        'test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"',
+        'test -z "$(git config --local --get-all credential.helper || true)"',
+    )
+    for marker in required:
+        assert marker in workflow, marker
+    assert "actions/checkout@" not in workflow
+
+
 def test_live_authority_assets_are_tracked() -> None:
     required_paths = (
         ".github/workflows/live-gateway-authority.yml",
@@ -78,7 +96,7 @@ def test_pr_live_authority_contract_executes_without_claiming_live_pass() -> Non
     assert "GATEWAY_API_KEY" not in workflow
     assert "TINVEST_TOKEN" not in workflow
     assert "continue-on-error: true" not in workflow
-    assert "persist-credentials: false" in workflow
+    _assert_headless_exact_sha_bootstrap(workflow)
     _assert_external_actions_are_pinned(workflow)
 
 
