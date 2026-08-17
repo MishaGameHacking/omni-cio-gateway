@@ -382,6 +382,50 @@ A short SHA may be used for navigation when useful. Full random-looking secret m
 
 ---
 
+## FL-017 — Self-hosted authority bootstrap must not depend on codeload Action preparation
+
+**Date:** 2026-08-17  
+**WP / PR / reference:** V10 CI maintenance / PR #328 / blocker discovered while validating PR #327  
+**Symptom / failing gate:** multiple exact-head self-hosted workflows failed before repository tests executed. GitHub annotations reported HTTP 429 and 503 while preparing pinned `actions/checkout` and `actions/upload-artifact` content from the GitHub Actions download path.
+
+**Root cause:** the mandatory Lenovo authority plane had a shared external Action-preparation dependency before project-owned validation could begin. A pinned SHA protects action identity, but it does not make the action archive transport available or reliable.
+
+**Blast radius searched:** Engineering Governance, Fast PR, Toolchain Compatibility, Self-Hosted Windows authority, active Live Gateway Authority routing contract, path-triggered WP6 identity audit, WP15 deterministic Web support, WP16-WP22A Web gates and post-merge Regression Shield. Historical OWNER physical-evidence workflows and GitHub-hosted release provenance were classified separately rather than bulk-rewritten.
+
+**Why preflight missed it:** external Action preparation had been treated as trusted CI plumbing rather than an availability dependency of the mandatory self-hosted authority plane. Initial correction also focused too narrowly on `actions/checkout` until a separate failure showed `actions/upload-artifact` used the same failure domain.
+
+**Corrective change:** replace external checkout preparation in the current generic self-hosted authority plane with source-controlled exact-SHA Git bootstrap using `contents: read`; remove external artifact transport from that mandatory plane and keep authoritative diagnostics/results in project tests, GitHub logs and job summaries.
+
+**Permanent regression/guard:** `tests/test_v10_ci_action_download_resilience.py` enumerates the active self-hosted authority workflows and rejects reintroduction of `actions/checkout` or `actions/upload-artifact`; Engineering Governance runs that guard on PRs and the full authoritative/post-merge test suite collects it again.
+
+**Future prevention rule:** before adding an external Action to a mandatory self-hosted authority job, classify whether its download/initialization occurs before project checks and whether failure would create a shared pre-test single point of failure. Identity pinning and transport resilience are separate requirements.
+
+**Dependency/tooling knowledge change:** self-hosted Actions still depend on GitHub-hosted Action distribution. A full-SHA pin constrains code identity but does not eliminate codeload/network rate-limit or availability failure modes.
+
+---
+
+## FL-018 — Headless Windows Git bootstrap must fail closed without inherited credential interactivity
+
+**Date:** 2026-08-17  
+**WP / PR / reference:** V10 CI maintenance / PR #328  
+**Symptom / failing gate:** after external Action checkout was removed and the Lenovo service was confirmed online/assigned, a manual `git fetch` remained in progress at repository bootstrap instead of reaching project checks. After the headless credential correction, Engineering Governance then exposed a second contract-drift symptom because its validator still required the old `actions/checkout`-specific `persist-credentials: false` marker.
+
+**Root cause:** a persistent Windows service account may inherit Git/Git Credential Manager helper configuration capable of interactive prompting. The first manual bootstrap appended a job-token helper but did not reset inherited helpers or disable terminal/GCM interactivity. Separately, one governance validator expressed the security intent through an implementation-specific checkout marker rather than through the actual credential properties.
+
+**Blast radius searched:** every active generic self-hosted authority bootstrap, current credential-helper usage, Git Bash first-step availability, exact-SHA verification, cleanup shells, Engineering Governance and CI cost-control validators. Pre-CI diff review also caught and restored the accepted FL-010 native-`cmd` cleanup contract before final acceptance.
+
+**Why preflight missed it:** manual Git fetch was initially reasoned about as a repository/network operation, not as a composition of system/global/local credential-helper layers under a headless service identity. The stale validator was not exercised until the replacement bootstrap had already passed its first real runner execution.
+
+**Corrective change:** set `GIT_TERMINAL_PROMPT=0` and `GCM_INTERACTIVE=0`; reset inherited helper resolution with an empty local `credential.helper`; append only the temporary job-scoped GitHub-token helper; remove all local helper entries immediately after fetch; verify exact reviewed/event SHA; update governance validators to require these semantic properties rather than `persist-credentials: false`.
+
+**Permanent regression/guard:** the repository-wide resilience test requires the non-interactive environment, helper reset/add/unset sequence, `contents: read`, clean workspace, and exact-SHA verification across the active self-hosted authority set. Engineering Governance and cost-control guards additionally preserve the accepted native Windows cleanup semantics and the separation between the self-hosted live routing contract and the actual hosted V9 live probe.
+
+**Future prevention rule:** headless CI must never rely on an inherited interactive credential chain. Express security guards in terms of the property being protected—least privilege, no persistent credentials, no prompt, exact source identity—not in terms of one helper Action's configuration syntax.
+
+**Dependency/tooling knowledge change:** Git can compose credential helpers across configuration scopes; Git Credential Manager interaction is enabled unless explicitly disabled. Headless build/service environments should fail when interaction is required rather than wait for an invisible prompt.
+
+---
+
 ## Entry template
 
 ```text
