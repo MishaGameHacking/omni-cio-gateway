@@ -31,7 +31,7 @@ The following are forbidden as required production dependencies for ordinary use
 - an outbound tunnel whose only production origin is the OWNER's home Lenovo/network;
 - any browser path that fails for all users merely because the OWNER's home loses power or Internet.
 
-Lenovo remains valuable for engineering, self-hosted CI, controlled acceptance, recovery rehearsal and protected rollback. It is **not** the public-product availability anchor.
+Lenovo remains valuable for engineering, self-hosted CI, controlled acceptance, recovery rehearsal and protected rollback and is not the public-product availability anchor.
 
 A home/Lenovo tunnel may exist only for explicitly non-production engineering/staging/recovery use and must never be represented as satisfying this public-hosted requirement.
 
