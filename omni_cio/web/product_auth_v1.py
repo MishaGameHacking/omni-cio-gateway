@@ -19,18 +19,17 @@ class ProductSessionRegistryV1(Protocol):
         *,
         user_id: str,
         tenant_id: str,
-        now: datetime | None = None,
+        now: datetime,
     ) -> tuple[str, SessionScopeV1]: ...
 
     def resolve(
         self,
-        token: str,
+        token: str | None,
         *,
-        now: datetime | None = None,
-        touch: bool = True,
+        now: datetime,
     ) -> SessionScopeV1 | None: ...
 
-    def revoke(self, token: str, *, now: datetime | None = None) -> bool: ...
+    def revoke(self, token: str | None, *, now: datetime) -> bool: ...
 
 
 class ProductAuthenticationError(RuntimeError):
@@ -97,7 +96,7 @@ class ProductAuthenticationServiceV1:
         identity: VerifiedExternalIdentityV1,
     ) -> ProductAccountScopeV1:
         now = self._utc(self._now())
-        session = self._sessions.resolve(current_session_token, now=now, touch=True)
+        session = self._sessions.resolve(current_session_token, now=now)
         if session is None:
             raise ProductAuthenticationError("AUTHENTICATED_ACCOUNT_REQUIRED")
 
