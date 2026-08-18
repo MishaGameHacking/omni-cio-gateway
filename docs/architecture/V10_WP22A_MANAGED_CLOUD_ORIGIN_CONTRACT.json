@@ -1,192 +1,203 @@
 {
-  "contract_version": "1.5.0",
-  "status": "RECOMMENDED_PENDING_OWNER_COST_APPROVAL",
+  "contract_version": "1.6.0",
+  "status": "RECOMMENDED_STAGED_FREE_FIRST_PENDING_OWNER_COST_APPROVAL",
   "decision_date": "2026-08-18",
   "owning_package": "WP22A",
   "accepted_base_main": "ee45026b1287c7427dc5e05b2a04b7bdb974d11f",
   "phase": "SERVICE_HOSTING_ARCHITECTURE_DECISION",
+  "cost_strategy": {
+    "policy": "FREE_FIRST_LOWEST_COST_SAFE",
+    "current_authorized_recurring_budget_rub": 0,
+    "prefer_already_owned_or_free_before_paid": true,
+    "free_service_must_meet_hard_security_legal_recovery_requirements": true,
+    "lowest_cost_paid_option_used_only_when_no_safe_free_option_meets_the_gate": true,
+    "multiple_free_or_low_cost_services_allowed": true,
+    "multi_provider_composition_requires_bounded_failure_domains": true,
+    "multi_provider_composition_requires_portable_source_controlled_interfaces": true,
+    "do_not_fragment_identity_session_primary_database_or_secret_custody_for_marginal_savings": true,
+    "code_can_compensate_for_noncritical_service_limitations": true,
+    "code_cannot_compensate_for_missing_legal_permission_data_localization_secret_custody_or_recovery": true,
+    "owner_product_experience_required_before_new_recurring_paid_commitment": true,
+    "automatic_paid_overage_allowed": false,
+    "provider_apply_authorized": false
+  },
+  "deployment_ladder": {
+    "stage_0": {
+      "name": "ZERO_RECURRING_PROOF_OF_PRODUCT",
+      "target_owner_out_of_pocket_rub_per_month": 0,
+      "runtime": "ALREADY_OWNED_GITHUB_PLUS_LENOVO_FOR_ENGINEERING_ACCEPTANCE_ONLY",
+      "optional_cloud_preview": "FREE_TIER_SYNTHETIC_NON_PRIVATE_ONLY",
+      "real_public_user_registration_allowed": false,
+      "real_tenant_private_data_allowed": false,
+      "broker_credentials_allowed": false,
+      "t_invest_public_connector_allowed": false
+    },
+    "stage_1": {
+      "name": "FREE_OR_GRANT_HOSTED_PILOT",
+      "target_owner_out_of_pocket_rub_per_month": 0,
+      "resources": "FREE_TIER_GRANT_BONUS_ONLY",
+      "hard_spend_cap_required": true,
+      "automatic_paid_overage_allowed": false,
+      "production_claim_allowed": false
+    },
+    "stage_2": {
+      "name": "MINIMUM_SAFE_PAID_PILOT",
+      "provider": "UNSELECTED_UNTIL_FRESH_REVALIDATION",
+      "monthly_cost_target": "LOWEST_COST_OPTION_THAT_MEETS_ALL_HARD_REQUIREMENTS",
+      "owner_cost_approval_required": true,
+      "measured_load_required_before_sizing": true,
+      "scale_only_when_free_or_grant_stage_cannot_safely_satisfy_required_gate": true
+    },
+    "stage_3": {
+      "name": "HA_PRODUCTION_SCALE_UP",
+      "reference_provider": "CLOUD_RU_EVOLUTION",
+      "reference_topology": "TWO_APP_VM_MULTI_AZ_PLUS_GEOREDUNDANT_NLB_PLUS_BUSINESS_POSTGRESQL_CLUSTER_HA_THREE_NODE_MULTI_AZ",
+      "reference_monthly_rub_approx": 24508.8311904,
+      "is_initial_spend_commitment": false,
+      "activation_requires_measured_sla_load_failure_budget_or_user_demand": true,
+      "owner_cost_approval_required": true
+    }
+  },
   "recommendation": {
-    "provider": "CLOUD_RU_EVOLUTION",
-    "runtime": "EVOLUTION_VM",
-    "runtime_topology": "TWO_VM_ACTIVE_ACTIVE_DISTINCT_AZ_BEHIND_GEOREDUNDANT_EVOLUTION_NLB",
-    "runtime_region_requirement": "RUSSIA",
-    "runtime_distinct_availability_zones_required": true,
-    "edge": "CLOUD_RU_EVOLUTION_DNS_NLB_NGINX_TLS",
-    "public_dns": "CLOUD_RU_EVOLUTION_DNS",
-    "public_load_balancer": "CLOUD_RU_EVOLUTION_L4_NLB",
-    "public_load_balancer_selected_availability_zones": 2,
-    "public_load_balancer_resource_units_per_selected_az": 1,
-    "public_load_balancer_total_initial_resource_units": 2,
-    "public_load_balancer_provider_min_resource_units_per_az": 1,
-    "public_load_balancer_georedundant_placement_required": true,
+    "preferred_zero_cost_preview_provider": "CLOUD_RU_EVOLUTION_FREE_TIER_WHEN_SOURCE_CONTROLLED_PREVIEW_EXISTS",
+    "preferred_ha_scale_up_provider": "CLOUD_RU_EVOLUTION",
+    "paid_pilot_provider": "UNSELECTED_UNTIL_REVALIDATION",
+    "runtime_region_requirement_for_real_user_private_state": "RUSSIA",
+    "owner_home_availability_dependency_allowed_for_public_production": false,
+    "cloudflare_primary_or_sole_production_edge_allowed": false,
+    "cloudflare_primary_edge_rejection_reason": "CLOUDFLARE_CURRENT_FIRST_PARTY_GUIDANCE_REPORTS_RUSSIAN_ISP_THROTTLING_MAKING_NORMAL_RUSSIAN_USER_REACHABILITY_UNRELIABLE",
+    "container_apps_primary_real_user_runtime_allowed": false,
+    "container_apps_synthetic_preview_allowed": true,
+    "container_apps_real_tenant_private_state_allowed": false,
     "public_load_balancer_automation": "PINNED_TERRAFORM_PROVIDER_IF_NLB_RESOURCE_ACCEPTANCE_PASSES_ELSE_CLOUD_RU_PUBLIC_API",
     "public_load_balancer_terraform_support_state": "OFFICIAL_DOCS_CONFLICT_REQUIRES_PINNED_PROVIDER_ACCEPTANCE",
-    "public_load_balancer_service_limitations_says_terraform_unsupported": true,
-    "public_load_balancer_terraform_resource_reference_present": true,
-    "public_load_balancer_public_api_supported": true,
     "public_load_balancer_apply_blocked_until_automation_path_validated": true,
-    "certificate_manager": "CLOUD_RU_EVOLUTION_CERTIFICATE_MANAGER_LETS_ENCRYPT",
-    "tls_termination": "NGINX_ON_RUNTIME_VMS",
-    "certificate_distribution": "LEAST_PRIVILEGE_FROM_CERTIFICATE_MANAGER_TO_RUNTIME_VMS",
-    "product_identity_at_edge": false,
-    "cloudflare_primary_or_sole_production_edge_allowed": false,
-    "cloudflare_primary_edge_rejection_reason": "CLOUDFLARE_2026_SUPPORT_DOCS_CONFIRM_SYSTEMATIC_RUSSIA_ISP_THROTTLING_MAKING_RUSSIAN_USER_ACCESS_UNRELIABLE",
-    "cloudflare_optional_secondary_use": "DEFERRED_REQUIRES_SEPARATE_REACHABILITY_DATA_LOCALIZATION_AND_COST_REVIEW",
-    "database": "CLOUD_RU_MANAGED_POSTGRESQL_PRIVATE_IP",
-    "database_mode": "BUSINESS",
-    "database_topology": "CLUSTER_HA_THREE_NODE_MULTI_AZ",
-    "database_primary_nodes": 1,
-    "database_standby_nodes": 2,
-    "database_availability_zones": 3,
-    "database_multi_az_required_for_initial_production": true,
-    "database_provider_recommended_production_topology_used": true,
-    "database_standard_mode_allowed_for_initial_public_production": false,
-    "database_two_node_primary_standby_allowed_as_initial_public_production_baseline": false,
-    "database_standard_rejection_reason": "OFFICIAL_CLOUD_RU_DOCS_POSITION_STANDARD_FOR_TESTING_SMALL_APPS_AND_BUSINESS_THREE_NODE_MULTI_AZ_CLUSTER_HA_AS_RECOMMENDED_PRODUCTION_TOPOLOGY",
+    "ha_reference_runtime_topology": "TWO_VM_ACTIVE_ACTIVE_DISTINCT_AZ_BEHIND_GEOREDUNDANT_EVOLUTION_NLB",
+    "ha_reference_database_mode": "BUSINESS",
+    "ha_reference_database_topology": "CLUSTER_HA_THREE_NODE_MULTI_AZ",
+    "ha_reference_database_primary_nodes": 1,
+    "ha_reference_database_standby_nodes": 2,
+    "ha_reference_database_availability_zones": 3,
     "database_public_ip_allowed": false,
-    "network": "CLOUD_RU_EVOLUTION_VPC_PRIVATE_SUBNETS_ACROSS_REQUIRED_AZS",
-    "outbound_internet": "CLOUD_RU_EVOLUTION_SNAT",
-    "secret_store": "CLOUD_RU_SECRET_MANAGEMENT",
-    "key_management": "CLOUD_RU_KEY_MANAGEMENT_OR_REVIEWED_SYSTEM_KEY",
-    "backup_object_storage": "CLOUD_RU_EVOLUTION_OBJECT_STORAGE_ENCRYPTED",
-    "infrastructure_automation": "CLOUD_RU_TERRAFORM_FOR_SUPPORTED_RESOURCES_WITH_PINNED_NLB_ACCEPTANCE_OR_PUBLIC_API_FALLBACK_PLUS_GITHUB",
-    "initial_managed_external_waf": "DEFERRED_PENDING_COST_CAPACITY_AND_CERTIFICATE_CUSTODY_REVIEW",
-    "initial_edge_abuse_controls": "NGINX_PLUS_APPLICATION_RATE_LIMIT_HOST_CSRF_ORIGIN_SESSION_AND_SECURITY_HEADER_CONTROLS",
-    "container_apps_primary_runtime_allowed": false,
-    "container_apps_rejection_reason": "OFFICIAL_CLOUD_RU_DOCS_STATE_NO_MANAGED_POSTGRESQL_CONNECTIVITY_AND_PUBLIC_DB_PORT_IS_UNSAFE"
+    "secret_store_for_real_tenant_credentials": "REQUIRES_REVIEWED_ENCRYPTED_TENANT_SCOPED_BOUNDARY",
+    "initial_managed_external_waf": "DEFERRED_PENDING_COST_CAPACITY_AND_CERTIFICATE_CUSTODY_REVIEW"
   },
-  "selection_reasoning": {
-    "correctness_and_security_priority": true,
-    "russian_personal_data_primary_database_required": true,
-    "managed_postgresql_private_connectivity_required": true,
-    "managed_secret_store_required_for_tenant_broker_credentials": true,
-    "kms_capability_required_or_equivalent_reviewed_key_boundary": true,
-    "database_single_node_is_initial_production_recommendation": false,
-    "database_business_mode_required_for_initial_public_production": true,
-    "database_three_node_multi_az_required_for_initial_public_production": true,
-    "database_two_node_topology_is_not_initial_public_production_recommendation": true,
-    "database_standard_mode_is_not_initial_public_production_recommendation": true,
-    "runtime_single_node_is_initial_production_recommendation": false,
-    "runtime_cross_az_placement_required_for_initial_public_production": true,
-    "nlb_cross_az_placement_required_for_initial_public_production": true,
-    "nlb_total_two_resource_units_selected_as_one_per_two_az": true,
-    "nlb_automation_must_be_verified_against_pinned_provider_before_apply": true,
-    "russian_user_primary_edge_must_be_reliably_reachable_from_russia": true,
-    "github_source_controlled_provider_automation_required": true,
-    "terraform_only_provider_automation_required": false,
-    "provider_documentation_conflict_must_fail_closed": true,
-    "owner_home_availability_dependency_allowed": false,
-    "native_client_required_for_product_users": false
+  "free_and_bonus_snapshot": {
+    "snapshot_date": "2026-08-18",
+    "mutable_facts_must_be_revalidated_before_use": true,
+    "cloud_ru_evolution": {
+      "free_tier_intent": "TESTING_AND_SMALL_SITE_OR_APP",
+      "container_services_free_vcpu_hours_per_month": 25,
+      "container_services_free_ram_gb_hours_per_month": 50,
+      "object_storage_free_gb_standard": 15,
+      "card_link_bonus_rub": 4000,
+      "free_tier_is_not_production_sla_evidence": true
+    },
+    "yandex_cloud": {
+      "new_customer_grant_rub_min_for_ru_resident": 4000,
+      "grant_valid_days": 60,
+      "grant_is_not_permanent_free_production": true
+    },
+    "timeweb_cloud": {
+      "vps_hourly_billing": true,
+      "minimum_payment_rub": 50,
+      "support_test_bonus_available": true,
+      "grant_or_test_bonus_is_not_permanent_free_production": true
+    }
   },
   "candidate_evaluation": {
     "CLOUD_RU_EVOLUTION": {
-      "result": "RECOMMENDED_PENDING_COST_APPROVAL",
+      "result": "PREFERRED_FREE_PREVIEW_AND_HA_SCALE_UP_CANDIDATE",
       "strengths": [
         "RUSSIA_REGION",
-        "EVOLUTION_PLATFORM_152_FZ_UZ_1",
-        "THREE_VM_AVAILABILITY_ZONES",
-        "VM_VPC_PRIVATE_MANAGED_POSTGRESQL_REFERENCE_ARCHITECTURE",
+        "EVOLUTION_FREE_TIER",
+        "START_BONUS",
         "MANAGED_POSTGRESQL_BUSINESS_CLUSTER_HA_THREE_NODE_MULTI_AZ",
-        "MANAGED_POSTGRESQL_BUSINESS_CLIENT_VPC_ISOLATION",
-        "GEOREDUNDANT_NLB_ACROSS_AVAILABILITY_ZONES",
-        "EVOLUTION_DNS",
-        "EVOLUTION_L4_LOAD_BALANCER_WITH_HEALTH_CHECKS",
-        "EVOLUTION_CERTIFICATE_MANAGER_LETS_ENCRYPT",
-        "PROJECT_SCOPED_VERSIONED_SECRET_MANAGEMENT",
-        "KEY_MANAGEMENT_INTEGRATION",
-        "TERRAFORM_FOR_SUPPORTED_RESOURCES",
-        "TERRAFORM_NLB_RESOURCE_REFERENCE_PRESENT",
-        "PUBLIC_API_FOR_NLB",
-        "PAY_AS_YOU_GO"
+        "SECRET_MANAGEMENT_AND_KEY_MANAGEMENT",
+        "EVOLUTION_DNS_AND_NLB",
+        "TERRAFORM_AND_PUBLIC_API"
       ],
       "known_tradeoffs": [
-        "VM_RUNTIME_REQUIRES_OS_PATCHING_AND_RUNTIME_OPERATIONS",
-        "BUSINESS_THREE_NODE_MULTI_AZ_COSTS_MATERIALLY_MORE_THAN_STANDARD_OR_TWO_NODE",
-        "DOCUMENTED_BUSINESS_MINIMUM_RESOURCE_BOUNDS_DO_NOT_GUARANTEE_AN_EXACT_FLAVOR_IS_CURRENTLY_AVAILABLE",
-        "CLOUD_RU_OFFICIAL_DOCS_CONFLICT_ON_NLB_TERRAFORM_SUPPORT_REQUIRES_PINNED_PROVIDER_ACCEPTANCE_BEFORE_APPLY",
-        "EXTERNAL_MANAGED_WAF_IS_NOT_INCLUDED_IN_BASE_COST_AND_REQUIRES_SEPARATE_COST_AND_CERTIFICATE_CUSTODY_REVIEW"
-      ]
-    },
-    "TIMEWEB_CLOUD": {
-      "result": "FALLBACK_LOWER_COST",
-      "strengths": [
-        "RUSSIA_REGIONS",
-        "MANAGED_POSTGRESQL",
-        "PRIVATE_NETWORKING",
-        "TERRAFORM_API_AUTOMATION",
-        "152_FZ_INFRASTRUCTURE_OPTIONS"
-      ],
-      "known_tradeoffs": [
-        "NO_REVIEWED_GENERAL_NATIVE_SECRET_MANAGER_KMS_BOUNDARY_FOUND_FOR_THIS_SELECTION",
-        "S3_CREDENTIAL_LEAST_PRIVILEGE_LIMITATIONS_REQUIRE_EXTRA_DESIGN_FOR_BACKUP_SECRET_SEPARATION"
+        "FREE_TIER_DOES_NOT_INCLUDE_FULL_HA_PRODUCTION_STACK",
+        "CONTAINER_APPS_FREE_QUOTA_IS_SMALL",
+        "BUSINESS_THREE_NODE_MULTI_AZ_IS_MATERIALLY_PAID",
+        "NLB_TERRAFORM_DOCUMENTATION_CONFLICT_REQUIRES_PINNED_PROVIDER_ACCEPTANCE"
       ]
     },
     "YANDEX_CLOUD": {
-      "result": "SECURITY_STRONGER_HIGHER_COST_ALTERNATIVE",
+      "result": "GRANT_BACKED_SECURITY_STRONG_ALTERNATIVE",
       "strengths": [
         "RUSSIA_REGION",
-        "MANAGED_POSTGRESQL_152_FZ_COMPLIANCE",
+        "START_GRANT",
+        "MANAGED_POSTGRESQL",
         "LOCKBOX",
         "KMS",
-        "MATURE_TERRAFORM_AUTOMATION"
+        "TERRAFORM"
       ],
       "known_tradeoffs": [
-        "MANAGED_POSTGRESQL_PRODUCTION_CONFIGURATION_COST_IS_MATERIALLY_HIGHER_THAN_MINIMAL_ALTERNATIVES"
+        "START_GRANT_EXPIRES",
+        "NOT_PERMANENT_FREE_PRODUCTION"
+      ]
+    },
+    "TIMEWEB_CLOUD": {
+      "result": "LOW_COST_TEST_AND_PILOT_ALTERNATIVE",
+      "strengths": [
+        "RUSSIA_REGIONS",
+        "HOURLY_VPS_BILLING",
+        "SUPPORT_TEST_BONUS",
+        "LOW_ENTRY_COST",
+        "API_AND_TERRAFORM"
+      ],
+      "known_tradeoffs": [
+        "TEST_BONUS_NOT_PERMANENT",
+        "FULL_TENANT_SECRET_CUSTODY_BOUNDARY_REQUIRES_SEPARATE_REVIEW"
       ]
     },
     "RENDER": {
-      "result": "REJECT_PRIMARY_PRODUCTION_DATA_PLANE",
+      "result": "SYNTHETIC_PREVIEW_ONLY_NOT_RUSSIA_PRIVATE_DATA_PLANE",
       "reasons": [
         "NO_RUSSIA_REGION",
-        "FREE_WEB_SERVICE_SPINS_DOWN_AFTER_15_MINUTES_IDLE",
-        "FREE_POSTGRES_EXPIRES_AFTER_30_DAYS",
-        "NOT_SUITABLE_FOR_PRIMARY_RUSSIAN_PERSONAL_DATA_DATABASE"
+        "PROTECTED_V9_APP_APP_MUST_NOT_BE_REPLACED_BY_AN_UNREVIEWED_FREE_PREVIEW"
       ]
     },
     "CLOUDFLARE_PRIMARY_EDGE": {
       "result": "REJECT_PRIMARY_OR_SOLE_RUSSIAN_USER_PRODUCTION_EDGE",
       "reasons": [
-        "CLOUDFLARE_OFFICIAL_SUPPORT_APRIL_2026_REPORTS_SYSTEMATIC_RUSSIA_ISP_THROTTLING",
-        "CLOUDFLARE_SAYS_RUSSIAN_USERS_MAY_FIND_PROTECTED_SITES_INACCESSIBLE_OR_UNUSABLE",
-        "ORDINARY_RUSSIAN_USER_REACHABILITY_IS_A_BINDING_V10_REQUIREMENT"
+        "CURRENT_FIRST_PARTY_GUIDANCE_REPORTS_RUSSIAN_ISP_THROTTLING",
+        "ORDINARY_RUSSIAN_USER_REACHABILITY_IS_BINDING"
       ]
     }
   },
   "legal_and_data_boundary": {
     "legal_advice_claimed": false,
     "production_legal_signoff_required": true,
-    "russian_federal_law_152_fz_article_18_part_5_localization_gate": true,
-    "cloud_ru_evolution_152_fz_uz_1_infrastructure_claim_verified_from_provider_docs": true,
-    "provider_compliance_does_not_replace_omni_cio_operator_obligations": true,
+    "russian_federal_law_152_fz_localization_gate": true,
     "primary_identity_session_tenant_personal_data_outside_russia_allowed_by_this_contract": false,
-    "cross_border_processing_allowed_without_separate_legal_review": false
+    "cross_border_processing_allowed_without_separate_legal_review": false,
+    "free_or_discounted_service_does_not_waive_legal_security_or_broker_gates": true
   },
   "cost_boundary": {
-    "new_recurring_paid_commitment_required": true,
-    "owner_cost_approval_required_before_provider_apply": true,
+    "new_recurring_paid_commitment_required_now": false,
+    "current_owner_out_of_pocket_target_rub_per_month": 0,
+    "owner_cost_approval_required_before_any_new_recurring_paid_apply": true,
     "provider_apply_authorized": false,
-    "exact_selected_vm_price_revalidation_required_before_purchase": true,
-    "exact_selected_database_flavor_revalidation_required_before_purchase": true,
-    "database_reference_configuration_is_provider_documented_minimum_not_capacity_guarantee": true,
-    "cloud_ru_managed_postgresql_reference_node_formula_720h_rub_vat_included": "(1.49145 * vCPU + 0.4026 * RAM_GB + 0.016836 * SSD_GB) * 720",
+    "automatic_paid_overage_allowed": false,
+    "exact_price_and_free_quota_revalidation_required_before_use": true,
+    "cloud_ru_reference_pg_standard_single_node_1vcpu_2gb_20gb_monthly_rub_approx": 1896.0264,
+    "cloud_ru_reference_pg_standard_primary_standby_2x_monthly_rub_approx": 3792.0528,
     "cloud_ru_reference_pg_business_node_4vcpu_8gb_40gb_monthly_rub_approx": 7099.2288,
-    "cloud_ru_reference_pg_business_cluster_ha_multi_az_3x_4vcpu_8gb_40gb_monthly_rub_approx": 21297.6864,
-    "cloud_ru_vm_pricing_page_reference_1vcpu_2gb_30pct_monthly_compute_rub_approx": 636.8544,
-    "cloud_ru_vm_pricing_page_reference_20gb_boot_disk_monthly_rub_approx": 224.64,
+    "cloud_ru_reference_pg_business_cluster_ha_multi_az_3x_monthly_rub_approx": 21297.6864,
     "cloud_ru_reference_two_runtime_vms_with_20gb_disks_monthly_rub_approx": 1722.9888,
-    "cloud_ru_current_snat_gateway_monthly_rub_approx": 149.328,
     "cloud_ru_reference_nlb_two_az_one_resource_unit_each_plus_public_ip_monthly_rub_approx": 1305.8879904,
     "cloud_ru_reference_public_dns_zone_30_days_monthly_rub_approx": 32.94,
     "cloud_ru_certificate_manager_monthly_rub": 0,
-    "cloud_ru_reference_initial_stack_monthly_rub_approx": 24508.8311904,
-    "reference_initial_stack_excludes_domain_extra_object_storage_traffic_monitoring_external_waf_ddos_service_and_later_scale": true,
-    "estimate_is_not_purchase_quote": true
+    "cloud_ru_reference_ha_scale_up_stack_monthly_rub_approx": 24508.8311904,
+    "ha_reference_is_not_initial_purchase_quote_or_commitment": true
   },
   "activation": {
     "public_multi_user_enabled": false,
     "provider_resources_created": false,
     "provider_credentials_allowed_in_pull_request": false,
-    "cloudflare_product_authentication_allowed": false,
     "telegram_vk_product_authentication_required": true,
     "wp23_locked": true
   },

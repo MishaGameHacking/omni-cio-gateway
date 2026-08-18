@@ -1,6 +1,6 @@
 # Omni-CIO V10 — WP22A Managed-Cloud Origin Decision
 
-Status: **RECOMMENDED / OWNER COST APPROVAL REQUIRED BEFORE PROVIDER APPLY**  
+Status: **STAGED FREE-FIRST RECOMMENDATION / OWNER COST APPROVAL REQUIRED BEFORE PAID PROVIDER APPLY**  
 Owning package: **WP22A — External Web Access / Product Authentication Security Gate**  
 Decision date: **2026-08-18**  
 Accepted base `main`: `ee45026b1287c7427dc5e05b2a04b7bdb974d11f`
@@ -11,25 +11,49 @@ This is the WP22A Phase-1 source-only hosting/service recommendation for the acc
 
 `provider_apply_authorized=false`
 
-A recurring provider commitment requires explicit PROJECT OWNER approval after exact current pricing, capacity/flavor availability and shutdown/delete consequences are presented.
+The OWNER-directed cost policy is:
 
-## 2. Binding product constraints
+`already owned / open source / safe free tier / grant / bonus -> lowest-cost safe paid option -> scale only from measured need`
 
-Preserve ordinary Internet browser access, practical Russian USER reachability, no native VPN/client requirement, no OWNER home/Lenovo availability dependency, one source-controlled Web/Core, Telegram/VK product authentication mapped to internal accounts, server-side sessions, structural tenant isolation, Russia-primary personal-data handling pending legal signoff, tenant-scoped encrypted secrets/private state, recovery/rollback and `app:app`, `trading_methods=false`, `REAL_TRADING_ENABLED=false`.
+The reusable rule is recorded in `V10_FREE_FIRST_COST_DISCIPLINE.md`. Project memory is not relied on for this decision.
 
-## 3. Personal-data localization boundary
+## 2. Why the previous 24.5k RUB baseline is not the startup budget
 
-For the intended Russian USER population, primary identity/session/tenant data stays in a Russia-region data plane unless a later legal review accepts a statutory exception. Cloud.ru Evolution states its infrastructure is in Russia and describes 152-FZ UZ-1 compliance. Provider claims do not replace Omni-CIO operator/security/privacy/legal obligations; production legal signoff remains mandatory and cross-border processing stays fail-closed pending review.
+The earlier draft correctly identified a strong Cloud.ru HA production topology, but it incorrectly allowed that topology to read like the initial deployment target.
 
-## 4. Primary edge decision
+Cloud.ru currently documents three-node multi-zone Business Cluster HA as the recommended PostgreSQL production topology. That remains useful **Stage-3 HA reference architecture**. It does not prove that Omni-CIO needs to buy it before the OWNER has experienced the product or before measured users/load/failure budgets justify it.
 
-Cloudflare is **not** the primary or sole production edge for normal Russian USER traffic. Current Cloudflare first-party incident/support guidance reports systematic Russian-ISP throttling that can make Cloudflare-protected sites unavailable or unusable for Russian visitors. This conflicts with the accepted ordinary-Russian-user browser requirement.
+The current OWNER-authorized recurring infrastructure target is therefore **0 RUB/month**. No paid provider apply is authorized by this source decision.
 
-Therefore Cloudflare Tunnel/proxied traffic is removed from the normal production path. Any future secondary Cloudflare role requires a separate reachability, cross-border/personal-data, cost and failure-mode review. Cloudflare/GitHub/provider identity is never Omni-CIO product identity.
+## 3. Cost ladder
 
-## 5. Recommended production topology
+### Stage 0 — zero recurring proof-of-product
 
-Pending OWNER cost approval:
+Use already-owned GitHub plus the accepted source-controlled Web/Core and Lenovo engineering/acceptance environment to prove end-to-end product behavior. Lenovo is not a public production origin.
+
+An optional free cloud preview may be added later only from accepted source-controlled deployment. It is synthetic/non-private until its exact data/secret/legal boundary is accepted. It must not hold real tenant-private state, broker credentials or imply public T-Invest permission.
+
+### Stage 1 — free/grant hosted pilot
+
+Use current eligible free tiers/grants/bonuses with a hard spend cap and automatic paid overage disabled.
+
+Current official-provider snapshot, to be revalidated immediately before use:
+
+- Cloud.ru Evolution documents free-tier use for testing/small sites/apps; current Container Services free quota is 25 vCPU-hours and 50 GB RAM-hours monthly, and Object Storage has a free quota. Cloud.ru also advertises a 4,000 RUB bonus for eligible card-linked accounts.
+- Yandex Cloud documents a new-customer initial grant of at least 4,000 RUB for eligible Russian residents, valid for 60 days.
+- Timeweb Cloud documents hourly VPS billing, a 50 RUB minimum payment and an individually reviewed support bonus for testing VPS before payment.
+
+Promotional capacity is not production/SLA/legal evidence.
+
+### Stage 2 — minimum safe paid pilot
+
+Only if free/grant stages cannot satisfy the required gate. The paid-pilot provider is intentionally **UNSELECTED** until fresh official price/security/capacity review immediately before apply.
+
+Select the lowest-cost option that satisfies every hard requirement and size from measured load. OWNER recurring-cost approval remains mandatory.
+
+### Stage 3 — HA production scale-up
+
+Cloud.ru Evolution remains the strongest currently reviewed HA scale-up candidate:
 
 ```text
 ordinary Internet browser
@@ -40,13 +64,12 @@ Cloud.ru Evolution DNS
         v
 Evolution L4 NLB
 2 AZ / 1 resource unit per AZ
-public IP + health checks
         |
         +-------------------+
         |                   |
         v                   v
 Evolution VM A         Evolution VM B
-AZ-A / Nginx TLS       AZ-B / Nginx TLS
+AZ-A                   AZ-B
         |                   |
         +---------+---------+
                   |
@@ -56,111 +79,95 @@ AZ-A / Nginx TLS       AZ-B / Nginx TLS
                   v
        Managed PostgreSQL
  Business Cluster HA / Multi-AZ
-  Primary + 2 Standby / 3 AZ
-                  |
-          +-------+-------+
-          |               |
-          v               v
- Secret Management   encrypted recovery
- / Key Management    / Object Storage
+ Primary + 2 Standby / 3 AZ
 ```
 
-The application VMs must be placed in different availability zones. The NLB uses two selected zones with one resource unit in each, giving two total resource units in the initial reference topology. The database uses the provider-recommended production topology: Business Cluster HA with three nodes spread across three zones.
+This is a **future scale-up reference**, not an initial purchase commitment.
 
-## 6. Runtime, DNS, TLS and load balancing
+## 4. Hard boundaries that cheap/free services cannot weaken
 
-Cloud.ru documents three VM availability zones and recommends placing application VMs in different zones to increase application fault tolerance. Evolution DNS is the public DNS boundary. Certificate lifecycle uses Evolution Certificate Manager + Let's Encrypt; TLS terminates at Nginx on the application VMs because the NLB is L4. Certificate/private-key delivery requires least privilege and must never leak into GitHub, CI logs or artifacts.
+Free or low-cost composition is allowed only if responsibilities are explicit and failure domains are bounded. We may use source-controlled code to close ordinary feature gaps such as retries, health checks, caching, validation, rate limiting and provider adapters.
 
-Cloud.ru's NLB quickstart creates a georedundant balancer across availability zones. Resource-unit count and cross-zone placement determine NLB performance/fault tolerance. The initial Omni-CIO reference therefore uses **2 AZ x 1 resource unit/AZ = 2 total units** with health checks.
+We do **not** split identity/session authority, the primary tenant database or raw secret custody across unrelated free providers merely to reduce a small bill.
 
-### NLB Terraform documentation conflict
+Code cannot compensate for missing:
 
-Current Cloud.ru first-party docs conflict:
+- legal/broker permission;
+- required personal-data localization;
+- trustworthy tenant-scoped secret custody;
+- durable backup/recovery;
+- a required security primitive.
 
-- NLB service limitations say management is through console/Public API and Terraform is unsupported;
-- the current Terraform for Evolution reference exposes first-class NLB and target-group resources.
+## 5. Russian USER edge
 
-No source is silently ignored. Before provider apply, source-controlled tooling must pin the exact Cloud.ru Terraform provider and prove the NLB schema/configuration with deterministic validation plus a reviewed non-mutating plan/acceptance step. Terraform is preferred if that exact path passes; otherwise reviewed Public API is the fallback. **Provider apply remains blocked until this is resolved by exact toolchain evidence.**
+Cloudflare remains **rejected as the primary or sole normal Russian USER production edge** because current first-party Cloudflare guidance reports Russian-ISP throttling that can make Cloudflare-protected sites unreliable for Russian visitors.
 
-## 7. Managed PostgreSQL
+A later secondary role requires separate reachability, data-localization, cost and failure-mode review. Cloudflare/GitHub/provider identity is never Omni-CIO product identity.
 
-Initial production database recommendation: **Business Cluster HA, three nodes (`Primary + 2 Standby`), Multi-AZ across three availability zones, private connectivity only**.
+## 6. Container Apps boundary
 
-Cloud.ru currently documents:
+Cloud.ru Container Apps is attractive for a **synthetic free preview** because it has a free monthly compute quota and scale-to-zero behavior.
 
-- Standard for testing/small applications;
-- Business for commercial/high-load services, inside isolated client-VPC infrastructure with a higher-security boundary;
-- Business lower resource bounds of 4 vCPU, 8 GB RAM and 40 GB disk per node, while warning not every theoretical flavor combination is necessarily currently available;
-- three-node multi-zone Cluster HA as the **recommended production topology**, using synchronous quorum replication and continuing operation after one availability zone fails.
+It is not accepted here as the real-user primary runtime/data plane. The current accepted WP22A requirements include tenant-private PostgreSQL, tenant-scoped secret custody, recovery and legal/data boundaries. Those must be independently proven before any real user/private payload is placed there.
 
-Accordingly, neither Standard nor two-node Primary/Standby is the initial public-production database baseline. A public PostgreSQL endpoint is forbidden.
+## 7. NLB Terraform documentation conflict — fail closed
 
-Provider automatic backups do not replace V10 portable/off-runtime encrypted recovery, hash/integrity verification, corrupt-backup rejection and restore rehearsal.
+Current Cloud.ru first-party documentation remains internally inconsistent: the NLB limitations material and the Terraform resource reference do not cleanly agree on Terraform management support.
 
-## 8. Secret boundary
+Before any NLB provider apply, source-controlled tooling must pin the exact provider and prove schema/configuration plus a reviewed non-mutating plan/acceptance step. Terraform is preferred if that exact path passes; otherwise reviewed Public API is the fallback. No provider apply is authorized while this remains unresolved by exact toolchain evidence.
 
-Runtime and tenant broker secrets use Cloud.ru Secret Management protected by Key Management or a separately reviewed provider system-key boundary.
+## 8. Database ladder
 
-Canonical ownership remains:
+For Stage 0/1 synthetic preview, real tenant-private PostgreSQL is not authorized.
 
-`USER -> Tenant -> BrokerConnection -> READ / TRADE_OPTIONAL -> verified broker account`
+For a later paid pilot, database mode/topology is selected from actual security, availability and measured load requirements immediately before apply. A public PostgreSQL endpoint remains forbidden.
 
-Frontend, Cortex, ordinary CI and unrelated tenants cannot receive raw broker credentials.
+For Stage 3 HA, Cloud.ru Business Cluster HA (`Primary + 2 Standby`, three AZ) remains the reference because the provider documents it as the recommended production topology and it survives one availability-zone loss.
 
-## 9. Container Apps rejection
+Provider backup never replaces V10 portable encrypted off-runtime recovery, integrity/hash verification, corrupt-backup rejection and restore rehearsal.
 
-Cloud.ru Container Apps remains rejected as primary runtime because current provider documentation does not support the required private Managed PostgreSQL integration and warns against the Internet-open external-database workaround. The reviewed path remains VMs + private VPC/subnets + Managed PostgreSQL.
+## 9. Candidate disposition
 
-## 10. Abuse, DDoS and WAF boundary
+- **Cloud.ru Evolution — PREFERRED FREE PREVIEW + HA SCALE-UP CANDIDATE.** Russia-hosted platform, current free tier/bonus, later private managed PostgreSQL, Secret Management/KMS, DNS/NLB/certificates and Terraform/API capabilities.
+- **Yandex Cloud — GRANT-BACKED SECURITY-STRONG ALTERNATIVE.** Useful initial grant plus mature managed database/secret/KMS stack; grant is temporary.
+- **Timeweb Cloud — LOW-COST TEST/PILOT ALTERNATIVE.** Cheap hourly Russian VPS and support test bonuses; tenant secret/data boundary still needs exact review before real-user use.
+- **Render — SYNTHETIC PREVIEW ONLY / NOT RUSSIA PRIVATE-DATA PLANE.** Protected V9 `app:app` remains untouched.
+- **Cloudflare primary edge — REJECT PRIMARY/SOLE RUSSIAN USER PATH.**
 
-Cloud.ru baseline infrastructure protection plus source-controlled Nginx/application controls form the initial base. Before public activation prove request/connection limits, Host allowlist, HSTS/CSP/nosniff/referrer/no-store as applicable, server-side rate limits, CSRF + exact Origin/Referer validation, deny-by-default CORS, session/tenant authorization, malformed/oversized request rejection, direct-origin bypass denial and non-sensitive health behavior.
+No candidate is allowed to create a paid resource in this PR.
 
-Managed external WAF/DDoS is not silently added because it changes recurring cost and TLS key custody; it requires a separate explicit WP22A capacity/security decision if evidence demands it.
+## 10. Cost reference
 
-## 11. Candidate disposition
+Current startup target: **0 RUB/month recurring owner out-of-pocket**.
 
-- **Cloud.ru Evolution — RECOMMENDED_PENDING_OWNER_COST_APPROVAL.** Russia placement, cross-AZ VM/NLB topology, Business Cluster HA Multi-AZ PostgreSQL, client-VPC isolation, DNS/certificate services, Secret Management/KMS and source-controlled Terraform/API automation.
-- **Timeweb Cloud — FALLBACK_LOWER_COST.** Useful Russian/private-network/Managed-PostgreSQL/Terraform/API properties, but this review did not establish an equivalent general native Secret Management/KMS boundary for tenant broker credentials.
-- **Yandex Cloud — SECURITY_STRONGER_HIGHER_COST_ALTERNATIVE.** Strong Russia-region Managed PostgreSQL + Lockbox/KMS path.
-- **Render — REJECT_PRIMARY_PRODUCTION_DATA_PLANE.** Not selected for the Russian-user primary personal-data plane; protected V9 `app:app` is unchanged.
-- **Cloudflare primary edge — REJECT_PRIMARY_OR_SOLE_RUSSIAN_USER_PRODUCTION_EDGE.** Russian-user reachability conflict.
+For comparison only, the earlier Cloud.ru HA reference remains approximately:
 
-## 12. Current cost boundary
+- Business PostgreSQL 3-node Multi-AZ: ~21,297.69 RUB/month;
+- two reference application VMs + disks: ~1,722.99 RUB/month;
+- NLB two AZ / one unit each + public IP: ~1,305.89 RUB/month;
+- public DNS: ~32.94 RUB/month;
+- Certificate Manager: currently 0 RUB;
+- total HA reference: ~24,508.83 RUB/month before excluded traffic/storage/monitoring/WAF/etc.
 
-Using current Cloud.ru tariff unit prices and documented Business lower resource bounds only as a reference floor at 720 hours:
+These figures are engineering snapshots, not a quote, purchase authorization or startup budget. All mutable prices/quotas must be revalidated immediately before use.
 
-- one reference Business PostgreSQL node (`4 vCPU / 8 GB / 40 GB`): **~7,099.23 RUB/month**;
-- three-node Business Cluster HA Multi-AZ: **~21,297.69 RUB/month**;
-- two reference application VMs + 20 GB boot disks: **~1,722.99 RUB/month**;
-- sNAT: **~149.33 RUB/month**;
-- NLB `2 AZ x 1 resource unit/AZ` + public IP: **~1,305.89 RUB/month**, before traffic;
-- one Evolution DNS zone: **~32.94 RUB/month**;
-- Certificate Manager: **0 RUB** currently.
+## 11. Safety / locks
 
-Reference initial stack: **~24,508.83 RUB/month**.
-
-This is an engineering lower-bound estimate, not a quote or capacity guarantee. Exact selectable database/VM flavors, zones, NLB shape and the full provider cart must be revalidated immediately before purchase. Excluded are domain registration, extra Object Storage, Internet/NLB traffic, additional monitoring, managed external WAF/DDoS, larger flavors required by load testing and later scale.
-
-## 13. Provider automation boundary
-
-Terraform is used for Evolution resources proven by the exact pinned provider/toolchain. NLB remains fail-closed until the documentation conflict is resolved by exact pinned-provider validation. GitHub source remains engineering authority; no long-lived provider credential belongs in source/PR logs/artifacts. Provider apply is allowed only from a separately reviewed accepted-main operations boundary after OWNER recurring-cost approval.
-
-## 14. Recovery and exit
-
-Before public activation prove scheduled PostgreSQL backup plus portable off-runtime copy, integrity/hash verification, corrupt-backup rejection, replacement-runtime reconstruction, Secret Management/KMS rotation/recovery, certificate renewal/replacement without key leakage, tenant isolation after restore, rollback to last accepted release, protected V9 rollback and provider exit using portable PostgreSQL data plus source-controlled runtime/automation contracts.
-
-## 15. Phase-1 exit condition
-
-This recommendation becomes accepted source authority only after exact-head DRAFT CI GREEN, full diff/review, fresh READY exact-head GREEN, squash merge, exact-main verification and post-merge Regression Shield GREEN.
-
-Even after source acceptance, provider apply remains blocked until explicit OWNER recurring-cost approval and exact NLB automation-path validation.
-
-Until then:
+Until the relevant later gates pass:
 
 - `provider_apply_authorized=false`;
 - `PUBLIC_MULTI_USER_ENABLED=false`;
-- no provider resources created;
-- no production DNS/public ingress activated;
-- no provider credential accepted into PR source/logs/artifacts;
+- no provider resources or provider credentials are created by this PR;
+- no production DNS/public ingress is activated;
+- no real broker/Telegram/VK/provider secret is committed;
+- T-Invest public connector remains fail-closed pending broker terms permission;
+- `app:app`, `trading_methods=false`, `REAL_TRADING_ENABLED=false`;
+- no transfer/withdrawal authority;
 - WP23 remains locked;
-- broker write/Real execution remain disabled.
+- protected V9 rollback remains available.
+
+## 12. Phase-1 exit condition
+
+This recommendation becomes accepted source authority only after exact-head DRAFT CI GREEN, full diff/review, fresh READY exact-head GREEN, squash merge, exact-main verification and post-merge Regression Shield GREEN.
+
+Source acceptance still does not authorize provider apply. Any later recurring commitment requires exact current pricing/free-quota validation, hard budget boundary, measured need, OWNER approval and a reviewed delete/shutdown path.

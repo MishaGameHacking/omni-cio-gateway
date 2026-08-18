@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CONTRACT = ROOT / "docs/architecture/V10_WP22A_MANAGED_CLOUD_ORIGIN_CONTRACT.json"
 DECISION = ROOT / "docs/architecture/V10_WP22A_MANAGED_CLOUD_ORIGIN_DECISION.md"
 SERVICE_SELECTION = ROOT / "docs/architecture/V10_WP22A_SERVICE_SELECTION.md"
+COST_POLICY = ROOT / "docs/architecture/V10_FREE_FIRST_COST_DISCIPLINE.md"
 
 
 def _payload() -> dict[str, Any]:
@@ -17,15 +18,14 @@ def _payload() -> dict[str, Any]:
 
 def test_selection_is_source_only_and_not_apply_authority() -> None:
     payload = _payload()
-    assert payload["status"] == "RECOMMENDED_PENDING_OWNER_COST_APPROVAL"
+    assert payload["status"] == "RECOMMENDED_STAGED_FREE_FIRST_PENDING_OWNER_COST_APPROVAL"
     assert payload["owning_package"] == "WP22A"
     assert payload["phase"] == "SERVICE_HOSTING_ARCHITECTURE_DECISION"
 
-    cost = payload["cost_boundary"]
-    assert cost["new_recurring_paid_commitment_required"] is True
-    assert cost["owner_cost_approval_required_before_provider_apply"] is True
+    cost = payload["cost_strategy"]
+    assert cost["current_authorized_recurring_budget_rub"] == 0
     assert cost["provider_apply_authorized"] is False
-    assert cost["estimate_is_not_purchase_quote"] is True
+    assert cost["automatic_paid_overage_allowed"] is False
 
     activation = payload["activation"]
     assert activation["public_multi_user_enabled"] is False
@@ -34,33 +34,141 @@ def test_selection_is_source_only_and_not_apply_authority() -> None:
     assert activation["wp23_locked"] is True
 
 
-def test_runtime_and_nlb_are_georedundant() -> None:
+def test_free_first_lowest_cost_safe_policy_is_binding() -> None:
+    payload = _payload()
+    policy = payload["cost_strategy"]
+
+    assert policy["policy"] == "FREE_FIRST_LOWEST_COST_SAFE"
+    assert policy["prefer_already_owned_or_free_before_paid"]
+    assert policy["free_service_must_meet_hard_security_legal_recovery_requirements"]
+    assert policy["lowest_cost_paid_option_used_only_when_no_safe_free_option_meets_the_gate"]
+    assert policy["multiple_free_or_low_cost_services_allowed"]
+    assert policy["multi_provider_composition_requires_bounded_failure_domains"]
+    assert policy["multi_provider_composition_requires_portable_source_controlled_interfaces"]
+    assert policy["do_not_fragment_identity_session_primary_database_or_secret_custody_for_marginal_savings"]
+    assert policy["code_can_compensate_for_noncritical_service_limitations"]
+    assert policy["code_cannot_compensate_for_missing_legal_permission_data_localization_secret_custody_or_recovery"]
+    assert policy["owner_product_experience_required_before_new_recurring_paid_commitment"]
+
+    text = COST_POLICY.read_text(encoding="utf-8")
+    assert "already owned / open source / safe free tier / grant / bonus" in text
+    assert "lowest-cost safe paid option" in text
+    assert "A cheaper service that cannot satisfy a hard gate is **not** the better option" in text
+
+
+def test_cost_ladder_keeps_zero_recurring_target_until_measured_need() -> None:
+    ladder = _payload()["deployment_ladder"]
+
+    stage0 = ladder["stage_0"]
+    assert stage0["name"] == "ZERO_RECURRING_PROOF_OF_PRODUCT"
+    assert stage0["target_owner_out_of_pocket_rub_per_month"] == 0
+    assert stage0["real_public_user_registration_allowed"] is False
+    assert stage0["real_tenant_private_data_allowed"] is False
+    assert stage0["broker_credentials_allowed"] is False
+    assert stage0["t_invest_public_connector_allowed"] is False
+
+    stage1 = ladder["stage_1"]
+    assert stage1["target_owner_out_of_pocket_rub_per_month"] == 0
+    assert stage1["hard_spend_cap_required"]
+    assert stage1["automatic_paid_overage_allowed"] is False
+    assert stage1["production_claim_allowed"] is False
+
+    stage2 = ladder["stage_2"]
+    assert stage2["provider"] == "UNSELECTED_UNTIL_FRESH_REVALIDATION"
+    assert stage2["monthly_cost_target"] == "LOWEST_COST_OPTION_THAT_MEETS_ALL_HARD_REQUIREMENTS"
+    assert stage2["owner_cost_approval_required"]
+    assert stage2["measured_load_required_before_sizing"]
+
+    stage3 = ladder["stage_3"]
+    assert stage3["is_initial_spend_commitment"] is False
+    assert stage3["activation_requires_measured_sla_load_failure_budget_or_user_demand"]
+
+
+def test_free_and_bonus_snapshot_is_explicitly_mutable() -> None:
+    snapshot = _payload()["free_and_bonus_snapshot"]
+    assert snapshot["snapshot_date"] == "2026-08-18"
+    assert snapshot["mutable_facts_must_be_revalidated_before_use"]
+
+    cloud = snapshot["cloud_ru_evolution"]
+    assert cloud["container_services_free_vcpu_hours_per_month"] == 25
+    assert cloud["container_services_free_ram_gb_hours_per_month"] == 50
+    assert cloud["object_storage_free_gb_standard"] == 15
+    assert cloud["card_link_bonus_rub"] == 4000
+    assert cloud["free_tier_is_not_production_sla_evidence"]
+
+    yandex = snapshot["yandex_cloud"]
+    assert yandex["new_customer_grant_rub_min_for_ru_resident"] == 4000
+    assert yandex["grant_valid_days"] == 60
+    assert yandex["grant_is_not_permanent_free_production"]
+
+    timeweb = snapshot["timeweb_cloud"]
+    assert timeweb["vps_hourly_billing"]
+    assert timeweb["minimum_payment_rub"] == 50
+    assert timeweb["support_test_bonus_available"]
+    assert timeweb["grant_or_test_bonus_is_not_permanent_free_production"]
+
+
+def test_free_preview_cannot_receive_real_private_or_broker_state() -> None:
+    rec = _payload()["recommendation"]
+    assert rec["container_apps_synthetic_preview_allowed"]
+    assert rec["container_apps_primary_real_user_runtime_allowed"] is False
+    assert rec["container_apps_real_tenant_private_state_allowed"] is False
+    assert rec["secret_store_for_real_tenant_credentials"] == (
+        "REQUIRES_REVIEWED_ENCRYPTED_TENANT_SCOPED_BOUNDARY"
+    )
+    assert rec["database_public_ip_allowed"] is False
+
+
+def test_cloudflare_primary_edge_remains_rejected() -> None:
     payload = _payload()
     rec = payload["recommendation"]
-    why = payload["selection_reasoning"]
+    candidate = payload["candidate_evaluation"]["CLOUDFLARE_PRIMARY_EDGE"]
 
-    assert rec["provider"] == "CLOUD_RU_EVOLUTION"
-    assert rec["runtime"] == "EVOLUTION_VM"
-    assert rec["runtime_topology"] == (
+    assert rec["cloudflare_primary_or_sole_production_edge_allowed"] is False
+    assert "RUSSIAN_ISP_THROTTLING" in rec["cloudflare_primary_edge_rejection_reason"]
+    assert candidate["result"] == "REJECT_PRIMARY_OR_SOLE_RUSSIAN_USER_PRODUCTION_EDGE"
+
+    decision = DECISION.read_text(encoding="utf-8")
+    assert "rejected as the primary or sole normal Russian USER production edge" in decision
+
+
+def test_ha_cloud_ru_topology_is_reference_not_startup_commitment() -> None:
+    payload = _payload()
+    rec = payload["recommendation"]
+    stage3 = payload["deployment_ladder"]["stage_3"]
+    cost = payload["cost_boundary"]
+
+    assert rec["preferred_ha_scale_up_provider"] == "CLOUD_RU_EVOLUTION"
+    assert rec["ha_reference_runtime_topology"] == (
         "TWO_VM_ACTIVE_ACTIVE_DISTINCT_AZ_BEHIND_GEOREDUNDANT_EVOLUTION_NLB"
     )
-    assert rec["runtime_region_requirement"] == "RUSSIA"
-    assert rec["runtime_distinct_availability_zones_required"] is True
-    assert rec["public_load_balancer_selected_availability_zones"] == 2
-    assert rec["public_load_balancer_resource_units_per_selected_az"] == 1
-    assert rec["public_load_balancer_total_initial_resource_units"] == 2
-    assert rec["public_load_balancer_provider_min_resource_units_per_az"] == 1
-    assert rec["public_load_balancer_georedundant_placement_required"] is True
-    assert why["runtime_cross_az_placement_required_for_initial_public_production"]
-    assert why["nlb_cross_az_placement_required_for_initial_public_production"]
-    assert why["nlb_total_two_resource_units_selected_as_one_per_two_az"]
+    assert rec["ha_reference_database_mode"] == "BUSINESS"
+    assert rec["ha_reference_database_topology"] == "CLUSTER_HA_THREE_NODE_MULTI_AZ"
+    assert rec["ha_reference_database_primary_nodes"] == 1
+    assert rec["ha_reference_database_standby_nodes"] == 2
+    assert rec["ha_reference_database_availability_zones"] == 3
+
+    assert stage3["reference_monthly_rub_approx"] == 24508.8311904
+    assert stage3["is_initial_spend_commitment"] is False
+    assert cost["cloud_ru_reference_ha_scale_up_stack_monthly_rub_approx"] == 24508.8311904
+    assert cost["ha_reference_is_not_initial_purchase_quote_or_commitment"]
+
+
+def test_paid_pilot_provider_is_deliberately_unselected() -> None:
+    payload = _payload()
+    rec = payload["recommendation"]
+    assert rec["paid_pilot_provider"] == "UNSELECTED_UNTIL_REVALIDATION"
+    assert payload["cost_boundary"]["new_recurring_paid_commitment_required_now"] is False
+    assert payload["cost_boundary"]["current_owner_out_of_pocket_target_rub_per_month"] == 0
+
+    decision = DECISION.read_text(encoding="utf-8")
+    selection = SERVICE_SELECTION.read_text(encoding="utf-8")
+    assert "paid-pilot provider is intentionally **UNSELECTED**" in decision
+    assert "Provider/topology remains **UNSELECTED**" in selection
 
 
 def test_nlb_automation_documentation_conflict_fails_closed() -> None:
-    payload = _payload()
-    rec = payload["recommendation"]
-    why = payload["selection_reasoning"]
-
+    rec = _payload()["recommendation"]
     assert rec["public_load_balancer_automation"] == (
         "PINNED_TERRAFORM_PROVIDER_IF_NLB_RESOURCE_ACCEPTANCE_PASSES_"
         "ELSE_CLOUD_RU_PUBLIC_API"
@@ -68,164 +176,28 @@ def test_nlb_automation_documentation_conflict_fails_closed() -> None:
     assert rec["public_load_balancer_terraform_support_state"] == (
         "OFFICIAL_DOCS_CONFLICT_REQUIRES_PINNED_PROVIDER_ACCEPTANCE"
     )
-    assert rec["public_load_balancer_service_limitations_says_terraform_unsupported"]
-    assert rec["public_load_balancer_terraform_resource_reference_present"]
-    assert rec["public_load_balancer_public_api_supported"]
     assert rec["public_load_balancer_apply_blocked_until_automation_path_validated"]
-    assert why["nlb_automation_must_be_verified_against_pinned_provider_before_apply"]
-    assert why["terraform_only_provider_automation_required"] is False
-    assert why["provider_documentation_conflict_must_fail_closed"]
 
 
-def test_cloudflare_primary_edge_is_rejected() -> None:
-    payload = _payload()
-    rec = payload["recommendation"]
-    candidate = payload["candidate_evaluation"]["CLOUDFLARE_PRIMARY_EDGE"]
-
-    assert rec["cloudflare_primary_or_sole_production_edge_allowed"] is False
-    assert rec["cloudflare_primary_edge_rejection_reason"] == (
-        "CLOUDFLARE_2026_SUPPORT_DOCS_CONFIRM_SYSTEMATIC_RUSSIA_ISP_"
-        "THROTTLING_MAKING_RUSSIAN_USER_ACCESS_UNRELIABLE"
-    )
-    assert rec["cloudflare_optional_secondary_use"] == (
-        "DEFERRED_REQUIRES_SEPARATE_REACHABILITY_DATA_LOCALIZATION_AND_COST_REVIEW"
-    )
-    assert candidate["result"] == (
-        "REJECT_PRIMARY_OR_SOLE_RUSSIAN_USER_PRODUCTION_EDGE"
-    )
-    assert "not** the primary or sole production edge" in DECISION.read_text(
-        encoding="utf-8"
-    )
-
-
-def test_database_uses_provider_recommended_cluster_ha() -> None:
-    payload = _payload()
-    rec = payload["recommendation"]
-    why = payload["selection_reasoning"]
-
-    assert rec["database"] == "CLOUD_RU_MANAGED_POSTGRESQL_PRIVATE_IP"
-    assert rec["database_mode"] == "BUSINESS"
-    assert rec["database_topology"] == "CLUSTER_HA_THREE_NODE_MULTI_AZ"
-    assert rec["database_primary_nodes"] == 1
-    assert rec["database_standby_nodes"] == 2
-    assert rec["database_availability_zones"] == 3
-    assert rec["database_multi_az_required_for_initial_production"]
-    assert rec["database_provider_recommended_production_topology_used"]
-    assert rec["database_standard_mode_allowed_for_initial_public_production"] is False
-    assert (
-        rec[
-            "database_two_node_primary_standby_allowed_as_initial_public_production_baseline"
-        ]
-        is False
-    )
-    assert rec["database_public_ip_allowed"] is False
-    assert rec["network"] == (
-        "CLOUD_RU_EVOLUTION_VPC_PRIVATE_SUBNETS_ACROSS_REQUIRED_AZS"
-    )
-    assert why["database_business_mode_required_for_initial_public_production"]
-    assert why["database_three_node_multi_az_required_for_initial_public_production"]
-    assert why["database_two_node_topology_is_not_initial_public_production_recommendation"]
-    assert why["database_standard_mode_is_not_initial_public_production_recommendation"]
-
-    decision = DECISION.read_text(encoding="utf-8")
-    selection = SERVICE_SELECTION.read_text(encoding="utf-8")
-    assert "Business Cluster HA" in decision
-    assert "Primary + 2 Standby" in decision
-    assert "Multi-AZ across three availability zones" in decision
-    assert "Business Cluster HA" in selection
-    assert "Primary + 2 Standby / 3 AZ" in selection
-
-
-def test_private_secret_and_legal_boundaries_remain_fail_closed() -> None:
-    payload = _payload()
-    rec = payload["recommendation"]
-    why = payload["selection_reasoning"]
-    legal = payload["legal_and_data_boundary"]
-
-    assert rec["secret_store"] == "CLOUD_RU_SECRET_MANAGEMENT"
-    assert rec["key_management"] == "CLOUD_RU_KEY_MANAGEMENT_OR_REVIEWED_SYSTEM_KEY"
-    assert rec["outbound_internet"] == "CLOUD_RU_EVOLUTION_SNAT"
-    assert why["managed_postgresql_private_connectivity_required"]
-    assert why["managed_secret_store_required_for_tenant_broker_credentials"]
-    assert why["owner_home_availability_dependency_allowed"] is False
-    assert legal["russian_federal_law_152_fz_article_18_part_5_localization_gate"]
-    assert (
-        legal[
-            "primary_identity_session_tenant_personal_data_outside_russia_allowed_by_this_contract"
-        ]
-        is False
-    )
-    assert legal["cross_border_processing_allowed_without_separate_legal_review"] is False
+def test_legal_and_data_boundaries_are_price_independent() -> None:
+    legal = _payload()["legal_and_data_boundary"]
     assert legal["production_legal_signoff_required"]
-    assert legal["provider_compliance_does_not_replace_omni_cio_operator_obligations"]
+    assert legal["russian_federal_law_152_fz_localization_gate"]
+    assert legal["primary_identity_session_tenant_personal_data_outside_russia_allowed_by_this_contract"] is False
+    assert legal["cross_border_processing_allowed_without_separate_legal_review"] is False
+    assert legal["free_or_discounted_service_does_not_waive_legal_security_or_broker_gates"]
 
 
-def test_container_apps_and_external_waf_stay_bounded() -> None:
-    rec = _payload()["recommendation"]
-    assert rec["container_apps_primary_runtime_allowed"] is False
-    assert rec["container_apps_rejection_reason"] == (
-        "OFFICIAL_CLOUD_RU_DOCS_STATE_NO_MANAGED_POSTGRESQL_CONNECTIVITY_"
-        "AND_PUBLIC_DB_PORT_IS_UNSAFE"
-    )
-    assert rec["initial_managed_external_waf"] == (
-        "DEFERRED_PENDING_COST_CAPACITY_AND_CERTIFICATE_CUSTODY_REVIEW"
-    )
-
-
-def test_candidate_ranking_keeps_bounded_fallbacks() -> None:
+def test_candidate_ranking_keeps_free_and_low_cost_fallbacks() -> None:
     candidates = _payload()["candidate_evaluation"]
-    cloud_ru = candidates["CLOUD_RU_EVOLUTION"]
-
-    assert cloud_ru["result"] == "RECOMMENDED_PENDING_COST_APPROVAL"
-    for marker in (
-        "THREE_VM_AVAILABILITY_ZONES",
-        "MANAGED_POSTGRESQL_BUSINESS_CLUSTER_HA_THREE_NODE_MULTI_AZ",
-        "MANAGED_POSTGRESQL_BUSINESS_CLIENT_VPC_ISOLATION",
-        "GEOREDUNDANT_NLB_ACROSS_AVAILABILITY_ZONES",
-        "EVOLUTION_DNS",
-        "EVOLUTION_L4_LOAD_BALANCER_WITH_HEALTH_CHECKS",
-        "EVOLUTION_CERTIFICATE_MANAGER_LETS_ENCRYPT",
-        "TERRAFORM_NLB_RESOURCE_REFERENCE_PRESENT",
-        "PUBLIC_API_FOR_NLB",
-    ):
-        assert marker in cloud_ru["strengths"]
-
-    assert (
-        "BUSINESS_THREE_NODE_MULTI_AZ_COSTS_MATERIALLY_MORE_THAN_STANDARD_OR_TWO_NODE"
-        in cloud_ru["known_tradeoffs"]
+    assert candidates["CLOUD_RU_EVOLUTION"]["result"] == (
+        "PREFERRED_FREE_PREVIEW_AND_HA_SCALE_UP_CANDIDATE"
     )
-    assert candidates["TIMEWEB_CLOUD"]["result"] == "FALLBACK_LOWER_COST"
-    assert candidates["YANDEX_CLOUD"]["result"] == (
-        "SECURITY_STRONGER_HIGHER_COST_ALTERNATIVE"
+    assert candidates["YANDEX_CLOUD"]["result"] == "GRANT_BACKED_SECURITY_STRONG_ALTERNATIVE"
+    assert candidates["TIMEWEB_CLOUD"]["result"] == "LOW_COST_TEST_AND_PILOT_ALTERNATIVE"
+    assert candidates["RENDER"]["result"] == (
+        "SYNTHETIC_PREVIEW_ONLY_NOT_RUSSIA_PRIVATE_DATA_PLANE"
     )
-    assert candidates["RENDER"]["result"] == "REJECT_PRIMARY_PRODUCTION_DATA_PLANE"
-
-
-def test_reference_cost_matches_production_topology() -> None:
-    cost = _payload()["cost_boundary"]
-    pg_node = "cloud_ru_reference_pg_business_node_4vcpu_8gb_40gb_monthly_rub_approx"
-    pg_ha = (
-        "cloud_ru_reference_pg_business_cluster_ha_multi_az_"
-        "3x_4vcpu_8gb_40gb_monthly_rub_approx"
-    )
-    nlb = (
-        "cloud_ru_reference_nlb_two_az_one_resource_unit_each_"
-        "plus_public_ip_monthly_rub_approx"
-    )
-
-    assert cost[pg_node] == 7099.2288
-    assert cost[pg_ha] == 21297.6864
-    assert cost["cloud_ru_reference_two_runtime_vms_with_20gb_disks_monthly_rub_approx"] == 1722.9888
-    assert cost[nlb] == 1305.8879904
-    assert cost["cloud_ru_reference_public_dns_zone_30_days_monthly_rub_approx"] == 32.94
-    assert cost["cloud_ru_certificate_manager_monthly_rub"] == 0
-    assert cost["cloud_ru_reference_initial_stack_monthly_rub_approx"] == 24508.8311904
-    assert cost["exact_selected_vm_price_revalidation_required_before_purchase"]
-    assert cost["exact_selected_database_flavor_revalidation_required_before_purchase"]
-    assert cost[
-        "database_reference_configuration_is_provider_documented_minimum_not_capacity_guarantee"
-    ]
-    assert cost["estimate_is_not_purchase_quote"]
 
 
 def test_money_and_broker_authority_remain_fail_closed() -> None:
@@ -243,14 +215,23 @@ def test_money_and_broker_authority_remain_fail_closed() -> None:
     assert safety["transfer_withdrawal_allowed"] is False
     assert safety["protected_v9_rollback"] is True
     assert safety["app_entrypoint"] == "app:app"
-    assert activation["cloudflare_product_authentication_allowed"] is False
     assert activation["telegram_vk_product_authentication_required"] is True
 
 
-def test_service_selection_still_forbids_provider_apply() -> None:
+def test_service_selection_preserves_inherited_source_markers() -> None:
     selection = SERVICE_SELECTION.read_text(encoding="utf-8")
+    for marker in (
+        "public HTTPS hostname",
+        "public TLS/certificate lifecycle",
+        "Production-origin provider selection is not yet made",
+        "No provider mutation is authorized",
+        "managed-cloud production origin independent of OWNER home infrastructure",
+        "A tunnel whose sole production origin is the PROJECT OWNER's home Lenovo/network is forbidden",
+        "NO PROVIDER APPLY AUTHORIZED",
+    ):
+        assert marker in selection
+
     decision = DECISION.read_text(encoding="utf-8")
-    assert "NO PROVIDER APPLY AUTHORIZED" in selection
-    assert "OWNER COST APPROVAL REQUIRED BEFORE PROVIDER APPLY" in decision
+    assert "OWNER COST APPROVAL REQUIRED BEFORE PAID PROVIDER APPLY" in decision
     assert "provider_apply_authorized=false" in decision
     assert "PUBLIC_MULTI_USER_ENABLED=false" in decision
