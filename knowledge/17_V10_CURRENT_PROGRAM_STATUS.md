@@ -6,7 +6,7 @@ Updated: 2026-08-18
 
 Omni-CIO V10: **DEVELOPMENT ACTIVE / BLOCK D COMPLETE / WP16–WP22 COMPLETE / WP22A CURRENT / PHASE 1 ACCEPTED / PHASE 2 AUTHORIZED**.
 
-Accepted implementation progress remains **40%**.
+Accepted implementation progress is **40%**.
 
 Block A (5%), Block B (9%), Block C (12%) and Block D (14%) have passed their owning Exit Gates. Block E remains in progress: WP16–WP22 are accepted COMPLETE; **WP22A — External Web Access / Product Authentication Security Gate** is the only authorized current functional package and is not yet accepted complete. Block E receives no percentage credit until its own Exit Gate.
 
@@ -183,7 +183,7 @@ Therefore:
 
 `PUBLIC_MULTI_USER_ENABLED=false` remains the safe default during WP22A.
 
-## WP22A Phase 2 — Product-auth / tenant-security correction
+## Current next package — WP22A Phase 2 — Product-auth / tenant-security correction
 
 Phase-2 purpose is to replace historical OWNER/home-specific product authentication assumptions with the accepted public USER model while reusing existing V10 components and security controls.
 
