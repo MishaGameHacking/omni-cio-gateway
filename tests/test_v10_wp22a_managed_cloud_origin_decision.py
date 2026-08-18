@@ -60,13 +60,13 @@ def test_recommendation_has_private_database_and_secret_boundary() -> None:
     )
     assert reasoning["owner_home_availability_dependency_allowed"] is False
 
-    assert legal["russian_federal_law_152_fz_article_18_part_5_localization_gate"] is True
-    assert (
-        legal[
-            "primary_identity_session_tenant_personal_data_outside_russia_allowed_by_this_contract"
-        ]
-        is False
+    localization_gate = "russian_federal_law_152_fz_article_18_part_5_localization_gate"
+    outside_russia = (
+        "primary_identity_session_tenant_personal_data_"
+        "outside_russia_allowed_by_this_contract"
     )
+    assert legal[localization_gate] is True
+    assert legal[outside_russia] is False
     assert legal["production_legal_signoff_required"] is True
 
 
