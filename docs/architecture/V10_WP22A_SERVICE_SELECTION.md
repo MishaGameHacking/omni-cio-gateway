@@ -69,6 +69,7 @@ Nginx TLS + Omni-CIO   Nginx TLS + Omni-CIO
                   |
                   v
        Managed PostgreSQL
+       Business / Multi-AZ
         Primary + Standby
                   |
           +-------+-------+
@@ -85,12 +86,15 @@ Binding recommendation properties:
 - DNS: Evolution DNS;
 - TLS certificate lifecycle: Evolution Certificate Manager + Let's Encrypt;
 - TLS termination: Nginx on the runtime VMs because Evolution NLB is L4;
-- database: private Managed PostgreSQL Standard, two-node Primary/Standby;
+- database: private Managed PostgreSQL **Business**, two-node **Primary/Standby Multi-AZ**;
 - database public IP: forbidden;
+- Standard Managed PostgreSQL: not accepted as the initial public-production database mode;
 - tenant/runtime secret store: Secret Management with Key Management or reviewed provider system key;
 - outbound Internet: reviewed sNAT;
 - provider automation: Terraform for resources proven supported by the exact pinned Evolution provider, with a reviewed Cloud.ru Public API fallback where that exact Terraform path is not accepted;
 - public broker connector: fail-closed independently of public Web/account availability.
+
+Cloud.ru positions Managed PostgreSQL Standard for testing/small applications and Business for commercial/high-load services. Business places the cluster in isolated infrastructure inside the client's VPC and documents a stronger security boundary. Business Primary/Standby can place its two nodes in different availability zones and then withstand one availability-zone failure. The documented Business selectable resource bounds begin at 4 vCPU, 8 GB RAM and 40 GB disk per node; exact currently selectable flavor combinations still require pre-purchase revalidation.
 
 Current Cloud.ru Load Balancer documentation permits a one-resource-unit configuration. Omni-CIO deliberately recommends **two resource units initially** because resource-unit count contributes to performance/fault tolerance; two is an engineering redundancy choice, not a provider minimum.
 
@@ -172,7 +176,7 @@ Cloud.ru also offers Qrator/StormWall DDoS/WAF services. They are **not silently
 
 ### Cloud.ru Evolution
 
-**RECOMMENDED_PENDING_OWNER_COST_APPROVAL.** Strongest reviewed combination of Russian placement, private Managed PostgreSQL, Primary/Standby, Secret Management/KMS, native DNS/NLB/Certificate Manager and source-controlled Terraform/API automation. NLB automation remains a bounded pre-apply verification point because current first-party service and Terraform references conflict; exact pinned-provider evidence decides Terraform versus Public API fallback.
+**RECOMMENDED_PENDING_OWNER_COST_APPROVAL.** Strongest reviewed combination of Russian placement, private Managed PostgreSQL Business Multi-AZ, client-VPC isolation, Secret Management/KMS, native DNS/NLB/Certificate Manager and source-controlled Terraform/API automation. NLB automation remains a bounded pre-apply verification point because current first-party service and Terraform references conflict; exact pinned-provider evidence decides Terraform versus Public API fallback.
 
 ### Timeweb Cloud
 
@@ -180,7 +184,7 @@ Cloud.ru also offers Qrator/StormWall DDoS/WAF services. They are **not silently
 
 ### Yandex Cloud
 
-**SECURITY_STRONGER_HIGHER_COST_ALTERNATIVE.** Mature Russian Managed PostgreSQL + Lockbox + KMS; retained if later availability/security requirements justify the higher cost.
+**SECURITY_STRONGER_HIGHER_COST_ALTERNATIVE.** Mature Russian Managed PostgreSQL + Lockbox + KMS; retained if later availability/security requirements justify higher cost.
 
 ### Render
 
@@ -192,22 +196,25 @@ Cloud.ru also offers Qrator/StormWall DDoS/WAF services. They are **not silently
 
 ## 9. Cost boundary
 
-Current official Cloud.ru references give a lower-bound engineering estimate, not a purchase quote:
+Current official Cloud.ru tariffs give a lower-bound engineering estimate, not a purchase quote:
 
-- Managed PostgreSQL Primary/Standby reference: about **3,792.05 RUB/month**;
+- one reference Business PostgreSQL node at documented lower bounds (`4 vCPU / 8 GB / 40 GB`): about **7,099.23 RUB/month**;
+- Business Primary/Standby Multi-AZ, two such nodes: about **14,198.46 RUB/month**;
 - two reference application VMs with 20 GB boot disks: about **1,722.99 RUB/month**;
 - sNAT: about **149.33 RUB/month**;
 - **recommended two Evolution NLB resource units** + public IP: about **1,305.89 RUB/month**, before traffic;
 - one public Evolution DNS zone for 30 days: about **32.94 RUB/month**;
 - Evolution Certificate Manager: currently free.
 
-Reference initial stack: about **7,003.20 RUB/month**.
+Reference initial stack: about **17,409.60 RUB/month**.
+
+The PostgreSQL amount uses current tariff unit prices and documented Business lower bounds as a reference floor. Cloud.ru notes that not every possible flavor combination is necessarily available; the exact selectable Business flavor must be verified immediately before purchase.
 
 The NLB cost intentionally prices the two-unit Omni-CIO redundancy recommendation. A one-unit provider configuration is permitted but is not the initial V10 recommendation.
 
-Excluded from that lower bound: domain registration, extra Object Storage/traffic/monitoring, managed external WAF/DDoS, larger VMs, later scale and Business Multi-AZ PostgreSQL.
+Excluded from that lower bound: domain registration, extra Object Storage/traffic/monitoring, managed external WAF/DDoS, larger VM/database flavors required by load testing and later scale.
 
-The exact provider cart must be revalidated immediately before purchase. A new recurring paid provider commitment requires explicit OWNER approval after the exact cap and shutdown/delete path are presented.
+A new recurring paid provider commitment requires explicit OWNER approval after the exact cap and shutdown/delete path are presented.
 
 Until that approval **and** exact NLB automation-path validation:
 
