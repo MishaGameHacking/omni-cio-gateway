@@ -33,7 +33,7 @@ The OWNER-observed GitHub Actions zero-budget hard stop is mutable external stat
 If a GitHub-hosted job is blocked by budget/billing:
 
 - classify the startup block accurately as external infrastructure/cost state rather than a code defect;
-- do not merge around a RED applicable check;
+- do not merge around the RED applicable check;
 - do not repeatedly trigger a hosted job already known to be unable to start;
 - first use semantically equivalent already-accepted/zero-cost validation where safe, especially Lenovo self-hosted CI;
 - never silently remove a required hosted clean-room semantic;
