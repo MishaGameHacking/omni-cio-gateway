@@ -45,11 +45,17 @@ def test_phase1_selects_managed_cloud_origin_and_security_boundaries() -> None:
     assert boundary["selected_managed_cloud_origin_provider"] == "CLOUD_RU_EVOLUTION"
     assert boundary["selected_primary_region_family"] == "RUSSIA"
     assert boundary["ordinary_browser_public_https_required"] is True
-    assert boundary["owner_home_or_lenovo_production_availability_dependency_allowed"] is False
+    assert (
+        boundary["owner_home_or_lenovo_production_availability_dependency_allowed"]
+        is False
+    )
     assert boundary["selected_initial_public_edge"] == (
         "DIRECT_EVOLUTION_PUBLIC_IP_WITH_SECURITY_GROUPS_AND_EVOLUTION_DNS"
     )
-    assert boundary["selected_tls_boundary"] == "EVOLUTION_CERTIFICATE_MANAGER_LETS_ENCRYPT"
+    assert (
+        boundary["selected_tls_boundary"]
+        == "EVOLUTION_CERTIFICATE_MANAGER_LETS_ENCRYPT"
+    )
     assert boundary["selected_primary_database_boundary"] == (
         "EVOLUTION_MANAGED_POSTGRESQL_PRIVATE_VPC"
     )
@@ -73,10 +79,14 @@ def test_free_first_lowest_cost_safe_policy_is_binding() -> None:
     assert policy["policy"] == "FREE_FIRST_LOWEST_COST_SAFE"
     assert policy["prefer_already_owned_or_free_before_paid"]
     assert policy["free_service_must_meet_hard_security_legal_recovery_requirements"]
-    assert policy["lowest_cost_paid_option_used_only_when_no_safe_free_option_meets_the_gate"]
+    assert policy[
+        "lowest_cost_paid_option_used_only_when_no_safe_free_option_meets_the_gate"
+    ]
     assert policy["multiple_free_or_low_cost_services_allowed"]
     assert policy["multi_provider_composition_requires_bounded_failure_domains"]
-    assert policy["multi_provider_composition_requires_portable_source_controlled_interfaces"]
+    assert policy[
+        "multi_provider_composition_requires_portable_source_controlled_interfaces"
+    ]
     assert policy[
         "do_not_fragment_identity_session_primary_database_or_raw_credential_custody_for_marginal_savings"
     ]
@@ -84,12 +94,17 @@ def test_free_first_lowest_cost_safe_policy_is_binding() -> None:
     assert policy[
         "code_cannot_compensate_for_missing_legal_permission_data_localization_credential_custody_or_recovery"
     ]
-    assert policy["owner_product_experience_required_before_new_recurring_paid_commitment"]
+    assert policy[
+        "owner_product_experience_required_before_new_recurring_paid_commitment"
+    ]
 
     text = COST_POLICY.read_text(encoding="utf-8")
     assert "already owned / open source / safe free tier / grant / bonus" in text
     assert "lowest-cost safe paid option" in text
-    assert "A cheaper service that cannot satisfy a hard gate is **not** the better option" in text
+    assert (
+        "A cheaper service that cannot satisfy a hard gate is **not** the better option"
+        in text
+    )
     assert "A required architecture decision still gets made" in text
 
 
@@ -160,15 +175,23 @@ def test_free_preview_cannot_receive_real_private_or_broker_state() -> None:
 def test_cloud_ru_selection_reasoning_prefers_total_security_boundary() -> None:
     why = _payload()["selection_reasoning"]
 
-    assert why["cloud_ru_selected_because_hard_boundaries_are_available_in_one_russia_provider"]
+    assert why[
+        "cloud_ru_selected_because_hard_boundaries_are_available_in_one_russia_provider"
+    ]
     assert why["native_managed_postgresql_private_network"]
     assert why["native_scms_service_fee_free"]
     assert why["native_kms_service_fee_free"]
     assert why["native_certificate_manager_service_fee_free"]
     assert why["native_object_storage_free_tier_available"]
-    assert why["timeweb_raw_compute_can_be_cheaper_but_equivalent_managed_credential_boundary_not_selected"]
-    assert why["timeweb_vault_path_requires_kubernetes_or_self_managed_operational_boundary"]
-    assert why["single_provider_security_core_preferred_over_cross_provider_credential_bootstrap_for_marginal_compute_savings"]
+    assert why[
+        "timeweb_raw_compute_can_be_cheaper_but_equivalent_managed_credential_boundary_not_selected"
+    ]
+    assert why[
+        "timeweb_vault_path_requires_kubernetes_or_self_managed_operational_boundary"
+    ]
+    assert why[
+        "single_provider_security_core_preferred_over_cross_provider_credential_bootstrap_for_marginal_compute_savings"
+    ]
     assert why["ha_spend_deferred_until_measured_need"]
 
 
@@ -181,7 +204,10 @@ def test_cloudflare_primary_edge_remains_rejected() -> None:
     assert candidate["result"] == "REJECT_PRIMARY_OR_SOLE_RUSSIAN_USER_PRODUCTION_EDGE"
 
     decision = DECISION.read_text(encoding="utf-8")
-    assert "rejected as the primary or sole normal Russian USER production edge" in decision
+    assert (
+        "rejected as the primary or sole normal Russian USER production edge"
+        in decision
+    )
 
 
 def test_ha_cloud_ru_topology_is_reference_not_startup_commitment() -> None:
@@ -195,7 +221,10 @@ def test_ha_cloud_ru_topology_is_reference_not_startup_commitment() -> None:
     )
     assert stage3["reference_monthly_rub_approx"] == 24508.8311904
     assert stage3["is_initial_spend_commitment"] is False
-    assert cost["cloud_ru_reference_ha_scale_up_stack_monthly_rub_approx"] == 24508.8311904
+    assert (
+        cost["cloud_ru_reference_ha_scale_up_stack_monthly_rub_approx"]
+        == 24508.8311904
+    )
     assert cost["ha_reference_is_not_initial_purchase_quote_or_commitment"]
 
 
@@ -214,16 +243,23 @@ def test_paid_pilot_provider_is_selected_but_sku_and_apply_are_deferred() -> Non
     decision = DECISION.read_text(encoding="utf-8")
     selection = SERVICE_SELECTION.read_text(encoding="utf-8")
     assert "Selected provider: **Cloud.ru Evolution**" in decision
-    assert "Cloud.ru Evolution is the selected production managed-cloud provider/boundary" in selection
+    assert (
+        "Cloud.ru Evolution is the selected production managed-cloud provider/boundary"
+        in selection
+    )
 
 
-def test_candidate_ranking_preserves_fallbacks_without_fragmenting_security_core() -> None:
+def test_candidate_ranking_preserves_fallbacks_without_fragmenting_security_core() -> (
+    None
+):
     candidates = _payload()["candidate_evaluation"]
 
     assert candidates["CLOUD_RU_EVOLUTION"]["result"] == (
         "SELECTED_PRODUCTION_ORIGIN_AND_FREE_PREVIEW_PROVIDER"
     )
-    assert candidates["YANDEX_CLOUD"]["result"] == "STRONG_MANAGED_FALLBACK_NOT_SELECTED"
+    assert (
+        candidates["YANDEX_CLOUD"]["result"] == "STRONG_MANAGED_FALLBACK_NOT_SELECTED"
+    )
     assert candidates["TIMEWEB_CLOUD"]["result"] == (
         "LOW_COST_COMPUTE_FALLBACK_NOT_SELECTED_FOR_SECURITY_CORE"
     )
@@ -240,7 +276,9 @@ def test_candidate_ranking_preserves_fallbacks_without_fragmenting_security_core
 def test_provider_automation_is_fail_closed() -> None:
     automation = _payload()["automation_boundary"]
     assert automation["terraform_preferred_for_supported_cloud_ru_resources"]
-    assert automation["public_api_fallback_allowed_only_when_reviewed_terraform_resource_is_not_accepted"]
+    assert automation[
+        "public_api_fallback_allowed_only_when_reviewed_terraform_resource_is_not_accepted"
+    ]
     assert automation["nlb_exact_provider_schema_acceptance_required_before_apply"]
     assert automation["provider_identity_cannot_be_product_identity"]
     assert automation["provider_credentials_allowed_in_pull_request"] is False
@@ -251,11 +289,18 @@ def test_legal_and_data_boundaries_are_price_independent() -> None:
     legal = _payload()["legal_and_data_boundary"]
     assert legal["production_legal_signoff_required"]
     assert legal["russian_federal_law_152_fz_localization_gate"]
+    assert (
+        legal[
+            "primary_identity_session_tenant_personal_data_outside_russia_allowed_by_this_contract"
+        ]
+        is False
+    )
+    assert (
+        legal["cross_border_processing_allowed_without_separate_legal_review"] is False
+    )
     assert legal[
-        "primary_identity_session_tenant_personal_data_outside_russia_allowed_by_this_contract"
-    ] is False
-    assert legal["cross_border_processing_allowed_without_separate_legal_review"] is False
-    assert legal["free_or_discounted_service_does_not_waive_legal_security_or_broker_gates"]
+        "free_or_discounted_service_does_not_waive_legal_security_or_broker_gates"
+    ]
 
 
 def test_money_and_broker_authority_remain_fail_closed() -> None:
@@ -294,4 +339,7 @@ def test_service_selection_preserves_inherited_markers_and_new_authority() -> No
     assert "OWNER COST APPROVAL REQUIRED BEFORE ANY PAID APPLY" in decision
     assert "provider_apply_authorized=false" in decision
     assert "PUBLIC_MULTI_USER_ENABLED=false" in decision
-    assert "Selected managed-cloud production origin/provider boundary: Cloud.ru Evolution" in decision
+    assert (
+        "Selected managed-cloud production origin/provider boundary: Cloud.ru Evolution"
+        in decision
+    )
