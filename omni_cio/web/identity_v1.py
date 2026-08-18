@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
-import hashlib
 from typing import Final
 
 
@@ -32,7 +31,12 @@ class ProviderDescriptorV1:
 
 @dataclass(frozen=True, slots=True)
 class VerifiedExternalIdentityV1:
-    """Server-verified identity proof stripped of profile authorization fields."""
+    """Server-verified identity proof stripped of profile authorization fields.
+
+    `subject` is an in-memory protocol result only. Durable product identity uses
+    the runtime-keyed HMAC binding implemented by `product_identity_v1`; this
+    type deliberately exposes no unkeyed persistent fingerprint helper.
+    """
 
     provider: IdentityProviderV1
     subject: str
@@ -40,10 +44,8 @@ class VerifiedExternalIdentityV1:
     def __post_init__(self) -> None:
         if not self.subject or len(self.subject) > 256:
             raise ValueError("external identity subject is invalid")
-
-    def binding_fingerprint_sha256(self) -> str:
-        payload = f"{self.provider.value}:{self.subject}".encode("utf-8")
-        return hashlib.sha256(payload).hexdigest()
+        if self.subject != self.subject.strip():
+            raise ValueError("external identity subject must be canonical")
 
 
 ORDINARY_LOGIN_PROVIDERS: Final[tuple[IdentityProviderV1, ...]] = (
