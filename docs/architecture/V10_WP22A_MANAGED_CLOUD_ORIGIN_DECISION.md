@@ -108,22 +108,28 @@ Public DNS: Evolution DNS.
 
 Certificate lifecycle: Evolution Certificate Manager + Let's Encrypt. TLS terminates at Nginx on the runtime VMs because the NLB is L4. Certificate/private-key delivery must use a dedicated least-privilege runtime identity; private key material must never enter GitHub, PR CI, logs or artifacts.
 
-The current Cloud.ru Load Balancer v2 documentation is authoritative for this decision:
+The current Cloud.ru Load Balancer documentation is authoritative for the service behavior:
 
 - provider minimum: **1 resource unit**;
 - resource-unit count is a manual performance/fault-tolerance setting;
 - this V10 recommendation deliberately starts with **2 resource units** to avoid making the single permitted unit the only NLB processing boundary;
 - public IP supported;
-- target health checks supported;
-- current limitations page states **Terraform is not supported** for Load Balancer management.
+- target health checks supported.
 
-Therefore two NLB resource units are an Omni-CIO initial fault-tolerance choice, **not** a Cloud.ru provider minimum. NLB source-controlled automation must use **Cloud.ru Public API from a reviewed GitHub/provider-operation boundary**, not pretend the current NLB v2 is Terraform-manageable. Terraform remains the preferred automation path for Cloud.ru resources that the current provider actually supports.
+Cloud.ru's current official documentation is **internally inconsistent about Terraform management of NLB**:
+
+- the Load Balancer limitations page says management is available through the Evolution console and Public API and says Terraform is not supported;
+- the current Terraform for Evolution reference simultaneously exposes first-class `cloudru_evolution_nlb_network_load_balancer` and `cloudru_evolution_nlb_target_group` resources, including public address, rules and health-check schema.
+
+Because both are current first-party sources, this Phase-1 decision must not pretend either statement silently wins. The production apply path therefore fails closed until a later source-controlled toolchain step pins the exact Cloud.ru Terraform provider version and proves the NLB resource path with deterministic provider-schema/config validation and a reviewed non-mutating provider plan/acceptance step. If that exact pinned provider path is proven supported, Terraform is preferred for NLB as well; if it is not, the reviewed Cloud.ru Public API is the fallback. **No NLB provider apply is authorized while this documentation conflict is unresolved by exact toolchain evidence.**
 
 Primary sources:
 
 - NLB limitations/current management: `https://cloud.ru/docs/nlb/ug/topics/overview__limitations`;
 - NLB resource units: `https://cloud.ru/docs/nlb/ug/topics/concepts__service-essence-resource-unit`;
 - NLB pricing: `https://cloud.ru/docs/nlb/ug/topics/pricing`;
+- Terraform NLB resource: `https://cloud.ru/docs/terraform-evolution/ug/topics/reference/resources/cloudru_evolution_nlb_network_load_balancer`;
+- Terraform NLB target group: `https://cloud.ru/docs/terraform-evolution/ug/topics/reference/resources/cloudru_evolution_nlb_target_group`;
 - Certificate Manager: `https://cloud.ru/docs/certificate-manager/ug/index`;
 - Let's Encrypt: `https://cloud.ru/docs/certificate-manager/ug/topics/tutorials__letsencrypt`;
 - Evolution DNS: `https://cloud.ru/docs/dns/ug/index`.
@@ -175,7 +181,7 @@ Managed Qrator/StormWall WAF/DDoS is **not silently included** because it materi
 
 ### Cloud.ru Evolution
 
-**RECOMMENDED_PENDING_OWNER_COST_APPROVAL.** Best reviewed combination of Russia placement, private Managed PostgreSQL, Primary/Standby, native DNS/NLB/Certificate Manager, Secret Management/KMS and source-controlled Terraform/API automation.
+**RECOMMENDED_PENDING_OWNER_COST_APPROVAL.** Best reviewed combination of Russia placement, private Managed PostgreSQL, Primary/Standby, native DNS/NLB/Certificate Manager, Secret Management/KMS and source-controlled Terraform/API automation. NLB automation remains explicitly fail-closed until the conflicting first-party Terraform documentation is resolved by exact pinned-provider evidence.
 
 ### Timeweb Cloud
 
@@ -227,13 +233,15 @@ The exact provider cart must be revalidated immediately before purchase. OWNER m
 
 Current automation target:
 
-- Terraform for supported Evolution resources where the current provider/docs support it;
-- Cloud.ru Public API for current NLB v2;
-- GitHub source as engineering source of truth;
+- Terraform for Evolution resources verified by the exact pinned provider/toolchain;
+- for NLB specifically, do **not** hard-code Terraform-only or Public-API-only while Cloud.ru's official service and Terraform references disagree;
+- before provider apply, pin the exact Terraform provider version and prove the NLB resource schema/config with deterministic validation plus a reviewed non-mutating provider plan/acceptance step;
+- use Terraform for NLB if that exact acceptance passes; otherwise use the reviewed Cloud.ru Public API fallback;
+- GitHub source remains engineering source of truth for either path;
 - no long-lived provider credential in source, PR logs or artifacts;
 - provider apply only from an explicitly reviewed accepted-main operational boundary after OWNER recurring-cost approval.
 
-No convenience claim such as "Terraform supports everything" may override current provider documentation.
+Documentation inconsistency is treated as a deployment blocker, not permission to guess. No convenience claim such as "Terraform supports everything" or "Terraform supports nothing for NLB" may override exact pinned-toolchain evidence.
 
 ## 14. Recovery and exit
 
@@ -253,7 +261,7 @@ Before public activation prove:
 
 This recommendation can become accepted source authority only after exact-head DRAFT CI GREEN, full diff/review, fresh READY exact-head GREEN, squash merge, exact-main verification and post-merge Regression Shield GREEN.
 
-Even after source acceptance, provider apply remains blocked until explicit OWNER recurring-cost approval.
+Even after source acceptance, provider apply remains blocked until explicit OWNER recurring-cost approval **and** exact NLB automation-path validation resolve the current Cloud.ru documentation conflict.
 
 Until then:
 
