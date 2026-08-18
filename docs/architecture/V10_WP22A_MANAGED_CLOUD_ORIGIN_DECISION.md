@@ -73,7 +73,8 @@ Cloud.ru Evolution DNS
         v
 Evolution L4 Network Load Balancer
 public IP + health checks
-minimum 2 resource units
+recommended initial: 2 resource units
+(provider minimum: 1)
         |
         +-------------------+
         |                   |
@@ -109,18 +110,20 @@ Certificate lifecycle: Evolution Certificate Manager + Let's Encrypt. TLS termin
 
 The current Cloud.ru Load Balancer v2 documentation is authoritative for this decision:
 
-- minimum **2 resource units** per L4 load balancer;
+- provider minimum: **1 resource unit**;
+- resource-unit count is a manual performance/fault-tolerance setting;
+- this V10 recommendation deliberately starts with **2 resource units** to avoid making the single permitted unit the only NLB processing boundary;
 - public IP supported;
 - target health checks supported;
 - current limitations page states **Terraform is not supported** for Load Balancer management.
 
-Therefore NLB source-controlled automation must use **Cloud.ru Public API from a reviewed GitHub/provider-operation boundary**, not pretend the current NLB v2 is Terraform-manageable. Terraform remains the preferred automation path for Cloud.ru resources that the current provider actually supports.
+Therefore two NLB resource units are an Omni-CIO initial fault-tolerance choice, **not** a Cloud.ru provider minimum. NLB source-controlled automation must use **Cloud.ru Public API from a reviewed GitHub/provider-operation boundary**, not pretend the current NLB v2 is Terraform-manageable. Terraform remains the preferred automation path for Cloud.ru resources that the current provider actually supports.
 
 Primary sources:
 
-- NLB service/current minimum resource units: `https://cloud.ru/documents/contracts/terms-of-service/evolution/load-balancer/description-load-balancer`;
-- NLB current limitations: `https://cloud.ru/docs/nlb/ug/topics/overview__limitations`;
-- NLB pricing: `https://cloud.ru/documents/tariffs/evolution/load-balancer`;
+- NLB limitations/current management: `https://cloud.ru/docs/nlb/ug/topics/overview__limitations`;
+- NLB resource units: `https://cloud.ru/docs/nlb/ug/topics/concepts__service-essence-resource-unit`;
+- NLB pricing: `https://cloud.ru/docs/nlb/ug/topics/pricing`;
 - Certificate Manager: `https://cloud.ru/docs/certificate-manager/ug/index`;
 - Let's Encrypt: `https://cloud.ru/docs/certificate-manager/ug/topics/tutorials__letsencrypt`;
 - Evolution DNS: `https://cloud.ru/docs/dns/ug/index`.
@@ -199,11 +202,13 @@ At 720 hours:
 - two reference `1 vCPU / 2 GB / 20 GB` PostgreSQL nodes: about **3,792.05 RUB/month**;
 - two reference `1 vCPU / 2 GB / 30% CPU` application VMs with 20 GB boot disks: about **1,722.99 RUB/month**;
 - sNAT: about **149.33 RUB/month**;
-- Evolution NLB current minimum 2 resource units + public IP: about **1,305.89 RUB/month**, before traffic charges;
+- **recommended two NLB resource units** + public IP: about **1,305.89 RUB/month**, before traffic charges;
 - one public Evolution DNS zone for 30 days: about **32.94 RUB/month**;
 - Evolution Certificate Manager: currently **0 RUB**.
 
 Reference initial stack: about **7,003.20 RUB/month**.
+
+The NLB amount intentionally prices the two-unit V10 redundancy recommendation; Cloud.ru currently permits a one-unit configuration, but that cheaper single-unit option is not the initial Omni-CIO recommendation.
 
 Excluded:
 
