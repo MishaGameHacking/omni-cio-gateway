@@ -98,6 +98,18 @@ The following old assumptions are **not** reusable as final product authority:
 - final user experience restricted to PROJECT OWNER;
 - permanent public multi-user disablement.
 
+### 5.1 Historical Phase-A TLS markers — regression provenance only
+
+The accepted Phase-A implementation used the following Cloudflare-specific TLS/certificate assumptions. They are retained here only so inherited regression guards can recognize the historical boundary while the final provider-selection gate is reopened:
+
+- `Universal SSL`;
+- `active Cloudflare full-DNS zone`;
+- `first-level subdomain`;
+- `Cloudflare owns edge-certificate issuance, renewal and deployment`;
+- `X-Forwarded-Proto`.
+
+These strings are **not binding final public-hosted provider requirements**. The finally selected provider/edge design must instead prove equivalent or stronger public TLS/certificate issuance, renewal, hostname coverage and an explicit trusted forwarded-protocol boundary. No historical marker authorizes provider apply or makes Cloudflare the final application host.
+
 ## 6. Broker/public-service separation
 
 Production-origin selection must not assume T-Invest public connector permission. Current T-Invest documentation says ordinary client API access does not permit a public service with data retransmission.
