@@ -81,9 +81,15 @@ Keeps OWNER engineering browser-first and Lenovo headless for CI/recovery. Its e
 
 `OMNI_CIO_V10_ENGINEERING_QUALITY_AND_GREEN_MERGE_AMENDMENT.md`
 
-Companions include engineering-quality contract, OWNER handoff, CI cost control, Failure Learning Ledger and governance workflow.
+Machine/governance companions:
 
-Locks root-cause-first engineering, all applicable exact-head checks actually `success`, no fake PASS, exact-head invalidation after commits, focused PRs, squash merge, post-merge verification and bounded OWNER handoffs. This governance remains fully active for Amendments 9/10 and subsequent implementation.
+- `../architecture/V10_ENGINEERING_QUALITY_GATE_CONTRACT.json`;
+- `../operations/V10_OWNER_ACTION_HANDOFF_STANDARD.md`;
+- `../operations/V10_CI_COST_CONTROL_STANDARD.md`;
+- `../operations/V10_ENGINEERING_FAILURE_LEARNING_LEDGER.md`;
+- `.github/workflows/v10-engineering-governance.yml` through repository root.
+
+Locks root-cause-first engineering, all applicable exact-head checks actually `success`, no fake PASS, exact-head invalidation after commits, focused PRs, squash merge, post-merge verification and bounded OWNER handoffs. This governance remains fully active for Amendments 9/10 and subsequent implementation. Its runtime-hosting subsection is updated by Amendment 10 from Personal-Node-final hosting to the managed-cloud/no-home public-production boundary while preserving the V9 Render baseline and OWNER budget discipline.
 
 ### 9. Product User / Engineering Authority Boundary
 
