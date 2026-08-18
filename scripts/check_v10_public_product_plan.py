@@ -146,17 +146,23 @@ def validate_contract(failures: list[str]) -> None:
 
 
 def validate_live_authority(failures: list[str]) -> None:
-    forbidden_current = (
-        "WP22A — External Web Access / OWNER Authentication Security Gate"
+    forbidden_current_markers = (
+        "WP22A — External Web Access / OWNER Authentication Security Gate",
+        "Do **not** begin functional WP22A implementation until that planning PR is squash-merged",
+        "The current public/free/hosted planning correction must complete its own merge/post-merge lifecycle",
+        "Before functional WP22A coding resumes, the OWNER-approved planning correction",
+        "Current planning freeze:",
     )
     for path in LIVE_PRODUCT_AUTHORITY:
         text = read_text(path, failures)
         if not text:
             continue
-        if forbidden_current in text:
-            failures.append(
-                f"live authority restored obsolete OWNER-product-auth WP22A wording: {path.relative_to(ROOT)}"
-            )
+        for marker in forbidden_current_markers:
+            if marker in text:
+                failures.append(
+                    "live authority restored obsolete product/planning wording: "
+                    f"{path.relative_to(ROOT)}: {marker}"
+                )
 
     for path in (
         ROOT / "AGENTS.md",
@@ -201,7 +207,7 @@ def validate_live_authority(failures: list[str]) -> None:
     for marker in (
         "Accepted implementation progress is **40%**",
         "APPROVED TARGET / IMPLEMENTATION FLAG REMAINS OFF UNTIL EXIT GATES",
-        "Do **not** begin functional WP22A implementation until that planning PR is squash-merged",
+        "WP22A — External Web Access / Product Authentication Security Gate",
     ):
         require(status, marker, "current status", failures)
 
