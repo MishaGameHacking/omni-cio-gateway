@@ -11,6 +11,7 @@ Repository-front-door snapshot of accepted/current program authority:
 - accepted V10 implementation progress: **40%**;
 - WP0–WP22: accepted according to the canonical status/evidence chain;
 - current functional package: **WP22A — External Web Access / Product Authentication Security Gate**;
+- OWNER-approved Product USER / Engineering Authority + Public Free Multi-User Hosted Runtime planning correction is **accepted on `main` through PR #329 + post-merge Regression Shield #1503 SUCCESS**;
 - WP23+ remains locked behind the corrected WP22A Exit Gate and Master Plan sequence;
 - **public multi-user/global browser service is the approved V10 target**;
 - **public Internet ingress remains OFF while the corrected WP22A/security/legal/capacity gates are unfinished**; planning approval is not production activation;
@@ -116,7 +117,7 @@ Use:
 
 Do not start Telegram, AI, Real execution or later packages out of sequence. Do not call RED, skipped, queued or pending GREEN. Do not synthesize OWNER physical evidence. Do not create a second Web App/repository/Core/broker stack.
 
-The current planning correction itself must complete PR/CI/merge/post-merge acceptance before functional WP22A implementation resumes.
+The public/free/hosted planning correction is accepted. Corrected WP22A may proceed only under its current execution/service-selection contracts and Master Plan gates; acceptance of the planning correction does not authorize public activation, provider mutation, broker-write expansion or WP23 work.
 
 ## Protected V9 boundaries
 

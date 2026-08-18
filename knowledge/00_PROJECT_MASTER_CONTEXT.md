@@ -20,11 +20,11 @@ V10 target is one **public modern multi-user Omni-CIO Web product**. A supported
 
 OWNER issued `START V10` on 2026-08-05.
 
-As of this planning correction, canonical status remains **40% accepted implementation**, WP0–WP22 accepted and **WP22A** as the current authorized functional package. WP23+ remains locked. This sentence is a convenience snapshot only; `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md` is the dynamic authority.
+Canonical status remains **40% accepted implementation**, WP0–WP22 accepted and **WP22A** as the current authorized functional package. WP23+ remains locked. This sentence is a convenience snapshot only; `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md` is the dynamic authority.
 
 WP22A is interpreted as **External Web Access / Product Authentication Security Gate**. Public multi-user/global browser access is the approved target, but actual public activation stays fail-closed until corrected WP22A plus tenant-isolation/security/privacy/broker/legal/capacity/recovery gates pass.
 
-The 2026-08-18 OWNER planning decision does **not** itself open ingress, mutate a provider, enable broker write or start WP23.
+The 2026-08-18 OWNER planning decision is accepted on `main` through PR #329 plus post-merge Regression Shield #1503 SUCCESS. It does **not** itself open ingress, mutate a provider, enable broker write or start WP23.
 
 ## 3. USER versus PROJECT OWNER
 
@@ -126,7 +126,7 @@ GitHub is engineering source of truth. Significant work follows:
 
 Red is red. Skipped/pending/queued is not PASS. OWNER physical/secret evidence is never synthesized. OWNER participation is limited to genuinely non-delegable account/consent/secret/admin/physical decisions.
 
-The 2026-08-18 planning correction itself must complete this same PR/CI/merge/post-merge lifecycle **before functional WP22A development resumes**.
+The 2026-08-18 planning correction has completed its PR/CI/merge/post-merge lifecycle and is accepted authority. Corrected WP22A may resume under its current execution/service-selection contracts; public activation, provider mutation, broker-write expansion and WP23 remain independently gated.
 
 ## 11. Authority navigation
 

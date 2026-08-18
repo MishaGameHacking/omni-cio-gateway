@@ -58,7 +58,7 @@ Engineering invariants:
 - do not weaken tests/security/Regression Shield;
 - later WPs remain locked until current Exit Gate.
 
-If the Public Free Multi-User Hosted Runtime planning correction is not yet accepted, do planning/governance/documentation only. Do not resume functional WP22A coding until that plan PR is squash-merged and its exact new main passes required post-merge GREEN.
+The Product USER / Engineering Authority + Public Free Multi-User Hosted Runtime planning correction is already accepted through PR #329 merged to exact main `5f535c0ced9514866bd3680042f3ba0bb012f866` with post-merge Regression Shield #1503 / run `32129304332` SUCCESS. Do not reintroduce the superseded planning freeze or OWNER/home-production assumptions. Read the latest accepted `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`; corrected WP22A is the current functional package and its first implementation phase is the service/hosting architecture decision under the current execution/service-selection contracts. Planning acceptance does not authorize public activation, paid-provider purchase, privileged provider mutation, broker-write expansion or WP23 work.
 
 Broker/money invariants:
 - tenant-scoped READ/optional TRADE credentials;

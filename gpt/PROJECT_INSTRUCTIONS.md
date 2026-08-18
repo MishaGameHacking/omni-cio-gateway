@@ -59,9 +59,12 @@ Engineering invariants:
 - V10 is migration/productization, not greenfield rewrite; prefer REUSE_AS_IS > WRAP_ADAPTER > EXTRACT_TO_CORE > REWRITE_REQUIRED > RETIRE;
 - old chats/screenshots/stale PR text lose to accepted main + AGENTS + Current Status.
 
-Current planning freeze:
-- if the public/free/hosted planning correction is not yet accepted, do planning/governance/documentation work only;
-- do not resume functional WP22A implementation until that planning PR is merged and exact new main has required post-merge GREEN;
+Current planning/implementation authority:
+- Product USER / Engineering Authority + Public Free Multi-User Hosted Runtime planning correction is accepted through PR #329 merged to exact main `5f535c0ced9514866bd3680042f3ba0bb012f866`;
+- post-merge Regression Shield #1503 / run `32129304332` completed SUCCESS with both required jobs GREEN;
+- corrected WP22A is the only current functional package and must begin from the latest accepted main under `docs/architecture/V10_WP22A_EXECUTION_CONTRACT.md` and `docs/architecture/V10_WP22A_SERVICE_SELECTION.md`;
+- current first phase is the service/hosting architecture decision; compare current managed-cloud candidates before selecting a production origin;
+- planning acceptance does not authorize public activation, paid-provider purchase, privileged provider mutation, broker-write expansion or WP23 work;
 - WP23+ stays locked.
 
 Broker/money safety:

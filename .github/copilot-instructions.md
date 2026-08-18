@@ -55,7 +55,7 @@ Do exactly one current Work Package/defect at a time:
 
 Do not start later WPs early. Do not start V11. Do not implement Telegram/AI/Real execution/billing early merely because they are mentioned in the target architecture.
 
-The current public/free/hosted planning correction must complete its own merge/post-merge lifecycle before functional WP22A coding resumes.
+The Product USER / Engineering Authority + Public Free Multi-User Hosted Runtime planning correction is **accepted** through PR #329 merged to exact main `5f535c0ced9514866bd3680042f3ba0bb012f866` with post-merge Regression Shield #1503 / run `32129304332` SUCCESS. Corrected WP22A is therefore the current functional package; begin only from the latest accepted main and follow `V10_WP22A_EXECUTION_CONTRACT.md` + `V10_WP22A_SERVICE_SELECTION.md`. This acceptance does not authorize public activation, paid-provider purchase, privileged provider mutation, broker-write expansion or WP23 work.
 
 ## Pre-CI Engineering Gate
 

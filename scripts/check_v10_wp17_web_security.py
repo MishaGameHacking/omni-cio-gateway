@@ -49,12 +49,13 @@ def _wp22a_source_gate_active(failures: list[str]) -> bool:
         failures.append(f"WP22A execution contract unreadable: {type(exc).__name__}")
         return False
 
-    # WP17 only needs proof that a reviewed WP22A source contract owns the
-    # already-accepted external-access markers. The contract may be in a
-    # fail-closed planning hold.
-    # live ingress or provider activation is never inferred from source-marker presence.
+    # WP17 only needs proof that a reviewed corrected WP22A source contract owns
+    # the already-accepted external-access markers. The contract lifecycle may
+    # advance from planning hold to current implementation without changing the
+    # durable public/no-home/source-gate semantics. live ingress or provider
+    # activation is never inferred from source-marker presence.
     required_markers = (
-        "Status: **PLANNING HOLD / CORRECTED PUBLIC-HOSTED TARGET",
+        "CORRECTED PUBLIC-HOSTED TARGET",
         "Owning package: **WP22A — External Web Access / Product Authentication Security Gate**",
         "WP23+: LOCKED",
         "`PUBLIC_MULTI_USER_ENABLED=false`",

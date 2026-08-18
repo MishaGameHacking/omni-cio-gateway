@@ -4,7 +4,7 @@ Updated: 2026-08-18
 
 ## Executive state
 
-Omni-CIO V10: **DEVELOPMENT ACTIVE / BLOCK D COMPLETE / WP16–WP22 COMPLETE / WP22A AUTHORIZED CURRENT PACKAGE / PUBLIC-FREE-HOSTED PLANNING CORRECTION IN ACCEPTANCE**.
+Omni-CIO V10: **DEVELOPMENT ACTIVE / BLOCK D COMPLETE / WP16–WP22 COMPLETE / WP22A AUTHORIZED CURRENT PACKAGE / PUBLIC-FREE-HOSTED PLANNING CORRECTION ACCEPTED**.
 
 Accepted implementation progress is **40%**.
 
@@ -14,28 +14,35 @@ WP23+ remains locked behind the corrected WP22A Exit Gate and Master Plan sequen
 
 ## Latest accepted engineering baseline
 
-CI-resilience maintenance PR #328 was squash-merged to exact `main`:
+OWNER-approved public/free/hosted planning correction PR #329 was squash-merged to exact `main`:
 
-`10c1c0368c6415c70279e8de71ee0792e371dd3a`
+`5f535c0ced9514866bd3680042f3ba0bb012f866`
 
-The OWNER supplied the required post-merge evidence for that exact main: **Regression Shield #1502 — SUCCESS**, with both `Dependency, code and secret security` and `Quality, contracts and coverage` jobs passing. PR #328 is therefore accepted engineering authority.
+Required post-merge evidence for that exact main is complete: **Regression Shield #1503 / run `32129304332` — SUCCESS**. Both required jobs completed SUCCESS:
 
-PR #327 (`Plan: separate Omni-CIO USER identity from PROJECT OWNER authority`) was closed **unmerged / superseded** on 2026-08-18. Its valid USER-vs-PROJECT-OWNER intent is carried forward in the consolidated planning correction created from exact accepted `10c1c036...` main. PR #327 itself is historical and is not accepted authority.
+- `Dependency, code and secret security`;
+- `Quality, contracts and coverage`.
 
-## Current planning freeze before functional development
+PR #329 is therefore accepted planning/governance authority. It does not itself increase implementation progress, complete WP22A, activate public production, select/purchase a provider, enable T-Invest public connector functionality, expand broker write authority or unlock WP23+.
 
-OWNER explicitly required all agreed V10 plan corrections to be committed, reviewed, GREEN, squash-merged and post-merge verified **before functional WP22A development resumes**.
+CI-resilience maintenance PR #328 remains accepted engineering history at exact main `10c1c0368c6415c70279e8de71ee0792e371dd3a` with post-merge Regression Shield #1502 SUCCESS.
+
+PR #327 (`Plan: separate Omni-CIO USER identity from PROJECT OWNER authority`) was closed **unmerged / superseded** on 2026-08-18. Its valid USER-vs-PROJECT-OWNER intent is carried forward by accepted PR #329 and Amendments 9/10. PR #327 itself is historical and is not accepted authority.
+
+## Planning correction acceptance / functional development authority
+
+OWNER required all agreed V10 plan corrections to be committed, reviewed, GREEN, squash-merged and post-merge verified before functional WP22A development resumed. That prerequisite is now satisfied by accepted PR #329 plus exact-main Regression Shield #1503 SUCCESS.
 
 Therefore current engineering authority is:
 
-- planning/governance/documentation changes only until this correction is accepted;
-- no new WP22A runtime/provider/product implementation during this planning PR;
-- no Cloudflare/provider mutation;
-- no public DNS/production activation;
-- no broker authority expansion;
-- no WP23 work.
+- corrected **WP22A** functional development may resume from the latest accepted `main`;
+- implementation must follow the corrected public-hosted WP22A execution/service-selection contracts and the Master Plan sequence;
+- service/provider comparison and source-controlled architecture may proceed, but no paid provider purchase or privileged provider mutation is implied;
+- public DNS/production activation remains locked until the owning security/isolation/recovery/legal/broker/capacity gates pass;
+- broker write / Real execution authority remains unchanged;
+- WP23+ remains locked.
 
-OWNER action required now: **NO**. Engineering continues the planning PR autonomously through exact-head CI, review, merge and post-merge verification. If a genuinely non-delegable provider/account/legal/secret/admin decision is later required, use the accepted OWNER handoff standard.
+OWNER action required now: **NO**. Engineering may proceed autonomously with the corrected WP22A implementation until a genuinely non-delegable provider/account/legal/secret/admin/budget/physical decision is reached; then use the accepted OWNER handoff standard.
 
 ## OWNER-approved final V10 product direction
 
@@ -106,7 +113,7 @@ Optional TRADE authority remains separate. Execution eligibility remains the sam
 
 `EXECUTABLE_ACCOUNTS = VERIFIED_READ_ACCOUNTS ∩ VERIFIED_TRADE_ACCOUNTS`
 
-This planning correction does not enable Real execution.
+The accepted planning correction does not enable Real execution.
 
 ### Hosted tenant-private data
 
@@ -144,13 +151,13 @@ Therefore:
 - public Internet ingress — **OFF / LOCKED until corrected WP22A and production launch gates**;
 - broker write / Real execution — **UNCHANGED / NOT AUTHORIZED**.
 
-`PUBLIC_MULTI_USER_ENABLED=false` remains the safe implementation default during current planning/implementation. The approved target after all required launch gates is public multi-user enabled.
+`PUBLIC_MULTI_USER_ENABLED=false` remains the safe implementation default during current WP22A implementation. The approved target after all required launch gates is public multi-user enabled.
 
 ## Current next package — WP22A External Web Access / Product Authentication Security Gate
 
 Corrected objective: deliver the external-access, product-authentication and isolation security boundary for the eventual **public hosted** Omni-CIO product without making PROJECT OWNER infrastructure identity a product account and without making OWNER home infrastructure the production origin.
 
-Required WP22A direction after this planning correction is accepted:
+Required WP22A direction under the accepted planning correction:
 
 - reuse the one accepted source-controlled Web App/Core rather than create a second site;
 - design/accept an approved managed-cloud production origin independent of OWNER home IP/Wi-Fi/LAN/Lenovo;
@@ -227,7 +234,8 @@ Accepted implementation/history remains available through the merged PR chain an
 - Engineering Quality governance PR #322 accepted; post-merge Regression Shield #1498 — SUCCESS;
 - WP22A Phase-A browser-only/clientless PR #321 accepted as dormant/pre-amendment implementation evidence, **not** final public product authority where OWNER identity/home origin conflicts with later planning;
 - WP15 physical OWNER audit failures on later unrelated Web SHAs remain historical fail-closed evidence and were never relabeled PASS;
-- CI-resilience PR #328 -> exact main `10c1c0368c6415c70279e8de71ee0792e371dd3a`; post-merge Regression Shield **#1502 SUCCESS** on that exact main.
+- CI-resilience PR #328 -> exact main `10c1c0368c6415c70279e8de71ee0792e371dd3a`; post-merge Regression Shield **#1502 SUCCESS** on that exact main;
+- public/free/hosted planning PR #329 -> exact main `5f535c0ced9514866bd3680042f3ba0bb012f866`; post-merge Regression Shield **#1503 / run `32129304332` SUCCESS**, both required jobs SUCCESS.
 
 Hosted jobs that did not execute because of external capacity/billing conditions were never counted as PASS.
 
@@ -245,6 +253,6 @@ Hosted jobs that did not execute because of external capacity/billing conditions
 
 ## Current next action
 
-Complete the **planning correction PR only**: Product USER/PROJECT OWNER separation + Public Free Multi-User Hosted Runtime + live-guidance/current-WP synchronization + permanent regression guards.
+Begin corrected **WP22A Phase 1 — Service/hosting architecture decision** from the latest accepted `main` under `docs/architecture/V10_WP22A_EXECUTION_CONTRACT.md` and `docs/architecture/V10_WP22A_SERVICE_SELECTION.md`.
 
-Do **not** begin functional WP22A implementation until that planning PR is squash-merged and its exact new `main` passes required post-merge Regression Shield. After acceptance, resume only corrected WP22A; WP23+ remains locked.
+First produce a current official-provider comparison and an explicit managed-cloud production-origin decision satisfying the no-home dependency, tenant data/secret isolation, recovery, capacity, cost and legal constraints. Do not place real provider secrets in PR/CI, do not purchase or mutate a paid provider without the required OWNER decision, do not activate public production, and do not begin WP23+ until the corrected WP22A Exit Gate passes.

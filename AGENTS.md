@@ -35,6 +35,7 @@ Current accepted snapshot:
 - V10 WP0–WP22 are accepted COMPLETE according to the current-status file;
 - accepted V10 progress is **40%** because Block E is not credited piecemeal;
 - **WP22A — External Web Access / Product Authentication Security Gate is the only authorized current functional package**;
+- Product USER / Engineering Authority + Public Free Multi-User Hosted Runtime planning correction is accepted through PR #329 and post-merge Regression Shield #1503 SUCCESS;
 - WP23+ remains LOCKED behind the corrected WP22A Exit Gate;
 - public multi-user/global browser service is the approved target, but `PUBLIC_MULTI_USER_ENABLED=false` remains the safe implementation default until WP22A plus tenant-isolation/security/privacy/broker/legal/capacity gates are accepted;
 - final public production must not depend on PROJECT OWNER home IP/Wi-Fi/router/LAN/Lenovo; an approved managed-cloud origin is required by the active launch amendment;
@@ -449,8 +450,8 @@ When AI implementation begins, CI must additionally fail closed on policy/tool/e
 
 Current functional authorization is read only from `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`. **WP22A — External Web Access / Product Authentication Security Gate** remains the only authorized functional package and WP23+ remains locked.
 
-Before functional WP22A coding resumes, the OWNER-approved planning correction for Product USER separation plus Public Free Multi-User Hosted Runtime must complete its own lifecycle: exact-head GREEN → full review → squash merge → exact-main post-merge Regression Shield GREEN.
+The OWNER-approved Product USER separation + Public Free Multi-User Hosted Runtime planning correction is accepted through PR #329 merged to exact `main` `5f535c0ced9514866bd3680042f3ba0bb012f866` with post-merge Regression Shield #1503 / run `32129304332` SUCCESS and both required jobs GREEN.
 
-After that, WP22A must be reworked against the accepted public target: ordinary product auth, tenant isolation, managed-cloud production with no OWNER-home availability dependency, free initial access, tenant-scoped broker credentials, and separate broker/legal activation gates.
+Corrected WP22A must now proceed from the latest accepted main, starting with its **Service/hosting architecture decision**. Rework against the accepted public target: ordinary product auth, tenant isolation, managed-cloud production with no OWNER-home availability dependency, free initial access, tenant-scoped broker credentials, and separate broker/legal activation gates.
 
-Do not interpret documentation cleanup, a planning PR, source-controlled Cloudflare intent or external reachability as WP22A completion. No planning change by itself may mutate provider state, enable Real trading, bypass broker terms or unlock WP23.
+Do not interpret planning acceptance, documentation cleanup, source-controlled Cloudflare intent or external reachability as WP22A completion. No planning change by itself may mutate provider state, enable Real trading, bypass broker terms or unlock WP23.
