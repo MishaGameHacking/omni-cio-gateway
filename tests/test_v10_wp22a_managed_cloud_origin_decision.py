@@ -222,8 +222,7 @@ def test_ha_cloud_ru_topology_is_reference_not_startup_commitment() -> None:
     assert stage3["reference_monthly_rub_approx"] == 24508.8311904
     assert stage3["is_initial_spend_commitment"] is False
     assert (
-        cost["cloud_ru_reference_ha_scale_up_stack_monthly_rub_approx"]
-        == 24508.8311904
+        cost["cloud_ru_reference_ha_scale_up_stack_monthly_rub_approx"] == 24508.8311904
     )
     assert cost["ha_reference_is_not_initial_purchase_quote_or_commitment"]
 
