@@ -1,5 +1,5 @@
 {
-  "contract_version": "1.1.0",
+  "contract_version": "1.2.0",
   "status": "RECOMMENDED_PENDING_OWNER_COST_APPROVAL",
   "decision_date": "2026-08-18",
   "owning_package": "WP22A",
@@ -13,6 +13,9 @@
     "edge": "CLOUD_RU_EVOLUTION_DNS_NLB_NGINX_TLS",
     "public_dns": "CLOUD_RU_EVOLUTION_DNS",
     "public_load_balancer": "CLOUD_RU_EVOLUTION_L4_NLB",
+    "public_load_balancer_min_resource_units": 2,
+    "public_load_balancer_automation": "CLOUD_RU_PUBLIC_API_PLUS_GITHUB_SOURCE_CONTROL",
+    "public_load_balancer_terraform_supported_currently": false,
     "certificate_manager": "CLOUD_RU_EVOLUTION_CERTIFICATE_MANAGER_LETS_ENCRYPT",
     "tls_termination": "NGINX_ON_RUNTIME_VMS",
     "certificate_distribution": "LEAST_PRIVILEGE_FROM_CERTIFICATE_MANAGER_TO_RUNTIME_VMS",
@@ -30,7 +33,7 @@
     "secret_store": "CLOUD_RU_SECRET_MANAGEMENT",
     "key_management": "CLOUD_RU_KEY_MANAGEMENT_OR_REVIEWED_SYSTEM_KEY",
     "backup_object_storage": "CLOUD_RU_EVOLUTION_OBJECT_STORAGE_ENCRYPTED",
-    "infrastructure_as_code": "CLOUD_RU_TERRAFORM_PROVIDER_PLUS_GITHUB",
+    "infrastructure_automation": "CLOUD_RU_TERRAFORM_FOR_SUPPORTED_RESOURCES_PLUS_PUBLIC_API_FOR_NLB_PLUS_GITHUB",
     "initial_managed_external_waf": "DEFERRED_PENDING_COST_CAPACITY_AND_CERTIFICATE_CUSTODY_REVIEW",
     "initial_edge_abuse_controls": "NGINX_PLUS_APPLICATION_RATE_LIMIT_HOST_CSRF_ORIGIN_SESSION_AND_SECURITY_HEADER_CONTROLS",
     "container_apps_primary_runtime_allowed": false,
@@ -45,7 +48,8 @@
     "database_single_node_is_initial_production_recommendation": false,
     "runtime_single_node_is_initial_production_recommendation": false,
     "russian_user_primary_edge_must_be_reliably_reachable_from_russia": true,
-    "github_iac_automation_required": true,
+    "github_source_controlled_provider_automation_required": true,
+    "terraform_only_provider_automation_required": false,
     "owner_home_availability_dependency_allowed": false,
     "native_client_required_for_product_users": false
   },
@@ -62,12 +66,14 @@
         "EVOLUTION_CERTIFICATE_MANAGER_LETS_ENCRYPT",
         "PROJECT_SCOPED_VERSIONED_SECRET_MANAGEMENT",
         "KEY_MANAGEMENT_INTEGRATION",
-        "TERRAFORM_PROVIDER",
+        "TERRAFORM_FOR_SUPPORTED_RESOURCES",
+        "PUBLIC_API_FOR_NLB",
         "PAY_AS_YOU_GO"
       ],
       "known_tradeoffs": [
         "VM_RUNTIME_REQUIRES_OS_PATCHING_AND_RUNTIME_OPERATIONS",
         "STANDARD_PRIMARY_STANDBY_IS_SINGLE_AZ_AND_DOES_NOT_EQUAL_MULTI_AZ_BUSINESS_TOPOLOGY",
+        "CURRENT_NLB_V2_DOCS_STATE_TERRAFORM_NOT_SUPPORTED_SO_NLB_AUTOMATION_REQUIRES_PUBLIC_API",
         "EXTERNAL_MANAGED_WAF_IS_NOT_INCLUDED_IN_BASE_COST_AND_REQUIRES_SEPARATE_COST_AND_CERTIFICATE_CUSTODY_REVIEW"
       ]
     },
@@ -137,10 +143,10 @@
     "cloud_ru_vm_pricing_page_reference_20gb_boot_disk_monthly_rub_approx": 224.64,
     "cloud_ru_reference_two_runtime_vms_with_20gb_disks_monthly_rub_approx": 1722.9888,
     "cloud_ru_current_snat_gateway_monthly_rub_approx": 149.328,
-    "cloud_ru_reference_nlb_one_resource_unit_plus_public_ip_monthly_rub_approx": 727.6079952,
+    "cloud_ru_reference_nlb_min_two_resource_units_plus_public_ip_monthly_rub_approx": 1305.8879904,
     "cloud_ru_reference_public_dns_zone_30_days_monthly_rub_approx": 32.94,
     "cloud_ru_certificate_manager_monthly_rub": 0,
-    "cloud_ru_reference_initial_stack_monthly_rub_approx": 6424.9175952,
+    "cloud_ru_reference_initial_stack_monthly_rub_approx": 7003.1975904,
     "reference_initial_stack_excludes_domain_extra_object_storage_traffic_monitoring_external_waf_ddos_service_and_later_scale": true,
     "estimate_is_not_purchase_quote": true
   },
