@@ -1,56 +1,136 @@
 # 17 — V10 CURRENT PROGRAM STATUS
 
-Updated: 2026-08-16
+Updated: 2026-08-18
 
 ## Executive state
 
-Omni-CIO V10: **DEVELOPMENT ACTIVE / BLOCK D COMPLETE / WP16 COMPLETE / WP17 COMPLETE / WP18 COMPLETE / WP19 COMPLETE / WP20 COMPLETE / WP21 COMPLETE / WP22 COMPLETE / WP22A AUTHORIZED CURRENT PACKAGE**.
+Omni-CIO V10: **DEVELOPMENT ACTIVE / BLOCK D COMPLETE / WP16–WP22 COMPLETE / WP22A AUTHORIZED CURRENT PACKAGE / PUBLIC-FREE-HOSTED PLANNING CORRECTION IN ACCEPTANCE**.
 
 Accepted implementation progress is **40%**.
 
-Block A (5%), Block B (9%), Block C (12%) and Block D (14%) have passed their owning Exit Gates. Block E is still in progress: WP16, WP17, WP18, WP19, WP20, WP21 and WP22 are complete; WP22A — External Web Access / OWNER Authentication Security Gate — is the current authorized functional package. Block E receives no percentage credit until its own Block Exit Gate, which includes WP22A.
+Block A (5%), Block B (9%), Block C (12%) and Block D (14%) have passed their owning Exit Gates. Block E remains in progress: WP16–WP22 are accepted COMPLETE; **WP22A — External Web Access / Product Authentication Security Gate** is the current authorized functional package and is not yet accepted complete. Block E receives no percentage credit until its own Exit Gate.
 
-WP22 was implemented on final reviewed head `cbe521c2cafad1a7d8df81119344ffca35098e12` and squash-merged through PR #314 to exact `main` `872976cd2bb34d304c8666a332e466fc6cd9b0d4`.
+WP23+ remains locked behind the corrected WP22A Exit Gate and Master Plan sequence.
 
-On the final reviewed WP22 head, the fresh `ready_for_review` cycle completed **SUCCESS** for the dedicated WP22 System Admin Audit, inherited WP15 Live Web Support, WP16 Web Design System, WP17 Application Shell, WP18 Portfolio Dashboard, WP19 Watchtower Incident, WP20 Research Dossier, WP21 Decision/Risk/Plan and authoritative Self-Hosted Windows CI. The authoritative gate included Regression Shield coverage, dependency audit, SAST, tracked-content secret scan, stable `app:app` and read-only GPT Actions checks. Hosted Fast PR Checks / Toolchain Compatibility did not start substantive GitHub-hosted jobs because of the account billing/spending-limit condition; they remain infrastructure failures, not PASS and not code failures.
+## Latest accepted engineering baseline
 
-After squash merge, post-merge Regression Shield #1494 / run `31796896704` completed **SUCCESS** on exact `main` `872976cd2bb34d304c8666a332e466fc6cd9b0d4`. Both independent jobs passed: quality/contracts/coverage and dependency/code/secret security. The post-merge WP22 System Admin Audit #15 / run `31796896578` also completed **SUCCESS** on the same exact main.
+CI-resilience maintenance PR #328 was squash-merged to exact `main`:
 
-The post-merge WP15 Live Web OWNER Audit #21 / run `31796896713` remains **FAILURE**, not PASS. Its accepted immutable OWNER evidence is bound to the accepted WP15 implementation rather than the later WP22 main, so the audit reports `implementation_bound=false` and `WP15_LIVE_RUNNER_ISOLATION_NOT_PROVEN`. The auditor intentionally performs the live secret/evidence ACL probes only after implementation/evidence/hash binding succeeds; because that precondition is false on later Web main SHAs, the emitted runner-access booleans remain fail-closed defaults and are not evidence that a new runner secret-access regression occurred. The same sanitized audit still records real broker READ observation present, locally used READ credential evidence present, no secret value recorded, no private portfolio values recorded, no broker-write authority added, `trading_methods=false` and gateway `app:app`. No new OWNER evidence is synthesized merely to rebind historical WP15 acceptance to a later Web commit.
+`10c1c0368c6415c70279e8de71ee0792e371dd3a`
 
-The accepted WP22 product surface remains local/private, OWNER/session-scoped and READ-only. `/system` projects sanitized service health, release/deploy identity, PostgreSQL/migration state, accepted backup RPO/RTO plus durable backup observation, T-Invest READ/Watchtower state, explicit future-locked Telegram/AI state, bounded resource telemetry, required safety invariants and bounded recent jobs/errors. Unknown/degraded telemetry remains explicit instead of being fabricated as READY. No browser mutation control, public ingress, broker-write route, Telegram/AI activation or Real execution authority was introduced.
+The OWNER supplied the required post-merge evidence for that exact main: **Regression Shield #1502 — SUCCESS**, with both `Dependency, code and secret security` and `Quality, contracts and coverage` jobs passing. PR #328 is therefore accepted engineering authority.
 
-The deferred/accepted WP15 real T-Invest READ path remains unchanged. Broker provisioning remains connection-scoped through the authenticated local/private Web flow; raw broker credentials, full provider account IDs and private portfolio payloads remain outside GitHub/CI evidence.
+PR #327 (`Plan: separate Omni-CIO USER identity from PROJECT OWNER authority`) was closed **unmerged / superseded** on 2026-08-18. Its valid USER-vs-PROJECT-OWNER intent is carried forward in the consolidated planning correction created from exact accepted `10c1c036...` main. PR #327 itself is historical and is not accepted authority.
 
-The 2026-08-15 Browser-Only Phone Engineering / Headless Personal Node Operations amendment is accepted and active. It keeps the OWNER's normal control surface browser-only where feasible, keeps Lenovo/replacement Personal Node as the V10 private runtime, and treats clientless external-access providers as access/security transport rather than a second application/private-state host.
+## Current planning freeze before functional development
 
-The 2026-08-16 Engineering Quality / Pre-CI / Green-Merge governance package is also **accepted and active**. Governance PR #322 is accepted at exact `main` `1c05390d9cf31b8cc68a90a5d7cbd6428ffe7791`, and post-merge Regression Shield #1498 / run `31959959791` completed **SUCCESS** on that exact main. These governance changes do not increase the 40% product-progress figure, complete WP22A or unlock WP23.
+OWNER explicitly required all agreed V10 plan corrections to be committed, reviewed, GREEN, squash-merged and post-merge verified **before functional WP22A development resumes**.
 
-OWNER action required now: **NO**. Engineering may continue WP22A autonomously through source, tests, PRs and CI. Ordinary phone/browser product acceptance is not requested before the relevant implementation is merged and its required post-merge verification is GREEN. If a genuinely non-delegable account/consent/secret/admin prerequisite becomes necessary, engineering must use the accepted OWNER handoff standard and request only that bounded prerequisite.
+Therefore current engineering authority is:
 
-Owner start command: **`START V10`** received 2026-08-05.
+- planning/governance/documentation changes only until this correction is accepted;
+- no new WP22A runtime/provider/product implementation during this planning PR;
+- no Cloudflare/provider mutation;
+- no public DNS/production activation;
+- no broker authority expansion;
+- no WP23 work.
 
-Starting or advancing V10 never expands broker/Real-money authority by itself.
+OWNER action required now: **NO**. Engineering continues the planning PR autonomously through exact-head CI, review, merge and post-merge verification. If a genuinely non-delegable provider/account/legal/secret/admin decision is later required, use the accepted OWNER handoff standard.
+
+## OWNER-approved final V10 product direction
+
+### Public global Web
+
+The approved final product target is a **public modern multi-user Omni-CIO Web service** reachable from ordinary Internet-connected modern phones/desktops through a public HTTPS hostname.
+
+A normal USER must not require:
+
+- PROJECT OWNER home public IP;
+- PROJECT OWNER Wi-Fi/cable/mobile home Internet;
+- PROJECT OWNER router/NAT/LAN;
+- Lenovo laptop as public production origin;
+- Tailscale/native VPN client for ordinary product use;
+- GitHub repository access;
+- Cloudflare/provider membership;
+- Windows/CI credentials.
+
+The final public production origin must be an approved **managed-cloud runtime** selected through the V10 service-selection/security/recovery process. Lenovo remains engineering/self-hosted CI/controlled acceptance/recovery/rollback, not the public availability anchor.
+
+Cloudflare may be used for reviewed DNS/TLS/WAF/DDoS/edge functions. Cloudflare/provider identity belongs to engineering authority and is not product authentication. A Tunnel whose sole production origin is the OWNER's home Lenovo/network does not satisfy the final hosted target.
+
+### USER identity and tenant isolation
+
+Canonical product identity remains:
+
+`OmniCIOUserAccount -> Tenant -> Session -> tenant-scoped product state`
+
+The PROJECT OWNER is not a special product role. When using Omni-CIO, the PROJECT OWNER is an ordinary USER using exactly the same account/tenant/session path as supported users.
+
+Ordinary login methods remain Telegram Login and VK ID mapped to the internal Omni-CIO account. Product authority comes from reviewed product authentication plus server-side session state, never GitHub/cloud-provider/Windows ownership.
+
+Before public activation, API plus database-enforced tenant isolation and cross-tenant negative tests must cover records, jobs, queues, caches, notifications, exports, backups/recovery and AI/RAG memory.
+
+### Free initial launch
+
+Initial registered-user access is free:
+
+- `BILLING_ENABLED=false`;
+- `TRIAL_ENABLED=false`;
+- `SUBSCRIPTION_ENFORCEMENT=false`;
+- `PREMIUM_FEATURE_GATING=false`;
+- no payment method required for registration/login;
+- no 7-day trial or 1/3/6/12-month entitlement required for initial use.
+
+Earlier paid/trial architecture is superseded for the initial launch. Future monetization is `DEFERRED_OPTIONAL` and requires a later explicit OWNER-approved amendment plus applicable legal/payment implementation.
+
+### Tenant-owned broker credentials
+
+For public V10, broker credentials are not application-global user credentials.
+
+Canonical ownership:
+
+`USER -> Tenant -> BrokerConnection -> READ / TRADE_OPTIONAL -> verified broker-account binding`
+
+A credential submitted by USER A belongs only to Tenant A and must never be usable by Tenant B.
+
+Raw credentials:
+
+- are entered/replaced/revoked only through authenticated USER Web settings over reviewed HTTPS;
+- are never returned to the browser after submission;
+- are never stored in browser Web Storage;
+- never enter GitHub, CI logs or artifacts;
+- require encrypted-at-rest tenant-scoped cloud secret/data protection;
+- are inaccessible to Cortex, ordinary CI and unrelated tenants.
+
+Optional TRADE authority remains separate. Execution eligibility remains the same-tenant intersection:
+
+`EXECUTABLE_ACCOUNTS = VERIFIED_READ_ACCOUNTS ∩ VERIFIED_TRADE_ACCOUNTS`
+
+This planning correction does not enable Real execution.
+
+### Hosted tenant-private data
+
+The managed-cloud public target explicitly supersedes the older assumption that every public USER's private investment data must remain on an OWNER/Personal Node.
+
+Hosted tenant-private state and encrypted broker credentials are permitted only after the exact architecture passes security, privacy/personal-data, retention, secrets, backup/recovery and broker/legal gates. GitHub/CI still never stores these private values.
+
+## T-Invest public connector gate
+
+Current official T-Invest API documentation states that a public service based on T-Invest API is not permitted under ordinary client API access because data retransmission rights are not granted.
+
+Therefore:
+
+- public Omni-CIO Web/account/tenant development is a separate concern from T-Invest public connector activation;
+- a user-supplied token does not waive broker terms;
+- T-Invest-backed public production functionality remains **FAIL_CLOSED_PENDING_BROKER_TERMS_PERMISSION** until a contractually valid permission/partner arrangement or another explicitly accepted compliant architecture exists;
+- no plan/UI/status may claim broker-terms approval before it exists.
 
 ## Accepted / current WP state
 
 - Block A / WP0 — **COMPLETE (5%)**;
-- Block B / WP1 — **COMPLETE**;
-- Block B / WP2 — **COMPLETE**;
-- Block B / WP3 — **COMPLETE**;
-- Block B / WP4 — **COMPLETE (Block B accepted at 9%)**;
-- Block C / WP5 — **COMPLETE**;
-- Block C / WP6 — **COMPLETE**;
-- Block C / WP7 — **COMPLETE**;
-- Block C / WP8 — **COMPLETE**;
-- Block C / WP9 — **COMPLETE**;
-- Block C / WP9A — **COMPLETE**;
-- Block C / WP10 — **COMPLETE (Block C accepted at 12%)**;
-- Block D / WP11 — **COMPLETE**;
-- Block D / WP12 — **COMPLETE**;
-- Block D / WP13 — **COMPLETE**;
-- Block D / WP14 — **COMPLETE**;
-- Block D / WP15 — **COMPLETE (Block D accepted at 14%)**;
+- Block B / WP1–WP4 — **COMPLETE (Block B accepted at 9%)**;
+- Block C / WP5–WP10 incl. WP9A — **COMPLETE (Block C accepted at 12%)**;
+- Block D / WP11–WP15 — **COMPLETE (Block D accepted at 14%)**;
 - Block E / WP16 — **COMPLETE**;
 - Block E / WP17 — **COMPLETE**;
 - Block E / WP18 — **COMPLETE**;
@@ -59,37 +139,41 @@ Starting or advancing V10 never expands broker/Real-money authority by itself.
 - Block E / WP21 — **COMPLETE**;
 - Block E / WP22 — **COMPLETE**;
 - Block E / WP22A — **AUTHORIZED CURRENT PACKAGE / NOT YET ACCEPTED COMPLETE**;
-- Block F / WP23+ — **LOCKED behind WP22A and Master Plan sequence**;
-- public multi-user activation — **OFF / LOCKED**;
-- public Internet ingress — **OFF / LOCKED until WP22A Exit Gate**;
+- Block F / WP23+ — **LOCKED behind corrected WP22A and Master Plan sequence**;
+- public multi-user activation — **APPROVED TARGET / IMPLEMENTATION FLAG REMAINS OFF UNTIL EXIT GATES**;
+- public Internet ingress — **OFF / LOCKED until corrected WP22A and production launch gates**;
 - broker write / Real execution — **UNCHANGED / NOT AUTHORIZED**.
 
-An open/draft WP22A implementation PR may exist outside accepted `main`; that is in-flight engineering evidence only. WP22A remains not COMPLETE until its required code/tests/security/recovery/provider/OWNER evidence and final status Exit Gate are accepted.
+`PUBLIC_MULTI_USER_ENABLED=false` remains the safe implementation default during current planning/implementation. The approved target after all required launch gates is public multi-user enabled.
 
-## Current next package — WP22A External Web Access / OWNER Authentication Security Gate
+## Current next package — WP22A External Web Access / Product Authentication Security Gate
 
-Master Plan objective: prevent the local Personal cabinet from becoming a public attack surface before external-access security design and evidence are complete.
+Corrected objective: deliver the external-access, product-authentication and isolation security boundary for the eventual **public hosted** Omni-CIO product without making PROJECT OWNER infrastructure identity a product account and without making OWNER home infrastructure the production origin.
 
-Required WP22A deliverables:
+Required WP22A direction after this planning correction is accepted:
 
-- decide whether public ingress is needed at all; safe private remote access is evaluated first;
-- if external ingress is needed, define reviewed TLS termination, certificate issuance/renewal, HSTS/host allowlist and trusted reverse-proxy chain;
-- preserve a separate ordinary-browser authentication path; Telegram/Mini App identity is not the only login authority;
-- server-side sessions with defined lifetime, rotation, explicit revoke/logout and secure/HttpOnly/SameSite cookies or equivalent reviewed controls;
-- CSRF protection plus Origin/Referer/Host validation where applicable and CORS deny-by-default;
-- login/API rate limiting and abuse policy without self-DoS of critical monitoring;
-- any future Real-plan approval endpoint requires step-up/recent OWNER authentication and never trusts only a deep-link URL;
-- external ingress configuration remains repository-controlled while secret keys/certificate private material remain runtime-only.
+- reuse the one accepted source-controlled Web App/Core rather than create a second site;
+- design/accept an approved managed-cloud production origin independent of OWNER home IP/Wi-Fi/LAN/Lenovo;
+- define public TLS termination, certificate lifecycle, trusted proxy chain, HSTS and Host allowlist;
+- keep Cloudflare/provider administration separate from Omni-CIO USER authentication;
+- use Telegram/VK -> internal Omni-CIO account -> server-side session product auth;
+- define bounded session lifetime, rotation, revoke/logout and Secure/HttpOnly/SameSite cookies;
+- enforce CSRF plus Origin/Referer/Host validation and deny-by-default CORS;
+- enforce login/API abuse/rate limits without self-DoS of critical monitoring;
+- deny direct/API tenant access without valid USER session/authorization;
+- prove database-enforced tenant isolation and cross-scope negatives;
+- define tenant-scoped secrets, encrypted hosted private state, backup/recovery and restoration without cross-tenant leakage;
+- prove the public product does not depend on Lenovo/home availability;
+- keep T-Invest public connector fail-closed until broker-terms permission is accepted;
+- keep any future Real approval USER-scoped to that USER's own tenant/account with step-up/recent auth and all money-path gates.
 
-Required WP22A checks include relevant ASVS 5.0.0 controls, invalid/stolen/expired sessions, CSRF, host-header/origin abuse, brute-force/rate-limit behavior, direct API calls without UI and Telegram `initData` replay/staleness where applicable.
+Required checks retain ASVS-relevant controls, stolen/invalid/expired sessions, CSRF, Host/Origin abuse, brute-force/rate-limit behavior, direct API calls, tenant IDOR/cross-scope tests, restore leakage tests and Telegram replay/staleness where applicable.
 
-WP22A Exit Gate: **until this gate is GREEN, Web remains local/private and the Real approval surface is not published externally**.
-
-WP22A must reuse the accepted single Web App, server-side session/identity model, tenant isolation and operational diagnostics. It must not create a second website/control plane, grant broker-write authority, enable Real execution, or treat external reachability as equivalent to public multi-user activation.
+WP22A Exit Gate: **no production public activation is accepted until the corrected hosted architecture and all required security/isolation/recovery/legal/broker/capacity gates are GREEN.**
 
 ## Canonical authority
 
-Base program:
+Mandatory sources include:
 
 - `AGENTS.md`;
 - `README.md`;
@@ -97,143 +181,70 @@ Base program:
 - `knowledge/00_PROJECT_MASTER_CONTEXT.md`;
 - `knowledge/16_CURRENT_PROGRAM_STATUS.md` for protected V9 runtime state;
 - `docs/master-plan/OMNI_CIO_V10_PROGRAM_LOCK.md`;
-- `docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.md`;
-- `docs/master-plan/Omni-CIO_V10_Master_Plan_RU.pdf`;
-- `docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.sha256`;
+- `docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.md` + synchronized PDF/SHA manifest;
 - `docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md`;
-- `docs/master-plan/OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md`;
-- `docs/master-plan/OMNI_CIO_V10_CONCRETE_EXECUTION_PLAN_AMENDMENT.md`;
-- `docs/master-plan/OMNI_CIO_V10_PHONE_ONLY_ENGINEERING_AND_HEADLESS_NODE_OPERATIONS_AMENDMENT.md`;
-- `docs/master-plan/OMNI_CIO_V10_ENGINEERING_QUALITY_AND_GREEN_MERGE_AMENDMENT.md`.
-
-Identity, broker provisioning and Web work are additionally governed by:
-
+- `docs/master-plan/OMNI_CIO_V10_ENGINEERING_QUALITY_AND_GREEN_MERGE_AMENDMENT.md`;
+- `docs/master-plan/OMNI_CIO_V10_PRODUCT_USER_AND_ENGINEERING_AUTHORITY_BOUNDARY_AMENDMENT.md`;
+- `docs/master-plan/OMNI_CIO_V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_AMENDMENT.md`;
+- `docs/architecture/V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_CONTRACT.json`;
 - `docs/master-plan/OMNI_CIO_V10_IDENTITY_MULTI_TENANT_ACCOUNT_AND_AUTHENTICATION_AMENDMENT.md`;
-- `docs/architecture/ADR-0010-identity-multitenant-authentication.md`;
-- `docs/architecture/V10_IDENTITY_AUTHENTICATION_CONTRACT.json`;
-- `docs/operations/V10_IDENTITY_AND_BROKER_CONNECTION_SECURITY_NOTES.md`;
-- `docs/architecture/V10_WP15_TINVEST_READONLY_CONTRACT.md`;
-- `docs/architecture/V10_WP15_LIVE_ACCEPTANCE_STATE.json`;
-- `docs/architecture/V10_WP15_LIVE_WEB_ACCEPTANCE_CONTRACT.json`;
-- `docs/operations/V10_WP15_OWNER_LIVE_READ_RUNBOOK.md`;
-- `docs/architecture/V10_WP16_WEB_DESIGN_SYSTEM_CONTRACT.md`;
-- `docs/architecture/ADR-0011-web-read-credential-provisioning.md`;
-- `docs/architecture/V10_WP17_APPLICATION_SHELL_CONTRACT.json`;
-- `docs/operations/V10_WP17_APPLICATION_SHELL_RUNBOOK.md`;
-- `docs/architecture/V10_WP18_EXECUTION_CONTRACT.md`;
-- `docs/architecture/V10_WP18_PORTFOLIO_DASHBOARD_CONTRACT.md`;
-- `docs/architecture/V10_WP19_EXECUTION_CONTRACT.md`;
-- `docs/architecture/V10_WP19_WATCHTOWER_INCIDENT_UI_CONTRACT.md`;
-- `docs/architecture/V10_WP20_EXECUTION_CONTRACT.md`;
-- `docs/architecture/V10_WP20_RESEARCH_DOSSIER_UI_CONTRACT.md`;
-- `docs/architecture/V10_WP21_EXECUTION_CONTRACT.md`;
-- `docs/architecture/V10_WP21_DECISION_RISK_PLAN_UI_CONTRACT.md`;
-- `docs/architecture/V10_WP22_EXECUTION_CONTRACT.md`;
-- `docs/architecture/V10_WP22_SYSTEM_ADMIN_UI_CONTRACT.md`;
-- `docs/architecture/V10_ENGINEERING_QUALITY_GATE_CONTRACT.json`;
-- `docs/architecture/V10_SECURITY_BOUNDARIES.md`;
-- `docs/architecture/V10_THREAT_MODEL.md`.
+- accepted security/threat/recovery/WP22A architecture and runbooks.
 
-GitHub remains engineering source of truth. Protected production/recovery baseline remains **Omni-CIO v9.0.0 — COMPLETE / owner-accepted / controlled maintenance** until the responsible later V10 parity/decommission gate.
+GitHub remains engineering source of truth. Historical PRs/old OWNER-only Personal-Node contracts remain historical implementation evidence where superseded; they do not override later accepted amendments.
 
 ## Progress
 
 | Block | Planned weight | Accepted state |
 |---|---:|---|
 | A. Architecture and V9 protection | 5% | COMPLETE — WP0 |
-| B. GitHub, dependencies and CI/CD | 9% | COMPLETE — WP1 / WP2 / WP3 / WP4 |
-| C. Lenovo Omni-CIO Node / infrastructure | 12% | COMPLETE — WP5 / WP6 / WP7 / WP8 / WP9 / WP9A / WP10 |
-| D. V10 Core and data | 14% | COMPLETE — WP11 / WP12 / WP13 / WP14 / WP15 incl. real READ evidence |
-| E. Omni-CIO Web Platform | 14% | IN PROGRESS — WP16 / WP17 / WP18 / WP19 / WP20 / WP21 / WP22 COMPLETE; WP22A CURRENT |
-| F. Telegram | 8% | NOT STARTED — product/interaction contract pre-approved only |
+| B. GitHub, dependencies and CI/CD | 9% | COMPLETE — WP1–WP4 |
+| C. Node / infrastructure baseline | 12% | COMPLETE — WP5–WP10/WP9A |
+| D. V10 Core and data | 14% | COMPLETE — WP11–WP15 |
+| E. Omni-CIO Web Platform | 14% | IN PROGRESS — WP16–WP22 COMPLETE; corrected WP22A CURRENT |
+| F. Telegram | 8% | NOT STARTED — planning only |
 | G. AI Copilot / Research / GPT Migration | 18% | NOT STARTED |
 | H. Guardian / Watchtower Loop | 8% | NOT STARTED |
 | I. Personal Real Execution | 7% | NOT STARTED |
 | J. Integration / hardening / recovery / release | 5% | NOT STARTED |
 | **TOTAL** | **100% planned** | **40% ACCEPTED** |
 
-The 40% total is intentional: Block E is not credited piecemeal and WP22A has not passed its Exit Gate.
+The 40% total is intentional: Block E is not credited piecemeal and corrected WP22A has not passed its Exit Gate.
 
-## Accepted implementation evidence index
+## Accepted implementation evidence summary
 
-- WP0 PR #228 -> `7c5de954eed10dd406e743c38f7bdef6b0634108`;
-- WP1 PR #229 -> `dbd459b280de84d3f571b458b46f1039880312ca`;
-- WP2 PR #230 -> `3e3a89791d7f1594e4e1ba52125f8361708ae29d`;
-- WP3 PR #236 -> `289ff563e99a64bbf8b5a289e84668dde58ef42a`;
-- WP4 PR #248 / hardening #249 -> accepted Block B;
-- WP5 PR #251; WP6 #253; WP7 #255; WP8 #257; WP9 #259; WP9A #261; WP10 rebuild #267 -> accepted Block C;
-- WP11 clean rebuild #269; WP12 #271; WP13 #273; WP14 #275;
-- WP15 primary PR #277 -> `f8862d1af88400189d3c0780d2029a87cb5427ca`;
-- Identity / Multi-Tenant / Authentication amendment PR #278 -> `cbf6a7adba78fa56d23e90ce2cfe2952d21a5e5b`;
-- WP16 PR #280 -> `03f3ff2f389b1b683e60e1ccc706cd7f62a9ba35`;
-- WP17 PR #282 -> `5b6b12f144c9bfa71307dcb28548a97527456b5b`;
-- deferred WP15 live support PR #284 and acceptance hardening PRs #285/#286/#287/#290/#292/#293/#294/#295/#296/#297/#298/#299;
-- V10 status/runbook sync PR #300 -> `0825e6c4625944d7b8e7dd796150fb1ae6707e6d`;
-- WP15 live responsiveness/deadline correction PR #301 -> exact accepted implementation `a7ecad5f7e84e756d19fca2969a71c62fca744a2`;
-- WP15 live acceptance/status transition PR #302 -> accepted pre-WP18 `main` `8b6780dc2d0c6cb3f70577e6f24a5e8ca11def07`;
-- WP18 PR #303 -> squash merge `90c8b52c864db034d31d6184346b2ff62707c121`;
-- WP18 final reviewed head `18ce03a3557b51255499fa22c2e1f5ac4be92cc2`: fresh `ready_for_review` runs WP18 #82, WP15 Read #272, WP15 Live #200, WP15 Deferred #204, WP16 #324, WP17 #295 and Self-Hosted Windows CI #973 — **SUCCESS**;
-- post-WP18 Regression Shield #1486 / run `31705088464` on exact `main` `90c8b52c864db034d31d6184346b2ff62707c121` — **SUCCESS**;
-- WP19 final PR #308 reviewed head `8f6c60805341c34726e22eefb676220d7ae66dcb`: WP19 #25, WP15 Live Web Support #226, WP16 #353, WP17 #324, WP18 #111 and Self-Hosted Windows CI #1000 — **SUCCESS**;
-- WP19 PR #308 squash merge -> exact `main` `058e53a76e6f6aeabe32eb6711cb5168417d5093`;
-- post-WP19 Regression Shield #1488 / run `31728413708` on exact `main` `058e53a76e6f6aeabe32eb6711cb5168417d5093` — **SUCCESS**, including coverage, dependency audit, SAST and tracked-secret scan;
-- post-WP19 Watchtower Incident Audit #26 / run `31728413735` — **SUCCESS** on the same exact main;
-- WP20 final PR #310 reviewed head `21fec9d2682d3731759bb520f25cb1026295013a`: WP15 Live Web Support #238, WP16 #367, WP17 #338, WP18 #125, WP19 #39, WP20 #11 and Self-Hosted Windows CI #1012 — **SUCCESS**;
-- WP20 PR #310 squash merge -> exact `main` `b83e2bcc729ed0863f861a258dc951a57ec6b65e`;
-- post-WP20 Regression Shield #1490 / run `31745729866` on exact `main` `b83e2bcc729ed0863f861a258dc951a57ec6b65e` — **SUCCESS**, including coverage, dependency audit, SAST and tracked-secret scan;
-- post-WP20 Research Dossier Audit #12 / run `31745729883` — **SUCCESS** on the same exact main;
-- post-WP20 WP15 Live Web OWNER Audit #19 / run `31745729843` — **FAILURE** due immutable accepted WP15 evidence SHA not matching the later Web main; this remains red and is not treated as PASS or as proof of a new isolation regression;
-- WP21 final PR #312 reviewed head `87953ba8a082dc81cb14b56525da3e5da65361ef`: WP15 Live Web Support #267, WP16 #398, WP17 #369, WP18 #156, WP19 #70, WP20 #42, WP21 #28 and Self-Hosted Windows CI #1041 — **SUCCESS**;
-- WP21 PR #312 squash merge -> exact `main` `933e05ead311f0016372cab1d38eb9746bc62a19`;
-- post-WP21 Regression Shield #1492 / run `31783003407` on exact `main` `933e05ead311f0016372cab1d38eb9746bc62a19` — **SUCCESS**, including quality/contracts/coverage, dependency audit, SAST and tracked-secret scan;
-- post-WP21 Decision/Risk/Plan Audit #29 / run `31783003337` — **SUCCESS** on the same exact main;
-- post-WP21 inherited WP18 #157, WP17 #370, WP16 #399 and WP19 #71 — **SUCCESS** on the same exact main;
-- post-WP21 WP15 Live Web OWNER Audit #20 / run `31783003403` — **FAILURE** because immutable accepted WP15 evidence is not bound to the later WP21 main; the audit remains fail-closed and is not treated as PASS or as proof of a new isolation regression;
-- WP21 status transition PR #313 -> `4bb18b7cddc33b8d79d168103c747852b8624b23`;
-- WP22 final reviewed head `cbe521c2cafad1a7d8df81119344ffca35098e12`: dedicated WP22 audit, inherited Web regressions and authoritative Self-Hosted Windows CI — **SUCCESS**;
-- WP22 PR #314 squash merge -> exact `main` `872976cd2bb34d304c8666a332e466fc6cd9b0d4`;
-- post-WP22 Regression Shield #1494 / run `31796896704` on exact `main` `872976cd2bb34d304c8666a332e466fc6cd9b0d4` — **SUCCESS**, including quality/contracts/coverage, dependency audit, SAST and tracked-secret scan;
-- post-WP22 System Admin Audit #15 / run `31796896578` — **SUCCESS** on the same exact main;
-- post-WP22 WP15 Live Web OWNER Audit #21 / run `31796896713` — **FAILURE** because immutable accepted WP15 evidence is not bound to the later WP22 main; the audit short-circuits before live ACL probes when binding is false and therefore is not treated as PASS or as proof of a new isolation regression;
-- Browser-Only Phone Engineering / Headless Personal Node amendment PR #319 -> `9ad0eeb8d22895c3790fc5c7c78e9faf72a670e2`;
-- follow-up status/authority transition PR #320 -> `7b3d83482f52041ef845681caabcd1baceb19d1b`;
-- Engineering Quality / Pre-CI / Green-Merge governance PR #322 -> exact accepted `main` `1c05390d9cf31b8cc68a90a5d7cbd6428ffe7791`;
-- post-governance Regression Shield #1498 / run `31959959791` on exact `main` `1c05390d9cf31b8cc68a90a5d7cbd6428ffe7791` — **SUCCESS**.
+Accepted implementation/history remains available through the merged PR chain and Git history. Key current anchors:
 
-Hosted Fast PR Checks / Toolchain Compatibility runs that GitHub did not start because of the account billing/spending-limit condition remain infrastructure failures, not PASS and not code failures.
+- WP0–WP15 accepted through the existing V10 evidence chain;
+- Identity/Multi-Tenant amendment PR #278 accepted;
+- WP16 PR #280 accepted;
+- WP17 PR #282 accepted;
+- WP18 PR #303 + post-merge Regression Shield #1486 — SUCCESS;
+- WP19 PR #308 + post-merge Regression Shield #1488 — SUCCESS;
+- WP20 PR #310 + post-merge Regression Shield #1490 — SUCCESS;
+- WP21 PR #312 + post-merge Regression Shield #1492 — SUCCESS;
+- WP22 PR #314 + post-merge Regression Shield #1494 and focused WP22 audit — SUCCESS;
+- Browser-Only/Headless operations PRs #319/#320 accepted as engineering/operations history, superseded only where the later public-hosted amendment changes final production topology;
+- Engineering Quality governance PR #322 accepted; post-merge Regression Shield #1498 — SUCCESS;
+- WP22A Phase-A browser-only/clientless PR #321 accepted as dormant/pre-amendment implementation evidence, **not** final public product authority where OWNER identity/home origin conflicts with later planning;
+- WP15 physical OWNER audit failures on later unrelated Web SHAs remain historical fail-closed evidence and were never relabeled PASS;
+- CI-resilience PR #328 -> exact main `10c1c0368c6415c70279e8de71ee0792e371dd3a`; post-merge Regression Shield **#1502 SUCCESS** on that exact main.
 
-## WP22 closeout evidence
-
-WP22 satisfies its Master Plan Exit Gate:
-
-- the `/system` route is authenticated, session/tenant-scoped and strictly READ-only;
-- service health, release/deploy identity, PostgreSQL/migration status, backup RPO/RTO, T-Invest READ, Watchtower, resource/disk/temperature availability, safety state and bounded recent jobs/errors are visible from one ordinary operating surface;
-- unavailable, degraded and future-locked states are explicit and never fabricated as READY;
-- Telegram and AI remain explicitly future-locked rather than being reported as current runtime failures;
-- safety/kill-switch information is diagnostic only; contradictory required safety state fails closed;
-- diagnostics omit raw exceptions, secret references, credentials, backup/recovery material, full broker account identifiers and private portfolio payloads;
-- no POST/PUT/PATCH/DELETE companion route or browser mutation control was added;
-- no public ingress, broker-write authority, Telegram/AI activation or Real execution was introduced;
-- deterministic Web/Python/browser evidence covers degraded-service, migration mismatch, low disk, masked errors, missing telemetry and authenticated/unauthenticated behavior;
-- review state before merge had zero blocking threads/comments and the complete 12-file WP22 diff was reviewed;
-- squash merge, exact-main Regression Shield and exact-main focused WP22 audit all completed successfully.
-
-This acceptance authorizes only the separate WP22A external-access security package. It does not authorize opening the cabinet to the public Internet before WP22A passes its own Exit Gate.
+Hosted jobs that did not execute because of external capacity/billing conditions were never counted as PASS.
 
 ## Permanent safety / rollback invariants
 
-- deployment entrypoint remains `app:app`;
+- deployment entrypoint for protected V9 remains `app:app`;
 - `trading_methods=false`;
 - `REAL_TRADING_ENABLED=false`;
-- broker write authority is not expanded by Web/read work;
-- no real broker/Telegram/VK tokens, encryption/recovery keys, private portfolio payload or full account IDs in GitHub, CI logs or artifacts;
+- no broker-write expansion by Web/planning work;
+- no real broker/Telegram/VK/provider secrets, encryption/recovery keys, private portfolio payloads or full account IDs in GitHub/CI/artifacts;
 - protected V9 rollback remains preserved;
-- red CI is red; skipped is not PASS; billing/infrastructure failure is distinct from code failure;
-- feature/maintenance/governance work uses focused branch/PR, preflight, mandatory exact-head applicable GREEN CI, zero blocking threads, squash merge and required post-merge Regression Shield;
+- red CI is red; skipped/queued/pending is not PASS;
+- focused PR + exact-head applicable GREEN + zero blockers + squash merge + required post-merge Regression Shield remains mandatory;
 - OWNER physical/secret evidence is never synthesized.
 
 ## Current next action
 
-Continue **WP22A — External Web Access / OWNER Authentication Security Gate** under the accepted Engineering Quality / Pre-CI / Green-Merge rules. Before each material WP22A change, re-read accepted `main`, the WP execution template, Master Plan WP22A section, identity/session contracts, `V10_SECURITY_BOUNDARIES.md`, `V10_THREAT_MODEL.md`, browser-only/headless-node amendment and relevant Windows/Web deployment authorities.
+Complete the **planning correction PR only**: Product USER/PROJECT OWNER separation + Public Free Multi-User Hosted Runtime + live-guidance/current-WP synchronization + permanent regression guards.
 
-Current in-flight PR/branch/CI state must be read directly from GitHub and must not be copied into this status as accepted evidence before merge. Until WP22A is GREEN and formally accepted, Web remains local/private, WP23+ remains locked and broker-write / Real execution authority remains unchanged.
+Do **not** begin functional WP22A implementation until that planning PR is squash-merged and its exact new `main` passes required post-merge Regression Shield. After acceptance, resume only corrected WP22A; WP23+ remains locked.
