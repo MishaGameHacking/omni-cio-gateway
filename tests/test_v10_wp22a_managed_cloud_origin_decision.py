@@ -52,7 +52,9 @@ def test_recommendation_uses_native_russia_reachable_edge() -> None:
         "CLOUD_RU_EVOLUTION_L4_NLB"
     )
     assert recommendation["public_load_balancer_provider_min_resource_units"] == 1
-    assert recommendation["public_load_balancer_recommended_initial_resource_units"] == 2
+    assert recommendation[
+        "public_load_balancer_recommended_initial_resource_units"
+    ] == 2
     assert (
         recommendation[
             "public_load_balancer_two_units_are_design_choice_not_provider_minimum"
@@ -72,17 +74,31 @@ def test_recommendation_uses_native_russia_reachable_edge() -> None:
         ]
         is True
     )
-    assert recommendation["public_load_balancer_terraform_resource_reference_present"] is True
+    assert (
+        recommendation["public_load_balancer_terraform_resource_reference_present"]
+        is True
+    )
     assert recommendation["public_load_balancer_public_api_supported"] is True
-    assert recommendation["public_load_balancer_apply_blocked_until_automation_path_validated"] is True
+    assert (
+        recommendation[
+            "public_load_balancer_apply_blocked_until_automation_path_validated"
+        ]
+        is True
+    )
     assert recommendation["certificate_manager"] == (
         "CLOUD_RU_EVOLUTION_CERTIFICATE_MANAGER_LETS_ENCRYPT"
     )
     assert recommendation["tls_termination"] == "NGINX_ON_RUNTIME_VMS"
     assert recommendation["product_identity_at_edge"] is False
     assert reasoning["nlb_two_resource_units_selected_for_initial_fault_tolerance"] is True
-    assert reasoning["nlb_automation_must_be_verified_against_pinned_provider_before_apply"] is True
-    assert reasoning["russian_user_primary_edge_must_be_reliably_reachable_from_russia"] is True
+    assert (
+        reasoning["nlb_automation_must_be_verified_against_pinned_provider_before_apply"]
+        is True
+    )
+    assert (
+        reasoning["russian_user_primary_edge_must_be_reliably_reachable_from_russia"]
+        is True
+    )
     assert reasoning["runtime_single_node_is_initial_production_recommendation"] is False
     assert reasoning["github_source_controlled_provider_automation_required"] is True
     assert reasoning["terraform_only_provider_automation_required"] is False
@@ -118,13 +134,15 @@ def test_cloudflare_primary_edge_is_rejected_for_russian_user_reachability() -> 
     assert "must not** be the primary or sole production edge" in decision
 
 
-def test_recommendation_has_private_database_and_secret_boundary() -> None:
+def test_recommendation_has_business_multi_az_database_and_secret_boundary() -> None:
     payload = _payload()
     recommendation = payload["recommendation"]
     reasoning = payload["selection_reasoning"]
     legal = payload["legal_and_data_boundary"]
 
     initial_ha = "database_primary_standby_required_for_initial_production"
+    multi_az = "database_multi_az_required_for_initial_production"
+    standard_allowed = "database_standard_mode_allowed_for_initial_public_production"
     single_node = "database_single_node_is_initial_production_recommendation"
     compliance = (
         "cloud_ru_evolution_152_fz_uz_1_"
@@ -135,9 +153,15 @@ def test_recommendation_has_private_database_and_secret_boundary() -> None:
     )
 
     assert recommendation["database"] == "CLOUD_RU_MANAGED_POSTGRESQL_PRIVATE_IP"
-    assert recommendation["database_mode"] == "STANDARD"
-    assert recommendation["database_topology"] == "PRIMARY_STANDBY_TWO_NODE"
+    assert recommendation["database_mode"] == "BUSINESS"
+    assert recommendation["database_topology"] == "PRIMARY_STANDBY_TWO_NODE_MULTI_AZ"
     assert recommendation[initial_ha] is True
+    assert recommendation[multi_az] is True
+    assert recommendation[standard_allowed] is False
+    assert recommendation["database_standard_rejection_reason"] == (
+        "OFFICIAL_CLOUD_RU_DOCS_POSITION_STANDARD_FOR_TESTING_SMALL_APPS_"
+        "AND_BUSINESS_FOR_COMMERCIAL_HIGH_LOAD_WITH_HIGHER_SECURITY_AND_MULTI_AZ"
+    )
     assert recommendation["database_public_ip_allowed"] is False
     assert recommendation["network"] == "CLOUD_RU_EVOLUTION_VPC_PRIVATE_SUBNET"
     assert recommendation["outbound_internet"] == "CLOUD_RU_EVOLUTION_SNAT"
@@ -153,6 +177,14 @@ def test_recommendation_has_private_database_and_secret_boundary() -> None:
         is True
     )
     assert reasoning[single_node] is False
+    assert reasoning["database_business_mode_required_for_initial_public_production"] is True
+    assert reasoning["database_multi_az_required_for_initial_public_production"] is True
+    assert (
+        reasoning[
+            "database_standard_mode_is_not_initial_public_production_recommendation"
+        ]
+        is True
+    )
     assert reasoning["owner_home_availability_dependency_allowed"] is False
 
     localization_gate = "russian_federal_law_152_fz_article_18_part_5_localization_gate"
@@ -165,6 +197,12 @@ def test_recommendation_has_private_database_and_secret_boundary() -> None:
     assert legal[compliance] is True
     assert legal[provider_obligations] is True
     assert legal["production_legal_signoff_required"] is True
+
+    decision = DECISION.read_text(encoding="utf-8")
+    selection = SERVICE_SELECTION.read_text(encoding="utf-8")
+    assert "Business, two-node Primary/Standby, Multi-AZ" in decision
+    assert "Standard is therefore **not** the initial production recommendation" in decision
+    assert "Primary/Standby Multi-AZ" in selection
 
 
 def test_cloud_ru_container_apps_is_rejected_for_primary_runtime() -> None:
@@ -187,12 +225,20 @@ def test_candidate_ranking_keeps_bounded_fallbacks() -> None:
 
     assert cloud_ru["result"] == "RECOMMENDED_PENDING_COST_APPROVAL"
     assert "EVOLUTION_PLATFORM_152_FZ_UZ_1" in cloud_ru["strengths"]
-    assert "MANAGED_POSTGRESQL_PRIMARY_STANDBY" in cloud_ru["strengths"]
+    assert "MANAGED_POSTGRESQL_BUSINESS_PRIMARY_STANDBY_MULTI_AZ" in cloud_ru[
+        "strengths"
+    ]
+    assert "MANAGED_POSTGRESQL_BUSINESS_CLIENT_VPC_ISOLATION" in cloud_ru[
+        "strengths"
+    ]
     assert "EVOLUTION_DNS" in cloud_ru["strengths"]
     assert "EVOLUTION_L4_LOAD_BALANCER_WITH_HEALTH_CHECKS" in cloud_ru["strengths"]
     assert "EVOLUTION_CERTIFICATE_MANAGER_LETS_ENCRYPT" in cloud_ru["strengths"]
     assert "TERRAFORM_NLB_RESOURCE_REFERENCE_PRESENT" in cloud_ru["strengths"]
     assert "PUBLIC_API_FOR_NLB" in cloud_ru["strengths"]
+    assert "BUSINESS_MULTI_AZ_COSTS_MATERIALLY_MORE_THAN_STANDARD" in cloud_ru[
+        "known_tradeoffs"
+    ]
     assert (
         "CLOUD_RU_OFFICIAL_DOCS_CONFLICT_ON_NLB_TERRAFORM_SUPPORT_REQUIRES_"
         "PINNED_PROVIDER_ACCEPTANCE_BEFORE_APPLY"
@@ -205,11 +251,14 @@ def test_candidate_ranking_keeps_bounded_fallbacks() -> None:
     assert "FREE_POSTGRES_EXPIRES_AFTER_30_DAYS" in render["reasons"]
 
 
-def test_reference_cost_includes_two_vms_nlb_dns_and_ha_database() -> None:
+def test_reference_cost_includes_business_multi_az_database_and_edge() -> None:
     cost = _payload()["cost_boundary"]
+    pg_node = (
+        "cloud_ru_reference_pg_business_node_4vcpu_8gb_40gb_monthly_rub_approx"
+    )
     pg_ha_cost = (
-        "cloud_ru_reference_pg_primary_standby_"
-        "2x_1vcpu_2gb_20gb_monthly_rub_approx"
+        "cloud_ru_reference_pg_business_primary_standby_multi_az_"
+        "2x_4vcpu_8gb_40gb_monthly_rub_approx"
     )
     two_vms = (
         "cloud_ru_reference_two_runtime_vms_with_20gb_disks_"
@@ -224,14 +273,25 @@ def test_reference_cost_includes_two_vms_nlb_dns_and_ha_database() -> None:
         "monitoring_external_waf_ddos_service_and_later_scale"
     )
 
-    assert cost[pg_ha_cost] == 3792.0528
+    assert cost[pg_node] == 7099.2288
+    assert cost[pg_ha_cost] == 14198.4576
     assert cost[two_vms] == 1722.9888
     assert cost[nlb_cost] == 1305.8879904
     assert cost["cloud_ru_reference_public_dns_zone_30_days_monthly_rub_approx"] == 32.94
     assert cost["cloud_ru_certificate_manager_monthly_rub"] == 0
-    assert cost["cloud_ru_reference_initial_stack_monthly_rub_approx"] == 7003.1975904
+    assert cost["cloud_ru_reference_initial_stack_monthly_rub_approx"] == 17409.6023904
     assert cost[excluded_costs] is True
     assert cost["exact_selected_vm_price_revalidation_required_before_purchase"] is True
+    assert (
+        cost["exact_selected_database_flavor_revalidation_required_before_purchase"]
+        is True
+    )
+    assert (
+        cost[
+            "database_reference_configuration_is_provider_documented_minimum_not_capacity_guarantee"
+        ]
+        is True
+    )
     assert cost["estimate_is_not_purchase_quote"] is True
 
 
