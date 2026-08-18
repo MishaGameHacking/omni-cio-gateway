@@ -20,12 +20,15 @@ Canonical base artifacts:
 Accepted amendment discovery:
 
 - `OMNI_CIO_V10_AMENDMENTS_INDEX.md` — mandatory index of active/superseded amendments;
-- `OMNI_CIO_V10_CONCRETE_EXECUTION_PLAN_AMENDMENT.md` — binding concrete data/AI/autonomy/Lenovo/subscription implementation decisions;
+- `OMNI_CIO_V10_CONCRETE_EXECUTION_PLAN_AMENDMENT.md` — binding concrete data/AI/autonomy implementation decisions;
 - `OMNI_CIO_V10_GITHUB_PRO_AND_MIGRATION_IMPLEMENTATION_AMENDMENT.md` — GitHub Pro, migration/parity and WP implementation discipline;
-- `OMNI_CIO_V10_AUTONOMOUS_PORTFOLIO_GOVERNANCE_AND_COMMERCIAL_MODEL_AMENDMENT.md` — portfolio-governance/commercial/legal direction;
-- `OMNI_CIO_V10_IDENTITY_MULTI_TENANT_ACCOUNT_AND_AUTHENTICATION_AMENDMENT.md` — identity/tenant/authentication direction;
-- `OMNI_CIO_V10_PHONE_ONLY_ENGINEERING_AND_HEADLESS_NODE_OPERATIONS_AMENDMENT.md` — browser-only OWNER/headless Personal-Node operating model;
+- `OMNI_CIO_V10_AUTONOMOUS_PORTFOLIO_GOVERNANCE_AND_COMMERCIAL_MODEL_AMENDMENT.md` — portfolio-governance and historical commercial direction, superseded for initial free launch where Amendment 10 conflicts;
+- `OMNI_CIO_V10_IDENTITY_MULTI_TENANT_ACCOUNT_AND_AUTHENTICATION_AMENDMENT.md` — identity/tenant/authentication baseline;
+- `OMNI_CIO_V10_PHONE_ONLY_ENGINEERING_AND_HEADLESS_NODE_OPERATIONS_AMENDMENT.md` — browser-only OWNER/headless Lenovo operations baseline, superseded where Amendment 10 forbids home/Lenovo public-production dependency;
 - `OMNI_CIO_V10_ENGINEERING_QUALITY_AND_GREEN_MERGE_AMENDMENT.md` — accepted Pre-CI/all-green/failure-learning/OWNER-handoff discipline;
+- `OMNI_CIO_V10_PRODUCT_USER_AND_ENGINEERING_AUTHORITY_BOUNDARY_AMENDMENT.md` — ordinary USER identity is separate from PROJECT OWNER engineering/business authority;
+- `OMNI_CIO_V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_AMENDMENT.md` — public global browser product, managed-cloud production, no OWNER-home production dependency, free initial access and tenant-scoped broker credentials;
+- `../architecture/V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_CONTRACT.json` — machine-readable contract for the same public launch direction;
 - `../architecture/V10_AI_CORTEX_CONTRACT.json` and other machine-readable companions — executable/validated policy where defined;
 - `OMNI_CIO_V10_ACCOUNT_INDEPENDENCE_AMENDMENT.md` — historical owner-approved amendment already consolidated into the base plan and retained for provenance.
 
@@ -43,24 +46,27 @@ The canonical sequence remains defined by `OMNI_CIO_V10_MASTER_PLAN.md`. Each im
 
 Historical package files may correctly say that an earlier WP was `CURRENT`, `PENDING` or `NEXT` at the time they were written. That wording is package evidence, not a live queue. Current authorization is always read from `../../knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
 
-The presence of accepted `apps/api/`, `apps/web/` and Personal-Node infrastructure in the repository reflects already accepted owning WPs; it does not unlock Telegram, AI, public multi-user, billing or Real-execution WPs early.
+The presence of accepted `apps/api/`, `apps/web/` and Personal-Node infrastructure reflects already accepted owning WPs. It does not authorize out-of-sequence Telegram, AI or Real-execution work. Public multi-user is now the approved **target**, but actual public activation remains fail-closed until the corrected WP22A and its security/legal/broker/capacity gates pass.
 
 ## Concrete V10 product lock
 
-The accepted concrete amendments clarify implementation without changing block weights/order:
+The accepted amendments clarify implementation without changing block weights/order:
 
 - Deterministic Core owns financial/accounting truth;
 - V10 accounting target uses verified broker HTML reports; no photo/screenshot/OCR portfolio workflow;
 - MOEX is current-market enrichment and stays distinct from broker period-end facts;
-- local-first Omni-CIO Cortex baseline is Qwen3.5-4B via Ollama behind a replaceable provider;
-- paid AI/search/hosted-agent SaaS is not required for V10 Definition of Done;
+- local-first Omni-CIO Cortex baseline is Qwen3.5-4B via Ollama behind a replaceable provider, subject to later hosting decisions of the owning AI WP;
+- paid AI/search/hosted-agent SaaS is not required for V10 Definition of Done unless a later owning gate proves it necessary;
 - System Policy + typed tools + RAG + evals precede QLoRA;
 - 24/7 autonomy is event-driven/checkpointed;
 - SearXNG-first research + bounded HTTP/Playwright retrieval + Evidence Store;
 - AI has no direct broker-write/admin/GitHub-bypass/Real-money authority;
 - OWNER local participation is minimized to genuinely non-delegable actions;
-- CI is verifier rather than primary debugger, and every applicable exact-head merge gate must conclude SUCCESS;
-- current V10 Web/API runtime remains on the approved Personal Node; external access providers are access/security transport rather than private-state application hosts.
+- **PROJECT OWNER is not a special product role; when using Omni-CIO the PROJECT OWNER is an ordinary USER on the same account/tenant/session path as supported users;**
+- **final public V10 production must be hosted independently of the OWNER's home IP/Wi-Fi/router/LAN/Lenovo; Lenovo remains engineering/CI/recovery, not the public availability anchor;**
+- **initial public USER access is free: billing, trial, subscription enforcement and premium feature gating are disabled; future monetization is deferred optional scope;**
+- **broker READ and optional TRADE credentials belong only to the authenticated tenant's BrokerConnection and may never be shared globally or across tenants;**
+- CI is verifier rather than primary debugger, and every applicable exact-head merge gate must conclude SUCCESS.
 
 Read the accepted amendments themselves for exact requirements and block-by-block elaboration.
 
@@ -101,7 +107,7 @@ V10 development does not silently remove V9 safety boundaries:
 
 - production read-only credential remains isolated;
 - Sandbox remains virtual and separately credentialed;
-- Real execution remains exact-owner-confirmed, immutable, idempotent, fail-closed and broker-reconciled;
+- Real execution remains exact-USER-confirmed for that USER's own tenant, immutable, idempotent, fail-closed and broker-reconciled;
 - AI has no direct broker-write authority;
 - GitHub engineering access is never trading authorization;
 - current `app:app` / GPT recovery behavior stays protected until an accepted V10 migration replaces it;

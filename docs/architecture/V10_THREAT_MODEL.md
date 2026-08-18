@@ -1,376 +1,271 @@
 # Omni-CIO V10 — Threat Model
 
-Status: **WP22A clientless external-access threat-model update**  
-Scope: Personal V10 platform, current V9 coexistence, future Lenovo/Web/Telegram/AI/Real contours.
+Status: **UPDATED FOR PUBLIC-HOSTED MULTI-USER TARGET / WP22A PLANNING**  
+Scope: protected V9 coexistence, public hosted Web/account/tenant target, future Telegram/AI/Real contours.
 
 ## 1. Security objective
 
-A defect, compromised interface, malicious document, stolen session, CI mistake or AI hallucination must not silently become uncontrolled movement of real money or disclosure of broker secrets/private portfolio data.
+A defect, compromised interface, malicious document, stolen session, cloud/CI mistake, cross-tenant authorization bug or AI hallucination must not silently become:
 
-Primary safety strategy:
+- disclosure of another USER's private state or broker credential;
+- unauthorized/duplicate real-money action;
+- provider/engineering identity becoming product authority;
+- public-service dependency on PROJECT OWNER home infrastructure;
+- unsafe public activation before broker/legal/security gates.
 
-**separate authority -> validate evidence -> fail closed -> explicit owner approval -> idempotent submit -> broker reconciliation -> auditable recovery**.
+Primary strategy:
+
+**separate authority -> tenant isolation -> validate evidence -> fail closed -> explicit USER approval for own tenant -> idempotent submit -> broker reconciliation -> auditable recovery**.
 
 ## 2. Protected assets
 
-Highest priority assets:
+Highest priority assets include:
 
-- Real trading credential and broker authority;
-- read-only broker credential;
-- Telegram bot credential;
-- local encryption/recovery keys;
-- private portfolio/balance/operations data;
-- immutable plan/approval state;
-- execution idempotency and reconciliation state;
-- Decision Journal/audit evidence;
+- each tenant's READ/optional TRADE credentials and verified broker-account bindings;
+- tenant-private positions/balances/operations/reports/decisions/plans/research;
+- server-side session/account-linking state;
+- immutable plan/approval/idempotency/reconciliation state;
+- audit/Decision Journal evidence;
+- cloud runtime/data/secret credentials and encryption/recovery keys;
+- Telegram/VK/provider secrets;
 - canonical GitHub source/release identity;
 - V9 recovery assets;
-- V10 database/backups;
-- AI System Policy/Tool Registry and model provenance.
+- PostgreSQL/backups;
+- AI System Policy/Tool Registry/model provenance.
 
 ## 3. Trust boundaries
 
 1. GitHub repository <-> CI runner.
-2. CI/deployment <-> Lenovo runtime.
-3. Runtime services <-> local secret store.
-4. Web/Telegram <-> OWNER identity/session.
-5. AI/RAG <-> untrusted retrieved text.
-6. Research Collector <-> public Internet/sources.
-7. Core <-> broker read APIs.
-8. Execution service <-> T-Invest Real API.
-9. Runtime DB <-> backup/off-device recovery.
-10. Current V9 runtime <-> future V10 replacement boundaries.
-11. Authenticated Web provisioning <-> connection-scoped read-broker secret child.
-12. OWNER browser <-> Cloudflare Access/edge <-> Cloudflare Tunnel/cloudflared <-> loopback-only Web origin.
+2. CI/release <-> managed-cloud production runtime.
+3. Runtime services <-> tenant private-data/secret plane.
+4. Public browser <-> edge/reverse proxy <-> Web/API.
+5. Product authentication provider <-> internal Omni-CIO account/session.
+6. USER session <-> tenant authorization / database isolation.
+7. Core <-> tenant BrokerConnection READ APIs.
+8. Execution service <-> same-tenant TRADE credential / T-Invest Real API.
+9. Runtime DB <-> encrypted backup/off-runtime recovery.
+10. AI/RAG <-> untrusted retrieved/tenant data.
+11. Research collector <-> public Internet/sources.
+12. Current V9 runtime <-> future V10 cutover.
+13. PROJECT OWNER engineering/provider authority <-> ordinary product USER authority.
+14. Cloud edge/provider identity <-> Omni-CIO product authentication.
 
 ## 4. Threat catalogue
 
-### T1 — Repository or workflow compromise
+### T1 — Repository/workflow compromise
 
-**Scenario:** malicious/accidental workflow code executes on self-hosted runner and attempts to read secrets or modify production.
+**Scenario:** malicious/accidental workflow code executes on CI and tries to read production secrets or mutate production.
 
-Controls planned:
+Controls: private repo, exact-head PR/CI, runner/runtime separation, no production tenant secrets in arbitrary PR jobs, reviewed privileged deployment boundary, workspace cleanup, source/release identity verification, secret scan/SAST/dependency audit.
 
-- private repository;
-- focused PR/review/CI discipline;
-- separate runner/runtime identities;
-- runner denied trading-secret/private-backup access;
-- reviewed release/deploy identity;
-- workspace cleanup;
-- branch/ruleset protection evaluation in WP3;
-- secret scanning/SAST/dependency audit.
+Fail-safe: inability to prove reviewed accepted source blocks privileged deployment.
 
-Fail-safe: inability to prove reviewed release identity blocks privileged deployment.
+### T2 — Review/protection bypass
 
-### T2 — Direct push / bypass of review
+**Scenario:** direct push or bypass defeats normal engineering review.
 
-**Scenario:** repository allows an authorized user to bypass normal PR discipline.
-
-Current observation at WP0: server-side branch protection is not enabled on `main`.
-
-Interim control: manual no-direct-main policy plus required focused PR and exact-head Regression Shield.
-
-WP3 action: evaluate/configure strongest protection available for the owner's GitHub plan and document compensating controls when a platform feature is unavailable.
+Controls: protected main/ruleset where available, focused PR, required exact-head all-GREEN checks, zero blockers, squash merge and post-merge Regression Shield. GitHub engineering authority still does not create product/trading authority.
 
 ### T3 — Secret leakage
 
-**Scenario:** token appears in Git, logs, crash dump, UI, prompt, diagnostic archive or process arguments.
+**Scenario:** broker/provider/Telegram/VK/encryption secret appears in source, logs, crash data, browser response/storage, prompts or artifacts.
 
-Controls:
+Controls: tenant-scoped secret store/encryption, redaction/allowlist logging, no browser secret return/Web Storage, no CLI/history leakage, CI secret scan, least-privilege access, rotation/revocation.
 
-- local secret store;
-- process/role ACL;
-- redaction/allowlist logging;
-- no secrets in CLI args/history;
-- repository secret scan;
-- crash-dump policy;
-- separate rotation/revocation procedure.
+Response: uncertain exposure is treated as compromise and credential is revoked/rotated.
 
-Response: revoke/rotate affected credential; treat uncertain exposure as compromised.
+### T4 — Stolen/lost engineering device
 
-### T4 — Stolen or lost Lenovo/SSD
+**Scenario:** attacker obtains Lenovo/storage.
 
-**Scenario:** attacker obtains powered-off device/storage.
-
-Controls planned:
-
-- full-disk or owner-approved equivalent encryption;
-- separate recovery-key custody;
-- runtime secret protection;
-- no plaintext backups;
-- minimal local privilege.
-
-Exit requirement later: physical loss of powered-off disk does not trivially disclose broker secrets/private DB.
+Controls: disk/runtime protection and minimal privilege. More importantly, Lenovo is no longer the final public production/private-state authority; ordinary public service availability and hosted tenant secrets must not depend on the OWNER laptop.
 
 ### T5 — Web session compromise
 
-**Scenario:** stolen cookie/session/deep link is used to view data or approve action.
+**Scenario:** stolen/fixed/replayed session accesses a USER tenant or approves action.
 
-Controls planned:
+Controls: TLS, server-side sessions, Secure/HttpOnly/SameSite cookies, fixation protection, rotation/revocation/expiry, CSRF/Origin/Host/CORS, rate limits, recent/step-up USER auth for Real approval and immutable plan binding.
 
-- TLS when external ingress exists;
-- server-side sessions;
-- secure/HttpOnly/SameSite or reviewed equivalent;
-- rotation/revocation/expiry;
-- CSRF/Origin/Host/CORS controls;
-- rate limiting;
-- recent/step-up OWNER authentication for Real plan approval;
-- plan hash binding.
+### T6 — Cross-tenant IDOR / authorization confusion
 
-Fail-safe: external Real approval surface remains disabled before WP22A passes.
+**Scenario:** USER A supplies Tenant B/object/job/cache identifiers and receives or mutates B's state.
 
-### T6 — Telegram impersonation/replay
+Controls: tenant scope from server-side session only; object ID is never authority; application authorization plus database-enforced tenant isolation; tenant-scoped foreign keys/uniqueness; negative IDOR tests.
 
-**Scenario:** attacker forges client fields or replays stale Mini App auth data.
+Fail-safe: ambiguous/missing tenant binding denies access.
 
-Controls planned:
+### T7 — Cross-tenant background/cache/RAG leakage
 
-- server-side validation of Telegram `initData`;
-- OWNER allowlist;
-- `auth_date` freshness;
-- replay/session handling;
-- Telegram identity does not reveal broker secret and is not sole proof for Real approval.
+**Scenario:** worker, cache key, notification, export, AI/RAG memory or audit record loses tenant scope and leaks data.
 
-### T7 — Prompt injection / poisoned RAG
+Controls: immutable tenant scope on jobs/checkpoints, tenant-aware cache keys/storage, scoped RAG namespaces, explicit USER/tenant context on notifications/exports, cross-scope regression tests.
 
-**Scenario:** a news article/document tells the model to ignore policy, call privileged tools, reveal data or alter a recommendation.
+### T8 — Backup/restore tenant collapse
 
-Controls:
+**Scenario:** restore mixes tenant rows, secret bindings or session/account ownership.
 
-- retrieved content is untrusted data, not instructions;
-- immutable higher-priority System Policy;
-- allowlisted Tool Registry;
-- AI denied broker write and secret access;
-- source provenance/identity/freshness;
-- RAG poisoning/adversarial evals;
-- structured output validation;
-- unknown/abstain on insufficient evidence.
+Controls: encrypted backups, integrity hashes/corrupt-backup rejection, schema/tenant constraints, restore rehearsal, cross-tenant post-restore negatives, replacement-runtime recovery.
 
-### T8 — AI hallucination / overconfidence
+### T9 — Edge/provider identity becomes product identity
 
-**Scenario:** model invents an event, issuer, figure or recommendation.
+**Scenario:** Cloudflare/GitHub/provider account membership automatically mints a product session or selects privileged tenant.
 
-Controls:
+Controls: provider identity remains engineering/staging authority only; product session requires Telegram/VK -> internal Omni-CIO account binding; PROJECT OWNER uses same USER path; no OWNER fingerprint/hard-coded owner tenant bootstrap.
 
-- source-grounded facts only;
-- AI output clearly separated from canonical evidence;
-- deterministic Credit/Risk/Optimizer/Plan authority;
-- confidence/unknowns/contradictions;
-- model/eval versioning;
-- no direct execution.
+### T10 — Home-origin availability dependency
 
-### T9 — Wrong instrument identity
+**Scenario:** public service is exposed through a tunnel but its sole origin is OWNER home Lenovo/network; power/ISP/router failure takes all users offline.
 
-**Scenario:** news or ticker string maps to wrong security/issuer and alters portfolio decision.
+Controls: final production origin is approved managed-cloud runtime; no home public IP/Wi-Fi/router/LAN/Lenovo dependency; recovery/redeploy works without OWNER home access.
 
-Controls:
+A Cloudflare Tunnel can be an origin-protection transport, but a home-Lenovo sole origin fails this gate.
 
-- broker UID/FIGI/ISIN/class-code primary identity;
-- name/ticker only secondary labels;
-- identity binding on evidence;
-- ambiguity blocks strong conclusion.
+### T11 — Prompt injection / poisoned RAG
 
-### T10 — Stale/incomplete/contradictory data
+**Scenario:** retrieved or tenant-provided text asks model to ignore policy, reveal secrets or call privileged tools.
 
-**Scenario:** old market quote or partial portfolio/evidence is treated as exact current truth.
+Controls: retrieved content is untrusted data; immutable System Policy; allowlisted typed tools; AI denied raw broker secrets/write/admin; provenance/freshness; adversarial evals; structured validation/abstain.
 
-Controls:
+### T12 — AI hallucination / wrong instrument / stale data
 
-- timestamps/freshness contracts;
-- completeness state;
-- contradiction state;
-- stale market blocks exact sizing/Real preflight;
-- explicit degraded/unknown states.
+**Scenario:** model invents facts or maps evidence to wrong instrument, stale quote or incomplete portfolio.
 
-### T11 — Duplicate/ambiguous broker submit
+Controls: deterministic Core authority, canonical IDs, source identity/provenance/timestamps, confidence/contradiction/completeness states, AI output separated from canonical evidence, stale data blocks unjustified exact sizing/Real preflight.
 
-**Scenario:** timeout occurs after possible broker acceptance and software retries automatically.
+### T13 — Duplicate/ambiguous broker submit
 
-Controls inherited from V9:
+**Scenario:** timeout follows possible broker acceptance and software retries automatically.
 
-- UUID/idempotency binding;
-- at most one possible submit per request identity;
-- ambiguous submit -> UNKNOWN / do-not-resubmit;
-- broker reconciliation only;
-- submitted != filled without proof.
+Controls: UUID/idempotency binding, at most one possible submit per identity, ambiguity -> UNKNOWN/do-not-resubmit, broker reconciliation only, submitted != filled without proof.
 
-This is a P0 invariant.
+P0 invariant.
 
-### T12 — Plan drift after approval
+### T14 — Plan drift after USER approval
 
-**Scenario:** instrument/lots/limits/market conditions change after owner approved a plan.
+**Scenario:** plan/instrument/lots/limits/material market state changes after approval.
 
-Controls:
+Controls: immutable plan hash, short expiry, recent/step-up USER auth, repeat preflight, material drift invalidates approval and requires new plan/approval.
 
-- immutable plan hash;
-- short expiry;
-- repeat preflight before every leg;
-- material drift invalidates approval;
-- new plan requires new approval.
+### T15 — Privilege escalation between services
 
-### T13 — Privilege escalation between services
+**Scenario:** Web/AI/Telegram/background process reaches tenant secrets, execution authority or cloud admin.
 
-**Scenario:** compromised Web/AI/Telegram process reaches Real credential or OS admin.
+Controls: separate least-privilege identities/capabilities; narrow secret/decryption paths; negative permission tests; no general admin shell to AI; future execution as narrow capability boundary.
 
-Controls planned:
+### T16 — Database corruption/state loss
 
-- separate service identities;
-- least filesystem/secret ACL;
-- execution service as narrow capability boundary;
-- negative permission tests;
-- no general command shell exposed to AI.
+**Scenario:** corruption loses plan/execution/audit/tenant state.
 
-### T14 — Database corruption / state loss
+Controls: PostgreSQL constraints/migrations, encrypted hashed backups, RPO/RTO, restore rehearsal, durable-state readiness; Real submit blocked if required durable state/audit persistence is unhealthy.
 
-**Scenario:** SSD failure/corruption loses plan/execution/reconciliation/audit state.
+### T17 — Clock manipulation/drift
 
-Controls planned:
+**Scenario:** incorrect time breaks session/freshness/approval lifetime.
 
-- PostgreSQL migrations/constraints;
-- append-only/audit-sensitive semantics;
-- encrypted backups with hashes;
-- RPO/RTO;
-- restore rehearsal;
-- Real submit blocked if durable state/audit persistence unhealthy.
+Controls: provider/NTP monitoring, UTC canonical timestamps, source/broker/receive timestamps distinct; unsafe drift blocks time-sensitive approval/Real operations.
 
-### T15 — Clock manipulation/drift
+### T18 — Dependency/supply-chain compromise
 
-**Scenario:** wrong local time breaks freshness, session expiry or plan confirmation lifetime.
+**Scenario:** compromised package/Action/model/tool/provider image is installed.
 
-Controls planned:
+Controls: locks/hashes/pins, dependency audit/SAST, reviewed toolchain/image provenance, controlled update/rollback, model digest/source/license registry.
 
-- Windows/NTP monitoring;
-- UTC canonical timestamps;
-- source/broker/local receive times kept distinct;
-- unsafe drift blocks time-sensitive approval/Real operations.
+### T19 — Unsafe external data retrieval / terms violation
 
-### T16 — Dependency/supply-chain compromise
+**Scenario:** parser executes active content, scraper violates terms, or external source behavior creates security/legal risk.
 
-**Scenario:** malicious/compromised package/action/model artifact is installed.
+Controls: source registry, safe parse/normalization, no active untrusted HTML/JS execution where not explicitly sandboxed, content hashes/parser versions, bounded rate/cache, terms/license/retention review.
+
+### T20 — Public T-Invest service used without permission
+
+**Scenario:** public users submit their own tokens and product assumes this automatically grants right to operate a public T-Invest-based service/retransmit data.
+
+Controls: public Web/account activation separated from T-Invest connector activation; current official broker-terms gate remains fail-closed; no UI/status claim without contractual evidence; connector may remain disabled while public account platform exists.
+
+### T21 — Tenant broker credential abuse
+
+**Scenario:** stolen USER session, malicious client, broad credential or implementation bug stores/reads/reuses a credential outside that tenant.
 
 Controls:
 
-- hash-locked Python dependencies;
-- lockfiles and exact toolchain policy;
-- pinned GitHub Actions;
-- dependency audit/SAST;
-- model digest/source/license registry;
-- controlled updates and rollback;
-- no silent AI model auto-update changing Real behavior.
+- authenticated same-origin USER settings only;
+- server session supplies tenant scope;
+- candidate token body only, never URL/Web Storage;
+- raw token not returned;
+- verified broker authority/account binding before durable use;
+- encrypted tenant-scoped secret record/reference;
+- no global/shared credential fallback;
+- no Cortex/CI/unrelated tenant access;
+- replacement/revocation semantics preserve verified binding;
+- optional TRADE remains separate from READ.
 
-### T17 — Unsafe external data retrieval
+### T22 — READ/TRADE account mismatch
 
-**Scenario:** parser executes active content, source changes format, rate-limit bypass or unapproved scraping creates bad evidence/security risk.
+**Scenario:** TRADE credential exposes an account not independently present under verified READ authority, or credentials belong to different tenants.
 
-Controls planned:
+Controls: exact same-tenant intersection `VERIFIED_READ_ACCOUNTS ∩ VERIFIED_TRADE_ACCOUNTS`; mismatch fails closed; account IDs masked; no automatic promotion/rebinding.
 
-- trusted source registry;
-- approved retrieval methods;
-- safe parser/normalization;
-- no active HTML/JS execution;
-- parser version/content hash;
-- rate limits/cache;
-- terms/license/retention review.
+### T23 — Public ingress/session/CSRF/Host abuse
 
-### T18 — Excessive monitoring / alert flood
+**Scenario:** hostile Host/Origin, direct API call, stolen session, forged proxy headers, weak CORS or rate-limit bypass reaches tenant data.
 
-**Scenario:** noisy Watchtower produces repeated alerts or AI jobs, hiding true incidents and exhausting resources.
+Controls: exact public hostname/TLS, trusted proxy/protocol boundary, Host allowlist, CSRF + Origin/Referer, deny-by-default CORS, bounded rate limits, secure session cookies, direct API negative tests, security headers and no edge-identity bypass.
 
-Controls planned:
+### T24 — Cloud/runtime secret or backup compromise
 
-- deterministic materiality triggers;
-- semantic dedup;
-- severity policy;
-- bounded retries/jobs;
-- resource/temperature limits;
-- AI wakes only for qualified tasks.
+**Scenario:** cloud admin/runtime role/backup path exposes all tenant secrets/data.
 
-### T19 — Unauthorized architecture drift
+Controls: least-privilege runtime identities, encryption at rest, separation of secrets/private rows where appropriate, auditable access/rotation, encrypted off-runtime backups, bounded retention, no source/CI secret material, incident/revocation/recovery procedure.
 
-**Scenario:** developer creates second frontend/Gateway/AI/execution stack or account-only hidden configuration.
+### T25 — Provider outage / lock-in / failed recovery
 
-Controls:
+**Scenario:** cloud region/provider fails or account is lost and product cannot recover.
 
-- Program Lock;
-- current-WP scope;
-- repository structure guards in WP1/WP3;
-- ADR process;
-- Account Independence invariant;
-- one source of truth.
+Controls: documented provider/data inventory, GitHub source/release provenance, encrypted off-runtime recovery, replacement-runtime rehearsal, rollback, export/exit path and measured RPO/RTO. OWNER home infrastructure is not the production fallback assumption; protected V9 remains separate recovery history until its owning cutover/decommission.
 
-### T20 — V9 regression during V10 migration
+### T26 — Unsafe free-public abuse / resource exhaustion
 
-**Scenario:** V10 refactor breaks accepted current production or recovery before replacement is accepted.
+**Scenario:** free registration/public endpoint attracts brute force, scraping, bot accounts, expensive research/AI jobs or DB exhaustion.
 
-Controls:
+Controls: registration/login/API rate limiting, abuse controls, quotas/bounded background jobs, backpressure/circuit breakers, capacity/load tests, monitoring and graceful degradation. Security/money gates remain fail-closed.
 
-- V9 remains deployed/protected;
-- golden regression fixtures;
-- compatibility wrappers until proof;
-- current `app:app` contract retained;
-- package-specific staged acceptance;
-- explicit rollback.
+Free access does not mean unbounded resource authority.
 
-### T21 — Web broker READ credential provisioning abuse
+### T27 — Premature monetization or entitlement drift
 
-**Scenario:** a stolen Web session, malicious client request, broad T-Invest credential, path traversal or compromised CI attempts to store/read/replace a broker credential outside the authenticated tenant READ boundary.
+**Scenario:** old trial/subscription code blocks initial free users or payment logic is introduced without OWNER/legal decision.
 
-WP17 controls:
+Controls: initial flags `BILLING_ENABLED=false`, `TRIAL_ENABLED=false`, `SUBSCRIPTION_ENFORCEMENT=false`, `PREMIUM_FEATURE_GATING=false`; future monetization `DEFERRED_OPTIONAL` and separately amended/tested.
 
-- normal broker credential entry exists only under an authenticated same-origin Web session;
-- client-supplied tenant/account ownership claims are ignored; tenant scope comes only from the server-side session;
-- candidate token is sent in a request body, never URL/CLI/Web Storage, and is not returned in API responses;
-- preview material is memory-only, short-lived, scoped to user+tenant and zeroed on consume/cancel/expiry;
-- accepted WP15 `GetAccounts` validation must prove READ-only authority before durable storage; FULL/unknown authority fails closed;
-- broad READ token may expose several accounts but the user binds only verified masked accounts from that exact challenge;
-- replacement must preserve the same verified account set rather than silently rebinding a connection;
-- durable secret bytes use the existing WP8 DPAPI LocalMachine mechanism under `read-broker/connections`, never PostgreSQL;
-- runtime write authority is limited to that READ child; `broker_trading` and execution credentials remain unreachable;
-- opaque random secret references prevent broker account IDs from becoming filesystem paths;
-- runner has no secret `ReadData`/write/delete authority and cannot upload the secret subtree as evidence;
-- public registration and Internet ingress remain disabled; external hardening is still owned by WP22A.
+### T28 — Unauthorized architecture drift
 
-Fail-safe: missing/invalid vault marker or ACL, stale/invalid challenge, tenant mismatch, broker authority mismatch, database persistence failure or credential-store failure rejects the provisioning action and never falls back to TRADE/write credentials.
+**Scenario:** developer/AI creates second frontend/Gateway/Core/identity/broker stack or returns to OWNER-only/home-production assumptions.
 
-### T22 — Clientless external Web boundary bypass or misconfiguration
+Controls: Program Lock, Amendments Index, current status, Public Hosted machine contract, repository/documentation/public-product guards, current-WP scope and ADR/amendment process.
 
-**Scenario:** a forged Cloudflare identity header, unprotected tunnel route, hostile Host/Origin, stolen remote session, compromised CI runner, provider drift, invalid edge-certificate state or failed rollback bypasses the intended OWNER-only external Web gate or leaves the Lenovo origin exposed.
+### T29 — V9 regression during V10 migration
 
-WP22A controls:
+**Scenario:** V10 changes break accepted V9 production/recovery before cutover.
 
-- the Lenovo Web origin binds only to `127.0.0.1`; no inbound public Lenovo port is introduced;
-- visitor TLS terminates at Cloudflare on a provider-managed publicly trusted certificate; the zero-cost selected path requires an active full-DNS zone, a first-level WP22A hostname, proxied DNS, valid Universal SSL coverage and provider-managed renewal before cutover is accepted;
-- external application requests require exact `X-Forwarded-Proto: https`; missing/plain-HTTP/ambiguous protocol markers fail closed without enabling general proxy-header peer trust;
-- edge certificate private keys remain provider-managed and are never copied into GitHub, Lenovo runtime state or CI artifacts;
-- Cloudflare Tunnel uses a single reviewed hostname plus catch-all `http_status:404`;
-- Cloudflare Access is deny-by-default and the selected Access application/policy is created before DNS publication is considered usable;
-- `cloudflared` is configured to validate `Cf-Access-Jwt-Assertion` for the exact team/application audience before proxying the protected hostname;
-- the application additionally requires the expected Access identity fingerprint, non-empty assertion, exact external Host, loopback peer, server-side Omni-CIO session, exact HTTPS Origin for unsafe requests and matching CSRF cookie/header;
-- external sessions use bounded idle/absolute lifetimes, rotation/revocation, Secure/HttpOnly/SameSite session cookies and no Web Storage credentials;
-- login and mutation rates are bounded and external responses use HSTS/CSP/frame/object/referrer/cache hardening;
-- the self-hosted GitHub runner is denied direct loopback TCP access and denied runtime config/tunnel-token access by OS controls;
-- provider credentials are unavailable to arbitrary PR code; real provider mutation is allowed only from reviewed accepted `main` through the protected Phase B contour;
-- tunnel token, raw OWNER identity, broker secrets and private portfolio data remain outside GitHub/CI artifacts;
-- Phase B apply is ordered fail-closed; after a late failure rollback removes/disables external reachability first and reconstructs the previously accepted local Web;
-- separate ordinary-phone browser evidence is mandatory and cannot be synthesized by CI.
-
-Local-trust note: Cloudflare Access is not treated as a defense against an already-compromised OWNER/admin Windows account. Such local code execution is a node compromise governed by T3/T13 and the disk/runtime controls. The explicitly less-trusted CI runner is isolated from the loopback origin and WP22A secret/config subtrees.
-
-Fail-safe: missing/invalid TLS certificate coverage or renewal state, non-HTTPS external protocol, missing Access validation, wrong OWNER identity, wrong Host/Origin/CSRF, non-loopback origin path, missing runner denial, provider-state mismatch or rollback uncertainty blocks WP22A acceptance and keeps WP23 LOCKED.
+Controls: protected `app:app`, compatibility wrappers/tests, staged acceptance, explicit rollback and owning parity/decommission gate.
 
 ## 5. Severity
 
-- **P0 — money/security authority:** possible unauthorized/duplicate Real action, secret disclosure, approval bypass. Stop current work.
-- **P1 — data correctness/recovery:** wrong financial facts, identity, lost durable state, unrecoverable backup. Next WP blocked.
+- **P0 — money/security authority:** unauthorized/duplicate Real action, secret disclosure, cross-tenant private-data disclosure, approval bypass. Stop current work.
+- **P1 — data correctness/recovery/identity:** wrong financial facts/tenant binding, lost durable state, unrecoverable backup, unsafe public auth. Next acceptance blocked.
 - **P2 — functional reliability:** broken feature without authority/data compromise. Fix current WP.
-- **P3 — cosmetic/minor:** may enter backlog if Exit Gate permits.
+- **P3 — cosmetic/minor:** backlog only if Exit Gate permits.
 
 ## 6. Security acceptance philosophy
 
-No single control is considered sufficient. Real-money safety depends on defense in depth:
+No single edge, session, database or broker control is sufficient.
 
-`identity + least privilege + evidence + deterministic constraints + immutable approval + idempotency + reconciliation + audit + recovery`.
+Defense in depth:
+
+`product identity + tenant isolation + least privilege + evidence + deterministic constraints + immutable approval + idempotency + reconciliation + audit + recovery`.
+
+Public target does not equal public activation. `PUBLIC_MULTI_USER_ENABLED=false`, `trading_methods=false` and `REAL_TRADING_ENABLED=false` remain until their owning accepted gates change them.
 
 ## 7. Threat-model maintenance
 
-Every V10 WP that introduces a new external surface, credential, persistent state, AI tool or Real authority must update this threat model or explicitly state why no threat boundary changed.
+Every V10 WP that introduces a new public surface, tenant data path, credential, persistent state, AI tool, provider or Real authority must update this threat model or explicitly demonstrate why no threat boundary changed.

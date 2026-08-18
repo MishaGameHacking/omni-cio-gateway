@@ -71,6 +71,9 @@ jobs:
       - name: Verify documentation authority and lifecycle consistency
         run: python scripts/check_v10_documentation_consistency.py
 
+      - name: Verify public free hosted product plan
+        run: python scripts/check_v10_public_product_plan.py
+
       - name: Verify CI cost-control contract
         run: python scripts/check_v10_ci_cost_control.py
 
@@ -82,6 +85,7 @@ jobs:
           python -m py_compile
           scripts/check_v10_engineering_governance.py
           scripts/check_v10_documentation_consistency.py
+          scripts/check_v10_public_product_plan.py
           scripts/check_v10_ci_cost_control.py
           scripts/check_v10_regression_shield.py
           scripts/v10_ci_router.py

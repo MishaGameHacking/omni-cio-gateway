@@ -1,7 +1,7 @@
 {
-  "schema": "omni-cio.v10.engineering-quality-gate.v2",
+  "schema": "omni-cio.v10.engineering-quality-gate.v3",
   "status": "ACTIVE_ACCEPTED_ON_MAIN",
-  "date": "2026-08-16",
+  "date": "2026-08-18",
   "acceptance_evidence": {
     "accepted_pr": 322,
     "main_sha_encoding": "HEX_CHUNKS",
@@ -15,6 +15,12 @@
     "regression_shield_run_number": 1498,
     "regression_shield_run_id": 31959959791,
     "regression_shield_conclusion": "success"
+  },
+  "runtime_hosting_update": {
+    "decision_date": "2026-08-18",
+    "amendment": "docs/master-plan/OMNI_CIO_V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_AMENDMENT.md",
+    "public_runtime_contract": "docs/architecture/V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_CONTRACT.json",
+    "effective_on_merge": true
   },
   "scope": [
     "V10_IMPLEMENTATION",
@@ -117,16 +123,22 @@
     "cost_or_authority_consequence_before_confirmation": true
   },
   "runtime_hosting": {
-    "v10_primary_host": "APPROVED_LENOVO_OR_REPLACEMENT_PERSONAL_NODE",
-    "v10_web_built_and_served_on_personal_node": true,
-    "separate_paid_cloud_web_host_required_for_v10": false,
-    "render_com_v10_runtime_target": false,
+    "v10_public_production_host": "APPROVED_MANAGED_CLOUD_RUNTIME_SELECTED_BY_OWNING_GATE",
+    "managed_cloud_runtime_required_for_public_product": true,
+    "owner_home_or_lenovo_public_dependency_allowed": false,
+    "owner_home_power_or_internet_public_sla_dependency_allowed": false,
+    "lenovo_role": "ENGINEERING_SELF_HOSTED_CI_ACCEPTANCE_RECOVERY_ROLLBACK",
+    "lenovo_may_be_final_public_production_origin": false,
+    "provider_selection_requires_owner_approved_gate": true,
+    "provider_purchase_or_mutation_implied_by_planning": false,
+    "render_com_v10_runtime_target_selected": false,
     "render_com_new_workspace_authoritative": false,
     "render_com_new_v10_service_without_owner_amendment_allowed": false,
     "protected_v9_render_app_app_baseline_preserved": true,
-    "external_access_provider_role": "ACCESS_SECURITY_TRANSPORT_TO_PERSONAL_NODE",
-    "external_access_provider_may_become_private_state_host": false,
-    "cloudflare_candidate_does_not_imply_cloud_app_hosting": true
+    "cloudflare_role": "EDGE_DNS_TLS_WAF_DDOS_ORIGIN_PROTECTION_CANDIDATE_NOT_PRODUCT_IDENTITY",
+    "cloudflare_home_lenovo_tunnel_satisfies_final_public_hosting": false,
+    "hosted_tenant_private_state_allowed_after_security_privacy_legal_gates": true,
+    "external_access_provider_may_become_product_identity": false
   },
   "ci_cost_control": {
     "standard": "docs/operations/V10_CI_COST_CONTROL_STANDARD.md",

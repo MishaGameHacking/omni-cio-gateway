@@ -244,8 +244,32 @@ def validate_high_risk_headers(failures: list[str]) -> None:
         failures.append(f"engineering-quality contract JSON invalid: {exc}")
         return
 
-    if contract.get("status") != "ACTIVE_ACCEPTED_ON_MAIN":
+    contract_status = contract.get("status")
+    accepted_status = "ACTIVE_ACCEPTED_ON_MAIN"
+    pending_runtime_update_status = "ACTIVE_ACCEPTED_GOVERNANCE_WITH_OWNER_APPROVED_RUNTIME_UPDATE_EFFECTIVE_ON_MERGE"
+    if contract_status not in {accepted_status, pending_runtime_update_status}:
         failures.append("engineering-quality contract status is not active/accepted")
+    elif contract_status == pending_runtime_update_status:
+        runtime_update = contract.get("runtime_hosting_update")
+        if not isinstance(runtime_update, dict):
+            failures.append(
+                "pending runtime-hosting governance status lacks runtime_hosting_update"
+            )
+        else:
+            if runtime_update.get("effective_on_merge") is not True:
+                failures.append(
+                    "pending runtime-hosting governance update must remain effective-on-merge"
+                )
+            if (
+                runtime_update.get("amendment")
+                != "docs/master-plan/OMNI_CIO_V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_AMENDMENT.md"
+            ):
+                failures.append("pending runtime-hosting amendment path mismatch")
+            if (
+                runtime_update.get("public_runtime_contract")
+                != "docs/architecture/V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_CONTRACT.json"
+            ):
+                failures.append("pending public runtime contract path mismatch")
 
     acceptance = contract.get("acceptance_evidence")
     if not isinstance(acceptance, dict):

@@ -15,63 +15,59 @@
 5. knowledge/16_CURRENT_PROGRAM_STATUS.md — protected V9 runtime baseline only
 6. docs/master-plan/OMNI_CIO_V10_PROGRAM_LOCK.md
 7. docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.md
-8. docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md и все active amendments
-9. docs/master-plan/OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md
-10. knowledge/17_V10_CURRENT_PROGRAM_STATUS.md — единственный current V10 WP/progress authority
-11. профильные architecture/domain/runbook/contracts по текущей задаче
-12. gpt/SETUP_INDEX.md и связанные GPT recovery files только если задача затрагивает текущий Custom GPT/V9 recovery
+8. docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md и все active amendments, особенно Product User / Engineering Authority и Public Free Multi-User Hosted Runtime
+9. docs/architecture/V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_CONTRACT.json
+10. docs/master-plan/OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md
+11. knowledge/17_V10_CURRENT_PROGRAM_STATUS.md — единственный current V10 WP/progress authority
+12. профильные architecture/domain/runbook/contracts по текущей задаче
+13. gpt/SETUP_INDEX.md и связанные GPT recovery files только если задача затрагивает current Custom GPT/V9 recovery
 
-Затем проверь фактическое состояние репозитория:
+Затем проверь:
 - exact main SHA;
-- open Pull Requests и Issues;
-- active private-main ruleset/protection;
-- latest exact-head required CI/security и post-merge Regression Shield;
-- текущий authorized WP только из knowledge/17_V10_CURRENT_PROGRAM_STATUS.md;
-- production Render/Gateway contract, если задача затрагивает protected V9 runtime/deploy/GPT;
-- любой in-flight PR не считать accepted implementation до merge + required post-merge GREEN.
+- open Pull Requests/Issues;
+- required exact-head CI/security и post-merge Regression Shield;
+- authorized current WP только из current status;
+- любой in-flight/unmerged PR не считать accepted authority.
 
-Текущая программа определяется так:
-- V10 — единственная active feature program; OWNER уже выдал START V10;
-- V9.0.0 остаётся protected production/recovery baseline до ответственного V10 cutover;
-- exact accepted progress/current-next WP НЕ брать из этого prompt, старого чата, screenshot, package-local PENDING/CURRENT/NEXT или stale PR description — читать только из accepted-main knowledge/17_V10_CURRENT_PROGRAM_STATUS.md;
-- не начинать later WP раньше Exit Gate текущего WP.
+Current target:
+- один public modern multi-user Omni-CIO Web product для обычных Internet-connected phone/desktop browsers;
+- final production НЕ зависит от PROJECT OWNER home IP, Wi-Fi/router/LAN, home Internet/power или Lenovo;
+- Lenovo = engineering/self-hosted CI/controlled acceptance/recovery/rollback, не public production origin;
+- final public Web/API/private state = approved managed-cloud production architecture selected by owning WP22A service/security/recovery gate;
+- PROJECT OWNER не special product role; OWNER использует тот же OmniCIOUserAccount -> Tenant -> Session path, что и любой USER;
+- Telegram Login/VK ID = product auth; GitHub/cloud-provider/Windows = engineering authority;
+- public multi-user = approved target, но PUBLIC_MULTI_USER_ENABLED=false до required gates;
+- initial USER access fully free: BILLING_ENABLED=false, TRIAL_ENABLED=false, SUBSCRIPTION_ENFORCEMENT=false, PREMIUM_FEATURE_GATING=false; future monetization DEFERRED_OPTIONAL;
+- each USER owns only tenant-scoped BrokerConnection READ/optional TRADE credentials; no global/shared user broker token;
+- raw credentials never return to browser storage and never enter GitHub/CI/artifacts;
+- T-Invest public connector remains separate fail-closed broker-terms gate;
+- app:app protected V9 baseline, trading_methods=false, REAL_TRADING_ENABLED=false, no transfer/withdrawal/margin/short remain preserved.
 
-Обязательные инженерные инварианты:
-- один Omni-CIO product line, один canonical repo, один Core; не создавать duplicate Gateway/Web/Telegram/AI/execution stack;
-- GitHub engineering access никогда не означает broker/trading authority;
-- read-only, Sandbox и Real credentials изолированы; secret values/private portfolio payloads не сохранять в GitHub;
-- AI не получает прямого broker-write/admin/GitHub-bypass/Real-money authority;
-- Real execution остаётся exact-owner-confirmed, immutable, idempotent, fail-closed и broker-reconciled;
-- no withdrawal/transfer, margin/short, MARKET/BESTPRICE, automatic retry after ambiguous possible-submit или autonomous recurring Real execution;
-- stable protected V9 recovery entrypoint `app:app` сохранять до отдельного accepted V10 cutover;
-- `trading_methods=false` и `REAL_TRADING_ENABLED=false` сохранять, пока owning accepted gate явно не меняет соответствующую authority;
-- изменения делать только через focused branch + PR;
-- сначала установить root cause/blast radius и выполнить applicable cheap/focused preflight; CI использовать как independent verifier, а не primary debugger;
-- every applicable exact-head V10 check должен реально выполниться и conclude success; failure/cancelled/pending/neutral/skipped не считать GREEN evidence для applicable gate;
-- merge только squash после exact-head GREEN, full-diff review и zero unresolved blocking review threads;
-- после merge проверить exact new main и required post-merge Regression Shield/owning audits;
-- OWNER product acceptance запрашивать только после implementation merge + required post-merge GREEN; pre-merge OWNER involvement только для genuinely non-delegable prerequisite;
-- не ослаблять проверки ради зелёного CI;
-- Dependabot PR — предложение, а не разрешение на изменение accepted V10 baseline;
-- historical records сохранять как evidence, но не использовать как competing current-state ledger.
+Do not activate public production merely because it is target architecture. Corrected WP22A plus tenant isolation, session/abuse, secrets/recovery, privacy/personal-data, broker/legal/regulatory, capacity/incident gates must pass first.
 
-Repository/runtime ownership:
-- one deterministic Core: omni_cio/;
-- accepted V10 API/Web roots may already exist under apps/api/ and apps/web/ according to current status;
-- accepted Personal-Node infrastructure may exist under infrastructure/;
-- apps/telegram/ and ai/ остаются lifecycle-gated до owning authorized WPs;
-- V10 Web/API/private state остаются на approved Lenovo/replacement Personal Node, если later OWNER-approved architecture amendment явно не изменит это;
-- external-access provider — access/security transport, не второй authoritative private-state/application host;
-- existing Render app:app — protected V9 production/recovery baseline, не новый V10 hosting target.
+Engineering invariants:
+- one canonical repo/Core/product line; no duplicate stacks;
+- focused branch + PR only;
+- root cause/blast radius before material fix;
+- cheap/focused preflight before expensive CI;
+- every applicable exact-head check must really run and conclude success; RED/skipped/queued/pending is not GREEN;
+- any commit invalidates prior final GREEN;
+- full diff + zero blockers + squash merge;
+- exact new main + required post-merge Regression Shield before status/acceptance;
+- OWNER product acceptance only after merge/post-merge GREEN except genuine non-delegable prerequisite;
+- do not weaken tests/security/Regression Shield;
+- later WPs remain locked until current Exit Gate.
 
-Перед изменениями кратко зафиксируй:
-- current main SHA;
-- текущий authorized WP;
-- relevant open PR/issues;
-- состояние required CI/protection;
-- какие canonical files/contracts прочитаны;
-- точный scope текущего WP/дефекта и что намеренно не входит в него;
-- какие historical records были просмотрены только как evidence и не используются как current authority.
+If the Public Free Multi-User Hosted Runtime planning correction is not yet accepted, do planning/governance/documentation only. Do not resume functional WP22A coding until that plan PR is squash-merged and its exact new main passes required post-merge GREEN.
+
+Broker/money invariants:
+- tenant-scoped READ/optional TRADE credentials;
+- same-tenant VERIFIED_READ_ACCOUNTS ∩ VERIFIED_TRADE_ACCOUNTS for execution eligibility;
+- immutable plan + authenticated USER confirmation for own tenant + preflight + idempotency/reconciliation;
+- no AI broker-write authority;
+- no withdrawal/transfer/margin/short/autonomous recurring Real execution.
+
+Before changes, briefly report exact main, current WP, relevant PR/issues, required CI/protection, canonical files read, exact current scope/non-goals, and historical records used only as evidence.
 ```
 
 Для настройки самого существующего Custom GPT использовать `gpt/SETUP_INDEX.md` как главный recovery/setup источник.

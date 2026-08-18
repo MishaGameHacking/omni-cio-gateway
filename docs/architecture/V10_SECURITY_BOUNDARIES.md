@@ -1,212 +1,185 @@
 # Omni-CIO V10 — Security Boundaries
 
-Status: **WP0 architecture freeze**  
-Runtime effect: **none until later Exit Gates**
+Status: **ACTIVE ARCHITECTURE / UPDATED FOR PUBLIC-HOSTED MULTI-USER TARGET**  
+Runtime effect: **none until owning Exit Gates**
 
 ## 1. Objective
 
-Define authority boundaries before implementation so a Web/Telegram/AI/GitHub compromise cannot automatically become broker-write authority.
+Define authority boundaries so compromise of Web, Telegram, AI, GitHub, cloud edge/runtime or one USER account cannot automatically become cross-tenant disclosure, broker-secret disclosure or uncontrolled real-money authority.
 
-Security model: **least privilege + explicit authority + fail closed + evidence before action**.
+Security model: **least privilege + tenant isolation + explicit authority + fail closed + evidence before action**.
 
 ## 2. Authority zones
 
 ### Zone A — GitHub engineering plane
 
-May contain:
+May contain code, tests, schemas, migrations, safe defaults, policies/prompts/tool contracts/evals, CI/deployment/recovery logic and non-secret release metadata.
 
-- code, tests, schemas, migrations;
-- safe configuration defaults;
-- AI policies/prompts/tool contracts/evals;
-- CI/deployment/bootstrap/recovery logic;
-- public/non-secret release metadata.
+Must not contain real broker/Telegram/VK/provider/recovery secrets, full account IDs, private tenant portfolio/database payloads, private encryption keys or raw backups.
 
-Must not contain:
-
-- broker/Telegram/runtime secret values;
-- full account IDs/private portfolio payloads;
-- private encryption keys;
-- raw private DB backups.
-
-GitHub collaborator access is engineering authority only, never money authority.
+GitHub access is engineering authority only. It never grants a product USER session, tenant authority or trading authority.
 
 ### Zone B — CI / self-hosted runner
 
-The runner executes repository workflows and is therefore treated as potentially dangerous if workflow trust is lost.
+CI executes repository code and is treated as potentially dangerous if workflow trust is lost.
 
-Required V10 design:
+Required:
 
-- private repository only;
-- runner identity separate from runtime identity;
-- runner cannot read trading secret store/private DB backups;
-- reviewed release deployment separated from arbitrary PR code;
-- persistent runner workspace is cleaned after jobs;
-- critical deployment path validates reviewed Git/release identity.
+- reviewed exact-head source;
+- runner/runtime identities separated;
+- runner cannot read production tenant secrets/private backups;
+- reviewed release/deploy identity separated from arbitrary PR code;
+- clean workspace;
+- privileged provider/deployment secrets unavailable to unaccepted PR code;
+- no fabricated clean-room/OWNER evidence.
 
-Until WP3/WP6 implement stronger controls, project process manually requires focused PR + exact-head CI + no direct secret-bearing deployment from unreviewed branches.
+Lenovo `omni-cio-ci` is engineering continuity/authority evidence, **not** public production hosting.
 
-### Zone C — V10 runtime
+### Zone C — Public hosted V10 runtime
 
-Runtime services use separate least-privilege identities where practical.
+The final public Web/API/private-state production runtime is an approved managed-cloud architecture independent of PROJECT OWNER home IP/Wi-Fi/router/LAN/Internet/power/Lenovo.
 
-Sub-boundaries:
+Sub-boundaries include Web/API, deterministic Core, tenant data/session layer, background jobs, Research, Telegram adapter, future AI worker, future Execution service, database/backup and edge/provider integration.
 
-- Core/read-only services;
-- Web/API;
-- Telegram adapter;
-- AI worker;
-- Research collector;
-- Execution service;
-- database/backup service.
+The public runtime must not become one broad identity that automatically has every tenant secret and every future trading authority. Least-privilege service identities and scoped decryption/access paths are mandatory where practical.
 
-The AI/Web/Telegram processes must not inherit direct broker-write credentials merely because they share one machine.
+### Zone D — Tenant private-data / secret plane
 
-### Zone D — Local secret store
+For public V10, private state and broker credentials are tenant-owned hosted data, subject to accepted security/privacy/legal gates.
 
-Contains runtime-only secret values:
+Canonical secret ownership:
 
-- T-Invest read credential;
-- T-Invest trading credential;
-- Telegram bot token;
-- local encryption/recovery material where applicable;
-- future approved external source credentials.
+`USER -> Tenant -> BrokerConnection -> READ / TRADE_OPTIONAL`
 
-Requirements planned for Block C:
+Requirements:
 
-- OS/DPAPI/credential-protected or owner-approved equivalent;
-- ACL by runtime role;
-- no command-line/history/log exposure;
-- rotation/revocation metadata;
-- recovery key stored separately from protected data.
+- no application-global USER broker token;
+- encrypted at rest;
+- raw secret never returned to browser after submission;
+- no Web Storage/GitHub/CI/artifact exposure;
+- tenant-aware authorization before runtime secret use;
+- no Cortex/ordinary CI/unrelated-tenant raw secret access;
+- rotation/revocation/audit metadata;
+- recovery keys separated from protected data where applicable;
+- backup/restore preserves tenant scope.
+
+Protected V9 local/DPAPI secret contours remain valid historical/recovery authority until their owning V10 cutover.
 
 ### Zone E — Broker authority
 
-Three independent credentials/contours:
+Three capability classes remain isolated:
 
-1. **Production READ** — read-only, never fallback to trading credential.
-2. **Sandbox** — virtual-only credential and host.
-3. **Personal Real** — separate account-scoped trading credential, no transfer authority.
+1. **READ** — monitoring/account/portfolio/market information only.
+2. **Sandbox** — virtual-only authority.
+3. **TRADE / Real** — optional same-tenant trading credential, separately gated; no transfer/withdrawal authority.
 
-No code may silently promote READ into Real or use Real as a convenience fallback for ordinary reads.
+Public V10 execution eligibility remains:
 
-### Zone F — Owner approval
+`VERIFIED_READ_ACCOUNTS ∩ VERIFIED_TRADE_ACCOUNTS`
 
-Owner development approval, alert acknowledgement and Real plan approval are different authorities.
+for the same tenant. No code may silently use a TRADE token as a convenience READ fallback or share one tenant's credential with another.
 
-`START V10` authorizes engineering work only.
+### Zone F — USER approval versus PROJECT OWNER authority
 
-Real approval later requires:
+PROJECT OWNER engineering/business approval and a product USER's own portfolio/Real approval are different authorities.
 
-- exact immutable plan identity/hash;
-- recent/step-up owner authentication on the approved surface;
-- short lifetime;
-- repeat preflight before submit;
-- plan drift invalidates approval.
+`START V10`, GitHub merge, provider ownership or infrastructure access authorizes no user investment action.
+
+When PROJECT OWNER uses Omni-CIO, the OWNER is an ordinary USER.
+
+Future Real approval requires the authenticated USER acting only for that USER's own tenant/account, immutable plan/hash, recent/step-up product authentication, short lifetime and fresh preflight. Material drift invalidates approval.
 
 ### Zone G — AI authority
 
-AI may call only an allowlisted tool registry.
+AI may call only allowlisted typed tools and is denied direct broker write, raw broker secrets, unrestricted SQL/filesystem/network/admin shell, GitHub protection bypass and Real-money approval authority.
 
-AI is denied:
+Retrieved content is untrusted data, never policy authority.
 
-- direct broker write;
-- secret access;
-- raw OS command execution by default;
-- authority escalation through natural-language instructions;
-- treating retrieved text as higher-priority system policy.
+### Zone H — Public Web / product authentication ingress
 
-Untrusted documents/news are data, never instructions.
+WP22A is the External Web Access / Product Authentication Security Gate.
 
-### Zone H — External Web/Telegram ingress
+Before corrected WP22A and launch gates pass, `PUBLIC_MULTI_USER_ENABLED=false` and production public activation remains locked.
 
-Before WP22A security gate, V10 Web remains local/private.
+Final public ingress requires:
 
-External access later requires:
+- reviewed public TLS/certificate lifecycle;
+- trusted edge/reverse-proxy/protocol chain;
+- Telegram/VK -> internal Omni-CIO account -> server-side USER session;
+- Cloudflare/provider identity kept outside product identity;
+- Secure/HttpOnly/SameSite session controls, rotation/revocation/expiry;
+- CSRF + Origin/Referer/Host/CORS controls;
+- login/API abuse/rate limiting;
+- direct API negative tests;
+- database-enforced tenant isolation;
+- cross-tenant IDOR/cache/job/backup/RAG negatives;
+- production recovery independent of OWNER home access.
 
-- reviewed TLS/certificate lifecycle;
-- OWNER authentication independent of a deep-link URL;
-- server-side session controls;
-- CSRF/Origin/Host/CORS controls;
-- rate limiting/abuse handling;
-- replay/staleness validation for Telegram Mini App identity;
-- recent/step-up auth for Real plan approval.
+Cloudflare may be edge/origin-protection infrastructure. A Tunnel whose sole production origin is OWNER home Lenovo is not a valid final public-production boundary.
 
 ## 3. Data classifications
 
 ### Public/low sensitivity
 
-- application code;
-- architecture docs;
-- public market/source references;
-- non-secret release version/Git SHA.
+Code, architecture docs, public market/source references and non-secret release metadata.
 
 ### Internal engineering
 
-- prompts/policies;
-- tests/evals;
-- deployment schemas;
-- non-secret diagnostics.
+Policies/prompts, synthetic tests/evals, deployment schemas and sanitized diagnostics.
 
-### Private financial
+### Tenant-private financial/product data
 
-- positions;
-- balances;
-- operations;
-- private Decision Journal content;
-- portfolio analytics tied to OWNER.
+Positions, balances, operations, imported reports, decisions/plans/journal, research personalization, tenant-specific jobs/audit state and analytics.
+
+Such data is not repository configuration and is inaccessible across tenants.
 
 ### Secret
 
-- bearer/API tokens;
-- broker credentials;
-- Telegram bot token;
-- private keys/encryption material;
-- authorization headers.
+Broker credentials, Telegram/VK/provider secrets, private encryption/recovery material, session secrets and authorization headers.
 
-Secret data is never committed. Private financial data is not treated as repository configuration.
+Secrets are never committed. Hosted secrets require approved encryption/access/rotation/recovery boundaries.
 
 ## 4. Critical negative guarantees
 
-The system must be designed so these implications are false:
-
 ```text
-GitHub write access      != trading authority
-AI output                != plan approval
-Telegram alert click     != broker submit
-Web session              != secret access
-Read token               != trading token
-Plan approved once       != approval of a changed plan
-Possible broker submit   != safe retry permission
-Submitted order          != filled order
-AI research text         != canonical evidence
-Lenovo possession        != plaintext secret disclosure
+GitHub/provider ownership    != product USER/tenant authority
+PROJECT OWNER               != special product superuser
+USER A session              != Tenant B authority
+Object ID                   != authorization
+Web session                 != raw secret access
+Cloudflare Access identity  != Omni-CIO USER session
+Read token                  != trading token
+USER A broker token         != shared/global token
+AI output                   != plan approval
+Plan approved once          != changed-plan approval
+Possible broker submit      != safe retry permission
+Submitted order             != filled order
+Public product target       != permission to expose unfinished service
+Lenovo/home availability    != public production availability dependency
 ```
 
 ## 5. Kill-switch hierarchy
 
-Existing V9 kill switches remain binding until replaced by reviewed V10 equivalents:
+Protected V9/current safety switches remain binding until owning accepted WPs replace them:
 
 - `REAL_TRADING_ENABLED=false` — master Real rollback;
-- `WATCHTOWER_ENABLED=false` — monitoring rollback.
+- `WATCHTOWER_ENABLED=false` where applicable;
+- `PUBLIC_MULTI_USER_ENABLED=false` — public-product activation remains off until corrected launch gates.
 
-Planned V10 switches include separate AI, Telegram, plan-execution and Watchtower controls. Disabling an optional component must not widen another component's authority.
+Disabling one optional component must not widen another component's authority.
 
-## 6. Current repository protection observation
+## 6. Public-hosting and legal/broker gates
 
-At WP0 start, GitHub reports `main` as not protected by a server-side branch protection rule. This does **not** authorize direct pushes.
+Public Web/account service and public broker-backed functionality are separate authority boundaries.
 
-Until WP3 evaluates and configures the strongest repository protection available for the owner's GitHub plan, V10 manually enforces:
+Current T-Invest ordinary client API terms do not grant public-service data-retransmission rights. A user-supplied token is not a broker-terms waiver. Public T-Invest-backed functionality remains fail-closed pending accepted permission/compliant architecture.
 
-`focused branch -> PR -> exact-head Regression Shield/security -> zero review blockers -> squash merge`.
+Hosted tenant-private data/credentials additionally require privacy/personal-data, retention, processor/location, backup/recovery and production legal acceptance.
 
-WP3 must explicitly evaluate required status checks/conversation resolution/restrictions supported for this private repository; inability to enable a paid GitHub protection feature must be documented and compensated with repository/CI process controls rather than silently ignored.
+Initial user access is free (`BILLING_ENABLED=false`, `TRIAL_ENABLED=false`, `SUBSCRIPTION_ENFORCEMENT=false`, `PREMIUM_FEATURE_GATING=false`). Future monetization is separate scope and cannot be used to bypass product/security gates.
 
 ## 7. Security-change rule
 
-Any change that moves a component across one of these boundaries requires:
+Any change crossing one of these boundaries requires explicit current-WP scope, threat review, deterministic negative tests where possible, least-privilege analysis, rollback/kill switch where relevant and ADR/amendment when the boundary changes architecturally.
 
-- explicit current-WP scope;
-- threat review;
-- deterministic negative tests where possible;
-- rollback/kill switch where relevant;
-- ADR if the boundary changes architecturally.
+No public activation, hosted secret custody, broker capability or cross-tenant operational surface is accepted solely because source code exists.

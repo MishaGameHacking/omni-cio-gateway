@@ -14,6 +14,9 @@ AMENDMENT = (
 )
 INDEX = ROOT / "docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md"
 CONTRACT = ROOT / "docs/architecture/V10_ENGINEERING_QUALITY_GATE_CONTRACT.json"
+PUBLIC_CONTRACT = (
+    ROOT / "docs/architecture/V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_CONTRACT.json"
+)
 LEDGER = ROOT / "docs/operations/V10_ENGINEERING_FAILURE_LEARNING_LEDGER.md"
 OWNER_STANDARD = ROOT / "docs/operations/V10_OWNER_ACTION_HANDOFF_STANDARD.md"
 COPILOT_POLICY = ROOT / ".github/instructions/owner-handoff-and-runtime.instructions.md"
@@ -34,6 +37,21 @@ def _load_text(path: Path, failures: list[str]) -> str:
     except (OSError, UnicodeError) as exc:
         failures.append(f"cannot read {path.relative_to(ROOT)}: {exc}")
         return ""
+
+
+def _load_json(path: Path, failures: list[str]) -> dict[str, Any] | None:
+    text = _load_text(path, failures)
+    if not text:
+        return None
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError as exc:
+        failures.append(f"invalid JSON in {path.relative_to(ROOT)}: {exc}")
+        return None
+    if not isinstance(payload, dict):
+        failures.append(f"JSON root must be object: {path.relative_to(ROOT)}")
+        return None
+    return payload
 
 
 def _require_markers(
@@ -60,52 +78,32 @@ def _expect_bool(
         failures.append(f"{context}.{key} must be {expected!r}")
 
 
+def _require_section(
+    data: dict[str, Any], name: str, failures: list[str]
+) -> dict[str, Any]:
+    section = data.get(name)
+    if not isinstance(section, dict):
+        failures.append(f"engineering quality contract section must be object: {name}")
+        return {}
+    return section
+
+
 def validate_contract(failures: list[str]) -> None:
-    text = _load_text(CONTRACT, failures)
-    if not text:
-        return
-    try:
-        data = json.loads(text)
-    except json.JSONDecodeError as exc:
-        failures.append(f"invalid engineering quality contract JSON: {exc}")
+    data = _load_json(CONTRACT, failures)
+    if data is None:
         return
 
-    if data.get("schema") != "omni-cio.v10.engineering-quality-gate.v2":
+    if data.get("schema") != "omni-cio.v10.engineering-quality-gate.v3":
         failures.append("engineering quality contract schema mismatch")
 
-    pre_ci = data.get("pre_ci")
-    merge_gate = data.get("merge_gate")
-    owner = data.get("owner_participation")
-    owner_handoff = data.get("owner_handoff")
-    runtime_hosting = data.get("runtime_hosting")
-    learning = data.get("failure_learning")
-    isolation = data.get("fault_isolation")
-    protected = data.get("protected_invariants")
-
-    for name, section in (
-        ("pre_ci", pre_ci),
-        ("merge_gate", merge_gate),
-        ("owner_participation", owner),
-        ("owner_handoff", owner_handoff),
-        ("runtime_hosting", runtime_hosting),
-        ("failure_learning", learning),
-        ("fault_isolation", isolation),
-        ("protected_invariants", protected),
-    ):
-        if not isinstance(section, dict):
-            failures.append(
-                f"engineering quality contract section must be object: {name}"
-            )
-            return
-
-    assert isinstance(pre_ci, dict)
-    assert isinstance(merge_gate, dict)
-    assert isinstance(owner, dict)
-    assert isinstance(owner_handoff, dict)
-    assert isinstance(runtime_hosting, dict)
-    assert isinstance(learning, dict)
-    assert isinstance(isolation, dict)
-    assert isinstance(protected, dict)
+    pre_ci = _require_section(data, "pre_ci", failures)
+    merge_gate = _require_section(data, "merge_gate", failures)
+    owner = _require_section(data, "owner_participation", failures)
+    owner_handoff = _require_section(data, "owner_handoff", failures)
+    runtime_hosting = _require_section(data, "runtime_hosting", failures)
+    learning = _require_section(data, "failure_learning", failures)
+    isolation = _require_section(data, "fault_isolation", failures)
+    protected = _require_section(data, "protected_invariants", failures)
 
     _expect_bool(pre_ci, "required", True, "pre_ci", failures)
     _expect_bool(pre_ci, "ci_is_primary_debugger", False, "pre_ci", failures)
@@ -144,7 +142,18 @@ def validate_contract(failures: list[str]) -> None:
         failures,
     )
     rejected = set(merge_gate.get("rejected_as_green", []))
-    for required in {"failure", "cancelled", "neutral", "skipped", "pending"}:
+    for required in {
+        "failure",
+        "cancelled",
+        "queued",
+        "pending",
+        "in_progress",
+        "timed_out",
+        "action_required",
+        "stale",
+        "neutral",
+        "skipped",
+    }:
         if required not in rejected:
             failures.append(f"merge_gate must reject {required!r} as GREEN evidence")
 
@@ -170,66 +179,21 @@ def validate_contract(failures: list[str]) -> None:
         != "docs/operations/V10_OWNER_ACTION_HANDOFF_STANDARD.md"
     ):
         failures.append("OWNER handoff standard path mismatch")
-    _expect_bool(
-        owner_handoff,
+    for key in (
         "direct_official_link_required_when_stable",
-        True,
-        "owner_handoff",
-        failures,
-    )
+        "current_official_ui_or_docs_verification_required_when_changeable",
+        "expected_result_required",
+        "stop_conditions_required",
+        "do_not_do_warnings_required",
+        "minimum_safe_return_required",
+        "one_bounded_owner_action_at_a_time",
+        "owner_must_not_be_required_to_discover_target_page",
+    ):
+        _expect_bool(owner_handoff, key, True, "owner_handoff", failures)
     _expect_bool(
         owner_handoff,
         "generic_navigation_without_link_sufficient",
         False,
-        "owner_handoff",
-        failures,
-    )
-    _expect_bool(
-        owner_handoff,
-        "current_official_ui_or_docs_verification_required_when_changeable",
-        True,
-        "owner_handoff",
-        failures,
-    )
-    _expect_bool(
-        owner_handoff,
-        "expected_result_required",
-        True,
-        "owner_handoff",
-        failures,
-    )
-    _expect_bool(
-        owner_handoff,
-        "stop_conditions_required",
-        True,
-        "owner_handoff",
-        failures,
-    )
-    _expect_bool(
-        owner_handoff,
-        "do_not_do_warnings_required",
-        True,
-        "owner_handoff",
-        failures,
-    )
-    _expect_bool(
-        owner_handoff,
-        "minimum_safe_return_required",
-        True,
-        "owner_handoff",
-        failures,
-    )
-    _expect_bool(
-        owner_handoff,
-        "one_bounded_owner_action_at_a_time",
-        True,
-        "owner_handoff",
-        failures,
-    )
-    _expect_bool(
-        owner_handoff,
-        "owner_must_not_be_required_to_discover_target_page",
-        True,
         "owner_handoff",
         failures,
     )
@@ -242,27 +206,64 @@ def validate_contract(failures: list[str]) -> None:
     )
 
     if (
-        runtime_hosting.get("v10_primary_host")
-        != "APPROVED_LENOVO_OR_REPLACEMENT_PERSONAL_NODE"
+        runtime_hosting.get("v10_public_production_host")
+        != "APPROVED_MANAGED_CLOUD_RUNTIME_SELECTED_BY_OWNING_GATE"
     ):
-        failures.append("V10 primary host must remain the approved Personal Node")
+        failures.append(
+            "V10 public production host must be selected by the managed-cloud owning gate"
+        )
     _expect_bool(
         runtime_hosting,
-        "v10_web_built_and_served_on_personal_node",
+        "managed_cloud_runtime_required_for_public_product",
         True,
         "runtime_hosting",
         failures,
     )
     _expect_bool(
         runtime_hosting,
-        "separate_paid_cloud_web_host_required_for_v10",
+        "owner_home_or_lenovo_public_dependency_allowed",
         False,
         "runtime_hosting",
         failures,
     )
     _expect_bool(
         runtime_hosting,
-        "render_com_v10_runtime_target",
+        "owner_home_power_or_internet_public_sla_dependency_allowed",
+        False,
+        "runtime_hosting",
+        failures,
+    )
+    if (
+        runtime_hosting.get("lenovo_role")
+        != "ENGINEERING_SELF_HOSTED_CI_ACCEPTANCE_RECOVERY_ROLLBACK"
+    ):
+        failures.append(
+            "Lenovo role must remain engineering/CI/acceptance/recovery/rollback"
+        )
+    _expect_bool(
+        runtime_hosting,
+        "lenovo_may_be_final_public_production_origin",
+        False,
+        "runtime_hosting",
+        failures,
+    )
+    _expect_bool(
+        runtime_hosting,
+        "provider_selection_requires_owner_approved_gate",
+        True,
+        "runtime_hosting",
+        failures,
+    )
+    _expect_bool(
+        runtime_hosting,
+        "provider_purchase_or_mutation_implied_by_planning",
+        False,
+        "runtime_hosting",
+        failures,
+    )
+    _expect_bool(
+        runtime_hosting,
+        "render_com_v10_runtime_target_selected",
         False,
         "runtime_hosting",
         failures,
@@ -289,19 +290,109 @@ def validate_contract(failures: list[str]) -> None:
         failures,
     )
     if (
-        runtime_hosting.get("external_access_provider_role")
-        != "ACCESS_SECURITY_TRANSPORT_TO_PERSONAL_NODE"
+        runtime_hosting.get("cloudflare_role")
+        != "EDGE_DNS_TLS_WAF_DDOS_ORIGIN_PROTECTION_CANDIDATE_NOT_PRODUCT_IDENTITY"
     ):
         failures.append(
-            "external access provider must remain transport to Personal Node"
+            "Cloudflare role must remain edge/origin protection, not product identity"
         )
     _expect_bool(
         runtime_hosting,
-        "external_access_provider_may_become_private_state_host",
+        "cloudflare_home_lenovo_tunnel_satisfies_final_public_hosting",
         False,
         "runtime_hosting",
         failures,
     )
+    _expect_bool(
+        runtime_hosting,
+        "hosted_tenant_private_state_allowed_after_security_privacy_legal_gates",
+        True,
+        "runtime_hosting",
+        failures,
+    )
+    _expect_bool(
+        runtime_hosting,
+        "external_access_provider_may_become_product_identity",
+        False,
+        "runtime_hosting",
+        failures,
+    )
+
+    public_contract = _load_json(PUBLIC_CONTRACT, failures)
+    if public_contract is not None:
+        product = public_contract.get("product_target", {})
+        production = public_contract.get("production_hosting", {})
+        access = public_contract.get("initial_access_model", {})
+        broker = public_contract.get("broker_credentials", {})
+        activation = public_contract.get("activation", {})
+        safety = public_contract.get("safety", {})
+        if not all(
+            isinstance(item, dict)
+            for item in (product, production, access, broker, activation, safety)
+        ):
+            failures.append("public runtime contract sections must be objects")
+        else:
+            _expect_bool(
+                product, "public_multi_user_target", True, "public_product", failures
+            )
+            _expect_bool(
+                product,
+                "project_owner_is_special_product_role",
+                False,
+                "public_product",
+                failures,
+            )
+            _expect_bool(
+                production,
+                "managed_cloud_origin_required",
+                True,
+                "public_production",
+                failures,
+            )
+            _expect_bool(
+                production,
+                "lenovo_as_public_production_origin_allowed",
+                False,
+                "public_production",
+                failures,
+            )
+            _expect_bool(access, "billing_enabled", False, "initial_access", failures)
+            _expect_bool(access, "trial_enabled", False, "initial_access", failures)
+            _expect_bool(
+                access, "subscription_enforcement", False, "initial_access", failures
+            )
+            _expect_bool(
+                access, "premium_feature_gating", False, "initial_access", failures
+            )
+            if broker.get("ownership") != "TENANT_SCOPED_BROKER_CONNECTION":
+                failures.append("public broker credentials must remain tenant-scoped")
+            _expect_bool(
+                broker,
+                "cross_tenant_secret_access_allowed",
+                False,
+                "broker_credentials",
+                failures,
+            )
+            _expect_bool(
+                activation,
+                "implementation_default_public_multi_user_enabled",
+                False,
+                "activation",
+                failures,
+            )
+            _expect_bool(
+                activation,
+                "target_after_exit_gates_public_multi_user_enabled",
+                True,
+                "activation",
+                failures,
+            )
+            if safety.get("app_entrypoint") != "app:app":
+                failures.append("public plan must preserve app:app")
+            _expect_bool(safety, "trading_methods", False, "public_safety", failures)
+            _expect_bool(
+                safety, "real_trading_enabled", False, "public_safety", failures
+            )
 
     _expect_bool(
         learning,
@@ -317,11 +408,7 @@ def validate_contract(failures: list[str]) -> None:
         failures.append("failure-learning ledger path mismatch")
 
     _expect_bool(
-        isolation,
-        "bounded_failure_domains",
-        True,
-        "fault_isolation",
-        failures,
+        isolation, "bounded_failure_domains", True, "fault_isolation", failures
     )
     _expect_bool(
         isolation,
@@ -339,6 +426,14 @@ def validate_contract(failures: list[str]) -> None:
         failures.append("REAL_TRADING_ENABLED must remain false")
     if protected.get("broker_write_authority_added") is not False:
         failures.append("engineering governance must not add broker-write authority")
+    if protected.get("transfer_withdrawal_authority") is not False:
+        failures.append(
+            "engineering governance must not add transfer/withdrawal authority"
+        )
+    if protected.get("v9_rollback_protected") is not True:
+        failures.append("V9 rollback must remain protected")
+    if protected.get("master_plan_sequence_preserved") is not True:
+        failures.append("Master Plan sequence must remain protected")
 
 
 def main() -> int:
@@ -363,7 +458,8 @@ def main() -> int:
             "every **applicable** exact-head V10 check must actually execute and conclude `success`",
             "OWNER participation / handoff law",
             "bounded failure domains rather than one fragile monolith",
-            "WP22A",
+            "WP22A — External Web Access / Product Authentication Security Gate",
+            "managed-cloud production runtime",
         ),
         failures,
     )
@@ -387,6 +483,7 @@ def main() -> int:
             "OMNI_CIO_V10_ENGINEERING_QUALITY_AND_GREEN_MERGE_AMENDMENT.md",
             "V10_ENGINEERING_QUALITY_GATE_CONTRACT.json",
             "V10_ENGINEERING_FAILURE_LEARNING_LEDGER.md",
+            "Public Free Multi-User Hosted Runtime",
         ),
         failures,
     )
@@ -412,6 +509,7 @@ def main() -> int:
             "Mandatory OWNER handoff format",
             "V10 local runtime / rendering law",
             "Render.com boundary",
+            "managed-cloud production runtime",
             "owner_must_not_be_required_to_discover_target_page",
         ),
         failures,
@@ -423,8 +521,8 @@ def main() -> int:
             'applyTo: "**"',
             "OWNER help must be deterministic",
             "direct official HTTPS link",
-            "V10 Web runs on the Personal Node",
-            "Do not treat Render.com as the V10 hosting target",
+            "Lenovo is engineering/recovery, not public production",
+            "managed-cloud production runtime",
             "OWNER billing / CI cost control",
         ),
         failures,
@@ -448,6 +546,7 @@ def main() -> int:
             "All applicable exact-head checks must be SUCCESS",
             "OWNER product acceptance only after merge",
             "Failure Learning Ledger",
+            "managed-cloud Omni-CIO Web/API",
         ),
         failures,
     )
@@ -469,6 +568,7 @@ def main() -> int:
             "name: V10 Engineering Governance",
             "python scripts/check_v10_engineering_governance.py",
             "python scripts/check_v10_documentation_consistency.py",
+            "python scripts/check_v10_public_product_plan.py",
             "python scripts/check_v10_ci_cost_control.py",
             "python scripts/check_v10_regression_shield.py",
             "contents: read",
@@ -496,7 +596,9 @@ def main() -> int:
     print("Exact-head applicable checks: SUCCESS-only project policy")
     print("OWNER product acceptance: post-merge/post-Regression-Shield")
     print("OWNER handoff: direct official link + bounded action contract enforced")
-    print("V10 runtime: Personal Node primary; Render.com not V10 hosting target")
+    print(
+        "V10 public runtime: managed-cloud target; OWNER home/Lenovo not public origin"
+    )
     print("Failure-learning ledger: present")
     print("Fault-isolation contract: present")
     return 0
