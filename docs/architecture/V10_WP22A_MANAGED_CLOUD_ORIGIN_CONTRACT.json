@@ -12,6 +12,9 @@
     "edge": "CLOUDFLARE_DNS_TLS_WAF_DDOS_TUNNEL",
     "product_identity_at_edge": false,
     "database": "CLOUD_RU_MANAGED_POSTGRESQL_PRIVATE_IP",
+    "database_mode": "STANDARD",
+    "database_topology": "PRIMARY_STANDBY_TWO_NODE",
+    "database_primary_standby_required_for_initial_production": true,
     "database_public_ip_allowed": false,
     "network": "CLOUD_RU_EVOLUTION_VPC_PRIVATE_SUBNET",
     "secret_store": "CLOUD_RU_SECRET_MANAGEMENT",
@@ -27,6 +30,7 @@
     "managed_postgresql_private_connectivity_required": true,
     "managed_secret_store_required_for_tenant_broker_credentials": true,
     "kms_capability_required_or_equivalent_reviewed_key_boundary": true,
+    "database_single_node_is_initial_production_recommendation": false,
     "github_iac_automation_required": true,
     "owner_home_availability_dependency_allowed": false,
     "native_client_required_for_product_users": false
@@ -36,7 +40,9 @@
       "result": "RECOMMENDED_PENDING_COST_APPROVAL",
       "strengths": [
         "RUSSIA_REGION",
+        "EVOLUTION_PLATFORM_152_FZ_UZ_1",
         "VM_VPC_PRIVATE_MANAGED_POSTGRESQL_REFERENCE_ARCHITECTURE",
+        "MANAGED_POSTGRESQL_PRIMARY_STANDBY",
         "PROJECT_SCOPED_VERSIONED_SECRET_MANAGEMENT",
         "KEY_MANAGEMENT_INTEGRATION",
         "TERRAFORM_PROVIDER",
@@ -44,7 +50,8 @@
       ],
       "known_tradeoffs": [
         "VM_RUNTIME_REQUIRES_MORE_OS_OPERATIONS_THAN_FULL_PAAS",
-        "EXACT_LOW_END_VM_MONTHLY_COST_MUST_BE_REVALIDATED_IN_PROVIDER_CALCULATOR_BEFORE_PURCHASE"
+        "EXACT_SELECTED_VM_FLAVOR_AND_MONTHLY_COST_MUST_BE_REVALIDATED_IN_PROVIDER_CALCULATOR_BEFORE_PURCHASE",
+        "STANDARD_PRIMARY_STANDBY_IS_SINGLE_AZ_AND_DOES_NOT_EQUAL_MULTI_AZ_BUSINESS_TOPOLOGY"
       ]
     },
     "TIMEWEB_CLOUD": {
@@ -88,6 +95,8 @@
     "legal_advice_claimed": false,
     "production_legal_signoff_required": true,
     "russian_federal_law_152_fz_article_18_part_5_localization_gate": true,
+    "cloud_ru_evolution_152_fz_uz_1_infrastructure_claim_verified_from_provider_docs": true,
+    "provider_compliance_does_not_replace_omni_cio_operator_obligations": true,
     "primary_identity_session_tenant_personal_data_outside_russia_allowed_by_this_contract": false,
     "cross_border_processing_allowed_without_separate_legal_review": false
   },
@@ -95,9 +104,15 @@
     "new_recurring_paid_commitment_required": true,
     "owner_cost_approval_required_before_provider_apply": true,
     "provider_apply_authorized": false,
-    "exact_vm_price_revalidation_required_before_purchase": true,
-    "cloud_ru_managed_postgresql_reference_single_node_formula_720h_rub_vat_included": "(1.49145 * vCPU + 0.4026 * RAM_GB + 0.016836 * SSD_GB) * 720",
-    "cloud_ru_reference_pg_1vcpu_2gb_20gb_monthly_rub_approx": 1896.0264,
+    "exact_selected_vm_price_revalidation_required_before_purchase": true,
+    "cloud_ru_managed_postgresql_reference_node_formula_720h_rub_vat_included": "(1.49145 * vCPU + 0.4026 * RAM_GB + 0.016836 * SSD_GB) * 720",
+    "cloud_ru_reference_pg_node_1vcpu_2gb_20gb_monthly_rub_approx": 1896.0264,
+    "cloud_ru_reference_pg_primary_standby_2x_1vcpu_2gb_20gb_monthly_rub_approx": 3792.0528,
+    "cloud_ru_vm_pricing_page_reference_1vcpu_2gb_30pct_monthly_compute_rub_approx": 636.8544,
+    "cloud_ru_vm_pricing_page_reference_20gb_boot_disk_monthly_rub_approx": 224.64,
+    "cloud_ru_current_snat_gateway_monthly_rub_approx": 149.328,
+    "cloud_ru_reference_minimum_stack_monthly_rub_approx": 4802.8752,
+    "reference_minimum_stack_excludes_domain_extra_object_storage_traffic_monitoring_and_later_scale": true,
     "estimate_is_not_purchase_quote": true
   },
   "activation": {
