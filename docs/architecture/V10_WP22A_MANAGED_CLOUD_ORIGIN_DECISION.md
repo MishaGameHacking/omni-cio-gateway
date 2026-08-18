@@ -43,7 +43,13 @@ Engineering consequence for WP22A:
 - any future cross-border processing remains separately legally reviewed and fail-closed;
 - this architecture decision is not legal advice and does not replace the required production legal signoff.
 
-Official source: `https://ips.pravo.gov.ru/api/ips/legislation/document` — Federal Law No. 152-FZ, Article 18 part 5.
+Cloud.ru's current Evolution documentation states that all Evolution infrastructure is located in the Russian Federation and that the platform is attested for 152-FZ protection level UZ-1. This is a provider-infrastructure property, not a transfer of Omni-CIO's own operator/security/legal responsibilities to the provider.
+
+Official sources:
+
+- Federal Law No. 152-FZ, Article 18 part 5: `https://ips.pravo.gov.ru/api/ips/legislation/document`;
+- Cloud.ru Evolution overview: `https://cloud.ru/docs/evolution/overview/index`;
+- Cloud.ru Evolution compliance: `https://cloud.ru/docs/evolution/overview/topics/security__compliance`.
 
 ## 4. Candidate comparison
 
@@ -58,26 +64,47 @@ with tenant/runtime secrets stored in **Cloud.ru Secret Management**, optionally
 Why it currently ranks first for Omni-CIO:
 
 1. Cloud.ru publishes an official secure reference architecture in which the application runs on an Evolution VM and Managed PostgreSQL is reachable only over a private subnet/IP.
-2. Managed PostgreSQL is not required to expose a public database port.
-3. Secret Management is project-scoped/versioned and can encrypt secrets using Key Management or a provider system key.
-4. Secret Management is currently free in Evolution, reducing the pressure to weaken the secret boundary for cost reasons.
-5. Cloud.ru publishes a Terraform provider and VM/VPC/security-group automation path, so infrastructure can remain source-controlled and reproducible.
-6. Evolution is pay-as-you-go and accepts bank-card top-up for individuals.
-7. A Cloudflare Tunnel from the **managed-cloud VM**, unlike a Tunnel to the PROJECT OWNER home Lenovo, satisfies the no-home-origin requirement while allowing the origin application port to remain non-public.
+2. Managed PostgreSQL connects from an Evolution VM only over an internal IP in the same project/subnet, so the database does not need a public Internet port.
+3. Managed PostgreSQL supports `Primary/Standby`; the Terraform resource exposes `primary_standby_mode=true` for a synchronized two-node topology.
+4. Secret Management is project-scoped/versioned and can encrypt secrets using Key Management or a provider system key.
+5. Secret Management is currently free in Evolution, reducing the pressure to weaken the secret boundary for cost reasons.
+6. Cloud.ru publishes a Terraform provider and VM/VPC/security-group automation path, so infrastructure can remain source-controlled and reproducible.
+7. Evolution infrastructure is in Russia and current provider documentation states 152-FZ UZ-1 attestation.
+8. Evolution is pay-as-you-go and accepts bank-card top-up for individuals.
+9. A Cloudflare Tunnel from the **managed-cloud VM**, unlike a Tunnel to the PROJECT OWNER home Lenovo, satisfies the no-home-origin requirement while allowing the application origin port to remain non-public.
+
+#### Initial PostgreSQL topology
+
+The initial production recommendation is **Standard mode, two-node Primary/Standby**, not a single-node database.
+
+Reasons:
+
+- the accepted V10 target is a real public service, so one database process/node should not silently become the only durable-state availability boundary;
+- Cloud.ru Standard supports small resource sizes and up to two nodes;
+- Primary/Standby preserves a bounded low-cost entry point while providing node redundancy;
+- the Standard topology remains single-AZ, so it is **not** equivalent to Business Multi-AZ and must not be described as zone-level high availability;
+- later capacity/availability evidence may require migration through backup/restore to Business Multi-AZ, which Cloud.ru explicitly supports as the path when changing deployment mode.
 
 Important limitation: **Cloud.ru Container Apps is explicitly rejected as the primary runtime for this design.** Cloud.ru's own FAQ says Container Apps does not support Managed PostgreSQL connectivity and that connecting to an external database through an Internet-open port is not a safe scenario. Therefore the safe Cloud.ru design uses a VM + VPC + private Managed PostgreSQL, not Container Apps.
 
 Current official sources:
 
 - secure VM + private Managed PostgreSQL tutorial: `https://cloud.ru/docs/tutorials-evolution/list/topics/free-tier-vm__postgresql-connection`;
-- Managed PostgreSQL quick start/private-subnet requirement: `https://cloud.ru/docs/paas-postgresql/ug/topics/quickstart`;
+- private Managed PostgreSQL connection rule: `https://cloud.ru/docs/paas-postgresql/ug/topics/guides__databases__connecting-to-database`;
+- Managed PostgreSQL deployment modes: `https://cloud.ru/docs/paas-postgresql/ug/topics/concepts__deployment-mode`;
+- Managed PostgreSQL replication/topology: `https://cloud.ru/docs/paas-postgresql/ug/topics/concepts__replication`;
+- Managed PostgreSQL Terraform resource: `https://cloud.ru/docs/terraform-evolution/ug/topics/reference/resources/cloudru_evolution_postgresql_cluster`;
+- Managed PostgreSQL backup policy: `https://cloud.ru/docs/paas-postgresql/ug/topics/guides__backups__backup-policy`;
 - Container Apps database limitation: `https://cloud.ru/docs/container-apps-evolution/ug/topics/faq__database-connection`;
 - Secret Management: `https://cloud.ru/docs/scsm/ug/index`;
 - Secret Management + Key Management: `https://cloud.ru/docs/scsm/ug/topics/guides__add-secret`;
 - Secret Management pricing: `https://cloud.ru/docs/scsm/ug/topics/pricing`;
 - Terraform VM deployment: `https://cloud.ru/docs/terraform-evolution/ug/topics/guides/vm_create_full`;
 - Managed PostgreSQL current tariff: `https://cloud.ru/documents/tariffs/evolution/managed-postgresql`;
-- Evolution payment model: `https://cloud.ru/docs/evolution/overview/topics/pricing`.
+- VM pricing/reference calculation: `https://cloud.ru/docs/virtual-machines/ug/topics/pricing`;
+- Evolution Compute network tariff: `https://cloud.ru/documents/tariffs/evolution/evolution-compute`;
+- Evolution payment model: `https://cloud.ru/docs/evolution/overview/topics/pricing`;
+- Evolution compliance: `https://cloud.ru/docs/evolution/overview/topics/security__compliance`.
 
 ### 4.2 Timeweb Cloud — lower-cost fallback
 
@@ -146,7 +173,8 @@ Omni-CIO Web/API runtime
         `----> private VPC/subnet
                   |
                   v
-          Cloud.ru Managed PostgreSQL
+       Cloud.ru Managed PostgreSQL
+          Primary + Standby
                   |
                   v
           encrypted backup/recovery path
@@ -156,23 +184,40 @@ Cloudflare is an edge and origin-protection component only. Cloudflare/GitHub/pr
 
 The public VM application port must not be independently reachable as an untrusted origin path when Cloudflare Tunnel is active. Administrative access, if required, is a separate least-privilege engineering path and never a product-login bypass.
 
+The VM can use outbound-only Internet through a reviewed sNAT path for Cloudflare Tunnel/provider operations. No inbound public application port is required by the recommended product path.
+
 ## 6. Current cost boundary
 
-Cloud.ru Managed PostgreSQL publishes current pay-as-you-go rates including VAT:
+Cloud.ru Managed PostgreSQL currently publishes pay-as-you-go rates including VAT:
 
 - 1 vCPU: `1.49145 RUB/hour`;
 - 1 GB RAM: `0.4026 RUB/hour`;
 - network SSD: `0.016836 RUB/GB-hour`.
 
-A purely arithmetic single-node reference of `1 vCPU / 2 GB RAM / 20 GB SSD` at 720 hours is approximately **1,896.03 RUB/month**. This is only a comparison estimate: actual minimum configuration, availability mode, VM, public/sNAT IP, disk, object-storage traffic and taxes/options must be revalidated in the provider calculator immediately before purchase.
+Reference arithmetic at 720 hours:
 
-The exact low-end Evolution VM price was not treated as known from the tariff excerpt used during this review. Therefore this document intentionally does **not** invent a total monthly price.
+- one `1 vCPU / 2 GB RAM / 20 GB SSD` PostgreSQL node: about **1,896.03 RUB/month**;
+- two-node Primary/Standby PostgreSQL reference: about **3,792.05 RUB/month**.
+
+The current VM pricing documentation includes a `1 vCPU / 2 GB RAM / 30% guaranteed CPU` example at `0.88452 RUB/hour`, and a boot-disk example at `0.0156 RUB/GB-hour`. The current Evolution Compute tariff lists sNAT at `0.2074 RUB/hour` including VAT.
+
+Using those **reference** values only, a minimum arithmetic stack of:
+
+- two small PostgreSQL nodes;
+- one reference `1 vCPU / 2 GB` VM;
+- 20 GB boot disk;
+- one sNAT gateway;
+
+is about **4,802.88 RUB/month**.
+
+This is a lower-bound engineering estimate, **not a purchase quote and not a capacity guarantee**. It excludes a custom domain, additional Object Storage beyond any applicable free allocation, traffic, monitoring products, future scale, Business Multi-AZ, and any larger VM flavor required by load testing. The exact selected VM flavor and the complete provider cart must be revalidated immediately before purchase.
 
 Before provider apply, PROJECT OWNER must receive and approve:
 
 - exact selected VM flavor and monthly estimate;
 - exact PostgreSQL topology and monthly estimate;
-- IP/NAT/storage/backup costs;
+- sNAT/network/storage/backup costs;
+- custom-domain cost if a new domain is required;
 - expected all-in initial monthly range;
 - whether the cost is recurring/pay-as-you-go and how to stop it.
 
@@ -183,6 +228,7 @@ No paid provider resource is authorized before that approval.
 The provider selection is valid only if later source work proves:
 
 - PostgreSQL backup + integrity verification + corrupt-backup rejection;
+- provider automatic backup policy plus a separately portable/off-runtime recovery copy where required;
 - encrypted off-runtime backup/recovery;
 - replacement VM/runtime reconstruction from GitHub plus private durable state;
 - Secret Management/KMS rotation/recovery without putting secrets in GitHub;
@@ -190,6 +236,8 @@ The provider selection is valid only if later source work proves:
 - rollback to the last accepted V10 release;
 - protected V9 rollback remains available until responsible cutover;
 - provider exit is possible using portable PostgreSQL backups, source-controlled runtime/IaC and non-provider-exclusive application contracts.
+
+Cloud.ru's current Managed PostgreSQL backup policy supports scheduled backups and retention up to 30 days; native provider backup alone does not replace the V10 requirement for independently recoverable durable state and corrupt-backup validation.
 
 ## 8. Phase-1 exit condition
 
