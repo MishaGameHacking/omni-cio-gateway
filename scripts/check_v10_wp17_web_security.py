@@ -51,8 +51,8 @@ def _wp22a_source_gate_active(failures: list[str]) -> bool:
 
     # WP17 only needs proof that a reviewed WP22A source contract owns the
     # already-accepted external-access markers. The contract may be in a
-    # fail-closed planning hold. Source-gate presence never proves that
-    # live public ingress has been activated, nor does it authorize provider apply.
+    # fail-closed planning hold.
+    # live ingress or provider activation is never inferred from source-marker presence.
     required_markers = (
         "Status: **PLANNING HOLD / CORRECTED PUBLIC-HOSTED TARGET",
         "Owning package: **WP22A — External Web Access / Product Authentication Security Gate**",
