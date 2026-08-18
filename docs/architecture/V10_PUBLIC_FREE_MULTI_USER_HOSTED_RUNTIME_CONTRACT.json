@@ -5,6 +5,10 @@
   "product_target": {
     "public_multi_user_target": true,
     "ordinary_browser_global_internet_access": true,
+    "internet_connection_required_for_registration_login_product_use": true,
+    "offline_registration_allowed": false,
+    "offline_login_allowed": false,
+    "offline_authenticated_product_mode_allowed": false,
     "native_client_required": false,
     "one_account_one_tenant_baseline": true,
     "project_owner_is_special_product_role": false
