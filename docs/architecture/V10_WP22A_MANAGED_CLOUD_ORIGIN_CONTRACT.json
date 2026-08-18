@@ -1,5 +1,5 @@
 {
-  "contract_version": "1.0.0",
+  "contract_version": "1.1.0",
   "status": "RECOMMENDED_PENDING_OWNER_COST_APPROVAL",
   "decision_date": "2026-08-18",
   "owning_package": "WP22A",
@@ -8,19 +8,31 @@
   "recommendation": {
     "provider": "CLOUD_RU_EVOLUTION",
     "runtime": "EVOLUTION_VM",
+    "runtime_topology": "TWO_VM_ACTIVE_ACTIVE_BEHIND_EVOLUTION_NLB",
     "runtime_region_requirement": "RUSSIA",
-    "edge": "CLOUDFLARE_DNS_TLS_WAF_DDOS_TUNNEL",
+    "edge": "CLOUD_RU_EVOLUTION_DNS_NLB_NGINX_TLS",
+    "public_dns": "CLOUD_RU_EVOLUTION_DNS",
+    "public_load_balancer": "CLOUD_RU_EVOLUTION_L4_NLB",
+    "certificate_manager": "CLOUD_RU_EVOLUTION_CERTIFICATE_MANAGER_LETS_ENCRYPT",
+    "tls_termination": "NGINX_ON_RUNTIME_VMS",
+    "certificate_distribution": "LEAST_PRIVILEGE_FROM_CERTIFICATE_MANAGER_TO_RUNTIME_VMS",
     "product_identity_at_edge": false,
+    "cloudflare_primary_or_sole_production_edge_allowed": false,
+    "cloudflare_primary_edge_rejection_reason": "CLOUDFLARE_2026_SUPPORT_DOCS_CONFIRM_SYSTEMATIC_RUSSIA_ISP_THROTTLING_MAKING_RUSSIAN_USER_ACCESS_UNRELIABLE",
+    "cloudflare_optional_secondary_use": "DEFERRED_REQUIRES_SEPARATE_REACHABILITY_DATA_LOCALIZATION_AND_COST_REVIEW",
     "database": "CLOUD_RU_MANAGED_POSTGRESQL_PRIVATE_IP",
     "database_mode": "STANDARD",
     "database_topology": "PRIMARY_STANDBY_TWO_NODE",
     "database_primary_standby_required_for_initial_production": true,
     "database_public_ip_allowed": false,
     "network": "CLOUD_RU_EVOLUTION_VPC_PRIVATE_SUBNET",
+    "outbound_internet": "CLOUD_RU_EVOLUTION_SNAT",
     "secret_store": "CLOUD_RU_SECRET_MANAGEMENT",
     "key_management": "CLOUD_RU_KEY_MANAGEMENT_OR_REVIEWED_SYSTEM_KEY",
     "backup_object_storage": "CLOUD_RU_EVOLUTION_OBJECT_STORAGE_ENCRYPTED",
     "infrastructure_as_code": "CLOUD_RU_TERRAFORM_PROVIDER_PLUS_GITHUB",
+    "initial_managed_external_waf": "DEFERRED_PENDING_COST_CAPACITY_AND_CERTIFICATE_CUSTODY_REVIEW",
+    "initial_edge_abuse_controls": "NGINX_PLUS_APPLICATION_RATE_LIMIT_HOST_CSRF_ORIGIN_SESSION_AND_SECURITY_HEADER_CONTROLS",
     "container_apps_primary_runtime_allowed": false,
     "container_apps_rejection_reason": "OFFICIAL_CLOUD_RU_DOCS_STATE_NO_MANAGED_POSTGRESQL_CONNECTIVITY_AND_PUBLIC_DB_PORT_IS_UNSAFE"
   },
@@ -31,6 +43,8 @@
     "managed_secret_store_required_for_tenant_broker_credentials": true,
     "kms_capability_required_or_equivalent_reviewed_key_boundary": true,
     "database_single_node_is_initial_production_recommendation": false,
+    "runtime_single_node_is_initial_production_recommendation": false,
+    "russian_user_primary_edge_must_be_reliably_reachable_from_russia": true,
     "github_iac_automation_required": true,
     "owner_home_availability_dependency_allowed": false,
     "native_client_required_for_product_users": false
@@ -43,15 +57,18 @@
         "EVOLUTION_PLATFORM_152_FZ_UZ_1",
         "VM_VPC_PRIVATE_MANAGED_POSTGRESQL_REFERENCE_ARCHITECTURE",
         "MANAGED_POSTGRESQL_PRIMARY_STANDBY",
+        "EVOLUTION_DNS",
+        "EVOLUTION_L4_LOAD_BALANCER_WITH_HEALTH_CHECKS",
+        "EVOLUTION_CERTIFICATE_MANAGER_LETS_ENCRYPT",
         "PROJECT_SCOPED_VERSIONED_SECRET_MANAGEMENT",
         "KEY_MANAGEMENT_INTEGRATION",
         "TERRAFORM_PROVIDER",
         "PAY_AS_YOU_GO"
       ],
       "known_tradeoffs": [
-        "VM_RUNTIME_REQUIRES_MORE_OS_OPERATIONS_THAN_FULL_PAAS",
-        "EXACT_SELECTED_VM_FLAVOR_AND_MONTHLY_COST_MUST_BE_REVALIDATED_IN_PROVIDER_CALCULATOR_BEFORE_PURCHASE",
-        "STANDARD_PRIMARY_STANDBY_IS_SINGLE_AZ_AND_DOES_NOT_EQUAL_MULTI_AZ_BUSINESS_TOPOLOGY"
+        "VM_RUNTIME_REQUIRES_OS_PATCHING_AND_RUNTIME_OPERATIONS",
+        "STANDARD_PRIMARY_STANDBY_IS_SINGLE_AZ_AND_DOES_NOT_EQUAL_MULTI_AZ_BUSINESS_TOPOLOGY",
+        "EXTERNAL_MANAGED_WAF_IS_NOT_INCLUDED_IN_BASE_COST_AND_REQUIRES_SEPARATE_COST_AND_CERTIFICATE_CUSTODY_REVIEW"
       ]
     },
     "TIMEWEB_CLOUD": {
@@ -89,6 +106,14 @@
         "FREE_POSTGRES_EXPIRES_AFTER_30_DAYS",
         "NOT_SUITABLE_FOR_PRIMARY_RUSSIAN_PERSONAL_DATA_DATABASE"
       ]
+    },
+    "CLOUDFLARE_PRIMARY_EDGE": {
+      "result": "REJECT_PRIMARY_OR_SOLE_RUSSIAN_USER_PRODUCTION_EDGE",
+      "reasons": [
+        "CLOUDFLARE_OFFICIAL_SUPPORT_APRIL_2026_REPORTS_SYSTEMATIC_RUSSIA_ISP_THROTTLING",
+        "CLOUDFLARE_SAYS_RUSSIAN_USERS_MAY_FIND_PROTECTED_SITES_INACCESSIBLE_OR_UNUSABLE",
+        "ORDINARY_RUSSIAN_USER_REACHABILITY_IS_A_BINDING_V10_REQUIREMENT"
+      ]
     }
   },
   "legal_and_data_boundary": {
@@ -110,9 +135,13 @@
     "cloud_ru_reference_pg_primary_standby_2x_1vcpu_2gb_20gb_monthly_rub_approx": 3792.0528,
     "cloud_ru_vm_pricing_page_reference_1vcpu_2gb_30pct_monthly_compute_rub_approx": 636.8544,
     "cloud_ru_vm_pricing_page_reference_20gb_boot_disk_monthly_rub_approx": 224.64,
+    "cloud_ru_reference_two_runtime_vms_with_20gb_disks_monthly_rub_approx": 1722.9888,
     "cloud_ru_current_snat_gateway_monthly_rub_approx": 149.328,
-    "cloud_ru_reference_minimum_stack_monthly_rub_approx": 4802.8752,
-    "reference_minimum_stack_excludes_domain_extra_object_storage_traffic_monitoring_and_later_scale": true,
+    "cloud_ru_reference_nlb_one_resource_unit_plus_public_ip_monthly_rub_approx": 727.6079952,
+    "cloud_ru_reference_public_dns_zone_30_days_monthly_rub_approx": 32.94,
+    "cloud_ru_certificate_manager_monthly_rub": 0,
+    "cloud_ru_reference_initial_stack_monthly_rub_approx": 6424.9175952,
+    "reference_initial_stack_excludes_domain_extra_object_storage_traffic_monitoring_external_waf_ddos_service_and_later_scale": true,
     "estimate_is_not_purchase_quote": true
   },
   "activation": {
