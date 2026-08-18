@@ -89,10 +89,12 @@ Binding recommendation properties:
 - database public IP: forbidden;
 - tenant/runtime secret store: Secret Management with Key Management or reviewed provider system key;
 - outbound Internet: reviewed sNAT;
-- provider automation: Terraform for currently supported Evolution resources plus Cloud.ru Public API for current NLB v2, all driven from reviewed GitHub source;
+- provider automation: Terraform for resources proven supported by the exact pinned Evolution provider, with a reviewed Cloud.ru Public API fallback where that exact Terraform path is not accepted;
 - public broker connector: fail-closed independently of public Web/account availability.
 
-Current Cloud.ru Load Balancer v2 documentation permits a one-resource-unit configuration. Omni-CIO deliberately recommends **two resource units initially** because resource-unit count contributes to performance/fault tolerance; two is an engineering redundancy choice, not a provider minimum. Current limitations also state Terraform is not supported for Load Balancer management, so NLB automation must use reviewed Cloud.ru Public API rather than a stale Terraform assumption. Terraform remains preferred for supported resources.
+Current Cloud.ru Load Balancer documentation permits a one-resource-unit configuration. Omni-CIO deliberately recommends **two resource units initially** because resource-unit count contributes to performance/fault tolerance; two is an engineering redundancy choice, not a provider minimum.
+
+There is a current first-party documentation conflict for NLB automation. The Load Balancer limitations page says Terraform is not supported and points to the Evolution console/Public API, while the current Terraform for Evolution reference exposes first-class `cloudru_evolution_nlb_network_load_balancer` and `cloudru_evolution_nlb_target_group` resources. Neither statement is silently discarded. Before provider apply, source-controlled tooling must pin the exact Cloud.ru Terraform provider version and prove the NLB schema/configuration through deterministic validation plus a reviewed non-mutating provider plan/acceptance step. If that exact path passes, Terraform is preferred; otherwise the reviewed Public API is the fallback. **Provider apply remains blocked until this conflict is resolved by exact toolchain evidence.**
 
 Cloud.ru Container Apps is **not** the selected primary runtime. Current Cloud.ru documentation states that Container Apps does not support Managed PostgreSQL connectivity and that an external database opened to the Internet is not a safe scenario; therefore the secure reviewed path uses VMs + private VPC + Managed PostgreSQL.
 
@@ -170,7 +172,7 @@ Cloud.ru also offers Qrator/StormWall DDoS/WAF services. They are **not silently
 
 ### Cloud.ru Evolution
 
-**RECOMMENDED_PENDING_OWNER_COST_APPROVAL.** Strongest reviewed combination of Russian placement, private Managed PostgreSQL, Primary/Standby, Secret Management/KMS, native DNS/NLB/Certificate Manager and source-controlled Terraform/API automation.
+**RECOMMENDED_PENDING_OWNER_COST_APPROVAL.** Strongest reviewed combination of Russian placement, private Managed PostgreSQL, Primary/Standby, Secret Management/KMS, native DNS/NLB/Certificate Manager and source-controlled Terraform/API automation. NLB automation remains a bounded pre-apply verification point because current first-party service and Terraform references conflict; exact pinned-provider evidence decides Terraform versus Public API fallback.
 
 ### Timeweb Cloud
 
@@ -207,7 +209,7 @@ Excluded from that lower bound: domain registration, extra Object Storage/traffi
 
 The exact provider cart must be revalidated immediately before purchase. A new recurring paid provider commitment requires explicit OWNER approval after the exact cap and shutdown/delete path are presented.
 
-Until that approval:
+Until that approval **and** exact NLB automation-path validation:
 
 - `provider_apply_authorized=false`;
 - `PUBLIC_MULTI_USER_ENABLED=false`;
@@ -236,4 +238,4 @@ The technical recommendation may become accepted source authority only after:
 9. squash merge;
 10. exact-main post-merge Regression Shield GREEN.
 
-Even after source acceptance, **provider apply remains blocked** until PROJECT OWNER explicitly approves the current recurring cost commitment. WP23 remains locked behind the full corrected WP22A Exit Gate.
+Even after source acceptance, **provider apply remains blocked** until PROJECT OWNER explicitly approves the current recurring cost commitment and exact pinned-toolchain evidence selects an accepted NLB automation path. WP23 remains locked behind the full corrected WP22A Exit Gate.
