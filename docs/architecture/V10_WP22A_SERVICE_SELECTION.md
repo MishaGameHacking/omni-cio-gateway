@@ -22,8 +22,10 @@ The architecture must preserve:
 
 - ordinary browser access from modern phones/desktops;
 - reliable normal Russian USER reachability;
-- public HTTPS with reviewed certificate lifecycle;
+- public HTTPS hostname;
+- public TLS/certificate lifecycle with reviewed issuance, renewal, runtime delivery and rollback;
 - no VPN/native-client requirement for ordinary product use;
+- managed-cloud production origin independent of OWNER home infrastructure;
 - no OWNER home IP/Wi-Fi/router/LAN/Lenovo availability dependency;
 - one source-controlled Web App/Core;
 - Telegram/VK -> internal Omni-CIO account -> server-side session;
