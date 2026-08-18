@@ -21,6 +21,7 @@ def test_selection_is_source_only_and_not_apply_authority() -> None:
     assert payload["status"] == "RECOMMENDED_STAGED_FREE_FIRST_PENDING_OWNER_COST_APPROVAL"
     assert payload["owning_package"] == "WP22A"
     assert payload["phase"] == "SERVICE_HOSTING_ARCHITECTURE_DECISION"
+    assert payload["accepted_base_main_binding"] == "PR_BASE_REF_VERIFIED_BY_GITHUB"
 
     cost = payload["cost_strategy"]
     assert cost["current_authorized_recurring_budget_rub"] == 0
@@ -45,9 +46,13 @@ def test_free_first_lowest_cost_safe_policy_is_binding() -> None:
     assert policy["multiple_free_or_low_cost_services_allowed"]
     assert policy["multi_provider_composition_requires_bounded_failure_domains"]
     assert policy["multi_provider_composition_requires_portable_source_controlled_interfaces"]
-    assert policy["do_not_fragment_identity_session_primary_database_or_secret_custody_for_marginal_savings"]
+    assert policy[
+        "do_not_fragment_identity_session_primary_database_or_raw_credential_custody_for_marginal_savings"
+    ]
     assert policy["code_can_compensate_for_noncritical_service_limitations"]
-    assert policy["code_cannot_compensate_for_missing_legal_permission_data_localization_secret_custody_or_recovery"]
+    assert policy[
+        "code_cannot_compensate_for_missing_legal_permission_data_localization_credential_custody_or_recovery"
+    ]
     assert policy["owner_product_experience_required_before_new_recurring_paid_commitment"]
 
     text = COST_POLICY.read_text(encoding="utf-8")
@@ -94,6 +99,8 @@ def test_free_and_bonus_snapshot_is_explicitly_mutable() -> None:
     assert cloud["container_services_free_ram_gb_hours_per_month"] == 50
     assert cloud["object_storage_free_gb_standard"] == 15
     assert cloud["card_link_bonus_rub"] == 4000
+    assert cloud["new_free_vm_creation_assumed_available_for_new_account_now"] is False
+    assert cloud["new_free_vm_registration_cutoff_date"] == "2026-06-30"
     assert cloud["free_tier_is_not_production_sla_evidence"]
 
     yandex = snapshot["yandex_cloud"]
@@ -113,7 +120,7 @@ def test_free_preview_cannot_receive_real_private_or_broker_state() -> None:
     assert rec["container_apps_synthetic_preview_allowed"]
     assert rec["container_apps_primary_real_user_runtime_allowed"] is False
     assert rec["container_apps_real_tenant_private_state_allowed"] is False
-    assert rec["secret_store_for_real_tenant_credentials"] == (
+    assert rec["credential_vault_for_real_tenant_credentials"] == (
         "REQUIRES_REVIEWED_ENCRYPTED_TENANT_SCOPED_BOUNDARY"
     )
     assert rec["database_public_ip_allowed"] is False
@@ -183,7 +190,9 @@ def test_legal_and_data_boundaries_are_price_independent() -> None:
     legal = _payload()["legal_and_data_boundary"]
     assert legal["production_legal_signoff_required"]
     assert legal["russian_federal_law_152_fz_localization_gate"]
-    assert legal["primary_identity_session_tenant_personal_data_outside_russia_allowed_by_this_contract"] is False
+    assert legal[
+        "primary_identity_session_tenant_personal_data_outside_russia_allowed_by_this_contract"
+    ] is False
     assert legal["cross_border_processing_allowed_without_separate_legal_review"] is False
     assert legal["free_or_discounted_service_does_not_waive_legal_security_or_broker_gates"]
 
@@ -197,6 +206,11 @@ def test_candidate_ranking_keeps_free_and_low_cost_fallbacks() -> None:
     assert candidates["TIMEWEB_CLOUD"]["result"] == "LOW_COST_TEST_AND_PILOT_ALTERNATIVE"
     assert candidates["RENDER"]["result"] == (
         "SYNTHETIC_PREVIEW_ONLY_NOT_RUSSIA_PRIVATE_DATA_PLANE"
+    )
+    assert "SCMS_AND_KMS" in candidates["CLOUD_RU_EVOLUTION"]["strengths"]
+    assert (
+        "FULL_TENANT_CREDENTIAL_CUSTODY_BOUNDARY_REQUIRES_SEPARATE_REVIEW"
+        in candidates["TIMEWEB_CLOUD"]["known_tradeoffs"]
     )
 
 

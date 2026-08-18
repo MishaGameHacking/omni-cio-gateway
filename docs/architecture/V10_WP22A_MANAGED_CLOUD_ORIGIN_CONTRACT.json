@@ -1,9 +1,9 @@
 {
-  "contract_version": "1.6.0",
+  "contract_version": "1.6.1",
   "status": "RECOMMENDED_STAGED_FREE_FIRST_PENDING_OWNER_COST_APPROVAL",
   "decision_date": "2026-08-18",
   "owning_package": "WP22A",
-  "accepted_base_main": "ee45026b1287c7427dc5e05b2a04b7bdb974d11f",
+  "accepted_base_main_binding": "PR_BASE_REF_VERIFIED_BY_GITHUB",
   "phase": "SERVICE_HOSTING_ARCHITECTURE_DECISION",
   "cost_strategy": {
     "policy": "FREE_FIRST_LOWEST_COST_SAFE",
@@ -14,9 +14,9 @@
     "multiple_free_or_low_cost_services_allowed": true,
     "multi_provider_composition_requires_bounded_failure_domains": true,
     "multi_provider_composition_requires_portable_source_controlled_interfaces": true,
-    "do_not_fragment_identity_session_primary_database_or_secret_custody_for_marginal_savings": true,
+    "do_not_fragment_identity_session_primary_database_or_raw_credential_custody_for_marginal_savings": true,
     "code_can_compensate_for_noncritical_service_limitations": true,
-    "code_cannot_compensate_for_missing_legal_permission_data_localization_secret_custody_or_recovery": true,
+    "code_cannot_compensate_for_missing_legal_permission_data_localization_credential_custody_or_recovery": true,
     "owner_product_experience_required_before_new_recurring_paid_commitment": true,
     "automatic_paid_overage_allowed": false,
     "provider_apply_authorized": false
@@ -79,7 +79,7 @@
     "ha_reference_database_standby_nodes": 2,
     "ha_reference_database_availability_zones": 3,
     "database_public_ip_allowed": false,
-    "secret_store_for_real_tenant_credentials": "REQUIRES_REVIEWED_ENCRYPTED_TENANT_SCOPED_BOUNDARY",
+    "credential_vault_for_real_tenant_credentials": "REQUIRES_REVIEWED_ENCRYPTED_TENANT_SCOPED_BOUNDARY",
     "initial_managed_external_waf": "DEFERRED_PENDING_COST_CAPACITY_AND_CERTIFICATE_CUSTODY_REVIEW"
   },
   "free_and_bonus_snapshot": {
@@ -91,6 +91,8 @@
       "container_services_free_ram_gb_hours_per_month": 50,
       "object_storage_free_gb_standard": 15,
       "card_link_bonus_rub": 4000,
+      "new_free_vm_creation_assumed_available_for_new_account_now": false,
+      "new_free_vm_registration_cutoff_date": "2026-06-30",
       "free_tier_is_not_production_sla_evidence": true
     },
     "yandex_cloud": {
@@ -113,7 +115,7 @@
         "EVOLUTION_FREE_TIER",
         "START_BONUS",
         "MANAGED_POSTGRESQL_BUSINESS_CLUSTER_HA_THREE_NODE_MULTI_AZ",
-        "SECRET_MANAGEMENT_AND_KEY_MANAGEMENT",
+        "SCMS_AND_KMS",
         "EVOLUTION_DNS_AND_NLB",
         "TERRAFORM_AND_PUBLIC_API"
       ],
@@ -150,7 +152,7 @@
       ],
       "known_tradeoffs": [
         "TEST_BONUS_NOT_PERMANENT",
-        "FULL_TENANT_SECRET_CUSTODY_BOUNDARY_REQUIRES_SEPARATE_REVIEW"
+        "FULL_TENANT_CREDENTIAL_CUSTODY_BOUNDARY_REQUIRES_SEPARATE_REVIEW"
       ]
     },
     "RENDER": {
