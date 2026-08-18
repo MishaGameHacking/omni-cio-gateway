@@ -62,6 +62,9 @@ def validate_contract(failures: list[str]) -> None:
 
     expected_false = {
         ("product_target", "project_owner_is_special_product_role"),
+        ("product_target", "offline_registration_allowed"),
+        ("product_target", "offline_login_allowed"),
+        ("product_target", "offline_authenticated_product_mode_allowed"),
         ("production_hosting", "home_public_ip_dependency_allowed"),
         ("production_hosting", "home_wifi_dependency_allowed"),
         ("production_hosting", "home_router_dependency_allowed"),
@@ -96,6 +99,10 @@ def validate_contract(failures: list[str]) -> None:
     expected_true = {
         ("product_target", "public_multi_user_target"),
         ("product_target", "ordinary_browser_global_internet_access"),
+        (
+            "product_target",
+            "internet_connection_required_for_registration_login_product_use",
+        ),
         ("product_target", "one_account_one_tenant_baseline"),
         ("production_hosting", "managed_cloud_origin_required"),
         ("identity", "tenant_scope_from_server_session_only"),
@@ -113,12 +120,25 @@ def validate_contract(failures: list[str]) -> None:
         if payload.get(section, {}).get(key) is not True:
             failures.append(f"contract must keep {section}.{key}=true")
 
-    if payload.get("initial_access_model", {}).get("future_monetization_state") != "DEFERRED_OPTIONAL":
+    if (
+        payload.get("initial_access_model", {}).get("future_monetization_state")
+        != "DEFERRED_OPTIONAL"
+    ):
         failures.append("future monetization must remain DEFERRED_OPTIONAL")
-    if payload.get("broker_credentials", {}).get("ownership") != "TENANT_SCOPED_BROKER_CONNECTION":
-        failures.append("broker credential ownership must remain TENANT_SCOPED_BROKER_CONNECTION")
-    if payload.get("t_invest", {}).get("public_connector_default") != "FAIL_CLOSED_PENDING_BROKER_TERMS_PERMISSION":
-        failures.append("T-Invest public connector must remain fail-closed pending broker terms")
+    if (
+        payload.get("broker_credentials", {}).get("ownership")
+        != "TENANT_SCOPED_BROKER_CONNECTION"
+    ):
+        failures.append(
+            "broker credential ownership must remain TENANT_SCOPED_BROKER_CONNECTION"
+        )
+    if (
+        payload.get("t_invest", {}).get("public_connector_default")
+        != "FAIL_CLOSED_PENDING_BROKER_TERMS_PERMISSION"
+    ):
+        failures.append(
+            "T-Invest public connector must remain fail-closed pending broker terms"
+        )
     if payload.get("safety", {}).get("app_entrypoint") != "app:app":
         failures.append("protected app entrypoint must remain app:app")
 
@@ -153,6 +173,7 @@ def validate_live_authority(failures: list[str]) -> None:
         "home public IP address",
         "Lenovo laptop as the public production origin",
         "approved managed cloud production runtime",
+        "The normal requirement for product use is an Internet connection",
         "`BILLING_ENABLED=false`",
         "`TRIAL_ENABLED=false`",
         "`SUBSCRIPTION_ENFORCEMENT=false`",
@@ -192,8 +213,9 @@ def main() -> int:
         return 1
 
     print(
-        "V10 public product plan guard passed: public hosted target, no-home production, "
-        "free initial launch, ordinary USER identity and tenant-scoped broker credentials are locked."
+        "V10 public product plan guard passed: public Internet-only hosted target, no-home "
+        "production, free initial launch, ordinary USER identity and tenant-scoped broker "
+        "credentials are locked."
     )
     return 0
 
