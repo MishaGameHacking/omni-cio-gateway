@@ -224,19 +224,19 @@ def test_external_tls_and_certificate_lifecycle_are_fail_closed() -> None:
     selection = SERVICE_SELECTION.read_text(encoding="utf-8")
     contract = EXECUTION_CONTRACT.read_text(encoding="utf-8")
     for marker in (
-        "Universal SSL",
-        "active Cloudflare full-DNS zone",
-        "first-level subdomain",
-        "Cloudflare owns edge-certificate issuance, renewal and deployment",
-        "X-Forwarded-Proto",
+        "public HTTPS hostname",
+        "public TLS/certificate lifecycle",
+        "Production-origin provider selection is not yet made",
+        "No provider mutation is authorized",
+        "managed-cloud production origin independent of OWNER home infrastructure",
     ):
         assert marker in selection
     for marker in (
-        "publicly trusted provider-managed certificate",
-        "Universal SSL",
-        "provider-managed renewal",
-        "X-Forwarded-Proto: https",
-        "must not silently enable a paid certificate product",
+        "public TLS with exact certificate/hostname lifecycle",
+        "trusted reverse-proxy chain",
+        "Host allowlist / anti-host-header abuse",
+        "HSTS",
+        "no accepted public production activation",
     ):
         assert marker in contract
 
@@ -246,6 +246,7 @@ def test_inherited_wp17_guard_recognizes_reviewed_wp22a_source_only() -> None:
     assert "WP22A_EXECUTION_CONTRACT" in text
     assert "wp22a_source_gate" in text
     assert "live public ingress has been activated" in text
+    assert "source-gate presence never proves" in text
     assert "if bind_all_marker in lowered_backend" in text
     assert 'if "tailscale funnel" in lowered_backend' in text
     assert "if marker in lowered_backend and not wp22a_source_gate" in text
