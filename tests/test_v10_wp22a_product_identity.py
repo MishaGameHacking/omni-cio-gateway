@@ -44,6 +44,7 @@ class _FakeConnection:
         self.tenants: set[str] = set()
         self.bindings: dict[tuple[str, str], tuple[int, str, str]] = {}
         self.params_seen: list[tuple[Any, ...]] = []
+        self.advisory_locks: list[int] = []
 
     def transaction(self) -> _Transaction:
         return _Transaction()
@@ -59,6 +60,10 @@ class _FakeConnection:
         sql = " ".join(str(query).split())
         values = tuple(params or ())
         self.params_seen.append(values)
+
+        if sql.startswith("SELECT pg_advisory_xact_lock"):
+            self.advisory_locks.append(int(values[0]))
+            return _Cursor((1,))
 
         if sql.startswith(
             "SELECT user_id, tenant_id FROM omni_cio_v10.external_identity_bindings"
@@ -115,10 +120,11 @@ def _repo(
     connection: _FakeConnection,
     *,
     registration_enabled: bool = False,
+    keyring: IdentityBindingKeyringV1 | None = None,
 ) -> PostgresProductIdentityRepositoryV1:
     return PostgresProductIdentityRepositoryV1(
         connection,  # type: ignore[arg-type]
-        keyring=IdentityBindingKeyringV1(active=_key()),
+        keyring=keyring or IdentityBindingKeyringV1(active=_key()),
         registration_enabled=registration_enabled,
     )
 
@@ -166,7 +172,7 @@ def test_unknown_identity_fails_closed_while_registration_is_disabled() -> None:
     assert connection.bindings == {}
 
 
-def test_registration_creates_internal_scope_and_never_persists_raw_subject() -> None:
+def test_registration_creates_internal_scope_serializes_and_never_persists_raw_subject() -> None:
     connection = _FakeConnection()
     identity = VerifiedExternalIdentityV1(
         provider=IdentityProviderV1.VK_ID,
@@ -184,7 +190,43 @@ def test_registration_creates_internal_scope_and_never_persists_raw_subject() ->
     assert first.tenant_id != "tenant:v1:owner"
     assert (first.user_id, first.tenant_id) in connection.users
     assert first.tenant_id in connection.tenants
+    assert len(connection.advisory_locks) == 1
     assert "vk-stable-subject-001" not in repr(connection.params_seen)
+
+
+def test_previous_binding_key_is_resolved_and_cannot_be_rebound() -> None:
+    connection = _FakeConnection()
+    previous = _key(1, b"p")
+    active = _key(2, b"a")
+    keyring = IdentityBindingKeyringV1(active=active, previous=(previous,))
+    identity = VerifiedExternalIdentityV1(
+        provider=IdentityProviderV1.TELEGRAM,
+        subject="rotated-key-subject",
+    )
+    first_scope = ProductAccountScopeV1(
+        user_id="user:v1:first_user",
+        tenant_id="tenant:v1:first_tenant",
+    )
+    second_scope = ProductAccountScopeV1(
+        user_id="user:v1:second_user",
+        tenant_id="tenant:v1:second_tenant",
+    )
+    connection.users.update(
+        {
+            (first_scope.user_id, first_scope.tenant_id),
+            (second_scope.user_id, second_scope.tenant_id),
+        }
+    )
+    connection.bindings[(identity.provider.value, previous.digest(identity))] = (
+        previous.version,
+        first_scope.user_id,
+        first_scope.tenant_id,
+    )
+    repository = _repo(connection, keyring=keyring)
+
+    assert repository.resolve_verified(identity, now=NOW) == first_scope
+    with pytest.raises(ProductIdentityError, match="EXTERNAL_IDENTITY_ALREADY_BOUND"):
+        repository.link_verified(second_scope, identity, now=NOW)
 
 
 def test_external_identity_cannot_be_rebound_to_another_account() -> None:
