@@ -246,9 +246,7 @@ def validate_high_risk_headers(failures: list[str]) -> None:
 
     contract_status = contract.get("status")
     accepted_status = "ACTIVE_ACCEPTED_ON_MAIN"
-    pending_runtime_update_status = (
-        "ACTIVE_ACCEPTED_GOVERNANCE_WITH_OWNER_APPROVED_RUNTIME_UPDATE_EFFECTIVE_ON_MERGE"
-    )
+    pending_runtime_update_status = "ACTIVE_ACCEPTED_GOVERNANCE_WITH_OWNER_APPROVED_RUNTIME_UPDATE_EFFECTIVE_ON_MERGE"
     if contract_status not in {accepted_status, pending_runtime_update_status}:
         failures.append("engineering-quality contract status is not active/accepted")
     elif contract_status == pending_runtime_update_status:
