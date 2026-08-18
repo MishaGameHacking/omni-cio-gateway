@@ -51,7 +51,14 @@ def test_recommendation_uses_native_russia_reachable_edge() -> None:
     assert recommendation["public_load_balancer"] == (
         "CLOUD_RU_EVOLUTION_L4_NLB"
     )
-    assert recommendation["public_load_balancer_min_resource_units"] == 2
+    assert recommendation["public_load_balancer_provider_min_resource_units"] == 1
+    assert recommendation["public_load_balancer_recommended_initial_resource_units"] == 2
+    assert (
+        recommendation[
+            "public_load_balancer_two_units_are_design_choice_not_provider_minimum"
+        ]
+        is True
+    )
     assert recommendation["public_load_balancer_automation"] == (
         "CLOUD_RU_PUBLIC_API_PLUS_GITHUB_SOURCE_CONTROL"
     )
@@ -61,6 +68,7 @@ def test_recommendation_uses_native_russia_reachable_edge() -> None:
     )
     assert recommendation["tls_termination"] == "NGINX_ON_RUNTIME_VMS"
     assert recommendation["product_identity_at_edge"] is False
+    assert reasoning["nlb_two_resource_units_selected_for_initial_fault_tolerance"] is True
     assert reasoning["russian_user_primary_edge_must_be_reliably_reachable_from_russia"] is True
     assert reasoning["runtime_single_node_is_initial_production_recommendation"] is False
     assert reasoning["github_source_controlled_provider_automation_required"] is True
@@ -193,8 +201,8 @@ def test_reference_cost_includes_two_vms_nlb_dns_and_ha_database() -> None:
         "monthly_rub_approx"
     )
     nlb_cost = (
-        "cloud_ru_reference_nlb_min_two_resource_units_plus_public_ip_"
-        "monthly_rub_approx"
+        "cloud_ru_reference_nlb_recommended_two_resource_units_"
+        "plus_public_ip_monthly_rub_approx"
     )
     excluded_costs = (
         "reference_initial_stack_excludes_domain_extra_object_storage_traffic_"
