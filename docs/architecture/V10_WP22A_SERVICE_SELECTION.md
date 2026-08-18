@@ -53,7 +53,8 @@ Cloud.ru Evolution DNS
         v
 Cloud.ru Evolution L4 Network Load Balancer
 public IP + health checks
-minimum 2 resource units
+recommended initial: 2 resource units
+(provider minimum: 1)
         |
         +-------------------+
         |                   |
@@ -91,7 +92,7 @@ Binding recommendation properties:
 - provider automation: Terraform for currently supported Evolution resources plus Cloud.ru Public API for current NLB v2, all driven from reviewed GitHub source;
 - public broker connector: fail-closed independently of public Web/account availability.
 
-Current Cloud.ru Load Balancer v2 documentation says a L4 load balancer has a minimum of **2 resource units** and that Terraform is currently **not supported** for Load Balancer management. Therefore NLB automation must use the reviewed Cloud.ru Public API rather than a stale Terraform assumption. Terraform remains preferred for supported resources.
+Current Cloud.ru Load Balancer v2 documentation permits a one-resource-unit configuration. Omni-CIO deliberately recommends **two resource units initially** because resource-unit count contributes to performance/fault tolerance; two is an engineering redundancy choice, not a provider minimum. Current limitations also state Terraform is not supported for Load Balancer management, so NLB automation must use reviewed Cloud.ru Public API rather than a stale Terraform assumption. Terraform remains preferred for supported resources.
 
 Cloud.ru Container Apps is **not** the selected primary runtime. Current Cloud.ru documentation states that Container Apps does not support Managed PostgreSQL connectivity and that an external database opened to the Internet is not a safe scenario; therefore the secure reviewed path uses VMs + private VPC + Managed PostgreSQL.
 
@@ -194,11 +195,13 @@ Current official Cloud.ru references give a lower-bound engineering estimate, no
 - Managed PostgreSQL Primary/Standby reference: about **3,792.05 RUB/month**;
 - two reference application VMs with 20 GB boot disks: about **1,722.99 RUB/month**;
 - sNAT: about **149.33 RUB/month**;
-- current Evolution NLB minimum 2 resource units + public IP: about **1,305.89 RUB/month**, before traffic;
+- **recommended two Evolution NLB resource units** + public IP: about **1,305.89 RUB/month**, before traffic;
 - one public Evolution DNS zone for 30 days: about **32.94 RUB/month**;
 - Evolution Certificate Manager: currently free.
 
 Reference initial stack: about **7,003.20 RUB/month**.
+
+The NLB cost intentionally prices the two-unit Omni-CIO redundancy recommendation. A one-unit provider configuration is permitted but is not the initial V10 recommendation.
 
 Excluded from that lower bound: domain registration, extra Object Storage/traffic/monitoring, managed external WAF/DDoS, larger VMs, later scale and Business Multi-AZ PostgreSQL.
 
