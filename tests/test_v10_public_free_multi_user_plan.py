@@ -50,6 +50,7 @@ def test_public_hosted_amendments_and_contract_exist() -> None:
     assert product_target["offline_registration_allowed"] is False
     assert product_target["offline_login_allowed"] is False
     assert product_target["offline_authenticated_product_mode_allowed"] is False
+    assert product_target["native_client_required"] is False
     assert product_target["project_owner_is_special_product_role"] is False
 
     hosting = payload["production_hosting"]
