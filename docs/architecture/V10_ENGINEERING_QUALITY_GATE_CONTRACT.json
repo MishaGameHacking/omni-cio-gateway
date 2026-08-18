@@ -1,6 +1,6 @@
 {
   "schema": "omni-cio.v10.engineering-quality-gate.v3",
-  "status": "ACTIVE_ACCEPTED_GOVERNANCE_WITH_OWNER_APPROVED_RUNTIME_UPDATE_EFFECTIVE_ON_MERGE",
+  "status": "ACTIVE_ACCEPTED_ON_MAIN",
   "date": "2026-08-18",
   "acceptance_evidence": {
     "accepted_pr": 322,
