@@ -87,15 +87,27 @@ class PostgresProductIdentityRepositoryV1:
             raise ValueError("identity timestamps must be timezone-aware")
         return value.astimezone(timezone.utc)
 
-    def resolve_verified(
-        self,
-        identity: VerifiedExternalIdentityV1,
-        *,
-        now: datetime,
-    ) -> ProductAccountScopeV1 | None:
-        verified_at = self._utc(now)
-        for binding_key in self._keyring.keys:
-            digest = binding_key.digest(identity)
+    def _binding_candidates(
+        self, identity: VerifiedExternalIdentityV1
+    ) -> tuple[tuple[IdentityBindingKeyV1, str], ...]:
+        return tuple((key, key.digest(identity)) for key in self._keyring.keys)
+
+    @staticmethod
+    def _advisory_lock_value(active_digest: str) -> int:
+        unsigned = int(active_digest[:16], 16)
+        return unsigned if unsigned < (1 << 63) else unsigned - (1 << 64)
+
+    def _lock_identity(self, identity: VerifiedExternalIdentityV1) -> None:
+        active_digest = self._keyring.active.digest(identity)
+        self._connection.execute(
+            "SELECT pg_advisory_xact_lock(%s)",
+            (self._advisory_lock_value(active_digest),),
+        )
+
+    def _find_binding(
+        self, identity: VerifiedExternalIdentityV1
+    ) -> tuple[ProductAccountScopeV1, str] | None:
+        for binding_key, digest in self._binding_candidates(identity):
             row = self._connection.execute(
                 "SELECT user_id, tenant_id "
                 "FROM omni_cio_v10.external_identity_bindings "
@@ -103,18 +115,34 @@ class PostgresProductIdentityRepositoryV1:
                 "AND binding_key_version = %s",
                 (identity.provider.value, digest, binding_key.version),
             ).fetchone()
-            if row is None:
-                continue
-            scope = ProductAccountScopeV1(user_id=str(row[0]), tenant_id=str(row[1]))
-            with self._connection.transaction():
-                self._connection.execute(
-                    "UPDATE omni_cio_v10.external_identity_bindings "
-                    "SET last_verified_at = GREATEST(last_verified_at, %s) "
-                    "WHERE provider = %s AND subject_binding_sha256 = %s",
-                    (verified_at, identity.provider.value, digest),
+            if row is not None:
+                return (
+                    ProductAccountScopeV1(
+                        user_id=str(row[0]), tenant_id=str(row[1])
+                    ),
+                    digest,
                 )
-            return scope
         return None
+
+    def resolve_verified(
+        self,
+        identity: VerifiedExternalIdentityV1,
+        *,
+        now: datetime,
+    ) -> ProductAccountScopeV1 | None:
+        verified_at = self._utc(now)
+        found = self._find_binding(identity)
+        if found is None:
+            return None
+        scope, digest = found
+        with self._connection.transaction():
+            self._connection.execute(
+                "UPDATE omni_cio_v10.external_identity_bindings "
+                "SET last_verified_at = GREATEST(last_verified_at, %s) "
+                "WHERE provider = %s AND subject_binding_sha256 = %s",
+                (verified_at, identity.provider.value, digest),
+            )
+        return scope
 
     def resolve_or_register(
         self,
@@ -137,8 +165,9 @@ class PostgresProductIdentityRepositoryV1:
         now: datetime,
     ) -> None:
         linked_at = self._utc(now)
-        digest = self._keyring.active.digest(identity)
+        active_digest = self._keyring.active.digest(identity)
         with self._connection.transaction():
+            self._lock_identity(identity)
             account = self._connection.execute(
                 "SELECT 1 FROM omni_cio_v10.users "
                 "WHERE user_id = %s AND tenant_id = %s",
@@ -147,22 +176,16 @@ class PostgresProductIdentityRepositoryV1:
             if account is None:
                 raise ProductIdentityError("PRODUCT_ACCOUNT_SCOPE_UNKNOWN")
 
-            existing_identity = self._connection.execute(
-                "SELECT user_id, tenant_id FROM omni_cio_v10.external_identity_bindings "
-                "WHERE provider = %s AND subject_binding_sha256 = %s",
-                (identity.provider.value, digest),
-            ).fetchone()
-            if existing_identity is not None:
-                if (str(existing_identity[0]), str(existing_identity[1])) != (
-                    scope.user_id,
-                    scope.tenant_id,
-                ):
+            existing_binding = self._find_binding(identity)
+            if existing_binding is not None:
+                existing_scope, existing_digest = existing_binding
+                if existing_scope != scope:
                     raise ProductIdentityError("EXTERNAL_IDENTITY_ALREADY_BOUND")
                 self._connection.execute(
                     "UPDATE omni_cio_v10.external_identity_bindings "
                     "SET last_verified_at = GREATEST(last_verified_at, %s) "
                     "WHERE provider = %s AND subject_binding_sha256 = %s",
-                    (linked_at, identity.provider.value, digest),
+                    (linked_at, identity.provider.value, existing_digest),
                 )
                 return
 
@@ -181,7 +204,7 @@ class PostgresProductIdentityRepositoryV1:
                 "VALUES (%s, %s, %s, %s, %s, %s, %s)",
                 (
                     identity.provider.value,
-                    digest,
+                    active_digest,
                     self._keyring.active.version,
                     scope.user_id,
                     scope.tenant_id,
@@ -197,28 +220,24 @@ class PostgresProductIdentityRepositoryV1:
         now: datetime,
     ) -> ProductAccountScopeV1:
         created_at = self._utc(now)
-        user_id = f"user:v1:{secrets.token_hex(16)}"
-        tenant_id = f"tenant:v1:{secrets.token_hex(16)}"
-        scope = ProductAccountScopeV1(user_id=user_id, tenant_id=tenant_id)
-        digest = self._keyring.active.digest(identity)
-        timestamp = created_at.isoformat()
-        tenant_hash = hashlib.sha256(
-            f"tenant|{tenant_id}|1.0|1|product_user|{timestamp}".encode("utf-8")
-        ).hexdigest()
-        user_hash = hashlib.sha256(
-            f"user|{user_id}|{tenant_id}|1.0|1|user|{timestamp}".encode("utf-8")
-        ).hexdigest()
+        active_digest = self._keyring.active.digest(identity)
 
         with self._connection.transaction():
-            existing = self._connection.execute(
-                "SELECT user_id, tenant_id FROM omni_cio_v10.external_identity_bindings "
-                "WHERE provider = %s AND subject_binding_sha256 = %s",
-                (identity.provider.value, digest),
-            ).fetchone()
-            if existing is not None:
-                return ProductAccountScopeV1(
-                    user_id=str(existing[0]), tenant_id=str(existing[1])
-                )
+            self._lock_identity(identity)
+            existing_binding = self._find_binding(identity)
+            if existing_binding is not None:
+                return existing_binding[0]
+
+            user_id = f"user:v1:{secrets.token_hex(16)}"
+            tenant_id = f"tenant:v1:{secrets.token_hex(16)}"
+            scope = ProductAccountScopeV1(user_id=user_id, tenant_id=tenant_id)
+            timestamp = created_at.isoformat()
+            tenant_hash = hashlib.sha256(
+                f"tenant|{tenant_id}|1.0|1|product_user|{timestamp}".encode("utf-8")
+            ).hexdigest()
+            user_hash = hashlib.sha256(
+                f"user|{user_id}|{tenant_id}|1.0|1|user|{timestamp}".encode("utf-8")
+            ).hexdigest()
 
             self._connection.execute(
                 "INSERT INTO omni_cio_v10.tenants "
@@ -239,7 +258,7 @@ class PostgresProductIdentityRepositoryV1:
                 "VALUES (%s, %s, %s, %s, %s, %s, %s)",
                 (
                     identity.provider.value,
-                    digest,
+                    active_digest,
                     self._keyring.active.version,
                     user_id,
                     tenant_id,
@@ -247,4 +266,4 @@ class PostgresProductIdentityRepositoryV1:
                     created_at,
                 ),
             )
-        return scope
+            return scope
