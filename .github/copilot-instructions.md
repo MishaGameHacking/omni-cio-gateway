@@ -57,7 +57,7 @@ Do not start later WPs early. Do not start V11. Do not implement Telegram/AI/Rea
 
 The current public/free/hosted planning correction must complete its own merge/post-merge lifecycle before functional WP22A coding resumes.
 
-## Pre-CI / Green-Merge law
+## Pre-CI Engineering Gate
 
 CI is an independent verifier, not primary debugger.
 
@@ -72,13 +72,15 @@ Before expensive exact-head CI:
 7. review official current external docs when behavior/support/pricing/terms can change;
 8. re-review full diff.
 
-Every applicable exact-head check must actually execute and conclude `success`. `failure`, `cancelled`, `queued`, `pending`, `in_progress`, `timed_out`, `action_required`, `stale`, `neutral` and `skipped` are not GREEN evidence for an applicable gate.
+**All applicable exact-head checks must be SUCCESS.** Every applicable check must actually execute and conclude `success`. `failure`, `cancelled`, `queued`, `pending`, `in_progress`, `timed_out`, `action_required`, `stale`, `neutral` and `skipped` are not GREEN evidence for an applicable gate.
 
 Infrastructure/billing/provider failures must be classified truthfully and still block merge when the applicable check is RED. Any new commit invalidates prior final GREEN evidence.
 
 Normal closure: exact-head all-GREEN -> final diff/review -> zero unresolved blockers -> squash merge -> exact new main -> required post-merge Regression Shield.
 
-OWNER product acceptance is post-merge/post-Regression-Shield unless a genuinely non-delegable prerequisite is required earlier.
+**OWNER product acceptance only after merge** and required post-merge GREEN, unless a genuinely non-delegable prerequisite is required earlier.
+
+Unexpected material RED after declared preflight readiness requires a confidence postmortem and reusable entry in the **Failure Learning Ledger** at `docs/operations/V10_ENGINEERING_FAILURE_LEARNING_LEDGER.md`.
 
 ## Fault isolation
 
@@ -101,7 +103,8 @@ Permanent guards include:
 
 - `python scripts/check_v10_repository_boundaries.py`;
 - `python scripts/check_v10_engineering_governance.py`;
-- `python scripts/check_v10_documentation_consistency.py`.
+- `python scripts/check_v10_documentation_consistency.py`;
+- `python scripts/check_v10_public_product_plan.py`.
 
 Do not weaken guards to land a change.
 
