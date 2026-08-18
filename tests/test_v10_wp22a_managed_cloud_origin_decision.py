@@ -60,19 +60,33 @@ def test_recommendation_uses_native_russia_reachable_edge() -> None:
         is True
     )
     assert recommendation["public_load_balancer_automation"] == (
-        "CLOUD_RU_PUBLIC_API_PLUS_GITHUB_SOURCE_CONTROL"
+        "PINNED_TERRAFORM_PROVIDER_IF_NLB_RESOURCE_ACCEPTANCE_PASSES_"
+        "ELSE_CLOUD_RU_PUBLIC_API"
     )
-    assert recommendation["public_load_balancer_terraform_supported_currently"] is False
+    assert recommendation["public_load_balancer_terraform_support_state"] == (
+        "OFFICIAL_DOCS_CONFLICT_REQUIRES_PINNED_PROVIDER_ACCEPTANCE"
+    )
+    assert (
+        recommendation[
+            "public_load_balancer_service_limitations_says_terraform_unsupported"
+        ]
+        is True
+    )
+    assert recommendation["public_load_balancer_terraform_resource_reference_present"] is True
+    assert recommendation["public_load_balancer_public_api_supported"] is True
+    assert recommendation["public_load_balancer_apply_blocked_until_automation_path_validated"] is True
     assert recommendation["certificate_manager"] == (
         "CLOUD_RU_EVOLUTION_CERTIFICATE_MANAGER_LETS_ENCRYPT"
     )
     assert recommendation["tls_termination"] == "NGINX_ON_RUNTIME_VMS"
     assert recommendation["product_identity_at_edge"] is False
     assert reasoning["nlb_two_resource_units_selected_for_initial_fault_tolerance"] is True
+    assert reasoning["nlb_automation_must_be_verified_against_pinned_provider_before_apply"] is True
     assert reasoning["russian_user_primary_edge_must_be_reliably_reachable_from_russia"] is True
     assert reasoning["runtime_single_node_is_initial_production_recommendation"] is False
     assert reasoning["github_source_controlled_provider_automation_required"] is True
     assert reasoning["terraform_only_provider_automation_required"] is False
+    assert reasoning["provider_documentation_conflict_must_fail_closed"] is True
 
 
 def test_cloudflare_primary_edge_is_rejected_for_russian_user_reachability() -> None:
@@ -177,10 +191,11 @@ def test_candidate_ranking_keeps_bounded_fallbacks() -> None:
     assert "EVOLUTION_DNS" in cloud_ru["strengths"]
     assert "EVOLUTION_L4_LOAD_BALANCER_WITH_HEALTH_CHECKS" in cloud_ru["strengths"]
     assert "EVOLUTION_CERTIFICATE_MANAGER_LETS_ENCRYPT" in cloud_ru["strengths"]
+    assert "TERRAFORM_NLB_RESOURCE_REFERENCE_PRESENT" in cloud_ru["strengths"]
     assert "PUBLIC_API_FOR_NLB" in cloud_ru["strengths"]
     assert (
-        "CURRENT_NLB_V2_DOCS_STATE_TERRAFORM_NOT_SUPPORTED_SO_NLB_"
-        "AUTOMATION_REQUIRES_PUBLIC_API"
+        "CLOUD_RU_OFFICIAL_DOCS_CONFLICT_ON_NLB_TERRAFORM_SUPPORT_REQUIRES_"
+        "PINNED_PROVIDER_ACCEPTANCE_BEFORE_APPLY"
         in cloud_ru["known_tradeoffs"]
     )
     assert timeweb["result"] == "FALLBACK_LOWER_COST"
