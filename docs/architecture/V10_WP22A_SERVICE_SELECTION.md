@@ -52,6 +52,7 @@ Cloud.ru Evolution DNS
         v
 Cloud.ru Evolution L4 Network Load Balancer
 public IP + health checks
+minimum 2 resource units
         |
         +-------------------+
         |                   |
@@ -86,8 +87,10 @@ Binding recommendation properties:
 - database public IP: forbidden;
 - tenant/runtime secret store: Secret Management with Key Management or reviewed provider system key;
 - outbound Internet: reviewed sNAT;
-- IaC: Cloud.ru Terraform provider + GitHub engineering plane;
+- provider automation: Terraform for currently supported Evolution resources plus Cloud.ru Public API for current NLB v2, all driven from reviewed GitHub source;
 - public broker connector: fail-closed independently of public Web/account availability.
+
+Current Cloud.ru Load Balancer v2 documentation says a L4 load balancer has a minimum of **2 resource units** and that Terraform is currently **not supported** for Load Balancer management. Therefore NLB automation must use the reviewed Cloud.ru Public API rather than a stale Terraform assumption. Terraform remains preferred for supported resources.
 
 Cloud.ru Container Apps is **not** the selected primary runtime. Current Cloud.ru documentation states that Container Apps does not support Managed PostgreSQL connectivity and that an external database opened to the Internet is not a safe scenario; therefore the secure reviewed path uses VMs + private VPC + Managed PostgreSQL.
 
@@ -122,7 +125,7 @@ The following controls remain valuable and must be reused where semantically val
 - trusted reverse-proxy/protocol boundary;
 - Secure/HttpOnly/SameSite server-side session cookies;
 - session rotation, bounded idle/absolute lifetime, logout/revoke;
-- CSRF and exact Origin/Referer checks on unsafe methods;
+- CSRF and exact Origin/Referer checks on unsafe requests;
 - CORS deny-by-default;
 - bounded login/mutation rate limits;
 - HSTS, CSP, `nosniff`, restrictive referrer policy and `no-store` where appropriate;
@@ -165,7 +168,7 @@ Cloud.ru also offers Qrator/StormWall DDoS/WAF services. They are **not silently
 
 ### Cloud.ru Evolution
 
-**RECOMMENDED_PENDING_OWNER_COST_APPROVAL.** Strongest reviewed combination of Russian placement, private Managed PostgreSQL, Primary/Standby, Secret Management/KMS, native DNS/NLB/Certificate Manager and Terraform coverage.
+**RECOMMENDED_PENDING_OWNER_COST_APPROVAL.** Strongest reviewed combination of Russian placement, private Managed PostgreSQL, Primary/Standby, Secret Management/KMS, native DNS/NLB/Certificate Manager and source-controlled Terraform/API automation.
 
 ### Timeweb Cloud
 
@@ -190,11 +193,11 @@ Current official Cloud.ru references give a lower-bound engineering estimate, no
 - Managed PostgreSQL Primary/Standby reference: about **3,792.05 RUB/month**;
 - two reference application VMs with 20 GB boot disks: about **1,722.99 RUB/month**;
 - sNAT: about **149.33 RUB/month**;
-- one NLB resource unit + public IP: about **727.61 RUB/month**, before traffic;
+- current Evolution NLB minimum 2 resource units + public IP: about **1,305.89 RUB/month**, before traffic;
 - one public Evolution DNS zone for 30 days: about **32.94 RUB/month**;
 - Evolution Certificate Manager: currently free.
 
-Reference initial stack: about **6,424.92 RUB/month**.
+Reference initial stack: about **7,003.20 RUB/month**.
 
 Excluded from that lower bound: domain registration, extra Object Storage/traffic/monitoring, managed external WAF/DDoS, larger VMs, later scale and Business Multi-AZ PostgreSQL.
 
