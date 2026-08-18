@@ -27,6 +27,7 @@ The recommended production architecture must continue to satisfy all accepted V1
 - ordinary modern phone/desktop browser over normal Internet;
 - reliable normal access for the intended Russian USER population;
 - public HTTPS hostname;
+- explicit **public TLS/certificate lifecycle** with reviewed issuance, renewal, runtime delivery and rollback;
 - no native VPN/device client for ordinary USER access;
 - **managed-cloud production origin independent of OWNER home infrastructure**;
 - one source-controlled Web App/Core, no competing site/repository/runtime stack;
