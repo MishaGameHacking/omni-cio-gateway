@@ -1,135 +1,121 @@
 # Omni-CIO V10 — WP22A Service Selection Gate
 
-Status: **SELECTED FOR IMPLEMENTATION / NOT YET ACCEPTED**  
-Owning package: **WP22A — External Web Access / OWNER Authentication Security Gate**  
-Accepted browser-only functional baseline: `7b3d83482f52041ef845681caabcd1baceb19d1b`  
-Mutable accepted-base tracking lives only in `V10_WP22A_EXECUTION_CONTRACT.md`; this service-selection record is provider/design evidence, not a second progress/base ledger.
+Status: **REOPENED BY OWNER-APPROVED PUBLIC-HOSTED PLANNING CORRECTION / NO PROVIDER APPLY AUTHORIZED**  
+Owning package: **WP22A — External Web Access / Product Authentication Security Gate**
 
-## 1. Required outcome
+## 1. Why this gate is reopened
 
-Select one clientless external-access transport for the existing source-controlled Omni-CIO Web App. The selected design must let the OWNER use an ordinary phone browser without installing a VPN/device client, keep the Lenovo origin non-public, remain automatable from GitHub after bounded bootstrap, preserve server-side sessions and OWNER identity, and add no broker-write/public-multi-user authority.
+The earlier WP22A Phase-A selection was optimized for a browser-only PROJECT OWNER accessing the Lenovo Personal Node through Cloudflare Access + Tunnel. That design is useful historical/pre-production engineering evidence, but it no longer satisfies the 2026-08-18 final-product requirement.
 
-The browser-only/headless amendment is controlling authority. The closed Tailscale-specific PR #317 is not accepted WP22A authority. The later accepted engineering-governance base is also controlling for pre-CI, all-GREEN merge, OWNER handoff, live-evidence and failure-learning discipline.
+The final product must be a public multi-user Web service whose ordinary availability does **not** depend on PROJECT OWNER home IP/Wi-Fi/router/LAN/Internet/Lenovo.
 
-## 2. Hard requirements
+Controlling amendments after acceptance:
 
-A candidate fails immediately if it cannot satisfy all of these:
+- `docs/master-plan/OMNI_CIO_V10_PRODUCT_USER_AND_ENGINEERING_AUTHORITY_BOUNDARY_AMENDMENT.md`;
+- `docs/master-plan/OMNI_CIO_V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_AMENDMENT.md`;
+- `docs/architecture/V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_CONTRACT.json`.
 
-- ordinary mobile browser access with no required native VPN/device client;
-- no inbound port or publicly routable origin requirement on the Personal Node;
-- authentication before the private Web origin is usable;
-- exact OWNER authorization, fail-closed by default;
-- source-controlled API/IaC automation after bounded bootstrap;
-- explicit rollback that removes external reachability without damaging the accepted local Web;
-- no broker credential, private portfolio payload or durable private DB movement into the access provider;
-- no new Web App/repository/runtime stack;
-- preserved `app:app`, `trading_methods=false`, `REAL_TRADING_ENABLED=false` and no transfer/withdrawal authority.
+This file therefore supersedes the old statement `SELECTED FOR IMPLEMENTATION` for final public production. No provider mutation is authorized by this planning change.
 
-## 3. Candidates
+## 2. Required final outcome
 
-### 3.1 Cloudflare Access + Cloudflare Tunnel — SELECTED
+Select one production architecture for the existing source-controlled Omni-CIO Web/API and tenant-private state that satisfies all of the following:
 
-Requirement fit:
+- ordinary modern phone/desktop browser over normal Internet;
+- public HTTPS hostname;
+- no native VPN/device client for ordinary USER access;
+- **managed-cloud production origin independent of OWNER home infrastructure**;
+- one source-controlled Web App/Core, no competing site/repository/runtime stack;
+- Telegram/VK -> internal Omni-CIO account -> server-side USER session as product authentication;
+- API + database-enforced tenant isolation;
+- tenant-scoped encrypted broker/private-data boundary;
+- secure secrets/backup/recovery/replacement-runtime design;
+- GitHub-controlled deployment/release provenance and rollback;
+- measured capacity/abuse controls;
+- privacy/personal-data/legal and broker-terms compatibility;
+- preserved `app:app`, `trading_methods=false`, `REAL_TRADING_ENABLED=false` until their owning future gates.
 
-- Access supports clientless browser access to self-hosted/private Web applications;
-- Tunnel is outbound-only from the origin, requiring no public IP or open inbound port;
-- Access policies can be restricted to the OWNER account member and selected login method;
-- the existing Cloudflare account/member identity path avoids creating a new daily Omni-CIO infrastructure password;
-- Cloudflare publishes supported API/Terraform resources for Tunnel, Access policy/application and DNS management;
-- remotely managed tunnels can use a runtime-only token file, avoiding token exposure in scheduled-task arguments;
-- `cloudflared` can run persistently on Windows;
-- the source-controlled implementation pins the currently reviewed Cloudflare Terraform provider and cloudflared binary/hash before Phase B.
+## 3. Cloudflare role retained but narrowed
 
-Security design consequence:
+Cloudflare remains a strong candidate for **edge functions** such as:
 
-- Access application/policy must exist before a published hostname is activated;
-- `cloudflared` must enforce Access for the tunnel ingress using the exact Access application audience/team binding;
-- the backend independently requires the Access identity header plus exact OWNER fingerprint, exact canonical Host, loopback proxy peer, same-origin CSRF on unsafe methods, and server-side Omni-CIO session state;
-- the GitHub self-hosted runner remains denied direct access to the loopback backend port;
-- no direct origin port is exposed.
+- authoritative/proxied DNS;
+- public TLS/certificate lifecycle;
+- WAF/DDoS/edge controls;
+- optional origin protection/Tunnel where appropriate;
+- source-controlled provider automation.
 
-TLS and certificate lifecycle for the selected zero-cost Personal path:
+Official Cloudflare Tunnel behavior is still relevant: `cloudflared` can connect an origin outbound-only without a public origin IP and map a public hostname to a service. That property is useful for origin protection.
 
-- visitor TLS terminates at the Cloudflare edge on a publicly trusted, Cloudflare-managed Universal SSL certificate; the local `cloudflared -> 127.0.0.1:8765` hop remains loopback-only HTTP and does not require an externally trusted origin certificate;
-- the selected Phase-B path requires an **active Cloudflare full-DNS zone** and uses exactly one **first-level subdomain** of that zone so Universal SSL coverage is deterministic without a paid certificate add-on;
-- the WP22A DNS record remains `Proxied`; Cloudflare owns edge-certificate issuance, renewal and deployment, so no edge private key or certificate bundle is copied to GitHub or Lenovo;
-- before the hostname is treated as usable, the protected Phase-B verifier must prove that an active certificate covers the exact hostname and that provider-managed renewal remains enabled;
-- `X-Forwarded-Proto` must equal exactly `https` at the loopback application boundary; missing, `http`, or ambiguous values fail closed and may not reach an Omni-CIO remote session;
-- if the live OWNER zone is partial/CNAME-only, the desired hostname is deeper than one subdomain level, Universal SSL is inactive, or exact coverage cannot be proven, Phase B stops before cutover. Engineering must not silently buy/enable Advanced Certificate Manager, Total TLS, a custom certificate, or another paid product.
+However, a Cloudflare Tunnel whose **sole production origin is the PROJECT OWNER's home Lenovo/network** is explicitly ineligible as the final V10 public-production architecture because loss of OWNER home power/Internet would remove service availability.
 
-Cost now: **Cloudflare Zero Trust Free is the selected Personal-contour target**, subject to the exact live account/feature checks performed before Phase B. Free service is not treated as having a paid-plan SLA.
+Cloudflare Access/account-member identity must not be the canonical Omni-CIO USER authentication system. It may remain an engineering/staging pre-auth layer only where separately justified.
 
-Main limitation: an active domain/zone under Cloudflare is required for the normal published-hostname path, and one-time OWNER account/domain/API-credential bootstrap remains unavoidable.
+## 4. Production-origin provider selection is not yet made
 
-### 3.2 ngrok — compatible fallback, not selected
+This planning correction intentionally does **not** hard-code Render, Timeweb, Cloudflare Workers/Containers, AWS, another VPS, or any other new V10 production host.
 
-Strengths:
+The implementation phase must perform a current service-selection decision using official provider information and the V10 engineering rules. At minimum compare:
 
-- clientless browser access;
-- managed HTTPS endpoints;
-- OAuth-capable access policies;
-- no OWNER device client required.
+- region/data-location and personal-data/legal suitability;
+- managed PostgreSQL/storage/secret support;
+- availability/restart/redeploy characteristics;
+- encrypted backup/restore and off-device recovery;
+- GitHub Actions/API/IaC automation;
+- least-privilege runtime identities;
+- private networking/edge integration;
+- logging/monitoring without secret/private-data leakage;
+- capacity/load/abuse controls;
+- rollback/replacement-node procedure;
+- pricing/free-tier limitations and predictable cost;
+- provider lock-in/exit path.
 
-Reasons not selected for current WP22A:
+A new recurring paid provider commitment requires OWNER approval after exact cost/authority consequences are presented. Planning may compare providers without purchasing or mutating anything.
 
-- current free-tier quotas and development-domain constraints are less suitable for the intended persistent OWNER dashboard;
-- higher long-term dependency on a proprietary endpoint/traffic-policy model for a function Cloudflare can satisfy together with the selected DNS/IaC path.
+## 5. Reusable controls from accepted Phase A
 
-Fallback condition: reconsider if Cloudflare domain/bootstrap requirements become impossible or the selected Cloudflare controls cannot pass WP22A security/recovery evidence.
+The following controls remain valuable and should be reused where compatible with the hosted architecture:
 
-### 3.3 Tailscale Serve — not eligible as normal OWNER phone path
-
-Tailscale Serve remains a strong private machine/tailnet transport and may remain useful for machine-to-machine or engineering infrastructure. It is rejected for the required OWNER product path because normal tailnet access depends on a Tailscale device client, which conflicts with the accepted browser-only amendment.
-
-The closed PR #317 therefore remains historical engineering material only; it is not merged or accepted.
-
-## 4. Selected identity method
-
-For current Personal V10, use the **existing Cloudflare Access identity provider restricted to Cloudflare account members** and an Access policy limited to the current Cloudflare account member.
-
-Rationale:
-
-- the selected outer identity is already controlled by the OWNER Cloudflare account;
-- it removes the need to create and custody an additional GitHub OAuth App client secret solely for the infrastructure gate;
-- the inner Omni-CIO application still performs exact OWNER identity fingerprinting and issues its own revocable server-side session;
-- Terraform reads and validates the existing organization/IdP instead of creating duplicate identity infrastructure.
-
-This outer infrastructure identity does **not** replace Telegram/VK as the ordinary product authentication-provider abstraction and does not enable public registration/multi-user mode.
-
-If later commercial/multi-user activation needs direct GitHub or another IdP in Access, that is a separate reviewed identity/service decision.
-
-## 5. Provider automation model
-
-Provider state must converge through source-controlled Cloudflare API/Terraform automation after one-time bootstrap. The current dormant feature PR validates provider schemas and intent without any real provider credential. Real mutation is deferred until the exact implementation is accepted on `main` and the protected Phase B workflow itself is source-reviewed and accepted.
-
-Minimum provider authority is restricted to the exact resources needed by the reviewed plan: Tunnel, Access application/policy/identity-provider reads required for validation, and the selected zone DNS record. Provider credentials are never committed, logged, copied into Codespaces, exposed to pull-request code or returned through chat.
-
-Tunnel runtime credentials remain runtime-only on the Personal Node. A remotely managed tunnel token is treated as a secret because possession can run the tunnel.
-
-## 6. Provider-independent security requirements reused from PR #317
-
-The clean rebuild keeps the following design ideas but reimplements them against the selected Cloudflare transport:
-
-- remote-specific server-side session lifetime of 2 hours idle / 24 hours absolute;
-- host-bound Secure/HttpOnly/SameSite session cookie and host-bound CSRF cookie;
-- session rotation on successful outer OWNER authentication;
-- exact Host and HTTPS Origin validation;
-- fail-closed external protocol binding through exact `X-Forwarded-Proto: https`;
-- CSRF cookie/header equality on unsafe methods;
-- bounded login/mutation rate limiting;
-- HSTS, strict CSP, `nosniff`, restrictive referrer policy, `no-store`;
+- exact Host validation;
+- trusted reverse-proxy/protocol boundary;
+- Secure/HttpOnly/SameSite server-side session cookies;
+- session rotation, bounded idle/absolute lifetime, logout/revoke;
+- CSRF and exact Origin/Referer checks on unsafe methods;
 - CORS deny-by-default;
-- accepted local Web TrustedHost boundary retained behind the external gate;
-- Web backend remains loopback-only;
-- GitHub runner direct-loopback negative test;
+- bounded login/mutation rate limits;
+- HSTS, CSP, `nosniff`, restrictive referrer policy and `no-store` where appropriate;
+- direct-origin/API negative tests;
 - fail-closed provider/runtime rollback;
-- exact-head OWNER physical evidence for phone HTTPS access, login and logout/session revocation;
-- sanitized evidence only.
+- provider/runtime secrets kept out of source/PR CI;
+- exact-head CI and post-merge Regression Shield.
 
-Tailscale host patterns, Tailscale identity headers, Serve/Funnel logic and tailnet OWNER evidence are explicitly not reused.
+The following old assumptions are **not** reusable as final product authority:
+
+- Cloudflare account-member identity -> product USER session;
+- exact OWNER fingerprint as product login;
+- hard-coded OWNER user/tenant session bootstrap;
+- Lenovo loopback backend as final production origin;
+- final user experience restricted to PROJECT OWNER;
+- permanent public multi-user disablement.
+
+## 6. Broker/public-service separation
+
+Production-origin selection must not assume T-Invest public connector permission. Current T-Invest documentation says ordinary client API access does not permit a public service with data retransmission.
+
+Therefore the public Web/account platform and T-Invest-backed public features are separate activation gates. Hosted-provider selection must allow broker-backed functionality to remain fail-closed without preventing the account/Web platform from existing.
 
 ## 7. Exit from service-selection gate
 
-PASS requires this file plus the WP22A execution contract to be source-controlled in the clean WP22A branch and the implementation/tests to prove the selected controls before any provider mutation is authorized.
+This gate is not PASS merely because Cloudflare Phase A previously existed.
 
-The service selection itself does not make Cloudflare state accepted, does not activate ingress and does not unlock WP23.
+PASS for the corrected public target requires:
+
+1. current official provider review;
+2. explicit production-origin choice that satisfies no-home dependency;
+3. data/secret/tenant isolation design;
+4. recovery/rollback/capacity/cost/legal analysis;
+5. source-controlled architecture/IaC intent with no production secrets;
+6. deterministic tests/guards;
+7. normal exact-head CI/review/merge/post-merge acceptance.
+
+Until then, no final public production origin is selected and no provider mutation is authorized.
