@@ -12,11 +12,13 @@
 
 V10 последовательно превращает этот продукт в самостоятельную Personal Autonomous Investment Platform. Не создавать второй Custom GPT, duplicate Gateway, parallel Web, Telegram brain, competing AI stack, competing scheduler или parallel broker/execution stack вне явно утверждённого V10 work package/amendment.
 
-Три broker-контура изолированы:
+Три protected V9 broker-контура изолированы:
 
 1. production read-only — `TINVEST_TOKEN`;
 2. optional virtual Sandbox — `TINVEST_SANDBOX_TOKEN`;
-3. optional exact-owner-confirmed Real execution — отдельный `TINVEST_TRADING_TOKEN` + durable state.
+3. optional exact-user-confirmed Real execution — отдельный `TINVEST_TRADING_TOKEN` + durable state.
+
+For public V10, broker credentials are **not global application credentials**: they belong only to the authenticated tenant's `BrokerConnection` according to the active Identity and Public Free Multi-User Hosted Runtime amendments.
 
 GitHub engineering access никогда не означает broker/trading authority.
 
@@ -32,12 +34,16 @@ Current accepted snapshot:
 
 - V10 WP0–WP22 are accepted COMPLETE according to the current-status file;
 - accepted V10 progress is **40%** because Block E is not credited piecemeal;
-- **WP22A — External Web Access / OWNER Authentication Security Gate is the only authorized current functional package**;
-- WP23+ remains LOCKED behind the WP22A Exit Gate;
-- public Internet ingress remains OFF/LOCKED until WP22A acceptance;
+- **WP22A — External Web Access / Product Authentication Security Gate is the only authorized current functional package**;
+- WP23+ remains LOCKED behind the corrected WP22A Exit Gate;
+- public multi-user/global browser service is the approved target, but `PUBLIC_MULTI_USER_ENABLED=false` remains the safe implementation default until WP22A plus tenant-isolation/security/privacy/broker/legal/capacity gates are accepted;
+- final public production must not depend on PROJECT OWNER home IP/Wi-Fi/router/LAN/Lenovo; an approved managed-cloud origin is required by the active launch amendment;
+- initial registered-user access is free: billing/trial/subscription enforcement/premium gating are disabled for initial launch;
 - broker-write / Real execution authority remains unchanged and not authorized by this status.
 
-The OWNER-approved Engineering Quality / Pre-CI / Green-Merge governance package is accepted and active on `main` at `1c05390d9cf31b8cc68a90a5d7cbd6428ffe7791`; post-merge Regression Shield #1498 / run `31959959791` completed SUCCESS on that exact main. Governance changes development/verification discipline only and does not advance V10 product progress or unlock another WP.
+The PROJECT OWNER is not a special Omni-CIO product role. When using Omni-CIO, the PROJECT OWNER is an ordinary USER on the same `OmniCIOUserAccount -> Tenant -> Session` path as supported users. GitHub/cloud-provider/Windows/CI authority stays outside product identity.
+
+The OWNER-approved Engineering Quality / Pre-CI / Green-Merge governance package is accepted and active. Governance changes development/verification discipline only and does not advance V10 product progress or unlock another WP.
 
 Documentation lifecycle and the distinction between current authority and historical WP records are defined in `docs/DOCUMENTATION_AUTHORITY_AND_LIFECYCLE.md`.
 
@@ -56,7 +62,10 @@ Before any change, read in this order:
    - `docs/master-plan/OMNI_CIO_V10_CONCRETE_EXECUTION_PLAN_AMENDMENT.md`;
    - `docs/master-plan/OMNI_CIO_V10_GITHUB_PRO_AND_MIGRATION_IMPLEMENTATION_AMENDMENT.md`;
    - `docs/master-plan/OMNI_CIO_V10_ENGINEERING_QUALITY_AND_GREEN_MERGE_AMENDMENT.md`;
+   - `docs/master-plan/OMNI_CIO_V10_PRODUCT_USER_AND_ENGINEERING_AUTHORITY_BOUNDARY_AMENDMENT.md`;
+   - `docs/master-plan/OMNI_CIO_V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_AMENDMENT.md`;
 9. machine-readable contracts relevant to the work, especially:
+   - `docs/architecture/V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_CONTRACT.json`;
    - `docs/architecture/V10_AI_CORTEX_CONTRACT.json`;
    - `docs/architecture/V10_GITHUB_PRO_UTILIZATION_CONTRACT.json`;
    - `docs/architecture/V10_V9_TO_V10_PARITY_LEDGER.json`;
@@ -127,7 +136,7 @@ Private `main` is protected. Accepted merge discipline requires:
 - conversation resolution;
 - strict required context `V10 authoritative merge gate` from GitHub Actions;
 - no routine bypass actor;
-- external GitHub Actions pinned to full commit SHA;
+- external GitHub Actions pinned to full commit SHA where used;
 - exact-head evidence before merge.
 
 Hybrid CI model:
@@ -137,7 +146,7 @@ Hybrid CI model:
 - post-merge Regression Shield protects accepted `main` where required;
 - no green capacity/routing check may be described as hosted clean-room PASS unless the hosted clean-room workload actually executed.
 
-Current 2026-08-16 OWNER-observed GitHub Actions account state is a time-bounded external condition: Actions budget USD 0 with stop-usage enabled. While the accepted machine-readable quality contract records `BLOCKED_OWNER_ZERO_BUDGET_HARD_STOP`:
+Current OWNER-observed GitHub Actions budget/payment state is an external condition and must not be silently changed. While the accepted machine-readable quality contract records a zero-budget hard stop:
 
 - do not silently increase budget, alter payment settings or disable the hard stop;
 - do not repeatedly trigger hosted jobs already known to be unable to start;
@@ -205,23 +214,15 @@ MOEX current quotes are enrichment for current market valuation and must never o
 
 The accepted AI concept is **Omni-CIO Cortex** — a narrow investment/system operator, not a general-purpose chatbot.
 
-Initial local AI baseline:
+Initial AI model/runtime assumptions remain governed by their owning amendment/WP. The public hosted-runtime amendment may require a later service/runtime selection when the AI WP unlocks; no AI hosting implementation is started early.
 
-- `Qwen3.5-4B`;
-- Ollama local runtime;
-- Apache-2.0 model baseline;
-- Q4_K_M or validated equivalent 4-bit deployment target;
-- Russian first-class product language;
-- 8K initial context; 16K only after measured acceptance;
-- provider remains replaceable behind a stable adapter.
-
-V10 Definition of Done must not require a paid OpenAI/Anthropic/Google/other AI inference API, paid search API or hosted agent SaaS. GitHub Pro is the already accepted engineering subscription.
+V10 Definition of Done must not require a paid OpenAI/Anthropic/Google/other AI inference API, paid search API or hosted agent SaaS unless a later explicit owning decision proves it necessary. GitHub Pro is the already accepted engineering subscription.
 
 ### 7.4 AI specialization sequence
 
 Do not fine-tune first. Mandatory order:
 
-`System Policy → typed Tool Registry → Knowledge/RAG → sanitized eval corpus → measured local benchmark → QLoRA only if persistent measured gaps remain`.
+`System Policy → typed Tool Registry → Knowledge/RAG → sanitized eval corpus → measured benchmark → QLoRA only if persistent measured gaps remain`.
 
 Every model/policy/adapter change must be versioned, evaluated and rollbackable.
 
@@ -237,7 +238,7 @@ AI outage must degrade gracefully; deterministic Core must remain usable.
 
 Initial no-subscription-first research stack:
 
-- SearchProvider abstraction with self-hosted SearXNG first;
+- SearchProvider abstraction with self-hosted/open-source path first;
 - bounded HTTP/document retrieval first;
 - Playwright/Chromium only as a bounded JS-rendering fallback;
 - LangGraph OSS is the initial orchestration candidate for durable checkpoint/resume/HITL workflows;
@@ -302,11 +303,11 @@ Only when a local Windows action is genuinely non-delegable, use the preferred f
 
 The permanent AI/runtime process must use least privilege; Administrator is for installation/service/system configuration only.
 
-The Lenovo is the first V10 Personal node, not architectural ownership of the system.
+Lenovo is an engineering/self-hosted-CI/controlled-acceptance/recovery asset. It is not architectural ownership of public production and must not be required for ordinary public USER availability.
 
-## 10. Lenovo resource arbitration
+## 10. Lenovo resource arbitration and hosted-production separation
 
-The same Lenovo is both GitHub self-hosted CI and the local V10/AI node. Infrastructure must explicitly prevent resource contention:
+The same Lenovo may run GitHub self-hosted CI and engineering/acceptance workloads. Infrastructure must explicitly prevent resource contention:
 
 - detect authoritative CI activity;
 - pause/deprioritize heavy background AI/research/training during critical CI;
@@ -314,17 +315,21 @@ The same Lenovo is both GitHub self-hosted CI and the local V10/AI node. Infrast
 - expose CPU/RAM/GPU/VRAM/availability health;
 - AI failure must not take down deterministic Core or GitHub runner.
 
-The V10 Web/API/application runtime remains on the approved Lenovo/replacement Personal Node unless a later explicit OWNER-approved architecture amendment changes that. A reviewed external-access provider is access/security transport, not a second authoritative private-state/app host. A new Render.com V10 service is not authorized merely for convenience; the existing Render.com `app:app` remains the protected V9 production/recovery baseline until its owning parity/decommission gate.
+For the **final public product**, V10 Web/API and required hosted private-data services must run on an approved managed-cloud production runtime independent of OWNER home IP/Wi-Fi/router/LAN/Lenovo. The provider is selected through the owning service-selection/security/recovery gate; do not choose a new provider merely for novelty or convenience.
+
+A Cloudflare Tunnel whose sole origin is the OWNER's home Lenovo/network is not valid final public production. Cloudflare may still be accepted for DNS/TLS/WAF/DDoS/edge or non-production transport. The existing Render.com `app:app` remains the protected V9 production/recovery baseline until its owning parity/decommission gate; a V10 cloud deployment must be the same source-controlled product, not a competing Web App.
 
 ## 11. Broker execution boundary
 
 ### 11.1 Production read-only
 
-`TINVEST_TOKEN` remains read-only. It is never promoted or replaced by trading token as fallback.
+Protected V9 `TINVEST_TOKEN` remains read-only and is never promoted/replaced by a trading token as fallback.
+
+For public V10, normal users provision their own tenant-scoped READ credential only through authenticated Web settings. It is stored under that tenant's `BrokerConnection`, never as a shared/global USER credential and never returned to browser storage.
 
 ### 11.2 Sandbox
 
-Sandbox is virtual only and uses `TINVEST_SANDBOX_TOKEN`. Sandbox output is never real portfolio mutation evidence. Transfer/withdraw/margin remain forbidden.
+Sandbox is virtual only and uses an isolated Sandbox credential/connection. Sandbox output is never real portfolio mutation evidence. Transfer/withdraw/margin remain forbidden.
 
 ### 11.3 Real execution
 
@@ -332,25 +337,26 @@ Real BUY/SELL can occur only through reviewed deterministic `omni_cio.real_tradi
 
 Mandatory invariants remain:
 
-- separate account-scoped trading credential;
-- `REAL_TRADING_ENABLED=true` required;
+- separate tenant-scoped/account-verified trading credential;
+- `REAL_TRADING_ENABLED=true` required only after owning activation gate;
 - durable state, no unsafe memory fallback;
 - own-funds BUY / own-position SELL;
 - no margin/short;
 - fresh trusted market/order book;
 - hard caps and exact price-step rules;
 - immutable plan/proposal;
-- exact short-lived OWNER confirmation from a **new** turn;
+- exact short-lived authenticated USER confirmation for that USER's own tenant from a **new** turn/session step-up as required;
 - immediate preflight;
 - UUID/idempotency binding;
 - one possible submit per identity;
 - ambiguous possible-submit → do not retry; reconcile only;
 - `submitted != filled` without broker evidence;
-- account IDs masked.
+- account IDs masked;
+- `EXECUTABLE_ACCOUNTS = VERIFIED_READ_ACCOUNTS ∩ VERIFIED_TRADE_ACCOUNTS` for the same tenant.
 
-Forbidden: transfer/withdraw/securities transfer, MARKET/BESTPRICE, margin/short, autonomous derivatives execution, stop/replace/async submit, token management, autonomous recurring Real execution and automatic retry after possible-submit ambiguity.
+Forbidden: transfer/withdraw/securities transfer, MARKET/BESTPRICE where prohibited by accepted contract, margin/short, unauthorized autonomous derivatives execution, unsafe stop/replace/async submit, token management by AI, autonomous recurring Real execution and automatic retry after possible-submit ambiguity.
 
-`REAL_TRADING_ENABLED=false` remains master Real rollback.
+`REAL_TRADING_ENABLED=false` remains master Real rollback until accepted Real activation.
 
 AI, Watchtower, Telegram, `START V10`, GitHub merge or portfolio-management wording is never Real-submit authorization.
 
@@ -358,17 +364,19 @@ AI, Watchtower, Telegram, `START V10`, GitHub merge or portfolio-management word
 
 The current Custom GPT v9.0.0 remains applied/recovery evidence until the explicit V10 parity/decommission gate.
 
-Current repository configuration sources remain under `gpt/`. Do not create a second GPT. Do not delete existing Instructions/Knowledge/Actions because local AI exists.
+Current repository configuration sources remain under `gpt/`. Do not create a second GPT. Do not delete existing Instructions/Knowledge/Actions because V10 exists.
 
 While the GPT remains applied, it may claim only operationIds actually published by effective production `/openapi.json` and supported by returned evidence.
 
 ## 13. Secrets/private data
 
-Never commit/publish real values of broker tokens, Gateway key, Upstash/QStash secrets, future Telegram token, local AI/runtime secrets, encryption keys, Authorization headers, full account IDs or private portfolio/report payloads.
+Never commit/publish real values of broker tokens, Gateway key, Upstash/QStash secrets, future Telegram/VK/provider secrets, AI/runtime secrets, encryption/recovery keys, Authorization headers, full account IDs or private portfolio/report payloads.
 
 GitHub contains schemas/roles/safe defaults, not private values.
 
 Research/eval fixtures must be synthetic or properly sanitized.
+
+For the hosted public baseline, tenant-private state and encrypted broker credentials may exist only inside the approved cloud data/secret boundary after its owning security/privacy/legal gates; they remain forbidden from GitHub/CI/artifacts and inaccessible across tenants.
 
 ## 14. Dependency/runtime policy
 
@@ -376,7 +384,7 @@ Canonical Python lock sources remain `requirements.in` / `requirements-dev.in`; 
 
 Known incompatible tooling is held narrowly/documented; do not disable verification to force an update.
 
-Before introducing or materially upgrading a language/runtime/framework/package/provider/Action, verify current official support, security, license, Windows compatibility where relevant, reproducible lock/install, fallback/rollback and measurable benefit. `latest` is not automatically `best`; accepted code is not rewritten merely for novelty. New languages require a concrete component-level correctness/security/isolation/performance/systems-integration reason and may not create polyglot sprawl.
+Before introducing or materially upgrading a language/runtime/framework/package/provider/Action, verify current official support, security, license, platform compatibility where relevant, reproducible lock/install, fallback/rollback and measurable benefit. `latest` is not automatically `best`; accepted code is not rewritten merely for novelty. New languages require a concrete component-level correctness/security/isolation/performance/systems-integration reason and may not create polyglot sprawl.
 
 Until a responsible V10 WP replaces it, current protected V9 compatibility remains:
 
@@ -402,7 +410,7 @@ Preserve exact-decimal and provenance discipline:
 
 Accepted repository architecture is defined by `docs/architecture/REPOSITORY_STRUCTURE.md` and guarded by permanent tests.
 
-Accepted/active V10 adapter roots currently include `apps/api/` and `apps/web/`; accepted Personal-Node infrastructure lives under `infrastructure/`. `apps/telegram/` and `ai/` remain later lifecycle-gated roots until their owning Work Packages are authorized. The protected V9 root wrappers remain until a responsible migration explicitly replaces them.
+Accepted/active V10 adapter roots currently include `apps/api/` and `apps/web/`; accepted engineering/Personal-Node infrastructure lives under `infrastructure/`. `apps/telegram/` and `ai/` remain later lifecycle-gated roots until their owning Work Packages are authorized. The protected V9 root wrappers remain until a responsible migration explicitly replaces them.
 
 Do not create duplicate setup/audit/inventory documents when an accepted source of truth should be updated instead. Follow `docs/DOCUMENTATION_AUTHORITY_AND_LIFECYCLE.md` so historical records remain evidence without becoming competing current-state ledgers.
 
@@ -424,6 +432,7 @@ Regression Shield/authoritative merge gate remains strict. At minimum protect:
 - SAST;
 - secret scan;
 - protected money-path replay/idempotency;
+- tenant isolation / no cross-tenant secret or data access;
 - future capability-aware DB/API/Web/Telegram/AI contracts when those roots appear.
 
 Permanent guards include:
@@ -438,8 +447,10 @@ When AI implementation begins, CI must additionally fail closed on policy/tool/e
 
 ## 18. Current next action
 
-Current functional authorization is read only from `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`. At the accepted current baseline, **WP22A** is the only authorized functional package and WP23+ remains locked.
+Current functional authorization is read only from `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`. **WP22A — External Web Access / Product Authentication Security Gate** remains the only authorized functional package and WP23+ remains locked.
 
-The Engineering Quality / Pre-CI / Green-Merge governance prerequisite has already completed its lifecycle and is active. WP22A may therefore continue under those laws through its own focused PR(s), exact-head applicable GREEN gates, required post-merge verification and only then any OWNER product acceptance required by the WP22A Exit Gate.
+Before functional WP22A coding resumes, the OWNER-approved planning correction for Product USER separation plus Public Free Multi-User Hosted Runtime must complete its own lifecycle: exact-head GREEN → full review → squash merge → exact-main post-merge Regression Shield GREEN.
 
-Do not interpret documentation cleanup, an in-flight WP22A PR, source-controlled Cloudflare intent or external reachability as WP22A completion. No documentation change may open public ingress, mutate provider state, add broker-write authority, enable Real trading or unlock WP23.
+After that, WP22A must be reworked against the accepted public target: ordinary product auth, tenant isolation, managed-cloud production with no OWNER-home availability dependency, free initial access, tenant-scoped broker credentials, and separate broker/legal activation gates.
+
+Do not interpret documentation cleanup, a planning PR, source-controlled Cloudflare intent or external reachability as WP22A completion. No planning change by itself may mutate provider state, enable Real trading, bypass broker terms or unlock WP23.
