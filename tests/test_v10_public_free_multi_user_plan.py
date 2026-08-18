@@ -40,9 +40,17 @@ def test_public_hosted_amendments_and_contract_exist() -> None:
     assert CONTRACT.is_file()
 
     payload = json.loads(_text(CONTRACT))
-    assert payload["product_target"]["public_multi_user_target"] is True
-    assert payload["product_target"]["ordinary_browser_global_internet_access"] is True
-    assert payload["product_target"]["project_owner_is_special_product_role"] is False
+    product_target = payload["product_target"]
+    assert product_target["public_multi_user_target"] is True
+    assert product_target["ordinary_browser_global_internet_access"] is True
+    assert (
+        product_target["internet_connection_required_for_registration_login_product_use"]
+        is True
+    )
+    assert product_target["offline_registration_allowed"] is False
+    assert product_target["offline_login_allowed"] is False
+    assert product_target["offline_authenticated_product_mode_allowed"] is False
+    assert product_target["project_owner_is_special_product_role"] is False
 
     hosting = payload["production_hosting"]
     assert hosting["managed_cloud_origin_required"] is True
@@ -109,6 +117,18 @@ def test_project_owner_is_not_a_product_superuser() -> None:
     agents = _text(ROOT / "AGENTS.md")
     assert "PROJECT OWNER is not a special Omni-CIO product role" in agents
     assert "OmniCIOUserAccount -> Tenant -> Session" in agents
+
+
+def test_public_product_requires_internet_and_has_no_offline_auth_mode() -> None:
+    amendment = _text(PUBLIC_AMENDMENT)
+    assert "The normal requirement for product use is an Internet connection" in amendment
+
+    contract = json.loads(_text(CONTRACT))
+    target = contract["product_target"]
+    assert target["internet_connection_required_for_registration_login_product_use"] is True
+    assert target["offline_registration_allowed"] is False
+    assert target["offline_login_allowed"] is False
+    assert target["offline_authenticated_product_mode_allowed"] is False
 
 
 def test_public_production_cannot_depend_on_owner_home_or_lenovo() -> None:
