@@ -1,0 +1,121 @@
+{
+  "contract_version": "1.0.0",
+  "status": "RECOMMENDED_PENDING_OWNER_COST_APPROVAL",
+  "decision_date": "2026-08-18",
+  "owning_package": "WP22A",
+  "accepted_base_main": "ee45026b1287c7427dc5e05b2a04b7bdb974d11f",
+  "phase": "SERVICE_HOSTING_ARCHITECTURE_DECISION",
+  "recommendation": {
+    "provider": "CLOUD_RU_EVOLUTION",
+    "runtime": "EVOLUTION_VM",
+    "runtime_region_requirement": "RUSSIA",
+    "edge": "CLOUDFLARE_DNS_TLS_WAF_DDOS_TUNNEL",
+    "product_identity_at_edge": false,
+    "database": "CLOUD_RU_MANAGED_POSTGRESQL_PRIVATE_IP",
+    "database_public_ip_allowed": false,
+    "network": "CLOUD_RU_EVOLUTION_VPC_PRIVATE_SUBNET",
+    "secret_store": "CLOUD_RU_SECRET_MANAGEMENT",
+    "key_management": "CLOUD_RU_KEY_MANAGEMENT_OR_REVIEWED_SYSTEM_KEY",
+    "backup_object_storage": "CLOUD_RU_EVOLUTION_OBJECT_STORAGE_ENCRYPTED",
+    "infrastructure_as_code": "CLOUD_RU_TERRAFORM_PROVIDER_PLUS_GITHUB",
+    "container_apps_primary_runtime_allowed": false,
+    "container_apps_rejection_reason": "OFFICIAL_CLOUD_RU_DOCS_STATE_NO_MANAGED_POSTGRESQL_CONNECTIVITY_AND_PUBLIC_DB_PORT_IS_UNSAFE"
+  },
+  "selection_reasoning": {
+    "correctness_and_security_priority": true,
+    "russian_personal_data_primary_database_required": true,
+    "managed_postgresql_private_connectivity_required": true,
+    "managed_secret_store_required_for_tenant_broker_credentials": true,
+    "kms_capability_required_or_equivalent_reviewed_key_boundary": true,
+    "github_iac_automation_required": true,
+    "owner_home_availability_dependency_allowed": false,
+    "native_client_required_for_product_users": false
+  },
+  "candidate_evaluation": {
+    "CLOUD_RU_EVOLUTION": {
+      "result": "RECOMMENDED_PENDING_COST_APPROVAL",
+      "strengths": [
+        "RUSSIA_REGION",
+        "VM_VPC_PRIVATE_MANAGED_POSTGRESQL_REFERENCE_ARCHITECTURE",
+        "PROJECT_SCOPED_VERSIONED_SECRET_MANAGEMENT",
+        "KEY_MANAGEMENT_INTEGRATION",
+        "TERRAFORM_PROVIDER",
+        "PAY_AS_YOU_GO"
+      ],
+      "known_tradeoffs": [
+        "VM_RUNTIME_REQUIRES_MORE_OS_OPERATIONS_THAN_FULL_PAAS",
+        "EXACT_LOW_END_VM_MONTHLY_COST_MUST_BE_REVALIDATED_IN_PROVIDER_CALCULATOR_BEFORE_PURCHASE"
+      ]
+    },
+    "TIMEWEB_CLOUD": {
+      "result": "FALLBACK_LOWER_COST",
+      "strengths": [
+        "RUSSIA_REGIONS",
+        "MANAGED_POSTGRESQL",
+        "PRIVATE_NETWORKING",
+        "TERRAFORM_API_AUTOMATION",
+        "152_FZ_INFRASTRUCTURE_OPTIONS"
+      ],
+      "known_tradeoffs": [
+        "NO_REVIEWED_GENERAL_NATIVE_SECRET_MANAGER_KMS_BOUNDARY_FOUND_FOR_THIS_SELECTION",
+        "S3_CREDENTIAL_LEAST_PRIVILEGE_LIMITATIONS_REQUIRE_EXTRA_DESIGN_FOR_BACKUP_SECRET_SEPARATION"
+      ]
+    },
+    "YANDEX_CLOUD": {
+      "result": "SECURITY_STRONGER_HIGHER_COST_ALTERNATIVE",
+      "strengths": [
+        "RUSSIA_REGION",
+        "MANAGED_POSTGRESQL_152_FZ_COMPLIANCE",
+        "LOCKBOX",
+        "KMS",
+        "MATURE_TERRAFORM_AUTOMATION"
+      ],
+      "known_tradeoffs": [
+        "MANAGED_POSTGRESQL_PRODUCTION_CONFIGURATION_COST_IS_MATERIALLY_HIGHER_THAN_MINIMAL_ALTERNATIVES"
+      ]
+    },
+    "RENDER": {
+      "result": "REJECT_PRIMARY_PRODUCTION_DATA_PLANE",
+      "reasons": [
+        "NO_RUSSIA_REGION",
+        "FREE_WEB_SERVICE_SPINS_DOWN_AFTER_15_MINUTES_IDLE",
+        "FREE_POSTGRES_EXPIRES_AFTER_30_DAYS",
+        "NOT_SUITABLE_FOR_PRIMARY_RUSSIAN_PERSONAL_DATA_DATABASE"
+      ]
+    }
+  },
+  "legal_and_data_boundary": {
+    "legal_advice_claimed": false,
+    "production_legal_signoff_required": true,
+    "russian_federal_law_152_fz_article_18_part_5_localization_gate": true,
+    "primary_identity_session_tenant_personal_data_outside_russia_allowed_by_this_contract": false,
+    "cross_border_processing_allowed_without_separate_legal_review": false
+  },
+  "cost_boundary": {
+    "new_recurring_paid_commitment_required": true,
+    "owner_cost_approval_required_before_provider_apply": true,
+    "provider_apply_authorized": false,
+    "exact_vm_price_revalidation_required_before_purchase": true,
+    "cloud_ru_managed_postgresql_reference_single_node_formula_720h_rub_vat_included": "(1.49145 * vCPU + 0.4026 * RAM_GB + 0.016836 * SSD_GB) * 720",
+    "cloud_ru_reference_pg_1vcpu_2gb_20gb_monthly_rub_approx": 1896.0264,
+    "estimate_is_not_purchase_quote": true
+  },
+  "activation": {
+    "public_multi_user_enabled": false,
+    "provider_resources_created": false,
+    "provider_credentials_allowed_in_pull_request": false,
+    "cloudflare_product_authentication_allowed": false,
+    "telegram_vk_product_authentication_required": true,
+    "wp23_locked": true
+  },
+  "broker_and_money_safety": {
+    "t_invest_public_connector": "FAIL_CLOSED_PENDING_BROKER_TERMS_PERMISSION",
+    "broker_credentials": "TENANT_SCOPED_ONLY",
+    "broker_write_authority_added": false,
+    "trading_methods": false,
+    "real_trading_enabled": false,
+    "transfer_withdrawal_allowed": false,
+    "protected_v9_rollback": true,
+    "app_entrypoint": "app:app"
+  }
+}
