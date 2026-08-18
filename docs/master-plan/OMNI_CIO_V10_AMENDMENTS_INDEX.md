@@ -2,7 +2,7 @@
 
 Status: **ACTIVE PROGRAM INDEX**
 
-This index exists so future engineering/AI sessions can restore OWNER-approved V10 clarifications from GitHub instead of depending on chat memory.
+This index exists so future engineering/AI sessions restore OWNER-approved V10 clarifications from GitHub instead of depending on chat memory.
 
 Documentation lifecycle: `../DOCUMENTATION_AUTHORITY_AND_LIFECYCLE.md`.
 
@@ -14,9 +14,9 @@ The synchronized V10 Master Plan remains the canonical base program:
 - `Omni-CIO_V10_Master_Plan_RU.pdf`;
 - `OMNI_CIO_V10_MASTER_PLAN.sha256`.
 
-Accepted amendments supplement/narrow the base plan without silently renumbering blocks or changing block weights. When an accepted amendment intentionally resolves an ambiguity, the amendment governs that implementation choice until a later OWNER-approved consolidation or superseding amendment.
+Accepted amendments supplement, narrow or explicitly supersede parts of the base plan without silently renumbering blocks or changing block weights. When amendments conflict, the later explicit OWNER-approved amendment governs the conflicting implementation choice. Historical evidence remains historical.
 
-Unmerged/closed draft PR text is not an accepted amendment. Current progress/current-next WP is read only from `../../knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
+Unmerged/closed draft PR text is not accepted authority. Current progress/current-next WP is read only from `../../knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
 
 ## Active amendments
 
@@ -24,197 +24,113 @@ Unmerged/closed draft PR text is not an accepted amendment. Current progress/cur
 
 `OMNI_CIO_V10_ACCOUNT_INDEPENDENCE_AMENDMENT.md`
 
-Historical owner-approved amendment already consolidated into the canonical Master Plan. Retained for audit/provenance.
+Historical OWNER-approved amendment already consolidated into the base plan; retained for audit/provenance.
 
-### 2. Concrete Execution Plan / AI Cortex / local-first autonomy
+### 2. Concrete Execution Plan / AI Cortex / Autonomy
 
 `OMNI_CIO_V10_CONCRETE_EXECUTION_PLAN_AMENDMENT.md`
 
-Machine-readable companion:
+Companion: `../architecture/V10_AI_CORTEX_CONTRACT.json`.
 
-`../architecture/V10_AI_CORTEX_CONTRACT.json`
+Locks deterministic Core as financial truth, verified broker-report accounting, bounded research/AI authority, event-driven autonomy, typed tools, recovery and no direct AI broker-write/admin authority. Earlier local-first/Personal-Node assumptions are superseded only where Amendment 10 explicitly changes the final public production topology.
 
-Locks the concrete 2026-08-07 OWNER decisions:
-
-- deterministic Core is the source of financial truth;
-- V10 accounting/portfolio target is verified broker HTML report import; no photo/OCR workflow;
-- MOEX is current-market enrichment and must not overwrite broker-period accounting facts;
-- local-first AI baseline is Qwen3.5-4B + Ollama;
-- no paid AI/search/agent SaaS is required for V10 Definition of Done;
-- AI is specialized as Omni-CIO Cortex rather than a general-purpose assistant;
-- tool authority is typed/allowlisted/fail-closed;
-- Web research is evidence-based, SearXNG-first and browser-fallback bounded;
-- 24/7 autonomy is event-driven with durable checkpoints, not an endless LLM loop;
-- LangGraph OSS is the initial orchestration candidate;
-- QLoRA is considered only after System Policy + tools + RAG + evals demonstrate a persistent gap;
-- AI never receives direct broker-write/admin/bypass authority;
-- OWNER local participation is minimized to reviewed PowerShell operations only when GitHub/code/CI cannot perform the action remotely.
-
-### 3. GitHub Pro Maximum Utilization / V10 Migration Implementation Contract
+### 3. GitHub Pro / Migration Implementation Contract
 
 `OMNI_CIO_V10_GITHUB_PRO_AND_MIGRATION_IMPLEMENTATION_AMENDMENT.md`
 
-Machine-readable companions:
-
-- `../architecture/V10_GITHUB_PRO_UTILIZATION_CONTRACT.json`;
-- `../architecture/V10_V9_TO_V10_PARITY_LEDGER.json`;
-- `../architecture/V10_COMPONENT_REUSE_MATRIX.json`;
-- `../architecture/V10_RELEASE_MANIFEST.schema.json`.
-
-Locks the OWNER-approved rule that GitHub Pro is the V10 engineering Control Plane and that V10 is a controlled productization/migration of the accepted V9 system, not a greenfield rewrite or feature-expansion program. It defines CI compute routing across GitHub-hosted runners and the Lenovo self-hosted runner, Actions-minute/cache/artifact budgets, Codespaces clean-room use, Releases/tag provenance, environment usage, dependency automation, parity/reuse rules, canonical acceptance oracles, WP execution format, cutover discipline, scope firewall, and a subscription-minimization policy.
+Companions include GitHub utilization, V9→V10 parity, component reuse and release-manifest contracts. Locks GitHub as engineering source of truth, controlled migration rather than greenfield rewrite, reproducibility, release provenance and WP implementation discipline.
 
 ### 4. Telegram Product / Interaction / Delivery Contract
 
 `OMNI_CIO_V10_TELEGRAM_PRODUCT_AND_INTERACTION_AMENDMENT.md`
 
-Planning checklist:
-
-`OMNI_CIO_V10_TELEGRAM_IMPLEMENTATION_CHECKLIST.md`
-
-Machine-readable companions:
-
-- `../architecture/V10_TELEGRAM_PRODUCT_CONTRACT.json`;
-- `../architecture/V10_TELEGRAM_MESSAGE_REGISTRY.json`.
-
-Locks the OWNER-approved product behavior for Block F before implementation:
-
-- Telegram is an OWNER-only private companion interface, not a second Core/Web/AI product;
-- long polling is the initial transport; public webhook ingress is not required;
-- the compact command surface is `/start`, `/help`, `/status`, `/portfolio`, `/alerts`, `/system`, `/app`;
-- Telegram consumes canonical Core DTOs and never owns financial calculations or broker-write logic;
-- BotFather/manual OWNER work is minimized to creating/confirming the bot and locally storing/rotating its token;
-- Mini App identity requires server-side validation of Telegram `initData`, freshness/replay controls and a short-lived V10 session;
-- message families, privacy levels and buttons are versioned in a registry;
-- alert delivery is durable, idempotent, deduplicated and edits an existing incident message when practical;
-- callback/deep-link values are opaque, server-validated and never authority by possession alone;
-- Telegram Mini App is the same Web frontend/codebase, not a second UI implementation;
-- AI conversation is not implemented early in Block F; WP32C later activates the same shared Omni-CIO Cortex for Web and Telegram after AI prerequisites/evals;
-- degraded modes preserve deterministic commands where Core remains available;
-- no recurring paid Telegram/bot middleware/SaaS is required for V10 Definition of Done.
-
-This amendment is planning authority only and does not start Block F or change the current implementation sequence by itself.
+Companions include Telegram product/message registries and implementation checklist. Telegram remains an adapter to the same Core/Web product. Historical OWNER-only product wording is superseded by Amendment 9: final Telegram is USER-scoped to the authenticated Omni-CIO account/tenant.
 
 ### 5. Autonomous Portfolio Governance / Zero-Custody / Commercial Model
 
 `OMNI_CIO_V10_AUTONOMOUS_PORTFOLIO_GOVERNANCE_AND_COMMERCIAL_MODEL_AMENDMENT.md`
 
-Machine-readable / legal companions:
+Companions include governance, sanctions/universe, legal and license/update contracts.
 
-- `../architecture/V10_AUTONOMOUS_PORTFOLIO_GOVERNANCE_CONTRACT.json`;
-- `../architecture/V10_RUSSIAN_MARKET_UNIVERSE_AND_SANCTIONS_POLICY.json`;
-- `../architecture/V10_ZERO_CUSTODY_LICENSE_UPDATE_CONTRACT.json`;
-- `../legal/V10_RU_COMMERCIAL_LEGAL_GATES.md`.
-
-This amendment locks the OWNER-approved product definition across the existing A-J program without renumbering blocks or crediting implementation progress:
-
-- the central product is autonomous portfolio governance, not a dashboard/chat/trading robot;
-- the deterministic system operates 24/7; Cortex is an on-demand bounded research/interpretation/negotiation specialist that the system or OWNER may invoke;
-- every held asset receives explicit health/freshness/trend state and monitoring intensity is risk/materiality based;
-- the system dynamically screens the supported broker universe through a Russian-market-only policy, sanctions/custody hard gates, eligibility, liquidity/data-quality and asset-class rules;
-- sanctions `BLOCKED` assets cannot be new BUY candidates; naive name-only screening is insufficient;
-- diversification is multi-dimensional and optimizer output may be `NO_CHANGE`, one-to-one replacement, one-to-many split or multi-position rebalance;
-- the normal user output is one ranked concrete primary proposal rather than an unordered idea catalogue;
-- proposal rejection/revision creates a bounded OWNER dialogue and versioned soft preference/constraint update; hard safety policy cannot be overridden by chat;
-- Real execution remains cash-only BUY/SELL after immutable OWNER approval and fresh preflight; no margin/leverage/uncovered short/transfers/withdrawals;
-- private investment state and broker secrets remain Personal Node zero-custody by default;
-- commercial access uses a full 7-day trial then fixed 1/3/6/12 month manual prepaid periods; no auto-renewal/recurring charge;
-- supported Personal Nodes automatically converge to approved STABLE releases through a signed/verified/rollback-safe updater;
-- commercial launch is fail-closed on explicit Russian-law personal-data, consumer, payment/KKT, broker-terms, investment-advisory/autoconsulting and production legal gates.
-
-The amendment also narrows the AI contract: the **system** is the primary 24/7 autonomous actor, not an endlessly-running LLM.
-
-This is planning authority only. It does not start billing, updater, Portfolio Guardian, Real execution or any later block.
+Portfolio-governance, sanctions/custody, optimizer, immutable proposal/approval, Real-execution safeguards and legal gates remain active. Its 7-day trial, fixed-term paid access, premium-expiry behavior and mandatory Personal-Node zero-custody topology are **superseded for the initial public launch where they conflict with Amendment 10**. Future monetization remains deferred optional scope.
 
 ### 6. Identity / Multi-Tenant Account / Authentication
 
 `OMNI_CIO_V10_IDENTITY_MULTI_TENANT_ACCOUNT_AND_AUTHENTICATION_AMENDMENT.md`
 
-Architecture / machine-readable companions:
+Companions:
 
 - `../architecture/ADR-0010-identity-multitenant-authentication.md`;
 - `../architecture/V10_IDENTITY_AUTHENTICATION_CONTRACT.json`;
 - `../operations/V10_IDENTITY_AND_BROKER_CONNECTION_SECURITY_NOTES.md`.
 
-Locks the OWNER-approved 2026-08-10 identity/account direction while preserving existing safety/legal gates:
+Locks internal Omni-CIO account identity, Telegram/VK authentication, one-account/one-tenant baseline, server-side sessions, database-enforced tenant isolation and tenant-owned `BrokerConnection` READ/optional TRADE credentials. Its prohibition on a centrally hosted tenant-private data model is superseded only by Amendment 10's explicit managed-cloud public baseline, subject to security/privacy/legal/broker gates.
 
-- an internal Omni-CIO user account is authoritative; Telegram and VK ID are authentication providers, not business/account IDs;
-- ordinary login methods are Telegram Login and VK ID; no Omni-CIO password database or Google login is required for the ordinary path;
-- one user account owns one isolated tenant in the baseline model and may link both Telegram and VK identities after proof of both;
-- server-side revocable sessions provide remembered login without making a phone/browser authoritative state;
-- provider display names/profile data are never sufficient for automatic account merge;
-- public multi-user readiness requires API plus database-enforced tenant isolation and cross-scope tests across jobs/cache/AI/backups;
-- broker credentials belong to tenant-owned `BrokerConnection` objects and normal provisioning occurs only through authenticated Web settings;
-- T-Invest READ and optional TRADE credentials remain separate; execution is allowed only for the exact broker-account intersection independently verified through both credentials;
-- a broad token may bind multiple broker accounts, while an account-specific token binds only the account exposed by the broker;
-- transfer/withdrawal authority remains outside V10;
-- the central Identity/Commercial plane is minimal and is not authorized to become a centralized portfolio/broker-secret/private-history database;
-- public multi-user activation remains disabled until external-Web security, cross-tenant isolation, broker-terms, personal-data, investment-advisory, capacity and commercial legal gates are accepted;
-- WP15 live credential evidence was moved from ordinary PowerShell UX to the reviewed authenticated Web broker-provisioning flow.
-
-This amendment changed product/account interpretation and selected acceptance sequencing only where explicitly stated. Historical references to then-future Block E work are interpreted at the amendment's acceptance time; current implementation state comes from the canonical status file.
-
-### 7. Browser-Only Phone Engineering / Headless Personal Node Operations
+### 7. Browser-Only Phone Engineering / Headless Node Operations
 
 `OMNI_CIO_V10_PHONE_ONLY_ENGINEERING_AND_HEADLESS_NODE_OPERATIONS_AMENDMENT.md`
 
-Machine-readable / operations companions:
+Companions:
 
 - `../architecture/V10_PHONE_ONLY_ENGINEERING_CONTRACT.json`;
 - `../operations/V10_PHONE_ENGINEERING_RUNBOOK.md`.
 
-Locks the OWNER-approved 2026-08-15 operating model without renumbering WPs or bypassing WP22A:
-
-- the OWNER's normal engineering and product-control surface is the phone browser only;
-- GitHub remains engineering source of truth and the primary automation hub; routine code, PR, CI, deployment and supported provider operations are performed directly through GitHub/Actions/APIs rather than recurring OWNER dashboard work;
-- native phone applications are not required for normal OWNER operation;
-- external-service signup/login should use GitHub social login when the provider supports it, while runtime/workload automation prefers federated or narrowly scoped machine credentials;
-- Lenovo/the replacement Personal Node operates headlessly; local PowerShell is a physical/admin recovery exception, not routine OWNER UX;
-- significant external services require a documented service-selection gate covering security, WP fit, GitHub automation, browser-only UX, reliability/recovery, privacy/data custody, price, lock-in, operational burden, legal/broker constraints and performance;
-- free/already-paid options are preferred only when they satisfy the owning V10 security/reliability requirements; paid service remains allowed after documented insufficiency and OWNER approval;
-- Cloudflare Access + Tunnel is an **initial WP22A clientless candidate**, not accepted WP22A implementation merely because the amendment exists;
-- Tailscale may remain useful for machine/CI/private infrastructure, but a phone path that requires a native device client does not satisfy the OWNER browser-only requirement;
-- no second Web App/control plane, public unauthenticated ingress, broker-write authority, Real execution authority, GitHub bypass or arbitrary remote PowerShell is created by this amendment;
-- `app:app`, `trading_methods=false`, `REAL_TRADING_ENABLED=false`, zero-custody boundaries and protected V9 rollback remain unchanged.
-
-This amendment changes the operational/access design constraint only. WP22A remains the current functional package and must separately pass its full security/recovery/OWNER evidence Exit Gate before WP23 can start.
+Keeps OWNER engineering browser-first and Lenovo headless for CI/recovery. Its earlier interpretation of Lenovo/replacement Personal Node as the final V10 private runtime is superseded for **public production** by Amendment 10. Lenovo remains engineering/self-hosted-CI/acceptance/recovery/rollback and must not be the public availability anchor.
 
 ### 8. Engineering Quality / Pre-CI / Green Merge
 
 `OMNI_CIO_V10_ENGINEERING_QUALITY_AND_GREEN_MERGE_AMENDMENT.md`
 
-Machine-readable / operations / engineering-memory companions:
+Companions include engineering-quality contract, OWNER handoff, CI cost control, Failure Learning Ledger and governance workflow.
 
-- `../architecture/V10_ENGINEERING_QUALITY_GATE_CONTRACT.json`;
-- `../operations/V10_OWNER_ACTION_HANDOFF_STANDARD.md`;
-- `../operations/V10_CI_COST_CONTROL_STANDARD.md`;
-- `../operations/V10_ENGINEERING_FAILURE_LEARNING_LEDGER.md`;
-- `../../.github/instructions/owner-handoff-and-runtime.instructions.md`;
-- `../../.github/workflows/v10-engineering-governance.yml`.
+Locks root-cause-first engineering, all applicable exact-head checks actually `success`, no fake PASS, exact-head invalidation after commits, focused PRs, squash merge, post-merge verification and bounded OWNER handoffs. This governance remains fully active for Amendments 9/10 and subsequent implementation.
 
-Locks the OWNER-approved 2026-08-16 engineering discipline for all remaining V10 work:
+### 9. Product User / Engineering Authority Boundary
 
-- CI is the independent verifier, not the normal interactive debugger;
-- every material RED requires root-cause analysis, repository-wide analogous-pattern/blast-radius review and a permanent regression/guard where reusable;
-- expensive full CI starts only after applicable cheap/focused preflight and full-diff review are clean;
-- material dependency/API changes require current official support/security/compatibility review; `latest` is not automatically best and accepted code is not rewritten merely for novelty;
-- new programming languages are allowed only for concrete component-level correctness/security/isolation/performance/systems-integration reasons; polyglot sprawl is forbidden;
-- Omni-CIO components should form bounded failure domains with explicit degraded states while money/security authority remains fail-closed;
-- every **applicable** exact-head check must actually run and conclude `success` before merge; skipped/neutral/cancelled/pending/infrastructure-red checks are not GREEN project evidence;
-- irrelevant workflows must be fixed at routing/trigger level rather than left as misleading skipped/cancelled PR checks;
-- any commit after final GREEN invalidates the old final evidence and requires a fresh exact-head cycle;
-- normal PR closure is GREEN -> full review -> squash merge; unmerged/superseded work is never accepted implementation;
-- OWNER product acceptance (phone/browser/UX/login/logout/portfolio comparison) occurs only after implementation merge and required post-merge Regression Shield GREEN;
-- pre-merge OWNER involvement is limited to genuinely non-delegable prerequisites such as external consent/account bootstrap, domain/payment decision, narrow credential bootstrap or physical/admin action;
-- OWNER-only handoffs require a verified direct official target link when stable, exact scope/action/result/STOP contract and no vague page discovery;
-- V10 Web/API runtime remains on the approved Personal Node; a new Render.com V10 host is not authorized by convenience;
-- OWNER-controlled GitHub Actions budget/payment state is never silently changed; current zero-budget hard stop is handled by truthful zero-cost routing without fake clean-room PASS;
-- unexpected material RED after declared preflight readiness requires a confidence postmortem and reusable learning is persisted in the Failure Learning Ledger.
+`OMNI_CIO_V10_PRODUCT_USER_AND_ENGINEERING_AUTHORITY_BOUNDARY_AMENDMENT.md`
 
-**Acceptance evidence:** governance PR #322 was accepted into exact `main` `1c05390d9cf31b8cc68a90a5d7cbd6428ffe7791`; post-merge Regression Shield #1498 / run `31959959791` completed **SUCCESS** on that exact main. The amendment is therefore **ACTIVE**. Its acceptance did not change WP numbering/progress, complete WP22A, open public ingress, add broker-write authority or unlock WP23.
+Locks the 2026-08-17/18 OWNER decision that:
+
+- PROJECT OWNER is not a special Omni-CIO product role;
+- PROJECT OWNER uses the same `OmniCIOUserAccount -> Tenant -> Session` path as every supported USER;
+- GitHub/cloud-provider/Windows/CI authority stays outside product identity;
+- WP22 `/system` is USER-facing diagnostics, not a cross-tenant OWNER/admin cabinet;
+- WP22A is interpreted as **External Web Access / Product Authentication Security Gate**;
+- Telegram and product-domain approval/negotiation are USER-scoped;
+- provider/edge identity must not silently mint/select an Omni-CIO tenant session.
+
+This amendment carries forward the valid intent of closed-unmerged PR #327; that PR itself is historical and not accepted authority.
+
+### 10. Public Free Multi-User Hosted Runtime
+
+`OMNI_CIO_V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_AMENDMENT.md`
+
+Machine-readable companion:
+
+`../architecture/V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_CONTRACT.json`
+
+Locks the 2026-08-18 OWNER launch direction:
+
+- final product is a public modern multi-user Web service reachable from ordinary Internet browsers/phones;
+- one account = one USER = one isolated tenant baseline;
+- public production must not depend on OWNER home public IP, Wi-Fi, router, LAN, cable/mobile uplink or Lenovo;
+- final production origin is an approved managed cloud runtime selected through the service-selection gate;
+- Lenovo remains engineering/self-hosted CI/controlled acceptance/recovery/rollback, not public production availability;
+- initial registered-user access is free: `BILLING_ENABLED=false`, `TRIAL_ENABLED=false`, `SUBSCRIPTION_ENFORCEMENT=false`, `PREMIUM_FEATURE_GATING=false`;
+- future monetization is `DEFERRED_OPTIONAL`, not part of initial access;
+- each USER enters/replaces/revokes their own tenant-scoped broker READ and optional TRADE credentials in authenticated Web settings;
+- no broker credential is global/shared across users or returned to the browser after submission;
+- READ/TRADE exact broker-account intersection and all Real-money safeguards remain fail-closed;
+- managed hosted tenant-private state/secret custody is allowed only after exact security/privacy/personal-data/broker/legal gates accept the design;
+- public multi-user is now the approved **target**, while `PUBLIC_MULTI_USER_ENABLED=false` remains the implementation default until the corrected WP22A/launch gates pass;
+- current T-Invest public-service terms remain a separate fail-closed gate: user-supplied tokens do not waive broker restrictions;
+- payment/KKT gates are not required merely for free access, but become applicable if monetization is later enabled.
+
+Amendment 10 explicitly supersedes conflicting Personal-Node-final-product, permanent-private, initial-paid-access and central-private-data prohibitions in Amendments 5/6/7 and older WP22A wording. Non-conflicting safety, tenant isolation, legal, broker separation, recovery and engineering rules remain active.
 
 ## Draft/superseded planning material
 
-Open or historical PR descriptions must not be treated as active plan authority merely because they contain V10 ideas. In particular, any older unmerged planning PR that conflicts with an accepted amendment must be closed/superseded rather than merged as a competing roadmap.
+Open or historical PR descriptions must not be treated as active plan authority merely because they contain V10 ideas. Closed-unmerged PR #327 is superseded by Amendments 9/10 and is historical only. Older unmerged Personal-Node/cloud migration or OWNER-only external-access planning is likewise non-authoritative when it conflicts with accepted amendments.
 
 ## Required reading order for new V10 engineering sessions
 
@@ -225,7 +141,8 @@ Open or historical PR descriptions must not be treated as active plan authority 
 5. `OMNI_CIO_V10_PROGRAM_LOCK.md`;
 6. `OMNI_CIO_V10_MASTER_PLAN.md`;
 7. this Amendments Index;
-8. all active amendments listed here;
-9. `../../knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`;
-10. current-WP architecture/runbook;
-11. current `main`, open PR/issues and GitHub Actions.
+8. all active amendments listed here, especially 9 and 10 for product/public-hosting semantics;
+9. machine-readable contracts;
+10. `../../knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`;
+11. current-WP architecture/runbook;
+12. current `main`, open PR/issues and GitHub Actions.
