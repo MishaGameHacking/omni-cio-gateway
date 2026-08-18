@@ -245,8 +245,11 @@ def test_inherited_wp17_guard_recognizes_reviewed_wp22a_source_only() -> None:
     text = WP17_SECURITY_GUARD.read_text(encoding="utf-8")
     assert "WP22A_EXECUTION_CONTRACT" in text
     assert "wp22a_source_gate" in text
-    assert "live public ingress has been activated" in text
-    assert "source-gate presence never proves" in text
+    assert (
+        "live ingress or provider activation is never inferred from source-marker presence"
+        in text
+    )
+    assert "live activation not implied" in text
     assert "if bind_all_marker in lowered_backend" in text
     assert 'if "tailscale funnel" in lowered_backend' in text
     assert "if marker in lowered_backend and not wp22a_source_gate" in text
