@@ -5,44 +5,39 @@ Owning package: **WP22A — External Web Access / Product Authentication Securit
 
 ## 1. Authority transition
 
-The earlier WP22A Phase-A selection was optimized for a browser-only PROJECT OWNER accessing the Lenovo Personal Node through Cloudflare Access + Tunnel. That design remains historical/pre-production engineering evidence, but it does not satisfy the final public multi-user product requirement.
+The earlier Phase-A design optimized browser-only PROJECT OWNER access to the Lenovo Personal Node through Cloudflare Access + Tunnel. It remains historical/pre-production evidence only. The accepted public-hosted target requires a normal public Web service independent of OWNER home infrastructure and practically reachable from ordinary Russian networks.
 
-The OWNER-approved public-hosted correction requires a normal public Web service whose availability does **not** depend on PROJECT OWNER home IP/Wi-Fi/router/LAN/Internet/Lenovo and whose normal Russian USER path remains practically reachable from ordinary Russian networks.
+Current machine/human decision authority is:
 
-The implementation review recorded in:
+- `V10_WP22A_MANAGED_CLOUD_ORIGIN_CONTRACT.json`;
+- `V10_WP22A_MANAGED_CLOUD_ORIGIN_DECISION.md`.
 
-- `docs/architecture/V10_WP22A_MANAGED_CLOUD_ORIGIN_DECISION.md`;
-- `docs/architecture/V10_WP22A_MANAGED_CLOUD_ORIGIN_CONTRACT.json`;
-
-now recommends **Cloud.ru Evolution** as the managed-cloud provider boundary, pending exact recurring-cost approval by PROJECT OWNER before any provider resource is created.
-
-Historical lifecycle marker for regression provenance only: `Production-origin provider selection is not yet made`. That statement described the reopened gate before the current Phase-1 recommendation and is **superseded as current human authority** by this section. Machine-readable current authority is the managed-cloud-origin contract, whose state is `RECOMMENDED_PENDING_OWNER_COST_APPROVAL` and `provider_apply_authorized=false`.
+Historical lifecycle marker for regression provenance only: `Production-origin provider selection is not yet made`. That statement described the reopened gate before the current recommendation and is superseded as current authority.
 
 No provider mutation is authorized by this recommendation.
 
 ## 2. Required final outcome
 
-The recommended production architecture must continue to satisfy all accepted V10 properties:
+The architecture must preserve:
 
-- ordinary modern phone/desktop browser over normal Internet;
-- reliable normal access for the intended Russian USER population;
-- public HTTPS hostname;
-- explicit **public TLS/certificate lifecycle** with reviewed issuance, renewal, runtime delivery and rollback;
-- no native VPN/device client for ordinary USER access;
-- **managed-cloud production origin independent of OWNER home infrastructure**;
-- one source-controlled Web App/Core, no competing site/repository/runtime stack;
-- Telegram/VK -> internal Omni-CIO account -> server-side USER session as product authentication;
+- ordinary browser access from modern phones/desktops;
+- reliable normal Russian USER reachability;
+- public HTTPS with reviewed certificate lifecycle;
+- no VPN/native-client requirement for ordinary product use;
+- no OWNER home IP/Wi-Fi/router/LAN/Lenovo availability dependency;
+- one source-controlled Web App/Core;
+- Telegram/VK -> internal Omni-CIO account -> server-side session;
 - API + database-enforced tenant isolation;
-- tenant-scoped encrypted broker/private-data boundary;
-- secure secrets/backup/recovery/replacement-runtime design;
-- GitHub-controlled deployment/release provenance and rollback;
+- tenant-scoped encrypted secrets/private state;
+- backup/recovery/replacement-runtime capability;
+- GitHub-controlled deployment/release provenance;
 - measured capacity/abuse controls;
-- privacy/personal-data/legal and broker-terms compatibility;
-- preserved `app:app`, `trading_methods=false`, `REAL_TRADING_ENABLED=false` until their owning future gates.
+- privacy/personal-data/legal and broker-term gates;
+- `app:app`, `trading_methods=false`, `REAL_TRADING_ENABLED=false` and protected V9 rollback.
 
-## 3. Current recommendation
+## 3. Recommended production boundary
 
-Pending OWNER recurring-cost approval, the recommended boundary is:
+Pending OWNER recurring-cost approval:
 
 ```text
 ordinary Internet browser
@@ -51,26 +46,25 @@ ordinary Internet browser
 Cloud.ru Evolution DNS
         |
         v
-Cloud.ru Evolution L4 Network Load Balancer
+Evolution L4 NLB
+2 AZ / 1 resource unit per AZ
 public IP + health checks
-recommended initial: 2 resource units
-(provider minimum: 1)
         |
         +-------------------+
         |                   |
         v                   v
 Evolution VM A         Evolution VM B
-Nginx TLS + Omni-CIO   Nginx TLS + Omni-CIO
+AZ-A / Nginx TLS       AZ-B / Nginx TLS
         |                   |
         +---------+---------+
                   |
                   v
-         private VPC/subnet
+       private VPC/subnets
                   |
                   v
        Managed PostgreSQL
-       Business / Multi-AZ
-        Primary + Standby
+ Business Cluster HA / Multi-AZ
+  Primary + 2 Standby / 3 AZ
                   |
           +-------+-------+
           |               |
@@ -79,82 +73,64 @@ Nginx TLS + Omni-CIO   Nginx TLS + Omni-CIO
  / Key Management    / Object Storage
 ```
 
-Binding recommendation properties:
+Binding properties:
 
-- provider/runtime: Cloud.ru Evolution VMs in Russia;
-- runtime: two application VMs behind Evolution NLB, not one permanent application node;
+- provider/runtime: Cloud.ru Evolution, Russia;
+- runtime: two application VMs, **one per different availability zone**;
+- NLB: **two selected availability zones, one resource unit in each**; two total units are the current V10 georedundant reference configuration;
 - DNS: Evolution DNS;
-- TLS certificate lifecycle: Evolution Certificate Manager + Let's Encrypt;
-- TLS termination: Nginx on the runtime VMs because Evolution NLB is L4;
-- database: private Managed PostgreSQL **Business**, two-node **Primary/Standby Multi-AZ**;
-- database public IP: forbidden;
-- Standard Managed PostgreSQL: not accepted as the initial public-production database mode;
-- tenant/runtime secret store: Secret Management with Key Management or reviewed provider system key;
-- outbound Internet: reviewed sNAT;
-- provider automation: Terraform for resources proven supported by the exact pinned Evolution provider, with a reviewed Cloud.ru Public API fallback where that exact Terraform path is not accepted;
-- public broker connector: fail-closed independently of public Web/account availability.
+- TLS: Evolution Certificate Manager + Let's Encrypt; Nginx terminates TLS on runtime VMs behind L4 NLB;
+- database: private Managed PostgreSQL **Business Cluster HA**, three nodes (`Primary + 2 Standby`) in **three different availability zones**;
+- Standard and two-node Primary/Standby are not the initial public-production database baseline;
+- public PostgreSQL endpoint: forbidden;
+- secrets: Secret Management + Key Management or separately reviewed system-key boundary;
+- outbound: reviewed sNAT;
+- provider automation: exact pinned Terraform provider where proven, Public API fallback where exact Terraform support is not accepted;
+- public T-Invest connector: independently fail-closed.
 
-Cloud.ru positions Managed PostgreSQL Standard for testing/small applications and Business for commercial/high-load services. Business places the cluster in isolated infrastructure inside the client's VPC and documents a stronger security boundary. Business Primary/Standby can place its two nodes in different availability zones and then withstand one availability-zone failure. The documented Business selectable resource bounds begin at 4 vCPU, 8 GB RAM and 40 GB disk per node; exact currently selectable flavor combinations still require pre-purchase revalidation.
+Cloud.ru documents Standard for testing/small applications and Business for commercial/high-load services with stronger client-VPC isolation. Its current Managed PostgreSQL reliability guide explicitly recommends the **three-node multi-zone Cluster HA** topology for production; it retains quorum after one zone fails. Cloud.ru also exposes three VM availability zones and recommends placing application VMs in different zones for higher availability. The NLB quickstart builds a georedundant balancer across availability zones, and resource-unit placement across zones determines fault tolerance.
 
-Current Cloud.ru Load Balancer documentation permits a one-resource-unit configuration. Omni-CIO deliberately recommends **two resource units initially** because resource-unit count contributes to performance/fault tolerance; two is an engineering redundancy choice, not a provider minimum.
+Cloud.ru currently permits one NLB resource unit in each selected zone. The V10 reference therefore uses **2 AZ x 1 unit/AZ = 2 total resource units**, rather than two units in one zone.
 
-There is a current first-party documentation conflict for NLB automation. The Load Balancer limitations page says Terraform is not supported and points to the Evolution console/Public API, while the current Terraform for Evolution reference exposes first-class `cloudru_evolution_nlb_network_load_balancer` and `cloudru_evolution_nlb_target_group` resources. Neither statement is silently discarded. Before provider apply, source-controlled tooling must pin the exact Cloud.ru Terraform provider version and prove the NLB schema/configuration through deterministic validation plus a reviewed non-mutating provider plan/acceptance step. If that exact path passes, Terraform is preferred; otherwise the reviewed Public API is the fallback. **Provider apply remains blocked until this conflict is resolved by exact toolchain evidence.**
+## 4. NLB automation documentation conflict — fail closed
 
-Cloud.ru Container Apps is **not** the selected primary runtime. Current Cloud.ru documentation states that Container Apps does not support Managed PostgreSQL connectivity and that an external database opened to the Internet is not a safe scenario; therefore the secure reviewed path uses VMs + private VPC + Managed PostgreSQL.
+Current first-party Cloud.ru docs conflict:
 
-## 4. Cloudflare primary edge rejected for normal Russian USER traffic
+- the NLB limitations page says management is via Evolution console/Public API and Terraform is unsupported;
+- the current Terraform for Evolution reference exposes `cloudru_evolution_nlb_network_load_balancer` and `cloudru_evolution_nlb_target_group` resources.
 
-Cloudflare remains useful historical engineering knowledge, but it is no longer a strong candidate for the **primary or sole** Russian-user production edge.
+Before provider apply, source-controlled tooling must pin the exact Cloud.ru Terraform provider and prove the NLB schema/config through deterministic validation plus a reviewed non-mutating provider plan/acceptance step. If that exact path passes, Terraform is preferred; otherwise reviewed Public API is the fallback. Documentation inconsistency is a blocker, not permission to guess.
 
-Cloudflare's own incident analysis from 2025 and support guidance updated on 2026-04-23 report systematic Russian-ISP throttling of Cloudflare-protected websites, with Russian visitors likely to experience failures or unusable sites. That conflicts with the V10 requirement that a normal USER in Russia can open Omni-CIO through an ordinary Internet browser without a VPN/native client.
+Cloud.ru Container Apps remains rejected as the primary runtime because current provider documentation does not support the required private Managed PostgreSQL path without an unsafe Internet-open database workaround.
 
-Therefore:
+## 5. Cloudflare primary edge rejected for normal Russian USER traffic
 
-- Cloudflare Tunnel is removed from the recommended normal public product path;
-- Cloudflare proxied HTTP/TLS must not be the sole/primary Russian-user edge;
-- Cloudflare/GitHub/provider membership remains forbidden as product identity;
-- any future Cloudflare secondary/non-primary role requires a separate reachability, cross-border/personal-data, cost and failure-mode review.
+Cloudflare remains historical engineering knowledge but must not be the primary or sole Russian-user production edge. Current Cloudflare first-party incident/support guidance reports systematic Russian-ISP throttling that can make Cloudflare-protected sites unavailable or unusable to Russian visitors.
 
-The earlier Phase-A Cloudflare source remains dormant historical regression evidence only and does not authorize final production use.
+Therefore Cloudflare Tunnel/proxied HTTP is removed from the normal public-product path. Any later secondary role requires separate reachability, cross-border/personal-data, cost and failure-mode review. Cloudflare/GitHub/provider identity remains forbidden as product identity.
 
-## 5. Russian personal-data boundary
+## 6. Reusable Phase-A controls
 
-For the intended Russian USER population, the primary identity/session/tenant data plane is Russia-region only unless a later legal review accepts a statutory exception.
+Reuse where semantically valid:
 
-The current official text of Federal Law No. 152-FZ Article 18 part 5 is treated as a production localization gate. Cloud.ru Evolution currently states that its infrastructure is located in the Russian Federation and that Evolution is attested for 152-FZ UZ-1.
-
-Provider attestation does **not** remove Omni-CIO's own operator, access-control, application-security, privacy, consent, notification or other legal duties. Production legal signoff remains mandatory. Cross-border processing remains fail-closed until separately reviewed.
-
-## 6. Reusable controls from accepted Phase A
-
-The following controls remain valuable and must be reused where semantically valid:
-
-- exact Host validation;
-- trusted reverse-proxy/protocol boundary;
+- Host allowlist;
+- explicit trusted proxy/protocol boundary;
 - Secure/HttpOnly/SameSite server-side session cookies;
-- session rotation, bounded idle/absolute lifetime, logout/revoke;
-- CSRF and exact Origin/Referer checks on unsafe requests;
+- bounded session lifetime, rotation, logout/revoke;
+- CSRF + exact Origin/Referer validation;
 - CORS deny-by-default;
 - bounded login/mutation rate limits;
-- HSTS, CSP, `nosniff`, restrictive referrer policy and `no-store` where appropriate;
+- HSTS/CSP/nosniff/restrictive referrer/no-store where applicable;
 - direct-origin/API negative tests;
-- fail-closed provider/runtime rollback;
-- provider/runtime secrets kept out of source/PR CI;
-- exact-head CI and post-merge Regression Shield.
+- fail-closed rollback;
+- provider secrets excluded from PR CI;
+- exact-head CI + post-merge Regression Shield.
 
-The following old assumptions are **not** reusable as final product authority:
-
-- Cloudflare account-member identity -> product USER session;
-- exact OWNER fingerprint as product login;
-- hard-coded OWNER user/tenant session bootstrap;
-- Lenovo loopback backend as final production origin;
-- Cloudflare proxied path as the only normal Russian USER path;
-- final user experience restricted to PROJECT OWNER;
-- permanent public multi-user disablement.
+Old final-product assumptions are not reusable: Cloudflare membership as product identity, exact OWNER fingerprint session bootstrap, Lenovo loopback as production origin, OWNER-only product access, or permanent public-multi-user disablement.
 
 ### 6.1 Historical Phase-A TLS markers — regression provenance only
 
-The accepted Phase-A implementation used the following Cloudflare-specific assumptions. They remain quoted only so inherited regression guards can recognize dormant historical source while WP22A is reworked:
+The accepted dormant Phase-A source used these Cloudflare-specific markers:
 
 - `Universal SSL`;
 - `active Cloudflare full-DNS zone`;
@@ -162,61 +138,43 @@ The accepted Phase-A implementation used the following Cloudflare-specific assum
 - `Cloudflare owns edge-certificate issuance, renewal and deployment`;
 - `X-Forwarded-Proto`.
 
-These are **not binding final public-hosted provider requirements**. The current recommendation instead uses Evolution DNS + Certificate Manager/Let's Encrypt + Nginx TLS behind Evolution NLB.
+They are historical regression markers, not current production requirements.
 
-## 7. DDoS/WAF and abuse-control boundary
+## 7. DDoS/WAF and abuse boundary
 
-Cloud.ru documents baseline infrastructure protection including channel-capacity DDoS protection and perimeter segmentation. That infrastructure control is useful but is not treated as an application WAF.
+Cloud.ru baseline infrastructure protection plus source-controlled Nginx/application controls are the initial base. Before public activation prove connection/request limits, Host, security headers, CSRF, Origin/Referer, CORS, session/tenant authorization, malformed/oversized request rejection and direct-origin bypass denial.
 
-Before public activation, the base source-controlled path must prove Nginx and application controls for request/connection limits, Host, HSTS/CSP/security headers, CSRF, Origin/Referer, CORS, server-side session/tenant authorization, malformed/oversized requests and direct-origin bypass.
+Managed Qrator/StormWall WAF/DDoS is not silently included because it changes recurring cost and TLS private-key custody; if load/abuse evidence requires it, that is a separate explicit WP22A cost/security decision.
 
-Cloud.ru also offers Qrator/StormWall DDoS/WAF services. They are **not silently included** in the base recommendation because current managed WAF options materially change recurring cost and TLS certificate/private-key custody. If abuse/load evidence requires a managed WAF, that becomes a separate explicit WP22A cost/security decision before public scale.
+## 8. Candidate disposition
 
-## 8. Provider comparison disposition
-
-### Cloud.ru Evolution
-
-**RECOMMENDED_PENDING_OWNER_COST_APPROVAL.** Strongest reviewed combination of Russian placement, private Managed PostgreSQL Business Multi-AZ, client-VPC isolation, Secret Management/KMS, native DNS/NLB/Certificate Manager and source-controlled Terraform/API automation. NLB automation remains a bounded pre-apply verification point because current first-party service and Terraform references conflict; exact pinned-provider evidence decides Terraform versus Public API fallback.
-
-### Timeweb Cloud
-
-**FALLBACK_LOWER_COST.** Russian regions, Managed PostgreSQL, private networking and Terraform/API support are attractive, but the current review did not establish an equivalent general native Secret Management/KMS boundary for tenant broker credentials.
-
-### Yandex Cloud
-
-**SECURITY_STRONGER_HIGHER_COST_ALTERNATIVE.** Mature Russian Managed PostgreSQL + Lockbox + KMS; retained if later availability/security requirements justify higher cost.
-
-### Render
-
-**REJECT_PRIMARY_PRODUCTION_DATA_PLANE** for public V10 Russian-user personal data because the reviewed regions do not include Russia and free Web/Postgres limitations are not production-suitable. Protected V9 `app:app` remains unchanged.
-
-### Cloudflare primary edge
-
-**REJECT_PRIMARY_OR_SOLE_RUSSIAN_USER_PRODUCTION_EDGE** because Cloudflare's own current support evidence says ISP throttling can make protected sites unusable for Russian users.
+- **Cloud.ru Evolution — RECOMMENDED_PENDING_OWNER_COST_APPROVAL.** Best reviewed combination of Russian placement, cross-AZ VMs/NLB, Business Cluster HA Multi-AZ PostgreSQL, Secret Management/KMS, DNS/certificate services and source-controlled Terraform/API automation.
+- **Timeweb Cloud — FALLBACK_LOWER_COST.** Russian regions/private networking/Managed PostgreSQL/API/Terraform are useful, but this review did not establish an equivalent general native Secret Management/KMS boundary for tenant broker credentials.
+- **Yandex Cloud — SECURITY_STRONGER_HIGHER_COST_ALTERNATIVE.** Strong Russian Managed PostgreSQL + Lockbox/KMS alternative.
+- **Render — REJECT_PRIMARY_PRODUCTION_DATA_PLANE.** Not suitable as the new Russian-user primary personal-data plane; protected V9 `app:app` remains untouched.
+- **Cloudflare primary edge — REJECT_PRIMARY_OR_SOLE_RUSSIAN_USER_PRODUCTION_EDGE.** Russian-user reachability conflict.
 
 ## 9. Cost boundary
 
-Current official Cloud.ru tariffs give a lower-bound engineering estimate, not a purchase quote:
+Current Cloud.ru tariffs give a lower-bound engineering estimate, not a purchase quote. At 720 hours, using the documented Business resource lower bounds only as a reference floor:
 
-- one reference Business PostgreSQL node at documented lower bounds (`4 vCPU / 8 GB / 40 GB`): about **7,099.23 RUB/month**;
-- Business Primary/Standby Multi-AZ, two such nodes: about **14,198.46 RUB/month**;
+- one reference Business PostgreSQL node (`4 vCPU / 8 GB / 40 GB`): about **7,099.23 RUB/month**;
+- three-node Business Cluster HA Multi-AZ: about **21,297.69 RUB/month**;
 - two reference application VMs with 20 GB boot disks: about **1,722.99 RUB/month**;
 - sNAT: about **149.33 RUB/month**;
-- **recommended two Evolution NLB resource units** + public IP: about **1,305.89 RUB/month**, before traffic;
+- NLB **2 AZ x 1 resource unit/AZ** + public IP: about **1,305.89 RUB/month**, before traffic;
 - one public Evolution DNS zone for 30 days: about **32.94 RUB/month**;
 - Evolution Certificate Manager: currently free.
 
-Reference initial stack: about **17,409.60 RUB/month**.
+Reference initial stack: about **24,508.83 RUB/month**.
 
-The PostgreSQL amount uses current tariff unit prices and documented Business lower bounds as a reference floor. Cloud.ru notes that not every possible flavor combination is necessarily available; the exact selectable Business flavor must be verified immediately before purchase.
+The database figure does not prove an exact `4 vCPU / 8 GB / 40 GB` flavor is currently selectable; Cloud.ru states that not every possible flavor combination is necessarily available. Exact database/VM flavors, availability zones, NLB shape and the complete cart must be revalidated before purchase.
 
-The NLB cost intentionally prices the two-unit Omni-CIO redundancy recommendation. A one-unit provider configuration is permitted but is not the initial V10 recommendation.
+Excluded: domain registration, extra Object Storage, traffic, monitoring beyond base evidence, managed external WAF/DDoS, larger flavors required by load testing and later scale.
 
-Excluded from that lower bound: domain registration, extra Object Storage/traffic/monitoring, managed external WAF/DDoS, larger VM/database flavors required by load testing and later scale.
+A new recurring paid commitment requires explicit OWNER approval after the exact cap and shutdown/delete path are presented.
 
-A new recurring paid provider commitment requires explicit OWNER approval after the exact cap and shutdown/delete path are presented.
-
-Until that approval **and** exact NLB automation-path validation:
+Until that approval and exact NLB automation validation:
 
 - `provider_apply_authorized=false`;
 - `PUBLIC_MULTI_USER_ENABLED=false`;
@@ -226,16 +184,14 @@ Until that approval **and** exact NLB automation-path validation:
 
 ## 10. Broker/public-service separation
 
-Production-origin selection does not imply T-Invest public connector permission. Current accepted V10 policy keeps broker-backed public functionality fail-closed until separate contractually valid permission/compliant design is accepted.
-
-The public Web/account platform can therefore proceed while T-Invest public production features remain disabled.
+Production-origin selection does not imply T-Invest public connector permission. Public Web/account work can proceed while broker-backed public production remains fail-closed pending contractually valid permission/compliant design.
 
 ## 11. Exit from service-selection gate
 
-The technical recommendation may become accepted source authority only after:
+Technical source acceptance requires:
 
 1. current official provider/reachability review;
-2. explicit production-origin/edge choice satisfying no-home and normal-user reachability;
+2. explicit production-origin/edge choice satisfying no-home and ordinary-user reachability;
 3. data/secret/tenant isolation design;
 4. recovery/rollback/capacity/cost/legal analysis;
 5. deterministic regression guards;
@@ -245,4 +201,4 @@ The technical recommendation may become accepted source authority only after:
 9. squash merge;
 10. exact-main post-merge Regression Shield GREEN.
 
-Even after source acceptance, **provider apply remains blocked** until PROJECT OWNER explicitly approves the current recurring cost commitment and exact pinned-toolchain evidence selects an accepted NLB automation path. WP23 remains locked behind the full corrected WP22A Exit Gate.
+Even after source acceptance, provider apply remains blocked until PROJECT OWNER explicitly approves the current recurring-cost commitment and exact pinned-toolchain evidence accepts the NLB automation path. WP23 remains locked behind the full corrected WP22A Exit Gate.
