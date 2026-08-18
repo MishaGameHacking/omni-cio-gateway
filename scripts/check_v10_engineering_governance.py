@@ -14,7 +14,9 @@ AMENDMENT = (
 )
 INDEX = ROOT / "docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md"
 CONTRACT = ROOT / "docs/architecture/V10_ENGINEERING_QUALITY_GATE_CONTRACT.json"
-PUBLIC_CONTRACT = ROOT / "docs/architecture/V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_CONTRACT.json"
+PUBLIC_CONTRACT = (
+    ROOT / "docs/architecture/V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_CONTRACT.json"
+)
 LEDGER = ROOT / "docs/operations/V10_ENGINEERING_FAILURE_LEARNING_LEDGER.md"
 OWNER_STANDARD = ROOT / "docs/operations/V10_OWNER_ACTION_HANDOFF_STANDARD.md"
 COPILOT_POLICY = ROOT / ".github/instructions/owner-handoff-and-runtime.instructions.md"
@@ -26,7 +28,9 @@ WORKFLOW = ROOT / ".github/workflows/v10-engineering-governance.yml"
 
 def _load_text(path: Path, failures: list[str]) -> str:
     if not path.is_file():
-        failures.append(f"missing engineering governance file: {path.relative_to(ROOT)}")
+        failures.append(
+            f"missing engineering governance file: {path.relative_to(ROOT)}"
+        )
         return ""
     try:
         return path.read_text(encoding="utf-8")
@@ -170,7 +174,10 @@ def validate_contract(failures: list[str]) -> None:
     if owner.get("pre_merge_exception") != "GENUINELY_NON_DELEGABLE_PREREQUISITE_ONLY":
         failures.append("OWNER pre-merge exception is wider than prerequisite-only")
 
-    if owner_handoff.get("standard") != "docs/operations/V10_OWNER_ACTION_HANDOFF_STANDARD.md":
+    if (
+        owner_handoff.get("standard")
+        != "docs/operations/V10_OWNER_ACTION_HANDOFF_STANDARD.md"
+    ):
         failures.append("OWNER handoff standard path mismatch")
     for key in (
         "direct_official_link_required_when_stable",
@@ -202,7 +209,9 @@ def validate_contract(failures: list[str]) -> None:
         runtime_hosting.get("v10_public_production_host")
         != "APPROVED_MANAGED_CLOUD_RUNTIME_SELECTED_BY_OWNING_GATE"
     ):
-        failures.append("V10 public production host must be selected by the managed-cloud owning gate")
+        failures.append(
+            "V10 public production host must be selected by the managed-cloud owning gate"
+        )
     _expect_bool(
         runtime_hosting,
         "managed_cloud_runtime_required_for_public_product",
@@ -228,7 +237,9 @@ def validate_contract(failures: list[str]) -> None:
         runtime_hosting.get("lenovo_role")
         != "ENGINEERING_SELF_HOSTED_CI_ACCEPTANCE_RECOVERY_ROLLBACK"
     ):
-        failures.append("Lenovo role must remain engineering/CI/acceptance/recovery/rollback")
+        failures.append(
+            "Lenovo role must remain engineering/CI/acceptance/recovery/rollback"
+        )
     _expect_bool(
         runtime_hosting,
         "lenovo_may_be_final_public_production_origin",
@@ -282,7 +293,9 @@ def validate_contract(failures: list[str]) -> None:
         runtime_hosting.get("cloudflare_role")
         != "EDGE_DNS_TLS_WAF_DDOS_ORIGIN_PROTECTION_CANDIDATE_NOT_PRODUCT_IDENTITY"
     ):
-        failures.append("Cloudflare role must remain edge/origin protection, not product identity")
+        failures.append(
+            "Cloudflare role must remain edge/origin protection, not product identity"
+        )
     _expect_bool(
         runtime_hosting,
         "cloudflare_home_lenovo_tunnel_satisfies_final_public_hosting",
@@ -313,26 +326,73 @@ def validate_contract(failures: list[str]) -> None:
         broker = public_contract.get("broker_credentials", {})
         activation = public_contract.get("activation", {})
         safety = public_contract.get("safety", {})
-        if not all(isinstance(item, dict) for item in (product, production, access, broker, activation, safety)):
+        if not all(
+            isinstance(item, dict)
+            for item in (product, production, access, broker, activation, safety)
+        ):
             failures.append("public runtime contract sections must be objects")
         else:
-            _expect_bool(product, "public_multi_user_target", True, "public_product", failures)
-            _expect_bool(product, "project_owner_is_special_product_role", False, "public_product", failures)
-            _expect_bool(production, "managed_cloud_origin_required", True, "public_production", failures)
-            _expect_bool(production, "lenovo_as_public_production_origin_allowed", False, "public_production", failures)
+            _expect_bool(
+                product, "public_multi_user_target", True, "public_product", failures
+            )
+            _expect_bool(
+                product,
+                "project_owner_is_special_product_role",
+                False,
+                "public_product",
+                failures,
+            )
+            _expect_bool(
+                production,
+                "managed_cloud_origin_required",
+                True,
+                "public_production",
+                failures,
+            )
+            _expect_bool(
+                production,
+                "lenovo_as_public_production_origin_allowed",
+                False,
+                "public_production",
+                failures,
+            )
             _expect_bool(access, "billing_enabled", False, "initial_access", failures)
             _expect_bool(access, "trial_enabled", False, "initial_access", failures)
-            _expect_bool(access, "subscription_enforcement", False, "initial_access", failures)
-            _expect_bool(access, "premium_feature_gating", False, "initial_access", failures)
+            _expect_bool(
+                access, "subscription_enforcement", False, "initial_access", failures
+            )
+            _expect_bool(
+                access, "premium_feature_gating", False, "initial_access", failures
+            )
             if broker.get("ownership") != "TENANT_SCOPED_BROKER_CONNECTION":
                 failures.append("public broker credentials must remain tenant-scoped")
-            _expect_bool(broker, "cross_tenant_secret_access_allowed", False, "broker_credentials", failures)
-            _expect_bool(activation, "implementation_default_public_multi_user_enabled", False, "activation", failures)
-            _expect_bool(activation, "target_after_exit_gates_public_multi_user_enabled", True, "activation", failures)
+            _expect_bool(
+                broker,
+                "cross_tenant_secret_access_allowed",
+                False,
+                "broker_credentials",
+                failures,
+            )
+            _expect_bool(
+                activation,
+                "implementation_default_public_multi_user_enabled",
+                False,
+                "activation",
+                failures,
+            )
+            _expect_bool(
+                activation,
+                "target_after_exit_gates_public_multi_user_enabled",
+                True,
+                "activation",
+                failures,
+            )
             if safety.get("app_entrypoint") != "app:app":
                 failures.append("public plan must preserve app:app")
             _expect_bool(safety, "trading_methods", False, "public_safety", failures)
-            _expect_bool(safety, "real_trading_enabled", False, "public_safety", failures)
+            _expect_bool(
+                safety, "real_trading_enabled", False, "public_safety", failures
+            )
 
     _expect_bool(
         learning,
@@ -341,10 +401,15 @@ def validate_contract(failures: list[str]) -> None:
         "failure_learning",
         failures,
     )
-    if learning.get("ledger") != "docs/operations/V10_ENGINEERING_FAILURE_LEARNING_LEDGER.md":
+    if (
+        learning.get("ledger")
+        != "docs/operations/V10_ENGINEERING_FAILURE_LEARNING_LEDGER.md"
+    ):
         failures.append("failure-learning ledger path mismatch")
 
-    _expect_bool(isolation, "bounded_failure_domains", True, "fault_isolation", failures)
+    _expect_bool(
+        isolation, "bounded_failure_domains", True, "fault_isolation", failures
+    )
     _expect_bool(
         isolation,
         "money_and_security_authority_fail_closed",
@@ -362,7 +427,9 @@ def validate_contract(failures: list[str]) -> None:
     if protected.get("broker_write_authority_added") is not False:
         failures.append("engineering governance must not add broker-write authority")
     if protected.get("transfer_withdrawal_authority") is not False:
-        failures.append("engineering governance must not add transfer/withdrawal authority")
+        failures.append(
+            "engineering governance must not add transfer/withdrawal authority"
+        )
     if protected.get("v9_rollback_protected") is not True:
         failures.append("V9 rollback must remain protected")
     if protected.get("master_plan_sequence_preserved") is not True:
@@ -529,7 +596,9 @@ def main() -> int:
     print("Exact-head applicable checks: SUCCESS-only project policy")
     print("OWNER product acceptance: post-merge/post-Regression-Shield")
     print("OWNER handoff: direct official link + bounded action contract enforced")
-    print("V10 public runtime: managed-cloud target; OWNER home/Lenovo not public origin")
+    print(
+        "V10 public runtime: managed-cloud target; OWNER home/Lenovo not public origin"
+    )
     print("Failure-learning ledger: present")
     print("Fault-isolation contract: present")
     return 0
