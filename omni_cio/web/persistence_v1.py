@@ -6,11 +6,7 @@ import secrets
 from typing import Any
 
 from omni_cio.adapters.tinvest_read_v1 import BrokerAccountBindingV1
-from omni_cio.contracts.v1.domain import (
-    OWNER_TENANT_ID,
-    BrokerAccountV1,
-    BrokerProvider,
-)
+from omni_cio.contracts.v1.domain import BrokerAccountV1, BrokerProvider
 from omni_cio.persistence.migration import ConnectionLike
 from omni_cio.persistence.repository import model_record_sha256
 from omni_cio.web.broker_vault_v1 import new_read_connection_secret_ref
@@ -156,12 +152,17 @@ class PostgresBrokerConnectionRepositoryV1:
         bindings: tuple[BrokerAccountBindingV1, ...],
         now: datetime,
     ) -> None:
-        if tenant_id != OWNER_TENANT_ID:
-            raise PermissionError("WP17 private acceptance admits only OWNER tenant")
         if not bindings:
             raise ValueError("broker connection requires at least one verified account")
         timestamp = _utc(now)
         with self._connection.transaction():
+            tenant = self._connection.execute(
+                "SELECT 1 FROM omni_cio_v10.tenants WHERE tenant_id = %s",
+                (tenant_id,),
+            ).fetchone()
+            if tenant is None:
+                raise PermissionError("BROKER_CONNECTION_TENANT_UNKNOWN")
+
             for binding in bindings:
                 account = BrokerAccountV1(
                     broker_account_id=binding.broker_account_id,
