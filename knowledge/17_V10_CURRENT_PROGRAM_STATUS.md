@@ -177,7 +177,7 @@ Therefore:
 - Block E / WP22A Phase 2 — **AUTHORIZED CURRENT INCREMENT**;
 - Block E / WP22A overall — **CURRENT / NOT YET COMPLETE**;
 - Block F / WP23+ — **LOCKED**;
-- public multi-user activation — **APPROVED TARGET / IMPLEMENTATION FLAG OFF UNTIL EXIT GATES**;
+- public multi-user activation — **APPROVED TARGET / IMPLEMENTATION FLAG REMAINS OFF UNTIL EXIT GATES**;
 - public Internet production ingress — **OFF / LOCKED**;
 - broker write / Real execution — **UNCHANGED / NOT AUTHORIZED**.
 
