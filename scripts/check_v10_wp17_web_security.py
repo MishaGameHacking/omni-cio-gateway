@@ -52,7 +52,7 @@ def _wp22a_source_gate_active(failures: list[str]) -> bool:
     # WP17 only needs proof that a reviewed corrected WP22A source contract owns
     # the already-accepted external-access markers. The contract lifecycle may
     # advance from planning hold to current implementation without changing the
-    # durable public/no-home/source-gate semantics. Live ingress or provider
+    # durable public/no-home/source-gate semantics. live ingress or provider
     # activation is never inferred from source-marker presence.
     required_markers = (
         "CORRECTED PUBLIC-HOSTED TARGET",
