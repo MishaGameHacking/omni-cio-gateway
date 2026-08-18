@@ -45,6 +45,9 @@ def test_recommendation_has_private_database_and_secret_boundary() -> None:
     assert recommendation["runtime"] == "EVOLUTION_VM"
     assert recommendation["runtime_region_requirement"] == "RUSSIA"
     assert recommendation["database"] == "CLOUD_RU_MANAGED_POSTGRESQL_PRIVATE_IP"
+    assert recommendation["database_mode"] == "STANDARD"
+    assert recommendation["database_topology"] == "PRIMARY_STANDBY_TWO_NODE"
+    assert recommendation["database_primary_standby_required_for_initial_production"] is True
     assert recommendation["database_public_ip_allowed"] is False
     assert recommendation["network"] == "CLOUD_RU_EVOLUTION_VPC_PRIVATE_SUBNET"
     assert recommendation["secret_store"] == "CLOUD_RU_SECRET_MANAGEMENT"
@@ -58,6 +61,7 @@ def test_recommendation_has_private_database_and_secret_boundary() -> None:
         reasoning["managed_secret_store_required_for_tenant_broker_credentials"]
         is True
     )
+    assert reasoning["database_single_node_is_initial_production_recommendation"] is False
     assert reasoning["owner_home_availability_dependency_allowed"] is False
 
     localization_gate = "russian_federal_law_152_fz_article_18_part_5_localization_gate"
@@ -67,6 +71,8 @@ def test_recommendation_has_private_database_and_secret_boundary() -> None:
     )
     assert legal[localization_gate] is True
     assert legal[outside_russia] is False
+    assert legal["cloud_ru_evolution_152_fz_uz_1_infrastructure_claim_verified_from_provider_docs"] is True
+    assert legal["provider_compliance_does_not_replace_omni_cio_operator_obligations"] is True
     assert legal["production_legal_signoff_required"] is True
 
 
@@ -89,11 +95,23 @@ def test_candidate_ranking_keeps_bounded_fallbacks() -> None:
     render = candidates["RENDER"]
 
     assert cloud_ru["result"] == "RECOMMENDED_PENDING_COST_APPROVAL"
+    assert "EVOLUTION_PLATFORM_152_FZ_UZ_1" in cloud_ru["strengths"]
+    assert "MANAGED_POSTGRESQL_PRIMARY_STANDBY" in cloud_ru["strengths"]
     assert timeweb["result"] == "FALLBACK_LOWER_COST"
     assert yandex["result"] == "SECURITY_STRONGER_HIGHER_COST_ALTERNATIVE"
     assert render["result"] == "REJECT_PRIMARY_PRODUCTION_DATA_PLANE"
     assert "NO_RUSSIA_REGION" in render["reasons"]
     assert "FREE_POSTGRES_EXPIRES_AFTER_30_DAYS" in render["reasons"]
+
+
+def test_reference_cost_uses_ha_database_and_remains_non_binding() -> None:
+    cost = _payload()["cost_boundary"]
+
+    assert cost["cloud_ru_reference_pg_primary_standby_2x_1vcpu_2gb_20gb_monthly_rub_approx"] == 3792.0528
+    assert cost["cloud_ru_reference_minimum_stack_monthly_rub_approx"] == 4802.8752
+    assert cost["reference_minimum_stack_excludes_domain_extra_object_storage_traffic_monitoring_and_later_scale"] is True
+    assert cost["exact_selected_vm_price_revalidation_required_before_purchase"] is True
+    assert cost["estimate_is_not_purchase_quote"] is True
 
 
 def test_cloudflare_is_edge_not_product_identity() -> None:
