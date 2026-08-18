@@ -15,7 +15,9 @@ ROLE_AMENDMENT = (
     ROOT
     / "docs/master-plan/OMNI_CIO_V10_PRODUCT_USER_AND_ENGINEERING_AUTHORITY_BOUNDARY_AMENDMENT.md"
 )
-CONTRACT = ROOT / "docs/architecture/V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_CONTRACT.json"
+CONTRACT = (
+    ROOT / "docs/architecture/V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_CONTRACT.json"
+)
 
 LIVE_PRODUCT_AUTHORITY = (
     ROOT / "AGENTS.md",
@@ -144,7 +146,9 @@ def validate_contract(failures: list[str]) -> None:
 
 
 def validate_live_authority(failures: list[str]) -> None:
-    forbidden_current = "WP22A — External Web Access / OWNER Authentication Security Gate"
+    forbidden_current = (
+        "WP22A — External Web Access / OWNER Authentication Security Gate"
+    )
     for path in LIVE_PRODUCT_AUTHORITY:
         text = read_text(path, failures)
         if not text:
