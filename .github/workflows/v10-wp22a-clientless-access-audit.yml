@@ -156,33 +156,50 @@ jobs:
           terraform_lock = Path('infrastructure/cloudflare/wp22a/.terraform.lock.hcl').read_text(encoding='utf-8')
           api = Path('apps/web/src/app-shell/api.ts').read_text(encoding='utf-8')
 
-          required = ['Cloudflare Access + Tunnel', '127.0.0.1:8765', 'WP23 remains LOCKED', 'trading_methods=false', 'REAL_TRADING_ENABLED=false']
-          for marker in required:
+          planning_required = [
+              'managed-cloud Omni-CIO Web/API',
+              'WP23+: LOCKED',
+              'trading_methods=false',
+              'REAL_TRADING_ENABLED=false',
+              'historical/dormant engineering evidence',
+          ]
+          for marker in planning_required:
               if marker not in contract and marker not in selection:
-                  raise SystemExit(f'WP22A contract marker missing: {marker}')
+                  raise SystemExit(f'WP22A corrected planning marker missing: {marker}')
+          for marker in (
+              'Production-origin provider selection is not yet made',
+              'No provider mutation is authorized',
+              'managed-cloud production origin independent of OWNER home infrastructure',
+          ):
+              if marker not in selection:
+                  raise SystemExit(f'WP22A provider-neutral planning marker missing: {marker}')
+
+          # The already-accepted Phase-A Cloudflare/Lenovo source remains dormant
+          # historical evidence during this planning-only PR. Validate its safety
+          # properties without treating it as the selected final public architecture.
           for marker in ('Cf-Access-Authenticated-User-Email', 'Cf-Access-Jwt-Assertion', '__Host-omni_v10_session', '__Host-omni_v10_csrf'):
               if marker not in middleware:
-                  raise SystemExit(f'WP22A middleware marker missing: {marker}')
+                  raise SystemExit(f'WP22A dormant Phase-A middleware marker missing: {marker}')
           if 'OMNI_V10_WEB_EXTERNAL_PROVIDER' not in factory or 'cloudflare' not in factory:
-              raise SystemExit('WP22A remote factory is not Cloudflare-bound')
+              raise SystemExit('WP22A dormant Phase-A remote factory safety source drifted')
           if '--host 127.0.0.1' not in launcher or '--no-proxy-headers' not in launcher:
-              raise SystemExit('WP22A runtime is not loopback/no-proxy-header bound')
+              raise SystemExit('WP22A dormant Phase-A runtime lost loopback/no-proxy-header boundary')
           for marker in ('--token-file', 'Get-FileHash -Algorithm SHA256', 'BlockRunnerLoopback', 'Read-Host "Cloudflare Tunnel token'):
               if marker not in provisioner:
-                  raise SystemExit(f'WP22A Lenovo provisioner missing: {marker}')
+                  raise SystemExit(f'WP22A dormant Phase-A Lenovo source missing: {marker}')
           for marker in ('data "cloudflare_zero_trust_organization"', 'data "cloudflare_zero_trust_access_identity_providers"', 'idp.config.restrict_to_account_members', 'cloudflare_zero_trust_access_application', 'cloudflare_account_member', 'required  = true', 'http_status:404', 'http://127.0.0.1:8765', 'deny_unmatched_requests == true'):
               if marker not in terraform:
-                  raise SystemExit(f'WP22A Cloudflare intent missing: {marker}')
+                  raise SystemExit(f'WP22A dormant Phase-A Cloudflare source missing: {marker}')
           if 'resource "cloudflare_zero_trust_organization"' in terraform or 'resource "cloudflare_zero_trust_access_identity_provider"' in terraform:
-              raise SystemExit('WP22A must consume the existing Zero Trust organization/default Cloudflare IdP instead of creating duplicates')
+              raise SystemExit('WP22A dormant Phase-A source must not create duplicate Zero Trust organization/IdP')
           for marker in ('registry.terraform.io/cloudflare/cloudflare', 'version     = "5.22.0"', 'zh:ca4bf16742a7e59319a482f003d32f6f6abbc5fbf862916ce1a136278e6d420d'):
               if marker not in terraform_lock:
-                  raise SystemExit(f'WP22A Terraform lock marker missing: {marker}')
+                  raise SystemExit(f'WP22A dormant Phase-A Terraform lock marker missing: {marker}')
           if 'X-Omni-CSRF' not in api or 'localStorage' in api or 'sessionStorage' in api:
               raise SystemExit('WP22A frontend session/CSRF contract invalid')
           if 'Tailscale-User-' in middleware or '.ts.net' in middleware:
-              raise SystemExit('WP22A clean rebuild contains Tailscale identity coupling')
-          print('WP22A clientless source contract OK')
+              raise SystemExit('WP22A dormant Phase-A source contains Tailscale identity coupling')
+          print('WP22A corrected planning + dormant Phase-A source safety contract OK')
           PY
 
       - name: Verify accepted Web and repository guards
