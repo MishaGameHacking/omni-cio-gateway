@@ -51,6 +51,11 @@ def test_recommendation_uses_native_russia_reachable_edge() -> None:
     assert recommendation["public_load_balancer"] == (
         "CLOUD_RU_EVOLUTION_L4_NLB"
     )
+    assert recommendation["public_load_balancer_min_resource_units"] == 2
+    assert recommendation["public_load_balancer_automation"] == (
+        "CLOUD_RU_PUBLIC_API_PLUS_GITHUB_SOURCE_CONTROL"
+    )
+    assert recommendation["public_load_balancer_terraform_supported_currently"] is False
     assert recommendation["certificate_manager"] == (
         "CLOUD_RU_EVOLUTION_CERTIFICATE_MANAGER_LETS_ENCRYPT"
     )
@@ -58,6 +63,8 @@ def test_recommendation_uses_native_russia_reachable_edge() -> None:
     assert recommendation["product_identity_at_edge"] is False
     assert reasoning["russian_user_primary_edge_must_be_reliably_reachable_from_russia"] is True
     assert reasoning["runtime_single_node_is_initial_production_recommendation"] is False
+    assert reasoning["github_source_controlled_provider_automation_required"] is True
+    assert reasoning["terraform_only_provider_automation_required"] is False
 
 
 def test_cloudflare_primary_edge_is_rejected_for_russian_user_reachability() -> None:
@@ -162,6 +169,12 @@ def test_candidate_ranking_keeps_bounded_fallbacks() -> None:
     assert "EVOLUTION_DNS" in cloud_ru["strengths"]
     assert "EVOLUTION_L4_LOAD_BALANCER_WITH_HEALTH_CHECKS" in cloud_ru["strengths"]
     assert "EVOLUTION_CERTIFICATE_MANAGER_LETS_ENCRYPT" in cloud_ru["strengths"]
+    assert "PUBLIC_API_FOR_NLB" in cloud_ru["strengths"]
+    assert (
+        "CURRENT_NLB_V2_DOCS_STATE_TERRAFORM_NOT_SUPPORTED_SO_NLB_"
+        "AUTOMATION_REQUIRES_PUBLIC_API"
+        in cloud_ru["known_tradeoffs"]
+    )
     assert timeweb["result"] == "FALLBACK_LOWER_COST"
     assert yandex["result"] == "SECURITY_STRONGER_HIGHER_COST_ALTERNATIVE"
     assert render["result"] == "REJECT_PRIMARY_PRODUCTION_DATA_PLANE"
@@ -180,7 +193,7 @@ def test_reference_cost_includes_two_vms_nlb_dns_and_ha_database() -> None:
         "monthly_rub_approx"
     )
     nlb_cost = (
-        "cloud_ru_reference_nlb_one_resource_unit_plus_public_ip_"
+        "cloud_ru_reference_nlb_min_two_resource_units_plus_public_ip_"
         "monthly_rub_approx"
     )
     excluded_costs = (
@@ -190,10 +203,10 @@ def test_reference_cost_includes_two_vms_nlb_dns_and_ha_database() -> None:
 
     assert cost[pg_ha_cost] == 3792.0528
     assert cost[two_vms] == 1722.9888
-    assert cost[nlb_cost] == 727.6079952
+    assert cost[nlb_cost] == 1305.8879904
     assert cost["cloud_ru_reference_public_dns_zone_30_days_monthly_rub_approx"] == 32.94
     assert cost["cloud_ru_certificate_manager_monthly_rub"] == 0
-    assert cost["cloud_ru_reference_initial_stack_monthly_rub_approx"] == 6424.9175952
+    assert cost["cloud_ru_reference_initial_stack_monthly_rub_approx"] == 7003.1975904
     assert cost[excluded_costs] is True
     assert cost["exact_selected_vm_price_revalidation_required_before_purchase"] is True
     assert cost["estimate_is_not_purchase_quote"] is True
