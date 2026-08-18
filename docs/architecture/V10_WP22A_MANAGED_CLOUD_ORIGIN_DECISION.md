@@ -89,6 +89,7 @@ Nginx TLS + Omni-CIO   Nginx TLS + Omni-CIO
                   |
                   v
        Managed PostgreSQL
+       Business / Multi-AZ
         Primary + Standby
                   |
           +-------+-------+
@@ -108,11 +109,11 @@ Public DNS: Evolution DNS.
 
 Certificate lifecycle: Evolution Certificate Manager + Let's Encrypt. TLS terminates at Nginx on the runtime VMs because the NLB is L4. Certificate/private-key delivery must use a dedicated least-privilege runtime identity; private key material must never enter GitHub, PR CI, logs or artifacts.
 
-The current Cloud.ru Load Balancer documentation is authoritative for the service behavior:
+The current Cloud.ru Load Balancer documentation is authoritative for service behavior:
 
 - provider minimum: **1 resource unit**;
 - resource-unit count is a manual performance/fault-tolerance setting;
-- this V10 recommendation deliberately starts with **2 resource units** to avoid making the single permitted unit the only NLB processing boundary;
+- this V10 recommendation deliberately starts with **2 resource units**;
 - public IP supported;
 - target health checks supported.
 
@@ -121,7 +122,7 @@ Cloud.ru's current official documentation is **internally inconsistent about Ter
 - the Load Balancer limitations page says management is available through the Evolution console and Public API and says Terraform is not supported;
 - the current Terraform for Evolution reference simultaneously exposes first-class `cloudru_evolution_nlb_network_load_balancer` and `cloudru_evolution_nlb_target_group` resources, including public address, rules and health-check schema.
 
-Because both are current first-party sources, this Phase-1 decision must not pretend either statement silently wins. The production apply path therefore fails closed until a later source-controlled toolchain step pins the exact Cloud.ru Terraform provider version and proves the NLB resource path with deterministic provider-schema/config validation and a reviewed non-mutating provider plan/acceptance step. If that exact pinned provider path is proven supported, Terraform is preferred for NLB as well; if it is not, the reviewed Cloud.ru Public API is the fallback. **No NLB provider apply is authorized while this documentation conflict is unresolved by exact toolchain evidence.**
+Because both are current first-party sources, this Phase-1 decision must not pretend either statement silently wins. The production apply path therefore fails closed until a later source-controlled toolchain step pins the exact Cloud.ru Terraform provider version and proves the NLB resource path with deterministic provider-schema/config validation and a reviewed non-mutating provider plan/acceptance step. If that exact pinned provider path is proven supported, Terraform is preferred for NLB; if it is not, the reviewed Cloud.ru Public API is the fallback. **No NLB provider apply is authorized while this documentation conflict is unresolved by exact toolchain evidence.**
 
 Primary sources:
 
@@ -136,13 +137,28 @@ Primary sources:
 
 ## 7. Managed PostgreSQL
 
-Initial database recommendation: **Standard, two-node Primary/Standby**, private IP only.
+Initial database recommendation: **Business, two-node Primary/Standby, Multi-AZ, private connectivity only**.
 
-A single-node database is not the initial public-production recommendation. Primary/Standby bounds node failure at a lower entry cost, but Standard remains single-AZ and must not be mislabeled as Business Multi-AZ.
+Cloud.ru's current Managed PostgreSQL documentation distinguishes the deployment modes materially:
 
-The application and database use the same reviewed project/private network boundary. A public PostgreSQL port is forbidden.
+- **Standard** is positioned for testing and small applications and is single-AZ;
+- **Business** is positioned for commercial/high-load services, places the cluster in isolated infrastructure inside the client's VPC and documents a higher-security boundary;
+- Business Primary/Standby may place the two nodes in different availability zones, in which case the cluster can withstand one availability-zone failure;
+- the documented Business selectable bounds begin at **4 vCPU, 8 GB RAM and 40 GB disk per node**. The docs also warn that not every possible flavor combination is necessarily available at any given time.
+
+For a public multi-user Omni-CIO service holding tenant identity/session/private-state data, Standard is therefore **not** the initial production recommendation. The lower-cost Standard option remains suitable for non-production testing only where the owning implementation explicitly allows it.
+
+The application and database use the same reviewed private network boundary. A public PostgreSQL endpoint is forbidden.
 
 Provider automatic backup is useful but does not replace V10 portable/off-runtime recovery, integrity/hash verification, corrupt-backup rejection and restore rehearsal.
+
+Primary sources:
+
+- deployment modes and resource bounds: `https://cloud.ru/docs/paas-postgresql/ug/topics/concepts__deployment-mode`;
+- Primary/Standby and Multi-AZ behavior: `https://cloud.ru/docs/paas-postgresql/ug/topics/concepts__replication`;
+- quickstart mode guidance: `https://cloud.ru/docs/paas-postgresql/ug/topics/quickstart`;
+- current tariffs: `https://cloud.ru/documents/tariffs/evolution/managed-postgresql`;
+- pricing rules: `https://cloud.ru/docs/paas-postgresql/ug/topics/pricing`.
 
 ## 8. Secret boundary
 
@@ -181,7 +197,7 @@ Managed Qrator/StormWall WAF/DDoS is **not silently included** because it materi
 
 ### Cloud.ru Evolution
 
-**RECOMMENDED_PENDING_OWNER_COST_APPROVAL.** Best reviewed combination of Russia placement, private Managed PostgreSQL, Primary/Standby, native DNS/NLB/Certificate Manager, Secret Management/KMS and source-controlled Terraform/API automation. NLB automation remains explicitly fail-closed until the conflicting first-party Terraform documentation is resolved by exact pinned-provider evidence.
+**RECOMMENDED_PENDING_OWNER_COST_APPROVAL.** Best reviewed combination of Russia placement, private Managed PostgreSQL Business Multi-AZ, client-VPC isolation, native DNS/NLB/Certificate Manager, Secret Management/KMS and source-controlled Terraform/API automation. NLB automation remains explicitly fail-closed until the conflicting first-party Terraform documentation is resolved by exact pinned-provider evidence.
 
 ### Timeweb Cloud
 
@@ -201,18 +217,21 @@ Managed Qrator/StormWall WAF/DDoS is **not silently included** because it materi
 
 ## 12. Current cost boundary
 
-Current official Cloud.ru references provide a lower-bound engineering estimate, not a quote or capacity guarantee.
+Current official Cloud.ru tariffs provide a lower-bound engineering estimate, not a quote or capacity guarantee.
 
-At 720 hours:
+At 720 hours, using the documented Business minimum resource bounds as a **reference floor**:
 
-- two reference `1 vCPU / 2 GB / 20 GB` PostgreSQL nodes: about **3,792.05 RUB/month**;
+- one `4 vCPU / 8 GB / 40 GB` Business PostgreSQL node: about **7,099.23 RUB/month**;
+- Business Primary/Standby Multi-AZ, two such nodes: about **14,198.46 RUB/month**;
 - two reference `1 vCPU / 2 GB / 30% CPU` application VMs with 20 GB boot disks: about **1,722.99 RUB/month**;
 - sNAT: about **149.33 RUB/month**;
 - **recommended two NLB resource units** + public IP: about **1,305.89 RUB/month**, before traffic charges;
 - one public Evolution DNS zone for 30 days: about **32.94 RUB/month**;
 - Evolution Certificate Manager: currently **0 RUB**.
 
-Reference initial stack: about **7,003.20 RUB/month**.
+Reference initial stack: about **17,409.60 RUB/month**.
+
+The PostgreSQL estimate uses current tariff unit prices and the documented Business lower bounds; it is **not proof that an exact `4 vCPU / 8 GB / 40 GB` flavor is currently selectable**. Exact database flavor, VM flavor, zones and the complete provider cart must be revalidated immediately before purchase.
 
 The NLB amount intentionally prices the two-unit V10 redundancy recommendation; Cloud.ru currently permits a one-unit configuration, but that cheaper single-unit option is not the initial Omni-CIO recommendation.
 
@@ -223,11 +242,10 @@ Excluded:
 - Internet/NLB traffic;
 - monitoring beyond base/source-controlled evidence;
 - managed external WAF/DDoS;
-- larger VMs required by load testing;
-- later scale;
-- Business Multi-AZ PostgreSQL.
+- larger VM/database flavors required by load testing;
+- later scale.
 
-The exact provider cart must be revalidated immediately before purchase. OWNER must be shown the exact recurring cap and the exact resource-delete/shutdown path before provider apply.
+OWNER must be shown the exact recurring cap and the exact resource-delete/shutdown path before provider apply.
 
 ## 13. Provider automation boundary
 
@@ -253,7 +271,7 @@ Before public activation prove:
 - Secret Management/KMS rotation/recovery;
 - certificate renewal/replacement without private-key leakage;
 - tenant isolation after restore;
-- rollback to last accepted V10 release;
+- rollback to last accepted release;
 - protected V9 rollback until responsible cutover;
 - provider exit using portable PostgreSQL data and source-controlled runtime/automation contracts.
 
