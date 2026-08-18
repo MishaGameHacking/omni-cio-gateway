@@ -1,6 +1,6 @@
 # Omni-CIO V10 — WP22A Execution Contract
 
-Status: **PLANNING HOLD / CORRECTED PUBLIC-HOSTED TARGET / FUNCTIONAL IMPLEMENTATION MUST NOT RESUME UNTIL PLANNING PR ACCEPTED**  
+Status: **CURRENT / CORRECTED PUBLIC-HOSTED TARGET / PLANNING PR #329 ACCEPTED / FUNCTIONAL IMPLEMENTATION AUTHORIZED UNDER THIS CONTRACT**  
 Owning package: **WP22A — External Web Access / Product Authentication Security Gate**
 
 ## 1. Authority and sequencing
@@ -11,11 +11,11 @@ Owning package: **WP22A — External Web Access / Product Authentication Securit
 - WP16–WP22: COMPLETE.
 - WP22A: CURRENT / NOT COMPLETE.
 - WP23+: LOCKED.
-- Current planning correction: Product USER separation + Public Free Multi-User Hosted Runtime.
+- Accepted planning authority: Product USER separation + Public Free Multi-User Hosted Runtime.
 
 The earlier accepted Phase-A OWNER/clientless implementation remains historical/dormant engineering evidence. It is **not** final product authority where it assumes Cloudflare OWNER identity, an OWNER-only product session, Lenovo/home origin or permanent public-multi-user disablement.
 
-No functional WP22A code/provider mutation begins while the current planning correction is unaccepted.
+The corrected planning prerequisite is satisfied by PR #329 merged to exact `main` `5f535c0ced9514866bd3680042f3ba0bb012f866` plus post-merge Regression Shield #1503 / run `32129304332` SUCCESS with both required jobs GREEN. Functional WP22A work may therefore proceed under this contract, starting with the service/hosting architecture decision. This does not authorize public production activation, privileged provider mutation, a paid-provider purchase, broker-write expansion or WP23 work.
 
 ## 2. Corrected purpose
 
@@ -211,22 +211,23 @@ Before public activation, the selected architecture must prove:
 - monitoring that distinguishes application, cloud-provider and external broker/provider degradation;
 - no ordinary public-user outage solely because Lenovo is powered off or OWNER home Internet is unavailable.
 
-## 14. Planning-to-implementation transition
+## 14. Planning acceptance evidence
 
-The current planning PR must first complete:
+The corrected planning transition is accepted and complete:
 
-1. exact-head applicable CI all `success`;
-2. full diff and authority review;
-3. zero unresolved blockers;
-4. squash merge with exact-head guard;
-5. exact new `main` verification;
-6. required post-merge Regression Shield `success`.
+1. PR #329 final exact-head applicable CI completed `success`;
+2. full diff/authority review completed with zero unresolved blockers;
+3. PR #329 was squash-merged to exact `main` `5f535c0ced9514866bd3680042f3ba0bb012f866`;
+4. post-merge Regression Shield #1503 / run `32129304332` completed `success`;
+5. both required post-merge jobs completed `success`:
+   - `Dependency, code and secret security`;
+   - `Quality, contracts and coverage`.
 
-Only after that acceptance may a fresh WP22A implementation branch be created from the exact accepted main.
+This evidence authorizes a fresh corrected WP22A implementation branch from the latest accepted main. It does not itself satisfy any later WP22A implementation/production Exit Gate.
 
 ## 15. Corrected WP22A implementation phases
 
-After planning acceptance, implementation should proceed as focused increments inside the same WP22A sequence, without mixing later WPs:
+Implementation proceeds as focused increments inside the same WP22A sequence, without mixing later WPs:
 
 1. **Service/hosting architecture decision** — select managed-cloud origin and edge/data/secret boundaries; no real secrets in PR.
 2. **Product-auth / tenant-security correction** — remove OWNER edge-identity product-session assumptions and prove USER session/tenant isolation.
