@@ -37,6 +37,8 @@ The architecture must preserve:
 - privacy/personal-data/legal and broker-term gates;
 - `app:app`, `trading_methods=false`, `REAL_TRADING_ENABLED=false` and protected V9 rollback.
 
+A tunnel whose sole production origin is the PROJECT OWNER's home Lenovo/network is forbidden as the final public-product path. This compatibility marker records the accepted no-home rule; the current recommendation uses the managed-cloud topology below.
+
 ## 3. Recommended production boundary
 
 Pending OWNER recurring-cost approval:
