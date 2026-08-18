@@ -46,7 +46,7 @@ def test_current_repository_satisfies_engineering_governance() -> None:
         in completed.stdout
     )
     assert "OWNER handoff: direct official link" in completed.stdout
-    assert "Render.com not V10 hosting target" in completed.stdout
+    assert "managed-cloud target; OWNER home/Lenovo not public origin" in completed.stdout
 
 
 def test_contract_accepts_only_success_for_applicable_merge_checks() -> None:
@@ -86,18 +86,33 @@ def test_owner_handoff_requires_direct_verified_link_and_stop_contract() -> None
     assert "Mandatory OWNER handoff format" in text
 
 
-def test_v10_runtime_is_personal_node_not_render_com() -> None:
+def test_v10_public_runtime_is_managed_cloud_and_not_owner_home() -> None:
     contract = json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))
     runtime = contract["runtime_hosting"]
 
-    assert runtime["v10_primary_host"] == "APPROVED_LENOVO_OR_REPLACEMENT_PERSONAL_NODE"
-    assert runtime["v10_web_built_and_served_on_personal_node"] is True
-    assert runtime["separate_paid_cloud_web_host_required_for_v10"] is False
-    assert runtime["render_com_v10_runtime_target"] is False
+    assert (
+        runtime["v10_public_production_host"]
+        == "APPROVED_MANAGED_CLOUD_RUNTIME_SELECTED_BY_OWNING_GATE"
+    )
+    assert runtime["managed_cloud_runtime_required_for_public_product"] is True
+    assert runtime["owner_home_or_lenovo_public_dependency_allowed"] is False
+    assert (
+        runtime["owner_home_power_or_internet_public_sla_dependency_allowed"]
+        is False
+    )
+    assert (
+        runtime["lenovo_role"]
+        == "ENGINEERING_SELF_HOSTED_CI_ACCEPTANCE_RECOVERY_ROLLBACK"
+    )
+    assert runtime["lenovo_may_be_final_public_production_origin"] is False
+    assert runtime["provider_selection_requires_owner_approved_gate"] is True
+    assert runtime["provider_purchase_or_mutation_implied_by_planning"] is False
+    assert runtime["render_com_v10_runtime_target_selected"] is False
     assert runtime["render_com_new_workspace_authoritative"] is False
     assert runtime["render_com_new_v10_service_without_owner_amendment_allowed"] is False
     assert runtime["protected_v9_render_app_app_baseline_preserved"] is True
-    assert runtime["external_access_provider_may_become_private_state_host"] is False
+    assert runtime["cloudflare_home_lenovo_tunnel_satisfies_final_public_hosting"] is False
+    assert runtime["external_access_provider_may_become_product_identity"] is False
 
 
 def test_validator_rejects_neutral_as_accepted_green(
@@ -156,12 +171,12 @@ def test_validator_rejects_owner_handoff_without_direct_link_requirement(
     )
 
 
-def test_validator_rejects_render_com_as_v10_runtime_target(
+def test_validator_rejects_owner_home_or_lenovo_public_dependency(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     contract = json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))
-    contract["runtime_hosting"]["render_com_v10_runtime_target"] = True
+    contract["runtime_hosting"]["owner_home_or_lenovo_public_dependency_allowed"] = True
     modified = tmp_path / "quality-contract.json"
     modified.write_text(json.dumps(contract), encoding="utf-8")
     monkeypatch.setattr(governance, "CONTRACT", modified)
@@ -170,6 +185,6 @@ def test_validator_rejects_render_com_as_v10_runtime_target(
     governance.validate_contract(failures)
 
     assert any(
-        "render_com_v10_runtime_target must be False" in failure
+        "owner_home_or_lenovo_public_dependency_allowed must be False" in failure
         for failure in failures
     )
