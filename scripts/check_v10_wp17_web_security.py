@@ -49,17 +49,21 @@ def _wp22a_source_gate_active(failures: list[str]) -> bool:
         failures.append(f"WP22A execution contract unreadable: {type(exc).__name__}")
         return False
 
+    # WP17 only needs proof that a reviewed WP22A source contract owns the
+    # already-accepted external-access markers. The contract may be in a
+    # fail-closed planning hold; live ingress or provider activation is never
+    # inferred from source-marker presence.
     required_markers = (
-        "Status: **IMPLEMENTATION IN PROGRESS / CLIENTLESS REBUILD**",
-        "Owning package: **WP22A — External Web Access / OWNER Authentication Security Gate**",
-        "WP23 remains LOCKED",
-        "public registration/multi-user remains OFF",
-        "Uvicorn binds only to `127.0.0.1`",
+        "Status: **PLANNING HOLD / CORRECTED PUBLIC-HOSTED TARGET",
+        "Owning package: **WP22A — External Web Access / Product Authentication Security Gate**",
+        "WP23+: LOCKED",
+        "`PUBLIC_MULTI_USER_ENABLED=false`",
+        "must not depend on PROJECT OWNER home public IP",
     )
     if all(marker in text for marker in required_markers):
         return True
     failures.append(
-        "WP22A execution contract present but source-gate markers are incomplete"
+        "WP22A execution contract present but corrected source-gate markers are incomplete"
     )
     return False
 
@@ -144,9 +148,9 @@ def main() -> int:
                 f"broker write/transfer marker present in WP17 backend: {marker}"
             )
 
-    # A bind-all listener and Tailscale Funnel remain forbidden even after WP22A starts.
-    # Cloudflare source markers become valid only when the reviewed WP22A source gate is
-    # present; this does not imply that live public ingress has been activated.
+    # A bind-all listener and Tailscale Funnel remain forbidden. Historical
+    # Cloudflare source markers are allowed only when the reviewed corrected
+    # WP22A source contract is present; this never implies live activation.
     bind_all_marker = ".".join(("0", "0", "0", "0"))
     if bind_all_marker in lowered_backend:
         failures.append(
@@ -203,9 +207,7 @@ def main() -> int:
     print("Broker provisioning: WP8 read-broker connection child / no TRADE authority")
     print("READ-vault acceptance: exact-head OWNER evidence + non-admin runner probe")
     if wp22a_source_gate:
-        print(
-            "External access: WP22A source gate present / live activation not implied"
-        )
+        print("External access: corrected WP22A source contract present / live activation not implied")
     else:
         print("Public ingress: OFF / WP22A gated")
     return 0
