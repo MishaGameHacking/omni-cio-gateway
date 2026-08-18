@@ -1,133 +1,193 @@
 # Omni-CIO V10 — WP22A Service Selection Gate
 
-Status: **REOPENED BY OWNER-APPROVED PUBLIC-HOSTED PLANNING CORRECTION / NO PROVIDER APPLY AUTHORIZED**  
+Status: **CLOUD.RU EVOLUTION SELECTED / STAGED FREE-FIRST / OWNER COST APPROVAL REQUIRED / NO PROVIDER APPLY AUTHORIZED**  
 Owning package: **WP22A — External Web Access / Product Authentication Security Gate**
 
-## 1. Why this gate is reopened
+## 1. Authority transition
 
-The earlier WP22A Phase-A selection was optimized for a browser-only PROJECT OWNER accessing the Lenovo Personal Node through Cloudflare Access + Tunnel. That design is useful historical/pre-production engineering evidence, but it no longer satisfies the 2026-08-18 final-product requirement.
+The accepted public-hosted target requires a normal public Web service independent of OWNER home infrastructure and practically reachable from ordinary Russian networks.
 
-The final product must be a public multi-user Web service whose ordinary availability does **not** depend on PROJECT OWNER home IP/Wi-Fi/router/LAN/Internet/Lenovo.
+Current decision authority:
 
-Controlling amendments after acceptance:
+- `V10_FREE_FIRST_COST_DISCIPLINE.md`;
+- `V10_WP22A_MANAGED_CLOUD_ORIGIN_CONTRACT.json`;
+- `V10_WP22A_MANAGED_CLOUD_ORIGIN_DECISION.md`.
 
-- `docs/master-plan/OMNI_CIO_V10_PRODUCT_USER_AND_ENGINEERING_AUTHORITY_BOUNDARY_AMENDMENT.md`;
-- `docs/master-plan/OMNI_CIO_V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_AMENDMENT.md`;
-- `docs/architecture/V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_CONTRACT.json`.
+Historical lifecycle marker retained for inherited regression provenance: `Production-origin provider selection is not yet made`.
 
-This file therefore supersedes the old statement `SELECTED FOR IMPLEMENTATION` for final public production. No provider mutation is authorized by this planning change.
+That historical marker is now superseded for the current Phase-1 decision: **Cloud.ru Evolution is the selected production managed-cloud provider/boundary.**
+
+**No provider mutation is authorized** by this source-only recommendation.
 
 ## 2. Required final outcome
 
-Select one production architecture for the existing source-controlled Omni-CIO Web/API and tenant-private state that satisfies all of the following:
+The architecture must preserve:
 
-- ordinary modern phone/desktop browser over normal Internet;
+- ordinary browser access from modern phones/desktops;
+- reliable normal Russian USER reachability;
 - public HTTPS hostname;
-- no native VPN/device client for ordinary USER access;
-- **managed-cloud production origin independent of OWNER home infrastructure**;
-- one source-controlled Web App/Core, no competing site/repository/runtime stack;
-- Telegram/VK -> internal Omni-CIO account -> server-side USER session as product authentication;
+- public TLS/certificate lifecycle with reviewed issuance, renewal, runtime delivery and rollback;
+- no VPN/native-client requirement for ordinary product use;
+- managed-cloud production origin independent of OWNER home infrastructure;
+- no OWNER home IP/Wi-Fi/router/LAN/Lenovo availability dependency;
+- one source-controlled Web App/Core;
+- Telegram/VK -> internal Omni-CIO account -> server-side session;
 - API + database-enforced tenant isolation;
-- tenant-scoped encrypted broker/private-data boundary;
-- secure secrets/backup/recovery/replacement-runtime design;
-- GitHub-controlled deployment/release provenance and rollback;
+- tenant-scoped encrypted credentials/private state;
+- backup/recovery/replacement-runtime capability;
+- GitHub-controlled deployment/release provenance;
 - measured capacity/abuse controls;
-- privacy/personal-data/legal and broker-terms compatibility;
-- preserved `app:app`, `trading_methods=false`, `REAL_TRADING_ENABLED=false` until their owning future gates.
+- privacy/personal-data/legal and broker-term gates;
+- `app:app`, `trading_methods=false`, `REAL_TRADING_ENABLED=false` and protected V9 rollback.
 
-## 3. Cloudflare role retained but narrowed
+A tunnel whose sole production origin is the PROJECT OWNER's home Lenovo/network is forbidden as the final public-product path.
 
-Cloudflare remains a strong candidate for **edge functions** such as:
+## 3. Binding cost discipline
 
-- authoritative/proxied DNS;
-- public TLS/certificate lifecycle;
-- WAF/DDoS/edge controls;
-- optional origin protection/Tunnel where appropriate;
-- source-controlled provider automation.
+Use:
 
-Official Cloudflare Tunnel behavior is still relevant: `cloudflared` can connect an origin outbound-only without a public origin IP and map a public hostname to a service. That property is useful for origin protection.
+`already owned / open source / safe free tier / grant / bonus -> lowest-cost safe paid option -> scale only from measured need`
 
-However, a Cloudflare Tunnel whose **sole production origin is the PROJECT OWNER's home Lenovo/network** is explicitly ineligible as the final V10 public-production architecture because loss of OWNER home power/Internet would remove service availability.
+The current authorized recurring infrastructure target is **0 RUB/month**. Free first does not mean insecure first: any candidate that fails a hard security/legal/recovery/data-localization gate is rejected regardless of price.
 
-Cloudflare Access/account-member identity must not be the canonical Omni-CIO USER authentication system. It may remain an engineering/staging pre-auth layer only where separately justified.
+Several free/cheap services may be combined where their responsibilities remain explicit and independently replaceable. Do not fragment identity/session authority, primary tenant database semantics or raw credential custody merely to save a small amount.
 
-## 4. Production-origin provider selection is not yet made
+A required current-WP architecture decision is still made in source even when provider apply remains blocked.
 
-This planning correction intentionally does **not** hard-code Render, Timeweb, Cloudflare Workers/Containers, AWS, another VPS, or any other new V10 production host.
+## 4. Selected production boundary
 
-The implementation phase must perform a current service-selection decision using official provider information and the V10 engineering rules. At minimum compare:
+**Provider: Cloud.ru Evolution.**
 
-- region/data-location and personal-data/legal suitability;
-- managed PostgreSQL/storage/secret support;
-- availability/restart/redeploy characteristics;
-- encrypted backup/restore and off-device recovery;
-- GitHub Actions/API/IaC automation;
-- least-privilege runtime identities;
-- private networking/edge integration;
-- logging/monitoring without secret/private-data leakage;
-- capacity/load/abuse controls;
-- rollback/replacement-node procedure;
-- pricing/free-tier limitations and predictable cost;
-- provider lock-in/exit path.
+Selected Stage-2 minimum production security boundary after proof-of-product:
 
-A new recurring paid provider commitment requires OWNER approval after exact cost/authority consequences are presented. Planning may compare providers without purchasing or mutating anything.
+- one right-sized Evolution VM initially;
+- public Evolution IP + security groups;
+- Evolution DNS;
+- Evolution Certificate Manager / Let's Encrypt;
+- private Evolution VPC;
+- Evolution Managed PostgreSQL Standard over private networking;
+- Evolution Secret Management;
+- Evolution Key Management where the application encryption/envelope boundary requires it;
+- client-side encrypted portable recovery bundles in Evolution Object Storage;
+- OWNER-controlled secondary encrypted recovery copy;
+- source-controlled Terraform for accepted supported resources, reviewed Public API fallback only where exact provider support is not accepted.
 
-## 5. Reusable controls from accepted Phase A
+The exact VM/DB SKU and Stage-2 monthly total are **not pre-bought or frozen**. They are revalidated immediately before apply from measured load and current tariffs. OWNER approval remains mandatory before any new recurring paid commitment.
 
-The following controls remain valuable and should be reused where compatible with the hosted architecture:
+## 5. Why Cloud.ru is selected
 
-- exact Host validation;
-- trusted reverse-proxy/protocol boundary;
-- Secure/HttpOnly/SameSite server-side session cookies;
-- session rotation, bounded idle/absolute lifetime, logout/revoke;
-- CSRF and exact Origin/Referer checks on unsafe methods;
-- CORS deny-by-default;
-- bounded login/mutation rate limits;
-- HSTS, CSP, `nosniff`, restrictive referrer policy and `no-store` where appropriate;
-- direct-origin/API negative tests;
-- fail-closed provider/runtime rollback;
-- provider/runtime secrets kept out of source/PR CI;
-- exact-head CI and post-merge Regression Shield.
+The provider closes the reviewed hard production boundaries in one Russia-hosted platform: public VM/VPC/security groups, private Managed PostgreSQL, managed Secret Management, managed KMS, Certificate Manager, DNS, Object Storage and Terraform/Public API surfaces.
 
-The following old assumptions are **not** reusable as final product authority:
+Current first-party pricing also makes Secret Management, Key Management and Certificate Manager available without a separate service fee. Object Storage has an ongoing free quota. This reduces ancillary cost without creating a cross-provider credential bootstrap.
 
-- Cloudflare account-member identity -> product USER session;
-- exact OWNER fingerprint as product login;
-- hard-coded OWNER user/tenant session bootstrap;
-- Lenovo loopback backend as final production origin;
-- final user experience restricted to PROJECT OWNER;
-- permanent public multi-user disablement.
+Timeweb Cloud remains a lower-cost raw-compute fallback, but the reviewed first-party Vault solution is a Kubernetes add-on whose production configuration requires explicit initialization/unseal and HA operations. Yandex Cloud remains a strong managed fallback, but its initial grant is temporary and Lockbox/KMS are metered.
 
-### 5.1 Historical Phase-A TLS markers — regression provenance only
+Therefore Cloud.ru is selected for the **security/operations boundary**, not because its maximum-HA reference is cheapest.
 
-The accepted Phase-A implementation used the following Cloudflare-specific TLS/certificate assumptions. They are retained here only so inherited regression guards can recognize the historical boundary while the final provider-selection gate is reopened:
+## 6. Stage 0 — zero recurring proof-of-product
 
-- `Universal SSL`;
-- `active Cloudflare full-DNS zone`;
-- `first-level subdomain`;
-- `Cloudflare owns edge-certificate issuance, renewal and deployment`;
-- `X-Forwarded-Proto`.
+Already-owned GitHub + Lenovo may prove the product for engineering/OWNER acceptance, but Lenovo is never the final public production availability anchor.
 
-These strings are **not binding final public-hosted provider requirements**. The finally selected provider/edge design must instead prove equivalent or stronger public TLS/certificate issuance, renewal, hostname coverage and an explicit trusted forwarded-protocol boundary. No historical marker authorizes provider apply or makes Cloudflare the final application host.
+Optional Cloud.ru free cloud preview is synthetic/non-private only until its exact gates pass. It cannot accept real public registrations/private tenant data/broker credentials by implication.
 
-## 6. Broker/public-service separation
+Target recurring OWNER out-of-pocket: **0 RUB/month**.
 
-Production-origin selection must not assume T-Invest public connector permission. Current T-Invest documentation says ordinary client API access does not permit a public service with data retransmission.
+## 7. Stage 1 — Cloud.ru free/bonus hosted pilot
 
-Therefore the public Web/account platform and T-Invest-backed public features are separate activation gates. Hosted-provider selection must allow broker-backed functionality to remain fail-closed without preventing the account/Web platform from existing.
+Prefer eligible Evolution free-tier/bonus resources only after an explicit fail-closed spend boundary is proven.
 
-## 7. Exit from service-selection gate
+Current snapshot, revalidated immediately before use:
 
-This gate is not PASS merely because Cloudflare Phase A previously existed.
+- Container Services: first 25 vCPU-hours and 50 GB RAM-hours per month free;
+- Object Storage: 15 GB standard storage plus documented free operation/egress quotas;
+- Evolution DNS: free request quota;
+- eligible card-linked accounts may receive 4,000 bonus RUB;
+- a new free VM must **not** be assumed available to a newly registered account after the documented 2026-06-30 cutoff;
+- usage above free quotas can be billed, so `free tier` alone is not a spend control.
 
-PASS for the corrected public target requires:
+Stage 1 remains synthetic/non-private and is not automatically a production/SLA/legal claim.
 
-1. current official provider review;
-2. explicit production-origin choice that satisfies no-home dependency;
-3. data/secret/tenant isolation design;
-4. recovery/rollback/capacity/cost/legal analysis;
-5. source-controlled architecture/IaC intent with no production secrets;
-6. deterministic tests/guards;
-7. normal exact-head CI/review/merge/post-merge acceptance.
+## 8. Stage 2 — minimum safe paid Cloud.ru pilot
 
-Until then, no final public production origin is selected and no provider mutation is authorized.
+Only when Stages 0/1 cannot satisfy the real-user production gate.
+
+Provider is already selected: **Cloud.ru Evolution**.
+
+Choose the smallest current Cloud.ru VM + Managed PostgreSQL Standard topology that satisfies measured capacity, tenant security, recovery and availability requirements. Exact price/SKU is revalidated immediately before apply; OWNER must approve the recurring cap and delete/shutdown path.
+
+A public PostgreSQL endpoint is forbidden.
+
+## 9. Stage 3 — Cloud.ru HA scale-up
+
+Scale only from measured SLA/load/failure-budget/user demand.
+
+Current retained reference:
+
+- two application VMs in different AZs;
+- georedundant L4 NLB;
+- private Managed PostgreSQL Business Cluster HA, Primary + 2 Standby across three AZs.
+
+The existing ~24.5k RUB/month engineering estimate is **not the startup budget** and not an authorized purchase.
+
+## 10. Public edge / Cloudflare disposition
+
+The selected initial production edge is Cloud.ru public IP/security groups/DNS, with public TLS managed through the reviewed Cloud.ru certificate boundary.
+
+Cloudflare remains rejected as the primary or sole normal Russian USER production edge under the current accepted reachability boundary. A later secondary role requires separate reachability/data/cost review.
+
+Cloudflare/GitHub/provider account membership is never Omni-CIO product authentication.
+
+## 11. Reusable security controls
+
+Reuse Host allowlist, trusted proxy boundary, Secure/HttpOnly/SameSite server sessions, bounded lifetime/rotation/revoke, CSRF + Origin/Referer validation, deny-by-default CORS, rate limits, HSTS/CSP/nosniff/referrer/no-store as appropriate, direct-origin negatives, exact-head CI and rollback.
+
+Free/cheap composition may add retries/cache/health checks/adapters, but cannot replace legal permission, localization, credential custody or durable recovery.
+
+## 12. NLB automation conflict
+
+Cloud.ru first-party documentation remains inconsistent around NLB Terraform management. NLB is not part of the initial one-VM Stage-2 topology.
+
+Before Stage-3 NLB apply, pin the exact Terraform provider and prove schema/configuration plus a reviewed non-mutating plan. If that exact path is not accepted, use a reviewed Cloud.ru Public API fallback.
+
+Documentation inconsistency is a blocker, not permission to guess.
+
+## 13. Recovery boundary
+
+Provider-native recovery is supplemented by portable V10 recovery:
+
+- client-side encryption before portable backup upload;
+- integrity/hash verification;
+- corrupt-backup rejection;
+- bounded retention;
+- replacement-runtime restore;
+- tenant-isolation verification after restore;
+- OWNER-controlled secondary encrypted copy for provider/account failure portability.
+
+The secondary copy does not make OWNER home infrastructure part of normal production availability.
+
+## 14. Cost boundary and locks
+
+`provider_apply_authorized=false`  
+`PUBLIC_MULTI_USER_ENABLED=false`  
+current recurring OWNER infrastructure authorization: **0 RUB/month**
+
+No provider resource, provider credential, production DNS/public ingress or paid overage is authorized by this PR.
+
+T-Invest public connector remains independently fail-closed. `app:app`, `trading_methods=false`, `REAL_TRADING_ENABLED=false` and protected V9 rollback remain unchanged. WP23 remains locked.
+
+## 15. Exit from service-selection gate
+
+Technical source acceptance requires:
+
+1. current official provider/free-tier/cost review;
+2. explicit production provider and edge/data/credential/recovery boundary;
+3. staged free-first cost policy;
+4. hard security/data/legal/recovery boundaries;
+5. deterministic regression guards;
+6. exact-head DRAFT CI GREEN;
+7. full diff/review with zero blockers;
+8. fresh READY exact-head CI GREEN;
+9. squash merge;
+10. exact-main post-merge Regression Shield GREEN.
+
+Even after source acceptance, provider apply remains blocked until the stage-specific source-controlled apply boundary, exact current price/SKU revalidation and any required OWNER account/cost consent are accepted.
