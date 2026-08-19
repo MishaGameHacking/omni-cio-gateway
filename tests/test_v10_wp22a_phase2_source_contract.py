@@ -6,6 +6,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 MIGRATION = ROOT / "omni_cio/persistence/migrations/0004_product_identity_multi_tenant.sql"
 IDENTITY = ROOT / "omni_cio/web/product_identity_v1.py"
+API = ROOT / "omni_cio/web/api_v1.py"
 PERSISTENCE = ROOT / "omni_cio/web/persistence_v1.py"
 SHELL = ROOT / "apps/web/src/app-shell/app-shell.tsx"
 STATUS = ROOT / "knowledge/17_V10_CURRENT_PROGRAM_STATUS.md"
@@ -60,6 +61,15 @@ def test_product_identity_uses_keyed_binding_and_fail_closed_registration() -> N
     assert "pg_advisory_xact_lock" in source
     assert "ProductAuthenticationServiceV1" in source
     assert "subject_binding_sha256" not in source
+
+
+def test_product_session_view_has_no_historical_owner_product_labels() -> None:
+    source = API.read_text(encoding="utf-8")
+
+    assert '"user_label": "OWNER"' not in source
+    assert '"tenant_label": "Personal"' not in source
+    assert '"authenticated": True' in source
+    assert '"expires_at": scope.expires_at.isoformat()' in source
 
 
 def test_broker_repository_sets_transaction_local_tenant_context() -> None:
