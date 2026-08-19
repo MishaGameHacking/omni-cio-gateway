@@ -21,6 +21,8 @@ FL-024 correctly added `pg_ctl -t`, `PGCTLTIMEOUT`, SQL timeouts, a Python-child
 
 The exact low-level Windows/PostgreSQL reason that the native invocation failed to return is not fabricated here. The proven engineering defect is relying on the blocking invocation to enforce the only startup wait boundary visible to the orchestrating process.
 
+A full-diff follow-up also found a cleanup-order edge case before another CI result was trusted: if `pg_ctl` successfully launches PostgreSQL but the separate readiness proof fails, cleanup must already be armed before the startup attempt. Otherwise the wrapper could return a bounded failure while leaving a temporary PostgreSQL process behind.
+
 ## Blast radius searched
 
 The defect is limited to the isolated Phase-2 PostgreSQL rehearsal lifecycle. Product identity, HMAC bindings, session semantics, tenant constraints, broker RLS policies and production authority are unchanged.
@@ -39,15 +41,16 @@ The correction does not:
 
 PostgreSQL startup is now split into independently bounded operations:
 
-1. launch `pg_ctl start -W` through `Start-Process`, with a parent-enforced 10-second launcher timeout;
-2. verify actual server readiness through a separately bounded `pg_isready` loop;
-3. retain the existing session-level SQL lock/statement limits and Python probe timeout;
-4. wrap the **entire PowerShell rehearsal process tree** in a separate Python watchdog with a 240-second bound;
-5. if the outer bound is exceeded, terminate the complete Windows child process tree with a separately bounded `taskkill /T /F` call and fail the focused gate.
+1. arm temporary-PostgreSQL cleanup **before** any startup attempt;
+2. launch `pg_ctl start -W` through `Start-Process`, with a parent-enforced 10-second launcher timeout;
+3. verify actual server readiness through a separately bounded `pg_isready` loop;
+4. retain the existing session-level SQL lock/statement limits and Python probe timeout;
+5. wrap the **entire PowerShell rehearsal process tree** in a separate Python watchdog with a 240-second bound;
+6. if the outer bound is exceeded, terminate the complete Windows child process tree with a separately bounded `taskkill /T /F` call and fail the focused gate.
 
 The shutdown path also uses a bounded `Start-Process` invocation rather than an unbounded direct native call.
 
-This makes the failure domains independent: launcher -> readiness probe -> SQL -> Python probe -> outer rehearsal process.
+This makes the failure domains independent: cleanup arming -> launcher -> readiness probe -> SQL -> Python probe -> outer rehearsal process.
 
 ## Permanent regression / guard
 
@@ -56,16 +59,17 @@ The Phase-2 source contract now requires:
 - `Start-TemporaryPostgresBounded`;
 - bounded `pg_isready` readiness checks;
 - the non-waiting `pg_ctl -W` launch path;
+- cleanup arming before the startup helper is invoked;
 - absence of the former direct `& $pgCtl start` invocation;
 - the independent outer watchdog and its 240-second workflow bound.
 
-A future regression can fail, but it must not consume the authoritative runner indefinitely.
+A future regression can fail, but it must not consume the authoritative runner indefinitely or leave a known temporary PostgreSQL lifecycle unowned after a readiness failure.
 
 ## Future prevention rule
 
 Do not treat a child tool's documented timeout as the only timeout for a CI orchestration layer. If losing control of the native invocation would prevent the parent from enforcing cleanup or progressing, launch that operation under an independently bounded parent process and validate success through a separate observable condition.
 
-For service startup specifically, prefer bounded launch plus bounded readiness verification over a single blocking call when CI runner availability is a scarce shared resource.
+For service startup specifically, prefer bounded launch plus bounded readiness verification over a single blocking call when CI runner availability is a scarce shared resource. Arm cleanup before the first operation that can create durable process state, not after readiness is already proven.
 
 ## Dependency/tooling knowledge change
 
