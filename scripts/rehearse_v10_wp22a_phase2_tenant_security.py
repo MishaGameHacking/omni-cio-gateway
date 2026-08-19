@@ -208,6 +208,17 @@ def _exercise(connection: psycopg.Connection[Any], *, dsn: str) -> dict[str, obj
     if str(binding_row[0]) == telegram_a.binding_fingerprint_sha256():
         raise AssertionError("provider binding regressed to unkeyed SHA-256")
 
+    owner_scope_external_binding_rejected = _expect_database_error(
+        connection,
+        lambda: connection.execute(
+            "INSERT INTO omni_cio_v10.external_identity_bindings "
+            "(provider, subject_binding_hmac_sha256, user_id, tenant_id, linked_at, "
+            "last_verified_at) VALUES ('telegram', %s, 'user:v1:owner', "
+            "'tenant:v1:owner', %s, %s)",
+            ("f" * 64, NOW, NOW),
+        ),
+    )
+
     sessions = PostgresWebSessionRegistryV1(connection)
     token_a, session_a = sessions.create(
         user_id=SCOPE_A.user_id,
@@ -382,6 +393,7 @@ def _exercise(connection: psycopg.Connection[Any], *, dsn: str) -> dict[str, obj
         "concurrent_identity_binding_serialized": concurrent_identity_binding_serialized,
         "product_accounts_isolated": True,
         "provider_binding_hmac": True,
+        "owner_scope_external_binding_rejected": owner_scope_external_binding_rejected,
         "raw_provider_subject_persisted": False,
         "plaintext_session_token_persisted": False,
         "server_session_tenant_scope": True,
