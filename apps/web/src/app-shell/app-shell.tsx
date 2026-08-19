@@ -160,7 +160,7 @@ export function ApplicationShell() {
           </ul>
         </nav>
         <div className="shell-account">
-          <span>{session.user_label ?? "USER"}</span>
+          <span>USER</span>
           <Button
             variant="secondary"
             onClick={() => {
