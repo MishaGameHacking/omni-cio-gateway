@@ -86,6 +86,108 @@ function Invoke-NativeChecked {
     }
 }
 
+function Test-PostgresReadyBounded {
+    param(
+        [Parameter(Mandatory = $true)][string]$PgIsReady,
+        [Parameter(Mandatory = $true)][int]$Port
+    )
+
+    $arguments = @(
+        "--host=127.0.0.1",
+        "--port=$Port",
+        "--username=wp22a_owner",
+        "--dbname=postgres",
+        "--timeout=1",
+        "--quiet"
+    )
+    $probe = Start-Process -FilePath $PgIsReady -ArgumentList $arguments `
+        -PassThru -WindowStyle Hidden
+    try {
+        if (-not $probe.WaitForExit(3000)) {
+            Stop-ProcessTree -Process $probe
+            return $false
+        }
+        return $probe.ExitCode -eq 0
+    }
+    finally {
+        Stop-ProcessTree -Process $probe
+        $probe.Dispose()
+    }
+}
+
+function Start-TemporaryPostgresBounded {
+    param(
+        [Parameter(Mandatory = $true)][string]$PgCtl,
+        [Parameter(Mandatory = $true)][string]$PgIsReady,
+        [Parameter(Mandatory = $true)][string]$DataDirectory,
+        [Parameter(Mandatory = $true)][string]$LogPath,
+        [Parameter(Mandatory = $true)][int]$Port,
+        [ValidateRange(5, 60)][int]$ReadyTimeoutSeconds = 20
+    )
+
+    # Do not rely on pg_ctl's own synchronous wait as the only boundary. On the
+    # authoritative Windows runner an obsolete exact-head run remained inside
+    # that native invocation despite -t/PGCTLTIMEOUT. Launch without waiting,
+    # then prove readiness with an independently bounded pg_isready loop.
+    $argumentLine = @(
+        "start",
+        "-D `"$DataDirectory`"",
+        "-l `"$LogPath`"",
+        "-W",
+        "-s",
+        "-o `"-h 127.0.0.1 -p $Port`""
+    ) -join " "
+    $launcher = Start-Process -FilePath $PgCtl -ArgumentList $argumentLine `
+        -PassThru -WindowStyle Hidden
+    try {
+        if (-not $launcher.WaitForExit(10000)) {
+            Stop-ProcessTree -Process $launcher
+            throw "WP22A_PHASE2_POSTGRES_LAUNCH_TIMEOUT"
+        }
+        if ($launcher.ExitCode -ne 0) {
+            throw "WP22A_PHASE2_POSTGRES_START_FAILED"
+        }
+    }
+    finally {
+        Stop-ProcessTree -Process $launcher
+        $launcher.Dispose()
+    }
+
+    $deadline = [DateTime]::UtcNow.AddSeconds($ReadyTimeoutSeconds)
+    do {
+        if (Test-PostgresReadyBounded -PgIsReady $PgIsReady -Port $Port) {
+            return
+        }
+        Start-Sleep -Milliseconds 250
+    } while ([DateTime]::UtcNow -lt $deadline)
+
+    throw "WP22A_PHASE2_POSTGRES_NOT_READY"
+}
+
+function Stop-TemporaryPostgresBounded {
+    param(
+        [Parameter(Mandatory = $true)][string]$PgCtl,
+        [Parameter(Mandatory = $true)][string]$DataDirectory
+    )
+
+    if (-not (Test-Path -LiteralPath $DataDirectory -PathType Container)) {
+        return
+    }
+    $argumentLine = "stop -D `"$DataDirectory`" -m fast -w -t 10 -s"
+    $stopper = Start-Process -FilePath $PgCtl -ArgumentList $argumentLine `
+        -PassThru -WindowStyle Hidden
+    try {
+        if (-not $stopper.WaitForExit(15000)) {
+            Stop-ProcessTree -Process $stopper
+            return
+        }
+    }
+    finally {
+        Stop-ProcessTree -Process $stopper
+        $stopper.Dispose()
+    }
+}
+
 if (-not (Test-Path -LiteralPath $PythonPath -PathType Leaf)) {
     throw "PYTHON_NOT_FOUND"
 }
@@ -133,16 +235,12 @@ try {
     ) -Reason "WP22A_PHASE2_INITDB_FAILED" -TimeoutSeconds 45
 
     Write-Host "WP22A_PHASE2_STAGE=postgres_start"
-    & $pgCtl start -D $dataDir -l $logPath -o "-h 127.0.0.1 -p $port" -w -t 10 -s *> $null
-    if ($LASTEXITCODE -ne 0) {
-        throw "WP22A_PHASE2_POSTGRES_START_FAILED"
-    }
+    Start-TemporaryPostgresBounded -PgCtl $pgCtl -PgIsReady $pgIsReady `
+        -DataDirectory $dataDir -LogPath $logPath -Port $port
     $started = $true
 
     Write-Host "WP22A_PHASE2_STAGE=postgres_ready"
-    & $pgIsReady --host=127.0.0.1 --port=$port --username=wp22a_owner `
-        --dbname=postgres --timeout=5 --quiet *> $null
-    if ($LASTEXITCODE -ne 0) {
+    if (-not (Test-PostgresReadyBounded -PgIsReady $pgIsReady -Port $port)) {
         throw "WP22A_PHASE2_POSTGRES_NOT_READY"
     }
 
@@ -246,7 +344,7 @@ finally {
     if ($started) {
         Write-Host "WP22A_PHASE2_STAGE=postgres_stop"
         try {
-            & $pgCtl stop -D $dataDir -m fast -w -t 10 -s *> $null
+            Stop-TemporaryPostgresBounded -PgCtl $pgCtl -DataDirectory $dataDir
         }
         catch {
             # Cleanup is best-effort; the focused failure remains authoritative.

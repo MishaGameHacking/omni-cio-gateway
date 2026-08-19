@@ -15,8 +15,12 @@ STATUS = ROOT / "knowledge/17_V10_CURRENT_PROGRAM_STATUS.md"
 REHEARSAL_WRAPPER = (
     ROOT / "infrastructure/windows/rehearse_wp22a_phase2_tenant_security.ps1"
 )
-REHEARSAL_WATCHDOG = ROOT / "scripts/run_v10_wp22a_phase2_rehearsal_watchdog.py"
-PHASE2_WORKFLOW = ROOT / ".github/workflows/v10-wp22a-phase2-product-auth-audit.yml"
+REHEARSAL_WATCHDOG = (
+    ROOT / "scripts/run_v10_wp22a_phase2_rehearsal_watchdog.py"
+)
+PHASE2_WORKFLOW = (
+    ROOT / ".github/workflows/v10-wp22a-phase2-product-auth-audit.yml"
+)
 
 
 def test_phase2_migration_generalizes_only_authorized_boundaries() -> None:
@@ -109,8 +113,12 @@ def test_phase2_rehearsal_has_layered_finite_waits_and_safe_stage_markers() -> N
         "statement_timeout=15000",
         "lock_timeout=10000",
         "taskkill.exe /PID $processId /T /F",
+        "Start-TemporaryPostgresBounded",
+        "Test-PostgresReadyBounded",
+        '"-W"',
         '"WP22A_PHASE2_STAGE=initdb"',
         '"WP22A_PHASE2_STAGE=postgres_start"',
+        '"WP22A_PHASE2_STAGE=postgres_ready"',
         '"WP22A_PHASE2_STAGE=database_create"',
         '"WP22A_PHASE2_STAGE=python_probe"',
         "-TimeoutSeconds 45",
@@ -118,6 +126,8 @@ def test_phase2_rehearsal_has_layered_finite_waits_and_safe_stage_markers() -> N
         "-w -t 10 -s",
     ):
         assert required in source
+
+    assert "& $pgCtl start" not in source
 
 
 def test_phase2_focused_gate_has_independent_outer_process_tree_watchdog() -> None:
