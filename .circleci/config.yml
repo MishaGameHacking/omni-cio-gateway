@@ -62,7 +62,49 @@ jobs:
             printf '%s\n' 'BILLING_MUTATION_PERFORMED=NO'
             printf '%s\n' 'REAL_SECRETS_USED=NO'
 
-  supplemental_linux_postgres18:
+  supplemental_linux_runtime_dependencies:
+    docker:
+      - image: cimg/python:3.12.10
+    resource_class: small
+    steps:
+      - checkout
+      - run:
+          name: Reproduce hash-locked runtime dependencies
+          command: |
+            set -eu
+            test "$(git rev-parse HEAD)" = "$CIRCLE_SHA1"
+            test "$(python --version)" = "Python 3.12.10"
+            python -m pip install --disable-pip-version-check --require-hashes -r requirements.txt
+            python -c "import psycopg, pydantic; print('CIRCLECI_RUNTIME_DEPENDENCIES=PASS')"
+
+  supplemental_linux_postgres18_environment:
+    docker:
+      - image: cimg/python:3.12.10
+      - image: cimg/postgres:18.4
+        environment:
+          POSTGRES_USER: omni_ci
+          POSTGRES_PASSWORD: synthetic-ci-only
+          POSTGRES_DB: omni_ci
+    resource_class: small
+    steps:
+      - checkout
+      - run:
+          name: Verify PostgreSQL service port readiness
+          command: |
+            set -eu
+            test "$(git rev-parse HEAD)" = "$CIRCLE_SHA1"
+            ready=0
+            for attempt in $(seq 1 45); do
+              if (echo > /dev/tcp/127.0.0.1/5432) >/dev/null 2>&1; then
+                ready=1
+                break
+              fi
+              sleep 1
+            done
+            test "$ready" = "1"
+            printf '%s\n' 'CIRCLECI_POSTGRES18_SERVICE_PORT=PASS'
+
+  supplemental_linux_postgres18_rehearsal:
     docker:
       - image: cimg/python:3.12.10
       - image: cimg/postgres:18.4
@@ -76,41 +118,17 @@ jobs:
     steps:
       - checkout
       - run:
-          name: Verify exact source and install hash-locked runtime dependencies
+          name: Install exact runtime dependencies
           command: |
             set -eu
             test "$(git rev-parse HEAD)" = "$CIRCLE_SHA1"
             test "$(python --version)" = "Python 3.12.10"
             python -m pip install --disable-pip-version-check --require-hashes -r requirements.txt
       - run:
-          name: Wait for PostgreSQL 18 readiness
+          name: Verify PostgreSQL 18 and rehearse durable-state semantics
           command: |
             set -eu
-            python - \<<'PY'
-            import os
-            import time
-            import psycopg
-
-            dsn = os.environ["OMNI_CIO_WP13_DSN"]
-            deadline = time.monotonic() + 45.0
-            last_error = None
-            while time.monotonic() < deadline:
-                try:
-                    with psycopg.connect(dsn, connect_timeout=3) as connection:
-                        version_num = int(connection.execute("SHOW server_version_num").fetchone()[0])
-                        if version_num // 10000 != 18:
-                            raise RuntimeError(f"POSTGRES_MAJOR_MISMATCH:{version_num}")
-                        print(f"CIRCLECI_POSTGRES_VERSION_NUM={version_num}")
-                        raise SystemExit(0)
-                except (psycopg.Error, OSError) as exc:
-                    last_error = type(exc).__name__
-                    time.sleep(1.0)
-            raise RuntimeError(f"POSTGRES18_NOT_READY:{last_error}")
-            PY
-      - run:
-          name: Rehearse accepted PostgreSQL migration and durable-state semantics
-          command: |
-            set -eu
+            python -c "import os,time,psycopg; dsn=os.environ['OMNI_CIO_WP13_DSN']; deadline=time.monotonic()+45; connection=None; last=None; exec(\"while time.monotonic() < deadline:\\n try:\\n  connection=psycopg.connect(dsn, connect_timeout=3); break\\n except psycopg.Error as exc:\\n  last=type(exc).__name__; time.sleep(1)\"); assert connection is not None, f'POSTGRES18_NOT_READY:{last}'; version_num=int(connection.execute('SHOW server_version_num').fetchone()[0]); connection.close(); assert version_num // 10000 == 18, f'POSTGRES_MAJOR_MISMATCH:{version_num}'; print(f'CIRCLECI_POSTGRES_VERSION_NUM={version_num}')"
             python scripts/rehearse_v10_wp13_persistence.py exercise
             printf '%s\n' 'V10_SUPPLEMENTAL_LINUX_POSTGRES18=PASS'
             printf '%s\n' 'SYNTHETIC_DATABASE_ONLY=YES'
@@ -120,4 +138,9 @@ workflows:
   v10_supplemental_linux_governance:
     jobs:
       - supplemental_linux_governance
-      - supplemental_linux_postgres18
+      - supplemental_linux_runtime_dependencies
+      - supplemental_linux_postgres18_environment
+      - supplemental_linux_postgres18_rehearsal:
+          requires:
+            - supplemental_linux_runtime_dependencies
+            - supplemental_linux_postgres18_environment
