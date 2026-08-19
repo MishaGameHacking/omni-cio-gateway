@@ -155,7 +155,7 @@ jobs:
               raise SystemExit('WP22A broker repository lost transaction-local tenant context')
           if 'OWNER private access' in shell or 'privateRemoteLogin' in shell:
               raise SystemExit('WP22A product shell still exposes engineering-edge OWNER login')
-          for invariant in ('PUBLIC_MULTI_USER_ENABLED=false', 'WP23+: LOCKED'):
+          for invariant in ('PUBLIC_MULTI_USER_ENABLED=false', 'WP23+ remains locked'):
               if invariant not in status:
                   raise SystemExit(f'WP22A Phase 2 program lock marker missing: {invariant}')
           print('WP22A Phase 2 fail-closed source contract OK')
