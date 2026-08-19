@@ -346,7 +346,9 @@ class ProductIdentityServiceV1:
             return _require_product_scope(existing)
         if not self._registration_enabled:
             raise ProductIdentityError("PUBLIC_REGISTRATION_DISABLED")
-        return _require_product_scope(self._repository.create_account(identity, now=now))
+        return _require_product_scope(
+            self._repository.create_account(identity, now=now)
+        )
 
     def link_authenticated_identity(
         self,
