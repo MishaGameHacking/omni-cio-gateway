@@ -17,7 +17,8 @@ from omni_cio.web.session_v1 import SessionRegistryV1
 
 
 NOW = datetime(2026, 8, 19, 4, 0, tzinfo=timezone.utc)
-BINDING_KEY = b"wp22a-synthetic-binding-key-0001!!"
+BINDING_KEY = bytes([120]) * 32
+OTHER_BINDING_KEY = bytes([121]) * 32
 SCOPE_A = ProductAccountScopeV1(
     user_id="user:v1:product_a",
     tenant_id="tenant:v1:product_a",
@@ -33,9 +34,14 @@ def identity(provider: IdentityProviderV1, subject: str) -> VerifiedExternalIden
 
 
 class FakeIdentityRepository(ProductIdentityRepositoryLike):
-    def __init__(self, scopes: tuple[ProductAccountScopeV1, ...] = (SCOPE_A, SCOPE_B)) -> None:
+    def __init__(
+        self,
+        scopes: tuple[ProductAccountScopeV1, ...] = (SCOPE_A, SCOPE_B),
+    ) -> None:
         self._available = list(scopes)
-        self._bindings: dict[tuple[IdentityProviderV1, str], ProductAccountScopeV1] = {}
+        self._bindings: dict[
+            tuple[IdentityProviderV1, str], ProductAccountScopeV1
+        ] = {}
         self._provider_by_scope: set[tuple[str, IdentityProviderV1]] = set()
 
     def resolve_verified_identity(
@@ -90,7 +96,7 @@ def test_provider_subject_binding_is_keyed_not_enumerable_plain_hash() -> None:
     )
     other_key_digest = protected_identity_binding_hmac_sha256(
         external_identity,
-        binding_key=b"another-synthetic-binding-key-002!!",
+        binding_key=OTHER_BINDING_KEY,
     )
 
     assert len(digest) == 64
