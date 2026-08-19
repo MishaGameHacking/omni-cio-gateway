@@ -69,6 +69,10 @@ CREATE TABLE omni_cio_v10.external_identity_bindings (
     CONSTRAINT external_identity_binding_hmac_sha256 CHECK (
         subject_binding_hmac_sha256 ~ '^[a-f0-9]{64}$'
     ),
+    CONSTRAINT external_identity_product_scope CHECK (
+        user_id <> 'user:v1:owner' AND
+        tenant_id <> 'tenant:v1:owner'
+    ),
     CONSTRAINT external_identity_user_scope_fk
         FOREIGN KEY (user_id, tenant_id)
         REFERENCES omni_cio_v10.users (user_id, tenant_id)
