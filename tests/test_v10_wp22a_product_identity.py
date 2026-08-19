@@ -27,6 +27,10 @@ SCOPE_B = ProductAccountScopeV1(
     user_id="user:v1:product_b",
     tenant_id="tenant:v1:product_b",
 )
+OWNER_SCOPE = ProductAccountScopeV1(
+    user_id="user:v1:owner",
+    tenant_id="tenant:v1:owner",
+)
 
 
 def identity(provider: IdentityProviderV1, subject: str) -> VerifiedExternalIdentityV1:
@@ -123,6 +127,21 @@ def test_registration_is_fail_closed_by_default() -> None:
         service.authenticate(
             identity(IdentityProviderV1.TELEGRAM, "new-user"),
             now=NOW,
+        )
+
+
+def test_historical_owner_scope_cannot_become_product_identity() -> None:
+    repository = FakeIdentityRepository(scopes=(OWNER_SCOPE,))
+    service = ProductIdentityServiceV1(repository, registration_enabled=True)
+    telegram = identity(IdentityProviderV1.TELEGRAM, "owner-product-attempt")
+
+    with pytest.raises(ProductIdentityError, match="OWNER_IDENTITY_RESERVED"):
+        service.authenticate(telegram, now=NOW)
+    with pytest.raises(ProductIdentityError, match="OWNER_IDENTITY_RESERVED"):
+        service.link_authenticated_identity(
+            OWNER_SCOPE,
+            identity(IdentityProviderV1.VK_ID, "owner-link-attempt"),
+            now=NOW + timedelta(seconds=1),
         )
 
 
