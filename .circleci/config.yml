@@ -1,5 +1,32 @@
 version: 2.1
 
+commands:
+  install_and_catalog:
+    steps:
+      - checkout
+      - run:
+          name: Install hash-locked runtime dependencies
+          command: python -m pip install --disable-pip-version-check --require-hashes -r requirements.txt
+      - run:
+          name: Wait for PostgreSQL TCP readiness
+          command: |
+            set -eu
+            ready=0
+            for attempt in $(seq 1 45); do
+              if (echo > /dev/tcp/127.0.0.1/5432) >/dev/null 2>&1; then
+                ready=1
+                break
+              fi
+              sleep 1
+            done
+            test "$ready" = "1"
+      - run:
+          name: Apply migrations and persist canonical catalog
+          command: |
+            set -eu
+            test "$(git rev-parse HEAD)" = "$CIRCLE_SHA1"
+            python -c "import os,psycopg; from scripts.rehearse_v10_wp13_persistence import _catalog; from omni_cio.persistence import apply_migrations,PostgresDomainRepository,load_catalog; c=psycopg.connect(os.environ['OMNI_CIO_WP13_DSN']); version_num=int(c.execute('SHOW server_version_num').fetchone()[0]); assert version_num // 10000 == 18; apply_migrations(c); catalog=_catalog(); repo=PostgresDomainRepository(c); first=repo.persist_catalog(catalog); second=repo.persist_catalog(catalog); assert first==second; assert load_catalog(c)==catalog; c.close(); print('CIRCLECI_WP13_DIRECT_CATALOG=PASS')"
+
 jobs:
   supplemental_linux_governance:
     docker:
@@ -22,22 +49,22 @@ jobs:
             python scripts/check_v10_ci_cost_control.py
             python scripts/check_v10_regression_shield.py
 
-  supplemental_linux_diagnostic_import:
+  supplemental_linux_catalog_pg18_4:
     docker:
       - image: cimg/python:3.12.10
+      - image: cimg/postgres:18.4
+        environment:
+          POSTGRES_USER: omni_ci
+          POSTGRES_PASSWORD: synthetic-ci-only
+          POSTGRES_DB: omni_ci
     resource_class: small
     environment:
       PYTHONPATH: .
+      OMNI_CIO_WP13_DSN: postgresql://omni_ci:synthetic-ci-only@127.0.0.1:5432/omni_ci
     steps:
-      - checkout
-      - run:
-          name: Install hash-locked runtime dependencies
-          command: python -m pip install --disable-pip-version-check --require-hashes -r requirements.txt
-      - run:
-          name: Import Linux portability diagnostic module
-          command: python -c "import scripts.diagnose_v10_wp13_linux_portability; print('CIRCLECI_WP13_DIAGNOSTIC_IMPORT=PASS')"
+      - install_and_catalog
 
-  supplemental_linux_diagnostic_initialized:
+  supplemental_linux_catalog_pg18_4_0:
     docker:
       - image: cimg/python:3.12.10
       - image: cimg/postgres:18.4.0
@@ -50,22 +77,11 @@ jobs:
       PYTHONPATH: .
       OMNI_CIO_WP13_DSN: postgresql://omni_ci:synthetic-ci-only@127.0.0.1:5432/omni_ci
     steps:
-      - checkout
-      - run:
-          name: Install hash-locked runtime dependencies
-          command: python -m pip install --disable-pip-version-check --require-hashes -r requirements.txt
-      - run:
-          name: Wait for PostgreSQL 18 and initialize accepted schema/catalog
-          command: |
-            set -eu
-            python -c "import os,time,psycopg; dsn=os.environ['OMNI_CIO_WP13_DSN']; deadline=time.monotonic()+45; c=None; exec(\"while time.monotonic() < deadline:\\n try:\\n  c=psycopg.connect(dsn, connect_timeout=3); break\\n except psycopg.Error:\\n  time.sleep(1)\"); assert c is not None; version_num=int(c.execute('SHOW server_version_num').fetchone()[0]); c.close(); assert version_num // 10000 == 18"
-            python -c "from scripts.diagnose_v10_wp13_linux_portability import _initialized; c,_,_=_initialized(); c.close(); print('CIRCLECI_WP13_DIAGNOSTIC_INITIALIZED=PASS')"
+      - install_and_catalog
 
 workflows:
   v10_supplemental_linux_diagnostics:
     jobs:
       - supplemental_linux_governance
-      - supplemental_linux_diagnostic_import
-      - supplemental_linux_diagnostic_initialized:
-          requires:
-            - supplemental_linux_diagnostic_import
+      - supplemental_linux_catalog_pg18_4
+      - supplemental_linux_catalog_pg18_4_0
