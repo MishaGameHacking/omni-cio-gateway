@@ -18,6 +18,8 @@ from omni_cio.web.session_v1 import SessionScopeV1
 _USER_ID_PATTERN = re.compile(r"^user:v1:[a-z0-9][a-z0-9_-]{2,63}$")
 _TENANT_ID_PATTERN = re.compile(r"^tenant:v1:[a-z0-9][a-z0-9_-]{2,63}$")
 _BINDING_KEY_MIN_BYTES = 32
+_OWNER_USER_ID = "user:v1:owner"
+_OWNER_TENANT_ID = "tenant:v1:owner"
 
 
 class ProductIdentityError(RuntimeError):
@@ -34,6 +36,12 @@ class ProductAccountScopeV1:
             raise ValueError("PRODUCT_USER_ID_INVALID")
         if _TENANT_ID_PATTERN.fullmatch(self.tenant_id) is None:
             raise ValueError("PRODUCT_TENANT_ID_INVALID")
+
+
+def _require_product_scope(scope: ProductAccountScopeV1) -> ProductAccountScopeV1:
+    if scope.user_id == _OWNER_USER_ID or scope.tenant_id == _OWNER_TENANT_ID:
+        raise ProductIdentityError("OWNER_IDENTITY_RESERVED")
+    return scope
 
 
 def _utc(value: datetime) -> datetime:
@@ -154,7 +162,9 @@ class PostgresProductIdentityRepositoryV1:
         ).fetchone()
         if row is None:
             return None
-        return ProductAccountScopeV1(user_id=str(row[0]), tenant_id=str(row[1]))
+        return _require_product_scope(
+            ProductAccountScopeV1(user_id=str(row[0]), tenant_id=str(row[1]))
+        )
 
     def resolve_verified_identity(
         self,
@@ -185,9 +195,7 @@ class PostgresProductIdentityRepositoryV1:
             if existing is not None:
                 return existing
 
-            scope = self._scope_factory()
-            if scope.user_id == "user:v1:owner" or scope.tenant_id == "tenant:v1:owner":
-                raise ProductIdentityError("OWNER_IDENTITY_RESERVED")
+            scope = _require_product_scope(self._scope_factory())
 
             tenant_payload: dict[str, object] = {
                 "schema_version": "1.0",
@@ -246,6 +254,7 @@ class PostgresProductIdentityRepositoryV1:
         *,
         now: datetime,
     ) -> None:
+        scope = _require_product_scope(scope)
         timestamp = _utc(now)
         binding_digest = self._binding_digest(identity)
         with self._connection.transaction():
@@ -294,6 +303,7 @@ class PostgresProductIdentityRepositoryV1:
         binding_digest: str,
         timestamp: datetime,
     ) -> None:
+        scope = _require_product_scope(scope)
         self._connection.execute(
             "INSERT INTO omni_cio_v10.external_identity_bindings "
             "(provider, subject_binding_hmac_sha256, user_id, tenant_id, linked_at, "
@@ -333,10 +343,10 @@ class ProductIdentityServiceV1:
     ) -> ProductAccountScopeV1:
         existing = self._repository.resolve_verified_identity(identity)
         if existing is not None:
-            return existing
+            return _require_product_scope(existing)
         if not self._registration_enabled:
             raise ProductIdentityError("PUBLIC_REGISTRATION_DISABLED")
-        return self._repository.create_account(identity, now=now)
+        return _require_product_scope(self._repository.create_account(identity, now=now))
 
     def link_authenticated_identity(
         self,
@@ -345,7 +355,11 @@ class ProductIdentityServiceV1:
         *,
         now: datetime,
     ) -> None:
-        self._repository.link_identity(scope, identity, now=now)
+        self._repository.link_identity(
+            _require_product_scope(scope),
+            identity,
+            now=now,
+        )
 
 
 class ProductAuthenticationServiceV1:
