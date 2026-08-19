@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 import json
 import os
+from threading import Barrier
 from typing import Any
 
 import psycopg
@@ -25,7 +28,7 @@ from omni_cio.web.product_identity_v1 import (
 
 DSN_ENV = "OMNI_CIO_WP22A_PHASE2_DSN"
 NOW = datetime(2026, 8, 19, 4, 0, tzinfo=timezone.utc)
-BINDING_KEY = b"wp22a-synthetic-binding-key-0001!!"
+BINDING_KEY = bytes([120]) * 32
 SCOPE_A = ProductAccountScopeV1(
     user_id="user:v1:product_a",
     tenant_id="tenant:v1:product_a",
@@ -33,6 +36,14 @@ SCOPE_A = ProductAccountScopeV1(
 SCOPE_B = ProductAccountScopeV1(
     user_id="user:v1:product_b",
     tenant_id="tenant:v1:product_b",
+)
+RACE_SCOPE_A = ProductAccountScopeV1(
+    user_id="user:v1:race_a",
+    tenant_id="tenant:v1:race_a",
+)
+RACE_SCOPE_B = ProductAccountScopeV1(
+    user_id="user:v1:race_b",
+    tenant_id="tenant:v1:race_b",
 )
 
 
@@ -60,7 +71,10 @@ def _binding(character: str, suffix: str) -> BrokerAccountBindingV1:
     )
 
 
-def _expect_database_error(connection: psycopg.Connection[Any], action: Any) -> bool:
+def _expect_database_error(
+    connection: psycopg.Connection[Any],
+    action: Callable[[], object],
+) -> bool:
     try:
         with connection.transaction():
             action()
@@ -81,8 +95,54 @@ def _set_probe_role_and_scope(
         )
 
 
-def _exercise(connection: psycopg.Connection[Any]) -> dict[str, object]:
+def _exercise_identity_race(dsn: str) -> bool:
+    race_identity = _identity(IdentityProviderV1.TELEGRAM, "synthetic-race")
+    barrier = Barrier(2)
+
+    def authenticate(candidate: ProductAccountScopeV1) -> ProductAccountScopeV1:
+        with psycopg.connect(dsn, autocommit=True) as worker_connection:
+            repository = PostgresProductIdentityRepositoryV1(
+                worker_connection,
+                binding_key=BINDING_KEY,
+                scope_factory=lambda: candidate,
+            )
+            service = ProductIdentityServiceV1(
+                repository,
+                registration_enabled=True,
+            )
+            barrier.wait(timeout=10)
+            return service.authenticate(race_identity, now=NOW)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [
+            pool.submit(authenticate, RACE_SCOPE_A),
+            pool.submit(authenticate, RACE_SCOPE_B),
+        ]
+        results = tuple(future.result(timeout=20) for future in futures)
+
+    if results[0] != results[1]:
+        raise AssertionError("concurrent registration created split identity bindings")
+    if results[0] not in {RACE_SCOPE_A, RACE_SCOPE_B}:
+        raise AssertionError("concurrent registration returned an unexpected account scope")
+
+    with psycopg.connect(dsn, autocommit=True) as verifier:
+        binding_digest = protected_identity_binding_hmac_sha256(
+            race_identity,
+            binding_key=BINDING_KEY,
+        )
+        rows = verifier.execute(
+            "SELECT user_id, tenant_id FROM omni_cio_v10.external_identity_bindings "
+            "WHERE provider = %s AND subject_binding_hmac_sha256 = %s",
+            (race_identity.provider.value, binding_digest),
+        ).fetchall()
+        if rows != [(results[0].user_id, results[0].tenant_id)]:
+            raise AssertionError("concurrent identity binding durable result is ambiguous")
+    return True
+
+
+def _exercise(connection: psycopg.Connection[Any], *, dsn: str) -> dict[str, object]:
     apply_migrations(connection)
+    concurrent_identity_binding_serialized = _exercise_identity_race(dsn)
 
     scopes = iter((SCOPE_A, SCOPE_B))
     identities = PostgresProductIdentityRepositoryV1(
@@ -155,7 +215,10 @@ def _exercise(connection: psycopg.Connection[Any]) -> dict[str, object]:
         tenant_id=SCOPE_B.tenant_id,
         now=NOW,
     )
-    if session_a.tenant_id != SCOPE_A.tenant_id or session_b.tenant_id != SCOPE_B.tenant_id:
+    if (
+        session_a.tenant_id != SCOPE_A.tenant_id
+        or session_b.tenant_id != SCOPE_B.tenant_id
+    ):
         raise AssertionError("server-side session scope changed tenant")
     resolved_a = sessions.resolve(token_a, now=NOW + timedelta(seconds=1))
     resolved_b = sessions.resolve(token_b, now=NOW + timedelta(seconds=1))
@@ -213,7 +276,8 @@ def _exercise(connection: psycopg.Connection[Any]) -> dict[str, object]:
         "SELECT c.relname, c.relrowsecurity, c.relforcerowsecurity "
         "FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
         "WHERE n.nspname = 'omni_cio_v10' "
-        "AND c.relname IN ('broker_accounts','broker_connections','broker_connection_accounts') "
+        "AND c.relname IN "
+        "('broker_accounts','broker_connections','broker_connection_accounts') "
         "ORDER BY c.relname"
     ).fetchall()
     if len(rls_rows) != 3 or not all(bool(row[1]) for row in rls_rows):
@@ -309,6 +373,7 @@ def _exercise(connection: psycopg.Connection[Any]) -> dict[str, object]:
 
     return {
         "status": "PASS",
+        "concurrent_identity_binding_serialized": concurrent_identity_binding_serialized,
         "product_accounts_isolated": True,
         "provider_binding_hmac": True,
         "raw_provider_subject_persisted": False,
@@ -328,9 +393,10 @@ def _exercise(connection: psycopg.Connection[Any]) -> dict[str, object]:
 
 
 def main() -> int:
+    dsn = _dsn()
     try:
-        with psycopg.connect(_dsn(), autocommit=True) as connection:
-            result = _exercise(connection)
+        with psycopg.connect(dsn, autocommit=True) as connection:
+            result = _exercise(connection, dsn=dsn)
     except Exception as exc:
         print(
             json.dumps(
