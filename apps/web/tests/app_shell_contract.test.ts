@@ -32,13 +32,15 @@ test("ordinary login surface is Telegram and VK ID without local password", () =
   assert.doesNotMatch(shell, /Google/i);
 });
 
-test("WP22A private access is status-gated and not presented as a public provider", () => {
+test("WP22A historical private edge API is dormant and not a product login", () => {
   const api = readFileSync(new URL("../src/app-shell/api.ts", import.meta.url), "utf8");
   const shell = readFileSync(new URL("../src/app-shell/app-shell.tsx", import.meta.url), "utf8");
   assert.match(api, /private-external-login\/status/);
   assert.match(api, /private-external-login/);
-  assert.match(shell, /OWNER private access/);
-  assert.match(shell, /не является третьим публичным login provider/);
+  assert.doesNotMatch(shell, /OWNER private access/);
+  assert.doesNotMatch(shell, /privateRemoteLogin/);
+  assert.doesNotMatch(shell, /readPrivateRemoteStatus/);
+  assert.match(shell, /Локальный OWNER acceptance виден только на loopback и не является третьим login provider/);
 });
 
 test("logout UI never claims revocation when the server request fails", () => {

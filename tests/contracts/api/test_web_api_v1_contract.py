@@ -66,6 +66,9 @@ class _CaptureConnection:
         self.query = ""
         self.params: tuple[Any, ...] | None = None
 
+    def transaction(self) -> Any:
+        return nullcontext()
+
     def execute(
         self,
         query: Any,

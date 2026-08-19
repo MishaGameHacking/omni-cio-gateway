@@ -3,12 +3,10 @@ import { Button, StatusBadge } from "../design-system/components";
 import type { OperationalState } from "../design-system/contracts";
 import {
   logoutCurrentSession,
-  privateRemoteLogin,
   privateTestLogin,
   providerLoginUrl,
   readHealth,
   readPrivateAcceptanceStatus,
-  readPrivateRemoteStatus,
   readProviders,
   readSession,
 } from "./api";
@@ -34,16 +32,12 @@ function LoginScreen({
   providers,
   apiUnavailable,
   privateAcceptanceEnabled,
-  privateRemoteEnabled,
   onPrivateAcceptance,
-  onPrivateRemote,
 }: {
   providers: ProviderView[];
   apiUnavailable: boolean;
   privateAcceptanceEnabled: boolean;
-  privateRemoteEnabled: boolean;
   onPrivateAcceptance: () => void;
-  onPrivateRemote: () => void;
 }) {
   const provider = (name: "telegram" | "vk_id") => providers.find((item) => item.provider === name);
   const telegram = provider("telegram");
@@ -56,17 +50,13 @@ function LoginScreen({
         <p className="shell-muted">Обычный вход — только через Telegram или VK ID. Локального пароля Omni-CIO нет.</p>
         {apiUnavailable ? <div className="login-warning" role="alert">Authentication API недоступен. Доступ к приватным разделам закрыт.</div> : null}
         <div className="login-actions">
-          {privateRemoteEnabled ? (
-            <Button variant="primary" onClick={onPrivateRemote}>OWNER private access</Button>
-          ) : null}
           <a className="ds-button ds-button--primary" aria-disabled={!telegram?.enabled} href={telegram?.enabled ? providerLoginUrl("telegram") : undefined}>Продолжить через Telegram</a>
           <a className="ds-button ds-button--secondary" aria-disabled={!vk?.enabled} href={vk?.enabled ? providerLoginUrl("vk_id") : undefined}>Продолжить через VK ID</a>
           {privateAcceptanceEnabled ? (
             <Button variant="secondary" onClick={onPrivateAcceptance}>Локальный OWNER acceptance</Button>
           ) : null}
         </div>
-        <p className="shell-caption">Provider buttons остаются fail-closed до reviewed local/private provider configuration.</p>
-        {privateRemoteEnabled ? <p className="shell-caption">OWNER private access — отдельный clientless infrastructure gate и не является третьим публичным login provider.</p> : null}
+        <p className="shell-caption">Provider buttons остаются fail-closed до reviewed provider configuration.</p>
         {privateAcceptanceEnabled ? <p className="shell-caption">Локальный OWNER acceptance виден только на loopback и не является третьим login provider.</p> : null}
       </section>
     </main>
@@ -77,7 +67,6 @@ export function ApplicationShell() {
   const [session, setSession] = useState<WebSessionView | null>(null);
   const [providers, setProviders] = useState<ProviderView[]>([]);
   const [privateAcceptanceEnabled, setPrivateAcceptanceEnabled] = useState(false);
-  const [privateRemoteEnabled, setPrivateRemoteEnabled] = useState(false);
   const [sessionUnavailable, setSessionUnavailable] = useState(false);
   const [path, setPath] = useState<AppRoutePath>(currentPath);
   const [health, setHealth] = useState<HealthView | null>(null);
@@ -101,9 +90,6 @@ export function ApplicationShell() {
     void readPrivateAcceptanceStatus()
       .then((value) => setPrivateAcceptanceEnabled(value.enabled))
       .catch(() => setPrivateAcceptanceEnabled(false));
-    void readPrivateRemoteStatus()
-      .then((value) => setPrivateRemoteEnabled(value.enabled))
-      .catch(() => setPrivateRemoteEnabled(false));
   }, [refreshSession]);
 
   useEffect(() => {
@@ -146,14 +132,8 @@ export function ApplicationShell() {
         providers={providers}
         apiUnavailable={sessionUnavailable}
         privateAcceptanceEnabled={privateAcceptanceEnabled}
-        privateRemoteEnabled={privateRemoteEnabled}
         onPrivateAcceptance={() => {
           void privateTestLogin()
-            .then(refreshSession)
-            .catch(() => setSessionUnavailable(true));
-        }}
-        onPrivateRemote={() => {
-          void privateRemoteLogin()
             .then(refreshSession)
             .catch(() => setSessionUnavailable(true));
         }}
@@ -180,7 +160,7 @@ export function ApplicationShell() {
           </ul>
         </nav>
         <div className="shell-account">
-          <span>{session.user_label ?? "OWNER"}</span>
+          <span>USER</span>
           <Button
             variant="secondary"
             onClick={() => {
