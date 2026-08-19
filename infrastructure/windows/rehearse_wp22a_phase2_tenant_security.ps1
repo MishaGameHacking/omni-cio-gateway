@@ -43,25 +43,13 @@ function Get-FreeLoopbackPort {
     }
 }
 
-function Invoke-NativeChecked {
-    param(
-        [Parameter(Mandatory = $true)][string]$FilePath,
-        [Parameter(Mandatory = $true)][string[]]$Arguments,
-        [Parameter(Mandatory = $true)][string]$Reason
-    )
-
-    & $FilePath @Arguments *> $null
-    if ($LASTEXITCODE -ne 0) {
-        throw $Reason
-    }
-}
-
-function Stop-ProbeTree {
+function Stop-ProcessTree {
     param([Parameter(Mandatory = $true)][System.Diagnostics.Process]$Process)
 
     try {
         if (-not $Process.HasExited) {
-            & taskkill.exe /PID $Process.Id /T /F *> $null
+            $processId = [int]$Process.Id
+            & taskkill.exe /PID $processId /T /F *> $null
             if ($LASTEXITCODE -ne 0 -and -not $Process.HasExited) {
                 $Process.Kill()
             }
@@ -70,6 +58,31 @@ function Stop-ProbeTree {
     }
     catch {
         # The timeout/failure remains authoritative; cleanup is best-effort.
+    }
+}
+
+function Invoke-NativeChecked {
+    param(
+        [Parameter(Mandatory = $true)][string]$FilePath,
+        [Parameter(Mandatory = $true)][string[]]$Arguments,
+        [Parameter(Mandatory = $true)][string]$Reason,
+        [ValidateRange(5, 120)][int]$TimeoutSeconds = 30
+    )
+
+    $process = Start-Process -FilePath $FilePath -ArgumentList $Arguments `
+        -PassThru -WindowStyle Hidden
+    try {
+        if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
+            Stop-ProcessTree -Process $process
+            throw ($Reason + "_TIMEOUT")
+        }
+        if ($process.ExitCode -ne 0) {
+            throw $Reason
+        }
+    }
+    finally {
+        Stop-ProcessTree -Process $process
+        $process.Dispose()
     }
 }
 
@@ -108,6 +121,8 @@ $probeProcess = $null
 
 try {
     New-Item -ItemType Directory -Path $root -Force | Out-Null
+
+    Write-Host "WP22A_PHASE2_STAGE=initdb"
     Invoke-NativeChecked -FilePath $initDb -Arguments @(
         "--pgdata=$dataDir",
         "--username=wp22a_owner",
@@ -115,27 +130,30 @@ try {
         "--encoding=UTF8",
         "--no-sync",
         "--no-instructions"
-    ) -Reason "WP22A_PHASE2_INITDB_FAILED"
+    ) -Reason "WP22A_PHASE2_INITDB_FAILED" -TimeoutSeconds 45
 
+    Write-Host "WP22A_PHASE2_STAGE=postgres_start"
     & $pgCtl start -D $dataDir -l $logPath -o "-h 127.0.0.1 -p $port" -w -t 10 -s *> $null
     if ($LASTEXITCODE -ne 0) {
         throw "WP22A_PHASE2_POSTGRES_START_FAILED"
     }
     $started = $true
 
+    Write-Host "WP22A_PHASE2_STAGE=postgres_ready"
     & $pgIsReady --host=127.0.0.1 --port=$port --username=wp22a_owner `
         --dbname=postgres --timeout=5 --quiet *> $null
     if ($LASTEXITCODE -ne 0) {
         throw "WP22A_PHASE2_POSTGRES_NOT_READY"
     }
 
+    Write-Host "WP22A_PHASE2_STAGE=database_create"
     Invoke-NativeChecked -FilePath $createdb -Arguments @(
         "--host=127.0.0.1",
         "--port=$port",
         "--username=wp22a_owner",
         "--no-password",
         "wp22a_phase2"
-    ) -Reason "WP22A_PHASE2_DATABASE_CREATE_FAILED"
+    ) -Reason "WP22A_PHASE2_DATABASE_CREATE_FAILED" -TimeoutSeconds 15
 
     # The probe deliberately exercises concurrent registration. Bound database
     # lock/statement waits at the PostgreSQL session itself so ThreadPoolExecutor
@@ -155,6 +173,7 @@ try {
     # Keep the child process bounded as a second line of defence. A future
     # regression must fail this focused gate instead of monopolizing the single
     # authoritative Lenovo runner until the outer workflow timeout.
+    Write-Host "WP22A_PHASE2_STAGE=python_probe"
     $startInfo = New-Object System.Diagnostics.ProcessStartInfo
     $startInfo.FileName = $PythonPath
     $startInfo.Arguments = '"' + $Probe.Replace('"', '\"') + '"'
@@ -172,7 +191,7 @@ try {
     $stdoutTask = $probeProcess.StandardOutput.ReadToEndAsync()
     $stderrTask = $probeProcess.StandardError.ReadToEndAsync()
     if (-not $probeProcess.WaitForExit($ProbeTimeoutSeconds * 1000)) {
-        Stop-ProbeTree -Process $probeProcess
+        Stop-ProcessTree -Process $probeProcess
         throw "WP22A_PHASE2_PROBE_TIMEOUT"
     }
 
@@ -221,10 +240,11 @@ finally {
     $env:PGCONNECT_TIMEOUT = $oldPgConnectTimeout
     $env:PGCTLTIMEOUT = $oldPgCtlTimeout
     if ($null -ne $probeProcess) {
-        Stop-ProbeTree -Process $probeProcess
+        Stop-ProcessTree -Process $probeProcess
         $probeProcess.Dispose()
     }
     if ($started) {
+        Write-Host "WP22A_PHASE2_STAGE=postgres_stop"
         try {
             & $pgCtl stop -D $dataDir -m fast -w -t 10 -s *> $null
         }
