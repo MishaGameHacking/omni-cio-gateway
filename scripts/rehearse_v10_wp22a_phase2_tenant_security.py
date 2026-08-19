@@ -329,7 +329,7 @@ def _exercise(connection: psycopg.Connection[Any]) -> dict[str, object]:
 
 def main() -> int:
     try:
-        with psycopg.connect(_dsn()) as connection:
+        with psycopg.connect(_dsn(), autocommit=True) as connection:
             result = _exercise(connection)
     except Exception as exc:
         print(
