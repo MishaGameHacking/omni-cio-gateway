@@ -244,19 +244,19 @@ def _exercise(connection: psycopg.Connection[Any], *, dsn: str) -> dict[str, obj
     binding_b = _binding("b", "2002")
     connection_a = "broker-connection:v1:" + "1" * 64
     connection_b = "broker-connection:v1:" + "2" * 64
-    secret_a = "read-connection:v1:" + "3" * 64
-    secret_b = "read-connection:v1:" + "4" * 64
+    vault_ref_a = "read-connection:v1:" + "3" * 64
+    vault_ref_b = "read-connection:v1:" + "4" * 64
     broker_repository.create_read_connection(
         tenant_id=SCOPE_A.tenant_id,
         connection_id=connection_a,
-        secret_ref=secret_a,
+        secret_ref=vault_ref_a,
         bindings=(binding_a,),
         now=NOW,
     )
     broker_repository.create_read_connection(
         tenant_id=SCOPE_B.tenant_id,
         connection_id=connection_b,
-        secret_ref=secret_b,
+        secret_ref=vault_ref_b,
         bindings=(binding_b,),
         now=NOW + timedelta(seconds=1),
     )
