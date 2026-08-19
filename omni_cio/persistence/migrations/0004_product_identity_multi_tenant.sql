@@ -45,7 +45,9 @@ ALTER TABLE omni_cio_v10.web_sessions
 
 -- Broker state is the first tenant-private relation generalized by WP22A Phase 2.
 -- Keep the existing composite scope FKs and add PostgreSQL RLS as a second,
--- database-enforced horizontal isolation boundary.
+-- database-enforced horizontal isolation boundary. FORCE RLS is intentionally
+-- deferred until Phase 3 creates the final least-privilege hosted runtime role;
+-- forcing it now would break the still-protected legacy OWNER persistence role.
 ALTER TABLE omni_cio_v10.broker_accounts
     DROP CONSTRAINT broker_account_owner_only;
 ALTER TABLE omni_cio_v10.broker_connections
@@ -88,21 +90,18 @@ AS $$
 $$;
 
 ALTER TABLE omni_cio_v10.broker_accounts ENABLE ROW LEVEL SECURITY;
-ALTER TABLE omni_cio_v10.broker_accounts FORCE ROW LEVEL SECURITY;
 CREATE POLICY broker_accounts_tenant_isolation
     ON omni_cio_v10.broker_accounts
     USING (tenant_id = omni_cio_v10.current_tenant_scope())
     WITH CHECK (tenant_id = omni_cio_v10.current_tenant_scope());
 
 ALTER TABLE omni_cio_v10.broker_connections ENABLE ROW LEVEL SECURITY;
-ALTER TABLE omni_cio_v10.broker_connections FORCE ROW LEVEL SECURITY;
 CREATE POLICY broker_connections_tenant_isolation
     ON omni_cio_v10.broker_connections
     USING (tenant_id = omni_cio_v10.current_tenant_scope())
     WITH CHECK (tenant_id = omni_cio_v10.current_tenant_scope());
 
 ALTER TABLE omni_cio_v10.broker_connection_accounts ENABLE ROW LEVEL SECURITY;
-ALTER TABLE omni_cio_v10.broker_connection_accounts FORCE ROW LEVEL SECURITY;
 CREATE POLICY broker_connection_accounts_tenant_isolation
     ON omni_cio_v10.broker_connection_accounts
     USING (tenant_id = omni_cio_v10.current_tenant_scope())
