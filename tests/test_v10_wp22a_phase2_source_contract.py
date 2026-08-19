@@ -15,6 +15,8 @@ STATUS = ROOT / "knowledge/17_V10_CURRENT_PROGRAM_STATUS.md"
 REHEARSAL_WRAPPER = (
     ROOT / "infrastructure/windows/rehearse_wp22a_phase2_tenant_security.ps1"
 )
+REHEARSAL_WATCHDOG = ROOT / "scripts/run_v10_wp22a_phase2_rehearsal_watchdog.py"
+PHASE2_WORKFLOW = ROOT / ".github/workflows/v10-wp22a-phase2-product-auth-audit.yml"
 
 
 def test_phase2_migration_generalizes_only_authorized_boundaries() -> None:
@@ -116,6 +118,27 @@ def test_phase2_rehearsal_has_layered_finite_waits_and_safe_stage_markers() -> N
         "-w -t 10 -s",
     ):
         assert required in source
+
+
+def test_phase2_focused_gate_has_independent_outer_process_tree_watchdog() -> None:
+    watchdog = REHEARSAL_WATCHDOG.read_text(encoding="utf-8")
+    workflow = PHASE2_WORKFLOW.read_text(encoding="utf-8")
+
+    for required in (
+        "subprocess.Popen",
+        "process.wait(timeout=args.timeout_seconds)",
+        '"taskkill.exe", "/PID", str(process_id), "/T", "/F"',
+        "timeout=_KILL_TIMEOUT_SECONDS",
+        "WP22A_PHASE2_OUTER_WATCHDOG_TIMEOUT",
+    ):
+        assert required in watchdog
+    assert "run_v10_wp22a_phase2_rehearsal_watchdog.py" in workflow
+    assert "--timeout-seconds 240" in workflow
+    assert (
+        "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "
+        "infrastructure\\windows\\rehearse_wp22a_phase2_tenant_security.ps1"
+        not in workflow
+    )
 
 
 def test_phase2_keeps_public_activation_and_wp23_locked() -> None:

@@ -92,9 +92,9 @@ jobs:
 
       - name: Run Phase 2 static quality and product-auth unit tests
         run: |
-          "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m ruff check omni_cio\web\api_v1.py omni_cio\web\product_identity_v1.py omni_cio\web\persistence_v1.py scripts\rehearse_v10_wp22a_phase2_tenant_security.py tests\test_v10_wp22a_product_identity.py tests\test_v10_wp22a_phase2_api_tenant_scope.py tests\test_v10_wp22a_phase2_source_contract.py tests\contracts\api\test_web_api_v1_contract.py
+          "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m ruff check omni_cio\web\api_v1.py omni_cio\web\product_identity_v1.py omni_cio\web\persistence_v1.py scripts\rehearse_v10_wp22a_phase2_tenant_security.py scripts\run_v10_wp22a_phase2_rehearsal_watchdog.py tests\test_v10_wp22a_product_identity.py tests\test_v10_wp22a_phase2_api_tenant_scope.py tests\test_v10_wp22a_phase2_source_contract.py tests\contracts\api\test_web_api_v1_contract.py
           if errorlevel 1 exit /b 30
-          "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m ruff format --check omni_cio\web\api_v1.py omni_cio\web\product_identity_v1.py omni_cio\web\persistence_v1.py scripts\rehearse_v10_wp22a_phase2_tenant_security.py tests\test_v10_wp22a_product_identity.py tests\test_v10_wp22a_phase2_api_tenant_scope.py tests\test_v10_wp22a_phase2_source_contract.py tests\contracts\api\test_web_api_v1_contract.py
+          "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m ruff format --check omni_cio\web\api_v1.py omni_cio\web\product_identity_v1.py omni_cio\web\persistence_v1.py scripts\rehearse_v10_wp22a_phase2_tenant_security.py scripts\run_v10_wp22a_phase2_rehearsal_watchdog.py tests\test_v10_wp22a_product_identity.py tests\test_v10_wp22a_phase2_api_tenant_scope.py tests\test_v10_wp22a_phase2_source_contract.py tests\contracts\api\test_web_api_v1_contract.py
           if errorlevel 1 exit /b 31
           "%VENV_WINDOWS_PATH%\Scripts\python.exe" -m mypy
           if errorlevel 1 exit /b 32
@@ -108,7 +108,7 @@ jobs:
 
       - name: Run isolated PostgreSQL tenant-security rehearsal
         run: |
-          powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File infrastructure\windows\rehearse_wp22a_phase2_tenant_security.ps1 -PythonPath "%VENV_WINDOWS_PATH%\Scripts\python.exe"
+          "%VENV_WINDOWS_PATH%\Scripts\python.exe" scripts\run_v10_wp22a_phase2_rehearsal_watchdog.py --script infrastructure\windows\rehearse_wp22a_phase2_tenant_security.ps1 --python-path "%VENV_WINDOWS_PATH%\Scripts\python.exe" --timeout-seconds 240
           if errorlevel 1 exit /b 40
 
       - name: Rehearse inherited WP13 migration backup and restore compatibility
