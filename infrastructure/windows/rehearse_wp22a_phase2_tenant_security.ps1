@@ -7,7 +7,10 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+$oldPgConnectTimeout = $env:PGCONNECT_TIMEOUT
+$oldPgCtlTimeout = $env:PGCTLTIMEOUT
 $env:PGCONNECT_TIMEOUT = "5"
+$env:PGCTLTIMEOUT = "10"
 
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $Probe = Join-Path $RepoRoot "scripts\rehearse_v10_wp22a_phase2_tenant_security.py"
@@ -50,6 +53,23 @@ function Invoke-NativeChecked {
     & $FilePath @Arguments *> $null
     if ($LASTEXITCODE -ne 0) {
         throw $Reason
+    }
+}
+
+function Stop-ProbeTree {
+    param([Parameter(Mandatory = $true)][System.Diagnostics.Process]$Process)
+
+    try {
+        if (-not $Process.HasExited) {
+            & taskkill.exe /PID $Process.Id /T /F *> $null
+            if ($LASTEXITCODE -ne 0 -and -not $Process.HasExited) {
+                $Process.Kill()
+            }
+            [void]$Process.WaitForExit(10000)
+        }
+    }
+    catch {
+        # The timeout/failure remains authoritative; cleanup is best-effort.
     }
 }
 
@@ -97,7 +117,7 @@ try {
         "--no-instructions"
     ) -Reason "WP22A_PHASE2_INITDB_FAILED"
 
-    & $pgCtl start -D $dataDir -l $logPath -o "-h 127.0.0.1 -p $port" -w -s *> $null
+    & $pgCtl start -D $dataDir -l $logPath -o "-h 127.0.0.1 -p $port" -w -t 10 -s *> $null
     if ($LASTEXITCODE -ne 0) {
         throw "WP22A_PHASE2_POSTGRES_START_FAILED"
     }
@@ -117,9 +137,13 @@ try {
         "wp22a_phase2"
     ) -Reason "WP22A_PHASE2_DATABASE_CREATE_FAILED"
 
+    # The probe deliberately exercises concurrent registration. Bound database
+    # lock/statement waits at the PostgreSQL session itself so ThreadPoolExecutor
+    # teardown cannot wait indefinitely on a blocked SQL statement.
     $env:OMNI_CIO_WP22A_PHASE2_DSN = (
         "host=127.0.0.1 port=$port user=wp22a_owner " +
-        "dbname=wp22a_phase2 connect_timeout=5"
+        "dbname=wp22a_phase2 connect_timeout=5 " +
+        "options='-c statement_timeout=15000 -c lock_timeout=10000'"
     )
     if ([string]::IsNullOrWhiteSpace($oldPythonPath)) {
         $env:PYTHONPATH = $RepoRoot
@@ -128,10 +152,9 @@ try {
         $env:PYTHONPATH = "$RepoRoot;$oldPythonPath"
     }
 
-    # The Python probe contains an intentional concurrent-registration race.
-    # Keep the entire child process bounded as a second line of defence: a
-    # future/database wait must fail this focused gate rather than occupying the
-    # single authoritative Lenovo runner until the outer workflow timeout.
+    # Keep the child process bounded as a second line of defence. A future
+    # regression must fail this focused gate instead of monopolizing the single
+    # authoritative Lenovo runner until the outer workflow timeout.
     $startInfo = New-Object System.Diagnostics.ProcessStartInfo
     $startInfo.FileName = $PythonPath
     $startInfo.Arguments = '"' + $Probe.Replace('"', '\"') + '"'
@@ -149,12 +172,7 @@ try {
     $stdoutTask = $probeProcess.StandardOutput.ReadToEndAsync()
     $stderrTask = $probeProcess.StandardError.ReadToEndAsync()
     if (-not $probeProcess.WaitForExit($ProbeTimeoutSeconds * 1000)) {
-        try {
-            $probeProcess.Kill()
-        }
-        catch {
-            # Timeout is already authoritative; process cleanup remains best-effort.
-        }
+        Stop-ProbeTree -Process $probeProcess
         throw "WP22A_PHASE2_PROBE_TIMEOUT"
     }
 
@@ -200,25 +218,18 @@ try {
 finally {
     $env:OMNI_CIO_WP22A_PHASE2_DSN = $oldDsn
     $env:PYTHONPATH = $oldPythonPath
+    $env:PGCONNECT_TIMEOUT = $oldPgConnectTimeout
+    $env:PGCTLTIMEOUT = $oldPgCtlTimeout
     if ($null -ne $probeProcess) {
-        try {
-            if (-not $probeProcess.HasExited) {
-                $probeProcess.Kill()
-            }
-        }
-        catch {
-            # Cleanup is best-effort; the focused timeout remains authoritative.
-        }
-        finally {
-            $probeProcess.Dispose()
-        }
+        Stop-ProbeTree -Process $probeProcess
+        $probeProcess.Dispose()
     }
     if ($started) {
         try {
-            & $pgCtl stop -D $dataDir -m fast -w -s *> $null
+            & $pgCtl stop -D $dataDir -m fast -w -t 10 -s *> $null
         }
         catch {
-            # Cleanup is best-effort; the CI workspace cleanup remains authoritative.
+            # Cleanup is best-effort; the focused failure remains authoritative.
         }
     }
     if (Test-Path -LiteralPath $root) {
