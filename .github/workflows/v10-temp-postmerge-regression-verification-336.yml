@@ -13,61 +13,85 @@ permissions:
 jobs:
   verify-postmerge-regression:
     name: Verify exact-main post-merge Regression Shield
-    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Verify Regression Shield for exact accepted main
-        shell: powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command ". '{0}'"
         env:
           GH_TOKEN: ${{ github.token }}
           EXPECTED_MAIN_SHA: 00fc692710aa9eaf02ca78ea0535b51600020768
         run: |
-          $ErrorActionPreference = 'Stop'
-          $repo = $env:GITHUB_REPOSITORY
-          $expected = $env:EXPECTED_MAIN_SHA
-          $headers = @{
-            Authorization = "Bearer $($env:GH_TOKEN)"
-            Accept = 'application/vnd.github+json'
-            'X-GitHub-Api-Version' = '2022-11-28'
+          python3 - <<'PY'
+          import json
+          import os
+          import urllib.request
+
+          repo = os.environ["GITHUB_REPOSITORY"]
+          expected = os.environ["EXPECTED_MAIN_SHA"]
+          token = os.environ["GH_TOKEN"]
+          headers = {
+              "Authorization": f"Bearer {token}",
+              "Accept": "application/vnd.github+json",
+              "X-GitHub-Api-Version": "2022-11-28",
           }
 
-          $runsUri = "https://api.github.com/repos/$repo/actions/workflows/regression-shield.yml/runs?branch=main&event=push&per_page=20"
-          $runsResponse = Invoke-RestMethod -Uri $runsUri -Headers $headers -Method Get
-          $matches = @($runsResponse.workflow_runs | Where-Object {
-            $_.head_sha -eq $expected -and $_.event -eq 'push' -and $_.head_branch -eq 'main'
-          } | Sort-Object run_number -Descending)
+          def get_json(url: str) -> dict:
+              request = urllib.request.Request(url, headers=headers)
+              with urllib.request.urlopen(request, timeout=20) as response:
+                  return json.load(response)
 
-          if ($matches.Count -ne 1) {
-            throw "POSTMERGE_REGRESSION_RUN_NOT_FOUND count=$($matches.Count)"
-          }
-
-          $run = $matches[0]
-          if ($run.status -ne 'completed') {
-            throw "POSTMERGE_REGRESSION_NOT_COMPLETED run=$($run.id) status=$($run.status)"
-          }
-          if ($run.conclusion -ne 'success') {
-            throw "POSTMERGE_REGRESSION_NOT_GREEN run=$($run.id) conclusion=$($run.conclusion)"
-          }
-
-          $jobsResponse = Invoke-RestMethod -Uri $run.jobs_url -Headers $headers -Method Get
-          $required = @(
-            'Quality, contracts and coverage',
-            'Dependency, code and secret security'
+          runs_url = (
+              f"https://api.github.com/repos/{repo}/actions/workflows/"
+              "regression-shield.yml/runs?branch=main&event=push&per_page=20"
+          )
+          runs = get_json(runs_url)["workflow_runs"]
+          matches = sorted(
+              (
+                  run
+                  for run in runs
+                  if run["head_sha"] == expected
+                  and run["event"] == "push"
+                  and run["head_branch"] == "main"
+              ),
+              key=lambda run: run["run_number"],
+              reverse=True,
           )
 
-          foreach ($name in $required) {
-            $matching = @($jobsResponse.jobs | Where-Object { $_.name -eq $name })
-            if ($matching.Count -ne 1) {
-              throw "POSTMERGE_REQUIRED_JOB_NOT_FOUND name=$name count=$($matching.Count)"
-            }
-            $job = $matching[0]
-            if ($job.status -ne 'completed' -or $job.conclusion -ne 'success') {
-              throw "POSTMERGE_REQUIRED_JOB_NOT_GREEN name=$name status=$($job.status) conclusion=$($job.conclusion)"
-            }
-          }
+          if len(matches) != 1:
+              raise SystemExit(f"POSTMERGE_REGRESSION_RUN_NOT_FOUND count={len(matches)}")
 
-          Write-Output "REGRESSION_SHIELD_EVIDENCE run_id=$($run.id) run_number=$($run.run_number) head_sha=$($run.head_sha) conclusion=$($run.conclusion)"
-          foreach ($name in $required) {
-            $job = @($jobsResponse.jobs | Where-Object { $_.name -eq $name })[0]
-            Write-Output "REGRESSION_SHIELD_JOB name=$name conclusion=$($job.conclusion)"
-          }
+          run = matches[0]
+          if run["status"] != "completed":
+              raise SystemExit(
+                  f"POSTMERGE_REGRESSION_NOT_COMPLETED run={run['id']} status={run['status']}"
+              )
+          if run["conclusion"] != "success":
+              raise SystemExit(
+                  f"POSTMERGE_REGRESSION_NOT_GREEN run={run['id']} conclusion={run['conclusion']}"
+              )
+
+          jobs = get_json(run["jobs_url"])["jobs"]
+          required = (
+              "Quality, contracts and coverage",
+              "Dependency, code and secret security",
+          )
+          by_name = {job["name"]: job for job in jobs}
+
+          for name in required:
+              job = by_name.get(name)
+              if job is None:
+                  raise SystemExit(f"POSTMERGE_REQUIRED_JOB_NOT_FOUND name={name}")
+              if job["status"] != "completed" or job["conclusion"] != "success":
+                  raise SystemExit(
+                      "POSTMERGE_REQUIRED_JOB_NOT_GREEN "
+                      f"name={name} status={job['status']} conclusion={job['conclusion']}"
+                  )
+
+          print(
+              "REGRESSION_SHIELD_EVIDENCE "
+              f"run_id={run['id']} run_number={run['run_number']} "
+              f"head_sha={run['head_sha']} conclusion={run['conclusion']}"
+          )
+          for name in required:
+              print(f"REGRESSION_SHIELD_JOB name={name} conclusion={by_name[name]['conclusion']}")
+          PY
