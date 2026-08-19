@@ -17,11 +17,13 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Verify Regression Shield for exact accepted main
-        shell: python
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           EXPECTED_MAIN_SHA: 67223469e0031b94d0ada7c5c0d92e3e4efb8d22
         run: |
+          set -euo pipefail
+          python - <<'PY'
           import json
           import os
           import urllib.request
@@ -93,3 +95,4 @@ jobs:
           for name in required:
               job = next(job for job in jobs if job["name"] == name)
               print(f"REGRESSION_SHIELD_JOB name={name} conclusion={job['conclusion']}")
+          PY
