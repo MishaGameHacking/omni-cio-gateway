@@ -1,6 +1,6 @@
 # WP22A — Supplemental Linux CI Decision
 
-Status: **DRAFT IMPLEMENTATION / CIRCLECI FREE PROBE GREEN / LENOVO UNCHANGED**  
+Status: **DRAFT IMPLEMENTATION / CIRCLECI FREE LINUX GATES PROVEN / LENOVO UNCHANGED**  
 Owning package: **WP22A — External Web Access / Product Authentication Security Gate**  
 Accepted base `main`: `67223469e0031b94d0ada7c5c0d92e3e4efb8d22`
 
@@ -55,22 +55,24 @@ Azure Pipelines remains a fallback candidate, not an active dependency.
 
 No paid CI provider is authorized.
 
-## 5. Actual proof evidence
+## 5. Actual proof evidence and failure learning
 
-The PROJECT OWNER completed the unavoidable one-time CircleCI/GitHub repository authorization for only the canonical project.
+The PROJECT OWNER completed the unavoidable one-time CircleCI/GitHub repository authorization for only the canonical project. All subsequent diagnosis and source correction was performed through GitHub/CircleCI status evidence without requesting a CircleCI API token or routine OWNER interaction.
 
-Failure learning during the proof:
+Reusable failure learning from the bounded proof:
 
-1. the first source probe used a future monthly `cimg/base:2026.08` tag before that base image existed and failed at environment start;
-2. the image was corrected to an available published tag;
-3. a combined safety probe then failed because it searched for `trading_methods=false` in the wrong canonical file;
-4. the failure domain was split into environment, private checkout and individual marker jobs;
-5. Linux environment and private GitHub checkout passed; only the misplaced source assertion failed;
-6. the assertion was corrected to the accepted README boundary;
-7. exact-head `a9a50eb871e3a7710f83b3323a634b10a7542afa` reported `ci/circleci: supplemental_linux_capacity_probe = success` back to GitHub;
-8. the capacity probe was promoted to durable Linux governance evidence.
+1. **Future image tag:** the first source probe used `cimg/base:2026.08` before that monthly image existed and failed at environment start. Use only currently published image identities.
+2. **Wrong source assertion:** a combined safety probe searched for `trading_methods=false` in the wrong canonical file. The failure domain was split; Linux environment/private checkout and the other immutable markers were independently GREEN; the assertion was corrected to the accepted README boundary.
+3. **CircleCI config-expression collision:** a PostgreSQL readiness command used a normal shell/Python heredoc containing `<<`. CircleCI config 2.1 preprocesses `<< ... >>` expressions, so the config failed before creating jobs. The heredoc form was removed from the durable config.
+4. **Unpublished PostgreSQL patch-style tag:** direct A/B execution of identical migration/catalog code proved `cimg/postgres:18.4` GREEN while `cimg/postgres:18.4.0` failed. Current public image inventory exposes `18.4`, not `18.4.0`; do not infer an image tag from the upstream PostgreSQL three-part version.
+5. **Source-root parity:** the accepted Windows WP13 wrapper explicitly prepends repository root to `PYTHONPATH` before invoking `scripts/rehearse_v10_wp13_persistence.py`. Linux direct-file execution must preserve the same source-root import contract instead of assuming script-directory resolution is equivalent.
+6. **Bounded failure-domain proof:** separate Linux jobs proved the Docker executor, private GitHub checkout, hash-locked runtime install, PostgreSQL 18 service, psycopg connectivity/version, migration-race serialization, exact catalog round-trip and concurrent incident revision before collapsing diagnostics back to the durable gate.
 
-No provider deployment, production mutation, billing mutation or real secret was used by the proof.
+Exact head `a9a50eb871e3a7710f83b3323a634b10a7542afa` first proved the bounded source/capacity path GREEN. Exact head `c989ce4a342200e386c64944bb10f0f9a8b537db` then proved both durable jobs GREEN together: `supplemental_linux_governance` and the complete accepted WP13 PostgreSQL-18 rehearsal.
+
+Those heads are historical diagnostic evidence only after any later commit. Final acceptance requires a fresh all-GREEN cycle on the final exact head.
+
+No provider deployment, production mutation, billing mutation or real secret was used by these proofs.
 
 ## 6. Durable supplemental gates
 
@@ -97,13 +99,14 @@ It must:
 - use exact Python `3.12.10`;
 - install runtime dependencies only from the committed hash-locked `requirements.txt`;
 - use only a synthetic local CI database/user/password;
+- preserve the accepted repository-root Python import boundary with `PYTHONPATH=.`;
 - wait with a finite deadline for PostgreSQL readiness;
 - verify the PostgreSQL major version is 18 before the rehearsal;
-- execute `scripts/rehearse_v10_wp13_persistence.py exercise`;
-- prove migration race serialization, migration replay idempotency, canonical round-trip, Decimal/numeric semantics, append-only rejection, conflicting replay rejection, concurrent write idempotency, owner-scope rejection and bounded cache retention;
+- execute `scripts/rehearse_v10_wp13_persistence.py exercise` unchanged;
+- prove migration race serialization, migration replay idempotency, canonical round-trip, Decimal/numeric semantics, append-only rejection, conflicting replay rejection, concurrent write idempotency, owner-scope rejection, content-hash idempotency, bounded cache retention and state/migration digest semantics;
 - never use or emit a real database, broker credential or private portfolio payload.
 
-Current CircleCI public image inventory includes `cimg/postgres:18.4`; the source uses the explicit 18.4 tag instead of `current`/`latest`.
+The current CircleCI `cimg/postgres:18.4` linux/amd64 image was verified from the published registry and the durable source pins the proven linux/amd64 manifest digest rather than using `latest`, `current` or the nonexistent `18.4.0` tag.
 
 A green supplemental Linux job is useful independent evidence. It does not replace any applicable Windows-only, PostgreSQL-on-Windows or authoritative Lenovo gate.
 
@@ -114,6 +117,8 @@ CircleCI Free is a finite external capacity pool, not permission for unbounded C
 Rules:
 
 - use the smallest adequate resource class;
+- keep the durable topology compact (governance + one full PostgreSQL portability rehearsal);
+- diagnostic fan-out exists only while isolating a failure and must be removed afterward;
 - do not duplicate every historical WP workflow mechanically;
 - add heavier Linux/Web/PostgreSQL checks only when they materially improve current-WP evidence;
 - keep PostgreSQL rehearsal synthetic and bounded;
@@ -136,7 +141,7 @@ CircleCI cannot become the application runtime, durable production database, ten
 
 Before merge:
 
-1. obsolete one-off GitHub-hosted Windows probe material is absent from the final diff;
+1. obsolete one-off GitHub-hosted Windows probe and temporary diagnostic code are absent from the final diff;
 2. durable CircleCI exact-head supplemental Linux governance job succeeds;
 3. durable CircleCI exact-head supplemental Linux PostgreSQL 18 rehearsal succeeds;
 4. existing applicable GitHub/Lenovo gates execute and succeed on the exact head;
