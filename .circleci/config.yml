@@ -1,9 +1,9 @@
 version: 2.1
 
 jobs:
-  no_lenovo_capacity_probe:
+  supplemental_linux_capacity_probe:
     docker:
-      - image: cimg/base:2026.08
+      - image: cimg/base:2026.07
     resource_class: small
     steps:
       - checkout
@@ -29,17 +29,18 @@ jobs:
             grep -q 'trading_methods=false' AGENTS.md
             grep -q 'REAL_TRADING_ENABLED=false' AGENTS.md
             grep -q 'PUBLIC_MULTI_USER_ENABLED=false' knowledge/17_V10_CURRENT_PROGRAM_STATUS.md
-            printf '%s\n' 'V10_NO_LENOVO_SAFETY_MARKERS=PASS'
+            printf '%s\n' 'V10_SUPPLEMENTAL_LINUX_SAFETY_MARKERS=PASS'
       - run:
           name: Record bounded hosted-CI probe
           command: |
-            printf '%s\n' 'CIRCLECI_HOSTED_CAPACITY_PROBE=PASS'
+            printf '%s\n' 'CIRCLECI_HOSTED_LINUX_CAPACITY_PROBE=PASS'
             printf '%s\n' 'CANONICAL_SOURCE=GITHUB'
+            printf '%s\n' 'LENOVO_WINDOWS_CONTOUR_REPLACED=NO'
             printf '%s\n' 'PRODUCTION_MUTATION_PERFORMED=NO'
             printf '%s\n' 'BILLING_MUTATION_PERFORMED=NO'
             printf '%s\n' 'REAL_SECRETS_USED=NO'
 
 workflows:
-  wp22a_no_lenovo_recovery_probe:
+  wp22a_supplemental_linux_capacity_probe:
     jobs:
-      - no_lenovo_capacity_probe
+      - supplemental_linux_capacity_probe
