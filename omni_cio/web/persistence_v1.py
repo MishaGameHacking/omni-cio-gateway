@@ -2,19 +2,19 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import re
 import secrets
 from typing import Any
 
 from omni_cio.adapters.tinvest_read_v1 import BrokerAccountBindingV1
-from omni_cio.contracts.v1.domain import (
-    OWNER_TENANT_ID,
-    BrokerAccountV1,
-    BrokerProvider,
-)
+from omni_cio.contracts.v1.domain import BrokerAccountV1, BrokerProvider
 from omni_cio.persistence.migration import ConnectionLike
 from omni_cio.persistence.repository import model_record_sha256
 from omni_cio.web.broker_vault_v1 import new_read_connection_secret_ref
 from omni_cio.web.session_v1 import SessionPolicyV1, SessionScopeV1, _token_hash
+
+
+_TENANT_ID_RE = re.compile(r"^tenant:v1:[a-z0-9][a-z0-9_-]{2,63}$")
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,6 +34,17 @@ def _utc(value: datetime) -> datetime:
     if value.tzinfo is None or value.utcoffset() is None:
         raise ValueError("Web persistence timestamp must be timezone-aware")
     return value.astimezone(timezone.utc)
+
+
+def _set_tenant_scope(connection: ConnectionLike, tenant_id: str) -> None:
+    """Bind PostgreSQL RLS to the authenticated server-side tenant for this tx."""
+
+    if _TENANT_ID_RE.fullmatch(tenant_id) is None:
+        raise ValueError("WEB_TENANT_SCOPE_INVALID")
+    connection.execute(
+        "SELECT set_config('omni_cio.tenant_id', %s, true)",
+        (tenant_id,),
+    )
 
 
 def new_broker_connection_id() -> str:
@@ -156,12 +167,11 @@ class PostgresBrokerConnectionRepositoryV1:
         bindings: tuple[BrokerAccountBindingV1, ...],
         now: datetime,
     ) -> None:
-        if tenant_id != OWNER_TENANT_ID:
-            raise PermissionError("WP17 private acceptance admits only OWNER tenant")
         if not bindings:
             raise ValueError("broker connection requires at least one verified account")
         timestamp = _utc(now)
         with self._connection.transaction():
+            _set_tenant_scope(self._connection, tenant_id)
             for binding in bindings:
                 account = BrokerAccountV1(
                     broker_account_id=binding.broker_account_id,
@@ -243,19 +253,21 @@ class PostgresBrokerConnectionRepositoryV1:
     def list_read_connections(
         self, *, tenant_id: str
     ) -> tuple[BrokerConnectionRecordV1, ...]:
-        rows = self._connection.execute(
-            "SELECT c.connection_id, c.tenant_id, c.provider, c.credential_role, c.state, "
-            "c.secret_ref, c.created_at, c.last_verified_at, a.broker_account_id, "
-            "a.account_fingerprint_sha256, a.masked_label "
-            "FROM omni_cio_v10.broker_connections c "
-            "LEFT JOIN omni_cio_v10.broker_connection_accounts ca "
-            "ON ca.connection_id = c.connection_id AND ca.tenant_id = c.tenant_id "
-            "LEFT JOIN omni_cio_v10.broker_accounts a "
-            "ON a.broker_account_id = ca.broker_account_id AND a.tenant_id = ca.tenant_id "
-            "WHERE c.tenant_id = %s AND c.state <> 'REVOKED' "
-            "ORDER BY c.created_at, c.connection_id, a.broker_account_id",
-            (tenant_id,),
-        ).fetchall()
+        with self._connection.transaction():
+            _set_tenant_scope(self._connection, tenant_id)
+            rows = self._connection.execute(
+                "SELECT c.connection_id, c.tenant_id, c.provider, c.credential_role, c.state, "
+                "c.secret_ref, c.created_at, c.last_verified_at, a.broker_account_id, "
+                "a.account_fingerprint_sha256, a.masked_label "
+                "FROM omni_cio_v10.broker_connections c "
+                "LEFT JOIN omni_cio_v10.broker_connection_accounts ca "
+                "ON ca.connection_id = c.connection_id AND ca.tenant_id = c.tenant_id "
+                "LEFT JOIN omni_cio_v10.broker_accounts a "
+                "ON a.broker_account_id = ca.broker_account_id AND a.tenant_id = ca.tenant_id "
+                "WHERE c.tenant_id = %s AND c.state <> 'REVOKED' "
+                "ORDER BY c.created_at, c.connection_id, a.broker_account_id",
+                (tenant_id,),
+            ).fetchall()
         grouped: dict[str, tuple[list[Any], list[BrokerAccountBindingV1]]] = {}
         for row in rows:
             connection_id = str(row[0])
@@ -295,6 +307,7 @@ class PostgresBrokerConnectionRepositoryV1:
     ) -> str | None:
         current = _utc(now)
         with self._connection.transaction():
+            _set_tenant_scope(self._connection, tenant_id)
             row = self._connection.execute(
                 "SELECT secret_ref, state FROM omni_cio_v10.broker_connections "
                 "WHERE tenant_id = %s AND connection_id = %s FOR UPDATE",
@@ -321,6 +334,7 @@ class PostgresBrokerConnectionRepositoryV1:
     ) -> str:
         current = _utc(now)
         with self._connection.transaction():
+            _set_tenant_scope(self._connection, tenant_id)
             row = self._connection.execute(
                 "SELECT secret_ref, state FROM omni_cio_v10.broker_connections "
                 "WHERE tenant_id = %s AND connection_id = %s FOR UPDATE",
