@@ -1,0 +1,45 @@
+version: 2.1
+
+jobs:
+  no_lenovo_capacity_probe:
+    docker:
+      - image: cimg/base:2026.08
+    resource_class: small
+    steps:
+      - checkout
+      - run:
+          name: Verify exact checked-out source
+          command: |
+            set -eu
+            ACTUAL_HEAD="$(git rev-parse HEAD)"
+            if [ "$ACTUAL_HEAD" != "$CIRCLE_SHA1" ]; then
+              echo "CIRCLECI_EXACT_HEAD_MISMATCH" >&2
+              exit 11
+            fi
+            test -f AGENTS.md
+            test -f README.md
+            test -f docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.md
+            test -f knowledge/17_V10_CURRENT_PROGRAM_STATUS.md
+            printf 'CIRCLECI_EXACT_HEAD=%s\n' "$ACTUAL_HEAD"
+      - run:
+          name: Verify immutable V10 safety markers
+          command: |
+            set -eu
+            grep -q 'app:app' AGENTS.md
+            grep -q 'trading_methods=false' AGENTS.md
+            grep -q 'REAL_TRADING_ENABLED=false' AGENTS.md
+            grep -q 'PUBLIC_MULTI_USER_ENABLED=false' knowledge/17_V10_CURRENT_PROGRAM_STATUS.md
+            printf '%s\n' 'V10_NO_LENOVO_SAFETY_MARKERS=PASS'
+      - run:
+          name: Record bounded hosted-CI probe
+          command: |
+            printf '%s\n' 'CIRCLECI_HOSTED_CAPACITY_PROBE=PASS'
+            printf '%s\n' 'CANONICAL_SOURCE=GITHUB'
+            printf '%s\n' 'PRODUCTION_MUTATION_PERFORMED=NO'
+            printf '%s\n' 'BILLING_MUTATION_PERFORMED=NO'
+            printf '%s\n' 'REAL_SECRETS_USED=NO'
+
+workflows:
+  wp22a_no_lenovo_recovery_probe:
+    jobs:
+      - no_lenovo_capacity_probe
