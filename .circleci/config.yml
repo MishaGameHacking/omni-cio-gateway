@@ -1,39 +1,61 @@
 version: 2.1
 
 jobs:
-  supplemental_linux_capacity_probe:
+  supplemental_linux_governance:
     docker:
-      - image: cimg/base:2026.07
+      - image: cimg/python:3.12.10
     resource_class: small
     steps:
-      - run:
-          name: Verify hosted Linux environment
-          command: |
-            set -eu
-            uname -a
-            git --version
-            printf '%s\n' 'CIRCLECI_LINUX_ENVIRONMENT=PASS'
       - checkout
       - run:
-          name: Verify exact checked-out source
+          name: Verify exact source and immutable safety boundary
           command: |
             set -eu
             ACTUAL_HEAD="$(git rev-parse HEAD)"
             test "$ACTUAL_HEAD" = "$CIRCLE_SHA1"
+            test "$(python --version)" = "Python 3.12.10"
             test -f AGENTS.md
             test -f README.md
             test -f docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.md
             test -f knowledge/17_V10_CURRENT_PROGRAM_STATUS.md
-            printf 'CIRCLECI_EXACT_HEAD=%s\n' "$ACTUAL_HEAD"
-      - run:
-          name: Verify immutable V10 safety markers
-          command: |
-            set -eu
             grep -Fq 'app:app' AGENTS.md
             grep -Fq 'trading_methods=false' README.md
             grep -Fq 'REAL_TRADING_ENABLED=false' AGENTS.md
             grep -Fq 'PUBLIC_MULTI_USER_ENABLED=false' knowledge/17_V10_CURRENT_PROGRAM_STATUS.md
-            printf '%s\n' 'V10_SUPPLEMENTAL_LINUX_SAFETY_MARKERS=PASS'
+            printf 'CIRCLECI_EXACT_HEAD=%s\n' "$ACTUAL_HEAD"
+            printf '%s\n' 'V10_SUPPLEMENTAL_LINUX_SAFETY_BOUNDARY=PASS'
+      - run:
+          name: Verify portable engineering governance contracts
+          command: |
+            set -eu
+            python scripts/check_v10_engineering_governance.py
+            python scripts/check_v10_documentation_consistency.py
+            python scripts/check_v10_public_product_plan.py
+            python scripts/check_v10_ci_cost_control.py
+            python scripts/check_v10_regression_shield.py
+      - run:
+          name: Compile portable governance and CI guards
+          command: |
+            set -eu
+            python -m py_compile \
+              scripts/check_v10_engineering_governance.py \
+              scripts/check_v10_documentation_consistency.py \
+              scripts/check_v10_public_product_plan.py \
+              scripts/check_v10_ci_cost_control.py \
+              scripts/check_v10_regression_shield.py \
+              scripts/v10_ci_router.py
+      - run:
+          name: Run portable stdlib CI contract regression tests
+          command: |
+            set -eu
+            python -m unittest \
+              tests.test_v10_regression_shield \
+              tests.test_v10_ci_action_download_resilience \
+              tests.test_v10_release_provenance
+      - run:
+          name: Record supplemental Linux evidence boundary
+          command: |
+            printf '%s\n' 'V10_SUPPLEMENTAL_LINUX_GOVERNANCE=PASS'
             printf '%s\n' 'CANONICAL_SOURCE=GITHUB'
             printf '%s\n' 'LENOVO_WINDOWS_CONTOUR_REPLACED=NO'
             printf '%s\n' 'PRODUCTION_MUTATION_PERFORMED=NO'
@@ -41,6 +63,6 @@ jobs:
             printf '%s\n' 'REAL_SECRETS_USED=NO'
 
 workflows:
-  wp22a_supplemental_linux_capacity_probe:
+  v10_supplemental_linux_governance:
     jobs:
-      - supplemental_linux_capacity_probe
+      - supplemental_linux_governance
