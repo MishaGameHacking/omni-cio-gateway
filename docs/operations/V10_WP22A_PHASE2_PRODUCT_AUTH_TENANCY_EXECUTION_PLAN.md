@@ -32,14 +32,15 @@ Phase 2 owns only:
 2. protected provider-subject lookup binding using keyed HMAC-SHA256 (no raw subject and no enumerable unkeyed subject hash in PostgreSQL);
 3. one external identity -> at most one USER account;
 4. one USER account -> at most one binding per provider, while Telegram + VK may both bind to that account;
-5. public registration **disabled by default**;
-6. server-side session issuance/rotation/revocation from verified identity only;
-7. `web_sessions` generalization while retaining the `(user_id, tenant_id)` database FK;
-8. broker connection/account persistence generalization to arbitrary valid tenant scope;
-9. application-side tenant binding with transaction-local PostgreSQL tenant context;
-10. PostgreSQL RLS on generalized broker relations and a restricted-role negative rehearsal;
-11. removal of historical remote OWNER login and OWNER/Personal session labels from the normal Web product boundary;
-12. deterministic unit/static/PostgreSQL evidence that client `user_id` / `tenant_id` selectors do not override server-side session scope and that cross-tenant/IDOR access fails closed.
+5. historical `user:v1:owner` / `tenant:v1:owner` engineering identity is reserved and cannot receive Telegram/VK product bindings; the PROJECT OWNER's eventual public product account must be an ordinary `product_user` / `user` scope like every other USER;
+6. public registration **disabled by default**;
+7. server-side session issuance/rotation/revocation from verified identity only;
+8. `web_sessions` generalization while retaining the `(user_id, tenant_id)` database FK;
+9. broker connection/account persistence generalization to arbitrary valid tenant scope;
+10. application-side tenant binding with transaction-local PostgreSQL tenant context;
+11. PostgreSQL RLS on generalized broker relations and a restricted-role negative rehearsal;
+12. removal of historical remote OWNER login and OWNER/Personal session labels from the normal Web product boundary;
+13. deterministic unit/static/PostgreSQL evidence that client `user_id` / `tenant_id` selectors do not override server-side session scope and that cross-tenant/IDOR access fails closed.
 
 ## Deliberately out of scope / locked
 
@@ -92,6 +93,7 @@ Mitigations:
 
 - migration generalizes only identity/session/broker relations;
 - unrelated private tables and the accepted OWNER canonical graph retain their existing scope in Phase 2;
+- historical OWNER engineering identity is denied as an external product-identity binding in both application logic and PostgreSQL constraints;
 - existing composite tenant FKs/uniqueness are retained;
 - broker repository always sets tenant context inside the same transaction as private SQL;
 - Web API tests prove non-OWNER product sessions ignore client-supplied user/tenant selectors;
@@ -109,6 +111,7 @@ Before final exact-head CI:
 - run isolated PostgreSQL 18 Phase-2 tenant-security rehearsal;
 - run WP13 migration/recovery regression rehearsal;
 - inspect full branch diff for accidental widening of unrelated OWNER guards;
+- verify historical OWNER engineering identity cannot be promoted into a privileged product account through provider linking;
 - verify `app:app`, `trading_methods=false`, `REAL_TRADING_ENABLED=false` unchanged.
 
 ## Required Phase-2 acceptance evidence
@@ -120,6 +123,7 @@ Phase 2 is not complete unless all applicable exact-head checks conclude `succes
 - same identity resolves to one stable internal USER/tenant;
 - second provider can link only from authenticated account scope;
 - identity already bound elsewhere cannot be stolen/merged;
+- historical OWNER engineering scope cannot receive a product provider binding or become a privileged product identity;
 - login rotates/revokes the prior server session;
 - plaintext session token is not persisted;
 - product session presentation exposes no historical OWNER/Personal authority label or raw user/tenant IDs;
