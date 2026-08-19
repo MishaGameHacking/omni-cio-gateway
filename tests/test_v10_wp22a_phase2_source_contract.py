@@ -12,6 +12,9 @@ API = ROOT / "omni_cio/web/api_v1.py"
 PERSISTENCE = ROOT / "omni_cio/web/persistence_v1.py"
 SHELL = ROOT / "apps/web/src/app-shell/app-shell.tsx"
 STATUS = ROOT / "knowledge/17_V10_CURRENT_PROGRAM_STATUS.md"
+REHEARSAL_WRAPPER = (
+    ROOT / "infrastructure/windows/rehearse_wp22a_phase2_tenant_security.ps1"
+)
 
 
 def test_phase2_migration_generalizes_only_authorized_boundaries() -> None:
@@ -93,6 +96,26 @@ def test_product_shell_has_no_engineering_edge_owner_login() -> None:
     assert "Продолжить через Telegram" in source
     assert "Продолжить через VK ID" in source
     assert "<span>USER</span>" in source
+
+
+def test_phase2_rehearsal_has_layered_finite_waits_and_safe_stage_markers() -> None:
+    source = REHEARSAL_WRAPPER.read_text(encoding="utf-8")
+
+    for required in (
+        "ProbeTimeoutSeconds = 120",
+        'PGCTLTIMEOUT = "10"',
+        "statement_timeout=15000",
+        "lock_timeout=10000",
+        "taskkill.exe /PID $processId /T /F",
+        '"WP22A_PHASE2_STAGE=initdb"',
+        '"WP22A_PHASE2_STAGE=postgres_start"',
+        '"WP22A_PHASE2_STAGE=database_create"',
+        '"WP22A_PHASE2_STAGE=python_probe"',
+        "-TimeoutSeconds 45",
+        "-TimeoutSeconds 15",
+        "-w -t 10 -s",
+    ):
+        assert required in source
 
 
 def test_phase2_keeps_public_activation_and_wp23_locked() -> None:
