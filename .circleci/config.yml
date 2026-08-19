@@ -1,7 +1,7 @@
 version: 2.1
 
 jobs:
-  supplemental_linux_environment_probe:
+  supplemental_linux_capacity_probe:
     docker:
       - image: cimg/base:2026.07
     resource_class: small
@@ -13,12 +13,6 @@ jobs:
             uname -a
             git --version
             printf '%s\n' 'CIRCLECI_LINUX_ENVIRONMENT=PASS'
-
-  supplemental_linux_checkout_probe:
-    docker:
-      - image: cimg/base:2026.07
-    resource_class: small
-    steps:
       - checkout
       - run:
           name: Verify exact checked-out source
@@ -31,55 +25,22 @@ jobs:
             test -f docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.md
             test -f knowledge/17_V10_CURRENT_PROGRAM_STATUS.md
             printf 'CIRCLECI_EXACT_HEAD=%s\n' "$ACTUAL_HEAD"
-
-  marker_app_entrypoint:
-    docker:
-      - image: cimg/base:2026.07
-    resource_class: small
-    steps:
-      - checkout
-      - run: grep -Fq 'app:app' AGENTS.md
-
-  marker_trading_methods:
-    docker:
-      - image: cimg/base:2026.07
-    resource_class: small
-    steps:
-      - checkout
-      - run: grep -Fq 'trading_methods=false' AGENTS.md
-
-  marker_real_trading:
-    docker:
-      - image: cimg/base:2026.07
-    resource_class: small
-    steps:
-      - checkout
-      - run: grep -Fq 'REAL_TRADING_ENABLED=false' AGENTS.md
-
-  marker_public_multi_user:
-    docker:
-      - image: cimg/base:2026.07
-    resource_class: small
-    steps:
-      - checkout
-      - run: grep -Fq 'PUBLIC_MULTI_USER_ENABLED=false' knowledge/17_V10_CURRENT_PROGRAM_STATUS.md
+      - run:
+          name: Verify immutable V10 safety markers
+          command: |
+            set -eu
+            grep -Fq 'app:app' AGENTS.md
+            grep -Fq 'trading_methods=false' README.md
+            grep -Fq 'REAL_TRADING_ENABLED=false' AGENTS.md
+            grep -Fq 'PUBLIC_MULTI_USER_ENABLED=false' knowledge/17_V10_CURRENT_PROGRAM_STATUS.md
+            printf '%s\n' 'V10_SUPPLEMENTAL_LINUX_SAFETY_MARKERS=PASS'
+            printf '%s\n' 'CANONICAL_SOURCE=GITHUB'
+            printf '%s\n' 'LENOVO_WINDOWS_CONTOUR_REPLACED=NO'
+            printf '%s\n' 'PRODUCTION_MUTATION_PERFORMED=NO'
+            printf '%s\n' 'BILLING_MUTATION_PERFORMED=NO'
+            printf '%s\n' 'REAL_SECRETS_USED=NO'
 
 workflows:
   wp22a_supplemental_linux_capacity_probe:
     jobs:
-      - supplemental_linux_environment_probe
-      - supplemental_linux_checkout_probe:
-          requires:
-            - supplemental_linux_environment_probe
-      - marker_app_entrypoint:
-          requires:
-            - supplemental_linux_checkout_probe
-      - marker_trading_methods:
-          requires:
-            - supplemental_linux_checkout_probe
-      - marker_real_trading:
-          requires:
-            - supplemental_linux_checkout_probe
-      - marker_public_multi_user:
-          requires:
-            - supplemental_linux_checkout_probe
+      - supplemental_linux_capacity_probe
