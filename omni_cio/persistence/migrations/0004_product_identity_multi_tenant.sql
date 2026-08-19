@@ -1,5 +1,7 @@
--- WP22A Phase 2: remove historical OWNER-only persistence checks while
--- retaining explicit tenant foreign keys/uniqueness and public activation locks.
+-- WP22A Phase 2: generalize only the identity/session/broker persistence
+-- boundaries required by the accepted public USER model. Historical OWNER-only
+-- checks on portfolio/research/decision/job state remain fail-closed until the
+-- later hosted private-state phase owns their generalization.
 
 ALTER TABLE omni_cio_v10.tenants
     DROP CONSTRAINT owner_tenant_only,
@@ -34,42 +36,18 @@ ALTER TABLE omni_cio_v10.users
     ),
     ADD CONSTRAINT users_one_account_per_tenant UNIQUE (tenant_id);
 
-ALTER TABLE omni_cio_v10.broker_accounts
-    DROP CONSTRAINT broker_account_owner_only;
-ALTER TABLE omni_cio_v10.portfolios
-    DROP CONSTRAINT portfolio_owner_only;
-ALTER TABLE omni_cio_v10.policies
-    DROP CONSTRAINT policy_owner_only;
-ALTER TABLE omni_cio_v10.portfolio_snapshots
-    DROP CONSTRAINT snapshot_owner_only;
-ALTER TABLE omni_cio_v10.positions
-    DROP CONSTRAINT position_owner_only;
-ALTER TABLE omni_cio_v10.evidence
-    DROP CONSTRAINT evidence_owner_only;
-ALTER TABLE omni_cio_v10.incidents
-    DROP CONSTRAINT incident_owner_only;
-ALTER TABLE omni_cio_v10.decisions
-    DROP CONSTRAINT decision_owner_only;
-ALTER TABLE omni_cio_v10.plans
-    DROP CONSTRAINT plan_owner_only;
-ALTER TABLE omni_cio_v10.executions
-    DROP CONSTRAINT execution_owner_only;
-ALTER TABLE omni_cio_v10.journal
-    DROP CONSTRAINT journal_owner_only;
-ALTER TABLE omni_cio_v10.research_cache
-    DROP CONSTRAINT research_owner_only;
-ALTER TABLE omni_cio_v10.jobs
-    DROP CONSTRAINT job_owner_only;
-ALTER TABLE omni_cio_v10.job_events
-    DROP CONSTRAINT job_event_owner_only;
-ALTER TABLE omni_cio_v10.system_health
-    DROP CONSTRAINT health_owner_only;
-ALTER TABLE omni_cio_v10.content_blobs
-    DROP CONSTRAINT content_blob_owner_only;
-ALTER TABLE omni_cio_v10.state_revisions
-    DROP CONSTRAINT state_revision_owner_only;
+-- Product sessions are a central account-plane relation. They resolve tenant
+-- scope from an opaque token hash before a tenant is known, so they deliberately
+-- do not use tenant RLS. The user/tenant composite FK remains the database scope
+-- binding and plaintext browser tokens are never persisted.
 ALTER TABLE omni_cio_v10.web_sessions
     DROP CONSTRAINT web_session_owner_only;
+
+-- Broker state is the first tenant-private relation generalized by WP22A Phase 2.
+-- Keep the existing composite scope FKs and add PostgreSQL RLS as a second,
+-- database-enforced horizontal isolation boundary.
+ALTER TABLE omni_cio_v10.broker_accounts
+    DROP CONSTRAINT broker_account_owner_only;
 ALTER TABLE omni_cio_v10.broker_connections
     DROP CONSTRAINT broker_connection_owner_only;
 ALTER TABLE omni_cio_v10.broker_connection_accounts
@@ -77,17 +55,17 @@ ALTER TABLE omni_cio_v10.broker_connection_accounts
 
 CREATE TABLE omni_cio_v10.external_identity_bindings (
     provider text NOT NULL,
-    subject_binding_sha256 char(64) NOT NULL,
+    subject_binding_hmac_sha256 char(64) NOT NULL,
     user_id text NOT NULL,
     tenant_id text NOT NULL,
     linked_at timestamptz NOT NULL,
     last_verified_at timestamptz NOT NULL,
-    PRIMARY KEY (provider, subject_binding_sha256),
+    PRIMARY KEY (provider, subject_binding_hmac_sha256),
     CONSTRAINT external_identity_provider CHECK (
         provider IN ('telegram', 'vk_id')
     ),
-    CONSTRAINT external_identity_binding_sha256 CHECK (
-        subject_binding_sha256 ~ '^[a-f0-9]{64}$'
+    CONSTRAINT external_identity_binding_hmac_sha256 CHECK (
+        subject_binding_hmac_sha256 ~ '^[a-f0-9]{64}$'
     ),
     CONSTRAINT external_identity_user_scope_fk
         FOREIGN KEY (user_id, tenant_id)
@@ -100,3 +78,32 @@ CREATE TABLE omni_cio_v10.external_identity_bindings (
 );
 CREATE INDEX external_identity_user_scope_idx
     ON omni_cio_v10.external_identity_bindings (tenant_id, user_id);
+
+CREATE OR REPLACE FUNCTION omni_cio_v10.current_tenant_scope()
+RETURNS text
+LANGUAGE sql
+STABLE
+AS $$
+    SELECT NULLIF(pg_catalog.current_setting('omni_cio.tenant_id', true), '')
+$$;
+
+ALTER TABLE omni_cio_v10.broker_accounts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE omni_cio_v10.broker_accounts FORCE ROW LEVEL SECURITY;
+CREATE POLICY broker_accounts_tenant_isolation
+    ON omni_cio_v10.broker_accounts
+    USING (tenant_id = omni_cio_v10.current_tenant_scope())
+    WITH CHECK (tenant_id = omni_cio_v10.current_tenant_scope());
+
+ALTER TABLE omni_cio_v10.broker_connections ENABLE ROW LEVEL SECURITY;
+ALTER TABLE omni_cio_v10.broker_connections FORCE ROW LEVEL SECURITY;
+CREATE POLICY broker_connections_tenant_isolation
+    ON omni_cio_v10.broker_connections
+    USING (tenant_id = omni_cio_v10.current_tenant_scope())
+    WITH CHECK (tenant_id = omni_cio_v10.current_tenant_scope());
+
+ALTER TABLE omni_cio_v10.broker_connection_accounts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE omni_cio_v10.broker_connection_accounts FORCE ROW LEVEL SECURITY;
+CREATE POLICY broker_connection_accounts_tenant_isolation
+    ON omni_cio_v10.broker_connection_accounts
+    USING (tenant_id = omni_cio_v10.current_tenant_scope())
+    WITH CHECK (tenant_id = omni_cio_v10.current_tenant_scope());
