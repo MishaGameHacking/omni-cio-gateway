@@ -158,8 +158,6 @@ def _exercise(connection: psycopg.Connection[Any]) -> dict[str, object]:
     )
     if session_a.tenant_id != SCOPE_A.tenant_id or session_b.tenant_id != SCOPE_B.tenant_id:
         raise AssertionError("server-side session scope changed tenant")
-    if sessions.resolve(token_a, now=NOW + timedelta(seconds=1)) != session_a.model_copy() if False else False:
-        raise AssertionError("unreachable")
     resolved_a = sessions.resolve(token_a, now=NOW + timedelta(seconds=1))
     resolved_b = sessions.resolve(token_b, now=NOW + timedelta(seconds=1))
     if resolved_a is None or resolved_a.tenant_id != SCOPE_A.tenant_id:
