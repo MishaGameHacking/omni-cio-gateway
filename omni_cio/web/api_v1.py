@@ -173,8 +173,6 @@ def create_web_api(services: WebApiServicesV1) -> FastAPI:
             return {"authenticated": False}
         return {
             "authenticated": True,
-            "user_label": "OWNER",
-            "tenant_label": "Personal",
             "expires_at": scope.expires_at.isoformat(),
         }
 
