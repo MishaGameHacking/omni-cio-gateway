@@ -34,7 +34,6 @@ SCOPE_B = ProductAccountScopeV1(
     user_id="user:v1:product_b",
     tenant_id="tenant:v1:product_b",
 )
-PROBE_ROLE = "wp22a_phase2_rls_probe"
 
 
 def _dsn() -> str:
@@ -74,7 +73,7 @@ def _set_probe_role_and_scope(
     connection: psycopg.Connection[Any],
     tenant_id: str | None,
 ) -> None:
-    connection.execute(f"SET LOCAL ROLE {PROBE_ROLE}")
+    connection.execute("SET LOCAL ROLE wp22a_phase2_rls_probe")
     if tenant_id is not None:
         connection.execute(
             "SELECT set_config('omni_cio.tenant_id', %s, true)",
@@ -217,16 +216,22 @@ def _exercise(connection: psycopg.Connection[Any]) -> dict[str, object]:
         "AND c.relname IN ('broker_accounts','broker_connections','broker_connection_accounts') "
         "ORDER BY c.relname"
     ).fetchall()
-    if len(rls_rows) != 3 or not all(bool(row[1]) and bool(row[2]) for row in rls_rows):
-        raise AssertionError(f"broker RLS/FORCE policy is not enabled: {rls_rows!r}")
+    if len(rls_rows) != 3 or not all(bool(row[1]) for row in rls_rows):
+        raise AssertionError(f"broker RLS policy is not enabled: {rls_rows!r}")
+    if any(bool(row[2]) for row in rls_rows):
+        raise AssertionError("Phase 2 unexpectedly forced RLS on the legacy table owner")
 
-    connection.execute(f"CREATE ROLE {PROBE_ROLE} NOLOGIN NOSUPERUSER NOBYPASSRLS")
-    connection.execute(f"GRANT USAGE ON SCHEMA omni_cio_v10 TO {PROBE_ROLE}")
+    connection.execute(
+        "CREATE ROLE wp22a_phase2_rls_probe NOLOGIN NOSUPERUSER NOBYPASSRLS"
+    )
+    connection.execute(
+        "GRANT USAGE ON SCHEMA omni_cio_v10 TO wp22a_phase2_rls_probe"
+    )
     connection.execute(
         "GRANT SELECT, INSERT, UPDATE, DELETE ON "
         "omni_cio_v10.broker_accounts, "
         "omni_cio_v10.broker_connections, "
-        f"omni_cio_v10.broker_connection_accounts TO {PROBE_ROLE}"
+        "omni_cio_v10.broker_connection_accounts TO wp22a_phase2_rls_probe"
     )
 
     with connection.transaction():
@@ -311,7 +316,8 @@ def _exercise(connection: psycopg.Connection[Any]) -> dict[str, object]:
         "server_session_tenant_scope": True,
         "broker_application_tenant_scope": True,
         "broker_rls_enabled": True,
-        "broker_rls_force_enabled": True,
+        "restricted_role_rls_enforced": True,
+        "rls_force_deferred_to_phase3": True,
         "rls_default_deny_without_scope": True,
         "cross_tenant_object_id_denied": True,
         "cross_tenant_insert_rejected": cross_insert_rejected,
