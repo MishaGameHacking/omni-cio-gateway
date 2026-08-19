@@ -25,6 +25,7 @@ def test_phase2_migration_generalizes_only_authorized_boundaries() -> None:
         "DROP CONSTRAINT broker_connection_owner_only",
         "DROP CONSTRAINT broker_connection_accounts_owner_only",
         "subject_binding_hmac_sha256",
+        "external_identity_product_scope",
         "ENABLE ROW LEVEL SECURITY",
         "broker_accounts_tenant_isolation",
         "broker_connections_tenant_isolation",
@@ -60,6 +61,7 @@ def test_product_identity_uses_keyed_binding_and_fail_closed_registration() -> N
     assert "hmac.new" in source
     assert "PRODUCT_IDENTITY_BINDING_KEY_TOO_SHORT" in source
     assert "PUBLIC_REGISTRATION_DISABLED" in source
+    assert "OWNER_IDENTITY_RESERVED" in source
     assert "pg_advisory_xact_lock" in source
     assert "ProductAuthenticationServiceV1" in source
     assert "subject_binding_sha256" not in source
