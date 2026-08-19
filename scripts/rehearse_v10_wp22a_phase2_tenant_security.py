@@ -123,7 +123,9 @@ def _exercise_identity_race(dsn: str) -> bool:
     if results[0] != results[1]:
         raise AssertionError("concurrent registration created split identity bindings")
     if results[0] not in {RACE_SCOPE_A, RACE_SCOPE_B}:
-        raise AssertionError("concurrent registration returned an unexpected account scope")
+        raise AssertionError(
+            "concurrent registration returned an unexpected account scope"
+        )
 
     with psycopg.connect(dsn, autocommit=True) as verifier:
         binding_digest = protected_identity_binding_hmac_sha256(
@@ -136,7 +138,9 @@ def _exercise_identity_race(dsn: str) -> bool:
             (race_identity.provider.value, binding_digest),
         ).fetchall()
         if rows != [(results[0].user_id, results[0].tenant_id)]:
-            raise AssertionError("concurrent identity binding durable result is ambiguous")
+            raise AssertionError(
+                "concurrent identity binding durable result is ambiguous"
+            )
     return True
 
 
@@ -283,14 +287,14 @@ def _exercise(connection: psycopg.Connection[Any], *, dsn: str) -> dict[str, obj
     if len(rls_rows) != 3 or not all(bool(row[1]) for row in rls_rows):
         raise AssertionError(f"broker RLS policy is not enabled: {rls_rows!r}")
     if any(bool(row[2]) for row in rls_rows):
-        raise AssertionError("Phase 2 unexpectedly forced RLS on the legacy table owner")
+        raise AssertionError(
+            "Phase 2 unexpectedly forced RLS on the legacy table owner"
+        )
 
     connection.execute(
         "CREATE ROLE wp22a_phase2_rls_probe NOLOGIN NOSUPERUSER NOBYPASSRLS"
     )
-    connection.execute(
-        "GRANT USAGE ON SCHEMA omni_cio_v10 TO wp22a_phase2_rls_probe"
-    )
+    connection.execute("GRANT USAGE ON SCHEMA omni_cio_v10 TO wp22a_phase2_rls_probe")
     connection.execute(
         "GRANT SELECT, INSERT, UPDATE, DELETE ON "
         "omni_cio_v10.broker_accounts, "
@@ -369,7 +373,9 @@ def _exercise(connection: psycopg.Connection[Any], *, dsn: str) -> dict[str, obj
         "broker_connection_accounts_owner_only",
     ):
         if removed in legacy_owner_guards:
-            raise AssertionError(f"Phase 2 required boundary stayed OWNER-only: {removed}")
+            raise AssertionError(
+                f"Phase 2 required boundary stayed OWNER-only: {removed}"
+            )
 
     return {
         "status": "PASS",
