@@ -39,16 +39,16 @@ class FakeIdentityRepository(ProductIdentityRepositoryLike):
         scopes: tuple[ProductAccountScopeV1, ...] = (SCOPE_A, SCOPE_B),
     ) -> None:
         self._available = list(scopes)
-        self._bindings: dict[
-            tuple[IdentityProviderV1, str], ProductAccountScopeV1
-        ] = {}
+        self._bindings: dict[tuple[IdentityProviderV1, str], ProductAccountScopeV1] = {}
         self._provider_by_scope: set[tuple[str, IdentityProviderV1]] = set()
 
     def resolve_verified_identity(
         self,
         external_identity: VerifiedExternalIdentityV1,
     ) -> ProductAccountScopeV1 | None:
-        return self._bindings.get((external_identity.provider, external_identity.subject))
+        return self._bindings.get(
+            (external_identity.provider, external_identity.subject)
+        )
 
     def create_account(
         self,
@@ -176,7 +176,9 @@ def test_same_provider_cannot_be_silently_merged_into_one_account() -> None:
         )
 
 
-def test_verified_login_rotates_server_side_session_and_preserves_tenant_scope() -> None:
+def test_verified_login_rotates_server_side_session_and_preserves_tenant_scope() -> (
+    None
+):
     repository = FakeIdentityRepository()
     identities = ProductIdentityServiceV1(repository, registration_enabled=True)
     telegram = identity(IdentityProviderV1.TELEGRAM, "tg-a")
