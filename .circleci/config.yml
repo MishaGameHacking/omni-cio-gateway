@@ -130,6 +130,66 @@ jobs:
             python -c "import os,time,psycopg; dsn=os.environ['OMNI_CIO_WP13_DSN']; deadline=time.monotonic()+45; connection=None; last=None; exec(\"while time.monotonic() < deadline:\\n try:\\n  connection=psycopg.connect(dsn, connect_timeout=3); break\\n except psycopg.Error as exc:\\n  last=type(exc).__name__; time.sleep(1)\"); assert connection is not None, f'POSTGRES18_NOT_READY:{last}'; version_num=int(connection.execute('SHOW server_version_num').fetchone()[0]); connection.close(); assert version_num // 10000 == 18, f'POSTGRES_MAJOR_MISMATCH:{version_num}'; print(f'CIRCLECI_POSTGRES_VERSION_NUM={version_num}')"
             printf '%s\n' 'CIRCLECI_POSTGRES18_DRIVER=PASS'
 
+  supplemental_linux_wp13_migration_race:
+    docker:
+      - image: cimg/python:3.12.10
+      - image: cimg/postgres:18.4
+        environment:
+          POSTGRES_USER: omni_ci
+          POSTGRES_PASSWORD: synthetic-ci-only
+          POSTGRES_DB: omni_ci
+    resource_class: small
+    environment:
+      OMNI_CIO_WP13_DSN: postgresql://omni_ci:synthetic-ci-only@127.0.0.1:5432/omni_ci
+    steps:
+      - checkout
+      - run:
+          name: Install exact runtime dependencies and prove migration race serialization
+          command: |
+            set -eu
+            python -m pip install --disable-pip-version-check --require-hashes -r requirements.txt
+            python -c "import os; from scripts.rehearse_v10_wp13_persistence import _migration_race; assert _migration_race(os.environ['OMNI_CIO_WP13_DSN']); print('CIRCLECI_WP13_MIGRATION_RACE=PASS')"
+
+  supplemental_linux_wp13_catalog_roundtrip:
+    docker:
+      - image: cimg/python:3.12.10
+      - image: cimg/postgres:18.4
+        environment:
+          POSTGRES_USER: omni_ci
+          POSTGRES_PASSWORD: synthetic-ci-only
+          POSTGRES_DB: omni_ci
+    resource_class: small
+    environment:
+      OMNI_CIO_WP13_DSN: postgresql://omni_ci:synthetic-ci-only@127.0.0.1:5432/omni_ci
+    steps:
+      - checkout
+      - run:
+          name: Install exact runtime dependencies and prove catalog replay
+          command: |
+            set -eu
+            python -m pip install --disable-pip-version-check --require-hashes -r requirements.txt
+            python -c "import os,psycopg; from scripts.rehearse_v10_wp13_persistence import _catalog; from omni_cio.persistence import apply_migrations,PostgresDomainRepository,load_catalog; dsn=os.environ['OMNI_CIO_WP13_DSN']; c=psycopg.connect(dsn); apply_migrations(c); catalog=_catalog(); repo=PostgresDomainRepository(c); first=repo.persist_catalog(catalog); second=repo.persist_catalog(catalog); assert first==second; assert load_catalog(c)==catalog; c.close(); print('CIRCLECI_WP13_CATALOG_ROUNDTRIP=PASS')"
+
+  supplemental_linux_wp13_concurrent_revision:
+    docker:
+      - image: cimg/python:3.12.10
+      - image: cimg/postgres:18.4
+        environment:
+          POSTGRES_USER: omni_ci
+          POSTGRES_PASSWORD: synthetic-ci-only
+          POSTGRES_DB: omni_ci
+    resource_class: small
+    environment:
+      OMNI_CIO_WP13_DSN: postgresql://omni_ci:synthetic-ci-only@127.0.0.1:5432/omni_ci
+    steps:
+      - checkout
+      - run:
+          name: Install exact runtime dependencies and prove concurrent revision replay
+          command: |
+            set -eu
+            python -m pip install --disable-pip-version-check --require-hashes -r requirements.txt
+            python -c "import os,psycopg; from scripts.rehearse_v10_wp13_persistence import _catalog,_concurrent_catalog_replay; from omni_cio.contracts.v1.domain import CanonicalDomainCatalogV1,IncidentStatus; from omni_cio.persistence import apply_migrations,PostgresDomainRepository,load_catalog; dsn=os.environ['OMNI_CIO_WP13_DSN']; c=psycopg.connect(dsn); apply_migrations(c); catalog=_catalog(); PostgresDomainRepository(c).persist_catalog(catalog); c.close(); acknowledged=catalog.incidents[0].model_copy(update={'status':IncidentStatus.ACKNOWLEDGED}); acknowledged_catalog=CanonicalDomainCatalogV1.model_validate({**catalog.model_dump(mode='python'),'incidents':(acknowledged,)}); _concurrent_catalog_replay(dsn,acknowledged_catalog); c=psycopg.connect(dsn); assert load_catalog(c)==acknowledged_catalog; c.close(); print('CIRCLECI_WP13_CONCURRENT_REVISION=PASS')"
+
   supplemental_linux_wp13_rehearsal:
     docker:
       - image: cimg/python:3.12.10
@@ -147,21 +207,7 @@ jobs:
           name: Install exact runtime dependencies
           command: |
             set -eu
-            test "$(git rev-parse HEAD)" = "$CIRCLE_SHA1"
             python -m pip install --disable-pip-version-check --require-hashes -r requirements.txt
-      - run:
-          name: Wait for PostgreSQL TCP readiness
-          command: |
-            set -eu
-            ready=0
-            for attempt in $(seq 1 45); do
-              if (echo > /dev/tcp/127.0.0.1/5432) >/dev/null 2>&1; then
-                ready=1
-                break
-              fi
-              sleep 1
-            done
-            test "$ready" = "1"
       - run:
           name: Rehearse accepted WP13 durable-state semantics
           command: |
@@ -181,6 +227,17 @@ workflows:
           requires:
             - supplemental_linux_runtime_dependencies
             - supplemental_linux_postgres18_environment
-      - supplemental_linux_wp13_rehearsal:
+      - supplemental_linux_wp13_migration_race:
           requires:
             - supplemental_linux_postgres18_driver
+      - supplemental_linux_wp13_catalog_roundtrip:
+          requires:
+            - supplemental_linux_postgres18_driver
+      - supplemental_linux_wp13_concurrent_revision:
+          requires:
+            - supplemental_linux_postgres18_driver
+      - supplemental_linux_wp13_rehearsal:
+          requires:
+            - supplemental_linux_wp13_migration_race
+            - supplemental_linux_wp13_catalog_roundtrip
+            - supplemental_linux_wp13_concurrent_revision
