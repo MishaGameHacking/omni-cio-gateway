@@ -234,6 +234,9 @@ try {
         "--no-instructions"
     ) -Reason "WP22A_PHASE2_INITDB_FAILED" -TimeoutSeconds 45
 
+    # Arm cleanup before any startup attempt. pg_ctl can launch postgres and then
+    # fail readiness; cleanup must still attempt a bounded stop in that case.
+    $started = $true
     Write-Host "WP22A_PHASE2_STAGE=postgres_start"
     Start-TemporaryPostgresBounded -PgCtl $pgCtl -PgIsReady $pgIsReady `
         -DataDirectory $dataDir -LogPath $logPath -Port $port
