@@ -17,7 +17,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Verify Regression Shield for exact accepted main
-        shell: powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File {0}
+        shell: powershell
         env:
           GH_TOKEN: ${{ github.token }}
           EXPECTED_MAIN_SHA: 00fc692710aa9eaf02ca78ea0535b51600020768
