@@ -240,7 +240,6 @@ try {
     Write-Host "WP22A_PHASE2_STAGE=postgres_start"
     Start-TemporaryPostgresBounded -PgCtl $pgCtl -PgIsReady $pgIsReady `
         -DataDirectory $dataDir -LogPath $logPath -Port $port
-    $started = $true
 
     Write-Host "WP22A_PHASE2_STAGE=postgres_ready"
     if (-not (Test-PostgresReadyBounded -PgIsReady $pgIsReady -Port $port)) {
