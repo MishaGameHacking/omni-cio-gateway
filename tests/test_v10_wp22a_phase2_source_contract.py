@@ -4,7 +4,9 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-MIGRATION = ROOT / "omni_cio/persistence/migrations/0004_product_identity_multi_tenant.sql"
+MIGRATION = (
+    ROOT / "omni_cio/persistence/migrations/0004_product_identity_multi_tenant.sql"
+)
 IDENTITY = ROOT / "omni_cio/web/product_identity_v1.py"
 API = ROOT / "omni_cio/web/api_v1.py"
 PERSISTENCE = ROOT / "omni_cio/web/persistence_v1.py"
