@@ -4,6 +4,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import hashlib
+import hmac
 import json
 import re
 import secrets
@@ -11,10 +12,12 @@ from typing import Protocol
 
 from omni_cio.persistence.migration import ConnectionLike
 from omni_cio.web.identity_v1 import VerifiedExternalIdentityV1
+from omni_cio.web.session_v1 import SessionScopeV1
 
 
 _USER_ID_PATTERN = re.compile(r"^user:v1:[a-z0-9][a-z0-9_-]{2,63}$")
 _TENANT_ID_PATTERN = re.compile(r"^tenant:v1:[a-z0-9][a-z0-9_-]{2,63}$")
+_BINDING_KEY_MIN_BYTES = 32
 
 
 class ProductIdentityError(RuntimeError):
@@ -57,6 +60,24 @@ def _record_sha256(payload: dict[str, object]) -> str:
     return hashlib.sha256(canonical).hexdigest()
 
 
+def protected_identity_binding_hmac_sha256(
+    identity: VerifiedExternalIdentityV1,
+    *,
+    binding_key: bytes,
+) -> str:
+    """Derive an exact-lookup binding without persisting an enumerable raw subject hash."""
+
+    if len(binding_key) < _BINDING_KEY_MIN_BYTES:
+        raise ValueError("PRODUCT_IDENTITY_BINDING_KEY_TOO_SHORT")
+    payload = f"{identity.provider.value}:{identity.subject}".encode("utf-8")
+    return hmac.new(binding_key, payload, hashlib.sha256).hexdigest()
+
+
+def _binding_lock_key(binding_digest: str) -> int:
+    raw = bytes.fromhex(binding_digest[:16])
+    return int.from_bytes(raw, byteorder="big", signed=True)
+
+
 class ProductIdentityRepositoryLike(Protocol):
     def resolve_verified_identity(
         self,
@@ -79,36 +100,70 @@ class ProductIdentityRepositoryLike(Protocol):
     ) -> None: ...
 
 
-class PostgresProductIdentityRepositoryV1:
-    """Durable external-identity -> internal account/tenant binding.
+class SessionIssuerLike(Protocol):
+    def create(
+        self,
+        *,
+        user_id: str,
+        tenant_id: str,
+        now: datetime,
+    ) -> tuple[str, SessionScopeV1]: ...
 
-    Raw provider subjects are used only long enough to derive the binding digest.
-    They are never written to PostgreSQL. The repository never accepts a tenant
-    selector from a browser; callers supply only an already-authenticated scope.
+    def revoke(self, token: str | None, *, now: datetime) -> bool: ...
+
+
+class PostgresProductIdentityRepositoryV1:
+    """Durable verified external-identity -> internal account/tenant binding.
+
+    The provider subject exists in process memory only long enough to derive a
+    keyed HMAC binding. PostgreSQL receives no raw Telegram/VK subject and no
+    unkeyed subject fingerprint. Browser-controlled user/tenant selectors are
+    never accepted by this repository.
     """
 
     def __init__(
         self,
         connection: ConnectionLike,
         *,
+        binding_key: bytes,
         scope_factory: Callable[[], ProductAccountScopeV1] = _new_scope,
     ) -> None:
+        if len(binding_key) < _BINDING_KEY_MIN_BYTES:
+            raise ValueError("PRODUCT_IDENTITY_BINDING_KEY_TOO_SHORT")
         self._connection = connection
+        self._binding_key = bytes(binding_key)
         self._scope_factory = scope_factory
+
+    def _binding_digest(self, identity: VerifiedExternalIdentityV1) -> str:
+        return protected_identity_binding_hmac_sha256(
+            identity,
+            binding_key=self._binding_key,
+        )
+
+    def _resolve_digest(
+        self,
+        *,
+        provider: str,
+        binding_digest: str,
+    ) -> ProductAccountScopeV1 | None:
+        row = self._connection.execute(
+            "SELECT user_id, tenant_id "
+            "FROM omni_cio_v10.external_identity_bindings "
+            "WHERE provider = %s AND subject_binding_hmac_sha256 = %s",
+            (provider, binding_digest),
+        ).fetchone()
+        if row is None:
+            return None
+        return ProductAccountScopeV1(user_id=str(row[0]), tenant_id=str(row[1]))
 
     def resolve_verified_identity(
         self,
         identity: VerifiedExternalIdentityV1,
     ) -> ProductAccountScopeV1 | None:
-        row = self._connection.execute(
-            "SELECT user_id, tenant_id "
-            "FROM omni_cio_v10.external_identity_bindings "
-            "WHERE provider = %s AND subject_binding_sha256 = %s",
-            (identity.provider.value, identity.binding_fingerprint_sha256()),
-        ).fetchone()
-        if row is None:
-            return None
-        return ProductAccountScopeV1(user_id=str(row[0]), tenant_id=str(row[1]))
+        return self._resolve_digest(
+            provider=identity.provider.value,
+            binding_digest=self._binding_digest(identity),
+        )
 
     def create_account(
         self,
@@ -117,8 +172,16 @@ class PostgresProductIdentityRepositoryV1:
         now: datetime,
     ) -> ProductAccountScopeV1:
         timestamp = _utc(now)
+        binding_digest = self._binding_digest(identity)
         with self._connection.transaction():
-            existing = self.resolve_verified_identity(identity)
+            self._connection.execute(
+                "SELECT pg_advisory_xact_lock(%s)",
+                (_binding_lock_key(binding_digest),),
+            )
+            existing = self._resolve_digest(
+                provider=identity.provider.value,
+                binding_digest=binding_digest,
+            )
             if existing is not None:
                 return existing
 
@@ -168,7 +231,12 @@ class PostgresProductIdentityRepositoryV1:
                     _record_sha256(user_payload),
                 ),
             )
-            self._insert_binding(scope, identity, timestamp)
+            self._insert_binding(
+                scope,
+                identity,
+                binding_digest=binding_digest,
+                timestamp=timestamp,
+            )
             return scope
 
     def link_identity(
@@ -179,8 +247,16 @@ class PostgresProductIdentityRepositoryV1:
         now: datetime,
     ) -> None:
         timestamp = _utc(now)
+        binding_digest = self._binding_digest(identity)
         with self._connection.transaction():
-            existing = self.resolve_verified_identity(identity)
+            self._connection.execute(
+                "SELECT pg_advisory_xact_lock(%s)",
+                (_binding_lock_key(binding_digest),),
+            )
+            existing = self._resolve_digest(
+                provider=identity.provider.value,
+                binding_digest=binding_digest,
+            )
             if existing is not None:
                 if existing != scope:
                     raise ProductIdentityError("IDENTITY_ALREADY_BOUND")
@@ -195,7 +271,7 @@ class PostgresProductIdentityRepositoryV1:
                 raise ProductIdentityError("AUTHENTICATED_ACCOUNT_NOT_FOUND")
 
             provider_row = self._connection.execute(
-                "SELECT subject_binding_sha256 "
+                "SELECT subject_binding_hmac_sha256 "
                 "FROM omni_cio_v10.external_identity_bindings "
                 "WHERE user_id = %s AND provider = %s",
                 (scope.user_id, identity.provider.value),
@@ -203,21 +279,28 @@ class PostgresProductIdentityRepositoryV1:
             if provider_row is not None:
                 raise ProductIdentityError("PROVIDER_ALREADY_LINKED")
 
-            self._insert_binding(scope, identity, timestamp)
+            self._insert_binding(
+                scope,
+                identity,
+                binding_digest=binding_digest,
+                timestamp=timestamp,
+            )
 
     def _insert_binding(
         self,
         scope: ProductAccountScopeV1,
         identity: VerifiedExternalIdentityV1,
+        *,
+        binding_digest: str,
         timestamp: datetime,
     ) -> None:
         self._connection.execute(
             "INSERT INTO omni_cio_v10.external_identity_bindings "
-            "(provider, subject_binding_sha256, user_id, tenant_id, linked_at, "
+            "(provider, subject_binding_hmac_sha256, user_id, tenant_id, linked_at, "
             "last_verified_at) VALUES (%s, %s, %s, %s, %s, %s)",
             (
                 identity.provider.value,
-                identity.binding_fingerprint_sha256(),
+                binding_digest,
                 scope.user_id,
                 scope.tenant_id,
                 timestamp,
@@ -227,7 +310,7 @@ class PostgresProductIdentityRepositoryV1:
 
 
 class ProductIdentityServiceV1:
-    """Authentication-to-account boundary with registration disabled by default."""
+    """Verified-provider to internal-account boundary; registration is off by default."""
 
     def __init__(
         self,
@@ -263,3 +346,58 @@ class ProductIdentityServiceV1:
         now: datetime,
     ) -> None:
         self._repository.link_identity(scope, identity, now=now)
+
+
+class ProductAuthenticationServiceV1:
+    """Issue/rotate a server-side session only after provider verification."""
+
+    def __init__(
+        self,
+        *,
+        identities: ProductIdentityServiceV1,
+        sessions: SessionIssuerLike,
+    ) -> None:
+        self._identities = identities
+        self._sessions = sessions
+
+    def authenticate_verified_identity(
+        self,
+        identity: VerifiedExternalIdentityV1,
+        *,
+        current_session_token: str | None,
+        now: datetime,
+    ) -> tuple[str, SessionScopeV1]:
+        timestamp = _utc(now)
+        account_scope = self._identities.authenticate(identity, now=timestamp)
+
+        # Fail closed against session fixation: any pre-auth/current token is revoked
+        # before a fresh opaque server-side session is minted.
+        self._sessions.revoke(current_session_token, now=timestamp)
+        token, session_scope = self._sessions.create(
+            user_id=account_scope.user_id,
+            tenant_id=account_scope.tenant_id,
+            now=timestamp,
+        )
+        if (
+            session_scope.user_id != account_scope.user_id
+            or session_scope.tenant_id != account_scope.tenant_id
+        ):
+            self._sessions.revoke(token, now=timestamp)
+            raise ProductIdentityError("SESSION_SCOPE_MISMATCH")
+        return token, session_scope
+
+    def link_verified_identity(
+        self,
+        authenticated_scope: SessionScopeV1,
+        identity: VerifiedExternalIdentityV1,
+        *,
+        now: datetime,
+    ) -> None:
+        self._identities.link_authenticated_identity(
+            ProductAccountScopeV1(
+                user_id=authenticated_scope.user_id,
+                tenant_id=authenticated_scope.tenant_id,
+            ),
+            identity,
+            now=_utc(now),
+        )
