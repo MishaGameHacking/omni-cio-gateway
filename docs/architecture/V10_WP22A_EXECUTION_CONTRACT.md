@@ -1,6 +1,6 @@
 # Omni-CIO V10 — WP22A Execution Contract
 
-Status: **CURRENT / CORRECTED PUBLIC-HOSTED TARGET / PHASE 1 ACCEPTED / PHASE 2 AUTHORIZED**  
+Status: **CURRENT / CORRECTED PUBLIC-HOSTED TARGET / PHASE 1 ACCEPTED / PHASE 2 ACCEPTED / PHASE 3 AUTHORIZED**  
 Owning package: **WP22A — External Web Access / Product Authentication Security Gate**
 
 ## 1. Authority and sequencing
@@ -10,7 +10,8 @@ Owning package: **WP22A — External Web Access / Product Authentication Securit
 - Accepted V10 implementation progress: 40%.
 - WP16–WP22: COMPLETE.
 - WP22A Phase 1: ACCEPTED.
-- WP22A Phase 2: CURRENT / AUTHORIZED.
+- WP22A Phase 2: ACCEPTED.
+- WP22A Phase 3: CURRENT / AUTHORIZED.
 - WP22A overall: NOT COMPLETE.
 - WP23+: LOCKED.
 - Accepted planning authority: Product USER separation + Public Free Multi-User Hosted Runtime.
@@ -19,14 +20,11 @@ The earlier accepted Phase-A OWNER/clientless implementation remains historical/
 
 The corrected planning prerequisite was satisfied by PR #329 merged to exact `main` `5f535c0ced9514866bd3680042f3ba0bb012f866` plus post-merge Regression Shield #1503 / run `32129304332` SUCCESS with both required jobs GREEN.
 
-WP22A Phase 1 service/hosting architecture decision is now accepted through PR #333, squash-merged to exact `main` `51dbe41ad1e63ddb4c0b101f573b70254a5255b8`. The PROJECT OWNER supplied direct post-merge GitHub Actions evidence for **Regression Shield #1505 — SUCCESS** on that exact main, with both required jobs GREEN:
+WP22A Phase 1 service/hosting architecture decision is accepted through PR #333, exact main `51dbe41ad1e63ddb4c0b101f573b70254a5255b8`, plus Regression Shield #1505 SUCCESS. Phase 1 selected **Cloud.ru Evolution** as the managed-cloud production provider/security boundary while preserving current recurring OWNER infrastructure authorization at **0 RUB/month** and keeping provider apply disabled.
 
-- `Dependency, code and secret security`;
-- `Quality, contracts and coverage`.
+WP22A Phase 2 product-auth / tenant-security correction is accepted through PR #336, exact main `00fc692710aa9eaf02ca78ea0535b51600020768`, plus Regression Shield #1508 / run `32277165957` attempt 2 SUCCESS with both required jobs GREEN. The first run attempt was RED because `pip-audit` timed out reading `api.osv.dev`; acceptance remained blocked until the same exact-main security job was re-run without source changes and completed dependency audit, SAST and tracked-content secret scan successfully.
 
-Phase 1 selected **Cloud.ru Evolution** as the managed-cloud production provider/security boundary while preserving current recurring OWNER infrastructure authorization at **0 RUB/month** and keeping provider apply disabled.
-
-Therefore **Phase 2 — Product-auth / tenant-security correction** may proceed from exact accepted `main` `51dbe41ad1e63ddb4c0b101f573b70254a5255b8`.
+Therefore **Phase 3 — Hosted runtime/data/secret/recovery implementation** is the current authorized source increment after this transition is accepted.
 
 This does not authorize public production activation, privileged provider mutation, a paid-provider purchase, broker-write expansion or WP23 work.
 
@@ -66,11 +64,12 @@ Reuse accepted V10 components rather than rewrite them:
 - `apps/web` — accepted WP16–WP22 Web App;
 - `apps/api` — accepted Web/API composition;
 - `omni_cio` deterministic Core/contracts;
-- PostgreSQL server-side session model;
-- accepted tenant/session authorization semantics;
+- accepted Phase-2 product identity/session/tenant boundary;
+- PostgreSQL server-side session model and accepted tenant RLS direction;
 - accepted Web broker-provisioning concept, generalized to hosted tenant-scoped secret custody;
 - WP18–WP22 product services and browser contracts;
 - existing security/CSRF/Host/session/rate-limit patterns where semantically valid;
+- existing WP10/WP13 recovery and PostgreSQL migration/rehearsal patterns where compatible with hosted tenant scope;
 - GitHub exact-head/all-GREEN/Regression-Shield governance;
 - protected V9 `app:app` baseline and rollback until responsible cutover.
 
@@ -98,7 +97,7 @@ The accepted cost sequence remains:
 
 `already owned / open source / safe free tier / grant / bonus -> lowest-cost safe paid option -> scale only from measured need`
 
-Current recurring OWNER infrastructure authorization remains **0 RUB/month**. No provider apply is authorized merely because Phase 1 selected the final production boundary.
+Current recurring OWNER infrastructure authorization remains **0 RUB/month**. No provider apply is authorized merely because Phase 1 selected the final production boundary or because Phase 3 creates source configuration.
 
 ## 6. Product authentication and session boundary
 
@@ -137,9 +136,9 @@ Mandatory controls:
 - caches/RAG/AI memory/audit/notifications/exports/backups preserve tenant scope;
 - restore/recovery cannot collapse tenant boundaries.
 
-Mandatory negative evidence includes IDOR, cross-tenant object references, stale sessions, cache-key collision, job-scope confusion, backup/restore leakage and AI/RAG cross-scope leakage.
+Mandatory negative evidence includes IDOR, cross-tenant object references, stale sessions, cache-key collision, job-scope confusion, backup/restore leakage and later AI/RAG cross-scope leakage.
 
-Phase 2 owns the identity/session/persistence isolation correction needed to remove historical OWNER-only product assumptions. Later phases own hosted runtime/recovery evidence that depends on deployed infrastructure.
+Phase 2 accepted the identity/session/broker persistence isolation correction. Phase 3 must extend that tenant boundary through hosted private state, backup/restore and recovery source contracts without widening authority.
 
 ## 8. Tenant broker-secret boundary
 
@@ -165,6 +164,8 @@ Optional TRADE credential remains separately gated. Same-tenant exact account in
 
 This contract does not enable broker write or Real execution.
 
+Phase 3 may define and test the encrypted secret-custody interface using placeholders/synthetic fixtures only. Real broker/provider secret values are not Phase-3 source inputs.
+
 ## 9. Public Web request security
 
 The selected public architecture must prove at minimum:
@@ -185,7 +186,7 @@ The selected public architecture must prove at minimum:
 
 OWASP ASVS-relevant controls remain part of the review/evidence basis where applicable.
 
-Phase 2 must preserve reusable request-security controls while severing the historical coupling between edge OWNER identity and product tenant/session authority.
+Phase 3 owns source-controlled runtime/edge trust declarations required for later activation. Actual public ingress, real certificate issuance and DNS/provider mutation remain later-phase actions.
 
 ## 10. Free initial launch boundary
 
@@ -198,7 +199,7 @@ Initial USER product access is planned as free:
 
 No payment method is required for initial registration/login and no subscription expiry disables ordinary features.
 
-Future monetization is `DEFERRED_OPTIONAL`. WP22A must not add billing simply because the older commercial amendment described trial/subscriptions.
+Future monetization is `DEFERRED_OPTIONAL`. WP22A must not add billing simply because older commercial planning described trial/subscriptions.
 
 Payment/KKT implementation is not an initial-free-launch prerequisite. Privacy/security/broker/regulatory/production legal gates remain applicable.
 
@@ -221,26 +222,26 @@ Never commit/log/artifact cloud-provider API tokens/keys, tunnel/runtime tokens,
 
 Privileged provider mutation can occur only from an explicitly reviewed accepted-main workflow/operations boundary after its own source PR is accepted. Provider engineering identity cannot become a product session.
 
-Phase 2 therefore uses deterministic/offline identity proofs and test fixtures only. Real Telegram/VK client credentials are not required for source acceptance.
+**Phase 3 is source-only with dormant provider credentials.** It may create reviewed IaC/deployment/configuration and tests but must not apply Cloud.ru resources, create public DNS/ingress, spend money or require real provider secrets.
 
-## 13. Recovery and availability
+## 13. Hosted data, recovery and availability
 
 Before public activation, the selected architecture must prove:
 
 - application restart/redeploy without OWNER home access;
-- database/private-state backup/restore;
+- durable tenant-aware PostgreSQL/private-state backup/restore;
 - hash/integrity verification and corrupt-backup rejection;
 - encrypted off-runtime backup/recovery where required;
-- secret/key rotation/recovery;
+- tenant-scoped secret/key rotation/recovery;
 - replacement runtime recovery;
 - rollback to last accepted release;
 - tenant isolation after restore;
 - monitoring that distinguishes application, cloud-provider and external broker/provider degradation;
 - no ordinary public-user outage solely because Lenovo is powered off or OWNER home Internet is unavailable.
 
-These deployed recovery/availability proofs belong to later WP22A phases; Phase 2 must ensure its account/session/tenant model is compatible with tenant-preserving recovery and does not introduce implicit OWNER/global scope.
+Phase 3 owns the source model and deterministic rehearsals that can be proven without real provider credentials. Phase 4 owns protected provider bootstrap/apply. Phase 5 owns deployed public-hosted acceptance and real recovery/availability evidence that cannot be synthesized offline.
 
-## 14. Accepted prerequisite and Phase-1 evidence
+## 14. Accepted prerequisites and evidence
 
 ### Corrected planning transition
 
@@ -254,15 +255,25 @@ These deployed recovery/availability proofs belong to later WP22A phases; Phase 
 
 1. PR #333 final head `595c7fb2924de71812d8f28b70230fca8089632f` completed the applicable exact-head DRAFT and fresh READY cycles with all applicable checks `success`;
 2. full diff/review completed with zero unresolved blocking threads;
-3. PR #333 was squash-merged with expected-head protection to exact `main` `51dbe41ad1e63ddb4c0b101f573b70254a5255b8`;
-4. PROJECT OWNER supplied direct GitHub Actions evidence that Regression Shield **#1505** on that exact main completed `Success`;
-5. both required post-merge jobs were shown `Successful`:
-   - `Dependency, code and secret security`;
-   - `Quality, contracts and coverage`;
-6. accepted production provider/security boundary is **Cloud.ru Evolution**;
-7. `provider_apply_authorized=false`, current recurring OWNER infrastructure authorization remains `0 RUB/month`, and `PUBLIC_MULTI_USER_ENABLED=false`.
+3. PR #333 was squash-merged to exact `main` `51dbe41ad1e63ddb4c0b101f573b70254a5255b8`;
+4. Regression Shield #1505 on that exact main completed SUCCESS with both required jobs SUCCESS;
+5. accepted production provider/security boundary is **Cloud.ru Evolution**;
+6. `provider_apply_authorized=false`, current recurring OWNER infrastructure authorization remains `0 RUB/month`, and `PUBLIC_MULTI_USER_ENABLED=false`.
 
-This evidence authorizes a fresh Phase-2 implementation branch from exact accepted main. It does not satisfy later hosted-runtime/provider/public-activation gates.
+### WP22A Phase 2 product-auth / tenant security
+
+1. PR #336 final exact head `d3bc7b03b0ba589877e771ffe77bdd31e3d2a100` completed required DRAFT and fresh READY cycles with all applicable checks `success`;
+2. supplemental Linux governance and PostgreSQL lanes completed `success`;
+3. final 20-file Phase-2 diff review completed with zero unresolved blocking threads;
+4. PR #336 was squash-merged to exact `main` `00fc692710aa9eaf02ca78ea0535b51600020768`;
+5. post-merge Regression Shield #1508 / run `32277165957` attempt 1 was RED because the external OSV API read timed out; acceptance remained blocked;
+6. only the failed security job was re-run on the same exact main SHA, consistent with GitHub re-run semantics; no source/check weakening occurred;
+7. run attempt 2 completed `success` with both required jobs `success`:
+   - `Quality, contracts and coverage`;
+   - `Dependency, code and secret security`;
+8. Phase-2 implementation retains `PUBLIC_MULTI_USER_ENABLED=false`, V9 `app:app`, `trading_methods=false`, `REAL_TRADING_ENABLED=false`, no provider apply and no WP23 authority.
+
+This evidence accepts Phase 2 and authorizes the Phase-3 source increment. It does not satisfy hosted provider apply or public-production acceptance gates.
 
 ## 15. Corrected WP22A implementation phases
 
@@ -270,11 +281,11 @@ Implementation proceeds as focused increments inside the same WP22A sequence, wi
 
 1. **Service/hosting architecture decision — ACCEPTED**  
    Cloud.ru Evolution selected as managed-cloud production/security boundary under staged free-first cost discipline. No provider apply occurred.
-2. **Product-auth / tenant-security correction — CURRENT / AUTHORIZED**  
-   Remove OWNER edge-identity product-session assumptions; implement/reuse verified external-identity -> internal account -> tenant -> server-side session semantics; generalize necessary OWNER-only persistence boundaries; prove session and cross-tenant negative behavior.
-3. **Hosted runtime/data/secret/recovery implementation — LOCKED until Phase 2 acceptance**  
-   Source-controlled runtime/IaC/deployment/backup design with dormant secrets.
-4. **Protected provider bootstrap/apply — LOCKED until accepted source boundary and required OWNER/provider authorization**  
+2. **Product-auth / tenant-security correction — ACCEPTED**  
+   Verified external identity -> internal account -> tenant -> server-side session semantics and required broker persistence/RLS isolation correction accepted through PR #336 + Regression Shield #1508 attempt 2 SUCCESS.
+3. **Hosted runtime/data/secret/recovery implementation — CURRENT / AUTHORIZED**  
+   Source-controlled runtime/IaC/deployment/private-state/secret/recovery design and deterministic rehearsals with dormant provider secrets only.
+4. **Protected provider bootstrap/apply — LOCKED until Phase 3 acceptance and required OWNER/provider authorization**  
    Apply only from accepted main after reviewed privileged boundary exists.
 5. **Public-hosted acceptance — LOCKED**  
    Real HTTPS, normal USER login/logout/session, tenant isolation, availability/recovery, abuse controls and sanitized OWNER acceptance where non-delegable.
@@ -285,25 +296,41 @@ Implementation proceeds as focused increments inside the same WP22A sequence, wi
 
 No phase grants WP23 authority early.
 
-## 16. Phase-2 acceptance boundary
+## 16. Phase-2 accepted boundary
 
-Phase 2 is accepted only when the exact implementation proves, at minimum:
+Phase 2 is accepted on exact main `00fc692710aa9eaf02ca78ea0535b51600020768` with the required post-merge Regression Shield GREEN. Its accepted boundary includes:
 
 - no Cloudflare/GitHub/provider engineering identity can mint/select an Omni-CIO USER tenant;
 - verified Telegram/VK external identity abstractions bind to an internal Omni-CIO account rather than directly to tenant authority;
 - account/tenant scope comes exclusively from server-side session resolution;
-- session creation/rotation/expiry/logout/revoke-all remain fail-closed and do not retain plaintext browser session tokens server-side;
-- historical OWNER-only session/persistence assumptions required for multi-user support are replaced without weakening scope FKs/uniqueness or V9 rollback;
+- session creation/rotation/expiry/logout/revoke-all remain fail-closed;
+- historical OWNER-only session/broker persistence assumptions required for multi-user support are replaced without weakening scope FKs/uniqueness or V9 rollback;
 - broker connection CRUD remains tenant-scoped and cross-tenant object IDs fail closed;
 - no client-supplied `user_id` / `tenant_id` acts as authorization;
 - deterministic IDOR/cross-tenant/session negatives cover the changed boundary;
 - no real external-provider or broker secret enters GitHub/CI/artifacts;
-- `PUBLIC_MULTI_USER_ENABLED=false`, `app:app`, `trading_methods=false`, `REAL_TRADING_ENABLED=false` and WP23 lock remain intact;
+- `PUBLIC_MULTI_USER_ENABLED=false`, `app:app`, `trading_methods=false`, `REAL_TRADING_ENABLED=false` and WP23 lock remain intact.
+
+## 17. Phase-3 acceptance boundary
+
+Phase 3 may be accepted only when exact source/tests/CI prove, at minimum:
+
+- one source-controlled hosted runtime/deployment/IaC model for the accepted Cloud.ru Evolution boundary; no parallel website/runtime stack;
+- provider apply remains dormant and impossible without an explicit later privileged path/authorization;
+- hosted PostgreSQL/private state is tenant-aware and uses a least-privilege runtime role compatible with accepted Phase-2 database isolation;
+- real provider/broker/recovery keys are not present in source, CI, artifacts, logs or test fixtures;
+- tenant broker-secret custody has an explicit encrypted storage interface, least-privilege runtime access and cross-tenant negative tests using synthetic material only;
+- backup/restore rehearsal verifies hashes/integrity, rejects corrupt backups and preserves tenant isolation;
+- replacement-runtime recovery and rollback are source-controlled/rehearsable without OWNER home infrastructure;
+- public-edge/proxy/Host/TLS trust assumptions are source-controlled and fail closed while actual public ingress remains off;
+- observability/incident contracts distinguish application, provider and external broker/auth degradation without leaking private data;
+- capacity/cost declarations preserve the accepted free-first sequence and do not authorize paid spend;
+- `PUBLIC_MULTI_USER_ENABLED=false`, `app:app`, `trading_methods=false`, `REAL_TRADING_ENABLED=false`, protected V9 rollback and WP23 lock remain intact;
 - exact-head applicable CI and required post-merge Regression Shield complete GREEN.
 
-Real Telegram/VK provider credentials, provider apply and public registration are not Phase-2 source-acceptance prerequisites.
+Real Cloud.ru credentials/resources, real Telegram/VK credentials, public DNS/HTTPS activation and OWNER browser acceptance are not Phase-3 source-acceptance prerequisites. They belong to later phases and must not be synthesized.
 
-## 17. WP22A Exit Gate
+## 18. WP22A Exit Gate
 
 WP22A is COMPLETE only when the **corrected public-hosted product architecture**, not the historical OWNER-home Phase A, is accepted with code/tests/CI/security/recovery/provider/legal/broker/capacity evidence required by the active amendments.
 
