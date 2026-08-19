@@ -1,8 +1,9 @@
 name: TEMP V10 Post-Merge Regression Verification 336
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
+  push:
+    branches:
+      - v10/verify-postmerge-shield-336
     paths:
       - ".github/workflows/v10-temp-postmerge-regression-verification-336.yml"
 
