@@ -121,6 +121,7 @@ def test_phase2_rehearsal_has_layered_finite_waits_and_safe_stage_markers() -> N
         '"WP22A_PHASE2_STAGE=postgres_ready"',
         '"WP22A_PHASE2_STAGE=database_create"',
         '"WP22A_PHASE2_STAGE=python_probe"',
+        "Arm cleanup before any startup attempt",
         "-TimeoutSeconds 45",
         "-TimeoutSeconds 15",
         "-w -t 10 -s",
@@ -128,6 +129,9 @@ def test_phase2_rehearsal_has_layered_finite_waits_and_safe_stage_markers() -> N
         assert required in source
 
     assert "& $pgCtl start" not in source
+    cleanup_arm = source.index("$started = $true")
+    startup_call = source.index("Start-TemporaryPostgresBounded -PgCtl")
+    assert cleanup_arm < startup_call
 
 
 def test_phase2_focused_gate_has_independent_outer_process_tree_watchdog() -> None:
