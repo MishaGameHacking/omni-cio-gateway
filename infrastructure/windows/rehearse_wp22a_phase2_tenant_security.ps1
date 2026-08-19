@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)][string]$PythonPath,
+    [ValidateRange(30, 300)][int]$ProbeTimeoutSeconds = 120,
     [switch]$AsJson
 )
 
@@ -83,6 +84,7 @@ $port = Get-FreeLoopbackPort
 $oldDsn = $env:OMNI_CIO_WP22A_PHASE2_DSN
 $oldPythonPath = $env:PYTHONPATH
 $started = $false
+$probeProcess = $null
 
 try {
     New-Item -ItemType Directory -Path $root -Force | Out-Null
@@ -126,14 +128,47 @@ try {
         $env:PYTHONPATH = "$RepoRoot;$oldPythonPath"
     }
 
-    $raw = & $PythonPath $Probe 2>&1
-    $probeExit = $LASTEXITCODE
-    $text = ($raw | Out-String).Trim()
+    # The Python probe contains an intentional concurrent-registration race.
+    # Keep the entire child process bounded as a second line of defence: a
+    # future/database wait must fail this focused gate rather than occupying the
+    # single authoritative Lenovo runner until the outer workflow timeout.
+    $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $startInfo.FileName = $PythonPath
+    $startInfo.Arguments = '"' + $Probe.Replace('"', '\"') + '"'
+    $startInfo.WorkingDirectory = $RepoRoot
+    $startInfo.UseShellExecute = $false
+    $startInfo.CreateNoWindow = $true
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+
+    $probeProcess = New-Object System.Diagnostics.Process
+    $probeProcess.StartInfo = $startInfo
+    if (-not $probeProcess.Start()) {
+        throw "WP22A_PHASE2_PROBE_START_FAILED"
+    }
+    $stdoutTask = $probeProcess.StandardOutput.ReadToEndAsync()
+    $stderrTask = $probeProcess.StandardError.ReadToEndAsync()
+    if (-not $probeProcess.WaitForExit($ProbeTimeoutSeconds * 1000)) {
+        try {
+            $probeProcess.Kill()
+        }
+        catch {
+            # Timeout is already authoritative; process cleanup remains best-effort.
+        }
+        throw "WP22A_PHASE2_PROBE_TIMEOUT"
+    }
+
+    $probeExit = $probeProcess.ExitCode
+    $text = ($stdoutTask.GetAwaiter().GetResult() | Out-String).Trim()
+    $stderrText = ($stderrTask.GetAwaiter().GetResult() | Out-String).Trim()
     if ($probeExit -ne 0) {
         if ($AsJson -and -not [string]::IsNullOrWhiteSpace($text)) {
             Write-Output $text
         }
         throw "WP22A_PHASE2_PROBE_FAILED"
+    }
+    if (-not [string]::IsNullOrWhiteSpace($stderrText)) {
+        throw "WP22A_PHASE2_PROBE_STDERR_NOT_EMPTY"
     }
     if ([string]::IsNullOrWhiteSpace($text)) {
         throw "WP22A_PHASE2_PROBE_OUTPUT_EMPTY"
@@ -165,6 +200,19 @@ try {
 finally {
     $env:OMNI_CIO_WP22A_PHASE2_DSN = $oldDsn
     $env:PYTHONPATH = $oldPythonPath
+    if ($null -ne $probeProcess) {
+        try {
+            if (-not $probeProcess.HasExited) {
+                $probeProcess.Kill()
+            }
+        }
+        catch {
+            # Cleanup is best-effort; the focused timeout remains authoritative.
+        }
+        finally {
+            $probeProcess.Dispose()
+        }
+    }
     if ($started) {
         try {
             & $pgCtl stop -D $dataDir -m fast -w -s *> $null
