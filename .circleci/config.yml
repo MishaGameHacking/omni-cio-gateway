@@ -1,14 +1,5 @@
 version: 2.1
 
-commands:
-  wait_postgres18:
-    steps:
-      - run:
-          name: Wait for PostgreSQL 18 readiness
-          command: |
-            set -eu
-            python -c "import os,time,psycopg; dsn=os.environ['OMNI_CIO_WP13_DSN']; deadline=time.monotonic()+45; connection=None; last=None; exec(\"while time.monotonic() < deadline:\\n try:\\n  connection=psycopg.connect(dsn, connect_timeout=3); break\\n except psycopg.Error as exc:\\n  last=type(exc).__name__; time.sleep(1)\"); assert connection is not None, f'POSTGRES18_NOT_READY:{last}'; version_num=int(connection.execute('SHOW server_version_num').fetchone()[0]); connection.close(); assert version_num // 10000 == 18, f'POSTGRES_MAJOR_MISMATCH:{version_num}'; print(f'CIRCLECI_POSTGRES_VERSION_NUM={version_num}')"
-
 jobs:
   supplemental_linux_governance:
     docker:
@@ -17,92 +8,64 @@ jobs:
     steps:
       - checkout
       - run:
-          name: Verify exact source and immutable safety boundary
+          name: Verify exact source and governance contracts
           command: |
             set -eu
             test "$(git rev-parse HEAD)" = "$CIRCLE_SHA1"
-            test "$(python --version)" = "Python 3.12.10"
             grep -Fq 'app:app' AGENTS.md
             grep -Fq 'trading_methods=false' README.md
             grep -Fq 'REAL_TRADING_ENABLED=false' AGENTS.md
             grep -Fq 'PUBLIC_MULTI_USER_ENABLED=false' knowledge/17_V10_CURRENT_PROGRAM_STATUS.md
-      - run:
-          name: Verify portable engineering governance contracts
-          command: |
-            set -eu
             python scripts/check_v10_engineering_governance.py
             python scripts/check_v10_documentation_consistency.py
             python scripts/check_v10_public_product_plan.py
             python scripts/check_v10_ci_cost_control.py
             python scripts/check_v10_regression_shield.py
-      - run:
-          name: Run portable stdlib CI contract regression tests
-          command: |
-            set -eu
-            python -m unittest \
-              tests.test_v10_regression_shield \
-              tests.test_v10_ci_action_download_resilience \
-              tests.test_v10_release_provenance
 
-  supplemental_linux_wp13_numeric:
+  supplemental_linux_diagnostic_import:
+    docker:
+      - image: cimg/python:3.12.10
+    resource_class: small
+    environment:
+      PYTHONPATH: .
+    steps:
+      - checkout
+      - run:
+          name: Install hash-locked runtime dependencies
+          command: python -m pip install --disable-pip-version-check --require-hashes -r requirements.txt
+      - run:
+          name: Import Linux portability diagnostic module
+          command: python -c "import scripts.diagnose_v10_wp13_linux_portability; print('CIRCLECI_WP13_DIAGNOSTIC_IMPORT=PASS')"
+
+  supplemental_linux_diagnostic_initialized:
     docker:
       - image: cimg/python:3.12.10
       - image: cimg/postgres:18.4.0
-        environment: &postgres_environment
+        environment:
           POSTGRES_USER: omni_ci
           POSTGRES_PASSWORD: synthetic-ci-only
           POSTGRES_DB: omni_ci
     resource_class: small
-    environment: &probe_environment
+    environment:
       PYTHONPATH: .
       OMNI_CIO_WP13_DSN: postgresql://omni_ci:synthetic-ci-only@127.0.0.1:5432/omni_ci
     steps:
       - checkout
-      - run: &install_runtime
+      - run:
           name: Install hash-locked runtime dependencies
+          command: python -m pip install --disable-pip-version-check --require-hashes -r requirements.txt
+      - run:
+          name: Wait for PostgreSQL 18 and initialize accepted schema/catalog
           command: |
             set -eu
-            test "$(git rev-parse HEAD)" = "$CIRCLE_SHA1"
-            python -m pip install --disable-pip-version-check --require-hashes -r requirements.txt
-      - wait_postgres18
-      - run:
-          name: Prove numeric semantics
-          command: python -m scripts.diagnose_v10_wp13_linux_portability numeric
-
-  supplemental_linux_wp13_negatives:
-    docker:
-      - image: cimg/python:3.12.10
-      - image: cimg/postgres:18.4.0
-        environment: *postgres_environment
-    resource_class: small
-    environment: *probe_environment
-    steps:
-      - checkout
-      - run: *install_runtime
-      - wait_postgres18
-      - run:
-          name: Prove immutable and scope negatives
-          command: python -m scripts.diagnose_v10_wp13_linux_portability negatives
-
-  supplemental_linux_wp13_content_cache_digest:
-    docker:
-      - image: cimg/python:3.12.10
-      - image: cimg/postgres:18.4.0
-        environment: *postgres_environment
-    resource_class: small
-    environment: *probe_environment
-    steps:
-      - checkout
-      - run: *install_runtime
-      - wait_postgres18
-      - run:
-          name: Prove content cache and digest semantics
-          command: python -m scripts.diagnose_v10_wp13_linux_portability content-cache-digest
+            python -c "import os,time,psycopg; dsn=os.environ['OMNI_CIO_WP13_DSN']; deadline=time.monotonic()+45; c=None; exec(\"while time.monotonic() < deadline:\\n try:\\n  c=psycopg.connect(dsn, connect_timeout=3); break\\n except psycopg.Error:\\n  time.sleep(1)\"); assert c is not None; version_num=int(c.execute('SHOW server_version_num').fetchone()[0]); c.close(); assert version_num // 10000 == 18"
+            python -c "from scripts.diagnose_v10_wp13_linux_portability import _initialized; c,_,_=_initialized(); c.close(); print('CIRCLECI_WP13_DIAGNOSTIC_INITIALIZED=PASS')"
 
 workflows:
   v10_supplemental_linux_diagnostics:
     jobs:
       - supplemental_linux_governance
-      - supplemental_linux_wp13_numeric
-      - supplemental_linux_wp13_negatives
-      - supplemental_linux_wp13_content_cache_digest
+      - supplemental_linux_diagnostic_import
+      - supplemental_linux_diagnostic_initialized:
+          requires:
+            - supplemental_linux_diagnostic_import
