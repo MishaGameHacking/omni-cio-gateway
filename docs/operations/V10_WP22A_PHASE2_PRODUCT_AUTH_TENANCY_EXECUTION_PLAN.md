@@ -20,7 +20,7 @@ WP12–WP22 were intentionally implemented on an OWNER-only migration baseline. 
 - `web_sessions` permit only the OWNER account;
 - broker persistence rejects non-OWNER tenants;
 - the public identity abstraction exists but durable external-identity bindings do not;
-- the existing application shell still contains historical private-edge OWNER UX.
+- the existing application shell and session presentation still contain historical OWNER product-role assumptions.
 
 The correction must not remove unrelated OWNER-only guards before their owning hosted/private-state phase.
 
@@ -38,8 +38,8 @@ Phase 2 owns only:
 8. broker connection/account persistence generalization to arbitrary valid tenant scope;
 9. application-side tenant binding with transaction-local PostgreSQL tenant context;
 10. PostgreSQL RLS on generalized broker relations and a restricted-role negative rehearsal;
-11. removal of historical remote OWNER login from the normal Web product shell;
-12. deterministic unit/static/PostgreSQL evidence for cross-tenant and IDOR denial.
+11. removal of historical remote OWNER login and OWNER/Personal session labels from the normal Web product boundary;
+12. deterministic unit/static/PostgreSQL evidence that client `user_id` / `tenant_id` selectors do not override server-side session scope and that cross-tenant/IDOR access fails closed.
 
 ## Deliberately out of scope / locked
 
@@ -56,6 +56,12 @@ Phase 2 does **not** authorize:
 - WP23 Telegram Bot work.
 
 Historical OWNER-only constraints on portfolio/research/decision/job/content state remain in force during Phase 2. This is deliberate fail-closed staging, not incomplete evidence disguised as PASS.
+
+### Legacy canonical OWNER graph compatibility
+
+`CanonicalDomainCatalogV1` / `load_catalog()` remain the accepted OWNER-only WP12/WP13 canonical private-state graph during Phase 2. They are **not** silently converted into a public multi-tenant portfolio model in this package. Public registration and hosted private-state activation remain off, so accepted runtime does not create real product-user rows that are then consumed by that legacy graph.
+
+Phase 2 instead establishes the separate account/session/broker boundary required before Phase 3. Before hosted real-user activation, Phase 3 must either tenant-scope/replace the legacy canonical reader where its private-state tables are generalized or prove an equivalent tenant-preserving compatibility boundary. This prevents Phase 2 from pulling portfolio/research/decision migration work forward while making the future dependency explicit.
 
 ## PostgreSQL RLS staging decision
 
@@ -75,18 +81,20 @@ Potential regression areas:
 
 - WP13 migration replay / PostgreSQL restore because migration series gains `0004`;
 - WP15/WP17 broker connection creation/list/replace/revoke;
-- server-side session persistence;
+- server-side session persistence and session-view presentation;
 - Application Shell unauthenticated login surface;
 - legacy OWNER acceptance paths;
+- accepted OWNER-only `CanonicalDomainCatalogV1` reader semantics if future hosted private-state work is started early;
 - backup/state-digest behavior if RLS is applied too broadly;
 - secret scanning if synthetic binding keys resemble credentials.
 
 Mitigations:
 
 - migration generalizes only identity/session/broker relations;
-- unrelated private tables retain OWNER-only checks;
+- unrelated private tables and the accepted OWNER canonical graph retain their existing scope in Phase 2;
 - existing composite tenant FKs/uniqueness are retained;
 - broker repository always sets tenant context inside the same transaction as private SQL;
+- Web API tests prove non-OWNER product sessions ignore client-supplied user/tenant selectors;
 - HMAC key is dependency-injected and required; Phase-2 tests use an obvious synthetic key only;
 - real provider/broker secrets are forbidden from tests/evidence;
 - existing WP13 recovery rehearsal remains an inherited gate.
@@ -97,7 +105,7 @@ Before final exact-head CI:
 
 - review migration constraints against `0001`/`0003` exact names;
 - static/syntax check all changed Python/PowerShell/YAML;
-- run focused product-identity unit tests;
+- run focused product-identity and product-session API tests;
 - run isolated PostgreSQL 18 Phase-2 tenant-security rehearsal;
 - run WP13 migration/recovery regression rehearsal;
 - inspect full branch diff for accidental widening of unrelated OWNER guards;
@@ -114,6 +122,8 @@ Phase 2 is not complete unless all applicable exact-head checks conclude `succes
 - identity already bound elsewhere cannot be stolen/merged;
 - login rotates/revokes the prior server session;
 - plaintext session token is not persisted;
+- product session presentation exposes no historical OWNER/Personal authority label or raw user/tenant IDs;
+- private API authority comes from the resolved server session and ignores client user/tenant selectors;
 - broker CRUD uses server tenant scope and cross-tenant object IDs fail closed;
 - PostgreSQL RLS restricted-role probe sees only its tenant and rejects cross-tenant INSERT;
 - unrelated private tables remain OWNER-locked;
