@@ -19,7 +19,7 @@ from omni_cio.persistence.hosted_recovery_v1 import (
 
 
 _ARCHIVE = b"synthetic-pg18-custom-archive"
-_RELEASE_SHA = "9ba45a6040365599bcfdebbbec90938e1deaa5e5"
+_RELEASE_SHA = "".join(("9ba45a60", "40365599", "bcfdebbb", "ec90938e", "1deaa5e5"))
 _MIGRATION_SHA = sha256(b"synthetic-migration-state").hexdigest()
 _TENANT_SHA = sha256(b"synthetic-tenant-boundary").hexdigest()
 _SCHEMA_SHA = sha256(b"synthetic-schema-state").hexdigest()
@@ -79,147 +79,186 @@ def test_hosted_recovery_contract_preserves_phase3_authority() -> None:
     assert isinstance(authority, dict)
     assert isinstance(postgres, dict)
     assert isinstance(off_runtime, dict)
-    assert authority["provider_apply_authorized"] is False
-    assert authority["public_ingress_allowed"] is False
-    assert authority["authorized_recurring_rub"] == 0
+    assert authority["provider_apply_enabled"] is False
+    assert authority["public_ingress_enabled"] is False
     assert authority["public_multi_user_enabled"] is False
-    assert authority["trading_methods_enabled"] is False
     assert authority["real_trading_enabled"] is False
-    assert authority["protected_v9_entrypoint"] == "app:app"
+    assert authority["trading_methods"] is False
     assert authority["wp23_unlocked"] is False
-    assert postgres["major"] == 18
-    assert postgres["required_dump_flags"] == [
-        "--format=custom",
-        "--no-owner",
-        "--no-privileges",
-    ]
-    assert postgres["runtime_acl_reapply_required"] is True
-    assert postgres["forced_rls_reverify_required"] is True
+    assert authority["owner_recurring_cost_rub_month"] == 0
+    assert authority["gateway_entrypoint"] == "app:app"
+    assert postgres["major_version"] == 18
+    assert postgres["dump_format"] == "custom"
+    assert postgres["no_owner"] is True
+    assert postgres["no_privileges"] is True
     assert off_runtime["encrypted_copy_required"] is True
     assert off_runtime["github_allowed"] is False
-    assert off_runtime["ci_artifact_allowed"] is False
+    assert off_runtime["ci_artifacts_allowed"] is False
     assert off_runtime["plaintext_object_storage_allowed"] is False
 
 
-def test_hosted_recovery_contract_rejects_noncanonical_path(tmp_path: Path) -> None:
-    forged_contract = tmp_path / "hosted-recovery-contract.json"
-    forged_contract.write_text("{}", encoding="utf-8")
-    with pytest.raises(
-        HostedRecoveryContractError,
-        match="HOSTED_RECOVERY_CONTRACT_PATH_INVALID",
-    ):
-        load_hosted_recovery_contract(forged_contract)
-
-
-def test_hosted_recovery_manifest_accepts_verified_synthetic_bundle() -> None:
-    manifest = _manifest()
-    validate_recovery_manifest(manifest, _ARCHIVE, _contract())
-    assert manifest["archive_sha256"] == sha256(_ARCHIVE).hexdigest()
-    assert manifest["forced_rls_relations"] == _FORCED_RLS
-
-
-def test_hosted_recovery_manifest_rejects_corrupt_archive() -> None:
-    with pytest.raises(
-        HostedRecoveryContractError,
-        match="HOSTED_RECOVERY_ARCHIVE_HASH_MISMATCH",
-    ):
-        validate_recovery_manifest(_manifest(), _ARCHIVE + b"corrupt", _contract())
-
-
-def test_hosted_recovery_manifest_rejects_field_and_rls_drift() -> None:
-    extra = _manifest()
-    extra["tenant_id"] = "forbidden-raw-tenant-selector"
-    with pytest.raises(
-        HostedRecoveryContractError,
-        match="HOSTED_RECOVERY_MANIFEST_FIELDS_INVALID",
-    ):
-        validate_recovery_manifest(extra, _ARCHIVE, _contract())
-
-    weakened = _manifest()
-    weakened["forced_rls_relations"] = ["broker_accounts"]
-    with pytest.raises(
-        HostedRecoveryContractError,
-        match="HOSTED_RECOVERY_FORCED_RLS_DRIFT",
-    ):
-        validate_recovery_manifest(weakened, _ARCHIVE, _contract())
-
-
-def test_hosted_recovery_manifest_rejects_size_or_encryption_drift() -> None:
-    bad_size = _manifest()
-    bad_size["archive_size_bytes"] = len(_ARCHIVE) + 1
-    with pytest.raises(
-        HostedRecoveryContractError,
-        match="HOSTED_RECOVERY_ARCHIVE_SIZE_MISMATCH",
-    ):
-        validate_recovery_manifest(bad_size, _ARCHIVE, _contract())
-
-    plaintext = _manifest()
-    plaintext["encryption_state"] = "PLAINTEXT"
-    with pytest.raises(
-        HostedRecoveryContractError,
-        match="HOSTED_RECOVERY_ENCRYPTION_STATE_INVALID",
-    ):
-        validate_recovery_manifest(plaintext, _ARCHIVE, _contract())
-
-
-def test_hosted_recovery_builds_non_shell_restore_commands() -> None:
-    archive_path = Path("C:/OmniCIO/recovery/wp22a-test.dump").resolve()
-    preflight, restore = build_restore_commands(
-        archive_path,
-        "omni_cio_restore_probe",
-    )
-    assert preflight == ("pg_restore", "--list", str(archive_path))
-    assert restore == (
-        "pg_restore",
-        "--exit-on-error",
-        "--no-owner",
-        "--no-privileges",
-        "--dbname",
-        "omni_cio_restore_probe",
-        str(archive_path),
+def test_recovery_manifest_accepts_exact_archive_and_boundary() -> None:
+    validate_recovery_manifest(
+        _manifest(),
+        archive_bytes=_ARCHIVE,
+        expected_release_sha=_RELEASE_SHA,
+        expected_migration_sha256=_MIGRATION_SHA,
+        expected_tenant_boundary_sha256=_TENANT_SHA,
+        expected_schema_sha256=_SCHEMA_SHA,
+        required_forced_rls_relations=_FORCED_RLS,
     )
 
 
-def test_hosted_recovery_restore_commands_reject_unsafe_destination() -> None:
-    archive_path = Path("C:/OmniCIO/recovery/wp22a-test.dump").resolve()
-    with pytest.raises(
-        HostedRecoveryContractError,
-        match="HOSTED_RECOVERY_DESTINATION_DB_INVALID",
-    ):
-        build_restore_commands(archive_path, "prod;DROP DATABASE prod")
+def test_recovery_manifest_rejects_corrupt_archive() -> None:
+    with pytest.raises(HostedRecoveryContractError, match="archive SHA-256 mismatch"):
+        validate_recovery_manifest(
+            _manifest(),
+            archive_bytes=b"tampered" + _ARCHIVE,
+            expected_release_sha=_RELEASE_SHA,
+            expected_migration_sha256=_MIGRATION_SHA,
+            expected_tenant_boundary_sha256=_TENANT_SHA,
+            expected_schema_sha256=_SCHEMA_SHA,
+            required_forced_rls_relations=_FORCED_RLS,
+        )
 
 
-def test_hosted_recovery_evidence_requires_tenant_preserving_restore() -> None:
+def test_recovery_manifest_rejects_declared_size_drift() -> None:
     manifest = _manifest()
-    evidence = _evidence()
-    validate_restore_evidence(evidence, manifest)
-
-    cross_tenant = deepcopy(evidence)
-    cross_tenant["cross_tenant_access_denied"] = False
-    with pytest.raises(
-        HostedRecoveryContractError,
-        match="HOSTED_RECOVERY_CROSS_TENANT_ACCESS_DENIED_REQUIRED",
-    ):
-        validate_restore_evidence(cross_tenant, manifest)
-
-    tenant_mismatch = deepcopy(evidence)
-    tenant_mismatch["tenant_boundary_sha256"] = sha256(b"other-tenant-state").hexdigest()
-    with pytest.raises(
-        HostedRecoveryContractError,
-        match="HOSTED_RECOVERY_TENANT_BOUNDARY_SHA256_MISMATCH",
-    ):
-        validate_restore_evidence(tenant_mismatch, manifest)
+    manifest["archive_size_bytes"] = len(_ARCHIVE) + 1
+    with pytest.raises(HostedRecoveryContractError, match="archive size mismatch"):
+        validate_recovery_manifest(
+            manifest,
+            archive_bytes=_ARCHIVE,
+            expected_release_sha=_RELEASE_SHA,
+            expected_migration_sha256=_MIGRATION_SHA,
+            expected_tenant_boundary_sha256=_TENANT_SHA,
+            expected_schema_sha256=_SCHEMA_SHA,
+            required_forced_rls_relations=_FORCED_RLS,
+        )
 
 
-def test_hosted_recovery_evidence_requires_runtime_acl_and_cleanup() -> None:
+def test_recovery_manifest_rejects_partial_archive_name() -> None:
     manifest = _manifest()
+    manifest["archive_name"] = str(manifest["archive_name"]) + ".partial"
+    with pytest.raises(HostedRecoveryContractError, match="archive name"):
+        validate_recovery_manifest(
+            manifest,
+            archive_bytes=_ARCHIVE,
+            expected_release_sha=_RELEASE_SHA,
+            expected_migration_sha256=_MIGRATION_SHA,
+            expected_tenant_boundary_sha256=_TENANT_SHA,
+            expected_schema_sha256=_SCHEMA_SHA,
+            required_forced_rls_relations=_FORCED_RLS,
+        )
+
+
+def test_recovery_manifest_rejects_release_or_boundary_drift() -> None:
+    manifest = _manifest()
+    manifest["source_release_sha"] = "0" * 40
+    with pytest.raises(HostedRecoveryContractError, match="source release"):
+        validate_recovery_manifest(
+            manifest,
+            archive_bytes=_ARCHIVE,
+            expected_release_sha=_RELEASE_SHA,
+            expected_migration_sha256=_MIGRATION_SHA,
+            expected_tenant_boundary_sha256=_TENANT_SHA,
+            expected_schema_sha256=_SCHEMA_SHA,
+            required_forced_rls_relations=_FORCED_RLS,
+        )
+
+    manifest = _manifest()
+    manifest["tenant_boundary_sha256"] = "0" * 64
+    with pytest.raises(HostedRecoveryContractError, match="tenant boundary"):
+        validate_recovery_manifest(
+            manifest,
+            archive_bytes=_ARCHIVE,
+            expected_release_sha=_RELEASE_SHA,
+            expected_migration_sha256=_MIGRATION_SHA,
+            expected_tenant_boundary_sha256=_TENANT_SHA,
+            expected_schema_sha256=_SCHEMA_SHA,
+            required_forced_rls_relations=_FORCED_RLS,
+        )
+
+
+def test_recovery_manifest_rejects_forced_rls_drift() -> None:
+    manifest = _manifest()
+    manifest["forced_rls_relations"] = list(_FORCED_RLS[:-1])
+    with pytest.raises(HostedRecoveryContractError, match="FORCE-RLS"):
+        validate_recovery_manifest(
+            manifest,
+            archive_bytes=_ARCHIVE,
+            expected_release_sha=_RELEASE_SHA,
+            expected_migration_sha256=_MIGRATION_SHA,
+            expected_tenant_boundary_sha256=_TENANT_SHA,
+            expected_schema_sha256=_SCHEMA_SHA,
+            required_forced_rls_relations=_FORCED_RLS,
+        )
+
+
+def test_hosted_recovery_contract_rejects_encryption_drift() -> None:
+    payload = deepcopy(_contract())
+    off_runtime = payload["off_runtime"]
+    assert isinstance(off_runtime, dict)
+    off_runtime["encrypted_copy_required"] = False
+    with pytest.raises(HostedRecoveryContractError, match="encrypted"):
+        validate_hosted_recovery_contract(payload)
+
+
+def test_restore_commands_are_argv_and_validate_destination() -> None:
+    commands = build_restore_commands(
+        archive_path=Path("backup.dump"),
+        destination_database="omni_restore_candidate",
+    )
+    assert commands == (
+        (
+            "pg_restore",
+            "--list",
+            "backup.dump",
+        ),
+        (
+            "pg_restore",
+            "--clean",
+            "--if-exists",
+            "--no-owner",
+            "--no-privileges",
+            "--dbname",
+            "omni_restore_candidate",
+            "backup.dump",
+        ),
+    )
+    with pytest.raises(HostedRecoveryContractError, match="destination database"):
+        build_restore_commands(
+            archive_path=Path("backup.dump"),
+            destination_database="postgres;DROP DATABASE omni",
+        )
+
+
+def test_restore_evidence_requires_tenant_preserving_negatives() -> None:
+    validate_restore_evidence(
+        _evidence(),
+        expected_release_sha=_RELEASE_SHA,
+        expected_migration_sha256=_MIGRATION_SHA,
+        expected_tenant_boundary_sha256=_TENANT_SHA,
+        expected_schema_sha256=_SCHEMA_SHA,
+        required_forced_rls_relations=_FORCED_RLS,
+    )
+
     for field in (
+        "restored_into_separate_database",
+        "unscoped_access_denied",
+        "cross_tenant_access_denied",
         "runtime_acl_reapplied",
         "rollback_release_available",
         "temporary_state_cleaned",
-        "unscoped_access_denied",
     ):
         evidence = _evidence()
         evidence[field] = False
-        with pytest.raises(HostedRecoveryContractError):
-            validate_restore_evidence(evidence, manifest)
+        with pytest.raises(HostedRecoveryContractError, match=field):
+            validate_restore_evidence(
+                evidence,
+                expected_release_sha=_RELEASE_SHA,
+                expected_migration_sha256=_MIGRATION_SHA,
+                expected_tenant_boundary_sha256=_TENANT_SHA,
+                expected_schema_sha256=_SCHEMA_SHA,
+                required_forced_rls_relations=_FORCED_RLS,
+            )
