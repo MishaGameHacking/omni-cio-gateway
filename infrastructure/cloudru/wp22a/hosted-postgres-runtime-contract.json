@@ -1,5 +1,5 @@
 {
-  "schema_version": "v10.wp22a.phase3.hosted-postgres-runtime.v1",
+  "schema_version": "v10.wp22a.phase3.hosted-postgres-runtime.v2",
   "authority": {
     "provider": "Cloud.ru Evolution",
     "source_only": true,
@@ -12,20 +12,23 @@
     "protected_v9_entrypoint": "app:app",
     "wp23_unlocked": false
   },
-  "runtime_role": {
+  "provider_user": {
     "name": "omni_cio_hosted_api",
-    "cluster_scoped": true,
-    "login_identity_bound": false,
-    "preexisting_exact_role_reuse_allowed": true,
-    "membership_in_other_roles_allowed": false,
+    "resource_type": "cloudru_evolution_postgresql_user",
+    "provisioning_phase": "WP22A_PHASE4",
+    "source_bootstrap_creates_user": false,
+    "login_required": true,
+    "credential_delivery": "external_non_source",
+    "credential_value_in_source_allowed": false,
+    "predefined_roles": [],
+    "database_owner": false,
+    "schema_owner": false,
+    "object_owner": false,
     "superuser": false,
     "create_database": false,
     "create_role": false,
-    "inherit": false,
     "replication": false,
-    "bypass_rls": false,
-    "safe_creator_admin_membership_allowed": true,
-    "runtime_member_authority_bound": false
+    "bypass_rls": false
   },
   "schema": {
     "name": "omni_cio_v10",
@@ -103,7 +106,7 @@
     "content_blobs",
     "state_revisions"
   ],
-  "forbidden_role_grants": [
+  "forbidden_predefined_roles": [
     "pg_read_all_data",
     "pg_write_all_data"
   ]

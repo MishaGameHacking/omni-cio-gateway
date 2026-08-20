@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import copy
-
 import pytest
 
 from omni_cio.persistence.hosted_postgres_runtime_v1 import (
@@ -27,9 +25,9 @@ def test_hosted_postgres_contract_preserves_phase3_authority() -> None:
     validate_hosted_postgres_runtime_contract(payload)
 
     authority = payload["authority"]
-    role = payload["runtime_role"]
+    provider_user = payload["provider_user"]
     assert isinstance(authority, dict)
-    assert isinstance(role, dict)
+    assert isinstance(provider_user, dict)
     assert authority["provider_apply_authorized"] is False
     assert authority["public_database_ingress_allowed"] is False
     assert authority["authorized_recurring_rub"] == 0
@@ -38,18 +36,18 @@ def test_hosted_postgres_contract_preserves_phase3_authority() -> None:
     assert authority["real_trading_enabled"] is False
     assert authority["protected_v9_entrypoint"] == "app:app"
     assert authority["wp23_unlocked"] is False
-    assert role["name"] == "omni_cio_hosted_api"
-    assert role["cluster_scoped"] is True
-    assert role["login_identity_bound"] is False
-    assert role["preexisting_exact_role_reuse_allowed"] is True
-    assert role["membership_in_other_roles_allowed"] is False
-    assert role["safe_creator_admin_membership_allowed"] is True
-    assert role["runtime_member_authority_bound"] is False
-    assert role["bypass_rls"] is False
-    assert payload["database_privileges"] == []
-    assert payload["function_privileges"] == {
-        "current_tenant_scope()": ["EXECUTE"]
-    }
+    assert provider_user["name"] == "omni_cio_hosted_api"
+    assert provider_user["resource_type"] == "cloudru_evolution_postgresql_user"
+    assert provider_user["provisioning_phase"] == "WP22A_PHASE4"
+    assert provider_user["source_bootstrap_creates_user"] is False
+    assert provider_user["login_required"] is True
+    assert provider_user["credential_delivery"] == "external_non_source"
+    assert provider_user["credential_value_in_source_allowed"] is False
+    assert provider_user["predefined_roles"] == []
+    assert provider_user["database_owner"] is False
+    assert provider_user["schema_owner"] is False
+    assert provider_user["object_owner"] is False
+    assert provider_user["bypass_rls"] is False
 
 
 def test_hosted_postgres_bootstrap_matches_exact_dml_matrix() -> None:
@@ -70,6 +68,10 @@ def test_hosted_postgres_bootstrap_matches_exact_dml_matrix() -> None:
         "broker_connection_accounts",
     }
     assert set(privileges).isdisjoint(forbidden)
+    assert payload["database_privileges"] == []
+    assert payload["function_privileges"] == {
+        "current_tenant_scope()": ["EXECUTE"]
+    }
 
 
 def test_hosted_postgres_bootstrap_forces_tenant_broker_rls() -> None:
@@ -87,18 +89,23 @@ def test_hosted_postgres_bootstrap_forces_tenant_broker_rls() -> None:
         assert "FORCE ROW LEVEL SECURITY" in source
 
 
-def test_hosted_postgres_bootstrap_reuses_only_exact_cluster_role() -> None:
+def test_hosted_postgres_bootstrap_checks_provider_user_and_ownership() -> None:
     source = _bootstrap()
     assert "pg_catalog.pg_roles" in source
     assert "pg_catalog.pg_auth_members" in source
-    assert "HOSTED_API_ROLE_ATTRIBUTE_DRIFT" in source
-    assert "HOSTED_API_ROLE_MEMBERSHIP_DRIFT" in source
-    assert "HOSTED_API_ROLE_MEMBER_AUTHORITY_PRESENT" in source
-    assert "membership.inherit_option OR membership.set_option" in source
+    assert "HOSTED_API_USER_NOT_PROVISIONED" in source
+    assert "HOSTED_API_USER_ATTRIBUTE_DRIFT" in source
+    assert "HOSTED_API_USER_ROLE_MEMBERSHIP_PRESENT" in source
+    assert "HOSTED_API_USER_MEMBERS_PRESENT" in source
+    assert "HOSTED_API_DATABASE_OWNERSHIP_FORBIDDEN" in source
+    assert "HOSTED_API_SCHEMA_OWNERSHIP_FORBIDDEN" in source
+    assert "HOSTED_API_OBJECT_OWNERSHIP_FORBIDDEN" in source
     assert "REVOKE ALL PRIVILEGES ON DATABASE" in source
     assert "GRANT EXECUTE ON FUNCTION" in source
-    assert "CREATE ROLE omni_cio_hosted_api" in source
-    assert "ALTER ROLE omni_cio_hosted_api" in source
+    assert "CREATE ROLE" not in source
+    assert "CREATE USER" not in source
+    assert "ALTER ROLE" not in source
+    assert "ALTER USER" not in source
 
 
 def test_hosted_postgres_validator_rejects_unrelated_table_grant() -> None:
@@ -114,16 +121,18 @@ def test_hosted_postgres_validator_rejects_unrelated_table_grant() -> None:
         validate_hosted_postgres_runtime_sql(unsafe, _contract())
 
 
-def test_hosted_postgres_validator_rejects_login_or_rls_bypass() -> None:
-    for unsafe in (
-        _bootstrap().replace("NOLOGIN", "LOGIN"),
-        _bootstrap().replace("NOBYPASSRLS", "BYPASSRLS"),
-    ):
-        with pytest.raises(
-            HostedPostgresRuntimeContractError,
-            match="HOSTED_POSTGRES_SQL_ROLE_OPTION_DRIFT",
-        ):
-            validate_hosted_postgres_runtime_sql(
-                unsafe,
-                copy.deepcopy(_contract()),
-            )
+def test_hosted_postgres_validator_rejects_provider_or_broad_role_mutation() -> None:
+    unsafe_inputs = (
+        (
+            _bootstrap() + "\nCREATE USER extra_login;\n",
+            "HOSTED_POSTGRES_SQL_PROVIDER_USER_MANAGEMENT_FORBIDDEN",
+        ),
+        (
+            _bootstrap()
+            + "\nGRANT pg_read_all_data TO omni_cio_hosted_api;\n",
+            "HOSTED_POSTGRES_SQL_BROAD_ROLE_GRANT",
+        ),
+    )
+    for unsafe, expected in unsafe_inputs:
+        with pytest.raises(HostedPostgresRuntimeContractError, match=expected):
+            validate_hosted_postgres_runtime_sql(unsafe, _contract())

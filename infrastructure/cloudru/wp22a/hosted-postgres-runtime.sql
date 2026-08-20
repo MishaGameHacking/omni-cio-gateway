@@ -1,74 +1,104 @@
--- WP22A Phase 3: source-only least-privilege hosted API database role.
--- This bootstrap is deliberately outside the ordinary per-database migration
--- series because PostgreSQL roles are cluster-scoped. Phase 4 may execute it
--- only on an accepted hosted database boundary with separately injected login
--- identity. It creates no provider resource, public ingress, or paid service.
+-- WP22A Phase 3: source-only object grants for the Cloud.ru-managed API user.
+-- Phase 4 creates the login user through the accepted provider boundary with
+-- separately injected credentials and no predefined broad PostgreSQL roles.
+-- This SQL never creates or alters users and never applies provider resources.
 
-DO $hosted_role$
+DO $hosted_user$
 DECLARE
-    existing_role pg_catalog.pg_roles%ROWTYPE;
+    runtime_user pg_catalog.pg_roles%ROWTYPE;
 BEGIN
     SELECT *
-    INTO existing_role
+    INTO runtime_user
     FROM pg_catalog.pg_roles
     WHERE rolname = 'omni_cio_hosted_api';
 
     IF NOT FOUND THEN
-        EXECUTE 'CREATE ROLE omni_cio_hosted_api ' ||
-            'NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT ' ||
-            'NOLOGIN NOREPLICATION NOBYPASSRLS';
-    ELSIF
-        existing_role.rolsuper OR
-        existing_role.rolcreatedb OR
-        existing_role.rolcreaterole OR
-        existing_role.rolinherit OR
-        existing_role.rolcanlogin OR
-        existing_role.rolreplication OR
-        existing_role.rolbypassrls
+        RAISE EXCEPTION 'HOSTED_API_USER_NOT_PROVISIONED'
+            USING ERRCODE = '42704';
+    END IF;
+
+    IF
+        NOT runtime_user.rolcanlogin OR
+        runtime_user.rolsuper OR
+        runtime_user.rolcreatedb OR
+        runtime_user.rolcreaterole OR
+        runtime_user.rolreplication OR
+        runtime_user.rolbypassrls
     THEN
-        RAISE EXCEPTION 'HOSTED_API_ROLE_ATTRIBUTE_DRIFT'
+        RAISE EXCEPTION 'HOSTED_API_USER_ATTRIBUTE_DRIFT'
             USING ERRCODE = '42501';
     END IF;
 
     IF EXISTS (
         SELECT 1
         FROM pg_catalog.pg_auth_members membership
-        JOIN pg_catalog.pg_roles member_role
-            ON member_role.oid = membership.member
-        WHERE member_role.rolname = 'omni_cio_hosted_api'
+        WHERE membership.member = runtime_user.oid
     ) THEN
-        RAISE EXCEPTION 'HOSTED_API_ROLE_MEMBERSHIP_DRIFT'
+        RAISE EXCEPTION 'HOSTED_API_USER_ROLE_MEMBERSHIP_PRESENT'
             USING ERRCODE = '42501';
     END IF;
 
     IF EXISTS (
         SELECT 1
         FROM pg_catalog.pg_auth_members membership
-        JOIN pg_catalog.pg_roles granted_role
-            ON granted_role.oid = membership.roleid
-        WHERE granted_role.rolname = 'omni_cio_hosted_api'
-        AND (membership.inherit_option OR membership.set_option)
+        WHERE membership.roleid = runtime_user.oid
     ) THEN
-        RAISE EXCEPTION 'HOSTED_API_ROLE_MEMBER_AUTHORITY_PRESENT'
+        RAISE EXCEPTION 'HOSTED_API_USER_MEMBERS_PRESENT'
+            USING ERRCODE = '42501';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM pg_catalog.pg_database database_record
+        WHERE database_record.datname = pg_catalog.current_database()
+        AND database_record.datdba = runtime_user.oid
+    ) THEN
+        RAISE EXCEPTION 'HOSTED_API_DATABASE_OWNERSHIP_FORBIDDEN'
+            USING ERRCODE = '42501';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM pg_catalog.pg_namespace schema_record
+        WHERE schema_record.nspname = 'omni_cio_v10'
+        AND schema_record.nspowner = runtime_user.oid
+    ) THEN
+        RAISE EXCEPTION 'HOSTED_API_SCHEMA_OWNERSHIP_FORBIDDEN'
+            USING ERRCODE = '42501';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM pg_catalog.pg_class relation_record
+        JOIN pg_catalog.pg_namespace schema_record
+            ON schema_record.oid = relation_record.relnamespace
+        WHERE schema_record.nspname = 'omni_cio_v10'
+        AND relation_record.relowner = runtime_user.oid
+    ) THEN
+        RAISE EXCEPTION 'HOSTED_API_OBJECT_OWNERSHIP_FORBIDDEN'
+            USING ERRCODE = '42501';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM pg_catalog.pg_proc function_record
+        JOIN pg_catalog.pg_namespace schema_record
+            ON schema_record.oid = function_record.pronamespace
+        WHERE schema_record.nspname = 'omni_cio_v10'
+        AND function_record.proowner = runtime_user.oid
+    ) THEN
+        RAISE EXCEPTION 'HOSTED_API_OBJECT_OWNERSHIP_FORBIDDEN'
             USING ERRCODE = '42501';
     END IF;
 END;
-$hosted_role$;
-
-ALTER ROLE omni_cio_hosted_api
-    NOSUPERUSER
-    NOCREATEDB
-    NOCREATEROLE
-    NOINHERIT
-    NOLOGIN
-    NOREPLICATION
-    NOBYPASSRLS;
+$hosted_user$;
 
 DO $database_privileges$
 BEGIN
     EXECUTE pg_catalog.format(
-        'REVOKE ALL PRIVILEGES ON DATABASE %I FROM omni_cio_hosted_api',
-        pg_catalog.current_database()
+        'REVOKE ALL PRIVILEGES ON DATABASE %I FROM %I',
+        pg_catalog.current_database(),
+        'omni_cio_hosted_api'
     );
 END;
 $database_privileges$;
