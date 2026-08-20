@@ -223,21 +223,21 @@ def _sync_regular_file(
 
 
 def _sync_directory(directory: Path) -> None:
-    """Best-effort directory fsync where the platform supports it."""
+    if os.name == "nt":
+        return
     flags = os.O_RDONLY
     if hasattr(os, "O_DIRECTORY"):
         flags |= os.O_DIRECTORY
     try:
         fd = os.open(directory, flags)
-    except OSError:
-        return
-    try:
         try:
             os.fsync(fd)
-        except OSError:
-            return
-    finally:
-        os.close(fd)
+        finally:
+            os.close(fd)
+    except OSError as exc:
+        raise HostedRecoveryContractError(
+            "HOSTED_RECOVERY_DIRECTORY_SYNC_FAILED"
+        ) from exc
 
 
 def _regular_identity(path: Path, code: str) -> _FileIdentity:
