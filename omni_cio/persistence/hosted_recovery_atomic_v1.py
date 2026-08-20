@@ -31,12 +31,17 @@ def _identity(value: os.stat_result) -> _FileIdentity:
 
 
 def _snapshot(value: os.stat_result) -> _FileSnapshot:
+    # Windows may report a different creation-time/ctime view for a hard-link
+    # path than for an already-open handle to the same file. Device/inode,
+    # size and mtime remain stable replacement/content-change signals, so do
+    # not make that Windows-only representation mismatch a false tamper event.
+    stable_ctime_ns = 0 if os.name == "nt" else value.st_ctime_ns
     return (
         value.st_dev,
         value.st_ino,
         value.st_size,
         value.st_mtime_ns,
-        value.st_ctime_ns,
+        stable_ctime_ns,
     )
 
 
