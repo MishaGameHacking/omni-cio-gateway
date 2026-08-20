@@ -5,8 +5,10 @@ from datetime import datetime
 import hashlib
 import hmac
 import json
+import os
 from pathlib import Path
 import re
+import stat
 from typing import Any
 
 
@@ -82,13 +84,19 @@ def _as_mapping(value: object, code: str) -> Mapping[str, Any]:
 def _as_string_sequence(value: object, code: str) -> tuple[str, ...]:
     if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
         raise HostedRecoveryContractError(code)
-    normalized = tuple(str(item) for item in value)
+    if any(not isinstance(item, str) for item in value):
+        raise HostedRecoveryContractError(code)
+    normalized = tuple(value)
     if len(normalized) != len(set(normalized)):
         raise HostedRecoveryContractError(code)
     return normalized
 
 
-def _require_exact_mapping(actual: Mapping[str, Any], expected: Mapping[str, object], code: str) -> None:
+def _require_exact_mapping(
+    actual: Mapping[str, Any],
+    expected: Mapping[str, object],
+    code: str,
+) -> None:
     if set(actual) != set(expected):
         raise HostedRecoveryContractError(code)
     for key, expected_value in expected.items():
@@ -117,6 +125,16 @@ def _require_created_at(value: object, code: str) -> str:
     except ValueError as exc:
         raise HostedRecoveryContractError(code) from exc
     return value
+
+
+def _is_reparse_point(path: Path) -> bool:
+    if os.name != "nt":
+        return False
+    try:
+        attributes = path.stat(follow_symlinks=False).st_file_attributes
+    except (AttributeError, OSError):
+        return False
+    return bool(attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT)
 
 
 def load_hosted_recovery_contract(path: Path = CONTRACT_PATH) -> dict[str, Any]:
@@ -244,25 +262,70 @@ def _require_final_archive_path(archive_path: Path) -> None:
         raise HostedRecoveryContractError("HOSTED_RECOVERY_PARTIAL_ARCHIVE_FORBIDDEN")
     if not _ARCHIVE_NAME_RE.fullmatch(archive_path.name):
         raise HostedRecoveryContractError("HOSTED_RECOVERY_ARCHIVE_NAME_INVALID")
-    if archive_path.is_symlink() or not archive_path.is_file():
+    if (
+        archive_path.is_symlink()
+        or _is_reparse_point(archive_path)
+        or not archive_path.is_file()
+    ):
         raise HostedRecoveryContractError("HOSTED_RECOVERY_ARCHIVE_NOT_REGULAR_FILE")
 
 
-def _archive_file_integrity(archive_path: Path) -> tuple[int, str]:
+def _archive_file_integrity(
+    archive_path: Path,
+    *,
+    maximum_archive_bytes: int,
+) -> tuple[int, str]:
     _require_final_archive_path(archive_path)
     try:
-        size_before = archive_path.stat().st_size
+        path_before = archive_path.stat(follow_symlinks=False)
         digest = hashlib.sha256()
         observed_size = 0
         with archive_path.open("rb") as handle:
+            handle_before = os.fstat(handle.fileno())
+            if (path_before.st_dev, path_before.st_ino) != (
+                handle_before.st_dev,
+                handle_before.st_ino,
+            ):
+                raise HostedRecoveryContractError(
+                    "HOSTED_RECOVERY_ARCHIVE_CHANGED_DURING_VALIDATION"
+                )
             for chunk in iter(lambda: handle.read(1024 * 1024), b""):
                 observed_size += len(chunk)
+                if observed_size > maximum_archive_bytes:
+                    raise HostedRecoveryContractError(
+                        "HOSTED_RECOVERY_ARCHIVE_SIZE_EXCEEDED"
+                    )
                 digest.update(chunk)
-        size_after = archive_path.stat().st_size
+            handle_after = os.fstat(handle.fileno())
+        path_after = archive_path.stat(follow_symlinks=False)
+    except HostedRecoveryContractError:
+        raise
     except OSError as exc:
         raise HostedRecoveryContractError("HOSTED_RECOVERY_ARCHIVE_READ_INVALID") from exc
-    if observed_size != size_before or size_after != size_before:
-        raise HostedRecoveryContractError("HOSTED_RECOVERY_ARCHIVE_CHANGED_DURING_VALIDATION")
+
+    identity_before = (path_before.st_dev, path_before.st_ino)
+    identity_after = (path_after.st_dev, path_after.st_ino)
+    handle_identity_before = (handle_before.st_dev, handle_before.st_ino)
+    handle_identity_after = (handle_after.st_dev, handle_after.st_ino)
+    if not (
+        identity_before
+        == identity_after
+        == handle_identity_before
+        == handle_identity_after
+    ):
+        raise HostedRecoveryContractError(
+            "HOSTED_RECOVERY_ARCHIVE_CHANGED_DURING_VALIDATION"
+        )
+    if (
+        observed_size != path_before.st_size
+        or path_after.st_size != path_before.st_size
+        or handle_after.st_size != handle_before.st_size
+        or path_before.st_mtime_ns != path_after.st_mtime_ns
+        or handle_before.st_mtime_ns != handle_after.st_mtime_ns
+    ):
+        raise HostedRecoveryContractError(
+            "HOSTED_RECOVERY_ARCHIVE_CHANGED_DURING_VALIDATION"
+        )
     return observed_size, digest.hexdigest()
 
 
@@ -343,16 +406,20 @@ def validate_recovery_manifest(
     archive_size = manifest["archive_size_bytes"]
     if type(archive_size) is not int or archive_size < int(integrity["minimum_archive_bytes"]):
         raise HostedRecoveryContractError("HOSTED_RECOVERY_ARCHIVE_SIZE_INVALID")
-    if archive_size > int(integrity["maximum_archive_bytes"]):
+    maximum_archive_bytes = int(integrity["maximum_archive_bytes"])
+    if archive_size > maximum_archive_bytes:
         raise HostedRecoveryContractError("HOSTED_RECOVERY_ARCHIVE_SIZE_EXCEEDED")
     try:
-        path_size = archive_path.stat().st_size
+        path_size = archive_path.stat(follow_symlinks=False).st_size
     except OSError as exc:
         raise HostedRecoveryContractError("HOSTED_RECOVERY_ARCHIVE_READ_INVALID") from exc
     if archive_size != path_size:
         raise HostedRecoveryContractError("HOSTED_RECOVERY_ARCHIVE_SIZE_MISMATCH")
 
-    actual_size, actual_hash = _archive_file_integrity(archive_path)
+    actual_size, actual_hash = _archive_file_integrity(
+        archive_path,
+        maximum_archive_bytes=maximum_archive_bytes,
+    )
     if archive_size != actual_size:
         raise HostedRecoveryContractError("HOSTED_RECOVERY_ARCHIVE_CHANGED_DURING_VALIDATION")
     declared_hash = _require_sha256(
@@ -378,9 +445,13 @@ def validate_recovery_manifest(
         "schema_state_sha256": expected_schema_sha256,
     }
     for field, expected_value in expected_digests.items():
-        actual_value = _require_sha256(manifest[field], f"HOSTED_RECOVERY_{field.upper()}_INVALID")
+        actual_value = _require_sha256(
+            manifest[field], f"HOSTED_RECOVERY_{field.upper()}_INVALID"
+        )
         if not hmac.compare_digest(actual_value, expected_value):
-            raise HostedRecoveryContractError(f"HOSTED_RECOVERY_{field.upper()}_MISMATCH")
+            raise HostedRecoveryContractError(
+                f"HOSTED_RECOVERY_{field.upper()}_MISMATCH"
+            )
 
     forced_rls = _as_string_sequence(
         manifest["forced_rls_relations"], "HOSTED_RECOVERY_FORCED_RLS_INVALID"
@@ -390,29 +461,6 @@ def validate_recovery_manifest(
 
     if manifest["encryption_state"] != bundle["encryption_state"]:
         raise HostedRecoveryContractError("HOSTED_RECOVERY_ENCRYPTION_STATE_INVALID")
-
-
-def build_dump_command(
-    archive_path: Path,
-    source_database: str,
-) -> tuple[Path, tuple[str, ...]]:
-    if not archive_path.is_absolute():
-        raise HostedRecoveryContractError("HOSTED_RECOVERY_ARCHIVE_PATH_NOT_ABSOLUTE")
-    if not _ARCHIVE_NAME_RE.fullmatch(archive_path.name):
-        raise HostedRecoveryContractError("HOSTED_RECOVERY_ARCHIVE_NAME_INVALID")
-    if not _DATABASE_RE.fullmatch(source_database):
-        raise HostedRecoveryContractError("HOSTED_RECOVERY_SOURCE_DATABASE_INVALID")
-
-    partial_path = archive_path.with_name(f"{archive_path.name}.partial")
-    command = (
-        "pg_dump",
-        *_EXPECTED_DUMP_FLAGS,
-        "--file",
-        str(partial_path),
-        "--dbname",
-        source_database,
-    )
-    return partial_path, command
 
 
 def build_restore_commands(
@@ -506,10 +554,13 @@ def validate_restore_evidence(
     }
     for field, expected_value in expected_values.items():
         if evidence[field] != expected_value:
-            raise HostedRecoveryContractError(f"HOSTED_RECOVERY_{field.upper()}_MISMATCH")
+            raise HostedRecoveryContractError(
+                f"HOSTED_RECOVERY_{field.upper()}_MISMATCH"
+            )
 
     forced_rls = _as_string_sequence(
-        evidence["forced_rls_relations"], "HOSTED_RECOVERY_EVIDENCE_FORCED_RLS_INVALID"
+        evidence["forced_rls_relations"],
+        "HOSTED_RECOVERY_EVIDENCE_FORCED_RLS_INVALID",
     )
     if forced_rls != required_forced_rls:
         raise HostedRecoveryContractError("HOSTED_RECOVERY_EVIDENCE_FORCE_RLS_MISMATCH")
@@ -527,4 +578,6 @@ def validate_restore_evidence(
     )
     for field in required_true_fields:
         if evidence[field] is not True:
-            raise HostedRecoveryContractError(f"HOSTED_RECOVERY_{field.upper()}_REQUIRED")
+            raise HostedRecoveryContractError(
+                f"HOSTED_RECOVERY_{field.upper()}_REQUIRED"
+            )

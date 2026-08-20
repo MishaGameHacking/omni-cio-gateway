@@ -6,11 +6,12 @@ from pathlib import Path
 
 import pytest
 
+import omni_cio.persistence.hosted_recovery_v1 as hosted_recovery
 from omni_cio.persistence.hosted_recovery_v1 import (
     CONTRACT_PATH,
     HostedRecoveryContractError,
+    _archive_file_integrity,
     archive_sha256,
-    build_dump_command,
     build_restore_commands,
     load_hosted_recovery_contract,
     validate_hosted_recovery_contract,
@@ -177,6 +178,10 @@ def test_hosted_recovery_contract_preserves_phase3_authority() -> None:
     assert off_runtime["plaintext_object_storage_allowed"] is False
 
 
+def test_legacy_dump_helper_is_not_exposed() -> None:
+    assert not hasattr(hosted_recovery, "build_dump_command")
+
+
 def test_recovery_manifest_accepts_exact_archive_and_boundary(tmp_path: Path) -> None:
     _validate_manifest(tmp_path, _manifest())
 
@@ -198,6 +203,15 @@ def test_recovery_manifest_rejects_empty_archive(tmp_path: Path) -> None:
     manifest["archive_size_bytes"] = 0
     with pytest.raises(HostedRecoveryContractError, match="ARCHIVE_SIZE_INVALID"):
         _validate_manifest(tmp_path, manifest, b"")
+
+
+def test_stream_integrity_enforces_runtime_size_bound(tmp_path: Path) -> None:
+    archive_path = _write_archive(tmp_path)
+    with pytest.raises(HostedRecoveryContractError, match="ARCHIVE_SIZE_EXCEEDED"):
+        _archive_file_integrity(
+            archive_path,
+            maximum_archive_bytes=len(_ARCHIVE) - 1,
+        )
 
 
 def test_recovery_manifest_rejects_declared_size_drift(tmp_path: Path) -> None:
@@ -255,6 +269,11 @@ def test_recovery_manifest_rejects_forced_rls_drift(tmp_path: Path) -> None:
     with pytest.raises(HostedRecoveryContractError, match="FORCE_RLS_MISMATCH"):
         _validate_manifest(tmp_path, manifest)
 
+    manifest = _manifest()
+    manifest["forced_rls_relations"] = [*_FORCED_RLS[:-1], 1]
+    with pytest.raises(HostedRecoveryContractError, match="FORCED_RLS_INVALID"):
+        _validate_manifest(tmp_path, manifest)
+
 
 def test_hosted_recovery_contract_rejects_encryption_drift() -> None:
     payload = deepcopy(_contract())
@@ -263,41 +282,6 @@ def test_hosted_recovery_contract_rejects_encryption_drift() -> None:
     off_runtime["encrypted_copy_required"] = False
     with pytest.raises(HostedRecoveryContractError, match="OFF_RUNTIME_DRIFT"):
         validate_hosted_recovery_contract(payload)
-
-
-def test_dump_command_targets_partial_archive_and_validates_inputs(tmp_path: Path) -> None:
-    archive_path = (tmp_path / _ARCHIVE_NAME).resolve()
-    partial_path, command = build_dump_command(
-        archive_path=archive_path,
-        source_database="omni_hosted",
-    )
-    assert partial_path == archive_path.with_name(f"{archive_path.name}.partial")
-    assert command == (
-        "pg_dump",
-        "--format=custom",
-        "--no-privileges",
-        "--file",
-        str(partial_path),
-        "--dbname",
-        "omni_hosted",
-    )
-    assert "--no-owner" not in command
-
-    with pytest.raises(HostedRecoveryContractError, match="SOURCE_DATABASE_INVALID"):
-        build_dump_command(
-            archive_path=archive_path,
-            source_database="postgres;DROP DATABASE omni",
-        )
-    with pytest.raises(HostedRecoveryContractError, match="ARCHIVE_PATH_NOT_ABSOLUTE"):
-        build_dump_command(
-            archive_path=Path(_ARCHIVE_NAME),
-            source_database="omni_hosted",
-        )
-    with pytest.raises(HostedRecoveryContractError, match="ARCHIVE_NAME_INVALID"):
-        build_dump_command(
-            archive_path=(tmp_path / "backup.dump").resolve(),
-            source_database="omni_hosted",
-        )
 
 
 def test_restore_commands_validate_exact_archive_before_building_argv(tmp_path: Path) -> None:
@@ -321,7 +305,7 @@ def test_restore_commands_validate_exact_archive_before_building_argv(tmp_path: 
         _build_restore_commands(
             archive_path,
             manifest,
-            destination_database="postgres;DROP DATABASE omni",
+            destination_database="invalid database",
         )
     with pytest.raises(HostedRecoveryContractError, match="ARCHIVE_PATH_NOT_ABSOLUTE"):
         _build_restore_commands(Path(_ARCHIVE_NAME), manifest)
