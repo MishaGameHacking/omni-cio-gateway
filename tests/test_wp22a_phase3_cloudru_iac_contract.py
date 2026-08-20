@@ -19,8 +19,12 @@ def test_phase3_cloudru_iac_files_exist() -> None:
 
 def test_official_cloudru_provider_family_is_source_controlled() -> None:
     versions = _read("versions.tf")
-    assert 'source  = "cloud-ru/cloudru"' in versions
-    assert 'version = "~> 2.0.0"' in versions
+    # Cloud.ru Evolution v2 official examples use the direct provider distribution
+    # address and an exact 2.0.0 pin. Keep this deterministic until a reviewed
+    # provider-upgrade increment deliberately advances it.
+    assert 'source  = "cloud.ru/cloudru/cloud"' in versions
+    assert 'version = "2.0.0"' in versions
+    assert 'source  = "cloud-ru/cloudru"' not in versions
 
 
 def test_phase3_mutation_public_cost_and_product_gates_default_closed() -> None:
