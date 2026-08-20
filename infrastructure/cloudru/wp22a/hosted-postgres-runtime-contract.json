@@ -23,12 +23,20 @@
     "create_role": false,
     "inherit": false,
     "replication": false,
-    "bypass_rls": false
+    "bypass_rls": false,
+    "safe_creator_admin_membership_allowed": true,
+    "runtime_member_authority_bound": false
   },
   "schema": {
     "name": "omni_cio_v10",
     "usage": true,
     "create": false
+  },
+  "database_privileges": [],
+  "function_privileges": {
+    "current_tenant_scope()": [
+      "EXECUTE"
+    ]
   },
   "relation_privileges": {
     "tenants": [

@@ -25,6 +25,9 @@ BOOTSTRAP_PATH = (
 
 _ROLE_NAME = "omni_cio_hosted_api"
 _SCHEMA_NAME = "omni_cio_v10"
+_EXPECTED_FUNCTION_PRIVILEGES: dict[str, tuple[str, ...]] = {
+    "current_tenant_scope()": ("EXECUTE",),
+}
 _EXPECTED_RELATION_PRIVILEGES: dict[str, tuple[str, ...]] = {
     "tenants": ("INSERT",),
     "users": ("SELECT", "INSERT"),
@@ -171,6 +174,8 @@ def validate_hosted_postgres_runtime_contract(
             "login_identity_bound": False,
             "preexisting_exact_role_reuse_allowed": True,
             "membership_in_other_roles_allowed": False,
+            "safe_creator_admin_membership_allowed": True,
+            "runtime_member_authority_bound": False,
             "superuser": False,
             "create_database": False,
             "create_role": False,
@@ -190,6 +195,31 @@ def validate_hosted_postgres_runtime_contract(
         {"name": _SCHEMA_NAME, "usage": True, "create": False},
         "HOSTED_POSTGRES_SCHEMA_DRIFT",
     )
+
+    database_privileges = _as_string_sequence(
+        payload.get("database_privileges"),
+        "HOSTED_POSTGRES_DATABASE_PRIVILEGES_INVALID",
+    )
+    if database_privileges:
+        raise HostedPostgresRuntimeContractError(
+            "HOSTED_POSTGRES_DATABASE_PRIVILEGES_DRIFT"
+        )
+
+    function_privileges = _as_mapping(
+        payload.get("function_privileges"),
+        "HOSTED_POSTGRES_FUNCTION_PRIVILEGES_INVALID",
+    )
+    normalized_function_privileges = {
+        str(function): _as_string_sequence(
+            privileges,
+            "HOSTED_POSTGRES_FUNCTION_PRIVILEGES_INVALID",
+        )
+        for function, privileges in function_privileges.items()
+    }
+    if normalized_function_privileges != _EXPECTED_FUNCTION_PRIVILEGES:
+        raise HostedPostgresRuntimeContractError(
+            "HOSTED_POSTGRES_FUNCTION_PRIVILEGES_DRIFT"
+        )
 
     relation_privileges = _as_mapping(
         payload.get("relation_privileges"),
@@ -259,6 +289,13 @@ def _expected_grant_statements() -> set[str]:
     expected = {
         f"GRANT USAGE ON SCHEMA {_SCHEMA_NAME.upper()} TO {_ROLE_NAME.upper()}"
     }
+    for function, privileges in _EXPECTED_FUNCTION_PRIVILEGES.items():
+        joined = ", ".join(privileges)
+        expected.add(
+            "GRANT "
+            f"{joined} ON FUNCTION {_SCHEMA_NAME.upper()}.{function.upper()} "
+            f"TO {_ROLE_NAME.upper()}"
+        )
     for relation, privileges in _EXPECTED_RELATION_PRIVILEGES.items():
         joined = ", ".join(privileges)
         expected.add(
@@ -273,7 +310,11 @@ def validate_hosted_postgres_runtime_sql(
     sql: str,
     payload: Mapping[str, Any] | None = None,
 ) -> None:
-    contract = payload or load_hosted_postgres_runtime_contract()
+    contract = (
+        payload
+        if payload is not None
+        else load_hosted_postgres_runtime_contract()
+    )
     validate_hosted_postgres_runtime_contract(contract)
     normalized = _normalize_sql(sql)
 
@@ -309,8 +350,12 @@ def validate_hosted_postgres_runtime_sql(
         "PG_CATALOG.PG_AUTH_MEMBERS",
         "HOSTED_API_ROLE_ATTRIBUTE_DRIFT",
         "HOSTED_API_ROLE_MEMBERSHIP_DRIFT",
+        "HOSTED_API_ROLE_MEMBER_AUTHORITY_PRESENT",
+        "MEMBERSHIP.INHERIT_OPTION OR MEMBERSHIP.SET_OPTION",
+        "REVOKE ALL PRIVILEGES ON DATABASE %I FROM OMNI_CIO_HOSTED_API",
         "REVOKE ALL ON ALL TABLES IN SCHEMA OMNI_CIO_V10 FROM OMNI_CIO_HOSTED_API",
         "REVOKE ALL ON ALL SEQUENCES IN SCHEMA OMNI_CIO_V10 FROM OMNI_CIO_HOSTED_API",
+        "REVOKE ALL ON ALL FUNCTIONS IN SCHEMA OMNI_CIO_V10 FROM OMNI_CIO_HOSTED_API",
         "REVOKE CREATE ON SCHEMA OMNI_CIO_V10 FROM OMNI_CIO_HOSTED_API",
     )
     for marker in required_markers:

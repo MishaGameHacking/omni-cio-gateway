@@ -43,7 +43,13 @@ def test_hosted_postgres_contract_preserves_phase3_authority() -> None:
     assert role["login_identity_bound"] is False
     assert role["preexisting_exact_role_reuse_allowed"] is True
     assert role["membership_in_other_roles_allowed"] is False
+    assert role["safe_creator_admin_membership_allowed"] is True
+    assert role["runtime_member_authority_bound"] is False
     assert role["bypass_rls"] is False
+    assert payload["database_privileges"] == []
+    assert payload["function_privileges"] == {
+        "current_tenant_scope()": ["EXECUTE"]
+    }
 
 
 def test_hosted_postgres_bootstrap_matches_exact_dml_matrix() -> None:
@@ -87,6 +93,10 @@ def test_hosted_postgres_bootstrap_reuses_only_exact_cluster_role() -> None:
     assert "pg_catalog.pg_auth_members" in source
     assert "HOSTED_API_ROLE_ATTRIBUTE_DRIFT" in source
     assert "HOSTED_API_ROLE_MEMBERSHIP_DRIFT" in source
+    assert "HOSTED_API_ROLE_MEMBER_AUTHORITY_PRESENT" in source
+    assert "membership.inherit_option OR membership.set_option" in source
+    assert "REVOKE ALL PRIVILEGES ON DATABASE" in source
+    assert "GRANT EXECUTE ON FUNCTION" in source
     assert "CREATE ROLE omni_cio_hosted_api" in source
     assert "ALTER ROLE omni_cio_hosted_api" in source
 
