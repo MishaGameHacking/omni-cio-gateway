@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from datetime import datetime
 import hashlib
 import hmac
 import json
@@ -12,6 +13,16 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[2]
 CONTRACT_PATH = ROOT / "infrastructure" / "cloudru" / "wp22a" / "hosted-recovery-contract.json"
 
+_EXPECTED_CONTRACT_FIELDS = (
+    "schema_version",
+    "authority",
+    "postgres",
+    "integrity",
+    "bundle",
+    "tenant_boundary",
+    "restore",
+    "off_runtime",
+)
 _EXPECTED_AUTHORITY = {
     "provider": "Cloud.ru Evolution",
     "source_only": True,
@@ -49,6 +60,9 @@ _EXPECTED_MANIFEST_FIELDS = (
 )
 _ARCHIVE_NAME_PATTERN = r"wp22a-[0-9]{8}T[0-9]{6}Z-[a-f0-9]{12}\.dump"
 _ARCHIVE_NAME_RE = re.compile(_ARCHIVE_NAME_PATTERN)
+_ARCHIVE_TIMESTAMP_RE = re.compile(
+    r"^wp22a-([0-9]{8}T[0-9]{6}Z)-[a-f0-9]{12}\.dump$"
+)
 _SHA256_RE = re.compile(r"^[a-f0-9]{64}$")
 _RELEASE_SHA_RE = re.compile(r"^[a-f0-9]{40}$")
 _CREATED_AT_RE = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")
@@ -95,6 +109,16 @@ def _require_release_sha(value: object, code: str) -> str:
     return value
 
 
+def _require_created_at(value: object, code: str) -> str:
+    if not isinstance(value, str) or not _CREATED_AT_RE.fullmatch(value):
+        raise HostedRecoveryContractError(code)
+    try:
+        datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ")
+    except ValueError as exc:
+        raise HostedRecoveryContractError(code) from exc
+    return value
+
+
 def load_hosted_recovery_contract(path: Path = CONTRACT_PATH) -> dict[str, Any]:
     if path.resolve(strict=False) != CONTRACT_PATH.resolve(strict=False):
         raise HostedRecoveryContractError("HOSTED_RECOVERY_CONTRACT_PATH_INVALID")
@@ -105,6 +129,8 @@ def load_hosted_recovery_contract(path: Path = CONTRACT_PATH) -> dict[str, Any]:
 
 
 def validate_hosted_recovery_contract(payload: Mapping[str, Any]) -> None:
+    if set(payload) != set(_EXPECTED_CONTRACT_FIELDS):
+        raise HostedRecoveryContractError("HOSTED_RECOVERY_CONTRACT_FIELDS_INVALID")
     if payload.get("schema_version") != "v10.wp22a.phase3.hosted-recovery.v1":
         raise HostedRecoveryContractError("HOSTED_RECOVERY_CONTRACT_VERSION_INVALID")
 
@@ -283,9 +309,9 @@ def validate_recovery_manifest(
     if manifest["backup_class"] != bundle["backup_class"]:
         raise HostedRecoveryContractError("HOSTED_RECOVERY_BACKUP_CLASS_INVALID")
 
-    created_at = manifest["created_at_utc"]
-    if not isinstance(created_at, str) or not _CREATED_AT_RE.fullmatch(created_at):
-        raise HostedRecoveryContractError("HOSTED_RECOVERY_CREATED_AT_INVALID")
+    created_at = _require_created_at(
+        manifest["created_at_utc"], "HOSTED_RECOVERY_CREATED_AT_INVALID"
+    )
 
     archive_name = manifest["archive_name"]
     if not isinstance(archive_name, str):
@@ -296,6 +322,19 @@ def validate_recovery_manifest(
         raise HostedRecoveryContractError("HOSTED_RECOVERY_ARCHIVE_PATH_INVALID")
     if not _ARCHIVE_NAME_RE.fullmatch(archive_name):
         raise HostedRecoveryContractError("HOSTED_RECOVERY_ARCHIVE_NAME_INVALID")
+    timestamp_match = _ARCHIVE_TIMESTAMP_RE.fullmatch(archive_name)
+    if timestamp_match is None:
+        raise HostedRecoveryContractError("HOSTED_RECOVERY_ARCHIVE_NAME_INVALID")
+    try:
+        archive_created_at = datetime.strptime(
+            timestamp_match.group(1), "%Y%m%dT%H%M%SZ"
+        ).strftime("%Y-%m-%dT%H:%M:%SZ")
+    except ValueError as exc:
+        raise HostedRecoveryContractError(
+            "HOSTED_RECOVERY_ARCHIVE_TIMESTAMP_INVALID"
+        ) from exc
+    if archive_created_at != created_at:
+        raise HostedRecoveryContractError("HOSTED_RECOVERY_ARCHIVE_TIMESTAMP_MISMATCH")
 
     _require_final_archive_path(archive_path)
     if archive_path.name != archive_name:
@@ -442,6 +481,9 @@ def validate_restore_evidence(
 
     required_fields = {
         "restored_into_separate_database",
+        "restore_list_preflight_passed",
+        "restore_catalog_rechecked",
+        "replacement_runtime_recovery_rehearsed",
         "accepted_release_sha",
         "migration_state_sha256",
         "tenant_boundary_sha256",
@@ -474,6 +516,9 @@ def validate_restore_evidence(
 
     required_true_fields = (
         "restored_into_separate_database",
+        "restore_list_preflight_passed",
+        "restore_catalog_rechecked",
+        "replacement_runtime_recovery_rehearsed",
         "unscoped_access_denied",
         "cross_tenant_access_denied",
         "runtime_acl_reapplied",

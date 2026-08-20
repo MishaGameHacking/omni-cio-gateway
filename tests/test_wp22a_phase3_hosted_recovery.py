@@ -59,6 +59,9 @@ def _manifest() -> dict[str, object]:
 def _evidence() -> dict[str, object]:
     return {
         "restored_into_separate_database": True,
+        "restore_list_preflight_passed": True,
+        "restore_catalog_rechecked": True,
+        "replacement_runtime_recovery_rehearsed": True,
         "accepted_release_sha": _RELEASE_SHA,
         "migration_state_sha256": _MIGRATION_SHA,
         "tenant_boundary_sha256": _TENANT_SHA,
@@ -129,6 +132,13 @@ def _validate_evidence(evidence: dict[str, object]) -> None:
     )
 
 
+def test_hosted_recovery_contract_rejects_unknown_top_level_fields() -> None:
+    payload = deepcopy(_contract())
+    payload["unexpected"] = True
+    with pytest.raises(HostedRecoveryContractError, match="CONTRACT_FIELDS_INVALID"):
+        validate_hosted_recovery_contract(payload)
+
+
 def test_hosted_recovery_contract_preserves_phase3_authority() -> None:
     payload = _contract()
     validate_hosted_recovery_contract(payload)
@@ -195,6 +205,24 @@ def test_recovery_manifest_rejects_declared_size_drift(tmp_path: Path) -> None:
     manifest["archive_size_bytes"] = len(_ARCHIVE) + 1
     with pytest.raises(HostedRecoveryContractError, match="ARCHIVE_SIZE_MISMATCH"):
         _validate_manifest(tmp_path, manifest)
+
+
+def test_recovery_manifest_rejects_invalid_or_mismatched_timestamp(tmp_path: Path) -> None:
+    manifest = _manifest()
+    manifest["created_at_utc"] = "2026-99-99T99:99:99Z"
+    with pytest.raises(HostedRecoveryContractError, match="CREATED_AT_INVALID"):
+        _validate_manifest(tmp_path, manifest)
+
+    manifest = _manifest()
+    manifest["created_at_utc"] = "2026-08-20T11:30:01Z"
+    with pytest.raises(HostedRecoveryContractError, match="ARCHIVE_TIMESTAMP_MISMATCH"):
+        _validate_manifest(tmp_path, manifest)
+
+    manifest = _manifest()
+    invalid_name = "wp22a-20269999T999999Z-a1b2c3d4e5f6.dump"
+    manifest["archive_name"] = invalid_name
+    with pytest.raises(HostedRecoveryContractError, match="ARCHIVE_TIMESTAMP_INVALID"):
+        _validate_manifest(tmp_path, manifest, archive_name=invalid_name)
 
 
 def test_recovery_manifest_rejects_partial_archive_name(tmp_path: Path) -> None:
@@ -322,6 +350,9 @@ def test_restore_evidence_requires_tenant_preserving_negatives() -> None:
 
     for field in (
         "restored_into_separate_database",
+        "restore_list_preflight_passed",
+        "restore_catalog_rechecked",
+        "replacement_runtime_recovery_rehearsed",
         "unscoped_access_denied",
         "cross_tenant_access_denied",
         "runtime_acl_reapplied",
