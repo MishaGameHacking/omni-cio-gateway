@@ -24,7 +24,8 @@ _EXPECTED_AUTHORITY = {
     "protected_v9_entrypoint": "app:app",
     "wp23_unlocked": False,
 }
-_EXPECTED_DUMP_FLAGS = ("--format=custom", "--no-owner", "--no-privileges")
+_EXPECTED_DUMP_FLAGS = ("--format=custom", "--no-privileges")
+_EXPECTED_RESTORE_FLAGS = ("--exit-on-error", "--no-owner", "--no-privileges")
 _EXPECTED_FORCED_RLS = (
     "broker_accounts",
     "broker_connections",
@@ -119,6 +120,7 @@ def validate_hosted_recovery_contract(payload: Mapping[str, Any]) -> None:
             "restore_tool": "pg_restore",
             "archive_format": "CUSTOM",
             "required_dump_flags": list(_EXPECTED_DUMP_FLAGS),
+            "required_restore_flags": list(_EXPECTED_RESTORE_FLAGS),
             "restore_list_preflight_required": True,
             "restore_into_separate_database_required": True,
             "restore_exit_on_error_required": True,
@@ -138,6 +140,7 @@ def validate_hosted_recovery_contract(payload: Mapping[str, Any]) -> None:
             "atomic_promotion_required": True,
             "temporary_suffix": ".partial",
             "corrupt_backup_rejection_required": True,
+            "minimum_archive_bytes": 1,
             "maximum_archive_bytes": 4294967296,
         },
         "HOSTED_RECOVERY_INTEGRITY_DRIFT",
@@ -240,7 +243,7 @@ def validate_recovery_manifest(
     if required_forced_rls != _EXPECTED_FORCED_RLS:
         raise HostedRecoveryContractError("HOSTED_RECOVERY_REQUIRED_FORCED_RLS_DRIFT")
 
-    if tuple(manifest.keys()) != _EXPECTED_MANIFEST_FIELDS:
+    if set(manifest) != set(_EXPECTED_MANIFEST_FIELDS):
         raise HostedRecoveryContractError("HOSTED_RECOVERY_MANIFEST_FIELDS_INVALID")
 
     bundle = _as_mapping(active_contract["bundle"], "HOSTED_RECOVERY_BUNDLE_INVALID")
@@ -256,12 +259,14 @@ def validate_recovery_manifest(
         raise HostedRecoveryContractError("HOSTED_RECOVERY_CREATED_AT_INVALID")
 
     archive_name = manifest["archive_name"]
-    if not isinstance(archive_name, str) or not _ARCHIVE_NAME_RE.fullmatch(archive_name):
+    if not isinstance(archive_name, str):
         raise HostedRecoveryContractError("HOSTED_RECOVERY_ARCHIVE_NAME_INVALID")
     if archive_name.endswith(str(integrity["temporary_suffix"])):
         raise HostedRecoveryContractError("HOSTED_RECOVERY_PARTIAL_ARCHIVE_FORBIDDEN")
     if "/" in archive_name or "\\" in archive_name or ".." in archive_name:
         raise HostedRecoveryContractError("HOSTED_RECOVERY_ARCHIVE_PATH_INVALID")
+    if not _ARCHIVE_NAME_RE.fullmatch(archive_name):
+        raise HostedRecoveryContractError("HOSTED_RECOVERY_ARCHIVE_NAME_INVALID")
 
     declared_hash = _require_sha256(
         manifest["archive_sha256"], "HOSTED_RECOVERY_ARCHIVE_SHA256_INVALID"
@@ -270,7 +275,7 @@ def validate_recovery_manifest(
         raise HostedRecoveryContractError("HOSTED_RECOVERY_ARCHIVE_SHA256_MISMATCH")
 
     archive_size = manifest["archive_size_bytes"]
-    if type(archive_size) is not int or archive_size < 0:
+    if type(archive_size) is not int or archive_size < int(integrity["minimum_archive_bytes"]):
         raise HostedRecoveryContractError("HOSTED_RECOVERY_ARCHIVE_SIZE_INVALID")
     if archive_size != len(archive_bytes):
         raise HostedRecoveryContractError("HOSTED_RECOVERY_ARCHIVE_SIZE_MISMATCH")
@@ -308,6 +313,29 @@ def validate_recovery_manifest(
         raise HostedRecoveryContractError("HOSTED_RECOVERY_ENCRYPTION_STATE_INVALID")
 
 
+def build_dump_command(
+    archive_path: Path,
+    source_database: str,
+) -> tuple[Path, tuple[str, ...]]:
+    if not archive_path.is_absolute():
+        raise HostedRecoveryContractError("HOSTED_RECOVERY_ARCHIVE_PATH_NOT_ABSOLUTE")
+    if not _ARCHIVE_NAME_RE.fullmatch(archive_path.name):
+        raise HostedRecoveryContractError("HOSTED_RECOVERY_ARCHIVE_NAME_INVALID")
+    if not _DATABASE_RE.fullmatch(source_database):
+        raise HostedRecoveryContractError("HOSTED_RECOVERY_SOURCE_DATABASE_INVALID")
+
+    partial_path = archive_path.with_name(f"{archive_path.name}.partial")
+    command = (
+        "pg_dump",
+        *_EXPECTED_DUMP_FLAGS,
+        "--file",
+        str(partial_path),
+        "--dbname",
+        source_database,
+    )
+    return partial_path, command
+
+
 def build_restore_commands(
     archive_path: Path,
     destination_database: str,
@@ -316,15 +344,15 @@ def build_restore_commands(
         raise HostedRecoveryContractError("HOSTED_RECOVERY_ARCHIVE_PATH_NOT_ABSOLUTE")
     if archive_path.name.endswith(".partial"):
         raise HostedRecoveryContractError("HOSTED_RECOVERY_PARTIAL_ARCHIVE_FORBIDDEN")
+    if not _ARCHIVE_NAME_RE.fullmatch(archive_path.name):
+        raise HostedRecoveryContractError("HOSTED_RECOVERY_ARCHIVE_NAME_INVALID")
     if not _DATABASE_RE.fullmatch(destination_database):
         raise HostedRecoveryContractError("HOSTED_RECOVERY_DESTINATION_DATABASE_INVALID")
 
     preflight = ("pg_restore", "--list", str(archive_path))
     restore = (
         "pg_restore",
-        "--exit-on-error",
-        "--no-owner",
-        "--no-privileges",
+        *_EXPECTED_RESTORE_FLAGS,
         "--dbname",
         destination_database,
         str(archive_path),

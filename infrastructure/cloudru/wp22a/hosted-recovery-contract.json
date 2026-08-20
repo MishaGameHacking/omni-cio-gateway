@@ -19,6 +19,10 @@
     "archive_format": "CUSTOM",
     "required_dump_flags": [
       "--format=custom",
+      "--no-privileges"
+    ],
+    "required_restore_flags": [
+      "--exit-on-error",
       "--no-owner",
       "--no-privileges"
     ],
@@ -35,6 +39,7 @@
     "atomic_promotion_required": true,
     "temporary_suffix": ".partial",
     "corrupt_backup_rejection_required": true,
+    "minimum_archive_bytes": 1,
     "maximum_archive_bytes": 4294967296
   },
   "bundle": {
