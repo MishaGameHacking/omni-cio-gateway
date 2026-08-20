@@ -7,7 +7,6 @@ from ._hosted_recovery_contract_v1 import (
     validate_hosted_recovery_contract,
 )
 from ._hosted_recovery_integrity_v1 import (
-    _archive_file_integrity,
     archive_sha256,
     validate_recovery_manifest,
 )

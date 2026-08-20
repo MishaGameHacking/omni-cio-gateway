@@ -7,10 +7,12 @@ from pathlib import Path
 import pytest
 
 import omni_cio.persistence.hosted_recovery_v1 as hosted_recovery
+from omni_cio.persistence._hosted_recovery_integrity_v1 import (
+    _archive_file_integrity,
+)
 from omni_cio.persistence.hosted_recovery_v1 import (
     CONTRACT_PATH,
     HostedRecoveryContractError,
-    _archive_file_integrity,
     archive_sha256,
     build_restore_commands,
     load_hosted_recovery_contract,
