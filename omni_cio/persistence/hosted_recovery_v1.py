@@ -56,6 +56,8 @@ _EXPECTED_MANIFEST_FIELDS = (
     "forced_rls_relations",
     "encryption_state",
 )
+_ARCHIVE_NAME_PATTERN = r"wp22a-[0-9]{8}T[0-9]{6}Z-[a-f0-9]{12}\.dump"
+_ARCHIVE_NAME_RE = re.compile(_ARCHIVE_NAME_PATTERN)
 _SHA256_RE = re.compile(r"^[a-f0-9]{64}$")
 _RELEASE_SHA_RE = re.compile(r"^[a-f0-9]{40}$")
 _CREATED_AT_RE = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")
@@ -170,9 +172,7 @@ def validate_hosted_recovery_contract(payload: Mapping[str, Any]) -> None:
         bundle,
         {
             "backup_class": "POSTGRES_LOGICAL_PRIVATE_STATE",
-            "archive_name_pattern": (
-                r"wp22a-[0-9]{8}T[0-9]{6}Z-[a-f0-9]{12}\.dump"
-            ),
+            "archive_name_pattern": _ARCHIVE_NAME_PATTERN,
             "manifest_schema_version": (
                 "v10.wp22a.phase3.hosted-recovery-manifest.v1"
             ),
@@ -281,8 +281,7 @@ def validate_recovery_manifest(
     archive_name = manifest["archive_name"]
     if not isinstance(archive_name, str):
         raise HostedRecoveryContractError("HOSTED_RECOVERY_ARCHIVE_NAME_INVALID")
-    archive_pattern = str(bundle["archive_name_pattern"])
-    if not re.fullmatch(archive_pattern, archive_name):
+    if not _ARCHIVE_NAME_RE.fullmatch(archive_name):
         raise HostedRecoveryContractError("HOSTED_RECOVERY_ARCHIVE_NAME_INVALID")
     if archive_name.endswith(str(integrity["temporary_suffix"])):
         raise HostedRecoveryContractError("HOSTED_RECOVERY_PARTIAL_ARCHIVE_FORBIDDEN")
