@@ -87,6 +87,11 @@ def test_hosted_secret_reference_is_opaque_and_scope_validated() -> None:
     ("tenant_id", "secret_ref", "expected"),
     [
         ("tenant:bad", "hosted-read:v1:" + "a" * 64, "HOSTED_SECRET_TENANT_INVALID"),
+        (
+            "tenant:v1:owner",
+            "hosted-read:v1:" + "a" * 64,
+            "HOSTED_SECRET_TENANT_RESERVED",
+        ),
         ("tenant:v1:alpha_001", "read-connection:v1:" + "a" * 64, "HOSTED_SECRET_REF_INVALID"),
     ],
 )

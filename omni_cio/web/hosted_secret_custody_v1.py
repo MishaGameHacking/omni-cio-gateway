@@ -8,6 +8,7 @@ from typing import Protocol
 
 _TENANT_ID_RE = re.compile(r"^tenant:v1:[a-z0-9][a-z0-9_-]{2,63}$")
 _HOSTED_SECRET_REF_RE = re.compile(r"^hosted-read:v1:[a-f0-9]{64}$")
+_RESERVED_OWNER_TENANT_ID = "tenant:v1:owner"
 
 
 class HostedReadSecretCustodyError(RuntimeError):
@@ -58,5 +59,7 @@ def new_hosted_read_secret_ref() -> str:
 def validate_hosted_read_secret_scope(*, tenant_id: str, secret_ref: str) -> None:
     if _TENANT_ID_RE.fullmatch(tenant_id) is None:
         raise HostedReadSecretCustodyError("HOSTED_SECRET_TENANT_INVALID")
+    if tenant_id == _RESERVED_OWNER_TENANT_ID:
+        raise HostedReadSecretCustodyError("HOSTED_SECRET_TENANT_RESERVED")
     if _HOSTED_SECRET_REF_RE.fullmatch(secret_ref) is None:
         raise HostedReadSecretCustodyError("HOSTED_SECRET_REF_INVALID")
