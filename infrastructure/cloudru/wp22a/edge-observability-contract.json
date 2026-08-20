@@ -1,0 +1,71 @@
+{
+  "schema_version": "v10.wp22a.phase3.edge-observability.v1",
+  "authority": {
+    "provider": "Cloud.ru Evolution",
+    "source_only": true,
+    "provider_apply_authorized": false,
+    "public_ingress_enabled": false,
+    "authorized_recurring_rub": 0,
+    "public_multi_user_enabled": false,
+    "trading_methods_enabled": false,
+    "real_trading_enabled": false,
+    "protected_v9_entrypoint": "app:app",
+    "wp23_unlocked": false
+  },
+  "edge_trust": {
+    "https_required_before_public_activation": true,
+    "trusted_proxy_chain_required": true,
+    "forwarded_proto_trust_allowlist_required": true,
+    "host_allowlist_required": true,
+    "hsts_required": true,
+    "csrf_origin_validation_required": true,
+    "cors_default": "deny",
+    "private_response_cache_default": "no-store",
+    "engineering_identity_product_bypass_allowed": false,
+    "direct_origin_public_access_allowed": false
+  },
+  "observability": {
+    "tenant_payload_logging_allowed": false,
+    "broker_credential_logging_allowed": false,
+    "session_identifier_logging_allowed": false,
+    "private_portfolio_logging_allowed": false,
+    "required_health_domains": [
+      "application",
+      "database",
+      "cloud_provider",
+      "identity_provider",
+      "external_broker"
+    ],
+    "runtime_states": [
+      "READY",
+      "PARTIAL",
+      "STALE",
+      "DEGRADED",
+      "BLOCKED",
+      "ERROR",
+      "OFFLINE",
+      "RECOVERING",
+      "OWNER_ACTION_REQUIRED"
+    ],
+    "dependency_degradation_must_preserve_trust_boundary": true,
+    "sanitized_correlation_id_required": true
+  },
+  "capacity_and_cost": {
+    "registration_enabled": false,
+    "public_rate_limits_required_before_activation": true,
+    "bounded_request_body_required": true,
+    "bounded_concurrency_required": true,
+    "bounded_background_work_required": true,
+    "cost_alerting_required_before_paid_activation": true,
+    "automatic_paid_scale_up_allowed": false,
+    "free_bonus_stage_first": true,
+    "owner_cost_approval_required_before_recurring_spend": true
+  },
+  "incident_and_recovery": {
+    "last_accepted_release_rollback_required": true,
+    "provider_outage_distinct_from_application_error": true,
+    "broker_outage_distinct_from_application_error": true,
+    "lenovo_required_for_public_availability": false,
+    "owner_home_network_required_for_public_availability": false
+  }
+}
