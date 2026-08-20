@@ -1,0 +1,91 @@
+{
+  "schema_version": "v10.wp22a.phase3.hosted-postgres-recovery.v1",
+  "authority": {
+    "provider": "Cloud.ru Evolution",
+    "source_only": true,
+    "provider_apply_authorized": false,
+    "public_database_ingress_allowed": false,
+    "authorized_recurring_rub": 0,
+    "public_multi_user_enabled": false,
+    "trading_methods_enabled": false,
+    "real_trading_enabled": false,
+    "protected_v9_entrypoint": "app:app",
+    "wp23_unlocked": false
+  },
+  "inherits": {
+    "recovery_contract": "docs/architecture/V10_WP10_RECOVERY_CONTRACT.json",
+    "runtime_contract": "infrastructure/cloudru/wp22a/hosted-postgres-runtime-contract.json",
+    "postgres_major": 18,
+    "archive_format": "CUSTOM",
+    "hash_algorithm": "SHA256"
+  },
+  "backup_bundle": {
+    "dump_tool": "pg_dump",
+    "dump_flags": ["--format=custom", "--no-owner", "--no-privileges"],
+    "manifest_required": true,
+    "archive_hash_required": true,
+    "archive_size_required": true,
+    "atomic_promotion_required": true,
+    "partial_suffix": ".partial",
+    "corrupt_archive_rejected_before_restore": true,
+    "private_payload_in_manifest_allowed": false,
+    "credential_value_in_bundle_allowed": false
+  },
+  "restore_rehearsal": {
+    "restore_tool": "pg_restore",
+    "list_preflight_required": true,
+    "restore_into_separate_database_required": true,
+    "replacement_runtime_only": true,
+    "restore_no_owner": true,
+    "restore_no_privileges": true,
+    "tenant_preservation_required": true,
+    "force_rls_reapply_required": true,
+    "runtime_acl_bootstrap_reapply_required": true,
+    "runtime_login_credential_reuse_required": false,
+    "runtime_login_credential_in_source_allowed": false,
+    "public_ingress_required": false
+  },
+  "post_restore_guards": {
+    "schema_migrations_present": true,
+    "tenant_relations_present": [
+      "tenants",
+      "users",
+      "external_identity_bindings",
+      "web_sessions",
+      "broker_accounts",
+      "broker_connections",
+      "broker_connection_accounts"
+    ],
+    "forced_rls_relations": [
+      "broker_accounts",
+      "broker_connections",
+      "broker_connection_accounts"
+    ],
+    "tenant_setting": "omni_cio.tenant_id",
+    "unscoped_default_deny": true,
+    "runtime_role": "omni_cio_hosted_api",
+    "runtime_role_must_be_non_superuser": true,
+    "runtime_role_must_not_bypass_rls": true,
+    "broad_predefined_roles_forbidden": ["pg_read_all_data", "pg_write_all_data"]
+  },
+  "evidence": {
+    "synthetic_only_in_ci": true,
+    "real_secret_values_allowed": false,
+    "real_tenant_payload_allowed": false,
+    "provider_identifiers_required": false,
+    "sanitized_summary_only": true,
+    "successful_restore_claim_requires_all_post_restore_guards": true
+  },
+  "acceptance": {
+    "deterministic_source_tests_required": true,
+    "corrupt_bundle_negative_test_required": true,
+    "tenant_scope_negative_test_required": true,
+    "force_rls_negative_test_required": true,
+    "runtime_acl_reapply_negative_test_required": true,
+    "repository_required_checks_green": true,
+    "zero_unresolved_review_threads": true,
+    "squash_merge_only": true,
+    "post_merge_regression_shield_required": true,
+    "phase4_provider_apply_remains_locked": true
+  }
+}
