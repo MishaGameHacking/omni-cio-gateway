@@ -99,7 +99,11 @@ def _require_exact_mapping(
 def load_hosted_recovery_contract(
     path: Path = CONTRACT_PATH,
 ) -> dict[str, Any]:
-    payload = json.loads(path.read_text(encoding="utf-8"))
+    requested_path = path.resolve(strict=False)
+    canonical_path = CONTRACT_PATH.resolve(strict=False)
+    if requested_path != canonical_path:
+        raise HostedRecoveryContractError("HOSTED_RECOVERY_CONTRACT_PATH_INVALID")
+    payload = json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
         raise HostedRecoveryContractError("HOSTED_RECOVERY_CONTRACT_NOT_OBJECT")
     return payload
