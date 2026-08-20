@@ -30,6 +30,7 @@ _FORCED_RLS = [
     "broker_connection_accounts",
 ]
 _ARCHIVE_NAME = "wp22a-20260820T113000Z-a1b2c3d4e5f6.dump"
+_ALT_ARCHIVE_NAME = "wp22a-20260820T113001Z-f6e5d4c3b2a1.dump"
 
 
 def _contract() -> dict[str, object]:
@@ -71,10 +72,44 @@ def _evidence() -> dict[str, object]:
     }
 
 
-def _validate_manifest(manifest: dict[str, object], archive_bytes: bytes = _ARCHIVE) -> None:
+def _write_archive(
+    tmp_path: Path,
+    archive_bytes: bytes = _ARCHIVE,
+    archive_name: str = _ARCHIVE_NAME,
+) -> Path:
+    archive_path = (tmp_path / archive_name).resolve()
+    archive_path.write_bytes(archive_bytes)
+    return archive_path
+
+
+def _validate_manifest(
+    tmp_path: Path,
+    manifest: dict[str, object],
+    archive_bytes: bytes = _ARCHIVE,
+    archive_name: str = _ARCHIVE_NAME,
+) -> Path:
+    archive_path = _write_archive(tmp_path, archive_bytes, archive_name)
     validate_recovery_manifest(
         manifest,
-        archive_bytes=archive_bytes,
+        archive_path=archive_path,
+        expected_release_sha=_RELEASE_SHA,
+        expected_migration_sha256=_MIGRATION_SHA,
+        expected_tenant_boundary_sha256=_TENANT_SHA,
+        expected_schema_sha256=_SCHEMA_SHA,
+        required_forced_rls_relations=_FORCED_RLS,
+    )
+    return archive_path
+
+
+def _build_restore_commands(
+    archive_path: Path,
+    manifest: dict[str, object],
+    destination_database: str = "omni_restore_candidate",
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    return build_restore_commands(
+        archive_path=archive_path,
+        destination_database=destination_database,
+        manifest=manifest,
         expected_release_sha=_RELEASE_SHA,
         expected_migration_sha256=_MIGRATION_SHA,
         expected_tenant_boundary_sha256=_TENANT_SHA,
@@ -132,60 +167,65 @@ def test_hosted_recovery_contract_preserves_phase3_authority() -> None:
     assert off_runtime["plaintext_object_storage_allowed"] is False
 
 
-def test_recovery_manifest_accepts_exact_archive_and_boundary() -> None:
-    _validate_manifest(_manifest())
+def test_recovery_manifest_accepts_exact_archive_and_boundary(tmp_path: Path) -> None:
+    _validate_manifest(tmp_path, _manifest())
 
 
-def test_recovery_manifest_accepts_allowlisted_fields_in_any_json_order() -> None:
+def test_recovery_manifest_accepts_allowlisted_fields_in_any_json_order(tmp_path: Path) -> None:
     manifest = _manifest()
     reordered = dict(reversed(tuple(manifest.items())))
-    _validate_manifest(reordered)
+    _validate_manifest(tmp_path, reordered)
 
 
-def test_recovery_manifest_rejects_corrupt_archive() -> None:
+def test_recovery_manifest_rejects_corrupt_archive(tmp_path: Path) -> None:
     with pytest.raises(HostedRecoveryContractError, match="ARCHIVE_SHA256_MISMATCH"):
-        _validate_manifest(_manifest(), b"tampered" + _ARCHIVE)
+        _validate_manifest(tmp_path, _manifest(), b"X" + _ARCHIVE[1:])
 
 
-def test_recovery_manifest_rejects_empty_archive() -> None:
+def test_recovery_manifest_rejects_empty_archive(tmp_path: Path) -> None:
     manifest = _manifest()
     manifest["archive_sha256"] = archive_sha256(b"")
     manifest["archive_size_bytes"] = 0
     with pytest.raises(HostedRecoveryContractError, match="ARCHIVE_SIZE_INVALID"):
-        _validate_manifest(manifest, b"")
+        _validate_manifest(tmp_path, manifest, b"")
 
 
-def test_recovery_manifest_rejects_declared_size_drift() -> None:
+def test_recovery_manifest_rejects_declared_size_drift(tmp_path: Path) -> None:
     manifest = _manifest()
     manifest["archive_size_bytes"] = len(_ARCHIVE) + 1
     with pytest.raises(HostedRecoveryContractError, match="ARCHIVE_SIZE_MISMATCH"):
-        _validate_manifest(manifest)
+        _validate_manifest(tmp_path, manifest)
 
 
-def test_recovery_manifest_rejects_partial_archive_name() -> None:
+def test_recovery_manifest_rejects_partial_archive_name(tmp_path: Path) -> None:
     manifest = _manifest()
     manifest["archive_name"] = str(manifest["archive_name"]) + ".partial"
     with pytest.raises(HostedRecoveryContractError, match="PARTIAL_ARCHIVE_FORBIDDEN"):
-        _validate_manifest(manifest)
+        _validate_manifest(tmp_path, manifest)
 
 
-def test_recovery_manifest_rejects_release_or_boundary_drift() -> None:
+def test_recovery_manifest_binds_manifest_to_exact_archive_path(tmp_path: Path) -> None:
+    with pytest.raises(HostedRecoveryContractError, match="ARCHIVE_MANIFEST_NAME_MISMATCH"):
+        _validate_manifest(tmp_path, _manifest(), archive_name=_ALT_ARCHIVE_NAME)
+
+
+def test_recovery_manifest_rejects_release_or_boundary_drift(tmp_path: Path) -> None:
     manifest = _manifest()
     manifest["source_release_sha"] = "0" * 40
     with pytest.raises(HostedRecoveryContractError, match="SOURCE_RELEASE_MISMATCH"):
-        _validate_manifest(manifest)
+        _validate_manifest(tmp_path, manifest)
 
     manifest = _manifest()
     manifest["tenant_boundary_sha256"] = "0" * 64
     with pytest.raises(HostedRecoveryContractError, match="TENANT_BOUNDARY_SHA256_MISMATCH"):
-        _validate_manifest(manifest)
+        _validate_manifest(tmp_path, manifest)
 
 
-def test_recovery_manifest_rejects_forced_rls_drift() -> None:
+def test_recovery_manifest_rejects_forced_rls_drift(tmp_path: Path) -> None:
     manifest = _manifest()
     manifest["forced_rls_relations"] = list(_FORCED_RLS[:-1])
     with pytest.raises(HostedRecoveryContractError, match="FORCE_RLS_MISMATCH"):
-        _validate_manifest(manifest)
+        _validate_manifest(tmp_path, manifest)
 
 
 def test_hosted_recovery_contract_rejects_encryption_drift() -> None:
@@ -232,12 +272,10 @@ def test_dump_command_targets_partial_archive_and_validates_inputs(tmp_path: Pat
         )
 
 
-def test_restore_commands_are_argv_and_validate_destination(tmp_path: Path) -> None:
-    archive_path = (tmp_path / _ARCHIVE_NAME).resolve()
-    commands = build_restore_commands(
-        archive_path=archive_path,
-        destination_database="omni_restore_candidate",
-    )
+def test_restore_commands_validate_exact_archive_before_building_argv(tmp_path: Path) -> None:
+    manifest = _manifest()
+    archive_path = _write_archive(tmp_path)
+    commands = _build_restore_commands(archive_path, manifest)
     assert commands == (
         ("pg_restore", "--list", str(archive_path)),
         (
@@ -250,26 +288,33 @@ def test_restore_commands_are_argv_and_validate_destination(tmp_path: Path) -> N
             str(archive_path),
         ),
     )
+
     with pytest.raises(HostedRecoveryContractError, match="DESTINATION_DATABASE_INVALID"):
-        build_restore_commands(
-            archive_path=archive_path,
+        _build_restore_commands(
+            archive_path,
+            manifest,
             destination_database="postgres;DROP DATABASE omni",
         )
     with pytest.raises(HostedRecoveryContractError, match="ARCHIVE_PATH_NOT_ABSOLUTE"):
-        build_restore_commands(
-            archive_path=Path(_ARCHIVE_NAME),
-            destination_database="omni_restore_candidate",
-        )
+        _build_restore_commands(Path(_ARCHIVE_NAME), manifest)
+
+
+def test_restore_commands_reject_unverified_or_changed_archive(tmp_path: Path) -> None:
+    manifest = _manifest()
+    archive_path = _write_archive(tmp_path)
+    archive_path.write_bytes(b"x" * len(_ARCHIVE))
+    with pytest.raises(HostedRecoveryContractError, match="ARCHIVE_SHA256_MISMATCH"):
+        _build_restore_commands(archive_path, manifest)
+
+    partial_path = archive_path.with_name(f"{archive_path.name}.partial")
+    partial_path.write_bytes(_ARCHIVE)
     with pytest.raises(HostedRecoveryContractError, match="PARTIAL_ARCHIVE_FORBIDDEN"):
-        build_restore_commands(
-            archive_path=archive_path.with_name(f"{archive_path.name}.partial"),
-            destination_database="omni_restore_candidate",
-        )
+        _build_restore_commands(partial_path, manifest)
+
+    invalid_name_path = (tmp_path / "backup.dump").resolve()
+    invalid_name_path.write_bytes(_ARCHIVE)
     with pytest.raises(HostedRecoveryContractError, match="ARCHIVE_NAME_INVALID"):
-        build_restore_commands(
-            archive_path=(tmp_path / "backup.dump").resolve(),
-            destination_database="omni_restore_candidate",
-        )
+        _build_restore_commands(invalid_name_path, manifest)
 
 
 def test_restore_evidence_requires_tenant_preserving_negatives() -> None:

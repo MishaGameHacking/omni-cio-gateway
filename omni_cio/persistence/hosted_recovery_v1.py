@@ -211,9 +211,38 @@ def archive_sha256(archive_bytes: bytes) -> str:
     return hashlib.sha256(archive_bytes).hexdigest()
 
 
+def _require_final_archive_path(archive_path: Path) -> None:
+    if not archive_path.is_absolute():
+        raise HostedRecoveryContractError("HOSTED_RECOVERY_ARCHIVE_PATH_NOT_ABSOLUTE")
+    if archive_path.name.endswith(".partial"):
+        raise HostedRecoveryContractError("HOSTED_RECOVERY_PARTIAL_ARCHIVE_FORBIDDEN")
+    if not _ARCHIVE_NAME_RE.fullmatch(archive_path.name):
+        raise HostedRecoveryContractError("HOSTED_RECOVERY_ARCHIVE_NAME_INVALID")
+    if archive_path.is_symlink() or not archive_path.is_file():
+        raise HostedRecoveryContractError("HOSTED_RECOVERY_ARCHIVE_NOT_REGULAR_FILE")
+
+
+def _archive_file_integrity(archive_path: Path) -> tuple[int, str]:
+    _require_final_archive_path(archive_path)
+    try:
+        size_before = archive_path.stat().st_size
+        digest = hashlib.sha256()
+        observed_size = 0
+        with archive_path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                observed_size += len(chunk)
+                digest.update(chunk)
+        size_after = archive_path.stat().st_size
+    except OSError as exc:
+        raise HostedRecoveryContractError("HOSTED_RECOVERY_ARCHIVE_READ_INVALID") from exc
+    if observed_size != size_before or size_after != size_before:
+        raise HostedRecoveryContractError("HOSTED_RECOVERY_ARCHIVE_CHANGED_DURING_VALIDATION")
+    return observed_size, digest.hexdigest()
+
+
 def validate_recovery_manifest(
     manifest: Mapping[str, Any],
-    archive_bytes: bytes,
+    archive_path: Path,
     *,
     expected_release_sha: str,
     expected_migration_sha256: str,
@@ -268,19 +297,30 @@ def validate_recovery_manifest(
     if not _ARCHIVE_NAME_RE.fullmatch(archive_name):
         raise HostedRecoveryContractError("HOSTED_RECOVERY_ARCHIVE_NAME_INVALID")
 
-    declared_hash = _require_sha256(
-        manifest["archive_sha256"], "HOSTED_RECOVERY_ARCHIVE_SHA256_INVALID"
-    )
-    if not hmac.compare_digest(declared_hash, archive_sha256(archive_bytes)):
-        raise HostedRecoveryContractError("HOSTED_RECOVERY_ARCHIVE_SHA256_MISMATCH")
+    _require_final_archive_path(archive_path)
+    if archive_path.name != archive_name:
+        raise HostedRecoveryContractError("HOSTED_RECOVERY_ARCHIVE_MANIFEST_NAME_MISMATCH")
 
     archive_size = manifest["archive_size_bytes"]
     if type(archive_size) is not int or archive_size < int(integrity["minimum_archive_bytes"]):
         raise HostedRecoveryContractError("HOSTED_RECOVERY_ARCHIVE_SIZE_INVALID")
-    if archive_size != len(archive_bytes):
-        raise HostedRecoveryContractError("HOSTED_RECOVERY_ARCHIVE_SIZE_MISMATCH")
     if archive_size > int(integrity["maximum_archive_bytes"]):
         raise HostedRecoveryContractError("HOSTED_RECOVERY_ARCHIVE_SIZE_EXCEEDED")
+    try:
+        path_size = archive_path.stat().st_size
+    except OSError as exc:
+        raise HostedRecoveryContractError("HOSTED_RECOVERY_ARCHIVE_READ_INVALID") from exc
+    if archive_size != path_size:
+        raise HostedRecoveryContractError("HOSTED_RECOVERY_ARCHIVE_SIZE_MISMATCH")
+
+    actual_size, actual_hash = _archive_file_integrity(archive_path)
+    if archive_size != actual_size:
+        raise HostedRecoveryContractError("HOSTED_RECOVERY_ARCHIVE_CHANGED_DURING_VALIDATION")
+    declared_hash = _require_sha256(
+        manifest["archive_sha256"], "HOSTED_RECOVERY_ARCHIVE_SHA256_INVALID"
+    )
+    if not hmac.compare_digest(declared_hash, actual_hash):
+        raise HostedRecoveryContractError("HOSTED_RECOVERY_ARCHIVE_SHA256_MISMATCH")
 
     if manifest["postgres_major"] != 18:
         raise HostedRecoveryContractError("HOSTED_RECOVERY_POSTGRES_MAJOR_INVALID")
@@ -339,15 +379,28 @@ def build_dump_command(
 def build_restore_commands(
     archive_path: Path,
     destination_database: str,
+    *,
+    manifest: Mapping[str, Any],
+    expected_release_sha: str,
+    expected_migration_sha256: str,
+    expected_tenant_boundary_sha256: str,
+    expected_schema_sha256: str,
+    required_forced_rls_relations: Sequence[str],
+    contract: Mapping[str, Any] | None = None,
 ) -> tuple[tuple[str, ...], tuple[str, ...]]:
-    if not archive_path.is_absolute():
-        raise HostedRecoveryContractError("HOSTED_RECOVERY_ARCHIVE_PATH_NOT_ABSOLUTE")
-    if archive_path.name.endswith(".partial"):
-        raise HostedRecoveryContractError("HOSTED_RECOVERY_PARTIAL_ARCHIVE_FORBIDDEN")
-    if not _ARCHIVE_NAME_RE.fullmatch(archive_path.name):
-        raise HostedRecoveryContractError("HOSTED_RECOVERY_ARCHIVE_NAME_INVALID")
     if not _DATABASE_RE.fullmatch(destination_database):
         raise HostedRecoveryContractError("HOSTED_RECOVERY_DESTINATION_DATABASE_INVALID")
+
+    validate_recovery_manifest(
+        manifest,
+        archive_path,
+        expected_release_sha=expected_release_sha,
+        expected_migration_sha256=expected_migration_sha256,
+        expected_tenant_boundary_sha256=expected_tenant_boundary_sha256,
+        expected_schema_sha256=expected_schema_sha256,
+        required_forced_rls_relations=required_forced_rls_relations,
+        contract=contract,
+    )
 
     preflight = ("pg_restore", "--list", str(archive_path))
     restore = (
