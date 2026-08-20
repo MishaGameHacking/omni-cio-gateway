@@ -16,9 +16,11 @@ from omni_cio.persistence.hosted_recovery_v1 import HostedRecoveryContractError
 
 _ARCHIVE = b"synthetic-pg18-custom-archive"
 _CREATED_AT = "2026-08-20T17:15:30Z"
+_NONCE = "recoverytest1"
+_OTHER_NONCE = "recoverytest2"
 
 
-def _staged_archive(tmp_path: Path, nonce: str = "abc123def456") -> Path:
+def _staged_archive(tmp_path: Path, nonce: str = _NONCE) -> Path:
     staging_path, _ = build_staging_dump_command(
         tmp_path.resolve(),
         nonce,
@@ -39,12 +41,12 @@ def test_staging_dump_command_uses_isolated_partial_path(
     staging_dir = tmp_path.resolve()
     staging_path, command = build_staging_dump_command(
         staging_dir,
-        "abc123def456",
+        _NONCE,
         "omni_hosted",
     )
 
     assert staging_path == staging_dir / (
-        "wp22a-staging-abc123def456.dump.partial"
+        f"wp22a-staging-{_NONCE}.dump.partial"
     )
     assert command == (
         "pg_dump",
@@ -62,7 +64,7 @@ def test_staging_dump_command_rejects_existing_or_invalid_target(
     tmp_path: Path,
 ) -> None:
     staging_dir = tmp_path.resolve()
-    existing = staging_dir / "wp22a-staging-abc123def456.dump.partial"
+    existing = staging_dir / f"wp22a-staging-{_NONCE}.dump.partial"
     existing.write_bytes(b"existing")
 
     with pytest.raises(
@@ -71,7 +73,7 @@ def test_staging_dump_command_rejects_existing_or_invalid_target(
     ):
         build_staging_dump_command(
             staging_dir,
-            "abc123def456",
+            _NONCE,
             "omni_hosted",
         )
 
@@ -91,7 +93,7 @@ def test_staging_dump_command_rejects_existing_or_invalid_target(
     ):
         build_staging_dump_command(
             staging_dir,
-            "abc123def457",
+            _OTHER_NONCE,
             "invalid database",
         )
 
@@ -283,7 +285,7 @@ def test_finalize_staged_archive_rejects_empty_or_invalid_timestamp(
     staging_dir = tmp_path.resolve()
     empty_path, _ = build_staging_dump_command(
         staging_dir,
-        "abc123def456",
+        _NONCE,
         "omni_hosted",
     )
     empty_path.write_bytes(b"")
@@ -297,7 +299,7 @@ def test_finalize_staged_archive_rejects_empty_or_invalid_timestamp(
         )
 
     empty_path.unlink()
-    archive_path = _staged_archive(tmp_path, nonce="abc123def457")
+    archive_path = _staged_archive(tmp_path, nonce=_OTHER_NONCE)
     with pytest.raises(
         HostedRecoveryContractError,
         match="CREATED_AT_INVALID",
