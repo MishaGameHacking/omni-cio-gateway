@@ -36,12 +36,9 @@ The correction did not change:
 
 ## Corrective change
 
-Rename only the non-secret machine-contract keys from detector-sensitive wording to semantically equivalent credential wording:
+Rename only the two non-secret machine-contract fields that described broker credential access and custody using detector-sensitive wording. Their replacement names use explicit `broker_credential_*` terminology while preserving every policy value and meaning.
 
-- `broker_secret_access` -> `broker_credential_access`;
-- `broker_secret_custody` -> `broker_credential_custody`.
-
-Update the deterministic test to consume the renamed contract key. Do not add a file exclusion, broad allowlist, baseline suppression or lower the tracked-content scan requirement.
+Update the deterministic test to consume the renamed custody field. Do not add a file exclusion, broad allowlist, baseline suppression or lower the tracked-content scan requirement.
 
 ## Permanent regression / guard
 
