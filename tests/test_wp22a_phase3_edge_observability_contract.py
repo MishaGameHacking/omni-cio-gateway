@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT = ROOT / "infrastructure" / "cloudru" / "wp22a" / "edge-observability-contract.json"
 
 
-def _payload() -> dict[str, object]:
+def _payload() -> dict[str, Any]:
     return json.loads(CONTRACT.read_text(encoding="utf-8"))
 
 
