@@ -101,6 +101,16 @@ def test_hosted_recovery_contract_preserves_phase3_authority() -> None:
     assert off_runtime["plaintext_object_storage_allowed"] is False
 
 
+def test_hosted_recovery_contract_rejects_noncanonical_path(tmp_path: Path) -> None:
+    forged_contract = tmp_path / "hosted-recovery-contract.json"
+    forged_contract.write_text("{}", encoding="utf-8")
+    with pytest.raises(
+        HostedRecoveryContractError,
+        match="HOSTED_RECOVERY_CONTRACT_PATH_INVALID",
+    ):
+        load_hosted_recovery_contract(forged_contract)
+
+
 def test_hosted_recovery_manifest_accepts_verified_synthetic_bundle() -> None:
     manifest = _manifest()
     validate_recovery_manifest(manifest, _ARCHIVE, _contract())
