@@ -20,6 +20,7 @@ def build_restore_commands(
     archive_path: Path,
     destination_database: str,
     *,
+    source_database: str,
     manifest: Mapping[str, Any],
     expected_release_sha: str,
     expected_migration_sha256: str,
@@ -28,9 +29,17 @@ def build_restore_commands(
     required_forced_rls_relations: Sequence[str],
     contract: Mapping[str, Any] | None = None,
 ) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    if not _DATABASE_RE.fullmatch(source_database):
+        raise HostedRecoveryContractError(
+            "HOSTED_RECOVERY_SOURCE_DATABASE_INVALID"
+        )
     if not _DATABASE_RE.fullmatch(destination_database):
         raise HostedRecoveryContractError(
             "HOSTED_RECOVERY_DESTINATION_DATABASE_INVALID"
+        )
+    if destination_database == source_database:
+        raise HostedRecoveryContractError(
+            "HOSTED_RECOVERY_RESTORE_TO_SOURCE_DATABASE_FORBIDDEN"
         )
     validate_recovery_manifest(
         manifest,

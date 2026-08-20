@@ -115,6 +115,7 @@ def _build_restore_commands(
     return build_restore_commands(
         archive_path=archive_path,
         destination_database=destination_database,
+        source_database="omni_hosted",
         manifest=manifest,
         expected_release_sha=_RELEASE_SHA,
         expected_migration_sha256=_MIGRATION_SHA,
@@ -346,6 +347,15 @@ def test_restore_commands_validate_exact_archive_before_building_argv(
             archive_path,
             manifest,
             destination_database="invalid database",
+        )
+    with pytest.raises(
+        HostedRecoveryContractError,
+        match="RESTORE_TO_SOURCE_DATABASE_FORBIDDEN",
+    ):
+        _build_restore_commands(
+            archive_path,
+            manifest,
+            destination_database="omni_hosted",
         )
     with pytest.raises(HostedRecoveryContractError, match="ARCHIVE_PATH_NOT_ABSOLUTE"):
         _build_restore_commands(Path(_ARCHIVE_NAME), manifest)
