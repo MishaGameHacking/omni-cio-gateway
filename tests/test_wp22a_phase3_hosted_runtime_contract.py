@@ -36,7 +36,7 @@ def test_hosted_runtime_contract_preserves_phase3_locks() -> None:
 def test_hosted_private_state_and_secret_custody_fail_closed() -> None:
     payload = json.loads(CONTRACT.read_text(encoding="utf-8"))
     private_state = payload["private_state"]
-    custody = payload["broker_secret_custody"]
+    custody = payload["broker_credential_custody"]
 
     assert private_state["database"] == "postgresql"
     assert private_state["tenant_context_required"] is True
