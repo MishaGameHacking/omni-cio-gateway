@@ -175,7 +175,6 @@ def _stream_integrity(path: Path) -> tuple[int, str, _FileIdentity]:
                         "HOSTED_RECOVERY_ARCHIVE_SIZE_EXCEEDED"
                     )
                 digest.update(chunk)
-            os.fsync(handle.fileno())
             opened_after = os.fstat(handle.fileno())
         after = path.stat(follow_symlinks=False)
     except HostedRecoveryContractError:
@@ -200,6 +199,27 @@ def _stream_integrity(path: Path) -> tuple[int, str, _FileIdentity]:
             "HOSTED_RECOVERY_ARCHIVE_CHANGED_DURING_VALIDATION"
         )
     return observed, digest.hexdigest(), _identity(before)
+
+
+def _sync_regular_file(
+    path: Path,
+    expected_identity: _FileIdentity,
+) -> None:
+    try:
+        with path.open("rb+") as handle:
+            metadata = os.fstat(handle.fileno())
+            if _identity(metadata) != expected_identity:
+                raise HostedRecoveryContractError(
+                    "HOSTED_RECOVERY_ARCHIVE_CHANGED_DURING_VALIDATION"
+                )
+            handle.flush()
+            os.fsync(handle.fileno())
+    except HostedRecoveryContractError:
+        raise
+    except OSError as exc:
+        raise HostedRecoveryContractError(
+            "HOSTED_RECOVERY_ARCHIVE_SYNC_FAILED"
+        ) from exc
 
 
 def _sync_directory(directory: Path) -> None:
@@ -352,6 +372,7 @@ def finalize_staged_archive(
     published = False
     final_verified = False
     try:
+        _sync_regular_file(staging_path, expected_identity)
         _publish_no_clobber(
             staging_path,
             final_path,

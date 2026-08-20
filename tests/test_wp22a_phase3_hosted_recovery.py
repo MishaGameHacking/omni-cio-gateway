@@ -30,8 +30,8 @@ _FORCED_RLS = [
     "broker_connections",
     "broker_connection_accounts",
 ]
-_ARCHIVE_NAME = "wp22a-20260820T113000Z-a1b2c3d4e5f6.dump"
-_ALT_ARCHIVE_NAME = "wp22a-20260820T113001Z-f6e5d4c3b2a1.dump"
+_ARCHIVE_NAME = "wp22a-20260820T113000Z-ea232a88b3ee.dump"
+_ALT_ARCHIVE_NAME = "wp22a-20260820T113001Z-ea232a88b3ee.dump"
 
 
 def _contract() -> dict[str, object]:
@@ -186,7 +186,9 @@ def test_recovery_manifest_accepts_exact_archive_and_boundary(tmp_path: Path) ->
     _validate_manifest(tmp_path, _manifest())
 
 
-def test_recovery_manifest_accepts_allowlisted_fields_in_any_json_order(tmp_path: Path) -> None:
+def test_recovery_manifest_accepts_allowlisted_fields_in_any_json_order(
+    tmp_path: Path,
+) -> None:
     manifest = _manifest()
     reordered = dict(reversed(tuple(manifest.items())))
     _validate_manifest(tmp_path, reordered)
@@ -221,7 +223,9 @@ def test_recovery_manifest_rejects_declared_size_drift(tmp_path: Path) -> None:
         _validate_manifest(tmp_path, manifest)
 
 
-def test_recovery_manifest_rejects_invalid_or_mismatched_timestamp(tmp_path: Path) -> None:
+def test_recovery_manifest_rejects_invalid_or_mismatched_timestamp(
+    tmp_path: Path,
+) -> None:
     manifest = _manifest()
     manifest["created_at_utc"] = "2026-99-99T99:99:99Z"
     with pytest.raises(HostedRecoveryContractError, match="CREATED_AT_INVALID"):
@@ -229,14 +233,35 @@ def test_recovery_manifest_rejects_invalid_or_mismatched_timestamp(tmp_path: Pat
 
     manifest = _manifest()
     manifest["created_at_utc"] = "2026-08-20T11:30:01Z"
-    with pytest.raises(HostedRecoveryContractError, match="ARCHIVE_TIMESTAMP_MISMATCH"):
+    with pytest.raises(
+        HostedRecoveryContractError,
+        match="ARCHIVE_TIMESTAMP_MISMATCH",
+    ):
         _validate_manifest(tmp_path, manifest)
 
     manifest = _manifest()
-    invalid_name = "wp22a-20269999T999999Z-a1b2c3d4e5f6.dump"
+    invalid_name = "wp22a-20269999T999999Z-ea232a88b3ee.dump"
     manifest["archive_name"] = invalid_name
-    with pytest.raises(HostedRecoveryContractError, match="ARCHIVE_TIMESTAMP_INVALID"):
+    with pytest.raises(
+        HostedRecoveryContractError,
+        match="ARCHIVE_TIMESTAMP_INVALID",
+    ):
         _validate_manifest(tmp_path, manifest, archive_name=invalid_name)
+
+
+def test_recovery_manifest_rejects_digest_suffix_drift(tmp_path: Path) -> None:
+    manifest = _manifest()
+    invalid_name = "wp22a-20260820T113000Z-000000000000.dump"
+    manifest["archive_name"] = invalid_name
+    with pytest.raises(
+        HostedRecoveryContractError,
+        match="ARCHIVE_DIGEST_SUFFIX_MISMATCH",
+    ):
+        _validate_manifest(
+            tmp_path,
+            manifest,
+            archive_name=invalid_name,
+        )
 
 
 def test_recovery_manifest_rejects_partial_archive_name(tmp_path: Path) -> None:
@@ -246,8 +271,13 @@ def test_recovery_manifest_rejects_partial_archive_name(tmp_path: Path) -> None:
         _validate_manifest(tmp_path, manifest)
 
 
-def test_recovery_manifest_binds_manifest_to_exact_archive_path(tmp_path: Path) -> None:
-    with pytest.raises(HostedRecoveryContractError, match="ARCHIVE_MANIFEST_NAME_MISMATCH"):
+def test_recovery_manifest_binds_manifest_to_exact_archive_path(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(
+        HostedRecoveryContractError,
+        match="ARCHIVE_MANIFEST_NAME_MISMATCH",
+    ):
         _validate_manifest(tmp_path, _manifest(), archive_name=_ALT_ARCHIVE_NAME)
 
 
@@ -259,7 +289,10 @@ def test_recovery_manifest_rejects_release_or_boundary_drift(tmp_path: Path) -> 
 
     manifest = _manifest()
     manifest["tenant_boundary_sha256"] = "0" * 64
-    with pytest.raises(HostedRecoveryContractError, match="TENANT_BOUNDARY_SHA256_MISMATCH"):
+    with pytest.raises(
+        HostedRecoveryContractError,
+        match="TENANT_BOUNDARY_SHA256_MISMATCH",
+    ):
         _validate_manifest(tmp_path, manifest)
 
 
@@ -284,7 +317,9 @@ def test_hosted_recovery_contract_rejects_encryption_drift() -> None:
         validate_hosted_recovery_contract(payload)
 
 
-def test_restore_commands_validate_exact_archive_before_building_argv(tmp_path: Path) -> None:
+def test_restore_commands_validate_exact_archive_before_building_argv(
+    tmp_path: Path,
+) -> None:
     manifest = _manifest()
     archive_path = _write_archive(tmp_path)
     commands = _build_restore_commands(archive_path, manifest)
@@ -301,7 +336,10 @@ def test_restore_commands_validate_exact_archive_before_building_argv(tmp_path: 
         ),
     )
 
-    with pytest.raises(HostedRecoveryContractError, match="DESTINATION_DATABASE_INVALID"):
+    with pytest.raises(
+        HostedRecoveryContractError,
+        match="DESTINATION_DATABASE_INVALID",
+    ):
         _build_restore_commands(
             archive_path,
             manifest,
