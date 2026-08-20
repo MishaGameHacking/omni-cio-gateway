@@ -1,6 +1,7 @@
 -- WP22A Phase 3: source-only object grants for the Cloud.ru-managed API user.
 -- Phase 4 creates the login user through the accepted provider boundary with
 -- separately injected credentials and no predefined broad PostgreSQL roles.
+-- Run this idempotent bootstrap after migrations and after every later migration.
 -- This SQL never creates or alters users and never applies provider resources.
 
 DO $hosted_user$
@@ -96,20 +97,34 @@ $hosted_user$;
 DO $database_privileges$
 BEGIN
     EXECUTE pg_catalog.format(
+        'REVOKE CREATE, TEMPORARY ON DATABASE %I FROM PUBLIC',
+        pg_catalog.current_database()
+    );
+    EXECUTE pg_catalog.format(
         'REVOKE ALL PRIVILEGES ON DATABASE %I FROM %I',
+        pg_catalog.current_database(),
+        'omni_cio_hosted_api'
+    );
+    EXECUTE pg_catalog.format(
+        'GRANT CONNECT ON DATABASE %I TO %I',
         pg_catalog.current_database(),
         'omni_cio_hosted_api'
     );
 END;
 $database_privileges$;
 
+REVOKE CREATE ON SCHEMA public FROM PUBLIC;
+REVOKE ALL ON SCHEMA omni_cio_v10 FROM PUBLIC;
+REVOKE ALL ON ALL TABLES IN SCHEMA omni_cio_v10 FROM PUBLIC;
+REVOKE ALL ON ALL SEQUENCES IN SCHEMA omni_cio_v10 FROM PUBLIC;
+REVOKE ALL ON ALL FUNCTIONS IN SCHEMA omni_cio_v10 FROM PUBLIC;
+
+REVOKE ALL ON SCHEMA omni_cio_v10 FROM omni_cio_hosted_api;
 REVOKE ALL ON ALL TABLES IN SCHEMA omni_cio_v10
     FROM omni_cio_hosted_api;
 REVOKE ALL ON ALL SEQUENCES IN SCHEMA omni_cio_v10
     FROM omni_cio_hosted_api;
 REVOKE ALL ON ALL FUNCTIONS IN SCHEMA omni_cio_v10
-    FROM omni_cio_hosted_api;
-REVOKE CREATE ON SCHEMA omni_cio_v10
     FROM omni_cio_hosted_api;
 GRANT USAGE ON SCHEMA omni_cio_v10
     TO omni_cio_hosted_api;

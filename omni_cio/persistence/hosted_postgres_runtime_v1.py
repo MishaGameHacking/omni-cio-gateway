@@ -25,6 +25,7 @@ BOOTSTRAP_PATH = (
 
 _USER_NAME = "omni_cio_hosted_api"
 _SCHEMA_NAME = "omni_cio_v10"
+_EXPECTED_DATABASE_PRIVILEGES = ("CONNECT",)
 _EXPECTED_FUNCTION_PRIVILEGES: dict[str, tuple[str, ...]] = {
     "current_tenant_scope()": ("EXECUTE",),
 }
@@ -121,7 +122,7 @@ def validate_hosted_postgres_runtime_contract(
 ) -> None:
     if (
         payload.get("schema_version")
-        != "v10.wp22a.phase3.hosted-postgres-runtime.v2"
+        != "v10.wp22a.phase3.hosted-postgres-runtime.v3"
     ):
         raise HostedPostgresRuntimeContractError(
             "HOSTED_POSTGRES_CONTRACT_VERSION_INVALID"
@@ -175,6 +176,24 @@ def validate_hosted_postgres_runtime_contract(
         "HOSTED_POSTGRES_PROVIDER_USER_DRIFT",
     )
 
+    bootstrap = _as_mapping(
+        payload.get("bootstrap"),
+        "HOSTED_POSTGRES_BOOTSTRAP_INVALID",
+    )
+    _require_exact_mapping(
+        bootstrap,
+        {
+            "provider_user_must_preexist": True,
+            "run_after_migrations": True,
+            "reapply_after_every_migration": True,
+            "public_schema_create_revoked": True,
+            "public_app_schema_privileges_revoked": True,
+            "public_function_execute_revoked": True,
+            "public_database_temporary_revoked": True,
+        },
+        "HOSTED_POSTGRES_BOOTSTRAP_DRIFT",
+    )
+
     schema = _as_mapping(
         payload.get("schema"),
         "HOSTED_POSTGRES_SCHEMA_INVALID",
@@ -189,7 +208,7 @@ def validate_hosted_postgres_runtime_contract(
         payload.get("database_privileges"),
         "HOSTED_POSTGRES_DATABASE_PRIVILEGES_INVALID",
     )
-    if database_privileges:
+    if database_privileges != _EXPECTED_DATABASE_PRIVILEGES:
         raise HostedPostgresRuntimeContractError(
             "HOSTED_POSTGRES_DATABASE_PRIVILEGES_DRIFT"
         )
@@ -349,11 +368,18 @@ def validate_hosted_postgres_runtime_sql(
         "SCHEMA_RECORD.NSPOWNER = RUNTIME_USER.OID",
         "RELATION_RECORD.RELOWNER = RUNTIME_USER.OID",
         "FUNCTION_RECORD.PROOWNER = RUNTIME_USER.OID",
+        "REVOKE CREATE, TEMPORARY ON DATABASE %I FROM PUBLIC",
         "REVOKE ALL PRIVILEGES ON DATABASE %I FROM %I",
+        "GRANT CONNECT ON DATABASE %I TO %I",
+        "REVOKE CREATE ON SCHEMA PUBLIC FROM PUBLIC",
+        "REVOKE ALL ON SCHEMA OMNI_CIO_V10 FROM PUBLIC",
+        "REVOKE ALL ON ALL TABLES IN SCHEMA OMNI_CIO_V10 FROM PUBLIC",
+        "REVOKE ALL ON ALL SEQUENCES IN SCHEMA OMNI_CIO_V10 FROM PUBLIC",
+        "REVOKE ALL ON ALL FUNCTIONS IN SCHEMA OMNI_CIO_V10 FROM PUBLIC",
+        "REVOKE ALL ON SCHEMA OMNI_CIO_V10 FROM OMNI_CIO_HOSTED_API",
         "REVOKE ALL ON ALL TABLES IN SCHEMA OMNI_CIO_V10 FROM OMNI_CIO_HOSTED_API",
         "REVOKE ALL ON ALL SEQUENCES IN SCHEMA OMNI_CIO_V10 FROM OMNI_CIO_HOSTED_API",
         "REVOKE ALL ON ALL FUNCTIONS IN SCHEMA OMNI_CIO_V10 FROM OMNI_CIO_HOSTED_API",
-        "REVOKE CREATE ON SCHEMA OMNI_CIO_V10 FROM OMNI_CIO_HOSTED_API",
     )
     for marker in required_markers:
         if marker not in normalized:

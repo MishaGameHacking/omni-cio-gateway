@@ -26,8 +26,10 @@ def test_hosted_postgres_contract_preserves_phase3_authority() -> None:
 
     authority = payload["authority"]
     provider_user = payload["provider_user"]
+    bootstrap = payload["bootstrap"]
     assert isinstance(authority, dict)
     assert isinstance(provider_user, dict)
+    assert isinstance(bootstrap, dict)
     assert authority["provider_apply_authorized"] is False
     assert authority["public_database_ingress_allowed"] is False
     assert authority["authorized_recurring_rub"] == 0
@@ -48,6 +50,9 @@ def test_hosted_postgres_contract_preserves_phase3_authority() -> None:
     assert provider_user["schema_owner"] is False
     assert provider_user["object_owner"] is False
     assert provider_user["bypass_rls"] is False
+    assert bootstrap["provider_user_must_preexist"] is True
+    assert bootstrap["run_after_migrations"] is True
+    assert bootstrap["reapply_after_every_migration"] is True
 
 
 def test_hosted_postgres_bootstrap_matches_exact_dml_matrix() -> None:
@@ -68,7 +73,7 @@ def test_hosted_postgres_bootstrap_matches_exact_dml_matrix() -> None:
         "broker_connection_accounts",
     }
     assert set(privileges).isdisjoint(forbidden)
-    assert payload["database_privileges"] == []
+    assert payload["database_privileges"] == ["CONNECT"]
     assert payload["function_privileges"] == {
         "current_tenant_scope()": ["EXECUTE"]
     }
@@ -100,12 +105,25 @@ def test_hosted_postgres_bootstrap_checks_provider_user_and_ownership() -> None:
     assert "HOSTED_API_DATABASE_OWNERSHIP_FORBIDDEN" in source
     assert "HOSTED_API_SCHEMA_OWNERSHIP_FORBIDDEN" in source
     assert "HOSTED_API_OBJECT_OWNERSHIP_FORBIDDEN" in source
-    assert "REVOKE ALL PRIVILEGES ON DATABASE" in source
-    assert "GRANT EXECUTE ON FUNCTION" in source
     assert "CREATE ROLE" not in source
     assert "CREATE USER" not in source
     assert "ALTER ROLE" not in source
     assert "ALTER USER" not in source
+
+
+def test_hosted_postgres_bootstrap_removes_public_privilege_paths() -> None:
+    source = _bootstrap()
+    for required in (
+        "REVOKE CREATE, TEMPORARY ON DATABASE",
+        "GRANT CONNECT ON DATABASE",
+        "REVOKE CREATE ON SCHEMA public FROM PUBLIC",
+        "REVOKE ALL ON SCHEMA omni_cio_v10 FROM PUBLIC",
+        "REVOKE ALL ON ALL TABLES IN SCHEMA omni_cio_v10 FROM PUBLIC",
+        "REVOKE ALL ON ALL SEQUENCES IN SCHEMA omni_cio_v10 FROM PUBLIC",
+        "REVOKE ALL ON ALL FUNCTIONS IN SCHEMA omni_cio_v10 FROM PUBLIC",
+    ):
+        assert required in source
+    assert "GRANT EXECUTE ON FUNCTION" in source
 
 
 def test_hosted_postgres_validator_rejects_unrelated_table_grant() -> None:
@@ -121,6 +139,18 @@ def test_hosted_postgres_validator_rejects_unrelated_table_grant() -> None:
         validate_hosted_postgres_runtime_sql(unsafe, _contract())
 
 
+def test_hosted_postgres_validator_requires_public_function_revoke() -> None:
+    unsafe = _bootstrap().replace(
+        "REVOKE ALL ON ALL FUNCTIONS IN SCHEMA omni_cio_v10 FROM PUBLIC;\n",
+        "",
+    )
+    with pytest.raises(
+        HostedPostgresRuntimeContractError,
+        match="HOSTED_POSTGRES_SQL_SAFETY_MARKER_MISSING",
+    ):
+        validate_hosted_postgres_runtime_sql(unsafe, _contract())
+
+
 def test_hosted_postgres_validator_rejects_provider_or_broad_role_mutation() -> None:
     unsafe_inputs = (
         (
@@ -131,6 +161,11 @@ def test_hosted_postgres_validator_rejects_provider_or_broad_role_mutation() -> 
             _bootstrap()
             + "\nGRANT pg_read_all_data TO omni_cio_hosted_api;\n",
             "HOSTED_POSTGRES_SQL_BROAD_ROLE_GRANT",
+        ),
+        (
+            _bootstrap()
+            + "\nGRANT TEMPORARY ON DATABASE example TO omni_cio_hosted_api;\n",
+            "HOSTED_POSTGRES_SQL_GRANT_UNEXPECTED",
         ),
     )
     for unsafe, expected in unsafe_inputs:
