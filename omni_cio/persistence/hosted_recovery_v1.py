@@ -10,13 +10,7 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[2]
-CONTRACT_PATH = (
-    ROOT
-    / "infrastructure"
-    / "cloudru"
-    / "wp22a"
-    / "hosted-recovery-contract.json"
-)
+CONTRACT_PATH = ROOT / "infrastructure" / "cloudru" / "wp22a" / "hosted-recovery-contract.json"
 
 _EXPECTED_AUTHORITY = {
     "provider": "Cloud.ru Evolution",
@@ -30,11 +24,7 @@ _EXPECTED_AUTHORITY = {
     "protected_v9_entrypoint": "app:app",
     "wp23_unlocked": False,
 }
-_EXPECTED_DUMP_FLAGS = (
-    "--format=custom",
-    "--no-owner",
-    "--no-privileges",
-)
+_EXPECTED_DUMP_FLAGS = ("--format=custom", "--no-owner", "--no-privileges")
 _EXPECTED_FORCED_RLS = (
     "broker_accounts",
     "broker_connections",
@@ -83,27 +73,29 @@ def _as_string_sequence(value: object, code: str) -> tuple[str, ...]:
     return normalized
 
 
-def _require_exact_mapping(
-    actual: Mapping[str, Any],
-    expected: Mapping[str, object],
-    code: str,
-) -> None:
+def _require_exact_mapping(actual: Mapping[str, Any], expected: Mapping[str, object], code: str) -> None:
     if set(actual) != set(expected):
         raise HostedRecoveryContractError(code)
     for key, expected_value in expected.items():
         actual_value = actual[key]
-        if type(actual_value) is not type(expected_value):
-            raise HostedRecoveryContractError(code)
-        if actual_value != expected_value:
+        if type(actual_value) is not type(expected_value) or actual_value != expected_value:
             raise HostedRecoveryContractError(code)
 
 
-def load_hosted_recovery_contract(
-    path: Path = CONTRACT_PATH,
-) -> dict[str, Any]:
-    requested_path = path.resolve(strict=False)
-    canonical_path = CONTRACT_PATH.resolve(strict=False)
-    if requested_path != canonical_path:
+def _require_sha256(value: object, code: str) -> str:
+    if not isinstance(value, str) or not _SHA256_RE.fullmatch(value):
+        raise HostedRecoveryContractError(code)
+    return value
+
+
+def _require_release_sha(value: object, code: str) -> str:
+    if not isinstance(value, str) or not _RELEASE_SHA_RE.fullmatch(value):
+        raise HostedRecoveryContractError(code)
+    return value
+
+
+def load_hosted_recovery_contract(path: Path = CONTRACT_PATH) -> dict[str, Any]:
+    if path.resolve(strict=False) != CONTRACT_PATH.resolve(strict=False):
         raise HostedRecoveryContractError("HOSTED_RECOVERY_CONTRACT_PATH_INVALID")
     payload = json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
@@ -115,20 +107,10 @@ def validate_hosted_recovery_contract(payload: Mapping[str, Any]) -> None:
     if payload.get("schema_version") != "v10.wp22a.phase3.hosted-recovery.v1":
         raise HostedRecoveryContractError("HOSTED_RECOVERY_CONTRACT_VERSION_INVALID")
 
-    authority = _as_mapping(
-        payload.get("authority"),
-        "HOSTED_RECOVERY_AUTHORITY_INVALID",
-    )
-    _require_exact_mapping(
-        authority,
-        _EXPECTED_AUTHORITY,
-        "HOSTED_RECOVERY_AUTHORITY_DRIFT",
-    )
+    authority = _as_mapping(payload.get("authority"), "HOSTED_RECOVERY_AUTHORITY_INVALID")
+    _require_exact_mapping(authority, _EXPECTED_AUTHORITY, "HOSTED_RECOVERY_AUTHORITY_DRIFT")
 
-    postgres = _as_mapping(
-        payload.get("postgres"),
-        "HOSTED_RECOVERY_POSTGRES_INVALID",
-    )
+    postgres = _as_mapping(payload.get("postgres"), "HOSTED_RECOVERY_POSTGRES_INVALID")
     _require_exact_mapping(
         postgres,
         {
@@ -146,10 +128,7 @@ def validate_hosted_recovery_contract(payload: Mapping[str, Any]) -> None:
         "HOSTED_RECOVERY_POSTGRES_DRIFT",
     )
 
-    integrity = _as_mapping(
-        payload.get("integrity"),
-        "HOSTED_RECOVERY_INTEGRITY_INVALID",
-    )
+    integrity = _as_mapping(payload.get("integrity"), "HOSTED_RECOVERY_INTEGRITY_INVALID")
     _require_exact_mapping(
         integrity,
         {
@@ -164,18 +143,13 @@ def validate_hosted_recovery_contract(payload: Mapping[str, Any]) -> None:
         "HOSTED_RECOVERY_INTEGRITY_DRIFT",
     )
 
-    bundle = _as_mapping(
-        payload.get("bundle"),
-        "HOSTED_RECOVERY_BUNDLE_INVALID",
-    )
+    bundle = _as_mapping(payload.get("bundle"), "HOSTED_RECOVERY_BUNDLE_INVALID")
     _require_exact_mapping(
         bundle,
         {
             "backup_class": "POSTGRES_LOGICAL_PRIVATE_STATE",
             "archive_name_pattern": _ARCHIVE_NAME_PATTERN,
-            "manifest_schema_version": (
-                "v10.wp22a.phase3.hosted-recovery-manifest.v1"
-            ),
+            "manifest_schema_version": "v10.wp22a.phase3.hosted-recovery-manifest.v1",
             "allowed_manifest_fields": list(_EXPECTED_MANIFEST_FIELDS),
             "encryption_state": "EXTERNAL_ENVELOPE_REQUIRED",
         },
@@ -183,8 +157,7 @@ def validate_hosted_recovery_contract(payload: Mapping[str, Any]) -> None:
     )
 
     tenant_boundary = _as_mapping(
-        payload.get("tenant_boundary"),
-        "HOSTED_RECOVERY_TENANT_BOUNDARY_INVALID",
+        payload.get("tenant_boundary"), "HOSTED_RECOVERY_TENANT_BOUNDARY_INVALID"
     )
     _require_exact_mapping(
         tenant_boundary,
@@ -199,10 +172,7 @@ def validate_hosted_recovery_contract(payload: Mapping[str, Any]) -> None:
         "HOSTED_RECOVERY_TENANT_BOUNDARY_DRIFT",
     )
 
-    restore = _as_mapping(
-        payload.get("restore"),
-        "HOSTED_RECOVERY_RESTORE_INVALID",
-    )
+    restore = _as_mapping(payload.get("restore"), "HOSTED_RECOVERY_RESTORE_INVALID")
     _require_exact_mapping(
         restore,
         {
@@ -219,10 +189,7 @@ def validate_hosted_recovery_contract(payload: Mapping[str, Any]) -> None:
         "HOSTED_RECOVERY_RESTORE_DRIFT",
     )
 
-    off_runtime = _as_mapping(
-        payload.get("off_runtime"),
-        "HOSTED_RECOVERY_OFF_RUNTIME_INVALID",
-    )
+    off_runtime = _as_mapping(payload.get("off_runtime"), "HOSTED_RECOVERY_OFF_RUNTIME_INVALID")
     _require_exact_mapping(
         off_runtime,
         {
@@ -241,33 +208,43 @@ def archive_sha256(archive_bytes: bytes) -> str:
     return hashlib.sha256(archive_bytes).hexdigest()
 
 
-def _require_sha256(value: object, code: str) -> str:
-    if not isinstance(value, str) or not _SHA256_RE.fullmatch(value):
-        raise HostedRecoveryContractError(code)
-    return value
-
-
 def validate_recovery_manifest(
     manifest: Mapping[str, Any],
     archive_bytes: bytes,
+    *,
+    expected_release_sha: str,
+    expected_migration_sha256: str,
+    expected_tenant_boundary_sha256: str,
+    expected_schema_sha256: str,
+    required_forced_rls_relations: Sequence[str],
     contract: Mapping[str, Any] | None = None,
 ) -> None:
-    active_contract = (
-        contract if contract is not None else load_hosted_recovery_contract()
-    )
+    active_contract = contract if contract is not None else load_hosted_recovery_contract()
     validate_hosted_recovery_contract(active_contract)
+
+    expected_release_sha = _require_release_sha(
+        expected_release_sha, "HOSTED_RECOVERY_EXPECTED_RELEASE_SHA_INVALID"
+    )
+    expected_migration_sha256 = _require_sha256(
+        expected_migration_sha256, "HOSTED_RECOVERY_EXPECTED_MIGRATION_SHA256_INVALID"
+    )
+    expected_tenant_boundary_sha256 = _require_sha256(
+        expected_tenant_boundary_sha256, "HOSTED_RECOVERY_EXPECTED_TENANT_BOUNDARY_SHA256_INVALID"
+    )
+    expected_schema_sha256 = _require_sha256(
+        expected_schema_sha256, "HOSTED_RECOVERY_EXPECTED_SCHEMA_SHA256_INVALID"
+    )
+    required_forced_rls = _as_string_sequence(
+        required_forced_rls_relations, "HOSTED_RECOVERY_REQUIRED_FORCED_RLS_INVALID"
+    )
+    if required_forced_rls != _EXPECTED_FORCED_RLS:
+        raise HostedRecoveryContractError("HOSTED_RECOVERY_REQUIRED_FORCED_RLS_DRIFT")
 
     if tuple(manifest.keys()) != _EXPECTED_MANIFEST_FIELDS:
         raise HostedRecoveryContractError("HOSTED_RECOVERY_MANIFEST_FIELDS_INVALID")
 
-    bundle = _as_mapping(
-        active_contract["bundle"],
-        "HOSTED_RECOVERY_BUNDLE_INVALID",
-    )
-    integrity = _as_mapping(
-        active_contract["integrity"],
-        "HOSTED_RECOVERY_INTEGRITY_INVALID",
-    )
+    bundle = _as_mapping(active_contract["bundle"], "HOSTED_RECOVERY_BUNDLE_INVALID")
+    integrity = _as_mapping(active_contract["integrity"], "HOSTED_RECOVERY_INTEGRITY_INVALID")
 
     if manifest["schema_version"] != bundle["manifest_schema_version"]:
         raise HostedRecoveryContractError("HOSTED_RECOVERY_MANIFEST_VERSION_INVALID")
@@ -279,9 +256,7 @@ def validate_recovery_manifest(
         raise HostedRecoveryContractError("HOSTED_RECOVERY_CREATED_AT_INVALID")
 
     archive_name = manifest["archive_name"]
-    if not isinstance(archive_name, str):
-        raise HostedRecoveryContractError("HOSTED_RECOVERY_ARCHIVE_NAME_INVALID")
-    if not _ARCHIVE_NAME_RE.fullmatch(archive_name):
+    if not isinstance(archive_name, str) or not _ARCHIVE_NAME_RE.fullmatch(archive_name):
         raise HostedRecoveryContractError("HOSTED_RECOVERY_ARCHIVE_NAME_INVALID")
     if archive_name.endswith(str(integrity["temporary_suffix"])):
         raise HostedRecoveryContractError("HOSTED_RECOVERY_PARTIAL_ARCHIVE_FORBIDDEN")
@@ -289,20 +264,17 @@ def validate_recovery_manifest(
         raise HostedRecoveryContractError("HOSTED_RECOVERY_ARCHIVE_PATH_INVALID")
 
     declared_hash = _require_sha256(
-        manifest["archive_sha256"],
-        "HOSTED_RECOVERY_ARCHIVE_SHA256_INVALID",
+        manifest["archive_sha256"], "HOSTED_RECOVERY_ARCHIVE_SHA256_INVALID"
     )
-    actual_hash = archive_sha256(archive_bytes)
-    if not hmac.compare_digest(declared_hash, actual_hash):
-        raise HostedRecoveryContractError("HOSTED_RECOVERY_ARCHIVE_HASH_MISMATCH")
+    if not hmac.compare_digest(declared_hash, archive_sha256(archive_bytes)):
+        raise HostedRecoveryContractError("HOSTED_RECOVERY_ARCHIVE_SHA256_MISMATCH")
 
     archive_size = manifest["archive_size_bytes"]
     if type(archive_size) is not int or archive_size < 0:
         raise HostedRecoveryContractError("HOSTED_RECOVERY_ARCHIVE_SIZE_INVALID")
     if archive_size != len(archive_bytes):
         raise HostedRecoveryContractError("HOSTED_RECOVERY_ARCHIVE_SIZE_MISMATCH")
-    maximum_archive_bytes = int(integrity["maximum_archive_bytes"])
-    if archive_size > maximum_archive_bytes:
+    if archive_size > int(integrity["maximum_archive_bytes"]):
         raise HostedRecoveryContractError("HOSTED_RECOVERY_ARCHIVE_SIZE_EXCEEDED")
 
     if manifest["postgres_major"] != 18:
@@ -310,28 +282,27 @@ def validate_recovery_manifest(
     if manifest["archive_format"] != "CUSTOM":
         raise HostedRecoveryContractError("HOSTED_RECOVERY_ARCHIVE_FORMAT_INVALID")
 
-    source_release_sha = manifest["source_release_sha"]
-    if not isinstance(source_release_sha, str) or not _RELEASE_SHA_RE.fullmatch(
-        source_release_sha
-    ):
-        raise HostedRecoveryContractError("HOSTED_RECOVERY_RELEASE_SHA_INVALID")
+    source_release_sha = _require_release_sha(
+        manifest["source_release_sha"], "HOSTED_RECOVERY_RELEASE_SHA_INVALID"
+    )
+    if not hmac.compare_digest(source_release_sha, expected_release_sha):
+        raise HostedRecoveryContractError("HOSTED_RECOVERY_SOURCE_RELEASE_MISMATCH")
 
-    for field in (
-        "migration_state_sha256",
-        "tenant_boundary_sha256",
-        "schema_state_sha256",
-    ):
-        _require_sha256(
-            manifest[field],
-            f"HOSTED_RECOVERY_{field.upper()}_INVALID",
-        )
+    expected_digests = {
+        "migration_state_sha256": expected_migration_sha256,
+        "tenant_boundary_sha256": expected_tenant_boundary_sha256,
+        "schema_state_sha256": expected_schema_sha256,
+    }
+    for field, expected_value in expected_digests.items():
+        actual_value = _require_sha256(manifest[field], f"HOSTED_RECOVERY_{field.upper()}_INVALID")
+        if not hmac.compare_digest(actual_value, expected_value):
+            raise HostedRecoveryContractError(f"HOSTED_RECOVERY_{field.upper()}_MISMATCH")
 
     forced_rls = _as_string_sequence(
-        manifest["forced_rls_relations"],
-        "HOSTED_RECOVERY_FORCED_RLS_INVALID",
+        manifest["forced_rls_relations"], "HOSTED_RECOVERY_FORCED_RLS_INVALID"
     )
-    if forced_rls != _EXPECTED_FORCED_RLS:
-        raise HostedRecoveryContractError("HOSTED_RECOVERY_FORCED_RLS_DRIFT")
+    if forced_rls != required_forced_rls:
+        raise HostedRecoveryContractError("HOSTED_RECOVERY_FORCE_RLS_MISMATCH")
 
     if manifest["encryption_state"] != bundle["encryption_state"]:
         raise HostedRecoveryContractError("HOSTED_RECOVERY_ENCRYPTION_STATE_INVALID")
@@ -346,7 +317,7 @@ def build_restore_commands(
     if archive_path.name.endswith(".partial"):
         raise HostedRecoveryContractError("HOSTED_RECOVERY_PARTIAL_ARCHIVE_FORBIDDEN")
     if not _DATABASE_RE.fullmatch(destination_database):
-        raise HostedRecoveryContractError("HOSTED_RECOVERY_DESTINATION_DB_INVALID")
+        raise HostedRecoveryContractError("HOSTED_RECOVERY_DESTINATION_DATABASE_INVALID")
 
     preflight = ("pg_restore", "--list", str(archive_path))
     restore = (
@@ -363,8 +334,31 @@ def build_restore_commands(
 
 def validate_restore_evidence(
     evidence: Mapping[str, Any],
-    manifest: Mapping[str, Any],
+    *,
+    expected_release_sha: str,
+    expected_migration_sha256: str,
+    expected_tenant_boundary_sha256: str,
+    expected_schema_sha256: str,
+    required_forced_rls_relations: Sequence[str],
 ) -> None:
+    expected_release_sha = _require_release_sha(
+        expected_release_sha, "HOSTED_RECOVERY_EXPECTED_RELEASE_SHA_INVALID"
+    )
+    expected_migration_sha256 = _require_sha256(
+        expected_migration_sha256, "HOSTED_RECOVERY_EXPECTED_MIGRATION_SHA256_INVALID"
+    )
+    expected_tenant_boundary_sha256 = _require_sha256(
+        expected_tenant_boundary_sha256, "HOSTED_RECOVERY_EXPECTED_TENANT_BOUNDARY_SHA256_INVALID"
+    )
+    expected_schema_sha256 = _require_sha256(
+        expected_schema_sha256, "HOSTED_RECOVERY_EXPECTED_SCHEMA_SHA256_INVALID"
+    )
+    required_forced_rls = _as_string_sequence(
+        required_forced_rls_relations, "HOSTED_RECOVERY_REQUIRED_FORCED_RLS_INVALID"
+    )
+    if required_forced_rls != _EXPECTED_FORCED_RLS:
+        raise HostedRecoveryContractError("HOSTED_RECOVERY_REQUIRED_FORCED_RLS_DRIFT")
+
     required_fields = {
         "restored_into_separate_database",
         "accepted_release_sha",
@@ -380,36 +374,31 @@ def validate_restore_evidence(
     }
     if set(evidence) != required_fields:
         raise HostedRecoveryContractError("HOSTED_RECOVERY_EVIDENCE_FIELDS_INVALID")
-    if evidence["restored_into_separate_database"] is not True:
-        raise HostedRecoveryContractError("HOSTED_RECOVERY_SEPARATE_DB_REQUIRED")
 
-    comparisons = {
-        "accepted_release_sha": "source_release_sha",
-        "migration_state_sha256": "migration_state_sha256",
-        "tenant_boundary_sha256": "tenant_boundary_sha256",
-        "schema_state_sha256": "schema_state_sha256",
+    expected_values = {
+        "accepted_release_sha": expected_release_sha,
+        "migration_state_sha256": expected_migration_sha256,
+        "tenant_boundary_sha256": expected_tenant_boundary_sha256,
+        "schema_state_sha256": expected_schema_sha256,
     }
-    for evidence_field, manifest_field in comparisons.items():
-        if evidence[evidence_field] != manifest[manifest_field]:
-            raise HostedRecoveryContractError(
-                f"HOSTED_RECOVERY_{evidence_field.upper()}_MISMATCH"
-            )
+    for field, expected_value in expected_values.items():
+        if evidence[field] != expected_value:
+            raise HostedRecoveryContractError(f"HOSTED_RECOVERY_{field.upper()}_MISMATCH")
 
     forced_rls = _as_string_sequence(
-        evidence["forced_rls_relations"],
-        "HOSTED_RECOVERY_EVIDENCE_FORCED_RLS_INVALID",
+        evidence["forced_rls_relations"], "HOSTED_RECOVERY_EVIDENCE_FORCED_RLS_INVALID"
     )
-    if forced_rls != _EXPECTED_FORCED_RLS:
-        raise HostedRecoveryContractError("HOSTED_RECOVERY_EVIDENCE_FORCED_RLS_DRIFT")
+    if forced_rls != required_forced_rls:
+        raise HostedRecoveryContractError("HOSTED_RECOVERY_EVIDENCE_FORCE_RLS_MISMATCH")
 
-    for field in (
+    required_true_fields = (
+        "restored_into_separate_database",
         "unscoped_access_denied",
         "cross_tenant_access_denied",
         "runtime_acl_reapplied",
         "rollback_release_available",
         "temporary_state_cleaned",
-    ):
+    )
+    for field in required_true_fields:
         if evidence[field] is not True:
-            raise HostedRecoveryContractError(
-                f"HOSTED_RECOVERY_{field.upper()}_REQUIRED"
-            )
+            raise HostedRecoveryContractError(f"HOSTED_RECOVERY_{field.upper()}_REQUIRED")
