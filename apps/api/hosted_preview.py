@@ -174,7 +174,9 @@ class HostedPreviewSecurityMiddlewareV1(BaseHTTPMiddleware):
     ) -> Response:
         forwarded = request.headers.get("x-forwarded-proto", "").strip().lower()
         scheme = forwarded or request.url.scheme.lower()
-        api_path = request.url.path.startswith("/api/") or request.url.path == "/healthz"
+        api_path = (
+            request.url.path.startswith("/api/") or request.url.path == "/healthz"
+        )
         if scheme != "https":
             return _safe_error("HTTPS_REQUIRED", 403, api_path=api_path)
 
@@ -184,7 +186,11 @@ class HostedPreviewSecurityMiddlewareV1(BaseHTTPMiddleware):
             if request.url.path != PREVIEW_LOGIN_PATH:
                 cookie = request.cookies.get(CSRF_COOKIE, "")
                 header = request.headers.get(CSRF_HEADER, "")
-                if not cookie or not header or not secrets.compare_digest(cookie, header):
+                if (
+                    not cookie
+                    or not header
+                    or not secrets.compare_digest(cookie, header)
+                ):
                     return _safe_error("CSRF_REJECTED", 403, api_path=api_path)
 
         response = await call_next(request)
