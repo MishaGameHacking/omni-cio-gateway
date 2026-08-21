@@ -178,8 +178,9 @@ def test_broker_credentials_are_tenant_owned_not_global() -> None:
     assert "credentials are encrypted at rest" in amendment
 
     status = _text(ROOT / "knowledge/17_V10_CURRENT_PROGRAM_STATUS.md")
+    assert "Canonical ownership remains:" in status
     assert "USER -> Tenant -> BrokerConnection -> READ / TRADE_OPTIONAL" in status
-    assert "A credential submitted by USER A belongs only to Tenant A" in status
+    assert "No real broker credential is authorized in the Phase-4 synthetic preview" in status
 
 
 def test_t_invest_public_connector_stays_separate_fail_closed_gate() -> None:
