@@ -1,0 +1,191 @@
+name: TEMP V10 Phase 4A Status Reconcile
+
+on:
+  push:
+    branches:
+      - v10/wp22a-phase4-render-neon-preview
+    paths:
+      - ".github/workflows/v10-temp-phase4-status-reconcile.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  reconcile-status:
+    name: Reconcile canonical status and self-delete
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    steps:
+      - name: Bootstrap exact branch without external Actions
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GIT_TERMINAL_PROMPT: "0"
+        run: |
+          set -euo pipefail
+          find . -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+          git init .
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          git config --local credential.helper ""
+          git config --local --add credential.helper '!f() { echo username=x-access-token; echo password=$GITHUB_TOKEN; }; f'
+          git fetch --no-tags --prune --depth=1 origin "+${GITHUB_REF}:refs/remotes/origin/status-branch"
+          git checkout -B "${GITHUB_REF_NAME}" refs/remotes/origin/status-branch
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+
+      - name: Reconcile exact status transition
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path("knowledge/17_V10_CURRENT_PROGRAM_STATUS.md")
+          text = path.read_text(encoding="utf-8")
+          new_state = "Omni-CIO V10: **DEVELOPMENT ACTIVE / BLOCK D COMPLETE / WP16–WP22 COMPLETE / WP22A CURRENT / PHASE 1 ACCEPTED / PHASE 2 ACCEPTED / PHASE 3 ACCEPTED / PHASE 4A ZERO-COST PREVIEW CURRENT**."
+          old_state = "Omni-CIO V10: **DEVELOPMENT ACTIVE / BLOCK D COMPLETE / WP16–WP22 COMPLETE / WP22A CURRENT / PHASE 1 ACCEPTED / PHASE 2 ACCEPTED / PHASE 3 AUTHORIZED**."
+
+          if new_state in text:
+              pass
+          elif old_state in text:
+              def replace_once(old: str, new: str, reason: str) -> None:
+                  global text
+                  count = text.count(old)
+                  if count != 1:
+                      raise SystemExit(f"{reason}: expected one anchor, found {count}")
+                  text = text.replace(old, new, 1)
+
+              replace_once(
+                  "Updated: 2026-08-19",
+                  "Updated: 2026-08-21",
+                  "STATUS_DATE_ANCHOR_INVALID",
+              )
+              replace_once(old_state, new_state, "EXECUTIVE_STATE_ANCHOR_INVALID")
+              replace_once(
+                  "Block A (5%), Block B (9%), Block C (12%) and Block D (14%) have passed their owning Exit Gates. Block E remains in progress: WP16–WP22 are accepted COMPLETE; **WP22A — External Web Access / Product Authentication Security Gate** is the only authorized current functional package and is not yet accepted complete. Block E receives no percentage credit until its own Exit Gate.",
+                  "Block A (5%), Block B (9%), Block C (12%) and Block D (14%) have passed their owning Exit Gates. Block E remains in progress: WP16–WP22 are accepted COMPLETE; WP22A Phases 1–3 are accepted; **WP22A Phase 4A — Render + Neon zero-cost synthetic preview** is the only authorized current focused implementation boundary. WP22A overall is not yet accepted complete, so Block E receives no percentage credit until its own Exit Gate.",
+                  "EXECUTIVE_SCOPE_ANCHOR_INVALID",
+              )
+
+              insertion_anchor = "## Latest accepted engineering baseline\n"
+              if text.count(insertion_anchor) != 1:
+                  raise SystemExit("LATEST_BASELINE_ANCHOR_INVALID")
+              accepted_section = """
+
+          ### WP22A Phase 3 — accepted
+
+          The five focused hosted-runtime/data/secret/recovery/edge increments are accepted on `main`. The final implementation increment PR #350 was squash-merged as `b4d1098d518613f6c10dfa74397a512c804b2928`; its mandatory post-merge Regression Shield #1514 / run `32435410881` completed SUCCESS with both required jobs GREEN. Temporary verifier PR #351 independently confirmed that exact-main evidence and was closed unmerged.
+
+          Acceptance-evidence consolidation PR #352 was then squash-merged as exact current baseline `fbd50b2aa5029170d9aabf178103e2e761648422`. Its post-merge Regression Shield and same-repository read-only verifier PR #353 completed successfully; PR #353 was closed unmerged and is not implementation authority.
+
+          Phase 3 therefore provides accepted source/test boundaries for dormant Cloud.ru IaC, PostgreSQL 18 least-privilege/FORCE-RLS runtime access, tenant-scoped encrypted secret references, tenant-preserving recovery, trusted hosted edge assumptions, sanitized readiness/incident evidence, zero-RUB-first capacity controls and exact-release rollback. Phase 3 did not create a public URL or authorize paid production resources.
+
+          ### WP22A Phase 4A — zero-cost synthetic preview current
+
+          The OWNER explicitly requested public deployment and supplied repository secrets named `NEON_API_KEY` and `RENDER_API_KEY`. This authorizes autonomous apply only for one free Render Docker Web Service plus one free Neon PostgreSQL 18 project used as a synthetic, shared, read-only preview.
+
+          The accepted final production-provider decision remains Cloud.ru Evolution. Render + Neon is an interim proof-of-product surface, not a production-provider replacement. Recurring-cost authority remains zero; paid plans and automatic paid overage are forbidden. Public registration, real Telegram/VK identity, private tenant data, real broker credentials, broker write, Real execution and WP23 remain disabled.
+          """
+              text = text.replace(
+                  insertion_anchor,
+                  insertion_anchor + accepted_section,
+                  1,
+              )
+
+              functional_pattern = re.compile(
+                  r"## Current functional development authority\n\nCurrent engineering authority is now:\n\n.*?OWNER action required now: \*\*NO\*\*\. Engineering may proceed autonomously through source design, code, tests, CI and recovery rehearsal that do not require provider credentials or privileged provider mutation\. Stop only at a genuinely non-delegable OWNER/provider/secret/admin/budget/legal/physical action\.",
+                  re.DOTALL,
+              )
+              replacement = """## Current functional development authority
+
+          Current engineering authority is now:
+
+          - **WP22A Phase 4A — Render + Neon zero-cost synthetic preview** is the only authorized current focused implementation boundary;
+          - start only from exact accepted `main` `fbd50b2aa5029170d9aabf178103e2e761648422` after its post-merge evidence is GREEN;
+          - build the existing `apps/web` React client and host it with a dedicated FastAPI preview factory;
+          - use PostgreSQL 18 in the free Neon Frankfurt region and one free Render Docker service in Frankfurt;
+          - provider mutation must execute only from accepted exact `main` through a reviewed workflow; PR workflows receive no provider secrets;
+          - preview data must remain synthetic/non-private and the Web API must reject all mutations and real broker credential submission;
+          - public HTTPS health must bind to the exact accepted-main release SHA before the preview URL is reported available;
+          - recurring-cost authority is 0; paid plan, paid overage and silent scale-up are forbidden;
+          - the Cloud.ru production-provider decision remains unchanged and final production apply stays separately gated;
+          - `PUBLIC_MULTI_USER_ENABLED=false`, protected V9 `app:app`, `trading_methods=false`, `REAL_TRADING_ENABLED=false` and the WP23 lock remain preserved.
+
+          OWNER action required now: **NO**. Engineering may proceed autonomously through reviewed source, CI, free-provider apply and public synthetic-preview verification. Stop only if Render/Neon credentials are invalid or insufficient, a provider requires payment/manual verification, multiple Render workspaces require OWNER selection, or another genuinely non-delegable provider/admin/budget/legal action appears."""
+              text, count = functional_pattern.subn(replacement, text, count=1)
+              if count != 1:
+                  raise SystemExit("CURRENT_AUTHORITY_BLOCK_INVALID")
+
+              replace_once(
+                  "- Block E / WP22A Phase 3 — **AUTHORIZED CURRENT INCREMENT**;",
+                  "- Block E / WP22A Phase 3 — **ACCEPTED**;\n- Block E / WP22A Phase 4A — **CURRENT — ZERO-COST SYNTHETIC PREVIEW APPLY**;",
+                  "ACCEPTED_STATE_PHASE3_ANCHOR_INVALID",
+              )
+              replace_once(
+                  "- Block E / WP22A overall — **CURRENT / NOT YET COMPLETE**;",
+                  "- Block E / WP22A overall — **CURRENT / PHASE 4A PREVIEW IN PROGRESS / NOT YET COMPLETE**;",
+                  "ACCEPTED_STATE_OVERALL_ANCHOR_INVALID",
+              )
+
+              next_pattern = re.compile(
+                  r"## Current next package — WP22A Phase 3 — Hosted runtime/data/secret/recovery implementation\n\n.*?\n## Canonical authority",
+                  re.DOTALL,
+              )
+              next_section = """## Current next package — WP22A Phase 4A — Render + Neon zero-cost synthetic preview
+
+          Phase-4A purpose is to publish a working V10 proof-of-product from accepted exact `main` without enabling normal multi-user registration or storing any real private/broker data.
+
+          Required Phase-4A outcome includes at minimum:
+
+          - preserve the existing `apps/web`, `apps/api`, deterministic `omni_cio` Core and protected V9 `app:app`;
+          - reproducibly build the React/Vite Web client and dedicated hosted FastAPI preview runtime;
+          - create/reuse only the exact free Render and Neon resources declared by the reviewed contract;
+          - require PostgreSQL 18, TLS, committed migrations and exact-main release identity;
+          - expose a provider-generated public HTTPS URL only after `/healthz` proves the exact deployed SHA and database connectivity;
+          - issue only a shared synthetic server-side preview session;
+          - reject all non-safe Web API methods and forbid real broker credentials/private tenant payloads;
+          - keep registration, public multi-user activation, broker write, Real execution and WP23 disabled;
+          - keep recurring-cost authority at 0 and fail if either provider requires payment or paid overage;
+          - retain rollback to the last exact release whose public health passed.
+
+          Phase 4A does not accept the final Cloud.ru production topology, normal USER identity/session flows, real tenant-private state, broker integration or public-product availability. Those remain separate later WP22A acceptance gates.
+
+          ## Canonical authority"""
+              text, count = next_pattern.subn(next_section, text, count=1)
+              if count != 1:
+                  raise SystemExit("CURRENT_NEXT_PACKAGE_BLOCK_INVALID")
+
+              replace_once(
+                  "| E. Omni-CIO Web Platform | 14% | IN PROGRESS — WP16–WP22 COMPLETE; WP22A Phase 1 ACCEPTED; Phase 2 ACCEPTED; Phase 3 CURRENT |",
+                  "| E. Omni-CIO Web Platform | 14% | IN PROGRESS — WP16–WP22 COMPLETE; WP22A Phases 1–3 ACCEPTED; Phase 4A ZERO-COST PREVIEW CURRENT |",
+                  "PROGRESS_TABLE_ANCHOR_INVALID",
+              )
+          else:
+              raise SystemExit("STATUS_STATE_UNKNOWN")
+
+          if new_state not in text:
+              raise SystemExit("STATUS_TRANSITION_NOT_APPLIED")
+          path.write_text(text, encoding="utf-8")
+          PY
+          rm -f .github/workflows/v10-temp-phase4-status-reconcile.yml
+          grep -F "PHASE 3 ACCEPTED / PHASE 4A ZERO-COST PREVIEW CURRENT" knowledge/17_V10_CURRENT_PROGRAM_STATUS.md
+          grep -F "WP22A Phase 4A — zero-cost synthetic preview current" knowledge/17_V10_CURRENT_PROGRAM_STATUS.md
+          test ! -e .github/workflows/v10-temp-phase4-status-reconcile.yml
+
+      - name: Commit reconciliation and remove temporary workflow
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git config user.name "Omni-CIO Status Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add -- knowledge/17_V10_CURRENT_PROGRAM_STATUS.md
+          git add -u -- .github/workflows/v10-temp-phase4-status-reconcile.yml
+          git diff --cached --check
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "WP22A: reconcile Phase 4A program status"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
