@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import Any
 import json
 from pathlib import Path
 
@@ -20,7 +21,7 @@ AUTHORIZATION = (
 )
 
 
-def _contract() -> dict[str, object]:
+def _contract() -> dict[str, Any]:
     return json.loads(CONTRACT.read_text(encoding="utf-8"))
 
 
