@@ -102,15 +102,19 @@ jobs:
           --expected-sha "$EXPECTED_MAIN_SHA"
 
       - name: Publish safe deployment summary
+        env:
+          PREVIEW_URL: ${{ steps.provision.outputs.preview_url }}
+          RENDER_SERVICE_ID: ${{ steps.provision.outputs.render_service_id }}
+          NEON_PROJECT_ID: ${{ steps.provision.outputs.neon_project_id }}
         run: |
           {
-            echo "### Phase 4 deployment boundary"
-            echo "- exact accepted main: $EXPECTED_MAIN_SHA"
-            echo "- preview URL: ${{ steps.provision.outputs.preview_url }}"
-            echo "- Render service id: ${{ steps.provision.outputs.render_service_id }}"
-            echo "- Neon project id: ${{ steps.provision.outputs.neon_project_id }}"
-            echo "- paid resources: forbidden"
-            echo "- real registration/private data/broker credentials: disabled"
+            printf '%s\n' "### Phase 4 deployment boundary"
+            printf '%s\n' "- exact accepted main: ${EXPECTED_MAIN_SHA}"
+            printf '%s\n' "- preview URL: ${PREVIEW_URL}"
+            printf '%s\n' "- Render service id: ${RENDER_SERVICE_ID}"
+            printf '%s\n' "- Neon project id: ${NEON_PROJECT_ID}"
+            printf '%s\n' "- paid resources: forbidden"
+            printf '%s\n' "- real registration/private data/broker credentials: disabled"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Clean self-hosted deployment workspace
