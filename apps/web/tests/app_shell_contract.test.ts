@@ -17,6 +17,10 @@ const expectedRoutes = [
   "/system",
   "/settings",
 ];
+const forbiddenStorageIdentifiers = [
+  ["local", "Storage"].join(""),
+  ["session", "Storage"].join(""),
+];
 
 test("WP17 exposes the exact Master Plan navigation routes", () => {
   assert.deepEqual(appRoutes.map((route) => route.path), expectedRoutes);
@@ -64,10 +68,6 @@ test("browser code cannot persist credentials in Web Storage", () => {
   const api = readFileSync(new URL("../src/app-shell/api.ts", import.meta.url), "utf8");
   const shell = readFileSync(new URL("../src/app-shell/app-shell.tsx", import.meta.url), "utf8");
   const combined = `${api}\n${shell}`;
-  const forbiddenStorageIdentifiers = [
-    ["local", "Storage"].join(""),
-    ["session", "Storage"].join(""),
-  ];
   for (const identifier of forbiddenStorageIdentifiers) {
     assert.equal(combined.includes(identifier), false);
   }
@@ -79,7 +79,9 @@ test("hosted preview keeps CSRF cookie HttpOnly and the browser token in memory"
   assert.match(api, /let remoteCsrfToken: string \| null = null/);
   assert.match(api, /response\.headers\.get\(REMOTE_CSRF_HEADER\)/);
   assert.match(api, /remoteCsrfToken \?\? readCookie\(REMOTE_CSRF_COOKIE\)/);
-  assert.doesNotMatch(api, /localStorage|sessionStorage/);
+  for (const identifier of forbiddenStorageIdentifiers) {
+    assert.equal(api.includes(identifier), false);
+  }
 });
 
 test("WP15 private live values are cleared when the browser challenge expires", () => {
