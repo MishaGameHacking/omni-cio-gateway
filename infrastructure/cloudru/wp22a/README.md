@@ -1,14 +1,18 @@
-# WP22A Phase 3 — Cloud.ru Evolution dormant IaC boundary
+# WP22A Phase 3 — Cloud.ru Evolution dormant hosted boundary
 
-This directory is the source-only hosted-runtime/IaC boundary authorized by WP22A Phase 3.
+This directory is the source-only hosted runtime, data, recovery and readiness
+boundary authorized by WP22A Phase 3.
 
-It intentionally **does not** create, modify, discover, or destroy Cloud.ru resources. It carries no provider credentials, project IDs, tenant data, broker credentials, DNS names, public IPs, TLS material, recovery keys, or Terraform state.
+It intentionally **does not** create, modify, discover or destroy Cloud.ru
+resources. It carries no provider credentials, project IDs, tenant data, broker
+credentials, DNS names, public IPs, TLS material, recovery keys or Terraform
+state.
 
 ## Current authority
 
 - accepted provider boundary: Cloud.ru Evolution;
 - `provider_apply_authorized = false`;
-- `public_ingress_enabled = false`;
+- public ingress remains off;
 - `authorized_recurring_rub = 0`;
 - `PUBLIC_MULTI_USER_ENABLED=false`;
 - protected V9 `app:app` remains unchanged;
@@ -16,18 +20,40 @@ It intentionally **does not** create, modify, discover, or destroy Cloud.ru reso
 - `REAL_TRADING_ENABLED=false`;
 - WP23+ remains locked.
 
-Any later provider apply requires a separately reviewed Phase-4 privileged path from accepted `main`, the required OWNER/provider authorization, current pricing/capacity validation, and explicit secret injection outside GitHub source/CI artifacts.
+Any later provider apply requires a separately reviewed Phase-4 privileged path
+from accepted `main`, the required OWNER/provider authorization, current
+pricing/capacity validation and explicit secret injection outside GitHub source
+and CI artifacts.
 
-## What this increment proves
+## Source-controlled boundaries
 
-The Terraform root is deliberately dormant. It pins the official Cloud.ru Evolution provider family in source and exposes only fail-closed safety variables/checks. There are no `resource` or `data` blocks and no `provider` block requiring credentials in this increment.
+The Phase-3 directory now contains focused machine-readable contracts for:
 
-The deterministic Python contract test verifies that:
+- dormant Cloud.ru Terraform safety and provider-family pinning;
+- hosted runtime roles, tenant-private state and encrypted secret custody;
+- provider-managed PostgreSQL runtime-user privileges and FORCE RLS;
+- portable logical backup, integrity, atomic publication and replacement restore;
+- hosted edge trust, health-domain classification, sanitized evidence,
+  capacity/cost controls and release rollback readiness.
+
+The corresponding Python validators and deterministic tests fail closed on drift
+without requiring provider credentials or privileged mutation.
+
+## Dormant IaC
+
+The Terraform root remains deliberately dormant. It pins the official Cloud.ru
+Evolution provider family in source and exposes only fail-closed safety
+variables/checks. There are no resource or data blocks and no provider block
+requiring credentials in Phase 3.
+
+The deterministic contract tests verify that:
 
 1. the official provider source is declared;
-2. all mutation/public/cost gates default fail-closed;
-3. the hard Phase-3 product locks remain recorded;
-4. no Terraform resources/data sources or obvious credential/value fields are present;
+2. mutation, public-ingress and cost gates default fail closed;
+3. hard product locks remain recorded;
+4. no Terraform resources, data sources or credential-shaped values are present;
 5. local Terraform state and tfvars remain globally ignored.
 
-This is the first focused Phase-3 source increment, not Phase-3 acceptance by itself. Hosted runtime, private PostgreSQL, encrypted tenant-secret custody, backup/restore, replacement-runtime recovery, rollback, edge trust and observability are added as later focused source increments under the same Phase-3 authority before any provider apply.
+These declarations are source evidence only and are not Phase-3 acceptance by itself.
+Public preview or production deployment begins only through a later accepted-main
+protected apply boundary.
