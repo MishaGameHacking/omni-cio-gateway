@@ -10,9 +10,6 @@ on:
       - main
   workflow_dispatch:
 
-permissions:
-  contents: read
-
 concurrency:
   group: v10-phase4-free-preview-deploy
   cancel-in-progress: false
@@ -20,6 +17,8 @@ concurrency:
 jobs:
   deploy-free-preview:
     name: Deploy exact accepted main to Render and Neon free preview
+    permissions:
+      contents: read
     if: >-
       (github.event_name == 'workflow_run' &&
        github.event.workflow_run.conclusion == 'success' &&

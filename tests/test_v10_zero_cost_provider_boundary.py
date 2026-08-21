@@ -177,3 +177,10 @@ def test_deployment_workflow_requires_fresh_attestation_and_test_toolchain() -> 
     assert "requirements-dev.txt windows-requirements-dev.txt" in workflow
     assert "--require-hashes -r windows-requirements-dev.txt" in workflow
     assert "import fastapi, psycopg, pytest" in workflow
+    assert "\npermissions:\n  contents: read\n" not in workflow
+    assert (
+        "  deploy-free-preview:\n"
+        "    name: Deploy exact accepted main to Render and Neon free preview\n"
+        "    permissions:\n"
+        "      contents: read\n"
+    ) in workflow
