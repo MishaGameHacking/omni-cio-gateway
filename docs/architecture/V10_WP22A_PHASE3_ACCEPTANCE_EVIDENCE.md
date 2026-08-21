@@ -1,11 +1,11 @@
 # Omni-CIO V10 — WP22A Phase 3 Acceptance Evidence
 
-Status: **EVIDENCE RECORD ONLY / DOES NOT BY ITSELF AUTHORIZE PHASE 4 PROVIDER APPLY**  
+Status: **COMPLETE EVIDENCE RECORD / CANONICAL PHASE-STATUS TRANSITION STILL REQUIRED / DOES NOT AUTHORIZE PHASE 4 PROVIDER APPLY**  
 Owning package: **WP22A — External Web Access / Product Authentication Security Gate**
 
 ## Purpose
 
-This record consolidates the exact accepted-main evidence for the five focused WP22A Phase-3 source increments. It does not weaken or bypass `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`, `V10_WP22A_EXECUTION_CONTRACT.md`, exact-head all-GREEN governance, provider authorization, cost controls, public-ingress locks, broker/legal gates, or the WP23 lock.
+This record consolidates the exact accepted-main evidence for the five focused WP22A Phase-3 source increments and the final evidence-consolidation merge. It does not weaken or bypass `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`, `V10_WP22A_EXECUTION_CONTRACT.md`, exact-head all-GREEN governance, provider authorization, cost controls, public-ingress locks, broker/legal gates, or the WP23 lock.
 
 ## Phase-3 implementation chain
 
@@ -13,9 +13,10 @@ This record consolidates the exact accepted-main evidence for the five focused W
 2. PR #343 — hosted runtime and tenant READ-secret custody contract — squash-merged as `5c17fa329acc294c52db9d09169e0fe63b815733` after Regression Shield #1510 / run `32328163879` SUCCESS.
 3. PR #345 — hosted PostgreSQL least-privilege runtime-user / effective-ACL / FORCE-RLS boundary — squash-merged as `9ba45a6040365599bcfdebbbec90938e1deaa5e5`.
 4. PR #347 — tenant-preserving hosted recovery integrity boundary — squash-merged as `912e3eee44f73d15d9a81186515957c1f3d6cbb8` after Regression Shield #1512 / run `32359671871` SUCCESS.
-5. PR #350 — hosted edge trust, readiness, observability, capacity/cost and release/rollback boundary — squash-merged as exact current `main` `b4d1098d518613f6c10dfa74397a512c804b2928` after accepted base Regression Shield #1513 / run `32418768717` SUCCESS.
+5. PR #350 — hosted edge trust, readiness, observability, capacity/cost and release/rollback boundary — squash-merged as `b4d1098d518613f6c10dfa74397a512c804b2928` after accepted base Regression Shield #1513 / run `32418768717` SUCCESS.
+6. PR #352 — Phase-3 acceptance-evidence consolidation — squash-merged as exact accepted `main` `fbd50b2aa5029170d9aabf178103e2e761648422` after the Phase-3 source chain and Regression Shield #1514 were verified.
 
-## Exact-main post-merge evidence for final Phase-3 increment
+## Exact-main post-merge evidence for final Phase-3 source increment
 
 The mandatory Regression Shield triggered by PR #350's squash merge completed on exact `main` `b4d1098d518613f6c10dfa74397a512c804b2928`:
 
@@ -27,6 +28,25 @@ The mandatory Regression Shield triggered by PR #350's squash merge completed on
 - `Dependency, code and secret security`: **success**.
 
 Independent same-repository verification was performed by temporary PR #351 using read-only `actions: read` authority on the Lenovo `omni-cio-ci` runner. Verification workflow run `32435882105`, job `96636882616`, completed **success** and emitted the exact Regression Shield run/head and both required successful job conclusions. PR #351 was then closed unmerged, preserving the accepted source tree.
+
+## Exact-main post-merge evidence for Phase-3 evidence consolidation
+
+PR #352 was squash-merged to exact accepted `main`:
+
+`fbd50b2aa5029170d9aabf178103e2e761648422`
+
+The mandatory post-merge Regression Shield for that exact main completed successfully:
+
+- Regression Shield run number: **#1515**;
+- workflow run ID: `32445484371`;
+- head SHA: `fbd50b2aa5029170d9aabf178103e2e761648422`;
+- workflow conclusion: **success**;
+- `Quality, contracts and coverage`: **success**;
+- `Dependency, code and secret security`: **success**.
+
+Independent same-repository verification was performed by temporary PR #353 using read-only `actions: read` authority on the Lenovo `omni-cio-ci` runner. Verification workflow run `32449260734`, job `96674484815`, completed **success** and emitted the exact Regression Shield run/head plus both required successful job conclusions. PR #353 was then closed unmerged after evidence capture.
+
+No RED, skipped, queued, pending or neutral result is represented as acceptance evidence above.
 
 ## Phase-3 acceptance-surface mapping
 
@@ -64,4 +84,8 @@ The required invariants remain:
 
 ## Transition rule
 
-Phase 4 remains locked until the canonical program-status transition accepts Phase 3 under the governing documentation chain. Even after that source transition, privileged Cloud.ru bootstrap/apply requires the separately required OWNER/provider authorization and must execute only through an accepted-main reviewed privileged boundary. This evidence file is not that authorization.
+Phase-3 acceptance evidence is now complete through exact accepted main `fbd50b2aa5029170d9aabf178103e2e761648422` plus Regression Shield #1515 with both mandatory jobs SUCCESS.
+
+The canonical program-status transition must still explicitly accept Phase 3 under the governing documentation chain before Phase 4 can be considered for authorization. Even after that source transition, privileged Cloud.ru bootstrap/apply remains separately locked behind the required OWNER/provider authorization and must execute only through an accepted-main reviewed privileged boundary.
+
+This evidence file is not provider authorization, spend authorization, public-ingress authorization, broker authorization, or WP23 authority.
