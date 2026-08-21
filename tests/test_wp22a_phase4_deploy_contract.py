@@ -186,6 +186,70 @@ def test_existing_neon_project_lookup_is_explicitly_org_scoped() -> None:
     assert len(api.paths) == 1
 
 
+
+def test_wrong_region_legacy_neon_project_is_preserved() -> None:
+    module = _module()
+    assert module.NEON_PROJECT_NAME == "omni-cio-v10-preview-frankfurt"
+    assert module.LEGACY_NEON_PROJECT_NAME == "omni-cio-v10-preview"
+
+    class Api:
+        def __init__(self) -> None:
+            self.methods: list[str] = []
+
+        def request(
+            self,
+            method: str,
+            path: str,
+            *,
+            body: object | None = None,
+            expected: frozenset[int] = frozenset({200}),
+        ) -> dict[str, object]:
+            self.methods.append(method)
+            if method == "GET" and path.startswith("/projects?"):
+                query = parse_qs(urlsplit(path).query)
+                assert query["search"] == [module.NEON_PROJECT_NAME]
+                return {
+                    "projects": [
+                        {
+                            "id": "project-legacy-preview",
+                            "name": module.LEGACY_NEON_PROJECT_NAME,
+                            "org_id": "org-free-preview",
+                            "pg_version": 18,
+                            "region_id": "aws-us-east-1",
+                        }
+                    ]
+                }
+            if method == "GET" and path.startswith("/regions?"):
+                return {"regions": [{"id": module.NEON_REGION}]}
+            assert method == "POST"
+            assert path == "/projects"
+            assert expected == frozenset({201})
+            assert body == {
+                "project": {
+                    "name": module.NEON_PROJECT_NAME,
+                    "region_id": module.NEON_REGION,
+                    "pg_version": 18,
+                    "org_id": "org-free-preview",
+                }
+            }
+            return {
+                "project": {
+                    "id": "project-frankfurt-preview",
+                    "name": module.NEON_PROJECT_NAME,
+                    "org_id": "org-free-preview",
+                    "pg_version": 18,
+                    "region_id": module.NEON_REGION,
+                },
+                "operations": [],
+            }
+
+    api = Api()
+    project = module._ensure_neon_project(api, "org-free-preview")
+
+    assert project["id"] == "project-frankfurt-preview"
+    assert api.methods == ["GET", "GET", "POST"]
+
+
 def test_neon_create_and_region_paths_are_org_scoped() -> None:
     source = SCRIPT.read_text(encoding="utf-8")
 
