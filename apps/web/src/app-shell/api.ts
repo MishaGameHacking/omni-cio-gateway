@@ -3,6 +3,7 @@ import type {
   BrokerProvisioningPreviewView,
   HealthView,
   PortfolioDashboardView,
+  PreviewModeView,
   PrivateAcceptanceStatusView,
   ProviderView,
   WebSessionView,
@@ -60,12 +61,24 @@ export function readPrivateAcceptanceStatus(): Promise<PrivateAcceptanceStatusVi
   return requestJson<PrivateAcceptanceStatusView>("/api/v10/web/private-test-login/status");
 }
 
+export function readPreviewMode(): Promise<PreviewModeView> {
+  return requestJson<PreviewModeView>("/api/v10/web/preview-mode");
+}
+
 export function readPrivateRemoteStatus(): Promise<{ enabled: boolean }> {
   return requestJson<{ enabled: boolean }>("/api/v10/web/private-external-login/status");
 }
 
 export async function privateRemoteLogin(): Promise<void> {
   await requestJson<{ ok: true }>("/api/v10/web/private-external-login", {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: "{}",
+  });
+}
+
+export async function previewLogin(): Promise<void> {
+  await requestJson<{ ok: true }>("/api/v10/web/preview-login", {
     method: "POST",
     headers: JSON_HEADERS,
     body: "{}",

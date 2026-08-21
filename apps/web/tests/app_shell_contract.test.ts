@@ -43,6 +43,16 @@ test("WP22A historical private edge API is dormant and not a product login", () 
   assert.match(shell, /Локальный OWNER acceptance виден только на loopback и не является третьим login provider/);
 });
 
+test("Phase 4 preview is explicit synthetic mode without broker authority", () => {
+  const api = readFileSync(new URL("../src/app-shell/api.ts", import.meta.url), "utf8");
+  const shell = readFileSync(new URL("../src/app-shell/app-shell.tsx", import.meta.url), "utf8");
+  assert.match(api, /\/api\/v10\/web\/preview-mode/);
+  assert.match(api, /\/api\/v10\/web\/preview-login/);
+  assert.match(shell, /Безопасная публичная демонстрация|previewMode\.label/);
+  assert.match(shell, /real registration, broker credentials and private portfolio data are disabled/);
+  assert.match(shell, /Не вводи реальные токены на этом стенде/);
+});
+
 test("logout UI never claims revocation when the server request fails", () => {
   const shell = readFileSync(new URL("../src/app-shell/app-shell.tsx", import.meta.url), "utf8");
   assert.doesNotMatch(shell, /logoutCurrentSession\(\)\.finally/);

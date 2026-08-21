@@ -1,203 +1,260 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Button, StatusBadge } from "../design-system/components";
+import { useEffect, useState } from "react";
+import { Button, StatePanel, StatusBadge } from "../design-system/components";
 import type { OperationalState } from "../design-system/contracts";
 import {
   logoutCurrentSession,
+  previewLogin,
   privateTestLogin,
   providerLoginUrl,
   readHealth,
+  readPreviewMode,
   readPrivateAcceptanceStatus,
   readProviders,
   readSession,
 } from "./api";
-import { appRoutes, isKnownRoute, type AppRoutePath, type HealthView, type ProviderView, type WebSessionView } from "./contracts";
-import { DecisionPlanPage } from "./decision-plan";
+import type {
+  AppRoutePath,
+  PreviewModeView,
+  ProviderView,
+  WebSessionView,
+} from "./contracts";
+import { appRoutes, isKnownRoute } from "./contracts";
 import { RoutePage } from "./pages";
-import { PortfolioDashboardPage } from "./portfolio-dashboard";
-import { ResearchDossiersPage } from "./research-dossiers";
-import { SystemAdminPage } from "./system-admin";
-import { WatchtowerIncidentsPage } from "./watchtower-incidents";
 
-function currentPath(): AppRoutePath {
-  const path = window.location.pathname;
-  return isKnownRoute(path) ? path : "/";
+function navigate(path: AppRoutePath) {
+  if (window.location.pathname !== path) window.history.pushState({}, "", path);
+  window.dispatchEvent(new PopStateEvent("popstate"));
 }
 
-function healthToOperational(value: HealthView["state"]): OperationalState {
-  if (value === "READY" || value === "PARTIAL" || value === "STALE" || value === "DEGRADED" || value === "OFFLINE") return value;
-  return "DEGRADED";
+function useRoute(): AppRoutePath {
+  const initial = isKnownRoute(window.location.pathname) ? window.location.pathname : "/";
+  const [route, setRoute] = useState<AppRoutePath>(initial);
+  useEffect(() => {
+    const onPopState = () => setRoute(isKnownRoute(window.location.pathname) ? window.location.pathname : "/");
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+  return route;
+}
+
+function ProviderButton({ provider }: { provider: ProviderView }) {
+  const label = provider.provider === "telegram" ? "Продолжить через Telegram" : "Продолжить через VK ID";
+  if (!provider.enabled) {
+    return (
+      <Button variant="secondary" disabled aria-describedby={`${provider.provider}-reason`}>
+        {label}
+        <span id={`${provider.provider}-reason`} className="sr-only">
+          {provider.reason ?? "Provider not configured"}
+        </span>
+      </Button>
+    );
+  }
+  return <a className="ds-button" href={providerLoginUrl(provider.provider)}>{label}</a>;
 }
 
 function LoginScreen({
   providers,
-  apiUnavailable,
+  previewMode,
   privateAcceptanceEnabled,
-  onPrivateAcceptance,
+  onPreviewLogin,
+  onPrivateLogin,
+  busy,
 }: {
   providers: ProviderView[];
-  apiUnavailable: boolean;
+  previewMode: PreviewModeView | null;
   privateAcceptanceEnabled: boolean;
-  onPrivateAcceptance: () => void;
+  onPreviewLogin: () => void;
+  onPrivateLogin: () => void;
+  busy: boolean;
 }) {
-  const provider = (name: "telegram" | "vk_id") => providers.find((item) => item.provider === name);
-  const telegram = provider("telegram");
-  const vk = provider("vk_id");
   return (
-    <main className="login-shell" role="main">
-      <section className="login-card" aria-labelledby="login-title">
+    <main className="login-layout">
+      <section className="login-panel" aria-labelledby="login-title">
         <p className="shell-eyebrow">OMNI-CIO V10</p>
-        <h1 id="login-title">Вход в личный аккаунт</h1>
-        <p className="shell-muted">Обычный вход — только через Telegram или VK ID. Локального пароля Omni-CIO нет.</p>
-        {apiUnavailable ? <div className="login-warning" role="alert">Authentication API недоступен. Доступ к приватным разделам закрыт.</div> : null}
+        <h1 id="login-title">Инвестиционные решения с проверяемой логикой</h1>
+        <p>
+          Серверная сессия, tenant isolation и READ-only broker boundary. Пароли и токены не сохраняются в браузере.
+        </p>
+        {previewMode?.enabled ? (
+          <div className="shell-stack">
+            <Button disabled={busy} onClick={onPreviewLogin}>
+              {busy ? "Открываем…" : previewMode.label}
+            </Button>
+            <p className="shell-caption">
+              Синтетический публичный preview: реальные пользователи, broker-токены и приватные портфели отключены.
+            </p>
+          </div>
+        ) : null}
         <div className="login-actions">
-          <a className="ds-button ds-button--primary" aria-disabled={!telegram?.enabled} href={telegram?.enabled ? providerLoginUrl("telegram") : undefined}>Продолжить через Telegram</a>
-          <a className="ds-button ds-button--secondary" aria-disabled={!vk?.enabled} href={vk?.enabled ? providerLoginUrl("vk_id") : undefined}>Продолжить через VK ID</a>
+          {providers.map((provider) => <ProviderButton provider={provider} key={provider.provider} />)}
           {privateAcceptanceEnabled ? (
-            <Button variant="secondary" onClick={onPrivateAcceptance}>Локальный OWNER acceptance</Button>
+            <Button disabled={busy} onClick={onPrivateLogin}>
+              {busy ? "Вход…" : "Локальный OWNER acceptance"}
+            </Button>
           ) : null}
         </div>
-        <p className="shell-caption">Provider buttons остаются fail-closed до reviewed provider configuration.</p>
-        {privateAcceptanceEnabled ? <p className="shell-caption">Локальный OWNER acceptance виден только на loopback и не является третьим login provider.</p> : null}
+        <p className="shell-caption">
+          Локальный OWNER acceptance виден только на loopback и не является третьим login provider.
+        </p>
+        {!previewMode?.enabled && providers.every((provider) => !provider.enabled) ? (
+          <StatePanel kind="warning" title="Вход пока не настроен">
+            Telegram Login и VK ID остаются fail-closed до появления проверенных credentials.
+          </StatePanel>
+        ) : null}
       </section>
     </main>
   );
 }
 
 export function ApplicationShell() {
+  const route = useRoute();
   const [session, setSession] = useState<WebSessionView | null>(null);
   const [providers, setProviders] = useState<ProviderView[]>([]);
+  const [previewMode, setPreviewMode] = useState<PreviewModeView | null>(null);
   const [privateAcceptanceEnabled, setPrivateAcceptanceEnabled] = useState(false);
-  const [sessionUnavailable, setSessionUnavailable] = useState(false);
-  const [path, setPath] = useState<AppRoutePath>(currentPath);
-  const [health, setHealth] = useState<HealthView | null>(null);
-  const [healthUnavailable, setHealthUnavailable] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [healthState, setHealthState] = useState<OperationalState>("OFFLINE");
+  const [freshness, setFreshness] = useState("UNKNOWN");
+  const [loading, setLoading] = useState(true);
+  const [unavailable, setUnavailable] = useState(false);
+  const [authenticating, setAuthenticating] = useState(false);
+  const [logoutError, setLogoutError] = useState<string | null>(null);
 
-  const refreshSession = useCallback(async () => {
-    try {
-      const value = await readSession();
-      setSession(value);
-      setSessionUnavailable(false);
-    } catch {
-      setSession({ authenticated: false });
-      setSessionUnavailable(true);
+  async function initialize() {
+    setLoading(true);
+    const [sessionResult, providerResult, privateResult, previewResult] = await Promise.allSettled([
+      readSession(),
+      readProviders(),
+      readPrivateAcceptanceStatus(),
+      readPreviewMode(),
+    ]);
+    if (providerResult.status === "fulfilled") setProviders(providerResult.value);
+    if (privateResult.status === "fulfilled") setPrivateAcceptanceEnabled(privateResult.value.enabled);
+    if (previewResult.status === "fulfilled") setPreviewMode(previewResult.value);
+    if (sessionResult.status === "rejected") {
+      setUnavailable(true);
+      setSession(null);
+      setHealthState("OFFLINE");
+      setFreshness("UNKNOWN");
+      setLoading(false);
+      return;
     }
-  }, []);
-
-  useEffect(() => {
-    void refreshSession();
-    void readProviders().then(setProviders).catch(() => setProviders([]));
-    void readPrivateAcceptanceStatus()
-      .then((value) => setPrivateAcceptanceEnabled(value.enabled))
-      .catch(() => setPrivateAcceptanceEnabled(false));
-  }, [refreshSession]);
-
-  useEffect(() => {
-    if (!session?.authenticated) return;
-    void readHealth()
-      .then((value) => {
-        setHealth(value);
-        setHealthUnavailable(false);
-      })
-      .catch(() => {
-        setHealth(null);
-        setHealthUnavailable(true);
-      });
-  }, [session?.authenticated]);
-
-  useEffect(() => {
-    const onPopState = () => setPath(currentPath());
-    window.addEventListener("popstate", onPopState);
-    return () => window.removeEventListener("popstate", onPopState);
-  }, []);
-
-  const navigate = useCallback((nextPath: AppRoutePath) => {
-    if (nextPath !== window.location.pathname) window.history.pushState({}, "", nextPath);
-    setPath(nextPath);
-    setMenuOpen(false);
-    window.scrollTo({ top: 0, behavior: "instant" });
-  }, []);
-
-  const healthState = useMemo<OperationalState>(() => {
-    if (healthUnavailable) return "DEGRADED";
-    return health ? healthToOperational(health.state) : "RECOVERING";
-  }, [health, healthUnavailable]);
-
-  if (session === null) {
-    return <main className="shell-loading" role="main"><span role="status">Проверка server-side session…</span></main>;
+    setUnavailable(false);
+    setSession(sessionResult.value);
+    if (sessionResult.value.authenticated) {
+      try {
+        const health = await readHealth();
+        setHealthState(health.state);
+        setFreshness(health.freshness);
+      } catch {
+        setHealthState("OFFLINE");
+        setFreshness("UNKNOWN");
+      }
+    }
+    setLoading(false);
   }
-  if (!session.authenticated) {
+
+  useEffect(() => { void initialize(); }, []);
+
+  async function authenticatePreview() {
+    setAuthenticating(true);
+    try {
+      await previewLogin();
+      await initialize();
+    } catch {
+      setUnavailable(true);
+    } finally {
+      setAuthenticating(false);
+    }
+  }
+
+  async function authenticatePrivately() {
+    setAuthenticating(true);
+    try {
+      await privateTestLogin();
+      await initialize();
+    } catch {
+      setUnavailable(true);
+    } finally {
+      setAuthenticating(false);
+    }
+  }
+
+  function logout() {
+    setLogoutError(null);
+    void logoutCurrentSession()
+      .then(() => initialize())
+      .catch(() => {
+        setLogoutError("Выход не подтверждён сервером. Текущая сессия остаётся активной.");
+      });
+  }
+
+  if (loading) return <main className="login-layout"><p role="status">Загрузка Omni-CIO…</p></main>;
+  if (unavailable) {
+    return (
+      <main className="login-layout">
+        <StatePanel kind="error" title="Web API недоступен">
+          Fail-closed: интерфейс не показывает фиктивный успешный статус. Проверь локальный runtime и PostgreSQL.
+        </StatePanel>
+      </main>
+    );
+  }
+  if (!session?.authenticated) {
     return (
       <LoginScreen
         providers={providers}
-        apiUnavailable={sessionUnavailable}
+        previewMode={previewMode}
         privateAcceptanceEnabled={privateAcceptanceEnabled}
-        onPrivateAcceptance={() => {
-          void privateTestLogin()
-            .then(refreshSession)
-            .catch(() => setSessionUnavailable(true));
-        }}
+        onPreviewLogin={() => void authenticatePreview()}
+        onPrivateLogin={() => void authenticatePrivately()}
+        busy={authenticating}
       />
     );
   }
 
   return (
     <div className="app-shell">
-      <header className="shell-topbar">
-        <div className="shell-brand"><span className="shell-brand__mark" aria-hidden="true">O</span><span>OMNI-CIO</span></div>
-        <div className="shell-topbar__status" aria-label="Глобальное состояние">
-          <StatusBadge state={healthState} />
-          <span className="shell-freshness">{health?.freshness ?? "UNKNOWN"}</span>
+      <aside className="app-sidebar" aria-label="Основная навигация">
+        <div className="app-brand">
+          <strong>OMNI-CIO</strong>
+          <span>V10 · READ ONLY</span>
         </div>
-        <button className="shell-menu-button" type="button" aria-expanded={menuOpen} aria-controls="primary-navigation" onClick={() => setMenuOpen((value) => !value)}>Меню</button>
-      </header>
-      <aside className={`shell-sidebar${menuOpen ? " shell-sidebar--open" : ""}`}>
-        <nav id="primary-navigation" aria-label="Основная навигация">
-          <ul className="shell-nav">
-            {appRoutes.map((route) => (
-              <li key={route.path}><button type="button" className="shell-nav__item" aria-current={path === route.path ? "page" : undefined} onClick={() => navigate(route.path)}>{route.label}</button></li>
-            ))}
-          </ul>
+        <nav>
+          {appRoutes.map((item) => (
+            <a
+              aria-current={route === item.path ? "page" : undefined}
+              href={item.path}
+              key={item.path}
+              onClick={(event) => { event.preventDefault(); navigate(item.path); }}
+            >
+              {item.label}
+            </a>
+          ))}
         </nav>
-        <div className="shell-account">
-          <span>USER</span>
-          <Button
-            variant="secondary"
-            onClick={() => {
-              void logoutCurrentSession()
-                .then(() => {
-                  setSession({ authenticated: false });
-                  setSessionUnavailable(false);
-                })
-                .catch(() => setSessionUnavailable(true));
-            }}
-          >
-            Выйти
-          </Button>
-        </div>
       </aside>
-      <main className="shell-content" id="main-content">
-        {sessionUnavailable ? <div className="shell-degraded" role="alert">Выход не подтверждён сервером. Текущая сессия остаётся активной.</div> : null}
-        {healthUnavailable ? <div className="shell-degraded" role="status">Downstream API недоступен — shell работает в DEGRADED режиме.</div> : null}
-        {path === "/portfolio" || path === "/assets" ? (
-          <PortfolioDashboardPage assetsMode={path === "/assets"} />
-        ) : path === "/watchtower" ? (
-          <WatchtowerIncidentsPage />
-        ) : path === "/research" ? (
-          <ResearchDossiersPage />
-        ) : path === "/risks" || path === "/decisions" || path === "/plans" ? (
-          <DecisionPlanPage focus={path === "/risks" ? "risks" : path === "/decisions" ? "decisions" : "plans"} />
-        ) : path === "/system" ? (
-          <SystemAdminPage healthState={healthState} freshness={health?.freshness ?? "UNKNOWN"} />
-        ) : (
-          <RoutePage
-            path={path}
-            healthState={healthState}
-            freshness={health?.freshness ?? "UNKNOWN"}
-            onSessionsRevoked={() => setSession({ authenticated: false })}
-          />
-        )}
-      </main>
+      <div className="app-workspace">
+        <header className="app-topbar">
+          <div>
+            <strong>{session.user_label ?? "USER"}</strong>
+            <span>{session.tenant_label ?? "TENANT"}</span>
+          </div>
+          <div className="app-topbar__state">
+            <StatusBadge state={healthState} />
+            <span>Freshness: {freshness}</span>
+            <Button variant="secondary" onClick={logout}>Выйти</Button>
+          </div>
+        </header>
+        {logoutError ? <div className="shell-degraded" role="alert">{logoutError}</div> : null}
+        {previewMode?.synthetic ? (
+          <div className="shell-degraded" role="status">
+            SYNTHETIC PREVIEW · real registration, broker credentials and private portfolio data are disabled. Не вводи реальные токены на этом стенде.
+          </div>
+        ) : healthState !== "READY" ? (
+          <div className="shell-degraded" role="status">
+            Runtime state: {healthState}. Финансовые данные не маскируются под свежие.
+          </div>
+        ) : null}
+        <RoutePage path={route} healthState={healthState} freshness={freshness} />
+      </div>
     </div>
   );
 }
