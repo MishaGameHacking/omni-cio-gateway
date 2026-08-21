@@ -54,6 +54,6 @@ The deterministic contract tests verify that:
 4. no Terraform resources, data sources or credential-shaped values are present;
 5. local Terraform state and tfvars remain globally ignored.
 
-These declarations are Phase-3 source evidence, not hosted activation. Public
-preview or production deployment begins only through a later accepted-main
+These declarations are source evidence only and are not Phase-3 acceptance by itself.
+Public preview or production deployment begins only through a later accepted-main
 protected apply boundary.
