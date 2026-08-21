@@ -17,6 +17,10 @@ const expectedRoutes = [
   "/system",
   "/settings",
 ];
+const forbiddenStorageIdentifiers = [
+  ["local", "Storage"].join(""),
+  ["session", "Storage"].join(""),
+];
 
 test("WP17 exposes the exact Master Plan navigation routes", () => {
   assert.deepEqual(appRoutes.map((route) => route.path), expectedRoutes);
@@ -43,6 +47,16 @@ test("WP22A historical private edge API is dormant and not a product login", () 
   assert.match(shell, /Локальный OWNER acceptance виден только на loopback и не является третьим login provider/);
 });
 
+test("Phase 4 preview is explicit synthetic mode without broker authority", () => {
+  const api = readFileSync(new URL("../src/app-shell/api.ts", import.meta.url), "utf8");
+  const shell = readFileSync(new URL("../src/app-shell/app-shell.tsx", import.meta.url), "utf8");
+  assert.match(api, /\/api\/v10\/web\/preview-mode/);
+  assert.match(api, /\/api\/v10\/web\/preview-login/);
+  assert.match(shell, /Безопасная публичная демонстрация|previewMode\.label/);
+  assert.match(shell, /real registration, broker credentials and private portfolio data are disabled/);
+  assert.match(shell, /Не вводи реальные токены на этом стенде/);
+});
+
 test("logout UI never claims revocation when the server request fails", () => {
   const shell = readFileSync(new URL("../src/app-shell/app-shell.tsx", import.meta.url), "utf8");
   assert.doesNotMatch(shell, /logoutCurrentSession\(\)\.finally/);
@@ -54,14 +68,20 @@ test("browser code cannot persist credentials in Web Storage", () => {
   const api = readFileSync(new URL("../src/app-shell/api.ts", import.meta.url), "utf8");
   const shell = readFileSync(new URL("../src/app-shell/app-shell.tsx", import.meta.url), "utf8");
   const combined = `${api}\n${shell}`;
-  const forbiddenStorageIdentifiers = [
-    ["local", "Storage"].join(""),
-    ["session", "Storage"].join(""),
-  ];
   for (const identifier of forbiddenStorageIdentifiers) {
     assert.equal(combined.includes(identifier), false);
   }
   assert.match(api, /credentials:\s*["']same-origin["']/);
+});
+
+test("hosted preview keeps CSRF cookie HttpOnly and the browser token in memory", () => {
+  const api = readFileSync(new URL("../src/app-shell/api.ts", import.meta.url), "utf8");
+  assert.match(api, /let remoteCsrfToken: string \| null = null/);
+  assert.match(api, /response\.headers\.get\(REMOTE_CSRF_HEADER\)/);
+  assert.match(api, /remoteCsrfToken \?\? readCookie\(REMOTE_CSRF_COOKIE\)/);
+  for (const identifier of forbiddenStorageIdentifiers) {
+    assert.equal(api.includes(identifier), false);
+  }
 });
 
 test("WP15 private live values are cleared when the browser challenge expires", () => {

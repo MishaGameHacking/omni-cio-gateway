@@ -3,14 +3,24 @@ import { Button, StatusBadge } from "../design-system/components";
 import type { OperationalState } from "../design-system/contracts";
 import {
   logoutCurrentSession,
+  previewLogin,
   privateTestLogin,
   providerLoginUrl,
   readHealth,
+  readPreviewMode,
   readPrivateAcceptanceStatus,
   readProviders,
   readSession,
 } from "./api";
-import { appRoutes, isKnownRoute, type AppRoutePath, type HealthView, type ProviderView, type WebSessionView } from "./contracts";
+import {
+  appRoutes,
+  isKnownRoute,
+  type AppRoutePath,
+  type HealthView,
+  type PreviewModeView,
+  type ProviderView,
+  type WebSessionView,
+} from "./contracts";
 import { DecisionPlanPage } from "./decision-plan";
 import { RoutePage } from "./pages";
 import { PortfolioDashboardPage } from "./portfolio-dashboard";
@@ -31,12 +41,18 @@ function healthToOperational(value: HealthView["state"]): OperationalState {
 function LoginScreen({
   providers,
   apiUnavailable,
+  previewMode,
+  previewBusy,
   privateAcceptanceEnabled,
+  onPreviewLogin,
   onPrivateAcceptance,
 }: {
   providers: ProviderView[];
   apiUnavailable: boolean;
+  previewMode: PreviewModeView | null;
+  previewBusy: boolean;
   privateAcceptanceEnabled: boolean;
+  onPreviewLogin: () => void;
   onPrivateAcceptance: () => void;
 }) {
   const provider = (name: "telegram" | "vk_id") => providers.find((item) => item.provider === name);
@@ -49,6 +65,14 @@ function LoginScreen({
         <h1 id="login-title">Вход в личный аккаунт</h1>
         <p className="shell-muted">Обычный вход — только через Telegram или VK ID. Локального пароля Omni-CIO нет.</p>
         {apiUnavailable ? <div className="login-warning" role="alert">Authentication API недоступен. Доступ к приватным разделам закрыт.</div> : null}
+        {previewMode?.enabled ? (
+          <div className="shell-stack">
+            <Button disabled={previewBusy} onClick={onPreviewLogin}>
+              {previewBusy ? "Открываем…" : previewMode.label}
+            </Button>
+            <p className="shell-caption">Синтетический публичный preview: реальные пользователи, broker-токены и приватные портфели отключены.</p>
+          </div>
+        ) : null}
         <div className="login-actions">
           <a className="ds-button ds-button--primary" aria-disabled={!telegram?.enabled} href={telegram?.enabled ? providerLoginUrl("telegram") : undefined}>Продолжить через Telegram</a>
           <a className="ds-button ds-button--secondary" aria-disabled={!vk?.enabled} href={vk?.enabled ? providerLoginUrl("vk_id") : undefined}>Продолжить через VK ID</a>
@@ -66,6 +90,8 @@ function LoginScreen({
 export function ApplicationShell() {
   const [session, setSession] = useState<WebSessionView | null>(null);
   const [providers, setProviders] = useState<ProviderView[]>([]);
+  const [previewMode, setPreviewMode] = useState<PreviewModeView | null>(null);
+  const [previewBusy, setPreviewBusy] = useState(false);
   const [privateAcceptanceEnabled, setPrivateAcceptanceEnabled] = useState(false);
   const [sessionUnavailable, setSessionUnavailable] = useState(false);
   const [path, setPath] = useState<AppRoutePath>(currentPath);
@@ -84,9 +110,22 @@ export function ApplicationShell() {
     }
   }, []);
 
+  const authenticatePreview = useCallback(async () => {
+    setPreviewBusy(true);
+    try {
+      await previewLogin();
+      await refreshSession();
+    } catch {
+      setSessionUnavailable(true);
+    } finally {
+      setPreviewBusy(false);
+    }
+  }, [refreshSession]);
+
   useEffect(() => {
     void refreshSession();
     void readProviders().then(setProviders).catch(() => setProviders([]));
+    void readPreviewMode().then(setPreviewMode).catch(() => setPreviewMode(null));
     void readPrivateAcceptanceStatus()
       .then((value) => setPrivateAcceptanceEnabled(value.enabled))
       .catch(() => setPrivateAcceptanceEnabled(false));
@@ -131,7 +170,10 @@ export function ApplicationShell() {
       <LoginScreen
         providers={providers}
         apiUnavailable={sessionUnavailable}
+        previewMode={previewMode}
+        previewBusy={previewBusy}
         privateAcceptanceEnabled={privateAcceptanceEnabled}
+        onPreviewLogin={() => void authenticatePreview()}
         onPrivateAcceptance={() => {
           void privateTestLogin()
             .then(refreshSession)
@@ -178,6 +220,11 @@ export function ApplicationShell() {
       </aside>
       <main className="shell-content" id="main-content">
         {sessionUnavailable ? <div className="shell-degraded" role="alert">Выход не подтверждён сервером. Текущая сессия остаётся активной.</div> : null}
+        {previewMode?.synthetic ? (
+          <div className="shell-degraded" role="status">
+            SYNTHETIC PREVIEW · real registration, broker credentials and private portfolio data are disabled. Не вводи реальные токены на этом стенде.
+          </div>
+        ) : null}
         {healthUnavailable ? <div className="shell-degraded" role="status">Downstream API недоступен — shell работает в DEGRADED режиме.</div> : null}
         {path === "/portfolio" || path === "/assets" ? (
           <PortfolioDashboardPage assetsMode={path === "/assets"} />

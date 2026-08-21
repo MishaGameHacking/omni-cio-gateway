@@ -33,6 +33,14 @@ export interface PrivateAcceptanceStatusView {
   enabled: boolean;
 }
 
+export interface PreviewModeView {
+  enabled: boolean;
+  synthetic: boolean;
+  broker_credentials_enabled: boolean;
+  registration_enabled: boolean;
+  label: string;
+}
+
 export interface HealthView {
   state: "READY" | "PARTIAL" | "STALE" | "DEGRADED" | "OFFLINE";
   freshness: "FRESH" | "STALE" | "UNKNOWN";
