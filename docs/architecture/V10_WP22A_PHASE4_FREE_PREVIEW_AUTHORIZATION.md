@@ -73,11 +73,16 @@ It must:
 
 The preview database must be PostgreSQL 18 on Neon Free, with a European/Frankfurt region preferred when available to the connected account.
 
+Neon roles created through the Console, CLI or control-plane API inherit membership in `neon_superuser`, whose authority includes `BYPASSRLS`. Such a role is forbidden for the Omni-CIO runtime. The deployment boundary must use a separately injected privileged bootstrap connection only for migrations and idempotent SQL creation of `omni_cio_hosted_api` with exact `LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS` attributes and no role memberships. The bootstrap connection is never supplied to the Render runtime. The runtime password is generated inside the accepted-main workflow, masked before use, passed directly to Render as a secret environment value and never written to source, logs, summaries or artifacts.
+
 Required controls:
 
 - TLS connection only;
 - pooled runtime connection;
-- migration authority separated from runtime authority when the provider supports it;
+- migration/bootstrap authority separated from runtime authority;
+- runtime role created with SQL only, never through Neon Console/CLI/API;
+- no `neon_superuser`, predefined broad role or `BYPASSRLS` membership;
+- exact login/non-superuser/non-CREATEDB/non-CREATEROLE/non-replication/non-BYPASSRLS attributes;
 - least-privilege runtime role;
 - exact migration/schema verification;
 - tenant context, RLS and FORCE-RLS verification;
@@ -111,6 +116,7 @@ Phase 4 is accepted only after the reviewed accepted-main workflow proves:
 - expected free plans and PostgreSQL 18;
 - successful React/Python build;
 - successful database migrations and structural isolation checks;
+- exact runtime-role attributes and absence of membership/BYPASSRLS authority;
 - exact release SHA deployed;
 - generated HTTPS URL responds successfully;
 - public readiness is GREEN;

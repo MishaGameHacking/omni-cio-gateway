@@ -60,6 +60,19 @@
     "tls_required": true,
     "pooled_runtime_connection_required": true,
     "migration_connection_separate_when_supported": true,
+    "bootstrap_connection_runtime_use_allowed": false,
+    "runtime_role_creation": "SQL_ONLY",
+    "neon_control_plane_runtime_role_allowed": false,
+    "neon_superuser_membership_allowed": false,
+    "bypass_rls_allowed": false,
+    "runtime_role_attributes": {
+      "login": true,
+      "superuser": false,
+      "createdb": false,
+      "createrole": false,
+      "replication": false,
+      "bypassrls": false
+    },
     "least_privilege_runtime_role_required": true,
     "tenant_rls_verification_required": true,
     "force_rls_verification_required": true

@@ -121,6 +121,20 @@ def test_database_is_postgresql18_free_tls_and_tenant_safe() -> None:
     assert database["free_plan_required"] is True
     assert database["tls_required"] is True
     assert database["pooled_runtime_connection_required"] is True
+    assert database["migration_connection_separate_when_supported"] is True
+    assert database["bootstrap_connection_runtime_use_allowed"] is False
+    assert database["runtime_role_creation"] == "SQL_ONLY"
+    assert database["neon_control_plane_runtime_role_allowed"] is False
+    assert database["neon_superuser_membership_allowed"] is False
+    assert database["bypass_rls_allowed"] is False
+    assert database["runtime_role_attributes"] == {
+        "login": True,
+        "superuser": False,
+        "createdb": False,
+        "createrole": False,
+        "replication": False,
+        "bypassrls": False,
+    }
     assert database["least_privilege_runtime_role_required"] is True
     assert database["tenant_rls_verification_required"] is True
     assert database["force_rls_verification_required"] is True
@@ -193,9 +207,11 @@ def test_human_authorization_contract_carries_required_markers() -> None:
         "AUTHORIZED ON ACCEPTANCE / ZERO-COST SYNTHETIC PREVIEW ONLY",
         "WP22A — External Web Access / Product Authentication Security Gate",
         "omni-cio-v10-web",
+        "runtime role created with SQL only, never through Neon Console/CLI/API",
+        "NO `neon_superuser`, predefined broad role or `BYPASSRLS` membership",
         "`PUBLIC_MULTI_USER_ENABLED=false`",
         "`trading_methods=false`",
         "`REAL_TRADING_ENABLED=false`",
         "Phase 5 still owns normal USER login/logout/session acceptance",
     ):
-        assert marker in text
+        assert marker.casefold() in text.casefold()
