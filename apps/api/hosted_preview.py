@@ -534,21 +534,26 @@ def create_hosted_preview_app(
         }
 
     @app.get("/api/v10/web/session")
-    def session_view(request: Request) -> dict[str, object]:
+    def session_view(request: Request) -> Response:
         scope = services.sessions.resolve(
             request.cookies.get(SESSION_COOKIE),
             now=_utc(services.now()),
         )
-        if scope is None:
-            return {"authenticated": False}
+        csrf = request.cookies.get(CSRF_COOKIE, "")
+        if scope is None or not csrf:
+            return JSONResponse({"authenticated": False})
         if scope.user_id != PREVIEW_USER_ID or scope.tenant_id != PREVIEW_TENANT_ID:
-            return {"authenticated": False}
-        return {
-            "authenticated": True,
-            "user_label": "DEMO USER",
-            "tenant_label": "SYNTHETIC PREVIEW",
-            "expires_at": scope.expires_at.isoformat(),
-        }
+            return JSONResponse({"authenticated": False})
+        result = JSONResponse(
+            {
+                "authenticated": True,
+                "user_label": "DEMO USER",
+                "tenant_label": "SYNTHETIC PREVIEW",
+                "expires_at": scope.expires_at.isoformat(),
+            }
+        )
+        result.headers[CSRF_HEADER] = csrf
+        return result
 
     @app.get("/api/v10/web/auth/providers")
     def providers() -> list[dict[str, object]]:
@@ -600,11 +605,12 @@ def create_hosted_preview_app(
             CSRF_COOKIE,
             csrf,
             secure=True,
-            httponly=False,
+            httponly=True,
             samesite="strict",
             path="/",
             max_age=max_age,
         )
+        response.headers[CSRF_HEADER] = csrf
         return {"ok": True}
 
     @app.post("/api/v10/web/session/logout")

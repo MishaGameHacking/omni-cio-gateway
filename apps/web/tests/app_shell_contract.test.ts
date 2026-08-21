@@ -74,6 +74,14 @@ test("browser code cannot persist credentials in Web Storage", () => {
   assert.match(api, /credentials:\s*["']same-origin["']/);
 });
 
+test("hosted preview keeps CSRF cookie HttpOnly and the browser token in memory", () => {
+  const api = readFileSync(new URL("../src/app-shell/api.ts", import.meta.url), "utf8");
+  assert.match(api, /let remoteCsrfToken: string \| null = null/);
+  assert.match(api, /response\.headers\.get\(REMOTE_CSRF_HEADER\)/);
+  assert.match(api, /remoteCsrfToken \?\? readCookie\(REMOTE_CSRF_COOKIE\)/);
+  assert.doesNotMatch(api, /localStorage|sessionStorage/);
+});
+
 test("WP15 private live values are cleared when the browser challenge expires", () => {
   const pages = readFileSync(new URL("../src/app-shell/pages.tsx", import.meta.url), "utf8");
   assert.match(pages, /Date\.parse\(liveView\.expires_at\)/);

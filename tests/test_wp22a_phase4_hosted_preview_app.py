@@ -65,8 +65,16 @@ def _login(client: TestClient) -> str:
     )
     assert response.status_code == 200
     assert response.json() == {"ok": True}
-    csrf = client.cookies.get(CSRF_COOKIE)
+    csrf = response.headers.get(CSRF_HEADER)
     assert csrf
+    assert csrf == client.cookies.get(CSRF_COOKIE)
+    csrf_cookies = [
+        value
+        for value in response.headers.get_list("set-cookie")
+        if value.startswith(f"{CSRF_COOKIE}=")
+    ]
+    assert len(csrf_cookies) == 1
+    assert "HttpOnly" in csrf_cookies[0]
     return csrf
 
 
@@ -102,9 +110,9 @@ def test_preview_login_requires_https_origin_and_issues_server_session(
 ) -> None:
     client = _client(tmp_path)
 
-    assert client.get("/api/v10/web/session").json() == {
-        "authenticated": False
-    }
+    anonymous = client.get("/api/v10/web/session")
+    assert anonymous.json() == {"authenticated": False}
+    assert CSRF_HEADER not in anonymous.headers
     rejected = client.post("/api/v10/web/preview-login")
     assert rejected.status_code == 403
     assert rejected.json() == {"detail": "ORIGIN_REQUIRED"}
@@ -118,6 +126,7 @@ def test_preview_login_requires_https_origin_and_issues_server_session(
         "tenant_label": "SYNTHETIC PREVIEW",
         "expires_at": "2026-08-21T08:00:00+00:00",
     }
+    assert session.headers[CSRF_HEADER] == csrf
     assert csrf == client.cookies.get(CSRF_COOKIE)
 
 
