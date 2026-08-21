@@ -768,6 +768,8 @@ def _render_services(api: JsonApi, owner_id: str) -> list[dict[str, Any]]:
 
 
 def _validate_existing_render_service(service: dict[str, Any]) -> None:
+    if service.get("autoDeploy") != "no":
+        raise ProvisioningStopped("RENDER_AUTODEPLOY_FORBIDDEN")
     if service.get("name") != RENDER_SERVICE_NAME:
         raise ProvisioningStopped("RENDER_SERVICE_NAME_DRIFT")
     if service.get("type") != "web_service":

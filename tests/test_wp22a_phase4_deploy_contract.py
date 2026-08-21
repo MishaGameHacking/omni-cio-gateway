@@ -179,6 +179,7 @@ def test_existing_render_service_requires_exact_safe_shape() -> None:
     module = _module()
     service = {
         "id": "srv-preview",
+        "autoDeploy": "no",
         "name": module.RENDER_SERVICE_NAME,
         "type": "web_service",
         "repo": module.REPOSITORY_URL,
@@ -196,6 +197,14 @@ def test_existing_render_service_requires_exact_safe_shape() -> None:
     }
     module._validate_existing_render_service(service)
 
+    service["autoDeploy"] = "yes"
+    with pytest.raises(
+        module.ProvisioningStopped,
+        match="RENDER_AUTODEPLOY_FORBIDDEN",
+    ):
+        module._validate_existing_render_service(service)
+
+    service["autoDeploy"] = "no"
     service["serviceDetails"]["plan"] = "starter"
     with pytest.raises(module.ProvisioningStopped, match="RENDER_FREE_PLAN_REQUIRED"):
         module._validate_existing_render_service(service)
