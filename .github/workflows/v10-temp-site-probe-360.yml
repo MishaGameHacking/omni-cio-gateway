@@ -1,0 +1,142 @@
+name: TEMP V10 Site Probe 360
+
+on:
+  push:
+    branches:
+      - v10/temp-site-probe-360
+    paths:
+      - ".github/workflows/v10-temp-site-probe-360.yml"
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  probe-exact-main-site:
+    name: Probe exact-main deploy and public HTTPS
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 10
+    steps:
+      - name: Discover deployment run and verify public site
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_MAIN_SHA: "96154892e39f72f3d647aea089d44a3d000a112c"
+          PREVIEW_ROOT: "https://omni-cio-v10-web.onrender.com/"
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $repo = $env:GITHUB_REPOSITORY
+          $expected = $env:EXPECTED_MAIN_SHA
+          $headers = @{
+            Authorization = ('Bearer ' + $env:GH_TOKEN)
+            Accept = 'application/vnd.github+json'
+            'X-GitHub-Api-Version' = '2022-11-28'
+          }
+
+          $runsUri = 'https://api.github.com/repos/' + $repo + '/actions/workflows/v10-phase4-free-preview-deploy.yml/runs?per_page=20'
+          $runs = (Invoke-RestMethod -Uri $runsUri -Headers $headers -Method Get).workflow_runs
+          $matches = @(
+            $runs |
+              Where-Object {
+                $_.head_sha -eq $expected -and
+                $_.head_branch -eq 'main'
+              } |
+              Sort-Object run_number -Descending
+          )
+          if ($matches.Count -lt 1) {
+            throw ('DEPLOY_RUN_NOT_FOUND exact_main=' + $expected)
+          }
+
+          $run = $matches[0]
+          Write-Output (
+            'DEPLOY_RUN id=' + $run.id +
+            ' number=' + $run.run_number +
+            ' event=' + $run.event +
+            ' status=' + $run.status +
+            ' conclusion=' + $run.conclusion +
+            ' head_sha=' + $run.head_sha +
+            ' created_at=' + $run.created_at +
+            ' updated_at=' + $run.updated_at
+          )
+          if ($run.status -ne 'completed') {
+            throw ('DEPLOY_RUN_NOT_COMPLETED id=' + $run.id + ' status=' + $run.status)
+          }
+          if ($run.conclusion -ne 'success') {
+            $jobs = (Invoke-RestMethod -Uri $run.jobs_url -Headers $headers -Method Get).jobs
+            foreach ($job in $jobs) {
+              Write-Output (
+                'DEPLOY_JOB name=' + $job.name +
+                ' status=' + $job.status +
+                ' conclusion=' + $job.conclusion
+              )
+            }
+            throw ('DEPLOY_RUN_NOT_GREEN id=' + $run.id + ' conclusion=' + $run.conclusion)
+          }
+
+          $rootResponse = $null
+          $lastRootError = $null
+          for ($attempt = 1; $attempt -le 6; $attempt++) {
+            try {
+              $rootResponse = Invoke-WebRequest -Uri $env:PREVIEW_ROOT -Method Get -UseBasicParsing -TimeoutSec 60
+              if ([int]$rootResponse.StatusCode -eq 200) {
+                break
+              }
+              $lastRootError = 'HTTP ' + [int]$rootResponse.StatusCode
+            }
+            catch {
+              $lastRootError = $_.Exception.Message
+            }
+            Start-Sleep -Seconds 10
+          }
+          if ($null -eq $rootResponse -or [int]$rootResponse.StatusCode -ne 200) {
+            throw ('PUBLIC_ROOT_NOT_READY error=' + $lastRootError)
+          }
+
+          $title = ''
+          $titleMatch = [regex]::Match([string]$rootResponse.Content, '<title>([^<]*)</title>', 'IgnoreCase')
+          if ($titleMatch.Success) {
+            $title = ($titleMatch.Groups[1].Value -replace '[\r\n]+', ' ').Trim()
+          }
+          Write-Output (
+            'PUBLIC_ROOT url=' + $env:PREVIEW_ROOT +
+            ' status=' + [int]$rootResponse.StatusCode +
+            ' title=' + $title
+          )
+
+          $healthUrl = $env:PREVIEW_ROOT + 'healthz'
+          $healthResponse = Invoke-WebRequest -Uri $healthUrl -Method Get -UseBasicParsing -TimeoutSec 60
+          if ([int]$healthResponse.StatusCode -ne 200) {
+            throw ('PUBLIC_HEALTH_HTTP_INVALID status=' + [int]$healthResponse.StatusCode)
+          }
+          $health = $healthResponse.Content | ConvertFrom-Json
+          if ([string]$health.status -ne 'ok') {
+            throw ('PUBLIC_HEALTH_STATUS_INVALID value=' + [string]$health.status)
+          }
+          if ([string]$health.release_sha -ne $expected) {
+            throw ('PUBLIC_HEALTH_RELEASE_MISMATCH value=' + [string]$health.release_sha)
+          }
+          if ([string]$health.database -ne 'READY') {
+            throw ('PUBLIC_HEALTH_DATABASE_INVALID value=' + [string]$health.database)
+          }
+          if ([bool]$health.synthetic_preview -ne $true) {
+            throw ('PUBLIC_HEALTH_SYNTHETIC_INVALID value=' + [string]$health.synthetic_preview)
+          }
+
+          $cacheControl = [string]$healthResponse.Headers['Cache-Control']
+          $hsts = [string]$healthResponse.Headers['Strict-Transport-Security']
+          if ($cacheControl -notmatch '(^|[, ]+)no-store([, ]+|$)') {
+            throw ('PUBLIC_HEALTH_CACHE_CONTROL_INVALID value=' + $cacheControl)
+          }
+          if ($hsts -notmatch 'max-age=31536000') {
+            throw ('PUBLIC_HEALTH_HSTS_INVALID value=' + $hsts)
+          }
+
+          Write-Output (
+            'PUBLIC_HEALTH url=' + $healthUrl +
+            ' status=200 app_status=' + [string]$health.status +
+            ' release_sha=' + [string]$health.release_sha +
+            ' database=' + [string]$health.database +
+            ' synthetic_preview=' + [string]$health.synthetic_preview +
+            ' cache_control=' + $cacheControl +
+            ' hsts=' + $hsts
+          )
