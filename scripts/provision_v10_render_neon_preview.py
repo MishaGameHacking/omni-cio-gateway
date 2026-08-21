@@ -49,8 +49,7 @@ BUILD_COMMAND = (
     "npm run lint && npm test && npm run build"
 )
 START_COMMAND = (
-    "uvicorn apps.api.hosted_preview:create_app --factory "
-    "--host 0.0.0.0 --port $PORT"
+    "uvicorn apps.api.hosted_preview:create_app --factory --host 0.0.0.0 --port $PORT"
 )
 
 
@@ -529,8 +528,7 @@ def _replace_uri_credentials(uri: str, role: str, password: str) -> str:
         raise ProvisioningStopped("NEON_CONNECTION_URI_SHAPE_INVALID")
     port = f":{parsed.port}" if parsed.port is not None else ""
     netloc = (
-        f"{quote(role, safe='')}:{quote(password, safe='')}@"
-        f"{parsed.hostname}{port}"
+        f"{quote(role, safe='')}:{quote(password, safe='')}@{parsed.hostname}{port}"
     )
     return urlunsplit(
         (
@@ -610,9 +608,7 @@ def _bootstrap_database(
                 (RUNTIME_ROLE,),
             ).fetchone()
             if memberships is not None and int(memberships[0]) != 0:
-                raise ProvisioningStopped(
-                    "HOSTED_RUNTIME_ROLE_MEMBERSHIP_PRESENT"
-                )
+                raise ProvisioningStopped("HOSTED_RUNTIME_ROLE_MEMBERSHIP_PRESENT")
             command = "ALTER ROLE" if existing else "CREATE ROLE"
             connection.execute(
                 sql.SQL(
@@ -703,9 +699,7 @@ def _bootstrap_database(
                 "WHERE member_role.rolname = current_user"
             ).fetchone()
             if count is None or int(count[0]) != 0:
-                raise ProvisioningStopped(
-                    "HOSTED_RUNTIME_ROLE_MEMBERSHIP_PRESENT"
-                )
+                raise ProvisioningStopped("HOSTED_RUNTIME_ROLE_MEMBERSHIP_PRESENT")
             rows = runtime.execute(
                 "SELECT c.relname, c.relrowsecurity, c.relforcerowsecurity "
                 "FROM pg_catalog.pg_class c "
@@ -995,8 +989,7 @@ def _external_probe(expected_sha: str) -> None:
                 and payload.get("release_sha") == expected_sha
                 and payload.get("synthetic_preview") is True
                 and headers.get("cache-control") == "no-store"
-                and headers.get("strict-transport-security")
-                == "max-age=31536000"
+                and headers.get("strict-transport-security") == "max-age=31536000"
             ):
                 _emit("EXTERNAL_HTTPS_PROBE=PASS")
                 return

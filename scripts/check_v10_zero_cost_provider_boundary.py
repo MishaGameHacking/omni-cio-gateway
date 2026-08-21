@@ -11,9 +11,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 
-NEON_ORGANIZATIONS_URL = (
-    "https://console.neon.tech/api/v2/users/me/organizations"
-)
+NEON_ORGANIZATIONS_URL = "https://console.neon.tech/api/v2/users/me/organizations"
 ATTESTATION_PATTERN = re.compile(
     r"^NO_PAYMENT_METHOD_CONFIRMED:"
     r"(?P<timestamp>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)$"

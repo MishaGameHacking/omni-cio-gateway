@@ -222,10 +222,7 @@ def verify_exact_main_regression(
         if job.get("conclusion") != "success":
             raise RegressionStopped("REGRESSION_SHIELD_REQUIRED_JOB_NOT_GREEN")
 
-    print(
-        "EXACT_MAIN_REGRESSION=PASS "
-        f"run_id={run_id} head_sha={expected_sha}"
-    )
+    print(f"EXACT_MAIN_REGRESSION=PASS run_id={run_id} head_sha={expected_sha}")
     for required_name in REQUIRED_JOBS:
         print(f"EXACT_MAIN_REGRESSION_JOB=PASS name={required_name}")
     return run_id
