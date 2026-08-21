@@ -234,6 +234,7 @@ export function ApplicationShell() {
       <div className="app-workspace">
         <header className="app-topbar">
           <div>
+            <span>USER</span>
             <strong>{session.user_label ?? "USER"}</strong>
             <span>{session.tenant_label ?? "TENANT"}</span>
           </div>
