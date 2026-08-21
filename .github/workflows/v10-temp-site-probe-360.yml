@@ -6,6 +6,10 @@ on:
       - v10/temp-site-probe-360
     paths:
       - ".github/workflows/v10-temp-site-probe-360.yml"
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - ".github/workflows/v10-temp-site-probe-360.yml"
 
 permissions:
   contents: write
