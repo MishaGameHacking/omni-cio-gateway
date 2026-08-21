@@ -37,10 +37,11 @@ def _app(
     tmp_path: Path,
     *,
     database_probe=lambda: None,
+    sessions: SessionRegistryV1 | None = None,
 ):
     return create_hosted_preview_app(
         HostedPreviewServicesV1(
-            sessions=SessionRegistryV1(PREVIEW_SESSION_POLICY),
+            sessions=sessions or SessionRegistryV1(PREVIEW_SESSION_POLICY),
             database_probe=database_probe,
             hostname=HOSTNAME,
             release_sha=RELEASE_SHA,
@@ -200,6 +201,29 @@ def test_csrf_logout_revokes_preview_session(tmp_path: Path) -> None:
     }
 
 
+def test_revoke_all_preview_route_cannot_revoke_another_visitors_session(
+    tmp_path: Path,
+) -> None:
+    sessions = SessionRegistryV1(PREVIEW_SESSION_POLICY)
+    app = _app(tmp_path, sessions=sessions)
+    first = TestClient(app, base_url=ORIGIN)
+    second = TestClient(app, base_url=ORIGIN)
+    first_csrf = _login(first)
+    _login(second)
+
+    accepted = first.post(
+        "/api/v10/web/session/revoke-all",
+        headers={"Origin": ORIGIN, CSRF_HEADER: first_csrf},
+    )
+
+    assert accepted.status_code == 200
+    assert accepted.json() == {"ok": True}
+    assert first.get("/api/v10/web/session").json() == {
+        "authenticated": False
+    }
+    assert second.get("/api/v10/web/session").json()["authenticated"] is True
+
+
 def test_database_failure_is_fail_closed_without_raw_diagnostics(
     tmp_path: Path,
 ) -> None:
@@ -236,6 +260,19 @@ def test_untrusted_host_plain_http_and_cross_origin_are_rejected(
     )
     assert cross_origin.status_code == 403
     assert cross_origin.json() == {"detail": "ORIGIN_REQUIRED"}
+
+
+def test_unknown_api_path_fails_closed_instead_of_serving_spa(
+    tmp_path: Path,
+) -> None:
+    client = _client(tmp_path)
+
+    response = client.get("/api/v10/web/not-a-real-route")
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "NOT_FOUND"}
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["content-type"].startswith("application/json")
 
 
 def test_spa_fallback_and_assets_are_served_from_reviewed_build(

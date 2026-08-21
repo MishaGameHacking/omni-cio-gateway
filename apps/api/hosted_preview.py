@@ -626,8 +626,8 @@ def create_hosted_preview_app(
         scope = _require_session(request, services)
         if isinstance(scope, Response):
             return scope
-        services.sessions.revoke_all_for_user(
-            scope.user_id,
+        services.sessions.revoke(
+            request.cookies.get(SESSION_COOKIE),
             now=_utc(services.now()),
         )
         result = JSONResponse({"ok": True})
@@ -728,6 +728,15 @@ def create_hosted_preview_app(
         except Exception:
             return _safe_error("SYSTEM_STATUS_UNAVAILABLE", 503)
         return JSONResponse(payload)
+
+    @app.api_route(
+        "/api/{path:path}",
+        methods=["GET", "HEAD", "OPTIONS", "POST", "PUT", "PATCH", "DELETE"],
+        include_in_schema=False,
+    )
+    def unknown_api_path(path: str) -> Response:
+        del path
+        return _safe_error("NOT_FOUND", 404)
 
     assets = web_dist / "assets"
     if assets.is_dir():
