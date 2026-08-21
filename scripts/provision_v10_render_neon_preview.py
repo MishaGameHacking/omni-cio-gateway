@@ -319,8 +319,47 @@ def _wait_neon_operations(
             time.sleep(5.0)
 
 
-def _ensure_neon_project(api: JsonApi) -> dict[str, Any]:
-    query = urlencode({"limit": 400, "search": NEON_PROJECT_NAME})
+def _neon_organization(api: JsonApi) -> str:
+    payload = _json_object(
+        api.request("GET", "/users/me/organizations"),
+        "NEON_ORGANIZATIONS_RESPONSE_INVALID",
+    )
+    organizations = [
+        _json_object(item, "NEON_ORGANIZATION_INVALID")
+        for item in _json_list(
+            payload.get("organizations"),
+            "NEON_ORGANIZATIONS_INVALID",
+        )
+    ]
+    if len(organizations) != 1:
+        raise ProvisioningStopped("NEON_ORGANIZATION_NOT_UNIQUE")
+    organization = organizations[0]
+    organization_id = _provider_id(
+        organization.get("id"),
+        "NEON_ORGANIZATION_ID_INVALID",
+    )
+    plan = organization.get("plan")
+    if not isinstance(plan, str) or plan.casefold() != "free":
+        raise ProvisioningStopped("NEON_FREE_PLAN_REQUIRED")
+    _emit("NEON_ORGANIZATION=FREE_VERIFIED")
+    return organization_id
+
+
+def _ensure_neon_project(
+    api: JsonApi,
+    organization_id: str,
+) -> dict[str, Any]:
+    safe_organization_id = _provider_id(
+        organization_id,
+        "NEON_ORGANIZATION_ID_INVALID",
+    )
+    query = urlencode(
+        {
+            "limit": 400,
+            "search": NEON_PROJECT_NAME,
+            "org_id": safe_organization_id,
+        }
+    )
     payload = _json_object(
         api.request("GET", f"/projects?{query}"),
         "NEON_PROJECTS_RESPONSE_INVALID",
@@ -333,8 +372,9 @@ def _ensure_neon_project(api: JsonApi) -> dict[str, Any]:
     if len(projects) > 1:
         raise ProvisioningStopped("NEON_PROJECT_NAME_NOT_UNIQUE")
     if not projects:
+        regions_query = urlencode({"org_id": safe_organization_id})
         regions_payload = _json_object(
-            api.request("GET", "/regions"),
+            api.request("GET", f"/regions?{regions_query}"),
             "NEON_REGIONS_RESPONSE_INVALID",
         )
         regions = _json_list(
@@ -355,6 +395,7 @@ def _ensure_neon_project(api: JsonApi) -> dict[str, Any]:
                         "name": NEON_PROJECT_NAME,
                         "region_id": NEON_REGION,
                         "pg_version": 18,
+                        "org_id": safe_organization_id,
                     }
                 },
                 expected=frozenset({201}),
@@ -380,6 +421,8 @@ def _ensure_neon_project(api: JsonApi) -> dict[str, Any]:
         _emit("NEON_PROJECT=REUSED_FREE_PREVIEW")
 
     project = projects[0]
+    if project.get("org_id") != safe_organization_id:
+        raise ProvisioningStopped("NEON_PROJECT_ORGANIZATION_DRIFT")
     if int(project.get("pg_version", 0)) != 18:
         raise ProvisioningStopped("NEON_POSTGRES18_REQUIRED")
     if str(project.get("region_id", "")) != NEON_REGION:
@@ -388,8 +431,8 @@ def _ensure_neon_project(api: JsonApi) -> dict[str, Any]:
     return project
 
 
-def _neon_target(api: JsonApi) -> NeonTarget:
-    project = _ensure_neon_project(api)
+def _neon_target(api: JsonApi, organization_id: str) -> NeonTarget:
+    project = _ensure_neon_project(api, organization_id)
     project_id = _provider_segment(project.get("id"), "NEON_PROJECT_ID_INVALID")
     branch_payload = _json_object(
         api.request("GET", f"/projects/{project_id}/branches?limit=100"),
@@ -1004,7 +1047,8 @@ def run(repo_root: Path, expected_sha: str) -> str:
 
     neon = JsonApi(NEON_API_BASE, neon_key, label="NEON")
     render = JsonApi(RENDER_API_BASE, render_key, label="RENDER")
-    target = _neon_target(neon)
+    organization_id = _neon_organization(neon)
+    target = _neon_target(neon, organization_id)
     runtime_uri = _bootstrap_database(repo_root, target, runtime_password)
     render_target = _render_target(render, runtime_uri, expected_sha)
     _external_probe(expected_sha)
@@ -1015,6 +1059,7 @@ def run(repo_root: Path, expected_sha: str) -> str:
         [
             "### Omni-CIO V10 Phase 4 free preview",
             f"- exact release: `{expected_sha}`",
+            "- Neon organization / free plan: PASS",
             "- Neon PostgreSQL 18 / Frankfurt: PASS",
             "- least-privilege runtime role / FORCE RLS: PASS",
             "- Render Free / Frankfurt: PASS",
