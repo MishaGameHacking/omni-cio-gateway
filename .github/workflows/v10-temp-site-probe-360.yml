@@ -1,217 +1,142 @@
 name: TEMP V10 Site Probe 360
 
 on:
-  push:
-    branches:
-      - v10/temp-site-probe-360
-    paths:
-      - ".github/workflows/v10-temp-site-probe-360.yml"
   pull_request:
     types: [opened, synchronize, reopened]
     paths:
       - ".github/workflows/v10-temp-site-probe-360.yml"
 
 permissions:
-  contents: write
+  contents: read
   actions: read
+  pull-requests: read
 
 jobs:
   probe-exact-main-site:
     name: Probe exact-main deploy and public HTTPS
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 10
-    env:
-      EXPECTED_MAIN_SHA: "96154892e39f72f3d647aea089d44a3d000a112c"
-      PREVIEW_ROOT: "https://omni-cio-v10-web.onrender.com/"
-      PROBE_RESULT_PATH: ${{ runner.temp }}\v10-site-probe-360.txt
-      RESULT_REPO_PATH: tmp/v10-site-probe-360.txt
-      RESULT_BRANCH: v10/temp-site-probe-360
-
     steps:
       - name: Discover deployment run and verify public site
-        id: probe
         shell: powershell
         env:
           GH_TOKEN: ${{ github.token }}
+          EXPECTED_MAIN_SHA: "96154892e39f72f3d647aea089d44a3d000a112c"
+          PREVIEW_ROOT: "https://omni-cio-v10-web.onrender.com/"
         run: |
           $ErrorActionPreference = 'Stop'
-          $lines = [System.Collections.Generic.List[string]]::new()
-          $lines.Add('PROBE_TIMESTAMP_UTC=' + [DateTime]::UtcNow.ToString('o'))
-          $lines.Add('EXPECTED_MAIN_SHA=' + $env:EXPECTED_MAIN_SHA)
-          $lines.Add('PUBLIC_URL=' + $env:PREVIEW_ROOT)
-          $probeSucceeded = $false
-
-          try {
-            $repo = $env:GITHUB_REPOSITORY
-            $expected = $env:EXPECTED_MAIN_SHA
-            $headers = @{
-              Authorization = ('Bearer ' + $env:GH_TOKEN)
-              Accept = 'application/vnd.github+json'
-              'X-GitHub-Api-Version' = '2022-11-28'
-            }
-
-            $runsUri = 'https://api.github.com/repos/' + $repo + '/actions/workflows/v10-phase4-free-preview-deploy.yml/runs?per_page=20'
-            $runs = (Invoke-RestMethod -Uri $runsUri -Headers $headers -Method Get).workflow_runs
-            $matches = @(
-              $runs |
-                Where-Object {
-                  $_.head_sha -eq $expected -and
-                  $_.head_branch -eq 'main'
-                } |
-                Sort-Object run_number -Descending
-            )
-            if ($matches.Count -lt 1) {
-              throw ('DEPLOY_RUN_NOT_FOUND exact_main=' + $expected)
-            }
-
-            $run = $matches[0]
-            $lines.Add('DEPLOY_RUN_ID=' + [string]$run.id)
-            $lines.Add('DEPLOY_RUN_NUMBER=' + [string]$run.run_number)
-            $lines.Add('DEPLOY_EVENT=' + [string]$run.event)
-            $lines.Add('DEPLOY_STATUS=' + [string]$run.status)
-            $lines.Add('DEPLOY_CONCLUSION=' + [string]$run.conclusion)
-            $lines.Add('DEPLOY_HEAD_SHA=' + [string]$run.head_sha)
-            $lines.Add('DEPLOY_CREATED_AT=' + [string]$run.created_at)
-            $lines.Add('DEPLOY_UPDATED_AT=' + [string]$run.updated_at)
-
-            if ($run.status -ne 'completed') {
-              throw ('DEPLOY_RUN_NOT_COMPLETED id=' + $run.id + ' status=' + $run.status)
-            }
-            if ($run.conclusion -ne 'success') {
-              $jobs = (Invoke-RestMethod -Uri $run.jobs_url -Headers $headers -Method Get).jobs
-              foreach ($job in $jobs) {
-                $safeName = ([string]$job.name -replace '[\r\n=]+', ' ').Trim()
-                $lines.Add(
-                  'DEPLOY_JOB=' + $safeName +
-                  '|status=' + [string]$job.status +
-                  '|conclusion=' + [string]$job.conclusion
-                )
-              }
-              throw ('DEPLOY_RUN_NOT_GREEN id=' + $run.id + ' conclusion=' + $run.conclusion)
-            }
-
-            $rootResponse = $null
-            $lastRootError = $null
-            for ($attempt = 1; $attempt -le 6; $attempt++) {
-              try {
-                $rootResponse = Invoke-WebRequest -Uri $env:PREVIEW_ROOT -Method Get -UseBasicParsing -TimeoutSec 60
-                if ([int]$rootResponse.StatusCode -eq 200) {
-                  break
-                }
-                $lastRootError = 'HTTP ' + [int]$rootResponse.StatusCode
-              }
-              catch {
-                $lastRootError = ($_.Exception.Message -replace '[\r\n=]+', ' ').Trim()
-              }
-              Start-Sleep -Seconds 10
-            }
-            if ($null -eq $rootResponse -or [int]$rootResponse.StatusCode -ne 200) {
-              throw ('PUBLIC_ROOT_NOT_READY error=' + $lastRootError)
-            }
-
-            $title = ''
-            $titleMatch = [regex]::Match([string]$rootResponse.Content, '<title>([^<]*)</title>', 'IgnoreCase')
-            if ($titleMatch.Success) {
-              $title = ($titleMatch.Groups[1].Value -replace '[\r\n=]+', ' ').Trim()
-            }
-            $lines.Add('ROOT_HTTP_STATUS=' + [string][int]$rootResponse.StatusCode)
-            $lines.Add('ROOT_TITLE=' + $title)
-
-            $healthUrl = $env:PREVIEW_ROOT + 'healthz'
-            $healthResponse = Invoke-WebRequest -Uri $healthUrl -Method Get -UseBasicParsing -TimeoutSec 60
-            if ([int]$healthResponse.StatusCode -ne 200) {
-              throw ('PUBLIC_HEALTH_HTTP_INVALID status=' + [int]$healthResponse.StatusCode)
-            }
-            $health = $healthResponse.Content | ConvertFrom-Json
-            if ([string]$health.status -ne 'ok') {
-              throw ('PUBLIC_HEALTH_STATUS_INVALID value=' + [string]$health.status)
-            }
-            if ([string]$health.release_sha -ne $expected) {
-              throw ('PUBLIC_HEALTH_RELEASE_MISMATCH value=' + [string]$health.release_sha)
-            }
-            if ([string]$health.database -ne 'READY') {
-              throw ('PUBLIC_HEALTH_DATABASE_INVALID value=' + [string]$health.database)
-            }
-            if ([bool]$health.synthetic_preview -ne $true) {
-              throw ('PUBLIC_HEALTH_SYNTHETIC_INVALID value=' + [string]$health.synthetic_preview)
-            }
-
-            $cacheControl = [string]$healthResponse.Headers['Cache-Control']
-            $hsts = [string]$healthResponse.Headers['Strict-Transport-Security']
-            if ($cacheControl -notmatch '(^|[, ]+)no-store([, ]+|$)') {
-              throw ('PUBLIC_HEALTH_CACHE_CONTROL_INVALID value=' + $cacheControl)
-            }
-            if ($hsts -notmatch 'max-age=31536000') {
-              throw ('PUBLIC_HEALTH_HSTS_INVALID value=' + $hsts)
-            }
-
-            $lines.Add('HEALTH_HTTP_STATUS=200')
-            $lines.Add('HEALTH_STATUS=' + [string]$health.status)
-            $lines.Add('HEALTH_RELEASE_SHA=' + [string]$health.release_sha)
-            $lines.Add('HEALTH_DATABASE=' + [string]$health.database)
-            $lines.Add('HEALTH_SYNTHETIC_PREVIEW=' + [string]$health.synthetic_preview)
-            $lines.Add('HEALTH_CACHE_CONTROL=' + ($cacheControl -replace '[\r\n=]+', ' ').Trim())
-            $lines.Add('HEALTH_HSTS=' + ($hsts -replace '[\r\n=]+', ' ').Trim())
-            $lines.Add('PROBE_RESULT=SUCCESS')
-            $probeSucceeded = $true
-          }
-          catch {
-            $safeError = ($_.Exception.Message -replace '[\r\n=]+', ' ').Trim()
-            $lines.Add('PROBE_RESULT=FAILURE')
-            $lines.Add('PROBE_ERROR=' + $safeError)
-          }
-          finally {
-            $lines | Set-Content -Path $env:PROBE_RESULT_PATH -Encoding utf8
-            $lines | ForEach-Object { Write-Output $_ }
-          }
-
-          if (-not $probeSucceeded) {
-            exit 1
-          }
-
-      - name: Publish sanitized probe evidence to temporary branch
-        if: always()
-        shell: powershell
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          $ErrorActionPreference = 'Stop'
-          if (-not (Test-Path $env:PROBE_RESULT_PATH)) {
-            'PROBE_RESULT=FAILURE' | Set-Content -Path $env:PROBE_RESULT_PATH -Encoding utf8
-            'PROBE_ERROR=RESULT_FILE_MISSING' | Add-Content -Path $env:PROBE_RESULT_PATH -Encoding utf8
-          }
-
           $repo = $env:GITHUB_REPOSITORY
+          $expected = $env:EXPECTED_MAIN_SHA
           $headers = @{
             Authorization = ('Bearer ' + $env:GH_TOKEN)
             Accept = 'application/vnd.github+json'
             'X-GitHub-Api-Version' = '2022-11-28'
           }
-          $uri = 'https://api.github.com/repos/' + $repo + '/contents/' + $env:RESULT_REPO_PATH
-          $encodedBranch = [uri]::EscapeDataString($env:RESULT_BRANCH)
-          $existingSha = $null
-          try {
-            $existing = Invoke-RestMethod -Uri ($uri + '?ref=' + $encodedBranch) -Headers $headers -Method Get
-            $existingSha = [string]$existing.sha
-          }
-          catch {
-            $statusCode = $null
-            if ($null -ne $_.Exception.Response) {
-              $statusCode = [int]$_.Exception.Response.StatusCode
-            }
-            if ($statusCode -ne 404) {
-              throw
-            }
+
+          $runsUri = 'https://api.github.com/repos/' + $repo + '/actions/workflows/v10-phase4-free-preview-deploy.yml/runs?per_page=20'
+          $runs = (Invoke-RestMethod -Uri $runsUri -Headers $headers -Method Get).workflow_runs
+          $matches = @(
+            $runs |
+              Where-Object {
+                $_.head_sha -eq $expected -and
+                $_.head_branch -eq 'main'
+              } |
+              Sort-Object run_number -Descending
+          )
+          if ($matches.Count -lt 1) {
+            throw ('DEPLOY_RUN_NOT_FOUND exact_main=' + $expected)
           }
 
-          $bytes = [System.IO.File]::ReadAllBytes($env:PROBE_RESULT_PATH)
-          $body = @{
-            message = 'Publish sanitized exact-main site probe evidence'
-            content = [Convert]::ToBase64String($bytes)
-            branch = $env:RESULT_BRANCH
+          $run = $matches[0]
+          Write-Output (
+            'DEPLOY_RUN id=' + $run.id +
+            ' number=' + $run.run_number +
+            ' event=' + $run.event +
+            ' status=' + $run.status +
+            ' conclusion=' + $run.conclusion +
+            ' head_sha=' + $run.head_sha +
+            ' created_at=' + $run.created_at +
+            ' updated_at=' + $run.updated_at
+          )
+          if ($run.status -ne 'completed') {
+            throw ('DEPLOY_RUN_NOT_COMPLETED id=' + $run.id + ' status=' + $run.status)
           }
-          if ($existingSha) {
-            $body.sha = $existingSha
+          if ($run.conclusion -ne 'success') {
+            $jobs = (Invoke-RestMethod -Uri $run.jobs_url -Headers $headers -Method Get).jobs
+            foreach ($job in $jobs) {
+              Write-Output (
+                'DEPLOY_JOB name=' + $job.name +
+                ' status=' + $job.status +
+                ' conclusion=' + $job.conclusion
+              )
+            }
+            throw ('DEPLOY_RUN_NOT_GREEN id=' + $run.id + ' conclusion=' + $run.conclusion)
           }
-          Invoke-RestMethod -Uri $uri -Headers $headers -Method Put -ContentType 'application/json' -Body ($body | ConvertTo-Json -Depth 4) | Out-Null
-          Write-Output ('SANITIZED_RESULT_PUBLISHED path=' + $env:RESULT_REPO_PATH)
+
+          $rootResponse = $null
+          $lastRootError = $null
+          for ($attempt = 1; $attempt -le 6; $attempt++) {
+            try {
+              $rootResponse = Invoke-WebRequest -Uri $env:PREVIEW_ROOT -Method Get -UseBasicParsing -TimeoutSec 60
+              if ([int]$rootResponse.StatusCode -eq 200) {
+                break
+              }
+              $lastRootError = 'HTTP ' + [int]$rootResponse.StatusCode
+            }
+            catch {
+              $lastRootError = ($_.Exception.Message -replace '[\r\n]+', ' ').Trim()
+            }
+            Start-Sleep -Seconds 10
+          }
+          if ($null -eq $rootResponse -or [int]$rootResponse.StatusCode -ne 200) {
+            throw ('PUBLIC_ROOT_NOT_READY error=' + $lastRootError)
+          }
+
+          $title = ''
+          $titleMatch = [regex]::Match([string]$rootResponse.Content, '<title>([^<]*)</title>', 'IgnoreCase')
+          if ($titleMatch.Success) {
+            $title = ($titleMatch.Groups[1].Value -replace '[\r\n]+', ' ').Trim()
+          }
+          Write-Output (
+            'PUBLIC_ROOT url=' + $env:PREVIEW_ROOT +
+            ' status=' + [int]$rootResponse.StatusCode +
+            ' title=' + $title
+          )
+
+          $healthUrl = $env:PREVIEW_ROOT + 'healthz'
+          $healthResponse = Invoke-WebRequest -Uri $healthUrl -Method Get -UseBasicParsing -TimeoutSec 60
+          if ([int]$healthResponse.StatusCode -ne 200) {
+            throw ('PUBLIC_HEALTH_HTTP_INVALID status=' + [int]$healthResponse.StatusCode)
+          }
+          $health = $healthResponse.Content | ConvertFrom-Json
+          if ([string]$health.status -ne 'ok') {
+            throw ('PUBLIC_HEALTH_STATUS_INVALID value=' + [string]$health.status)
+          }
+          if ([string]$health.release_sha -ne $expected) {
+            throw ('PUBLIC_HEALTH_RELEASE_MISMATCH value=' + [string]$health.release_sha)
+          }
+          if ([string]$health.database -ne 'READY') {
+            throw ('PUBLIC_HEALTH_DATABASE_INVALID value=' + [string]$health.database)
+          }
+          if ([bool]$health.synthetic_preview -ne $true) {
+            throw ('PUBLIC_HEALTH_SYNTHETIC_INVALID value=' + [string]$health.synthetic_preview)
+          }
+
+          $cacheControl = [string]$healthResponse.Headers['Cache-Control']
+          $hsts = [string]$healthResponse.Headers['Strict-Transport-Security']
+          if ($cacheControl -notmatch '(^|[, ]+)no-store([, ]+|$)') {
+            throw ('PUBLIC_HEALTH_CACHE_CONTROL_INVALID value=' + $cacheControl)
+          }
+          if ($hsts -notmatch 'max-age=31536000') {
+            throw ('PUBLIC_HEALTH_HSTS_INVALID value=' + $hsts)
+          }
+
+          Write-Output (
+            'PUBLIC_HEALTH url=' + $healthUrl +
+            ' status=200 app_status=' + [string]$health.status +
+            ' release_sha=' + [string]$health.release_sha +
+            ' database=' + [string]$health.database +
+            ' synthetic_preview=' + [string]$health.synthetic_preview +
+            ' cache_control=' + $cacheControl +
+            ' hsts=' + $hsts
+          )
