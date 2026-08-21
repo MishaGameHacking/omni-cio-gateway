@@ -1,0 +1,214 @@
+name: V10 WP22A Phase 4A Preview Audit
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+    paths:
+      - ".dockerignore"
+      - ".github/workflows/v10-preview-deploy.yml"
+      - ".github/workflows/v10-wp22a-phase4a-preview-audit.yml"
+      - "Dockerfile.v10-preview"
+      - "apps/api/hosted_preview.py"
+      - "apps/web/**"
+      - "docs/architecture/V10_WP22A_PHASE4_RENDER_NEON_PREVIEW_CONTRACT.md"
+      - "docs/operations/V10_RENDER_NEON_PREVIEW_RUNBOOK.md"
+      - "infrastructure/preview/render-neon-contract.json"
+      - "knowledge/17_V10_CURRENT_PROGRAM_STATUS.md"
+      - "omni_cio/**"
+      - "requirements.txt"
+      - "scripts/v10_preview_deploy.py"
+      - "tests/test_v10_hosted_preview.py"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: v10-wp22a-phase4a-preview-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  preview-audit:
+    name: Build and rehearse synthetic preview on PostgreSQL 18
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+
+    steps:
+      - name: Bootstrap exact reviewed repository without external Actions
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          GITHUB_TOKEN: ${{ github.token }}
+          GIT_TERMINAL_PROMPT: "0"
+        run: |
+          set -euo pipefail
+          find . -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+          git init .
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          git config --local gc.auto 0
+          git config --local credential.helper ""
+          git config --local --add credential.helper '!f() { echo username=x-access-token; echo password=$GITHUB_TOKEN; }; f'
+          git fetch --no-tags --prune --depth=1 origin "+refs/heads/${HEAD_REF}:refs/remotes/origin/exact-head"
+          test "$(git rev-parse refs/remotes/origin/exact-head)" = "$EXPECTED_HEAD"
+          git checkout --detach "$EXPECTED_HEAD"
+          git config --local --unset-all credential.helper
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          test -z "$(git config --local --get-all credential.helper || true)"
+
+      - name: Verify source-only preview contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m compileall -q apps/api/hosted_preview.py scripts/v10_preview_deploy.py
+          python -m unittest discover -s tests -p 'test_v10_hosted_preview.py'
+
+      - name: Build exact preview image
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build \
+            --file Dockerfile.v10-preview \
+            --tag omni-cio-v10-preview:${GITHUB_SHA} \
+            .
+
+      - name: Rehearse PostgreSQL 18 runtime and public safety
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          NETWORK="omni-preview-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          DATABASE="omni-preview-db-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          APPLICATION="omni-preview-app-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          PASSWORD="preview-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          echo "::add-mask::$PASSWORD"
+          docker network create "$NETWORK"
+          docker run --detach \
+            --name "$DATABASE" \
+            --network "$NETWORK" \
+            --env POSTGRES_PASSWORD="$PASSWORD" \
+            postgres:18-bookworm
+
+          for _ in $(seq 1 60); do
+            if docker exec "$DATABASE" pg_isready -U postgres >/dev/null 2>&1; then
+              break
+            fi
+            sleep 2
+          done
+          docker exec "$DATABASE" pg_isready -U postgres
+
+          DSN="postgresql://postgres:${PASSWORD}@${DATABASE}:5432/postgres"
+          echo "::add-mask::$DSN"
+          docker run --detach \
+            --name "$APPLICATION" \
+            --network "$NETWORK" \
+            --publish 127.0.0.1:18080:10000 \
+            --env OMNI_V10_HOSTED_PREVIEW=1 \
+            --env OMNI_V10_POSTGRES_DSN="$DSN" \
+            --env OMNI_V10_IMPLEMENTATION_SHA="$EXPECTED_HEAD" \
+            --env PUBLIC_MULTI_USER_ENABLED=false \
+            --env REAL_TRADING_ENABLED=false \
+            "omni-cio-v10-preview:${GITHUB_SHA}"
+
+          healthy=0
+          for _ in $(seq 1 90); do
+            if curl --fail --silent --show-error \
+              http://127.0.0.1:18080/healthz \
+              > health.json 2>/dev/null; then
+              healthy=1
+              break
+            fi
+            if ! docker inspect --format '{{.State.Running}}' "$APPLICATION" \
+              | grep --quiet '^true$'; then
+              break
+            fi
+            sleep 2
+          done
+          if [ "$healthy" -ne 1 ]; then
+            docker logs "$APPLICATION"
+            exit 1
+          fi
+
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          value = json.loads(Path("health.json").read_text(encoding="utf-8"))
+          assert value == {
+              "status": "ok",
+              "mode": "synthetic_read_only_preview",
+              "release": os.environ["EXPECTED_HEAD"],
+          }
+          PY
+
+          curl --fail --silent --show-error \
+            --dump-header health.headers \
+            --output /dev/null \
+            http://127.0.0.1:18080/healthz
+          grep --ignore-case '^strict-transport-security:' health.headers
+          grep --ignore-case '^content-security-policy:' health.headers
+          grep --ignore-case '^cache-control: no-store' health.headers
+          grep --ignore-case '^x-omni-preview-mode: synthetic-read-only' health.headers
+
+          curl --fail --silent --show-error \
+            http://127.0.0.1:18080/ \
+            > index.html
+          grep --quiet '<div id="root"' index.html
+
+          curl --silent --show-error \
+            http://127.0.0.1:18080/api/v10/web/session \
+            > session.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          value = json.loads(Path("session.json").read_text(encoding="utf-8"))
+          assert value["authenticated"] is True
+          assert isinstance(value["expires_at"], str) and value["expires_at"]
+          PY
+
+          status="$(curl --silent --show-error \
+            --output mutation.json \
+            --write-out '%{http_code}' \
+            --request POST \
+            --header 'Content-Type: application/json' \
+            --data '{}' \
+            http://127.0.0.1:18080/api/v10/web/session/logout)"
+          test "$status" = "403"
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          value = json.loads(Path("mutation.json").read_text(encoding="utf-8"))
+          assert value == {"detail": "HOSTED_PREVIEW_READ_ONLY"}
+          PY
+
+      - name: Summarize failure diagnostics
+        if: failure()
+        shell: bash
+        run: |
+          docker ps --all || true
+          for name in $(docker ps --all --format '{{.Names}}' | grep '^omni-preview-' || true); do
+            echo "### $name"
+            docker logs "$name" || true
+          done
+
+      - name: Clean preview rehearsal
+        if: always()
+        shell: bash
+        run: |
+          docker rm --force \
+            "omni-preview-app-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            "omni-preview-db-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            2>/dev/null || true
+          docker network rm \
+            "omni-preview-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            2>/dev/null || true
+          docker image rm \
+            "omni-cio-v10-preview:${GITHUB_SHA}" \
+            2>/dev/null || true
