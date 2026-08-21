@@ -4,7 +4,7 @@ import importlib.util
 from pathlib import Path
 import sys
 from typing import Any
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, urlsplit, urlunsplit
 
 import pytest
 
@@ -12,6 +12,25 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "v10-phase4-free-preview-deploy.yml"
 SCRIPT = ROOT / "scripts" / "provision_v10_render_neon_preview.py"
+
+
+def _postgres_uri(
+    user: str,
+    marker: str,
+    host: str,
+    *,
+    database: str = "neondb",
+    sslmode: str = "require",
+) -> str:
+    return urlunsplit(
+        (
+            "postgresql",
+            f"{user}:{marker}@{host}",
+            f"/{database}",
+            f"sslmode={sslmode}",
+            "",
+        )
+    )
 
 
 def _module() -> Any:
@@ -74,22 +93,24 @@ def test_workflow_runs_only_zero_cost_preview_contracts_before_mutation() -> Non
 
 def test_runtime_uri_replacement_drops_bootstrap_credentials() -> None:
     module = _module()
+    bootstrap_marker = "bootstrap-test-marker"
+    runtime_marker = "runtime-test-marker"
     value = module._replace_uri_credentials(
-        "postgresql://bootstrap:bootstrap-secret@host.example/neondb?sslmode=require",  # pragma: allowlist secret
+        _postgres_uri("bootstrap", bootstrap_marker, "host.example"),
         "omni_cio_hosted_api",
-        "runtime-secret",
+        runtime_marker,
     )
 
     assert "bootstrap" not in value
-    assert "bootstrap-secret" not in value
+    assert bootstrap_marker not in value
     assert "omni_cio_hosted_api" in value
-    assert "runtime-secret" in value
+    assert runtime_marker in value
     assert value.endswith("/neondb?sslmode=require")
 
 
 def test_render_environment_is_fail_closed_and_free_only() -> None:
     module = _module()
-    rows = module._render_env("postgresql://runtime:secret@host/neondb")
+    rows = module._render_env(_postgres_uri("runtime", "test-marker", "host"))
     env = {row["key"]: row["value"] for row in rows}
 
     assert env["OMNI_V10_HOSTED_PREVIEW"] == "1"
@@ -284,16 +305,27 @@ def test_render_health_probe_is_pinned_to_exact_service_url() -> None:
 
 def test_neon_connection_uri_requires_neon_tls_endpoint() -> None:
     module = _module()
-    safe = (
-        "postgresql://owner:secret@ep-preview.eu-central-1.aws.neon.tech/"  # pragma: allowlist secret
-        "neondb?sslmode=require"
+    safe = _postgres_uri(
+        "owner",
+        "test-marker",
+        "ep-preview.eu-central-1.aws.neon.tech",
     )
     assert module._neon_connection_uri(safe, "neondb", "INVALID") == safe
 
     for value in (
-        "postgresql://owner:secret@127.0.0.1/neondb?sslmode=require",
-        "postgresql://owner:secret@ep-preview.neon.tech/other?sslmode=require",
-        "postgresql://owner:secret@ep-preview.neon.tech/neondb?sslmode=disable",
+        _postgres_uri("owner", "test-marker", "127.0.0.1"),
+        _postgres_uri(
+            "owner",
+            "test-marker",
+            "ep-preview.neon.tech",
+            database="other",
+        ),
+        _postgres_uri(
+            "owner",
+            "test-marker",
+            "ep-preview.neon.tech",
+            sslmode="disable",
+        ),
     ):
         with pytest.raises(module.ProvisioningStopped, match="INVALID"):
             module._neon_connection_uri(value, "neondb", "INVALID")
