@@ -75,7 +75,7 @@ def test_workflow_runs_only_zero_cost_preview_contracts_before_mutation() -> Non
 def test_runtime_uri_replacement_drops_bootstrap_credentials() -> None:
     module = _module()
     value = module._replace_uri_credentials(
-        "postgresql://bootstrap:bootstrap-secret@host.example/neondb?sslmode=require",
+        "postgresql://bootstrap:bootstrap-secret@host.example/neondb?sslmode=require",  # pragma: allowlist secret
         "omni_cio_hosted_api",
         "runtime-secret",
     )
@@ -276,7 +276,7 @@ def test_render_health_probe_is_pinned_to_exact_service_url() -> None:
 def test_neon_connection_uri_requires_neon_tls_endpoint() -> None:
     module = _module()
     safe = (
-        "postgresql://owner:secret@ep-preview.eu-central-1.aws.neon.tech/"
+        "postgresql://owner:secret@ep-preview.eu-central-1.aws.neon.tech/"  # pragma: allowlist secret
         "neondb?sslmode=require"
     )
     assert module._neon_connection_uri(safe, "neondb", "INVALID") == safe
