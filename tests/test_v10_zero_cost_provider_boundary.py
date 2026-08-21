@@ -163,12 +163,18 @@ def test_deployment_workflow_requires_fresh_attestation_and_test_toolchain() -> 
         / "v10-phase4-free-preview-deploy.yml"
     ).read_text(encoding="utf-8")
 
+    assert "Verify exact-main Regression Shield before provider mutation" in workflow
+    assert "python scripts/check_v10_exact_main_regression.py" in workflow
+    assert "tests/test_v10_exact_main_regression.py" in workflow
     assert "Enforce zero-charge provider boundary" in workflow
     assert (
         "RENDER_ZERO_CHARGE_ATTESTATION: "
         "${{ vars.RENDER_ZERO_CHARGE_ATTESTATION }}"
     ) in workflow
     assert "python scripts/check_v10_zero_cost_provider_boundary.py" in workflow
+    assert workflow.index(
+        "Verify exact-main Regression Shield before provider mutation"
+    ) < workflow.index("Enforce zero-charge provider boundary")
     assert workflow.index("Enforce zero-charge provider boundary") < workflow.index(
         "Provision and deploy zero-cost synthetic preview"
     )
@@ -177,10 +183,11 @@ def test_deployment_workflow_requires_fresh_attestation_and_test_toolchain() -> 
     assert "requirements-dev.txt windows-requirements-dev.txt" in workflow
     assert "--require-hashes -r windows-requirements-dev.txt" in workflow
     assert "import fastapi, psycopg, pytest" in workflow
-    assert "\npermissions:\n  contents: read\n" not in workflow
+    assert "\npermissions:\n" not in workflow
     assert (
         "  deploy-free-preview:\n"
         "    name: Deploy exact accepted main to Render and Neon free preview\n"
         "    permissions:\n"
+        "      actions: read\n"
         "      contents: read\n"
     ) in workflow

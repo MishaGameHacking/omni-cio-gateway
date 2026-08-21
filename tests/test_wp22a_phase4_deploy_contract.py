@@ -41,6 +41,21 @@ def test_workflow_has_no_pull_request_secret_path() -> None:
     assert "secrets.RENDER_API_KEY" in text
     assert "secrets.NEON_API_KEY" in text
     assert "cancel-in-progress: false" in text
+    assert "      actions: read\n      contents: read\n" in text
+
+
+def test_all_trigger_paths_reverify_exact_main_regression_before_mutation() -> None:
+    text = WORKFLOW.read_text(encoding="utf-8")
+    regression = text.index(
+        "Verify exact-main Regression Shield before provider mutation"
+    )
+    boundary = text.index("Enforce zero-charge provider boundary")
+    provision = text.index("Provision and deploy zero-cost synthetic preview")
+
+    assert regression < boundary < provision
+    assert "python scripts/check_v10_exact_main_regression.py" in text
+    assert "tests/test_v10_exact_main_regression.py" in text
+    assert "GITHUB_TOKEN: ${{ github.token }}" in text
 
 
 def test_workflow_runs_only_zero_cost_preview_contracts_before_mutation() -> None:
@@ -49,6 +64,7 @@ def test_workflow_runs_only_zero_cost_preview_contracts_before_mutation() -> Non
     provision = text.index("Provision and deploy zero-cost synthetic preview")
 
     assert verify < provision
+    assert "tests/test_v10_exact_main_regression.py" in text
     assert "tests/test_wp22a_phase4_free_preview_authorization.py" in text
     assert "tests/test_wp22a_phase4_hosted_preview_app.py" in text
     assert "tests/test_wp22a_phase4_deploy_contract.py" in text

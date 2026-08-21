@@ -1,7 +1,7 @@
-# WP22A Phase 4 — Render + Neon zero-cost preview implementation contract
+# WP22A Phase 4 - Render + Neon zero-cost preview implementation contract
 
 Status: **IMPLEMENTATION UNDER REVIEW / PROVIDER APPLY LOCKED UNTIL AUTHORIZATION IS ACCEPTED ON `main`**  
-Owning package: **WP22A — External Web Access / Product Authentication Security Gate**
+Owning package: **WP22A - External Web Access / Product Authentication Security Gate**
 
 ## Purpose
 
@@ -14,6 +14,8 @@ The preview proves build, PostgreSQL 18 migrations, least-privilege runtime acce
 Exactly one deployment implementation is supported:
 
 - deployment workflow: `.github/workflows/v10-phase4-free-preview-deploy.yml`;
+- exact-main Regression Shield verifier: `scripts/check_v10_exact_main_regression.py`;
+- exact-main verification tests: `tests/test_v10_exact_main_regression.py`;
 - provider provisioner: `scripts/provision_v10_render_neon_preview.py`;
 - hosted application factory: `apps/api/hosted_preview.py`;
 - existing Web product: `apps/web`;
@@ -42,12 +44,15 @@ The canonical workflow:
 
 - runs on the existing self-hosted Windows `omni-cio-ci` runner rather than budget-blocked GitHub-hosted capacity;
 - has no `pull_request` trigger;
+- grants only job-scoped `actions: read` and `contents: read` permissions;
+- re-verifies through the read-only GitHub Actions API, for both automatic and manual dispatch paths, that exactly one push-triggered Regression Shield run for the exact accepted-main SHA completed successfully;
+- requires the exact run's `Quality, contracts and coverage` and `Dependency, code and secret security` jobs to be completed and successful before any provider mutation;
 - receives `RENDER_API_KEY` and `NEON_API_KEY` only in the provider-mutation step;
 - bootstraps and verifies the exact accepted-main SHA;
 - runs deterministic deployment-source tests before any provider call;
 - masks provider keys, generated runtime credentials and database URIs;
 - writes only sanitized classifications, non-sensitive resource IDs, release SHA and the public preview URL;
-- fails closed on unexpected workspace, service, project, plan, version, region, role, migration, health or billing state.
+- fails closed on unexpected workflow, run, job, workspace, service, project, plan, version, region, role, migration, health or billing state.
 
 ## Render runtime
 
@@ -91,8 +96,9 @@ The preview is public by URL but synthetic by data and authority.
 - Telegram and VK providers remain disabled;
 - the login screen offers an explicit synthetic preview action;
 - that action creates a server-side synthetic session; no automatic impersonation occurs;
-- session and CSRF cookies are Secure and SameSite=Strict; the session cookie is HttpOnly;
-- no session, provider token or database credential is stored in browser Web Storage;
+- session and CSRF cookies are Secure, HttpOnly and SameSite=Strict;
+- the CSRF proof is returned only in a same-origin, `no-store` response header and retained only in the active JavaScript process memory;
+- no session, CSRF proof, provider token or database credential is stored in browser Web Storage;
 - real broker connection mutations are rejected;
 - portfolio, research, incident, decision and system views expose only synthetic or empty preview data;
 - `trading_methods=false`;
@@ -124,10 +130,11 @@ Phase 4 preview acceptance requires:
 4. zero unresolved blocking review threads;
 5. squash merge to `main`;
 6. exact-main Regression Shield SUCCESS;
-7. deployment workflow SUCCESS;
-8. Render deploy `live` on the exact accepted-main SHA;
-9. public HTTPS health and security probes SUCCESS;
-10. ordinary-browser smoke evidence for the V10 shell;
-11. negative checks proving real credentials and mutations remain blocked.
+7. deployment workflow re-verification of that exact Regression Shield run and both required jobs;
+8. deployment workflow SUCCESS;
+9. Render deploy `live` on the exact accepted-main SHA;
+10. public HTTPS health and security probes SUCCESS;
+11. ordinary-browser smoke evidence for the V10 shell;
+12. negative checks proving real credentials and mutations remain blocked.
 
 Only then may the public URL be described as a working synthetic preview. Phase 5 and final Cloud.ru production acceptance remain separate.

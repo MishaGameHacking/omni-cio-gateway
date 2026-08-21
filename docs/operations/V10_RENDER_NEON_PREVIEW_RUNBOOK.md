@@ -12,6 +12,7 @@ This runbook operates the temporary public synthetic preview for the existing Om
 Use only:
 
 - `.github/workflows/v10-phase4-free-preview-deploy.yml`;
+- `scripts/check_v10_exact_main_regression.py`;
 - `scripts/provision_v10_render_neon_preview.py`;
 - `apps/api/hosted_preview.py`;
 - `apps/web`.
@@ -45,7 +46,14 @@ Never paste either key into source, pull requests, issues, chat, screenshots, su
 
 ## Trigger and source verification
 
-Normal deployment is triggered by a successful `Regression Shield` workflow run on branch `main`. A manual dispatch is allowed only from `main`.
+Normal deployment is triggered by a successful `Regression Shield` workflow run on branch `main`. A manual dispatch is allowed only from `main` as a retry path; it never bypasses Regression Shield.
+
+Before any provider mutation, every trigger path must use the read-only GitHub Actions API to prove that the exact target SHA has exactly one completed successful `push` run of `.github/workflows/regression-shield.yml`, and that both required jobs are completed and successful:
+
+- `Quality, contracts and coverage`;
+- `Dependency, code and secret security`.
+
+Missing, duplicate, queued, cancelled, failed, manually triggered or SHA-mismatched Regression Shield evidence is a hard failure.
 
 The workflow must:
 
@@ -53,13 +61,15 @@ The workflow must:
 - derive the exact accepted-main SHA from the triggering event;
 - fetch and detach-checkout that exact SHA;
 - remove Git credential helpers after checkout;
+- grant only job-scoped `actions: read` and `contents: read` permissions;
+- execute `scripts/check_v10_exact_main_regression.py` before provider credentials or mutation are used;
 - create an isolated Python environment;
 - install only hash-locked runtime dependencies;
 - compile and run the Phase 4 deployment/application tests before provider calls;
 - pass secrets only to the provision step;
 - clean the isolated environment and repository workspace afterward.
 
-A source SHA mismatch is a hard failure.
+A source SHA or Regression Shield evidence mismatch is a hard failure.
 
 ## Database bootstrap
 
@@ -109,8 +119,9 @@ The preview:
 - rejects real broker-connection mutations;
 - exposes only synthetic or empty portfolio, research, incident, decision and system data;
 - stores sessions only in PostgreSQL;
-- keeps session credentials out of browser Web Storage;
-- uses Secure and SameSite=Strict cookies, with the session cookie HttpOnly;
+- keeps session credentials and CSRF proofs out of browser Web Storage;
+- uses Secure, HttpOnly and SameSite=Strict session and CSRF cookies;
+- returns the CSRF proof only through a same-origin, `no-store` response header and keeps it only in active process memory;
 - requires same-origin and CSRF proof for state-changing requests;
 - keeps API and health responses `no-store`;
 - applies Host allowlisting, HSTS, CSP, `nosniff`, referrer and opener protections.
@@ -134,7 +145,7 @@ The final workflow summary may contain only the exact release SHA, public previe
 
 ## Failure handling
 
-Provider API, plan, region, PostgreSQL version, migration, role, RLS, build, deploy, health, release or security-header failure remains RED.
+GitHub authority, provider API, plan, region, PostgreSQL version, migration, role, RLS, build, deploy, health, release or security-header failure remains RED.
 
 Safe recovery order:
 
@@ -144,9 +155,9 @@ Safe recovery order:
 4. complete exact-head DRAFT and fresh READY validation;
 5. squash-merge the accepted fix;
 6. require exact-main Regression Shield SUCCESS;
-7. allow the accepted-main deployment workflow to retry.
+7. allow the accepted-main deployment workflow to re-verify that exact run and retry.
 
-Never recover by weakening exact-SHA, free-plan, TLS, PostgreSQL 18, least-privilege, RLS, no-secret or no-real-data controls.
+Never recover by weakening exact-SHA, Regression Shield, free-plan, TLS, PostgreSQL 18, least-privilege, RLS, no-secret or no-real-data controls.
 
 ## Exit from preview
 
