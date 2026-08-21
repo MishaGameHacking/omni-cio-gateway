@@ -4,6 +4,7 @@ import importlib.util
 from pathlib import Path
 import sys
 from typing import Any
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
@@ -86,6 +87,76 @@ def test_render_environment_is_fail_closed_and_free_only() -> None:
     assert env["BROKER_WRITE_ENABLED"] == "false"
     assert env["PYTHON_VERSION"] == "3.12.10"
     assert env["NODE_VERSION"] == "24.18.0"
+
+
+def test_neon_organization_requires_one_free_plan() -> None:
+    module = _module()
+
+    class Api:
+        def __init__(self, organizations: list[dict[str, object]]) -> None:
+            self.organizations = organizations
+
+        def request(self, method: str, path: str) -> dict[str, object]:
+            assert method == "GET"
+            assert path == "/users/me/organizations"
+            return {"organizations": self.organizations}
+
+    assert module._neon_organization(
+        Api([{"id": "org-free-preview", "plan": "free"}])
+    ) == "org-free-preview"
+
+    with pytest.raises(
+        module.ProvisioningStopped,
+        match="NEON_ORGANIZATION_NOT_UNIQUE",
+    ):
+        module._neon_organization(Api([]))
+
+    with pytest.raises(module.ProvisioningStopped, match="NEON_FREE_PLAN_REQUIRED"):
+        module._neon_organization(
+            Api([{"id": "org-paid-preview", "plan": "launch"}])
+        )
+
+
+def test_existing_neon_project_lookup_is_explicitly_org_scoped() -> None:
+    module = _module()
+
+    class Api:
+        def __init__(self) -> None:
+            self.paths: list[str] = []
+
+        def request(self, method: str, path: str) -> dict[str, object]:
+            assert method == "GET"
+            self.paths.append(path)
+            query = parse_qs(urlsplit(path).query)
+            assert query["org_id"] == ["org-free-preview"]
+            assert query["search"] == [module.NEON_PROJECT_NAME]
+            return {
+                "projects": [
+                    {
+                        "id": "project-free-preview",
+                        "name": module.NEON_PROJECT_NAME,
+                        "org_id": "org-free-preview",
+                        "pg_version": 18,
+                        "region_id": module.NEON_REGION,
+                    }
+                ]
+            }
+
+    api = Api()
+    project = module._ensure_neon_project(api, "org-free-preview")
+
+    assert project["id"] == "project-free-preview"
+    assert len(api.paths) == 1
+
+
+def test_neon_create_and_region_paths_are_org_scoped() -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+
+    assert 'api.request("GET", "/users/me/organizations")' in source
+    assert 'regions_query = urlencode({"org_id": safe_organization_id})' in source
+    assert '"org_id": safe_organization_id' in source
+    assert 'project.get("org_id") != safe_organization_id' in source
+    assert "NEON_PROJECT_ORGANIZATION_DRIFT" in source
 
 
 def test_existing_render_service_requires_exact_safe_shape() -> None:
