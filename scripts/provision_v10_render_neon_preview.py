@@ -21,8 +21,11 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 RENDER_API_BASE = "https://api.render.com/v1"
 NEON_API_BASE = "https://console.neon.tech/api/v2"
 REPOSITORY_URL = "https://github.com/MishaGameHacking/omni-cio-gateway"
-NEON_PROJECT_NAME = "omni-cio-v10-preview"
 NEON_REGION = "aws-eu-central-1"
+# Project regions are immutable. Keep the legacy unscoped name out of provider
+# selection so a wrong-region preview is preserved instead of mutated or deleted.
+NEON_PROJECT_NAME = "omni-cio-v10-preview-frankfurt"
+LEGACY_NEON_PROJECT_NAME = "omni-cio-v10-preview"
 RENDER_SERVICE_NAME = "omni-cio-v10-web"
 RENDER_REGION = "frankfurt"
 RENDER_SERVICE_URL = f"https://{RENDER_SERVICE_NAME}.onrender.com"

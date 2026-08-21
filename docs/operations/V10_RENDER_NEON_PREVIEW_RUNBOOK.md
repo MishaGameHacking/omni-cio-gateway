@@ -24,7 +24,7 @@ Do not deploy through a second workflow, Dockerfile, temporary status workflow, 
 The workflow may manage only:
 
 - Render Free native Python Web Service `omni-cio-v10-web` in Frankfurt;
-- Neon PostgreSQL 18 project `omni-cio-v10-preview` in `aws-eu-central-1`;
+- Neon PostgreSQL 18 project `omni-cio-v10-preview-frankfurt` in `aws-eu-central-1`;
 - SQL-created least-privilege role `omni_cio_hosted_api`;
 - provider-generated HTTPS and PostgreSQL endpoints;
 - synthetic preview tenant, user and session state.
@@ -74,6 +74,8 @@ A source SHA or Regression Shield evidence mismatch is a hard failure.
 ## Database bootstrap
 
 The provisioner discovers or creates the exact Neon project and verifies PostgreSQL major version 18 and Frankfurt region.
+
+Neon project regions are immutable. A legacy project named `omni-cio-v10-preview` in another region is deliberately ignored and is never updated or deleted. The region-scoped Frankfurt project is created or reused independently.
 
 Using the privileged bootstrap connection only inside the workflow, it:
 

@@ -29,12 +29,14 @@ A second Docker-based deploy workflow, duplicate provider client, temporary self
 The implementation may create or reuse only:
 
 1. one Render **Free** native Python Web Service named `omni-cio-v10-web`, branch `main`, region Frankfurt;
-2. one Neon PostgreSQL 18 project named `omni-cio-v10-preview`, region `aws-eu-central-1`;
+2. one Neon PostgreSQL 18 project named `omni-cio-v10-preview-frankfurt`, region `aws-eu-central-1`;
 3. the provider-generated HTTPS hostname and PostgreSQL endpoints;
 4. a SQL-created runtime role named `omni_cio_hosted_api`;
 5. synthetic preview tenant, user and session records.
 
 No paid instance, paid database feature, automatic paid overage, custom domain, Cloud.ru resource, real identity credential, broker credential or private portfolio payload is authorized. Any payment, card, broader permission, non-free plan or account-verification requirement stops the apply.
+
+The legacy unscoped project name `omni-cio-v10-preview` is out of scope. If it exists in another immutable region, the provisioner must preserve it without mutation or deletion and create or reuse only the Frankfurt-scoped project.
 
 ## GitHub authority and trigger
 
