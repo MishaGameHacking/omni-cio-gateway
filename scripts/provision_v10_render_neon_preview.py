@@ -14,8 +14,8 @@ import sys
 import time
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote, urlencode, urlsplit, urlunsplit
-from urllib.request import Request, urlopen
+from urllib.parse import parse_qs, quote, unquote, urlencode, urlsplit, urlunsplit
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 
 RENDER_API_BASE = "https://api.render.com/v1"
@@ -25,11 +25,14 @@ NEON_PROJECT_NAME = "omni-cio-v10-preview"
 NEON_REGION = "aws-eu-central-1"
 RENDER_SERVICE_NAME = "omni-cio-v10-web"
 RENDER_REGION = "frankfurt"
+RENDER_SERVICE_URL = f"https://{RENDER_SERVICE_NAME}.onrender.com"
 RUNTIME_ROLE = "omni_cio_hosted_api"
 PREVIEW_TENANT_ID = "tenant:v1:synthetic_preview"
 PREVIEW_USER_ID = "user:v1:synthetic_preview"
 PREVIEW_CREATED_AT = datetime(2026, 8, 21, tzinfo=timezone.utc)
 _SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
+_PROVIDER_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")
+_SAFE_TEXT_PATTERN = re.compile(r"^[^\x00-\x1f\x7f]{1,128}$")
 _TERMINAL_DEPLOY_FAILURES = frozenset(
     {
         "deactivated",
@@ -75,6 +78,23 @@ class RenderTarget:
     service_id: str
     service_url: str
     deploy_id: str
+
+
+class _RejectRedirects(HTTPRedirectHandler):
+    def redirect_request(
+        self,
+        request: Request,
+        file_pointer: Any,
+        code: int,
+        message: str,
+        headers: Any,
+        new_url: str,
+    ) -> None:
+        del request, file_pointer, code, message, headers, new_url
+        return None
+
+
+_NO_REDIRECT_OPENER = build_opener(_RejectRedirects())
 
 
 def _mask(value: str) -> None:
@@ -130,9 +150,80 @@ def _canonical_sha256(payload: dict[str, object]) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _provider_id(value: object, code: str) -> str:
+    if not isinstance(value, str) or _PROVIDER_ID_PATTERN.fullmatch(value) is None:
+        raise ProvisioningStopped(code)
+    return value
+
+
+def _provider_segment(value: object, code: str) -> str:
+    return quote(_provider_id(value, code), safe="")
+
+
+def _safe_provider_text(value: object, code: str) -> str:
+    if not isinstance(value, str) or _SAFE_TEXT_PATTERN.fullmatch(value) is None:
+        raise ProvisioningStopped(code)
+    return value
+
+
+def _safe_api_path(path: str, code: str) -> str:
+    if not path.startswith("/") or path.startswith("//") or "\\" in path:
+        raise ProvisioningStopped(code)
+    if any(character in path for character in ("\r", "\n", "\x00")):
+        raise ProvisioningStopped(code)
+    parsed = urlsplit(path)
+    if parsed.scheme or parsed.netloc or parsed.fragment:
+        raise ProvisioningStopped(code)
+    for raw_segment in parsed.path.split("/"):
+        segment = unquote(raw_segment)
+        if segment in {".", ".."} or "/" in segment or "\\" in segment:
+            raise ProvisioningStopped(code)
+    return path
+
+
+def _neon_connection_uri(value: object, database_name: str, code: str) -> str:
+    if not isinstance(value, str):
+        raise ProvisioningStopped(code)
+    try:
+        parsed = urlsplit(value)
+        port = parsed.port
+    except ValueError:
+        raise ProvisioningStopped(code) from None
+    hostname = (parsed.hostname or "").lower().rstrip(".")
+    if (
+        parsed.scheme not in {"postgres", "postgresql"}
+        or not parsed.username
+        or parsed.password is None
+        or not hostname.endswith(".neon.tech")
+        or port not in {None, 5432}
+        or unquote(parsed.path) != f"/{database_name}"
+        or parsed.fragment
+    ):
+        raise ProvisioningStopped(code)
+    query = parse_qs(parsed.query, keep_blank_values=True)
+    if query.get("sslmode") != ["require"]:
+        raise ProvisioningStopped(code)
+    return value
+
+
+def _render_service_url(value: object) -> str:
+    if not isinstance(value, str):
+        raise ProvisioningStopped("RENDER_HTTPS_URL_MISSING")
+    normalized = value.strip().rstrip("/")
+    if normalized != RENDER_SERVICE_URL:
+        raise ProvisioningStopped("RENDER_HTTPS_URL_DRIFT")
+    return RENDER_SERVICE_URL
+
+
 class JsonApi:
     def __init__(self, base_url: str, token: str, *, label: str) -> None:
-        self.base_url = base_url.rstrip("/")
+        expected_base = {
+            "NEON": NEON_API_BASE,
+            "RENDER": RENDER_API_BASE,
+        }.get(label)
+        if expected_base is None or base_url.rstrip("/") != expected_base:
+            raise ProvisioningStopped("PROVIDER_API_BASE_INVALID")
+        self.base_url = expected_base
         self.token = token
         self.label = label
 
@@ -145,7 +236,8 @@ class JsonApi:
         expected: frozenset[int] = frozenset({200}),
         timeout: float = 30.0,
     ) -> Any:
-        url = f"{self.base_url}{path}"
+        safe_path = _safe_api_path(path, f"{self.label}_API_PATH_INVALID")
+        url = f"{self.base_url}{safe_path}"
         data = None
         headers = {
             "Accept": "application/json",
@@ -157,7 +249,7 @@ class JsonApi:
             headers["Content-Type"] = "application/json"
         request = Request(url, data=data, headers=headers, method=method)
         try:
-            with urlopen(request, timeout=timeout) as response:
+            with _NO_REDIRECT_OPENER.open(request, timeout=timeout) as response:
                 status = int(response.status)
                 raw = response.read()
         except HTTPError as exc:
@@ -196,18 +288,20 @@ def _wait_neon_operations(
     project_id: str,
     operations: object,
 ) -> None:
+    safe_project_id = _provider_segment(project_id, "NEON_PROJECT_ID_INVALID")
     rows = _json_list(operations, "NEON_OPERATIONS_INVALID")
     for row in rows:
         operation = _json_object(row, "NEON_OPERATION_INVALID")
-        operation_id = str(operation.get("id", ""))
-        if not operation_id:
-            raise ProvisioningStopped("NEON_OPERATION_ID_MISSING")
+        operation_id = _provider_segment(
+            operation.get("id"),
+            "NEON_OPERATION_ID_INVALID",
+        )
         deadline = time.monotonic() + 600.0
         while True:
             payload = _json_object(
                 api.request(
                     "GET",
-                    f"/projects/{project_id}/operations/{operation_id}",
+                    f"/projects/{safe_project_id}/operations/{operation_id}",
                 ),
                 "NEON_OPERATION_RESPONSE_INVALID",
             )
@@ -271,9 +365,10 @@ def _ensure_neon_project(api: JsonApi) -> dict[str, Any]:
             created.get("project"),
             "NEON_PROJECT_CREATE_RESPONSE_INVALID",
         )
-        project_id = str(project.get("id", ""))
-        if not project_id:
-            raise ProvisioningStopped("NEON_PROJECT_ID_MISSING")
+        project_id = _provider_segment(
+            project.get("id"),
+            "NEON_PROJECT_ID_INVALID",
+        )
         _wait_neon_operations(
             api,
             project_id,
@@ -289,14 +384,13 @@ def _ensure_neon_project(api: JsonApi) -> dict[str, Any]:
         raise ProvisioningStopped("NEON_POSTGRES18_REQUIRED")
     if str(project.get("region_id", "")) != NEON_REGION:
         raise ProvisioningStopped("NEON_FRANKFURT_REGION_REQUIRED")
-    if not str(project.get("id", "")):
-        raise ProvisioningStopped("NEON_PROJECT_ID_MISSING")
+    _provider_segment(project.get("id"), "NEON_PROJECT_ID_INVALID")
     return project
 
 
 def _neon_target(api: JsonApi) -> NeonTarget:
     project = _ensure_neon_project(api)
-    project_id = str(project["id"])
+    project_id = _provider_segment(project.get("id"), "NEON_PROJECT_ID_INVALID")
     branch_payload = _json_object(
         api.request("GET", f"/projects/{project_id}/branches?limit=100"),
         "NEON_BRANCHES_RESPONSE_INVALID",
@@ -313,9 +407,10 @@ def _neon_target(api: JsonApi) -> NeonTarget:
         defaults = [item for item in branches if item.get("name") == "main"]
     if len(defaults) != 1:
         raise ProvisioningStopped("NEON_DEFAULT_BRANCH_NOT_UNIQUE")
-    branch_id = str(defaults[0].get("id", ""))
-    if not branch_id:
-        raise ProvisioningStopped("NEON_BRANCH_ID_MISSING")
+    branch_id = _provider_segment(
+        defaults[0].get("id"),
+        "NEON_BRANCH_ID_INVALID",
+    )
 
     database_payload = _json_object(
         api.request(
@@ -337,10 +432,14 @@ def _neon_target(api: JsonApi) -> NeonTarget:
             raise ProvisioningStopped("NEON_DATABASE_NOT_UNIQUE")
         preferred = databases
     database = preferred[0]
-    database_name = str(database.get("name", ""))
-    bootstrap_role = str(database.get("owner_name", ""))
-    if not database_name or not bootstrap_role:
-        raise ProvisioningStopped("NEON_DATABASE_OWNER_MISSING")
+    database_name = _safe_provider_text(
+        database.get("name"),
+        "NEON_DATABASE_NAME_INVALID",
+    )
+    bootstrap_role = _safe_provider_text(
+        database.get("owner_name"),
+        "NEON_DATABASE_OWNER_INVALID",
+    )
     if bootstrap_role == RUNTIME_ROLE:
         raise ProvisioningStopped("NEON_BOOTSTRAP_ROLE_INVALID")
 
@@ -359,10 +458,16 @@ def _neon_target(api: JsonApi) -> NeonTarget:
         api.request("GET", f"/projects/{project_id}/connection_uri?{pooled}"),
         "NEON_POOLED_CONNECTION_URI_INVALID",
     )
-    bootstrap_uri = str(direct_payload.get("uri", ""))
-    pooled_bootstrap_uri = str(pooled_payload.get("uri", ""))
-    if not bootstrap_uri or not pooled_bootstrap_uri:
-        raise ProvisioningStopped("NEON_CONNECTION_URI_MISSING")
+    bootstrap_uri = _neon_connection_uri(
+        direct_payload.get("uri"),
+        database_name,
+        "NEON_CONNECTION_URI_SHAPE_INVALID",
+    )
+    pooled_bootstrap_uri = _neon_connection_uri(
+        pooled_payload.get("uri"),
+        database_name,
+        "NEON_POOLED_CONNECTION_URI_SHAPE_INVALID",
+    )
     _mask(bootstrap_uri)
     _mask(pooled_bootstrap_uri)
     return NeonTarget(
@@ -606,17 +711,18 @@ def _render_owner(api: JsonApi) -> str:
     owners = _unwrap_rows(api.request("GET", "/owners?limit=100"), "owner")
     if len(owners) != 1:
         raise ProvisioningStopped("RENDER_WORKSPACE_NOT_UNIQUE")
-    owner_id = str(owners[0].get("id", ""))
-    if not owner_id:
-        raise ProvisioningStopped("RENDER_WORKSPACE_ID_MISSING")
-    return owner_id
+    return _provider_segment(
+        owners[0].get("id"),
+        "RENDER_WORKSPACE_ID_INVALID",
+    )
 
 
 def _render_services(api: JsonApi, owner_id: str) -> list[dict[str, Any]]:
+    safe_owner_id = _provider_segment(owner_id, "RENDER_WORKSPACE_ID_INVALID")
     query = urlencode(
         {
             "name": RENDER_SERVICE_NAME,
-            "ownerId": owner_id,
+            "ownerId": safe_owner_id,
             "includePreviews": "false",
             "limit": 100,
         }
@@ -660,6 +766,7 @@ def _create_render_service(
     owner_id: str,
     runtime_uri: str,
 ) -> tuple[dict[str, Any], str]:
+    safe_owner_id = _provider_segment(owner_id, "RENDER_WORKSPACE_ID_INVALID")
     payload = _json_object(
         api.request(
             "POST",
@@ -667,7 +774,7 @@ def _create_render_service(
             body={
                 "type": "web_service",
                 "name": RENDER_SERVICE_NAME,
-                "ownerId": owner_id,
+                "ownerId": safe_owner_id,
                 "repo": REPOSITORY_URL,
                 "autoDeploy": "no",
                 "branch": "main",
@@ -692,9 +799,10 @@ def _create_render_service(
         payload.get("service"),
         "RENDER_CREATE_SERVICE_INVALID",
     )
-    deploy_id = str(payload.get("deployId", ""))
-    if not deploy_id:
-        raise ProvisioningStopped("RENDER_INITIAL_DEPLOY_ID_MISSING")
+    deploy_id = _provider_segment(
+        payload.get("deployId"),
+        "RENDER_INITIAL_DEPLOY_ID_INVALID",
+    )
     _emit("RENDER_SERVICE=CREATED_FREE_PREVIEW")
     return service, deploy_id
 
@@ -705,12 +813,14 @@ def _wait_render_deploy(
     deploy_id: str,
     expected_sha: str,
 ) -> None:
+    safe_service_id = _provider_segment(service_id, "RENDER_SERVICE_ID_INVALID")
+    safe_deploy_id = _provider_segment(deploy_id, "RENDER_DEPLOY_ID_INVALID")
     deadline = time.monotonic() + 1800.0
     while True:
         deploy = _json_object(
             api.request(
                 "GET",
-                f"/services/{service_id}/deploys/{deploy_id}",
+                f"/services/{safe_service_id}/deploys/{safe_deploy_id}",
             ),
             "RENDER_DEPLOY_RESPONSE_INVALID",
         )
@@ -737,17 +847,18 @@ def _trigger_render_deploy(
     service_id: str,
     expected_sha: str,
 ) -> str:
+    safe_service_id = _provider_segment(service_id, "RENDER_SERVICE_ID_INVALID")
     payload = api.request(
         "POST",
-        f"/services/{service_id}/deploys",
+        f"/services/{safe_service_id}/deploys",
         body={"commitId": expected_sha, "clearCache": "do_not_clear"},
         expected=frozenset({201, 202}),
     )
     if isinstance(payload, dict) and payload.get("id"):
-        return str(payload["id"])
+        return _provider_segment(payload["id"], "RENDER_DEPLOY_ID_INVALID")
     query = urlencode({"limit": 20})
     deploys = _unwrap_rows(
-        api.request("GET", f"/services/{service_id}/deploys?{query}"),
+        api.request("GET", f"/services/{safe_service_id}/deploys?{query}"),
         "deploy",
     )
     matching = [
@@ -758,10 +869,10 @@ def _trigger_render_deploy(
     ]
     if not matching:
         raise ProvisioningStopped("RENDER_DEPLOY_ID_NOT_FOUND")
-    deploy_id = str(matching[0].get("id", ""))
-    if not deploy_id:
-        raise ProvisioningStopped("RENDER_DEPLOY_ID_MISSING")
-    return deploy_id
+    return _provider_segment(
+        matching[0].get("id"),
+        "RENDER_DEPLOY_ID_INVALID",
+    )
 
 
 def _render_target(
@@ -776,9 +887,10 @@ def _render_target(
     if services:
         service = services[0]
         _validate_existing_render_service(service)
-        service_id = str(service.get("id", ""))
-        if not service_id:
-            raise ProvisioningStopped("RENDER_SERVICE_ID_MISSING")
+        service_id = _provider_segment(
+            service.get("id"),
+            "RENDER_SERVICE_ID_INVALID",
+        )
         api.request(
             "PUT",
             f"/services/{service_id}/env-vars",
@@ -793,9 +905,10 @@ def _render_target(
             owner_id,
             runtime_uri,
         )
-        service_id = str(service.get("id", ""))
-        if not service_id:
-            raise ProvisioningStopped("RENDER_SERVICE_ID_MISSING")
+        service_id = _provider_segment(
+            service.get("id"),
+            "RENDER_SERVICE_ID_INVALID",
+        )
     _wait_render_deploy(api, service_id, deploy_id, expected_sha)
     current = _json_object(
         api.request("GET", f"/services/{service_id}"),
@@ -806,9 +919,7 @@ def _render_target(
         current.get("serviceDetails"),
         "RENDER_SERVICE_DETAILS_INVALID",
     )
-    service_url = str(details.get("url", "")).rstrip("/")
-    if not service_url.startswith("https://"):
-        raise ProvisioningStopped("RENDER_HTTPS_URL_MISSING")
+    service_url = _render_service_url(details.get("url"))
     return RenderTarget(
         owner_id=owner_id,
         service_id=service_id,
@@ -817,9 +928,9 @@ def _render_target(
     )
 
 
-def _external_probe(service_url: str, expected_sha: str) -> None:
+def _external_probe(expected_sha: str) -> None:
     deadline = time.monotonic() + 600.0
-    health_url = f"{service_url}/healthz"
+    health_url = f"{RENDER_SERVICE_URL}/healthz"
     while True:
         try:
             request = Request(
@@ -827,7 +938,7 @@ def _external_probe(service_url: str, expected_sha: str) -> None:
                 headers={"Accept": "application/json"},
                 method="GET",
             )
-            with urlopen(request, timeout=30.0) as response:
+            with _NO_REDIRECT_OPENER.open(request, timeout=30.0) as response:
                 status = int(response.status)
                 raw = response.read()
                 headers = {
@@ -896,7 +1007,7 @@ def run(repo_root: Path, expected_sha: str) -> str:
     target = _neon_target(neon)
     runtime_uri = _bootstrap_database(repo_root, target, runtime_password)
     render_target = _render_target(render, runtime_uri, expected_sha)
-    _external_probe(render_target.service_url, expected_sha)
+    _external_probe(expected_sha)
     _write_output("preview_url", render_target.service_url)
     _write_output("render_service_id", render_target.service_id)
     _write_output("neon_project_id", target.project_id)

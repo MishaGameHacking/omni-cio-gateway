@@ -136,3 +136,68 @@ def test_http_failures_never_include_provider_response_body() -> None:
     assert "PAYMENT_OR_CARD_REQUIRED" in source
     assert "API_KEY_INVALID_OR_INSUFFICIENT" in source
     assert "::add-mask::" in source
+
+
+def test_provider_identifiers_reject_path_traversal() -> None:
+    module = _module()
+
+    assert module._provider_id("srv-safe_123", "INVALID") == "srv-safe_123"
+    for value in ("../owners", "srv/value", "srv?x=1", "", "srv%2fvalue"):
+        with pytest.raises(module.ProvisioningStopped, match="INVALID"):
+            module._provider_id(value, "INVALID")
+
+
+def test_provider_paths_reject_absolute_and_encoded_traversal() -> None:
+    module = _module()
+
+    assert module._safe_api_path("/services/srv-safe", "INVALID") == (
+        "/services/srv-safe"
+    )
+    for value in (
+        "https://attacker.example/steal",
+        "//attacker.example/steal",
+        "/services/../owners",
+        "/services/%2e%2e/owners",
+        "/services/%2Fowners",
+        "/services\\owners",
+    ):
+        with pytest.raises(module.ProvisioningStopped, match="INVALID"):
+            module._safe_api_path(value, "INVALID")
+
+
+def test_render_health_probe_is_pinned_to_exact_service_url() -> None:
+    module = _module()
+
+    assert module._render_service_url(module.RENDER_SERVICE_URL) == (
+        module.RENDER_SERVICE_URL
+    )
+    for value in (
+        "https://attacker.example",
+        "https://omni-cio-v10-web.onrender.com.attacker.example",
+        "http://omni-cio-v10-web.onrender.com",
+        "https://omni-cio-v10-web.onrender.com/other",
+    ):
+        with pytest.raises(module.ProvisioningStopped):
+            module._render_service_url(value)
+
+    source = SCRIPT.read_text(encoding="utf-8")
+    assert "def _external_probe(expected_sha: str)" in source
+    assert 'health_url = f"{RENDER_SERVICE_URL}/healthz"' in source
+    assert "_NO_REDIRECT_OPENER.open" in source
+
+
+def test_neon_connection_uri_requires_neon_tls_endpoint() -> None:
+    module = _module()
+    safe = (
+        "postgresql://owner:secret@ep-preview.eu-central-1.aws.neon.tech/"
+        "neondb?sslmode=require"
+    )
+    assert module._neon_connection_uri(safe, "neondb", "INVALID") == safe
+
+    for value in (
+        "postgresql://owner:secret@127.0.0.1/neondb?sslmode=require",
+        "postgresql://owner:secret@ep-preview.neon.tech/other?sslmode=require",
+        "postgresql://owner:secret@ep-preview.neon.tech/neondb?sslmode=disable",
+    ):
+        with pytest.raises(module.ProvisioningStopped, match="INVALID"):
+            module._neon_connection_uri(value, "neondb", "INVALID")
