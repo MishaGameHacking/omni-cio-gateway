@@ -155,7 +155,7 @@ def test_paid_neon_plan_stops_before_provider_mutation() -> None:
         )
 
 
-def test_deployment_workflow_requires_fresh_attestation_preflight() -> None:
+def test_deployment_workflow_requires_fresh_attestation_and_test_toolchain() -> None:
     workflow = (
         Path(__file__).resolve().parents[1]
         / ".github"
@@ -173,3 +173,7 @@ def test_deployment_workflow_requires_fresh_attestation_preflight() -> None:
         "Provision and deploy zero-cost synthetic preview"
     )
     assert "tests/test_v10_zero_cost_provider_boundary.py" in workflow
+    assert "scripts/windows_ci_lock.py project" in workflow
+    assert "requirements-dev.txt windows-requirements-dev.txt" in workflow
+    assert "--require-hashes -r windows-requirements-dev.txt" in workflow
+    assert "import fastapi, psycopg, pytest" in workflow
