@@ -254,7 +254,12 @@ export function ApplicationShell() {
             Runtime state: {healthState}. Финансовые данные не маскируются под свежие.
           </div>
         ) : null}
-        <RoutePage path={route} healthState={healthState} freshness={freshness} />
+        <RoutePage
+          path={route}
+          healthState={healthState}
+          freshness={freshness}
+          onSessionsRevoked={() => void initialize()}
+        />
       </div>
     </div>
   );
