@@ -45,7 +45,7 @@ def _opener(payload: object, *, status: int = 200):
 def _env(attestation: str = VALID_ATTESTATION) -> dict[str, str]:
     return {
         "RENDER_ZERO_CHARGE_ATTESTATION": attestation,
-        "NEON_API_KEY": "neon-token-must-never-leak",
+        "NEON_API_KEY": "neon-token-must-never-leak",  # pragma: allowlist secret
     }
 
 
