@@ -3,11 +3,13 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import json
 from pathlib import Path
+from urllib.error import HTTPError
 
 import pytest
 
 from scripts.check_v10_zero_cost_provider_boundary import (
     BoundaryStopped,
+    NEON_ORGANIZATIONS_URL,
     validate_neon_free_organization,
     validate_render_zero_charge_attestation,
     verify_zero_cost_provider_boundary,
@@ -99,7 +101,7 @@ def test_exactly_one_free_neon_organization_is_required() -> None:
         )
 
 
-def test_full_boundary_verification_is_read_only_and_fail_closed(
+def test_full_boundary_verification_is_read_only_and_never_prints_token(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     verify_zero_cost_provider_boundary(
@@ -112,7 +114,30 @@ def test_full_boundary_verification_is_read_only_and_fail_closed(
     captured = capsys.readouterr()
     assert "PASS_FRESH_NO_PAYMENT_METHOD" in captured.out
     assert "FREE_VERIFIED" in captured.out
+    assert "neon-token-must-never-leak" not in captured.out
     assert "neon-token-must-never-leak" not in captured.err
+    assert "::add-mask::" not in captured.out
+
+
+def test_provider_redirect_is_rejected_before_response_body_processing() -> None:
+    def redirecting_opener(*args: object, **kwargs: object) -> FakeResponse:
+        raise HTTPError(
+            NEON_ORGANIZATIONS_URL,
+            302,
+            "redirect forbidden",
+            hdrs=None,
+            fp=None,
+        )
+
+    with pytest.raises(
+        BoundaryStopped,
+        match="NEON_PLAN_PREFLIGHT_REDIRECT_FORBIDDEN",
+    ):
+        verify_zero_cost_provider_boundary(
+            env=_env(),
+            now=FIXED_NOW,
+            opener=redirecting_opener,
+        )
 
 
 def test_paid_neon_plan_stops_before_provider_mutation() -> None:

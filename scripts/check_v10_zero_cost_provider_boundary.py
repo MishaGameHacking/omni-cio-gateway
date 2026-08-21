@@ -8,7 +8,7 @@ import re
 import sys
 from typing import Any, Protocol
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 
 NEON_ORGANIZATIONS_URL = (
@@ -33,6 +33,23 @@ class HttpResponse(Protocol):
 
 
 OpenUrl = Callable[..., HttpResponse]
+
+
+class _RejectRedirects(HTTPRedirectHandler):
+    def redirect_request(
+        self,
+        request: Request,
+        file_pointer: Any,
+        code: int,
+        message: str,
+        headers: Any,
+        new_url: str,
+    ) -> None:
+        del request, file_pointer, code, message, headers, new_url
+        return None
+
+
+_NO_REDIRECT_OPENER = build_opener(_RejectRedirects())
 
 
 class BoundaryStopped(RuntimeError):
@@ -90,7 +107,7 @@ def _decode_json_object(raw: bytes, code: str) -> dict[str, Any]:
 def read_neon_organizations(
     token: str,
     *,
-    opener: OpenUrl = urlopen,
+    opener: OpenUrl | None = None,
 ) -> list[dict[str, Any]]:
     request = Request(
         NEON_ORGANIZATIONS_URL,
@@ -101,12 +118,18 @@ def read_neon_organizations(
         },
         method="GET",
     )
+    open_url = _NO_REDIRECT_OPENER.open if opener is None else opener
     try:
-        with opener(request, timeout=30.0) as response:
+        with open_url(request, timeout=30.0) as response:
             status = int(response.status)
             raw = response.read()
     except HTTPError as exc:
         status = int(exc.code)
+        if 300 <= status < 400:
+            raise BoundaryStopped(
+                "NEON_PLAN_PREFLIGHT_REDIRECT_FORBIDDEN",
+                status=status,
+            ) from None
         if status in {401, 403}:
             raise BoundaryStopped(
                 "NEON_API_KEY_INVALID_OR_INSUFFICIENT",
@@ -153,12 +176,11 @@ def verify_zero_cost_provider_boundary(
     *,
     env: Mapping[str, str] | None = None,
     now: datetime | None = None,
-    opener: OpenUrl = urlopen,
+    opener: OpenUrl | None = None,
 ) -> None:
     source = os.environ if env is None else env
     attestation = _required_env("RENDER_ZERO_CHARGE_ATTESTATION", source)
     neon_token = _required_env("NEON_API_KEY", source)
-    print(f"::add-mask::{neon_token}")
     validate_render_zero_charge_attestation(attestation, now=now)
     organizations = read_neon_organizations(neon_token, opener=opener)
     validate_neon_free_organization(organizations)
