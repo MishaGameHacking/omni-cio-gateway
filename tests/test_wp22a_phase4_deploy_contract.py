@@ -220,7 +220,8 @@ def test_wrong_region_legacy_neon_project_is_preserved() -> None:
                     ]
                 }
             if method == "GET" and path.startswith("/regions?"):
-                return {"regions": [{"id": module.NEON_REGION}]}
+                # Neon OpenAPI RegionResponse uses the `region_id` field.
+                return {"regions": [{"region_id": module.NEON_REGION}]}
             assert method == "POST"
             assert path == "/projects"
             assert expected == frozenset({201})

@@ -384,7 +384,7 @@ def _ensure_neon_project(
             "NEON_REGIONS_INVALID",
         )
         if not any(
-            isinstance(region, dict) and region.get("id") == NEON_REGION
+            isinstance(region, dict) and region.get("region_id") == NEON_REGION
             for region in regions
         ):
             raise ProvisioningStopped("NEON_FRANKFURT_REGION_UNAVAILABLE")
