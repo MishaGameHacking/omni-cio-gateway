@@ -119,7 +119,7 @@ def test_hosted_postgres_bootstrap_accepts_only_pg18_creator_admin_edge() -> Non
     assert "NOT membership.admin_option" in source
     assert "membership.inherit_option" in source
     assert "membership.set_option" in source
-    assert "rolname = pg_catalog.current_user" in source
+    assert "rolname = current_user" in source
 
     # Runtime authority is still stricter in the opposite direction: the
     # application login itself cannot be a member of any other role.
