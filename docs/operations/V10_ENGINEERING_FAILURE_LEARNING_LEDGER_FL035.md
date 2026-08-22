@@ -58,7 +58,8 @@ Add one read-only, accepted-main-only diagnostic companion to the existing canon
 - discover exactly one `omni-cio-v10-web` service through the authenticated Render API;
 - find the most recent deploy bound to the exact accepted-main SHA;
 - accept only Render's documented deploy-status enum;
-- inspect only the matching `deploy_ended` structured event;
+- inspect only the matching structured `deploy_ended` event;
+- if that event links a failed build by provider build ID, inspect only the matching structured `build_ended` event;
 - reduce structured reason fields to an allowlisted classification such as `BUILD_FAILED`, `NON_ZERO_EXIT`, `EARLY_EXIT`, `OOM_KILLED`, `TIMED_OUT`, `UNHEALTHY` or `EVICTED`;
 - never print provider free-form reason text, raw logs, URIs, credentials or headers;
 - run this diagnostic only after the canonical provisioner has already failed, and always preserve the original non-zero deployment result.
@@ -72,6 +73,7 @@ Deterministic tests cover:
 - exact-release deploy binding;
 - wrapper/list response handling;
 - allowlisted terminal-status validation;
+- linked deploy-to-build event binding;
 - structured reason classification;
 - rejection of unknown provider statuses;
 - omission of arbitrary provider text from workflow output.
@@ -86,4 +88,4 @@ Provider diagnostic authority must stay in the same or narrower accepted-main se
 
 ## Dependency/tooling knowledge change
 
-Render's current public API exposes a finite deploy-status enum including `build_failed`, `update_failed`, `pre_deploy_failed`, `canceled` and `deactivated`, plus structured service events such as `deploy_ended`. Those structured fields are a safer engineering evidence surface than copying raw dashboard logs into GitHub Actions output.
+Render's current public API exposes a finite deploy-status enum including `build_failed`, `update_failed`, `pre_deploy_failed`, `canceled` and `deactivated`, plus structured service events such as `deploy_ended` and `build_ended`. Those structured fields are a safer engineering evidence surface than copying raw dashboard logs into GitHub Actions output.
