@@ -587,6 +587,52 @@ def _preview_records() -> tuple[dict[str, object], dict[str, object]]:
     return tenant, user
 
 
+def _converge_runtime_role(connection: Any, runtime_password: str) -> None:
+    from psycopg import sql
+
+    existing = connection.execute(
+        "SELECT rolsuper, rolcreatedb, rolcreaterole, rolreplication, "
+        "rolbypassrls FROM pg_catalog.pg_roles WHERE rolname = %s",
+        (RUNTIME_ROLE,),
+    ).fetchone()
+    memberships = connection.execute(
+        "SELECT count(*) FROM pg_catalog.pg_auth_members memberships "
+        "JOIN pg_catalog.pg_roles member_role "
+        "ON member_role.oid = memberships.member "
+        "WHERE member_role.rolname = %s",
+        (RUNTIME_ROLE,),
+    ).fetchone()
+    if memberships is not None and int(memberships[0]) != 0:
+        raise ProvisioningStopped("HOSTED_RUNTIME_ROLE_MEMBERSHIP_PRESENT")
+
+    if existing is None:
+        connection.execute(
+            sql.SQL(
+                "CREATE ROLE {} WITH LOGIN NOSUPERUSER NOCREATEDB "
+                "NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD {}"
+            ).format(
+                sql.Identifier(RUNTIME_ROLE),
+                sql.Literal(runtime_password),
+            )
+        )
+        return
+
+    if tuple(existing) != (False, False, False, False, False):
+        raise ProvisioningStopped("HOSTED_RUNTIME_ROLE_ATTRIBUTE_DRIFT")
+
+    # PostgreSQL 18 lets a non-superuser CREATEROLE administrator rotate the
+    # password/login state of a role for which it has ADMIN OPTION, but it may
+    # not restate SUPERUSER and may only change CREATEDB/REPLICATION/BYPASSRLS
+    # when it possesses those attributes itself. The existing role was already
+    # validated fail-closed above, so retries mutate only LOGIN + PASSWORD.
+    connection.execute(
+        sql.SQL("ALTER ROLE {} WITH LOGIN PASSWORD {}").format(
+            sql.Identifier(RUNTIME_ROLE),
+            sql.Literal(runtime_password),
+        )
+    )
+
+
 def _bootstrap_database(
     repo_root: Path,
     target: NeonTarget,
@@ -594,7 +640,6 @@ def _bootstrap_database(
 ) -> str:
     try:
         import psycopg
-        from psycopg import sql
 
         from omni_cio.persistence.hosted_postgres_runtime_v1 import (
             load_hosted_postgres_runtime_contract,
@@ -625,29 +670,7 @@ def _bootstrap_database(
             _emit("DATABASE_BOOTSTRAP_STAGE=MIGRATIONS")
             apply_migrations(connection)
             _emit("DATABASE_BOOTSTRAP_STAGE=RUNTIME_ROLE")
-            existing = connection.execute(
-                "SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = %s",
-                (RUNTIME_ROLE,),
-            ).fetchone()
-            memberships = connection.execute(
-                "SELECT count(*) FROM pg_catalog.pg_auth_members memberships "
-                "JOIN pg_catalog.pg_roles member_role "
-                "ON member_role.oid = memberships.member "
-                "WHERE member_role.rolname = %s",
-                (RUNTIME_ROLE,),
-            ).fetchone()
-            if memberships is not None and int(memberships[0]) != 0:
-                raise ProvisioningStopped("HOSTED_RUNTIME_ROLE_MEMBERSHIP_PRESENT")
-            command = "ALTER ROLE" if existing else "CREATE ROLE"
-            connection.execute(
-                sql.SQL(
-                    f"{command} {{}} WITH LOGIN NOSUPERUSER NOCREATEDB "
-                    "NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD {}"
-                ).format(
-                    sql.Identifier(RUNTIME_ROLE),
-                    sql.Literal(runtime_password),
-                )
-            )
+            _converge_runtime_role(connection, runtime_password)
             _emit("DATABASE_BOOTSTRAP_STAGE=RUNTIME_GRANTS")
             connection.execute(runtime_sql, prepare=False)
             _emit("DATABASE_BOOTSTRAP_STAGE=SYNTHETIC_SEED")
