@@ -34,6 +34,8 @@ The implementation may create or reuse only:
 4. a SQL-created runtime role named `omni_cio_hosted_api`;
 5. synthetic preview tenant, user and session records.
 
+The Render service `name` is not public-hostname authority. The provisioner must use the provider-returned top-level service `slug` together with `serviceDetails.url`, require their exact binding as `https://<slug>.onrender.com`, and carry that canonical URL through deployment probes, workflow outputs and summaries. It must never synthesize or guess the public URL from the requested service name. The hosted runtime independently consumes Render's `RENDER_EXTERNAL_HOSTNAME`; both producer and runtime therefore bind to the same provider-assigned origin.
+
 No paid instance, paid database feature, automatic paid overage, custom domain, Cloud.ru resource, real identity credential, broker credential or private portfolio payload is authorized. Any payment, card, broader permission, non-free plan or account-verification requirement stops the apply.
 
 The legacy unscoped project name `omni-cio-v10-preview` is out of scope. If it exists in another immutable region, the provisioner must preserve it without mutation or deletion and create or reuse only the Frankfurt-scoped project.
