@@ -10,6 +10,7 @@ from scripts import diagnose_v10_render_deploy as diagnostic
 EXPECTED_SHA = "a" * 40
 SERVICE_ID = "srv-da4r3d49v7es73919ntg"
 DEPLOY_ID = "dep-da4r3e49v7es73919r70"
+BUILD_ID = "bld-da4r3e49v7es73919r70"
 SERVICE_SLUG = "omni-cio-v10-web-9x7k"
 
 
@@ -19,10 +20,12 @@ class FakeApi(diagnostic.provisioner.JsonApi):
         *,
         deploy_status: str,
         reason: object,
+        build_reason: object | None = None,
         include_exact_deploy: bool = True,
     ) -> None:
         self.deploy_status = deploy_status
         self.reason = reason
+        self.build_reason = build_reason
         self.include_exact_deploy = include_exact_deploy
 
     def request(
@@ -79,8 +82,7 @@ class FakeApi(diagnostic.provisioner.JsonApi):
                     }
                 }
             ]
-        if "/events?" in path:
-            assert "type=deploy_ended" in path
+        if "/events?" in path and "type=deploy_ended" in path:
             return [
                 {
                     "event": {
@@ -89,7 +91,27 @@ class FakeApi(diagnostic.provisioner.JsonApi):
                         "timestamp": "2026-08-22T14:28:39Z",
                         "details": {
                             "deployId": DEPLOY_ID,
+                            "deployStatus": "failed",
+                            "status": 1,
                             "reason": self.reason,
+                        },
+                    }
+                }
+            ]
+        if "/events?" in path and "type=build_ended" in path:
+            if self.build_reason is None:
+                return []
+            return [
+                {
+                    "event": {
+                        "id": "evt-build-da4r3e49v7es73919r70",
+                        "type": "build_ended",
+                        "timestamp": "2026-08-22T14:28:38Z",
+                        "details": {
+                            "buildId": BUILD_ID,
+                            "buildStatus": "failed",
+                            "status": 1,
+                            "reason": self.build_reason,
                         },
                     }
                 }
@@ -101,11 +123,13 @@ def _api(
     *,
     deploy_status: str,
     reason: object,
+    build_reason: object | None = None,
     include_exact_deploy: bool = True,
 ) -> FakeApi:
     return FakeApi(
         deploy_status=deploy_status,
         reason=reason,
+        build_reason=build_reason,
         include_exact_deploy=include_exact_deploy,
     )
 
@@ -118,7 +142,7 @@ def test_reports_build_failure_without_free_form_provider_text(
     api = _api(
         deploy_status="build_failed",
         reason={
-            "buildFailed": {"id": "bld-da4r3e49v7es73919r70"},
+            "buildFailed": {"id": BUILD_ID},
             "failure": {"unhealthy": provider_text},
         },
     )
@@ -130,6 +154,20 @@ def test_reports_build_failure_without_free_form_provider_text(
     assert "RENDER_DEPLOY_REASON=UNHEALTHY" in output
     assert "RENDER_DEPLOY_DIAGNOSTIC=PASS" in output
     assert provider_text not in output
+
+
+def test_resolves_build_failure_through_structured_build_event() -> None:
+    result = diagnostic.diagnose(
+        EXPECTED_SHA,
+        api=_api(
+            deploy_status="build_failed",
+            reason={"buildFailed": {"id": BUILD_ID}},
+            build_reason={"failure": {"nonZeroExit": 1}},
+        ),
+    )
+
+    assert result.status == "build_failed"
+    assert result.reason == "NON_ZERO_EXIT"
 
 
 def test_reports_non_zero_exit_for_update_failure() -> None:
