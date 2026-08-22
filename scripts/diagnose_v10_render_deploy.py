@@ -296,10 +296,10 @@ def diagnose(
     raw_status = deploy.get("status")
     if not isinstance(raw_status, str) or raw_status not in _DEPLOY_STATUSES:
         raise DiagnosticStopped("RENDER_DIAGNOSTIC_DEPLOY_STATUS_INVALID")
-    if raw_status not in _FAILURE_STATUSES:
-        raise DiagnosticStopped("RENDER_DIAGNOSTIC_DEPLOY_NOT_FAILED")
     reason = _attempt_pipeline_reason(client, service_id, lower_bound)
     if reason is None:
+        if raw_status not in _FAILURE_STATUSES:
+            raise DiagnosticStopped("RENDER_DIAGNOSTIC_DEPLOY_NOT_FAILED")
         reason = _deploy_event_reason(client, service_id, deploy_id, raw_status)
     return DeployDiagnostic(
         service_id=service_id,
