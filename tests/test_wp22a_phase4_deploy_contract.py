@@ -12,6 +12,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "v10-phase4-free-preview-deploy.yml"
 SCRIPT = ROOT / "scripts" / "provision_v10_render_neon_preview.py"
+HOSTED_APP = ROOT / "apps" / "api" / "hosted_preview.py"
 
 
 def _postgres_uri(
@@ -264,6 +265,7 @@ def test_existing_render_service_requires_exact_safe_shape() -> None:
     module = _module()
     service = {
         "id": "srv-preview",
+        "slug": "omni-cio-v10-web-9x7k",
         "autoDeploy": "no",
         "name": module.RENDER_SERVICE_NAME,
         "type": "web_service",
@@ -274,6 +276,7 @@ def test_existing_render_service_requires_exact_safe_shape() -> None:
             "plan": "free",
             "region": "frankfurt",
             "healthCheckPath": "/healthz",
+            "url": "https://omni-cio-v10-web-9x7k.onrender.com",
             "envSpecificDetails": {
                 "buildCommand": module.BUILD_COMMAND,
                 "startCommand": module.START_COMMAND,
@@ -346,24 +349,59 @@ def test_provider_paths_reject_absolute_and_encoded_traversal() -> None:
             module._safe_api_path(value, "INVALID")
 
 
-def test_render_health_probe_is_pinned_to_exact_service_url() -> None:
+def test_render_health_probe_uses_provider_assigned_slug_and_url() -> None:
     module = _module()
+    service = {
+        "slug": "omni-cio-v10-web-9x7k",
+        "serviceDetails": {
+            "url": "https://omni-cio-v10-web-9x7k.onrender.com",
+        },
+    }
 
-    assert module._render_service_url(module.RENDER_SERVICE_URL) == (
-        module.RENDER_SERVICE_URL
+    assert module._render_service_url(service) == (
+        "https://omni-cio-v10-web-9x7k.onrender.com"
     )
-    for value in (
-        "https://attacker.example",
-        "https://omni-cio-v10-web.onrender.com.attacker.example",
-        "http://omni-cio-v10-web.onrender.com",
-        "https://omni-cio-v10-web.onrender.com/other",
-    ):
+
+    invalid = (
+        (
+            "omni-cio-v10-web-9x7k",
+            "https://attacker.example",
+        ),
+        (
+            "omni-cio-v10-web-9x7k",
+            "https://omni-cio-v10-web-9x7k.onrender.com.attacker.example",
+        ),
+        (
+            "omni-cio-v10-web-9x7k",
+            "http://omni-cio-v10-web-9x7k.onrender.com",
+        ),
+        (
+            "omni-cio-v10-web-9x7k",
+            "https://omni-cio-v10-web-9x7k.onrender.com/other",
+        ),
+        (
+            "omni-cio-v10-web-other",
+            "https://omni-cio-v10-web-9x7k.onrender.com",
+        ),
+        (
+            "OMNI-CIO-V10-WEB",
+            "https://omni-cio-v10-web.onrender.com",
+        ),
+    )
+    for slug, url in invalid:
+        service["slug"] = slug
+        service["serviceDetails"]["url"] = url
         with pytest.raises(module.ProvisioningStopped):
-            module._render_service_url(value)
+            module._render_service_url(service)
 
     source = SCRIPT.read_text(encoding="utf-8")
-    assert "def _external_probe(expected_sha: str)" in source
-    assert 'health_url = f"{RENDER_SERVICE_URL}/healthz"' in source
+    hosted_source = HOSTED_APP.read_text(encoding="utf-8")
+    assert "RENDER_SERVICE_URL" not in source
+    assert "def _external_probe(service_url: str, expected_sha: str)" in source
+    assert 'health_url = f"{service_url}/healthz"' in source
+    assert "_external_probe(render_target.service_url, expected_sha)" in source
+    assert 'payload.get("database") == "READY"' in source
+    assert '_required_env("RENDER_EXTERNAL_HOSTNAME")' in hosted_source
     assert "_NO_REDIRECT_OPENER.open" in source
 
 

@@ -28,13 +28,13 @@ NEON_PROJECT_NAME = "omni-cio-v10-preview-frankfurt"
 LEGACY_NEON_PROJECT_NAME = "omni-cio-v10-preview"
 RENDER_SERVICE_NAME = "omni-cio-v10-web"
 RENDER_REGION = "frankfurt"
-RENDER_SERVICE_URL = f"https://{RENDER_SERVICE_NAME}.onrender.com"
 RUNTIME_ROLE = "omni_cio_hosted_api"
 PREVIEW_TENANT_ID = "tenant:v1:synthetic_preview"
 PREVIEW_USER_ID = "user:v1:synthetic_preview"
 PREVIEW_CREATED_AT = datetime(2026, 8, 21, tzinfo=timezone.utc)
 _SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 _PROVIDER_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")
+_RENDER_SLUG_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 _SAFE_TEXT_PATTERN = re.compile(r"^[^\x00-\x1f\x7f]{1,128}$")
 _TERMINAL_DEPLOY_FAILURES = frozenset(
     {
@@ -208,13 +208,36 @@ def _neon_connection_uri(value: object, database_name: str, code: str) -> str:
     return value
 
 
-def _render_service_url(value: object) -> str:
+def _render_service_url(service: dict[str, Any]) -> str:
+    slug = service.get("slug")
+    if not isinstance(slug, str) or _RENDER_SLUG_PATTERN.fullmatch(slug) is None:
+        raise ProvisioningStopped("RENDER_SERVICE_SLUG_INVALID")
+    details = _json_object(
+        service.get("serviceDetails"),
+        "RENDER_SERVICE_DETAILS_INVALID",
+    )
+    value = details.get("url")
     if not isinstance(value, str):
         raise ProvisioningStopped("RENDER_HTTPS_URL_MISSING")
-    normalized = value.strip().rstrip("/")
-    if normalized != RENDER_SERVICE_URL:
+    try:
+        parsed = urlsplit(value.strip())
+        port = parsed.port
+    except ValueError:
+        raise ProvisioningStopped("RENDER_HTTPS_URL_DRIFT") from None
+    expected_hostname = f"{slug}.onrender.com"
+    hostname = (parsed.hostname or "").lower().rstrip(".")
+    if (
+        parsed.scheme != "https"
+        or parsed.username is not None
+        or parsed.password is not None
+        or hostname != expected_hostname
+        or port not in {None, 443}
+        or parsed.path not in {"", "/"}
+        or parsed.query
+        or parsed.fragment
+    ):
         raise ProvisioningStopped("RENDER_HTTPS_URL_DRIFT")
-    return RENDER_SERVICE_URL
+    return f"https://{expected_hostname}"
 
 
 class JsonApi:
@@ -807,6 +830,7 @@ def _validate_existing_render_service(service: dict[str, Any]) -> None:
         raise ProvisioningStopped("RENDER_BUILD_COMMAND_DRIFT")
     if env_details.get("startCommand") != START_COMMAND:
         raise ProvisioningStopped("RENDER_START_COMMAND_DRIFT")
+    _render_service_url(service)
 
 
 def _create_render_service(
@@ -963,11 +987,7 @@ def _render_target(
         "RENDER_SERVICE_RESPONSE_INVALID",
     )
     _validate_existing_render_service(current)
-    details = _json_object(
-        current.get("serviceDetails"),
-        "RENDER_SERVICE_DETAILS_INVALID",
-    )
-    service_url = _render_service_url(details.get("url"))
+    service_url = _render_service_url(current)
     return RenderTarget(
         owner_id=owner_id,
         service_id=service_id,
@@ -976,9 +996,9 @@ def _render_target(
     )
 
 
-def _external_probe(expected_sha: str) -> None:
+def _external_probe(service_url: str, expected_sha: str) -> None:
     deadline = time.monotonic() + 600.0
-    health_url = f"{RENDER_SERVICE_URL}/healthz"
+    health_url = f"{service_url}/healthz"
     while True:
         try:
             request = Request(
@@ -998,6 +1018,7 @@ def _external_probe(expected_sha: str) -> None:
                 and isinstance(payload, dict)
                 and payload.get("status") == "ok"
                 and payload.get("release_sha") == expected_sha
+                and payload.get("database") == "READY"
                 and payload.get("synthetic_preview") is True
                 and headers.get("cache-control") == "no-store"
                 and headers.get("strict-transport-security") == "max-age=31536000"
@@ -1055,7 +1076,7 @@ def run(repo_root: Path, expected_sha: str) -> str:
     target = _neon_target(neon, organization_id)
     runtime_uri = _bootstrap_database(repo_root, target, runtime_password)
     render_target = _render_target(render, runtime_uri, expected_sha)
-    _external_probe(expected_sha)
+    _external_probe(render_target.service_url, expected_sha)
     _write_output("preview_url", render_target.service_url)
     _write_output("render_service_id", render_target.service_id)
     _write_output("neon_project_id", target.project_id)
