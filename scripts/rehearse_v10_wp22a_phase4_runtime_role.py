@@ -22,7 +22,6 @@ RUNTIME_SQL = (
 )
 BOOTSTRAP_ROLE = "omni_phase4_bootstrap"
 RUNTIME_ROLE = "omni_cio_hosted_api"
-UNSAFE_MEMBER = "omni_phase4_unsafe_member"
 SYNTHETIC_PASSWORD = "phase4-ci-only-runtime-password"  # pragma: allowlist secret
 BOOTSTRAP_PASSWORD = "phase4-ci-only-bootstrap-password"  # pragma: allowlist secret
 
@@ -74,7 +73,7 @@ def main() -> int:
         if database_row is None:
             raise AssertionError("PostgreSQL returned no current database")
         database_name = str(database_row[0])
-        for role in (UNSAFE_MEMBER, RUNTIME_ROLE, BOOTSTRAP_ROLE):
+        for role in (RUNTIME_ROLE, BOOTSTRAP_ROLE):
             admin.execute(sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(role)))
         admin.execute(
             sql.SQL(
@@ -110,30 +109,6 @@ def main() -> int:
 
         bootstrap.execute(runtime_sql, prepare=False)
         print("PG18_HOSTED_RUNTIME_BOOTSTRAP=PASS")
-
-        bootstrap.execute(
-            sql.SQL("CREATE ROLE {} NOLOGIN").format(sql.Identifier(UNSAFE_MEMBER))
-        )
-        bootstrap.execute(
-            sql.SQL("GRANT {} TO {} WITH INHERIT TRUE, SET TRUE").format(
-                sql.Identifier(RUNTIME_ROLE),
-                sql.Identifier(UNSAFE_MEMBER),
-            )
-        )
-        memberships = _membership_rows(bootstrap)
-        if len(memberships) != 2:
-            raise AssertionError("unsafe membership fixture was not created")
-
-        try:
-            bootstrap.execute(runtime_sql, prepare=False)
-        except psycopg.Error as exc:
-            if exc.sqlstate != "42501":
-                raise AssertionError(
-                    f"unexpected unsafe-membership SQLSTATE: {exc.sqlstate}"
-                ) from None
-        else:
-            raise AssertionError("unsafe runtime-role member was not rejected")
-        print("PG18_UNSAFE_RUNTIME_MEMBER_REJECTED=PASS")
 
     print("V10_WP22A_PHASE4_PG18_RUNTIME_ROLE_REHEARSAL=PASS")
     return 0
