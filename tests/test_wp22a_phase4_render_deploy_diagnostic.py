@@ -256,6 +256,21 @@ def test_reports_pipeline_minutes_exhausted_for_current_attempt() -> None:
     assert result.reason == "PIPELINE_MINUTES_EXHAUSTED"
 
 
+def test_pipeline_exhaustion_can_explain_queued_deploy() -> None:
+    result = diagnostic.diagnose(
+        EXPECTED_SHA,
+        NOT_BEFORE,
+        api=_api(
+            deploy_status="queued",
+            reason={},
+            pipeline_event_timestamp="2026-08-22T14:27:05Z",
+        ),
+    )
+
+    assert result.status == "queued"
+    assert result.reason == "PIPELINE_MINUTES_EXHAUSTED"
+
+
 def test_ignores_stale_pipeline_minutes_event() -> None:
     result = diagnostic.diagnose(
         EXPECTED_SHA,
