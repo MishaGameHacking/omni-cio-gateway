@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from typing import Any
 
 import pytest
 
@@ -12,36 +12,58 @@ SERVICE_ID = "srv-da4r3d49v7es73919ntg"
 DEPLOY_ID = "dep-da4r3e49v7es73919r70"
 
 
-def _responses(
-    *,
-    deploy_status: str,
-    reason: object,
-    include_exact_deploy: bool = True,
-) -> Callable[[str, str], object]:
-    def fake_request(token: str, path: str) -> object:
-        assert token == "synthetic-render-key"
+class FakeApi(diagnostic.provisioner.JsonApi):
+    def __init__(
+        self,
+        *,
+        deploy_status: str,
+        reason: object,
+        include_exact_deploy: bool = True,
+    ) -> None:
+        self.deploy_status = deploy_status
+        self.reason = reason
+        self.include_exact_deploy = include_exact_deploy
+
+    def request(
+        self,
+        method: str,
+        path: str,
+        *,
+        body: object | None = None,
+        expected: frozenset[int] = frozenset({200}),
+        timeout: float = 30.0,
+    ) -> Any:
+        assert method == "GET"
+        assert body is None
+        assert expected == frozenset({200})
+        assert timeout == 30.0
+        if path == "/owners?limit=100":
+            return [{"owner": {"id": "tea-free-preview"}}]
         if path.startswith("/services?"):
+            assert "ownerId=tea-free-preview" in path
+            assert "name=omni-cio-v10-web" in path
             return [
                 {
                     "service": {
                         "id": SERVICE_ID,
-                        "name": diagnostic.RENDER_SERVICE_NAME,
+                        "name": diagnostic.provisioner.RENDER_SERVICE_NAME,
                     }
                 }
             ]
         if "/deploys?" in path:
-            commit_id = EXPECTED_SHA if include_exact_deploy else "b" * 40
+            commit_id = EXPECTED_SHA if self.include_exact_deploy else "b" * 40
             return [
                 {
                     "deploy": {
                         "id": DEPLOY_ID,
-                        "status": deploy_status,
+                        "status": self.deploy_status,
                         "createdAt": "2026-08-22T14:27:04Z",
                         "commit": {"id": commit_id},
                     }
                 }
             ]
         if "/events?" in path:
+            assert "type=deploy_ended" in path
             return [
                 {
                     "event": {
@@ -50,14 +72,25 @@ def _responses(
                         "timestamp": "2026-08-22T14:28:39Z",
                         "details": {
                             "deployId": DEPLOY_ID,
-                            "reason": reason,
+                            "reason": self.reason,
                         },
                     }
                 }
             ]
         raise AssertionError(path)
 
-    return fake_request
+
+def _api(
+    *,
+    deploy_status: str,
+    reason: object,
+    include_exact_deploy: bool = True,
+) -> FakeApi:
+    return FakeApi(
+        deploy_status=deploy_status,
+        reason=reason,
+        include_exact_deploy=include_exact_deploy,
+    )
 
 
 def test_reports_build_failure_without_free_form_provider_text(
@@ -65,18 +98,14 @@ def test_reports_build_failure_without_free_form_provider_text(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     secret_text = "sensitive-provider-message-must-not-escape"
-    monkeypatch.setenv("RENDER_API_KEY", "synthetic-render-key")
-    monkeypatch.setattr(
-        diagnostic,
-        "_request",
-        _responses(
-            deploy_status="build_failed",
-            reason={
-                "buildFailed": {"id": "bld-da4r3e49v7es73919r70"},
-                "failure": {"unhealthy": secret_text},
-            },
-        ),
+    api = _api(
+        deploy_status="build_failed",
+        reason={
+            "buildFailed": {"id": "bld-da4r3e49v7es73919r70"},
+            "failure": {"unhealthy": secret_text},
+        },
     )
+    monkeypatch.setattr(diagnostic, "_api_from_environment", lambda: api)
 
     assert diagnostic.main(["--expected-sha", EXPECTED_SHA]) == 0
     output = capsys.readouterr().out
@@ -86,20 +115,15 @@ def test_reports_build_failure_without_free_form_provider_text(
     assert secret_text not in output
 
 
-def test_reports_non_zero_exit_for_update_failure(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("RENDER_API_KEY", "synthetic-render-key")
-    monkeypatch.setattr(
-        diagnostic,
-        "_request",
-        _responses(
+def test_reports_non_zero_exit_for_update_failure() -> None:
+    result = diagnostic.diagnose(
+        EXPECTED_SHA,
+        api=_api(
             deploy_status="update_failed",
             reason={"failure": {"nonZeroExit": 3}},
         ),
     )
 
-    result = diagnostic.diagnose(EXPECTED_SHA)
     assert result.service_id == SERVICE_ID
     assert result.deploy_id == DEPLOY_ID
     assert result.status == "update_failed"
@@ -119,44 +143,36 @@ def test_allowlisted_failure_reason_classification(
     failure: dict[str, object],
     expected: str,
 ) -> None:
-    assert diagnostic._safe_failure_reason(  # noqa: SLF001 - focused parser contract
+    assert diagnostic._safe_failure_reason(  # noqa: SLF001 - parser contract
         {"reason": {"failure": failure}},
         "update_failed",
     ) == expected
 
 
 def test_falls_back_to_terminal_status_when_event_is_missing() -> None:
-    assert diagnostic._safe_failure_reason(  # noqa: SLF001 - focused parser contract
+    assert diagnostic._safe_failure_reason(  # noqa: SLF001 - parser contract
         {},
         "pre_deploy_failed",
     ) == "PRE_DEPLOY_FAILED"
 
 
-def test_rejects_unknown_provider_status(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("RENDER_API_KEY", "synthetic-render-key")
-    monkeypatch.setattr(
-        diagnostic,
-        "_request",
-        _responses(deploy_status="mystery_failed", reason={}),
-    )
-
+def test_rejects_unknown_provider_status() -> None:
     with pytest.raises(diagnostic.DiagnosticStopped) as exc_info:
-        diagnostic.diagnose(EXPECTED_SHA)
+        diagnostic.diagnose(
+            EXPECTED_SHA,
+            api=_api(deploy_status="mystery_failed", reason={}),
+        )
     assert exc_info.value.code == "RENDER_DIAGNOSTIC_DEPLOY_STATUS_INVALID"
 
 
-def test_requires_deploy_for_exact_release(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("RENDER_API_KEY", "synthetic-render-key")
-    monkeypatch.setattr(
-        diagnostic,
-        "_request",
-        _responses(
-            deploy_status="build_failed",
-            reason={},
-            include_exact_deploy=False,
-        ),
-    )
-
+def test_requires_deploy_for_exact_release() -> None:
     with pytest.raises(diagnostic.DiagnosticStopped) as exc_info:
-        diagnostic.diagnose(EXPECTED_SHA)
+        diagnostic.diagnose(
+            EXPECTED_SHA,
+            api=_api(
+                deploy_status="build_failed",
+                reason={},
+                include_exact_deploy=False,
+            ),
+        )
     assert exc_info.value.code == "RENDER_DIAGNOSTIC_DEPLOY_NOT_FOUND"
