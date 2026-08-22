@@ -98,6 +98,22 @@ def _matching_deploy(
     return matches[0]
 
 
+def _service_events(
+    api: provisioner.JsonApi,
+    service_id: str,
+    event_type: str,
+) -> list[dict[str, Any]]:
+    safe_service_id = provisioner._provider_segment(
+        service_id,
+        "RENDER_DIAGNOSTIC_SERVICE_ID_INVALID",
+    )
+    query = urlencode({"type": event_type, "limit": 100})
+    return provisioner._unwrap_rows(
+        api.request("GET", f"/services/{safe_service_id}/events?{query}"),
+        "event",
+    )
+
+
 def _safe_failure_reason(details: dict[str, Any], status: str) -> str:
     reason = details.get("reason")
     if isinstance(reason, dict):
@@ -127,23 +143,50 @@ def _safe_failure_reason(details: dict[str, Any], status: str) -> str:
     }.get(status, "NO_SAFE_REASON")
 
 
+def _build_failure_id(details: dict[str, Any]) -> str | None:
+    reason = details.get("reason")
+    if not isinstance(reason, dict):
+        return None
+    build_failed = reason.get("buildFailed")
+    if not isinstance(build_failed, dict) or "id" not in build_failed:
+        return None
+    return provisioner._provider_id(
+        build_failed.get("id"),
+        "RENDER_DIAGNOSTIC_BUILD_ID_INVALID",
+    )
+
+
+def _build_event_reason(
+    api: provisioner.JsonApi,
+    service_id: str,
+    build_id: str,
+    status: str,
+) -> str:
+    matches: list[dict[str, Any]] = []
+    for event in _service_events(api, service_id, "build_ended"):
+        if event.get("type") != "build_ended":
+            continue
+        details = event.get("details")
+        if isinstance(details, dict) and details.get("buildId") == build_id:
+            matches.append(event)
+    if not matches:
+        return "BUILD_FAILED"
+    matches.sort(key=lambda item: str(item.get("timestamp", "")), reverse=True)
+    details = provisioner._json_object(
+        matches[0].get("details"),
+        "RENDER_DIAGNOSTIC_BUILD_EVENT_DETAILS_INVALID",
+    )
+    return _safe_failure_reason(details, status)
+
+
 def _deploy_event_reason(
     api: provisioner.JsonApi,
     service_id: str,
     deploy_id: str,
     status: str,
 ) -> str:
-    safe_service_id = provisioner._provider_segment(
-        service_id,
-        "RENDER_DIAGNOSTIC_SERVICE_ID_INVALID",
-    )
-    query = urlencode({"type": "deploy_ended", "limit": 100})
-    events = provisioner._unwrap_rows(
-        api.request("GET", f"/services/{safe_service_id}/events?{query}"),
-        "event",
-    )
     matches: list[dict[str, Any]] = []
-    for event in events:
+    for event in _service_events(api, service_id, "deploy_ended"):
         if event.get("type") != "deploy_ended":
             continue
         details = event.get("details")
@@ -156,7 +199,13 @@ def _deploy_event_reason(
         matches[0].get("details"),
         "RENDER_DIAGNOSTIC_EVENT_DETAILS_INVALID",
     )
-    return _safe_failure_reason(details, status)
+    reason = _safe_failure_reason(details, status)
+    if reason != "BUILD_FAILED":
+        return reason
+    build_id = _build_failure_id(details)
+    if build_id is None:
+        return reason
+    return _build_event_reason(api, service_id, build_id, status)
 
 
 def diagnose(
