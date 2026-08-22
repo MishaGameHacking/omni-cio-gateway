@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Any
 
 import psycopg
 from psycopg import sql
@@ -40,7 +41,9 @@ def _dsn_for_role(dsn: str, role: str, password: str) -> str:
     return make_conninfo(**params)
 
 
-def _membership_rows(connection: psycopg.Connection[object]) -> list[tuple[object, ...]]:
+def _membership_rows(
+    connection: psycopg.Connection[Any],
+) -> list[tuple[str, bool, bool, bool]]:
     rows = connection.execute(
         "SELECT member_role.rolname, membership.admin_option, "
         "membership.inherit_option, membership.set_option "
@@ -53,7 +56,9 @@ def _membership_rows(connection: psycopg.Connection[object]) -> list[tuple[objec
         "ORDER BY member_role.rolname",
         (RUNTIME_ROLE,),
     ).fetchall()
-    return [tuple(row) for row in rows]
+    return [
+        (str(row[0]), bool(row[1]), bool(row[2]), bool(row[3])) for row in rows
+    ]
 
 
 def main() -> int:
@@ -65,7 +70,10 @@ def main() -> int:
     )
 
     with psycopg.connect(admin_dsn, autocommit=True) as admin:
-        database_name = str(admin.execute("SELECT current_database()").fetchone()[0])
+        database_row = admin.execute("SELECT current_database()").fetchone()
+        if database_row is None:
+            raise AssertionError("PostgreSQL returned no current database")
+        database_name = str(database_row[0])
         for role in (UNSAFE_MEMBER, RUNTIME_ROLE, BOOTSTRAP_ROLE):
             admin.execute(sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(role)))
         admin.execute(
@@ -96,7 +104,7 @@ def main() -> int:
         if memberships != expected:
             raise AssertionError(
                 "PostgreSQL 18 creator-admin membership shape drifted: "
-                f"count={len(memberships)} values={memberships!r}"
+                f"count={len(memberships)}"
             )
         print("PG18_RUNTIME_CREATOR_ADMIN_EDGE=PASS")
 
@@ -107,9 +115,10 @@ def main() -> int:
             sql.SQL("CREATE ROLE {} NOLOGIN").format(sql.Identifier(UNSAFE_MEMBER))
         )
         bootstrap.execute(
-            sql.SQL(
-                "GRANT {} TO {} WITH INHERIT TRUE, SET TRUE"
-            ).format(sql.Identifier(RUNTIME_ROLE), sql.Identifier(UNSAFE_MEMBER))
+            sql.SQL("GRANT {} TO {} WITH INHERIT TRUE, SET TRUE").format(
+                sql.Identifier(RUNTIME_ROLE),
+                sql.Identifier(UNSAFE_MEMBER),
+            )
         )
         memberships = _membership_rows(bootstrap)
         if len(memberships) != 2:
