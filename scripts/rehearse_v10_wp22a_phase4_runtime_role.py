@@ -56,9 +56,7 @@ def _membership_rows(
         "ORDER BY member_role.rolname",
         (RUNTIME_ROLE,),
     ).fetchall()
-    return [
-        (str(row[0]), bool(row[1]), bool(row[2]), bool(row[3])) for row in rows
-    ]
+    return [(str(row[0]), bool(row[1]), bool(row[2]), bool(row[3])) for row in rows]
 
 
 def _create_bootstrap_role(admin_dsn: str, *, own_database: bool) -> str:
@@ -68,7 +66,9 @@ def _create_bootstrap_role(admin_dsn: str, *, own_database: bool) -> str:
             raise AssertionError("PostgreSQL returned no current database")
         database_name = str(database_row[0])
         for role in (RUNTIME_ROLE, BOOTSTRAP_ROLE):
-            admin.execute(sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(role)))
+            admin.execute(
+                sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(role))
+            )
         admin.execute(
             sql.SQL(
                 "CREATE ROLE {} WITH LOGIN NOSUPERUSER NOCREATEDB CREATEROLE "
