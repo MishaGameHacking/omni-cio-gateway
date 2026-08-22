@@ -117,7 +117,8 @@ def _matching_deploy(
             matches.append((created_at, deploy))
     if not matches:
         raise DiagnosticStopped("RENDER_DIAGNOSTIC_DEPLOY_NOT_FOUND")
-    matches.sort(key=lambda item: item[0], reverse=True)
+    if len(matches) != 1:
+        raise DiagnosticStopped("RENDER_DIAGNOSTIC_DEPLOY_NOT_UNIQUE")
     return matches[0][1]
 
 
@@ -194,7 +195,8 @@ def _build_event_reason(
             matches.append(event)
     if not matches:
         return "BUILD_FAILED"
-    matches.sort(key=lambda item: str(item.get("timestamp", "")), reverse=True)
+    if len(matches) != 1:
+        raise DiagnosticStopped("RENDER_DIAGNOSTIC_BUILD_EVENT_NOT_UNIQUE")
     details = provisioner._json_object(
         matches[0].get("details"),
         "RENDER_DIAGNOSTIC_BUILD_EVENT_DETAILS_INVALID",
@@ -217,7 +219,8 @@ def _deploy_event_reason(
             matches.append(event)
     if not matches:
         return _safe_failure_reason({}, status)
-    matches.sort(key=lambda item: str(item.get("timestamp", "")), reverse=True)
+    if len(matches) != 1:
+        raise DiagnosticStopped("RENDER_DIAGNOSTIC_DEPLOY_EVENT_NOT_UNIQUE")
     details = provisioner._json_object(
         matches[0].get("details"),
         "RENDER_DIAGNOSTIC_EVENT_DETAILS_INVALID",
