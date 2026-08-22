@@ -10,6 +10,7 @@ from scripts import diagnose_v10_render_deploy as diagnostic
 EXPECTED_SHA = "a" * 40
 SERVICE_ID = "srv-da4r3d49v7es73919ntg"
 DEPLOY_ID = "dep-da4r3e49v7es73919r70"
+SERVICE_SLUG = "omni-cio-v10-web-9x7k"
 
 
 class FakeApi(diagnostic.provisioner.JsonApi):
@@ -46,7 +47,23 @@ class FakeApi(diagnostic.provisioner.JsonApi):
                 {
                     "service": {
                         "id": SERVICE_ID,
+                        "slug": SERVICE_SLUG,
+                        "autoDeploy": "no",
                         "name": diagnostic.provisioner.RENDER_SERVICE_NAME,
+                        "type": "web_service",
+                        "repo": diagnostic.provisioner.REPOSITORY_URL,
+                        "branch": "main",
+                        "serviceDetails": {
+                            "runtime": "python",
+                            "plan": "free",
+                            "region": diagnostic.provisioner.RENDER_REGION,
+                            "healthCheckPath": "/healthz",
+                            "url": f"https://{SERVICE_SLUG}.onrender.com",
+                            "envSpecificDetails": {
+                                "buildCommand": diagnostic.provisioner.BUILD_COMMAND,
+                                "startCommand": diagnostic.provisioner.START_COMMAND,
+                            },
+                        },
                     }
                 }
             ]
