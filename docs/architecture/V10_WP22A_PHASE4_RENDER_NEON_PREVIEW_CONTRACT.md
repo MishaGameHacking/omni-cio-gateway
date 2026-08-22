@@ -17,10 +17,12 @@ Exactly one deployment implementation is supported:
 - exact-main Regression Shield verifier: `scripts/check_v10_exact_main_regression.py`;
 - exact-main verification tests: `tests/test_v10_exact_main_regression.py`;
 - provider provisioner: `scripts/provision_v10_render_neon_preview.py`;
+- sanitized Render terminal diagnostic: `scripts/diagnose_v10_render_deploy.py`;
 - PostgreSQL 18 runtime-role rehearsal: `scripts/rehearse_v10_wp22a_phase4_runtime_role.py`;
 - hosted application factory: `apps/api/hosted_preview.py`;
 - existing Web product: `apps/web`;
 - deployment contract tests: `tests/test_wp22a_phase4_deploy_contract.py`;
+- Render diagnostic tests: `tests/test_wp22a_phase4_render_deploy_diagnostic.py`;
 - runtime-role retry tests: `tests/test_wp22a_phase4_runtime_role_retry.py`;
 - hosted application tests: `tests/test_wp22a_phase4_hosted_preview_app.py`.
 
@@ -55,9 +57,11 @@ The canonical workflow:
 - requires the exact run's `Quality, contracts and coverage` and `Dependency, code and secret security` jobs to be completed and successful before any provider mutation;
 - receives `RENDER_API_KEY` and `NEON_API_KEY` only in the provider-mutation step;
 - bootstraps and verifies the exact accepted-main SHA;
-- runs deterministic deployment-source tests before any provider call, including the existing-role PostgreSQL 18 retry guard;
+- runs deterministic deployment-source tests before any provider call, including the existing-role PostgreSQL 18 retry guard and Render terminal-diagnostic guard;
 - masks provider keys, generated runtime credentials and database URIs;
 - writes only sanitized classifications, non-sensitive resource IDs, release SHA and the public preview URL;
+- on a failed provider deploy, preserves the original non-zero result and performs only read-only Render API diagnostics for the same exact accepted-main SHA;
+- accepts only Render's documented terminal status enum and reduces structured provider reasons to allowlisted classifications without printing free-form provider text or raw logs;
 - fails closed on unexpected workflow, run, job, workspace, service, project, plan, version, region, role, migration, health or billing state.
 
 ## Render runtime
@@ -76,6 +80,8 @@ Start command:
 `uvicorn apps.api.hosted_preview:create_app --factory --host 0.0.0.0 --port $PORT`
 
 The service must remain on plan `free`, branch `main`, region `frankfurt`, health path `/healthz`, and exact reviewed build/start commands. Drift is a hard failure.
+
+A Render terminal failure must remain RED while retaining a safe engineering class. At minimum the accepted-main failure path distinguishes the documented deploy status (`build_failed`, `update_failed`, `pre_deploy_failed`, `canceled` or `deactivated`) and may classify only structured, allowlisted reason fields such as non-zero exit, early exit, OOM, timeout, unhealthy or eviction. Provider free-form event/log text is never copied into Actions output.
 
 ## Neon runtime boundary
 
