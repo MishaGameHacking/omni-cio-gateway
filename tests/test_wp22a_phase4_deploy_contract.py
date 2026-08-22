@@ -186,7 +186,6 @@ def test_existing_neon_project_lookup_is_explicitly_org_scoped() -> None:
     assert len(api.paths) == 1
 
 
-
 def test_wrong_region_legacy_neon_project_is_preserved() -> None:
     module = _module()
     assert module.NEON_PROJECT_NAME == "omni-cio-v10-preview-frankfurt"
@@ -394,3 +393,28 @@ def test_neon_connection_uri_requires_neon_tls_endpoint() -> None:
     ):
         with pytest.raises(module.ProvisioningStopped, match="INVALID"):
             module._neon_connection_uri(value, "neondb", "INVALID")
+
+
+def test_database_bootstrap_stage_evidence_is_fixed_sanitized_and_ordered() -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+    bootstrap = source[
+        source.index("def _bootstrap_database(") : source.index("def _render_env(")
+    ]
+    markers = (
+        'DATABASE_BOOTSTRAP_STAGE=CONNECT',
+        'DATABASE_BOOTSTRAP_STAGE=MIGRATIONS',
+        'DATABASE_BOOTSTRAP_STAGE=RUNTIME_ROLE',
+        'DATABASE_BOOTSTRAP_STAGE=RUNTIME_GRANTS',
+        'DATABASE_BOOTSTRAP_STAGE=SYNTHETIC_SEED',
+        'DATABASE_BOOTSTRAP_STAGE=COMPLETE',
+    )
+    positions: list[int] = []
+    for marker in markers:
+        literal = f'_emit("{marker}")'
+        assert bootstrap.count(literal) == 1
+        positions.append(bootstrap.index(literal))
+
+    assert positions == sorted(positions)
+    assert '_emit(str(' not in bootstrap
+    assert '_emit(repr(' not in bootstrap
+    assert 'raise ProvisioningStopped("DATABASE_BOOTSTRAP_FAILED") from None' in bootstrap
