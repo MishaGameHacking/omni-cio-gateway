@@ -14,10 +14,11 @@ Use only:
 - `.github/workflows/v10-phase4-free-preview-deploy.yml`;
 - `scripts/check_v10_exact_main_regression.py`;
 - `scripts/provision_v10_render_neon_preview.py`;
+- `scripts/diagnose_v10_render_deploy.py`;
 - `apps/api/hosted_preview.py`;
 - `apps/web`.
 
-Do not deploy through a second workflow, Dockerfile, temporary status workflow, local laptop command or GitHub-hosted Ubuntu lane. The accepted self-hosted Windows workflow is the only provider-mutation path.
+Do not deploy through a second workflow, Dockerfile, temporary status workflow, local laptop command or GitHub-hosted Ubuntu lane. The accepted self-hosted Windows workflow is the only provider-mutation path. The Render diagnostic is read-only and runs only inside that same accepted-main secret boundary after the canonical provisioner has already failed.
 
 ## Managed resources
 
@@ -67,6 +68,7 @@ The workflow must:
 - install only hash-locked runtime dependencies;
 - compile and run the Phase 4 deployment/application tests before provider calls;
 - pass secrets only to the provision step;
+- on provider failure, preserve the original non-zero result while allowing only read-only sanitized Render diagnostics for the exact release;
 - clean the isolated environment and repository workspace afterward.
 
 A source SHA or Regression Shield evidence mismatch is a hard failure.
@@ -148,6 +150,8 @@ The final workflow summary may contain only the exact release SHA, public previe
 ## Failure handling
 
 GitHub authority, provider API, plan, region, PostgreSQL version, migration, role, RLS, build, deploy, health, release or security-header failure remains RED.
+
+For Render terminal failures, the workflow may retrieve only the structured deploy and matching `deploy_ended` event for the exact accepted-main SHA. It emits only allowlisted status/reason classifications and never copies free-form provider event/log text into Actions output. Diagnostic failure never converts the original deploy failure to success and never triggers a second provider mutation.
 
 Safe recovery order:
 
