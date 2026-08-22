@@ -51,7 +51,7 @@ BEGIN
     SELECT oid
     INTO bootstrap_user_oid
     FROM pg_catalog.pg_roles
-    WHERE rolname = pg_catalog.current_user;
+    WHERE rolname = current_user;
 
     SELECT count(*)
     INTO runtime_member_count
