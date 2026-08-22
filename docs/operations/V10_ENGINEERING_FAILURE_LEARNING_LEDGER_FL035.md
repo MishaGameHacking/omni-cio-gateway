@@ -41,6 +41,7 @@ The review covered:
 - existing Windows frontend/type/lint/test/build routing;
 - the absence of a provider-secret-bearing PR diagnostic path by design;
 - Render's current public API schemas for deploy statuses and service events;
+- Render Hobby pipeline-minute accounting and the documented `pipeline_minutes_exhausted` lifecycle event that can prevent a build when no paid continuation is available;
 - same-SHA retry ambiguity and the risk of attaching an earlier failed deploy to a later failure that occurred before Render;
 - adjacent risks from printing raw provider event/log text.
 
@@ -54,6 +55,8 @@ The previous Phase 4 corrections concentrated on provider URL authority and Post
 
 A second adjacent gap was found during full-diff review before another accepted-main retry: exact SHA alone is not a sufficient causal key when the same accepted SHA can be retried. Without an attempt boundary, a later non-Render failure could accidentally inherit an earlier Render failure classification from the same SHA.
 
+A third gap was found from the current provider contract: Render exposes `pipeline_minutes_exhausted` separately from ordinary build/deploy failure. On a Hobby workspace, included Starter pipeline minutes are finite; if they are exhausted and no payment method or permitted spend exists, Render can stop new builds. Collapsing that capacity condition into `BUILD_FAILED` would incorrectly send engineering toward application source changes.
+
 ## Corrective change
 
 Add one read-only, accepted-main-only diagnostic companion to the existing canonical workflow:
@@ -63,9 +66,10 @@ Add one read-only, accepted-main-only diagnostic companion to the existing canon
 - require exactly one Render deploy bound to the exact accepted-main SHA and created at or after that current-attempt boundary;
 - reject stale prior deploys and multiple current-attempt matches instead of selecting one heuristically;
 - accept only Render's documented deploy-status enum and require the selected deploy itself to be a failed terminal state;
-- inspect only the matching structured `deploy_ended` event;
+- query only the documented `pipeline_minutes_exhausted` service-event type from the same current-attempt boundary and classify it as `PIPELINE_MINUTES_EXHAUSTED` only when exactly one current event exists;
+- inspect only the matching structured `deploy_ended` event when no current pipeline-exhaustion event exists;
 - if that event links a failed build by provider build ID, inspect only one matching structured `build_ended` event;
-- reduce structured reason fields to an allowlisted classification such as `BUILD_FAILED`, `NON_ZERO_EXIT`, `EARLY_EXIT`, `OOM_KILLED`, `TIMED_OUT`, `UNHEALTHY` or `EVICTED`;
+- reduce structured reason fields to an allowlisted classification such as `PIPELINE_MINUTES_EXHAUSTED`, `BUILD_FAILED`, `NON_ZERO_EXIT`, `EARLY_EXIT`, `OOM_KILLED`, `TIMED_OUT`, `UNHEALTHY` or `EVICTED`;
 - never print provider free-form reason text, raw logs, URIs, credentials or headers;
 - run this diagnostic only after the canonical provisioner has already failed, and always preserve the original non-zero deployment result.
 
@@ -80,6 +84,9 @@ Deterministic tests cover:
 - rejection of a failed deploy from an earlier retry of the same SHA;
 - rejection of multiple current-attempt deploy matches;
 - rejection of live/non-failed deploys;
+- current-attempt `pipeline_minutes_exhausted` classification;
+- stale pipeline-exhaustion event rejection/fallback;
+- ambiguous multiple current pipeline-exhaustion events;
 - wrapper/list response handling;
 - allowlisted terminal-status validation;
 - linked deploy-to-build event binding;
@@ -96,8 +103,10 @@ For external provider mutations, fail-closed status is necessary but not suffici
 
 Diagnostic correlation must bind not only to release identity but also to the current mutation attempt when retries of one release are possible. If exact causal correlation cannot be proven, return unavailable rather than selecting a recent-looking provider event.
 
+Provider billing/quota/capacity events are not application defects. Under a zero-charge boundary, they must remain distinct and must never trigger an automatic paid plan, payment-method addition or spend-limit increase.
+
 Provider diagnostic authority must stay in the same or narrower accepted-main secret boundary as the mutation itself. Do not create temporary secret-bearing workflows or expose provider credentials to PR code.
 
 ## Dependency/tooling knowledge change
 
-Render's current public API exposes a finite deploy-status enum including `build_failed`, `update_failed`, `pre_deploy_failed`, `canceled` and `deactivated`, plus structured service events such as `deploy_ended` and `build_ended`. Render also documents separate lifecycle events such as `pipeline_minutes_exhausted`. Those structured fields are a safer engineering evidence surface than copying raw dashboard logs into GitHub Actions output, but they still require causal binding to the current provision attempt before being treated as root-cause evidence.
+Render's current public API exposes a finite deploy-status enum including `build_failed`, `update_failed`, `pre_deploy_failed`, `canceled` and `deactivated`, plus structured service events such as `deploy_ended`, `build_ended` and `pipeline_minutes_exhausted`. Hobby currently includes a finite Starter pipeline-minute allowance; when that allowance is exhausted and no paid continuation is permitted, new builds can be stopped. Those structured fields are a safer engineering evidence surface than copying raw dashboard logs into GitHub Actions output, but they still require causal binding to the current provision attempt before being treated as root-cause evidence.
