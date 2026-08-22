@@ -97,6 +97,7 @@ jobs:
             apps/api/hosted_preview.py \
             scripts/check_v10_exact_main_regression.py \
             scripts/check_v10_zero_cost_provider_boundary.py \
+            scripts/diagnose_v10_render_deploy.py \
             scripts/provision_v10_render_neon_preview.py \
             scripts/rehearse_v10_wp22a_phase4_runtime_role.py
           python -m pytest -q \
@@ -105,6 +106,8 @@ jobs:
             tests/test_wp22a_phase4_hosted_preview_app.py \
             tests/test_wp22a_phase4_deploy_contract.py \
             tests/test_wp22a_phase4_provisioner_import_path.py \
+            tests/test_wp22a_phase4_render_deploy_diagnostic.py \
+            tests/test_wp22a_phase4_render_pagination_guard.py \
             tests/test_wp22a_phase4_runtime_role_retry.py \
             tests/test_v10_zero_cost_provider_boundary.py
 
@@ -119,10 +122,24 @@ jobs:
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
           NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
-        run: >-
-          python -m scripts.provision_v10_render_neon_preview
-          --repo-root .
-          --expected-sha "$EXPECTED_MAIN_SHA"
+        run: |
+          provision_started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          set +e
+          python -m scripts.provision_v10_render_neon_preview \
+            --repo-root . \
+            --expected-sha "$EXPECTED_MAIN_SHA"
+          provision_status=$?
+          set -e
+          if [ "$provision_status" -ne 0 ]; then
+            diagnostic_status=0
+            python -m scripts.diagnose_v10_render_deploy \
+              --expected-sha "$EXPECTED_MAIN_SHA" \
+              --not-before "$provision_started_at" || diagnostic_status=$?
+            if [ "$diagnostic_status" -ne 0 ]; then
+              printf '%s\n' 'RENDER_DEPLOY_DIAGNOSTIC=UNAVAILABLE'
+            fi
+            exit "$provision_status"
+          fi
 
       - name: Publish safe deployment summary
         env:

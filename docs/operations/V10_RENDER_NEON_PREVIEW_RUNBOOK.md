@@ -14,10 +14,11 @@ Use only:
 - `.github/workflows/v10-phase4-free-preview-deploy.yml`;
 - `scripts/check_v10_exact_main_regression.py`;
 - `scripts/provision_v10_render_neon_preview.py`;
+- `scripts/diagnose_v10_render_deploy.py`;
 - `apps/api/hosted_preview.py`;
 - `apps/web`.
 
-Do not deploy through a second workflow, Dockerfile, temporary status workflow, local laptop command or GitHub-hosted Ubuntu lane. The accepted self-hosted Windows workflow is the only provider-mutation path.
+Do not deploy through a second workflow, Dockerfile, temporary status workflow, local laptop command or GitHub-hosted Ubuntu lane. The accepted self-hosted Windows workflow is the only provider-mutation path. The Render diagnostic is read-only and runs only inside that same accepted-main secret boundary after the canonical provisioner has already failed.
 
 ## Managed resources
 
@@ -67,6 +68,11 @@ The workflow must:
 - install only hash-locked runtime dependencies;
 - compile and run the Phase 4 deployment/application tests before provider calls;
 - pass secrets only to the provision step;
+- capture a UTC provision-attempt boundary immediately before invoking the canonical provisioner;
+- on provider failure, preserve the original non-zero result while allowing only read-only sanitized Render diagnostics for exactly one deploy from the same exact release and current provision attempt;
+- require that deploy to be in an allowlisted failed terminal state for ordinary build/update/start/health diagnosis;
+- allow a unique current-attempt `pipeline_minutes_exhausted` event to explain a still `created`/`queued` deploy whose build was prevented from starting;
+- treat stale prior deploys/events, multiple current-attempt matches, unsupported non-failed states or malformed timestamps as unavailable diagnostics rather than inferred root cause;
 - clean the isolated environment and repository workspace afterward.
 
 A source SHA or Regression Shield evidence mismatch is a hard failure.
@@ -111,6 +117,8 @@ Required environment remains fail-closed:
 
 The deployment must target the exact accepted-main SHA. Plan, region, repository, branch, build command, start command or health-path drift is RED.
 
+The Render Hobby workspace currently provides an included Starter pipeline-minute allowance. The preview must not buy extra pipeline minutes or add a payment method automatically. If Render emits `pipeline_minutes_exhausted`, classify the apply as `PIPELINE_MINUTES_EXHAUSTED`, keep it RED and stop; paid continuation requires a separate explicit OWNER decision, while a later free allowance reset may permit a normal accepted-main retry.
+
 ## Runtime behavior
 
 An unauthenticated browser receives the normal V10 login shell with an explicit synthetic preview action. The action creates a server-side synthetic session and CSRF cookie. It does not register a real user or impersonate a production tenant.
@@ -149,15 +157,19 @@ The final workflow summary may contain only the exact release SHA, public previe
 
 GitHub authority, provider API, plan, region, PostgreSQL version, migration, role, RLS, build, deploy, health, release or security-header failure remains RED.
 
+For Render provider failures, the workflow may retrieve only one structured deploy for the exact accepted-main SHA created at or after the current provision-attempt UTC boundary. Ordinary deploy-failure diagnosis requires that deploy to be in an allowlisted failed terminal state and may inspect only its matching `deploy_ended` event; if that event links a failed build by provider build ID, the diagnostic may also retrieve only the matching structured `build_ended` event. The diagnostic may additionally query only the documented `pipeline_minutes_exhausted` event type with the same service and current-attempt start boundary; exactly one such current event produces `PIPELINE_MINUTES_EXHAUSTED` even if the deploy remains `created` or `queued` because the build never started. It emits only allowlisted classifications and never copies free-form provider event/log text into Actions output. A stale, ambiguous, unsupported non-failed or malformed match makes diagnostics unavailable; diagnostic failure never converts the original provider failure to success and never triggers a second provider mutation.
+
 Safe recovery order:
 
 1. inspect sanitized GitHub and provider status;
 2. classify the failure without revealing secrets;
-3. fix source on a focused branch;
+3. fix source on a focused branch when the cause is source/runtime/configuration;
 4. complete exact-head DRAFT and fresh READY validation;
 5. squash-merge the accepted fix;
 6. require exact-main Regression Shield SUCCESS;
 7. allow the accepted-main deployment workflow to re-verify that exact run and retry.
+
+For `PIPELINE_MINUTES_EXHAUSTED`, do not patch application code or add a payment method automatically. Preserve the zero-cost boundary and wait for a free allowance reset or obtain an explicit OWNER-approved cost decision before any paid continuation.
 
 Never recover by weakening exact-SHA, Regression Shield, free-plan, TLS, PostgreSQL 18, least-privilege, RLS, no-secret or no-real-data controls.
 
