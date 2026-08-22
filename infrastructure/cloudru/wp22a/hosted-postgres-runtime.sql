@@ -7,6 +7,8 @@
 DO $hosted_user$
 DECLARE
     runtime_user pg_catalog.pg_roles%ROWTYPE;
+    bootstrap_user_oid oid;
+    runtime_member_count bigint;
 BEGIN
     SELECT *
     INTO runtime_user
@@ -30,6 +32,8 @@ BEGIN
             USING ERRCODE = '42501';
     END IF;
 
+    -- The runtime role itself must never inherit from or SET ROLE to any other
+    -- role. This is the effective-authority boundary used by the application.
     IF EXISTS (
         SELECT 1
         FROM pg_catalog.pg_auth_members membership
@@ -39,10 +43,31 @@ BEGIN
             USING ERRCODE = '42501';
     END IF;
 
-    IF EXISTS (
+    -- PostgreSQL 18 gives a non-superuser CREATEROLE creator one administrative
+    -- membership back to a role it creates. The system grant is ADMIN only and
+    -- deliberately has INHERIT=FALSE and SET=FALSE, so it does not let the
+    -- bootstrap login exercise runtime privileges. Accept only that exact edge
+    -- to the current bootstrap login; reject every wider/member relationship.
+    SELECT oid
+    INTO bootstrap_user_oid
+    FROM pg_catalog.pg_roles
+    WHERE rolname = pg_catalog.current_user;
+
+    SELECT count(*)
+    INTO runtime_member_count
+    FROM pg_catalog.pg_auth_members membership
+    WHERE membership.roleid = runtime_user.oid;
+
+    IF runtime_member_count > 1 OR EXISTS (
         SELECT 1
         FROM pg_catalog.pg_auth_members membership
         WHERE membership.roleid = runtime_user.oid
+        AND (
+            membership.member <> bootstrap_user_oid OR
+            NOT membership.admin_option OR
+            membership.inherit_option OR
+            membership.set_option
+        )
     ) THEN
         RAISE EXCEPTION 'HOSTED_API_USER_MEMBERS_PRESENT'
             USING ERRCODE = '42501';
