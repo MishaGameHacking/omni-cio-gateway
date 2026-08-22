@@ -2,20 +2,15 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
-import json
-import os
 import re
 import sys
 from typing import Any
-from urllib.error import HTTPError, URLError
-from urllib.parse import quote, urlencode
-from urllib.request import Request, urlopen
+from urllib.parse import urlencode
+
+from scripts import provision_v10_render_neon_preview as provisioner
 
 
-RENDER_API_BASE = "https://api.render.com/v1"
-RENDER_SERVICE_NAME = "omni-cio-v10-web"
 _SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
-_PROVIDER_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")
 _DEPLOY_STATUSES = frozenset(
     {
         "created",
@@ -32,7 +27,13 @@ _DEPLOY_STATUSES = frozenset(
     }
 )
 _FAILURE_STATUSES = frozenset(
-    {"deactivated", "build_failed", "update_failed", "canceled", "pre_deploy_failed"}
+    {
+        "deactivated",
+        "build_failed",
+        "update_failed",
+        "canceled",
+        "pre_deploy_failed",
+    }
 )
 
 
@@ -50,98 +51,38 @@ class DeployDiagnostic:
     reason: str
 
 
-def _mask(value: str) -> None:
-    if value:
-        print(f"::add-mask::{value}")
-
-
-def _required_env(name: str) -> str:
-    value = os.environ.get(name, "").strip()
-    if not value:
-        raise DiagnosticStopped(f"{name}_REQUIRED")
-    _mask(value)
-    return value
-
-
-def _provider_id(value: object, code: str) -> str:
-    if not isinstance(value, str) or _PROVIDER_ID_PATTERN.fullmatch(value) is None:
-        raise DiagnosticStopped(code)
-    return value
-
-
-def _object(value: object, code: str) -> dict[str, Any]:
-    if not isinstance(value, dict):
-        raise DiagnosticStopped(code)
-    return value
-
-
-def _list(value: object, code: str) -> list[Any]:
-    if not isinstance(value, list):
-        raise DiagnosticStopped(code)
-    return value
-
-
-def _unwrap_rows(payload: object, key: str) -> list[dict[str, Any]]:
-    rows = _list(payload, f"{key.upper()}_LIST_INVALID")
-    result: list[dict[str, Any]] = []
-    for row in rows:
-        item = _object(row, f"{key.upper()}_ROW_INVALID")
-        nested = item.get(key)
-        result.append(
-            _object(nested, f"{key.upper()}_WRAPPER_INVALID")
-            if nested is not None
-            else item
-        )
-    return result
-
-
-def _request(token: str, path: str) -> object:
-    if not path.startswith("/") or path.startswith("//"):
-        raise DiagnosticStopped("RENDER_DIAGNOSTIC_PATH_INVALID")
-    request = Request(
-        f"{RENDER_API_BASE}{path}",
-        headers={
-            "Accept": "application/json",
-            "Authorization": f"Bearer {token}",
-            "User-Agent": "omni-cio-v10-phase4-diagnostic",
-        },
-        method="GET",
+def _api_from_environment() -> provisioner.JsonApi:
+    return provisioner.JsonApi(
+        provisioner.RENDER_API_BASE,
+        provisioner._required_env("RENDER_API_KEY"),
+        label="RENDER",
     )
-    try:
-        with urlopen(request, timeout=30.0) as response:  # noqa: S310 - fixed Render API base
-            status = int(response.status)
-            raw = response.read()
-    except HTTPError as exc:
-        if int(exc.code) in {401, 403}:
-            raise DiagnosticStopped("RENDER_DIAGNOSTIC_AUTHORITY_FAILED") from None
-        raise DiagnosticStopped("RENDER_DIAGNOSTIC_HTTP_ERROR") from None
-    except (URLError, TimeoutError, OSError):
-        raise DiagnosticStopped("RENDER_DIAGNOSTIC_NETWORK_ERROR") from None
-    if status != 200:
-        raise DiagnosticStopped("RENDER_DIAGNOSTIC_STATUS_INVALID")
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError:
-        raise DiagnosticStopped("RENDER_DIAGNOSTIC_JSON_INVALID") from None
 
 
-def _matching_service(token: str) -> dict[str, Any]:
-    query = urlencode({"name": RENDER_SERVICE_NAME, "limit": 20})
+def _matching_service(api: provisioner.JsonApi) -> dict[str, Any]:
+    owner_id = provisioner._render_owner(api)
     services = [
         service
-        for service in _unwrap_rows(_request(token, f"/services?{query}"), "service")
-        if service.get("name") == RENDER_SERVICE_NAME
+        for service in provisioner._render_services(api, owner_id)
+        if service.get("name") == provisioner.RENDER_SERVICE_NAME
     ]
     if len(services) != 1:
         raise DiagnosticStopped("RENDER_DIAGNOSTIC_SERVICE_NOT_UNIQUE")
     return services[0]
 
 
-def _matching_deploy(token: str, service_id: str, expected_sha: str) -> dict[str, Any]:
-    safe_service_id = quote(_provider_id(service_id, "RENDER_DIAGNOSTIC_SERVICE_ID_INVALID"), safe="")
+def _matching_deploy(
+    api: provisioner.JsonApi,
+    service_id: str,
+    expected_sha: str,
+) -> dict[str, Any]:
+    safe_service_id = provisioner._provider_segment(
+        service_id,
+        "RENDER_DIAGNOSTIC_SERVICE_ID_INVALID",
+    )
     query = urlencode({"limit": 100})
-    deploys = _unwrap_rows(
-        _request(token, f"/services/{safe_service_id}/deploys?{query}"),
+    deploys = provisioner._unwrap_rows(
+        api.request("GET", f"/services/{safe_service_id}/deploys?{query}"),
         "deploy",
     )
     matches: list[dict[str, Any]] = []
@@ -185,15 +126,18 @@ def _safe_failure_reason(details: dict[str, Any], status: str) -> str:
 
 
 def _deploy_event_reason(
-    token: str,
+    api: provisioner.JsonApi,
     service_id: str,
     deploy_id: str,
     status: str,
 ) -> str:
-    safe_service_id = quote(_provider_id(service_id, "RENDER_DIAGNOSTIC_SERVICE_ID_INVALID"), safe="")
+    safe_service_id = provisioner._provider_segment(
+        service_id,
+        "RENDER_DIAGNOSTIC_SERVICE_ID_INVALID",
+    )
     query = urlencode({"type": "deploy_ended", "limit": 100})
-    events = _unwrap_rows(
-        _request(token, f"/services/{safe_service_id}/events?{query}"),
+    events = provisioner._unwrap_rows(
+        api.request("GET", f"/services/{safe_service_id}/events?{query}"),
         "event",
     )
     matches: list[dict[str, Any]] = []
@@ -206,22 +150,35 @@ def _deploy_event_reason(
     if not matches:
         return _safe_failure_reason({}, status)
     matches.sort(key=lambda item: str(item.get("timestamp", "")), reverse=True)
-    details = _object(matches[0].get("details"), "RENDER_DIAGNOSTIC_EVENT_DETAILS_INVALID")
+    details = provisioner._json_object(
+        matches[0].get("details"),
+        "RENDER_DIAGNOSTIC_EVENT_DETAILS_INVALID",
+    )
     return _safe_failure_reason(details, status)
 
 
-def diagnose(expected_sha: str) -> DeployDiagnostic:
+def diagnose(
+    expected_sha: str,
+    *,
+    api: provisioner.JsonApi | None = None,
+) -> DeployDiagnostic:
     if _SHA_PATTERN.fullmatch(expected_sha) is None:
         raise DiagnosticStopped("EXPECTED_SHA_INVALID")
-    token = _required_env("RENDER_API_KEY")
-    service = _matching_service(token)
-    service_id = _provider_id(service.get("id"), "RENDER_DIAGNOSTIC_SERVICE_ID_INVALID")
-    deploy = _matching_deploy(token, service_id, expected_sha)
-    deploy_id = _provider_id(deploy.get("id"), "RENDER_DIAGNOSTIC_DEPLOY_ID_INVALID")
+    client = _api_from_environment() if api is None else api
+    service = _matching_service(client)
+    service_id = provisioner._provider_id(
+        service.get("id"),
+        "RENDER_DIAGNOSTIC_SERVICE_ID_INVALID",
+    )
+    deploy = _matching_deploy(client, service_id, expected_sha)
+    deploy_id = provisioner._provider_id(
+        deploy.get("id"),
+        "RENDER_DIAGNOSTIC_DEPLOY_ID_INVALID",
+    )
     raw_status = deploy.get("status")
     if not isinstance(raw_status, str) or raw_status not in _DEPLOY_STATUSES:
         raise DiagnosticStopped("RENDER_DIAGNOSTIC_DEPLOY_STATUS_INVALID")
-    reason = _deploy_event_reason(token, service_id, deploy_id, raw_status)
+    reason = _deploy_event_reason(client, service_id, deploy_id, raw_status)
     return DeployDiagnostic(
         service_id=service_id,
         deploy_id=deploy_id,
@@ -240,15 +197,13 @@ def main(argv: list[str] | None = None) -> int:
     args = _parse_args(list(sys.argv[1:] if argv is None else argv))
     try:
         result = diagnose(args.expected_sha.strip().lower())
-    except DiagnosticStopped as exc:
+    except (DiagnosticStopped, provisioner.ProvisioningStopped) as exc:
         print(f"RENDER_DEPLOY_DIAGNOSTIC=STOPPED code={exc.code}")
         return 1
     print(f"RENDER_DEPLOY_STATUS={result.status}")
     print(f"RENDER_DEPLOY_REASON={result.reason}")
-    print(
-        "RENDER_DEPLOY_TERMINAL="
-        + ("YES" if result.status in _FAILURE_STATUSES or result.status == "live" else "NO")
-    )
+    terminal = result.status in _FAILURE_STATUSES or result.status == "live"
+    print(f"RENDER_DEPLOY_TERMINAL={'YES' if terminal else 'NO'}")
     print("RENDER_DEPLOY_DIAGNOSTIC=PASS")
     return 0
 
