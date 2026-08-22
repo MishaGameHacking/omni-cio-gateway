@@ -147,6 +147,82 @@ def _service_events(
     )
 
 
+def _event_id(summary: dict[str, Any], event_type: str) -> str:
+    if summary.get("type") != event_type:
+        raise DiagnosticStopped("RENDER_DIAGNOSTIC_EVENT_TYPE_DRIFT")
+    return provisioner._provider_id(
+        summary.get("id"),
+        "RENDER_DIAGNOSTIC_EVENT_ID_INVALID",
+    )
+
+
+def _retrieve_event(
+    api: provisioner.JsonApi,
+    event_id: str,
+    event_type: str,
+) -> dict[str, Any]:
+    safe_event_id = provisioner._provider_segment(
+        event_id,
+        "RENDER_DIAGNOSTIC_EVENT_ID_INVALID",
+    )
+    payload = provisioner._json_object(
+        api.request("GET", f"/events/{safe_event_id}"),
+        "RENDER_DIAGNOSTIC_EVENT_RESPONSE_INVALID",
+    )
+    nested = payload.get("event")
+    event = (
+        provisioner._json_object(
+            nested,
+            "RENDER_DIAGNOSTIC_EVENT_RESPONSE_INVALID",
+        )
+        if nested is not None
+        else payload
+    )
+    actual_id = provisioner._provider_id(
+        event.get("id"),
+        "RENDER_DIAGNOSTIC_EVENT_ID_INVALID",
+    )
+    if actual_id != event_id or event.get("type") != event_type:
+        raise DiagnosticStopped("RENDER_DIAGNOSTIC_EVENT_IDENTITY_DRIFT")
+    return event
+
+
+def _matching_event_details(
+    api: provisioner.JsonApi,
+    service_id: str,
+    event_type: str,
+    detail_key: str,
+    detail_id: str,
+    not_before: datetime,
+) -> dict[str, Any] | None:
+    matches: list[dict[str, Any]] = []
+    for summary in _service_events(
+        api,
+        service_id,
+        event_type,
+        not_before=not_before,
+    ):
+        event_id = _event_id(summary, event_type)
+        timestamp = _utc_timestamp(
+            summary.get("timestamp"),
+            "RENDER_DIAGNOSTIC_EVENT_TIMESTAMP_INVALID",
+        )
+        if timestamp < not_before:
+            continue
+        event = _retrieve_event(api, event_id, event_type)
+        details = provisioner._json_object(
+            event.get("details"),
+            "RENDER_DIAGNOSTIC_EVENT_DETAILS_INVALID",
+        )
+        if details.get(detail_key) == detail_id:
+            matches.append(details)
+    if not matches:
+        return None
+    if len(matches) != 1:
+        raise DiagnosticStopped("RENDER_DIAGNOSTIC_EVENT_NOT_UNIQUE")
+    return matches[0]
+
+
 def _safe_failure_reason(details: dict[str, Any], status: str) -> str:
     reason = details.get("reason")
     if isinstance(reason, dict):
@@ -194,26 +270,25 @@ def _attempt_pipeline_reason(
     service_id: str,
     not_before: datetime,
 ) -> str | None:
-    matches: list[dict[str, Any]] = []
-    for event in _service_events(
+    matches: list[str] = []
+    for summary in _service_events(
         api,
         service_id,
         "pipeline_minutes_exhausted",
         not_before=not_before,
     ):
-        if event.get("type") != "pipeline_minutes_exhausted":
-            continue
+        _event_id(summary, "pipeline_minutes_exhausted")
         timestamp = _utc_timestamp(
-            event.get("timestamp"),
+            summary.get("timestamp"),
             "RENDER_DIAGNOSTIC_PIPELINE_EVENT_TIMESTAMP_INVALID",
         )
         if timestamp >= not_before:
-            matches.append(event)
+            matches.append("PIPELINE_MINUTES_EXHAUSTED")
     if not matches:
         return None
     if len(matches) != 1:
         raise DiagnosticStopped("RENDER_DIAGNOSTIC_PIPELINE_EVENT_NOT_UNIQUE")
-    return "PIPELINE_MINUTES_EXHAUSTED"
+    return matches[0]
 
 
 def _build_event_reason(
@@ -221,22 +296,18 @@ def _build_event_reason(
     service_id: str,
     build_id: str,
     status: str,
+    not_before: datetime,
 ) -> str:
-    matches: list[dict[str, Any]] = []
-    for event in _service_events(api, service_id, "build_ended"):
-        if event.get("type") != "build_ended":
-            continue
-        details = event.get("details")
-        if isinstance(details, dict) and details.get("buildId") == build_id:
-            matches.append(event)
-    if not matches:
-        return "BUILD_FAILED"
-    if len(matches) != 1:
-        raise DiagnosticStopped("RENDER_DIAGNOSTIC_BUILD_EVENT_NOT_UNIQUE")
-    details = provisioner._json_object(
-        matches[0].get("details"),
-        "RENDER_DIAGNOSTIC_BUILD_EVENT_DETAILS_INVALID",
+    details = _matching_event_details(
+        api,
+        service_id,
+        "build_ended",
+        "buildId",
+        build_id,
+        not_before,
     )
+    if details is None:
+        return "BUILD_FAILED"
     return _safe_failure_reason(details, status)
 
 
@@ -245,29 +316,31 @@ def _deploy_event_reason(
     service_id: str,
     deploy_id: str,
     status: str,
+    not_before: datetime,
 ) -> str:
-    matches: list[dict[str, Any]] = []
-    for event in _service_events(api, service_id, "deploy_ended"):
-        if event.get("type") != "deploy_ended":
-            continue
-        details = event.get("details")
-        if isinstance(details, dict) and details.get("deployId") == deploy_id:
-            matches.append(event)
-    if not matches:
-        return _safe_failure_reason({}, status)
-    if len(matches) != 1:
-        raise DiagnosticStopped("RENDER_DIAGNOSTIC_DEPLOY_EVENT_NOT_UNIQUE")
-    details = provisioner._json_object(
-        matches[0].get("details"),
-        "RENDER_DIAGNOSTIC_EVENT_DETAILS_INVALID",
+    details = _matching_event_details(
+        api,
+        service_id,
+        "deploy_ended",
+        "deployId",
+        deploy_id,
+        not_before,
     )
+    if details is None:
+        return _safe_failure_reason({}, status)
     reason = _safe_failure_reason(details, status)
     if reason != "BUILD_FAILED":
         return reason
     build_id = _build_failure_id(details)
     if build_id is None:
         return reason
-    return _build_event_reason(api, service_id, build_id, status)
+    return _build_event_reason(
+        api,
+        service_id,
+        build_id,
+        status,
+        not_before,
+    )
 
 
 def diagnose(
@@ -300,7 +373,13 @@ def diagnose(
     if reason is None:
         if raw_status not in _FAILURE_STATUSES:
             raise DiagnosticStopped("RENDER_DIAGNOSTIC_DEPLOY_NOT_FAILED")
-        reason = _deploy_event_reason(client, service_id, deploy_id, raw_status)
+        reason = _deploy_event_reason(
+            client,
+            service_id,
+            deploy_id,
+            raw_status,
+            lower_bound,
+        )
     return DeployDiagnostic(
         service_id=service_id,
         deploy_id=deploy_id,
