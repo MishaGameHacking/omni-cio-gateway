@@ -13,7 +13,9 @@ def test_phase4_pg18_rehearsal_generates_ephemeral_credentials() -> None:
 
     assert "import secrets" in source
     assert source.count("secrets.token_urlsafe(32)") == 1
-    assert source.count("_ephemeral_password()") == 3
+    assert source.count("_ephemeral_password()") == 5
+    assert "first_password = _ephemeral_password()" in source
+    assert "second_password = _ephemeral_password()" in source
     assert "SYNTHETIC_PASSWORD" not in source
     assert "BOOTSTRAP_PASSWORD" not in source
 
