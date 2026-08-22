@@ -12,6 +12,8 @@ from scripts import provision_v10_render_neon_preview as provisioner
 
 
 _SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
+_PAGE_LIMIT = 100
+_DEPLOY_QUERY_SKEW = timedelta(seconds=1)
 _DEPLOY_STATUSES = frozenset(
     {
         "created",
@@ -79,6 +81,13 @@ def _render_timestamp(value: datetime) -> str:
     return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
+def _bounded_rows(payload: Any, key: str, code: str) -> list[dict[str, Any]]:
+    rows = provisioner._unwrap_rows(payload, key)
+    if len(rows) >= _PAGE_LIMIT:
+        raise DiagnosticStopped(code)
+    return rows
+
+
 def _matching_service(api: provisioner.JsonApi) -> dict[str, Any]:
     owner_id = provisioner._render_owner(api)
     services = [
@@ -103,10 +112,16 @@ def _matching_deploy(
         service_id,
         "RENDER_DIAGNOSTIC_SERVICE_ID_INVALID",
     )
-    query = urlencode({"limit": 100})
-    deploys = provisioner._unwrap_rows(
+    query = urlencode(
+        {
+            "createdAfter": _render_timestamp(not_before - _DEPLOY_QUERY_SKEW),
+            "limit": _PAGE_LIMIT,
+        }
+    )
+    deploys = _bounded_rows(
         api.request("GET", f"/services/{safe_service_id}/deploys?{query}"),
         "deploy",
+        "RENDER_DIAGNOSTIC_DEPLOY_WINDOW_TRUNCATED",
     )
     matches: list[tuple[datetime, dict[str, Any]]] = []
     for deploy in deploys:
@@ -137,13 +152,14 @@ def _service_events(
         service_id,
         "RENDER_DIAGNOSTIC_SERVICE_ID_INVALID",
     )
-    query_values: dict[str, object] = {"type": event_type, "limit": 100}
+    query_values: dict[str, object] = {"type": event_type, "limit": _PAGE_LIMIT}
     if not_before is not None:
         query_values["startTime"] = _render_timestamp(not_before)
     query = urlencode(query_values)
-    return provisioner._unwrap_rows(
+    return _bounded_rows(
         api.request("GET", f"/services/{safe_service_id}/events?{query}"),
         "event",
+        "RENDER_DIAGNOSTIC_EVENT_WINDOW_TRUNCATED",
     )
 
 
@@ -407,7 +423,8 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     print(f"RENDER_DEPLOY_STATUS={result.status}")
     print(f"RENDER_DEPLOY_REASON={result.reason}")
-    print("RENDER_DEPLOY_TERMINAL=YES")
+    terminal = "YES" if result.status in _FAILURE_STATUSES else "NO"
+    print(f"RENDER_DEPLOY_TERMINAL={terminal}")
     print("RENDER_DEPLOY_DIAGNOSTIC=PASS")
     return 0
 
