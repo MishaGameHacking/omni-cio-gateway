@@ -165,8 +165,7 @@ def _assert_runtime_login(admin_dsn: str, password: str) -> None:
             "WHERE rolname = current_user"
         ).fetchone()
         tenant_select = runtime.execute(
-            "SELECT has_table_privilege("
-            "current_user, 'omni_cio_v10.tenants', 'SELECT')"
+            "SELECT has_table_privilege(current_user, 'omni_cio_v10.tenants', 'SELECT')"
         ).fetchone()
         _verify_synthetic_scope(runtime)
     expected = (RUNTIME_ROLE, True, False, False, False, False, False)
