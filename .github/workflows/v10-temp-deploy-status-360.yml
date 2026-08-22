@@ -7,6 +7,12 @@ on:
     paths:
       - ".github/workflows/v10-temp-deploy-status-360.yml"
       - "scripts/v10_temp_deploy_status_360.py"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/v10-temp-deploy-status-360.yml"
+      - "scripts/v10_temp_deploy_status_360.py"
 
 permissions:
   actions: read
