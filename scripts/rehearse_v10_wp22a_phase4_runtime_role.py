@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import os
 from pathlib import Path
+import secrets
 from typing import Any
 
 import psycopg
@@ -23,8 +24,6 @@ RUNTIME_SQL = (
 )
 BOOTSTRAP_ROLE = "omni_phase4_bootstrap"
 RUNTIME_ROLE = "omni_cio_hosted_api"
-SYNTHETIC_PASSWORD = "phase4-ci-only-runtime-password"  # pragma: allowlist secret
-BOOTSTRAP_PASSWORD = "phase4-ci-only-bootstrap-password"  # pragma: allowlist secret
 
 
 def _required_dsn() -> str:
@@ -32,6 +31,10 @@ def _required_dsn() -> str:
     if not value:
         raise RuntimeError(f"{DSN_ENV} is required")
     return value
+
+
+def _ephemeral_password() -> str:
+    return secrets.token_urlsafe(32)
 
 
 def _dsn_for_role(dsn: str, role: str, password: str) -> str:
@@ -60,6 +63,7 @@ def _membership_rows(
 
 
 def _create_bootstrap_role(admin_dsn: str, *, own_database: bool) -> str:
+    bootstrap_password = _ephemeral_password()
     with psycopg.connect(admin_dsn, autocommit=True) as admin:
         database_row = admin.execute("SELECT current_database()").fetchone()
         if database_row is None:
@@ -73,7 +77,7 @@ def _create_bootstrap_role(admin_dsn: str, *, own_database: bool) -> str:
             sql.SQL(
                 "CREATE ROLE {} WITH LOGIN NOSUPERUSER NOCREATEDB CREATEROLE "
                 "NOREPLICATION NOBYPASSRLS PASSWORD {}"
-            ).format(sql.Identifier(BOOTSTRAP_ROLE), sql.Literal(BOOTSTRAP_PASSWORD))
+            ).format(sql.Identifier(BOOTSTRAP_ROLE), sql.Literal(bootstrap_password))
         )
         if own_database:
             admin.execute(
@@ -82,15 +86,16 @@ def _create_bootstrap_role(admin_dsn: str, *, own_database: bool) -> str:
                     sql.Identifier(BOOTSTRAP_ROLE),
                 )
             )
-    return _dsn_for_role(admin_dsn, BOOTSTRAP_ROLE, BOOTSTRAP_PASSWORD)
+    return _dsn_for_role(admin_dsn, BOOTSTRAP_ROLE, bootstrap_password)
 
 
 def _create_runtime_role(bootstrap: psycopg.Connection[Any]) -> None:
+    runtime_password = _ephemeral_password()
     bootstrap.execute(
         sql.SQL(
             "CREATE ROLE {} WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE "
             "NOREPLICATION NOBYPASSRLS PASSWORD {}"
-        ).format(sql.Identifier(RUNTIME_ROLE), sql.Literal(SYNTHETIC_PASSWORD))
+        ).format(sql.Identifier(RUNTIME_ROLE), sql.Literal(runtime_password))
     )
 
 
