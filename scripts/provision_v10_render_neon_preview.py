@@ -596,9 +596,12 @@ def _bootstrap_database(
     tenant, user = _preview_records()
     tenant_digest = _canonical_sha256(tenant)
     user_digest = _canonical_sha256(user)
+    _emit("DATABASE_BOOTSTRAP_STAGE=CONNECT")
     try:
         with psycopg.connect(target.bootstrap_uri, autocommit=True) as connection:
+            _emit("DATABASE_BOOTSTRAP_STAGE=MIGRATIONS")
             apply_migrations(connection)
+            _emit("DATABASE_BOOTSTRAP_STAGE=RUNTIME_ROLE")
             existing = connection.execute(
                 "SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = %s",
                 (RUNTIME_ROLE,),
@@ -622,7 +625,9 @@ def _bootstrap_database(
                     sql.Literal(runtime_password),
                 )
             )
+            _emit("DATABASE_BOOTSTRAP_STAGE=RUNTIME_GRANTS")
             connection.execute(runtime_sql, prepare=False)
+            _emit("DATABASE_BOOTSTRAP_STAGE=SYNTHETIC_SEED")
             connection.execute(
                 "INSERT INTO omni_cio_v10.tenants "
                 "(tenant_id, schema_version, identity_version, mode, "
@@ -667,6 +672,7 @@ def _bootstrap_database(
             )
             if list(stored) != expected:
                 raise ProvisioningStopped("SYNTHETIC_PREVIEW_RECORD_DRIFT")
+            _emit("DATABASE_BOOTSTRAP_STAGE=COMPLETE")
     except ProvisioningStopped:
         raise
     except Exception:
