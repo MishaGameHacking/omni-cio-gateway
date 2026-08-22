@@ -70,7 +70,8 @@ The workflow must:
 - pass secrets only to the provision step;
 - capture a UTC provision-attempt boundary immediately before invoking the canonical provisioner;
 - on provider failure, preserve the original non-zero result while allowing only read-only sanitized Render diagnostics for exactly one failed deploy from the same exact release and current provision attempt;
-- treat stale prior deploys, multiple current-attempt deploy matches, non-failed deploy states or malformed timestamps as unavailable diagnostics rather than inferred root cause;
+- detect `pipeline_minutes_exhausted` only from a unique structured service event inside the same current-attempt time boundary, distinguishing zero-charge capacity exhaustion from application build failure;
+- treat stale prior deploys/events, multiple current-attempt matches, non-failed deploy states or malformed timestamps as unavailable diagnostics rather than inferred root cause;
 - clean the isolated environment and repository workspace afterward.
 
 A source SHA or Regression Shield evidence mismatch is a hard failure.
@@ -115,6 +116,8 @@ Required environment remains fail-closed:
 
 The deployment must target the exact accepted-main SHA. Plan, region, repository, branch, build command, start command or health-path drift is RED.
 
+The Render Hobby workspace currently provides an included Starter pipeline-minute allowance. The preview must not buy extra pipeline minutes or add a payment method automatically. If Render emits `pipeline_minutes_exhausted`, classify the apply as `PIPELINE_MINUTES_EXHAUSTED`, keep it RED and stop; paid continuation requires a separate explicit OWNER decision, while a later free allowance reset may permit a normal accepted-main retry.
+
 ## Runtime behavior
 
 An unauthenticated browser receives the normal V10 login shell with an explicit synthetic preview action. The action creates a server-side synthetic session and CSRF cookie. It does not register a real user or impersonate a production tenant.
@@ -153,17 +156,19 @@ The final workflow summary may contain only the exact release SHA, public previe
 
 GitHub authority, provider API, plan, region, PostgreSQL version, migration, role, RLS, build, deploy, health, release or security-header failure remains RED.
 
-For Render terminal failures, the workflow may retrieve only one structured failed deploy for the exact accepted-main SHA created at or after the current provision-attempt UTC boundary, plus its matching `deploy_ended` event. If that event links a failed build by provider build ID, the diagnostic may also retrieve only the matching structured `build_ended` event. It emits only allowlisted status/reason classifications and never copies free-form provider event/log text into Actions output. A stale, ambiguous, non-failed or malformed match makes diagnostics unavailable; diagnostic failure never converts the original deploy failure to success and never triggers a second provider mutation.
+For Render terminal failures, the workflow may retrieve only one structured failed deploy for the exact accepted-main SHA created at or after the current provision-attempt UTC boundary, plus its matching `deploy_ended` event. If that event links a failed build by provider build ID, the diagnostic may also retrieve only the matching structured `build_ended` event. It may additionally query only the documented `pipeline_minutes_exhausted` event type with the same service and current-attempt start boundary; exactly one such current event produces the sanitized `PIPELINE_MINUTES_EXHAUSTED` class. It emits only allowlisted status/reason classifications and never copies free-form provider event/log text into Actions output. A stale, ambiguous, non-failed or malformed match makes diagnostics unavailable; diagnostic failure never converts the original deploy failure to success and never triggers a second provider mutation.
 
 Safe recovery order:
 
 1. inspect sanitized GitHub and provider status;
 2. classify the failure without revealing secrets;
-3. fix source on a focused branch;
+3. fix source on a focused branch when the cause is source/runtime/configuration;
 4. complete exact-head DRAFT and fresh READY validation;
 5. squash-merge the accepted fix;
 6. require exact-main Regression Shield SUCCESS;
 7. allow the accepted-main deployment workflow to re-verify that exact run and retry.
+
+For `PIPELINE_MINUTES_EXHAUSTED`, do not patch application code or add a payment method automatically. Preserve the zero-cost boundary and wait for a free allowance reset or obtain an explicit OWNER-approved cost decision before any paid continuation.
 
 Never recover by weakening exact-SHA, Regression Shield, free-plan, TLS, PostgreSQL 18, least-privilege, RLS, no-secret or no-real-data controls.
 
