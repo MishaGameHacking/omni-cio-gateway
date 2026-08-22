@@ -60,7 +60,9 @@ The canonical workflow:
 - runs deterministic deployment-source tests before any provider call, including the existing-role PostgreSQL 18 retry guard and Render terminal-diagnostic guard;
 - masks provider keys, generated runtime credentials and database URIs;
 - writes only sanitized classifications, non-sensitive resource IDs, release SHA and the public preview URL;
-- on a failed provider deploy, preserves the original non-zero result and performs only read-only Render API diagnostics for the same exact accepted-main SHA;
+- captures an explicit UTC `not-before` boundary immediately before the canonical provisioner starts;
+- on a failed provider deploy, preserves the original non-zero result and performs only read-only Render API diagnostics for the same exact accepted-main SHA and the same provision attempt;
+- rejects stale earlier deploys, multiple matching deploys, and any matching deploy that is not in an allowlisted failed terminal state instead of guessing a cause;
 - accepts only Render's documented terminal status enum and reduces structured provider reasons to allowlisted classifications without printing free-form provider text or raw logs;
 - fails closed on unexpected workflow, run, job, workspace, service, project, plan, version, region, role, migration, health or billing state.
 
@@ -81,7 +83,7 @@ Start command:
 
 The service must remain on plan `free`, branch `main`, region `frankfurt`, health path `/healthz`, and exact reviewed build/start commands. Drift is a hard failure.
 
-A Render terminal failure must remain RED while retaining a safe engineering class. At minimum the accepted-main failure path distinguishes the documented deploy status (`build_failed`, `update_failed`, `pre_deploy_failed`, `canceled` or `deactivated`) and may classify only structured, allowlisted reason fields such as non-zero exit, early exit, OOM, timeout, unhealthy or eviction. Provider free-form event/log text is never copied into Actions output.
+A Render terminal failure must remain RED while retaining a safe engineering class. At minimum the accepted-main failure path distinguishes the documented deploy status (`build_failed`, `update_failed`, `pre_deploy_failed`, `canceled` or `deactivated`) and may classify only structured, allowlisted reason fields such as non-zero exit, early exit, OOM, timeout, unhealthy or eviction. Provider free-form event/log text is never copied into Actions output. Diagnostic evidence is valid only when exactly one failed Render deploy for the exact accepted-main SHA was created at or after the workflow's current-attempt UTC boundary; otherwise diagnosis is unavailable and the original deployment failure remains RED.
 
 ## Neon runtime boundary
 
