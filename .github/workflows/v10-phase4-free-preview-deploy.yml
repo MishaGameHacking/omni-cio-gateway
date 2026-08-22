@@ -122,6 +122,7 @@ jobs:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
           NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
         run: |
+          provision_started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           set +e
           python -m scripts.provision_v10_render_neon_preview \
             --repo-root . \
@@ -131,7 +132,8 @@ jobs:
           if [ "$provision_status" -ne 0 ]; then
             diagnostic_status=0
             python -m scripts.diagnose_v10_render_deploy \
-              --expected-sha "$EXPECTED_MAIN_SHA" || diagnostic_status=$?
+              --expected-sha "$EXPECTED_MAIN_SHA" \
+              --not-before "$provision_started_at" || diagnostic_status=$?
             if [ "$diagnostic_status" -ne 0 ]; then
               printf '%s\n' 'RENDER_DEPLOY_DIAGNOSTIC=UNAVAILABLE'
             fi
