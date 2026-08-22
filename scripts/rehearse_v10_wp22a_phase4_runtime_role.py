@@ -15,6 +15,7 @@ from omni_cio.persistence.hosted_postgres_runtime_v1 import (
     validate_hosted_postgres_runtime_sql,
 )
 from omni_cio.persistence.migration import apply_migrations
+from scripts.provision_v10_render_neon_preview import _converge_runtime_role
 
 
 DSN_ENV = "OMNI_CIO_WP13_DSN"
@@ -89,16 +90,6 @@ def _create_bootstrap_role(admin_dsn: str, *, own_database: bool) -> str:
     return _dsn_for_role(admin_dsn, BOOTSTRAP_ROLE, bootstrap_password)
 
 
-def _create_runtime_role(bootstrap: psycopg.Connection[Any]) -> None:
-    runtime_password = _ephemeral_password()
-    bootstrap.execute(
-        sql.SQL(
-            "CREATE ROLE {} WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE "
-            "NOREPLICATION NOBYPASSRLS PASSWORD {}"
-        ).format(sql.Identifier(RUNTIME_ROLE), sql.Literal(runtime_password))
-    )
-
-
 def _assert_creator_edge(bootstrap: psycopg.Connection[Any]) -> None:
     memberships = _membership_rows(bootstrap)
     expected = [(BOOTSTRAP_ROLE, True, False, False)]
@@ -110,11 +101,24 @@ def _assert_creator_edge(bootstrap: psycopg.Connection[Any]) -> None:
     print("PG18_RUNTIME_CREATOR_ADMIN_EDGE=PASS")
 
 
+def _assert_runtime_login(admin_dsn: str, password: str) -> None:
+    runtime_dsn = _dsn_for_role(admin_dsn, RUNTIME_ROLE, password)
+    with psycopg.connect(runtime_dsn, autocommit=True) as runtime:
+        role = runtime.execute(
+            "SELECT rolname, rolcanlogin, rolsuper, rolcreatedb, rolcreaterole, "
+            "rolreplication, rolbypassrls FROM pg_catalog.pg_roles "
+            "WHERE rolname = current_user"
+        ).fetchone()
+    expected = (RUNTIME_ROLE, True, False, False, False, False, False)
+    if role != expected:
+        raise AssertionError("PostgreSQL 18 runtime role attributes drifted")
+
+
 def rehearse_creator_edge() -> int:
     admin_dsn = _required_dsn()
     bootstrap_dsn = _create_bootstrap_role(admin_dsn, own_database=False)
     with psycopg.connect(bootstrap_dsn, autocommit=True) as bootstrap:
-        _create_runtime_role(bootstrap)
+        _converge_runtime_role(bootstrap, _ephemeral_password())
         _assert_creator_edge(bootstrap)
     print("V10_WP22A_PHASE4_PG18_CREATOR_EDGE_REHEARSAL=PASS")
     return 0
@@ -129,11 +133,21 @@ def rehearse_bootstrap() -> int:
     )
     bootstrap_dsn = _create_bootstrap_role(admin_dsn, own_database=True)
     with psycopg.connect(bootstrap_dsn, autocommit=True) as bootstrap:
+        first_password = _ephemeral_password()
         apply_migrations(bootstrap)
-        _create_runtime_role(bootstrap)
+        _converge_runtime_role(bootstrap, first_password)
         _assert_creator_edge(bootstrap)
         bootstrap.execute(runtime_sql, prepare=False)
+        _assert_runtime_login(admin_dsn, first_password)
         print("PG18_HOSTED_RUNTIME_BOOTSTRAP=PASS")
+
+        second_password = _ephemeral_password()
+        _converge_runtime_role(bootstrap, second_password)
+        _assert_creator_edge(bootstrap)
+        bootstrap.execute(runtime_sql, prepare=False)
+        _assert_runtime_login(admin_dsn, second_password)
+        print("PG18_HOSTED_RUNTIME_RETRY=PASS")
+
     print("V10_WP22A_PHASE4_PG18_RUNTIME_ROLE_REHEARSAL=PASS")
     return 0
 

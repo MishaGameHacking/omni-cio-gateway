@@ -17,9 +17,11 @@ Exactly one deployment implementation is supported:
 - exact-main Regression Shield verifier: `scripts/check_v10_exact_main_regression.py`;
 - exact-main verification tests: `tests/test_v10_exact_main_regression.py`;
 - provider provisioner: `scripts/provision_v10_render_neon_preview.py`;
+- PostgreSQL 18 runtime-role rehearsal: `scripts/rehearse_v10_wp22a_phase4_runtime_role.py`;
 - hosted application factory: `apps/api/hosted_preview.py`;
 - existing Web product: `apps/web`;
 - deployment contract tests: `tests/test_wp22a_phase4_deploy_contract.py`;
+- runtime-role retry tests: `tests/test_wp22a_phase4_runtime_role_retry.py`;
 - hosted application tests: `tests/test_wp22a_phase4_hosted_preview_app.py`.
 
 A second Docker-based deploy workflow, duplicate provider client, temporary self-modifying status workflow or GitHub-hosted Ubuntu acceptance lane is forbidden. The repository's current zero-budget CI boundary remains authoritative.
@@ -53,7 +55,7 @@ The canonical workflow:
 - requires the exact run's `Quality, contracts and coverage` and `Dependency, code and secret security` jobs to be completed and successful before any provider mutation;
 - receives `RENDER_API_KEY` and `NEON_API_KEY` only in the provider-mutation step;
 - bootstraps and verifies the exact accepted-main SHA;
-- runs deterministic deployment-source tests before any provider call;
+- runs deterministic deployment-source tests before any provider call, including the existing-role PostgreSQL 18 retry guard;
 - masks provider keys, generated runtime credentials and database URIs;
 - writes only sanitized classifications, non-sensitive resource IDs, release SHA and the public preview URL;
 - fails closed on unexpected workflow, run, job, workspace, service, project, plan, version, region, role, migration, health or billing state.
@@ -88,6 +90,8 @@ The runtime role must be created with SQL and have exactly:
 - `NOREPLICATION`;
 - `NOBYPASSRLS`;
 - no role memberships.
+
+Role provisioning is explicitly idempotent. On first creation, the provisioner sets the complete least-privilege attribute set above. On a retry where the role already exists, it must first prove that all privileged attributes are already false and that the runtime role has no memberships. If any privileged attribute or membership has drifted, provisioning stops before mutation. A safe existing role is updated only for the required `LOGIN` state and generated password; the retry must not restate `SUPERUSER`, `CREATEDB`, `REPLICATION` or `BYPASSRLS` attributes that a non-superuser PostgreSQL 18 `CREATEROLE` administrator is not authorized to change. The exact PostgreSQL 18 rehearsal must exercise both creation and an immediate second convergence/password-rotation pass against the same role.
 
 The application receives only the pooled runtime URI. Startup verifies PostgreSQL 18, exact runtime-role attributes, absence of memberships, required schema objects, RLS and FORCE RLS before serving traffic.
 
