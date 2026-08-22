@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -7,6 +8,8 @@ import pytest
 from scripts import diagnose_v10_render_deploy as diagnostic
 
 
+ROOT = Path(__file__).resolve().parents[1]
+WORKFLOW = ROOT / ".github" / "workflows" / "v10-phase4-free-preview-deploy.yml"
 EXPECTED_SHA = "a" * 40
 NOT_BEFORE = "2026-08-22T14:27:00Z"
 SERVICE_ID = "srv-da4r3d49v7es73919ntg"
@@ -323,3 +326,17 @@ def test_requires_explicit_utc_attempt_boundary(not_before: str) -> None:
             api=_api(deploy_status="build_failed", reason={}),
         )
     assert exc_info.value.code == "RENDER_DIAGNOSTIC_NOT_BEFORE_INVALID"
+
+
+def test_workflow_binds_diagnostic_to_current_provision_attempt() -> None:
+    text = WORKFLOW.read_text(encoding="utf-8")
+
+    marker = 'provision_started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"'
+    provision = "python -m scripts.provision_v10_render_neon_preview"
+    diagnostic_command = "python -m scripts.diagnose_v10_render_deploy"
+    not_before = '--not-before "$provision_started_at"'
+
+    assert marker in text
+    assert diagnostic_command in text
+    assert not_before in text
+    assert text.index(marker) < text.index(provision) < text.index(diagnostic_command)
