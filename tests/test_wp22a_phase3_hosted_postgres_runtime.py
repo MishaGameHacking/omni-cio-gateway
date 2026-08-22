@@ -111,6 +111,21 @@ def test_hosted_postgres_bootstrap_checks_provider_user_and_ownership() -> None:
     assert "ALTER USER" not in source
 
 
+def test_hosted_postgres_bootstrap_accepts_only_pg18_creator_admin_edge() -> None:
+    source = _bootstrap()
+    assert "runtime_member_count > 1" in source
+    assert "membership.roleid = runtime_user.oid" in source
+    assert "membership.member <> bootstrap_user_oid" in source
+    assert "NOT membership.admin_option" in source
+    assert "membership.inherit_option" in source
+    assert "membership.set_option" in source
+    assert "rolname = pg_catalog.current_user" in source
+
+    # Runtime authority is still stricter in the opposite direction: the
+    # application login itself cannot be a member of any other role.
+    assert "membership.member = runtime_user.oid" in source
+
+
 def test_hosted_postgres_bootstrap_removes_public_privilege_paths() -> None:
     source = _bootstrap()
     for required in (
