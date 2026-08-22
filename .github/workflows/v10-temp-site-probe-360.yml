@@ -21,7 +21,7 @@ jobs:
 
     steps:
       - name: Discover deploy and probe public site
-        shell: powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command ". '{0}'"
+        shell: powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "& ([ScriptBlock]::Create((Get-Content -Raw '{0}')))"
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
