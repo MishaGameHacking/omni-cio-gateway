@@ -68,7 +68,9 @@ def _matching_service(api: provisioner.JsonApi) -> dict[str, Any]:
     ]
     if len(services) != 1:
         raise DiagnosticStopped("RENDER_DIAGNOSTIC_SERVICE_NOT_UNIQUE")
-    return services[0]
+    service = services[0]
+    provisioner._validate_existing_render_service(service)
+    return service
 
 
 def _matching_deploy(
