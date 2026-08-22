@@ -254,14 +254,26 @@ def test_database_failure_is_fail_closed_without_raw_diagnostics(
     assert "database-secret" not in health.text
 
 
-def test_untrusted_host_plain_http_and_cross_origin_are_rejected(
+def test_render_health_probe_allows_internal_http_only_for_healthz(
     tmp_path: Path,
 ) -> None:
     client = _client(tmp_path)
     assert client.get("/healthz", headers={"Host": "evil.example"}).status_code == 400
 
     plain = TestClient(_app(tmp_path), base_url=f"http://{HOSTNAME}")
-    assert plain.get("/healthz").status_code == 403
+    health = plain.get("/healthz")
+    assert health.status_code == 200
+    assert health.json() == {
+        "status": "ok",
+        "release_sha": RELEASE_SHA,
+        "database": "READY",
+        "synthetic_preview": True,
+    }
+    assert plain.get("/api/v10/web/preview-mode").status_code == 403
+    assert plain.get("/api/v10/web/preview-mode").json() == {
+        "detail": "HTTPS_REQUIRED"
+    }
+    assert plain.get("/").status_code == 403
 
     cross_origin = client.post(
         "/api/v10/web/preview-login",
