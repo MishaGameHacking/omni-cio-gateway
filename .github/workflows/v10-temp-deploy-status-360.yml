@@ -6,6 +6,7 @@ on:
       - v10/temp-site-probe-360
     paths:
       - ".github/workflows/v10-temp-deploy-status-360.yml"
+      - "scripts/v10_temp_deploy_status_360.py"
 
 permissions:
   actions: read
@@ -23,179 +24,29 @@ jobs:
       RESULT_BRANCH: "v10/temp-site-probe-360"
 
     steps:
-      - name: Collect and publish sanitized deployment evidence
-        shell: powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command ". '{0}'"
+      - name: Bootstrap repository and Python runtime
+        shell: cmd
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $ErrorActionPreference = 'Stop'
-          $lines = [System.Collections.Generic.List[string]]::new()
-          $lines.Add('DIAGNOSTIC_TIMESTAMP_UTC=' + [DateTime]::UtcNow.ToString('o'))
-          $lines.Add('EXPECTED_MAIN_SHA=' + $env:EXPECTED_MAIN_SHA)
-          $lines.Add('PUBLIC_URL=' + $env:PREVIEW_ROOT)
+          set "GIT_TERMINAL_PROMPT=0"
+          set "GCM_INTERACTIVE=Never"
+          set "GH_TOKEN=%GH_TOKEN%"
+          if exist repo rmdir /s /q repo
+          git -c credential.helper= -c http.extraHeader="Authorization: Bearer %GH_TOKEN%" clone --filter=blob:none --no-checkout "https://github.com/%GITHUB_REPOSITORY%.git" repo
+          if errorlevel 1 exit /b 20
+          cd repo
+          git -c credential.helper= -c http.extraHeader="Authorization: Bearer %GH_TOKEN%" fetch --depth=1 origin "%GITHUB_SHA%"
+          if errorlevel 1 exit /b 21
+          git -c advice.detachedHead=false checkout --detach "%GITHUB_SHA%"
+          if errorlevel 1 exit /b 22
+          call scripts\bootstrap_windows_ci_python.cmd
+          if errorlevel 1 exit /b %ERRORLEVEL%
 
-          $repo = $env:GITHUB_REPOSITORY
-          $headers = @{
-            Authorization = ('Bearer ' + $env:GH_TOKEN)
-            Accept = 'application/vnd.github+json'
-            'X-GitHub-Api-Version' = '2022-11-28'
-          }
-
-          try {
-            $regressionUri = 'https://api.github.com/repos/' + $repo + '/actions/workflows/regression-shield.yml/runs?per_page=30'
-            $regressionRuns = (Invoke-RestMethod -Uri $regressionUri -Headers $headers -Method Get).workflow_runs
-            $regressionMatches = @(
-              $regressionRuns |
-                Where-Object {
-                  $_.head_sha -eq $env:EXPECTED_MAIN_SHA -and
-                  $_.head_branch -eq 'main' -and
-                  $_.event -eq 'push'
-                } |
-                Sort-Object run_number -Descending
-            )
-            $lines.Add('REGRESSION_MATCH_COUNT=' + [string]$regressionMatches.Count)
-            if ($regressionMatches.Count -lt 1) {
-              $lines.Add('REGRESSION_RUN_FOUND=false')
-            }
-            else {
-              $regression = $regressionMatches[0]
-              $lines.Add('REGRESSION_RUN_FOUND=true')
-              $lines.Add('REGRESSION_RUN_ID=' + [string]$regression.id)
-              $lines.Add('REGRESSION_RUN_NUMBER=' + [string]$regression.run_number)
-              $lines.Add('REGRESSION_EVENT=' + [string]$regression.event)
-              $lines.Add('REGRESSION_STATUS=' + [string]$regression.status)
-              $lines.Add('REGRESSION_CONCLUSION=' + [string]$regression.conclusion)
-              $lines.Add('REGRESSION_HEAD_SHA=' + [string]$regression.head_sha)
-              $lines.Add('REGRESSION_CREATED_AT=' + [string]$regression.created_at)
-              $lines.Add('REGRESSION_UPDATED_AT=' + [string]$regression.updated_at)
-              $regressionJobs = (Invoke-RestMethod -Uri $regression.jobs_url -Headers $headers -Method Get).jobs
-              foreach ($job in $regressionJobs) {
-                $safeName = ([string]$job.name -replace '[\r\n=|]+', ' ').Trim()
-                $lines.Add(
-                  'REGRESSION_JOB=' + $safeName +
-                  '|status=' + [string]$job.status +
-                  '|conclusion=' + [string]$job.conclusion +
-                  '|id=' + [string]$job.id
-                )
-              }
-            }
-          }
-          catch {
-            $safeError = ($_.Exception.Message -replace '[\r\n=]+', ' ').Trim()
-            $lines.Add('REGRESSION_METADATA_ERROR=' + $safeError)
-          }
-
-          try {
-            $runsUri = 'https://api.github.com/repos/' + $repo + '/actions/workflows/v10-phase4-free-preview-deploy.yml/runs?per_page=30'
-            $runs = (Invoke-RestMethod -Uri $runsUri -Headers $headers -Method Get).workflow_runs
-            $matches = @(
-              $runs |
-                Where-Object {
-                  $_.head_sha -eq $env:EXPECTED_MAIN_SHA -and
-                  $_.head_branch -eq 'main'
-                } |
-                Sort-Object run_number -Descending
-            )
-            $lines.Add('DEPLOY_MATCH_COUNT=' + [string]$matches.Count)
-            if ($matches.Count -lt 1) {
-              $lines.Add('DEPLOY_RUN_FOUND=false')
-            }
-            else {
-              $run = $matches[0]
-              $lines.Add('DEPLOY_RUN_FOUND=true')
-              $lines.Add('DEPLOY_RUN_ID=' + [string]$run.id)
-              $lines.Add('DEPLOY_RUN_NUMBER=' + [string]$run.run_number)
-              $lines.Add('DEPLOY_EVENT=' + [string]$run.event)
-              $lines.Add('DEPLOY_STATUS=' + [string]$run.status)
-              $lines.Add('DEPLOY_CONCLUSION=' + [string]$run.conclusion)
-              $lines.Add('DEPLOY_HEAD_SHA=' + [string]$run.head_sha)
-              $lines.Add('DEPLOY_CREATED_AT=' + [string]$run.created_at)
-              $lines.Add('DEPLOY_UPDATED_AT=' + [string]$run.updated_at)
-              $jobs = (Invoke-RestMethod -Uri $run.jobs_url -Headers $headers -Method Get).jobs
-              foreach ($job in $jobs) {
-                $safeName = ([string]$job.name -replace '[\r\n=|]+', ' ').Trim()
-                $lines.Add(
-                  'DEPLOY_JOB=' + $safeName +
-                  '|status=' + [string]$job.status +
-                  '|conclusion=' + [string]$job.conclusion +
-                  '|id=' + [string]$job.id
-                )
-              }
-            }
-          }
-          catch {
-            $safeError = ($_.Exception.Message -replace '[\r\n=]+', ' ').Trim()
-            $lines.Add('DEPLOY_METADATA_ERROR=' + $safeError)
-          }
-
-          try {
-            $rootResponse = Invoke-WebRequest -Uri $env:PREVIEW_ROOT -Method Get -UseBasicParsing -TimeoutSec 45
-            $lines.Add('ROOT_HTTP_STATUS=' + [string][int]$rootResponse.StatusCode)
-            $title = ''
-            $titleMatch = [regex]::Match([string]$rootResponse.Content, '<title>([^<]*)</title>', 'IgnoreCase')
-            if ($titleMatch.Success) {
-              $title = ($titleMatch.Groups[1].Value -replace '[\r\n=]+', ' ').Trim()
-            }
-            $lines.Add('ROOT_TITLE=' + $title)
-          }
-          catch {
-            $statusCode = $null
-            if ($null -ne $_.Exception.Response) {
-              try { $statusCode = [int]$_.Exception.Response.StatusCode } catch { $statusCode = $null }
-            }
-            if ($null -ne $statusCode) {
-              $lines.Add('ROOT_HTTP_STATUS=' + [string]$statusCode)
-            }
-            $safeError = ($_.Exception.Message -replace '[\r\n=]+', ' ').Trim()
-            $lines.Add('ROOT_ERROR=' + $safeError)
-          }
-
-          try {
-            $healthUrl = $env:PREVIEW_ROOT + 'healthz'
-            $healthResponse = Invoke-WebRequest -Uri $healthUrl -Method Get -UseBasicParsing -TimeoutSec 45
-            $lines.Add('HEALTH_HTTP_STATUS=' + [string][int]$healthResponse.StatusCode)
-            $health = $healthResponse.Content | ConvertFrom-Json
-            $lines.Add('HEALTH_STATUS=' + ([string]$health.status -replace '[\r\n=]+', ' ').Trim())
-            $lines.Add('HEALTH_RELEASE_SHA=' + ([string]$health.release_sha -replace '[\r\n=]+', ' ').Trim())
-            $lines.Add('HEALTH_DATABASE=' + ([string]$health.database -replace '[\r\n=]+', ' ').Trim())
-            $lines.Add('HEALTH_SYNTHETIC_PREVIEW=' + ([string]$health.synthetic_preview -replace '[\r\n=]+', ' ').Trim())
-            $lines.Add('HEALTH_CACHE_CONTROL=' + ([string]$healthResponse.Headers['Cache-Control'] -replace '[\r\n=]+', ' ').Trim())
-            $lines.Add('HEALTH_HSTS=' + ([string]$healthResponse.Headers['Strict-Transport-Security'] -replace '[\r\n=]+', ' ').Trim())
-          }
-          catch {
-            $statusCode = $null
-            if ($null -ne $_.Exception.Response) {
-              try { $statusCode = [int]$_.Exception.Response.StatusCode } catch { $statusCode = $null }
-            }
-            if ($null -ne $statusCode) {
-              $lines.Add('HEALTH_HTTP_STATUS=' + [string]$statusCode)
-            }
-            $safeError = ($_.Exception.Message -replace '[\r\n=]+', ' ').Trim()
-            $lines.Add('HEALTH_ERROR=' + $safeError)
-          }
-
-          $resultText = ($lines -join "`n") + "`n"
-          $resultBytes = [System.Text.Encoding]::UTF8.GetBytes($resultText)
-          $contentUri = 'https://api.github.com/repos/' + $repo + '/contents/' + $env:RESULT_REPO_PATH
-          $branchQuery = [uri]::EscapeDataString($env:RESULT_BRANCH)
-          $existingSha = $null
-          try {
-            $existing = Invoke-RestMethod -Uri ($contentUri + '?ref=' + $branchQuery) -Headers $headers -Method Get
-            $existingSha = [string]$existing.sha
-          }
-          catch {
-            $statusCode = $null
-            if ($null -ne $_.Exception.Response) {
-              try { $statusCode = [int]$_.Exception.Response.StatusCode } catch { $statusCode = $null }
-            }
-            if ($statusCode -ne 404) { throw }
-          }
-          $body = @{
-            message = 'Publish sanitized exact-main deploy diagnostic'
-            content = [Convert]::ToBase64String($resultBytes)
-            branch = $env:RESULT_BRANCH
-          }
-          if ($existingSha) { $body.sha = $existingSha }
-          Invoke-RestMethod -Uri $contentUri -Headers $headers -Method Put -ContentType 'application/json' -Body ($body | ConvertTo-Json -Depth 4) | Out-Null
-          $lines | ForEach-Object { Write-Output $_ }
-          Write-Output ('SANITIZED_RESULT_PUBLISHED path=' + $env:RESULT_REPO_PATH)
+      - name: Collect and publish sanitized deployment evidence
+        shell: cmd
+        working-directory: repo
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          C:\actions-runner\_tool\omni-python-3.12.10\python.exe scripts\v10_temp_deploy_status_360.py
