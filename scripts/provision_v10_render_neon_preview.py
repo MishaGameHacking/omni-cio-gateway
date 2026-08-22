@@ -34,9 +34,7 @@ PREVIEW_USER_ID = "user:v1:synthetic_preview"
 PREVIEW_CREATED_AT = datetime(2026, 8, 21, tzinfo=timezone.utc)
 _SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 _PROVIDER_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")
-_RENDER_SLUG_PATTERN = re.compile(
-    r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
-)
+_RENDER_SLUG_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 _SAFE_TEXT_PATTERN = re.compile(r"^[^\x00-\x1f\x7f]{1,128}$")
 _TERMINAL_DEPLOY_FAILURES = frozenset(
     {
