@@ -114,12 +114,12 @@ def test_reports_build_failure_without_free_form_provider_text(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    secret_text = "sensitive-provider-message-must-not-escape"
+    provider_text = "sensitive-provider-message-must-not-escape"
     api = _api(
         deploy_status="build_failed",
         reason={
             "buildFailed": {"id": "bld-da4r3e49v7es73919r70"},
-            "failure": {"unhealthy": secret_text},
+            "failure": {"unhealthy": provider_text},
         },
     )
     monkeypatch.setattr(diagnostic, "_api_from_environment", lambda: api)
@@ -129,7 +129,7 @@ def test_reports_build_failure_without_free_form_provider_text(
     assert "RENDER_DEPLOY_STATUS=build_failed" in output
     assert "RENDER_DEPLOY_REASON=UNHEALTHY" in output
     assert "RENDER_DEPLOY_DIAGNOSTIC=PASS" in output
-    assert secret_text not in output
+    assert provider_text not in output
 
 
 def test_reports_non_zero_exit_for_update_failure() -> None:
