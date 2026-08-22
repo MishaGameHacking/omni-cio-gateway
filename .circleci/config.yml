@@ -93,6 +93,11 @@ jobs:
           command: |
             set -eu
             python scripts/rehearse_v10_wp13_persistence.py exercise
+      - run:
+          name: Rehearse Phase 4 runtime-role semantics on Linux PostgreSQL 18
+          command: |
+            set -eu
+            python -m scripts.rehearse_v10_wp22a_phase4_runtime_role
             printf '%s\n' 'V10_SUPPLEMENTAL_LINUX_POSTGRES18=PASS'
             printf '%s\n' 'SYNTHETIC_DATABASE_ONLY=YES'
             printf '%s\n' 'REAL_SECRETS_USED=NO'
