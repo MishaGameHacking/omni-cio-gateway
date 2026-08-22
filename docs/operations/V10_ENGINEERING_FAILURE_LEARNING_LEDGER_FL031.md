@@ -1,74 +1,95 @@
-# FL-031 — Provider bootstrap failures need safe stage evidence
+# FL-031 — PostgreSQL 18 creator-admin membership must not be mistaken for runtime authority
 
 Status: **ADDITIVE FAILURE-LEARNING ENTRY FOR WP22A PHASE 4; PRIMARY LEDGER REMAINS `V10_ENGINEERING_FAILURE_LEARNING_LEDGER.md`**  
 Date: **2026-08-22**  
-WP / reference: **WP22A Phase 4 Render + Neon synthetic preview / accepted-main deploy run `32555714430`**
+WP / reference: **WP22A Phase 4 Render + Neon synthetic preview / accepted-main deploy run `32555714430` / PR #366**
 
 ## Symptom / failing gate
 
 The exact accepted-main Phase 4 deployment on `4e10a04376523248cba8d5fa2ec8288de345e1e9` successfully verified the exact-main Regression Shield, passed the focused Phase 4 source tests, passed the zero-charge provider boundary, verified the Neon Free organization, and reused the Frankfurt-scoped Neon PostgreSQL 18 preview project.
 
-The provider step then stopped with only:
+The provider step then stopped before Render provisioning with:
 
 `PHASE4_FREE_PREVIEW=STOPPED code=DATABASE_BOOTSTRAP_FAILED`
 
-No Render service was created because the deployment sequence does not enter Render provisioning until the database bootstrap is complete.
+The original bootstrap catch intentionally suppressed raw database exceptions for secret safety, so the accepted-main run alone did not expose the failing PostgreSQL substage.
 
-## Root cause of the diagnostic gap
+## Root cause
 
-`_bootstrap_database()` intentionally suppressed raw database exceptions to keep credentials, connection URIs and provider details out of GitHub logs. That secret-safety decision was correct, but one broad catch covered several materially different operations: direct Neon connection, migrations, runtime-role provisioning, hosted-runtime grants/RLS setup and synthetic preview seeding.
+The Phase 4 provisioner creates or rotates the SQL runtime role `omni_cio_hosted_api` from the privileged Neon database-owner/bootstrap role and then applies `infrastructure/cloudru/wp22a/hosted-postgres-runtime.sql`.
 
-The single generic failure code therefore preserved secrecy but did not preserve enough sanitized stage evidence to distinguish the failing boundary safely.
+PostgreSQL 18 automatically grants a role created by a non-superuser `CREATEROLE` user back to that creator with the administrative membership shape equivalent to:
 
-This entry does **not** guess the underlying Neon/PostgreSQL failure. The exact database root cause must be established from a later accepted-main run after the stage evidence is present.
+`ADMIN=true, INHERIT=false, SET=false`.
+
+That edge lets the creator administer the role but does not let it inherit the runtime role's ordinary privileges or `SET ROLE` into it. PostgreSQL documents that the automatic grant is system-created and cannot be removed or changed by the `CREATEROLE` user itself.
+
+The accepted hosted-runtime SQL incorrectly rejected every `pg_auth_members` row where `roleid` was the runtime role. Therefore the legitimate PostgreSQL 18 creator-admin edge was classified as forbidden runtime membership during hosted-runtime grants/RLS bootstrap.
+
+This is distinct from the protected requirement that the runtime role itself must not be a member of `neon_superuser`, predefined broad roles or any other role. That stricter direction remains unchanged.
+
+## Deterministic reproduction and proof
+
+PR #366 added PostgreSQL 18 rehearsals on the same pinned PostgreSQL 18 CircleCI image already used by the accepted supplemental lane.
+
+Exact-head `27d7a52f847e0407209131740c38a2cf4efe1067` produced:
+
+- `ci/circleci: supplemental_linux_postgres18` — **SUCCESS** / build `476`;
+- `ci/circleci: supplemental_linux_phase4_pg18_creator_edge` — **SUCCESS** / build `477`;
+- `ci/circleci: supplemental_linux_phase4_pg18_bootstrap` — **SUCCESS** / build `475`;
+- `ci/circleci: supplemental_linux_governance` — **SUCCESS** / build `474`.
+
+The creator-edge rehearsal uses a real non-superuser PostgreSQL 18 `CREATEROLE` bootstrap login, creates the exact runtime role and proves the returned membership tuple is exactly one creator row with `admin_option=true`, `inherit_option=false`, `set_option=false`.
+
+The full bootstrap rehearsal additionally applies the committed migrations and executes the corrected hosted-runtime SQL successfully under that same role model. This closes the portability gap that the earlier WP13-only PostgreSQL lane did not exercise.
+
+## Corrective change
+
+The runtime-role guard now preserves both security requirements:
+
+1. any row where `omni_cio_hosted_api` is itself a member of another role remains forbidden;
+2. members *of* `omni_cio_hosted_api` are accepted only when there is at most one row and it belongs to the current bootstrap login with exact `ADMIN=true`, `INHERIT=false`, `SET=false` semantics.
+
+Any additional member, different member, missing admin option, inherited access or `SET ROLE` access remains fail-closed with `HOSTED_API_USER_MEMBERS_PRESENT`.
+
+The provisioner also emits fixed non-secret bootstrap stage markers before connection, migrations, runtime-role management, runtime grants, synthetic seeding and completion. Raw database exception messages, URIs, passwords, hostnames and provider bodies remain suppressed.
 
 ## Blast radius searched
 
 The review covered:
 
-- the canonical Phase 4 provider workflow;
 - Neon organization/project/branch/database/connection discovery;
-- PostgreSQL 18 migration execution;
-- SQL creation/rotation of the least-privilege `omni_cio_hosted_api` role;
+- PostgreSQL 18 role-creation semantics;
+- migration execution;
+- SQL creation/rotation of `omni_cio_hosted_api`;
+- both directions of `pg_auth_members` authority;
 - hosted runtime grants and FORCE RLS application;
 - synthetic preview tenant/user seeding;
-- the subsequent Render service creation boundary;
-- secret/logging rules that forbid raw provider/database error bodies and connection data.
+- the downstream Render service creation boundary;
+- secret/logging controls around provider/database failures.
 
-The current evidence proves that Render Git repository access, the Render no-card attestation, the exact-main Regression Shield and Neon Free project discovery are not the failing stages in run `32555714430`.
+No broker, Real-execution, V9 production, public-registration or paid-resource authority is changed.
 
 ## Why preflight missed it
 
-The source tests validated provider contracts, safe URI handling, exact-main authority and the provisioner launch mode. They did not exercise the real Neon database connection with repository secrets on a pull request, which is intentionally forbidden. The accepted-main provider run was therefore the first place where this external database boundary could fail.
+The existing supplemental PostgreSQL 18 lane exercised WP13 persistence semantics but did not create the Phase 4 runtime role through a non-superuser `CREATEROLE` login and did not execute `hosted-postgres-runtime.sql` under the resulting PostgreSQL 18 membership graph.
 
-The provisioner also lacked fixed, non-secret stage markers, so the first real external failure could not be localized without another source change.
-
-## Corrective change
-
-Keep the raw exception suppression and generic terminal code, but emit fixed sanitized stage markers immediately before each risky database bootstrap phase:
-
-- `CONNECT`;
-- `MIGRATIONS`;
-- `RUNTIME_ROLE`;
-- `RUNTIME_GRANTS`;
-- `SYNTHETIC_SEED`;
-- `COMPLETE`.
-
-The markers contain no hostname, database URI, username, password, SQL text, provider response body or exception message. The last emitted marker before `DATABASE_BOOTSTRAP_FAILED` identifies the failing phase while preserving the existing secret boundary.
+Static tests saw the old blanket `pg_auth_members` rejection as conservative and therefore could not distinguish a privileged runtime membership from PostgreSQL 18's administrative-only creator edge.
 
 ## Permanent regression / guard
 
-`tests/test_wp22a_phase4_deploy_contract.py` verifies that every fixed marker occurs exactly once, in execution order, and that the bootstrap block does not log `str(...)` or `repr(...)` exception data. The existing generic terminal failure remains fail-closed.
+Permanent protection now includes:
+
+- fixed sanitized `DATABASE_BOOTSTRAP_STAGE` markers with raw exception suppression;
+- source assertions for the exact creator-admin predicate;
+- `supplemental_linux_phase4_pg18_creator_edge`, which proves PostgreSQL 18's real membership shape;
+- `supplemental_linux_phase4_pg18_bootstrap`, which executes migrations plus the hosted-runtime bootstrap using that shape;
+- the original supplemental PostgreSQL 18 persistence lane, which remains independently GREEN.
 
 ## Future prevention rule
 
-When a secret-bearing accepted-main/provider-only path contains several distinct external operations under one sanitized exception boundary, preserve both requirements:
+Security review of role membership must distinguish the direction and effective privilege of each membership edge. A catalog row is not automatically evidence that the protected runtime role inherited authority.
 
-1. never expose raw provider/database exceptions or secret-bearing values;
-2. emit fixed stage-level evidence sufficient to localize the failed boundary without another speculative debugging cycle.
+For PostgreSQL version-sensitive authorization semantics, static SQL checks are insufficient when an inexpensive real PostgreSQL rehearsal is available. The CI gate must reproduce the exact role-creation context and inspect `admin_option`, `inherit_option` and `set_option` separately.
 
-Do not replace safe classification with verbose exception logging merely to speed diagnosis.
-
-## Dependency/tooling knowledge change
-
-External managed PostgreSQL behavior can differ from local PostgreSQL even when SQL and transaction semantics are valid. Provider-only acceptance must therefore retain safe stage observability around connection, migration and privilege boundaries instead of assuming a local PostgreSQL rehearsal proves the external path end to end.
+Provider-only workflows must also retain fixed stage-level diagnostics so a future external failure can be localized without leaking secret-bearing exception text.
