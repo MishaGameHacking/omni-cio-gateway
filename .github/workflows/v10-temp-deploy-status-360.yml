@@ -17,7 +17,7 @@ jobs:
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 10
     env:
-      EXPECTED_MAIN_SHA: "96154892e39f72f3d647aea089d44a3d000a112c"
+      EXPECTED_MAIN_SHA: "4e10a04376523248cba8d5fa2ec8288de345e1e9"
       PREVIEW_ROOT: "https://omni-cio-v10-web.onrender.com/"
       RESULT_REPO_PATH: "tmp/v10-deploy-status-360.txt"
       RESULT_BRANCH: "v10/temp-site-probe-360"
@@ -42,6 +42,50 @@ jobs:
           }
 
           try {
+            $regressionUri = 'https://api.github.com/repos/' + $repo + '/actions/workflows/regression-shield.yml/runs?per_page=30'
+            $regressionRuns = (Invoke-RestMethod -Uri $regressionUri -Headers $headers -Method Get).workflow_runs
+            $regressionMatches = @(
+              $regressionRuns |
+                Where-Object {
+                  $_.head_sha -eq $env:EXPECTED_MAIN_SHA -and
+                  $_.head_branch -eq 'main' -and
+                  $_.event -eq 'push'
+                } |
+                Sort-Object run_number -Descending
+            )
+            $lines.Add('REGRESSION_MATCH_COUNT=' + [string]$regressionMatches.Count)
+            if ($regressionMatches.Count -lt 1) {
+              $lines.Add('REGRESSION_RUN_FOUND=false')
+            }
+            else {
+              $regression = $regressionMatches[0]
+              $lines.Add('REGRESSION_RUN_FOUND=true')
+              $lines.Add('REGRESSION_RUN_ID=' + [string]$regression.id)
+              $lines.Add('REGRESSION_RUN_NUMBER=' + [string]$regression.run_number)
+              $lines.Add('REGRESSION_EVENT=' + [string]$regression.event)
+              $lines.Add('REGRESSION_STATUS=' + [string]$regression.status)
+              $lines.Add('REGRESSION_CONCLUSION=' + [string]$regression.conclusion)
+              $lines.Add('REGRESSION_HEAD_SHA=' + [string]$regression.head_sha)
+              $lines.Add('REGRESSION_CREATED_AT=' + [string]$regression.created_at)
+              $lines.Add('REGRESSION_UPDATED_AT=' + [string]$regression.updated_at)
+              $regressionJobs = (Invoke-RestMethod -Uri $regression.jobs_url -Headers $headers -Method Get).jobs
+              foreach ($job in $regressionJobs) {
+                $safeName = ([string]$job.name -replace '[\r\n=|]+', ' ').Trim()
+                $lines.Add(
+                  'REGRESSION_JOB=' + $safeName +
+                  '|status=' + [string]$job.status +
+                  '|conclusion=' + [string]$job.conclusion +
+                  '|id=' + [string]$job.id
+                )
+              }
+            }
+          }
+          catch {
+            $safeError = ($_.Exception.Message -replace '[\r\n=]+', ' ').Trim()
+            $lines.Add('REGRESSION_METADATA_ERROR=' + $safeError)
+          }
+
+          try {
             $runsUri = 'https://api.github.com/repos/' + $repo + '/actions/workflows/v10-phase4-free-preview-deploy.yml/runs?per_page=30'
             $runs = (Invoke-RestMethod -Uri $runsUri -Headers $headers -Method Get).workflow_runs
             $matches = @(
@@ -52,7 +96,7 @@ jobs:
                 } |
                 Sort-Object run_number -Descending
             )
-
+            $lines.Add('DEPLOY_MATCH_COUNT=' + [string]$matches.Count)
             if ($matches.Count -lt 1) {
               $lines.Add('DEPLOY_RUN_FOUND=false')
             }
@@ -67,7 +111,6 @@ jobs:
               $lines.Add('DEPLOY_HEAD_SHA=' + [string]$run.head_sha)
               $lines.Add('DEPLOY_CREATED_AT=' + [string]$run.created_at)
               $lines.Add('DEPLOY_UPDATED_AT=' + [string]$run.updated_at)
-
               $jobs = (Invoke-RestMethod -Uri $run.jobs_url -Headers $headers -Method Get).jobs
               foreach ($job in $jobs) {
                 $safeName = ([string]$job.name -replace '[\r\n=|]+', ' ').Trim()
@@ -147,7 +190,6 @@ jobs:
             }
             if ($statusCode -ne 404) { throw }
           }
-
           $body = @{
             message = 'Publish sanitized exact-main deploy diagnostic'
             content = [Convert]::ToBase64String($resultBytes)
@@ -155,6 +197,5 @@ jobs:
           }
           if ($existingSha) { $body.sha = $existingSha }
           Invoke-RestMethod -Uri $contentUri -Headers $headers -Method Put -ContentType 'application/json' -Body ($body | ConvertTo-Json -Depth 4) | Out-Null
-
           $lines | ForEach-Object { Write-Output $_ }
           Write-Output ('SANITIZED_RESULT_PUBLISHED path=' + $env:RESULT_REPO_PATH)
