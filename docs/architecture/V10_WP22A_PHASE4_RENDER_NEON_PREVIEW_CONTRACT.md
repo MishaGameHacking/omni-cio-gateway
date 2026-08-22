@@ -77,6 +77,8 @@ Start command:
 
 The service must remain on plan `free`, branch `main`, region `frankfurt`, health path `/healthz`, and exact reviewed build/start commands. Drift is a hard failure.
 
+Render terminates public TLS at its edge and forwards requests to the service process over plain HTTP. The application must therefore accept Render's internal `GET /healthz` transport so the configured provider health gate can observe the sanitized readiness endpoint. This exception is limited to `GET /healthz` with the exact trusted Render Host; every browser/API route remains HTTPS-only by trusted forwarded-protocol semantics, and public HTTP is redirected to HTTPS by Render before it reaches the application process.
+
 ## Neon runtime boundary
 
 The Neon project must use PostgreSQL 18 in Frankfurt. The privileged bootstrap URI may be used only inside the accepted-main workflow for migrations and role provisioning; it is never supplied to the Render runtime.
@@ -119,7 +121,7 @@ The hosted application must preserve:
 
 - exact `RENDER_GIT_COMMIT` release identity;
 - generated Render hostname allowlisting;
-- HTTPS-only request enforcement behind the trusted Render edge;
+- public HTTPS-only request enforcement behind the trusted Render edge, with only the provider's internal plain-HTTP `GET /healthz` readiness probe permitted;
 - same-origin mutation checks and CSRF validation;
 - deny-by-default cross-origin behavior;
 - HSTS, CSP, `nosniff`, referrer and opener protections;
