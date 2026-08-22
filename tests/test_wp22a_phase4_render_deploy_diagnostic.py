@@ -8,6 +8,7 @@ from scripts import diagnose_v10_render_deploy as diagnostic
 
 
 EXPECTED_SHA = "a" * 40
+NOT_BEFORE = "2026-08-22T14:27:00Z"
 SERVICE_ID = "srv-da4r3d49v7es73919ntg"
 DEPLOY_ID = "dep-da4r3e49v7es73919r70"
 BUILD_ID = "bld-da4r3e49v7es73919r70"
@@ -22,11 +23,15 @@ class FakeApi(diagnostic.provisioner.JsonApi):
         reason: object,
         build_reason: object | None = None,
         include_exact_deploy: bool = True,
+        deploy_created_at: str = "2026-08-22T14:27:04Z",
+        duplicate_current_deploy: bool = False,
     ) -> None:
         self.deploy_status = deploy_status
         self.reason = reason
         self.build_reason = build_reason
         self.include_exact_deploy = include_exact_deploy
+        self.deploy_created_at = deploy_created_at
+        self.duplicate_current_deploy = duplicate_current_deploy
 
     def request(
         self,
@@ -72,16 +77,28 @@ class FakeApi(diagnostic.provisioner.JsonApi):
             ]
         if "/deploys?" in path:
             commit_id = EXPECTED_SHA if self.include_exact_deploy else "b" * 40
-            return [
+            deploys = [
                 {
                     "deploy": {
                         "id": DEPLOY_ID,
                         "status": self.deploy_status,
-                        "createdAt": "2026-08-22T14:27:04Z",
+                        "createdAt": self.deploy_created_at,
                         "commit": {"id": commit_id},
                     }
                 }
             ]
+            if self.duplicate_current_deploy:
+                deploys.append(
+                    {
+                        "deploy": {
+                            "id": "dep-second-current-attempt",
+                            "status": self.deploy_status,
+                            "createdAt": "2026-08-22T14:27:05Z",
+                            "commit": {"id": EXPECTED_SHA},
+                        }
+                    }
+                )
+            return deploys
         if "/events?" in path and "type=deploy_ended" in path:
             return [
                 {
@@ -125,12 +142,16 @@ def _api(
     reason: object,
     build_reason: object | None = None,
     include_exact_deploy: bool = True,
+    deploy_created_at: str = "2026-08-22T14:27:04Z",
+    duplicate_current_deploy: bool = False,
 ) -> FakeApi:
     return FakeApi(
         deploy_status=deploy_status,
         reason=reason,
         build_reason=build_reason,
         include_exact_deploy=include_exact_deploy,
+        deploy_created_at=deploy_created_at,
+        duplicate_current_deploy=duplicate_current_deploy,
     )
 
 
@@ -148,7 +169,17 @@ def test_reports_build_failure_without_free_form_provider_text(
     )
     monkeypatch.setattr(diagnostic, "_api_from_environment", lambda: api)
 
-    assert diagnostic.main(["--expected-sha", EXPECTED_SHA]) == 0
+    assert (
+        diagnostic.main(
+            [
+                "--expected-sha",
+                EXPECTED_SHA,
+                "--not-before",
+                NOT_BEFORE,
+            ]
+        )
+        == 0
+    )
     output = capsys.readouterr().out
     assert "RENDER_DEPLOY_STATUS=build_failed" in output
     assert "RENDER_DEPLOY_REASON=UNHEALTHY" in output
@@ -159,6 +190,7 @@ def test_reports_build_failure_without_free_form_provider_text(
 def test_resolves_build_failure_through_structured_build_event() -> None:
     result = diagnostic.diagnose(
         EXPECTED_SHA,
+        NOT_BEFORE,
         api=_api(
             deploy_status="build_failed",
             reason={"buildFailed": {"id": BUILD_ID}},
@@ -173,6 +205,7 @@ def test_resolves_build_failure_through_structured_build_event() -> None:
 def test_reports_non_zero_exit_for_update_failure() -> None:
     result = diagnostic.diagnose(
         EXPECTED_SHA,
+        NOT_BEFORE,
         api=_api(
             deploy_status="update_failed",
             reason={"failure": {"nonZeroExit": 3}},
@@ -215,6 +248,7 @@ def test_rejects_unknown_provider_status() -> None:
     with pytest.raises(diagnostic.DiagnosticStopped) as exc_info:
         diagnostic.diagnose(
             EXPECTED_SHA,
+            NOT_BEFORE,
             api=_api(deploy_status="mystery_failed", reason={}),
         )
     assert exc_info.value.code == "RENDER_DIAGNOSTIC_DEPLOY_STATUS_INVALID"
@@ -224,6 +258,7 @@ def test_requires_deploy_for_exact_release() -> None:
     with pytest.raises(diagnostic.DiagnosticStopped) as exc_info:
         diagnostic.diagnose(
             EXPECTED_SHA,
+            NOT_BEFORE,
             api=_api(
                 deploy_status="build_failed",
                 reason={},
@@ -231,3 +266,60 @@ def test_requires_deploy_for_exact_release() -> None:
             ),
         )
     assert exc_info.value.code == "RENDER_DIAGNOSTIC_DEPLOY_NOT_FOUND"
+
+
+def test_rejects_stale_failed_deploy_from_earlier_attempt() -> None:
+    with pytest.raises(diagnostic.DiagnosticStopped) as exc_info:
+        diagnostic.diagnose(
+            EXPECTED_SHA,
+            NOT_BEFORE,
+            api=_api(
+                deploy_status="build_failed",
+                reason={},
+                deploy_created_at="2026-08-22T14:26:59Z",
+            ),
+        )
+    assert exc_info.value.code == "RENDER_DIAGNOSTIC_DEPLOY_NOT_FOUND"
+
+
+def test_rejects_ambiguous_multiple_deploys_in_current_attempt() -> None:
+    with pytest.raises(diagnostic.DiagnosticStopped) as exc_info:
+        diagnostic.diagnose(
+            EXPECTED_SHA,
+            NOT_BEFORE,
+            api=_api(
+                deploy_status="build_failed",
+                reason={},
+                duplicate_current_deploy=True,
+            ),
+        )
+    assert exc_info.value.code == "RENDER_DIAGNOSTIC_DEPLOY_NOT_UNIQUE"
+
+
+def test_rejects_non_failed_deploy() -> None:
+    with pytest.raises(diagnostic.DiagnosticStopped) as exc_info:
+        diagnostic.diagnose(
+            EXPECTED_SHA,
+            NOT_BEFORE,
+            api=_api(deploy_status="live", reason={}),
+        )
+    assert exc_info.value.code == "RENDER_DIAGNOSTIC_DEPLOY_NOT_FAILED"
+
+
+@pytest.mark.parametrize(
+    "not_before",
+    [
+        "",
+        "2026-08-22T14:27:00",
+        "2026-08-22T17:27:00+03:00",
+        "not-a-timestamp",
+    ],
+)
+def test_requires_explicit_utc_attempt_boundary(not_before: str) -> None:
+    with pytest.raises(diagnostic.DiagnosticStopped) as exc_info:
+        diagnostic.diagnose(
+            EXPECTED_SHA,
+            not_before,
+            api=_api(deploy_status="build_failed", reason={}),
+        )
+    assert exc_info.value.code == "RENDER_DIAGNOSTIC_NOT_BEFORE_INVALID"
