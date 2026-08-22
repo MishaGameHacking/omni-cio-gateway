@@ -16,6 +16,10 @@ NOT_BEFORE = "2026-08-22T14:27:00Z"
 SERVICE_ID = "srv-da4r3d49v7es73919ntg"
 DEPLOY_ID = "dep-da4r3e49v7es73919r70"
 BUILD_ID = "bld-da4r3e49v7es73919r70"
+DEPLOY_EVENT_ID = "evt-da4r3e49v7es73919r70"
+BUILD_EVENT_ID = "evt-cph1rs3idesc73a2b2mg"
+PIPELINE_EVENT_ID = "evt-cph1rs3idesc73a2b2mh"
+PIPELINE_EVENT_ID_2 = "evt-cph1rs3idesc73a2b2mi"
 SERVICE_SLUG = "omni-cio-v10-web-9x7k"
 
 
@@ -31,6 +35,8 @@ class FakeApi(diagnostic.provisioner.JsonApi):
         duplicate_current_deploy: bool = False,
         pipeline_event_timestamp: str | None = None,
         duplicate_pipeline_event: bool = False,
+        retrieve_event_wrapped: bool = False,
+        retrieve_identity_drift: bool = False,
     ) -> None:
         self.deploy_status = deploy_status
         self.reason = reason
@@ -40,6 +46,31 @@ class FakeApi(diagnostic.provisioner.JsonApi):
         self.duplicate_current_deploy = duplicate_current_deploy
         self.pipeline_event_timestamp = pipeline_event_timestamp
         self.duplicate_pipeline_event = duplicate_pipeline_event
+        self.retrieve_event_wrapped = retrieve_event_wrapped
+        self.retrieve_identity_drift = retrieve_identity_drift
+        self.retrieved_event_ids: list[str] = []
+
+    def _full_event(
+        self,
+        event_id: str,
+        event_type: str,
+        timestamp: str,
+        details: dict[str, object],
+    ) -> dict[str, object]:
+        actual_id = "evt-cph1rs3idesc73a2b2mj" if self.retrieve_identity_drift else event_id
+        event: dict[str, object] = {
+            "id": actual_id,
+            "type": event_type,
+            "timestamp": timestamp,
+            "details": details,
+        }
+        return {"event": event} if self.retrieve_event_wrapped else event
+
+    def _assert_event_query(self, path: str, event_type: str) -> None:
+        query = parse_qs(urlsplit(path).query)
+        assert query["type"] == [event_type]
+        assert query["startTime"] == [NOT_BEFORE]
+        assert query["limit"] == ["100"]
 
     def request(
         self,
@@ -108,17 +139,15 @@ class FakeApi(diagnostic.provisioner.JsonApi):
                 )
             return deploys
         if "/events?" in path and "type=pipeline_minutes_exhausted" in path:
-            query = parse_qs(urlsplit(path).query)
-            assert query["startTime"] == [NOT_BEFORE]
+            self._assert_event_query(path, "pipeline_minutes_exhausted")
             if self.pipeline_event_timestamp is None:
                 return []
             events = [
                 {
                     "event": {
-                        "id": "evt-pipeline-minutes-0001",
+                        "id": PIPELINE_EVENT_ID,
                         "type": "pipeline_minutes_exhausted",
                         "timestamp": self.pipeline_event_timestamp,
-                        "details": {},
                     }
                 }
             ]
@@ -126,48 +155,66 @@ class FakeApi(diagnostic.provisioner.JsonApi):
                 events.append(
                     {
                         "event": {
-                            "id": "evt-pipeline-minutes-0002",
+                            "id": PIPELINE_EVENT_ID_2,
                             "type": "pipeline_minutes_exhausted",
                             "timestamp": "2026-08-22T14:27:06Z",
-                            "details": {},
                         }
                     }
                 )
             return events
         if "/events?" in path and "type=deploy_ended" in path:
+            self._assert_event_query(path, "deploy_ended")
             return [
                 {
                     "event": {
-                        "id": "evt-da4r3e49v7es73919r70",
+                        "id": DEPLOY_EVENT_ID,
                         "type": "deploy_ended",
                         "timestamp": "2026-08-22T14:28:39Z",
-                        "details": {
-                            "deployId": DEPLOY_ID,
-                            "deployStatus": "failed",
-                            "status": 1,
-                            "reason": self.reason,
-                        },
+                        "status": "failed",
                     }
                 }
             ]
         if "/events?" in path and "type=build_ended" in path:
+            self._assert_event_query(path, "build_ended")
             if self.build_reason is None:
                 return []
             return [
                 {
                     "event": {
-                        "id": "evt-build-da4r3e49v7es73919r70",
+                        "id": BUILD_EVENT_ID,
                         "type": "build_ended",
                         "timestamp": "2026-08-22T14:28:38Z",
-                        "details": {
-                            "buildId": BUILD_ID,
-                            "buildStatus": "failed",
-                            "status": 1,
-                            "reason": self.build_reason,
-                        },
+                        "status": "failed",
                     }
                 }
             ]
+        if path == f"/events/{DEPLOY_EVENT_ID}":
+            self.retrieved_event_ids.append(DEPLOY_EVENT_ID)
+            return self._full_event(
+                DEPLOY_EVENT_ID,
+                "deploy_ended",
+                "2026-08-22T14:28:39Z",
+                {
+                    "deployId": DEPLOY_ID,
+                    "deployStatus": "failed",
+                    "status": 1,
+                    "reason": self.reason,
+                },
+            )
+        if path == f"/events/{BUILD_EVENT_ID}":
+            self.retrieved_event_ids.append(BUILD_EVENT_ID)
+            assert self.build_reason is not None
+            return self._full_event(
+                BUILD_EVENT_ID,
+                "build_ended",
+                "2026-08-22T14:28:38Z",
+                {
+                    "buildId": BUILD_ID,
+                    "buildStatus": "failed",
+                    "status": 1,
+                    "reason": self.build_reason,
+                },
+            )
         raise AssertionError(path)
 
 
@@ -181,6 +228,8 @@ def _api(
     duplicate_current_deploy: bool = False,
     pipeline_event_timestamp: str | None = None,
     duplicate_pipeline_event: bool = False,
+    retrieve_event_wrapped: bool = False,
+    retrieve_identity_drift: bool = False,
 ) -> FakeApi:
     return FakeApi(
         deploy_status=deploy_status,
@@ -191,6 +240,8 @@ def _api(
         duplicate_current_deploy=duplicate_current_deploy,
         pipeline_event_timestamp=pipeline_event_timestamp,
         duplicate_pipeline_event=duplicate_pipeline_event,
+        retrieve_event_wrapped=retrieve_event_wrapped,
+        retrieve_identity_drift=retrieve_identity_drift,
     )
 
 
@@ -224,36 +275,61 @@ def test_reports_build_failure_without_free_form_provider_text(
     assert "RENDER_DEPLOY_REASON=UNHEALTHY" in output
     assert "RENDER_DEPLOY_DIAGNOSTIC=PASS" in output
     assert provider_text not in output
+    assert api.retrieved_event_ids == [DEPLOY_EVENT_ID]
 
 
-def test_resolves_build_failure_through_structured_build_event() -> None:
-    result = diagnostic.diagnose(
-        EXPECTED_SHA,
-        NOT_BEFORE,
-        api=_api(
-            deploy_status="build_failed",
-            reason={"buildFailed": {"id": BUILD_ID}},
-            build_reason={"failure": {"nonZeroExit": 1}},
-        ),
+def test_resolves_build_failure_through_retrieved_structured_events() -> None:
+    api = _api(
+        deploy_status="build_failed",
+        reason={"buildFailed": {"id": BUILD_ID}},
+        build_reason={"failure": {"nonZeroExit": 1}},
     )
+    result = diagnostic.diagnose(EXPECTED_SHA, NOT_BEFORE, api=api)
 
     assert result.status == "build_failed"
     assert result.reason == "NON_ZERO_EXIT"
+    assert api.retrieved_event_ids == [DEPLOY_EVENT_ID, BUILD_EVENT_ID]
 
 
-def test_reports_pipeline_minutes_exhausted_for_current_attempt() -> None:
+def test_accepts_wrapped_retrieve_event_response() -> None:
     result = diagnostic.diagnose(
         EXPECTED_SHA,
         NOT_BEFORE,
         api=_api(
-            deploy_status="build_failed",
-            reason={"buildFailed": {"id": BUILD_ID}},
-            pipeline_event_timestamp="2026-08-22T14:27:05Z",
+            deploy_status="update_failed",
+            reason={"failure": {"nonZeroExit": 3}},
+            retrieve_event_wrapped=True,
         ),
     )
 
+    assert result.reason == "NON_ZERO_EXIT"
+
+
+def test_rejects_retrieved_event_identity_drift() -> None:
+    with pytest.raises(diagnostic.DiagnosticStopped) as exc_info:
+        diagnostic.diagnose(
+            EXPECTED_SHA,
+            NOT_BEFORE,
+            api=_api(
+                deploy_status="update_failed",
+                reason={"failure": {"nonZeroExit": 3}},
+                retrieve_identity_drift=True,
+            ),
+        )
+    assert exc_info.value.code == "RENDER_DIAGNOSTIC_EVENT_IDENTITY_DRIFT"
+
+
+def test_reports_pipeline_minutes_exhausted_for_current_attempt() -> None:
+    api = _api(
+        deploy_status="build_failed",
+        reason={"buildFailed": {"id": BUILD_ID}},
+        pipeline_event_timestamp="2026-08-22T14:27:05Z",
+    )
+    result = diagnostic.diagnose(EXPECTED_SHA, NOT_BEFORE, api=api)
+
     assert result.status == "build_failed"
     assert result.reason == "PIPELINE_MINUTES_EXHAUSTED"
+    assert api.retrieved_event_ids == []
 
 
 def test_pipeline_exhaustion_can_explain_queued_deploy() -> None:
@@ -394,7 +470,7 @@ def test_rejects_ambiguous_multiple_deploys_in_current_attempt() -> None:
     assert exc_info.value.code == "RENDER_DIAGNOSTIC_DEPLOY_NOT_UNIQUE"
 
 
-def test_rejects_non_failed_deploy() -> None:
+def test_rejects_non_failed_deploy_without_capacity_event() -> None:
     with pytest.raises(diagnostic.DiagnosticStopped) as exc_info:
         diagnostic.diagnose(
             EXPECTED_SHA,
