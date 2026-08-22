@@ -75,6 +75,10 @@ def _utc_timestamp(value: object, code: str) -> datetime:
     return parsed.astimezone(timezone.utc)
 
 
+def _render_timestamp(value: datetime) -> str:
+    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
 def _matching_service(api: provisioner.JsonApi) -> dict[str, Any]:
     owner_id = provisioner._render_owner(api)
     services = [
@@ -126,12 +130,17 @@ def _service_events(
     api: provisioner.JsonApi,
     service_id: str,
     event_type: str,
+    *,
+    not_before: datetime | None = None,
 ) -> list[dict[str, Any]]:
     safe_service_id = provisioner._provider_segment(
         service_id,
         "RENDER_DIAGNOSTIC_SERVICE_ID_INVALID",
     )
-    query = urlencode({"type": event_type, "limit": 100})
+    query_values: dict[str, object] = {"type": event_type, "limit": 100}
+    if not_before is not None:
+        query_values["startTime"] = _render_timestamp(not_before)
+    query = urlencode(query_values)
     return provisioner._unwrap_rows(
         api.request("GET", f"/services/{safe_service_id}/events?{query}"),
         "event",
@@ -178,6 +187,33 @@ def _build_failure_id(details: dict[str, Any]) -> str | None:
         build_failed.get("id"),
         "RENDER_DIAGNOSTIC_BUILD_ID_INVALID",
     )
+
+
+def _attempt_pipeline_reason(
+    api: provisioner.JsonApi,
+    service_id: str,
+    not_before: datetime,
+) -> str | None:
+    matches: list[dict[str, Any]] = []
+    for event in _service_events(
+        api,
+        service_id,
+        "pipeline_minutes_exhausted",
+        not_before=not_before,
+    ):
+        if event.get("type") != "pipeline_minutes_exhausted":
+            continue
+        timestamp = _utc_timestamp(
+            event.get("timestamp"),
+            "RENDER_DIAGNOSTIC_PIPELINE_EVENT_TIMESTAMP_INVALID",
+        )
+        if timestamp >= not_before:
+            matches.append(event)
+    if not matches:
+        return None
+    if len(matches) != 1:
+        raise DiagnosticStopped("RENDER_DIAGNOSTIC_PIPELINE_EVENT_NOT_UNIQUE")
+    return "PIPELINE_MINUTES_EXHAUSTED"
 
 
 def _build_event_reason(
@@ -262,7 +298,9 @@ def diagnose(
         raise DiagnosticStopped("RENDER_DIAGNOSTIC_DEPLOY_STATUS_INVALID")
     if raw_status not in _FAILURE_STATUSES:
         raise DiagnosticStopped("RENDER_DIAGNOSTIC_DEPLOY_NOT_FAILED")
-    reason = _deploy_event_reason(client, service_id, deploy_id, raw_status)
+    reason = _attempt_pipeline_reason(client, service_id, lower_bound)
+    if reason is None:
+        reason = _deploy_event_reason(client, service_id, deploy_id, raw_status)
     return DeployDiagnostic(
         service_id=service_id,
         deploy_id=deploy_id,
