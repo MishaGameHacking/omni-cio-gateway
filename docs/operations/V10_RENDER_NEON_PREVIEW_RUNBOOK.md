@@ -151,7 +151,7 @@ The final workflow summary may contain only the exact release SHA, public previe
 
 GitHub authority, provider API, plan, region, PostgreSQL version, migration, role, RLS, build, deploy, health, release or security-header failure remains RED.
 
-For Render terminal failures, the workflow may retrieve only the structured deploy and matching `deploy_ended` event for the exact accepted-main SHA. It emits only allowlisted status/reason classifications and never copies free-form provider event/log text into Actions output. Diagnostic failure never converts the original deploy failure to success and never triggers a second provider mutation.
+For Render terminal failures, the workflow may retrieve only the structured deploy and matching `deploy_ended` event for the exact accepted-main SHA. If that event links a failed build by provider build ID, the diagnostic may also retrieve only the matching structured `build_ended` event. It emits only allowlisted status/reason classifications and never copies free-form provider event/log text into Actions output. Diagnostic failure never converts the original deploy failure to success and never triggers a second provider mutation.
 
 Safe recovery order:
 
