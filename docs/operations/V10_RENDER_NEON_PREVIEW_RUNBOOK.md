@@ -68,7 +68,9 @@ The workflow must:
 - install only hash-locked runtime dependencies;
 - compile and run the Phase 4 deployment/application tests before provider calls;
 - pass secrets only to the provision step;
-- on provider failure, preserve the original non-zero result while allowing only read-only sanitized Render diagnostics for the exact release;
+- capture a UTC provision-attempt boundary immediately before invoking the canonical provisioner;
+- on provider failure, preserve the original non-zero result while allowing only read-only sanitized Render diagnostics for exactly one failed deploy from the same exact release and current provision attempt;
+- treat stale prior deploys, multiple current-attempt deploy matches, non-failed deploy states or malformed timestamps as unavailable diagnostics rather than inferred root cause;
 - clean the isolated environment and repository workspace afterward.
 
 A source SHA or Regression Shield evidence mismatch is a hard failure.
@@ -151,7 +153,7 @@ The final workflow summary may contain only the exact release SHA, public previe
 
 GitHub authority, provider API, plan, region, PostgreSQL version, migration, role, RLS, build, deploy, health, release or security-header failure remains RED.
 
-For Render terminal failures, the workflow may retrieve only the structured deploy and matching `deploy_ended` event for the exact accepted-main SHA. If that event links a failed build by provider build ID, the diagnostic may also retrieve only the matching structured `build_ended` event. It emits only allowlisted status/reason classifications and never copies free-form provider event/log text into Actions output. Diagnostic failure never converts the original deploy failure to success and never triggers a second provider mutation.
+For Render terminal failures, the workflow may retrieve only one structured failed deploy for the exact accepted-main SHA created at or after the current provision-attempt UTC boundary, plus its matching `deploy_ended` event. If that event links a failed build by provider build ID, the diagnostic may also retrieve only the matching structured `build_ended` event. It emits only allowlisted status/reason classifications and never copies free-form provider event/log text into Actions output. A stale, ambiguous, non-failed or malformed match makes diagnostics unavailable; diagnostic failure never converts the original deploy failure to success and never triggers a second provider mutation.
 
 Safe recovery order:
 
