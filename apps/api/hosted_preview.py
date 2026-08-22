@@ -177,7 +177,8 @@ class HostedPreviewSecurityMiddlewareV1(BaseHTTPMiddleware):
         api_path = (
             request.url.path.startswith("/api/") or request.url.path == "/healthz"
         )
-        if scheme != "https":
+        render_health_probe = request.method == "GET" and request.url.path == "/healthz"
+        if scheme != "https" and not render_health_probe:
             return _safe_error("HTTPS_REQUIRED", 403, api_path=api_path)
 
         if request.method not in _SAFE_METHODS:
