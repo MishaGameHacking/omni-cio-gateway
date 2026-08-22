@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 import re
 import sys
 from typing import Any
@@ -59,6 +60,21 @@ def _api_from_environment() -> provisioner.JsonApi:
     )
 
 
+def _utc_timestamp(value: object, code: str) -> datetime:
+    if not isinstance(value, str) or not value.strip():
+        raise DiagnosticStopped(code)
+    normalized = value.strip()
+    if normalized.endswith("Z"):
+        normalized = f"{normalized[:-1]}+00:00"
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        raise DiagnosticStopped(code) from None
+    if parsed.tzinfo is None or parsed.utcoffset() != timedelta(0):
+        raise DiagnosticStopped(code)
+    return parsed.astimezone(timezone.utc)
+
+
 def _matching_service(api: provisioner.JsonApi) -> dict[str, Any]:
     owner_id = provisioner._render_owner(api)
     services = [
@@ -77,6 +93,7 @@ def _matching_deploy(
     api: provisioner.JsonApi,
     service_id: str,
     expected_sha: str,
+    not_before: datetime,
 ) -> dict[str, Any]:
     safe_service_id = provisioner._provider_segment(
         service_id,
@@ -87,15 +104,21 @@ def _matching_deploy(
         api.request("GET", f"/services/{safe_service_id}/deploys?{query}"),
         "deploy",
     )
-    matches: list[dict[str, Any]] = []
+    matches: list[tuple[datetime, dict[str, Any]]] = []
     for deploy in deploys:
         commit = deploy.get("commit")
-        if isinstance(commit, dict) and commit.get("id") == expected_sha:
-            matches.append(deploy)
+        if not isinstance(commit, dict) or commit.get("id") != expected_sha:
+            continue
+        created_at = _utc_timestamp(
+            deploy.get("createdAt"),
+            "RENDER_DIAGNOSTIC_DEPLOY_CREATED_AT_INVALID",
+        )
+        if created_at >= not_before:
+            matches.append((created_at, deploy))
     if not matches:
         raise DiagnosticStopped("RENDER_DIAGNOSTIC_DEPLOY_NOT_FOUND")
-    matches.sort(key=lambda item: str(item.get("createdAt", "")), reverse=True)
-    return matches[0]
+    matches.sort(key=lambda item: item[0], reverse=True)
+    return matches[0][1]
 
 
 def _service_events(
@@ -210,18 +233,23 @@ def _deploy_event_reason(
 
 def diagnose(
     expected_sha: str,
+    not_before: str,
     *,
     api: provisioner.JsonApi | None = None,
 ) -> DeployDiagnostic:
     if _SHA_PATTERN.fullmatch(expected_sha) is None:
         raise DiagnosticStopped("EXPECTED_SHA_INVALID")
+    lower_bound = _utc_timestamp(
+        not_before,
+        "RENDER_DIAGNOSTIC_NOT_BEFORE_INVALID",
+    )
     client = _api_from_environment() if api is None else api
     service = _matching_service(client)
     service_id = provisioner._provider_id(
         service.get("id"),
         "RENDER_DIAGNOSTIC_SERVICE_ID_INVALID",
     )
-    deploy = _matching_deploy(client, service_id, expected_sha)
+    deploy = _matching_deploy(client, service_id, expected_sha, lower_bound)
     deploy_id = provisioner._provider_id(
         deploy.get("id"),
         "RENDER_DIAGNOSTIC_DEPLOY_ID_INVALID",
@@ -229,6 +257,8 @@ def diagnose(
     raw_status = deploy.get("status")
     if not isinstance(raw_status, str) or raw_status not in _DEPLOY_STATUSES:
         raise DiagnosticStopped("RENDER_DIAGNOSTIC_DEPLOY_STATUS_INVALID")
+    if raw_status not in _FAILURE_STATUSES:
+        raise DiagnosticStopped("RENDER_DIAGNOSTIC_DEPLOY_NOT_FAILED")
     reason = _deploy_event_reason(client, service_id, deploy_id, raw_status)
     return DeployDiagnostic(
         service_id=service_id,
@@ -241,20 +271,23 @@ def diagnose(
 def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--expected-sha", required=True)
+    parser.add_argument("--not-before", required=True)
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(list(sys.argv[1:] if argv is None else argv))
     try:
-        result = diagnose(args.expected_sha.strip().lower())
+        result = diagnose(
+            args.expected_sha.strip().lower(),
+            args.not_before.strip(),
+        )
     except (DiagnosticStopped, provisioner.ProvisioningStopped) as exc:
         print(f"RENDER_DEPLOY_DIAGNOSTIC=STOPPED code={exc.code}")
         return 1
     print(f"RENDER_DEPLOY_STATUS={result.status}")
     print(f"RENDER_DEPLOY_REASON={result.reason}")
-    terminal = result.status in _FAILURE_STATUSES or result.status == "live"
-    print(f"RENDER_DEPLOY_TERMINAL={'YES' if terminal else 'NO'}")
+    print("RENDER_DEPLOY_TERMINAL=YES")
     print("RENDER_DEPLOY_DIAGNOSTIC=PASS")
     return 0
 
