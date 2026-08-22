@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   reproduce-bootstrap-import:
-    name: Reproduce exact-main database bootstrap imports
+    name: Reproduce exact-main direct-script bootstrap imports
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 15
     env:
@@ -67,37 +67,41 @@ jobs:
           python scripts/windows_ci_lock.py project requirements-dev.txt windows-requirements-dev.txt
           python -m pip install --disable-pip-version-check --require-hashes -r windows-requirements-dev.txt
 
-      - name: Reproduce database bootstrap import closure
+      - name: Prove cwd import works
         shell: bash
         run: |
           set -euo pipefail
           python - <<'PY'
-          import importlib
-
-          checks = (
-              ("psycopg", "psycopg"),
-              ("psycopg.sql", "psycopg.sql"),
-              ("omni_cio.persistence", "omni_cio.persistence"),
-              (
-                  "omni_cio.persistence.hosted_postgres_runtime_v1",
-                  "omni_cio.persistence.hosted_postgres_runtime_v1",
-              ),
-              ("omni_cio.persistence.migration", "omni_cio.persistence.migration"),
+          from psycopg import sql
+          from omni_cio.persistence.hosted_postgres_runtime_v1 import (
+              load_hosted_postgres_runtime_contract,
+              validate_hosted_postgres_runtime_sql,
           )
-          for label, module_name in checks:
-              try:
-                  importlib.import_module(module_name)
-              except Exception as exc:
-                  message = str(exc).replace("\r", " ").replace("\n", " ")[:300]
-                  print(
-                      "IMPORT_PROBE=FAIL "
-                      f"module={label} type={type(exc).__name__} message={message}",
-                      flush=True,
-                  )
-                  raise
-              else:
-                  print(f"IMPORT_PROBE=PASS module={label}", flush=True)
+          from omni_cio.persistence.migration import apply_migrations
+          del sql, load_hosted_postgres_runtime_contract, validate_hosted_postgres_runtime_sql, apply_migrations
+          print("IMPORT_PROBE_CWD=PASS", flush=True)
           PY
+
+      - name: Reproduce direct scripts path import closure
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > scripts/_phase4_import_probe.py <<'PY'
+          import sys
+
+          print(f"DIRECT_SCRIPT_SYS_PATH_0={sys.path[0]}", flush=True)
+          from psycopg import sql
+          print("IMPORT_PROBE=PASS module=psycopg.sql", flush=True)
+          from omni_cio.persistence.hosted_postgres_runtime_v1 import (
+              load_hosted_postgres_runtime_contract,
+              validate_hosted_postgres_runtime_sql,
+          )
+          print("IMPORT_PROBE=PASS module=omni_cio.persistence.hosted_postgres_runtime_v1", flush=True)
+          from omni_cio.persistence.migration import apply_migrations
+          print("IMPORT_PROBE=PASS module=omni_cio.persistence.migration", flush=True)
+          del sql, load_hosted_postgres_runtime_contract, validate_hosted_postgres_runtime_sql, apply_migrations
+          PY
+          python scripts/_phase4_import_probe.py
 
       - name: Clean diagnostic workspace
         if: always()
