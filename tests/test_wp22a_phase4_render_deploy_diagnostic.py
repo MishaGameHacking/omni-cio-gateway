@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
@@ -28,6 +29,8 @@ class FakeApi(diagnostic.provisioner.JsonApi):
         include_exact_deploy: bool = True,
         deploy_created_at: str = "2026-08-22T14:27:04Z",
         duplicate_current_deploy: bool = False,
+        pipeline_event_timestamp: str | None = None,
+        duplicate_pipeline_event: bool = False,
     ) -> None:
         self.deploy_status = deploy_status
         self.reason = reason
@@ -35,6 +38,8 @@ class FakeApi(diagnostic.provisioner.JsonApi):
         self.include_exact_deploy = include_exact_deploy
         self.deploy_created_at = deploy_created_at
         self.duplicate_current_deploy = duplicate_current_deploy
+        self.pipeline_event_timestamp = pipeline_event_timestamp
+        self.duplicate_pipeline_event = duplicate_pipeline_event
 
     def request(
         self,
@@ -102,6 +107,33 @@ class FakeApi(diagnostic.provisioner.JsonApi):
                     }
                 )
             return deploys
+        if "/events?" in path and "type=pipeline_minutes_exhausted" in path:
+            query = parse_qs(urlsplit(path).query)
+            assert query["startTime"] == [NOT_BEFORE]
+            if self.pipeline_event_timestamp is None:
+                return []
+            events = [
+                {
+                    "event": {
+                        "id": "evt-pipeline-minutes-0001",
+                        "type": "pipeline_minutes_exhausted",
+                        "timestamp": self.pipeline_event_timestamp,
+                        "details": {},
+                    }
+                }
+            ]
+            if self.duplicate_pipeline_event:
+                events.append(
+                    {
+                        "event": {
+                            "id": "evt-pipeline-minutes-0002",
+                            "type": "pipeline_minutes_exhausted",
+                            "timestamp": "2026-08-22T14:27:06Z",
+                            "details": {},
+                        }
+                    }
+                )
+            return events
         if "/events?" in path and "type=deploy_ended" in path:
             return [
                 {
@@ -147,6 +179,8 @@ def _api(
     include_exact_deploy: bool = True,
     deploy_created_at: str = "2026-08-22T14:27:04Z",
     duplicate_current_deploy: bool = False,
+    pipeline_event_timestamp: str | None = None,
+    duplicate_pipeline_event: bool = False,
 ) -> FakeApi:
     return FakeApi(
         deploy_status=deploy_status,
@@ -155,6 +189,8 @@ def _api(
         include_exact_deploy=include_exact_deploy,
         deploy_created_at=deploy_created_at,
         duplicate_current_deploy=duplicate_current_deploy,
+        pipeline_event_timestamp=pipeline_event_timestamp,
+        duplicate_pipeline_event=duplicate_pipeline_event,
     )
 
 
@@ -203,6 +239,50 @@ def test_resolves_build_failure_through_structured_build_event() -> None:
 
     assert result.status == "build_failed"
     assert result.reason == "NON_ZERO_EXIT"
+
+
+def test_reports_pipeline_minutes_exhausted_for_current_attempt() -> None:
+    result = diagnostic.diagnose(
+        EXPECTED_SHA,
+        NOT_BEFORE,
+        api=_api(
+            deploy_status="build_failed",
+            reason={"buildFailed": {"id": BUILD_ID}},
+            pipeline_event_timestamp="2026-08-22T14:27:05Z",
+        ),
+    )
+
+    assert result.status == "build_failed"
+    assert result.reason == "PIPELINE_MINUTES_EXHAUSTED"
+
+
+def test_ignores_stale_pipeline_minutes_event() -> None:
+    result = diagnostic.diagnose(
+        EXPECTED_SHA,
+        NOT_BEFORE,
+        api=_api(
+            deploy_status="build_failed",
+            reason={"buildFailed": {"id": BUILD_ID}},
+            pipeline_event_timestamp="2026-08-22T14:26:59Z",
+        ),
+    )
+
+    assert result.reason == "BUILD_FAILED"
+
+
+def test_rejects_multiple_pipeline_events_in_current_attempt() -> None:
+    with pytest.raises(diagnostic.DiagnosticStopped) as exc_info:
+        diagnostic.diagnose(
+            EXPECTED_SHA,
+            NOT_BEFORE,
+            api=_api(
+                deploy_status="build_failed",
+                reason={},
+                pipeline_event_timestamp="2026-08-22T14:27:05Z",
+                duplicate_pipeline_event=True,
+            ),
+        )
+    assert exc_info.value.code == "RENDER_DIAGNOSTIC_PIPELINE_EVENT_NOT_UNIQUE"
 
 
 def test_reports_non_zero_exit_for_update_failure() -> None:
