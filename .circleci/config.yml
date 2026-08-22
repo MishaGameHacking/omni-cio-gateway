@@ -93,17 +93,66 @@ jobs:
           command: |
             set -eu
             python scripts/rehearse_v10_wp13_persistence.py exercise
-      - run:
-          name: Rehearse Phase 4 runtime-role semantics on Linux PostgreSQL 18
-          command: |
-            set -eu
-            python -m scripts.rehearse_v10_wp22a_phase4_runtime_role
             printf '%s\n' 'V10_SUPPLEMENTAL_LINUX_POSTGRES18=PASS'
             printf '%s\n' 'SYNTHETIC_DATABASE_ONLY=YES'
             printf '%s\n' 'REAL_SECRETS_USED=NO'
+
+  supplemental_linux_phase4_pg18_creator_edge:
+    docker:
+      - image: cimg/python:3.12.10
+      - image: cimg/postgres@sha256:a41132098e5802d6287f4186f7e2b8bbf0d745dfbc912f0e826e6666d91d1bb2
+        environment:
+          POSTGRES_USER: omni_ci
+          POSTGRES_PASSWORD: synthetic-ci-only # pragma: allowlist secret
+          POSTGRES_DB: omni_ci
+    resource_class: small
+    environment:
+      PYTHONPATH: .
+      OMNI_CIO_WP13_DSN: postgresql://omni_ci:synthetic-ci-only@127.0.0.1:5432/omni_ci # pragma: allowlist secret
+    steps:
+      - checkout
+      - run:
+          name: Install exact runtime dependencies
+          command: |
+            set -eu
+            test "$(git rev-parse HEAD)" = "$CIRCLE_SHA1"
+            python -m pip install --disable-pip-version-check --require-hashes -r requirements.txt
+      - run:
+          name: Prove PostgreSQL 18 creator-admin edge
+          command: |
+            set -eu
+            python -m scripts.rehearse_v10_wp22a_phase4_runtime_role creator-edge
+
+  supplemental_linux_phase4_pg18_bootstrap:
+    docker:
+      - image: cimg/python:3.12.10
+      - image: cimg/postgres@sha256:a41132098e5802d6287f4186f7e2b8bbf0d745dfbc912f0e826e6666d91d1bb2
+        environment:
+          POSTGRES_USER: omni_ci
+          POSTGRES_PASSWORD: synthetic-ci-only # pragma: allowlist secret
+          POSTGRES_DB: omni_ci
+    resource_class: small
+    environment:
+      PYTHONPATH: .
+      OMNI_CIO_WP13_DSN: postgresql://omni_ci:synthetic-ci-only@127.0.0.1:5432/omni_ci # pragma: allowlist secret
+    steps:
+      - checkout
+      - run:
+          name: Install exact runtime dependencies
+          command: |
+            set -eu
+            test "$(git rev-parse HEAD)" = "$CIRCLE_SHA1"
+            python -m pip install --disable-pip-version-check --require-hashes -r requirements.txt
+      - run:
+          name: Prove hosted runtime bootstrap on PostgreSQL 18
+          command: |
+            set -eu
+            python -m scripts.rehearse_v10_wp22a_phase4_runtime_role bootstrap
 
 workflows:
   v10_supplemental_linux_governance:
     jobs:
       - supplemental_linux_governance
       - supplemental_linux_postgres18
+      - supplemental_linux_phase4_pg18_creator_edge
+      - supplemental_linux_phase4_pg18_bootstrap
