@@ -8,65 +8,102 @@ on:
 
 permissions:
   contents: read
-  actions: read
 
 jobs:
-  probe-exact-main-site:
-    name: Probe exact-main deploy and public HTTPS
+  reproduce-bootstrap-import:
+    name: Reproduce exact-main database bootstrap imports
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
-    timeout-minutes: 10
+    timeout-minutes: 15
     env:
       EXPECTED_MAIN_SHA: "96154892e39f72f3d647aea089d44a3d000a112c"
-      PREVIEW_ROOT: "https://omni-cio-v10-web.onrender.com/"
 
     steps:
-      - name: Discover deploy and probe public site
-        shell: powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "& ([ScriptBlock]::Create((Get-Content -Raw '{0}')))"
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Expose installed Git Bash before repository bootstrap
+        shell: cmd
         run: |
-          $ErrorActionPreference = 'Stop'
-          $repo = $env:GITHUB_REPOSITORY
-          $headers = @{
-            Authorization = ('Bearer ' + $env:GH_TOKEN)
-            Accept = 'application/vnd.github+json'
-            'X-GitHub-Api-Version' = '2022-11-28'
-          }
-          $runsUri = 'https://api.github.com/repos/' + $repo + '/actions/workflows/v10-phase4-free-preview-deploy.yml/runs?per_page=30'
-          $runs = (Invoke-RestMethod -Uri $runsUri -Headers $headers -Method Get).workflow_runs
-          $matches = @($runs | Where-Object { $_.head_sha -eq $env:EXPECTED_MAIN_SHA -and $_.head_branch -eq 'main' } | Sort-Object run_number -Descending)
-          if ($matches.Count -lt 1) { throw ('DEPLOY_RUN_NOT_FOUND exact_main=' + $env:EXPECTED_MAIN_SHA) }
-          $run = $matches[0]
-          Write-Output ('DEPLOY_RUN id=' + $run.id + ' number=' + $run.run_number + ' status=' + $run.status + ' conclusion=' + $run.conclusion + ' head_sha=' + $run.head_sha)
-          $jobs = (Invoke-RestMethod -Uri $run.jobs_url -Headers $headers -Method Get).jobs
-          foreach ($job in $jobs) {
-            $safeName = ([string]$job.name -replace '[\r\n=|]+', ' ').Trim()
-            Write-Output ('DEPLOY_JOB name=' + $safeName + ' id=' + $job.id + ' status=' + $job.status + ' conclusion=' + $job.conclusion)
-          }
-          if ($run.status -ne 'completed') { throw ('DEPLOY_RUN_NOT_COMPLETED id=' + $run.id + ' status=' + $run.status) }
+          powershell.exe -NoProfile -NonInteractive -Command "$git=(Get-Command git.exe -ErrorAction Stop).Source; $root=Split-Path -Parent (Split-Path -Parent $git); $bin=Join-Path $root 'bin'; if (-not (Test-Path (Join-Path $bin 'bash.exe'))) { exit 12 }; $bin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append"
+          if errorlevel 1 exit /b 12
 
-          try {
-            $root = Invoke-WebRequest -Uri $env:PREVIEW_ROOT -Method Get -UseBasicParsing -TimeoutSec 45
-            $title = ''
-            $match = [regex]::Match([string]$root.Content, '<title>([^<]*)</title>', 'IgnoreCase')
-            if ($match.Success) { $title = ($match.Groups[1].Value -replace '[\r\n=]+', ' ').Trim() }
-            Write-Output ('PUBLIC_ROOT status=' + [int]$root.StatusCode + ' title=' + $title)
-          }
-          catch {
-            $statusCode = $null
-            if ($null -ne $_.Exception.Response) { try { $statusCode = [int]$_.Exception.Response.StatusCode } catch { $statusCode = $null } }
-            Write-Output ('PUBLIC_ROOT status=' + [string]$statusCode + ' error=' + (($_.Exception.Message -replace '[\r\n=]+', ' ').Trim()))
-          }
+      - name: Bootstrap exact accepted main without external Actions
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GIT_TERMINAL_PROMPT: "0"
+          GCM_INTERACTIVE: "0"
+        run: |
+          set -euo pipefail
+          find . -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+          git init .
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          git config --local gc.auto 0
+          git config --local credential.helper ""
+          git config --local --add credential.helper '!f() { echo username=x-access-token; echo password=$GITHUB_TOKEN; }; f'
+          git fetch --no-tags --prune --depth=1 origin "+refs/heads/main:refs/remotes/origin/main"
+          test "$(git rev-parse refs/remotes/origin/main)" = "$EXPECTED_MAIN_SHA"
+          git checkout --detach "$EXPECTED_MAIN_SHA"
+          git config --local --unset-all credential.helper
+          test "$(git rev-parse HEAD)" = "$EXPECTED_MAIN_SHA"
 
-          try {
-            $health = Invoke-WebRequest -Uri ($env:PREVIEW_ROOT + 'healthz') -Method Get -UseBasicParsing -TimeoutSec 45
-            $payload = $health.Content | ConvertFrom-Json
-            Write-Output ('PUBLIC_HEALTH status=' + [int]$health.StatusCode + ' app_status=' + [string]$payload.status + ' release_sha=' + [string]$payload.release_sha + ' database=' + [string]$payload.database + ' synthetic_preview=' + [string]$payload.synthetic_preview)
-          }
-          catch {
-            $statusCode = $null
-            if ($null -ne $_.Exception.Response) { try { $statusCode = [int]$_.Exception.Response.StatusCode } catch { $statusCode = $null } }
-            Write-Output ('PUBLIC_HEALTH status=' + [string]$statusCode + ' error=' + (($_.Exception.Message -replace '[\r\n=]+', ' ').Trim()))
-          }
+      - name: Bootstrap isolated Python 3.12.10
+        shell: cmd
+        run: scripts\bootstrap_windows_ci_python.cmd
 
-          if ($run.conclusion -ne 'success') { exit 2 }
+      - name: Create exact deployment diagnostic environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          VENV_ROOT="$(cygpath -u "$RUNNER_TEMP")"
+          VENV_PATH="$VENV_ROOT/omni-cio-phase4-import-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          rm -rf "$VENV_PATH"
+          python -m venv "$VENV_PATH"
+          echo "VENV_PATH=$VENV_PATH" >> "$GITHUB_ENV"
+          echo "$(cygpath -w "$VENV_PATH/Scripts")" >> "$GITHUB_PATH"
+          "$VENV_PATH/Scripts/python.exe" -m pip --version
+
+      - name: Install exact Phase 4 dependency projection
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/windows_ci_lock.py project requirements-dev.txt windows-requirements-dev.txt
+          python -m pip install --disable-pip-version-check --require-hashes -r windows-requirements-dev.txt
+
+      - name: Reproduce database bootstrap import closure
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import importlib
+
+          checks = (
+              ("psycopg", "psycopg"),
+              ("psycopg.sql", "psycopg.sql"),
+              ("omni_cio.persistence", "omni_cio.persistence"),
+              (
+                  "omni_cio.persistence.hosted_postgres_runtime_v1",
+                  "omni_cio.persistence.hosted_postgres_runtime_v1",
+              ),
+              ("omni_cio.persistence.migration", "omni_cio.persistence.migration"),
+          )
+          for label, module_name in checks:
+              try:
+                  importlib.import_module(module_name)
+              except Exception as exc:
+                  message = str(exc).replace("\r", " ").replace("\n", " ")[:300]
+                  print(
+                      "IMPORT_PROBE=FAIL "
+                      f"module={label} type={type(exc).__name__} message={message}",
+                      flush=True,
+                  )
+                  raise
+              else:
+                  print(f"IMPORT_PROBE=PASS module={label}", flush=True)
+          PY
+
+      - name: Clean diagnostic workspace
+        if: always()
+        shell: bash
+        run: |
+          rm -rf "${VENV_PATH:-}"
+          git config --local --unset-all credential.helper 2>/dev/null || true
+          git reset --hard HEAD 2>/dev/null || true
+          git clean -ffdx 2>/dev/null || true
