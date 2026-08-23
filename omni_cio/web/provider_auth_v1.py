@@ -33,10 +33,9 @@ class AuthorizationTransactionPolicyV1:
 
 
 @dataclass(frozen=True, slots=True)
-class AuthorizationTransactionV1:
+class AuthorizationStartV1:
     provider: IdentityProviderV1
     state: str
-    code_verifier: str
     code_challenge: str
     nonce: str
     redirect_uri: str
@@ -117,7 +116,7 @@ class AuthorizationTransactionRegistryV1:
         provider: IdentityProviderV1,
         redirect_uri: str,
         now: datetime,
-    ) -> AuthorizationTransactionV1:
+    ) -> AuthorizationStartV1:
         timestamp = _utc(now)
         callback = _https_redirect_uri(redirect_uri)
         state = secrets.token_urlsafe(32)
@@ -137,10 +136,9 @@ class AuthorizationTransactionRegistryV1:
             if len(self._pending) >= self._policy.max_pending:
                 raise ProviderAuthorizationError("AUTH_TRANSACTION_CAPACITY_EXCEEDED")
             self._pending[digest] = pending
-        return AuthorizationTransactionV1(
+        return AuthorizationStartV1(
             provider=provider,
             state=state,
-            code_verifier=verifier,
             code_challenge=_pkce_challenge(verifier),
             nonce=nonce,
             redirect_uri=callback,
@@ -163,7 +161,7 @@ class AuthorizationTransactionRegistryV1:
             pending = self._pending.get(digest)
             if pending is None:
                 raise ProviderAuthorizationError("AUTH_TRANSACTION_NOT_FOUND")
-            if pending.provider is not provider:
+            if pending.provider != provider:
                 raise ProviderAuthorizationError("AUTH_TRANSACTION_PROVIDER_MISMATCH")
             self._pending.pop(digest, None)
         return ConsumedAuthorizationTransactionV1(
@@ -173,10 +171,6 @@ class AuthorizationTransactionRegistryV1:
             redirect_uri=pending.redirect_uri,
             expires_at=pending.expires_at,
         )
-
-    def stored_plaintext_state_count(self) -> int:
-        """Invariant probe: raw OAuth state values are never retained."""
-        return 0
 
     def pending_count(self, *, now: datetime) -> int:
         timestamp = _utc(now)

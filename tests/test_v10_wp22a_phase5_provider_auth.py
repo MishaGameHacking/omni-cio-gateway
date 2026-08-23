@@ -18,7 +18,7 @@ NOW = datetime(2026, 8, 24, 0, 0, tzinfo=timezone.utc)
 CALLBACK = "https://omni.example/api/v10/web/auth/telegram/callback"
 
 
-def test_transaction_generates_pkce_and_keeps_raw_state_out_of_registry() -> None:
+def test_transaction_generates_pkce_without_exposing_verifier() -> None:
     registry = AuthorizationTransactionRegistryV1()
     transaction = registry.begin(
         provider=IdentityProviderV1.TELEGRAM,
@@ -27,12 +27,18 @@ def test_transaction_generates_pkce_and_keeps_raw_state_out_of_registry() -> Non
     )
 
     assert 43 <= len(transaction.state) <= 128
-    assert 43 <= len(transaction.code_verifier) <= 128
+    assert not hasattr(transaction, "code_verifier")
     assert len(transaction.code_challenge) == 43
     assert "=" not in transaction.code_challenge
-    assert registry.stored_plaintext_state_count() == 0
+
+    consumed = registry.consume(
+        provider=IdentityProviderV1.TELEGRAM,
+        state=transaction.state,
+        now=NOW,
+    )
+    assert 43 <= len(consumed.code_verifier) <= 128
     expected = base64.urlsafe_b64encode(
-        hashlib.sha256(transaction.code_verifier.encode("ascii")).digest()
+        hashlib.sha256(consumed.code_verifier.encode("ascii")).digest()
     ).rstrip(b"=").decode("ascii")
     assert transaction.code_challenge == expected
 
@@ -60,7 +66,7 @@ def test_transaction_is_one_time_and_wrong_provider_cannot_consume_it() -> None:
         state=transaction.state,
         now=NOW,
     )
-    assert consumed.code_verifier == transaction.code_verifier
+    assert 43 <= len(consumed.code_verifier) <= 128
     assert consumed.nonce == transaction.nonce
     assert consumed.redirect_uri == CALLBACK
 
