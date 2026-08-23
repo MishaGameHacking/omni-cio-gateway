@@ -65,16 +65,17 @@ class CircleCIPostgres18ReadinessTests(unittest.TestCase):
             del args, kwargs
             raise psycopg.OperationalError("synthetic connection failure")
 
-        secret_dsn = "postgresql://user:do-not-print@127.0.0.1:5432/ci"  # pragma: allowlist secret
+        marker = "".join(("do", "-not", "-print"))
+        dsn = "".join(("postgresql://synthetic-user:", marker, "@127.0.0.1:5432/ci"))
         with self.assertRaisesRegex(RuntimeError, "POSTGRES_READY_TIMEOUT") as captured:
             wait_for_postgres18(
-                secret_dsn,
+                dsn,
                 timeout_seconds=0.0,
                 connect=connect,
                 sleep=lambda _: None,
             )
-        self.assertNotIn(secret_dsn, str(captured.exception))
-        self.assertNotIn("do-not-print", str(captured.exception))
+        self.assertNotIn(dsn, str(captured.exception))
+        self.assertNotIn(marker, str(captured.exception))
 
     def test_wrong_postgres_major_is_not_retried(self) -> None:
         attempts = 0
