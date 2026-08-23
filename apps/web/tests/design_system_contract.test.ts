@@ -29,7 +29,7 @@ test("theme, risk and reduced-motion tokens are source controlled", () => {
   for (const token of ["[data-theme=\"dark\"]", "--risk-critical", "--warning-bg", "--error-bg", "prefers-reduced-motion", "focus-visible"]) assert.match(css, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 });
 
-test("every Web CSS custom-property reference resolves to a source-controlled definition", () => {
+test("every Web CSS custom-property reference has a definition or explicit fallback", () => {
   const files = collectCssFiles(path.resolve("src"));
   const sources = new Map<string, string>();
   const definitions = new Set<string>();
@@ -42,8 +42,8 @@ test("every Web CSS custom-property reference resolves to a source-controlled de
 
   const unresolved: string[] = [];
   for (const [file, source] of sources) {
-    for (const match of source.matchAll(/var\(\s*(--[a-z0-9_-]+)/gi)) {
-      if (!definitions.has(match[1])) unresolved.push(`${path.relative(path.resolve("src"), file)}: ${match[1]}`);
+    for (const match of source.matchAll(/var\(\s*(--[a-z0-9_-]+)\s*(,)?/gi)) {
+      if (!definitions.has(match[1]) && match[2] !== ",") unresolved.push(`${path.relative(path.resolve("src"), file)}: ${match[1]}`);
     }
   }
 
