@@ -65,7 +65,7 @@ class CircleCIPostgres18ReadinessTests(unittest.TestCase):
             del args, kwargs
             raise psycopg.OperationalError("synthetic connection failure")
 
-        secret_dsn = "postgresql://user:do-not-print@127.0.0.1:5432/ci"
+        secret_dsn = "postgresql://user:do-not-print@127.0.0.1:5432/ci"  # pragma: allowlist secret
         with self.assertRaisesRegex(RuntimeError, "POSTGRES_READY_TIMEOUT") as captured:
             wait_for_postgres18(
                 secret_dsn,
