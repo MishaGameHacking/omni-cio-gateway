@@ -13,7 +13,7 @@ permissions:
 jobs:
   verify-postmerge-regression:
     name: Verify exact-main post-merge Regression Shield
-    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    runs-on: windows-latest
     timeout-minutes: 5
     steps:
       - name: Verify Regression Shield for exact accepted main
