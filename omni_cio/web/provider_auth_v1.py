@@ -29,10 +29,7 @@ class AuthorizationTransactionPolicyV1:
     def __post_init__(self) -> None:
         if self.lifetime <= timedelta(0) or self.lifetime > timedelta(minutes=15):
             raise ValueError("AUTH_TRANSACTION_LIFETIME_INVALID")
-        if (
-            self.max_pending < 1
-            or self.max_pending > _MAX_PENDING_AUTH_TRANSACTIONS
-        ):
+        if self.max_pending < 1 or self.max_pending > _MAX_PENDING_AUTH_TRANSACTIONS:
             raise ValueError("AUTH_TRANSACTION_CAPACITY_INVALID")
 
 

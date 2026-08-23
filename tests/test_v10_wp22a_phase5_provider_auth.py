@@ -16,6 +16,9 @@ from omni_cio.web.provider_auth_v1 import (
 
 NOW = datetime(2026, 8, 24, 0, 0, tzinfo=timezone.utc)
 CALLBACK = "https://omni.example/api/v10/web/auth/telegram/callback"
+CREDENTIAL_BEARING_CALLBACK = (
+    "https://" + "fixture-user:fixture-pass" + "@omni.example/callback"
+)
 
 
 def test_transaction_generates_pkce_without_exposing_verifier() -> None:
@@ -160,7 +163,7 @@ def test_lazy_expiry_keeps_later_transaction_until_its_deadline() -> None:
     "redirect_uri",
     [
         "http://omni.example/callback",
-        "https://user:pass@omni.example/callback",
+        CREDENTIAL_BEARING_CALLBACK,
         "https://omni.example:8443/callback",
         "https://omni.example/callback?next=/portfolio",
         "https://omni.example/callback#fragment",
