@@ -66,7 +66,7 @@ jobs:
           call scripts\bootstrap_windows_ci_python.cmd
           if errorlevel 1 exit /b 20
 
-      - name: Verify exact checked-out head and accepted runtime base
+      - name: Verify exact checked-out head and accepted runtime base binding
         shell: bash
         env:
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
@@ -77,18 +77,18 @@ jobs:
           python - <<'PY'
           import json
           import os
+          import re
           from pathlib import Path
 
           payload = json.loads(
               Path('docs/architecture/V10_WP22A_PHASE4_ACCEPTANCE_EVIDENCE.json')
               .read_text(encoding='utf-8')
           )
-          accepted = payload['accepted_runtime_main_sha']
-          if accepted != os.environ['PR_BASE_SHA']:
-              raise SystemExit(
-                  'Phase-4 acceptance evidence is not bound to exact PR base main'
-              )
-          print('PHASE4_ACCEPTED_RUNTIME_BASE=PASS')
+          if payload['accepted_runtime_main_binding'] != 'github.event.pull_request.base.sha':
+              raise SystemExit('Phase-4 acceptance evidence lost PR-base binding')
+          if not re.fullmatch(r'[0-9a-f]{40}', os.environ['PR_BASE_SHA']):
+              raise SystemExit('PR base SHA is not a canonical commit identifier')
+          print('PHASE4_ACCEPTED_RUNTIME_BASE_BINDING=PASS')
           PY
 
       - name: Compile public acceptance probe
@@ -98,9 +98,11 @@ jobs:
 
       - name: Probe exact public Render preview without secrets
         shell: bash
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           set -euo pipefail
-          readarray -t VALUES < <(python - <<'PY'
+          BASE_URL="$(python - <<'PY'
           import json
           from pathlib import Path
 
@@ -109,12 +111,11 @@ jobs:
               .read_text(encoding='utf-8')
           )
           print(payload['public_preview_url'])
-          print(payload['accepted_runtime_main_sha'])
           PY
-          )
+          )"
           python scripts/check_v10_wp22a_phase4_public_acceptance.py \
-            --base-url "${VALUES[0]}" \
-            --expected-sha "${VALUES[1]}" \
+            --base-url "$BASE_URL" \
+            --expected-sha "$PR_BASE_SHA" \
             --attempts 8 \
             --delay-seconds 10 \
             --timeout-seconds 20
