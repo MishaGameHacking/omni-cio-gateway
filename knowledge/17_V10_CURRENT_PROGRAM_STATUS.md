@@ -1,10 +1,10 @@
 # 17 — V10 CURRENT PROGRAM STATUS
 
-Updated: 2026-08-21
+Updated: 2026-08-23
 
 ## Executive state
 
-Omni-CIO V10: **DEVELOPMENT ACTIVE / BLOCK D COMPLETE / WP16–WP22 COMPLETE / WP22A CURRENT / PHASE 1 ACCEPTED / PHASE 2 ACCEPTED / PHASE 3 ACCEPTED / PHASE 4 AUTHORIZED**.
+Omni-CIO V10: **DEVELOPMENT ACTIVE / BLOCK D COMPLETE / WP16–WP22 COMPLETE / WP22A CURRENT / PHASE 1 ACCEPTED / PHASE 2 ACCEPTED / PHASE 3 ACCEPTED / PHASE 4 ACCEPTED / PHASE 5 AUTHORIZED**.
 
 Accepted implementation progress is **40%**.
 
@@ -12,7 +12,57 @@ Block A (5%), Block B (9%), Block C (12%) and Block D (14%) have passed their ow
 
 WP23+ remains locked behind the corrected WP22A Exit Gate and Master Plan sequence.
 
+This file becomes current authority only when present on accepted protected `main`. The Phase-4 acceptance transition recorded here is valid only because its owning transition PR must complete the dedicated exact-base public acceptance gate plus all ordinary exact-head DRAFT/READY gates before squash merge.
+
 ## Latest accepted engineering baseline
+
+### WP22A Phase 4 — accepted
+
+Phase 4 established the zero-cost synthetic hosted proof-of-product through the accepted Render Free + Neon PostgreSQL 18 boundary while preserving V9 and all broker/Real locks.
+
+The focused Phase-4 chain includes:
+
+1. PR #357 — initial zero-cost Render + Neon preview — exact main `9814ce151c713711c33c9ee5026f34a6e11255cd`;
+2. PR #359 — Frankfurt preview project selection — exact main `21c055a9f9abc1596c4f883801ee75ebd185b32f`;
+3. PR #360 — Neon active-region response parsing — exact main `96154892e39f72f3d647aea089d44a3d000a112c`;
+4. PR #364 — provisioner import-root correction — exact main `4e10a04376523248cba8d5fa2ec8288de345e1e9`;
+5. PR #366 — PostgreSQL 18 runtime-role bootstrap semantics — exact main `3e6a50801e2ac8c75ab872a64d100a9a9424bc06`;
+6. PR #368 — Render-assigned hostname authority — exact main `3aa41fdad9057ad1ca50b32ab5b03f7e4438fbf9`;
+7. PR #369 — idempotent existing runtime-role retry — exact main `38f79cd5425bda1e745bb61a3eb560671db4ee8e`;
+8. PR #370 — attempt-correlated secret-safe Render terminal diagnostics — exact main `60ced8498bd6ce64bdbbe04a63eed706d37098a6`;
+9. PR #376 — read-only hosted startup under least-privilege runtime role — exact main `4dd5cf123726a76a08424f5376db5b6b10ba5a31`;
+10. PR #378 — unavailable CircleCI retirement and PostgreSQL-18 evidence migration into the authoritative Windows gate — exact main `227296afe94212c1ca54b291edfb35740940e0b8`;
+11. PR #379 — canonical mobile-shell token repair and responsive regression evidence — exact main `235ebfd386d46b74fb2428085ac233aa4494d696`;
+12. PR #380 — OWNER-approved future Web visual-refresh brief only — exact main `4b8b0ce71e33c5e7b723e2f748a6fcf334bf6481`; runtime code is unchanged relative to `235ebfd386d46b74fb2428085ac233aa4494d696`.
+
+Provider/runtime acceptance is consolidated in:
+
+- `docs/architecture/V10_WP22A_PHASE4_ACCEPTANCE_EVIDENCE.md`;
+- `docs/architecture/V10_WP22A_PHASE4_ACCEPTANCE_EVIDENCE.json`;
+- `.github/workflows/v10-wp22a-phase4-public-acceptance.yml`.
+
+The transition gate is read-only and must prove the public Render preview is HTTPS, healthy, database-ready, synthetic-only, private-cache protected, HSTS protected and bound to exact accepted runtime main `4b8b0ce71e33c5e7b723e2f748a6fcf334bf6481`. A stale release SHA or any failed probe keeps Phase 4 RED and blocks this transition.
+
+### Phase-4 accepted boundary
+
+Phase 4 accepts only the synthetic proof-of-product:
+
+- separate Render Free service `omni-cio-v10-web`;
+- Neon PostgreSQL 18 Free preview database in the accepted Frankfurt boundary;
+- exact migration/bootstrap and least-privilege SQL-created runtime-role separation;
+- FORCE-RLS / tenant-aware database protections and synthetic seed only;
+- hosted FastAPI + existing React application in one source-controlled product;
+- provider-returned public HTTPS preview URL and exact release/readiness proof;
+- public registration disabled;
+- no real broker credential/private portfolio/account payload;
+- no protected V9 service mutation;
+- no paid resource/automatic paid overage;
+- broker write OFF, `trading_methods=false`, `REAL_TRADING_ENABLED=false`;
+- WP23 remains locked.
+
+Phase 4 does not imply normal real-USER public-hosted acceptance. That belongs to Phase 5.
+
+## Earlier accepted WP22A authority
 
 ### WP22A Phase 3 — accepted
 
@@ -24,37 +74,13 @@ The five focused Phase-3 hosted-runtime source increments are accepted:
 4. PR #347 — tenant-preserving hosted recovery integrity boundary — exact main `912e3eee44f73d15d9a81186515957c1f3d6cbb8`;
 5. PR #350 — hosted edge trust, readiness, observability, capacity/cost and release/rollback boundary — exact main `b4d1098d518613f6c10dfa74397a512c804b2928`.
 
-The final Phase-3 implementation main completed mandatory post-merge Regression Shield #1514 / run `32435410881` with both required jobs `success`.
+PR #352 consolidated Phase-3 evidence to exact main `fbd50b2aa5029170d9aabf178103e2e761648422`. Regression Shield #1515 / run `32445484371` completed SUCCESS with both required jobs SUCCESS, and temporary verifier PR #353 independently confirmed the exact main/run/job evidence through read-only `actions: read` authority before closing unmerged.
 
-PR #352 consolidated the accepted Phase-3 evidence and was squash-merged to exact main:
+### WP22A Phase 2 — accepted
 
-`fbd50b2aa5029170d9aabf178103e2e761648422`
+PR #336 accepted the verified external-identity -> internal account -> tenant -> server-side session boundary, tenant-scoped broker persistence/API authority and PostgreSQL tenant/RLS correction on exact main `00fc692710aa9eaf02ca78ea0535b51600020768`.
 
-That exact main completed Regression Shield #1515 / run `32445484371` with:
-
-- `Quality, contracts and coverage` — **SUCCESS**;
-- `Dependency, code and secret security` — **SUCCESS**.
-
-Temporary verifier PR #353 independently confirmed the exact main/run/job evidence through read-only `actions: read` authority and was closed unmerged.
-
-Therefore **WP22A Phase 3 is accepted** and **WP22A Phase 4 — Protected provider bootstrap/apply** is the authorized current increment.
-
-### Phase-3 accepted boundary
-
-Phase 3 established reviewed source/test contracts for:
-
-- one hosted runtime/deployment/IaC model without creating a parallel product stack;
-- tenant-aware PostgreSQL private state, least-privilege runtime authority, effective ACL guards and mandatory FORCE RLS on protected broker relations;
-- tenant-scoped opaque broker-secret references and encrypted-custody interfaces without real secret values in source, CI, artifacts, browser storage or logs;
-- atomic backup staging, size/SHA-256 integrity, corrupt-backup rejection, tenant-preserving restore, replacement-runtime recovery and rollback;
-- trusted proxy, Host, HTTPS/forwarded-protocol, CORS, Origin/Referer, CSRF, private-cache and secure-cookie assumptions for later hosted activation;
-- sanitized release-bound readiness evidence across application, provider, database, product-auth, external-broker and recovery domains;
-- bounded request, concurrency, database-pool, backup and cost controls with no automatic paid overage;
-- accepted-main release identity, health-before-traffic and last-accepted-release rollback.
-
-Phase 3 did not create public production resources, enable public registration, activate real Telegram/VK credentials, activate T-Invest public-service functionality, enable broker write/Real execution or unlock WP23.
-
-## Earlier accepted WP22A authority
+Regression Shield #1508 / run `32277165957`, attempt 2, completed SUCCESS with both required jobs GREEN after the first attempt was blocked by a transient OSV network timeout.
 
 ### WP22A Phase 1 — accepted
 
@@ -64,39 +90,37 @@ The accepted cost order remains:
 
 `already owned / open source / safe free tier / grant / bonus -> lowest-cost safe paid option -> scale only from measured need`
 
-No paid commitment was authorized by provider selection.
-
-### WP22A Phase 2 — accepted
-
-PR #336 accepted the verified external-identity -> internal account -> tenant -> server-side session boundary, tenant-scoped broker persistence/API authority and PostgreSQL tenant/RLS correction on exact main `00fc692710aa9eaf02ca78ea0535b51600020768`.
-
-Regression Shield #1508 / run `32277165957`, attempt 2, completed SUCCESS with both required jobs GREEN after the first attempt was blocked by a transient OSV network timeout.
-
-Phase 2 did not activate real external-provider credentials, public registration, public production ingress, T-Invest public connector authority, broker write or WP23.
+Provider selection did not authorize a paid commitment.
 
 ## Current functional development authority
 
 Current engineering authority is:
 
-- **WP22A Phase 4 — Protected provider bootstrap/apply** is the only authorized current implementation increment;
-- implementation starts from accepted exact main `fbd50b2aa5029170d9aabf178103e2e761648422` after this status transition is accepted;
-- create one reviewed accepted-main privileged deployment boundary for the already connected free Render and Neon accounts;
-- use repository secrets `RENDER_API_KEY` and `NEON_API_KEY` only from an accepted-main workflow, never from ordinary pull-request jobs;
-- create a separate free service named `omni-cio-v10-web`; the protected V9 `omni-cio-gateway` / `app:app` service remains unchanged;
-- build the existing `apps/web` React application and serve it from the existing `apps/api` / `omni_cio` product boundary;
-- provision or select only a free Neon PostgreSQL 18 preview database and a free Render Web Service;
-- create only synthetic/non-private preview state; no real broker credential, private portfolio/account payload or production tenant data is authorized;
-- expose a generated Render HTTPS preview hostname only after migrations, readiness and rollback checks pass;
-- keep public registration and real product multi-user activation disabled;
-- keep the public T-Invest connector fail-closed pending broker terms/permission;
-- do not create Cloud.ru production resources in this free-preview increment;
-- no paid plan, card charge, automatic paid scale-up or recurring spend is authorized;
-- if either provider requires payment, account verification that cannot be automated, or permissions beyond the supplied keys, stop and request OWNER action;
-- do not implement WP23 Telegram Bot Foundation, AI/Cortex or broker-write/Real work early.
+- **WP22A Phase 5 — Public-hosted acceptance** is the only authorized current implementation increment;
+- Phase 5 begins only after the Phase-4 acceptance/status transition is accepted on protected `main`;
+- reuse the existing `apps/web`, `apps/api`, `omni_cio`, PostgreSQL, deployment and recovery architecture; no second Web product/Core/identity/database/broker stack;
+- prove normal public HTTPS product use from ordinary supported phone/desktop browsers without OWNER home infrastructure as the availability anchor;
+- implement/accept only the Telegram Login and VK ID product-auth surface required for verified external identity -> internal account binding; do not start WP23 Telegram Bot Foundation;
+- resolve tenant scope only from authenticated server-side session state;
+- prove login/logout/session rotation/revocation, deployed tenant isolation, recovery/availability and rate/abuse/capacity behavior;
+- keep public T-Invest-backed production functionality fail-closed pending accepted broker permission;
+- keep broker write OFF, `trading_methods=false` and `REAL_TRADING_ENABLED=false`;
+- keep `PUBLIC_MULTI_USER_ENABLED=false` until its focused Phase-5 activation gate proves all owning acceptance conditions;
+- keep initial USER access free: `BILLING_ENABLED=false`, `TRIAL_ENABLED=false`, `SUBSCRIPTION_ENFORCEMENT=false`, `PREMIUM_FEATURE_GATING=false`;
+- final production provider remains Cloud.ru Evolution;
+- current recurring infrastructure authorization remains `0 RUB/month` / `0 USD/month`;
+- before any paid Cloud.ru apply, revalidate exact SKU/region/current price and obtain explicit OWNER cost approval above the current zero-cost cap;
+- no automatic paid fallback or card charge is authorized;
+- do not implement WP23, AI/Cortex or broker-write/Real work early.
 
-The OWNER explicitly authorized the zero-cost Render/Neon website deployment after connecting both API keys and requested a ready working public site. This authorization is limited to the free synthetic preview boundary above and does not authorize paid resources, real tenant-private data, real broker credentials, Cloud.ru production apply or public multi-user activation.
+The Phase-5 authority is defined by:
 
-OWNER action required now: **NO**. Engineering may proceed autonomously through source changes, tests, CI, accepted-main workflow creation and zero-cost provider bootstrap using the supplied repository secrets. Stop only at a genuinely non-delegable provider/account/billing/legal/secret action.
+- `docs/architecture/V10_WP22A_PHASE5_PUBLIC_HOSTED_ACCEPTANCE_AUTHORIZATION.md`;
+- `docs/architecture/V10_WP22A_PHASE5_PUBLIC_HOSTED_ACCEPTANCE_CONTRACT.json`;
+- accepted active amendments 8, 9 and 10;
+- the existing WP22A security/recovery/service-selection contracts.
+
+OWNER action required now: **NO** for Phase-5 source implementation and deterministic acceptance work. Stop only at a genuinely non-delegable provider/account/billing/legal/secret/physical action. In particular, a recurring paid Cloud.ru commitment above the current `0` cap requires explicit OWNER approval after exact current pricing/SKU is known.
 
 ## OWNER-approved final V10 product direction
 
@@ -106,7 +130,7 @@ The approved final product target is a **public modern multi-user Omni-CIO Web s
 
 A normal USER must not require PROJECT OWNER home IP/Wi-Fi/router/LAN/home Internet, Lenovo as production origin, Tailscale/native VPN, GitHub repository access, provider membership or Windows/CI credentials.
 
-The final public production origin remains the accepted Cloud.ru Evolution managed-cloud boundary. Render/Neon in Phase 4 are a zero-cost synthetic proof-of-product and do not replace that production decision.
+The final public production origin remains the accepted Cloud.ru Evolution managed-cloud boundary. Render/Neon Phase 4 remains a zero-cost synthetic proof-of-product and does not replace that production decision.
 
 ### USER identity and tenant isolation
 
@@ -145,7 +169,15 @@ Canonical ownership remains:
 
 `USER -> Tenant -> BrokerConnection -> READ / TRADE_OPTIONAL -> verified broker-account binding`
 
-No real broker credential is authorized in the Phase-4 synthetic preview. Public T-Invest-backed production functionality remains **FAIL_CLOSED_PENDING_BROKER_TERMS_PERMISSION**.
+No real broker credential is authorized in the Phase-4 synthetic preview. Phase 5 may implement only the accepted tenant-scoped real-user custody boundary; public T-Invest-backed production functionality remains **FAIL_CLOSED_PENDING_BROKER_TERMS_PERMISSION** until its independent permission gate passes.
+
+## OWNER-approved Web visual direction
+
+The OWNER-approved Premium Spatial Financial OS specification is accepted planning authority at:
+
+`docs/architecture/V10_WEB_VISUAL_DESIGN_REFRESH_IMPLEMENTATION_BRIEF.md`
+
+It remains **NOT CURRENT-WP AUTHORITY BY ITSELF**. Phase 5 does not silently authorize its CSS/TSX/runtime implementation. The visual refresh may begin only when a later accepted canonical status/amendment explicitly authorizes that named increment in sequence. Until then, Phase-5 Web changes are limited to the functional/auth/session/tenant/recovery/acceptance work required by WP22A.
 
 ## Accepted / current WP state
 
@@ -163,35 +195,39 @@ No real broker credential is authorized in the Phase-4 synthetic preview. Public
 - Block E / WP22A Phase 1 — **ACCEPTED**;
 - Block E / WP22A Phase 2 — **ACCEPTED**;
 - Block E / WP22A Phase 3 — **ACCEPTED**;
-- Block E / WP22A Phase 4 — **AUTHORIZED CURRENT INCREMENT**;
-- Block E / WP22A Phase 5 — **LOCKED**;
+- Block E / WP22A Phase 4 — **ACCEPTED**;
+- Block E / WP22A Phase 5 — **AUTHORIZED CURRENT INCREMENT**;
 - Block E / WP22A overall — **CURRENT / NOT YET COMPLETE**;
 - Block F / WP23+ — **LOCKED**;
-- public multi-user activation — **APPROVED TARGET / IMPLEMENTATION FLAG REMAINS OFF UNTIL EXIT GATES**;
-- public production Internet ingress — **OFF / LOCKED**;
-- zero-cost synthetic preview HTTPS — **AUTHORIZED ONLY THROUGH ACCEPTED PHASE-4 BOUNDARY**;
+- public multi-user activation — **APPROVED TARGET / IMPLEMENTATION FLAG REMAINS OFF UNTIL PHASE-5 ACTIVATION GATE**;
+- public production Internet ingress — **PHASE-5 ACCEPTANCE WORK / NOT YET ACCEPTED PRODUCTION**;
+- zero-cost synthetic preview HTTPS — **PHASE-4 ACCEPTED PROOF-OF-PRODUCT**;
 - broker write / Real execution — **UNCHANGED / NOT AUTHORIZED**.
 
-`PUBLIC_MULTI_USER_ENABLED=false` remains the safe default during WP22A.
+`PUBLIC_MULTI_USER_ENABLED=false` remains the safe default during WP22A Phase 5 until its owning activation gate passes.
 
-## Current next package — WP22A Phase 4 — Protected provider bootstrap/apply
+## Current next package — WP22A Phase 5 — Public-hosted acceptance
 
-Phase-4 purpose is to create a reproducible, fail-closed and zero-cost hosted proof-of-product using the existing GitHub, Render and Neon connections without widening product or financial authority.
+Phase-5 purpose is to close the real public-hosted product acceptance boundary without widening broker/execution authority or bypassing provider/cost/legal requirements.
 
-Required Phase-4 outcome includes at minimum:
+Required Phase-5 outcome includes at minimum:
 
-1. an accepted-main-only deployment workflow with explicit secret names and no PR secret exposure;
-2. deterministic credential preflight that emits only PASS/FAIL classifications;
-3. a separate Render service `omni-cio-v10-web` on the Free instance type;
-4. a Neon PostgreSQL 18 preview project/branch in an approved European region when available under the connected account;
-5. build of `apps/web` plus a hosted FastAPI entrypoint bound to `0.0.0.0:$PORT`;
-6. database migrations, schema/tenant/RLS/ACL verification and a least-privilege runtime connection;
-7. synthetic preview identity/data only, with public registration and broker-secret submission disabled;
-8. generated HTTPS hostname, health/readiness verification and rollback to the last accepted release;
-9. no mutation of the protected V9 Render service;
-10. no paid resource, automatic paid overage or Cloud.ru production apply.
+1. ordinary public HTTPS reachability from supported phone/desktop browsers independent of OWNER home infrastructure;
+2. verified Telegram Login / VK ID -> internal account binding with no provider engineering identity as product authority;
+3. server-side session fixation protection, rotation, bounded lifetime, logout and revoke-all acceptance;
+4. tenant scope derived only from server-side session state and deployed cross-tenant negatives over applicable private surfaces;
+5. tenant-scoped secret/private-state custody without raw credential return or browser Web Storage;
+6. deployed recovery/replacement-runtime/availability evidence with tenant isolation preserved;
+7. measured request/rate/abuse/capacity controls and fail-closed degraded behavior;
+8. accepted trusted-proxy/Host/TLS/CORS/Origin/Referer/CSRF/private-cache/security-header behavior;
+9. exact release provenance, health-before-traffic and rollback evidence;
+10. current Cloud.ru provider/SKU/price/free-or-bonus revalidation immediately before production apply;
+11. explicit OWNER approval before any recurring paid commitment above the current zero-cost cap;
+12. public T-Invest-backed functionality remaining independently fail-closed until broker permission;
+13. no broker-write/Real execution expansion and no WP23 early work;
+14. all focused Phase-5 increments following exact-head DRAFT GREEN -> fresh READY GREEN -> zero blockers -> squash merge -> exact-main Regression Shield GREEN.
 
-Phase 4 may create the synthetic preview URL. Phase 5 owns real public-hosted acceptance including normal USER login/logout/session evidence, real tenant-isolation acceptance, deployed recovery/availability evidence and any non-delegable OWNER browser confirmation.
+Phase 5 completion does not automatically make WP22A COMPLETE. A final WP22A closeout must map all Exit-Gate evidence and only then may the Master Plan consider WP23.
 
 ## Canonical authority
 
@@ -210,7 +246,9 @@ Mandatory sources include:
 - `docs/architecture/V10_WP22A_EXECUTION_CONTRACT.md`;
 - `docs/architecture/V10_WP22A_SERVICE_SELECTION.md`;
 - `docs/architecture/V10_WP22A_PHASE3_ACCEPTANCE_EVIDENCE.md`;
-- the accepted Phase-4 authorization/deployment contract added by the current increment;
+- `docs/architecture/V10_WP22A_PHASE4_ACCEPTANCE_EVIDENCE.md`;
+- `docs/architecture/V10_WP22A_PHASE5_PUBLIC_HOSTED_ACCEPTANCE_AUTHORIZATION.md`;
+- `docs/architecture/V10_WP22A_PHASE5_PUBLIC_HOSTED_ACCEPTANCE_CONTRACT.json`;
 - accepted security/threat/recovery/WP22A architecture and runbooks.
 
 GitHub remains engineering source of truth. Historical PRs and old OWNER-only Personal-Node assumptions do not override accepted `main` plus later active amendments. OWNER-supplied evidence may be used only for genuinely non-delegable acceptance facts and must never be synthesized.
@@ -223,7 +261,7 @@ GitHub remains engineering source of truth. Historical PRs and old OWNER-only Pe
 | B. GitHub, dependencies and CI/CD | 9% | COMPLETE — WP1–WP4 |
 | C. Node / infrastructure baseline | 12% | COMPLETE — WP5–WP10/WP9A |
 | D. V10 Core and data | 14% | COMPLETE — WP11–WP15 |
-| E. Omni-CIO Web Platform | 14% | IN PROGRESS — WP16–WP22 COMPLETE; WP22A Phases 1–3 ACCEPTED; Phase 4 CURRENT |
+| E. Omni-CIO Web Platform | 14% | IN PROGRESS — WP16–WP22 COMPLETE; WP22A Phases 1–4 ACCEPTED; Phase 5 CURRENT |
 | F. Telegram | 8% | NOT STARTED — planning only |
 | G. AI Copilot / Research / GPT Migration | 18% | NOT STARTED |
 | H. Guardian / Watchtower Loop | 8% | NOT STARTED |
@@ -239,24 +277,24 @@ The 40% total is intentional: Block E is not credited piecemeal and WP22A overal
 - protected V9 service and rollback remain available;
 - `trading_methods=false`;
 - `REAL_TRADING_ENABLED=false`;
-- `PUBLIC_MULTI_USER_ENABLED=false` until the owning public-activation gate;
+- `PUBLIC_MULTI_USER_ENABLED=false` until the owning Phase-5 activation gate;
 - no broker-write expansion by WP22A;
 - no transfer/withdrawal/margin/uncovered-short authority;
 - no real broker/Telegram/VK/provider secret values, encryption/recovery keys, private portfolio payloads or full account IDs in GitHub/CI/artifacts;
-- Phase-4 provider secrets are consumed only from accepted-main Actions secrets and are never printed;
-- no paid resource or recurring spend without a new explicit OWNER approval;
-- red CI is red; skipped/queued/pending is not PASS;
+- Phase-4 provider secrets remain accepted-main-only and are never printed;
+- no paid resource or recurring spend without exact current cost revalidation and explicit OWNER approval above the current authorized cap;
+- red CI is red; skipped/queued/pending/neutral is not PASS;
 - focused PR + exact-head applicable GREEN + zero blockers + squash merge + required post-merge Regression Shield remains mandatory;
 - OWNER physical/secret evidence is never synthesized.
 
 ## Current next action
 
-After this status transition is accepted:
+After this Phase-4 acceptance/Phase-5 authorization transition is accepted:
 
-1. add the focused Phase-4 free-preview authorization and deployment contracts;
-2. implement a hosted V10 preview entrypoint and deterministic React/Python build;
-3. add accepted-main-only Render/Neon credential preflight and idempotent free-resource provisioning;
-4. keep all provider mutations impossible from pull-request events;
-5. merge only after exact-head DRAFT and READY checks are GREEN;
-6. let the accepted-main workflow create/deploy `omni-cio-v10-web` and verify its generated HTTPS URL;
-7. stop before any paid plan, real tenant-private data, real broker credential, Cloud.ru production mutation, public registration, Phase 5 acceptance or WP23 work.
+1. restore exact new `main` and required post-merge Regression Shield evidence;
+2. inspect accepted Phase-2 auth/session/tenant code plus dormant external-provider adapters for the smallest Phase-5 increment;
+3. implement one focused normal-USER hosted-auth/session acceptance slice without activating public multi-user mode prematurely;
+4. add deterministic identity/session/IDOR negatives and deployed-browser acceptance evidence;
+5. continue Phase-5 recovery/availability/capacity/provider production gates one focused PR at a time;
+6. revalidate exact Cloud.ru SKU/current cost before any production provider mutation and stop for OWNER cost approval if the safe topology exceeds the current zero-cost cap;
+7. keep public T-Invest, broker write, Real execution, WP23 and the Premium Spatial visual-refresh implementation locked until their own accepted authority explicitly opens them.
