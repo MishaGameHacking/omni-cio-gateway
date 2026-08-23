@@ -37,12 +37,12 @@ def _json(path: Path) -> dict[str, Any]:
 def test_phase4_acceptance_is_bound_to_exact_current_main_and_public_gate() -> None:
     payload = _json(PHASE4_EVIDENCE)
 
-    assert payload["accepted_runtime_main_sha"] == (
-        "4b8b0ce71e33c5e7b723e2f748a6fcf334bf6481"
+    assert payload["accepted_runtime_main_binding"] == (
+        "github.event.pull_request.base.sha"
     )
-    assert payload["runtime_parent_sha"] == (
-        "235ebfd386d46b74fb2428085ac233aa4494d696"
-    )
+    assert payload["runtime_parent_record"] == "documented_in_markdown_evidence"
+    assert "accepted_runtime_main_sha" not in payload
+    assert "runtime_parent_sha" not in payload
     assert payload["public_preview_url"] == (
         "https://omni-cio-v10-web.onrender.com"
     )
