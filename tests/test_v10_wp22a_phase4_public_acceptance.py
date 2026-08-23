@@ -8,6 +8,7 @@ import pytest
 
 from scripts.check_v10_wp22a_phase4_public_acceptance import (
     AcceptanceFailure,
+    main,
     probe_public_preview,
 )
 
@@ -157,3 +158,34 @@ def test_public_acceptance_does_not_echo_invalid_health_body() -> None:
 
     assert exc_info.value.code == "HEALTH_INVALID_JSON"
     assert private_marker not in str(exc_info.value)
+
+
+def test_public_acceptance_main_reports_safe_failure_detail(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def fail_probe(**_kwargs: object) -> None:
+        raise AcceptanceFailure("HEALTH_CONTRACT_MISMATCH", "release_sha")
+
+    monkeypatch.setattr(
+        "scripts.check_v10_wp22a_phase4_public_acceptance.probe_public_preview",
+        fail_probe,
+    )
+
+    result = main(
+        [
+            "--base-url",
+            BASE_URL,
+            "--expected-sha",
+            EXPECTED_SHA,
+            "--attempts",
+            "1",
+        ]
+    )
+    output = capsys.readouterr().out
+
+    assert result == 1
+    assert (
+        "PHASE4_PUBLIC_ACCEPTANCE=FAIL "
+        "code=HEALTH_CONTRACT_MISMATCH detail=release_sha"
+    ) in output

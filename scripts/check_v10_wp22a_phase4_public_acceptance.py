@@ -70,7 +70,10 @@ def _safe_fetch(
     try:
         with opener(request, timeout=timeout_seconds) as response:
             status = int(response.status)
-            headers = {str(key).lower(): str(value) for key, value in response.headers.items()}
+            headers = {
+                str(key).lower(): str(value)
+                for key, value in response.headers.items()
+            }
             body = response.read()
             final_url = response.geturl()
     except HTTPError as exc:
@@ -232,7 +235,8 @@ def main(argv: list[str] | None = None) -> int:
             timeout_seconds=args.timeout_seconds,
         )
     except AcceptanceFailure as exc:
-        print(f"PHASE4_PUBLIC_ACCEPTANCE=FAIL code={exc.code}")
+        detail = f" detail={exc.detail}" if exc.detail else ""
+        print(f"PHASE4_PUBLIC_ACCEPTANCE=FAIL code={exc.code}{detail}")
         return 1
 
     print("PHASE4_PUBLIC_ACCEPTANCE=PASS")
