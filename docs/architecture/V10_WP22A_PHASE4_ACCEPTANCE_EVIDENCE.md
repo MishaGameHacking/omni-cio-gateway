@@ -49,14 +49,14 @@ Historical browser evidence is not used as a substitute for exact-main release e
 
 `.github/workflows/v10-wp22a-phase4-public-acceptance.yml`
 
-The gate runs without provider/broker/private-data secrets and is bound to the exact PR base main encoded in `V10_WP22A_PHASE4_ACCEPTANCE_EVIDENCE.json`.
+The gate runs without provider/broker/private-data secrets. The machine evidence records that accepted runtime identity is bound to `github.event.pull_request.base.sha`; the workflow passes that exact event SHA directly to the public probe instead of storing commit identifiers as machine-readable high-entropy literals.
 
 Before this transition may merge, it must prove against the provider-returned public preview hostname:
 
 - HTTPS only and the exact expected Render preview host;
 - `GET /healthz` returns HTTP 200;
 - `status = ok`;
-- `release_sha` equals exact accepted runtime main `4b8b0ce71e33c5e7b723e2f748a6fcf334bf6481`;
+- `release_sha` equals the PR's exact accepted base main SHA (currently `4b8b0ce71e33c5e7b723e2f748a6fcf334bf6481`);
 - `database = READY`;
 - `synthetic_preview = true`;
 - `Cache-Control` contains `no-store`;
