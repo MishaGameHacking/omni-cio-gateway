@@ -10,6 +10,9 @@ STATUS = ROOT / "knowledge/17_V10_CURRENT_PROGRAM_STATUS.md"
 PHASE4_EVIDENCE = (
     ROOT / "docs/architecture/V10_WP22A_PHASE4_ACCEPTANCE_EVIDENCE.json"
 )
+PHASE4_WORKFLOW = (
+    ROOT / ".github/workflows/v10-wp22a-phase4-public-acceptance.yml"
+)
 PHASE5_CONTRACT = (
     ROOT
     / "docs"
@@ -55,6 +58,11 @@ def test_phase4_acceptance_is_bound_to_exact_current_main_and_public_gate() -> N
     assert gate["synthetic_preview_required"] is True
     assert gate["cache_no_store_required"] is True
     assert gate["hsts_required"] is True
+
+    workflow = PHASE4_WORKFLOW.read_text(encoding="utf-8")
+    assert "PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}" in workflow
+    assert '--expected-sha "$PR_BASE_SHA"' in workflow
+    assert "accepted_runtime_main_sha" not in workflow
 
 
 def test_status_proposes_phase4_acceptance_and_phase5_as_current() -> None:
