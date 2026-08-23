@@ -13,7 +13,7 @@ from scripts.check_v10_wp22a_phase4_public_acceptance import (
 )
 
 
-EXPECTED_SHA = "4b8b0ce71e33c5e7b723e2f748a6fcf334bf6481"
+EXPECTED_SHA = "a" * 40
 BASE_URL = "https://omni-cio-v10-web.onrender.com"
 
 
