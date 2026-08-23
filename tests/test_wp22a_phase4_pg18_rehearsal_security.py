@@ -45,7 +45,12 @@ def test_authoritative_gate_runs_both_real_postgres18_phase4_rehearsals() -> Non
     source = AUTHORITATIVE_WORKFLOW.read_text(encoding="utf-8")
 
     assert source.count("Rehearse Phase 4 PostgreSQL 18 runtime-role semantics") == 1
-    assert source.count("rehearse_wp22a_phase4_runtime_role.ps1") == 1
+    assert source.count("rehearse_wp22a_phase4_runtime_role.ps1") == 2
+    assert (
+        'script_path="$(cygpath -w infrastructure/windows/'
+        'rehearse_wp22a_phase4_runtime_role.ps1)"'
+    ) in source
+    assert '-File "$script_path"' in source
     assert "runs-on: [self-hosted, Windows, X64, omni-cio-ci]" in source
     assert "V10 authoritative merge gate" in source
 
