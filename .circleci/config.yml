@@ -91,15 +91,15 @@ jobs:
             test "$(git rev-parse HEAD)" = "$CIRCLE_SHA1"
             test "$(python --version)" = "Python 3.12.10"
             python -m pip install --disable-pip-version-check --require-hashes -r requirements.txt
+      - run:
+          name: Wait for PostgreSQL 18 service readiness
+          command: |
+            set -eu
+            python -m scripts.wait_for_postgres18
       - when:
           condition:
             equal: [wp13, << parameters.rehearsal >>]
           steps:
-            - run:
-                name: Verify PostgreSQL 18 through psycopg
-                command: |
-                  set -eu
-                  python -c "import os,time,psycopg; dsn=os.environ['OMNI_CIO_WP13_DSN']; deadline=time.monotonic()+45; c=None; exec(\"while time.monotonic() < deadline:\\n try:\\n  c=psycopg.connect(dsn, connect_timeout=3); break\\n except psycopg.Error:\\n  time.sleep(1)\"); assert c is not None; version_num=int(c.execute('SHOW server_version_num').fetchone()[0]); c.close(); assert version_num // 10000 == 18, f'POSTGRES_MAJOR_MISMATCH:{version_num}'; print(f'CIRCLECI_POSTGRES_VERSION_NUM={version_num}')"
             - run:
                 name: Rehearse accepted WP13 persistence semantics on Linux PostgreSQL 18
                 command: |
