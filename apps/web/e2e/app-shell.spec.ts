@@ -99,6 +99,15 @@ for (const width of [360, 768, 1440] as const) {
       });
       expect(sidebarStyle.backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
       expect(sidebarStyle.position).toBe("fixed");
+      const sidebarBox = await sidebar.boundingBox();
+      expect(sidebarBox).not.toBeNull();
+      expect(sidebarBox!.x).toBeLessThanOrEqual(0.5);
+      expect(sidebarBox!.width).toBeGreaterThanOrEqual(width - 1);
+      const drawerOwnsViewportPoint = await page.evaluate(() => {
+        const topmost = document.elementFromPoint(window.innerWidth / 2, Math.min(window.innerHeight - 1, 200));
+        return Boolean(topmost?.closest(".shell-sidebar"));
+      });
+      expect(drawerOwnsViewportPoint).toBe(true);
     }
     const overflow = await page.evaluate(() => ({ clientWidth: document.documentElement.clientWidth, scrollWidth: document.documentElement.scrollWidth }));
     expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.clientWidth);
