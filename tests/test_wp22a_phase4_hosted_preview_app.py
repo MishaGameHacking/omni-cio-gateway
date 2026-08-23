@@ -2,14 +2,20 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 from fastapi.testclient import TestClient
+import pytest
 
 from apps.api.hosted_preview import (
     CSRF_COOKIE,
     CSRF_HEADER,
     HostedPreviewServicesV1,
     PREVIEW_SESSION_POLICY,
+    PREVIEW_TENANT_ID,
+    PREVIEW_USER_ID,
+    _record_sha256,
+    _verify_synthetic_scope,
     create_hosted_preview_app,
 )
 from omni_cio.web.session_v1 import SessionRegistryV1
@@ -19,6 +25,43 @@ HOSTNAME = "omni-cio-v10-web.onrender.com"
 ORIGIN = f"https://{HOSTNAME}"
 RELEASE_SHA = "a" * 40
 FIXED_NOW = datetime(2026, 8, 21, 6, 0, tzinfo=timezone.utc)
+PREVIEW_CREATED_AT = datetime(2026, 8, 21, tzinfo=timezone.utc)
+
+
+class _RowCursor:
+    def __init__(self, row: tuple[object, ...] | None) -> None:
+        self._row = row
+
+    def fetchone(self) -> tuple[object, ...] | None:
+        return self._row
+
+
+class _ScopeConnection:
+    def __init__(self, row: tuple[object, ...] | None) -> None:
+        self.row = row
+        self.statements: list[tuple[str, tuple[object, ...] | None]] = []
+
+    def execute(
+        self,
+        query: str,
+        params: tuple[object, ...] | None = None,
+        **_: Any,
+    ) -> _RowCursor:
+        self.statements.append((query, params))
+        return _RowCursor(self.row)
+
+
+def _preview_user_digest() -> str:
+    return _record_sha256(
+        {
+            "schema_version": "1.0",
+            "identity_version": 1,
+            "user_id": PREVIEW_USER_ID,
+            "tenant_id": PREVIEW_TENANT_ID,
+            "role": "user",
+            "created_at": PREVIEW_CREATED_AT.isoformat(),
+        }
+    )
 
 
 def _web_dist(tmp_path: Path) -> Path:
@@ -76,6 +119,42 @@ def _login(client: TestClient) -> str:
     assert len(csrf_cookies) == 1
     assert "HttpOnly" in csrf_cookies[0]
     return csrf
+
+
+def test_synthetic_scope_startup_verification_is_read_only() -> None:
+    connection = _ScopeConnection(
+        (
+            PREVIEW_TENANT_ID,
+            "1.0",
+            1,
+            "user",
+            _preview_user_digest(),
+        )
+    )
+
+    _verify_synthetic_scope(connection)
+
+    assert len(connection.statements) == 1
+    query, params = connection.statements[0]
+    assert query.lstrip().upper().startswith("SELECT ")
+    assert "INSERT" not in query.upper()
+    assert "ON CONFLICT" not in query.upper()
+    assert params == (PREVIEW_USER_ID,)
+
+
+def test_synthetic_scope_startup_verification_fails_closed_on_drift() -> None:
+    connection = _ScopeConnection(
+        (
+            PREVIEW_TENANT_ID,
+            "1.0",
+            1,
+            "user",
+            "0" * 64,
+        )
+    )
+
+    with pytest.raises(RuntimeError, match="HOSTED_PREVIEW_SYNTHETIC_SCOPE_DRIFT"):
+        _verify_synthetic_scope(connection)
 
 
 def test_public_health_and_preview_metadata_are_hardened(tmp_path: Path) -> None:

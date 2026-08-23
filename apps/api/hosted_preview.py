@@ -212,15 +212,9 @@ def _require_session(
     return scope
 
 
-def _bootstrap_synthetic_scope(connection: Any) -> None:
+def _verify_synthetic_scope(connection: Any) -> None:
+    """Verify provider-seeded preview identity without widening runtime authority."""
     created = datetime(2026, 8, 21, tzinfo=timezone.utc)
-    tenant_payload: dict[str, object] = {
-        "schema_version": "1.0",
-        "identity_version": 1,
-        "tenant_id": PREVIEW_TENANT_ID,
-        "mode": "product_user",
-        "created_at": created.isoformat(),
-    }
     user_payload: dict[str, object] = {
         "schema_version": "1.0",
         "identity_version": 1,
@@ -229,43 +223,20 @@ def _bootstrap_synthetic_scope(connection: Any) -> None:
         "role": "user",
         "created_at": created.isoformat(),
     }
-    with connection.transaction():
-        connection.execute(
-            "INSERT INTO omni_cio_v10.tenants "
-            "(tenant_id, schema_version, identity_version, mode, created_at, "
-            "record_sha256) VALUES (%s, %s, %s, %s, %s, %s) "
-            "ON CONFLICT (tenant_id) DO NOTHING",
-            (
-                PREVIEW_TENANT_ID,
-                "1.0",
-                1,
-                "product_user",
-                created,
-                _record_sha256(tenant_payload),
-            ),
-        )
-        connection.execute(
-            "INSERT INTO omni_cio_v10.users "
-            "(user_id, tenant_id, schema_version, identity_version, role, "
-            "created_at, record_sha256) VALUES (%s, %s, %s, %s, %s, %s, %s) "
-            "ON CONFLICT (user_id) DO NOTHING",
-            (
-                PREVIEW_USER_ID,
-                PREVIEW_TENANT_ID,
-                "1.0",
-                1,
-                "user",
-                created,
-                _record_sha256(user_payload),
-            ),
-        )
-        row = connection.execute(
-            "SELECT tenant_id, schema_version, identity_version, role "
-            "FROM omni_cio_v10.users WHERE user_id = %s",
-            (PREVIEW_USER_ID,),
-        ).fetchone()
-        if row != (PREVIEW_TENANT_ID, "1.0", 1, "user"):
-            raise RuntimeError("HOSTED_PREVIEW_SYNTHETIC_SCOPE_DRIFT")
+    row = connection.execute(
+        "SELECT tenant_id, schema_version, identity_version, role, record_sha256 "
+        "FROM omni_cio_v10.users WHERE user_id = %s",
+        (PREVIEW_USER_ID,),
+    ).fetchone()
+    expected = (
+        PREVIEW_TENANT_ID,
+        "1.0",
+        1,
+        "user",
+        _record_sha256(user_payload),
+    )
+    if row != expected:
+        raise RuntimeError("HOSTED_PREVIEW_SYNTHETIC_SCOPE_DRIFT")
 
 
 def _probe_runtime_database(connection: Any) -> None:
@@ -321,6 +292,11 @@ def _probe_runtime_database(connection: Any) -> None:
     ).fetchall()
     if len(rows) != 3 or any(not bool(row[1]) or not bool(row[2]) for row in rows):
         raise RuntimeError("HOSTED_PREVIEW_FORCE_RLS_REQUIRED")
+
+
+def _probe_hosted_preview_database(connection: Any) -> None:
+    _probe_runtime_database(connection)
+    _verify_synthetic_scope(connection)
 
 
 def _empty_portfolio(now: str) -> dict[str, object]:
@@ -773,8 +749,7 @@ def create_app() -> FastAPI:
     raw_connection = connect_postgres(_required_env("OMNI_V10_POSTGRES_DSN"))
     _configure_long_lived_web_connection(raw_connection)
     connection = _SerializedWebConnection(raw_connection)
-    _bootstrap_synthetic_scope(connection)
-    _probe_runtime_database(connection)
+    _probe_hosted_preview_database(connection)
     sessions = PostgresWebSessionRegistryV1(
         connection,
         policy=PREVIEW_SESSION_POLICY,
@@ -782,7 +757,7 @@ def create_app() -> FastAPI:
     return create_hosted_preview_app(
         HostedPreviewServicesV1(
             sessions=sessions,
-            database_probe=lambda: _probe_runtime_database(connection),
+            database_probe=lambda: _probe_hosted_preview_database(connection),
             hostname=hostname,
             release_sha=release_sha,
         )
