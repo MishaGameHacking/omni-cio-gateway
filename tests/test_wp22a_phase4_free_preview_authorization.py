@@ -25,16 +25,17 @@ def _contract() -> dict[str, Any]:
     return json.loads(CONTRACT.read_text(encoding="utf-8"))
 
 
-def test_phase3_is_accepted_and_phase4_is_current() -> None:
+def test_phase3_and_phase4_are_accepted_and_phase5_is_current() -> None:
     text = STATUS.read_text(encoding="utf-8")
 
-    assert "PHASE 3 ACCEPTED / PHASE 4 AUTHORIZED" in text
+    assert "PHASE 3 ACCEPTED / PHASE 4 ACCEPTED / PHASE 5 AUTHORIZED" in text
     assert "Block E / WP22A Phase 3 — **ACCEPTED**" in text
-    assert "Block E / WP22A Phase 4 — **AUTHORIZED CURRENT INCREMENT**" in text
+    assert "Block E / WP22A Phase 4 — **ACCEPTED**" in text
+    assert "Block E / WP22A Phase 5 — **AUTHORIZED CURRENT INCREMENT**" in text
     assert (
-        "## Current next package — WP22A Phase 4 — Protected provider "
-        "bootstrap/apply"
-    ) in text
+        "## Current next package — WP22A Phase 5 — Public-hosted acceptance"
+        in text
+    )
 
 
 def test_exact_phase3_acceptance_evidence_is_pinned() -> None:

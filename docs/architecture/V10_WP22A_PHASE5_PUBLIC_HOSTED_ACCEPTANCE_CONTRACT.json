@@ -1,0 +1,84 @@
+{
+  "schema_version": "v10.wp22a.phase5.public-hosted-acceptance.v1",
+  "status": "AUTHORIZED_ON_PHASE4_ACCEPTANCE",
+  "authority": {
+    "phase4_acceptance_evidence": "docs/architecture/V10_WP22A_PHASE4_ACCEPTANCE_EVIDENCE.md",
+    "phase4_acceptance_contract": "docs/architecture/V10_WP22A_PHASE4_ACCEPTANCE_EVIDENCE.json",
+    "phase5_authorized": true,
+    "wp22a_complete": false,
+    "wp23_unlocked": false,
+    "visual_refresh_runtime_authorized": false
+  },
+  "product_path": {
+    "normal_browser_required": true,
+    "owner_home_availability_dependency_allowed": false,
+    "external_identity_providers": [
+      "telegram",
+      "vk_id"
+    ],
+    "identity_flow": "verified_external_identity -> OmniCIOUserAccount -> Tenant -> server_side_Session",
+    "provider_identity_is_product_identity": false,
+    "owner_special_product_role_allowed": false
+  },
+  "session": {
+    "server_side_required": true,
+    "secure_cookie_required": true,
+    "http_only_cookie_required": true,
+    "same_site_required": true,
+    "bounded_idle_lifetime_required": true,
+    "bounded_absolute_lifetime_required": true,
+    "fixation_protection_required": true,
+    "rotation_required": true,
+    "logout_required": true,
+    "revoke_all_required": true,
+    "browser_web_storage_tokens_allowed": false,
+    "csrf_same_origin_required": true
+  },
+  "tenant": {
+    "server_resolved_scope_required": true,
+    "client_supplied_tenant_authority_allowed": false,
+    "cross_tenant_negative_tests_required": true,
+    "database_rls_required": true,
+    "recovery_preserves_isolation_required": true
+  },
+  "provider": {
+    "production_provider": "Cloud.ru Evolution",
+    "provider_apply_authorized": false,
+    "current_authorized_recurring_rub": 0,
+    "current_authorized_recurring_usd": 0,
+    "automatic_paid_fallback_allowed": false,
+    "exact_price_sku_revalidation_required_before_apply": true,
+    "owner_cost_approval_required_above_current_cap": true,
+    "render_neon_preview_remains_synthetic": true
+  },
+  "broker": {
+    "public_tinvest_status": "FAIL_CLOSED_PENDING_BROKER_TERMS_PERMISSION",
+    "real_broker_credentials_in_preview_allowed": false,
+    "broker_write_enabled": false,
+    "trading_methods": false,
+    "real_trading_enabled": false,
+    "transfer_withdrawal_margin_short_authority_allowed": false
+  },
+  "initial_user_access": {
+    "billing_enabled": false,
+    "trial_enabled": false,
+    "subscription_enforcement": false,
+    "premium_feature_gating": false
+  },
+  "activation": {
+    "public_multi_user_enabled_initial": false,
+    "activation_requires_focused_phase5_gate": true,
+    "normal_user_login_logout_session_acceptance_required": true,
+    "deployed_tenant_isolation_required": true,
+    "deployed_recovery_availability_required": true,
+    "abuse_capacity_controls_required": true,
+    "exact_release_and_rollback_required": true,
+    "owner_acceptance_only_when_non_delegable": true
+  },
+  "visual_refresh": {
+    "brief": "docs/architecture/V10_WEB_VISUAL_DESIGN_REFRESH_IMPLEMENTATION_BRIEF.md",
+    "owner_approved_direction": true,
+    "implementation_authorized_by_this_contract": false,
+    "second_frontend_allowed": false
+  }
+}
