@@ -14,6 +14,7 @@ from omni_cio.web.identity_v1 import IdentityProviderV1, VerifiedExternalIdentit
 
 
 _STATE_PATTERN = re.compile(r"^[A-Za-z0-9_-]{32,512}$")
+_MAX_PENDING_AUTH_TRANSACTIONS = 4096
 
 
 class ProviderAuthorizationError(RuntimeError):
@@ -28,7 +29,10 @@ class AuthorizationTransactionPolicyV1:
     def __post_init__(self) -> None:
         if self.lifetime <= timedelta(0) or self.lifetime > timedelta(minutes=15):
             raise ValueError("AUTH_TRANSACTION_LIFETIME_INVALID")
-        if self.max_pending < 1 or self.max_pending > 100_000:
+        if (
+            self.max_pending < 1
+            or self.max_pending > _MAX_PENDING_AUTH_TRANSACTIONS
+        ):
             raise ValueError("AUTH_TRANSACTION_CAPACITY_INVALID")
 
 
@@ -108,6 +112,7 @@ class AuthorizationTransactionRegistryV1:
     def __init__(self, policy: AuthorizationTransactionPolicyV1 | None = None) -> None:
         self._policy = policy or AuthorizationTransactionPolicyV1()
         self._pending: dict[str, _PendingAuthorizationTransactionV1] = {}
+        self._next_expiry_at: datetime | None = None
         self._lock = RLock()
 
     def begin(
@@ -136,6 +141,8 @@ class AuthorizationTransactionRegistryV1:
             if len(self._pending) >= self._policy.max_pending:
                 raise ProviderAuthorizationError("AUTH_TRANSACTION_CAPACITY_EXCEEDED")
             self._pending[digest] = pending
+            if self._next_expiry_at is None or expires_at < self._next_expiry_at:
+                self._next_expiry_at = expires_at
         return AuthorizationStartV1(
             provider=provider,
             state=state,
@@ -164,6 +171,8 @@ class AuthorizationTransactionRegistryV1:
             if pending.provider != provider:
                 raise ProviderAuthorizationError("AUTH_TRANSACTION_PROVIDER_MISMATCH")
             self._pending.pop(digest, None)
+            if not self._pending:
+                self._next_expiry_at = None
         return ConsumedAuthorizationTransactionV1(
             provider=pending.provider,
             code_verifier=pending.code_verifier,
@@ -179,9 +188,16 @@ class AuthorizationTransactionRegistryV1:
             return len(self._pending)
 
     def _purge_expired(self, now: datetime) -> None:
+        next_expiry = self._next_expiry_at
+        if next_expiry is None or now < next_expiry:
+            return
+        next_expiry = None
         for digest, pending in tuple(self._pending.items()):
             if now >= pending.expires_at:
                 self._pending.pop(digest, None)
+            elif next_expiry is None or pending.expires_at < next_expiry:
+                next_expiry = pending.expires_at
+        self._next_expiry_at = next_expiry
 
 
 class ProviderAuthenticationRuntimeLike(Protocol):

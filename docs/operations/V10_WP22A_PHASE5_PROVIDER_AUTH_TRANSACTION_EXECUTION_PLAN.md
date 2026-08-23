@@ -54,11 +54,15 @@ Required properties:
 - cryptographically random OAuth `state`, PKCE verifier and OIDC nonce;
 - S256 PKCE challenge;
 - raw `state` is not retained server-side; only its SHA-256 lookup digest is kept;
-- PKCE verifier and nonce stay server-side and are removed after consume/expiry;
+- PKCE verifier stays server-side and is not exposed by the authorization-start
+  value; verifier and nonce are removed after consume/expiry;
 - exact provider binding prevents a Telegram transaction being consumed as VK ID;
 - callback state is one-time under concurrent requests;
 - replay, expiry, malformed state and provider mismatch fail closed;
-- pending transactions have finite TTL and bounded capacity;
+- pending transactions have finite TTL, a hard maximum of 4096, and default cap
+  1024;
+- expired-entry scans are lazy: normal operations are O(1) before the next known
+  expiry boundary, avoiding a full pending-registry scan on every request;
 - only exact HTTPS callback URIs on default TLS port are accepted; credentials,
   query strings and fragments are rejected;
 - runtime restart invalidates in-flight authorization attempts rather than trying
@@ -94,18 +98,23 @@ Cheap focused preflight before the first repository CI cycle:
 - full branch diff review before READY.
 
 The local scratch preflight used no real secrets/provider calls and passed 13
-focused cases before the repository commit was created.
+focused cases before the repository PR was opened. After Gitar identified the
+O(n)-per-operation expiry scan as a future auth-path DoS risk, the registry was
+changed to lazy expiry scanning with a hard 4096 cap and focused expiry/capacity
+coverage was rerun before refreshing exact-head CI.
 
 ## 8. Normal and negative acceptance
 
 The focused test suite must prove:
 
-- generated state/verifier satisfy bounded URL-safe form;
+- generated state and PKCE verifier satisfy bounded URL-safe form while the
+  verifier never leaves the server-side pending transaction before consume;
 - PKCE challenge equals base64url(SHA-256(verifier)) without padding;
 - wrong provider cannot consume another provider's state;
 - successful consume is one-time;
-- expired state is destroyed;
+- expired state is destroyed and later-expiring state remains valid;
 - full pending capacity fails closed but expired entries are purged;
+- configured capacity above the hard maximum is rejected;
 - HTTP, credential-bearing, non-443, query-bearing, fragment-bearing and malformed
   callback URIs are rejected;
 - concurrent callback attempts yield exactly one successful consume;

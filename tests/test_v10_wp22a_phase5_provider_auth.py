@@ -126,6 +126,36 @@ def test_capacity_is_bounded_but_expired_entries_do_not_self_dos() -> None:
     assert replacement.state
 
 
+def test_lazy_expiry_keeps_later_transaction_until_its_deadline() -> None:
+    registry = AuthorizationTransactionRegistryV1(
+        AuthorizationTransactionPolicyV1(lifetime=timedelta(seconds=10))
+    )
+    first = registry.begin(
+        provider=IdentityProviderV1.TELEGRAM,
+        redirect_uri=CALLBACK,
+        now=NOW,
+    )
+    second = registry.begin(
+        provider=IdentityProviderV1.TELEGRAM,
+        redirect_uri=CALLBACK,
+        now=NOW + timedelta(seconds=1),
+    )
+
+    assert registry.pending_count(now=NOW + timedelta(seconds=10)) == 1
+    consumed = registry.consume(
+        provider=IdentityProviderV1.TELEGRAM,
+        state=second.state,
+        now=NOW + timedelta(seconds=10),
+    )
+    assert consumed.expires_at == NOW + timedelta(seconds=11)
+    with pytest.raises(ProviderAuthorizationError, match="AUTH_TRANSACTION_NOT_FOUND"):
+        registry.consume(
+            provider=IdentityProviderV1.TELEGRAM,
+            state=first.state,
+            now=NOW + timedelta(seconds=10),
+        )
+
+
 @pytest.mark.parametrize(
     "redirect_uri",
     [
@@ -178,6 +208,8 @@ def test_policy_bounds_and_utc_clock_are_enforced() -> None:
         AuthorizationTransactionPolicyV1(lifetime=timedelta(0))
     with pytest.raises(ValueError, match="AUTH_TRANSACTION_CAPACITY_INVALID"):
         AuthorizationTransactionPolicyV1(max_pending=0)
+    with pytest.raises(ValueError, match="AUTH_TRANSACTION_CAPACITY_INVALID"):
+        AuthorizationTransactionPolicyV1(max_pending=4097)
 
     registry = AuthorizationTransactionRegistryV1()
     with pytest.raises(ValueError, match="AUTH_TRANSACTION_CLOCK_NOT_UTC_AWARE"):
