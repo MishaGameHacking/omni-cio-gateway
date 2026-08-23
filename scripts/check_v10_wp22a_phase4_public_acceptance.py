@@ -71,8 +71,7 @@ def _safe_fetch(
         with opener(request, timeout=timeout_seconds) as response:
             status = int(response.status)
             headers = {
-                str(key).lower(): str(value)
-                for key, value in response.headers.items()
+                str(key).lower(): str(value) for key, value in response.headers.items()
             }
             body = response.read()
             final_url = response.geturl()
@@ -152,8 +151,8 @@ def _validate_root(
         raise AcceptanceFailure("ROOT_INVALID_UTF8") from None
 
     for marker in (
-        "<div id=\"root\"></div>",
-        "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"",
+        '<div id="root"></div>',
+        '<meta name="viewport" content="width=device-width, initial-scale=1.0"',
         "Omni-CIO",
     ):
         if marker not in html:
