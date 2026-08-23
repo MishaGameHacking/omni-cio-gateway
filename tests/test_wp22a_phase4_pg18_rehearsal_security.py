@@ -31,7 +31,7 @@ def test_phase4_pg18_windows_rehearsal_is_ephemeral_and_fail_closed() -> None:
     assert '"PostgreSQL\\18\\bin\\$Name.exe"' in source
     assert '"--username=phase4_owner"' in source
     assert '"--auth=trust"' in source
-    assert '"-h 127.0.0.1 -p $Port"' in source
+    assert '"-o `"-h 127.0.0.1 -p $Port`""' in source
     assert '"creator-edge"' in source
     assert '"bootstrap"' in source
     assert "POSTGRES_START_READINESS_TIMEOUT" in source
