@@ -165,7 +165,11 @@ def test_initial_launch_is_free_but_public_activation_remains_gated() -> None:
         assert marker in amendment
 
     status = _text(ROOT / "knowledge/17_V10_CURRENT_PROGRAM_STATUS.md")
-    assert "APPROVED TARGET / IMPLEMENTATION FLAG REMAINS OFF UNTIL EXIT GATES" in status
+    assert (
+        "public multi-user activation — **APPROVED TARGET / IMPLEMENTATION FLAG REMAINS OFF UNTIL"
+        in status
+    )
+    assert "`PUBLIC_MULTI_USER_ENABLED=false` remains the safe default" in status
     assert "WP23+ remains locked" in status
 
 
