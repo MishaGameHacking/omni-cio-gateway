@@ -32,11 +32,13 @@ test("theme, risk and reduced-motion tokens are source controlled", () => {
 test("every Web CSS custom-property reference has a default token or explicit fallback", () => {
   const files = collectCssFiles(path.resolve("src"));
   const tokensSource = fs.readFileSync(path.resolve("src/design-system/tokens.css"), "utf8");
-  const rootBlock = tokensSource.match(/:root\s*\{([\s\S]*?)\}/)?.[1];
-  assert.ok(rootBlock, "tokens.css must declare the canonical default :root token set");
+  const rootBlocks = [...tokensSource.matchAll(/:root\s*\{([\s\S]*?)\}/g)].map((match) => match[1]);
+  assert.ok(rootBlocks.length > 0, "tokens.css must declare the canonical default :root token set");
 
   const defaultDefinitions = new Set<string>();
-  for (const match of rootBlock.matchAll(/(--[a-z0-9_-]+)\s*:/gi)) defaultDefinitions.add(match[1]);
+  for (const rootBlock of rootBlocks) {
+    for (const match of rootBlock.matchAll(/(--[a-z0-9_-]+)\s*:/gi)) defaultDefinitions.add(match[1]);
+  }
 
   const unresolved: string[] = [];
   for (const file of files) {
