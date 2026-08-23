@@ -95,11 +95,20 @@ class CircleCIPostgres18ReadinessTests(unittest.TestCase):
 
     def test_circleci_wait_is_unconditional_for_all_postgres_rehearsals(self) -> None:
         config = (ROOT / ".circleci" / "config.yml").read_text(encoding="utf-8")
+        job_start = config.index("  supplemental_linux_postgres18:\n")
+        job_end = config.index("\nworkflows:\n", job_start)
+        postgres_job = config[job_start:job_end]
         wait_name = "name: Wait for PostgreSQL 18 service readiness"
         wait_command = "python -m scripts.wait_for_postgres18"
+
         self.assertEqual(config.count(wait_name), 1)
         self.assertEqual(config.count(wait_command), 1)
-        self.assertLess(config.index(wait_name), config.index("      - when:"))
+        self.assertEqual(postgres_job.count(wait_name), 1)
+        self.assertEqual(postgres_job.count(wait_command), 1)
+        self.assertLess(postgres_job.index(wait_name), postgres_job.index("      - when:"))
+        self.assertIn("- wp13", postgres_job)
+        self.assertIn("- phase4-creator-edge", postgres_job)
+        self.assertIn("- phase4-bootstrap", postgres_job)
         self.assertNotIn('python -c "import os,time,psycopg', config)
 
 
