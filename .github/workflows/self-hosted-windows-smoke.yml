@@ -193,6 +193,14 @@ jobs:
           python -m pip install --disable-pip-version-check
           --require-hashes -r windows-requirements-dev.txt
 
+      - name: Rehearse Phase 4 PostgreSQL 18 runtime-role semantics
+        run: |
+          set -euo pipefail
+          python_path="$(cygpath -w "$(which python)")"
+          powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass \
+            -File infrastructure\windows\rehearse_wp22a_phase4_runtime_role.ps1 \
+            -PythonPath "$python_path"
+
       - name: Verify lock files are current
         run: |
           python -m piptools compile \
