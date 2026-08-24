@@ -28,12 +28,20 @@ def _contract() -> dict[str, Any]:
 def test_phase3_and_phase4_are_accepted_and_phase5_is_current() -> None:
     text = STATUS.read_text(encoding="utf-8")
 
-    assert "PHASE 3 ACCEPTED / PHASE 4 ACCEPTED / PHASE 5 AUTHORIZED" in text
+    assert (
+        "PHASE 3 ACCEPTED / PHASE 4 ACCEPTED / "
+        "PHASE 5 TECHNICAL CLOSEOUT AUTHORIZED / "
+        "PUBLIC PRODUCTION ACTIVATION LOCKED" in text
+    )
     assert "Block E / WP22A Phase 3 — **ACCEPTED**" in text
     assert "Block E / WP22A Phase 4 — **ACCEPTED**" in text
-    assert "Block E / WP22A Phase 5 — **AUTHORIZED CURRENT INCREMENT**" in text
     assert (
-        "## Current next package — WP22A Phase 5 — Public-hosted acceptance"
+        "Block E / WP22A Phase 5 — "
+        "**INTEGRATED TECHNICAL CLOSEOUT AUTHORIZED CURRENT INCREMENT**"
+        in text
+    )
+    assert (
+        "## Current next package — WP22A Phase 5 — Integrated technical closeout"
         in text
     )
 
