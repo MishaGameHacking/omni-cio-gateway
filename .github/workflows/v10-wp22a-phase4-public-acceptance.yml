@@ -40,6 +40,7 @@ jobs:
         env:
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           GITHUB_TOKEN: ${{ github.token }}
           GIT_TERMINAL_PROMPT: "0"
@@ -53,7 +54,8 @@ jobs:
           git config --local credential.helper ""
           git config --local --add credential.helper '!f() { echo username=x-access-token; echo password=$GITHUB_TOKEN; }; f'
           git fetch --no-tags --prune --depth=1 origin "+refs/pull/${PR_NUMBER}/head:refs/remotes/pull/head"
-          git fetch --no-tags --prune --depth=1 origin "$PR_BASE_SHA"
+          git fetch --no-tags --prune --depth=1 origin "+refs/heads/${PR_BASE_REF}:refs/remotes/pull/base"
+          test "$(git rev-parse refs/remotes/pull/base)" = "$PR_BASE_SHA"
           git checkout --detach "$EXPECTED_HEAD"
           git config --local --unset-all credential.helper
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
