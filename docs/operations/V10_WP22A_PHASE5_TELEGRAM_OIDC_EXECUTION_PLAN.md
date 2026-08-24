@@ -98,16 +98,17 @@ Required properties:
 - header `alg` is exactly `RS256`; `crit`, `jku`, embedded `jwk`, `x5u`, `x5c`
   and `b64` override surfaces are rejected;
 - JWK must be a bounded RSA signing key, optional JWK `alg` may only be RS256,
-  duplicate `kid` is rejected, RSA modulus is 2048–4096 bits and exponent is
-  bounded/odd;
+  optional `key_ops` must permit verification, duplicate `kid` is rejected,
+  leading-zero modulus/exponent encodings are rejected, RSA modulus is
+  2048–4096 bits and exponent is bounded/odd;
 - signature verification uses exact EMSA-PKCS1-v1_5 SHA-256 encoding and
   constant-time final byte comparison;
 - claims require exact issuer, exact audience/client ID, exact transaction
   nonce, bounded subject, integer `iat`/`exp`, sensible temporal ordering,
   expiry validation and bounded clock skew; `nbf`, when present, is enforced;
-- JWKS cache is short-lived and an unknown `kid` while the cache is fresh fails
-  without repeated network fetch, limiting attacker-controlled refresh
-  amplification;
+- JWKS cache is short-lived; refresh is serialized so concurrent cache misses do
+  not amplify into one provider request per login, and an unknown `kid` while
+  the cache is fresh fails without repeated network fetch;
 - config representation omits the Client Secret;
 - the only successful product output is
   `VerifiedExternalIdentityV1(provider=telegram, subject=<verified sub>)`.
@@ -148,7 +149,7 @@ merge; no database/private-state recovery is required.
 Cheap scratch preflight before opening repository CI:
 
 - Python compile of adapter and focused tests: PASS;
-- 21 focused deterministic tests: PASS;
+- 23 focused deterministic tests: PASS;
 - maximum changed Python line length <= 88: PASS;
 - dependency/lock changes: NONE;
 - provider/network calls: synthetic `httpx.MockTransport` only;
@@ -174,6 +175,7 @@ Focused tests must prove:
 - token exchange uses the exact fixed endpoint and Basic authentication;
 - verified ID token produces only Telegram `VerifiedExternalIdentityV1`;
 - fixed official JWKS URL is the only key-fetch origin;
+- concurrent JWKS cache miss performs one bounded fixed-origin refresh;
 - RFC 7515 RS256 known-answer validates.
 
 ## 11. Negative/failure tests
@@ -181,13 +183,14 @@ Focused tests must prove:
 Focused tests cover:
 
 - invalid Client ID/callback/code;
-- provider redirect/non-200 and oversized response;
-- one-time transaction destruction after provider failure;
+- provider redirect/non-200, network failure and oversized response;
+- one-time transaction destruction after provider/network failure;
 - invalid/tampered signature;
 - `HS256`/JWK algorithm-confusion attempts;
 - external/embedded JWK/header override attempts;
 - issuer/audience/nonce/subject/time mismatch;
 - unknown `kid` request-amplification resistance while cache is fresh;
+- concurrent cache-miss request-amplification resistance;
 - duplicate provider JSON members;
 - secret omission from config representation.
 
