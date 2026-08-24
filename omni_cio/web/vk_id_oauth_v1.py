@@ -256,7 +256,9 @@ class VkIdOauthRuntimeV1:
         response_state = payload.get("state")
         user_id = payload.get("user_id")
         access_token = payload.get("access_token")
-        valid_state = isinstance(response_state, str) and response_state == expected_state
+        valid_state = (
+            isinstance(response_state, str) and response_state == expected_state
+        )
         valid_user_id = (
             isinstance(user_id, int)
             and not isinstance(user_id, bool)

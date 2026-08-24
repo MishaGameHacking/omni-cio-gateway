@@ -43,7 +43,9 @@ def _assert_runtime_contract(runtime: ProviderAuthenticationRuntimeLike) -> None
 
 def test_vk_and_telegram_conform_to_provider_runtime_contract() -> None:
     registry = AuthorizationTransactionRegistryV1()
-    _assert_runtime_contract(VkIdOauthRuntimeV1(config=_config(), transactions=registry))
+    _assert_runtime_contract(
+        VkIdOauthRuntimeV1(config=_config(), transactions=registry)
+    )
     _assert_runtime_contract(
         TelegramOidcRuntimeV1(
             config=TelegramOidcConfigV1(
