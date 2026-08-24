@@ -64,13 +64,20 @@ No dependency or lock-file change is required.
 
 ## 5. Allowed changes
 
-This focused increment changes only:
+The functional increment changes only:
 
 1. `omni_cio/web/telegram_oidc_v1.py`;
 2. `tests/test_v10_wp22a_phase5_telegram_oidc.py`;
 3. this execution-plan record.
 
-No migration or durable persistence change is introduced.
+After the first DRAFT exact-head cycle exposed a reusable static-contract
+preflight miss, governance additionally requires the additive engineering-memory
+record:
+
+4. `docs/operations/V10_ENGINEERING_FAILURE_LEARNING_LEDGER_FL038.md`.
+
+That fourth file records the failed validation cycle only; it does not widen
+product/runtime scope. No migration or durable persistence change is introduced.
 
 ## 6. Security and authority contract
 
@@ -144,7 +151,7 @@ in-memory and safely refetched after restart. No provider token is durable.
 Rollback is source-only: remove the dormant adapter/tests or revert the squash
 merge; no database/private-state recovery is required.
 
-## 9. Pre-CI readiness
+## 9. Pre-CI readiness and first DRAFT correction
 
 Cheap scratch preflight before opening repository CI:
 
@@ -159,6 +166,19 @@ Cheap scratch preflight before opening repository CI:
   secret scanner can evaluate the changed surface without a secret-shaped
   standalone literal;
 - no real secrets/private identities/tenant/broker payloads used.
+
+The first exact-head DRAFT cycle on `a1f65a98492e0d6558615223f57f0494bb1a1fc6`
+correctly found a missing static-contract preflight condition. `V10 WP20 Research
+Dossier Audit` run `32679858247` passed its frontend/browser/audit stages and then
+failed repository-wide mypy because `_b64url_decode` declared `str` while the
+JWK `n`/`e` callers correctly provided untrusted `Any | None` values from JSON.
+
+Root-cause review confirmed that `_b64url_decode` itself is the runtime type
+validator. Its input contract was corrected to `object`, preserving the existing
+`isinstance(value, str)` fail-closed narrowing rather than adding casts, ignores
+or mypy suppression. The scratch compile + focused suite remained GREEN after
+that correction. FL-038 records the reusable lesson. Any evidence from the old
+head is non-final and invalidated by the corrective commit.
 
 Exact repository Ruff, mypy, tracked-content secret scan, SAST, dependency audit
 and all other applicable workflows remain independent CI evidence; scratch
@@ -211,10 +231,10 @@ component and no automatic algorithm/origin fallback.
 The branch may land only after:
 
 1. all applicable exact-head DRAFT checks actually execute and conclude
-   `success`;
+   `success` on the post-correction head;
 2. focused provider-auth/OIDC tests, Ruff format/lint, mypy, dependency/security
    and repository governance gates are GREEN;
-3. full three-file diff is reviewed against exact accepted base;
+3. full four-file diff is reviewed against exact accepted base;
 4. Gitar/security review has no unresolved material finding;
 5. unresolved blocking review threads = 0 and no P0/P1 blocker remains;
 6. a fresh READY cycle on the unchanged head has every applicable check
