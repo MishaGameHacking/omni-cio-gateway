@@ -68,8 +68,32 @@ def test_phase4_acceptance_is_bound_to_exact_current_main_and_public_gate() -> N
 
     workflow = PHASE4_WORKFLOW.read_text(encoding="utf-8")
     assert "PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}" in workflow
+    assert "PR_BASE_REF: ${{ github.event.pull_request.base.ref }}" in workflow
     assert '--expected-sha "$PR_BASE_SHA"' in workflow
     assert "accepted_runtime_main_sha" not in workflow
+
+
+def test_historical_phase4_live_probe_is_not_coupled_to_phase5_status_changes() -> None:
+    workflow = PHASE4_WORKFLOW.read_text(encoding="utf-8")
+
+    for path in (
+        "docs/architecture/V10_WP22A_PHASE5_PUBLIC_HOSTED_ACCEPTANCE_AUTHORIZATION.md",
+        "docs/architecture/V10_WP22A_PHASE5_PUBLIC_HOSTED_ACCEPTANCE_CONTRACT.json",
+        "knowledge/17_V10_CURRENT_PROGRAM_STATUS.md",
+        "tests/test_v10_wp22a_phase5_transition.py",
+    ):
+        assert f'- "{path}"' not in workflow
+
+    assert "Route historical Phase 4 live probe by changed authority surface" in workflow
+    assert "PHASE4_LIVE_PROBE_REQUIRED" in workflow
+    assert (
+        "PHASE4_PUBLIC_ACCEPTANCE_ROUTING=PASS "
+        "reason=historical_phase4_runtime_authority_unchanged"
+    ) in workflow
+    assert "if: env.PHASE4_LIVE_PROBE_REQUIRED == 'true'" in workflow
+    assert "docs/architecture/V10_WP22A_PHASE4_ACCEPTANCE_EVIDENCE.json" in workflow
+    assert "docs/architecture/V10_WP22A_PHASE4_ACCEPTANCE_EVIDENCE.md" in workflow
+    assert "scripts/check_v10_wp22a_phase4_public_acceptance.py" in workflow
 
 
 def test_status_keeps_phase5_current_and_wp23_locked() -> None:
