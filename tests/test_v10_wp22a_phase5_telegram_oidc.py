@@ -106,6 +106,9 @@ def _rfc_rsa_modulus() -> str:
 
 
 def _jwks(kid: str = "telegram-key-1") -> dict[str, object]:
+    # Telegram currently publishes multiple signing families in one JWKS. The
+    # RS256-pinned adapter must ignore unrelated keys instead of rejecting the
+    # whole provider key set.
     return {
         "keys": [
             {
@@ -115,7 +118,33 @@ def _jwks(kid: str = "telegram-key-1") -> dict[str, object]:
                 "alg": "RS256",
                 "n": _rfc_rsa_modulus(),
                 "e": "AQAB",
-            }
+            },
+            {
+                "kty": "EC",
+                "kid": "oidc-es256-1",
+                "use": "sig",
+                "alg": "ES256",
+                "crv": "P-256",
+                "x": "fixture-x",
+                "y": "fixture-y",
+            },
+            {
+                "kty": "OKP",
+                "kid": "oidc-eddsa-1",
+                "use": "sig",
+                "alg": "EdDSA",
+                "crv": "Ed25519",
+                "x": "fixture-x",
+            },
+            {
+                "kty": "EC",
+                "kid": "oidc-es256k-1",
+                "use": "sig",
+                "alg": "ES256K",
+                "crv": "secp256k1",
+                "x": "fixture-x",
+                "y": "fixture-y",
+            },
         ]
     }
 
