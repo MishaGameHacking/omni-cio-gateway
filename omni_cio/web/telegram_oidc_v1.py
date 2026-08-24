@@ -65,9 +65,7 @@ class TelegramOidcConfigV1:
             raise ValueError("TELEGRAM_OIDC_TIMEOUT_INVALID")
         if self.clock_skew < timedelta(0) or self.clock_skew > timedelta(minutes=2):
             raise ValueError("TELEGRAM_OIDC_CLOCK_SKEW_INVALID")
-        if not timedelta(seconds=10) <= self.jwks_cache_lifetime <= timedelta(
-            hours=1
-        ):
+        if not timedelta(seconds=10) <= self.jwks_cache_lifetime <= timedelta(hours=1):
             raise ValueError("TELEGRAM_OIDC_JWKS_CACHE_INVALID")
 
 
@@ -200,9 +198,7 @@ def _bounded_json_response(
             payload = bytearray()
             for chunk in response.iter_bytes():
                 if len(payload) + len(chunk) > max_response_bytes:
-                    raise TelegramOidcError(
-                        "TELEGRAM_OIDC_PROVIDER_RESPONSE_TOO_LARGE"
-                    )
+                    raise TelegramOidcError("TELEGRAM_OIDC_PROVIDER_RESPONSE_TOO_LARGE")
                 payload.extend(chunk)
     except TelegramOidcError:
         raise
