@@ -87,7 +87,7 @@ def _unique_json_object(payload: bytes) -> dict[str, Any]:
     try:
         decoded = payload.decode("utf-8")
         value = json.loads(decoded, object_pairs_hook=unique_pairs)
-    except (UnicodeDecodeError, ValueError):
+    except ValueError:
         raise VkIdOauthError("VK_ID_PROVIDER_JSON_INVALID") from None
     if not isinstance(value, dict):
         raise VkIdOauthError("VK_ID_PROVIDER_JSON_INVALID")
