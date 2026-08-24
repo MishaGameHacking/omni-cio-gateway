@@ -7,6 +7,13 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 STATUS = ROOT / "knowledge/17_V10_CURRENT_PROGRAM_STATUS.md"
+AMENDMENTS_INDEX = ROOT / "docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md"
+AMENDMENT11 = (
+    ROOT
+    / "docs"
+    / "master-plan"
+    / "OMNI_CIO_V10_WP22A_TECHNICAL_CLOSEOUT_AND_PUBLIC_ACTIVATION_SEPARATION_AMENDMENT.md"
+)
 PHASE4_EVIDENCE = (
     ROOT / "docs/architecture/V10_WP22A_PHASE4_ACCEPTANCE_EVIDENCE.json"
 )
@@ -65,7 +72,7 @@ def test_phase4_acceptance_is_bound_to_exact_current_main_and_public_gate() -> N
     assert "accepted_runtime_main_sha" not in workflow
 
 
-def test_status_proposes_phase4_acceptance_and_phase5_as_current() -> None:
+def test_status_keeps_phase5_current_and_wp23_locked() -> None:
     text = STATUS.read_text(encoding="utf-8")
 
     assert (
@@ -79,15 +86,44 @@ def test_status_proposes_phase4_acceptance_and_phase5_as_current() -> None:
     )
     assert "WP23+ remains locked" in text
     assert "Accepted implementation progress is **40%**" in text
+    assert "one integrated WP22A Phase-5 technical-closeout implementation" in text
+    assert "`PUBLIC_MULTI_USER_ENABLED=false`" in text
+
+
+def test_amendment11_is_registered_as_sequencing_only() -> None:
+    index = AMENDMENTS_INDEX.read_text(encoding="utf-8")
+    amendment = AMENDMENT11.read_text(encoding="utf-8")
+
+    assert "### 11. WP22A Technical Closeout / Public Activation Separation" in index
+    assert AMENDMENT11.name in index
+    assert "sequencing only" in index
+    assert "The only supported human product-login protocols are:" in amendment
+    assert "Telegram Login" in amendment
+    assert "VK ID" in amendment
+    assert "No third human login path exists." in amendment
+    assert "PUBLIC_MULTI_USER_ENABLED=true" in amendment
+    assert "later independent fail-closed gate" in amendment
+    assert "does not by itself mark Phase 5 accepted" in amendment
+    assert "does not unlock WP23" in amendment
 
 
 def test_phase5_authority_preserves_cost_and_execution_locks() -> None:
     payload = _json(PHASE5_CONTRACT)
     authority = payload["authority"]
     provider = payload["provider"]
+    activation = payload["public_production_activation"]
     broker = payload["broker"]
 
+    assert payload["schema_version"] == (
+        "v10.wp22a.phase5.public-hosted-acceptance.v2"
+    )
+    assert payload["status"] == (
+        "WP22A_TECHNICAL_CLOSEOUT_AUTHORIZED_PUBLIC_ACTIVATION_LOCKED"
+    )
     assert authority["phase5_authorized"] is True
+    assert authority["wp22a_technical_gate_authorized"] is True
+    assert authority["wp22a_technical_gate_complete"] is False
+    assert authority["public_production_activation_authorized"] is False
     assert authority["wp22a_complete"] is False
     assert authority["wp23_unlocked"] is False
     assert provider["production_provider"] == "Cloud.ru Evolution"
@@ -96,12 +132,43 @@ def test_phase5_authority_preserves_cost_and_execution_locks() -> None:
     assert provider["current_authorized_recurring_usd"] == 0
     assert provider["automatic_paid_fallback_allowed"] is False
     assert provider["owner_cost_approval_required_above_current_cap"] is True
+    assert activation["public_multi_user_enabled"] is False
+    assert activation["provider_apply_authorized"] is False
+    assert activation["real_user_cutover_authorized"] is False
+    assert activation["current_authorized_recurring_rub"] == 0
+    assert activation["current_authorized_recurring_usd"] == 0
+    assert activation["automatic_paid_fallback_allowed"] is False
     assert broker["broker_write_enabled"] is False
     assert broker["trading_methods"] is False
     assert broker["real_trading_enabled"] is False
     assert broker["public_tinvest_status"] == (
         "FAIL_CLOSED_PENDING_BROKER_TERMS_PERMISSION"
     )
+
+
+def test_phase5_technical_closeout_forbids_human_session_bypass() -> None:
+    payload = _json(PHASE5_CONTRACT)
+    technical = payload["technical_closeout"]
+    product = payload["product_path"]
+    access = payload["initial_user_access"]
+
+    assert technical["hosted_synthetic_acceptance_allowed"] is True
+    assert technical["real_provider_secret_required_for_gate"] is False
+    assert technical["human_login_protocols"] == ["telegram", "vk_id"]
+    assert technical["human_session_bypass_allowed"] is False
+    assert technical[
+        "deterministic_provider_double_may_mint_human_product_session"
+    ] is False
+    assert technical["browser_bound_pre_auth_required"] is True
+    assert technical["durable_pre_auth_required"] is True
+    assert technical["one_time_atomic_pre_auth_consume_required"] is True
+    assert technical[
+        "provider_mixup_replay_browser_swap_negative_tests_required"
+    ] is True
+    assert product["human_product_login_protocols_only"] is True
+    assert product["human_session_bypass_allowed"] is False
+    assert access["authentication_required"] is True
+    assert access["anonymous_demo_product_session_allowed"] is False
 
 
 def test_phase5_product_identity_is_user_tenant_session_not_provider_authority() -> None:
