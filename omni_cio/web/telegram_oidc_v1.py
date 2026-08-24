@@ -264,10 +264,20 @@ def _parse_jwks(payload: dict[str, Any]) -> dict[str, _RsaPublicKeyV1]:
     for item in items:
         if not isinstance(item, dict):
             raise TelegramOidcError("TELEGRAM_OIDC_JWKS_INVALID")
+        algorithm = item.get("alg")
+        key_type = item.get("kty")
+        if algorithm not in {None, "RS256"}:
+            continue
+        if key_type != "RSA":
+            if algorithm == "RS256":
+                raise TelegramOidcError("TELEGRAM_OIDC_JWKS_INVALID")
+            continue
         kid, key = _rsa_public_key(item)
         if kid in keys:
             raise TelegramOidcError("TELEGRAM_OIDC_JWKS_INVALID")
         keys[kid] = key
+    if not keys:
+        raise TelegramOidcError("TELEGRAM_OIDC_JWKS_INVALID")
     return keys
 
 
