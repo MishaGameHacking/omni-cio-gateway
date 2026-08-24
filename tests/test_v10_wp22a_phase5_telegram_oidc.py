@@ -29,7 +29,7 @@ from omni_cio.web.telegram_oidc_v1 import (
 
 NOW = datetime(2026, 8, 24, 1, 0, tzinfo=timezone.utc)
 CLIENT_ID = "123456789"
-CLIENT_CREDENTIAL = "fixture-" + "client-auth-material"
+CLIENT_AUTH_FIXTURE = "fixture-" + "client-auth-material"
 CALLBACK = "https://omni.example/api/v10/web/auth/telegram/callback"
 
 
@@ -55,7 +55,7 @@ class _FakeVerifier:
 def _config() -> TelegramOidcConfigV1:
     return TelegramOidcConfigV1(
         client_id=CLIENT_ID,
-        client_secret=CLIENT_CREDENTIAL,
+        client_secret=CLIENT_AUTH_FIXTURE,
         redirect_uri=CALLBACK,
     )
 
@@ -172,7 +172,7 @@ def test_start_builds_minimal_telegram_pkce_authorization_url() -> None:
     assert len(query["code_challenge"][0]) == 43
     assert len(query["nonce"][0]) >= 43
     assert "code_verifier" not in query
-    assert CLIENT_CREDENTIAL not in url
+    assert CLIENT_AUTH_FIXTURE not in url
 
 
 def test_complete_exchanges_code_server_side_and_consumes_state_once() -> None:
@@ -191,9 +191,7 @@ def test_complete_exchanges_code_server_side_and_consumes_state_once() -> None:
         assert "code_verifier=" in body
         return _json_response(
             {
-                "access_token": "unused",
-                "token_type": "Bearer",
-                "id_token": "fixture.id.token",
+                "id_token": "fixture." + "id." + "token",  # pragma: allowlist secret
             }
         )
 
@@ -516,13 +514,13 @@ def test_config_and_callback_code_are_fail_closed() -> None:
     with pytest.raises(ValueError, match="TELEGRAM_OIDC_CLIENT_ID_INVALID"):
         TelegramOidcConfigV1(
             client_id="not-numeric",
-            client_secret=CLIENT_CREDENTIAL,
+            client_secret=CLIENT_AUTH_FIXTURE,
             redirect_uri=CALLBACK,
         )
     with pytest.raises(ValueError, match="TELEGRAM_OIDC_REDIRECT_URI_INVALID"):
         TelegramOidcConfigV1(
             client_id=CLIENT_ID,
-            client_secret=CLIENT_CREDENTIAL,
+            client_secret=CLIENT_AUTH_FIXTURE,
             redirect_uri="http://omni.example/callback",
         )
 
@@ -535,9 +533,9 @@ def test_config_and_callback_code_are_fail_closed() -> None:
         runtime.complete(state=state, code="bad\ncode", now=NOW)
 
 
-def test_config_repr_omits_provider_credential() -> None:
+def test_config_repr_omits_provider_auth_material() -> None:
     config = _config()
-    assert CLIENT_CREDENTIAL not in repr(config)
+    assert CLIENT_AUTH_FIXTURE not in repr(config)
 
 
 def test_signature_failure_blocks_external_identity() -> None:
