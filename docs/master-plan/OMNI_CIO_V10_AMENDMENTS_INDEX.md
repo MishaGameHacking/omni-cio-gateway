@@ -134,6 +134,22 @@ Locks the 2026-08-18 OWNER launch direction:
 
 Amendment 10 explicitly supersedes conflicting Personal-Node-final-product, permanent-private, initial-paid-access and central-private-data prohibitions in Amendments 5/6/7 and older WP22A wording. Non-conflicting safety, tenant isolation, legal, broker separation, recovery and engineering rules remain active.
 
+### 11. WP22A Technical Closeout / Public Activation Separation
+
+`OMNI_CIO_V10_WP22A_TECHNICAL_CLOSEOUT_AND_PUBLIC_ACTIVATION_SEPARATION_AMENDMENT.md`
+
+This sequencing amendment records the 2026-08-24 OWNER decision that:
+
+- WP22A may close only after its complete technical External Web Access / Product Authentication Security Gate is implemented and accepted on the reviewed hosted technical boundary;
+- the only human product-login protocols are Telegram Login and VK ID; OWNER/admin/developer/demo/preview/private-test/private-external session-minting bypasses are forbidden in deployed product mode;
+- deterministic provider doubles are permitted only below the deployed routing/network authority boundary when real secrets/provider-console actions are genuinely non-delegable, and can never become a human login/session bypass;
+- technical closeout still requires browser-bound durable pre-auth transactions, provider verification, account/tenant binding, production-grade server-side sessions, application + PostgreSQL tenant isolation, CSRF/origin/host/proxy/cache controls, abuse/capacity behavior, recovery/rollback and exact release evidence;
+- final Cloud.ru Evolution provider mutation, real provider secret provisioning/callback registration, real-user public cutover, `PUBLIC_MULTI_USER_ENABLED=true`, recurring paid spend and production privacy/legal/capacity/monitoring approval remain a later independent fail-closed activation gate;
+- public T-Invest remains `FAIL_CLOSED_PENDING_BROKER_TERMS_PERMISSION`, broker write stays OFF, `trading_methods=false` and `REAL_TRADING_ENABLED=false`;
+- Amendment 11 does not itself mark Phase 5 accepted, WP22A COMPLETE, WP23 unlocked or the Web visual-refresh runtime authorized.
+
+Amendment 11 narrows sequencing only. Amendments 9 and 10 remain binding for USER identity, tenant isolation, final public/free/managed-cloud product direction and all non-conflicting security/recovery/legal/broker boundaries.
+
 ## Draft/superseded planning material
 
 Open or historical PR descriptions must not be treated as active plan authority merely because they contain V10 ideas. Closed-unmerged PR #327 is superseded by Amendments 9/10 and is historical only. Older unmerged Personal-Node/cloud migration or OWNER-only external-access planning is likewise non-authoritative when it conflicts with accepted amendments.
@@ -147,7 +163,7 @@ Open or historical PR descriptions must not be treated as active plan authority 
 5. `OMNI_CIO_V10_PROGRAM_LOCK.md`;
 6. `OMNI_CIO_V10_MASTER_PLAN.md`;
 7. this Amendments Index;
-8. all active amendments listed here, especially 9 and 10 for product/public-hosting semantics;
+8. all active amendments listed here, especially 9, 10 and 11 for product/public-hosting and WP22A sequencing semantics;
 9. machine-readable contracts;
 10. `../../knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`;
 11. current-WP architecture/runbook;
