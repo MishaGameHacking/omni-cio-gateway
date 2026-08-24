@@ -222,6 +222,13 @@ def _rsa_public_key(jwk: dict[str, Any]) -> tuple[str, _RsaPublicKeyV1]:
         raise TelegramOidcError("TELEGRAM_OIDC_JWKS_INVALID")
     if jwk.get("use") not in {None, "sig"} or jwk.get("alg") not in {None, "RS256"}:
         raise TelegramOidcError("TELEGRAM_OIDC_JWKS_INVALID")
+    key_ops = jwk.get("key_ops")
+    if key_ops is not None and (
+        not isinstance(key_ops, list)
+        or "verify" not in key_ops
+        or any(not isinstance(item, str) for item in key_ops)
+    ):
+        raise TelegramOidcError("TELEGRAM_OIDC_JWKS_INVALID")
     modulus_raw = _b64url_decode(
         jwk.get("n"),
         reason="TELEGRAM_OIDC_JWKS_INVALID",
@@ -232,7 +239,12 @@ def _rsa_public_key(jwk: dict[str, Any]) -> tuple[str, _RsaPublicKeyV1]:
         reason="TELEGRAM_OIDC_JWKS_INVALID",
         maximum=16,
     )
-    if not modulus_raw or modulus_raw[0] == 0 or not exponent_raw:
+    if (
+        not modulus_raw
+        or modulus_raw[0] == 0
+        or not exponent_raw
+        or exponent_raw[0] == 0
+    ):
         raise TelegramOidcError("TELEGRAM_OIDC_JWKS_INVALID")
     modulus = int.from_bytes(modulus_raw, "big")
     exponent = int.from_bytes(exponent_raw, "big")
@@ -435,22 +447,21 @@ class TelegramIdTokenVerifierV1:
                     raise TelegramOidcError("TELEGRAM_OIDC_SIGNING_KEY_UNKNOWN")
                 return key
 
-        payload = _bounded_json_response(
-            client,
-            method="GET",
-            url=TELEGRAM_OIDC_JWKS_ENDPOINT,
-            timeout_seconds=self._config.timeout_seconds,
-            max_response_bytes=_MAX_JWKS_RESPONSE_BYTES,
-        )
-        keys = _parse_jwks(payload)
-        expires_at = now + self._config.jwks_cache_lifetime
-        with self._lock:
-            self._keys = keys
-            self._keys_expires_at = expires_at
+            # Serialize the bounded fixed-origin refresh so a cache miss cannot
+            # amplify into one provider request per concurrent login.
+            payload = _bounded_json_response(
+                client,
+                method="GET",
+                url=TELEGRAM_OIDC_JWKS_ENDPOINT,
+                timeout_seconds=self._config.timeout_seconds,
+                max_response_bytes=_MAX_JWKS_RESPONSE_BYTES,
+            )
+            self._keys = _parse_jwks(payload)
+            self._keys_expires_at = now + self._config.jwks_cache_lifetime
             key = self._keys.get(kid)
-        if key is None:
-            raise TelegramOidcError("TELEGRAM_OIDC_SIGNING_KEY_UNKNOWN")
-        return key
+            if key is None:
+                raise TelegramOidcError("TELEGRAM_OIDC_SIGNING_KEY_UNKNOWN")
+            return key
 
 
 class TelegramOidcRuntimeV1:
