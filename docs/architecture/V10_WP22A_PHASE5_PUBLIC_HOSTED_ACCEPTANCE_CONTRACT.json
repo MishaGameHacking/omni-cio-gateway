@@ -1,10 +1,13 @@
 {
-  "schema_version": "v10.wp22a.phase5.public-hosted-acceptance.v1",
-  "status": "AUTHORIZED_ON_PHASE4_ACCEPTANCE",
+  "schema_version": "v10.wp22a.phase5.public-hosted-acceptance.v2",
+  "status": "WP22A_TECHNICAL_CLOSEOUT_AUTHORIZED_PUBLIC_ACTIVATION_LOCKED",
   "authority": {
     "phase4_acceptance_evidence": "docs/architecture/V10_WP22A_PHASE4_ACCEPTANCE_EVIDENCE.md",
     "phase4_acceptance_contract": "docs/architecture/V10_WP22A_PHASE4_ACCEPTANCE_EVIDENCE.json",
     "phase5_authorized": true,
+    "wp22a_technical_gate_authorized": true,
+    "wp22a_technical_gate_complete": false,
+    "public_production_activation_authorized": false,
     "wp22a_complete": false,
     "wp23_unlocked": false,
     "visual_refresh_runtime_authorized": false
@@ -18,7 +21,36 @@
     ],
     "identity_flow": "verified_external_identity -> OmniCIOUserAccount -> Tenant -> server_side_Session",
     "provider_identity_is_product_identity": false,
-    "owner_special_product_role_allowed": false
+    "owner_special_product_role_allowed": false,
+    "human_product_login_protocols_only": true,
+    "human_session_bypass_allowed": false
+  },
+  "technical_closeout": {
+    "hosted_synthetic_acceptance_allowed": true,
+    "real_provider_secret_required_for_gate": false,
+    "deterministic_provider_double_allowed_below_deployed_routing_boundary": true,
+    "deterministic_provider_double_may_mint_human_product_session": false,
+    "human_login_protocols": [
+      "telegram",
+      "vk_id"
+    ],
+    "human_session_bypass_allowed": false,
+    "browser_bound_pre_auth_required": true,
+    "durable_pre_auth_required": true,
+    "one_time_atomic_pre_auth_consume_required": true,
+    "provider_mixup_replay_browser_swap_negative_tests_required": true,
+    "verified_provider_to_internal_account_required": true,
+    "server_side_session_required": true,
+    "session_fixation_rotation_logout_revoke_all_required": true,
+    "cross_tenant_negative_tests_required": true,
+    "database_rls_required": true,
+    "browser_request_firewall_required": true,
+    "trusted_proxy_host_tls_required": true,
+    "abuse_capacity_controls_required": true,
+    "recovery_and_rollback_required": true,
+    "exact_release_evidence_required": true,
+    "exact_head_draft_and_fresh_ready_green_required": true,
+    "exact_main_regression_shield_required": true
   },
   "session": {
     "server_side_required": true,
@@ -51,6 +83,21 @@
     "owner_cost_approval_required_above_current_cap": true,
     "render_neon_preview_remains_synthetic": true
   },
+  "public_production_activation": {
+    "production_provider": "Cloud.ru Evolution",
+    "public_multi_user_enabled": false,
+    "provider_apply_authorized": false,
+    "real_provider_secret_provisioning_authorized": false,
+    "real_provider_callback_registration_authorized": false,
+    "real_user_cutover_authorized": false,
+    "current_authorized_recurring_rub": 0,
+    "current_authorized_recurring_usd": 0,
+    "automatic_paid_fallback_allowed": false,
+    "exact_price_sku_revalidation_required_before_apply": true,
+    "owner_cost_approval_required_above_current_cap": true,
+    "production_privacy_legal_capacity_monitoring_signoff_required": true,
+    "public_tinvest_permission_required_for_broker_backed_features": true
+  },
   "broker": {
     "public_tinvest_status": "FAIL_CLOSED_PENDING_BROKER_TERMS_PERMISSION",
     "real_broker_credentials_in_preview_allowed": false,
@@ -63,9 +110,12 @@
     "billing_enabled": false,
     "trial_enabled": false,
     "subscription_enforcement": false,
-    "premium_feature_gating": false
+    "premium_feature_gating": false,
+    "authentication_required": true,
+    "anonymous_demo_product_session_allowed": false
   },
   "activation": {
+    "scope": "LEGACY_COMPATIBILITY_ALIAS_FOR_LATER_PUBLIC_PRODUCTION_ACTIVATION",
     "public_multi_user_enabled_initial": false,
     "activation_requires_focused_phase5_gate": true,
     "normal_user_login_logout_session_acceptance_required": true,
@@ -73,7 +123,8 @@
     "deployed_recovery_availability_required": true,
     "abuse_capacity_controls_required": true,
     "exact_release_and_rollback_required": true,
-    "owner_acceptance_only_when_non_delegable": true
+    "owner_acceptance_only_when_non_delegable": true,
+    "technical_closeout_may_complete_while_public_activation_locked": true
   },
   "visual_refresh": {
     "brief": "docs/architecture/V10_WEB_VISUAL_DESIGN_REFRESH_IMPLEMENTATION_BRIEF.md",
