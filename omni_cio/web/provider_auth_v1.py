@@ -209,4 +209,5 @@ class ProviderAuthenticationRuntimeLike(Protocol):
         state: str,
         code: str,
         now: datetime,
+        device_id: str | None = None,
     ) -> VerifiedExternalIdentityV1: ...

@@ -516,7 +516,10 @@ class TelegramOidcRuntimeV1:
         state: str,
         code: str,
         now: datetime,
+        device_id: str | None = None,
     ) -> VerifiedExternalIdentityV1:
+        if device_id is not None:
+            raise TelegramOidcError("TELEGRAM_OIDC_CALLBACK_INVALID")
         if not isinstance(code, str) or _CODE_PATTERN.fullmatch(code) is None:
             raise TelegramOidcError("TELEGRAM_OIDC_CODE_INVALID")
         transaction = self._transactions.consume(
