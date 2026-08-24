@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 import json
 from urllib.parse import parse_qs, urlsplit
@@ -247,6 +248,29 @@ def test_provider_failure_does_not_preserve_consumed_transaction() -> None:
     assert calls == 1
 
 
+def test_network_error_is_generic_and_transaction_stays_consumed() -> None:
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        raise httpx.ConnectError("fixture provider unavailable", request=request)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    runtime = TelegramOidcRuntimeV1(
+        config=_config(),
+        transactions=AuthorizationTransactionRegistryV1(),
+        client=client,
+    )
+    state = parse_qs(urlsplit(runtime.start(now=NOW)).query)["state"][0]
+
+    with pytest.raises(TelegramOidcError, match="TELEGRAM_OIDC_NETWORK_ERROR"):
+        runtime.complete(state=state, code="telegram-code", now=NOW)
+    with pytest.raises(ProviderAuthorizationError, match="AUTH_TRANSACTION_NOT_FOUND"):
+        runtime.complete(state=state, code="telegram-code", now=NOW)
+    assert calls == 1
+
+
 def test_provider_response_size_is_bounded_before_json_parse() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(
@@ -458,6 +482,34 @@ def test_unknown_kid_does_not_trigger_repeat_fetch_while_cache_is_fresh(
             client=client,
         )
     assert calls == 1
+
+
+def test_concurrent_jwks_cache_miss_is_single_fixed_origin_fetch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(str(request.url))
+        return _json_response(_jwks())
+
+    monkeypatch.setattr(telegram_oidc, "_verify_rs256_signature", lambda **_: True)
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    verifier = TelegramIdTokenVerifierV1(_config())
+
+    def verify(_: int) -> str:
+        return verifier.verify(
+            _token(),
+            expected_nonce="expected-nonce",
+            now=NOW,
+            client=client,
+        ).subject
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        subjects = list(executor.map(verify, range(16)))
+
+    assert subjects == ["424242"] * 16
+    assert calls == [TELEGRAM_OIDC_JWKS_ENDPOINT]
 
 
 def test_config_and_callback_code_are_fail_closed() -> None:
