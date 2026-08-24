@@ -7,12 +7,8 @@ on:
       - ".github/workflows/v10-wp22a-phase4-public-acceptance.yml"
       - "docs/architecture/V10_WP22A_PHASE4_ACCEPTANCE_EVIDENCE.json"
       - "docs/architecture/V10_WP22A_PHASE4_ACCEPTANCE_EVIDENCE.md"
-      - "docs/architecture/V10_WP22A_PHASE5_PUBLIC_HOSTED_ACCEPTANCE_AUTHORIZATION.md"
-      - "docs/architecture/V10_WP22A_PHASE5_PUBLIC_HOSTED_ACCEPTANCE_CONTRACT.json"
-      - "knowledge/17_V10_CURRENT_PROGRAM_STATUS.md"
       - "scripts/check_v10_wp22a_phase4_public_acceptance.py"
       - "tests/test_v10_wp22a_phase4_public_acceptance.py"
-      - "tests/test_v10_wp22a_phase5_transition.py"
       - "tests/test_wp22a_phase4_free_preview_authorization.py"
 
 permissions:
@@ -43,6 +39,7 @@ jobs:
         shell: bash
         env:
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           GITHUB_TOKEN: ${{ github.token }}
           GIT_TERMINAL_PROMPT: "0"
@@ -56,10 +53,33 @@ jobs:
           git config --local credential.helper ""
           git config --local --add credential.helper '!f() { echo username=x-access-token; echo password=$GITHUB_TOKEN; }; f'
           git fetch --no-tags --prune --depth=1 origin "+refs/pull/${PR_NUMBER}/head:refs/remotes/pull/head"
+          git fetch --no-tags --prune --depth=1 origin "$PR_BASE_SHA"
           git checkout --detach "$EXPECTED_HEAD"
           git config --local --unset-all credential.helper
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
           test -z "$(git config --local --get-all credential.helper || true)"
+
+      - name: Route historical Phase 4 live probe by changed authority surface
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          requires_live_probe=false
+          while IFS= read -r path; do
+            case "$path" in
+              docs/architecture/V10_WP22A_PHASE4_ACCEPTANCE_EVIDENCE.json|\
+              docs/architecture/V10_WP22A_PHASE4_ACCEPTANCE_EVIDENCE.md|\
+              scripts/check_v10_wp22a_phase4_public_acceptance.py)
+                requires_live_probe=true
+                ;;
+            esac
+          done < <(git diff --name-only "$PR_BASE_SHA" "$EXPECTED_HEAD")
+          echo "PHASE4_LIVE_PROBE_REQUIRED=$requires_live_probe" >> "$GITHUB_ENV"
+          if [ "$requires_live_probe" = false ]; then
+            echo "PHASE4_PUBLIC_ACCEPTANCE_ROUTING=PASS reason=historical_phase4_runtime_authority_unchanged"
+          fi
 
       - name: Bootstrap protected runner Python
         run: |
@@ -97,6 +117,7 @@ jobs:
           if errorlevel 1 exit /b 30
 
       - name: Probe exact public Render preview without secrets
+        if: env.PHASE4_LIVE_PROBE_REQUIRED == 'true'
         shell: bash
         env:
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
