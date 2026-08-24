@@ -39,12 +39,20 @@ It specifies standard OIDC Authorization Code flow with PKCE, the fixed issuer
 `/token`, JWKS endpoint `/.well-known/jwks.json`, required `openid` scope,
 server-side token exchange with Client ID/Secret and PKCE verifier, and
 cryptographic ID-token verification. Telegram documents RS256 as the default
-signing algorithm and supports a server-generated nonce included in the
-resulting ID token.
+signing algorithm, also permits ES256, EdDSA and ES256K when explicitly selected,
+and supports a server-generated nonce included in the resulting ID token.
 
-The adapter intentionally pins the accepted RS256 profile rather than accepting
-a provider- or token-selected algorithm family. A later algorithm change is a
-reviewed configuration/protocol change, not an automatic compatibility path.
+The fixed Telegram JWKS may therefore contain several signing-key families at
+the same time. Current independent June-2026 provider-integration evidence shows
+RS256, ES256, EdDSA and ES256K keys coexisting in that one set and demonstrates
+that treating every unrelated key as a required RSA parse target can break an
+otherwise valid RS256 login path.
+
+This adapter intentionally pins the accepted/default RS256 profile. It filters
+the bounded provider set to usable RS256/RSA candidates, ignores unrelated
+algorithm families, and still fails closed on malformed or ambiguous RS256
+candidates. A later configured signing-algorithm change is a reviewed
+configuration/protocol change, not an automatic compatibility path.
 
 The local RS256 implementation is protected by the official RFC 7515 Appendix
 A.2 RSASSA-PKCS1-v1_5 SHA-256 known-answer vector plus tamper rejection.
@@ -102,12 +110,16 @@ Required properties:
 - token response access/refresh payload is not persisted and is cleared after
   extracting the ID token;
 - JWT compact serialization and base64url components are strictly bounded;
-- header `alg` is exactly `RS256`; `crit`, `jku`, embedded `jwk`, `x5u`, `x5c`
-  and `b64` override surfaces are rejected;
-- JWK must be a bounded RSA signing key, optional JWK `alg` may only be RS256,
-  optional `key_ops` must permit verification, duplicate `kid` is rejected,
-  leading-zero modulus/exponent encodings are rejected, RSA modulus is
-  2048–4096 bits and exponent is bounded/odd;
+- ID-token header `alg` is exactly `RS256`; `crit`, `jku`, embedded `jwk`, `x5u`,
+  `x5c` and `b64` override surfaces are rejected;
+- the bounded JWKS may contain unrelated Telegram signing families, which are
+  ignored for this pinned profile rather than invalidating the entire set;
+- every selected RS256 candidate must be an RSA signing key; a JWK that declares
+  `alg=RS256` with a non-RSA `kty` is invalid, and at least one usable RS256/RSA
+  candidate must exist;
+- selected RSA candidates enforce bounded `kid`, signing `use`, verification
+  `key_ops`, absent-or-`RS256` JWK `alg`, unique selected `kid`, non-leading-zero
+  modulus/exponent encodings, 2048–4096-bit modulus and bounded odd exponent;
 - signature verification uses exact EMSA-PKCS1-v1_5 SHA-256 encoding and
   constant-time final byte comparison;
 - claims require exact issuer, exact audience/client ID, exact transaction
@@ -151,9 +163,9 @@ in-memory and safely refetched after restart. No provider token is durable.
 Rollback is source-only: remove the dormant adapter/tests or revert the squash
 merge; no database/private-state recovery is required.
 
-## 9. Pre-CI readiness and first DRAFT correction
+## 9. Pre-CI readiness and correction history
 
-Cheap scratch preflight before opening repository CI:
+Initial cheap scratch preflight before opening repository CI:
 
 - Python compile of adapter and focused tests: PASS;
 - 23 focused deterministic tests: PASS;
@@ -176,13 +188,31 @@ JWK `n`/`e` callers correctly provided untrusted `Any | None` values from JSON.
 Root-cause review confirmed that `_b64url_decode` itself is the runtime type
 validator. Its input contract was corrected to `object`, preserving the existing
 `isinstance(value, str)` fail-closed narrowing rather than adding casts, ignores
-or mypy suppression. The scratch compile + focused suite remained GREEN after
-that correction. FL-038 records the reusable lesson. Any evidence from the old
-head is non-final and invalidated by the corrective commit.
+or mypy suppression. FL-038 records the reusable lesson.
 
-Exact repository Ruff, mypy, tracked-content secret scan, SAST, dependency audit
-and all other applicable workflows remain independent CI evidence; scratch
-preflight is not substituted for those gates.
+A later exact-head cycle on `8ac10574bac5690587b1cc455a286cbdbcd23180`
+reached 12/13 workflow SUCCESS; its sole RED was `V10 WP17 Application Shell
+Audit` run `32680305640`, where all Web/browser/audit work and `ruff check`
+passed but exact `ruff format --check` requested two semantic-neutral source
+normalizations. Root cause was scratch preflight checking compile/tests/line
+length without running the repository's exact formatter command. The correction
+is tracked by the existing canonical formatter lesson FL-007; no duplicate
+failure-learning record is created.
+
+Before final DRAFT acceptance, current provider revalidation then exposed a
+material protocol-compatibility defect independent of CI: Telegram's one JWKS
+can carry RS256, ES256, EdDSA and ES256K keys together. The previous parser tried
+to parse every item as RSA, so any valid unrelated EC/OKP Telegram key would
+fail the entire RS256 path. The parser now selects only compatible RS256/RSA
+candidates, remains fail-closed on malformed/ambiguous RS256 candidates, and the
+standard fixture permanently includes the current mixed signing-family shape.
+A dedicated negative regression also rejects an entry that declares `alg=RS256`
+with a non-RSA key type.
+
+Every commit after these corrections invalidates all earlier workflow/review
+evidence. Exact repository Ruff, mypy, tracked-content secret scan, SAST,
+dependency audit and all other applicable workflows remain independent final
+evidence; scratch preflight is never substituted for those gates.
 
 ## 10. Normal-path acceptance tests
 
@@ -195,6 +225,8 @@ Focused tests must prove:
 - token exchange uses the exact fixed endpoint and Basic authentication;
 - verified ID token produces only Telegram `VerifiedExternalIdentityV1`;
 - fixed official JWKS URL is the only key-fetch origin;
+- current mixed Telegram JWKS families can coexist while a valid RS256/RSA key
+  is selected for the pinned profile;
 - concurrent JWKS cache miss performs one bounded fixed-origin refresh;
 - RFC 7515 RS256 known-answer validates.
 
@@ -206,7 +238,8 @@ Focused tests cover:
 - provider redirect/non-200, network failure and oversized response;
 - one-time transaction destruction after provider/network failure;
 - invalid/tampered signature;
-- `HS256`/JWK algorithm-confusion attempts;
+- `HS256`/JWK algorithm-confusion attempts and absence of any usable RS256 key;
+- a JWK that explicitly declares `alg=RS256` with a non-RSA key type;
 - external/embedded JWK/header override attempts;
 - issuer/audience/nonce/subject/time mismatch;
 - unknown `kid` request-amplification resistance while cache is fresh;
@@ -226,14 +259,21 @@ authentication error; deterministic Core, V9 `app:app`, existing Web data and al
 broker safety boundaries remain unchanged. There is no retry loop in this
 component and no automatic algorithm/origin fallback.
 
+The bounded JWKS refresh intentionally serializes a cache miss in this dormant
+increment to prevent one provider fetch per concurrent login. Before a later
+route/provider activation increment exposes real concurrent login traffic, that
+increment must measure this pause and re-evaluate a reviewed single-flight or
+rotation-aware stale-window design without silently weakening key-rotation or
+revocation semantics.
+
 ## 13. CI routing and Exit Gate
 
 The branch may land only after:
 
 1. all applicable exact-head DRAFT checks actually execute and conclude
-   `success` on the post-correction head;
-2. focused provider-auth/OIDC tests, Ruff format/lint, mypy, dependency/security
-   and repository governance gates are GREEN;
+   `success` on the final post-correction head;
+2. focused provider-auth/OIDC tests, exact Ruff format/lint, mypy,
+   dependency/security and repository governance gates are GREEN;
 3. full four-file diff is reviewed against exact accepted base;
 4. Gitar/security review has no unresolved material finding;
 5. unresolved blocking review threads = 0 and no P0/P1 blocker remains;
@@ -249,12 +289,17 @@ Any new commit invalidates previous final exact-head evidence.
 
 ## 14. OWNER participation
 
-OWNER action required before merge: **NO**.
+OWNER action required before merge: **NO** for source/provider-credential work.
 
 No real Telegram Client ID/Secret is required for this dormant deterministic
-increment. Credential provisioning, provider Allowed URL registration or other
-non-delegable provider action belongs only to a later focused Phase-5 binding /
-deployed-acceptance increment after its own source gate.
+increment. Credential provisioning, Allowed URL registration and confirming the
+BotFather signing algorithm are deferred to a later focused Phase-5 binding /
+deployed-acceptance increment. That future activation must bind configuration to
+the algorithm implemented by the accepted adapter; this increment supports only
+RS256 and does not silently negotiate another algorithm.
+
+Repository landing itself remains governed by the normal protected PR landing
+contract and its exact-head confirmation requirements.
 
 ## 15. Rollback and next authorized work
 

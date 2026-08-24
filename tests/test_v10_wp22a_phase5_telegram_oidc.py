@@ -607,6 +607,35 @@ def test_jwks_algorithm_confusion_key_is_rejected() -> None:
         )
 
 
+def test_jwks_rs256_candidate_cannot_use_non_rsa_key_type() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return _json_response(
+            {
+                "keys": [
+                    {
+                        "kty": "EC",
+                        "kid": "telegram-key-1",
+                        "use": "sig",
+                        "alg": "RS256",
+                        "crv": "P-256",
+                        "x": "fixture-x",
+                        "y": "fixture-y",
+                    }
+                ]
+            }
+        )
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    verifier = TelegramIdTokenVerifierV1(_config())
+    with pytest.raises(TelegramOidcError, match="TELEGRAM_OIDC_JWKS_INVALID"):
+        verifier.verify(
+            _token(),
+            expected_nonce="expected-nonce",
+            now=NOW,
+            client=client,
+        )
+
+
 def test_duplicate_provider_json_members_fail_closed() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(
