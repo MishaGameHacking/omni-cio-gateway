@@ -125,7 +125,7 @@ def _utc(value: datetime) -> datetime:
     return value.astimezone(timezone.utc)
 
 
-def _b64url_decode(value: str, *, reason: str, maximum: int) -> bytes:
+def _b64url_decode(value: object, *, reason: str, maximum: int) -> bytes:
     if (
         not isinstance(value, str)
         or not value
