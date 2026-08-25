@@ -4,7 +4,6 @@ import type {
   HealthView,
   PortfolioDashboardView,
   PreviewModeView,
-  PrivateAcceptanceStatusView,
   ProviderView,
   WebSessionView,
   Wp15LiveAcceptanceStatusView,
@@ -62,40 +61,8 @@ export function readProviders(): Promise<ProviderView[]> {
   return requestJson<ProviderView[]>("/api/v10/web/auth/providers");
 }
 
-export function readPrivateAcceptanceStatus(): Promise<PrivateAcceptanceStatusView> {
-  return requestJson<PrivateAcceptanceStatusView>("/api/v10/web/private-test-login/status");
-}
-
 export function readPreviewMode(): Promise<PreviewModeView> {
   return requestJson<PreviewModeView>("/api/v10/web/preview-mode");
-}
-
-export function readPrivateRemoteStatus(): Promise<{ enabled: boolean }> {
-  return requestJson<{ enabled: boolean }>("/api/v10/web/private-external-login/status");
-}
-
-export async function privateRemoteLogin(): Promise<void> {
-  await requestJson<{ ok: true }>("/api/v10/web/private-external-login", {
-    method: "POST",
-    headers: JSON_HEADERS,
-    body: "{}",
-  });
-}
-
-export async function previewLogin(): Promise<void> {
-  await requestJson<{ ok: true }>("/api/v10/web/preview-login", {
-    method: "POST",
-    headers: JSON_HEADERS,
-    body: "{}",
-  });
-}
-
-export async function privateTestLogin(): Promise<void> {
-  await requestJson<{ ok: true }>("/api/v10/web/private-test-login", {
-    method: "POST",
-    headers: JSON_HEADERS,
-    body: "{}",
-  });
 }
 
 export function readHealth(): Promise<HealthView> {
@@ -186,6 +153,6 @@ export async function revokeAllSessions(): Promise<void> {
   remoteCsrfToken = null;
 }
 
-export function providerLoginUrl(provider: "telegram" | "vk_id"): string {
+export function providerLoginPath(provider: "telegram" | "vk_id"): string {
   return `/api/v10/web/auth/${provider}/start`;
 }
