@@ -6,6 +6,7 @@ from omni_cio.web.request_limits_v1 import (
     HostedRequestAbuseControlV1,
     ProviderAuthAbuseControlV1,
     RequestRatePolicyV1,
+    is_session_token_candidate,
 )
 
 
@@ -18,24 +19,53 @@ def test_fixed_window_limiter_bounds_attacker_controlled_key_population() -> Non
     assert limiter.admit("c", limit=1, now_monotonic=61.0)
 
 
-def test_hosted_control_enforces_global_and_request_class_dimensions() -> None:
+def test_hosted_control_separates_global_and_request_class_dimensions() -> None:
     policy = RequestRatePolicyV1(
-        global_api_requests=4,
-        anonymous_requests=2,
-        authenticated_session_requests=3,
+        global_api_requests=2,
+        anonymous_requests=1,
+        authenticated_session_requests=2,
         max_session_keys=8,
     )
     control = HostedRequestAbuseControlV1(policy)
 
-    assert control.admit(session_token=None, now_monotonic=0.0)
-    assert control.admit(session_token=None, now_monotonic=1.0)
-    assert not control.admit(session_token=None, now_monotonic=2.0)
+    assert control.admit_global(now_monotonic=0.0)
+    assert control.admit_global(now_monotonic=1.0)
+    assert not control.admit_global(now_monotonic=2.0)
 
-    assert control.admit(session_token="s" * 43, now_monotonic=3.0)
-    assert not control.admit(session_token="t" * 43, now_monotonic=4.0)
+    assert control.admit_request_class(
+        verified_session_token=None,
+        now_monotonic=0.0,
+    )
+    assert not control.admit_request_class(
+        verified_session_token=None,
+        now_monotonic=1.0,
+    )
+
+    valid_shape = "s" * 43
+    assert control.admit_request_class(
+        verified_session_token=valid_shape,
+        now_monotonic=0.0,
+    )
+    assert control.admit_request_class(
+        verified_session_token=valid_shape,
+        now_monotonic=1.0,
+    )
+    assert not control.admit_request_class(
+        verified_session_token=valid_shape,
+        now_monotonic=2.0,
+    )
 
 
-def test_invalid_session_shape_stays_in_anonymous_bucket() -> None:
+def test_session_candidate_shape_is_only_a_bounded_prelookup_guard() -> None:
+    assert is_session_token_candidate("s" * 43)
+    assert not is_session_token_candidate(None)
+    assert not is_session_token_candidate("not-a-session")
+    assert not is_session_token_candidate("s" * 42)
+    assert not is_session_token_candidate("s" * 44)
+    assert not is_session_token_candidate("!" * 43)
+
+
+def test_invalid_verified_token_shape_stays_in_anonymous_bucket() -> None:
     control = HostedRequestAbuseControlV1(
         RequestRatePolicyV1(
             global_api_requests=10,
@@ -44,12 +74,12 @@ def test_invalid_session_shape_stays_in_anonymous_bucket() -> None:
         )
     )
 
-    assert control.admit(
-        session_token="not-a-session",
+    assert control.admit_request_class(
+        verified_session_token="not-a-session",
         now_monotonic=0.0,
     )
-    assert not control.admit(
-        session_token="another-invalid-session",
+    assert not control.admit_request_class(
+        verified_session_token="another-invalid-session",
         now_monotonic=1.0,
     )
 
@@ -61,7 +91,11 @@ def test_health_dimension_is_separate_and_bounded() -> None:
 
     assert control.admit_health(now_monotonic=0.0)
     assert not control.admit_health(now_monotonic=1.0)
-    assert control.admit(session_token=None, now_monotonic=1.0)
+    assert control.admit_global(now_monotonic=1.0)
+    assert control.admit_request_class(
+        verified_session_token=None,
+        now_monotonic=1.0,
+    )
 
 
 def test_provider_start_and_callback_windows_are_bounded_independently() -> None:

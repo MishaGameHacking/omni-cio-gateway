@@ -161,26 +161,43 @@ Private/API responses remain `no-store`. HSTS, CSP, nosniff, referrer and opener
 headers remain enabled. `Vary: Origin, Sec-Fetch-Site` prevents request-security
 metadata from being ignored by intermediary caches.
 
-Render terminates TLS at its managed edge. Within this accepted Render boundary,
-`X-Forwarded-Proto` is used only as the reviewed edge-to-origin scheme signal; the
-application port is not an independently exposed public authority.
+Render terminates public TLS at its managed load balancer and forwards the request to
+the Web Service application port over HTTP; Render documents that forwarded port as
+not directly reachable from the public Internet. The application therefore does not
+read `X-Forwarded-Proto` (or another client-supplied forwarded header) as TLS
+authority. The reviewed Render entrypoint explicitly composes the source-level
+`trusted_edge_tls_terminated=True` boundary for the accepted `.onrender.com` host.
+Outside that exact composition the default remains direct HTTPS-required and a
+spoofed `X-Forwarded-Proto: https` cannot satisfy the gate.
+
+A future provider/origin topology must establish its own reviewed proxy trust model;
+it must not inherit the Render trust assertion implicitly.
 
 ## 9. Abuse and capacity controls
 
 The technical boundary has separate bounded dimensions for:
 
+- a global product-API ingress cap that executes before any session-store lookup;
 - anonymous API requests;
-- authenticated session requests, keyed only by SHA-256 of the opaque session token;
+- authenticated session requests, keyed by SHA-256 of the opaque session token only
+  after the server-side session registry resolves that token to a live session;
 - Telegram/VK provider starts;
 - Telegram/VK callbacks;
 - pending durable provider transactions;
 - outbound provider concurrency.
 
+Session-cookie syntax is only a cheap bounded prelookup guard. Malformed values never
+reach the session store, while a shape-valid but unresolved/revoked/expired token is
+collapsed into the shared anonymous bucket and never receives authenticated capacity.
+The global cap is consumed before durable lookup so rotating fake session candidates
+cannot create unbounded PostgreSQL verification work.
+
 Rate/capacity rejection is fail-closed with HTTP `429` and bounded `Retry-After`.
 Provider outbound-capacity rejection happens before provider code exchange so it does
 not consume the valid browser transaction. The provider-proof cookie is preserved for
 a bounded retry. `/healthz` is intentionally not starved by ordinary product-rate
-limits so monitoring can distinguish overload from application outage.
+limits and has its own bounded monitoring capacity so monitoring can distinguish
+overload from application outage.
 
 ## 10. Recovery rule for authentication authority
 

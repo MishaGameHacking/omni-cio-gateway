@@ -57,8 +57,12 @@ def test_render_entrypoint_wires_phase5_provider_auth_builder(monkeypatch) -> No
 
     expected_app = FastAPI()
 
-    def create_hosted(services: hosted_preview.HostedPreviewServicesV1) -> FastAPI:
+    def create_hosted(
+        services: hosted_preview.HostedPreviewServicesV1,
+        **kwargs: Any,
+    ) -> FastAPI:
         captured["services"] = services
+        captured["create_hosted_kwargs"] = kwargs
         return expected_app
 
     monkeypatch.setattr(hosted_preview, "create_hosted_preview_app", create_hosted)
@@ -73,4 +77,7 @@ def test_render_entrypoint_wires_phase5_provider_auth_builder(monkeypatch) -> No
     services = captured["services"]
     assert services.provider_auth is provider_auth
     assert services.sessions is sessions
+    assert captured["create_hosted_kwargs"] == {
+        "trusted_edge_tls_terminated": True,
+    }
     assert raw_connection.autocommit is True

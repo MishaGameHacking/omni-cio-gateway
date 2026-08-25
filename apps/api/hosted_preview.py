@@ -37,7 +37,10 @@ from omni_cio.web.provider_auth_routes_v1 import (
     ProviderAuthRouteServicesV1,
     install_provider_auth_routes_v1,
 )
-from omni_cio.web.request_limits_v1 import HostedRequestAbuseControlV1
+from omni_cio.web.request_limits_v1 import (
+    HostedRequestAbuseControlV1,
+    is_session_token_candidate,
+)
 from omni_cio.web.session_v1 import SessionPolicyV1, SessionScopeV1
 
 
@@ -59,6 +62,8 @@ _HOST_PATTERN = re.compile(
     r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
     r"(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+"
 )
+_RENDER_HOST_SUFFIX = ".onrender.com"
+_SESSION_SCOPE_STATE_ATTR = "_omni_v10_session_scope"
 _CONTENT_SECURITY_POLICY = (
     "default-src 'self'; "
     "base-uri 'none'; "
@@ -198,6 +203,11 @@ def _disabled_provider_auth(
     )
 
 
+def _request_session_scope(request: Request) -> SessionScopeV1 | None:
+    scope = getattr(request.state, _SESSION_SCOPE_STATE_ATTR, None)
+    return scope if isinstance(scope, SessionScopeV1) else None
+
+
 class HostedPreviewSecurityMiddlewareV1(BaseHTTPMiddleware):
     def __init__(
         self,
@@ -205,11 +215,17 @@ class HostedPreviewSecurityMiddlewareV1(BaseHTTPMiddleware):
         *,
         hostname: str,
         cookies: BrowserCookiePolicyV1,
+        sessions: SessionRegistryLike,
+        now: Callable[[], datetime],
+        trusted_edge_tls_terminated: bool = False,
         abuse: HostedRequestAbuseControlV1 | None = None,
     ) -> None:
         super().__init__(app)
         self._hostname = hostname
         self._cookies = cookies
+        self._sessions = sessions
+        self._now = now
+        self._trusted_edge_tls_terminated = trusted_edge_tls_terminated
         self._abuse = abuse or HostedRequestAbuseControlV1()
 
     async def dispatch(
@@ -217,15 +233,14 @@ class HostedPreviewSecurityMiddlewareV1(BaseHTTPMiddleware):
         request: Request,
         call_next: Callable[..., Any],
     ) -> Response:
-        # Render terminates TLS at its managed edge and the application port is
-        # not directly Internet-reachable. X-Forwarded-Proto is therefore
-        # accepted only inside that reviewed edge-to-origin hosting boundary.
-        forwarded = request.headers.get("x-forwarded-proto", "").strip().lower()
-        scheme = forwarded or request.url.scheme.lower()
         api_path = (
             request.url.path.startswith("/api/") or request.url.path == "/healthz"
         )
-        if scheme != "https":
+        # Never treat a client-controlled forwarded header as TLS authority. On the
+        # accepted Render Web Service the managed edge terminates public TLS and
+        # forwards to a port that Render documents as not directly Internet-reachable;
+        # that provider boundary is asserted by source composition instead.
+        if request.url.scheme.lower() != "https" and not self._trusted_edge_tls_terminated:
             return _safe_error("HTTPS_REQUIRED", 403, api_path=api_path)
 
         if request.url.path == "/healthz":
@@ -235,8 +250,28 @@ class HostedPreviewSecurityMiddlewareV1(BaseHTTPMiddleware):
                     api_path=True,
                 )
         elif api_path:
+            # Bound database work before touching attacker-controlled session
+            # candidates. A shape-valid cookie is never authentication authority.
+            if not self._abuse.admit_global():
+                return _rate_error(
+                    retry_after_seconds=self._abuse.policy.retry_after_seconds,
+                    api_path=True,
+                )
             session_token = request.cookies.get(BROWSER_SESSION_COOKIE)
-            if not self._abuse.admit(session_token=session_token):
+            scope: SessionScopeV1 | None = None
+            if is_session_token_candidate(session_token):
+                try:
+                    scope = self._sessions.resolve(
+                        session_token,
+                        now=_utc(self._now()),
+                    )
+                except Exception:
+                    return _safe_error("SESSION_LOOKUP_UNAVAILABLE", 503)
+            setattr(request.state, _SESSION_SCOPE_STATE_ATTR, scope)
+            verified_token = session_token if scope is not None else None
+            if not self._abuse.admit_request_class(
+                verified_session_token=verified_token
+            ):
                 return _rate_error(
                     retry_after_seconds=self._abuse.policy.retry_after_seconds,
                     api_path=True,
@@ -272,14 +307,8 @@ class HostedPreviewSecurityMiddlewareV1(BaseHTTPMiddleware):
         return _harden_response(response, api_path=api_path)
 
 
-def _require_session(
-    request: Request,
-    services: HostedPreviewServicesV1,
-) -> SessionScopeV1 | Response:
-    scope = services.sessions.resolve(
-        request.cookies.get(BROWSER_SESSION_COOKIE),
-        now=_utc(services.now()),
-    )
+def _require_session(request: Request) -> SessionScopeV1 | Response:
+    scope = _request_session_scope(request)
     if scope is None:
         return _safe_error("AUTHENTICATION_REQUIRED", 401)
     return scope
@@ -538,12 +567,15 @@ def create_hosted_preview_app(
     *,
     web_dist: Path = WEB_DIST,
     additional_hosts: tuple[str, ...] = (),
+    trusted_edge_tls_terminated: bool = False,
 ) -> FastAPI:
     hostname = _hostname(services.hostname)
     services.release_sha = _release_sha(services.release_sha)
     services.database_probe()
     provider_auth = services.provider_auth or _disabled_provider_auth(services)
 
+    if trusted_edge_tls_terminated and not hostname.endswith(_RENDER_HOST_SUFFIX):
+        raise RuntimeError("HOSTED_PREVIEW_TRUSTED_EDGE_INVALID")
     if not web_dist.is_dir() or not (web_dist / "index.html").is_file():
         raise RuntimeError("HOSTED_PREVIEW_WEB_BUILD_MISSING")
 
@@ -589,7 +621,7 @@ def create_hosted_preview_app(
     @app.get("/api/v10/web/session")
     def session_view(request: Request) -> Response:
         token = request.cookies.get(BROWSER_SESSION_COOKIE, "")
-        scope = services.sessions.resolve(token, now=_utc(services.now()))
+        scope = _request_session_scope(request)
         csrf = request.cookies.get(BROWSER_CSRF_COOKIE, "")
         if (
             scope is None
@@ -626,7 +658,7 @@ def create_hosted_preview_app(
 
     @app.post("/api/v10/web/session/logout")
     def logout(request: Request) -> Response:
-        scope = _require_session(request, services)
+        scope = _require_session(request)
         if isinstance(scope, Response):
             return scope
         services.sessions.revoke(
@@ -640,7 +672,7 @@ def create_hosted_preview_app(
 
     @app.post("/api/v10/web/session/revoke-all")
     def revoke_all(request: Request) -> Response:
-        scope = _require_session(request, services)
+        scope = _require_session(request)
         if isinstance(scope, Response):
             return scope
         services.sessions.revoke_all_for_user(
@@ -654,7 +686,7 @@ def create_hosted_preview_app(
 
     @app.get("/api/v10/web/health")
     def health(request: Request) -> Response:
-        scope = _require_session(request, services)
+        scope = _require_session(request)
         if isinstance(scope, Response):
             return scope
         try:
@@ -678,14 +710,14 @@ def create_hosted_preview_app(
 
     @app.get("/api/v10/web/broker-connections")
     def broker_connections(request: Request) -> Response:
-        scope = _require_session(request, services)
+        scope = _require_session(request)
         if isinstance(scope, Response):
             return scope
         return JSONResponse([])
 
     @app.get("/api/v10/web/wp15-live-acceptance/status")
     def live_acceptance_status(request: Request) -> Response:
-        scope = _require_session(request, services)
+        scope = _require_session(request)
         if isinstance(scope, Response):
             return scope
         return JSONResponse({"enabled": False})
@@ -699,42 +731,42 @@ def create_hosted_preview_app(
         connection_id: str | None = None,
     ) -> Response:
         del connection_id
-        scope = _require_session(request, services)
+        scope = _require_session(request)
         if isinstance(scope, Response):
             return scope
         return _safe_error("BROKER_CREDENTIALS_DISABLED_IN_SYNTHETIC_PREVIEW", 403)
 
     @app.get("/api/v10/web/portfolio-dashboard")
     def portfolio_dashboard(request: Request) -> Response:
-        scope = _require_session(request, services)
+        scope = _require_session(request)
         if isinstance(scope, Response):
             return scope
         return JSONResponse(_empty_portfolio(_now_iso(services)))
 
     @app.get("/api/v10/web/watchtower-incidents")
     def watchtower_incidents(request: Request) -> Response:
-        scope = _require_session(request, services)
+        scope = _require_session(request)
         if isinstance(scope, Response):
             return scope
         return JSONResponse(_empty_watchtower(_now_iso(services)))
 
     @app.get("/api/v10/web/research-dossiers")
     def research_dossiers(request: Request) -> Response:
-        scope = _require_session(request, services)
+        scope = _require_session(request)
         if isinstance(scope, Response):
             return scope
         return JSONResponse(_empty_research(_now_iso(services)))
 
     @app.get("/api/v10/web/decision-plan")
     def decision_plan(request: Request) -> Response:
-        scope = _require_session(request, services)
+        scope = _require_session(request)
         if isinstance(scope, Response):
             return scope
         return JSONResponse(_empty_decision(_now_iso(services)))
 
     @app.get("/api/v10/web/system-status")
     def system_status(request: Request) -> Response:
-        scope = _require_session(request, services)
+        scope = _require_session(request)
         if isinstance(scope, Response):
             return scope
         try:
@@ -768,6 +800,9 @@ def create_hosted_preview_app(
         HostedPreviewSecurityMiddlewareV1,
         hostname=hostname,
         cookies=provider_auth.cookies,
+        sessions=services.sessions,
+        now=services.now,
+        trusted_edge_tls_terminated=trusted_edge_tls_terminated,
         abuse=HostedRequestAbuseControlV1(),
     )
     app.add_middleware(
@@ -803,5 +838,6 @@ def create_app() -> FastAPI:
             hostname=hostname,
             release_sha=release_sha,
             provider_auth=provider_auth,
-        )
+        ),
+        trusted_edge_tls_terminated=True,
     )

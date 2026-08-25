@@ -8,9 +8,24 @@ from threading import BoundedSemaphore, RLock
 import time
 
 from omni_cio.web.identity_v1 import IdentityProviderV1
+from omni_cio.web.session_v1 import SESSION_TOKEN_BYTES
 
 
-_SESSION_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{32,512}$")
+_SESSION_TOKEN_LENGTH = (SESSION_TOKEN_BYTES * 8 + 5) // 6
+_SESSION_TOKEN_RE = re.compile(
+    rf"^[A-Za-z0-9_-]{{{_SESSION_TOKEN_LENGTH}}}$"
+)
+
+
+def is_session_token_candidate(token: str | None) -> bool:
+    """Return whether a cookie can be a token issued by SessionRegistryV1.
+
+    This is only a cheap syntax/size guard before durable lookup. It is never
+    authentication authority: callers must resolve the candidate against the
+    server-side session registry before passing it to an authenticated bucket.
+    """
+
+    return bool(token and _SESSION_TOKEN_RE.fullmatch(token))
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,21 +123,32 @@ class HostedRequestAbuseControlV1:
             now_monotonic=now_monotonic,
         )
 
-    def admit(
-        self,
-        *,
-        session_token: str | None,
-        now_monotonic: float | None = None,
-    ) -> bool:
-        if not self._limiter.admit(
+    def admit_global(self, *, now_monotonic: float | None = None) -> bool:
+        """Bound all product API traffic before any session-store lookup."""
+
+        return self._limiter.admit(
             "global-api",
             limit=self.policy.global_api_requests,
             now_monotonic=now_monotonic,
-        ):
-            return False
+        )
 
-        if session_token and _SESSION_TOKEN_RE.fullmatch(session_token):
-            digest = hashlib.sha256(session_token.encode("ascii")).hexdigest()
+    def admit_request_class(
+        self,
+        *,
+        verified_session_token: str | None,
+        now_monotonic: float | None = None,
+    ) -> bool:
+        """Apply anonymous/session fairness after server-side session resolution.
+
+        ``verified_session_token`` must only be supplied after the server-side
+        registry resolved the token to a live session. Syntax alone is not
+        authentication authority; an invalid value is conservatively collapsed
+        into the shared anonymous bucket.
+        """
+
+        if is_session_token_candidate(verified_session_token):
+            assert verified_session_token is not None
+            digest = hashlib.sha256(verified_session_token.encode("ascii")).hexdigest()
             key = "session:" + digest
             limit = self.policy.authenticated_session_requests
         else:
