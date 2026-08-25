@@ -63,7 +63,8 @@ def test_start_builds_current_vkid_pkce_authorization_url() -> None:
         transactions=AuthorizationTransactionRegistryV1(),
     )
 
-    url = runtime.start(now=NOW)
+    start = runtime.start(now=NOW)
+    url = start.authorization_url
     parsed = urlsplit(url)
     expected = urlsplit(VK_ID_AUTHORIZATION_ENDPOINT)
     query = parse_qs(parsed.query, keep_blank_values=True)
@@ -119,12 +120,13 @@ def test_complete_exchanges_code_and_returns_only_verified_vkid_identity() -> No
         client=client,
     )
     start = runtime.start(now=NOW)
-    state = parse_qs(urlsplit(start).query)["state"][0]
+    state = parse_qs(urlsplit(start.authorization_url).query)["state"][0]
 
     identity = runtime.complete(
         state=state,
         code="vk-code",
         device_id="vk-device-42",
+        browser_proof=start.browser_proof,
         now=NOW,
     )
 
@@ -140,6 +142,7 @@ def test_complete_exchanges_code_and_returns_only_verified_vkid_identity() -> No
             state=state,
             code="vk-code",
             device_id="vk-device-42",
+            browser_proof=start.browser_proof,
             now=NOW,
         )
     assert len(requests) == 1
@@ -154,13 +157,15 @@ def test_invalid_device_id_is_rejected_before_state_is_consumed(
 ) -> None:
     registry = AuthorizationTransactionRegistryV1()
     runtime = VkIdOauthRuntimeV1(config=_config(), transactions=registry)
-    state = parse_qs(urlsplit(runtime.start(now=NOW)).query)["state"][0]
+    start = runtime.start(now=NOW)
+    state = parse_qs(urlsplit(start.authorization_url).query)["state"][0]
 
     with pytest.raises(VkIdOauthError, match="VK_ID_DEVICE_ID_INVALID"):
         runtime.complete(
             state=state,
             code="vk-code",
             device_id=device_id,
+            browser_proof=start.browser_proof,
             now=NOW,
         )
     assert registry.pending_count(now=NOW) == 1
@@ -169,13 +174,15 @@ def test_invalid_device_id_is_rejected_before_state_is_consumed(
 def test_invalid_code_is_rejected_before_state_is_consumed() -> None:
     registry = AuthorizationTransactionRegistryV1()
     runtime = VkIdOauthRuntimeV1(config=_config(), transactions=registry)
-    state = parse_qs(urlsplit(runtime.start(now=NOW)).query)["state"][0]
+    start = runtime.start(now=NOW)
+    state = parse_qs(urlsplit(start.authorization_url).query)["state"][0]
 
     with pytest.raises(VkIdOauthError, match="VK_ID_CODE_INVALID"):
         runtime.complete(
             state=state,
             code="contains space",
             device_id="vk-device-42",
+            browser_proof=start.browser_proof,
             now=NOW,
         )
     assert registry.pending_count(now=NOW) == 1
@@ -202,13 +209,15 @@ def test_provider_state_mismatch_fails_closed_after_consuming_transaction() -> N
         transactions=registry,
         client=httpx.Client(transport=httpx.MockTransport(handler)),
     )
-    state = parse_qs(urlsplit(runtime.start(now=NOW)).query)["state"][0]
+    start = runtime.start(now=NOW)
+    state = parse_qs(urlsplit(start.authorization_url).query)["state"][0]
 
     with pytest.raises(VkIdOauthError, match="VK_ID_STATE_MISMATCH"):
         runtime.complete(
             state=state,
             code="vk-code",
             device_id="vk-device-42",
+            browser_proof=start.browser_proof,
             now=NOW,
         )
     with pytest.raises(ProviderAuthorizationError, match="AUTH_TRANSACTION_NOT_FOUND"):
@@ -216,6 +225,7 @@ def test_provider_state_mismatch_fails_closed_after_consuming_transaction() -> N
             state=state,
             code="vk-code",
             device_id="vk-device-42",
+            browser_proof=start.browser_proof,
             now=NOW,
         )
     assert calls == 1
@@ -233,13 +243,15 @@ def test_provider_error_payload_is_generic_and_consumes_transaction() -> None:
         transactions=AuthorizationTransactionRegistryV1(),
         client=httpx.Client(transport=httpx.MockTransport(handler)),
     )
-    state = parse_qs(urlsplit(runtime.start(now=NOW)).query)["state"][0]
+    start = runtime.start(now=NOW)
+    state = parse_qs(urlsplit(start.authorization_url).query)["state"][0]
 
     with pytest.raises(VkIdOauthError, match="VK_ID_PROVIDER_RESPONSE_INVALID"):
         runtime.complete(
             state=state,
             code="vk-code",
             device_id="vk-device-42",
+            browser_proof=start.browser_proof,
             now=NOW,
         )
     with pytest.raises(ProviderAuthorizationError, match="AUTH_TRANSACTION_NOT_FOUND"):
@@ -247,6 +259,7 @@ def test_provider_error_payload_is_generic_and_consumes_transaction() -> None:
             state=state,
             code="vk-code",
             device_id="vk-device-42",
+            browser_proof=start.browser_proof,
             now=NOW,
         )
 
@@ -260,13 +273,15 @@ def test_network_error_is_generic_and_transaction_stays_consumed() -> None:
         transactions=AuthorizationTransactionRegistryV1(),
         client=httpx.Client(transport=httpx.MockTransport(handler)),
     )
-    state = parse_qs(urlsplit(runtime.start(now=NOW)).query)["state"][0]
+    start = runtime.start(now=NOW)
+    state = parse_qs(urlsplit(start.authorization_url).query)["state"][0]
 
     with pytest.raises(VkIdOauthError, match="VK_ID_NETWORK_ERROR"):
         runtime.complete(
             state=state,
             code="vk-code",
             device_id="vk-device-42",
+            browser_proof=start.browser_proof,
             now=NOW,
         )
     with pytest.raises(ProviderAuthorizationError, match="AUTH_TRANSACTION_NOT_FOUND"):
@@ -274,6 +289,7 @@ def test_network_error_is_generic_and_transaction_stays_consumed() -> None:
             state=state,
             code="vk-code",
             device_id="vk-device-42",
+            browser_proof=start.browser_proof,
             now=NOW,
         )
 
@@ -294,13 +310,15 @@ def test_provider_response_is_bounded_before_json_parse() -> None:
         transactions=AuthorizationTransactionRegistryV1(),
         client=httpx.Client(transport=httpx.MockTransport(handler)),
     )
-    state = parse_qs(urlsplit(runtime.start(now=NOW)).query)["state"][0]
+    start = runtime.start(now=NOW)
+    state = parse_qs(urlsplit(start.authorization_url).query)["state"][0]
 
     with pytest.raises(VkIdOauthError, match="VK_ID_PROVIDER_RESPONSE_TOO_LARGE"):
         runtime.complete(
             state=state,
             code="vk-code",
             device_id="vk-device-42",
+            browser_proof=start.browser_proof,
             now=NOW,
         )
 
@@ -319,13 +337,15 @@ def test_duplicate_provider_json_members_are_rejected() -> None:
         transactions=AuthorizationTransactionRegistryV1(),
         client=httpx.Client(transport=httpx.MockTransport(handler)),
     )
-    state = parse_qs(urlsplit(runtime.start(now=NOW)).query)["state"][0]
+    start = runtime.start(now=NOW)
+    state = parse_qs(urlsplit(start.authorization_url).query)["state"][0]
 
     with pytest.raises(VkIdOauthError, match="VK_ID_PROVIDER_JSON_INVALID"):
         runtime.complete(
             state=state,
             code="vk-code",
             device_id="vk-device-42",
+            browser_proof=start.browser_proof,
             now=NOW,
         )
 
@@ -359,13 +379,15 @@ def test_ambiguous_token_identity_fields_fail_closed(
         transactions=AuthorizationTransactionRegistryV1(),
         client=httpx.Client(transport=httpx.MockTransport(handler)),
     )
-    state = parse_qs(urlsplit(runtime.start(now=NOW)).query)["state"][0]
+    start = runtime.start(now=NOW)
+    state = parse_qs(urlsplit(start.authorization_url).query)["state"][0]
 
     with pytest.raises(VkIdOauthError, match="VK_ID_TOKEN_RESPONSE_INVALID"):
         runtime.complete(
             state=state,
             code="vk-code",
             device_id="vk-device-42",
+            browser_proof=start.browser_proof,
             now=NOW,
         )
 
@@ -387,6 +409,7 @@ def test_wrong_provider_state_cannot_be_consumed_by_vkid() -> None:
             state=telegram.state,
             code="vk-code",
             device_id="vk-device-42",
+            browser_proof=telegram.browser_proof,
             now=NOW,
         )
     assert registry.pending_count(now=NOW) == 1
@@ -402,13 +425,15 @@ def test_telegram_rejects_vkid_device_id_without_consuming_state() -> None:
         ),
         transactions=registry,
     )
-    state = parse_qs(urlsplit(runtime.start(now=NOW)).query)["state"][0]
+    start = runtime.start(now=NOW)
+    state = parse_qs(urlsplit(start.authorization_url).query)["state"][0]
 
     with pytest.raises(TelegramOidcError, match="TELEGRAM_OIDC_CALLBACK_INVALID"):
         runtime.complete(
             state=state,
             code="telegram-code",
             device_id="vk-device-42",
+            browser_proof=start.browser_proof,
             now=NOW,
         )
     assert registry.pending_count(now=NOW) == 1

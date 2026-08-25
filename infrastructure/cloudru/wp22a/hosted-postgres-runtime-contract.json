@@ -1,5 +1,5 @@
 {
-  "schema_version": "v10.wp22a.phase3.hosted-postgres-runtime.v3",
+  "schema_version": "v10.wp22a.phase3.hosted-postgres-runtime.v4",
   "authority": {
     "provider": "Cloud.ru Evolution",
     "source_only": true,
@@ -68,6 +68,11 @@
       "SELECT",
       "INSERT",
       "UPDATE",
+      "DELETE"
+    ],
+    "provider_auth_transactions": [
+      "SELECT",
+      "INSERT",
       "DELETE"
     ],
     "broker_accounts": [

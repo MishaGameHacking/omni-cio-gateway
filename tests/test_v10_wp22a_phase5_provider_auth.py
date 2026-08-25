@@ -31,12 +31,14 @@ def test_transaction_generates_pkce_without_exposing_verifier() -> None:
 
     assert 43 <= len(transaction.state) <= 128
     assert not hasattr(transaction, "code_verifier")
+    assert transaction.browser_proof not in repr(transaction)
     assert len(transaction.code_challenge) == 43
     assert "=" not in transaction.code_challenge
 
     consumed = registry.consume(
         provider=IdentityProviderV1.TELEGRAM,
         state=transaction.state,
+        browser_proof=transaction.browser_proof,
         now=NOW,
     )
     assert 43 <= len(consumed.code_verifier) <= 128
@@ -60,6 +62,7 @@ def test_transaction_is_one_time_and_wrong_provider_cannot_consume_it() -> None:
         registry.consume(
             provider=IdentityProviderV1.VK_ID,
             state=transaction.state,
+            browser_proof=transaction.browser_proof,
             now=NOW,
         )
     assert registry.pending_count(now=NOW) == 1
@@ -67,6 +70,7 @@ def test_transaction_is_one_time_and_wrong_provider_cannot_consume_it() -> None:
     consumed = registry.consume(
         provider=IdentityProviderV1.TELEGRAM,
         state=transaction.state,
+        browser_proof=transaction.browser_proof,
         now=NOW,
     )
     assert 43 <= len(consumed.code_verifier) <= 128
@@ -77,6 +81,7 @@ def test_transaction_is_one_time_and_wrong_provider_cannot_consume_it() -> None:
         registry.consume(
             provider=IdentityProviderV1.TELEGRAM,
             state=transaction.state,
+            browser_proof=transaction.browser_proof,
             now=NOW,
         )
 
@@ -95,6 +100,7 @@ def test_expired_state_is_destroyed_and_rejected() -> None:
         registry.consume(
             provider=IdentityProviderV1.TELEGRAM,
             state=transaction.state,
+            browser_proof=transaction.browser_proof,
             now=NOW + timedelta(seconds=30),
         )
     assert registry.pending_count(now=NOW + timedelta(seconds=30)) == 0
@@ -148,6 +154,7 @@ def test_lazy_expiry_keeps_later_transaction_until_its_deadline() -> None:
     consumed = registry.consume(
         provider=IdentityProviderV1.TELEGRAM,
         state=second.state,
+        browser_proof=second.browser_proof,
         now=NOW + timedelta(seconds=10),
     )
     assert consumed.expires_at == NOW + timedelta(seconds=11)
@@ -155,6 +162,7 @@ def test_lazy_expiry_keeps_later_transaction_until_its_deadline() -> None:
         registry.consume(
             provider=IdentityProviderV1.TELEGRAM,
             state=first.state,
+            browser_proof=first.browser_proof,
             now=NOW + timedelta(seconds=10),
         )
 
@@ -193,6 +201,7 @@ def test_only_one_parallel_callback_can_consume_state() -> None:
             registry.consume(
                 provider=IdentityProviderV1.TELEGRAM,
                 state=transaction.state,
+                browser_proof=transaction.browser_proof,
                 now=NOW,
             )
             return "accepted"
@@ -231,5 +240,31 @@ def test_non_base64url_state_is_rejected_without_lookup() -> None:
         registry.consume(
             provider=IdentityProviderV1.TELEGRAM,
             state="☃" * 40,
+            browser_proof="a" * 43,
             now=NOW,
         )
+
+
+def test_wrong_browser_proof_cannot_destroy_valid_transaction() -> None:
+    registry = AuthorizationTransactionRegistryV1()
+    transaction = registry.begin(
+        provider=IdentityProviderV1.TELEGRAM,
+        redirect_uri=CALLBACK,
+        now=NOW,
+    )
+
+    with pytest.raises(ProviderAuthorizationError, match="AUTH_TRANSACTION_NOT_FOUND"):
+        registry.consume(
+            provider=IdentityProviderV1.TELEGRAM,
+            state=transaction.state,
+            browser_proof="a" * 43,
+            now=NOW,
+        )
+    assert registry.pending_count(now=NOW) == 1
+
+    registry.consume(
+        provider=IdentityProviderV1.TELEGRAM,
+        state=transaction.state,
+        browser_proof=transaction.browser_proof,
+        now=NOW,
+    )

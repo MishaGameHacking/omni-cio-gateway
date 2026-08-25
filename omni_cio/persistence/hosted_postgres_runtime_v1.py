@@ -34,6 +34,7 @@ _EXPECTED_RELATION_PRIVILEGES: dict[str, tuple[str, ...]] = {
     "users": ("SELECT", "INSERT"),
     "external_identity_bindings": ("SELECT", "INSERT"),
     "web_sessions": ("SELECT", "INSERT", "UPDATE", "DELETE"),
+    "provider_auth_transactions": ("SELECT", "INSERT", "DELETE"),
     "broker_accounts": ("SELECT", "INSERT"),
     "broker_connections": ("SELECT", "INSERT", "UPDATE"),
     "broker_connection_accounts": ("SELECT", "INSERT"),
@@ -122,7 +123,7 @@ def validate_hosted_postgres_runtime_contract(
 ) -> None:
     if (
         payload.get("schema_version")
-        != "v10.wp22a.phase3.hosted-postgres-runtime.v3"
+        != "v10.wp22a.phase3.hosted-postgres-runtime.v4"
     ):
         raise HostedPostgresRuntimeContractError(
             "HOSTED_POSTGRES_CONTRACT_VERSION_INVALID"

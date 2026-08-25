@@ -1,20 +1,28 @@
 from __future__ import annotations
 
 import base64
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 import hashlib
+import hmac
 import re
 import secrets
 from threading import RLock
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 from urllib.parse import urlsplit
 
 from omni_cio.web.identity_v1 import IdentityProviderV1, VerifiedExternalIdentityV1
 
+if TYPE_CHECKING:
+    from omni_cio.persistence.migration import ConnectionLike
+
 
 _STATE_PATTERN = re.compile(r"^[A-Za-z0-9_-]{32,512}$")
+_BROWSER_PROOF_PATTERN = re.compile(r"^[A-Za-z0-9_-]{32,512}$")
+_PKCE_VERIFIER_PATTERN = re.compile(r"^[A-Za-z0-9_-]{43,128}$")
+_NONCE_PATTERN = re.compile(r"^[A-Za-z0-9_-]{32,512}$")
 _MAX_PENDING_AUTH_TRANSACTIONS = 4096
+_AUTH_TRANSACTION_CAPACITY_LOCK_KEY = 220205
 
 
 class ProviderAuthorizationError(RuntimeError):
@@ -41,6 +49,14 @@ class AuthorizationStartV1:
     nonce: str
     redirect_uri: str
     expires_at: datetime
+    browser_proof: str = field(repr=False)
+
+
+@dataclass(frozen=True, slots=True)
+class ProviderAuthorizationStartV1:
+    authorization_url: str
+    browser_proof: str = field(repr=False)
+    expires_at: datetime
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,6 +75,7 @@ class _PendingAuthorizationTransactionV1:
     nonce: str
     redirect_uri: str
     expires_at: datetime
+    browser_proof_sha256: str
 
 
 def _utc(value: datetime) -> datetime:
@@ -68,6 +85,8 @@ def _utc(value: datetime) -> datetime:
 
 
 def _https_redirect_uri(value: str) -> str:
+    if not isinstance(value, str) or value != value.strip():
+        raise ValueError("AUTH_REDIRECT_URI_INVALID")
     normalized = value.strip()
     try:
         parsed = urlsplit(normalized)
@@ -92,18 +111,26 @@ def _state_digest(value: str) -> str:
     return hashlib.sha256(value.encode("ascii")).hexdigest()
 
 
+def _browser_proof_digest(value: str) -> str:
+    return hashlib.sha256(value.encode("ascii")).hexdigest()
+
+
 def _pkce_challenge(verifier: str) -> str:
     digest = hashlib.sha256(verifier.encode("ascii")).digest()
     return base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
 
 
 class AuthorizationTransactionRegistryV1:
-    """Bounded in-process OAuth/OIDC state + PKCE transaction registry.
+    """Bounded browser-bound in-process OAuth/OIDC transaction test fixture.
 
     Raw state is returned once to the provider redirect but only its SHA-256
-    digest is retained. The PKCE verifier and nonce stay server-side and are
-    destroyed when the transaction is consumed or expires. Runtime restart
-    invalidates in-flight login attempts, which fails closed and requires retry.
+    digest is retained. A separate initiating-browser proof is returned only to
+    the caller and retained solely as a digest. The PKCE verifier and nonce stay
+    server-side and are destroyed when the transaction is consumed or expires.
+
+    Deployed multi-instance runtimes use PostgresAuthorizationTransactionStoreV1.
+    This implementation remains injectable for deterministic unit tests and
+    local composition, while enforcing the same browser-binding contract.
     """
 
     def __init__(self, policy: AuthorizationTransactionPolicyV1 | None = None) -> None:
@@ -124,6 +151,7 @@ class AuthorizationTransactionRegistryV1:
         state = secrets.token_urlsafe(32)
         verifier = secrets.token_urlsafe(48)
         nonce = secrets.token_urlsafe(32)
+        browser_proof = secrets.token_urlsafe(32)
         digest = _state_digest(state)
         expires_at = timestamp + self._policy.lifetime
         pending = _PendingAuthorizationTransactionV1(
@@ -132,6 +160,7 @@ class AuthorizationTransactionRegistryV1:
             nonce=nonce,
             redirect_uri=callback,
             expires_at=expires_at,
+            browser_proof_sha256=_browser_proof_digest(browser_proof),
         )
         with self._lock:
             self._purge_expired(timestamp)
@@ -147,6 +176,7 @@ class AuthorizationTransactionRegistryV1:
             nonce=nonce,
             redirect_uri=callback,
             expires_at=expires_at,
+            browser_proof=browser_proof,
         )
 
     def consume(
@@ -154,12 +184,19 @@ class AuthorizationTransactionRegistryV1:
         *,
         provider: IdentityProviderV1,
         state: str,
+        browser_proof: str,
         now: datetime,
     ) -> ConsumedAuthorizationTransactionV1:
         timestamp = _utc(now)
-        if _STATE_PATTERN.fullmatch(state) is None:
+        if not isinstance(state, str) or _STATE_PATTERN.fullmatch(state) is None:
             raise ProviderAuthorizationError("AUTH_TRANSACTION_STATE_INVALID")
+        if (
+            not isinstance(browser_proof, str)
+            or _BROWSER_PROOF_PATTERN.fullmatch(browser_proof) is None
+        ):
+            raise ProviderAuthorizationError("AUTH_TRANSACTION_BROWSER_PROOF_INVALID")
         digest = _state_digest(state)
+        browser_proof_sha256 = _browser_proof_digest(browser_proof)
         with self._lock:
             self._purge_expired(timestamp)
             pending = self._pending.get(digest)
@@ -167,6 +204,13 @@ class AuthorizationTransactionRegistryV1:
                 raise ProviderAuthorizationError("AUTH_TRANSACTION_NOT_FOUND")
             if pending.provider != provider:
                 raise ProviderAuthorizationError("AUTH_TRANSACTION_PROVIDER_MISMATCH")
+            if not hmac.compare_digest(
+                pending.browser_proof_sha256,
+                browser_proof_sha256,
+            ):
+                # Keep the valid transaction available to the initiating browser
+                # and avoid revealing whether an attacker guessed a live state.
+                raise ProviderAuthorizationError("AUTH_TRANSACTION_NOT_FOUND")
             self._pending.pop(digest, None)
             if not self._pending:
                 self._next_expiry_at = None
@@ -197,17 +241,214 @@ class AuthorizationTransactionRegistryV1:
         self._next_expiry_at = next_expiry
 
 
+class AuthorizationTransactionStoreLike(Protocol):
+    def begin(
+        self,
+        *,
+        provider: IdentityProviderV1,
+        redirect_uri: str,
+        now: datetime,
+    ) -> AuthorizationStartV1: ...
+
+    def consume(
+        self,
+        *,
+        provider: IdentityProviderV1,
+        state: str,
+        browser_proof: str,
+        now: datetime,
+    ) -> ConsumedAuthorizationTransactionV1: ...
+
+
+class PostgresAuthorizationTransactionStoreV1:
+    """Durable, bounded, browser-bound OAuth/OIDC transaction authority.
+
+    Only digests of provider state and the initiating-browser proof are stored.
+    PostgreSQL performs the one-time claim with DELETE ... RETURNING, so exactly
+    one callback can obtain the verifier/nonce even across multiple processes.
+    """
+
+    def __init__(
+        self,
+        connection: ConnectionLike,
+        policy: AuthorizationTransactionPolicyV1 | None = None,
+    ) -> None:
+        self._connection = connection
+        self._policy = policy or AuthorizationTransactionPolicyV1()
+
+    def begin(
+        self,
+        *,
+        provider: IdentityProviderV1,
+        redirect_uri: str,
+        now: datetime,
+    ) -> AuthorizationStartV1:
+        timestamp = _utc(now)
+        callback = _https_redirect_uri(redirect_uri)
+        state = secrets.token_urlsafe(32)
+        verifier = secrets.token_urlsafe(48)
+        nonce = secrets.token_urlsafe(32)
+        browser_proof = secrets.token_urlsafe(32)
+        expires_at = timestamp + self._policy.lifetime
+
+        with self._connection.transaction():
+            # Serialize cleanup/capacity/insert across every hosted process.
+            self._connection.execute(
+                "SELECT pg_advisory_xact_lock(%s)",
+                (_AUTH_TRANSACTION_CAPACITY_LOCK_KEY,),
+            )
+            self._connection.execute(
+                "DELETE FROM omni_cio_v10.provider_auth_transactions "
+                "WHERE expires_at <= %s",
+                (timestamp,),
+            )
+            row = self._connection.execute(
+                "SELECT count(*) FROM omni_cio_v10.provider_auth_transactions"
+            ).fetchone()
+            if (
+                row is None
+                or len(row) != 1
+                or not isinstance(row[0], int)
+                or isinstance(row[0], bool)
+            ):
+                raise ProviderAuthorizationError("AUTH_TRANSACTION_STORE_INVALID")
+            if int(row[0]) >= self._policy.max_pending:
+                raise ProviderAuthorizationError("AUTH_TRANSACTION_CAPACITY_EXCEEDED")
+            self._connection.execute(
+                "INSERT INTO omni_cio_v10.provider_auth_transactions "
+                "(state_sha256, browser_proof_sha256, provider, code_verifier, "
+                "nonce, redirect_uri, created_at, expires_at) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                (
+                    _state_digest(state),
+                    _browser_proof_digest(browser_proof),
+                    provider.value,
+                    verifier,
+                    nonce,
+                    callback,
+                    timestamp,
+                    expires_at,
+                ),
+            )
+
+        return AuthorizationStartV1(
+            provider=provider,
+            state=state,
+            code_challenge=_pkce_challenge(verifier),
+            nonce=nonce,
+            redirect_uri=callback,
+            expires_at=expires_at,
+            browser_proof=browser_proof,
+        )
+
+    def consume(
+        self,
+        *,
+        provider: IdentityProviderV1,
+        state: str,
+        browser_proof: str,
+        now: datetime,
+    ) -> ConsumedAuthorizationTransactionV1:
+        timestamp = _utc(now)
+        if not isinstance(state, str) or _STATE_PATTERN.fullmatch(state) is None:
+            raise ProviderAuthorizationError("AUTH_TRANSACTION_STATE_INVALID")
+        if (
+            not isinstance(browser_proof, str)
+            or _BROWSER_PROOF_PATTERN.fullmatch(browser_proof) is None
+        ):
+            raise ProviderAuthorizationError("AUTH_TRANSACTION_BROWSER_PROOF_INVALID")
+
+        state_sha256 = _state_digest(state)
+        with self._connection.transaction():
+            row = self._connection.execute(
+                "DELETE FROM omni_cio_v10.provider_auth_transactions "
+                "WHERE state_sha256 = %s AND browser_proof_sha256 = %s "
+                "AND provider = %s AND expires_at > %s "
+                "RETURNING provider, code_verifier, nonce, redirect_uri, expires_at",
+                (
+                    state_sha256,
+                    _browser_proof_digest(browser_proof),
+                    provider.value,
+                    timestamp,
+                ),
+            ).fetchone()
+            if row is None:
+                # Remove only an expired row. A wrong browser proof or provider
+                # cannot destroy the initiating browser's valid transaction.
+                self._connection.execute(
+                    "DELETE FROM omni_cio_v10.provider_auth_transactions "
+                    "WHERE state_sha256 = %s AND expires_at <= %s",
+                    (state_sha256, timestamp),
+                )
+                raise ProviderAuthorizationError("AUTH_TRANSACTION_NOT_FOUND")
+
+        try:
+            if len(row) != 5:
+                raise ValueError
+            stored_provider = IdentityProviderV1(row[0])
+            code_verifier = row[1]
+            nonce = row[2]
+            redirect_uri = row[3]
+            expires_at = _utc(row[4])
+            if (
+                not isinstance(code_verifier, str)
+                or _PKCE_VERIFIER_PATTERN.fullmatch(code_verifier) is None
+                or not isinstance(nonce, str)
+                or _NONCE_PATTERN.fullmatch(nonce) is None
+                or not isinstance(redirect_uri, str)
+                or _https_redirect_uri(redirect_uri) != redirect_uri
+                or expires_at <= timestamp
+            ):
+                raise ValueError
+        except (TypeError, ValueError, IndexError):
+            raise ProviderAuthorizationError("AUTH_TRANSACTION_STORE_INVALID") from None
+        if stored_provider != provider:
+            raise ProviderAuthorizationError("AUTH_TRANSACTION_STORE_INVALID")
+        return ConsumedAuthorizationTransactionV1(
+            provider=stored_provider,
+            code_verifier=code_verifier,
+            nonce=nonce,
+            redirect_uri=redirect_uri,
+            expires_at=expires_at,
+        )
+
+    def pending_count(self, *, now: datetime) -> int:
+        timestamp = _utc(now)
+        with self._connection.transaction():
+            self._connection.execute(
+                "SELECT pg_advisory_xact_lock(%s)",
+                (_AUTH_TRANSACTION_CAPACITY_LOCK_KEY,),
+            )
+            self._connection.execute(
+                "DELETE FROM omni_cio_v10.provider_auth_transactions "
+                "WHERE expires_at <= %s",
+                (timestamp,),
+            )
+            row = self._connection.execute(
+                "SELECT count(*) FROM omni_cio_v10.provider_auth_transactions"
+            ).fetchone()
+        if (
+            row is None
+            or len(row) != 1
+            or not isinstance(row[0], int)
+            or isinstance(row[0], bool)
+        ):
+            raise ProviderAuthorizationError("AUTH_TRANSACTION_STORE_INVALID")
+        return int(row[0])
+
+
 class ProviderAuthenticationRuntimeLike(Protocol):
     @property
     def provider(self) -> IdentityProviderV1: ...
 
-    def start(self, *, now: datetime) -> str: ...
+    def start(self, *, now: datetime) -> ProviderAuthorizationStartV1: ...
 
     def complete(
         self,
         *,
         state: str,
         code: str,
+        browser_proof: str,
         now: datetime,
         device_id: str | None = None,
     ) -> VerifiedExternalIdentityV1: ...

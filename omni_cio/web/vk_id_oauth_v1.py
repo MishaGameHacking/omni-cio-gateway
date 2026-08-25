@@ -11,8 +11,9 @@ import httpx
 
 from omni_cio.web.identity_v1 import IdentityProviderV1, VerifiedExternalIdentityV1
 from omni_cio.web.provider_auth_v1 import (
-    AuthorizationTransactionRegistryV1,
+    AuthorizationTransactionStoreLike,
     ConsumedAuthorizationTransactionV1,
+    ProviderAuthorizationStartV1,
     ProviderAuthorizationError,
 )
 
@@ -150,7 +151,7 @@ class VkIdOauthRuntimeV1:
         self,
         *,
         config: VkIdOauthConfigV1,
-        transactions: AuthorizationTransactionRegistryV1,
+        transactions: AuthorizationTransactionStoreLike,
         client: httpx.Client | None = None,
     ) -> None:
         self._config = config
@@ -161,7 +162,7 @@ class VkIdOauthRuntimeV1:
     def provider(self) -> IdentityProviderV1:
         return IdentityProviderV1.VK_ID
 
-    def start(self, *, now: datetime) -> str:
+    def start(self, *, now: datetime) -> ProviderAuthorizationStartV1:
         transaction = self._transactions.begin(
             provider=self.provider,
             redirect_uri=self._config.redirect_uri,
@@ -179,13 +180,18 @@ class VkIdOauthRuntimeV1:
                 "prompt": "",
             }
         )
-        return f"{VK_ID_AUTHORIZATION_ENDPOINT}?{query}"
+        return ProviderAuthorizationStartV1(
+            authorization_url=f"{VK_ID_AUTHORIZATION_ENDPOINT}?{query}",
+            browser_proof=transaction.browser_proof,
+            expires_at=transaction.expires_at,
+        )
 
     def complete(
         self,
         *,
         state: str,
         code: str,
+        browser_proof: str,
         now: datetime,
         device_id: str | None = None,
     ) -> VerifiedExternalIdentityV1:
@@ -196,6 +202,7 @@ class VkIdOauthRuntimeV1:
         transaction = self._transactions.consume(
             provider=self.provider,
             state=state,
+            browser_proof=browser_proof,
             now=now,
         )
         if self._client is not None:

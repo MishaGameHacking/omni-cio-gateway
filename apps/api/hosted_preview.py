@@ -389,9 +389,9 @@ def _system_status(
         "database": {
             "state": "READY",
             "availability": "AVAILABLE",
-            "current_migration": "0004_product_identity_multi_tenant",
-            "expected_migration": "0004_product_identity_multi_tenant",
-            "migration_count": 4,
+            "current_migration": "0005_browser_bound_provider_auth",
+            "expected_migration": "0005_browser_bound_provider_auth",
+            "migration_count": 5,
             "exact_migration_state": True,
         },
         "backup": {

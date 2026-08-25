@@ -182,7 +182,8 @@ def test_start_builds_minimal_telegram_pkce_authorization_url() -> None:
         transactions=AuthorizationTransactionRegistryV1(),
     )
 
-    url = runtime.start(now=NOW)
+    start = runtime.start(now=NOW)
+    url = start.authorization_url
     parsed = urlsplit(url)
     expected = urlsplit(TELEGRAM_OIDC_AUTHORIZATION_ENDPOINT)
     query = parse_qs(parsed.query, keep_blank_values=True)
@@ -233,10 +234,15 @@ def test_complete_exchanges_code_server_side_and_consumes_state_once() -> None:
         verifier=verifier,
     )
     start = runtime.start(now=NOW)
-    state = parse_qs(urlsplit(start).query)["state"][0]
-    nonce = parse_qs(urlsplit(start).query)["nonce"][0]
+    state = parse_qs(urlsplit(start.authorization_url).query)["state"][0]
+    nonce = parse_qs(urlsplit(start.authorization_url).query)["nonce"][0]
 
-    identity = runtime.complete(state=state, code="telegram-code", now=NOW)
+    identity = runtime.complete(
+        state=state,
+        code="telegram-code",
+        browser_proof=start.browser_proof,
+        now=NOW,
+    )
 
     assert identity == VerifiedExternalIdentityV1(
         provider=IdentityProviderV1.TELEGRAM,
@@ -245,7 +251,12 @@ def test_complete_exchanges_code_server_side_and_consumes_state_once() -> None:
     assert verifier.calls == [("fixture.id.token", nonce)]
     assert len(requests) == 1
     with pytest.raises(ProviderAuthorizationError, match="AUTH_TRANSACTION_NOT_FOUND"):
-        runtime.complete(state=state, code="telegram-code", now=NOW)
+        runtime.complete(
+            state=state,
+            code="telegram-code",
+            browser_proof=start.browser_proof,
+            now=NOW,
+        )
     assert len(requests) == 1
 
 
@@ -263,15 +274,26 @@ def test_provider_failure_does_not_preserve_consumed_transaction() -> None:
         transactions=AuthorizationTransactionRegistryV1(),
         client=client,
     )
-    state = parse_qs(urlsplit(runtime.start(now=NOW)).query)["state"][0]
+    start = runtime.start(now=NOW)
+    state = parse_qs(urlsplit(start.authorization_url).query)["state"][0]
 
     with pytest.raises(
         TelegramOidcError,
         match="TELEGRAM_OIDC_PROVIDER_RESPONSE_INVALID",
     ):
-        runtime.complete(state=state, code="telegram-code", now=NOW)
+        runtime.complete(
+            state=state,
+            code="telegram-code",
+            browser_proof=start.browser_proof,
+            now=NOW,
+        )
     with pytest.raises(ProviderAuthorizationError, match="AUTH_TRANSACTION_NOT_FOUND"):
-        runtime.complete(state=state, code="telegram-code", now=NOW)
+        runtime.complete(
+            state=state,
+            code="telegram-code",
+            browser_proof=start.browser_proof,
+            now=NOW,
+        )
     assert calls == 1
 
 
@@ -289,12 +311,23 @@ def test_network_error_is_generic_and_transaction_stays_consumed() -> None:
         transactions=AuthorizationTransactionRegistryV1(),
         client=client,
     )
-    state = parse_qs(urlsplit(runtime.start(now=NOW)).query)["state"][0]
+    start = runtime.start(now=NOW)
+    state = parse_qs(urlsplit(start.authorization_url).query)["state"][0]
 
     with pytest.raises(TelegramOidcError, match="TELEGRAM_OIDC_NETWORK_ERROR"):
-        runtime.complete(state=state, code="telegram-code", now=NOW)
+        runtime.complete(
+            state=state,
+            code="telegram-code",
+            browser_proof=start.browser_proof,
+            now=NOW,
+        )
     with pytest.raises(ProviderAuthorizationError, match="AUTH_TRANSACTION_NOT_FOUND"):
-        runtime.complete(state=state, code="telegram-code", now=NOW)
+        runtime.complete(
+            state=state,
+            code="telegram-code",
+            browser_proof=start.browser_proof,
+            now=NOW,
+        )
     assert calls == 1
 
 
@@ -315,13 +348,19 @@ def test_provider_response_size_is_bounded_before_json_parse() -> None:
         transactions=AuthorizationTransactionRegistryV1(),
         client=client,
     )
-    state = parse_qs(urlsplit(runtime.start(now=NOW)).query)["state"][0]
+    start = runtime.start(now=NOW)
+    state = parse_qs(urlsplit(start.authorization_url).query)["state"][0]
 
     with pytest.raises(
         TelegramOidcError,
         match="TELEGRAM_OIDC_PROVIDER_RESPONSE_TOO_LARGE",
     ):
-        runtime.complete(state=state, code="telegram-code", now=NOW)
+        runtime.complete(
+            state=state,
+            code="telegram-code",
+            browser_proof=start.browser_proof,
+            now=NOW,
+        )
 
 
 def test_rs256_verifier_matches_rfc7515_vector_and_rejects_tampering() -> None:
@@ -557,9 +596,15 @@ def test_config_and_callback_code_are_fail_closed() -> None:
         config=_config(),
         transactions=AuthorizationTransactionRegistryV1(),
     )
-    state = parse_qs(urlsplit(runtime.start(now=NOW)).query)["state"][0]
+    start = runtime.start(now=NOW)
+    state = parse_qs(urlsplit(start.authorization_url).query)["state"][0]
     with pytest.raises(TelegramOidcError, match="TELEGRAM_OIDC_CODE_INVALID"):
-        runtime.complete(state=state, code="bad\ncode", now=NOW)
+        runtime.complete(
+            state=state,
+            code="bad\ncode",
+            browser_proof=start.browser_proof,
+            now=NOW,
+        )
 
 
 def test_config_repr_omits_provider_auth_material() -> None:
@@ -650,9 +695,15 @@ def test_duplicate_provider_json_members_fail_closed() -> None:
         transactions=AuthorizationTransactionRegistryV1(),
         client=client,
     )
-    state = parse_qs(urlsplit(runtime.start(now=NOW)).query)["state"][0]
+    start = runtime.start(now=NOW)
+    state = parse_qs(urlsplit(start.authorization_url).query)["state"][0]
     with pytest.raises(
         TelegramOidcError,
         match="TELEGRAM_OIDC_PROVIDER_JSON_INVALID",
     ):
-        runtime.complete(state=state, code="telegram-code", now=NOW)
+        runtime.complete(
+            state=state,
+            code="telegram-code",
+            browser_proof=start.browser_proof,
+            now=NOW,
+        )
