@@ -6,13 +6,11 @@ from threading import Condition, RLock
 import httpx
 
 from omni_cio.web.telegram_oidc_v1 import (
-    TELEGRAM_OIDC_JWKS_ENDPOINT,
     TelegramIdTokenVerifierV1,
     TelegramOidcConfigV1,
     TelegramOidcError,
-    _MAX_JWKS_RESPONSE_BYTES,
     _RsaPublicKeyV1,
-    _bounded_json_response,
+    _bounded_jwks_response,
     _parse_jwks,
 )
 
@@ -41,12 +39,9 @@ class TelegramJwksSingleFlightVerifierV1(TelegramIdTokenVerifierV1):
         self._unknown_kid_refresh_after: datetime | None = None
 
     def _fetch_keys(self, client: httpx.Client) -> dict[str, _RsaPublicKeyV1]:
-        payload = _bounded_json_response(
+        payload = _bounded_jwks_response(
             client,
-            method="GET",
-            url=TELEGRAM_OIDC_JWKS_ENDPOINT,
             timeout_seconds=self._config.timeout_seconds,
-            max_response_bytes=_MAX_JWKS_RESPONSE_BYTES,
         )
         return _parse_jwks(payload)
 
