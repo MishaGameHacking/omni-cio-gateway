@@ -165,6 +165,18 @@ def _now_iso(services: HostedPreviewServicesV1) -> str:
     return _utc(services.now()).isoformat()
 
 
+def _merge_vary(response: Response, *required: str) -> None:
+    existing = response.headers.get("Vary", "")
+    values = [value.strip() for value in existing.split(",") if value.strip()]
+    seen = {value.lower() for value in values}
+    for value in required:
+        key = value.lower()
+        if key not in seen:
+            values.append(value)
+            seen.add(key)
+    response.headers["Vary"] = ", ".join(values)
+
+
 def _harden_response(response: Response, *, api_path: bool) -> Response:
     response.headers["Strict-Transport-Security"] = "max-age=31536000"
     response.headers["Content-Security-Policy"] = _CONTENT_SECURITY_POLICY
@@ -172,7 +184,7 @@ def _harden_response(response: Response, *, api_path: bool) -> Response:
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "same-origin"
     response.headers["Cache-Control"] = "no-store" if api_path else "no-cache"
-    response.headers["Vary"] = "Origin, Sec-Fetch-Site"
+    _merge_vary(response, "Origin", "Sec-Fetch-Site")
     return response
 
 

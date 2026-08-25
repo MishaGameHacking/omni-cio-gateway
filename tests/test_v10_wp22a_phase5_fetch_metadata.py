@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 
 from apps.api.hosted_preview import HostedPreviewSecurityMiddlewareV1
@@ -23,6 +24,13 @@ def _app() -> FastAPI:
     @app.get("/safe")
     def safe() -> dict[str, bool]:
         return {"ok": True}
+
+    @app.get("/preexisting-vary")
+    def preexisting_vary() -> JSONResponse:
+        return JSONResponse(
+            {"ok": True},
+            headers={"Vary": "Accept-Encoding, origin"},
+        )
 
     @app.post(TELEGRAM_START_PATH)
     def provider_start() -> dict[str, bool]:
@@ -103,3 +111,12 @@ def test_security_response_varies_on_origin_and_fetch_metadata() -> None:
 
     assert response.status_code == 200
     assert response.headers["vary"] == "Origin, Sec-Fetch-Site"
+
+
+def test_security_response_preserves_existing_vary_without_duplicates() -> None:
+    client = TestClient(_app(), base_url=ORIGIN)
+
+    response = client.get("/preexisting-vary")
+
+    assert response.status_code == 200
+    assert response.headers["vary"] == "Accept-Encoding, origin, Sec-Fetch-Site"
