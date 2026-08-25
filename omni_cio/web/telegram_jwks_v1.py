@@ -60,10 +60,7 @@ class TelegramJwksSingleFlightVerifierV1(TelegramIdTokenVerifierV1):
         waited = False
         while True:
             with self._refresh_condition:
-                cache_fresh = (
-                    self._keys_expires_at is not None
-                    and now < self._keys_expires_at
-                )
+                cache_fresh = self._keys_expires_at is not None and now < self._keys_expires_at
                 if cache_fresh:
                     key = self._keys.get(kid)
                     if key is not None:
@@ -72,9 +69,7 @@ class TelegramJwksSingleFlightVerifierV1(TelegramIdTokenVerifierV1):
                         self._unknown_kid_refresh_after is not None
                         and now < self._unknown_kid_refresh_after
                     ):
-                        raise TelegramOidcError(
-                            "TELEGRAM_OIDC_SIGNING_KEY_UNKNOWN"
-                        )
+                        raise TelegramOidcError("TELEGRAM_OIDC_SIGNING_KEY_UNKNOWN")
 
                 if (
                     self._refresh_failed_until is not None

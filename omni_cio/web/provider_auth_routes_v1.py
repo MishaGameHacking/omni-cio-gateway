@@ -56,8 +56,7 @@ class ProviderAuthRouteServicesV1:
         if len(providers) != len(set(providers)):
             raise ValueError("PROVIDER_AUTH_RUNTIME_DUPLICATE")
         if any(
-            provider
-            not in {IdentityProviderV1.TELEGRAM, IdentityProviderV1.VK_ID}
+            provider not in {IdentityProviderV1.TELEGRAM, IdentityProviderV1.VK_ID}
             for provider in providers
         ):
             raise ValueError("PROVIDER_AUTH_RUNTIME_INVALID")
