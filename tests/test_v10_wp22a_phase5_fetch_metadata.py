@@ -1,16 +1,20 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from apps.api.hosted_preview import HostedPreviewSecurityMiddlewareV1
 from omni_cio.web.browser_security_v1 import BrowserCookiePolicyV1
 from omni_cio.web.provider_auth_routes_v1 import TELEGRAM_START_PATH
+from omni_cio.web.session_v1 import SessionRegistryV1
 
 
 HOSTNAME = "omni-cio-v10-web.onrender.com"
 ORIGIN = f"https://{HOSTNAME}"
 COOKIES = BrowserCookiePolicyV1(csrf_binding_key=bytes([71]) * 32)
+FIXED_NOW = datetime(2026, 8, 25, 18, 0, tzinfo=timezone.utc)
 
 
 def _app() -> FastAPI:
@@ -32,6 +36,8 @@ def _app() -> FastAPI:
         HostedPreviewSecurityMiddlewareV1,
         hostname=HOSTNAME,
         cookies=COOKIES,
+        sessions=SessionRegistryV1(),
+        now=lambda: FIXED_NOW,
     )
     return app
 
