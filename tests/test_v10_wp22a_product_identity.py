@@ -227,6 +227,44 @@ def test_verified_login_rotates_server_side_session_and_preserves_tenant_scope()
     assert sessions.stored_plaintext_token_count() == 0
 
 
+def test_split_login_boundary_separates_untrusted_old_token_from_fresh_issue() -> None:
+    repository = FakeIdentityRepository()
+    identities = ProductIdentityServiceV1(repository, registration_enabled=True)
+    telegram = identity(IdentityProviderV1.TELEGRAM, "tg-split")
+    scope = identities.authenticate(telegram, now=NOW)
+    sessions = SessionRegistryV1()
+    old_token, _ = sessions.create(
+        user_id=scope.user_id,
+        tenant_id=scope.tenant_id,
+        now=NOW,
+    )
+    authentication = ProductAuthenticationServiceV1(
+        identities=identities,
+        sessions=sessions,
+    )
+    rotated_at = NOW + timedelta(minutes=1)
+
+    resolved_scope = authentication.resolve_verified_identity(
+        telegram,
+        now=rotated_at,
+    )
+    assert resolved_scope == scope
+    assert sessions.resolve(old_token, now=rotated_at) is not None
+
+    assert authentication.revoke_session(old_token, now=rotated_at)
+    assert sessions.resolve(old_token, now=rotated_at) is None
+
+    new_token, session_scope = authentication.issue_session(
+        resolved_scope,
+        now=rotated_at,
+    )
+    assert new_token != old_token
+    assert session_scope.user_id == scope.user_id
+    assert session_scope.tenant_id == scope.tenant_id
+    assert sessions.resolve(new_token, now=rotated_at) is not None
+    assert sessions.stored_plaintext_token_count() == 0
+
+
 def test_provider_link_uses_resolved_server_session_scope() -> None:
     repository = FakeIdentityRepository()
     identities = ProductIdentityServiceV1(repository, registration_enabled=True)

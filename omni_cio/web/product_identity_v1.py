@@ -365,7 +365,7 @@ class ProductIdentityServiceV1:
 
 
 class ProductAuthenticationServiceV1:
-    """Issue/rotate a server-side session only after provider verification."""
+    """Bind provider identity to product scope and issue fresh server-side sessions."""
 
     def __init__(
         self,
@@ -376,19 +376,34 @@ class ProductAuthenticationServiceV1:
         self._identities = identities
         self._sessions = sessions
 
-    def authenticate_verified_identity(
+    def resolve_verified_identity(
         self,
         identity: VerifiedExternalIdentityV1,
         *,
-        current_session_token: str | None,
+        now: datetime,
+    ) -> ProductAccountScopeV1:
+        """Resolve provider identity without accepting browser session material."""
+
+        timestamp = _utc(now)
+        return _require_product_scope(
+            self._identities.authenticate(identity, now=timestamp)
+        )
+
+    def revoke_session(self, token: str | None, *, now: datetime) -> bool:
+        """Consume an untrusted current-session candidate without producing a token."""
+
+        return self._sessions.revoke(token, now=_utc(now))
+
+    def issue_session(
+        self,
+        account_scope: ProductAccountScopeV1,
+        *,
         now: datetime,
     ) -> tuple[str, SessionScopeV1]:
-        timestamp = _utc(now)
-        account_scope = self._identities.authenticate(identity, now=timestamp)
+        """Mint a fresh session from server-resolved product scope only."""
 
-        # Fail closed against session fixation: any pre-auth/current token is revoked
-        # before a fresh opaque server-side session is minted.
-        self._sessions.revoke(current_session_token, now=timestamp)
+        timestamp = _utc(now)
+        account_scope = _require_product_scope(account_scope)
         token, session_scope = self._sessions.create(
             user_id=account_scope.user_id,
             tenant_id=account_scope.tenant_id,
@@ -401,6 +416,20 @@ class ProductAuthenticationServiceV1:
             self._sessions.revoke(token, now=timestamp)
             raise ProductIdentityError("SESSION_SCOPE_MISMATCH")
         return token, session_scope
+
+    def authenticate_verified_identity(
+        self,
+        identity: VerifiedExternalIdentityV1,
+        *,
+        current_session_token: str | None,
+        now: datetime,
+    ) -> tuple[str, SessionScopeV1]:
+        """Compatibility wrapper preserving fixation-safe resolve/revoke/issue order."""
+
+        timestamp = _utc(now)
+        account_scope = self.resolve_verified_identity(identity, now=timestamp)
+        self.revoke_session(current_session_token, now=timestamp)
+        return self.issue_session(account_scope, now=timestamp)
 
     def link_verified_identity(
         self,

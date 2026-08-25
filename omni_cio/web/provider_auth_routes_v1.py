@@ -15,7 +15,10 @@ from omni_cio.web.identity_v1 import (
     ProviderDescriptorV1,
     VerifiedExternalIdentityV1,
 )
-from omni_cio.web.product_identity_v1 import ProductIdentityError
+from omni_cio.web.product_identity_v1 import (
+    ProductAccountScopeV1,
+    ProductIdentityError,
+)
 from omni_cio.web.provider_auth_v1 import (
     ProviderAuthenticationRuntimeLike,
     ProviderAuthorizationError,
@@ -32,11 +35,19 @@ _PROOF_COOKIE_MAX_AGE_SECONDS = 15 * 60
 
 
 class ProductAuthenticationLike(Protocol):
-    def authenticate_verified_identity(
+    def resolve_verified_identity(
         self,
         identity: VerifiedExternalIdentityV1,
         *,
-        current_session_token: str | None,
+        now: datetime,
+    ) -> ProductAccountScopeV1: ...
+
+    def revoke_session(self, token: str | None, *, now: datetime) -> bool: ...
+
+    def issue_session(
+        self,
+        account_scope: ProductAccountScopeV1,
+        *,
         now: datetime,
     ) -> tuple[str, SessionScopeV1]: ...
 
@@ -242,12 +253,19 @@ def install_provider_auth_routes_v1(
                 )
             finally:
                 services.abuse.release_outbound()
-            token, _ = authentication.authenticate_verified_identity(
+
+            authenticated_at = _utc_now(services)
+            account_scope = authentication.resolve_verified_identity(
                 identity,
-                current_session_token=request.cookies.get(
-                    services.cookies.session_cookie
-                ),
-                now=_utc_now(services),
+                now=authenticated_at,
+            )
+            authentication.revoke_session(
+                request.cookies.get(services.cookies.session_cookie),
+                now=authenticated_at,
+            )
+            token, _ = authentication.issue_session(
+                account_scope,
+                now=authenticated_at,
             )
             csrf = services.cookies.csrf_token(token)
         except (ProductIdentityError, ProviderAuthorizationError, ValueError):

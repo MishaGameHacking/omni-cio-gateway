@@ -16,6 +16,7 @@ from omni_cio.web.identity_v1 import (
     IdentityProviderV1,
     VerifiedExternalIdentityV1,
 )
+from omni_cio.web.product_identity_v1 import ProductAccountScopeV1
 from omni_cio.web.provider_auth_routes_v1 import (
     TELEGRAM_CALLBACK_PATH,
     TELEGRAM_START_PATH,
@@ -32,6 +33,10 @@ NOW = datetime(2026, 8, 25, 9, 0, tzinfo=timezone.utc)
 CSRF_KEY = bytes([171]) * 32
 SESSION_TOKEN = "s" * 43
 OLD_SESSION_TOKEN = "o" * 43
+PRODUCT_SCOPE = ProductAccountScopeV1(
+    user_id="user:v1:product",
+    tenant_id="tenant:v1:product",
+)
 
 
 @dataclass(slots=True)
@@ -68,22 +73,40 @@ class FakeProductAuthentication:
     def __init__(self) -> None:
         self.current_tokens: list[str | None] = []
         self.identities: list[VerifiedExternalIdentityV1] = []
+        self.issued_scopes: list[ProductAccountScopeV1] = []
+        self.events: list[str] = []
 
-    def authenticate_verified_identity(
+    def resolve_verified_identity(
         self,
         identity: VerifiedExternalIdentityV1,
         *,
-        current_session_token: str | None,
+        now: datetime,
+    ) -> ProductAccountScopeV1:
+        assert now == NOW
+        self.identities.append(identity)
+        self.events.append("resolve")
+        return PRODUCT_SCOPE
+
+    def revoke_session(self, token: str | None, *, now: datetime) -> bool:
+        assert now == NOW
+        self.current_tokens.append(token)
+        self.events.append("revoke")
+        return token is not None
+
+    def issue_session(
+        self,
+        account_scope: ProductAccountScopeV1,
+        *,
         now: datetime,
     ) -> tuple[str, SessionScopeV1]:
         assert now == NOW
-        self.current_tokens.append(current_session_token)
-        self.identities.append(identity)
+        self.issued_scopes.append(account_scope)
+        self.events.append("issue")
         return (
             SESSION_TOKEN,
             SessionScopeV1(
-                user_id="user:v1:product",
-                tenant_id="tenant:v1:product",
+                user_id=account_scope.user_id,
+                tenant_id=account_scope.tenant_id,
                 expires_at=NOW + timedelta(hours=1),
             ),
         )
@@ -169,6 +192,8 @@ def test_callback_requires_initiating_browser_and_rotates_session() -> None:
     assert response.headers["location"] == "/"
     assert authentication.current_tokens == [OLD_SESSION_TOKEN]
     assert authentication.identities[0].provider == IdentityProviderV1.TELEGRAM
+    assert authentication.issued_scopes == [PRODUCT_SCOPE]
+    assert authentication.events == ["resolve", "revoke", "issue"]
     assert client.cookies.get(BROWSER_SESSION_COOKIE) == SESSION_TOKEN
     csrf = client.cookies.get(BROWSER_CSRF_COOKIE)
     assert csrf is not None
