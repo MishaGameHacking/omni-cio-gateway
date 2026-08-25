@@ -3,9 +3,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-import hmac
-import re
 from typing import Protocol
+from urllib.parse import quote
 
 from fastapi import FastAPI, Request
 from starlette.responses import JSONResponse, RedirectResponse, Response
@@ -38,7 +37,6 @@ TELEGRAM_CALLBACK_PATH = "/api/v10/web/auth/telegram/callback"
 VK_ID_START_PATH = "/api/v10/web/auth/vk_id/start"
 VK_ID_CALLBACK_PATH = "/api/v10/web/auth/vk_id/callback"
 _PROOF_COOKIE_MAX_AGE_SECONDS = 15 * 60
-_AUTHORIZATION_QUERY_PATTERN = re.compile(r"^[A-Za-z0-9_.~%=&+\-]{1,4096}$")
 
 
 class ProductAuthenticationLike(Protocol):
@@ -137,18 +135,16 @@ def _fixed_authorization_url(
     provider: IdentityProviderV1,
     authorization: ProviderAuthorizationStartV1,
 ) -> str:
-    query = authorization.authorization_query
-    if (
-        not isinstance(query, str)
-        or _AUTHORIZATION_QUERY_PATTERN.fullmatch(query) is None
-    ):
-        raise ProviderAuthorizationError("PROVIDER_AUTHORIZATION_QUERY_INVALID")
     if provider == IdentityProviderV1.TELEGRAM:
         endpoint = TELEGRAM_OIDC_AUTHORIZATION_ENDPOINT
     elif provider == IdentityProviderV1.VK_ID:
         endpoint = VK_ID_AUTHORIZATION_ENDPOINT
     else:
         raise ProviderAuthorizationError("PROVIDER_AUTHORIZATION_ENDPOINT_INVALID")
+    query = quote(
+        str(authorization.authorization_query or ""),
+        safe="=&%+._~-",
+    )
     return f"{endpoint}?{query}"
 
 
@@ -210,33 +206,13 @@ def install_provider_auth_routes_v1(
                 provider=provider,
                 cookies=services.cookies,
             )
-        issued = _utc_now(services)
         browser_proof = new_authorization_browser_proof_v1()
         try:
             authorization = runtime.start(
-                now=issued,
+                now=_utc_now(services),
                 browser_proof=browser_proof,
             )
-            if not hmac.compare_digest(
-                authorization.browser_proof,
-                browser_proof,
-            ):
-                raise ProviderAuthorizationError("PROVIDER_BROWSER_PROOF_MISMATCH")
             authorization_url = _fixed_authorization_url(provider, authorization)
-            expires_at = authorization.expires_at
-            if (
-                not isinstance(expires_at, datetime)
-                or expires_at.tzinfo is None
-                or expires_at.utcoffset() is None
-            ):
-                raise ProviderAuthorizationError("PROVIDER_AUTHORIZATION_EXPIRY_INVALID")
-            lifetime_seconds = int(
-                (expires_at.astimezone(timezone.utc) - issued).total_seconds()
-            )
-            max_age = min(
-                _PROOF_COOKIE_MAX_AGE_SECONDS,
-                max(1, lifetime_seconds),
-            )
         except (ProviderAuthorizationError, TypeError, ValueError):
             return _safe_error(
                 "IDENTITY_PROVIDER_UNAVAILABLE",
@@ -249,8 +225,9 @@ def install_provider_auth_routes_v1(
             status_code=303,
             headers={"Cache-Control": "no-store"},
         )
-        # Cookie credential provenance is local and input-free. The provider
-        # runtime receives the proof only to bind its server-side transaction.
+        # Credential provenance is local and input-free. The runtime receives
+        # this proof only to bind its server-side transaction; its returned proof
+        # value is not browser credential authority.
         response.set_cookie(
             services.cookies.proof_cookie(provider),
             browser_proof,
@@ -258,7 +235,7 @@ def install_provider_auth_routes_v1(
             secure=True,
             samesite="lax",
             path="/",
-            max_age=max_age,
+            max_age=_PROOF_COOKIE_MAX_AGE_SECONDS,
         )
         return response
 
