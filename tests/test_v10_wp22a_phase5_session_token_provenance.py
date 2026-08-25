@@ -48,7 +48,7 @@ class UnusedIdentityRepository(ProductIdentityRepositoryLike):
         del scope, identity, now
 
 
-def test_preminted_session_token_binds_to_server_scope_without_plaintext_storage() -> None:
+def test_preminted_session_token_binds_without_plaintext_storage() -> None:
     sessions = SessionRegistryV1()
     identities = ProductIdentityServiceV1(UnusedIdentityRepository())
     authentication = ProductAuthenticationServiceV1(
