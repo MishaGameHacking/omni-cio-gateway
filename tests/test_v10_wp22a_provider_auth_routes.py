@@ -27,6 +27,8 @@ from omni_cio.web.provider_auth_routes_v1 import (
 )
 from omni_cio.web.provider_auth_v1 import ProviderAuthorizationStartV1
 from omni_cio.web.session_v1 import SessionScopeV1
+from omni_cio.web.telegram_oidc_v1 import TELEGRAM_OIDC_AUTHORIZATION_ENDPOINT
+from omni_cio.web.vk_id_oauth_v1 import VK_ID_AUTHORIZATION_ENDPOINT
 
 
 NOW = datetime(2026, 8, 25, 9, 0, tzinfo=timezone.utc)
@@ -39,17 +41,38 @@ PRODUCT_SCOPE = ProductAccountScopeV1(
 )
 
 
+def _provider_endpoint(provider: IdentityProviderV1) -> str:
+    if provider == IdentityProviderV1.TELEGRAM:
+        return TELEGRAM_OIDC_AUTHORIZATION_ENDPOINT
+    if provider == IdentityProviderV1.VK_ID:
+        return VK_ID_AUTHORIZATION_ENDPOINT
+    raise AssertionError("unexpected provider")
+
+
 @dataclass(slots=True)
 class FakeProviderRuntime:
     provider: IdentityProviderV1
     completions: list[tuple[str, str, str, str | None]]
+    authorization_url_override: str | None = None
+    returned_browser_proof_override: str | None = None
+    started_browser_proof: str | None = None
 
-    def start(self, *, now: datetime) -> ProviderAuthorizationStartV1:
+    def start(
+        self,
+        *,
+        now: datetime,
+        browser_proof: str | None = None,
+    ) -> ProviderAuthorizationStartV1:
         assert now == NOW
+        assert browser_proof is not None
+        self.started_browser_proof = browser_proof
         return ProviderAuthorizationStartV1(
-            authorization_url=f"https://provider.example/{self.provider.value}",
-            browser_proof=f"proof-{self.provider.value}-" + "x" * 32,
+            authorization_url=(
+                self.authorization_url_override or _provider_endpoint(self.provider)
+            ),
+            browser_proof=self.returned_browser_proof_override or browser_proof,
             expires_at=NOW + timedelta(minutes=5),
+            authorization_query="fixture=1",
         )
 
     def complete(
@@ -62,6 +85,7 @@ class FakeProviderRuntime:
         device_id: str | None = None,
     ) -> VerifiedExternalIdentityV1:
         assert now == NOW
+        assert browser_proof == self.started_browser_proof
         self.completions.append((state, code, browser_proof, device_id))
         return VerifiedExternalIdentityV1(
             provider=self.provider,
@@ -153,22 +177,50 @@ def test_host_cookie_policy_cannot_disable_secure_or_use_short_key() -> None:
 
 
 def test_start_is_fixed_post_route_and_sets_only_httponly_browser_proof() -> None:
-    app, _, _ = _app(IdentityProviderV1.TELEGRAM)
+    app, runtimes, _ = _app(IdentityProviderV1.TELEGRAM)
     client = TestClient(app, base_url="https://omni.example")
 
     assert client.get(TELEGRAM_START_PATH).status_code == 405
     response = client.post(TELEGRAM_START_PATH, follow_redirects=False)
 
     assert response.status_code == 303
-    assert response.headers["location"] == "https://provider.example/telegram"
-    assert "proof-telegram" not in response.text
+    assert response.headers["location"] == (
+        TELEGRAM_OIDC_AUTHORIZATION_ENDPOINT + "?fixture=1"
+    )
+    runtime = runtimes[0]
+    assert runtime.started_browser_proof is not None
+    assert runtime.started_browser_proof not in response.text
     cookies = _set_cookie_headers(response)
     proof = next(value for value in cookies if "oauth_telegram" in value)
+    assert runtime.started_browser_proof in proof
     assert "HttpOnly" in proof
     assert "Secure" in proof
     assert "SameSite=lax" in proof
     assert "Path=/" in proof
     assert "Domain=" not in proof
+
+
+def test_runtime_cannot_override_redirect_origin_or_proof_cookie_value() -> None:
+    app, runtimes, _ = _app(IdentityProviderV1.TELEGRAM)
+    runtime = runtimes[0]
+    runtime.authorization_url_override = "https://evil.example/steal"
+    client = TestClient(app, base_url="https://omni.example")
+
+    safe = client.post(TELEGRAM_START_PATH, follow_redirects=False)
+    assert safe.status_code == 303
+    assert safe.headers["location"] == (
+        TELEGRAM_OIDC_AUTHORIZATION_ENDPOINT + "?fixture=1"
+    )
+    proof_cookie = "__Host-omni_v10_oauth_telegram"
+    minted = client.cookies.get(proof_cookie)
+    assert minted == runtime.started_browser_proof
+    assert minted is not None
+
+    runtime.returned_browser_proof_override = "z" * 43
+    rejected = client.post(TELEGRAM_START_PATH, follow_redirects=False)
+    assert rejected.status_code == 503
+    assert rejected.json() == {"detail": "IDENTITY_PROVIDER_UNAVAILABLE"}
+    assert client.cookies.get(proof_cookie) is None
 
 
 def test_callback_requires_initiating_browser_and_rotates_session() -> None:
@@ -200,7 +252,7 @@ def test_callback_requires_initiating_browser_and_rotates_session() -> None:
     assert fresh_token != OLD_SESSION_TOKEN
     assert fresh_token != "a" * 43
     assert fresh_token != "accepted"
-    assert not fresh_token.startswith("proof-telegram-")
+    assert fresh_token != runtimes[0].started_browser_proof
     assert client.cookies.get(BROWSER_SESSION_COOKIE) == fresh_token
     csrf = client.cookies.get(BROWSER_CSRF_COOKIE)
     assert csrf is not None

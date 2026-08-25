@@ -57,6 +57,7 @@ class ProviderAuthorizationStartV1:
     authorization_url: str
     browser_proof: str = field(repr=False)
     expires_at: datetime
+    authorization_query: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -115,6 +116,18 @@ def _browser_proof_digest(value: str) -> str:
     return hashlib.sha256(value.encode("ascii")).hexdigest()
 
 
+def _validated_browser_proof(value: str) -> str:
+    if not isinstance(value, str) or _BROWSER_PROOF_PATTERN.fullmatch(value) is None:
+        raise ProviderAuthorizationError("AUTH_TRANSACTION_BROWSER_PROOF_INVALID")
+    return value
+
+
+def new_authorization_browser_proof_v1() -> str:
+    """Mint one browser-bound provider proof from the process CSPRNG only."""
+
+    return _validated_browser_proof(secrets.token_urlsafe(32))
+
+
 def _pkce_challenge(verifier: str) -> str:
     digest = hashlib.sha256(verifier.encode("ascii")).digest()
     return base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
@@ -145,13 +158,18 @@ class AuthorizationTransactionRegistryV1:
         provider: IdentityProviderV1,
         redirect_uri: str,
         now: datetime,
+        browser_proof: str | None = None,
     ) -> AuthorizationStartV1:
         timestamp = _utc(now)
         callback = _https_redirect_uri(redirect_uri)
         state = secrets.token_urlsafe(32)
         verifier = secrets.token_urlsafe(48)
         nonce = secrets.token_urlsafe(32)
-        browser_proof = secrets.token_urlsafe(32)
+        proof = (
+            new_authorization_browser_proof_v1()
+            if browser_proof is None
+            else _validated_browser_proof(browser_proof)
+        )
         digest = _state_digest(state)
         expires_at = timestamp + self._policy.lifetime
         pending = _PendingAuthorizationTransactionV1(
@@ -160,7 +178,7 @@ class AuthorizationTransactionRegistryV1:
             nonce=nonce,
             redirect_uri=callback,
             expires_at=expires_at,
-            browser_proof_sha256=_browser_proof_digest(browser_proof),
+            browser_proof_sha256=_browser_proof_digest(proof),
         )
         with self._lock:
             self._purge_expired(timestamp)
@@ -176,7 +194,7 @@ class AuthorizationTransactionRegistryV1:
             nonce=nonce,
             redirect_uri=callback,
             expires_at=expires_at,
-            browser_proof=browser_proof,
+            browser_proof=proof,
         )
 
     def consume(
@@ -190,13 +208,9 @@ class AuthorizationTransactionRegistryV1:
         timestamp = _utc(now)
         if not isinstance(state, str) or _STATE_PATTERN.fullmatch(state) is None:
             raise ProviderAuthorizationError("AUTH_TRANSACTION_STATE_INVALID")
-        if (
-            not isinstance(browser_proof, str)
-            or _BROWSER_PROOF_PATTERN.fullmatch(browser_proof) is None
-        ):
-            raise ProviderAuthorizationError("AUTH_TRANSACTION_BROWSER_PROOF_INVALID")
+        proof = _validated_browser_proof(browser_proof)
         digest = _state_digest(state)
-        browser_proof_sha256 = _browser_proof_digest(browser_proof)
+        browser_proof_sha256 = _browser_proof_digest(proof)
         with self._lock:
             self._purge_expired(timestamp)
             pending = self._pending.get(digest)
@@ -248,6 +262,7 @@ class AuthorizationTransactionStoreLike(Protocol):
         provider: IdentityProviderV1,
         redirect_uri: str,
         now: datetime,
+        browser_proof: str | None = None,
     ) -> AuthorizationStartV1: ...
 
     def consume(
@@ -282,13 +297,18 @@ class PostgresAuthorizationTransactionStoreV1:
         provider: IdentityProviderV1,
         redirect_uri: str,
         now: datetime,
+        browser_proof: str | None = None,
     ) -> AuthorizationStartV1:
         timestamp = _utc(now)
         callback = _https_redirect_uri(redirect_uri)
         state = secrets.token_urlsafe(32)
         verifier = secrets.token_urlsafe(48)
         nonce = secrets.token_urlsafe(32)
-        browser_proof = secrets.token_urlsafe(32)
+        proof = (
+            new_authorization_browser_proof_v1()
+            if browser_proof is None
+            else _validated_browser_proof(browser_proof)
+        )
         expires_at = timestamp + self._policy.lifetime
 
         with self._connection.transaction():
@@ -321,7 +341,7 @@ class PostgresAuthorizationTransactionStoreV1:
                 "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     _state_digest(state),
-                    _browser_proof_digest(browser_proof),
+                    _browser_proof_digest(proof),
                     provider.value,
                     verifier,
                     nonce,
@@ -338,7 +358,7 @@ class PostgresAuthorizationTransactionStoreV1:
             nonce=nonce,
             redirect_uri=callback,
             expires_at=expires_at,
-            browser_proof=browser_proof,
+            browser_proof=proof,
         )
 
     def consume(
@@ -352,11 +372,7 @@ class PostgresAuthorizationTransactionStoreV1:
         timestamp = _utc(now)
         if not isinstance(state, str) or _STATE_PATTERN.fullmatch(state) is None:
             raise ProviderAuthorizationError("AUTH_TRANSACTION_STATE_INVALID")
-        if (
-            not isinstance(browser_proof, str)
-            or _BROWSER_PROOF_PATTERN.fullmatch(browser_proof) is None
-        ):
-            raise ProviderAuthorizationError("AUTH_TRANSACTION_BROWSER_PROOF_INVALID")
+        proof = _validated_browser_proof(browser_proof)
 
         state_sha256 = _state_digest(state)
         with self._connection.transaction():
@@ -367,7 +383,7 @@ class PostgresAuthorizationTransactionStoreV1:
                 "RETURNING provider, code_verifier, nonce, redirect_uri, expires_at",
                 (
                     state_sha256,
-                    _browser_proof_digest(browser_proof),
+                    _browser_proof_digest(proof),
                     provider.value,
                     timestamp,
                 ),
@@ -441,7 +457,12 @@ class ProviderAuthenticationRuntimeLike(Protocol):
     @property
     def provider(self) -> IdentityProviderV1: ...
 
-    def start(self, *, now: datetime) -> ProviderAuthorizationStartV1: ...
+    def start(
+        self,
+        *,
+        now: datetime,
+        browser_proof: str | None = None,
+    ) -> ProviderAuthorizationStartV1: ...
 
     def complete(
         self,

@@ -129,6 +129,30 @@ def test_postgres_transaction_persists_only_state_and_browser_proof_digests() ->
     assert start.browser_proof not in repr(start)
 
 
+def test_postgres_transaction_binds_route_owned_browser_proof() -> None:
+    connection = _PostgresTransactionFixture()
+    store = PostgresAuthorizationTransactionStoreV1(connection)
+    route_proof = "p" * 43
+
+    start = store.begin(
+        provider=IdentityProviderV1.TELEGRAM,
+        redirect_uri=CALLBACK,
+        now=NOW,
+        browser_proof=route_proof,
+    )
+
+    assert start.browser_proof == route_proof
+    stored = next(iter(connection.rows.values()))
+    assert stored[0] == hashlib.sha256(route_proof.encode("ascii")).hexdigest()
+    consumed = store.consume(
+        provider=IdentityProviderV1.TELEGRAM,
+        state=start.state,
+        browser_proof=route_proof,
+        now=NOW,
+    )
+    assert consumed.redirect_uri == CALLBACK
+
+
 def test_wrong_browser_or_provider_cannot_destroy_postgres_transaction() -> None:
     connection = _PostgresTransactionFixture()
     store = PostgresAuthorizationTransactionStoreV1(connection)
@@ -207,8 +231,7 @@ def test_postgres_capacity_is_global_and_expired_rows_are_purged() -> None:
         now=NOW,
     )
     with pytest.raises(
-        ProviderAuthorizationError,
-        match="AUTH_TRANSACTION_CAPACITY_EXCEEDED",
+        ProviderAuthorizationError, match="AUTH_TRANSACTION_CAPACITY_EXCEEDED"
     ):
         store.begin(
             provider=IdentityProviderV1.VK_ID,

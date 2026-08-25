@@ -24,6 +24,7 @@ from omni_cio.web.browser_security_v1 import (
     BrowserCookiePolicyV1,
 )
 from omni_cio.web.identity_v1 import IdentityProviderV1, VerifiedExternalIdentityV1
+from omni_cio.web.product_identity_v1 import ProductAccountScopeV1
 from omni_cio.web.provider_auth_routes_v1 import (
     TELEGRAM_CALLBACK_PATH,
     TELEGRAM_START_PATH,
@@ -31,6 +32,7 @@ from omni_cio.web.provider_auth_routes_v1 import (
 )
 from omni_cio.web.provider_auth_v1 import ProviderAuthorizationStartV1
 from omni_cio.web.session_v1 import SessionRegistryV1, SessionScopeV1
+from omni_cio.web.telegram_oidc_v1 import TELEGRAM_OIDC_AUTHORIZATION_ENDPOINT
 
 
 HOSTNAME = "omni-cio-v10-web.onrender.com"
@@ -67,13 +69,22 @@ class _ScopeConnection:
 @dataclass(slots=True)
 class _FakeProviderRuntime:
     provider: IdentityProviderV1 = IdentityProviderV1.TELEGRAM
+    started_browser_proof: str | None = None
 
-    def start(self, *, now: datetime) -> ProviderAuthorizationStartV1:
+    def start(
+        self,
+        *,
+        now: datetime,
+        browser_proof: str | None = None,
+    ) -> ProviderAuthorizationStartV1:
         assert now == FIXED_NOW
+        assert browser_proof is not None
+        self.started_browser_proof = browser_proof
         return ProviderAuthorizationStartV1(
-            authorization_url="https://provider.example/telegram",
-            browser_proof="p" * 43,
+            authorization_url=TELEGRAM_OIDC_AUTHORIZATION_ENDPOINT,
+            browser_proof=browser_proof,
             expires_at=FIXED_NOW + timedelta(minutes=5),
+            authorization_query="fixture=1",
         )
 
     def complete(
@@ -87,7 +98,7 @@ class _FakeProviderRuntime:
     ) -> VerifiedExternalIdentityV1:
         assert state == "a" * 43
         assert code == "accepted"
-        assert browser_proof == "p" * 43
+        assert browser_proof == self.started_browser_proof
         assert now == FIXED_NOW
         assert device_id is None
         return VerifiedExternalIdentityV1(
@@ -100,18 +111,33 @@ class _FakeProductAuthentication:
     def __init__(self, sessions: SessionRegistryV1) -> None:
         self._sessions = sessions
 
-    def authenticate_verified_identity(
+    def resolve_verified_identity(
         self,
         identity: VerifiedExternalIdentityV1,
         *,
-        current_session_token: str | None,
         now: datetime,
-    ) -> tuple[str, SessionScopeV1]:
+    ) -> ProductAccountScopeV1:
         assert identity.provider == IdentityProviderV1.TELEGRAM
-        self._sessions.revoke(current_session_token, now=now)
-        return self._sessions.create(
+        assert now == FIXED_NOW
+        return ProductAccountScopeV1(
             user_id="user:v1:phase5_test",
             tenant_id="tenant:v1:phase5_test",
+        )
+
+    def revoke_session(self, token: str | None, *, now: datetime) -> bool:
+        return self._sessions.revoke(token, now=now)
+
+    def bind_session(
+        self,
+        token: str,
+        account_scope: ProductAccountScopeV1,
+        *,
+        now: datetime,
+    ) -> SessionScopeV1:
+        return self._sessions.bind(
+            token=token,
+            user_id=account_scope.user_id,
+            tenant_id=account_scope.tenant_id,
             now=now,
         )
 
@@ -310,9 +336,13 @@ def test_hosted_provider_callback_composes_verified_identity_to_session(
         follow_redirects=False,
     )
     assert start.status_code == 303
-    assert start.headers["location"] == "https://provider.example/telegram"
+    assert start.headers["location"] == (
+        TELEGRAM_OIDC_AUTHORIZATION_ENDPOINT + "?fixture=1"
+    )
     proof_cookie = cookies.proof_cookie(IdentityProviderV1.TELEGRAM)
-    assert client.cookies.get(proof_cookie) == "p" * 43
+    proof = client.cookies.get(proof_cookie)
+    assert proof is not None
+    assert len(proof) == 43
 
     callback = client.get(
         TELEGRAM_CALLBACK_PATH + "?state=" + "a" * 43 + "&code=accepted",

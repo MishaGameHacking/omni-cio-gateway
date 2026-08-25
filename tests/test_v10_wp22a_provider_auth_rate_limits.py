@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from omni_cio.web.browser_security_v1 import BrowserCookiePolicyV1
 from omni_cio.web.identity_v1 import IdentityProviderV1, VerifiedExternalIdentityV1
+from omni_cio.web.product_identity_v1 import ProductAccountScopeV1
 from omni_cio.web.provider_auth_routes_v1 import (
     TELEGRAM_CALLBACK_PATH,
     TELEGRAM_START_PATH,
@@ -20,23 +21,36 @@ from omni_cio.web.request_limits_v1 import (
     RequestRatePolicyV1,
 )
 from omni_cio.web.session_v1 import SessionScopeV1
+from omni_cio.web.telegram_oidc_v1 import TELEGRAM_OIDC_AUTHORIZATION_ENDPOINT
 
 
 NOW = datetime(2026, 8, 25, 20, 0, tzinfo=timezone.utc)
 CSRF_KEY = bytes([81]) * 32
-SESSION_TOKEN = "s" * 43
+PRODUCT_SCOPE = ProductAccountScopeV1(
+    user_id="user:v1:rate_limit",
+    tenant_id="tenant:v1:rate_limit",
+)
 
 
 @dataclass(slots=True)
 class _Runtime:
     provider: IdentityProviderV1 = IdentityProviderV1.TELEGRAM
+    started_browser_proof: str | None = None
 
-    def start(self, *, now: datetime) -> ProviderAuthorizationStartV1:
+    def start(
+        self,
+        *,
+        now: datetime,
+        browser_proof: str | None = None,
+    ) -> ProviderAuthorizationStartV1:
         assert now == NOW
+        assert browser_proof is not None
+        self.started_browser_proof = browser_proof
         return ProviderAuthorizationStartV1(
-            authorization_url="https://provider.example/telegram",
-            browser_proof="p" * 43,
+            authorization_url=TELEGRAM_OIDC_AUTHORIZATION_ENDPOINT,
+            browser_proof=browser_proof,
             expires_at=NOW + timedelta(minutes=5),
+            authorization_query="fixture=1",
         )
 
     def complete(
@@ -50,7 +64,7 @@ class _Runtime:
     ) -> VerifiedExternalIdentityV1:
         assert state == "a" * 43
         assert code == "accepted"
-        assert browser_proof == "p" * 43
+        assert browser_proof == self.started_browser_proof
         assert now == NOW
         assert device_id is None
         return VerifiedExternalIdentityV1(
@@ -60,22 +74,34 @@ class _Runtime:
 
 
 class _Authentication:
-    def authenticate_verified_identity(
+    def resolve_verified_identity(
         self,
         identity: VerifiedExternalIdentityV1,
         *,
-        current_session_token: str | None,
         now: datetime,
-    ) -> tuple[str, SessionScopeV1]:
+    ) -> ProductAccountScopeV1:
         assert identity.provider == IdentityProviderV1.TELEGRAM
         assert now == NOW
-        return (
-            SESSION_TOKEN,
-            SessionScopeV1(
-                user_id="user:v1:rate_limit",
-                tenant_id="tenant:v1:rate_limit",
-                expires_at=NOW + timedelta(hours=1),
-            ),
+        return PRODUCT_SCOPE
+
+    def revoke_session(self, token: str | None, *, now: datetime) -> bool:
+        assert now == NOW
+        return token is not None
+
+    def bind_session(
+        self,
+        token: str,
+        account_scope: ProductAccountScopeV1,
+        *,
+        now: datetime,
+    ) -> SessionScopeV1:
+        assert len(token) == 43
+        assert account_scope == PRODUCT_SCOPE
+        assert now == NOW
+        return SessionScopeV1(
+            user_id=account_scope.user_id,
+            tenant_id=account_scope.tenant_id,
+            expires_at=NOW + timedelta(hours=1),
         )
 
 
@@ -115,7 +141,10 @@ def test_outbound_capacity_429_preserves_browser_proof_for_retry() -> None:
 
     start = client.post(TELEGRAM_START_PATH, follow_redirects=False)
     assert start.status_code == 303
-    assert client.cookies.get(proof_cookie) == "p" * 43
+    runtime = services.runtimes[0]
+    assert isinstance(runtime, _Runtime)
+    assert runtime.started_browser_proof is not None
+    assert client.cookies.get(proof_cookie) == runtime.started_browser_proof
 
     assert services.abuse.acquire_outbound()
     try:
@@ -128,7 +157,7 @@ def test_outbound_capacity_429_preserves_browser_proof_for_retry() -> None:
 
     assert limited.status_code == 429
     assert limited.headers["retry-after"] == "1"
-    assert client.cookies.get(proof_cookie) == "p" * 43
+    assert client.cookies.get(proof_cookie) == runtime.started_browser_proof
 
     accepted = client.get(
         TELEGRAM_CALLBACK_PATH + "?state=" + "a" * 43 + "&code=accepted",
@@ -143,11 +172,11 @@ def test_callback_rate_limit_is_independent_of_start_limit() -> None:
         RequestRatePolicyV1(provider_starts=2, provider_callbacks=1)
     )
     client = _client(services)
+    runtime = services.runtimes[0]
+    assert isinstance(runtime, _Runtime)
+    client.post(TELEGRAM_START_PATH, follow_redirects=False)
+    assert runtime.started_browser_proof is not None
 
-    client.cookies.set(
-        services.cookies.proof_cookie(IdentityProviderV1.TELEGRAM),
-        "p" * 43,
-    )
     first = client.get(
         TELEGRAM_CALLBACK_PATH + "?state=" + "a" * 43 + "&code=accepted",
         follow_redirects=False,
@@ -156,7 +185,7 @@ def test_callback_rate_limit_is_independent_of_start_limit() -> None:
 
     client.cookies.set(
         services.cookies.proof_cookie(IdentityProviderV1.TELEGRAM),
-        "p" * 43,
+        runtime.started_browser_proof,
     )
     limited = client.get(
         TELEGRAM_CALLBACK_PATH + "?state=" + "a" * 43 + "&code=accepted",
