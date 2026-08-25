@@ -22,6 +22,7 @@ from apps.api.app import (
     _SerializedWebConnection,
     _configure_long_lived_web_connection,
 )
+from apps.api.wp22a_phase5_auth import build_wp22a_phase5_provider_auth
 from omni_cio.persistence.migration import connect_postgres
 from omni_cio.web.browser_security_v1 import (
     BROWSER_CSRF_COOKIE,
@@ -746,11 +747,17 @@ def create_app() -> FastAPI:
         connection,
         policy=PREVIEW_SESSION_POLICY,
     )
+    provider_auth = build_wp22a_phase5_provider_auth(
+        connection=connection,
+        sessions=sessions,
+        canonical_origin=f"https://{hostname}",
+    )
     return create_hosted_preview_app(
         HostedPreviewServicesV1(
             sessions=sessions,
             database_probe=lambda: _probe_hosted_preview_database(connection),
             hostname=hostname,
             release_sha=release_sha,
+            provider_auth=provider_auth,
         )
     )
