@@ -228,7 +228,13 @@ class HostedPreviewSecurityMiddlewareV1(BaseHTTPMiddleware):
         if scheme != "https":
             return _safe_error("HTTPS_REQUIRED", 403, api_path=api_path)
 
-        if api_path and request.url.path != "/healthz":
+        if request.url.path == "/healthz":
+            if not self._abuse.admit_health():
+                return _rate_error(
+                    retry_after_seconds=self._abuse.policy.retry_after_seconds,
+                    api_path=True,
+                )
+        elif api_path:
             session_token = request.cookies.get(BROWSER_SESSION_COOKIE)
             if not self._abuse.admit(session_token=session_token):
                 return _rate_error(

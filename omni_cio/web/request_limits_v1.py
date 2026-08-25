@@ -3,15 +3,21 @@ from __future__ import annotations
 from collections import deque
 from dataclasses import dataclass
 import hashlib
+import re
 from threading import BoundedSemaphore, RLock
 import time
 
 from omni_cio.web.identity_v1 import IdentityProviderV1
 
 
+_SESSION_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{32,512}$")
+
+
 @dataclass(frozen=True, slots=True)
 class RequestRatePolicyV1:
     window_seconds: int = 60
+    global_api_requests: int = 5000
+    health_requests: int = 120
     anonymous_requests: int = 300
     authenticated_session_requests: int = 600
     provider_starts: int = 60
@@ -23,6 +29,8 @@ class RequestRatePolicyV1:
     def __post_init__(self) -> None:
         values = (
             self.window_seconds,
+            self.global_api_requests,
+            self.health_requests,
             self.anonymous_requests,
             self.authenticated_session_requests,
             self.provider_starts,
@@ -90,7 +98,14 @@ class HostedRequestAbuseControlV1:
         self.policy = policy or RequestRatePolicyV1()
         self._limiter = BoundedFixedWindowLimiterV1(
             window_seconds=self.policy.window_seconds,
-            max_keys=self.policy.max_session_keys,
+            max_keys=self.policy.max_session_keys + 3,
+        )
+
+    def admit_health(self, *, now_monotonic: float | None = None) -> bool:
+        return self._limiter.admit(
+            "health",
+            limit=self.policy.health_requests,
+            now_monotonic=now_monotonic,
         )
 
     def admit(
@@ -99,8 +114,15 @@ class HostedRequestAbuseControlV1:
         session_token: str | None,
         now_monotonic: float | None = None,
     ) -> bool:
-        if session_token:
-            digest = hashlib.sha256(session_token.encode("utf-8")).hexdigest()
+        if not self._limiter.admit(
+            "global-api",
+            limit=self.policy.global_api_requests,
+            now_monotonic=now_monotonic,
+        ):
+            return False
+
+        if session_token and _SESSION_TOKEN_RE.fullmatch(session_token):
+            digest = hashlib.sha256(session_token.encode("ascii")).hexdigest()
             key = "session:" + digest
             limit = self.policy.authenticated_session_requests
         else:
