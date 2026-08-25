@@ -12,9 +12,7 @@ from omni_cio.web.session_v1 import SESSION_TOKEN_BYTES
 
 
 _SESSION_TOKEN_LENGTH = (SESSION_TOKEN_BYTES * 8 + 5) // 6
-_SESSION_TOKEN_RE = re.compile(
-    rf"^[A-Za-z0-9_-]{{{_SESSION_TOKEN_LENGTH}}}$"
-)
+_SESSION_TOKEN_RE = re.compile(rf"^[A-Za-z0-9_-]{{{_SESSION_TOKEN_LENGTH}}}$")
 
 
 def is_session_token_candidate(token: str | None) -> bool:

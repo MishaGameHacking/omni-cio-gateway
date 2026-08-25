@@ -55,7 +55,9 @@ class TelegramJwksSingleFlightVerifierV1(TelegramIdTokenVerifierV1):
         waited = False
         while True:
             with self._refresh_condition:
-                cache_fresh = self._keys_expires_at is not None and now < self._keys_expires_at
+                cache_fresh = (
+                    self._keys_expires_at is not None and now < self._keys_expires_at
+                )
                 if cache_fresh:
                     key = self._keys.get(kid)
                     if key is not None:

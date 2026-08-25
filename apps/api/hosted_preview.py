@@ -254,7 +254,10 @@ class HostedPreviewSecurityMiddlewareV1(BaseHTTPMiddleware):
         # accepted Render Web Service the managed edge terminates public TLS and
         # forwards to a port that Render documents as not directly Internet-reachable;
         # that provider boundary is asserted by source composition instead.
-        if request.url.scheme.lower() != "https" and not self._trusted_edge_tls_terminated:
+        if (
+            request.url.scheme.lower() != "https"
+            and not self._trusted_edge_tls_terminated
+        ):
             return _safe_error("HTTPS_REQUIRED", 403, api_path=api_path)
 
         if request.url.path == "/healthz":
