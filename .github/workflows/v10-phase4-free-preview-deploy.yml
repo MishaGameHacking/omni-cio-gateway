@@ -109,6 +109,7 @@ jobs:
             tests/test_wp22a_phase4_render_deploy_diagnostic.py \
             tests/test_wp22a_phase4_render_pagination_guard.py \
             tests/test_wp22a_phase4_runtime_role_retry.py \
+            tests/test_wp22a_phase4_transient_network_hardening.py \
             tests/test_v10_zero_cost_provider_boundary.py
 
       - name: Enforce zero-charge provider boundary

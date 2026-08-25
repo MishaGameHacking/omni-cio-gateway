@@ -426,6 +426,30 @@ A short SHA may be used for navigation when useful. Full random-looking secret m
 
 ---
 
+## FL-019 — Deployment retries must distinguish repeatable reads from ambiguous mutations
+
+**Date:** 2026-08-25
+
+**WP / reference:** WP22A Phase 4 deployment run `32828381444`, job `97741349681`, exact accepted main `ef8db1e`
+
+**Symptom / failing gate:** exact-main Regression Shield, the zero-charge provider boundary, the Neon Free/Frankfurt checks, migrations, runtime-role convergence and grants all passed. The job then paused for roughly one socket-timeout interval during `DATABASE_BOOTSTRAP_STAGE=SYNTHETIC_SEED`, stopped as `DATABASE_BOOTSTRAP_FAILED`, and an immediately following read-only Render diagnostic stopped as `RENDER_API_NETWORK_ERROR`. The already deployed preview remained available.
+
+**Root cause:** a transient outbound network interruption on the self-hosted deployment node crossed two independent provider connections. The provisioner used a single long-lived bootstrap database connection and converted every database exception into one generic code. Provider API reads also made only one attempt, so the follow-up diagnostic could not recover or preserve the useful failure class.
+
+**Blast radius searched:** Neon bootstrap connection establishment, migrations, runtime-role/grant mutation, synthetic preview seeding and verification, pooled runtime read-only verification, all Render/Neon API methods, the fallback Render diagnostic, secret-safe logging, provider billing boundaries and the existing live service. No evidence implicated repository tests, authentication/tenant code, provider credentials, paid-resource state or the previous accepted deployment.
+
+**Why preflight missed it:** deterministic tests covered fail-closed provider status handling, idempotent runtime-role convergence and fixed stage evidence, but did not inject socket disconnects between database stages or into provider GET requests. The failure required the real self-hosted outbound network path.
+
+**Corrective change:** isolate the synthetic seed onto a fresh PostgreSQL connection with a finite connection timeout; retry that stage only because both inserts use `ON CONFLICT DO NOTHING` and the stored canonical hashes are reverified after every attempt. Retry pooled runtime verification because it is read-only. Add bounded backoff to provider GET requests only. Keep migrations, role/grant mutation and all provider POST/PUT operations fail-closed without blind replay after an ambiguous response.
+
+**Permanent regression/guard:** deterministic fault-injection tests now prove a three-attempt bound, fresh database connections, exact backoff, convergence after an ambiguous seed disconnect, no retry on seed drift, read-only runtime reconnection, GET-only provider retry, no provider mutation replay and absence of URI/token/exception detail in emitted diagnostics. The Phase 4 workflow executes this suite before any provider mutation.
+
+**Future prevention rule:** classify every retry boundary by idempotency and ambiguity before adding resilience. A network error is retryable only when the operation is a read or its convergence proof is explicit and tested; mutating provider calls remain stopped unless they carry a provider-supported idempotency key or are reconciled by an independent read.
+
+**Dependency/tooling knowledge change:** PostgreSQL `INSERT ... ON CONFLICT DO NOTHING` plus post-write digest verification provides a safe convergence primitive for the fixed synthetic records. Psycopg connection failures are handled as `OperationalError` without logging raw exception text. Render documents transient outbound resets as an expected condition that clients should handle with bounded reconnect logic for safe repeatable operations.
+
+---
+
 ## Entry template
 
 ```text
