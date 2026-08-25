@@ -1,16 +1,18 @@
 # 17 — V10 CURRENT PROGRAM STATUS
 
-Updated: 2026-08-23
+Updated: 2026-08-24
 
 ## Executive state
 
-Omni-CIO V10: **DEVELOPMENT ACTIVE / BLOCK D COMPLETE / WP16–WP22 COMPLETE / WP22A CURRENT / PHASE 1 ACCEPTED / PHASE 2 ACCEPTED / PHASE 3 ACCEPTED / PHASE 4 ACCEPTED / PHASE 5 AUTHORIZED**.
+Omni-CIO V10: **DEVELOPMENT ACTIVE / BLOCK D COMPLETE / WP16–WP22 COMPLETE / WP22A CURRENT / PHASE 1 ACCEPTED / PHASE 2 ACCEPTED / PHASE 3 ACCEPTED / PHASE 4 ACCEPTED / PHASE 5 TECHNICAL CLOSEOUT AUTHORIZED / PUBLIC PRODUCTION ACTIVATION LOCKED**.
 
 Accepted implementation progress is **40%**.
 
 Block A (5%), Block B (9%), Block C (12%) and Block D (14%) have passed their owning Exit Gates. Block E remains in progress: WP16–WP22 are accepted COMPLETE; **WP22A — External Web Access / Product Authentication Security Gate** is the only authorized current functional package and is not yet accepted complete. Block E receives no percentage credit until its own Exit Gate.
 
 WP23+ remains locked behind the corrected WP22A Exit Gate and Master Plan sequence.
+
+Amendment 11 separates the complete WP22A technical Exit Gate from the later real public-production/provider activation gate. This is a sequencing correction only: all browser-auth/session/tenant/security/recovery/abuse requirements remain mandatory, while final Cloud.ru apply, real provider secret provisioning, paid commitment and `PUBLIC_MULTI_USER_ENABLED=true` remain independently fail-closed.
 
 This file becomes current authority only when present on accepted protected `main`. The Phase-4 acceptance transition recorded here is valid only because its owning transition PR must complete the dedicated exact-base public acceptance gate plus all ordinary exact-head DRAFT/READY gates before squash merge.
 
@@ -60,7 +62,7 @@ Phase 4 accepts only the synthetic proof-of-product:
 - broker write OFF, `trading_methods=false`, `REAL_TRADING_ENABLED=false`;
 - WP23 remains locked.
 
-Phase 4 does not imply normal real-USER public-hosted acceptance. That belongs to Phase 5.
+Phase 4 does not imply normal USER product-auth technical acceptance or real public-production activation. Phase 5 owns the former; Amendment 11 assigns the latter to a separate later gate.
 
 ## Earlier accepted WP22A authority
 
@@ -96,31 +98,36 @@ Provider selection did not authorize a paid commitment.
 
 Current engineering authority is:
 
-- **WP22A Phase 5 — Public-hosted acceptance** is the only authorized current implementation increment;
+- **WP22A Phase 5 — Integrated technical closeout** is the only authorized current implementation increment;
+- Amendment 11 authorizes one integrated Phase-5 source branch/PR unless a documented deploy-before-code migration, independently reversible rollout, security-isolation boundary or objectively unreviewable final diff requires a split;
 - Phase 5 begins only after the Phase-4 acceptance/status transition is accepted on protected `main`;
 - reuse the existing `apps/web`, `apps/api`, `omni_cio`, PostgreSQL, deployment and recovery architecture; no second Web product/Core/identity/database/broker stack;
-- prove normal public HTTPS product use from ordinary supported phone/desktop browsers without OWNER home infrastructure as the availability anchor;
+- prove normal hosted HTTPS product use from ordinary supported phone/desktop browsers without OWNER home infrastructure as the availability anchor;
 - implement/accept only the Telegram Login and VK ID product-auth surface required for verified external identity -> internal account binding; do not start WP23 Telegram Bot Foundation;
+- remove every deployed preview/private/OWNER/admin/developer/demo session-minting bypass; free access still requires Telegram or VK ID;
+- accept deterministic provider doubles only below deployed routing/network boundaries when real secrets/provider-console actions are non-delegable; such doubles may never become a human-accessible session issuer;
 - resolve tenant scope only from authenticated server-side session state;
 - prove login/logout/session rotation/revocation, deployed tenant isolation, recovery/availability and rate/abuse/capacity behavior;
 - keep public T-Invest-backed production functionality fail-closed pending accepted broker permission;
 - keep broker write OFF, `trading_methods=false` and `REAL_TRADING_ENABLED=false`;
-- keep `PUBLIC_MULTI_USER_ENABLED=false` until its focused Phase-5 activation gate proves all owning acceptance conditions;
+- keep `PUBLIC_MULTI_USER_ENABLED=false` through WP22A technical closeout and until the later independent public-production activation gate proves all owning acceptance conditions;
 - keep initial USER access free: `BILLING_ENABLED=false`, `TRIAL_ENABLED=false`, `SUBSCRIPTION_ENFORCEMENT=false`, `PREMIUM_FEATURE_GATING=false`;
 - final production provider remains Cloud.ru Evolution;
 - current recurring infrastructure authorization remains `0 RUB/month` / `0 USD/month`;
 - before any paid Cloud.ru apply, revalidate exact SKU/region/current price and obtain explicit OWNER cost approval above the current zero-cost cap;
 - no automatic paid fallback or card charge is authorized;
+- final Cloud.ru apply, production DNS/edge mutation, real provider secret provisioning and real public-user cutover remain outside technical closeout and are not authorized by Phase 5;
 - do not implement WP23, AI/Cortex or broker-write/Real work early.
 
 The Phase-5 authority is defined by:
 
 - `docs/architecture/V10_WP22A_PHASE5_PUBLIC_HOSTED_ACCEPTANCE_AUTHORIZATION.md`;
 - `docs/architecture/V10_WP22A_PHASE5_PUBLIC_HOSTED_ACCEPTANCE_CONTRACT.json`;
-- accepted active amendments 8, 9 and 10;
+- `docs/master-plan/OMNI_CIO_V10_WP22A_TECHNICAL_CLOSEOUT_AND_PUBLIC_ACTIVATION_SEPARATION_AMENDMENT.md`;
+- accepted active amendments 8, 9, 10 and 11;
 - the existing WP22A security/recovery/service-selection contracts.
 
-OWNER action required now: **NO** for Phase-5 source implementation and deterministic acceptance work. Stop only at a genuinely non-delegable provider/account/billing/legal/secret/physical action. In particular, a recurring paid Cloud.ru commitment above the current `0` cap requires explicit OWNER approval after exact current pricing/SKU is known.
+OWNER action required now: **NO** for the integrated Phase-5 source implementation and deterministic hosted technical acceptance. Stop only at a genuinely non-delegable provider/account/billing/legal/secret/physical action. Such an action belongs to the later public-production activation gate unless it is strictly required to verify a non-synthesizable technical fact. In particular, a recurring paid Cloud.ru commitment above the current `0` cap requires explicit OWNER approval after exact current pricing/SKU is known.
 
 ## OWNER-approved final V10 product direction
 
@@ -196,38 +203,39 @@ It remains **NOT CURRENT-WP AUTHORITY BY ITSELF**. Phase 5 does not silently aut
 - Block E / WP22A Phase 2 — **ACCEPTED**;
 - Block E / WP22A Phase 3 — **ACCEPTED**;
 - Block E / WP22A Phase 4 — **ACCEPTED**;
-- Block E / WP22A Phase 5 — **AUTHORIZED CURRENT INCREMENT**;
+- Block E / WP22A Phase 5 — **INTEGRATED TECHNICAL CLOSEOUT AUTHORIZED CURRENT INCREMENT**;
 - Block E / WP22A overall — **CURRENT / NOT YET COMPLETE**;
 - Block F / WP23+ — **LOCKED**;
-- public multi-user activation — **APPROVED TARGET / IMPLEMENTATION FLAG REMAINS OFF UNTIL PHASE-5 ACTIVATION GATE**;
-- public production Internet ingress — **PHASE-5 ACCEPTANCE WORK / NOT YET ACCEPTED PRODUCTION**;
+- public multi-user activation — **APPROVED TARGET / IMPLEMENTATION FLAG REMAINS OFF UNTIL SEPARATE PUBLIC-PRODUCTION ACTIVATION GATE**;
+- public production Internet ingress — **SEPARATE PUBLIC-PRODUCTION ACTIVATION GATE / LOCKED**;
 - zero-cost synthetic preview HTTPS — **PHASE-4 ACCEPTED PROOF-OF-PRODUCT**;
 - broker write / Real execution — **UNCHANGED / NOT AUTHORIZED**.
 
-`PUBLIC_MULTI_USER_ENABLED=false` remains the safe default during WP22A Phase 5 until its owning activation gate passes.
+`PUBLIC_MULTI_USER_ENABLED=false` remains the safe default during and after WP22A technical closeout until the separate public-production activation gate passes.
 
-## Current next package — WP22A Phase 5 — Public-hosted acceptance
+## Current next package — WP22A Phase 5 — Integrated technical closeout
 
-Phase-5 purpose is to close the real public-hosted product acceptance boundary without widening broker/execution authority or bypassing provider/cost/legal requirements.
+Phase-5 purpose is to close the complete hosted technical product-authentication/security/recovery boundary without widening broker/execution authority or bypassing provider/cost/legal requirements. Final Cloud.ru/public-user activation remains a later independent fail-closed gate.
 
 Required Phase-5 outcome includes at minimum:
 
-1. ordinary public HTTPS reachability from supported phone/desktop browsers independent of OWNER home infrastructure;
+1. ordinary hosted HTTPS reachability from supported phone/desktop browsers independent of OWNER home infrastructure;
 2. verified Telegram Login / VK ID -> internal account binding with no provider engineering identity as product authority;
-3. server-side session fixation protection, rotation, bounded lifetime, logout and revoke-all acceptance;
-4. tenant scope derived only from server-side session state and deployed cross-tenant negatives over applicable private surfaces;
-5. tenant-scoped secret/private-state custody without raw credential return or browser Web Storage;
-6. deployed recovery/replacement-runtime/availability evidence with tenant isolation preserved;
-7. measured request/rate/abuse/capacity controls and fail-closed degraded behavior;
-8. accepted trusted-proxy/Host/TLS/CORS/Origin/Referer/CSRF/private-cache/security-header behavior;
-9. exact release provenance, health-before-traffic and rollback evidence;
-10. current Cloud.ru provider/SKU/price/free-or-bonus revalidation immediately before production apply;
-11. explicit OWNER approval before any recurring paid commitment above the current zero-cost cap;
-12. public T-Invest-backed functionality remaining independently fail-closed until broker permission;
-13. no broker-write/Real execution expansion and no WP23 early work;
-14. all focused Phase-5 increments following exact-head DRAFT GREEN -> fresh READY GREEN -> zero blockers -> squash merge -> exact-main Regression Shield GREEN.
+3. no deployed preview/private/OWNER/admin/developer/demo route capable of minting a product session;
+4. durable browser-bound one-time pre-auth transactions plus provider mix-up/replay/browser-swapping negatives;
+5. server-side session fixation protection, rotation, bounded lifetime, logout and revoke-all acceptance;
+6. tenant scope derived only from server-side session state and deployed cross-tenant negatives over applicable private surfaces;
+7. tenant-scoped secret/private-state custody without raw credential return or browser Web Storage;
+8. deployed recovery/replacement-runtime/availability evidence with tenant isolation preserved;
+9. measured request/rate/abuse/capacity controls and fail-closed degraded behavior;
+10. accepted trusted-proxy/Host/TLS/CORS/Origin/Referer/CSRF/Fetch-Metadata/private-cache/security-header behavior;
+11. exact release provenance, health-before-traffic and rollback evidence;
+12. deterministic provider acceptance below deployed routing where real secrets/provider-console actions are non-delegable, without any deployed synthetic session issuer;
+13. public T-Invest-backed functionality remaining independently fail-closed until broker permission;
+14. no broker-write/Real execution expansion and no WP23 early work;
+15. one comprehensive exact-head DRAFT GREEN -> independent Gitar/Sonar -> fresh READY GREEN -> zero blockers -> squash merge -> exact-main Regression Shield GREEN cycle for the integrated implementation.
 
-Phase 5 completion does not automatically make WP22A COMPLETE. A final WP22A closeout must map all Exit-Gate evidence and only then may the Master Plan consider WP23.
+Integrated Phase-5 implementation acceptance does not automatically make WP22A COMPLETE. A final small WP22A closeout must map all technical Exit-Gate evidence and only then may canonical status advance. Final Cloud.ru apply, real provider/public-user cutover, paid commitment and `PUBLIC_MULTI_USER_ENABLED=true` remain pending even after technical WP22A closure until their later activation gate passes.
 
 ## Canonical authority
 
@@ -241,7 +249,8 @@ Mandatory sources include:
 - `docs/master-plan/OMNI_CIO_V10_PROGRAM_LOCK.md`;
 - `docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.md`;
 - `docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md`;
-- active amendments 8, 9 and 10;
+- `docs/master-plan/OMNI_CIO_V10_WP22A_TECHNICAL_CLOSEOUT_AND_PUBLIC_ACTIVATION_SEPARATION_AMENDMENT.md`;
+- active amendments 8, 9, 10 and 11;
 - `docs/architecture/V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_CONTRACT.json`;
 - `docs/architecture/V10_WP22A_EXECUTION_CONTRACT.md`;
 - `docs/architecture/V10_WP22A_SERVICE_SELECTION.md`;
@@ -277,7 +286,7 @@ The 40% total is intentional: Block E is not credited piecemeal and WP22A overal
 - protected V9 service and rollback remain available;
 - `trading_methods=false`;
 - `REAL_TRADING_ENABLED=false`;
-- `PUBLIC_MULTI_USER_ENABLED=false` until the owning Phase-5 activation gate;
+- `PUBLIC_MULTI_USER_ENABLED=false` until the separate public-production activation gate;
 - no broker-write expansion by WP22A;
 - no transfer/withdrawal/margin/uncovered-short authority;
 - no real broker/Telegram/VK/provider secret values, encryption/recovery keys, private portfolio payloads or full account IDs in GitHub/CI/artifacts;
@@ -289,12 +298,13 @@ The 40% total is intentional: Block E is not credited piecemeal and WP22A overal
 
 ## Current next action
 
-After this Phase-4 acceptance/Phase-5 authorization transition is accepted:
+After Amendment 11 is accepted:
 
-1. restore exact new `main` and required post-merge Regression Shield evidence;
-2. inspect accepted Phase-2 auth/session/tenant code plus dormant external-provider adapters for the smallest Phase-5 increment;
-3. implement one focused normal-USER hosted-auth/session acceptance slice without activating public multi-user mode prematurely;
-4. add deterministic identity/session/IDOR negatives and deployed-browser acceptance evidence;
-5. continue Phase-5 recovery/availability/capacity/provider production gates one focused PR at a time;
-6. revalidate exact Cloud.ru SKU/current cost before any production provider mutation and stop for OWNER cost approval if the safe topology exceeds the current zero-cost cap;
-7. keep public T-Invest, broker write, Real execution, WP23 and the Premium Spatial visual-refresh implementation locked until their own accepted authority explicitly opens them.
+1. restore exact new `main` and its required post-merge Regression Shield evidence;
+2. create one integrated WP22A Phase-5 technical-closeout implementation branch from that exact accepted main;
+3. implement the complete Browser -> Provider -> Account -> Tenant -> Session -> API/PostgreSQL flow, retire deployed synthetic/OWNER/admin session bypasses and add deterministic negative/recovery/browser evidence;
+4. finish all source, migrations, tests, frontend, deployment contracts and documentation before the first comprehensive DRAFT verification cycle;
+5. complete exact-head DRAFT GREEN, independent Gitar/Sonar, fresh READY GREEN, squash merge and exact-main Regression Shield;
+6. create only then a small evidence/status closeout PR mapping every technical Exit-Gate item before marking WP22A complete or authorizing the next named increment;
+7. leave final Cloud.ru/public-user/provider-secret/paid production activation locked for its later explicit gate and OWNER action where non-delegable;
+8. keep public T-Invest, broker write, Real execution, WP23 and the Premium Spatial visual-refresh implementation locked until their own accepted authority explicitly opens them.

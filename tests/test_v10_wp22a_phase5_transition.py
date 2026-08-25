@@ -7,6 +7,16 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 STATUS = ROOT / "knowledge/17_V10_CURRENT_PROGRAM_STATUS.md"
+AMENDMENTS_INDEX = ROOT / "docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md"
+AMENDMENT11 = (
+    ROOT
+    / "docs"
+    / "master-plan"
+    / (
+        "OMNI_CIO_V10_WP22A_TECHNICAL_CLOSEOUT_AND_"
+        "PUBLIC_ACTIVATION_SEPARATION_AMENDMENT.md"
+    )
+)
 PHASE4_EVIDENCE = (
     ROOT / "docs/architecture/V10_WP22A_PHASE4_ACCEPTANCE_EVIDENCE.json"
 )
@@ -69,12 +79,18 @@ def test_status_proposes_phase4_acceptance_and_phase5_as_current() -> None:
     text = STATUS.read_text(encoding="utf-8")
 
     assert (
-        "PHASE 3 ACCEPTED / PHASE 4 ACCEPTED / PHASE 5 AUTHORIZED" in text
+        "PHASE 3 ACCEPTED / PHASE 4 ACCEPTED / "
+        "PHASE 5 TECHNICAL CLOSEOUT AUTHORIZED / "
+        "PUBLIC PRODUCTION ACTIVATION LOCKED" in text
     )
     assert "Block E / WP22A Phase 4 — **ACCEPTED**" in text
-    assert "Block E / WP22A Phase 5 — **AUTHORIZED CURRENT INCREMENT**" in text
     assert (
-        "## Current next package — WP22A Phase 5 — Public-hosted acceptance"
+        "Block E / WP22A Phase 5 — "
+        "**INTEGRATED TECHNICAL CLOSEOUT AUTHORIZED CURRENT INCREMENT**"
+        in text
+    )
+    assert (
+        "## Current next package — WP22A Phase 5 — Integrated technical closeout"
         in text
     )
     assert "WP23+ remains locked" in text
@@ -88,6 +104,9 @@ def test_phase5_authority_preserves_cost_and_execution_locks() -> None:
     broker = payload["broker"]
 
     assert authority["phase5_authorized"] is True
+    assert authority["wp22a_technical_gate_authorized"] is True
+    assert authority["wp22a_technical_gate_complete"] is False
+    assert authority["public_production_activation_authorized"] is False
     assert authority["wp22a_complete"] is False
     assert authority["wp23_unlocked"] is False
     assert provider["production_provider"] == "Cloud.ru Evolution"
@@ -102,6 +121,62 @@ def test_phase5_authority_preserves_cost_and_execution_locks() -> None:
     assert broker["public_tinvest_status"] == (
         "FAIL_CLOSED_PENDING_BROKER_TERMS_PERMISSION"
     )
+
+
+def test_amendment11_separates_technical_closeout_from_public_activation() -> None:
+    payload = _json(PHASE5_CONTRACT)
+    technical = payload["technical_closeout"]
+    production = payload["public_production_activation"]
+    legacy_activation = payload["activation"]
+
+    assert payload["schema_version"].endswith(".v2")
+    assert technical["hosted_synthetic_acceptance_allowed"] is True
+    assert technical["real_provider_secret_required_for_gate"] is False
+    assert technical["human_login_protocols"] == ["telegram", "vk_id"]
+    assert technical["human_session_bypass_allowed"] is False
+    assert technical["provider_double_below_deployed_routing_only"] is True
+    assert technical["browser_bound_pre_auth_required"] is True
+    assert technical["durable_pre_auth_required"] is True
+    assert technical["cross_tenant_negative_tests_required"] is True
+    assert technical["recovery_and_rollback_required"] is True
+
+    assert production["production_provider"] == "Cloud.ru Evolution"
+    assert production["public_multi_user_enabled"] is False
+    assert production["provider_apply_authorized"] is False
+    assert production["real_user_cutover_authorized"] is False
+    assert production["current_authorized_recurring_rub"] == 0
+    assert production["current_authorized_recurring_usd"] == 0
+    assert production["automatic_paid_fallback_allowed"] is False
+    assert production["production_dns_edge_mutation_authorized"] is False
+    assert production["production_provider_secret_provisioning_authorized"] is False
+    assert legacy_activation["deprecated_by"] == "public_production_activation"
+
+
+def test_amendment11_is_discoverable_and_keeps_next_gates_locked() -> None:
+    amendment = AMENDMENT11.read_text(encoding="utf-8")
+    index = AMENDMENTS_INDEX.read_text(encoding="utf-8")
+    authorization = PHASE5_AUTHORIZATION.read_text(encoding="utf-8")
+    status = STATUS.read_text(encoding="utf-8")
+
+    assert AMENDMENT11.name in index
+    for marker in (
+        "exactly Telegram Login and VK ID",
+        "`PUBLIC_MULTI_USER_ENABLED=false`",
+        "`provider_apply_authorized=false`",
+        "`trading_methods=false`",
+        "`REAL_TRADING_ENABLED=false`",
+        "WP23 remains locked",
+        "Protected V9 `app:app` rollback",
+    ):
+        assert marker in amendment
+
+    assert "no deployed `preview-login`" in authorization
+    assert (
+        "provider doubles may be injected only below deployed routing"
+        in authorization
+    )
+    assert "PUBLIC PRODUCTION ACTIVATION LOCKED" in status
+    assert "Accepted implementation progress is **40%**" in status
 
 
 def test_phase5_product_identity_is_user_tenant_session_not_provider_authority() -> None:

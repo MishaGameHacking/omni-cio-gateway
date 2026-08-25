@@ -1,13 +1,39 @@
 {
-  "schema_version": "v10.wp22a.phase5.public-hosted-acceptance.v1",
-  "status": "AUTHORIZED_ON_PHASE4_ACCEPTANCE",
+  "schema_version": "v10.wp22a.phase5.public-hosted-acceptance.v2",
+  "status": "WP22A_TECHNICAL_CLOSEOUT_AUTHORIZED_PUBLIC_ACTIVATION_LOCKED",
   "authority": {
     "phase4_acceptance_evidence": "docs/architecture/V10_WP22A_PHASE4_ACCEPTANCE_EVIDENCE.md",
     "phase4_acceptance_contract": "docs/architecture/V10_WP22A_PHASE4_ACCEPTANCE_EVIDENCE.json",
     "phase5_authorized": true,
+    "wp22a_technical_gate_authorized": true,
+    "wp22a_technical_gate_complete": false,
+    "public_production_activation_authorized": false,
     "wp22a_complete": false,
     "wp23_unlocked": false,
     "visual_refresh_runtime_authorized": false
+  },
+  "technical_closeout": {
+    "hosted_synthetic_acceptance_allowed": true,
+    "real_provider_secret_required_for_gate": false,
+    "human_login_protocols": [
+      "telegram",
+      "vk_id"
+    ],
+    "human_session_bypass_allowed": false,
+    "provider_double_below_deployed_routing_only": true,
+    "browser_bound_pre_auth_required": true,
+    "durable_pre_auth_required": true,
+    "atomic_pre_auth_consume_required": true,
+    "provider_mixup_replay_browser_swap_negatives_required": true,
+    "verified_provider_to_internal_account_required": true,
+    "server_side_session_required": true,
+    "cross_tenant_negative_tests_required": true,
+    "browser_request_security_required": true,
+    "recovery_and_rollback_required": true,
+    "abuse_capacity_controls_required": true,
+    "responsive_browser_acceptance_required": true,
+    "exact_release_evidence_required": true,
+    "exact_head_draft_ready_and_main_shield_required": true
   },
   "product_path": {
     "normal_browser_required": true,
@@ -51,6 +77,20 @@
     "owner_cost_approval_required_above_current_cap": true,
     "render_neon_preview_remains_synthetic": true
   },
+  "public_production_activation": {
+    "production_provider": "Cloud.ru Evolution",
+    "public_multi_user_enabled": false,
+    "provider_apply_authorized": false,
+    "real_user_cutover_authorized": false,
+    "current_authorized_recurring_rub": 0,
+    "current_authorized_recurring_usd": 0,
+    "automatic_paid_fallback_allowed": false,
+    "exact_price_sku_revalidation_required_before_apply": true,
+    "owner_cost_approval_required_above_current_cap": true,
+    "production_dns_edge_mutation_authorized": false,
+    "production_provider_secret_provisioning_authorized": false,
+    "production_privacy_legal_operations_gate_complete": false
+  },
   "broker": {
     "public_tinvest_status": "FAIL_CLOSED_PENDING_BROKER_TERMS_PERMISSION",
     "real_broker_credentials_in_preview_allowed": false,
@@ -66,6 +106,8 @@
     "premium_feature_gating": false
   },
   "activation": {
+    "status": "DEPRECATED_SEQUENCING_ALIAS_USE_PUBLIC_PRODUCTION_ACTIVATION",
+    "deprecated_by": "public_production_activation",
     "public_multi_user_enabled_initial": false,
     "activation_requires_focused_phase5_gate": true,
     "normal_user_login_logout_session_acceptance_required": true,

@@ -134,6 +134,25 @@ Locks the 2026-08-18 OWNER launch direction:
 
 Amendment 10 explicitly supersedes conflicting Personal-Node-final-product, permanent-private, initial-paid-access and central-private-data prohibitions in Amendments 5/6/7 and older WP22A wording. Non-conflicting safety, tenant isolation, legal, broker separation, recovery and engineering rules remain active.
 
+### 11. WP22A Technical Closeout / Public Production Activation Separation
+
+`OMNI_CIO_V10_WP22A_TECHNICAL_CLOSEOUT_AND_PUBLIC_ACTIVATION_SEPARATION_AMENDMENT.md`
+
+Machine-readable companion:
+
+`../architecture/V10_WP22A_PHASE5_PUBLIC_HOSTED_ACCEPTANCE_CONTRACT.json`
+
+Locks the 2026-08-24 OWNER sequencing correction that:
+
+- WP22A may close its complete technical External Web Access / Product Authentication Security Gate on the accepted hosted technical/synthetic boundary without first purchasing/applying final production infrastructure or provisioning OWNER-held production provider secrets;
+- exactly Telegram Login and VK ID remain the only human product-authentication protocols, and no OWNER/admin/developer/demo/preview/private session-minting bypass may exist in deployed product mode;
+- deterministic provider doubles are permitted only below deployed routing/network boundaries and may never become a human-accessible session issuer;
+- the technical gate still requires browser-bound durable pre-auth, provider mix-up/replay defenses, internal account/tenant/session composition, tenant/RLS negatives, browser/API security, abuse/capacity controls, recovery, rollback and exact release evidence;
+- final Cloud.ru Evolution apply, real provider provisioning, production DNS/edge/public-user cutover, `PUBLIC_MULTI_USER_ENABLED=true` and production legal/operations acceptance remain a later independent fail-closed activation gate;
+- current recurring infrastructure authority remains `0 RUB/month` / `0 USD/month`, provider apply remains forbidden and automatic paid fallback remains forbidden;
+- public T-Invest remains fail-closed, broker write remains OFF, `trading_methods=false`, `REAL_TRADING_ENABLED=false`, WP23 remains locked and protected V9 `app:app` rollback remains intact;
+- Amendment 11 changes sequencing only and does not weaken Amendments 9/10, mark WP22A complete or authorize the visual-refresh runtime by itself.
+
 ## Draft/superseded planning material
 
 Open or historical PR descriptions must not be treated as active plan authority merely because they contain V10 ideas. Closed-unmerged PR #327 is superseded by Amendments 9/10 and is historical only. Older unmerged Personal-Node/cloud migration or OWNER-only external-access planning is likewise non-authoritative when it conflicts with accepted amendments.
