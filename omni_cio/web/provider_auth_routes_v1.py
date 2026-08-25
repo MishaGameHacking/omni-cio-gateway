@@ -43,7 +43,7 @@ class ProductAuthenticationLike(Protocol):
 @dataclass(slots=True)
 class ProviderAuthRouteServicesV1:
     runtimes: tuple[ProviderAuthenticationRuntimeLike, ...]
-    authentication: ProductAuthenticationLike
+    authentication: ProductAuthenticationLike | None
     cookies: BrowserCookiePolicyV1
     now: Callable[[], datetime] = lambda: datetime.now(timezone.utc)
 
@@ -57,6 +57,8 @@ class ProviderAuthRouteServicesV1:
             for provider in providers
         ):
             raise ValueError("PROVIDER_AUTH_RUNTIME_INVALID")
+        if self.runtimes and self.authentication is None:
+            raise ValueError("PROVIDER_AUTH_AUTHENTICATION_REQUIRED")
 
     def runtime(
         self,
@@ -186,7 +188,8 @@ def install_provider_auth_routes_v1(
 
     def callback(provider: IdentityProviderV1, request: Request) -> Response:
         runtime = services.runtime(provider)
-        if runtime is None:
+        authentication = services.authentication
+        if runtime is None or authentication is None:
             return _safe_error(
                 "IDENTITY_PROVIDER_NOT_CONFIGURED",
                 503,
@@ -216,7 +219,7 @@ def install_provider_auth_routes_v1(
                 now=_utc_now(services),
                 device_id=device_id,
             )
-            token, _ = services.authentication.authenticate_verified_identity(
+            token, _ = authentication.authenticate_verified_identity(
                 identity,
                 current_session_token=request.cookies.get(
                     services.cookies.session_cookie
