@@ -20,7 +20,10 @@ from omni_cio.web.provider_auth_routes_v1 import (
     VK_ID_CALLBACK_PATH,
     ProviderAuthRouteServicesV1,
 )
-from omni_cio.web.provider_auth_v1 import PostgresAuthorizationTransactionStoreV1
+from omni_cio.web.provider_auth_v1 import (
+    PostgresAuthorizationTransactionStoreV1,
+    ProviderAuthenticationRuntimeLike,
+)
 from omni_cio.web.telegram_jwks_v1 import TelegramJwksSingleFlightVerifierV1
 from omni_cio.web.telegram_oidc_v1 import TelegramOidcConfigV1, TelegramOidcRuntimeV1
 from omni_cio.web.vk_id_oauth_v1 import VkIdOauthConfigV1, VkIdOauthRuntimeV1
@@ -140,7 +143,7 @@ def build_wp22a_phase5_provider_auth(
         sessions=sessions,
     )
 
-    runtimes = []
+    runtimes: list[ProviderAuthenticationRuntimeLike] = []
     if telegram_client_id:
         telegram_config = TelegramOidcConfigV1(
             client_id=telegram_client_id,
