@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from email.message import Message
 from typing import Any
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlunsplit
 
 import pytest
@@ -131,6 +132,118 @@ def test_provider_get_network_retry_is_bounded_and_fails_closed(
 
     assert opener.methods == ["GET", "GET", "GET"]
     assert delays == [1.0, 2.0]
+
+
+@pytest.mark.parametrize("status", sorted(provisioner._TRANSIENT_GET_HTTP_STATUSES))
+def test_provider_get_retries_only_allowlisted_transient_http_statuses(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    status: int,
+) -> None:
+    opener = _SequenceOpener(
+        [
+            HTTPError(
+                "https://api.render.com/v1/owners",
+                status,
+                "sensitive-upstream-detail",
+                Message(),
+                None,
+            ),
+            _HttpResponse(),
+        ]
+    )
+    delays: list[float] = []
+    monkeypatch.setattr(provisioner, "_NO_REDIRECT_OPENER", opener)
+    monkeypatch.setattr(provisioner.time, "sleep", delays.append)
+    api = provisioner.JsonApi(
+        provisioner.RENDER_API_BASE,
+        "provider-secret-marker",
+        label="RENDER",
+    )
+
+    assert api.request("GET", "/owners") == {"result": "ok"}
+
+    assert opener.methods == ["GET", "GET"]
+    assert delays == [1.0]
+    output = capsys.readouterr().out
+    assert output.strip() == (f"RENDER_API_HTTP_RETRY status={status} attempt=2/3")
+    assert "provider-secret-marker" not in output
+    assert "sensitive-upstream-detail" not in output
+
+
+@pytest.mark.parametrize("method", ["POST", "PUT"])
+def test_provider_mutation_transient_http_status_is_never_retried(
+    monkeypatch: pytest.MonkeyPatch,
+    method: str,
+) -> None:
+    opener = _SequenceOpener(
+        [
+            HTTPError(
+                "https://console.neon.tech/api/v2/projects",
+                503,
+                "ambiguous-provider-mutation",
+                Message(),
+                None,
+            ),
+            _HttpResponse(),
+        ]
+    )
+    delays: list[float] = []
+    monkeypatch.setattr(provisioner, "_NO_REDIRECT_OPENER", opener)
+    monkeypatch.setattr(provisioner.time, "sleep", delays.append)
+    api = provisioner.JsonApi(
+        provisioner.NEON_API_BASE,
+        "provider-secret-marker",
+        label="NEON",
+    )
+
+    with pytest.raises(
+        provisioner.ProvisioningStopped,
+        match="NEON_API_HTTP_ERROR status=503",
+    ):
+        api.request(
+            method,
+            "/projects",
+            body={"project": {"name": "preview"}},
+            expected=frozenset({200, 201}),
+        )
+
+    assert opener.methods == [method]
+    assert delays == []
+
+
+def test_provider_non_transient_get_http_status_is_not_retried(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    opener = _SequenceOpener(
+        [
+            HTTPError(
+                "https://api.render.com/v1/owners",
+                500,
+                "upstream-application-failure",
+                Message(),
+                None,
+            ),
+            _HttpResponse(),
+        ]
+    )
+    delays: list[float] = []
+    monkeypatch.setattr(provisioner, "_NO_REDIRECT_OPENER", opener)
+    monkeypatch.setattr(provisioner.time, "sleep", delays.append)
+    api = provisioner.JsonApi(
+        provisioner.RENDER_API_BASE,
+        "provider-secret-marker",
+        label="RENDER",
+    )
+
+    with pytest.raises(
+        provisioner.ProvisioningStopped,
+        match="RENDER_API_HTTP_ERROR status=500",
+    ):
+        api.request("GET", "/owners")
+
+    assert opener.methods == ["GET"]
+    assert delays == []
 
 
 class _OperationalError(Exception):

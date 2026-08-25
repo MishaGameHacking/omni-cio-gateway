@@ -37,6 +37,7 @@ _PROVIDER_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")
 _RENDER_SLUG_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 _SAFE_TEXT_PATTERN = re.compile(r"^[^\x00-\x1f\x7f]{1,128}$")
 _TRANSIENT_RETRY_DELAYS_SECONDS = (1.0, 2.0)
+_TRANSIENT_GET_HTTP_STATUSES = frozenset({408, 429, 502, 503, 504})
 _DATABASE_CONNECT_TIMEOUT_SECONDS = 15
 _TERMINAL_DEPLOY_FAILURES = frozenset(
     {
@@ -286,6 +287,17 @@ class JsonApi:
                     raw = response.read()
             except HTTPError as exc:
                 status = int(exc.code)
+                if (
+                    safe_method == "GET"
+                    and status in _TRANSIENT_GET_HTTP_STATUSES
+                    and attempt + 1 < attempts
+                ):
+                    _emit(
+                        f"{self.label}_API_HTTP_RETRY status={status} "
+                        f"attempt={attempt + 2}/{attempts}"
+                    )
+                    time.sleep(_TRANSIENT_RETRY_DELAYS_SECONDS[attempt])
+                    continue
                 if status == 402:
                     raise ProvisioningStopped(
                         "PAYMENT_OR_CARD_REQUIRED",
