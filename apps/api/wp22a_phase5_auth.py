@@ -21,6 +21,7 @@ from omni_cio.web.provider_auth_routes_v1 import (
     ProviderAuthRouteServicesV1,
 )
 from omni_cio.web.provider_auth_v1 import PostgresAuthorizationTransactionStoreV1
+from omni_cio.web.telegram_jwks_v1 import TelegramJwksSingleFlightVerifierV1
 from omni_cio.web.telegram_oidc_v1 import TelegramOidcConfigV1, TelegramOidcRuntimeV1
 from omni_cio.web.vk_id_oauth_v1 import VkIdOauthConfigV1, VkIdOauthRuntimeV1
 
@@ -141,14 +142,16 @@ def build_wp22a_phase5_provider_auth(
 
     runtimes = []
     if telegram_client_id:
+        telegram_config = TelegramOidcConfigV1(
+            client_id=telegram_client_id,
+            client_secret=telegram_client_secret,
+            redirect_uri=origin + TELEGRAM_CALLBACK_PATH,
+        )
         runtimes.append(
             TelegramOidcRuntimeV1(
-                config=TelegramOidcConfigV1(
-                    client_id=telegram_client_id,
-                    client_secret=telegram_client_secret,
-                    redirect_uri=origin + TELEGRAM_CALLBACK_PATH,
-                ),
+                config=telegram_config,
                 transactions=transactions,
+                verifier=TelegramJwksSingleFlightVerifierV1(telegram_config),
             )
         )
     if vk_client_id:
