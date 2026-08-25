@@ -36,6 +36,9 @@ _SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 _PROVIDER_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")
 _RENDER_SLUG_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 _SAFE_TEXT_PATTERN = re.compile(r"^[^\x00-\x1f\x7f]{1,128}$")
+_TRANSIENT_RETRY_DELAYS_SECONDS = (1.0, 2.0)
+_TRANSIENT_GET_HTTP_STATUSES = frozenset({408, 429, 502, 503, 504})
+_DATABASE_CONNECT_TIMEOUT_SECONDS = 15
 _TERMINAL_DEPLOY_FAILURES = frozenset(
     {
         "deactivated",
@@ -263,6 +266,7 @@ class JsonApi:
     ) -> Any:
         safe_path = _safe_api_path(path, f"{self.label}_API_PATH_INVALID")
         url = f"{self.base_url}{safe_path}"
+        safe_method = method.upper()
         data = None
         headers = {
             "Accept": "application/json",
@@ -272,29 +276,53 @@ class JsonApi:
         if body is not None:
             data = json.dumps(body, separators=(",", ":")).encode("utf-8")
             headers["Content-Type"] = "application/json"
-        request = Request(url, data=data, headers=headers, method=method)
-        try:
-            with _NO_REDIRECT_OPENER.open(request, timeout=timeout) as response:
-                status = int(response.status)
-                raw = response.read()
-        except HTTPError as exc:
-            status = int(exc.code)
-            if status == 402:
+        attempts = (
+            len(_TRANSIENT_RETRY_DELAYS_SECONDS) + 1 if safe_method == "GET" else 1
+        )
+        for attempt in range(attempts):
+            request = Request(url, data=data, headers=headers, method=safe_method)
+            try:
+                with _NO_REDIRECT_OPENER.open(request, timeout=timeout) as response:
+                    status = int(response.status)
+                    raw = response.read()
+            except HTTPError as exc:
+                status = int(exc.code)
+                if (
+                    safe_method == "GET"
+                    and status in _TRANSIENT_GET_HTTP_STATUSES
+                    and attempt + 1 < attempts
+                ):
+                    _emit(
+                        f"{self.label}_API_HTTP_RETRY status={status} "
+                        f"attempt={attempt + 2}/{attempts}"
+                    )
+                    time.sleep(_TRANSIENT_RETRY_DELAYS_SECONDS[attempt])
+                    continue
+                if status == 402:
+                    raise ProvisioningStopped(
+                        "PAYMENT_OR_CARD_REQUIRED",
+                        status=status,
+                    ) from None
+                if status in {401, 403}:
+                    raise ProvisioningStopped(
+                        f"{self.label}_API_KEY_INVALID_OR_INSUFFICIENT",
+                        status=status,
+                    ) from None
                 raise ProvisioningStopped(
-                    "PAYMENT_OR_CARD_REQUIRED",
+                    f"{self.label}_API_HTTP_ERROR",
                     status=status,
                 ) from None
-            if status in {401, 403}:
-                raise ProvisioningStopped(
-                    f"{self.label}_API_KEY_INVALID_OR_INSUFFICIENT",
-                    status=status,
-                ) from None
-            raise ProvisioningStopped(
-                f"{self.label}_API_HTTP_ERROR",
-                status=status,
-            ) from None
-        except (URLError, TimeoutError, OSError):
-            raise ProvisioningStopped(f"{self.label}_API_NETWORK_ERROR") from None
+            except (URLError, TimeoutError, OSError):
+                if attempt + 1 >= attempts:
+                    raise ProvisioningStopped(
+                        f"{self.label}_API_NETWORK_ERROR"
+                    ) from None
+                _emit(
+                    f"{self.label}_API_NETWORK_RETRY attempt={attempt + 2}/{attempts}"
+                )
+                time.sleep(_TRANSIENT_RETRY_DELAYS_SECONDS[attempt])
+                continue
+            break
         if status not in expected:
             raise ProvisioningStopped(
                 f"{self.label}_API_UNEXPECTED_STATUS",
@@ -633,6 +661,182 @@ def _converge_runtime_role(connection: Any, runtime_password: str) -> None:
     )
 
 
+def _connect_postgres_with_retry(
+    psycopg_module: Any,
+    uri: str,
+    *,
+    retry_marker: str,
+    failure_code: str,
+) -> Any:
+    attempts = len(_TRANSIENT_RETRY_DELAYS_SECONDS) + 1
+    for attempt in range(attempts):
+        try:
+            return psycopg_module.connect(
+                uri,
+                autocommit=True,
+                connect_timeout=_DATABASE_CONNECT_TIMEOUT_SECONDS,
+            )
+        except psycopg_module.OperationalError:
+            if attempt + 1 >= attempts:
+                raise ProvisioningStopped(failure_code) from None
+            _emit(f"{retry_marker} attempt={attempt + 2}/{attempts}")
+            time.sleep(_TRANSIENT_RETRY_DELAYS_SECONDS[attempt])
+    raise AssertionError("bounded PostgreSQL connection retry exhausted")
+
+
+def _seed_preview_records(
+    connection: Any,
+    tenant_digest: str,
+    user_digest: str,
+) -> None:
+    connection.execute(
+        "INSERT INTO omni_cio_v10.tenants "
+        "(tenant_id, schema_version, identity_version, mode, "
+        "created_at, record_sha256) VALUES (%s, %s, %s, %s, %s, %s) "
+        "ON CONFLICT (tenant_id) DO NOTHING",
+        (
+            PREVIEW_TENANT_ID,
+            "1.0",
+            1,
+            "product_user",
+            PREVIEW_CREATED_AT,
+            tenant_digest,
+        ),
+    )
+    connection.execute(
+        "INSERT INTO omni_cio_v10.users "
+        "(user_id, tenant_id, schema_version, identity_version, role, "
+        "created_at, record_sha256) VALUES (%s, %s, %s, %s, %s, %s, %s) "
+        "ON CONFLICT (user_id) DO NOTHING",
+        (
+            PREVIEW_USER_ID,
+            PREVIEW_TENANT_ID,
+            "1.0",
+            1,
+            "user",
+            PREVIEW_CREATED_AT,
+            user_digest,
+        ),
+    )
+    stored = connection.execute(
+        "SELECT tenant_id, record_sha256 FROM omni_cio_v10.tenants "
+        "WHERE tenant_id = %s UNION ALL "
+        "SELECT user_id, record_sha256 FROM omni_cio_v10.users "
+        "WHERE user_id = %s ORDER BY 1",
+        (PREVIEW_TENANT_ID, PREVIEW_USER_ID),
+    ).fetchall()
+    expected = sorted(
+        [
+            (PREVIEW_TENANT_ID, tenant_digest),
+            (PREVIEW_USER_ID, user_digest),
+        ]
+    )
+    if list(stored) != expected:
+        raise ProvisioningStopped("SYNTHETIC_PREVIEW_RECORD_DRIFT")
+
+
+def _seed_preview_records_with_retry(
+    psycopg_module: Any,
+    bootstrap_uri: str,
+    tenant_digest: str,
+    user_digest: str,
+) -> None:
+    attempts = len(_TRANSIENT_RETRY_DELAYS_SECONDS) + 1
+    for attempt in range(attempts):
+        try:
+            with psycopg_module.connect(
+                bootstrap_uri,
+                autocommit=True,
+                connect_timeout=_DATABASE_CONNECT_TIMEOUT_SECONDS,
+            ) as connection:
+                _seed_preview_records(connection, tenant_digest, user_digest)
+            return
+        except ProvisioningStopped:
+            raise
+        except psycopg_module.OperationalError:
+            if attempt + 1 >= attempts:
+                raise ProvisioningStopped(
+                    "DATABASE_SYNTHETIC_SEED_NETWORK_ERROR"
+                ) from None
+            _emit(
+                "DATABASE_SYNTHETIC_SEED_NETWORK_RETRY "
+                f"attempt={attempt + 2}/{attempts}"
+            )
+            time.sleep(_TRANSIENT_RETRY_DELAYS_SECONDS[attempt])
+        except Exception:
+            raise ProvisioningStopped("DATABASE_SYNTHETIC_SEED_FAILED") from None
+
+
+def _verify_hosted_runtime(connection: Any) -> None:
+    role = connection.execute(
+        "SELECT rolname, rolcanlogin, rolsuper, rolcreatedb, "
+        "rolcreaterole, rolreplication, rolbypassrls "
+        "FROM pg_catalog.pg_roles WHERE rolname = current_user"
+    ).fetchone()
+    if role != (
+        RUNTIME_ROLE,
+        True,
+        False,
+        False,
+        False,
+        False,
+        False,
+    ):
+        raise ProvisioningStopped("HOSTED_RUNTIME_ROLE_DRIFT")
+    count = connection.execute(
+        "SELECT count(*) FROM pg_catalog.pg_auth_members memberships "
+        "JOIN pg_catalog.pg_roles member_role "
+        "ON member_role.oid = memberships.member "
+        "WHERE member_role.rolname = current_user"
+    ).fetchone()
+    if count is None or int(count[0]) != 0:
+        raise ProvisioningStopped("HOSTED_RUNTIME_ROLE_MEMBERSHIP_PRESENT")
+    rows = connection.execute(
+        "SELECT c.relname, c.relrowsecurity, c.relforcerowsecurity "
+        "FROM pg_catalog.pg_class c "
+        "JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "
+        "WHERE n.nspname = 'omni_cio_v10' "
+        "AND c.relname = ANY(%s) ORDER BY c.relname",
+        (
+            [
+                "broker_accounts",
+                "broker_connection_accounts",
+                "broker_connections",
+            ],
+        ),
+    ).fetchall()
+    if len(rows) != 3 or any(not bool(row[1]) or not bool(row[2]) for row in rows):
+        raise ProvisioningStopped("HOSTED_RUNTIME_FORCE_RLS_DRIFT")
+
+
+def _verify_hosted_runtime_with_retry(
+    psycopg_module: Any,
+    runtime_uri: str,
+) -> None:
+    attempts = len(_TRANSIENT_RETRY_DELAYS_SECONDS) + 1
+    for attempt in range(attempts):
+        try:
+            with psycopg_module.connect(
+                runtime_uri,
+                autocommit=True,
+                connect_timeout=_DATABASE_CONNECT_TIMEOUT_SECONDS,
+            ) as runtime:
+                _verify_hosted_runtime(runtime)
+            return
+        except ProvisioningStopped:
+            raise
+        except psycopg_module.OperationalError:
+            if attempt + 1 >= attempts:
+                raise ProvisioningStopped("HOSTED_RUNTIME_CONNECTION_FAILED") from None
+            _emit(
+                "HOSTED_RUNTIME_CONNECTION_NETWORK_RETRY "
+                f"attempt={attempt + 2}/{attempts}"
+            )
+            time.sleep(_TRANSIENT_RETRY_DELAYS_SECONDS[attempt])
+        except Exception:
+            raise ProvisioningStopped("HOSTED_RUNTIME_CONNECTION_FAILED") from None
+
+
 def _bootstrap_database(
     repo_root: Path,
     target: NeonTarget,
@@ -666,63 +870,33 @@ def _bootstrap_database(
     user_digest = _canonical_sha256(user)
     _emit("DATABASE_BOOTSTRAP_STAGE=CONNECT")
     try:
-        with psycopg.connect(target.bootstrap_uri, autocommit=True) as connection:
+        connection = _connect_postgres_with_retry(
+            psycopg,
+            target.bootstrap_uri,
+            retry_marker="DATABASE_CONNECT_NETWORK_RETRY",
+            failure_code="DATABASE_CONNECT_NETWORK_ERROR",
+        )
+        with connection:
             _emit("DATABASE_BOOTSTRAP_STAGE=MIGRATIONS")
             apply_migrations(connection)
             _emit("DATABASE_BOOTSTRAP_STAGE=RUNTIME_ROLE")
             _converge_runtime_role(connection, runtime_password)
             _emit("DATABASE_BOOTSTRAP_STAGE=RUNTIME_GRANTS")
             connection.execute(runtime_sql, prepare=False)
-            _emit("DATABASE_BOOTSTRAP_STAGE=SYNTHETIC_SEED")
-            connection.execute(
-                "INSERT INTO omni_cio_v10.tenants "
-                "(tenant_id, schema_version, identity_version, mode, "
-                "created_at, record_sha256) VALUES (%s, %s, %s, %s, %s, %s) "
-                "ON CONFLICT (tenant_id) DO NOTHING",
-                (
-                    PREVIEW_TENANT_ID,
-                    "1.0",
-                    1,
-                    "product_user",
-                    PREVIEW_CREATED_AT,
-                    tenant_digest,
-                ),
-            )
-            connection.execute(
-                "INSERT INTO omni_cio_v10.users "
-                "(user_id, tenant_id, schema_version, identity_version, role, "
-                "created_at, record_sha256) VALUES (%s, %s, %s, %s, %s, %s, %s) "
-                "ON CONFLICT (user_id) DO NOTHING",
-                (
-                    PREVIEW_USER_ID,
-                    PREVIEW_TENANT_ID,
-                    "1.0",
-                    1,
-                    "user",
-                    PREVIEW_CREATED_AT,
-                    user_digest,
-                ),
-            )
-            stored = connection.execute(
-                "SELECT tenant_id, record_sha256 FROM omni_cio_v10.tenants "
-                "WHERE tenant_id = %s UNION ALL "
-                "SELECT user_id, record_sha256 FROM omni_cio_v10.users "
-                "WHERE user_id = %s ORDER BY 1",
-                (PREVIEW_TENANT_ID, PREVIEW_USER_ID),
-            ).fetchall()
-            expected = sorted(
-                [
-                    (PREVIEW_TENANT_ID, tenant_digest),
-                    (PREVIEW_USER_ID, user_digest),
-                ]
-            )
-            if list(stored) != expected:
-                raise ProvisioningStopped("SYNTHETIC_PREVIEW_RECORD_DRIFT")
-            _emit("DATABASE_BOOTSTRAP_STAGE=COMPLETE")
     except ProvisioningStopped:
         raise
+    except psycopg.OperationalError:
+        raise ProvisioningStopped("DATABASE_BOOTSTRAP_NETWORK_ERROR") from None
     except Exception:
         raise ProvisioningStopped("DATABASE_BOOTSTRAP_FAILED") from None
+    _emit("DATABASE_BOOTSTRAP_STAGE=SYNTHETIC_SEED")
+    _seed_preview_records_with_retry(
+        psycopg,
+        target.bootstrap_uri,
+        tenant_digest,
+        user_digest,
+    )
+    _emit("DATABASE_BOOTSTRAP_STAGE=COMPLETE")
 
     runtime_uri = _replace_uri_credentials(
         target.pooled_bootstrap_uri,
@@ -730,53 +904,7 @@ def _bootstrap_database(
         runtime_password,
     )
     _mask(runtime_uri)
-    try:
-        with psycopg.connect(runtime_uri, autocommit=True) as runtime:
-            role = runtime.execute(
-                "SELECT rolname, rolcanlogin, rolsuper, rolcreatedb, "
-                "rolcreaterole, rolreplication, rolbypassrls "
-                "FROM pg_catalog.pg_roles WHERE rolname = current_user"
-            ).fetchone()
-            if role != (
-                RUNTIME_ROLE,
-                True,
-                False,
-                False,
-                False,
-                False,
-                False,
-            ):
-                raise ProvisioningStopped("HOSTED_RUNTIME_ROLE_DRIFT")
-            count = runtime.execute(
-                "SELECT count(*) FROM pg_catalog.pg_auth_members memberships "
-                "JOIN pg_catalog.pg_roles member_role "
-                "ON member_role.oid = memberships.member "
-                "WHERE member_role.rolname = current_user"
-            ).fetchone()
-            if count is None or int(count[0]) != 0:
-                raise ProvisioningStopped("HOSTED_RUNTIME_ROLE_MEMBERSHIP_PRESENT")
-            rows = runtime.execute(
-                "SELECT c.relname, c.relrowsecurity, c.relforcerowsecurity "
-                "FROM pg_catalog.pg_class c "
-                "JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "
-                "WHERE n.nspname = 'omni_cio_v10' "
-                "AND c.relname = ANY(%s) ORDER BY c.relname",
-                (
-                    [
-                        "broker_accounts",
-                        "broker_connection_accounts",
-                        "broker_connections",
-                    ],
-                ),
-            ).fetchall()
-            if len(rows) != 3 or any(
-                not bool(row[1]) or not bool(row[2]) for row in rows
-            ):
-                raise ProvisioningStopped("HOSTED_RUNTIME_FORCE_RLS_DRIFT")
-    except ProvisioningStopped:
-        raise
-    except Exception:
-        raise ProvisioningStopped("HOSTED_RUNTIME_CONNECTION_FAILED") from None
+    _verify_hosted_runtime_with_retry(psycopg, runtime_uri)
     _emit("NEON_DATABASE_BOOTSTRAP=PASS")
     return runtime_uri
 
