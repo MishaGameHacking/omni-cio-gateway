@@ -165,6 +165,10 @@ def _now_iso(services: HostedPreviewServicesV1) -> str:
     return _utc(services.now()).isoformat()
 
 
+def _is_api_path(path: str) -> bool:
+    return path.startswith("/api/") or path == "/healthz"
+
+
 def _merge_vary(response: Response, *required: str) -> None:
     existing = response.headers.get("Vary", "")
     values = [value.strip() for value in existing.split(",") if value.strip()]
@@ -245,9 +249,7 @@ class HostedPreviewSecurityMiddlewareV1(BaseHTTPMiddleware):
         request: Request,
         call_next: Callable[..., Any],
     ) -> Response:
-        api_path = (
-            request.url.path.startswith("/api/") or request.url.path == "/healthz"
-        )
+        api_path = _is_api_path(request.url.path)
         # Never treat a client-controlled forwarded header as TLS authority. On the
         # accepted Render Web Service the managed edge terminates public TLS and
         # forwards to a port that Render documents as not directly Internet-reachable;
@@ -597,6 +599,15 @@ def create_hosted_preview_app(
         redoc_url=None,
         openapi_url=None,
     )
+
+    @app.exception_handler(Exception)
+    def unhandled_exception(request: Request, exc: Exception) -> Response:
+        del exc
+        return _safe_error(
+            "INTERNAL_ERROR",
+            500,
+            api_path=_is_api_path(request.url.path),
+        )
 
     @app.get("/healthz")
     def healthz() -> Response:
