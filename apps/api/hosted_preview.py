@@ -52,6 +52,7 @@ PREVIEW_SESSION_POLICY = SessionPolicyV1(
 )
 _PROVIDER_START_PATHS = frozenset({TELEGRAM_START_PATH, VK_ID_START_PATH})
 _SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+_UNTRUSTED_FETCH_SITES = frozenset({"cross-site", "same-site"})
 _SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 _HOST_PATTERN = re.compile(
     r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
@@ -165,6 +166,7 @@ def _harden_response(response: Response, *, api_path: bool) -> Response:
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "same-origin"
     response.headers["Cache-Control"] = "no-store" if api_path else "no-cache"
+    response.headers["Vary"] = "Origin, Sec-Fetch-Site"
     return response
 
 
@@ -175,7 +177,9 @@ def _safe_error(detail: str, status_code: int, *, api_path: bool = True) -> Resp
     )
 
 
-def _disabled_provider_auth(services: HostedPreviewServicesV1) -> ProviderAuthRouteServicesV1:
+def _disabled_provider_auth(
+    services: HostedPreviewServicesV1,
+) -> ProviderAuthRouteServicesV1:
     return ProviderAuthRouteServicesV1(
         runtimes=(),
         authentication=None,
@@ -201,6 +205,9 @@ class HostedPreviewSecurityMiddlewareV1(BaseHTTPMiddleware):
         request: Request,
         call_next: Callable[..., Any],
     ) -> Response:
+        # Render terminates TLS at its managed edge and the application port is
+        # not directly Internet-reachable. X-Forwarded-Proto is therefore
+        # accepted only inside that reviewed edge-to-origin hosting boundary.
         forwarded = request.headers.get("x-forwarded-proto", "").strip().lower()
         scheme = forwarded or request.url.scheme.lower()
         api_path = (
@@ -212,6 +219,13 @@ class HostedPreviewSecurityMiddlewareV1(BaseHTTPMiddleware):
         if request.method not in _SAFE_METHODS:
             if _origin_hostname(request.headers.get("origin", "")) != self._hostname:
                 return _safe_error("ORIGIN_REQUIRED", 403, api_path=api_path)
+            fetch_site = request.headers.get("sec-fetch-site", "").strip().lower()
+            if fetch_site in _UNTRUSTED_FETCH_SITES:
+                return _safe_error(
+                    "FETCH_METADATA_REJECTED",
+                    403,
+                    api_path=api_path,
+                )
             if request.url.path not in _PROVIDER_START_PATHS:
                 session_token = request.cookies.get(BROWSER_SESSION_COOKIE, "")
                 cookie = request.cookies.get(BROWSER_CSRF_COOKIE, "")
@@ -246,7 +260,7 @@ def _require_session(
 
 
 def _verify_synthetic_scope(connection: Any) -> None:
-    """Verify provider-seeded Phase-4 fixture without using it as Phase-5 auth authority."""
+    """Verify provider-seeded Phase-4 fixture without using it as auth authority."""
     created = datetime(2026, 8, 21, tzinfo=timezone.utc)
     user_payload: dict[str, object] = {
         "schema_version": "1.0",
@@ -343,7 +357,10 @@ def _empty_portfolio(now: str) -> dict[str, object]:
             {
                 "code": "SYNTHETIC_PREVIEW_NO_BROKER_DATA",
                 "severity": "info",
-                "message": "Real broker and portfolio data are disabled in technical acceptance.",
+                "message": (
+                    "Real broker and portfolio data are disabled in technical "
+                    "acceptance."
+                ),
             }
         ],
         "calculation_policy": {
