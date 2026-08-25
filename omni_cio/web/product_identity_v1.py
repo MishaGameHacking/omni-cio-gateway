@@ -12,7 +12,7 @@ from typing import Protocol
 
 from omni_cio.persistence.migration import ConnectionLike
 from omni_cio.web.identity_v1 import VerifiedExternalIdentityV1
-from omni_cio.web.session_v1 import SessionScopeV1
+from omni_cio.web.session_v1 import SessionScopeV1, new_session_token_v1
 
 
 _USER_ID_PATTERN = re.compile(r"^user:v1:[a-z0-9][a-z0-9_-]{2,63}$")
@@ -116,6 +116,15 @@ class SessionIssuerLike(Protocol):
         tenant_id: str,
         now: datetime,
     ) -> tuple[str, SessionScopeV1]: ...
+
+    def bind(
+        self,
+        *,
+        token: str,
+        user_id: str,
+        tenant_id: str,
+        now: datetime,
+    ) -> SessionScopeV1: ...
 
     def revoke(self, token: str | None, *, now: datetime) -> bool: ...
 
@@ -394,17 +403,19 @@ class ProductAuthenticationServiceV1:
 
         return self._sessions.revoke(token, now=_utc(now))
 
-    def issue_session(
+    def bind_session(
         self,
+        token: str,
         account_scope: ProductAccountScopeV1,
         *,
         now: datetime,
-    ) -> tuple[str, SessionScopeV1]:
-        """Mint a fresh session from server-resolved product scope only."""
+    ) -> SessionScopeV1:
+        """Bind independently minted credential material to server-resolved scope."""
 
         timestamp = _utc(now)
         account_scope = _require_product_scope(account_scope)
-        token, session_scope = self._sessions.create(
+        session_scope = self._sessions.bind(
+            token=token,
             user_id=account_scope.user_id,
             tenant_id=account_scope.tenant_id,
             now=timestamp,
@@ -415,7 +426,18 @@ class ProductAuthenticationServiceV1:
         ):
             self._sessions.revoke(token, now=timestamp)
             raise ProductIdentityError("SESSION_SCOPE_MISMATCH")
-        return token, session_scope
+        return session_scope
+
+    def issue_session(
+        self,
+        account_scope: ProductAccountScopeV1,
+        *,
+        now: datetime,
+    ) -> tuple[str, SessionScopeV1]:
+        """Compatibility API: mint with CSPRNG, then bind to resolved scope."""
+
+        token = new_session_token_v1()
+        return token, self.bind_session(token, account_scope, now=now)
 
     def authenticate_verified_identity(
         self,

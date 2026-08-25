@@ -24,7 +24,7 @@ from omni_cio.web.provider_auth_v1 import (
     ProviderAuthorizationError,
 )
 from omni_cio.web.request_limits_v1 import ProviderAuthAbuseControlV1
-from omni_cio.web.session_v1 import SessionScopeV1
+from omni_cio.web.session_v1 import SessionScopeV1, new_session_token_v1
 
 
 TELEGRAM_START_PATH = "/api/v10/web/auth/telegram/start"
@@ -44,12 +44,13 @@ class ProductAuthenticationLike(Protocol):
 
     def revoke_session(self, token: str | None, *, now: datetime) -> bool: ...
 
-    def issue_session(
+    def bind_session(
         self,
+        token: str,
         account_scope: ProductAccountScopeV1,
         *,
         now: datetime,
-    ) -> tuple[str, SessionScopeV1]: ...
+    ) -> SessionScopeV1: ...
 
 
 @dataclass(slots=True)
@@ -263,7 +264,12 @@ def install_provider_auth_routes_v1(
                 request.cookies.get(services.cookies.session_cookie),
                 now=authenticated_at,
             )
-            token, _ = authentication.issue_session(
+            # Credential provenance is deliberately local to the cookie sink:
+            # callback/query/cookie/provider data can select an authenticated
+            # server-side scope, but cannot construct the new browser token.
+            token = new_session_token_v1()
+            authentication.bind_session(
+                token,
                 account_scope,
                 now=authenticated_at,
             )

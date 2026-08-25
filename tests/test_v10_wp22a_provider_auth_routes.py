@@ -73,7 +73,8 @@ class FakeProductAuthentication:
     def __init__(self) -> None:
         self.current_tokens: list[str | None] = []
         self.identities: list[VerifiedExternalIdentityV1] = []
-        self.issued_scopes: list[ProductAccountScopeV1] = []
+        self.bound_scopes: list[ProductAccountScopeV1] = []
+        self.bound_tokens: list[str] = []
         self.events: list[str] = []
 
     def resolve_verified_identity(
@@ -93,22 +94,21 @@ class FakeProductAuthentication:
         self.events.append("revoke")
         return token is not None
 
-    def issue_session(
+    def bind_session(
         self,
+        token: str,
         account_scope: ProductAccountScopeV1,
         *,
         now: datetime,
-    ) -> tuple[str, SessionScopeV1]:
+    ) -> SessionScopeV1:
         assert now == NOW
-        self.issued_scopes.append(account_scope)
-        self.events.append("issue")
-        return (
-            SESSION_TOKEN,
-            SessionScopeV1(
-                user_id=account_scope.user_id,
-                tenant_id=account_scope.tenant_id,
-                expires_at=NOW + timedelta(hours=1),
-            ),
+        self.bound_tokens.append(token)
+        self.bound_scopes.append(account_scope)
+        self.events.append("bind")
+        return SessionScopeV1(
+            user_id=account_scope.user_id,
+            tenant_id=account_scope.tenant_id,
+            expires_at=NOW + timedelta(hours=1),
         )
 
 
@@ -192,14 +192,21 @@ def test_callback_requires_initiating_browser_and_rotates_session() -> None:
     assert response.headers["location"] == "/"
     assert authentication.current_tokens == [OLD_SESSION_TOKEN]
     assert authentication.identities[0].provider == IdentityProviderV1.TELEGRAM
-    assert authentication.issued_scopes == [PRODUCT_SCOPE]
-    assert authentication.events == ["resolve", "revoke", "issue"]
-    assert client.cookies.get(BROWSER_SESSION_COOKIE) == SESSION_TOKEN
+    assert authentication.bound_scopes == [PRODUCT_SCOPE]
+    assert authentication.events == ["resolve", "revoke", "bind"]
+    assert len(authentication.bound_tokens) == 1
+    fresh_token = authentication.bound_tokens[0]
+    assert len(fresh_token) == 43
+    assert fresh_token != OLD_SESSION_TOKEN
+    assert fresh_token != "a" * 43
+    assert fresh_token != "accepted"
+    assert not fresh_token.startswith("proof-telegram-")
+    assert client.cookies.get(BROWSER_SESSION_COOKIE) == fresh_token
     csrf = client.cookies.get(BROWSER_CSRF_COOKIE)
     assert csrf is not None
     assert BrowserCookiePolicyV1(
         csrf_binding_key=CSRF_KEY
-    ).csrf_matches(session_token=SESSION_TOKEN, csrf_token=csrf)
+    ).csrf_matches(session_token=fresh_token, csrf_token=csrf)
     assert client.cookies.get("__Host-omni_v10_oauth_telegram") is None
 
 
