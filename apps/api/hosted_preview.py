@@ -23,22 +23,33 @@ from apps.api.app import (
     _configure_long_lived_web_connection,
 )
 from omni_cio.persistence.migration import connect_postgres
-from omni_cio.web.api_v1 import SESSION_COOKIE
+from omni_cio.web.browser_security_v1 import (
+    BROWSER_CSRF_COOKIE,
+    BROWSER_CSRF_HEADER,
+    BROWSER_SESSION_COOKIE,
+    BrowserCookiePolicyV1,
+)
 from omni_cio.web.persistence_v1 import PostgresWebSessionRegistryV1
+from omni_cio.web.provider_auth_routes_v1 import (
+    TELEGRAM_START_PATH,
+    VK_ID_START_PATH,
+    ProviderAuthRouteServicesV1,
+    install_provider_auth_routes_v1,
+)
 from omni_cio.web.session_v1 import SessionPolicyV1, SessionScopeV1
 
 
 WEB_DIST = Path(__file__).resolve().parents[1] / "web" / "dist"
-PREVIEW_LOGIN_PATH = "/api/v10/web/preview-login"
 PREVIEW_STATUS_PATH = "/api/v10/web/preview-mode"
-CSRF_COOKIE = "__Host-omni_v10_csrf"
-CSRF_HEADER = "X-Omni-CSRF"
+CSRF_COOKIE = BROWSER_CSRF_COOKIE
+CSRF_HEADER = BROWSER_CSRF_HEADER
 PREVIEW_TENANT_ID = "tenant:v1:synthetic_preview"
 PREVIEW_USER_ID = "user:v1:synthetic_preview"
 PREVIEW_SESSION_POLICY = SessionPolicyV1(
     idle_lifetime=timedelta(hours=2),
     absolute_lifetime=timedelta(hours=24),
 )
+_PROVIDER_START_PATHS = frozenset({TELEGRAM_START_PATH, VK_ID_START_PATH})
 _SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 _SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 _HOST_PATTERN = re.compile(
@@ -82,6 +93,7 @@ class HostedPreviewServicesV1:
     hostname: str
     release_sha: str
     now: Callable[[], datetime] = lambda: datetime.now(timezone.utc)
+    provider_auth: ProviderAuthRouteServicesV1 | None = None
 
 
 def _utc(value: datetime) -> datetime:
@@ -162,10 +174,26 @@ def _safe_error(detail: str, status_code: int, *, api_path: bool = True) -> Resp
     )
 
 
+def _disabled_provider_auth(services: HostedPreviewServicesV1) -> ProviderAuthRouteServicesV1:
+    return ProviderAuthRouteServicesV1(
+        runtimes=(),
+        authentication=None,
+        cookies=BrowserCookiePolicyV1(csrf_binding_key=secrets.token_bytes(32)),
+        now=services.now,
+    )
+
+
 class HostedPreviewSecurityMiddlewareV1(BaseHTTPMiddleware):
-    def __init__(self, app: Any, *, hostname: str) -> None:
+    def __init__(
+        self,
+        app: Any,
+        *,
+        hostname: str,
+        cookies: BrowserCookiePolicyV1,
+    ) -> None:
         super().__init__(app)
         self._hostname = hostname
+        self._cookies = cookies
 
     async def dispatch(
         self,
@@ -183,13 +211,19 @@ class HostedPreviewSecurityMiddlewareV1(BaseHTTPMiddleware):
         if request.method not in _SAFE_METHODS:
             if _origin_hostname(request.headers.get("origin", "")) != self._hostname:
                 return _safe_error("ORIGIN_REQUIRED", 403, api_path=api_path)
-            if request.url.path != PREVIEW_LOGIN_PATH:
-                cookie = request.cookies.get(CSRF_COOKIE, "")
-                header = request.headers.get(CSRF_HEADER, "")
+            if request.url.path not in _PROVIDER_START_PATHS:
+                session_token = request.cookies.get(BROWSER_SESSION_COOKIE, "")
+                cookie = request.cookies.get(BROWSER_CSRF_COOKIE, "")
+                header = request.headers.get(BROWSER_CSRF_HEADER, "")
                 if (
-                    not cookie
+                    not session_token
+                    or not cookie
                     or not header
                     or not secrets.compare_digest(cookie, header)
+                    or not self._cookies.csrf_matches(
+                        session_token=session_token,
+                        csrf_token=cookie,
+                    )
                 ):
                     return _safe_error("CSRF_REJECTED", 403, api_path=api_path)
 
@@ -202,18 +236,16 @@ def _require_session(
     services: HostedPreviewServicesV1,
 ) -> SessionScopeV1 | Response:
     scope = services.sessions.resolve(
-        request.cookies.get(SESSION_COOKIE),
+        request.cookies.get(BROWSER_SESSION_COOKIE),
         now=_utc(services.now()),
     )
     if scope is None:
         return _safe_error("AUTHENTICATION_REQUIRED", 401)
-    if scope.user_id != PREVIEW_USER_ID or scope.tenant_id != PREVIEW_TENANT_ID:
-        return _safe_error("SYNTHETIC_PREVIEW_SCOPE_REQUIRED", 403)
     return scope
 
 
 def _verify_synthetic_scope(connection: Any) -> None:
-    """Verify provider-seeded preview identity without widening runtime authority."""
+    """Verify provider-seeded Phase-4 fixture without using it as Phase-5 auth authority."""
     created = datetime(2026, 8, 21, tzinfo=timezone.utc)
     user_payload: dict[str, object] = {
         "schema_version": "1.0",
@@ -310,7 +342,7 @@ def _empty_portfolio(now: str) -> dict[str, object]:
             {
                 "code": "SYNTHETIC_PREVIEW_NO_BROKER_DATA",
                 "severity": "info",
-                "message": "Real broker and portfolio data are disabled in preview.",
+                "message": "Real broker and portfolio data are disabled in technical acceptance.",
             }
         ],
         "calculation_policy": {
@@ -378,7 +410,7 @@ def _system_status(
         "generated_at": now,
         "state": "READY",
         "release": {
-            "release": "v10-phase4-synthetic-preview",
+            "release": "v10-phase5-synthetic-technical-auth",
             "git_sha": services.release_sha,
             "git_sha_source": "RENDER_GIT_COMMIT",
             "last_deploy_at": None,
@@ -428,10 +460,10 @@ def _system_status(
         "services": [
             {
                 "id": "application",
-                "label": "V10 Web preview",
+                "label": "V10 Web technical acceptance",
                 "state": "READY",
                 "availability": "AVAILABLE",
-                "detail": "Synthetic React/FastAPI preview is online.",
+                "detail": "Provider-only React/FastAPI technical boundary is online.",
                 "observed_at": now,
             },
             {
@@ -466,12 +498,13 @@ def create_hosted_preview_app(
     hostname = _hostname(services.hostname)
     services.release_sha = _release_sha(services.release_sha)
     services.database_probe()
+    provider_auth = services.provider_auth or _disabled_provider_auth(services)
 
     if not web_dist.is_dir() or not (web_dist / "index.html").is_file():
         raise RuntimeError("HOSTED_PREVIEW_WEB_BUILD_MISSING")
 
     app = FastAPI(
-        title="Omni-CIO V10 synthetic hosted preview",
+        title="Omni-CIO V10 hosted technical acceptance",
         docs_url=None,
         redoc_url=None,
         openapi_url=None,
@@ -502,92 +535,50 @@ def create_hosted_preview_app(
     @app.get(PREVIEW_STATUS_PATH)
     def preview_mode() -> dict[str, object]:
         return {
-            "enabled": True,
+            "enabled": False,
             "synthetic": True,
             "broker_credentials_enabled": False,
             "registration_enabled": False,
-            "label": "Безопасная публичная демонстрация",
+            "label": "Synthetic technical boundary",
         }
 
     @app.get("/api/v10/web/session")
     def session_view(request: Request) -> Response:
-        scope = services.sessions.resolve(
-            request.cookies.get(SESSION_COOKIE),
-            now=_utc(services.now()),
-        )
-        csrf = request.cookies.get(CSRF_COOKIE, "")
-        if scope is None or not csrf:
-            return JSONResponse({"authenticated": False})
-        if scope.user_id != PREVIEW_USER_ID or scope.tenant_id != PREVIEW_TENANT_ID:
+        token = request.cookies.get(BROWSER_SESSION_COOKIE, "")
+        scope = services.sessions.resolve(token, now=_utc(services.now()))
+        csrf = request.cookies.get(BROWSER_CSRF_COOKIE, "")
+        if (
+            scope is None
+            or not token
+            or not provider_auth.cookies.csrf_matches(
+                session_token=token,
+                csrf_token=csrf,
+            )
+        ):
             return JSONResponse({"authenticated": False})
         result = JSONResponse(
             {
                 "authenticated": True,
-                "user_label": "DEMO USER",
-                "tenant_label": "SYNTHETIC PREVIEW",
                 "expires_at": scope.expires_at.isoformat(),
             }
         )
-        result.headers[CSRF_HEADER] = csrf
+        result.headers[BROWSER_CSRF_HEADER] = csrf
         return result
 
     @app.get("/api/v10/web/auth/providers")
     def providers() -> list[dict[str, object]]:
-        return [
-            {
-                "provider": "telegram",
-                "enabled": False,
-                "reason": "NOT_CONFIGURED",
-            },
-            {
-                "provider": "vk_id",
-                "enabled": False,
-                "reason": "NOT_CONFIGURED",
-            },
-        ]
+        result: list[dict[str, object]] = []
+        for descriptor in provider_auth.descriptors():
+            row: dict[str, object] = {
+                "provider": descriptor.provider.value,
+                "enabled": descriptor.enabled,
+            }
+            if not descriptor.enabled:
+                row["reason"] = "NOT_CONFIGURED"
+            result.append(row)
+        return result
 
-    @app.get("/api/v10/web/private-test-login/status")
-    def private_test_status() -> dict[str, bool]:
-        return {"enabled": False}
-
-    @app.get("/api/v10/web/private-external-login/status")
-    def private_remote_status() -> dict[str, bool]:
-        return {"enabled": False}
-
-    @app.post(PREVIEW_LOGIN_PATH)
-    def preview_login(request: Request, response: Response) -> dict[str, bool]:
-        issued = _utc(services.now())
-        services.sessions.revoke(
-            request.cookies.get(SESSION_COOKIE),
-            now=issued,
-        )
-        token, scope = services.sessions.create(
-            user_id=PREVIEW_USER_ID,
-            tenant_id=PREVIEW_TENANT_ID,
-            now=issued,
-        )
-        csrf = secrets.token_urlsafe(32)
-        max_age = max(1, int((scope.expires_at - issued).total_seconds()))
-        response.set_cookie(
-            SESSION_COOKIE,
-            token,
-            secure=True,
-            httponly=True,
-            samesite="strict",
-            path="/",
-            max_age=max_age,
-        )
-        response.set_cookie(
-            CSRF_COOKIE,
-            csrf,
-            secure=True,
-            httponly=True,
-            samesite="strict",
-            path="/",
-            max_age=max_age,
-        )
-        response.headers[CSRF_HEADER] = csrf
-        return {"ok": True}
+    install_provider_auth_routes_v1(app, services=provider_auth)
 
     @app.post("/api/v10/web/session/logout")
     def logout(request: Request) -> Response:
@@ -595,12 +586,12 @@ def create_hosted_preview_app(
         if isinstance(scope, Response):
             return scope
         services.sessions.revoke(
-            request.cookies.get(SESSION_COOKIE),
+            request.cookies.get(BROWSER_SESSION_COOKIE),
             now=_utc(services.now()),
         )
         result = JSONResponse({"ok": True})
-        result.delete_cookie(SESSION_COOKIE, path="/", secure=True)
-        result.delete_cookie(CSRF_COOKIE, path="/", secure=True)
+        result.delete_cookie(BROWSER_SESSION_COOKIE, path="/", secure=True)
+        result.delete_cookie(BROWSER_CSRF_COOKIE, path="/", secure=True)
         return result
 
     @app.post("/api/v10/web/session/revoke-all")
@@ -608,13 +599,13 @@ def create_hosted_preview_app(
         scope = _require_session(request, services)
         if isinstance(scope, Response):
             return scope
-        services.sessions.revoke(
-            request.cookies.get(SESSION_COOKIE),
+        services.sessions.revoke_all_for_user(
+            scope.user_id,
             now=_utc(services.now()),
         )
         result = JSONResponse({"ok": True})
-        result.delete_cookie(SESSION_COOKIE, path="/", secure=True)
-        result.delete_cookie(CSRF_COOKIE, path="/", secure=True)
+        result.delete_cookie(BROWSER_SESSION_COOKIE, path="/", secure=True)
+        result.delete_cookie(BROWSER_CSRF_COOKIE, path="/", secure=True)
         return result
 
     @app.get("/api/v10/web/health")
@@ -732,6 +723,7 @@ def create_hosted_preview_app(
     app.add_middleware(
         HostedPreviewSecurityMiddlewareV1,
         hostname=hostname,
+        cookies=provider_auth.cookies,
     )
     app.add_middleware(
         TrustedHostMiddleware,
