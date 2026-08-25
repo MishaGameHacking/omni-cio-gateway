@@ -37,6 +37,7 @@ from omni_cio.web.provider_auth_routes_v1 import (
     ProviderAuthRouteServicesV1,
     install_provider_auth_routes_v1,
 )
+from omni_cio.web.request_limits_v1 import HostedRequestAbuseControlV1
 from omni_cio.web.session_v1 import SessionPolicyV1, SessionScopeV1
 
 
@@ -177,6 +178,15 @@ def _safe_error(detail: str, status_code: int, *, api_path: bool = True) -> Resp
     )
 
 
+def _rate_error(*, retry_after_seconds: int, api_path: bool = True) -> Response:
+    response = JSONResponse(
+        {"detail": "RATE_LIMITED"},
+        status_code=429,
+        headers={"Retry-After": str(retry_after_seconds)},
+    )
+    return _harden_response(response, api_path=api_path)
+
+
 def _disabled_provider_auth(
     services: HostedPreviewServicesV1,
 ) -> ProviderAuthRouteServicesV1:
@@ -195,10 +205,12 @@ class HostedPreviewSecurityMiddlewareV1(BaseHTTPMiddleware):
         *,
         hostname: str,
         cookies: BrowserCookiePolicyV1,
+        abuse: HostedRequestAbuseControlV1 | None = None,
     ) -> None:
         super().__init__(app)
         self._hostname = hostname
         self._cookies = cookies
+        self._abuse = abuse or HostedRequestAbuseControlV1()
 
     async def dispatch(
         self,
@@ -215,6 +227,14 @@ class HostedPreviewSecurityMiddlewareV1(BaseHTTPMiddleware):
         )
         if scheme != "https":
             return _safe_error("HTTPS_REQUIRED", 403, api_path=api_path)
+
+        if api_path and request.url.path != "/healthz":
+            session_token = request.cookies.get(BROWSER_SESSION_COOKIE)
+            if not self._abuse.admit(session_token=session_token):
+                return _rate_error(
+                    retry_after_seconds=self._abuse.policy.retry_after_seconds,
+                    api_path=True,
+                )
 
         if request.method not in _SAFE_METHODS:
             if _origin_hostname(request.headers.get("origin", "")) != self._hostname:
@@ -742,6 +762,7 @@ def create_hosted_preview_app(
         HostedPreviewSecurityMiddlewareV1,
         hostname=hostname,
         cookies=provider_auth.cookies,
+        abuse=HostedRequestAbuseControlV1(),
     )
     app.add_middleware(
         TrustedHostMiddleware,

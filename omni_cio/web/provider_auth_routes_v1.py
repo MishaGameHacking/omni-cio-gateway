@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Protocol
 
@@ -20,6 +20,7 @@ from omni_cio.web.provider_auth_v1 import (
     ProviderAuthenticationRuntimeLike,
     ProviderAuthorizationError,
 )
+from omni_cio.web.request_limits_v1 import ProviderAuthAbuseControlV1
 from omni_cio.web.session_v1 import SessionScopeV1
 
 
@@ -46,6 +47,9 @@ class ProviderAuthRouteServicesV1:
     authentication: ProductAuthenticationLike | None
     cookies: BrowserCookiePolicyV1
     now: Callable[[], datetime] = lambda: datetime.now(timezone.utc)
+    abuse: ProviderAuthAbuseControlV1 = field(
+        default_factory=ProviderAuthAbuseControlV1
+    )
 
     def __post_init__(self) -> None:
         providers = tuple(runtime.provider for runtime in self.runtimes)
@@ -142,12 +146,25 @@ def _safe_error(
     return response
 
 
+def _rate_error(services: ProviderAuthRouteServicesV1) -> Response:
+    return JSONResponse(
+        {"detail": "RATE_LIMITED"},
+        status_code=429,
+        headers={
+            "Cache-Control": "no-store",
+            "Retry-After": str(services.abuse.policy.retry_after_seconds),
+        },
+    )
+
+
 def install_provider_auth_routes_v1(
     app: FastAPI,
     *,
     services: ProviderAuthRouteServicesV1,
 ) -> None:
     def start(provider: IdentityProviderV1) -> Response:
+        if not services.abuse.admit_start(provider):
+            return _rate_error(services)
         runtime = services.runtime(provider)
         if runtime is None:
             return _safe_error(
@@ -187,6 +204,8 @@ def install_provider_auth_routes_v1(
         return response
 
     def callback(provider: IdentityProviderV1, request: Request) -> Response:
+        if not services.abuse.admit_callback(provider):
+            return _rate_error(services)
         runtime = services.runtime(provider)
         authentication = services.authentication
         if runtime is None or authentication is None:
@@ -212,13 +231,18 @@ def install_provider_auth_routes_v1(
             )
             if not browser_proof:
                 raise ValueError("PROVIDER_CALLBACK_BROWSER_PROOF_REQUIRED")
-            identity = runtime.complete(
-                state=state or "",
-                code=code or "",
-                browser_proof=browser_proof,
-                now=_utc_now(services),
-                device_id=device_id,
-            )
+            if not services.abuse.acquire_outbound():
+                return _rate_error(services)
+            try:
+                identity = runtime.complete(
+                    state=state or "",
+                    code=code or "",
+                    browser_proof=browser_proof,
+                    now=_utc_now(services),
+                    device_id=device_id,
+                )
+            finally:
+                services.abuse.release_outbound()
             token, _ = authentication.authenticate_verified_identity(
                 identity,
                 current_session_token=request.cookies.get(
