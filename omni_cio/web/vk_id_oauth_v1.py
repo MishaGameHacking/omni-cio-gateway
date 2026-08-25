@@ -95,17 +95,20 @@ def _unique_json_object(payload: bytes) -> dict[str, Any]:
     return value
 
 
-def _bounded_json_response(
+def _bounded_token_response(
     client: httpx.Client,
     *,
-    url: str,
     timeout_seconds: float,
+    params: dict[str, str],
     data: dict[str, str],
 ) -> dict[str, Any]:
+    """POST only to the fixed VK token endpoint; caller data cannot choose the host."""
+
     try:
         with client.stream(
             "POST",
-            url,
+            VK_ID_TOKEN_ENDPOINT,
+            params=params,
             data=data,
             timeout=timeout_seconds,
             follow_redirects=False,
@@ -240,20 +243,18 @@ class VkIdOauthRuntimeV1:
         device_id: str,
         client: httpx.Client,
     ) -> VerifiedExternalIdentityV1:
-        query = urlencode(
-            {
-                "grant_type": "authorization_code",
-                "redirect_uri": transaction.redirect_uri,
-                "client_id": self._config.client_id,
-                "code_verifier": transaction.code_verifier,
-                "state": expected_state,
-                "device_id": device_id,
-            }
-        )
-        payload = _bounded_json_response(
+        params = {
+            "grant_type": "authorization_code",
+            "redirect_uri": transaction.redirect_uri,
+            "client_id": self._config.client_id,
+            "code_verifier": transaction.code_verifier,
+            "state": expected_state,
+            "device_id": device_id,
+        }
+        payload = _bounded_token_response(
             client,
-            url=f"{VK_ID_TOKEN_ENDPOINT}?{query}",
             timeout_seconds=self._config.timeout_seconds,
+            params=params,
             data={"code": code},
         )
         if "error" in payload:
