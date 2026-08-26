@@ -358,7 +358,8 @@ def test_hosted_provider_callback_composes_verified_identity_to_session(
     assert session.status_code == 200
     assert session.json()["authenticated"] is True
     assert session.json()["expires_at"]
-    assert session.headers[CSRF_HEADER] == client.cookies.get(CSRF_COOKIE)
+    assert CSRF_HEADER not in session.headers
+    assert client.cookies.get(CSRF_COOKIE)
 
 
 def test_authenticated_technical_boundary_returns_safe_empty_product_views(
