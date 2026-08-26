@@ -333,3 +333,55 @@ def test_detect_secrets_validator_allows_only_exact_wp7_boundary_keyword(
         "potential secret: docs/architecture/V10_WP7_BOOTSTRAP_CONTRACT.json:1 "
         "(Secret Keyword)"
     ]
+
+
+def test_detect_secrets_validator_allows_only_exact_wp22a_git_sha_evidence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    evidence_path = (
+        tmp_path
+        / "docs"
+        / "architecture"
+        / "V10_WP22A_PHASE5_TECHNICAL_ACCEPTANCE_EVIDENCE.json"
+    )
+    transition_path = tmp_path / "tests" / "test_v10_wp22a_phase5_transition.py"
+    evidence_path.parent.mkdir(parents=True)
+    transition_path.parent.mkdir(parents=True)
+    accepted_main = baseline._WP22A_PHASE5_ACCEPTED_MAIN_SHA
+    implementation_head = baseline._WP22A_PHASE5_IMPLEMENTATION_HEAD_SHA
+    evidence_path.write_text(
+        f'  "accepted_main_sha": "{accepted_main}",\n',
+        encoding="utf-8",
+    )
+    transition_path.write_text(
+        f'        "{implementation_head}"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(baseline, "ROOT", tmp_path)
+    report = {
+        "results": {
+            r"docs\architecture\V10_WP22A_PHASE5_TECHNICAL_ACCEPTANCE_EVIDENCE.json": [
+                {"type": "Hex High Entropy String", "line_number": 1}
+            ],
+            "tests/test_v10_wp22a_phase5_transition.py": [
+                {"type": "Hex High Entropy String", "line_number": 1}
+            ],
+        }
+    }
+
+    failures: list[str] = []
+    baseline.validate_detect_secrets_report(report, failures)
+    assert failures == []
+
+    evidence_path.write_text(
+        f'  "accepted_main_sha": "{"a" * 40}",\n',
+        encoding="utf-8",
+    )
+    failures = []
+    baseline.validate_detect_secrets_report(report, failures)
+    assert failures == [
+        "potential secret: "
+        r"docs\architecture\V10_WP22A_PHASE5_TECHNICAL_ACCEPTANCE_EVIDENCE.json:1 "
+        "(Hex High Entropy String)"
+    ]

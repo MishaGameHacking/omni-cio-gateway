@@ -8,15 +8,16 @@ Current V10 progress and current/next Work Package are defined only by `knowledg
 
 Repository-front-door snapshot of accepted/current program authority:
 
-- accepted V10 implementation progress: **40%**;
-- WP0–WP22: accepted according to the canonical status/evidence chain;
-- current functional package: **WP22A — External Web Access / Product Authentication Security Gate**;
-- OWNER-approved Product USER / Engineering Authority + Public Free Multi-User Hosted Runtime planning correction is **accepted on `main` through PR #329 + post-merge Regression Shield #1503 SUCCESS**;
-- WP23+ remains locked behind the corrected WP22A Exit Gate and Master Plan sequence;
+- accepted V10 implementation progress: **54%**;
+- WP0–WP22A: accepted COMPLETE according to the canonical status/evidence chain;
+- current functional package: **WEB-VISUAL-A — Premium Spatial Financial OS / Design-system foundation**;
+- WP22A technical closeout is accepted only through its Phase-5 evidence/status chain; public-production activation remains a separate fail-closed gate;
+- OWNER-approved Product USER / Engineering Authority + Public Free Multi-User Hosted Runtime planning correction is accepted on `main`;
+- WP23+ remains locked behind the accepted visual-refresh sequence and Master Plan authorization;
 - **public multi-user/global browser service is the approved V10 target**;
-- **public Internet ingress remains OFF while the corrected WP22A/security/legal/capacity gates are unfinished**; planning approval is not production activation;
+- **public Internet ingress remains OFF while the separate production-activation/security/privacy/broker/legal/capacity gates are unfinished**; technical acceptance is not production activation;
 - final public production must not depend on PROJECT OWNER home IP, Wi-Fi, router/LAN, home Internet or Lenovo as the production origin;
-- final public Web/API/private-state runtime must use an approved managed-cloud production architecture selected by the owning service/security/recovery gate;
+- final public Web/API/private-state runtime must use the approved managed-cloud production boundary selected by the owning service/security/recovery gate;
 - PROJECT OWNER is an ordinary product USER when using Omni-CIO; GitHub/cloud-provider/Windows authority is separate from product identity;
 - initial registered-user access is free: billing, trial, subscription enforcement and premium feature gating are disabled for the initial launch;
 - normal broker READ and optional TRADE credentials belong only to the authenticated tenant's `BrokerConnection`; no shared/global user broker token is allowed;
@@ -90,6 +91,8 @@ Real execution is not enabled by this planning direction. Exact same-tenant READ
 | USER vs PROJECT OWNER boundary | `docs/master-plan/OMNI_CIO_V10_PRODUCT_USER_AND_ENGINEERING_AUTHORITY_BOUNDARY_AMENDMENT.md` |
 | Public/free/hosted target | `docs/master-plan/OMNI_CIO_V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_AMENDMENT.md` |
 | Machine public-hosting contract | `docs/architecture/V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_CONTRACT.json` |
+| WP22A technical acceptance | `docs/architecture/V10_WP22A_PHASE5_TECHNICAL_ACCEPTANCE_EVIDENCE.md` |
+| Current visual-refresh authority | `docs/architecture/V10_WEB_VISUAL_DESIGN_REFRESH_IMPLEMENTATION_BRIEF.md` |
 | V10 system/security architecture | `docs/architecture/` |
 | Protected V9 release/recovery history | `CHANGELOG.md`, `gpt/`, `knowledge/16_CURRENT_PROGRAM_STATUS.md` |
 
@@ -117,7 +120,7 @@ Use:
 
 Do not start Telegram, AI, Real execution or later packages out of sequence. Do not call RED, skipped, queued or pending GREEN. Do not synthesize OWNER physical evidence. Do not create a second Web App/repository/Core/broker stack.
 
-The public/free/hosted planning correction is accepted. Corrected WP22A may proceed only under its current execution/service-selection contracts and Master Plan gates; acceptance of the planning correction does not authorize public activation, provider mutation, broker-write expansion or WP23 work.
+WP22A technical closeout is complete only through its accepted evidence chain. The current `WEB-VISUAL-A` package may change only the authorized design-system foundation; it cannot activate public production, mutate the final provider, expand broker-write authority or start WP23.
 
 ## Protected V9 boundaries
 

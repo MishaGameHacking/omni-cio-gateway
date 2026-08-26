@@ -35,6 +35,15 @@ PHASE5_AUTHORIZATION = (
     / "architecture"
     / "V10_WP22A_PHASE5_PUBLIC_HOSTED_ACCEPTANCE_AUTHORIZATION.md"
 )
+PHASE5_EVIDENCE = (
+    ROOT
+    / "docs"
+    / "architecture"
+    / "V10_WP22A_PHASE5_TECHNICAL_ACCEPTANCE_EVIDENCE.json"
+)
+PHASE5_CLOSEOUT_WORKFLOW = (
+    ROOT / ".github/workflows/v10-wp22a-phase5-technical-closeout.yml"
+)
 VISUAL_BRIEF = (
     ROOT
     / "docs"
@@ -75,29 +84,85 @@ def test_phase4_acceptance_is_bound_to_exact_current_main_and_public_gate() -> N
     assert "accepted_runtime_main_sha" not in workflow
 
 
-def test_status_proposes_phase4_acceptance_and_phase5_as_current() -> None:
+def test_phase5_closeout_evidence_maps_accepted_exact_main_chain() -> None:
+    evidence = _json(PHASE5_EVIDENCE)
+
+    assert evidence["status"] == (
+        "PROPOSED_ACCEPTANCE_EFFECTIVE_ONLY_AFTER_CLOSEOUT_GREEN_MERGE"
+    )
+    assert evidence["accepted_runtime_main_binding"] == (
+        "github.event.pull_request.base.sha"
+    )
+    implementation = evidence["integrated_implementation"]
+    assert implementation["pull_request"] == 391
+    assert implementation["exact_head_sha"] == (
+        "936f334c4037479d0b2bb99651fa5c8e7dd92b02"
+    )
+    assert implementation["accepted_main_sha"] == (
+        "bb15739acf82ded8eafb6d006cf222fb3988770d"
+    )
+    assert implementation["draft_green_required"] is True
+    assert implementation["fresh_ready_green_required"] is True
+    assert implementation["independent_gitar_sonar_required"] is True
+    assert implementation["zero_unresolved_blocking_threads_required"] is True
+
+    post_merge = evidence["post_merge_acceptance"]
+    assert post_merge["regression_shield_run_id"] == 32958019958
+    assert post_merge["regression_shield_conclusion"] == "success"
+    assert post_merge["required_regression_jobs_success"] is True
+    assert post_merge["all_exact_main_push_workflows_success"] is True
+
+    hosted = evidence["hosted_exact_release"]
+    assert hosted["workflow_run_id"] == 32960260373
+    assert hosted["workflow_attempt"] == 2
+    assert hosted["workflow_conclusion"] == "success"
+    assert hosted["exact_main_sha"] == implementation["accepted_main_sha"]
+    assert hosted["zero_charge_attestation"] == "PASS_FRESH_NO_PAYMENT_METHOD"
+    assert hosted["neon_organization_plan"] == "FREE_VERIFIED"
+    assert hosted["database_bootstrap"] == "PASS"
+    assert hosted["render_deploy"] == "LIVE_EXACT_SHA"
+    assert hosted["external_https_probe"] == "PASS"
+
+    assert all(evidence["technical_exit_gate"].values())
+    effect = evidence["closeout_effect_on_green_merge"]
+    assert effect["wp22a_technical_gate_complete"] is True
+    assert effect["wp22a_complete"] is True
+    assert effect["accepted_v10_progress_percent"] == 54
+    assert effect["visual_refresh_increment_a_authorized"] is True
+    assert effect["wp23_unlocked"] is False
+
+    locks = evidence["locks_preserved"]
+    assert locks["public_production_activation_authorized"] is False
+    assert locks["public_multi_user_enabled"] is False
+    assert locks["cloudru_provider_apply_authorized"] is False
+    assert locks["real_user_cutover_authorized"] is False
+    assert locks["broker_write_enabled"] is False
+    assert locks["trading_methods"] is False
+    assert locks["real_trading_enabled"] is False
+    assert locks["protected_v9_entrypoint"] == "app:app"
+
+
+def test_status_closes_wp22a_and_authorizes_only_visual_increment_a() -> None:
     text = STATUS.read_text(encoding="utf-8")
 
     assert (
-        "PHASE 3 ACCEPTED / PHASE 4 ACCEPTED / "
-        "PHASE 5 TECHNICAL CLOSEOUT AUTHORIZED / "
-        "PUBLIC PRODUCTION ACTIVATION LOCKED" in text
-    )
-    assert "Block E / WP22A Phase 4 — **ACCEPTED**" in text
-    assert (
-        "Block E / WP22A Phase 5 — "
-        "**INTEGRATED TECHNICAL CLOSEOUT AUTHORIZED CURRENT INCREMENT**"
+        "WP0–WP22A COMPLETE / WEB VISUAL REFRESH INCREMENT A AUTHORIZED"
         in text
     )
+    assert "Block E / WP22A Phase 5 — **ACCEPTED**" in text
+    assert "Block E / WP22A overall — **COMPLETE**" in text
+    assert "Block E — **COMPLETE (14%)**" in text
     assert (
-        "## Current next package — WP22A Phase 5 — Integrated technical closeout"
+        "## Current next package — WEB-VISUAL-A — "
+        "Premium Spatial Financial OS Increment A — Design-system foundation"
         in text
     )
-    assert "WP23+ remains locked" in text
-    assert "Accepted implementation progress is **40%**" in text
+    assert "WP23+ LOCKED" in text
+    assert "Accepted implementation progress is **54%**" in text
+    assert "`PUBLIC_MULTI_USER_ENABLED=false` remains the safe default" in text
 
 
-def test_phase5_authority_preserves_cost_and_execution_locks() -> None:
+def test_phase5_authority_closes_technical_gate_without_widening_locks() -> None:
     payload = _json(PHASE5_CONTRACT)
     authority = payload["authority"]
     provider = payload["provider"]
@@ -105,10 +170,11 @@ def test_phase5_authority_preserves_cost_and_execution_locks() -> None:
 
     assert authority["phase5_authorized"] is True
     assert authority["wp22a_technical_gate_authorized"] is True
-    assert authority["wp22a_technical_gate_complete"] is False
+    assert authority["wp22a_technical_gate_complete"] is True
     assert authority["public_production_activation_authorized"] is False
-    assert authority["wp22a_complete"] is False
+    assert authority["wp22a_complete"] is True
     assert authority["wp23_unlocked"] is False
+    assert authority["visual_refresh_runtime_authorized"] is True
     assert provider["production_provider"] == "Cloud.ru Evolution"
     assert provider["provider_apply_authorized"] is False
     assert provider["current_authorized_recurring_rub"] == 0
@@ -129,7 +195,7 @@ def test_amendment11_separates_technical_closeout_from_public_activation() -> No
     production = payload["public_production_activation"]
     legacy_activation = payload["activation"]
 
-    assert payload["schema_version"].endswith(".v2")
+    assert payload["schema_version"].endswith(".v3")
     assert technical["hosted_synthetic_acceptance_allowed"] is True
     assert technical["real_provider_secret_required_for_gate"] is False
     assert technical["human_login_protocols"] == ["telegram", "vk_id"]
@@ -150,6 +216,7 @@ def test_amendment11_separates_technical_closeout_from_public_activation() -> No
     assert production["production_dns_edge_mutation_authorized"] is False
     assert production["production_provider_secret_provisioning_authorized"] is False
     assert legacy_activation["deprecated_by"] == "public_production_activation"
+    assert legacy_activation["activation_requires_focused_phase5_gate"] is False
 
 
 def test_amendment11_is_discoverable_and_keeps_next_gates_locked() -> None:
@@ -176,7 +243,7 @@ def test_amendment11_is_discoverable_and_keeps_next_gates_locked() -> None:
         in authorization
     )
     assert "PUBLIC PRODUCTION ACTIVATION LOCKED" in status
-    assert "Accepted implementation progress is **40%**" in status
+    assert "Accepted implementation progress is **54%**" in status
 
 
 def test_phase5_product_identity_is_user_tenant_session_not_provider_authority() -> None:
@@ -199,14 +266,31 @@ def test_phase5_product_identity_is_user_tenant_session_not_provider_authority()
     assert tenant["cross_tenant_negative_tests_required"] is True
 
 
-def test_visual_refresh_remains_planning_only_during_phase5_transition() -> None:
+def test_visual_refresh_increment_a_is_explicitly_authorized_without_semantic_widening() -> None:
     payload = _json(PHASE5_CONTRACT)
     visual = payload["visual_refresh"]
-    authorization = PHASE5_AUTHORIZATION.read_text(encoding="utf-8")
     brief = VISUAL_BRIEF.read_text(encoding="utf-8")
 
     assert visual["owner_approved_direction"] is True
-    assert visual["implementation_authorized_by_this_contract"] is False
+    assert visual["implementation_authorized_by_this_contract"] is True
+    assert visual["current_increment"] == "A_DESIGN_SYSTEM_FOUNDATION"
+    assert visual["product_semantic_changes_allowed"] is False
     assert visual["second_frontend_allowed"] is False
-    assert "planning-only" in authorization
-    assert "NOT CURRENT-WP AUTHORITY BY ITSELF" in brief
+    assert "### Increment A — Design-system foundation" in brief
+    assert "- `tokens.css`;" in brief
+    assert "- `base.css`;" in brief
+    assert "- no product-semantic changes." in brief
+
+
+def test_closeout_workflow_reverifies_exact_base_shield_and_public_release() -> None:
+    workflow = PHASE5_CLOSEOUT_WORKFLOW.read_text(encoding="utf-8")
+
+    assert "actions: read" in workflow
+    assert "PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}" in workflow
+    assert "EXPECTED_MAIN_SHA: ${{ github.event.pull_request.base.sha }}" in workflow
+    assert "python scripts/check_v10_exact_main_regression.py" in workflow
+    assert "python scripts/check_v10_public_product_plan.py" in workflow
+    assert "python -m pytest -q tests/test_v10_wp22a_phase5_transition.py" in workflow
+    assert '--expected-sha "$PR_BASE_SHA"' in workflow
+    assert "RENDER_API_KEY" not in workflow
+    assert "NEON_API_KEY" not in workflow

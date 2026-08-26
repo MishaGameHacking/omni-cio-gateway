@@ -102,11 +102,14 @@ def test_live_authority_uses_product_auth_not_owner_product_auth() -> None:
 
     for path in (
         ROOT / "AGENTS.md",
-        ROOT / "README.md",
         ROOT / "knowledge/17_V10_CURRENT_PROGRAM_STATUS.md",
         ROOT / "docs/architecture/V10_WP22A_EXECUTION_CONTRACT.md",
     ):
         assert "WP22A — External Web Access / Product Authentication Security Gate" in _text(path)
+
+    readme = _text(ROOT / "README.md")
+    assert "product authentication (Telegram Login / VK ID)" in readme
+    assert "PROJECT OWNER is an ordinary product USER" in readme
 
 
 def test_project_owner_is_not_a_product_superuser() -> None:
@@ -181,10 +184,21 @@ def test_broker_credentials_are_tenant_owned_not_global() -> None:
     assert "credentials are never returned to the browser after submission" in amendment
     assert "credentials are encrypted at rest" in amendment
 
+    readme = _text(ROOT / "README.md")
+    assert (
+        "USER -> Tenant -> BrokerConnection -> READ / TRADE_OPTIONAL -> "
+        "verified broker-account bindings" in readme
+    )
+    assert "no shared/global user broker token is allowed" in readme
+
     status = _text(ROOT / "knowledge/17_V10_CURRENT_PROGRAM_STATUS.md")
-    assert "Canonical ownership remains:" in status
-    assert "USER -> Tenant -> BrokerConnection -> READ / TRADE_OPTIONAL" in status
-    assert "No real broker credential is authorized in the Phase-4 synthetic preview" in status
+    assert (
+        "Public T-Invest-backed production functionality remains "
+        "**FAIL_CLOSED_PENDING_BROKER_TERMS_PERMISSION**" in status
+    )
+    assert "tenant READ/optional TRADE credential separation remains mandatory" in status
+    assert "broker write OFF" in status
+    assert "`REAL_TRADING_ENABLED=false`" in status
 
 
 def test_t_invest_public_connector_stays_separate_fail_closed_gate() -> None:

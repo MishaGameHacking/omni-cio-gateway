@@ -164,19 +164,28 @@ def validate_live_authority(failures: list[str]) -> None:
                     f"{path.relative_to(ROOT)}: {marker}"
                 )
 
+    canonical_package_name = (
+        "WP22A — External Web Access / Product Authentication Security Gate"
+    )
     for path in (
-        ROOT / "AGENTS.md",
-        ROOT / "README.md",
         ROOT / "knowledge/17_V10_CURRENT_PROGRAM_STATUS.md",
         ROOT / "docs/architecture/V10_WP22A_EXECUTION_CONTRACT.md",
     ):
         text = read_text(path, failures)
         require(
             text,
-            "WP22A — External Web Access / Product Authentication Security Gate",
+            canonical_package_name,
             str(path.relative_to(ROOT)),
             failures,
         )
+
+    live_completion_markers = (
+        (ROOT / "AGENTS.md", "The WP22A technical gate is complete only through"),
+        (ROOT / "README.md", "WP22A technical closeout is accepted only through"),
+    )
+    for path, marker in live_completion_markers:
+        text = read_text(path, failures)
+        require(text, marker, str(path.relative_to(ROOT)), failures)
 
     amendment = read_text(PUBLIC_AMENDMENT, failures)
     for marker in (
@@ -205,7 +214,7 @@ def validate_live_authority(failures: list[str]) -> None:
 
     status = read_text(ROOT / "knowledge/17_V10_CURRENT_PROGRAM_STATUS.md", failures)
     for marker in (
-        "Accepted implementation progress is **40%**",
+        "Accepted implementation progress is **54%**",
         "public multi-user activation — **APPROVED TARGET / IMPLEMENTATION FLAG REMAINS OFF UNTIL",
         "`PUBLIC_MULTI_USER_ENABLED=false` remains the safe default",
         "WP22A — External Web Access / Product Authentication Security Gate",

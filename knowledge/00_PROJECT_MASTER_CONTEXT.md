@@ -1,6 +1,6 @@
 # 00 — OMNI-CIO PROJECT MASTER CONTEXT
 
-Дата актуализации: 2026-08-18
+Дата актуализации: 2026-08-26
 
 Этот файл хранит короткую долговременную память **одного проекта**: защищённого owner-accepted V9 runtime и последовательно развиваемой автономной платформы V10.
 
@@ -20,11 +20,11 @@ V10 target is one **public modern multi-user Omni-CIO Web product**. A supported
 
 OWNER issued `START V10` on 2026-08-05.
 
-Canonical status remains **40% accepted implementation**, WP0–WP22 accepted and **WP22A** as the current authorized functional package. WP23+ remains locked. This sentence is a convenience snapshot only; `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md` is the dynamic authority.
+Canonical status is **54% accepted implementation**, WP0–WP22A accepted COMPLETE and **WEB-VISUAL-A** as the current authorized functional package. WP23+ remains locked. This sentence is a convenience snapshot only; `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md` is the dynamic authority.
 
-WP22A is interpreted as **External Web Access / Product Authentication Security Gate**. Public multi-user/global browser access is the approved target, but actual public activation stays fail-closed until corrected WP22A plus tenant-isolation/security/privacy/broker/legal/capacity/recovery gates pass.
+WP22A remains the completed **External Web Access / Product Authentication Security Gate**. Its technical closeout is separate from public-production activation: the latter still owns final Cloud.ru provider apply, production provider secrets/DNS/edge, real public-user cutover and `PUBLIC_MULTI_USER_ENABLED=true`.
 
-The 2026-08-18 OWNER planning decision is accepted on `main` through PR #329 plus post-merge Regression Shield #1503 SUCCESS. It does **not** itself open ingress, mutate a provider, enable broker write or start WP23.
+The current `WEB-VISUAL-A` package is the Premium Spatial Financial OS **Increment A — Design-system foundation** only. It may update canonical Web tokens/base styling and directly related tests without changing product, identity, tenant, broker or execution semantics. Increment B and WP23 remain out of scope until their own accepted sequence opens them.
 
 ## 3. USER versus PROJECT OWNER
 
@@ -47,7 +47,7 @@ The final public production service must not depend on the PROJECT OWNER's:
 - Lenovo laptop as production origin;
 - home power/Internet availability.
 
-The final public Web/API and required hosted private-data services must run on an **approved managed cloud production runtime** selected through the V10 service-selection/security/recovery process.
+The final public Web/API and required hosted private-data services must run on an **approved managed cloud production runtime** selected through the V10 service-selection/security/recovery process. The selected final production provider remains Cloud.ru Evolution, but provider apply is not authorized by technical WP22A completion.
 
 Lenovo remains important for engineering, authoritative self-hosted CI, controlled acceptance, recovery rehearsal and protected rollback. It is not the public availability anchor.
 
@@ -59,7 +59,7 @@ Ordinary product login methods remain Telegram Login and VK ID, both mapped to t
 
 One normal account owns one isolated tenant in the baseline model. Tenant scope is derived from authenticated server-side session state, never from a client-supplied user/tenant selector.
 
-Before public activation, API plus database-enforced tenant isolation and cross-tenant negative tests must cover private records, jobs, queues, caches, notifications, exports, backups/recovery and AI/RAG memory.
+Before real public activation, API plus database-enforced tenant isolation and cross-tenant negative tests must remain intact across private records, jobs, queues, caches, notifications, exports, backups/recovery and later AI/RAG memory.
 
 Sessions remain server-side, revocable and protected by Secure/HttpOnly/SameSite cookies, bounded idle/absolute lifetime, fixation protection, rotation, logout and revoke-all semantics.
 
@@ -100,11 +100,9 @@ Infrastructure costs are separate engineering/provider budget decisions and do n
 
 ## 8. T-Invest public-service gate
 
-Current official T-Invest API terms/FAQ prohibit building a public service with retransmission of T-Invest API data under ordinary client API access.
+Current official T-Invest API terms/FAQ keep public T-Invest-backed production functionality behind a separate fail-closed broker-permission gate. A user-supplied token does not by itself waive broker terms.
 
-Therefore public Omni-CIO Web/account activation and public T-Invest connector activation are separate gates. A user-supplied token does not by itself waive broker terms.
-
-Until a contractually valid broker/partner permission or another explicitly accepted compliant architecture exists, T-Invest-backed public production functionality remains fail-closed even though the public site/account/tenant platform may be developed and accepted.
+Therefore public Omni-CIO Web/account technical acceptance and public T-Invest connector activation remain separate gates. Until a contractually valid broker/partner permission or another explicitly accepted compliant architecture exists, T-Invest-backed public production functionality remains fail-closed.
 
 ## 9. Deterministic Core / Cortex
 
@@ -126,7 +124,7 @@ GitHub is engineering source of truth. Significant work follows:
 
 Red is red. Skipped/pending/queued is not PASS. OWNER physical/secret evidence is never synthesized. OWNER participation is limited to genuinely non-delegable account/consent/secret/admin/physical decisions.
 
-The 2026-08-18 planning correction has completed its PR/CI/merge/post-merge lifecycle and is accepted authority. Corrected WP22A may resume under its current execution/service-selection contracts; public activation, provider mutation, broker-write expansion and WP23 remain independently gated.
+WP22A technical closeout has its own immutable acceptance evidence. Current development may proceed only as `WEB-VISUAL-A`; public activation, final provider mutation, broker-write expansion, Increment B and WP23 remain independently gated.
 
 ## 11. Authority navigation
 
@@ -140,8 +138,10 @@ Always restore context from:
 - `docs/master-plan/OMNI_CIO_V10_PRODUCT_USER_AND_ENGINEERING_AUTHORITY_BOUNDARY_AMENDMENT.md`;
 - `docs/master-plan/OMNI_CIO_V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_AMENDMENT.md`;
 - `docs/architecture/V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_CONTRACT.json`;
+- `docs/architecture/V10_WP22A_PHASE5_TECHNICAL_ACCEPTANCE_EVIDENCE.md`;
+- `docs/architecture/V10_WEB_VISUAL_DESIGN_REFRESH_IMPLEMENTATION_BRIEF.md`;
 - `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`;
-- current WP architecture/security/recovery files;
+- current package architecture/security/recovery files;
 - current `main`, open PRs/issues and GitHub Actions.
 
 Chat memory, screenshots, stale PR descriptions and historical package records never override accepted GitHub authority.

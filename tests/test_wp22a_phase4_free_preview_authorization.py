@@ -25,25 +25,24 @@ def _contract() -> dict[str, Any]:
     return json.loads(CONTRACT.read_text(encoding="utf-8"))
 
 
-def test_phase3_and_phase4_are_accepted_and_phase5_is_current() -> None:
+def test_phase3_phase4_and_phase5_are_accepted_and_visual_a_is_current() -> None:
     text = STATUS.read_text(encoding="utf-8")
 
-    assert (
-        "PHASE 3 ACCEPTED / PHASE 4 ACCEPTED / "
-        "PHASE 5 TECHNICAL CLOSEOUT AUTHORIZED / "
-        "PUBLIC PRODUCTION ACTIVATION LOCKED" in text
-    )
     assert "Block E / WP22A Phase 3 — **ACCEPTED**" in text
     assert "Block E / WP22A Phase 4 — **ACCEPTED**" in text
+    assert "Block E / WP22A Phase 5 — **ACCEPTED**" in text
+    assert "Block E / WP22A overall — **COMPLETE**" in text
+    assert "Accepted implementation progress is **54%**" in text
+    assert "WEB VISUAL REFRESH INCREMENT A AUTHORIZED" in text
+    assert "PUBLIC PRODUCTION ACTIVATION LOCKED" in text
     assert (
-        "Block E / WP22A Phase 5 — "
-        "**INTEGRATED TECHNICAL CLOSEOUT AUTHORIZED CURRENT INCREMENT**"
+        "## Current next package — WEB-VISUAL-A — "
+        "Premium Spatial Financial OS Increment A — Design-system foundation"
         in text
     )
-    assert (
-        "## Current next package — WP22A Phase 5 — Integrated technical closeout"
-        in text
-    )
+
+    assert "PHASE 5 TECHNICAL CLOSEOUT AUTHORIZED" not in text
+    assert "## Current next package — WP22A Phase 5" not in text
 
 
 def test_exact_phase3_acceptance_evidence_is_pinned() -> None:

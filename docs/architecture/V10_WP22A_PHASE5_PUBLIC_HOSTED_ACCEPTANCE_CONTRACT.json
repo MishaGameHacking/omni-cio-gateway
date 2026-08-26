@@ -1,16 +1,18 @@
 {
-  "schema_version": "v10.wp22a.phase5.public-hosted-acceptance.v2",
-  "status": "WP22A_TECHNICAL_CLOSEOUT_AUTHORIZED_PUBLIC_ACTIVATION_LOCKED",
+  "schema_version": "v10.wp22a.phase5.public-hosted-acceptance.v3",
+  "status": "WP22A_TECHNICAL_CLOSEOUT_COMPLETE_VISUAL_REFRESH_INCREMENT_A_AUTHORIZED_PUBLIC_ACTIVATION_LOCKED",
   "authority": {
     "phase4_acceptance_evidence": "docs/architecture/V10_WP22A_PHASE4_ACCEPTANCE_EVIDENCE.md",
     "phase4_acceptance_contract": "docs/architecture/V10_WP22A_PHASE4_ACCEPTANCE_EVIDENCE.json",
+    "phase5_acceptance_evidence": "docs/architecture/V10_WP22A_PHASE5_TECHNICAL_ACCEPTANCE_EVIDENCE.md",
+    "phase5_acceptance_contract": "docs/architecture/V10_WP22A_PHASE5_TECHNICAL_ACCEPTANCE_EVIDENCE.json",
     "phase5_authorized": true,
     "wp22a_technical_gate_authorized": true,
-    "wp22a_technical_gate_complete": false,
+    "wp22a_technical_gate_complete": true,
     "public_production_activation_authorized": false,
-    "wp22a_complete": false,
+    "wp22a_complete": true,
     "wp23_unlocked": false,
-    "visual_refresh_runtime_authorized": false
+    "visual_refresh_runtime_authorized": true
   },
   "technical_closeout": {
     "hosted_synthetic_acceptance_allowed": true,
@@ -109,7 +111,7 @@
     "status": "DEPRECATED_SEQUENCING_ALIAS_USE_PUBLIC_PRODUCTION_ACTIVATION",
     "deprecated_by": "public_production_activation",
     "public_multi_user_enabled_initial": false,
-    "activation_requires_focused_phase5_gate": true,
+    "activation_requires_focused_phase5_gate": false,
     "normal_user_login_logout_session_acceptance_required": true,
     "deployed_tenant_isolation_required": true,
     "deployed_recovery_availability_required": true,
@@ -120,7 +122,14 @@
   "visual_refresh": {
     "brief": "docs/architecture/V10_WEB_VISUAL_DESIGN_REFRESH_IMPLEMENTATION_BRIEF.md",
     "owner_approved_direction": true,
-    "implementation_authorized_by_this_contract": false,
+    "implementation_authorized_by_this_contract": true,
+    "current_increment": "A_DESIGN_SYSTEM_FOUNDATION",
+    "current_increment_scope": [
+      "apps/web/src/design-system/tokens.css",
+      "apps/web/src/design-system/base.css",
+      "design-system contracts/tests"
+    ],
+    "product_semantic_changes_allowed": false,
     "second_frontend_allowed": false
   }
 }

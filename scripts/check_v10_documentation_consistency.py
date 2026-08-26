@@ -127,8 +127,8 @@ def extract_current_state(status: str, failures: list[str]) -> tuple[str, str]:
         r"Accepted implementation progress is \*\*(\d+%)\*\*",
         status,
     )
-    wp_match = re.search(
-        r"^## Current next package — (WP[0-9A-Z]+)\b",
+    package_match = re.search(
+        r"^## Current next package — ([A-Z0-9][A-Z0-9_-]+)\b",
         status,
         re.MULTILINE,
     )
@@ -136,15 +136,15 @@ def extract_current_state(status: str, failures: list[str]) -> tuple[str, str]:
         failures.append(
             "current status is missing accepted implementation progress marker"
         )
-    if wp_match is None:
+    if package_match is None:
         failures.append("current status is missing current-next-package heading")
     return (
         progress_match.group(1) if progress_match else "",
-        wp_match.group(1) if wp_match else "",
+        package_match.group(1) if package_match else "",
     )
 
 
-def validate_live_guidance(progress: str, wp: str, failures: list[str]) -> None:
+def _validate_live_guidance_delegation(failures: list[str]) -> None:
     for path in LIVE_GUIDANCE:
         text = read_text(path, failures)
         if not text:
@@ -160,11 +160,17 @@ def validate_live_guidance(progress: str, wp: str, failures: list[str]) -> None:
                     f"stale live-state marker in {path.relative_to(ROOT)}: {marker}"
                 )
 
+
+def _validate_readme_snapshot(
+    progress: str,
+    package: str,
+    failures: list[str],
+) -> None:
     readme = read_text(ROOT / "README.md", failures)
     if progress and f"**{progress}**" not in readme:
         failures.append("root README current snapshot does not match status progress")
-    if wp and wp not in readme:
-        failures.append("root README current snapshot does not match current WP")
+    if package and package not in readme:
+        failures.append("root README current snapshot does not match current package")
     for marker in (
         "## Current V10 snapshot",
         "WP23+ remains locked",
@@ -173,12 +179,24 @@ def validate_live_guidance(progress: str, wp: str, failures: list[str]) -> None:
         if marker not in readme:
             failures.append(f"root README is missing current-snapshot marker: {marker}")
 
+
+def _validate_agents_snapshot(
+    progress: str,
+    package: str,
+    failures: list[str],
+) -> None:
     agents = read_text(ROOT / "AGENTS.md", failures)
     if progress and f"accepted V10 progress is **{progress}**" not in agents:
         failures.append("AGENTS current snapshot does not match status progress")
-    if wp and f"**{wp} —" not in agents:
-        failures.append("AGENTS current snapshot does not match current WP")
+    if package and f"**{package} —" not in agents:
+        failures.append("AGENTS current snapshot does not match current package")
 
+
+def _validate_master_context_snapshot(
+    progress: str,
+    package: str,
+    failures: list[str],
+) -> None:
     master_context = read_text(
         ROOT / "knowledge/00_PROJECT_MASTER_CONTEXT.md",
         failures,
@@ -188,11 +206,20 @@ def validate_live_guidance(progress: str, wp: str, failures: list[str]) -> None:
             "Master Context convenience snapshot does not match status progress"
         )
     if (
-        wp
-        and f"**{wp}** as the current authorized functional package"
+        package
+        and f"**{package}** as the current authorized functional package"
         not in master_context
     ):
-        failures.append("Master Context convenience snapshot does not match current WP")
+        failures.append(
+            "Master Context convenience snapshot does not match current package"
+        )
+
+
+def validate_live_guidance(progress: str, package: str, failures: list[str]) -> None:
+    _validate_live_guidance_delegation(failures)
+    _validate_readme_snapshot(progress, package, failures)
+    _validate_agents_snapshot(progress, package, failures)
+    _validate_master_context_snapshot(progress, package, failures)
 
 
 def validate_high_risk_headers(failures: list[str]) -> None:
@@ -327,9 +354,9 @@ def main() -> int:
     validate_status_uniqueness(failures)
 
     status = read_text(STATUS, failures)
-    progress, wp = extract_current_state(status, failures) if status else ("", "")
+    progress, package = extract_current_state(status, failures) if status else ("", "")
 
-    validate_live_guidance(progress, wp, failures)
+    validate_live_guidance(progress, package, failures)
     validate_high_risk_headers(failures)
     validate_repository_lifecycle(failures)
 
@@ -340,7 +367,7 @@ def main() -> int:
 
     print(
         "V10 documentation consistency passed: "
-        f"current status {progress}, current WP {wp}; "
+        f"current status {progress}, current package {package}; "
         "live guidance and lifecycle labels aligned."
     )
     return 0
