@@ -34,7 +34,7 @@ from omni_cio.web.vk_id_oauth_v1 import VkIdOauthConfigV1
 
 
 _TELEGRAM_CLIENT_ID = "OMNI_V10_TELEGRAM_OIDC_CLIENT_ID"
-_TELEGRAM_CLIENT_SECRET = "OMNI_V10_TELEGRAM_OIDC_CLIENT_SECRET"
+_TELEGRAM_CLIENT_AUTH_ENV = "OMNI_V10_TELEGRAM_OIDC_CLIENT_SECRET"
 _VK_CLIENT_ID = "OMNI_V10_VK_ID_CLIENT_ID"
 _IDENTITY_BINDING_KEY = "OMNI_V10_IDENTITY_BINDING_KEY_HEX"
 _CSRF_BINDING_KEY = "OMNI_V10_CSRF_BINDING_KEY_HEX"
@@ -106,7 +106,7 @@ def build_wp22a_phase5_provider_auth(
     environment = os.environ if env is None else env
     origin = _canonical_origin(canonical_origin)
     telegram_client_id = _value(environment, _TELEGRAM_CLIENT_ID)
-    telegram_client_secret = _value(environment, _TELEGRAM_CLIENT_SECRET)
+    telegram_client_secret = _value(environment, _TELEGRAM_CLIENT_AUTH_ENV)
     vk_client_id = _value(environment, _VK_CLIENT_ID)
 
     if bool(telegram_client_id) != bool(telegram_client_secret):
