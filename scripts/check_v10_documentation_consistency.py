@@ -144,7 +144,7 @@ def extract_current_state(status: str, failures: list[str]) -> tuple[str, str]:
     )
 
 
-def validate_live_guidance(progress: str, package: str, failures: list[str]) -> None:
+def _validate_live_guidance_delegation(failures: list[str]) -> None:
     for path in LIVE_GUIDANCE:
         text = read_text(path, failures)
         if not text:
@@ -160,6 +160,12 @@ def validate_live_guidance(progress: str, package: str, failures: list[str]) -> 
                     f"stale live-state marker in {path.relative_to(ROOT)}: {marker}"
                 )
 
+
+def _validate_readme_snapshot(
+    progress: str,
+    package: str,
+    failures: list[str],
+) -> None:
     readme = read_text(ROOT / "README.md", failures)
     if progress and f"**{progress}**" not in readme:
         failures.append("root README current snapshot does not match status progress")
@@ -173,12 +179,24 @@ def validate_live_guidance(progress: str, package: str, failures: list[str]) -> 
         if marker not in readme:
             failures.append(f"root README is missing current-snapshot marker: {marker}")
 
+
+def _validate_agents_snapshot(
+    progress: str,
+    package: str,
+    failures: list[str],
+) -> None:
     agents = read_text(ROOT / "AGENTS.md", failures)
     if progress and f"accepted V10 progress is **{progress}**" not in agents:
         failures.append("AGENTS current snapshot does not match status progress")
     if package and f"**{package} —" not in agents:
         failures.append("AGENTS current snapshot does not match current package")
 
+
+def _validate_master_context_snapshot(
+    progress: str,
+    package: str,
+    failures: list[str],
+) -> None:
     master_context = read_text(
         ROOT / "knowledge/00_PROJECT_MASTER_CONTEXT.md",
         failures,
@@ -195,6 +213,13 @@ def validate_live_guidance(progress: str, package: str, failures: list[str]) -> 
         failures.append(
             "Master Context convenience snapshot does not match current package"
         )
+
+
+def validate_live_guidance(progress: str, package: str, failures: list[str]) -> None:
+    _validate_live_guidance_delegation(failures)
+    _validate_readme_snapshot(progress, package, failures)
+    _validate_agents_snapshot(progress, package, failures)
+    _validate_master_context_snapshot(progress, package, failures)
 
 
 def validate_high_risk_headers(failures: list[str]) -> None:
