@@ -36,6 +36,7 @@ NOW = datetime(2026, 8, 25, 9, 0, tzinfo=timezone.utc)
 CSRF_KEY = bytes([171]) * 32
 SESSION_TOKEN = "s" * 43
 OLD_SESSION_TOKEN = "o" * 43
+TEST_COOKIE_DOMAIN = "omni.example"
 PRODUCT_SCOPE = ProductAccountScopeV1(
     user_id="user:v1:product",
     tenant_id="tenant:v1:product",
@@ -243,7 +244,15 @@ def test_callback_requires_initiating_browser_and_rotates_session() -> None:
     assert missing.status_code == 400
     assert runtimes[0].completions == []
 
-    client.cookies.set(BROWSER_SESSION_COOKIE, OLD_SESSION_TOKEN)
+    # Seed the synthetic pre-auth cookie in the same host/path jar slot a browser
+    # uses for a __Host- cookie, so the callback Set-Cookie replaces it instead of
+    # leaving a second same-name fixture with an unrelated scope.
+    client.cookies.set(
+        BROWSER_SESSION_COOKIE,
+        OLD_SESSION_TOKEN,
+        domain=TEST_COOKIE_DOMAIN,
+        path="/",
+    )
     assert client.post(TELEGRAM_START_PATH, follow_redirects=False).status_code == 303
     response = client.get(
         TELEGRAM_CALLBACK_PATH + "?state=" + "a" * 43 + "&code=accepted",
@@ -263,13 +272,31 @@ def test_callback_requires_initiating_browser_and_rotates_session() -> None:
     assert fresh_token != "a" * 43
     assert fresh_token != "accepted"
     assert fresh_token != runtimes[0].started_browser_proof
-    assert client.cookies.get(BROWSER_SESSION_COOKIE) == fresh_token
-    csrf = client.cookies.get(BROWSER_CSRF_COOKIE)
+    assert (
+        client.cookies.get(
+            BROWSER_SESSION_COOKIE,
+            domain=TEST_COOKIE_DOMAIN,
+            path="/",
+        )
+        == fresh_token
+    )
+    csrf = client.cookies.get(
+        BROWSER_CSRF_COOKIE,
+        domain=TEST_COOKIE_DOMAIN,
+        path="/",
+    )
     assert csrf is not None
     assert BrowserCookiePolicyV1(
         csrf_binding_key=CSRF_KEY
     ).csrf_matches(session_token=fresh_token, csrf_token=csrf)
-    assert client.cookies.get("__Host-omni_v10_oauth_telegram") is None
+    assert (
+        client.cookies.get(
+            "__Host-omni_v10_oauth_telegram",
+            domain=TEST_COOKIE_DOMAIN,
+            path="/",
+        )
+        is None
+    )
 
 
 def test_provider_proof_cannot_be_reused_across_fixed_callback_routes() -> None:
