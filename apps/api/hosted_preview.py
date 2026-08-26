@@ -658,14 +658,12 @@ def create_hosted_preview_app(
             )
         ):
             return JSONResponse({"authenticated": False})
-        result = JSONResponse(
+        return JSONResponse(
             {
                 "authenticated": True,
                 "expires_at": scope.expires_at.isoformat(),
             }
         )
-        result.headers[BROWSER_CSRF_HEADER] = csrf
-        return result
 
     @app.get("/api/v10/web/auth/providers")
     def providers() -> list[dict[str, object]]:
