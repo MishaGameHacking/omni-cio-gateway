@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import secrets
 from urllib.parse import parse_qs, urlsplit
 
 import httpx
@@ -18,7 +19,7 @@ from omni_cio.web.telegram_oidc_v1 import (
 
 NOW = datetime(2026, 8, 25, 21, 0, tzinfo=timezone.utc)
 CLIENT_ID = "123456789"
-CLIENT_SECRET = "fixture-client-secret-value"
+CLIENT_SECRET = secrets.token_urlsafe(32)
 CALLBACK = "https://omni.example/api/v10/web/auth/telegram/callback"
 
 

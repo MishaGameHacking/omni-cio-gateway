@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
+import secrets
 from threading import Event
 
 import httpx
@@ -13,6 +14,7 @@ from omni_cio.web.telegram_oidc_v1 import TelegramOidcConfigV1, TelegramOidcErro
 
 NOW = datetime(2026, 8, 25, 19, 0, tzinfo=timezone.utc)
 CALLBACK = "https://omni.example/api/v10/web/auth/telegram/callback"
+CLIENT_SECRET = secrets.token_urlsafe(32)
 RFC_RSA_MODULUS = "".join(
     [
         "ofgWCuLjybRl",
@@ -51,7 +53,7 @@ RFC_RSA_MODULUS = "".join(
 def _config() -> TelegramOidcConfigV1:
     return TelegramOidcConfigV1(
         client_id="123456789",
-        client_secret="fixture-client-auth-material",
+        client_secret=CLIENT_SECRET,
         redirect_uri=CALLBACK,
         timeout_seconds=1.0,
         jwks_cache_lifetime=timedelta(minutes=1),
@@ -139,7 +141,7 @@ def test_unknown_kid_rotation_probe_is_cooldown_bounded() -> None:
         return httpx.Response(200, json=_jwks(kid))
 
     verifier = TelegramJwksSingleFlightVerifierV1(_config())
-    client = httpx.Client(transport=httpx.MockTransport(handler))
+    client = htttpx.Client(transport=httpx.MockTransport(handler))
 
     with pytest.raises(TelegramOidcError, match="TELEGRAM_OIDC_SIGNING_KEY_UNKNOWN"):
         verifier._key_for("rotated-key", now=NOW, client=client)

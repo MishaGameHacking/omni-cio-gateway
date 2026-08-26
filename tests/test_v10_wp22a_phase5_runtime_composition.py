@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import secrets
 from typing import Any, cast
 
 import pytest
@@ -17,8 +18,9 @@ from omni_cio.web.vk_id_oauth_v1 import VkIdOauthRuntimeV1
 
 NOW = datetime(2026, 8, 25, 18, 30, tzinfo=timezone.utc)
 ORIGIN = "https://omni-cio-v10-web.onrender.com"
-KEY_A = "11" * 32
-KEY_B = "22" * 32
+TELEGRAM_CLIENT_SECRET = secrets.token_urlsafe(32)
+KEY_A = secrets.token_hex(32)
+KEY_B = secrets.token_hex(32)
 
 
 def _build(env: dict[str, str]):
@@ -55,13 +57,13 @@ def test_partial_telegram_configuration_aborts_startup() -> None:
         Phase5ProviderAuthConfigurationError,
         match="WP22A_PHASE5_TELEGRAM_CONFIGURATION_INCOMPLETE",
     ):
-        _build({"OMNI_V10_TELEGRAM_OIDC_CLIENT_SECRET": "x" * 32})
+        _build({"OMNI_V10_TELEGRAM_OIDC_CLIENT_SECRET": TELEGRAM_CLIENT_SECRET})
 
 
 def test_configured_provider_requires_both_server_side_binding_keys() -> None:
     telegram = {
         "OMNI_V10_TELEGRAM_OIDC_CLIENT_ID": "123456",
-        "OMNI_V10_TELEGRAM_OIDC_CLIENT_SECRET": "s" * 32,
+        "OMNI_V10_TELEGRAM_OIDC_CLIENT_SECRET": TELEGRAM_CLIENT_SECRET,
     }
     with pytest.raises(
         Phase5ProviderAuthConfigurationError,
@@ -78,24 +80,24 @@ def test_configured_provider_requires_both_server_side_binding_keys() -> None:
 
 
 def test_invalid_binding_key_encoding_is_rejected_without_echoing_value() -> None:
-    secret_value = "not-a-valid-secret-key"
+    invalid_binding_material = "invalid_" + secrets.token_urlsafe(8)
     with pytest.raises(Phase5ProviderAuthConfigurationError) as error:
         _build(
             {
                 "OMNI_V10_VK_ID_CLIENT_ID": "123456",
-                "OMNI_V10_CSRF_BINDING_KEY_HEX": secret_value,
+                "OMNI_V10_CSRF_BINDING_KEY_HEX": invalid_binding_material,
                 "OMNI_V10_IDENTITY_BINDING_KEY_HEX": KEY_B,
             }
         )
     assert str(error.value) == "OMNI_V10_CSRF_BINDING_KEY_HEX_INVALID"
-    assert secret_value not in str(error.value)
+    assert invalid_binding_material not in str(error.value)
 
 
 def test_telegram_and_vk_runtime_composition_uses_fixed_https_callbacks() -> None:
     services = _build(
         {
             "OMNI_V10_TELEGRAM_OIDC_CLIENT_ID": "123456",
-            "OMNI_V10_TELEGRAM_OIDC_CLIENT_SECRET": "s" * 32,
+            "OMNI_V10_TELEGRAM_OIDC_CLIENT_SECRET": TELEGRAM_CLIENT_SECRET,
             "OMNI_V10_VK_ID_CLIENT_ID": "654321",
             "OMNI_V10_CSRF_BINDING_KEY_HEX": KEY_A,
             "OMNI_V10_IDENTITY_BINDING_KEY_HEX": KEY_B,

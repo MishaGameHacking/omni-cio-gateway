@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import secrets
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
@@ -28,6 +29,7 @@ from omni_cio.web.vk_id_oauth_v1 import (
 NOW = datetime(2026, 8, 25, 21, 30, tzinfo=timezone.utc)
 TELEGRAM_CALLBACK = "https://omni.example/api/v10/web/auth/telegram/callback"
 VK_CALLBACK = "https://omni.example/api/v10/web/auth/vk_id/callback"
+TELEGRAM_CLIENT_SECRET = secrets.token_urlsafe(32)
 
 
 def test_route_minted_browser_proof_binds_telegram_transaction() -> None:
@@ -35,7 +37,7 @@ def test_route_minted_browser_proof_binds_telegram_transaction() -> None:
     runtime = BrowserBoundTelegramOidcRuntimeV1(
         config=TelegramOidcConfigV1(
             client_id="123456789",
-            client_secret="fixture-client-secret-value",
+            client_secret=TELEGRAM_CLIENT_SECRET,
             redirect_uri=TELEGRAM_CALLBACK,
         ),
         transactions=transactions,
