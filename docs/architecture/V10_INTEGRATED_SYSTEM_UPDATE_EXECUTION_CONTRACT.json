@@ -1,0 +1,47 @@
+{
+  "schema": "omni-cio.v10.integrated-system-update-execution.v1",
+  "status": "OWNER_APPROVED_PROPOSAL_PENDING_ACCEPTANCE",
+  "execution_units": ["FOCUSED_CHANGE", "INTEGRATED_SYSTEM_UPDATE"],
+  "integrated_update": {
+    "one_branch_default": true,
+    "one_final_pr_default": true,
+    "internal_milestones_required": true,
+    "main_progress_changes_only_after_merge_and_post_merge_acceptance": true,
+    "next_major_update_locked_until_acceptance": true
+  },
+  "publication": {
+    "publish_after_integration_ready": true,
+    "temporary_verifier_commits_forbidden": true,
+    "one_coherent_implementation_head_default": true
+  },
+  "verification": {
+    "head_freeze_after_external_verification": true,
+    "observe_safe_findings_before_fix": true,
+    "root_cause_before_correction": true,
+    "batch_correction_default": true,
+    "continue_on_error_to_fake_green_forbidden": true,
+    "exact_head_success_only": true
+  },
+  "ledgers": {
+    "branch_execution_ledger_required": true,
+    "github_dashboard_required": true,
+    "current_status_authority_remains": "knowledge/17_V10_CURRENT_PROGRAM_STATUS.md"
+  },
+  "split_triggers": [
+    "migration_ordering",
+    "security_authority_transition",
+    "dependency_toolchain_boundary",
+    "owner_provider_action",
+    "live_temporal_evidence",
+    "production_cutover",
+    "real_money_authority",
+    "reviewability_limit"
+  ],
+  "protected_invariants": {
+    "app_entrypoint": "app:app",
+    "trading_methods": false,
+    "REAL_TRADING_ENABLED": false,
+    "broker_write": false,
+    "PUBLIC_MULTI_USER_ENABLED": false
+  }
+}
