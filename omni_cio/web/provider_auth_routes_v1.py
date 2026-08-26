@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+import secrets
 from typing import Protocol
 from urllib.parse import quote
 
@@ -27,7 +28,7 @@ from omni_cio.web.provider_auth_v1 import (
     new_authorization_browser_proof_v1,
 )
 from omni_cio.web.request_limits_v1 import ProviderAuthAbuseControlV1
-from omni_cio.web.session_v1 import SessionScopeV1, new_session_token_v1
+from omni_cio.web.session_v1 import SESSION_TOKEN_BYTES, SessionScopeV1
 from omni_cio.web.telegram_oidc_v1 import TELEGRAM_OIDC_AUTHORIZATION_ENDPOINT
 from omni_cio.web.vk_id_oauth_v1 import VK_ID_AUTHORIZATION_ENDPOINT
 
@@ -289,10 +290,10 @@ def install_provider_auth_routes_v1(
                 request.cookies.get(services.cookies.session_cookie),
                 now=authenticated_at,
             )
-            # Credential provenance is deliberately local to the cookie sink:
-            # callback/query/cookie/provider data can select an authenticated
-            # server-side scope, but cannot construct the new browser token.
-            token = new_session_token_v1()
+            # Keep the CSPRNG origin in the same module as the framework cookie
+            # sink. Callback/query/cookie/provider data can select only the
+            # authenticated server-side scope; none can construct this token.
+            token = secrets.token_urlsafe(SESSION_TOKEN_BYTES)
             authentication.bind_session(
                 token,
                 account_scope,
