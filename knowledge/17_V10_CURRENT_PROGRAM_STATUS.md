@@ -10,7 +10,7 @@ Accepted implementation progress is **54%**.
 
 Blocks A (5%), B (9%), C (12%), D (14%) and E (14%) have passed their owning Exit Gates. WP16–WP22 and the complete **WP22A — External Web Access / Product Authentication Security Gate** are accepted COMPLETE through the evidence chain recorded below.
 
-The current authorized implementation package is **WEB-VISUAL-A — Premium Spatial Financial OS / Design-system foundation**. This is the OWNER-approved visual-refresh Increment A only; it does not reopen WP22A and does not unlock WP23.
+The current authorized implementation package is **WEB-VISUAL-A — Premium Spatial Financial OS / Design-system foundation**. This is the OWNER-approved visual-refresh Increment A only; it does not reopen WP22A and does not unlock WP23. WP23+ remains locked.
 
 Public production remains a separate later fail-closed activation gate. `PUBLIC_MULTI_USER_ENABLED=false`, final Cloud.ru provider apply, production DNS/edge mutation, real provider secret provisioning and real public-user cutover remain locked.
 
