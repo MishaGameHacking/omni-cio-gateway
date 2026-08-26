@@ -164,6 +164,8 @@ GRANT SELECT, INSERT ON TABLE omni_cio_v10.external_identity_bindings
     TO omni_cio_hosted_api;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE omni_cio_v10.web_sessions
     TO omni_cio_hosted_api;
+GRANT SELECT, INSERT, DELETE ON TABLE omni_cio_v10.provider_auth_transactions
+    TO omni_cio_hosted_api;
 GRANT SELECT, INSERT ON TABLE omni_cio_v10.broker_accounts
     TO omni_cio_hosted_api;
 GRANT SELECT, INSERT, UPDATE ON TABLE omni_cio_v10.broker_connections

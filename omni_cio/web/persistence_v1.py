@@ -11,7 +11,12 @@ from omni_cio.contracts.v1.domain import BrokerAccountV1, BrokerProvider
 from omni_cio.persistence.migration import ConnectionLike
 from omni_cio.persistence.repository import model_record_sha256
 from omni_cio.web.broker_vault_v1 import new_read_connection_secret_ref
-from omni_cio.web.session_v1 import SessionPolicyV1, SessionScopeV1, _token_hash
+from omni_cio.web.session_v1 import (
+    SessionPolicyV1,
+    SessionScopeV1,
+    _token_hash,
+    new_session_token_v1,
+)
 
 
 _TENANT_ID_RE = re.compile(r"^tenant:v1:[a-z0-9][a-z0-9_-]{2,63}$")
@@ -67,8 +72,25 @@ class PostgresWebSessionRegistryV1:
         tenant_id: str,
         now: datetime,
     ) -> tuple[str, SessionScopeV1]:
+        token = new_session_token_v1()
+        return token, self.bind(
+            token=token,
+            user_id=user_id,
+            tenant_id=tenant_id,
+            now=now,
+        )
+
+    def bind(
+        self,
+        *,
+        token: str,
+        user_id: str,
+        tenant_id: str,
+        now: datetime,
+    ) -> SessionScopeV1:
+        """Bind a pre-minted opaque credential to durable server-side scope."""
+
         issued = _utc(now)
-        token = secrets.token_urlsafe(32)
         digest = _token_hash(token)
         idle_expires = issued + self._policy.idle_lifetime
         absolute_expires = issued + self._policy.absolute_lifetime
@@ -88,7 +110,7 @@ class PostgresWebSessionRegistryV1:
                     absolute_expires,
                 ),
             )
-        return token, SessionScopeV1(
+        return SessionScopeV1(
             user_id=user_id,
             tenant_id=tenant_id,
             expires_at=idle_expires,
@@ -98,7 +120,10 @@ class PostgresWebSessionRegistryV1:
         if not token:
             return None
         current = _utc(now)
-        digest = _token_hash(token)
+        try:
+            digest = _token_hash(token)
+        except ValueError:
+            return None
         with self._connection.transaction():
             row = self._connection.execute(
                 "SELECT user_id, tenant_id, idle_expires_at, absolute_expires_at, revoked_at "
@@ -134,7 +159,10 @@ class PostgresWebSessionRegistryV1:
         if not token:
             return False
         current = _utc(now)
-        digest = _token_hash(token)
+        try:
+            digest = _token_hash(token)
+        except ValueError:
+            return False
         with self._connection.transaction():
             cursor = self._connection.execute(
                 "UPDATE omni_cio_v10.web_sessions SET revoked_at = %s "

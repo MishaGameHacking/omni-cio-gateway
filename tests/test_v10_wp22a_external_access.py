@@ -486,9 +486,14 @@ def test_expired_session_is_rejected_server_side() -> None:
     assert client.get("/protected").json() == {"authenticated": False}
 
 
-def test_frontend_remote_mutations_echo_host_bound_csrf_cookie() -> None:
+def test_frontend_remote_mutations_use_transient_session_bootstrap_csrf() -> None:
     api_source = (WEB_SOURCE / "app-shell" / "api.ts").read_text(encoding="utf-8")
-    assert "__Host-omni_v10_csrf" in api_source
+    assert "__Host-omni_v10_csrf" not in api_source
+    assert "document.cookie" not in api_source
+    assert "readCookie(" not in api_source
+    assert '"/api/v10/web/session"' in api_source
+    assert "csrf_token: csrfToken" in api_source
+    assert "csrfHeaderToken" in api_source
     assert "X-Omni-CSRF" in api_source
     assert "localStorage" not in api_source
     assert "sessionStorage" not in api_source

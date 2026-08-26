@@ -22,29 +22,49 @@ from apps.api.app import (
     _SerializedWebConnection,
     _configure_long_lived_web_connection,
 )
+from apps.api.wp22a_phase5_auth import build_wp22a_phase5_provider_auth
 from omni_cio.persistence.migration import connect_postgres
-from omni_cio.web.api_v1 import SESSION_COOKIE
+from omni_cio.web.browser_security_v1 import (
+    BROWSER_CSRF_COOKIE,
+    BROWSER_CSRF_HEADER,
+    BROWSER_SESSION_COOKIE,
+    BrowserCookiePolicyV1,
+)
 from omni_cio.web.persistence_v1 import PostgresWebSessionRegistryV1
+from omni_cio.web.provider_auth_routes_v1 import (
+    TELEGRAM_START_PATH,
+    VK_ID_START_PATH,
+    ProviderAuthRouteServicesV1,
+    install_provider_auth_routes_v1,
+)
+from omni_cio.web.request_limits_v1 import (
+    HostedRequestAbuseControlV1,
+    is_session_token_candidate,
+)
 from omni_cio.web.session_v1 import SessionPolicyV1, SessionScopeV1
 
 
 WEB_DIST = Path(__file__).resolve().parents[1] / "web" / "dist"
-PREVIEW_LOGIN_PATH = "/api/v10/web/preview-login"
 PREVIEW_STATUS_PATH = "/api/v10/web/preview-mode"
-CSRF_COOKIE = "__Host-omni_v10_csrf"
-CSRF_HEADER = "X-Omni-CSRF"
+CSRF_COOKIE = BROWSER_CSRF_COOKIE
+CSRF_HEADER = BROWSER_CSRF_HEADER
 PREVIEW_TENANT_ID = "tenant:v1:synthetic_preview"
 PREVIEW_USER_ID = "user:v1:synthetic_preview"
 PREVIEW_SESSION_POLICY = SessionPolicyV1(
     idle_lifetime=timedelta(hours=2),
     absolute_lifetime=timedelta(hours=24),
 )
+_PROVIDER_START_PATHS = frozenset({TELEGRAM_START_PATH, VK_ID_START_PATH})
 _SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+_UNTRUSTED_FETCH_SITES = frozenset({"cross-site", "same-site"})
 _SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 _HOST_PATTERN = re.compile(
     r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
     r"(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+"
 )
+_RENDER_HOST_SUFFIX = ".onrender.com"
+_HEALTHZ_PATH = "/healthz"
+_SESSION_SCOPE_STATE_ATTR = "_omni_v10_session_scope"
 _CONTENT_SECURITY_POLICY = (
     "default-src 'self'; "
     "base-uri 'none'; "
@@ -82,6 +102,7 @@ class HostedPreviewServicesV1:
     hostname: str
     release_sha: str
     now: Callable[[], datetime] = lambda: datetime.now(timezone.utc)
+    provider_auth: ProviderAuthRouteServicesV1 | None = None
 
 
 def _utc(value: datetime) -> datetime:
@@ -145,6 +166,22 @@ def _now_iso(services: HostedPreviewServicesV1) -> str:
     return _utc(services.now()).isoformat()
 
 
+def _is_api_path(path: str) -> bool:
+    return path.startswith("/api/") or path == _HEALTHZ_PATH
+
+
+def _merge_vary(response: Response, *required: str) -> None:
+    existing = response.headers.get("Vary", "")
+    values = [value.strip() for value in existing.split(",") if value.strip()]
+    seen = {value.lower() for value in values}
+    for value in required:
+        key = value.lower()
+        if key not in seen:
+            values.append(value)
+            seen.add(key)
+    response.headers["Vary"] = ", ".join(values)
+
+
 def _harden_response(response: Response, *, api_path: bool) -> Response:
     response.headers["Strict-Transport-Security"] = "max-age=31536000"
     response.headers["Content-Security-Policy"] = _CONTENT_SECURITY_POLICY
@@ -152,6 +189,7 @@ def _harden_response(response: Response, *, api_path: bool) -> Response:
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "same-origin"
     response.headers["Cache-Control"] = "no-store" if api_path else "no-cache"
+    _merge_vary(response, "Origin", "Sec-Fetch-Site")
     return response
 
 
@@ -162,58 +200,153 @@ def _safe_error(detail: str, status_code: int, *, api_path: bool = True) -> Resp
     )
 
 
+def _rate_error(*, retry_after_seconds: int, api_path: bool = True) -> Response:
+    response = JSONResponse(
+        {"detail": "RATE_LIMITED"},
+        status_code=429,
+        headers={"Retry-After": str(retry_after_seconds)},
+    )
+    return _harden_response(response, api_path=api_path)
+
+
+def _disabled_provider_auth(
+    services: HostedPreviewServicesV1,
+) -> ProviderAuthRouteServicesV1:
+    return ProviderAuthRouteServicesV1(
+        runtimes=(),
+        authentication=None,
+        cookies=BrowserCookiePolicyV1(csrf_binding_key=secrets.token_bytes(32)),
+        now=services.now,
+    )
+
+
+def _request_session_scope(request: Request) -> SessionScopeV1 | None:
+    scope = getattr(request.state, _SESSION_SCOPE_STATE_ATTR, None)
+    return scope if isinstance(scope, SessionScopeV1) else None
+
+
 class HostedPreviewSecurityMiddlewareV1(BaseHTTPMiddleware):
-    def __init__(self, app: Any, *, hostname: str) -> None:
+    def __init__(
+        self,
+        app: Any,
+        *,
+        hostname: str,
+        cookies: BrowserCookiePolicyV1,
+        sessions: SessionRegistryLike,
+        now: Callable[[], datetime],
+        trusted_edge_tls_terminated: bool = False,
+        abuse: HostedRequestAbuseControlV1 | None = None,
+    ) -> None:
         super().__init__(app)
         self._hostname = hostname
+        self._cookies = cookies
+        self._sessions = sessions
+        self._now = now
+        self._trusted_edge_tls_terminated = trusted_edge_tls_terminated
+        self._abuse = abuse or HostedRequestAbuseControlV1()
+
+    def _transport_error(self, request: Request, *, api_path: bool) -> Response | None:
+        # Never treat a client-controlled forwarded header as TLS authority. On the
+        # accepted Render Web Service the managed edge terminates public TLS and
+        # forwards to a port that Render documents as not directly Internet-reachable;
+        # that provider boundary is asserted by source composition instead.
+        if (
+            request.url.scheme.lower() != "https"
+            and not self._trusted_edge_tls_terminated
+        ):
+            return _safe_error("HTTPS_REQUIRED", 403, api_path=api_path)
+        return None
+
+    def _resolve_session(self, request: Request) -> Response | None:
+        session_token = request.cookies.get(BROWSER_SESSION_COOKIE)
+        scope: SessionScopeV1 | None = None
+        if is_session_token_candidate(session_token):
+            try:
+                scope = self._sessions.resolve(
+                    session_token,
+                    now=_utc(self._now()),
+                )
+            except Exception:
+                return _safe_error("SESSION_LOOKUP_UNAVAILABLE", 503)
+        setattr(request.state, _SESSION_SCOPE_STATE_ATTR, scope)
+        verified_token = session_token if scope is not None else None
+        if not self._abuse.admit_request_class(verified_session_token=verified_token):
+            return _rate_error(
+                retry_after_seconds=self._abuse.policy.retry_after_seconds,
+                api_path=True,
+            )
+        return None
+
+    def _admission_error(self, request: Request, *, api_path: bool) -> Response | None:
+        if request.url.path == _HEALTHZ_PATH:
+            if self._abuse.admit_health():
+                return None
+            return _rate_error(
+                retry_after_seconds=self._abuse.policy.retry_after_seconds,
+                api_path=True,
+            )
+        if not api_path:
+            return None
+        if not self._abuse.admit_global():
+            return _rate_error(
+                retry_after_seconds=self._abuse.policy.retry_after_seconds,
+                api_path=True,
+            )
+        return self._resolve_session(request)
+
+    def _csrf_valid(self, request: Request) -> bool:
+        session_token = request.cookies.get(BROWSER_SESSION_COOKIE, "")
+        cookie = request.cookies.get(BROWSER_CSRF_COOKIE, "")
+        header = request.headers.get(BROWSER_CSRF_HEADER, "")
+        if not session_token or not cookie or not header:
+            return False
+        if not secrets.compare_digest(cookie, header):
+            return False
+        return self._cookies.csrf_matches(
+            session_token=session_token,
+            csrf_token=cookie,
+        )
+
+    def _mutation_error(self, request: Request, *, api_path: bool) -> Response | None:
+        if request.method in _SAFE_METHODS:
+            return None
+        if _origin_hostname(request.headers.get("origin", "")) != self._hostname:
+            return _safe_error("ORIGIN_REQUIRED", 403, api_path=api_path)
+        fetch_site = request.headers.get("sec-fetch-site", "").strip().lower()
+        if fetch_site in _UNTRUSTED_FETCH_SITES:
+            return _safe_error("FETCH_METADATA_REJECTED", 403, api_path=api_path)
+        if request.url.path in _PROVIDER_START_PATHS:
+            return None
+        if not self._csrf_valid(request):
+            return _safe_error("CSRF_REJECTED", 403, api_path=api_path)
+        return None
 
     async def dispatch(
         self,
         request: Request,
         call_next: Callable[..., Any],
     ) -> Response:
-        forwarded = request.headers.get("x-forwarded-proto", "").strip().lower()
-        scheme = forwarded or request.url.scheme.lower()
-        api_path = (
-            request.url.path.startswith("/api/") or request.url.path == "/healthz"
-        )
-        if scheme != "https":
-            return _safe_error("HTTPS_REQUIRED", 403, api_path=api_path)
-
-        if request.method not in _SAFE_METHODS:
-            if _origin_hostname(request.headers.get("origin", "")) != self._hostname:
-                return _safe_error("ORIGIN_REQUIRED", 403, api_path=api_path)
-            if request.url.path != PREVIEW_LOGIN_PATH:
-                cookie = request.cookies.get(CSRF_COOKIE, "")
-                header = request.headers.get(CSRF_HEADER, "")
-                if (
-                    not cookie
-                    or not header
-                    or not secrets.compare_digest(cookie, header)
-                ):
-                    return _safe_error("CSRF_REJECTED", 403, api_path=api_path)
-
+        api_path = _is_api_path(request.url.path)
+        error = self._transport_error(request, api_path=api_path)
+        if error is None:
+            error = self._admission_error(request, api_path=api_path)
+        if error is None:
+            error = self._mutation_error(request, api_path=api_path)
+        if error is not None:
+            return error
         response = await call_next(request)
         return _harden_response(response, api_path=api_path)
 
 
-def _require_session(
-    request: Request,
-    services: HostedPreviewServicesV1,
-) -> SessionScopeV1 | Response:
-    scope = services.sessions.resolve(
-        request.cookies.get(SESSION_COOKIE),
-        now=_utc(services.now()),
-    )
+def _require_session(request: Request) -> SessionScopeV1 | Response:
+    scope = _request_session_scope(request)
     if scope is None:
         return _safe_error("AUTHENTICATION_REQUIRED", 401)
-    if scope.user_id != PREVIEW_USER_ID or scope.tenant_id != PREVIEW_TENANT_ID:
-        return _safe_error("SYNTHETIC_PREVIEW_SCOPE_REQUIRED", 403)
     return scope
 
 
 def _verify_synthetic_scope(connection: Any) -> None:
-    """Verify provider-seeded preview identity without widening runtime authority."""
+    """Verify provider-seeded Phase-4 fixture without using it as auth authority."""
     created = datetime(2026, 8, 21, tzinfo=timezone.utc)
     user_payload: dict[str, object] = {
         "schema_version": "1.0",
@@ -310,7 +443,10 @@ def _empty_portfolio(now: str) -> dict[str, object]:
             {
                 "code": "SYNTHETIC_PREVIEW_NO_BROKER_DATA",
                 "severity": "info",
-                "message": "Real broker and portfolio data are disabled in preview.",
+                "message": (
+                    "Real broker and portfolio data are disabled in technical "
+                    "acceptance."
+                ),
             }
         ],
         "calculation_policy": {
@@ -378,7 +514,7 @@ def _system_status(
         "generated_at": now,
         "state": "READY",
         "release": {
-            "release": "v10-phase4-synthetic-preview",
+            "release": "v10-phase5-synthetic-technical-auth",
             "git_sha": services.release_sha,
             "git_sha_source": "RENDER_GIT_COMMIT",
             "last_deploy_at": None,
@@ -389,9 +525,9 @@ def _system_status(
         "database": {
             "state": "READY",
             "availability": "AVAILABLE",
-            "current_migration": "0004_product_identity_multi_tenant",
-            "expected_migration": "0004_product_identity_multi_tenant",
-            "migration_count": 4,
+            "current_migration": "0005_browser_bound_provider_auth",
+            "expected_migration": "0005_browser_bound_provider_auth",
+            "migration_count": 5,
             "exact_migration_state": True,
         },
         "backup": {
@@ -428,10 +564,10 @@ def _system_status(
         "services": [
             {
                 "id": "application",
-                "label": "V10 Web preview",
+                "label": "V10 Web technical acceptance",
                 "state": "READY",
                 "availability": "AVAILABLE",
-                "detail": "Synthetic React/FastAPI preview is online.",
+                "detail": "Provider-only React/FastAPI technical boundary is online.",
                 "observed_at": now,
             },
             {
@@ -457,35 +593,33 @@ def _system_status(
     }
 
 
-def create_hosted_preview_app(
-    services: HostedPreviewServicesV1,
-    *,
-    web_dist: Path = WEB_DIST,
-    additional_hosts: tuple[str, ...] = (),
-) -> FastAPI:
-    hostname = _hostname(services.hostname)
-    services.release_sha = _release_sha(services.release_sha)
-    services.database_probe()
+class _HostedPreviewRoutesV1:
+    def __init__(
+        self,
+        services: HostedPreviewServicesV1,
+        provider_auth: ProviderAuthRouteServicesV1,
+        web_dist: Path,
+    ) -> None:
+        self._services = services
+        self._provider_auth = provider_auth
+        self._web_dist = web_dist
 
-    if not web_dist.is_dir() or not (web_dist / "index.html").is_file():
-        raise RuntimeError("HOSTED_PREVIEW_WEB_BUILD_MISSING")
+    def unhandled_exception(self, request: Request, exc: Exception) -> Response:
+        del exc
+        return _safe_error(
+            "INTERNAL_ERROR",
+            500,
+            api_path=_is_api_path(request.url.path),
+        )
 
-    app = FastAPI(
-        title="Omni-CIO V10 synthetic hosted preview",
-        docs_url=None,
-        redoc_url=None,
-        openapi_url=None,
-    )
-
-    @app.get("/healthz")
-    def healthz() -> Response:
+    def healthz(self) -> Response:
         try:
-            services.database_probe()
+            self._services.database_probe()
         except Exception:
             return JSONResponse(
                 {
                     "status": "unavailable",
-                    "release_sha": services.release_sha,
+                    "release_sha": self._services.release_sha,
                     "synthetic_preview": True,
                 },
                 status_code=503,
@@ -493,143 +627,92 @@ def create_hosted_preview_app(
         return JSONResponse(
             {
                 "status": "ok",
-                "release_sha": services.release_sha,
+                "release_sha": self._services.release_sha,
                 "database": "READY",
                 "synthetic_preview": True,
             }
         )
 
-    @app.get(PREVIEW_STATUS_PATH)
-    def preview_mode() -> dict[str, object]:
+    def preview_mode(self) -> dict[str, object]:
         return {
-            "enabled": True,
+            "enabled": False,
             "synthetic": True,
             "broker_credentials_enabled": False,
             "registration_enabled": False,
-            "label": "Безопасная публичная демонстрация",
+            "label": "Synthetic technical boundary",
         }
 
-    @app.get("/api/v10/web/session")
-    def session_view(request: Request) -> Response:
-        scope = services.sessions.resolve(
-            request.cookies.get(SESSION_COOKIE),
-            now=_utc(services.now()),
-        )
-        csrf = request.cookies.get(CSRF_COOKIE, "")
-        if scope is None or not csrf:
+    def session_view(self, request: Request) -> Response:
+        token = request.cookies.get(BROWSER_SESSION_COOKIE, "")
+        scope = _request_session_scope(request)
+        csrf = request.cookies.get(BROWSER_CSRF_COOKIE, "")
+        if (
+            scope is None
+            or not token
+            or not self._provider_auth.cookies.csrf_matches(
+                session_token=token,
+                csrf_token=csrf,
+            )
+        ):
             return JSONResponse({"authenticated": False})
-        if scope.user_id != PREVIEW_USER_ID or scope.tenant_id != PREVIEW_TENANT_ID:
-            return JSONResponse({"authenticated": False})
-        result = JSONResponse(
+        return JSONResponse(
             {
                 "authenticated": True,
-                "user_label": "DEMO USER",
-                "tenant_label": "SYNTHETIC PREVIEW",
                 "expires_at": scope.expires_at.isoformat(),
+                "csrf_token": csrf,
             }
         )
-        result.headers[CSRF_HEADER] = csrf
+
+    def providers(self) -> list[dict[str, object]]:
+        result: list[dict[str, object]] = []
+        for descriptor in self._provider_auth.descriptors():
+            row: dict[str, object] = {
+                "provider": descriptor.provider.value,
+                "enabled": descriptor.enabled,
+            }
+            if not descriptor.enabled:
+                row["reason"] = "NOT_CONFIGURED"
+            result.append(row)
         return result
 
-    @app.get("/api/v10/web/auth/providers")
-    def providers() -> list[dict[str, object]]:
-        return [
-            {
-                "provider": "telegram",
-                "enabled": False,
-                "reason": "NOT_CONFIGURED",
-            },
-            {
-                "provider": "vk_id",
-                "enabled": False,
-                "reason": "NOT_CONFIGURED",
-            },
-        ]
-
-    @app.get("/api/v10/web/private-test-login/status")
-    def private_test_status() -> dict[str, bool]:
-        return {"enabled": False}
-
-    @app.get("/api/v10/web/private-external-login/status")
-    def private_remote_status() -> dict[str, bool]:
-        return {"enabled": False}
-
-    @app.post(PREVIEW_LOGIN_PATH)
-    def preview_login(request: Request, response: Response) -> dict[str, bool]:
-        issued = _utc(services.now())
-        services.sessions.revoke(
-            request.cookies.get(SESSION_COOKIE),
-            now=issued,
-        )
-        token, scope = services.sessions.create(
-            user_id=PREVIEW_USER_ID,
-            tenant_id=PREVIEW_TENANT_ID,
-            now=issued,
-        )
-        csrf = secrets.token_urlsafe(32)
-        max_age = max(1, int((scope.expires_at - issued).total_seconds()))
-        response.set_cookie(
-            SESSION_COOKIE,
-            token,
-            secure=True,
-            httponly=True,
-            samesite="strict",
-            path="/",
-            max_age=max_age,
-        )
-        response.set_cookie(
-            CSRF_COOKIE,
-            csrf,
-            secure=True,
-            httponly=True,
-            samesite="strict",
-            path="/",
-            max_age=max_age,
-        )
-        response.headers[CSRF_HEADER] = csrf
-        return {"ok": True}
-
-    @app.post("/api/v10/web/session/logout")
-    def logout(request: Request) -> Response:
-        scope = _require_session(request, services)
+    def logout(self, request: Request) -> Response:
+        scope = _require_session(request)
         if isinstance(scope, Response):
             return scope
-        services.sessions.revoke(
-            request.cookies.get(SESSION_COOKIE),
-            now=_utc(services.now()),
+        self._services.sessions.revoke(
+            request.cookies.get(BROWSER_SESSION_COOKIE),
+            now=_utc(self._services.now()),
         )
         result = JSONResponse({"ok": True})
-        result.delete_cookie(SESSION_COOKIE, path="/", secure=True)
-        result.delete_cookie(CSRF_COOKIE, path="/", secure=True)
+        result.delete_cookie(BROWSER_SESSION_COOKIE, path="/", secure=True)
+        result.delete_cookie(BROWSER_CSRF_COOKIE, path="/", secure=True)
         return result
 
-    @app.post("/api/v10/web/session/revoke-all")
-    def revoke_all(request: Request) -> Response:
-        scope = _require_session(request, services)
+    def revoke_all(self, request: Request) -> Response:
+        scope = _require_session(request)
         if isinstance(scope, Response):
             return scope
-        services.sessions.revoke(
-            request.cookies.get(SESSION_COOKIE),
-            now=_utc(services.now()),
+        self._services.sessions.revoke_all_for_user(
+            scope.user_id,
+            now=_utc(self._services.now()),
         )
         result = JSONResponse({"ok": True})
-        result.delete_cookie(SESSION_COOKIE, path="/", secure=True)
-        result.delete_cookie(CSRF_COOKIE, path="/", secure=True)
+        result.delete_cookie(BROWSER_SESSION_COOKIE, path="/", secure=True)
+        result.delete_cookie(BROWSER_CSRF_COOKIE, path="/", secure=True)
         return result
 
-    @app.get("/api/v10/web/health")
-    def health(request: Request) -> Response:
-        scope = _require_session(request, services)
+    def health(self, request: Request) -> Response:
+        scope = _require_session(request)
         if isinstance(scope, Response):
             return scope
         try:
-            services.database_probe()
+            self._services.database_probe()
         except Exception:
             return JSONResponse(
                 {
                     "state": "OFFLINE",
                     "freshness": "UNKNOWN",
-                    "checked_at": _now_iso(services),
+                    "checked_at": _now_iso(self._services),
                 },
                 status_code=503,
             )
@@ -637,101 +720,215 @@ def create_hosted_preview_app(
             {
                 "state": "READY",
                 "freshness": "FRESH",
-                "checked_at": _now_iso(services),
+                "checked_at": _now_iso(self._services),
             }
         )
 
-    @app.get("/api/v10/web/broker-connections")
-    def broker_connections(request: Request) -> Response:
-        scope = _require_session(request, services)
+    def broker_connections(self, request: Request) -> Response:
+        scope = _require_session(request)
         if isinstance(scope, Response):
             return scope
         return JSONResponse([])
 
-    @app.get("/api/v10/web/wp15-live-acceptance/status")
-    def live_acceptance_status(request: Request) -> Response:
-        scope = _require_session(request, services)
+    def live_acceptance_status(self, request: Request) -> Response:
+        scope = _require_session(request)
         if isinstance(scope, Response):
             return scope
         return JSONResponse({"enabled": False})
 
-    @app.post("/api/v10/web/broker-connections/preview")
-    @app.post("/api/v10/web/broker-connections/commit")
-    @app.post("/api/v10/web/broker-connections/{connection_id}/replace")
-    @app.delete("/api/v10/web/broker-connections/{connection_id}")
     def broker_mutation_disabled(
+        self,
         request: Request,
         connection_id: str | None = None,
     ) -> Response:
         del connection_id
-        scope = _require_session(request, services)
+        scope = _require_session(request)
         if isinstance(scope, Response):
             return scope
         return _safe_error("BROKER_CREDENTIALS_DISABLED_IN_SYNTHETIC_PREVIEW", 403)
 
-    @app.get("/api/v10/web/portfolio-dashboard")
-    def portfolio_dashboard(request: Request) -> Response:
-        scope = _require_session(request, services)
+    def portfolio_dashboard(self, request: Request) -> Response:
+        scope = _require_session(request)
         if isinstance(scope, Response):
             return scope
-        return JSONResponse(_empty_portfolio(_now_iso(services)))
+        return JSONResponse(_empty_portfolio(_now_iso(self._services)))
 
-    @app.get("/api/v10/web/watchtower-incidents")
-    def watchtower_incidents(request: Request) -> Response:
-        scope = _require_session(request, services)
+    def watchtower_incidents(self, request: Request) -> Response:
+        scope = _require_session(request)
         if isinstance(scope, Response):
             return scope
-        return JSONResponse(_empty_watchtower(_now_iso(services)))
+        return JSONResponse(_empty_watchtower(_now_iso(self._services)))
 
-    @app.get("/api/v10/web/research-dossiers")
-    def research_dossiers(request: Request) -> Response:
-        scope = _require_session(request, services)
+    def research_dossiers(self, request: Request) -> Response:
+        scope = _require_session(request)
         if isinstance(scope, Response):
             return scope
-        return JSONResponse(_empty_research(_now_iso(services)))
+        return JSONResponse(_empty_research(_now_iso(self._services)))
 
-    @app.get("/api/v10/web/decision-plan")
-    def decision_plan(request: Request) -> Response:
-        scope = _require_session(request, services)
+    def decision_plan(self, request: Request) -> Response:
+        scope = _require_session(request)
         if isinstance(scope, Response):
             return scope
-        return JSONResponse(_empty_decision(_now_iso(services)))
+        return JSONResponse(_empty_decision(_now_iso(self._services)))
 
-    @app.get("/api/v10/web/system-status")
-    def system_status(request: Request) -> Response:
-        scope = _require_session(request, services)
+    def system_status(self, request: Request) -> Response:
+        scope = _require_session(request)
         if isinstance(scope, Response):
             return scope
         try:
             payload = _system_status(
-                services,
-                now=_now_iso(services),
+                self._services,
+                now=_now_iso(self._services),
             )
         except Exception:
             return _safe_error("SYSTEM_STATUS_UNAVAILABLE", 503)
         return JSONResponse(payload)
 
-    @app.api_route(
+    def unknown_api_path(self, path: str) -> Response:
+        del path
+        return _safe_error("NOT_FOUND", 404)
+
+    def web_fallback(self, path: str) -> FileResponse:
+        del path
+        return FileResponse(self._web_dist / "index.html")
+
+
+def _register_hosted_routes(
+    app: FastAPI,
+    routes: _HostedPreviewRoutesV1,
+) -> None:
+    app.add_exception_handler(Exception, routes.unhandled_exception)
+    app.add_api_route(_HEALTHZ_PATH, routes.healthz, methods=["GET"])
+    app.add_api_route(PREVIEW_STATUS_PATH, routes.preview_mode, methods=["GET"])
+    app.add_api_route("/api/v10/web/session", routes.session_view, methods=["GET"])
+    app.add_api_route("/api/v10/web/auth/providers", routes.providers, methods=["GET"])
+    app.add_api_route("/api/v10/web/session/logout", routes.logout, methods=["POST"])
+    app.add_api_route(
+        "/api/v10/web/session/revoke-all",
+        routes.revoke_all,
+        methods=["POST"],
+    )
+    app.add_api_route("/api/v10/web/health", routes.health, methods=["GET"])
+    app.add_api_route(
+        "/api/v10/web/broker-connections",
+        routes.broker_connections,
+        methods=["GET"],
+    )
+    app.add_api_route(
+        "/api/v10/web/wp15-live-acceptance/status",
+        routes.live_acceptance_status,
+        methods=["GET"],
+    )
+    app.add_api_route(
+        "/api/v10/web/broker-connections/preview",
+        routes.broker_mutation_disabled,
+        methods=["POST"],
+    )
+    app.add_api_route(
+        "/api/v10/web/broker-connections/commit",
+        routes.broker_mutation_disabled,
+        methods=["POST"],
+    )
+    app.add_api_route(
+        "/api/v10/web/broker-connections/{connection_id}/replace",
+        routes.broker_mutation_disabled,
+        methods=["POST"],
+    )
+    app.add_api_route(
+        "/api/v10/web/broker-connections/{connection_id}",
+        routes.broker_mutation_disabled,
+        methods=["DELETE"],
+    )
+    app.add_api_route(
+        "/api/v10/web/portfolio-dashboard",
+        routes.portfolio_dashboard,
+        methods=["GET"],
+    )
+    app.add_api_route(
+        "/api/v10/web/watchtower-incidents",
+        routes.watchtower_incidents,
+        methods=["GET"],
+    )
+    app.add_api_route(
+        "/api/v10/web/research-dossiers",
+        routes.research_dossiers,
+        methods=["GET"],
+    )
+    app.add_api_route(
+        "/api/v10/web/decision-plan",
+        routes.decision_plan,
+        methods=["GET"],
+    )
+    app.add_api_route(
+        "/api/v10/web/system-status",
+        routes.system_status,
+        methods=["GET"],
+    )
+    app.add_api_route(
         "/api/{path:path}",
+        routes.unknown_api_path,
         methods=["GET", "HEAD", "OPTIONS", "POST", "PUT", "PATCH", "DELETE"],
         include_in_schema=False,
     )
-    def unknown_api_path(path: str) -> Response:
-        del path
-        return _safe_error("NOT_FOUND", 404)
+    app.add_api_route(
+        "/{path:path}",
+        routes.web_fallback,
+        methods=["GET"],
+        include_in_schema=False,
+    )
+
+
+def _validate_hosted_runtime_inputs(
+    services: HostedPreviewServicesV1,
+    *,
+    web_dist: Path,
+    trusted_edge_tls_terminated: bool,
+) -> str:
+    hostname = _hostname(services.hostname)
+    services.release_sha = _release_sha(services.release_sha)
+    services.database_probe()
+    if trusted_edge_tls_terminated and not hostname.endswith(_RENDER_HOST_SUFFIX):
+        raise RuntimeError("HOSTED_PREVIEW_TRUSTED_EDGE_INVALID")
+    if not web_dist.is_dir() or not (web_dist / "index.html").is_file():
+        raise RuntimeError("HOSTED_PREVIEW_WEB_BUILD_MISSING")
+    return hostname
+
+
+def create_hosted_preview_app(
+    services: HostedPreviewServicesV1,
+    *,
+    web_dist: Path = WEB_DIST,
+    additional_hosts: tuple[str, ...] = (),
+    trusted_edge_tls_terminated: bool = False,
+) -> FastAPI:
+    hostname = _validate_hosted_runtime_inputs(
+        services,
+        web_dist=web_dist,
+        trusted_edge_tls_terminated=trusted_edge_tls_terminated,
+    )
+    provider_auth = services.provider_auth or _disabled_provider_auth(services)
+    app = FastAPI(
+        title="Omni-CIO V10 hosted technical acceptance",
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,
+    )
+    routes = _HostedPreviewRoutesV1(services, provider_auth, web_dist)
+    install_provider_auth_routes_v1(app, services=provider_auth)
 
     assets = web_dist / "assets"
     if assets.is_dir():
         app.mount("/assets", StaticFiles(directory=assets), name="web-assets")
-
-    @app.get("/{path:path}", include_in_schema=False)
-    def web_fallback(path: str) -> FileResponse:
-        del path
-        return FileResponse(web_dist / "index.html")
+    _register_hosted_routes(app, routes)
 
     app.add_middleware(
         HostedPreviewSecurityMiddlewareV1,
         hostname=hostname,
+        cookies=provider_auth.cookies,
+        sessions=services.sessions,
+        now=services.now,
+        trusted_edge_tls_terminated=trusted_edge_tls_terminated,
+        abuse=HostedRequestAbuseControlV1(),
     )
     app.add_middleware(
         TrustedHostMiddleware,
@@ -754,11 +951,18 @@ def create_app() -> FastAPI:
         connection,
         policy=PREVIEW_SESSION_POLICY,
     )
+    provider_auth = build_wp22a_phase5_provider_auth(
+        connection=connection,
+        sessions=sessions,
+        canonical_origin=f"https://{hostname}",
+    )
     return create_hosted_preview_app(
         HostedPreviewServicesV1(
             sessions=sessions,
             database_probe=lambda: _probe_hosted_preview_database(connection),
             hostname=hostname,
             release_sha=release_sha,
-        )
+            provider_auth=provider_auth,
+        ),
+        trusted_edge_tls_terminated=True,
     )

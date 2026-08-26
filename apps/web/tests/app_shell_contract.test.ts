@@ -21,6 +21,11 @@ const forbiddenStorageIdentifiers = [
   ["local", "Storage"].join(""),
   ["session", "Storage"].join(""),
 ];
+const forbiddenHumanSessionBypasses = [
+  "/preview-login",
+  "/private-test-login",
+  "/private-external-login",
+];
 
 test("WP17 exposes the exact Master Plan navigation routes", () => {
   assert.deepEqual(appRoutes.map((route) => route.path), expectedRoutes);
@@ -28,7 +33,7 @@ test("WP17 exposes the exact Master Plan navigation routes", () => {
   assert.equal(isKnownRoute("/private-other-tenant"), false);
 });
 
-test("ordinary login surface is Telegram and VK ID without local password", () => {
+test("ordinary login surface is exactly Telegram and VK ID without local password", () => {
   const shell = readFileSync(new URL("../src/app-shell/app-shell.tsx", import.meta.url), "utf8");
   assert.match(shell, /Продолжить через Telegram/);
   assert.match(shell, /Продолжить через VK ID/);
@@ -36,23 +41,29 @@ test("ordinary login surface is Telegram and VK ID without local password", () =
   assert.doesNotMatch(shell, /Google/i);
 });
 
-test("WP22A historical private edge API is dormant and not a product login", () => {
+test("provider login starts with POST forms instead of state-changing GET navigation", () => {
   const api = readFileSync(new URL("../src/app-shell/api.ts", import.meta.url), "utf8");
   const shell = readFileSync(new URL("../src/app-shell/app-shell.tsx", import.meta.url), "utf8");
-  assert.match(api, /private-external-login\/status/);
-  assert.match(api, /private-external-login/);
-  assert.doesNotMatch(shell, /OWNER private access/);
-  assert.doesNotMatch(shell, /privateRemoteLogin/);
-  assert.doesNotMatch(shell, /readPrivateRemoteStatus/);
-  assert.match(shell, /Локальный OWNER acceptance виден только на loopback и не является третьим login provider/);
+  assert.match(api, /\/api\/v10\/web\/auth\/\$\{provider\}\/start/);
+  assert.match(shell, /<form method="post" action=\{providerLoginPath\("telegram"\)\}>/);
+  assert.match(shell, /<form method="post" action=\{providerLoginPath\("vk_id"\)\}>/);
+  assert.doesNotMatch(shell, /href=\{providerLoginPath/);
 });
 
-test("Phase 4 preview is explicit synthetic mode without broker authority", () => {
+test("browser product code exposes no preview private or OWNER session-minting bypass", () => {
+  const api = readFileSync(new URL("../src/app-shell/api.ts", import.meta.url), "utf8");
+  const shell = readFileSync(new URL("../src/app-shell/app-shell.tsx", import.meta.url), "utf8");
+  const combined = `${api}\n${shell}`;
+  for (const path of forbiddenHumanSessionBypasses) assert.equal(combined.includes(path), false);
+  assert.doesNotMatch(combined, /OWNER acceptance/i);
+  assert.doesNotMatch(combined, /previewLogin|privateTestLogin|privateRemoteLogin/);
+});
+
+test("synthetic hosted mode remains a non-authority warning only", () => {
   const api = readFileSync(new URL("../src/app-shell/api.ts", import.meta.url), "utf8");
   const shell = readFileSync(new URL("../src/app-shell/app-shell.tsx", import.meta.url), "utf8");
   assert.match(api, /\/api\/v10\/web\/preview-mode/);
-  assert.match(api, /\/api\/v10\/web\/preview-login/);
-  assert.match(shell, /Безопасная публичная демонстрация|previewMode\.label/);
+  assert.doesNotMatch(api, /\/api\/v10\/web\/preview-login/);
   assert.match(shell, /real registration, broker credentials and private portfolio data are disabled/);
   assert.match(shell, /Не вводи реальные токены на этом стенде/);
 });
@@ -74,11 +85,13 @@ test("browser code cannot persist credentials in Web Storage", () => {
   assert.match(api, /credentials:\s*["']same-origin["']/);
 });
 
-test("hosted preview keeps CSRF cookie HttpOnly and the browser token in memory", () => {
+test("hosted browser keeps CSRF bootstrap material transient and never reads cookies", () => {
   const api = readFileSync(new URL("../src/app-shell/api.ts", import.meta.url), "utf8");
-  assert.match(api, /let remoteCsrfToken: string \| null = null/);
-  assert.match(api, /response\.headers\.get\(REMOTE_CSRF_HEADER\)/);
-  assert.match(api, /remoteCsrfToken \?\? readCookie\(REMOTE_CSRF_COOKIE\)/);
+  assert.match(api, /let csrfHeaderToken: string \| null = null/);
+  assert.match(api, /csrf_token: csrfToken/);
+  assert.match(api, /headers\.set\(REMOTE_CSRF_HEADER, csrfHeaderToken\)/);
+  assert.doesNotMatch(api, /document\.cookie|readCookie\(/);
+  assert.doesNotMatch(api, /response\.headers\.get\(REMOTE_CSRF_HEADER\)/);
   for (const identifier of forbiddenStorageIdentifiers) {
     assert.equal(api.includes(identifier), false);
   }

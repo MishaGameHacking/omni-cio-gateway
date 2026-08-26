@@ -16,8 +16,9 @@ import httpx
 
 from omni_cio.web.identity_v1 import IdentityProviderV1, VerifiedExternalIdentityV1
 from omni_cio.web.provider_auth_v1 import (
-    AuthorizationTransactionRegistryV1,
+    AuthorizationTransactionStoreLike,
     ConsumedAuthorizationTransactionV1,
+    ProviderAuthorizationStartV1,
     ProviderAuthorizationError,
 )
 
@@ -26,6 +27,7 @@ TELEGRAM_OIDC_AUTHORIZATION_ENDPOINT = f"{TELEGRAM_OIDC_ISSUER}/auth"
 TELEGRAM_OIDC_TOKEN_ENDPOINT = f"{TELEGRAM_OIDC_ISSUER}/token"
 TELEGRAM_OIDC_JWKS_ENDPOINT = f"{TELEGRAM_OIDC_ISSUER}/.well-known/jwks.json"
 
+_JSON_MEDIA_TYPE = "application/json"
 _MAX_TOKEN_RESPONSE_BYTES = 32_768
 _MAX_JWKS_RESPONSE_BYTES = 131_072
 _MAX_ID_TOKEN_CHARS = 16_384
@@ -161,53 +163,83 @@ def _content_type(response: httpx.Response) -> str:
     return response.headers.get("content-type", "").partition(";")[0].strip().lower()
 
 
-def _bounded_json_response(
-    client: httpx.Client,
+def _read_bounded_json_response(
+    response: httpx.Response,
     *,
-    method: str,
-    url: str,
-    timeout_seconds: float,
     max_response_bytes: int,
-    data: dict[str, str] | None = None,
-    auth: httpx.Auth | None = None,
 ) -> dict[str, Any]:
-    try:
-        with client.stream(
-            method,
-            url,
-            data=data,
-            auth=auth,
-            timeout=timeout_seconds,
-            follow_redirects=False,
-            headers={"Accept": "application/json"},
-        ) as response:
-            if (
-                response.status_code != 200
-                or _content_type(response) != "application/json"
-            ):
-                raise TelegramOidcError("TELEGRAM_OIDC_PROVIDER_RESPONSE_INVALID")
-            declared = response.headers.get("content-length")
-            if declared is not None:
-                try:
-                    if int(declared) > max_response_bytes:
-                        raise TelegramOidcError(
-                            "TELEGRAM_OIDC_PROVIDER_RESPONSE_TOO_LARGE"
-                        )
-                except ValueError:
-                    pass
-            payload = bytearray()
-            for chunk in response.iter_bytes():
-                if len(payload) + len(chunk) > max_response_bytes:
-                    raise TelegramOidcError("TELEGRAM_OIDC_PROVIDER_RESPONSE_TOO_LARGE")
-                payload.extend(chunk)
-    except TelegramOidcError:
-        raise
-    except httpx.HTTPError:
-        raise TelegramOidcError("TELEGRAM_OIDC_NETWORK_ERROR") from None
+    if response.status_code != 200 or _content_type(response) != _JSON_MEDIA_TYPE:
+        raise TelegramOidcError("TELEGRAM_OIDC_PROVIDER_RESPONSE_INVALID")
+    declared = response.headers.get("content-length")
+    if declared is not None:
+        try:
+            if int(declared) > max_response_bytes:
+                raise TelegramOidcError("TELEGRAM_OIDC_PROVIDER_RESPONSE_TOO_LARGE")
+        except ValueError:
+            pass
+    payload = bytearray()
+    for chunk in response.iter_bytes():
+        if len(payload) + len(chunk) > max_response_bytes:
+            raise TelegramOidcError("TELEGRAM_OIDC_PROVIDER_RESPONSE_TOO_LARGE")
+        payload.extend(chunk)
     return _unique_json_object(
         bytes(payload),
         reason="TELEGRAM_OIDC_PROVIDER_JSON_INVALID",
     )
+
+
+def _bounded_token_response(
+    client: httpx.Client,
+    *,
+    timeout_seconds: float,
+    data: dict[str, str],
+    auth: httpx.Auth,
+) -> dict[str, Any]:
+    """POST only to Telegram's fixed token endpoint."""
+
+    try:
+        with client.stream(
+            "POST",
+            TELEGRAM_OIDC_TOKEN_ENDPOINT,
+            data=data,
+            auth=auth,
+            timeout=timeout_seconds,
+            follow_redirects=False,
+            headers={"Accept": _JSON_MEDIA_TYPE},
+        ) as response:
+            return _read_bounded_json_response(
+                response,
+                max_response_bytes=_MAX_TOKEN_RESPONSE_BYTES,
+            )
+    except TelegramOidcError:
+        raise
+    except httpx.HTTPError:
+        raise TelegramOidcError("TELEGRAM_OIDC_NETWORK_ERROR") from None
+
+
+def _bounded_jwks_response(
+    client: httpx.Client,
+    *,
+    timeout_seconds: float,
+) -> dict[str, Any]:
+    """GET only from Telegram's fixed JWKS endpoint."""
+
+    try:
+        with client.stream(
+            "GET",
+            TELEGRAM_OIDC_JWKS_ENDPOINT,
+            timeout=timeout_seconds,
+            follow_redirects=False,
+            headers={"Accept": _JSON_MEDIA_TYPE},
+        ) as response:
+            return _read_bounded_json_response(
+                response,
+                max_response_bytes=_MAX_JWKS_RESPONSE_BYTES,
+            )
+    except TelegramOidcError:
+        raise
+    except httpx.HTTPError:
+        raise TelegramOidcError("TELEGRAM_OIDC_NETWORK_ERROR") from None
 
 
 def _rsa_public_key(jwk: dict[str, Any]) -> tuple[str, _RsaPublicKeyV1]:
@@ -455,12 +487,9 @@ class TelegramIdTokenVerifierV1:
 
             # Serialize the bounded fixed-origin refresh so a cache miss cannot
             # amplify into one provider request per concurrent login.
-            payload = _bounded_json_response(
+            payload = _bounded_jwks_response(
                 client,
-                method="GET",
-                url=TELEGRAM_OIDC_JWKS_ENDPOINT,
                 timeout_seconds=self._config.timeout_seconds,
-                max_response_bytes=_MAX_JWKS_RESPONSE_BYTES,
             )
             self._keys = _parse_jwks(payload)
             self._keys_expires_at = now + self._config.jwks_cache_lifetime
@@ -477,7 +506,7 @@ class TelegramOidcRuntimeV1:
         self,
         *,
         config: TelegramOidcConfigV1,
-        transactions: AuthorizationTransactionRegistryV1,
+        transactions: AuthorizationTransactionStoreLike,
         client: httpx.Client | None = None,
         verifier: TelegramIdTokenVerifierLike | None = None,
     ) -> None:
@@ -490,11 +519,17 @@ class TelegramOidcRuntimeV1:
     def provider(self) -> IdentityProviderV1:
         return IdentityProviderV1.TELEGRAM
 
-    def start(self, *, now: datetime) -> str:
+    def start(
+        self,
+        *,
+        now: datetime,
+        browser_proof: str | None = None,
+    ) -> ProviderAuthorizationStartV1:
         transaction = self._transactions.begin(
             provider=self.provider,
             redirect_uri=self._config.redirect_uri,
             now=now,
+            browser_proof=browser_proof,
         )
         query = urlencode(
             {
@@ -508,13 +543,19 @@ class TelegramOidcRuntimeV1:
                 "nonce": transaction.nonce,
             }
         )
-        return f"{TELEGRAM_OIDC_AUTHORIZATION_ENDPOINT}?{query}"
+        return ProviderAuthorizationStartV1(
+            authorization_url=f"{TELEGRAM_OIDC_AUTHORIZATION_ENDPOINT}?{query}",
+            browser_proof=transaction.browser_proof,
+            expires_at=transaction.expires_at,
+            authorization_query=query,
+        )
 
     def complete(
         self,
         *,
         state: str,
         code: str,
+        browser_proof: str,
         now: datetime,
         device_id: str | None = None,
     ) -> VerifiedExternalIdentityV1:
@@ -525,6 +566,7 @@ class TelegramOidcRuntimeV1:
         transaction = self._transactions.consume(
             provider=self.provider,
             state=state,
+            browser_proof=browser_proof,
             now=now,
         )
         if self._client is not None:
@@ -559,12 +601,9 @@ class TelegramOidcRuntimeV1:
         now: datetime,
         client: httpx.Client,
     ) -> VerifiedExternalIdentityV1:
-        payload = _bounded_json_response(
+        payload = _bounded_token_response(
             client,
-            method="POST",
-            url=TELEGRAM_OIDC_TOKEN_ENDPOINT,
             timeout_seconds=self._config.timeout_seconds,
-            max_response_bytes=_MAX_TOKEN_RESPONSE_BYTES,
             data={
                 "grant_type": "authorization_code",
                 "code": code,

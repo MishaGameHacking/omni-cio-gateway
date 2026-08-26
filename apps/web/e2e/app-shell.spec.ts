@@ -3,7 +3,7 @@ import fs from "node:fs";
 
 async function mockAuthenticatedApi(page: import("@playwright/test").Page, options?: { healthOffline?: boolean }) {
   await page.route("**/api/v10/web/session", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ authenticated: true, user_label: "OWNER", tenant_label: "Personal" }) });
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ authenticated: true, user_label: "USER", tenant_label: "Tenant" }) });
   });
   await page.route("**/api/v10/web/auth/providers", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([{ provider: "telegram", enabled: false, reason: "NOT_CONFIGURED" }, { provider: "vk_id", enabled: false, reason: "NOT_CONFIGURED" }]) });
@@ -12,7 +12,7 @@ async function mockAuthenticatedApi(page: import("@playwright/test").Page, optio
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ enabled: true, synthetic: true, broker_credentials_enabled: false, registration_enabled: false, label: "Безопасная публичная демонстрация" }),
+      body: JSON.stringify({ enabled: true, synthetic: true, broker_credentials_enabled: false, registration_enabled: false, label: "Synthetic technical boundary" }),
     });
   });
   await page.route("**/api/v10/web/health", async (route) => {
@@ -30,18 +30,44 @@ async function mockAuthenticatedApi(page: import("@playwright/test").Page, optio
   });
 }
 
-test("unauthenticated route is guarded and exposes only Telegram/VK login", async ({ page }) => {
+async function mockUnauthenticatedApi(page: import("@playwright/test").Page, providers: Array<{ provider: "telegram" | "vk_id"; enabled: boolean; reason?: string }>) {
   await page.route("**/api/v10/web/session", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: '{"authenticated":false}' });
   });
   await page.route("**/api/v10/web/auth/providers", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([{ provider: "telegram", enabled: false, reason: "NOT_CONFIGURED" }, { provider: "vk_id", enabled: false, reason: "NOT_CONFIGURED" }]) });
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(providers) });
   });
+  await page.route("**/api/v10/web/preview-mode", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ enabled: true, synthetic: true, broker_credentials_enabled: false, registration_enabled: false, label: "Synthetic technical boundary" }) });
+  });
+}
+
+test("unauthenticated route is guarded and exposes only Telegram/VK login", async ({ page }) => {
+  await mockUnauthenticatedApi(page, [
+    { provider: "telegram", enabled: false, reason: "NOT_CONFIGURED" },
+    { provider: "vk_id", enabled: false, reason: "NOT_CONFIGURED" },
+  ]);
   await page.goto("/portfolio");
   await expect(page.getByRole("heading", { name: "Вход в личный аккаунт" })).toBeVisible();
-  await expect(page.getByText("Продолжить через Telegram")).toBeVisible();
-  await expect(page.getByText("Продолжить через VK ID")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Продолжить через Telegram" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Продолжить через VK ID" })).toBeDisabled();
   await expect(page.getByRole("heading", { name: "Портфель" })).toHaveCount(0);
+  await expect(page.getByText(/OWNER acceptance|публичная демонстрация/i)).toHaveCount(0);
+});
+
+test("configured provider login uses a top-level POST instead of state-changing GET", async ({ page }) => {
+  await mockUnauthenticatedApi(page, [
+    { provider: "telegram", enabled: true },
+    { provider: "vk_id", enabled: false, reason: "NOT_CONFIGURED" },
+  ]);
+  let observedMethod = "";
+  await page.route("**/api/v10/web/auth/telegram/start", async (route) => {
+    observedMethod = route.request().method();
+    await route.fulfill({ status: 503, contentType: "application/json", body: '{"detail":"IDENTITY_PROVIDER_UNAVAILABLE"}' });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Продолжить через Telegram" }).click();
+  await expect.poll(() => observedMethod).toBe("POST");
 });
 
 test("authenticated shell navigates without exposing build identity globally", async ({ page }) => {

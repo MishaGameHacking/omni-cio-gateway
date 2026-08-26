@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 import hashlib
+import re
 import secrets
 from threading import RLock
 from typing import Final
@@ -11,6 +12,8 @@ from omni_cio.contracts.v1.domain import TenantId, UserId
 
 
 SESSION_TOKEN_BYTES: Final[int] = 32
+_SESSION_TOKEN_LENGTH: Final[int] = (SESSION_TOKEN_BYTES * 8 + 5) // 6
+_SESSION_TOKEN_PATTERN = re.compile(rf"^[A-Za-z0-9_-]{{{_SESSION_TOKEN_LENGTH}}}$")
 
 
 def _utc(value: datetime) -> datetime:
@@ -19,8 +22,20 @@ def _utc(value: datetime) -> datetime:
     return value.astimezone(timezone.utc)
 
 
+def _require_session_token(token: str) -> str:
+    if not isinstance(token, str) or _SESSION_TOKEN_PATTERN.fullmatch(token) is None:
+        raise ValueError("SESSION_TOKEN_INVALID")
+    return token
+
+
+def new_session_token_v1() -> str:
+    """Mint one opaque browser credential from the process CSPRNG only."""
+
+    return _require_session_token(secrets.token_urlsafe(SESSION_TOKEN_BYTES))
+
+
 def _token_hash(token: str) -> str:
-    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+    return hashlib.sha256(_require_session_token(token).encode("utf-8")).hexdigest()
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,8 +89,25 @@ class SessionRegistryV1:
         tenant_id: TenantId,
         now: datetime,
     ) -> tuple[str, SessionScopeV1]:
+        token = new_session_token_v1()
+        return token, self.bind(
+            token=token,
+            user_id=user_id,
+            tenant_id=tenant_id,
+            now=now,
+        )
+
+    def bind(
+        self,
+        *,
+        token: str,
+        user_id: UserId,
+        tenant_id: TenantId,
+        now: datetime,
+    ) -> SessionScopeV1:
+        """Bind a pre-minted opaque credential to one server-resolved scope."""
+
         issued = _utc(now)
-        token = secrets.token_urlsafe(SESSION_TOKEN_BYTES)
         digest = _token_hash(token)
         record = _SessionRecordV1(
             token_hash=digest,
@@ -86,14 +118,19 @@ class SessionRegistryV1:
             absolute_expires_at=issued + self._policy.absolute_lifetime,
         )
         with self._lock:
+            if digest in self._records:
+                raise ValueError("SESSION_TOKEN_ALREADY_BOUND")
             self._records[digest] = record
-        return token, self._scope(record, issued)
+        return self._scope(record, issued)
 
     def resolve(self, token: str | None, *, now: datetime) -> SessionScopeV1 | None:
         if not token:
             return None
         current = _utc(now)
-        digest = _token_hash(token)
+        try:
+            digest = _token_hash(token)
+        except ValueError:
+            return None
         with self._lock:
             record = self._records.get(digest)
             if record is None or record.revoked_at is not None:
@@ -110,7 +147,10 @@ class SessionRegistryV1:
         if not token:
             return False
         current = _utc(now)
-        digest = _token_hash(token)
+        try:
+            digest = _token_hash(token)
+        except ValueError:
+            return False
         with self._lock:
             record = self._records.get(digest)
             if record is None:

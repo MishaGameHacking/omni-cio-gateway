@@ -68,6 +68,7 @@ def test_hosted_postgres_bootstrap_matches_exact_dml_matrix() -> None:
         "users",
         "external_identity_bindings",
         "web_sessions",
+        "provider_auth_transactions",
         "broker_accounts",
         "broker_connections",
         "broker_connection_accounts",

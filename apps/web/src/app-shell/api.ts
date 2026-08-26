@@ -4,7 +4,6 @@ import type {
   HealthView,
   PortfolioDashboardView,
   PreviewModeView,
-  PrivateAcceptanceStatusView,
   ProviderView,
   WebSessionView,
   Wp15LiveAcceptanceStatusView,
@@ -13,26 +12,17 @@ import type {
 } from "./contracts";
 
 const JSON_HEADERS = { "Content-Type": "application/json" } as const;
-const REMOTE_CSRF_COOKIE = "__Host-omni_v10_csrf";
 const REMOTE_CSRF_HEADER = "X-Omni-CSRF";
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
-let remoteCsrfToken: string | null = null;
+let csrfHeaderToken: string | null = null;
 
-function readCookie(name: string): string | null {
-  const prefix = `${name}=`;
-  for (const item of document.cookie.split(";")) {
-    const candidate = item.trim();
-    if (candidate.startsWith(prefix)) return candidate.slice(prefix.length);
-  }
-  return null;
-}
+type SessionBootstrapView = WebSessionView & { csrf_token?: string };
 
 function requestHeaders(init?: RequestInit): Headers {
   const headers = new Headers(init?.headers);
   const method = (init?.method ?? "GET").toUpperCase();
-  if (!SAFE_METHODS.has(method)) {
-    const csrf = remoteCsrfToken ?? readCookie(REMOTE_CSRF_COOKIE);
-    if (csrf) headers.set(REMOTE_CSRF_HEADER, csrf);
+  if (!SAFE_METHODS.has(method) && csrfHeaderToken) {
+    headers.set(REMOTE_CSRF_HEADER, csrfHeaderToken);
   }
   return headers;
 }
@@ -47,55 +37,27 @@ async function requestJson<T>(input: string, init?: RequestInit): Promise<T> {
   if (!response.ok) {
     throw new Error(`WEB_API_${response.status}`);
   }
-  const csrf = response.headers.get(REMOTE_CSRF_HEADER);
-  if (csrf) remoteCsrfToken = csrf;
   return (await response.json()) as T;
 }
 
 export async function readSession(): Promise<WebSessionView> {
-  const session = await requestJson<WebSessionView>("/api/v10/web/session");
-  if (!session.authenticated) remoteCsrfToken = null;
-  return session;
+  try {
+    const bootstrap = await requestJson<SessionBootstrapView>("/api/v10/web/session");
+    const { csrf_token: csrfToken, ...session } = bootstrap;
+    csrfHeaderToken = session.authenticated && typeof csrfToken === "string" ? csrfToken : null;
+    return session;
+  } catch (error) {
+    csrfHeaderToken = null;
+    throw error;
+  }
 }
 
 export function readProviders(): Promise<ProviderView[]> {
   return requestJson<ProviderView[]>("/api/v10/web/auth/providers");
 }
 
-export function readPrivateAcceptanceStatus(): Promise<PrivateAcceptanceStatusView> {
-  return requestJson<PrivateAcceptanceStatusView>("/api/v10/web/private-test-login/status");
-}
-
 export function readPreviewMode(): Promise<PreviewModeView> {
   return requestJson<PreviewModeView>("/api/v10/web/preview-mode");
-}
-
-export function readPrivateRemoteStatus(): Promise<{ enabled: boolean }> {
-  return requestJson<{ enabled: boolean }>("/api/v10/web/private-external-login/status");
-}
-
-export async function privateRemoteLogin(): Promise<void> {
-  await requestJson<{ ok: true }>("/api/v10/web/private-external-login", {
-    method: "POST",
-    headers: JSON_HEADERS,
-    body: "{}",
-  });
-}
-
-export async function previewLogin(): Promise<void> {
-  await requestJson<{ ok: true }>("/api/v10/web/preview-login", {
-    method: "POST",
-    headers: JSON_HEADERS,
-    body: "{}",
-  });
-}
-
-export async function privateTestLogin(): Promise<void> {
-  await requestJson<{ ok: true }>("/api/v10/web/private-test-login", {
-    method: "POST",
-    headers: JSON_HEADERS,
-    body: "{}",
-  });
 }
 
 export function readHealth(): Promise<HealthView> {
@@ -174,7 +136,7 @@ export async function logoutCurrentSession(): Promise<void> {
     headers: JSON_HEADERS,
     body: "{}",
   });
-  remoteCsrfToken = null;
+  csrfHeaderToken = null;
 }
 
 export async function revokeAllSessions(): Promise<void> {
@@ -183,9 +145,9 @@ export async function revokeAllSessions(): Promise<void> {
     headers: JSON_HEADERS,
     body: "{}",
   });
-  remoteCsrfToken = null;
+  csrfHeaderToken = null;
 }
 
-export function providerLoginUrl(provider: "telegram" | "vk_id"): string {
+export function providerLoginPath(provider: "telegram" | "vk_id"): string {
   return `/api/v10/web/auth/${provider}/start`;
 }
