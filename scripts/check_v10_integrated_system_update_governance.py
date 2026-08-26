@@ -29,6 +29,19 @@ PATHS = {
     "workflow": ROOT / ".github/workflows/v10-engineering-governance.yml",
 }
 
+FOCUSED_CHANGE = "FOCUSED_CHANGE"
+INTEGRATED_SYSTEM_UPDATE = "INTEGRATED_SYSTEM_UPDATE"
+INTEGRATED_UPDATE_LAW = "Integrated System Update Execution Law"
+INTEGRATION_READY = "INTEGRATION_READY"
+HEAD_FREEZE = "HEAD FREEZE"
+PRODUCT_IMPLEMENTATION_PAUSED = "PRODUCT IMPLEMENTATION PAUSED"
+WEB_VISUAL_INTEGRATED = "WEB-VISUAL-INTEGRATED"
+OWNER_START_REQUIRED = "OWNER START REQUIRED"
+OWNER_START_COMMAND = "START V10 WEB VISUAL SYSTEM UPDATE"
+BRANCH_LEDGER_BANNER = "BRANCH-LOCAL EXECUTION STATE — NOT ACCEPTED MAIN AUTHORITY"
+ACCEPTED_PROGRESS_MARKER = "Accepted implementation progress is **54%**"
+PROTECTED_INVARIANTS = "protected_invariants"
+
 TRUE_RULES = {
     "integrated_update": (
         "one_branch_default",
@@ -97,88 +110,88 @@ EXPECTED_SPLIT_TRIGGERS = {
 
 SURFACE_MARKERS = {
     "amendment": (
-        "Integrated System Update Execution Law / Amendment 12",
+        f"{INTEGRATED_UPDATE_LAW} / Amendment 12",
         "Single Remote Publication Default",
-        "HEAD FREEZE",
+        HEAD_FREEZE,
         "Systemic diagnosis and batch-correction law",
-        "PRODUCT IMPLEMENTATION PAUSED",
-        "START V10 WEB VISUAL SYSTEM UPDATE",
+        PRODUCT_IMPLEMENTATION_PAUSED,
+        OWNER_START_COMMAND,
     ),
     "index": (
-        "Integrated System Update Execution Law",
+        INTEGRATED_UPDATE_LAW,
         "OMNI_CIO_V10_INTEGRATED_SYSTEM_UPDATE_EXECUTION_AMENDMENT.md",
         "V10_INTEGRATED_SYSTEM_UPDATE_EXECUTION_CONTRACT.json",
     ),
     "ledger": (
-        "BRANCH-LOCAL EXECUTION STATE — NOT ACCEPTED MAIN AUTHORITY",
+        BRANCH_LEDGER_BANNER,
         "Mandatory split-trigger review",
-        "Verification batches / HEAD FREEZE",
+        f"Verification batches / {HEAD_FREEZE}",
         "Root-cause inventory and correction batch",
     ),
     "wp_template": (
         "Execution unit",
-        "INTEGRATED_SYSTEM_UPDATE",
-        "INTEGRATION_READY",
-        "HEAD FREEZE",
+        INTEGRATED_SYSTEM_UPDATE,
+        INTEGRATION_READY,
+        HEAD_FREEZE,
         "mandatory split review",
     ),
     "pr_template": (
         "Execution unit",
-        "INTEGRATION_READY",
-        "HEAD FREEZE",
+        INTEGRATION_READY,
+        HEAD_FREEZE,
         "consolidated finding inventory",
         "System Update dashboard",
     ),
     "issue_template": (
         "V10 Integrated System Update Dashboard",
-        "BRANCH-LOCAL EXECUTION STATE — NOT ACCEPTED MAIN AUTHORITY",
+        BRANCH_LEDGER_BANNER,
         "Mandatory split-trigger review",
         "Verification batches / exact SHAs / consolidated findings",
     ),
     "status": (
-        "PRODUCT IMPLEMENTATION PAUSED",
-        "WEB-VISUAL-INTEGRATED",
-        "OWNER START REQUIRED",
-        "START V10 WEB VISUAL SYSTEM UPDATE",
-        "Accepted implementation progress is **54%**",
+        PRODUCT_IMPLEMENTATION_PAUSED,
+        WEB_VISUAL_INTEGRATED,
+        OWNER_START_REQUIRED,
+        OWNER_START_COMMAND,
+        ACCEPTED_PROGRESS_MARKER,
     ),
     "agents": (
-        "Integrated System Update Execution Law",
-        "FOCUSED_CHANGE",
-        "INTEGRATED_SYSTEM_UPDATE",
-        "HEAD FREEZE",
-        "START V10 WEB VISUAL SYSTEM UPDATE",
+        INTEGRATED_UPDATE_LAW,
+        FOCUSED_CHANGE,
+        INTEGRATED_SYSTEM_UPDATE,
+        HEAD_FREEZE,
+        OWNER_START_COMMAND,
     ),
     "contributing": (
-        "Integrated System Update Execution Law",
-        "INTEGRATION_READY",
-        "HEAD FREEZE",
+        INTEGRATED_UPDATE_LAW,
+        INTEGRATION_READY,
+        HEAD_FREEZE,
         "correction batch",
     ),
     "readme": (
-        "WEB-VISUAL-INTEGRATED",
-        "PRODUCT IMPLEMENTATION PAUSED",
-        "OWNER START REQUIRED",
+        WEB_VISUAL_INTEGRATED,
+        PRODUCT_IMPLEMENTATION_PAUSED,
+        OWNER_START_REQUIRED,
     ),
     "master_context": (
-        "WEB-VISUAL-INTEGRATED",
-        "PRODUCT IMPLEMENTATION PAUSED",
-        "OWNER START REQUIRED",
+        WEB_VISUAL_INTEGRATED,
+        PRODUCT_IMPLEMENTATION_PAUSED,
+        OWNER_START_REQUIRED,
     ),
     "copilot": (
-        "Integrated System Update Execution Law",
-        "INTEGRATED_SYSTEM_UPDATE",
-        "HEAD FREEZE",
+        INTEGRATED_UPDATE_LAW,
+        INTEGRATED_SYSTEM_UPDATE,
+        HEAD_FREEZE,
     ),
     "project_instructions": (
-        "Integrated System Update Execution Law",
-        "INTEGRATED_SYSTEM_UPDATE",
-        "HEAD FREEZE",
+        INTEGRATED_UPDATE_LAW,
+        INTEGRATED_SYSTEM_UPDATE,
+        HEAD_FREEZE,
     ),
     "new_chat": (
-        "Integrated System Update Execution Law",
-        "INTEGRATED_SYSTEM_UPDATE",
-        "HEAD FREEZE",
+        INTEGRATED_UPDATE_LAW,
+        INTEGRATED_SYSTEM_UPDATE,
+        HEAD_FREEZE,
     ),
     "workflow": (
         "python scripts/check_v10_integrated_system_update_governance.py",
@@ -214,6 +227,124 @@ def load_contract(failures: list[str]) -> dict[str, Any]:
     return payload if isinstance(payload, dict) else {}
 
 
+def mapping_section(
+    payload: dict[str, Any], section_name: str, failures: list[str]
+) -> dict[str, Any]:
+    section = payload.get(section_name)
+    fail_unless(
+        isinstance(section, dict),
+        f"{section_name} must be an object",
+        failures,
+    )
+    return section if isinstance(section, dict) else {}
+
+
+def validate_expected_values(
+    section: dict[str, Any],
+    expected_values: dict[str, Any],
+    prefix: str,
+    failures: list[str],
+) -> None:
+    for key, expected in expected_values.items():
+        fail_unless(
+            section.get(key) == expected,
+            f"{prefix}.{key} mismatch",
+            failures,
+        )
+
+
+def validate_boolean_values(
+    section: dict[str, Any],
+    keys: tuple[str, ...],
+    expected: bool,
+    prefix: str,
+    failures: list[str],
+) -> None:
+    for key in keys:
+        fail_unless(
+            section.get(key) is expected,
+            f"{prefix}.{key} must be {expected}",
+            failures,
+        )
+
+
+def validate_authority(payload: dict[str, Any], failures: list[str]) -> None:
+    authority = mapping_section(payload, "authority", failures)
+    validate_expected_values(
+        authority,
+        {
+            "product_progress_effect": "NONE",
+            "runtime_authority_effect": "NONE",
+            "product_implementation_paused_after_acceptance": True,
+            "next_prepared_system_update": WEB_VISUAL_INTEGRATED,
+            "owner_start_required": True,
+            "owner_start_command": OWNER_START_COMMAND,
+        },
+        "authority",
+        failures,
+    )
+    fail_unless(
+        authority.get("next_prepared_member_milestones")
+        == [f"WEB-VISUAL-{letter}" for letter in "ABCDEFG"],
+        "WEB VISUAL member milestone order mismatch",
+        failures,
+    )
+
+
+def validate_true_rules(payload: dict[str, Any], failures: list[str]) -> None:
+    for section_name, keys in TRUE_RULES.items():
+        section = mapping_section(payload, section_name, failures)
+        validate_boolean_values(section, keys, True, section_name, failures)
+
+
+def validate_ledgers(payload: dict[str, Any], failures: list[str]) -> None:
+    ledgers = mapping_section(payload, "ledgers", failures)
+    validate_expected_values(
+        ledgers,
+        {
+            "branch_execution_ledger_required": True,
+            "github_dashboard_required": True,
+            "branch_execution_ledger_template": (
+                "docs/updates/INTEGRATED_SYSTEM_UPDATE_EXECUTION_LEDGER_TEMPLATE.md"
+            ),
+            "github_dashboard_issue_template": (
+                ".github/ISSUE_TEMPLATE/v10_integrated_system_update.yml"
+            ),
+            "working_state_banner": BRANCH_LEDGER_BANNER,
+            "current_status_authority_remains": (
+                "knowledge/17_V10_CURRENT_PROGRAM_STATUS.md"
+            ),
+        },
+        "ledgers",
+        failures,
+    )
+
+
+def validate_protected_invariants(
+    payload: dict[str, Any], failures: list[str]
+) -> None:
+    protected = mapping_section(payload, PROTECTED_INVARIANTS, failures)
+    fail_unless(
+        protected.get("app_entrypoint") == "app:app",
+        "protected app entrypoint must remain app:app",
+        failures,
+    )
+    validate_boolean_values(
+        protected,
+        FALSE_PROTECTED,
+        False,
+        PROTECTED_INVARIANTS,
+        failures,
+    )
+    validate_boolean_values(
+        protected,
+        TRUE_PROTECTED,
+        True,
+        PROTECTED_INVARIANTS,
+        failures,
+    )
+
+
 def validate_contract(payload: dict[str, Any], failures: list[str]) -> None:
     fail_unless(
         payload.get("schema") == "omni-cio.v10.integrated-system-update-execution.v1",
@@ -228,106 +359,19 @@ def validate_contract(payload: dict[str, Any], failures: list[str]) -> None:
     )
     fail_unless(
         payload.get("execution_units")
-        == ["FOCUSED_CHANGE", "INTEGRATED_SYSTEM_UPDATE"],
+        == [FOCUSED_CHANGE, INTEGRATED_SYSTEM_UPDATE],
         "integrated-update execution units mismatch",
         failures,
     )
-
-    authority = payload.get("authority")
-    fail_unless(isinstance(authority, dict), "authority must be an object", failures)
-    if isinstance(authority, dict):
-        expected_authority = {
-            "product_progress_effect": "NONE",
-            "runtime_authority_effect": "NONE",
-            "product_implementation_paused_after_acceptance": True,
-            "next_prepared_system_update": "WEB-VISUAL-INTEGRATED",
-            "owner_start_required": True,
-            "owner_start_command": "START V10 WEB VISUAL SYSTEM UPDATE",
-        }
-        for key, expected in expected_authority.items():
-            fail_unless(
-                authority.get(key) == expected,
-                f"authority.{key} mismatch",
-                failures,
-            )
-        fail_unless(
-            authority.get("next_prepared_member_milestones")
-            == [f"WEB-VISUAL-{letter}" for letter in "ABCDEFG"],
-            "WEB VISUAL member milestone order mismatch",
-            failures,
-        )
-
-    for section_name, keys in TRUE_RULES.items():
-        section = payload.get(section_name)
-        fail_unless(
-            isinstance(section, dict),
-            f"{section_name} must be an object",
-            failures,
-        )
-        if isinstance(section, dict):
-            for key in keys:
-                fail_unless(
-                    section.get(key) is True,
-                    f"{section_name}.{key} must be True",
-                    failures,
-                )
-
-    ledgers = payload.get("ledgers")
-    fail_unless(isinstance(ledgers, dict), "ledgers must be an object", failures)
-    if isinstance(ledgers, dict):
-        expected_ledgers = {
-            "branch_execution_ledger_required": True,
-            "github_dashboard_required": True,
-            "branch_execution_ledger_template": (
-                "docs/updates/INTEGRATED_SYSTEM_UPDATE_EXECUTION_LEDGER_TEMPLATE.md"
-            ),
-            "github_dashboard_issue_template": (
-                ".github/ISSUE_TEMPLATE/v10_integrated_system_update.yml"
-            ),
-            "working_state_banner": (
-                "BRANCH-LOCAL EXECUTION STATE — NOT ACCEPTED MAIN AUTHORITY"
-            ),
-            "current_status_authority_remains": (
-                "knowledge/17_V10_CURRENT_PROGRAM_STATUS.md"
-            ),
-        }
-        for key, expected in expected_ledgers.items():
-            fail_unless(
-                ledgers.get(key) == expected,
-                f"ledgers.{key} mismatch",
-                failures,
-            )
-
+    validate_authority(payload, failures)
+    validate_true_rules(payload, failures)
+    validate_ledgers(payload, failures)
     fail_unless(
         set(payload.get("split_triggers", [])) == EXPECTED_SPLIT_TRIGGERS,
         "mandatory split-trigger set mismatch",
         failures,
     )
-
-    protected = payload.get("protected_invariants")
-    fail_unless(
-        isinstance(protected, dict),
-        "protected_invariants must be an object",
-        failures,
-    )
-    if isinstance(protected, dict):
-        fail_unless(
-            protected.get("app_entrypoint") == "app:app",
-            "protected app entrypoint must remain app:app",
-            failures,
-        )
-        for key in FALSE_PROTECTED:
-            fail_unless(
-                protected.get(key) is False,
-                f"protected_invariants.{key} must be False",
-                failures,
-            )
-        for key in TRUE_PROTECTED:
-            fail_unless(
-                protected.get(key) is True,
-                f"protected_invariants.{key} must be True",
-                failures,
-            )
+    validate_protected_invariants(payload, failures)
 
 
 def validate_surfaces(failures: list[str]) -> None:
@@ -353,9 +397,9 @@ def main() -> int:
         return 1
 
     print("V10 integrated-system-update governance check passed.")
-    print("Execution units: FOCUSED_CHANGE / INTEGRATED_SYSTEM_UPDATE")
-    print("Publication: INTEGRATION_READY before external verification")
-    print("Verification: HEAD FREEZE + consolidated root-cause correction batches")
+    print(f"Execution units: {FOCUSED_CHANGE} / {INTEGRATED_SYSTEM_UPDATE}")
+    print(f"Publication: {INTEGRATION_READY} before external verification")
+    print(f"Verification: {HEAD_FREEZE} + consolidated root-cause correction batches")
     print("Accepted progress: main/post-merge only")
     print("Product implementation: PAUSED until exact OWNER START")
     return 0

@@ -23,15 +23,24 @@ def _contract() -> dict[str, object]:
 
 class IntegratedSystemUpdateGovernanceTests(unittest.TestCase):
     def test_current_repository_satisfies_integrated_update_governance(self) -> None:
-        output = subprocess.check_output(
+        completed = subprocess.run(
             [sys.executable, str(SCRIPT)],
             cwd=ROOT,
+            check=False,
+            capture_output=True,
             text=True,
             timeout=30,
         )
-        assert "Execution units: FOCUSED_CHANGE / INTEGRATED_SYSTEM_UPDATE" in output
-        assert "Verification: HEAD FREEZE" in output
-        assert "Product implementation: PAUSED until exact OWNER START" in output
+        assert completed.returncode == 0, completed.stderr or completed.stdout
+        assert (
+            "Execution units: FOCUSED_CHANGE / INTEGRATED_SYSTEM_UPDATE"
+            in completed.stdout
+        )
+        assert "Verification: HEAD FREEZE" in completed.stdout
+        assert (
+            "Product implementation: PAUSED until exact OWNER START"
+            in completed.stdout
+        )
 
     def test_contract_preserves_execution_order_and_acceptance_boundary(self) -> None:
         payload = _contract()
