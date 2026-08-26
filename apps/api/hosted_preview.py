@@ -63,6 +63,7 @@ _HOST_PATTERN = re.compile(
     r"(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+"
 )
 _RENDER_HOST_SUFFIX = ".onrender.com"
+_HEALTHZ_PATH = "/healthz"
 _SESSION_SCOPE_STATE_ATTR = "_omni_v10_session_scope"
 _CONTENT_SECURITY_POLICY = (
     "default-src 'self'; "
@@ -166,7 +167,7 @@ def _now_iso(services: HostedPreviewServicesV1) -> str:
 
 
 def _is_api_path(path: str) -> bool:
-    return path.startswith("/api/") or path == "/healthz"
+    return path.startswith("/api/") or path == _HEALTHZ_PATH
 
 
 def _merge_vary(response: Response, *required: str) -> None:
@@ -277,7 +278,7 @@ class HostedPreviewSecurityMiddlewareV1(BaseHTTPMiddleware):
         return None
 
     def _admission_error(self, request: Request, *, api_path: bool) -> Response | None:
-        if request.url.path == "/healthz":
+        if request.url.path == _HEALTHZ_PATH:
             if self._abuse.admit_health():
                 return None
             return _rate_error(
@@ -797,7 +798,7 @@ def _register_hosted_routes(
     routes: _HostedPreviewRoutesV1,
 ) -> None:
     app.add_exception_handler(Exception, routes.unhandled_exception)
-    app.add_api_route("/healthz", routes.healthz, methods=["GET"])
+    app.add_api_route(_HEALTHZ_PATH, routes.healthz, methods=["GET"])
     app.add_api_route(PREVIEW_STATUS_PATH, routes.preview_mode, methods=["GET"])
     app.add_api_route("/api/v10/web/session", routes.session_view, methods=["GET"])
     app.add_api_route("/api/v10/web/auth/providers", routes.providers, methods=["GET"])
