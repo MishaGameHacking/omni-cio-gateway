@@ -205,7 +205,7 @@ def validate_live_authority(failures: list[str]) -> None:
 
     status = read_text(ROOT / "knowledge/17_V10_CURRENT_PROGRAM_STATUS.md", failures)
     for marker in (
-        "Accepted implementation progress is **40%**",
+        "Accepted implementation progress is **54%**",
         "public multi-user activation — **APPROVED TARGET / IMPLEMENTATION FLAG REMAINS OFF UNTIL",
         "`PUBLIC_MULTI_USER_ENABLED=false` remains the safe default",
         "WP22A — External Web Access / Product Authentication Security Gate",

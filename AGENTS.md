@@ -32,13 +32,13 @@ The exact current state is always read from `knowledge/17_V10_CURRENT_PROGRAM_ST
 
 Current accepted snapshot:
 
-- V10 WP0–WP22 are accepted COMPLETE according to the current-status file;
-- accepted V10 progress is **40%** because Block E is not credited piecemeal;
-- **WP22A — External Web Access / Product Authentication Security Gate is the only authorized current functional package**;
-- Product USER / Engineering Authority + Public Free Multi-User Hosted Runtime planning correction is accepted through PR #329 and post-merge Regression Shield #1503 SUCCESS;
-- WP23+ remains LOCKED behind the corrected WP22A Exit Gate;
-- public multi-user/global browser service is the approved target, but `PUBLIC_MULTI_USER_ENABLED=false` remains the safe implementation default until WP22A plus tenant-isolation/security/privacy/broker/legal/capacity gates are accepted;
-- final public production must not depend on PROJECT OWNER home IP/Wi-Fi/router/LAN/Lenovo; an approved managed-cloud origin is required by the active launch amendment;
+- V10 WP0–WP22A are accepted COMPLETE according to the current-status/evidence chain;
+- accepted V10 progress is **54%** because Block E has now passed the complete WP22A technical Exit Gate;
+- **WEB-VISUAL-A — Premium Spatial Financial OS / Design-system foundation is the only authorized current functional package**;
+- WP22A technical acceptance remains separate from the later public-production activation gate;
+- WP23+ remains LOCKED behind the accepted visual-refresh sequence and Master Plan authorization;
+- public multi-user/global browser service is the approved target, but `PUBLIC_MULTI_USER_ENABLED=false` remains the safe implementation default until the separate production-activation/security/privacy/broker/legal/capacity gates are accepted;
+- final public production must not depend on PROJECT OWNER home IP/Wi-Fi/router/LAN/Lenovo; the selected final managed-cloud provider remains Cloud.ru Evolution and final provider apply is still locked;
 - initial registered-user access is free: billing/trial/subscription enforcement/premium gating are disabled for initial launch;
 - broker-write / Real execution authority remains unchanged and not authorized by this status.
 
@@ -65,6 +65,7 @@ Before any change, read in this order:
    - `docs/master-plan/OMNI_CIO_V10_ENGINEERING_QUALITY_AND_GREEN_MERGE_AMENDMENT.md`;
    - `docs/master-plan/OMNI_CIO_V10_PRODUCT_USER_AND_ENGINEERING_AUTHORITY_BOUNDARY_AMENDMENT.md`;
    - `docs/master-plan/OMNI_CIO_V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_AMENDMENT.md`;
+   - `docs/master-plan/OMNI_CIO_V10_WP22A_TECHNICAL_CLOSEOUT_AND_PUBLIC_ACTIVATION_SEPARATION_AMENDMENT.md`;
 9. machine-readable contracts relevant to the work, especially:
    - `docs/architecture/V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_CONTRACT.json`;
    - `docs/architecture/V10_AI_CORTEX_CONTRACT.json`;
@@ -75,7 +76,7 @@ Before any change, read in this order:
    - `docs/architecture/V10_ENGINEERING_QUALITY_GATE_CONTRACT.json`;
 10. `docs/master-plan/OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md` before starting any implementation WP;
 11. `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`;
-12. accepted V10 architecture, ADR, recovery and current-WP files;
+12. accepted V10 architecture, ADR, recovery and current-package files;
 13. actual `main`, open PR/issues and GitHub Actions.
 
 Old chat, screenshot, stale PR description, package-local historical status heading or unmerged planning draft is never source of truth when it conflicts with accepted `main` plus the authority chain above.
@@ -91,7 +92,7 @@ Binding rules:
 - do not implement later WPs early because hardware or an API is available;
 - do not mix unrelated WPs in one PR;
 - do not weaken lint/type/security/eval/Regression Shield to make a PR green;
-- do not treat file/UI existence as completion; the WP Exit Gate is required;
+- do not treat file/UI existence as completion; the owning Exit Gate is required;
 - new material scope requires OWNER-approved amendment, not chat improvisation;
 - no V11 or competing roadmap before V10 reaches 100% and owner acceptance;
 - any implementation WP must fill/use `OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md`;
@@ -448,10 +449,10 @@ When AI implementation begins, CI must additionally fail closed on policy/tool/e
 
 ## 18. Current next action
 
-Current functional authorization is read only from `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`. **WP22A — External Web Access / Product Authentication Security Gate** remains the only authorized functional package and WP23+ remains locked.
+Current functional authorization is read only from `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`. **WEB-VISUAL-A — Premium Spatial Financial OS / Design-system foundation** is the only authorized current functional package and WP23+ remains locked.
 
-The OWNER-approved Product USER separation + Public Free Multi-User Hosted Runtime planning correction is accepted through PR #329 merged to exact `main` `5f535c0ced9514866bd3680042f3ba0bb012f866` with post-merge Regression Shield #1503 / run `32129304332` SUCCESS and both required jobs GREEN.
+The WP22A technical gate is complete only through its accepted Phase-5 evidence chain. Public production remains independently inactive: `PUBLIC_MULTI_USER_ENABLED=false`, final Cloud.ru provider apply/cutover remains unauthorized, public T-Invest remains fail-closed, broker write remains OFF, `trading_methods=false` and `REAL_TRADING_ENABLED=false` remain protected.
 
-Corrected WP22A must now proceed from the latest accepted main, starting with its **Service/hosting architecture decision**. Rework against the accepted public target: ordinary product auth, tenant isolation, managed-cloud production with no OWNER-home availability dependency, free initial access, tenant-scoped broker credentials, and separate broker/legal activation gates.
+`WEB-VISUAL-A` may modify only canonical design-system foundation scope defined by `docs/architecture/V10_WEB_VISUAL_DESIGN_REFRESH_IMPLEMENTATION_BRIEF.md`: tokens, base styling and directly related design-system contracts/tests. Do not include shell/navigation Increment B, route-specific redesign, API/database/auth/session/tenant changes, new broker authority, WP23 Telegram Bot work or AI/Cortex work in the same PR.
 
-Do not interpret planning acceptance, documentation cleanup, source-controlled Cloudflare intent or external reachability as WP22A completion. No planning change by itself may mutate provider state, enable Real trading, bypass broker terms or unlock WP23.
+Every visual increment still follows exact-head DRAFT GREEN → independent review → fresh READY GREEN → squash merge → exact-main post-merge verification. Increment B must not start before Increment A is accepted.
