@@ -116,7 +116,9 @@ def test_telegram_and_vk_runtime_composition_uses_fixed_https_callbacks() -> Non
 
 
 def test_origin_must_be_exact_https_origin_without_path_or_query() -> None:
-    clock = lambda: NOW
+    def clock() -> datetime:
+        return NOW
+
     for invalid in (
         "http://omni.example",
         "https://omni.example/path",

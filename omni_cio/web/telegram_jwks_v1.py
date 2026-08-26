@@ -126,9 +126,7 @@ class TelegramJwksSingleFlightVerifierV1(TelegramIdTokenVerifierV1):
             self._refreshing = False
             key = self._keys.get(kid)
             self._unknown_kid_refresh_after = (
-                None
-                if key is not None
-                else now + _JWKS_UNKNOWN_KID_REFRESH_COOLDOWN
+                None if key is not None else now + _JWKS_UNKNOWN_KID_REFRESH_COOLDOWN
             )
             self._refresh_condition.notify_all()
         if key is None:
