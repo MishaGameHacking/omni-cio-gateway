@@ -141,7 +141,7 @@ def test_unknown_kid_rotation_probe_is_cooldown_bounded() -> None:
         return httpx.Response(200, json=_jwks(kid))
 
     verifier = TelegramJwksSingleFlightVerifierV1(_config())
-    client = htttpx.Client(transport=httpx.MockTransport(handler))
+    client = httpx.Client(transport=httpx.MockTransport(handler))
 
     with pytest.raises(TelegramOidcError, match="TELEGRAM_OIDC_SIGNING_KEY_UNKNOWN"):
         verifier._key_for("rotated-key", now=NOW, client=client)
