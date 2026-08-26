@@ -381,6 +381,54 @@ def _approved_git_sha_evidence_finding(filename: str, finding: dict[str, Any]) -
     )
 
 
+def _approved_detect_secrets_finding(filename: str, finding: dict[str, Any]) -> bool:
+    return (
+        _approved_keyword_metadata_finding(filename, finding)
+        or _approved_public_checksum_finding(filename, finding)
+        or _approved_git_sha_evidence_finding(filename, finding)
+    )
+
+
+def _validate_detect_secrets_finding(
+    filename: str,
+    finding: object,
+    failures: list[str],
+) -> None:
+    if not isinstance(finding, dict):
+        failures.append(f"invalid detect-secrets finding for {filename}")
+        return
+    if _approved_detect_secrets_finding(filename, finding):
+        return
+    line_number = finding.get("line_number", "unknown")
+    finding_type = finding.get("type", "unknown")
+    failures.append(f"potential secret: {filename}:{line_number} ({finding_type})")
+
+
+def _validate_detect_secrets_findings(
+    filename: str,
+    findings: object,
+    failures: list[str],
+) -> None:
+    if not isinstance(findings, list):
+        failures.append(f"invalid detect-secrets findings for {filename}")
+        return
+    for finding in findings:
+        _validate_detect_secrets_finding(filename, finding, failures)
+
+
+def _validate_detect_secrets_file(
+    filename: object,
+    findings: object,
+    failures: list[str],
+) -> None:
+    if not isinstance(filename, str):
+        failures.append("invalid detect-secrets filename")
+        return
+    if GENERATED_SECRET_SCAN_PATH.search(filename):
+        return
+    _validate_detect_secrets_findings(filename, findings, failures)
+
+
 def validate_detect_secrets_report(
     report: dict[str, Any],
     failures: list[str],
@@ -390,29 +438,7 @@ def validate_detect_secrets_report(
         failures.append("detect-secrets output does not contain a results object")
         return
     for filename, findings in results.items():
-        if not isinstance(filename, str):
-            failures.append("invalid detect-secrets filename")
-            continue
-        if GENERATED_SECRET_SCAN_PATH.search(filename):
-            continue
-        if not isinstance(findings, list):
-            failures.append(f"invalid detect-secrets findings for {filename}")
-            continue
-        for finding in findings:
-            if not isinstance(finding, dict):
-                failures.append(f"invalid detect-secrets finding for {filename}")
-                continue
-            if _approved_keyword_metadata_finding(filename, finding):
-                continue
-            if _approved_public_checksum_finding(filename, finding):
-                continue
-            if _approved_git_sha_evidence_finding(filename, finding):
-                continue
-            line_number = finding.get("line_number", "unknown")
-            finding_type = finding.get("type", "unknown")
-            failures.append(
-                f"potential secret: {filename}:{line_number} ({finding_type})"
-            )
+        _validate_detect_secrets_file(filename, findings, failures)
 
 
 def validate_repository_baseline() -> list[str]:
