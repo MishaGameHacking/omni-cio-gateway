@@ -192,7 +192,9 @@ def validate_live_guidance(progress: str, package: str, failures: list[str]) -> 
         and f"**{package}** as the current authorized functional package"
         not in master_context
     ):
-        failures.append("Master Context convenience snapshot does not match current package")
+        failures.append(
+            "Master Context convenience snapshot does not match current package"
+        )
 
 
 def validate_high_risk_headers(failures: list[str]) -> None:
@@ -246,9 +248,7 @@ def validate_high_risk_headers(failures: list[str]) -> None:
 
     contract_status = contract.get("status")
     accepted_status = "ACTIVE_ACCEPTED_ON_MAIN"
-    pending_runtime_update_status = (
-        "ACTIVE_ACCEPTED_GOVERNANCE_WITH_OWNER_APPROVED_RUNTIME_UPDATE_EFFECTIVE_ON_MERGE"
-    )
+    pending_runtime_update_status = "ACTIVE_ACCEPTED_GOVERNANCE_WITH_OWNER_APPROVED_RUNTIME_UPDATE_EFFECTIVE_ON_MERGE"
     if contract_status not in {accepted_status, pending_runtime_update_status}:
         failures.append("engineering-quality contract status is not active/accepted")
     elif contract_status == pending_runtime_update_status:
@@ -329,9 +329,7 @@ def main() -> int:
     validate_status_uniqueness(failures)
 
     status = read_text(STATUS, failures)
-    progress, package = (
-        extract_current_state(status, failures) if status else ("", "")
-    )
+    progress, package = extract_current_state(status, failures) if status else ("", "")
 
     validate_live_guidance(progress, package, failures)
     validate_high_risk_headers(failures)
