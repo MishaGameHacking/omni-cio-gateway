@@ -36,7 +36,6 @@ def _build(env: dict[str, str]):
 def test_no_provider_configuration_is_valid_fail_closed_state() -> None:
     services = _build({})
     descriptors = services.descriptors()
-
     assert services.authentication is None
     assert services.runtimes == ()
     assert [item.provider for item in descriptors] == [
@@ -52,7 +51,6 @@ def test_partial_telegram_configuration_aborts_startup() -> None:
         match="WP22A_PHASE5_TELEGRAM_CONFIGURATION_INCOMPLETE",
     ):
         _build({"OMNI_V10_TELEGRAM_OIDC_CLIENT_ID": "123456"})
-
     with pytest.raises(
         Phase5ProviderAuthConfigurationError,
         match="WP22A_PHASE5_TELEGRAM_CONFIGURATION_INCOMPLETE",
@@ -70,7 +68,6 @@ def test_configured_provider_requires_both_server_side_binding_keys() -> None:
         match="OMNI_V10_CSRF_BINDING_KEY_HEX_REQUIRED",
     ):
         _build(telegram)
-
     telegram["OMNI_V10_CSRF_BINDING_KEY_HEX"] = KEY_A
     with pytest.raises(
         Phase5ProviderAuthConfigurationError,
@@ -103,7 +100,6 @@ def test_telegram_and_vk_runtime_composition_uses_fixed_https_callbacks() -> Non
             "OMNI_V10_IDENTITY_BINDING_KEY_HEX": KEY_B,
         }
     )
-
     assert services.authentication is not None
     assert [runtime.provider for runtime in services.runtimes] == [
         IdentityProviderV1.TELEGRAM,
@@ -112,25 +108,31 @@ def test_telegram_and_vk_runtime_composition_uses_fixed_https_callbacks() -> Non
     telegram, vk = services.runtimes
     assert isinstance(telegram, TelegramOidcRuntimeV1)
     assert isinstance(vk, VkIdOauthRuntimeV1)
-    assert telegram._config.redirect_uri == ORIGIN + "/api/v10/web/auth/telegram/callback"
+    assert (
+        telegram._config.redirect_uri
+        == ORIGIN + "/api/v10/web/auth/telegram/callback"
+    )
     assert vk._config.redirect_uri == ORIGIN + "/api/v10/web/auth/vk_id/callback"
 
 
 def test_origin_must_be_exact_https_origin_without_path_or_query() -> None:
+    clock = lambda: NOW
     for invalid in (
         "http://omni.example",
         "https://omni.example/path",
         "https://omni.example?x=1",
         "https://user@omni.example",
     ):
+        connection = cast(Any, object())
+        sessions = SessionRegistryV1()
         with pytest.raises(
             Phase5ProviderAuthConfigurationError,
             match="WP22A_PHASE5_ORIGIN_INVALID",
         ):
             build_wp22a_phase5_provider_auth(
-                connection=cast(Any, object()),
-                sessions=SessionRegistryV1(),
+                connection=connection,
+                sessions=sessions,
                 canonical_origin=invalid,
                 env={},
-                now=lambda: NOW,
+                now=clock,
             )

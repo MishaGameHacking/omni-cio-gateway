@@ -17,10 +17,11 @@ if TYPE_CHECKING:
     from omni_cio.persistence.migration import ConnectionLike
 
 
-_STATE_PATTERN = re.compile(r"^[A-Za-z0-9_-]{32,512}$")
-_BROWSER_PROOF_PATTERN = re.compile(r"^[A-Za-z0-9_-]{32,512}$")
+_OPAQUE_32_512_PATTERN = re.compile(r"^[A-Za-z0-9_-]{32,512}$")
+_STATE_PATTERN = _OPAQUE_32_512_PATTERN
+_BROWSER_PROOF_PATTERN = _OPAQUE_32_512_PATTERN
 _PKCE_VERIFIER_PATTERN = re.compile(r"^[A-Za-z0-9_-]{43,128}$")
-_NONCE_PATTERN = re.compile(r"^[A-Za-z0-9_-]{32,512}$")
+_NONCE_PATTERN = _OPAQUE_32_512_PATTERN
 _MAX_PENDING_AUTH_TRANSACTIONS = 4096
 _AUTH_TRANSACTION_CAPACITY_LOCK_KEY = 220205
 

@@ -13,10 +13,7 @@ from omni_cio.web.browser_security_v1 import (
     BROWSER_SESSION_COOKIE,
     BrowserCookiePolicyV1,
 )
-from omni_cio.web.identity_v1 import (
-    IdentityProviderV1,
-    VerifiedExternalIdentityV1,
-)
+from omni_cio.web.identity_v1 import IdentityProviderV1, VerifiedExternalIdentityV1
 from omni_cio.web.product_identity_v1 import ProductAccountScopeV1
 from omni_cio.web.provider_auth_routes_v1 import (
     TELEGRAM_CALLBACK_PATH,
@@ -164,7 +161,6 @@ def _set_cookie_headers(response: object) -> list[str]:
 def test_cookie_policy_binds_csrf_to_opaque_session_without_exposing_key() -> None:
     policy = BrowserCookiePolicyV1(csrf_binding_key=CSRF_KEY)
     token = policy.csrf_token(SESSION_TOKEN)
-
     assert policy.csrf_matches(session_token=SESSION_TOKEN, csrf_token=token)
     assert not policy.csrf_matches(session_token="z" * 43, csrf_token=token)
     assert CSRF_KEY.hex() not in repr(policy)
@@ -182,10 +178,8 @@ def test_host_cookie_policy_cannot_disable_secure_or_use_short_key() -> None:
 def test_start_is_fixed_post_route_and_sets_only_httponly_browser_proof() -> None:
     app, runtimes, _ = _app(IdentityProviderV1.TELEGRAM)
     client = TestClient(app, base_url="https://omni.example")
-
     assert client.get(TELEGRAM_START_PATH).status_code == 405
     response = client.post(TELEGRAM_START_PATH, follow_redirects=False)
-
     assert response.status_code == 303
     assert response.headers["location"] == (
         TELEGRAM_OIDC_AUTHORIZATION_ENDPOINT + "?fixture=1"
@@ -212,9 +206,7 @@ def test_runtime_output_cannot_override_redirect_origin_or_proof_cookie() -> Non
     )
     runtime.returned_browser_proof_override = "z" * 43
     client = TestClient(app, base_url="https://omni.example")
-
     response = client.post(TELEGRAM_START_PATH, follow_redirects=False)
-
     assert response.status_code == 303
     location = response.headers["location"]
     parsed = urlsplit(location)
@@ -243,10 +235,6 @@ def test_callback_requires_initiating_browser_and_rotates_session() -> None:
     )
     assert missing.status_code == 400
     assert runtimes[0].completions == []
-
-    # Seed the synthetic pre-auth cookie in the same host/path jar slot a browser
-    # uses for a __Host- cookie, so the callback Set-Cookie replaces it instead of
-    # leaving a second same-name fixture with an unrelated scope.
     client.cookies.set(
         BROWSER_SESSION_COOKIE,
         OLD_SESSION_TOKEN,
@@ -258,7 +246,6 @@ def test_callback_requires_initiating_browser_and_rotates_session() -> None:
         TELEGRAM_CALLBACK_PATH + "?state=" + "a" * 43 + "&code=accepted",
         follow_redirects=False,
     )
-
     assert response.status_code == 303
     assert response.headers["location"] == "/"
     assert authentication.current_tokens == [OLD_SESSION_TOKEN]
@@ -280,33 +267,28 @@ def test_callback_requires_initiating_browser_and_rotates_session() -> None:
         )
         == fresh_token
     )
-    csrf = client.cookies.get(
-        BROWSER_CSRF_COOKIE,
+    csrf = client.cookies.get(BROWSER_CSRF_COOKIE, domain=TEST_COOKIE_DOMAIN, path="/")
+    assert csrf is not None
+    assert BrowserCookiePolicyV1(csrf_binding_key=CSRF_KEY).csrf_matches(
+        session_token=fresh_token,
+        csrf_token=csrf,
+    )
+    csrf_header = next(
+        value for value in _set_cookie_headers(response) if BROWSER_CSRF_COOKIE in value
+    )
+    assert "HttpOnly" in csrf_header
+    assert "Secure" in csrf_header
+    assert client.cookies.get(
+        "__Host-omni_v10_oauth_telegram",
         domain=TEST_COOKIE_DOMAIN,
         path="/",
-    )
-    assert csrf is not None
-    assert BrowserCookiePolicyV1(
-        csrf_binding_key=CSRF_KEY
-    ).csrf_matches(session_token=fresh_token, csrf_token=csrf)
-    assert (
-        client.cookies.get(
-            "__Host-omni_v10_oauth_telegram",
-            domain=TEST_COOKIE_DOMAIN,
-            path="/",
-        )
-        is None
-    )
+    ) is None
 
 
 def test_provider_proof_cannot_be_reused_across_fixed_callback_routes() -> None:
-    app, runtimes, _ = _app(
-        IdentityProviderV1.TELEGRAM,
-        IdentityProviderV1.VK_ID,
-    )
+    app, runtimes, _ = _app(IdentityProviderV1.TELEGRAM, IdentityProviderV1.VK_ID)
     client = TestClient(app, base_url="https://omni.example")
     client.post(TELEGRAM_START_PATH, follow_redirects=False)
-
     mixed = client.get(
         VK_ID_CALLBACK_PATH
         + "?state="
@@ -314,7 +296,6 @@ def test_provider_proof_cannot_be_reused_across_fixed_callback_routes() -> None:
         + "&code=accepted&device_id=device-1",
         follow_redirects=False,
     )
-
     assert mixed.status_code == 400
     assert runtimes[1].completions == []
     assert client.cookies.get("__Host-omni_v10_oauth_telegram") is not None
@@ -324,7 +305,6 @@ def test_vk_callback_requires_single_device_id_and_rejects_duplicate_state() -> 
     app, runtimes, _ = _app(IdentityProviderV1.VK_ID)
     client = TestClient(app, base_url="https://omni.example")
     client.post(VK_ID_START_PATH, follow_redirects=False)
-
     duplicate = client.get(
         VK_ID_CALLBACK_PATH
         + "?state="
@@ -341,7 +321,6 @@ def test_vk_callback_requires_single_device_id_and_rejects_duplicate_state() -> 
 def test_unconfigured_fixed_provider_routes_fail_closed() -> None:
     app, _, _ = _app()
     client = TestClient(app, base_url="https://omni.example")
-
     assert client.post(TELEGRAM_START_PATH).status_code == 503
     assert client.post(VK_ID_START_PATH).status_code == 503
     assert client.get(

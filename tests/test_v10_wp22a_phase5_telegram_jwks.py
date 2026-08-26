@@ -142,20 +142,18 @@ def test_unknown_kid_rotation_probe_is_cooldown_bounded() -> None:
 
     verifier = TelegramJwksSingleFlightVerifierV1(_config())
     client = httpx.Client(transport=httpx.MockTransport(handler))
+    during_cooldown = NOW + timedelta(seconds=5)
+    after_cooldown = NOW + timedelta(seconds=11)
 
     with pytest.raises(TelegramOidcError, match="TELEGRAM_OIDC_SIGNING_KEY_UNKNOWN"):
         verifier._key_for("rotated-key", now=NOW, client=client)
     with pytest.raises(TelegramOidcError, match="TELEGRAM_OIDC_SIGNING_KEY_UNKNOWN"):
-        verifier._key_for(
-            "rotated-key",
-            now=NOW + timedelta(seconds=5),
-            client=client,
-        )
+        verifier._key_for("rotated-key", now=during_cooldown, client=client)
     assert calls == 1
 
     key = verifier._key_for(
         "rotated-key",
-        now=NOW + timedelta(seconds=11),
+        now=after_cooldown,
         client=client,
     )
     assert key.size_bytes >= 256
@@ -172,21 +170,15 @@ def test_failed_refresh_has_bounded_retry_cooldown() -> None:
 
     verifier = TelegramJwksSingleFlightVerifierV1(_config())
     client = httpx.Client(transport=httpx.MockTransport(handler))
+    during_cooldown = NOW + timedelta(seconds=1)
+    after_cooldown = NOW + timedelta(seconds=6)
 
     with pytest.raises(TelegramOidcError, match="TELEGRAM_OIDC_NETWORK_ERROR"):
         verifier._key_for("telegram-key", now=NOW, client=client)
     with pytest.raises(TelegramOidcError, match="TELEGRAM_OIDC_JWKS_REFRESH_BACKOFF"):
-        verifier._key_for(
-            "telegram-key",
-            now=NOW + timedelta(seconds=1),
-            client=client,
-        )
+        verifier._key_for("telegram-key", now=during_cooldown, client=client)
     assert calls == 1
 
     with pytest.raises(TelegramOidcError, match="TELEGRAM_OIDC_NETWORK_ERROR"):
-        verifier._key_for(
-            "telegram-key",
-            now=NOW + timedelta(seconds=6),
-            client=client,
-        )
+        verifier._key_for("telegram-key", now=after_cooldown, client=client)
     assert calls == 2

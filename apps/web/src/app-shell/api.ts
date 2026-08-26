@@ -12,25 +12,17 @@ import type {
 } from "./contracts";
 
 const JSON_HEADERS = { "Content-Type": "application/json" } as const;
-const REMOTE_CSRF_COOKIE = "__Host-omni_v10_csrf";
 const REMOTE_CSRF_HEADER = "X-Omni-CSRF";
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+let csrfHeaderToken: string | null = null;
 
-function readCookie(name: string): string | null {
-  const prefix = `${name}=`;
-  for (const item of document.cookie.split(";")) {
-    const candidate = item.trim();
-    if (candidate.startsWith(prefix)) return candidate.slice(prefix.length);
-  }
-  return null;
-}
+type SessionBootstrapView = WebSessionView & { csrf_token?: string };
 
 function requestHeaders(init?: RequestInit): Headers {
   const headers = new Headers(init?.headers);
   const method = (init?.method ?? "GET").toUpperCase();
-  if (!SAFE_METHODS.has(method)) {
-    const csrf = readCookie(REMOTE_CSRF_COOKIE);
-    if (csrf) headers.set(REMOTE_CSRF_HEADER, csrf);
+  if (!SAFE_METHODS.has(method) && csrfHeaderToken) {
+    headers.set(REMOTE_CSRF_HEADER, csrfHeaderToken);
   }
   return headers;
 }
@@ -48,8 +40,16 @@ async function requestJson<T>(input: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
-export function readSession(): Promise<WebSessionView> {
-  return requestJson<WebSessionView>("/api/v10/web/session");
+export async function readSession(): Promise<WebSessionView> {
+  try {
+    const bootstrap = await requestJson<SessionBootstrapView>("/api/v10/web/session");
+    const { csrf_token: csrfToken, ...session } = bootstrap;
+    csrfHeaderToken = session.authenticated && typeof csrfToken === "string" ? csrfToken : null;
+    return session;
+  } catch (error) {
+    csrfHeaderToken = null;
+    throw error;
+  }
 }
 
 export function readProviders(): Promise<ProviderView[]> {
@@ -136,6 +136,7 @@ export async function logoutCurrentSession(): Promise<void> {
     headers: JSON_HEADERS,
     body: "{}",
   });
+  csrfHeaderToken = null;
 }
 
 export async function revokeAllSessions(): Promise<void> {
@@ -144,6 +145,7 @@ export async function revokeAllSessions(): Promise<void> {
     headers: JSON_HEADERS,
     body: "{}",
   });
+  csrfHeaderToken = null;
 }
 
 export function providerLoginPath(provider: "telegram" | "vk_id"): string {

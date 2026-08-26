@@ -35,7 +35,12 @@ function healthToOperational(value: HealthView["state"]): OperationalState {
   return "DEGRADED";
 }
 
-function LoginScreen({ providers, apiUnavailable }: { providers: ProviderView[]; apiUnavailable: boolean }) {
+type LoginScreenProps = Readonly<{
+  providers: ProviderView[];
+  apiUnavailable: boolean;
+}>;
+
+function LoginScreen({ providers, apiUnavailable }: LoginScreenProps) {
   const provider = (name: "telegram" | "vk_id") => providers.find((item) => item.provider === name);
   const telegram = provider("telegram");
   const vk = provider("vk_id");

@@ -27,6 +27,7 @@ TELEGRAM_OIDC_AUTHORIZATION_ENDPOINT = f"{TELEGRAM_OIDC_ISSUER}/auth"
 TELEGRAM_OIDC_TOKEN_ENDPOINT = f"{TELEGRAM_OIDC_ISSUER}/token"
 TELEGRAM_OIDC_JWKS_ENDPOINT = f"{TELEGRAM_OIDC_ISSUER}/.well-known/jwks.json"
 
+_JSON_MEDIA_TYPE = "application/json"
 _MAX_TOKEN_RESPONSE_BYTES = 32_768
 _MAX_JWKS_RESPONSE_BYTES = 131_072
 _MAX_ID_TOKEN_CHARS = 16_384
@@ -167,7 +168,7 @@ def _read_bounded_json_response(
     *,
     max_response_bytes: int,
 ) -> dict[str, Any]:
-    if response.status_code != 200 or _content_type(response) != "application/json":
+    if response.status_code != 200 or _content_type(response) != _JSON_MEDIA_TYPE:
         raise TelegramOidcError("TELEGRAM_OIDC_PROVIDER_RESPONSE_INVALID")
     declared = response.headers.get("content-length")
     if declared is not None:
@@ -204,7 +205,7 @@ def _bounded_token_response(
             auth=auth,
             timeout=timeout_seconds,
             follow_redirects=False,
-            headers={"Accept": "application/json"},
+            headers={"Accept": _JSON_MEDIA_TYPE},
         ) as response:
             return _read_bounded_json_response(
                 response,
@@ -229,7 +230,7 @@ def _bounded_jwks_response(
             TELEGRAM_OIDC_JWKS_ENDPOINT,
             timeout=timeout_seconds,
             follow_redirects=False,
-            headers={"Accept": "application/json"},
+            headers={"Accept": _JSON_MEDIA_TYPE},
         ) as response:
             return _read_bounded_json_response(
                 response,
@@ -518,11 +519,17 @@ class TelegramOidcRuntimeV1:
     def provider(self) -> IdentityProviderV1:
         return IdentityProviderV1.TELEGRAM
 
-    def start(self, *, now: datetime) -> ProviderAuthorizationStartV1:
+    def start(
+        self,
+        *,
+        now: datetime,
+        browser_proof: str | None = None,
+    ) -> ProviderAuthorizationStartV1:
         transaction = self._transactions.begin(
             provider=self.provider,
             redirect_uri=self._config.redirect_uri,
             now=now,
+            browser_proof=browser_proof,
         )
         query = urlencode(
             {
@@ -540,6 +547,7 @@ class TelegramOidcRuntimeV1:
             authorization_url=f"{TELEGRAM_OIDC_AUTHORIZATION_ENDPOINT}?{query}",
             browser_proof=transaction.browser_proof,
             expires_at=transaction.expires_at,
+            authorization_query=query,
         )
 
     def complete(

@@ -95,15 +95,16 @@ def test_expired_state_is_destroyed_and_rejected() -> None:
         redirect_uri=CALLBACK,
         now=NOW,
     )
+    expired_at = NOW + timedelta(seconds=30)
 
     with pytest.raises(ProviderAuthorizationError, match="AUTH_TRANSACTION_NOT_FOUND"):
         registry.consume(
             provider=IdentityProviderV1.TELEGRAM,
             state=transaction.state,
             browser_proof=transaction.browser_proof,
-            now=NOW + timedelta(seconds=30),
+            now=expired_at,
         )
-    assert registry.pending_count(now=NOW + timedelta(seconds=30)) == 0
+    assert registry.pending_count(now=expired_at) == 0
 
 
 def test_capacity_is_bounded_but_expired_entries_do_not_self_dos() -> None:
@@ -127,10 +128,11 @@ def test_capacity_is_bounded_but_expired_entries_do_not_self_dos() -> None:
             now=NOW,
         )
 
+    replacement_time = NOW + timedelta(seconds=10)
     replacement = registry.begin(
         provider=IdentityProviderV1.TELEGRAM,
         redirect_uri=CALLBACK,
-        now=NOW + timedelta(seconds=10),
+        now=replacement_time,
     )
     assert replacement.state
 
@@ -144,26 +146,29 @@ def test_lazy_expiry_keeps_later_transaction_until_its_deadline() -> None:
         redirect_uri=CALLBACK,
         now=NOW,
     )
+    second_start = NOW + timedelta(seconds=1)
+    first_expiry = NOW + timedelta(seconds=10)
+    second_expiry = NOW + timedelta(seconds=11)
     second = registry.begin(
         provider=IdentityProviderV1.TELEGRAM,
         redirect_uri=CALLBACK,
-        now=NOW + timedelta(seconds=1),
+        now=second_start,
     )
 
-    assert registry.pending_count(now=NOW + timedelta(seconds=10)) == 1
+    assert registry.pending_count(now=first_expiry) == 1
     consumed = registry.consume(
         provider=IdentityProviderV1.TELEGRAM,
         state=second.state,
         browser_proof=second.browser_proof,
-        now=NOW + timedelta(seconds=10),
+        now=first_expiry,
     )
-    assert consumed.expires_at == NOW + timedelta(seconds=11)
+    assert consumed.expires_at == second_expiry
     with pytest.raises(ProviderAuthorizationError, match="AUTH_TRANSACTION_NOT_FOUND"):
         registry.consume(
             provider=IdentityProviderV1.TELEGRAM,
             state=first.state,
             browser_proof=first.browser_proof,
-            now=NOW + timedelta(seconds=10),
+            now=first_expiry,
         )
 
 
@@ -216,8 +221,10 @@ def test_only_one_parallel_callback_can_consume_state() -> None:
 
 
 def test_policy_bounds_and_utc_clock_are_enforced() -> None:
+    zero_lifetime = timedelta(0)
+    naive_now = datetime(2026, 8, 24)
     with pytest.raises(ValueError, match="AUTH_TRANSACTION_LIFETIME_INVALID"):
-        AuthorizationTransactionPolicyV1(lifetime=timedelta(0))
+        AuthorizationTransactionPolicyV1(lifetime=zero_lifetime)
     with pytest.raises(ValueError, match="AUTH_TRANSACTION_CAPACITY_INVALID"):
         AuthorizationTransactionPolicyV1(max_pending=0)
     with pytest.raises(ValueError, match="AUTH_TRANSACTION_CAPACITY_INVALID"):
@@ -228,7 +235,7 @@ def test_policy_bounds_and_utc_clock_are_enforced() -> None:
         registry.begin(
             provider=IdentityProviderV1.TELEGRAM,
             redirect_uri=CALLBACK,
-            now=datetime(2026, 8, 24),
+            now=naive_now,
         )
 
 

@@ -190,161 +190,216 @@ def _rate_error(services: ProviderAuthRouteServicesV1) -> Response:
     )
 
 
+def _start_provider_auth(
+    provider: IdentityProviderV1,
+    services: ProviderAuthRouteServicesV1,
+) -> Response:
+    if not services.abuse.admit_start(provider):
+        return _rate_error(services)
+    runtime = services.runtime(provider)
+    if runtime is None:
+        return _safe_error(
+            "IDENTITY_PROVIDER_NOT_CONFIGURED",
+            503,
+            provider=provider,
+            cookies=services.cookies,
+        )
+
+    browser_proof = new_authorization_browser_proof_v1()
+    try:
+        authorization = runtime.start(
+            now=_utc_now(services),
+            browser_proof=browser_proof,
+        )
+        authorization_url = _fixed_authorization_url(provider, authorization)
+    except (ProviderAuthorizationError, TypeError, ValueError):
+        return _safe_error(
+            "IDENTITY_PROVIDER_UNAVAILABLE",
+            503,
+            provider=provider,
+            cookies=services.cookies,
+        )
+
+    response = RedirectResponse(
+        authorization_url,
+        status_code=303,
+        headers={"Cache-Control": "no-store"},
+    )
+    # The credential is minted locally and the provider runtime cannot replace it.
+    response.set_cookie(
+        services.cookies.proof_cookie(provider),
+        browser_proof,
+        httponly=True,
+        secure=True,
+        samesite="lax",
+        path="/",
+        max_age=_PROOF_COOKIE_MAX_AGE_SECONDS,
+    )
+    return response
+
+
+def _provider_callback_values(
+    provider: IdentityProviderV1,
+    request: Request,
+    cookies: BrowserCookiePolicyV1,
+) -> tuple[str, str, str | None, str]:
+    if _bounded_query(request, "error", maximum=256, required=False):
+        raise ValueError("PROVIDER_CALLBACK_REJECTED")
+    state = _bounded_query(request, "state", maximum=512) or ""
+    code = _bounded_query(request, "code", maximum=2048) or ""
+    device_id = (
+        _bounded_query(request, "device_id", maximum=512)
+        if provider == IdentityProviderV1.VK_ID
+        else None
+    )
+    browser_proof = request.cookies.get(cookies.proof_cookie(provider), "")
+    if not browser_proof:
+        raise ValueError("PROVIDER_CALLBACK_BROWSER_PROOF_REQUIRED")
+    return state, code, device_id, browser_proof
+
+
+def _complete_provider_identity(
+    provider: IdentityProviderV1,
+    request: Request,
+    services: ProviderAuthRouteServicesV1,
+    runtime: ProviderAuthenticationRuntimeLike,
+) -> VerifiedExternalIdentityV1 | Response:
+    state, code, device_id, browser_proof = _provider_callback_values(
+        provider,
+        request,
+        services.cookies,
+    )
+    if not services.abuse.acquire_outbound():
+        return _rate_error(services)
+    try:
+        return runtime.complete(
+            state=state,
+            code=code,
+            browser_proof=browser_proof,
+            now=_utc_now(services),
+            device_id=device_id,
+        )
+    finally:
+        services.abuse.release_outbound()
+
+
+def _establish_authenticated_session(
+    provider: IdentityProviderV1,
+    request: Request,
+    services: ProviderAuthRouteServicesV1,
+    authentication: ProductAuthenticationLike,
+    identity: VerifiedExternalIdentityV1,
+) -> Response:
+    authenticated_at = _utc_now(services)
+    account_scope = authentication.resolve_verified_identity(
+        identity,
+        now=authenticated_at,
+    )
+    authentication.revoke_session(
+        request.cookies.get(services.cookies.session_cookie),
+        now=authenticated_at,
+    )
+
+    # Session and CSRF material are derived locally only after provider verification.
+    token = new_session_token_v1()
+    authentication.bind_session(
+        token,
+        account_scope,
+        now=authenticated_at,
+    )
+    csrf = services.cookies.csrf_token(token)
+
+    response = RedirectResponse(
+        "/",
+        status_code=303,
+        headers={"Cache-Control": "no-store"},
+    )
+    _delete_proof_cookie(response, provider=provider, cookies=services.cookies)
+    response.set_cookie(
+        services.cookies.session_cookie,
+        token,
+        httponly=True,
+        secure=True,
+        samesite="lax",
+        path="/",
+        max_age=services.cookies.session_max_age_seconds,
+    )
+    # The browser receives the verified CSRF value through the authenticated
+    # session bootstrap response; the cookie itself remains script-inaccessible.
+    response.set_cookie(
+        services.cookies.csrf_cookie,
+        csrf,
+        httponly=True,
+        secure=True,
+        samesite="lax",
+        path="/",
+        max_age=services.cookies.session_max_age_seconds,
+    )
+    return response
+
+
+def _complete_provider_callback(
+    provider: IdentityProviderV1,
+    request: Request,
+    services: ProviderAuthRouteServicesV1,
+) -> Response:
+    if not services.abuse.admit_callback(provider):
+        return _rate_error(services)
+    runtime = services.runtime(provider)
+    authentication = services.authentication
+    if runtime is None or authentication is None:
+        return _safe_error(
+            "IDENTITY_PROVIDER_NOT_CONFIGURED",
+            503,
+            provider=provider,
+            cookies=services.cookies,
+        )
+
+    try:
+        identity = _complete_provider_identity(provider, request, services, runtime)
+        if isinstance(identity, Response):
+            return identity
+        return _establish_authenticated_session(
+            provider,
+            request,
+            services,
+            authentication,
+            identity,
+        )
+    except (ProductIdentityError, ProviderAuthorizationError, ValueError):
+        return _safe_error(
+            "AUTHENTICATION_REJECTED",
+            400,
+            provider=provider,
+            cookies=services.cookies,
+        )
+
+
 def install_provider_auth_routes_v1(
     app: FastAPI,
     *,
     services: ProviderAuthRouteServicesV1,
 ) -> None:
-    def start(provider: IdentityProviderV1) -> Response:
-        if not services.abuse.admit_start(provider):
-            return _rate_error(services)
-        runtime = services.runtime(provider)
-        if runtime is None:
-            return _safe_error(
-                "IDENTITY_PROVIDER_NOT_CONFIGURED",
-                503,
-                provider=provider,
-                cookies=services.cookies,
-            )
-        browser_proof = new_authorization_browser_proof_v1()
-        try:
-            authorization = runtime.start(
-                now=_utc_now(services),
-                browser_proof=browser_proof,
-            )
-            authorization_url = _fixed_authorization_url(provider, authorization)
-        except (ProviderAuthorizationError, TypeError, ValueError):
-            return _safe_error(
-                "IDENTITY_PROVIDER_UNAVAILABLE",
-                503,
-                provider=provider,
-                cookies=services.cookies,
-            )
-        response = RedirectResponse(
-            authorization_url,
-            status_code=303,
-            headers={"Cache-Control": "no-store"},
-        )
-        # Credential provenance is local and input-free. The runtime receives
-        # this proof only to bind its server-side transaction; its returned proof
-        # value is not browser credential authority.
-        response.set_cookie(
-            services.cookies.proof_cookie(provider),
-            browser_proof,
-            httponly=True,
-            secure=True,
-            samesite="lax",
-            path="/",
-            max_age=_PROOF_COOKIE_MAX_AGE_SECONDS,
-        )
-        return response
-
-    def callback(provider: IdentityProviderV1, request: Request) -> Response:
-        if not services.abuse.admit_callback(provider):
-            return _rate_error(services)
-        runtime = services.runtime(provider)
-        authentication = services.authentication
-        if runtime is None or authentication is None:
-            return _safe_error(
-                "IDENTITY_PROVIDER_NOT_CONFIGURED",
-                503,
-                provider=provider,
-                cookies=services.cookies,
-            )
-        try:
-            if _bounded_query(request, "error", maximum=256, required=False):
-                raise ValueError("PROVIDER_CALLBACK_REJECTED")
-            state = _bounded_query(request, "state", maximum=512)
-            code = _bounded_query(request, "code", maximum=2048)
-            device_id = (
-                _bounded_query(request, "device_id", maximum=512)
-                if provider == IdentityProviderV1.VK_ID
-                else None
-            )
-            browser_proof = request.cookies.get(
-                services.cookies.proof_cookie(provider),
-                "",
-            )
-            if not browser_proof:
-                raise ValueError("PROVIDER_CALLBACK_BROWSER_PROOF_REQUIRED")
-            if not services.abuse.acquire_outbound():
-                return _rate_error(services)
-            try:
-                identity = runtime.complete(
-                    state=state or "",
-                    code=code or "",
-                    browser_proof=browser_proof,
-                    now=_utc_now(services),
-                    device_id=device_id,
-                )
-            finally:
-                services.abuse.release_outbound()
-
-            authenticated_at = _utc_now(services)
-            account_scope = authentication.resolve_verified_identity(
-                identity,
-                now=authenticated_at,
-            )
-            authentication.revoke_session(
-                request.cookies.get(services.cookies.session_cookie),
-                now=authenticated_at,
-            )
-            # Credential provenance is deliberately local to the cookie sink:
-            # callback/query/cookie/provider data can select an authenticated
-            # server-side scope, but cannot construct the new browser token.
-            token = new_session_token_v1()
-            authentication.bind_session(
-                token,
-                account_scope,
-                now=authenticated_at,
-            )
-            csrf = services.cookies.csrf_token(token)
-        except (ProductIdentityError, ProviderAuthorizationError, ValueError):
-            return _safe_error(
-                "AUTHENTICATION_REJECTED",
-                400,
-                provider=provider,
-                cookies=services.cookies,
-            )
-
-        response = RedirectResponse(
-            "/",
-            status_code=303,
-            headers={"Cache-Control": "no-store"},
-        )
-        _delete_proof_cookie(response, provider=provider, cookies=services.cookies)
-        response.set_cookie(
-            services.cookies.session_cookie,
-            token,
-            httponly=True,
-            secure=True,
-            samesite="lax",
-            path="/",
-            max_age=services.cookies.session_max_age_seconds,
-        )
-        response.set_cookie(
-            services.cookies.csrf_cookie,
-            csrf,
-            httponly=False,
-            secure=True,
-            samesite="lax",
-            path="/",
-            max_age=services.cookies.session_max_age_seconds,
-        )
-        return response
-
     @app.post(TELEGRAM_START_PATH, include_in_schema=False)
     def telegram_start() -> Response:
-        return start(IdentityProviderV1.TELEGRAM)
+        return _start_provider_auth(IdentityProviderV1.TELEGRAM, services)
 
     @app.get(TELEGRAM_CALLBACK_PATH, include_in_schema=False)
     def telegram_callback(request: Request) -> Response:
-        return callback(IdentityProviderV1.TELEGRAM, request)
+        return _complete_provider_callback(
+            IdentityProviderV1.TELEGRAM,
+            request,
+            services,
+        )
 
     @app.post(VK_ID_START_PATH, include_in_schema=False)
     def vk_id_start() -> Response:
-        return start(IdentityProviderV1.VK_ID)
+        return _start_provider_auth(IdentityProviderV1.VK_ID, services)
 
     @app.get(VK_ID_CALLBACK_PATH, include_in_schema=False)
     def vk_id_callback(request: Request) -> Response:
-        return callback(IdentityProviderV1.VK_ID, request)
+        return _complete_provider_callback(
+            IdentityProviderV1.VK_ID,
+            request,
+            services,
+        )

@@ -112,20 +112,16 @@ class _PostgresTransactionFixture:
 def test_postgres_transaction_persists_only_state_and_browser_proof_digests() -> None:
     connection = _PostgresTransactionFixture()
     store = PostgresAuthorizationTransactionStoreV1(connection)
-
     start = store.begin(
         provider=IdentityProviderV1.TELEGRAM,
         redirect_uri=CALLBACK,
         now=NOW,
     )
-
     assert start.state not in repr(connection.rows)
     assert start.browser_proof not in repr(connection.rows)
     assert hashlib.sha256(start.state.encode("ascii")).hexdigest() in connection.rows
     stored = next(iter(connection.rows.values()))
-    assert stored[0] == hashlib.sha256(
-        start.browser_proof.encode("ascii")
-    ).hexdigest()
+    assert stored[0] == hashlib.sha256(start.browser_proof.encode("ascii")).hexdigest()
     assert start.browser_proof not in repr(start)
 
 
@@ -133,14 +129,12 @@ def test_postgres_transaction_binds_route_owned_browser_proof() -> None:
     connection = _PostgresTransactionFixture()
     store = PostgresAuthorizationTransactionStoreV1(connection)
     route_proof = "p" * 43
-
     start = store.begin(
         provider=IdentityProviderV1.TELEGRAM,
         redirect_uri=CALLBACK,
         now=NOW,
         browser_proof=route_proof,
     )
-
     assert start.browser_proof == route_proof
     stored = next(iter(connection.rows.values()))
     assert stored[0] == hashlib.sha256(route_proof.encode("ascii")).hexdigest()
@@ -161,7 +155,6 @@ def test_wrong_browser_or_provider_cannot_destroy_postgres_transaction() -> None
         redirect_uri=CALLBACK,
         now=NOW,
     )
-
     for provider, proof in (
         (IdentityProviderV1.VK_ID, start.browser_proof),
         (IdentityProviderV1.TELEGRAM, "a" * 43),
@@ -177,7 +170,6 @@ def test_wrong_browser_or_provider_cannot_destroy_postgres_transaction() -> None
                 now=NOW,
             )
         assert store.pending_count(now=NOW) == 1
-
     consumed = store.consume(
         provider=IdentityProviderV1.TELEGRAM,
         state=start.state,
@@ -211,7 +203,6 @@ def test_postgres_delete_returning_allows_one_parallel_callback() -> None:
 
     with ThreadPoolExecutor(max_workers=8) as executor:
         results = list(executor.map(consume, range(16)))
-
     assert results.count("accepted") == 1
     assert results.count("AUTH_TRANSACTION_NOT_FOUND") == 15
 
@@ -220,29 +211,24 @@ def test_postgres_capacity_is_global_and_expired_rows_are_purged() -> None:
     connection = _PostgresTransactionFixture()
     store = PostgresAuthorizationTransactionStoreV1(
         connection,
-        AuthorizationTransactionPolicyV1(
-            max_pending=1,
-            lifetime=timedelta(seconds=10),
-        ),
+        AuthorizationTransactionPolicyV1(max_pending=1, lifetime=timedelta(seconds=10)),
     )
-    store.begin(
-        provider=IdentityProviderV1.TELEGRAM,
-        redirect_uri=CALLBACK,
-        now=NOW,
-    )
+    vk_callback = CALLBACK.replace("telegram", "vk_id")
+    replacement_time = NOW + timedelta(seconds=10)
+    store.begin(provider=IdentityProviderV1.TELEGRAM, redirect_uri=CALLBACK, now=NOW)
     with pytest.raises(
-        ProviderAuthorizationError, match="AUTH_TRANSACTION_CAPACITY_EXCEEDED"
+        ProviderAuthorizationError,
+        match="AUTH_TRANSACTION_CAPACITY_EXCEEDED",
     ):
         store.begin(
             provider=IdentityProviderV1.VK_ID,
-            redirect_uri=CALLBACK.replace("telegram", "vk_id"),
+            redirect_uri=vk_callback,
             now=NOW,
         )
-
     replacement = store.begin(
         provider=IdentityProviderV1.VK_ID,
-        redirect_uri=CALLBACK.replace("telegram", "vk_id"),
-        now=NOW + timedelta(seconds=10),
+        redirect_uri=vk_callback,
+        now=replacement_time,
     )
     assert replacement.provider == IdentityProviderV1.VK_ID
 
@@ -255,7 +241,6 @@ def test_phase5_migration_and_runtime_grant_are_least_privilege() -> None:
     bootstrap = (
         ROOT / "infrastructure/cloudru/wp22a/hosted-postgres-runtime.sql"
     ).read_text(encoding="utf-8")
-
     for required in (
         "state_sha256 char(64) PRIMARY KEY",
         "browser_proof_sha256 char(64) NOT NULL UNIQUE",
