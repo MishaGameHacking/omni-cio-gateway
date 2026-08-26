@@ -114,6 +114,7 @@ jobs:
           python -m py_compile scripts/check_v10_documentation_consistency.py scripts/check_v10_public_product_plan.py scripts/check_v10_wp22a_phase4_public_acceptance.py tests/test_v10_wp22a_phase5_transition.py
           python scripts/check_v10_documentation_consistency.py
           python scripts/check_v10_public_product_plan.py
+          python -m pip install --disable-pip-version-check pytest==9.1.1
           python -m pytest -q tests/test_v10_wp22a_phase5_transition.py
 
       - name: Probe exact public hosted technical release without secrets
