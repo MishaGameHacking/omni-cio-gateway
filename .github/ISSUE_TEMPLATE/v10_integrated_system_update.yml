@@ -1,0 +1,120 @@
+name: V10 Integrated System Update Dashboard
+description: Branch-local dashboard for one OWNER-authorized V10 Integrated System Update
+title: "[V10 System Update] "
+assignees: [MishaGameHacking]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **BRANCH-LOCAL EXECUTION STATE — NOT ACCEPTED MAIN AUTHORITY**
+
+        Use this only for an `INTEGRATED_SYSTEM_UPDATE` explicitly authorized by `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`. Accepted progress remains in the canonical status file on protected `main`. Do not paste secrets, private portfolio payloads, full account IDs or provider credentials.
+  - type: input
+    id: update_id
+    attributes:
+      label: Update ID / title
+      placeholder: V10 WEB VISUAL SYSTEM UPDATE
+    validations:
+      required: true
+  - type: input
+    id: accepted_base
+    attributes:
+      label: Accepted base SHA
+      description: Exact protected-main SHA from which the integrated branch starts.
+    validations:
+      required: true
+  - type: textarea
+    id: authority
+    attributes:
+      label: OWNER authority / current-status evidence
+      description: Record the accepted authority and explicit START evidence for this exact update. No secrets.
+    validations:
+      required: true
+  - type: textarea
+    id: milestones
+    attributes:
+      label: Ordered member milestones
+      description: Keep states as DONE / IN_PROGRESS / TODO / BLOCKED and preserve dependency order.
+      value: |
+        - [ ] 1. TODO —
+        - [ ] 2. TODO —
+        - [ ] 3. TODO —
+    validations:
+      required: true
+  - type: textarea
+    id: execution_state
+    attributes:
+      label: Current exact work item / next action / blockers / known defects
+      value: |
+        Current exact work item:
+        Next exact action:
+        Blockers: NONE
+        Known defects: NONE
+    validations:
+      required: true
+  - type: textarea
+    id: preflight
+    attributes:
+      label: Internal focused / preflight evidence
+      description: Record local/focused tests, full-diff review, coupled-surface review and INTEGRATION_READY evidence.
+    validations:
+      required: true
+  - type: textarea
+    id: split_review
+    attributes:
+      label: Mandatory split-trigger review
+      value: |
+        - DB/migration ordering: CLEAR / TRIGGERED / N/A
+        - Security/authority transition: CLEAR / TRIGGERED / N/A
+        - Dependency/toolchain boundary: CLEAR / TRIGGERED / N/A
+        - OWNER/provider action: CLEAR / TRIGGERED / N/A
+        - Live/temporal evidence: CLEAR / TRIGGERED / N/A
+        - Production cutover: CLEAR / TRIGGERED / N/A
+        - Real-money authority: CLEAR / TRIGGERED / N/A
+        - Reviewability limit: CLEAR / TRIGGERED / N/A
+    validations:
+      required: true
+  - type: checkboxes
+    id: protected_authority
+    attributes:
+      label: Protected authority checklist
+      options:
+        - label: Protected V9 `app:app` / rollback boundary remains intact unless an owning accepted migration explicitly replaces it.
+          required: true
+        - label: `PUBLIC_MULTI_USER_ENABLED=false` remains fail-closed unless its separate activation gate owns this change.
+          required: true
+        - label: `trading_methods=false`, `REAL_TRADING_ENABLED=false` and broker write OFF remain unchanged unless their owning future gates explicitly authorize otherwise.
+          required: true
+        - label: No transfer/withdrawal/margin/leverage/uncovered-short authority is introduced.
+          required: true
+        - label: Tenant isolation and secret/private-data exclusion from GitHub/CI/artifacts remain fail-closed.
+          required: true
+  - type: textarea
+    id: verification_batches
+    attributes:
+      label: Verification batches / exact SHAs / consolidated findings
+      description: Freeze each published head while safe checks finish. Group findings by root cause before the next correction batch.
+      value: |
+        Verification SHA:
+        DRAFT/READY:
+        Applicable checks and terminal conclusions:
+        Consolidated findings/root causes:
+        Correction batch:
+    validations:
+      required: true
+  - type: textarea
+    id: final_lifecycle
+    attributes:
+      label: Final lifecycle
+      value: |
+        - [ ] INTEGRATION_READY
+        - [ ] DRAFT exact-head applicable checks all success
+        - [ ] Independent review complete
+        - [ ] Fresh final exact-head verification complete
+        - [ ] READY exact-head applicable checks all success
+        - [ ] Zero unresolved blocking threads
+        - [ ] Squash merge
+        - [ ] Exact-new-main Regression Shield / owning post-merge gates success
+        - [ ] Canonical current status updated from accepted evidence
+    validations:
+      required: true

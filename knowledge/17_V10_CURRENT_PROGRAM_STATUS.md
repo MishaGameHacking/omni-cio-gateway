@@ -1,22 +1,38 @@
 # 17 — V10 CURRENT PROGRAM STATUS
 
-Updated: 2026-08-26
+Updated: 2026-08-27
 
 ## Executive state
 
-Omni-CIO V10: **DEVELOPMENT ACTIVE / BLOCKS A–E COMPLETE / WP0–WP22A COMPLETE / WEB VISUAL REFRESH INCREMENT A AUTHORIZED / WP23+ LOCKED / PUBLIC PRODUCTION ACTIVATION LOCKED**.
+Omni-CIO V10: **DEVELOPMENT ACTIVE / BLOCKS A–E COMPLETE / WP0–WP22A COMPLETE / PRODUCT IMPLEMENTATION PAUSED / NEXT PREPARED SYSTEM UPDATE WEB-VISUAL-INTEGRATED A→G / OWNER START REQUIRED / WP23+ LOCKED / PUBLIC PRODUCTION ACTIVATION LOCKED**.
 
 Accepted implementation progress is **54%**.
 
 Blocks A (5%), B (9%), C (12%), D (14%) and E (14%) have passed their owning Exit Gates. WP16–WP22 and the complete **WP22A — External Web Access / Product Authentication Security Gate** are accepted COMPLETE through the evidence chain recorded below.
 
-The current authorized implementation package is **WEB-VISUAL-A — Premium Spatial Financial OS / Design-system foundation**. This is the OWNER-approved visual-refresh Increment A only; it does not reopen WP22A and does not unlock WP23. WP23+ remains locked.
+Amendment 12 prepares **WEB-VISUAL-INTEGRATED — Premium Spatial Financial OS A→G System Update** as the next coherent execution unit. It changes delivery granularity only. It does not advance accepted product progress, does not change runtime authority and does not start product implementation by itself.
+
+Post-Amendment-12 product state is intentionally **PRODUCT IMPLEMENTATION PAUSED**. The prepared member milestones remain ordered:
+
+`WEB-VISUAL-A -> WEB-VISUAL-B -> WEB-VISUAL-C -> WEB-VISUAL-D -> WEB-VISUAL-E -> WEB-VISUAL-F -> WEB-VISUAL-G`
+
+**OWNER START REQUIRED.** Exact command required before creating the product implementation branch or modifying product source:
+
+`START V10 WEB VISUAL SYSTEM UPDATE`
+
+Until that command is explicitly recorded by current authority, no `apps/web` visual-refresh implementation may begin under Amendment 12. **WP23+ remains locked** behind acceptance of the complete visual System Update and later Master Plan authorization.
 
 Public production remains a separate later fail-closed activation gate. `PUBLIC_MULTI_USER_ENABLED=false`, final Cloud.ru provider apply, production DNS/edge mutation, real provider secret provisioning and real public-user cutover remain locked.
 
-This file becomes current authority only when present on accepted protected `main`. On a closeout branch, the state transition described here is proposed and becomes effective only after that PR completes exact-head DRAFT GREEN, independent review, fresh READY GREEN, squash merge and exact-new-main Regression Shield GREEN.
+This file becomes current authority only when present on accepted protected `main`. On a governance/closeout branch, a state transition described here is proposed and becomes effective only after that PR completes exact-head DRAFT GREEN, independent review, fresh READY GREEN, squash merge and exact-new-main Regression Shield / owning post-merge GREEN.
 
 ## Latest accepted engineering baseline
+
+Exact accepted protected `main` before Amendment 12 acceptance is:
+
+`069ae96e76a8d8cde9f716b2dcea1587fa557a35`
+
+It is the squash merge of PR #392, **WP22A Phase 5: close technical acceptance and authorize Visual Increment A**. The exact-main Regression Shield push run `32999626024` completed `success`; no later accepted `main` has replaced this baseline at the time this proposed governance state was prepared.
 
 ### WP22A Phase 5 — integrated technical implementation accepted
 
@@ -35,14 +51,14 @@ The integrated package reused the existing `apps/web`, `apps/api`, `omni_cio`, P
 
 ### Exact-main post-merge acceptance
 
-Exact accepted main `bb15739acf82ded8eafb6d006cf222fb3988770d` completed the canonical post-merge acceptance chain:
+Exact implementation main `bb15739acf82ded8eafb6d006cf222fb3988770d` completed its canonical post-merge acceptance chain:
 
 - Regression Shield run `32958019958`: `success`;
 - both required Shield jobs: `success`;
 - all applicable exact-main push workflows observed for the merge: `success`;
 - no accepted RED post-merge workflow.
 
-The accepted-main deployment workflow `32960260373`, attempt 2, then completed `success` inside the existing zero-cost synthetic Render + Neon boundary. Sanitized accepted evidence includes:
+The accepted-main deployment workflow `32960260373`, attempt 2, completed `success` inside the existing zero-cost synthetic Render + Neon boundary. Sanitized accepted evidence includes:
 
 - fresh zero-charge OWNER attestation: `PASS_FRESH_NO_PAYMENT_METHOD`;
 - Neon organization plan: `FREE_VERIFIED`;
@@ -99,25 +115,77 @@ Therefore:
 
 Phase-4 and Phase-5 hosted evidence is technical/synthetic acceptance only. It is not real public-production activation and does not replace Cloud.ru Evolution as the selected final production provider.
 
+## Amendment 12 — governance transition
+
+OWNER approved the **Integrated System Update Execution Law / Amendment 12** on 2026-08-26. The law is governance-only and becomes active only after its own exact-head DRAFT/READY/review/squash/post-merge lifecycle succeeds on protected `main`.
+
+Canonical Amendment-12 sources:
+
+- `docs/master-plan/OMNI_CIO_V10_INTEGRATED_SYSTEM_UPDATE_EXECUTION_AMENDMENT.md`;
+- `docs/architecture/V10_INTEGRATED_SYSTEM_UPDATE_EXECUTION_CONTRACT.json`;
+- `docs/updates/INTEGRATED_SYSTEM_UPDATE_EXECUTION_LEDGER_TEMPLATE.md`;
+- `.github/ISSUE_TEMPLATE/v10_integrated_system_update.yml`;
+- `scripts/check_v10_integrated_system_update_governance.py`.
+
+The law defines exactly two execution units:
+
+- `FOCUSED_CHANGE` for isolated defects, governance/documentation corrections, maintenance and mandatory split boundaries;
+- `INTEGRATED_SYSTEM_UPDATE` for one coherent OWNER-authorized system outcome with ordered member WP/increments.
+
+For an `INTEGRATED_SYSTEM_UPDATE`:
+
+- one integrated branch and one final PR are the default;
+- member WP/increments remain mandatory ordered internal milestones;
+- internal milestone PASS is branch-local only;
+- accepted V10 percentage changes only after final squash merge and required exact-main post-merge acceptance;
+- external verification starts only after `INTEGRATION_READY`;
+- a published verification SHA enters **HEAD FREEZE** while the safe independent verification batch reaches terminal state;
+- safe findings are consolidated and grouped by root cause before one coherent correction batch;
+- temporary verifier commits/PRs and `continue-on-error` fake GREEN are forbidden;
+- a new published commit invalidates previous final exact-head evidence;
+- mandatory split triggers remain DB/migration ordering, security/authority transition, dependency/toolchain boundary, OWNER/provider action, live/temporal evidence, production cutover, Real-money authority and reviewability limit.
+
+Every integrated update must use both a branch Execution Ledger and a GitHub-visible System Update dashboard. Both are working-state records and must state:
+
+`BRANCH-LOCAL EXECUTION STATE — NOT ACCEPTED MAIN AUTHORITY`
+
+They never replace this file as accepted current progress authority.
+
 ## Current functional development authority
 
-Current engineering authority is limited to:
+**PRODUCT IMPLEMENTATION PAUSED.**
 
-- **WEB-VISUAL-A — Premium Spatial Financial OS / Design-system foundation**;
-- governing brief: `docs/architecture/V10_WEB_VISUAL_DESIGN_REFRESH_IMPLEMENTATION_BRIEF.md`;
-- allowed runtime focus: canonical `apps/web/src/design-system/tokens.css`, `apps/web/src/design-system/base.css`, and directly related design-system contracts/tests;
-- no product-semantic, API, database, identity, tenant, broker or execution behavior changes;
-- no shell/navigation Increment B work in the same PR;
-- no new UI framework, second token system, second frontend or parallel component library;
-- preserve the canonical operational vocabulary `READY | PARTIAL | STALE | DEGRADED | BLOCKED | ERROR | OFFLINE | RECOVERING | OWNER_ACTION_REQUIRED`;
-- preserve canonical responsive acceptance at 360 / 768 / 1440 px;
-- preserve light/dark accessibility, reduced-motion behavior and existing route semantics;
-- no material dependency addition without a separate accepted dependency/architecture decision;
-- complete focused Web preflight plus the repository-wide applicable exact-head DRAFT/READY/merge/post-merge lifecycle.
+No product/runtime source package is currently started by Amendment 12 itself.
 
-The A–G visual sequence remains sequential. Increment A acceptance is required before Increment B. This authorization does not permit visual work to alter financial truth, security semantics or locked operational authority.
+The next prepared execution unit is:
 
-OWNER action required now: **NO** for Increment A source implementation. Stop only at a genuinely non-delegable provider/account/billing/legal/secret/physical action.
+**WEB-VISUAL-INTEGRATED — Premium Spatial Financial OS A→G System Update / OWNER START REQUIRED**.
+
+Prepared member scope is inherited from `docs/architecture/V10_WEB_VISUAL_DESIGN_REFRESH_IMPLEMENTATION_BRIEF.md`:
+
+1. `WEB-VISUAL-A` — design-system foundation;
+2. `WEB-VISUAL-B` — spatial shell/navigation;
+3. `WEB-VISUAL-C` — Portfolio/Assets presentation;
+4. `WEB-VISUAL-D` — Watchtower/Research/Risk/Decisions/Plans presentation;
+5. `WEB-VISUAL-E` — Execution/Journal/System/Settings presentation;
+6. `WEB-VISUAL-F` — atmosphere/optional spatial brand layer;
+7. `WEB-VISUAL-G` — visual/performance/accessibility hardening.
+
+The A→G dependency/content order remains binding. Amendment 12 supersedes only the old assumption that every visual increment must land as a separate branch/PR. It does not permit later content to be implemented before required predecessor branch-local Exit evidence.
+
+Before the exact START command, do not:
+
+- create the `WEB-VISUAL-INTEGRATED` implementation branch;
+- modify `apps/web` for the visual refresh;
+- mark any visual member milestone `IN_PROGRESS`;
+- open a product implementation PR;
+- use CI/Sonar/Gitar as a substitute for branch-local `INTEGRATION_READY` preflight.
+
+OWNER action required now: **YES only to start the prepared System Update**, by issuing exactly:
+
+`START V10 WEB VISUAL SYSTEM UPDATE`
+
+No provider/account/billing/legal/secret/physical action is required merely to accept Amendment 12.
 
 ## Public-production activation — still LOCKED
 
@@ -149,7 +217,7 @@ Unchanged locks:
 - `REAL_TRADING_ENABLED=false`;
 - no transfer/withdrawal/margin/leverage/uncovered-short authority;
 - tenant READ/optional TRADE credential separation remains mandatory;
-- a GitHub merge, AI output, visual refresh or WP22A completion is never broker-submit authorization.
+- a GitHub merge, AI output, visual refresh, System Update or WP22A completion is never broker-submit authorization.
 
 Protected V9 production/recovery entrypoint remains `app:app`; its rollback boundary is untouched.
 
@@ -186,7 +254,8 @@ Future monetization remains `DEFERRED_OPTIONAL`.
 - Block E / WP22A Phase 5 — **ACCEPTED**;
 - Block E / WP22A overall — **COMPLETE**;
 - Block E — **COMPLETE (14%)**;
-- current named implementation increment — **WEB-VISUAL-A / AUTHORIZED**;
+- product implementation — **PAUSED**;
+- next prepared execution unit — **WEB-VISUAL-INTEGRATED / OWNER START REQUIRED**;
 - Block F / WP23+ — **LOCKED**;
 - public production activation — **LOCKED**;
 - broker write / Real execution — **UNCHANGED / NOT AUTHORIZED**.
@@ -207,28 +276,25 @@ Future monetization remains `DEFERRED_OPTIONAL`.
 | J. Integration / hardening / recovery / release | 5% | NOT STARTED |
 | **TOTAL** | **100% planned** | **54% ACCEPTED** |
 
-## Current next package — WEB-VISUAL-A — Premium Spatial Financial OS Increment A — Design-system foundation
+## Current next package — WEB-VISUAL-INTEGRATED — Prepared A→G System Update / OWNER START REQUIRED
 
-Purpose: establish the reusable visual token/base layer for the already accepted single React Web product without changing product semantics.
+Purpose after explicit OWNER START: implement the already approved Premium Spatial Financial OS visual refresh as one coherent `INTEGRATED_SYSTEM_UPDATE`, preserving A→G as ordered internal milestones and retaining all current product/security/runtime semantics.
 
-Allowed scope:
+Prepared scope:
 
-1. palette/typography/spacing/radius/elevation/material/motion/semantic-state tokens in the canonical design-system files;
-2. light/dark token completeness and accessibility;
-3. base typography/layout/focus/reduced-motion/reduced-transparency-safe foundations;
-4. permanent design-system contract tests, unresolved-token guards and deterministic visual gallery evidence;
-5. bundle/dependency impact proof with no casual new runtime dependency;
-6. Web typecheck/lint/test/build and applicable Playwright/browser evidence;
-7. exact-head DRAFT GREEN -> independent review -> fresh READY GREEN -> squash -> exact-main post-merge verification.
+- one existing `apps/web` product only;
+- no new UI framework, second token system, second frontend or parallel component library;
+- no financial calculation semantic changes;
+- no API/database/auth/session/tenant/broker authority changes merely for visual design;
+- preserve `READY | PARTIAL | STALE | DEGRADED | BLOCKED | ERROR | OFFLINE | RECOVERING | OWNER_ACTION_REQUIRED`;
+- preserve canonical responsive acceptance at 360 / 768 / 1440 px;
+- preserve light/dark accessibility, reduced-motion behavior and existing route semantics;
+- no material dependency addition without its owning dependency/toolchain review;
+- member milestone branch-local Exit evidence in A→G order;
+- final integrated `INTEGRATION_READY` before first external verification publication;
+- exact-head DRAFT GREEN -> independent review -> correction batch if required -> fresh exact-head verification -> READY GREEN -> squash -> exact-main post-merge verification.
 
-Forbidden in Increment A:
-
-- shell/navigation redesign (Increment B);
-- route-specific Portfolio/Assets/Watchtower/etc redesign;
-- API/database/auth/session/tenant/broker semantics;
-- public-production activation;
-- WP23 Telegram Bot work;
-- AI/Cortex or broker-write/Real work.
+The next major System Update after WEB-VISUAL-INTEGRATED remains locked until the complete integrated update is accepted. WP23 is not unlocked by an internal visual milestone.
 
 ## Canonical authority
 
@@ -243,6 +309,9 @@ Mandatory current sources include:
 - `docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.md`;
 - `docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md`;
 - `docs/master-plan/OMNI_CIO_V10_WP22A_TECHNICAL_CLOSEOUT_AND_PUBLIC_ACTIVATION_SEPARATION_AMENDMENT.md`;
+- `docs/master-plan/OMNI_CIO_V10_INTEGRATED_SYSTEM_UPDATE_EXECUTION_AMENDMENT.md`;
+- `docs/architecture/V10_INTEGRATED_SYSTEM_UPDATE_EXECUTION_CONTRACT.json`;
+- `docs/updates/INTEGRATED_SYSTEM_UPDATE_EXECUTION_LEDGER_TEMPLATE.md`;
 - `docs/architecture/V10_WP22A_PHASE5_TECHNICAL_ACCEPTANCE_EVIDENCE.md`;
 - `docs/architecture/V10_WP22A_PHASE5_PUBLIC_HOSTED_ACCEPTANCE_CONTRACT.json`;
 - `docs/architecture/V10_WEB_VISUAL_DESIGN_REFRESH_IMPLEMENTATION_BRIEF.md`;
@@ -258,19 +327,21 @@ GitHub remains engineering source of truth. Historical PR text, old screenshots 
 - `REAL_TRADING_ENABLED=false`;
 - `PUBLIC_MULTI_USER_ENABLED=false` until the separate public-production activation gate;
 - no broker-write expansion;
-- no transfer/withdrawal/margin/uncovered-short authority;
+- no transfer/withdrawal/margin/leverage/uncovered-short authority;
+- no cross-tenant authority expansion;
 - no real broker/Telegram/VK/provider secret values, encryption/recovery keys, private portfolio payloads or full account IDs in GitHub/CI/artifacts;
 - no paid resource or recurring spend without exact current cost revalidation and explicit OWNER approval above the authorized cap;
 - RED is RED; skipped/queued/pending/neutral is not applicable-gate PASS;
-- focused PR + exact-head applicable GREEN + zero blockers + squash merge + required post-merge Regression Shield remains mandatory;
+- exact-head applicable GREEN + zero blockers + squash merge + required post-merge Regression Shield remains mandatory;
 - OWNER physical/secret evidence is never synthesized.
 
 ## Current next action
 
-1. accept this small WP22A evidence/status closeout only through its own exact-head DRAFT/READY/review/squash/post-merge lifecycle;
-2. after the closeout is accepted on `main`, create one focused **WEB-VISUAL-A** branch from that exact accepted main;
-3. implement only visual Increment A design-system foundation scope;
-4. run repository baseline plus Web typecheck/lint/test/build and applicable deterministic browser/visual evidence;
-5. complete exact-head DRAFT GREEN, independent review, fresh READY GREEN, squash merge and exact-main post-merge verification;
-6. do not start Increment B until Increment A Exit evidence is accepted;
-7. keep WP23, public-production activation, public T-Invest, broker write and Real execution locked until their own accepted authority explicitly opens them.
+1. finish Amendment 12 governance synchronization through one coherent PR #393 correction batch;
+2. hold each published PR head under HEAD FREEZE while safe applicable verification reaches terminal state;
+3. require DRAFT exact-head all-applicable `success`, independent review and zero unresolved blocking threads;
+4. run a fresh unchanged-head READY applicable cycle and require all applicable `success`;
+5. squash merge Amendment 12 and verify exact-new-main Regression Shield / governance post-merge gates;
+6. after Amendment 12 is accepted, keep **PRODUCT IMPLEMENTATION PAUSED**;
+7. wait for exact OWNER command `START V10 WEB VISUAL SYSTEM UPDATE` before creating the integrated visual implementation branch;
+8. keep WP23, public-production activation, public T-Invest, broker write and Real execution locked until their own accepted authority explicitly opens them.

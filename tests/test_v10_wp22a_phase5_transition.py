@@ -142,21 +142,20 @@ def test_phase5_closeout_evidence_maps_accepted_exact_main_chain() -> None:
     assert locks["protected_v9_entrypoint"] == "app:app"
 
 
-def test_status_closes_wp22a_and_authorizes_only_visual_increment_a() -> None:
+def test_status_closes_wp22a_and_prepares_integrated_visual_update() -> None:
     text = STATUS.read_text(encoding="utf-8")
 
-    assert (
-        "WP0–WP22A COMPLETE / WEB VISUAL REFRESH INCREMENT A AUTHORIZED"
-        in text
-    )
+    assert "WP0–WP22A COMPLETE" in text
     assert "Block E / WP22A Phase 5 — **ACCEPTED**" in text
     assert "Block E / WP22A overall — **COMPLETE**" in text
     assert "Block E — **COMPLETE (14%)**" in text
+    assert "PRODUCT IMPLEMENTATION PAUSED" in text
     assert (
-        "## Current next package — WEB-VISUAL-A — "
-        "Premium Spatial Financial OS Increment A — Design-system foundation"
+        "## Current next package — WEB-VISUAL-INTEGRATED — "
+        "Prepared A→G System Update / OWNER START REQUIRED"
         in text
     )
+    assert "START V10 WEB VISUAL SYSTEM UPDATE" in text
     assert "WP23+ LOCKED" in text
     assert "Accepted implementation progress is **54%**" in text
     assert "`PUBLIC_MULTI_USER_ENABLED=false` remains the safe default" in text
@@ -266,7 +265,7 @@ def test_phase5_product_identity_is_user_tenant_session_not_provider_authority()
     assert tenant["cross_tenant_negative_tests_required"] is True
 
 
-def test_visual_refresh_increment_a_is_explicitly_authorized_without_semantic_widening() -> None:
+def test_visual_refresh_increment_a_was_explicitly_authorized_by_phase5() -> None:
     payload = _json(PHASE5_CONTRACT)
     visual = payload["visual_refresh"]
     brief = VISUAL_BRIEF.read_text(encoding="utf-8")

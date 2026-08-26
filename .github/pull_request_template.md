@@ -1,18 +1,45 @@
 ## Что изменено
 
-Опишите одну логическую цель, current WP/maintenance defect и затронутые поверхности.
+Опишите одну логическую цель и выбранный execution unit.
 
 ## Причина / source of truth
 
 - Current accepted `main` SHA:
-- Current WP / defect:
+- Execution unit: `FOCUSED_CHANGE` / `INTEGRATED_SYSTEM_UPDATE`
+- Current WP / defect / System Update:
+- Member milestone(s), если integrated:
 - Master Plan / amendment / ADR / contract:
 - Почему изменение требуется сейчас:
+- OWNER START evidence, если требуется:
+
+## Integrated System Update law
+
+Canonical law: `docs/master-plan/OMNI_CIO_V10_INTEGRATED_SYSTEM_UPDATE_EXECUTION_AMENDMENT.md`.
+
+Для `FOCUSED_CHANGE` отметьте неприменимое как N/A. Для `INTEGRATED_SYSTEM_UPDATE`:
+
+- [ ] Canonical current status явно авторизует exact System Update и его ordered member milestones.
+- [ ] Branch Execution Ledger создан по `docs/updates/INTEGRATED_SYSTEM_UPDATE_EXECUTION_LEDGER_TEMPLATE.md`.
+- [ ] GitHub System Update dashboard issue создан через repository template.
+- [ ] Ledger/dashboard содержат `BRANCH-LOCAL EXECUTION STATE — NOT ACCEPTED MAIN AUTHORITY`.
+- [ ] Все required member milestones branch-local PASS в dependency order.
+- [ ] Mandatory split triggers проверены: DB/migration ordering, security/authority transition, dependency/toolchain boundary, OWNER/provider action, live/temporal evidence, production cutover, Real-money authority, reviewability limit.
+- [ ] `INTEGRATION_READY` установлен только после полного internal preflight и full-diff review.
+- [ ] Первый опубликованный implementation head является одним coherent completed head; temporary verifier commits/PRs не использовались.
+
+Execution Ledger / dashboard:
+
+```text
+ledger path:
+dashboard issue:
+INTEGRATION_READY: PASS/FAIL/N/A
+```
 
 ## Scope
 
-- [ ] Изменение относится к одному текущему V10 WP/maintenance defect/governance amendment.
-- [ ] Не смешан следующий WP или несвязанный feature work.
+- [ ] Изменение относится к одному текущему authorized execution unit.
+- [ ] Не смешан следующий major System Update или несвязанный feature work.
+- [ ] Member milestones integrated update не переставлены относительно dependency order.
 - [ ] Не создаётся duplicate Gateway/Web/Telegram/AI/scheduler/database/broker/execution stack.
 - [ ] Если scope materially изменился, существует OWNER-approved amendment, а не chat-only решение.
 
@@ -25,6 +52,8 @@
 - root cause:
 - какие аналогичные места/паттерны найдены поиском по repository:
 - blast radius:
+- directly coupled producers/consumers/config/workflows:
+- adjacent failure modes:
 - почему предыдущий preflight не поймал проблему:
 - permanent regression/guard:
 
@@ -52,6 +81,33 @@
 commands / focused results / reviewed official dependency state
 ```
 
+## HEAD FREEZE / verification batch
+
+После публикации verification SHA head заморожен, пока безопасные независимые applicable checks не достигнут terminal state. Первый обычный RED не является поводом немедленно пушить новый symptom-fix commit.
+
+- [ ] Safe batch наблюдался до терминального состояния всех доступных независимых checks.
+- [ ] Собран один consolidated finding inventory из Actions/Windows/Sonar/Gitar/SAST/browser/owning gates.
+- [ ] Findings сгруппированы по root cause / defect class.
+- [ ] `continue-on-error` не использован для fake GREEN.
+- [ ] Если продолжение могло раскрыть secret/private data, достичь broker/Real path, сделать destructive migration/provider mutation, uncontrolled spend или cross-tenant exposure — применён safety abort вместо ожидания.
+
+Consolidated finding inventory:
+
+```text
+verification SHA:
+terminal checks:
+findings/root-cause groups:
+safety abort: NO / reason
+```
+
+Correction batch, если нужен:
+
+```text
+all safe findings collected -> systemic hardening -> one coherent correction batch -> full focused preflight -> one new head -> fresh verification
+```
+
+Любой новый commit инвалидирует прежнее final exact-head GREEN evidence.
+
 ## Fault isolation / degraded behavior
 
 - [ ] Изменение не создаёт ненужный single point of failure для deterministic Core.
@@ -64,11 +120,14 @@ commands / focused results / reviewed official dependency state
 ## Authority / безопасность
 
 - [ ] Stable protected `app:app` сохранён, если owning accepted migration не заменяет его явно.
+- [ ] `PUBLIC_MULTI_USER_ENABLED=false` сохранён, если отдельный activation gate явно не является owning change.
 - [ ] `trading_methods=false` сохранён для текущего non-execution surface.
 - [ ] `REAL_TRADING_ENABLED=false` сохранён, если текущий later execution WP явно не авторизован Master Plan.
+- [ ] Broker write остаётся OFF без owning future gate.
 - [ ] Production READ / Sandbox / TRADE credentials не смешаны.
-- [ ] Не добавлены transfer/withdrawal, margin/short или новый broker-write bypass.
+- [ ] Не добавлены transfer/withdrawal, margin/leverage/uncovered-short или новый broker-write bypass.
 - [ ] В diff/log/artifact нет real token/key, Authorization header, full account ID, private portfolio payload, recovery/encryption key или raw OWNER identity.
+- [ ] Cross-tenant isolation сохраняется fail-closed.
 - [ ] Partial/stale/truncated/contradictory data не выдаются за complete/current.
 - [ ] Protected V9 rollback сохранён.
 
@@ -92,12 +151,11 @@ NONE / verified official starting URL + exact bounded action + expected non-secr
 
 ## V10 runtime / hosting boundary
 
-- [ ] V10 Web/API/application runtime остаётся на approved Lenovo/replacement Personal Node, если owning OWNER-approved amendment не меняет это явно.
-- [ ] `apps/web`/V10 Web строится/rendered/served на Personal Node по owning deployment contract.
-- [ ] Новый Render.com Web Service/worker/Postgres/deployment/paid plan не создаётся как V10 runtime.
-- [ ] Empty/new Render.com workspace не считается Omni-CIO authority.
-- [ ] Existing Render.com `app:app` сохранён только как protected V9 production/recovery baseline до owning parity/decommission gate.
-- [ ] WP22A/access provider используется как access/security transport к Personal-Node origin, а не как second application/private-state host.
+- [ ] Final public V10 Web/API/private-state runtime не зависит от OWNER home IP/Wi-Fi/router/LAN/Lenovo.
+- [ ] Production-provider apply/public cutover остаётся отдельным fail-closed gate и не выводится из planning/merge/System Update автоматически.
+- [ ] Existing Render.com `app:app` сохранён как protected V9 production/recovery baseline до owning parity/decommission gate.
+- [ ] Новый provider/runtime не создаёт competing second Web/API/private-state stack.
+- [ ] Paid/provider mutation имеет exact OWNER authority и cost revalidation, если применимо.
 
 ## Exact-head GREEN merge gate
 
@@ -138,20 +196,21 @@ NONE / exact prerequisite only; no secrets
 ## Контракты / документация / learning
 
 - [ ] Обновлены canonical docs/contracts; competing source of truth не создан.
-- [ ] WP execution contract/template отражает pre-CI, negative tests, rollback и Exit Gate.
+- [ ] WP/execution-unit contract отражает pre-CI, negative tests, rollback, internal milestone gates и final acceptance boundary.
 - [ ] Failure Learning Ledger обновлён, если неожиданный RED выявил reusable process/technical lesson.
-- [ ] Current status изменяется только из accepted evidence, не из draft intent.
+- [ ] Current status изменяется только из accepted evidence; integrated member checkboxes не повышают accepted percentage.
 - [ ] Исторические PR/issues не выдаются за current authority.
 
 ## Merge / после merge
 
 - [ ] Normal closure: PR будет закрыт squash merge только после полного GREEN exact-head gate.
 - [ ] Exact new `main` SHA будет проверен после merge.
-- [ ] Required post-merge Regression Shield должен быть GREEN до OWNER product acceptance/следующего WP.
+- [ ] Required post-merge Regression Shield должен быть GREEN до OWNER product acceptance/следующего major System Update.
 - [ ] OWNER product acceptance, если нужен, выполняется только после merge + post-merge GREEN.
-- [ ] Если OWNER acceptance найдёт defect: новая focused fix branch/PR; direct patch в `main` запрещён.
+- [ ] Если OWNER acceptance найдёт defect: новый authorized `FOCUSED_CHANGE` или correction path; direct patch в `main` запрещён.
 - [ ] Известен rollback/recovery path.
 
-## Следующий WP
+## Следующий milestone / System Update
 
-- [ ] Следующий WP остаётся LOCKED до полного Exit Gate текущего WP/status transition.
+- [ ] Следующий member milestone внутри того же authorized integrated update начинается только после branch-local predecessor Exit evidence.
+- [ ] Следующий **major System Update** остаётся LOCKED до полного integrated Exit Gate, merge, exact-main post-merge acceptance и canonical status transition.
