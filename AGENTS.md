@@ -33,7 +33,7 @@ The exact current state is always read from `knowledge/17_V10_CURRENT_PROGRAM_ST
 Current accepted snapshot:
 
 - V10 WP0–WP22A are accepted COMPLETE according to the current-status/evidence chain;
-- accepted V10 progress is **54%** because Block E has now passed the complete WP22A technical Exit Gate;
+- accepted V10 progress is **54%** because Block E has now passed the complete `WP22A — External Web Access / Product Authentication Security Gate` technical Exit Gate;
 - **WEB-VISUAL-A — Premium Spatial Financial OS / Design-system foundation is the only authorized current functional package**;
 - WP22A technical acceptance remains separate from the later public-production activation gate;
 - WP23+ remains LOCKED behind the accepted visual-refresh sequence and Master Plan authorization;
