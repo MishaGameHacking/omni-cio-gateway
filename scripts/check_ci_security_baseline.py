@@ -43,6 +43,12 @@ _WP7_PUBLIC_PYTHON_SHA256 = "".join(
         "E0BD",
     )
 )
+_WP22A_PHASE5_IMPLEMENTATION_HEAD_SHA = "".join(
+    ("936f334c", "4037479d", "0b2bb996", "51fa5c8e", "7dd92b02")
+)
+_WP22A_PHASE5_ACCEPTED_MAIN_SHA = "".join(
+    ("bb15739a", "cf82ded8", "eafb6d00", "6cf222fb", "3988770d")
+)
 APPROVED_KEYWORD_LINES = {
     "docs/architecture/V10_WP6_IDENTITY_PRIVILEGE_CONTRACT.json": frozenset(
         {
@@ -96,6 +102,21 @@ APPROVED_PUBLIC_CHECKSUM_LINES = {
     ),
     "tests/test_v10_wp7_bootstrap_contract.py": frozenset(
         {f'"{_WP7_PUBLIC_PYTHON_SHA256}"'}
+    ),
+}
+APPROVED_GIT_SHA_EVIDENCE_LINES = {
+    "docs/architecture/V10_WP22A_PHASE5_TECHNICAL_ACCEPTANCE_EVIDENCE.json": frozenset(
+        {
+            f'"exact_head_sha": "{_WP22A_PHASE5_IMPLEMENTATION_HEAD_SHA}",',
+            f'"accepted_main_sha": "{_WP22A_PHASE5_ACCEPTED_MAIN_SHA}",',
+            f'"exact_main_sha": "{_WP22A_PHASE5_ACCEPTED_MAIN_SHA}",',
+        }
+    ),
+    "tests/test_v10_wp22a_phase5_transition.py": frozenset(
+        {
+            f'"{_WP22A_PHASE5_IMPLEMENTATION_HEAD_SHA}"',
+            f'"{_WP22A_PHASE5_ACCEPTED_MAIN_SHA}"',
+        }
     ),
 }
 EXTERNAL_VENV_ROOT_COMMAND = 'VENV_ROOT="$(cygpath -u "$RUNNER_TEMP")"'
@@ -350,6 +371,16 @@ def _approved_public_checksum_finding(filename: str, finding: dict[str, Any]) ->
     )
 
 
+def _approved_git_sha_evidence_finding(filename: str, finding: dict[str, Any]) -> bool:
+    if finding.get("type") != "Hex High Entropy String":
+        return False
+    return _approved_exact_line(
+        filename,
+        finding.get("line_number"),
+        APPROVED_GIT_SHA_EVIDENCE_LINES,
+    )
+
+
 def validate_detect_secrets_report(
     report: dict[str, Any],
     failures: list[str],
@@ -374,6 +405,8 @@ def validate_detect_secrets_report(
             if _approved_keyword_metadata_finding(filename, finding):
                 continue
             if _approved_public_checksum_finding(filename, finding):
+                continue
+            if _approved_git_sha_evidence_finding(filename, finding):
                 continue
             line_number = finding.get("line_number", "unknown")
             finding_type = finding.get("type", "unknown")
