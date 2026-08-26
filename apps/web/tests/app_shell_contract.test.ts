@@ -85,11 +85,12 @@ test("browser code cannot persist credentials in Web Storage", () => {
   assert.match(api, /credentials:\s*["']same-origin["']/);
 });
 
-test("hosted browser keeps CSRF token in memory or same-origin cookie only", () => {
+test("hosted browser uses only the same-origin CSRF cookie as its token source", () => {
   const api = readFileSync(new URL("../src/app-shell/api.ts", import.meta.url), "utf8");
-  assert.match(api, /let remoteCsrfToken: string \| null = null/);
-  assert.match(api, /response\.headers\.get\(REMOTE_CSRF_HEADER\)/);
-  assert.match(api, /remoteCsrfToken \?\? readCookie\(REMOTE_CSRF_COOKIE\)/);
+  assert.match(api, /const csrf = readCookie\(REMOTE_CSRF_COOKIE\)/);
+  assert.match(api, /headers\.set\(REMOTE_CSRF_HEADER, csrf\)/);
+  assert.doesNotMatch(api, /remoteCsrfToken/);
+  assert.doesNotMatch(api, /response\.headers\.get\(REMOTE_CSRF_HEADER\)/);
   for (const identifier of forbiddenStorageIdentifiers) {
     assert.equal(api.includes(identifier), false);
   }
