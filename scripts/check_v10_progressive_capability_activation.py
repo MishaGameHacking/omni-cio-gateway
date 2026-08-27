@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import json
 from pathlib import Path
 import sys
@@ -43,9 +44,9 @@ CURRENT_CAPABILITY_STATES = {
     "tinvest_read": "BLOCKED_EXTERNAL",
 }
 WORKING_BANNER = "WORKING CAPABILITY ACTIVATION STATE — NOT ACCEPTED MAIN AUTHORITY"
-OBSOLETE_CURRENT_STATUS_ASSERTIONS = (
-    'assert "PUBLIC PRODUCTION ACTIVATION LOCKED" in ',
-    'assert "`PUBLIC_MULTI_USER_ENABLED=false` remains the safe default" in ',
+OBSOLETE_CURRENT_STATUS_MARKERS = (
+    "PUBLIC PRODUCTION ACTIVATION LOCKED",
+    "`PUBLIC_MULTI_USER_ENABLED=false` remains the safe default",
 )
 
 
@@ -308,7 +309,65 @@ def _validate_broker_and_security(payload: dict[str, Any], failures: list[str]) 
     _validate_runtime_defaults(payload, failures)
 
 
+def _asserted_string_literals(
+    text: str, label: str, failures: list[str]
+) -> set[str]:
+    try:
+        tree = ast.parse(text, filename=label)
+    except SyntaxError as exc:
+        failures.append(f"{label} is not valid Python: {exc}")
+        return set()
+
+    return {
+        node.value
+        for assertion in ast.walk(tree)
+        if isinstance(assertion, ast.Assert)
+        for node in ast.walk(assertion.test)
+        if isinstance(node, ast.Constant) and isinstance(node.value, str)
+    }
+
+
+def _obsolete_assertion_markers(
+    text: str, label: str, failures: list[str]
+) -> set[str]:
+    asserted_strings = _asserted_string_literals(text, label, failures)
+    return {
+        marker
+        for marker in OBSOLETE_CURRENT_STATUS_MARKERS
+        if any(marker in value for value in asserted_strings)
+    }
+
+
+def _validate_obsolete_assertion_guard(failures: list[str]) -> None:
+    probes = (
+        (
+            "single-quoted",
+            "assert 'PUBLIC PRODUCTION ACTIVATION LOCKED' in status",
+            "PUBLIC PRODUCTION ACTIVATION LOCKED",
+        ),
+        (
+            "multiline-concatenated",
+            'assert (\n    "`PUBLIC_MULTI_USER_ENABLED=false` remains "\n'
+            '    "the safe default"\n    in status\n)',
+            "`PUBLIC_MULTI_USER_ENABLED=false` remains the safe default",
+        ),
+    )
+    for probe_label, source, expected in probes:
+        observed = _obsolete_assertion_markers(
+            source, f"synthetic:{probe_label}", failures
+        )
+        if expected not in observed:
+            failures.append(
+                f"obsolete assertion guard missed {probe_label} semantic probe"
+            )
+
+    benign = "note = 'PUBLIC PRODUCTION ACTIVATION LOCKED'"
+    if _obsolete_assertion_markers(benign, "synthetic:benign", failures):
+        failures.append("obsolete assertion guard rejects a non-assert mention")
+
+
 def _validate_current_status_consumers(failures: list[str]) -> None:
+    _validate_obsolete_assertion_guard(failures)
     for path in STATUS_CONSUMER_TESTS:
         text = _read(path, failures)
         label = str(path.relative_to(ROOT))
@@ -318,11 +377,10 @@ def _validate_current_status_consumers(failures: list[str]) -> None:
             "BLOCKED_EXTERNAL",
         ):
             _require(text, marker, label, failures)
-        for obsolete in OBSOLETE_CURRENT_STATUS_ASSERTIONS:
-            if obsolete in text:
-                failures.append(
-                    f"{label} still asserts obsolete current-status marker: {obsolete}"
-                )
+        for obsolete in sorted(_obsolete_assertion_markers(text, label, failures)):
+            failures.append(
+                f"{label} still asserts obsolete current-status marker: {obsolete}"
+            )
 
 
 def _validate_documents(failures: list[str]) -> None:
