@@ -61,6 +61,58 @@ class OrgScopedNeonApi(_base.JsonApi):
             raise ProvisioningStopped("NEON_REGION_ORGANIZATION_DRIFT")
         return {"regions": [{"region_id": NEON_REGION}]}
 
+    @staticmethod
+    def _attempt_count(method: str) -> int:
+        if method == "GET":
+            return len(_ORG_SCOPE_423_RETRY_DELAYS_SECONDS) + 1
+        return 1
+
+    @staticmethod
+    def _raise_precise_auth_failure(exc: ProvisioningStopped) -> None:
+        if exc.status == 401:
+            raise ProvisioningStopped("NEON_API_KEY_INVALID", status=401) from None
+        if exc.status == 403:
+            raise ProvisioningStopped("NEON_API_KEY_INSUFFICIENT", status=403) from None
+
+    @staticmethod
+    def _should_retry_locked(
+        method: str,
+        exc: ProvisioningStopped,
+        attempt: int,
+        attempts: int,
+    ) -> bool:
+        return method == "GET" and exc.status == 423 and attempt + 1 < attempts
+
+    def _request_provider_with_retry(
+        self,
+        method: str,
+        path: str,
+        *,
+        body: object | None,
+        expected: frozenset[int],
+        timeout: float,
+    ) -> Any:
+        attempts = self._attempt_count(method)
+        for attempt in range(attempts):
+            try:
+                return self._call_provider(
+                    method,
+                    path,
+                    body=body,
+                    expected=expected,
+                    timeout=timeout,
+                )
+            except ProvisioningStopped as exc:
+                self._raise_precise_auth_failure(exc)
+                if not self._should_retry_locked(method, exc, attempt, attempts):
+                    raise
+                _base._emit(
+                    "NEON_API_HTTP_RETRY status=423 "
+                    f"attempt={attempt + 2}/{attempts}"
+                )
+                self._sleeper(_ORG_SCOPE_423_RETRY_DELAYS_SECONDS[attempt])
+        raise AssertionError("unreachable Neon org-scope request state")
+
     def request(
         self,
         method: str,
@@ -76,45 +128,13 @@ class OrgScopedNeonApi(_base.JsonApi):
             static_regions = self._static_region_response(safe_path)
             if static_regions is not None:
                 return static_regions
-
-        attempts = (
-            len(_ORG_SCOPE_423_RETRY_DELAYS_SECONDS) + 1
-            if safe_method == "GET"
-            else 1
+        return self._request_provider_with_retry(
+            safe_method,
+            safe_path,
+            body=body,
+            expected=expected,
+            timeout=timeout,
         )
-        for attempt in range(attempts):
-            try:
-                return self._call_provider(
-                    safe_method,
-                    safe_path,
-                    body=body,
-                    expected=expected,
-                    timeout=timeout,
-                )
-            except ProvisioningStopped as exc:
-                if exc.status == 401:
-                    raise ProvisioningStopped(
-                        "NEON_API_KEY_INVALID",
-                        status=401,
-                    ) from None
-                if exc.status == 403:
-                    raise ProvisioningStopped(
-                        "NEON_API_KEY_INSUFFICIENT",
-                        status=403,
-                    ) from None
-                if (
-                    safe_method == "GET"
-                    and exc.status == 423
-                    and attempt + 1 < attempts
-                ):
-                    _base._emit(
-                        "NEON_API_HTTP_RETRY status=423 "
-                        f"attempt={attempt + 2}/{attempts}"
-                    )
-                    self._sleeper(_ORG_SCOPE_423_RETRY_DELAYS_SECONDS[attempt])
-                    continue
-                raise
-        raise AssertionError("unreachable Neon org-scope request state")
 
 
 def _validate_neon_org_id(value: str) -> str:
