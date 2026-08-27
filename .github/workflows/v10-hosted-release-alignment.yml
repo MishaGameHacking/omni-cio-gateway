@@ -12,6 +12,10 @@ on:
   schedule:
     - cron: "23 3 * * *"
 
+permissions:
+  actions: read
+  contents: read
+
 concurrency:
   group: v10-hosted-release-alignment
   cancel-in-progress: false
@@ -19,9 +23,6 @@ concurrency:
 jobs:
   verify-hosted-release:
     name: Verify hosted preview release matches accepted main
-    permissions:
-      actions: read
-      contents: read
     if: >-
       (github.event_name == 'workflow_run' &&
        github.event.workflow_run.head_branch == 'main') ||
