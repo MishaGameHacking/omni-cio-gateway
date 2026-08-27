@@ -110,7 +110,7 @@ def validate_render_zero_charge_attestation(
 def _decode_json_object(raw: bytes, code: str) -> dict[str, Any]:
     try:
         payload = json.loads(raw)
-    except (UnicodeDecodeError, json.JSONDecodeEror):
+    except (UnicodeDecodeError, json.JSONDecodeError):
         raise BoundaryStopped(code) from None
     if not isinstance(payload, dict):
         raise BoundaryStopped(code)

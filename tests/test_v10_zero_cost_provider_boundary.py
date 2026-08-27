@@ -190,7 +190,7 @@ def test_neon_auth_failure_distinguishes_invalid_from_insufficient_scope(
     status: int,
     code: str,
 ) -> None:
-    def rejecting_opener(request: Request, *, timeout: int) -> FakeResponse:
+    def rejecting_opener(request: Request, *, timeout: float) -> FakeResponse:
         _assert_neon_request(request, timeout)
         _raise_http_error(status)
 
@@ -219,7 +219,7 @@ def test_transient_neon_http_failure_retries_before_success() -> None:
             _raise_http_error(503)
         return FakeResponse(
             {_ORGANIZATIONS_KEY: [{"id": _SAFE_ORGANIZATION_ID, "plan": "free"}]}
-         )
+        )
 
     verify_zero_cost_provider_boundary(
         env=_env(),
@@ -286,7 +286,7 @@ def test_paid_neon_plan_stops_before_provider_mutation() -> None:
 
 
 def test_network_exception_handling_uses_non_redundant_oserror_boundary() -> None:
-    source = SCRIT.read_text(encoding="utf-8")
+    source = SCRIPT.read_text(encoding="utf-8")
 
     assert "except (URLError, TimeoutError, OSError)" not in source
     assert "except OSError:" in source
@@ -311,7 +311,7 @@ def test_deployment_workflow_requires_fresh_attestation_and_test_toolchain() -> 
     assert "python scripts/check_v10_zero_cost_provider_boundary.py" in workflow
     assert workflow.index(
         "Verify exact-main Regression Shield before provider mutation"
-   ) < workflow.index(_BOUNDARY_STEP)
+    ) < workflow.index(_BOUNDARY_STEP)
     assert workflow.index(_BOUNDARY_STEP) < workflow.index(
         "Provision and deploy zero-cost synthetic preview"
     )
