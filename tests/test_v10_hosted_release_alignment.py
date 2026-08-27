@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 import sys
 from typing import Any
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 
 import pytest
 
@@ -178,6 +178,51 @@ def test_transient_health_failure_is_bounded_and_retryable() -> None:
 
     assert attempts == 2
     assert sleeps == [module._RETRY_DELAYS_SECONDS[0]]
+
+
+def test_urlerror_uses_bounded_network_retry_without_redundant_exception_tuple() -> None:
+    module = _module()
+    attempts = 0
+    sleeps: list[float] = []
+
+    def opener(request: Any, *, timeout: float) -> _Response:
+        nonlocal attempts
+        del request, timeout
+        attempts += 1
+        if attempts < 3:
+            raise URLError("temporary network failure")
+        return _Response(_payload())
+
+    module.verify_hosted_release_alignment(
+        EXPECTED_SHA,
+        opener=opener,
+        sleep=sleeps.append,
+    )
+
+    assert attempts == 3
+    assert sleeps == list(module._RETRY_DELAYS_SECONDS)
+
+
+def test_exhausted_network_retries_fail_closed() -> None:
+    module = _module()
+    attempts = 0
+    sleeps: list[float] = []
+
+    def opener(request: Any, *, timeout: float) -> _Response:
+        nonlocal attempts
+        del request, timeout
+        attempts += 1
+        raise TimeoutError("still unavailable")
+
+    with pytest.raises(module.AlignmentStopped, match="PREVIEW_HEALTH_NETWORK_ERROR"):
+        module.verify_hosted_release_alignment(
+            EXPECTED_SHA,
+            opener=opener,
+            sleep=sleeps.append,
+        )
+
+    assert attempts == 3
+    assert sleeps == list(module._RETRY_DELAYS_SECONDS)
 
 
 def test_workflow_detects_downstream_drift_even_when_deploy_failed() -> None:

@@ -7,7 +7,7 @@ import re
 import sys
 import time
 from typing import Any, Protocol
-from urllib.error import HTTPError, URLError
+from urllib.error import HTTPError
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 
@@ -65,6 +65,13 @@ class AlignmentStopped(RuntimeError):
         super().__init__(code)
 
 
+class _RetryableHealthError(RuntimeError):
+    def __init__(self, code: str, *, status: int | None = None) -> None:
+        self.code = code
+        self.status = status
+        super().__init__(code)
+
+
 def _release_sha(value: object, code: str) -> str:
     if not isinstance(value, str) or _SHA_PATTERN.fullmatch(value) is None:
         raise AlignmentStopped(code)
@@ -87,6 +94,51 @@ def _decode_payload(raw: bytes) -> dict[str, object]:
     return value
 
 
+def _request_health_once(open_url: OpenUrl) -> bytes:
+    request = Request(
+        _health_url(),
+        headers={
+            "Accept": "application/json",
+            "User-Agent": "omni-cio-v10-hosted-release-alignment",
+        },
+        method="GET",
+    )
+    try:
+        with open_url(request, timeout=_HTTP_TIMEOUT_SECONDS) as response:
+            status = int(response.status)
+            raw = response.read()
+    except HTTPError as exc:
+        status = int(exc.code)
+        if 300 <= status < 400:
+            raise AlignmentStopped(
+                "PREVIEW_HEALTH_REDIRECT_FORBIDDEN",
+                status=status,
+            ) from None
+        if status in _TRANSIENT_STATUSES:
+            raise _RetryableHealthError(
+                "PREVIEW_HEALTH_HTTP_ERROR",
+                status=status,
+            ) from None
+        raise AlignmentStopped(
+            "PREVIEW_HEALTH_HTTP_ERROR",
+            status=status,
+        ) from None
+    except OSError:
+        raise _RetryableHealthError("PREVIEW_HEALTH_NETWORK_ERROR") from None
+
+    if status in _TRANSIENT_STATUSES:
+        raise _RetryableHealthError(
+            "PREVIEW_HEALTH_UNEXPECTED_STATUS",
+            status=status,
+        )
+    if status != 200:
+        raise AlignmentStopped(
+            "PREVIEW_HEALTH_UNEXPECTED_STATUS",
+            status=status,
+        )
+    return raw
+
+
 def _read_health_payload(
     *,
     opener: OpenUrl | None = None,
@@ -95,46 +147,13 @@ def _read_health_payload(
     open_url = _NO_REDIRECT_OPENER.open if opener is None else opener
     attempts = len(_RETRY_DELAYS_SECONDS) + 1
     for attempt in range(attempts):
-        request = Request(
-            _health_url(),
-            headers={
-                "Accept": "application/json",
-                "User-Agent": "omni-cio-v10-hosted-release-alignment",
-            },
-            method="GET",
-        )
         try:
-            with open_url(request, timeout=_HTTP_TIMEOUT_SECONDS) as response:
-                status = int(response.status)
-                raw = response.read()
-        except HTTPError as exc:
-            status = int(exc.code)
-            if 300 <= status < 400:
-                raise AlignmentStopped(
-                    "PREVIEW_HEALTH_REDIRECT_FORBIDDEN",
-                    status=status,
-                ) from None
-            if status in _TRANSIENT_STATUSES and attempt + 1 < attempts:
-                sleep(_RETRY_DELAYS_SECONDS[attempt])
-                continue
-            raise AlignmentStopped(
-                "PREVIEW_HEALTH_HTTP_ERROR",
-                status=status,
-            ) from None
-        except (URLError, TimeoutError, OSError):
-            if attempt + 1 < attempts:
-                sleep(_RETRY_DELAYS_SECONDS[attempt])
-                continue
-            raise AlignmentStopped("PREVIEW_HEALTH_NETWORK_ERROR") from None
-
-        if status in _TRANSIENT_STATUSES and attempt + 1 < attempts:
+            raw = _request_health_once(open_url)
+        except _RetryableHealthError as exc:
+            if attempt + 1 >= attempts:
+                raise AlignmentStopped(exc.code, status=exc.status) from None
             sleep(_RETRY_DELAYS_SECONDS[attempt])
             continue
-        if status != 200:
-            raise AlignmentStopped(
-                "PREVIEW_HEALTH_UNEXPECTED_STATUS",
-                status=status,
-            )
         return _decode_payload(raw)
 
     raise AssertionError("hosted release alignment retry loop exhausted")
