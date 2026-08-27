@@ -108,6 +108,8 @@ def test_clean_room_project_create_reuses_base_target_without_provider_regions_c
 ) -> None:
     api = _api()
     calls: list[tuple[str, str]] = []
+    intercepted_region_paths: list[str] = []
+    original_region_response = api._static_region_response
     connection_uri = (
         "postgresql://neondb_owner:test-password@ep-test.neon.tech/"
         "neondb?sslmode=require"
@@ -131,11 +133,18 @@ def test_clean_room_project_create_reuses_base_target_without_provider_regions_c
             return {"uri": connection_uri}
         raise AssertionError((method, path))
 
+    def region_response(path: str) -> dict[str, object] | None:
+        if path.startswith("/regions"):
+            intercepted_region_paths.append(path)
+        return original_region_response(path)
+
     monkeypatch.setattr(api, "_call_provider", provider_call)
+    monkeypatch.setattr(api, "_static_region_response", region_response)
 
     target = provisioner._neon_target(api, _ORG_ID)
 
     assert target.project_id == _PROJECT["id"]
+    assert intercepted_region_paths == [f"/regions?org_id={_ORG_ID}"]
     assert all("/regions" not in path for _method, path in calls)
     assert ("POST", "/projects") in calls
 
