@@ -1,0 +1,79 @@
+{
+  "schema": "omni-cio.v10.capability-activation-ledger.v1",
+  "status": "CAPABILITY_STATE_AUTHORITY_WHEN_PRESENT_ON_ACCEPTED_MAIN",
+  "progress_authority": false,
+  "program_status_authority": "knowledge/17_V10_CURRENT_PROGRAM_STATUS.md",
+  "unlisted_capability_semantics": "NOT_ACCEPTED_IMPLEMENTED_AND_NO_AUTHORITY",
+  "allowed_states": [
+    "IMPLEMENTED",
+    "LIVE_OPERABLE",
+    "BLOCKED_EXTERNAL",
+    "REAL_MONEY_AUTHORIZED"
+  ],
+  "capabilities": [
+    {
+      "capability_id": "product_authentication_telegram_vk",
+      "state": "BLOCKED_EXTERNAL",
+      "implementation_evidence": [
+        "docs/architecture/V10_WP22A_PHASE5_TECHNICAL_ACCEPTANCE_EVIDENCE.md",
+        "knowledge/17_V10_CURRENT_PROGRAM_STATUS.md"
+      ],
+      "direct_gates": [
+        "PRODUCTION_PROVIDER_CONFIGURATION",
+        "PRODUCTION_CALLBACK_REGISTRATION",
+        "PRODUCTION_SECURITY_PRIVACY_CAPACITY_OPERATIONS"
+      ],
+      "external_blockers": [
+        "Production Telegram/VK provider credentials and callback registration are not accepted",
+        "Real-user production cutover is not accepted"
+      ],
+      "emergency_kill_switch_asserted": false,
+      "last_accepted_transition_date": "2026-08-27"
+    },
+    {
+      "capability_id": "public_multi_user_tenant_access",
+      "state": "BLOCKED_EXTERNAL",
+      "implementation_evidence": [
+        "docs/architecture/V10_WP22A_PHASE5_TECHNICAL_ACCEPTANCE_EVIDENCE.md",
+        "docs/architecture/V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_CONTRACT.json"
+      ],
+      "direct_gates": [
+        "PRODUCTION_MANAGED_CLOUD_APPLY",
+        "PERSONAL_DATA_PRIVACY_LEGAL",
+        "CAPACITY_LOAD_ABUSE",
+        "INCIDENT_MONITORING_RECOVERY",
+        "REAL_USER_CUTOVER"
+      ],
+      "external_blockers": [
+        "Final production apply and real-user cutover are not accepted",
+        "Production privacy/personal-data/legal/capacity/operations evidence is incomplete"
+      ],
+      "emergency_kill_switch_asserted": false,
+      "last_accepted_transition_date": "2026-08-27"
+    },
+    {
+      "capability_id": "t_invest_read_public_connector",
+      "state": "BLOCKED_EXTERNAL",
+      "implementation_evidence": [
+        "docs/master-plan/OMNI_CIO_V10_IDENTITY_MULTI_TENANT_ACCOUNT_AND_AUTHENTICATION_AMENDMENT.md",
+        "docs/master-plan/OMNI_CIO_V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_AMENDMENT.md"
+      ],
+      "direct_gates": [
+        "BROKER_TERMS_PERMISSION",
+        "TENANT_SCOPED_SECRET_CUSTODY",
+        "PRODUCTION_SECURITY_PRIVACY_LEGAL"
+      ],
+      "external_blockers": [
+        "Public T-Invest broker-terms permission has no accepted evidence",
+        "Production tenant-scoped broker secret custody has no accepted activation evidence"
+      ],
+      "emergency_kill_switch_asserted": false,
+      "last_accepted_transition_date": "2026-08-27"
+    }
+  ],
+  "notes": [
+    "No capability in this ledger is REAL_MONEY_AUTHORIZED as of Amendment 13 acceptance.",
+    "TRADE credential provisioning and real broker submission are intentionally absent until their owning implementation gates establish accepted implementation authority.",
+    "This ledger contains no raw provider/broker secrets, full account identifiers or private portfolio payloads."
+  ]
+}
