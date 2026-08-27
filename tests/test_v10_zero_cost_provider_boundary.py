@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import io
 import json
 from pathlib import Path
 from urllib.error import HTTPError
@@ -18,6 +19,11 @@ from scripts.check_v10_zero_cost_provider_boundary import (
 
 FIXED_NOW = datetime(2026, 8, 21, 9, 0, tzinfo=timezone.utc)
 VALID_ATTESTATION = "NO_PAYMENT_METHOD_CONFIRMED:2026-08-21T08:30:00Z"
+SCRIPT = (
+    Path(__file__).resolve().parents[1]
+    / "scripts"
+    / "check_v10_zero_cost_provider_boundary.py"
+)
 
 
 class FakeResponse:
@@ -31,8 +37,16 @@ class FakeResponse:
     def __exit__(self, *args: object) -> None:
         return None
 
-    def read(self) -> bytes:
-        return self._raw
+    def read(self, amount: int = -1) -> bytes:
+        if amount < 0:
+            return self._raw
+        return self._raw[:amount]
+
+
+class RawResponse(FakeResponse):
+    def __init__(self, raw: bytes, status: int = 200) -> None:
+        self.status = status
+        self._raw = raw
 
 
 def _opener(payload: object, *, status: int = 200):
@@ -47,6 +61,16 @@ def _env(attestation: str = VALID_ATTESTATION) -> dict[str, str]:
         "RENDER_ZERO_CHARGE_ATTESTATION": attestation,
         "NEON_API_KEY": "neon-token-must-never-leak",  # pragma: allowlist secret
     }
+
+
+def _http_error(status: int) -> HTTPError:
+    return HTTPError(
+        NEON_ORGANIZATIONS_URL,
+        status,
+        "provider response must stay sanitized",
+        hdrs=None,
+        fp=io.BytesIO(b"provider-body-must-not-leak"),
+    )
 
 
 def test_fresh_render_attestation_is_accepted() -> None:
@@ -121,13 +145,7 @@ def test_full_boundary_verification_is_read_only_and_never_prints_token(
 
 def test_provider_redirect_is_rejected_before_response_body_processing() -> None:
     def redirecting_opener(*args: object, **kwargs: object) -> FakeResponse:
-        raise HTTPError(
-            NEON_ORGANIZATIONS_URL,
-            302,
-            "redirect forbidden",
-            hdrs=None,
-            fp=None,
-        )
+        raise _http_error(302)
 
     with pytest.raises(
         BoundaryStopped,
@@ -137,6 +155,94 @@ def test_provider_redirect_is_rejected_before_response_body_processing() -> None
             env=_env(),
             now=FIXED_NOW,
             opener=redirecting_opener,
+        )
+
+
+@pytest.mark.parametrize(
+    ("status", "code"),
+    [
+        (401, "NEON_API_KEY_INVALID"),
+        (403, "NEON_API_KEY_INSUFFICIENT"),
+    ],
+)
+def test_neon_auth_failure_distinguishes_invalid_from_insufficient_scope(
+    status: int,
+    code: str,
+) -> None:
+    def rejecting_opener(*args: object, **kwargs: object) -> FakeResponse:
+        raise _http_error(status)
+
+    with pytest.raises(BoundaryStopped) as stopped:
+        verify_zero_cost_provider_boundary(
+            env=_env(),
+            now=FIXED_NOW,
+            opener=rejecting_opener,
+        )
+
+    assert stopped.value.code == code
+    assert stopped.value.status == status
+    assert "provider-body-must-not-leak" not in str(stopped.value)
+    assert "neon-token-must-never-leak" not in str(stopped.value)
+
+
+def test_transient_neon_http_failure_retries_before_success() -> None:
+    attempts = 0
+    sleeps: list[float] = []
+
+    def opener(*args: object, **kwargs: object) -> FakeResponse:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise _http_error(503)
+        return FakeResponse(
+            {"organizations": [{"id": "org-safe-preview", "plan": "free"}]}
+        )
+
+    verify_zero_cost_provider_boundary(
+        env=_env(),
+        now=FIXED_NOW,
+        opener=opener,
+        sleeper=sleeps.append,
+    )
+
+    assert attempts == 2
+    assert sleeps == [1.0]
+
+
+def test_exhausted_network_retries_fail_closed_without_secret_leak() -> None:
+    attempts = 0
+    sleeps: list[float] = []
+
+    def opener(*args: object, **kwargs: object) -> FakeResponse:
+        nonlocal attempts
+        attempts += 1
+        raise TimeoutError("network unavailable")
+
+    with pytest.raises(BoundaryStopped) as stopped:
+        verify_zero_cost_provider_boundary(
+            env=_env(),
+            now=FIXED_NOW,
+            opener=opener,
+            sleeper=sleeps.append,
+        )
+
+    assert stopped.value.code == "NEON_PLAN_PREFLIGHT_NETWORK_ERROR"
+    assert attempts == 3
+    assert sleeps == [1.0, 2.0]
+    assert "neon-token-must-never-leak" not in str(stopped.value)
+
+
+def test_oversized_neon_response_fails_closed_before_json_processing() -> None:
+    raw = b"{" + (b"x" * 1_048_576) + b"}"
+
+    with pytest.raises(
+        BoundaryStopped,
+        match="NEON_ORGANIZATIONS_RESPONSE_TOO_LARGE",
+    ):
+        verify_zero_cost_provider_boundary(
+            env=_env(),
+            now=FIXED_NOW,
+            opener=lambda *_args, **_kwargs: RawResponse(raw),
         )
 
 
@@ -153,6 +259,13 @@ def test_paid_neon_plan_stops_before_provider_mutation() -> None:
                 }
             ),
         )
+
+
+def test_network_exception_handling_uses_non_redundant_oserror_boundary() -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+
+    assert "except (URLError, TimeoutError, OSError)" not in source
+    assert "except OSError:" in source
 
 
 def test_deployment_workflow_requires_fresh_attestation_and_test_toolchain() -> None:
