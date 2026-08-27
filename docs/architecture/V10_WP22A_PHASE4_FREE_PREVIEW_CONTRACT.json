@@ -32,6 +32,10 @@
       "RENDER_API_KEY",
       "NEON_API_KEY"
     ],
+    "required_variable_names": [
+      "NEON_ORG_ID",
+      "RENDER_ZERO_CHARGE_ATTESTATION"
+    ],
     "secret_values_in_source_allowed": false,
     "secret_values_in_logs_allowed": false,
     "secret_values_in_artifacts_allowed": false,
@@ -57,6 +61,8 @@
     "major_version": 18,
     "region_preference": "EUROPE_FRANKFURT",
     "free_plan_required": true,
+    "organization_id_source": "GITHUB_ACTIONS_VARIABLE_NEON_ORG_ID",
+    "organization_scoped_api_key_supported": true,
     "tls_required": true,
     "pooled_runtime_connection_required": true,
     "migration_connection_separate_when_supported": true,
