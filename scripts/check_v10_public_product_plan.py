@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import sys
+from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -15,8 +16,16 @@ ROLE_AMENDMENT = (
     ROOT
     / "docs/master-plan/OMNI_CIO_V10_PRODUCT_USER_AND_ENGINEERING_AUTHORITY_BOUNDARY_AMENDMENT.md"
 )
+PROGRESSIVE_AMENDMENT = (
+    ROOT / "docs/master-plan/"
+    "OMNI_CIO_V10_LIVE_USER_OPERABILITY_AND_PROGRESSIVE_CAPABILITY_"
+    "ACTIVATION_AMENDMENT.md"
+)
 CONTRACT = (
     ROOT / "docs/architecture/V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_CONTRACT.json"
+)
+PROGRESSIVE_CONTRACT = (
+    ROOT / "docs/architecture/V10_PROGRESSIVE_CAPABILITY_ACTIVATION_CONTRACT.json"
 )
 
 LIVE_PRODUCT_AUTHORITY = (
@@ -52,14 +61,24 @@ def require(text: str, marker: str, label: str, failures: list[str]) -> None:
         failures.append(f"{label} missing marker: {marker}")
 
 
-def validate_contract(failures: list[str]) -> None:
-    raw = read_text(CONTRACT, failures)
+def load_json(path: Path, label: str, failures: list[str]) -> dict[str, Any]:
+    raw = read_text(path, failures)
     if not raw:
-        return
+        return {}
     try:
         payload = json.loads(raw)
     except json.JSONDecodeError as exc:
-        failures.append(f"public hosted runtime contract JSON invalid: {exc}")
+        failures.append(f"{label} JSON invalid: {exc}")
+        return {}
+    if not isinstance(payload, dict):
+        failures.append(f"{label} root must be an object")
+        return {}
+    return payload
+
+
+def validate_historical_public_contract(failures: list[str]) -> None:
+    payload = load_json(CONTRACT, "public hosted runtime contract", failures)
+    if not payload:
         return
 
     expected_false = {
@@ -117,32 +136,76 @@ def validate_contract(failures: list[str]) -> None:
 
     for section, key in expected_false:
         if payload.get(section, {}).get(key) is not False:
-            failures.append(f"contract must keep {section}.{key}=false")
+            failures.append(f"historical contract must keep {section}.{key}=false")
     for section, key in expected_true:
         if payload.get(section, {}).get(key) is not True:
-            failures.append(f"contract must keep {section}.{key}=true")
+            failures.append(f"historical contract must keep {section}.{key}=true")
 
-    if (
-        payload.get("initial_access_model", {}).get("future_monetization_state")
-        != "DEFERRED_OPTIONAL"
+    if payload.get("initial_access_model", {}).get("future_monetization_state") != (
+        "DEFERRED_OPTIONAL"
     ):
         failures.append("future monetization must remain DEFERRED_OPTIONAL")
-    if (
-        payload.get("broker_credentials", {}).get("ownership")
-        != "TENANT_SCOPED_BROKER_CONNECTION"
+    if payload.get("broker_credentials", {}).get("ownership") != (
+        "TENANT_SCOPED_BROKER_CONNECTION"
     ):
         failures.append(
             "broker credential ownership must remain TENANT_SCOPED_BROKER_CONNECTION"
         )
-    if (
-        payload.get("t_invest", {}).get("public_connector_default")
-        != "FAIL_CLOSED_PENDING_BROKER_TERMS_PERMISSION"
+    if payload.get("t_invest", {}).get("public_connector_default") != (
+        "FAIL_CLOSED_PENDING_BROKER_TERMS_PERMISSION"
     ):
         failures.append(
             "T-Invest public connector must remain fail-closed pending broker terms"
         )
     if payload.get("safety", {}).get("app_entrypoint") != "app:app":
         failures.append("protected app entrypoint must remain app:app")
+
+
+def validate_progressive_contract(failures: list[str]) -> None:
+    payload = load_json(
+        PROGRESSIVE_CONTRACT,
+        "progressive capability activation contract",
+        failures,
+    )
+    if not payload:
+        return
+
+    if payload.get("activation_states") != [
+        "IMPLEMENTED",
+        "LIVE_OPERABLE",
+        "BLOCKED_EXTERNAL",
+        "REAL_MONEY_AUTHORIZED",
+    ]:
+        failures.append("progressive activation state enum changed")
+
+    runtime = payload.get("current_runtime_defaults", {})
+    for key in (
+        "PUBLIC_MULTI_USER_ENABLED",
+        "trading_methods",
+        "broker_write",
+        "REAL_TRADING_ENABLED",
+    ):
+        if runtime.get(key) is not False:
+            failures.append(f"governance PR must keep current {key}=false")
+    if runtime.get("public_tinvest_state") != (
+        "FAIL_CLOSED_PENDING_BROKER_TERMS_PERMISSION"
+    ):
+        failures.append("progressive contract widened current public T-Invest state")
+
+    broker = payload.get("broker", {})
+    if broker.get("read_independent_from_real_execution") is not True:
+        failures.append("READ must remain independent from unfinished Real execution")
+    if broker.get("trade_credential_connected_does_not_authorize_submit") is not True:
+        failures.append("TRADE credential connection must not authorize submit")
+    if broker.get("real_submit_requires_state") != "REAL_MONEY_AUTHORIZED":
+        failures.append("real submit must require REAL_MONEY_AUTHORIZED")
+    for key in (
+        "transfer_withdrawal_authority",
+        "margin_leverage_authority",
+        "uncovered_short_authority",
+    ):
+        if broker.get(key) is not False:
+            failures.append(f"progressive contract must keep broker.{key}=false")
 
 
 def validate_live_authority(failures: list[str]) -> None:
@@ -212,19 +275,35 @@ def validate_live_authority(failures: list[str]) -> None:
     ):
         require(role, marker, str(ROLE_AMENDMENT.relative_to(ROOT)), failures)
 
+    progressive = read_text(PROGRESSIVE_AMENDMENT, failures)
+    for marker in (
+        "one canonical Omni-CIO Web",
+        "`LIVE_OPERABLE` does not imply Real-money broker-submit authority",
+        "READ credential is a normal read capability, not Real-money execution authority",
+        "`TRADE credential connected/verified`",
+        "current runtime state**, not a permanent V10-wide release lock",
+    ):
+        require(
+            progressive, marker, str(PROGRESSIVE_AMENDMENT.relative_to(ROOT)), failures
+        )
+
     status = read_text(ROOT / "knowledge/17_V10_CURRENT_PROGRAM_STATUS.md", failures)
     for marker in (
         "Accepted implementation progress is **54%**",
-        "public multi-user activation — **APPROVED TARGET / IMPLEMENTATION FLAG REMAINS OFF UNTIL",
-        "`PUBLIC_MULTI_USER_ENABLED=false` remains the safe default",
+        "Amendment 13 — progressive capability activation",
+        "telegram_login | `BLOCKED_EXTERNAL`",
+        "tinvest_read | `BLOCKED_EXTERNAL`",
+        "current runtime state, not a V10-wide release lock",
         "WP22A — External Web Access / Product Authentication Security Gate",
+        "Public T-Invest-backed production functionality remains **FAIL_CLOSED_PENDING_BROKER_TERMS_PERMISSION**",
     ):
         require(status, marker, "current status", failures)
 
 
 def main() -> int:
     failures: list[str] = []
-    validate_contract(failures)
+    validate_historical_public_contract(failures)
+    validate_progressive_contract(failures)
     validate_live_authority(failures)
 
     if failures:
@@ -233,9 +312,9 @@ def main() -> int:
         return 1
 
     print(
-        "V10 public product plan guard passed: public Internet-only hosted target, no-home "
-        "production, free initial launch, ordinary USER identity and tenant-scoped broker "
-        "credentials are locked."
+        "V10 public product plan guard passed: public hosted target, progressive "
+        "capability activation, free initial access, tenant-scoped broker credentials "
+        "and Real-money separation are locked."
     )
     return 0
 

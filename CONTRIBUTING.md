@@ -10,10 +10,10 @@ V9 WP0–WP15 завершены и owner-accepted; V9 runtime остаётся 
 2. Прочитайте `README.md`, `docs/README.md` и `docs/DOCUMENTATION_AUTHORITY_AND_LIFECYCLE.md`.
 3. Прочитайте `knowledge/00_PROJECT_MASTER_CONTEXT.md`.
 4. Прочитайте `knowledge/16_CURRENT_PROGRAM_STATUS.md` для текущего V9 runtime baseline.
-5. Прочитайте `docs/master-plan/OMNI_CIO_V10_PROGRAM_LOCK.md`, `docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.md`, `docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md` и все active amendments, включая `OMNI_CIO_V10_INTEGRATED_SYSTEM_UPDATE_EXECUTION_AMENDMENT.md`.
-6. Прочитайте `docs/architecture/V10_INTEGRATED_SYSTEM_UPDATE_EXECUTION_CONTRACT.json` и `docs/master-plan/OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md`.
-7. Прочитайте `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md` — единственный accepted V10 progress/current-next execution ledger.
-8. Прочитайте профильные architecture/security/recovery/runbook/ledger current execution unit.
+5. Прочитайте `docs/master-plan/OMNI_CIO_V10_PROGRAM_LOCK.md`, `docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.md`, `docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md` и все active amendments, включая `OMNI_CIO_V10_INTEGRATED_SYSTEM_UPDATE_EXECUTION_AMENDMENT.md` и `OMNI_CIO_V10_LIVE_USER_OPERABILITY_AND_PROGRESSIVE_CAPABILITY_ACTIVATION_AMENDMENT.md`.
+6. Прочитайте `docs/architecture/V10_INTEGRATED_SYSTEM_UPDATE_EXECUTION_CONTRACT.json`, `docs/architecture/V10_PROGRESSIVE_CAPABILITY_ACTIVATION_CONTRACT.json` и `docs/master-plan/OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md`.
+7. Прочитайте `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md` — единственный accepted V10 progress/current-next execution/capability-state ledger.
+8. Прочитайте профильные architecture/security/recovery/runbook/ledger current execution unit/capability transition.
 9. Для current GPT/config/recovery задач прочитайте `gpt/SETUP_INDEX.md` и `gpt/CONFIGURATION.md`.
 10. Проверьте actual `main`, open PR/issues и latest GitHub Actions.
 
@@ -29,8 +29,12 @@ V9 WP0–WP15 завершены и owner-accepted; V9 runtime остаётся 
 - WP0–WP22A are accepted COMPLETE; accepted progress remains 54%.
 - Engineering Quality / Pre-CI / Green-Merge governance: **accepted and active**.
 - **Integrated System Update Execution Law** / Amendment 12 governs delivery granularity when accepted on protected `main`.
-- Post-Amendment-12 product state: `PRODUCT IMPLEMENTATION PAUSED`; next prepared update `WEB-VISUAL-INTEGRATED`; exact OWNER command required to start product work: `START V10 WEB VISUAL SYSTEM UPDATE`.
-- WP23+, public production activation, broker write and Real execution remain locked.
+- **Live User Operability & Progressive Capability Activation Law** / Amendment 13 governs capability-activation granularity when accepted on protected `main`.
+- Product implementation remains `PAUSED`; next prepared update `WEB-VISUAL-INTEGRATED`; exact OWNER command required to start product work: `START V10 WEB VISUAL SYSTEM UPDATE`.
+- WP23+ remains locked behind the complete visual System Update and Master Plan sequence.
+- Current Telegram Login, VK ID, public multi-user tenant access and public T-Invest READ remain `BLOCKED_EXTERNAL`; Amendment 13 itself does not provision secrets/providers or activate them.
+- Current `PUBLIC_MULTI_USER_ENABLED=false` is a runtime state, not a permanent V10-wide release lock.
+- Broker write and Real execution remain locked; `LIVE_OPERABLE` never implies `REAL_MONEY_AUTHORIZED`.
 
 Do not maintain a second `NEXT` or V10 percentage in this contributor guide; the lines above are only a convenience summary and defer to current status.
 
@@ -50,6 +54,33 @@ Every integrated update must keep:
 - banner `BRANCH-LOCAL EXECUTION STATE — NOT ACCEPTED MAIN AUTHORITY` in both working records.
 
 Before external publication, complete every required member milestone, focused/local checks, full-diff review, coupled-surface review, analogous-pattern/adjacent-failure review, regression guards and mandatory split-trigger review. Only then mark `INTEGRATION_READY`.
+
+## Progressive Capability Activation
+
+For implemented user-facing capability use only these activation states:
+
+`IMPLEMENTED | LIVE_OPERABLE | BLOCKED_EXTERNAL | REAL_MONEY_AUTHORIZED`.
+
+Do not assign an activation state to an unimplemented future capability merely to imply progress.
+
+Rules:
+
+- one canonical Omni-CIO Web is the ordinary product surface; do not create a second user-facing staging product merely to test completed capabilities;
+- local/CI/provider doubles, synthetic fixtures, T-Invest Sandbox and Shadow Mode remain engineering/safety contours, not product-auth/tenant bypasses;
+- a completed capability becomes `LIVE_OPERABLE` only after all gates that actually own it pass, and then must not stay disabled solely because unrelated later V10 work is unfinished;
+- `V10 is not finished yet` is not a valid external blocker;
+- real provider registration/secrets, broker terms/permission, tenant secret custody, privacy/legal, managed runtime, capacity/monitoring/incident operations remain real `BLOCKED_EXTERNAL` gates until accepted evidence exists;
+- T-Invest READ/live portfolio/positions/operations are independent of unfinished Real execution, but public use remains blocked until broker terms/permission and tenant secret-custody/security/privacy/live-connection gates pass;
+- a future TRADE credential may be connected/validated only through its accepted provisioning/security flow; `TRADE credential connected/verified` never means submit authority;
+- execution eligibility remains `VERIFIED_READ_ACCOUNTS ∩ VERIFIED_TRADE_ACCOUNTS`; mismatch fails closed;
+- real broker submit requires `REAL_MONEY_AUTHORIZED` after its complete Sandbox/Shadow, immutable-plan, USER-approval, drift/preflight, reconciliation, kill-switch and broker-permission gate;
+- transfer/withdrawal, margin/leverage and uncovered-short remain forbidden unless a later explicit authority changes scope;
+- real-user operability and multi-user isolation become part of Definition of Done where live proof is possible;
+- material capability-state transitions use `docs/updates/V10_CAPABILITY_ACTIVATION_LEDGER_TEMPLATE.md` plus `.github/ISSUE_TEMPLATE/v10_capability_activation.yml` with banner `WORKING CAPABILITY ACTIVATION STATE — NOT ACCEPTED MAIN AUTHORITY`;
+- accepted capability state and temporary runtime availability/kill-switch suspension are tracked separately;
+- no provider/broker secret, Authorization header, full broker account ID or private portfolio payload may be stored in GitHub/CI/chat/activation evidence.
+
+Capability activation never silently unlocks a later implementation WP/System Update and never weakens Amendment-12 exact-head/HEAD-FREEZE discipline.
 
 ## HEAD FREEZE / correction-batch law
 
@@ -93,22 +124,27 @@ WP numbering alone is not a split trigger.
 - Сохранять стабильный V9 Render entrypoint `app:app`, пока отдельный accepted V10 migration package не докажет replacement.
 - Internal Python engine не считать GPT Action, если его operationId отсутствует в effective production OpenAPI.
 - `docs/architecture/REPOSITORY_STRUCTURE.md` определяет canonical repository ownership.
-- `scripts/check_v10_repository_boundaries.py`, `scripts/check_v10_engineering_governance.py`, `scripts/check_v10_integrated_system_update_governance.py` и `scripts/check_v10_documentation_consistency.py` являются обязательными guards и не должны ослабляться ради merge.
+- `scripts/check_v10_repository_boundaries.py`, `scripts/check_v10_engineering_governance.py`, `scripts/check_v10_integrated_system_update_governance.py`, `scripts/check_v10_progressive_capability_activation.py` и `scripts/check_v10_documentation_consistency.py` являются обязательными guards и не должны ослабляться ради merge.
 
 ### Broker contours
 
 Production intentionally contains isolated READ/Sandbox/Real contours. Do not collapse these boundaries.
 
+READ is not Real-money authority. Once the actual public T-Invest broker-terms/permission plus tenant secret-custody/security/privacy/live-connection gates pass, READ/live portfolio/positions/operations may become `LIVE_OPERABLE` without waiting for unfinished Real execution.
+
+A future accepted TRADE credential provisioning flow may connect/validate a tenant-scoped TRADE role, but that is distinct from broker submit. `EXECUTABLE_ACCOUNTS = VERIFIED_READ_ACCOUNTS ∩ VERIFIED_TRADE_ACCOUNTS` remains mandatory and TRADE is never a READ fallback.
+
 Real execution remains later-gated, exact-user-confirmed, immutable, idempotent and broker-reconciled. No transfer/withdrawal, margin/leverage/uncovered-short authority or autonomous recurring real-money execution may be introduced outside its owning future gate.
 
-`trading_methods=false` and `REAL_TRADING_ENABLED=false` remain protected. `START V10`, Amendment 12, an internal milestone, development approval, AI output or alert acknowledgement is not broker-submit authorization.
+`trading_methods=false` and `REAL_TRADING_ENABLED=false` remain current protected defaults. `START V10`, Amendment 12/13, an internal milestone, `LIVE_OPERABLE`, development approval, AI output or alert acknowledgement is not broker-submit authorization.
 
 ### Public product
 
-- `PUBLIC_MULTI_USER_ENABLED=false` remains the safe default until its separate activation gate.
+- `PUBLIC_MULTI_USER_ENABLED=false` is the current fail-closed runtime state, not a permanent V10-wide release lock.
+- A future capability-specific activation may change that state only after all authentication/multi-user provider/runtime/privacy/legal/capacity/monitoring gates are actually accepted.
 - Final public production must not depend on OWNER home IP/Wi-Fi/router/LAN/Lenovo.
 - Final public Web/API/private-state hosting uses the accepted managed-cloud boundary selected by owning authority.
-- Public T-Invest functionality remains `FAIL_CLOSED_PENDING_BROKER_TERMS_PERMISSION`.
+- Public T-Invest functionality remains `FAIL_CLOSED_PENDING_BROKER_TERMS_PERMISSION` until actual broker terms/permission plus secret-custody/security/privacy gates pass.
 - Initial USER access remains free; billing/trial/subscription/premium gating stay disabled until separately changed by accepted authority.
 
 ### Data/security
@@ -164,7 +200,7 @@ Canonical Python dependency sources/locks remain `requirements.in`, `requirement
 10. Require fresh final DRAFT GREEN, independent review, READY fresh GREEN, zero blockers.
 11. Squash merge, exact-main Regression Shield/owning post-merge gates, then status transition.
 
-Repository merge сам по себе не меняет GPT Editor и не расширяет Real-money/public-production authority.
+For a user-facing capability transition, fill the progressive activation section in `OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md`; if the transition is material, maintain the Capability Activation Ledger/dashboard. Repository merge itself does not make a capability live and never expands Real-money authority.
 
 ## Минимальные проверки
 
@@ -176,6 +212,7 @@ python scripts/check_repository_layout.py
 python scripts/check_v10_repository_boundaries.py
 python scripts/check_v10_engineering_governance.py
 python scripts/check_v10_integrated_system_update_governance.py
+python scripts/check_v10_progressive_capability_activation.py
 python scripts/check_v10_documentation_consistency.py
 python scripts/check_gpt_recovery_consistency.py
 python -m ruff check .
@@ -197,6 +234,10 @@ PR должен объяснять:
 - полный changed surface и coupled producers/consumers;
 - mandatory split-trigger review для integrated work;
 - `INTEGRATION_READY` evidence для integrated work;
+- affected user-facing capability IDs/current/proposed activation state, if any;
+- specific external blockers rather than “V10 unfinished”;
+- real-user/multi-user isolation evidence when applicable;
+- broker READ/TRADE/Real-money separation when applicable;
 - verification SHA + HEAD FREEZE consolidated finding inventory;
 - correction batch/root-cause groups, если применимо;
 - runtime/data/GPT/public/broker contours;
@@ -212,4 +253,4 @@ PR должен объяснять:
 
 Не переписывайте исторический смысл merged PR/closed issue/WP record так, будто он всегда описывал текущее состояние. Если старый файл может ввести в заблуждение, добавьте lifecycle/supersession note и ссылку на current status.
 
-Current status должен жить в canonical status file, а не в случайном старом комментарии, dashboard checkbox или branch Execution Ledger.
+Current status должен жить в canonical status file, а не в случайном старом комментарии, dashboard checkbox, branch Execution Ledger или Capability Activation Ledger.

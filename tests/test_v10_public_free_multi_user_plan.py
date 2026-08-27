@@ -15,7 +15,16 @@ ROLE_AMENDMENT = (
     ROOT
     / "docs/master-plan/OMNI_CIO_V10_PRODUCT_USER_AND_ENGINEERING_AUTHORITY_BOUNDARY_AMENDMENT.md"
 )
+PROGRESSIVE_AMENDMENT = (
+    ROOT
+    / "docs/master-plan/"
+    "OMNI_CIO_V10_LIVE_USER_OPERABILITY_AND_PROGRESSIVE_CAPABILITY_"
+    "ACTIVATION_AMENDMENT.md"
+)
 CONTRACT = ROOT / "docs/architecture/V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_CONTRACT.json"
+PROGRESSIVE_CONTRACT = (
+    ROOT / "docs/architecture/V10_PROGRESSIVE_CAPABILITY_ACTIVATION_CONTRACT.json"
+)
 
 LIVE_PRODUCT_AUTHORITY = (
     ROOT / "AGENTS.md",
@@ -37,7 +46,9 @@ def _text(path: Path) -> str:
 def test_public_hosted_amendments_and_contract_exist() -> None:
     assert PUBLIC_AMENDMENT.is_file()
     assert ROLE_AMENDMENT.is_file()
+    assert PROGRESSIVE_AMENDMENT.is_file()
     assert CONTRACT.is_file()
+    assert PROGRESSIVE_CONTRACT.is_file()
 
     payload = json.loads(_text(CONTRACT))
     product_target = payload["product_target"]
@@ -116,7 +127,10 @@ def test_project_owner_is_not_a_product_superuser() -> None:
     role = _text(ROLE_AMENDMENT)
     assert "PROJECT OWNER is not a special Omni-CIO product user" in role
     assert "PROJECT OWNER using Omni-CIO == ordinary USER using Omni-CIO" in role
-    assert "engineering authority to operate the service != product authority to read/use a tenant" in role
+    assert (
+        "engineering authority to operate the service != product authority to read/use a tenant"
+        in role
+    )
 
     agents = _text(ROOT / "AGENTS.md")
     assert "PROJECT OWNER is not a special Omni-CIO product role" in agents
@@ -155,7 +169,7 @@ def test_public_production_cannot_depend_on_owner_home_or_lenovo() -> None:
     assert "must not depend on PROJECT OWNER home public IP" in execution
 
 
-def test_initial_launch_is_free_but_public_activation_remains_gated() -> None:
+def test_initial_launch_free_model_and_progressive_activation_coexist() -> None:
     amendment = _text(PUBLIC_AMENDMENT)
     for marker in (
         "`BILLING_ENABLED=false`",
@@ -167,12 +181,16 @@ def test_initial_launch_is_free_but_public_activation_remains_gated() -> None:
     ):
         assert marker in amendment
 
+    progressive = _text(PROGRESSIVE_AMENDMENT)
+    assert "one canonical Omni-CIO Web" in progressive
+    assert "A user-facing capability" in progressive
+    assert "unrelated later V10 blocks" in progressive
+
     status = _text(ROOT / "knowledge/17_V10_CURRENT_PROGRAM_STATUS.md")
-    assert (
-        "public multi-user activation — **APPROVED TARGET / IMPLEMENTATION FLAG REMAINS OFF UNTIL"
-        in status
-    )
-    assert "`PUBLIC_MULTI_USER_ENABLED=false` remains the safe default" in status
+    assert "Amendment 13 — progressive capability activation" in status
+    assert "current runtime state, not a V10-wide release lock" in status
+    assert "telegram_login | `BLOCKED_EXTERNAL`" in status
+    assert "tinvest_read | `BLOCKED_EXTERNAL`" in status
     assert "WP23+ remains locked" in status
 
 
@@ -201,14 +219,26 @@ def test_broker_credentials_are_tenant_owned_not_global() -> None:
     assert "`REAL_TRADING_ENABLED=false`" in status
 
 
-def test_t_invest_public_connector_stays_separate_fail_closed_gate() -> None:
+def test_t_invest_read_is_progressive_but_terms_stay_fail_closed() -> None:
     amendment = _text(PUBLIC_AMENDMENT)
-    assert "public Omni-CIO account/Web activation and public T-Invest connector activation are separate gates" in amendment
+    assert (
+        "public Omni-CIO account/Web activation and public T-Invest connector activation "
+        "are separate gates" in amendment
+    )
     assert "user-supplied tokens do not by themselves waive" in amendment
 
     contract = json.loads(_text(CONTRACT))
-    assert contract["t_invest"]["public_connector_default"] == "FAIL_CLOSED_PENDING_BROKER_TERMS_PERMISSION"
+    assert contract["t_invest"]["public_connector_default"] == (
+        "FAIL_CLOSED_PENDING_BROKER_TERMS_PERMISSION"
+    )
     assert contract["t_invest"]["user_supplied_token_waives_broker_terms"] is False
+
+    progressive = json.loads(_text(PROGRESSIVE_CONTRACT))
+    broker = progressive["broker"]
+    assert broker["read_independent_from_real_execution"] is True
+    assert broker["read_live_operability_must_not_wait_real_execution"] is True
+    assert broker["trade_credential_connected_does_not_authorize_submit"] is True
+    assert broker["real_submit_requires_state"] == "REAL_MONEY_AUTHORIZED"
 
 
 def test_planning_change_does_not_expand_money_authority() -> None:
@@ -221,3 +251,14 @@ def test_planning_change_does_not_expand_money_authority() -> None:
         "protected V9 rollback",
     ):
         assert marker in amendment
+
+    progressive = json.loads(_text(PROGRESSIVE_CONTRACT))
+    runtime = progressive["current_runtime_defaults"]
+    assert runtime["trading_methods"] is False
+    assert runtime["broker_write"] is False
+    assert runtime["REAL_TRADING_ENABLED"] is False
+
+    broker = progressive["broker"]
+    assert broker["transfer_withdrawal_authority"] is False
+    assert broker["margin_leverage_authority"] is False
+    assert broker["uncovered_short_authority"] is False

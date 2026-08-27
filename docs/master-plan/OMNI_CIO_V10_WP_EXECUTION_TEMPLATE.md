@@ -10,6 +10,8 @@ Amendment 12 / Integrated System Update Execution Law adds two valid execution u
 - `FOCUSED_CHANGE` — isolated defect/governance/maintenance/mandatory split;
 - `INTEGRATED_SYSTEM_UPDATE` — one coherent OWNER-authorized system update with ordered member WP/increments, one integrated branch and one final PR by default.
 
+Amendment 13 / Live User Operability & Progressive Capability Activation Law additionally requires every user-facing execution unit to distinguish accepted implementation from live-user capability activation. Completed user-facing capability must not wait for unrelated later blocks after all gates that actually own that capability are accepted.
+
 ## 1. Execution-unit / WP identity
 
 - Execution unit: `FOCUSED_CHANGE` / `INTEGRATED_SYSTEM_UPDATE`
@@ -22,8 +24,12 @@ Amendment 12 / Integrated System Update Execution Law adds two valid execution u
 - Prior dependency/Exit Gate proven by:
 - Branch-scoped Execution Ledger path, if integrated:
 - GitHub System Update dashboard issue, if integrated:
+- User-facing capability IDs affected, if any:
+- Capability Activation Ledger/dashboard required: YES/NO + reason
 
 For `INTEGRATED_SYSTEM_UPDATE`, a member milestone may become branch-local `DONE` only after its own internal Exit criteria pass. That state does not advance accepted V10 progress, change `main`, unlock a later major update, authorize public production or authorize broker/Real execution.
+
+For user-facing capability work, an implementation/member milestone PASS also does not by itself mean `LIVE_OPERABLE` or `REAL_MONEY_AUTHORIZED`.
 
 ## 2. Accepted baseline
 
@@ -147,11 +153,54 @@ For any Web/runtime/provider work state explicitly:
 - whether an OWNER/provider action is a mandatory split trigger;
 - how the protected V9 Render.com `app:app` baseline remains untouched until its owning parity/decommission gate.
 
-Public-production mutation remains separately fail-closed. Planning, an Integrated System Update, a GitHub merge or AI output never by itself authorizes provider apply, public cutover or a paid resource.
+Public-production mutation remains fail-closed. Planning, an Integrated System Update, a GitHub merge or AI output never by itself authorizes provider apply, public cutover or a paid resource.
+
+### 10.2 Progressive Capability Activation / real-user boundary
+
+For every user-facing capability affected, record its accepted current state and proposed post-acceptance state using exactly one of the Amendment-13 states for implemented/activation-tracked capabilities:
+
+- `IMPLEMENTED`;
+- `LIVE_OPERABLE`;
+- `BLOCKED_EXTERNAL`;
+- `REAL_MONEY_AUTHORIZED`.
+
+If the capability is not yet implemented, do not assign a state merely to imply progress.
+
+For each capability state decision record:
+
+- capability ID;
+- current state;
+- proposed state;
+- technical/security owning gates;
+- specific real external blockers, if any;
+- real-provider/broker/legal/privacy/secret-custody/capacity/monitoring evidence required;
+- whether real USER operability can safely be proven on the one canonical Omni-CIO Web;
+- real-user acceptance path;
+- multi-user/tenant-isolation negative evidence where applicable;
+- monitoring/revoke/rollback/recovery evidence;
+- truthful UI state when not live;
+- kill-switch/current runtime availability separately from accepted capability state.
+
+`V10 is not finished yet` is not a valid external blocker.
+
+For broker capability record explicitly:
+
+- READ remains independent from unfinished Real execution;
+- a TRADE/full-access credential is never used as READ fallback;
+- `TRADE credential connected/verified` does not authorize broker submit;
+- execution eligibility remains `VERIFIED_READ_ACCOUNTS ∩ VERIFIED_TRADE_ACCOUNTS`;
+- account mismatch fails closed;
+- `LIVE_OPERABLE` does not imply `REAL_MONEY_AUTHORIZED`;
+- real submit remains forbidden until the owning execution/Real-money gate accepts it;
+- transfer/withdrawal/margin/uncovered-short authority is not expanded.
+
+A material activation transition must use `docs/updates/V10_CAPABILITY_ACTIVATION_LEDGER_TEMPLATE.md` plus the GitHub capability activation dashboard. Both are working evidence only and never replace canonical current status.
 
 ## 11. Normal-path acceptance tests
 
 List deterministic tests proving the intended behavior.
+
+For user-facing capability that can safely become live, include the applicable real-user path on the canonical deployed Web. Synthetic/provider-double evidence remains engineering evidence and is not a substitute for live-user evidence when live proof is available and required.
 
 ## 12. Negative/failure tests
 
@@ -166,7 +215,11 @@ At minimum cover applicable cases:
 - authorization failure;
 - incompatible schema/version;
 - secret/private-data leak prevention;
-- fail-closed money/authority behavior.
+- fail-closed money/authority behavior;
+- USER A -> USER B cross-tenant read/write denial for tenant-scoped capability;
+- stale/revoked session behavior;
+- broker READ/TRADE account mismatch for broker capability;
+- live capability temporary safety suspension/kill-switch truthfulness where applicable.
 
 ### 12.1 Root-cause / blast-radius plan
 
@@ -194,6 +247,8 @@ Define:
 - correlation IDs;
 - user-visible degraded state;
 - evidence retained for acceptance.
+
+For a `LIVE_OPERABLE` capability, also define how current runtime availability/safety suspension differs from accepted capability state and how the USER sees a truthful bounded reason instead of a silently broken control.
 
 ### 13.1 Fault isolation / degraded-mode contract
 
@@ -263,6 +318,8 @@ Verification batch record:
 
 State exactly how to return to the accepted prior state without losing broker/reconciliation truth.
 
+For a user-facing activation transition, distinguish code rollback, capability-state rollback, runtime kill switch and external/provider revocation. None may leak or lose broker/reconciliation truth.
+
 ## 17. Exit Gate
 
 Define a binary PASS/FAIL gate for this WP/member milestone. “Looks good”, “page opens”, or “tests mostly pass” is not sufficient.
@@ -281,6 +338,17 @@ Final merge/normal PR closure requires:
 - mandatory split review clear;
 - final integrated acceptance only after squash merge and exact-main post-merge gates.
 
+For each affected user-facing capability, final Exit evidence must also classify:
+
+- accepted implementation state;
+- whether the capability remains `BLOCKED_EXTERNAL` or is eligible for `LIVE_OPERABLE`;
+- exact external blocker/evidence when blocked;
+- real USER end-to-end evidence on canonical Web when live proof is possible and required;
+- multi-user/tenant-isolation negatives where applicable;
+- monitoring/revoke/rollback/recovery evidence;
+- no artificial dependency on unrelated later V10 blocks;
+- `REAL_MONEY_AUTHORIZED` only when the full owning execution gate explicitly passes.
+
 ## 18. Required acceptance evidence
 
 List exact evidence such as:
@@ -291,11 +359,16 @@ List exact evidence such as:
 - release manifest/provenance;
 - migration/recovery rehearsal;
 - parity ledger status change;
-- owner approval if specifically required.
+- owner approval if specifically required;
+- sanitized real-user operability evidence where required;
+- sanitized multi-user isolation evidence where applicable;
+- capability Activation Ledger/dashboard reference for a material state transition.
 
 OWNER product acceptance is normally **post-merge and post-Regression-Shield**. Before merge, OWNER action is allowed only for a genuinely non-delegable prerequisite needed to make engineering verifiable (account/consent/domain/payment/narrow credential/UAC-admin/physical action/Master Plan decision).
 
 If OWNER action is required, acceptance evidence must also state that the handoff used the verified direct-link/expected-result/STOP/do-not-do/minimum-return contract and did not expose secrets or private runtime URLs.
+
+No real provider/broker secret, Authorization header, full broker account ID or private portfolio payload may be stored as GitHub/CI/activation evidence.
 
 ## 19. Documentation/status updates in the same PR
 
@@ -305,7 +378,11 @@ For `INTEGRATED_SYSTEM_UPDATE`, the branch Execution Ledger and GitHub System Up
 
 `BRANCH-LOCAL EXECUTION STATE — NOT ACCEPTED MAIN AUTHORITY`.
 
-They never replace `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
+For material capability activation, the Capability Activation Ledger and GitHub dashboard must say:
+
+`WORKING CAPABILITY ACTIVATION STATE — NOT ACCEPTED MAIN AUTHORITY`.
+
+Both classes of working record never replace `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
 
 ### 19.1 Failure-learning update
 
@@ -324,6 +401,8 @@ Do not store secrets/private payloads in the ledger.
 Name the next authorized member milestone or next major System Update and the exact evidence that unlocks it.
 
 A later member milestone inside the same authorized integrated update may begin after its required predecessor branch-local Exit criteria pass. A later **major System Update** remains locked until the current integrated PR is merged, required exact-main Regression Shield/owning gates pass, any required OWNER acceptance completes and canonical status transitions from accepted evidence.
+
+Capability activation is separate from Master Plan sequencing: a capability already implemented and accepted may move through its Amendment-13 activation gate without falsely unlocking a later implementation WP/System Update, while an unimplemented later capability remains locked by the plan.
 
 ## 21. Scope-discovery rule
 

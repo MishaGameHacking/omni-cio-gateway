@@ -35,6 +35,46 @@ dashboard issue:
 INTEGRATION_READY: PASS/FAIL/N/A
 ```
 
+## Progressive Capability Activation
+
+Canonical law: `docs/master-plan/OMNI_CIO_V10_LIVE_USER_OPERABILITY_AND_PROGRESSIVE_CAPABILITY_ACTIVATION_AMENDMENT.md`.
+
+Для любого affected user-facing capability:
+
+- Capability ID:
+- Accepted current state: `IMPLEMENTED` / `LIVE_OPERABLE` / `BLOCKED_EXTERNAL` / `REAL_MONEY_AUTHORIZED` / N/A-not-implemented
+- Proposed state:
+- Material activation transition: YES/NO
+
+- [ ] Нереализованная capability не получила fake activation state ради прогресса.
+- [ ] `V10 is not finished yet` не используется как external blocker.
+- [ ] Перечислены конкретные provider/broker/legal/privacy/secret-custody/runtime/capacity/monitoring blockers, если они есть.
+- [ ] Для material transition создан `docs/updates/V10_CAPABILITY_ACTIVATION_LEDGER_TEMPLATE.md` ledger + GitHub Capability Activation dashboard.
+- [ ] Ledger/dashboard содержат `WORKING CAPABILITY ACTIVATION STATE — NOT ACCEPTED MAIN AUTHORITY`.
+- [ ] Если live proof доступен и безопасен, real supported USER проверяет capability на one canonical Omni-CIO Web через ordinary product path.
+- [ ] Multi-user/tenant-isolation negatives доказаны по применимости.
+- [ ] Monitoring/revoke/rollback/recovery доказаны по применимости.
+- [ ] Accepted capability state отделён от temporary runtime availability/kill-switch suspension.
+- [ ] `LIVE_OPERABLE` не трактуется как `REAL_MONEY_AUTHORIZED`.
+- [ ] Для broker work READ остаётся независим от unfinished Real execution, TRADE credential не используется как READ fallback.
+- [ ] `TRADE credential connected/verified` не трактуется как broker submit authority.
+- [ ] Execution eligibility остаётся `VERIFIED_READ_ACCOUNTS ∩ VERIFIED_TRADE_ACCOUNTS`; mismatch fails closed.
+- [ ] Real submit остаётся запрещён без owning `REAL_MONEY_AUTHORIZED` gate.
+- [ ] Transfer/withdrawal/margin/uncovered-short authority не расширена.
+- [ ] В GitHub/CI/chat/evidence нет real provider/broker secret, Authorization header, full broker account ID или private portfolio payload.
+
+Activation evidence:
+
+```text
+current state:
+proposed state:
+external blockers/evidence:
+real-user evidence:
+multi-user isolation evidence:
+kill-switch/runtime availability:
+real-money boundary:
+```
+
 ## Scope
 
 - [ ] Изменение относится к одному текущему authorized execution unit.
@@ -120,10 +160,10 @@ all safe findings collected -> systemic hardening -> one coherent correction bat
 ## Authority / безопасность
 
 - [ ] Stable protected `app:app` сохранён, если owning accepted migration не заменяет его явно.
-- [ ] `PUBLIC_MULTI_USER_ENABLED=false` сохранён, если отдельный activation gate явно не является owning change.
+- [ ] Current `PUBLIC_MULTI_USER_ENABLED=false` сохранён, если этот PR не является exact capability-specific activation change с полным accepted external evidence.
 - [ ] `trading_methods=false` сохранён для текущего non-execution surface.
-- [ ] `REAL_TRADING_ENABLED=false` сохранён, если текущий later execution WP явно не авторизован Master Plan.
-- [ ] Broker write остаётся OFF без owning future gate.
+- [ ] `REAL_TRADING_ENABLED=false` сохранён, если exact owning Real-money gate не авторизован и не доказан.
+- [ ] Broker write остаётся OFF без owning `REAL_MONEY_AUTHORIZED` future gate.
 - [ ] Production READ / Sandbox / TRADE credentials не смешаны.
 - [ ] Не добавлены transfer/withdrawal, margin/leverage/uncovered-short или новый broker-write bypass.
 - [ ] В diff/log/artifact нет real token/key, Authorization header, full account ID, private portfolio payload, recovery/encryption key или raw OWNER identity.
@@ -152,7 +192,7 @@ NONE / verified official starting URL + exact bounded action + expected non-secr
 ## V10 runtime / hosting boundary
 
 - [ ] Final public V10 Web/API/private-state runtime не зависит от OWNER home IP/Wi-Fi/router/LAN/Lenovo.
-- [ ] Production-provider apply/public cutover остаётся отдельным fail-closed gate и не выводится из planning/merge/System Update автоматически.
+- [ ] Capability activation не выводится автоматически из planning/merge/System Update; реальные provider/runtime/privacy/legal/capacity/monitoring gates доказаны для exact proposed transition.
 - [ ] Existing Render.com `app:app` сохранён как protected V9 production/recovery baseline до owning parity/decommission gate.
 - [ ] Новый provider/runtime не создаёт competing second Web/API/private-state stack.
 - [ ] Paid/provider mutation имеет exact OWNER authority и cost revalidation, если применимо.
@@ -181,11 +221,13 @@ all applicable conclusions: success
 review threads: 0
 ```
 
-## OWNER participation
+## OWNER participation / real-user operability
 
-- [ ] OWNER product acceptance is post-merge: телефон/browser/UX/login/logout/portfolio comparison не запрашивались для незамерженного implementation PR.
-- [ ] Если OWNER участвовал до merge, это был только genuinely non-delegable prerequisite (account/consent/domain/payment/narrow credential/UAC-admin/physical/Master-Plan decision), и scope действия описан ниже.
+- [ ] OWNER product acceptance is post-merge for ordinary implementation; phone/browser/UX/login/logout/portfolio comparison was not used as a substitute for pre-merge engineering verification.
+- [ ] Если OWNER участвовал до merge, это был only genuinely non-delegable prerequisite (account/consent/domain/payment/narrow credential/UAC-admin/physical/Master-Plan decision).
 - [ ] OWNER не использовался как transport layer для обычного CI/debugging/log inspection.
+- [ ] For an Amendment-13 live capability transition, sanitized real-user operability evidence is collected through the ordinary USER path after engineering/post-merge readiness where required.
+- [ ] Real-user evidence contains no secret/private payload and is not confused with broker/Real-money authorization.
 
 Pre-merge OWNER prerequisite, если был:
 
@@ -196,21 +238,22 @@ NONE / exact prerequisite only; no secrets
 ## Контракты / документация / learning
 
 - [ ] Обновлены canonical docs/contracts; competing source of truth не создан.
-- [ ] WP/execution-unit contract отражает pre-CI, negative tests, rollback, internal milestone gates и final acceptance boundary.
+- [ ] WP/execution-unit contract отражает pre-CI, negative tests, rollback, internal milestone gates, progressive capability-state decision where applicable and final acceptance boundary.
 - [ ] Failure Learning Ledger обновлён, если неожиданный RED выявил reusable process/technical lesson.
-- [ ] Current status изменяется только из accepted evidence; integrated member checkboxes не повышают accepted percentage.
+- [ ] Current status изменяется только из accepted evidence; integrated member/capability working checkboxes не повышают accepted percentage.
 - [ ] Исторические PR/issues не выдаются за current authority.
 
 ## Merge / после merge
 
 - [ ] Normal closure: PR будет закрыт squash merge только после полного GREEN exact-head gate.
 - [ ] Exact new `main` SHA будет проверен после merge.
-- [ ] Required post-merge Regression Shield должен быть GREEN до OWNER product acceptance/следующего major System Update.
-- [ ] OWNER product acceptance, если нужен, выполняется только после merge + post-merge GREEN.
-- [ ] Если OWNER acceptance найдёт defect: новый authorized `FOCUSED_CHANGE` или correction path; direct patch в `main` запрещён.
+- [ ] Required post-merge Regression Shield должен быть GREEN до следующего major System Update и до capability activation when its owning law requires that evidence.
+- [ ] Capability state becomes accepted only from exact-main evidence; merge alone does not imply `LIVE_OPERABLE` or `REAL_MONEY_AUTHORIZED`.
+- [ ] Если OWNER/live-user acceptance найдёт defect: новый authorized `FOCUSED_CHANGE` или correction path; direct patch в `main` запрещён.
 - [ ] Известен rollback/recovery path.
 
 ## Следующий milestone / System Update
 
 - [ ] Следующий member milestone внутри того же authorized integrated update начинается только после branch-local predecessor Exit evidence.
 - [ ] Следующий **major System Update** остаётся LOCKED до полного integrated Exit Gate, merge, exact-main post-merge acceptance и canonical status transition.
+- [ ] Capability activation не используется для ложного unlock следующего implementation WP/System Update.

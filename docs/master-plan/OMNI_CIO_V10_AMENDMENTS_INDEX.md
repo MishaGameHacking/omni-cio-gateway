@@ -89,7 +89,7 @@ Machine/governance companions:
 - `../operations/V10_ENGINEERING_FAILURE_LEARNING_LEDGER.md`;
 - `.github/workflows/v10-engineering-governance.yml` through repository root.
 
-Locks root-cause-first engineering, all applicable exact-head checks actually `success`, no fake PASS, exact-head invalidation after commits, coherent reviewable PRs, squash merge, post-merge verification and bounded OWNER handoffs. This governance remains fully active for Amendments 9/10/11/12 and subsequent implementation. Amendment 12 changes only delivery granularity: “focused PR” means one coherent PR per authorized execution unit rather than mandatory one PR per individual member WP/increment. Its runtime-hosting subsection is updated by Amendment 10 from Personal-Node-final hosting to the managed-cloud/no-home public-production boundary while preserving the V9 Render baseline and OWNER budget discipline.
+Locks root-cause-first engineering, all applicable exact-head checks actually `success`, no fake PASS, exact-head invalidation after commits, coherent reviewable PRs, squash merge, post-merge verification and bounded OWNER handoffs. This governance remains fully active for Amendments 9/10/11/12/13 and subsequent implementation. Amendment 12 changes only delivery granularity: “focused PR” means one coherent PR per authorized execution unit rather than mandatory one PR per individual member WP/increment. Amendment 13 changes only user-capability activation granularity and does not weaken exact-head/security/Real-money gates. Its runtime-hosting subsection is updated by Amendment 10 from Personal-Node-final hosting to the managed-cloud/no-home public-production boundary while preserving the V9 Render baseline and OWNER budget discipline.
 
 ### 9. Product User / Engineering Authority Boundary
 
@@ -132,7 +132,7 @@ Locks the 2026-08-18 OWNER launch direction:
 - current T-Invest public-service terms remain a separate fail-closed gate: user-supplied tokens do not waive broker restrictions;
 - payment/KKT gates are not required merely for free access, but become applicable if monetization is later enabled.
 
-Amendment 10 explicitly supersedes conflicting Personal-Node-final-product, permanent-private, initial-paid-access and central-private-data prohibitions in Amendments 5/6/7 and older WP22A wording. Non-conflicting safety, tenant isolation, legal, broker separation, recovery and engineering rules remain active.
+Amendment 10 explicitly supersedes conflicting Personal-Node-final-product, permanent-private, initial-paid-access and central-private-data prohibitions in Amendments 5/6/7 and older WP22A wording. Non-conflicting safety, tenant isolation, legal, broker separation, recovery and engineering rules remain active. Amendment 13 later supersedes only the assumption that all normal user capabilities must wait for one monolithic final activation event; the current runtime defaults and external security/broker/provider gates remain fail-closed until their own evidence passes.
 
 ### 11. WP22A Technical Closeout / Public Production Activation Separation
 
@@ -152,6 +152,8 @@ Locks the 2026-08-24 OWNER sequencing correction that:
 - current recurring infrastructure authority remains `0 RUB/month` / `0 USD/month`, provider apply remains forbidden and automatic paid fallback remains forbidden;
 - public T-Invest remains fail-closed, broker write remains OFF, `trading_methods=false`, `REAL_TRADING_ENABLED=false`, WP23 remains locked and protected V9 `app:app` rollback remains intact;
 - Amendment 11 changes sequencing only and does not weaken Amendments 9/10, mark WP22A complete or authorize the visual-refresh runtime by itself.
+
+Amendment 13 later decomposes the monolithic activation interpretation into capability-specific activation gates. It does not fabricate the Cloud/provider/legal/operations evidence listed here and does not activate any capability by itself.
 
 ### 12. Integrated System Update Execution Law
 
@@ -178,9 +180,42 @@ Locks the 2026-08-26 OWNER delivery-discipline decision that:
 - mandatory split triggers preserve DB/migration sequencing, security/authority changes, dependency/toolchain boundaries, OWNER/provider actions, live/temporal evidence, production cutover, Real-money authority and reviewability;
 - the prepared first integrated update is `WEB-VISUAL-INTEGRATED` with ordered `WEB-VISUAL-A -> B -> C -> D -> E -> F -> G` member milestones;
 - acceptance of Amendment 12 itself does **not** start product work: canonical post-acceptance state is `PRODUCT IMPLEMENTATION PAUSED`, `OWNER START REQUIRED`, and the exact command is `START V10 WEB VISUAL SYSTEM UPDATE`;
-- protected `app:app`, `PUBLIC_MULTI_USER_ENABLED=false`, `trading_methods=false`, `REAL_TRADING_ENABLED=false`, broker write OFF, tenant isolation, secret exclusion, squash merge and exact-head SUCCESS-only policy remain unchanged.
+- protected `app:app`, `PUBLIC_MULTI_USER_ENABLED=false`, `trading_methods=false`, `REAL_TRADING_ENABLED=false`, broker write OFF, tenant isolation, secret exclusion, squash merge and exact-head SUCCESS-only policy remain unchanged at Amendment-12 acceptance.
 
-Amendment 12 supersedes only conflicting **delivery granularity** wording in Program Lock Section 7, Amendment 3, Amendment 8 and Visual Refresh Brief Section 17. It does not reorder the Master Plan, change block weights, alter product scope or unlock a later major System Update.
+Amendment 12 supersedes only conflicting **delivery granularity** wording in Program Lock Section 7, Amendment 3, Amendment 8 and Visual Refresh Brief Section 17. It does not reorder the Master Plan, change block weights, alter product scope or unlock a later major System Update. Amendment 13 later changes only the future activation granularity of completed user-facing capabilities; it does not weaken Amendment-12 execution discipline.
+
+### 13. Live User Operability & Progressive Capability Activation
+
+`OMNI_CIO_V10_LIVE_USER_OPERABILITY_AND_PROGRESSIVE_CAPABILITY_ACTIVATION_AMENDMENT.md`
+
+Machine/governance companions:
+
+- `../architecture/V10_PROGRESSIVE_CAPABILITY_ACTIVATION_CONTRACT.json`;
+- `../updates/V10_CAPABILITY_ACTIVATION_LEDGER_TEMPLATE.md`;
+- `.github/ISSUE_TEMPLATE/v10_capability_activation.yml` through repository root;
+- `../../scripts/check_v10_progressive_capability_activation.py`;
+- `.github/workflows/v10-engineering-governance.yml` through repository root.
+
+Locks the 2026-08-27 OWNER activation-policy decision that:
+
+- one canonical Omni-CIO Web is the ordinary real-user product surface; a second user-facing staging product is not required merely to test completed capability behavior;
+- engineering CI/provider doubles/Sandbox/Shadow remain allowed safety contours but never become an auth/tenant bypass or a second product;
+- implemented user-facing capabilities use exact states `IMPLEMENTED / LIVE_OPERABLE / BLOCKED_EXTERNAL / REAL_MONEY_AUTHORIZED`;
+- a capability whose own technical/security/external gates pass becomes `LIVE_OPERABLE` without waiting unrelated future blocks or final `V10.0.0`;
+- “V10 is not finished” is not a valid external blocker;
+- Telegram Login, VK ID and multi-user access may activate progressively after their own real-provider/runtime/privacy/capacity/monitoring gates;
+- T-Invest READ/live portfolio/positions/operations are independent of unfinished Real execution and may become `LIVE_OPERABLE` after real broker-terms/permission plus tenant secret-custody/security/privacy/live-connection acceptance;
+- a future tenant-scoped TRADE credential may be connected/validated after its own provisioning/security gate, but `TRADE credential connected != real broker submit authorized`;
+- execution eligibility remains `VERIFIED_READ_ACCOUNTS ∩ VERIFIED_TRADE_ACCOUNTS`;
+- real broker submit requires `REAL_MONEY_AUTHORIZED` after Shadow/Sandbox, immutable plan, USER approval, drift/preflight, reconciliation, kill switches and actual broker permission;
+- transfer/withdrawal, margin/leverage and uncovered-short authority remain outside this activation freedom;
+- real-user operability and multi-user isolation become part of Definition of Done where live proof is possible;
+- emergency kill switches remain safety mechanisms, not permanent artificial locks after a capability's gates pass;
+- capability activation ledger/dashboard are working evidence only and never replace canonical current status;
+- Amendment 13 itself is governance-only: current `PUBLIC_MULTI_USER_ENABLED=false`, broker write OFF, `trading_methods=false`, `REAL_TRADING_ENABLED=false` and public T-Invest fail-closed state remain unchanged until later capability-specific gates actually accept a transition;
+- product implementation remains PAUSED and `START V10 WEB VISUAL SYSTEM UPDATE` remains required before WEB-VISUAL-INTEGRATED source work.
+
+Amendment 13 explicitly supersedes only conflicting **activation granularity/timing** wording in Amendments 10/11/12 and live guidance. It does not change Master Plan order/weights, fabricate provider/broker/legal/privacy evidence, authorize spend or Real money, weaken tenant/security/recovery boundaries or start any product System Update.
 
 ## Draft/superseded planning material
 
@@ -195,7 +230,7 @@ Open or historical PR descriptions must not be treated as active plan authority 
 5. `OMNI_CIO_V10_PROGRAM_LOCK.md`;
 6. `OMNI_CIO_V10_MASTER_PLAN.md`;
 7. this Amendments Index;
-8. all active amendments listed here, especially 9/10/11/12 for current product/public-hosting/delivery semantics;
+8. all active amendments listed here, especially 9/10/11/12/13 for current product/public-hosting/delivery/activation semantics;
 9. machine-readable contracts;
 10. `OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md`;
 11. `../../knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`;
