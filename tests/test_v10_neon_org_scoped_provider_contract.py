@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 import json
 from pathlib import Path
-from typing import Any
 
 import pytest
 
@@ -21,14 +21,37 @@ _PROJECT = {
 }
 SCRIPT = Path(provisioner.__file__).resolve()
 _TEST_TOKEN = "test-neon-token"
+ProviderCall = Callable[..., object]
 
 
-def _api(*, sleeper=lambda _delay: None) -> provisioner.OrgScopedNeonApi:
+def _no_sleep(_delay: float) -> None:
+    return None
+
+
+def _api(*, sleeper: Callable[[float], None] = _no_sleep) -> provisioner.OrgScopedNeonApi:
     return provisioner.OrgScopedNeonApi(
         _TEST_TOKEN,
         _ORG_ID,
         sleeper=sleeper,
     )
+
+
+def _organization_response(org_id: str, plan: str) -> dict[str, object]:
+    return {"organization": {"id": org_id, "plan": plan}}
+
+
+def _rejecting_call(status: int) -> ProviderCall:
+    def reject(
+        _method: str,
+        _path: str,
+        **_kwargs: object,
+    ) -> object:
+        raise provisioner.ProvisioningStopped(
+            "NEON_API_KEY_INVALID_OR_INSUFFICIENT",
+            status=status,
+        )
+
+    return reject
 
 
 def test_org_scoped_lookup_uses_direct_organization_endpoint(
@@ -43,7 +66,7 @@ def test_org_scoped_lookup_uses_direct_organization_endpoint(
         **_kwargs: object,
     ) -> object:
         calls.append((method, path))
-        return {"organization": {"id": _ORG_ID, "plan": "free"}}
+        return _organization_response(_ORG_ID, "free")
 
     monkeypatch.setattr(api, "_call_provider", provider_call)
 
@@ -59,16 +82,12 @@ def test_org_scoped_lookup_rejects_identity_drift_and_paid_plan(
     monkeypatch.setattr(
         mismatch_api,
         "_call_provider",
-        lambda *_args, **_kwargs: {
-            "organization": {"id": "org-other", "plan": "free"}
-        },
+        lambda *_args, **_kwargs: _organization_response("org-other", "free"),
     )
     monkeypatch.setattr(
         paid_api,
         "_call_provider",
-        lambda *_args, **_kwargs: {
-            "organization": {"id": _ORG_ID, "plan": "launch"}
-        },
+        lambda *_args, **_kwargs: _organization_response(_ORG_ID, "launch"),
     )
 
     with pytest.raises(
@@ -144,6 +163,26 @@ def test_static_region_shim_rejects_wrong_organization_before_provider(
     assert called is False
 
 
+def test_static_region_shim_still_enforces_safe_api_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    api = _api()
+    called = False
+
+    def provider_call(*_args: object, **_kwargs: object) -> object:
+        nonlocal called
+        called = True
+        return {}
+
+    monkeypatch.setattr(api, "_call_provider", provider_call)
+    unsafe_path = f"/regions?org_id={_ORG_ID}#fragment"
+
+    with pytest.raises(provisioner.ProvisioningStopped, match="NEON_API_PATH_INVALID"):
+        api.request("GET", unsafe_path)
+
+    assert called is False
+
+
 def test_invalid_org_id_fails_before_provider_call() -> None:
     with pytest.raises(provisioner.ProvisioningStopped, match="NEON_ORG_ID_INVALID"):
         provisioner.OrgScopedNeonApi(_TEST_TOKEN, "../other")
@@ -166,12 +205,13 @@ def test_org_scoped_adapter_retries_423_and_preserves_precise_auth_errors(
         attempts += 1
         if attempts == 1:
             raise provisioner.ProvisioningStopped("NEON_API_HTTP_ERROR", status=423)
-        return {"organization": {"id": _ORG_ID, "plan": "free"}}
+        return _organization_response(_ORG_ID, "free")
 
     monkeypatch.setattr(api, "_call_provider", locked_then_ready)
-    assert api.request("GET", f"/organizations/{_ORG_ID}") == {
-        "organization": {"id": _ORG_ID, "plan": "free"}
-    }
+    assert api.request("GET", f"/organizations/{_ORG_ID}") == _organization_response(
+        _ORG_ID,
+        "free",
+    )
     assert attempts == 2
     assert sleeps == [1.0]
 
@@ -180,18 +220,7 @@ def test_org_scoped_adapter_retries_423_and_preserves_precise_auth_errors(
         (403, "NEON_API_KEY_INSUFFICIENT"),
     ):
         rejecting_api = _api()
-
-        def reject(
-            _method: str,
-            _path: str,
-            **_kwargs: object,
-        ) -> Any:
-            raise provisioner.ProvisioningStopped(
-                "NEON_API_KEY_INVALID_OR_INSUFFICIENT",
-                status=status,
-            )
-
-        monkeypatch.setattr(rejecting_api, "_call_provider", reject)
+        monkeypatch.setattr(rejecting_api, "_call_provider", _rejecting_call(status))
         with pytest.raises(provisioner.ProvisioningStopped) as stopped:
             rejecting_api.request("GET", f"/organizations/{_ORG_ID}")
         assert stopped.value.code == code
