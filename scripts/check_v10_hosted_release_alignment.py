@@ -149,16 +149,17 @@ def verify_hosted_release_alignment(
     expected = _release_sha(expected_sha, "EXPECTED_MAIN_SHA_INVALID")
     payload = _read_health_payload(opener=opener, sleep=sleep)
 
-    observed = _release_sha(
-        payload.get("release_sha"),
-        "PREVIEW_RELEASE_SHA_INVALID",
-    )
     if payload.get("status") != "ok":
         raise AlignmentStopped("PREVIEW_HEALTH_NOT_OK")
     if payload.get("database") != "READY":
         raise AlignmentStopped("PREVIEW_DATABASE_NOT_READY")
     if payload.get("synthetic_preview") is not True:
         raise AlignmentStopped("PREVIEW_SYNTHETIC_BOUNDARY_INVALID")
+
+    observed = _release_sha(
+        payload.get("release_sha"),
+        "PREVIEW_RELEASE_SHA_INVALID",
+    )
     if observed != expected:
         raise AlignmentStopped(
             "PREVIEW_RELEASE_SHA_DRIFT",
