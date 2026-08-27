@@ -31,7 +31,7 @@ The directly coupled surfaces are:
 - canonical `/healthz.release_sha` producer in `apps/api/hosted_preview.py`;
 - post-merge acceptance/handoff logic that inventories Actions runs.
 
-Adjacent failure modes include a provider-side manual rollback, a deployment failure after a successful merge, a stale/cold hosted runtime, and an acceptance query that filters by event type rather than traversing the applicable workflow chain.
+Adjacent failure modes include a provider-side manual rollback, a deployment failure after a successful merge, a stale/cold hosted runtime, a newer `main` overtaking an older deployment/alignment run, and an acceptance query that filters by event type rather than traversing the applicable workflow chain.
 
 ## Why preflight missed it
 
@@ -45,10 +45,11 @@ Focused defect #396 adds a read-only hosted-release alignment guard that:
 
 1. runs after every Phase-4 deployment workflow completion regardless of upstream conclusion;
 2. independently compares the expected main SHA with canonical `/healthz.release_sha`;
-3. requires healthy database/synthetic-preview contract fields as well as the exact SHA;
+3. requires healthy database/synthetic-preview contract fields before validating the exact release SHA, so degraded health is not masked by a missing/malformed SHA;
 4. rejects redirects, malformed responses and bounded network/provider failures;
 5. performs a bounded daily self-hosted recheck to expose manual/provider-side drift;
-6. uses no Render, Neon, broker or product secrets.
+6. uses no Render, Neon, broker or product secrets;
+7. explicitly classifies an older alignment run as `SUPERSEDED_BY_NEWER_MAIN` when `main` advanced before that run executes, without claiming the current runtime is aligned; the newer main SHA owns its own Regression Shield -> deploy -> alignment chain.
 
 The controlled deployment and zero-cost attestation requirements remain unchanged.
 
@@ -58,12 +59,14 @@ For any accepted-main change that triggers a downstream deployment/runtime workf
 
 When an external runtime exposes accepted release identity, a secret-free exact-release alignment check must remain available and must be RED on SHA mismatch. Repository authority and runtime alignment are separate facts until both are proven.
 
+If a downstream run is overtaken by a newer accepted `main`, it may terminate as explicitly superseded only when it makes no current-runtime PASS claim. Final acceptance must then wait for the latest applicable main chain rather than treating the old run as proof.
+
 ## Future prevention rule
 
 Never infer `site == main` from a green source/Regression-Shield batch. Prove deployment/runtime identity from the downstream workflow and the runtime's own release endpoint. If the deployment is blocked by a non-delegable provider condition, report that blocker and the stale runtime explicitly rather than declaring the whole operational handoff complete.
 
-Do not enable provider direct auto-deploy merely to hide a controlled-deployment RED condition.
+Do not enable provider direct auto-deploy merely to hide a controlled-deployment RED condition. Do not let an old `workflow_run` race produce either a raw shell failure or a false current-runtime PASS after `main` has advanced.
 
 ## Dependency/tooling knowledge change
 
-No dependency upgrade is required. The relevant GitHub Actions behavior is event topology: `workflow_run` fires when the named upstream workflow completes, including unsuccessful conclusions unless the downstream job adds a success-only condition. The correction intentionally uses that behavior to detect stale hosted runtime after failed deployment as well as after successful deployment.
+No dependency upgrade is required. The relevant GitHub Actions behavior is event topology: `workflow_run` fires when the named upstream workflow completes, including unsuccessful conclusions unless the downstream job adds a success-only condition. The correction intentionally uses that behavior to detect stale hosted runtime after failed deployment as well as after successful deployment, while explicitly classifying overtaken older runs as superseded.
