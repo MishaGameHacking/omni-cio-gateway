@@ -1,221 +1,155 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 import os
 from pathlib import Path
 import re
 import secrets
 import sys
+import time
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import parse_qs, urlsplit
 
 from scripts import provision_v10_render_neon_preview as _base
 
 
 NEON_API_BASE = _base.NEON_API_BASE
 NEON_REGION = _base.NEON_REGION
-NEON_PROJECT_NAME = _base.NEON_PROJECT_NAME
 RENDER_API_BASE = _base.RENDER_API_BASE
 ProvisioningStopped = _base.ProvisioningStopped
 NeonTarget = _base.NeonTarget
-JsonApi = _base.JsonApi
 _NEON_ORG_ID_PATTERN = re.compile(r"^[a-z0-9-]{1,60}$")
+_ORG_SCOPE_423_RETRY_DELAYS_SECONDS = (1.0, 2.0)
+Sleep = Callable[[float], None]
+
+
+class OrgScopedNeonApi(_base.JsonApi):
+    def __init__(
+        self,
+        token: str,
+        organization_id: str,
+        *,
+        sleeper: Sleep = time.sleep,
+    ) -> None:
+        super().__init__(NEON_API_BASE, token, label="NEON")
+        self.organization_id = _validate_neon_org_id(organization_id)
+        self._sleeper = sleeper
+
+    def _call_provider(
+        self,
+        method: str,
+        path: str,
+        *,
+        body: object | None,
+        expected: frozenset[int],
+        timeout: float,
+    ) -> Any:
+        return super().request(
+            method,
+            path,
+            body=body,
+            expected=expected,
+            timeout=timeout,
+        )
+
+    def _static_region_response(self, path: str) -> dict[str, object] | None:
+        parsed = urlsplit(path)
+        if parsed.path != "/regions":
+            return None
+        query = parse_qs(parsed.query)
+        if query.get("org_id") != [self.organization_id]:
+            raise ProvisioningStopped("NEON_REGION_ORGANIZATION_DRIFT")
+        return {"regions": [{"region_id": NEON_REGION}]}
+
+    def request(
+        self,
+        method: str,
+        path: str,
+        *,
+        body: object | None = None,
+        expected: frozenset[int] = frozenset({200}),
+        timeout: float = 30.0,
+    ) -> Any:
+        safe_method = method.upper()
+        if safe_method == "GET":
+            static_regions = self._static_region_response(path)
+            if static_regions is not None:
+                return static_regions
+
+        attempts = (
+            len(_ORG_SCOPE_423_RETRY_DELAYS_SECONDS) + 1
+            if safe_method == "GET"
+            else 1
+        )
+        for attempt in range(attempts):
+            try:
+                return self._call_provider(
+                    safe_method,
+                    path,
+                    body=body,
+                    expected=expected,
+                    timeout=timeout,
+                )
+            except ProvisioningStopped as exc:
+                if exc.status == 401:
+                    raise ProvisioningStopped(
+                        "NEON_API_KEY_INVALID",
+                        status=401,
+                    ) from None
+                if exc.status == 403:
+                    raise ProvisioningStopped(
+                        "NEON_API_KEY_INSUFFICIENT",
+                        status=403,
+                    ) from None
+                if (
+                    safe_method == "GET"
+                    and exc.status == 423
+                    and attempt + 1 < attempts
+                ):
+                    _base._emit(
+                        "NEON_API_HTTP_RETRY status=423 "
+                        f"attempt={attempt + 2}/{attempts}"
+                    )
+                    self._sleeper(_ORG_SCOPE_423_RETRY_DELAYS_SECONDS[attempt])
+                    continue
+                raise
+        raise AssertionError("unreachable Neon org-scope request state")
+
+
+def _validate_neon_org_id(value: str) -> str:
+    if _NEON_ORG_ID_PATTERN.fullmatch(value) is None:
+        raise ProvisioningStopped("NEON_ORG_ID_INVALID")
+    return value
 
 
 def _required_neon_org_id() -> str:
     value = os.environ.get("NEON_ORG_ID", "").strip()
     if not value:
         raise ProvisioningStopped("NEON_ORG_ID_REQUIRED")
-    if _NEON_ORG_ID_PATTERN.fullmatch(value) is None:
-        raise ProvisioningStopped("NEON_ORG_ID_INVALID")
-    return value
+    return _validate_neon_org_id(value)
 
 
-def _neon_organization(api: JsonApi, organization_id: str) -> str:
-    if _NEON_ORG_ID_PATTERN.fullmatch(organization_id) is None:
-        raise ProvisioningStopped("NEON_ORG_ID_INVALID")
+def _neon_organization(api: OrgScopedNeonApi, organization_id: str) -> str:
+    safe_org_id = _validate_neon_org_id(organization_id)
     payload = _base._json_object(
-        api.request("GET", f"/organizations/{organization_id}"),
+        api.request("GET", f"/organizations/{safe_org_id}"),
         "NEON_ORGANIZATION_RESPONSE_INVALID",
     )
     organization = _base._json_object(
         payload.get("organization", payload),
         "NEON_ORGANIZATION_RESPONSE_INVALID",
     )
-    if organization.get("id") != organization_id:
+    if organization.get("id") != safe_org_id:
         raise ProvisioningStopped("NEON_ORGANIZATION_ID_MISMATCH")
     plan = organization.get("plan")
     if not isinstance(plan, str) or plan.casefold() != "free":
         raise ProvisioningStopped("NEON_FREE_PLAN_REQUIRED")
     _base._emit("NEON_ORGANIZATION=FREE_VERIFIED")
-    return organization_id
+    return safe_org_id
 
 
-def _ensure_neon_project(
-    api: JsonApi,
-    organization_id: str,
-) -> dict[str, Any]:
-    if _NEON_ORG_ID_PATTERN.fullmatch(organization_id) is None:
-        raise ProvisioningStopped("NEON_ORG_ID_INVALID")
-    query = urlencode(
-        {
-            "limit": 400,
-            "search": NEON_PROJECT_NAME,
-            "org_id": organization_id,
-        }
-    )
-    payload = _base._json_object(
-        api.request("GET", f"/projects?{query}"),
-        "NEON_PROJECTS_RESPONSE_INVALID",
-    )
-    projects = [
-        _base._json_object(item, "NEON_PROJECT_INVALID")
-        for item in _base._json_list(
-            payload.get("projects"),
-            "NEON_PROJECTS_INVALID",
-        )
-        if isinstance(item, dict) and item.get("name") == NEON_PROJECT_NAME
-    ]
-    if len(projects) > 1:
-        raise ProvisioningStopped("NEON_PROJECT_NAME_NOT_UNIQUE")
-    if not projects:
-        created = _base._json_object(
-            api.request(
-                "POST",
-                "/projects",
-                body={
-                    "project": {
-                        "name": NEON_PROJECT_NAME,
-                        "region_id": NEON_REGION,
-                        "pg_version": 18,
-                        "org_id": organization_id,
-                    }
-                },
-                expected=frozenset({201}),
-            ),
-            "NEON_PROJECT_CREATE_RESPONSE_INVALID",
-        )
-        project = _base._json_object(
-            created.get("project"),
-            "NEON_PROJECT_CREATE_RESPONSE_INVALID",
-        )
-        project_id = _base._provider_segment(
-            project.get("id"),
-            "NEON_PROJECT_ID_INVALID",
-        )
-        _base._wait_neon_operations(
-            api,
-            project_id,
-            created.get("operations", []),
-        )
-        projects = [project]
-        _base._emit("NEON_PROJECT=CREATED_FREE_PREVIEW")
-    else:
-        _base._emit("NEON_PROJECT=REUSED_FREE_PREVIEW")
-
-    project = projects[0]
-    if project.get("org_id") != organization_id:
-        raise ProvisioningStopped("NEON_PROJECT_ORGANIZATION_DRIFT")
-    if int(project.get("pg_version", 0)) != 18:
-        raise ProvisioningStopped("NEON_POSTGRES18_REQUIRED")
-    if str(project.get("region_id", "")) != NEON_REGION:
-        raise ProvisioningStopped("NEON_FRANKFURT_REGION_REQUIRED")
-    _base._provider_segment(project.get("id"), "NEON_PROJECT_ID_INVALID")
-    return project
-
-
-def _neon_target(api: JsonApi, organization_id: str) -> NeonTarget:
-    project = _ensure_neon_project(api, organization_id)
-    project_id = _base._provider_segment(
-        project.get("id"),
-        "NEON_PROJECT_ID_INVALID",
-    )
-    branch_payload = _base._json_object(
-        api.request("GET", f"/projects/{project_id}/branches?limit=100"),
-        "NEON_BRANCHES_RESPONSE_INVALID",
-    )
-    branches = [
-        _base._json_object(item, "NEON_BRANCH_INVALID")
-        for item in _base._json_list(
-            branch_payload.get("branches"),
-            "NEON_BRANCHES_INVALID",
-        )
-    ]
-    defaults = [item for item in branches if item.get("default") is True]
-    if not defaults:
-        defaults = [item for item in branches if item.get("name") == "main"]
-    if len(defaults) != 1:
-        raise ProvisioningStopped("NEON_DEFAULT_BRANCH_NOT_UNIQUE")
-    branch_id = _base._provider_segment(
-        defaults[0].get("id"),
-        "NEON_BRANCH_ID_INVALID",
-    )
-
-    database_payload = _base._json_object(
-        api.request(
-            "GET",
-            f"/projects/{project_id}/branches/{branch_id}/databases",
-        ),
-        "NEON_DATABASES_RESPONSE_INVALID",
-    )
-    databases = [
-        _base._json_object(item, "NEON_DATABASE_INVALID")
-        for item in _base._json_list(
-            database_payload.get("databases"),
-            "NEON_DATABASES_INVALID",
-        )
-    ]
-    preferred = [item for item in databases if item.get("name") == "neondb"]
-    if len(preferred) != 1:
-        if len(databases) != 1:
-            raise ProvisioningStopped("NEON_DATABASE_NOT_UNIQUE")
-        preferred = databases
-    database = preferred[0]
-    database_name = _base._safe_provider_text(
-        database.get("name"),
-        "NEON_DATABASE_NAME_INVALID",
-    )
-    bootstrap_role = _base._safe_provider_text(
-        database.get("owner_name"),
-        "NEON_DATABASE_OWNER_INVALID",
-    )
-    if bootstrap_role == _base.RUNTIME_ROLE:
-        raise ProvisioningStopped("NEON_BOOTSTRAP_ROLE_INVALID")
-
-    common = {
-        "branch_id": branch_id,
-        "database_name": database_name,
-        "role_name": bootstrap_role,
-    }
-    direct = urlencode({**common, "pooled": "false"})
-    pooled = urlencode({**common, "pooled": "true"})
-    direct_payload = _base._json_object(
-        api.request("GET", f"/projects/{project_id}/connection_uri?{direct}"),
-        "NEON_CONNECTION_URI_INVALID",
-    )
-    pooled_payload = _base._json_object(
-        api.request("GET", f"/projects/{project_id}/connection_uri?{pooled}"),
-        "NEON_POOLED_CONNECTION_URI_INVALID",
-    )
-    bootstrap_uri = _base._neon_connection_uri(
-        direct_payload.get("uri"),
-        database_name,
-        "NEON_CONNECTION_URI_SHAPE_INVALID",
-    )
-    pooled_bootstrap_uri = _base._neon_connection_uri(
-        pooled_payload.get("uri"),
-        database_name,
-        "NEON_POOLED_CONNECTION_URI_SHAPE_INVALID",
-    )
-    _base._mask(bootstrap_uri)
-    _base._mask(pooled_bootstrap_uri)
-    return NeonTarget(
-        project_id=project_id,
-        branch_id=branch_id,
-        database_name=database_name,
-        bootstrap_role=bootstrap_role,
-        bootstrap_uri=bootstrap_uri,
-        pooled_bootstrap_uri=pooled_bootstrap_uri,
-    )
+def _neon_target(api: OrgScopedNeonApi, organization_id: str) -> NeonTarget:
+    return _base._neon_target(api, _validate_neon_org_id(organization_id))
 
 
 def run(repo_root: Path, expected_sha: str) -> str:
@@ -226,8 +160,8 @@ def run(repo_root: Path, expected_sha: str) -> str:
     runtime_password = secrets.token_urlsafe(48)
     _base._mask(runtime_password)
 
-    neon = JsonApi(NEON_API_BASE, neon_key, label="NEON")
-    render = JsonApi(RENDER_API_BASE, render_key, label="RENDER")
+    neon = OrgScopedNeonApi(neon_key, organization_id)
+    render = _base.JsonApi(RENDER_API_BASE, render_key, label="RENDER")
     _neon_organization(neon, organization_id)
     target = _neon_target(neon, organization_id)
     runtime_uri = _base._bootstrap_database(repo_root, target, runtime_password)
