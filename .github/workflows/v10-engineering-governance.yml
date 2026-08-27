@@ -54,7 +54,7 @@ jobs:
           test -z "$(git config --local --get-all credential.helper || true)"
 
       - name: Bootstrap protected runner Python
-        run: scripts\\bootstrap_windows_ci_python.cmd
+        run: scripts\bootstrap_windows_ci_python.cmd
 
       - name: Verify exact checked-out head
         env:

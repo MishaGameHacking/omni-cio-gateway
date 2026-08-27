@@ -24,8 +24,7 @@ _REQUIRED_WORKFLOW_RUN_LISTS = {
 def _read(path: Path, failures: list[str]) -> str:
     if not path.is_file():
         failures.append(
-            "missing hosted-release governance file: "
-            f"{path.relative_to(ROOT)}"
+            f"missing hosted-release governance file: {path.relative_to(ROOT)}"
         )
         return ""
     try:
