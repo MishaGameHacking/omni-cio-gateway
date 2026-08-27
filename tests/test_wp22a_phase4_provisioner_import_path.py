@@ -22,7 +22,7 @@ def test_phase4_workflow_executes_org_scoped_adapter_as_repo_root_module() -> No
     text = WORKFLOW.read_text(encoding="utf-8")
 
     assert f"python -m {MODULE}" in text
-    assert f"python -m {LEGACY_MODULE} \\\n" not in text
+    assert f"python -m {LEGACY_MODULE} \\" not in text
     assert "python scripts/provision_v10_render_neon_preview.py" not in text
     assert "tests/test_wp22a_phase4_provisioner_import_path.py" in text
 
