@@ -275,6 +275,22 @@ def test_oversized_neon_response_fails_closed_before_json_processing() -> None:
         )
 
 
+def test_malformed_neon_json_fails_closed_with_sanitized_error() -> None:
+    env = _env()
+    opener = _raw_opener(b'{"organizations":')
+
+    with pytest.raises(BoundaryStopped) as stopped:
+        verify_zero_cost_provider_boundary(
+            env=env,
+            now=FIXED_NOW,
+            opener=opener,
+        )
+
+    assert stopped.value.code == "NEON_ORGANIZATIONS_RESPONSE_INVALID"
+    assert stopped.value.status is None
+    assert _TEST_NEON_TOKEN not in str(stopped.value)
+
+
 def test_paid_neon_plan_stops_before_provider_mutation() -> None:
     env = _env()
     opener = _opener(
