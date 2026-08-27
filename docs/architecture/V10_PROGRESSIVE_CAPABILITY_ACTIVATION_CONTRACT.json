@@ -1,0 +1,144 @@
+{
+  "schema": "omni-cio.v10.progressive-capability-activation.v1",
+  "status": "OWNER_APPROVED_EFFECTIVE_WHEN_PRESENT_ON_ACCEPTED_MAIN",
+  "decision_date": "2026-08-27",
+  "amendment": "docs/master-plan/OMNI_CIO_V10_LIVE_USER_OPERABILITY_AND_PROGRESSIVE_CAPABILITY_ACTIVATION_AMENDMENT.md",
+  "authority": {
+    "product_progress_effect": "NONE",
+    "runtime_mutation_effect": "NONE",
+    "product_implementation_paused_after_acceptance": true,
+    "next_prepared_system_update": "WEB-VISUAL-INTEGRATED",
+    "owner_start_required": true,
+    "owner_start_command": "START V10 WEB VISUAL SYSTEM UPDATE",
+    "canonical_user_product": "ONE_CANONICAL_OMNI_CIO_WEB",
+    "separate_staging_site_required": false
+  },
+  "capability_states": [
+    "IMPLEMENTED",
+    "LIVE_OPERABLE",
+    "BLOCKED_EXTERNAL",
+    "REAL_MONEY_AUTHORIZED"
+  ],
+  "state_semantics": {
+    "unlisted_capability": "NOT_ACCEPTED_IMPLEMENTED_AND_NO_AUTHORITY",
+    "IMPLEMENTED": "IMPLEMENTATION_ACCEPTED_LIVE_ACTIVATION_NOT_YET_ACCEPTED",
+    "LIVE_OPERABLE": "DIRECT_APPLICABLE_GATES_ACCEPTED_AND_ORDINARY_USER_CAN_USE_ON_CANONICAL_WEB",
+    "BLOCKED_EXTERNAL": "IMPLEMENTATION_MAY_EXIST_BUT_REQUIRED_EXTERNAL_OR_PRODUCTION_EVIDENCE_IS_MISSING",
+    "REAL_MONEY_AUTHORIZED": "REAL_BROKER_SUBMIT_CAPABILITY_EXPLICITLY_ACCEPTED_BY_OWNING_REAL_MONEY_GATE"
+  },
+  "progressive_activation": {
+    "completed_capability_must_not_wait_for_unrelated_future_scope": true,
+    "direct_gate_evidence_required": true,
+    "external_gate_evidence_required_when_applicable": true,
+    "unrelated_unfinished_v10_scope_may_block_live_operability": false,
+    "canonical_web_is_live_product": true,
+    "separate_staging_site_required": false,
+    "real_user_operability_required_for_user_facing_dod": true,
+    "multi_user_isolation_required_when_multi_user": true,
+    "synthetic_evidence_may_replace_required_external_evidence": false,
+    "emergency_kill_switch_is_lifecycle_state": false,
+    "kill_switch_may_temporarily_disable_accepted_capability": true
+  },
+  "identity_and_multi_user": {
+    "ordinary_login_providers": [
+      "TELEGRAM",
+      "VK_ID"
+    ],
+    "owner_admin_developer_demo_login_allowed": false,
+    "tenant_scope_from_server_session_only": true,
+    "database_enforced_tenant_isolation_required": true,
+    "cross_tenant_access_allowed": false,
+    "PUBLIC_MULTI_USER_ENABLED_is_capability_activation_control": true,
+    "PUBLIC_MULTI_USER_ENABLED_current_value_changed_by_this_amendment": false
+  },
+  "broker_credentials": {
+    "ownership": "TENANT_SCOPED_BROKER_CONNECTION",
+    "read_can_be_live_operable_before_real_execution": true,
+    "read_requires_broker_terms_security_secret_custody_acceptance": true,
+    "real_portfolio_positions_operations_may_follow_read_live_operability": true,
+    "trade_credential_provisioning_can_be_live_operable_before_submit": true,
+    "trade_credential_connected_is_real_money_authorized": false,
+    "execution_account_rule": "VERIFIED_READ_ACCOUNTS_INTERSECTION_VERIFIED_TRADE_ACCOUNTS",
+    "full_access_trade_credential_may_fallback_for_read": false,
+    "global_shared_read_token_allowed": false,
+    "global_shared_trade_token_allowed": false,
+    "cross_tenant_secret_access_allowed": false,
+    "cortex_raw_secret_access_allowed": false,
+    "raw_secret_in_browser_web_storage_allowed": false,
+    "raw_secret_in_github_ci_artifacts_chat_allowed": false,
+    "user_supplied_token_waives_broker_terms": false,
+    "current_public_t_invest_connector_state": "BLOCKED_EXTERNAL"
+  },
+  "real_money": {
+    "real_money_state": "REAL_MONEY_AUTHORIZED",
+    "credential_connection_is_authorization": false,
+    "required_before_authorization": [
+      "SANDBOX_OR_SHADOW_EVIDENCE",
+      "IMMUTABLE_PLAN_APPROVAL",
+      "AUTHENTICATED_USER_APPROVAL",
+      "FRESH_PREFLIGHT",
+      "READ_TRADE_ACCOUNT_IDENTITY_INTERSECTION",
+      "OWN_CASH_OWN_POSITION_ONLY",
+      "DRIFT_STOP_AND_REPLAN",
+      "IDEMPOTENT_SUBMIT",
+      "AMBIGUOUS_SUBMIT_RECONCILIATION",
+      "BROKER_RECONCILIATION",
+      "DURABLE_AUDIT",
+      "EMERGENCY_KILL_SWITCHES"
+    ],
+    "REAL_TRADING_ENABLED_current_default": false,
+    "trading_methods_current_default": false,
+    "transfer_withdrawal_authority_expanded": false,
+    "margin_leverage_authority_expanded": false,
+    "uncovered_short_authority_expanded": false,
+    "ai_direct_broker_write_authority": false
+  },
+  "user_facing_definition_of_done": {
+    "accepted_implementation_required": true,
+    "exact_head_success_only_required": true,
+    "canonical_web_deployment_required_for_live_operable": true,
+    "ordinary_user_path_required": true,
+    "real_user_operability_evidence_required": true,
+    "multi_user_isolation_evidence_required_when_applicable": true,
+    "deterministic_cross_tenant_negative_tests_required_when_applicable": true,
+    "secret_private_data_exclusion_required": true,
+    "health_monitoring_degraded_state_required": true,
+    "rollback_recovery_required": true,
+    "external_evidence_required_when_applicable": true,
+    "capability_ledger_transition_required": true
+  },
+  "ledgers": {
+    "capability_activation_ledger": "docs/operations/V10_CAPABILITY_ACTIVATION_LEDGER.json",
+    "github_dashboard_issue_template": ".github/ISSUE_TEMPLATE/v10_capability_activation.yml",
+    "live_user_operability_standard": "docs/operations/V10_LIVE_USER_OPERABILITY_ACCEPTANCE_STANDARD.md",
+    "current_program_status_authority_remains": "knowledge/17_V10_CURRENT_PROGRAM_STATUS.md",
+    "capability_ledger_is_program_progress_authority": false,
+    "dashboard_is_program_progress_authority": false,
+    "working_state_banner": "CAPABILITY ACTIVATION WORKING STATE — NOT V10 PROGRESS AUTHORITY"
+  },
+  "supersession": {
+    "blanket_wait_until_final_v10_release_for_independent_completed_capabilities": false,
+    "amendment_10_activation_fields_superseded_only_where_they_blanket_block_unrelated_completed_capabilities": true,
+    "amendment_11_technical_vs_production_separation_preserved": true,
+    "amendment_12_execution_law_preserved": true,
+    "master_plan_block_wp_order_preserved": true,
+    "program_weights_preserved": true,
+    "direct_security_external_real_money_gates_preserved": true
+  },
+  "protected_invariants": {
+    "app_entrypoint": "app:app",
+    "protected_v9_rollback": true,
+    "tenant_isolation_required": true,
+    "secret_exclusion_required": true,
+    "exact_head_success_only": true,
+    "squash_merge_required": true,
+    "post_merge_regression_shield_required": true,
+    "temporary_verifier_commits_prs_branches_forbidden": true,
+    "trading_methods": false,
+    "REAL_TRADING_ENABLED": false,
+    "broker_write": false,
+    "PUBLIC_MULTI_USER_ENABLED_changed_by_this_amendment": false,
+    "transfer_withdrawal_authority": false,
+    "margin_leverage_uncovered_short_authority": false
+  }
+}
