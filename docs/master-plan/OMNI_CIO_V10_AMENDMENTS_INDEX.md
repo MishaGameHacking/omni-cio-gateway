@@ -16,7 +16,7 @@ The synchronized V10 Master Plan remains the canonical base program:
 
 Accepted amendments supplement, narrow or explicitly supersede parts of the base plan without silently renumbering blocks or changing block weights. When amendments conflict, the later explicit OWNER-approved amendment governs the conflicting implementation choice. Historical evidence remains historical.
 
-Unmerged/closed draft PR text is not accepted authority. Current progress/current-next WP is read only from `../../knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
+Unmerged/closed draft PR text is not accepted authority. Current progress/current-next execution authority is read only from `../../knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
 
 ## Active amendments
 
@@ -38,7 +38,7 @@ Locks deterministic Core as financial truth, verified broker-report accounting, 
 
 `OMNI_CIO_V10_GITHUB_PRO_AND_MIGRATION_IMPLEMENTATION_AMENDMENT.md`
 
-Companions include GitHub utilization, V9→V10 parity, component reuse and release-manifest contracts. Locks GitHub as engineering source of truth, controlled migration rather than greenfield rewrite, reproducibility, release provenance and WP implementation discipline.
+Companions include GitHub utilization, V9→V10 parity, component reuse and release-manifest contracts. Locks GitHub as engineering source of truth, controlled migration rather than greenfield rewrite, reproducibility, release provenance and WP implementation discipline. Amendment 12 supersedes only its one-PR-per-WP delivery-granularity assumption; migration order, parity, reuse, reproducibility and recovery requirements remain active.
 
 ### 4. Telegram Product / Interaction / Delivery Contract
 
@@ -89,7 +89,7 @@ Machine/governance companions:
 - `../operations/V10_ENGINEERING_FAILURE_LEARNING_LEDGER.md`;
 - `.github/workflows/v10-engineering-governance.yml` through repository root.
 
-Locks root-cause-first engineering, all applicable exact-head checks actually `success`, no fake PASS, exact-head invalidation after commits, focused PRs, squash merge, post-merge verification and bounded OWNER handoffs. This governance remains fully active for Amendments 9/10 and subsequent implementation. Its runtime-hosting subsection is updated by Amendment 10 from Personal-Node-final hosting to the managed-cloud/no-home public-production boundary while preserving the V9 Render baseline and OWNER budget discipline.
+Locks root-cause-first engineering, all applicable exact-head checks actually `success`, no fake PASS, exact-head invalidation after commits, coherent reviewable PRs, squash merge, post-merge verification and bounded OWNER handoffs. This governance remains fully active for Amendments 9/10/11/12 and subsequent implementation. Amendment 12 changes only delivery granularity: “focused PR” means one coherent PR per authorized execution unit rather than mandatory one PR per individual member WP/increment. Its runtime-hosting subsection is updated by Amendment 10 from Personal-Node-final hosting to the managed-cloud/no-home public-production boundary while preserving the V9 Render baseline and OWNER budget discipline.
 
 ### 9. Product User / Engineering Authority Boundary
 
@@ -153,6 +153,35 @@ Locks the 2026-08-24 OWNER sequencing correction that:
 - public T-Invest remains fail-closed, broker write remains OFF, `trading_methods=false`, `REAL_TRADING_ENABLED=false`, WP23 remains locked and protected V9 `app:app` rollback remains intact;
 - Amendment 11 changes sequencing only and does not weaken Amendments 9/10, mark WP22A complete or authorize the visual-refresh runtime by itself.
 
+### 12. Integrated System Update Execution Law
+
+`OMNI_CIO_V10_INTEGRATED_SYSTEM_UPDATE_EXECUTION_AMENDMENT.md`
+
+Machine/governance companions:
+
+- `../architecture/V10_INTEGRATED_SYSTEM_UPDATE_EXECUTION_CONTRACT.json`;
+- `../updates/INTEGRATED_SYSTEM_UPDATE_EXECUTION_LEDGER_TEMPLATE.md`;
+- `.github/ISSUE_TEMPLATE/v10_integrated_system_update.yml` through repository root;
+- `../../scripts/check_v10_integrated_system_update_governance.py`;
+- `.github/workflows/v10-engineering-governance.yml` through repository root.
+
+Locks the 2026-08-26 OWNER delivery-discipline decision that:
+
+- each material change is either `FOCUSED_CHANGE` or `INTEGRATED_SYSTEM_UPDATE`;
+- an integrated update keeps ordered WP/increments as branch-local internal milestones while using one integrated branch and one final PR by default;
+- accepted V10 progress changes only after final squash merge plus required exact-main post-merge acceptance;
+- integrated work is not published for external verification before `INTEGRATION_READY`;
+- after a verification SHA is published, **HEAD FREEZE** applies while the safe independent verification batch reaches terminal state;
+- RED findings are consolidated and diagnosed by root cause/blast radius before one coherent correction batch; symptom-by-symptom CI iteration is not the default;
+- temporary verifier commits/PRs and `continue-on-error` fake GREEN are forbidden;
+- every integrated update has a branch Execution Ledger and GitHub-visible System Update dashboard, both explicitly non-authoritative for accepted progress;
+- mandatory split triggers preserve DB/migration sequencing, security/authority changes, dependency/toolchain boundaries, OWNER/provider actions, live/temporal evidence, production cutover, Real-money authority and reviewability;
+- the prepared first integrated update is `WEB-VISUAL-INTEGRATED` with ordered `WEB-VISUAL-A -> B -> C -> D -> E -> F -> G` member milestones;
+- acceptance of Amendment 12 itself does **not** start product work: canonical post-acceptance state is `PRODUCT IMPLEMENTATION PAUSED`, `OWNER START REQUIRED`, and the exact command is `START V10 WEB VISUAL SYSTEM UPDATE`;
+- protected `app:app`, `PUBLIC_MULTI_USER_ENABLED=false`, `trading_methods=false`, `REAL_TRADING_ENABLED=false`, broker write OFF, tenant isolation, secret exclusion, squash merge and exact-head SUCCESS-only policy remain unchanged.
+
+Amendment 12 supersedes only conflicting **delivery granularity** wording in Program Lock Section 7, Amendment 3, Amendment 8 and Visual Refresh Brief Section 17. It does not reorder the Master Plan, change block weights, alter product scope or unlock a later major System Update.
+
 ## Draft/superseded planning material
 
 Open or historical PR descriptions must not be treated as active plan authority merely because they contain V10 ideas. Closed-unmerged PR #327 is superseded by Amendments 9/10 and is historical only. Older unmerged Personal-Node/cloud migration or OWNER-only external-access planning is likewise non-authoritative when it conflicts with accepted amendments.
@@ -166,8 +195,9 @@ Open or historical PR descriptions must not be treated as active plan authority 
 5. `OMNI_CIO_V10_PROGRAM_LOCK.md`;
 6. `OMNI_CIO_V10_MASTER_PLAN.md`;
 7. this Amendments Index;
-8. all active amendments listed here, especially 9 and 10 for product/public-hosting semantics;
+8. all active amendments listed here, especially 9/10/11/12 for current product/public-hosting/delivery semantics;
 9. machine-readable contracts;
-10. `../../knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`;
-11. current-WP architecture/runbook;
-12. current `main`, open PR/issues and GitHub Actions.
+10. `OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md`;
+11. `../../knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`;
+12. current execution-unit architecture/runbook/ledger when authorized;
+13. current `main`, open PR/issues and GitHub Actions.

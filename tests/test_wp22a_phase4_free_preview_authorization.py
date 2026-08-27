@@ -25,7 +25,7 @@ def _contract() -> dict[str, Any]:
     return json.loads(CONTRACT.read_text(encoding="utf-8"))
 
 
-def test_phase3_phase4_and_phase5_are_accepted_and_visual_a_is_current() -> None:
+def test_wp22a_is_accepted_and_integrated_visual_update_is_prepared() -> None:
     text = STATUS.read_text(encoding="utf-8")
 
     assert "Block E / WP22A Phase 3 — **ACCEPTED**" in text
@@ -33,11 +33,14 @@ def test_phase3_phase4_and_phase5_are_accepted_and_visual_a_is_current() -> None
     assert "Block E / WP22A Phase 5 — **ACCEPTED**" in text
     assert "Block E / WP22A overall — **COMPLETE**" in text
     assert "Accepted implementation progress is **54%**" in text
-    assert "WEB VISUAL REFRESH INCREMENT A AUTHORIZED" in text
+    assert "PRODUCT IMPLEMENTATION PAUSED" in text
+    assert "WEB-VISUAL-INTEGRATED" in text
+    assert "OWNER START REQUIRED" in text
+    assert "START V10 WEB VISUAL SYSTEM UPDATE" in text
     assert "PUBLIC PRODUCTION ACTIVATION LOCKED" in text
     assert (
-        "## Current next package — WEB-VISUAL-A — "
-        "Premium Spatial Financial OS Increment A — Design-system foundation"
+        "## Current next package — WEB-VISUAL-INTEGRATED — "
+        "Prepared A→G System Update / OWNER START REQUIRED"
         in text
     )
 

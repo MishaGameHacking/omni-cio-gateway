@@ -2,7 +2,7 @@
 
 Omni-CIO is one investment platform. The protected owner-accepted Custom GPT v9.0.0 + one production Gateway remains the current production/recovery baseline while V10 is developed sequentially in this same repository.
 
-Current V10 progress and current/next Work Package are defined only by `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
+Current V10 progress and current/next execution authority are defined only by `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
 
 ## Current V10 snapshot
 
@@ -10,10 +10,12 @@ Repository-front-door snapshot of accepted/current program authority:
 
 - accepted V10 implementation progress: **54%**;
 - WP0–WP22A: accepted COMPLETE according to the canonical status/evidence chain;
-- current functional package: **WEB-VISUAL-A — Premium Spatial Financial OS / Design-system foundation**;
+- **PRODUCT IMPLEMENTATION PAUSED** after the Amendment-12 governance transition;
+- next prepared execution unit: **WEB-VISUAL-INTEGRATED — Premium Spatial Financial OS A→G System Update / OWNER START REQUIRED**;
+- exact product START required before implementation: `START V10 WEB VISUAL SYSTEM UPDATE`;
+- Amendment 12 changes delivery granularity only; it does not advance accepted product progress or runtime authority;
 - WP22A technical closeout is accepted only through its Phase-5 evidence/status chain; public-production activation remains a separate fail-closed gate;
-- OWNER-approved Product USER / Engineering Authority + Public Free Multi-User Hosted Runtime planning correction is accepted on `main`;
-- WP23+ remains locked behind the accepted visual-refresh sequence and Master Plan authorization;
+- WP23+ remains locked behind acceptance of the complete visual System Update and later Master Plan authorization;
 - **public multi-user/global browser service is the approved V10 target**;
 - **public Internet ingress remains OFF while the separate production-activation/security/privacy/broker/legal/capacity gates are unfinished**; technical acceptance is not production activation;
 - final public production must not depend on PROJECT OWNER home IP, Wi-Fi, router/LAN, home Internet or Lenovo as the production origin;
@@ -23,9 +25,31 @@ Repository-front-door snapshot of accepted/current program authority:
 - normal broker READ and optional TRADE credentials belong only to the authenticated tenant's `BrokerConnection`; no shared/global user broker token is allowed;
 - current T-Invest public-service terms remain a separate fail-closed broker gate; user-supplied tokens do not waive broker restrictions;
 - broker-write / Real-execution authority remains unchanged;
-- `app:app`, `trading_methods=false`, `REAL_TRADING_ENABLED=false` and protected V9 rollback remain intact.
+- `app:app`, `trading_methods=false`, `REAL_TRADING_ENABLED=false`, `PUBLIC_MULTI_USER_ENABLED=false` and protected V9 rollback remain intact.
 
 This box is a concise repository front door, **not a second progress ledger**. For exact evidence and transitions read `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
+
+## Integrated System Update Execution Law
+
+Amendment 12 defines two execution units without changing the Master Plan block/WP dependency order:
+
+- `FOCUSED_CHANGE` — a genuinely isolated defect, governance/documentation correction, maintenance item or mandatory split boundary;
+- `INTEGRATED_SYSTEM_UPDATE` — one coherent OWNER-authorized subsystem outcome with ordered internal WP/increment milestones, one integrated branch and one final PR by default.
+
+For integrated work, internal milestones remain mandatory but are branch-local only. Accepted progress changes only after the complete integrated PR is squash-merged and required exact-main post-merge verification is GREEN.
+
+Before first external verification publication, the integrated branch must reach `INTEGRATION_READY`: all member milestones complete, known preflight defects fixed, full diff/coupled surfaces reviewed, regression guards present and mandatory split triggers cleared.
+
+After a verification SHA is published, **HEAD FREEZE** applies while safe independent checks reach terminal state. Findings are consolidated and grouped by root cause/blast radius before one coherent correction batch. Temporary verifier commits/PRs and `continue-on-error` fake GREEN are forbidden. A new commit invalidates prior final exact-head evidence.
+
+Every `INTEGRATED_SYSTEM_UPDATE` uses:
+
+- `docs/updates/INTEGRATED_SYSTEM_UPDATE_EXECUTION_LEDGER_TEMPLATE.md`;
+- `.github/ISSUE_TEMPLATE/v10_integrated_system_update.yml`.
+
+Both are working-state records only and must say `BRANCH-LOCAL EXECUTION STATE — NOT ACCEPTED MAIN AUTHORITY`.
+
+The prepared visual update remains **OWNER START REQUIRED**. Do not create its implementation branch or modify `apps/web` until `START V10 WEB VISUAL SYSTEM UPDATE` is explicitly issued after Amendment 12 is accepted.
 
 ## Product target
 
@@ -84,15 +108,18 @@ Real execution is not enabled by this planning direction. Exact same-tenant READ
 | Documentation authority/lifecycle | `docs/DOCUMENTATION_AUTHORITY_AND_LIFECYCLE.md` |
 | Long-lived project context | `knowledge/00_PROJECT_MASTER_CONTEXT.md` |
 | Current V9 runtime/applied state | `knowledge/16_CURRENT_PROGRAM_STATUS.md` |
-| Current V10 progress / current WP | `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md` |
+| Current V10 progress / current execution authority | `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md` |
 | V10 scope/sequence lock | `docs/master-plan/OMNI_CIO_V10_PROGRAM_LOCK.md` |
 | V10 canonical base program | `docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.md` |
 | Active amendments / precedence | `docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md` |
+| Integrated System Update Execution Law | `docs/master-plan/OMNI_CIO_V10_INTEGRATED_SYSTEM_UPDATE_EXECUTION_AMENDMENT.md` |
+| Machine execution-unit contract | `docs/architecture/V10_INTEGRATED_SYSTEM_UPDATE_EXECUTION_CONTRACT.json` |
+| Integrated branch ledger template | `docs/updates/INTEGRATED_SYSTEM_UPDATE_EXECUTION_LEDGER_TEMPLATE.md` |
 | USER vs PROJECT OWNER boundary | `docs/master-plan/OMNI_CIO_V10_PRODUCT_USER_AND_ENGINEERING_AUTHORITY_BOUNDARY_AMENDMENT.md` |
 | Public/free/hosted target | `docs/master-plan/OMNI_CIO_V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_AMENDMENT.md` |
 | Machine public-hosting contract | `docs/architecture/V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_CONTRACT.json` |
 | WP22A technical acceptance | `docs/architecture/V10_WP22A_PHASE5_TECHNICAL_ACCEPTANCE_EVIDENCE.md` |
-| Current visual-refresh authority | `docs/architecture/V10_WEB_VISUAL_DESIGN_REFRESH_IMPLEMENTATION_BRIEF.md` |
+| Prepared visual-refresh content authority | `docs/architecture/V10_WEB_VISUAL_DESIGN_REFRESH_IMPLEMENTATION_BRIEF.md` |
 | V10 system/security architecture | `docs/architecture/` |
 | Protected V9 release/recovery history | `CHANGELOG.md`, `gpt/`, `knowledge/16_CURRENT_PROGRAM_STATUS.md` |
 
@@ -114,18 +141,18 @@ V10 does not silently replace this baseline. Public hosted V10 cutover occurs on
 
 ## V10 development law
 
-Use:
+Use the current execution unit from accepted authority:
 
-`restore authority -> current WP/defect -> focused branch -> root-cause/blast-radius review -> cheap preflight -> implementation/tests -> full diff -> all applicable exact-head checks SUCCESS -> zero blockers -> squash merge -> exact-main post-merge verification -> OWNER acceptance only when required -> status -> next WP`.
+`restore authority -> FOCUSED_CHANGE or OWNER-authorized INTEGRATED_SYSTEM_UPDATE -> root-cause/blast-radius + coupled-surface preflight -> implementation/internal milestones -> INTEGRATION_READY when applicable -> one published head -> HEAD FREEZE -> all applicable exact-head checks SUCCESS -> independent review -> coherent correction batch if required -> fresh final exact-head verification -> READY GREEN -> zero blockers -> squash merge -> exact-main post-merge verification -> status -> next major System Update`.
 
 Do not start Telegram, AI, Real execution or later packages out of sequence. Do not call RED, skipped, queued or pending GREEN. Do not synthesize OWNER physical evidence. Do not create a second Web App/repository/Core/broker stack.
 
-WP22A technical closeout is complete only through its accepted evidence chain. The current `WEB-VISUAL-A` package may change only the authorized design-system foundation; it cannot activate public production, mutate the final provider, expand broker-write authority or start WP23.
+The WP22A technical gate is complete only through its accepted evidence chain. Amendment 12 does not reopen it, activate public production, mutate the final provider, expand broker-write authority or start WP23.
 
 ## Protected V9 boundaries
 
-V9 remains owner-accepted controlled maintenance/recovery until an explicit V10 parity/decommission gate safely replaces it. Stable entrypoint remains `app:app`; protected rollback remains available. `START V10`, V10 planning, AI output or a GitHub merge is never broker-submit authorization.
+V9 remains owner-accepted controlled maintenance/recovery until an explicit V10 parity/decommission gate safely replaces it. Stable entrypoint remains `app:app`; protected rollback remains available. `START V10`, Amendment 12, an internal milestone, AI output or a GitHub merge is never broker-submit authorization.
 
 ## Recovery / safety
 
-`REAL_TRADING_ENABLED=false` remains the master Real-money kill switch until its owning future activation gate. `trading_methods=false` remains protected. No transfer/withdrawal authority is introduced. Real broker/Telegram/VK/provider/recovery secrets, full account IDs and private portfolio payloads never belong in GitHub/CI/artifacts.
+`REAL_TRADING_ENABLED=false` remains the master Real-money kill switch until its owning future activation gate. `trading_methods=false` remains protected. `PUBLIC_MULTI_USER_ENABLED=false` remains the public activation kill switch. No transfer/withdrawal authority is introduced. Real broker/Telegram/VK/provider/recovery secrets, full account IDs and private portfolio payloads never belong in GitHub/CI/artifacts.

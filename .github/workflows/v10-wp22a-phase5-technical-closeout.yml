@@ -1,20 +1,15 @@
 name: V10 WP22A Phase 5 Technical Closeout
 
+# Historical one-shot acceptance gate. WP22A Phase 5 is already accepted on main.
+# Live status/governance/test changes are protected by permanent repository guards and
+# must not replay this temporal exact-base acceptance against a later PR base.
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
-      - ".github/workflows/v10-wp22a-phase5-technical-closeout.yml"
-      - "AGENTS.md"
-      - "README.md"
       - "docs/architecture/V10_WP22A_PHASE5_PUBLIC_HOSTED_ACCEPTANCE_CONTRACT.json"
       - "docs/architecture/V10_WP22A_PHASE5_TECHNICAL_ACCEPTANCE_EVIDENCE.json"
       - "docs/architecture/V10_WP22A_PHASE5_TECHNICAL_ACCEPTANCE_EVIDENCE.md"
-      - "knowledge/00_PROJECT_MASTER_CONTEXT.md"
-      - "knowledge/17_V10_CURRENT_PROGRAM_STATUS.md"
-      - "scripts/check_v10_documentation_consistency.py"
-      - "scripts/check_v10_public_product_plan.py"
-      - "tests/test_v10_wp22a_phase5_transition.py"
 
 permissions:
   actions: read

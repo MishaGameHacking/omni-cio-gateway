@@ -1,19 +1,14 @@
 name: V10 WP22A Phase 4 Public Acceptance
 
+# Historical one-shot synthetic-preview acceptance gate. Phase 4 is accepted.
+# Live status/governance/test changes use permanent repository guards; they must
+# not re-probe an old hosted release against each later pull-request base SHA.
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
-      - ".github/workflows/v10-wp22a-phase4-public-acceptance.yml"
       - "docs/architecture/V10_WP22A_PHASE4_ACCEPTANCE_EVIDENCE.json"
       - "docs/architecture/V10_WP22A_PHASE4_ACCEPTANCE_EVIDENCE.md"
-      - "docs/architecture/V10_WP22A_PHASE5_PUBLIC_HOSTED_ACCEPTANCE_AUTHORIZATION.md"
-      - "docs/architecture/V10_WP22A_PHASE5_PUBLIC_HOSTED_ACCEPTANCE_CONTRACT.json"
-      - "knowledge/17_V10_CURRENT_PROGRAM_STATUS.md"
-      - "scripts/check_v10_wp22a_phase4_public_acceptance.py"
-      - "tests/test_v10_wp22a_phase4_public_acceptance.py"
-      - "tests/test_v10_wp22a_phase5_transition.py"
-      - "tests/test_wp22a_phase4_free_preview_authorization.py"
 
 permissions:
   contents: read

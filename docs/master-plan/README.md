@@ -28,7 +28,10 @@ Accepted amendment discovery:
 - `OMNI_CIO_V10_ENGINEERING_QUALITY_AND_GREEN_MERGE_AMENDMENT.md` — accepted Pre-CI/all-green/failure-learning/OWNER-handoff discipline;
 - `OMNI_CIO_V10_PRODUCT_USER_AND_ENGINEERING_AUTHORITY_BOUNDARY_AMENDMENT.md` — ordinary USER identity is separate from PROJECT OWNER engineering/business authority;
 - `OMNI_CIO_V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_AMENDMENT.md` — public global browser product, managed-cloud production, no OWNER-home production dependency, free initial access and tenant-scoped broker credentials;
-- `../architecture/V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_CONTRACT.json` — machine-readable contract for the same public launch direction;
+- `OMNI_CIO_V10_WP22A_TECHNICAL_CLOSEOUT_AND_PUBLIC_ACTIVATION_SEPARATION_AMENDMENT.md` — separates complete WP22A technical acceptance from later production activation;
+- `OMNI_CIO_V10_INTEGRATED_SYSTEM_UPDATE_EXECUTION_AMENDMENT.md` — Amendment 12, Integrated System Update Execution Law; changes delivery granularity while preserving dependency order, safety and accepted-main progress semantics;
+- `../architecture/V10_INTEGRATED_SYSTEM_UPDATE_EXECUTION_CONTRACT.json` — machine-readable Amendment-12 execution-unit contract;
+- `../architecture/V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_CONTRACT.json` — machine-readable public launch direction;
 - `../architecture/V10_AI_CORTEX_CONTRACT.json` and other machine-readable companions — executable/validated policy where defined;
 - `OMNI_CIO_V10_ACCOUNT_INDEPENDENCE_AMENDMENT.md` — historical owner-approved amendment already consolidated into the base plan and retained for provenance.
 
@@ -36,17 +39,26 @@ Current V10 progress authority:
 
 `../../knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
 
-Do **not** hard-code or infer the current WP/progress from historical PR text, a dated amendment, a package execution contract or this index. The status file on accepted `main` is the current-state authority.
+Do **not** hard-code or infer the current WP/progress from historical PR text, a dated amendment, a package execution contract, branch Execution Ledger or this index. The status file on accepted `main` is the current-state authority.
 
 The synchronized Master Plan Markdown/PDF pair must not be edited independently. New OWNER-approved implementation detail may be recorded by focused amendment; a later intentional consolidation must regenerate/review the synchronized pair and its integrity manifest together.
 
 ## V10 delivery sequence and lifecycle
 
-The canonical sequence remains defined by `OMNI_CIO_V10_MASTER_PLAN.md`. Each implementation package uses `OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md` and advances only after its Exit Gate.
+The canonical dependency/Block/WP sequence remains defined by `OMNI_CIO_V10_MASTER_PLAN.md`. Amendment 12 changes **delivery granularity**, not dependency order.
+
+Every material change uses exactly one execution unit:
+
+- `FOCUSED_CHANGE` for an isolated defect/governance/maintenance/mandatory-split unit;
+- `INTEGRATED_SYSTEM_UPDATE` for one coherent OWNER-authorized System Update with ordered member WP/increments.
+
+For integrated work, member milestones retain their own scope/contracts/tests/internal Exit criteria but may be completed branch-locally before the single final integrated PR. Accepted percentage and next-major-update authority change only after complete squash merge plus required exact-main post-merge acceptance.
+
+Integrated work is published only after `INTEGRATION_READY`. After a verification SHA is published, `HEAD FREEZE` applies while safe independent checks reach terminal state; findings are consolidated by root cause and corrected in coherent batches rather than one CI run per symptom.
+
+Every integrated update uses `../updates/INTEGRATED_SYSTEM_UPDATE_EXECUTION_LEDGER_TEMPLATE.md` and the repository System Update dashboard issue template. Those working records must say `BRANCH-LOCAL EXECUTION STATE — NOT ACCEPTED MAIN AUTHORITY`.
 
 Historical package files may correctly say that an earlier WP was `CURRENT`, `PENDING` or `NEXT` at the time they were written. That wording is package evidence, not a live queue. Current authorization is always read from `../../knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
-
-The presence of accepted `apps/api/`, `apps/web/` and Personal-Node infrastructure reflects already accepted owning WPs. It does not authorize out-of-sequence Telegram, AI or Real-execution work. Public multi-user is now the approved **target**, but actual public activation remains fail-closed until the corrected WP22A and its security/legal/broker/capacity gates pass.
 
 ## Concrete V10 product lock
 
@@ -55,20 +67,31 @@ The accepted amendments clarify implementation without changing block weights/or
 - Deterministic Core owns financial/accounting truth;
 - V10 accounting target uses verified broker HTML reports; no photo/screenshot/OCR portfolio workflow;
 - MOEX is current-market enrichment and stays distinct from broker period-end facts;
-- local-first Omni-CIO Cortex baseline is Qwen3.5-4B via Ollama behind a replaceable provider, subject to later hosting decisions of the owning AI WP;
+- local-first AI assumptions remain gated by the owning AI WP and later hosting decisions;
 - paid AI/search/hosted-agent SaaS is not required for V10 Definition of Done unless a later owning gate proves it necessary;
 - System Policy + typed tools + RAG + evals precede QLoRA;
 - 24/7 autonomy is event-driven/checkpointed;
-- SearXNG-first research + bounded HTTP/Playwright retrieval + Evidence Store;
+- bounded research + Evidence Store and provenance/freshness discipline remain mandatory;
 - AI has no direct broker-write/admin/GitHub-bypass/Real-money authority;
 - OWNER local participation is minimized to genuinely non-delegable actions;
-- **PROJECT OWNER is not a special product role; when using Omni-CIO the PROJECT OWNER is an ordinary USER on the same account/tenant/session path as supported users;**
-- **final public V10 production must be hosted independently of the OWNER's home IP/Wi-Fi/router/LAN/Lenovo; Lenovo remains engineering/CI/recovery, not the public availability anchor;**
-- **initial public USER access is free: billing, trial, subscription enforcement and premium feature gating are disabled; future monetization is deferred optional scope;**
-- **broker READ and optional TRADE credentials belong only to the authenticated tenant's BrokerConnection and may never be shared globally or across tenants;**
-- CI is verifier rather than primary debugger, and every applicable exact-head merge gate must conclude SUCCESS.
+- PROJECT OWNER is not a special product role; OWNER is an ordinary USER on the same account/tenant/session path;
+- final public V10 production must be hosted independently of OWNER home infrastructure; Lenovo remains engineering/CI/recovery;
+- initial public USER access is free; future monetization is deferred optional scope;
+- broker READ/optional TRADE credentials belong only to the authenticated tenant's `BrokerConnection`;
+- CI is verifier rather than primary debugger, and every applicable exact-head merge gate must conclude SUCCESS;
+- Amendment 12 never weakens exact-head, squash, recovery, public-production, broker or Real-money gates.
 
-Read the accepted amendments themselves for exact requirements and block-by-block elaboration.
+## Prepared visual System Update
+
+When current accepted status authorizes it and exact OWNER START is issued, Amendment 12 groups the approved visual refresh as:
+
+`WEB-VISUAL-A -> B -> C -> D -> E -> F -> G`
+
+inside `WEB-VISUAL-INTEGRATED` by default. The content/dependency order remains binding even though separate PR-per-increment delivery is no longer mandatory.
+
+Acceptance of Amendment 12 itself keeps **PRODUCT IMPLEMENTATION PAUSED**. Exact command required before product source work:
+
+`START V10 WEB VISUAL SYSTEM UPDATE`
 
 ## Omni-CIO v9 Portfolio Autopilot — completed protected runtime program
 
@@ -84,7 +107,7 @@ Current V9 applied/runtime status:
 
 `../../knowledge/16_CURRENT_PROGRAM_STATUS.md`.
 
-V9 remains the protected production/recovery baseline until a responsible later V10 WP explicitly replaces a boundary and passes its Exit Gate.
+V9 remains the protected production/recovery baseline until a responsible later V10 gate explicitly replaces a boundary and passes its Exit Gate.
 
 ## Source-of-truth hierarchy
 
@@ -96,10 +119,11 @@ For current V10 development:
 4. synchronized `OMNI_CIO_V10_MASTER_PLAN.md` + PDF + SHA manifest;
 5. `OMNI_CIO_V10_AMENDMENTS_INDEX.md` + accepted active amendments;
 6. machine-readable contracts;
-7. `../../knowledge/17_V10_CURRENT_PROGRAM_STATUS.md` for dynamic progress/current-next WP;
-8. accepted V10 architecture/ADR/current-WP contracts;
-9. exact-head PR/CI/runtime evidence;
-10. historical records as historical evidence only.
+7. `../../knowledge/17_V10_CURRENT_PROGRAM_STATUS.md` for dynamic progress/current-next execution authority;
+8. accepted V10 architecture/ADR/current execution-unit contracts;
+9. branch Ledger/dashboard as non-authoritative working state when an integrated update is active;
+10. exact-head PR/CI/runtime evidence;
+11. historical records as historical evidence only.
 
 ## Permanent safety boundaries
 
@@ -111,8 +135,11 @@ V10 development does not silently remove V9 safety boundaries:
 - AI has no direct broker-write authority;
 - GitHub engineering access is never trading authorization;
 - current `app:app` / GPT recovery behavior stays protected until an accepted V10 migration replaces it;
+- `PUBLIC_MULTI_USER_ENABLED=false`, `trading_methods=false` and `REAL_TRADING_ENABLED=false` remain fail-closed until their own accepted gates;
 - no competing GPT/Gateway/Web/Telegram/AI/execution source of truth.
 
 ## Further-change rule
 
-V10 work proceeds one current WP at a time through focused branch/PR, root-cause/blast-radius preflight, all applicable exact-head SUCCESS gates, zero blocking review threads, squash merge and required post-merge verification. New material scope is accepted only through the amendment process. V11/competing programs remain prohibited until V10 final acceptance.
+V10 work proceeds through the execution unit authorized by current status. `FOCUSED_CHANGE` remains focused and reviewable. `INTEGRATED_SYSTEM_UPDATE` keeps ordered internal milestones, complete preflight, `INTEGRATION_READY`, HEAD FREEZE verification batches, consolidated root-cause correction batches, all applicable exact-head SUCCESS, zero blocking review threads, squash merge and required post-merge verification.
+
+New material scope is accepted only through the amendment process. V11/competing programs remain prohibited until V10 final acceptance.

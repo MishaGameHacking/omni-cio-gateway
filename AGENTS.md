@@ -10,7 +10,7 @@
 
 `Existing Omni-CIO Custom GPT v9.0.0 → Omni-CIO Gateway (app:app) → protected broker contours`.
 
-V10 последовательно превращает этот продукт в самостоятельную Personal Autonomous Investment Platform. Не создавать второй Custom GPT, duplicate Gateway, parallel Web, Telegram brain, competing AI stack, competing scheduler или parallel broker/execution stack вне явно утверждённого V10 work package/amendment.
+V10 последовательно превращает этот продукт в самостоятельную Personal Autonomous Investment Platform. Не создавать второй Custom GPT, duplicate Gateway, parallel Web, Telegram brain, competing AI stack, competing scheduler или parallel broker/execution stack вне явно утверждённого V10 execution unit/amendment.
 
 Три protected V9 broker-контура изолированы:
 
@@ -34,17 +34,18 @@ Current accepted snapshot:
 
 - V10 WP0–WP22A are accepted COMPLETE according to the current-status/evidence chain;
 - accepted V10 progress is **54%** because Block E has now passed the complete `WP22A — External Web Access / Product Authentication Security Gate` technical Exit Gate;
-- **WEB-VISUAL-A — Premium Spatial Financial OS / Design-system foundation is the only authorized current functional package**;
+- **WEB-VISUAL-INTEGRATED — Premium Spatial Financial OS A→G System Update / OWNER START REQUIRED** is the next prepared functional execution unit under Amendment 12;
+- **PRODUCT IMPLEMENTATION PAUSED** until the exact OWNER command `START V10 WEB VISUAL SYSTEM UPDATE` is explicitly issued after Amendment 12 acceptance;
 - WP22A technical acceptance remains separate from the later public-production activation gate;
-- WP23+ remains LOCKED behind the accepted visual-refresh sequence and Master Plan authorization;
+- WP23+ remains LOCKED behind acceptance of the complete visual System Update and Master Plan authorization;
 - public multi-user/global browser service is the approved target, but `PUBLIC_MULTI_USER_ENABLED=false` remains the safe implementation default until the separate production-activation/security/privacy/broker/legal/capacity gates are accepted;
 - final public production must not depend on PROJECT OWNER home IP/Wi-Fi/router/LAN/Lenovo; the selected final managed-cloud provider remains Cloud.ru Evolution and final provider apply is still locked;
 - initial registered-user access is free: billing/trial/subscription enforcement/premium gating are disabled for initial launch;
-- broker-write / Real execution authority remains unchanged and not authorized by this status.
+- broker-write / Real execution authority remains unchanged and not authorized by this status or Amendment 12.
 
 The PROJECT OWNER is not a special Omni-CIO product role. When using Omni-CIO, the PROJECT OWNER is an ordinary USER on the same `OmniCIOUserAccount -> Tenant -> Session` path as supported users. GitHub/cloud-provider/Windows/CI authority stays outside product identity.
 
-The OWNER-approved Engineering Quality / Pre-CI / Green-Merge governance package is accepted and active. Governance changes development/verification discipline only and does not advance V10 product progress or unlock another WP.
+The OWNER-approved Engineering Quality / Pre-CI / Green-Merge governance package is accepted and active. The OWNER-approved **Integrated System Update Execution Law / Amendment 12** changes delivery granularity only; it does not advance V10 product progress or unlock another major System Update.
 
 Documentation lifecycle and the distinction between current authority and historical WP records are defined in `docs/DOCUMENTATION_AUTHORITY_AND_LIFECYCLE.md`.
 
@@ -66,7 +67,9 @@ Before any change, read in this order:
    - `docs/master-plan/OMNI_CIO_V10_PRODUCT_USER_AND_ENGINEERING_AUTHORITY_BOUNDARY_AMENDMENT.md`;
    - `docs/master-plan/OMNI_CIO_V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_AMENDMENT.md`;
    - `docs/master-plan/OMNI_CIO_V10_WP22A_TECHNICAL_CLOSEOUT_AND_PUBLIC_ACTIVATION_SEPARATION_AMENDMENT.md`;
+   - `docs/master-plan/OMNI_CIO_V10_INTEGRATED_SYSTEM_UPDATE_EXECUTION_AMENDMENT.md`;
 9. machine-readable contracts relevant to the work, especially:
+   - `docs/architecture/V10_INTEGRATED_SYSTEM_UPDATE_EXECUTION_CONTRACT.json`;
    - `docs/architecture/V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_CONTRACT.json`;
    - `docs/architecture/V10_AI_CORTEX_CONTRACT.json`;
    - `docs/architecture/V10_GITHUB_PRO_UTILIZATION_CONTRACT.json`;
@@ -74,36 +77,75 @@ Before any change, read in this order:
    - `docs/architecture/V10_COMPONENT_REUSE_MATRIX.json`;
    - `docs/architecture/V10_RELEASE_MANIFEST.schema.json`;
    - `docs/architecture/V10_ENGINEERING_QUALITY_GATE_CONTRACT.json`;
-10. `docs/master-plan/OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md` before starting any implementation WP;
+10. `docs/master-plan/OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md` before starting any implementation execution unit/member milestone;
 11. `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`;
-12. accepted V10 architecture, ADR, recovery and current-package files;
+12. accepted V10 architecture, ADR, recovery and current execution-unit files/Execution Ledger when authorized;
 13. actual `main`, open PR/issues and GitHub Actions.
 
 Old chat, screenshot, stale PR description, package-local historical status heading or unmerged planning draft is never source of truth when it conflicts with accepted `main` plus the authority chain above.
 
-## 4. Sequential delivery and engineering-quality discipline
+## 4. Integrated System Update Execution Law and engineering-quality discipline
 
-Every significant V10/maintenance package follows:
+Every material V10 change uses exactly one execution unit:
 
-`restore context → identify exactly one current WP/defect → focused branch → root-cause/blast-radius reasoning → implementation/tests → cheap/focused preflight → full-diff review → exact-head applicable gates → all applicable checks SUCCESS → resolve review threads → squash merge → exact new main → post-merge verification → OWNER product acceptance only if required → update V10 status → next WP`.
+- `FOCUSED_CHANGE` — a genuinely isolated defect, governance/documentation correction, maintenance item, independent migration step or mandatory split boundary;
+- `INTEGRATED_SYSTEM_UPDATE` — one coherent OWNER-authorized system/subsystem outcome with ordered member WP/increments.
+
+For `INTEGRATED_SYSTEM_UPDATE`:
+
+- one integrated branch and one final PR are the default;
+- member WP/increments remain mandatory ordered internal milestones and keep Master Plan dependency order;
+- internal milestone PASS is branch-local only and never advances accepted V10 percentage, changes accepted `main`, unlocks the next major System Update, activates public production or authorizes broker/Real execution;
+- every integrated update uses `docs/updates/INTEGRATED_SYSTEM_UPDATE_EXECUTION_LEDGER_TEMPLATE.md` and the GitHub System Update dashboard issue template;
+- both working-state records must say `BRANCH-LOCAL EXECUTION STATE — NOT ACCEPTED MAIN AUTHORITY`;
+- before first external verification publication, all required member milestones, known focused failures, full-diff review, directly coupled producer/consumer/config/workflow review, analogous-pattern search where material, adjacent failure review, deterministic regression guards, security/recovery review and mandatory split-trigger review must pass; only then mark `INTEGRATION_READY`.
+
+CI is an independent verifier, not the normal interactive debugger.
+
+After a verification SHA is published, **HEAD FREEZE** applies while the current safe independent verification batch reaches terminal state. A first ordinary RED is not a signal to immediately push another symptom-fix commit. Where safe and technically possible:
+
+1. allow independent applicable checks to reach terminal state;
+2. collect available GitHub Actions, authoritative Windows CI, Sonar, Gitar, SAST/security, browser/E2E and owning-gate findings;
+3. create one consolidated finding inventory;
+4. group findings by root cause/defect class;
+5. perform root-cause, blast-radius, analogous-pattern, coupled-surface, adjacent-failure and security/recovery analysis;
+6. add permanent regression guards for reusable defect classes;
+7. publish one coherent correction batch only after complete focused/local preflight.
+
+`continue-on-error` must never make a required RED look GREEN. Safety abort overrides diagnostic completeness if continued execution could expose real secrets/private data, reach broker-write/Real-money authority, perform destructive migration/provider mutation, create uncontrolled paid-resource mutation or expose another tenant.
+
+Any new published commit invalidates previous final exact-head GREEN evidence.
+
+Mandatory split triggers are evidence-based, not WP-number-based:
+
+1. DB/migration ordering;
+2. security/authority transition;
+3. dependency/toolchain boundary;
+4. genuinely non-delegable OWNER/provider action;
+5. live/temporal evidence such as soak/Shadow Mode;
+6. production cutover;
+7. Real-money authority;
+8. reviewability limit.
+
+For `FOCUSED_CHANGE`, the protected lifecycle remains a focused branch/PR. For `INTEGRATED_SYSTEM_UPDATE`, the protected lifecycle is:
+
+`restore authority → exact OWNER-authorized System Update → integrated branch → ordered internal milestones → INTEGRATION_READY → one coherent published head → DRAFT exact-head verification → HEAD FREEZE → independent review → coherent correction batch if required → fresh final exact-head verification → READY → fresh applicable READY SUCCESS → zero blockers → squash merge → exact new main → Regression Shield/owning post-merge gates → accepted status transition`.
 
 Binding rules:
 
-- do not implement later WPs early because hardware or an API is available;
-- do not mix unrelated WPs in one PR;
+- do not implement a later major System Update early because hardware or an API is available;
+- do not silently absorb unrelated scope into an integrated update;
 - do not weaken lint/type/security/eval/Regression Shield to make a PR green;
-- do not treat file/UI existence as completion; the owning Exit Gate is required;
+- do not treat file/UI existence or an internal milestone checkbox as accepted completion;
 - new material scope requires OWNER-approved amendment, not chat improvisation;
 - no V11 or competing roadmap before V10 reaches 100% and owner acceptance;
-- any implementation WP must fill/use `OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md`;
-- if discovered work is not required for the current Exit Gate, classify it as current blocker/defect, future-WP work or amendment proposal instead of silently implementing it;
-- CI is an independent verifier, not the normal interactive debugger;
-- before an expensive full cycle, establish root cause, inspect the complete changed surface and directly coupled consumers/producers, search analogous repository patterns, inspect adjacent failure modes, add a permanent regression guard when the defect class is reusable, and run available cheap/focused checks;
+- implementation execution units/member milestones must fill/use `OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md`;
+- if discovered work is not required for the current execution-unit outcome, classify it as current blocker/defect, future work, mandatory split or amendment proposal instead of silently implementing it;
+- before an expensive full cycle, establish root cause where applicable, inspect the complete changed surface and directly coupled consumers/producers, search analogous repository patterns, inspect adjacent failure modes, add a permanent regression guard when the defect class is reusable, and run available cheap/focused checks;
 - a one-line patch is acceptable only when evidence proves the defect class is genuinely local;
 - an unexpected material RED after declared preflight readiness requires a confidence postmortem and reusable lesson in `docs/operations/V10_ENGINEERING_FAILURE_LEARNING_LEDGER.md`;
 - every **applicable** exact-head V10 check must actually execute and conclude `success`; `failure`, `cancelled`, `queued`, `pending`, `in_progress`, `timed_out`, `action_required`, `stale`, `neutral` and `skipped` are not V10 GREEN evidence for an applicable gate;
 - infrastructure/billing/provider failures must be classified truthfully, but a RED applicable check still blocks merge;
-- any new commit invalidates the previous final GREEN evidence;
 - normal PR closure is GREEN exact head → final diff/review → squash merge; an unmerged superseded PR is historical work, never accepted implementation.
 
 ## 5. V10 migration/productization discipline — binding
@@ -425,7 +467,7 @@ Regression Shield/authoritative merge gate remains strict. At minimum protect:
 - lock reproducibility;
 - CI/security policy;
 - repository boundaries;
-- engineering-governance, documentation-consistency and CI cost-control contracts;
+- engineering-governance, Integrated System Update governance, documentation-consistency and CI cost-control contracts;
 - compile/Ruff/format/mypy;
 - `app:app` compatibility until intentionally retired;
 - current GPT/recovery contracts while applied;
@@ -441,6 +483,7 @@ Permanent guards include:
 
 - `python scripts/check_v10_repository_boundaries.py`;
 - `python scripts/check_v10_engineering_governance.py`;
+- `python scripts/check_v10_integrated_system_update_governance.py`;
 - `python scripts/check_v10_documentation_consistency.py`.
 
 Do not bypass or weaken these guards to land a change.
@@ -449,10 +492,14 @@ When AI implementation begins, CI must additionally fail closed on policy/tool/e
 
 ## 18. Current next action
 
-Current functional authorization is read only from `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`. **WEB-VISUAL-A — Premium Spatial Financial OS / Design-system foundation** is the only authorized current functional package and WP23+ remains locked.
+Current functional authorization is read only from `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
 
 The WP22A technical gate is complete only through its accepted Phase-5 evidence chain. Public production remains independently inactive: `PUBLIC_MULTI_USER_ENABLED=false`, final Cloud.ru provider apply/cutover remains unauthorized, public T-Invest remains fail-closed, broker write remains OFF, `trading_methods=false` and `REAL_TRADING_ENABLED=false` remain protected.
 
-`WEB-VISUAL-A` may modify only canonical design-system foundation scope defined by `docs/architecture/V10_WEB_VISUAL_DESIGN_REFRESH_IMPLEMENTATION_BRIEF.md`: tokens, base styling and directly related design-system contracts/tests. Do not include shell/navigation Increment B, route-specific redesign, API/database/auth/session/tenant changes, new broker authority, WP23 Telegram Bot work or AI/Cortex work in the same PR.
+**PRODUCT IMPLEMENTATION PAUSED.** The next prepared execution unit is **WEB-VISUAL-INTEGRATED — Premium Spatial Financial OS A→G System Update / OWNER START REQUIRED**. Amendment 12 does not itself start product work.
 
-Every visual increment still follows exact-head DRAFT GREEN → independent review → fresh READY GREEN → squash merge → exact-main post-merge verification. Increment B must not start before Increment A is accepted.
+Do not create the integrated visual branch or modify `apps/web` for the refresh until the OWNER explicitly issues:
+
+`START V10 WEB VISUAL SYSTEM UPDATE`
+
+When started, `WEB-VISUAL-A -> B -> C -> D -> E -> F -> G` remain ordered branch-local member milestones. The complete System Update still follows `INTEGRATION_READY` → exact-head DRAFT GREEN → HEAD FREEZE / independent review → coherent correction batch if required → fresh READY GREEN → squash merge → exact-main post-merge verification. WP23+ remains locked until the complete visual System Update is accepted.

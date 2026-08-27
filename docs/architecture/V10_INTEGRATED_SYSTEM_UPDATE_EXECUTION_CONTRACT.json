@@ -1,0 +1,100 @@
+{
+  "schema": "omni-cio.v10.integrated-system-update-execution.v1",
+  "status": "OWNER_APPROVED_EFFECTIVE_WHEN_PRESENT_ON_ACCEPTED_MAIN",
+  "execution_units": [
+    "FOCUSED_CHANGE",
+    "INTEGRATED_SYSTEM_UPDATE"
+  ],
+  "authority": {
+    "product_progress_effect": "NONE",
+    "runtime_authority_effect": "NONE",
+    "product_implementation_paused_after_acceptance": true,
+    "next_prepared_system_update": "WEB-VISUAL-INTEGRATED",
+    "next_prepared_member_milestones": [
+      "WEB-VISUAL-A",
+      "WEB-VISUAL-B",
+      "WEB-VISUAL-C",
+      "WEB-VISUAL-D",
+      "WEB-VISUAL-E",
+      "WEB-VISUAL-F",
+      "WEB-VISUAL-G"
+    ],
+    "owner_start_required": true,
+    "owner_start_command": "START V10 WEB VISUAL SYSTEM UPDATE"
+  },
+  "integrated_update": {
+    "one_branch_default": true,
+    "one_final_pr_default": true,
+    "internal_milestones_required": true,
+    "member_milestones_must_follow_dependency_order": true,
+    "internal_milestone_pass_is_branch_local_only": true,
+    "main_progress_changes_only_after_merge_and_post_merge_acceptance": true,
+    "next_major_update_locked_until_acceptance": true,
+    "only_one_product_integrated_update_active_by_default": true
+  },
+  "publication": {
+    "publish_after_integration_ready": true,
+    "temporary_verifier_commits_forbidden": true,
+    "one_coherent_implementation_head_default": true,
+    "second_published_head_requires_correction_batch_base_sync_or_split_reason": true
+  },
+  "verification": {
+    "head_freeze_after_external_verification": true,
+    "observe_safe_findings_before_fix": true,
+    "root_cause_before_correction": true,
+    "blast_radius_before_correction": true,
+    "analogous_pattern_search_before_correction": true,
+    "coupled_producer_consumer_review_before_correction": true,
+    "adjacent_failure_mode_review_before_correction": true,
+    "batch_correction_default": true,
+    "continue_on_error_to_fake_green_forbidden": true,
+    "exact_head_success_only": true,
+    "new_commit_invalidates_prior_final_green": true,
+    "safety_abort_overrides_diagnostic_completeness": true
+  },
+  "ledgers": {
+    "branch_execution_ledger_required": true,
+    "branch_execution_ledger_template": "docs/updates/INTEGRATED_SYSTEM_UPDATE_EXECUTION_LEDGER_TEMPLATE.md",
+    "github_dashboard_required": true,
+    "github_dashboard_issue_template": ".github/ISSUE_TEMPLATE/v10_integrated_system_update.yml",
+    "working_state_banner": "BRANCH-LOCAL EXECUTION STATE — NOT ACCEPTED MAIN AUTHORITY",
+    "current_status_authority_remains": "knowledge/17_V10_CURRENT_PROGRAM_STATUS.md"
+  },
+  "split_triggers": [
+    "migration_ordering",
+    "security_authority_transition",
+    "dependency_toolchain_boundary",
+    "owner_provider_action",
+    "live_temporal_evidence",
+    "production_cutover",
+    "real_money_authority",
+    "reviewability_limit"
+  ],
+  "supersession": {
+    "delivery_granularity_only": true,
+    "program_block_wp_order_preserved": true,
+    "program_weights_preserved": true,
+    "product_scope_preserved": true,
+    "references": [
+      "docs/master-plan/OMNI_CIO_V10_PROGRAM_LOCK.md#7-sequential-delivery-rule",
+      "docs/master-plan/OMNI_CIO_V10_ENGINEERING_QUALITY_AND_GREEN_MERGE_AMENDMENT.md",
+      "docs/master-plan/OMNI_CIO_V10_GITHUB_PRO_AND_MIGRATION_IMPLEMENTATION_AMENDMENT.md",
+      "docs/architecture/V10_WEB_VISUAL_DESIGN_REFRESH_IMPLEMENTATION_BRIEF.md#17-implementation-increments"
+    ]
+  },
+  "protected_invariants": {
+    "app_entrypoint": "app:app",
+    "trading_methods": false,
+    "REAL_TRADING_ENABLED": false,
+    "broker_write": false,
+    "PUBLIC_MULTI_USER_ENABLED": false,
+    "transfer_withdrawal_authority": false,
+    "margin_leverage_uncovered_short_authority": false,
+    "cross_tenant_isolation_required": true,
+    "secrets_private_data_in_github_ci_artifacts_allowed": false,
+    "squash_merge_required": true,
+    "zero_unresolved_blocking_threads_required": true,
+    "post_merge_regression_shield_required": true,
+    "owner_only_evidence_may_be_synthesized": false
+  }
+}
