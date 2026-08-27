@@ -1,0 +1,87 @@
+name: V10 Hosted Release Alignment
+
+on:
+  workflow_run:
+    workflows:
+      - V10 Phase 4 Free Preview Deploy
+    types:
+      - completed
+    branches:
+      - main
+  workflow_dispatch:
+  schedule:
+    - cron: "23 3 * * *"
+
+concurrency:
+  group: v10-hosted-release-alignment
+  cancel-in-progress: false
+
+jobs:
+  verify-hosted-release:
+    name: Verify hosted preview release matches accepted main
+    permissions:
+      actions: read
+      contents: read
+    if: >-
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.head_branch == 'main') ||
+      (github.event_name == 'workflow_dispatch' &&
+       github.ref == 'refs/heads/main') ||
+      github.event_name == 'schedule'
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash
+    env:
+      EXPECTED_MAIN_SHA: >-
+        ${{ github.event_name == 'workflow_run' &&
+            github.event.workflow_run.head_sha || github.sha }}
+
+    steps:
+      - name: Expose installed Git Bash before repository bootstrap
+        shell: cmd
+        run: |
+          powershell.exe -NoProfile -NonInteractive -Command "$git=(Get-Command git.exe -ErrorAction Stop).Source; $root=Split-Path -Parent (Split-Path -Parent $git); $bin=Join-Path $root 'bin'; if (-not (Test-Path (Join-Path $bin 'bash.exe'))) { exit 12 }; $bin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append"
+          if errorlevel 1 exit /b 12
+
+      - name: Bootstrap exact current main without external Actions
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GIT_TERMINAL_PROMPT: "0"
+          GCM_INTERACTIVE: "0"
+        run: |
+          set -euo pipefail
+          find . -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+          git init .
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          git config --local gc.auto 0
+          git config --local credential.helper ""
+          git config --local --add credential.helper '!f() { echo username=x-access-token; echo password=$GITHUB_TOKEN; }; f'
+          git fetch --no-tags --prune --depth=1 origin "+refs/heads/main:refs/remotes/origin/main"
+          test "$(git rev-parse refs/remotes/origin/main)" = "$EXPECTED_MAIN_SHA"
+          git checkout --detach "$EXPECTED_MAIN_SHA"
+          git config --local --unset-all credential.helper
+          test "$(git rev-parse HEAD)" = "$EXPECTED_MAIN_SHA"
+          test -z "$(git config --local --get-all credential.helper || true)"
+
+      - name: Bootstrap isolated Python 3.12.10
+        shell: cmd
+        run: scripts\bootstrap_windows_ci_python.cmd
+
+      - name: Verify exact-main Regression Shield before runtime assertion
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python scripts/check_v10_exact_main_regression.py
+
+      - name: Verify canonical hosted release alignment
+        run: >-
+          python scripts/check_v10_hosted_release_alignment.py
+          --expected-sha "$EXPECTED_MAIN_SHA"
+
+      - name: Clean self-hosted alignment workspace
+        if: always()
+        run: |
+          git config --local --unset-all credential.helper 2>/dev/null || true
+          git reset --hard HEAD
+          git clean -ffdx
