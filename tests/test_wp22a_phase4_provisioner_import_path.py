@@ -8,7 +8,8 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "v10-phase4-free-preview-deploy.yml"
-MODULE = "scripts.provision_v10_render_neon_preview"
+MODULE = "scripts.provision_v10_render_neon_preview_org_scope"
+LEGACY_MODULE = "scripts.provision_v10_render_neon_preview"
 
 
 def _clean_python_env() -> dict[str, str]:
@@ -17,10 +18,11 @@ def _clean_python_env() -> dict[str, str]:
     return env
 
 
-def test_phase4_workflow_executes_provisioner_as_repo_root_module() -> None:
+def test_phase4_workflow_executes_org_scoped_adapter_as_repo_root_module() -> None:
     text = WORKFLOW.read_text(encoding="utf-8")
 
     assert f"python -m {MODULE}" in text
+    assert f"python -m {LEGACY_MODULE} \\\n" not in text
     assert "python scripts/provision_v10_render_neon_preview.py" not in text
     assert "tests/test_wp22a_phase4_provisioner_import_path.py" in text
 
