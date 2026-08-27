@@ -37,7 +37,9 @@ def test_wp22a_is_accepted_and_integrated_visual_update_is_prepared() -> None:
     assert "WEB-VISUAL-INTEGRATED" in text
     assert "OWNER START REQUIRED" in text
     assert "START V10 WEB VISUAL SYSTEM UPDATE" in text
-    assert "PUBLIC PRODUCTION ACTIVATION LOCKED" in text
+    assert "Amendment 13 — progressive capability activation" in text
+    assert "current runtime state, not a V10-wide release lock" in text
+    assert "current user-facing activation transitions — **BLOCKED_EXTERNAL" in text
     assert (
         "## Current next package — WEB-VISUAL-INTEGRATED — "
         "Prepared A→G System Update / OWNER START REQUIRED"

@@ -1,89 +1,73 @@
-# FL-046 — Cookie-rotation tests must preserve browser cookie scope
+# FL-046 — Superseded current-status semantics require full consumer migration
 
-Status: **ADDITIVE FAILURE-LEARNING ENTRY FOR WP22A PHASE 5; PRIMARY LEDGER REMAINS `V10_ENGINEERING_FAILURE_LEARNING_LEDGER.md`**  
-Date: **2026-08-26**  
-WP / PR / reference: **WP22A Phase 5 integrated technical closeout / PR #391 / exact head `40918d45` / authoritative Windows Regression Shield run `32902327033`**
+Status: **ADDITIVE FAILURE-LEARNING ENTRY FOR AMENDMENT 13; PRIMARY LEDGER REMAINS `V10_ENGINEERING_FAILURE_LEARNING_LEDGER.md`**  
+Date: **2026-08-27**  
+WP / PR / reference: **Amendment 13 governance / PR #395 / exact-head Self-Hosted Windows CI run `33051189974`, job `98446832741`**
 
 ## Symptom / failing gate
 
-The exact-head DRAFT cycle for PR #391 reached the authoritative `Self-Hosted Windows CI` Regression Shield after the same head had already passed the applicable Ruff, formatter, mypy and focused V10 gates.
+After Amendment 13 guards, formatting, type checks, protected `app:app` checks and read-only release checks passed on exact head `a3ebed8bec66e30ba41282afa0f091a2cf4e6659`, the full Regression Shield reached 2,547 tests and failed only three assertions after **2,544 passed**. Coverage remained above the required threshold at **62.20%**.
 
-The full protected test suite reported:
+The failures were not runtime defects. Two historical WP22A transition test files still required the old current-status phrases `PUBLIC PRODUCTION ACTIVATION LOCKED` or ``PUBLIC_MULTI_USER_ENABLED=false` remains the safe default``. Amendment 13 intentionally supersedes that blanket current-state interpretation with capability-specific `BLOCKED_EXTERNAL` / `LIVE_OPERABLE` semantics while preserving the actual current false runtime flag and external blockers.
 
-`1 failed, 2521 passed`
+## Root-cause analysis
 
-The failing regression was:
+The governance update correctly synchronized the Amendment, machine contract, canonical current status, `AGENTS.md`, `CONTRIBUTING.md`, WP/PR templates and the dedicated public/progressive guards. However, preflight did not search every pre-existing test that consumed `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md` by exact historical wording.
 
-`tests/test_v10_wp22a_provider_auth_routes.py::test_callback_requires_initiating_browser_and_rotates_session`
+Those tests mixed two different responsibilities:
 
-The provider callback itself completed its intended security flow: provider identity resolution, old-session revocation, fresh CSPRNG token minting and server-side binding all ran successfully and the response returned the expected redirect. The failure occurred only when the test performed a name-only HTTPX cookie lookup after rotation. HTTPX raised `CookieConflict` because two cookies with the name `__Host-omni_v10_session` existed in different cookie-jar scopes.
+- validating immutable historical WP22A/Amendment-11 evidence, which must remain unchanged;
+- validating the **current** V10 authority summary, whose activation semantics were deliberately superseded by Amendment 13.
 
-The head remains RED until a new exact-head Regression Shield succeeds. This fixture correction does not satisfy or override the separate SonarQube Cloud Security Rating B blocker observed on the same historical head.
-
-## Root cause
-
-The regression manually seeded the old session with:
-
-`client.cookies.set(BROWSER_SESSION_COOKIE, OLD_SESSION_TOKEN)`
-
-That synthetic cookie had no explicit host/domain scope. The callback response correctly emitted the production `__Host-omni_v10_session` cookie with `Path=/`, `Secure` and no `Domain` attribute. HTTPX therefore retained the manually seeded test cookie and the response cookie as distinct cookie-jar entries with the same name but different scopes.
-
-A real browser does not create the pre-existing `__Host-` session through an unscoped test helper. The cookie is host-bound by a prior server `Set-Cookie` response. The regression fixture therefore did not faithfully model the browser scope that the production replacement operation expects.
-
-HTTPX 0.28.1 intentionally supports domain/path-scoped cookies. Its `Cookies.get()` raises `CookieConflict` when a name-only lookup matches multiple scoped cookies. The failure was consequently a deterministic test-fixture portability defect, not evidence that the production rotation emitted two session cookies.
+The historical evidence assertions remained valid. Only the current-status string assertions became stale.
 
 ## Blast radius searched
 
-The review covered:
+The correction review searched repository consumers for both obsolete current-status markers and distinguished current-state tests from accepted historical evidence. The stale executable assertions were confined to:
 
-- every Phase-5 `TestClient.cookies.set(...)` use in the PR diff;
-- manual session-cookie fixtures in hosted rate-limit tests;
-- provider browser-proof cookie fixtures in provider rate-limit tests;
-- hosted technical-boundary session/CSRF fixtures;
-- existing accepted WP15/WP22A tests that manually seed cookies;
-- every path that expects a same-name server response to replace or delete a manually seeded cookie;
-- the provider callback session-rotation assertions;
-- the exact accepted dependency pin `httpx==0.28.1`;
-- Linux-style focused gates versus the authoritative Windows full Regression Shield.
+- `tests/test_v10_wp22a_phase5_transition.py`;
+- `tests/test_wp22a_phase4_free_preview_authorization.py`.
 
-The analogous manual fixtures do not currently combine an unscoped seed with a same-name server replacement assertion. The material failure is therefore isolated to the session-rotation regression. Production cookie attributes, provider authority, tenant scope, broker authority and public-production locks do not require modification.
+Historical Amendment-10/11/12 documents, Phase-4/5 contracts and authorization records containing older activation language are retained as historical accepted evidence and are not rewritten as if Amendment 13 had always existed.
+
+The already-updated `tests/test_v10_public_free_multi_user_plan.py` uses the Amendment-13 progressive semantics and therefore did not require correction.
+
+## Why preflight missed it
+
+Focused Amendment-13 checks validated the new authority surfaces and new regression tests, but the analogous-pattern search concentrated on live documentation/guards rather than all legacy tests that parse the canonical status file. The full protected Regression Shield was the first gate broad enough to execute these older transition consumers together with the new status semantics.
 
 ## Corrective change
 
-The rotation regression now seeds the synthetic old session into the same host/path cookie-jar slot used by the `https://omni.example` TestClient:
+The stale transition tests now preserve the facts that still matter while consuming the new current authority correctly:
 
-`domain="omni.example", path="/"`
+- `PUBLIC_MULTI_USER_ENABLED=false` remains asserted as the current runtime fact;
+- `Amendment 13 — progressive capability activation` is required;
+- `current runtime state, not a V10-wide release lock` is required;
+- current user-facing activation remains represented as `BLOCKED_EXTERNAL` where real gates remain;
+- WP23 remains locked and `PRODUCT IMPLEMENTATION PAUSED` / `START V10 WEB VISUAL SYSTEM UPDATE` remain unchanged.
 
-After the callback, session, CSRF and deleted provider-proof assertions use the same explicit host/path scope.
-
-This lets the callback's real `Set-Cookie` replace the synthetic old session in the cookie jar, which matches the browser behavior the test is intended to model. The production route remains unchanged: the `__Host-` session cookie still has `Secure=True`, `Path=/` and no `Domain` attribute.
-
-No cookie-security weakening, dependency update, HTTPX workaround, platform-specific skip, test exclusion or CI relaxation is introduced.
+The progressive capability guard now reads the affected current-status consumer tests before expensive full-suite execution, requires the Amendment-13 markers and rejects reintroduction of the two obsolete blanket-lock assertions.
 
 ## Permanent regression / guard
 
-The existing provider-route rotation test remains the permanent functional guard and now proves the intended behavior with browser-faithful scope:
+`python scripts/check_v10_progressive_capability_activation.py` now fails early when the reviewed current-status consumer tests:
 
-- the callback receives and revokes the old session token;
-- the authenticated product scope is server-resolved;
-- the fresh token is independently minted and differs from old/browser/provider material;
-- the exact fresh token is present in the expected host/path session-cookie slot;
-- the CSRF cookie in the same scope validates against the fresh token;
-- the provider proof cookie is removed from that scope after successful callback.
+- stop recognizing Amendment 13 progressive capability semantics;
+- stop recognizing `BLOCKED_EXTERNAL` / current-runtime-not-release-lock semantics; or
+- reintroduce the exact obsolete current-status assertions that caused this Regression Shield RED.
 
-The authoritative Windows Regression Shield remains mandatory after the correction. Success on a narrower Linux/focused lane does not substitute for that exact-head proof.
+The full Regression Shield remains authoritative and is not narrowed or weakened.
 
 ## Future prevention rule
 
-For TestClient/HTTPX cookie tests that exercise replacement, rotation or deletion:
+When a governance amendment intentionally supersedes current-status semantics:
 
-1. model the cookie's browser host/path scope when manually seeding pre-existing state;
-2. do not use a name-only cookie lookup when the test can legitimately contain more than one scope;
-3. use explicit `domain` and `path` in assertions that are about one browser origin;
-4. preserve production `__Host-` requirements instead of weakening cookie attributes to make a test jar convenient;
-5. search adjacent manual cookie fixtures whenever a cookie-scope failure appears;
-6. require the authoritative cross-platform Regression Shield after a fixture correction because narrower lanes can miss cookie-jar/platform interaction differences.
+1. search all tests/scripts that consume the canonical current-status file or the superseded marker before the first expensive CI cycle;
+2. update **current-state consumers** in the same coherent change;
+3. preserve historical accepted documents/contracts as historical evidence unless the amendment explicitly requires a lifecycle note rather than rewriting their original meaning;
+4. keep underlying fail-closed facts such as false runtime flags and unpassed external gates explicit even when the higher-level activation model changes;
+5. add an early deterministic guard for the superseded consumer class when the lesson is reusable.
 
 ## Dependency/tooling knowledge change
 
-No dependency update is required. The repository remains pinned to `httpx==0.28.1`. The relevant HTTPX behavior is part of its supported cookie API: cookies are scoped by domain/path and a name-only lookup is ambiguous when multiple scoped cookies share the same name.
+No dependency or toolchain change is required. The lesson is about semantic authority migration across repository consumers: focused governance guards and the full Regression Shield protect different layers and both remain mandatory.

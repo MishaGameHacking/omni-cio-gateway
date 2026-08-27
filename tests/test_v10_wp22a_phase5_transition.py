@@ -158,7 +158,9 @@ def test_status_closes_wp22a_and_prepares_integrated_visual_update() -> None:
     assert "START V10 WEB VISUAL SYSTEM UPDATE" in text
     assert "WP23+ LOCKED" in text
     assert "Accepted implementation progress is **54%**" in text
-    assert "`PUBLIC_MULTI_USER_ENABLED=false` remains the safe default" in text
+    assert "`PUBLIC_MULTI_USER_ENABLED=false`" in text
+    assert "current runtime state, not a V10-wide release lock" in text
+    assert "current user-facing activation transitions — **BLOCKED_EXTERNAL" in text
 
 
 def test_phase5_authority_closes_technical_gate_without_widening_locks() -> None:
@@ -241,7 +243,9 @@ def test_amendment11_is_discoverable_and_keeps_next_gates_locked() -> None:
         "provider doubles may be injected only below deployed routing"
         in authorization
     )
-    assert "PUBLIC PRODUCTION ACTIVATION LOCKED" in status
+    assert "Amendment 13 — progressive capability activation" in status
+    assert "current runtime state, not a V10-wide release lock" in status
+    assert "BLOCKED_EXTERNAL" in status
     assert "Accepted implementation progress is **54%**" in status
 
 

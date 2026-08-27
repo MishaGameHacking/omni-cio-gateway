@@ -25,6 +25,10 @@ WP_TEMPLATE = ROOT / "docs/master-plan/OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md"
 PR_TEMPLATE = ROOT / ".github/pull_request_template.md"
 WORKFLOW = ROOT / ".github/workflows/v10-engineering-governance.yml"
 PUBLIC_PLAN_GUARD = ROOT / "scripts/check_v10_public_product_plan.py"
+STATUS_CONSUMER_TESTS = (
+    ROOT / "tests/test_v10_wp22a_phase5_transition.py",
+    ROOT / "tests/test_wp22a_phase4_free_preview_authorization.py",
+)
 
 EXPECTED_STATES = [
     "IMPLEMENTED",
@@ -39,6 +43,10 @@ CURRENT_CAPABILITY_STATES = {
     "tinvest_read": "BLOCKED_EXTERNAL",
 }
 WORKING_BANNER = "WORKING CAPABILITY ACTIVATION STATE — NOT ACCEPTED MAIN AUTHORITY"
+OBSOLETE_CURRENT_STATUS_ASSERTIONS = (
+    'assert "PUBLIC PRODUCTION ACTIVATION LOCKED" in ',
+    'assert "`PUBLIC_MULTI_USER_ENABLED=false` remains the safe default" in ',
+)
 
 
 def _read(path: Path, failures: list[str]) -> str:
@@ -300,6 +308,23 @@ def _validate_broker_and_security(payload: dict[str, Any], failures: list[str]) 
     _validate_runtime_defaults(payload, failures)
 
 
+def _validate_current_status_consumers(failures: list[str]) -> None:
+    for path in STATUS_CONSUMER_TESTS:
+        text = _read(path, failures)
+        label = str(path.relative_to(ROOT))
+        for marker in (
+            "Amendment 13 — progressive capability activation",
+            "current runtime state, not a V10-wide release lock",
+            "BLOCKED_EXTERNAL",
+        ):
+            _require(text, marker, label, failures)
+        for obsolete in OBSOLETE_CURRENT_STATUS_ASSERTIONS:
+            if obsolete in text:
+                failures.append(
+                    f"{label} still asserts obsolete current-status marker: {obsolete}"
+                )
+
+
 def _validate_documents(failures: list[str]) -> None:
     amendment = _read(AMENDMENT, failures)
     for marker in (
@@ -346,6 +371,8 @@ def _validate_documents(failures: list[str]) -> None:
             "VERIFIED_READ_ACCOUNTS ∩ VERIFIED_TRADE_ACCOUNTS",
         ):
             _require(text, marker, label, failures)
+
+    _validate_current_status_consumers(failures)
 
     ledger = _read(LEDGER, failures)
     issue = _read(ISSUE_TEMPLATE, failures)
