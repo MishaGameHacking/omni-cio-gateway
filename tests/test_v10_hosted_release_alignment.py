@@ -114,6 +114,28 @@ def test_health_contract_must_be_ready_and_synthetic() -> None:
             )
 
 
+def test_degraded_health_precedes_release_sha_validation() -> None:
+    module = _module()
+    payload = {
+        "status": "unavailable",
+        "database": "DEGRADED",
+        "synthetic_preview": True,
+    }
+
+    with pytest.raises(module.AlignmentStopped, match="PREVIEW_HEALTH_NOT_OK"):
+        module.verify_hosted_release_alignment(
+            EXPECTED_SHA,
+            opener=lambda *_args, **_kwargs: _Response(payload),
+        )
+
+
+def test_canonical_origin_is_fixed() -> None:
+    module = _module()
+
+    with pytest.raises(module.AlignmentStopped, match="PREVIEW_ORIGIN_DRIFT"):
+        module._health_url("https://example.invalid")
+
+
 def test_release_identity_requires_full_lowercase_sha() -> None:
     module = _module()
 
@@ -174,7 +196,9 @@ def test_workflow_detects_downstream_drift_even_when_deploy_failed() -> None:
     assert "cancel-in-progress: false" in text
     assert "python scripts/check_v10_exact_main_regression.py" in text
     assert "python scripts/check_v10_hosted_release_alignment.py" in text
-    assert 'test "$(git rev-parse refs/remotes/origin/main)" = ' in text
+    assert "HOSTED_RELEASE_ALIGNMENT=SUPERSEDED_BY_NEWER_MAIN" in text
+    assert "ALIGNMENT_APPLICABLE=false" in text
+    assert "current_main_sha" in text
     assert '"$EXPECTED_MAIN_SHA"' in text
 
     for secret_name in (
