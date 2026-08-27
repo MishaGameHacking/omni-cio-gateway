@@ -13,12 +13,14 @@ Use only:
 
 - `.github/workflows/v10-phase4-free-preview-deploy.yml`;
 - `scripts/check_v10_exact_main_regression.py`;
-- `scripts/provision_v10_render_neon_preview.py`;
+- `scripts/check_v10_zero_cost_provider_boundary.py`;
+- `scripts/provision_v10_render_neon_preview_org_scope.py` as the active organization-scoped provider adapter;
+- `scripts/provision_v10_render_neon_preview.py` as the reused DB/Render/runtime implementation base behind that adapter;
 - `scripts/diagnose_v10_render_deploy.py`;
 - `apps/api/hosted_preview.py`;
 - `apps/web`.
 
-Do not deploy through a second workflow, Dockerfile, temporary status workflow, local laptop command or GitHub-hosted Ubuntu lane. The accepted self-hosted Windows workflow is the only provider-mutation path. The Render diagnostic is read-only and runs only inside that same accepted-main secret boundary after the canonical provisioner has already failed.
+Do not deploy through a second workflow, Dockerfile, temporary status workflow, local laptop command or GitHub-hosted Ubuntu lane. The accepted self-hosted Windows workflow is the only provider-mutation path. The organization-scoped adapter is part of that one path; it is not a parallel provider stack. The Render diagnostic is read-only and runs only inside that same accepted-main secret boundary after the canonical adapter has already failed.
 
 ## Managed resources
 
@@ -41,9 +43,11 @@ Before provider mutation, confirm:
 3. there are no unresolved blocking review threads;
 4. the implementation was squash-merged;
 5. the exact-main Regression Shield completed SUCCESS;
-6. repository secrets `RENDER_API_KEY` and `NEON_API_KEY` are present without exposing their values.
+6. repository secrets `RENDER_API_KEY` and organization-scoped `NEON_API_KEY` are present without exposing their values;
+7. repository Actions variable `NEON_ORG_ID` contains the exact non-secret Neon organization identifier selected for the preview;
+8. repository Actions variable `RENDER_ZERO_CHARGE_ATTESTATION` is fresh under the accepted 24-hour rule.
 
-Never paste either key into source, pull requests, issues, chat, screenshots, summaries or artifacts.
+`NEON_ORG_ID` is configuration identity, not a credential. Store it as an Actions Variable, not a Secret. `NEON_API_KEY` remains a Secret. Never paste either provider key into source, pull requests, issues, chat, screenshots, summaries or artifacts.
 
 ## Trigger and source verification
 
@@ -67,8 +71,9 @@ The workflow must:
 - create an isolated Python environment;
 - install only hash-locked runtime dependencies;
 - compile and run the Phase 4 deployment/application tests before provider calls;
-- pass secrets only to the provision step;
-- capture a UTC provision-attempt boundary immediately before invoking the canonical provisioner;
+- verify the exact configured Neon organization and Free plan through the organization-scoped endpoint before any mutation;
+- pass secrets only to provider-gated steps;
+- capture a UTC provision-attempt boundary immediately before invoking the canonical organization-scoped adapter;
 - on provider failure, preserve the original non-zero result while allowing only read-only sanitized Render diagnostics for exactly one deploy from the same exact release and current provision attempt;
 - require that deploy to be in an allowlisted failed terminal state for ordinary build/update/start/health diagnosis;
 - allow a unique current-attempt `pipeline_minutes_exhausted` event to explain a still `created`/`queued` deploy whose build was prevented from starting;
@@ -77,13 +82,29 @@ The workflow must:
 
 A source SHA or Regression Shield evidence mismatch is a hard failure.
 
+## Neon organization-scoped authority
+
+The Phase-4 CI credential is an organization-scoped Neon API key. The active deployment path must not infer organization identity by listing organizations for the current user.
+
+The workflow supplies `NEON_ORG_ID` as non-secret configuration. The zero-cost preflight and active adapter must:
+
+1. validate the identifier before network access;
+2. request `GET /organizations/{org_id}`;
+3. require the returned organization identity to match exactly;
+4. require the organization plan to be `free`;
+5. fail closed on 401, 403, malformed/oversized responses, redirects or identity mismatch;
+6. keep transient read-only retries bounded;
+7. never emit the API key or free-form provider response body.
+
+The active organization-scoped path must not use `/users/me/organizations`. It must also not depend on provider `/regions` discovery. The accepted Frankfurt region `aws-eu-central-1` is source-controlled; project creation requests that exact region and then verifies the returned project region. This avoids requiring user-centric discovery authority while preserving the zero-cost and Frankfurt constraints.
+
 ## Database bootstrap
 
-The provisioner discovers or creates the exact Neon project and verifies PostgreSQL major version 18 and Frankfurt region.
+The organization-scoped adapter discovers or creates the exact Neon project and verifies PostgreSQL major version 18, exact organization ownership and Frankfurt region.
 
 Neon project regions are immutable. A legacy project named `omni-cio-v10-preview` in another region is deliberately ignored and is never updated or deleted. The region-scoped Frankfurt project is created or reused independently.
 
-Using the privileged bootstrap connection only inside the workflow, it:
+Using the privileged bootstrap connection only inside the workflow, the reused implementation base:
 
 1. applies committed migrations;
 2. creates or rotates `omni_cio_hosted_api` with `LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS`;
@@ -97,7 +118,7 @@ The privileged bootstrap URI must never be stored in Render. Render receives onl
 
 ## Render build and start
 
-The provisioner discovers or creates exactly one Render Free service named `omni-cio-v10-web` on branch `main` in Frankfurt.
+The reused implementation base discovers or creates exactly one Render Free service named `omni-cio-v10-web` on branch `main` in Frankfurt.
 
 The exact native build command installs hash-locked Python dependencies, runs `npm ci`, Web typecheck, lint and tests, and builds `apps/web/dist`.
 
@@ -155,7 +176,7 @@ The final workflow summary may contain only the exact release SHA, public previe
 
 ## Failure handling
 
-GitHub authority, provider API, plan, region, PostgreSQL version, migration, role, RLS, build, deploy, health, release or security-header failure remains RED.
+GitHub authority, provider API, organization identity, plan, region, PostgreSQL version, migration, role, RLS, build, deploy, health, release or security-header failure remains RED.
 
 For Render provider failures, the workflow may retrieve only one structured deploy for the exact accepted-main SHA created at or after the current provision-attempt UTC boundary. Ordinary deploy-failure diagnosis requires that deploy to be in an allowlisted failed terminal state and may inspect only its matching `deploy_ended` event; if that event links a failed build by provider build ID, the diagnostic may also retrieve only the matching structured `build_ended` event. The diagnostic may additionally query only the documented `pipeline_minutes_exhausted` event type with the same service and current-attempt start boundary; exactly one such current event produces `PIPELINE_MINUTES_EXHAUSTED` even if the deploy remains `created` or `queued` because the build never started. It emits only allowlisted classifications and never copies free-form provider event/log text into Actions output. A stale, ambiguous, unsupported non-failed or malformed match makes diagnostics unavailable; diagnostic failure never converts the original provider failure to success and never triggers a second provider mutation.
 
@@ -171,7 +192,7 @@ Safe recovery order:
 
 For `PIPELINE_MINUTES_EXHAUSTED`, do not patch application code or add a payment method automatically. Preserve the zero-cost boundary and wait for a free allowance reset or obtain an explicit OWNER-approved cost decision before any paid continuation.
 
-Never recover by weakening exact-SHA, Regression Shield, free-plan, TLS, PostgreSQL 18, least-privilege, RLS, no-secret or no-real-data controls.
+Never recover by weakening exact-SHA, Regression Shield, organization identity, free-plan, TLS, PostgreSQL 18, least-privilege, RLS, no-secret or no-real-data controls.
 
 ## Exit from preview
 
