@@ -71,6 +71,9 @@ jobs:
       - name: Verify Integrated System Update execution law
         run: python scripts/check_v10_integrated_system_update_governance.py
 
+      - name: Verify progressive capability activation law
+        run: python scripts/check_v10_progressive_capability_activation_governance.py
+
       - name: Verify documentation authority and lifecycle consistency
         run: python scripts/check_v10_documentation_consistency.py
 
@@ -88,6 +91,7 @@ jobs:
           python -m py_compile
           scripts/check_v10_engineering_governance.py
           scripts/check_v10_integrated_system_update_governance.py
+          scripts/check_v10_progressive_capability_activation_governance.py
           scripts/check_v10_documentation_consistency.py
           scripts/check_v10_public_product_plan.py
           scripts/check_v10_ci_cost_control.py
@@ -101,6 +105,7 @@ jobs:
           tests.test_v10_ci_action_download_resilience
           tests.test_v10_release_provenance
           tests.test_v10_integrated_system_update_governance
+          tests.test_v10_progressive_capability_activation_governance
           tests.test_v10_wp22a_historical_gate_routing
 
       - name: Clean self-hosted workspace
