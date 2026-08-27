@@ -223,7 +223,7 @@ review threads: 0
 
 ## OWNER participation / real-user operability
 
-- [ ] OWNER product acceptance for ordinary implementation remains post-merge; phone/browser/UX/login/logout/portfolio comparison was not used as a substitute for pre-merge engineering verification.
+- [ ] OWNER product acceptance is post-merge for ordinary implementation; phone/browser/UX/login/logout/portfolio comparison was not used as a substitute for pre-merge engineering verification.
 - [ ] Если OWNER участвовал до merge, это был only genuinely non-delegable prerequisite (account/consent/domain/payment/narrow credential/UAC-admin/physical/Master-Plan decision).
 - [ ] OWNER не использовался как transport layer для обычного CI/debugging/log inspection.
 - [ ] For an Amendment-13 live capability transition, sanitized real-user operability evidence is collected through the ordinary USER path after engineering/post-merge readiness where required.

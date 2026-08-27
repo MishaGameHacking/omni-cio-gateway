@@ -17,8 +17,7 @@ ROLE_AMENDMENT = (
     / "docs/master-plan/OMNI_CIO_V10_PRODUCT_USER_AND_ENGINEERING_AUTHORITY_BOUNDARY_AMENDMENT.md"
 )
 PROGRESSIVE_AMENDMENT = (
-    ROOT
-    / "docs/master-plan/"
+    ROOT / "docs/master-plan/"
     "OMNI_CIO_V10_LIVE_USER_OPERABILITY_AND_PROGRESSIVE_CAPABILITY_"
     "ACTIVATION_AMENDMENT.md"
 )
@@ -284,7 +283,9 @@ def validate_live_authority(failures: list[str]) -> None:
         "`TRADE credential connected/verified`",
         "current runtime state**, not a permanent V10-wide release lock",
     ):
-        require(progressive, marker, str(PROGRESSIVE_AMENDMENT.relative_to(ROOT)), failures)
+        require(
+            progressive, marker, str(PROGRESSIVE_AMENDMENT.relative_to(ROOT)), failures
+        )
 
     status = read_text(ROOT / "knowledge/17_V10_CURRENT_PROGRAM_STATUS.md", failures)
     for marker in (
