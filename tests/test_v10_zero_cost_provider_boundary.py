@@ -168,12 +168,13 @@ def test_provider_redirect_is_rejected_before_response_body_processing() -> None
         _assert_neon_request(request, timeout)
         _raise_http_error(302)
 
+    env = _env()
     with pytest.raises(
         BoundaryStopped,
         match="NEON_PLAN_PREFLIGHT_REDIRECT_FORBIDDEN",
     ):
         verify_zero_cost_provider_boundary(
-            env=_env(),
+            env=env,
             now=FIXED_NOW,
             opener=redirecting_opener,
         )
@@ -194,9 +195,10 @@ def test_neon_auth_failure_distinguishes_invalid_from_insufficient_scope(
         _assert_neon_request(request, timeout)
         _raise_http_error(status)
 
+    env = _env()
     with pytest.raises(BoundaryStopped) as stopped:
         verify_zero_cost_provider_boundary(
-            env=_env(),
+            env=env,
             now=FIXED_NOW,
             opener=rejecting_opener,
         )
@@ -242,9 +244,10 @@ def test_exhausted_network_retries_fail_closed_without_secret_leak() -> None:
         attempts += 1
         raise TimeoutError("network unavailable")
 
+    env = _env()
     with pytest.raises(BoundaryStopped) as stopped:
         verify_zero_cost_provider_boundary(
-            env=_env(),
+            env=env,
             now=FIXED_NOW,
             opener=opener,
             sleeper=sleeps.append,
@@ -258,30 +261,35 @@ def test_exhausted_network_retries_fail_closed_without_secret_leak() -> None:
 
 def test_oversized_neon_response_fails_closed_before_json_processing() -> None:
     raw = b"{" + (b"x" * 1_048_576) + b"}"
+    env = _env()
+    opener = _raw_opener(raw)
 
     with pytest.raises(
         BoundaryStopped,
         match="NEON_ORGANIZATIONS_RESPONSE_TOO_LARGE",
     ):
         verify_zero_cost_provider_boundary(
-            env=_env(),
+            env=env,
             now=FIXED_NOW,
-            opener=_raw_opener(raw),
+            opener=opener,
         )
 
 
 def test_paid_neon_plan_stops_before_provider_mutation() -> None:
+    env = _env()
+    opener = _opener(
+        {
+            _ORGANIZATIONS_KEY: [
+                {"id": "org-paid-preview", "plan": "scale"}
+            ]
+        }
+    )
+
     with pytest.raises(BoundaryStopped, match="NEON_FREE_PLAN_REQUIRED"):
         verify_zero_cost_provider_boundary(
-            env=_env(),
+            env=env,
             now=FIXED_NOW,
-            opener=_opener(
-                {
-                    _ORGANIZATIONS_KEY: [
-                        {"id": "org-paid-preview", "plan": "scale"}
-                    ]
-                }
-            ),
+            opener=opener,
         )
 
 
