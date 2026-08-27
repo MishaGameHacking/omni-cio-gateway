@@ -43,6 +43,12 @@ class _Response:
         return self._raw
 
 
+class _RawResponse(_Response):
+    def __init__(self, raw: bytes, *, status: int = 200) -> None:
+        self.status = status
+        self._raw = raw
+
+
 def _payload(sha: str = EXPECTED_SHA) -> dict[str, object]:
     return {
         "status": "ok",
@@ -127,6 +133,19 @@ def test_degraded_health_precedes_release_sha_validation() -> None:
             EXPECTED_SHA,
             opener=lambda *_args, **_kwargs: _Response(payload),
         )
+
+
+@pytest.mark.parametrize("raw", [b"{", b"[]"])
+def test_malformed_or_non_object_health_response_fails_closed(raw: bytes) -> None:
+    module = _module()
+
+    with pytest.raises(module.AlignmentStopped) as stopped:
+        module.verify_hosted_release_alignment(
+            EXPECTED_SHA,
+            opener=lambda *_args, **_kwargs: _RawResponse(raw),
+        )
+
+    assert stopped.value.code == "PREVIEW_HEALTH_RESPONSE_INVALID"
 
 
 def test_canonical_origin_is_fixed() -> None:

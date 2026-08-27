@@ -45,6 +45,8 @@ A stale or missing `RENDER_ZERO_CHARGE_ATTESTATION` must continue to block deplo
 
 For an accepted-main change that triggers the hosted preview chain, an inventory limited to `event=push` is incomplete. The applicable downstream `workflow_run` chain must also reach terminal state.
 
+Applicable downstream `queued`, `pending`, `in_progress`, `failure`, `cancelled`, `timed_out`, `action_required`, `stale`, `neutral` or `skipped` states/conclusions are not accepted post-merge runtime evidence. The latest applicable hosted-preview chain is accepted only when its required downstream alignment concludes `success` on the exact expected SHA.
+
 Repository authority and hosted-runtime alignment must be reported separately when they differ. Do not say the hosted site is current unless the latest applicable alignment gate succeeds on the exact expected SHA. A superseded older run is neither drift evidence nor current-runtime PASS evidence.
 
 If the deployment is blocked by a genuinely non-delegable OWNER/provider condition, record that blocker explicitly and keep runtime alignment RED/stale until the real condition is resolved. Do not fabricate a provider attestation or weaken the gate to remove the RED result.

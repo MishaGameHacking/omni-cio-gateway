@@ -49,7 +49,8 @@ Focused defect #396 adds a read-only hosted-release alignment guard that:
 4. rejects redirects, malformed responses and bounded network/provider failures;
 5. performs a bounded daily self-hosted recheck to expose manual/provider-side drift;
 6. uses no Render, Neon, broker or product secrets;
-7. explicitly classifies an older alignment run as `SUPERSEDED_BY_NEWER_MAIN` when `main` advanced before that run executes, without claiming the current runtime is aligned; the newer main SHA owns its own Regression Shield -> deploy -> alignment chain.
+7. explicitly classifies an older alignment run as `SUPERSEDED_BY_NEWER_MAIN` when `main` advanced before that run executes, without claiming the current runtime is aligned; the newer main SHA owns its own Regression Shield -> deploy -> alignment chain;
+8. wires a deterministic stdlib hosted-release governance guard into `V10 Engineering Governance` so the downstream terminal-success acceptance rule cannot silently disappear from the guarded workflow/standard.
 
 The controlled deployment and zero-cost attestation requirements remain unchanged.
 
