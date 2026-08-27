@@ -27,6 +27,8 @@ A mismatch is `PREVIEW_RELEASE_SHA_DRIFT` and is not GREEN runtime evidence.
 
 The alignment workflow runs after every Phase-4 deployment workflow completion regardless of whether that deployment succeeded or failed. It also runs on a bounded daily self-hosted schedule so a manual rollback or other provider-side release drift does not wait for the next repository merge to become visible.
 
+If `main` advances between an older deployment trigger and its alignment job, that old job reports `HOSTED_RELEASE_ALIGNMENT=SUPERSEDED_BY_NEWER_MAIN` and makes no current-runtime PASS claim. The newer `main` SHA owns its own Regression Shield -> deploy -> alignment chain; only that latest applicable chain may prove the site current.
+
 ## Controlled deployment boundary
 
 Do not fix drift by enabling Render direct `On Commit` auto-deploy. The accepted preview provisioner keeps `autoDeploy=no` intentionally. This preserves:
@@ -43,7 +45,7 @@ A stale or missing `RENDER_ZERO_CHARGE_ATTESTATION` must continue to block deplo
 
 For an accepted-main change that triggers the hosted preview chain, an inventory limited to `event=push` is incomplete. The applicable downstream `workflow_run` chain must also reach terminal state.
 
-Repository authority and hosted-runtime alignment must be reported separately when they differ. Do not say the hosted site is current unless the alignment gate succeeds on the exact expected SHA.
+Repository authority and hosted-runtime alignment must be reported separately when they differ. Do not say the hosted site is current unless the latest applicable alignment gate succeeds on the exact expected SHA. A superseded older run is neither drift evidence nor current-runtime PASS evidence.
 
 If the deployment is blocked by a genuinely non-delegable OWNER/provider condition, record that blocker explicitly and keep runtime alignment RED/stale until the real condition is resolved. Do not fabricate a provider attestation or weaken the gate to remove the RED result.
 
