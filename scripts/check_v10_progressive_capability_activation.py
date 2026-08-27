@@ -171,7 +171,9 @@ def _validate_current_capability(
 def _validate_current_capabilities(
     payload: dict[str, Any], failures: list[str]
 ) -> None:
-    observed = _index_current_capabilities(payload.get("current_capabilities"), failures)
+    observed = _index_current_capabilities(
+        payload.get("current_capabilities"), failures
+    )
     if set(observed) != set(CURRENT_CAPABILITY_STATES):
         failures.append(
             "current capability set does not match accepted technical baseline"
