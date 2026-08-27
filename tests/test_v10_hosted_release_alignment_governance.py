@@ -61,6 +61,10 @@ class HostedReleaseAlignmentGovernanceTests(unittest.TestCase):
             "SUCCESS required",
             completed.stdout,
         )
+        self.assertIn(
+            "Runtime PASS publication: post-probe exact-main recheck required",
+            completed.stdout,
+        )
 
     def test_workflow_run_parser_tolerates_benign_yaml_formatting(self) -> None:
         governance = _module()
@@ -107,11 +111,11 @@ on:
             },
         )
 
-    def test_validator_rejects_success_only_downstream_trigger(self) -> None:
+    def test_validator_rejects_any_upstream_conclusion_gate(self) -> None:
         governance = _module()
         sources = _sources()
         sources["alignment_workflow"] += (
-            "\n# github.event.workflow_run.conclusion == 'success'\n"
+            '\n# github.event.workflow_run.conclusion != "failure"\n'
         )
         failures: list[str] = []
 
@@ -119,6 +123,24 @@ on:
 
         self.assertTrue(
             any("forbidden governance marker" in failure for failure in failures),
+            failures,
+        )
+
+    def test_validator_requires_pre_and_post_probe_main_checks(self) -> None:
+        governance = _module()
+        sources = _sources()
+        fetch_marker = governance._EXACT_MAIN_FETCH
+        sources["alignment_workflow"] = sources["alignment_workflow"].replace(
+            fetch_marker,
+            "# exact-main fetch removed",
+            1,
+        )
+        failures: list[str] = []
+
+        governance.validate_sources(**sources, failures=failures)
+
+        self.assertTrue(
+            any("at least 2 times" in failure for failure in failures),
             failures,
         )
 
@@ -138,6 +160,22 @@ on:
                 "not accepted post-merge runtime evidence" in failure
                 for failure in failures
             ),
+            failures,
+        )
+
+    def test_validator_rejects_missing_post_probe_pass_rule(self) -> None:
+        governance = _module()
+        sources = _sources()
+        sources["alignment_standard"] = sources["alignment_standard"].replace(
+            "successful probe output is withheld until a post-probe main recheck",
+            "probe output is published immediately",
+        )
+        failures: list[str] = []
+
+        governance.validate_sources(**sources, failures=failures)
+
+        self.assertTrue(
+            any("post-probe main recheck" in failure for failure in failures),
             failures,
         )
 

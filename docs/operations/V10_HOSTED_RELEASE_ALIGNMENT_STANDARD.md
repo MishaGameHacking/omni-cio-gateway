@@ -29,6 +29,8 @@ The alignment workflow runs after every Phase-4 deployment workflow completion r
 
 If `main` advances between an older deployment trigger and its alignment job, that old job reports `HOSTED_RELEASE_ALIGNMENT=SUPERSEDED_BY_NEWER_MAIN` and makes no current-runtime PASS claim. The newer `main` SHA owns its own Regression Shield -> deploy -> alignment chain; only that latest applicable chain may prove the site current.
 
+To close the probe/PASS-publication race, successful probe output is withheld until a post-probe main recheck. The workflow re-fetches `main` after the runtime probe and publishes the captured `PREVIEW_RELEASE_ALIGNMENT=PASS` only when the branch still equals `EXPECTED_MAIN_SHA`. If `main` advanced during the probe, the captured PASS is suppressed and the run reports `HOSTED_RELEASE_ALIGNMENT=SUPERSEDED_BY_NEWER_MAIN` instead.
+
 ## Controlled deployment boundary
 
 Do not fix drift by enabling Render direct `On Commit` auto-deploy. The accepted preview provisioner keeps `autoDeploy=no` intentionally. This preserves:

@@ -246,6 +246,10 @@ def test_exhausted_network_retries_fail_closed() -> None:
 
 def test_workflow_detects_downstream_drift_even_when_deploy_failed() -> None:
     text = WORKFLOW.read_text(encoding="utf-8")
+    fetch_marker = (
+        'git fetch --no-tags --prune --depth=1 origin '
+        '"+refs/heads/main:refs/remotes/origin/main"'
+    )
 
     assert "name: V10 Hosted Release Alignment" in text
     assert "workflow_run:" in text
@@ -255,11 +259,16 @@ def test_workflow_detects_downstream_drift_even_when_deploy_failed() -> None:
     assert "workflow_dispatch:" in text
     assert "schedule:" in text
     assert 'cron: "23 3 * * *"' in text
-    assert "github.event.workflow_run.conclusion == 'success'" not in text
+    assert "github.event.workflow_run.conclusion" not in text
     assert "runs-on: [self-hosted, Windows, X64, omni-cio-ci]" in text
     assert "cancel-in-progress: false" in text
     assert "python scripts/check_v10_exact_main_regression.py" in text
+    assert "Probe canonical hosted release alignment without publishing PASS" in text
     assert "python scripts/check_v10_hosted_release_alignment.py" in text
+    assert "> hosted_alignment_pass.txt" in text
+    assert "Reconfirm current main before publishing runtime PASS" in text
+    assert "cat hosted_alignment_pass.txt" in text
+    assert text.count(fetch_marker) == 2
     assert "HOSTED_RELEASE_ALIGNMENT=SUPERSEDED_BY_NEWER_MAIN" in text
     assert "ALIGNMENT_APPLICABLE=false" in text
     assert "current_main_sha" in text

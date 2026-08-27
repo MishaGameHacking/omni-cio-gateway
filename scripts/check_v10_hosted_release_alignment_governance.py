@@ -19,6 +19,10 @@ _REQUIRED_WORKFLOW_RUN_LISTS = {
     "types": {"completed"},
     "branches": {"main"},
 }
+_EXACT_MAIN_FETCH = (
+    'git fetch --no-tags --prune --depth=1 origin '
+    '"+refs/heads/main:refs/remotes/origin/main"'
+)
 
 
 def _read(path: Path, failures: list[str]) -> str:
@@ -139,6 +143,22 @@ def _require_markers(
             failures.append(f"{label} is missing governance marker: {marker}")
 
 
+def _require_minimum_occurrences(
+    label: str,
+    text: str,
+    marker: str,
+    minimum: int,
+    failures: list[str],
+) -> None:
+    observed = text.count(marker)
+    if observed < minimum:
+        message = (
+            f"{label} must contain {marker!r} at least {minimum} times; "
+            f"observed {observed}"
+        )
+        failures.append(message)
+
+
 def _forbid_markers(
     label: str,
     text: str,
@@ -184,16 +204,27 @@ def validate_sources(
             "contents: read",
             "cancel-in-progress: false",
             "python scripts/check_v10_exact_main_regression.py",
+            "Probe canonical hosted release alignment without publishing PASS",
             "python scripts/check_v10_hosted_release_alignment.py",
+            "> hosted_alignment_pass.txt",
+            "Reconfirm current main before publishing runtime PASS",
+            "cat hosted_alignment_pass.txt",
             "HOSTED_RELEASE_ALIGNMENT=SUPERSEDED_BY_NEWER_MAIN",
         ),
+        failures,
+    )
+    _require_minimum_occurrences(
+        "hosted alignment workflow",
+        alignment_workflow,
+        _EXACT_MAIN_FETCH,
+        2,
         failures,
     )
     _forbid_markers(
         "hosted alignment workflow",
         alignment_workflow,
         (
-            "github.event.workflow_run.conclusion == 'success'",
+            "github.event.workflow_run.conclusion",
             "RENDER_API_KEY",
             "NEON_API_KEY",
             "RENDER_ZERO_CHARGE_ATTESTATION",
@@ -210,6 +241,7 @@ def validate_sources(
             "`queued`, `pending`, `in_progress`, `failure`, `cancelled`",
             "not accepted post-merge runtime evidence",
             "latest applicable alignment gate succeeds on the exact expected SHA",
+            "successful probe output is withheld until a post-probe main recheck",
             "superseded older run is neither drift evidence nor current-runtime "
             "PASS evidence",
         ),
@@ -222,6 +254,7 @@ def validate_sources(
         (
             "Post-merge acceptance must traverse downstream deployment event topology",
             "complete applicable event chain",
+            "post-probe main recheck",
             "SUPERSEDED_BY_NEWER_MAIN",
         ),
         failures,
@@ -267,6 +300,7 @@ def main() -> int:
     print(
         "Post-merge downstream topology: terminal exact-main alignment SUCCESS required"
     )
+    print("Runtime PASS publication: post-probe exact-main recheck required")
     print("Older superseded workflow_run: never current-runtime PASS evidence")
     return 0
 

@@ -91,11 +91,31 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: python scripts/check_v10_exact_main_regression.py
 
-      - name: Verify canonical hosted release alignment
+      - name: Probe canonical hosted release alignment without publishing PASS
         if: env.ALIGNMENT_APPLICABLE == 'true'
         run: >-
           python scripts/check_v10_hosted_release_alignment.py
           --expected-sha "$EXPECTED_MAIN_SHA"
+          > hosted_alignment_pass.txt
+
+      - name: Reconfirm current main before publishing runtime PASS
+        if: env.ALIGNMENT_APPLICABLE == 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GIT_TERMINAL_PROMPT: "0"
+          GCM_INTERACTIVE: "0"
+        run: |
+          set -euo pipefail
+          git config --local credential.helper ""
+          git config --local --add credential.helper '!f() { echo username=x-access-token; echo password=$GITHUB_TOKEN; }; f'
+          git fetch --no-tags --prune --depth=1 origin "+refs/heads/main:refs/remotes/origin/main"
+          current_main_sha="$(git rev-parse refs/remotes/origin/main)"
+          git config --local --unset-all credential.helper
+          if [ "$current_main_sha" != "$EXPECTED_MAIN_SHA" ]; then
+            echo "HOSTED_RELEASE_ALIGNMENT=SUPERSEDED_BY_NEWER_MAIN expected=$EXPECTED_MAIN_SHA current=$current_main_sha phase=post_probe"
+            exit 0
+          fi
+          cat hosted_alignment_pass.txt
 
       - name: Clean self-hosted alignment workspace
         if: always()

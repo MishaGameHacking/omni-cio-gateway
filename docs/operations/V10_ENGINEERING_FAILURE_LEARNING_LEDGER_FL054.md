@@ -31,13 +31,13 @@ The directly coupled surfaces are:
 - canonical `/healthz.release_sha` producer in `apps/api/hosted_preview.py`;
 - post-merge acceptance/handoff logic that inventories Actions runs.
 
-Adjacent failure modes include a provider-side manual rollback, a deployment failure after a successful merge, a stale/cold hosted runtime, a newer `main` overtaking an older deployment/alignment run, and an acceptance query that filters by event type rather than traversing the applicable workflow chain.
+Adjacent failure modes include a provider-side manual rollback, a deployment failure after a successful merge, a stale/cold hosted runtime, a newer `main` overtaking an older deployment/alignment run, a newer `main` advancing while an alignment probe is already running, and an acceptance query that filters by event type rather than traversing the applicable workflow chain.
 
 ## Why preflight missed it
 
 Pre-merge verification correctly proved the code/governance head. Post-merge Regression Shield also correctly proved exact main. The missing assumption was that repository post-merge GREEN implied hosted-preview convergence even though the deployment trigger occurs only after Regression Shield and uses a different GitHub event type.
 
-The acceptance process had exact-SHA rigor but an incomplete event-topology boundary.
+The acceptance process had exact-SHA rigor but an incomplete event-topology boundary. The first alignment implementation also checked `main` only before the runtime probe, leaving a time-of-check/time-of-use window in which an older run could publish PASS after `main` advanced during the probe.
 
 ## Corrective change
 
@@ -50,7 +50,8 @@ Focused defect #396 adds a read-only hosted-release alignment guard that:
 5. performs a bounded daily self-hosted recheck to expose manual/provider-side drift;
 6. uses no Render, Neon, broker or product secrets;
 7. explicitly classifies an older alignment run as `SUPERSEDED_BY_NEWER_MAIN` when `main` advanced before that run executes, without claiming the current runtime is aligned; the newer main SHA owns its own Regression Shield -> deploy -> alignment chain;
-8. wires a deterministic stdlib hosted-release governance guard into `V10 Engineering Governance` so the downstream terminal-success acceptance rule cannot silently disappear from the guarded workflow/standard.
+8. wires a deterministic stdlib hosted-release governance guard into `V10 Engineering Governance` so the downstream terminal-success acceptance rule cannot silently disappear from the guarded workflow/standard;
+9. withholds successful runtime-probe output until a post-probe main recheck, suppressing the captured PASS and reporting `SUPERSEDED_BY_NEWER_MAIN` if `main` advanced while the probe was running.
 
 The controlled deployment and zero-cost attestation requirements remain unchanged.
 
@@ -60,14 +61,14 @@ For any accepted-main change that triggers a downstream deployment/runtime workf
 
 When an external runtime exposes accepted release identity, a secret-free exact-release alignment check must remain available and must be RED on SHA mismatch. Repository authority and runtime alignment are separate facts until both are proven.
 
-If a downstream run is overtaken by a newer accepted `main`, it may terminate as explicitly superseded only when it makes no current-runtime PASS claim. Final acceptance must then wait for the latest applicable main chain rather than treating the old run as proof.
+If a downstream run is overtaken by a newer accepted `main`, it may terminate as explicitly superseded only when it makes no current-runtime PASS claim. Final acceptance must then wait for the latest applicable main chain rather than treating the old run as proof. Runtime PASS publication must be guarded by an exact-main recheck after any non-atomic external probe that can outlive the initial branch check.
 
 ## Future prevention rule
 
 Never infer `site == main` from a green source/Regression-Shield batch. Prove deployment/runtime identity from the downstream workflow and the runtime's own release endpoint. If the deployment is blocked by a non-delegable provider condition, report that blocker and the stale runtime explicitly rather than declaring the whole operational handoff complete.
 
-Do not enable provider direct auto-deploy merely to hide a controlled-deployment RED condition. Do not let an old `workflow_run` race produce either a raw shell failure or a false current-runtime PASS after `main` has advanced.
+Do not enable provider direct auto-deploy merely to hide a controlled-deployment RED condition. Do not let an old `workflow_run` race produce either a raw shell failure or a false current-runtime PASS after `main` has advanced. A pre-probe branch check alone is insufficient for a current-runtime PASS claim when the external probe can overlap a newer accepted `main`.
 
 ## Dependency/tooling knowledge change
 
-No dependency upgrade is required. The relevant GitHub Actions behavior is event topology: `workflow_run` fires when the named upstream workflow completes, including unsuccessful conclusions unless the downstream job adds a success-only condition. The correction intentionally uses that behavior to detect stale hosted runtime after failed deployment as well as after successful deployment, while explicitly classifying overtaken older runs as superseded.
+No dependency upgrade is required. The relevant GitHub Actions behavior is event topology: `workflow_run` fires when the named upstream workflow completes, including unsuccessful conclusions unless the downstream job adds a conclusion condition. The correction intentionally uses that behavior to detect stale hosted runtime after failed deployment as well as after successful deployment, while explicitly classifying overtaken older runs as superseded.
