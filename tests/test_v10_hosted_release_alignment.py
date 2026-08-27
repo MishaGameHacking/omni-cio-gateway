@@ -55,7 +55,7 @@ def _payload(sha: str = EXPECTED_SHA) -> dict[str, object]:
 def test_exact_release_sha_passes_without_secrets() -> None:
     module = _module()
 
-    def opener(request: object, *, timeout: float) -> _Response:
+    def opener(request: Any, *, timeout: float) -> _Response:
         assert request.full_url == f"{module.CANONICAL_PREVIEW_ORIGIN}/healthz"
         assert timeout == module._HTTP_TIMEOUT_SECONDS
         return _Response(_payload())
@@ -80,7 +80,7 @@ def test_stale_release_sha_fails_closed_with_sanitized_identity() -> None:
 def test_redirect_is_rejected_without_following_provider_location() -> None:
     module = _module()
 
-    def opener(request: object, *, timeout: float) -> _Response:
+    def opener(request: Any, *, timeout: float) -> _Response:
         del timeout
         raise HTTPError(
             request.full_url,
@@ -134,7 +134,7 @@ def test_transient_health_failure_is_bounded_and_retryable() -> None:
     attempts = 0
     sleeps: list[float] = []
 
-    def opener(request: object, *, timeout: float) -> _Response:
+    def opener(request: Any, *, timeout: float) -> _Response:
         nonlocal attempts
         del timeout
         attempts += 1
