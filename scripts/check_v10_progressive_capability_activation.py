@@ -309,9 +309,7 @@ def _validate_broker_and_security(payload: dict[str, Any], failures: list[str]) 
     _validate_runtime_defaults(payload, failures)
 
 
-def _asserted_string_literals(
-    text: str, label: str, failures: list[str]
-) -> set[str]:
+def _asserted_string_literals(text: str, label: str, failures: list[str]) -> set[str]:
     try:
         tree = ast.parse(text, filename=label)
     except SyntaxError as exc:
@@ -327,9 +325,7 @@ def _asserted_string_literals(
     }
 
 
-def _obsolete_assertion_markers(
-    text: str, label: str, failures: list[str]
-) -> set[str]:
+def _obsolete_assertion_markers(text: str, label: str, failures: list[str]) -> set[str]:
     asserted_strings = _asserted_string_literals(text, label, failures)
     return {
         marker
