@@ -71,8 +71,9 @@ class OrgScopedNeonApi(_base.JsonApi):
         timeout: float = 30.0,
     ) -> Any:
         safe_method = method.upper()
+        safe_path = _base._safe_api_path(path, "NEON_API_PATH_INVALID")
         if safe_method == "GET":
-            static_regions = self._static_region_response(path)
+            static_regions = self._static_region_response(safe_path)
             if static_regions is not None:
                 return static_regions
 
@@ -85,7 +86,7 @@ class OrgScopedNeonApi(_base.JsonApi):
             try:
                 return self._call_provider(
                     safe_method,
-                    path,
+                    safe_path,
                     body=body,
                     expected=expected,
                     timeout=timeout,
