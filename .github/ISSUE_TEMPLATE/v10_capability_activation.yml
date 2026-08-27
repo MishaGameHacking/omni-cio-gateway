@@ -1,0 +1,95 @@
+name: V10 Capability Activation Dashboard
+description: Track a progressive capability activation without creating a competing V10 progress ledger.
+title: "[V10 CAPABILITY] <capability-id> activation"
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        # CAPABILITY ACTIVATION WORKING STATE — NOT V10 PROGRESS AUTHORITY
+        `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md` remains the only accepted V10 progress/current-next execution authority.
+
+  - type: input
+    id: capability_id
+    attributes:
+      label: Capability ID
+      description: Stable ID used in docs/operations/V10_CAPABILITY_ACTIVATION_LEDGER.json.
+      placeholder: product_authentication_telegram_vk
+    validations:
+      required: true
+
+  - type: dropdown
+    id: proposed_state
+    attributes:
+      label: Proposed capability state
+      options:
+        - IMPLEMENTED
+        - LIVE_OPERABLE
+        - BLOCKED_EXTERNAL
+        - REAL_MONEY_AUTHORIZED
+    validations:
+      required: true
+
+  - type: textarea
+    id: accepted_baseline
+    attributes:
+      label: Accepted baseline and implementation evidence
+      description: Exact accepted main/release/WP evidence. No secrets or private payloads.
+    validations:
+      required: true
+
+  - type: textarea
+    id: direct_gates
+    attributes:
+      label: Direct applicable gates
+      description: Technical, security, tenant, provider, broker, privacy/legal, capacity, recovery and operational gates that directly apply.
+    validations:
+      required: true
+
+  - type: textarea
+    id: external_evidence
+    attributes:
+      label: External evidence or BLOCKED_EXTERNAL reasons
+      description: Record real non-secret evidence references. Do not self-certify missing broker/legal/provider facts.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: user_dod
+    attributes:
+      label: User-facing Definition of Done
+      options:
+        - label: Ordinary USER path on the canonical Omni-CIO Web is proven when LIVE_OPERABLE is proposed.
+        - label: Real-user operability evidence is recorded with a minimum safe non-secret result when applicable.
+        - label: Multi-user isolation and deterministic cross-tenant negatives pass when applicable.
+        - label: Health/monitoring/degraded behavior and rollback/recovery are accepted when applicable.
+        - label: Secret/private-data exclusion is verified.
+
+  - type: checkboxes
+    id: broker_boundary
+    attributes:
+      label: Broker / Real-money boundary
+      options:
+        - label: READ and TRADE credential roles remain isolated.
+        - label: READ/TRADE account identity intersection is enforced if TRADE provisioning is in scope.
+        - label: TRADE credential connected is not represented as Real broker-submit authorization.
+        - label: Transfer/withdrawal/margin/leverage/uncovered-short authority is not expanded.
+        - label: REAL_MONEY_AUTHORIZED is used only for the owning accepted broker-submit capability.
+
+  - type: textarea
+    id: kill_switch
+    attributes:
+      label: Emergency / operational controls
+      description: Kill switch, rollback and current assertion state. This is separate from lifecycle state.
+
+  - type: textarea
+    id: blockers
+    attributes:
+      label: Blockers / STOP conditions
+      description: If any direct gate lacks evidence, state BLOCKED_EXTERNAL or keep the prior state.
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Exact verification and acceptance evidence
+      description: Exact SHAs, run IDs, sanitized provider evidence, review state and post-merge evidence. Never paste secrets.
