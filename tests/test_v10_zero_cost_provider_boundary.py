@@ -19,6 +19,10 @@ from scripts.check_v10_zero_cost_provider_boundary import (
 
 FIXED_NOW = datetime(2026, 8, 21, 9, 0, tzinfo=timezone.utc)
 VALID_ATTESTATION = "NO_PAYMENT_METHOD_CONFIRMED:2026-08-21T08:30:00Z"
+_SAFE_ORGANIZATION_ID = "org-safe-preview"
+_TEST_NEON_TOKEN = "neon-token-must-never-leak"
+_BOUNDARY_STEP = "Enforce zero-charge provider boundary"
+_ORGANIZATIONS_KEY = "organizations"
 SCRIPT = (
     Path(__file__).resolve().parents[1]
     / "scripts"
@@ -59,7 +63,7 @@ def _opener(payload: object, *, status: int = 200):
 def _env(attestation: str = VALID_ATTESTATION) -> dict[str, str]:
     return {
         "RENDER_ZERO_CHARGE_ATTESTATION": attestation,
-        "NEON_API_KEY": "neon-token-must-never-leak",  # pragma: allowlist secret
+        "NEON_API_KEY": _TEST_NEON_TOKEN,  # pragma: allowlist secret
     }
 
 
@@ -108,7 +112,7 @@ def test_invalid_stale_or_future_render_attestation_is_rejected(
 
 def test_exactly_one_free_neon_organization_is_required() -> None:
     validate_neon_free_organization(
-        [{"id": "org-safe-preview", "plan": "free"}]
+        [{"id": _SAFE_ORGANIZATION_ID, "plan": "free"}]
     )
 
     with pytest.raises(BoundaryStopped, match="NEON_FREE_PLAN_REQUIRED"):
@@ -132,14 +136,14 @@ def test_full_boundary_verification_is_read_only_and_never_prints_token(
         env=_env(),
         now=FIXED_NOW,
         opener=_opener(
-            {"organizations": [{"id": "org-safe-preview", "plan": "free"}]}
+            {_ORGANIZATIONS_KEY: [{"id": _SAFE_ORGANIZATION_ID, "plan": "free"}]}
         ),
     )
     captured = capsys.readouterr()
     assert "PASS_FRESH_NO_PAYMENT_METHOD" in captured.out
     assert "FREE_VERIFIED" in captured.out
-    assert "neon-token-must-never-leak" not in captured.out
-    assert "neon-token-must-never-leak" not in captured.err
+    assert _TEST_NEON_TOKEN not in captured.out
+    assert _TEST_NEON_TOKEN not in captured.err
     assert "::add-mask::" not in captured.out
 
 
@@ -182,7 +186,7 @@ def test_neon_auth_failure_distinguishes_invalid_from_insufficient_scope(
     assert stopped.value.code == code
     assert stopped.value.status == status
     assert "provider-body-must-not-leak" not in str(stopped.value)
-    assert "neon-token-must-never-leak" not in str(stopped.value)
+    assert _TEST_NEON_TOKEN not in str(stopped.value)
 
 
 def test_transient_neon_http_failure_retries_before_success() -> None:
@@ -195,7 +199,7 @@ def test_transient_neon_http_failure_retries_before_success() -> None:
         if attempts == 1:
             raise _http_error(503)
         return FakeResponse(
-            {"organizations": [{"id": "org-safe-preview", "plan": "free"}]}
+            {_ORGANIZATIONS_KEY: [{"id": _SAFE_ORGANIZATION_ID, "plan": "free"}]}
         )
 
     verify_zero_cost_provider_boundary(
@@ -229,7 +233,7 @@ def test_exhausted_network_retries_fail_closed_without_secret_leak() -> None:
     assert stopped.value.code == "NEON_PLAN_PREFLIGHT_NETWORK_ERROR"
     assert attempts == 3
     assert sleeps == [1.0, 2.0]
-    assert "neon-token-must-never-leak" not in str(stopped.value)
+    assert _TEST_NEON_TOKEN not in str(stopped.value)
 
 
 def test_oversized_neon_response_fails_closed_before_json_processing() -> None:
@@ -253,7 +257,7 @@ def test_paid_neon_plan_stops_before_provider_mutation() -> None:
             now=FIXED_NOW,
             opener=_opener(
                 {
-                    "organizations": [
+                    _ORGANIZATIONS_KEY: [
                         {"id": "org-paid-preview", "plan": "scale"}
                     ]
                 }
@@ -279,7 +283,7 @@ def test_deployment_workflow_requires_fresh_attestation_and_test_toolchain() -> 
     assert "Verify exact-main Regression Shield before provider mutation" in workflow
     assert "python scripts/check_v10_exact_main_regression.py" in workflow
     assert "tests/test_v10_exact_main_regression.py" in workflow
-    assert "Enforce zero-charge provider boundary" in workflow
+    assert _BOUNDARY_STEP in workflow
     assert (
         "RENDER_ZERO_CHARGE_ATTESTATION: "
         "${{ vars.RENDER_ZERO_CHARGE_ATTESTATION }}"
@@ -287,8 +291,8 @@ def test_deployment_workflow_requires_fresh_attestation_and_test_toolchain() -> 
     assert "python scripts/check_v10_zero_cost_provider_boundary.py" in workflow
     assert workflow.index(
         "Verify exact-main Regression Shield before provider mutation"
-    ) < workflow.index("Enforce zero-charge provider boundary")
-    assert workflow.index("Enforce zero-charge provider boundary") < workflow.index(
+    ) < workflow.index(_BOUNDARY_STEP)
+    assert workflow.index(_BOUNDARY_STEP) < workflow.index(
         "Provision and deploy zero-cost synthetic preview"
     )
     assert "tests/test_v10_zero_cost_provider_boundary.py" in workflow

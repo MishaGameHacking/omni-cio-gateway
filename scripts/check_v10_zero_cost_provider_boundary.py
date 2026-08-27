@@ -7,7 +7,7 @@ import os
 import re
 import sys
 import time
-from typing import Any, Protocol
+from typing import Any, NoReturn, Protocol
 from urllib.error import HTTPError
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
@@ -23,6 +23,7 @@ _TRANSIENT_HTTP_STATUSES = frozenset({408, 429, 502, 503, 504})
 _RETRY_DELAYS_SECONDS = (1.0, 2.0)
 _HTTP_TIMEOUT_SECONDS = 30.0
 _MAX_RESPONSE_BYTES = 1_048_576
+_NEON_HTTP_ERROR = "NEON_PLAN_PREFLIGHT_HTTP_ERROR"
 
 
 class HttpResponse(Protocol):
@@ -127,39 +128,33 @@ def _neon_request(token: str) -> Request:
     )
 
 
+def _raise_neon_http_failure(status: int) -> NoReturn:
+    if 300 <= status < 400:
+        raise BoundaryStopped(
+            "NEON_PLAN_PREFLIGHT_REDIRECT_FORBIDDEN",
+            status=status,
+        ) from None
+    if status == 401:
+        raise BoundaryStopped("NEON_API_KEY_INVALID", status=status) from None
+    if status == 403:
+        raise BoundaryStopped("NEON_API_KEY_INSUFFICIENT", status=status) from None
+    if status in _TRANSIENT_HTTP_STATUSES:
+        raise _RetryableBoundary(_NEON_HTTP_ERROR, status=status) from None
+    raise BoundaryStopped(_NEON_HTTP_ERROR, status=status) from None
+
+
 def _read_neon_organizations_once(token: str, open_url: OpenUrl) -> bytes:
     try:
         with open_url(_neon_request(token), timeout=_HTTP_TIMEOUT_SECONDS) as response:
             status = int(response.status)
             raw = response.read(_MAX_RESPONSE_BYTES + 1)
     except HTTPError as exc:
-        status = int(exc.code)
-        if 300 <= status < 400:
-            raise BoundaryStopped(
-                "NEON_PLAN_PREFLIGHT_REDIRECT_FORBIDDEN",
-                status=status,
-            ) from None
-        if status == 401:
-            raise BoundaryStopped("NEON_API_KEY_INVALID", status=status) from None
-        if status == 403:
-            raise BoundaryStopped("NEON_API_KEY_INSUFFICIENT", status=status) from None
-        if status in _TRANSIENT_HTTP_STATUSES:
-            raise _RetryableBoundary(
-                "NEON_PLAN_PREFLIGHT_HTTP_ERROR",
-                status=status,
-            ) from None
-        raise BoundaryStopped(
-            "NEON_PLAN_PREFLIGHT_HTTP_ERROR",
-            status=status,
-        ) from None
+        _raise_neon_http_failure(int(exc.code))
     except OSError:
         raise _RetryableBoundary("NEON_PLAN_PREFLIGHT_NETWORK_ERROR") from None
 
     if status in _TRANSIENT_HTTP_STATUSES:
-        raise _RetryableBoundary(
-            "NEON_PLAN_PREFLIGHT_HTTP_ERROR",
-            status=status,
-        )
+        raise _RetryableBoundary(_NEON_HTTP_ERROR, status=status)
     if status != 200:
         raise BoundaryStopped(
             "NEON_PLAN_PREFLIGHT_UNEXPECTED_STATUS",

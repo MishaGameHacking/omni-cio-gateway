@@ -28,7 +28,7 @@ The directly coupled surfaces were reviewed:
 - `scripts/provision_v10_render_neon_preview.py` — downstream provider client that uses the same Neon credential only after the boundary passes;
 - `scripts/check_v10_hosted_release_alignment.py` — downstream read-only runtime detector, whose RED is a symptom rather than the provider-auth root cause.
 
-Repository search also found analogous urllib exception tuples in other verification scripts. They are tracked as analogous quality debt but are not silently expanded into this provider-auth correction unless their owning behavior is materially coupled.
+Repository search also found analogous urllib exception tuples in other verification scripts. They are recorded here as analogous quality debt but are not silently expanded into this provider-auth correction unless their owning behavior is materially coupled.
 
 ## Why preflight missed it
 
