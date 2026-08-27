@@ -19,8 +19,9 @@ _REQUIRED_WORKFLOW_RUN_LISTS = {
     "types": {"completed"},
     "branches": {"main"},
 }
+_ALIGNMENT_WORKFLOW_LABEL = "hosted alignment workflow"
 _EXACT_MAIN_FETCH = (
-    'git fetch --no-tags --prune --depth=1 origin '
+    "git fetch --no-tags --prune --depth=1 origin "
     '"+refs/heads/main:refs/remotes/origin/main"'
 )
 
@@ -195,7 +196,7 @@ def validate_sources(
 ) -> None:
     _validate_workflow_run_routing(alignment_workflow, failures)
     _require_markers(
-        "hosted alignment workflow",
+        _ALIGNMENT_WORKFLOW_LABEL,
         alignment_workflow,
         (
             "name: V10 Hosted Release Alignment",
@@ -214,14 +215,14 @@ def validate_sources(
         failures,
     )
     _require_minimum_occurrences(
-        "hosted alignment workflow",
+        _ALIGNMENT_WORKFLOW_LABEL,
         alignment_workflow,
         _EXACT_MAIN_FETCH,
         2,
         failures,
     )
     _forbid_markers(
-        "hosted alignment workflow",
+        _ALIGNMENT_WORKFLOW_LABEL,
         alignment_workflow,
         (
             "github.event.workflow_run.conclusion",
