@@ -89,7 +89,7 @@ Machine/governance companions:
 - `../operations/V10_ENGINEERING_FAILURE_LEARNING_LEDGER.md`;
 - `.github/workflows/v10-engineering-governance.yml` through repository root.
 
-Locks root-cause-first engineering, all applicable exact-head checks actually `success`, no fake PASS, exact-head invalidation after commits, coherent reviewable PRs, squash merge, post-merge verification and bounded OWNER handoffs. This governance remains fully active for Amendments 9/10/11/12 and subsequent implementation. Amendment 12 changes only delivery granularity: “focused PR” means one coherent PR per authorized execution unit rather than mandatory one PR per individual member WP/increment. Its runtime-hosting subsection is updated by Amendment 10 from Personal-Node-final hosting to the managed-cloud/no-home public-production boundary while preserving the V9 Render baseline and OWNER budget discipline.
+Locks root-cause-first engineering, all applicable exact-head checks actually `success`, no fake PASS, exact-head invalidation after commits, coherent reviewable PRs, squash merge, post-merge verification and bounded OWNER handoffs. This governance remains fully active for Amendments 9/10/11/12/13 and subsequent implementation. Amendment 12 changes only delivery granularity: “focused PR” means one coherent PR per authorized execution unit rather than mandatory one PR per individual member WP/increment. Amendment 13 changes capability-activation semantics only; it does not weaken exact-head, security, recovery or merge discipline. Its runtime-hosting subsection is updated by Amendment 10 from Personal-Node-final hosting to the managed-cloud/no-home public-production boundary while preserving the V9 Render baseline and OWNER budget discipline.
 
 ### 9. Product User / Engineering Authority Boundary
 
@@ -132,7 +132,7 @@ Locks the 2026-08-18 OWNER launch direction:
 - current T-Invest public-service terms remain a separate fail-closed gate: user-supplied tokens do not waive broker restrictions;
 - payment/KKT gates are not required merely for free access, but become applicable if monetization is later enabled.
 
-Amendment 10 explicitly supersedes conflicting Personal-Node-final-product, permanent-private, initial-paid-access and central-private-data prohibitions in Amendments 5/6/7 and older WP22A wording. Non-conflicting safety, tenant isolation, legal, broker separation, recovery and engineering rules remain active.
+Amendment 10 explicitly supersedes conflicting Personal-Node-final-product, permanent-private, initial-paid-access and central-private-data prohibitions in Amendments 5/6/7 and older WP22A wording. Amendment 13 later supersedes only blanket activation coupling that would keep an otherwise independently accepted capability disabled because unrelated later V10 scope is unfinished. Non-conflicting safety, tenant isolation, legal, broker separation, recovery and engineering rules remain active.
 
 ### 11. WP22A Technical Closeout / Public Production Activation Separation
 
@@ -152,6 +152,8 @@ Locks the 2026-08-24 OWNER sequencing correction that:
 - current recurring infrastructure authority remains `0 RUB/month` / `0 USD/month`, provider apply remains forbidden and automatic paid fallback remains forbidden;
 - public T-Invest remains fail-closed, broker write remains OFF, `trading_methods=false`, `REAL_TRADING_ENABLED=false`, WP23 remains locked and protected V9 `app:app` rollback remains intact;
 - Amendment 11 changes sequencing only and does not weaken Amendments 9/10, mark WP22A complete or authorize the visual-refresh runtime by itself.
+
+Amendment 13 later refines the activation side of this split: independently completed ordinary-user capabilities should become `LIVE_OPERABLE` after their own direct production/external gates pass rather than waiting for unrelated later V10 scope. It does not fabricate or waive any of those gates.
 
 ### 12. Integrated System Update Execution Law
 
@@ -182,6 +184,37 @@ Locks the 2026-08-26 OWNER delivery-discipline decision that:
 
 Amendment 12 supersedes only conflicting **delivery granularity** wording in Program Lock Section 7, Amendment 3, Amendment 8 and Visual Refresh Brief Section 17. It does not reorder the Master Plan, change block weights, alter product scope or unlock a later major System Update.
 
+### 13. Live User Operability & Progressive Capability Activation Law
+
+`OMNI_CIO_V10_LIVE_USER_OPERABILITY_AND_PROGRESSIVE_CAPABILITY_ACTIVATION_AMENDMENT.md`
+
+Machine/governance companions:
+
+- `../architecture/V10_PROGRESSIVE_CAPABILITY_ACTIVATION_CONTRACT.json`;
+- `../operations/V10_CAPABILITY_ACTIVATION_LEDGER.json`;
+- `../operations/V10_LIVE_USER_OPERABILITY_ACCEPTANCE_STANDARD.md`;
+- `.github/ISSUE_TEMPLATE/v10_capability_activation.yml` through repository root;
+- `../../scripts/check_v10_progressive_capability_activation_governance.py`;
+- `.github/workflows/v10-engineering-governance.yml` through repository root.
+
+Locks the 2026-08-27 OWNER capability-activation decision that:
+
+- one canonical Omni-CIO Web is the real product as V10 evolves; a separate staging website is not required;
+- capability lifecycle states are exactly `IMPLEMENTED`, `LIVE_OPERABLE`, `BLOCKED_EXTERNAL`, `REAL_MONEY_AUTHORIZED` for ledgered capabilities;
+- a completed ordinary-user capability must become `LIVE_OPERABLE` after its own direct technical/security/external gates pass and must not wait merely for unrelated later V10 scope;
+- Telegram/VK product authentication and multi-user tenant access may activate progressively after their own production/provider/security/privacy/capacity gates;
+- T-Invest READ and accepted real portfolio/positions/operations may become live independently from Real execution after broker-terms/security/secret-custody acceptance;
+- protected tenant-scoped TRADE credential provisioning may become live after its own flow/custody/account-binding gates, but `TRADE credential connected != real broker submit authorized`;
+- READ/TRADE execution eligibility remains exact same-tenant verified-account intersection;
+- `REAL_MONEY_AUTHORIZED` is reserved for accepted broker submit after Sandbox/Shadow, immutable plan approval, fresh preflight, drift stop/re-plan, idempotency/reconciliation, durable audit and kill switches;
+- transfer/withdrawal/margin/leverage/uncovered-short authority is not expanded;
+- emergency kill switches, tenant isolation, secret exclusion, protected V9 rollback and SUCCESS-only verification remain mandatory;
+- user-facing `LIVE_OPERABLE` Definition of Done includes canonical-Web deployment, real-user operability evidence and multi-user isolation evidence where applicable;
+- external provider/broker/legal/terms gates may never be self-certified or replaced by synthetic evidence;
+- acceptance of Amendment 13 does not activate runtime, change current flags, advance product progress or start `WEB-VISUAL-INTEGRATED`; the exact OWNER START remains required.
+
+Amendment 13 supersedes only conflicting **blanket activation** wording that couples an otherwise independently accepted capability to unrelated unfinished future scope or final V10 release. Direct production, provider, security, privacy/legal, broker and Real-money gates remain fail-closed.
+
 ## Draft/superseded planning material
 
 Open or historical PR descriptions must not be treated as active plan authority merely because they contain V10 ideas. Closed-unmerged PR #327 is superseded by Amendments 9/10 and is historical only. Older unmerged Personal-Node/cloud migration or OWNER-only external-access planning is likewise non-authoritative when it conflicts with accepted amendments.
@@ -195,7 +228,7 @@ Open or historical PR descriptions must not be treated as active plan authority 
 5. `OMNI_CIO_V10_PROGRAM_LOCK.md`;
 6. `OMNI_CIO_V10_MASTER_PLAN.md`;
 7. this Amendments Index;
-8. all active amendments listed here, especially 9/10/11/12 for current product/public-hosting/delivery semantics;
+8. all active amendments listed here, especially 9/10/11/12/13 for current product/public-hosting/delivery/activation semantics;
 9. machine-readable contracts;
 10. `OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md`;
 11. `../../knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`;
