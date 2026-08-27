@@ -2,7 +2,7 @@
 
 Status: **ADDITIVE FAILURE-LEARNING ENTRY; PRIMARY LEDGER REMAINS `V10_ENGINEERING_FAILURE_LEARNING_LEDGER.md`**  
 Date: **2026-08-27**  
-Scope: **Amendment 12 governance PR #393 / verification head `b147d208d7f8539655f8660da2a0d49b552a6692`**
+Scope: **Amendment 12 governance PR #393 / verification heads `b147d208d7f8539655f8660da2a0d49b552a6692` through `7552b8dcf95f7e3bb0f18d76e71e918088ed7366`**
 
 ## Symptom / failing gates
 
@@ -57,3 +57,13 @@ Every new permanent guard must have both an enforcement path and an authoritativ
 ## Dependency/tooling knowledge change
 
 No dependency or runtime version changed. The reusable tooling lesson is GitHub Actions routing semantics: path filters are part of the acceptance contract, not incidental workflow plumbing. Sonar duplication thresholds and independent review remain verifier signals that must be addressed structurally rather than suppressed.
+
+## Follow-up correction RED — exact formatter preflight
+
+On correction head `7552b8dcf95f7e3bb0f18d76e71e918088ed7366`, the safe DRAFT batch reached `V10 authoritative merge gate` and failed at `Run protected runtime static quality`. `ruff check` passed, but `ruff format --check` rejected two layout choices in `scripts/check_v10_integrated_system_update_governance.py`. All other DRAFT workflows completed successfully.
+
+Root cause: the correction preflight compiled the three changed Python files and ran focused governance/routing tests, but it did not execute the repository's exact formatter check before publishing the head. The formatter RED was therefore preventable and was not a product/runtime defect.
+
+Blast radius: the authoritative gate runs `ruff format --check` across `scripts` and its protected test surfaces; its output identified exactly one unformatted file and two formatter-only rewrites. No dependency, runtime, authority, API, database, broker or product semantic surface was implicated.
+
+Corrective and prevention rule: apply the exact deterministic formatter output only, then require `python -m ruff format --check` on every changed Python surface as part of cheap preflight before the next published verification head. A successful `ruff check`, compilation, or focused test run does not substitute for formatter verification.

@@ -320,9 +320,7 @@ def validate_ledgers(payload: dict[str, Any], failures: list[str]) -> None:
     )
 
 
-def validate_protected_invariants(
-    payload: dict[str, Any], failures: list[str]
-) -> None:
+def validate_protected_invariants(payload: dict[str, Any], failures: list[str]) -> None:
     protected = mapping_section(payload, PROTECTED_INVARIANTS, failures)
     fail_unless(
         protected.get("app_entrypoint") == "app:app",
@@ -358,8 +356,7 @@ def validate_contract(payload: dict[str, Any], failures: list[str]) -> None:
         failures,
     )
     fail_unless(
-        payload.get("execution_units")
-        == [FOCUSED_CHANGE, INTEGRATED_SYSTEM_UPDATE],
+        payload.get("execution_units") == [FOCUSED_CHANGE, INTEGRATED_SYSTEM_UPDATE],
         "integrated-update execution units mismatch",
         failures,
     )
