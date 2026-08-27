@@ -18,7 +18,7 @@ V10 последовательно превращает этот продукт 
 2. optional virtual Sandbox — `TINVEST_SANDBOX_TOKEN`;
 3. optional exact-user-confirmed Real execution — отдельный `TINVEST_TRADING_TOKEN` + durable state.
 
-For public V10, broker credentials are **not global application credentials**: they belong only to the authenticated tenant's `BrokerConnection` according to the active Identity and Public Free Multi-User Hosted Runtime amendments.
+For public V10, broker credentials are **not global application credentials**: they belong only to the authenticated tenant's `BrokerConnection` according to the active Identity, Public Free Multi-User Hosted Runtime and Progressive Capability Activation amendments.
 
 GitHub engineering access никогда не означает broker/trading authority.
 
@@ -35,17 +35,20 @@ Current accepted snapshot:
 - V10 WP0–WP22A are accepted COMPLETE according to the current-status/evidence chain;
 - accepted V10 progress is **54%** because Block E has now passed the complete `WP22A — External Web Access / Product Authentication Security Gate` technical Exit Gate;
 - **WEB-VISUAL-INTEGRATED — Premium Spatial Financial OS A→G System Update / OWNER START REQUIRED** is the next prepared functional execution unit under Amendment 12;
-- **PRODUCT IMPLEMENTATION PAUSED** until the exact OWNER command `START V10 WEB VISUAL SYSTEM UPDATE` is explicitly issued after Amendment 12 acceptance;
-- WP22A technical acceptance remains separate from the later public-production activation gate;
+- **PRODUCT IMPLEMENTATION PAUSED** until the exact OWNER command `START V10 WEB VISUAL SYSTEM UPDATE` is explicitly issued;
+- WP22A technical acceptance remains separate from live capability activation evidence;
 - WP23+ remains LOCKED behind acceptance of the complete visual System Update and Master Plan authorization;
-- public multi-user/global browser service is the approved target, but `PUBLIC_MULTI_USER_ENABLED=false` remains the safe implementation default until the separate production-activation/security/privacy/broker/legal/capacity gates are accepted;
-- final public production must not depend on PROJECT OWNER home IP/Wi-Fi/router/LAN/Lenovo; the selected final managed-cloud provider remains Cloud.ru Evolution and final provider apply is still locked;
+- public multi-user/global browser service is the approved target; current `PUBLIC_MULTI_USER_ENABLED=false` is a fail-closed runtime state, not a permanent V10-wide release lock;
+- completed user-facing capabilities may become `LIVE_OPERABLE` after their own technical/security/external gates under Amendment 13 without waiting for unrelated later V10 blocks;
+- Telegram Login, VK ID, public multi-user tenant access and public T-Invest READ currently remain `BLOCKED_EXTERNAL` until their real provider/broker/privacy/secret-custody/runtime/operations gates are accepted;
+- final public production must not depend on PROJECT OWNER home IP/Wi-Fi/router/LAN/Lenovo; the selected final managed-cloud provider remains Cloud.ru Evolution and final provider apply is still locked at the current baseline;
 - initial registered-user access is free: billing/trial/subscription enforcement/premium gating are disabled for initial launch;
-- broker-write / Real execution authority remains unchanged and not authorized by this status or Amendment 12.
+- broker-write / Real execution authority remains unchanged and not authorized by this status, Amendment 12 or Amendment 13;
+- `TRADE credential connected/verified` never means broker submit is authorized; real submit requires `REAL_MONEY_AUTHORIZED` through its owning execution gate.
 
 The PROJECT OWNER is not a special Omni-CIO product role. When using Omni-CIO, the PROJECT OWNER is an ordinary USER on the same `OmniCIOUserAccount -> Tenant -> Session` path as supported users. GitHub/cloud-provider/Windows/CI authority stays outside product identity.
 
-The OWNER-approved Engineering Quality / Pre-CI / Green-Merge governance package is accepted and active. The OWNER-approved **Integrated System Update Execution Law / Amendment 12** changes delivery granularity only; it does not advance V10 product progress or unlock another major System Update.
+The OWNER-approved Engineering Quality / Pre-CI / Green-Merge governance package is accepted and active. The OWNER-approved **Integrated System Update Execution Law / Amendment 12** changes delivery granularity only. The OWNER-approved **Live User Operability & Progressive Capability Activation Law / Amendment 13** changes capability-activation granularity only when accepted on protected `main`; it does not advance implementation progress or widen Real-money authority by itself.
 
 Documentation lifecycle and the distinction between current authority and historical WP records are defined in `docs/DOCUMENTATION_AUTHORITY_AND_LIFECYCLE.md`.
 
@@ -68,8 +71,10 @@ Before any change, read in this order:
    - `docs/master-plan/OMNI_CIO_V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_AMENDMENT.md`;
    - `docs/master-plan/OMNI_CIO_V10_WP22A_TECHNICAL_CLOSEOUT_AND_PUBLIC_ACTIVATION_SEPARATION_AMENDMENT.md`;
    - `docs/master-plan/OMNI_CIO_V10_INTEGRATED_SYSTEM_UPDATE_EXECUTION_AMENDMENT.md`;
+   - `docs/master-plan/OMNI_CIO_V10_LIVE_USER_OPERABILITY_AND_PROGRESSIVE_CAPABILITY_ACTIVATION_AMENDMENT.md`;
 9. machine-readable contracts relevant to the work, especially:
    - `docs/architecture/V10_INTEGRATED_SYSTEM_UPDATE_EXECUTION_CONTRACT.json`;
+   - `docs/architecture/V10_PROGRESSIVE_CAPABILITY_ACTIVATION_CONTRACT.json`;
    - `docs/architecture/V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_CONTRACT.json`;
    - `docs/architecture/V10_AI_CORTEX_CONTRACT.json`;
    - `docs/architecture/V10_GITHUB_PRO_UTILIZATION_CONTRACT.json`;
@@ -79,7 +84,7 @@ Before any change, read in this order:
    - `docs/architecture/V10_ENGINEERING_QUALITY_GATE_CONTRACT.json`;
 10. `docs/master-plan/OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md` before starting any implementation execution unit/member milestone;
 11. `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`;
-12. accepted V10 architecture, ADR, recovery and current execution-unit files/Execution Ledger when authorized;
+12. accepted V10 architecture, ADR, recovery and current execution-unit/capability activation files/ledgers when authorized;
 13. actual `main`, open PR/issues and GitHub Actions.
 
 Old chat, screenshot, stale PR description, package-local historical status heading or unmerged planning draft is never source of truth when it conflicts with accepted `main` plus the authority chain above.
@@ -95,7 +100,7 @@ For `INTEGRATED_SYSTEM_UPDATE`:
 
 - one integrated branch and one final PR are the default;
 - member WP/increments remain mandatory ordered internal milestones and keep Master Plan dependency order;
-- internal milestone PASS is branch-local only and never advances accepted V10 percentage, changes accepted `main`, unlocks the next major System Update, activates public production or authorizes broker/Real execution;
+- internal milestone PASS is branch-local only and never advances accepted V10 percentage, changes accepted `main`, unlocks the next major System Update, activates a live capability or authorizes broker/Real execution;
 - every integrated update uses `docs/updates/INTEGRATED_SYSTEM_UPDATE_EXECUTION_LEDGER_TEMPLATE.md` and the GitHub System Update dashboard issue template;
 - both working-state records must say `BRANCH-LOCAL EXECUTION STATE — NOT ACCEPTED MAIN AUTHORITY`;
 - before first external verification publication, all required member milestones, known focused failures, full-diff review, directly coupled producer/consumer/config/workflow review, analogous-pattern search where material, adjacent failure review, deterministic regression guards, security/recovery review and mandatory split-trigger review must pass; only then mark `INTEGRATION_READY`.
@@ -147,6 +152,35 @@ Binding rules:
 - every **applicable** exact-head V10 check must actually execute and conclude `success`; `failure`, `cancelled`, `queued`, `pending`, `in_progress`, `timed_out`, `action_required`, `stale`, `neutral` and `skipped` are not V10 GREEN evidence for an applicable gate;
 - infrastructure/billing/provider failures must be classified truthfully, but a RED applicable check still blocks merge;
 - normal PR closure is GREEN exact head → final diff/review → squash merge; an unmerged superseded PR is historical work, never accepted implementation.
+
+### 4.1 Progressive Capability Activation Law
+
+For every implemented user-facing capability, distinguish **implementation acceptance** from **live-user activation**. The only activation states for implemented/activation-tracked capabilities are:
+
+`IMPLEMENTED | LIVE_OPERABLE | BLOCKED_EXTERNAL | REAL_MONEY_AUTHORIZED`.
+
+A capability that is not implemented must not be assigned one of those states merely to make a dashboard look complete.
+
+Rules:
+
+- one canonical Omni-CIO Web is the ordinary user-facing product; do not create a second user-facing staging product merely to validate completed capability behavior;
+- local/CI/provider doubles, synthetic fixtures, T-Invest Sandbox and Shadow Mode remain allowed engineering/safety contours and never become a product-auth/tenant bypass;
+- `V10 is not finished yet` is not a valid external blocker;
+- a completed user-facing capability becomes `LIVE_OPERABLE` only after every technical/security/external gate that actually owns it is accepted, and then must not stay artificially disabled solely because an unrelated later V10 block is unfinished;
+- real-provider registration, provider secrets, broker terms/permission, tenant secret custody, privacy/legal, managed-runtime, capacity/monitoring/incident-operations and other genuine external prerequisites remain `BLOCKED_EXTERNAL` until real evidence exists;
+- current `PUBLIC_MULTI_USER_ENABLED=false` is a runtime state, not a permanent V10-wide release lock;
+- T-Invest READ/live portfolio/positions/operations are independent of unfinished Real execution but remain `BLOCKED_EXTERNAL` until broker terms/permission plus tenant secret-custody/security/privacy/live-connection gates are accepted;
+- a future TRADE credential may be connected/validated only through its owning accepted provisioning/security flow, and `TRADE credential connected/verified` never means broker submit authority;
+- execution eligibility remains exactly `VERIFIED_READ_ACCOUNTS ∩ VERIFIED_TRADE_ACCOUNTS` for the same tenant; mismatch fails closed;
+- real broker submit requires `REAL_MONEY_AUTHORIZED` after its complete Sandbox/Shadow, immutable-plan, USER-approval, drift/preflight, reconciliation, kill-switch and broker-permission gate;
+- transfer/withdrawal, margin/leverage and uncovered-short authority remain outside this freedom;
+- emergency kill switches may temporarily suspend an accepted live capability for a truthful safety reason but must not become the permanent artificial normal state after all owning gates pass;
+- real-user operability and multi-user isolation become part of Definition of Done where live proof is technically and externally possible;
+- material capability-state transitions use `docs/updates/V10_CAPABILITY_ACTIVATION_LEDGER_TEMPLATE.md` and `.github/ISSUE_TEMPLATE/v10_capability_activation.yml`, both marked `WORKING CAPABILITY ACTIVATION STATE — NOT ACCEPTED MAIN AUTHORITY`;
+- accepted capability state and current runtime availability are separate; a temporary safety suspension does not silently rewrite accepted state;
+- no provider/broker secret, Authorization header, full broker account ID or private portfolio payload is stored in GitHub/CI/chat/activation evidence.
+
+Amendment 13 changes activation granularity only. It does not unlock a later implementation WP/System Update, fabricate external permission, authorize spend, or relax Amendment-12 exact-head/HEAD-FREEZE/security/recovery discipline.
 
 ## 5. V10 migration/productization discipline — binding
 
@@ -330,6 +364,8 @@ Before an implementation PR is merged and its required post-merge Regression Shi
 
 Pre-merge OWNER participation is allowed only for a genuinely non-delegable prerequisite: external account/consent bootstrap, domain/payment decision, narrowly scoped credential bootstrap, UAC/admin/firmware/BitLocker/physical action, or an explicit Master Plan OWNER decision.
 
+Amendment 13 adds a post-merge/live-operability rule for user-facing capability: when real USER evidence is technically and externally possible, that evidence is part of the capability's activation/Definition-of-Done gate and uses the same ordinary product path. This does not permit secret-bearing screenshots or pre-merge bypasses.
+
 When OWNER action is genuinely needed, follow `docs/operations/V10_OWNER_ACTION_HANDOFF_STANDARD.md`:
 
 - give a direct official HTTPS link to the exact stable target page when such a stable link exists;
@@ -371,13 +407,25 @@ Protected V9 `TINVEST_TOKEN` remains read-only and is never promoted/replaced by
 
 For public V10, normal users provision their own tenant-scoped READ credential only through authenticated Web settings. It is stored under that tenant's `BrokerConnection`, never as a shared/global USER credential and never returned to browser storage.
 
+After the actual public T-Invest broker-terms/permission plus tenant secret-custody/security/privacy/live-connection gates are accepted, READ/live portfolio/positions/operations may become `LIVE_OPERABLE` independently of unfinished Real execution. Until those real external gates are accepted, public T-Invest remains `BLOCKED_EXTERNAL` / `FAIL_CLOSED_PENDING_BROKER_TERMS_PERMISSION`.
+
 ### 11.2 Sandbox
 
 Sandbox is virtual only and uses an isolated Sandbox credential/connection. Sandbox output is never real portfolio mutation evidence. Transfer/withdraw/margin remain forbidden.
 
-### 11.3 Real execution
+### 11.3 TRADE credential connection versus Real submit
 
-Real BUY/SELL can occur only through reviewed deterministic `omni_cio.real_trading` / plan-execution lifecycle and only when server readiness is valid.
+A future accepted Web/security provisioning flow may allow an authenticated USER to connect/replace/revoke and validate a tenant-scoped TRADE credential. That event does not itself authorize an order.
+
+Execution eligibility remains:
+
+`EXECUTABLE_ACCOUNTS = VERIFIED_READ_ACCOUNTS ∩ VERIFIED_TRADE_ACCOUNTS`.
+
+A mismatch fails closed. A TRADE/full-access credential is never a fallback for READ operations.
+
+### 11.4 Real execution
+
+Real BUY/SELL can occur only through reviewed deterministic `omni_cio.real_trading` / plan-execution lifecycle and only when server readiness is valid and the capability is explicitly `REAL_MONEY_AUTHORIZED` by its owning gate.
 
 Mandatory invariants remain:
 
@@ -402,7 +450,7 @@ Forbidden: transfer/withdraw/securities transfer, MARKET/BESTPRICE where prohibi
 
 `REAL_TRADING_ENABLED=false` remains master Real rollback until accepted Real activation.
 
-AI, Watchtower, Telegram, `START V10`, GitHub merge or portfolio-management wording is never Real-submit authorization.
+AI, Watchtower, Telegram, `START V10`, GitHub merge, `LIVE_OPERABLE` state or portfolio-management wording is never Real-submit authorization.
 
 ## 12. V9 GPT migration/recovery boundary
 
@@ -467,7 +515,7 @@ Regression Shield/authoritative merge gate remains strict. At minimum protect:
 - lock reproducibility;
 - CI/security policy;
 - repository boundaries;
-- engineering-governance, Integrated System Update governance, documentation-consistency and CI cost-control contracts;
+- engineering-governance, Integrated System Update governance, Progressive Capability Activation governance, documentation-consistency and CI cost-control contracts;
 - compile/Ruff/format/mypy;
 - `app:app` compatibility until intentionally retired;
 - current GPT/recovery contracts while applied;
@@ -484,6 +532,7 @@ Permanent guards include:
 - `python scripts/check_v10_repository_boundaries.py`;
 - `python scripts/check_v10_engineering_governance.py`;
 - `python scripts/check_v10_integrated_system_update_governance.py`;
+- `python scripts/check_v10_progressive_capability_activation.py`;
 - `python scripts/check_v10_documentation_consistency.py`.
 
 Do not bypass or weaken these guards to land a change.
@@ -492,11 +541,13 @@ When AI implementation begins, CI must additionally fail closed on policy/tool/e
 
 ## 18. Current next action
 
-Current functional authorization is read only from `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
+Current functional authorization and accepted capability-state decisions are read only from `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
 
-The WP22A technical gate is complete only through its accepted Phase-5 evidence chain. Public production remains independently inactive: `PUBLIC_MULTI_USER_ENABLED=false`, final Cloud.ru provider apply/cutover remains unauthorized, public T-Invest remains fail-closed, broker write remains OFF, `trading_methods=false` and `REAL_TRADING_ENABLED=false` remain protected.
+The WP22A technical gate is complete only through its accepted Phase-5 evidence chain. At the current Amendment-13 governance baseline, no live capability is activated by governance alone: `PUBLIC_MULTI_USER_ENABLED=false`, final Cloud.ru provider apply/cutover remains unauthorized, Telegram/VK real provider configuration is pending, public T-Invest remains `FAIL_CLOSED_PENDING_BROKER_TERMS_PERMISSION`, broker write remains OFF, `trading_methods=false` and `REAL_TRADING_ENABLED=false` remain protected.
 
-**PRODUCT IMPLEMENTATION PAUSED.** The next prepared execution unit is **WEB-VISUAL-INTEGRATED — Premium Spatial Financial OS A→G System Update / OWNER START REQUIRED**. Amendment 12 does not itself start product work.
+Those false/blocked values are current runtime/external states, not a blanket rule that completed capabilities must wait for unrelated later V10 blocks. Future capability-specific transitions require their real evidence and accepted Amendment-13 activation gate.
+
+**PRODUCT IMPLEMENTATION PAUSED.** The next prepared execution unit is **WEB-VISUAL-INTEGRATED — Premium Spatial Financial OS A→G System Update / OWNER START REQUIRED**. Amendment 13 does not itself start product work.
 
 Do not create the integrated visual branch or modify `apps/web` for the refresh until the OWNER explicitly issues:
 

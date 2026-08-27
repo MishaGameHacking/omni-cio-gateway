@@ -4,7 +4,7 @@ Updated: 2026-08-27
 
 ## Executive state
 
-Omni-CIO V10: **DEVELOPMENT ACTIVE / BLOCKS A–E COMPLETE / WP0–WP22A COMPLETE / PRODUCT IMPLEMENTATION PAUSED / NEXT PREPARED SYSTEM UPDATE WEB-VISUAL-INTEGRATED A→G / OWNER START REQUIRED / WP23+ LOCKED / PUBLIC PRODUCTION ACTIVATION LOCKED**.
+Omni-CIO V10: **DEVELOPMENT ACTIVE / BLOCKS A–E COMPLETE / WP0–WP22A COMPLETE / PRODUCT IMPLEMENTATION PAUSED / NEXT PREPARED SYSTEM UPDATE WEB-VISUAL-INTEGRATED A→G / OWNER START REQUIRED / WP23+ LOCKED / CURRENT USER-FACING ACTIVATIONS BLOCKED_EXTERNAL WHERE REAL GATES REMAIN**.
 
 Accepted implementation progress is **54%**.
 
@@ -20,19 +20,30 @@ Post-Amendment-12 product state is intentionally **PRODUCT IMPLEMENTATION PAUSED
 
 `START V10 WEB VISUAL SYSTEM UPDATE`
 
-Until that command is explicitly recorded by current authority, no `apps/web` visual-refresh implementation may begin under Amendment 12. **WP23+ remains locked** behind acceptance of the complete visual System Update and later Master Plan authorization.
+Until that command is explicitly recorded by current authority, no `apps/web` visual-refresh implementation may begin. **WP23+ remains locked** behind acceptance of the complete visual System Update and later Master Plan authorization.
 
-Public production remains a separate later fail-closed activation gate. `PUBLIC_MULTI_USER_ENABLED=false`, final Cloud.ru provider apply, production DNS/edge mutation, real provider secret provisioning and real public-user cutover remain locked.
+Current live user-facing activation remains fail-closed where real external evidence is missing. `PUBLIC_MULTI_USER_ENABLED=false`, final Cloud.ru provider apply, production DNS/edge mutation, real Telegram/VK provider provisioning and public T-Invest activation remain unavailable at the current baseline. Under Amendment 13, these are capability-specific current/external states rather than one permanent V10-wide release lock.
 
 This file becomes current authority only when present on accepted protected `main`. On a governance/closeout branch, a state transition described here is proposed and becomes effective only after that PR completes exact-head DRAFT GREEN, independent review, fresh READY GREEN, squash merge and exact-new-main Regression Shield / owning post-merge GREEN.
 
 ## Latest accepted engineering baseline
 
-Exact accepted protected `main` before Amendment 12 acceptance is:
+Exact protected `main` at the start of the Amendment-13 governance update is:
 
-`069ae96e76a8d8cde9f716b2dcea1587fa557a35`
+`4aa34b1fef89e156a88844803a2c9ec983f6fc64`
 
-It is the squash merge of PR #392, **WP22A Phase 5: close technical acceptance and authorize Visual Increment A**. The exact-main Regression Shield push run `32999626024` completed `success`; no later accepted `main` has replaced this baseline at the time this proposed governance state was prepared.
+It is the squash merge of PR #393, **Governance: introduce V10 Integrated System Update Execution Law Amendment 12**.
+
+Owning Amendment-12 exact-main post-merge acceptance is proven by:
+
+- Regression Shield push run `33041745015`: `completed / success` on exact `4aa34b1f...`;
+- V10 Engineering Governance push run `33041745155`: `completed / success` on exact `4aa34b1f...`.
+
+The unrelated automatic preview deploy failure and a cancelled Sonar main analysis observed on the same SHA are not reclassified as GREEN and are not used as Amendment-12 governance acceptance evidence.
+
+### Prior WP22A closeout baseline
+
+PR #392 closed the WP22A technical program on exact accepted main `069ae96e76a8d8cde9f716b2dcea1587fa557a35`; its exact-main Regression Shield push run `32999626024` completed `success`.
 
 ### WP22A Phase 5 — integrated technical implementation accepted
 
@@ -49,7 +60,7 @@ Accepted source/review chain:
 
 The integrated package reused the existing `apps/web`, `apps/api`, `omni_cio`, PostgreSQL, deployment and recovery architecture. It did not create a second Web product, API, identity system, database authority, Gateway or broker stack.
 
-### Exact-main post-merge acceptance
+### WP22A implementation post-merge acceptance
 
 Exact implementation main `bb15739acf82ded8eafb6d006cf222fb3988770d` completed its canonical post-merge acceptance chain:
 
@@ -82,7 +93,7 @@ The dedicated closeout gate is read-only. It binds the closeout PR to `github.ev
 
 ## WP22A technical Exit Gate — COMPLETE
 
-The evidence chain maps Amendment 11's technical requirements without reclassifying missing technical work as a production-activation concern.
+The evidence chain maps Amendment 11's technical requirements without reclassifying missing technical work as completed live-provider/public-user acceptance.
 
 Accepted technical boundary includes:
 
@@ -95,7 +106,7 @@ Accepted technical boundary includes:
 7. CSRF, Origin/Referer, Fetch Metadata, Host, trusted-edge/TLS, CORS, cache and security-header controls;
 8. bounded request/provider abuse, rate, capacity and degraded fail-closed behavior;
 9. migration/restart/redeploy/recovery/restore-isolation/rollback evidence;
-10. hosted ordinary-browser/exact-release evidence independent of PROJECT OWNER home availability;
+10. hosted ordinary-browser/exact-release technical evidence independent of PROJECT OWNER home availability;
 11. complete exact-head DRAFT/READY review chain plus exact-main Regression Shield.
 
 Therefore:
@@ -113,11 +124,11 @@ Therefore:
 - WP22A Phase 4 — **ACCEPTED**: zero-cost synthetic Render Free + Neon PostgreSQL 18 proof-of-product.
 - WP22A Phase 5 — **ACCEPTED**: integrated technical browser/provider/account/tenant/session/security/recovery/abuse closeout.
 
-Phase-4 and Phase-5 hosted evidence is technical/synthetic acceptance only. It is not real public-production activation and does not replace Cloud.ru Evolution as the selected final production provider.
+Phase-4 and Phase-5 hosted evidence is technical/synthetic acceptance only. It is not proof that real Telegram/VK/public-user/T-Invest external gates have passed and does not replace Cloud.ru Evolution as the selected final managed-cloud provider baseline.
 
-## Amendment 12 — governance transition
+## Amendment 12 — ACCEPTED governance law
 
-OWNER approved the **Integrated System Update Execution Law / Amendment 12** on 2026-08-26. The law is governance-only and becomes active only after its own exact-head DRAFT/READY/review/squash/post-merge lifecycle succeeds on protected `main`.
+OWNER approved the **Integrated System Update Execution Law / Amendment 12** on 2026-08-26. It is accepted on protected `main` through PR #393 and the exact-main post-merge evidence above.
 
 Canonical Amendment-12 sources:
 
@@ -151,13 +162,68 @@ Every integrated update must use both a branch Execution Ledger and a GitHub-vis
 
 They never replace this file as accepted current progress authority.
 
+## Amendment 13 — progressive capability activation
+
+OWNER approved **V10 Live User Operability & Progressive Capability Activation Law / Amendment 13** on 2026-08-27 as a governance-only follow-up after Amendment 12 acceptance.
+
+This status transition becomes active only when Amendment 13 itself completes exact-head DRAFT GREEN, independent review, fresh READY GREEN, squash merge and exact-new-main Regression Shield + V10 Engineering Governance `success`.
+
+Canonical Amendment-13 sources in the governance update are:
+
+- `docs/master-plan/OMNI_CIO_V10_LIVE_USER_OPERABILITY_AND_PROGRESSIVE_CAPABILITY_ACTIVATION_AMENDMENT.md`;
+- `docs/architecture/V10_PROGRESSIVE_CAPABILITY_ACTIVATION_CONTRACT.json`;
+- `docs/updates/V10_CAPABILITY_ACTIVATION_LEDGER_TEMPLATE.md`;
+- `.github/ISSUE_TEMPLATE/v10_capability_activation.yml`;
+- `scripts/check_v10_progressive_capability_activation.py`.
+
+The exact activation-state vocabulary is:
+
+`IMPLEMENTED | LIVE_OPERABLE | BLOCKED_EXTERNAL | REAL_MONEY_AUTHORIZED`.
+
+The law changes activation granularity, not V10 implementation order or accepted percentage. A completed user-facing capability no longer waits for unrelated future blocks merely because V10 is not finished. It becomes `LIVE_OPERABLE` only after every gate that actually owns that capability is accepted.
+
+A separate user-facing staging product is not required. Local/CI/provider doubles, T-Invest Sandbox and Shadow remain allowed engineering/safety contours but never become a second product or product-auth bypass.
+
+### Current capability activation baseline
+
+Amendment 13 itself performs no provider, broker, DNS, cloud, secret or runtime mutation. Therefore current user-facing capability state remains fail-closed where real external evidence is missing:
+
+| Capability | Current activation state | Current blocker summary |
+|---|---|---|
+| telegram_login | `BLOCKED_EXTERNAL` | real Telegram registration/callback/runtime secret plus public runtime privacy/capacity/monitoring acceptance |
+| vk_id | `BLOCKED_EXTERNAL` | real VK ID registration/callback/runtime secret plus public runtime privacy/capacity/monitoring acceptance |
+| public_multi_user_tenant_access | `BLOCKED_EXTERNAL` | live provider auth + public-user privacy/legal/capacity/monitoring + accepted managed-runtime cutover |
+| tinvest_read | `BLOCKED_EXTERNAL` | `FAIL_CLOSED_PENDING_BROKER_TERMS_PERMISSION` + tenant secret-custody/security/privacy/live-connection acceptance |
+
+`PUBLIC_MULTI_USER_ENABLED=false` remains the **current runtime state, not a V10-wide release lock**. A later capability-specific activation may change that runtime flag without waiting for unrelated Web Visual/Telegram Bot/AI/Guardian/final-release work, but only after all authentication/multi-user external gates are actually accepted.
+
+Public T-Invest-backed production functionality remains **FAIL_CLOSED_PENDING_BROKER_TERMS_PERMISSION**. READ/live portfolio/positions/operations are explicitly independent from unfinished Real execution, but cannot become public `LIVE_OPERABLE` until broker terms/permission and tenant secret-custody/security/privacy/live acceptance are real and accepted.
+
+A future accepted TRADE credential provisioning flow may connect/replace/revoke/validate the USER's tenant-scoped TRADE role and verify:
+
+`EXECUTABLE_ACCOUNTS = VERIFIED_READ_ACCOUNTS ∩ VERIFIED_TRADE_ACCOUNTS`.
+
+`TRADE credential connected/verified` is not broker-submit authority. Broker write remains OFF, `trading_methods=false` and `REAL_TRADING_ENABLED=false` remain current protected defaults.
+
+Real order submission may become `REAL_MONEY_AUTHORIZED` only through its later owning execution gate after representative Sandbox/Shadow evidence, immutable plan, authenticated USER approval, drift/preflight, ambiguous-submit reconciliation, kill switches and actual broker terms/permission. Transfer/withdrawal, margin/leverage and uncovered-short authority remain forbidden.
+
+### Real-user Definition of Done
+
+For a user-facing capability where live proof is technically and externally possible, final operability evidence now includes the applicable sequence:
+
+`automated verification -> canonical deployed Web -> real supported USER interaction -> multi-user isolation negatives -> monitoring/revoke/rollback/recovery -> capability state transition`.
+
+USER feedback from the live canonical product becomes normal defect input under Amendment 12 root-cause/blast-radius/batch-correction discipline.
+
+No real provider/broker secret, Authorization header, full account ID or private portfolio payload may be placed in GitHub/CI/chat/activation dashboards.
+
 ## Current functional development authority
 
 **PRODUCT IMPLEMENTATION PAUSED.**
 
-No product/runtime source package is currently started by Amendment 12 itself.
+No product/runtime source package is started by Amendment 13 itself.
 
-The next prepared execution unit is:
+The next prepared execution unit remains:
 
 **WEB-VISUAL-INTEGRATED — Premium Spatial Financial OS A→G System Update / OWNER START REQUIRED**.
 
@@ -171,7 +237,7 @@ Prepared member scope is inherited from `docs/architecture/V10_WEB_VISUAL_DESIGN
 6. `WEB-VISUAL-F` — atmosphere/optional spatial brand layer;
 7. `WEB-VISUAL-G` — visual/performance/accessibility hardening.
 
-The A→G dependency/content order remains binding. Amendment 12 supersedes only the old assumption that every visual increment must land as a separate branch/PR. It does not permit later content to be implemented before required predecessor branch-local Exit evidence.
+The A→G dependency/content order remains binding. Amendment 12 supersedes only the old assumption that every visual increment must land as a separate branch/PR. Amendment 13 does not change that implementation sequence.
 
 Before the exact START command, do not:
 
@@ -179,45 +245,47 @@ Before the exact START command, do not:
 - modify `apps/web` for the visual refresh;
 - mark any visual member milestone `IN_PROGRESS`;
 - open a product implementation PR;
-- use CI/Sonar/Gitar as a substitute for branch-local `INTEGRATION_READY` preflight.
+- provision real Telegram/VK/T-Invest secrets merely because Amendment 13 is merged.
 
-OWNER action required now: **YES only to start the prepared System Update**, by issuing exactly:
+OWNER action required to start product implementation: **YES only by issuing exactly**:
 
 `START V10 WEB VISUAL SYSTEM UPDATE`
 
-No provider/account/billing/legal/secret/physical action is required merely to accept Amendment 12.
+## Current external activation baseline — BLOCKED_EXTERNAL where gates remain
 
-## Public-production activation — still LOCKED
+Amendment 13 decomposes the older monolithic activation interpretation into capability-specific gates. It does not claim that any missing real external evidence is already satisfied.
 
-Amendment 11 keeps technical WP22A completion separate from production activation.
+Current facts remain:
 
-The following remain false/locked:
-
-- public multi-user activation — **APPROVED TARGET / IMPLEMENTATION FLAG REMAINS OFF UNTIL SEPARATE PUBLIC-PRODUCTION ACTIVATION GATE**;
-- `PUBLIC_MULTI_USER_ENABLED=false` remains the safe default;
-- final production provider remains **Cloud.ru Evolution**;
-- final Cloud.ru `provider_apply_authorized=false`;
-- `real_user_cutover_authorized=false`;
-- production DNS/edge mutation unauthorized;
-- production Telegram/VK provider-secret provisioning/callback registration requiring OWNER authority remains pending;
-- production privacy/personal-data/legal/capacity/monitoring/incident sign-off remains pending;
+- `PUBLIC_MULTI_USER_ENABLED=false`;
+- final managed-cloud provider baseline remains **Cloud.ru Evolution**;
+- final Cloud.ru `provider_apply_authorized=false` at the current zero-spend baseline;
+- current production DNS/edge mutation is not authorized;
+- real Telegram/VK provider registration/runtime-secret provisioning is pending;
+- public-user privacy/personal-data/legal/capacity/monitoring/incident sign-off is pending;
 - current recurring production infrastructure authorization remains `0 RUB/month` / `0 USD/month`;
-- no automatic paid fallback, paid overage or card charge is authorized.
+- no automatic paid fallback, paid overage or card charge is authorized;
+- public T-Invest remains `FAIL_CLOSED_PENDING_BROKER_TERMS_PERMISSION`.
 
-The accepted Render/Neon service remains a zero-cost synthetic technical environment, not final public production.
+A later capability-specific activation may transition a completed capability from `BLOCKED_EXTERNAL` to `LIVE_OPERABLE` once its own exact provider/runtime/privacy/legal/security/capacity/monitoring/broker gates are actually accepted. It does not need to wait for unrelated later V10 blocks.
+
+The accepted Render/Neon service remains a zero-cost synthetic technical environment and is not by itself real-provider/public-user/T-Invest acceptance.
 
 ## Broker / Real execution boundary — unchanged
 
 Public T-Invest-backed production functionality remains **FAIL_CLOSED_PENDING_BROKER_TERMS_PERMISSION**.
 
-Unchanged locks:
+Unchanged current locks:
 
 - broker write OFF;
 - `trading_methods=false`;
 - `REAL_TRADING_ENABLED=false`;
 - no transfer/withdrawal/margin/leverage/uncovered-short authority;
 - tenant READ/optional TRADE credential separation remains mandatory;
-- a GitHub merge, AI output, visual refresh, System Update or WP22A completion is never broker-submit authorization.
+- TRADE/full-access credential is never a fallback for READ operations;
+- `TRADE credential connected/verified` is not broker-submit authorization;
+- `LIVE_OPERABLE` is not `REAL_MONEY_AUTHORIZED`;
+- a GitHub merge, AI output, visual refresh, System Update, WP22A completion or capability dashboard is never broker-submit authorization.
 
 Protected V9 production/recovery entrypoint remains `app:app`; its rollback boundary is untouched.
 
@@ -257,7 +325,7 @@ Future monetization remains `DEFERRED_OPTIONAL`.
 - product implementation — **PAUSED**;
 - next prepared execution unit — **WEB-VISUAL-INTEGRATED / OWNER START REQUIRED**;
 - Block F / WP23+ — **LOCKED**;
-- public production activation — **LOCKED**;
+- current user-facing activation transitions — **BLOCKED_EXTERNAL where listed above**;
 - broker write / Real execution — **UNCHANGED / NOT AUTHORIZED**.
 
 ## Progress
@@ -294,7 +362,7 @@ Prepared scope:
 - final integrated `INTEGRATION_READY` before first external verification publication;
 - exact-head DRAFT GREEN -> independent review -> correction batch if required -> fresh exact-head verification -> READY GREEN -> squash -> exact-main post-merge verification.
 
-The next major System Update after WEB-VISUAL-INTEGRATED remains locked until the complete integrated update is accepted. WP23 is not unlocked by an internal visual milestone.
+The next major System Update after WEB-VISUAL-INTEGRATED remains locked until the complete integrated update is accepted. WP23 is not unlocked by an internal visual milestone or by a capability activation transition.
 
 ## Canonical authority
 
@@ -310,8 +378,11 @@ Mandatory current sources include:
 - `docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md`;
 - `docs/master-plan/OMNI_CIO_V10_WP22A_TECHNICAL_CLOSEOUT_AND_PUBLIC_ACTIVATION_SEPARATION_AMENDMENT.md`;
 - `docs/master-plan/OMNI_CIO_V10_INTEGRATED_SYSTEM_UPDATE_EXECUTION_AMENDMENT.md`;
+- `docs/master-plan/OMNI_CIO_V10_LIVE_USER_OPERABILITY_AND_PROGRESSIVE_CAPABILITY_ACTIVATION_AMENDMENT.md` once accepted;
 - `docs/architecture/V10_INTEGRATED_SYSTEM_UPDATE_EXECUTION_CONTRACT.json`;
+- `docs/architecture/V10_PROGRESSIVE_CAPABILITY_ACTIVATION_CONTRACT.json` once accepted;
 - `docs/updates/INTEGRATED_SYSTEM_UPDATE_EXECUTION_LEDGER_TEMPLATE.md`;
+- `docs/updates/V10_CAPABILITY_ACTIVATION_LEDGER_TEMPLATE.md` once accepted;
 - `docs/architecture/V10_WP22A_PHASE5_TECHNICAL_ACCEPTANCE_EVIDENCE.md`;
 - `docs/architecture/V10_WP22A_PHASE5_PUBLIC_HOSTED_ACCEPTANCE_CONTRACT.json`;
 - `docs/architecture/V10_WEB_VISUAL_DESIGN_REFRESH_IMPLEMENTATION_BRIEF.md`;
@@ -323,25 +394,24 @@ GitHub remains engineering source of truth. Historical PR text, old screenshots 
 
 - protected V9 deployment entrypoint remains `app:app`;
 - protected V9 service and rollback remain available;
-- `trading_methods=false`;
-- `REAL_TRADING_ENABLED=false`;
-- `PUBLIC_MULTI_USER_ENABLED=false` until the separate public-production activation gate;
-- no broker-write expansion;
+- `trading_methods=false` and `REAL_TRADING_ENABLED=false` remain current protected defaults until the owning execution/Real-money gate explicitly changes them;
+- `PUBLIC_MULTI_USER_ENABLED=false` remains the current fail-closed runtime state until all capability-specific authentication/multi-user external gates required for a transition are accepted;
+- no broker-write expansion without `REAL_MONEY_AUTHORIZED` owning evidence;
 - no transfer/withdrawal/margin/leverage/uncovered-short authority;
 - no cross-tenant authority expansion;
 - no real broker/Telegram/VK/provider secret values, encryption/recovery keys, private portfolio payloads or full account IDs in GitHub/CI/artifacts;
 - no paid resource or recurring spend without exact current cost revalidation and explicit OWNER approval above the authorized cap;
 - RED is RED; skipped/queued/pending/neutral is not applicable-gate PASS;
 - exact-head applicable GREEN + zero blockers + squash merge + required post-merge Regression Shield remains mandatory;
-- OWNER physical/secret evidence is never synthesized.
+- OWNER physical/secret/legal/provider evidence is never synthesized.
 
-## Current next action
+## Current next action after Amendment 13 governance acceptance
 
-1. finish Amendment 12 governance synchronization through one coherent PR #393 correction batch;
-2. hold each published PR head under HEAD FREEZE while safe applicable verification reaches terminal state;
-3. require DRAFT exact-head all-applicable `success`, independent review and zero unresolved blocking threads;
-4. run a fresh unchanged-head READY applicable cycle and require all applicable `success`;
-5. squash merge Amendment 12 and verify exact-new-main Regression Shield / governance post-merge gates;
-6. after Amendment 12 is accepted, keep **PRODUCT IMPLEMENTATION PAUSED**;
-7. wait for exact OWNER command `START V10 WEB VISUAL SYSTEM UPDATE` before creating the integrated visual implementation branch;
-8. keep WP23, public-production activation, public T-Invest, broker write and Real execution locked until their own accepted authority explicitly opens them.
+1. complete Amendment 13 as one `FOCUSED_CHANGE` governance PR under Amendment 12;
+2. require all applicable exact-head DRAFT checks to conclude `success`;
+3. require independent review and zero unresolved blocking threads;
+4. run fresh unchanged-head READY applicable checks and require `success` only;
+5. squash merge and verify exact-new-main Regression Shield plus V10 Engineering Governance `success`;
+6. after acceptance, stop with **PRODUCT IMPLEMENTATION PAUSED**;
+7. do not create or modify `WEB-VISUAL-INTEGRATED` product source until the OWNER separately issues `START V10 WEB VISUAL SYSTEM UPDATE`;
+8. perform no real Telegram/VK/T-Invest secret provisioning or capability activation merely because Amendment 13 was merged.
