@@ -24,6 +24,7 @@ _RETRY_DELAYS_SECONDS = (1.0, 2.0)
 _HTTP_TIMEOUT_SECONDS = 30.0
 _MAX_RESPONSE_BYTES = 1_048_576
 _NEON_HTTP_ERROR = "NEON_PLAN_PREFLIGHT_HTTP_ERROR"
+_NEON_RESPONSE_INVALID = "NEON_ORGANIZATIONS_RESPONSE_INVALID"
 
 
 class HttpResponse(Protocol):
@@ -33,7 +34,7 @@ class HttpResponse(Protocol):
 
     def __exit__(self, *args: object) -> None: ...
 
-    def read(self, amount: int = -1) -> bytes: ...
+    def read(self, _: int = -1) -> bytes: ...
 
 
 OpenUrl = Callable[..., HttpResponse]
@@ -109,7 +110,7 @@ def validate_render_zero_charge_attestation(
 def _decode_json_object(raw: bytes, code: str) -> dict[str, Any]:
     try:
         payload = json.loads(raw)
-    except (UnicodeDecodeError, json.JSONDecodeError):
+    except (UnicodeDecodeError, json.JSONDecodeEror):
         raise BoundaryStopped(code) from None
     if not isinstance(payload, dict):
         raise BoundaryStopped(code)
@@ -165,6 +166,20 @@ def _read_neon_organizations_once(token: str, open_url: OpenUrl) -> bytes:
     return raw
 
 
+def _decode_neon_organizations(raw: bytes) -> list[dict[str, Any]]:
+    payload = _decode_json_object(raw, _NEON_RESPONSE_INVALID)
+    rows = payload.get("organizations")
+    if not isinstance(rows, list):
+        raise BoundaryStopped(_NEON_RESPONSE_INVALID)
+
+    organizations: list[dict[str, Any]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            raise BoundaryStopped("NEON_ORGANIZATION_ROW_INVALID")
+        organizations.append(row)
+    return organizations
+
+
 def read_neon_organizations(
     token: str,
     *,
@@ -172,27 +187,17 @@ def read_neon_organizations(
     sleeper: Sleep = time.sleep,
 ) -> list[dict[str, Any]]:
     open_url = _NO_REDIRECT_OPENER.open if opener is None else opener
-    attempts = len(_RETRY_DELAYS_SECONDS) + 1
-    for attempt in range(attempts):
+    attempt = 0
+    while True:
         try:
             raw = _read_neon_organizations_once(token, open_url)
         except _RetryableBoundary as exc:
-            if attempt + 1 >= attempts:
+            if attempt >= len(_RETRY_DELAYS_SECONDS):
                 raise BoundaryStopped(exc.code, status=exc.status) from None
             sleeper(_RETRY_DELAYS_SECONDS[attempt])
+            attempt += 1
             continue
-        payload = _decode_json_object(raw, "NEON_ORGANIZATIONS_RESPONSE_INVALID")
-        rows = payload.get("organizations")
-        if not isinstance(rows, list):
-            raise BoundaryStopped("NEON_ORGANIZATIONS_RESPONSE_INVALID")
-        organizations: list[dict[str, Any]] = []
-        for row in rows:
-            if not isinstance(row, dict):
-                raise BoundaryStopped("NEON_ORGANIZATION_ROW_INVALID")
-            organizations.append(row)
-        return organizations
-
-    raise AssertionError("Neon organization preflight retry loop exhausted")
+        return _decode_neon_organizations(raw)
 
 
 def validate_neon_free_organization(

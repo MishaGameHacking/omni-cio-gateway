@@ -83,8 +83,8 @@ def _env(attestation: str = VALID_ATTESTATION) -> dict[str, str]:
     }
 
 
-def _http_error(status: int) -> HTTPError:
-    return HTTPError(
+def _raise_http_error(status: int) -> None:
+    raise HTTPError(
         NEON_ORGANIZATIONS_URL,
         status,
         "provider response must stay sanitized",
@@ -166,7 +166,7 @@ def test_full_boundary_verification_is_read_only_and_never_prints_token(
 def test_provider_redirect_is_rejected_before_response_body_processing() -> None:
     def redirecting_opener(request: Request, *, timeout: float) -> FakeResponse:
         _assert_neon_request(request, timeout)
-        raise _http_error(302)
+        _raise_http_error(302)
 
     with pytest.raises(
         BoundaryStopped,
@@ -190,9 +190,9 @@ def test_neon_auth_failure_distinguishes_invalid_from_insufficient_scope(
     status: int,
     code: str,
 ) -> None:
-    def rejecting_opener(request: Request, *, timeout: float) -> FakeResponse:
+    def rejecting_opener(request: Request, *, timeout: int) -> FakeResponse:
         _assert_neon_request(request, timeout)
-        raise _http_error(status)
+        _raise_http_error(status)
 
     with pytest.raises(BoundaryStopped) as stopped:
         verify_zero_cost_provider_boundary(
@@ -216,10 +216,10 @@ def test_transient_neon_http_failure_retries_before_success() -> None:
         _assert_neon_request(request, timeout)
         attempts += 1
         if attempts == 1:
-            raise _http_error(503)
+            _raise_http_error(503)
         return FakeResponse(
             {_ORGANIZATIONS_KEY: [{"id": _SAFE_ORGANIZATION_ID, "plan": "free"}]}
-        )
+         )
 
     verify_zero_cost_provider_boundary(
         env=_env(),
@@ -286,7 +286,7 @@ def test_paid_neon_plan_stops_before_provider_mutation() -> None:
 
 
 def test_network_exception_handling_uses_non_redundant_oserror_boundary() -> None:
-    source = SCRIPT.read_text(encoding="utf-8")
+    source = SCRIT.read_text(encoding="utf-8")
 
     assert "except (URLError, TimeoutError, OSError)" not in source
     assert "except OSError:" in source
@@ -311,7 +311,7 @@ def test_deployment_workflow_requires_fresh_attestation_and_test_toolchain() -> 
     assert "python scripts/check_v10_zero_cost_provider_boundary.py" in workflow
     assert workflow.index(
         "Verify exact-main Regression Shield before provider mutation"
-    ) < workflow.index(_BOUNDARY_STEP)
+   ) < workflow.index(_BOUNDARY_STEP)
     assert workflow.index(_BOUNDARY_STEP) < workflow.index(
         "Provision and deploy zero-cost synthetic preview"
     )
