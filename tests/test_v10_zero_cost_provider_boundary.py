@@ -5,6 +5,7 @@ import io
 import json
 from pathlib import Path
 from urllib.error import HTTPError
+from urllib.request import Request
 
 import pytest
 
@@ -53,9 +54,24 @@ class RawResponse(FakeResponse):
         self._raw = raw
 
 
+def _assert_neon_request(request: Request, timeout: float) -> None:
+    assert request.full_url == NEON_ORGANIZATIONS_URL
+    assert request.get_method() == "GET"
+    assert timeout == 30.0
+
+
 def _opener(payload: object, *, status: int = 200):
-    def open_request(*args: object, **kwargs: object) -> FakeResponse:
+    def open_request(request: Request, *, timeout: float) -> FakeResponse:
+        _assert_neon_request(request, timeout)
         return FakeResponse(payload, status=status)
+
+    return open_request
+
+
+def _raw_opener(raw: bytes):
+    def open_request(request: Request, *, timeout: float) -> RawResponse:
+        _assert_neon_request(request, timeout)
+        return RawResponse(raw)
 
     return open_request
 
@@ -148,7 +164,8 @@ def test_full_boundary_verification_is_read_only_and_never_prints_token(
 
 
 def test_provider_redirect_is_rejected_before_response_body_processing() -> None:
-    def redirecting_opener(*args: object, **kwargs: object) -> FakeResponse:
+    def redirecting_opener(request: Request, *, timeout: float) -> FakeResponse:
+        _assert_neon_request(request, timeout)
         raise _http_error(302)
 
     with pytest.raises(
@@ -173,7 +190,8 @@ def test_neon_auth_failure_distinguishes_invalid_from_insufficient_scope(
     status: int,
     code: str,
 ) -> None:
-    def rejecting_opener(*args: object, **kwargs: object) -> FakeResponse:
+    def rejecting_opener(request: Request, *, timeout: float) -> FakeResponse:
+        _assert_neon_request(request, timeout)
         raise _http_error(status)
 
     with pytest.raises(BoundaryStopped) as stopped:
@@ -193,8 +211,9 @@ def test_transient_neon_http_failure_retries_before_success() -> None:
     attempts = 0
     sleeps: list[float] = []
 
-    def opener(*args: object, **kwargs: object) -> FakeResponse:
+    def opener(request: Request, *, timeout: float) -> FakeResponse:
         nonlocal attempts
+        _assert_neon_request(request, timeout)
         attempts += 1
         if attempts == 1:
             raise _http_error(503)
@@ -217,8 +236,9 @@ def test_exhausted_network_retries_fail_closed_without_secret_leak() -> None:
     attempts = 0
     sleeps: list[float] = []
 
-    def opener(*args: object, **kwargs: object) -> FakeResponse:
+    def opener(request: Request, *, timeout: float) -> FakeResponse:
         nonlocal attempts
+        _assert_neon_request(request, timeout)
         attempts += 1
         raise TimeoutError("network unavailable")
 
@@ -246,7 +266,7 @@ def test_oversized_neon_response_fails_closed_before_json_processing() -> None:
         verify_zero_cost_provider_boundary(
             env=_env(),
             now=FIXED_NOW,
-            opener=lambda *_args, **_kwargs: RawResponse(raw),
+            opener=_raw_opener(raw),
         )
 
 
