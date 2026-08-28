@@ -26,6 +26,11 @@ CURRENT_SELF_HOSTED_AUTHORITY_WORKFLOWS = (
     "v10-wp22a-clientless-access-audit.yml",
 )
 
+MANDATORY_BOOTSTRAP_RETRY_WORKFLOWS = (
+    "regression-shield.yml",
+    "self-hosted-windows-smoke.yml",
+)
+
 
 class V10CIActionDownloadResilienceTests(unittest.TestCase):
     def test_current_self_hosted_authority_plane_has_no_codeload_actions(self) -> None:
@@ -85,6 +90,50 @@ class V10CIActionDownloadResilienceTests(unittest.TestCase):
                 )
             if "continue-on-error: true" in text:
                 failures.append(f"{name} must not soften an authority job")
+        self.assertEqual(failures, [], "\n".join(failures))
+
+    def test_mandatory_merge_and_post_merge_bootstrap_retries_transport_only(self) -> None:
+        failures: list[str] = []
+        retry_markers = (
+            "bootstrap_succeeded=0",
+            "for bootstrap_attempt in 1 2 3; do",
+            "fetch_status=0",
+            "|| fetch_status=$?",
+            "git config --local --unset-all credential.helper 2>/dev/null || true",
+            "rm -rf .git",
+            'sleep "$((bootstrap_attempt * 5))"',
+            'if [ "$bootstrap_succeeded" -ne 1 ]; then',
+            'echo "Repository bootstrap transport failed after 3 attempts." >&2',
+            "exit 70",
+        )
+        pre_head_cleanup = "if git rev-parse --verify HEAD >/dev/null 2>&1; then"
+
+        for name in MANDATORY_BOOTSTRAP_RETRY_WORKFLOWS:
+            text = (WORKFLOWS / name).read_text(encoding="utf-8")
+            bootstrap_count = text.count("Bootstrap exact ")
+            if bootstrap_count == 0:
+                failures.append(f"{name} has no exact repository bootstrap step")
+                continue
+
+            for marker in retry_markers:
+                if text.count(marker) < bootstrap_count:
+                    failures.append(
+                        f"{name} missing bounded retry marker for every bootstrap: {marker}"
+                    )
+
+            retry_loop_count = text.count("for bootstrap_attempt in 1 2 3; do")
+            if retry_loop_count != bootstrap_count:
+                failures.append(
+                    f"{name} retry loop count {retry_loop_count} != bootstrap count {bootstrap_count}"
+                )
+
+            reset_count = text.count("git reset --hard HEAD")
+            safe_cleanup_count = text.count(pre_head_cleanup)
+            if safe_cleanup_count < reset_count:
+                failures.append(
+                    f"{name} has cleanup reset that is not guarded for missing HEAD"
+                )
+
         self.assertEqual(failures, [], "\n".join(failures))
 
 
