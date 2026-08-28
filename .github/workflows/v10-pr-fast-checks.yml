@@ -45,19 +45,39 @@ jobs:
         run: |
           set -euo pipefail
           find . -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
-          git init .
-          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
-          git config --local gc.auto 0
-          git config --local credential.helper ""
-          git config --local --add credential.helper '!f() { echo username=x-access-token; echo password=$GITHUB_TOKEN; }; f'
+          bootstrap_succeeded=0
+          for bootstrap_attempt in 1 2 3; do
+            rm -rf .git
+            git init .
+            git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+            git config --local gc.auto 0
+            git config --local credential.helper ""
+            git config --local --add credential.helper '!f() { echo username=x-access-token; echo password=$GITHUB_TOKEN; }; f'
+            fetch_status=0
+            if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+              git fetch --no-tags --prune origin "+refs/heads/${BASE_REF}:refs/remotes/origin/base" "+refs/pull/${PR_NUMBER}/head:refs/remotes/pull/head" || fetch_status=$?
+            else
+              git fetch --no-tags --prune --depth=1 origin "+${GITHUB_REF}:refs/remotes/origin/event" || fetch_status=$?
+            fi
+            git config --local --unset-all credential.helper 2>/dev/null || true
+            if [ "$fetch_status" -eq 0 ]; then
+              bootstrap_succeeded=1
+              break
+            fi
+            rm -rf .git
+            if [ "$bootstrap_attempt" -lt 3 ]; then
+              echo "Repository bootstrap transport failed on attempt ${bootstrap_attempt}/3; retrying after bounded backoff." >&2
+              sleep "$((bootstrap_attempt * 5))"
+            fi
+          done
+          if [ "$bootstrap_succeeded" -ne 1 ]; then
+            echo "Repository bootstrap transport failed after 3 attempts." >&2
+            exit 70
+          fi
           if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
-            git fetch --no-tags --prune origin "+refs/heads/${BASE_REF}:refs/remotes/origin/base" "+refs/pull/${PR_NUMBER}/head:refs/remotes/pull/head"
             git cat-file -e "${BASE_SHA}^{commit}"
-          else
-            git fetch --no-tags --prune --depth=1 origin "+${GITHUB_REF}:refs/remotes/origin/event"
           fi
           git checkout --detach "$EXPECTED_HEAD"
-          git config --local --unset-all credential.helper
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
           test -z "$(git config --local --get-all credential.helper || true)"
 
@@ -86,6 +106,11 @@ jobs:
         shell: cmd
         run: |
           git config --local --unset-all credential.helper >nul 2>nul
+          git rev-parse --verify HEAD >nul 2>nul
+          if errorlevel 1 (
+            if exist .git rmdir /s /q .git
+            exit /b 0
+          )
           git reset --hard HEAD
           git clean -ffdx
 
@@ -115,18 +140,36 @@ jobs:
         run: |
           set -euo pipefail
           find . -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
-          git init .
-          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
-          git config --local gc.auto 0
-          git config --local credential.helper ""
-          git config --local --add credential.helper '!f() { echo username=x-access-token; echo password=$GITHUB_TOKEN; }; f'
-          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
-            git fetch --no-tags --prune --depth=1 origin "+refs/pull/${PR_NUMBER}/head:refs/remotes/pull/head"
-          else
-            git fetch --no-tags --prune --depth=1 origin "+${GITHUB_REF}:refs/remotes/origin/event"
+          bootstrap_succeeded=0
+          for bootstrap_attempt in 1 2 3; do
+            rm -rf .git
+            git init .
+            git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+            git config --local gc.auto 0
+            git config --local credential.helper ""
+            git config --local --add credential.helper '!f() { echo username=x-access-token; echo password=$GITHUB_TOKEN; }; f'
+            fetch_status=0
+            if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+              git fetch --no-tags --prune --depth=1 origin "+refs/pull/${PR_NUMBER}/head:refs/remotes/pull/head" || fetch_status=$?
+            else
+              git fetch --no-tags --prune --depth=1 origin "+${GITHUB_REF}:refs/remotes/origin/event" || fetch_status=$?
+            fi
+            git config --local --unset-all credential.helper 2>/dev/null || true
+            if [ "$fetch_status" -eq 0 ]; then
+              bootstrap_succeeded=1
+              break
+            fi
+            rm -rf .git
+            if [ "$bootstrap_attempt" -lt 3 ]; then
+              echo "Repository bootstrap transport failed on attempt ${bootstrap_attempt}/3; retrying after bounded backoff." >&2
+              sleep "$((bootstrap_attempt * 5))"
+            fi
+          done
+          if [ "$bootstrap_succeeded" -ne 1 ]; then
+            echo "Repository bootstrap transport failed after 3 attempts." >&2
+            exit 70
           fi
           git checkout --detach "$EXPECTED_HEAD"
-          git config --local --unset-all credential.helper
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
           test -z "$(git config --local --get-all credential.helper || true)"
 
@@ -178,6 +221,11 @@ jobs:
         shell: cmd
         run: |
           git config --local --unset-all credential.helper >nul 2>nul
+          git rev-parse --verify HEAD >nul 2>nul
+          if errorlevel 1 (
+            if exist .git rmdir /s /q .git
+            exit /b 0
+          )
           git reset --hard HEAD
           git clean -ffdx
 
@@ -208,18 +256,36 @@ jobs:
         run: |
           set -euo pipefail
           find . -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
-          git init .
-          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
-          git config --local gc.auto 0
-          git config --local credential.helper ""
-          git config --local --add credential.helper '!f() { echo username=x-access-token; echo password=$GITHUB_TOKEN; }; f'
-          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
-            git fetch --no-tags --prune --depth=1 origin "+refs/pull/${PR_NUMBER}/head:refs/remotes/pull/head"
-          else
-            git fetch --no-tags --prune --depth=1 origin "+${GITHUB_REF}:refs/remotes/origin/event"
+          bootstrap_succeeded=0
+          for bootstrap_attempt in 1 2 3; do
+            rm -rf .git
+            git init .
+            git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+            git config --local gc.auto 0
+            git config --local credential.helper ""
+            git config --local --add credential.helper '!f() { echo username=x-access-token; echo password=$GITHUB_TOKEN; }; f'
+            fetch_status=0
+            if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+              git fetch --no-tags --prune --depth=1 origin "+refs/pull/${PR_NUMBER}/head:refs/remotes/pull/head" || fetch_status=$?
+            else
+              git fetch --no-tags --prune --depth=1 origin "+${GITHUB_REF}:refs/remotes/origin/event" || fetch_status=$?
+            fi
+            git config --local --unset-all credential.helper 2>/dev/null || true
+            if [ "$fetch_status" -eq 0 ]; then
+              bootstrap_succeeded=1
+              break
+            fi
+            rm -rf .git
+            if [ "$bootstrap_attempt" -lt 3 ]; then
+              echo "Repository bootstrap transport failed on attempt ${bootstrap_attempt}/3; retrying after bounded backoff." >&2
+              sleep "$((bootstrap_attempt * 5))"
+            fi
+          done
+          if [ "$bootstrap_succeeded" -ne 1 ]; then
+            echo "Repository bootstrap transport failed after 3 attempts." >&2
+            exit 70
           fi
           git checkout --detach "$EXPECTED_HEAD"
-          git config --local --unset-all credential.helper
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
           test -z "$(git config --local --get-all credential.helper || true)"
 
@@ -298,5 +364,10 @@ jobs:
         shell: cmd
         run: |
           git config --local --unset-all credential.helper >nul 2>nul
+          git rev-parse --verify HEAD >nul 2>nul
+          if errorlevel 1 (
+            if exist .git rmdir /s /q .git
+            exit /b 0
+          )
           git reset --hard HEAD
           git clean -ffdx
