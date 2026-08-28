@@ -107,8 +107,7 @@ class OrgScopedNeonApi(_base.JsonApi):
                 if not self._should_retry_locked(method, exc, attempt, attempts):
                     raise
                 _base._emit(
-                    "NEON_API_HTTP_RETRY status=423 "
-                    f"attempt={attempt + 2}/{attempts}"
+                    f"NEON_API_HTTP_RETRY status=423 attempt={attempt + 2}/{attempts}"
                 )
                 self._sleeper(_ORG_SCOPE_423_RETRY_DELAYS_SECONDS[attempt])
         raise AssertionError("unreachable Neon org-scope request state")
