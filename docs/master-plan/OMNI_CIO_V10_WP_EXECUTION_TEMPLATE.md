@@ -314,6 +314,31 @@ Verification batch record:
 - root-cause groups:
 - correction batch SHA, if required:
 
+### 15.1 Files changed / independent review evidence
+
+For every published PR head, record evidence for the **same exact SHA**:
+
+- complete GitHub **Files changed** surface reviewed against accepted base;
+- inline review threads and check annotations inspected;
+- Sonar, Gitar, SAST/security and any other applicable code/security review outputs inspected;
+- every material finding classified against actual code, root cause, blast radius, analogous locations, directly coupled surfaces and adjacent failure modes as applicable;
+- real correctness/maintainability/diagnostic/security/review-quality defects fixed and reusable defect classes guarded deterministically;
+- bot approval treated as supporting evidence, never a substitute for engineering judgment;
+- final manual engineering diff review performed even when independent tools report no findings;
+- unresolved blocking review threads = 0.
+
+Any correction commit invalidates both prior final GREEN evidence **and** prior review evidence. The new exact head requires fresh Files changed + review evidence before merge.
+
+Review record:
+
+- exact SHA:
+- Files changed review: PASS/FAIL
+- independent sources inspected:
+- material findings/dispositions:
+- unresolved blocking review threads:
+- final manual engineering diff review: PASS/FAIL
+- fresh after correction commit: YES/NO/N/A
+
 ## 16. Rollback/recovery
 
 State exactly how to return to the accepted prior state without losing broker/reconciliation truth.
@@ -331,12 +356,18 @@ Final merge/normal PR closure requires:
 - current exact head;
 - all applicable checks actually ran and concluded `success`;
 - full diff review;
+- complete exact-head GitHub Files changed review;
+- applicable inline/check/Sonar/Gitar/SAST/other code-security review outputs inspected and material findings dispositioned;
+- final manual engineering diff review after the last code change;
+- fresh Files changed + independent review evidence after any correction commit;
 - zero unresolved blocking review threads;
 - no unresolved P0/P1 blocker;
 - required security/recovery evidence;
 - all required integrated member milestones branch-local PASS;
 - mandatory split review clear;
 - final integrated acceptance only after squash merge and exact-main post-merge gates.
+
+Bot approval is supporting independent evidence; it never replaces engineering judgment or the required exact-head CI/security gates.
 
 For each affected user-facing capability, final Exit evidence must also classify:
 

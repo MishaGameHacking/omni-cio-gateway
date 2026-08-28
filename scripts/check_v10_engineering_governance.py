@@ -8,6 +8,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 AGENTS = ROOT / "AGENTS.md"
+CONTRIBUTING = ROOT / "CONTRIBUTING.md"
 AMENDMENT = (
     ROOT
     / "docs/master-plan/OMNI_CIO_V10_ENGINEERING_QUALITY_AND_GREEN_MERGE_AMENDMENT.md"
@@ -24,6 +25,39 @@ PR_TEMPLATE = ROOT / ".github/pull_request_template.md"
 COPILOT = ROOT / ".github/copilot-instructions.md"
 WP_TEMPLATE = ROOT / "docs/master-plan/OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md"
 WORKFLOW = ROOT / ".github/workflows/v10-engineering-governance.yml"
+
+REVIEW_GATE_BOOL_KEYS = (
+    "new_commit_invalidates_final_green_evidence",
+    "new_commit_invalidates_review_evidence",
+    "zero_unresolved_blocking_review_threads",
+    "full_diff_review_required",
+    "complete_files_changed_review_required",
+    "independent_review_outputs_required_when_applicable",
+    "material_findings_require_engineering_classification",
+    "bot_approval_is_supporting_not_substitute",
+    "manual_engineering_diff_review_required",
+    "correction_commit_requires_fresh_files_changed_and_review",
+)
+REQUIRED_REVIEW_OUTPUTS = {
+    "INLINE_REVIEW_THREADS",
+    "CHECK_ANNOTATIONS",
+    "SONAR",
+    "GITAR",
+    "SAST_SECURITY_REVIEW",
+    "OTHER_APPLICABLE_CODE_SECURITY_REVIEW",
+}
+REJECTED_GREEN_CONCLUSIONS = {
+    "failure",
+    "cancelled",
+    "queued",
+    "pending",
+    "in_progress",
+    "timed_out",
+    "action_required",
+    "stale",
+    "neutral",
+    "skipped",
+}
 
 
 def _load_text(path: Path, failures: list[str]) -> str:
@@ -88,23 +122,7 @@ def _require_section(
     return section
 
 
-def validate_contract(failures: list[str]) -> None:
-    data = _load_json(CONTRACT, failures)
-    if data is None:
-        return
-
-    if data.get("schema") != "omni-cio.v10.engineering-quality-gate.v3":
-        failures.append("engineering quality contract schema mismatch")
-
-    pre_ci = _require_section(data, "pre_ci", failures)
-    merge_gate = _require_section(data, "merge_gate", failures)
-    owner = _require_section(data, "owner_participation", failures)
-    owner_handoff = _require_section(data, "owner_handoff", failures)
-    runtime_hosting = _require_section(data, "runtime_hosting", failures)
-    learning = _require_section(data, "failure_learning", failures)
-    isolation = _require_section(data, "fault_isolation", failures)
-    protected = _require_section(data, "protected_invariants", failures)
-
+def _validate_pre_ci(pre_ci: dict[str, Any], failures: list[str]) -> None:
     _expect_bool(pre_ci, "required", True, "pre_ci", failures)
     _expect_bool(pre_ci, "ci_is_primary_debugger", False, "pre_ci", failures)
     _expect_bool(pre_ci, "root_cause_before_fix", True, "pre_ci", failures)
@@ -117,6 +135,26 @@ def validate_contract(failures: list[str]) -> None:
         failures,
     )
 
+
+def _validate_merge_review_gate(
+    merge_gate: dict[str, Any], failures: list[str]
+) -> None:
+    for key in REVIEW_GATE_BOOL_KEYS:
+        _expect_bool(merge_gate, key, True, "merge_gate", failures)
+
+    review_outputs = merge_gate.get("review_outputs", [])
+    if not isinstance(review_outputs, list):
+        failures.append("merge_gate.review_outputs must be a list")
+        return
+
+    present_review_outputs = {item for item in review_outputs if isinstance(item, str)}
+    for required in sorted(REQUIRED_REVIEW_OUTPUTS - present_review_outputs):
+        failures.append(
+            f"merge_gate.review_outputs missing required source: {required}"
+        )
+
+
+def _validate_merge_gate(merge_gate: dict[str, Any], failures: list[str]) -> None:
     if merge_gate.get("accepted_check_conclusions") != ["success"]:
         failures.append("merge_gate accepts conclusions other than success")
     _expect_bool(merge_gate, "exact_head_only", True, "merge_gate", failures)
@@ -141,22 +179,14 @@ def validate_contract(failures: list[str]) -> None:
         "merge_gate",
         failures,
     )
-    rejected = set(merge_gate.get("rejected_as_green", []))
-    for required in {
-        "failure",
-        "cancelled",
-        "queued",
-        "pending",
-        "in_progress",
-        "timed_out",
-        "action_required",
-        "stale",
-        "neutral",
-        "skipped",
-    }:
-        if required not in rejected:
-            failures.append(f"merge_gate must reject {required!r} as GREEN evidence")
+    _validate_merge_review_gate(merge_gate, failures)
 
+    rejected = set(merge_gate.get("rejected_as_green", []))
+    for required in sorted(REJECTED_GREEN_CONCLUSIONS - rejected):
+        failures.append(f"merge_gate must reject {required!r} as GREEN evidence")
+
+
+def _validate_owner(owner: dict[str, Any], failures: list[str]) -> None:
     _expect_bool(
         owner,
         "product_acceptance_before_implementation_merge",
@@ -174,6 +204,8 @@ def validate_contract(failures: list[str]) -> None:
     if owner.get("pre_merge_exception") != "GENUINELY_NON_DELEGABLE_PREREQUISITE_ONLY":
         failures.append("OWNER pre-merge exception is wider than prerequisite-only")
 
+
+def _validate_owner_handoff(owner_handoff: dict[str, Any], failures: list[str]) -> None:
     if (
         owner_handoff.get("standard")
         != "docs/operations/V10_OWNER_ACTION_HANDOFF_STANDARD.md"
@@ -205,6 +237,10 @@ def validate_contract(failures: list[str]) -> None:
         failures,
     )
 
+
+def _validate_runtime_hosting(
+    runtime_hosting: dict[str, Any], failures: list[str]
+) -> None:
     if (
         runtime_hosting.get("v10_public_production_host")
         != "APPROVED_MANAGED_CLOUD_RUNTIME_SELECTED_BY_OWNING_GATE"
@@ -318,82 +354,84 @@ def validate_contract(failures: list[str]) -> None:
         failures,
     )
 
-    public_contract = _load_json(PUBLIC_CONTRACT, failures)
-    if public_contract is not None:
-        product = public_contract.get("product_target", {})
-        production = public_contract.get("production_hosting", {})
-        access = public_contract.get("initial_access_model", {})
-        broker = public_contract.get("broker_credentials", {})
-        activation = public_contract.get("activation", {})
-        safety = public_contract.get("safety", {})
-        if not all(
-            isinstance(item, dict)
-            for item in (product, production, access, broker, activation, safety)
-        ):
-            failures.append("public runtime contract sections must be objects")
-        else:
-            _expect_bool(
-                product, "public_multi_user_target", True, "public_product", failures
-            )
-            _expect_bool(
-                product,
-                "project_owner_is_special_product_role",
-                False,
-                "public_product",
-                failures,
-            )
-            _expect_bool(
-                production,
-                "managed_cloud_origin_required",
-                True,
-                "public_production",
-                failures,
-            )
-            _expect_bool(
-                production,
-                "lenovo_as_public_production_origin_allowed",
-                False,
-                "public_production",
-                failures,
-            )
-            _expect_bool(access, "billing_enabled", False, "initial_access", failures)
-            _expect_bool(access, "trial_enabled", False, "initial_access", failures)
-            _expect_bool(
-                access, "subscription_enforcement", False, "initial_access", failures
-            )
-            _expect_bool(
-                access, "premium_feature_gating", False, "initial_access", failures
-            )
-            if broker.get("ownership") != "TENANT_SCOPED_BROKER_CONNECTION":
-                failures.append("public broker credentials must remain tenant-scoped")
-            _expect_bool(
-                broker,
-                "cross_tenant_secret_access_allowed",
-                False,
-                "broker_credentials",
-                failures,
-            )
-            _expect_bool(
-                activation,
-                "implementation_default_public_multi_user_enabled",
-                False,
-                "activation",
-                failures,
-            )
-            _expect_bool(
-                activation,
-                "target_after_exit_gates_public_multi_user_enabled",
-                True,
-                "activation",
-                failures,
-            )
-            if safety.get("app_entrypoint") != "app:app":
-                failures.append("public plan must preserve app:app")
-            _expect_bool(safety, "trading_methods", False, "public_safety", failures)
-            _expect_bool(
-                safety, "real_trading_enabled", False, "public_safety", failures
-            )
 
+def _validate_public_runtime_contract(failures: list[str]) -> None:
+    public_contract = _load_json(PUBLIC_CONTRACT, failures)
+    if public_contract is None:
+        return
+
+    product = public_contract.get("product_target", {})
+    production = public_contract.get("production_hosting", {})
+    access = public_contract.get("initial_access_model", {})
+    broker = public_contract.get("broker_credentials", {})
+    activation = public_contract.get("activation", {})
+    safety = public_contract.get("safety", {})
+    sections = (product, production, access, broker, activation, safety)
+    if not all(isinstance(item, dict) for item in sections):
+        failures.append("public runtime contract sections must be objects")
+        return
+
+    _expect_bool(product, "public_multi_user_target", True, "public_product", failures)
+    _expect_bool(
+        product,
+        "project_owner_is_special_product_role",
+        False,
+        "public_product",
+        failures,
+    )
+    _expect_bool(
+        production,
+        "managed_cloud_origin_required",
+        True,
+        "public_production",
+        failures,
+    )
+    _expect_bool(
+        production,
+        "lenovo_as_public_production_origin_allowed",
+        False,
+        "public_production",
+        failures,
+    )
+    _expect_bool(access, "billing_enabled", False, "initial_access", failures)
+    _expect_bool(access, "trial_enabled", False, "initial_access", failures)
+    _expect_bool(access, "subscription_enforcement", False, "initial_access", failures)
+    _expect_bool(access, "premium_feature_gating", False, "initial_access", failures)
+    if broker.get("ownership") != "TENANT_SCOPED_BROKER_CONNECTION":
+        failures.append("public broker credentials must remain tenant-scoped")
+    _expect_bool(
+        broker,
+        "cross_tenant_secret_access_allowed",
+        False,
+        "broker_credentials",
+        failures,
+    )
+    _expect_bool(
+        activation,
+        "implementation_default_public_multi_user_enabled",
+        False,
+        "activation",
+        failures,
+    )
+    _expect_bool(
+        activation,
+        "target_after_exit_gates_public_multi_user_enabled",
+        True,
+        "activation",
+        failures,
+    )
+    if safety.get("app_entrypoint") != "app:app":
+        failures.append("public plan must preserve app:app")
+    _expect_bool(safety, "trading_methods", False, "public_safety", failures)
+    _expect_bool(safety, "real_trading_enabled", False, "public_safety", failures)
+
+
+def _validate_failure_and_protected_invariants(
+    learning: dict[str, Any],
+    isolation: dict[str, Any],
+    protected: dict[str, Any],
+    failures: list[str],
+) -> None:
     _expect_bool(
         learning,
         "confidence_postmortem_after_unexpected_red",
@@ -436,10 +474,42 @@ def validate_contract(failures: list[str]) -> None:
         failures.append("Master Plan sequence must remain protected")
 
 
+def validate_contract(failures: list[str]) -> None:
+    data = _load_json(CONTRACT, failures)
+    if data is None:
+        return
+
+    if data.get("schema") != "omni-cio.v10.engineering-quality-gate.v4":
+        failures.append("engineering quality contract schema mismatch")
+
+    pre_ci = _require_section(data, "pre_ci", failures)
+    merge_gate = _require_section(data, "merge_gate", failures)
+    owner = _require_section(data, "owner_participation", failures)
+    owner_handoff = _require_section(data, "owner_handoff", failures)
+    runtime_hosting = _require_section(data, "runtime_hosting", failures)
+    learning = _require_section(data, "failure_learning", failures)
+    isolation = _require_section(data, "fault_isolation", failures)
+    protected = _require_section(data, "protected_invariants", failures)
+
+    _validate_pre_ci(pre_ci, failures)
+    _validate_merge_gate(merge_gate, failures)
+    _validate_owner(owner, failures)
+    _validate_owner_handoff(owner_handoff, failures)
+    _validate_runtime_hosting(runtime_hosting, failures)
+    _validate_public_runtime_contract(failures)
+    _validate_failure_and_protected_invariants(
+        learning,
+        isolation,
+        protected,
+        failures,
+    )
+
+
 def main() -> int:
     failures: list[str] = []
 
     agents = _load_text(AGENTS, failures)
+    contributing = _load_text(CONTRIBUTING, failures)
     amendment = _load_text(AMENDMENT, failures)
     index = _load_text(INDEX, failures)
     ledger = _load_text(LEDGER, failures)
@@ -456,10 +526,21 @@ def main() -> int:
         (
             "CI is an independent verifier",
             "every **applicable** exact-head V10 check must actually execute and conclude `success`",
+            "Changed-files + independent code-review merge gate",
             "OWNER participation / handoff law",
             "bounded failure domains rather than one fragile monolith",
             "WP22A — External Web Access / Product Authentication Security Gate",
             "managed-cloud production runtime",
+        ),
+        failures,
+    )
+    _require_markers(
+        CONTRIBUTING,
+        contributing,
+        (
+            "Files changed / independent code-review gate",
+            "Bot approval is supporting evidence",
+            "fresh Files changed + review evidence",
         ),
         failures,
     )
@@ -533,6 +614,7 @@ def main() -> int:
         (
             "Pre-CI engineering gate",
             "Root cause / blast radius",
+            "Files changed / independent review evidence",
             "All applicable exact-head checks = SUCCESS",
             "OWNER product acceptance is post-merge",
         ),
@@ -556,6 +638,7 @@ def main() -> int:
         (
             "Pre-CI readiness",
             "Root-cause / blast-radius plan",
+            "Files changed / independent review evidence",
             "Fault isolation / degraded-mode contract",
             "Failure-learning update",
         ),
@@ -594,6 +677,7 @@ def main() -> int:
     print("AGENTS engineering law: present")
     print("Pre-CI root-cause and blast-radius discipline: enforced")
     print("Exact-head applicable checks: SUCCESS-only project policy")
+    print("Exact-head changed-files + independent review: enforced")
     print("OWNER product acceptance: post-merge/post-Regression-Shield")
     print("OWNER handoff: direct official link + bounded action contract enforced")
     print(

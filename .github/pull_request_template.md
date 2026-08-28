@@ -148,6 +148,28 @@ all safe findings collected -> systemic hardening -> one coherent correction bat
 
 Любой новый commit инвалидирует прежнее final exact-head GREEN evidence.
 
+### Files changed / independent review evidence
+
+Для **каждого опубликованного exact PR head** GREEN checks необходимы, но недостаточны сами по себе:
+
+- [ ] Полный GitHub **Files changed** просмотрен на текущем exact head против accepted base.
+- [ ] Проверены все inline review threads и check annotations.
+- [ ] Проверены Sonar, Gitar, SAST/security и другие реально применимые code/security review outputs.
+- [ ] Каждый material finding сопоставлен с actual code и классифицирован по root cause, blast radius, analogous locations, coupled surfaces и adjacent failure modes по применимости.
+- [ ] Реальные correctness/maintainability/diagnostic/security/review-quality defects исправлены; bot approval не использован как замена engineering judgment.
+- [ ] Unresolved blocking review threads = 0.
+- [ ] Выполнен финальный manual engineering diff review, даже если bots/findings отсутствуют.
+- [ ] После любого correction commit прежние GREEN и review evidence признаны stale; на новом exact head повторены Files changed + applicable bot/security review.
+
+```text
+HEAD SHA:
+Files changed reviewed on HEAD: YES/NO
+review sources inspected:
+material findings / dispositions:
+final manual engineering diff review: PASS/FAIL
+fresh after correction commit: YES/NO/N/A
+```
+
 ## Fault isolation / degraded behavior
 
 - [ ] Изменение не создаёт ненужный single point of failure для deterministic Core.
@@ -209,6 +231,7 @@ Project policy is stricter than generic GitHub semantics: applicable `skipped`, 
 - [ ] Неприменимые workflows не висят misleading skipped/cancelled checks; routing/trigger исправлен по необходимости.
 - [ ] Старые GREEN runs предыдущего SHA не используются как final evidence.
 - [ ] Full diff reviewed after final code change.
+- [ ] Files changed / independent review evidence выше относится к этому же exact HEAD.
 - [ ] Unresolved blocking review threads = 0.
 - [ ] P0/P1 blockers = 0.
 
