@@ -86,3 +86,23 @@ If first-party reference prose and first-party implementation guidance conflict,
 ## Dependency/tooling knowledge change
 
 No dependency upgrade is required. This correction updates provider API routing/configuration only and preserves the accepted toolchain and lock files.
+
+## Verification-batch follow-up — synthetic credential-shaped fixtures
+
+The first complete DRAFT exact-head verification after the org-scope correction exposed a second, independent preflight defect. The authoritative secret scan rejected one newly added test fixture because a synthetic PostgreSQL DSN encoded `user:marker@host` as one credential-shaped string literal. No real credential was present or disclosed; the detector correctly treated the tracked source pattern as unsafe-looking evidence.
+
+### Root cause / blast radius
+
+The new org-scope test introduced a connection-URI fixture using a monolithic basic-auth-shaped literal even though accepted Phase-4 tests already construct synthetic PostgreSQL URIs programmatically from separate fields. Repository search found no second newly introduced monolithic fixture in the focused changed surface. The coupled production URI validator still requires username/password syntax and must continue to be exercised; weakening that validation or suppressing `detect-secrets` would reduce security coverage.
+
+### Why preflight missed it
+
+Focused unit/static preflight covered Python behavior and formatting but did not execute the repository-wide tracked-content secret scan before publishing the verification head. That allowed a harmless but prohibited secret-shaped fixture to reach the expensive authoritative lane.
+
+### Correction / permanent guard
+
+Use the accepted Phase-4 `_postgres_uri()` fixture style: assemble a synthetic DSN through `urlunsplit()` from separate non-secret marker fields, then pass the resulting URI through the unchanged production validator. Keep `detect-secrets` and the CI baseline unchanged. Future provider/auth test fixtures must avoid tracked monolithic credential-shaped literals, and focused preflight for changes that add authentication/DSN fixtures must include the repository secret scan before publication.
+
+### Dependency/tooling effect
+
+None. The existing `detect-secrets` version and security threshold remain unchanged; this is a fixture/preflight correction only.

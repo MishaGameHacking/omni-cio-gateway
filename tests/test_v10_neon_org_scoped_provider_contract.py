@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 import json
 from pathlib import Path
+from urllib.parse import urlunsplit
 
 import pytest
 
@@ -38,6 +39,18 @@ def _api(*, sleeper: Callable[[float], None] = _no_sleep) -> provisioner.OrgScop
 
 def _organization_response(org_id: str, plan: str) -> dict[str, object]:
     return {"organization": {"id": org_id, "plan": plan}}
+
+
+def _postgres_uri(user: str, marker: str, host: str) -> str:
+    return urlunsplit(
+        (
+            "postgresql",
+            f"{user}:{marker}@{host}",
+            "/neondb",
+            "sslmode=require",
+            "",
+        )
+    )
 
 
 def _rejecting_call(status: int) -> ProviderCall:
@@ -110,9 +123,10 @@ def test_clean_room_project_create_reuses_base_target_without_provider_regions_c
     calls: list[tuple[str, str]] = []
     intercepted_region_paths: list[str] = []
     original_region_response = api._static_region_response
-    connection_uri = (
-        "postgresql://neondb_owner:test-password@ep-test.neon.tech/"
-        "neondb?sslmode=require"
+    connection_uri = _postgres_uri(
+        "neondb_owner",
+        "synthetic-marker",
+        "ep-test.neon.tech",
     )
 
     def provider_call(
