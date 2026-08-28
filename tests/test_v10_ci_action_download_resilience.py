@@ -51,6 +51,7 @@ CURRENT_CRITICAL_FOLLOWUP_RETRY_WORKFLOWS = (
 )
 
 HOSTED_ALIGNMENT_WORKFLOW = "v10-hosted-release-alignment.yml"
+LIVE_AUTHORITY_WORKFLOW = "v10-live-gateway-authority-contract.yml"
 
 RETRY_MARKERS = (
     "bootstrap_succeeded=0",
@@ -195,6 +196,29 @@ class V10CIActionDownloadResilienceTests(unittest.TestCase):
                 )
 
         self.assertEqual(failures, [], "\n".join(failures))
+
+    def test_live_authority_cmd_cleanup_clears_missing_head_errorlevel(self) -> None:
+        text = (WORKFLOWS / LIVE_AUTHORITY_WORKFLOW).read_text(encoding="utf-8")
+        cleanup = text.split("- name: Clean contract workspace", 1)[1]
+
+        missing_head_exit = cleanup.index("exit /b 0")
+        strict_reset = cleanup.index("git reset --hard HEAD")
+        strict_clean = cleanup.index("git clean -ffdx")
+
+        for marker in (
+            CMD_PRE_HEAD_CLEANUP,
+            "if errorlevel 1 (",
+            "if exist .git rmdir /s /q .git",
+            "exit /b 0",
+            "git reset --hard HEAD",
+            "git clean -ffdx",
+        ):
+            self.assertIn(marker, cleanup)
+
+        self.assertLess(missing_head_exit, strict_reset)
+        self.assertLess(missing_head_exit, strict_clean)
+        self.assertNotIn("git reset --hard HEAD || true", cleanup)
+        self.assertNotIn("git clean -ffdx || true", cleanup)
 
     def test_hosted_alignment_retries_bootstrap_and_post_probe_reconfirmation(
         self,

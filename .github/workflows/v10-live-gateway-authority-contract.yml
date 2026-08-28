@@ -114,7 +114,7 @@ jobs:
           git rev-parse --verify HEAD >nul 2>nul
           if errorlevel 1 (
             if exist .git rmdir /s /q .git
-          ) else (
-            git reset --hard HEAD
-            git clean -ffdx
+            exit /b 0
           )
+          git reset --hard HEAD
+          git clean -ffdx
