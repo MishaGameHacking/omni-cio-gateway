@@ -26,6 +26,15 @@ CURRENT_SELF_HOSTED_AUTHORITY_WORKFLOWS = (
     "v10-wp22a-clientless-access-audit.yml",
 )
 
+BLOCKER_DEPENDENCY_CLOSED_RETRY_WORKFLOWS = (
+    "regression-shield.yml",
+    "self-hosted-windows-smoke.yml",
+    "v10-engineering-governance.yml",
+    "v10-pr-fast-checks.yml",
+    "v10-toolchain-compat.yml",
+    "v10-wp6-identity-audit.yml",
+)
+
 
 class V10CIActionDownloadResilienceTests(unittest.TestCase):
     def test_current_self_hosted_authority_plane_has_no_codeload_actions(self) -> None:
@@ -87,7 +96,7 @@ class V10CIActionDownloadResilienceTests(unittest.TestCase):
                 failures.append(f"{name} must not soften an authority job")
         self.assertEqual(failures, [], "\n".join(failures))
 
-    def test_current_authority_plane_retries_only_repository_transport(self) -> None:
+    def test_blocker_dependency_closure_retries_only_repository_transport(self) -> None:
         failures: list[str] = []
         retry_markers = (
             "bootstrap_succeeded=0",
@@ -104,7 +113,7 @@ class V10CIActionDownloadResilienceTests(unittest.TestCase):
         bash_pre_head_cleanup = "if git rev-parse --verify HEAD >/dev/null 2>&1; then"
         cmd_pre_head_cleanup = "git rev-parse --verify HEAD >nul 2>nul"
 
-        for name in CURRENT_SELF_HOSTED_AUTHORITY_WORKFLOWS:
+        for name in BLOCKER_DEPENDENCY_CLOSED_RETRY_WORKFLOWS:
             text = (WORKFLOWS / name).read_text(encoding="utf-8")
             bootstrap_count = text.count("Bootstrap exact ")
             if bootstrap_count == 0:
