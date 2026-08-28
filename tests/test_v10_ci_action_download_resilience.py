@@ -101,7 +101,8 @@ class V10CIActionDownloadResilienceTests(unittest.TestCase):
             'echo "Repository bootstrap transport failed after 3 attempts." >&2',
             "exit 70",
         )
-        pre_head_cleanup = "if git rev-parse --verify HEAD >/dev/null 2>&1; then"
+        bash_pre_head_cleanup = "if git rev-parse --verify HEAD >/dev/null 2>&1; then"
+        cmd_pre_head_cleanup = "git rev-parse --verify HEAD >nul 2>nul"
 
         for name in CURRENT_SELF_HOSTED_AUTHORITY_WORKFLOWS:
             text = (WORKFLOWS / name).read_text(encoding="utf-8")
@@ -123,7 +124,9 @@ class V10CIActionDownloadResilienceTests(unittest.TestCase):
                 )
 
             reset_count = text.count("git reset --hard HEAD")
-            safe_cleanup_count = text.count(pre_head_cleanup)
+            safe_cleanup_count = text.count(bash_pre_head_cleanup) + text.count(
+                cmd_pre_head_cleanup
+            )
             if safe_cleanup_count < reset_count:
                 failures.append(
                     f"{name} has cleanup reset that is not guarded for missing HEAD"
