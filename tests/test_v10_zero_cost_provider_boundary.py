@@ -11,7 +11,8 @@ import pytest
 
 from scripts.check_v10_zero_cost_provider_boundary import (
     BoundaryStopped,
-    NEON_ORGANIZATIONS_URL,
+    NEON_API_BASE,
+    read_neon_organization,
     validate_neon_free_organization,
     validate_render_zero_charge_attestation,
     verify_zero_cost_provider_boundary,
@@ -22,8 +23,8 @@ FIXED_NOW = datetime(2026, 8, 21, 9, 0, tzinfo=timezone.utc)
 VALID_ATTESTATION = "NO_PAYMENT_METHOD_CONFIRMED:2026-08-21T08:30:00Z"
 _SAFE_ORGANIZATION_ID = "org-safe-preview"
 _TEST_NEON_TOKEN = "neon-token-must-never-leak"
+_ORGANIZATION_KEY = "organization"
 _BOUNDARY_STEP = "Enforce zero-charge provider boundary"
-_ORGANIZATIONS_KEY = "organizations"
 SCRIPT = (
     Path(__file__).resolve().parents[1]
     / "scripts"
@@ -54,10 +55,21 @@ class RawResponse(FakeResponse):
         self._raw = raw
 
 
+def _expected_neon_url() -> str:
+    return f"{NEON_API_BASE}/organizations/{_SAFE_ORGANIZATION_ID}"
+
+
 def _assert_neon_request(request: Request, timeout: float) -> None:
-    assert request.full_url == NEON_ORGANIZATIONS_URL
+    assert request.full_url == _expected_neon_url()
     assert request.get_method() == "GET"
     assert timeout == 30.0
+
+
+def _payload(
+    plan: str = "free",
+    org_id: str = _SAFE_ORGANIZATION_ID,
+) -> dict[str, object]:
+    return {_ORGANIZATION_KEY: {"id": org_id, "plan": plan}}
 
 
 def _opener(payload: object, *, status: int = 200):
@@ -80,12 +92,13 @@ def _env(attestation: str = VALID_ATTESTATION) -> dict[str, str]:
     return {
         "RENDER_ZERO_CHARGE_ATTESTATION": attestation,
         "NEON_API_KEY": _TEST_NEON_TOKEN,  # pragma: allowlist secret
+        "NEON_ORG_ID": _SAFE_ORGANIZATION_ID,
     }
 
 
 def _raise_http_error(status: int) -> None:
     raise HTTPError(
-        NEON_ORGANIZATIONS_URL,
+        _expected_neon_url(),
         status,
         "provider response must stay sanitized",
         hdrs=None,
@@ -126,41 +139,72 @@ def test_invalid_stale_or_future_render_attestation_is_rejected(
         validate_render_zero_charge_attestation(value, now=FIXED_NOW)
 
 
-def test_exactly_one_free_neon_organization_is_required() -> None:
+def test_exact_configured_free_neon_organization_is_required() -> None:
+    organization = {"id": _SAFE_ORGANIZATION_ID, "plan": "free"}
     validate_neon_free_organization(
-        [{"id": _SAFE_ORGANIZATION_ID, "plan": "free"}]
+        organization,
+        expected_org_id=_SAFE_ORGANIZATION_ID,
     )
 
+    paid = {"id": _SAFE_ORGANIZATION_ID, "plan": "launch"}
     with pytest.raises(BoundaryStopped, match="NEON_FREE_PLAN_REQUIRED"):
         validate_neon_free_organization(
-            [{"id": "org-paid-preview", "plan": "launch"}]
+            paid,
+            expected_org_id=_SAFE_ORGANIZATION_ID,
         )
 
-    with pytest.raises(BoundaryStopped, match="NEON_ORGANIZATION_NOT_UNIQUE"):
+    mismatch = {"id": "org-other-preview", "plan": "free"}
+    with pytest.raises(BoundaryStopped, match="NEON_ORGANIZATION_ID_MISMATCH"):
         validate_neon_free_organization(
-            [
-                {"id": "org-one", "plan": "free"},
-                {"id": "org-two", "plan": "free"},
-            ]
+            mismatch,
+            expected_org_id=_SAFE_ORGANIZATION_ID,
         )
 
 
-def test_full_boundary_verification_is_read_only_and_never_prints_token(
+def test_full_boundary_uses_org_scoped_endpoint_and_never_prints_token(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     verify_zero_cost_provider_boundary(
         env=_env(),
         now=FIXED_NOW,
-        opener=_opener(
-            {_ORGANIZATIONS_KEY: [{"id": _SAFE_ORGANIZATION_ID, "plan": "free"}]}
-        ),
+        opener=_opener(_payload()),
     )
     captured = capsys.readouterr()
     assert "PASS_FRESH_NO_PAYMENT_METHOD" in captured.out
     assert "FREE_VERIFIED" in captured.out
     assert _TEST_NEON_TOKEN not in captured.out
     assert _TEST_NEON_TOKEN not in captured.err
-    assert "::add-mask::" not in captured.out
+    assert "users/me/organizations" not in captured.out
+
+
+def test_missing_or_invalid_neon_org_id_fails_before_network() -> None:
+    called = False
+
+    def opener(request: Request, *, timeout: float) -> FakeResponse:
+        nonlocal called
+        del request, timeout
+        called = True
+        return FakeResponse(_payload())
+
+    missing = _env()
+    missing.pop("NEON_ORG_ID")
+    with pytest.raises(BoundaryStopped, match="NEON_ORG_ID_REQUIRED"):
+        verify_zero_cost_provider_boundary(
+            env=missing,
+            now=FIXED_NOW,
+            opener=opener,
+        )
+
+    invalid = _env()
+    invalid["NEON_ORG_ID"] = "../other"
+    with pytest.raises(BoundaryStopped, match="NEON_ORG_ID_INVALID"):
+        verify_zero_cost_provider_boundary(
+            env=invalid,
+            now=FIXED_NOW,
+            opener=opener,
+        )
+
+    assert called is False
 
 
 def test_provider_redirect_is_rejected_before_response_body_processing() -> None:
@@ -209,7 +253,10 @@ def test_neon_auth_failure_distinguishes_invalid_from_insufficient_scope(
     assert _TEST_NEON_TOKEN not in str(stopped.value)
 
 
-def test_transient_neon_http_failure_retries_before_success() -> None:
+@pytest.mark.parametrize("transient_status", [423, 503])
+def test_transient_neon_http_failure_retries_before_success(
+    transient_status: int,
+) -> None:
     attempts = 0
     sleeps: list[float] = []
 
@@ -218,10 +265,8 @@ def test_transient_neon_http_failure_retries_before_success() -> None:
         _assert_neon_request(request, timeout)
         attempts += 1
         if attempts == 1:
-            _raise_http_error(503)
-        return FakeResponse(
-            {_ORGANIZATIONS_KEY: [{"id": _SAFE_ORGANIZATION_ID, "plan": "free"}]}
-        )
+            _raise_http_error(transient_status)
+        return FakeResponse(_payload())
 
     verify_zero_cost_provider_boundary(
         env=_env(),
@@ -261,12 +306,12 @@ def test_exhausted_network_retries_fail_closed_without_secret_leak() -> None:
 
 def test_oversized_neon_response_fails_closed_before_json_processing() -> None:
     raw = b"{" + (b"x" * 1_048_576) + b"}"
-    env = _env()
     opener = _raw_opener(raw)
+    env = _env()
 
     with pytest.raises(
         BoundaryStopped,
-        match="NEON_ORGANIZATIONS_RESPONSE_TOO_LARGE",
+        match="NEON_ORGANIZATION_RESPONSE_TOO_LARGE",
     ):
         verify_zero_cost_provider_boundary(
             env=env,
@@ -276,8 +321,8 @@ def test_oversized_neon_response_fails_closed_before_json_processing() -> None:
 
 
 def test_malformed_neon_json_fails_closed_with_sanitized_error() -> None:
+    opener = _raw_opener(b'{"organization":')
     env = _env()
-    opener = _raw_opener(b'{"organizations":')
 
     with pytest.raises(BoundaryStopped) as stopped:
         verify_zero_cost_provider_boundary(
@@ -286,20 +331,24 @@ def test_malformed_neon_json_fails_closed_with_sanitized_error() -> None:
             opener=opener,
         )
 
-    assert stopped.value.code == "NEON_ORGANIZATIONS_RESPONSE_INVALID"
+    assert stopped.value.code == "NEON_ORGANIZATION_RESPONSE_INVALID"
     assert stopped.value.status is None
     assert _TEST_NEON_TOKEN not in str(stopped.value)
 
 
-def test_paid_neon_plan_stops_before_provider_mutation() -> None:
-    env = _env()
-    opener = _opener(
-        {
-            _ORGANIZATIONS_KEY: [
-                {"id": "org-paid-preview", "plan": "scale"}
-            ]
-        }
+def test_direct_object_response_is_accepted_for_provider_compatibility() -> None:
+    result = read_neon_organization(
+        _TEST_NEON_TOKEN,
+        _SAFE_ORGANIZATION_ID,
+        opener=_opener({"id": _SAFE_ORGANIZATION_ID, "plan": "free"}),
     )
+
+    assert result["id"] == _SAFE_ORGANIZATION_ID
+
+
+def test_paid_neon_plan_stops_before_provider_mutation() -> None:
+    opener = _opener(_payload(plan="scale"))
+    env = _env()
 
     with pytest.raises(BoundaryStopped, match="NEON_FREE_PLAN_REQUIRED"):
         verify_zero_cost_provider_boundary(
@@ -316,7 +365,14 @@ def test_network_exception_handling_uses_non_redundant_oserror_boundary() -> Non
     assert "except OSError:" in source
 
 
-def test_deployment_workflow_requires_fresh_attestation_and_test_toolchain() -> None:
+def test_user_organization_discovery_is_permanently_forbidden() -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+
+    assert "/users/me/organizations" not in source
+    assert "NEON_ORG_ID" in source
+
+
+def test_deployment_workflow_requires_org_scope_and_fresh_attestation() -> None:
     workflow = (
         Path(__file__).resolve().parents[1]
         / ".github"
@@ -332,6 +388,7 @@ def test_deployment_workflow_requires_fresh_attestation_and_test_toolchain() -> 
         "RENDER_ZERO_CHARGE_ATTESTATION: "
         "${{ vars.RENDER_ZERO_CHARGE_ATTESTATION }}"
     ) in workflow
+    assert workflow.count("NEON_ORG_ID: ${{ vars.NEON_ORG_ID }}") == 2
     assert "python scripts/check_v10_zero_cost_provider_boundary.py" in workflow
     assert workflow.index(
         "Verify exact-main Regression Shield before provider mutation"
@@ -340,6 +397,7 @@ def test_deployment_workflow_requires_fresh_attestation_and_test_toolchain() -> 
         "Provision and deploy zero-cost synthetic preview"
     )
     assert "tests/test_v10_zero_cost_provider_boundary.py" in workflow
+    assert "tests/test_v10_neon_org_scoped_provider_contract.py" in workflow
     assert "scripts/windows_ci_lock.py project" in workflow
     assert "requirements-dev.txt windows-requirements-dev.txt" in workflow
     assert "--require-hashes -r windows-requirements-dev.txt" in workflow
