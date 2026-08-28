@@ -42,14 +42,32 @@ jobs:
         run: |
           set -euo pipefail
           find . -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
-          git init .
-          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
-          git config --local gc.auto 0
-          git config --local credential.helper ""
-          git config --local --add credential.helper '!f() { echo username=x-access-token; echo password=$GITHUB_TOKEN; }; f'
-          git fetch --no-tags --prune --depth=1 origin "$EXPECTED_HEAD"
+          bootstrap_succeeded=0
+          for bootstrap_attempt in 1 2 3; do
+            rm -rf .git
+            git init .
+            git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+            git config --local gc.auto 0
+            git config --local credential.helper ""
+            git config --local --add credential.helper '!f() { echo username=x-access-token; echo password=$GITHUB_TOKEN; }; f'
+            fetch_status=0
+            git fetch --no-tags --prune --depth=1 origin "$EXPECTED_HEAD" || fetch_status=$?
+            git config --local --unset-all credential.helper 2>/dev/null || true
+            if [ "$fetch_status" -eq 0 ]; then
+              bootstrap_succeeded=1
+              break
+            fi
+            rm -rf .git
+            if [ "$bootstrap_attempt" -lt 3 ]; then
+              echo "Repository bootstrap transport failed on attempt ${bootstrap_attempt}/3; retrying after bounded backoff." >&2
+              sleep "$((bootstrap_attempt * 5))"
+            fi
+          done
+          if [ "$bootstrap_succeeded" -ne 1 ]; then
+            echo "Repository bootstrap transport failed after 3 attempts." >&2
+            exit 70
+          fi
           git checkout --detach FETCH_HEAD
-          git config --local --unset-all credential.helper
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
           test -z "$(git config --local --get-all credential.helper || true)"
 
@@ -118,5 +136,9 @@ jobs:
         shell: bash
         run: |
           git config --local --unset-all credential.helper 2>/dev/null || true
-          git reset --hard HEAD
-          git clean -ffdx
+          if git rev-parse --verify HEAD >/dev/null 2>&1; then
+            git reset --hard HEAD
+            git clean -ffdx
+          else
+            rm -rf .git
+          fi
