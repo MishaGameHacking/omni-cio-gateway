@@ -159,8 +159,8 @@ jobs:
         run: |
           git config --local --unset-all credential.helper 2>/dev/null || true
           if git rev-parse --verify HEAD >/dev/null 2>&1; then
-            git reset --hard HEAD
-            git clean -ffdx
+            git reset --hard HEAD || true
+            git clean -ffdx || true
           else
             rm -rf .git
           fi

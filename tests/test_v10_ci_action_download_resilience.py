@@ -234,6 +234,15 @@ class V10CIActionDownloadResilienceTests(unittest.TestCase):
         self.assertLess(exhaustion_guard, current_main_read)
         self.assertLess(current_main_read, publish_pass)
 
+        cleanup = text.split("- name: Clean self-hosted alignment workspace", 1)[1]
+        for marker in (
+            BASH_PRE_HEAD_CLEANUP,
+            "git reset --hard HEAD || true",
+            "git clean -ffdx || true",
+            "rm -rf .git",
+        ):
+            self.assertIn(marker, cleanup)
+
         reset_count = text.count("git reset --hard HEAD")
         safe_cleanup_count = text.count(BASH_PRE_HEAD_CLEANUP) + text.count(
             CMD_PRE_HEAD_CLEANUP
