@@ -101,6 +101,8 @@ class V10CIActionDownloadResilienceTests(unittest.TestCase):
         retry_markers = (
             "bootstrap_succeeded=0",
             "for bootstrap_attempt in 1 2 3; do",
+            "git config --local http.lowSpeedLimit 1000",
+            "git config --local http.lowSpeedTime 60",
             "fetch_status=0",
             "|| fetch_status=$?",
             "git config --local --unset-all credential.helper 2>/dev/null || true",
