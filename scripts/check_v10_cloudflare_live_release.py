@@ -52,8 +52,9 @@ def _origin(value: str, *, allowed_custom_host: str = "") -> str:
     ):
         raise RuntimeError("CLOUDFLARE_RELEASE_ORIGIN_INVALID")
     hostname = _hostname(authority)
-    custom_host = _hostname(allowed_custom_host) if allowed_custom_host else ""
-    if not hostname.endswith(".workers.dev") and hostname != custom_host:
+    if hostname.endswith(".workers.dev"):
+        return f"https://{hostname}"
+    if not allowed_custom_host or hostname != _hostname(allowed_custom_host):
         raise RuntimeError("CLOUDFLARE_RELEASE_ORIGIN_NOT_ALLOWED")
     return f"https://{hostname}"
 
