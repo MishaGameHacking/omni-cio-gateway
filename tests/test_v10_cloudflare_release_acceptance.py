@@ -40,6 +40,18 @@ class CloudflareReleaseAcceptanceTests(unittest.TestCase):
                 ):
                     guard.validate()
 
+    def test_guard_rejects_missing_staging_container(self) -> None:
+        payload = loads_jsonc(guard.WRANGLER.read_text(encoding="utf-8"))
+        del payload["env"]["staging"]["containers"]
+        with tempfile.TemporaryDirectory() as temporary:
+            candidate = Path(temporary) / "wrangler.jsonc"
+            candidate.write_text(json.dumps(payload), encoding="utf-8")
+            with mock.patch.object(guard, "WRANGLER", candidate):
+                with self.assertRaisesRegex(
+                    RuntimeError, "CLOUDFLARE_RELEASE_STAGING_CONTAINER_INVALID"
+                ):
+                    guard.validate()
+
     def test_guard_rejects_staging_deploy_without_container_rollout(self) -> None:
         payload = json.loads(guard.PACKAGE.read_text(encoding="utf-8"))
         payload["scripts"]["cloudflare:deploy:staging"] = (
