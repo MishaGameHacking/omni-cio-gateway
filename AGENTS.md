@@ -28,6 +28,8 @@ Current synchronized snapshot:
 
 PROJECT OWNER is not a special Omni-CIO product role. When using the product, OWNER is an ordinary USER on the same `OmniCIOUserAccount -> Tenant -> Session` path. Engineering/provider authority cannot mint/select a product tenant.
 
+The WP22A technical gate is complete only through its accepted evidence chain. Amendment 14 does not reopen it, activate public production, expand broker-write authority or start WP23.
+
 ## 3. Mandatory authority restore
 
 Before material work restore from current GitHub `main`, not chat memory:

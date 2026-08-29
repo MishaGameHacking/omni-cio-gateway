@@ -174,6 +174,8 @@ Do not start Telegram, AI, Real execution or later packages out of sequence. Do 
 
 The WP22A technical gate is complete only through its accepted evidence chain. Amendment 14 does not reopen it, activate public production, expand broker-write authority or start WP23.
 
+WP22A technical closeout is accepted only through its own dedicated technical-closeout evidence chain; it does not itself activate public production, expand broker-write authority or start WP23.
+
 ## Protected V9 boundaries
 
 V9 remains owner-accepted controlled maintenance/recovery until an explicit V10 parity/decommission gate safely replaces it. Stable entrypoint remains `app:app`; protected rollback remains available. `START V10`, Amendment 12/13/14, an internal milestone, AI output, a GitHub merge or Cloudflare deployment is never broker-submit authorization.

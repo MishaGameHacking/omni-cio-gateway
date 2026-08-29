@@ -128,7 +128,7 @@ A separate user-facing staging product is not required. Local/CI/provider double
 
 Current user-facing activation transitions — **BLOCKED_EXTERNAL where listed above**.
 
-Public T-Invest-backed production functionality remains `FAIL_CLOSED_PENDING_BROKER_TERMS_PERMISSION`. READ/live portfolio/positions/operations are independent from unfinished Real execution, but cannot become public `LIVE_OPERABLE` until broker terms/permission and tenant secret-custody/security/privacy/live acceptance are real and accepted.
+Public T-Invest-backed production functionality remains **FAIL_CLOSED_PENDING_BROKER_TERMS_PERMISSION**. READ/live portfolio/positions/operations are independent from unfinished Real execution, but cannot become public `LIVE_OPERABLE` until broker terms/permission and tenant secret-custody/security/privacy/live acceptance are real and accepted.
 
 ## Amendment 14 — Cloudflare Platform & Continuous Release Authority
 
