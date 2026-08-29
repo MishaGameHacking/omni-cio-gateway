@@ -42,7 +42,9 @@ def _origin(value: str) -> str:
 
 
 def _json(origin: str, path: str) -> dict[str, Any]:
-    opener = build_opener(_NoRedirect(), HTTPSHandler(context=ssl.create_default_context()))
+    opener = build_opener(
+        _NoRedirect(), HTTPSHandler(context=ssl.create_default_context())
+    )
     request = Request(origin + path, headers={"Accept": "application/json"})
     try:
         with opener.open(request, timeout=15) as response:
@@ -99,7 +101,10 @@ def verify(origin: str, expected_sha: str) -> None:
 def main(argv: list[str] | None = None) -> int:
     args = sys.argv[1:] if argv is None else argv
     if len(args) != 2:
-        print("usage: check_v10_cloudflare_live_release.py <origin> <sha>", file=sys.stderr)
+        print(
+            "usage: check_v10_cloudflare_live_release.py <origin> <sha>",
+            file=sys.stderr,
+        )
         return 2
     try:
         verify(args[0], args[1])
