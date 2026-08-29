@@ -80,7 +80,7 @@ Public release ID is event-derived CalVer `YYYY.MM.DD.N` plus exact source SHA, 
 
 ## 6. Execution-unit discipline
 
-Every material change is exactly one `FOCUSED_CHANGE` or one OWNER-authorized `INTEGRATED_SYSTEM_UPDATE`.
+Governed by the **Integrated System Update Execution Law**. Every material change is exactly one `FOCUSED_CHANGE` or one OWNER-authorized `INTEGRATED_SYSTEM_UPDATE`.
 
 Mandatory split triggers: DB/migration ordering, security/authority transition, dependency/toolchain boundary, genuinely non-delegable OWNER/provider action, live/temporal evidence, production cutover, Real-money authority and reviewability limit.
 

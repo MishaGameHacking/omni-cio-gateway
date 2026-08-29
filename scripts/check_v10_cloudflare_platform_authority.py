@@ -96,9 +96,7 @@ def _validate_provider_and_authority(
         failures.append("GitHub engineering authority rank must be 1")
     if authority.get("cloudflare_platform_authority_rank") != 2:
         failures.append("Cloudflare platform authority rank must be 2")
-    for key in (
-        "github_is_source_review_provenance_truth",
-    ):
+    for key in ("github_is_source_review_provenance_truth",):
         _expect_bool(authority, key, True, "authority", failures)
     for key in (
         "cloudflare_state_may_override_accepted_github_authority",
@@ -109,8 +107,12 @@ def _validate_provider_and_authority(
         _expect_bool(authority, key, False, "authority", failures)
 
     if provider.get("new_v10_primary_platform_target") != "CLOUDFLARE_WORKERS_PAID":
-        failures.append("new V10 primary platform target must be CLOUDFLARE_WORKERS_PAID")
-    _expect_bool(provider, "workers_paid_owner_active_baseline", True, "provider", failures)
+        failures.append(
+            "new V10 primary platform target must be CLOUDFLARE_WORKERS_PAID"
+        )
+    _expect_bool(
+        provider, "workers_paid_owner_active_baseline", True, "provider", failures
+    )
     for key in (
         "cloudru_new_v10_target_selected",
         "render_new_v10_target_selected",
@@ -165,9 +167,13 @@ def _validate_runtime_database_security(
     security = _section(payload, "security", failures)
 
     _expect_bool(product, "one_canonical_public_web", True, "product", failures)
-    _expect_bool(product, "second_user_facing_product_allowed", False, "product", failures)
+    _expect_bool(
+        product, "second_user_facing_product_allowed", False, "product", failures
+    )
     _expect_bool(product, "cloudflare_is_product_identity", False, "product", failures)
-    _expect_bool(product, "public_multi_user_enabled_current", False, "product", failures)
+    _expect_bool(
+        product, "public_multi_user_enabled_current", False, "product", failures
+    )
     _expect_bool(
         product,
         "cloudflare_deployment_alone_activates_real_users",
@@ -176,7 +182,9 @@ def _validate_runtime_database_security(
         failures,
     )
     if product.get("human_product_identity_providers") != ["telegram", "vk_id"]:
-        failures.append("human product identity providers must remain Telegram and VK ID")
+        failures.append(
+            "human product identity providers must remain Telegram and VK ID"
+        )
 
     _expect_bool(
         runtime,
@@ -209,7 +217,9 @@ def _validate_runtime_database_security(
 
     if database.get("accepted_postgresql_major") != 18:
         failures.append("accepted PostgreSQL major must remain 18")
-    _expect_bool(database, "neon_postgresql_authority_preserved", True, "database", failures)
+    _expect_bool(
+        database, "neon_postgresql_authority_preserved", True, "database", failures
+    )
     _expect_bool(
         database,
         "d1_replaces_financial_tenant_truth_by_default",
@@ -270,9 +280,7 @@ def _validate_runtime_database_security(
     )
 
 
-def _validate_builds_and_sequence(
-    payload: dict[str, Any], failures: list[str]
-) -> None:
+def _validate_builds_and_sequence(payload: dict[str, Any], failures: list[str]) -> None:
     builds = _section(payload, "workers_builds", failures)
     expected_numbers = {
         "included_build_minutes_per_month_reference": 6000,
@@ -308,19 +316,26 @@ def _validate_builds_and_sequence(
     observed = [item.get("id") for item in sequence if isinstance(item, dict)]
     if observed != EXPECTED_SEQUENCE:
         failures.append(
-            "Cloudflare implementation sequence must remain " + " -> ".join(EXPECTED_SEQUENCE)
+            "Cloudflare implementation sequence must remain "
+            + " -> ".join(EXPECTED_SEQUENCE)
         )
     if len(sequence) != len(EXPECTED_SEQUENCE):
-        failures.append("Cloudflare implementation sequence must have exactly four stages")
+        failures.append(
+            "Cloudflare implementation sequence must have exactly four stages"
+        )
 
     if len(sequence) >= 2:
         for item in sequence[:2]:
             if not isinstance(item, dict):
                 continue
             if item.get("provider_mutation") is not False:
-                failures.append("first two Cloudflare stages must not mutate provider state")
+                failures.append(
+                    "first two Cloudflare stages must not mutate provider state"
+                )
             if item.get("production_deploy") is not False:
-                failures.append("first two Cloudflare stages must not deploy production")
+                failures.append(
+                    "first two Cloudflare stages must not deploy production"
+                )
 
 
 def _validate_protected_invariants(
@@ -418,7 +433,12 @@ def validate_repository(failures: list[str]) -> None:
         ("retired Phase-4 workflow", phase4),
         ("retired hosted-alignment workflow", alignment),
     ):
-        for forbidden in ("workflow_run:", "schedule:", "RENDER_API_KEY", "NEON_API_KEY"):
+        for forbidden in (
+            "workflow_run:",
+            "schedule:",
+            "RENDER_API_KEY",
+            "NEON_API_KEY",
+        ):
             if forbidden in text:
                 failures.append(f"{label} reactivated forbidden marker: {forbidden}")
 
@@ -430,9 +450,16 @@ def validate_repository(failures: list[str]) -> None:
             if runtime.get("cloudflare_workers_paid_selected") is not True:
                 failures.append("engineering quality contract must select Workers Paid")
             if runtime.get("cloudru_new_v10_runtime_target_selected") is not False:
-                failures.append("engineering quality contract must retire Cloud.ru for new V10")
-            if runtime.get("render_com_new_v10_release_acceptance_allowed") is not False:
-                failures.append("engineering quality contract must retire Render release acceptance")
+                failures.append(
+                    "engineering quality contract must retire Cloud.ru for new V10"
+                )
+            if (
+                runtime.get("render_com_new_v10_release_acceptance_allowed")
+                is not False
+            ):
+                failures.append(
+                    "engineering quality contract must retire Render release acceptance"
+                )
 
     if contract is not None:
         validate_contract(contract, failures)

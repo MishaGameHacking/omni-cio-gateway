@@ -73,12 +73,14 @@ Public release identity is event-derived CalVer `YYYY.MM.DD.N` plus exact source
 
 ## Execution-unit model
 
-Every material change is one of:
+Governed by the **Integrated System Update Execution Law**. Every material change is one of:
 
 - `FOCUSED_CHANGE` — isolated defect, governance/documentation correction, maintenance, independent migration or mandatory split boundary;
 - `INTEGRATED_SYSTEM_UPDATE` — one coherent OWNER-authorized subsystem outcome with ordered internal member milestones.
 
 Mandatory split triggers include migration/DB ordering, security/authority transition, dependency/toolchain boundary, non-delegable OWNER/provider action, live/temporal evidence, production cutover, Real-money authority and reviewability limit.
+
+Publication of an `INTEGRATED_SYSTEM_UPDATE` requires reaching `INTEGRATION_READY` before external verification is published.
 
 For integrated updates maintain the branch Execution Ledger and GitHub System Update dashboard with `BRANCH-LOCAL EXECUTION STATE — NOT ACCEPTED MAIN AUTHORITY`. Internal milestone PASS never changes accepted progress by itself.
 

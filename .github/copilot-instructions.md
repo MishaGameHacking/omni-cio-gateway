@@ -55,6 +55,10 @@ Re-check `main` before promotion. Never promote a superseded candidate. If the l
 
 Public release ID is event-derived CalVer `YYYY.MM.DD.N` plus exact source/Cloudflare version metadata; do not create a source-code version-bump commit only to update the display version.
 
+## Execution-unit discipline
+
+Governed by the **Integrated System Update Execution Law**. Every material change is exactly one `FOCUSED_CHANGE` or one OWNER-authorized `INTEGRATED_SYSTEM_UPDATE` with ordered internal member milestones.
+
 ## Pre-CI Engineering Gate
 
 CI is an independent verifier, not the primary debugger.

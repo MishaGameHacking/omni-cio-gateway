@@ -20,7 +20,9 @@ CLOUDFLARE_CONTRACT = (
 
 def _read(path: Path, failures: list[str]) -> str:
     if not path.is_file():
-        failures.append(f"missing hosted-release governance file: {path.relative_to(ROOT)}")
+        failures.append(
+            f"missing hosted-release governance file: {path.relative_to(ROOT)}"
+        )
         return ""
     try:
         return path.read_text(encoding="utf-8")
@@ -63,7 +65,9 @@ def _forbid_markers(
 ) -> None:
     for marker in markers:
         if marker in text:
-            failures.append(f"{label} contains forbidden active-provider marker: {marker}")
+            failures.append(
+                f"{label} contains forbidden active-provider marker: {marker}"
+            )
 
 
 def _validate_manual_only_retired_workflow(
@@ -144,13 +148,18 @@ def validate_sources(
         return
     provider = cloudflare_contract.get("provider_transition")
     if not isinstance(provider, dict):
-        failures.append("Cloudflare authority contract provider_transition must be an object")
+        failures.append(
+            "Cloudflare authority contract provider_transition must be an object"
+        )
         return
     if provider.get("render_new_v10_target_selected") is not False:
         failures.append("Render must remain disabled as a new V10 target")
     if provider.get("render_zero_charge_attestation_required_for_new_v10") is not False:
         failures.append("Render zero-charge attestation must not gate new V10")
-    if provider.get("render_hosted_release_alignment_required_for_new_v10") is not False:
+    if (
+        provider.get("render_hosted_release_alignment_required_for_new_v10")
+        is not False
+    ):
         failures.append("Render hosted alignment must not gate new V10")
     if provider.get("historical_wp22a_render_neon_evidence_preserved") is not True:
         failures.append("historical WP22A Render/Neon evidence must stay preserved")

@@ -288,7 +288,9 @@ def _validate_cloudflare_engineering_overlay(
         if update.get(key) != value:
             failures.append(f"Cloudflare engineering overlay {key} mismatch")
     if update.get("effective_on_green_merge") is not True:
-        failures.append("Cloudflare engineering overlay must remain effective-on-green-merge")
+        failures.append(
+            "Cloudflare engineering overlay must remain effective-on-green-merge"
+        )
 
     runtime = contract.get("runtime_hosting")
     if not isinstance(runtime, dict):
@@ -299,9 +301,13 @@ def _validate_cloudflare_engineering_overlay(
     if runtime.get("cloudru_new_v10_runtime_target_selected") is not False:
         failures.append("engineering-quality contract must retire Cloud.ru for new V10")
     if runtime.get("render_com_new_v10_release_acceptance_allowed") is not False:
-        failures.append("engineering-quality contract must retire Render release acceptance")
+        failures.append(
+            "engineering-quality contract must retire Render release acceptance"
+        )
     if runtime.get("protected_v9_render_app_app_baseline_preserved") is not True:
-        failures.append("engineering-quality contract must preserve protected V9 Render")
+        failures.append(
+            "engineering-quality contract must preserve protected V9 Render"
+        )
 
 
 def _validate_engineering_contract_status(
@@ -309,9 +315,7 @@ def _validate_engineering_contract_status(
 ) -> None:
     status = contract.get("status")
     accepted_status = "ACTIVE_ACCEPTED_ON_MAIN"
-    old_pending_status = (
-        "ACTIVE_ACCEPTED_GOVERNANCE_WITH_OWNER_APPROVED_RUNTIME_UPDATE_EFFECTIVE_ON_MERGE"
-    )
+    old_pending_status = "ACTIVE_ACCEPTED_GOVERNANCE_WITH_OWNER_APPROVED_RUNTIME_UPDATE_EFFECTIVE_ON_MERGE"
     cloudflare_status = "ACTIVE_ACCEPTED_ON_MAIN_WITH_CLOUDFLARE_AUTHORITY_UPDATE"
     if status not in {accepted_status, old_pending_status, cloudflare_status}:
         failures.append("engineering-quality contract status is not active/accepted")
@@ -415,12 +419,20 @@ def validate_high_risk_headers(failures: list[str]) -> None:
         if not isinstance(provider, dict):
             failures.append("Cloudflare authority provider_transition must be object")
         else:
-            if provider.get("new_v10_primary_platform_target") != "CLOUDFLARE_WORKERS_PAID":
+            if (
+                provider.get("new_v10_primary_platform_target")
+                != "CLOUDFLARE_WORKERS_PAID"
+            ):
                 failures.append("Cloudflare authority must select Workers Paid")
             if provider.get("render_new_v10_target_selected") is not False:
                 failures.append("Cloudflare authority must retire Render for new V10")
-            if provider.get("protected_v9_render_app_app_baseline_preserved") is not True:
-                failures.append("Cloudflare authority must preserve V9 app:app baseline")
+            if (
+                provider.get("protected_v9_render_app_app_baseline_preserved")
+                is not True
+            ):
+                failures.append(
+                    "Cloudflare authority must preserve V9 app:app baseline"
+                )
 
 
 def validate_repository_lifecycle(failures: list[str]) -> None:

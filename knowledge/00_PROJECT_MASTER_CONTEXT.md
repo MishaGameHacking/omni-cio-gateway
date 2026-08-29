@@ -43,7 +43,7 @@ Current V10 snapshot after the Amendment-14 authority transition is accepted:
 - **54% accepted implementation**;
 - WP0–WP22A / Blocks A–E COMPLETE;
 - **CLOUDFLARE-BUILDS-VERIFIER-INTEGRATION** as the current authorized functional package;
-- `WEB-VISUAL-INTEGRATED` remains the prepared product System Update, **PRODUCT IMPLEMENTATION PAUSED**, with `START V10 WEB VISUAL SYSTEM UPDATE` still required before its separate source work;
+- `WEB-VISUAL-INTEGRATED` remains the prepared product System Update, **PRODUCT IMPLEMENTATION PAUSED**, with **OWNER START REQUIRED** via `START V10 WEB VISUAL SYSTEM UPDATE` still required before its separate source work;
 - WP23+ LOCKED;
 - current `PUBLIC_MULTI_USER_ENABLED=false`;
 - Telegram Login / VK ID / public multi-user tenant access / public T-Invest READ remain `BLOCKED_EXTERNAL` until their own live gates;
