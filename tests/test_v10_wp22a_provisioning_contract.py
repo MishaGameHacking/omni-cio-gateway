@@ -98,8 +98,8 @@ def test_cloudflare_provider_bootstrap_is_version_hash_and_distribution_pinned()
     )
     assert "Get-FileHash -Algorithm SHA256" in text
     assert "WP22A_CLOUDFLARE_PROVIDER_ARCHIVE_HASH_MISMATCH" in text
-    assert '$maxDownloadAttempts = 3' in text
-    assert 'for ($attempt = 1; $attempt -le $maxDownloadAttempts; $attempt++)' in text
+    assert "$maxDownloadAttempts = 3" in text
+    assert "for ($attempt = 1; $attempt -le $maxDownloadAttempts; $attempt++)" in text
     assert "Start-Sleep -Seconds ($attempt * 2)" in text
     assert "WP22A_CLOUDFLARE_PROVIDER_DOWNLOAD_FAILED_AFTER_RETRIES" in text
 

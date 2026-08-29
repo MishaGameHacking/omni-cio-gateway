@@ -156,7 +156,7 @@ def validate() -> None:
         raise RuntimeError("CLOUDFLARE_RELEASE_STAGING_MIGRATION_INVALID")
 
     package = _load(PACKAGE)
-    if package.get("engines") != {"node": "24.18.0", "npm": "11.16.0"}:
+    if package.get("engines") != {"node": "24.18.0", "npm": "10.9.2"}:
         raise RuntimeError("CLOUDFLARE_RELEASE_NODE_BASELINE_INVALID")
     scripts = _object(package.get("scripts"), "SCRIPTS")
     if scripts.get("build") != _SECURE_WEB_BUILD:

@@ -92,6 +92,11 @@ def _security_contracts() -> None:
         cwd=ROOT,
         check=True,
     )
+    subprocess.run(
+        [sys.executable, "scripts/check_v10_cloudflare_node_supply_chain.py"],
+        cwd=ROOT,
+        check=True,
+    )
 
 
 def _runtime_contracts() -> None:
