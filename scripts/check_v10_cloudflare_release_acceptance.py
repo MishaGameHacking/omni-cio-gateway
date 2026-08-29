@@ -18,13 +18,17 @@ LIVE_VERIFIER = ROOT / "scripts/check_v10_cloudflare_live_release.py"
 LIVE_PROBE = ROOT / "scripts/probe_v10_cloudflare_live_release.sh"
 PACKAGE = ROOT / "package.json"
 _REQUIRED_RUNTIME_SECRETS = ["OMNI_V10_POSTGRES_DSN"]
+_SECURE_WEB_BUILD = (
+    "python scripts/write_v10_cloudflare_build_info.py && "
+    "npm ci --ignore-scripts --prefix apps/web && npm run --prefix apps/web build"
+)
 
 
 def _load(path: Path) -> dict[str, Any]:
     try:
         source = path.read_text(encoding="utf-8")
         value = loads_jsonc(source) if path.suffix == ".jsonc" else json.loads(source)
-    except (OSError, UnicodeError, ValueError, json.JSONDecodeError) as exc:
+    except (OSError, UnicodeError, ValueError) as exc:
         raise RuntimeError(f"CLOUDFLARE_RELEASE_CONTRACT_UNREADABLE:{path}") from exc
     if not isinstance(value, dict):
         raise RuntimeError(f"CLOUDFLARE_RELEASE_OBJECT_REQUIRED:{path}")
@@ -114,11 +118,7 @@ def validate() -> None:
 
     wrangler = _load(WRANGLER)
     build = _object(wrangler.get("build"), "WRANGLER_BUILD")
-    expected_build = (
-        "python scripts/write_v10_cloudflare_build_info.py && "
-        "npm ci --prefix apps/web && npm run --prefix apps/web build"
-    )
-    if build.get("command") != expected_build:
+    if build.get("command") != _SECURE_WEB_BUILD:
         raise RuntimeError("CLOUDFLARE_RELEASE_SELF_CONTAINED_BUILD_INVALID")
     if wrangler.get("workers_dev") is not True:
         raise RuntimeError("CLOUDFLARE_RELEASE_WORKERS_DEV_REQUIRED")
@@ -159,6 +159,8 @@ def validate() -> None:
     if package.get("engines") != {"node": "24.18.0", "npm": "11.16.0"}:
         raise RuntimeError("CLOUDFLARE_RELEASE_NODE_BASELINE_INVALID")
     scripts = _object(package.get("scripts"), "SCRIPTS")
+    if scripts.get("build") != _SECURE_WEB_BUILD:
+        raise RuntimeError("CLOUDFLARE_RELEASE_BUILD_SCRIPT_INVALID")
     if scripts.get("cloudflare:deploy:staging") != (
         "wrangler deploy --env staging --containers-rollout=immediate"
     ):
@@ -219,6 +221,7 @@ def main() -> int:
         return 1
     print("V10 Cloudflare CF-C/CF-D release acceptance contract passed.")
     print("Candidate: isolated staging Worker + Container rollout")
+    print("Dependency install lifecycle scripts: DISABLED")
     print("Required runtime secret: OMNI_V10_POSTGRES_DSN in staging and production")
     print("Production branch: main")
     print("Automatic deploy command: npx wrangler deploy")
