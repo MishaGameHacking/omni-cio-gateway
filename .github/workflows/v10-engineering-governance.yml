@@ -97,6 +97,9 @@ jobs:
       - name: Verify Cloudflare Builds verifier contract
         run: python scripts/check_v10_cloudflare_builds_verifier.py
 
+      - name: Verify Cloudflare runtime compatibility contract
+        run: python scripts/check_v10_cloudflare_runtime_compatibility.py
+
       - name: Verify hosted release post-merge alignment governance
         run: python scripts/check_v10_hosted_release_alignment_governance.py
 
@@ -126,6 +129,9 @@ jobs:
           scripts/check_v10_cloudflare_public_product_integrated.py
           scripts/check_v10_cloudflare_builds_verifier.py
           scripts/run_v10_cloudflare_verifier.py
+          scripts/check_v10_cloudflare_runtime_compatibility.py
+          scripts/write_v10_cloudflare_build_info.py
+          apps/api/cloudflare_runtime.py
           scripts/check_v10_hosted_release_alignment_governance.py
           scripts/check_v10_integrated_system_update_governance.py
           scripts/check_v10_progressive_capability_activation.py
@@ -148,6 +154,7 @@ jobs:
           tests.test_v10_cloudflare_platform_authority
           tests.test_v10_cloudflare_public_product_integrated
           tests.test_v10_cloudflare_builds_verifier
+          tests.test_v10_cloudflare_runtime_compatibility
 
       - name: Clean self-hosted workspace
         if: always()
