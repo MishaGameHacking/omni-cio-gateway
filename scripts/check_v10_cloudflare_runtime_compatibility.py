@@ -73,6 +73,26 @@ def validate() -> None:
         or database.get("d1_used") is not False
     ):
         raise RuntimeError("CLOUDFLARE_RUNTIME_DATABASE_SUBSTITUTION_FORBIDDEN")
+
+    expected_security_true = {
+        "incoming_forwarded_headers_are_stripped_at_worker",
+        "worker_sets_internal_forwarded_proto_https",
+        "container_is_not_direct_public_ingress",
+        "container_transport_uses_fixed_internal_url",
+        "public_route_is_encoded_in_internal_headers",
+        "public_route_is_validated_before_asgi_restore",
+        "internal_route_headers_are_removed_before_app",
+        "runtime_database_secret_required",
+        "database_secret_absence_returns_503_before_container_start",
+    }
+    for key in expected_security_true:
+        if security.get(key) is not True:
+            raise RuntimeError(f"CLOUDFLARE_RUNTIME_{key.upper()}_MUST_BE_TRUE")
+    if (
+        security.get("container_transport_url")
+        != "https://omni-cio.internal/_omni/cloudflare-proxy"
+    ):
+        raise RuntimeError("CLOUDFLARE_RUNTIME_CONTAINER_TRANSPORT_URL_INVALID")
     for key in (
         "telegram_vk_provider_auth_enabled",
         "public_multi_user_enabled",
@@ -82,6 +102,7 @@ def validate() -> None:
     ):
         if security.get(key) is not False:
             raise RuntimeError(f"CLOUDFLARE_RUNTIME_{key.upper()}_MUST_BE_FALSE")
+
     if cost.get("automatic_paid_overage_authorized") is not False:
         raise RuntimeError("CLOUDFLARE_RUNTIME_PAID_OVERAGE_FORBIDDEN")
     if release.get("worker_name") != "omni-cio-v10-web":
