@@ -12,6 +12,17 @@ EXPECTED_LIVE_GUIDANCE_HELPERS = (
     "_validate_agents_snapshot",
     "_validate_master_context_snapshot",
 )
+EXPECTED_HIGH_RISK_HEADER_HELPERS = (
+    "_validate_program_lock_header",
+    "_validate_toolchain_baseline_header",
+    "_validate_historical_record_headers",
+    "_validate_engineering_amendment_header",
+    "_validate_cloudflare_amendment_header",
+)
+EXPECTED_CLOUDFLARE_AMENDMENT_HEADER_HELPERS = (
+    "_validate_cloudflare_amendment_markers",
+    "_validate_cloudflare_contract_header",
+)
 
 
 def _function(tree: ast.Module, name: str) -> ast.FunctionDef:
@@ -29,6 +40,38 @@ def test_live_guidance_validation_remains_decomposed() -> None:
     for statement, helper_name in zip(
         function.body,
         EXPECTED_LIVE_GUIDANCE_HELPERS,
+        strict=True,
+    ):
+        assert isinstance(statement, ast.Expr)
+        assert isinstance(statement.value, ast.Call)
+        assert isinstance(statement.value.func, ast.Name)
+        assert statement.value.func.id == helper_name
+
+
+def test_high_risk_header_validation_remains_decomposed() -> None:
+    tree = ast.parse(SCRIPT.read_text(encoding="utf-8"))
+    function = _function(tree, "validate_high_risk_headers")
+
+    assert len(function.body) == len(EXPECTED_HIGH_RISK_HEADER_HELPERS)
+    for statement, helper_name in zip(
+        function.body,
+        EXPECTED_HIGH_RISK_HEADER_HELPERS,
+        strict=True,
+    ):
+        assert isinstance(statement, ast.Expr)
+        assert isinstance(statement.value, ast.Call)
+        assert isinstance(statement.value.func, ast.Name)
+        assert statement.value.func.id == helper_name
+
+
+def test_cloudflare_amendment_header_remains_decomposed() -> None:
+    tree = ast.parse(SCRIPT.read_text(encoding="utf-8"))
+    function = _function(tree, "_validate_cloudflare_amendment_header")
+
+    assert len(function.body) == len(EXPECTED_CLOUDFLARE_AMENDMENT_HEADER_HELPERS)
+    for statement, helper_name in zip(
+        function.body,
+        EXPECTED_CLOUDFLARE_AMENDMENT_HEADER_HELPERS,
         strict=True,
     ):
         assert isinstance(statement, ast.Expr)

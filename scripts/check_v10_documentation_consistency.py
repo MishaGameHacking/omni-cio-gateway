@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import re
 import sys
+from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -20,6 +21,13 @@ ENGINEERING_AMENDMENT = (
 )
 ENGINEERING_CONTRACT = (
     ROOT / "docs/architecture/V10_ENGINEERING_QUALITY_GATE_CONTRACT.json"
+)
+CLOUDFLARE_AMENDMENT = (
+    ROOT
+    / "docs/master-plan/OMNI_CIO_V10_CLOUDFLARE_PLATFORM_AND_CONTINUOUS_RELEASE_AUTHORITY_AMENDMENT.md"
+)
+CLOUDFLARE_CONTRACT = (
+    ROOT / "docs/architecture/V10_CLOUDFLARE_PLATFORM_AUTHORITY_CONTRACT.json"
 )
 
 LIVE_GUIDANCE = (
@@ -62,13 +70,7 @@ def _hex(*chunks: str) -> str:
 
 
 START_RECORD_EVIDENCE_MARKERS = (
-    _hex(
-        "159316c5",
-        "b211977b",
-        "0d9125df",
-        "fb862103",
-        "16ae10d3",
-    ),
+    _hex("159316c5", "b211977b", "0d9125df", "fb862103", "16ae10d3"),
     "planning PR #227",
     "Regression Shield run #1332",
     _hex(
@@ -107,6 +109,21 @@ def read_text(path: Path, failures: list[str]) -> str:
     except (OSError, UnicodeError) as exc:
         failures.append(f"cannot read {path.relative_to(ROOT)}: {exc}")
         return ""
+
+
+def _load_json(path: Path, failures: list[str], label: str) -> dict[str, Any] | None:
+    text = read_text(path, failures)
+    if not text:
+        return None
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError as exc:
+        failures.append(f"{label} JSON invalid: {exc}")
+        return None
+    if not isinstance(payload, dict):
+        failures.append(f"{label} JSON root must be object")
+        return None
+    return payload
 
 
 def validate_status_uniqueness(failures: list[str]) -> None:
@@ -222,82 +239,9 @@ def validate_live_guidance(progress: str, package: str, failures: list[str]) -> 
     _validate_master_context_snapshot(progress, package, failures)
 
 
-def validate_high_risk_headers(failures: list[str]) -> None:
-    program_lock = read_text(PROGRAM_LOCK, failures)
-    if "SCOPE-SEQUENCE LOCK" not in program_lock:
-        failures.append("Program Lock must be labeled as scope-sequence lock")
-    if (
-        "Dynamic current WP/progress is intentionally not duplicated here"
-        not in program_lock
-    ):
-        failures.append("Program Lock must explicitly delegate dynamic current state")
-
-    toolchain = read_text(TOOLCHAIN, failures)
-    if "WP2 ACCEPTED BASELINE" not in toolchain:
-        failures.append("WP2 toolchain baseline must be labeled accepted")
-    if "FINAL EXIT GATE PENDING" in toolchain:
-        failures.append(
-            "accepted WP2 toolchain baseline still claims pending exit gate"
-        )
-
-    for path in (START_RECORD, READINESS_AUDIT):
-        text = read_text(path, failures)
-        if "HISTORICAL SNAPSHOT — NOT CURRENT-STATE AUTHORITY" not in text:
-            failures.append(
-                "high-risk historical record lacks lifecycle banner: "
-                f"{path.relative_to(ROOT)}"
-            )
-
-    start_record = read_text(START_RECORD, failures)
-    for marker in START_RECORD_EVIDENCE_MARKERS:
-        if marker not in start_record:
-            failures.append(
-                f"historical WP0 start evidence was removed or rewritten: {marker}"
-            )
-
-    amendment = read_text(ENGINEERING_AMENDMENT, failures)
-    if "ACCEPTED ON `main` / ACTIVE" not in amendment:
-        failures.append("engineering-quality amendment must be labeled accepted/active")
-    if "EFFECTIVE ONLY AFTER MERGE" in amendment:
-        failures.append("engineering-quality amendment still claims future activation")
-
-    contract_text = read_text(ENGINEERING_CONTRACT, failures)
-    if not contract_text:
-        return
-
-    try:
-        contract = json.loads(contract_text)
-    except json.JSONDecodeError as exc:
-        failures.append(f"engineering-quality contract JSON invalid: {exc}")
-        return
-
-    contract_status = contract.get("status")
-    accepted_status = "ACTIVE_ACCEPTED_ON_MAIN"
-    pending_runtime_update_status = "ACTIVE_ACCEPTED_GOVERNANCE_WITH_OWNER_APPROVED_RUNTIME_UPDATE_EFFECTIVE_ON_MERGE"
-    if contract_status not in {accepted_status, pending_runtime_update_status}:
-        failures.append("engineering-quality contract status is not active/accepted")
-    elif contract_status == pending_runtime_update_status:
-        runtime_update = contract.get("runtime_hosting_update")
-        if not isinstance(runtime_update, dict):
-            failures.append(
-                "pending runtime-hosting governance status lacks runtime_hosting_update"
-            )
-        else:
-            if runtime_update.get("effective_on_merge") is not True:
-                failures.append(
-                    "pending runtime-hosting governance update must remain effective-on-merge"
-                )
-            if (
-                runtime_update.get("amendment")
-                != "docs/master-plan/OMNI_CIO_V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_AMENDMENT.md"
-            ):
-                failures.append("pending runtime-hosting amendment path mismatch")
-            if (
-                runtime_update.get("public_runtime_contract")
-                != "docs/architecture/V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_CONTRACT.json"
-            ):
-                failures.append("pending public runtime contract path mismatch")
-
+def _validate_original_engineering_acceptance(
+    contract: dict[str, Any], failures: list[str]
+) -> None:
     acceptance = contract.get("acceptance_evidence")
     if not isinstance(acceptance, dict):
         failures.append("engineering-quality contract lacks acceptance evidence")
@@ -320,6 +264,196 @@ def validate_high_risk_headers(failures: list[str]) -> None:
         failures.append("engineering-quality contract accepted main SHA mismatch")
     if acceptance.get("regression_shield_conclusion") != "success":
         failures.append("engineering-quality contract lacks GREEN post-merge evidence")
+
+
+def _validate_cloudflare_engineering_overlay(
+    contract: dict[str, Any], failures: list[str]
+) -> None:
+    update = contract.get("runtime_hosting_update")
+    if not isinstance(update, dict):
+        failures.append("Cloudflare engineering overlay lacks runtime_hosting_update")
+        return
+
+    expected = {
+        "cloudflare_decision_date": "2026-08-29",
+        "cloudflare_amendment": (
+            "docs/master-plan/"
+            "OMNI_CIO_V10_CLOUDFLARE_PLATFORM_AND_CONTINUOUS_RELEASE_AUTHORITY_AMENDMENT.md"
+        ),
+        "cloudflare_contract": (
+            "docs/architecture/V10_CLOUDFLARE_PLATFORM_AUTHORITY_CONTRACT.json"
+        ),
+    }
+    for key, value in expected.items():
+        if update.get(key) != value:
+            failures.append(f"Cloudflare engineering overlay {key} mismatch")
+    if update.get("effective_on_green_merge") is not True:
+        failures.append(
+            "Cloudflare engineering overlay must remain effective-on-green-merge"
+        )
+
+    runtime = contract.get("runtime_hosting")
+    if not isinstance(runtime, dict):
+        failures.append("engineering-quality runtime_hosting must be object")
+        return
+    if runtime.get("cloudflare_workers_paid_selected") is not True:
+        failures.append("engineering-quality contract must select Workers Paid")
+    if runtime.get("cloudru_new_v10_runtime_target_selected") is not False:
+        failures.append("engineering-quality contract must retire Cloud.ru for new V10")
+    if runtime.get("render_com_new_v10_release_acceptance_allowed") is not False:
+        failures.append(
+            "engineering-quality contract must retire Render release acceptance"
+        )
+    if runtime.get("protected_v9_render_app_app_baseline_preserved") is not True:
+        failures.append(
+            "engineering-quality contract must preserve protected V9 Render"
+        )
+
+
+def _validate_engineering_contract_status(
+    contract: dict[str, Any], failures: list[str]
+) -> None:
+    status = contract.get("status")
+    accepted_status = "ACTIVE_ACCEPTED_ON_MAIN"
+    old_pending_status = "ACTIVE_ACCEPTED_GOVERNANCE_WITH_OWNER_APPROVED_RUNTIME_UPDATE_EFFECTIVE_ON_MERGE"
+    cloudflare_status = "ACTIVE_ACCEPTED_ON_MAIN_WITH_CLOUDFLARE_AUTHORITY_UPDATE"
+    if status not in {accepted_status, old_pending_status, cloudflare_status}:
+        failures.append("engineering-quality contract status is not active/accepted")
+        return
+
+    if status == old_pending_status:
+        update = contract.get("runtime_hosting_update")
+        if not isinstance(update, dict):
+            failures.append(
+                "pending runtime-hosting governance status lacks runtime_hosting_update"
+            )
+        else:
+            if update.get("effective_on_merge") is not True:
+                failures.append(
+                    "pending runtime-hosting governance update must remain effective-on-merge"
+                )
+            if (
+                update.get("amendment")
+                != "docs/master-plan/OMNI_CIO_V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_AMENDMENT.md"
+            ):
+                failures.append("pending runtime-hosting amendment path mismatch")
+            if (
+                update.get("public_runtime_contract")
+                != "docs/architecture/V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_CONTRACT.json"
+            ):
+                failures.append("pending public runtime contract path mismatch")
+
+    if status == cloudflare_status:
+        _validate_cloudflare_engineering_overlay(contract, failures)
+
+
+def _validate_program_lock_header(failures: list[str]) -> None:
+    program_lock = read_text(PROGRAM_LOCK, failures)
+    if "SCOPE-SEQUENCE LOCK" not in program_lock:
+        failures.append("Program Lock must be labeled as scope-sequence lock")
+    if (
+        "Dynamic current WP/progress is intentionally not duplicated here"
+        not in program_lock
+    ):
+        failures.append("Program Lock must explicitly delegate dynamic current state")
+
+
+def _validate_toolchain_baseline_header(failures: list[str]) -> None:
+    toolchain = read_text(TOOLCHAIN, failures)
+    if "WP2 ACCEPTED BASELINE" not in toolchain:
+        failures.append("WP2 toolchain baseline must be labeled accepted")
+    if "FINAL EXIT GATE PENDING" in toolchain:
+        failures.append(
+            "accepted WP2 toolchain baseline still claims pending exit gate"
+        )
+
+
+def _validate_historical_record_headers(failures: list[str]) -> None:
+    for path in (START_RECORD, READINESS_AUDIT):
+        text = read_text(path, failures)
+        if "HISTORICAL SNAPSHOT — NOT CURRENT-STATE AUTHORITY" not in text:
+            failures.append(
+                "high-risk historical record lacks lifecycle banner: "
+                f"{path.relative_to(ROOT)}"
+            )
+
+    start_record = read_text(START_RECORD, failures)
+    for marker in START_RECORD_EVIDENCE_MARKERS:
+        if marker not in start_record:
+            failures.append(
+                f"historical WP0 start evidence was removed or rewritten: {marker}"
+            )
+
+
+def _validate_engineering_amendment_header(failures: list[str]) -> None:
+    amendment = read_text(ENGINEERING_AMENDMENT, failures)
+    if "ACCEPTED ON `main` / ACTIVE" not in amendment:
+        failures.append("engineering-quality amendment must be labeled accepted/active")
+    if "EFFECTIVE ONLY AFTER MERGE" in amendment:
+        failures.append("engineering-quality amendment still claims future activation")
+
+    contract = _load_json(
+        ENGINEERING_CONTRACT,
+        failures,
+        "engineering-quality contract",
+    )
+    if contract is not None:
+        _validate_engineering_contract_status(contract, failures)
+        _validate_original_engineering_acceptance(contract, failures)
+
+
+def _validate_cloudflare_amendment_markers(failures: list[str]) -> None:
+    cloudflare_amendment = read_text(CLOUDFLARE_AMENDMENT, failures)
+    for marker in (
+        "GitHub is authority rank 1",
+        "Cloudflare Workers Paid is platform rank 2",
+        "CLOUDFLARE-BUILDS-VERIFIER-INTEGRATION",
+    ):
+        if marker not in cloudflare_amendment:
+            failures.append(f"Cloudflare authority amendment missing marker: {marker}")
+
+
+def _validate_cloudflare_provider_transition(
+    provider: dict[str, Any], failures: list[str]
+) -> None:
+    if provider.get("new_v10_primary_platform_target") != "CLOUDFLARE_WORKERS_PAID":
+        failures.append("Cloudflare authority must select Workers Paid")
+    if provider.get("render_new_v10_target_selected") is not False:
+        failures.append("Cloudflare authority must retire Render for new V10")
+    if provider.get("protected_v9_render_app_app_baseline_preserved") is not True:
+        failures.append("Cloudflare authority must preserve V9 app:app baseline")
+
+
+def _validate_cloudflare_contract_header(failures: list[str]) -> None:
+    cloudflare_contract = _load_json(
+        CLOUDFLARE_CONTRACT,
+        failures,
+        "Cloudflare authority contract",
+    )
+    if cloudflare_contract is not None:
+        if (
+            cloudflare_contract.get("schema")
+            != "omni-cio.v10.cloudflare-platform-authority.v1"
+        ):
+            failures.append("Cloudflare authority contract schema mismatch")
+        provider = cloudflare_contract.get("provider_transition")
+        if not isinstance(provider, dict):
+            failures.append("Cloudflare authority provider_transition must be object")
+        else:
+            _validate_cloudflare_provider_transition(provider, failures)
+
+
+def _validate_cloudflare_amendment_header(failures: list[str]) -> None:
+    _validate_cloudflare_amendment_markers(failures)
+    _validate_cloudflare_contract_header(failures)
+
+
+def validate_high_risk_headers(failures: list[str]) -> None:
+    _validate_program_lock_header(failures)
+    _validate_toolchain_baseline_header(failures)
+    _validate_historical_record_headers(failures)
+    _validate_engineering_amendment_header(failures)
+    _validate_cloudflare_amendment_header(failures)
 
 
 def validate_repository_lifecycle(failures: list[str]) -> None:

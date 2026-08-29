@@ -25,7 +25,7 @@ def _contract() -> dict[str, Any]:
     return json.loads(CONTRACT.read_text(encoding="utf-8"))
 
 
-def test_wp22a_is_accepted_and_integrated_visual_update_is_prepared() -> None:
+def test_wp22a_is_accepted_and_cloudflare_builds_is_next_while_visual_is_prepared() -> None:
     text = STATUS.read_text(encoding="utf-8")
 
     assert "Block E / WP22A Phase 3 — **ACCEPTED**" in text
@@ -41,10 +41,11 @@ def test_wp22a_is_accepted_and_integrated_visual_update_is_prepared() -> None:
     assert "current runtime state, not a V10-wide release lock" in text
     assert "current user-facing activation transitions — **BLOCKED_EXTERNAL" in text
     assert (
-        "## Current next package — WEB-VISUAL-INTEGRATED — "
-        "Prepared A→G System Update / OWNER START REQUIRED"
+        "## Current next package — CLOUDFLARE-BUILDS-VERIFIER-INTEGRATION — "
+        "Repository-Side Portable Verification Integration"
         in text
     )
+    assert "### Prepared product package — WEB-VISUAL-INTEGRATED" in text
 
     assert "PHASE 5 TECHNICAL CLOSEOUT AUTHORIZED" not in text
     assert "## Current next package — WP22A Phase 5" not in text

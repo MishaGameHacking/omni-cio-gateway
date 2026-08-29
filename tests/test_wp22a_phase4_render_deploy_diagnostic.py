@@ -357,7 +357,6 @@ def test_ignores_stale_pipeline_minutes_event() -> None:
             pipeline_event_timestamp="2026-08-22T14:26:59Z",
         ),
     )
-
     assert result.reason == "BUILD_FAILED"
 
 
@@ -499,15 +498,13 @@ def test_requires_explicit_utc_attempt_boundary(not_before: str) -> None:
     assert exc_info.value.code == "RENDER_DIAGNOSTIC_NOT_BEFORE_INVALID"
 
 
-def test_workflow_binds_diagnostic_to_current_provision_attempt() -> None:
+def test_retired_phase4_workflow_does_not_invoke_render_diagnostic() -> None:
     text = WORKFLOW.read_text(encoding="utf-8")
 
-    marker = 'provision_started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"'
-    provision = "python -m scripts.provision_v10_render_neon_preview"
-    diagnostic_command = "python -m scripts.diagnose_v10_render_deploy"
-    not_before = '--not-before "$provision_started_at"'
-
-    assert marker in text
-    assert diagnostic_command in text
-    assert not_before in text
-    assert text.index(marker) < text.index(provision) < text.index(diagnostic_command)
+    assert "LEGACY_RENDER_PHASE4_RETIRED_AMENDMENT_14" in text
+    assert "workflow_dispatch:" in text
+    assert 'provision_started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"' not in text
+    assert "python -m scripts.provision_v10_render_neon_preview" not in text
+    assert "python -m scripts.diagnose_v10_render_deploy" not in text
+    assert '--not-before "$provision_started_at"' not in text
+    assert "exit /b 78" in text

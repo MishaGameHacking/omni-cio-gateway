@@ -1,184 +1,263 @@
 # 00 — OMNI-CIO PROJECT MASTER CONTEXT
 
-Дата актуализации: 2026-08-27
+Дата актуализации: 2026-08-29
 
-Этот файл хранит короткую долговременную память **одного проекта**: защищённого owner-accepted V9 runtime и последовательно развиваемой автономной платформы V10.
+Этот файл хранит долгоживущий контекст проекта. Динамический прогресс/current package всегда берётся только из `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
 
-**Lifecycle:** long-lived product/context authority, **not a competing progress ledger**. Exact current V10 percentage, accepted WP state and authorized next execution unit are read only from `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md` on accepted `main`. Documentation classification: `docs/DOCUMENTATION_AUTHORITY_AND_LIFECYCLE.md`.
+## 1. Project identity
 
-## 1. Product identity
+Canonical repository: `MishaGameHacking/omni-cio-gateway`.
 
-Текущий applied production/recovery baseline остаётся:
+Omni-CIO — один investment platform/product line. Защищённый V9 остаётся production/recovery baseline, V10 — единственная активная feature-development программа.
 
-`Omni-CIO API | Управляющий и аналитик v9.0.0` → protected Gateway `app:app` → protected broker contours.
+Нельзя создавать competing Gateway, competing Web product, parallel product-auth stack, competing AI/scheduler/broker/execution stack или второй пользовательский staging-продукт без отдельного OWNER-approved amendment/execution unit.
 
-V9 WP0–WP15 are complete and owner-accepted. Protected V9 remains controlled maintenance/recovery while V10 is built. Do not create a second GPT, duplicate Gateway, competing Web App, second Core or parallel broker/execution stack.
+Stable protected V9 Gateway entrypoint: `app:app`.
 
-V10 target is one **public modern multi-user Omni-CIO Web product**. A supported USER with ordinary Internet access must eventually be able to open the public HTTPS site from a normal phone/desktop browser, authenticate, and use only that USER's isolated tenant state.
+Protected V9 WP0–WP15 delivery is complete and remains in controlled maintenance.
 
-## 2. Current V10 program state
+## 2. Source of truth
 
-OWNER issued `START V10` on 2026-08-05.
+Порядок authority для разработки:
 
-Canonical status is **54% accepted implementation**, WP0–WP22A accepted COMPLETE and **WEB-VISUAL-INTEGRATED** as the current authorized functional package in **PREPARED / PRODUCT IMPLEMENTATION PAUSED / OWNER START REQUIRED** state. This sentence is a convenience snapshot only; `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md` is the dynamic authority.
+1. актуальный protected GitHub `main`;
+2. `AGENTS.md`;
+3. `README.md` / `CONTRIBUTING.md`;
+4. этот Master Context;
+5. `knowledge/16_CURRENT_PROGRAM_STATUS.md` для V9 runtime;
+6. `docs/master-plan/OMNI_CIO_V10_PROGRAM_LOCK.md`;
+7. `docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.md`;
+8. `docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md` + все applicable active amendments;
+9. machine-readable architecture/security/release contracts;
+10. `docs/master-plan/OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md`;
+11. `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md` для dynamic progress/current execution authority;
+12. current execution-unit contracts/runbooks/ledgers;
+13. actual recent commits, PR/issues and GitHub Actions.
 
-WP22A remains the completed **External Web Access / Product Authentication Security Gate**. Its technical closeout is separate from public-production activation: the latter still owns final Cloud.ru provider apply, production provider secrets/DNS/edge, real public-user cutover and `PUBLIC_MULTI_USER_ENABLED=true`.
+Chat memory, screenshots, old PR descriptions, Cloudflare dashboard state and historical WP evidence never override accepted `main`.
 
-Amendment 12 — **Integrated System Update Execution Law** — changes delivery granularity only. The next prepared visual System Update contains ordered member milestones:
+## 3. Current convenience snapshot
 
-`WEB-VISUAL-A -> B -> C -> D -> E -> F -> G`.
+This is a convenience snapshot only; exact details remain in `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
 
-Acceptance of Amendment 12 itself does not start product implementation. Canonical post-acceptance state is **PRODUCT IMPLEMENTATION PAUSED**, **OWNER START REQUIRED**. Exact command required before creating the integrated visual implementation branch or changing `apps/web` for the refresh:
+Current V10 snapshot after the Amendment-14 authority transition is accepted:
 
-`START V10 WEB VISUAL SYSTEM UPDATE`
+- **54% accepted implementation**;
+- WP0–WP22A / Blocks A–E COMPLETE;
+- **CLOUDFLARE-BUILDS-VERIFIER-INTEGRATION** as the current authorized functional package;
+- `WEB-VISUAL-INTEGRATED` remains the prepared product System Update, **PRODUCT IMPLEMENTATION PAUSED**, with **OWNER START REQUIRED** via `START V10 WEB VISUAL SYSTEM UPDATE` still required before its separate source work;
+- WP23+ LOCKED;
+- current `PUBLIC_MULTI_USER_ENABLED=false`;
+- Telegram Login / VK ID / public multi-user tenant access / public T-Invest READ remain `BLOCKED_EXTERNAL` until their own live gates;
+- broker write OFF, `trading_methods=false`, `REAL_TRADING_ENABLED=false`;
+- protected V9 `app:app` rollback remains intact.
 
-WP23+ remains locked. Public-production activation, broker write and Real execution remain independently locked.
+## 4. GitHub / Cloudflare authority model
 
-## 3. Integrated System Update Execution Law
+GitHub is authority rank 1 for engineering:
 
-Every material V10 change uses one of two execution units:
+- source code;
+- protected `main`;
+- Pull Requests;
+- exact commit SHA;
+- review/check evidence;
+- accepted status/provenance;
+- release source identity.
 
-- `FOCUSED_CHANGE` for an isolated defect, governance/documentation correction, maintenance item or mandatory split boundary;
-- `INTEGRATED_SYSTEM_UPDATE` for one coherent OWNER-authorized system outcome with ordered internal WP/increment milestones.
+Cloudflare Workers Paid is platform rank 2 for **new V10** work after Amendment 14 acceptance:
 
-For `INTEGRATED_SYSTEM_UPDATE`:
+- application/edge hosting target;
+- Workers/Static Assets;
+- Workers Builds portable compute/verification target after repository integration;
+- Custom Domains/DNS/TLS;
+- WAF/DDoS/rate/Turnstile security where applicable;
+- Access for private/admin/engineering surfaces only by default;
+- Hyperdrive only after database compatibility evidence;
+- KV/R2/Durable Objects/Queues/Workflows when a concrete owning package justifies them;
+- Workers AI/Vectorize only when AI/Cortex scope is authorized.
 
-- one integrated branch and one final PR are the default;
-- member WP/increments remain mandatory and follow dependency order;
-- internal milestone PASS is branch-local only and never changes accepted progress by itself;
-- all member milestones, complete local/focused preflight, coupled-surface review, regression guards and mandatory split review must pass before `INTEGRATION_READY`;
-- the preferred first external verification state is one coherent completed implementation head;
-- after publication, **HEAD FREEZE** applies while safe independent checks reach terminal state;
-- findings are consolidated and grouped by root cause/blast radius before one coherent correction batch;
-- a new commit invalidates prior final exact-head GREEN;
-- temporary verifier commits/PRs and fake-GREEN `continue-on-error` are forbidden;
-- required split triggers remain migration ordering, security/authority transition, dependency/toolchain boundary, OWNER/provider action, live/temporal evidence, production cutover, Real-money authority and reviewability limit.
+Cloudflare dashboard/provider state never overrides accepted GitHub authority.
 
-Every integrated update has a branch Execution Ledger and GitHub System Update dashboard, both marked:
+Cloudflare infrastructure identity is not Omni-CIO product identity.
 
-`BRANCH-LOCAL EXECUTION STATE — NOT ACCEPTED MAIN AUTHORITY`.
+## 5. Provider transition boundary
 
-They cannot replace `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
+For new V10 deployment/release work after Amendment 14 acceptance:
 
-## 4. USER versus PROJECT OWNER
+- selected managed target: `CLOUDFLARE_WORKERS_PAID`;
+- Cloud.ru Evolution is no longer the selected new-V10 provider target;
+- Render is no longer active new-V10 deployment, zero-charge-attestation, hosted-release-alignment or recovery target;
+- no new Render attestation refresh/provider mutation is required;
+- accepted WP22A Render + Neon evidence remains historical evidence and must not be rewritten;
+- protected V9 Render production/recovery remains protected.
 
-Canonical product path:
+Amendment 14 is governance only. It does not itself:
 
-`OmniCIOUserAccount -> Tenant -> Session -> tenant-scoped product state`
+- click/deploy Cloudflare;
+- mutate DNS/domain;
+- create API tokens/secrets;
+- activate public users;
+- migrate Neon/PostgreSQL;
+- provision Telegram/VK provider secrets;
+- authorize Real money.
 
-The PROJECT OWNER is not a special Omni-CIO product user/admin. When using Omni-CIO, the PROJECT OWNER is an ordinary USER on the same account/tenant/session path as supported users.
+Provider/security authority, build integration, runtime compatibility, candidate provider mutation and production cutover are mandatory split boundaries.
 
-GitHub, CI, cloud-provider, Windows, recovery, legal/business and deployment authority live in an engineering/operations plane outside normal product identity. Such authority never grants a cross-tenant product session or broker-secret access.
+## 6. Mandatory Cloudflare implementation sequence
 
-## 5. Public production topology
+After Amendment 14 acceptance, execute exactly:
 
-The final public production service must not depend on the PROJECT OWNER's:
+1. `CLOUDFLARE-BUILDS-VERIFIER-INTEGRATION` — repository-side portable build/check integration; no production deploy;
+2. `CLOUDFLARE-RUNTIME-COMPATIBILITY` — React/Vite/backend/native dependency/PostgreSQL/Hyperdrive compatibility evidence/config;
+3. `CLOUDFLARE-CANDIDATE-DEPLOYMENT` — immutable candidate provider mutation only after prior gates;
+4. `CLOUDFLARE-PUBLIC-CUTOVER` — canonical domain/DNS/TLS/security/promotion/rollback and capability-specific live-user acceptance.
 
-- home public IP;
-- Wi-Fi/cable/mobile home Internet;
-- router/NAT/port forwarding;
-- LAN/private subnet;
-- Lenovo laptop as production origin;
-- home power/Internet availability.
+Do not start stage N+1 before stage N is accepted through exact-main post-merge verification.
 
-The final public Web/API and required hosted private-data services must run on an **approved managed cloud production runtime** selected through the V10 service-selection/security/recovery process. The selected final production provider remains Cloud.ru Evolution, but provider apply is not authorized by technical WP22A completion or Amendment 12.
+## 7. Continuous public release model
 
-Lenovo remains important for engineering, authoritative self-hosted CI, controlled acceptance, recovery rehearsal and protected rollback. It is not the public availability anchor.
+V10 is not a monolithic “finish 100%, then show users” program.
 
-Cloudflare may be selected for DNS/TLS/WAF/DDoS/edge transport. A Cloudflare Tunnel whose sole production origin is the OWNER's home Lenovo/network does not satisfy the final hosted-product requirement. Provider identity remains engineering authority, not product authentication.
+Every accepted protected `main` SHA is a new whole-product revision **candidate**. It is not an automatic production deployment.
 
-## 6. Identity, tenant isolation and sessions
+Required release path:
 
-Ordinary product login methods remain Telegram Login and VK ID, both mapped to the internal Omni-CIO account. Neither provider identity is itself a tenant/business identifier.
+`exact-head PR GREEN/review -> squash merge -> exact-main post-merge GREEN -> immutable Cloudflare candidate -> candidate acceptance -> production promotion`.
 
-One normal account owns one isolated tenant in the baseline model. Tenant scope is derived from authenticated server-side session state, never from a client-supplied user/tenant selector.
+Before promotion, current `main` is rechecked. A superseded candidate is not promotable.
 
-Before real public activation, API plus database-enforced tenant isolation and cross-tenant negative tests must remain intact across private records, jobs, queues, caches, notifications, exports, backups/recovery and later AI/RAG memory.
+If a newer `main` is blocked, production remains last-known-good and reports `UPDATE_PENDING`, `DEPLOYMENT_BLOCKED` or `OUT_OF_SYNC` instead of silently drifting.
 
-Sessions remain server-side, revocable and protected by Secure/HttpOnly/SameSite cookies, bounded idle/absolute lifetime, fixation protection, rotation, logout and revoke-all semantics.
+Public release identity is event-derived CalVer `YYYY.MM.DD.N` plus exact source SHA, Cloudflare Version ID, UTC release time and release status. No source-code version-bump commit is made only to change the displayed public version.
 
-## 7. Broker credentials are USER/tenant owned
+Rollback of Worker code does not imply rollback of KV/R2/D1/Durable Object state; schema/storage compatibility and recovery are separate evidence.
 
-For public V10 there is no global/shared user broker token.
+## 8. Public product / identity model
 
-Canonical ownership:
+One canonical public Omni-CIO Web is the target.
 
-`USER -> Tenant -> BrokerConnection -> READ / TRADE_OPTIONAL -> verified broker account binding`
+PROJECT OWNER is an ordinary product USER, not a product superuser.
 
-Each USER enters/replaces/revokes only their own broker credentials through authenticated Web settings. USER A's token must never be usable by Tenant B.
+Canonical human product identity remains:
 
-Raw credentials are never returned to the browser after submission, never stored in browser Web Storage, never committed to GitHub/CI/artifacts, and must be encrypted at rest inside the approved tenant-scoped cloud secret/data boundary. Cortex, ordinary CI and unrelated tenants never receive raw broker secrets.
+`Telegram Login | VK ID -> verified identity -> OmniCIOUserAccount -> Tenant -> server-side Session`.
 
-Optional execution remains fail-closed:
+`WP22A — External Web Access / Product Authentication Security Gate` is technically COMPLETE, but real provider/public runtime activation remains capability-specific.
 
-`EXECUTABLE_ACCOUNTS = VERIFIED_READ_ACCOUNTS ∩ VERIFIED_TRADE_ACCOUNTS`
+Tenant scope must be server-derived. PostgreSQL RLS/FORCE-RLS and cross-tenant negatives remain mandatory even when Cloudflare protects the outer edge.
 
-for the same tenant, with all existing immutable-plan, USER confirmation, preflight, idempotency, reconciliation, own-cash/own-position and no-transfer/no-margin safeguards.
+Cloudflare Access/WAF/Turnstile can protect infrastructure/browser surfaces but cannot mint/select an Omni-CIO tenant.
 
-`trading_methods=false` and `REAL_TRADING_ENABLED=false` remain unchanged until their owning accepted execution gates explicitly change them.
+## 9. Progressive capability activation
 
-## 8. Free initial launch
+Amendment 13 activation states are exactly:
 
-Initial public USER access is free:
+`IMPLEMENTED | LIVE_OPERABLE | BLOCKED_EXTERNAL | REAL_MONEY_AUTHORIZED`.
 
-- `BILLING_ENABLED=false`;
-- `TRIAL_ENABLED=false`;
-- `SUBSCRIPTION_ENFORCEMENT=false`;
-- `PREMIUM_FEATURE_GATING=false`;
-- no payment method required for registration/login;
-- no 7-day trial or 1/3/6/12-month entitlement required for initial access.
+A completed capability may become `LIVE_OPERABLE` when all its own technical/security/external gates pass; unrelated later V10 blocks are not a valid artificial blocker.
 
-Earlier paid/trial architecture is retained as historical/future optional planning only. Future monetization is `DEFERRED_OPTIONAL` and requires a new explicit OWNER-approved decision plus applicable legal/payment implementation.
+Current public-facing activation remains fail-closed where evidence is missing:
 
-Infrastructure costs are separate engineering/provider budget decisions and do not mean users are charged.
+- Telegram Login — `BLOCKED_EXTERNAL`;
+- VK ID — `BLOCKED_EXTERNAL`;
+- public multi-user tenant access — `BLOCKED_EXTERNAL`;
+- T-Invest READ — `BLOCKED_EXTERNAL` / `FAIL_CLOSED_PENDING_BROKER_TERMS_PERMISSION`.
 
-## 9. T-Invest public-service gate
+`PUBLIC_MULTI_USER_ENABLED=false` is current runtime state, not a permanent V10-wide release lock.
 
-Current official T-Invest API terms/FAQ keep public T-Invest-backed production functionality behind a separate fail-closed broker-permission gate. A user-supplied token does not by itself waive broker terms.
+## 10. Web/runtime migration discipline
 
-Therefore public Omni-CIO Web/account technical acceptance and public T-Invest connector activation remain separate gates. Until a contractually valid broker/partner permission or another explicitly accepted compliant architecture exists, T-Invest-backed public production functionality remains fail-closed.
+V10 is controlled migration/productization, not a greenfield rewrite.
 
-## 10. Deterministic Core / Cortex
-
-V10 remains a controlled V9→V10 productization, not a greenfield rewrite.
-
-Deterministic Core owns financial/accounting truth, exact calculations, permissions and money-path enforcement. Cortex owns bounded research, explanation, orchestration and user interaction where useful; it never receives direct broker-write/admin/bypass authority or raw TRADE secrets.
-
-Canonical migration preference remains:
+Default decision preference:
 
 `REUSE_AS_IS > WRAP_ADAPTER > EXTRACT_TO_CORE > REWRITE_REQUIRED > RETIRE`.
 
-## 11. GitHub and engineering process
+Existing React/Vite `apps/web` remains canonical Web source.
 
-Repository: `MishaGameHacking/omni-cio-gateway`.
+FastAPI support in Cloudflare Python Workers does not prove current CPython/native dependencies are compatible. Exact compatibility evidence is required before migration.
 
-GitHub is engineering source of truth. Significant work follows the authorized execution unit:
+Accepted Neon/PostgreSQL 18 tenant/RLS authority remains intact. D1 does not replace financial/tenant truth by default. Hyperdrive + PostgreSQL 18 compatibility is not assumed and requires focused evidence.
 
-`restore accepted authority -> FOCUSED_CHANGE or OWNER-authorized INTEGRATED_SYSTEM_UPDATE -> root-cause/blast-radius + coupled-surface preflight -> implementation/member milestones -> INTEGRATION_READY if integrated -> one published head -> HEAD FREEZE -> exact-head applicable checks SUCCESS -> independent review -> coherent correction batch if required -> fresh final verification -> READY SUCCESS -> zero blockers -> squash merge -> exact main -> post-merge Regression Shield -> status/acceptance -> next major System Update`.
+Do not create a second Gateway, second Web product, competing DB authority or competing scheduler simply to use more Cloudflare features.
 
-Red is red. Skipped/pending/queued is not PASS. OWNER physical/secret evidence is never synthesized. OWNER participation is limited to genuinely non-delegable account/consent/secret/admin/physical decisions.
+## 11. Cloudflare capacity / cost boundary
 
-WP22A technical closeout has immutable acceptance evidence. Current product implementation stays paused until the exact visual System Update START command. Public activation, final provider mutation, broker-write expansion and WP23 remain independently gated.
+The OWNER has an active Workers Paid baseline. The Amendment-14 contract records the 2026-08-29 official-reference values as mutable facts that must be revalidated before material configuration:
 
-## 12. Authority navigation
+- 6000 included build minutes/month;
+- up to 6 concurrent builds/account;
+- 20-minute build timeout;
+- 4 vCPU/build;
+- 8 GB memory/build;
+- 20 GB disk/build.
 
-Always restore context from:
+The existing subscription authorizes use of included capacity after the owning repository integration is accepted. It does not authorize uncontrolled paid overage or a higher paid plan.
 
-- `AGENTS.md`;
-- `README.md`;
-- `docs/master-plan/OMNI_CIO_V10_PROGRAM_LOCK.md`;
-- `docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.md`;
-- `docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md`;
-- `docs/master-plan/OMNI_CIO_V10_PRODUCT_USER_AND_ENGINEERING_AUTHORITY_BOUNDARY_AMENDMENT.md`;
-- `docs/master-plan/OMNI_CIO_V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_AMENDMENT.md`;
-- `docs/master-plan/OMNI_CIO_V10_WP22A_TECHNICAL_CLOSEOUT_AND_PUBLIC_ACTIVATION_SEPARATION_AMENDMENT.md`;
-- `docs/master-plan/OMNI_CIO_V10_INTEGRATED_SYSTEM_UPDATE_EXECUTION_AMENDMENT.md`;
-- `docs/architecture/V10_INTEGRATED_SYSTEM_UPDATE_EXECUTION_CONTRACT.json`;
-- `docs/architecture/V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_CONTRACT.json`;
-- `docs/architecture/V10_WP22A_PHASE5_TECHNICAL_ACCEPTANCE_EVIDENCE.md`;
-- `docs/architecture/V10_WEB_VISUAL_DESIGN_REFRESH_IMPLEMENTATION_BRIEF.md`;
-- `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`;
-- current execution-unit architecture/security/recovery/ledger files when authorized;
-- current `main`, open PRs/issues and GitHub Actions.
+Current GitHub/Lenovo CI routing does not change merely because Cloudflare Builds capacity exists.
 
-Chat memory, screenshots, stale PR descriptions and historical package records never override accepted GitHub authority.
+Portable verification should migrate only when semantics are equivalent. Windows/PowerShell/ACL/PostgreSQL-18-native contracts remain on trusted Lenovo self-hosted runners until an accepted equivalence proof exists.
+
+## 12. Engineering / CI law
+
+Never develop directly in `main`.
+
+Required lifecycle:
+
+`fresh accepted main -> focused/integrated branch -> root-cause/blast-radius/coupled-surface preflight -> deterministic guards -> complete diff review -> DRAFT PR -> exact-head SUCCESS-only checks -> independent review/Files changed -> READY fresh SUCCESS-only checks -> zero blockers -> squash merge -> exact-new-main Regression Shield + owning post-merge -> accepted`.
+
+`failure`, `cancelled`, `queued`, `pending`, `in_progress`, `timed_out`, `action_required`, `stale`, `neutral` and `skipped` are not GREEN for an applicable gate.
+
+A new commit invalidates prior final exact-head GREEN/review evidence.
+
+CI is an independent verifier; do not use it as the primary interactive debugger.
+
+Material defects require root cause, blast radius, analogous-pattern search, coupled producer/consumer inspection, adjacent failure analysis and a deterministic regression guard when reusable.
+
+Do not weaken lint/type/security/test/coverage/CI guards.
+
+## 13. Security / secrets
+
+Never place real secrets/private payloads in GitHub, chat, commits, PR comments, CI logs, screenshots or artifacts.
+
+Never disclose/request when avoidable:
+
+- broker tokens;
+- Telegram/VK secrets;
+- provider API secrets;
+- DB passwords;
+- encryption/recovery keys;
+- full account IDs;
+- private portfolio payloads.
+
+Cloudflare API tokens/secrets belong in approved secret custody at the owning provider-action gate, never repository source.
+
+## 14. Broker / Real-money boundary
+
+Current protected locks:
+
+- broker write OFF;
+- `trading_methods=false`;
+- `REAL_TRADING_ENABLED=false`;
+- transfer/withdrawal authority false;
+- margin/leverage/uncovered-short authority false.
+
+READ and optional TRADE credentials are tenant-scoped. `TRADE credential connected/verified != broker submit authorized`.
+
+Real broker submit requires `REAL_MONEY_AUTHORIZED` through the owning later execution gate after representative Sandbox/Shadow, immutable plan, authenticated USER approval, drift/preflight, reconciliation, kill switches and actual broker permission.
+
+A GitHub merge, Cloudflare deployment, public release, AI output, START command or user registration is never broker-submit authorization.
+
+## 15. V9 protection / recovery
+
+Protected V9 production/recovery remains available until an explicit accepted decommission/parity gate.
+
+Stable entrypoint remains `app:app`.
+
+Render retirement in **new V10** authority does not authorize mutation/deletion of the protected V9 Render baseline.
+
+## 16. Continuity
+
+After substantial work leave a GitHub-visible handoff with exact main/head SHA, execution unit, completed changes, checks/conclusions, review/blockers, remaining work and next authorized step.
+
+Do not create a competing current-status document.

@@ -23,7 +23,8 @@ SPEC = importlib.util.spec_from_file_location(
     "check_v10_engineering_governance",
     SCRIPT_PATH,
 )
-assert SPEC is not None and SPEC.loader is not None
+assert SPEC is not None
+assert SPEC.loader is not None
 governance = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(governance)
 
@@ -52,7 +53,7 @@ def test_current_repository_satisfies_engineering_governance() -> None:
         in completed.stdout
     )
     assert "OWNER handoff: direct official link" in completed.stdout
-    assert "managed-cloud target; OWNER home/Lenovo not public origin" in completed.stdout
+    assert "Cloudflare Workers Paid target after owning cutover gate" in completed.stdout
 
 
 def test_contract_accepts_only_success_for_applicable_merge_checks() -> None:
@@ -117,13 +118,13 @@ def test_owner_handoff_requires_direct_verified_link_and_stop_contract() -> None
     assert "Mandatory OWNER handoff format" in text
 
 
-def test_v10_public_runtime_is_managed_cloud_and_not_owner_home() -> None:
+def test_v10_public_runtime_is_cloudflare_workers_paid_and_not_owner_home() -> None:
     contract = json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))
     runtime = contract["runtime_hosting"]
 
     assert (
         runtime["v10_public_production_host"]
-        == "APPROVED_MANAGED_CLOUD_RUNTIME_SELECTED_BY_OWNING_GATE"
+        == "CLOUDFLARE_WORKERS_PAID_AFTER_OWNING_CUTOVER_GATE"
     )
     assert runtime["managed_cloud_runtime_required_for_public_product"] is True
     assert runtime["owner_home_or_lenovo_public_dependency_allowed"] is False
@@ -141,8 +142,21 @@ def test_v10_public_runtime_is_managed_cloud_and_not_owner_home() -> None:
     assert runtime["render_com_v10_runtime_target_selected"] is False
     assert runtime["render_com_new_workspace_authoritative"] is False
     assert runtime["render_com_new_v10_service_without_owner_amendment_allowed"] is False
+    assert runtime["render_com_new_v10_release_acceptance_allowed"] is False
+    assert runtime["cloudru_new_v10_runtime_target_selected"] is False
     assert runtime["protected_v9_render_app_app_baseline_preserved"] is True
+    assert runtime["cloudflare_workers_paid_selected"] is True
+    assert (
+        runtime["cloudflare_role"]
+        == "PRIMARY_NEW_V10_MANAGED_APPLICATION_EDGE_BUILD_PLATFORM_NOT_PRODUCT_IDENTITY"
+    )
+    assert runtime["cloudflare_governance_acceptance_mutates_provider"] is False
+    assert (
+        runtime["cloudflare_governance_acceptance_authorizes_production_cutover"]
+        is False
+    )
     assert runtime["cloudflare_home_lenovo_tunnel_satisfies_final_public_hosting"] is False
+    assert runtime["continuous_exact_main_release_required"] is True
     assert runtime["external_access_provider_may_become_product_identity"] is False
 
 
@@ -306,5 +320,27 @@ def test_validator_rejects_owner_home_or_lenovo_public_dependency(
 
     assert any(
         "owner_home_or_lenovo_public_dependency_allowed must be False" in failure
+        for failure in failures
+    )
+
+
+def test_validator_rejects_cloudflare_identity_or_cutover_widening(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    contract = json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))
+    contract["runtime_hosting"][
+        "cloudflare_governance_acceptance_authorizes_production_cutover"
+    ] = True
+    modified = tmp_path / "quality-contract.json"
+    modified.write_text(json.dumps(contract), encoding="utf-8")
+    monkeypatch.setattr(governance, "CONTRACT", modified)
+    failures: list[str] = []
+
+    governance.validate_contract(failures)
+
+    assert any(
+        "cloudflare_governance_acceptance_authorizes_production_cutover must be False"
+        in failure
         for failure in failures
     )

@@ -1,197 +1,30 @@
+# Historical WP22A Render/Neon provider workflow.
+# Amendment 14 retires this path from active V10 provider authority. It remains
+# manual-only so historical GitHub links stay resolvable, but invocation fails
+# closed before any provider mutation.
 name: V10 Phase 4 Free Preview Deploy
 
 on:
-  workflow_run:
-    workflows:
-      - Regression Shield
-    types:
-      - completed
-    branches:
-      - main
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 concurrency:
-  group: v10-phase4-free-preview-deploy
+  group: v10-phase4-retired-render-preview
   cancel-in-progress: false
 
 jobs:
-  deploy-free-preview:
-    name: Deploy exact accepted main to Render and Neon free preview
-    permissions:
-      actions: read
-      contents: read
-    if: >-
-      (github.event_name == 'workflow_run' &&
-       github.event.workflow_run.conclusion == 'success' &&
-       github.event.workflow_run.event == 'push' &&
-       github.event.workflow_run.head_branch == 'main') ||
-      (github.event_name == 'workflow_dispatch' &&
-       github.ref == 'refs/heads/main')
+  retired-render-preview:
+    name: Historical Render preview path is retired
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
-    timeout-minutes: 45
-    defaults:
-      run:
-        shell: bash
-    env:
-      EXPECTED_MAIN_SHA: >-
-        ${{ github.event_name == 'workflow_run' &&
-            github.event.workflow_run.head_sha || github.sha }}
-
+    timeout-minutes: 5
     steps:
-      - name: Expose installed Git Bash before repository bootstrap
+      - name: Refuse obsolete Render provider mutation
         shell: cmd
         run: |
-          powershell.exe -NoProfile -NonInteractive -Command "$git=(Get-Command git.exe -ErrorAction Stop).Source; $root=Split-Path -Parent (Split-Path -Parent $git); $bin=Join-Path $root 'bin'; if (-not (Test-Path (Join-Path $bin 'bash.exe'))) { exit 12 }; $bin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append"
-          if errorlevel 1 exit /b 12
-
-      - name: Bootstrap exact current main without external Actions
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          GIT_TERMINAL_PROMPT: "0"
-          GCM_INTERACTIVE: "0"
-        run: |
-          set -euo pipefail
-          find . -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
-          bootstrap_succeeded=0
-          for bootstrap_attempt in 1 2 3; do
-            rm -rf .git
-            git init .
-            git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
-            git config --local gc.auto 0
-            git config --local credential.helper ""
-            git config --local --add credential.helper '!f() { echo username=x-access-token; echo password=$GITHUB_TOKEN; }; f'
-            git config --local http.lowSpeedLimit 1000
-            git config --local http.lowSpeedTime 60
-            fetch_status=0
-            git fetch --no-tags --prune --depth=1 origin "+refs/heads/main:refs/remotes/origin/main" || fetch_status=$?
-            git config --local --unset-all credential.helper 2>/dev/null || true
-            if [ "$fetch_status" -eq 0 ]; then
-              bootstrap_succeeded=1
-              break
-            fi
-            rm -rf .git
-            if [ "$bootstrap_attempt" -lt 3 ]; then
-              echo "Repository bootstrap transport failed on attempt ${bootstrap_attempt}/3; retrying after bounded backoff." >&2
-              sleep "$((bootstrap_attempt * 5))"
-            fi
-          done
-          if [ "$bootstrap_succeeded" -ne 1 ]; then
-            echo "Repository bootstrap transport failed after 3 attempts." >&2
-            exit 70
-          fi
-          test "$(git rev-parse refs/remotes/origin/main)" = "$EXPECTED_MAIN_SHA"
-          git checkout --detach "$EXPECTED_MAIN_SHA"
-          test "$(git rev-parse HEAD)" = "$EXPECTED_MAIN_SHA"
-          test -z "$(git config --local --get-all credential.helper || true)"
-
-      - name: Bootstrap isolated Python 3.12.10
-        shell: cmd
-        run: scripts\bootstrap_windows_ci_python.cmd
-
-      - name: Verify exact-main Regression Shield before provider mutation
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: python scripts/check_v10_exact_main_regression.py
-
-      - name: Create isolated deployment environment
-        run: |
-          VENV_ROOT="$(cygpath -u "$RUNNER_TEMP")"
-          VENV_PATH="$VENV_ROOT/omni-cio-phase4-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          rm -rf "$VENV_PATH"
-          python -m venv "$VENV_PATH"
-          echo "VENV_PATH=$VENV_PATH" >> "$GITHUB_ENV"
-          echo "$(cygpath -w "$VENV_PATH/Scripts")" >> "$GITHUB_PATH"
-          "$VENV_PATH/Scripts/python.exe" -m pip --version
-
-      - name: Install exact deployment validation dependencies
-        run: |
-          python scripts/windows_ci_lock.py project \
-            requirements-dev.txt windows-requirements-dev.txt
-          python -m pip install --disable-pip-version-check \
-            --require-hashes -r windows-requirements-dev.txt
-          python -c "import fastapi, psycopg, pytest; print('Phase 4 validation toolchain ready')"
-
-      - name: Verify deployment source contracts before provider mutation
-        run: |
-          python -m compileall -q \
-            apps/api/hosted_preview.py \
-            scripts/check_v10_exact_main_regression.py \
-            scripts/check_v10_zero_cost_provider_boundary.py \
-            scripts/diagnose_v10_render_deploy.py \
-            scripts/provision_v10_render_neon_preview.py \
-            scripts/provision_v10_render_neon_preview_org_scope.py \
-            scripts/rehearse_v10_wp22a_phase4_runtime_role.py
-          python -m pytest -q \
-            tests/test_v10_exact_main_regression.py \
-            tests/test_wp22a_phase4_free_preview_authorization.py \
-            tests/test_wp22a_phase4_hosted_preview_app.py \
-            tests/test_wp22a_phase4_deploy_contract.py \
-            tests/test_wp22a_phase4_provisioner_import_path.py \
-            tests/test_wp22a_phase4_render_deploy_diagnostic.py \
-            tests/test_wp22a_phase4_render_pagination_guard.py \
-            tests/test_wp22a_phase4_runtime_role_retry.py \
-            tests/test_wp22a_phase4_transient_network_hardening.py \
-            tests/test_v10_neon_org_scoped_provider_contract.py \
-            tests/test_v10_zero_cost_provider_boundary.py
-
-      - name: Enforce zero-charge provider boundary
-        env:
-          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
-          NEON_ORG_ID: ${{ vars.NEON_ORG_ID }}
-          RENDER_ZERO_CHARGE_ATTESTATION: ${{ vars.RENDER_ZERO_CHARGE_ATTESTATION }}
-        run: python scripts/check_v10_zero_cost_provider_boundary.py
-
-      - name: Provision and deploy zero-cost synthetic preview
-        id: provision
-        env:
-          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
-          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
-          NEON_ORG_ID: ${{ vars.NEON_ORG_ID }}
-        run: |
-          provision_started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          set +e
-          python -m scripts.provision_v10_render_neon_preview_org_scope \
-            --repo-root . \
-            --expected-sha "$EXPECTED_MAIN_SHA"
-          provision_status=$?
-          set -e
-          if [ "$provision_status" -ne 0 ]; then
-            diagnostic_status=0
-            python -m scripts.diagnose_v10_render_deploy \
-              --expected-sha "$EXPECTED_MAIN_SHA" \
-              --not-before "$provision_started_at" || diagnostic_status=$?
-            if [ "$diagnostic_status" -ne 0 ]; then
-              printf '%s\n' 'RENDER_DEPLOY_DIAGNOSTIC=UNAVAILABLE'
-            fi
-            exit "$provision_status"
-          fi
-
-      - name: Publish safe deployment summary
-        env:
-          PREVIEW_URL: ${{ steps.provision.outputs.preview_url }}
-          RENDER_SERVICE_ID: ${{ steps.provision.outputs.render_service_id }}
-          NEON_PROJECT_ID: ${{ steps.provision.outputs.neon_project_id }}
-        run: |
-          {
-            printf '%s\n' "### Phase 4 deployment boundary"
-            printf '%s\n' "- exact accepted main: ${EXPECTED_MAIN_SHA}"
-            printf '%s\n' "- preview URL: ${PREVIEW_URL}"
-            printf '%s\n' "- Render service id: ${RENDER_SERVICE_ID}"
-            printf '%s\n' "- Neon project id: ${NEON_PROJECT_ID}"
-            printf '%s\n' "- Render no-payment-method attestation: fresh"
-            printf '%s\n' "- Neon organization plan: free"
-            printf '%s\n' "- paid resources: forbidden"
-            printf '%s\n' "- real registration/private data/broker credentials: disabled"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Clean self-hosted deployment workspace
-        if: always()
-        run: |
-          rm -rf "${VENV_PATH:-}"
-          git config --local --unset-all credential.helper 2>/dev/null || true
-          if git rev-parse --verify HEAD >/dev/null 2>&1; then
-            git reset --hard HEAD
-            git clean -ffdx
-          else
-            rm -rf .git
-          fi
+          @echo off
+          echo LEGACY_RENDER_PHASE4_RETIRED_AMENDMENT_14
+          echo This workflow is historical evidence only and is not an active V10 deployment path.
+          echo Use the accepted Cloudflare authority sequence; do not refresh Render attestation or mutate Render.
+          exit /b 78

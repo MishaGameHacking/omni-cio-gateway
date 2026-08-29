@@ -4,571 +4,189 @@
 
 ## 1. Product boundary
 
-Поддерживается **один Omni-CIO product line**.
+Поддерживается **один Omni-CIO product line**. Protected owner-accepted V9 production/recovery baseline остаётся `existing Omni-CIO Custom GPT v9.0.0 -> Omni-CIO Gateway (app:app) -> protected broker contours`. V10 productize/migrate этот же продукт; не создавать второй Gateway/Web/product-auth/AI/scheduler/broker/execution stack.
 
-Текущий owner-accepted production/recovery baseline пока остаётся:
-
-`Existing Omni-CIO Custom GPT v9.0.0 → Omni-CIO Gateway (app:app) → protected broker contours`.
-
-V10 последовательно превращает этот продукт в самостоятельную Personal Autonomous Investment Platform. Не создавать второй Custom GPT, duplicate Gateway, parallel Web, Telegram brain, competing AI stack, competing scheduler или parallel broker/execution stack вне явно утверждённого V10 execution unit/amendment.
-
-Три protected V9 broker-контура изолированы:
-
-1. production read-only — `TINVEST_TOKEN`;
-2. optional virtual Sandbox — `TINVEST_SANDBOX_TOKEN`;
-3. optional exact-user-confirmed Real execution — отдельный `TINVEST_TRADING_TOKEN` + durable state.
-
-For public V10, broker credentials are **not global application credentials**: they belong only to the authenticated tenant's `BrokerConnection` according to the active Identity, Public Free Multi-User Hosted Runtime and Progressive Capability Activation amendments.
-
-GitHub engineering access никогда не означает broker/trading authority.
+For public V10, broker credentials are tenant-scoped `BrokerConnection` credentials, never global application credentials. GitHub/Cloudflare engineering access never means broker/trading authority.
 
 ## 2. Current program state
 
-V9 WP0–WP15 repository delivery and owner external acceptance are **COMPLETE**. V9 remains protected controlled-maintenance/recovery baseline until a responsible V10 package safely replaces a boundary.
+Dynamic progress/current execution authority всегда берётся из `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`; этот файл не второй progress ledger.
 
-V10 is the **exclusive active feature program**. OWNER issued `START V10` on 2026-08-05.
+Current synchronized snapshot:
 
-The exact current state is always read from `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`; this file must not be treated as a competing progress ledger.
+- WP0–WP22A / Blocks A–E accepted COMPLETE;
+- accepted V10 progress is **54%**;
+- complete `WP22A — External Web Access / Product Authentication Security Gate` technical Exit Gate is accepted;
+- **CLOUDFLARE-BUILDS-VERIFIER-INTEGRATION — Repository-Side Portable Verification Integration** is current next package after Amendment 14 acceptance;
+- PRODUCT IMPLEMENTATION PAUSED during provider/security transition;
+- `WEB-VISUAL-INTEGRATED` remains prepared and still requires `START V10 WEB VISUAL SYSTEM UPDATE` before its separate source work;
+- WP23+ LOCKED;
+- `PUBLIC_MULTI_USER_ENABLED=false` current fail-closed state;
+- Telegram Login, VK ID, public multi-user tenant access and public T-Invest READ remain `BLOCKED_EXTERNAL` until their own gates;
+- broker write OFF, `trading_methods=false`, `REAL_TRADING_ENABLED=false`;
+- protected V9 `app:app` rollback intact.
 
-Current accepted snapshot:
+PROJECT OWNER is not a special Omni-CIO product role. When using the product, OWNER is an ordinary USER on the same `OmniCIOUserAccount -> Tenant -> Session` path. Engineering/provider authority cannot mint/select a product tenant.
 
-- V10 WP0–WP22A are accepted COMPLETE according to the current-status/evidence chain;
-- accepted V10 progress is **54%** because Block E has now passed the complete `WP22A — External Web Access / Product Authentication Security Gate` technical Exit Gate;
-- **WEB-VISUAL-INTEGRATED — Premium Spatial Financial OS A→G System Update / OWNER START REQUIRED** is the next prepared functional execution unit under Amendment 12;
-- **PRODUCT IMPLEMENTATION PAUSED** until the exact OWNER command `START V10 WEB VISUAL SYSTEM UPDATE` is explicitly issued;
-- WP22A technical acceptance remains separate from live capability activation evidence;
-- WP23+ remains LOCKED behind acceptance of the complete visual System Update and Master Plan authorization;
-- public multi-user/global browser service is the approved target; current `PUBLIC_MULTI_USER_ENABLED=false` is a fail-closed runtime state, not a permanent V10-wide release lock;
-- completed user-facing capabilities may become `LIVE_OPERABLE` after their own technical/security/external gates under Amendment 13 without waiting for unrelated later V10 blocks;
-- Telegram Login, VK ID, public multi-user tenant access and public T-Invest READ currently remain `BLOCKED_EXTERNAL` until their real provider/broker/privacy/secret-custody/runtime/operations gates are accepted;
-- final public production must not depend on PROJECT OWNER home IP/Wi-Fi/router/LAN/Lenovo; the selected final managed-cloud provider remains Cloud.ru Evolution and final provider apply is still locked at the current baseline;
-- initial registered-user access is free: billing/trial/subscription enforcement/premium gating are disabled for initial launch;
-- broker-write / Real execution authority remains unchanged and not authorized by this status, Amendment 12 or Amendment 13;
-- `TRADE credential connected/verified` never means broker submit is authorized; real submit requires `REAL_MONEY_AUTHORIZED` through its owning execution gate.
+The WP22A technical gate is complete only through its accepted evidence chain. Amendment 14 does not reopen it, activate public production, expand broker-write authority or start WP23.
 
-The PROJECT OWNER is not a special Omni-CIO product role. When using Omni-CIO, the PROJECT OWNER is an ordinary USER on the same `OmniCIOUserAccount -> Tenant -> Session` path as supported users. GitHub/cloud-provider/Windows/CI authority stays outside product identity.
+## 3. Mandatory authority restore
 
-The OWNER-approved Engineering Quality / Pre-CI / Green-Merge governance package is accepted and active. The OWNER-approved **Integrated System Update Execution Law / Amendment 12** changes delivery granularity only. The OWNER-approved **Live User Operability & Progressive Capability Activation Law / Amendment 13** changes capability-activation granularity only when accepted on protected `main`; it does not advance implementation progress or widen Real-money authority by itself.
-
-Documentation lifecycle and the distinction between current authority and historical WP records are defined in `docs/DOCUMENTATION_AUTHORITY_AND_LIFECYCLE.md`.
-
-## 3. Mandatory V10 authority order
-
-Before any change, read in this order:
+Before material work restore from current GitHub `main`, not chat memory:
 
 1. `README.md`;
-2. `knowledge/00_PROJECT_MASTER_CONTEXT.md`;
-3. `knowledge/16_CURRENT_PROGRAM_STATUS.md` for the protected V9 runtime baseline;
-4. `docs/master-plan/OMNI_CIO_V10_PROGRAM_LOCK.md`;
-5. `docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.md`;
-6. `docs/master-plan/Omni-CIO_V10_Master_Plan_RU.pdf` when owner-readable synchronized plan context is needed;
-7. `docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md`;
-8. every active amendment listed there, especially:
-   - `docs/master-plan/OMNI_CIO_V10_CONCRETE_EXECUTION_PLAN_AMENDMENT.md`;
-   - `docs/master-plan/OMNI_CIO_V10_GITHUB_PRO_AND_MIGRATION_IMPLEMENTATION_AMENDMENT.md`;
-   - `docs/master-plan/OMNI_CIO_V10_ENGINEERING_QUALITY_AND_GREEN_MERGE_AMENDMENT.md`;
-   - `docs/master-plan/OMNI_CIO_V10_PRODUCT_USER_AND_ENGINEERING_AUTHORITY_BOUNDARY_AMENDMENT.md`;
-   - `docs/master-plan/OMNI_CIO_V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_AMENDMENT.md`;
-   - `docs/master-plan/OMNI_CIO_V10_WP22A_TECHNICAL_CLOSEOUT_AND_PUBLIC_ACTIVATION_SEPARATION_AMENDMENT.md`;
-   - `docs/master-plan/OMNI_CIO_V10_INTEGRATED_SYSTEM_UPDATE_EXECUTION_AMENDMENT.md`;
-   - `docs/master-plan/OMNI_CIO_V10_LIVE_USER_OPERABILITY_AND_PROGRESSIVE_CAPABILITY_ACTIVATION_AMENDMENT.md`;
-9. machine-readable contracts relevant to the work, especially:
-   - `docs/architecture/V10_INTEGRATED_SYSTEM_UPDATE_EXECUTION_CONTRACT.json`;
-   - `docs/architecture/V10_PROGRESSIVE_CAPABILITY_ACTIVATION_CONTRACT.json`;
-   - `docs/architecture/V10_PUBLIC_FREE_MULTI_USER_HOSTED_RUNTIME_CONTRACT.json`;
-   - `docs/architecture/V10_AI_CORTEX_CONTRACT.json`;
-   - `docs/architecture/V10_GITHUB_PRO_UTILIZATION_CONTRACT.json`;
-   - `docs/architecture/V10_V9_TO_V10_PARITY_LEDGER.json`;
-   - `docs/architecture/V10_COMPONENT_REUSE_MATRIX.json`;
-   - `docs/architecture/V10_RELEASE_MANIFEST.schema.json`;
-   - `docs/architecture/V10_ENGINEERING_QUALITY_GATE_CONTRACT.json`;
-10. `docs/master-plan/OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md` before starting any implementation execution unit/member milestone;
+2. `AGENTS.md`;
+3. `CONTRIBUTING.md`;
+4. `knowledge/00_PROJECT_MASTER_CONTEXT.md`;
+5. `knowledge/16_CURRENT_PROGRAM_STATUS.md` for protected V9;
+6. `docs/master-plan/OMNI_CIO_V10_PROGRAM_LOCK.md`;
+7. `docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.md`;
+8. `docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md`;
+9. all applicable active amendments, especially Amendments 8–14;
+10. `docs/master-plan/OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md`;
 11. `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`;
-12. accepted V10 architecture, ADR, recovery and current execution-unit/capability activation files/ledgers when authorized;
-13. actual `main`, open PR/issues and GitHub Actions.
+12. owning execution-unit contracts/runbooks/ledgers;
+13. exact `main`, recent commits, open PR/issues and GitHub Actions.
 
-Old chat, screenshot, stale PR description, package-local historical status heading or unmerged planning draft is never source of truth when it conflicts with accepted `main` plus the authority chain above.
+Key current authority includes Amendment 14 and `docs/architecture/V10_CLOUDFLARE_PLATFORM_AUTHORITY_CONTRACT.json`. Old chat/screenshots/stale PR text/provider dashboard state never override accepted GitHub authority.
 
-## 4. Integrated System Update Execution Law and engineering-quality discipline
+## 4. GitHub #1 / Cloudflare #2
 
-Every material V10 change uses exactly one execution unit:
+After Amendment 14 acceptance:
 
-- `FOCUSED_CHANGE` — a genuinely isolated defect, governance/documentation correction, maintenance item, independent migration step or mandatory split boundary;
-- `INTEGRATED_SYSTEM_UPDATE` — one coherent OWNER-authorized system/subsystem outcome with ordered member WP/increments.
+- GitHub is engineering/source/review/provenance authority rank 1;
+- Cloudflare Workers Paid is platform rank 2 and selected new-V10 managed application/edge/build target after each owning gate;
+- Cloud.ru Evolution is no longer selected for new V10 deployment;
+- Render is retired from active **new V10** deployment, zero-charge attestation, hosted-release-alignment and recovery authority;
+- accepted WP22A Render/Neon evidence remains historical evidence;
+- protected V9 Render `app:app` production/recovery remains protected;
+- Amendment 14 acceptance itself performs no provider/DNS/domain mutation, secret creation, public-user activation or production cutover.
 
-For `INTEGRATED_SYSTEM_UPDATE`:
+Final public V10 requires a **managed-cloud production runtime** independent of OWNER home IP/Wi-Fi/router/LAN/Lenovo. Cloudflare services may be adopted when an owning package proves the need: Workers/Static Assets, Workers Builds, Custom Domains/DNS/TLS, WAF/DDoS/rate controls, Turnstile, Access for private/admin/engineering surfaces, Hyperdrive only after PG18 proof, KV/R2/Durable Objects/Queues/Workflows for explicit roles, and Workers AI/Vectorize only inside authorized AI/Cortex scope.
 
-- one integrated branch and one final PR are the default;
-- member WP/increments remain mandatory ordered internal milestones and keep Master Plan dependency order;
-- internal milestone PASS is branch-local only and never advances accepted V10 percentage, changes accepted `main`, unlocks the next major System Update, activates a live capability or authorizes broker/Real execution;
-- every integrated update uses `docs/updates/INTEGRATED_SYSTEM_UPDATE_EXECUTION_LEDGER_TEMPLATE.md` and the GitHub System Update dashboard issue template;
-- both working-state records must say `BRANCH-LOCAL EXECUTION STATE — NOT ACCEPTED MAIN AUTHORITY`;
-- before first external verification publication, all required member milestones, known focused failures, full-diff review, directly coupled producer/consumer/config/workflow review, analogous-pattern search where material, adjacent failure review, deterministic regression guards, security/recovery review and mandatory split-trigger review must pass; only then mark `INTEGRATION_READY`.
+Do not click dashboard `Deploy`, create provider tokens/secrets, mutate DNS/domain or create paid-overage resources during governance/build-planning unless that exact provider mutation is authorized.
+
+## 5. Continuous exact-main public release
+
+V10 is an engineering program; public capability releases do not wait for V10 100% when their own gates pass.
+
+Every accepted protected `main` SHA is a product revision candidate, not automatic production deployment.
+
+Required flow:
+
+`PR exact-head GREEN/review -> squash merge -> exact-main post-merge GREEN -> immutable Cloudflare candidate -> candidate acceptance -> production promotion`.
+
+Re-check current `main` immediately before promotion. Superseded candidates are not promotable. If latest `main` is blocked, production stays last-known-good and exposes `UPDATE_PENDING`, `DEPLOYMENT_BLOCKED` or `OUT_OF_SYNC`.
+
+Public release ID is event-derived CalVer `YYYY.MM.DD.N` plus exact source SHA, Cloudflare Version ID, UTC release time and status; never create a source version-bump commit only to change the display version. Worker rollback does not rewrite GitHub authority and does not automatically roll back KV/R2/D1/Durable Object state.
+
+## 6. Execution-unit discipline
+
+Governed by the **Integrated System Update Execution Law**. Every material change is exactly one `FOCUSED_CHANGE` or one OWNER-authorized `INTEGRATED_SYSTEM_UPDATE`.
+
+Mandatory split triggers: DB/migration ordering, security/authority transition, dependency/toolchain boundary, genuinely non-delegable OWNER/provider action, live/temporal evidence, production cutover, Real-money authority and reviewability limit.
+
+Amendment 14 therefore requires:
+
+1. `CLOUDFLARE-BUILDS-VERIFIER-INTEGRATION` — repository portable verification only; no production deploy;
+2. `CLOUDFLARE-RUNTIME-COMPATIBILITY` — React/Vite/backend/native dependency/PostgreSQL/Hyperdrive evidence;
+3. `CLOUDFLARE-CANDIDATE-DEPLOYMENT` — immutable candidate provider mutation after prior gates;
+4. `CLOUDFLARE-PUBLIC-CUTOVER` — domain/DNS/TLS/security/promotion/rollback and capability-specific live-user acceptance.
+
+Do not start N+1 before N is accepted.
+
+## 7. Pre-CI / root cause
 
 CI is an independent verifier, not the normal interactive debugger.
 
-After a verification SHA is published, **HEAD FREEZE** applies while the current safe independent verification batch reaches terminal state. A first ordinary RED is not a signal to immediately push another symptom-fix commit. Where safe and technically possible:
+Before fixing a material defect: find root cause, determine blast radius, search analogous patterns, inspect coupled producers/consumers/config/workflows, inspect adjacent failure modes, add deterministic regression guards where reusable, run cheap/focused preflight and review the complete diff.
 
-1. allow independent applicable checks to reach terminal state;
-2. collect available GitHub Actions, authoritative Windows CI, Sonar, Gitar, SAST/security, browser/E2E and owning-gate findings;
-3. create one consolidated finding inventory;
-4. group findings by root cause/defect class;
-5. perform root-cause, blast-radius, analogous-pattern, coupled-surface, adjacent-failure and security/recovery analysis;
-6. add permanent regression guards for reusable defect classes;
-7. publish one coherent correction batch only after complete focused/local preflight.
-
-`continue-on-error` must never make a required RED look GREEN. Safety abort overrides diagnostic completeness if continued execution could expose real secrets/private data, reach broker-write/Real-money authority, perform destructive migration/provider mutation, create uncontrolled paid-resource mutation or expose another tenant.
+Do not patch systemic defects symptom-by-symptom. After publishing a verification SHA, HEAD FREEZE applies while the safe independent batch reaches terminal state. Consolidate findings by root cause before one coherent correction batch.
 
-Any new published commit invalidates previous final exact-head GREEN evidence.
+Unexpected material RED after declared readiness requires a reusable lesson in `docs/operations/V10_ENGINEERING_FAILURE_LEARNING_LEDGER.md`.
 
-Mandatory split triggers are evidence-based, not WP-number-based:
+Prefer bounded failure domains rather than one fragile monolith. Consider timeouts/deadlines, bounded retries, idempotency, backpressure/circuit breaker, durable checkpoints, health/readiness/freshness, restart/recovery and least-privilege boundaries. Money/security authority fails closed.
 
-1. DB/migration ordering;
-2. security/authority transition;
-3. dependency/toolchain boundary;
-4. genuinely non-delegable OWNER/provider action;
-5. live/temporal evidence such as soak/Shadow Mode;
-6. production cutover;
-7. Real-money authority;
-8. reviewability limit.
+## 8. Git / PR lifecycle
 
-For `FOCUSED_CHANGE`, the protected lifecycle remains a focused branch/PR. For `INTEGRATED_SYSTEM_UPDATE`, the protected lifecycle is:
-
-`restore authority → exact OWNER-authorized System Update → integrated branch → ordered internal milestones → INTEGRATION_READY → one coherent published head → DRAFT exact-head verification → HEAD FREEZE → independent review → coherent correction batch if required → fresh final exact-head verification → READY → fresh applicable READY SUCCESS → zero blockers → squash merge → exact new main → Regression Shield/owning post-merge gates → accepted status transition`.
+Never develop directly in `main`.
 
-Binding rules:
+`fresh accepted main -> branch -> authorized implementation -> deterministic guards -> cheap preflight -> complete diff -> DRAFT PR -> applicable exact-head DRAFT SUCCESS -> Files changed + independent review -> zero blockers -> unchanged READY -> fresh applicable READY SUCCESS -> squash merge -> exact-new-main Regression Shield/owning post-merge SUCCESS -> accepted`.
 
-- do not implement a later major System Update early because hardware or an API is available;
-- do not silently absorb unrelated scope into an integrated update;
-- do not weaken lint/type/security/eval/Regression Shield to make a PR green;
-- do not treat file/UI existence or an internal milestone checkbox as accepted completion;
-- new material scope requires OWNER-approved amendment, not chat improvisation;
-- no V11 or competing roadmap before V10 reaches 100% and owner acceptance;
-- implementation execution units/member milestones must fill/use `OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md`;
-- if discovered work is not required for the current execution-unit outcome, classify it as current blocker/defect, future work, mandatory split or amendment proposal instead of silently implementing it;
-- before an expensive full cycle, establish root cause where applicable, inspect the complete changed surface and directly coupled consumers/producers, search analogous repository patterns, inspect adjacent failure modes, add a permanent regression guard when the defect class is reusable, and run available cheap/focused checks;
-- a one-line patch is acceptable only when evidence proves the defect class is genuinely local;
-- an unexpected material RED after declared preflight readiness requires a confidence postmortem and reusable lesson in `docs/operations/V10_ENGINEERING_FAILURE_LEARNING_LEDGER.md`;
-- every **applicable** exact-head V10 check must actually execute and conclude `success`; `failure`, `cancelled`, `queued`, `pending`, `in_progress`, `timed_out`, `action_required`, `stale`, `neutral` and `skipped` are not V10 GREEN evidence for an applicable gate;
-- infrastructure/billing/provider failures must be classified truthfully, but a RED applicable check still blocks merge;
-- normal PR closure is GREEN exact head → final diff/review → squash merge; an unmerged superseded PR is historical work, never accepted implementation.
+Project law: every **applicable** exact-head V10 check must actually execute and conclude `success`.
 
-### 4.1 Progressive Capability Activation Law
+`failure`, `cancelled`, `queued`, `pending`, `in_progress`, `timed_out`, `action_required`, `stale`, `neutral` and `skipped` are not GREEN for an applicable gate. New commit invalidates prior final exact-head GREEN/review evidence.
 
-For every implemented user-facing capability, distinguish **implementation acceptance** from **live-user activation**. The only activation states for implemented/activation-tracked capabilities are:
+### Changed-files + independent code-review merge gate
 
-`IMPLEMENTED | LIVE_OPERABLE | BLOCKED_EXTERNAL | REAL_MONEY_AUTHORIZED`.
+Before merge inspect **all** Files changed, inline review threads, annotations and applicable Sonar/Gitar/SAST/security/code-review outputs; classify material findings; unresolved blocking review threads = 0; perform final manual engineering diff review. Bot approval is supporting evidence only. After a correction commit repeat Files changed + review on the new exact head.
 
-A capability that is not implemented must not be assigned one of those states merely to make a dashboard look complete.
-
-Rules:
+## 9. Testing baseline
 
-- one canonical Omni-CIO Web is the ordinary user-facing product; do not create a second user-facing staging product merely to validate completed capability behavior;
-- local/CI/provider doubles, synthetic fixtures, T-Invest Sandbox and Shadow Mode remain allowed engineering/safety contours and never become a product-auth/tenant bypass;
-- `V10 is not finished yet` is not a valid external blocker;
-- a completed user-facing capability becomes `LIVE_OPERABLE` only after every technical/security/external gate that actually owns it is accepted, and then must not stay artificially disabled solely because an unrelated later V10 block is unfinished;
-- real-provider registration, provider secrets, broker terms/permission, tenant secret custody, privacy/legal, managed-runtime, capacity/monitoring/incident-operations and other genuine external prerequisites remain `BLOCKED_EXTERNAL` until real evidence exists;
-- current `PUBLIC_MULTI_USER_ENABLED=false` is a runtime state, not a permanent V10-wide release lock;
-- T-Invest READ/live portfolio/positions/operations are independent of unfinished Real execution but remain `BLOCKED_EXTERNAL` until broker terms/permission plus tenant secret-custody/security/privacy/live-connection gates are accepted;
-- a future TRADE credential may be connected/validated only through its owning accepted provisioning/security flow, and `TRADE credential connected/verified` never means broker submit authority;
-- execution eligibility remains exactly `VERIFIED_READ_ACCOUNTS ∩ VERIFIED_TRADE_ACCOUNTS` for the same tenant; mismatch fails closed;
-- real broker submit requires `REAL_MONEY_AUTHORIZED` after its complete Sandbox/Shadow, immutable-plan, USER-approval, drift/preflight, reconciliation, kill-switch and broker-permission gate;
-- transfer/withdrawal, margin/leverage and uncovered-short authority remain outside this freedom;
-- emergency kill switches may temporarily suspend an accepted live capability for a truthful safety reason but must not become the permanent artificial normal state after all owning gates pass;
-- real-user operability and multi-user isolation become part of Definition of Done where live proof is technically and externally possible;
-- material capability-state transitions use `docs/updates/V10_CAPABILITY_ACTIVATION_LEDGER_TEMPLATE.md` and `.github/ISSUE_TEMPLATE/v10_capability_activation.yml`, both marked `WORKING CAPABILITY ACTIVATION STATE — NOT ACCEPTED MAIN AUTHORITY`;
-- accepted capability state and current runtime availability are separate; a temporary safety suspension does not silently rewrite accepted state;
-- no provider/broker secret, Authorization header, full broker account ID or private portfolio payload is stored in GitHub/CI/chat/activation evidence.
+Do not weaken guards to obtain GREEN. Where applicable run:
 
-Amendment 13 changes activation granularity only. It does not unlock a later implementation WP/System Update, fabricate external permission, authorize spend, or relax Amendment-12 exact-head/HEAD-FREEZE/security/recovery discipline.
+```text
+python scripts/check_ci_security_baseline.py
+python scripts/check_repository_layout.py
+python scripts/check_v10_repository_boundaries.py
+python scripts/check_v10_engineering_governance.py
+python scripts/check_v10_cloudflare_platform_authority.py
+python scripts/check_v10_documentation_consistency.py
+python scripts/check_gpt_recovery_consistency.py
+python -m ruff check .
+python -m ruff format --check .
+python -m mypy
+python -m pytest -q --cov --cov-branch --cov-fail-under=60
+```
 
-## 5. V10 migration/productization discipline — binding
+Also run owning focused checks, dependency/security scans, frontend typecheck/lint/test/build/audit and browser/recovery checks when applicable.
 
-V10 is a controlled migration/productization of the accepted system, not a greenfield rewrite.
+Current GitHub/Lenovo routing remains authoritative until `CLOUDFLARE-BUILDS-VERIFIER-INTEGRATION` is accepted. Do not fake Windows/PowerShell/ACL/PostgreSQL-18 semantics in a portable lane. Quota/provider outage is never `success`.
 
-For every material V9 capability in V10 scope:
+## 10. Dependencies / runtime compatibility
 
-1. identify the accepted V9 source/tests/semantics from `main`;
-2. bind it to an entry in `V10_V9_TO_V10_PARITY_LEDGER.json`;
-3. choose/update a migration decision in `V10_COMPONENT_REUSE_MATRIX.json`;
-4. define the canonical V10 owner/contract;
-5. implement the smallest migration satisfying the owning WP;
-6. prove deterministic parity or an explicitly versioned semantic replacement;
-7. cut over only after the required gate;
-8. retire old behavior only after parity/recovery/cutover evidence or explicit OWNER-approved retirement.
+Do not upgrade to `latest` by initiative. Use accepted versions/locks: `requirements.in`, `requirements-dev.in`, generated `requirements.txt`, `requirements-dev.txt`, and `docs/architecture/V10_TOOLCHAIN_BASELINE.*`.
 
-Default component decision preference:
+Cloudflare migration preference remains `REUSE_AS_IS > WRAP_ADAPTER > EXTRACT_TO_CORE > REWRITE_REQUIRED > RETIRE`.
 
-`REUSE_AS_IS > WRAP_ADAPTER > EXTRACT_TO_CORE > REWRITE_REQUIRED > RETIRE`.
+Existing React/Vite Web remains canonical source. FastAPI availability in Python Workers does not prove all CPython/native dependencies compatible; test them. Neon/PostgreSQL 18 tenant/RLS authority remains; D1 is not an automatic replacement; Hyperdrive + PostgreSQL 18 compatibility must be proved.
 
-`REWRITE_REQUIRED` is allowed only for a concrete security/correctness/runtime/architecture/data-migration reason. “Cleaner”, “newer”, “easier to rewrite”, or AI/developer preference is not sufficient.
+## 11. Product / tenant / activation
 
-No new feature is added merely because it becomes convenient during migration. The V10 scope firewall in the active planning amendment is binding.
+One canonical Omni-CIO Web is the ordinary user-facing product. Human product auth remains Telegram Login and VK ID unless later authority changes it:
 
-## 6. GitHub protection / CI baseline
+`Telegram Login | VK ID -> verified identity -> OmniCIOUserAccount -> Tenant -> server-side Session`.
 
-Private `main` is protected. Accepted merge discipline requires:
+Tenant scope is server-derived; PostgreSQL RLS/FORCE-RLS and cross-tenant negatives remain mandatory. Cloudflare WAF/Access/Turnstile is additive outer security, not tenant authorization.
 
-- PR-based changes;
-- squash-only merge;
-- conversation resolution;
-- strict required context `V10 authoritative merge gate` from GitHub Actions;
-- no routine bypass actor;
-- external GitHub Actions pinned to full commit SHA where used;
-- exact-head evidence before merge.
-
-Hybrid CI model:
-
-- GitHub-hosted runners are acceleration/disposable compatibility evidence when OWNER-controlled hosted capacity is actually available;
-- Lenovo `omni-cio-ci` is the authoritative heavy Windows gate and continuity lane;
-- post-merge Regression Shield protects accepted `main` where required;
-- no green capacity/routing check may be described as hosted clean-room PASS unless the hosted clean-room workload actually executed.
-
-Current OWNER-observed GitHub Actions budget/payment state is an external condition and must not be silently changed. While the accepted machine-readable quality contract records a zero-budget hard stop:
-
-- do not silently increase budget, alter payment settings or disable the hard stop;
-- do not repeatedly trigger hosted jobs already known to be unable to start;
-- use Lenovo for deterministic checks where semantics are equivalent;
-- keep `V10 authoritative merge gate` mandatory;
-- capacity-deferred compatibility jobs must execute a real routing/capacity contract and report truthfully instead of becoming job-level `skipped` GREEN evidence;
-- absence of disposable hosted compatibility does not fabricate compatibility PASS;
-- STABLE release provenance may not claim clean-room evidence that was not produced;
-- when hosted capacity changes, re-verify current external state and restore hosted lanes only through a focused GREEN CI/governance PR.
-
-Canonical current details are in:
-
-- `docs/architecture/V10_REGRESSION_SHIELD.md`;
-- `docs/V10_GITHUB_PRO_HYBRID_CI.md`;
-- `docs/operations/V10_CI_COST_CONTROL_STANDARD.md`.
-
-Never weaken protection because GitHub Actions is degraded. Incident handling must be explicit, bounded, evidence-backed and restore the reviewed normal/available-capacity mode through source control.
-
-### 6.1 GitHub Pro maximum-utilization rule
-
-GitHub Pro is the approved primary engineering subscription. Before introducing another recurring paid engineering service, prove and document why GitHub Pro + Lenovo + open-source/self-hosted alternatives are insufficient, including cost, lock-in and fallback, then obtain OWNER-approved amendment.
-
-Use GitHub Pro deliberately:
-
-- hosted Actions minutes = finite acceleration budget, not the only compute;
-- heavy repeatable validation moves to Lenovo when safe;
-- hosted Windows clean-room jobs are path-aware rather than blindly run for docs-only changes;
-- cache accelerates reproducible dependencies/tools only;
-- short-lived artifacts hold sanitized CI evidence only;
-- Codespaces, if/when implemented, is optional clean-room development/handoff, never production/Real/secret-bearing runtime;
-- GitHub Releases and protected `v10.*` release identity remain provenance controls;
-- GitHub Environments are deployment identity/history/scoping, not broker-secret custody;
-- Dependabot remains enabled for actual ecosystems and should group safe minor/patch noise when appropriate;
-- Enterprise/GHAS-only private-repository features are not V10 prerequisites;
-- lack of premium native CodeQL/secret scanning/private artifact attestations must not weaken the underlying security/provenance requirement; use repository-controlled checks where required.
-
-## 7. V10 concrete data/AI architecture — binding
-
-### 7.1 Deterministic Core owns truth
-
-The deterministic Core owns financial/accounting facts, validation, reconciliation, exact calculations, permissions and money-path enforcement.
-
-The AI must not become:
-
-- portfolio/accounting ledger;
-- source of exact prices/quantities/cash/commissions;
-- replacement for deterministic calculations;
-- broker execution authority.
-
-AI may interpret/explain Core results and orchestrate allowlisted tools only.
-
-### 7.2 V10 portfolio/accounting target
-
-For the new V10 cabinet, primary accounting input is a **verified broker HTML account report import**.
-
-The V10 target explicitly forbids photo/screenshot/OCR portfolio import.
-
-The importer must eventually support safe parse-only handling, arbitrary periods, SHA-256 duplicate detection, normalization, positions/cash/trades/commissions/taxes/coupons-dividends/accrued interest, review before acceptance, archive/history/compare/replace/delete, reconciliation and truthful partial/unsupported states.
-
-Current V9 T-Invest runtime remains protected until the responsible V10 Core/data package passes its Exit Gate.
-
-MOEX current quotes are enrichment for current market valuation and must never overwrite broker period-end accounting facts. The UI/data model must distinguish broker-period truth from current-market estimate.
-
-### 7.3 Omni-CIO Cortex
-
-The accepted AI concept is **Omni-CIO Cortex** — a narrow investment/system operator, not a general-purpose chatbot.
-
-Initial AI model/runtime assumptions remain governed by their owning amendment/WP. The public hosted-runtime amendment may require a later service/runtime selection when the AI WP unlocks; no AI hosting implementation is started early.
-
-V10 Definition of Done must not require a paid OpenAI/Anthropic/Google/other AI inference API, paid search API or hosted agent SaaS unless a later explicit owning decision proves it necessary. GitHub Pro is the already accepted engineering subscription.
-
-### 7.4 AI specialization sequence
-
-Do not fine-tune first. Mandatory order:
-
-`System Policy → typed Tool Registry → Knowledge/RAG → sanitized eval corpus → measured benchmark → QLoRA only if persistent measured gaps remain`.
-
-Every model/policy/adapter change must be versioned, evaluated and rollbackable.
-
-### 7.5 24/7 autonomy
-
-Autonomy is event-driven, bounded and checkpointed. Endless untriggered `while true: think()` loops are forbidden.
-
-Approved event classes include user questions, accepted report import, reconciliation discrepancy, stale data, deterministic Watchtower events, connector failure, scheduled research refresh, system-health degradation and evidence gaps.
-
-AI outage must degrade gracefully; deterministic Core must remain usable.
-
-### 7.6 Research baseline
-
-Initial no-subscription-first research stack:
-
-- SearchProvider abstraction with self-hosted/open-source path first;
-- bounded HTTP/document retrieval first;
-- Playwright/Chromium only as a bounded JS-rendering fallback;
-- LangGraph OSS is the initial orchestration candidate for durable checkpoint/resume/HITL workflows;
-- external/retrieved text is **untrusted data**, never control instructions.
-
-Material research must carry provenance/freshness/identity evidence. Source priority is broker report → MOEX → CBR/regulator → issuer/primary sources → reputable secondary sources → general Web discovery.
-
-### 7.7 Tool authority firewall
-
-AI may autonomously use only typed allowlisted read/analytical/research tools and bounded evidence/checkpoint/cache writes.
-
-AI must never receive directly:
-
-- raw broker trading secret;
-- arbitrary broker execute/PostOrder tool;
-- transfer/withdrawal authority;
-- unrestricted SQL/filesystem/network authority;
-- unrestricted PowerShell/admin shell;
-- GitHub ruleset/CI/OWNER bypass;
-- Real-money approval authority.
-
-Security/admin/secret/destructive/merge/Real-money actions remain human/engineering boundaries.
-
-## 8. Canonical data/state discipline
-
-Web, Telegram and Cortex must consume canonical Core DTO/contracts, not reimplement financial meaning.
-
-Required semantics across owning WPs:
-
-- Decimal-safe money/quantity representation;
-- explicit currency/source/schema version;
-- UTC canonical timestamps and visible `as_of` where material;
-- canonical instrument/object IDs over display-name matching;
-- `0`, `unknown`, `not_available`, `not_applicable`, `stale`, `partial` are distinct;
-- unified runtime vocabulary: `READY | PARTIAL | STALE | DEGRADED | BLOCKED | ERROR | OFFLINE | RECOVERING | OWNER_ACTION_REQUIRED`;
-- degraded dependency must state what remains trustworthy and what actions become blocked.
-
-AI text similarity is never the acceptance oracle for deterministic Core migration.
-
-## 9. OWNER participation / handoff law
-
-Do everything possible through GitHub/code/CI without OWNER involvement.
-
-Before an implementation PR is merged and its required post-merge Regression Shield is GREEN, do **not** ask the OWNER for ordinary product acceptance such as phone/browser walkthrough, UX/login/logout test, portfolio comparison or manual runtime checks that engineering/CI can perform.
-
-Pre-merge OWNER participation is allowed only for a genuinely non-delegable prerequisite: external account/consent bootstrap, domain/payment decision, narrowly scoped credential bootstrap, UAC/admin/firmware/BitLocker/physical action, or an explicit Master Plan OWNER decision.
-
-Amendment 13 adds a post-merge/live-operability rule for user-facing capability: when real USER evidence is technically and externally possible, that evidence is part of the capability's activation/Definition-of-Done gate and uses the same ordinary product path. This does not permit secret-bearing screenshots or pre-merge bypasses.
-
-When OWNER action is genuinely needed, follow `docs/operations/V10_OWNER_ACTION_HANDOFF_STANDARD.md`:
-
-- give a direct official HTTPS link to the exact stable target page when such a stable link exists;
-- if no stable deep link can be verified, say so and give the closest verified official start URL plus exact click path;
-- identify exact account/repository/workspace/service/device scope;
-- request one bounded action at a time;
-- state exact expected result, STOP conditions, adjacent actions that must not be taken, and minimum safe non-secret return;
-- disclose cost/authority consequence before any paid/public/credential/irreversible action;
-- never require the OWNER to discover the target page from vague navigation instructions;
-- never request secret-bearing screenshots/links or raw secrets in chat.
-
-Only when a local Windows action is genuinely non-delegable, use the preferred format:
-
-`OWNER opens PowerShell → Administrator only if necessary → pastes one reviewed idempotent block → returns PASS/FAIL output`.
-
-The permanent AI/runtime process must use least privilege; Administrator is for installation/service/system configuration only.
-
-Lenovo is an engineering/self-hosted-CI/controlled-acceptance/recovery asset. It is not architectural ownership of public production and must not be required for ordinary public USER availability.
-
-## 10. Lenovo resource arbitration and hosted-production separation
-
-The same Lenovo may run GitHub self-hosted CI and engineering/acceptance workloads. Infrastructure must explicitly prevent resource contention:
-
-- detect authoritative CI activity;
-- pause/deprioritize heavy background AI/research/training during critical CI;
-- QLoRA/training must not overlap authoritative gate by default;
-- expose CPU/RAM/GPU/VRAM/availability health;
-- AI failure must not take down deterministic Core or GitHub runner.
-
-For the **final public product**, V10 Web/API and required hosted private-data services must run on an approved managed-cloud production runtime independent of OWNER home IP/Wi-Fi/router/LAN/Lenovo. The provider is selected through the owning service-selection/security/recovery gate; do not choose a new provider merely for novelty or convenience.
-
-A Cloudflare Tunnel whose sole origin is the OWNER's home Lenovo/network is not valid final public production. Cloudflare may still be accepted for DNS/TLS/WAF/DDoS/edge or non-production transport. The existing Render.com `app:app` remains the protected V9 production/recovery baseline until its owning parity/decommission gate; a V10 cloud deployment must be the same source-controlled product, not a competing Web App.
-
-## 11. Broker execution boundary
-
-### 11.1 Production read-only
-
-Protected V9 `TINVEST_TOKEN` remains read-only and is never promoted/replaced by a trading token as fallback.
-
-For public V10, normal users provision their own tenant-scoped READ credential only through authenticated Web settings. It is stored under that tenant's `BrokerConnection`, never as a shared/global USER credential and never returned to browser storage.
-
-After the actual public T-Invest broker-terms/permission plus tenant secret-custody/security/privacy/live-connection gates are accepted, READ/live portfolio/positions/operations may become `LIVE_OPERABLE` independently of unfinished Real execution. Until those real external gates are accepted, public T-Invest remains `BLOCKED_EXTERNAL` / `FAIL_CLOSED_PENDING_BROKER_TERMS_PERMISSION`.
-
-### 11.2 Sandbox
-
-Sandbox is virtual only and uses an isolated Sandbox credential/connection. Sandbox output is never real portfolio mutation evidence. Transfer/withdraw/margin remain forbidden.
-
-### 11.3 TRADE credential connection versus Real submit
-
-A future accepted Web/security provisioning flow may allow an authenticated USER to connect/replace/revoke and validate a tenant-scoped TRADE credential. That event does not itself authorize an order.
-
-Execution eligibility remains:
+Progressive Capability Activation: capability states are exactly `IMPLEMENTED | LIVE_OPERABLE | BLOCKED_EXTERNAL | REAL_MONEY_AUTHORIZED`. “V10 unfinished” is not itself an external blocker, but every owning technical/security/external gate must be real and accepted.
 
 `EXECUTABLE_ACCOUNTS = VERIFIED_READ_ACCOUNTS ∩ VERIFIED_TRADE_ACCOUNTS`.
 
-A mismatch fails closed. A TRADE/full-access credential is never a fallback for READ operations.
+## 12. Security / secrets
 
-### 11.4 Real execution
+Never place real secrets in GitHub, chat, commits, PR comments, CI logs, screenshots or artifacts. Never request real credentials when the task can be completed without receiving them.
 
-Real BUY/SELL can occur only through reviewed deterministic `omni_cio.real_trading` / plan-execution lifecycle and only when server readiness is valid and the capability is explicitly `REAL_MONEY_AUTHORIZED` by its owning gate.
+Do not disclose broker tokens, Telegram/VK secrets, provider API secrets, DB passwords, encryption/recovery keys, full account IDs or private portfolio payloads. `.env` is local-only from `.env.example`. Cloudflare tokens/secrets belong only in approved secret custody at the owning provider-action gate.
 
-Mandatory invariants remain:
+## 13. Broker / Real-money boundary
 
-- separate tenant-scoped/account-verified trading credential;
-- `REAL_TRADING_ENABLED=true` required only after owning activation gate;
-- durable state, no unsafe memory fallback;
-- own-funds BUY / own-position SELL;
-- no margin/short;
-- fresh trusted market/order book;
-- hard caps and exact price-step rules;
-- immutable plan/proposal;
-- exact short-lived authenticated USER confirmation for that USER's own tenant from a **new** turn/session step-up as required;
-- immediate preflight;
-- UUID/idempotency binding;
-- one possible submit per identity;
-- ambiguous possible-submit → do not retry; reconcile only;
-- `submitted != filled` without broker evidence;
-- account IDs masked;
-- `EXECUTABLE_ACCOUNTS = VERIFIED_READ_ACCOUNTS ∩ VERIFIED_TRADE_ACCOUNTS` for the same tenant.
+Current protected locks: broker write OFF, `trading_methods=false`, `REAL_TRADING_ENABLED=false`, no transfer/withdrawal/margin/leverage/uncovered-short authority.
 
-Forbidden: transfer/withdraw/securities transfer, MARKET/BESTPRICE where prohibited by accepted contract, margin/short, unauthorized autonomous derivatives execution, unsafe stop/replace/async submit, token management by AI, autonomous recurring Real execution and automatic retry after possible-submit ambiguity.
+READ/optional TRADE credentials are tenant-scoped and role-separated. `TRADE credential connected/verified != broker submit authorized`.
 
-`REAL_TRADING_ENABLED=false` remains master Real rollback until accepted Real activation.
+Real submit requires `REAL_MONEY_AUTHORIZED` after representative Sandbox/Shadow, immutable plan, authenticated USER approval, drift/preflight, ambiguous-submit reconciliation, kill switches and actual broker permission. GitHub merge, Cloudflare deploy/release, AI output, START command or user registration is never broker-submit authorization.
 
-AI, Watchtower, Telegram, `START V10`, GitHub merge, `LIVE_OPERABLE` state or portfolio-management wording is never Real-submit authorization.
+## 14. V9 / V10 boundary
 
-## 12. V9 GPT migration/recovery boundary
+Protected V9 remains production/recovery until an explicit parity/decommission gate. Stable entrypoint remains `app:app`. Do not mutate/delete protected V9 Render merely because Render is retired from **new V10** authority. V10 is controlled migration/productization, not greenfield rewrite.
 
-The current Custom GPT v9.0.0 remains applied/recovery evidence until the explicit V10 parity/decommission gate.
+## 15. OWNER participation / handoff law
 
-Current repository configuration sources remain under `gpt/`. Do not create a second GPT. Do not delete existing Instructions/Knowledge/Actions because V10 exists.
+Do safe repository/GitHub/tool work autonomously. OWNER participation is only for genuinely non-delegable external consent/account/provider UI, physical/UAC, secret custody, domain/payment or Master Plan authority.
 
-While the GPT remains applied, it may claim only operationIds actually published by effective production `/openapi.json` and supported by returned evidence.
+When OWNER action is required: provide a direct official HTTPS link when stable, otherwise verified official start URL + exact click path; state exact scope/expected result, stop conditions, do-not-do warnings, minimum safe return and cost/authority consequences. Never ask OWNER to send real secret values. OWNER product acceptance is post-merge/post-Regression-Shield unless a genuinely non-delegable prerequisite must occur earlier.
 
-## 13. Secrets/private data
+## 16. Continuity
 
-Never commit/publish real values of broker tokens, Gateway key, Upstash/QStash secrets, future Telegram/VK/provider secrets, AI/runtime secrets, encryption/recovery keys, Authorization headers, full account IDs or private portfolio/report payloads.
-
-GitHub contains schemas/roles/safe defaults, not private values.
-
-Research/eval fixtures must be synthetic or properly sanitized.
-
-For the hosted public baseline, tenant-private state and encrypted broker credentials may exist only inside the approved cloud data/secret boundary after its owning security/privacy/legal gates; they remain forbidden from GitHub/CI/artifacts and inaccessible across tenants.
-
-## 14. Dependency/runtime policy
-
-Canonical Python lock sources remain `requirements.in` / `requirements-dev.in`; generated hash locks are derived and verified. Do not hand-edit generated locks as source of truth.
-
-Known incompatible tooling is held narrowly/documented; do not disable verification to force an update.
-
-Before introducing or materially upgrading a language/runtime/framework/package/provider/Action, verify current official support, security, license, platform compatibility where relevant, reproducible lock/install, fallback/rollback and measurable benefit. `latest` is not automatically `best`; accepted code is not rewritten merely for novelty. New languages require a concrete component-level correctness/security/isolation/performance/systems-integration reason and may not create polyglot sprawl.
-
-Until a responsible V10 WP replaces it, current protected V9 compatibility remains:
-
-- service `omni-cio-gateway`;
-- stable entrypoint `app:app`;
-- current V9 wrappers such as `app_v371.py`, `app_v360.py`, `main.py` remain protected dependencies;
-- conditional write surfaces fail closed through existing readiness/kill-switch contracts.
-
-## 15. Money/data quality
-
-Preserve exact-decimal and provenance discipline:
-
-- no currency mixing without verified FX + timestamp;
-- no double-counting commissions/child operations/embedded trades;
-- incomplete/partial/contradictory data is not full truth;
-- stale market blocks unjustified exact sizing;
-- last price is not guaranteed execution price;
-- free cash/withdraw limits are not automatically investment budget;
-- missing data should produce an explicit insufficient-data state, not fabricated precision;
-- bond clean price and accrued interest remain distinct.
-
-## 16. Repository ownership / fault isolation
-
-Accepted repository architecture is defined by `docs/architecture/REPOSITORY_STRUCTURE.md` and guarded by permanent tests.
-
-Accepted/active V10 adapter roots currently include `apps/api/` and `apps/web/`; accepted engineering/Personal-Node infrastructure lives under `infrastructure/`. `apps/telegram/` and `ai/` remain later lifecycle-gated roots until their owning Work Packages are authorized. The protected V9 root wrappers remain until a responsible migration explicitly replaces them.
-
-Do not create duplicate setup/audit/inventory documents when an accepted source of truth should be updated instead. Follow `docs/DOCUMENTATION_AUTHORITY_AND_LIFECYCLE.md` so historical records remain evidence without becoming competing current-state ledgers.
-
-V10 should form bounded failure domains rather than one fragile monolith. Where applicable use explicit contracts, timeouts/deadlines, bounded retries with idempotency, backpressure/circuit breakers, durable queues/checkpoints, health/readiness/freshness states, restart/recovery behavior and least-privilege process/service boundaries. Failure of optional AI/Research/Telegram/external ingress should not unnecessarily take down deterministic Core when safe degradation is possible. Money/security/identity/secret/broker authority always fails closed.
-
-## 17. Required verification
-
-Regression Shield/authoritative merge gate remains strict. At minimum protect:
-
-- lock reproducibility;
-- CI/security policy;
-- repository boundaries;
-- engineering-governance, Integrated System Update governance, Progressive Capability Activation governance, documentation-consistency and CI cost-control contracts;
-- compile/Ruff/format/mypy;
-- `app:app` compatibility until intentionally retired;
-- current GPT/recovery contracts while applied;
-- pytest/coverage;
-- dependency audit/SBOM where required;
-- SAST;
-- secret scan;
-- protected money-path replay/idempotency;
-- tenant isolation / no cross-tenant secret or data access;
-- future capability-aware DB/API/Web/Telegram/AI contracts when those roots appear.
-
-Permanent guards include:
-
-- `python scripts/check_v10_repository_boundaries.py`;
-- `python scripts/check_v10_engineering_governance.py`;
-- `python scripts/check_v10_integrated_system_update_governance.py`;
-- `python scripts/check_v10_progressive_capability_activation.py`;
-- `python scripts/check_v10_documentation_consistency.py`.
-
-Do not bypass or weaken these guards to land a change.
-
-When AI implementation begins, CI must additionally fail closed on policy/tool/evidence/eval invariants, including zero broker-write authority leakage and zero invented exact financial facts in critical deterministic fixtures.
-
-## 18. Current next action
-
-Current functional authorization and accepted capability-state decisions are read only from `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
-
-The WP22A technical gate is complete only through its accepted Phase-5 evidence chain. At the current Amendment-13 governance baseline, no live capability is activated by governance alone: `PUBLIC_MULTI_USER_ENABLED=false`, final Cloud.ru provider apply/cutover remains unauthorized, Telegram/VK real provider configuration is pending, public T-Invest remains `FAIL_CLOSED_PENDING_BROKER_TERMS_PERMISSION`, broker write remains OFF, `trading_methods=false` and `REAL_TRADING_ENABLED=false` remain protected.
-
-Those false/blocked values are current runtime/external states, not a blanket rule that completed capabilities must wait for unrelated later V10 blocks. Future capability-specific transitions require their real evidence and accepted Amendment-13 activation gate.
-
-**PRODUCT IMPLEMENTATION PAUSED.** The next prepared execution unit is **WEB-VISUAL-INTEGRATED — Premium Spatial Financial OS A→G System Update / OWNER START REQUIRED**. Amendment 13 does not itself start product work.
-
-Do not create the integrated visual branch or modify `apps/web` for the refresh until the OWNER explicitly issues:
-
-`START V10 WEB VISUAL SYSTEM UPDATE`
-
-When started, `WEB-VISUAL-A -> B -> C -> D -> E -> F -> G` remain ordered branch-local member milestones. The complete System Update still follows `INTEGRATION_READY` → exact-head DRAFT GREEN → HEAD FREEZE / independent review → coherent correction batch if required → fresh READY GREEN → squash merge → exact-main post-merge verification. WP23+ remains locked until the complete visual System Update is accepted.
-
-## 19. Changed-files + independent code-review merge gate
-
-For **every development PR and every published exact head**, GREEN CI is required but is not sufficient by itself to declare the change ready.
-
-Before merge, engineering must:
-
-1. inspect the complete GitHub **Files changed** surface against the accepted base;
-2. inspect inline review threads, check annotations, Sonar, Gitar, SAST/security and every other applicable code/security review output;
-3. classify each material finding against the actual code, root cause, blast radius, analogous locations, directly coupled producers/consumers/config/workflows and adjacent failure modes as applicable;
-4. fix real correctness, maintainability, diagnostic, security and review-quality defects rather than relying on a GREEN badge;
-5. add deterministic regression guards for reusable defect classes;
-6. require unresolved blocking review threads = 0;
-7. perform a final manual engineering diff review even if bots report no findings.
-
-Bot approval is supporting independent evidence, not a substitute for engineering judgment. Manual review is likewise not a substitute for applicable exact-head CI/security gates.
-
-Any correction commit invalidates **both** previous final exact-head GREEN evidence and previous Files-changed/review evidence. The new exact head requires fresh applicable checks plus a fresh complete Files changed + independent-review pass before merge.
+After a substantial stage leave GitHub-visible handoff with exact base/main/head SHA, execution unit, completed work, checks/conclusions, review/blockers, remaining work and next authorized step. Do not create a competing current-status document.

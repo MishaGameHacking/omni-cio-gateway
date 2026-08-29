@@ -13,7 +13,7 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "lint": "node scripts/lint.mjs",
-    "test": "node --test tests/*.test.ts",
+    "test": "node --test tests/*.test.ts tests/*.test.mjs",
     "build": "vite build",
     "e2e": "node scripts/run-e2e.mjs",
     "e2e:browser": "playwright test"

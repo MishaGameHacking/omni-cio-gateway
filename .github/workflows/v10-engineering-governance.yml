@@ -88,6 +88,9 @@ jobs:
       - name: Verify engineering governance contract
         run: python scripts/check_v10_engineering_governance.py
 
+      - name: Verify Cloudflare platform and continuous release authority
+        run: python scripts/check_v10_cloudflare_platform_authority.py
+
       - name: Verify hosted release post-merge alignment governance
         run: python scripts/check_v10_hosted_release_alignment_governance.py
 
@@ -113,6 +116,7 @@ jobs:
         run: >-
           python -m py_compile
           scripts/check_v10_engineering_governance.py
+          scripts/check_v10_cloudflare_platform_authority.py
           scripts/check_v10_hosted_release_alignment_governance.py
           scripts/check_v10_integrated_system_update_governance.py
           scripts/check_v10_progressive_capability_activation.py
@@ -132,6 +136,7 @@ jobs:
           tests.test_v10_progressive_capability_activation
           tests.test_v10_wp22a_historical_gate_routing
           tests.test_v10_hosted_release_alignment_governance
+          tests.test_v10_cloudflare_platform_authority
 
       - name: Clean self-hosted workspace
         if: always()
