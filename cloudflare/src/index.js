@@ -4,7 +4,10 @@ import { SOURCE_SHA } from "./generated-build-info.js";
 
 const BACKEND_INSTANCE_COUNT = 1;
 const INTERNAL_HOST = "omni-cio.internal";
+const INTERNAL_PROXY_URL = "https://omni-cio.internal/_omni/cloudflare-proxy";
 const REQUIRED_DATABASE_SECRET = "OMNI_V10_POSTGRES_DSN";
+const MAX_ROUTE_PATH_LENGTH = 4096;
+const MAX_ROUTE_QUERY_LENGTH = 8192;
 
 function backendEnvironment() {
   const databaseDsn = runtimeEnv[REQUIRED_DATABASE_SECRET];
@@ -38,14 +41,27 @@ function hardenedJson(payload, status = 200) {
   });
 }
 
-function backendRequest(request) {
+function routeIsBounded(url) {
+  const query = url.search.startsWith("?") ? url.search.slice(1) : url.search;
+  return (
+    url.pathname.length <= MAX_ROUTE_PATH_LENGTH &&
+    query.length <= MAX_ROUTE_QUERY_LENGTH
+  );
+}
+
+function backendRequest(request, routeUrl) {
   const clientIp = request.headers.get("cf-connecting-ip");
+  const query = routeUrl.search.startsWith("?")
+    ? routeUrl.search.slice(1)
+    : routeUrl.search;
   const headers = new Headers(request.headers);
   headers.set("host", INTERNAL_HOST);
   headers.delete("forwarded");
   headers.delete("x-forwarded-for");
   headers.delete("x-forwarded-host");
   headers.delete("x-forwarded-proto");
+  headers.delete("x-omni-route-path");
+  headers.delete("x-omni-route-query");
   if (clientIp) {
     headers.set("x-forwarded-for", clientIp);
   }
@@ -53,13 +69,20 @@ function backendRequest(request) {
   headers.set("x-forwarded-proto", "https");
   headers.set("x-omni-edge-provider", "cloudflare");
   headers.set("x-omni-source-sha", SOURCE_SHA);
-  return new Request(request, {
+  headers.set("x-omni-route-path", encodeURIComponent(routeUrl.pathname));
+  headers.set("x-omni-route-query", encodeURIComponent(query));
+  return new Request(INTERNAL_PROXY_URL, {
+    method: request.method,
     headers,
+    body: request.body,
     redirect: "manual",
   });
 }
 
-async function proxyBackend(request, env) {
+async function proxyBackend(request, env, routeUrl) {
+  if (!routeIsBounded(routeUrl)) {
+    return hardenedJson({ detail: "ROUTE_TOO_LARGE" }, 414);
+  }
   if (
     typeof env[REQUIRED_DATABASE_SECRET] !== "string" ||
     env[REQUIRED_DATABASE_SECRET].length === 0
@@ -74,7 +97,7 @@ async function proxyBackend(request, env) {
     );
   }
   const instance = await getRandom(env.BACKEND, BACKEND_INSTANCE_COUNT);
-  return instance.fetch(backendRequest(request));
+  return instance.fetch(backendRequest(request, routeUrl));
 }
 
 export default {
@@ -92,7 +115,7 @@ export default {
       });
     }
     if (url.pathname === "/healthz" || url.pathname.startsWith("/api/")) {
-      return proxyBackend(request, env);
+      return proxyBackend(request, env, url);
     }
     return env.ASSETS.fetch(request);
   },
