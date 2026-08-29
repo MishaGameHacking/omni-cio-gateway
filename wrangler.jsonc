@@ -42,6 +42,16 @@
   "env": {
     "staging": {
       "name": "omni-cio-v10-web-staging",
+      "containers": [
+        {
+          "class_name": "Backend",
+          "image": "./Dockerfile.cloudflare",
+          "max_instances": 1,
+          "instance_type": "lite",
+          "rollout_active_grace_period": 0,
+          "rollout_step_percentage": 100
+        }
+      ],
       "durable_objects": {
         "bindings": [
           {
