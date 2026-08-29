@@ -182,6 +182,8 @@ def validate() -> None:
         '"OMNI_V10_POSTGRES_DSN"',
         '"/_omni/cloudflare-proxy"',
         "_validated_route(scope, self._release_sha)",
+        "_INTERNAL_EDGE_HEADERS = frozenset(",
+        "if bytes(key).lower() not in _INTERNAL_EDGE_HEADERS",
         'scope_type == "websocket"',
         '"type": "websocket.close"',
         '"code": 1008',
@@ -215,6 +217,7 @@ def main() -> int:
     print("Backend: Cloudflare Container / Python 3.14.6")
     print("Dependency install lifecycle scripts: DISABLED")
     print("Streaming request bodies: EXPLICIT HALF-DUPLEX")
+    print("Internal edge proof headers: STRIPPED BEFORE APP")
     print("WebSocket direct ingress: PROTOCOL-SAFE REJECTION")
     print(
         "Container transport: fixed internal proxy endpoint + validated route restore"
