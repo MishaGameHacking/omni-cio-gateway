@@ -5,6 +5,8 @@ from pathlib import Path
 import sys
 from typing import Any
 
+from scripts.v10_jsonc import loads_jsonc
+
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT = ROOT / "docs/architecture/V10_CLOUDFLARE_RELEASE_ACCEPTANCE_CONTRACT.json"
@@ -15,8 +17,9 @@ PACKAGE = ROOT / "package.json"
 
 def _load(path: Path) -> dict[str, Any]:
     try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        source = path.read_text(encoding="utf-8")
+        value = loads_jsonc(source) if path.suffix == ".jsonc" else json.loads(source)
+    except (OSError, UnicodeError, ValueError, json.JSONDecodeError) as exc:
         raise RuntimeError(f"CLOUDFLARE_RELEASE_CONTRACT_UNREADABLE:{path}") from exc
     if not isinstance(value, dict):
         raise RuntimeError(f"CLOUDFLARE_RELEASE_OBJECT_REQUIRED:{path}")
