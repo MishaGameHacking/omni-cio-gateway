@@ -81,6 +81,21 @@ class CloudflareBuildsVerifierTests(unittest.TestCase):
                 ):
                     guard.validate()
 
+    def test_guard_rejects_dynamic_command_execution(self) -> None:
+        source = guard.RUNNER.read_text(encoding="utf-8")
+        with tempfile.TemporaryDirectory() as temporary:
+            candidate = Path(temporary) / "runner.py"
+            candidate.write_text(
+                source + "\nsubprocess.run(command)\n",
+                encoding="utf-8",
+            )
+            with mock.patch.object(guard, "RUNNER", candidate):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "CLOUDFLARE_VERIFIER_DYNAMIC_COMMAND_EXECUTION_FORBIDDEN",
+                ):
+                    guard.validate()
+
 
 if __name__ == "__main__":
     unittest.main()
