@@ -40,14 +40,16 @@ Chat memory, screenshots, old PR descriptions, Cloudflare dashboard state and hi
 
 This is a convenience snapshot only; exact details remain in `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
 
-Current V10 snapshot after the Amendment-14 authority transition is accepted:
+Current V10 snapshot after Amendments 14/15 are accepted:
 
 - **54% accepted implementation**;
 - WP0–WP22A / Blocks A–E COMPLETE;
-- **CLOUDFLARE-BUILDS-VERIFIER-INTEGRATION** as the current authorized functional package;
-- `WEB-VISUAL-INTEGRATED` remains the prepared product System Update, **PRODUCT IMPLEMENTATION PAUSED**, with **OWNER START REQUIRED** via `START V10 WEB VISUAL SYSTEM UPDATE` still required before its separate source work;
+- **CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED** as the current authorized functional package;
+- default integrated implementation branch: `system/cloudflare-public-product`;
+- ordered internal milestones: `CF-A / CLOUDFLARE-BUILDS-VERIFIER-INTEGRATION -> CF-B / CLOUDFLARE-RUNTIME-COMPATIBILITY -> CF-C / CLOUDFLARE-CANDIDATE-DEPLOYMENT -> CF-D / CLOUDFLARE-PUBLIC-CUTOVER`;
+- `WEB-VISUAL-INTEGRATED` remains the prepared product System Update, **PRODUCT IMPLEMENTATION PAUSED** for visual-refresh scope, with **OWNER START REQUIRED** via `START V10 WEB VISUAL SYSTEM UPDATE` still required before its separate source work;
 - WP23+ LOCKED;
-- current `PUBLIC_MULTI_USER_ENABLED=false`;
+- current `PUBLIC_MULTI_USER_ENABLED=false` until CF-D and capability-specific live gates;
 - Telegram Login / VK ID / public multi-user tenant access / public T-Invest READ remain `BLOCKED_EXTERNAL` until their own live gates;
 - broker write OFF, `trading_methods=false`, `REAL_TRADING_ENABLED=false`;
 - protected V9 `app:app` rollback remains intact.
@@ -68,12 +70,13 @@ Cloudflare Workers Paid is platform rank 2 for **new V10** work after Amendment 
 
 - application/edge hosting target;
 - Workers/Static Assets;
-- Workers Builds portable compute/verification target after repository integration;
+- Workers Builds portable compute/verification target after CF-A proof;
+- Containers for proven full-Linux/native runtime needs after CF-B evidence;
 - Custom Domains/DNS/TLS;
-- WAF/DDoS/rate/Turnstile security where applicable;
+- WAF/DDoS/rate/Turnstile security where applicable to the actual plan;
 - Access for private/admin/engineering surfaces only by default;
 - Hyperdrive only after database compatibility evidence;
-- KV/R2/Durable Objects/Queues/Workflows when a concrete owning package justifies them;
+- KV/R2/Durable Objects/Queues/Workflows when a concrete owning milestone justifies them;
 - Workers AI/Vectorize only when AI/Cortex scope is authorized.
 
 Cloudflare dashboard/provider state never overrides accepted GitHub authority.
@@ -91,28 +94,36 @@ For new V10 deployment/release work after Amendment 14 acceptance:
 - accepted WP22A Render + Neon evidence remains historical evidence and must not be rewritten;
 - protected V9 Render production/recovery remains protected.
 
-Amendment 14 is governance only. It does not itself:
+Amendment 14 selected platform authority. Amendment 15 changes only implementation delivery granularity by grouping the four Cloudflare stages into one `INTEGRATED_SYSTEM_UPDATE`.
 
-- click/deploy Cloudflare;
-- mutate DNS/domain;
-- create API tokens/secrets;
-- activate public users;
-- migrate Neon/PostgreSQL;
-- provision Telegram/VK provider secrets;
-- authorize Real money.
+Neither governance amendment by itself:
 
-Provider/security authority, build integration, runtime compatibility, candidate provider mutation and production cutover are mandatory split boundaries.
+- clicks/deploys Cloudflare;
+- mutates DNS/domain;
+- creates API tokens/secrets;
+- activates public users;
+- migrates Neon/PostgreSQL;
+- provisions Telegram/VK provider secrets;
+- authorizes Real money.
 
-## 6. Mandatory Cloudflare implementation sequence
+## 6. Cloudflare integrated implementation sequence
 
-After Amendment 14 acceptance, execute exactly:
+After Amendment 15 acceptance, execute one integrated update:
 
-1. `CLOUDFLARE-BUILDS-VERIFIER-INTEGRATION` — repository-side portable build/check integration; no production deploy;
-2. `CLOUDFLARE-RUNTIME-COMPATIBILITY` — React/Vite/backend/native dependency/PostgreSQL/Hyperdrive compatibility evidence/config;
-3. `CLOUDFLARE-CANDIDATE-DEPLOYMENT` — immutable candidate provider mutation only after prior gates;
-4. `CLOUDFLARE-PUBLIC-CUTOVER` — canonical domain/DNS/TLS/security/promotion/rollback and capability-specific live-user acceptance.
+`CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED`
 
-Do not start stage N+1 before stage N is accepted through exact-main post-merge verification.
+Default branch:
+
+`system/cloudflare-public-product`
+
+Ordered internal milestones:
+
+1. `CF-A / CLOUDFLARE-BUILDS-VERIFIER-INTEGRATION` — repository-side portable build/check integration, shard/impact/provenance/cost guards; no candidate/public promotion;
+2. `CF-B / CLOUDFLARE-RUNTIME-COMPATIBILITY` — React/Vite/backend/native dependency/PostgreSQL/Hyperdrive/Containers compatibility evidence/config;
+3. `CF-C / CLOUDFLARE-CANDIDATE-DEPLOYMENT` — immutable candidate provider mutation only after prior internal gates;
+4. `CF-D / CLOUDFLARE-PUBLIC-CUTOVER` — canonical domain/DNS/TLS/security/promotion/rollback and capability-specific live-user acceptance.
+
+Do not start milestone N+1 before milestone N's branch-local Exit Gate passes. A separate `main` merge between these four milestones is no longer required by Amendment 15. A real DB/security/OWNER/live/cutover/Real-money/reviewability split trigger discovered during implementation still forces a stop/split; the integrated branch is never a bypass.
 
 ## 7. Continuous public release model
 
@@ -163,7 +174,7 @@ Current public-facing activation remains fail-closed where evidence is missing:
 - public multi-user tenant access — `BLOCKED_EXTERNAL`;
 - T-Invest READ — `BLOCKED_EXTERNAL` / `FAIL_CLOSED_PENDING_BROKER_TERMS_PERMISSION`.
 
-`PUBLIC_MULTI_USER_ENABLED=false` is current runtime state, not a permanent V10-wide release lock.
+`PUBLIC_MULTI_USER_ENABLED=false` is current runtime state, not a permanent V10-wide release lock. It may change only in CF-D after all owning live gates are actually satisfied.
 
 ## 10. Web/runtime migration discipline
 
@@ -175,13 +186,15 @@ Default decision preference:
 
 Existing React/Vite `apps/web` remains canonical Web source.
 
-FastAPI support in Cloudflare Python Workers does not prove current CPython/native dependencies are compatible. Exact compatibility evidence is required before migration.
+FastAPI support in Cloudflare Python Workers does not prove current CPython/native dependencies are compatible. Exact compatibility evidence is required before migration. Cloudflare Containers may be used when CF-B proves a concrete full-Linux/native dependency need and its cost/recovery semantics are acceptable.
 
-Accepted Neon/PostgreSQL 18 tenant/RLS authority remains intact. D1 does not replace financial/tenant truth by default. Hyperdrive + PostgreSQL 18 compatibility is not assumed and requires focused evidence.
+Accepted Neon/PostgreSQL 18 tenant/RLS authority remains intact until an explicit equivalent migration is proved. D1 does not replace financial/tenant truth by default. Hyperdrive + PostgreSQL 18 compatibility is not assumed and requires focused evidence.
 
 Do not create a second Gateway, second Web product, competing DB authority or competing scheduler simply to use more Cloudflare features.
 
-## 11. Cloudflare capacity / cost boundary
+## 11. Cloudflare-first dependency / capacity / cost boundary
+
+Prefer an appropriate Cloudflare service over replaceable external infrastructure when semantics are equivalent and security, recovery, authority and cost are not weakened. Do not adopt a Cloudflare feature merely because it exists on the plan.
 
 The OWNER has an active Workers Paid baseline. The Amendment-14 contract records the 2026-08-29 official-reference values as mutable facts that must be revalidated before material configuration:
 
@@ -192,11 +205,11 @@ The OWNER has an active Workers Paid baseline. The Amendment-14 contract records
 - 8 GB memory/build;
 - 20 GB disk/build.
 
-The existing subscription authorizes use of included capacity after the owning repository integration is accepted. It does not authorize uncontrolled paid overage or a higher paid plan.
+The existing subscription authorizes use of included capacity inside the owning integrated milestone. It does not authorize uncontrolled paid overage or a higher paid plan.
 
-Current GitHub/Lenovo CI routing does not change merely because Cloudflare Builds capacity exists.
+Current GitHub/Lenovo CI routing does not change merely because Cloudflare Builds capacity exists. Portable verification migrates only when semantics are equivalent. Windows/PowerShell/ACL/PostgreSQL-18-native contracts remain on trusted Lenovo self-hosted runners until an accepted equivalence proof exists.
 
-Portable verification should migrate only when semantics are equivalent. Windows/PowerShell/ACL/PostgreSQL-18-native contracts remain on trusted Lenovo self-hosted runners until an accepted equivalence proof exists.
+GitHub remains engineering authority rank 1. Telegram/VK/T-Invest remain external product/provider interfaces. PostgreSQL/Neon may remain where Cloudflare does not provide an accepted equivalent of the current PostgreSQL 18/RLS financial truth boundary.
 
 ## 12. Engineering / CI law
 
@@ -230,7 +243,7 @@ Never disclose/request when avoidable:
 - full account IDs;
 - private portfolio payloads.
 
-Cloudflare API tokens/secrets belong in approved secret custody at the owning provider-action gate, never repository source.
+Cloudflare API tokens/secrets belong in approved secret custody at the owning provider-action milestone, never repository source.
 
 ## 14. Broker / Real-money boundary
 
@@ -248,7 +261,15 @@ Real broker submit requires `REAL_MONEY_AUTHORIZED` through the owning later exe
 
 A GitHub merge, Cloudflare deployment, public release, AI output, START command or user registration is never broker-submit authorization.
 
-## 15. V9 protection / recovery
+## 15. WEB VISUAL lock
+
+`WEB-VISUAL-INTEGRATED` remains prepared but excluded from `CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED`.
+
+Do not create its implementation branch or perform visual-refresh source changes until the exact OWNER command is issued:
+
+`START V10 WEB VISUAL SYSTEM UPDATE`
+
+## 16. V9 protection / recovery
 
 Protected V9 production/recovery remains available until an explicit accepted decommission/parity gate.
 
@@ -256,7 +277,7 @@ Stable entrypoint remains `app:app`.
 
 Render retirement in **new V10** authority does not authorize mutation/deletion of the protected V9 Render baseline.
 
-## 16. Continuity
+## 17. Continuity
 
 After substantial work leave a GitHub-visible handoff with exact main/head SHA, execution unit, completed changes, checks/conclusions, review/blockers, remaining work and next authorized step.
 
