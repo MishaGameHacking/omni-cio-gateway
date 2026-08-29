@@ -347,7 +347,7 @@ def _validate_engineering_contract_status(
         _validate_cloudflare_engineering_overlay(contract, failures)
 
 
-def validate_high_risk_headers(failures: list[str]) -> None:
+def _validate_program_lock_header(failures: list[str]) -> None:
     program_lock = read_text(PROGRAM_LOCK, failures)
     if "SCOPE-SEQUENCE LOCK" not in program_lock:
         failures.append("Program Lock must be labeled as scope-sequence lock")
@@ -357,6 +357,8 @@ def validate_high_risk_headers(failures: list[str]) -> None:
     ):
         failures.append("Program Lock must explicitly delegate dynamic current state")
 
+
+def _validate_toolchain_baseline_header(failures: list[str]) -> None:
     toolchain = read_text(TOOLCHAIN, failures)
     if "WP2 ACCEPTED BASELINE" not in toolchain:
         failures.append("WP2 toolchain baseline must be labeled accepted")
@@ -365,6 +367,8 @@ def validate_high_risk_headers(failures: list[str]) -> None:
             "accepted WP2 toolchain baseline still claims pending exit gate"
         )
 
+
+def _validate_historical_record_headers(failures: list[str]) -> None:
     for path in (START_RECORD, READINESS_AUDIT):
         text = read_text(path, failures)
         if "HISTORICAL SNAPSHOT — NOT CURRENT-STATE AUTHORITY" not in text:
@@ -380,6 +384,8 @@ def validate_high_risk_headers(failures: list[str]) -> None:
                 f"historical WP0 start evidence was removed or rewritten: {marker}"
             )
 
+
+def _validate_engineering_amendment_header(failures: list[str]) -> None:
     amendment = read_text(ENGINEERING_AMENDMENT, failures)
     if "ACCEPTED ON `main` / ACTIVE" not in amendment:
         failures.append("engineering-quality amendment must be labeled accepted/active")
@@ -395,6 +401,8 @@ def validate_high_risk_headers(failures: list[str]) -> None:
         _validate_engineering_contract_status(contract, failures)
         _validate_original_engineering_acceptance(contract, failures)
 
+
+def _validate_cloudflare_amendment_header(failures: list[str]) -> None:
     cloudflare_amendment = read_text(CLOUDFLARE_AMENDMENT, failures)
     for marker in (
         "GitHub is authority rank 1",
@@ -433,6 +441,14 @@ def validate_high_risk_headers(failures: list[str]) -> None:
                 failures.append(
                     "Cloudflare authority must preserve V9 app:app baseline"
                 )
+
+
+def validate_high_risk_headers(failures: list[str]) -> None:
+    _validate_program_lock_header(failures)
+    _validate_toolchain_baseline_header(failures)
+    _validate_historical_record_headers(failures)
+    _validate_engineering_amendment_header(failures)
+    _validate_cloudflare_amendment_header(failures)
 
 
 def validate_repository_lifecycle(failures: list[str]) -> None:

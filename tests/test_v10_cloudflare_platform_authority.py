@@ -13,7 +13,8 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts/check_v10_cloudflare_platform_authority.py"
 CONTRACT = ROOT / "docs/architecture/V10_CLOUDFLARE_PLATFORM_AUTHORITY_CONTRACT.json"
 SPEC = importlib.util.spec_from_file_location("cloudflare_platform_authority", SCRIPT)
-assert SPEC is not None and SPEC.loader is not None
+assert SPEC is not None
+assert SPEC.loader is not None
 checker = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(checker)
 

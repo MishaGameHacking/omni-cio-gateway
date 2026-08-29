@@ -280,7 +280,9 @@ def _validate_runtime_database_security(
     )
 
 
-def _validate_builds_and_sequence(payload: dict[str, Any], failures: list[str]) -> None:
+def _validate_builds_reference_values_and_flags(
+    payload: dict[str, Any], failures: list[str]
+) -> None:
     builds = _section(payload, "workers_builds", failures)
     expected_numbers = {
         "included_build_minutes_per_month_reference": 6000,
@@ -309,6 +311,10 @@ def _validate_builds_and_sequence(payload: dict[str, Any], failures: list[str]) 
     ):
         _expect_bool(builds, key, False, "workers_builds", failures)
 
+
+def _validate_implementation_sequence(
+    payload: dict[str, Any], failures: list[str]
+) -> None:
     sequence = payload.get("implementation_sequence")
     if not isinstance(sequence, list):
         failures.append("implementation_sequence must be a list")
@@ -336,6 +342,11 @@ def _validate_builds_and_sequence(payload: dict[str, Any], failures: list[str]) 
                 failures.append(
                     "first two Cloudflare stages must not deploy production"
                 )
+
+
+def _validate_builds_and_sequence(payload: dict[str, Any], failures: list[str]) -> None:
+    _validate_builds_reference_values_and_flags(payload, failures)
+    _validate_implementation_sequence(payload, failures)
 
 
 def _validate_protected_invariants(
@@ -366,15 +377,9 @@ def validate_contract(payload: dict[str, Any], failures: list[str]) -> None:
     _validate_protected_invariants(payload, failures)
 
 
-def validate_repository(failures: list[str]) -> None:
-    amendment = _read(AMENDMENT, failures)
-    index = _read(INDEX, failures)
-    status = _read(STATUS, failures)
-    quality = _load_json(QUALITY, failures)
-    contract = _load_json(CONTRACT, failures)
-    phase4 = _read(PHASE4_WORKFLOW, failures)
-    alignment = _read(ALIGNMENT_WORKFLOW, failures)
-
+def _validate_repository_markers(
+    amendment: str, index: str, status: str, failures: list[str]
+) -> None:
     _require_markers(
         "Amendment 14",
         amendment,
@@ -409,6 +414,11 @@ def validate_repository(failures: list[str]) -> None:
         ),
         failures,
     )
+
+
+def _validate_retired_workflow_guards(
+    phase4: str, alignment: str, failures: list[str]
+) -> None:
     _require_markers(
         "retired Phase-4 workflow",
         phase4,
@@ -442,24 +452,38 @@ def validate_repository(failures: list[str]) -> None:
             if forbidden in text:
                 failures.append(f"{label} reactivated forbidden marker: {forbidden}")
 
-    if quality is not None:
-        runtime = quality.get("runtime_hosting")
-        if not isinstance(runtime, dict):
-            failures.append("engineering quality runtime_hosting must be an object")
-        else:
-            if runtime.get("cloudflare_workers_paid_selected") is not True:
-                failures.append("engineering quality contract must select Workers Paid")
-            if runtime.get("cloudru_new_v10_runtime_target_selected") is not False:
-                failures.append(
-                    "engineering quality contract must retire Cloud.ru for new V10"
-                )
-            if (
-                runtime.get("render_com_new_v10_release_acceptance_allowed")
-                is not False
-            ):
-                failures.append(
-                    "engineering quality contract must retire Render release acceptance"
-                )
+
+def _validate_quality_contract_overlay(
+    quality: dict[str, Any] | None, failures: list[str]
+) -> None:
+    if quality is None:
+        return
+    runtime = quality.get("runtime_hosting")
+    if not isinstance(runtime, dict):
+        failures.append("engineering quality runtime_hosting must be an object")
+        return
+    if runtime.get("cloudflare_workers_paid_selected") is not True:
+        failures.append("engineering quality contract must select Workers Paid")
+    if runtime.get("cloudru_new_v10_runtime_target_selected") is not False:
+        failures.append("engineering quality contract must retire Cloud.ru for new V10")
+    if runtime.get("render_com_new_v10_release_acceptance_allowed") is not False:
+        failures.append(
+            "engineering quality contract must retire Render release acceptance"
+        )
+
+
+def validate_repository(failures: list[str]) -> None:
+    amendment = _read(AMENDMENT, failures)
+    index = _read(INDEX, failures)
+    status = _read(STATUS, failures)
+    quality = _load_json(QUALITY, failures)
+    contract = _load_json(CONTRACT, failures)
+    phase4 = _read(PHASE4_WORKFLOW, failures)
+    alignment = _read(ALIGNMENT_WORKFLOW, failures)
+
+    _validate_repository_markers(amendment, index, status, failures)
+    _validate_retired_workflow_guards(phase4, alignment, failures)
+    _validate_quality_contract_overlay(quality, failures)
 
     if contract is not None:
         validate_contract(contract, failures)
