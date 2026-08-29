@@ -76,6 +76,37 @@ class CloudflareReleaseAcceptanceTests(unittest.TestCase):
                 ):
                     guard.validate()
 
+    def test_guard_rejects_unsafe_wrangler_dependency_install(self) -> None:
+        payload = loads_jsonc(guard.WRANGLER.read_text(encoding="utf-8"))
+        payload["build"]["command"] = payload["build"]["command"].replace(
+            "npm ci --ignore-scripts --prefix apps/web",
+            "npm ci --prefix apps/web",
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            candidate = Path(temporary) / "wrangler.jsonc"
+            candidate.write_text(json.dumps(payload), encoding="utf-8")
+            with mock.patch.object(guard, "WRANGLER", candidate):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "CLOUDFLARE_RELEASE_SELF_CONTAINED_BUILD_INVALID",
+                ):
+                    guard.validate()
+
+    def test_guard_rejects_unsafe_root_build_dependency_install(self) -> None:
+        payload = json.loads(guard.PACKAGE.read_text(encoding="utf-8"))
+        payload["scripts"]["build"] = payload["scripts"]["build"].replace(
+            "npm ci --ignore-scripts --prefix apps/web",
+            "npm ci --prefix apps/web",
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            candidate = Path(temporary) / "package.json"
+            candidate.write_text(json.dumps(payload), encoding="utf-8")
+            with mock.patch.object(guard, "PACKAGE", candidate):
+                with self.assertRaisesRegex(
+                    RuntimeError, "CLOUDFLARE_RELEASE_BUILD_SCRIPT_INVALID"
+                ):
+                    guard.validate()
+
     def test_guard_rejects_staging_deploy_without_container_rollout(self) -> None:
         payload = json.loads(guard.PACKAGE.read_text(encoding="utf-8"))
         payload["scripts"]["cloudflare:deploy:staging"] = (
