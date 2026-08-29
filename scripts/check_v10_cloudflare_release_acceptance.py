@@ -75,6 +75,11 @@ def validate() -> None:
         "https_only": True,
         "redirects_followed": False,
         "max_response_bytes": 65536,
+        "trusted_origin_environment_variable": "OMNI_V10_CLOUDFLARE_ORIGIN",
+        "trusted_custom_host_environment_variable": "OMNI_V10_CLOUDFLARE_CUSTOM_HOST",
+        "workers_dev_suffix": ".workers.dev",
+        "ip_literal_origin_allowed": False,
+        "local_internal_origin_allowed": False,
         "release_platform": "cloudflare",
         "release_backend": "container",
         "release_static_assets": True,
@@ -153,6 +158,12 @@ def validate() -> None:
         raise RuntimeError("CLOUDFLARE_RELEASE_VERIFIER_UNREADABLE") from exc
     for marker in (
         "CLOUDFLARE_RELEASE_ORIGIN_INVALID",
+        "CLOUDFLARE_RELEASE_ORIGIN_NOT_ALLOWED",
+        "CLOUDFLARE_RELEASE_ORIGIN_REQUIRED",
+        'OMNI_V10_CLOUDFLARE_ORIGIN',
+        'OMNI_V10_CLOUDFLARE_CUSTOM_HOST',
+        'ipaddress.ip_address(hostname)',
+        'hostname.endswith(".workers.dev")',
         "CLOUDFLARE_RELEASE_HEALTH_SHA_MISMATCH",
         "CLOUDFLARE_RELEASE_DATABASE_NOT_READY",
         '"/api/v10/release"',
@@ -174,6 +185,7 @@ def main() -> int:
     print("Candidate: isolated staging Worker + Container rollout")
     print("Production branch: main")
     print("Automatic deploy command: npx wrangler deploy")
+    print("Live release origin: trusted workers.dev or one approved custom host")
     print("Live exact-SHA/database acceptance remains fail-closed.")
     return 0
 
