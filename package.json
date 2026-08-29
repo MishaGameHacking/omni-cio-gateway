@@ -9,7 +9,7 @@
   },
   "packageManager": "npm@11.16.0",
   "scripts": {
-    "build": "python scripts/write_v10_cloudflare_build_info.py && npm ci --prefix apps/web && npm run --prefix apps/web build",
+    "build": "python scripts/write_v10_cloudflare_build_info.py && npm ci --ignore-scripts --prefix apps/web && npm run --prefix apps/web build",
     "cloudflare:deploy": "wrangler deploy --containers-rollout=immediate",
     "cloudflare:deploy:staging": "wrangler deploy --env staging --containers-rollout=immediate",
     "cloudflare:worker-only": "wrangler deploy --containers-rollout=none"
