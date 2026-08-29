@@ -10,10 +10,10 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT = (
-    ROOT
-    / "docs/architecture/V10_CLOUDFLARE_PUBLIC_PRODUCT_INTEGRATED_CONTRACT.json"
+    ROOT / "docs/architecture/V10_CLOUDFLARE_PUBLIC_PRODUCT_INTEGRATED_CONTRACT.json"
 )
 GUARD = ROOT / "scripts/check_v10_cloudflare_public_product_integrated.py"
+GOVERNANCE_WORKFLOW = ROOT / ".github/workflows/v10-engineering-governance.yml"
 
 
 class CloudflarePublicProductIntegratedGovernanceTests(unittest.TestCase):
@@ -36,6 +36,21 @@ class CloudflarePublicProductIntegratedGovernanceTests(unittest.TestCase):
                 ("CF-C", "CLOUDFLARE-CANDIDATE-DEPLOYMENT", True, False),
                 ("CF-D", "CLOUDFLARE-PUBLIC-CUTOVER", True, True),
             ],
+        )
+
+    def test_contract_preserves_product_activation_gates(self) -> None:
+        payload = json.loads(CONTRACT.read_text(encoding="utf-8"))
+        activation = payload["product_activation"]
+        self.assertTrue(activation["goal_public_current_safe_product"])
+        self.assertTrue(activation["capability_specific_live_gate_required"])
+        self.assertFalse(activation["public_multi_user_enabled_by_governance_alone"])
+        self.assertFalse(
+            activation["telegram_vk_live_without_real_provider_evidence_allowed"]
+        )
+        self.assertFalse(
+            activation[
+                "tinvest_read_live_without_broker_terms_and_secret_custody_allowed"
+            ]
         )
 
     def test_contract_preserves_web_visual_and_money_locks(self) -> None:
@@ -76,9 +91,22 @@ class CloudflarePublicProductIntegratedGovernanceTests(unittest.TestCase):
                 "_validate_milestones",
                 "_validate_cloudflare_first",
                 "_validate_cost_security",
+                "_validate_product_activation",
                 "_validate_web_visual",
                 "_validate_protected_invariants",
             ],
+        )
+
+    def test_governance_workflow_cleanup_is_closed(self) -> None:
+        workflow = GOVERNANCE_WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn(
+            "if git rev-parse --verify HEAD >/dev/null 2>&1; then\n"
+            "            git reset --hard HEAD\n"
+            "            git clean -ffdx\n"
+            "          else\n"
+            "            rm -rf .git\n"
+            "          fi",
+            workflow,
         )
 
     def test_repository_guard_passes(self) -> None:

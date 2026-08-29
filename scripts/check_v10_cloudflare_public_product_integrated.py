@@ -12,8 +12,7 @@ AMENDMENT = (
     / "docs/master-plan/OMNI_CIO_V10_CLOUDFLARE_PUBLIC_PRODUCT_INTEGRATED_DELIVERY_AMENDMENT.md"
 )
 CONTRACT = (
-    ROOT
-    / "docs/architecture/V10_CLOUDFLARE_PUBLIC_PRODUCT_INTEGRATED_CONTRACT.json"
+    ROOT / "docs/architecture/V10_CLOUDFLARE_PUBLIC_PRODUCT_INTEGRATED_CONTRACT.json"
 )
 INDEX = ROOT / "docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md"
 STATUS = ROOT / "knowledge/17_V10_CURRENT_PROGRAM_STATUS.md"
@@ -21,6 +20,7 @@ README = ROOT / "README.md"
 AGENTS = ROOT / "AGENTS.md"
 CONTRIBUTING = ROOT / "CONTRIBUTING.md"
 MASTER_CONTEXT = ROOT / "knowledge/00_PROJECT_MASTER_CONTEXT.md"
+GOVERNANCE_WORKFLOW = ROOT / ".github/workflows/v10-engineering-governance.yml"
 
 UPDATE_ID = "CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED"
 BRANCH = "system/cloudflare-public-product"
@@ -67,9 +67,7 @@ def _expect_bool(
         failures.append(f"{label}.{key} must be {expected}")
 
 
-def _section(
-    payload: dict[str, Any], key: str, failures: list[str]
-) -> dict[str, Any]:
+def _section(payload: dict[str, Any], key: str, failures: list[str]) -> dict[str, Any]:
     value = payload.get(key)
     if not isinstance(value, dict):
         failures.append(f"{key} must be an object")
@@ -136,9 +134,7 @@ def _validate_milestones(payload: dict[str, Any], failures: list[str]) -> None:
         failures.append("Cloudflare internal milestone order/authority mismatch")
 
 
-def _validate_cloudflare_first(
-    payload: dict[str, Any], failures: list[str]
-) -> None:
+def _validate_cloudflare_first(payload: dict[str, Any], failures: list[str]) -> None:
     cloudflare = _section(payload, "cloudflare_first", failures)
     for key in (
         "prefer_cloudflare_when_semantically_equivalent",
@@ -177,6 +173,21 @@ def _validate_cost_security(payload: dict[str, Any], failures: list[str]) -> Non
         _expect_bool(cost, key, False, "cost_security", failures)
 
 
+def _validate_product_activation(payload: dict[str, Any], failures: list[str]) -> None:
+    activation = _section(payload, "product_activation", failures)
+    for key in (
+        "goal_public_current_safe_product",
+        "capability_specific_live_gate_required",
+    ):
+        _expect_bool(activation, key, True, "product_activation", failures)
+    for key in (
+        "public_multi_user_enabled_by_governance_alone",
+        "telegram_vk_live_without_real_provider_evidence_allowed",
+        "tinvest_read_live_without_broker_terms_and_secret_custody_allowed",
+    ):
+        _expect_bool(activation, key, False, "product_activation", failures)
+
+
 def _validate_web_visual(payload: dict[str, Any], failures: list[str]) -> None:
     visual = _section(payload, "web_visual", failures)
     _expect_bool(visual, "included_in_this_update", False, "web_visual", failures)
@@ -185,9 +196,7 @@ def _validate_web_visual(payload: dict[str, Any], failures: list[str]) -> None:
         failures.append("WEB VISUAL OWNER start command changed")
 
 
-def _validate_protected_invariants(
-    payload: dict[str, Any], failures: list[str]
-) -> None:
+def _validate_protected_invariants(payload: dict[str, Any], failures: list[str]) -> None:
     protected = _section(payload, "protected_invariants", failures)
     if protected.get("app_entrypoint") != "app:app":
         failures.append("protected app entrypoint must remain app:app")
@@ -215,6 +224,7 @@ def _validate_contract(payload: dict[str, Any], failures: list[str]) -> None:
     _validate_milestones(payload, failures)
     _validate_cloudflare_first(payload, failures)
     _validate_cost_security(payload, failures)
+    _validate_product_activation(payload, failures)
     _validate_web_visual(payload, failures)
     _validate_protected_invariants(payload, failures)
 
@@ -238,11 +248,14 @@ def _validate_surfaces(failures: list[str]) -> None:
     agents = _read(AGENTS, failures)
     contributing = _read(CONTRIBUTING, failures)
     master_context = _read(MASTER_CONTEXT, failures)
+    governance_workflow = _read(GOVERNANCE_WORKFLOW, failures)
 
     _require_markers(
         "Amendment 15",
         amendment,
         (
+            "**Status:** OWNER-APPROVED / EFFECTIVE ONLY WHEN ACCEPTED ON PROTECTED `main`",
+            "**Product progress effect:** NONE by itself",
             UPDATE_ID,
             BRANCH,
             "CLOUDFLARE-BUILDS-VERIFIER-INTEGRATION",
@@ -275,6 +288,17 @@ def _validate_surfaces(failures: list[str]) -> None:
             "CF-C",
             "CF-D",
             OWNER_START_COMMAND,
+        ),
+        failures,
+    )
+    _require_markers(
+        "V10 Engineering Governance workflow",
+        governance_workflow,
+        (
+            "Verify Cloudflare public-product integrated delivery law",
+            "python scripts/check_v10_cloudflare_public_product_integrated.py",
+            "if git rev-parse --verify HEAD >/dev/null 2>&1; then",
+            "else\n            rm -rf .git\n          fi",
         ),
         failures,
     )
