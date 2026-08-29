@@ -1,7 +1,7 @@
 FROM node:24.18.0-bookworm-slim AS web-build
 WORKDIR /build
 COPY apps/web/package.json apps/web/package-lock.json ./apps/web/
-RUN npm ci --prefix apps/web
+RUN npm ci --ignore-scripts --prefix apps/web
 COPY apps/web ./apps/web
 RUN npm run --prefix apps/web build
 
