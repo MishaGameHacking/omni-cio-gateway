@@ -68,26 +68,22 @@ jobs:
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
 
       - name: Generate and print exact provider lock
-        shell: powershell
+        shell: bash
         run: |
-          $ErrorActionPreference = 'Stop'
-          $node = 'C:\Program Files\nodejs\node.exe'
-          $npx = 'C:\Program Files\nodejs\npx.cmd'
-          if (-not (Test-Path -LiteralPath $node)) { throw 'NODE_NOT_FOUND' }
-          if (-not (Test-Path -LiteralPath $npx)) { throw 'NPX_NOT_FOUND' }
-          $nodeVersion = (& $node --version | Out-String).Trim()
-          if ($nodeVersion -ne 'v24.18.0') { throw "NODE_VERSION_MISMATCH:$nodeVersion" }
-          $npmVersion = (& $npx --yes npm@10.9.2 --version | Out-String).Trim()
-          if ($npmVersion -ne '10.9.2') { throw "NPM_VERSION_MISMATCH:$npmVersion" }
-          & $npx --yes npm@10.9.2 install --package-lock-only --ignore-scripts --no-audit --no-fund
-          if ($LASTEXITCODE -ne 0) { throw "NPM_LOCK_SYNTHESIS_FAILED:$LASTEXITCODE" }
-          $bytes = [IO.File]::ReadAllBytes((Join-Path $PWD 'package-lock.json'))
-          $encoded = [Convert]::ToBase64String($bytes)
-          Write-Output 'BEGIN_PACKAGE_LOCK_BASE64'
-          for ($i = 0; $i -lt $encoded.Length; $i += 100) {
-            Write-Output $encoded.Substring($i, [Math]::Min(100, $encoded.Length - $i))
-          }
-          Write-Output 'END_PACKAGE_LOCK_BASE64'
+          set -euo pipefail
+          node_exe='/c/Program Files/nodejs/node.exe'
+          npx_cmd='/c/Program Files/nodejs/npx.cmd'
+          test -f "$node_exe"
+          test -f "$npx_cmd"
+          node_version="$("$node_exe" --version | tr -d '\r')"
+          test "$node_version" = 'v24.18.0'
+          npm_version="$("$npx_cmd" --yes npm@10.9.2 --version | tr -d '\r')"
+          test "$npm_version" = '10.9.2'
+          "$npx_cmd" --yes npm@10.9.2 install --package-lock-only --ignore-scripts --no-audit --no-fund
+          test -f package-lock.json
+          echo BEGIN_PACKAGE_LOCK_BASE64
+          base64 package-lock.json | tr -d '\r\n' | fold -w 100
+          echo END_PACKAGE_LOCK_BASE64
 
       - name: Clean temporary workspace
         if: always()
