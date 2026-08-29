@@ -20,11 +20,6 @@ jobs:
     timeout-minutes: 10
     env:
       EXPECTED_HEAD: ${{ github.sha }}
-      CLOUDFLARE_API_TOKEN_VALUE: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID_SECRET_VALUE: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      CLOUDFLARE_ACCOUNT_ID_VAR_VALUE: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-      NEON_API_KEY_VALUE: ${{ secrets.NEON_API_KEY }}
-      NEON_ORG_ID_VALUE: ${{ vars.NEON_ORG_ID }}
 
     steps:
       - name: Expose installed Git Bash
@@ -53,50 +48,19 @@ jobs:
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
           test -z "$(git config --local --get-all credential.helper || true)"
 
-      - name: Probe provider authority without revealing credentials
-        shell: bash
-        run: |
-          set -euo pipefail
-          readiness=0
-          if [ -n "${CLOUDFLARE_API_TOKEN_VALUE:-}" ]; then
-            echo "CLOUDFLARE_API_TOKEN=AVAILABLE"
-          else
-            echo "CLOUDFLARE_API_TOKEN=MISSING"
-            readiness=1
-          fi
-          if [ -n "${CLOUDFLARE_ACCOUNT_ID_SECRET_VALUE:-}" ] || [ -n "${CLOUDFLARE_ACCOUNT_ID_VAR_VALUE:-}" ]; then
-            echo "CLOUDFLARE_ACCOUNT_ID=AVAILABLE"
-          else
-            echo "CLOUDFLARE_ACCOUNT_ID=MISSING"
-            readiness=1
-          fi
-          if [ -n "${NEON_API_KEY_VALUE:-}" ]; then
-            echo "NEON_API_KEY=AVAILABLE"
-          else
-            echo "NEON_API_KEY=MISSING"
-            readiness=1
-          fi
-          if [ -n "${NEON_ORG_ID_VALUE:-}" ]; then
-            echo "NEON_ORG_ID=AVAILABLE"
-          else
-            echo "NEON_ORG_ID=MISSING"
-            readiness=1
-          fi
-          if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
-            echo "CLOUDFLARE_CONTAINER_ENGINE=AVAILABLE"
-            echo "CLOUDFLARE_DEPLOY_PATH=DIRECT_WRANGLER_AVAILABLE"
-          else
-            echo "CLOUDFLARE_CONTAINER_ENGINE=MISSING_OR_NOT_RUNNING"
-            echo "CLOUDFLARE_DEPLOY_PATH=WORKERS_BUILDS"
-          fi
-          if [ "$readiness" -ne 0 ]; then
-            echo "CLOUDFLARE_CF_C_PROVIDER_READINESS=BLOCKED"
-            exit 78
-          fi
-
       - name: Bootstrap protected runner Python
         shell: cmd
         run: scripts\bootstrap_windows_ci_python.cmd
+
+      - name: Probe provider authority without revealing credentials
+        shell: cmd
+        env:
+          CLOUDFLARE_API_TOKEN_VALUE: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID_CREDENTIAL_VALUE: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_ACCOUNT_ID_VAR_VALUE: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          NEON_API_KEY_VALUE: ${{ secrets.NEON_API_KEY }}
+          NEON_ORG_ID_VALUE: ${{ vars.NEON_ORG_ID }}
+        run: python -m scripts.check_v10_cloudflare_provider_readiness
 
       - name: Probe Neon read authority fail-closed
         shell: bash

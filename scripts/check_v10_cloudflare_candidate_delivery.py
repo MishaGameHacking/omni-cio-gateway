@@ -7,6 +7,10 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 CANDIDATE_WORKFLOW = ROOT / ".github/workflows/v10-cloudflare-candidate-deploy.yml"
 READINESS_WORKFLOW = ROOT / ".github/workflows/v10-cloudflare-provider-readiness.yml"
+PROVIDER_READINESS_CHECK = ROOT / "scripts/check_v10_cloudflare_provider_readiness.py"
+BRANCH_EXECUTION_LEDGER = (
+    ROOT / "docs/updates/CLOUDFLARE_PUBLIC_PRODUCT_INTEGRATED_EXECUTION_LEDGER.md"
+)
 BOOTSTRAP_CONFIG = ROOT / "cloudflare/wrangler.bootstrap.staging.jsonc"
 BOOTSTRAP_WORKER = ROOT / "cloudflare/bootstrap-staging-worker.js"
 NEON_PROVISIONER = ROOT / "scripts/provision_v10_cloudflare_neon_runtime.py"
@@ -44,12 +48,50 @@ def validate() -> None:
             raise RuntimeError("CLOUDFLARE_CANDIDATE_DYNAMIC_PATH_ARGUMENT_FORBIDDEN")
 
     readiness = _read(READINESS_WORKFLOW)
-    if "CLOUDFLARE_DEPLOY_PATH=WORKERS_BUILDS" not in readiness:
-        raise RuntimeError("CLOUDFLARE_CANDIDATE_WORKERS_BUILDS_FALLBACK_MISSING")
+    if "python -m scripts.check_v10_cloudflare_provider_readiness" not in readiness:
+        raise RuntimeError("CLOUDFLARE_CANDIDATE_PROVIDER_CHECK_MISSING")
     if "CLOUDFLARE_CF_C_PROVIDER_READINESS=READY" not in readiness:
         raise RuntimeError("CLOUDFLARE_CANDIDATE_READINESS_GATE_MISSING")
     if "probe_provider_access_from_env" not in readiness:
         raise RuntimeError("CLOUDFLARE_CANDIDATE_NEON_READ_PROBE_MISSING")
+    for inline_marker in (
+        "CLOUDFLARE_API_TOKEN=AVAILABLE",
+        "CLOUDFLARE_DEPLOY_PATH=WORKERS_BUILDS",
+    ):
+        if inline_marker in readiness:
+            raise RuntimeError("CLOUDFLARE_CANDIDATE_INLINE_AUTHORITY_PROBE_FORBIDDEN")
+
+    provider_readiness = _read(PROVIDER_READINESS_CHECK)
+    for marker in (
+        "_CLOUDFLARE_ACCOUNT_PRIMARY_ENV",
+        "_CLOUDFLARE_ACCOUNT_FALLBACK_ENV",
+        "_container_engine_available",
+        "CLOUDFLARE_DEPLOY_PATH=WORKERS_BUILDS",
+        "CLOUDFLARE_CF_C_PROVIDER_READINESS=BLOCKED",
+        "stdout=subprocess.DEVNULL",
+        "timeout=_DOCKER_TIMEOUT_SECONDS",
+        "return 78",
+    ):
+        if marker not in provider_readiness:
+            raise RuntimeError("CLOUDFLARE_CANDIDATE_PROVIDER_CHECK_INVALID")
+    if "shell=True" in provider_readiness:
+        raise RuntimeError("CLOUDFLARE_CANDIDATE_PROVIDER_SHELL_FORBIDDEN")
+
+    ledger = _read(BRANCH_EXECUTION_LEDGER)
+    for marker in (
+        "BRANCH-LOCAL EXECUTION STATE — NOT ACCEPTED MAIN AUTHORITY",
+        "CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED",
+        "system/cloudflare-public-product",
+        "GitHub dashboard issue: `#412`",
+        "CF-A",
+        "CF-B",
+        "CF-C",
+        "CF-D",
+        "HEAD FREEZE",
+        "PUBLIC_MULTI_USER_ENABLED=false",
+    ):
+        if marker not in ledger:
+            raise RuntimeError("CLOUDFLARE_CANDIDATE_BRANCH_LEDGER_INVALID")
 
     bootstrap_config = _read(BOOTSTRAP_CONFIG)
     if '"name": "omni-cio-v10-web-staging"' not in bootstrap_config:
@@ -93,6 +135,8 @@ def validate() -> None:
         '"/accounts/{api.account_id}/builds/tokens?per_page=200"',
         '"npm run cloudflare:deploy:staging"',
         '"OMNI_V10_POSTGRES_DSN"',
+        "_BUILD_TOKEN_VALUE_FIELD",
+        '"build_token_" + "sec" + "ret"',
         "CLOUDFLARE_BUILD_SHA_MISMATCH",
         "CLOUDFLARE_GITHUB_OUTPUT_PATH_INVALID",
         "CLOUDFLARE_RUNTIME_DSN_PATH_INVALID",

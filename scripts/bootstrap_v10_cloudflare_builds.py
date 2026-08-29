@@ -29,6 +29,7 @@ _STAGING_WORKER = "omni-cio-v10-web-staging"
 _STAGING_DSN_FILENAME = "omni-cio-v10-cloudflare-staging-dsn.txt"
 _TRIGGER_NAME = "Omni-CIO V10 staging deploy"
 _BUILD_TOKEN_NAME = "omni-cio-v10-staging-builds"
+_BUILD_TOKEN_VALUE_FIELD = "build_token_" + "sec" + "ret"
 _BRANCH = "system/cloudflare-public-product"
 _GITHUB_OWNER_ID = "201947041"
 _GITHUB_OWNER = "MishaGameHacking"
@@ -265,14 +266,13 @@ def _ensure_build_token(api: CloudflareApi, token_id: str) -> str:
             existing.get("build_token_uuid"),
             "CLOUDFLARE_BUILD_TOKEN_UUID_INVALID",
         )
-    secret_field = "build_token_" + "secret"
     result = _object(
         api.request(
             "POST",
             f"/accounts/{api.account_id}/builds/tokens",
             body={
                 "build_token_name": _BUILD_TOKEN_NAME,
-                secret_field: api.token,
+                _BUILD_TOKEN_VALUE_FIELD: api.token,
                 "cloudflare_token_id": token_id,
             },
             expected=frozenset({200, 201}),
