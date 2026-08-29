@@ -24,7 +24,6 @@ VALID_ATTESTATION = "NO_PAYMENT_METHOD_CONFIRMED:2026-08-21T08:30:00Z"
 _SAFE_ORGANIZATION_ID = "org-safe-preview"
 _TEST_NEON_TOKEN = "neon-token-must-never-leak"
 _ORGANIZATION_KEY = "organization"
-_BOUNDARY_STEP = "Enforce zero-charge provider boundary"
 SCRIPT = (
     Path(__file__).resolve().parents[1]
     / "scripts"
@@ -372,7 +371,7 @@ def test_user_organization_discovery_is_permanently_forbidden() -> None:
     assert "NEON_ORG_ID" in source
 
 
-def test_deployment_workflow_requires_org_scope_and_fresh_attestation() -> None:
+def test_phase4_workflow_is_historical_manual_only_and_fail_closed() -> None:
     workflow = (
         Path(__file__).resolve().parents[1]
         / ".github"
@@ -380,33 +379,18 @@ def test_deployment_workflow_requires_org_scope_and_fresh_attestation() -> None:
         / "v10-phase4-free-preview-deploy.yml"
     ).read_text(encoding="utf-8")
 
-    assert "Verify exact-main Regression Shield before provider mutation" in workflow
-    assert "python scripts/check_v10_exact_main_regression.py" in workflow
-    assert "tests/test_v10_exact_main_regression.py" in workflow
-    assert _BOUNDARY_STEP in workflow
-    assert (
-        "RENDER_ZERO_CHARGE_ATTESTATION: "
-        "${{ vars.RENDER_ZERO_CHARGE_ATTESTATION }}"
-    ) in workflow
-    assert workflow.count("NEON_ORG_ID: ${{ vars.NEON_ORG_ID }}") == 2
-    assert "python scripts/check_v10_zero_cost_provider_boundary.py" in workflow
-    assert workflow.index(
-        "Verify exact-main Regression Shield before provider mutation"
-    ) < workflow.index(_BOUNDARY_STEP)
-    assert workflow.index(_BOUNDARY_STEP) < workflow.index(
-        "Provision and deploy zero-cost synthetic preview"
-    )
-    assert "tests/test_v10_zero_cost_provider_boundary.py" in workflow
-    assert "tests/test_v10_neon_org_scoped_provider_contract.py" in workflow
-    assert "scripts/windows_ci_lock.py project" in workflow
-    assert "requirements-dev.txt windows-requirements-dev.txt" in workflow
-    assert "--require-hashes -r windows-requirements-dev.txt" in workflow
-    assert "import fastapi, psycopg, pytest" in workflow
-    assert "\npermissions:\n" not in workflow
-    assert (
-        "  deploy-free-preview:\n"
-        "    name: Deploy exact accepted main to Render and Neon free preview\n"
-        "    permissions:\n"
-        "      actions: read\n"
-        "      contents: read\n"
-    ) in workflow
+    assert "workflow_dispatch:" in workflow
+    assert "workflow_run:" not in workflow
+    assert "schedule:" not in workflow
+    assert "runs-on: [self-hosted, Windows, X64, omni-cio-ci]" in workflow
+    assert "LEGACY_RENDER_PHASE4_RETIRED_AMENDMENT_14" in workflow
+    assert "exit /b 78" in workflow
+    for forbidden in (
+        "RENDER_API_KEY",
+        "NEON_API_KEY",
+        "RENDER_ZERO_CHARGE_ATTESTATION",
+        "NEON_ORG_ID",
+        "check_v10_zero_cost_provider_boundary.py",
+        "provision_v10_phase4_free_preview.py",
+    ):
+        assert forbidden not in workflow
