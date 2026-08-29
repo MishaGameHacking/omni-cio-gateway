@@ -141,6 +141,7 @@ def validate() -> None:
         'headers.set("x-omni-route-path", encodeURIComponent(routeUrl.pathname))',
         'headers.set("x-omni-route-query", encodeURIComponent(query))',
         "return new Request(INTERNAL_PROXY_URL, {",
+        'duplex: "half"',
         'headers.delete("x-forwarded-proto")',
         'headers.set("x-forwarded-proto", "https")',
         'headers.set("x-forwarded-for", clientIp)',
@@ -181,6 +182,9 @@ def validate() -> None:
         '"OMNI_V10_POSTGRES_DSN"',
         '"/_omni/cloudflare-proxy"',
         "_validated_route(scope, self._release_sha)",
+        'scope_type == "websocket"',
+        '"type": "websocket.close"',
+        '"code": 1008',
         "CloudflareEdgeRouteRestoreV1",
         "return CloudflareEdgeRouteRestoreV1(hosted_app, release_sha=release_sha)",
         "_probe_hosted_preview_database(connection)",
@@ -210,6 +214,8 @@ def main() -> int:
     print("Frontend: Workers Static Assets")
     print("Backend: Cloudflare Container / Python 3.14.6")
     print("Dependency install lifecycle scripts: DISABLED")
+    print("Streaming request bodies: EXPLICIT HALF-DUPLEX")
+    print("WebSocket direct ingress: PROTOCOL-SAFE REJECTION")
     print(
         "Container transport: fixed internal proxy endpoint + validated route restore"
     )
