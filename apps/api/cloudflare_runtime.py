@@ -30,6 +30,14 @@ _ROUTE_PATH_HEADER = b"x-omni-route-path"
 _ROUTE_QUERY_HEADER = b"x-omni-route-query"
 _EDGE_PROVIDER_HEADER = b"x-omni-edge-provider"
 _SOURCE_SHA_HEADER = b"x-omni-source-sha"
+_INTERNAL_EDGE_HEADERS = frozenset(
+    {
+        _ROUTE_PATH_HEADER,
+        _ROUTE_QUERY_HEADER,
+        _EDGE_PROVIDER_HEADER,
+        _SOURCE_SHA_HEADER,
+    }
+)
 _MAX_RAW_PATH_BYTES = 4096
 _MAX_RAW_QUERY_BYTES = 8192
 
@@ -167,7 +175,7 @@ class CloudflareEdgeRouteRestoreV1:
         filtered_headers = [
             (key, value)
             for key, value in scope.get("headers", ())
-            if bytes(key).lower() not in {_ROUTE_PATH_HEADER, _ROUTE_QUERY_HEADER}
+            if bytes(key).lower() not in _INTERNAL_EDGE_HEADERS
         ]
         restored_scope = dict(scope)
         restored_scope["path"] = path
