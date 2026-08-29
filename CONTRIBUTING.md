@@ -151,6 +151,8 @@ Human product authentication remains Telegram Login / VK ID -> verified identity
 
 Cloudflare Access/WAF/Turnstile are additive infrastructure security, not product tenant authority.
 
+`EXECUTABLE_ACCOUNTS = VERIFIED_READ_ACCOUNTS ∩ VERIFIED_TRADE_ACCOUNTS`.
+
 ## Runtime / data migration
 
 Use the migration preference:
