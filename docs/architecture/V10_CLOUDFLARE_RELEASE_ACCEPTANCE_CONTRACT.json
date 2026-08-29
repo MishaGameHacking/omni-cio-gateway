@@ -32,6 +32,11 @@
     "https_only": true,
     "redirects_followed": false,
     "max_response_bytes": 65536,
+    "trusted_origin_environment_variable": "OMNI_V10_CLOUDFLARE_ORIGIN",
+    "trusted_custom_host_environment_variable": "OMNI_V10_CLOUDFLARE_CUSTOM_HOST",
+    "workers_dev_suffix": ".workers.dev",
+    "ip_literal_origin_allowed": false,
+    "local_internal_origin_allowed": false,
     "release_platform": "cloudflare",
     "release_backend": "container",
     "release_static_assets": true,
@@ -47,7 +52,8 @@
     "container_rollout_failure_is_success": false,
     "source_sha_mismatch_is_success": false,
     "provider_outage_is_success": false,
-    "non_production_worker_version_without_container_is_success": false
+    "non_production_worker_version_without_container_is_success": false,
+    "unapproved_release_origin_is_success": false
   },
   "protected_invariants": {
     "broker_write": false,
