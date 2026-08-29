@@ -67,6 +67,33 @@ class CloudflareRuntimeCompatibilityTests(unittest.TestCase):
                 ):
                     guard.validate()
 
+    def test_guard_rejects_dynamic_container_transport_contract(self) -> None:
+        payload = json.loads(guard.CONTRACT.read_text(encoding="utf-8"))
+        payload["security"]["container_transport_uses_fixed_internal_url"] = False
+        with tempfile.TemporaryDirectory() as temporary:
+            candidate = Path(temporary) / "runtime.json"
+            candidate.write_text(json.dumps(payload), encoding="utf-8")
+            with mock.patch.object(guard, "CONTRACT", candidate):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "CLOUDFLARE_RUNTIME_CONTAINER_TRANSPORT_USES_FIXED_INTERNAL_URL_"
+                    "MUST_BE_TRUE",
+                ):
+                    guard.validate()
+
+    def test_guard_rejects_changed_container_transport_url(self) -> None:
+        payload = json.loads(guard.CONTRACT.read_text(encoding="utf-8"))
+        payload["security"]["container_transport_url"] = "https://example.com/"
+        with tempfile.TemporaryDirectory() as temporary:
+            candidate = Path(temporary) / "runtime.json"
+            candidate.write_text(json.dumps(payload), encoding="utf-8")
+            with mock.patch.object(guard, "CONTRACT", candidate):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "CLOUDFLARE_RUNTIME_CONTAINER_TRANSPORT_URL_INVALID",
+                ):
+                    guard.validate()
+
     def test_guard_rejects_container_scale_widening(self) -> None:
         payload = json.loads(guard.WRANGLER.read_text(encoding="utf-8"))
         payload["containers"][0]["max_instances"] = 2
