@@ -1,0 +1,97 @@
+{
+  "schema": "omni-cio.v10.cloudflare-builds-verifier.v1",
+  "status": "BRANCH_LOCAL_CF_A_IMPLEMENTATION",
+  "update_id": "CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED",
+  "milestone": "CF-A",
+  "accepted_base_sha": "2106f1b1792bc710c8eaa68d6be87e04455c0263",
+  "branch": "system/cloudflare-public-product",
+  "authority": {
+    "source": "Amendment 15",
+    "provider_mutation_allowed": false,
+    "production_promotion_allowed": false,
+    "github_engineering_authority_retained": true,
+    "authoritative_windows_fallback": "Lenovo omni-cio-ci"
+  },
+  "workers_builds_reference": {
+    "observed_at": "2026-08-29",
+    "plan": "Workers Paid",
+    "included_build_minutes_per_month": 6000,
+    "max_concurrent_builds": 6,
+    "build_timeout_minutes": 20,
+    "vcpu_per_build": 4,
+    "memory_gib_per_build": 8,
+    "disk_gib_per_build": 20,
+    "automatic_paid_overage_authorized": false
+  },
+  "dispatch": {
+    "mode": "WORK_CONSERVING_COMPLEMENTARY_SHARDS",
+    "fill_all_safe_slots": true,
+    "distinct_useful_work_by_default": true,
+    "duplicate_heavy_work_by_default": false,
+    "quota_or_provider_outage_reassigns_work": true,
+    "missing_or_failed_shard_may_report_green": false,
+    "cloudflare_loss_may_weaken_required_assertions": false,
+    "lenovo_catch_all_fallback_required": true,
+    "exact_head_binding_required": true
+  },
+  "shards": [
+    {
+      "id": "CFV-1-GOVERNANCE",
+      "slot_class": "policy",
+      "command": "python scripts/run_v10_cloudflare_verifier.py CFV-1-GOVERNANCE",
+      "requires_runtime_secrets": false
+    },
+    {
+      "id": "CFV-2-WEB-STATIC",
+      "slot_class": "web",
+      "command": "python scripts/run_v10_cloudflare_verifier.py CFV-2-WEB-STATIC",
+      "requires_runtime_secrets": false
+    },
+    {
+      "id": "CFV-3-PYTHON-STATIC",
+      "slot_class": "python-static",
+      "command": "python scripts/run_v10_cloudflare_verifier.py CFV-3-PYTHON-STATIC",
+      "requires_runtime_secrets": false
+    },
+    {
+      "id": "CFV-4-SECURITY-CONTRACTS",
+      "slot_class": "security-contracts",
+      "command": "python scripts/run_v10_cloudflare_verifier.py CFV-4-SECURITY-CONTRACTS",
+      "requires_runtime_secrets": false
+    },
+    {
+      "id": "CFV-5-RUNTIME-CONTRACTS",
+      "slot_class": "runtime-contracts",
+      "command": "python scripts/run_v10_cloudflare_verifier.py CFV-5-RUNTIME-CONTRACTS",
+      "requires_runtime_secrets": false
+    },
+    {
+      "id": "CFV-6-RELEASE-PROVENANCE",
+      "slot_class": "release-provenance",
+      "command": "python scripts/run_v10_cloudflare_verifier.py CFV-6-RELEASE-PROVENANCE",
+      "requires_runtime_secrets": false
+    }
+  ],
+  "environment": {
+    "provider_ci_marker": "WORKERS_CI",
+    "provider_commit_sha": "WORKERS_CI_COMMIT_SHA",
+    "provider_branch": "WORKERS_CI_BRANCH",
+    "github_commit_sha": "GITHUB_SHA",
+    "accepted_sha_pattern": "^[0-9a-f]{40}$"
+  },
+  "security": {
+    "broker_secrets_allowed": false,
+    "provider_runtime_secrets_allowed": false,
+    "private_portfolio_payloads_allowed": false,
+    "production_deployment_authority_allowed": false,
+    "real_money_authority_allowed": false,
+    "tracked_secret_values_allowed": false
+  },
+  "exit_gate": {
+    "contract_guard_passes": true,
+    "runner_self_test_passes": true,
+    "all_six_shards_defined": true,
+    "cloudflare_builds_can_be_supplemental_not_authoritative": true,
+    "provider_mutation_performed": false
+  }
+}
