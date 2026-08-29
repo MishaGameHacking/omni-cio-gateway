@@ -95,8 +95,8 @@ def validate() -> None:
     for item in shards:
         if not isinstance(item, dict):
             raise RuntimeError("CLOUDFLARE_VERIFIER_SHARD_INVALID")
-        expected_command = (
-            "python scripts/run_v10_cloudflare_verifier.py " + str(item.get("id"))
+        expected_command = "python scripts/run_v10_cloudflare_verifier.py " + str(
+            item.get("id")
         )
         if item.get("command") != expected_command:
             raise RuntimeError("CLOUDFLARE_VERIFIER_SHARD_COMMAND_INVALID")
