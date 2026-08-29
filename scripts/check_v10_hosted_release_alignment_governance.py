@@ -1,36 +1,26 @@
 from __future__ import annotations
 
-import ast
+import json
 from pathlib import Path
 import sys
+from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
+PHASE4_WORKFLOW = ROOT / ".github/workflows/v10-phase4-free-preview-deploy.yml"
 ALIGNMENT_WORKFLOW = ROOT / ".github/workflows/v10-hosted-release-alignment.yml"
-ALIGNMENT_STANDARD = ROOT / "docs/operations/V10_HOSTED_RELEASE_ALIGNMENT_STANDARD.md"
-FAILURE_LEARNING = (
-    ROOT / "docs/operations/V10_ENGINEERING_FAILURE_LEARNING_LEDGER_FL054.md"
+CLOUDFLARE_AMENDMENT = (
+    ROOT
+    / "docs/master-plan/OMNI_CIO_V10_CLOUDFLARE_PLATFORM_AND_CONTINUOUS_RELEASE_AUTHORITY_AMENDMENT.md"
 )
-ENGINEERING_GOVERNANCE_WORKFLOW = (
-    ROOT / ".github/workflows/v10-engineering-governance.yml"
-)
-_REQUIRED_WORKFLOW_RUN_LISTS = {
-    "workflows": {"V10 Phase 4 Free Preview Deploy"},
-    "types": {"completed"},
-    "branches": {"main"},
-}
-_ALIGNMENT_WORKFLOW_LABEL = "hosted alignment workflow"
-_EXACT_MAIN_FETCH = (
-    "git fetch --no-tags --prune --depth=1 origin "
-    '"+refs/heads/main:refs/remotes/origin/main"'
+CLOUDFLARE_CONTRACT = (
+    ROOT / "docs/architecture/V10_CLOUDFLARE_PLATFORM_AUTHORITY_CONTRACT.json"
 )
 
 
 def _read(path: Path, failures: list[str]) -> str:
     if not path.is_file():
-        failures.append(
-            f"missing hosted-release governance file: {path.relative_to(ROOT)}"
-        )
+        failures.append(f"missing hosted-release governance file: {path.relative_to(ROOT)}")
         return ""
     try:
         return path.read_text(encoding="utf-8")
@@ -39,98 +29,19 @@ def _read(path: Path, failures: list[str]) -> str:
         return ""
 
 
-def _yaml_string_scalar(raw: str) -> str:
-    value = raw.strip()
-    if not value:
-        raise ValueError("workflow list entry must not be empty")
-    if value[0] in {"'", '"'}:
-        parsed = ast.literal_eval(value)
-        if not isinstance(parsed, str):
-            raise ValueError("workflow list entry must be a string")
-        return parsed
-    return value.split(" #", maxsplit=1)[0].rstrip()
-
-
-def _yaml_lines(text: str) -> list[tuple[int, str]]:
-    lines: list[tuple[int, str]] = []
-    for raw_line in text.splitlines():
-        stripped = raw_line.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        indent = len(raw_line) - len(raw_line.lstrip(" "))
-        lines.append((indent, stripped))
-    return lines
-
-
-def _find_key(
-    lines: list[tuple[int, str]],
-    key: str,
-    *,
-    indent: int | None = None,
-) -> int:
-    for index, (line_indent, stripped) in enumerate(lines):
-        if stripped == key and (indent is None or line_indent == indent):
-            return index
-    raise ValueError(f"workflow is missing {key.rstrip(':')}")
-
-
-def _child_block(
-    lines: list[tuple[int, str]],
-    key_index: int,
-) -> list[tuple[int, str]]:
-    key_indent = lines[key_index][0]
-    block: list[tuple[int, str]] = []
-    for line in lines[key_index + 1 :]:
-        if line[0] <= key_indent:
-            break
-        block.append(line)
-    return block
-
-
-def _find_mapping_key(
-    lines: list[tuple[int, str]],
-    key: str,
-) -> tuple[int, str]:
-    prefix = f"{key}:"
-    for index, (_indent, stripped) in enumerate(lines):
-        if stripped.startswith(prefix):
-            return index, stripped[len(prefix) :].strip()
-    raise ValueError(f"workflow is missing {key}")
-
-
-def _inline_list_values(raw: str) -> set[str]:
-    value = raw.split(" #", maxsplit=1)[0].strip()
-    if not (value.startswith("[") and value.endswith("]")):
-        raise ValueError("workflow inline list must use [value, ...] syntax")
-    items = value[1:-1].strip()
-    if not items:
-        return set()
-    return {_yaml_string_scalar(item) for item in items.split(",")}
-
-
-def _list_values(block: list[tuple[int, str]], key: str) -> set[str]:
-    key_index, inline = _find_mapping_key(block, key)
-    if inline:
-        return _inline_list_values(inline)
-    values_block = _child_block(block, key_index)
-    return {
-        _yaml_string_scalar(stripped[1:])
-        for _indent, stripped in values_block
-        if stripped.startswith("-")
-    }
-
-
-def _workflow_run_lists(text: str) -> dict[str, set[str]]:
-    lines = _yaml_lines(text)
-    on_block = _child_block(lines, _find_key(lines, "on:", indent=0))
-    workflow_run_block = _child_block(
-        on_block,
-        _find_key(on_block, "workflow_run:"),
-    )
-    return {
-        key: _list_values(workflow_run_block, key)
-        for key in _REQUIRED_WORKFLOW_RUN_LISTS
-    }
+def _load_json(path: Path, failures: list[str]) -> dict[str, Any] | None:
+    text = _read(path, failures)
+    if not text:
+        return None
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError as exc:
+        failures.append(f"invalid JSON in {path.relative_to(ROOT)}: {exc}")
+        return None
+    if not isinstance(payload, dict):
+        failures.append(f"JSON root must be object: {path.relative_to(ROOT)}")
+        return None
+    return payload
 
 
 def _require_markers(
@@ -144,22 +55,6 @@ def _require_markers(
             failures.append(f"{label} is missing governance marker: {marker}")
 
 
-def _require_minimum_occurrences(
-    label: str,
-    text: str,
-    marker: str,
-    minimum: int,
-    failures: list[str],
-) -> None:
-    observed = text.count(marker)
-    if observed < minimum:
-        message = (
-            f"{label} must contain {marker!r} at least {minimum} times; "
-            f"observed {observed}"
-        )
-        failures.append(message)
-
-
 def _forbid_markers(
     label: str,
     text: str,
@@ -168,126 +63,113 @@ def _forbid_markers(
 ) -> None:
     for marker in markers:
         if marker in text:
-            failures.append(f"{label} contains forbidden governance marker: {marker}")
+            failures.append(f"{label} contains forbidden active-provider marker: {marker}")
 
 
-def _validate_workflow_run_routing(text: str, failures: list[str]) -> None:
-    try:
-        observed = _workflow_run_lists(text)
-    except (SyntaxError, ValueError) as exc:
-        failures.append(f"hosted alignment workflow routing cannot be parsed: {exc}")
-        return
-
-    for key, expected in _REQUIRED_WORKFLOW_RUN_LISTS.items():
-        if observed.get(key) != expected:
-            failures.append(
-                "hosted alignment workflow on.workflow_run."
-                f"{key} must be {sorted(expected)!r}"
-            )
+def _validate_manual_only_retired_workflow(
+    *,
+    label: str,
+    text: str,
+    retirement_marker: str,
+    failure_code: str,
+    failures: list[str],
+) -> None:
+    _require_markers(
+        label,
+        text,
+        (
+            "workflow_dispatch:",
+            "contents: read",
+            "runs-on: [self-hosted, Windows, X64, omni-cio-ci]",
+            retirement_marker,
+            failure_code,
+        ),
+        failures,
+    )
+    _forbid_markers(
+        label,
+        text,
+        (
+            "workflow_run:",
+            "schedule:",
+            "RENDER_API_KEY",
+            "NEON_API_KEY",
+            "RENDER_ZERO_CHARGE_ATTESTATION",
+            "NEON_ORG_ID",
+            "check_v10_zero_cost_provider_boundary.py",
+            "provision_v10_phase4_free_preview.py",
+            "check_v10_hosted_release_alignment.py",
+            "onrender.com",
+        ),
+        failures,
+    )
 
 
 def validate_sources(
     *,
+    phase4_workflow: str,
     alignment_workflow: str,
-    alignment_standard: str,
-    failure_learning: str,
-    engineering_governance_workflow: str,
+    cloudflare_amendment: str,
+    cloudflare_contract: dict[str, Any] | None,
     failures: list[str],
 ) -> None:
-    _validate_workflow_run_routing(alignment_workflow, failures)
+    _validate_manual_only_retired_workflow(
+        label="historical Phase-4 Render workflow",
+        text=phase4_workflow,
+        retirement_marker="LEGACY_RENDER_PHASE4_RETIRED_AMENDMENT_14",
+        failure_code="exit /b 78",
+        failures=failures,
+    )
+    _validate_manual_only_retired_workflow(
+        label="historical Render alignment workflow",
+        text=alignment_workflow,
+        retirement_marker="LEGACY_RENDER_ALIGNMENT_RETIRED_AMENDMENT_14",
+        failure_code="exit /b 79",
+        failures=failures,
+    )
+
     _require_markers(
-        _ALIGNMENT_WORKFLOW_LABEL,
-        alignment_workflow,
+        "Cloudflare authority amendment",
+        cloudflare_amendment,
         (
-            "name: V10 Hosted Release Alignment",
-            "schedule:",
-            "actions: read",
-            "contents: read",
-            "cancel-in-progress: false",
-            "python scripts/check_v10_exact_main_regression.py",
-            "Probe canonical hosted release alignment without publishing PASS",
-            "python scripts/check_v10_hosted_release_alignment.py",
-            "> hosted_alignment_pass.txt",
-            "Reconfirm current main before publishing runtime PASS",
-            "cat hosted_alignment_pass.txt",
-            "HOSTED_RELEASE_ALIGNMENT=SUPERSEDED_BY_NEWER_MAIN",
-        ),
-        failures,
-    )
-    _require_minimum_occurrences(
-        _ALIGNMENT_WORKFLOW_LABEL,
-        alignment_workflow,
-        _EXACT_MAIN_FETCH,
-        2,
-        failures,
-    )
-    _forbid_markers(
-        _ALIGNMENT_WORKFLOW_LABEL,
-        alignment_workflow,
-        (
-            "github.event.workflow_run.conclusion",
-            "RENDER_API_KEY",
-            "NEON_API_KEY",
-            "RENDER_ZERO_CHARGE_ATTESTATION",
+            "Render.com is no longer an active new-V10 deployment",
+            "Historical contracts, runbooks and acceptance evidence may retain",
+            "protected V9 Render production/recovery baseline remains protected",
+            "CLOUDFLARE-BUILDS-VERIFIER-INTEGRATION",
         ),
         failures,
     )
 
-    _require_markers(
-        "hosted alignment standard",
-        alignment_standard,
-        (
-            "inventory limited to `event=push` is incomplete",
-            "applicable downstream `workflow_run` chain must also reach terminal state",
-            "`queued`, `pending`, `in_progress`, `failure`, `cancelled`",
-            "not accepted post-merge runtime evidence",
-            "latest applicable alignment gate succeeds on the exact expected SHA",
-            "successful probe output is withheld until a post-probe main recheck",
-            "superseded older run is neither drift evidence nor current-runtime "
-            "PASS evidence",
-        ),
-        failures,
-    )
-
-    _require_markers(
-        "hosted alignment failure learning",
-        failure_learning,
-        (
-            "Post-merge acceptance must traverse downstream deployment event topology",
-            "complete applicable event chain",
-            "post-probe main recheck",
-            "SUPERSEDED_BY_NEWER_MAIN",
-        ),
-        failures,
-    )
-
-    _require_markers(
-        "engineering governance workflow",
-        engineering_governance_workflow,
-        (
-            "python scripts/check_v10_hosted_release_alignment_governance.py",
-            "scripts/check_v10_hosted_release_alignment_governance.py",
-            "tests.test_v10_hosted_release_alignment_governance",
-        ),
-        failures,
-    )
+    if cloudflare_contract is None:
+        return
+    provider = cloudflare_contract.get("provider_transition")
+    if not isinstance(provider, dict):
+        failures.append("Cloudflare authority contract provider_transition must be an object")
+        return
+    if provider.get("render_new_v10_target_selected") is not False:
+        failures.append("Render must remain disabled as a new V10 target")
+    if provider.get("render_zero_charge_attestation_required_for_new_v10") is not False:
+        failures.append("Render zero-charge attestation must not gate new V10")
+    if provider.get("render_hosted_release_alignment_required_for_new_v10") is not False:
+        failures.append("Render hosted alignment must not gate new V10")
+    if provider.get("historical_wp22a_render_neon_evidence_preserved") is not True:
+        failures.append("historical WP22A Render/Neon evidence must stay preserved")
+    if provider.get("protected_v9_render_app_app_baseline_preserved") is not True:
+        failures.append("protected V9 Render app:app baseline must stay preserved")
 
 
 def main() -> int:
     failures: list[str] = []
+    phase4_workflow = _read(PHASE4_WORKFLOW, failures)
     alignment_workflow = _read(ALIGNMENT_WORKFLOW, failures)
-    alignment_standard = _read(ALIGNMENT_STANDARD, failures)
-    failure_learning = _read(FAILURE_LEARNING, failures)
-    engineering_governance_workflow = _read(
-        ENGINEERING_GOVERNANCE_WORKFLOW,
-        failures,
-    )
+    amendment = _read(CLOUDFLARE_AMENDMENT, failures)
+    contract = _load_json(CLOUDFLARE_CONTRACT, failures)
 
     validate_sources(
+        phase4_workflow=phase4_workflow,
         alignment_workflow=alignment_workflow,
-        alignment_standard=alignment_standard,
-        failure_learning=failure_learning,
-        engineering_governance_workflow=engineering_governance_workflow,
+        cloudflare_amendment=amendment,
+        cloudflare_contract=contract,
         failures=failures,
     )
 
@@ -298,11 +180,9 @@ def main() -> int:
         return 1
 
     print("V10 hosted-release alignment governance check passed.")
-    print(
-        "Post-merge downstream topology: terminal exact-main alignment SUCCESS required"
-    )
-    print("Runtime PASS publication: post-probe exact-main recheck required")
-    print("Older superseded workflow_run: never current-runtime PASS evidence")
+    print("Legacy Render Phase-4 deployment: manual-only and fail-closed")
+    print("Legacy Render hosted alignment: manual-only and fail-closed")
+    print("New V10 release authority: Cloudflare sequence owned by Amendment 14")
     return 0
 
 
