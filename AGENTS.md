@@ -554,3 +554,21 @@ Do not create the integrated visual branch or modify `apps/web` for the refresh 
 `START V10 WEB VISUAL SYSTEM UPDATE`
 
 When started, `WEB-VISUAL-A -> B -> C -> D -> E -> F -> G` remain ordered branch-local member milestones. The complete System Update still follows `INTEGRATION_READY` → exact-head DRAFT GREEN → HEAD FREEZE / independent review → coherent correction batch if required → fresh READY GREEN → squash merge → exact-main post-merge verification. WP23+ remains locked until the complete visual System Update is accepted.
+
+## 19. Changed-files + independent code-review merge gate
+
+For **every development PR and every published exact head**, GREEN CI is required but is not sufficient by itself to declare the change ready.
+
+Before merge, engineering must:
+
+1. inspect the complete GitHub **Files changed** surface against the accepted base;
+2. inspect inline review threads, check annotations, Sonar, Gitar, SAST/security and every other applicable code/security review output;
+3. classify each material finding against the actual code, root cause, blast radius, analogous locations, directly coupled producers/consumers/config/workflows and adjacent failure modes as applicable;
+4. fix real correctness, maintainability, diagnostic, security and review-quality defects rather than relying on a GREEN badge;
+5. add deterministic regression guards for reusable defect classes;
+6. require unresolved blocking review threads = 0;
+7. perform a final manual engineering diff review even if bots report no findings.
+
+Bot approval is supporting independent evidence, not a substitute for engineering judgment. Manual review is likewise not a substitute for applicable exact-head CI/security gates.
+
+Any correction commit invalidates **both** previous final exact-head GREEN evidence and previous Files-changed/review evidence. The new exact head requires fresh applicable checks plus a fresh complete Files changed + independent-review pass before merge.

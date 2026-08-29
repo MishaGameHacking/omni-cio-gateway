@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import ast
 import importlib.util
+import inspect
 import json
 from pathlib import Path
 import subprocess
@@ -42,6 +44,10 @@ def test_current_repository_satisfies_engineering_governance() -> None:
         in completed.stdout
     )
     assert (
+        "Exact-head changed-files + independent review: enforced"
+        in completed.stdout
+    )
+    assert (
         "OWNER product acceptance: post-merge/post-Regression-Shield"
         in completed.stdout
     )
@@ -58,6 +64,31 @@ def test_contract_accepts_only_success_for_applicable_merge_checks() -> None:
     )
     assert contract["merge_gate"]["infrastructure_failure_blocks_merge"] is True
     assert contract["merge_gate"]["billing_failure_blocks_merge"] is True
+
+
+def test_contract_requires_changed_files_and_independent_review() -> None:
+    contract = json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))
+    merge_gate = contract["merge_gate"]
+
+    for key in (
+        "new_commit_invalidates_review_evidence",
+        "complete_files_changed_review_required",
+        "independent_review_outputs_required_when_applicable",
+        "material_findings_require_engineering_classification",
+        "bot_approval_is_supporting_not_substitute",
+        "manual_engineering_diff_review_required",
+        "correction_commit_requires_fresh_files_changed_and_review",
+    ):
+        assert merge_gate[key] is True
+
+    assert {
+        "INLINE_REVIEW_THREADS",
+        "CHECK_ANNOTATIONS",
+        "SONAR",
+        "GITAR",
+        "SAST_SECURITY_REVIEW",
+        "OTHER_APPLICABLE_CODE_SECURITY_REVIEW",
+    } <= set(merge_gate["review_outputs"])
 
 
 def test_contract_forbids_owner_product_acceptance_before_merge() -> None:
@@ -115,6 +146,41 @@ def test_v10_public_runtime_is_managed_cloud_and_not_owner_home() -> None:
     assert runtime["external_access_provider_may_become_product_identity"] is False
 
 
+def test_validate_contract_remains_decomposed_orchestrator() -> None:
+    function = ast.parse(inspect.getsource(governance.validate_contract)).body[0]
+    assert isinstance(function, ast.FunctionDef)
+
+    called_helpers = {
+        node.func.id
+        for node in ast.walk(function)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+    }
+    expected_helpers = {
+        "_validate_pre_ci",
+        "_validate_merge_gate",
+        "_validate_owner",
+        "_validate_owner_handoff",
+        "_validate_runtime_hosting",
+        "_validate_public_runtime_contract",
+        "_validate_failure_and_protected_invariants",
+    }
+    assert expected_helpers <= called_helpers, (
+        "validate_contract must remain a thin orchestrator over focused validators"
+    )
+
+    loops = [
+        node
+        for node in ast.walk(function)
+        if isinstance(node, (ast.For, ast.AsyncFor, ast.While))
+    ]
+    assert not loops, "validate_contract must not regain iterative validation logic"
+
+    branches = [node for node in ast.walk(function) if isinstance(node, ast.If)]
+    assert len(branches) <= 2, (
+        "validate_contract should keep only load/schema guard branches"
+    )
+
+
 def test_validator_rejects_neutral_as_accepted_green(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -129,6 +195,60 @@ def test_validator_rejects_neutral_as_accepted_green(
     governance.validate_contract(failures)
 
     assert "merge_gate accepts conclusions other than success" in failures
+
+
+def test_validator_rejects_stale_review_evidence_after_correction(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    contract = json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))
+    contract["merge_gate"][
+        "correction_commit_requires_fresh_files_changed_and_review"
+    ] = False
+    modified = tmp_path / "quality-contract.json"
+    modified.write_text(json.dumps(contract), encoding="utf-8")
+    monkeypatch.setattr(governance, "CONTRACT", modified)
+    failures: list[str] = []
+
+    governance.validate_contract(failures)
+
+    assert any(
+        "correction_commit_requires_fresh_files_changed_and_review must be True"
+        in failure
+        for failure in failures
+    )
+
+
+def test_validator_rejects_missing_required_review_output(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    contract = json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))
+    contract["merge_gate"]["review_outputs"].remove("GITAR")
+    modified = tmp_path / "quality-contract.json"
+    modified.write_text(json.dumps(contract), encoding="utf-8")
+    monkeypatch.setattr(governance, "CONTRACT", modified)
+    failures: list[str] = []
+
+    governance.validate_contract(failures)
+
+    assert "merge_gate.review_outputs missing required source: GITAR" in failures
+
+
+def test_validator_rejects_malformed_review_outputs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    contract = json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))
+    contract["merge_gate"]["review_outputs"] = "GITAR"
+    modified = tmp_path / "quality-contract.json"
+    modified.write_text(json.dumps(contract), encoding="utf-8")
+    monkeypatch.setattr(governance, "CONTRACT", modified)
+    failures: list[str] = []
+
+    governance.validate_contract(failures)
+
+    assert "merge_gate.review_outputs must be a list" in failures
 
 
 def test_validator_rejects_premature_owner_acceptance(

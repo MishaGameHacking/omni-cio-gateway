@@ -1,5 +1,5 @@
 {
-  "schema": "omni-cio.v10.engineering-quality-gate.v3",
+  "schema": "omni-cio.v10.engineering-quality-gate.v4",
   "status": "ACTIVE_ACCEPTED_ON_MAIN",
   "date": "2026-08-18",
   "acceptance_evidence": {
@@ -89,8 +89,23 @@
     "billing_failure_blocks_merge": true,
     "irrelevant_workflow_should_not_trigger": true,
     "new_commit_invalidates_final_green_evidence": true,
+    "new_commit_invalidates_review_evidence": true,
     "zero_unresolved_blocking_review_threads": true,
     "full_diff_review_required": true,
+    "complete_files_changed_review_required": true,
+    "independent_review_outputs_required_when_applicable": true,
+    "review_outputs": [
+      "INLINE_REVIEW_THREADS",
+      "CHECK_ANNOTATIONS",
+      "SONAR",
+      "GITAR",
+      "SAST_SECURITY_REVIEW",
+      "OTHER_APPLICABLE_CODE_SECURITY_REVIEW"
+    ],
+    "material_findings_require_engineering_classification": true,
+    "bot_approval_is_supporting_not_substitute": true,
+    "manual_engineering_diff_review_required": true,
+    "correction_commit_requires_fresh_files_changed_and_review": true,
     "normal_close_is_merge_after_green": true
   },
   "owner_participation": {

@@ -101,6 +101,21 @@ Safety abort overrides diagnostic completeness if continued execution could expo
 
 Any new commit invalidates previous final exact-head GREEN evidence. `continue-on-error` must never be used to manufacture required GREEN.
 
+## Files changed / independent code-review gate
+
+Для каждого опубликованного PR head до merge обязательна не только CI-проверка, но и проверка фактически изменённого кода на **этом же exact head**:
+
+1. просмотреть полный GitHub **Files changed** против accepted base;
+2. проверить inline review threads, check annotations, Sonar, Gitar, SAST/security и любые другие применимые code/security review outputs;
+3. каждый material finding сопоставить с actual code и классифицировать по root cause, blast radius, analogous locations, directly coupled producers/consumers/config/workflows и adjacent failure modes по применимости;
+4. исправлять реальные correctness, maintainability, diagnostic, security и review-quality дефекты, а для reusable defect class добавлять deterministic regression guard;
+5. требовать `unresolved blocking review threads = 0`;
+6. выполнить финальный manual engineering diff review даже при отсутствии bot findings.
+
+**Bot approval is supporting evidence**, а не замена engineering judgment. И наоборот, ручной review или bot approval не заменяют обязательные exact-head CI/security gates.
+
+Любой correction commit делает stale одновременно прежний final GREEN и прежний review evidence. На новом exact head обязательны **fresh Files changed + review evidence** и свежие applicable checks до merge.
+
 ## Mandatory split triggers
 
 An `INTEGRATED_SYSTEM_UPDATE` must split when evidence requires a separate accepted state for:
@@ -183,8 +198,8 @@ Canonical Python dependency sources/locks remain `requirements.in`, `requirement
 4. Сделайте минимальное coherent изменение.
 5. Добавьте deterministic regression guard для reusable defect class.
 6. Выполните cheap/focused preflight и full diff.
-7. Опубликуйте PR и требуйте all applicable exact-head `success`.
-8. Resolve blockers, squash merge, verify exact new main and required post-merge gates.
+7. Опубликуйте PR, проверьте exact-head Files changed + applicable independent review outputs, устраните material findings и только затем используйте fresh exact-head SUCCESS checks как final merge evidence.
+8. Resolve blockers, выполните финальный manual diff review, squash merge, verify exact new main and required post-merge gates.
 
 Для `INTEGRATED_SYSTEM_UPDATE`:
 
@@ -197,7 +212,7 @@ Canonical Python dependency sources/locks remain `requirements.in`, `requirement
 7. Publish one coherent head / DRAFT PR.
 8. Apply HEAD FREEZE and collect full safe verification batch.
 9. If findings exist, diagnose systemically and publish one correction batch after local preflight.
-10. Require fresh final DRAFT GREEN, independent review, READY fresh GREEN, zero blockers.
+10. Require fresh final DRAFT GREEN, fresh Files changed/review evidence, independent review, READY fresh GREEN, zero blockers.
 11. Squash merge, exact-main Regression Shield/owning post-merge gates, then status transition.
 
 For a user-facing capability transition, fill the progressive activation section in `OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md`; if the transition is material, maintain the Capability Activation Ledger/dashboard. Repository merge itself does not make a capability live and never expands Real-money authority.
@@ -232,6 +247,7 @@ PR должен объяснять:
 - accepted base SHA;
 - root cause/blast radius для material defect;
 - полный changed surface и coupled producers/consumers;
+- exact-head Files changed review + inspected independent review sources + material finding dispositions + final manual engineering diff review;
 - mandatory split-trigger review для integrated work;
 - `INTEGRATION_READY` evidence для integrated work;
 - affected user-facing capability IDs/current/proposed activation state, if any;
