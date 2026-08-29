@@ -402,7 +402,7 @@ def _validate_engineering_amendment_header(failures: list[str]) -> None:
         _validate_original_engineering_acceptance(contract, failures)
 
 
-def _validate_cloudflare_amendment_header(failures: list[str]) -> None:
+def _validate_cloudflare_amendment_markers(failures: list[str]) -> None:
     cloudflare_amendment = read_text(CLOUDFLARE_AMENDMENT, failures)
     for marker in (
         "GitHub is authority rank 1",
@@ -412,6 +412,19 @@ def _validate_cloudflare_amendment_header(failures: list[str]) -> None:
         if marker not in cloudflare_amendment:
             failures.append(f"Cloudflare authority amendment missing marker: {marker}")
 
+
+def _validate_cloudflare_provider_transition(
+    provider: dict[str, Any], failures: list[str]
+) -> None:
+    if provider.get("new_v10_primary_platform_target") != "CLOUDFLARE_WORKERS_PAID":
+        failures.append("Cloudflare authority must select Workers Paid")
+    if provider.get("render_new_v10_target_selected") is not False:
+        failures.append("Cloudflare authority must retire Render for new V10")
+    if provider.get("protected_v9_render_app_app_baseline_preserved") is not True:
+        failures.append("Cloudflare authority must preserve V9 app:app baseline")
+
+
+def _validate_cloudflare_contract_header(failures: list[str]) -> None:
     cloudflare_contract = _load_json(
         CLOUDFLARE_CONTRACT,
         failures,
@@ -427,20 +440,12 @@ def _validate_cloudflare_amendment_header(failures: list[str]) -> None:
         if not isinstance(provider, dict):
             failures.append("Cloudflare authority provider_transition must be object")
         else:
-            if (
-                provider.get("new_v10_primary_platform_target")
-                != "CLOUDFLARE_WORKERS_PAID"
-            ):
-                failures.append("Cloudflare authority must select Workers Paid")
-            if provider.get("render_new_v10_target_selected") is not False:
-                failures.append("Cloudflare authority must retire Render for new V10")
-            if (
-                provider.get("protected_v9_render_app_app_baseline_preserved")
-                is not True
-            ):
-                failures.append(
-                    "Cloudflare authority must preserve V9 app:app baseline"
-                )
+            _validate_cloudflare_provider_transition(provider, failures)
+
+
+def _validate_cloudflare_amendment_header(failures: list[str]) -> None:
+    _validate_cloudflare_amendment_markers(failures)
+    _validate_cloudflare_contract_header(failures)
 
 
 def validate_high_risk_headers(failures: list[str]) -> None:
