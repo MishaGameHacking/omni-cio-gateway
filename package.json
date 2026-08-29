@@ -1,0 +1,22 @@
+{
+  "name": "omni-cio-v10-cloudflare-delivery",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "24.18.0",
+    "npm": "11.16.0"
+  },
+  "packageManager": "npm@11.16.0",
+  "scripts": {
+    "build": "python scripts/write_v10_cloudflare_build_info.py && npm ci --prefix apps/web && npm run --prefix apps/web build",
+    "cloudflare:deploy": "wrangler deploy --containers-rollout=immediate",
+    "cloudflare:worker-only": "wrangler deploy --containers-rollout=none"
+  },
+  "dependencies": {
+    "@cloudflare/containers": "0.3.7"
+  },
+  "devDependencies": {
+    "wrangler": "4.127.1"
+  }
+}
