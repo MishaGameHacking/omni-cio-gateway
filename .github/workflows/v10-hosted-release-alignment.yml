@@ -37,27 +37,16 @@ jobs:
   synthesize-cloudflare-root-lock:
     if: github.event_name == 'pull_request'
     name: TEMP exact npm 10.9.2 root lock synthesis
-    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - name: Bootstrap exact PR head
-        shell: cmd
-        env:
-          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          GITHUB_TOKEN: ${{ github.token }}
-        run: |
-          @echo off
-          powershell.exe -NoProfile -NonInteractive -Command "$git=(Get-Command git.exe -ErrorAction Stop).Source; $root=Split-Path -Parent (Split-Path -Parent $git); $bin=Join-Path $root 'bin'; $bin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append"
-          if errorlevel 1 exit /b 12
-      - name: Fetch exact reviewed repository
         shell: bash
         env:
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           GITHUB_TOKEN: ${{ github.token }}
           GIT_TERMINAL_PROMPT: "0"
-          GCM_INTERACTIVE: "0"
         run: |
           set -euo pipefail
           find . -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
@@ -69,31 +58,30 @@ jobs:
           git config --local --unset-all credential.helper
           git checkout --detach "$EXPECTED_HEAD"
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+
       - name: Generate and print exact provider lock
-        shell: powershell
+        shell: bash
         run: |
-          $ErrorActionPreference = 'Stop'
-          $node = 'C:\Program Files\nodejs\node.exe'
-          $npx = 'C:\Program Files\nodejs\npx.cmd'
-          if (-not (Test-Path -LiteralPath $node)) { throw 'NODE_NOT_FOUND' }
-          if (-not (Test-Path -LiteralPath $npx)) { throw 'NPX_NOT_FOUND' }
-          $nodeVersion = (& $node --version | Out-String).Trim()
-          if ($nodeVersion -ne 'v24.18.0') { throw "NODE_VERSION_MISMATCH:$nodeVersion" }
-          $npmVersion = (& $npx --yes npm@10.9.2 --version | Out-String).Trim()
-          if ($npmVersion -ne '10.9.2') { throw "NPM_VERSION_MISMATCH:$npmVersion" }
-          & $npx --yes npm@10.9.2 install --package-lock-only --ignore-scripts --no-audit --no-fund
-          if ($LASTEXITCODE -ne 0) { throw "NPM_LOCK_SYNTHESIS_FAILED:$LASTEXITCODE" }
-          $bytes = [IO.File]::ReadAllBytes((Join-Path $PWD 'package-lock.json'))
-          $encoded = [Convert]::ToBase64String($bytes)
-          Write-Output 'BEGIN_PACKAGE_LOCK_BASE64'
-          for ($i = 0; $i -lt $encoded.Length; $i += 100) {
-            Write-Output $encoded.Substring($i, [Math]::Min(100, $encoded.Length - $i))
-          }
-          Write-Output 'END_PACKAGE_LOCK_BASE64'
+          set -euo pipefail
+          test "$(npx --yes --package=node@24.18.0 node --version)" = "v24.18.0"
+          test "$(npx --yes --package=node@24.18.0 --package=npm@10.9.2 npm --version)" = "10.9.2"
+          npx --yes --package=node@24.18.0 --package=npm@10.9.2 npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+          python - <<'PY'
+          import base64
+          from pathlib import Path
+
+          payload = Path("package-lock.json").read_bytes()
+          encoded = base64.b64encode(payload).decode("ascii")
+          print("BEGIN_PACKAGE_LOCK_BASE64")
+          for index in range(0, len(encoded), 100):
+              print(encoded[index : index + 100])
+          print("END_PACKAGE_LOCK_BASE64")
+          PY
+
       - name: Clean temporary workspace
         if: always()
-        shell: cmd
+        shell: bash
         run: |
-          git config --local --unset-all credential.helper >nul 2>nul
-          git reset --hard HEAD >nul 2>nul
-          git clean -ffdx >nul 2>nul
+          git config --local --unset-all credential.helper || true
+          git reset --hard HEAD || true
+          git clean -ffdx || true
