@@ -161,6 +161,7 @@ jobs:
           tests.test_v10_cloudflare_public_product_integrated
           tests.test_v10_cloudflare_builds_verifier
           tests.test_v10_cloudflare_runtime_compatibility
+          tests.test_v10_cloudflare_release_acceptance
           tests.test_v10_cloudflare_live_release
           tests.test_v10_jsonc
 
