@@ -23,17 +23,7 @@ jobs:
     steps:
       - name: Read completed Sonar annotations
         shell: cmd
-        run: >-
-          powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command
-          "$ErrorActionPreference='Stop';
-          $headers=@{Accept='application/vnd.github+json';Authorization=('Bearer '+$env:GH_TOKEN);'X-GitHub-Api-Version'='2022-11-28'};
-          $url='https://api.github.com/repos/MishaGameHacking/omni-cio-gateway/check-runs/99129352927/annotations?per_page=100';
-          $annotations=@(Invoke-RestMethod -Uri $url -Headers $headers -Method Get);
-          Write-Output ('SONAR_DIAGNOSTIC_SOURCE_HEAD=a7b19dd17886142bc33d9b1f40152641634f389e');
-          Write-Output ('SONAR_DIAGNOSTIC_ANNOTATIONS='+$annotations.Count);
-          foreach($item in $annotations){
-            $path=([string]$item.path -replace '[\r\n\t]+',' ');
-            $title=([string]$item.title -replace '[\r\n\t]+',' ');
-            $message=([string]$item.message -replace '[\r\n\t]+',' ');
-            Write-Output ('SONAR_ANNOTATION path={0} lines={1}-{2} level={3} title={4} message={5}' -f $path,$item.start_line,$item.end_line,$item.annotation_level,$title,$message)
-          }"
+        run: |
+          @echo off
+          echo SONAR_DIAGNOSTIC_SOURCE_HEAD=a7b19dd17886142bc33d9b1f40152641634f389e
+          curl.exe -fsSL -H "Accept: application/vnd.github+json" -H "Authorization: Bearer %GH_TOKEN%" -H "X-GitHub-Api-Version: 2022-11-28" "https://api.github.com/repos/MishaGameHacking/omni-cio-gateway/check-runs/99129352927/annotations?per_page=100"
