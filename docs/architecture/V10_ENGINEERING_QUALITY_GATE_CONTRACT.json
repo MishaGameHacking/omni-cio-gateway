@@ -1,6 +1,6 @@
 {
   "schema": "omni-cio.v10.engineering-quality-gate.v5",
-  "status": "ACTIVE_ACCEPTED_ON_MAIN_WITH_PROPOSED_CLOUDFLARE_AUTHORITY_UPDATE",
+  "status": "ACTIVE_ACCEPTED_ON_MAIN_WITH_CLOUDFLARE_AUTHORITY_UPDATE",
   "date": "2026-08-29",
   "acceptance_evidence": {
     "accepted_pr": 322,
