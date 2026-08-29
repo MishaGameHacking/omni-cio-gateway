@@ -38,10 +38,7 @@ function hardenedJson(payload, status = 200) {
   });
 }
 
-function backendRequest(request, routeUrl) {
-  const url = new URL(`https://${INTERNAL_HOST}/`);
-  url.pathname = routeUrl.pathname;
-  url.search = routeUrl.search;
+function backendRequest(request) {
   const clientIp = request.headers.get("cf-connecting-ip");
   const headers = new Headers(request.headers);
   headers.set("host", INTERNAL_HOST);
@@ -56,15 +53,13 @@ function backendRequest(request, routeUrl) {
   headers.set("x-forwarded-proto", "https");
   headers.set("x-omni-edge-provider", "cloudflare");
   headers.set("x-omni-source-sha", SOURCE_SHA);
-  return new Request(url, {
-    method: request.method,
+  return new Request(request, {
     headers,
-    body: request.body,
     redirect: "manual",
   });
 }
 
-async function proxyBackend(request, env, routeUrl) {
+async function proxyBackend(request, env) {
   if (
     typeof env[REQUIRED_DATABASE_SECRET] !== "string" ||
     env[REQUIRED_DATABASE_SECRET].length === 0
@@ -79,7 +74,7 @@ async function proxyBackend(request, env, routeUrl) {
     );
   }
   const instance = await getRandom(env.BACKEND, BACKEND_INSTANCE_COUNT);
-  return instance.fetch(backendRequest(request, routeUrl));
+  return instance.fetch(backendRequest(request));
 }
 
 export default {
@@ -97,7 +92,7 @@ export default {
       });
     }
     if (url.pathname === "/healthz" || url.pathname.startsWith("/api/")) {
-      return proxyBackend(request, env, url);
+      return proxyBackend(request, env);
     }
     return env.ASSETS.fetch(request);
   },
