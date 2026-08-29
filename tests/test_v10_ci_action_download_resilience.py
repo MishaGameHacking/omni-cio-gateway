@@ -47,10 +47,12 @@ CURRENT_CRITICAL_FOLLOWUP_RETRY_WORKFLOWS = (
     "v10-wp22-system-admin-audit.yml",
     "v10-wp22a-clientless-access-audit.yml",
     "v10-wp22a-phase2-product-auth-audit.yml",
-    "v10-phase4-free-preview-deploy.yml",
 )
 
-HOSTED_ALIGNMENT_WORKFLOW = "v10-hosted-release-alignment.yml"
+RETIRED_RENDER_WORKFLOWS = (
+    "v10-phase4-free-preview-deploy.yml",
+    "v10-hosted-release-alignment.yml",
+)
 LIVE_AUTHORITY_WORKFLOW = "v10-live-gateway-authority-contract.yml"
 
 RETRY_MARKERS = (
@@ -220,59 +222,39 @@ class V10CIActionDownloadResilienceTests(unittest.TestCase):
         self.assertNotIn("git reset --hard HEAD || true", cleanup)
         self.assertNotIn("git clean -ffdx || true", cleanup)
 
-    def test_hosted_alignment_retries_bootstrap_and_post_probe_reconfirmation(
-        self,
-    ) -> None:
-        text = (WORKFLOWS / HOSTED_ALIGNMENT_WORKFLOW).read_text(encoding="utf-8")
+    def test_retired_render_workflows_are_manual_only_and_do_not_bootstrap(self) -> None:
+        expected = {
+            "v10-phase4-free-preview-deploy.yml": (
+                "LEGACY_RENDER_PHASE4_RETIRED_AMENDMENT_14",
+                "exit /b 78",
+            ),
+            "v10-hosted-release-alignment.yml": (
+                "LEGACY_RENDER_ALIGNMENT_RETIRED_AMENDMENT_14",
+                "exit /b 79",
+            ),
+        }
 
-        for marker in RETRY_MARKERS:
-            self.assertIn(marker, text)
-        self.assertEqual(text.count("for bootstrap_attempt in 1 2 3; do"), 1)
-
-        reconfirm = text.split(
-            "- name: Reconfirm current main before publishing runtime PASS", 1
-        )[1].split("- name: Clean self-hosted alignment workspace", 1)[0]
-        for marker in (
-            "reconfirm_succeeded=0",
-            "for reconfirm_attempt in 1 2 3; do",
-            "git config --local http.lowSpeedLimit 1000",
-            "git config --local http.lowSpeedTime 60",
-            "fetch_status=0",
-            "|| fetch_status=$?",
-            "git config --local --unset-all credential.helper 2>/dev/null || true",
-            'sleep "$((reconfirm_attempt * 5))"',
-            'if [ "$reconfirm_succeeded" -ne 1 ]; then',
-            'echo "Current-main reconfirm transport failed after 3 attempts; runtime PASS is withheld." >&2',
-            "exit 71",
-            "phase=post_probe",
-            "cat hosted_alignment_pass.txt",
-        ):
-            self.assertIn(marker, reconfirm)
-
-        self.assertNotIn("rm -rf .git", reconfirm)
-        exhaustion_guard = reconfirm.index('if [ "$reconfirm_succeeded" -ne 1 ]; then')
-        current_main_read = reconfirm.index(
-            'current_main_sha="$(git rev-parse refs/remotes/origin/main)"'
-        )
-        publish_pass = reconfirm.index("cat hosted_alignment_pass.txt")
-        self.assertLess(exhaustion_guard, current_main_read)
-        self.assertLess(current_main_read, publish_pass)
-
-        cleanup = text.split("- name: Clean self-hosted alignment workspace", 1)[1]
-        for marker in (
-            BASH_PRE_HEAD_CLEANUP,
-            "git reset --hard HEAD || true",
-            "git clean -ffdx || true",
-            "rm -rf .git",
-        ):
-            self.assertIn(marker, cleanup)
-
-        reset_count = text.count("git reset --hard HEAD")
-        safe_cleanup_count = text.count(BASH_PRE_HEAD_CLEANUP) + text.count(
-            CMD_PRE_HEAD_CLEANUP
-        )
-        self.assertGreaterEqual(safe_cleanup_count, reset_count)
-        self.assertNotIn("continue-on-error: true", text)
+        for name in RETIRED_RENDER_WORKFLOWS:
+            text = (WORKFLOWS / name).read_text(encoding="utf-8")
+            retirement_marker, exit_code = expected[name]
+            for marker in (
+                "workflow_dispatch:",
+                "contents: read",
+                "runs-on: [self-hosted, Windows, X64, omni-cio-ci]",
+                retirement_marker,
+                exit_code,
+            ):
+                self.assertIn(marker, text, name)
+            for forbidden in (
+                "workflow_run:",
+                "schedule:",
+                "GITHUB_TOKEN: ${{ github.token }}",
+                "git fetch --no-tags --prune",
+                "RENDER_API_KEY",
+                "NEON_API_KEY",
+                "continue-on-error: true",
+            ):
+                self.assertNotIn(forbidden, text, name)
 
 
 if __name__ == "__main__":
