@@ -38,12 +38,11 @@ function hardenedJson(payload, status = 200) {
   });
 }
 
-function backendRequest(request) {
-  const url = new URL(request.url);
+function backendRequest(request, routeUrl) {
+  const url = new URL(`https://${INTERNAL_HOST}/`);
+  url.pathname = routeUrl.pathname;
+  url.search = routeUrl.search;
   const clientIp = request.headers.get("cf-connecting-ip");
-  url.protocol = "https:";
-  url.hostname = INTERNAL_HOST;
-  url.port = "";
   const headers = new Headers(request.headers);
   headers.set("host", INTERNAL_HOST);
   headers.delete("forwarded");
@@ -65,7 +64,7 @@ function backendRequest(request) {
   });
 }
 
-async function proxyBackend(request, env) {
+async function proxyBackend(request, env, routeUrl) {
   if (
     typeof env[REQUIRED_DATABASE_SECRET] !== "string" ||
     env[REQUIRED_DATABASE_SECRET].length === 0
@@ -80,7 +79,7 @@ async function proxyBackend(request, env) {
     );
   }
   const instance = await getRandom(env.BACKEND, BACKEND_INSTANCE_COUNT);
-  return instance.fetch(backendRequest(request));
+  return instance.fetch(backendRequest(request, routeUrl));
 }
 
 export default {
@@ -98,7 +97,7 @@ export default {
       });
     }
     if (url.pathname === "/healthz" || url.pathname.startsWith("/api/")) {
-      return proxyBackend(request, env);
+      return proxyBackend(request, env, url);
     }
     return env.ASSETS.fetch(request);
   },
