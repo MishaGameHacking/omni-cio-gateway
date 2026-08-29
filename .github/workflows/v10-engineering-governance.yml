@@ -94,6 +94,9 @@ jobs:
       - name: Verify Cloudflare public-product integrated delivery law
         run: python scripts/check_v10_cloudflare_public_product_integrated.py
 
+      - name: Verify Cloudflare Builds verifier contract
+        run: python scripts/check_v10_cloudflare_builds_verifier.py
+
       - name: Verify hosted release post-merge alignment governance
         run: python scripts/check_v10_hosted_release_alignment_governance.py
 
@@ -121,6 +124,8 @@ jobs:
           scripts/check_v10_engineering_governance.py
           scripts/check_v10_cloudflare_platform_authority.py
           scripts/check_v10_cloudflare_public_product_integrated.py
+          scripts/check_v10_cloudflare_builds_verifier.py
+          scripts/run_v10_cloudflare_verifier.py
           scripts/check_v10_hosted_release_alignment_governance.py
           scripts/check_v10_integrated_system_update_governance.py
           scripts/check_v10_progressive_capability_activation.py
@@ -142,6 +147,7 @@ jobs:
           tests.test_v10_hosted_release_alignment_governance
           tests.test_v10_cloudflare_platform_authority
           tests.test_v10_cloudflare_public_product_integrated
+          tests.test_v10_cloudflare_builds_verifier
 
       - name: Clean self-hosted workspace
         if: always()
