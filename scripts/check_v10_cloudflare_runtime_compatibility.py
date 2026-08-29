@@ -31,7 +31,7 @@ def _load_json(path: Path) -> dict[str, Any]:
     try:
         source = _read(path)
         value = loads_jsonc(source) if path.suffix == ".jsonc" else json.loads(source)
-    except (ValueError, json.JSONDecodeError) as exc:
+    except ValueError as exc:
         raise RuntimeError(f"CLOUDFLARE_RUNTIME_JSON_INVALID:{path}") from exc
     if not isinstance(value, dict):
         raise RuntimeError(f"CLOUDFLARE_RUNTIME_OBJECT_REQUIRED:{path}")
@@ -165,6 +165,7 @@ def validate() -> None:
     dockerfile = _read(DOCKERFILE)
     for marker in (
         "FROM python:3.14.6-slim-bookworm",
+        "RUN npm ci --ignore-scripts --prefix apps/web",
         "python -m pip install --require-hashes -r requirements.txt",
         "USER omni",
         "apps.api.cloudflare_runtime:create_app",
@@ -208,6 +209,7 @@ def main() -> int:
     print("V10 Cloudflare runtime compatibility contract passed.")
     print("Frontend: Workers Static Assets")
     print("Backend: Cloudflare Container / Python 3.14.6")
+    print("Dependency install lifecycle scripts: DISABLED")
     print(
         "Container transport: fixed internal proxy endpoint + validated route restore"
     )
