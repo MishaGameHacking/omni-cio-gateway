@@ -23,7 +23,7 @@ from omni_cio.web.persistence_v1 import PostgresWebSessionRegistryV1
 
 _INTERNAL_HOST = "omni-cio.internal"
 _INTERNAL_PROXY_PATH = "/_omni/cloudflare-proxy"
-_DSN_SECRET = "OMNI_V10_POSTGRES_DSN"
+_DSN_ENV_NAME = "OMNI_V10_POSTGRES_DSN"
 _SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 _SECONDARY_ROUTE_ESCAPE_PATTERN = re.compile(r"%(?:2e|2f|5c|25)", re.IGNORECASE)
 _ROUTE_PATH_HEADER = b"x-omni-route-path"
@@ -195,7 +195,7 @@ def create_app():
     if _SHA_PATTERN.fullmatch(release_sha) is None:
         raise RuntimeError("CLOUDFLARE_RUNTIME_RELEASE_SHA_INVALID")
 
-    raw_connection = connect_postgres(_required_env(_DSN_SECRET))
+    raw_connection = connect_postgres(_required_env(_DSN_ENV_NAME))
     _configure_long_lived_web_connection(raw_connection)
     connection = _SerializedWebConnection(raw_connection)
     _probe_hosted_preview_database(connection)

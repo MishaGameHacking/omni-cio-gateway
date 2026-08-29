@@ -69,7 +69,7 @@ def validate() -> None:
         "staging_environment": "staging",
         "staging_worker_name": "omni-cio-v10-web-staging",
         "staging_deploy_command": "npm run cloudflare:deploy:staging",
-        "staging_database_secret_binding": "OMNI_V10_POSTGRES_DSN",
+        "staging_database_binding": "OMNI_V10_POSTGRES_DSN",
         "staging_container_rollout_required": True,
         "non_production_versions_upload_is_candidate": False,
     }

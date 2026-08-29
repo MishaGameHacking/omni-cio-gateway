@@ -5,12 +5,12 @@ import { SOURCE_SHA } from "./generated-build-info.js";
 const BACKEND_INSTANCE_COUNT = 1;
 const INTERNAL_HOST = "omni-cio.internal";
 const INTERNAL_PROXY_URL = "https://omni-cio.internal/_omni/cloudflare-proxy";
-const REQUIRED_DATABASE_SECRET = "OMNI_V10_POSTGRES_DSN";
+const REQUIRED_DATABASE_ENV_NAME = "OMNI_V10_POSTGRES_DSN";
 const MAX_ROUTE_PATH_LENGTH = 4096;
 const MAX_ROUTE_QUERY_LENGTH = 8192;
 
 function backendEnvironment() {
-  const databaseDsn = runtimeEnv[REQUIRED_DATABASE_SECRET];
+  const databaseDsn = runtimeEnv[REQUIRED_DATABASE_ENV_NAME];
   return {
     OMNI_V10_CLOUDFLARE_RUNTIME: "1",
     OMNI_V10_RELEASE_SHA: SOURCE_SHA,
@@ -85,8 +85,8 @@ async function proxyBackend(request, env, routeUrl) {
     return hardenedJson({ detail: "ROUTE_TOO_LARGE" }, 414);
   }
   if (
-    typeof env[REQUIRED_DATABASE_SECRET] !== "string" ||
-    env[REQUIRED_DATABASE_SECRET].length === 0
+    typeof env[REQUIRED_DATABASE_ENV_NAME] !== "string" ||
+    env[REQUIRED_DATABASE_ENV_NAME].length === 0
   ) {
     return hardenedJson(
       {

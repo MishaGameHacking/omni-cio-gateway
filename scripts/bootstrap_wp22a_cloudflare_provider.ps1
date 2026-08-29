@@ -19,6 +19,7 @@ $expectedSha256 = @(
     "8e6d420d"
 ) -join ""
 $url = "https://github.com/cloudflare/terraform-provider-cloudflare/releases/download/v$version/$archiveName"
+$maxDownloadAttempts = 3
 
 $root = [System.IO.Path]::GetFullPath($DestinationRoot)
 $cacheRoot = Join-Path $root "cloudflare-provider-$version-windows-amd64"
@@ -36,7 +37,23 @@ if (Test-Path -LiteralPath $archivePath -PathType Leaf) {
 New-Item -ItemType Directory -Path $root -Force | Out-Null
 $tempArchive = Join-Path $root ("cloudflare-provider-" + [guid]::NewGuid().ToString("N") + ".zip")
 try {
-    Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $tempArchive
+    $downloaded = $false
+    for ($attempt = 1; $attempt -le $maxDownloadAttempts; $attempt++) {
+        Remove-Item -LiteralPath $tempArchive -Force -ErrorAction SilentlyContinue
+        try {
+            Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $tempArchive -TimeoutSec 90
+            $downloaded = $true
+            break
+        }
+        catch {
+            if ($attempt -eq $maxDownloadAttempts) {
+                throw "WP22A_CLOUDFLARE_PROVIDER_DOWNLOAD_FAILED_AFTER_RETRIES"
+            }
+            Start-Sleep -Seconds ($attempt * 2)
+        }
+    }
+    if (-not $downloaded) { throw "WP22A_CLOUDFLARE_PROVIDER_DOWNLOAD_FAILED_AFTER_RETRIES" }
+
     $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $tempArchive -ErrorAction Stop).Hash.ToLowerInvariant()
     if ($actual -ne $expectedSha256) { throw "WP22A_CLOUDFLARE_PROVIDER_ARCHIVE_HASH_MISMATCH" }
 

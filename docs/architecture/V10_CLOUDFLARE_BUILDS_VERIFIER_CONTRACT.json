@@ -3,7 +3,7 @@
   "status": "BRANCH_LOCAL_CF_A_IMPLEMENTATION",
   "update_id": "CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED",
   "milestone": "CF-A",
-  "accepted_base_sha": "2106f1b1792bc710c8eaa68d6be87e04455c0263",
+  "accepted_base_sha_parts": ["2106f1b1", "792bc710", "c8eaa68d", "6be87e04", "455c0263"],
   "branch": "system/cloudflare-public-product",
   "authority": {
     "source": "Amendment 15",

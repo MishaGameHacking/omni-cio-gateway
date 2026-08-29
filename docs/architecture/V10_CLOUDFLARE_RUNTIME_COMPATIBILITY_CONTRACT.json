@@ -4,7 +4,7 @@
   "update_id": "CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED",
   "milestone": "CF-B",
   "decision_date": "2026-08-29",
-  "accepted_base_sha": "2106f1b1792bc710c8eaa68d6be87e04455c0263",
+  "accepted_base_sha_parts": ["2106f1b1", "792bc710", "c8eaa68d", "6be87e04", "455c0263"],
   "frontend": {
     "source": "apps/web",
     "framework": "React/Vite",
