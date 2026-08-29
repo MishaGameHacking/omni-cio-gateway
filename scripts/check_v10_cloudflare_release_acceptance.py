@@ -110,6 +110,16 @@ def validate() -> None:
     staging = _object(environments.get("staging"), "STAGING")
     if staging.get("name") != candidate["staging_worker_name"]:
         raise RuntimeError("CLOUDFLARE_RELEASE_STAGING_WORKER_INVALID")
+    expected_container = {
+        "class_name": "Backend",
+        "image": "./Dockerfile.cloudflare",
+        "max_instances": 1,
+        "instance_type": "lite",
+        "rollout_active_grace_period": 0,
+        "rollout_step_percentage": 100,
+    }
+    if staging.get("containers") != [expected_container]:
+        raise RuntimeError("CLOUDFLARE_RELEASE_STAGING_CONTAINER_INVALID")
     staging_durable_objects = _object(
         staging.get("durable_objects"), "STAGING_DURABLE_OBJECTS"
     )
