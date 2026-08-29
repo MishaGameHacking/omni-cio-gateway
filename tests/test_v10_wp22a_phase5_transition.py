@@ -142,7 +142,7 @@ def test_phase5_closeout_evidence_maps_accepted_exact_main_chain() -> None:
     assert locks["protected_v9_entrypoint"] == "app:app"
 
 
-def test_status_closes_wp22a_and_stages_cloudflare_before_prepared_visual_update() -> None:
+def test_status_closes_wp22a_and_stages_integrated_cloudflare_before_prepared_visual_update() -> None:
     text = STATUS.read_text(encoding="utf-8")
 
     assert "WP0–WP22A COMPLETE" in text
@@ -151,10 +151,14 @@ def test_status_closes_wp22a_and_stages_cloudflare_before_prepared_visual_update
     assert "Block E — **COMPLETE (14%)**" in text
     assert "PRODUCT IMPLEMENTATION PAUSED" in text
     assert (
-        "## Current next package — CLOUDFLARE-BUILDS-VERIFIER-INTEGRATION — "
-        "Repository-Side Portable Verification Integration"
+        "## Current next package — CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED — "
+        "Cloudflare Public Product System Update"
         in text
     )
+    assert "CF-A / CLOUDFLARE-BUILDS-VERIFIER-INTEGRATION" in text
+    assert "CF-B / CLOUDFLARE-RUNTIME-COMPATIBILITY" in text
+    assert "CF-C / CLOUDFLARE-CANDIDATE-DEPLOYMENT" in text
+    assert "CF-D / CLOUDFLARE-PUBLIC-CUTOVER" in text
     assert "### Prepared product package — WEB-VISUAL-INTEGRATED" in text
     assert "START V10 WEB VISUAL SYSTEM UPDATE" in text
     assert "WP23+ LOCKED" in text
@@ -222,6 +226,7 @@ def test_amendment11_separates_technical_closeout_from_public_activation() -> No
 
 
 def test_amendment11_is_discoverable_and_keeps_next_gates_locked() -> None:
+    payload = _json(PHASE5_CONTRACT)
     amendment = AMENDMENT11.read_text(encoding="utf-8")
     index = AMENDMENTS_INDEX.read_text(encoding="utf-8")
     authorization = PHASE5_AUTHORIZATION.read_text(encoding="utf-8")
@@ -248,6 +253,7 @@ def test_amendment11_is_discoverable_and_keeps_next_gates_locked() -> None:
     assert "current runtime state, not a V10-wide release lock" in status
     assert "BLOCKED_EXTERNAL" in status
     assert "Accepted implementation progress is **54%**" in status
+    assert payload["provider"]["production_provider"] == "Cloud.ru Evolution"
 
 
 def test_phase5_product_identity_is_user_tenant_session_not_provider_authority() -> None:

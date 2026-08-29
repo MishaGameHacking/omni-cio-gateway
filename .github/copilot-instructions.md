@@ -10,19 +10,23 @@ Dynamic V10 progress/current package authority is only `knowledge/17_V10_CURRENT
 
 - accepted implementation: 54%;
 - WP0–WP22A COMPLETE;
-- current next package after Amendment 14 acceptance: `CLOUDFLARE-BUILDS-VERIFIER-INTEGRATION`;
-- `WEB-VISUAL-INTEGRATED` remains prepared but PRODUCT IMPLEMENTATION PAUSED until its separate OWNER start/sequence permits source work;
+- current next package after Amendment 15 acceptance: `CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED`;
+- default implementation branch: `system/cloudflare-public-product`;
+- ordered internal milestones: `CF-A / CLOUDFLARE-BUILDS-VERIFIER-INTEGRATION -> CF-B / CLOUDFLARE-RUNTIME-COMPATIBILITY -> CF-C / CLOUDFLARE-CANDIDATE-DEPLOYMENT -> CF-D / CLOUDFLARE-PUBLIC-CUTOVER`;
+- internal milestones share one final integrated PR by default, but each branch-local Exit Gate must pass before dependent work;
+- `WEB-VISUAL-INTEGRATED` remains prepared but PRODUCT IMPLEMENTATION PAUSED for visual-refresh scope until its separate OWNER start/sequence permits source work;
+- exact visual start remains `START V10 WEB VISUAL SYSTEM UPDATE`;
 - WP23+ locked;
-- `PUBLIC_MULTI_USER_ENABLED=false` remains current fail-closed runtime state;
+- `PUBLIC_MULTI_USER_ENABLED=false` remains current fail-closed runtime state until CF-D and capability-specific gates;
 - broker write OFF, `trading_methods=false`, `REAL_TRADING_ENABLED=false`.
 
-Before any material work restore current `main`, `AGENTS.md`, `README.md`, `CONTRIBUTING.md`, Master Context, V9 current status, V10 Program Lock/Master Plan/Amendments Index, all applicable active amendments/contracts, current V10 status, current execution-unit docs, open PR/issues and GitHub Actions.
+Before any material work restore current `main`, `AGENTS.md`, `README.md`, `CONTRIBUTING.md`, Master Context, V9 current status, V10 Program Lock/Master Plan/Amendments Index, all applicable active amendments/contracts including Amendments 14/15, current V10 status, current execution-unit docs, open PR/issues and GitHub Actions.
 
 ## GitHub / Cloudflare authority
 
 GitHub is engineering authority rank 1: source, review, exact SHA, accepted status and provenance.
 
-Cloudflare Workers Paid is platform rank 2 for **new V10** application/edge/build work after Amendment 14 and each owning gate are accepted.
+Cloudflare Workers Paid is platform rank 2 for **new V10** application/edge/build work after Amendment 14 and the owning internal gates are accepted.
 
 For new V10 work:
 
@@ -30,18 +34,18 @@ For new V10 work:
 - Render is retired from active new-V10 deployment, zero-charge attestation, hosted-release alignment and recovery authority;
 - historical WP22A Render/Neon evidence remains historical evidence;
 - protected V9 Render `app:app` remains protected;
-- Amendment 14 acceptance itself does not deploy Cloudflare, mutate DNS/domain/provider state, create secrets, activate users or authorize Real money.
+- Amendments 14/15 alone do not deploy Cloudflare, mutate DNS/domain/provider state, create secrets, activate users or authorize Real money.
 
 The final public product uses a managed-cloud Omni-CIO Web/API independent of OWNER home availability. Cloudflare edge controls are additive security; Cloudflare Access is not product identity.
 
-Mandatory Cloudflare sequence:
+Amendment 15 integrates the Cloudflare implementation into one ordered System Update:
 
-1. `CLOUDFLARE-BUILDS-VERIFIER-INTEGRATION` — portable repository verification only, no production deploy;
-2. `CLOUDFLARE-RUNTIME-COMPATIBILITY` — React/Vite/backend/native dependency/PostgreSQL/Hyperdrive evidence;
-3. `CLOUDFLARE-CANDIDATE-DEPLOYMENT` — immutable candidate provider mutation;
-4. `CLOUDFLARE-PUBLIC-CUTOVER` — domain/DNS/TLS/security/promotion/rollback and capability-specific live acceptance.
+1. `CF-A / CLOUDFLARE-BUILDS-VERIFIER-INTEGRATION` — portable repository verification/shard/impact/provenance/cost contract; no candidate/public promotion;
+2. `CF-B / CLOUDFLARE-RUNTIME-COMPATIBILITY` — React/Vite/backend/native dependency/PostgreSQL/Hyperdrive/Containers evidence;
+3. `CF-C / CLOUDFLARE-CANDIDATE-DEPLOYMENT` — immutable candidate provider mutation only after CF-A/CF-B gates;
+4. `CF-D / CLOUDFLARE-PUBLIC-CUTOVER` — domain/DNS/TLS/security/promotion/rollback and capability-specific live acceptance.
 
-Never skip a mandatory split boundary merely to finish faster.
+Separate protected-main acceptance between CF-A…CF-D is not required after Amendment 15 acceptance, but never skip an internal Exit Gate. A real mandatory split trigger still forces a stop/split.
 
 ## Continuous public releases
 
@@ -58,6 +62,8 @@ Public release ID is event-derived CalVer `YYYY.MM.DD.N` plus exact source/Cloud
 ## Execution-unit discipline
 
 Governed by the **Integrated System Update Execution Law**. Every material change is exactly one `FOCUSED_CHANGE` or one OWNER-authorized `INTEGRATED_SYSTEM_UPDATE` with ordered internal member milestones.
+
+Current Cloudflare execution unit is `CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED`. Its one-branch default never bypasses DB/migration, security/authority, dependency/toolchain, OWNER/provider, live/temporal, production-cutover, Real-money or reviewability split triggers.
 
 ## Pre-CI Engineering Gate
 
@@ -85,6 +91,7 @@ Before merge:
 
 - review all Files changed;
 - inspect inline threads, annotations, Sonar, Gitar and applicable SAST/security/code-review output;
+- Quality Gate success does not excuse non-zero Sonar issues/annotations/hotspots;
 - classify and fix/block material findings;
 - unresolved blocking threads = 0;
 - repeat Files changed/review after every correction commit;
@@ -118,13 +125,23 @@ Reuse existing architecture by default:
 
 `REUSE_AS_IS > WRAP_ADAPTER > EXTRACT_TO_CORE > REWRITE_REQUIRED > RETIRE`.
 
-Existing React/Vite Web is canonical source. FastAPI support in Python Workers does not prove all CPython/native dependencies work there; compatibility is mandatory evidence.
+Existing React/Vite Web is canonical source and targets Workers Static Assets when CF-B proves the runtime path. FastAPI support in Python Workers does not prove all CPython/native dependencies work there; compatibility is mandatory evidence. Cloudflare Containers may be used only for a proven full-Linux/native runtime need with accepted cost/recovery semantics.
 
-Neon/PostgreSQL 18 remains tenant/data authority unless an explicit migration changes it. Do not assume Hyperdrive supports PostgreSQL 18; test it. Do not replace financial/tenant truth with D1 merely to use a Cloudflare feature.
+Neon/PostgreSQL 18 remains tenant/data authority unless an explicit equivalent migration changes it. Do not assume Hyperdrive supports PostgreSQL 18; test it. Do not replace financial/tenant truth with D1 merely to use a Cloudflare feature.
 
-Workers Paid included capacity may be used after repository integration, but mutable provider limits/pricing must be revalidated before material configuration. No uncontrolled paid overage or higher plan without fresh OWNER approval.
+Prefer Cloudflare services over replaceable external infrastructure only when semantics, security, recovery and cost are equivalent. Never remove GitHub or the PostgreSQL/Neon authority merely to claim a Cloudflare-only stack.
 
-Current GitHub/Lenovo CI routing stays authoritative until Cloudflare build lanes are accepted. Never fake Windows/PowerShell/ACL/PostgreSQL-native semantics as portable GREEN.
+Workers Paid included capacity may be used inside the owning milestone, but mutable provider limits/pricing must be revalidated before material configuration. No uncontrolled paid overage or higher plan without fresh OWNER approval.
+
+Current GitHub/Lenovo CI routing stays authoritative until CF-A lanes are accepted. Never fake Windows/PowerShell/ACL/PostgreSQL-native semantics as portable GREEN.
+
+## WEB VISUAL lock
+
+`CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED` deploys the existing accepted presentation. It does not authorize visual-refresh implementation.
+
+Do not create or implement `WEB-VISUAL-INTEGRATED` until the OWNER issues exactly:
+
+`START V10 WEB VISUAL SYSTEM UPDATE`
 
 ## Secrets / broker authority
 

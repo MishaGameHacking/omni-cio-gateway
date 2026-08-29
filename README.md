@@ -10,39 +10,43 @@ Repository-front-door snapshot of accepted/current program authority:
 
 - accepted V10 implementation progress: **54%**;
 - WP0–WP22A: accepted COMPLETE according to the canonical status/evidence chain;
-- **PRODUCT IMPLEMENTATION PAUSED** during the focused Cloudflare provider/security authority transition;
-- current next package after Amendment 14 acceptance: **CLOUDFLARE-BUILDS-VERIFIER-INTEGRATION — Repository-Side Portable Verification Integration**;
-- prepared product System Update remains **WEB-VISUAL-INTEGRATED — Premium Spatial Financial OS A→G / OWNER START REQUIRED** and is not executed inside the provider/security transition;
+- **PRODUCT IMPLEMENTATION PAUSED** for unrelated product scope during the Cloudflare provider/security transition;
+- current next package after Amendment 15 acceptance: **CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED — Cloudflare Public Product System Update**;
+- the former Amendment-14 split stages remain ordered internal milestones: `CF-A / CLOUDFLARE-BUILDS-VERIFIER-INTEGRATION -> CF-B / CLOUDFLARE-RUNTIME-COMPATIBILITY -> CF-C / CLOUDFLARE-CANDIDATE-DEPLOYMENT -> CF-D / CLOUDFLARE-PUBLIC-CUTOVER`;
+- default integrated implementation branch is `system/cloudflare-public-product`; one final PR is the default, but each internal milestone must pass before dependent work begins;
+- prepared product System Update remains **WEB-VISUAL-INTEGRATED — Premium Spatial Financial OS A→G / OWNER START REQUIRED** and is not executed inside the Cloudflare public-product update;
 - exact product START required before visual implementation: `START V10 WEB VISUAL SYSTEM UPDATE`;
-- Amendment 12 still governs execution-unit granularity and mandatory provider/security/cutover splits;
+- Amendment 12 still governs execution-unit law and mandatory split triggers;
 - Amendment 13 still governs progressive capability activation without waiting for all of V10;
-- Amendment 14 selects GitHub as engineering authority rank 1 and Cloudflare Workers Paid as new-V10 application/edge/build platform rank 2 when accepted; it does not itself deploy production;
+- Amendment 14 selects GitHub as engineering authority rank 1 and Cloudflare Workers Paid as new-V10 application/edge/build platform rank 2;
+- Amendment 15 changes only the delivery granularity of the four Cloudflare implementation stages into one integrated update and does not weaken their runtime/security/candidate/cutover gates;
 - historical WP22A Render/Neon hosted evidence remains evidence, while Render is retired from active **new V10** deployment/attestation/release-alignment authority;
-- Cloud.ru Evolution is no longer the selected provider target for new V10 work after Amendment 14 acceptance;
+- Cloud.ru Evolution is no longer the selected provider target for new V10 work;
 - WP23+ remains locked;
 - **public multi-user/global browser service is the approved V10 target**;
-- **public Internet ingress remains OFF while the separate Cloudflare runtime/candidate/cutover plus production security/privacy/broker/legal/capacity gates are unfinished**; technical acceptance is not production activation;
+- **public Internet ingress remains OFF until CF-D and the capability-specific production security/privacy/broker/legal/capacity gates actually pass**; technical acceptance is not production activation;
 - final public production must not depend on PROJECT OWNER home IP, Wi-Fi, router/LAN, home Internet or Lenovo as the production origin;
-- final public Web/API/private-state runtime must use the approved Cloudflare managed-platform boundary only after its owning compatibility/cutover gates;
+- final public Web/API/private-state runtime must use the approved Cloudflare managed-platform boundary after its owning internal compatibility/candidate/cutover gates;
 - PROJECT OWNER is an ordinary product USER when using Omni-CIO; GitHub/Cloudflare/Windows authority is separate from product identity;
 - initial registered-user access is free: billing, trial, subscription enforcement and premium feature gating are disabled for the initial launch;
 - normal broker READ and optional TRADE credentials belong only to the authenticated tenant's `BrokerConnection`; no shared/global user broker token is allowed;
 - current T-Invest public-service terms remain a separate fail-closed broker gate; user-supplied tokens do not waive broker restrictions;
 - broker-write / Real-execution authority remains unchanged;
-- `app:app`, `trading_methods=false`, `REAL_TRADING_ENABLED=false`, `PUBLIC_MULTI_USER_ENABLED=false` and protected V9 rollback remain intact.
+- `app:app`, `trading_methods=false`, `REAL_TRADING_ENABLED=false`, `PUBLIC_MULTI_USER_ENABLED=false` and protected V9 rollback remain intact until their own later gates.
 
 This box is a concise repository front door, **not a second progress ledger**. For exact evidence and transitions read `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
 
 ## Cloudflare platform / continuous release authority
 
-Amendment 14 introduces the current new-V10 target model without changing protected V9:
+Amendment 14 establishes the new-V10 platform model without changing protected V9, while Amendment 15 groups its implementation stages into one integrated delivery unit:
 
 - GitHub is canonical source/review/provenance authority;
-- Cloudflare Workers Paid is the selected managed application/edge/build platform after the owning acceptance gates;
-- the already purchased Workers Paid baseline may be used by accepted packages, but mutable limits/costs must be revalidated before material configuration and automatic paid overage or a higher plan is not implied;
-- current GitHub/Lenovo CI routing remains authoritative until `CLOUDFLARE-BUILDS-VERIFIER-INTEGRATION` proves and accepts portable Cloudflare build lanes;
+- Cloudflare Workers Paid is the selected managed application/edge/build platform after the owning gates;
+- the already purchased Workers Paid baseline may be used by accepted internal milestones, but mutable limits/costs must be revalidated before material configuration and automatic paid overage or a higher plan is not implied;
+- current GitHub/Lenovo CI routing remains authoritative until `CF-A / CLOUDFLARE-BUILDS-VERIFIER-INTEGRATION` proves portable Cloudflare build lanes;
 - existing React/Vite Web remains the migration source; backend/Python Worker/native-dependency compatibility must be proved rather than assumed;
-- accepted Neon/PostgreSQL 18 tenant/RLS authority remains intact; Hyperdrive + PostgreSQL 18 requires explicit compatibility evidence and D1 is not an automatic replacement;
+- Cloudflare Containers may be adopted only for a proven full-Linux/native runtime need and accepted cost/recovery semantics;
+- accepted Neon/PostgreSQL 18 tenant/RLS authority remains intact until an explicit equivalent migration is proved; Hyperdrive + PostgreSQL 18 requires explicit compatibility evidence and D1 is not an automatic replacement;
 - Cloudflare DNS/TLS/DDoS/WAF/rate/Turnstile/Access are additive security layers and never replace product account/tenant authorization;
 - Cloudflare deployment, public release or Access never grants broker/Real-money authority.
 
@@ -59,9 +63,11 @@ Amendment 12 defines two execution units without changing the Master Plan block/
 - `FOCUSED_CHANGE` — a genuinely isolated defect, governance/documentation correction, maintenance item or mandatory split boundary;
 - `INTEGRATED_SYSTEM_UPDATE` — one coherent OWNER-authorized subsystem outcome with ordered internal WP/increment milestones, one integrated branch and one final PR by default.
 
+Amendment 15 explicitly authorizes `CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED` as an `INTEGRATED_SYSTEM_UPDATE`. Its ordered internal milestones are CF-A through CF-D. Separate main acceptance between those four internal milestones is no longer required, but the branch-local Exit Gate for each milestone is mandatory before dependent work starts. A real Amendment-12 split trigger discovered during implementation still forces a stop/split.
+
 For integrated work, internal milestones remain mandatory but are branch-local only. Accepted progress changes only after the complete integrated PR is squash-merged and required exact-main post-merge verification is GREEN.
 
-Before first external verification publication, the integrated branch must reach `INTEGRATION_READY`: all member milestones complete, known preflight defects fixed, full diff/coupled surfaces reviewed, regression guards present and mandatory split triggers cleared.
+Before first external final-verification publication, the integrated branch must reach `INTEGRATION_READY`: all member milestones complete, known preflight defects fixed, full diff/coupled surfaces reviewed, regression guards present and mandatory split triggers cleared.
 
 After a verification SHA is published, **HEAD FREEZE** applies while safe independent checks reach terminal state. Findings are consolidated and grouped by root cause/blast radius before one coherent correction batch. Temporary verifier commits/PRs and `continue-on-error` fake GREEN are forbidden. A new commit invalidates prior final exact-head evidence.
 
@@ -72,7 +78,7 @@ Every `INTEGRATED_SYSTEM_UPDATE` uses:
 
 Both are working-state records only and must say `BRANCH-LOCAL EXECUTION STATE — NOT ACCEPTED MAIN AUTHORITY`.
 
-The prepared visual update remains **OWNER START REQUIRED**, but it is not the immediate current package while the mandatory Cloudflare provider/security transition sequence is being established. Do not create its implementation branch or modify `apps/web` merely as part of the authority/build migration.
+The prepared visual update remains **OWNER START REQUIRED**. Do not create its implementation branch or modify `apps/web` merely for visual redesign as part of the Cloudflare public-product update.
 
 ## Product target
 
@@ -136,7 +142,9 @@ Real execution is not enabled by this planning direction. Exact same-tenant READ
 | V10 canonical base program | `docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.md` |
 | Active amendments / precedence | `docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md` |
 | Cloudflare platform / continuous release authority | `docs/master-plan/OMNI_CIO_V10_CLOUDFLARE_PLATFORM_AND_CONTINUOUS_RELEASE_AUTHORITY_AMENDMENT.md` |
+| Cloudflare integrated public-product delivery | `docs/master-plan/OMNI_CIO_V10_CLOUDFLARE_PUBLIC_PRODUCT_INTEGRATED_DELIVERY_AMENDMENT.md` |
 | Cloudflare machine authority contract | `docs/architecture/V10_CLOUDFLARE_PLATFORM_AUTHORITY_CONTRACT.json` |
+| Integrated Cloudflare update contract | `docs/architecture/V10_CLOUDFLARE_PUBLIC_PRODUCT_INTEGRATED_CONTRACT.json` |
 | Integrated System Update Execution Law | `docs/master-plan/OMNI_CIO_V10_INTEGRATED_SYSTEM_UPDATE_EXECUTION_AMENDMENT.md` |
 | Machine execution-unit contract | `docs/architecture/V10_INTEGRATED_SYSTEM_UPDATE_EXECUTION_CONTRACT.json` |
 | Integrated branch ledger template | `docs/updates/INTEGRATED_SYSTEM_UPDATE_EXECUTION_LEDGER_TEMPLATE.md` |
@@ -162,7 +170,7 @@ GitHub main -> Render / omni-cio-gateway (`app:app`)
                   `-- protected Real-execution contour (disabled by kill switch)
 ```
 
-This is the protected V9 production/recovery baseline, not current new-V10 provider authority. V10 public cutover to Cloudflare occurs only through the dedicated build integration, runtime compatibility, candidate deployment and public cutover gates.
+This is the protected V9 production/recovery baseline, not current new-V10 provider authority. New V10 Render deployment is forbidden. V10 public cutover to Cloudflare occurs only through the ordered CF-A/CF-B/CF-C/CF-D internal gates of `CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED`.
 
 ## V10 development law
 
@@ -172,14 +180,14 @@ Use the current execution unit from accepted authority:
 
 Do not start Telegram, AI, Real execution or later packages out of sequence. Do not call RED, skipped, queued or pending GREEN. Do not synthesize OWNER physical evidence. Do not create a second Web App/repository/Core/broker stack.
 
-The WP22A technical gate is complete only through its accepted evidence chain. Amendment 14 does not reopen it, activate public production, expand broker-write authority or start WP23.
+The WP22A technical gate is complete only through its accepted evidence chain. Amendments 14/15 do not reopen it, fabricate public production, expand broker-write authority or start WP23.
 
 WP22A technical closeout is accepted only through its own dedicated technical-closeout evidence chain; it does not itself activate public production, expand broker-write authority or start WP23.
 
 ## Protected V9 boundaries
 
-V9 remains owner-accepted controlled maintenance/recovery until an explicit V10 parity/decommission gate safely replaces it. Stable entrypoint remains `app:app`; protected rollback remains available. `START V10`, Amendment 12/13/14, an internal milestone, AI output, a GitHub merge or Cloudflare deployment is never broker-submit authorization.
+V9 remains owner-accepted controlled maintenance/recovery until an explicit V10 parity/decommission gate safely replaces it. Stable entrypoint remains `app:app`; protected rollback remains available. `START V10`, Amendment 12/13/14/15, an internal milestone, AI output, a GitHub merge or Cloudflare deployment is never broker-submit authorization.
 
 ## Recovery / safety
 
-`REAL_TRADING_ENABLED=false` remains the master Real-money kill switch until its owning future activation gate. `trading_methods=false` remains protected. `PUBLIC_MULTI_USER_ENABLED=false` remains the public activation kill switch. No transfer/withdrawal authority is introduced. Real broker/Telegram/VK/provider/recovery secrets, full account IDs and private portfolio payloads never belong in GitHub/CI/artifacts.
+`REAL_TRADING_ENABLED=false` remains the master Real-money kill switch until its owning future activation gate. `trading_methods=false` remains protected. `PUBLIC_MULTI_USER_ENABLED=false` remains the public activation kill switch until CF-D and capability-specific acceptance. No transfer/withdrawal authority is introduced. Real broker/Telegram/VK/provider/recovery secrets, full account IDs and private portfolio payloads never belong in GitHub/CI/artifacts.
