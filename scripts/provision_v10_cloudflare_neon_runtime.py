@@ -7,7 +7,7 @@ import re
 import secrets
 import sys
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import parse_qs, urlencode, urlsplit
 
 from scripts import provision_v10_render_neon_preview as _base
 from scripts import provision_v10_render_neon_preview_org_scope as _org
@@ -17,7 +17,12 @@ _ROLE_BY_ENVIRONMENT = {
     "staging": "omni_cio_cloudflare_staging",
     "production": "omni_cio_cloudflare_prod",
 }
+_RUNTIME_DSN_FILENAME_BY_ENVIRONMENT = {
+    "staging": "omni-cio-v10-cloudflare-staging-dsn.txt",
+    "production": "omni-cio-v10-cloudflare-production-dsn.txt",
+}
 _ROLE_PATTERN = re.compile(r"^[a-z_][a-z0-9_]{0,62}$")
+_REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _runtime_role(environment: str) -> str:
@@ -32,7 +37,27 @@ def _runtime_role(environment: str) -> str:
     return role
 
 
-def _runtime_sql(repo_root: Path, runtime_role: str) -> str:
+def _runner_temp_root() -> Path:
+    value = os.environ.get("RUNNER_TEMP", "").strip()
+    if not value:
+        raise _base.ProvisioningStopped("CLOUDFLARE_RUNNER_TEMP_REQUIRED")
+    root = Path(value).resolve()
+    if not root.is_dir():
+        raise _base.ProvisioningStopped("CLOUDFLARE_RUNNER_TEMP_INVALID")
+    return root
+
+
+def runtime_dsn_file(environment: str) -> Path:
+    try:
+        filename = _RUNTIME_DSN_FILENAME_BY_ENVIRONMENT[environment]
+    except KeyError:
+        raise _base.ProvisioningStopped(
+            "CLOUDFLARE_RUNTIME_ENVIRONMENT_INVALID"
+        ) from None
+    return _runner_temp_root() / filename
+
+
+def _runtime_sql(runtime_role: str) -> str:
     try:
         from omni_cio.persistence.hosted_postgres_runtime_v1 import (
             load_hosted_postgres_runtime_contract,
@@ -43,7 +68,7 @@ def _runtime_sql(repo_root: Path, runtime_role: str) -> str:
             "DATABASE_RUNTIME_CONTRACT_IMPORT_FAILED"
         ) from None
     path = (
-        repo_root
+        _REPO_ROOT
         / "infrastructure"
         / "cloudru"
         / "wp22a"
@@ -63,7 +88,10 @@ def _runtime_sql(repo_root: Path, runtime_role: str) -> str:
     return rendered
 
 
-def _validate_project_probe(payload: object, organization_id: str) -> None:
+def _validate_project_probe(
+    payload: object,
+    organization_id: str,
+) -> dict[str, Any]:
     body = _base._json_object(payload, "NEON_PROJECTS_RESPONSE_INVALID")
     rows = _base._json_list(body.get("projects"), "NEON_PROJECTS_INVALID")
     projects = [
@@ -74,39 +102,61 @@ def _validate_project_probe(payload: object, organization_id: str) -> None:
     if len(projects) != 1:
         raise _base.ProvisioningStopped("NEON_EXPECTED_PROJECT_NOT_UNIQUE")
     project = projects[0]
-    project_org = project.get("org_id")
-    if isinstance(project_org, str) and project_org != organization_id:
+    if project.get("org_id") != organization_id:
         raise _base.ProvisioningStopped("NEON_PROJECT_ORGANIZATION_DRIFT")
-    region = project.get("region_id")
-    if isinstance(region, str) and region != _base.NEON_REGION:
+    if project.get("pg_version") != 18:
+        raise _base.ProvisioningStopped("NEON_POSTGRES18_REQUIRED")
+    if project.get("region_id") != _base.NEON_REGION:
         raise _base.ProvisioningStopped("NEON_FRANKFURT_REGION_REQUIRED")
+    _base._provider_segment(project.get("id"), "NEON_PROJECT_ID_INVALID")
+    return project
+
+
+def _discover_expected_project(
+    api: _org.OrgScopedNeonApi,
+    organization_id: str,
+) -> dict[str, Any]:
+    query = urlencode(
+        {
+            "limit": 400,
+            "search": _base.NEON_PROJECT_NAME,
+        }
+    )
+    return _validate_project_probe(
+        api.request("GET", f"/projects?{query}"),
+        organization_id,
+    )
+
+
+def _provider_context(
+    api: _org.OrgScopedNeonApi,
+    organization_id: str,
+) -> tuple[str, dict[str, Any]]:
+    safe_org_id = _org._validate_neon_org_id(organization_id)
+    if _base._neon_organization(api) != safe_org_id:
+        raise _base.ProvisioningStopped("NEON_PROJECT_ORGANIZATION_DRIFT")
+    project = _discover_expected_project(api, safe_org_id)
+    try:
+        _org._neon_organization(api, safe_org_id)
+    except _base.ProvisioningStopped as exc:
+        if exc.code != "NEON_API_KEY_INSUFFICIENT" or exc.status != 403:
+            raise
+        scope = "PROJECT_SCOPED"
+    else:
+        scope = "ORGANIZATION_SCOPED"
+    return scope, project
+
+
+def _emit_provider_access(scope: str) -> None:
+    _base._emit(f"CLOUDFLARE_NEON_PROVIDER_ACCESS=READY scope={scope}")
 
 
 def probe_provider_access(
     api: _org.OrgScopedNeonApi,
     organization_id: str,
 ) -> str:
-    safe_org_id = _org._validate_neon_org_id(organization_id)
-    try:
-        _org._neon_organization(api, safe_org_id)
-    except _base.ProvisioningStopped as exc:
-        if exc.code != "NEON_API_KEY_INSUFFICIENT" or exc.status != 403:
-            raise
-        query = urlencode(
-            {
-                "limit": 400,
-                "search": _base.NEON_PROJECT_NAME,
-                "org_id": safe_org_id,
-            }
-        )
-        _validate_project_probe(
-            api.request("GET", f"/projects?{query}"),
-            safe_org_id,
-        )
-        scope = "PROJECT_SCOPED"
-    else:
-        scope = "ORGANIZATION_SCOPED"
-    _base._emit(f"CLOUDFLARE_NEON_PROVIDER_ACCESS=READY scope={scope}")
+    scope, _ = _provider_context(api, organization_id)
+    _emit_provider_access(scope)
     return scope
 
 
@@ -115,6 +165,56 @@ def probe_provider_access_from_env() -> str:
     organization_id = _org._required_neon_org_id()
     neon = _org.OrgScopedNeonApi(neon_key, organization_id)
     return probe_provider_access(neon, organization_id)
+
+
+class _BoundProjectNeonApi(_org.OrgScopedNeonApi):
+    def __init__(
+        self,
+        delegate: _org.OrgScopedNeonApi,
+        organization_id: str,
+        project: dict[str, Any],
+    ) -> None:
+        self._delegate = delegate
+        self.organization_id = _org._validate_neon_org_id(organization_id)
+        self._project = dict(project)
+
+    def request(
+        self,
+        method: str,
+        path: str,
+        *,
+        body: object | None = None,
+        expected: frozenset[int] = frozenset({200}),
+        timeout: float = 30.0,
+    ) -> Any:
+        safe_method = method.upper()
+        parsed = urlsplit(path)
+        if parsed.path == "/projects":
+            if safe_method != "GET":
+                raise _base.ProvisioningStopped(
+                    "CLOUDFLARE_NEON_PROJECT_CREATE_FORBIDDEN"
+                )
+            expected_query = {
+                "limit": ["400"],
+                "search": [_base.NEON_PROJECT_NAME],
+                "org_id": [self.organization_id],
+            }
+            if parse_qs(parsed.query) != expected_query:
+                raise _base.ProvisioningStopped(
+                    "CLOUDFLARE_NEON_BROAD_PROJECT_QUERY_FORBIDDEN"
+                )
+            return {"projects": [dict(self._project)]}
+        if parsed.path == "/regions":
+            raise _base.ProvisioningStopped(
+                "CLOUDFLARE_NEON_REGION_DISCOVERY_FORBIDDEN"
+            )
+        return self._delegate.request(
+            safe_method,
+            path,
+            body=body,
+            expected=expected,
+            timeout=timeout,
+        )
 
 
 def _converge_runtime_role(
@@ -202,22 +302,17 @@ def _verify_runtime(connection: Any, runtime_role: str) -> None:
         raise _base.ProvisioningStopped("CLOUDFLARE_RUNTIME_FORCE_RLS_DRIFT")
 
 
-def _write_runtime_dsn(repo_root: Path, output_file: Path, runtime_uri: str) -> None:
+def _write_runtime_dsn(output_file: Path, runtime_uri: str) -> None:
+    if output_file.is_symlink():
+        raise _base.ProvisioningStopped("CLOUDFLARE_RUNTIME_DSN_SYMLINK_FORBIDDEN")
     target = output_file.resolve()
-    root = repo_root.resolve()
-    try:
-        target.relative_to(root)
-    except ValueError:
-        pass
-    else:
-        raise _base.ProvisioningStopped("CLOUDFLARE_RUNTIME_DSN_REPO_PATH_FORBIDDEN")
-    if not target.parent.is_dir():
-        raise _base.ProvisioningStopped("CLOUDFLARE_RUNTIME_DSN_PARENT_MISSING")
-    descriptor = os.open(
-        target,
-        os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
-        0o600,
-    )
+    runner_root = _runner_temp_root()
+    if target.parent != runner_root:
+        raise _base.ProvisioningStopped("CLOUDFLARE_RUNTIME_DSN_RUNNER_PATH_REQUIRED")
+    if target.name not in _RUNTIME_DSN_FILENAME_BY_ENVIRONMENT.values():
+        raise _base.ProvisioningStopped("CLOUDFLARE_RUNTIME_DSN_FILENAME_INVALID")
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(target, flags, 0o600)
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
             handle.write(runtime_uri)
@@ -235,12 +330,10 @@ def _write_runtime_dsn(repo_root: Path, output_file: Path, runtime_uri: str) -> 
 
 
 def run(
-    repo_root: Path,
     expected_sha: str,
     environment: str,
-    output_file: Path,
 ) -> str:
-    _base._exact_head(repo_root, expected_sha)
+    _base._exact_head(_REPO_ROOT, expected_sha)
     runtime_role = _runtime_role(environment)
     neon_key = _base._required_env("NEON_API_KEY")
     organization_id = _org._required_neon_org_id()
@@ -248,8 +341,12 @@ def run(
     _base._mask(runtime_password)
 
     neon = _org.OrgScopedNeonApi(neon_key, organization_id)
-    probe_provider_access(neon, organization_id)
-    target = _org._neon_target(neon, organization_id)
+    scope, project = _provider_context(neon, organization_id)
+    _emit_provider_access(scope)
+    target = _org._neon_target(
+        _BoundProjectNeonApi(neon, organization_id, project),
+        organization_id,
+    )
 
     try:
         import psycopg
@@ -257,7 +354,7 @@ def run(
     except Exception:
         raise _base.ProvisioningStopped("DATABASE_BOOTSTRAP_IMPORT_FAILED") from None
 
-    runtime_sql = _runtime_sql(repo_root, runtime_role)
+    runtime_sql = _runtime_sql(runtime_role)
     connection = _base._connect_postgres_with_retry(
         psycopg,
         target.bootstrap_uri,
@@ -306,7 +403,7 @@ def run(
     except Exception:
         raise _base.ProvisioningStopped("CLOUDFLARE_RUNTIME_VERIFY_FAILED") from None
 
-    _write_runtime_dsn(repo_root, output_file, runtime_uri)
+    _write_runtime_dsn(runtime_dsn_file(environment), runtime_uri)
     _base._emit(
         f"CLOUDFLARE_NEON_RUNTIME=READY environment={environment} role={runtime_role}"
     )
@@ -316,13 +413,11 @@ def run(
 def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--expected-sha", required=True)
-    parser.add_argument("--repo-root", default=".")
     parser.add_argument(
         "--environment",
         choices=tuple(_ROLE_BY_ENVIRONMENT),
         required=True,
     )
-    parser.add_argument("--output-file", required=True)
     return parser.parse_args(argv)
 
 
@@ -330,10 +425,8 @@ def main(argv: list[str] | None = None) -> int:
     args = _parse_args(sys.argv[1:] if argv is None else argv)
     try:
         run(
-            Path(args.repo_root).resolve(),
             args.expected_sha.strip().lower(),
             args.environment,
-            Path(args.output_file),
         )
     except _base.ProvisioningStopped as exc:
         _base._emit(f"CLOUDFLARE_NEON_RUNTIME=STOPPED code={exc.code}")

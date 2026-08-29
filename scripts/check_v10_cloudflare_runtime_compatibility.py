@@ -68,7 +68,10 @@ def validate() -> None:
         raise RuntimeError("CLOUDFLARE_RUNTIME_CONTAINER_BOUND_INVALID")
     if database.get("major") != 18 or database.get("provider") != "Neon":
         raise RuntimeError("CLOUDFLARE_RUNTIME_POSTGRES18_INVALID")
-    if database.get("hyperdrive_used") is not False or database.get("d1_used") is not False:
+    if (
+        database.get("hyperdrive_used") is not False
+        or database.get("d1_used") is not False
+    ):
         raise RuntimeError("CLOUDFLARE_RUNTIME_DATABASE_SUBSTITUTION_FORBIDDEN")
 
     expected_security_true = {
@@ -87,7 +90,10 @@ def validate() -> None:
     for key in expected_security_true:
         if security.get(key) is not True:
             raise RuntimeError(f"CLOUDFLARE_RUNTIME_{key.upper()}_MUST_BE_TRUE")
-    if security.get("container_transport_url") != "https://omni-cio.internal/_omni/cloudflare-proxy":
+    if (
+        security.get("container_transport_url")
+        != "https://omni-cio.internal/_omni/cloudflare-proxy"
+    ):
         raise RuntimeError("CLOUDFLARE_RUNTIME_CONTAINER_TRANSPORT_URL_INVALID")
     for key in (
         "telegram_vk_provider_auth_enabled",

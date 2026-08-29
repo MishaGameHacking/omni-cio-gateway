@@ -86,10 +86,8 @@ jobs:
           dsn_file="${RUNNER_TEMP}/omni-cio-v10-cloudflare-staging-dsn.txt"
           rm -f "$dsn_file"
           python -m scripts.provision_v10_cloudflare_neon_runtime \
-            --repo-root . \
             --expected-sha "$EXPECTED_HEAD" \
-            --environment staging \
-            --output-file "$dsn_file"
+            --environment staging
           test -s "$dsn_file"
           printf 'OMNI_V10_STAGING_DSN_FILE=%s\n' "$dsn_file" >> "$GITHUB_ENV"
 
@@ -114,9 +112,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m scripts.bootstrap_v10_cloudflare_builds \
-            --repo-root . \
-            --expected-sha "$EXPECTED_HEAD" \
-            --dsn-file "$OMNI_V10_STAGING_DSN_FILE"
+            --expected-sha "$EXPECTED_HEAD"
 
       - name: Accept live staging Worker and Container
         shell: bash
@@ -164,4 +160,3 @@ jobs:
             git clean -ffdx
           else
             rm -rf .git
-          fi

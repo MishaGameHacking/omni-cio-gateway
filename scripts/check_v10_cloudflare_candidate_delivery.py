@@ -39,6 +39,9 @@ def validate() -> None:
             raise RuntimeError("CLOUDFLARE_CANDIDATE_WORKFLOW_GUARD_MISSING")
     if "actions/checkout" in workflow or "docker build" in workflow:
         raise RuntimeError("CLOUDFLARE_CANDIDATE_FORBIDDEN_DEPENDENCY")
+    for forbidden in ("--repo-root", "--output-file", "--dsn-file"):
+        if forbidden in workflow:
+            raise RuntimeError("CLOUDFLARE_CANDIDATE_DYNAMIC_PATH_ARGUMENT_FORBIDDEN")
 
     readiness = _read(READINESS_WORKFLOW)
     if "CLOUDFLARE_DEPLOY_PATH=WORKERS_BUILDS" not in readiness:
@@ -60,9 +63,13 @@ def validate() -> None:
     for marker in (
         '"staging": "omni_cio_cloudflare_staging"',
         '"production": "omni_cio_cloudflare_prod"',
-        "probe_provider_access(",
+        "_base._neon_organization(api)",
+        '"search": _base.NEON_PROJECT_NAME',
+        "CLOUDFLARE_NEON_BROAD_PROJECT_QUERY_FORBIDDEN",
+        "CLOUDFLARE_NEON_PROJECT_CREATE_FORBIDDEN",
         "CLOUDFLARE_NEON_PROVIDER_ACCESS=READY",
-        "CLOUDFLARE_RUNTIME_DSN_REPO_PATH_FORBIDDEN",
+        "CLOUDFLARE_RUNNER_TEMP_REQUIRED",
+        "CLOUDFLARE_RUNTIME_DSN_RUNNER_PATH_REQUIRED",
         "validate_hosted_postgres_runtime_sql",
         "apply_migrations(connection)",
     ):
@@ -70,6 +77,12 @@ def validate() -> None:
             raise RuntimeError("CLOUDFLARE_CANDIDATE_NEON_GUARD_MISSING")
     if 'RUNTIME_ROLE = "omni_cio_hosted_api"' in neon:
         raise RuntimeError("CLOUDFLARE_CANDIDATE_SHARED_ROLE_FORBIDDEN")
+    for forbidden in (
+        'parser.add_argument("--repo-root"',
+        'parser.add_argument("--output-file"',
+    ):
+        if forbidden in neon:
+            raise RuntimeError("CLOUDFLARE_CANDIDATE_NEON_PATH_ARGUMENT_FORBIDDEN")
 
     builds = _read(BUILDS_BOOTSTRAP)
     for marker in (
@@ -81,9 +94,17 @@ def validate() -> None:
         '"npm run cloudflare:deploy:staging"',
         '"OMNI_V10_POSTGRES_DSN"',
         "CLOUDFLARE_BUILD_SHA_MISMATCH",
+        "CLOUDFLARE_GITHUB_OUTPUT_PATH_INVALID",
+        "CLOUDFLARE_RUNTIME_DSN_PATH_INVALID",
     ):
         if marker not in builds:
             raise RuntimeError("CLOUDFLARE_CANDIDATE_BUILDS_GUARD_MISSING")
+    for forbidden in (
+        'parser.add_argument("--repo-root"',
+        'parser.add_argument("--dsn-file"',
+    ):
+        if forbidden in builds:
+            raise RuntimeError("CLOUDFLARE_CANDIDATE_BUILDS_PATH_ARGUMENT_FORBIDDEN")
 
 
 def main() -> int:

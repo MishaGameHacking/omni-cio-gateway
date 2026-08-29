@@ -17,12 +17,16 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 _API_BASE = "https://api.cloudflare.com/client/v4"
 _ACCOUNT_ID = re.compile(r"^[0-9a-f]{32}$")
 _SHA = re.compile(r"^[0-9a-f]{40}$")
-_UUID = re.compile(r"^[0-9a-fA-F-]{32,36}$")
+_UUID = re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+)
 _TAG = re.compile(r"^[0-9a-fA-F]{32}$")
 _DNS_LABEL = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 _TRANSIENT = frozenset({408, 429, 502, 503, 504})
 _RETRY_DELAYS = (1.0, 2.0)
 _STAGING_WORKER = "omni-cio-v10-web-staging"
+_STAGING_DSN_FILENAME = "omni-cio-v10-cloudflare-staging-dsn.txt"
 _TRIGGER_NAME = "Omni-CIO V10 staging deploy"
 _BUILD_TOKEN_NAME = "omni-cio-v10-staging-builds"
 _BRANCH = "system/cloudflare-public-product"
@@ -30,6 +34,7 @@ _GITHUB_OWNER_ID = "201947041"
 _GITHUB_OWNER = "MishaGameHacking"
 _GITHUB_REPO_ID = "1312247309"
 _GITHUB_REPO = "omni-cio-gateway"
+_REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 class BootstrapStopped(RuntimeError):
@@ -61,6 +66,20 @@ def _required_env(name: str) -> str:
     if name == "CLOUDFLARE_API_TOKEN":
         _mask(value)
     return value
+
+
+def _runner_temp_root() -> Path:
+    value = os.environ.get("RUNNER_TEMP", "").strip()
+    if not value:
+        raise BootstrapStopped("CLOUDFLARE_RUNNER_TEMP_REQUIRED")
+    root = Path(value).resolve()
+    if not root.is_dir():
+        raise BootstrapStopped("CLOUDFLARE_RUNNER_TEMP_INVALID")
+    return root
+
+
+def _staging_dsn_file() -> Path:
+    return _runner_temp_root() / _STAGING_DSN_FILENAME
 
 
 def _safe_path(path: str) -> str:
@@ -282,7 +301,13 @@ def _staging_worker_tag(api: CloudflareApi) -> str:
     return _worker_tag(matches[0].get("tag"))
 
 
-def _put_runtime_secret(api: CloudflareApi, dsn_file: Path) -> None:
+def _put_runtime_secret(api: CloudflareApi) -> None:
+    candidate = _staging_dsn_file()
+    if candidate.is_symlink():
+        raise BootstrapStopped("CLOUDFLARE_RUNTIME_DSN_PATH_INVALID")
+    dsn_file = candidate.resolve()
+    if dsn_file.parent != _runner_temp_root() or dsn_file.name != _STAGING_DSN_FILENAME:
+        raise BootstrapStopped("CLOUDFLARE_RUNTIME_DSN_PATH_INVALID")
     try:
         runtime_dsn = dsn_file.read_text(encoding="utf-8").strip()
     except (OSError, UnicodeError):
@@ -482,17 +507,26 @@ def _staging_url(api: CloudflareApi) -> str:
 
 def _write_output(name: str, value: str) -> None:
     output = os.environ.get("GITHUB_OUTPUT", "").strip()
-    if output:
-        with Path(output).open("a", encoding="utf-8") as handle:
-            handle.write(f"{name}={value}\n")
+    if not output:
+        return
+    target = Path(output).resolve()
+    runner_root = _runner_temp_root()
+    try:
+        target.relative_to(runner_root)
+    except ValueError:
+        raise BootstrapStopped("CLOUDFLARE_GITHUB_OUTPUT_PATH_INVALID") from None
+    if target == runner_root or not target.parent.is_dir():
+        raise BootstrapStopped("CLOUDFLARE_GITHUB_OUTPUT_PATH_INVALID")
+    with target.open("a", encoding="utf-8") as handle:
+        handle.write(f"{name}={value}\n")
 
 
-def run(repo_root: Path, expected_sha: str, dsn_file: Path) -> str:
+def run(expected_sha: str) -> str:
     sha = _expected_sha(expected_sha)
     try:
         actual = subprocess.check_output(
             ["git", "rev-parse", "HEAD"],
-            cwd=repo_root,
+            cwd=_REPO_ROOT,
             text=True,
             stderr=subprocess.DEVNULL,
         ).strip()
@@ -510,7 +544,7 @@ def run(repo_root: Path, expected_sha: str, dsn_file: Path) -> str:
     connection_uuid = _ensure_repo_connection(api)
     build_token_uuid = _ensure_build_token(api, token_id)
     worker_tag = _staging_worker_tag(api)
-    _put_runtime_secret(api, dsn_file)
+    _put_runtime_secret(api)
     trigger_uuid, trigger_created = _ensure_trigger(
         api,
         worker_tag,
@@ -535,19 +569,13 @@ def run(repo_root: Path, expected_sha: str, dsn_file: Path) -> str:
 def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--expected-sha", required=True)
-    parser.add_argument("--repo-root", default=".")
-    parser.add_argument("--dsn-file", required=True)
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(sys.argv[1:] if argv is None else argv)
     try:
-        run(
-            Path(args.repo_root).resolve(),
-            args.expected_sha,
-            Path(args.dsn_file).resolve(),
-        )
+        run(args.expected_sha)
     except BootstrapStopped as exc:
         print(f"CLOUDFLARE_CF_C_CANDIDATE=STOPPED code={exc.code}")
         return 1
