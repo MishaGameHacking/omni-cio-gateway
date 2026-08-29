@@ -76,6 +76,7 @@ function backendRequest(request, routeUrl) {
     headers,
     body: request.body,
     redirect: "manual",
+    duplex: "half",
   });
 }
 
