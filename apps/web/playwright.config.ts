@@ -1,6 +1,7 @@
 import { defineConfig } from "@playwright/test";
 
 const channel = process.env.OMNI_WEB_BROWSER_CHANNEL;
+const baseURL = process.env.OMNI_WEB_PREVIEW_URL?.trim() || "http://127.0.0.1:4173";
 
 export default defineConfig({
   testDir: "./e2e",
@@ -19,7 +20,7 @@ export default defineConfig({
     timeout: 5_000,
   },
   use: {
-    baseURL: "http://127.0.0.1:4173",
+    baseURL,
     browserName: "chromium",
     channel: channel || undefined,
     headless: true,

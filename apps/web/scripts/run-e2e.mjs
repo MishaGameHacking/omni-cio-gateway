@@ -1,8 +1,9 @@
 import { spawn, spawnSync } from "node:child_process";
+import { resolvePreviewEndpoint } from "./e2e-preview-endpoint.mjs";
 
 const isWindows = process.platform === "win32";
 const npmCommand = "npm";
-const previewUrl = "http://127.0.0.1:4173/";
+const { port: previewPort, url: previewUrl } = resolvePreviewEndpoint();
 const previewTimeoutMs = 30_000;
 const browserTimeoutMs = 120_000;
 
@@ -11,7 +12,7 @@ function spawnNpm(args, options = {}) {
     ...options,
     shell: isWindows,
     windowsHide: true,
-    env: process.env,
+    env: { ...process.env, ...options.env },
   });
 }
 
@@ -83,7 +84,7 @@ function waitForChild(child, timeoutMs) {
 
 let previewOutput = "";
 const preview = spawnNpm(
-  ["run", "preview", "--", "--host", "127.0.0.1", "--port", "4173", "--strictPort"],
+  ["run", "preview", "--", "--host", "127.0.0.1", "--port", String(previewPort), "--strictPort"],
   { stdio: ["ignore", "pipe", "pipe"] },
 );
 preview.stdout.on("data", (chunk) => {
@@ -95,7 +96,10 @@ preview.stderr.on("data", (chunk) => {
 
 try {
   await waitForPreview(preview, () => previewOutput);
-  const browser = spawnNpm(["run", "e2e:browser"], { stdio: "inherit" });
+  const browser = spawnNpm(["run", "e2e:browser"], {
+    stdio: "inherit",
+    env: { OMNI_WEB_PREVIEW_URL: previewUrl },
+  });
   const code = await waitForChild(browser, browserTimeoutMs);
   if (code !== 0) {
     throw new Error(`Playwright browser evidence failed with exit code ${code}.`);
