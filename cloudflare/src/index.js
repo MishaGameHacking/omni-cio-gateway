@@ -40,6 +40,7 @@ function hardenedJson(payload, status = 200) {
 
 function backendRequest(request) {
   const url = new URL(request.url);
+  const clientIp = request.headers.get("cf-connecting-ip");
   url.protocol = "https:";
   url.hostname = INTERNAL_HOST;
   url.port = "";
@@ -49,6 +50,9 @@ function backendRequest(request) {
   headers.delete("x-forwarded-for");
   headers.delete("x-forwarded-host");
   headers.delete("x-forwarded-proto");
+  if (clientIp) {
+    headers.set("x-forwarded-for", clientIp);
+  }
   headers.set("x-forwarded-host", INTERNAL_HOST);
   headers.set("x-forwarded-proto", "https");
   headers.set("x-omni-edge-provider", "cloudflare");
