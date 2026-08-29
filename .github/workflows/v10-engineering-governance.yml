@@ -136,6 +136,7 @@ jobs:
           scripts/check_v10_cloudflare_release_acceptance.py
           scripts/check_v10_cloudflare_live_release.py
           scripts/write_v10_cloudflare_build_info.py
+          scripts/v10_jsonc.py
           apps/api/cloudflare_runtime.py
           scripts/check_v10_hosted_release_alignment_governance.py
           scripts/check_v10_integrated_system_update_governance.py
@@ -161,6 +162,7 @@ jobs:
           tests.test_v10_cloudflare_builds_verifier
           tests.test_v10_cloudflare_runtime_compatibility
           tests.test_v10_cloudflare_live_release
+          tests.test_v10_jsonc
 
       - name: Clean self-hosted workspace
         if: always()
