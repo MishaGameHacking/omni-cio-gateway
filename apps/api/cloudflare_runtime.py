@@ -25,6 +25,7 @@ _INTERNAL_HOST = "omni-cio.internal"
 _INTERNAL_PROXY_PATH = "/_omni/cloudflare-proxy"
 _DSN_SECRET = "OMNI_V10_POSTGRES_DSN"
 _SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
+_SECONDARY_ROUTE_ESCAPE_PATTERN = re.compile(r"%(?:2e|2f|5c|25)", re.IGNORECASE)
 _ROUTE_PATH_HEADER = b"x-omni-route-path"
 _ROUTE_QUERY_HEADER = b"x-omni-route-query"
 _EDGE_PROVIDER_HEADER = b"x-omni-edge-provider"
@@ -64,6 +65,18 @@ def _ascii_unquote_header(
     return decoded
 
 
+def _validate_canonical_api_path(path: str) -> None:
+    if "\\" in path:
+        raise ValueError("route path contains backslash")
+    segments = path.split("/")
+    if any(segment in {".", ".."} for segment in segments):
+        raise ValueError("route path contains dot segment")
+    if _SECONDARY_ROUTE_ESCAPE_PATTERN.search(path) is not None:
+        raise ValueError("route path contains secondary escape")
+    if any(ord(character) < 0x20 or ord(character) == 0x7F for character in path):
+        raise ValueError("route path contains control character")
+
+
 def _validated_route(
     scope: Mapping[str, Any], release_sha: str
 ) -> tuple[str, bytes, bytes]:
@@ -96,8 +109,7 @@ def _validated_route(
         raise ValueError("route path invalid") from exc
     if path != "/healthz" and not path.startswith("/api/"):
         raise ValueError("route path outside API boundary")
-    if any(ord(character) < 0x20 or ord(character) == 0x7F for character in path):
-        raise ValueError("route path contains control character")
+    _validate_canonical_api_path(path)
     if b"\x00" in raw_query or b"\r" in raw_query or b"\n" in raw_query:
         raise ValueError("route query contains control character")
     return path, raw_path, raw_query
@@ -130,8 +142,12 @@ class CloudflareEdgeRouteRestoreV1:
         receive: Receive,
         send: Send,
     ) -> None:
-        if scope.get("type") != "http":
+        scope_type = scope.get("type")
+        if scope_type == "lifespan":
             await self._app(scope, receive, send)
+            return
+        if scope_type != "http":
+            await _reject_proxy(send)
             return
         try:
             path, raw_path, raw_query = _validated_route(scope, self._release_sha)
