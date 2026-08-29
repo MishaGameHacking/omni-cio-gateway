@@ -107,7 +107,7 @@ jobs:
           fs.writeFileSync(releasePath, release);
 
           const verifierPath = 'scripts/run_v10_cloudflare_verifier.py';
-          let verifier = fs.readFileSync(verifierPath, 'utf8');
+          let verifier = fs.readFileSync(verifierPath, 'utf8').replace(/\r\n/g, '\n');
           const anchor = `    subprocess.run(\n        [sys.executable, "scripts/check_v10_wp17_web_security.py"],\n        cwd=ROOT,\n        check=True,\n    )\n`;
           const replacement = anchor + `    subprocess.run(\n        [sys.executable, "scripts/check_v10_cloudflare_node_supply_chain.py"],\n        cwd=ROOT,\n        check=True,\n    )\n`;
           if (!verifier.includes(anchor) || verifier.includes('check_v10_cloudflare_node_supply_chain.py')) {
