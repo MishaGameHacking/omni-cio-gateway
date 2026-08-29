@@ -34,7 +34,7 @@ The correction review covered:
 - `.github/workflows/v10-engineering-governance.yml`;
 - the Amendment-15 machine contract, especially `product_activation`;
 - the Amendment-15 lifecycle/status markers;
-- the adjacent Amendment-14 platform-authority diagnostic that still described the former first stage as the current "Next stage";
+- the adjacent Amendment-14 platform-authority diagnostic that still describes Amendment 14's original first stage as `Next stage`; this is not current-next authority after Amendment 15 and is deferred for CF-A verifier cleanup rather than widening this focused governance repair again;
 - existing governance workflow cleanup patterns and self-hosted exact-head bootstrap/cleanup law;
 - Sonar/Gitar/Semgrep outputs and the unresolved inline review thread;
 - existing dependency/broker deprecation warnings, which were classified as pre-existing CF-B compatibility debt and not mixed into the focused governance repair.
@@ -55,7 +55,7 @@ This was insufficient for a change that modified both Python governance code and
 - require exact Amendment-15 lifecycle/progress markers in the guard;
 - close the governance cleanup Bash conditional with `fi`;
 - add a deterministic regression assertion for the complete cleanup block;
-- update the adjacent Amendment-14 diagnostic so it no longer presents the old standalone build-integration stage as current-next authority after Amendment 15;
+- classify the adjacent Amendment-14 `Next stage` diagnostic as legacy stage-local wording and defer its cleanup to CF-A, while canonical current-next authority remains `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md` plus Amendment 15;
 - retain all existing Cloudflare provider, WEB VISUAL, V9 and Real-money locks.
 
 ## Permanent regression / guard

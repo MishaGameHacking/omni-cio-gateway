@@ -196,7 +196,9 @@ def _validate_web_visual(payload: dict[str, Any], failures: list[str]) -> None:
         failures.append("WEB VISUAL OWNER start command changed")
 
 
-def _validate_protected_invariants(payload: dict[str, Any], failures: list[str]) -> None:
+def _validate_protected_invariants(
+    payload: dict[str, Any], failures: list[str]
+) -> None:
     protected = _section(payload, "protected_invariants", failures)
     if protected.get("app_entrypoint") != "app:app":
         failures.append("protected app entrypoint must remain app:app")
