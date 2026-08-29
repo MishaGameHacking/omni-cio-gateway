@@ -89,7 +89,7 @@ Machine/governance companions:
 - `../operations/V10_ENGINEERING_FAILURE_LEARNING_LEDGER.md`;
 - `.github/workflows/v10-engineering-governance.yml` through repository root.
 
-Locks root-cause-first engineering, all applicable exact-head checks actually `success`, no fake PASS, exact-head invalidation after commits, coherent reviewable PRs, squash merge, post-merge verification and bounded OWNER handoffs. This governance remains fully active for Amendments 9/10/11/12/13/14 and subsequent implementation. Amendment 12 changes only delivery granularity: “focused PR” means one coherent PR per authorized execution unit rather than mandatory one PR per individual member WP/increment. Amendment 13 changes only user-capability activation granularity and does not weaken exact-head/security/Real-money gates. Amendment 14 changes current/future V10 managed-platform authority without weakening V9 rollback or the same GREEN/review law.
+Locks root-cause-first engineering, all applicable exact-head checks actually `success`, no fake PASS, exact-head invalidation after commits, coherent reviewable PRs, squash merge, post-merge verification and bounded OWNER handoffs. This governance remains fully active for Amendments 9/10/11/12/13/14/15 and subsequent implementation. Amendment 12 changes only delivery granularity: “focused PR” means one coherent PR per authorized execution unit rather than mandatory one PR per individual member WP/increment. Amendment 13 changes only user-capability activation granularity and does not weaken exact-head/security/Real-money gates. Amendment 14 changes current/future V10 managed-platform authority without weakening V9 rollback or the same GREEN/review law. Amendment 15 changes only the delivery granularity of the already-selected Cloudflare implementation and preserves the same exact-head/review/security law.
 
 ### 9. Product User / Engineering Authority Boundary
 
@@ -129,7 +129,7 @@ Locks the 2026-08-18 OWNER launch direction:
 - READ/TRADE exact broker-account intersection and all Real-money safeguards remain fail-closed;
 - managed hosted tenant-private state/secret custody is allowed only after exact security/privacy/personal-data/broker/legal gates accept the design;
 - public multi-user is now the approved **target**, while `PUBLIC_MULTI_USER_ENABLED=false` remains the implementation default until the corrected WP22A/launch gates pass;
-- current T-Invest public-service terms remain a separate fail-closed gate: user-supplied tokens do not waive broker restrictions;
+- current T-Invest public-service terms remain a separate fail-closed broker gate: user-supplied tokens do not waive broker restrictions;
 - payment/KKT gates are not required merely for free access, but become applicable if monetization is later enabled.
 
 Amendment 10 explicitly supersedes conflicting Personal-Node-final-product, permanent-private, initial-paid-access and central-private-data prohibitions in Amendments 5/6/7 and older WP22A wording. Non-conflicting safety, tenant isolation, legal, broker separation, recovery and engineering rules remain active. Amendment 13 later supersedes only the assumption that all normal user capabilities must wait for one monolithic final activation event. Amendment 14 later selects Cloudflare Workers Paid as the new-V10 managed application/edge/build target while preserving the no-home/public-hosting and security requirements recorded here.
@@ -178,11 +178,11 @@ Locks the 2026-08-26 OWNER delivery-discipline decision that:
 - temporary verifier commits/PRs and `continue-on-error` fake GREEN are forbidden;
 - every integrated update has a branch Execution Ledger and GitHub-visible System Update dashboard, both explicitly non-authoritative for accepted progress;
 - mandatory split triggers preserve DB/migration sequencing, security/authority changes, dependency/toolchain boundaries, OWNER/provider actions, live/temporal evidence, production cutover, Real-money authority and reviewability;
-- the prepared first integrated update is `WEB-VISUAL-INTEGRATED` with ordered `WEB-VISUAL-A -> B -> C -> D -> E -> F -> G` member milestones;
+- the prepared first product integrated update is `WEB-VISUAL-INTEGRATED` with ordered `WEB-VISUAL-A -> B -> C -> D -> E -> F -> G` member milestones;
 - acceptance of Amendment 12 itself does **not** start product work: canonical post-acceptance state is `PRODUCT IMPLEMENTATION PAUSED`, `OWNER START REQUIRED`, and the exact command is `START V10 WEB VISUAL SYSTEM UPDATE`;
 - protected `app:app`, `PUBLIC_MULTI_USER_ENABLED=false`, `trading_methods=false`, `REAL_TRADING_ENABLED=false`, broker write OFF, tenant isolation, secret exclusion, squash merge and exact-head SUCCESS-only policy remain unchanged at Amendment-12 acceptance.
 
-Amendment 12 supersedes only conflicting **delivery granularity** wording in Program Lock Section 7, Amendment 3, Amendment 8 and Visual Refresh Brief Section 17. It does not reorder the Master Plan, change block weights, alter product scope or unlock a later major System Update. Amendment 13 later changes only the future activation granularity of completed user-facing capabilities; Amendment 14 uses its mandatory split triggers for provider/security authority, build integration, runtime compatibility and production cutover.
+Amendment 12 supersedes only conflicting **delivery granularity** wording in Program Lock Section 7, Amendment 3, Amendment 8 and Visual Refresh Brief Section 17. It does not reorder the Master Plan, change block weights, alter product scope or unlock a later major System Update. Amendment 13 later changes only the future activation granularity of completed user-facing capabilities; Amendment 14 uses its mandatory split triggers for provider/security authority, build integration, runtime compatibility and production cutover. Amendment 15 later supersedes only the four-separate-merge delivery granularity for the selected Cloudflare transition while preserving those ordered internal authority gates and all real split triggers.
 
 ### 13. Live User Operability & Progressive Capability Activation
 
@@ -242,10 +242,39 @@ Locks the 2026-08-29 OWNER provider/release correction that:
 - existing React/Vite and FastAPI/PostgreSQL architecture is migrated by reuse/adapter preference, with Python Worker/native-dependency and PostgreSQL 18/Hyperdrive compatibility proved rather than assumed;
 - Workers Paid included build capacity may be used after the dedicated repository integration gate, while mutable limits must be revalidated and automatic paid overage/higher-plan expansion is forbidden without fresh OWNER approval;
 - portable verification targets Workers Builds after integration, while Windows/PowerShell/ACL/PostgreSQL-18-native semantics remain on trusted Lenovo runners until equivalent semantics are accepted;
-- the mandatory split sequence is `CLOUDFLARE-BUILDS-VERIFIER-INTEGRATION -> CLOUDFLARE-RUNTIME-COMPATIBILITY -> CLOUDFLARE-CANDIDATE-DEPLOYMENT -> CLOUDFLARE-PUBLIC-CUTOVER`;
+- the original mandatory split sequence is `CLOUDFLARE-BUILDS-VERIFIER-INTEGRATION -> CLOUDFLARE-RUNTIME-COMPATIBILITY -> CLOUDFLARE-CANDIDATE-DEPLOYMENT -> CLOUDFLARE-PUBLIC-CUTOVER`;
 - `PUBLIC_MULTI_USER_ENABLED=false`, broker write OFF, `trading_methods=false`, `REAL_TRADING_ENABLED=false` and WP23 lock remain unchanged by this governance amendment.
 
-Amendment 14 supersedes conflicting **current/future provider-selection, active Render release-target and monolithic public-release timing** wording in Amendments 8/10/11/13 and current guidance. It does not erase historical evidence, change Master Plan block weights/order, start WEB-VISUAL source work, fabricate external provider/legal evidence or authorize Real-money execution.
+Amendment 14 supersedes conflicting **current/future provider-selection, active Render release-target and monolithic public-release timing** wording in Amendments 8/10/11/13 and current guidance. It does not erase historical evidence, change Master Plan block weights/order, start WEB-VISUAL source work, fabricate external provider/legal evidence or authorize Real-money execution. Amendment 15 supersedes only the requirement to land the four Cloudflare implementation stages as four separately accepted main states; their order, internal gates, security/runtime/provider boundaries and continuous-release law remain active.
+
+### 15. Cloudflare Public Product Integrated Delivery
+
+`OMNI_CIO_V10_CLOUDFLARE_PUBLIC_PRODUCT_INTEGRATED_DELIVERY_AMENDMENT.md`
+
+Machine/governance companions:
+
+- `../architecture/V10_CLOUDFLARE_PUBLIC_PRODUCT_INTEGRATED_CONTRACT.json`;
+- `../../scripts/check_v10_cloudflare_public_product_integrated.py`;
+- `.github/workflows/v10-engineering-governance.yml` through repository root.
+
+Locks the 2026-08-29 OWNER delivery correction that:
+
+- current Cloudflare implementation is one `INTEGRATED_SYSTEM_UPDATE` named `CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED`;
+- default implementation branch is `system/cloudflare-public-product`;
+- one final PR is the default;
+- `CF-A / CLOUDFLARE-BUILDS-VERIFIER-INTEGRATION -> CF-B / CLOUDFLARE-RUNTIME-COMPATIBILITY -> CF-C / CLOUDFLARE-CANDIDATE-DEPLOYMENT -> CF-D / CLOUDFLARE-PUBLIC-CUTOVER` remains the mandatory internal order;
+- each internal milestone must pass its branch-local Exit Gate before dependent work begins;
+- separate protected-main merge/acceptance between CF-A…CF-D is not required;
+- any concrete Amendment-12 DB/security/dependency/OWNER/live/cutover/Real-money/reviewability split trigger still forces a stop/split;
+- prefer appropriate Cloudflare services over replaceable external infrastructure only when semantics, security, recovery and cost remain acceptable;
+- existing React/Vite targets Workers Static Assets, while Python Workers require dependency compatibility proof and Cloudflare Containers may be used only for a proven full-Linux/native runtime need;
+- D1 does not silently replace financial PostgreSQL; PostgreSQL/Neon 18/RLS may remain until an explicit equivalent migration is proved; Hyperdrive PG18 compatibility is not assumed;
+- active new-V10 Render code/config/dependencies are retired only after replacement parity plus consumer/recovery review; historical WP22A Render/Neon evidence and protected V9 Render `app:app` stay preserved;
+- GitHub remains engineering authority rank 1; no paid overage/higher-plan expansion is authorized by this amendment;
+- public capability activation remains evidence-based and fail-closed; broker write, `trading_methods=false`, `REAL_TRADING_ENABLED=false` and WP23 lock remain unchanged;
+- `WEB-VISUAL-INTEGRATED` is excluded and still requires the exact separate OWNER command `START V10 WEB VISUAL SYSTEM UPDATE`.
+
+Amendment 15 supersedes only conflicting **Cloudflare implementation delivery granularity** from Amendment 14/current guidance. It does not weaken the internal order, candidate/public-cutover authority gates, continuous exact-main release law, protected V9 recovery, tenant/data/security rules or Real-money locks.
 
 ## Draft/superseded planning material
 
@@ -260,7 +289,7 @@ Open or historical PR descriptions must not be treated as active plan authority 
 5. `OMNI_CIO_V10_PROGRAM_LOCK.md`;
 6. `OMNI_CIO_V10_MASTER_PLAN.md`;
 7. this Amendments Index;
-8. all active amendments listed here, especially 9/10/11/12/13/14 for current product/public-hosting/delivery/activation/platform semantics;
+8. all active amendments listed here, especially 9/10/11/12/13/14/15 for current product/public-hosting/delivery/activation/platform semantics;
 9. machine-readable contracts;
 10. `OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md`;
 11. `../../knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`;
