@@ -49,8 +49,9 @@ class CloudflareRuntimeRouteTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(query, b"page=1%20two")
 
     def test_validated_route_rejects_non_api_path(self) -> None:
+        scope = _scope(raw_path="/private")
         with self.assertRaisesRegex(ValueError, "outside API boundary"):
-            _validated_route(_scope(raw_path="/private"), _SHA)
+            _validated_route(scope, _SHA)
 
     def test_validated_route_rejects_wrong_release_sha(self) -> None:
         scope = _scope()
@@ -106,6 +107,25 @@ class CloudflareRuntimeRouteTests(unittest.IsolatedAsyncioTestCase):
         wrapper = CloudflareEdgeRouteRestoreV1(app, release_sha=_SHA)
         await wrapper(scope, receive, send)
         self.assertEqual(messages[0]["status"], 404)
+
+    async def test_wrapper_rejects_websocket_with_websocket_close(self) -> None:
+        messages: list[dict] = []
+
+        async def app(scope, receive, send) -> None:
+            del scope, receive, send
+            self.fail("downstream app must not receive direct websocket ingress")
+
+        async def receive() -> dict:
+            return {"type": "websocket.connect"}
+
+        async def send(message: dict) -> None:
+            messages.append(message)
+
+        scope = _scope()
+        scope["type"] = "websocket"
+        wrapper = CloudflareEdgeRouteRestoreV1(app, release_sha=_SHA)
+        await wrapper(scope, receive, send)
+        self.assertEqual(messages, [{"type": "websocket.close", "code": 1008}])
 
 
 if __name__ == "__main__":
