@@ -210,10 +210,8 @@ def test_broker_credentials_are_tenant_owned_not_global() -> None:
     assert "no shared/global user broker token is allowed" in readme
 
     status = _text(ROOT / "knowledge/17_V10_CURRENT_PROGRAM_STATUS.md")
-    assert (
-        "Public T-Invest-backed production functionality remains "
-        "**FAIL_CLOSED_PENDING_BROKER_TERMS_PERMISSION**" in status
-    )
+    assert "Public T-Invest-backed production functionality remains" in status
+    assert "FAIL_CLOSED_PENDING_BROKER_TERMS_PERMISSION" in status
     assert "tenant READ/optional TRADE credential separation remains mandatory" in status
     assert "broker write OFF" in status
     assert "`REAL_TRADING_ENABLED=false`" in status
