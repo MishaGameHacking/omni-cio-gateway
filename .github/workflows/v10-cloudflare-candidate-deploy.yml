@@ -1,0 +1,165 @@
+name: V10 Cloudflare Candidate Deployment
+
+on:
+  push:
+    branches:
+      - system/cloudflare-public-product
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: v10-cloudflare-candidate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  candidate:
+    name: CF-C staging Worker and Container acceptance
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 45
+    env:
+      EXPECTED_HEAD: ${{ github.sha }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID_SECRET_VALUE: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_ACCOUNT_ID_VAR_VALUE: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+      NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+      NEON_ORG_ID: ${{ vars.NEON_ORG_ID }}
+
+    steps:
+      - name: Expose installed Git Bash
+        shell: cmd
+        run: |
+          @echo off
+          powershell.exe -NoProfile -NonInteractive -Command "$git=(Get-Command git.exe -ErrorAction Stop).Source; $root=Split-Path -Parent (Split-Path -Parent $git); $bin=Join-Path $root 'bin'; if (-not (Test-Path (Join-Path $bin 'bash.exe'))) { exit 12 }; $bin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append"
+          if errorlevel 1 exit /b 12
+
+      - name: Bootstrap exact branch head without external Actions
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GIT_TERMINAL_PROMPT: "0"
+          GCM_INTERACTIVE: "0"
+        run: |
+          set -euo pipefail
+          find . -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+          git init .
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          git config --local credential.helper ""
+          git config --local --add credential.helper '!f() { echo username=x-access-token; echo password=$GITHUB_TOKEN; }; f'
+          git fetch --no-tags --depth=1 origin "$EXPECTED_HEAD"
+          git config --local --unset-all credential.helper 2>/dev/null || true
+          git checkout --detach FETCH_HEAD
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          test -z "$(git config --local --get-all credential.helper || true)"
+
+      - name: Resolve provider authority fail-closed
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${CLOUDFLARE_API_TOKEN:-}"
+          test -n "${NEON_API_KEY:-}"
+          test -n "${NEON_ORG_ID:-}"
+          if [ -n "${CLOUDFLARE_ACCOUNT_ID_SECRET_VALUE:-}" ]; then
+            account_id="$CLOUDFLARE_ACCOUNT_ID_SECRET_VALUE"
+          else
+            account_id="${CLOUDFLARE_ACCOUNT_ID_VAR_VALUE:-}"
+          fi
+          test -n "$account_id"
+          printf 'CLOUDFLARE_ACCOUNT_ID=%s\n' "$account_id" >> "$GITHUB_ENV"
+          echo "CLOUDFLARE_PROVIDER_AUTHORITY=AVAILABLE"
+
+      - name: Bootstrap protected runner Python
+        shell: cmd
+        run: scripts\bootstrap_windows_ci_python.cmd
+
+      - name: Install exact hashed Python runtime dependencies
+        shell: cmd
+        run: python -m pip install --disable-pip-version-check --require-hashes -r requirements.txt
+
+      - name: Provision isolated Neon staging runtime role
+        shell: bash
+        run: |
+          set -euo pipefail
+          dsn_file="${RUNNER_TEMP}/omni-cio-v10-cloudflare-staging-dsn.txt"
+          rm -f "$dsn_file"
+          python -m scripts.provision_v10_cloudflare_neon_runtime \
+            --repo-root . \
+            --expected-sha "$EXPECTED_HEAD" \
+            --environment staging \
+            --output-file "$dsn_file"
+          test -s "$dsn_file"
+          printf 'OMNI_V10_STAGING_DSN_FILE=%s\n' "$dsn_file" >> "$GITHUB_ENV"
+
+      - name: Install exact Cloudflare delivery toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(node --version)" = "v24.18.0"
+          test "$(npx --yes npm@10.9.2 --version)" = "10.9.2"
+          npx --yes npm@10.9.2 ci --ignore-scripts --no-audit --no-fund
+          test "$(npx wrangler --version | awk '{print $NF}')" = "4.127.1"
+
+      - name: Bootstrap isolated staging Worker without local Containers
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler deploy --config cloudflare/wrangler.bootstrap.staging.jsonc
+
+      - name: Configure Workers Builds and accept exact staging build
+        id: bootstrap
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m scripts.bootstrap_v10_cloudflare_builds \
+            --repo-root . \
+            --expected-sha "$EXPECTED_HEAD" \
+            --dsn-file "$OMNI_V10_STAGING_DSN_FILE"
+
+      - name: Accept live staging Worker and Container
+        shell: bash
+        env:
+          OMNI_V10_CLOUDFLARE_ORIGIN: ${{ steps.bootstrap.outputs.staging_url }}
+        run: |
+          set -euo pipefail
+          accepted=0
+          for attempt in $(seq 1 40); do
+            if bash scripts/probe_v10_cloudflare_live_release.sh "$EXPECTED_HEAD"; then
+              accepted=1
+              break
+            fi
+            echo "CLOUDFLARE_LIVE_ACCEPTANCE_RETRY attempt=${attempt}/40"
+            sleep 15
+          done
+          test "$accepted" -eq 1
+          echo "CLOUDFLARE_CF_C=ACCEPTED"
+
+      - name: Record accepted staging evidence
+        shell: bash
+        env:
+          STAGING_URL: ${{ steps.bootstrap.outputs.staging_url }}
+          BUILD_UUID: ${{ steps.bootstrap.outputs.cloudflare_build_uuid }}
+        run: |
+          {
+            echo "### V10 Cloudflare CF-C candidate"
+            echo "- exact SHA: \`${EXPECTED_HEAD}\`"
+            echo "- Worker + Container build: PASS"
+            echo "- Neon PostgreSQL 18 isolated staging role: PASS"
+            echo "- exact-SHA / health / database live acceptance: PASS"
+            echo "- staging URL: ${STAGING_URL}"
+            echo "- Cloudflare build UUID: \`${BUILD_UUID}\`"
+            echo "- production promotion: NOT PERFORMED"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Clean secrets and self-hosted workspace
+        if: always()
+        shell: bash
+        run: |
+          rm -f "${OMNI_V10_STAGING_DSN_FILE:-}"
+          git config --local --unset-all credential.helper 2>/dev/null || true
+          if git rev-parse --verify HEAD >/dev/null 2>&1; then
+            git reset --hard HEAD
+            git clean -ffdx
+          else
+            rm -rf .git
+          fi

@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   provider-readiness:
-    name: Cloudflare provider authority and container-engine readiness
+    name: Cloudflare provider authority and build-path readiness
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 10
     env:
@@ -58,42 +58,37 @@ jobs:
         run: |
           set -euo pipefail
           readiness=0
-
           if [ -n "${CLOUDFLARE_API_TOKEN_VALUE:-}" ]; then
             echo "CLOUDFLARE_API_TOKEN=AVAILABLE"
           else
             echo "CLOUDFLARE_API_TOKEN=MISSING"
             readiness=1
           fi
-
           if [ -n "${CLOUDFLARE_ACCOUNT_ID_SECRET_VALUE:-}" ] || [ -n "${CLOUDFLARE_ACCOUNT_ID_VAR_VALUE:-}" ]; then
             echo "CLOUDFLARE_ACCOUNT_ID=AVAILABLE"
           else
             echo "CLOUDFLARE_ACCOUNT_ID=MISSING"
             readiness=1
           fi
-
           if [ -n "${NEON_API_KEY_VALUE:-}" ]; then
             echo "NEON_API_KEY=AVAILABLE"
           else
             echo "NEON_API_KEY=MISSING"
             readiness=1
           fi
-
           if [ -n "${NEON_ORG_ID_VALUE:-}" ]; then
             echo "NEON_ORG_ID=AVAILABLE"
           else
             echo "NEON_ORG_ID=MISSING"
             readiness=1
           fi
-
           if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
             echo "CLOUDFLARE_CONTAINER_ENGINE=AVAILABLE"
+            echo "CLOUDFLARE_DEPLOY_PATH=DIRECT_WRANGLER_AVAILABLE"
           else
             echo "CLOUDFLARE_CONTAINER_ENGINE=MISSING_OR_NOT_RUNNING"
-            readiness=1
+            echo "CLOUDFLARE_DEPLOY_PATH=WORKERS_BUILDS"
           fi
-
           if [ "$readiness" -ne 0 ]; then
             echo "CLOUDFLARE_CF_C_PROVIDER_READINESS=BLOCKED"
             exit 78

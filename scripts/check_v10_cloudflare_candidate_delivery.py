@@ -1,0 +1,96 @@
+from __future__ import annotations
+
+from pathlib import Path
+import sys
+
+
+ROOT = Path(__file__).resolve().parents[1]
+CANDIDATE_WORKFLOW = ROOT / ".github/workflows/v10-cloudflare-candidate-deploy.yml"
+READINESS_WORKFLOW = ROOT / ".github/workflows/v10-cloudflare-provider-readiness.yml"
+BOOTSTRAP_CONFIG = ROOT / "cloudflare/wrangler.bootstrap.staging.jsonc"
+BOOTSTRAP_WORKER = ROOT / "cloudflare/bootstrap-staging-worker.js"
+NEON_PROVISIONER = ROOT / "scripts/provision_v10_cloudflare_neon_runtime.py"
+BUILDS_BOOTSTRAP = ROOT / "scripts/bootstrap_v10_cloudflare_builds.py"
+
+
+def _read(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        raise RuntimeError(f"CLOUDFLARE_CANDIDATE_FILE_UNREADABLE:{path}") from exc
+
+
+def validate() -> None:
+    workflow = _read(CANDIDATE_WORKFLOW)
+    for marker in (
+        "name: V10 Cloudflare Candidate Deployment",
+        "system/cloudflare-public-product",
+        "secrets.CLOUDFLARE_API_TOKEN",
+        "vars.CLOUDFLARE_ACCOUNT_ID",
+        "secrets.NEON_API_KEY",
+        "vars.NEON_ORG_ID",
+        "provision_v10_cloudflare_neon_runtime",
+        "wrangler.bootstrap.staging.jsonc",
+        "bootstrap_v10_cloudflare_builds",
+        "probe_v10_cloudflare_live_release.sh",
+        "git clean -ffdx",
+    ):
+        if marker not in workflow:
+            raise RuntimeError("CLOUDFLARE_CANDIDATE_WORKFLOW_GUARD_MISSING")
+    if "actions/checkout" in workflow or "docker build" in workflow:
+        raise RuntimeError("CLOUDFLARE_CANDIDATE_FORBIDDEN_DEPENDENCY")
+
+    readiness = _read(READINESS_WORKFLOW)
+    if "CLOUDFLARE_DEPLOY_PATH=WORKERS_BUILDS" not in readiness:
+        raise RuntimeError("CLOUDFLARE_CANDIDATE_WORKERS_BUILDS_FALLBACK_MISSING")
+    if "CLOUDFLARE_CF_C_PROVIDER_READINESS=READY" not in readiness:
+        raise RuntimeError("CLOUDFLARE_CANDIDATE_READINESS_GATE_MISSING")
+
+    bootstrap_config = _read(BOOTSTRAP_CONFIG)
+    if '"name": "omni-cio-v10-web-staging"' not in bootstrap_config:
+        raise RuntimeError("CLOUDFLARE_CANDIDATE_BOOTSTRAP_WORKER_INVALID")
+    if '"containers"' in bootstrap_config:
+        raise RuntimeError("CLOUDFLARE_CANDIDATE_BOOTSTRAP_CONTAINER_FORBIDDEN")
+    if "CLOUDFLARE_STAGING_BUILD_PENDING" not in _read(BOOTSTRAP_WORKER):
+        raise RuntimeError("CLOUDFLARE_CANDIDATE_BOOTSTRAP_RESPONSE_MISSING")
+
+    neon = _read(NEON_PROVISIONER)
+    for marker in (
+        '"staging": "omni_cio_cloudflare_staging"',
+        '"production": "omni_cio_cloudflare_prod"',
+        "CLOUDFLARE_RUNTIME_DSN_REPO_PATH_FORBIDDEN",
+        "validate_hosted_postgres_runtime_sql",
+        "apply_migrations(connection)",
+    ):
+        if marker not in neon:
+            raise RuntimeError("CLOUDFLARE_CANDIDATE_NEON_GUARD_MISSING")
+    if 'RUNTIME_ROLE = "omni_cio_hosted_api"' in neon:
+        raise RuntimeError("CLOUDFLARE_CANDIDATE_SHARED_ROLE_FORBIDDEN")
+
+    builds = _read(BUILDS_BOOTSTRAP)
+    for marker in (
+        '"omni-cio-v10-web-staging"',
+        '"Omni-CIO V10 staging deploy"',
+        '"system/cloudflare-public-product"',
+        '"/builds/repos/connections"',
+        '"/builds/tokens"',
+        '"npm run cloudflare:deploy:staging"',
+        '"OMNI_V10_POSTGRES_DSN"',
+        "CLOUDFLARE_BUILD_SHA_MISMATCH",
+    ):
+        if marker not in builds:
+            raise RuntimeError("CLOUDFLARE_CANDIDATE_BUILDS_GUARD_MISSING")
+
+
+def main() -> int:
+    try:
+        validate()
+    except RuntimeError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    print("V10 Cloudflare CF-C candidate delivery contract passed.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
