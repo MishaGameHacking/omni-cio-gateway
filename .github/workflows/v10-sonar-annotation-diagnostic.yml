@@ -16,73 +16,63 @@ jobs:
   annotations:
     name: Read Sonar annotations
     if: github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 6
     env:
       EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
       GH_TOKEN: ${{ github.token }}
     steps:
       - name: Wait for exact-head Sonar annotations
-        shell: bash
+        shell: powershell
         run: |
-          python3 - <<'PY'
-          from __future__ import annotations
-
-          import json
-          import os
-          import time
-          import urllib.request
-
-          repo = os.environ["GITHUB_REPOSITORY"]
-          sha = os.environ["EXPECTED_HEAD"]
-          token = os.environ["GH_TOKEN"]
-          api = os.environ["GITHUB_API_URL"]
-          headers = {
-              "Accept": "application/vnd.github+json",
-              "Authorization": f"Bearer {token}",
-              "X-GitHub-Api-Version": "2022-11-28",
+          $ErrorActionPreference = "Stop"
+          $headers = @{
+            Accept = "application/vnd.github+json"
+            Authorization = "Bearer $env:GH_TOKEN"
+            "X-GitHub-Api-Version" = "2022-11-28"
           }
-
-          def get_json(url: str):
-              request = urllib.request.Request(url, headers=headers)
-              with urllib.request.urlopen(request, timeout=20) as response:
-                  return json.load(response)
-
-          sonar = None
-          for attempt in range(36):
-              checks = get_json(
-                  f"{api}/repos/{repo}/commits/{sha}/check-runs?per_page=100"
-              )
-              candidates = [
-                  item
-                  for item in checks.get("check_runs", [])
-                  if item.get("name") == "SonarCloud Code Analysis"
-                  and item.get("head_sha") == sha
-              ]
-              if candidates and candidates[0].get("status") == "completed":
-                  sonar = candidates[0]
-                  break
-              if attempt == 35:
-                  raise SystemExit("SONAR_DIAGNOSTIC_EXACT_HEAD_NOT_COMPLETE")
-              time.sleep(10)
-
-          annotations_url = sonar.get("output", {}).get("annotations_url", "")
-          if not annotations_url:
-              raise SystemExit("SONAR_DIAGNOSTIC_ANNOTATIONS_URL_MISSING")
-          annotations = get_json(f"{annotations_url}?per_page=100")
-          print(f"SONAR_DIAGNOSTIC_HEAD={sha}")
-          print(f"SONAR_DIAGNOSTIC_CONCLUSION={sonar.get('conclusion')}")
-          print(f"SONAR_DIAGNOSTIC_ANNOTATIONS={len(annotations)}")
-          for item in annotations:
-              path = str(item.get("path", ""))[:300]
-              start = item.get("start_line")
-              end = item.get("end_line")
-              level = str(item.get("annotation_level", ""))[:30]
-              title = " ".join(str(item.get("title") or "").split())[:300]
-              message = " ".join(str(item.get("message") or "").split())[:1000]
-              print(
-                  "SONAR_ANNOTATION "
-                  f"path={path} lines={start}-{end} level={level} "
-                  f"title={title!r} message={message!r}"
-              )
-          PY
+          $sonar = $null
+          for ($attempt = 0; $attempt -lt 36; $attempt++) {
+            $checksUrl = "$env:GITHUB_API_URL/repos/$env:GITHUB_REPOSITORY/commits/$env:EXPECTED_HEAD/check-runs?per_page=100"
+            $checks = Invoke-RestMethod -Uri $checksUrl -Headers $headers -Method Get
+            $sonar = $checks.check_runs |
+              Where-Object {
+                $_.name -eq "SonarCloud Code Analysis" -and
+                $_.head_sha -eq $env:EXPECTED_HEAD
+              } |
+              Select-Object -First 1
+            if ($null -ne $sonar -and $sonar.status -eq "completed") {
+              break
+            }
+            if ($attempt -eq 35) {
+              throw "SONAR_DIAGNOSTIC_EXACT_HEAD_NOT_COMPLETE"
+            }
+            Start-Sleep -Seconds 10
+          }
+          $annotationsUrl = [string]$sonar.output.annotations_url
+          if ([string]::IsNullOrWhiteSpace($annotationsUrl)) {
+            throw "SONAR_DIAGNOSTIC_ANNOTATIONS_URL_MISSING"
+          }
+          $annotations = @(
+            Invoke-RestMethod -Uri "$annotationsUrl?per_page=100" -Headers $headers -Method Get
+          )
+          Write-Output "SONAR_DIAGNOSTIC_HEAD=$env:EXPECTED_HEAD"
+          Write-Output "SONAR_DIAGNOSTIC_CONCLUSION=$($sonar.conclusion)"
+          Write-Output "SONAR_DIAGNOSTIC_ANNOTATIONS=$($annotations.Count)"
+          foreach ($item in $annotations) {
+            $path = ([string]$item.path -replace '[\r\n\t]+', ' ')
+            $title = ([string]$item.title -replace '[\r\n\t]+', ' ')
+            $message = ([string]$item.message -replace '[\r\n\t]+', ' ')
+            if ($path.Length -gt 300) { $path = $path.Substring(0, 300) }
+            if ($title.Length -gt 300) { $title = $title.Substring(0, 300) }
+            if ($message.Length -gt 1000) { $message = $message.Substring(0, 1000) }
+            Write-Output (
+              "SONAR_ANNOTATION path={0} lines={1}-{2} level={3} title='{4}' message='{5}'" -f
+              $path,
+              $item.start_line,
+              $item.end_line,
+              $item.annotation_level,
+              $title,
+              $message
+            )
+          }
