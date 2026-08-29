@@ -24,7 +24,10 @@ SHARDS: tuple[Shard, ...] = (
         "CFV-1-GOVERNANCE",
         (
             (sys.executable, "scripts/check_v10_cloudflare_platform_authority.py"),
-            (sys.executable, "scripts/check_v10_cloudflare_public_product_integrated.py"),
+            (
+                sys.executable,
+                "scripts/check_v10_cloudflare_public_product_integrated.py",
+            ),
             (sys.executable, "scripts/check_v10_cloudflare_builds_verifier.py"),
         ),
     ),
