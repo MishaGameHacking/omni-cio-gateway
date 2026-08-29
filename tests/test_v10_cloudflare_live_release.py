@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import unittest
-from unittest import mock
 
 import scripts.check_v10_cloudflare_live_release as verifier
 
@@ -49,10 +48,10 @@ class CloudflareLiveReleaseTests(unittest.TestCase):
         ):
             verifier._configured_origin({})
 
-    def test_verify_accepts_exact_release_and_health(self) -> None:
+    def test_verify_release_accepts_exact_payload(self) -> None:
         sha = "a" * 40
-        responses = {
-            "/api/v10/release": {
+        verifier.verify_release(
+            {
                 "status": "ok",
                 "platform": "cloudflare",
                 "source_sha": sha,
@@ -61,59 +60,56 @@ class CloudflareLiveReleaseTests(unittest.TestCase):
                 "public_multi_user_enabled": False,
                 "real_trading_enabled": False,
             },
-            "/healthz": {
+            sha,
+        )
+
+    def test_verify_health_accepts_exact_payload(self) -> None:
+        sha = "a" * 40
+        verifier.verify_health(
+            {
                 "status": "ok",
                 "release_sha": sha,
                 "database": "READY",
             },
-        }
-        with mock.patch.object(
-            verifier,
-            "_json",
-            side_effect=lambda origin, path: responses[path],
-        ):
-            verifier.verify("https://example.workers.dev", sha)
+            sha,
+        )
 
-    def test_verify_rejects_source_drift(self) -> None:
+    def test_verify_release_rejects_source_drift(self) -> None:
         sha = "a" * 40
-        with mock.patch.object(
-            verifier,
-            "_json",
-            return_value={
-                "status": "ok",
-                "platform": "cloudflare",
-                "source_sha": "b" * 40,
-                "backend": "container",
-                "static_assets": True,
-                "public_multi_user_enabled": False,
-                "real_trading_enabled": False,
-            },
+        with self.assertRaisesRegex(
+            RuntimeError, "CLOUDFLARE_RELEASE_SOURCE_SHA_INVALID"
         ):
-            with self.assertRaisesRegex(
-                RuntimeError, "CLOUDFLARE_RELEASE_SOURCE_SHA_INVALID"
-            ):
-                verifier.verify("https://example.workers.dev", sha)
+            verifier.verify_release(
+                {
+                    "status": "ok",
+                    "platform": "cloudflare",
+                    "source_sha": "b" * 40,
+                    "backend": "container",
+                    "static_assets": True,
+                    "public_multi_user_enabled": False,
+                    "real_trading_enabled": False,
+                },
+                sha,
+            )
 
-    def test_verify_rejects_public_multi_user_widening(self) -> None:
+    def test_verify_release_rejects_public_multi_user_widening(self) -> None:
         sha = "a" * 40
-        with mock.patch.object(
-            verifier,
-            "_json",
-            return_value={
-                "status": "ok",
-                "platform": "cloudflare",
-                "source_sha": sha,
-                "backend": "container",
-                "static_assets": True,
-                "public_multi_user_enabled": True,
-                "real_trading_enabled": False,
-            },
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "CLOUDFLARE_RELEASE_PUBLIC_MULTI_USER_ENABLED_INVALID",
         ):
-            with self.assertRaisesRegex(
-                RuntimeError,
-                "CLOUDFLARE_RELEASE_PUBLIC_MULTI_USER_ENABLED_INVALID",
-            ):
-                verifier.verify("https://example.workers.dev", sha)
+            verifier.verify_release(
+                {
+                    "status": "ok",
+                    "platform": "cloudflare",
+                    "source_sha": sha,
+                    "backend": "container",
+                    "static_assets": True,
+                    "public_multi_user_enabled": True,
+                    "real_trading_enabled": False,
+                },
+                sha,
+            )
 
 
 if __name__ == "__main__":
