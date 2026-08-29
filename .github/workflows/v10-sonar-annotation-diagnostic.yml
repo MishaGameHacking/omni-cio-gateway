@@ -17,62 +17,23 @@ jobs:
     name: Read Sonar annotations
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
-    timeout-minutes: 6
+    timeout-minutes: 3
     env:
-      EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
       GH_TOKEN: ${{ github.token }}
     steps:
-      - name: Wait for exact-head Sonar annotations
-        shell: powershell
-        run: |
-          $ErrorActionPreference = "Stop"
-          $headers = @{
-            Accept = "application/vnd.github+json"
-            Authorization = "Bearer $env:GH_TOKEN"
-            "X-GitHub-Api-Version" = "2022-11-28"
-          }
-          $sonar = $null
-          for ($attempt = 0; $attempt -lt 36; $attempt++) {
-            $checksUrl = "$env:GITHUB_API_URL/repos/$env:GITHUB_REPOSITORY/commits/$env:EXPECTED_HEAD/check-runs?per_page=100"
-            $checks = Invoke-RestMethod -Uri $checksUrl -Headers $headers -Method Get
-            $sonar = $checks.check_runs |
-              Where-Object {
-                $_.name -eq "SonarCloud Code Analysis" -and
-                $_.head_sha -eq $env:EXPECTED_HEAD
-              } |
-              Select-Object -First 1
-            if ($null -ne $sonar -and $sonar.status -eq "completed") {
-              break
-            }
-            if ($attempt -eq 35) {
-              throw "SONAR_DIAGNOSTIC_EXACT_HEAD_NOT_COMPLETE"
-            }
-            Start-Sleep -Seconds 10
-          }
-          $annotationsUrl = [string]$sonar.output.annotations_url
-          if ([string]::IsNullOrWhiteSpace($annotationsUrl)) {
-            throw "SONAR_DIAGNOSTIC_ANNOTATIONS_URL_MISSING"
-          }
-          $annotations = @(
-            Invoke-RestMethod -Uri "$annotationsUrl?per_page=100" -Headers $headers -Method Get
-          )
-          Write-Output "SONAR_DIAGNOSTIC_HEAD=$env:EXPECTED_HEAD"
-          Write-Output "SONAR_DIAGNOSTIC_CONCLUSION=$($sonar.conclusion)"
-          Write-Output "SONAR_DIAGNOSTIC_ANNOTATIONS=$($annotations.Count)"
-          foreach ($item in $annotations) {
-            $path = ([string]$item.path -replace '[\r\n\t]+', ' ')
-            $title = ([string]$item.title -replace '[\r\n\t]+', ' ')
-            $message = ([string]$item.message -replace '[\r\n\t]+', ' ')
-            if ($path.Length -gt 300) { $path = $path.Substring(0, 300) }
-            if ($title.Length -gt 300) { $title = $title.Substring(0, 300) }
-            if ($message.Length -gt 1000) { $message = $message.Substring(0, 1000) }
-            Write-Output (
-              "SONAR_ANNOTATION path={0} lines={1}-{2} level={3} title='{4}' message='{5}'" -f
-              $path,
-              $item.start_line,
-              $item.end_line,
-              $item.annotation_level,
-              $title,
-              $message
-            )
-          }
+      - name: Read completed Sonar annotations
+        shell: cmd
+        run: >-
+          powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command
+          "$ErrorActionPreference='Stop';
+          $headers=@{Accept='application/vnd.github+json';Authorization=('Bearer '+$env:GH_TOKEN);'X-GitHub-Api-Version'='2022-11-28'};
+          $url='https://api.github.com/repos/MishaGameHacking/omni-cio-gateway/check-runs/99129352927/annotations?per_page=100';
+          $annotations=@(Invoke-RestMethod -Uri $url -Headers $headers -Method Get);
+          Write-Output ('SONAR_DIAGNOSTIC_SOURCE_HEAD=a7b19dd17886142bc33d9b1f40152641634f389e');
+          Write-Output ('SONAR_DIAGNOSTIC_ANNOTATIONS='+$annotations.Count);
+          foreach($item in $annotations){
+            $path=([string]$item.path -replace '[\r\n\t]+',' ');
+            $title=([string]$item.title -replace '[\r\n\t]+',' ');
+            $message=([string]$item.message -replace '[\r\n\t]+',' ');
+            Write-Output ('SONAR_ANNOTATION path={0} lines={1}-{2} level={3} title={4} message={5}' -f $path,$item.start_line,$item.end_line,$item.annotation_level,$title,$message)
+          }"
