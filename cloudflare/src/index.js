@@ -46,8 +46,11 @@ function backendRequest(request) {
   const headers = new Headers(request.headers);
   headers.set("host", INTERNAL_HOST);
   headers.delete("forwarded");
+  headers.delete("x-forwarded-for");
   headers.delete("x-forwarded-host");
   headers.delete("x-forwarded-proto");
+  headers.set("x-forwarded-host", INTERNAL_HOST);
+  headers.set("x-forwarded-proto", "https");
   headers.set("x-omni-edge-provider", "cloudflare");
   headers.set("x-omni-source-sha", SOURCE_SHA);
   return new Request(url, {
