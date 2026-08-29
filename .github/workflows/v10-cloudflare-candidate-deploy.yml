@@ -73,9 +73,11 @@ jobs:
         shell: cmd
         run: scripts\bootstrap_windows_ci_python.cmd
 
-      - name: Install exact hashed Python runtime dependencies
+      - name: Install exact hashed provider control-plane dependencies
         shell: cmd
-        run: python -m pip install --disable-pip-version-check --require-hashes -r requirements.txt
+        run: |
+          python -m pip install --disable-pip-version-check --require-hashes --no-deps --force-reinstall -r requirements.cloudflare-control-plane.txt
+          python -c "import importlib.metadata as m; expected={'psycopg':'3.3.4','psycopg-binary':'3.3.4','typing-extensions':'4.16.0','tzdata':'2026.3'}; actual={name:m.version(name) for name in expected}; assert actual == expected, actual"
 
       - name: Provision isolated Neon staging runtime role
         shell: bash
