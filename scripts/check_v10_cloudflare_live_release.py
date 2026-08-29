@@ -123,15 +123,17 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if len(args) != 2 or args[0] not in {"release", "health"}:
             raise RuntimeError("CLOUDFLARE_RELEASE_USAGE_INVALID")
+        mode = args[0]
+        sha = _expected_sha(args[1])
         payload = _stdin_json()
-        if args[0] == "release":
-            verify_release(payload, args[1])
+        if mode == "release":
+            verify_release(payload, sha)
         else:
-            verify_health(payload, args[1])
+            verify_health(payload, sha)
     except RuntimeError as exc:
         print(str(exc), file=sys.stderr)
         return 1
-    print(f"Cloudflare {args[0]} payload accepted for {args[1].strip().lower()}")
+    print(f"Cloudflare {mode} payload accepted for {sha}")
     return 0
 
 
