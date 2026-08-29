@@ -56,7 +56,7 @@ def validate() -> None:
         raise RuntimeError("CLOUDFLARE_RUNTIME_FRONTEND_PLACEMENT_INVALID")
     if backend.get("placement") != "CLOUDFLARE_CONTAINER":
         raise RuntimeError("CLOUDFLARE_RUNTIME_BACKEND_PLACEMENT_INVALID")
-    if backend.get("python") != "3.12.10":
+    if backend.get("python") != "3.14.6":
         raise RuntimeError("CLOUDFLARE_RUNTIME_PYTHON_BASELINE_INVALID")
     if backend.get("instance_type") != "lite" or backend.get("max_instances") != 1:
         raise RuntimeError("CLOUDFLARE_RUNTIME_CONTAINER_BOUND_INVALID")
@@ -117,7 +117,7 @@ def validate() -> None:
 
     dockerfile = _read(DOCKERFILE)
     for marker in (
-        "FROM python:3.12.10-slim-bookworm",
+        "FROM python:3.14.6-slim-bookworm",
         "python -m pip install --require-hashes -r requirements.txt",
         "USER omni",
         "apps.api.cloudflare_runtime:create_app",
@@ -156,7 +156,7 @@ def main() -> int:
         return 1
     print("V10 Cloudflare runtime compatibility contract passed.")
     print("Frontend: Workers Static Assets")
-    print("Backend: Cloudflare Container / Python 3.12.10")
+    print("Backend: Cloudflare Container / Python 3.14.6")
     print("Database: direct Neon PostgreSQL 18; Hyperdrive disabled")
     return 0
 
