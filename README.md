@@ -10,17 +10,21 @@ Repository-front-door snapshot of accepted/current program authority:
 
 - accepted V10 implementation progress: **54%**;
 - WP0–WP22A: accepted COMPLETE according to the canonical status/evidence chain;
-- **PRODUCT IMPLEMENTATION PAUSED** after the Amendment-12 governance transition;
-- next prepared execution unit: **WEB-VISUAL-INTEGRATED — Premium Spatial Financial OS A→G System Update / OWNER START REQUIRED**;
-- exact product START required before implementation: `START V10 WEB VISUAL SYSTEM UPDATE`;
-- Amendment 12 changes delivery granularity only; it does not advance accepted product progress or runtime authority;
-- WP22A technical closeout is accepted only through its Phase-5 evidence/status chain; public-production activation remains a separate fail-closed gate;
-- WP23+ remains locked behind acceptance of the complete visual System Update and later Master Plan authorization;
+- **PRODUCT IMPLEMENTATION PAUSED** during the focused Cloudflare provider/security authority transition;
+- current next package after Amendment 14 acceptance: **CLOUDFLARE-BUILDS-VERIFIER-INTEGRATION — Repository-Side Portable Verification Integration**;
+- prepared product System Update remains **WEB-VISUAL-INTEGRATED — Premium Spatial Financial OS A→G / OWNER START REQUIRED** and is not executed inside the provider/security transition;
+- exact product START required before visual implementation: `START V10 WEB VISUAL SYSTEM UPDATE`;
+- Amendment 12 still governs execution-unit granularity and mandatory provider/security/cutover splits;
+- Amendment 13 still governs progressive capability activation without waiting for all of V10;
+- Amendment 14 selects GitHub as engineering authority rank 1 and Cloudflare Workers Paid as new-V10 application/edge/build platform rank 2 when accepted; it does not itself deploy production;
+- historical WP22A Render/Neon hosted evidence remains evidence, while Render is retired from active **new V10** deployment/attestation/release-alignment authority;
+- Cloud.ru Evolution is no longer the selected provider target for new V10 work after Amendment 14 acceptance;
+- WP23+ remains locked;
 - **public multi-user/global browser service is the approved V10 target**;
-- **public Internet ingress remains OFF while the separate production-activation/security/privacy/broker/legal/capacity gates are unfinished**; technical acceptance is not production activation;
+- **public Internet ingress remains OFF while the separate Cloudflare runtime/candidate/cutover plus production security/privacy/broker/legal/capacity gates are unfinished**; technical acceptance is not production activation;
 - final public production must not depend on PROJECT OWNER home IP, Wi-Fi, router/LAN, home Internet or Lenovo as the production origin;
-- final public Web/API/private-state runtime must use the approved managed-cloud production boundary selected by the owning service/security/recovery gate;
-- PROJECT OWNER is an ordinary product USER when using Omni-CIO; GitHub/cloud-provider/Windows authority is separate from product identity;
+- final public Web/API/private-state runtime must use the approved Cloudflare managed-platform boundary only after its owning compatibility/cutover gates;
+- PROJECT OWNER is an ordinary product USER when using Omni-CIO; GitHub/Cloudflare/Windows authority is separate from product identity;
 - initial registered-user access is free: billing, trial, subscription enforcement and premium feature gating are disabled for the initial launch;
 - normal broker READ and optional TRADE credentials belong only to the authenticated tenant's `BrokerConnection`; no shared/global user broker token is allowed;
 - current T-Invest public-service terms remain a separate fail-closed broker gate; user-supplied tokens do not waive broker restrictions;
@@ -28,6 +32,25 @@ Repository-front-door snapshot of accepted/current program authority:
 - `app:app`, `trading_methods=false`, `REAL_TRADING_ENABLED=false`, `PUBLIC_MULTI_USER_ENABLED=false` and protected V9 rollback remain intact.
 
 This box is a concise repository front door, **not a second progress ledger**. For exact evidence and transitions read `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
+
+## Cloudflare platform / continuous release authority
+
+Amendment 14 introduces the current new-V10 target model without changing protected V9:
+
+- GitHub is canonical source/review/provenance authority;
+- Cloudflare Workers Paid is the selected managed application/edge/build platform after the owning acceptance gates;
+- the already purchased Workers Paid baseline may be used by accepted packages, but mutable limits/costs must be revalidated before material configuration and automatic paid overage or a higher plan is not implied;
+- current GitHub/Lenovo CI routing remains authoritative until `CLOUDFLARE-BUILDS-VERIFIER-INTEGRATION` proves and accepts portable Cloudflare build lanes;
+- existing React/Vite Web remains the migration source; backend/Python Worker/native-dependency compatibility must be proved rather than assumed;
+- accepted Neon/PostgreSQL 18 tenant/RLS authority remains intact; Hyperdrive + PostgreSQL 18 requires explicit compatibility evidence and D1 is not an automatic replacement;
+- Cloudflare DNS/TLS/DDoS/WAF/rate/Turnstile/Access are additive security layers and never replace product account/tenant authorization;
+- Cloudflare deployment, public release or Access never grants broker/Real-money authority.
+
+Continuous public release law is:
+
+`exact-head PR GREEN/review -> squash merge -> exact-main post-merge GREEN -> immutable Cloudflare candidate -> candidate acceptance -> production promotion`.
+
+A new accepted `main` SHA is a product revision candidate, not an automatic production deployment. If a newer candidate is not promotable, the public product stays last-known-good and exposes an explicit pending/blocked/out-of-sync state. Public release IDs are event-derived CalVer (`YYYY.MM.DD.N`) plus exact source/Cloudflare version metadata; they do not require a source-code version-bump commit.
 
 ## Integrated System Update Execution Law
 
@@ -49,7 +72,7 @@ Every `INTEGRATED_SYSTEM_UPDATE` uses:
 
 Both are working-state records only and must say `BRANCH-LOCAL EXECUTION STATE — NOT ACCEPTED MAIN AUTHORITY`.
 
-The prepared visual update remains **OWNER START REQUIRED**. Do not create its implementation branch or modify `apps/web` until `START V10 WEB VISUAL SYSTEM UPDATE` is explicitly issued after Amendment 12 is accepted.
+The prepared visual update remains **OWNER START REQUIRED**, but it is not the immediate current package while the mandatory Cloudflare provider/security transition sequence is being established. Do not create its implementation branch or modify `apps/web` merely as part of the authority/build migration.
 
 ## Product target
 
@@ -59,10 +82,10 @@ Final V10 product path:
 ordinary Internet browser
         |
         v
-public HTTPS / reviewed edge
+Cloudflare public HTTPS / reviewed edge
         |
         v
-approved managed-cloud Omni-CIO Web/API
+approved Cloudflare-hosted Omni-CIO Web/API boundary
         |
         v
 product authentication (Telegram Login / VK ID)
@@ -112,6 +135,8 @@ Real execution is not enabled by this planning direction. Exact same-tenant READ
 | V10 scope/sequence lock | `docs/master-plan/OMNI_CIO_V10_PROGRAM_LOCK.md` |
 | V10 canonical base program | `docs/master-plan/OMNI_CIO_V10_MASTER_PLAN.md` |
 | Active amendments / precedence | `docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md` |
+| Cloudflare platform / continuous release authority | `docs/master-plan/OMNI_CIO_V10_CLOUDFLARE_PLATFORM_AND_CONTINUOUS_RELEASE_AUTHORITY_AMENDMENT.md` |
+| Cloudflare machine authority contract | `docs/architecture/V10_CLOUDFLARE_PLATFORM_AUTHORITY_CONTRACT.json` |
 | Integrated System Update Execution Law | `docs/master-plan/OMNI_CIO_V10_INTEGRATED_SYSTEM_UPDATE_EXECUTION_AMENDMENT.md` |
 | Machine execution-unit contract | `docs/architecture/V10_INTEGRATED_SYSTEM_UPDATE_EXECUTION_CONTRACT.json` |
 | Integrated branch ledger template | `docs/updates/INTEGRATED_SYSTEM_UPDATE_EXECUTION_LEDGER_TEMPLATE.md` |
@@ -137,21 +162,21 @@ GitHub main -> Render / omni-cio-gateway (`app:app`)
                   `-- protected Real-execution contour (disabled by kill switch)
 ```
 
-V10 does not silently replace this baseline. Public hosted V10 cutover occurs only through the responsible future accepted package/release/recovery gates.
+This is the protected V9 production/recovery baseline, not current new-V10 provider authority. V10 public cutover to Cloudflare occurs only through the dedicated build integration, runtime compatibility, candidate deployment and public cutover gates.
 
 ## V10 development law
 
 Use the current execution unit from accepted authority:
 
-`restore authority -> FOCUSED_CHANGE or OWNER-authorized INTEGRATED_SYSTEM_UPDATE -> root-cause/blast-radius + coupled-surface preflight -> implementation/internal milestones -> INTEGRATION_READY when applicable -> one published head -> HEAD FREEZE -> all applicable exact-head checks SUCCESS -> independent review -> coherent correction batch if required -> fresh final exact-head verification -> READY GREEN -> zero blockers -> squash merge -> exact-main post-merge verification -> status -> next major System Update`.
+`restore authority -> FOCUSED_CHANGE or OWNER-authorized INTEGRATED_SYSTEM_UPDATE -> root-cause/blast-radius + coupled-surface preflight -> implementation/internal milestones -> INTEGRATION_READY when applicable -> one published head -> HEAD FREEZE -> all applicable exact-head checks SUCCESS -> independent review -> coherent correction batch if required -> fresh final exact-head verification -> READY GREEN -> zero blockers -> squash merge -> exact-main post-merge verification -> status -> next authorized execution unit`.
 
 Do not start Telegram, AI, Real execution or later packages out of sequence. Do not call RED, skipped, queued or pending GREEN. Do not synthesize OWNER physical evidence. Do not create a second Web App/repository/Core/broker stack.
 
-The WP22A technical gate is complete only through its accepted evidence chain. Amendment 12 does not reopen it, activate public production, mutate the final provider, expand broker-write authority or start WP23.
+The WP22A technical gate is complete only through its accepted evidence chain. Amendment 14 does not reopen it, activate public production, expand broker-write authority or start WP23.
 
 ## Protected V9 boundaries
 
-V9 remains owner-accepted controlled maintenance/recovery until an explicit V10 parity/decommission gate safely replaces it. Stable entrypoint remains `app:app`; protected rollback remains available. `START V10`, Amendment 12, an internal milestone, AI output or a GitHub merge is never broker-submit authorization.
+V9 remains owner-accepted controlled maintenance/recovery until an explicit V10 parity/decommission gate safely replaces it. Stable entrypoint remains `app:app`; protected rollback remains available. `START V10`, Amendment 12/13/14, an internal milestone, AI output, a GitHub merge or Cloudflare deployment is never broker-submit authorization.
 
 ## Recovery / safety
 
