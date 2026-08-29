@@ -7,6 +7,45 @@ import unittest
 import scripts.bootstrap_v10_cloudflare_builds as builds
 import scripts.check_v10_cloudflare_candidate_delivery as guard
 import scripts.provision_v10_cloudflare_neon_runtime as neon
+from scripts import provision_v10_render_neon_preview as neon_base
+from scripts import provision_v10_render_neon_preview_org_scope as neon_org
+
+
+class _ProjectScopedNeonApi(neon_org.OrgScopedNeonApi):
+    def __init__(self) -> None:
+        pass
+
+    def request(self, method: str, path: str, **kwargs):
+        del kwargs
+        if method == "GET" and path.startswith("/organizations/"):
+            raise neon_base.ProvisioningStopped(
+                "NEON_API_KEY_INSUFFICIENT",
+                status=403,
+            )
+        if method == "GET" and path.startswith("/projects?"):
+            return {
+                "projects": [
+                    {
+                        "id": "project-test",
+                        "name": neon_base.NEON_PROJECT_NAME,
+                        "org_id": "org-test",
+                        "region_id": neon_base.NEON_REGION,
+                        "pg_version": 18,
+                    }
+                ]
+            }
+        raise AssertionError((method, path))
+
+
+class _OrganizationScopedNeonApi(neon_org.OrgScopedNeonApi):
+    def __init__(self) -> None:
+        pass
+
+    def request(self, method: str, path: str, **kwargs):
+        del kwargs
+        if method == "GET" and path == "/organizations/org-test":
+            return {"organization": {"id": "org-test", "plan": "free"}}
+        raise AssertionError((method, path))
 
 
 class CloudflareCandidateProviderTests(unittest.TestCase):
@@ -31,6 +70,14 @@ class CloudflareCandidateProviderTests(unittest.TestCase):
                 "CLOUDFLARE_RUNTIME_DSN_REPO_PATH_FORBIDDEN",
             ):
                 neon._write_runtime_dsn(root, target, "postgresql://masked")
+
+    def test_provider_probe_accepts_project_scoped_key_without_org_read(self) -> None:
+        scope = neon.probe_provider_access(_ProjectScopedNeonApi(), "org-test")
+        self.assertEqual(scope, "PROJECT_SCOPED")
+
+    def test_provider_probe_accepts_organization_scoped_key(self) -> None:
+        scope = neon.probe_provider_access(_OrganizationScopedNeonApi(), "org-test")
+        self.assertEqual(scope, "ORGANIZATION_SCOPED")
 
     def test_staging_trigger_is_full_deploy_and_branch_scoped(self) -> None:
         payload = builds._desired_trigger("a" * 36, "b" * 36)

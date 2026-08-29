@@ -60,13 +60,15 @@ function backendRequest(request, routeUrl) {
   headers.delete("x-forwarded-for");
   headers.delete("x-forwarded-host");
   headers.delete("x-forwarded-proto");
+  headers.delete("x-omni-client-ip");
   headers.delete("x-omni-route-path");
   headers.delete("x-omni-route-query");
-  if (clientIp) {
-    headers.set("x-forwarded-for", clientIp);
+  headers.delete("x-omni-edge-provider");
+  headers.delete("x-omni-source-sha");
+  if (!clientIp) {
+    throw new Error("CLOUDFLARE_CLIENT_IP_MISSING");
   }
-  headers.set("x-forwarded-host", INTERNAL_HOST);
-  headers.set("x-forwarded-proto", "https");
+  headers.set("x-omni-client-ip", clientIp);
   headers.set("x-omni-edge-provider", "cloudflare");
   headers.set("x-omni-source-sha", SOURCE_SHA);
   headers.set("x-omni-route-path", encodeURIComponent(routeUrl.pathname));
@@ -98,7 +100,14 @@ async function proxyBackend(request, env, routeUrl) {
     );
   }
   const instance = await getRandom(env.BACKEND, BACKEND_INSTANCE_COUNT);
-  return instance.fetch(backendRequest(request, routeUrl));
+  try {
+    return await instance.fetch(backendRequest(request, routeUrl));
+  } catch (error) {
+    if (error instanceof Error && error.message === "CLOUDFLARE_CLIENT_IP_MISSING") {
+      return hardenedJson({ detail: "CLOUDFLARE_EDGE_IDENTITY_MISSING" }, 400);
+    }
+    throw error;
+  }
 }
 
 export default {

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+import ipaddress
 import os
 import re
 from typing import Any
@@ -26,12 +27,14 @@ _INTERNAL_PROXY_PATH = "/_omni/cloudflare-proxy"
 _DSN_ENV_NAME = "OMNI_V10_POSTGRES_DSN"
 _SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 _SECONDARY_ROUTE_ESCAPE_PATTERN = re.compile(r"%(?:2e|2f|5c|25)", re.IGNORECASE)
+_CLIENT_IP_HEADER = b"x-omni-client-ip"
 _ROUTE_PATH_HEADER = b"x-omni-route-path"
 _ROUTE_QUERY_HEADER = b"x-omni-route-query"
 _EDGE_PROVIDER_HEADER = b"x-omni-edge-provider"
 _SOURCE_SHA_HEADER = b"x-omni-source-sha"
 _INTERNAL_EDGE_HEADERS = frozenset(
     {
+        _CLIENT_IP_HEADER,
         _ROUTE_PATH_HEADER,
         _ROUTE_QUERY_HEADER,
         _EDGE_PROVIDER_HEADER,
@@ -85,9 +88,21 @@ def _validate_canonical_api_path(path: str) -> None:
         raise ValueError("route path contains control character")
 
 
+def _validated_client_ip(headers: Mapping[bytes, bytes]) -> str:
+    raw = headers.get(_CLIENT_IP_HEADER)
+    if raw is None or len(raw) > 64:
+        raise ValueError("client ip missing or too large")
+    try:
+        value = raw.decode("ascii")
+        address = ipaddress.ip_address(value)
+    except (UnicodeError, ValueError) as exc:
+        raise ValueError("client ip invalid") from exc
+    return address.compressed
+
+
 def _validated_route(
     scope: Mapping[str, Any], release_sha: str
-) -> tuple[str, bytes, bytes]:
+) -> tuple[str, bytes, bytes, str]:
     if scope.get("path") != _INTERNAL_PROXY_PATH:
         raise ValueError("internal proxy path required")
     headers = _header_map(scope)
@@ -100,6 +115,7 @@ def _validated_route(
     if source_sha != release_sha or _SHA_PATTERN.fullmatch(source_sha) is None:
         raise ValueError("source sha invalid")
 
+    client_ip = _validated_client_ip(headers)
     raw_path = _ascii_unquote_header(
         headers,
         _ROUTE_PATH_HEADER,
@@ -120,7 +136,7 @@ def _validated_route(
     _validate_canonical_api_path(path)
     if b"\x00" in raw_query or b"\r" in raw_query or b"\n" in raw_query:
         raise ValueError("route query contains control character")
-    return path, raw_path, raw_query
+    return path, raw_path, raw_query, client_ip
 
 
 async def _reject_proxy(send: Send) -> None:
@@ -167,7 +183,9 @@ class CloudflareEdgeRouteRestoreV1:
             await self._app(scope, receive, send)
             return
         try:
-            path, raw_path, raw_query = _validated_route(scope, self._release_sha)
+            path, raw_path, raw_query, client_ip = _validated_route(
+                scope, self._release_sha
+            )
         except ValueError:
             await _reject_proxy(send)
             return
@@ -178,6 +196,9 @@ class CloudflareEdgeRouteRestoreV1:
             if bytes(key).lower() not in _INTERNAL_EDGE_HEADERS
         ]
         restored_scope = dict(scope)
+        restored_scope["scheme"] = "https"
+        restored_scope["server"] = (_INTERNAL_HOST, 443)
+        restored_scope["client"] = (client_ip, 0)
         restored_scope["path"] = path
         restored_scope["raw_path"] = raw_path
         restored_scope["query_string"] = raw_query

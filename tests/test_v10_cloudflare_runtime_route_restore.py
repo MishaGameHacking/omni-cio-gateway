@@ -17,16 +17,22 @@ def _encoded(value: str) -> bytes:
     return quote(value, safe="~()*!.'-").encode("ascii")
 
 
-def _scope(*, raw_path: str = "/api/v10/example", raw_query: str = "") -> dict:
+def _scope(
+    *,
+    raw_path: str = "/api/v10/example",
+    raw_query: str = "",
+    client_ip: str = "203.0.113.10",
+) -> dict:
     return {
         "type": "http",
         "method": "GET",
-        "scheme": "https",
+        "scheme": "http",
         "path": _INTERNAL_PROXY_PATH,
         "raw_path": _INTERNAL_PROXY_PATH.encode("ascii"),
         "query_string": b"",
         "headers": [
             (b"host", b"omni-cio.internal"),
+            (b"x-omni-client-ip", client_ip.encode("ascii")),
             (b"x-omni-edge-provider", b"cloudflare"),
             (b"x-omni-source-sha", _SHA.encode("ascii")),
             (b"x-omni-route-path", _encoded(raw_path)),
@@ -36,8 +42,8 @@ def _scope(*, raw_path: str = "/api/v10/example", raw_query: str = "") -> dict:
 
 
 class CloudflareRuntimeRouteTests(unittest.IsolatedAsyncioTestCase):
-    def test_validated_route_restores_api_path_and_query(self) -> None:
-        path, raw_path, query = _validated_route(
+    def test_validated_route_restores_api_path_query_and_client(self) -> None:
+        path, raw_path, query, client_ip = _validated_route(
             _scope(
                 raw_path="/api/v10/example%20item",
                 raw_query="page=1%20two",
@@ -47,6 +53,7 @@ class CloudflareRuntimeRouteTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(path, "/api/v10/example item")
         self.assertEqual(raw_path, b"/api/v10/example%20item")
         self.assertEqual(query, b"page=1%20two")
+        self.assertEqual(client_ip, "203.0.113.10")
 
     def test_validated_route_rejects_non_api_path(self) -> None:
         scope = _scope(raw_path="/private")
@@ -56,10 +63,14 @@ class CloudflareRuntimeRouteTests(unittest.IsolatedAsyncioTestCase):
     def test_validated_route_rejects_wrong_release_sha(self) -> None:
         scope = _scope()
         headers = list(scope["headers"])
-        headers[2] = (b"x-omni-source-sha", ("b" * 40).encode("ascii"))
+        headers[3] = (b"x-omni-source-sha", ("b" * 40).encode("ascii"))
         scope["headers"] = headers
         with self.assertRaisesRegex(ValueError, "source sha invalid"):
             _validated_route(scope, _SHA)
+
+    def test_validated_route_rejects_invalid_client_ip(self) -> None:
+        with self.assertRaisesRegex(ValueError, "client ip invalid"):
+            _validated_route(_scope(client_ip="not-an-ip"), _SHA)
 
     async def test_wrapper_restores_scope_and_strips_internal_edge_headers(self) -> None:
         captured: list[dict] = []
@@ -82,11 +93,15 @@ class CloudflareRuntimeRouteTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(len(captured), 1)
         restored = captured[0]
+        self.assertEqual(restored["scheme"], "https")
+        self.assertEqual(restored["server"], ("omni-cio.internal", 443))
+        self.assertEqual(restored["client"], ("203.0.113.10", 0))
         self.assertEqual(restored["path"], "/healthz")
         self.assertEqual(restored["raw_path"], b"/healthz")
         self.assertEqual(restored["query_string"], b"probe=1")
         header_names = {key.lower() for key, _ in restored["headers"]}
         for internal_header in (
+            b"x-omni-client-ip",
             b"x-omni-route-path",
             b"x-omni-route-query",
             b"x-omni-edge-provider",

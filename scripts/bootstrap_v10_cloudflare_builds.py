@@ -161,7 +161,9 @@ class CloudflareApi:
                         "CLOUDFLARE_API_TOKEN_INSUFFICIENT",
                         status=status,
                     ) from None
-                raise BootstrapStopped("CLOUDFLARE_API_HTTP_ERROR", status=status) from None
+                raise BootstrapStopped(
+                    "CLOUDFLARE_API_HTTP_ERROR", status=status
+                ) from None
             except (URLError, TimeoutError, OSError):
                 if attempt + 1 >= attempts:
                     raise BootstrapStopped("CLOUDFLARE_API_NETWORK_ERROR") from None

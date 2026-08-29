@@ -67,6 +67,21 @@ class CloudflareRuntimeCompatibilityTests(unittest.TestCase):
                 ):
                     guard.validate()
 
+    def test_guard_rejects_forwarded_header_trust_reenable(self) -> None:
+        dockerfile = guard.DOCKERFILE.read_text(encoding="utf-8").replace(
+            '"--port", "8080"]',
+            '"--port", "8080", "--proxy-headers", "--forwarded-allow-ips", "*"]',
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            candidate = Path(temporary) / "Dockerfile.cloudflare"
+            candidate.write_text(dockerfile, encoding="utf-8")
+            with mock.patch.object(guard, "DOCKERFILE", candidate):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "CLOUDFLARE_RUNTIME_PROXY_HEADER_TRUST_FORBIDDEN",
+                ):
+                    guard.validate()
+
     def test_guard_rejects_dynamic_container_transport_contract(self) -> None:
         payload = json.loads(guard.CONTRACT.read_text(encoding="utf-8"))
         payload["security"]["container_transport_uses_fixed_internal_url"] = False

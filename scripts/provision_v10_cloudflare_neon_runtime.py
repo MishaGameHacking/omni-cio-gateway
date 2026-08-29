@@ -7,6 +7,7 @@ import re
 import secrets
 import sys
 from typing import Any
+from urllib.parse import urlencode
 
 from scripts import provision_v10_render_neon_preview as _base
 from scripts import provision_v10_render_neon_preview_org_scope as _org
@@ -23,7 +24,9 @@ def _runtime_role(environment: str) -> str:
     try:
         role = _ROLE_BY_ENVIRONMENT[environment]
     except KeyError:
-        raise _base.ProvisioningStopped("CLOUDFLARE_RUNTIME_ENVIRONMENT_INVALID") from None
+        raise _base.ProvisioningStopped(
+            "CLOUDFLARE_RUNTIME_ENVIRONMENT_INVALID"
+        ) from None
     if _ROLE_PATTERN.fullmatch(role) is None:
         raise _base.ProvisioningStopped("CLOUDFLARE_RUNTIME_ROLE_INVALID")
     return role
@@ -36,7 +39,9 @@ def _runtime_sql(repo_root: Path, runtime_role: str) -> str:
             validate_hosted_postgres_runtime_sql,
         )
     except Exception:
-        raise _base.ProvisioningStopped("DATABASE_RUNTIME_CONTRACT_IMPORT_FAILED") from None
+        raise _base.ProvisioningStopped(
+            "DATABASE_RUNTIME_CONTRACT_IMPORT_FAILED"
+        ) from None
     path = (
         repo_root
         / "infrastructure"
@@ -56,6 +61,60 @@ def _runtime_sql(repo_root: Path, runtime_role: str) -> str:
     if _base.RUNTIME_ROLE in rendered or runtime_role not in rendered:
         raise _base.ProvisioningStopped("DATABASE_RUNTIME_ROLE_RENDER_FAILED")
     return rendered
+
+
+def _validate_project_probe(payload: object, organization_id: str) -> None:
+    body = _base._json_object(payload, "NEON_PROJECTS_RESPONSE_INVALID")
+    rows = _base._json_list(body.get("projects"), "NEON_PROJECTS_INVALID")
+    projects = [
+        _base._json_object(row, "NEON_PROJECT_INVALID")
+        for row in rows
+        if isinstance(row, dict) and row.get("name") == _base.NEON_PROJECT_NAME
+    ]
+    if len(projects) != 1:
+        raise _base.ProvisioningStopped("NEON_EXPECTED_PROJECT_NOT_UNIQUE")
+    project = projects[0]
+    project_org = project.get("org_id")
+    if isinstance(project_org, str) and project_org != organization_id:
+        raise _base.ProvisioningStopped("NEON_PROJECT_ORGANIZATION_DRIFT")
+    region = project.get("region_id")
+    if isinstance(region, str) and region != _base.NEON_REGION:
+        raise _base.ProvisioningStopped("NEON_FRANKFURT_REGION_REQUIRED")
+
+
+def probe_provider_access(
+    api: _org.OrgScopedNeonApi,
+    organization_id: str,
+) -> str:
+    safe_org_id = _org._validate_neon_org_id(organization_id)
+    try:
+        _org._neon_organization(api, safe_org_id)
+    except _base.ProvisioningStopped as exc:
+        if exc.code != "NEON_API_KEY_INSUFFICIENT" or exc.status != 403:
+            raise
+        query = urlencode(
+            {
+                "limit": 400,
+                "search": _base.NEON_PROJECT_NAME,
+                "org_id": safe_org_id,
+            }
+        )
+        _validate_project_probe(
+            api.request("GET", f"/projects?{query}"),
+            safe_org_id,
+        )
+        scope = "PROJECT_SCOPED"
+    else:
+        scope = "ORGANIZATION_SCOPED"
+    _base._emit(f"CLOUDFLARE_NEON_PROVIDER_ACCESS=READY scope={scope}")
+    return scope
+
+
+def probe_provider_access_from_env() -> str:
+    neon_key = _base._required_env("NEON_API_KEY")
+    organization_id = _org._required_neon_org_id()
+    neon = _org.OrgScopedNeonApi(neon_key, organization_id)
+    return probe_provider_access(neon, organization_id)
 
 
 def _converge_runtime_role(
@@ -189,7 +248,7 @@ def run(
     _base._mask(runtime_password)
 
     neon = _org.OrgScopedNeonApi(neon_key, organization_id)
-    _org._neon_organization(neon, organization_id)
+    probe_provider_access(neon, organization_id)
     target = _org._neon_target(neon, organization_id)
 
     try:
@@ -218,7 +277,9 @@ def run(
     except psycopg.OperationalError:
         raise _base.ProvisioningStopped("CLOUDFLARE_DATABASE_NETWORK_ERROR") from None
     except Exception:
-        raise _base.ProvisioningStopped("CLOUDFLARE_DATABASE_BOOTSTRAP_FAILED") from None
+        raise _base.ProvisioningStopped(
+            "CLOUDFLARE_DATABASE_BOOTSTRAP_FAILED"
+        ) from None
 
     runtime_uri = _base._replace_uri_credentials(
         target.pooled_bootstrap_uri,
@@ -247,8 +308,7 @@ def run(
 
     _write_runtime_dsn(repo_root, output_file, runtime_uri)
     _base._emit(
-        "CLOUDFLARE_NEON_RUNTIME=READY "
-        f"environment={environment} role={runtime_role}"
+        f"CLOUDFLARE_NEON_RUNTIME=READY environment={environment} role={runtime_role}"
     )
     return runtime_role
 

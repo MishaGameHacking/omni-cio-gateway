@@ -24,4 +24,4 @@ RUN chown -R omni:omni /app
 USER omni
 EXPOSE 8080
 
-CMD ["python", "-m", "uvicorn", "apps.api.cloudflare_runtime:create_app", "--factory", "--host", "0.0.0.0", "--port", "8080", "--proxy-headers", "--forwarded-allow-ips", "*"]
+CMD ["python", "-m", "uvicorn", "apps.api.cloudflare_runtime:create_app", "--factory", "--host", "0.0.0.0", "--port", "8080"]

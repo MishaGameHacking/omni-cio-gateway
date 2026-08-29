@@ -45,6 +45,8 @@ def validate() -> None:
         raise RuntimeError("CLOUDFLARE_CANDIDATE_WORKERS_BUILDS_FALLBACK_MISSING")
     if "CLOUDFLARE_CF_C_PROVIDER_READINESS=READY" not in readiness:
         raise RuntimeError("CLOUDFLARE_CANDIDATE_READINESS_GATE_MISSING")
+    if "probe_provider_access_from_env" not in readiness:
+        raise RuntimeError("CLOUDFLARE_CANDIDATE_NEON_READ_PROBE_MISSING")
 
     bootstrap_config = _read(BOOTSTRAP_CONFIG)
     if '"name": "omni-cio-v10-web-staging"' not in bootstrap_config:
@@ -58,6 +60,8 @@ def validate() -> None:
     for marker in (
         '"staging": "omni_cio_cloudflare_staging"',
         '"production": "omni_cio_cloudflare_prod"',
+        "probe_provider_access(",
+        "CLOUDFLARE_NEON_PROVIDER_ACCESS=READY",
         "CLOUDFLARE_RUNTIME_DSN_REPO_PATH_FORBIDDEN",
         "validate_hosted_postgres_runtime_sql",
         "apply_migrations(connection)",
@@ -72,8 +76,8 @@ def validate() -> None:
         '"omni-cio-v10-web-staging"',
         '"Omni-CIO V10 staging deploy"',
         '"system/cloudflare-public-product"',
-        '"/builds/repos/connections"',
-        '"/builds/tokens"',
+        '"/accounts/{api.account_id}/builds/repos/connections"',
+        '"/accounts/{api.account_id}/builds/tokens?per_page=200"',
         '"npm run cloudflare:deploy:staging"',
         '"OMNI_V10_POSTGRES_DSN"',
         "CLOUDFLARE_BUILD_SHA_MISMATCH",

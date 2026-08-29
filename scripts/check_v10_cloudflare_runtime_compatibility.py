@@ -68,15 +68,14 @@ def validate() -> None:
         raise RuntimeError("CLOUDFLARE_RUNTIME_CONTAINER_BOUND_INVALID")
     if database.get("major") != 18 or database.get("provider") != "Neon":
         raise RuntimeError("CLOUDFLARE_RUNTIME_POSTGRES18_INVALID")
-    if (
-        database.get("hyperdrive_used") is not False
-        or database.get("d1_used") is not False
-    ):
+    if database.get("hyperdrive_used") is not False or database.get("d1_used") is not False:
         raise RuntimeError("CLOUDFLARE_RUNTIME_DATABASE_SUBSTITUTION_FORBIDDEN")
 
     expected_security_true = {
         "incoming_forwarded_headers_are_stripped_at_worker",
-        "worker_sets_internal_forwarded_proto_https",
+        "container_forwarded_header_trust_disabled",
+        "client_ip_forwarded_via_internal_edge_header",
+        "asgi_scheme_restored_from_fixed_cloudflare_edge",
         "container_is_not_direct_public_ingress",
         "container_transport_uses_fixed_internal_url",
         "public_route_is_encoded_in_internal_headers",
@@ -88,10 +87,7 @@ def validate() -> None:
     for key in expected_security_true:
         if security.get(key) is not True:
             raise RuntimeError(f"CLOUDFLARE_RUNTIME_{key.upper()}_MUST_BE_TRUE")
-    if (
-        security.get("container_transport_url")
-        != "https://omni-cio.internal/_omni/cloudflare-proxy"
-    ):
+    if security.get("container_transport_url") != "https://omni-cio.internal/_omni/cloudflare-proxy":
         raise RuntimeError("CLOUDFLARE_RUNTIME_CONTAINER_TRANSPORT_URL_INVALID")
     for key in (
         "telegram_vk_provider_auth_enabled",
@@ -136,15 +132,15 @@ def validate() -> None:
         'INTERNAL_HOST = "omni-cio.internal"',
         'INTERNAL_PROXY_URL = "https://omni-cio.internal/_omni/cloudflare-proxy"',
         'sleepAfter = "1m"',
-        'headers.delete("x-omni-route-path")',
-        'headers.delete("x-omni-route-query")',
+        'headers.delete("x-forwarded-for")',
+        'headers.delete("x-forwarded-host")',
+        'headers.delete("x-forwarded-proto")',
+        'headers.delete("x-omni-client-ip")',
+        'headers.set("x-omni-client-ip", clientIp)',
         'headers.set("x-omni-route-path", encodeURIComponent(routeUrl.pathname))',
         'headers.set("x-omni-route-query", encodeURIComponent(query))',
         "return new Request(INTERNAL_PROXY_URL, {",
         'duplex: "half"',
-        'headers.delete("x-forwarded-proto")',
-        'headers.set("x-forwarded-proto", "https")',
-        'headers.set("x-forwarded-for", clientIp)',
         "CLOUDFLARE_RUNTIME_DATABASE_NOT_CONFIGURED",
         'url.pathname === "/api/v10/release"',
         "public_multi_user_enabled: false",
@@ -152,11 +148,11 @@ def validate() -> None:
     ):
         if marker not in worker:
             raise RuntimeError("CLOUDFLARE_RUNTIME_WORKER_GUARD_MISSING")
-    if worker.count("new URL(request.url)") != 1:
-        raise RuntimeError("CLOUDFLARE_RUNTIME_DYNAMIC_BACKEND_ORIGIN_INVALID")
     for forbidden in (
+        'headers.set("x-forwarded-for"',
+        'headers.set("x-forwarded-host"',
+        'headers.set("x-forwarded-proto"',
         "new Request(request,",
-        "new URL(`https://${INTERNAL_HOST}/`)",
         "url.pathname = routeUrl.pathname",
         "url.search = routeUrl.search",
     ):
@@ -170,10 +166,11 @@ def validate() -> None:
         "python -m pip install --require-hashes -r requirements.txt",
         "USER omni",
         "apps.api.cloudflare_runtime:create_app",
-        '"--forwarded-allow-ips", "*"',
     ):
         if marker not in dockerfile:
             raise RuntimeError("CLOUDFLARE_RUNTIME_DOCKER_GUARD_MISSING")
+    if "--proxy-headers" in dockerfile or "--forwarded-allow-ips" in dockerfile:
+        raise RuntimeError("CLOUDFLARE_RUNTIME_PROXY_HEADER_TRUST_FORBIDDEN")
 
     runtime = _read(RUNTIME)
     for marker in (
@@ -181,7 +178,9 @@ def validate() -> None:
         '"CLOUDFLARE_RUNTIME_NOT_ENABLED"',
         '"OMNI_V10_POSTGRES_DSN"',
         '"/_omni/cloudflare-proxy"',
-        "_validated_route(scope, self._release_sha)",
+        "_validated_client_ip(headers)",
+        'restored_scope["scheme"] = "https"',
+        'restored_scope["client"] = (client_ip, 0)',
         "_INTERNAL_EDGE_HEADERS = frozenset(",
         "if bytes(key).lower() not in _INTERNAL_EDGE_HEADERS",
         'scope_type == "websocket"',
@@ -217,11 +216,9 @@ def main() -> int:
     print("Backend: Cloudflare Container / Python 3.14.6")
     print("Dependency install lifecycle scripts: DISABLED")
     print("Streaming request bodies: EXPLICIT HALF-DUPLEX")
-    print("Internal edge proof headers: STRIPPED BEFORE APP")
+    print("Incoming forwarded headers: STRIPPED; UVICORN TRUST DISABLED")
+    print("Client IP + TLS scheme: RESTORED FROM INTERNAL CLOUDFLARE CONTRACT")
     print("WebSocket direct ingress: PROTOCOL-SAFE REJECTION")
-    print(
-        "Container transport: fixed internal proxy endpoint + validated route restore"
-    )
     print("Database: direct Neon PostgreSQL 18; Hyperdrive disabled")
     return 0
 
