@@ -38,5 +38,24 @@
       "tag": "cloudflare-container-v1",
       "new_sqlite_classes": ["Backend"]
     }
-  ]
+  ],
+  "env": {
+    "staging": {
+      "name": "omni-cio-v10-web-staging",
+      "durable_objects": {
+        "bindings": [
+          {
+            "name": "BACKEND",
+            "class_name": "Backend"
+          }
+        ]
+      },
+      "migrations": [
+        {
+          "tag": "cloudflare-container-v1",
+          "new_sqlite_classes": ["Backend"]
+        }
+      ]
+    }
+  }
 }
