@@ -29,7 +29,7 @@ class JsoncTests(unittest.TestCase):
             loads_jsonc('{"value": 1 /*')
 
     def test_escaped_string_content_is_preserved(self) -> None:
-        payload = loads_jsonc(r'{"value": "quote: \" // not a comment",}')
+        payload = loads_jsonc(r'{"value": "quote: \" // not a comment",}'.replace(r'\"value\"', '"value"').replace(r': \"quote:', ': "quote:'))
         self.assertEqual(payload["value"], 'quote: " // not a comment')
 
 
