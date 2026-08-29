@@ -14,6 +14,8 @@ Omni-CIO — один investment platform/product line. Защищённый V9 
 
 Stable protected V9 Gateway entrypoint: `app:app`.
 
+Protected V9 WP0–WP15 delivery is complete and remains in controlled maintenance.
+
 ## 2. Source of truth
 
 Порядок authority для разработки:

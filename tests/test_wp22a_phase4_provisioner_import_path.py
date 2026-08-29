@@ -18,13 +18,15 @@ def _clean_python_env() -> dict[str, str]:
     return env
 
 
-def test_phase4_workflow_executes_org_scoped_adapter_as_repo_root_module() -> None:
+def test_retired_phase4_workflow_does_not_execute_archived_provisioners() -> None:
     text = WORKFLOW.read_text(encoding="utf-8")
 
-    assert f"python -m {MODULE}" in text
-    assert f"python -m {LEGACY_MODULE} \\" not in text
+    assert "LEGACY_RENDER_PHASE4_RETIRED_AMENDMENT_14" in text
+    assert "workflow_dispatch:" in text
+    assert f"python -m {MODULE}" not in text
+    assert f"python -m {LEGACY_MODULE}" not in text
     assert "python scripts/provision_v10_render_neon_preview.py" not in text
-    assert "tests/test_wp22a_phase4_provisioner_import_path.py" in text
+    assert "exit /b 78" in text
 
 
 def test_phase4_module_invocation_is_resolvable_without_pythonpath() -> None:

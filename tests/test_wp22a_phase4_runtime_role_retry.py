@@ -103,7 +103,9 @@ def test_postgres18_rehearsal_exercises_exact_create_and_retry_paths() -> None:
     assert bootstrap_source.count("bootstrap.execute(runtime_sql, prepare=False)") == 2
 
 
-def test_phase4_provider_preflight_keeps_retry_guard_in_exact_main_suite() -> None:
+def test_retired_phase4_workflow_does_not_bind_runtime_retry_guard() -> None:
     workflow = WORKFLOW.read_text(encoding="utf-8")
 
-    assert "tests/test_wp22a_phase4_runtime_role_retry.py" in workflow
+    assert "LEGACY_RENDER_PHASE4_RETIRED_AMENDMENT_14" in workflow
+    assert "tests/test_wp22a_phase4_runtime_role_retry.py" not in workflow
+    assert "exit /b 78" in workflow

@@ -2,6 +2,8 @@
 
 Omni-CIO — один продукт. Protected V9 production/recovery baseline остаётся `existing Custom GPT v9.0.0 + production Gateway app:app`; V10 — единственная active feature program в этом же репозитории.
 
+Protected V9 v9.0.0 remains in controlled maintenance; V10 changes must not reinterpret that historical recovery state.
+
 Dynamic V10 progress/current package authority is only `knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`.
 
 ## Перед началом
