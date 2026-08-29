@@ -61,7 +61,7 @@ class CloudflareRuntimeRouteTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(ValueError, "source sha invalid"):
             _validated_route(scope, _SHA)
 
-    async def test_wrapper_restores_scope_and_removes_route_headers(self) -> None:
+    async def test_wrapper_restores_scope_and_strips_internal_edge_headers(self) -> None:
         captured: list[dict] = []
 
         async def app(scope, receive, send) -> None:
@@ -86,8 +86,13 @@ class CloudflareRuntimeRouteTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(restored["raw_path"], b"/healthz")
         self.assertEqual(restored["query_string"], b"probe=1")
         header_names = {key.lower() for key, _ in restored["headers"]}
-        self.assertNotIn(b"x-omni-route-path", header_names)
-        self.assertNotIn(b"x-omni-route-query", header_names)
+        for internal_header in (
+            b"x-omni-route-path",
+            b"x-omni-route-query",
+            b"x-omni-edge-provider",
+            b"x-omni-source-sha",
+        ):
+            self.assertNotIn(internal_header, header_names)
 
     async def test_wrapper_rejects_direct_non_proxy_http_request(self) -> None:
         messages: list[dict] = []
