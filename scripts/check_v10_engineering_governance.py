@@ -243,10 +243,10 @@ def _validate_runtime_hosting(
 ) -> None:
     if (
         runtime_hosting.get("v10_public_production_host")
-        != "APPROVED_MANAGED_CLOUD_RUNTIME_SELECTED_BY_OWNING_GATE"
+        != "CLOUDFLARE_WORKERS_PAID_AFTER_OWNING_CUTOVER_GATE"
     ):
         failures.append(
-            "V10 public production host must be selected by the managed-cloud owning gate"
+            "V10 public production target must be Cloudflare Workers Paid after its owning cutover gate"
         )
     _expect_bool(
         runtime_hosting,
@@ -320,6 +320,20 @@ def _validate_runtime_hosting(
     )
     _expect_bool(
         runtime_hosting,
+        "render_com_new_v10_release_acceptance_allowed",
+        False,
+        "runtime_hosting",
+        failures,
+    )
+    _expect_bool(
+        runtime_hosting,
+        "cloudru_new_v10_runtime_target_selected",
+        False,
+        "runtime_hosting",
+        failures,
+    )
+    _expect_bool(
+        runtime_hosting,
         "protected_v9_render_app_app_baseline_preserved",
         True,
         "runtime_hosting",
@@ -327,15 +341,43 @@ def _validate_runtime_hosting(
     )
     if (
         runtime_hosting.get("cloudflare_role")
-        != "EDGE_DNS_TLS_WAF_DDOS_ORIGIN_PROTECTION_CANDIDATE_NOT_PRODUCT_IDENTITY"
+        != "PRIMARY_NEW_V10_MANAGED_APPLICATION_EDGE_BUILD_PLATFORM_NOT_PRODUCT_IDENTITY"
     ):
         failures.append(
-            "Cloudflare role must remain edge/origin protection, not product identity"
+            "Cloudflare must be the primary new-V10 managed application/edge/build platform, not product identity"
         )
+    _expect_bool(
+        runtime_hosting,
+        "cloudflare_workers_paid_selected",
+        True,
+        "runtime_hosting",
+        failures,
+    )
+    _expect_bool(
+        runtime_hosting,
+        "cloudflare_governance_acceptance_mutates_provider",
+        False,
+        "runtime_hosting",
+        failures,
+    )
+    _expect_bool(
+        runtime_hosting,
+        "cloudflare_governance_acceptance_authorizes_production_cutover",
+        False,
+        "runtime_hosting",
+        failures,
+    )
     _expect_bool(
         runtime_hosting,
         "cloudflare_home_lenovo_tunnel_satisfies_final_public_hosting",
         False,
+        "runtime_hosting",
+        failures,
+    )
+    _expect_bool(
+        runtime_hosting,
+        "continuous_exact_main_release_required",
+        True,
         "runtime_hosting",
         failures,
     )
@@ -479,7 +521,7 @@ def validate_contract(failures: list[str]) -> None:
     if data is None:
         return
 
-    if data.get("schema") != "omni-cio.v10.engineering-quality-gate.v4":
+    if data.get("schema") != "omni-cio.v10.engineering-quality-gate.v5":
         failures.append("engineering quality contract schema mismatch")
 
     pre_ci = _require_section(data, "pre_ci", failures)
@@ -681,7 +723,7 @@ def main() -> int:
     print("OWNER product acceptance: post-merge/post-Regression-Shield")
     print("OWNER handoff: direct official link + bounded action contract enforced")
     print(
-        "V10 public runtime: managed-cloud target; OWNER home/Lenovo not public origin"
+        "V10 public runtime: Cloudflare Workers Paid target after owning cutover gate; OWNER home/Lenovo not public origin"
     )
     print("Failure-learning ledger: present")
     print("Fault-isolation contract: present")
