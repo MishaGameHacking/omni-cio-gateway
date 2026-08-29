@@ -52,6 +52,18 @@ def validate() -> None:
         raise RuntimeError("CLOUDFLARE_RELEASE_CANDIDATE_MUTATION_INVALID")
     if candidate.get("production_promotion_allowed") is not False:
         raise RuntimeError("CLOUDFLARE_RELEASE_CANDIDATE_PROMOTION_INVALID")
+    expected_candidate = {
+        "staging_environment": "staging",
+        "staging_worker_name": "omni-cio-v10-web-staging",
+        "staging_deploy_command": "npm run cloudflare:deploy:staging",
+        "staging_database_secret_binding": "OMNI_V10_POSTGRES_DSN",
+        "staging_container_rollout_required": True,
+        "non_production_versions_upload_is_candidate": False,
+    }
+    for key, expected in expected_candidate.items():
+        if candidate.get(key) != expected:
+            raise RuntimeError(f"CLOUDFLARE_RELEASE_CANDIDATE_{key.upper()}_INVALID")
+
     if cutover.get("milestone") != "CF-D" or cutover.get("production_branch") != "main":
         raise RuntimeError("CLOUDFLARE_RELEASE_CUTOVER_INVALID")
     if cutover.get("automatic_git_deploy_required") is not True:
@@ -94,9 +106,30 @@ def validate() -> None:
     if wrangler.get("workers_dev") is not True:
         raise RuntimeError("CLOUDFLARE_RELEASE_WORKERS_DEV_REQUIRED")
 
+    environments = _object(wrangler.get("env"), "WRANGLER_ENV")
+    staging = _object(environments.get("staging"), "STAGING")
+    if staging.get("name") != candidate["staging_worker_name"]:
+        raise RuntimeError("CLOUDFLARE_RELEASE_STAGING_WORKER_INVALID")
+    staging_durable_objects = _object(
+        staging.get("durable_objects"), "STAGING_DURABLE_OBJECTS"
+    )
+    if staging_durable_objects.get("bindings") != [
+        {"name": "BACKEND", "class_name": "Backend"}
+    ]:
+        raise RuntimeError("CLOUDFLARE_RELEASE_STAGING_BINDING_INVALID")
+    if staging.get("migrations") != [
+        {"tag": "cloudflare-container-v1", "new_sqlite_classes": ["Backend"]}
+    ]:
+        raise RuntimeError("CLOUDFLARE_RELEASE_STAGING_MIGRATION_INVALID")
+
     package = _load(PACKAGE)
     if package.get("engines") != {"node": "24.18.0", "npm": "11.16.0"}:
         raise RuntimeError("CLOUDFLARE_RELEASE_NODE_BASELINE_INVALID")
+    scripts = _object(package.get("scripts"), "SCRIPTS")
+    if scripts.get("cloudflare:deploy:staging") != (
+        "wrangler deploy --env staging --containers-rollout=immediate"
+    ):
+        raise RuntimeError("CLOUDFLARE_RELEASE_STAGING_DEPLOY_INVALID")
     dependencies = _object(package.get("dependencies"), "DEPENDENCIES")
     dev_dependencies = _object(package.get("devDependencies"), "DEV_DEPENDENCIES")
     if dependencies.get("@cloudflare/containers") != "0.3.7":
@@ -128,6 +161,7 @@ def main() -> int:
         print(str(exc), file=sys.stderr)
         return 1
     print("V10 Cloudflare CF-C/CF-D release acceptance contract passed.")
+    print("Candidate: isolated staging Worker + Container rollout")
     print("Production branch: main")
     print("Automatic deploy command: npx wrangler deploy")
     print("Live exact-SHA/database acceptance remains fail-closed.")
