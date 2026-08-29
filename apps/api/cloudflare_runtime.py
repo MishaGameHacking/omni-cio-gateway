@@ -1,10 +1,12 @@
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Mapping
 import os
 import re
 from typing import Any
 from urllib.parse import unquote, unquote_to_bytes
+
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from apps.api.app import _SerializedWebConnection, _configure_long_lived_web_connection
 from apps.api.hosted_preview import (
@@ -29,11 +31,6 @@ _EDGE_PROVIDER_HEADER = b"x-omni-edge-provider"
 _SOURCE_SHA_HEADER = b"x-omni-source-sha"
 _MAX_RAW_PATH_BYTES = 4096
 _MAX_RAW_QUERY_BYTES = 8192
-
-
-ASGIReceive = Callable[[], Awaitable[dict[str, Any]]]
-ASGISend = Callable[[dict[str, Any]], Awaitable[None]]
-ASGIApp = Callable[[dict[str, Any], ASGIReceive, ASGISend], Awaitable[None]]
 
 
 def _required_env(name: str) -> str:
@@ -67,7 +64,9 @@ def _ascii_unquote_header(
     return decoded
 
 
-def _validated_route(scope: Mapping[str, Any], release_sha: str) -> tuple[str, bytes, bytes]:
+def _validated_route(
+    scope: Mapping[str, Any], release_sha: str
+) -> tuple[str, bytes, bytes]:
     if scope.get("path") != _INTERNAL_PROXY_PATH:
         raise ValueError("internal proxy path required")
     headers = _header_map(scope)
@@ -104,7 +103,7 @@ def _validated_route(scope: Mapping[str, Any], release_sha: str) -> tuple[str, b
     return path, raw_path, raw_query
 
 
-async def _reject_proxy(send: ASGISend) -> None:
+async def _reject_proxy(send: Send) -> None:
     body = b'{"detail":"CLOUDFLARE_EDGE_ROUTE_REJECTED"}'
     await send(
         {
@@ -127,9 +126,9 @@ class CloudflareEdgeRouteRestoreV1:
 
     async def __call__(
         self,
-        scope: dict[str, Any],
-        receive: ASGIReceive,
-        send: ASGISend,
+        scope: Scope,
+        receive: Receive,
+        send: Send,
     ) -> None:
         if scope.get("type") != "http":
             await self._app(scope, receive, send)
