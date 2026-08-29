@@ -58,7 +58,7 @@ def _ascii_unquote_header(
     try:
         encoded = raw.decode("ascii")
         decoded = unquote_to_bytes(encoded)
-    except (UnicodeError, ValueError) as exc:
+    except UnicodeError as exc:
         raise ValueError("route header encoding invalid") from exc
     if len(decoded) > max_bytes:
         raise ValueError("route header decoded size invalid")
@@ -105,7 +105,7 @@ def _validated_route(
     try:
         raw_path_text = raw_path.decode("ascii")
         path = unquote(raw_path_text, encoding="utf-8", errors="strict")
-    except (UnicodeError, ValueError) as exc:
+    except UnicodeError as exc:
         raise ValueError("route path invalid") from exc
     if path != "/healthz" and not path.startswith("/api/"):
         raise ValueError("route path outside API boundary")
@@ -131,6 +131,12 @@ async def _reject_proxy(send: Send) -> None:
     await send({"type": "http.response.body", "body": body})
 
 
+async def _reject_websocket(receive: Receive, send: Send) -> None:
+    message = await receive()
+    if message.get("type") == "websocket.connect":
+        await send({"type": "websocket.close", "code": 1008})
+
+
 class CloudflareEdgeRouteRestoreV1:
     def __init__(self, app: ASGIApp, *, release_sha: str) -> None:
         self._app = app
@@ -146,8 +152,11 @@ class CloudflareEdgeRouteRestoreV1:
         if scope_type == "lifespan":
             await self._app(scope, receive, send)
             return
+        if scope_type == "websocket":
+            await _reject_websocket(receive, send)
+            return
         if scope_type != "http":
-            await _reject_proxy(send)
+            await self._app(scope, receive, send)
             return
         try:
             path, raw_path, raw_query = _validated_route(scope, self._release_sha)
