@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import ipaddress
 import json
+import os
 import re
 import ssl
 import sys
-from typing import Any
+from typing import Any, Mapping
 from urllib.error import HTTPError
 from urllib.parse import urlsplit
 from urllib.request import HTTPSHandler, HTTPRedirectHandler, Request, build_opener
@@ -12,6 +14,9 @@ from urllib.request import HTTPSHandler, HTTPRedirectHandler, Request, build_ope
 
 _MAX_BYTES = 65_536
 _SHA = re.compile(r"^[0-9a-f]{40}$")
+_DNS_LABEL = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
+_ORIGIN_ENV = "OMNI_V10_CLOUDFLARE_ORIGIN"
+_CUSTOM_HOST_ENV = "OMNI_V10_CLOUDFLARE_CUSTOM_HOST"
 
 
 class _NoRedirect(HTTPRedirectHandler):
@@ -20,7 +25,29 @@ class _NoRedirect(HTTPRedirectHandler):
         return None
 
 
-def _origin(value: str) -> str:
+def _hostname(value: str) -> str:
+    try:
+        hostname = value.rstrip(".").encode("idna").decode("ascii").lower()
+    except UnicodeError as exc:
+        raise RuntimeError("CLOUDFLARE_RELEASE_ORIGIN_INVALID") from exc
+    if len(hostname) > 253 or "." not in hostname:
+        raise RuntimeError("CLOUDFLARE_RELEASE_ORIGIN_INVALID")
+    if any(_DNS_LABEL.fullmatch(label) is None for label in hostname.split(".")):
+        raise RuntimeError("CLOUDFLARE_RELEASE_ORIGIN_INVALID")
+    try:
+        ipaddress.ip_address(hostname)
+    except ValueError:
+        pass
+    else:
+        raise RuntimeError("CLOUDFLARE_RELEASE_ORIGIN_INVALID")
+    if hostname == "localhost" or hostname.endswith(
+        (".localhost", ".local", ".internal", ".home.arpa")
+    ):
+        raise RuntimeError("CLOUDFLARE_RELEASE_ORIGIN_INVALID")
+    return hostname
+
+
+def _origin(value: str, *, allowed_custom_host: str = "") -> str:
     candidate = value.strip().rstrip("/")
     try:
         parsed = urlsplit(candidate)
@@ -38,7 +65,21 @@ def _origin(value: str) -> str:
         or parsed.fragment
     ):
         raise RuntimeError("CLOUDFLARE_RELEASE_ORIGIN_INVALID")
-    return f"https://{parsed.hostname.lower().rstrip('.')}"
+    hostname = _hostname(parsed.hostname)
+    custom_host = _hostname(allowed_custom_host) if allowed_custom_host else ""
+    if not hostname.endswith(".workers.dev") and hostname != custom_host:
+        raise RuntimeError("CLOUDFLARE_RELEASE_ORIGIN_NOT_ALLOWED")
+    return f"https://{hostname}"
+
+
+def _configured_origin(env: Mapping[str, str]) -> str:
+    raw_origin = env.get(_ORIGIN_ENV, "").strip()
+    if not raw_origin:
+        raise RuntimeError("CLOUDFLARE_RELEASE_ORIGIN_REQUIRED")
+    return _origin(
+        raw_origin,
+        allowed_custom_host=env.get(_CUSTOM_HOST_ENV, "").strip(),
+    )
 
 
 def _json(origin: str, path: str) -> dict[str, Any]:
@@ -70,12 +111,11 @@ def _json(origin: str, path: str) -> dict[str, Any]:
 
 
 def verify(origin: str, expected_sha: str) -> None:
-    canonical_origin = _origin(origin)
     sha = expected_sha.strip().lower()
     if _SHA.fullmatch(sha) is None:
         raise RuntimeError("CLOUDFLARE_RELEASE_EXPECTED_SHA_INVALID")
 
-    release = _json(canonical_origin, "/api/v10/release")
+    release = _json(origin, "/api/v10/release")
     expected_release = {
         "status": "ok",
         "platform": "cloudflare",
@@ -89,7 +129,7 @@ def verify(origin: str, expected_sha: str) -> None:
         if release.get(key) != expected:
             raise RuntimeError(f"CLOUDFLARE_RELEASE_{key.upper()}_INVALID")
 
-    health = _json(canonical_origin, "/healthz")
+    health = _json(origin, "/healthz")
     if health.get("status") != "ok":
         raise RuntimeError("CLOUDFLARE_RELEASE_HEALTH_INVALID")
     if health.get("release_sha") != sha:
@@ -100,19 +140,20 @@ def verify(origin: str, expected_sha: str) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     args = sys.argv[1:] if argv is None else argv
-    if len(args) != 2:
+    if len(args) != 1:
         print(
-            "usage: check_v10_cloudflare_live_release.py <origin> <sha>",
+            "usage: check_v10_cloudflare_live_release.py <sha>",
             file=sys.stderr,
         )
         return 2
     try:
-        verify(args[0], args[1])
+        origin = _configured_origin(os.environ)
+        verify(origin, args[0])
     except RuntimeError as exc:
         print(str(exc), file=sys.stderr)
         return 1
-    print(f"Cloudflare live release accepted: {_origin(args[0])}")
-    print(f"Exact source SHA: {args[1].strip().lower()}")
+    print(f"Cloudflare live release accepted: {origin}")
+    print(f"Exact source SHA: {args[0].strip().lower()}")
     return 0
 
 
