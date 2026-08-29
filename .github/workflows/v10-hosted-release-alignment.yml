@@ -1,166 +1,30 @@
+# Historical Render hosted-release alignment workflow.
+# Amendment 14 retires Render from active V10 release authority. Keep the
+# workflow name/manual entry for provenance, but fail closed before any runtime
+# probe so it cannot be mistaken for current Cloudflare release acceptance.
 name: V10 Hosted Release Alignment
 
 on:
-  workflow_run:
-    workflows:
-      - V10 Phase 4 Free Preview Deploy
-    types:
-      - completed
-    branches:
-      - main
   workflow_dispatch:
-  schedule:
-    - cron: "23 3 * * *"
 
 permissions:
-  actions: read
   contents: read
 
 concurrency:
-  group: v10-hosted-release-alignment
+  group: v10-hosted-release-alignment-retired
   cancel-in-progress: false
 
 jobs:
-  verify-hosted-release:
-    name: Verify hosted preview release matches accepted main
-    if: >-
-      (github.event_name == 'workflow_run' &&
-       github.event.workflow_run.head_branch == 'main') ||
-      (github.event_name == 'workflow_dispatch' &&
-       github.ref == 'refs/heads/main') ||
-      github.event_name == 'schedule'
+  retired-hosted-alignment:
+    name: Historical Render alignment path is retired
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
-    timeout-minutes: 10
-    defaults:
-      run:
-        shell: bash
-    env:
-      EXPECTED_MAIN_SHA: >-
-        ${{ github.event_name == 'workflow_run' &&
-            github.event.workflow_run.head_sha || github.sha }}
-
+    timeout-minutes: 5
     steps:
-      - name: Expose installed Git Bash before repository bootstrap
+      - name: Refuse obsolete Render release acceptance
         shell: cmd
         run: |
-          powershell.exe -NoProfile -NonInteractive -Command "$git=(Get-Command git.exe -ErrorAction Stop).Source; $root=Split-Path -Parent (Split-Path -Parent $git); $bin=Join-Path $root 'bin'; if (-not (Test-Path (Join-Path $bin 'bash.exe'))) { exit 12 }; $bin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append"
-          if errorlevel 1 exit /b 12
-
-      - name: Bootstrap current main and classify alignment applicability
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          GIT_TERMINAL_PROMPT: "0"
-          GCM_INTERACTIVE: "0"
-        run: |
-          set -euo pipefail
-          find . -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
-          bootstrap_succeeded=0
-          for bootstrap_attempt in 1 2 3; do
-            rm -rf .git
-            git init .
-            git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
-            git config --local gc.auto 0
-            git config --local credential.helper ""
-            git config --local --add credential.helper '!f() { echo username=x-access-token; echo password=$GITHUB_TOKEN; }; f'
-            git config --local http.lowSpeedLimit 1000
-            git config --local http.lowSpeedTime 60
-            fetch_status=0
-            git fetch --no-tags --prune --depth=1 origin "+refs/heads/main:refs/remotes/origin/main" || fetch_status=$?
-            git config --local --unset-all credential.helper 2>/dev/null || true
-            if [ "$fetch_status" -eq 0 ]; then
-              bootstrap_succeeded=1
-              break
-            fi
-            rm -rf .git
-            if [ "$bootstrap_attempt" -lt 3 ]; then
-              echo "Repository bootstrap transport failed on attempt ${bootstrap_attempt}/3; retrying after bounded backoff." >&2
-              sleep "$((bootstrap_attempt * 5))"
-            fi
-          done
-          if [ "$bootstrap_succeeded" -ne 1 ]; then
-            echo "Repository bootstrap transport failed after 3 attempts." >&2
-            exit 70
-          fi
-          current_main_sha="$(git rev-parse refs/remotes/origin/main)"
-          echo "CURRENT_MAIN_SHA=$current_main_sha" >> "$GITHUB_ENV"
-          if [ "$current_main_sha" != "$EXPECTED_MAIN_SHA" ]; then
-            echo "ALIGNMENT_APPLICABLE=false" >> "$GITHUB_ENV"
-            echo "HOSTED_RELEASE_ALIGNMENT=SUPERSEDED_BY_NEWER_MAIN expected=$EXPECTED_MAIN_SHA current=$current_main_sha"
-            exit 0
-          fi
-          echo "ALIGNMENT_APPLICABLE=true" >> "$GITHUB_ENV"
-          git checkout --detach "$EXPECTED_MAIN_SHA"
-          test "$(git rev-parse HEAD)" = "$EXPECTED_MAIN_SHA"
-          test -z "$(git config --local --get-all credential.helper || true)"
-
-      - name: Report superseded alignment without current-runtime claim
-        if: env.ALIGNMENT_APPLICABLE == 'false'
-        run: >-
-          echo HOSTED_RELEASE_ALIGNMENT=SUPERSEDED_BY_NEWER_MAIN
-          expected="$EXPECTED_MAIN_SHA" current="$CURRENT_MAIN_SHA"
-
-      - name: Bootstrap isolated Python 3.12.10
-        if: env.ALIGNMENT_APPLICABLE == 'true'
-        shell: cmd
-        run: scripts\bootstrap_windows_ci_python.cmd
-
-      - name: Verify exact-main Regression Shield before runtime assertion
-        if: env.ALIGNMENT_APPLICABLE == 'true'
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: python scripts/check_v10_exact_main_regression.py
-
-      - name: Probe canonical hosted release alignment without publishing PASS
-        if: env.ALIGNMENT_APPLICABLE == 'true'
-        run: >-
-          python scripts/check_v10_hosted_release_alignment.py
-          --expected-sha "$EXPECTED_MAIN_SHA"
-          > hosted_alignment_pass.txt
-
-      - name: Reconfirm current main before publishing runtime PASS
-        if: env.ALIGNMENT_APPLICABLE == 'true'
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          GIT_TERMINAL_PROMPT: "0"
-          GCM_INTERACTIVE: "0"
-        run: |
-          set -euo pipefail
-          reconfirm_succeeded=0
-          for reconfirm_attempt in 1 2 3; do
-            git config --local credential.helper ""
-            git config --local --add credential.helper '!f() { echo username=x-access-token; echo password=$GITHUB_TOKEN; }; f'
-            git config --local http.lowSpeedLimit 1000
-            git config --local http.lowSpeedTime 60
-            fetch_status=0
-            git fetch --no-tags --prune --depth=1 origin "+refs/heads/main:refs/remotes/origin/main" || fetch_status=$?
-            git config --local --unset-all credential.helper 2>/dev/null || true
-            if [ "$fetch_status" -eq 0 ]; then
-              reconfirm_succeeded=1
-              break
-            fi
-            if [ "$reconfirm_attempt" -lt 3 ]; then
-              echo "Current-main reconfirm transport failed on attempt ${reconfirm_attempt}/3; retrying after bounded backoff." >&2
-              sleep "$((reconfirm_attempt * 5))"
-            fi
-          done
-          if [ "$reconfirm_succeeded" -ne 1 ]; then
-            echo "Current-main reconfirm transport failed after 3 attempts; runtime PASS is withheld." >&2
-            exit 71
-          fi
-          current_main_sha="$(git rev-parse refs/remotes/origin/main)"
-          if [ "$current_main_sha" != "$EXPECTED_MAIN_SHA" ]; then
-            echo "HOSTED_RELEASE_ALIGNMENT=SUPERSEDED_BY_NEWER_MAIN expected=$EXPECTED_MAIN_SHA current=$current_main_sha phase=post_probe"
-            exit 0
-          fi
-          cat hosted_alignment_pass.txt
-
-      - name: Clean self-hosted alignment workspace
-        if: always()
-        run: |
-          git config --local --unset-all credential.helper 2>/dev/null || true
-          if git rev-parse --verify HEAD >/dev/null 2>&1; then
-            git reset --hard HEAD || true
-            git clean -ffdx || true
-          else
-            rm -rf .git
-          fi
+          @echo off
+          echo LEGACY_RENDER_ALIGNMENT_RETIRED_AMENDMENT_14
+          echo Render hosted-release alignment is historical evidence only.
+          echo Current V10 release authority must use the accepted Cloudflare candidate and promotion sequence.
+          exit /b 79
