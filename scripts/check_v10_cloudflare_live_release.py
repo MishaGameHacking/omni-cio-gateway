@@ -5,7 +5,7 @@ import re
 import ssl
 import sys
 from typing import Any
-from urllib.error import HTTPError, URLError
+from urllib.error import HTTPError
 from urllib.parse import urlsplit
 from urllib.request import HTTPSHandler, HTTPRedirectHandler, Request, build_opener
 
@@ -54,7 +54,7 @@ def _json(origin: str, path: str) -> dict[str, Any]:
             payload = response.read(_MAX_BYTES + 1)
     except HTTPError as exc:
         raise RuntimeError(f"CLOUDFLARE_RELEASE_HTTP_{exc.code}") from None
-    except (URLError, OSError, TimeoutError) as exc:
+    except OSError as exc:
         raise RuntimeError("CLOUDFLARE_RELEASE_UNAVAILABLE") from exc
     if len(payload) > _MAX_BYTES:
         raise RuntimeError("CLOUDFLARE_RELEASE_RESPONSE_TOO_LARGE")
