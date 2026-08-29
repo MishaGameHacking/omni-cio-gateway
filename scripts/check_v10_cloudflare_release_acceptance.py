@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CONTRACT = ROOT / "docs/architecture/V10_CLOUDFLARE_RELEASE_ACCEPTANCE_CONTRACT.json"
 WRANGLER = ROOT / "wrangler.jsonc"
 LIVE_VERIFIER = ROOT / "scripts/check_v10_cloudflare_live_release.py"
+LIVE_PROBE = ROOT / "scripts/probe_v10_cloudflare_live_release.sh"
 PACKAGE = ROOT / "package.json"
 
 
@@ -33,6 +34,13 @@ def _object(value: object, label: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise RuntimeError(f"CLOUDFLARE_RELEASE_{label}_INVALID")
     return value
+
+
+def _read(path: Path, label: str) -> str:
+    try:
+        return path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        raise RuntimeError(f"CLOUDFLARE_RELEASE_{label}_UNREADABLE") from exc
 
 
 def validate() -> None:
@@ -75,6 +83,9 @@ def validate() -> None:
         "https_only": True,
         "redirects_followed": False,
         "max_response_bytes": 65536,
+        "network_probe_script": "scripts/probe_v10_cloudflare_live_release.sh",
+        "payload_verifier_script": "scripts/check_v10_cloudflare_live_release.py",
+        "python_network_io_allowed": False,
         "trusted_origin_environment_variable": "OMNI_V10_CLOUDFLARE_ORIGIN",
         "trusted_custom_host_environment_variable": "OMNI_V10_CLOUDFLARE_CUSTOM_HOST",
         "workers_dev_suffix": ".workers.dev",
@@ -152,27 +163,45 @@ def validate() -> None:
     if dev_dependencies.get("wrangler") != "4.127.1":
         raise RuntimeError("CLOUDFLARE_RELEASE_WRANGLER_VERSION_INVALID")
 
-    try:
-        verifier = LIVE_VERIFIER.read_text(encoding="utf-8")
-    except (OSError, UnicodeError) as exc:
-        raise RuntimeError("CLOUDFLARE_RELEASE_VERIFIER_UNREADABLE") from exc
+    verifier = _read(LIVE_VERIFIER, "VERIFIER")
     for marker in (
         "CLOUDFLARE_RELEASE_ORIGIN_INVALID",
         "CLOUDFLARE_RELEASE_ORIGIN_NOT_ALLOWED",
         "CLOUDFLARE_RELEASE_ORIGIN_REQUIRED",
-        'OMNI_V10_CLOUDFLARE_ORIGIN',
-        'OMNI_V10_CLOUDFLARE_CUSTOM_HOST',
-        'ipaddress.ip_address(hostname)',
+        "OMNI_V10_CLOUDFLARE_ORIGIN",
+        "OMNI_V10_CLOUDFLARE_CUSTOM_HOST",
+        "ipaddress.ip_address(hostname)",
         'hostname.endswith(".workers.dev")',
         "CLOUDFLARE_RELEASE_HEALTH_SHA_MISMATCH",
         "CLOUDFLARE_RELEASE_DATABASE_NOT_READY",
-        '"/api/v10/release"',
-        '"/healthz"',
-        "HTTPRedirectHandler",
         "_MAX_BYTES = 65_536",
+        "sys.stdin.buffer.read(_MAX_BYTES + 1)",
     ):
         if marker not in verifier:
             raise RuntimeError("CLOUDFLARE_RELEASE_VERIFIER_GUARD_MISSING")
+    for forbidden in (
+        "urllib.request",
+        "requests.",
+        "httpx.",
+        "socket.create_connection",
+        "http.client",
+    ):
+        if forbidden in verifier:
+            raise RuntimeError("CLOUDFLARE_RELEASE_PYTHON_NETWORK_IO_FORBIDDEN")
+
+    probe = _read(LIVE_PROBE, "PROBE")
+    for marker in (
+        "--proto '=https'",
+        "--tlsv1.2",
+        "--max-redirs 0",
+        "--max-filesize 65536",
+        '"${origin}/api/v10/release"',
+        '"${origin}/healthz"',
+        "check_v10_cloudflare_live_release.py release",
+        "check_v10_cloudflare_live_release.py health",
+    ):
+        if marker not in probe:
+            raise RuntimeError("CLOUDFLARE_RELEASE_PROBE_GUARD_MISSING")
 
 
 def main() -> int:
@@ -185,7 +214,7 @@ def main() -> int:
     print("Candidate: isolated staging Worker + Container rollout")
     print("Production branch: main")
     print("Automatic deploy command: npx wrangler deploy")
-    print("Live release origin: trusted workers.dev or one approved custom host")
+    print("Live probe: HTTPS-only curl + networkless Python payload verifier")
     print("Live exact-SHA/database acceptance remains fail-closed.")
     return 0
 
