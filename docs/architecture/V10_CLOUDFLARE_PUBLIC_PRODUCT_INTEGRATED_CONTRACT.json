@@ -1,0 +1,88 @@
+{
+  "schema": "omni-cio.v10.cloudflare-public-product-integrated.v1",
+  "status": "OWNER_APPROVED_EFFECTIVE_WHEN_PRESENT_ON_ACCEPTED_MAIN",
+  "decision_date": "2026-08-29",
+  "update_id": "CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED",
+  "execution_unit": "INTEGRATED_SYSTEM_UPDATE",
+  "default_branch": "system/cloudflare-public-product",
+  "delivery": {
+    "one_integrated_branch_default": true,
+    "one_final_pr_default": true,
+    "separate_main_acceptance_between_internal_milestones_required": false,
+    "internal_milestone_order_required": true,
+    "internal_exit_gate_before_dependent_milestone_required": true,
+    "mandatory_split_trigger_may_still_force_split": true,
+    "integration_ready_before_external_final_verification": true
+  },
+  "milestones": [
+    {
+      "id": "CF-A",
+      "legacy_stage_id": "CLOUDFLARE-BUILDS-VERIFIER-INTEGRATION",
+      "provider_mutation_allowed": false,
+      "production_promotion_allowed": false
+    },
+    {
+      "id": "CF-B",
+      "legacy_stage_id": "CLOUDFLARE-RUNTIME-COMPATIBILITY",
+      "provider_mutation_allowed": false,
+      "production_promotion_allowed": false
+    },
+    {
+      "id": "CF-C",
+      "legacy_stage_id": "CLOUDFLARE-CANDIDATE-DEPLOYMENT",
+      "provider_mutation_allowed": true,
+      "production_promotion_allowed": false
+    },
+    {
+      "id": "CF-D",
+      "legacy_stage_id": "CLOUDFLARE-PUBLIC-CUTOVER",
+      "provider_mutation_allowed": true,
+      "production_promotion_allowed": true
+    }
+  ],
+  "cloudflare_first": {
+    "prefer_cloudflare_when_semantically_equivalent": true,
+    "adopt_feature_merely_because_available": false,
+    "workers_static_assets_preferred_for_existing_react_vite_web": true,
+    "python_workers_require_dependency_compatibility_proof": true,
+    "containers_allowed_for_proven_full_linux_native_runtime_need": true,
+    "d1_replaces_financial_postgresql_by_default": false,
+    "hyperdrive_postgresql18_assumed_compatible": false,
+    "neon_postgresql18_may_remain_until_equivalent_migration_is_proved": true,
+    "github_engineering_authority_retained": true,
+    "new_v10_render_use_allowed": false,
+    "protected_v9_render_recovery_preserved": true
+  },
+  "cost_security": {
+    "workers_paid_included_capacity_may_be_used": true,
+    "automatic_paid_overage_allowed": false,
+    "higher_plan_without_fresh_owner_approval_allowed": false,
+    "real_secrets_in_repository_chat_ci_artifacts_allowed": false,
+    "quota_or_provider_outage_may_be_reported_as_success": false
+  },
+  "product_activation": {
+    "goal_public_current_safe_product": true,
+    "capability_specific_live_gate_required": true,
+    "public_multi_user_enabled_by_governance_alone": false,
+    "telegram_vk_live_without_real_provider_evidence_allowed": false,
+    "tinvest_read_live_without_broker_terms_and_secret_custody_allowed": false
+  },
+  "web_visual": {
+    "included_in_this_update": false,
+    "owner_start_required": true,
+    "owner_start_command": "START V10 WEB VISUAL SYSTEM UPDATE"
+  },
+  "protected_invariants": {
+    "app_entrypoint": "app:app",
+    "broker_write": false,
+    "trading_methods": false,
+    "REAL_TRADING_ENABLED": false,
+    "transfer_withdrawal_authority": false,
+    "margin_leverage_uncovered_short_authority": false,
+    "wp23_unlocked": false,
+    "cross_tenant_isolation_required": true,
+    "exact_head_success_only": true,
+    "squash_merge_required": true,
+    "post_merge_regression_shield_required": true
+  }
+}
