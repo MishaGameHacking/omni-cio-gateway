@@ -4,12 +4,8 @@ import ipaddress
 import json
 import os
 import re
-import ssl
 import sys
 from typing import Any, Mapping
-from urllib.error import HTTPError
-from urllib.parse import urlsplit
-from urllib.request import HTTPSHandler, HTTPRedirectHandler, Request, build_opener
 
 
 _MAX_BYTES = 65_536
@@ -17,12 +13,6 @@ _SHA = re.compile(r"^[0-9a-f]{40}$")
 _DNS_LABEL = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 _ORIGIN_ENV = "OMNI_V10_CLOUDFLARE_ORIGIN"
 _CUSTOM_HOST_ENV = "OMNI_V10_CLOUDFLARE_CUSTOM_HOST"
-
-
-class _NoRedirect(HTTPRedirectHandler):
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        del req, fp, code, msg, headers, newurl
-        return None
 
 
 def _hostname(value: str) -> str:
@@ -49,23 +39,19 @@ def _hostname(value: str) -> str:
 
 def _origin(value: str, *, allowed_custom_host: str = "") -> str:
     candidate = value.strip().rstrip("/")
-    try:
-        parsed = urlsplit(candidate)
-        port = parsed.port
-    except ValueError as exc:
-        raise RuntimeError("CLOUDFLARE_RELEASE_ORIGIN_INVALID") from exc
+    if not candidate.startswith("https://"):
+        raise RuntimeError("CLOUDFLARE_RELEASE_ORIGIN_INVALID")
+    authority = candidate.removeprefix("https://")
     if (
-        parsed.scheme != "https"
-        or not parsed.hostname
-        or parsed.username is not None
-        or parsed.password is not None
-        or port not in {None, 443}
-        or parsed.path not in {"", "/"}
-        or parsed.query
-        or parsed.fragment
+        not authority
+        or "/" in authority
+        or "?" in authority
+        or "#" in authority
+        or "@" in authority
+        or ":" in authority
     ):
         raise RuntimeError("CLOUDFLARE_RELEASE_ORIGIN_INVALID")
-    hostname = _hostname(parsed.hostname)
+    hostname = _hostname(authority)
     custom_host = _hostname(allowed_custom_host) if allowed_custom_host else ""
     if not hostname.endswith(".workers.dev") and hostname != custom_host:
         raise RuntimeError("CLOUDFLARE_RELEASE_ORIGIN_NOT_ALLOWED")
@@ -82,23 +68,8 @@ def _configured_origin(env: Mapping[str, str]) -> str:
     )
 
 
-def _json(origin: str, path: str) -> dict[str, Any]:
-    opener = build_opener(
-        _NoRedirect(), HTTPSHandler(context=ssl.create_default_context())
-    )
-    request = Request(origin + path, headers={"Accept": "application/json"})
-    try:
-        with opener.open(request, timeout=15) as response:
-            if response.status != 200:
-                raise RuntimeError("CLOUDFLARE_RELEASE_HTTP_INVALID")
-            content_type = response.headers.get_content_type()
-            if content_type != "application/json":
-                raise RuntimeError("CLOUDFLARE_RELEASE_CONTENT_TYPE_INVALID")
-            payload = response.read(_MAX_BYTES + 1)
-    except HTTPError as exc:
-        raise RuntimeError(f"CLOUDFLARE_RELEASE_HTTP_{exc.code}") from None
-    except OSError as exc:
-        raise RuntimeError("CLOUDFLARE_RELEASE_UNAVAILABLE") from exc
+def _stdin_json() -> dict[str, Any]:
+    payload = sys.stdin.buffer.read(_MAX_BYTES + 1)
     if len(payload) > _MAX_BYTES:
         raise RuntimeError("CLOUDFLARE_RELEASE_RESPONSE_TOO_LARGE")
     try:
@@ -110,13 +81,16 @@ def _json(origin: str, path: str) -> dict[str, Any]:
     return decoded
 
 
-def verify(origin: str, expected_sha: str) -> None:
-    sha = expected_sha.strip().lower()
+def _expected_sha(value: str) -> str:
+    sha = value.strip().lower()
     if _SHA.fullmatch(sha) is None:
         raise RuntimeError("CLOUDFLARE_RELEASE_EXPECTED_SHA_INVALID")
+    return sha
 
-    release = _json(origin, "/api/v10/release")
-    expected_release = {
+
+def verify_release(payload: Mapping[str, Any], expected_sha: str) -> None:
+    sha = _expected_sha(expected_sha)
+    expected = {
         "status": "ok",
         "platform": "cloudflare",
         "source_sha": sha,
@@ -125,35 +99,38 @@ def verify(origin: str, expected_sha: str) -> None:
         "public_multi_user_enabled": False,
         "real_trading_enabled": False,
     }
-    for key, expected in expected_release.items():
-        if release.get(key) != expected:
+    for key, expected_value in expected.items():
+        if payload.get(key) != expected_value:
             raise RuntimeError(f"CLOUDFLARE_RELEASE_{key.upper()}_INVALID")
 
-    health = _json(origin, "/healthz")
-    if health.get("status") != "ok":
+
+def verify_health(payload: Mapping[str, Any], expected_sha: str) -> None:
+    sha = _expected_sha(expected_sha)
+    if payload.get("status") != "ok":
         raise RuntimeError("CLOUDFLARE_RELEASE_HEALTH_INVALID")
-    if health.get("release_sha") != sha:
+    if payload.get("release_sha") != sha:
         raise RuntimeError("CLOUDFLARE_RELEASE_HEALTH_SHA_MISMATCH")
-    if health.get("database") != "READY":
+    if payload.get("database") != "READY":
         raise RuntimeError("CLOUDFLARE_RELEASE_DATABASE_NOT_READY")
 
 
 def main(argv: list[str] | None = None) -> int:
     args = sys.argv[1:] if argv is None else argv
-    if len(args) != 1:
-        print(
-            "usage: check_v10_cloudflare_live_release.py <sha>",
-            file=sys.stderr,
-        )
-        return 2
     try:
-        origin = _configured_origin(os.environ)
-        verify(origin, args[0])
+        if args == ["origin"]:
+            print(_configured_origin(os.environ))
+            return 0
+        if len(args) != 2 or args[0] not in {"release", "health"}:
+            raise RuntimeError("CLOUDFLARE_RELEASE_USAGE_INVALID")
+        payload = _stdin_json()
+        if args[0] == "release":
+            verify_release(payload, args[1])
+        else:
+            verify_health(payload, args[1])
     except RuntimeError as exc:
         print(str(exc), file=sys.stderr)
         return 1
-    print(f"Cloudflare live release accepted: {origin}")
-    print(f"Exact source SHA: {args[0].strip().lower()}")
+    print(f"Cloudflare {args[0]} payload accepted for {args[1].strip().lower()}")
     return 0
 
 
