@@ -1,0 +1,39 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "omni-cio-v10-web",
+  "main": "./src/index.js",
+  "compatibility_date": "2026-08-29",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "keep_vars": true,
+  "assets": {
+    "directory": "../apps/web/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/healthz"]
+  },
+  "containers": [
+    {
+      "class_name": "Backend",
+      "image": "../Dockerfile.cloudflare",
+      "max_instances": 1,
+      "instance_type": "lite",
+      "rollout_active_grace_period": 0,
+      "rollout_step_percentage": 100
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "BACKEND",
+        "class_name": "Backend"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "cloudflare-container-v1",
+      "new_sqlite_classes": ["Backend"]
+    }
+  ]
+}
