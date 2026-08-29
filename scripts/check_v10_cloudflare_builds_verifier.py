@@ -120,6 +120,7 @@ def validate() -> None:
         "GITHUB_SHA",
         "CLOUDFLARE_VERIFIER_SHA_MISMATCH",
         "subprocess.run",
+        '"--ignore-scripts"',
         "check=True",
         "shard.runner()",
     ):
@@ -146,6 +147,7 @@ def main() -> int:
     print("V10 Cloudflare Builds verifier contract passed.")
     print("CF-A provider mutation: OFF")
     print("Portable verifier shards: 6")
+    print("Web dependency lifecycle scripts: DISABLED")
     print("Dynamic verifier command execution: FORBIDDEN")
     print("Automatic paid overage authority: OFF")
     return 0
