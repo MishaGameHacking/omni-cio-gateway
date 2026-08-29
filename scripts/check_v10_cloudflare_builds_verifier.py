@@ -120,9 +120,19 @@ def validate() -> None:
         "GITHUB_SHA",
         "CLOUDFLARE_VERIFIER_SHA_MISMATCH",
         "subprocess.run",
+        "check=True",
+        "shard.runner()",
     ):
         if required not in runner:
             raise RuntimeError("CLOUDFLARE_VERIFIER_RUNNER_GUARD_MISSING")
+    for forbidden in (
+        "subprocess.run(command",
+        "_run(command",
+        ".commands",
+        "shell=True",
+    ):
+        if forbidden in runner:
+            raise RuntimeError("CLOUDFLARE_VERIFIER_DYNAMIC_COMMAND_EXECUTION_FORBIDDEN")
 
 
 def main() -> int:
@@ -134,6 +144,7 @@ def main() -> int:
     print("V10 Cloudflare Builds verifier contract passed.")
     print("CF-A provider mutation: OFF")
     print("Portable verifier shards: 6")
+    print("Dynamic verifier command execution: FORBIDDEN")
     print("Automatic paid overage authority: OFF")
     return 0
 
