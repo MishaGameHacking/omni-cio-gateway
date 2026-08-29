@@ -107,6 +107,20 @@ class CloudflareRuntimeCompatibilityTests(unittest.TestCase):
                 ):
                     guard.validate()
 
+    def test_guard_rejects_container_dependency_lifecycle_scripts(self) -> None:
+        dockerfile = guard.DOCKERFILE.read_text(encoding="utf-8").replace(
+            "RUN npm ci --ignore-scripts --prefix apps/web",
+            "RUN npm ci --prefix apps/web",
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            candidate = Path(temporary) / "Dockerfile.cloudflare"
+            candidate.write_text(dockerfile, encoding="utf-8")
+            with mock.patch.object(guard, "DOCKERFILE", candidate):
+                with self.assertRaisesRegex(
+                    RuntimeError, "CLOUDFLARE_RUNTIME_DOCKER_GUARD_MISSING"
+                ):
+                    guard.validate()
+
 
 if __name__ == "__main__":
     unittest.main()
