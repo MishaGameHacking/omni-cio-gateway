@@ -15,13 +15,13 @@ test("local browser evidence retains the canonical 4173 fallback", () => {
 });
 
 test("explicit preview port override is validated and propagated", () => {
-  assert.equal(resolvePreviewPort({ OMNI_WEB_PREVIEW_PORT: "43173" }), 43173);
+  assert.equal(resolvePreviewPort({ OMNI_WEB_PREVIEW_PORT: "24173" }), 24173);
   assert.throws(() => resolvePreviewPort({ OMNI_WEB_PREVIEW_PORT: "abc" }), /decimal digits/);
   assert.throws(() => resolvePreviewPort({ OMNI_WEB_PREVIEW_PORT: "80" }), /1024 through 65535/);
   assert.throws(() => resolvePreviewPort({ OMNI_WEB_PREVIEW_PORT: "65536" }), /1024 through 65535/);
 });
 
-test("GitHub browser jobs receive deterministic run-scoped preview ports", () => {
+test("GitHub browser jobs receive deterministic run-scoped preview ports outside default ephemeral ranges", () => {
   const wp17 = {
     GITHUB_RUN_ID: "33232822220",
     GITHUB_JOB: "wp17-application-shell",
@@ -36,10 +36,13 @@ test("GitHub browser jobs receive deterministic run-scoped preview ports", () =>
   };
 
   const first = resolvePreviewPort(wp17);
+  const second = resolvePreviewPort(wp20);
   assert.equal(resolvePreviewPort(wp17), first);
-  assert.notEqual(resolvePreviewPort(wp20), first);
-  assert.ok(first >= 18000 && first < 44000);
-  assert.ok(resolvePreviewPort(wp20) >= 18000 && resolvePreviewPort(wp20) < 44000);
+  assert.notEqual(second, first);
+  assert.ok(first >= 18000 && first < 32000);
+  assert.ok(second >= 18000 && second < 32000);
+  assert.ok(first < 32768);
+  assert.ok(second < 32768);
 });
 
 test("malformed GitHub identity fails closed instead of silently sharing a port", () => {

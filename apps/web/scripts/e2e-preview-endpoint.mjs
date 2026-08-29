@@ -1,6 +1,7 @@
 const LOCAL_PREVIEW_PORT = 4173;
 const CI_PREVIEW_PORT_BASE = 18000;
-const CI_PREVIEW_PORT_SPAN = 26000;
+const CI_PREVIEW_PORT_END_EXCLUSIVE = 32000;
+const CI_PREVIEW_PORT_SPAN = CI_PREVIEW_PORT_END_EXCLUSIVE - CI_PREVIEW_PORT_BASE;
 
 function requireDigits(value, label) {
   if (!/^\d+$/.test(value)) {
