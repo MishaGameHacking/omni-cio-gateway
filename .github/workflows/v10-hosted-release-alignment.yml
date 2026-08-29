@@ -86,16 +86,17 @@ jobs:
           "$node_exe" -e "const fs=require('fs'); const p=JSON.parse(fs.readFileSync('package.json','utf8')); p.engines.npm='10.9.2'; p.packageManager='npm@10.9.2'; fs.writeFileSync('package.json', JSON.stringify(p,null,2)+'\\n');"
           "$npx_cmd" --yes npm@10.9.2 install --package-lock-only --ignore-scripts --no-audit --no-fund
           test -f package-lock.json
-          payload="$("$node_exe" -e "const fs=require('fs'); process.stdout.write(JSON.stringify({content:fs.readFileSync('package-lock.json').toString('base64'),encoding:'base64'}));")"
-          response="$(curl --fail-with-body --silent --show-error \
+          "$node_exe" -e "const fs=require('fs'); fs.writeFileSync('blob-request.json', JSON.stringify({content:fs.readFileSync('package-lock.json').toString('base64'),encoding:'base64'}));"
+          curl --fail-with-body --silent --show-error \
             --request POST \
             --header "Authorization: Bearer ${GITHUB_TOKEN}" \
             --header 'Accept: application/vnd.github+json' \
             --header 'X-GitHub-Api-Version: 2022-11-28' \
             --header 'Content-Type: application/json' \
             "https://api.github.com/repos/${GITHUB_REPOSITORY}/git/blobs" \
-            --data-binary "$payload")"
-          blob_sha="$(printf '%s' "$response" | "$node_exe" -e "let s=''; process.stdin.on('data',d=>s+=d); process.stdin.on('end',()=>{const p=JSON.parse(s); if(!/^[0-9a-f]{40}$/.test(p.sha||'')) process.exit(2); process.stdout.write(p.sha);});")"
+            --data-binary @blob-request.json \
+            --output blob-response.json
+          blob_sha="$("$node_exe" -e "const fs=require('fs'); const p=JSON.parse(fs.readFileSync('blob-response.json','utf8')); if(!/^[0-9a-f]{40}$/.test(p.sha||'')) process.exit(2); process.stdout.write(p.sha);")"
           echo "PACKAGE_LOCK_BLOB_SHA=${blob_sha}"
 
       - name: Clean temporary workspace
