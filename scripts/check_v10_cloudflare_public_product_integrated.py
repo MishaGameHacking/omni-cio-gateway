@@ -11,7 +11,10 @@ AMENDMENT = (
     ROOT
     / "docs/master-plan/OMNI_CIO_V10_CLOUDFLARE_PUBLIC_PRODUCT_INTEGRATED_DELIVERY_AMENDMENT.md"
 )
-CONTRACT = ROOT / "docs/architecture/V10_CLOUDFLARE_PUBLIC_PRODUCT_INTEGRATED_CONTRACT.json"
+CONTRACT = (
+    ROOT
+    / "docs/architecture/V10_CLOUDFLARE_PUBLIC_PRODUCT_INTEGRATED_CONTRACT.json"
+)
 INDEX = ROOT / "docs/master-plan/OMNI_CIO_V10_AMENDMENTS_INDEX.md"
 STATUS = ROOT / "knowledge/17_V10_CURRENT_PROGRAM_STATUS.md"
 README = ROOT / "README.md"
@@ -54,13 +57,19 @@ def _load_contract(failures: list[str]) -> dict[str, Any]:
 
 
 def _expect_bool(
-    section: dict[str, Any], key: str, expected: bool, label: str, failures: list[str]
+    section: dict[str, Any],
+    key: str,
+    expected: bool,
+    label: str,
+    failures: list[str],
 ) -> None:
     if section.get(key) is not expected:
         failures.append(f"{label}.{key} must be {expected}")
 
 
-def _section(payload: dict[str, Any], key: str, failures: list[str]) -> dict[str, Any]:
+def _section(
+    payload: dict[str, Any], key: str, failures: list[str]
+) -> dict[str, Any]:
     value = payload.get(key)
     if not isinstance(value, dict):
         failures.append(f"{key} must be an object")
@@ -68,10 +77,13 @@ def _section(payload: dict[str, Any], key: str, failures: list[str]) -> dict[str
     return value
 
 
-def _validate_contract(payload: dict[str, Any], failures: list[str]) -> None:
+def _validate_identity(payload: dict[str, Any], failures: list[str]) -> None:
     if payload.get("schema") != "omni-cio.v10.cloudflare-public-product-integrated.v1":
         failures.append("integrated Cloudflare contract schema mismatch")
-    if payload.get("status") != "OWNER_APPROVED_EFFECTIVE_WHEN_PRESENT_ON_ACCEPTED_MAIN":
+    if (
+        payload.get("status")
+        != "OWNER_APPROVED_EFFECTIVE_WHEN_PRESENT_ON_ACCEPTED_MAIN"
+    ):
         failures.append("integrated Cloudflare contract status mismatch")
     if payload.get("update_id") != UPDATE_ID:
         failures.append("integrated Cloudflare update_id mismatch")
@@ -80,6 +92,8 @@ def _validate_contract(payload: dict[str, Any], failures: list[str]) -> None:
     if payload.get("default_branch") != BRANCH:
         failures.append("integrated Cloudflare branch mismatch")
 
+
+def _validate_delivery(payload: dict[str, Any], failures: list[str]) -> None:
     delivery = _section(payload, "delivery", failures)
     for key in (
         "one_integrated_branch_default",
@@ -98,26 +112,33 @@ def _validate_contract(payload: dict[str, Any], failures: list[str]) -> None:
         failures,
     )
 
+
+def _validate_milestones(payload: dict[str, Any], failures: list[str]) -> None:
     milestones = payload.get("milestones")
     if not isinstance(milestones, list):
         failures.append("milestones must be a list")
-    else:
-        observed: list[tuple[object, object, object, object]] = []
-        for item in milestones:
-            if not isinstance(item, dict):
-                failures.append("each milestone must be an object")
-                continue
-            observed.append(
-                (
-                    item.get("id"),
-                    item.get("legacy_stage_id"),
-                    item.get("provider_mutation_allowed"),
-                    item.get("production_promotion_allowed"),
-                )
-            )
-        if observed != EXPECTED_MILESTONES:
-            failures.append("Cloudflare internal milestone order/authority mismatch")
+        return
 
+    observed: list[tuple[object, object, object, object]] = []
+    for item in milestones:
+        if not isinstance(item, dict):
+            failures.append("each milestone must be an object")
+            continue
+        observed.append(
+            (
+                item.get("id"),
+                item.get("legacy_stage_id"),
+                item.get("provider_mutation_allowed"),
+                item.get("production_promotion_allowed"),
+            )
+        )
+    if observed != EXPECTED_MILESTONES:
+        failures.append("Cloudflare internal milestone order/authority mismatch")
+
+
+def _validate_cloudflare_first(
+    payload: dict[str, Any], failures: list[str]
+) -> None:
     cloudflare = _section(payload, "cloudflare_first", failures)
     for key in (
         "prefer_cloudflare_when_semantically_equivalent",
@@ -137,8 +158,16 @@ def _validate_contract(payload: dict[str, Any], failures: list[str]) -> None:
     ):
         _expect_bool(cloudflare, key, False, "cloudflare_first", failures)
 
+
+def _validate_cost_security(payload: dict[str, Any], failures: list[str]) -> None:
     cost = _section(payload, "cost_security", failures)
-    _expect_bool(cost, "workers_paid_included_capacity_may_be_used", True, "cost_security", failures)
+    _expect_bool(
+        cost,
+        "workers_paid_included_capacity_may_be_used",
+        True,
+        "cost_security",
+        failures,
+    )
     for key in (
         "automatic_paid_overage_allowed",
         "higher_plan_without_fresh_owner_approval_allowed",
@@ -147,12 +176,18 @@ def _validate_contract(payload: dict[str, Any], failures: list[str]) -> None:
     ):
         _expect_bool(cost, key, False, "cost_security", failures)
 
+
+def _validate_web_visual(payload: dict[str, Any], failures: list[str]) -> None:
     visual = _section(payload, "web_visual", failures)
     _expect_bool(visual, "included_in_this_update", False, "web_visual", failures)
     _expect_bool(visual, "owner_start_required", True, "web_visual", failures)
     if visual.get("owner_start_command") != OWNER_START_COMMAND:
         failures.append("WEB VISUAL OWNER start command changed")
 
+
+def _validate_protected_invariants(
+    payload: dict[str, Any], failures: list[str]
+) -> None:
     protected = _section(payload, "protected_invariants", failures)
     if protected.get("app_entrypoint") != "app:app":
         failures.append("protected app entrypoint must remain app:app")
@@ -174,8 +209,21 @@ def _validate_contract(payload: dict[str, Any], failures: list[str]) -> None:
         _expect_bool(protected, key, True, "protected_invariants", failures)
 
 
+def _validate_contract(payload: dict[str, Any], failures: list[str]) -> None:
+    _validate_identity(payload, failures)
+    _validate_delivery(payload, failures)
+    _validate_milestones(payload, failures)
+    _validate_cloudflare_first(payload, failures)
+    _validate_cost_security(payload, failures)
+    _validate_web_visual(payload, failures)
+    _validate_protected_invariants(payload, failures)
+
+
 def _require_markers(
-    label: str, text: str, markers: tuple[str, ...], failures: list[str]
+    label: str,
+    text: str,
+    markers: tuple[str, ...],
+    failures: list[str],
 ) -> None:
     for marker in markers:
         if marker not in text:
@@ -244,7 +292,10 @@ def main() -> int:
     _validate_contract(_load_contract(failures), failures)
     _validate_surfaces(failures)
     if failures:
-        print("V10 integrated Cloudflare public-product governance check failed:", file=sys.stderr)
+        print(
+            "V10 integrated Cloudflare public-product governance check failed:",
+            file=sys.stderr,
+        )
         for failure in failures:
             print(f"- {failure}", file=sys.stderr)
         return 1
