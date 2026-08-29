@@ -89,7 +89,7 @@ Machine/governance companions:
 - `../operations/V10_ENGINEERING_FAILURE_LEARNING_LEDGER.md`;
 - `.github/workflows/v10-engineering-governance.yml` through repository root.
 
-Locks root-cause-first engineering, all applicable exact-head checks actually `success`, no fake PASS, exact-head invalidation after commits, coherent reviewable PRs, squash merge, post-merge verification and bounded OWNER handoffs. This governance remains fully active for Amendments 9/10/11/12/13 and subsequent implementation. Amendment 12 changes only delivery granularity: “focused PR” means one coherent PR per authorized execution unit rather than mandatory one PR per individual member WP/increment. Amendment 13 changes only user-capability activation granularity and does not weaken exact-head/security/Real-money gates. Its runtime-hosting subsection is updated by Amendment 10 from Personal-Node-final hosting to the managed-cloud/no-home public-production boundary while preserving the V9 Render baseline and OWNER budget discipline.
+Locks root-cause-first engineering, all applicable exact-head checks actually `success`, no fake PASS, exact-head invalidation after commits, coherent reviewable PRs, squash merge, post-merge verification and bounded OWNER handoffs. This governance remains fully active for Amendments 9/10/11/12/13/14 and subsequent implementation. Amendment 12 changes only delivery granularity: “focused PR” means one coherent PR per authorized execution unit rather than mandatory one PR per individual member WP/increment. Amendment 13 changes only user-capability activation granularity and does not weaken exact-head/security/Real-money gates. Amendment 14 changes current/future V10 managed-platform authority without weakening V9 rollback or the same GREEN/review law.
 
 ### 9. Product User / Engineering Authority Boundary
 
@@ -132,7 +132,7 @@ Locks the 2026-08-18 OWNER launch direction:
 - current T-Invest public-service terms remain a separate fail-closed gate: user-supplied tokens do not waive broker restrictions;
 - payment/KKT gates are not required merely for free access, but become applicable if monetization is later enabled.
 
-Amendment 10 explicitly supersedes conflicting Personal-Node-final-product, permanent-private, initial-paid-access and central-private-data prohibitions in Amendments 5/6/7 and older WP22A wording. Non-conflicting safety, tenant isolation, legal, broker separation, recovery and engineering rules remain active. Amendment 13 later supersedes only the assumption that all normal user capabilities must wait for one monolithic final activation event; the current runtime defaults and external security/broker/provider gates remain fail-closed until their own evidence passes.
+Amendment 10 explicitly supersedes conflicting Personal-Node-final-product, permanent-private, initial-paid-access and central-private-data prohibitions in Amendments 5/6/7 and older WP22A wording. Non-conflicting safety, tenant isolation, legal, broker separation, recovery and engineering rules remain active. Amendment 13 later supersedes only the assumption that all normal user capabilities must wait for one monolithic final activation event. Amendment 14 later selects Cloudflare Workers Paid as the new-V10 managed application/edge/build target while preserving the no-home/public-hosting and security requirements recorded here.
 
 ### 11. WP22A Technical Closeout / Public Production Activation Separation
 
@@ -148,12 +148,12 @@ Locks the 2026-08-24 OWNER sequencing correction that:
 - exactly Telegram Login and VK ID remain the only human product-authentication protocols, and no OWNER/admin/developer/demo/preview/private session-minting bypass may exist in deployed product mode;
 - deterministic provider doubles are permitted only below deployed routing/network boundaries and may never become a human-accessible session issuer;
 - the technical gate still requires browser-bound durable pre-auth, provider mix-up/replay defenses, internal account/tenant/session composition, tenant/RLS negatives, browser/API security, abuse/capacity controls, recovery, rollback and exact release evidence;
-- final Cloud.ru Evolution apply, real provider provisioning, production DNS/edge/public-user cutover, `PUBLIC_MULTI_USER_ENABLED=true` and production legal/operations acceptance remain a later independent fail-closed activation gate;
-- current recurring infrastructure authority remains `0 RUB/month` / `0 USD/month`, provider apply remains forbidden and automatic paid fallback remains forbidden;
+- final provider apply, real provider provisioning, production DNS/edge/public-user cutover, `PUBLIC_MULTI_USER_ENABLED=true` and production legal/operations acceptance remain a later independent fail-closed activation gate;
+- the accepted 2026-08-24 Cloud.ru/Render provider wording is historical and is superseded for new V10 provider selection by Amendment 14 without rewriting WP22A evidence;
 - public T-Invest remains fail-closed, broker write remains OFF, `trading_methods=false`, `REAL_TRADING_ENABLED=false`, WP23 remains locked and protected V9 `app:app` rollback remains intact;
 - Amendment 11 changes sequencing only and does not weaken Amendments 9/10, mark WP22A complete or authorize the visual-refresh runtime by itself.
 
-Amendment 13 later decomposes the monolithic activation interpretation into capability-specific activation gates. It does not fabricate the Cloud/provider/legal/operations evidence listed here and does not activate any capability by itself.
+Amendment 13 later decomposes the monolithic activation interpretation into capability-specific activation gates. Amendment 14 changes current/future provider authority only; neither amendment fabricates provider/legal/operations evidence or activates a capability by itself.
 
 ### 12. Integrated System Update Execution Law
 
@@ -182,7 +182,7 @@ Locks the 2026-08-26 OWNER delivery-discipline decision that:
 - acceptance of Amendment 12 itself does **not** start product work: canonical post-acceptance state is `PRODUCT IMPLEMENTATION PAUSED`, `OWNER START REQUIRED`, and the exact command is `START V10 WEB VISUAL SYSTEM UPDATE`;
 - protected `app:app`, `PUBLIC_MULTI_USER_ENABLED=false`, `trading_methods=false`, `REAL_TRADING_ENABLED=false`, broker write OFF, tenant isolation, secret exclusion, squash merge and exact-head SUCCESS-only policy remain unchanged at Amendment-12 acceptance.
 
-Amendment 12 supersedes only conflicting **delivery granularity** wording in Program Lock Section 7, Amendment 3, Amendment 8 and Visual Refresh Brief Section 17. It does not reorder the Master Plan, change block weights, alter product scope or unlock a later major System Update. Amendment 13 later changes only the future activation granularity of completed user-facing capabilities; it does not weaken Amendment-12 execution discipline.
+Amendment 12 supersedes only conflicting **delivery granularity** wording in Program Lock Section 7, Amendment 3, Amendment 8 and Visual Refresh Brief Section 17. It does not reorder the Master Plan, change block weights, alter product scope or unlock a later major System Update. Amendment 13 later changes only the future activation granularity of completed user-facing capabilities; Amendment 14 uses its mandatory split triggers for provider/security authority, build integration, runtime compatibility and production cutover.
 
 ### 13. Live User Operability & Progressive Capability Activation
 
@@ -215,7 +215,37 @@ Locks the 2026-08-27 OWNER activation-policy decision that:
 - Amendment 13 itself is governance-only: current `PUBLIC_MULTI_USER_ENABLED=false`, broker write OFF, `trading_methods=false`, `REAL_TRADING_ENABLED=false` and public T-Invest fail-closed state remain unchanged until later capability-specific gates actually accept a transition;
 - product implementation remains PAUSED and `START V10 WEB VISUAL SYSTEM UPDATE` remains required before WEB-VISUAL-INTEGRATED source work.
 
-Amendment 13 explicitly supersedes only conflicting **activation granularity/timing** wording in Amendments 10/11/12 and live guidance. It does not change Master Plan order/weights, fabricate provider/broker/legal/privacy evidence, authorize spend or Real money, weaken tenant/security/recovery boundaries or start any product System Update.
+Amendment 13 explicitly supersedes only conflicting **activation granularity/timing** wording in Amendments 10/11/12 and live guidance. It does not change Master Plan order/weights, fabricate provider/broker/legal/privacy evidence, authorize Real money, weaken tenant/security/recovery boundaries or start any product System Update. Amendment 14 later changes managed-platform/cost authority while preserving this capability-specific fail-closed activation law.
+
+### 14. Cloudflare Platform & Continuous Release Authority
+
+`OMNI_CIO_V10_CLOUDFLARE_PLATFORM_AND_CONTINUOUS_RELEASE_AUTHORITY_AMENDMENT.md`
+
+Machine/governance companions:
+
+- `../architecture/V10_CLOUDFLARE_PLATFORM_AUTHORITY_CONTRACT.json`;
+- `../../scripts/check_v10_cloudflare_platform_authority.py`;
+- `.github/workflows/v10-engineering-governance.yml` through repository root.
+
+Locks the 2026-08-29 OWNER provider/release correction that:
+
+- GitHub remains engineering/source/review/provenance authority rank 1;
+- Cloudflare Workers Paid is platform rank 2 and the selected primary managed application/edge/build target for **new V10 work**;
+- Cloud.ru Evolution is no longer the selected new-V10 provider target;
+- Render is no longer an active new-V10 deployment, zero-charge attestation, hosted-release-alignment or recovery target;
+- accepted WP22A Render/Neon evidence remains historical technical evidence and protected V9 Render `app:app` remains intact;
+- Amendment 14 acceptance itself performs no Cloudflare deploy, DNS/domain mutation, API-token/secret creation, public-user activation or production cutover;
+- each accepted protected `main` SHA becomes a new product revision candidate, but promotion occurs only after exact-main post-merge and candidate acceptance gates;
+- production remains last-known-good and visibly out-of-sync when a newer `main` is not promotable;
+- public release identity uses event-derived CalVer `YYYY.MM.DD.N` plus exact source SHA/Cloudflare version metadata without a source-code version-bump commit;
+- one canonical Web/product identity stack remains mandatory; Cloudflare Access/security never becomes Omni-CIO product identity;
+- existing React/Vite and FastAPI/PostgreSQL architecture is migrated by reuse/adapter preference, with Python Worker/native-dependency and PostgreSQL 18/Hyperdrive compatibility proved rather than assumed;
+- Workers Paid included build capacity may be used after the dedicated repository integration gate, while mutable limits must be revalidated and automatic paid overage/higher-plan expansion is forbidden without fresh OWNER approval;
+- portable verification targets Workers Builds after integration, while Windows/PowerShell/ACL/PostgreSQL-18-native semantics remain on trusted Lenovo runners until equivalent semantics are accepted;
+- the mandatory split sequence is `CLOUDFLARE-BUILDS-VERIFIER-INTEGRATION -> CLOUDFLARE-RUNTIME-COMPATIBILITY -> CLOUDFLARE-CANDIDATE-DEPLOYMENT -> CLOUDFLARE-PUBLIC-CUTOVER`;
+- `PUBLIC_MULTI_USER_ENABLED=false`, broker write OFF, `trading_methods=false`, `REAL_TRADING_ENABLED=false` and WP23 lock remain unchanged by this governance amendment.
+
+Amendment 14 supersedes conflicting **current/future provider-selection, active Render release-target and monolithic public-release timing** wording in Amendments 8/10/11/13 and current guidance. It does not erase historical evidence, change Master Plan block weights/order, start WEB-VISUAL source work, fabricate external provider/legal evidence or authorize Real-money execution.
 
 ## Draft/superseded planning material
 
@@ -230,7 +260,7 @@ Open or historical PR descriptions must not be treated as active plan authority 
 5. `OMNI_CIO_V10_PROGRAM_LOCK.md`;
 6. `OMNI_CIO_V10_MASTER_PLAN.md`;
 7. this Amendments Index;
-8. all active amendments listed here, especially 9/10/11/12/13 for current product/public-hosting/delivery/activation semantics;
+8. all active amendments listed here, especially 9/10/11/12/13/14 for current product/public-hosting/delivery/activation/platform semantics;
 9. machine-readable contracts;
 10. `OMNI_CIO_V10_WP_EXECUTION_TEMPLATE.md`;
 11. `../../knowledge/17_V10_CURRENT_PROGRAM_STATUS.md`;
