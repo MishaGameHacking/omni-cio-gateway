@@ -11,6 +11,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 _SHA = re.compile(r"^[0-9a-f]{40}$")
+_WEB_ROOT = "apps/web"
 
 
 def _governance() -> None:
@@ -32,24 +33,28 @@ def _governance() -> None:
 
 
 def _web_static() -> None:
-    subprocess.run(["npm", "ci", "--prefix", "apps/web"], cwd=ROOT, check=True)
     subprocess.run(
-        ["npm", "run", "--prefix", "apps/web", "typecheck"],
+        ["npm", "ci", "--ignore-scripts", "--prefix", _WEB_ROOT],
         cwd=ROOT,
         check=True,
     )
     subprocess.run(
-        ["npm", "run", "--prefix", "apps/web", "lint"],
+        ["npm", "run", "--prefix", _WEB_ROOT, "typecheck"],
         cwd=ROOT,
         check=True,
     )
     subprocess.run(
-        ["npm", "run", "--prefix", "apps/web", "test"],
+        ["npm", "run", "--prefix", _WEB_ROOT, "lint"],
         cwd=ROOT,
         check=True,
     )
     subprocess.run(
-        ["npm", "run", "--prefix", "apps/web", "build"],
+        ["npm", "run", "--prefix", _WEB_ROOT, "test"],
+        cwd=ROOT,
+        check=True,
+    )
+    subprocess.run(
+        ["npm", "run", "--prefix", _WEB_ROOT, "build"],
         cwd=ROOT,
         check=True,
     )
