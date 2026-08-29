@@ -1,0 +1,52 @@
+{
+  "schema": "omni-cio.v10.cloudflare-release-acceptance.v1",
+  "status": "BRANCH_LOCAL_CF_C_CF_D_IMPLEMENTATION",
+  "update_id": "CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED",
+  "candidate": {
+    "milestone": "CF-C",
+    "provider_mutation_allowed": true,
+    "production_promotion_allowed": false,
+    "exact_source_sha_required": true,
+    "release_endpoint": "/api/v10/release",
+    "health_endpoint": "/healthz",
+    "database_must_be_ready": true,
+    "browser_root_http_200_required": true
+  },
+  "cutover": {
+    "milestone": "CF-D",
+    "provider_mutation_allowed": true,
+    "production_promotion_allowed": true,
+    "production_branch": "main",
+    "automatic_git_deploy_required": true,
+    "default_deploy_command": "npx wrangler deploy",
+    "container_rollout_required": true,
+    "post_merge_exact_sha_probe_required": true
+  },
+  "live_assertions": {
+    "https_only": true,
+    "redirects_followed": false,
+    "max_response_bytes": 65536,
+    "release_platform": "cloudflare",
+    "release_backend": "container",
+    "release_static_assets": true,
+    "public_multi_user_enabled": false,
+    "real_trading_enabled": false,
+    "health_status": "ok",
+    "health_database": "READY"
+  },
+  "fail_closed": {
+    "missing_origin_is_success": false,
+    "missing_database_secret_is_success": false,
+    "cloudflare_build_failure_is_success": false,
+    "container_rollout_failure_is_success": false,
+    "source_sha_mismatch_is_success": false,
+    "provider_outage_is_success": false
+  },
+  "protected_invariants": {
+    "broker_write": false,
+    "trading_methods": false,
+    "REAL_TRADING_ENABLED": false,
+    "telegram_vk_without_real_provider_evidence": false,
+    "tinvest_read_without_terms_and_secret_custody": false
+  }
+}
