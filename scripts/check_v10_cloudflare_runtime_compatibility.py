@@ -5,6 +5,8 @@ from pathlib import Path
 import sys
 from typing import Any
 
+from scripts.v10_jsonc import loads_jsonc
+
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT = ROOT / "docs/architecture/V10_CLOUDFLARE_RUNTIME_COMPATIBILITY_CONTRACT.json"
@@ -24,8 +26,9 @@ def _read(path: Path) -> str:
 
 def _load_json(path: Path) -> dict[str, Any]:
     try:
-        value = json.loads(_read(path))
-    except json.JSONDecodeError as exc:
+        source = _read(path)
+        value = loads_jsonc(source) if path.suffix == ".jsonc" else json.loads(source)
+    except (ValueError, json.JSONDecodeError) as exc:
         raise RuntimeError(f"CLOUDFLARE_RUNTIME_JSON_INVALID:{path}") from exc
     if not isinstance(value, dict):
         raise RuntimeError(f"CLOUDFLARE_RUNTIME_OBJECT_REQUIRED:{path}")
@@ -107,6 +110,7 @@ def validate() -> None:
         'sleepAfter = "1m"',
         'headers.delete("x-forwarded-proto")',
         'headers.set("x-forwarded-proto", "https")',
+        'headers.set("x-forwarded-for", clientIp)',
         "CLOUDFLARE_RUNTIME_DATABASE_NOT_CONFIGURED",
         'url.pathname === "/api/v10/release"',
         "public_multi_user_enabled: false",
