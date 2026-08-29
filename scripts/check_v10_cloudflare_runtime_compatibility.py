@@ -208,7 +208,9 @@ def main() -> int:
     print("V10 Cloudflare runtime compatibility contract passed.")
     print("Frontend: Workers Static Assets")
     print("Backend: Cloudflare Container / Python 3.14.6")
-    print("Container transport: fixed internal proxy endpoint + validated route restore")
+    print(
+        "Container transport: fixed internal proxy endpoint + validated route restore"
+    )
     print("Database: direct Neon PostgreSQL 18; Hyperdrive disabled")
     return 0
 
