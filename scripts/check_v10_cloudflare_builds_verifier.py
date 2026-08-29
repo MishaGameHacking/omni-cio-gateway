@@ -132,7 +132,9 @@ def validate() -> None:
         "shell=True",
     ):
         if forbidden in runner:
-            raise RuntimeError("CLOUDFLARE_VERIFIER_DYNAMIC_COMMAND_EXECUTION_FORBIDDEN")
+            raise RuntimeError(
+                "CLOUDFLARE_VERIFIER_DYNAMIC_COMMAND_EXECUTION_FORBIDDEN"
+            )
 
 
 def main() -> int:
