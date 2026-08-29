@@ -113,8 +113,13 @@ def validate() -> None:
     worker = _read(WORKER)
     for marker in (
         'INTERNAL_HOST = "omni-cio.internal"',
+        'INTERNAL_PROXY_URL = "https://omni-cio.internal/_omni/cloudflare-proxy"',
         'sleepAfter = "1m"',
-        "return new Request(request, {",
+        'headers.delete("x-omni-route-path")',
+        'headers.delete("x-omni-route-query")',
+        'headers.set("x-omni-route-path", encodeURIComponent(routeUrl.pathname))',
+        'headers.set("x-omni-route-query", encodeURIComponent(query))',
+        "return new Request(INTERNAL_PROXY_URL, {",
         'headers.delete("x-forwarded-proto")',
         'headers.set("x-forwarded-proto", "https")',
         'headers.set("x-forwarded-for", clientIp)',
@@ -128,6 +133,7 @@ def validate() -> None:
     if worker.count("new URL(request.url)") != 1:
         raise RuntimeError("CLOUDFLARE_RUNTIME_DYNAMIC_BACKEND_ORIGIN_INVALID")
     for forbidden in (
+        "new Request(request,",
         "new URL(`https://${INTERNAL_HOST}/`)",
         "url.pathname = routeUrl.pathname",
         "url.search = routeUrl.search",
@@ -151,6 +157,10 @@ def validate() -> None:
         'OMNI_V10_CLOUDFLARE_RUNTIME", ""',
         '"CLOUDFLARE_RUNTIME_NOT_ENABLED"',
         '"OMNI_V10_POSTGRES_DSN"',
+        '"/_omni/cloudflare-proxy"',
+        "_validated_route(scope, self._release_sha)",
+        "CloudflareEdgeRouteRestoreV1",
+        "return CloudflareEdgeRouteRestoreV1(hosted_app, release_sha=release_sha)",
         "_probe_hosted_preview_database(connection)",
         "provider_auth=None",
         "trusted_edge_tls_terminated=False",
@@ -177,6 +187,7 @@ def main() -> int:
     print("V10 Cloudflare runtime compatibility contract passed.")
     print("Frontend: Workers Static Assets")
     print("Backend: Cloudflare Container / Python 3.14.6")
+    print("Container transport: fixed internal proxy endpoint + validated route restore")
     print("Database: direct Neon PostgreSQL 18; Hyperdrive disabled")
     return 0
 
