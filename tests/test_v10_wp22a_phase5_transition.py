@@ -142,7 +142,7 @@ def test_phase5_closeout_evidence_maps_accepted_exact_main_chain() -> None:
     assert locks["protected_v9_entrypoint"] == "app:app"
 
 
-def test_status_closes_wp22a_and_prepares_integrated_visual_update() -> None:
+def test_status_closes_wp22a_and_stages_cloudflare_before_prepared_visual_update() -> None:
     text = STATUS.read_text(encoding="utf-8")
 
     assert "WP0–WP22A COMPLETE" in text
@@ -151,10 +151,11 @@ def test_status_closes_wp22a_and_prepares_integrated_visual_update() -> None:
     assert "Block E — **COMPLETE (14%)**" in text
     assert "PRODUCT IMPLEMENTATION PAUSED" in text
     assert (
-        "## Current next package — WEB-VISUAL-INTEGRATED — "
-        "Prepared A→G System Update / OWNER START REQUIRED"
+        "## Current next package — CLOUDFLARE-BUILDS-VERIFIER-INTEGRATION — "
+        "Repository-Side Portable Verification Integration"
         in text
     )
+    assert "### Prepared product package — WEB-VISUAL-INTEGRATED" in text
     assert "START V10 WEB VISUAL SYSTEM UPDATE" in text
     assert "WP23+ LOCKED" in text
     assert "Accepted implementation progress is **54%**" in text
