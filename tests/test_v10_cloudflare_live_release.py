@@ -36,6 +36,24 @@ class CloudflareLiveReleaseTests(unittest.TestCase):
                 ):
                     verifier._origin(value)
 
+    def test_workers_dev_origin_ignores_irrelevant_malformed_custom_host(self) -> None:
+        self.assertEqual(
+            verifier._origin(
+                "https://example.workers.dev",
+                allowed_custom_host="not a valid host",
+            ),
+            "https://example.workers.dev",
+        )
+
+    def test_custom_origin_still_requires_valid_exact_custom_host(self) -> None:
+        with self.assertRaisesRegex(
+            RuntimeError, "CLOUDFLARE_RELEASE_ORIGIN_INVALID"
+        ):
+            verifier._origin(
+                "https://www.example.com",
+                allowed_custom_host="not a valid host",
+            )
+
     def test_origin_rejects_unapproved_public_custom_host(self) -> None:
         with self.assertRaisesRegex(
             RuntimeError, "CLOUDFLARE_RELEASE_ORIGIN_NOT_ALLOWED"
