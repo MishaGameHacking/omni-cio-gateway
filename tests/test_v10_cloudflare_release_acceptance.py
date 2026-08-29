@@ -40,6 +40,30 @@ class CloudflareReleaseAcceptanceTests(unittest.TestCase):
                 ):
                     guard.validate()
 
+    def test_guard_rejects_missing_production_secret_declaration(self) -> None:
+        payload = loads_jsonc(guard.WRANGLER.read_text(encoding="utf-8"))
+        del payload["secrets"]
+        with tempfile.TemporaryDirectory() as temporary:
+            candidate = Path(temporary) / "wrangler.jsonc"
+            candidate.write_text(json.dumps(payload), encoding="utf-8")
+            with mock.patch.object(guard, "WRANGLER", candidate):
+                with self.assertRaisesRegex(
+                    RuntimeError, "CLOUDFLARE_RELEASE_PRODUCTION_SECRETS_INVALID"
+                ):
+                    guard.validate()
+
+    def test_guard_rejects_missing_staging_secret_declaration(self) -> None:
+        payload = loads_jsonc(guard.WRANGLER.read_text(encoding="utf-8"))
+        del payload["env"]["staging"]["secrets"]
+        with tempfile.TemporaryDirectory() as temporary:
+            candidate = Path(temporary) / "wrangler.jsonc"
+            candidate.write_text(json.dumps(payload), encoding="utf-8")
+            with mock.patch.object(guard, "WRANGLER", candidate):
+                with self.assertRaisesRegex(
+                    RuntimeError, "CLOUDFLARE_RELEASE_STAGING_SECRETS_INVALID"
+                ):
+                    guard.validate()
+
     def test_guard_rejects_missing_staging_container(self) -> None:
         payload = loads_jsonc(guard.WRANGLER.read_text(encoding="utf-8"))
         del payload["env"]["staging"]["containers"]
