@@ -17,6 +17,7 @@ WRANGLER = ROOT / "wrangler.jsonc"
 LIVE_VERIFIER = ROOT / "scripts/check_v10_cloudflare_live_release.py"
 LIVE_PROBE = ROOT / "scripts/probe_v10_cloudflare_live_release.sh"
 PACKAGE = ROOT / "package.json"
+_REQUIRED_RUNTIME_SECRETS = ["OMNI_V10_POSTGRES_DSN"]
 
 
 def _load(path: Path) -> dict[str, Any]:
@@ -121,11 +122,17 @@ def validate() -> None:
         raise RuntimeError("CLOUDFLARE_RELEASE_SELF_CONTAINED_BUILD_INVALID")
     if wrangler.get("workers_dev") is not True:
         raise RuntimeError("CLOUDFLARE_RELEASE_WORKERS_DEV_REQUIRED")
+    production_secrets = _object(wrangler.get("secrets"), "PRODUCTION_SECRETS")
+    if production_secrets.get("required") != _REQUIRED_RUNTIME_SECRETS:
+        raise RuntimeError("CLOUDFLARE_RELEASE_PRODUCTION_SECRETS_INVALID")
 
     environments = _object(wrangler.get("env"), "WRANGLER_ENV")
     staging = _object(environments.get("staging"), "STAGING")
     if staging.get("name") != candidate["staging_worker_name"]:
         raise RuntimeError("CLOUDFLARE_RELEASE_STAGING_WORKER_INVALID")
+    staging_secrets = _object(staging.get("secrets"), "STAGING_SECRETS")
+    if staging_secrets.get("required") != _REQUIRED_RUNTIME_SECRETS:
+        raise RuntimeError("CLOUDFLARE_RELEASE_STAGING_SECRETS_INVALID")
     expected_container = {
         "class_name": "Backend",
         "image": "./Dockerfile.cloudflare",
@@ -212,6 +219,7 @@ def main() -> int:
         return 1
     print("V10 Cloudflare CF-C/CF-D release acceptance contract passed.")
     print("Candidate: isolated staging Worker + Container rollout")
+    print("Required runtime secret: OMNI_V10_POSTGRES_DSN in staging and production")
     print("Production branch: main")
     print("Automatic deploy command: npx wrangler deploy")
     print("Live probe: HTTPS-only curl + networkless Python payload verifier")
