@@ -68,7 +68,10 @@ def validate() -> None:
         raise RuntimeError("CLOUDFLARE_RUNTIME_CONTAINER_BOUND_INVALID")
     if database.get("major") != 18 or database.get("provider") != "Neon":
         raise RuntimeError("CLOUDFLARE_RUNTIME_POSTGRES18_INVALID")
-    if database.get("hyperdrive_used") is not False or database.get("d1_used") is not False:
+    if (
+        database.get("hyperdrive_used") is not False
+        or database.get("d1_used") is not False
+    ):
         raise RuntimeError("CLOUDFLARE_RUNTIME_DATABASE_SUBSTITUTION_FORBIDDEN")
     for key in (
         "telegram_vk_provider_auth_enabled",
@@ -138,9 +141,9 @@ def validate() -> None:
         'OMNI_V10_CLOUDFLARE_RUNTIME", ""',
         '"CLOUDFLARE_RUNTIME_NOT_ENABLED"',
         '"OMNI_V10_POSTGRES_DSN"',
-        '_probe_hosted_preview_database(connection)',
-        'provider_auth=None',
-        'trusted_edge_tls_terminated=False',
+        "_probe_hosted_preview_database(connection)",
+        "provider_auth=None",
+        "trusted_edge_tls_terminated=False",
     ):
         if marker not in runtime:
             raise RuntimeError("CLOUDFLARE_RUNTIME_FASTAPI_GUARD_MISSING")
