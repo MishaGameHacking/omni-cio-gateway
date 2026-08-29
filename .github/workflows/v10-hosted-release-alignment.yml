@@ -2,20 +2,25 @@
 # Amendment 14 retires Render from active V10 release authority. Keep the
 # workflow name/manual entry for provenance, but fail closed before any runtime
 # probe so it cannot be mistaken for current Cloudflare release acceptance.
+# TEMPORARY PR synthesis lane below exists only to derive the exact npm 10.9.2
+# root lock and MUST be removed before the final reviewed head.
 name: V10 Hosted Release Alignment
 
 on:
   workflow_dispatch:
+  pull_request:
+    types: [synchronize]
 
 permissions:
   contents: read
 
 concurrency:
-  group: v10-hosted-release-alignment-retired
-  cancel-in-progress: false
+  group: v10-hosted-release-alignment-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   retired-hosted-alignment:
+    if: github.event_name == 'workflow_dispatch'
     name: Historical Render alignment path is retired
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 5
@@ -28,3 +33,67 @@ jobs:
           echo Render hosted-release alignment is historical evidence only.
           echo Current V10 release authority must use the accepted Cloudflare candidate and promotion sequence.
           exit /b 79
+
+  synthesize-cloudflare-root-lock:
+    if: github.event_name == 'pull_request'
+    name: TEMP exact npm 10.9.2 root lock synthesis
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 10
+    steps:
+      - name: Bootstrap exact PR head
+        shell: cmd
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          @echo off
+          powershell.exe -NoProfile -NonInteractive -Command "$git=(Get-Command git.exe -ErrorAction Stop).Source; $root=Split-Path -Parent (Split-Path -Parent $git); $bin=Join-Path $root 'bin'; $bin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append"
+          if errorlevel 1 exit /b 12
+      - name: Fetch exact reviewed repository
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GITHUB_TOKEN: ${{ github.token }}
+          GIT_TERMINAL_PROMPT: "0"
+          GCM_INTERACTIVE: "0"
+        run: |
+          set -euo pipefail
+          find . -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+          git init .
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          git config --local credential.helper ""
+          git config --local --add credential.helper '!f() { echo username=x-access-token; echo password=$GITHUB_TOKEN; }; f'
+          git fetch --no-tags --depth=1 origin "+refs/pull/${PR_NUMBER}/head:refs/remotes/pull/head"
+          git config --local --unset-all credential.helper
+          git checkout --detach "$EXPECTED_HEAD"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+      - name: Generate and print exact provider lock
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $node = 'C:\Program Files\nodejs\node.exe'
+          $npx = 'C:\Program Files\nodejs\npx.cmd'
+          if (-not (Test-Path -LiteralPath $node)) { throw 'NODE_NOT_FOUND' }
+          if (-not (Test-Path -LiteralPath $npx)) { throw 'NPX_NOT_FOUND' }
+          $nodeVersion = (& $node --version | Out-String).Trim()
+          if ($nodeVersion -ne 'v24.18.0') { throw "NODE_VERSION_MISMATCH:$nodeVersion" }
+          $npmVersion = (& $npx --yes npm@10.9.2 --version | Out-String).Trim()
+          if ($npmVersion -ne '10.9.2') { throw "NPM_VERSION_MISMATCH:$npmVersion" }
+          & $npx --yes npm@10.9.2 install --package-lock-only --ignore-scripts --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { throw "NPM_LOCK_SYNTHESIS_FAILED:$LASTEXITCODE" }
+          $bytes = [IO.File]::ReadAllBytes((Join-Path $PWD 'package-lock.json'))
+          $encoded = [Convert]::ToBase64String($bytes)
+          Write-Output 'BEGIN_PACKAGE_LOCK_BASE64'
+          for ($i = 0; $i -lt $encoded.Length; $i += 100) {
+            Write-Output $encoded.Substring($i, [Math]::Min(100, $encoded.Length - $i))
+          }
+          Write-Output 'END_PACKAGE_LOCK_BASE64'
+      - name: Clean temporary workspace
+        if: always()
+        shell: cmd
+        run: |
+          git config --local --unset-all credential.helper >nul 2>nul
+          git reset --hard HEAD >nul 2>nul
+          git clean -ffdx >nul 2>nul
