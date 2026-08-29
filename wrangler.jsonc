@@ -7,7 +7,7 @@
   "workers_dev": true,
   "keep_vars": true,
   "build": {
-    "command": "python scripts/write_v10_cloudflare_build_info.py && npm ci --prefix apps/web && npm run --prefix apps/web build"
+    "command": "python scripts/write_v10_cloudflare_build_info.py && npm ci --ignore-scripts --prefix apps/web && npm run --prefix apps/web build"
   },
   "assets": {
     "directory": "./apps/web/dist",
