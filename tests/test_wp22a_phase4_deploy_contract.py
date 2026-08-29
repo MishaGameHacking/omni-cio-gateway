@@ -47,49 +47,31 @@ def _module() -> Any:
 def test_workflow_has_no_pull_request_secret_path() -> None:
     text = WORKFLOW.read_text(encoding="utf-8")
 
-    assert "workflow_run:" in text
+    assert "workflow_run:" not in text
     assert "workflow_dispatch:" in text
     assert "pull_request:" not in text
-    assert "github.event.workflow_run.conclusion == 'success'" in text
-    assert "github.event.workflow_run.event == 'push'" in text
-    assert "github.event.workflow_run.head_branch == 'main'" in text
-    assert "refs/remotes/origin/main" in text
-    assert (
-        'test "$(git rev-parse refs/remotes/origin/main)" = '
-        '"$EXPECTED_MAIN_SHA"'
-    ) in text
-    assert "secrets.RENDER_API_KEY" in text
-    assert "secrets.NEON_API_KEY" in text
+    assert "secrets.RENDER_API_KEY" not in text
+    assert "secrets.NEON_API_KEY" not in text
     assert "cancel-in-progress: false" in text
-    assert "      actions: read\n      contents: read\n" in text
+    assert "permissions:\n  contents: read\n" in text
 
 
 def test_all_trigger_paths_reverify_exact_main_regression_before_mutation() -> None:
     text = WORKFLOW.read_text(encoding="utf-8")
-    regression = text.index(
-        "Verify exact-main Regression Shield before provider mutation"
-    )
-    boundary = text.index("Enforce zero-charge provider boundary")
-    provision = text.index("Provision and deploy zero-cost synthetic preview")
 
-    assert regression < boundary < provision
-    assert "python scripts/check_v10_exact_main_regression.py" in text
-    assert "tests/test_v10_exact_main_regression.py" in text
-    assert "GITHUB_TOKEN: ${{ github.token }}" in text
+    assert "Amendment 14 retires this path from active V10 provider authority" in text
+    assert "invocation fails\n# closed before any provider mutation" in text
+    assert "exit /b 78" in text
 
 
 def test_workflow_runs_only_zero_cost_preview_contracts_before_mutation() -> None:
     text = WORKFLOW.read_text(encoding="utf-8")
-    verify = text.index("Verify deployment source contracts before provider mutation")
-    provision = text.index("Provision and deploy zero-cost synthetic preview")
 
-    assert verify < provision
-    assert "tests/test_v10_exact_main_regression.py" in text
-    assert "tests/test_wp22a_phase4_free_preview_authorization.py" in text
-    assert "tests/test_wp22a_phase4_hosted_preview_app.py" in text
-    assert "tests/test_wp22a_phase4_deploy_contract.py" in text
-    assert "paid resources: forbidden" in text
-    assert "real registration/private data/broker credentials: disabled" in text
+    assert "Historical Render preview path is retired" in text
+    assert "Refuse obsolete Render provider mutation" in text
+    assert "LEGACY_RENDER_PHASE4_RETIRED_AMENDMENT_14" in text
+    assert "not an active V10 deployment path" in text
+    assert "do not refresh Render attestation or mutate Render" in text
 
 
 def test_runtime_uri_replacement_drops_bootstrap_credentials() -> None:

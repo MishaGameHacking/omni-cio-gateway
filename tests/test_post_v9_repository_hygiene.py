@@ -91,8 +91,8 @@ def test_applied_gpt_state_is_v9_not_pending_wp15() -> None:
 
     assert "Applied external GPT: **v9.0.0**" in status
     assert "Applied external GPT: **v9.0.0**" in config
-    assert "WP0–WP15" in master
-    assert "controlled maintenance" in master
+    assert "WP0–WP22A" in master
+    assert "production/recovery baseline" in master
 
     stale_markers = (
         "Applied external GPT remains **v8.6.1**",
@@ -125,9 +125,15 @@ def test_current_navigation_describes_completed_v9_maintenance_state() -> None:
         (master_plan_index, "docs/master-plan/README.md"),
     ):
         assert "v9.0.0" in text, relative
+
+    for text, relative in (
+        (changelog, "CHANGELOG.md"),
+        (copilot, ".github/copilot-instructions.md"),
+        (master_plan_index, "docs/master-plan/README.md"),
+    ):
         assert "controlled maintenance" in text, relative
 
     assert "WP0–WP15" in changelog
     assert "historical" in changelog.casefold()
     assert "completed" in master_plan_index.casefold()
-    assert "effective production" in copilot
+    assert "effective production" in changelog
