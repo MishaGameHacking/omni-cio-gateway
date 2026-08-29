@@ -114,6 +114,9 @@ def validate() -> None:
     for marker in (
         'INTERNAL_HOST = "omni-cio.internal"',
         'sleepAfter = "1m"',
+        'const url = new URL(`https://${INTERNAL_HOST}/`);',
+        "url.pathname = routeUrl.pathname;",
+        "url.search = routeUrl.search;",
         'headers.delete("x-forwarded-proto")',
         'headers.set("x-forwarded-proto", "https")',
         'headers.set("x-forwarded-for", clientIp)',
@@ -124,6 +127,8 @@ def validate() -> None:
     ):
         if marker not in worker:
             raise RuntimeError("CLOUDFLARE_RUNTIME_WORKER_GUARD_MISSING")
+    if worker.count("new URL(request.url)") != 1:
+        raise RuntimeError("CLOUDFLARE_RUNTIME_DYNAMIC_BACKEND_ORIGIN_INVALID")
 
     dockerfile = _read(DOCKERFILE)
     for marker in (
