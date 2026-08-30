@@ -15,15 +15,21 @@ _ORIGIN_ENV = "OMNI_V10_CLOUDFLARE_ORIGIN"
 _CUSTOM_HOST_ENV = "OMNI_V10_CLOUDFLARE_CUSTOM_HOST"
 
 
-def _hostname(value: str) -> str:
+def _idna_hostname(value: str) -> str:
     try:
-        hostname = value.rstrip(".").encode("idna").decode("ascii").lower()
+        return value.rstrip(".").encode("idna").decode("ascii").lower()
     except UnicodeError as exc:
         raise RuntimeError("CLOUDFLARE_RELEASE_ORIGIN_INVALID") from exc
+
+
+def _validate_hostname_shape(hostname: str) -> None:
     if len(hostname) > 253 or "." not in hostname:
         raise RuntimeError("CLOUDFLARE_RELEASE_ORIGIN_INVALID")
     if any(_DNS_LABEL.fullmatch(label) is None for label in hostname.split(".")):
         raise RuntimeError("CLOUDFLARE_RELEASE_ORIGIN_INVALID")
+
+
+def _reject_non_public_hostname(hostname: str) -> None:
     try:
         ipaddress.ip_address(hostname)
     except ValueError:
@@ -34,24 +40,28 @@ def _hostname(value: str) -> str:
         (".localhost", ".local", ".internal", ".home.arpa")
     ):
         raise RuntimeError("CLOUDFLARE_RELEASE_ORIGIN_INVALID")
+
+
+def _hostname(value: str) -> str:
+    hostname = _idna_hostname(value)
+    _validate_hostname_shape(hostname)
+    _reject_non_public_hostname(hostname)
     return hostname
 
 
-def _origin(value: str, *, allowed_custom_host: str = "") -> str:
+def _origin_authority(value: str) -> str:
     candidate = value.strip().rstrip("/")
     if not candidate.startswith("https://"):
         raise RuntimeError("CLOUDFLARE_RELEASE_ORIGIN_INVALID")
     authority = candidate.removeprefix("https://")
-    if (
-        not authority
-        or "/" in authority
-        or "?" in authority
-        or "#" in authority
-        or "@" in authority
-        or ":" in authority
-    ):
+    forbidden = ("/", "?", "#", "@", ":")
+    if not authority or any(marker in authority for marker in forbidden):
         raise RuntimeError("CLOUDFLARE_RELEASE_ORIGIN_INVALID")
-    hostname = _hostname(authority)
+    return authority
+
+
+def _origin(value: str, *, allowed_custom_host: str = "") -> str:
+    hostname = _hostname(_origin_authority(value))
     if hostname.endswith(".workers.dev"):
         return f"https://{hostname}"
     if not allowed_custom_host or hostname != _hostname(allowed_custom_host):
@@ -75,7 +85,7 @@ def _stdin_json() -> dict[str, Any]:
         raise RuntimeError("CLOUDFLARE_RELEASE_RESPONSE_TOO_LARGE")
     try:
         decoded = json.loads(payload.decode("utf-8"))
-    except (UnicodeError, json.JSONDecodeError) as exc:
+    except ValueError as exc:
         raise RuntimeError("CLOUDFLARE_RELEASE_JSON_INVALID") from exc
     if not isinstance(decoded, dict):
         raise RuntimeError("CLOUDFLARE_RELEASE_JSON_OBJECT_REQUIRED")

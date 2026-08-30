@@ -69,10 +69,13 @@ class CloudflareRuntimeRouteTests(unittest.IsolatedAsyncioTestCase):
             _validated_route(scope, _SHA)
 
     def test_validated_route_rejects_invalid_client_ip(self) -> None:
+        scope = _scope(client_ip="not-an-ip")
         with self.assertRaisesRegex(ValueError, "client ip invalid"):
-            _validated_route(_scope(client_ip="not-an-ip"), _SHA)
+            _validated_route(scope, _SHA)
 
-    async def test_wrapper_restores_scope_and_strips_internal_edge_headers(self) -> None:
+    async def test_wrapper_restores_scope_and_strips_internal_edge_headers(
+        self,
+    ) -> None:
         captured: list[dict] = []
 
         async def app(scope, receive, send) -> None:

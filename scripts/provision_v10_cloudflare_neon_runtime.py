@@ -133,8 +133,6 @@ def _provider_context(
     organization_id: str,
 ) -> tuple[str, dict[str, Any]]:
     safe_org_id = _org._validate_neon_org_id(organization_id)
-    if _base._neon_organization(api) != safe_org_id:
-        raise _base.ProvisioningStopped("NEON_PROJECT_ORGANIZATION_DRIFT")
     project = _discover_expected_project(api, safe_org_id)
     try:
         _org._neon_organization(api, safe_org_id)
@@ -329,10 +327,7 @@ def _write_runtime_dsn(output_file: Path, runtime_uri: str) -> None:
         pass
 
 
-def run(
-    expected_sha: str,
-    environment: str,
-) -> str:
+def run(expected_sha: str, environment: str) -> str:
     _base._exact_head(_REPO_ROOT, expected_sha)
     runtime_role = _runtime_role(environment)
     neon_key = _base._required_env("NEON_API_KEY")
@@ -424,10 +419,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(sys.argv[1:] if argv is None else argv)
     try:
-        run(
-            args.expected_sha.strip().lower(),
-            args.environment,
-        )
+        run(args.expected_sha.strip().lower(), args.environment)
     except _base.ProvisioningStopped as exc:
         _base._emit(f"CLOUDFLARE_NEON_RUNTIME=STOPPED code={exc.code}")
         return 1

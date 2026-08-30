@@ -95,7 +95,7 @@ def _validated_client_ip(headers: Mapping[bytes, bytes]) -> str:
     try:
         value = raw.decode("ascii")
         address = ipaddress.ip_address(value)
-    except (UnicodeError, ValueError) as exc:
+    except ValueError as exc:
         raise ValueError("client ip invalid") from exc
     return address.compressed
 

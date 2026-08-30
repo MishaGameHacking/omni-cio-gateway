@@ -44,20 +44,35 @@ def _object(value: object, label: str) -> dict[str, Any]:
     return value
 
 
-def validate() -> None:
-    contract = _load_json(CONTRACT)
+def _single_object(value: object, label: str, code: str) -> dict[str, Any]:
+    if not isinstance(value, list) or len(value) != 1:
+        raise RuntimeError(code)
+    return _object(value[0], label)
+
+
+def _require_markers(source: str, markers: tuple[str, ...], code: str) -> None:
+    if any(marker not in source for marker in markers):
+        raise RuntimeError(code)
+
+
+def _forbid_markers(source: str, markers: tuple[str, ...], code: str) -> None:
+    if any(marker in source for marker in markers):
+        raise RuntimeError(code)
+
+
+def _validate_contract_identity(contract: dict[str, Any]) -> None:
     if contract.get("schema") != "omni-cio.v10.cloudflare-runtime-compatibility.v1":
         raise RuntimeError("CLOUDFLARE_RUNTIME_SCHEMA_INVALID")
     if contract.get("milestone") != "CF-B":
         raise RuntimeError("CLOUDFLARE_RUNTIME_MILESTONE_INVALID")
 
+
+def _validate_contract_runtime(contract: dict[str, Any]) -> None:
     frontend = _object(contract.get("frontend"), "FRONTEND")
     backend = _object(contract.get("backend"), "BACKEND")
     database = _object(contract.get("database"), "DATABASE")
-    security = _object(contract.get("security"), "SECURITY")
     cost = _object(contract.get("cost"), "COST")
     release = _object(contract.get("release"), "RELEASE")
-
     if frontend.get("placement") != "WORKERS_STATIC_ASSETS":
         raise RuntimeError("CLOUDFLARE_RUNTIME_FRONTEND_PLACEMENT_INVALID")
     if backend.get("placement") != "CLOUDFLARE_CONTAINER":
@@ -73,8 +88,15 @@ def validate() -> None:
         or database.get("d1_used") is not False
     ):
         raise RuntimeError("CLOUDFLARE_RUNTIME_DATABASE_SUBSTITUTION_FORBIDDEN")
+    if cost.get("automatic_paid_overage_authorized") is not False:
+        raise RuntimeError("CLOUDFLARE_RUNTIME_PAID_OVERAGE_FORBIDDEN")
+    if release.get("worker_name") != "omni-cio-v10-web":
+        raise RuntimeError("CLOUDFLARE_RUNTIME_WORKER_NAME_INVALID")
 
-    expected_security_true = {
+
+def _validate_contract_security(contract: dict[str, Any]) -> None:
+    security = _object(contract.get("security"), "SECURITY")
+    expected_true = (
         "incoming_forwarded_headers_are_stripped_at_worker",
         "container_forwarded_header_trust_disabled",
         "client_ip_forwarded_via_internal_edge_header",
@@ -86,8 +108,8 @@ def validate() -> None:
         "internal_route_headers_are_removed_before_app",
         "runtime_database_secret_required",
         "database_secret_absence_returns_503_before_container_start",
-    }
-    for key in expected_security_true:
+    )
+    for key in expected_true:
         if security.get(key) is not True:
             raise RuntimeError(f"CLOUDFLARE_RUNTIME_{key.upper()}_MUST_BE_TRUE")
     if (
@@ -95,21 +117,20 @@ def validate() -> None:
         != "https://omni-cio.internal/_omni/cloudflare-proxy"
     ):
         raise RuntimeError("CLOUDFLARE_RUNTIME_CONTAINER_TRANSPORT_URL_INVALID")
-    for key in (
+    expected_false = (
         "telegram_vk_provider_auth_enabled",
         "public_multi_user_enabled",
         "broker_write",
         "trading_methods",
         "real_trading_enabled",
-    ):
+    )
+    for key in expected_false:
         if security.get(key) is not False:
             raise RuntimeError(f"CLOUDFLARE_RUNTIME_{key.upper()}_MUST_BE_FALSE")
 
-    if cost.get("automatic_paid_overage_authorized") is not False:
-        raise RuntimeError("CLOUDFLARE_RUNTIME_PAID_OVERAGE_FORBIDDEN")
-    if release.get("worker_name") != "omni-cio-v10-web":
-        raise RuntimeError("CLOUDFLARE_RUNTIME_WORKER_NAME_INVALID")
 
+def _validate_wrangler(contract: dict[str, Any]) -> None:
+    release = _object(contract.get("release"), "RELEASE")
     wrangler = _load_json(WRANGLER)
     if wrangler.get("name") != release["worker_name"]:
         raise RuntimeError("CLOUDFLARE_RUNTIME_WRANGLER_NAME_MISMATCH")
@@ -122,10 +143,11 @@ def validate() -> None:
         raise RuntimeError("CLOUDFLARE_RUNTIME_SPA_FALLBACK_INVALID")
     if assets.get("run_worker_first") != ["/api/*", "/healthz"]:
         raise RuntimeError("CLOUDFLARE_RUNTIME_EDGE_ROUTING_INVALID")
-    containers = wrangler.get("containers")
-    if not isinstance(containers, list) or len(containers) != 1:
-        raise RuntimeError("CLOUDFLARE_RUNTIME_CONTAINER_CONFIG_INVALID")
-    container = _object(containers[0], "CONTAINER")
+    container = _single_object(
+        wrangler.get("containers"),
+        "CONTAINER",
+        "CLOUDFLARE_RUNTIME_CONTAINER_CONFIG_INVALID",
+    )
     if (
         container.get("image") != "./Dockerfile.cloudflare"
         or container.get("instance_type") != "lite"
@@ -133,15 +155,22 @@ def validate() -> None:
     ):
         raise RuntimeError("CLOUDFLARE_RUNTIME_CONTAINER_LIMIT_INVALID")
 
+
+def _validate_worker() -> None:
     worker = _read(WORKER)
-    for marker in (
+    required = (
         'INTERNAL_HOST = "omni-cio.internal"',
         'INTERNAL_PROXY_URL = "https://omni-cio.internal/_omni/cloudflare-proxy"',
         'sleepAfter = "1m"',
         'headers.delete("x-forwarded-for")',
         'headers.delete("x-forwarded-host")',
+        'headers.delete("forwarded")',
         'headers.delete("x-forwarded-proto")',
         'headers.delete("x-omni-client-ip")',
+        'headers.delete("x-omni-route-path")',
+        'headers.delete("x-omni-route-query")',
+        'headers.delete("x-omni-edge-provider")',
+        'headers.delete("x-omni-source-sha")',
         'headers.set("x-omni-client-ip", clientIp)',
         'headers.set("x-omni-route-path", encodeURIComponent(routeUrl.pathname))',
         'headers.set("x-omni-route-query", encodeURIComponent(query))',
@@ -151,35 +180,45 @@ def validate() -> None:
         'url.pathname === "/api/v10/release"',
         "public_multi_user_enabled: false",
         "real_trading_enabled: false",
-    ):
-        if marker not in worker:
-            raise RuntimeError("CLOUDFLARE_RUNTIME_WORKER_GUARD_MISSING")
-    for forbidden in (
-        'headers.set("x-forwarded-for"',
-        'headers.set("x-forwarded-host"',
-        'headers.set("x-forwarded-proto"',
-        "new Request(request,",
-        "url.pathname = routeUrl.pathname",
-        "url.search = routeUrl.search",
-    ):
-        if forbidden in worker:
-            raise RuntimeError("CLOUDFLARE_RUNTIME_DYNAMIC_BACKEND_ORIGIN_INVALID")
+    )
+    _require_markers(worker, required, "CLOUDFLARE_RUNTIME_WORKER_GUARD_MISSING")
+    _forbid_markers(
+        worker,
+        (
+            'headers.set("x-forwarded-for"',
+            'headers.set("x-forwarded-host"',
+            'headers.set("x-forwarded-proto"',
+            "new Request(request,",
+            "url.pathname = routeUrl.pathname",
+            "url.search = routeUrl.search",
+        ),
+        "CLOUDFLARE_RUNTIME_DYNAMIC_BACKEND_ORIGIN_INVALID",
+    )
 
+
+def _validate_dockerfile() -> None:
     dockerfile = _read(DOCKERFILE)
-    for marker in (
-        "FROM python:3.14.6-slim-bookworm",
-        "RUN npm ci --ignore-scripts --prefix apps/web",
-        "python -m pip install --require-hashes -r requirements.txt",
-        "USER omni",
-        "apps.api.cloudflare_runtime:create_app",
-    ):
-        if marker not in dockerfile:
-            raise RuntimeError("CLOUDFLARE_RUNTIME_DOCKER_GUARD_MISSING")
-    if "--proxy-headers" in dockerfile or "--forwarded-allow-ips" in dockerfile:
-        raise RuntimeError("CLOUDFLARE_RUNTIME_PROXY_HEADER_TRUST_FORBIDDEN")
+    _require_markers(
+        dockerfile,
+        (
+            "FROM python:3.14.6-slim-bookworm",
+            "RUN npm ci --ignore-scripts --prefix apps/web",
+            "python -m pip install --require-hashes -r requirements.txt",
+            "USER omni",
+            "apps.api.cloudflare_runtime:create_app",
+        ),
+        "CLOUDFLARE_RUNTIME_DOCKER_GUARD_MISSING",
+    )
+    _forbid_markers(
+        dockerfile,
+        ("--proxy-headers", "--forwarded-allow-ips"),
+        "CLOUDFLARE_RUNTIME_PROXY_HEADER_TRUST_FORBIDDEN",
+    )
 
+
+def _validate_runtime() -> None:
     runtime = _read(RUNTIME)
-    for marker in (
+    required = (
         'OMNI_V10_CLOUDFLARE_RUNTIME", ""',
         '"CLOUDFLARE_RUNTIME_NOT_ENABLED"',
         '"OMNI_V10_POSTGRES_DSN"',
@@ -197,18 +236,33 @@ def validate() -> None:
         "_probe_hosted_preview_database(connection)",
         "provider_auth=None",
         "trusted_edge_tls_terminated=False",
-    ):
-        if marker not in runtime:
-            raise RuntimeError("CLOUDFLARE_RUNTIME_FASTAPI_GUARD_MISSING")
+    )
+    _require_markers(runtime, required, "CLOUDFLARE_RUNTIME_FASTAPI_GUARD_MISSING")
 
+
+def _validate_web_config() -> None:
     web = _read(WEB_CONFIG)
-    workers_index = web.find("process.env.WORKERS_CI_COMMIT_SHA")
-    github_index = web.find("process.env.GITHUB_SHA")
-    render_index = web.find("process.env.RENDER_GIT_COMMIT")
-    if min(workers_index, github_index, render_index) < 0:
+    indexes = (
+        web.find("process.env.WORKERS_CI_COMMIT_SHA"),
+        web.find("process.env.GITHUB_SHA"),
+        web.find("process.env.RENDER_GIT_COMMIT"),
+    )
+    if min(indexes) < 0:
         raise RuntimeError("CLOUDFLARE_RUNTIME_WEB_SHA_SOURCE_MISSING")
-    if not workers_index < github_index < render_index:
+    if not indexes[0] < indexes[1] < indexes[2]:
         raise RuntimeError("CLOUDFLARE_RUNTIME_WEB_SHA_PRECEDENCE_INVALID")
+
+
+def validate() -> None:
+    contract = _load_json(CONTRACT)
+    _validate_contract_identity(contract)
+    _validate_contract_runtime(contract)
+    _validate_contract_security(contract)
+    _validate_wrangler(contract)
+    _validate_worker()
+    _validate_dockerfile()
+    _validate_runtime()
+    _validate_web_config()
 
 
 def main() -> int:

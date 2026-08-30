@@ -9,7 +9,7 @@ import subprocess
 import sys
 import time
 from typing import Any
-from urllib.error import HTTPError, URLError
+from urllib.error import HTTPError
 from urllib.parse import quote, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
@@ -29,6 +29,8 @@ _STAGING_WORKER = "omni-cio-v10-web-staging"
 _STAGING_DSN_FILENAME = "omni-cio-v10-cloudflare-staging-dsn.txt"
 _TRIGGER_NAME = "Omni-CIO V10 staging deploy"
 _BUILD_TOKEN_NAME = "omni-cio-v10-staging-builds"
+_BUILD_COMMAND = "echo CLOUDFLARE_BUILD_PHASE=DELEGATED_TO_WRANGLER"
+_DEPLOY_COMMAND = "npm run cloudflare:deploy:staging"
 _BUILD_TOKEN_VALUE_FIELD = "build_token_" + "sec" + "ret"
 _BRANCH = "system/cloudflare-public-product"
 _GITHUB_OWNER_ID = "201947041"
@@ -36,6 +38,7 @@ _GITHUB_OWNER = "MishaGameHacking"
 _GITHUB_REPO_ID = "1312247309"
 _GITHUB_REPO = "omni-cio-gateway"
 _REPO_ROOT = Path(__file__).resolve().parents[1]
+_MAX_PROVIDER_RESPONSE_BYTES = 1_048_576
 
 
 class BootstrapStopped(RuntimeError):
@@ -125,6 +128,31 @@ def _expected_sha(value: str) -> str:
     return sha
 
 
+def _encoded_body(body: object | None) -> bytes | None:
+    if body is None:
+        return None
+    return json.dumps(body, separators=(",", ":")).encode("utf-8")
+
+
+def _request_headers(token: str, *, has_body: bool) -> dict[str, str]:
+    headers = {
+        "Accept": "application/json",
+        "Authorization": f"Bearer {token}",
+        "User-Agent": "omni-cio-v10-cloudflare-candidate",
+    }
+    if has_body:
+        headers["Content-Type"] = "application/json"
+    return headers
+
+
+def _attempt_count(method: str) -> int:
+    return len(_RETRY_DELAYS) + 1 if method == "GET" else 1
+
+
+def _retry_delay(attempt: int) -> float:
+    return _RETRY_DELAYS[attempt]
+
+
 class CloudflareApi:
     def __init__(self, account_id: str, token: str) -> None:
         normalized = account_id.strip().lower()
@@ -132,6 +160,85 @@ class CloudflareApi:
             raise BootstrapStopped("CLOUDFLARE_ACCOUNT_ID_INVALID")
         self.account_id = normalized
         self.token = token
+
+    def _request_once(
+        self,
+        method: str,
+        path: str,
+        *,
+        data: bytes | None,
+        headers: dict[str, str],
+        timeout: float,
+    ) -> tuple[int, bytes]:
+        request = Request(
+            f"{_API_BASE}{path}",
+            data=data,
+            headers=headers,
+            method=method,
+        )
+        with _OPENER.open(request, timeout=timeout) as response:
+            status = int(response.status)
+            raw = response.read(_MAX_PROVIDER_RESPONSE_BYTES + 1)
+        return status, raw
+
+    @staticmethod
+    def _raise_http_failure(status: int) -> None:
+        if status in {401, 403}:
+            raise BootstrapStopped(
+                "CLOUDFLARE_API_TOKEN_INSUFFICIENT",
+                status=status,
+            ) from None
+        raise BootstrapStopped("CLOUDFLARE_API_HTTP_ERROR", status=status) from None
+
+    @staticmethod
+    def _can_retry_http(method: str, status: int, attempt: int, attempts: int) -> bool:
+        return method == "GET" and status in _TRANSIENT and attempt + 1 < attempts
+
+    def _request_with_retry(
+        self,
+        method: str,
+        path: str,
+        *,
+        data: bytes | None,
+        headers: dict[str, str],
+        timeout: float,
+    ) -> tuple[int, bytes]:
+        attempts = _attempt_count(method)
+        for attempt in range(attempts):
+            try:
+                return self._request_once(
+                    method,
+                    path,
+                    data=data,
+                    headers=headers,
+                    timeout=timeout,
+                )
+            except HTTPError as exc:
+                status = int(exc.code)
+                if self._can_retry_http(method, status, attempt, attempts):
+                    time.sleep(_retry_delay(attempt))
+                    continue
+                self._raise_http_failure(status)
+            except OSError:
+                if attempt + 1 >= attempts:
+                    raise BootstrapStopped("CLOUDFLARE_API_NETWORK_ERROR") from None
+                time.sleep(_retry_delay(attempt))
+        raise AssertionError("bounded Cloudflare API retry exhausted")
+
+    @staticmethod
+    def _decode_result(raw: bytes, status: int) -> Any:
+        if len(raw) > _MAX_PROVIDER_RESPONSE_BYTES:
+            raise BootstrapStopped("CLOUDFLARE_API_RESPONSE_TOO_LARGE")
+        if not raw:
+            return None
+        try:
+            payload = json.loads(raw.decode("utf-8"))
+        except ValueError:
+            raise BootstrapStopped("CLOUDFLARE_API_JSON_INVALID") from None
+        envelope = _object(payload, "CLOUDFLARE_API_RESPONSE_INVALID")
+        if envelope.get("success") is not True:
+            raise BootstrapStopped("CLOUDFLARE_API_OPERATION_FAILED", status=status)
+        return envelope.get("result")
 
     def request(
         self,
@@ -144,66 +251,18 @@ class CloudflareApi:
     ) -> Any:
         safe_path = _safe_path(path)
         safe_method = method.upper()
-        data = None
-        headers = {
-            "Accept": "application/json",
-            "Authorization": f"Bearer {self.token}",
-            "User-Agent": "omni-cio-v10-cloudflare-candidate",
-        }
-        if body is not None:
-            data = json.dumps(body, separators=(",", ":")).encode("utf-8")
-            headers["Content-Type"] = "application/json"
-        attempts = len(_RETRY_DELAYS) + 1 if safe_method == "GET" else 1
-        raw = b""
-        status = 0
-        for attempt in range(attempts):
-            request = Request(
-                f"{_API_BASE}{safe_path}",
-                data=data,
-                headers=headers,
-                method=safe_method,
-            )
-            try:
-                with _OPENER.open(request, timeout=timeout) as response:
-                    status = int(response.status)
-                    raw = response.read(1_048_577)
-            except HTTPError as exc:
-                status = int(exc.code)
-                if (
-                    safe_method == "GET"
-                    and status in _TRANSIENT
-                    and attempt + 1 < attempts
-                ):
-                    time.sleep(_RETRY_DELAYS[attempt])
-                    continue
-                if status in {401, 403}:
-                    raise BootstrapStopped(
-                        "CLOUDFLARE_API_TOKEN_INSUFFICIENT",
-                        status=status,
-                    ) from None
-                raise BootstrapStopped(
-                    "CLOUDFLARE_API_HTTP_ERROR", status=status
-                ) from None
-            except (URLError, TimeoutError, OSError):
-                if attempt + 1 >= attempts:
-                    raise BootstrapStopped("CLOUDFLARE_API_NETWORK_ERROR") from None
-                time.sleep(_RETRY_DELAYS[attempt])
-                continue
-            break
+        data = _encoded_body(body)
+        headers = _request_headers(self.token, has_body=data is not None)
+        status, raw = self._request_with_retry(
+            safe_method,
+            safe_path,
+            data=data,
+            headers=headers,
+            timeout=timeout,
+        )
         if status not in expected:
             raise BootstrapStopped("CLOUDFLARE_API_STATUS_INVALID", status=status)
-        if len(raw) > 1_048_576:
-            raise BootstrapStopped("CLOUDFLARE_API_RESPONSE_TOO_LARGE")
-        if not raw:
-            return None
-        try:
-            payload = json.loads(raw.decode("utf-8"))
-        except (UnicodeError, json.JSONDecodeError):
-            raise BootstrapStopped("CLOUDFLARE_API_JSON_INVALID") from None
-        envelope = _object(payload, "CLOUDFLARE_API_RESPONSE_INVALID")
-        if envelope.get("success") is not True:
-            raise BootstrapStopped("CLOUDFLARE_API_OPERATION_FAILED", status=status)
-        return envelope.get("result")
+        return self._decode_result(raw, status)
 
 
 def _verify_token(api: CloudflareApi) -> str:
@@ -317,7 +376,8 @@ def _put_runtime_secret(api: CloudflareApi) -> None:
     _mask(runtime_dsn)
     api.request(
         "PUT",
-        f"/accounts/{api.account_id}/workers/scripts/{quote(_STAGING_WORKER, safe='')}/secrets",
+        f"/accounts/{api.account_id}/workers/scripts/"
+        f"{quote(_STAGING_WORKER, safe='')}/secrets",
         body={
             "name": "OMNI_V10_POSTGRES_DSN",
             "text": runtime_dsn,
@@ -332,15 +392,61 @@ def _desired_trigger(connection_uuid: str, build_token_uuid: str) -> dict[str, A
         "branch_excludes": [],
         "branch_includes": [_BRANCH],
         "build_caching_enabled": True,
-        "build_command": "echo CLOUDFLARE_BUILD_PHASE=DELEGATED_TO_WRANGLER",
+        "build_command": _BUILD_COMMAND,
         "build_token_uuid": build_token_uuid,
-        "deploy_command": "npm run cloudflare:deploy:staging",
+        "deploy_command": _DEPLOY_COMMAND,
         "path_excludes": [],
         "path_includes": ["*"],
         "repo_connection_uuid": connection_uuid,
         "root_directory": "/",
         "trigger_name": _TRIGGER_NAME,
     }
+
+
+def _validate_trigger_authority(
+    trigger: dict[str, Any],
+    worker_tag: str,
+    connection_uuid: str,
+) -> None:
+    if trigger.get("external_script_id") != worker_tag:
+        raise BootstrapStopped("CLOUDFLARE_STAGING_TRIGGER_WORKER_DRIFT")
+    repo = _object(
+        trigger.get("repo_connection"),
+        "CLOUDFLARE_TRIGGER_REPO_CONNECTION_INVALID",
+    )
+    expected_repo = {
+        "repo_connection_uuid": connection_uuid,
+        "provider_account_id": _GITHUB_OWNER_ID,
+        "provider_account_name": _GITHUB_OWNER,
+        "provider_type": "github",
+        "repo_id": _GITHUB_REPO_ID,
+        "repo_name": _GITHUB_REPO,
+    }
+    if any(repo.get(key) != value for key, value in expected_repo.items()):
+        raise BootstrapStopped("CLOUDFLARE_STAGING_TRIGGER_REPO_AUTHORITY_DRIFT")
+
+
+def _validate_trigger_configuration(
+    trigger: dict[str, Any],
+    trigger_uuid: str,
+    worker_tag: str,
+    connection_uuid: str,
+    desired: dict[str, Any],
+) -> None:
+    if (
+        _provider_uuid(
+            trigger.get("trigger_uuid"),
+            "CLOUDFLARE_TRIGGER_UUID_INVALID",
+        )
+        != trigger_uuid
+    ):
+        raise BootstrapStopped("CLOUDFLARE_STAGING_TRIGGER_UUID_DRIFT")
+    _validate_trigger_authority(trigger, worker_tag, connection_uuid)
+    for key, value in desired.items():
+        if key == "repo_connection_uuid":
+            continue
+        if trigger.get(key) != value:
+            raise BootstrapStopped("CLOUDFLARE_STAGING_TRIGGER_CONFIGURATION_DRIFT")
 
 
 def _ensure_trigger(
@@ -365,8 +471,10 @@ def _ensure_trigger(
         raise BootstrapStopped("CLOUDFLARE_STAGING_TRIGGER_NOT_UNIQUE")
     desired = _desired_trigger(connection_uuid, build_token_uuid)
     if matches:
+        existing = matches[0]
+        _validate_trigger_authority(existing, worker_tag, connection_uuid)
         trigger_uuid = _provider_uuid(
-            matches[0].get("trigger_uuid"),
+            existing.get("trigger_uuid"),
             "CLOUDFLARE_TRIGGER_UUID_INVALID",
         )
         patch = {
@@ -374,10 +482,20 @@ def _ensure_trigger(
             for key, value in desired.items()
             if key != "repo_connection_uuid"
         }
-        api.request(
-            "PATCH",
-            f"/accounts/{api.account_id}/builds/triggers/{trigger_uuid}",
-            body=patch,
+        updated = _object(
+            api.request(
+                "PATCH",
+                f"/accounts/{api.account_id}/builds/triggers/{trigger_uuid}",
+                body=patch,
+            ),
+            "CLOUDFLARE_TRIGGER_UPDATE_INVALID",
+        )
+        _validate_trigger_configuration(
+            updated,
+            trigger_uuid,
+            worker_tag,
+            connection_uuid,
+            desired,
         )
         print("CLOUDFLARE_STAGING_TRIGGER=REUSED")
         return trigger_uuid, False
@@ -391,25 +509,94 @@ def _ensure_trigger(
         ),
         "CLOUDFLARE_TRIGGER_CREATE_INVALID",
     )
-    print("CLOUDFLARE_STAGING_TRIGGER=CREATED")
-    return (
-        _provider_uuid(
-            result.get("trigger_uuid"),
-            "CLOUDFLARE_TRIGGER_UUID_INVALID",
-        ),
-        True,
+    trigger_uuid = _provider_uuid(
+        result.get("trigger_uuid"),
+        "CLOUDFLARE_TRIGGER_UUID_INVALID",
     )
+    _validate_trigger_configuration(
+        result,
+        trigger_uuid,
+        worker_tag,
+        connection_uuid,
+        desired,
+    )
+    print("CLOUDFLARE_STAGING_TRIGGER=CREATED")
+    return trigger_uuid, True
 
 
 def _builds_for_worker(api: CloudflareApi, worker_tag: str) -> list[dict[str, Any]]:
     rows = _list(
         api.request(
             "GET",
-            f"/accounts/{api.account_id}/builds/workers/{worker_tag}/builds?page=1&per_page=20",
+            f"/accounts/{api.account_id}/builds/workers/{worker_tag}/builds"
+            "?page=1&per_page=20",
         ),
         "CLOUDFLARE_BUILDS_INVALID",
     )
     return [_object(row, "CLOUDFLARE_BUILD_INVALID") for row in rows]
+
+
+def _build_trigger_metadata(
+    row: dict[str, Any],
+    *,
+    required: bool = False,
+) -> dict[str, Any] | None:
+    metadata = row.get("build_trigger_metadata")
+    if metadata is None:
+        if required:
+            raise BootstrapStopped("CLOUDFLARE_BUILD_TRIGGER_METADATA_MISSING")
+        return None
+    return _object(metadata, "CLOUDFLARE_BUILD_TRIGGER_METADATA_INVALID")
+
+
+def _build_commit_hash(
+    row: dict[str, Any],
+    *,
+    required: bool = False,
+) -> str | None:
+    trigger = _build_trigger_metadata(row, required=required)
+    if trigger is None:
+        return None
+    value = trigger.get("commit_hash")
+    if value is None or value == "":
+        if required:
+            raise BootstrapStopped("CLOUDFLARE_BUILD_SHA_MISSING")
+        return None
+    if not isinstance(value, str):
+        raise BootstrapStopped("CLOUDFLARE_BUILD_SHA_INVALID")
+    commit_hash = value.strip().lower()
+    if _SHA.fullmatch(commit_hash) is None:
+        raise BootstrapStopped("CLOUDFLARE_BUILD_SHA_INVALID")
+    return commit_hash
+
+
+def _build_metadata_matches_candidate(
+    trigger: dict[str, Any],
+    expected_sha: str,
+) -> bool:
+    return (
+        trigger.get("commit_hash") == expected_sha
+        and trigger.get("branch") == _BRANCH
+        and trigger.get("build_command") == _BUILD_COMMAND
+        and trigger.get("deploy_command") == _DEPLOY_COMMAND
+    )
+
+
+def _assert_build_candidate_identity(
+    row: dict[str, Any],
+    expected_sha: str,
+) -> None:
+    trigger = _build_trigger_metadata(row, required=True)
+    assert trigger is not None
+    commit_hash = _build_commit_hash(row, required=True)
+    if commit_hash != expected_sha:
+        raise BootstrapStopped("CLOUDFLARE_BUILD_SHA_MISMATCH")
+    if trigger.get("branch") != _BRANCH:
+        raise BootstrapStopped("CLOUDFLARE_BUILD_BRANCH_MISMATCH")
+    if trigger.get("build_command") != _BUILD_COMMAND:
+        raise BootstrapStopped("CLOUDFLARE_BUILD_COMMAND_MISMATCH")
+    if trigger.get("deploy_command") != _DEPLOY_COMMAND:
+        raise BootstrapStopped("CLOUDFLARE_DEPLOY_COMMAND_MISMATCH")
 
 
 def _find_exact_build(
@@ -418,7 +605,10 @@ def _find_exact_build(
     expected_sha: str,
 ) -> dict[str, Any] | None:
     for row in _builds_for_worker(api, worker_tag):
-        if row.get("commit_hash") == expected_sha:
+        trigger = _build_trigger_metadata(row)
+        if trigger is not None and _build_metadata_matches_candidate(
+            trigger, expected_sha
+        ):
             return row
     return None
 
@@ -445,7 +635,7 @@ def _start_or_reuse_build(
         api.request(
             "POST",
             f"/accounts/{api.account_id}/builds/triggers/{trigger_uuid}/builds",
-            body={"branch": _BRANCH},
+            body={"branch": _BRANCH, "commit_hash": expected_sha},
             expected=frozenset({200, 201}),
         ),
         "CLOUDFLARE_BUILD_CREATE_INVALID",
@@ -468,17 +658,18 @@ def _wait_build(api: CloudflareApi, build_uuid: str, expected_sha: str) -> None:
             ),
             "CLOUDFLARE_BUILD_STATUS_INVALID",
         )
-        commit_hash = result.get("commit_hash")
-        if isinstance(commit_hash, str) and commit_hash and commit_hash != expected_sha:
+        commit_hash = _build_commit_hash(result)
+        if commit_hash is not None and commit_hash != expected_sha:
             raise BootstrapStopped("CLOUDFLARE_BUILD_SHA_MISMATCH")
         outcome = result.get("build_outcome")
         if outcome == "success":
-            if commit_hash != expected_sha:
-                raise BootstrapStopped("CLOUDFLARE_BUILD_SHA_MISSING")
+            _assert_build_candidate_identity(result, expected_sha)
             print("CLOUDFLARE_STAGING_BUILD=SUCCESS")
             return
         if outcome in terminal_failures:
             raise BootstrapStopped("CLOUDFLARE_STAGING_BUILD_FAILED")
+        if result.get("status") == "stopped":
+            raise BootstrapStopped("CLOUDFLARE_BUILD_OUTCOME_MISSING")
         if time.monotonic() >= deadline:
             raise BootstrapStopped("CLOUDFLARE_STAGING_BUILD_TIMEOUT")
         time.sleep(10.0)

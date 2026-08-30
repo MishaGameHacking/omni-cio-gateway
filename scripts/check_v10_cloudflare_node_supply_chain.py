@@ -28,7 +28,7 @@ _FORBIDDEN_LIFECYCLE_SCRIPTS = {
 def _load_object(path: Path, label: str) -> dict[str, Any]:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+    except (OSError, ValueError) as exc:
         raise RuntimeError(f"CLOUDFLARE_NODE_SUPPLY_CHAIN_{label}_UNREADABLE") from exc
     if not isinstance(value, dict):
         raise RuntimeError(f"CLOUDFLARE_NODE_SUPPLY_CHAIN_{label}_INVALID")
@@ -49,18 +49,41 @@ def _read_npmrc() -> tuple[str, ...]:
     return tuple(line.strip() for line in lines if line.strip())
 
 
-def validate() -> None:
-    package = _load_object(PACKAGE, "PACKAGE")
-    if package.get("name") != "omni-cio-v10-cloudflare-delivery":
-        raise RuntimeError("CLOUDFLARE_NODE_SUPPLY_CHAIN_PACKAGE_NAME_INVALID")
-    if package.get("engines") != _EXPECTED_ENGINES:
-        raise RuntimeError("CLOUDFLARE_NODE_SUPPLY_CHAIN_TOOLCHAIN_INVALID")
-    if package.get("packageManager") != _EXPECTED_PACKAGE_MANAGER:
-        raise RuntimeError("CLOUDFLARE_NODE_SUPPLY_CHAIN_PACKAGE_MANAGER_INVALID")
-    if package.get("dependencies") != _EXPECTED_DEPENDENCIES:
-        raise RuntimeError("CLOUDFLARE_NODE_SUPPLY_CHAIN_DEPENDENCIES_INVALID")
-    if package.get("devDependencies") != _EXPECTED_DEV_DEPENDENCIES:
-        raise RuntimeError("CLOUDFLARE_NODE_SUPPLY_CHAIN_DEV_DEPENDENCIES_INVALID")
+def _require_equal(actual: object, expected: object, code: str) -> None:
+    if actual != expected:
+        raise RuntimeError(code)
+
+
+def _validate_package(package: dict[str, Any]) -> None:
+    expected = (
+        (
+            "name",
+            "omni-cio-v10-cloudflare-delivery",
+            "CLOUDFLARE_NODE_SUPPLY_CHAIN_PACKAGE_NAME_INVALID",
+        ),
+        (
+            "engines",
+            _EXPECTED_ENGINES,
+            "CLOUDFLARE_NODE_SUPPLY_CHAIN_TOOLCHAIN_INVALID",
+        ),
+        (
+            "packageManager",
+            _EXPECTED_PACKAGE_MANAGER,
+            "CLOUDFLARE_NODE_SUPPLY_CHAIN_PACKAGE_MANAGER_INVALID",
+        ),
+        (
+            "dependencies",
+            _EXPECTED_DEPENDENCIES,
+            "CLOUDFLARE_NODE_SUPPLY_CHAIN_DEPENDENCIES_INVALID",
+        ),
+        (
+            "devDependencies",
+            _EXPECTED_DEV_DEPENDENCIES,
+            "CLOUDFLARE_NODE_SUPPLY_CHAIN_DEV_DEPENDENCIES_INVALID",
+        ),
+    )
+    for key, value, code in expected:
+        _require_equal(package.get(key), value, code)
 
     scripts = _object(package.get("scripts"), "SCRIPTS")
     forbidden = sorted(_FORBIDDEN_LIFECYCLE_SCRIPTS.intersection(scripts))
@@ -69,43 +92,68 @@ def validate() -> None:
             "CLOUDFLARE_NODE_SUPPLY_CHAIN_LIFECYCLE_SCRIPTS_FORBIDDEN:"
             + ",".join(forbidden)
         )
+    _require_equal(
+        _read_npmrc(),
+        ("ignore-scripts=true",),
+        "CLOUDFLARE_NODE_SUPPLY_CHAIN_NPMRC_INVALID",
+    )
 
-    if _read_npmrc() != ("ignore-scripts=true",):
-        raise RuntimeError("CLOUDFLARE_NODE_SUPPLY_CHAIN_NPMRC_INVALID")
 
-    lock = _load_object(PACKAGE_LOCK, "PACKAGE_LOCK")
-    if lock.get("lockfileVersion") != 3 or lock.get("requires") is not True:
+def _validate_lock_identity(lock: dict[str, Any], package: dict[str, Any]) -> None:
+    if (lock.get("lockfileVersion"), lock.get("requires")) != (3, True):
         raise RuntimeError("CLOUDFLARE_NODE_SUPPLY_CHAIN_LOCKFILE_VERSION_INVALID")
-    if lock.get("name") != package.get("name") or lock.get("version") != package.get(
-        "version"
+    if (lock.get("name"), lock.get("version")) != (
+        package.get("name"),
+        package.get("version"),
     ):
         raise RuntimeError("CLOUDFLARE_NODE_SUPPLY_CHAIN_LOCK_IDENTITY_INVALID")
 
-    packages = _object(lock.get("packages"), "LOCK_PACKAGES")
+
+def _validate_lock_root(packages: dict[str, Any], package: dict[str, Any]) -> None:
     root = _object(packages.get(""), "LOCK_ROOT")
-    expected_root = {
+    expected = {
         "name": package.get("name"),
         "version": package.get("version"),
         "dependencies": _EXPECTED_DEPENDENCIES,
         "devDependencies": _EXPECTED_DEV_DEPENDENCIES,
         "engines": _EXPECTED_ENGINES,
     }
-    for key, expected in expected_root.items():
-        if root.get(key) != expected:
-            raise RuntimeError(
-                f"CLOUDFLARE_NODE_SUPPLY_CHAIN_LOCK_ROOT_{key.upper()}_INVALID"
-            )
+    for key, value in expected.items():
+        _require_equal(
+            root.get(key),
+            value,
+            f"CLOUDFLARE_NODE_SUPPLY_CHAIN_LOCK_ROOT_{key.upper()}_INVALID",
+        )
 
-    containers = _object(
-        packages.get("node_modules/@cloudflare/containers"),
-        "LOCK_CONTAINERS",
+
+def _validate_locked_versions(packages: dict[str, Any]) -> None:
+    locked = (
+        (
+            "node_modules/@cloudflare/containers",
+            "LOCK_CONTAINERS",
+            "0.3.7",
+            "CLOUDFLARE_NODE_SUPPLY_CHAIN_LOCK_CONTAINERS_INVALID",
+        ),
+        (
+            "node_modules/wrangler",
+            "LOCK_WRANGLER",
+            "4.127.1",
+            "CLOUDFLARE_NODE_SUPPLY_CHAIN_LOCK_WRANGLER_INVALID",
+        ),
     )
-    if containers.get("version") != "0.3.7":
-        raise RuntimeError("CLOUDFLARE_NODE_SUPPLY_CHAIN_LOCK_CONTAINERS_INVALID")
+    for path, label, version, code in locked:
+        package = _object(packages.get(path), label)
+        _require_equal(package.get("version"), version, code)
 
-    wrangler = _object(packages.get("node_modules/wrangler"), "LOCK_WRANGLER")
-    if wrangler.get("version") != "4.127.1":
-        raise RuntimeError("CLOUDFLARE_NODE_SUPPLY_CHAIN_LOCK_WRANGLER_INVALID")
+
+def validate() -> None:
+    package = _load_object(PACKAGE, "PACKAGE")
+    _validate_package(package)
+    lock = _load_object(PACKAGE_LOCK, "PACKAGE_LOCK")
+    _validate_lock_identity(lock, package)
+    packages = _object(lock.get("packages"), "LOCK_PACKAGES")
+    _validate_lock_root(packages, package)
+    _validate_locked_versions(packages)
 
 
 def main() -> int:

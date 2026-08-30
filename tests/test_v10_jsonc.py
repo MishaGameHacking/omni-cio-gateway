@@ -32,6 +32,14 @@ class JsoncTests(unittest.TestCase):
         payload = loads_jsonc('{"value": "quote: \\" // not a comment",}')
         self.assertEqual(payload["value"], 'quote: " // not a comment')
 
+    def test_comment_newlines_preserve_json_error_locality(self) -> None:
+        source = '{\n/* one\n two */\n"value": 1,\n}'
+        self.assertEqual(loads_jsonc(source), {"value": 1})
+
+    def test_unterminated_json_string_fails_closed(self) -> None:
+        with self.assertRaisesRegex(ValueError, "unterminated JSON string"):
+            loads_jsonc('{"value": "unterminated}')
+
 
 if __name__ == "__main__":
     unittest.main()

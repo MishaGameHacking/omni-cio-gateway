@@ -18,11 +18,10 @@ EXPECTED_SHARDS = [
     "CFV-6-RELEASE-PROVENANCE",
 ]
 
-
 def _load() -> dict[str, Any]:
     try:
         value = json.loads(CONTRACT.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+    except (OSError, ValueError) as exc:
         raise RuntimeError("CLOUDFLARE_VERIFIER_CONTRACT_UNREADABLE") from exc
     if not isinstance(value, dict):
         raise RuntimeError("CLOUDFLARE_VERIFIER_CONTRACT_INVALID")
@@ -40,8 +39,7 @@ def _require_bool(section: dict[str, Any], key: str, expected: bool) -> None:
         raise RuntimeError(f"CLOUDFLARE_VERIFIER_{key.upper()}_INVALID")
 
 
-def validate() -> None:
-    payload = _load()
+def _validate_identity(payload: dict[str, Any]) -> None:
     if payload.get("schema") != "omni-cio.v10.cloudflare-builds-verifier.v1":
         raise RuntimeError("CLOUDFLARE_VERIFIER_SCHEMA_INVALID")
     if payload.get("milestone") != "CF-A":
@@ -49,13 +47,17 @@ def validate() -> None:
     if payload.get("branch") != "system/cloudflare-public-product":
         raise RuntimeError("CLOUDFLARE_VERIFIER_BRANCH_INVALID")
 
+
+def _validate_authority(payload: dict[str, Any]) -> None:
     authority = _object(payload.get("authority"), "AUTHORITY")
     _require_bool(authority, "provider_mutation_allowed", False)
     _require_bool(authority, "production_promotion_allowed", False)
     _require_bool(authority, "github_engineering_authority_retained", True)
 
+
+def _validate_reference(payload: dict[str, Any]) -> None:
     reference = _object(payload.get("workers_builds_reference"), "REFERENCE")
-    expected_reference = {
+    expected = {
         "included_build_minutes_per_month": 6000,
         "max_concurrent_builds": 6,
         "build_timeout_minutes": 20,
@@ -64,28 +66,34 @@ def validate() -> None:
         "disk_gib_per_build": 20,
         "automatic_paid_overage_authorized": False,
     }
-    for key, expected in expected_reference.items():
-        if reference.get(key) != expected:
+    for key, value in expected.items():
+        if reference.get(key) != value:
             raise RuntimeError(f"CLOUDFLARE_VERIFIER_REFERENCE_{key.upper()}_INVALID")
 
+
+def _validate_dispatch(payload: dict[str, Any]) -> None:
     dispatch = _object(payload.get("dispatch"), "DISPATCH")
     if dispatch.get("mode") != "WORK_CONSERVING_COMPLEMENTARY_SHARDS":
         raise RuntimeError("CLOUDFLARE_VERIFIER_DISPATCH_MODE_INVALID")
-    for key in (
+    required_true = (
         "fill_all_safe_slots",
         "distinct_useful_work_by_default",
         "quota_or_provider_outage_reassigns_work",
         "lenovo_catch_all_fallback_required",
         "exact_head_binding_required",
-    ):
-        _require_bool(dispatch, key, True)
-    for key in (
+    )
+    required_false = (
         "duplicate_heavy_work_by_default",
         "missing_or_failed_shard_may_report_green",
         "cloudflare_loss_may_weaken_required_assertions",
-    ):
+    )
+    for key in required_true:
+        _require_bool(dispatch, key, True)
+    for key in required_false:
         _require_bool(dispatch, key, False)
 
+
+def _validate_shards(payload: dict[str, Any]) -> None:
     shards = payload.get("shards")
     if not isinstance(shards, list):
         raise RuntimeError("CLOUDFLARE_VERIFIER_SHARDS_INVALID")
@@ -95,27 +103,29 @@ def validate() -> None:
     for item in shards:
         if not isinstance(item, dict):
             raise RuntimeError("CLOUDFLARE_VERIFIER_SHARD_INVALID")
-        expected_command = "python scripts/run_v10_cloudflare_verifier.py " + str(
-            item.get("id")
+        expected_command = (
+            "python scripts/run_v10_cloudflare_verifier.py " + str(item.get("id"))
         )
         if item.get("command") != expected_command:
             raise RuntimeError("CLOUDFLARE_VERIFIER_SHARD_COMMAND_INVALID")
         if item.get("requires_runtime_secrets") is not False:
             raise RuntimeError("CLOUDFLARE_VERIFIER_SHARD_SECRET_SCOPE_INVALID")
 
+
+def _validate_security(payload: dict[str, Any]) -> None:
     security = _object(payload.get("security"), "SECURITY")
     for key, value in security.items():
         if value is not False:
             raise RuntimeError(f"CLOUDFLARE_VERIFIER_SECURITY_{key.upper()}_INVALID")
 
+
+def _validate_runner() -> None:
     try:
         runner = RUNNER.read_text(encoding="utf-8")
     except (OSError, UnicodeError) as exc:
         raise RuntimeError("CLOUDFLARE_VERIFIER_RUNNER_UNREADABLE") from exc
-    for identifier in EXPECTED_SHARDS:
-        if identifier not in runner:
-            raise RuntimeError("CLOUDFLARE_VERIFIER_RUNNER_SHARD_MISSING")
-    for required in (
+    required = (
+        *EXPECTED_SHARDS,
         "WORKERS_CI_COMMIT_SHA",
         "GITHUB_SHA",
         "CLOUDFLARE_VERIFIER_SHA_MISMATCH",
@@ -123,19 +133,23 @@ def validate() -> None:
         '"--ignore-scripts"',
         "check=True",
         "shard.runner()",
-    ):
-        if required not in runner:
-            raise RuntimeError("CLOUDFLARE_VERIFIER_RUNNER_GUARD_MISSING")
-    for forbidden in (
-        "subprocess.run(command",
-        "_run(command",
-        ".commands",
-        "shell=True",
-    ):
-        if forbidden in runner:
-            raise RuntimeError(
-                "CLOUDFLARE_VERIFIER_DYNAMIC_COMMAND_EXECUTION_FORBIDDEN"
-            )
+    )
+    if any(marker not in runner for marker in required):
+        raise RuntimeError("CLOUDFLARE_VERIFIER_RUNNER_GUARD_MISSING")
+    forbidden = ("subprocess.run(command", "_run(command", ".commands", "shell=True")
+    if any(marker in runner for marker in forbidden):
+        raise RuntimeError("CLOUDFLARE_VERIFIER_DYNAMIC_COMMAND_EXECUTION_FORBIDDEN")
+
+
+def validate() -> None:
+    payload = _load()
+    _validate_identity(payload)
+    _validate_authority(payload)
+    _validate_reference(payload)
+    _validate_dispatch(payload)
+    _validate_shards(payload)
+    _validate_security(payload)
+    _validate_runner()
 
 
 def main() -> int:

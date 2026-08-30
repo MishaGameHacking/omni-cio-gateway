@@ -20,11 +20,6 @@ jobs:
     timeout-minutes: 45
     env:
       EXPECTED_HEAD: ${{ github.sha }}
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID_SECRET_VALUE: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      CLOUDFLARE_ACCOUNT_ID_VAR_VALUE: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-      NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
-      NEON_ORG_ID: ${{ vars.NEON_ORG_ID }}
 
     steps:
       - name: Expose installed Git Bash
@@ -55,17 +50,33 @@ jobs:
 
       - name: Resolve provider authority fail-closed
         shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID_SECRET_VALUE: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_ACCOUNT_ID_VAR_VALUE: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_ORG_ID: ${{ vars.NEON_ORG_ID }}
         run: |
           set -euo pipefail
           test -n "${CLOUDFLARE_API_TOKEN:-}"
           test -n "${NEON_API_KEY:-}"
           test -n "${NEON_ORG_ID:-}"
-          if [ -n "${CLOUDFLARE_ACCOUNT_ID_SECRET_VALUE:-}" ]; then
+          if [[ -n "${CLOUDFLARE_ACCOUNT_ID_SECRET_VALUE:-}" ]]; then
             account_id="$CLOUDFLARE_ACCOUNT_ID_SECRET_VALUE"
           else
             account_id="${CLOUDFLARE_ACCOUNT_ID_VAR_VALUE:-}"
           fi
           test -n "$account_id"
+          if [[ ! "$account_id" =~ ^[0-9A-Fa-f]{32}$ ]]; then
+            echo "CLOUDFLARE_ACCOUNT_ID=INVALID" >&2
+            exit 78
+          fi
+          if [[ ! "$NEON_ORG_ID" =~ ^[a-z0-9-]{1,60}$ ]]; then
+            echo "NEON_ORG_ID=INVALID" >&2
+            exit 78
+          fi
+          echo "::add-mask::$account_id"
+          echo "::add-mask::$NEON_ORG_ID"
           printf 'CLOUDFLARE_ACCOUNT_ID=%s\n' "$account_id" >> "$GITHUB_ENV"
           echo "CLOUDFLARE_PROVIDER_AUTHORITY=AVAILABLE"
 
@@ -81,6 +92,9 @@ jobs:
 
       - name: Provision isolated Neon staging runtime role
         shell: bash
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_ORG_ID: ${{ vars.NEON_ORG_ID }}
         run: |
           set -euo pipefail
           dsn_file="${RUNNER_TEMP}/omni-cio-v10-cloudflare-staging-dsn.txt"
@@ -96,19 +110,23 @@ jobs:
         run: |
           set -euo pipefail
           test "$(node --version)" = "v24.18.0"
-          test "$(npx --yes npm@10.9.2 --version)" = "10.9.2"
-          npx --yes npm@10.9.2 ci --ignore-scripts --no-audit --no-fund
-          test "$(npx wrangler --version | awk '{print $NF}')" = "4.127.1"
+          test "$(npm --version)" = "11.16.0"
+          npm ci --ignore-scripts --no-audit --no-fund
+          test "$(./node_modules/.bin/wrangler --version | awk '{print $NF}')" = "4.127.1"
 
       - name: Bootstrap isolated staging Worker without local Containers
         shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
           set -euo pipefail
-          npx wrangler deploy --config cloudflare/wrangler.bootstrap.staging.jsonc
+          ./node_modules/.bin/wrangler deploy --config cloudflare/wrangler.bootstrap.staging.jsonc
 
       - name: Configure Workers Builds and accept exact staging build
         id: bootstrap
         shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
           set -euo pipefail
           python -m scripts.bootstrap_v10_cloudflare_builds \
@@ -153,10 +171,14 @@ jobs:
         if: always()
         shell: bash
         run: |
-          rm -f "${OMNI_V10_STAGING_DSN_FILE:-}"
+          rm -f -- "${RUNNER_TEMP}/omni-cio-v10-cloudflare-staging-dsn.txt"
+          if [[ -n "${OMNI_V10_STAGING_DSN_FILE:-}" ]]; then
+            rm -f -- "$OMNI_V10_STAGING_DSN_FILE"
+          fi
           git config --local --unset-all credential.helper 2>/dev/null || true
           if git rev-parse --verify HEAD >/dev/null 2>&1; then
             git reset --hard HEAD
             git clean -ffdx
           else
             rm -rf .git
+          fi
