@@ -16,6 +16,15 @@ BOOTSTRAP_WORKER = ROOT / "cloudflare/bootstrap-staging-worker.js"
 NEON_PROVISIONER = ROOT / "scripts/provision_v10_cloudflare_neon_runtime.py"
 BUILDS_BOOTSTRAP = ROOT / "scripts/bootstrap_v10_cloudflare_builds.py"
 
+_CLOUDFLARE_ACCOUNT_ID_SECRET = "secrets.CLOUDFLARE_ACCOUNT_ID"
+_NEON_ORG_ID_SECRET = "secrets.NEON_ORG_ID"
+_NEON_PROJECT_ID_SECRET = "secrets.NEON_PROJECT_ID"
+_PROVIDER_IDENTITY_SECRET_MARKERS = (
+    _CLOUDFLARE_ACCOUNT_ID_SECRET,
+    _NEON_ORG_ID_SECRET,
+    _NEON_PROJECT_ID_SECRET,
+)
+
 
 def _read(path: Path) -> str:
     try:
@@ -47,10 +56,10 @@ def _validate_candidate_secret_scope(workflow: str) -> None:
             "NEON_ORG_ID:",
             "NEON_PROJECT_ID:",
             "secrets.CLOUDFLARE_API_TOKEN",
-            "secrets.CLOUDFLARE_ACCOUNT_ID",
+            _CLOUDFLARE_ACCOUNT_ID_SECRET,
             "secrets.NEON_API_KEY",
-            "secrets.NEON_ORG_ID",
-            "secrets.NEON_PROJECT_ID",
+            _NEON_ORG_ID_SECRET,
+            _NEON_PROJECT_ID_SECRET,
         ),
         "CLOUDFLARE_CANDIDATE_JOB_SECRET_SCOPE_TOO_BROAD",
     )
@@ -59,11 +68,7 @@ def _validate_candidate_secret_scope(workflow: str) -> None:
 def _validate_provider_identity_custody(workflow: str) -> None:
     _require_markers(
         workflow,
-        (
-            "secrets.CLOUDFLARE_ACCOUNT_ID",
-            "secrets.NEON_ORG_ID",
-            "secrets.NEON_PROJECT_ID",
-        ),
+        _PROVIDER_IDENTITY_SECRET_MARKERS,
         "CLOUDFLARE_PROVIDER_IDENTITY_SECRET_CUSTODY_MISSING",
     )
     _forbid_markers(
@@ -86,10 +91,10 @@ def _validate_candidate_workflow() -> None:
             "name: V10 Cloudflare Candidate Deployment",
             "system/cloudflare-public-product",
             "secrets.CLOUDFLARE_API_TOKEN",
-            "secrets.CLOUDFLARE_ACCOUNT_ID",
+            _CLOUDFLARE_ACCOUNT_ID_SECRET,
             "secrets.NEON_API_KEY",
-            "secrets.NEON_ORG_ID",
-            "secrets.NEON_PROJECT_ID",
+            _NEON_ORG_ID_SECRET,
+            _NEON_PROJECT_ID_SECRET,
             "python -m scripts.check_v10_cloudflare_provider_readiness",
             "provision_v10_cloudflare_neon_runtime",
             "wrangler.bootstrap.staging.jsonc",
@@ -142,7 +147,7 @@ def _validate_readiness_workflow() -> None:
         readiness,
         (
             "probe_provider_access_from_env",
-            "secrets.NEON_PROJECT_ID",
+            _NEON_PROJECT_ID_SECRET,
             "NEON_PROJECT_ID:",
         ),
         "CLOUDFLARE_CANDIDATE_NEON_READ_PROBE_MISSING",
