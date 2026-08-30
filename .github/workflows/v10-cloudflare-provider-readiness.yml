@@ -62,11 +62,12 @@ jobs:
           NEON_ORG_ID_VALUE: ${{ vars.NEON_ORG_ID }}
         run: python -m scripts.check_v10_cloudflare_provider_readiness
 
-      - name: Probe Neon read authority fail-closed
+      - name: Probe Neon exact-project read authority fail-closed
         shell: bash
         env:
           NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
           NEON_ORG_ID: ${{ vars.NEON_ORG_ID }}
+          NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
         run: |
           set -euo pipefail
           python -c "from scripts.provision_v10_cloudflare_neon_runtime import probe_provider_access_from_env; probe_provider_access_from_env()"

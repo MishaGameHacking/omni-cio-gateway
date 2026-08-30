@@ -7,7 +7,7 @@ import re
 import secrets
 import sys
 from typing import Any
-from urllib.parse import parse_qs, urlencode, urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 from scripts import provision_v10_render_neon_preview as _base
 from scripts import provision_v10_render_neon_preview_org_scope as _org
@@ -22,6 +22,7 @@ _RUNTIME_DSN_FILENAME_BY_ENVIRONMENT = {
     "production": "omni-cio-v10-cloudflare-production-dsn.txt",
 }
 _ROLE_PATTERN = re.compile(r"^[a-z_][a-z0-9_]{0,62}$")
+_NEON_PROJECT_ID_PATTERN = re.compile(r"^[a-z0-9-]{1,60}$")
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -88,52 +89,63 @@ def _runtime_sql(runtime_role: str) -> str:
     return rendered
 
 
-def _validate_project_probe(
+def _validate_neon_project_id(value: str) -> str:
+    if _NEON_PROJECT_ID_PATTERN.fullmatch(value) is None:
+        raise _base.ProvisioningStopped("NEON_PROJECT_ID_INVALID")
+    return value
+
+
+def _required_neon_project_id() -> str:
+    value = os.environ.get("NEON_PROJECT_ID", "").strip()
+    if not value:
+        raise _base.ProvisioningStopped("NEON_PROJECT_ID_REQUIRED")
+    return _validate_neon_project_id(value)
+
+
+def _validate_bound_project(
     payload: object,
     organization_id: str,
+    expected_project_id: str,
 ) -> dict[str, Any]:
-    body = _base._json_object(payload, "NEON_PROJECTS_RESPONSE_INVALID")
-    rows = _base._json_list(body.get("projects"), "NEON_PROJECTS_INVALID")
-    projects = [
-        _base._json_object(row, "NEON_PROJECT_INVALID")
-        for row in rows
-        if isinstance(row, dict) and row.get("name") == _base.NEON_PROJECT_NAME
-    ]
-    if len(projects) != 1:
-        raise _base.ProvisioningStopped("NEON_EXPECTED_PROJECT_NOT_UNIQUE")
-    project = projects[0]
+    body = _base._json_object(payload, "NEON_PROJECT_RESPONSE_INVALID")
+    project = _base._json_object(
+        body.get("project", body),
+        "NEON_PROJECT_RESPONSE_INVALID",
+    )
+    safe_project_id = _validate_neon_project_id(expected_project_id)
+    if project.get("id") != safe_project_id:
+        raise _base.ProvisioningStopped("NEON_PROJECT_ID_MISMATCH")
+    if project.get("name") != _base.NEON_PROJECT_NAME:
+        raise _base.ProvisioningStopped("NEON_PROJECT_NAME_DRIFT")
     if project.get("org_id") != organization_id:
         raise _base.ProvisioningStopped("NEON_PROJECT_ORGANIZATION_DRIFT")
     if project.get("pg_version") != 18:
         raise _base.ProvisioningStopped("NEON_POSTGRES18_REQUIRED")
     if project.get("region_id") != _base.NEON_REGION:
         raise _base.ProvisioningStopped("NEON_FRANKFURT_REGION_REQUIRED")
-    _base._provider_segment(project.get("id"), "NEON_PROJECT_ID_INVALID")
     return project
 
 
-def _discover_expected_project(
+def _load_expected_project(
     api: _org.OrgScopedNeonApi,
     organization_id: str,
+    project_id: str,
 ) -> dict[str, Any]:
-    query = urlencode(
-        {
-            "limit": 400,
-            "search": _base.NEON_PROJECT_NAME,
-        }
-    )
-    return _validate_project_probe(
-        api.request("GET", f"/projects?{query}"),
+    safe_project_id = _validate_neon_project_id(project_id)
+    return _validate_bound_project(
+        api.request("GET", f"/projects/{safe_project_id}"),
         organization_id,
+        safe_project_id,
     )
 
 
 def _provider_context(
     api: _org.OrgScopedNeonApi,
     organization_id: str,
+    project_id: str,
 ) -> tuple[str, dict[str, Any]]:
     safe_org_id = _org._validate_neon_org_id(organization_id)
-    project = _discover_expected_project(api, safe_org_id)
+    project = _load_expected_project(api, safe_org_id, project_id)
     try:
         _org._neon_organization(api, safe_org_id)
     except _base.ProvisioningStopped as exc:
@@ -152,8 +164,9 @@ def _emit_provider_access(scope: str) -> None:
 def probe_provider_access(
     api: _org.OrgScopedNeonApi,
     organization_id: str,
+    project_id: str,
 ) -> str:
-    scope, _ = _provider_context(api, organization_id)
+    scope, _ = _provider_context(api, organization_id, project_id)
     _emit_provider_access(scope)
     return scope
 
@@ -161,8 +174,9 @@ def probe_provider_access(
 def probe_provider_access_from_env() -> str:
     neon_key = _base._required_env("NEON_API_KEY")
     organization_id = _org._required_neon_org_id()
+    project_id = _required_neon_project_id()
     neon = _org.OrgScopedNeonApi(neon_key, organization_id)
-    return probe_provider_access(neon, organization_id)
+    return probe_provider_access(neon, organization_id, project_id)
 
 
 class _BoundProjectNeonApi(_org.OrgScopedNeonApi):
@@ -332,11 +346,12 @@ def run(expected_sha: str, environment: str) -> str:
     runtime_role = _runtime_role(environment)
     neon_key = _base._required_env("NEON_API_KEY")
     organization_id = _org._required_neon_org_id()
+    project_id = _required_neon_project_id()
     runtime_password = secrets.token_urlsafe(48)
     _base._mask(runtime_password)
 
     neon = _org.OrgScopedNeonApi(neon_key, organization_id)
-    scope, project = _provider_context(neon, organization_id)
+    scope, project = _provider_context(neon, organization_id, project_id)
     _emit_provider_access(scope)
     target = _org._neon_target(
         _BoundProjectNeonApi(neon, organization_id, project),

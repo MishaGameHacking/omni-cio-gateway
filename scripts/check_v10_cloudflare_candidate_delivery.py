@@ -61,6 +61,7 @@ def _validate_candidate_workflow() -> None:
             "vars.CLOUDFLARE_ACCOUNT_ID",
             "secrets.NEON_API_KEY",
             "vars.NEON_ORG_ID",
+            "vars.NEON_PROJECT_ID",
             "provision_v10_cloudflare_neon_runtime",
             "wrangler.bootstrap.staging.jsonc",
             "bootstrap_v10_cloudflare_builds",
@@ -71,6 +72,8 @@ def _validate_candidate_workflow() -> None:
             "./node_modules/.bin/wrangler",
             "CLOUDFLARE_ACCOUNT_ID=INVALID",
             "NEON_ORG_ID=INVALID",
+            "NEON_PROJECT_ID=MISSING",
+            "NEON_PROJECT_ID=INVALID",
             'echo "::add-mask::$account_id"',
             'echo "::add-mask::$NEON_ORG_ID"',
             "for attempt in $(seq 1 40); do",
@@ -108,7 +111,11 @@ def _validate_readiness_workflow() -> None:
     )
     _require_markers(
         readiness,
-        ("probe_provider_access_from_env",),
+        (
+            "probe_provider_access_from_env",
+            "vars.NEON_PROJECT_ID",
+            "NEON_PROJECT_ID:",
+        ),
         "CLOUDFLARE_CANDIDATE_NEON_READ_PROBE_MISSING",
     )
     _forbid_markers(
@@ -187,9 +194,13 @@ def _validate_neon_provisioner() -> None:
         (
             '"staging": "omni_cio_cloudflare_staging"',
             '"production": "omni_cio_cloudflare_prod"',
-            "project = _discover_expected_project(api, safe_org_id)",
+            "_NEON_PROJECT_ID_PATTERN",
+            "project_id = _required_neon_project_id()",
+            "project = _load_expected_project(api, safe_org_id, project_id)",
+            'api.request("GET", f"/projects/{safe_project_id}")',
+            "NEON_PROJECT_ID_MISMATCH",
+            "NEON_PROJECT_NAME_DRIFT",
             "_org._neon_organization(api, safe_org_id)",
-            '"search": _base.NEON_PROJECT_NAME',
             "CLOUDFLARE_NEON_BROAD_PROJECT_QUERY_FORBIDDEN",
             "CLOUDFLARE_NEON_PROJECT_CREATE_FORBIDDEN",
             "CLOUDFLARE_NEON_PROVIDER_ACCESS=READY",
@@ -202,8 +213,12 @@ def _validate_neon_provisioner() -> None:
     )
     _forbid_markers(
         neon,
-        ("_base._neon_organization(api)",),
-        "CLOUDFLARE_CANDIDATE_NEON_BROAD_ORG_QUERY_FORBIDDEN",
+        (
+            "_discover_expected_project",
+            'api.request("GET", f"/projects?{query}")',
+            "_base._neon_organization(api)",
+        ),
+        "CLOUDFLARE_CANDIDATE_NEON_BROAD_DISCOVERY_FORBIDDEN",
     )
     _forbid_markers(
         neon,

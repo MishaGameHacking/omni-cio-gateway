@@ -56,11 +56,16 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID_VAR_VALUE: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
           NEON_ORG_ID: ${{ vars.NEON_ORG_ID }}
+          NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
         run: |
           set -euo pipefail
           test -n "${CLOUDFLARE_API_TOKEN:-}"
           test -n "${NEON_API_KEY:-}"
           test -n "${NEON_ORG_ID:-}"
+          if [[ -z "${NEON_PROJECT_ID:-}" ]]; then
+            echo "NEON_PROJECT_ID=MISSING" >&2
+            exit 78
+          fi
           if [[ -n "${CLOUDFLARE_ACCOUNT_ID_SECRET_VALUE:-}" ]]; then
             account_id="$CLOUDFLARE_ACCOUNT_ID_SECRET_VALUE"
           else
@@ -73,6 +78,10 @@ jobs:
           fi
           if [[ ! "$NEON_ORG_ID" =~ ^[a-z0-9-]{1,60}$ ]]; then
             echo "NEON_ORG_ID=INVALID" >&2
+            exit 78
+          fi
+          if [[ ! "$NEON_PROJECT_ID" =~ ^[a-z0-9-]{1,60}$ ]]; then
+            echo "NEON_PROJECT_ID=INVALID" >&2
             exit 78
           fi
           echo "::add-mask::$account_id"
@@ -95,6 +104,7 @@ jobs:
         env:
           NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
           NEON_ORG_ID: ${{ vars.NEON_ORG_ID }}
+          NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
         run: |
           set -euo pipefail
           dsn_file="${RUNNER_TEMP}/omni-cio-v10-cloudflare-staging-dsn.txt"

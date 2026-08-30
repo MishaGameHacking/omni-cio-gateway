@@ -14,6 +14,16 @@ from scripts import provision_v10_render_neon_preview as neon_base
 from scripts import provision_v10_render_neon_preview_org_scope as neon_org
 
 
+_PROJECT_ID = "project-test"
+_PROJECT = {
+    "id": _PROJECT_ID,
+    "name": neon_base.NEON_PROJECT_NAME,
+    "org_id": "org-test",
+    "region_id": neon_base.NEON_REGION,
+    "pg_version": 18,
+}
+
+
 class _ProjectScopedNeonApi(neon_org.OrgScopedNeonApi):
     def __init__(self) -> None:
         self.calls: list[tuple[str, str]] = []
@@ -26,19 +36,11 @@ class _ProjectScopedNeonApi(neon_org.OrgScopedNeonApi):
                 "project-scoped authority must not require user org listing"
             )
         if method == "GET" and path.startswith("/projects?"):
-            if "org_id=" in path:
-                raise AssertionError("project-scoped discovery must not require org_id")
-            return {
-                "projects": [
-                    {
-                        "id": "project-test",
-                        "name": neon_base.NEON_PROJECT_NAME,
-                        "org_id": "org-test",
-                        "region_id": neon_base.NEON_REGION,
-                        "pg_version": 18,
-                    }
-                ]
-            }
+            raise AssertionError(
+                "project-scoped authority must not enumerate provider-wide projects"
+            )
+        if method == "GET" and path == f"/projects/{_PROJECT_ID}":
+            return {"project": dict(_PROJECT)}
         if method == "GET" and path == "/organizations/org-test":
             raise neon_base.ProvisioningStopped(
                 "NEON_API_KEY_INSUFFICIENT",
@@ -59,17 +61,11 @@ class _OrganizationScopedNeonApi(neon_org.OrgScopedNeonApi):
                 "organization scope must use the exact configured org endpoint"
             )
         if method == "GET" and path.startswith("/projects?"):
-            return {
-                "projects": [
-                    {
-                        "id": "project-test",
-                        "name": neon_base.NEON_PROJECT_NAME,
-                        "org_id": "org-test",
-                        "region_id": neon_base.NEON_REGION,
-                        "pg_version": 18,
-                    }
-                ]
-            }
+            raise AssertionError(
+                "Cloudflare authority must not enumerate provider-wide projects"
+            )
+        if method == "GET" and path == f"/projects/{_PROJECT_ID}":
+            return {"project": dict(_PROJECT)}
         if method == "GET" and path == "/organizations/org-test":
             return {"organization": {"id": "org-test", "plan": "free"}}
         raise AssertionError((method, path))
@@ -125,48 +121,75 @@ class CloudflareCandidateProviderTests(unittest.TestCase):
                 ):
                     neon._write_runtime_dsn(outside_target, "postgresql://masked")
 
-    def test_provider_probe_accepts_project_scoped_key_without_broad_org_query(
+    def test_provider_probe_accepts_project_scoped_key_without_broad_project_query(
         self,
     ) -> None:
         api = _ProjectScopedNeonApi()
-        scope = neon.probe_provider_access(api, "org-test")
+        scope = neon.probe_provider_access(api, "org-test", _PROJECT_ID)
         self.assertEqual(scope, "PROJECT_SCOPED")
-        project_queries = [
-            path
-            for method, path in api.calls
-            if method == "GET" and path.startswith("/projects?")
-        ]
-        self.assertEqual(len(project_queries), 1)
-        self.assertNotIn("org_id=", project_queries[0])
+        self.assertIn(("GET", f"/projects/{_PROJECT_ID}"), api.calls)
+        self.assertFalse(
+            any(
+                method == "GET" and path.startswith("/projects?")
+                for method, path in api.calls
+            )
+        )
         self.assertNotIn(("GET", "/users/me/organizations"), api.calls)
         self.assertIn(("GET", "/organizations/org-test"), api.calls)
 
     def test_project_probe_rejects_missing_authority_fields(self) -> None:
-        base_project = {
-            "id": "project-test",
-            "name": neon_base.NEON_PROJECT_NAME,
-            "pg_version": 18,
-        }
         missing_org_payload = {
-            "projects": [{**base_project, "region_id": neon_base.NEON_REGION}]
+            "project": {key: value for key, value in _PROJECT.items() if key != "org_id"}
         }
         with self.assertRaisesRegex(
             RuntimeError,
             "NEON_PROJECT_ORGANIZATION_DRIFT",
         ):
-            neon._validate_project_probe(missing_org_payload, "org-test")
+            neon._validate_bound_project(
+                missing_org_payload,
+                "org-test",
+                _PROJECT_ID,
+            )
         missing_region_payload = {
-            "projects": [{**base_project, "org_id": "org-test"}]
+            "project": {
+                key: value for key, value in _PROJECT.items() if key != "region_id"
+            }
         }
         with self.assertRaisesRegex(
             RuntimeError,
             "NEON_FRANKFURT_REGION_REQUIRED",
         ):
-            neon._validate_project_probe(missing_region_payload, "org-test")
+            neon._validate_bound_project(
+                missing_region_payload,
+                "org-test",
+                _PROJECT_ID,
+            )
+
+    def test_project_probe_rejects_exact_id_and_name_drift(self) -> None:
+        wrong_id = {"project": {**_PROJECT, "id": "project-other"}}
+        with self.assertRaisesRegex(RuntimeError, "NEON_PROJECT_ID_MISMATCH"):
+            neon._validate_bound_project(wrong_id, "org-test", _PROJECT_ID)
+        wrong_name = {"project": {**_PROJECT, "name": "unexpected-project"}}
+        with self.assertRaisesRegex(RuntimeError, "NEON_PROJECT_NAME_DRIFT"):
+            neon._validate_bound_project(wrong_name, "org-test", _PROJECT_ID)
+
+    def test_project_id_contract_is_exact_and_required(self) -> None:
+        self.assertEqual(neon._validate_neon_project_id(_PROJECT_ID), _PROJECT_ID)
+        for value in ("", "Project-test", "project_test", "x" * 61):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(RuntimeError, "NEON_PROJECT_ID_INVALID"):
+                    neon._validate_neon_project_id(value)
+        with patch.dict(
+            os.environ,
+            {"NEON_API_KEY": "masked", "NEON_ORG_ID": "org-test"},
+            clear=True,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "NEON_PROJECT_ID_REQUIRED"):
+                neon.probe_provider_access_from_env()
 
     def test_provider_probe_accepts_organization_scoped_key(self) -> None:
         api = _OrganizationScopedNeonApi()
-        scope = neon.probe_provider_access(api, "org-test")
+        scope = neon.probe_provider_access(api, "org-test", _PROJECT_ID)
         self.assertEqual(scope, "ORGANIZATION_SCOPED")
         self.assertNotIn(("GET", "/users/me/organizations"), api.calls)
         self.assertIn(("GET", "/organizations/org-test"), api.calls)
@@ -184,25 +207,15 @@ class CloudflareCandidateProviderTests(unittest.TestCase):
 
         api = UnauthorizedApi()
         with self.assertRaisesRegex(RuntimeError, "NEON_API_KEY_INVALID"):
-            neon.probe_provider_access(api, "org-test")
+            neon.probe_provider_access(api, "org-test", _PROJECT_ID)
         self.assertNotIn(("GET", "/users/me/organizations"), api.calls)
 
     def test_project_org_drift_fails_before_scope_classification(self) -> None:
         class WrongOrganizationApi(_ProjectScopedNeonApi):
             def request(self, method: str, path: str, **kwargs):
-                if method == "GET" and path.startswith("/projects?"):
+                if method == "GET" and path == f"/projects/{_PROJECT_ID}":
                     self.calls.append((method, path))
-                    return {
-                        "projects": [
-                            {
-                                "id": "project-test",
-                                "name": neon_base.NEON_PROJECT_NAME,
-                                "org_id": "org-other",
-                                "region_id": neon_base.NEON_REGION,
-                                "pg_version": 18,
-                            }
-                        ]
-                    }
+                    return {"project": {**_PROJECT, "org_id": "org-other"}}
                 if path.startswith("/organizations/"):
                     raise AssertionError(
                         "scope classification must not run after org drift"
@@ -211,12 +224,12 @@ class CloudflareCandidateProviderTests(unittest.TestCase):
 
         api = WrongOrganizationApi()
         with self.assertRaisesRegex(RuntimeError, "NEON_PROJECT_ORGANIZATION_DRIFT"):
-            neon.probe_provider_access(api, "org-test")
+            neon.probe_provider_access(api, "org-test", _PROJECT_ID)
         self.assertNotIn(("GET", "/organizations/org-test"), api.calls)
 
     def test_bound_project_adapter_forbids_provider_wide_project_mutation(self) -> None:
         api = _ProjectScopedNeonApi()
-        _, project = neon._provider_context(api, "org-test")
+        _, project = neon._provider_context(api, "org-test", _PROJECT_ID)
         calls_before = list(api.calls)
         bound = neon._BoundProjectNeonApi(api, "org-test", project)
         query = urlencode(
