@@ -111,6 +111,36 @@ class CloudflareCandidateProviderTests(unittest.TestCase):
                 protected_custody + "\nvars.NEON_PROJECT_ID"
             )
 
+    def test_candidate_guard_requires_workers_builds_probe_before_mutation(self) -> None:
+        good = "\n".join(
+            (
+                guard._WORKERS_BUILDS_AUTHORITY_PROBE,
+                *guard._PROVIDER_MUTATION_STEP_MARKERS,
+            )
+        )
+        guard._validate_candidate_pre_mutation_authority(good)
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "CLOUDFLARE_CANDIDATE_PRE_MUTATION_AUTHORITY_PROBE_MISSING",
+        ):
+            guard._validate_candidate_pre_mutation_authority(
+                "\n".join(guard._PROVIDER_MUTATION_STEP_MARKERS)
+            )
+
+        late_probe = "\n".join(
+            (
+                guard._PROVIDER_MUTATION_STEP_MARKERS[0],
+                guard._WORKERS_BUILDS_AUTHORITY_PROBE,
+                *guard._PROVIDER_MUTATION_STEP_MARKERS[1:],
+            )
+        )
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "CLOUDFLARE_CANDIDATE_AUTHORITY_PROBE_AFTER_MUTATION",
+        ):
+            guard._validate_candidate_pre_mutation_authority(late_probe)
+
     def test_cloudflare_runtime_roles_are_isolated(self) -> None:
         self.assertEqual(neon._runtime_role("staging"), "omni_cio_cloudflare_staging")
         self.assertEqual(neon._runtime_role("production"), "omni_cio_cloudflare_prod")

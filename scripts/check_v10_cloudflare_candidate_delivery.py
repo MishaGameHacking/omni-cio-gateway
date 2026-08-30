@@ -24,6 +24,14 @@ _PROVIDER_IDENTITY_SECRET_MARKERS = (
     _NEON_ORG_ID_SECRET,
     _NEON_PROJECT_ID_SECRET,
 )
+_WORKERS_BUILDS_AUTHORITY_PROBE = (
+    "python -m scripts.probe_v10_cloudflare_workers_builds_authority"
+)
+_PROVIDER_MUTATION_STEP_MARKERS = (
+    "- name: Provision isolated Neon staging runtime role",
+    "- name: Bootstrap isolated staging Worker without local Containers",
+    "- name: Configure Workers Builds and accept exact staging build",
+)
 
 
 def _read(path: Path) -> str:
@@ -83,6 +91,18 @@ def _validate_provider_identity_custody(workflow: str) -> None:
     )
 
 
+def _validate_candidate_pre_mutation_authority(workflow: str) -> None:
+    probe_index = workflow.find(_WORKERS_BUILDS_AUTHORITY_PROBE)
+    if probe_index < 0:
+        raise RuntimeError("CLOUDFLARE_CANDIDATE_PRE_MUTATION_AUTHORITY_PROBE_MISSING")
+    for marker in _PROVIDER_MUTATION_STEP_MARKERS:
+        mutation_index = workflow.find(marker)
+        if mutation_index < 0:
+            raise RuntimeError("CLOUDFLARE_CANDIDATE_PROVIDER_MUTATION_STEP_MISSING")
+        if mutation_index < probe_index:
+            raise RuntimeError("CLOUDFLARE_CANDIDATE_AUTHORITY_PROBE_AFTER_MUTATION")
+
+
 def _validate_candidate_workflow() -> None:
     workflow = _read(CANDIDATE_WORKFLOW)
     _require_markers(
@@ -96,6 +116,7 @@ def _validate_candidate_workflow() -> None:
             _NEON_ORG_ID_SECRET,
             _NEON_PROJECT_ID_SECRET,
             "python -m scripts.check_v10_cloudflare_provider_readiness",
+            _WORKERS_BUILDS_AUTHORITY_PROBE,
             "provision_v10_cloudflare_neon_runtime",
             "wrangler.bootstrap.staging.jsonc",
             "bootstrap_v10_cloudflare_builds",
@@ -124,6 +145,7 @@ def _validate_candidate_workflow() -> None:
     )
     _validate_candidate_secret_scope(workflow)
     _validate_provider_identity_custody(workflow)
+    _validate_candidate_pre_mutation_authority(workflow)
 
 
 def _validate_readiness_workflow() -> None:

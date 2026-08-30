@@ -62,6 +62,13 @@ jobs:
           NEON_PROJECT_ID_VALUE: ${{ secrets.NEON_PROJECT_ID }}
         run: python -m scripts.check_v10_cloudflare_provider_readiness
 
+      - name: Verify Workers Builds authority before provider mutation
+        shell: cmd
+        env:
+          CLOUDFLARE_API_TOKEN_VALUE: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID_CREDENTIAL_VALUE: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: python -m scripts.probe_v10_cloudflare_workers_builds_authority
+
       - name: Install exact hashed provider control-plane dependencies
         shell: cmd
         run: |
