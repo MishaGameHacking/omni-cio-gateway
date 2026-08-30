@@ -28,6 +28,17 @@ class _CloudflareReadApi(Protocol):
     def request(self, method: str, path: str) -> Any: ...
 
 
+class _CloudflareReadAdapter(_CloudflareReadApi):
+    """Expose only the non-mutating Cloudflare API surface used by this probe."""
+
+    def __init__(self, api: CloudflareApi) -> None:
+        self._api = api
+        self.account_id = api.account_id
+
+    def request(self, method: str, path: str) -> Any:
+        return self._api.request(method, path)
+
+
 class _AuthorityProbeStopped(BootstrapStopped):
     """Attach a fixed, privacy-safe provider stage to a fail-closed probe error."""
 
@@ -148,7 +159,7 @@ def probe_workers_builds_authority(
     try:
         token = _required(environment, _CLOUDFLARE_TOKEN_ENV)
         account_id = _required(environment, _CLOUDFLARE_ACCOUNT_ENV)
-        api = CloudflareApi(account_id, token)
+        api = _CloudflareReadAdapter(CloudflareApi(account_id, token))
         _probe_read_authority(api)
     except BootstrapStopped as exc:
         print(_blocked_report(exc), file=destination)
