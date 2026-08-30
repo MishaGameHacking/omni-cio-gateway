@@ -39,6 +39,19 @@ class CloudflareNodeSupplyChainTests(unittest.TestCase):
                 ):
                     guard.validate()
 
+    def test_guard_rejects_build_script_drift(self) -> None:
+        payload = json.loads(guard.PACKAGE.read_text(encoding="utf-8"))
+        payload["scripts"]["build"] = "echo bypass"
+        with tempfile.TemporaryDirectory() as temporary:
+            candidate = Path(temporary) / "package.json"
+            candidate.write_text(json.dumps(payload), encoding="utf-8")
+            with mock.patch.object(guard, "PACKAGE", candidate):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "CLOUDFLARE_NODE_SUPPLY_CHAIN_SCRIPTS_INVALID",
+                ):
+                    guard.validate()
+
     def test_guard_rejects_unsafe_npmrc(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             candidate = Path(temporary) / ".npmrc"

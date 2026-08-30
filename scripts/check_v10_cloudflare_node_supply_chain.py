@@ -18,6 +18,17 @@ _EXPECTED_ENGINES = {"node": "24.18.0", "npm": "10.9.2"}
 _EXPECTED_PACKAGE_MANAGER = "npm@10.9.2"
 _EXPECTED_DEPENDENCIES = {"@cloudflare/containers": "0.3.7"}
 _EXPECTED_DEV_DEPENDENCIES = {"npm": "11.16.0", "wrangler": "4.127.1"}
+_EXPECTED_SCRIPTS = {
+    "build": (
+        "python scripts/write_v10_cloudflare_build_info.py && "
+        "npm ci --ignore-scripts --prefix apps/web && npm run --prefix apps/web build"
+    ),
+    "cloudflare:deploy": "wrangler deploy --containers-rollout=immediate",
+    "cloudflare:deploy:staging": (
+        "wrangler deploy --env staging --containers-rollout=immediate"
+    ),
+    "cloudflare:worker-only": "wrangler deploy --containers-rollout=none",
+}
 _FORBIDDEN_LIFECYCLE_SCRIPTS = {
     "preinstall",
     "install",
@@ -95,6 +106,11 @@ def _validate_package(package: dict[str, Any]) -> None:
             "CLOUDFLARE_NODE_SUPPLY_CHAIN_LIFECYCLE_SCRIPTS_FORBIDDEN:"
             + ",".join(forbidden)
         )
+    _require_equal(
+        scripts,
+        _EXPECTED_SCRIPTS,
+        "CLOUDFLARE_NODE_SUPPLY_CHAIN_SCRIPTS_INVALID",
+    )
     _require_equal(
         _read_npmrc(),
         ("ignore-scripts=true",),
@@ -184,6 +200,7 @@ def main() -> int:
     print("Frontend bootstrap npm: 11.16.0, exact lock entry required")
     print("Root dependency lock: package-lock v3, exact package versions")
     print("Dependency lifecycle scripts: DISABLED by source-controlled .npmrc")
+    print("Cloudflare build/deploy scripts: EXACT and fail-closed")
     print("Transient branch-writing lock synthesis workflow: RETIRED")
     return 0
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import tempfile
 from pathlib import Path
+from typing import cast
 import unittest
 from unittest.mock import patch
 from urllib.parse import urlencode
@@ -352,8 +353,96 @@ class CloudflareCandidateProviderTests(unittest.TestCase):
             ["system/cloudflare-public-product"],
         )
         self.assertEqual(payload["branch_excludes"], [])
+        self.assertEqual(payload["build_command"], "npm run build")
         self.assertEqual(payload["deploy_command"], "npm run cloudflare:deploy:staging")
         self.assertEqual(payload["root_directory"], "/")
+
+    def test_failed_exact_build_is_not_reused(self) -> None:
+        expected_sha = "a" * 40
+        row = {
+            "build_uuid": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+            "build_outcome": "fail",
+            "status": "stopped",
+            "build_trigger_metadata": {
+                "commit_hash": expected_sha,
+                "branch": builds._BRANCH,
+                "build_command": builds._BUILD_COMMAND,
+                "deploy_command": builds._DEPLOY_COMMAND,
+            },
+        }
+        api = builds.CloudflareApi("a" * 32, "masked")
+        with patch.object(builds, "_builds_for_worker", return_value=[row]):
+            self.assertIsNone(builds._find_exact_build(api, "b" * 32, expected_sha))
+
+    def test_running_exact_build_is_reused(self) -> None:
+        expected_sha = "a" * 40
+        row = {
+            "build_uuid": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+            "build_outcome": None,
+            "status": "running",
+            "build_trigger_metadata": {
+                "commit_hash": expected_sha,
+                "branch": builds._BRANCH,
+                "build_command": builds._BUILD_COMMAND,
+                "deploy_command": builds._DEPLOY_COMMAND,
+            },
+        }
+        api = builds.CloudflareApi("a" * 32, "masked")
+        with patch.object(builds, "_builds_for_worker", return_value=[row]):
+            self.assertIs(
+                builds._find_exact_build(api, "b" * 32, expected_sha),
+                row,
+            )
+
+    def test_build_failure_classifier_detects_stale_token(self) -> None:
+        messages = (
+            "Failed: The build token selected for this build has been deleted or "
+            "rolled and cannot be used for this build.",
+        )
+        self.assertEqual(
+            builds._classify_build_failure(messages),
+            "CLOUDFLARE_BUILD_TOKEN_STALE",
+        )
+
+    def test_build_failure_classifier_detects_deploy_phase(self) -> None:
+        self.assertEqual(
+            builds._classify_build_failure(
+                ("> omni-cio-v10-cloudflare-delivery cloudflare:deploy:staging",)
+            ),
+            "CLOUDFLARE_BUILD_DEPLOY_PHASE_FAILED",
+        )
+
+    def test_build_failure_diagnostic_uses_logs_endpoint(self) -> None:
+        class LogsApi:
+            account_id = "a" * 32
+
+            def __init__(self) -> None:
+                self.paths: list[str] = []
+
+            def request(self, method: str, path: str):
+                if method != "GET" or not path.endswith("/logs"):
+                    raise AssertionError((method, path))
+                self.paths.append(path)
+                return {
+                    "lines": [
+                        [
+                            0,
+                            "Failed: The build token selected for this build has been "
+                            "deleted or rolled and cannot be used for this build.",
+                        ]
+                    ],
+                    "cursor": None,
+                    "truncated": False,
+                }
+
+        raw_api = LogsApi()
+        api = cast(builds.CloudflareApi, raw_api)
+        diagnostic = builds._build_failure_diagnostic(
+            api,
+            "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        )
+        self.assertEqual(diagnostic, "CLOUDFLARE_BUILD_TOKEN_STALE")
+        self.assertEqual(len(raw_api.paths), 1)
 
     def test_expected_sha_is_exact(self) -> None:
         self.assertEqual(builds._expected_sha("a" * 40), "a" * 40)

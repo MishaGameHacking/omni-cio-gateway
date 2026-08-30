@@ -29,7 +29,7 @@ _STAGING_WORKER = "omni-cio-v10-web-staging"
 _STAGING_DSN_FILENAME = "omni-cio-v10-cloudflare-staging-dsn.txt"
 _TRIGGER_NAME = "Omni-CIO V10 staging deploy"
 _BUILD_TOKEN_NAME = "omni-cio-v10-staging-builds"
-_BUILD_COMMAND = "echo CLOUDFLARE_BUILD_PHASE=DELEGATED_TO_WRANGLER"
+_BUILD_COMMAND = "npm run build"
 _DEPLOY_COMMAND = "npm run cloudflare:deploy:staging"
 _BUILD_TOKEN_VALUE_FIELD = "build_token_" + "sec" + "ret"
 _BRANCH = "system/cloudflare-public-product"
@@ -39,6 +39,42 @@ _GITHUB_REPO_ID = "1312247309"
 _GITHUB_REPO = "omni-cio-gateway"
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _MAX_PROVIDER_RESPONSE_BYTES = 1_048_576
+_BUILD_LOG_MAX_PAGES = 8
+_BUILD_LOG_MAX_CURSOR_CHARS = 4096
+_REUSABLE_BUILD_STATUSES = frozenset({"queued", "initializing", "running"})
+_TERMINAL_BUILD_FAILURES = frozenset({"fail", "skipped", "cancelled", "terminated"})
+_ACTIONABLE_BUILD_FAILURES = frozenset(
+    {
+        "CLOUDFLARE_BUILD_TOKEN_STALE",
+        "CLOUDFLARE_BUILD_WORKER_NAME_MISMATCH",
+        "CLOUDFLARE_BUILD_ACCOUNT_MISMATCH",
+        "CLOUDFLARE_BUILD_PROVIDER_TIMEOUT",
+    }
+)
+_BUILD_LOG_CLASSIFIERS = (
+    (
+        "CLOUDFLARE_BUILD_TOKEN_STALE",
+        ("build token selected for this build has been deleted or rolled",),
+    ),
+    (
+        "CLOUDFLARE_BUILD_WORKER_NAME_MISMATCH",
+        (
+            "the name in your wrangler configuration file",
+            "must match the name of your worker",
+        ),
+    ),
+    (
+        "CLOUDFLARE_BUILD_ACCOUNT_MISMATCH",
+        (
+            "could not route to /client/v4/accounts/",
+            "perhaps your object identifier is invalid",
+        ),
+    ),
+    (
+        "CLOUDFLARE_BUILD_PROVIDER_TIMEOUT",
+        ("build was timed out",),
+    ),
+)
 
 
 class BootstrapStopped(RuntimeError):
@@ -615,6 +651,13 @@ def _assert_build_candidate_identity(
         raise BootstrapStopped("CLOUDFLARE_DEPLOY_COMMAND_MISMATCH")
 
 
+def _build_is_reusable(row: dict[str, Any]) -> bool:
+    outcome = row.get("build_outcome")
+    if outcome == "success":
+        return True
+    return outcome is None and row.get("status") in _REUSABLE_BUILD_STATUSES
+
+
 def _find_exact_build(
     api: CloudflareApi,
     worker_tag: str,
@@ -622,8 +665,10 @@ def _find_exact_build(
 ) -> dict[str, Any] | None:
     for row in _builds_for_worker(api, worker_tag):
         trigger = _build_trigger_metadata(row)
-        if trigger is not None and _build_metadata_matches_candidate(
-            trigger, expected_sha
+        if (
+            trigger is not None
+            and _build_metadata_matches_candidate(trigger, expected_sha)
+            and _build_is_reusable(row)
         ):
             return row
     return None
@@ -663,9 +708,77 @@ def _start_or_reuse_build(
     )
 
 
+def _build_log_messages(page: dict[str, Any]) -> tuple[str, ...]:
+    rows = _list(page.get("lines"), "CLOUDFLARE_BUILD_LOG_LINES_INVALID")
+    messages: list[str] = []
+    for raw_row in rows:
+        row = _list(raw_row, "CLOUDFLARE_BUILD_LOG_LINE_INVALID")
+        if len(row) < 2 or not isinstance(row[-1], str):
+            raise BootstrapStopped("CLOUDFLARE_BUILD_LOG_LINE_INVALID")
+        messages.append(row[-1])
+    return tuple(messages)
+
+
+def _classify_build_failure(messages: tuple[str, ...]) -> str:
+    normalized = tuple(message.lower() for message in messages)
+    for code, needles in _BUILD_LOG_CLASSIFIERS:
+        if any(all(needle in message for needle in needles) for message in normalized):
+            return code
+    if any(
+        "cloudflare:deploy:staging" in message or "wrangler 4.127.1" in message
+        for message in normalized
+    ):
+        return "CLOUDFLARE_BUILD_DEPLOY_PHASE_FAILED"
+    if any(
+        "cloudflare source identity generated for " in message
+        or "vite v" in message
+        for message in normalized
+    ):
+        return "CLOUDFLARE_BUILD_SOURCE_PHASE_FAILED"
+    if normalized:
+        return "CLOUDFLARE_BUILD_COMMAND_PHASE_FAILED"
+    return "CLOUDFLARE_BUILD_LOGS_EMPTY"
+
+
+def _build_failure_diagnostic(api: CloudflareApi, build_uuid: str) -> str:
+    safe_uuid = _provider_uuid(build_uuid, "CLOUDFLARE_BUILD_UUID_INVALID")
+    messages: list[str] = []
+    cursor: str | None = None
+    seen_cursors: set[str] = set()
+    for _ in range(_BUILD_LOG_MAX_PAGES):
+        path = f"/accounts/{api.account_id}/builds/builds/{safe_uuid}/logs"
+        if cursor is not None:
+            path += f"?cursor={quote(cursor, safe='')}"
+        page = _object(
+            api.request("GET", path),
+            "CLOUDFLARE_BUILD_LOGS_INVALID",
+        )
+        messages.extend(_build_log_messages(page))
+        next_cursor = page.get("cursor")
+        if next_cursor is None or next_cursor == "":
+            break
+        if (
+            not isinstance(next_cursor, str)
+            or len(next_cursor) > _BUILD_LOG_MAX_CURSOR_CHARS
+            or next_cursor in seen_cursors
+        ):
+            raise BootstrapStopped("CLOUDFLARE_BUILD_LOG_CURSOR_INVALID")
+        seen_cursors.add(next_cursor)
+        cursor = next_cursor
+    return _classify_build_failure(tuple(messages))
+
+
+def _safe_build_failure_diagnostic(api: CloudflareApi, build_uuid: str) -> str:
+    try:
+        diagnostic = _build_failure_diagnostic(api, build_uuid)
+    except BootstrapStopped:
+        diagnostic = "CLOUDFLARE_BUILD_LOG_DIAGNOSTIC_UNAVAILABLE"
+    print(f"CLOUDFLARE_BUILD_FAILURE_DIAGNOSTIC={diagnostic}")
+    return diagnostic
+
+
 def _wait_build(api: CloudflareApi, build_uuid: str, expected_sha: str) -> None:
     deadline = time.monotonic() + 1200.0
-    terminal_failures = {"fail", "skipped", "cancelled", "terminated"}
     while True:
         result = _object(
             api.request(
@@ -682,7 +795,10 @@ def _wait_build(api: CloudflareApi, build_uuid: str, expected_sha: str) -> None:
             _assert_build_candidate_identity(result, expected_sha)
             print("CLOUDFLARE_STAGING_BUILD=SUCCESS")
             return
-        if outcome in terminal_failures:
+        if outcome in _TERMINAL_BUILD_FAILURES:
+            diagnostic = _safe_build_failure_diagnostic(api, build_uuid)
+            if diagnostic in _ACTIONABLE_BUILD_FAILURES:
+                raise BootstrapStopped(diagnostic)
             raise BootstrapStopped("CLOUDFLARE_STAGING_BUILD_FAILED")
         if result.get("status") == "stopped":
             raise BootstrapStopped("CLOUDFLARE_BUILD_OUTCOME_MISSING")

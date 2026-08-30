@@ -310,6 +310,7 @@ def _validate_builds_bootstrap() -> None:
             '"system/cloudflare-public-product"',
             '"/accounts/{api.account_id}/builds/repos/connections"',
             '"/accounts/{api.account_id}/builds/tokens?per_page=200"',
+            '"npm run build"',
             '"npm run cloudflare:deploy:staging"',
             '"OMNI_V10_POSTGRES_DSN"',
             "_BUILD_TOKEN_VALUE_FIELD",
@@ -318,9 +319,13 @@ def _validate_builds_bootstrap() -> None:
             '"commit_hash": expected_sha',
             'row.get("build_trigger_metadata")',
             "_build_metadata_matches_candidate",
+            "_build_is_reusable",
             "CLOUDFLARE_BUILD_COMMAND_MISMATCH",
             "CLOUDFLARE_DEPLOY_COMMAND_MISMATCH",
             "CLOUDFLARE_BUILD_OUTCOME_MISSING",
+            "CLOUDFLARE_BUILD_TOKEN_STALE",
+            'builds/{safe_uuid}/logs',
+            "CLOUDFLARE_BUILD_FAILURE_DIAGNOSTIC=",
             "CLOUDFLARE_STAGING_TRIGGER_WORKER_DRIFT",
             "CLOUDFLARE_STAGING_TRIGGER_REPO_AUTHORITY_DRIFT",
             "CLOUDFLARE_STAGING_TRIGGER_CONFIGURATION_DRIFT",
@@ -333,6 +338,11 @@ def _validate_builds_bootstrap() -> None:
         builds,
         ('parser.add_argument("--repo-root"', 'parser.add_argument("--dsn-file"'),
         "CLOUDFLARE_CANDIDATE_BUILDS_PATH_ARGUMENT_FORBIDDEN",
+    )
+    _forbid_markers(
+        builds,
+        ("DELEGATED_TO_WRANGLER",),
+        "CLOUDFLARE_CANDIDATE_BUILDS_DELEGATED_BUILD_FORBIDDEN",
     )
 
 
