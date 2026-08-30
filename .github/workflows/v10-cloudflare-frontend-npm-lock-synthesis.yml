@@ -1,0 +1,128 @@
+name: V10 Cloudflare Frontend npm Lock Synthesis
+
+on:
+  push:
+    branches:
+      - system/cloudflare-public-product
+    paths:
+      - .github/workflows/v10-cloudflare-frontend-npm-lock-synthesis.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: v10-cloudflare-frontend-npm-lock-synthesis
+  cancel-in-progress: false
+
+jobs:
+  synthesize-lock:
+    name: Generate locked npm 11.16.0 bootstrap for frontend
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 15
+    steps:
+      - name: Expose installed Git Bash
+        shell: cmd
+        run: |
+          @echo off
+          powershell.exe -NoProfile -NonInteractive -Command "$git=(Get-Command git.exe -ErrorAction Stop).Source; $root=Split-Path -Parent (Split-Path -Parent $git); $bin=Join-Path $root 'bin'; $bin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append"
+          if errorlevel 1 exit /b 12
+
+      - name: Bootstrap exact pushed repository
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          find . -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+          git init .
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          git fetch --no-tags --depth=1 origin "${EXPECTED_HEAD}"
+          git checkout --detach FETCH_HEAD
+          test "$(git rev-parse HEAD)" = "${EXPECTED_HEAD}"
+
+      - name: Generate provider-compatible root lock with exact frontend npm
+        shell: bash
+        env:
+          GH_WRITE: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          node_exe='/c/Program Files/nodejs/node.exe'
+          npx_cmd='/c/Program Files/nodejs/npx.cmd'
+          test "$("$node_exe" --version | tr -d '\r')" = 'v24.18.0'
+          test "$("$npx_cmd" --yes npm@10.9.2 --version | tr -d '\r')" = '10.9.2'
+
+          "$node_exe" - <<'NODE'
+          const fs = require('fs');
+          const file = 'package.json';
+          const pkg = JSON.parse(fs.readFileSync(file, 'utf8'));
+          if (pkg.engines?.node !== '24.18.0' || pkg.engines?.npm !== '10.9.2') {
+            throw new Error('unexpected root provider engine baseline');
+          }
+          if (pkg.packageManager !== 'npm@10.9.2') {
+            throw new Error('unexpected root provider packageManager baseline');
+          }
+          if (pkg.devDependencies?.npm !== undefined) {
+            throw new Error('frontend npm bootstrap dependency already exists');
+          }
+          pkg.devDependencies = { npm: '11.16.0', ...pkg.devDependencies };
+          fs.writeFileSync(file, JSON.stringify(pkg, null, 2) + '\n');
+          NODE
+
+          "$npx_cmd" --yes npm@10.9.2 install --package-lock-only --ignore-scripts --no-audit --no-fund
+
+          "$node_exe" - <<'NODE'
+          const fs = require('fs');
+          const lock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
+          const root = lock.packages?.[''];
+          const npmPackage = lock.packages?.['node_modules/npm'];
+          if (lock.lockfileVersion !== 3 || lock.requires !== true) {
+            throw new Error('unexpected root lock format');
+          }
+          if (root?.devDependencies?.npm !== '11.16.0') {
+            throw new Error('root lock is missing exact frontend npm bootstrap');
+          }
+          if (npmPackage?.version !== '11.16.0') {
+            throw new Error('locked frontend npm package version mismatch');
+          }
+          if (typeof npmPackage.integrity !== 'string' || !npmPackage.integrity.startsWith('sha512-')) {
+            throw new Error('locked frontend npm package integrity missing');
+          }
+          NODE
+
+          "$node_exe" - <<'NODE'
+          const fs = require('fs');
+          const https = require('https');
+          const token = process.env.GH_WRITE;
+          if (!token) throw new Error('GitHub write authority unavailable');
+          const encoded = fs.readFileSync('package-lock.json').toString('base64');
+          const body = JSON.stringify({ content: encoded, encoding: 'base64' });
+          const request = https.request({
+            hostname: 'api.github.com',
+            path: `/repos/${process.env.GITHUB_REPOSITORY}/git/blobs`,
+            method: 'POST',
+            headers: {
+              Accept: 'application/vnd.github+json',
+              Authorization: `Bearer ${token}`,
+              'X-GitHub-Api-Version': '2022-11-28',
+              'User-Agent': 'omni-cio-v10-lock-synthesis',
+              'Content-Type': 'application/json',
+              'Content-Length': Buffer.byteLength(body),
+            },
+          }, (response) => {
+            let raw = '';
+            response.setEncoding('utf8');
+            response.on('data', (chunk) => { raw += chunk; });
+            response.on('end', () => {
+              if (response.statusCode !== 201) {
+                throw new Error(`GitHub blob creation failed with status ${response.statusCode}`);
+              }
+              const payload = JSON.parse(raw);
+              if (!/^[0-9a-f]{40}$/.test(payload.sha || '')) {
+                throw new Error('GitHub blob response SHA invalid');
+              }
+              console.log(`LOCK_BLOB_SHA=${payload.sha}`);
+            });
+          });
+          request.on('error', (error) => { throw error; });
+          request.end(body);
+          NODE
