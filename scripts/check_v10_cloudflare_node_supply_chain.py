@@ -14,7 +14,7 @@ NPMRC = ROOT / ".npmrc"
 _EXPECTED_ENGINES = {"node": "24.18.0", "npm": "10.9.2"}
 _EXPECTED_PACKAGE_MANAGER = "npm@10.9.2"
 _EXPECTED_DEPENDENCIES = {"@cloudflare/containers": "0.3.7"}
-_EXPECTED_DEV_DEPENDENCIES = {"wrangler": "4.127.1"}
+_EXPECTED_DEV_DEPENDENCIES = {"npm": "11.16.0", "wrangler": "4.127.1"}
 _FORBIDDEN_LIFECYCLE_SCRIPTS = {
     "preinstall",
     "install",
@@ -135,6 +135,12 @@ def _validate_locked_versions(packages: dict[str, Any]) -> None:
             "CLOUDFLARE_NODE_SUPPLY_CHAIN_LOCK_CONTAINERS_INVALID",
         ),
         (
+            "node_modules/npm",
+            "LOCK_NPM_BOOTSTRAP",
+            "11.16.0",
+            "CLOUDFLARE_NODE_SUPPLY_CHAIN_LOCK_NPM_BOOTSTRAP_INVALID",
+        ),
+        (
             "node_modules/wrangler",
             "LOCK_WRANGLER",
             "4.127.1",
@@ -163,7 +169,8 @@ def main() -> int:
         print(str(exc), file=sys.stderr)
         return 1
     print("V10 Cloudflare Node supply-chain contract passed.")
-    print("Cloudflare build toolchain: Node 24.18.0 / npm 10.9.2")
+    print("Cloudflare provider package manager: Node 24.18.0 / npm 10.9.2")
+    print("Frontend bootstrap npm: 11.16.0, exact lock entry required")
     print("Root dependency lock: package-lock v3, exact package versions")
     print("Dependency lifecycle scripts: DISABLED by source-controlled .npmrc")
     return 0
