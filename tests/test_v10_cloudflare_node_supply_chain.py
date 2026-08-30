@@ -89,6 +89,20 @@ class CloudflareNodeSupplyChainTests(unittest.TestCase):
                 ):
                     guard.validate()
 
+    def test_guard_rejects_transient_branch_write_workflow(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            candidate = Path(temporary) / "lock-synthesis.yml"
+            candidate.write_text(
+                "permissions:\n  contents: write\n",
+                encoding="utf-8",
+            )
+            with mock.patch.object(guard, "LOCK_SYNTHESIS_WORKFLOW", candidate):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "CLOUDFLARE_NODE_SUPPLY_CHAIN_TRANSIENT_WRITE_WORKFLOW_PRESENT",
+                ):
+                    guard.validate()
+
 
 if __name__ == "__main__":
     unittest.main()

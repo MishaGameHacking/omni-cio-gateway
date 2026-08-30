@@ -10,6 +10,9 @@ ROOT = Path(__file__).resolve().parents[1]
 PACKAGE = ROOT / "package.json"
 PACKAGE_LOCK = ROOT / "package-lock.json"
 NPMRC = ROOT / ".npmrc"
+LOCK_SYNTHESIS_WORKFLOW = (
+    ROOT / ".github" / "workflows" / "v10-cloudflare-frontend-npm-lock-synthesis.yml"
+)
 
 _EXPECTED_ENGINES = {"node": "24.18.0", "npm": "10.9.2"}
 _EXPECTED_PACKAGE_MANAGER = "npm@10.9.2"
@@ -152,7 +155,15 @@ def _validate_locked_versions(packages: dict[str, Any]) -> None:
         _require_equal(package.get("version"), version, code)
 
 
+def _validate_transient_write_workflow_retired() -> None:
+    if LOCK_SYNTHESIS_WORKFLOW.exists():
+        raise RuntimeError(
+            "CLOUDFLARE_NODE_SUPPLY_CHAIN_TRANSIENT_WRITE_WORKFLOW_PRESENT"
+        )
+
+
 def validate() -> None:
+    _validate_transient_write_workflow_retired()
     package = _load_object(PACKAGE, "PACKAGE")
     _validate_package(package)
     lock = _load_object(PACKAGE_LOCK, "PACKAGE_LOCK")
@@ -173,6 +184,7 @@ def main() -> int:
     print("Frontend bootstrap npm: 11.16.0, exact lock entry required")
     print("Root dependency lock: package-lock v3, exact package versions")
     print("Dependency lifecycle scripts: DISABLED by source-controlled .npmrc")
+    print("Transient branch-writing lock synthesis workflow: RETIRED")
     return 0
 
 
