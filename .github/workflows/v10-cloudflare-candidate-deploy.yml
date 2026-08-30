@@ -107,7 +107,21 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           set -euo pipefail
-          ./node_modules/.bin/wrangler deploy --config cloudflare/wrangler.bootstrap.staging.jsonc
+          set +e
+          python -m scripts.probe_v10_cloudflare_staging_worker_anchor
+          bootstrap_rc=$?
+          set -e
+          case "$bootstrap_rc" in
+            0)
+              ;;
+            10)
+              ./node_modules/.bin/wrangler deploy --config cloudflare/wrangler.bootstrap.staging.jsonc
+              python -m scripts.probe_v10_cloudflare_staging_worker_anchor
+              ;;
+            *)
+              exit "$bootstrap_rc"
+              ;;
+          esac
 
       - name: Configure Workers Builds and accept exact staging build
         id: bootstrap

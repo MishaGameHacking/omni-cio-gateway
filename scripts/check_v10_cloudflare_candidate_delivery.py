@@ -13,6 +13,9 @@ BRANCH_EXECUTION_LEDGER = (
 )
 BOOTSTRAP_CONFIG = ROOT / "cloudflare/wrangler.bootstrap.staging.jsonc"
 BOOTSTRAP_WORKER = ROOT / "cloudflare/bootstrap-staging-worker.js"
+STAGING_WORKER_ANCHOR_PROBE = (
+    ROOT / "scripts/probe_v10_cloudflare_staging_worker_anchor.py"
+)
 NEON_PROVISIONER = ROOT / "scripts/provision_v10_cloudflare_neon_runtime.py"
 BUILDS_BOOTSTRAP = ROOT / "scripts/bootstrap_v10_cloudflare_builds.py"
 
@@ -26,6 +29,13 @@ _PROVIDER_IDENTITY_SECRET_MARKERS = (
 )
 _WORKERS_BUILDS_AUTHORITY_PROBE = (
     "python -m scripts.probe_v10_cloudflare_workers_builds_authority"
+)
+_STAGING_WORKER_ANCHOR_COMMAND = (
+    "python -m scripts.probe_v10_cloudflare_staging_worker_anchor"
+)
+_BOOTSTRAP_DEPLOY_COMMAND = (
+    "./node_modules/.bin/wrangler deploy --config "
+    "cloudflare/wrangler.bootstrap.staging.jsonc"
 )
 _PROVIDER_MUTATION_STEP_MARKERS = (
     "- name: Provision isolated Neon staging runtime role",
@@ -103,6 +113,45 @@ def _validate_candidate_pre_mutation_authority(workflow: str) -> None:
             raise RuntimeError("CLOUDFLARE_CANDIDATE_AUTHORITY_PROBE_AFTER_MUTATION")
 
 
+def _bootstrap_worker_section(workflow: str) -> str:
+    start_marker = _PROVIDER_MUTATION_STEP_MARKERS[1]
+    end_marker = _PROVIDER_MUTATION_STEP_MARKERS[2]
+    _, separator, remainder = workflow.partition(start_marker)
+    if not separator:
+        raise RuntimeError("CLOUDFLARE_CANDIDATE_BOOTSTRAP_STEP_MISSING")
+    section, separator, _ = remainder.partition(end_marker)
+    if not separator:
+        raise RuntimeError("CLOUDFLARE_CANDIDATE_BOOTSTRAP_STEP_INVALID")
+    return section
+
+
+def _validate_idempotent_worker_anchor_bootstrap(workflow: str) -> None:
+    section = _bootstrap_worker_section(workflow)
+    if section.count(_STAGING_WORKER_ANCHOR_COMMAND) != 2:
+        raise RuntimeError("CLOUDFLARE_CANDIDATE_WORKER_ANCHOR_PROBE_COUNT_INVALID")
+    if section.count(_BOOTSTRAP_DEPLOY_COMMAND) != 1:
+        raise RuntimeError("CLOUDFLARE_CANDIDATE_BOOTSTRAP_DEPLOY_COUNT_INVALID")
+
+    first_probe = section.find(_STAGING_WORKER_ANCHOR_COMMAND)
+    result_capture = section.find("bootstrap_rc=$?", first_probe + 1)
+    case_gate = section.find('case "$bootstrap_rc" in', result_capture + 1)
+    required_case = section.find("10)", case_gate + 1)
+    deploy = section.find(_BOOTSTRAP_DEPLOY_COMMAND, required_case + 1)
+    second_probe = section.find(_STAGING_WORKER_ANCHOR_COMMAND, deploy + 1)
+    blocked_case = section.find("*)", second_probe + 1)
+    indices = (
+        first_probe,
+        result_capture,
+        case_gate,
+        required_case,
+        deploy,
+        second_probe,
+        blocked_case,
+    )
+    if any(index < 0 for index in indices) or tuple(sorted(indices)) != indices:
+        raise RuntimeError("CLOUDFLARE_CANDIDATE_BOOTSTRAP_GATE_ORDER_INVALID")
+
+
 def _validate_candidate_workflow() -> None:
     workflow = _read(CANDIDATE_WORKFLOW)
     _require_markers(
@@ -117,6 +166,7 @@ def _validate_candidate_workflow() -> None:
             _NEON_PROJECT_ID_SECRET,
             "python -m scripts.check_v10_cloudflare_provider_readiness",
             _WORKERS_BUILDS_AUTHORITY_PROBE,
+            _STAGING_WORKER_ANCHOR_COMMAND,
             "provision_v10_cloudflare_neon_runtime",
             "wrangler.bootstrap.staging.jsonc",
             "bootstrap_v10_cloudflare_builds",
@@ -146,6 +196,7 @@ def _validate_candidate_workflow() -> None:
     _validate_candidate_secret_scope(workflow)
     _validate_provider_identity_custody(workflow)
     _validate_candidate_pre_mutation_authority(workflow)
+    _validate_idempotent_worker_anchor_bootstrap(workflow)
 
 
 def _validate_readiness_workflow() -> None:
@@ -252,6 +303,32 @@ def _validate_bootstrap_worker() -> None:
         _read(BOOTSTRAP_WORKER),
         ("CLOUDFLARE_STAGING_BUILD_PENDING",),
         "CLOUDFLARE_CANDIDATE_BOOTSTRAP_RESPONSE_MISSING",
+    )
+    anchor_probe = _read(STAGING_WORKER_ANCHOR_PROBE)
+    _require_markers(
+        anchor_probe,
+        (
+            "_STAGING_WORKER",
+            'api.request("GET", f"/accounts/{api.account_id}/workers/scripts")',
+            "CLOUDFLARE_STAGING_WORKER_ANCHOR=REUSED",
+            "CLOUDFLARE_STAGING_WORKER_ANCHOR=BOOTSTRAP_REQUIRED",
+            "CLOUDFLARE_STAGING_WORKER_ANCHOR=BLOCKED",
+            "_BOOTSTRAP_REQUIRED = 10",
+            "_PROVIDER_BLOCKED = 78",
+            "_worker_tag",
+        ),
+        "CLOUDFLARE_CANDIDATE_WORKER_ANCHOR_PROBE_INVALID",
+    )
+    _forbid_markers(
+        anchor_probe,
+        (
+            'api.request("POST"',
+            'api.request("PUT"',
+            'api.request("PATCH"',
+            'api.request("DELETE"',
+            "subprocess.",
+        ),
+        "CLOUDFLARE_CANDIDATE_WORKER_ANCHOR_MUTATION_FORBIDDEN",
     )
 
 
