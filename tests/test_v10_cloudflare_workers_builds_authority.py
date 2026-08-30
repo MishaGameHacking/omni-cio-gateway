@@ -34,11 +34,17 @@ class _ReadApi:
         self,
         *,
         fail_path: str | None = None,
+        failure_code: str = "CLOUDFLARE_API_TOKEN_INSUFFICIENT",
+        failure_status: int | None = 403,
         token_status: str = "active",
+        token_result: object | None = None,
         build_tokens: list[dict[str, str]] | None = None,
     ) -> None:
         self.fail_path = fail_path
+        self.failure_code = failure_code
+        self.failure_status = failure_status
         self.token_status = token_status
+        self.token_result = token_result
         self.build_tokens = [] if build_tokens is None else build_tokens
         self.calls: list[tuple[str, str]] = []
 
@@ -46,8 +52,10 @@ class _ReadApi:
         del kwargs
         self.calls.append((method, path))
         if path == self.fail_path:
-            raise BootstrapStopped("CLOUDFLARE_API_TOKEN_INSUFFICIENT", status=403)
+            raise BootstrapStopped(self.failure_code, status=self.failure_status)
         if path == "/user/tokens/verify":
+            if self.token_result is not None:
+                return self.token_result
             return {"id": _TOKEN_ID, "status": self.token_status}
         if path.endswith("/builds/tokens?per_page=200"):
             return list(self.build_tokens)
@@ -136,6 +144,20 @@ class CloudflareWorkersBuildsAuthorityTests(unittest.TestCase):
             probe._probe_read_authority(api)
         self.assertEqual(api.calls, [("GET", "/user/tokens/verify")])
 
+    def test_token_verify_permission_failure_reports_exact_safe_stage(self) -> None:
+        api = _ReadApi(fail_path="/user/tokens/verify", failure_status=401)
+        output = StringIO()
+        environment = self._environment()
+        with patch.object(probe, "CloudflareApi", return_value=api):
+            status = probe.probe_workers_builds_authority(environment, output=output)
+        report = output.getvalue()
+        self.assertEqual(status, 78)
+        self.assertIn("code=CLOUDFLARE_API_TOKEN_INSUFFICIENT", report)
+        self.assertIn("stage=USER_TOKEN_VERIFY", report)
+        self.assertIn("status=401", report)
+        for value in environment.values():
+            self.assertNotIn(value, report)
+
     def test_builds_permission_failure_is_blocked_without_identifier_disclosure(self) -> None:
         api = _ReadApi(
             fail_path=f"/accounts/{'a' * 32}/builds/tokens?per_page=200",
@@ -151,6 +173,71 @@ class CloudflareWorkersBuildsAuthorityTests(unittest.TestCase):
             "code=CLOUDFLARE_API_TOKEN_INSUFFICIENT",
             report,
         )
+        self.assertIn("stage=WORKERS_BUILDS_TOKENS", report)
+        self.assertIn("status=403", report)
+        for value in environment.values():
+            self.assertNotIn(value, report)
+
+    def test_worker_scripts_permission_failure_reports_exact_safe_stage(self) -> None:
+        api = _ReadApi(fail_path=f"/accounts/{'a' * 32}/workers/scripts")
+        output = StringIO()
+        environment = self._environment()
+        with patch.object(probe, "CloudflareApi", return_value=api):
+            status = probe.probe_workers_builds_authority(environment, output=output)
+        report = output.getvalue()
+        self.assertEqual(status, 78)
+        self.assertIn("code=CLOUDFLARE_API_TOKEN_INSUFFICIENT", report)
+        self.assertIn("stage=WORKERS_SCRIPTS", report)
+        self.assertIn("status=403", report)
+        for value in environment.values():
+            self.assertNotIn(value, report)
+
+    def test_provider_network_failure_reports_stage_without_provider_path(self) -> None:
+        api = _ReadApi(
+            fail_path=f"/accounts/{'a' * 32}/builds/tokens?per_page=200",
+            failure_code="CLOUDFLARE_API_NETWORK_ERROR",
+            failure_status=None,
+        )
+        output = StringIO()
+        environment = self._environment()
+        with patch.object(probe, "CloudflareApi", return_value=api):
+            status = probe.probe_workers_builds_authority(environment, output=output)
+        report = output.getvalue()
+        self.assertEqual(status, 78)
+        self.assertIn("code=CLOUDFLARE_API_NETWORK_ERROR", report)
+        self.assertIn("stage=WORKERS_BUILDS_TOKENS", report)
+        self.assertNotIn("status=", report)
+        self.assertNotIn("/accounts/", report)
+        for value in environment.values():
+            self.assertNotIn(value, report)
+
+    def test_invalid_token_response_is_attributed_to_token_verify_stage(self) -> None:
+        api = _ReadApi(token_result=[])
+        output = StringIO()
+        environment = self._environment()
+        with patch.object(probe, "CloudflareApi", return_value=api):
+            status = probe.probe_workers_builds_authority(environment, output=output)
+        report = output.getvalue()
+        self.assertEqual(status, 78)
+        self.assertIn(
+            "code=CLOUDFLARE_WORKERS_BUILDS_TOKEN_VERIFY_INVALID",
+            report,
+        )
+        self.assertIn("stage=USER_TOKEN_VERIFY", report)
+        for value in environment.values():
+            self.assertNotIn(value, report)
+
+    def test_build_token_authority_drift_is_attributed_to_build_stage(self) -> None:
+        api = _ReadApi(build_tokens=[_build_token_record(token_id=_OTHER_TOKEN_ID)])
+        output = StringIO()
+        environment = self._environment()
+        with patch.object(probe, "CloudflareApi", return_value=api):
+            status = probe.probe_workers_builds_authority(environment, output=output)
+        report = output.getvalue()
+        self.assertEqual(status, 78)
+        self.assertIn("code=CLOUDFLARE_BUILD_TOKEN_AUTHORITY_DRIFT", report)
+        self.assertIn("stage=WORKERS_BUILDS_TOKENS", report)
+        self.assertNotIn("WORKERS_SCRIPTS", report)
         for value in environment.values():
             self.assertNotIn(value, report)
 

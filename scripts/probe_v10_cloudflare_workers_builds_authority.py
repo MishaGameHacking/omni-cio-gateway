@@ -17,12 +17,29 @@ from scripts.bootstrap_v10_cloudflare_builds import (
 _CLOUDFLARE_TOKEN_ENV = "CLOUDFLARE_API_" + "TOKEN_VALUE"
 _CLOUDFLARE_ACCOUNT_ENV = "CLOUDFLARE_ACCOUNT_ID_CREDENTIAL_VALUE"
 _TOKEN_ID = re.compile(r"^[0-9a-fA-F]{32}$")
+_STAGE_TOKEN_VERIFY = "USER_TOKEN_VERIFY"
+_STAGE_BUILD_TOKENS = "WORKERS_BUILDS_TOKENS"
+_STAGE_WORKER_SCRIPTS = "WORKERS_SCRIPTS"
 
 
 class _CloudflareReadApi(Protocol):
     account_id: str
 
     def request(self, method: str, path: str, **kwargs: Any) -> Any: ...
+
+
+class _AuthorityProbeStopped(BootstrapStopped):
+    """Attach a fixed, privacy-safe provider stage to a fail-closed probe error."""
+
+    def __init__(
+        self,
+        stage: str,
+        code: str,
+        *,
+        status: int | None = None,
+    ) -> None:
+        self.stage = stage
+        super().__init__(code, status=status)
 
 
 def _required(environ: Mapping[str, str], name: str) -> str:
@@ -32,15 +49,46 @@ def _required(environ: Mapping[str, str], name: str) -> str:
     return value
 
 
+def _request_at_stage(
+    api: _CloudflareReadApi,
+    stage: str,
+    method: str,
+    path: str,
+) -> Any:
+    try:
+        return api.request(method, path)
+    except _AuthorityProbeStopped:
+        raise
+    except BootstrapStopped as exc:
+        raise _AuthorityProbeStopped(
+            stage,
+            exc.code,
+            status=exc.status,
+        ) from None
+
+
+def _raise_at_stage(stage: str, exc: BootstrapStopped) -> None:
+    raise _AuthorityProbeStopped(stage, exc.code, status=exc.status) from None
+
+
 def _verify_user_scoped_token(api: _CloudflareReadApi) -> str:
-    result = api.request("GET", "/user/tokens/verify")
+    result = _request_at_stage(api, _STAGE_TOKEN_VERIFY, "GET", "/user/tokens/verify")
     if not isinstance(result, dict):
-        raise BootstrapStopped("CLOUDFLARE_WORKERS_BUILDS_TOKEN_VERIFY_INVALID")
+        raise _AuthorityProbeStopped(
+            _STAGE_TOKEN_VERIFY,
+            "CLOUDFLARE_WORKERS_BUILDS_TOKEN_VERIFY_INVALID",
+        )
     token_id = result.get("id")
     if not isinstance(token_id, str) or _TOKEN_ID.fullmatch(token_id) is None:
-        raise BootstrapStopped("CLOUDFLARE_WORKERS_BUILDS_TOKEN_ID_INVALID")
+        raise _AuthorityProbeStopped(
+            _STAGE_TOKEN_VERIFY,
+            "CLOUDFLARE_WORKERS_BUILDS_TOKEN_ID_INVALID",
+        )
     if result.get("status") != "active":
-        raise BootstrapStopped("CLOUDFLARE_WORKERS_BUILDS_TOKEN_NOT_ACTIVE")
+        raise _AuthorityProbeStopped(
+            _STAGE_TOKEN_VERIFY,
+            "CLOUDFLARE_WORKERS_BUILDS_TOKEN_NOT_ACTIVE",
+        )
     return token_id.lower()
 
 
@@ -60,15 +108,34 @@ def _verify_existing_build_token_authority(rows: Any, token_id: str) -> None:
 
 def _probe_read_authority(api: _CloudflareReadApi) -> None:
     token_id = _verify_user_scoped_token(api)
-    build_tokens = api.request(
+    build_tokens = _request_at_stage(
+        api,
+        _STAGE_BUILD_TOKENS,
         "GET",
         f"/accounts/{api.account_id}/builds/tokens?per_page=200",
     )
-    _verify_existing_build_token_authority(build_tokens, token_id)
-    api.request(
+    try:
+        _verify_existing_build_token_authority(build_tokens, token_id)
+    except BootstrapStopped as exc:
+        _raise_at_stage(_STAGE_BUILD_TOKENS, exc)
+    _request_at_stage(
+        api,
+        _STAGE_WORKER_SCRIPTS,
         "GET",
         f"/accounts/{api.account_id}/workers/scripts",
     )
+
+
+def _blocked_report(exc: BootstrapStopped) -> str:
+    fields = [
+        "CLOUDFLARE_WORKERS_BUILDS_AUTHORITY=BLOCKED",
+        f"code={exc.code}",
+    ]
+    if isinstance(exc, _AuthorityProbeStopped):
+        fields.append(f"stage={exc.stage}")
+    if exc.status is not None:
+        fields.append(f"status={exc.status}")
+    return " ".join(fields)
 
 
 def probe_workers_builds_authority(
@@ -84,10 +151,7 @@ def probe_workers_builds_authority(
         api = CloudflareApi(account_id, token)
         _probe_read_authority(api)
     except BootstrapStopped as exc:
-        print(
-            f"CLOUDFLARE_WORKERS_BUILDS_AUTHORITY=BLOCKED code={exc.code}",
-            file=destination,
-        )
+        print(_blocked_report(exc), file=destination)
         return 78
 
     print("CLOUDFLARE_WORKERS_BUILDS_TOKEN_SCOPE=USER_VERIFIED", file=destination)
