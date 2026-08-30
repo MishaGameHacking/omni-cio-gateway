@@ -304,6 +304,29 @@ def _ensure_repo_connection(api: CloudflareApi) -> str:
     return connection_uuid
 
 
+def _build_token_uuid_with_authority(
+    record: dict[str, Any],
+    token_id: str,
+) -> str:
+    build_token_uuid = _provider_uuid(
+        record.get("build_token_uuid"),
+        "CLOUDFLARE_BUILD_TOKEN_UUID_INVALID",
+    )
+    bound_token_id = record.get("cloudflare_token_id")
+    if not isinstance(bound_token_id, str):
+        raise BootstrapStopped("CLOUDFLARE_BUILD_TOKEN_AUTHORITY_DRIFT")
+    normalized_bound_token_id = bound_token_id.strip().lower()
+    if (
+        _ACCOUNT_ID.fullmatch(normalized_bound_token_id) is None
+        or normalized_bound_token_id != token_id
+    ):
+        raise BootstrapStopped("CLOUDFLARE_BUILD_TOKEN_AUTHORITY_DRIFT")
+    owner_type = record.get("owner_type")
+    if not isinstance(owner_type, str) or owner_type.strip().lower() != "user":
+        raise BootstrapStopped("CLOUDFLARE_BUILD_TOKEN_AUTHORITY_DRIFT")
+    return build_token_uuid
+
+
 def _ensure_build_token(api: CloudflareApi, token_id: str) -> str:
     rows = _list(
         api.request("GET", f"/accounts/{api.account_id}/builds/tokens?per_page=200"),
@@ -317,14 +340,9 @@ def _ensure_build_token(api: CloudflareApi, token_id: str) -> str:
     if len(matches) > 1:
         raise BootstrapStopped("CLOUDFLARE_BUILD_TOKEN_NOT_UNIQUE")
     if matches:
-        existing = matches[0]
-        if existing.get("cloudflare_token_id") != token_id:
-            raise BootstrapStopped("CLOUDFLARE_BUILD_TOKEN_AUTHORITY_DRIFT")
+        build_token_uuid = _build_token_uuid_with_authority(matches[0], token_id)
         print("CLOUDFLARE_BUILD_TOKEN=REUSED")
-        return _provider_uuid(
-            existing.get("build_token_uuid"),
-            "CLOUDFLARE_BUILD_TOKEN_UUID_INVALID",
-        )
+        return build_token_uuid
     result = _object(
         api.request(
             "POST",
@@ -338,11 +356,9 @@ def _ensure_build_token(api: CloudflareApi, token_id: str) -> str:
         ),
         "CLOUDFLARE_BUILD_TOKEN_CREATE_INVALID",
     )
+    build_token_uuid = _build_token_uuid_with_authority(result, token_id)
     print("CLOUDFLARE_BUILD_TOKEN=CREATED")
-    return _provider_uuid(
-        result.get("build_token_uuid"),
-        "CLOUDFLARE_BUILD_TOKEN_UUID_INVALID",
-    )
+    return build_token_uuid
 
 
 def _staging_worker_tag(api: CloudflareApi) -> str:

@@ -6,7 +6,12 @@ import re
 import sys
 from typing import Any, Protocol, TextIO
 
-from scripts.bootstrap_v10_cloudflare_builds import BootstrapStopped, CloudflareApi
+from scripts.bootstrap_v10_cloudflare_builds import (
+    BootstrapStopped,
+    CloudflareApi,
+    _BUILD_TOKEN_NAME,
+    _build_token_uuid_with_authority,
+)
 
 
 _CLOUDFLARE_TOKEN_ENV = "CLOUDFLARE_API_" + "TOKEN_VALUE"
@@ -27,7 +32,7 @@ def _required(environ: Mapping[str, str], name: str) -> str:
     return value
 
 
-def _verify_user_scoped_token(api: _CloudflareReadApi) -> None:
+def _verify_user_scoped_token(api: _CloudflareReadApi) -> str:
     result = api.request("GET", "/user/tokens/verify")
     if not isinstance(result, dict):
         raise BootstrapStopped("CLOUDFLARE_WORKERS_BUILDS_TOKEN_VERIFY_INVALID")
@@ -36,14 +41,30 @@ def _verify_user_scoped_token(api: _CloudflareReadApi) -> None:
         raise BootstrapStopped("CLOUDFLARE_WORKERS_BUILDS_TOKEN_ID_INVALID")
     if result.get("status") != "active":
         raise BootstrapStopped("CLOUDFLARE_WORKERS_BUILDS_TOKEN_NOT_ACTIVE")
+    return token_id.lower()
+
+
+def _verify_existing_build_token_authority(rows: Any, token_id: str) -> None:
+    if not isinstance(rows, list):
+        raise BootstrapStopped("CLOUDFLARE_BUILD_TOKENS_INVALID")
+    matches = [
+        row
+        for row in rows
+        if isinstance(row, dict) and row.get("build_token_name") == _BUILD_TOKEN_NAME
+    ]
+    if len(matches) > 1:
+        raise BootstrapStopped("CLOUDFLARE_BUILD_TOKEN_NOT_UNIQUE")
+    if matches:
+        _build_token_uuid_with_authority(matches[0], token_id)
 
 
 def _probe_read_authority(api: _CloudflareReadApi) -> None:
-    _verify_user_scoped_token(api)
-    api.request(
+    token_id = _verify_user_scoped_token(api)
+    build_tokens = api.request(
         "GET",
-        f"/accounts/{api.account_id}/builds/tokens?per_page=1",
+        f"/accounts/{api.account_id}/builds/tokens?per_page=200",
     )
+    _verify_existing_build_token_authority(build_tokens, token_id)
     api.request(
         "GET",
         f"/accounts/{api.account_id}/workers/scripts",
