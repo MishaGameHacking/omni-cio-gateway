@@ -18,6 +18,7 @@ EXPECTED_SHARDS = [
     "CFV-6-RELEASE-PROVENANCE",
 ]
 
+
 def _load() -> dict[str, Any]:
     try:
         value = json.loads(CONTRACT.read_text(encoding="utf-8"))
@@ -103,8 +104,8 @@ def _validate_shards(payload: dict[str, Any]) -> None:
     for item in shards:
         if not isinstance(item, dict):
             raise RuntimeError("CLOUDFLARE_VERIFIER_SHARD_INVALID")
-        expected_command = (
-            "python scripts/run_v10_cloudflare_verifier.py " + str(item.get("id"))
+        expected_command = "python scripts/run_v10_cloudflare_verifier.py " + str(
+            item.get("id")
         )
         if item.get("command") != expected_command:
             raise RuntimeError("CLOUDFLARE_VERIFIER_SHARD_COMMAND_INVALID")

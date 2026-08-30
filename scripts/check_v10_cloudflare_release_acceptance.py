@@ -239,7 +239,7 @@ def _validate_live_probe() -> None:
     _require_markers(
         probe,
         (
-            "[[ \"$#\" -ne 1 ]]",
+            '[[ "$#" -ne 1 ]]',
             "--proto '=https'",
             "--tlsv1.2",
             "--max-redirs 0",
