@@ -60,7 +60,6 @@ def probe_workers_builds_authority(
     try:
         token = _required(environment, _CLOUDFLARE_TOKEN_ENV)
         account_id = _required(environment, _CLOUDFLARE_ACCOUNT_ENV)
-        print(f"::add-mask::{token}")
         api = CloudflareApi(account_id, token)
         _probe_read_authority(api)
     except BootstrapStopped as exc:
