@@ -120,13 +120,12 @@ class CloudflareCandidateProviderTests(unittest.TestCase):
         )
         guard._validate_candidate_pre_mutation_authority(good)
 
+        missing_probe = "\n".join(guard._PROVIDER_MUTATION_STEP_MARKERS)
         with self.assertRaisesRegex(
             RuntimeError,
             "CLOUDFLARE_CANDIDATE_PRE_MUTATION_AUTHORITY_PROBE_MISSING",
         ):
-            guard._validate_candidate_pre_mutation_authority(
-                "\n".join(guard._PROVIDER_MUTATION_STEP_MARKERS)
-            )
+            guard._validate_candidate_pre_mutation_authority(missing_probe)
 
         late_probe = "\n".join(
             (
