@@ -63,6 +63,19 @@ class CloudflareNodeSupplyChainTests(unittest.TestCase):
                 ):
                     guard.validate()
 
+    def test_guard_rejects_locked_npm_bootstrap_drift(self) -> None:
+        payload = json.loads(guard.PACKAGE_LOCK.read_text(encoding="utf-8"))
+        payload["packages"]["node_modules/npm"]["version"] = "11.15.0"
+        with tempfile.TemporaryDirectory() as temporary:
+            candidate = Path(temporary) / "package-lock.json"
+            candidate.write_text(json.dumps(payload), encoding="utf-8")
+            with mock.patch.object(guard, "PACKAGE_LOCK", candidate):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "CLOUDFLARE_NODE_SUPPLY_CHAIN_LOCK_NPM_BOOTSTRAP_INVALID",
+                ):
+                    guard.validate()
+
     def test_guard_rejects_root_lifecycle_scripts(self) -> None:
         payload = json.loads(guard.PACKAGE.read_text(encoding="utf-8"))
         payload["scripts"]["postinstall"] = "node scripts/unreviewed.js"
