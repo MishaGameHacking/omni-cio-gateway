@@ -139,9 +139,10 @@ class CloudflareProviderReadinessTests(unittest.TestCase):
     def _complete_environment() -> dict[str, str]:
         return {
             readiness._CLOUDFLARE_AUTHORITY_ENV: "cf-value",
-            readiness._CLOUDFLARE_ACCOUNT_PRIMARY_ENV: "account-value",
+            readiness._CLOUDFLARE_ACCOUNT_ENV: "a" * 32,
             readiness._NEON_AUTHORITY_ENV: "neon-value",
-            readiness._NEON_ORGANIZATION_ENV: "org-value",
+            readiness._NEON_ORGANIZATION_ENV: "org-test",
+            readiness._NEON_PROJECT_ENV: "project-test",
         }
 
     def test_complete_authority_with_docker_selects_direct_deploy(self) -> None:
@@ -173,6 +174,30 @@ class CloudflareProviderReadinessTests(unittest.TestCase):
         for value in environment.values():
             if value:
                 self.assertNotIn(value, report)
+
+    def test_invalid_provider_identifiers_fail_closed_without_value_disclosure(
+        self,
+    ) -> None:
+        cases = (
+            (readiness._CLOUDFLARE_ACCOUNT_ENV, "CLOUDFLARE_ACCOUNT_ID", "not-an-id"),
+            (readiness._NEON_ORGANIZATION_ENV, "NEON_ORG_ID", "INVALID_ORG"),
+            (readiness._NEON_PROJECT_ENV, "NEON_PROJECT_ID", "INVALID_PROJECT"),
+        )
+        for name, label, invalid_value in cases:
+            with self.subTest(label=label):
+                environment = self._complete_environment()
+                environment[name] = invalid_value
+                output = StringIO()
+                with patch.object(readiness.shutil, "which", return_value=None):
+                    status = readiness.check_provider_readiness(
+                        environment,
+                        output=output,
+                    )
+                report = output.getvalue()
+                self.assertEqual(status, 78)
+                self.assertIn(f"{label}=INVALID", report)
+                self.assertNotIn(invalid_value, report)
+                self.assertIn("CLOUDFLARE_CF_C_PROVIDER_READINESS=BLOCKED", report)
 
     def test_missing_docker_selects_workers_builds_without_blocking(self) -> None:
         output = StringIO()
@@ -450,7 +475,6 @@ class CloudflareProviderReadinessTests(unittest.TestCase):
             {"branch": builds._BRANCH, "commit_hash": sha},
         )
 
-
     def test_successful_build_requires_complete_candidate_identity(self) -> None:
         sha = "c" * 40
 
@@ -491,10 +515,11 @@ class CloudflareProviderReadinessTests(unittest.TestCase):
                     }
                 raise AssertionError((method, path))
 
+        api = _StatusApi()
         with self.assertRaisesRegex(
             RuntimeError, "CLOUDFLARE_BUILD_OUTCOME_MISSING"
         ):
-            builds._wait_build(_StatusApi(), "e" * 36, sha)
+            builds._wait_build(api, "e" * 36, sha)
 
     def test_successful_build_requires_nested_exact_commit_hash(self) -> None:
         sha = "c" * 40
@@ -512,8 +537,9 @@ class CloudflareProviderReadinessTests(unittest.TestCase):
                     }
                 raise AssertionError((method, path))
 
+        api = _StatusApi()
         with self.assertRaisesRegex(RuntimeError, "CLOUDFLARE_BUILD_SHA_MISMATCH"):
-            builds._wait_build(_StatusApi(), "e" * 36, sha)
+            builds._wait_build(api, "e" * 36, sha)
 
 
 if __name__ == "__main__":

@@ -42,11 +42,39 @@ def _validate_candidate_secret_scope(workflow: str) -> None:
         job_header,
         (
             "CLOUDFLARE_API_TOKEN:",
+            "CLOUDFLARE_ACCOUNT_ID:",
             "NEON_API_KEY:",
+            "NEON_ORG_ID:",
+            "NEON_PROJECT_ID:",
             "secrets.CLOUDFLARE_API_TOKEN",
+            "secrets.CLOUDFLARE_ACCOUNT_ID",
             "secrets.NEON_API_KEY",
+            "secrets.NEON_ORG_ID",
+            "secrets.NEON_PROJECT_ID",
         ),
         "CLOUDFLARE_CANDIDATE_JOB_SECRET_SCOPE_TOO_BROAD",
+    )
+
+
+def _validate_provider_identity_custody(workflow: str) -> None:
+    _require_markers(
+        workflow,
+        (
+            "secrets.CLOUDFLARE_ACCOUNT_ID",
+            "secrets.NEON_ORG_ID",
+            "secrets.NEON_PROJECT_ID",
+        ),
+        "CLOUDFLARE_PROVIDER_IDENTITY_SECRET_CUSTODY_MISSING",
+    )
+    _forbid_markers(
+        workflow,
+        (
+            "vars.CLOUDFLARE_ACCOUNT_ID",
+            "vars.NEON_ORG_ID",
+            "vars.NEON_PROJECT_ID",
+            "CLOUDFLARE_ACCOUNT_ID_VAR_VALUE",
+        ),
+        "CLOUDFLARE_PROVIDER_IDENTITY_VARIABLE_CUSTODY_FORBIDDEN",
     )
 
 
@@ -58,10 +86,11 @@ def _validate_candidate_workflow() -> None:
             "name: V10 Cloudflare Candidate Deployment",
             "system/cloudflare-public-product",
             "secrets.CLOUDFLARE_API_TOKEN",
-            "vars.CLOUDFLARE_ACCOUNT_ID",
+            "secrets.CLOUDFLARE_ACCOUNT_ID",
             "secrets.NEON_API_KEY",
-            "vars.NEON_ORG_ID",
-            "vars.NEON_PROJECT_ID",
+            "secrets.NEON_ORG_ID",
+            "secrets.NEON_PROJECT_ID",
+            "python -m scripts.check_v10_cloudflare_provider_readiness",
             "provision_v10_cloudflare_neon_runtime",
             "wrangler.bootstrap.staging.jsonc",
             "bootstrap_v10_cloudflare_builds",
@@ -70,12 +99,6 @@ def _validate_candidate_workflow() -> None:
             'test "$(npm --version)" = "11.16.0"',
             "npm ci --ignore-scripts --no-audit --no-fund",
             "./node_modules/.bin/wrangler",
-            "CLOUDFLARE_ACCOUNT_ID=INVALID",
-            "NEON_ORG_ID=INVALID",
-            "NEON_PROJECT_ID=MISSING",
-            "NEON_PROJECT_ID=INVALID",
-            'echo "::add-mask::$account_id"',
-            'echo "::add-mask::$NEON_ORG_ID"',
             "for attempt in $(seq 1 40); do",
             "attempt=${attempt}/40",
             "git clean -ffdx",
@@ -95,13 +118,19 @@ def _validate_candidate_workflow() -> None:
         "CLOUDFLARE_CANDIDATE_DYNAMIC_PATH_ARGUMENT_FORBIDDEN",
     )
     _validate_candidate_secret_scope(workflow)
+    _validate_provider_identity_custody(workflow)
 
 
 def _validate_readiness_workflow() -> None:
     readiness = _read(READINESS_WORKFLOW)
     _require_markers(
         readiness,
-        ("python -m scripts.check_v10_cloudflare_provider_readiness",),
+        (
+            "python -m scripts.check_v10_cloudflare_provider_readiness",
+            "CLOUDFLARE_ACCOUNT_ID_CREDENTIAL_VALUE:",
+            "NEON_ORG_ID_VALUE:",
+            "NEON_PROJECT_ID_VALUE:",
+        ),
         "CLOUDFLARE_CANDIDATE_PROVIDER_CHECK_MISSING",
     )
     _require_markers(
@@ -113,7 +142,7 @@ def _validate_readiness_workflow() -> None:
         readiness,
         (
             "probe_provider_access_from_env",
-            "vars.NEON_PROJECT_ID",
+            "secrets.NEON_PROJECT_ID",
             "NEON_PROJECT_ID:",
         ),
         "CLOUDFLARE_CANDIDATE_NEON_READ_PROBE_MISSING",
@@ -123,6 +152,7 @@ def _validate_readiness_workflow() -> None:
         ("CLOUDFLARE_API_TOKEN=AVAILABLE", "CLOUDFLARE_DEPLOY_PATH=WORKERS_BUILDS"),
         "CLOUDFLARE_CANDIDATE_INLINE_AUTHORITY_PROBE_FORBIDDEN",
     )
+    _validate_provider_identity_custody(readiness)
 
 
 def _validate_provider_readiness() -> None:
@@ -130,8 +160,14 @@ def _validate_provider_readiness() -> None:
     _require_markers(
         source,
         (
-            "_CLOUDFLARE_ACCOUNT_PRIMARY_ENV",
-            "_CLOUDFLARE_ACCOUNT_FALLBACK_ENV",
+            "_CLOUDFLARE_ACCOUNT_ENV",
+            "_NEON_PROJECT_ENV",
+            "_ACCOUNT_ID",
+            "_NEON_RESOURCE_ID",
+            "CLOUDFLARE_ACCOUNT_ID",
+            "NEON_ORG_ID",
+            "NEON_PROJECT_ID",
+            "INVALID",
             "_container_engine_available",
             "CLOUDFLARE_DEPLOY_PATH=WORKERS_BUILDS",
             "CLOUDFLARE_CF_C_PROVIDER_READINESS=BLOCKED",
@@ -145,6 +181,11 @@ def _validate_provider_readiness() -> None:
         source,
         ("shell=True",),
         "CLOUDFLARE_CANDIDATE_PROVIDER_SHELL_FORBIDDEN",
+    )
+    _forbid_markers(
+        source,
+        ("_CLOUDFLARE_ACCOUNT_FALLBACK_ENV",),
+        "CLOUDFLARE_CANDIDATE_PROVIDER_VARIABLE_FALLBACK_FORBIDDEN",
     )
 
 

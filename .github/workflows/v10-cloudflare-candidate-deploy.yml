@@ -48,50 +48,19 @@ jobs:
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
           test -z "$(git config --local --get-all credential.helper || true)"
 
-      - name: Resolve provider authority fail-closed
-        shell: bash
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID_SECRET_VALUE: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          CLOUDFLARE_ACCOUNT_ID_VAR_VALUE: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
-          NEON_ORG_ID: ${{ vars.NEON_ORG_ID }}
-          NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
-        run: |
-          set -euo pipefail
-          test -n "${CLOUDFLARE_API_TOKEN:-}"
-          test -n "${NEON_API_KEY:-}"
-          test -n "${NEON_ORG_ID:-}"
-          if [[ -z "${NEON_PROJECT_ID:-}" ]]; then
-            echo "NEON_PROJECT_ID=MISSING" >&2
-            exit 78
-          fi
-          if [[ -n "${CLOUDFLARE_ACCOUNT_ID_SECRET_VALUE:-}" ]]; then
-            account_id="$CLOUDFLARE_ACCOUNT_ID_SECRET_VALUE"
-          else
-            account_id="${CLOUDFLARE_ACCOUNT_ID_VAR_VALUE:-}"
-          fi
-          test -n "$account_id"
-          if [[ ! "$account_id" =~ ^[0-9A-Fa-f]{32}$ ]]; then
-            echo "CLOUDFLARE_ACCOUNT_ID=INVALID" >&2
-            exit 78
-          fi
-          if [[ ! "$NEON_ORG_ID" =~ ^[a-z0-9-]{1,60}$ ]]; then
-            echo "NEON_ORG_ID=INVALID" >&2
-            exit 78
-          fi
-          if [[ ! "$NEON_PROJECT_ID" =~ ^[a-z0-9-]{1,60}$ ]]; then
-            echo "NEON_PROJECT_ID=INVALID" >&2
-            exit 78
-          fi
-          echo "::add-mask::$account_id"
-          echo "::add-mask::$NEON_ORG_ID"
-          printf 'CLOUDFLARE_ACCOUNT_ID=%s\n' "$account_id" >> "$GITHUB_ENV"
-          echo "CLOUDFLARE_PROVIDER_AUTHORITY=AVAILABLE"
-
       - name: Bootstrap protected runner Python
         shell: cmd
         run: scripts\bootstrap_windows_ci_python.cmd
+
+      - name: Resolve provider authority fail-closed without identifier logging
+        shell: cmd
+        env:
+          CLOUDFLARE_API_TOKEN_VALUE: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID_CREDENTIAL_VALUE: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          NEON_API_KEY_VALUE: ${{ secrets.NEON_API_KEY }}
+          NEON_ORG_ID_VALUE: ${{ secrets.NEON_ORG_ID }}
+          NEON_PROJECT_ID_VALUE: ${{ secrets.NEON_PROJECT_ID }}
+        run: python -m scripts.check_v10_cloudflare_provider_readiness
 
       - name: Install exact hashed provider control-plane dependencies
         shell: cmd
@@ -103,8 +72,8 @@ jobs:
         shell: bash
         env:
           NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
-          NEON_ORG_ID: ${{ vars.NEON_ORG_ID }}
-          NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
+          NEON_ORG_ID: ${{ secrets.NEON_ORG_ID }}
+          NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID }}
         run: |
           set -euo pipefail
           dsn_file="${RUNNER_TEMP}/omni-cio-v10-cloudflare-staging-dsn.txt"
@@ -128,6 +97,7 @@ jobs:
         shell: bash
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           set -euo pipefail
           ./node_modules/.bin/wrangler deploy --config cloudflare/wrangler.bootstrap.staging.jsonc
@@ -137,6 +107,7 @@ jobs:
         shell: bash
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           set -euo pipefail
           python -m scripts.bootstrap_v10_cloudflare_builds \

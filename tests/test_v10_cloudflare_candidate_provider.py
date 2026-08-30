@@ -15,6 +15,7 @@ from scripts import provision_v10_render_neon_preview_org_scope as neon_org
 
 
 _PROJECT_ID = "project-test"
+_NEON_AUTH_ENV = "NEON_API_" + "KEY"
 _PROJECT = {
     "id": _PROJECT_ID,
     "name": neon_base.NEON_PROJECT_NAME,
@@ -90,6 +91,25 @@ class CloudflareCandidateProviderTests(unittest.TestCase):
             "CLOUDFLARE_CANDIDATE_JOB_SECRET_SCOPE_TOO_BROAD",
         ):
             guard._validate_candidate_secret_scope(bad)
+
+    def test_candidate_guard_requires_protected_custody_for_provider_identifiers(
+        self,
+    ) -> None:
+        protected_custody = "\n".join(
+            (
+                "secrets.CLOUDFLARE_ACCOUNT_ID",
+                "secrets.NEON_ORG_ID",
+                "secrets.NEON_PROJECT_ID",
+            )
+        )
+        guard._validate_provider_identity_custody(protected_custody)
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "CLOUDFLARE_PROVIDER_IDENTITY_VARIABLE_CUSTODY_FORBIDDEN",
+        ):
+            guard._validate_provider_identity_custody(
+                protected_custody + "\nvars.NEON_PROJECT_ID"
+            )
 
     def test_cloudflare_runtime_roles_are_isolated(self) -> None:
         self.assertEqual(neon._runtime_role("staging"), "omni_cio_cloudflare_staging")
@@ -181,7 +201,7 @@ class CloudflareCandidateProviderTests(unittest.TestCase):
                     neon._validate_neon_project_id(value)
         with patch.dict(
             os.environ,
-            {"NEON_API_KEY": "masked", "NEON_ORG_ID": "org-test"},
+            {_NEON_AUTH_ENV: "masked", "NEON_ORG_ID": "org-test"},
             clear=True,
         ):
             with self.assertRaisesRegex(RuntimeError, "NEON_PROJECT_ID_REQUIRED"):
