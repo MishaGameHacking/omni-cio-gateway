@@ -21,8 +21,15 @@ class _BuildTokenApi:
         if method == "GET" and path.endswith("/builds/tokens?per_page=200"):
             return []
         if method == "POST" and path.endswith("/builds/tokens"):
-            self.created_body = kwargs.get("body")
-            return {"build_token_uuid": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"}
+            body = kwargs.get("body")
+            if not isinstance(body, dict):
+                raise AssertionError("build token body required")
+            self.created_body = body
+            return {
+                "build_token_uuid": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+                "cloudflare_token_id": body.get("cloudflare_token_id"),
+                "owner_type": "user",
+            }
         raise AssertionError((method, path))
 
 
@@ -226,8 +233,9 @@ class CloudflareProviderReadinessTests(unittest.TestCase):
     def test_build_token_payload_uses_provider_field_without_scan_allowlist(
         self,
     ) -> None:
+        token_id = "b" * 32
         api = _BuildTokenApi()
-        identifier = builds._ensure_build_token(api, "b" * 32)
+        identifier = builds._ensure_build_token(api, token_id)
         self.assertEqual(identifier, "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
         self.assertIsNotNone(api.created_body)
         assert api.created_body is not None
@@ -235,6 +243,7 @@ class CloudflareProviderReadinessTests(unittest.TestCase):
             api.created_body[builds._BUILD_TOKEN_VALUE_FIELD],
             api.token,
         )
+        self.assertEqual(api.created_body["cloudflare_token_id"], token_id)
         self.assertEqual(
             set(api.created_body),
             {
