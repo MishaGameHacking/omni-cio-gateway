@@ -25,7 +25,7 @@ _STAGE_WORKER_SCRIPTS = "WORKERS_SCRIPTS"
 class _CloudflareReadApi(Protocol):
     account_id: str
 
-    def request(self, method: str, path: str, **kwargs: Any) -> Any: ...
+    def request(self, method: str, path: str) -> Any: ...
 
 
 class _AuthorityProbeStopped(BootstrapStopped):
