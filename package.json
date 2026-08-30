@@ -18,6 +18,7 @@
     "@cloudflare/containers": "0.3.7"
   },
   "devDependencies": {
+    "npm": "11.16.0",
     "wrangler": "4.127.1"
   }
 }
