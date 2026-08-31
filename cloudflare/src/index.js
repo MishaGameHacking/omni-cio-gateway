@@ -6,17 +6,33 @@ const BACKEND_INSTANCE_COUNT = 1;
 const INTERNAL_HOST = "omni-cio.internal";
 const INTERNAL_PROXY_URL = "https://omni-cio.internal/_omni/cloudflare-proxy";
 const REQUIRED_DATABASE_ENV_NAME = "OMNI_V10_POSTGRES_DSN";
+const REQUIRED_DATABASE_ROLE_ENV_NAME = "OMNI_V10_POSTGRES_RUNTIME_ROLE";
+const ALLOWED_DATABASE_RUNTIME_ROLES = new Set([
+  "omni_cio_cloudflare_prod",
+  "omni_cio_cloudflare_staging",
+]);
 const MAX_ROUTE_PATH_LENGTH = 4096;
 const MAX_ROUTE_QUERY_LENGTH = 8192;
 
+function runtimeDatabaseRole(bindings) {
+  const value = bindings[REQUIRED_DATABASE_ROLE_ENV_NAME];
+  return typeof value === "string" && ALLOWED_DATABASE_RUNTIME_ROLES.has(value)
+    ? value
+    : null;
+}
+
 function backendEnvironment() {
   const databaseDsn = runtimeEnv[REQUIRED_DATABASE_ENV_NAME];
+  const runtimeRole = runtimeDatabaseRole(runtimeEnv);
   return {
     OMNI_V10_CLOUDFLARE_RUNTIME: "1",
     OMNI_V10_RELEASE_SHA: SOURCE_SHA,
     OMNI_V10_INTERNAL_HOSTNAME: INTERNAL_HOST,
     ...(typeof databaseDsn === "string" && databaseDsn.length > 0
       ? { OMNI_V10_POSTGRES_DSN: databaseDsn }
+      : {}),
+    ...(runtimeRole
+      ? { OMNI_V10_POSTGRES_RUNTIME_ROLE: runtimeRole }
       : {}),
   };
 }
@@ -94,6 +110,16 @@ async function proxyBackend(request, env, routeUrl) {
       {
         status: "unavailable",
         detail: "CLOUDFLARE_RUNTIME_DATABASE_NOT_CONFIGURED",
+        release_sha: SOURCE_SHA,
+      },
+      503,
+    );
+  }
+  if (!runtimeDatabaseRole(env)) {
+    return hardenedJson(
+      {
+        status: "unavailable",
+        detail: "CLOUDFLARE_RUNTIME_DATABASE_ROLE_NOT_CONFIGURED",
         release_sha: SOURCE_SHA,
       },
       503,

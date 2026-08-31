@@ -36,6 +36,11 @@
     "connection": "DIRECT_TLS_DSN_FROM_CLOUDFLARE_SECRET",
     "hyperdrive_used": false,
     "d1_used": false,
+    "runtime_roles": {
+      "production": "omni_cio_cloudflare_prod",
+      "staging": "omni_cio_cloudflare_staging",
+      "historical_hosted_preview_preserved": "omni_cio_hosted_api"
+    },
     "reason": "Cloudflare currently documents Hyperdrive known PostgreSQL support through 17.x; PG18 compatibility is not assumed."
   },
   "security": {
@@ -51,6 +56,8 @@
     "internal_route_headers_are_removed_before_app": true,
     "runtime_database_secret_required": true,
     "database_secret_absence_returns_503_before_container_start": true,
+    "runtime_database_role_source_controlled": true,
+    "runtime_database_role_validated_at_worker_and_container": true,
     "telegram_vk_provider_auth_enabled": false,
     "public_multi_user_enabled": false,
     "broker_write": false,

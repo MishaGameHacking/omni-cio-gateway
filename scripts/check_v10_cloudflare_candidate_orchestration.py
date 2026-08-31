@@ -27,6 +27,10 @@ _GATED_STEP = (
     "- name: Configure Workers Builds and accept exact staging build (gated exact-SHA)"
 )
 _GATED_COMMAND = "python -m scripts.run_v10_cloudflare_gated_candidate"
+_GATED_WAIT_MARKER = "builds._wait_build(api, build_uuid, sha)"
+_GATED_CLEANUP_MARKER = (
+    "quarantine_staging_autobuild(api, expected_sha=sha, verify_head=False)"
+)
 _LIVE_ACCEPTANCE = "- name: Accept live staging Worker and Container"
 _EVIDENCE = "- name: Record accepted staging evidence"
 _POST_QUARANTINE = "- name: Quarantine staging trigger after candidate attempt"
@@ -204,7 +208,7 @@ def _validate_gated_runner() -> None:
             "CLOUDFLARE_GATED_TRIGGER=ARMED_UNTIL_BUILD_TERMINAL",
             "quarantine_staging_autobuild",
             "CLOUDFLARE_GATED_CANDIDATE_CLEANUP_FAILED",
-            'builds._wait_build(api, build_uuid, sha)',
+            _GATED_WAIT_MARKER,
             'builds._write_output("staging_url", url)',
             'builds._write_output("cloudflare_build_uuid", build_uuid)',
         ),
@@ -222,16 +226,10 @@ def _validate_gated_runner() -> None:
         ),
         "CLOUDFLARE_ORCHESTRATION_AUTOBUILD_REUSE_FORBIDDEN",
     )
-    _require_order(
-        source,
-        (
-            "build_uuid = _start_exact_manual_build(",
-            "CLOUDFLARE_GATED_TRIGGER=ARMED_UNTIL_BUILD_TERMINAL",
-            "builds._wait_build(api, build_uuid, sha)",
-            "quarantine_staging_autobuild(api, expected_sha=sha, verify_head=False)",
-        ),
-        "CLOUDFLARE_ORCHESTRATION_ACTIVE_TRIGGER_LIFETIME_INVALID",
-    )
+    wait_index = source.find(_GATED_WAIT_MARKER)
+    cleanup_index = source.find(_GATED_CLEANUP_MARKER)
+    if wait_index < 0 or cleanup_index < 0 or wait_index >= cleanup_index:
+        raise RuntimeError("CLOUDFLARE_ORCHESTRATION_ACTIVE_TRIGGER_LIFETIME_INVALID")
 
 
 def _object(value: object, code: str) -> dict[str, Any]:

@@ -14,8 +14,8 @@ from apps.api.hosted_preview import (
     PREVIEW_SESSION_POLICY,
     HostedPreviewServicesV1,
     _hostname,
-    _probe_hosted_preview_database,
     _release_sha,
+    _verify_synthetic_scope,
     create_hosted_preview_app,
 )
 from omni_cio.persistence.migration import connect_postgres
@@ -25,6 +25,13 @@ from omni_cio.web.persistence_v1 import PostgresWebSessionRegistryV1
 _INTERNAL_HOST = "omni-cio.internal"
 _INTERNAL_PROXY_PATH = "/_omni/cloudflare-proxy"
 _DSN_ENV_NAME = "OMNI_V10_POSTGRES_DSN"
+_RUNTIME_ROLE_ENV_NAME = "OMNI_V10_POSTGRES_RUNTIME_ROLE"
+_ALLOWED_RUNTIME_ROLES = frozenset(
+    {
+        "omni_cio_cloudflare_prod",
+        "omni_cio_cloudflare_staging",
+    }
+)
 _SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 _SECONDARY_ROUTE_ESCAPE_PATTERN = re.compile(r"%(?:2e|2f|5c|25)", re.IGNORECASE)
 _CLIENT_IP_HEADER = b"x-omni-client-ip"
@@ -50,6 +57,92 @@ def _required_env(name: str) -> str:
     if not value:
         raise RuntimeError(f"{name}_REQUIRED")
     return value
+
+
+def _runtime_database_role() -> str:
+    role = _required_env(_RUNTIME_ROLE_ENV_NAME)
+    if role not in _ALLOWED_RUNTIME_ROLES:
+        raise RuntimeError("CLOUDFLARE_RUNTIME_DATABASE_ROLE_INVALID")
+    return role
+
+
+def _probe_cloudflare_runtime_database(
+    connection: Any,
+    *,
+    expected_runtime_role: str,
+) -> None:
+    """Validate the Cloudflare least-privilege PostgreSQL runtime boundary.
+
+    This is intentionally a Cloudflare adapter rather than a mutation of the accepted
+    historical WP22A hosted-preview probe. The provider-specific role name differs,
+    while the PostgreSQL 18, membership, schema, and FORCE-RLS requirements remain
+    equivalent and fail closed.
+    """
+
+    version = connection.execute("SHOW server_version_num").fetchone()
+    if version is None or int(version[0]) // 10000 != 18:
+        raise RuntimeError("CLOUDFLARE_RUNTIME_POSTGRES18_REQUIRED")
+
+    role = connection.execute(
+        "SELECT rolname, rolcanlogin, rolsuper, rolcreatedb, rolcreaterole, "
+        "rolreplication, rolbypassrls FROM pg_catalog.pg_roles "
+        "WHERE rolname = current_user"
+    ).fetchone()
+    if role != (
+        expected_runtime_role,
+        True,
+        False,
+        False,
+        False,
+        False,
+        False,
+    ):
+        raise RuntimeError("CLOUDFLARE_RUNTIME_DATABASE_ROLE_DRIFT")
+
+    memberships = connection.execute(
+        "SELECT count(*) FROM pg_catalog.pg_auth_members m "
+        "JOIN pg_catalog.pg_roles r ON r.oid = m.member "
+        "WHERE r.rolname = current_user"
+    ).fetchone()
+    if memberships is None or int(memberships[0]) != 0:
+        raise RuntimeError("CLOUDFLARE_RUNTIME_DATABASE_MEMBERSHIP_FORBIDDEN")
+
+    required = connection.execute(
+        "SELECT to_regclass('omni_cio_v10.tenants'), "
+        "to_regclass('omni_cio_v10.users'), "
+        "to_regclass('omni_cio_v10.web_sessions')"
+    ).fetchone()
+    if required is None or any(value is None for value in required):
+        raise RuntimeError("CLOUDFLARE_RUNTIME_DATABASE_SCHEMA_INCOMPLETE")
+
+    rows = connection.execute(
+        "SELECT c.relname, c.relrowsecurity, c.relforcerowsecurity "
+        "FROM pg_catalog.pg_class c "
+        "JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "
+        "WHERE n.nspname = 'omni_cio_v10' "
+        "AND c.relname = ANY(%s) ORDER BY c.relname",
+        (
+            [
+                "broker_accounts",
+                "broker_connection_accounts",
+                "broker_connections",
+            ],
+        ),
+    ).fetchall()
+    if len(rows) != 3 or any(not bool(row[1]) or not bool(row[2]) for row in rows):
+        raise RuntimeError("CLOUDFLARE_RUNTIME_DATABASE_FORCE_RLS_REQUIRED")
+
+
+def _probe_cloudflare_database(
+    connection: Any,
+    *,
+    expected_runtime_role: str,
+) -> None:
+    _probe_cloudflare_runtime_database(
+        connection,
+        expected_runtime_role=expected_runtime_role,
+    )
+    _verify_synthetic_scope(connection)
 
 
 def _header_map(scope: Mapping[str, Any]) -> dict[bytes, bytes]:
@@ -215,11 +308,15 @@ def create_app():
     release_sha = _release_sha(_required_env("OMNI_V10_RELEASE_SHA"))
     if _SHA_PATTERN.fullmatch(release_sha) is None:
         raise RuntimeError("CLOUDFLARE_RUNTIME_RELEASE_SHA_INVALID")
+    runtime_role = _runtime_database_role()
 
     raw_connection = connect_postgres(_required_env(_DSN_ENV_NAME))
     _configure_long_lived_web_connection(raw_connection)
     connection = _SerializedWebConnection(raw_connection)
-    _probe_hosted_preview_database(connection)
+    _probe_cloudflare_database(
+        connection,
+        expected_runtime_role=runtime_role,
+    )
     sessions = PostgresWebSessionRegistryV1(
         connection,
         policy=PREVIEW_SESSION_POLICY,
@@ -232,7 +329,10 @@ def create_app():
     hosted_app = create_hosted_preview_app(
         HostedPreviewServicesV1(
             sessions=sessions,
-            database_probe=lambda: _probe_hosted_preview_database(connection),
+            database_probe=lambda: _probe_cloudflare_database(
+                connection,
+                expected_runtime_role=runtime_role,
+            ),
             hostname=hostname,
             release_sha=release_sha,
             provider_auth=None,

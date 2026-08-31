@@ -54,6 +54,19 @@ class CloudflareRuntimeCompatibilityTests(unittest.TestCase):
                 ):
                     guard.validate()
 
+    def test_guard_rejects_runtime_role_contract_drift(self) -> None:
+        payload = json.loads(guard.CONTRACT.read_text(encoding="utf-8"))
+        payload["database"]["runtime_roles"]["staging"] = "omni_cio_hosted_api"
+        with tempfile.TemporaryDirectory() as temporary:
+            candidate = Path(temporary) / "runtime.json"
+            candidate.write_text(json.dumps(payload), encoding="utf-8")
+            with mock.patch.object(guard, "CONTRACT", candidate):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "CLOUDFLARE_RUNTIME_DATABASE_ROLES_INVALID",
+                ):
+                    guard.validate()
+
     def test_guard_rejects_public_multi_user_activation(self) -> None:
         payload = json.loads(guard.CONTRACT.read_text(encoding="utf-8"))
         payload["security"]["public_multi_user_enabled"] = True
@@ -119,6 +132,49 @@ class CloudflareRuntimeCompatibilityTests(unittest.TestCase):
                 with self.assertRaisesRegex(
                     RuntimeError,
                     "CLOUDFLARE_RUNTIME_CONTAINER_LIMIT_INVALID",
+                ):
+                    guard.validate()
+
+    def test_guard_rejects_production_runtime_role_binding_drift(self) -> None:
+        payload = json.loads(guard.WRANGLER.read_text(encoding="utf-8"))
+        payload["vars"][guard._RUNTIME_ROLE_BINDING] = "omni_cio_cloudflare_staging"
+        with tempfile.TemporaryDirectory() as temporary:
+            candidate = Path(temporary) / "wrangler.json"
+            candidate.write_text(json.dumps(payload), encoding="utf-8")
+            with mock.patch.object(guard, "WRANGLER", candidate):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "CLOUDFLARE_RUNTIME_PRODUCTION_ROLE_BINDING_INVALID",
+                ):
+                    guard.validate()
+
+    def test_guard_rejects_staging_runtime_role_binding_drift(self) -> None:
+        payload = json.loads(guard.WRANGLER.read_text(encoding="utf-8"))
+        payload["env"]["staging"]["vars"][guard._RUNTIME_ROLE_BINDING] = (
+            "omni_cio_cloudflare_prod"
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            candidate = Path(temporary) / "wrangler.json"
+            candidate.write_text(json.dumps(payload), encoding="utf-8")
+            with mock.patch.object(guard, "WRANGLER", candidate):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "CLOUDFLARE_RUNTIME_STAGING_ROLE_BINDING_INVALID",
+                ):
+                    guard.validate()
+
+    def test_guard_rejects_worker_role_passthrough_removal(self) -> None:
+        worker = guard.WORKER.read_text(encoding="utf-8").replace(
+            "OMNI_V10_POSTGRES_RUNTIME_ROLE: runtimeRole",
+            "OMNI_V10_POSTGRES_RUNTIME_ROLE_DISABLED: runtimeRole",
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            candidate = Path(temporary) / "index.js"
+            candidate.write_text(worker, encoding="utf-8")
+            with mock.patch.object(guard, "WORKER", candidate):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "CLOUDFLARE_RUNTIME_WORKER_GUARD_MISSING",
                 ):
                     guard.validate()
 

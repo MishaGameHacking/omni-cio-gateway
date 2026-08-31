@@ -18,6 +18,7 @@ WORKER = ROOT / "cloudflare/src/index.js"
 DOCKERFILE = ROOT / "Dockerfile.cloudflare"
 RUNTIME = ROOT / "apps/api/cloudflare_runtime.py"
 WEB_CONFIG = ROOT / "apps/web/vite.config.ts"
+_RUNTIME_ROLE_BINDING = "OMNI_V10_POSTGRES_RUNTIME_ROLE"
 
 
 def _read(path: Path) -> str:
@@ -60,6 +61,19 @@ def _forbid_markers(source: str, markers: tuple[str, ...], code: str) -> None:
         raise RuntimeError(code)
 
 
+def _runtime_roles(contract: dict[str, Any]) -> dict[str, Any]:
+    database = _object(contract.get("database"), "DATABASE")
+    roles = _object(database.get("runtime_roles"), "DATABASE_RUNTIME_ROLES")
+    expected = {
+        "production": "omni_cio_cloudflare_prod",
+        "staging": "omni_cio_cloudflare_staging",
+        "historical_hosted_preview_preserved": "omni_cio_hosted_api",
+    }
+    if roles != expected:
+        raise RuntimeError("CLOUDFLARE_RUNTIME_DATABASE_ROLES_INVALID")
+    return roles
+
+
 def _validate_contract_identity(contract: dict[str, Any]) -> None:
     if contract.get("schema") != "omni-cio.v10.cloudflare-runtime-compatibility.v1":
         raise RuntimeError("CLOUDFLARE_RUNTIME_SCHEMA_INVALID")
@@ -88,6 +102,7 @@ def _validate_contract_runtime(contract: dict[str, Any]) -> None:
         or database.get("d1_used") is not False
     ):
         raise RuntimeError("CLOUDFLARE_RUNTIME_DATABASE_SUBSTITUTION_FORBIDDEN")
+    _runtime_roles(contract)
     if cost.get("automatic_paid_overage_authorized") is not False:
         raise RuntimeError("CLOUDFLARE_RUNTIME_PAID_OVERAGE_FORBIDDEN")
     if release.get("worker_name") != "omni-cio-v10-web":
@@ -108,6 +123,8 @@ def _validate_contract_security(contract: dict[str, Any]) -> None:
         "internal_route_headers_are_removed_before_app",
         "runtime_database_secret_required",
         "database_secret_absence_returns_503_before_container_start",
+        "runtime_database_role_source_controlled",
+        "runtime_database_role_validated_at_worker_and_container",
     )
     for key in expected_true:
         if security.get(key) is not True:
@@ -131,6 +148,7 @@ def _validate_contract_security(contract: dict[str, Any]) -> None:
 
 def _validate_wrangler(contract: dict[str, Any]) -> None:
     release = _object(contract.get("release"), "RELEASE")
+    roles = _runtime_roles(contract)
     wrangler = _load_json(WRANGLER)
     if wrangler.get("name") != release["worker_name"]:
         raise RuntimeError("CLOUDFLARE_RUNTIME_WRANGLER_NAME_MISMATCH")
@@ -143,6 +161,14 @@ def _validate_wrangler(contract: dict[str, Any]) -> None:
         raise RuntimeError("CLOUDFLARE_RUNTIME_SPA_FALLBACK_INVALID")
     if assets.get("run_worker_first") != ["/api/*", "/healthz"]:
         raise RuntimeError("CLOUDFLARE_RUNTIME_EDGE_ROUTING_INVALID")
+    production_vars = _object(wrangler.get("vars"), "VARS")
+    if production_vars != {_RUNTIME_ROLE_BINDING: roles["production"]}:
+        raise RuntimeError("CLOUDFLARE_RUNTIME_PRODUCTION_ROLE_BINDING_INVALID")
+    environments = _object(wrangler.get("env"), "ENV")
+    staging = _object(environments.get("staging"), "STAGING")
+    staging_vars = _object(staging.get("vars"), "STAGING_VARS")
+    if staging_vars != {_RUNTIME_ROLE_BINDING: roles["staging"]}:
+        raise RuntimeError("CLOUDFLARE_RUNTIME_STAGING_ROLE_BINDING_INVALID")
     container = _single_object(
         wrangler.get("containers"),
         "CONTAINER",
@@ -161,6 +187,12 @@ def _validate_worker() -> None:
     required = (
         'INTERNAL_HOST = "omni-cio.internal"',
         'INTERNAL_PROXY_URL = "https://omni-cio.internal/_omni/cloudflare-proxy"',
+        'REQUIRED_DATABASE_ROLE_ENV_NAME = "OMNI_V10_POSTGRES_RUNTIME_ROLE"',
+        '"omni_cio_cloudflare_prod"',
+        '"omni_cio_cloudflare_staging"',
+        "ALLOWED_DATABASE_RUNTIME_ROLES.has(value)",
+        "OMNI_V10_POSTGRES_RUNTIME_ROLE: runtimeRole",
+        "CLOUDFLARE_RUNTIME_DATABASE_ROLE_NOT_CONFIGURED",
         'sleepAfter = "1m"',
         'headers.delete("x-forwarded-for")',
         'headers.delete("x-forwarded-host")',
@@ -222,6 +254,14 @@ def _validate_runtime() -> None:
         'OMNI_V10_CLOUDFLARE_RUNTIME", ""',
         '"CLOUDFLARE_RUNTIME_NOT_ENABLED"',
         '"OMNI_V10_POSTGRES_DSN"',
+        '"OMNI_V10_POSTGRES_RUNTIME_ROLE"',
+        '"omni_cio_cloudflare_prod"',
+        '"omni_cio_cloudflare_staging"',
+        '"CLOUDFLARE_RUNTIME_DATABASE_ROLE_INVALID"',
+        '"CLOUDFLARE_RUNTIME_DATABASE_ROLE_DRIFT"',
+        '"CLOUDFLARE_RUNTIME_DATABASE_MEMBERSHIP_FORBIDDEN"',
+        '"CLOUDFLARE_RUNTIME_DATABASE_FORCE_RLS_REQUIRED"',
+        "_verify_synthetic_scope(connection)",
         '"/_omni/cloudflare-proxy"',
         "_validated_client_ip(headers)",
         'restored_scope["scheme"] = "https"',
@@ -232,12 +272,18 @@ def _validate_runtime() -> None:
         '"type": "websocket.close"',
         '"code": 1008',
         "CloudflareEdgeRouteRestoreV1",
-        "return CloudflareEdgeRouteRestoreV1(hosted_app, release_sha=release_sha)",
-        "_probe_hosted_preview_database(connection)",
+        "runtime_role = _runtime_database_role()",
+        "_probe_cloudflare_database(",
+        "expected_runtime_role=runtime_role",
         "provider_auth=None",
         "trusted_edge_tls_terminated=False",
     )
     _require_markers(runtime, required, "CLOUDFLARE_RUNTIME_FASTAPI_GUARD_MISSING")
+    _forbid_markers(
+        runtime,
+        ("_probe_hosted_preview_database(connection)", '"omni_cio_hosted_api"'),
+        "CLOUDFLARE_RUNTIME_HISTORICAL_ROLE_REUSE_FORBIDDEN",
+    )
 
 
 def _validate_web_config() -> None:
@@ -279,7 +325,7 @@ def main() -> int:
     print("Incoming forwarded headers: STRIPPED; UVICORN TRUST DISABLED")
     print("Client IP + TLS scheme: RESTORED FROM INTERNAL CLOUDFLARE CONTRACT")
     print("WebSocket direct ingress: PROTOCOL-SAFE REJECTION")
-    print("Database: direct Neon PostgreSQL 18; Hyperdrive disabled")
+    print("Database: direct Neon PostgreSQL 18; environment role BOUND+VALIDATED")
     return 0
 
 
