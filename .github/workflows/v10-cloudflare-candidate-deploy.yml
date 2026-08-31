@@ -69,6 +69,22 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID_CREDENTIAL_VALUE: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: python -m scripts.probe_v10_cloudflare_workers_builds_authority
 
+      - name: Install exact Cloudflare delivery toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(node --version)" = "v24.18.0"
+          test "$(npm --version)" = "11.16.0"
+          npm ci --ignore-scripts --no-audit --no-fund
+          test "$(./node_modules/.bin/wrangler --version | awk '{print $NF}')" = "4.127.1"
+
+      - name: Verify Cloudflare Containers registry read authority
+        shell: cmd
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: python -m scripts.probe_v10_cloudflare_container_registry_authority
+
       - name: Install exact hashed provider control-plane dependencies
         shell: cmd
         run: |
@@ -90,15 +106,6 @@ jobs:
             --environment staging
           test -s "$dsn_file"
           printf 'OMNI_V10_STAGING_DSN_FILE=%s\n' "$dsn_file" >> "$GITHUB_ENV"
-
-      - name: Install exact Cloudflare delivery toolchain
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "$(node --version)" = "v24.18.0"
-          test "$(npm --version)" = "11.16.0"
-          npm ci --ignore-scripts --no-audit --no-fund
-          test "$(./node_modules/.bin/wrangler --version | awk '{print $NF}')" = "4.127.1"
 
       - name: Bootstrap isolated staging Worker without local Containers
         shell: bash

@@ -16,6 +16,12 @@ BOOTSTRAP_WORKER = ROOT / "cloudflare/bootstrap-staging-worker.js"
 STAGING_WORKER_ANCHOR_PROBE = (
     ROOT / "scripts/probe_v10_cloudflare_staging_worker_anchor.py"
 )
+CONTAINER_REGISTRY_AUTHORITY_PROBE = (
+    ROOT / "scripts/probe_v10_cloudflare_container_registry_authority.py"
+)
+CONTAINER_DEPLOY_AUTHORITY_CONTRACT = (
+    ROOT / "docs/architecture/V10_CLOUDFLARE_CONTAINER_DEPLOY_AUTHORITY_CONTRACT.json"
+)
 NEON_PROVISIONER = ROOT / "scripts/provision_v10_cloudflare_neon_runtime.py"
 BUILDS_BOOTSTRAP = ROOT / "scripts/bootstrap_v10_cloudflare_builds.py"
 
@@ -29,6 +35,13 @@ _PROVIDER_IDENTITY_SECRET_MARKERS = (
 )
 _WORKERS_BUILDS_AUTHORITY_PROBE = (
     "python -m scripts.probe_v10_cloudflare_workers_builds_authority"
+)
+_CONTAINER_REGISTRY_AUTHORITY_COMMAND = (
+    "python -m scripts.probe_v10_cloudflare_container_registry_authority"
+)
+_CLOUDFLARE_TOOLCHAIN_STEP_MARKER = "- name: Install exact Cloudflare delivery toolchain"
+_CONTAINER_REGISTRY_STEP_MARKER = (
+    "- name: Verify Cloudflare Containers registry read authority"
 )
 _STAGING_WORKER_ANCHOR_COMMAND = (
     "python -m scripts.probe_v10_cloudflare_staging_worker_anchor"
@@ -113,6 +126,23 @@ def _validate_candidate_pre_mutation_authority(workflow: str) -> None:
             raise RuntimeError("CLOUDFLARE_CANDIDATE_AUTHORITY_PROBE_AFTER_MUTATION")
 
 
+def _validate_container_registry_pre_mutation_authority(workflow: str) -> None:
+    toolchain_index = workflow.find(_CLOUDFLARE_TOOLCHAIN_STEP_MARKER)
+    step_index = workflow.find(_CONTAINER_REGISTRY_STEP_MARKER)
+    command_index = workflow.find(_CONTAINER_REGISTRY_AUTHORITY_COMMAND)
+    indices = (toolchain_index, step_index, command_index)
+    if any(index < 0 for index in indices):
+        raise RuntimeError("CLOUDFLARE_CANDIDATE_CONTAINER_AUTHORITY_PROBE_MISSING")
+    if tuple(sorted(indices)) != indices:
+        raise RuntimeError("CLOUDFLARE_CANDIDATE_CONTAINER_AUTHORITY_PROBE_ORDER_INVALID")
+    for marker in _PROVIDER_MUTATION_STEP_MARKERS:
+        mutation_index = workflow.find(marker)
+        if mutation_index < 0:
+            raise RuntimeError("CLOUDFLARE_CANDIDATE_PROVIDER_MUTATION_STEP_MISSING")
+        if mutation_index < command_index:
+            raise RuntimeError("CLOUDFLARE_CANDIDATE_CONTAINER_AUTHORITY_AFTER_MUTATION")
+
+
 def _bootstrap_worker_section(workflow: str) -> str:
     start_marker = _PROVIDER_MUTATION_STEP_MARKERS[1]
     end_marker = _PROVIDER_MUTATION_STEP_MARKERS[2]
@@ -166,6 +196,8 @@ def _validate_candidate_workflow() -> None:
             _NEON_PROJECT_ID_SECRET,
             "python -m scripts.check_v10_cloudflare_provider_readiness",
             _WORKERS_BUILDS_AUTHORITY_PROBE,
+            _CONTAINER_REGISTRY_AUTHORITY_COMMAND,
+            _CONTAINER_REGISTRY_STEP_MARKER,
             _STAGING_WORKER_ANCHOR_COMMAND,
             "provision_v10_cloudflare_neon_runtime",
             "wrangler.bootstrap.staging.jsonc",
@@ -196,6 +228,7 @@ def _validate_candidate_workflow() -> None:
     _validate_candidate_secret_scope(workflow)
     _validate_provider_identity_custody(workflow)
     _validate_candidate_pre_mutation_authority(workflow)
+    _validate_container_registry_pre_mutation_authority(workflow)
     _validate_idempotent_worker_anchor_bootstrap(workflow)
 
 
@@ -264,6 +297,59 @@ def _validate_provider_readiness() -> None:
         source,
         ("_CLOUDFLARE_ACCOUNT_FALLBACK_ENV",),
         "CLOUDFLARE_CANDIDATE_PROVIDER_VARIABLE_FALLBACK_FORBIDDEN",
+    )
+
+
+def _validate_container_registry_authority_probe() -> None:
+    source = _read(CONTAINER_REGISTRY_AUTHORITY_PROBE)
+    _require_markers(
+        source,
+        (
+            '"containers"',
+            '"images"',
+            '"list"',
+            '"--json"',
+            "stdout=subprocess.DEVNULL",
+            "stderr=subprocess.DEVNULL",
+            "check=False",
+            "timeout=_PROBE_TIMEOUT_SECONDS",
+            "CLOUDFLARE_CONTAINERS_REGISTRY_READ=READY",
+            "CLOUDFLARE_CONTAINERS_REGISTRY_AUTHORITY_REQUIRED",
+            "CLOUDFLARE_CONTAINERS_REGISTRY_PROBE_TIMEOUT",
+            "CLOUDFLARE_ACCOUNT_ID_INVALID",
+            "return _PROVIDER_BLOCKED",
+        ),
+        "CLOUDFLARE_CANDIDATE_CONTAINER_AUTHORITY_PROBE_INVALID",
+    )
+    _forbid_markers(
+        source,
+        (
+            "shell=True",
+            "capture_output=True",
+            "stdout=subprocess.PIPE",
+            "stderr=subprocess.PIPE",
+        ),
+        "CLOUDFLARE_CANDIDATE_CONTAINER_AUTHORITY_OUTPUT_CAPTURE_FORBIDDEN",
+    )
+
+
+def _validate_container_deploy_authority_contract() -> None:
+    contract = _read(CONTAINER_DEPLOY_AUTHORITY_CONTRACT)
+    _require_markers(
+        contract,
+        (
+            '"milestone": "CF-C"',
+            '"operation": "READ_ONLY"',
+            '"command": "wrangler containers images list --json"',
+            '"must_run_before_neon_or_cloudflare_candidate_mutation": true',
+            '"read_probe_success_is_candidate_deploy_acceptance": false',
+            '"real_exact_sha_container_build_and_live_probe_still_required": true',
+            '"raw_wrangler_probe_output_in_ci_allowed": false',
+            '"production_promotion_allowed_in_cf_c": false',
+            '"PUBLIC_MULTI_USER_ENABLED": false',
+            '"REAL_TRADING_ENABLED": false',
+        ),
+        "CLOUDFLARE_CANDIDATE_CONTAINER_AUTHORITY_CONTRACT_INVALID",
     )
 
 
@@ -401,6 +487,9 @@ def _validate_builds_bootstrap() -> None:
             "CLOUDFLARE_DEPLOY_COMMAND_MISMATCH",
             "CLOUDFLARE_BUILD_OUTCOME_MISSING",
             "CLOUDFLARE_BUILD_TOKEN_STALE",
+            "CLOUDFLARE_CONTAINER_REGISTRY_UNAUTHORIZED",
+            "CLOUDFLARE_CONTAINERS_ACCESS_DENIED",
+            "CLOUDFLARE_FIRST_DEPLOY_SECRET_INHERITANCE_FAILED",
             "builds/{safe_uuid}/logs",
             "_BUILD_LOG_NOT_READY_RETRY_DELAYS",
             "CLOUDFLARE_BUILD_LOGS=NOT_READY",
@@ -431,6 +520,8 @@ def validate() -> None:
     _validate_candidate_workflow()
     _validate_readiness_workflow()
     _validate_provider_readiness()
+    _validate_container_registry_authority_probe()
+    _validate_container_deploy_authority_contract()
     _validate_ledger()
     _validate_bootstrap_worker()
     _validate_neon_provisioner()
