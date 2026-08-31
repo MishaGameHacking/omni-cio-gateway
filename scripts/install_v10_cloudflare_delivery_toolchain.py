@@ -270,7 +270,10 @@ def _capture_version(command: tuple[str, ...], code: str) -> str:
         raise ToolchainBootstrapStopped(code) from exc
     if completed.returncode != 0:
         raise ToolchainBootstrapStopped(code)
-    return completed.stdout.strip().split()[-1]
+    tokens = completed.stdout.strip().split()
+    if not tokens:
+        raise ToolchainBootstrapStopped(code)
+    return tokens[-1]
 
 
 def _install_root_dependencies(node: Path, npm_cli: Path) -> None:

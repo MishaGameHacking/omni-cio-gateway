@@ -4,6 +4,7 @@ import ast
 import inspect
 import io
 from pathlib import Path
+import subprocess
 import tarfile
 import tempfile
 import unittest
@@ -107,6 +108,23 @@ class CloudflareDeliveryToolchainQualityTests(unittest.TestCase):
                 "_write_archive_member",
             }.issubset(call_names)
         )
+
+    def test_capture_version_fails_closed_on_empty_success_output(self) -> None:
+        completed = subprocess.CompletedProcess(
+            args=("tool", installer._VERSION_FLAG),
+            returncode=0,
+            stdout=" \r\n",
+            stderr="",
+        )
+        with patch.object(installer.subprocess, "run", return_value=completed):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "CLOUDFLARE_TEST_VERSION_INVALID",
+            ):
+                installer._capture_version(
+                    ("tool", installer._VERSION_FLAG),
+                    "CLOUDFLARE_TEST_VERSION_INVALID",
+                )
 
 
 if __name__ == "__main__":
