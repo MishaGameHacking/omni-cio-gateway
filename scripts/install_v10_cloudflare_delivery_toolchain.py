@@ -9,7 +9,6 @@ import shutil
 import subprocess
 import sys
 import tarfile
-from urllib.error import HTTPError, URLError
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 
@@ -154,7 +153,7 @@ def _download_npm_tarball() -> bytes:
             payload = response.read(_MAX_TARBALL_BYTES + 1)
     except ToolchainBootstrapStopped:
         raise
-    except (HTTPError, URLError, OSError, TimeoutError) as exc:
+    except OSError as exc:
         raise ToolchainBootstrapStopped("CLOUDFLARE_NPM_DOWNLOAD_FAILED") from exc
     if not payload or len(payload) > _MAX_TARBALL_BYTES:
         raise ToolchainBootstrapStopped("CLOUDFLARE_NPM_TARBALL_SIZE_INVALID")
@@ -182,44 +181,74 @@ def _safe_member_path(name: str) -> PurePosixPath:
     return candidate
 
 
-def _extract_npm(payload: bytes, destination: Path) -> Path:
+def _prepare_extract_destination(destination: Path) -> None:
     if destination.exists():
         if destination.is_symlink():
             raise ToolchainBootstrapStopped("CLOUDFLARE_NPM_BOOTSTRAP_PATH_INVALID")
         shutil.rmtree(destination)
     destination.mkdir(parents=False)
-    unpacked = 0
+
+
+def _open_npm_archive(payload: bytes) -> tarfile.TarFile:
     try:
-        archive = tarfile.open(fileobj=io.BytesIO(payload), mode="r:gz")
+        return tarfile.open(fileobj=io.BytesIO(payload), mode="r:gz")
     except tarfile.TarError as exc:
         raise ToolchainBootstrapStopped("CLOUDFLARE_NPM_TARBALL_INVALID") from exc
+
+
+def _bounded_archive_members(archive: tarfile.TarFile) -> list[tarfile.TarInfo]:
+    members = archive.getmembers()
+    if len(members) > _MAX_ARCHIVE_MEMBERS:
+        raise ToolchainBootstrapStopped("CLOUDFLARE_NPM_TARBALL_MEMBER_COUNT_INVALID")
+    return members
+
+
+def _validate_archive_member(
+    member: tarfile.TarInfo,
+    unpacked: int,
+) -> tuple[PurePosixPath, int, bool]:
+    if len(member.name) > _MAX_MEMBER_NAME_CHARS:
+        raise ToolchainBootstrapStopped(_TARBALL_PATH_INVALID)
+    relative = _safe_member_path(member.name)
+    if member.isdir():
+        return relative, unpacked, True
+    if not member.isfile() or member.size < 0:
+        raise ToolchainBootstrapStopped(_TARBALL_MEMBER_INVALID)
+    unpacked += member.size
+    if unpacked > _MAX_UNPACKED_BYTES:
+        raise ToolchainBootstrapStopped("CLOUDFLARE_NPM_TARBALL_UNPACKED_SIZE_INVALID")
+    return relative, unpacked, False
+
+
+def _write_archive_member(
+    archive: tarfile.TarFile,
+    member: tarfile.TarInfo,
+    destination: Path,
+    relative: PurePosixPath,
+) -> None:
+    target = destination / Path(*relative.parts)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    source = archive.extractfile(member)
+    if source is None:
+        raise ToolchainBootstrapStopped(_TARBALL_MEMBER_INVALID)
+    with source, target.open("wb") as handle:
+        shutil.copyfileobj(source, handle, length=1024 * 1024)
+
+
+def _extract_npm(payload: bytes, destination: Path) -> Path:
+    _prepare_extract_destination(destination)
+    archive = _open_npm_archive(payload)
+    unpacked = 0
     with archive:
-        members = archive.getmembers()
-        if len(members) > _MAX_ARCHIVE_MEMBERS:
-            raise ToolchainBootstrapStopped(
-                "CLOUDFLARE_NPM_TARBALL_MEMBER_COUNT_INVALID"
+        for member in _bounded_archive_members(archive):
+            relative, unpacked, is_directory = _validate_archive_member(
+                member,
+                unpacked,
             )
-        for member in members:
-            if len(member.name) > _MAX_MEMBER_NAME_CHARS:
-                raise ToolchainBootstrapStopped(_TARBALL_PATH_INVALID)
-            relative = _safe_member_path(member.name)
-            if member.isdir():
+            if is_directory:
                 (destination / Path(*relative.parts)).mkdir(parents=True, exist_ok=True)
                 continue
-            if not member.isfile() or member.size < 0:
-                raise ToolchainBootstrapStopped(_TARBALL_MEMBER_INVALID)
-            unpacked += member.size
-            if unpacked > _MAX_UNPACKED_BYTES:
-                raise ToolchainBootstrapStopped(
-                    "CLOUDFLARE_NPM_TARBALL_UNPACKED_SIZE_INVALID"
-                )
-            target = destination / Path(*relative.parts)
-            target.parent.mkdir(parents=True, exist_ok=True)
-            source = archive.extractfile(member)
-            if source is None:
-                raise ToolchainBootstrapStopped(_TARBALL_MEMBER_INVALID)
-            with source, target.open("wb") as handle:
-                shutil.copyfileobj(source, handle, length=1024 * 1024)
+            _write_archive_member(archive, member, destination, relative)
     cli = destination / "package" / "bin" / "npm-cli.js"
     if not cli.is_file() or cli.is_symlink():
         raise ToolchainBootstrapStopped("CLOUDFLARE_NPM_CLI_MISSING")
