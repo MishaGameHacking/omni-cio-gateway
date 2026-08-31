@@ -134,9 +134,7 @@ def _validate_container_registry_pre_mutation_authority(workflow: str) -> None:
     command_index = workflow.find(_CONTAINER_REGISTRY_AUTHORITY_COMMAND)
     indices = (toolchain_index, step_index, command_index)
     if any(index < 0 for index in indices):
-        raise RuntimeError(
-            "CLOUDFLARE_CANDIDATE_CONTAINER_AUTHORITY_PROBE_MISSING"
-        )
+        raise RuntimeError("CLOUDFLARE_CANDIDATE_CONTAINER_AUTHORITY_PROBE_MISSING")
     if tuple(sorted(indices)) != indices:
         raise RuntimeError(
             "CLOUDFLARE_CANDIDATE_CONTAINER_AUTHORITY_PROBE_ORDER_INVALID"
@@ -146,7 +144,9 @@ def _validate_container_registry_pre_mutation_authority(workflow: str) -> None:
         if mutation_index < 0:
             raise RuntimeError("CLOUDFLARE_CANDIDATE_PROVIDER_MUTATION_STEP_MISSING")
         if mutation_index < command_index:
-            raise RuntimeError("CLOUDFLARE_CANDIDATE_CONTAINER_AUTHORITY_AFTER_MUTATION")
+            raise RuntimeError(
+                "CLOUDFLARE_CANDIDATE_CONTAINER_AUTHORITY_AFTER_MUTATION"
+            )
 
 
 def _bootstrap_worker_section(workflow: str) -> str:
