@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import subprocess
 import sys
+from typing import Iterator
 
 import scripts.bootstrap_v10_cloudflare_builds as builds
 from scripts.quarantine_v10_cloudflare_staging_trigger import (
@@ -11,6 +13,7 @@ from scripts.quarantine_v10_cloudflare_staging_trigger import (
 
 
 _GATED_AUTOBUILD_SENTINEL_BRANCH = "__omni_cf_c_manual_only__"
+_ALLOWED_SOURCE_BRANCHES = frozenset({"system/cloudflare-public-product", "main"})
 
 
 def _assert_exact_head(expected_sha: str) -> str:
@@ -31,6 +34,31 @@ def _assert_exact_head(expected_sha: str) -> str:
     if actual != sha:
         raise builds.BootstrapStopped("CLOUDFLARE_GIT_HEAD_MISMATCH")
     return sha
+
+
+def _source_branch(value: str) -> str:
+    branch = value.strip()
+    if branch not in _ALLOWED_SOURCE_BRANCHES:
+        raise builds.BootstrapStopped("CLOUDFLARE_CANDIDATE_SOURCE_BRANCH_INVALID")
+    return branch
+
+
+@contextmanager
+def _candidate_source_branch(branch: str) -> Iterator[None]:
+    """Bind the accepted legacy Builds helper to one explicit source branch.
+
+    The helper's branch selector predates the post-merge exact-main rehearsal and is
+    a module constant used by its build metadata checks. The CLI is single-threaded,
+    so this bounded adapter can reuse that hardened path without duplicating provider
+    logic. The original value is restored even after a provider failure.
+    """
+
+    previous = builds._BRANCH
+    builds._BRANCH = branch
+    try:
+        yield
+    finally:
+        builds._BRANCH = previous
 
 
 def _create_gated_trigger(
@@ -124,8 +152,9 @@ def _prepare_candidate(api: builds.CloudflareApi, sha: str) -> tuple[str, str]:
     return worker_tag, build_uuid
 
 
-def run(expected_sha: str) -> str:
+def run(expected_sha: str, *, source_branch: str = builds._BRANCH) -> str:
     sha = _assert_exact_head(expected_sha)
+    branch = _source_branch(source_branch)
     token = builds._required_env("CLOUDFLARE_API_TOKEN")
     account_id = builds._required_env("CLOUDFLARE_ACCOUNT_ID")
     api = builds.CloudflareApi(account_id, token)
@@ -133,18 +162,19 @@ def run(expected_sha: str) -> str:
     primary: builds.BootstrapStopped | None = None
     build_uuid: str | None = None
     url: str | None = None
-    try:
-        _, build_uuid = _prepare_candidate(api, sha)
-        builds._wait_build(api, build_uuid, sha)
-        url = builds._staging_url(api)
-    except builds.BootstrapStopped as exc:
-        primary = exc
+    with _candidate_source_branch(branch):
+        try:
+            _, build_uuid = _prepare_candidate(api, sha)
+            builds._wait_build(api, build_uuid, sha)
+            url = builds._staging_url(api)
+        except builds.BootstrapStopped as exc:
+            primary = exc
 
-    cleanup: builds.BootstrapStopped | None = None
-    try:
-        quarantine_staging_autobuild(api, expected_sha=sha, verify_head=False)
-    except builds.BootstrapStopped as exc:
-        cleanup = exc
+        cleanup: builds.BootstrapStopped | None = None
+        try:
+            quarantine_staging_autobuild(api, expected_sha=sha, verify_head=False)
+        except builds.BootstrapStopped as exc:
+            cleanup = exc
 
     if cleanup is not None:
         if primary is not None:
@@ -167,13 +197,18 @@ def run(expected_sha: str) -> str:
 def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--expected-sha", required=True)
+    parser.add_argument(
+        "--source-branch",
+        default=builds._BRANCH,
+        choices=tuple(sorted(_ALLOWED_SOURCE_BRANCHES)),
+    )
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(sys.argv[1:] if argv is None else argv)
     try:
-        run(args.expected_sha)
+        run(args.expected_sha, source_branch=args.source_branch)
     except builds.BootstrapStopped as exc:
         fields = ["CLOUDFLARE_CF_C_CANDIDATE=STOPPED", f"code={exc.code}"]
         if exc.status is not None:

@@ -28,6 +28,64 @@ class CloudflareReleaseAcceptanceTests(unittest.TestCase):
                 ):
                     guard.validate()
 
+    def test_guard_rejects_direct_cloudflare_git_production_deploy(self) -> None:
+        payload = json.loads(guard.CONTRACT.read_text(encoding="utf-8"))
+        payload["post_merge_gate"][
+            "direct_cloudflare_git_production_deploy_allowed"
+        ] = True
+        with tempfile.TemporaryDirectory() as temporary:
+            candidate = Path(temporary) / "release.json"
+            candidate.write_text(json.dumps(payload), encoding="utf-8")
+            with mock.patch.object(guard, "CONTRACT", candidate):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "CLOUDFLARE_RELEASE_POST_MERGE_"
+                    "DIRECT_CLOUDFLARE_GIT_PRODUCTION_DEPLOY_ALLOWED_INVALID",
+                ):
+                    guard.validate()
+
+    def test_guard_requires_stale_production_build_quarantine(self) -> None:
+        payload = json.loads(guard.CONTRACT.read_text(encoding="utf-8"))
+        payload["cutover"][
+            "stale_production_build_quarantine_before_snapshot_required"
+        ] = False
+        with tempfile.TemporaryDirectory() as temporary:
+            candidate = Path(temporary) / "release.json"
+            candidate.write_text(json.dumps(payload), encoding="utf-8")
+            with mock.patch.object(guard, "CONTRACT", candidate):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "CLOUDFLARE_RELEASE_CUTOVER_STALE_PRODUCTION_BUILD_"
+                    "QUARANTINE_BEFORE_SNAPSHOT_REQUIRED_INVALID",
+                ):
+                    guard.validate()
+
+    def test_guard_rejects_production_workers_dev(self) -> None:
+        payload = loads_jsonc(guard.WRANGLER.read_text(encoding="utf-8"))
+        payload["workers_dev"] = True
+        with tempfile.TemporaryDirectory() as temporary:
+            candidate = Path(temporary) / "wrangler.jsonc"
+            candidate.write_text(json.dumps(payload), encoding="utf-8")
+            with mock.patch.object(guard, "WRANGLER", candidate):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "CLOUDFLARE_RELEASE_PRODUCTION_WORKERS_DEV_INVALID",
+                ):
+                    guard.validate()
+
+    def test_guard_rejects_staging_without_workers_dev(self) -> None:
+        payload = loads_jsonc(guard.WRANGLER.read_text(encoding="utf-8"))
+        payload["env"]["staging"]["workers_dev"] = False
+        with tempfile.TemporaryDirectory() as temporary:
+            candidate = Path(temporary) / "wrangler.jsonc"
+            candidate.write_text(json.dumps(payload), encoding="utf-8")
+            with mock.patch.object(guard, "WRANGLER", candidate):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "CLOUDFLARE_RELEASE_STAGING_WORKERS_DEV_INVALID",
+                ):
+                    guard.validate()
+
     def test_guard_rejects_missing_staging_worker(self) -> None:
         payload = loads_jsonc(guard.WRANGLER.read_text(encoding="utf-8"))
         del payload["env"]["staging"]
@@ -118,6 +176,18 @@ class CloudflareReleaseAcceptanceTests(unittest.TestCase):
             with mock.patch.object(guard, "PACKAGE", candidate):
                 with self.assertRaisesRegex(
                     RuntimeError, "CLOUDFLARE_RELEASE_STAGING_DEPLOY_INVALID"
+                ):
+                    guard.validate()
+
+    def test_guard_rejects_production_deploy_without_container_rollout(self) -> None:
+        payload = json.loads(guard.PACKAGE.read_text(encoding="utf-8"))
+        payload["scripts"]["cloudflare:deploy"] = "wrangler deploy"
+        with tempfile.TemporaryDirectory() as temporary:
+            candidate = Path(temporary) / "package.json"
+            candidate.write_text(json.dumps(payload), encoding="utf-8")
+            with mock.patch.object(guard, "PACKAGE", candidate):
+                with self.assertRaisesRegex(
+                    RuntimeError, "CLOUDFLARE_RELEASE_PRODUCTION_DEPLOY_INVALID"
                 ):
                     guard.validate()
 

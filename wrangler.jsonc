@@ -4,7 +4,7 @@
   "main": "./cloudflare/src/index.js",
   "compatibility_date": "2026-08-29",
   "compatibility_flags": ["nodejs_compat"],
-  "workers_dev": true,
+  "workers_dev": false,
   "keep_vars": true,
   "build": {
     "command": "python scripts/write_v10_cloudflare_build_info.py && npm ci --ignore-scripts --prefix apps/web && npm run --prefix apps/web build"
@@ -48,6 +48,7 @@
   "env": {
     "staging": {
       "name": "omni-cio-v10-web-staging",
+      "workers_dev": true,
       "vars": {
         "OMNI_V10_POSTGRES_RUNTIME_ROLE": "omni_cio_cloudflare_staging"
       },

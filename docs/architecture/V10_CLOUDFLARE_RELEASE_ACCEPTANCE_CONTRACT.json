@@ -1,6 +1,6 @@
 {
   "schema": "omni-cio.v10.cloudflare-release-acceptance.v1",
-  "status": "BRANCH_LOCAL_CF_C_CF_D_IMPLEMENTATION",
+  "status": "BRANCH_LOCAL_CF_C_ACCEPTED_CF_D_SOURCE_READY",
   "update_id": "CLOUDFLARE-PUBLIC-PRODUCT-INTEGRATED",
   "candidate": {
     "milestone": "CF-C",
@@ -18,14 +18,45 @@
     "database_must_be_ready": true,
     "browser_root_http_200_required": true
   },
+  "post_merge_gate": {
+    "trigger_workflow": "Regression Shield",
+    "trigger_event": "workflow_run",
+    "required_source_event": "push",
+    "required_head_branch": "main",
+    "required_core_push_workflows": [
+      "Regression Shield",
+      "V10 Engineering Governance"
+    ],
+    "minimum_successful_push_workflows": 11,
+    "all_observed_latest_push_workflows_must_succeed": true,
+    "current_main_recheck_required": true,
+    "recheck_immediately_before_promotion": true,
+    "exact_main_staging_rehearsal_required": true,
+    "direct_cloudflare_git_production_deploy_allowed": false,
+    "release_workflow": ".github/workflows/v10-cloudflare-production-release.yml"
+  },
   "cutover": {
     "milestone": "CF-D",
     "provider_mutation_allowed": true,
     "production_promotion_allowed": true,
     "production_branch": "main",
-    "automatic_git_deploy_required": true,
-    "default_deploy_command": "npx wrangler deploy",
+    "automatic_git_deploy_required": false,
+    "gated_post_merge_deploy_required": true,
+    "production_worker_name": "omni-cio-v10-web",
+    "production_workers_dev": false,
+    "default_deploy_command": "npm run cloudflare:deploy",
+    "production_build_transport": "WORKERS_BUILDS_GATED_MANUAL_EXACT_MAIN",
+    "persistent_production_build_trigger_allowed": false,
+    "stale_production_build_quarantine_before_snapshot_required": true,
+    "unknown_production_trigger_fails_closed": true,
     "container_rollout_required": true,
+    "custom_domain_required": true,
+    "custom_domain_suffix": ".ru",
+    "production_database_binding": "OMNI_V10_POSTGRES_DSN",
+    "production_database_secret_bootstrap_if_missing_only": true,
+    "production_database_secret_rotation_each_release_allowed": false,
+    "rollback_version_snapshot_required": true,
+    "rollback_on_failed_live_acceptance_required": true,
     "post_merge_exact_sha_probe_required": true
   },
   "live_assertions": {
@@ -57,7 +88,13 @@
     "provider_outage_is_success": false,
     "non_production_worker_version_without_container_is_success": false,
     "unapproved_release_origin_is_success": false,
-    "python_dynamic_network_target_is_success": false
+    "python_dynamic_network_target_is_success": false,
+    "missing_post_merge_push_workflow_is_success": false,
+    "failed_post_merge_push_workflow_is_success": false,
+    "superseded_main_is_success": false,
+    "missing_custom_domain_is_success": false,
+    "rollback_failure_is_success": false,
+    "stale_production_build_race_is_success": false
   },
   "protected_invariants": {
     "broker_write": false,
