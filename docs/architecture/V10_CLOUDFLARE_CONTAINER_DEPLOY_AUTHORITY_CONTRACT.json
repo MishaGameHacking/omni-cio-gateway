@@ -22,7 +22,8 @@
     "candidate_build_start_mode": "MANUAL_EXACT_SHA_AFTER_AUTHORITY_GATES",
     "trigger_must_be_removed_after_candidate_attempt": true,
     "gated_trigger_branch_filter_must_not_match_integrated_branch": true,
-    "gated_trigger_must_be_deleted_immediately_after_manual_build_start": true
+    "gated_trigger_must_be_deleted_immediately_after_manual_build_start": false,
+    "gated_trigger_must_remain_until_candidate_build_terminal": true
   },
   "pre_mutation_probe": {
     "command": "wrangler containers images list --json",
@@ -72,7 +73,8 @@
       "default Workers Builds token permissions do not document Containers permissions",
       "wrangler containers images list is the supported managed-registry read command",
       "manual Workers Builds may specify both branch and commit_hash to pin an exact commit",
-      "Workers Builds API supports cancelling running builds and deleting triggers"
+      "Workers Builds API supports cancelling running builds and deleting triggers",
+      "Cloudflare does not document deletion of an owning trigger as safe while its build is still active"
     ]
   }
 }

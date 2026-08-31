@@ -201,11 +201,10 @@ def _validate_gated_runner() -> None:
             'desired["branch_includes"] = [_GATED_AUTOBUILD_SENTINEL_BRANCH]',
             'body={"branch": builds._BRANCH, "commit_hash": expected_sha}',
             "CLOUDFLARE_BUILD_SOURCE=GATED_MANUAL_EXACT_SHA",
-            "remove_staging_triggers",
-            "CLOUDFLARE_GATED_TRIGGER_RETIREMENT_INVALID",
-            "CLOUDFLARE_GATED_TRIGGER=RETIRED",
+            "CLOUDFLARE_GATED_TRIGGER=ARMED_UNTIL_BUILD_TERMINAL",
             "quarantine_staging_autobuild",
             "CLOUDFLARE_GATED_CANDIDATE_CLEANUP_FAILED",
+            'builds._wait_build(api, build_uuid, sha)',
             'builds._write_output("staging_url", url)',
             'builds._write_output("cloudflare_build_uuid", build_uuid)',
         ),
@@ -217,9 +216,21 @@ def _validate_gated_runner() -> None:
             "_start_or_reuse_build",
             "_find_exact_build",
             "CLOUDFLARE_BUILD_SOURCE=AUTO",
+            "remove_staging_triggers",
+            "CLOUDFLARE_GATED_TRIGGER=RETIRED",
             "continue-on-error",
         ),
         "CLOUDFLARE_ORCHESTRATION_AUTOBUILD_REUSE_FORBIDDEN",
+    )
+    _require_order(
+        source,
+        (
+            "build_uuid = _start_exact_manual_build(",
+            "CLOUDFLARE_GATED_TRIGGER=ARMED_UNTIL_BUILD_TERMINAL",
+            "builds._wait_build(api, build_uuid, sha)",
+            "quarantine_staging_autobuild(api, expected_sha=sha, verify_head=False)",
+        ),
+        "CLOUDFLARE_ORCHESTRATION_ACTIVE_TRIGGER_LIFETIME_INVALID",
     )
 
 
@@ -245,7 +256,8 @@ def _validate_contract() -> None:
         "candidate_build_start_mode": "MANUAL_EXACT_SHA_AFTER_AUTHORITY_GATES",
         "trigger_must_be_removed_after_candidate_attempt": True,
         "gated_trigger_branch_filter_must_not_match_integrated_branch": True,
-        "gated_trigger_must_be_deleted_immediately_after_manual_build_start": True,
+        "gated_trigger_must_be_deleted_immediately_after_manual_build_start": False,
+        "gated_trigger_must_remain_until_candidate_build_terminal": True,
     }
     if any(quarantine.get(key) != value for key, value in expected.items()):
         raise RuntimeError("CLOUDFLARE_ORCHESTRATION_QUARANTINE_CONTRACT_INVALID")
@@ -268,6 +280,7 @@ def main() -> int:
     print("V10 Cloudflare CF-C orchestration contract passed.")
     print("Staging push auto-build: QUARANTINED")
     print("Candidate build: MANUAL EXACT-SHA AFTER AUTHORITY GATES")
+    print("Gated trigger lifetime: UNTIL CANDIDATE BUILD TERMINAL")
     print("Root provider npm: INTEGRITY-PINNED 10.9.2")
     return 0
 

@@ -5,10 +5,7 @@ import subprocess
 import sys
 
 import scripts.bootstrap_v10_cloudflare_builds as builds
-from scripts.quarantine_v10_cloudflare_staging_trigger import (
-    quarantine_staging_autobuild,
-    remove_staging_triggers,
-)
+from scripts.quarantine_v10_cloudflare_staging_trigger import quarantine_staging_autobuild
 
 
 _GATED_AUTOBUILD_SENTINEL_BRANCH = "__omni_cf_c_manual_only__"
@@ -121,10 +118,7 @@ def _prepare_candidate(api: builds.CloudflareApi, sha: str) -> tuple[str, str]:
         trigger_uuid=trigger_uuid,
         expected_sha=sha,
     )
-    deleted = remove_staging_triggers(api, worker_tag)
-    if deleted != 1:
-        raise builds.BootstrapStopped("CLOUDFLARE_GATED_TRIGGER_RETIREMENT_INVALID")
-    print("CLOUDFLARE_GATED_TRIGGER=RETIRED")
+    print("CLOUDFLARE_GATED_TRIGGER=ARMED_UNTIL_BUILD_TERMINAL")
     return worker_tag, build_uuid
 
 
