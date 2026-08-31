@@ -9,14 +9,16 @@ import scripts.check_v10_cloudflare_candidate_delivery as guard
 import scripts.probe_v10_cloudflare_staging_worker_anchor as worker_anchor
 
 
-class _WorkerScriptsApi:
-    account_id = "a" * 32
-
+class _WorkerScriptsApi(worker_anchor.CloudflareApi):
     def __init__(self, rows: object) -> None:
+        self.account_id = "a" * 32
+        self.token = "masked-token"
         self.rows = rows
         self.calls: list[tuple[str, str]] = []
 
-    def request(self, method: str, path: str) -> Any:
+    def request(self, method: str, path: str, **kwargs: Any) -> Any:
+        if kwargs:
+            raise AssertionError(kwargs)
         self.calls.append((method, path))
         if method != "GET" or path != f"/accounts/{self.account_id}/workers/scripts":
             raise AssertionError((method, path))

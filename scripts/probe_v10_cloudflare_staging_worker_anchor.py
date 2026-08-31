@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 import os
 import sys
-from typing import Any, Protocol, TextIO
+from typing import TextIO
 
 from scripts.bootstrap_v10_cloudflare_builds import (
     BootstrapStopped,
@@ -19,12 +19,6 @@ _BOOTSTRAP_REQUIRED = 10
 _PROVIDER_BLOCKED = 78
 
 
-class _CloudflareWorkerReadApi(Protocol):
-    account_id: str
-
-    def request(self, method: str, path: str) -> Any: ...
-
-
 def _required(environ: Mapping[str, str], name: str) -> str:
     value = environ.get(name, "").strip()
     if not value:
@@ -32,7 +26,7 @@ def _required(environ: Mapping[str, str], name: str) -> str:
     return value
 
 
-def _staging_worker_anchor_present(api: _CloudflareWorkerReadApi) -> bool:
+def _staging_worker_anchor_present(api: CloudflareApi) -> bool:
     rows = api.request("GET", f"/accounts/{api.account_id}/workers/scripts")
     if not isinstance(rows, list):
         raise BootstrapStopped("CLOUDFLARE_WORKERS_INVALID")
