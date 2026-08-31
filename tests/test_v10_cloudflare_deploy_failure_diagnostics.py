@@ -19,7 +19,9 @@ class _TerminalBuildApi:
 
 
 class CloudflareDeployFailureDiagnosticTests(unittest.TestCase):
-    def test_container_registry_unauthorized_requires_container_image_context(self) -> None:
+    def test_container_registry_unauthorized_requires_container_image_context(
+        self,
+    ) -> None:
         diagnostic = builds._classify_build_failure(
             (
                 "Building image omni-cio-v10-web-staging:abcdef",
@@ -36,7 +38,9 @@ class CloudflareDeployFailureDiagnosticTests(unittest.TestCase):
         )
         self.assertEqual(unrelated, "CLOUDFLARE_BUILD_DEPLOY_PHASE_FAILED")
 
-    def test_container_access_denial_is_classified_without_raw_log_disclosure(self) -> None:
+    def test_container_access_denial_is_classified_without_raw_log_disclosure(
+        self,
+    ) -> None:
         cases = (
             "Authentication error",
             "ApiError: Forbidden",
@@ -78,7 +82,9 @@ class CloudflareDeployFailureDiagnosticTests(unittest.TestCase):
         )
         self.assertEqual(diagnostic, "CLOUDFLARE_BUILD_DEPLOY_PHASE_FAILED")
 
-    def test_actionable_container_diagnostic_propagates_from_terminal_build(self) -> None:
+    def test_actionable_container_diagnostic_propagates_from_terminal_build(
+        self,
+    ) -> None:
         api = cast(builds.CloudflareApi, _TerminalBuildApi())
         with patch.object(
             builds,
@@ -89,9 +95,15 @@ class CloudflareDeployFailureDiagnosticTests(unittest.TestCase):
                 RuntimeError,
                 "CLOUDFLARE_CONTAINER_REGISTRY_UNAUTHORIZED",
             ):
-                builds._wait_build(api, "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", "c" * 40)
+                builds._wait_build(
+                    api,
+                    "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+                    "c" * 40,
+                )
 
-    def test_generic_deploy_diagnostic_does_not_gain_false_actionable_authority(self) -> None:
+    def test_generic_deploy_diagnostic_does_not_gain_false_actionable_authority(
+        self,
+    ) -> None:
         api = cast(builds.CloudflareApi, _TerminalBuildApi())
         with patch.object(
             builds,
@@ -102,7 +114,11 @@ class CloudflareDeployFailureDiagnosticTests(unittest.TestCase):
                 RuntimeError,
                 "CLOUDFLARE_STAGING_BUILD_FAILED",
             ):
-                builds._wait_build(api, "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", "c" * 40)
+                builds._wait_build(
+                    api,
+                    "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+                    "c" * 40,
+                )
 
 
 if __name__ == "__main__":
