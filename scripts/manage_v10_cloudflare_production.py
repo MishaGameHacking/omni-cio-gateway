@@ -251,7 +251,8 @@ def _active_version_id(api: builds.CloudflareApi) -> str:
     )
     percentage = version.get("percentage")
     if (
-        not isinstance(percentage, (int, float))
+        isinstance(percentage, bool)
+        or not isinstance(percentage, (int, float))
         or Decimal(str(percentage)) != Decimal("100")
     ):
         raise builds.BootstrapStopped(

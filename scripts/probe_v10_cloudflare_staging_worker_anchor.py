@@ -48,7 +48,9 @@ def _worker_anchor_present(api: CloudflareApi, worker_name: str) -> bool:
     rows = api.request("GET", f"/accounts/{api.account_id}/workers/scripts")
     if not isinstance(rows, list):
         raise BootstrapStopped("CLOUDFLARE_WORKERS_INVALID")
-    matches = [row for row in rows if isinstance(row, dict) and row.get("id") == worker_name]
+    matches = [
+        row for row in rows if isinstance(row, dict) and row.get("id") == worker_name
+    ]
     if len(matches) > 1:
         code = (
             "CLOUDFLARE_STAGING_WORKER_NOT_UNIQUE"

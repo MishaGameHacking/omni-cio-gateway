@@ -228,6 +228,28 @@ class CloudflareProductionManagerTests(unittest.TestCase):
                 production.snapshot_active_deployment(self._environment()), _VERSION_ID
             )
 
+    def test_snapshot_rejects_boolean_percentage_with_classified_error(self) -> None:
+        path = f"/accounts/{_ACCOUNT_ID}/workers/scripts/omni-cio-v10-web/deployments"
+        environment = self._environment()
+        for percentage in (True, False):
+            with self.subTest(percentage=percentage):
+                payload = {
+                    "deployments": [
+                        {
+                            "versions": [
+                                {"percentage": percentage, "version_id": _VERSION_ID}
+                            ]
+                        }
+                    ]
+                }
+                api = _Api({("GET", path): payload})
+                with patch.object(production, "_api", return_value=api):
+                    with self.assertRaisesRegex(
+                        RuntimeError,
+                        "CLOUDFLARE_PRODUCTION_SPLIT_DEPLOYMENT_FORBIDDEN",
+                    ):
+                        production.snapshot_active_deployment(environment)
+
 
 if __name__ == "__main__":
     unittest.main()
