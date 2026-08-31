@@ -42,7 +42,9 @@ def _node_executable(explicit: Path | None = None) -> Path:
     if candidate is None:
         discovered = shutil.which("node")
         if not discovered:
-            raise RegistryAuthorityStopped("CLOUDFLARE_CONTAINER_PROBE_NODE_UNAVAILABLE")
+            raise RegistryAuthorityStopped(
+                "CLOUDFLARE_CONTAINER_PROBE_NODE_UNAVAILABLE"
+            )
         candidate = Path(discovered)
     try:
         resolved = candidate.resolve(strict=True)

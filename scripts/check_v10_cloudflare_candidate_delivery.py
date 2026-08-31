@@ -39,7 +39,9 @@ _WORKERS_BUILDS_AUTHORITY_PROBE = (
 _CONTAINER_REGISTRY_AUTHORITY_COMMAND = (
     "python -m scripts.probe_v10_cloudflare_container_registry_authority"
 )
-_CLOUDFLARE_TOOLCHAIN_STEP_MARKER = "- name: Install exact Cloudflare delivery toolchain"
+_CLOUDFLARE_TOOLCHAIN_STEP_MARKER = (
+    "- name: Install exact Cloudflare delivery toolchain"
+)
 _CONTAINER_REGISTRY_STEP_MARKER = (
     "- name: Verify Cloudflare Containers registry read authority"
 )
@@ -132,9 +134,13 @@ def _validate_container_registry_pre_mutation_authority(workflow: str) -> None:
     command_index = workflow.find(_CONTAINER_REGISTRY_AUTHORITY_COMMAND)
     indices = (toolchain_index, step_index, command_index)
     if any(index < 0 for index in indices):
-        raise RuntimeError("CLOUDFLARE_CANDIDATE_CONTAINER_AUTHORITY_PROBE_MISSING")
+        raise RuntimeError(
+            "CLOUDFLARE_CANDIDATE_CONTAINER_AUTHORITY_PROBE_MISSING"
+        )
     if tuple(sorted(indices)) != indices:
-        raise RuntimeError("CLOUDFLARE_CANDIDATE_CONTAINER_AUTHORITY_PROBE_ORDER_INVALID")
+        raise RuntimeError(
+            "CLOUDFLARE_CANDIDATE_CONTAINER_AUTHORITY_PROBE_ORDER_INVALID"
+        )
     for marker in _PROVIDER_MUTATION_STEP_MARKERS:
         mutation_index = workflow.find(marker)
         if mutation_index < 0:

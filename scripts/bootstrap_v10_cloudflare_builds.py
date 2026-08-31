@@ -739,7 +739,9 @@ def _classify_build_failure(messages: tuple[str, ...]) -> str:
     ):
         return "CLOUDFLARE_FIRST_DEPLOY_SECRET_INHERITANCE_FAILED"
 
-    container_image_context = any("building image " in message for message in normalized)
+    container_image_context = any(
+        "building image " in message for message in normalized
+    )
     if container_image_context and any(
         "unauthorized" in message for message in normalized
     ):
