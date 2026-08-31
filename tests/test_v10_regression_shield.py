@@ -314,7 +314,7 @@ class V10RegressionShieldGuardTests(unittest.TestCase):
                 self.assertTrue(audit_policy._contains_direct_one_shot_audit(command))
 
         wrapper_command = (
-            'python ..\\..\\scripts\\run_v10_npm_audit.py --npm '
+            "python ..\\..\\scripts\\run_v10_npm_audit.py --npm "
             '"C:\\Program Files\\nodejs\\npm.cmd" --audit-level high'
         )
         self.assertFalse(audit_policy._contains_direct_one_shot_audit(wrapper_command))

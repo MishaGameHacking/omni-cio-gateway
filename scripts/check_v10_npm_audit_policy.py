@@ -25,6 +25,11 @@ _RAW_NPM_AUDIT = re.compile(
     r"(?:npm(?:\.cmd)?|[\"'](?:[^\"'\r\n]*[\\/])?npm(?:\.cmd)?[\"'])\s+audit\b",
     re.IGNORECASE,
 )
+_WRAPPER_CONTRACT_TOKENS = (
+    "client network socket disconnected before secure tls connection was established",
+    "security gate remains failed closed",
+    "retry is forbidden",
+)
 
 
 def _display(path: Path) -> str:
@@ -57,43 +62,55 @@ def validate_npm_audit_workflow(path: Path, failures: list[str]) -> None:
         )
 
 
-def validate_repository() -> list[str]:
-    failures: list[str] = []
+def _validate_audit_wrapper(failures: list[str]) -> None:
     if not AUDIT_WRAPPER.is_file():
         failures.append(
             f"missing mandatory npm audit wrapper: {_display(AUDIT_WRAPPER)}"
         )
-    else:
-        source = AUDIT_WRAPPER.read_text(encoding="utf-8")
-        try:
-            compile(source, str(AUDIT_WRAPPER), "exec")
-        except SyntaxError as exc:
-            failures.append(f"npm audit wrapper is not valid Python: {exc}")
-        for token in (
-            "client network socket disconnected before secure tls connection was established",
-            "security gate remains failed closed",
-            "retry is forbidden",
-        ):
-            if token not in source.lower():
-                failures.append(
-                    "npm audit wrapper is missing fail-closed transport contract: "
-                    f"{token}"
-                )
+        return
 
+    source = AUDIT_WRAPPER.read_text(encoding="utf-8")
+    try:
+        compile(source, str(AUDIT_WRAPPER), "exec")
+    except SyntaxError as exc:
+        failures.append(f"npm audit wrapper is not valid Python: {exc}")
+
+    lowered_source = source.lower()
+    for token in _WRAPPER_CONTRACT_TOKENS:
+        if token not in lowered_source:
+            failures.append(
+                "npm audit wrapper is missing fail-closed transport contract: "
+                f"{token}"
+            )
+
+
+def _validate_required_audit_workflows(failures: list[str]) -> None:
     for workflow in REQUIRED_AUDIT_WORKFLOWS:
         validate_npm_audit_workflow(workflow, failures)
 
-    if WORKFLOWS.is_dir():
-        workflow_paths = sorted(WORKFLOWS.glob("*.yml")) + sorted(
-            WORKFLOWS.glob("*.yaml")
-        )
-        for workflow in workflow_paths:
-            text = workflow.read_text(encoding="utf-8")
-            if _contains_direct_one_shot_audit(text):
-                failures.append(
-                    f"{_display(workflow)} bypasses the bounded npm audit "
-                    "transport policy"
-                )
+
+def _workflow_paths() -> tuple[Path, ...]:
+    if not WORKFLOWS.is_dir():
+        return ()
+    return tuple(
+        sorted(WORKFLOWS.glob("*.yml")) + sorted(WORKFLOWS.glob("*.yaml"))
+    )
+
+
+def _validate_no_raw_audit_bypass(failures: list[str]) -> None:
+    for workflow in _workflow_paths():
+        text = workflow.read_text(encoding="utf-8")
+        if _contains_direct_one_shot_audit(text):
+            failures.append(
+                f"{_display(workflow)} bypasses the bounded npm audit transport policy"
+            )
+
+
+def validate_repository() -> list[str]:
+    failures: list[str] = []
+    _validate_audit_wrapper(failures)
+    _validate_required_audit_workflows(failures)
+    _validate_no_raw_audit_bypass(failures)
     return failures
 
 
