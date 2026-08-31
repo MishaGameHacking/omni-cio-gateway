@@ -20,6 +20,7 @@ _NONTERMINAL_BUILD_STATUSES = frozenset({"queued", "initializing", "running"})
 _TERMINAL_BUILD_OUTCOMES = frozenset(
     {"success", "fail", "skipped", "cancelled", "terminated"}
 )
+_CANCEL_CONFIRM_DELAYS = (1.0, 2.0, 4.0, 8.0, 15.0)
 
 
 def _assert_exact_head(expected_sha: str) -> str:
@@ -159,30 +160,24 @@ def _existing_triggers(
     return [builds._object(row, "CLOUDFLARE_TRIGGER_INVALID") for row in rows]
 
 
-def _quarantine_stale_owned_trigger(
+def _stale_owned_trigger_uuid(
     api: builds.CloudflareApi,
     *,
     worker_tag: str,
     connection_uuid: str,
     desired: dict[str, Any],
-) -> int:
+) -> str | None:
     rows = _existing_triggers(api, worker_tag)
     if not rows:
-        return 0
+        return None
     if len(rows) != 1 or rows[0].get("trigger_name") != _PRODUCTION_TRIGGER_NAME:
         raise builds.BootstrapStopped("CLOUDFLARE_PRODUCTION_AUTODEPLOY_FORBIDDEN")
-    trigger_uuid = _validate_trigger(
+    return _validate_trigger(
         rows[0],
         worker_tag=worker_tag,
         connection_uuid=connection_uuid,
         desired=desired,
     )
-    api.request(
-        "DELETE",
-        f"/accounts/{api.account_id}/builds/triggers/{trigger_uuid}",
-    )
-    print("CLOUDFLARE_PRODUCTION_STALE_GATED_TRIGGER=QUARANTINED")
-    return 1
 
 
 def _create_trigger(
@@ -300,19 +295,49 @@ def _wait_build(api: builds.CloudflareApi, build_uuid: str, expected_sha: str) -
         time.sleep(10.0)
 
 
-def _cancel_if_nonterminal(api: builds.CloudflareApi, build_uuid: str | None) -> None:
+def _wait_cancel_terminal(
+    api: builds.CloudflareApi,
+    build_uuid: str,
+) -> dict[str, Any]:
+    attempts = len(_CANCEL_CONFIRM_DELAYS) + 1
+    for attempt in range(attempts):
+        current = _build_status(api, build_uuid)
+        if _build_is_terminal(current):
+            return current
+        if attempt + 1 >= attempts:
+            raise builds.BootstrapStopped("CLOUDFLARE_PRODUCTION_BUILD_CANCEL_RACE")
+        time.sleep(_CANCEL_CONFIRM_DELAYS[attempt])
+    raise AssertionError("bounded production build cancellation confirmation exhausted")
+
+
+def _cancel_if_nonterminal(
+    api: builds.CloudflareApi,
+    build_uuid: str | None,
+) -> dict[str, Any] | None:
     if build_uuid is None:
-        return
+        return None
     current = _build_status(api, build_uuid)
     if _build_is_terminal(current):
-        return
-    api.request(
-        "PUT",
-        f"/accounts/{api.account_id}/builds/builds/{build_uuid}/cancel",
-    )
-    current = _build_status(api, build_uuid)
-    if not _build_is_terminal(current):
-        raise builds.BootstrapStopped("CLOUDFLARE_PRODUCTION_BUILD_CANCEL_FAILED")
+        return current
+    path = f"/accounts/{api.account_id}/builds/builds/{build_uuid}/cancel"
+    try:
+        api.request("PUT", path)
+    except builds.BootstrapStopped as exc:
+        if exc.code != "CLOUDFLARE_API_HTTP_ERROR" or exc.status not in {400, 409}:
+            raise
+    return _wait_cancel_terminal(api, build_uuid)
+
+
+def _assert_stale_build_safely_terminal(row: dict[str, Any]) -> None:
+    outcome = row.get("build_outcome")
+    if outcome == "success":
+        raise builds.BootstrapStopped(
+            "CLOUDFLARE_PRODUCTION_STALE_BUILD_SUCCESS_RACE"
+        )
+    if outcome not in builds._TERMINAL_BUILD_FAILURES:
+        raise builds.BootstrapStopped(
+            "CLOUDFLARE_PRODUCTION_STALE_BUILD_OUTCOME_UNCONFIRMED"
+        )
 
 
 def _cancel_nonterminal_builds(
@@ -327,7 +352,10 @@ def _cancel_nonterminal_builds(
             row.get("build_uuid"),
             "CLOUDFLARE_BUILD_UUID_INVALID",
         )
-        _cancel_if_nonterminal(api, build_uuid)
+        terminal = _cancel_if_nonterminal(api, build_uuid)
+        if terminal is None:
+            raise AssertionError("stale production build UUID unexpectedly absent")
+        _assert_stale_build_safely_terminal(terminal)
         cancelled += 1
     if cancelled:
         print(
@@ -357,13 +385,17 @@ def _quarantine_provider_activity(
     build_token_uuid: str,
 ) -> tuple[int, int]:
     desired = _desired_trigger(connection_uuid, build_token_uuid)
-    deleted = _quarantine_stale_owned_trigger(
+    trigger_uuid = _stale_owned_trigger_uuid(
         api,
         worker_tag=worker_tag,
         connection_uuid=connection_uuid,
         desired=desired,
     )
     cancelled = _cancel_nonterminal_builds(api, worker_tag)
+    deleted = 0
+    if trigger_uuid is not None:
+        _delete_trigger(api, trigger_uuid)
+        deleted = 1
     print(
         "CLOUDFLARE_PRODUCTION_PROVIDER_ACTIVITY=QUARANTINED "
         f"cancelled_builds={cancelled} deleted_triggers={deleted}"
