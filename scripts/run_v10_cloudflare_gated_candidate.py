@@ -5,7 +5,9 @@ import subprocess
 import sys
 
 import scripts.bootstrap_v10_cloudflare_builds as builds
-from scripts.quarantine_v10_cloudflare_staging_trigger import quarantine_staging_autobuild
+from scripts.quarantine_v10_cloudflare_staging_trigger import (
+    quarantine_staging_autobuild,
+)
 
 
 _GATED_AUTOBUILD_SENTINEL_BRANCH = "__omni_cf_c_manual_only__"

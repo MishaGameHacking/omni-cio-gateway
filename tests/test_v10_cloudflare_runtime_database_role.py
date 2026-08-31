@@ -79,12 +79,13 @@ class CloudflareRuntimeDatabaseRoleTests(unittest.TestCase):
         )
 
     def test_historical_hosted_role_is_rejected_for_cloudflare(self) -> None:
+        connection = _RuntimeProbeConnection("omni_cio_hosted_api")
         with self.assertRaisesRegex(
             RuntimeError,
             "CLOUDFLARE_RUNTIME_DATABASE_ROLE_DRIFT",
         ):
             runtime._probe_cloudflare_runtime_database(
-                _RuntimeProbeConnection("omni_cio_hosted_api"),
+                connection,
                 expected_runtime_role="omni_cio_cloudflare_staging",
             )
 
@@ -128,12 +129,13 @@ class CloudflareRuntimeDatabaseRoleTests(unittest.TestCase):
                     return _Result(one=(1,))
                 return super().execute(statement, params)
 
+        connection = MembershipConnection("omni_cio_cloudflare_staging")
         with self.assertRaisesRegex(
             RuntimeError,
             "CLOUDFLARE_RUNTIME_DATABASE_MEMBERSHIP_FORBIDDEN",
         ):
             runtime._probe_cloudflare_runtime_database(
-                MembershipConnection("omni_cio_cloudflare_staging"),
+                connection,
                 expected_runtime_role="omni_cio_cloudflare_staging",
             )
 
@@ -150,12 +152,13 @@ class CloudflareRuntimeDatabaseRoleTests(unittest.TestCase):
                     )
                 return super().execute(statement, params)
 
+        connection = RlsConnection("omni_cio_cloudflare_prod")
         with self.assertRaisesRegex(
             RuntimeError,
             "CLOUDFLARE_RUNTIME_DATABASE_FORCE_RLS_REQUIRED",
         ):
             runtime._probe_cloudflare_runtime_database(
-                RlsConnection("omni_cio_cloudflare_prod"),
+                connection,
                 expected_runtime_role="omni_cio_cloudflare_prod",
             )
 
