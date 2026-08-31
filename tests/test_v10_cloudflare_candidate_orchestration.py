@@ -14,6 +14,15 @@ import scripts.quarantine_v10_cloudflare_staging_trigger as quarantine
 import scripts.run_v10_cloudflare_gated_candidate as gated
 
 
+_EXPECTED_SHA = "a" * 40
+_WORKER_TAG = "a" * 32
+_ACCOUNT_ID = "b" * 32
+_TRIGGER_UUID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+_BUILD_UUID = "11111111-2222-3333-4444-555555555555"
+_EXTRA_TRIGGER_UUID = "99999999-8888-7777-6666-555555555555"
+_OTHER_REPOSITORY = "other-repository"
+
+
 class CloudflareCandidateOrchestrationTests(unittest.TestCase):
     def test_repository_orchestration_contract_is_valid(self) -> None:
         guard.validate()
@@ -51,23 +60,22 @@ class CloudflareCandidateOrchestrationTests(unittest.TestCase):
                     installer._safe_member_path(candidate)
 
     def test_quarantine_rejects_trigger_repo_authority_drift(self) -> None:
-        worker_tag = "a" * 32
         trigger: dict[str, Any] = {
-            "trigger_uuid": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
-            "external_script_id": worker_tag,
+            "trigger_uuid": _TRIGGER_UUID,
+            "external_script_id": _WORKER_TAG,
             "repo_connection": {
                 "provider_account_id": builds._GITHUB_OWNER_ID,
                 "provider_account_name": builds._GITHUB_OWNER,
                 "provider_type": "github",
                 "repo_id": builds._GITHUB_REPO_ID,
-                "repo_name": "other-repository",
+                "repo_name": _OTHER_REPOSITORY,
             },
         }
         with self.assertRaisesRegex(
             RuntimeError,
             "CLOUDFLARE_STAGING_TRIGGER_REPO_AUTHORITY_DRIFT",
         ):
-            quarantine._validate_repo_authority(trigger, worker_tag)
+            quarantine._validate_repo_authority(trigger, _WORKER_TAG)
 
     @staticmethod
     def _trigger(worker_tag: str, trigger_uuid: str) -> dict[str, Any]:
@@ -85,19 +93,12 @@ class CloudflareCandidateOrchestrationTests(unittest.TestCase):
         }
 
     def test_quarantine_validates_all_triggers_before_delete(self) -> None:
-        worker_tag = "a" * 32
-        first = self._trigger(
-            worker_tag,
-            "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
-        )
-        second = self._trigger(
-            worker_tag,
-            "11111111-2222-3333-4444-555555555555",
-        )
-        second["repo_connection"]["repo_name"] = "other-repository"
+        first = self._trigger(_WORKER_TAG, _TRIGGER_UUID)
+        second = self._trigger(_WORKER_TAG, _BUILD_UUID)
+        second["repo_connection"]["repo_name"] = _OTHER_REPOSITORY
 
         class FakeApi:
-            account_id = "b" * 32
+            account_id = _ACCOUNT_ID
 
             def __init__(self) -> None:
                 self.mutations: list[tuple[str, str]] = []
@@ -115,22 +116,19 @@ class CloudflareCandidateOrchestrationTests(unittest.TestCase):
             RuntimeError,
             "CLOUDFLARE_STAGING_TRIGGER_REPO_AUTHORITY_DRIFT",
         ):
-            quarantine.remove_staging_triggers(api, worker_tag)
+            quarantine.remove_staging_triggers(api, _WORKER_TAG)
         self.assertEqual(raw_api.mutations, [])
 
     def test_quarantine_deletes_push_triggers_before_cancelling_builds(self) -> None:
-        worker_tag = "a" * 32
-        trigger_uuid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
-        build_uuid = "11111111-2222-3333-4444-555555555555"
-        trigger = self._trigger(worker_tag, trigger_uuid)
+        trigger = self._trigger(_WORKER_TAG, _TRIGGER_UUID)
         build = {
-            "build_uuid": build_uuid,
+            "build_uuid": _BUILD_UUID,
             "build_outcome": None,
             "status": "running",
         }
 
         class FakeApi:
-            account_id = "b" * 32
+            account_id = _ACCOUNT_ID
 
             def __init__(self) -> None:
                 self.calls: list[tuple[str, str]] = []
@@ -139,7 +137,7 @@ class CloudflareCandidateOrchestrationTests(unittest.TestCase):
                 del kwargs
                 self.calls.append((method, path))
                 if method == "GET" and path.endswith("/workers/scripts"):
-                    return [{"id": builds._STAGING_WORKER, "tag": worker_tag}]
+                    return [{"id": builds._STAGING_WORKER, "tag": _WORKER_TAG}]
                 if method == "GET" and path.endswith("/triggers"):
                     return [trigger]
                 return {}
@@ -149,59 +147,59 @@ class CloudflareCandidateOrchestrationTests(unittest.TestCase):
         with patch.object(builds, "_builds_for_worker", return_value=[build]):
             cancelled, deleted = quarantine.quarantine_staging_autobuild(
                 api,
-                expected_sha="a" * 40,
+                expected_sha=_EXPECTED_SHA,
                 verify_head=False,
             )
         self.assertEqual((cancelled, deleted), (1, 1))
         delete_index = raw_api.calls.index(
-            ("DELETE", f"/accounts/{raw_api.account_id}/builds/triggers/{trigger_uuid}")
+            (
+                "DELETE",
+                f"/accounts/{raw_api.account_id}/builds/triggers/{_TRIGGER_UUID}",
+            )
         )
         cancel_index = raw_api.calls.index(
-            ("PUT", f"/accounts/{raw_api.account_id}/builds/builds/{build_uuid}/cancel")
+            (
+                "PUT",
+                f"/accounts/{raw_api.account_id}/builds/builds/{_BUILD_UUID}/cancel",
+            )
         )
         self.assertLess(delete_index, cancel_index)
 
     def test_gated_manual_build_posts_exact_branch_and_sha(self) -> None:
-        expected_sha = "a" * 40
-        trigger_uuid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
-        build_uuid = "11111111-2222-3333-4444-555555555555"
-
         class FakeApi:
-            account_id = "b" * 32
+            account_id = _ACCOUNT_ID
 
             def __init__(self) -> None:
                 self.calls: list[tuple[str, str, dict[str, Any]]] = []
 
             def request(self, method: str, path: str, **kwargs):
                 self.calls.append((method, path, kwargs))
-                return {"build_uuid": build_uuid}
+                return {"build_uuid": _BUILD_UUID}
 
         raw_api = FakeApi()
         api = cast(builds.CloudflareApi, raw_api)
         actual = gated._start_exact_manual_build(
             api,
-            trigger_uuid=trigger_uuid,
-            expected_sha=expected_sha,
+            trigger_uuid=_TRIGGER_UUID,
+            expected_sha=_EXPECTED_SHA,
         )
-        self.assertEqual(actual, build_uuid)
+        self.assertEqual(actual, _BUILD_UUID)
         self.assertEqual(len(raw_api.calls), 1)
         method, path, kwargs = raw_api.calls[0]
         self.assertEqual(method, "POST")
-        self.assertTrue(path.endswith(f"/builds/triggers/{trigger_uuid}/builds"))
+        self.assertTrue(path.endswith(f"/builds/triggers/{_TRIGGER_UUID}/builds"))
         self.assertEqual(
             kwargs["body"],
-            {"branch": builds._BRANCH, "commit_hash": expected_sha},
+            {"branch": builds._BRANCH, "commit_hash": _EXPECTED_SHA},
         )
         self.assertEqual(kwargs["expected"], frozenset({200, 201}))
 
     def test_gated_trigger_uses_nonmatching_autobuild_sentinel(self) -> None:
-        worker_tag = "a" * 32
-        connection_uuid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
-        build_token_uuid = "11111111-2222-3333-4444-555555555555"
-        trigger_uuid = "99999999-8888-7777-6666-555555555555"
+        connection_uuid = _TRIGGER_UUID
+        build_token_uuid = _BUILD_UUID
 
         class FakeApi:
-            account_id = "b" * 32
+            account_id = _ACCOUNT_ID
 
             def __init__(self) -> None:
                 self.created_body: dict[str, Any] | None = None
@@ -213,8 +211,8 @@ class CloudflareCandidateOrchestrationTests(unittest.TestCase):
                     self.created_body = dict(kwargs["body"])
                     return {
                         **self.created_body,
-                        "trigger_uuid": trigger_uuid,
-                        "external_script_id": worker_tag,
+                        "trigger_uuid": _EXTRA_TRIGGER_UUID,
+                        "external_script_id": _WORKER_TAG,
                         "repo_connection": {
                             "repo_connection_uuid": connection_uuid,
                             "provider_account_id": builds._GITHUB_OWNER_ID,
@@ -230,23 +228,22 @@ class CloudflareCandidateOrchestrationTests(unittest.TestCase):
         api = cast(builds.CloudflareApi, raw_api)
         actual = gated._create_gated_trigger(
             api,
-            worker_tag=worker_tag,
+            worker_tag=_WORKER_TAG,
             connection_uuid=connection_uuid,
             build_token_uuid=build_token_uuid,
         )
-        self.assertEqual(actual, trigger_uuid)
-        assert raw_api.created_body is not None
+        self.assertEqual(actual, _EXTRA_TRIGGER_UUID)
+        self.assertIsNotNone(raw_api.created_body)
+        created_body = cast(dict[str, Any], raw_api.created_body)
         self.assertEqual(
-            raw_api.created_body["branch_includes"],
+            created_body["branch_includes"],
             [gated._GATED_AUTOBUILD_SENTINEL_BRANCH],
         )
-        self.assertNotIn(builds._BRANCH, raw_api.created_body["branch_includes"])
+        self.assertNotIn(builds._BRANCH, created_body["branch_includes"])
 
     def test_gated_runner_refuses_preexisting_push_trigger(self) -> None:
-        worker_tag = "a" * 32
-
         class FakeApi:
-            account_id = "b" * 32
+            account_id = _ACCOUNT_ID
 
             def __init__(self) -> None:
                 self.calls: list[tuple[str, str]] = []
@@ -268,9 +265,9 @@ class CloudflareCandidateOrchestrationTests(unittest.TestCase):
         ):
             gated._create_gated_trigger(
                 api,
-                worker_tag=worker_tag,
-                connection_uuid="aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
-                build_token_uuid="11111111-2222-3333-4444-555555555555",
+                worker_tag=_WORKER_TAG,
+                connection_uuid=_TRIGGER_UUID,
+                build_token_uuid=_BUILD_UUID,
             )
         self.assertEqual(len(raw_api.calls), 1)
         self.assertEqual(raw_api.calls[0][0], "GET")

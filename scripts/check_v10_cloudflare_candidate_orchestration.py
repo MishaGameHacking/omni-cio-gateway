@@ -126,7 +126,7 @@ def _validate_installer() -> None:
             '_NPM_VERSION = "10.9.2"',
             '_FRONTEND_NPM_VERSION = "11.16.0"',
             '_WRANGLER_VERSION = "4.127.1"',
-            'https://registry.npmjs.org/npm/-/npm-10.9.2.tgz',
+            "https://registry.npmjs.org/npm/-/npm-10.9.2.tgz",
             "sha512-iriPEPIkoMYUy3F6f3wwSZAU93E0Eg6cHwIR6jzzOXWSy+SD/",
             "hashlib.sha512",
             "hmac.compare_digest",

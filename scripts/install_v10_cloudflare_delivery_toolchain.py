@@ -29,6 +29,9 @@ _MAX_TARBALL_BYTES = 8 * 1024 * 1024
 _MAX_UNPACKED_BYTES = 24 * 1024 * 1024
 _MAX_ARCHIVE_MEMBERS = 4096
 _MAX_MEMBER_NAME_CHARS = 512
+_TARBALL_PATH_INVALID = "CLOUDFLARE_NPM_TARBALL_PATH_INVALID"
+_TARBALL_MEMBER_INVALID = "CLOUDFLARE_NPM_TARBALL_MEMBER_INVALID"
+_VERSION_FLAG = "--version"
 
 
 class ToolchainBootstrapStopped(RuntimeError):
@@ -60,7 +63,7 @@ def _node_executable() -> Path:
         raise ToolchainBootstrapStopped("CLOUDFLARE_NODE_UNAVAILABLE")
     node = Path(candidate).resolve()
     completed = subprocess.run(
-        (str(node), "--version"),
+        (str(node), _VERSION_FLAG),
         cwd=_REPO_ROOT,
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
@@ -110,12 +113,12 @@ def _verify_integrity(payload: bytes) -> None:
 
 def _safe_member_path(name: str) -> PurePosixPath:
     if not name or "\\" in name or "\x00" in name:
-        raise ToolchainBootstrapStopped("CLOUDFLARE_NPM_TARBALL_PATH_INVALID")
+        raise ToolchainBootstrapStopped(_TARBALL_PATH_INVALID)
     candidate = PurePosixPath(name)
     if candidate.is_absolute() or not candidate.parts or ".." in candidate.parts:
-        raise ToolchainBootstrapStopped("CLOUDFLARE_NPM_TARBALL_PATH_INVALID")
+        raise ToolchainBootstrapStopped(_TARBALL_PATH_INVALID)
     if any(":" in part for part in candidate.parts):
-        raise ToolchainBootstrapStopped("CLOUDFLARE_NPM_TARBALL_PATH_INVALID")
+        raise ToolchainBootstrapStopped(_TARBALL_PATH_INVALID)
     if candidate.parts[0] != "package":
         raise ToolchainBootstrapStopped("CLOUDFLARE_NPM_TARBALL_ROOT_INVALID")
     return candidate
@@ -140,13 +143,13 @@ def _extract_npm(payload: bytes, destination: Path) -> Path:
             )
         for member in members:
             if len(member.name) > _MAX_MEMBER_NAME_CHARS:
-                raise ToolchainBootstrapStopped("CLOUDFLARE_NPM_TARBALL_PATH_INVALID")
+                raise ToolchainBootstrapStopped(_TARBALL_PATH_INVALID)
             relative = _safe_member_path(member.name)
             if member.isdir():
                 (destination / Path(*relative.parts)).mkdir(parents=True, exist_ok=True)
                 continue
             if not member.isfile() or member.size < 0:
-                raise ToolchainBootstrapStopped("CLOUDFLARE_NPM_TARBALL_MEMBER_INVALID")
+                raise ToolchainBootstrapStopped(_TARBALL_MEMBER_INVALID)
             unpacked += member.size
             if unpacked > _MAX_UNPACKED_BYTES:
                 raise ToolchainBootstrapStopped(
@@ -156,7 +159,7 @@ def _extract_npm(payload: bytes, destination: Path) -> Path:
             target.parent.mkdir(parents=True, exist_ok=True)
             source = archive.extractfile(member)
             if source is None:
-                raise ToolchainBootstrapStopped("CLOUDFLARE_NPM_TARBALL_MEMBER_INVALID")
+                raise ToolchainBootstrapStopped(_TARBALL_MEMBER_INVALID)
             with source, target.open("wb") as handle:
                 shutil.copyfileobj(source, handle, length=1024 * 1024)
     cli = destination / "package" / "bin" / "npm-cli.js"
@@ -214,7 +217,7 @@ def install() -> None:
     _verify_integrity(payload)
     npm_cli = _extract_npm(payload, destination)
     provider_npm_version = _capture_version(
-        (str(node), str(npm_cli), "--version"),
+        (str(node), str(npm_cli), _VERSION_FLAG),
         "CLOUDFLARE_PROVIDER_NPM_INVALID",
     )
     if provider_npm_version != _NPM_VERSION:
@@ -224,19 +227,25 @@ def install() -> None:
     frontend_npm = _REPO_ROOT / "node_modules" / "npm" / "bin" / "npm-cli.js"
     if not frontend_npm.is_file():
         raise ToolchainBootstrapStopped("CLOUDFLARE_FRONTEND_NPM_MISSING")
-    if _capture_version(
-        (str(node), str(frontend_npm), "--version"),
-        "CLOUDFLARE_FRONTEND_NPM_INVALID",
-    ) != _FRONTEND_NPM_VERSION:
+    if (
+        _capture_version(
+            (str(node), str(frontend_npm), _VERSION_FLAG),
+            "CLOUDFLARE_FRONTEND_NPM_INVALID",
+        )
+        != _FRONTEND_NPM_VERSION
+    ):
         raise ToolchainBootstrapStopped("CLOUDFLARE_FRONTEND_NPM_INVALID")
 
     wrangler = _REPO_ROOT / "node_modules" / "wrangler" / "bin" / "wrangler.js"
     if not wrangler.is_file():
         raise ToolchainBootstrapStopped("CLOUDFLARE_WRANGLER_MISSING")
-    if _capture_version(
-        (str(node), str(wrangler), "--version"),
-        "CLOUDFLARE_WRANGLER_VERSION_INVALID",
-    ) != _WRANGLER_VERSION:
+    if (
+        _capture_version(
+            (str(node), str(wrangler), _VERSION_FLAG),
+            "CLOUDFLARE_WRANGLER_VERSION_INVALID",
+        )
+        != _WRANGLER_VERSION
+    ):
         raise ToolchainBootstrapStopped("CLOUDFLARE_WRANGLER_VERSION_INVALID")
 
     print(f"CLOUDFLARE_PROVIDER_NPM={_NPM_VERSION}")

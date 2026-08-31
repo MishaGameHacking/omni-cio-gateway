@@ -17,12 +17,16 @@ _GATED_AUTOBUILD_SENTINEL_BRANCH = "__omni_cf_c_manual_only__"
 def _assert_exact_head(expected_sha: str) -> str:
     sha = builds._expected_sha(expected_sha)
     try:
-        actual = subprocess.check_output(
-            ["git", "rev-parse", "HEAD"],
-            cwd=builds._REPO_ROOT,
-            text=True,
-            stderr=subprocess.DEVNULL,
-        ).strip().lower()
+        actual = (
+            subprocess.check_output(
+                ["git", "rev-parse", "HEAD"],
+                cwd=builds._REPO_ROOT,
+                text=True,
+                stderr=subprocess.DEVNULL,
+            )
+            .strip()
+            .lower()
+        )
     except (OSError, subprocess.CalledProcessError):
         raise builds.BootstrapStopped("CLOUDFLARE_GIT_HEAD_UNAVAILABLE") from None
     if actual != sha:
