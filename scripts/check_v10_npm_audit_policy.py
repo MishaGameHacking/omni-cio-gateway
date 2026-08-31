@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 import sys
 
 
@@ -20,10 +21,9 @@ REQUIRED_AUDIT_WORKFLOWS = (
     WORKFLOWS / "v10-wp22a-clientless-access-audit.yml",
 )
 _WRAPPER_TOKEN = "run_v10_npm_audit.py"
-_DIRECT_AUDIT_TOKENS = (
-    "npm audit --audit-level=high",
-    'npm.cmd" audit --audit-level=high',
-    "npm.cmd' audit --audit-level=high",
+_RAW_NPM_AUDIT = re.compile(
+    r"(?:npm(?:\.cmd)?|[\"'](?:[^\"'\r\n]*[\\/])?npm(?:\.cmd)?[\"'])\s+audit\b",
+    re.IGNORECASE,
 )
 
 
@@ -35,7 +35,7 @@ def _display(path: Path) -> str:
 
 
 def _contains_direct_one_shot_audit(text: str) -> bool:
-    return any(token in text for token in _DIRECT_AUDIT_TOKENS)
+    return _RAW_NPM_AUDIT.search(text) is not None
 
 
 def validate_npm_audit_workflow(path: Path, failures: list[str]) -> None:

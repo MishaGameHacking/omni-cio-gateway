@@ -302,6 +302,23 @@ class V10RegressionShieldGuardTests(unittest.TestCase):
         self.assertTrue(any("bounded audit wrapper" in item for item in failures))
         self.assertTrue(any("one-shot npm audit" in item for item in failures))
 
+    def test_npm_audit_policy_rejects_raw_command_variants(self) -> None:
+        raw_commands = (
+            "npm audit",
+            "npm.cmd audit --audit-level=critical",
+            'call "C:\\Program Files\\nodejs\\npm.cmd" audit --audit-level moderate',
+            "npm audit --audit-level low",
+        )
+        for command in raw_commands:
+            with self.subTest(command=command):
+                self.assertTrue(audit_policy._contains_direct_one_shot_audit(command))
+
+        wrapper_command = (
+            'python ..\\..\\scripts\\run_v10_npm_audit.py --npm '
+            '"C:\\Program Files\\nodejs\\npm.cmd" --audit-level high'
+        )
+        self.assertFalse(audit_policy._contains_direct_one_shot_audit(wrapper_command))
+
     def test_current_repository_satisfies_wp3_guard(self) -> None:
         self.assertEqual(shield.validate_repository(), [])
         self.assertEqual(audit_policy.validate_repository(), [])
