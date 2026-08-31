@@ -79,8 +79,7 @@ def _validate_audit_wrapper(failures: list[str]) -> None:
     for token in _WRAPPER_CONTRACT_TOKENS:
         if token not in lowered_source:
             failures.append(
-                "npm audit wrapper is missing fail-closed transport contract: "
-                f"{token}"
+                f"npm audit wrapper is missing fail-closed transport contract: {token}"
             )
 
 
@@ -92,9 +91,7 @@ def _validate_required_audit_workflows(failures: list[str]) -> None:
 def _workflow_paths() -> tuple[Path, ...]:
     if not WORKFLOWS.is_dir():
         return ()
-    return tuple(
-        sorted(WORKFLOWS.glob("*.yml")) + sorted(WORKFLOWS.glob("*.yaml"))
-    )
+    return tuple(sorted(WORKFLOWS.glob("*.yml")) + sorted(WORKFLOWS.glob("*.yaml")))
 
 
 def _validate_no_raw_audit_bypass(failures: list[str]) -> None:
