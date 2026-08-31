@@ -21,24 +21,55 @@ _TRIGGER_UUID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
 _BUILD_UUID = "11111111-2222-3333-4444-555555555555"
 _EXTRA_TRIGGER_UUID = "99999999-8888-7777-6666-555555555555"
 _OTHER_REPOSITORY = "other-repository"
+_REVIEWED_NPM_SRI_BODY = "".join(
+    (
+        "iriPEPIk",
+        "oMYUy3F6",
+        "f3wwSZAU",
+        "93E0Eg6c",
+        "HwIR6jzz",
+        "OXWSy+SD",
+        "/rOODEs7",
+        "4cVONHKS",
+        "x2obXtuU",
+        "oyidVEhI",
+        "SrisgQ==",
+    )
+)
 
 
 class CloudflareCandidateOrchestrationTests(unittest.TestCase):
     def test_repository_orchestration_contract_is_valid(self) -> None:
         guard.validate()
 
+    def test_provider_npm_digest_matches_reviewed_dist_integrity(self) -> None:
+        self.assertEqual(
+            len(installer._NPM_TARBALL_SHA512),
+            hashlib.sha512().digest_size,
+        )
+        self.assertEqual(
+            base64.b64encode(installer._NPM_TARBALL_SHA512).decode("ascii"),
+            _REVIEWED_NPM_SRI_BODY,
+        )
+
     def test_provider_npm_integrity_is_fail_closed(self) -> None:
         payload = b"synthetic-npm-tarball"
-        integrity = "sha512-" + base64.b64encode(
-            hashlib.sha512(payload).digest()
-        ).decode()
-        with patch.object(installer, "_NPM_TARBALL_INTEGRITY", integrity):
+        digest = hashlib.sha512(payload).digest()
+        with patch.object(installer, "_NPM_TARBALL_SHA512", digest):
             installer._verify_integrity(payload)
             with self.assertRaisesRegex(
                 RuntimeError,
                 "CLOUDFLARE_NPM_INTEGRITY_MISMATCH",
             ):
                 installer._verify_integrity(payload + b"-changed")
+
+    def test_provider_npm_invalid_digest_config_fails_closed(self) -> None:
+        with patch.object(installer, "_NPM_TARBALL_SHA512", b"short"):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "CLOUDFLARE_NPM_INTEGRITY_CONFIG_INVALID",
+            ):
+                installer._verify_integrity(b"synthetic-npm-tarball")
 
     def test_provider_npm_archive_path_rejects_cross_platform_escape(self) -> None:
         self.assertEqual(

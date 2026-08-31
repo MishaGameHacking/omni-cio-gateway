@@ -127,9 +127,10 @@ def _validate_installer() -> None:
             '_FRONTEND_NPM_VERSION = "11.16.0"',
             '_WRANGLER_VERSION = "4.127.1"',
             "https://registry.npmjs.org/npm/-/npm-10.9.2.tgz",
-            "sha512-iriPEPIkoMYUy3F6f3wwSZAU93E0Eg6cHwIR6jzzOXWSy+SD/",
-            "hashlib.sha512",
-            "hmac.compare_digest",
+            "_NPM_TARBALL_SHA512 = bytes(",
+            "len(_NPM_TARBALL_SHA512) != hashlib.sha512().digest_size",
+            "hashlib.sha512(payload).digest()",
+            "hmac.compare_digest(actual, _NPM_TARBALL_SHA512)",
             "_RejectRedirects",
             "_MAX_TARBALL_BYTES",
             "_MAX_UNPACKED_BYTES",
@@ -148,7 +149,15 @@ def _validate_installer() -> None:
     )
     _forbid(
         source,
-        ("shell=True", "npm install -g", "npx ", "check_hostname = False"),
+        (
+            "shell=True",
+            "npm install -g",
+            "npx ",
+            "check_hostname = False",
+            "_NPM_TARBALL_INTEGRITY",
+            "import base64",
+            "base64.b64decode",
+        ),
         "CLOUDFLARE_ORCHESTRATION_PINNED_TOOLCHAIN_UNSAFE",
     )
 
