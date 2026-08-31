@@ -101,6 +101,9 @@ class CloudflareStagingWorkerAnchorTests(unittest.TestCase):
                 self.assertEqual(code, expected_code)
                 self.assertIn(expected_output, output.getvalue())
 
+    def test_candidate_guard_accepts_generalized_anchor_probe_contract(self) -> None:
+        guard._validate_bootstrap_worker()
+
     def test_workflow_guard_requires_probe_gated_bootstrap_order(self) -> None:
         good = "\n".join(
             (

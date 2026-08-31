@@ -15,9 +15,13 @@ class CloudflareGatedCandidateSourceBranchTests(unittest.TestCase):
 
     def test_adapter_restores_branch_after_failure(self) -> None:
         original = builds._BRANCH
-        with self.assertRaisesRegex(RuntimeError, "synthetic"):
+
+        def raise_inside_adapter() -> None:
             with candidate._candidate_source_branch("main"):
                 raise RuntimeError("synthetic")
+
+        with self.assertRaisesRegex(RuntimeError, "synthetic"):
+            raise_inside_adapter()
         self.assertEqual(builds._BRANCH, original)
 
     def test_only_integrated_branch_and_main_are_allowed(self) -> None:

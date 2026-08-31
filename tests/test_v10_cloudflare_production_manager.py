@@ -34,7 +34,10 @@ class _Api:
         key = (method, path)
         if key not in self.responses:
             raise AssertionError(key)
-        return self.responses[key]
+        result = self.responses[key]
+        if isinstance(result, Exception):
+            raise result
+        return result
 
 
 class CloudflareProductionManagerTests(unittest.TestCase):
@@ -119,6 +122,57 @@ class CloudflareProductionManagerTests(unittest.TestCase):
             ):
                 production.attach_domain(environment)
 
+    def test_new_custom_domain_records_rollback_intent_before_provider_mutation(
+        self,
+    ) -> None:
+        environment = self._environment()
+        list_path = f"/accounts/{_ACCOUNT_ID}/workers/domains?hostname=omni.example.ru"
+        attach_path = f"/accounts/{_ACCOUNT_ID}/workers/domains"
+        provider_error = production.builds.BootstrapStopped(
+            "CLOUDFLARE_SYNTHETIC_ATTACH_FAILURE"
+        )
+        api = _Api(
+            {
+                ("GET", list_path): [],
+                ("PUT", attach_path): provider_error,
+            }
+        )
+        with (
+            patch.object(production, "_api", return_value=api),
+            patch.object(production.builds, "_write_output") as write_output,
+        ):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "CLOUDFLARE_SYNTHETIC_ATTACH_FAILURE",
+            ):
+                production.attach_domain(environment)
+        write_output.assert_called_once_with("custom_domain_created", "true")
+
+    def test_new_custom_domain_preserves_rollback_output_when_response_drifts(
+        self,
+    ) -> None:
+        environment = self._environment()
+        list_path = f"/accounts/{_ACCOUNT_ID}/workers/domains?hostname=omni.example.ru"
+        attach_path = f"/accounts/{_ACCOUNT_ID}/workers/domains"
+        drift = {
+            "id": "domain-id",
+            "hostname": "omni.example.ru",
+            "service": "other-worker",
+            "zone_id": _ZONE_ID,
+            "zone_name": "example.ru",
+        }
+        api = _Api({("GET", list_path): [], ("PUT", attach_path): drift})
+        with (
+            patch.object(production, "_api", return_value=api),
+            patch.object(production.builds, "_write_output") as write_output,
+        ):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "CLOUDFLARE_PRODUCTION_DOMAIN_ATTACH_DRIFT",
+            ):
+                production.attach_domain(environment)
+        write_output.assert_called_once_with("custom_domain_created", "true")
+
     def test_snapshot_requires_single_version_at_one_hundred_percent(self) -> None:
         path = f"/accounts/{_ACCOUNT_ID}/workers/scripts/omni-cio-v10-web/deployments"
         payload = {
@@ -150,12 +204,29 @@ class CloudflareProductionManagerTests(unittest.TestCase):
             ]
         }
         api = _Api({("GET", path): split_payload})
+        environment = self._environment()
         with patch.object(production, "_api", return_value=api):
             with self.assertRaisesRegex(
                 RuntimeError,
                 "CLOUDFLARE_PRODUCTION_SPLIT_DEPLOYMENT_FORBIDDEN",
             ):
-                production.snapshot_active_deployment(self._environment())
+                production.snapshot_active_deployment(environment)
+
+    def test_snapshot_accepts_exact_float_hundred_without_float_equality(self) -> None:
+        path = f"/accounts/{_ACCOUNT_ID}/workers/scripts/omni-cio-v10-web/deployments"
+        payload = {
+            "deployments": [
+                {"versions": [{"percentage": 100.0, "version_id": _VERSION_ID}]}
+            ]
+        }
+        api = _Api({("GET", path): payload})
+        with (
+            patch.object(production, "_api", return_value=api),
+            patch.object(production.builds, "_write_output"),
+        ):
+            self.assertEqual(
+                production.snapshot_active_deployment(self._environment()), _VERSION_ID
+            )
 
 
 if __name__ == "__main__":

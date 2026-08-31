@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Mapping
+from decimal import Decimal
 import os
 from pathlib import Path
 import re
@@ -140,9 +141,7 @@ def _domain_rows(api: builds.CloudflareApi, hostname: str) -> list[dict[str, Any
         api.request("GET", f"/accounts/{api.account_id}/workers/domains?{query}"),
         "CLOUDFLARE_PRODUCTION_DOMAINS_INVALID",
     )
-    return [
-        builds._object(row, "CLOUDFLARE_PRODUCTION_DOMAIN_INVALID") for row in rows
-    ]
+    return [builds._object(row, "CLOUDFLARE_PRODUCTION_DOMAIN_INVALID") for row in rows]
 
 
 def attach_domain(environ: Mapping[str, str] | None = None) -> bool:
@@ -165,20 +164,22 @@ def attach_domain(environ: Mapping[str, str] | None = None) -> bool:
             raise builds.BootstrapStopped(
                 "CLOUDFLARE_PRODUCTION_DOMAIN_AUTHORITY_DRIFT"
             )
+        builds._write_output("custom_domain_created", "false")
         created = False
     else:
+        builds._write_output("custom_domain_created", "true")
+        raw_result = api.request(
+            "PUT",
+            f"/accounts/{api.account_id}/workers/domains",
+            body=expected,
+        )
         result = builds._object(
-            api.request(
-                "PUT",
-                f"/accounts/{api.account_id}/workers/domains",
-                body=expected,
-            ),
+            raw_result,
             "CLOUDFLARE_PRODUCTION_DOMAIN_ATTACH_INVALID",
         )
         if any(result.get(key) != value for key, value in expected.items()):
             raise builds.BootstrapStopped("CLOUDFLARE_PRODUCTION_DOMAIN_ATTACH_DRIFT")
         created = True
-    builds._write_output("custom_domain_created", "true" if created else "false")
     print("CLOUDFLARE_PRODUCTION_DOMAIN=READY")
     return created
 
@@ -249,7 +250,10 @@ def _active_version_id(api: builds.CloudflareApi) -> str:
         "CLOUDFLARE_PRODUCTION_DEPLOYMENT_VERSION_INVALID",
     )
     percentage = version.get("percentage")
-    if not isinstance(percentage, (int, float)) or float(percentage) != 100.0:
+    if (
+        not isinstance(percentage, (int, float))
+        or Decimal(str(percentage)) != Decimal("100")
+    ):
         raise builds.BootstrapStopped(
             "CLOUDFLARE_PRODUCTION_SPLIT_DEPLOYMENT_FORBIDDEN"
         )

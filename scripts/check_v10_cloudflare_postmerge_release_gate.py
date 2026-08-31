@@ -8,7 +8,7 @@ from pathlib import Path
 import re
 import sys
 import time
-from typing import Any
+from typing import Any, NoReturn
 from urllib.error import HTTPError
 from urllib.parse import urlencode
 from urllib.request import HTTPRedirectHandler, Request, build_opener
@@ -22,6 +22,8 @@ _TRANSIENT_HTTP = frozenset({408, 429, 502, 503, 504})
 _RETRY_DELAYS = (1.0, 2.0)
 _DEFAULT_WAIT_SECONDS = 900
 _DEFAULT_POLL_SECONDS = 15
+_WORKFLOW_RUNS_PER_PAGE = 100
+_MAX_FILTERED_WORKFLOW_RUNS = 1000
 _CONTRACT = (
     Path(__file__).resolve().parents[1]
     / "docs/architecture/V10_CLOUDFLARE_RELEASE_ACCEPTANCE_CONTRACT.json"
@@ -85,56 +87,74 @@ def _contract() -> tuple[frozenset[str], int]:
     return frozenset(names), minimum
 
 
-def _api_get(path: str, token: str) -> Any:
-    if not path.startswith("/repos/") or "\\" in path:
-        raise ReleaseGateStopped("CLOUDFLARE_POSTMERGE_API_PATH_INVALID")
-    headers = {
+def _api_headers(token: str) -> dict[str, str]:
+    return {
         "Accept": "application/vnd.github+json",
         "Authorization": f"Bearer {token}",
         "User-Agent": "omni-cio-v10-cloudflare-postmerge-gate",
         "X-GitHub-Api-Version": "2026-03-10",
     }
+
+
+def _open_api_request(path: str, headers: Mapping[str, str]) -> tuple[int, bytes]:
+    request = Request(f"{_API_BASE}{path}", headers=dict(headers), method="GET")
+    with _OPENER.open(request, timeout=30.0) as response:
+        return int(response.status), response.read(_MAX_RESPONSE_BYTES + 1)
+
+
+def _sleep_before_retry(attempt: int, attempts: int) -> bool:
+    if attempt + 1 >= attempts:
+        return False
+    time.sleep(_RETRY_DELAYS[attempt])
+    return True
+
+
+def _raise_http_error(status: int) -> NoReturn:
+    if status in {401, 403}:
+        raise ReleaseGateStopped(
+            "CLOUDFLARE_POSTMERGE_GITHUB_AUTHORITY_INSUFFICIENT",
+            status=status,
+        )
+    raise ReleaseGateStopped(
+        "CLOUDFLARE_POSTMERGE_GITHUB_HTTP_ERROR",
+        status=status,
+    )
+
+
+def _decode_api_response(status: int, raw: bytes) -> Any:
+    if status != 200:
+        raise ReleaseGateStopped(
+            "CLOUDFLARE_POSTMERGE_GITHUB_STATUS_INVALID",
+            status=status,
+        )
+    if len(raw) > _MAX_RESPONSE_BYTES:
+        raise ReleaseGateStopped("CLOUDFLARE_POSTMERGE_GITHUB_RESPONSE_TOO_LARGE")
+    try:
+        return json.loads(raw.decode("utf-8"))
+    except ValueError:
+        raise ReleaseGateStopped("CLOUDFLARE_POSTMERGE_GITHUB_JSON_INVALID") from None
+
+
+def _api_get(path: str, token: str) -> Any:
+    if not path.startswith("/repos/") or "\\" in path:
+        raise ReleaseGateStopped("CLOUDFLARE_POSTMERGE_API_PATH_INVALID")
+    headers = _api_headers(token)
     attempts = len(_RETRY_DELAYS) + 1
     for attempt in range(attempts):
-        request = Request(f"{_API_BASE}{path}", headers=headers, method="GET")
         try:
-            with _OPENER.open(request, timeout=30.0) as response:
-                status = int(response.status)
-                raw = response.read(_MAX_RESPONSE_BYTES + 1)
+            status, raw = _open_api_request(path, headers)
         except HTTPError as exc:
             status = int(exc.code)
-            if status in _TRANSIENT_HTTP and attempt + 1 < attempts:
-                time.sleep(_RETRY_DELAYS[attempt])
+            if status in _TRANSIENT_HTTP and _sleep_before_retry(attempt, attempts):
                 continue
-            if status in {401, 403}:
-                raise ReleaseGateStopped(
-                    "CLOUDFLARE_POSTMERGE_GITHUB_AUTHORITY_INSUFFICIENT",
-                    status=status,
-                ) from None
-            raise ReleaseGateStopped(
-                "CLOUDFLARE_POSTMERGE_GITHUB_HTTP_ERROR",
-                status=status,
-            ) from None
+            _raise_http_error(status)
         except OSError:
-            if attempt + 1 < attempts:
-                time.sleep(_RETRY_DELAYS[attempt])
+            if _sleep_before_retry(attempt, attempts):
                 continue
             raise ReleaseGateStopped(
                 "CLOUDFLARE_POSTMERGE_GITHUB_NETWORK_ERROR"
             ) from None
-        if status != 200:
-            raise ReleaseGateStopped(
-                "CLOUDFLARE_POSTMERGE_GITHUB_STATUS_INVALID",
-                status=status,
-            )
-        if len(raw) > _MAX_RESPONSE_BYTES:
-            raise ReleaseGateStopped("CLOUDFLARE_POSTMERGE_GITHUB_RESPONSE_TOO_LARGE")
-        try:
-            return json.loads(raw.decode("utf-8"))
-        except (UnicodeError, ValueError):
-            raise ReleaseGateStopped(
-                "CLOUDFLARE_POSTMERGE_GITHUB_JSON_INVALID"
-            ) from None
+        return _decode_api_response(status, raw)
     raise AssertionError("bounded GitHub API retry exhausted")
 
 
@@ -148,33 +168,80 @@ def _current_main_sha(repository: str, token: str) -> str:
     return value.lower()
 
 
-def _workflow_runs(
-    repository: str, token: str, expected_sha: str
-) -> list[dict[str, Any]]:
-    query = urlencode(
+def _workflow_runs_query(expected_sha: str, page: int) -> str:
+    return urlencode(
         {
             "branch": "main",
             "event": "push",
             "head_sha": expected_sha,
-            "per_page": "100",
+            "per_page": str(_WORKFLOW_RUNS_PER_PAGE),
+            "page": str(page),
             "exclude_pull_requests": "true",
         }
     )
+
+
+def _workflow_run_page(
+    repository: str,
+    token: str,
+    expected_sha: str,
+    page: int,
+) -> tuple[int, list[dict[str, Any]]]:
+    query = _workflow_runs_query(expected_sha, page)
     payload = _api_get(f"/repos/{repository}/actions/runs?{query}", token)
-    if not isinstance(payload, dict) or not isinstance(
-        payload.get("workflow_runs"), list
+    if not isinstance(payload, dict):
+        raise ReleaseGateStopped("CLOUDFLARE_POSTMERGE_RUNS_RESPONSE_INVALID")
+    total_count = payload.get("total_count")
+    raw_rows = payload.get("workflow_runs")
+    if (
+        not isinstance(total_count, int)
+        or total_count < 0
+        or not isinstance(raw_rows, list)
     ):
         raise ReleaseGateStopped("CLOUDFLARE_POSTMERGE_RUNS_RESPONSE_INVALID")
     rows: list[dict[str, Any]] = []
-    for raw in payload["workflow_runs"]:
+    for raw in raw_rows:
         if not isinstance(raw, dict):
             raise ReleaseGateStopped("CLOUDFLARE_POSTMERGE_RUN_INVALID")
+        rows.append(raw)
+    return total_count, rows
+
+
+def _workflow_runs(
+    repository: str, token: str, expected_sha: str
+) -> list[dict[str, Any]]:
+    total_count, first_page = _workflow_run_page(repository, token, expected_sha, 1)
+    if total_count > _MAX_FILTERED_WORKFLOW_RUNS:
+        raise ReleaseGateStopped("CLOUDFLARE_POSTMERGE_RUNS_TRUNCATED")
+
+    page_count = max(
+        1,
+        (total_count + _WORKFLOW_RUNS_PER_PAGE - 1) // _WORKFLOW_RUNS_PER_PAGE,
+    )
+    raw_rows = list(first_page)
+    for page in range(2, page_count + 1):
+        observed_total, page_rows = _workflow_run_page(
+            repository,
+            token,
+            expected_sha,
+            page,
+        )
+        if observed_total != total_count:
+            raise ReleaseGateStopped("CLOUDFLARE_POSTMERGE_RUNS_CHANGED_DURING_READ")
+        raw_rows.extend(page_rows)
+    if len(raw_rows) != total_count:
+        raise ReleaseGateStopped("CLOUDFLARE_POSTMERGE_RUNS_INCOMPLETE")
+
+    rows: list[dict[str, Any]] = []
+    for raw in raw_rows:
         if (
             raw.get("head_sha") == expected_sha
             and raw.get("head_branch") == "main"
             and raw.get("event") == "push"
         ):
             rows.append(raw)
+    if len(rows) != total_count:
+        raise ReleaseGateStopped("CLOUDFLARE_POSTMERGE_RUN_FILTER_DRIFT")
     return rows
 
 

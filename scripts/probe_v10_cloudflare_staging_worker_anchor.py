@@ -21,9 +21,17 @@ _WORKERS = {
     "staging": _STAGING_WORKER,
     "production": _PRODUCTION_WORKER,
 }
-_MARKERS = {
-    "staging": "CLOUDFLARE_STAGING_WORKER_ANCHOR",
-    "production": "CLOUDFLARE_PRODUCTION_WORKER_ANCHOR",
+_OUTPUTS = {
+    "staging": {
+        "blocked": "CLOUDFLARE_STAGING_WORKER_ANCHOR=BLOCKED",
+        "reused": "CLOUDFLARE_STAGING_WORKER_ANCHOR=REUSED",
+        "bootstrap_required": "CLOUDFLARE_STAGING_WORKER_ANCHOR=BOOTSTRAP_REQUIRED",
+    },
+    "production": {
+        "blocked": "CLOUDFLARE_PRODUCTION_WORKER_ANCHOR=BLOCKED",
+        "reused": "CLOUDFLARE_PRODUCTION_WORKER_ANCHOR=REUSED",
+        "bootstrap_required": "CLOUDFLARE_PRODUCTION_WORKER_ANCHOR=BOOTSTRAP_REQUIRED",
+    },
 }
 _BOOTSTRAP_REQUIRED = 10
 _PROVIDER_BLOCKED = 78
@@ -40,11 +48,7 @@ def _worker_anchor_present(api: CloudflareApi, worker_name: str) -> bool:
     rows = api.request("GET", f"/accounts/{api.account_id}/workers/scripts")
     if not isinstance(rows, list):
         raise BootstrapStopped("CLOUDFLARE_WORKERS_INVALID")
-    matches = [
-        row
-        for row in rows
-        if isinstance(row, dict) and row.get("id") == worker_name
-    ]
+    matches = [row for row in rows if isinstance(row, dict) and row.get("id") == worker_name]
     if len(matches) > 1:
         code = (
             "CLOUDFLARE_STAGING_WORKER_NOT_UNIQUE"
@@ -72,23 +76,23 @@ def probe_worker_anchor(
         raise ValueError("unsupported Cloudflare worker environment")
     values = os.environ if environ is None else environ
     destination = sys.stdout if output is None else output
-    marker = _MARKERS[environment]
+    outputs = _OUTPUTS[environment]
     try:
         token = _required(values, _CLOUDFLARE_TOKEN_ENV)
         account_id = _required(values, _CLOUDFLARE_ACCOUNT_ENV)
         api = CloudflareApi(account_id, token)
         present = _worker_anchor_present(api, _WORKERS[environment])
     except BootstrapStopped as exc:
-        fields = [f"{marker}=BLOCKED", f"code={exc.code}"]
+        fields = [outputs["blocked"], f"code={exc.code}"]
         if exc.status is not None:
             fields.append(f"status={exc.status}")
         print(" ".join(fields), file=destination)
         return _PROVIDER_BLOCKED
 
     if present:
-        print(f"{marker}=REUSED", file=destination)
+        print(outputs["reused"], file=destination)
         return 0
-    print(f"{marker}=BOOTSTRAP_REQUIRED", file=destination)
+    print(outputs["bootstrap_required"], file=destination)
     return _BOOTSTRAP_REQUIRED
 
 
