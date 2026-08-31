@@ -41,6 +41,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 _MAX_PROVIDER_RESPONSE_BYTES = 1_048_576
 _BUILD_LOG_MAX_PAGES = 8
 _BUILD_LOG_MAX_CURSOR_CHARS = 4096
+_BUILD_LOG_NOT_READY_RETRY_DELAYS = (1.0, 2.0, 4.0, 8.0, 15.0)
 _REUSABLE_BUILD_STATUSES = frozenset({"queued", "initializing", "running"})
 _TERMINAL_BUILD_FAILURES = frozenset({"fail", "skipped", "cancelled", "terminated"})
 _ACTIONABLE_BUILD_FAILURES = frozenset(
@@ -709,7 +710,10 @@ def _start_or_reuse_build(
 
 
 def _build_log_messages(page: dict[str, Any]) -> tuple[str, ...]:
-    rows = _list(page.get("lines"), "CLOUDFLARE_BUILD_LOG_LINES_INVALID")
+    raw_rows = page.get("lines")
+    if raw_rows is None:
+        return ()
+    rows = _list(raw_rows, "CLOUDFLARE_BUILD_LOG_LINES_INVALID")
     messages: list[str] = []
     for raw_row in rows:
         row = _list(raw_row, "CLOUDFLARE_BUILD_LOG_LINE_INVALID")
@@ -730,14 +734,37 @@ def _classify_build_failure(messages: tuple[str, ...]) -> str:
     ):
         return "CLOUDFLARE_BUILD_DEPLOY_PHASE_FAILED"
     if any(
-        "cloudflare source identity generated for " in message
-        or "vite v" in message
+        "cloudflare source identity generated for " in message or "vite v" in message
         for message in normalized
     ):
         return "CLOUDFLARE_BUILD_SOURCE_PHASE_FAILED"
     if normalized:
         return "CLOUDFLARE_BUILD_COMMAND_PHASE_FAILED"
     return "CLOUDFLARE_BUILD_LOGS_EMPTY"
+
+
+def _build_log_page(api: CloudflareApi, path: str) -> dict[str, Any]:
+    attempts = len(_BUILD_LOG_NOT_READY_RETRY_DELAYS) + 1
+    for attempt in range(attempts):
+        try:
+            return _object(
+                api.request("GET", path),
+                "CLOUDFLARE_BUILD_LOGS_INVALID",
+            )
+        except BootstrapStopped as exc:
+            retryable = (
+                exc.code == "CLOUDFLARE_API_HTTP_ERROR"
+                and exc.status == 404
+                and attempt + 1 < attempts
+            )
+            if not retryable:
+                raise
+            print(
+                "CLOUDFLARE_BUILD_LOGS=NOT_READY "
+                f"attempt={attempt + 1}/{attempts}"
+            )
+            time.sleep(_BUILD_LOG_NOT_READY_RETRY_DELAYS[attempt])
+    raise AssertionError("bounded build-log readiness retry exhausted")
 
 
 def _build_failure_diagnostic(api: CloudflareApi, build_uuid: str) -> str:
@@ -749,10 +776,7 @@ def _build_failure_diagnostic(api: CloudflareApi, build_uuid: str) -> str:
         path = f"/accounts/{api.account_id}/builds/builds/{safe_uuid}/logs"
         if cursor is not None:
             path += f"?cursor={quote(cursor, safe='')}"
-        page = _object(
-            api.request("GET", path),
-            "CLOUDFLARE_BUILD_LOGS_INVALID",
-        )
+        page = _build_log_page(api, path)
         messages.extend(_build_log_messages(page))
         next_cursor = page.get("cursor")
         if next_cursor is None or next_cursor == "":
@@ -771,7 +795,14 @@ def _build_failure_diagnostic(api: CloudflareApi, build_uuid: str) -> str:
 def _safe_build_failure_diagnostic(api: CloudflareApi, build_uuid: str) -> str:
     try:
         diagnostic = _build_failure_diagnostic(api, build_uuid)
-    except BootstrapStopped:
+    except BootstrapStopped as exc:
+        fields = [
+            "CLOUDFLARE_BUILD_LOG_DIAGNOSTIC=UNAVAILABLE",
+            f"code={exc.code}",
+        ]
+        if exc.status is not None:
+            fields.append(f"status={exc.status}")
+        print(" ".join(fields))
         diagnostic = "CLOUDFLARE_BUILD_LOG_DIAGNOSTIC_UNAVAILABLE"
     print(f"CLOUDFLARE_BUILD_FAILURE_DIAGNOSTIC={diagnostic}")
     return diagnostic
