@@ -16,12 +16,12 @@ from scripts.check_v10_cloudflare_live_release import _hostname
 
 
 _PRODUCTION_WORKER = "omni-cio-v10-web"
-_RUNTIME_SECRET = "OMNI_V10_POSTGRES_DSN"
+_RUNTIME_DSN_BINDING = "OMNI_V10_POSTGRES_DSN"
 _CUSTOM_HOST_ENV = "OMNI_V10_CLOUDFLARE_CUSTOM_HOST"
 _ZONE_ID_ENV = "CLOUDFLARE_ZONE_ID"
 _ZONE_NAME_ENV = "CLOUDFLARE_ZONE_NAME"
 _ZONE_ID = re.compile(r"^[0-9a-f]{32}$")
-_RUNTIME_SECRET_MISSING = 10
+_RUNTIME_DSN_BINDING_MISSING = 10
 _PROVIDER_BLOCKED = 78
 
 
@@ -51,7 +51,7 @@ def _runtime_secret_present(api: builds.CloudflareApi) -> bool:
     matches = [
         row
         for row in rows
-        if isinstance(row, dict) and row.get("name") == _RUNTIME_SECRET
+        if isinstance(row, dict) and row.get("name") == _RUNTIME_DSN_BINDING
     ]
     if len(matches) > 1:
         raise builds.BootstrapStopped("CLOUDFLARE_PRODUCTION_SECRET_NOT_UNIQUE")
@@ -84,7 +84,7 @@ def probe_runtime_secret(
         print("CLOUDFLARE_PRODUCTION_DATABASE_SECRET=REUSED", file=destination)
         return 0
     print("CLOUDFLARE_PRODUCTION_DATABASE_SECRET=BOOTSTRAP_REQUIRED", file=destination)
-    return _RUNTIME_SECRET_MISSING
+    return _RUNTIME_DSN_BINDING_MISSING
 
 
 def put_runtime_secret(environ: Mapping[str, str] | None = None) -> None:
@@ -108,7 +108,7 @@ def put_runtime_secret(environ: Mapping[str, str] | None = None) -> None:
         "PUT",
         f"/accounts/{api.account_id}/workers/scripts/"
         f"{quote(_PRODUCTION_WORKER, safe='')}/secrets",
-        body={"name": _RUNTIME_SECRET, "text": dsn, "type": "secret_text"},
+        body={"name": _RUNTIME_DSN_BINDING, "text": dsn, "type": "secret_text"},
     )
     if not _runtime_secret_present(api):
         raise builds.BootstrapStopped("CLOUDFLARE_PRODUCTION_SECRET_VERIFY_FAILED")

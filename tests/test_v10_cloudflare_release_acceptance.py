@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import re
 import tempfile
 import unittest
 from unittest import mock
@@ -13,6 +14,18 @@ from scripts.v10_jsonc import loads_jsonc
 class CloudflareReleaseAcceptanceTests(unittest.TestCase):
     def test_repository_release_contract_is_valid(self) -> None:
         guard.validate()
+
+    def test_production_manager_avoids_hardcoded_secret_keyword_assignments(self) -> None:
+        source = guard.PRODUCTION_MANAGER.read_text(encoding="utf-8")
+        hardcoded_secret_assignment = re.compile(
+            r"(?mi)^\s*[A-Z_][A-Z0-9_]*SECRET[A-Z0-9_]*\s*=\s*[\"']"
+        )
+
+        self.assertIsNone(hardcoded_secret_assignment.search(source))
+        self.assertIn(
+            '_RUNTIME_DSN_BINDING = "OMNI_V10_POSTGRES_DSN"',
+            source,
+        )
 
     def test_guard_rejects_versions_upload_as_container_candidate(self) -> None:
         payload = json.loads(guard.CONTRACT.read_text(encoding="utf-8"))
