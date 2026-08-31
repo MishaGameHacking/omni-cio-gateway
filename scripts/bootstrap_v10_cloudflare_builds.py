@@ -759,12 +759,30 @@ def _build_log_page(api: CloudflareApi, path: str) -> dict[str, Any]:
             )
             if not retryable:
                 raise
-            print(
-                "CLOUDFLARE_BUILD_LOGS=NOT_READY "
-                f"attempt={attempt + 1}/{attempts}"
-            )
+            print(f"CLOUDFLARE_BUILD_LOGS=NOT_READY attempt={attempt + 1}/{attempts}")
             time.sleep(_BUILD_LOG_NOT_READY_RETRY_DELAYS[attempt])
     raise AssertionError("bounded build-log readiness retry exhausted")
+
+
+def _build_log_next_cursor(
+    page: dict[str, Any],
+    seen_cursors: set[str],
+) -> str | None:
+    truncated = page.get("truncated")
+    if truncated is not None and not isinstance(truncated, bool):
+        raise BootstrapStopped("CLOUDFLARE_BUILD_LOG_TRUNCATED_INVALID")
+    if truncated is not True:
+        return None
+
+    next_cursor = page.get("cursor")
+    if (
+        not isinstance(next_cursor, str)
+        or not next_cursor
+        or len(next_cursor) > _BUILD_LOG_MAX_CURSOR_CHARS
+        or next_cursor in seen_cursors
+    ):
+        raise BootstrapStopped("CLOUDFLARE_BUILD_LOG_CURSOR_INVALID")
+    return next_cursor
 
 
 def _build_failure_diagnostic(api: CloudflareApi, build_uuid: str) -> str:
@@ -778,17 +796,13 @@ def _build_failure_diagnostic(api: CloudflareApi, build_uuid: str) -> str:
             path += f"?cursor={quote(cursor, safe='')}"
         page = _build_log_page(api, path)
         messages.extend(_build_log_messages(page))
-        next_cursor = page.get("cursor")
-        if next_cursor is None or next_cursor == "":
+        next_cursor = _build_log_next_cursor(page, seen_cursors)
+        if next_cursor is None:
             break
-        if (
-            not isinstance(next_cursor, str)
-            or len(next_cursor) > _BUILD_LOG_MAX_CURSOR_CHARS
-            or next_cursor in seen_cursors
-        ):
-            raise BootstrapStopped("CLOUDFLARE_BUILD_LOG_CURSOR_INVALID")
         seen_cursors.add(next_cursor)
         cursor = next_cursor
+    else:
+        raise BootstrapStopped("CLOUDFLARE_BUILD_LOG_PAGINATION_EXHAUSTED")
     return _classify_build_failure(tuple(messages))
 
 
