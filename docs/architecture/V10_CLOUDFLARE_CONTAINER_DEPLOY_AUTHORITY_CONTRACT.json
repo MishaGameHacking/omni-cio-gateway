@@ -14,11 +14,22 @@
     "real_exact_sha_container_build_and_live_probe_still_required": true,
     "provider_permission_failure_may_be_reported_as_success": false
   },
+  "staging_autobuild_quarantine": {
+    "risk_reducing_provider_deactivation_allowed_before_registry_probe": true,
+    "persistent_branch_push_trigger_allowed_during_cf_c": false,
+    "preexisting_nonterminal_staging_builds_must_be_cancelled": true,
+    "preexisting_build_may_be_accepted_as_exact_sha_candidate": false,
+    "candidate_build_start_mode": "MANUAL_EXACT_SHA_AFTER_AUTHORITY_GATES",
+    "trigger_must_be_removed_after_candidate_attempt": true,
+    "gated_trigger_branch_filter_must_not_match_integrated_branch": true,
+    "gated_trigger_must_be_deleted_immediately_after_manual_build_start": true
+  },
   "pre_mutation_probe": {
     "command": "wrangler containers images list --json",
     "operation": "READ_ONLY",
     "must_run_after_exact_wrangler_install": true,
     "must_run_before_neon_or_cloudflare_candidate_mutation": true,
+    "risk_reducing_staging_autobuild_quarantine_is_the_only_pre_probe_provider_mutation": true,
     "stdout_must_be_suppressed": true,
     "stderr_must_be_suppressed": true,
     "timeout_seconds": 45,
@@ -59,7 +70,9 @@
       "Containers Edit grants write access to Containers",
       "Workers Builds API token defines access granted to builds",
       "default Workers Builds token permissions do not document Containers permissions",
-      "wrangler containers images list is the supported managed-registry read command"
+      "wrangler containers images list is the supported managed-registry read command",
+      "manual Workers Builds may specify both branch and commit_hash to pin an exact commit",
+      "Workers Builds API supports cancelling running builds and deleting triggers"
     ]
   }
 }
