@@ -142,7 +142,7 @@ jobs:
       - name: Audit Web dependencies
         working-directory: apps/web
         run: |
-          call "C:\Program Files\nodejs\npm.cmd" audit --audit-level=high
+          python ..\..\scripts\run_v10_npm_audit.py --npm "C:\Program Files\nodejs\npm.cmd" --audit-level high
           if errorlevel 1 exit /b 36
 
       - name: Run WP21 Python static type and unit contracts
