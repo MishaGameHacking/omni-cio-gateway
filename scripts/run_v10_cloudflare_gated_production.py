@@ -331,9 +331,7 @@ def _cancel_if_nonterminal(
 def _assert_stale_build_safely_terminal(row: dict[str, Any]) -> None:
     outcome = row.get("build_outcome")
     if outcome == "success":
-        raise builds.BootstrapStopped(
-            "CLOUDFLARE_PRODUCTION_STALE_BUILD_SUCCESS_RACE"
-        )
+        raise builds.BootstrapStopped("CLOUDFLARE_PRODUCTION_STALE_BUILD_SUCCESS_RACE")
     if outcome not in builds._TERMINAL_BUILD_FAILURES:
         raise builds.BootstrapStopped(
             "CLOUDFLARE_PRODUCTION_STALE_BUILD_OUTCOME_UNCONFIRMED"
