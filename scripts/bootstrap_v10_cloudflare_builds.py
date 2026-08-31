@@ -50,6 +50,9 @@ _ACTIONABLE_BUILD_FAILURES = frozenset(
         "CLOUDFLARE_BUILD_WORKER_NAME_MISMATCH",
         "CLOUDFLARE_BUILD_ACCOUNT_MISMATCH",
         "CLOUDFLARE_BUILD_PROVIDER_TIMEOUT",
+        "CLOUDFLARE_CONTAINER_REGISTRY_UNAUTHORIZED",
+        "CLOUDFLARE_CONTAINERS_ACCESS_DENIED",
+        "CLOUDFLARE_FIRST_DEPLOY_SECRET_INHERITANCE_FAILED",
     }
 )
 _BUILD_LOG_CLASSIFIERS = (
@@ -728,6 +731,25 @@ def _classify_build_failure(messages: tuple[str, ...]) -> str:
     for code, needles in _BUILD_LOG_CLASSIFIERS:
         if any(all(needle in message for needle in needles) for message in normalized):
             return code
+
+    if any(
+        "cannot inherit bindings: no previous version exists" in message
+        or "[code: 10057]" in message
+        for message in normalized
+    ):
+        return "CLOUDFLARE_FIRST_DEPLOY_SECRET_INHERITANCE_FAILED"
+
+    container_image_context = any("building image " in message for message in normalized)
+    if container_image_context and any(
+        "unauthorized" in message for message in normalized
+    ):
+        return "CLOUDFLARE_CONTAINER_REGISTRY_UNAUTHORIZED"
+    if container_image_context and any(
+        "authentication error" in message or "apierror: forbidden" in message
+        for message in normalized
+    ):
+        return "CLOUDFLARE_CONTAINERS_ACCESS_DENIED"
+
     if any(
         "cloudflare:deploy:staging" in message or "wrangler 4.127.1" in message
         for message in normalized

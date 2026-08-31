@@ -447,6 +447,7 @@ class CloudflareProviderReadinessTests(unittest.TestCase):
         sha = "c" * 40
         row = {
             "build_uuid": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+            "status": "running",
             "build_trigger_metadata": {
                 "commit_hash": sha,
                 "branch": builds._BRANCH,
@@ -465,6 +466,14 @@ class CloudflareProviderReadinessTests(unittest.TestCase):
             },
         }
         api = _BuildHistoryApi([wrong_command])
+        self.assertIsNone(builds._find_exact_build(api, "d" * 32, sha))
+
+        terminal_failure = {
+            **row,
+            "status": "stopped",
+            "build_outcome": "fail",
+        }
+        api = _BuildHistoryApi([terminal_failure])
         self.assertIsNone(builds._find_exact_build(api, "d" * 32, sha))
 
     def test_manual_build_is_pinned_to_branch_and_exact_commit(self) -> None:
