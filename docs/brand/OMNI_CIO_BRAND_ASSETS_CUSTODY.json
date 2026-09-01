@@ -1,20 +1,21 @@
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "brand": "Omni-CIO",
   "mark": "Omni Sentinel Core",
   "custody_state": "GITHUB_CANONICAL_MATERIALIZED",
   "import_date": "2026-09-01",
   "canonical_repository": "MishaGameHacking/omni-cio-gateway",
-  "repository_branch": "assets/omni-cio-brand-assets-v1",
+  "repository_acceptance_branch": "main",
+  "materialization_staging_branch": "assets/omni-cio-brand-assets-v1",
   "repository_canonical_package": {
     "root": "docs/brand/omni-cio-brand-assets-v1",
     "path_count": 37,
     "manifest_path": "docs/brand/omni-cio-brand-assets-v1/asset-manifest.json",
-    "manifest_sha256": "dcd45be85b06aeb09465407dfa9d1cdc376cda70fac13268a1d4e0875983693c",
-    "materialization_commit": "492055d15d3361d2c1857f3b87d12ee6c816cf7e",
+    "manifest_sha256": "a0ef0746a1bd25aeda03570d011e95b7f3844f22e95cf68101237fce1a9c4cf6",
     "full_binary_materialization_complete": true,
     "integrity_guard": "scripts/check_v10_brand_assets.py",
-    "regression_test": "tests/test_v10_brand_assets.py"
+    "regression_test": "tests/test_v10_brand_assets.py",
+    "initial_materialization_commit": "492055d15d3361d2c1857f3b87d12ee6c816cf7e"
   },
   "canonical_master": {
     "path": "raster/omni-sentinel-core-1024.png",
@@ -26,6 +27,29 @@
     "sha256": "1f1b2a44dbf3c55b485c478f39f114072dca3658c9c912e317ca2c487cbb3095",
     "pixel_sha256": "28a922764fed4ce5311a9c2071e43da61fd65f41837f643d0d1f3cf39fbc4499",
     "encoding_contract": "PNG_RGBA8_FILTER0_ZLIB9_DETERMINISTIC"
+  },
+  "maskable_derivative": {
+    "path": "web/pwa-maskable-512.png",
+    "bytes": 136162,
+    "sha256": "7ed01bd30c062d9b459f7208718fa350ab316b3d2c4b0f70549444e5288c2280",
+    "dimensions": [
+      512,
+      512
+    ],
+    "mode": "RGB",
+    "safe_zone_contract": {
+      "canvas_px": 512,
+      "guaranteed_visible_circle_diameter_percent": 80,
+      "important_alpha_threshold": 8,
+      "foreground_max_extent_px": 380,
+      "source_alpha_bbox": [
+        192,
+        204,
+        832,
+        819
+      ],
+      "background": "OPAQUE_BRAND_DIAGONAL_GRADIENT"
+    }
   },
   "legacy_corrected_drive_custody": {
     "provider": "GOOGLE_DRIVE_CONNECTED_OWNER_STORAGE",
@@ -69,7 +93,8 @@
     "path_count_verified": 37,
     "manifest_hash_verification_required": true,
     "transparent_pixel_identity_verification_required": true,
-    "do_not_merge_until_materialized_and_verified": false
+    "maskable_safe_zone_verification_required": true,
+    "binary_materialization_blocker_active": false
   },
   "future_integration_readiness": {
     "web_pwa_assets_complete": true,

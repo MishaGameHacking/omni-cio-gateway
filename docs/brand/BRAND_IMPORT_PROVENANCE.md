@@ -60,6 +60,25 @@ Repository-canonical deterministic transparent derivative:
 
 This distinction is intentional: the earlier corrected Drive ZIP remains recovery/provenance evidence, while GitHub's manifest and tracked file tree are the canonical engineering byte identity.
 
+## Maskable PWA derivative repair
+
+Independent review found that the first materialized `web/pwa-maskable-512.png` was byte-identical to the ordinary `web/pwa-icon-512.png`. That was not acceptable for a `purpose: "maskable"` resource because a maskable icon must keep its important mark content inside the platform safe zone.
+
+The defect was corrected without redesigning the frozen Omni Sentinel composition. A one-shot deterministic repair used the already accepted transparent foreground, centered the important foreground inside the Web App Manifest minimum safe-zone circle, and composited it over the approved opaque Omni-CIO diagonal background. The Web App Manifest safe zone is a centered circle with radius 40% of the icon size; the package records this as an 80% guaranteed-visible diameter contract.
+
+Repository-canonical maskable derivative:
+
+- path: `web/pwa-maskable-512.png`;
+- dimensions: `512 x 512`;
+- mode: `RGB` with opaque brand background;
+- bytes: `136162`;
+- SHA-256: `7ed01bd30c062d9b459f7208718fa350ab316b3d2c4b0f70549444e5288c2280`;
+- generated foreground extent: `380 px`;
+- source alpha bbox: `(192, 204, 832, 819)`;
+- important-alpha threshold used by the deterministic fit check: `8`.
+
+The ordinary 512 PWA icon remains unchanged and has SHA-256 `349ccd7642f0e05d67a96d4e6af3b643aa1b7c2a8f1ad853b0090abd3377cb86`. The permanent guard requires the ordinary and maskable resources to remain different and binds the maskable byte identity and safe-zone metadata through the custody contract.
+
 ## Frozen canonical master
 
 `raster/omni-sentinel-core-1024.png` remains byte-identical to the OWNER package.
@@ -70,28 +89,30 @@ SHA-256:
 
 ## GitHub canonical repository custody
 
-GitHub remains engineering/provenance authority rank 1. Commit `492055d15d3361d2c1857f3b87d12ee6c816cf7e` physically materialized the complete package under:
+GitHub remains engineering/provenance authority rank 1. Commit `492055d15d3361d2c1857f3b87d12ee6c816cf7e` on the focused staging branch physically materialized the complete package under:
 
 `docs/brand/omni-cio-brand-assets-v1/`
 
-Repository custody now contains all **37/37** package paths, including all PNG/ICO binaries referenced by the Android and Web/PWA descriptors.
+Repository custody contains all **37/37** package paths, including all PNG/ICO binaries referenced by the Android and Web/PWA descriptors.
 
 The package manifest is:
 
 `docs/brand/omni-cio-brand-assets-v1/asset-manifest.json`
 
-Manifest SHA-256:
+Current repository manifest SHA-256:
 
-`dcd45be85b06aeb09465407dfa9d1cdc376cda70fac13268a1d4e0875983693c`
+`a0ef0746a1bd25aeda03570d011e95b7f3844f22e95cf68101237fce1a9c4cf6`
+
+The machine-readable manifest digest authority is `docs/brand/OMNI_CIO_BRAND_ASSETS_CUSTODY.json`. `scripts/check_v10_brand_assets.py` reads that custody pin instead of carrying a second independent manifest-hash constant, so legitimate reviewed manifest updates cannot silently drift between two code constants.
 
 The manifest records per-file byte counts and SHA-256 identities. Permanent verification is provided by:
 
 - `scripts/check_v10_brand_assets.py`;
 - `tests/test_v10_brand_assets.py`.
 
-The guard verifies the exact package path set, manifest hashes/sizes, PNG headers, the deterministic transparent PNG's chunk/CRC/decoded-pixel identity, the multi-frame favicon, PWA manifest semantics, Android adaptive-icon descriptor completeness, custody state and the no-authority-expansion boundary.
+The guard verifies the exact package path set, manifest/custody hash binding, per-file hashes/sizes, PNG headers, the deterministic transparent PNG's chunk/CRC/decoded-pixel identity, the multi-frame favicon, ordinary-versus-maskable PWA separation, maskable safe-zone metadata, PWA manifest semantics, Android adaptive-icon descriptor completeness, custody state and the no-authority-expansion boundary.
 
-The one-shot binary materialization workflow/script were used only to bridge the earlier connector transport limitation. They are not part of the permanent package after materialization is complete.
+The one-shot binary materialization and maskable-repair workflows/scripts were used only to bridge connector/binary-generation limitations. They are not part of the permanent package after materialization and repair are complete. The machine custody flag is therefore `binary_materialization_blocker_active=false`; this clears only the artifact-materialization blocker. It does **not** bypass or pre-satisfy the independent exact-head CI/review/merge gate. After acceptance, the permanent repository branch is `main`; the focused asset branch is retained only as staging provenance.
 
 ## Private Drive recovery/provenance custody
 
@@ -108,7 +129,7 @@ The earlier corrected package is retained privately in the connected OWNER Drive
 
 An additional private recovery copy is retained as `OMNI-CIO-BRAND-ASSETS-V1-RECOVERY-COPY-4c6c83a8881d43a5.zip` at file ID `1k_4lm8RUg7LYgv8yX0JWd4MjP-rHLQe3`.
 
-These Drive artifacts predate the deterministic repository PNG encoding and therefore are **not** the authority for current GitHub per-file bytes. They must not overwrite `asset-manifest.json` or the repository-canonical deterministic transparent derivative during normal development.
+These Drive artifacts predate the deterministic repository PNG encoding and therefore are **not** the authority for current GitHub per-file bytes. They must not overwrite `asset-manifest.json` or the repository-canonical deterministic transparent/maskable derivatives during normal development.
 
 ## Historical pre-correction quarantine copy
 
@@ -124,7 +145,7 @@ This keeps the original OWNER-delivered byte history without allowing the known 
 
 The repository package contains the complete reusable delivery family for later authorized product integration:
 
-- Web/PWA: favicon, Apple Touch Icon, 192/512 icons, maskable icon and manifest snippet;
+- Web/PWA: favicon, Apple Touch Icon, 192/512 icons, distinct maskable icon and manifest snippet;
 - Android: background, foreground, monochrome layers and v26/v33 adaptive-icon XML resources;
 - general product use: canonical raster sizes, transparent and monochrome marks, source layers, QA references and brand tokens.
 
