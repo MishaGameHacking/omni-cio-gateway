@@ -29,67 +29,32 @@ The archive contained 37 package files.
 
 ## Ingestion defect and deterministic repair
 
-During repository ingestion, strict PNG validation found that:
+During repository ingestion, strict PNG validation found that `transparent/omni-sentinel-core-color-1024.png` had a truncated `IDAT` stream. The original stored bytes were stable (Drive and ZIP copies matched), but the PNG itself was incomplete. Its original SHA-256 was `55ca090ac7a66c987b3ec4695765d3e4dada29dbfc32d8e7f9ff3a1998e82120`.
 
-`transparent/omni-sentinel-core-color-1024.png`
+The derived transparent asset was reconstructed without redesign from `source/omni-sentinel-core-foreground-source-1254.png`: RGBA source; alpha `< 8` normalized to transparent black; crop `(96, 120, 1160, 1142)`; LANCZOS resize to `640 x 615`; composite at `(192, 204)` on transparent `1024 x 1024`; then complete PNG/CRC/image-decode validation.
 
-had a truncated `IDAT` stream. The original stored bytes were stable (Drive and ZIP copies matched), but the PNG itself was incomplete. Its original SHA-256 was:
-
-`55ca090ac7a66c987b3ec4695765d3e4dada29dbfc32d8e7f9ff3a1998e82120`
-
-The derived transparent asset was reconstructed without redesign from the package's approved high-resolution transparent foreground source:
-
-`source/omni-sentinel-core-foreground-source-1254.png`
-
-Deterministic reconstruction recipe:
-
-1. use RGBA source;
-2. remove source extraction noise with alpha threshold `< 8 -> transparent black`;
-3. crop the resulting approved foreground bounds `(96, 120, 1160, 1142)`;
-4. resize with LANCZOS to `640 x 615`;
-5. composite at `(192, 204)` on a transparent `1024 x 1024` canvas;
-6. save as a complete PNG and rerun chunk CRC/image-decode validation.
-
-The reconstructed image matches the surviving valid portion of the damaged derivative at greater than 99.8% exact pixel identity and restores the missing lower portion from the approved source geometry.
-
-Corrected transparent asset SHA-256:
-
-`d1e69a10dd56ac11ce70d8de81589a3a1c0875108b1d161183337b48df658236`
-
-The package `asset-manifest.json` was updated only for the corrected derivative's byte length and SHA-256/integrity fields.
+Corrected transparent asset SHA-256: `d1e69a10dd56ac11ce70d8de81589a3a1c0875108b1d161183337b48df658236`.
 
 ## Frozen canonical master
 
-The full-background canonical master remains byte-identical to the OWNER package:
+`raster/omni-sentinel-core-1024.png` remains byte-identical to the OWNER package.
 
-`raster/omni-sentinel-core-1024.png`
-
-SHA-256:
-
-`6ab10a3546dc57c0d88b352ab052db4e8f9b6464d52b4b4616b991c370bd805f`
+SHA-256: `6ab10a3546dc57c0d88b352ab052db4e8f9b6464d52b4b4616b991c370bd805f`.
 
 ## Corrected archive identity
 
-Corrected archive filename: `omni-cio-brand-assets-v1.zip`
-
-Corrected archive SHA-256:
-
-`4c6c83a8881d43a59eace38ff677e4fe0ef98271f67e0e50d8e7ff2a33bb5718`
-
-The corrected archive contains the same 37 package paths and passes ZIP CRC validation.
+- filename: `omni-cio-brand-assets-v1.zip`
+- SHA-256: `4c6c83a8881d43a59eace38ff677e4fe0ef98271f67e0e50d8e7ff2a33bb5718`
+- package paths: `37`
+- ZIP CRC validation: PASS
 
 ## Durable binary custody mirror
 
-A byte-identical corrected archive is also stored in the PROJECT OWNER's connected Google Drive so future authorized engineering sessions can recover the complete binary package even when the GitHub connector in a given ChatGPT runtime cannot stream local binary files into the Git data API.
+A byte-identical corrected archive is stored in the PROJECT OWNER's connected Google Drive so future authorized engineering sessions can recover the complete binary package even when a GitHub client cannot stream local binary files into the Git data API.
 
 - Drive file ID: `18B0OCxuU36BUEzbz8nr2dIiSj9wjsqF-`
-- Filename: `omni-cio-brand-assets-v1.zip`
+- filename: `omni-cio-brand-assets-v1.zip`
 - MIME type: `application/zip`
 - SHA-256: `4c6c83a8881d43a59eace38ff677e4fe0ef98271f67e0e50d8e7ff2a33bb5718`
-- Package paths: `37`
 
-This mirror is custody/recovery evidence only. GitHub remains engineering authority rank 1; the manifest and provenance committed to GitHub define the expected package identity. The Drive file does not authorize branding deployment, public cutover, or any runtime/broker capability transition.
-
-## Validation
-
-The prepared deterministic guard `check_v10_brand_assets.py` verifies manifest path coverage, byte lengths, SHA-256 values, PNG chunk structure/CRC/IEND and IHDR dimensions, JSON/XML parsing, favicon frame inventory, Android safe-zone metadata, and the frozen canonical master digest.
+This mirror is custody/recovery evidence only. GitHub remains engineering authority rank 1. It does not authorize branding deployment, public cutover, or runtime/broker capability transitions.
