@@ -13,7 +13,7 @@ jobs:
     timeout-minutes: 8
     steps:
       - name: Read exact-head Sonar annotations without source mutation
-        shell: powershell
+        shell: powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command ". '{0}'"
         env:
           GITHUB_TOKEN: ${{ github.token }}
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
