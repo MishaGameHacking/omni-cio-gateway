@@ -369,8 +369,7 @@ def verify_repository(repository_root: Path) -> None:
         missing = sorted(expected_paths - actual_paths)
         extra = sorted(actual_paths - expected_paths)
         raise ValueError(
-            "brand package path-set mismatch: "
-            f"missing={missing}, extra={extra}"
+            f"brand package path-set mismatch: missing={missing}, extra={extra}"
         )
     if len(actual_paths) != EXPECTED_PATH_COUNT:
         raise ValueError("brand package physical path count drifted")
