@@ -592,10 +592,7 @@ def _verify_delivery_contracts(
     custody_maskable: dict[str, Any],
 ) -> None:
     favicon_record = manifest_by_path.get(FAVICON_PATH)
-    if (
-        favicon_record is None
-        or favicon_record.get(RECORD_DIMENSIONS_KEY) != [48, 48]
-    ):
+    if favicon_record is None or favicon_record.get(RECORD_DIMENSIONS_KEY) != [48, 48]:
         raise ValueError("favicon manifest dimensions drifted")
     _verify_favicon(package_root / FAVICON_PATH)
     _verify_pwa_manifest(package_root)
