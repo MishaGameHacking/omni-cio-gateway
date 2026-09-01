@@ -1,31 +1,55 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "brand": "Omni-CIO",
   "mark": "Omni Sentinel Core",
-  "custody_state": "CANONICAL_CORRECTED_PACKAGE_DUAL_DRIVE_PRESERVED",
+  "custody_state": "GITHUB_CANONICAL_MATERIALIZED",
   "import_date": "2026-09-01",
   "canonical_repository": "MishaGameHacking/omni-cio-gateway",
   "repository_branch": "assets/omni-cio-brand-assets-v1",
-  "package": {
-    "canonical_archive_filename": "omni-cio-brand-assets-v1-CANONICAL-4c6c83a8881d43a5.zip",
-    "sha256": "4c6c83a8881d43a59eace38ff677e4fe0ef98271f67e0e50d8e7ff2a33bb5718",
-    "archive_bytes": 6589504,
+  "repository_canonical_package": {
+    "root": "docs/brand/omni-cio-brand-assets-v1",
     "path_count": 37,
     "manifest_path": "docs/brand/omni-cio-brand-assets-v1/asset-manifest.json",
-    "zip_crc_validation": "PASS",
-    "image_decode_validation": "PASS"
+    "manifest_sha256": "dcd45be85b06aeb09465407dfa9d1cdc376cda70fac13268a1d4e0875983693c",
+    "materialization_commit": "492055d15d3361d2c1857f3b87d12ee6c816cf7e",
+    "full_binary_materialization_complete": true,
+    "integrity_guard": "scripts/check_v10_brand_assets.py",
+    "regression_test": "tests/test_v10_brand_assets.py"
   },
-  "canonical_drive_custody": {
+  "canonical_master": {
+    "path": "raster/omni-sentinel-core-1024.png",
+    "sha256": "6ab10a3546dc57c0d88b352ab052db4e8f9b6464d52b4b4616b991c370bd805f"
+  },
+  "repaired_derivative": {
+    "path": "transparent/omni-sentinel-core-color-1024.png",
+    "bytes": 383535,
+    "sha256": "1f1b2a44dbf3c55b485c478f39f114072dca3658c9c912e317ca2c487cbb3095",
+    "pixel_sha256": "28a922764fed4ce5311a9c2071e43da61fd65f41837f643d0d1f3cf39fbc4499",
+    "encoding_contract": "PNG_RGBA8_FILTER0_ZLIB9_DETERMINISTIC"
+  },
+  "legacy_corrected_drive_custody": {
     "provider": "GOOGLE_DRIVE_CONNECTED_OWNER_STORAGE",
     "archive_folder_id": "1xViZ4jtS0mv10fnnjjPHsbOmCsy1GcVy",
     "archive_file_id": "12Zg5A0P__n_lMr3LYmDZdzESnFZ37Vxc",
     "expanded_folder_id": "19JbZCt5lFbL97hZ6ZHj7mJC_vavPy693",
     "archive_filename": "omni-cio-brand-assets-v1-CANONICAL-4c6c83a8881d43a5.zip",
-    "mime_type": "application/zip",
-    "sha256": "4c6c83a8881d43a59eace38ff677e4fe0ef98271f67e0e50d8e7ff2a33bb5718",
+    "archive_sha256": "4c6c83a8881d43a59eace38ff677e4fe0ef98271f67e0e50d8e7ff2a33bb5718",
+    "archive_bytes": 6589504,
     "expanded_path_count": 37,
     "visibility": "PRIVATE_NOT_SHARED",
-    "re_download_hash_verified": true
+    "status": "RECOVERY_PROVENANCE_NOT_REPOSITORY_BYTE_AUTHORITY",
+    "transparent_derivative": {
+      "bytes": 264293,
+      "sha256": "d1e69a10dd56ac11ce70d8de81589a3a1c0875108b1d161183337b48df658236"
+    },
+    "reason": "This corrected Drive package predates the deterministic repository PNG encoding. GitHub manifest and tracked files now define canonical engineering bytes."
+  },
+  "additional_private_recovery_copy": {
+    "archive_file_id": "1k_4lm8RUg7LYgv8yX0JWd4MjP-rHLQe3",
+    "filename": "OMNI-CIO-BRAND-ASSETS-V1-RECOVERY-COPY-4c6c83a8881d43a5.zip",
+    "archive_sha256": "4c6c83a8881d43a59eace38ff677e4fe0ef98271f67e0e50d8e7ff2a33bb5718",
+    "archive_bytes": 6589504,
+    "visibility": "PRIVATE_NOT_SHARED"
   },
   "historical_pre_correction_custody": {
     "archive_file_id": "1vYBw3_MwD7tH6sSynV57CaekVwNwWzfx",
@@ -40,19 +64,17 @@
     "status": "SOURCE_PROVENANCE_ONLY_NOT_CANONICAL",
     "reason": "The shared source remains read-only to this integration and contains the pre-correction archive/transparent derivative."
   },
-  "canonical_master": {
-    "path": "raster/omni-sentinel-core-1024.png",
-    "sha256": "6ab10a3546dc57c0d88b352ab052db4e8f9b6464d52b4b4616b991c370bd805f"
-  },
-  "repaired_derivative": {
-    "path": "transparent/omni-sentinel-core-color-1024.png",
-    "bytes": 264293,
-    "sha256": "d1e69a10dd56ac11ce70d8de81589a3a1c0875108b1d161183337b48df658236"
-  },
   "repository_binary_state": {
-    "full_binary_materialization_complete": false,
-    "reason": "The available GitHub connector accepts binary Git blobs only as inline base64 text and does not expose a file-reference upload parameter. Full binary custody is therefore preserved losslessly in private OWNER Drive until a reviewed binary-capable Git transport is available.",
-    "do_not_merge_until_materialized_and_verified": true
+    "full_binary_materialization_complete": true,
+    "path_count_verified": 37,
+    "manifest_hash_verification_required": true,
+    "transparent_pixel_identity_verification_required": true,
+    "do_not_merge_until_materialized_and_verified": false
+  },
+  "future_integration_readiness": {
+    "web_pwa_assets_complete": true,
+    "android_adaptive_assets_complete": true,
+    "starts_web_visual_update": false
   },
   "authority_effect": {
     "starts_web_visual_update": false,
