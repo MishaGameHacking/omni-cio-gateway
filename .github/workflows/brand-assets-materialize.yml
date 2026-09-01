@@ -1,0 +1,144 @@
+name: Temporary Brand Asset Materialization
+
+on:
+  push:
+    branches:
+      - "assets/omni-cio-brand-assets-v1"
+    paths:
+      - ".github/workflows/brand-assets-materialize.yml"
+      - "scripts/_temporary_materialize_brand_assets.py"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: brand-assets-materialize-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    name: Materialize canonical binary package
+    if: github.repository == 'MishaGameHacking/omni-cio-gateway' && github.ref == 'refs/heads/assets/omni-cio-brand-assets-v1'
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 20
+
+    steps:
+      - name: Expose installed Git Bash before repository bootstrap
+        shell: cmd
+        run: |
+          powershell.exe -NoProfile -NonInteractive -Command "$git=(Get-Command git.exe -ErrorAction Stop).Source; $root=Split-Path -Parent (Split-Path -Parent $git); $bin=Join-Path $root 'bin'; if (-not (Test-Path (Join-Path $bin 'bash.exe'))) { exit 12 }; $bin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append"
+          if errorlevel 1 exit /b 12
+
+      - name: Bootstrap exact triggering branch without external Actions
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.sha }}
+          GITHUB_TOKEN: ${{ github.token }}
+          GIT_TERMINAL_PROMPT: "0"
+          GCM_INTERACTIVE: "0"
+        run: |
+          set -euo pipefail
+          find . -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+          git init .
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          git config --local gc.auto 0
+          git config --local credential.helper ""
+          git config --local --add credential.helper '!f() { echo username=x-access-token; echo password=$GITHUB_TOKEN; }; f'
+          git fetch --no-tags --prune --depth=1 origin "+${GITHUB_REF}:refs/remotes/origin/materialize"
+          git config --local --unset-all credential.helper 2>/dev/null || true
+          test "$(git rev-parse refs/remotes/origin/materialize)" = "$EXPECTED_HEAD"
+          git checkout -b materialize "$EXPECTED_HEAD"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+
+      - name: Bootstrap isolated Python 3.12.10
+        shell: cmd
+        run: scripts\bootstrap_windows_ci_python.cmd
+
+      - name: Install reviewed Pillow wheel with exact hash
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/pillow-materialize-requirement.txt" <<'EOF'
+          Pillow==12.3.0 --hash=sha256:a2b55dd6b2a4c4b7d87ffa56bdb33fdc5fdb9a462173861a7bc097f17d91cb09
+          EOF
+          python -m pip install --disable-pip-version-check --no-input --only-binary=:all: --no-deps --require-hashes -r "$RUNNER_TEMP/pillow-materialize-requirement.txt"
+          python -c "import PIL; assert PIL.__version__ == '12.3.0'; print('Pillow 12.3.0 verified')"
+
+      - name: Download immutable OWNER source archive
+        shell: bash
+        env:
+          EXPECTED_ORIGINAL_SHA256: 351aad1b6bb52125c7f67a3755281d595e1c6d7b9b4dc045901a90771038ed6d
+          OWNER_SOURCE_FILE_ID: 1VrGniNzt7ZEjpkTC0dml5SuEZ5H77z8Z
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/omni-cio-brand-assets-v1-original.zip"
+          rm -f "$archive"
+          urls=(
+            "https://drive.usercontent.google.com/download?id=${OWNER_SOURCE_FILE_ID}&export=download&confirm=t"
+            "https://drive.google.com/uc?export=download&id=${OWNER_SOURCE_FILE_ID}&confirm=t"
+          )
+          matched=0
+          for url in "${urls[@]}"; do
+            rm -f "$archive"
+            if curl --fail --location --silent --show-error --connect-timeout 20 --max-time 240 --retry 2 --retry-all-errors "$url" --output "$archive"; then
+              actual="$(python -c "import hashlib, pathlib; print(hashlib.sha256(pathlib.Path(r'$archive').read_bytes()).hexdigest())")"
+              if [ "$actual" = "$EXPECTED_ORIGINAL_SHA256" ]; then
+                matched=1
+                break
+              fi
+            fi
+          done
+          if [ "$matched" -ne 1 ]; then
+            echo "OWNER source archive could not be recovered with the expected immutable SHA-256." >&2
+            exit 66
+          fi
+          echo "BRAND_ORIGINAL_ARCHIVE=$archive" >> "$GITHUB_ENV"
+
+      - name: Reconstruct and verify corrected canonical package
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/_temporary_materialize_brand_assets.py \
+            "$BRAND_ORIGINAL_ARCHIVE" \
+            docs/brand/omni-cio-brand-assets-v1
+          test "$(find docs/brand/omni-cio-brand-assets-v1 -type f | wc -l | tr -d ' ')" = "37"
+
+      - name: Commit canonical package on unchanged branch head
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.sha }}
+          BRANCH_NAME: ${{ github.ref_name }}
+          GITHUB_TOKEN: ${{ github.token }}
+          GIT_TERMINAL_PROMPT: "0"
+          GCM_INTERACTIVE: "0"
+        run: |
+          set -euo pipefail
+          git diff --check
+          git add -- docs/brand/omni-cio-brand-assets-v1
+          if git diff --cached --quiet; then
+            echo "Materializer produced no repository changes; refusing an ambiguous no-op." >&2
+            exit 67
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Brand: materialize complete canonical asset package"
+          materialized_head="$(git rev-parse HEAD)"
+          git config --local credential.helper ""
+          git config --local --add credential.helper '!f() { echo username=x-access-token; echo password=$GITHUB_TOKEN; }; f'
+          git fetch --no-tags --prune --depth=1 origin "+refs/heads/${BRANCH_NAME}:refs/remotes/origin/prepush"
+          test "$(git rev-parse refs/remotes/origin/prepush)" = "$EXPECTED_HEAD"
+          git push origin "HEAD:refs/heads/${BRANCH_NAME}"
+          git config --local --unset-all credential.helper 2>/dev/null || true
+          echo "Materialized branch head: ${materialized_head}"
+
+      - name: Clean workspace
+        if: always()
+        shell: bash
+        run: |
+          git config --local --unset-all credential.helper 2>/dev/null || true
+          if git rev-parse --verify HEAD >/dev/null 2>&1; then
+            git reset --hard HEAD
+            git clean -ffdx
+          else
+            rm -rf .git
+          fi
